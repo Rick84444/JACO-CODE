@@ -1,0 +1,51 @@
+{
+  "product": "JACO Autonomus IDE",
+  "version": "0.17.1-frozen-hands-off-seer-desktop-rc2",
+  "releaseClass": "RC",
+  "frozen": true,
+  "canonicalGui": "Antigravity / AI Studio",
+  "primaryPort": 3000,
+  "sourceProvenance": [
+    {
+      "artifact": "JACO-Cognitive-IDE-0.17.1-ANTIGRAVITY-SEER-BRIDGE-RC1.zip",
+      "sha256": "b173fea6babf1aacc1b7b7076e32c3b1f1a40b0f760103263b242f29adeb131e",
+      "role": "canonical Antigravity frontend/runtime base"
+    },
+    {
+      "artifact": "JACO-0.17.1.zip",
+      "sha256": "d447ae0df61d00c73f708ea59e11c1534cd9c068445d632550a791ce7179bd3e",
+      "role": "Desktop Hands-Off / Windows UI Automation addition"
+    },
+    {
+      "artifact": "JACO-Cognitive-IDE-0.17.1-RUNTIME-HARDENING1-RC.zip",
+      "role": "canonical Android Hands-Off, Nova Traction, Intuition Contract and native-engine source"
+    }
+  ],
+  "handsOffSurfaces": [
+    "ANDROID_ACCESSIBILITY",
+    "WINDOWS_UI_AUTOMATION"
+  ],
+  "seerLivePhases": [
+    "IDLE",
+    "OBSERVING",
+    "PLANNING",
+    "EXECUTING",
+    "VERIFYING",
+    "DEGRADED"
+  ],
+  "verification": {
+    "frozenHandsOff": "49/49 PASS",
+    "truthfulRuntime": "15/15 PASS",
+    "criticalTranspile": "11/11 PASS",
+    "treeParser": "186/186 PASS",
+    "secretScan": "PASS",
+    "termuxBashSyntax": "PASS",
+    "npmCi": "NOT VERIFIED \u2014 timed out",
+    "semanticTypecheck": "NOT VERIFIED",
+    "productionBuild": "NOT VERIFIED",
+    "windowsPhysicalActuation": "NOT VERIFIED",
+    "androidPhysicalActuation": "NOT VERIFIED"
+  },
+  "truthPolicy": "No unsupported or unobserved capability may be reported as verified.",
+  "generatedAtUtc": "2026-08-31T20:14:13.856596+00:00"
+}

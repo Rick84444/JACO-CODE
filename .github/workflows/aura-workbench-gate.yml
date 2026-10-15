@@ -1,0 +1,167 @@
+name: Aura Workbench Gate
+
+on:
+  pull_request:
+    paths:
+      - 'tests/nova/aura-truthful-gui.test.mjs'
+      - 'tests/nova/gameboard-fabric.test.mjs'
+      - 'agents/lib/gameboard-fabric.mjs'
+      - 'lite/START-ANDROID.sh'
+      - 'tools/build-lite.mjs'
+      - 'runtime/src/components/CognitiveGameboard.tsx'
+      - 'runtime/src/components/JacoAuraComputeIDE.tsx'
+      - 'runtime/server.ts'
+      - 'runtime/src/App.tsx'
+      - 'runtime/src/components/AuraChatPanel.tsx'
+      - 'runtime/src/components/AuraCodeEditor.tsx'
+      - 'runtime/src/components/AuraCommandPalette.tsx'
+      - 'runtime/src/components/AuraRepositoryTree.tsx'
+      - 'runtime/src/components/AuraRuntimeNucleus.tsx'
+      - 'runtime/src/lib/auraToolRegistry.ts'
+      - 'runtime/scripts/verify_aura_operator_workbench.mjs'
+      - 'runtime/src/server/mcp/auraMcpSourceRegistry.ts'
+      - 'agents/lib/aura-seer-chat.mjs'
+      - 'agents/cdp-bridge.mjs'
+      - 'gateway/src/workplace/workplace-store.mjs'
+      - 'gateway/src/workplace/workplace-server.mjs'
+      - 'tests/nova/aura-seer-chat.test.mjs'
+      - 'tests/workplace/workplace.test.mjs'
+      - 'tests/mcp/**'
+      - '.mcp.json'
+      - '.vscode/mcp.json'
+      - 'runtime/tools/jaco-mcp-launch.mjs'
+      - 'runtime/tools/mcp-runtime-url.mjs'
+      - 'runtime/gateway/src/mcp-stdio.mjs'
+      - 'runtime/gateway/src/mcp-factory.mjs'
+      - 'runtime/gateway/src/tool-registry.mjs'
+      - 'runtime/gateway/src/tool-handlers.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'runtime/src/components/AuraAgentBoard.tsx'
+      - '.github/workflows/aura-workbench-gate.yml'
+  push:
+    branches:
+      - master
+    paths:
+      - 'tests/nova/aura-truthful-gui.test.mjs'
+      - 'runtime/src/components/JacoAuraComputeIDE.tsx'
+      - 'runtime/server.ts'
+      - 'runtime/src/App.tsx'
+      - 'runtime/src/components/AuraChatPanel.tsx'
+      - 'runtime/src/components/AuraCodeEditor.tsx'
+      - 'runtime/src/components/AuraCommandPalette.tsx'
+      - 'runtime/src/components/AuraRepositoryTree.tsx'
+      - 'runtime/src/components/AuraRuntimeNucleus.tsx'
+      - 'runtime/src/lib/auraToolRegistry.ts'
+      - 'runtime/scripts/verify_aura_operator_workbench.mjs'
+      - 'runtime/src/server/mcp/auraMcpSourceRegistry.ts'
+      - 'agents/lib/aura-seer-chat.mjs'
+      - 'agents/cdp-bridge.mjs'
+      - 'gateway/src/workplace/workplace-store.mjs'
+      - 'gateway/src/workplace/workplace-server.mjs'
+      - 'tests/nova/aura-seer-chat.test.mjs'
+      - 'tests/workplace/workplace.test.mjs'
+      - 'tests/mcp/**'
+      - '.mcp.json'
+      - '.vscode/mcp.json'
+      - 'runtime/tools/jaco-mcp-launch.mjs'
+      - 'runtime/tools/mcp-runtime-url.mjs'
+      - 'runtime/gateway/src/mcp-stdio.mjs'
+      - 'runtime/gateway/src/mcp-factory.mjs'
+      - 'runtime/gateway/src/tool-registry.mjs'
+      - 'runtime/gateway/src/tool-handlers.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'runtime/src/components/AuraAgentBoard.tsx'
+      - '.github/workflows/aura-workbench-gate.yml'
+
+jobs:
+  truth-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked contract dependencies
+        run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - name: Workbench truth contract
+        run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs
+      - name: Activation and provider truth regressions
+        run: |
+          node --check agents/jaco-cli.mjs
+          node --check agents/lib/activate.mjs
+          node --test tests/nova/activate.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/planner-choice.test.mjs
+          bash -n runtime/bin/jaco
+      - name: Gameboard projection and deterministic simulator
+        run: node --experimental-sqlite --test tests/nova/gameboard-fabric.test.mjs tests/nova/gameboard-exchange.test.mjs
+      - name: Android Lite launcher syntax
+        run: bash -n lite/START-ANDROID.sh
+      - name: Workplace authority projection
+        run: node --experimental-sqlite --test tests/workplace/workplace.test.mjs
+      - name: ChatGPT gateway policy
+        run: node gateway/test/chatgpt-nova-gateway.test.mjs
+      - name: Operator acceptance probe syntax
+        run: node --check runtime/scripts/verify_aura_operator_workbench.mjs
+
+  canonical-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: runtime/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Install gateway MCP dependencies
+        run: npm ci --prefix gateway
+      - name: VS Code MCP client handshake
+        run: node ../tests/mcp/client-configs.test.mjs
+      - name: TypeScript — Workbench scope
+        shell: bash
+        run: |
+          set +e
+          npm run lint > "$RUNNER_TEMP/aura-tsc.txt" 2>&1
+          TSC_EXIT=$?
+          set -e
+          cat "$RUNNER_TEMP/aura-tsc.txt"
+          node - "$RUNNER_TEMP/aura-tsc.txt" "$TSC_EXIT" <<'NODE'
+          const fs = require('fs');
+          const report = fs.readFileSync(process.argv[2], 'utf8');
+          const tscExit = Number(process.argv[3]);
+          const server = fs.readFileSync('server.ts', 'utf8');
+          const rows = server.split(/\r?\n/);
+          const start = rows.findIndex(line => line.includes('// 4a. Aura Workbench')) + 1;
+          const end = rows.findIndex(line => line.includes('// 4b. Aura truthful runtime projection.')) + 1;
+          if (!start || !end || end <= start) {
+            console.error('Aura Workbench server markers are missing');
+            process.exit(1);
+          }
+          const errors = report.split(/\r?\n/).filter(line => /error TS\d+/.test(line));
+          const workbenchErrors = errors.filter(line => {
+            if (/^src\/components\/(JacoAuraComputeIDE|AuraRepositoryTree|AuraChatPanel|AuraRuntimeNucleus)\.tsx\(/.test(line)) return true;
+            const match = line.match(/^server\.ts\((\d+),/);
+            return match ? Number(match[1]) >= start && Number(match[1]) < end : false;
+          });
+          if (workbenchErrors.length) {
+            console.error('\nAura Workbench introduced TypeScript errors:');
+            console.error(workbenchErrors.join('\n'));
+            process.exit(1);
+          }
+          if (tscExit !== 0) {
+            console.log(`\nGlobal tsc still reports ${errors.length} pre-existing/out-of-scope error(s); none are in Aura Workbench.`);
+          } else {
+            console.log('\nGlobal TypeScript check is clean.');
+          }
+          NODE
+      - name: Server bundle
+        run: npm run build:server
+      - name: Client build
+        run: npm run build:client

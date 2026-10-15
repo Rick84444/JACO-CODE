@@ -1,0 +1,24 @@
+{
+  "schema": "jaco.reflective-futures.release-manifest.v1",
+  "generatedAtUTC": "2026-09-08T11:31:44.689381Z",
+  "product": "JACO Cognitive Runtime",
+  "version": "0.22.0",
+  "releaseId": "jaco-code-0.22.0",
+  "status": "RELEASE_CANDIDATE",
+  "canonical": false,
+  "candidatePorts": {
+    "core": 3020,
+    "sentinel": 3299,
+    "a2a": 3298
+  },
+  "architecture": [
+    "provider-neutral-routing",
+    "evidence-referential-integrity",
+    "capability-reputation-load-aware-dispatch",
+    "self-peer-review",
+    "deliberation",
+    "soft-sandbox",
+    "rolling-90-day-futures",
+    "a2a-trust-registry"
+  ]
+}

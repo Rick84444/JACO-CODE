@@ -1,0 +1,5 @@
+#!/data/data/com.termux/files/usr/bin/sh
+set -eu
+# Start the runit service daemon. Only Sentinel is enabled by default;
+# full JACO Core is activated on demand by jacoctl/UI/MCP.
+. /data/data/com.termux/files/usr/etc/profile.d/start-services.sh

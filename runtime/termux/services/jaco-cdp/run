@@ -1,0 +1,19 @@
+#!/data/data/com.termux/files/usr/bin/sh
+set -eu
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+HOME="${HOME:-/data/data/com.termux/files/home}"
+TMPDIR="${TMPDIR:-$PREFIX/tmp}"
+PATH="$PREFIX/bin:$PREFIX/bin/applets:${PATH:-/system/bin}"
+export PREFIX HOME TMPDIR PATH
+ENV_FILE="${JACO_RUNTIME_ENV:-$HOME/.config/jaco/runtime.env}"
+[ -f "$ENV_FILE" ] && . "$ENV_FILE"
+# Same checkout as Core and Workplace: the parent of JACO_ROOT, not a fixed home path.
+if [ -n "${JACO_ROOT:-}" ] && [ -f "$JACO_ROOT/../agents/cdp-bridge.mjs" ]; then
+  REPO_ROOT="${JACO_REPO_ROOT:-$(cd "$JACO_ROOT/.." && pwd)}"
+else
+  REPO_ROOT="${JACO_REPO_ROOT:-$HOME/jaco-code}"
+fi
+cd "$REPO_ROOT"
+[ "${JACO_ENABLE_CDP:-0}" = "1" ] || { echo "JACO_ENABLE_CDP_DISABLED" >&2; exit 0; }
+export JACO_CDP_BRIDGE_PORT="${JACO_CDP_BRIDGE_PORT:-2996}"
+exec "$PREFIX/bin/node" agents/cdp-bridge.mjs 2>&1

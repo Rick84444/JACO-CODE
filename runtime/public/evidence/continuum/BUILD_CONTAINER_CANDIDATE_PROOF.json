@@ -1,0 +1,29 @@
+{
+  "schema": "jaco.continuum.candidate-proof.v1",
+  "releaseId": "JACO-Cognitive-Runtime-0.20.0-CONTINUUM-RC1",
+  "verifiedAt": "2026-09-06T22:04:53.495Z",
+  "candidateRoot": "/mnt/data/jaco020work/JACO-Cognitive-Runtime-0.20.0-CONTINUUM-RC1",
+  "architecture": "SIDECAR_CONTROL_PLANE",
+  "ports": {
+    "continuum": 3020,
+    "sentinel": 3299,
+    "a2a": 3298
+  },
+  "executionSubstrate": {
+    "port": 3000,
+    "identity": {}
+  },
+  "pids": {
+    "continuum": 2376,
+    "sentinel": 2393,
+    "a2a": 2394
+  },
+  "checks": {
+    "identity": true,
+    "continuumStatus": true,
+    "eventIntegrity": true,
+    "sentinelHealth": true,
+    "a2aHealth": true
+  },
+  "truthBoundary": "TARGET_CANDIDATE_RUNTIME_VERIFIED; SUBSTRATE_CAPABILITIES_SEPARATELY_VERIFIED"
+}

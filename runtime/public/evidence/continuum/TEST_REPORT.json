@@ -1,0 +1,107 @@
+{
+  "schema": "jaco.continuum.test-report.v1",
+  "releaseId": "JACO-Cognitive-Runtime-0.20.0-CONTINUUM-RC1",
+  "observedAtUtc": "2026-09-06T22:17:33Z",
+  "environment": "OpenAI build container / Linux",
+  "overall": "PASS_WITH_DECLARED_BOUNDARIES",
+  "gates": [
+    {
+      "name": "continuum_static",
+      "result": "PASS",
+      "passed": 71,
+      "total": 71
+    },
+    {
+      "name": "continuum_behavior",
+      "result": "PASS",
+      "passed": 11,
+      "total": 11
+    },
+    {
+      "name": "continuum_standalone_integration",
+      "result": "PASS",
+      "detail": "identity/state/A2A/Sentinel/e-stop/restart/integrity"
+    },
+    {
+      "name": "a2a_continuum",
+      "result": "PASS",
+      "detail": "health/card/truthful-failure/method-boundary"
+    },
+    {
+      "name": "truthful_runtime",
+      "result": "PASS",
+      "passed": 15,
+      "total": 15
+    },
+    {
+      "name": "inherited_hands_off_seer",
+      "result": "PASS",
+      "passed": 49,
+      "total": 49
+    },
+    {
+      "name": "connected_inherited_e2e",
+      "result": "PASS",
+      "passed": 7,
+      "total": 7
+    },
+    {
+      "name": "gateway_structural_security",
+      "result": "PASS",
+      "passed": 28,
+      "total": 28
+    },
+    {
+      "name": "secret_scan",
+      "result": "PASS",
+      "hits": 0
+    },
+    {
+      "name": "rollup_resolver",
+      "result": "PASS",
+      "passed": 6,
+      "total": 6
+    },
+    {
+      "name": "sqlite_cjs",
+      "result": "PASS",
+      "passed": 7,
+      "total": 7
+    },
+    {
+      "name": "node_syntax_continuum",
+      "result": "PASS"
+    },
+    {
+      "name": "bash_syntax_candidate_activation",
+      "result": "PASS"
+    },
+    {
+      "name": "standalone_smoke",
+      "result": "PASS",
+      "ports": {
+        "core": 4020,
+        "sentinel": 4299,
+        "a2a": 4298
+      },
+      "cleanStop": true,
+      "substrateIntentionallyUnavailable": true
+    },
+    {
+      "name": "legacy_typescript_typecheck",
+      "result": "UNVERIFIED_IN_BUILD_CONTAINER",
+      "reason": "incomplete dev-dependency tree after npm registry timeout"
+    },
+    {
+      "name": "legacy_vite_esbuild_build",
+      "result": "UNVERIFIED_IN_BUILD_CONTAINER",
+      "reason": "vite/esbuild binaries unavailable because npm registry install timed out"
+    }
+  ],
+  "truthBoundaries": [
+    "PHYSICAL_ANDROID_TERMUX_PENDING",
+    "PHYSICAL_WINDOWS_PENDING",
+    "PHYSICAL_CHROME_CDP_0_20_PENDING",
+    "PRODUCTION_REVENUE_NOT_CLAIMED"
+  ]
+}

@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import { readFile, stat } from 'node:fs/promises';
+import { join } from 'node:path';
+const root=process.cwd();
+const checks=[];
+const check=(name,fn)=>{try{fn();checks.push([name,true])}catch(e){checks.push([name,false,e.message])}};
+const files=['gateway/package.json','gateway/src/sentinel.mjs','gateway/src/mcp-stdio.mjs','gateway/src/mcp-factory.mjs','gateway/src/tool-registry.mjs','gateway/src/tool-handlers.mjs','bin/jacoctl','bin/jaco','bin/jaco-tunnel','termux/install-activation.sh','termux/services/jaco-sentinel/run','termux/services/jaco-core/run','termux/services/jaco-workplace/run','termux/services/jaco-nova/run','termux/boot/00-jaco-sentinel'];
+for(const f of files){try{await stat(join(root,f));checks.push([`exists ${f}`,true])}catch(e){checks.push([`exists ${f}`,false,e.message])}}
+const pkg=JSON.parse(await readFile(join(root,'gateway/package.json'),'utf8'));
+const sentinel=await readFile(join(root,'gateway/src/sentinel.mjs'),'utf8');
+const stdio=await readFile(join(root,'gateway/src/mcp-stdio.mjs'),'utf8');
+const handlers=await readFile(join(root,'gateway/src/tool-handlers.mjs'),'utf8');
+const ctl=await readFile(join(root,'bin/jacoctl'),'utf8');
+const configSrc=await readFile(join(root,'gateway/src/config.mjs'),'utf8');
+const tunnel=await readFile(join(root,'bin/jaco-tunnel'),'utf8');
+check('official MCP server v2 pinned',()=>assert.equal(pkg.dependencies['@modelcontextprotocol/server'],'2.0.0'));
+check('official MCP node v2 pinned',()=>assert.equal(pkg.dependencies['@modelcontextprotocol/node'],'2.0.0'));
+check('official MCP client v2 test dependency pinned',()=>assert.equal(pkg.devDependencies['@modelcontextprotocol/client'],'2.0.0'));
+check('Streamable HTTP uses createMcpHandler',()=>assert.match(sentinel,/createMcpHandler/));
+check('stdio uses serveStdio',()=>assert.match(stdio,/serveStdio/));
+check('no handwritten protocol version',()=>assert.doesNotMatch(stdio+sentinel,/2024-11-05|2025-06-18|protocolVersion\s*=/));
+check('Sentinel default loopback',()=>assert.match(sentinel,/gatewayHost/));
+check('remote-capable mode requires bearer',()=>assert.match(sentinel,/JACO_MCP_BEARER is empty/));
+check('MCP has no raw shell/evaluate/credential tool',()=>assert.doesNotMatch(handlers,/jaco_.*(?:shell|evaluate|credential|exec)/i));
+check('MCP activation is explicit flag gated',()=>assert.match(configSrc,/JACO_MCP_ALLOW_ACTIVATION/));
+check('jacoctl fixed lifecycle verbs',()=>{assert.match(ctl,/activate\)/);assert.match(ctl,/deactivate\)/);assert.doesNotMatch(ctl,/eval |bash -c|sh -c/)});
+check('Core stays canonical :3000',()=>assert.match(ctl,/127\.0\.0\.1:3000/));
+check('Sentinel canonical :2999',()=>assert.match(ctl,/127\.0\.0\.1:2999/));
+check('OpenAI tunnel helper targets semantic MCP only',()=>{assert.match(tunnel,/runtimes connect/);assert.match(tunnel,/127\.0\.0\.1:2999\/mcp/);assert.doesNotMatch(tunnel,/127\.0\.0\.1:9222|--browser-url/)});
+check('OpenAI tunnel helper keeps runtime key by env reference',()=>{assert.match(tunnel,/--runtime-api-key/);assert.match(tunnel,/env:\$RUNTIME_KEY_ENV/);assert.doesNotMatch(tunnel,/OPENAI_API_KEY=/)});
+let fail=0; for(const [n,ok,msg] of checks){console.log(`${ok?'PASS':'FAIL'} ${n}${msg?` — ${msg}`:''}`);if(!ok)fail++}
+console.log(`\n${checks.length-fail}/${checks.length} PASS`);process.exitCode=fail?1:0;

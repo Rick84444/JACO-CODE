@@ -1,0 +1,14 @@
+{
+  "schema": "jaco.reflective-futures.security-report.v1",
+  "generatedAtUTC": "2026-09-08T11:31:44.689381Z",
+  "releaseId": "jaco-code-0.22.0",
+  "secretPatternScan": "0 hits",
+  "remoteMcp": "bearer-required",
+  "rawExecutionTools": "ABSENT",
+  "softSandbox": {
+    "state": "REAL_FILESYSTEM_ISOLATION",
+    "networkPolicy": "DENY_BY_DEFAULT",
+    "kernelBoundary": false
+  },
+  "hiddenIntentInference": "NOT_PERFORMED"
+}

@@ -1,0 +1,19 @@
+#!/data/data/com.termux/files/usr/bin/sh
+set -eu
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+HOME="${HOME:-/data/data/com.termux/files/home}"
+TMPDIR="${TMPDIR:-$PREFIX/tmp}"
+PATH="$PREFIX/bin:$PREFIX/bin/applets:${PATH:-/system/bin}"
+export PREFIX HOME TMPDIR PATH
+ENV_FILE="${JACO_RUNTIME_ENV:-$HOME/.config/jaco/runtime.env}"
+[ -f "$ENV_FILE" ] && . "$ENV_FILE"
+BASE="${OLLAMA_BASE_URL:-http://127.0.0.1:11434}"
+ROOT="${BASE%/v1}"; ROOT="${ROOT%/}"
+if curl -fsS --max-time 2 "$ROOT/api/tags" >/dev/null 2>&1; then
+  echo "[JACO Ollama] external provider already READY at $ROOT"
+  while curl -fsS --max-time 2 "$ROOT/api/tags" >/dev/null 2>&1; do sleep 30; done
+  exit 1
+fi
+command -v ollama >/dev/null 2>&1 || { echo "OLLAMA_COMMAND_NOT_FOUND" >&2; exit 127; }
+export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+exec ollama serve 2>&1

@@ -1,0 +1,12 @@
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "@id": "https://mimirpower.se/#organization",
+  "name": "Mimir Power / Dick Jacobsson",
+  "url": "https://mimirpower.se",
+  "logo": "https://mimirpower.se/favicon.ico",
+  "sameAs": [
+    "https://github.com/Rick84444/jaco-code"
+  ],
+  "description": "Developer of JACO Autonomous Agent OS, open-source multi-LLM orchestration platforms, and A2A marketplace protocols."
+}

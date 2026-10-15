@@ -1,0 +1,27 @@
+JACO Cognitive Runtime 0.21.0 Reflective Futures RC1 — SOURCE TREE VERIFICATION
+
+Observed source-tree gates before artifact freeze:
+- Reflective Futures static: 62/62 PASS
+- Reflective Futures behavior: 14/14 PASS
+- Continuum behavior: 11/11 PASS
+- Continuum standalone/restart/integrity: PASS
+- A2A Continuum boundary: PASS
+- Truthful runtime: 15/15 PASS
+- Frozen Hands-Off + SEER: 49/49 PASS
+- Connected E2E: 7/7 PASS
+- Wi-Fi MCP contract: PASS
+- Gateway structural: 28/28 PASS
+- Gateway handler/security/SDK boundary: PASS
+- Secret pattern scan: 0 hits
+- Rollup native resolver: 6/6 PASS
+- SQLite/CJS compatibility: 7/7 PASS
+- TypeScript/TSX parser: 203/203 PASS
+- MJS syntax: 76/76 PASS
+- Bash syntax: 18/18 PASS
+- JSON parse: 36/36 PASS
+
+Semantic tsc --noEmit: NOT VERIFIED in this build environment. The attempt exited with dependency/type-resolution errors because the complete project dependency/type-definition tree is not installed. Parser success is not promoted to semantic compile success.
+
+Physical Windows/Android/Chrome CDP: REQUIRES TARGET RUNTIME PROOF FOR 0.21.
+Soft sandbox: REAL FILESYSTEM ISOLATION; NOT AN OS/KERNEL SECURITY BOUNDARY.
+Forecast simulations: SYNTHETIC; NEVER REAL-WORLD EVIDENCE BY THEMSELVES.

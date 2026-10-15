@@ -1,0 +1,102 @@
+{
+  "name": "jaco-autonomus-ide",
+  "version": "0.21.0",
+  "description": "JACO: model-agnostic local runtime for persistent, policy-bound and verifiable agent execution.",
+  "type": "module",
+  "main": "./agents/hands-off-agent.mjs",
+  "bin": {
+    "jaco": "./agents/jaco-cli.mjs"
+  },
+  "scripts": {
+    "jaco:start": "node agents/lib/local-stack.mjs --open",
+    "jaco:activate": "node agents/jaco-cli.mjs activate",
+    "jaco:status": "node agents/jaco-cli.mjs status",
+    "jaco:preflight": "node agents/lib/local-stack.mjs --preflight",
+    "dev": "vite",
+    "start": "node agents/hands-off-agent.mjs",
+    "seer": "node --experimental-sqlite gateway/src/seer-start.mjs",
+    "workplace": "node --experimental-sqlite gateway/src/workplace/workplace-server.mjs",
+    "daemon": "pm2 start agents/hands-off-agent.mjs --name jaco-runtime",
+    "test": "node --test tests/nova/*.test.mjs gateway/test/seer-strategic-board*.test.mjs",
+    "test:strategic-board": "node --test gateway/test/seer-strategic-board*.test.mjs",
+    "test:skills": "node --test tests/nova/skill-runtime.test.mjs",
+    "test:workplace": "node --experimental-sqlite --test tests/workplace/*.test.mjs",
+    "lint": "node agents/check-runtime.mjs",
+    "bridge": "node agents/nova-bridge.mjs",
+    "cdp:mcp": "node agents/cdp-bridge.mjs",
+    "test:self-development": "node --experimental-sqlite --test gateway/test/seer-self-development.test.mjs gateway/test/seer-self-development-integration.test.mjs",
+    "verify:self-development": "npm test && npm run test:self-development",
+    "verify:browser-live": "node tests/nova/nova-live-functions.mjs"
+  },
+  "keywords": [
+    "agent-runtime",
+    "autonomous-agent",
+    "local-first",
+    "model-agnostic",
+    "mcp",
+    "verification",
+    "coding-agent",
+    "termux"
+  ],
+  "author": {
+    "name": "Dick Jacobsson",
+    "email": "hello@jacocode.com",
+    "url": "https://jacocode.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rick84444/jaco-code.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rick84444/jaco-code/issues"
+  },
+  "homepage": "https://jacocode.com",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/Rick84444"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "@coinbase/x402": "^2.1.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.1",
+    "dotenv": "^17.2.3",
+    "puppeteer": "^22.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
+    "ws": "^8.21.1",
+    "express": "^4.21.2",
+    "undici": "^7.29.1"
+  },
+  "optionalDependencies": {
+    "electron": "latest",
+    "pm2": "^5.4.3"
+  },
+  "devDependencies": {
+    "vite": "^8.3.0"
+  },
+  "files": [
+    "agents/jaco-cli.mjs",
+    "LICENSE",
+    ".env.example",
+    "agents/hands-off-agent.mjs",
+    "agents/lib",
+    "agents/nova-bridge.mjs",
+    "agents/input-bridge.ps1",
+    "runtime/src/server/nova/tractionCore.mjs",
+    "runtime/src/server/skills",
+    "tests/nova",
+    "tests/workplace",
+    "agents/cdp-bridge.mjs",
+    "agents/skills.config.mjs",
+    "gateway/src/workplace",
+    "JACO_AGENT_BOOTSTRAP.md",
+    "gateway/src/commerce/adapters/stripe.mjs",
+    "agents/windows-wmi-read.ps1",
+    "agents/check-runtime.mjs"
+  ]
+}

@@ -1,0 +1,83 @@
+name: Autonomous Coding Contract Gate
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'agents/hands-off-agent.mjs'
+      - 'agents/lib/**'
+      - 'agents/nova-bridge.mjs'
+      - 'agents/lib/coding-workspace.mjs'
+      - 'agents/lib/mission-client.mjs'
+      - 'agents/lib/github-control-inbox.mjs'
+      - 'agents/lib/living-core-promotion.mjs'
+      - 'gateway/src/seer-self-development.mjs'
+      - 'gateway/src/seer-mission-graph.mjs'
+      - 'gateway/test/seer-self-development*.test.mjs'
+      - 'tests/nova/**'
+      - 'tests/workplace/**'
+      - 'gateway/src/workplace/**'
+      - 'runtime/src/server/connected/durableMissionBus.mjs'
+      - 'runtime/src/server/connected/novaMissionControl.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'install.sh'
+      - '.github/agents/nova.agent.md'
+      - '.github/workflows/autonomous-coding-contract.yml'
+  pull_request:
+    paths:
+      - 'agents/hands-off-agent.mjs'
+      - 'agents/lib/**'
+      - 'agents/nova-bridge.mjs'
+      - 'agents/lib/coding-workspace.mjs'
+      - 'agents/lib/mission-client.mjs'
+      - 'agents/lib/github-control-inbox.mjs'
+      - 'agents/lib/living-core-promotion.mjs'
+      - 'gateway/src/seer-self-development.mjs'
+      - 'gateway/src/seer-mission-graph.mjs'
+      - 'gateway/test/seer-self-development*.test.mjs'
+      - 'tests/nova/**'
+      - 'tests/workplace/**'
+      - 'gateway/src/workplace/**'
+      - 'runtime/src/server/connected/durableMissionBus.mjs'
+      - 'runtime/src/server/connected/novaMissionControl.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'install.sh'
+      - '.github/agents/nova.agent.md'
+      - '.github/workflows/autonomous-coding-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - name: Install locked test dependencies
+        run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - name: Syntax check contract runtime
+        run: |
+          node --check agents/lib/coding-contract.mjs
+          node --check agents/lib/coding-workspace.mjs
+          node --check agents/lib/mission-client.mjs
+          node --check agents/lib/github-control-inbox.mjs
+          node --check agents/lib/living-core-promotion.mjs
+          node --check agents/hands-off-agent.mjs
+          node --check gateway/src/seer-self-development.mjs
+          node --check gateway/src/seer-mission-graph.mjs
+          node --check runtime/src/server/connected/durableMissionBus.mjs
+          node --check runtime/src/server/connected/novaMissionControl.mjs
+          node --check tests/nova/coding-contract.test.mjs
+          node --check gateway/test/seer-self-development-integration.test.mjs
+      - name: Run Nova regression suite
+        run: npm test
+      - name: Run Workplace regression suite
+        run: npm run test:workplace
+      - name: Verify complete self-development loop
+        run: npm run test:self-development

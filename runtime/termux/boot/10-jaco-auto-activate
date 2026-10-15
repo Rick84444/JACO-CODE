@@ -1,0 +1,19 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Activate the full JACO stack (Core, Workplace, Nova, tools) at boot, but only when the operator asked for it:
+# JACO_AUTO_ACTIVATE=1 in ~/.config/jaco/runtime.env. The default stays
+# on demand, because the full stack costs battery and memory. The Sentinel (00-jaco-sentinel) is the only
+# service that always starts; this waits for it, then runs the same `jacoctl activate` an operator would,
+# in the background, with its output in ~/.jaco/logs/boot-activate.log.
+set -eu
+CONFIG="${JACO_RUNTIME_ENV:-$HOME/.config/jaco/runtime.env}"
+WANT="$( [ -f "$CONFIG" ] && { . "$CONFIG" >/dev/null 2>&1; printf '%s' "${JACO_AUTO_ACTIVATE:-0}"; } || printf 0 )"
+[ "$WANT" = 1 ] || exit 0
+command -v jacoctl >/dev/null 2>&1 || { echo "[JACO] auto-activate requested but jacoctl is not installed" >&2; exit 0; }
+LOGDIR="$HOME/.jaco/logs"
+mkdir -p "$LOGDIR"
+(
+  sleep "${JACO_BOOT_ACTIVATE_DELAY:-25}"
+  printf '[%s] jacoctl activate --profile full\n' "$(date -u +%FT%TZ 2>/dev/null || echo now)"
+  jacoctl activate --profile full --json
+  printf '[%s] exit %s\n' "$(date -u +%FT%TZ 2>/dev/null || echo now)" "$?"
+) >> "$LOGDIR/boot-activate.log" 2>&1 &

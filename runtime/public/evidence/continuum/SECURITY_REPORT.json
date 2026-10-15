@@ -1,0 +1,29 @@
+{
+  "schema": "jaco.continuum.security-report.v1",
+  "releaseId": "JACO-Cognitive-Runtime-0.20.0-CONTINUUM-RC1",
+  "result": "PASS_WITH_TARGET_BOUNDARIES",
+  "controls": {
+    "operatorEmergencyStop": "LATCHED",
+    "operatorFinalSignoffDefault": true,
+    "executionLeases": "BOUNDED",
+    "highConsequenceCheckpoint": true,
+    "cloudDefaultDeny": true,
+    "cloudHardCaps": true,
+    "financialCommitmentApproval": true,
+    "secretRedactionPersistence": true,
+    "sourceSecretScanHits": 0,
+    "eventLedgerHashChain": true,
+    "rawCdpExternalExposure": false,
+    "nonLoopbackA2ABearerRequired": true,
+    "nonLoopbackSentinelBearerRequired": true,
+    "candidateDoesNotMutateCanonicalRuntime": true,
+    "canonicalPromotionExplicitOptIn": true,
+    "windowsCandidateCryptoBearers": true
+  },
+  "notCertified": [
+    "external penetration test",
+    "physical device permission model",
+    "production TLS termination",
+    "multi-tenant A2A authorization"
+  ]
+}

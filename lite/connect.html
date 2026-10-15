@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kom igång med JACO</title><link rel="stylesheet" href="/connect.css"><script src="/connect.js" defer></script></head>
+<body><main><p class="kicker">JACO · ANSLUTNINGAR</p><h1>Kom igång utan att redigera konfigurationsfiler.</h1>
+<p>JACO startar de lokala tjänsterna åt dig. Välj sedan de anslutningar du vill använda.</p>
+<section><h2>1. Din lokala installation</h2><p id="status" role="status">Kontrollerar installationen…</p><p id="project"></p>
+<button id="refresh">Kontrollera igen</button><a class="button" href="/">Öppna IDE och anslut modell</a>
+<h3>Har du redan modellnycklar i projektets .env?</h3><p>Välj en fil nedan om du vill importera kända modellnycklar till JACOs krypterade lager. Inga värden visas i chatten. Andra nycklar och befintliga sparade nycklar lämnas orörda.</p>
+<label for="env-file">Fil i det här projektet</label> <select id="env-file"><option value="">Välj fil</option></select>
+<button id="import-env">Importera valda modellnycklar säkert</button><p id="env-status" role="status"></p></section>
+<section><h2>2. Anslut ditt AI-verktyg</h2><p>Valfritt. Du behöver bara ansluta verktyg som du använder. Claude Code och VS Code konfigureras i projektet; Codex konfigureras för ditt användarkonto. Befintliga inställningar sparas med backup. Befintliga JACO-poster ändras inte automatiskt.</p>
+<div class="actions"><button data-client="codex">Anslut Codex</button><button data-client="claude">Anslut Claude Code</button><button data-client="vscode">Anslut VS Code</button></div>
+<p id="client-status" role="status">När du har sparat: öppna samma projekt i klienten och ladda om dess MCP-anslutningar. Klienten kan behöva ditt godkännande.</p>
+<button id="check">Testa JACO Editor-verktyget</button><p id="check-status" role="status">Testet läser projektinformation. Det ändrar inga projektfiler.</p></section>
+<section><h2>3. Mobil och JacoCloud</h2><p id="cloud">Kontrollerar adressen…</p><a id="cloud-link" hidden rel="noreferrer" target="_blank">Öppna din installations inloggning</a>
+<p>Skapa en engångskod under <strong>Enheter</strong> i IDE:t och ange koden på den andra enheten. Datorn måste vara på och JACO igång. Lokal MCP och modellanslutning fungerar utan Cloud.</p>
+<p>Om du saknar en publik adress behövs en egen autentiserad fjärranslutning. Guiden öppnar inte din dator mot internet automatiskt.</p></section>
+<p id="error" role="alert"></p><a class="button" href="/">Fortsätt till JACO</a>
+</main></body></html>

@@ -1,0 +1,151 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "JACO Autonomous AI Skills",
+    "description": "12 AI skills powered by DeepSeek R1, paid via USDC on Base (x402 protocol)",
+    "version": "1.0.0",
+    "contact": {
+      "email": "contact@example.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://example.com"
+    }
+  ],
+  "paths": {
+    "/run": {},
+    "/a2a-copywriter/health": {
+      "get": {
+        "summary": "Health check for AI Copywriter",
+        "operationId": "health_a2a_copywriter",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a-seo-optimizer/health": {
+      "get": {
+        "summary": "Health check for SEO Optimizer",
+        "operationId": "health_a2a_seo_optimizer",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a-data-analyst/health": {
+      "get": {
+        "summary": "Health check for Data Analyst",
+        "operationId": "health_a2a_data_analyst",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a-cyber-auditor/health": {
+      "get": {
+        "summary": "Health check for Cybersecurity Auditor",
+        "operationId": "health_a2a_cyber_auditor",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a-coding-reviewer/health": {
+      "get": {
+        "summary": "Health check for Code Reviewer",
+        "operationId": "health_a2a_coding_reviewer",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a-smart-contract-auditor/health": {
+      "get": {
+        "summary": "Health check for Smart Contract Auditor",
+        "operationId": "health_a2a_smart_contract_auditor",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a-global-translator/health": {
+      "get": {
+        "summary": "Health check for Global Translator",
+        "operationId": "health_a2a_global_translator",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a-marketing-analyst/health": {
+      "get": {
+        "summary": "Health check for Marketing Analyst",
+        "operationId": "health_a2a_marketing_analyst",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a-image-generator/health": {
+      "get": {
+        "summary": "Health check for Image Generator",
+        "operationId": "health_a2a_image_generator",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a-video-editor/health": {
+      "get": {
+        "summary": "Health check for Video Editor",
+        "operationId": "health_a2a_video_editor",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a-premium-html-builder/health": {
+      "get": {
+        "summary": "Health check for HTML Builder",
+        "operationId": "health_a2a_premium_html_builder",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a-smart-calculator/health": {
+      "get": {
+        "summary": "Health check for Smart Calculator",
+        "operationId": "health_a2a_smart_calculator",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  }
+}

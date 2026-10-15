@@ -1,0 +1,178 @@
+# JACO 0.19 WIP observed verification run
+UTC 2026-09-02T13:02:18Z
+
+## Gateway gate
+PASS exists gateway/package.json
+PASS exists gateway/src/sentinel.mjs
+PASS exists gateway/src/mcp-stdio.mjs
+PASS exists gateway/src/mcp-factory.mjs
+PASS exists gateway/src/tool-registry.mjs
+PASS exists gateway/src/tool-handlers.mjs
+PASS exists bin/jacoctl
+PASS exists bin/jaco
+PASS exists bin/jaco-tunnel
+PASS exists termux/install-activation.sh
+PASS exists termux/services/jaco-sentinel/run
+PASS exists termux/services/jaco-core/run
+PASS exists termux/boot/00-jaco-sentinel
+PASS official MCP server v2 pinned
+PASS official MCP node v2 pinned
+PASS official MCP client v2 test dependency pinned
+PASS Streamable HTTP uses createMcpHandler
+PASS stdio uses serveStdio
+PASS no handwritten protocol version
+PASS Sentinel default loopback
+PASS remote-capable mode requires bearer
+PASS MCP has no raw shell/evaluate/credential tool
+PASS MCP activation is explicit flag gated
+PASS jacoctl fixed lifecycle verbs
+PASS Core stays canonical :3000
+PASS Sentinel canonical :2999
+PASS OpenAI tunnel helper targets semantic MCP only
+PASS OpenAI tunnel helper keeps runtime key by env reference
+
+28/28 PASS
+
+## Gateway unit tests
+TAP version 13
+# PASS SDK boundary: official MCP v2 package pins, no handwritten protocol loop, no raw execution tool
+# Subtest: gateway/test/sdk-boundary.test.mjs
+ok 1 - gateway/test/sdk-boundary.test.mjs
+  ---
+  duration_ms: 218.11452
+  type: 'test'
+  ...
+# PASS security boundary: strict host/origin parsing and bearer comparison
+# Subtest: gateway/test/security.test.mjs
+ok 2 - gateway/test/security.test.mjs
+  ---
+  duration_ms: 179.671329
+  type: 'test'
+  ...
+# PASS tool handlers: semantic routes, auth headers, model identity, no raw shell/evaluate tools
+# Subtest: gateway/test/tool-registry.test.mjs
+ok 3 - gateway/test/tool-registry.test.mjs
+  ---
+  duration_ms: 450.886448
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 502.135679
+
+## jacoctl lifecycle
+PASS jacoctl: fixed lifecycle verbs activate/deactivate via runit service boundary
+
+## tunnel helper
+PASS jaco-tunnel: fixed official tunnel-client flow; runtime key is referenced by env, not serialized
+
+## inherited truth
+PASS pairing validates pairingId and pairingCode
+PASS termux execution has no fake dispatched success
+PASS android proxy uses explicit allowlist
+PASS computer bridge has no fabricated offline model list
+PASS ISO build does not synthesize checksum
+PASS Cloudflare does not synthesize trycloudflare domain
+PASS job reaper starts
+PASS startup model list evidence-empty
+PASS startup device list evidence-empty
+PASS economic stubs removed
+PASS stub generator removed
+PASS unsupported forge journey fails closed
+PASS torch cannot claim container-only hardware success
+PASS SEER has no fabricated default active goal
+PASS SEER exposes evidence state
+truthful-runtime: PASS (15/15)
+
+## inherited frozen Hands-Off
+PASS identity.product-name — release package is named JACO Autonomus IDE [jaco-autonomus-ide@0.18.0-rc1]
+PASS identity.inherited-frozen-baseline — 0.18 release explicitly inherits the frozen Hands-Off + SEER + Desktop baseline [0.18.0-rc1; jaco-code-0.17.1-RC2-HARDENED-FIXED]
+PASS seer.phase.idle — SEER live protocol includes IDLE [IDLE]
+PASS seer.phase.observing — SEER live protocol includes OBSERVING [OBSERVING]
+PASS seer.phase.planning — SEER live protocol includes PLANNING [PLANNING]
+PASS seer.phase.executing — SEER live protocol includes EXECUTING [EXECUTING]
+PASS seer.phase.verifying — SEER live protocol includes VERIFYING [VERIFYING]
+PASS seer.phase.degraded — SEER live protocol includes DEGRADED [DEGRADED]
+PASS seer.field.primaryGoal — SEER live state exposes primaryGoal [primaryGoal]
+PASS seer.field.subgoal — SEER live state exposes subgoal [subgoal]
+PASS seer.field.activeModule — SEER live state exposes activeModule [activeModule]
+PASS seer.field.provider — SEER live state exposes provider [provider]
+PASS seer.field.model — SEER live state exposes model [model]
+PASS seer.field.cycle — SEER live state exposes cycle [cycle]
+PASS seer.field.iteration — SEER live state exposes iteration [iteration]
+PASS seer.field.workers — SEER live state exposes workers [workers]
+PASS seer.field.toolsSkills — SEER live state exposes toolsSkills [toolsSkills]
+PASS seer.field.blocker — SEER live state exposes blocker [blocker]
+PASS seer.field.drift — SEER live state exposes drift [drift]
+PASS seer.field.latestVerifiedProgress — SEER live state exposes latestVerifiedProgress [latestVerifiedProgress]
+PASS seer.field.nextCycleAt — SEER live state exposes nextCycleAt [nextCycleAt]
+PASS seer.field.action — SEER live state exposes action [action]
+PASS seer.field.events — SEER live state exposes events [events]
+PASS seer.sse — SEER live event stream is exposed over SSE [/api/seer/live/events]
+PASS seer.ui-working — Antigravity UI contains SEER — WORKING operational view [WebAgentView.tsx]
+PASS seer.ui-no-fake-default — live UI uses UNAVAILABLE/UNCONFIGURED defaults instead of fabricated work [truthful empty-state labels]
+PASS android.client — canonical Android HandsOffClient is present [handsOffClient.ts]
+PASS android.observe-act-observe — Android actions verify observed state transition [snapshot hashes]
+PASS android.plan-runner — Android Hands-Off plan runner is present [resume gate]
+PASS android.native-accessibility — native Android Accessibility implementation is included [HandsOffAccessibilityService.kt]
+PASS desktop.client — Desktop Hands-Off client is present [desktopHandsOff.ts]
+PASS desktop.router — Desktop Hands-Off API is mounted [/api/desktop/hands-off]
+PASS desktop.uia — Desktop actuation uses Windows UI Automation [UI Automation patterns]
+PASS desktop.no-synthetic-input — Desktop bridge contains no synthetic keyboard/mouse actuation primitives [no synthetic input primitives]
+PASS desktop.grant-expiry — Desktop grant is expiring and capped [8 hour max]
+PASS desktop.process-allowlist — Desktop actions require allowed_processes [process allowlist]
+PASS desktop.credential-refusal — Credential and system-security surfaces are permanently blocked [blocked process policy]
+PASS desktop.secret-human-entry — Secrets/OTP/API keys require direct human entry [SECRET_TEXT refusal]
+PASS desktop.secret-redaction — Secret-bearing field values are redacted from observations [observation redaction]
+PASS desktop.verified-transition — Desktop receipt verifies before/after UI state transition [snapshot hash delta]
+PASS desktop.unsupported-truth — Unsupported non-Windows desktop path reports UNAVAILABLE [evidenceState]
+PASS nova.target-lock — Nova blocks action without a verified target lock [Nova gate]
+PASS nova.android-route — Nova can gate Android Hands-Off actions [android-action]
+PASS nova.desktop-route — Nova can gate Desktop Hands-Off actions [desktop-action]
+PASS hands-off.unified-status — Unified Hands-Off status exposes Android + Desktop [unified status]
+PASS contracts.persisted — Intuition Contracts are persisted and required by plan runner [persistent contract store]
+PASS security.no-hardcoded-hf-token — No Hugging Face token literal is embedded in server.ts [environment-only HUGGINGFACE_TOKEN]
+PASS release.no-hf-env — obsolete embedded hf_env runtime is absent [removed]
+PASS release.no-volatile-state — release contains no preloaded action/chat/job runtime state [.jaco state empty]
+inherited-frozen-hands-off: PASS (49/49)
+
+## inherited 0.18
+PASS identity.version [0.18.0-rc1]
+PASS identity.current-release
+PASS identity.gui
+PASS browser.client
+PASS browser.cdp-targets
+PASS browser.semantic-actions
+PASS browser.no-autonomous-evaluate
+PASS browser.broad-contract
+PASS browser.loopback-http
+PASS browser.auth-payment-deny
+PASS browser.semantic-postcondition
+PASS browser.route-memory
+PASS browser.semantic-route-guard [structural fingerprint reuse requires current semantic guard]
+PASS browser.router-mounted
+PASS browser.nova-route
+PASS relay.mounted
+PASS relay.single-writer
+PASS relay.contract
+PASS relay.model-cannot-self-sign
+PASS contract.grant-propagation
+PASS contract.just-in-time-grants [signed mandate derives surface grants after later attachment]
+PASS contract.common-8h-horizon [common Browser/Desktop-compatible mandate horizon]
+PASS seer.browser
+PASS seer.model-relay
+PASS gui.browser-visible
+PASS gui.autonomy-contract-control [Antigravity operator control for Browser attach and autonomy mandate]
+PASS unified-status.browser
+PASS runtime.identity-endpoint
+PASS runtime.loopback-default [default bind is loopback]
+PASS runtime.port-preflight [wrong-runtime port identity fails closed]
+PASS runtime.windows-canonical-start [Windows one-click canonical startup]
+PASS mcp.semantic-tools
+JACO 0.18 release gate: PASS (32/32)

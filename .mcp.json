@@ -1,0 +1,33 @@
+{
+  "mcpServers": {
+    "jaco": {
+      "command": "node",
+      "args": [
+        "runtime/tools/jaco-mcp-launch.mjs"
+      ],
+      "env": {
+        "JACO_MODEL_ID": "claude-code",
+        "JACO_AGENT_STABLE_ID": "claude-code",
+        "JACO_AGENT_NAME": "Claude Code",
+        "JACO_AGENT_PROVIDER": "anthropic",
+        "JACO_MCP_ALLOW_UPDATE": "1"
+      }
+    },
+    "jaco-editor": {
+      "command": "node",
+      "args": [
+        "runtime/tools/jaco-editor-mcp.mjs"
+      ],
+      "env": {
+        "JACO_RUNTIME_URL": "http://127.0.0.1:3000",
+        "JACO_WORKPLACE_URL": "http://127.0.0.1:2995"
+      }
+    },
+    "jaco-connect": {
+      "command": "node",
+      "args": [
+        "runtime/tools/jaco-connect-mcp.mjs"
+      ]
+    }
+  }
+}

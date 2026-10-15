@@ -1,0 +1,42 @@
+{
+  "schema": "jaco.continuum.runtime-proof.v1",
+  "releaseId": "JACO-Cognitive-Runtime-0.20.0-CONTINUUM-RC1",
+  "observedAtUtc": "2026-09-06T22:17:33Z",
+  "environment": "build-container-isolated-smoke",
+  "result": "PASS",
+  "identity": {
+    "product": "JACO Cognitive Runtime",
+    "version": "0.20.0-continuum-rc1",
+    "releaseId": "JACO-Cognitive-Runtime-0.20.0-CONTINUUM-RC1",
+    "controlPlane": "CONTINUUM_SIDECAR"
+  },
+  "services": {
+    "core": {
+      "port": 4020,
+      "healthy": true
+    },
+    "sentinel": {
+      "port": 4299,
+      "healthy": true
+    },
+    "a2a": {
+      "port": 4298,
+      "healthy": true
+    }
+  },
+  "checks": {
+    "identity": true,
+    "eventIntegrity": true,
+    "schedulerActive": true,
+    "cloudDefaultDeny": true,
+    "sentinelHandshake": true,
+    "a2aHandshake": true,
+    "cleanStop": true
+  },
+  "substrate": {
+    "port": 4999,
+    "reachable": false,
+    "intentionalForSmoke": true
+  },
+  "truthBoundary": "BUILD_CONTAINER_RUNTIME_VERIFIED; TARGET_DEVICE_AND_EXECUTION_SUBSTRATE_REQUIRE_SEPARATE_PROOF"
+}

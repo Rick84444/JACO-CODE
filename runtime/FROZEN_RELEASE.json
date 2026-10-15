@@ -1,0 +1,6 @@
+{
+  "superseded": true,
+  "supersededBy": "CURRENT_RELEASE.json",
+  "baseManifest": "BASE_RELEASE_0.17.1.json",
+  "note": "Retained only so older tooling does not silently read stale 0.17.1 identity."
+}

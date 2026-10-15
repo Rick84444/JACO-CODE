@@ -1,0 +1,121 @@
+name: SEER Strategic Governor Gate
+
+on:
+  pull_request:
+    paths:
+      - 'gateway/src/seer.mjs'
+      - 'gateway/src/seer-experience-store.mjs'
+      - 'gateway/test/seer-experience-store.test.mjs'
+      - 'gateway/src/seer-start.mjs'
+      - 'gateway/src/seer-model-provider.mjs'
+      - 'tests/nova/aura-seer-chat.test.mjs'
+      - 'runtime/src/components/AuraBrainModelPicker.tsx'
+      - 'runtime/src/components/JacoAgentChatbot.tsx'
+      - 'runtime/server.ts'
+      - 'server.ts'
+      - 'agents/lib/aura-seer-chat.mjs'
+      - 'agents/lib/seer-client.mjs'
+      - 'gateway/src/seer-strategy.mjs'
+      - 'gateway/src/seer-mission-graph.mjs'
+      - 'gateway/src/seer-autonomy-loop.mjs'
+      - 'runtime/src/server/connected/novaMissionControl.mjs'
+      - 'gateway/src/seer-self-development.mjs'
+      - 'gateway/test/seer-strategy.test.mjs'
+      - 'gateway/test/seer-model-provider.test.mjs'
+      - 'tests/nova/seer-integration.test.mjs'
+      - 'agents/start-all.ps1'
+      - 'agents/desktop-agentos.mjs'
+      - 'gateway/src/workplace/workplace-agent-supervisor.mjs'
+      - 'tests/nova/desktop-coding-execution.test.mjs'
+      - 'tests/workplace/workplace-supervisor.test.mjs'
+      - 'gateway/test/seer-mission-graph.test.mjs'
+      - 'gateway/test/seer-autonomy-loop.test.mjs'
+      - 'gateway/src/seer-development-cycle.mjs'
+      - 'gateway/test/seer-development-cycle.test.mjs'
+      - 'gateway/test/seer-autonomy-resolution.test.mjs'
+      - 'gateway/test/seer-self-development.test.mjs'
+      - 'gateway/test/seer-self-development-integration.test.mjs'
+      - '.github/workflows/seer-governor-canonical.yml'
+  push:
+    branches:
+      - 'master'
+
+jobs:
+  strategic-kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked test dependencies
+        run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - name: Syntax
+        run: |
+          node --check gateway/src/seer-model-provider.mjs
+          node --check gateway/src/seer-experience-store.mjs
+          node --check gateway/test/seer-experience-store.test.mjs
+          node --check tests/nova/aura-seer-chat.test.mjs
+          node --check agents/lib/aura-seer-chat.mjs
+          node --check agents/lib/seer-client.mjs
+          node --check gateway/src/seer-start.mjs
+          node --check gateway/src/seer-strategy.mjs
+          node --check gateway/src/seer-mission-graph.mjs
+          node --check gateway/src/seer-autonomy-loop.mjs
+          node --check runtime/src/server/connected/novaMissionControl.mjs
+          node --check gateway/src/seer-self-development.mjs
+          node --check gateway/src/seer.mjs
+          node --check gateway/test/seer-self-development-integration.test.mjs
+          node --check gateway/test/seer-autonomy-loop.test.mjs
+          node --check gateway/test/seer-autonomy-resolution.test.mjs
+      - name: Strategic kernel tests
+        run: node --test gateway/test/seer-model-provider.test.mjs gateway/test/seer-experience-store.test.mjs gateway/test/seer-strategy.test.mjs gateway/test/seer-mission-graph.test.mjs gateway/test/seer-autonomy-loop.test.mjs gateway/test/seer-development-cycle.test.mjs gateway/test/seer-autonomy-resolution.test.mjs gateway/test/seer-self-development.test.mjs gateway/test/seer-self-development-integration.test.mjs tests/nova/seer-integration.test.mjs tests/nova/aura-seer-chat.test.mjs
+      - name: Autonomous executor and recovery contracts
+        run: node --experimental-sqlite --test --test-timeout=30000 tests/nova/desktop-coding-execution.test.mjs tests/workplace/workplace-supervisor.test.mjs tests/nova/remote-startup-contract.test.mjs
+      - name: Runtime smoke test
+        env:
+          JACO_GATEWAY_TOKEN: ci-seer-governor-token-1234567890
+          SEER_STATE_DIR: ${{ runner.temp }}/seer-state
+          SEER_PORT: '2997'
+          JACO_WORKPLACE_REQUIRED: '0'
+          JACO_ALLOW_PAID_MODELS: '0'
+          SEER_AUTONOMY_LOOP_MS: '0'
+          SEER_GOVERNOR_INTERVAL_MS: '0'
+        run: |
+          node --experimental-sqlite gateway/src/seer.mjs > "$RUNNER_TEMP/seer.log" 2>&1 &
+          PID=$!
+          trap 'kill $PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:2997/health > "$RUNNER_TEMP/health.json"; then break; fi
+            sleep 1
+          done
+          node -e "const x=require(process.env.RUNNER_TEMP+'/health.json'); if(!x.ok||x.strategic_governor!==true) process.exit(1)"
+          curl -fsS -H "Authorization: Bearer $JACO_GATEWAY_TOKEN" http://127.0.0.1:2997/cortex/strategy/state > "$RUNNER_TEMP/state.json"
+          node -e "const x=require(process.env.RUNNER_TEMP+'/state.json'); if(!x.purpose||!Array.isArray(x.active_goals)||!Array.isArray(x.open_predictions)) process.exit(1)"
+          curl -fsS -H "Authorization: Bearer $JACO_GATEWAY_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"candidates":[{"id":"safe","success_probability":0.8,"repeatability":0.9,"strategic_fit":0.9,"evidence_quality":0.9,"risk":0.1,"expected_external_spend":0,"expected_outcome":{"metrics":{"tests_passed":1}},"falsifier":{"tests_passed":{"lte":0}}},{"id":"paid","success_probability":0.9,"repeatability":0.8,"strategic_fit":0.8,"evidence_quality":0.8,"risk":0.2,"expected_external_spend":25,"consequence":"FINANCIAL"}]}' \
+            http://127.0.0.1:2997/cortex/strategy/decide > "$RUNNER_TEMP/decision.json"
+          node -e "const x=require(process.env.RUNNER_TEMP+'/decision.json'); if(!x.decision||!x.prediction||x.ranked.length!==2) process.exit(1)"
+          curl -fsS -H "Authorization: Bearer $JACO_GATEWAY_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"title":"CI mission graph","objective":"prove dependency gating","nodes":[{"key":"a","objective":"first"},{"key":"b","objective":"second","dependencies":["a"]}]}' \
+            http://127.0.0.1:2997/cortex/mission-graphs > "$RUNNER_TEMP/graph.json"
+          node -e "const x=require(process.env.RUNNER_TEMP+'/graph.json'); const a=x.nodes.find(n=>n.key==='a'),b=x.nodes.find(n=>n.key==='b'); if(a?.status!=='READY'||b?.status!=='BLOCKED'||x.summary?.ready!==1) process.exit(1)"
+          curl -fsS -H "Authorization: Bearer $JACO_GATEWAY_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"title":"CI experience","goal":"Build a robust HTTP retry client"}' \
+            http://127.0.0.1:2997/cortex/missions > "$RUNNER_TEMP/experience-mission.json"
+          EXPERIENCE_MISSION_ID=$(node -p "require(process.env.RUNNER_TEMP+'/experience-mission.json').id")
+          curl -fsS -H "Authorization: Bearer $JACO_GATEWAY_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"type":"http_retry","input":{"client":"fetch","retries":4},"expected":{"tests_passed":true}}' \
+            "http://127.0.0.1:2997/cortex/missions/$EXPERIENCE_MISSION_ID/actions" > "$RUNNER_TEMP/experience-action.json"
+          EXPERIENCE_ACTION_ID=$(node -p "require(process.env.RUNNER_TEMP+'/experience-action.json').id")
+          curl -fsS -H "Authorization: Bearer $JACO_GATEWAY_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"actual":{"tests_passed":true}}' \
+            "http://127.0.0.1:2997/cortex/actions/$EXPERIENCE_ACTION_ID/verify" > "$RUNNER_TEMP/experience-verify.json"
+          curl -fsS -H "Authorization: Bearer $JACO_GATEWAY_TOKEN" \
+            "http://127.0.0.1:2997/cortex/experiences?q=http%20retry&limit=3" > "$RUNNER_TEMP/experience-search.json"
+          node -e "const x=require(process.env.RUNNER_TEMP+'/experience-search.json'); if(x.schema!=='jaco.experience-search/v1'||x.count<1||x.experiences?.[0]?.blueprint?.type!=='http_retry'||x.experiences?.[0]?.retrieval?.relevance<=0) process.exit(1)"
+          curl -fsS -H "Authorization: Bearer $JACO_GATEWAY_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"objective":"improve diagnostics","scope":{"allowed":["gateway/src/diagnostics/**"]},"acceptance":["tests pass"],"verification":{"commands":["node --check gateway/src/seer.mjs"]}}' \
+            http://127.0.0.1:2997/cortex/self-development > "$RUNNER_TEMP/selfdev.json"
+          node -e "const x=require(process.env.RUNNER_TEMP+'/selfdev.json'); const n=x.graph?.nodes?.[0]; if(x.schema!=='jaco.self-development/v1'||n?.status!=='READY'||n?.contract?.schema!=='jaco.coding-contract/v1'||x.graph?.policy?.git_push!==true||x.graph?.policy?.outgoing_financial_commitment_requires_operator_approval!==true) process.exit(1)"

@@ -1,0 +1,19 @@
+{
+  "schema": "jaco.reflective-futures.capability-matrix.v1",
+  "generatedAtUTC": "2026-09-08T11:31:44.689381Z",
+  "releaseId": "jaco-code-0.22.0",
+  "capabilities": {
+    "providerNeutralRouting": "SOURCE_AND_BEHAVIOR_VERIFIED",
+    "multiAgentDispatch": "SOURCE_AND_BEHAVIOR_VERIFIED",
+    "selfPeerReview": "SOURCE_AND_BEHAVIOR_VERIFIED",
+    "independentRewardValidation": "SOURCE_AND_BEHAVIOR_VERIFIED",
+    "softSandbox": "FILESYSTEM_VERIFIED_NOT_KERNEL_BOUNDARY",
+    "rolling90DayForecasts": "SOURCE_AND_BEHAVIOR_VERIFIED",
+    "brierCalibration": "SOURCE_AND_BEHAVIOR_VERIFIED",
+    "a2aTrustRegistry": "SOURCE_AND_BEHAVIOR_VERIFIED",
+    "physicalWindows": "REQUIRES_TARGET_RUNTIME_PROOF",
+    "physicalAndroidTermux": "REQUIRES_TARGET_RUNTIME_PROOF",
+    "physicalChromeCdp": "REQUIRES_TARGET_RUNTIME_PROOF_FOR_0.21",
+    "externalA2ARevenue": "NOT_CLAIMED"
+  }
+}

@@ -1,0 +1,51 @@
+#!/data/data/com.termux/files/usr/bin/sh
+set -eu
+
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+HOME="${HOME:-/data/data/com.termux/files/home}"
+TMPDIR="${TMPDIR:-$PREFIX/tmp}"
+PATH="$PREFIX/bin:$PREFIX/bin/applets:${PATH:-/system/bin}"
+mkdir -p "$TMPDIR"
+export PREFIX HOME TMPDIR PATH
+
+
+ENV_FILE="${JACO_RUNTIME_ENV:-$HOME/.config/jaco/runtime.env}"
+[ -f "$ENV_FILE" ] && . "$ENV_FILE"
+
+CANONICAL_RUNTIME="$HOME/jaco-code/runtime"
+
+if [ -z "${JACO_ROOT:-}" ] ||
+   [ ! -f "$JACO_ROOT/run_termux_node.sh" ] ||
+   [ ! -f "$JACO_ROOT/../gateway/src/workplace/workplace-server.mjs" ]; then
+  if [ -f "$CANONICAL_RUNTIME/run_termux_node.sh" ] &&
+     [ -f "$CANONICAL_RUNTIME/../gateway/src/workplace/workplace-server.mjs" ]; then
+    JACO_ROOT="$CANONICAL_RUNTIME"
+    export JACO_ROOT
+  else
+    echo "JACO_ROOT_INVALID: no canonical runtime checkout found" >&2
+    exit 41
+  fi
+fi
+
+REPO_ROOT="$(cd "$JACO_ROOT/.." && pwd)"
+cd "$REPO_ROOT"
+
+export JACO_RUNTIME_URL="${JACO_RUNTIME_URL:-http://127.0.0.1:3000}"
+export SEER_URL="${SEER_URL:-http://127.0.0.1:2997}"
+export JACO_WORKPLACE_URL="${JACO_WORKPLACE_URL:-http://127.0.0.1:2995}"
+export JACO_WORKPLACE_REQUIRED="${JACO_WORKPLACE_REQUIRED:-1}"
+export NOVA_BRAIN_MODE="${NOVA_BRAIN_MODE:-seer}"
+
+# One local credential contract for Runtime + SEER + Nova. Do not print it.
+if [ -z "${JACO_GATEWAY_TOKEN:-}" ]; then
+  if [ -n "${GATEWAY_TOKEN:-}" ]; then
+    export JACO_GATEWAY_TOKEN="$GATEWAY_TOKEN"
+  elif [ -n "${SEER_TOKEN:-}" ]; then
+    export JACO_GATEWAY_TOKEN="$SEER_TOKEN"
+  fi
+fi
+: "${JACO_GATEWAY_TOKEN:?JACO_GATEWAY_TOKEN is required for supervised Durable Nova}"
+export GATEWAY_TOKEN="${GATEWAY_TOKEN:-$JACO_GATEWAY_TOKEN}"
+export SEER_TOKEN="${SEER_TOKEN:-$JACO_GATEWAY_TOKEN}"
+
+exec "$PREFIX/bin/node" agents/hands-off-agent.mjs 2>&1

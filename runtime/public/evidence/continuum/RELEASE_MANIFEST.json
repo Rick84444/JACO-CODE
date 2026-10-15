@@ -1,0 +1,22 @@
+{
+  "schema": "jaco.continuum.release-manifest.v1",
+  "product": "JACO Cognitive Runtime",
+  "version": "0.20.0-continuum-rc1",
+  "releaseId": "JACO-Cognitive-Runtime-0.20.0-CONTINUUM-RC1",
+  "status": "RELEASE_CANDIDATE",
+  "canonical": false,
+  "base": {
+    "artifact": "jaco-code-0.19.1-RC1-INTEGRATED-FIX3.zip",
+    "sha256": "c80765cfb370bb5c4171bdb2b53a51007bed401f4874940f09b8153cdf5b9362"
+  },
+  "architecture": "SIDECAR_CONTROL_PLANE",
+  "candidatePorts": {
+    "core": 3020,
+    "sentinel": 3299,
+    "a2a": 3298
+  },
+  "substrateDefault": "http://127.0.0.1:3000",
+  "browserCdpDefault": "http://127.0.0.1:9222",
+  "operatorFinalAuthority": true,
+  "cloudDefaultDeny": true
+}

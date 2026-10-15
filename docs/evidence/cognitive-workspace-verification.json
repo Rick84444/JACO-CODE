@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "checks": 15,
+  "browser": "153.0.8010.0",
+  "observedAt": "2026-10-11T11:22:58.070Z",
+  "scope": "Controlled UI integration; no inference, Android or operator runtime execution",
+  "clientIndexSha256": "6d445da6e198c4896610b027869ae4d03f97976c83cda5249f9e785e76ca79cf",
+  "results": [
+    "A failed initial history read can reconnect without losing the draft",
+    "Production client opens with the real JACO brand, one conversation and no overflow",
+    "Desktop and mobile view changes retain the same draft and conversation session",
+    "A real SSE event is inserted exactly once in the conversation with its mission",
+    "A successful unverified step and a failing step cannot masquerade as verified",
+    "A question receives observed run context and does not restart or replace the mission",
+    "Evidence opens beside the conversation and identifies its durable source",
+    "An event opens the real, deferred Monaco editor for its referenced file",
+    "HTML preview runs in an isolated origin and cannot mutate the IDE",
+    "An observed file write updates the open preview without reopening it",
+    "A live file update preserves a dirty draft, rejects a conflicting save and requires explicit reload",
+    "Live connection interruption preserves the draft, exposes uncertainty and reconnects without duplicates",
+    "A store restart replays both durable events and the saved encrypted conversation",
+    "Lite mission acknowledgements are accepted without claiming completed work",
+    "Rejected goal creation keeps the request text and never creates a false activation message"
+  ]
+}

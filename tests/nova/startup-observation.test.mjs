@@ -1,0 +1,50 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { inspectStatus, activate, configuration } from '../../agents/lib/local-stack.mjs';
+
+test('fresh diagnostics distinguish semantic mismatch and do not disclose response data', async t => {
+  let healthy = true;
+  const server = http.createServer((_req,res) => { res.setHeader('content-type','application/json'); res.end(JSON.stringify({ok:healthy,secret:'private-response'})); });
+  await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const c = {runtime:'tested-runtime',env:{GATEWAY_TOKEN:'private-token'}};
+  const checks = [{id:'runtime',url:`http://127.0.0.1:${server.address().port}`,accept:d=>d.ok===true}];
+  const ready = await inspectStatus(c,checks);
+  assert.equal(ready.state,'READY');
+  assert.equal(ready.services[0].http,200);
+  assert.ok(Number.isFinite(Date.parse(ready.observedAt)));
+  assert.ok(!JSON.stringify(ready).includes('private'));
+  healthy = false;
+  const failed = await inspectStatus(c,checks);
+  assert.equal(failed.state,'BLOCKED');
+  assert.equal(failed.services[0].state,'UNHEALTHY');
+  assert.equal((await inspectStatus(c,[])).state,'BLOCKED');
+});
+
+test('new startup replaces a stale READY receipt before probing and retains failure phase', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(),'jaco-startup-receipt-'));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(root,'server.ts'),"app.get('/api/runtime/identity',()=>{});");
+  fs.writeFileSync(path.join(root,'package.json'),JSON.stringify({version:'test'}));
+  fs.mkdirSync(path.join(root,'dist'));
+  fs.writeFileSync(path.join(root,'dist/server.cjs'),'');
+  fs.writeFileSync(path.join(root,'dist/index.html'),'');
+  const dir = path.join(root,'logs/startup');fs.mkdirSync(dir,{recursive:true});
+  const receiptPath = path.join(dir,'status.json');
+  fs.writeFileSync(receiptPath,JSON.stringify({state:'READY',runId:'stale'}));
+  let during;
+  const server = http.createServer((_req,res) => { during = JSON.parse(fs.readFileSync(receiptPath));res.setHeader('content-type','application/json');res.end('{}'); });
+  await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const c = configuration(root,{GATEWAY_TOKEN:'x'.repeat(32),PORT:String(server.address().port),JACO_START_MODE:'production',JACO_ENABLE_CDP:'0'});
+  await assert.rejects(activate(c),/PORT_CONFLICT_OR_UNHEALTHY:runtime/);
+  assert.equal(during.state,'STARTING');assert.notEqual(during.runId,'stale');
+  const receipt = JSON.parse(fs.readFileSync(receiptPath));
+  assert.equal(receipt.state,'BLOCKED');assert.equal(receipt.phase,'preflight');
+  assert.equal(receipt.runId,during.runId);assert.ok(receipt.sequence>during.sequence);
+  assert.ok(Number.isFinite(Date.parse(receipt.completedAt)));
+});

@@ -1,0 +1,25 @@
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "@id": "https://mimirpower.se/#software-application",
+  "name": "JACO Runtime",
+  "alternateName": "JACO Autonomous OS",
+  "applicationCategory": "DeveloperApplication",
+  "applicationSubCategory": "AI Agent Execution Engine",
+  "operatingSystem": "Android, Linux, Windows, macOS",
+  "description": "User-controlled agentic AI runtime providing persistent mission memory, multi-model execution, and Termux mobile integration.",
+  "url": "https://mimirpower.se/jaco",
+  "downloadUrl": "https://github.com/Rick84444/",
+  "softwareVersion": "1.0.0",
+  "author": {
+    "@type": "Organization",
+    "name": "Dick Jacobsson"
+  },
+  "permissions": "Termux API, Local Storage, Network Access",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD",
+    "availability": "https://schema.org/InStock"
+  }
+}

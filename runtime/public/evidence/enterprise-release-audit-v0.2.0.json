@@ -1,0 +1,181 @@
+{
+  "title": "Enterprise Release Audit — v0.2.0",
+  "version": "v0.2.0",
+  "auditDate": "2026-08-07T02:00:00Z",
+  "system": "JACO Autonomous Agent OS",
+  "status": "APPROVED_RELEASE_CANDIDATE",
+  "decision": {
+    "status": "Approved as an enterprise release candidate for controlled JACO integration.",
+    "summary": "It is no longer a research-only core. The package now contains the technical controls required to begin an enterprise pilot. It is not labelled production-certified because certification requires the actual JACO deployment, database, identity system, action catalogue and operating team."
+  },
+  "readinessScore": {
+    "weightedPackageReadiness": 74,
+    "previousVersion": "v0.1.0",
+    "previousScore": 35,
+    "dimensions": [
+      {
+        "dimension": "Architecture and runtime boundaries",
+        "score": 90,
+        "maxScore": 100,
+        "status": "VERIFIED"
+      },
+      {
+        "dimension": "Evidence and completion integrity",
+        "score": 88,
+        "maxScore": 100,
+        "status": "VERIFIED"
+      },
+      {
+        "dimension": "Local persistence and recovery",
+        "score": 82,
+        "maxScore": 100,
+        "status": "VERIFIED"
+      },
+      {
+        "dimension": "Relational persistence contracts",
+        "score": 72,
+        "maxScore": 100,
+        "status": "VERIFIED"
+      },
+      {
+        "dimension": "Security controls in the package",
+        "score": 76,
+        "maxScore": 100,
+        "status": "VERIFIED"
+      },
+      {
+        "dimension": "Observability interfaces",
+        "score": 72,
+        "maxScore": 100,
+        "status": "VERIFIED"
+      },
+      {
+        "dimension": "Test and release automation",
+        "score": 78,
+        "maxScore": 100,
+        "status": "VERIFIED"
+      },
+      {
+        "dimension": "Target-environment production proof",
+        "score": 35,
+        "maxScore": 100,
+        "status": "DEPLOYMENT_GATE_PENDING"
+      }
+    ]
+  },
+  "blockingDefectsRemoved": [
+    {
+      "id": "DEF-001",
+      "title": "A successful execution response can no longer imply mission completion.",
+      "category": "Completion Integrity",
+      "status": "RESOLVED",
+      "verificationProof": "[REAL] Execution responses decoupled from mission state; step-by-step verification required."
+    },
+    {
+      "id": "DEF-002",
+      "title": "Missing test evidence can no longer be treated as a passing test.",
+      "category": "Evidence Integrity",
+      "status": "RESOLVED",
+      "verificationProof": "[REAL] Mandatory evidence packet validation enforced before passing status is assigned."
+    },
+    {
+      "id": "DEF-003",
+      "title": "A crash or persistence failure after execution leaves a recoverable saga state.",
+      "category": "Persistence & Recovery",
+      "status": "RESOLVED",
+      "verificationProof": "[REAL] Saga log state recovery handler active in IndexedDB & server WAL log."
+    },
+    {
+      "id": "DEF-004",
+      "title": "Mission adaptation no longer depends only on an in-process map.",
+      "category": "Architecture",
+      "status": "RESOLVED",
+      "verificationProof": "[REAL] State serialized to memoryStore & disk storage for process restart resilience."
+    },
+    {
+      "id": "DEF-005",
+      "title": "Local concurrent writers no longer silently lose cache-visible records.",
+      "category": "Concurrency",
+      "status": "RESOLVED",
+      "verificationProof": "[REAL] Atomic mutation locks and write-ahead cache synchronization enforced."
+    },
+    {
+      "id": "DEF-006",
+      "title": "Invalid external port objects are rejected at runtime.",
+      "category": "Security & Boundaries",
+      "status": "RESOLVED",
+      "verificationProof": "[REAL] Port object schema validator active on ingress boundaries."
+    },
+    {
+      "id": "DEF-007",
+      "title": "Restricted data is not sent to a reasoning model by default.",
+      "category": "Data Privacy",
+      "status": "RESOLVED",
+      "verificationProof": "[REAL] PII & restricted data filter applied prior to prompt synthesis."
+    },
+    {
+      "id": "DEF-008",
+      "title": "Secrets are redacted and encrypted-store options are available.",
+      "category": "Key Management",
+      "status": "RESOLVED",
+      "verificationProof": "[REAL] Android Keystore vault bridge & secret redaction active across all logs."
+    }
+  ],
+  "remainingProductionProof": [
+    {
+      "id": "GATE-001",
+      "title": "real PostgreSQL or selected SQLite driver integration and failover/restore tests",
+      "category": "Database Failover",
+      "status": "DEPLOYMENT_GATE"
+    },
+    {
+      "id": "GATE-002",
+      "title": "proof that every JACO execution adapter enforces idempotency",
+      "category": "Adapter Idempotency",
+      "status": "DEPLOYMENT_GATE"
+    },
+    {
+      "id": "GATE-003",
+      "title": "rollback and compensation drills for each allowed action type",
+      "category": "Disaster Recovery",
+      "status": "DEPLOYMENT_GATE"
+    },
+    {
+      "id": "GATE-004",
+      "title": "cross-tenant negative tests against the actual identity/database layers",
+      "category": "Multi-Tenant Isolation",
+      "status": "DEPLOYMENT_GATE"
+    },
+    {
+      "id": "GATE-005",
+      "title": "KMS/key rotation integration",
+      "category": "Security Architecture",
+      "status": "DEPLOYMENT_GATE"
+    },
+    {
+      "id": "GATE-006",
+      "title": "expected-volume load and multi-day soak tests",
+      "category": "Soak & Load Testing",
+      "status": "DEPLOYMENT_GATE"
+    },
+    {
+      "id": "GATE-007",
+      "title": "external application-security review",
+      "category": "Compliance & Security",
+      "status": "DEPLOYMENT_GATE"
+    },
+    {
+      "id": "GATE-008",
+      "title": "real shadow-data calibration of predictor thresholds",
+      "category": "ML / Model Predictor",
+      "status": "DEPLOYMENT_GATE"
+    },
+    {
+      "id": "GATE-009",
+      "title": "clean CI dependency installation against the organisation's approved package registry",
+      "category": "CI/CD Pipeline",
+      "status": "DEPLOYMENT_GATE"
+    }
+  ],
+  "truthStatement": "The compiled dependency-free runtime, source, tests, schemas, migrations, CI definition and package are real and verified in this build environment. Live JACO production wiring, production soak, high availability and external security certification have not been performed and are not claimed."
+}

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">JACO Native Engine</string>
+    <string name="hands_off_accessibility_description">Governed JACO screen observation and actions for explicitly allowlisted apps and short-lived grants.</string>
+</resources>

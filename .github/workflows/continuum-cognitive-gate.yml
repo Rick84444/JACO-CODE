@@ -1,0 +1,54 @@
+name: Continuum Cognitive Gate
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'runtime/src/server/continuum/**'
+      - 'runtime/scripts/continuum/**'
+      - 'runtime/package.json'
+      - 'runtime/package-lock.json'
+      - 'runtime/bin/jacoctl'
+      - 'runtime/gateway/test/jacoctl.test.sh'
+      - 'runtime/termux/services/jaco-core/run'
+      - 'runtime/run_termux_node.sh'
+      - 'runtime/server.ts'
+      - '.github/workflows/continuum-cognitive-gate.yml'
+  pull_request:
+    paths:
+      - 'runtime/src/server/continuum/**'
+      - 'runtime/scripts/continuum/**'
+      - 'runtime/package.json'
+      - 'runtime/package-lock.json'
+      - 'runtime/bin/jacoctl'
+      - 'runtime/gateway/test/jacoctl.test.sh'
+      - 'runtime/termux/services/jaco-core/run'
+      - 'runtime/run_termux_node.sh'
+      - 'runtime/server.ts'
+      - '.github/workflows/continuum-cognitive-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  continuum:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: runtime/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Continuum regression suite
+        run: npm run test:continuum-runtime
+      - name: Core lifecycle and single-writer contract
+        run: bash gateway/test/jacoctl.test.sh
+      - name: Reflective futures regression
+        run: npm run test:reflective-futures

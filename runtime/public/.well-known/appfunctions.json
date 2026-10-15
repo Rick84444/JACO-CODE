@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "1.0.0",
+  "appId": "ai.jaco.nativeengine",
+  "displayName": "JACO Cognitive IDE",
+  "functions": [
+    {
+      "name": "code_refactor",
+      "description": "Refactors, rewrites, or fixes code in a specific workspace file. Used when the user asks JACO to change or update their code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filePath": {
+            "type": "string",
+            "description": "The relative path to the file to modify in the JACO workspace."
+          },
+          "instruction": {
+            "type": "string",
+            "description": "The instructions describing what to change or refactor."
+          },
+          "newContent": {
+            "type": "string",
+            "description": "The completely rewritten file content based on the instruction."
+          }
+        },
+        "required": ["filePath", "instruction", "newContent"]
+      },
+      "execution": {
+        "mode": "foreground_service",
+        "requiresNetwork": false
+      }
+    },
+    {
+      "name": "quality_audit",
+      "description": "Performs a deep quality audit on a specific file or the whole workspace, checking for type safety, complexity, and Android AppFunctions compliance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "targetPath": {
+            "type": "string",
+            "description": "The path to audit. Leave empty to audit the entire workspace."
+          },
+          "depth": {
+            "type": "string",
+            "enum": ["shallow", "deep"],
+            "description": "The depth of the audit."
+          }
+        },
+        "required": ["targetPath"]
+      },
+      "execution": {
+        "mode": "background_workmanager",
+        "requiresNetwork": false
+      }
+    },
+    {
+      "name": "git_ops",
+      "description": "Executes Git operations like commit, checkout, branch creation, or status checks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": ["commit", "checkout", "status", "branch"],
+            "description": "The Git operation to perform."
+          },
+          "args": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Additional arguments for the git command, e.g. commit message."
+          }
+        },
+        "required": ["operation"]
+      },
+      "execution": {
+        "mode": "foreground_service",
+        "requiresNetwork": false
+      }
+    }
+  ]
+}

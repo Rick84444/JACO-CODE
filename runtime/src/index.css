@@ -1,0 +1,74 @@
+@import "tailwindcss";
+@import "./cognitive-workspace.css";
+
+@layer utilities {
+  .gemini-glow {
+    box-shadow: 0 0 20px rgba(6, 182, 212, 0.25), 0 0 40px rgba(6, 182, 212, 0.12);
+  }
+  .gemini-glow-text {
+    text-shadow: 0 0 12px rgba(6, 182, 212, 0.6);
+  }
+  .animate-pulse-slow {
+    animation: pulse-glow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* Apple Frosted Glass Utilities */
+  .apple-frosted-glass {
+    background: rgba(8, 15, 30, 0.65);
+    backdrop-filter: blur(28px) saturate(190%);
+    -webkit-backdrop-filter: blur(28px) saturate(190%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  }
+
+  .apple-frosted-card {
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(20px) saturate(170%);
+    -webkit-backdrop-filter: blur(20px) saturate(170%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .apple-frosted-pill {
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid rgba(6, 182, 212, 0.35);
+    box-shadow: 0 4px 20px rgba(6, 182, 212, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.2);
+  }
+
+  /* Smooth Scroll Mask Fading (fades top and bottom edges smoothly when text scrolls past) */
+  .scroll-fade-edges {
+    mask-image: linear-gradient(to bottom, transparent 0%, black 28px, black calc(100% - 24px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 28px, black calc(100% - 24px), transparent 100%);
+  }
+
+  .scroll-fade-top {
+    mask-image: linear-gradient(to bottom, transparent 0%, black 24px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 24px);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 15px rgba(6, 182, 212, 0.3), 0 0 30px rgba(6, 182, 212, 0.15);
+  }
+  50% {
+    opacity: .8;
+    box-shadow: 0 0 25px rgba(6, 182, 212, 0.6), 0 0 50px rgba(6, 182, 212, 0.3);
+  }
+}
+
+body {
+  background-color: #030712;
+  background-image: 
+    radial-gradient(circle at 20% 15%, rgba(6, 182, 212, 0.12), transparent 45%),
+    radial-gradient(circle at 80% 25%, rgba(99, 102, 241, 0.10), transparent 50%),
+    radial-gradient(circle at 50% 80%, rgba(16, 185, 129, 0.08), transparent 55%);
+  color: #f1f5f9;
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+

@@ -1,0 +1,67 @@
+{
+  "product": "JACO Cognitive Runtime",
+  "version": "0.22.0",
+  "releaseId": "jaco-code-0.22.0",
+  "canonical": false,
+  "status": "RELEASE_CANDIDATE",
+  "canonicalGui": "JACO Autonomous IDE",
+  "candidatePorts": {
+    "core": 3020,
+    "sentinel": 3299,
+    "a2a": 3298
+  },
+  "activationPorts": {
+    "core": 3000,
+    "sentinel": 2999,
+    "a2a": 2998
+  },
+  "supersedes": "JACO-Cognitive-Runtime-0.20.0-CONTINUUM-RC1",
+  "architecture": {
+    "persistentContinuum": true,
+    "providerRouting": "DYNAMIC_CAPABILITY_POLICY",
+    "multiAgentDispatch": "CAPABILITY_REPUTATION_LOAD_AWARE",
+    "selfReview": true,
+    "peerReview": true,
+    "rewardValidation": "INDEPENDENT_VERIFIED_EVIDENCE_REQUIRED",
+    "idleStallAudit": true,
+    "deliberationAllowsNoConclusion": true,
+    "boundedTimeExtensions": true,
+    "softSandbox": "SEPARATE_FILESYSTEM_WORKSPACE_DENY_BY_DEFAULT_NETWORK",
+    "softSandboxKernelBoundary": false,
+    "futureWindowDays": 90,
+    "forecastScoring": "BRIER",
+    "futureSimulation": "SYNTHETIC_SEEDED_MONTE_CARLO",
+    "evidenceReferentialIntegrity": "ENFORCED_ON_CRITICAL_TRANSITIONS",
+    "a2aTrustRegistry": true,
+    "a2aProtocolVersion": "1.0",
+    "a2aExtensions": [
+      "https://www.mimirpower.com/a2a/extensions/review-proof/v1",
+      "https://www.mimirpower.com/a2a/extensions/forecast-calibration/v1",
+      "https://www.mimirpower.com/a2a/extensions/soft-sandbox/v1"
+    ],
+    "continuumMcpEndpoint": "/mcp",
+    "continuumMcpSemanticTools": 34
+  },
+  "control": {
+    "operatorRoot": true,
+    "emergencyStop": true,
+    "cloudBudgetHardCap": true,
+    "financialCommitmentsRequireOperatorApproval": true,
+    "candidateDoesNotReplaceCanonical": true
+  },
+  "truthPolicy": "No unsupported, unexecuted, synthetic or unobserved capability is reported as verified. Forecasts are probabilistic and simulations remain labeled synthetic.",
+  "truthBoundaries": {
+    "physicalAndroidTermux": "REQUIRES_TARGET_RUNTIME_PROOF",
+    "physicalWindows": "REQUIRES_TARGET_RUNTIME_PROOF",
+    "physicalChromeCdp": "REQUIRES_TARGET_RUNTIME_PROOF_FOR_0.21",
+    "externalA2ARevenue": "NOT_CLAIMED_UNTIL_EXTERNAL_SETTLEMENT_AND_ACCEPTANCE_EVIDENCE",
+    "softSandbox": "REAL_FILESYSTEM_ISOLATION_NOT_OS_KERNEL_SECURITY_BOUNDARY",
+    "hiddenAgentIntent": "NOT_INFERRED; ONLY_DECLARED_GOAL_CONSISTENCY_IS_CHECKED"
+  },
+  "baseProvenance": {
+    "file": "BASE_RELEASE_0.17.1.json",
+    "note": "Frozen Hands-Off + SEER + Desktop baseline retained for audit/regression continuity",
+    "parentArtifact": "JACO-Cognitive-Runtime-0.20.0-CONTINUUM-RC1.zip",
+    "parentVerification": "0.20 release gates passed before 0.21 reflective-futures changes"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Local JACO runtime state / generated bearers
+.jaco/
+
+# Evidence written by local verification runs (scripts/verify_a2a_hardening.ts)
+verification/

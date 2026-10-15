@@ -1,0 +1,33 @@
+name: Termux MCP native gate
+on:
+  pull_request:
+    paths:
+      - 'runtime/tools/jaco-git-mcp.mjs'
+      - 'runtime/tools/jaco-fetch-mcp.mjs'
+      - 'runtime/src/server/mcp/stdioMcpHost.mjs'
+      - 'tests/nova/termux-native-mcp.test.mjs'
+      - '.github/workflows/termux-native-mcp.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'runtime/tools/jaco-git-mcp.mjs'
+      - 'runtime/tools/jaco-fetch-mcp.mjs'
+      - 'runtime/src/server/mcp/stdioMcpHost.mjs'
+      - 'tests/nova/termux-native-mcp.test.mjs'
+      - '.github/workflows/termux-native-mcp.yml'
+jobs:
+  native-mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Syntax validation
+        run: |
+          node --check runtime/tools/jaco-git-mcp.mjs
+          node --check runtime/tools/jaco-fetch-mcp.mjs
+          node --check runtime/src/server/mcp/stdioMcpHost.mjs
+      - name: Native stdio MCP and Git commit integration
+        run: node --test tests/nova/termux-native-mcp.test.mjs

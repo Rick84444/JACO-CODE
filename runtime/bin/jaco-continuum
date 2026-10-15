@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cmd="${1:-status}"; base="${2:-http://127.0.0.1:3000}"; token="${GATEWAY_TOKEN:-${JACO_GATEWAY_TOKEN:-}}"
+h=(); [[ -n "$token" ]] && h=(-H "x-gateway-token: $token")
+case "$cmd" in
+ status) curl -fsS "${h[@]}" "$base/api/continuum/status" ;;
+ integrity) curl -fsS "${h[@]}" "$base/api/continuum/integrity" ;;
+ pause) curl -fsS "${h[@]}" -H 'content-type: application/json' -X POST "$base/api/continuum/operator/pause" -d '{"reason":"operator CLI"}' ;;
+ resume) curl -fsS "${h[@]}" -H 'content-type: application/json' -X POST "$base/api/continuum/operator/resume" -d '{"reason":"operator CLI"}' ;;
+ emergency-stop) curl -fsS "${h[@]}" -H 'content-type: application/json' -X POST "$base/api/continuum/operator/emergency-stop" -d '{"reason":"operator CLI"}' ;;
+ reset-emergency) curl -fsS "${h[@]}" -H 'content-type: application/json' -X POST "$base/api/continuum/operator/reset-emergency" -d '{"reason":"operator CLI"}' ;;
+ scheduler-start) curl -fsS "${h[@]}" -H 'content-type: application/json' -X POST "$base/api/continuum/scheduler/start" -d '{}' ;;
+ scheduler-stop) curl -fsS "${h[@]}" -H 'content-type: application/json' -X POST "$base/api/continuum/scheduler/stop" -d '{"reason":"operator CLI"}' ;;
+ *) echo "usage: jaco-continuum {status|integrity|pause|resume|emergency-stop|reset-emergency|scheduler-start|scheduler-stop} [base-url]" >&2; exit 2 ;;
+esac
+echo

@@ -1,0 +1,38 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"workbench.editor.alwaysShowEditorActions": true,
+		"workbench.editor.autoLockGroups": {
+			"default": true,
+			"workbench.editor.chatSession": true,
+			"workbench.editor.chatDebug": true,
+			"workbench.editorinputs.searchEditorInput": true,
+			"workbench.editor.browser": true,
+			"agentSessionsWelcomePage": true,
+			"notebookOutputEditor": true,
+			"jupyter-notebook": true,
+			"polyglot-notebook": true,
+			"luna.editor": true,
+			"github-issues": true,
+			"repl": true,
+			"workbench.editors.gettingStartedInput": true,
+			"vscode.markdown.editor": true,
+			"imagePreview.previewEditor": true,
+			"vscode.audioPreview": true,
+			"workbench.input.interactive": true,
+			"mainThreadWebview-markdown.preview": true
+		},
+		"workbench.editor.centeredLayoutFixedWidth": true,
+		"workbench.editor.closeOnFileDelete": true,
+		"workbench.editor.defaultBinaryEditor": "chatgpt.conversationEditor",
+		"workbench.editor.enablePreviewFromCodeNavigation": true,
+		"workbench.editor.enablePreviewFromQuickOpen": true,
+		"workbench.editor.limit.excludeDirty": true,
+		"workbench.editor.limit.perEditorGroup": true,
+		"workbench.editor.sharedViewState": true
+	}
+}

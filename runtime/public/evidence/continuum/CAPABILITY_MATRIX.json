@@ -1,0 +1,79 @@
+{
+  "schema": "jaco.continuum.capability-matrix.v1",
+  "releaseId": "JACO-Cognitive-Runtime-0.20.0-CONTINUUM-RC1",
+  "capabilities": [
+    {
+      "id": "mission_ledger",
+      "state": "RUNTIME_VERIFIED_BUILD_CONTAINER"
+    },
+    {
+      "id": "commitment_graph",
+      "state": "RUNTIME_VERIFIED_BUILD_CONTAINER"
+    },
+    {
+      "id": "evidence_hash_chain",
+      "state": "RUNTIME_VERIFIED_BUILD_CONTAINER"
+    },
+    {
+      "id": "execution_leases",
+      "state": "RUNTIME_VERIFIED_BUILD_CONTAINER"
+    },
+    {
+      "id": "persistent_scheduler_restart_recovery",
+      "state": "RUNTIME_VERIFIED_BUILD_CONTAINER"
+    },
+    {
+      "id": "runtime_hub",
+      "state": "RUNTIME_VERIFIED_BUILD_CONTAINER"
+    },
+    {
+      "id": "hypothesis_engine",
+      "state": "RUNTIME_VERIFIED_BUILD_CONTAINER"
+    },
+    {
+      "id": "capability_compiler",
+      "state": "RUNTIME_VERIFIED_BUILD_CONTAINER"
+    },
+    {
+      "id": "cognitive_compression",
+      "state": "IMPLEMENTED_STATICALLY_VERIFIED"
+    },
+    {
+      "id": "economic_governor",
+      "state": "RUNTIME_VERIFIED_BUILD_CONTAINER"
+    },
+    {
+      "id": "browser_semantic_delta_batch",
+      "state": "RUNTIME_VERIFIED_WITH_FAKE_ADAPTER",
+      "targetProof": "PENDING_CDP_9222"
+    },
+    {
+      "id": "ollama_model_router",
+      "state": "IMPLEMENTED",
+      "targetProof": "PENDING_TARGET_PROVIDER"
+    },
+    {
+      "id": "openai_escalation",
+      "state": "IMPLEMENTED_DISABLED_BY_DEFAULT",
+      "targetProof": "PENDING_EXPLICIT_BUDGET_AND_KEY"
+    },
+    {
+      "id": "a2a_v1_boundary",
+      "state": "RUNTIME_VERIFIED_BUILD_CONTAINER"
+    },
+    {
+      "id": "continuum_sentinel",
+      "state": "RUNTIME_VERIFIED_BUILD_CONTAINER"
+    },
+    {
+      "id": "android_termux_candidate_launcher",
+      "state": "STATICALLY_VERIFIED",
+      "targetProof": "PENDING"
+    },
+    {
+      "id": "windows_candidate_launcher",
+      "state": "STATICALLY_VERIFIED",
+      "targetProof": "PENDING"
+    }
+  ]
+}

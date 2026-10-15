@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0",
+  "id": "jaco.lmstudio-runtime",
+  "name": "LM Studio Runtime Adapter",
+  "description": "Valbar LM Studio-motor för lokal LLM-inferens, kodanalys och snabb modellväxling via OpenAI-kompatibelt API.",
+  "enabled": false,
+  "runtime": "server",
+  "mode": "advisor",
+  "capabilities": [
+    "local_llm.inference",
+    "model.list",
+    "patch.propose",
+    "patch.apply",
+    "tests.run",
+    "events.stream"
+  ],
+  "permissions": {
+    "workspace": "selected",
+    "network": "restricted",
+    "shell": "allowlist",
+    "destructiveActions": "operator_approval",
+    "writeOutsideWorkspace": false
+  }
+}

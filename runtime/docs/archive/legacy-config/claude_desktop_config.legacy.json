@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "jaco-sandbox": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://ais-dev-fcwnhntycugc732crmifrq-37554770847.europe-west1.run.app/api/mcp/sse"]
+    }
+  }
+}

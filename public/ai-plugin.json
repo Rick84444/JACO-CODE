@@ -1,0 +1,18 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "JACO Autonomous Agent OS",
+  "name_for_model": "jaco_agent_os",
+  "description_for_human": "User-controlled agentic AI runtime for persistent mission state, multi-LLM orchestration, and A2A marketplace discovery.",
+  "description_for_model": "Plugin for interacting with JACO Agent OS runtime. Allows querying node status, retrieving AgentCard manifests, running OpenClaw tasks, and inspecting persistent mission logs.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://mimirpower.se/api/a2a/agentcard.json",
+    "is_user_authenticated": false
+  },
+  "logo_url": "https://mimirpower.se/favicon.ico",
+  "contact_email": "contact@example.com",
+  "legal_info_url": "https://mimirpower.se/jaco/license"
+}

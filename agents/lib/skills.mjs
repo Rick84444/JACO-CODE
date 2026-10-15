@@ -1,0 +1,113 @@
+// JACO skills in the SKILL.md format (operator 2026-10-03: JACO owns its procedures; any LLM follows them).
+// A skill is <root>/<id>/SKILL.md: frontmatter (name, description, tasks) and a markdown body of
+// instructions. Running a skill creates a Nova mission whose goal names the skill; the planner then
+// receives the body as state.skill, whichever model plans. tasks are the mission's allowedTasks.
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { TASK_FIELDS } from './task-fields.mjs';
+import { CODE_TASKS } from './coding-contract.mjs';
+
+const ID = /^[a-z][a-z0-9-]{1,60}$/;
+const MAX_BODY = 12_000;
+// The mission goal of a skill run: "Skill <id>: <operator input>".
+const GOAL = /^Skill ([a-z][a-z0-9-]{1,60}):/;
+
+const unquote = v => v.replace(/^(['"])(.*)\1$/, '$2');
+export function parseSkill(text) {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(String(text || ''));
+  if (!m) throw new Error('SKILL_FRONTMATTER_MISSING');
+  const meta = {};
+  for (const line of m[1].split(/\r?\n/)) {
+    const kv = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(line);
+    if (!kv) continue;
+    const value = kv[2].trim();
+    meta[kv[1]] = /^\[.*\]$/.test(value)
+      ? value.slice(1, -1).split(',').map(s => unquote(s.trim())).filter(Boolean)
+      : unquote(value);
+  }
+  return { meta, body: m[2].trim() };
+}
+
+export function skillTasks(meta) {
+  const tasks = Array.isArray(meta.tasks) ? meta.tasks : String(meta.tasks || '').split(',').map(s => s.trim()).filter(Boolean);
+  const unknown = tasks.filter(t => !Object.hasOwn(TASK_FIELDS, t));
+  if (unknown.length) throw new Error(`SKILL_TASK_UNKNOWN:${unknown.join(',')}`);
+  // Code tasks need a coding contract; a skill run does not carry one yet.
+  const code = tasks.filter(t => CODE_TASKS.has(t));
+  if (code.length) throw new Error(`SKILL_CODE_TASKS_NEED_CONTRACT:${code.join(',')}`);
+  if (!tasks.length) throw new Error('SKILL_TASKS_REQUIRED');
+  return [...new Set(tasks)];
+}
+
+function readSkill(root, id) {
+  const file = join(root, id, 'SKILL.md');
+  if (!existsSync(file)) return null;
+  if (statSync(file).size > MAX_BODY * 2) throw new Error('SKILL_TOO_LARGE');
+  const { meta, body } = parseSkill(readFileSync(file, 'utf8'));
+  return {
+    id, name: String(meta.name || id), description: String(meta.description || '').slice(0, 500),
+    tasks: skillTasks(meta), body: body.slice(0, MAX_BODY), truncated: body.length > MAX_BODY, source: file,
+  };
+}
+
+// Skills of all roots; the first root that has an id wins. A malformed skill is listed with its error,
+// never silently dropped.
+export function listSkills(roots) {
+  const seen = new Map();
+  for (const root of roots.filter(Boolean)) {
+    if (!existsSync(root)) continue;
+    for (const id of readdirSync(root).sort()) {
+      if (!ID.test(id) || seen.has(id)) continue;
+      try {
+        const skill = readSkill(root, id);
+        if (skill) { const { body, ...rest } = skill; seen.set(id, rest); }
+      } catch (error) {
+        seen.set(id, { id, name: id, description: '', tasks: [], error: String(error?.message || error), source: join(root, id, 'SKILL.md') });
+      }
+    }
+  }
+  return [...seen.values()];
+}
+
+export function loadSkill(roots, id) {
+  if (!ID.test(String(id || ''))) throw new Error('SKILL_ID_INVALID');
+  for (const root of roots.filter(Boolean)) {
+    if (!existsSync(root)) continue;
+    const skill = readSkill(root, id);
+    if (skill) return skill;
+  }
+  throw new Error('SKILL_NOT_FOUND');
+}
+
+export function skillMissionGoal(skill, input) {
+  const text = String(input || '').trim();
+  if (!text) throw new Error('SKILL_INPUT_REQUIRED');
+  if (text.length > 4000) throw new Error('SKILL_INPUT_TOO_LONG');
+  return `Skill ${skill.id}: ${text}`;
+}
+export const skillIdOfGoal = goal => GOAL.exec(String(goal || ''))?.[1] || null;
+
+// Nova's side: the skill body from the runtime, bounded, for the planner state.
+const auth = env => { const t = env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || ''; return { Authorization: `Bearer ${t}`, 'x-gateway-token': t }; };
+// The skill catalog for the planner: id and description of every usable skill (cached 5 minutes).
+let listCache = { at: 0, value: null };
+export async function fetchSkillList({ env = process.env, fetchImpl = fetch, runtimeUrl, now = Date.now() } = {}) {
+  if (listCache.value && now - listCache.at < 5 * 60_000) return listCache.value;
+  const base = runtimeUrl || env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000';
+  const res = await fetchImpl(`${base}/api/skills`, { headers: auth(env), signal: AbortSignal.timeout(15_000) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !Array.isArray(body.skills)) throw new Error(String(body.error || `HTTP_${res.status}`));
+  const value = body.skills.filter(s => !s.error).map(s => ({ id: s.id, description: String(s.description || '').slice(0, 200), tasks: s.tasks }));
+  listCache = { at: now, value };
+  return value;
+}
+export function resetSkillList() { listCache = { at: 0, value: null }; }
+
+export async function fetchSkill(id, { env = process.env, fetchImpl = fetch, runtimeUrl } = {}) {
+  const base = runtimeUrl || env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000';
+  const res = await fetchImpl(`${base}/api/skills/${encodeURIComponent(id)}`, { headers: auth(env), signal: AbortSignal.timeout(15_000) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body.skill) throw new Error(String(body.error || `HTTP_${res.status}`));
+  const { name, description, body: instructions } = body.skill;
+  return { id, name, description, instructions };
+}

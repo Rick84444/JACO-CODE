@@ -1,0 +1,8 @@
+{
+  "schema": "jaco.reflective-futures.build-container-verification.v1",
+  "generatedAtUTC": "2026-09-08T11:31:44.689381Z",
+  "releaseId": "jaco-code-0.22.0",
+  "environment": "Linux build container",
+  "classification": "SOURCE_TREE_VERIFIED",
+  "truthBoundary": "This is build-container/source verification, not physical Windows/Android/CDP proof."
+}

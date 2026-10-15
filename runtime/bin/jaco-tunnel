@@ -1,0 +1,111 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+ALIAS="${JACO_TUNNEL_ALIAS:-jaco}"
+MCP_URL="${JACO_TUNNEL_MCP_URL:-http://127.0.0.1:2999/mcp}"
+HEALTH_URL="${JACO_SENTINEL_URL:-http://127.0.0.1:2999}/health"
+TUNNEL_ID="${JACO_TUNNEL_ID:-${CONTROL_PLANE_TUNNEL_ID:-}}"
+RUNTIME_KEY_ENV="${JACO_TUNNEL_RUNTIME_KEY_ENV:-JACO_TUNNEL_RUNTIME_KEY}"
+BIN="${TUNNEL_CLIENT_BIN:-}"
+JSON=false
+
+usage(){ cat <<'TXT'
+JACO Secure MCP Tunnel helper
+
+Usage:
+  jaco-tunnel preflight [--json]
+  jaco-tunnel connect [--json]
+  jaco-tunnel status [--json]
+  jaco-tunnel disconnect [--json]
+
+Required for connect:
+  JACO_TUNNEL_ID=tunnel_...
+  JACO_TUNNEL_RUNTIME_KEY=<runtime key in environment only>
+
+Optional:
+  TUNNEL_CLIENT_BIN=/absolute/path/to/tunnel-client
+  JACO_TUNNEL_ALIAS=jaco
+  JACO_TUNNEL_MCP_URL=http://127.0.0.1:2999/mcp
+
+This helper never creates tunnels, never writes literal API keys, and never exposes
+Chrome CDP. It only connects the already-authorized OpenAI tunnel runtime to the
+local semantic JACO MCP endpoint.
+TXT
+}
+
+find_bin(){
+  if [[ -n "$BIN" && -x "$BIN" ]]; then printf '%s' "$BIN"; return 0; fi
+  if command -v tunnel-client >/dev/null 2>&1; then command -v tunnel-client; return 0; fi
+  return 1
+}
+
+sentinel_ready(){ curl -fsS --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; }
+key_is_set(){ [[ -n "${!RUNTIME_KEY_ENV:-}" ]]; }
+valid_tunnel_id(){ [[ "$TUNNEL_ID" =~ ^tunnel_[0-9a-f]{32}$ ]]; }
+
+emit(){
+  local state="$1" msg="$2" bin_path="${3:-}"
+  if [[ "$JSON" == true ]]; then
+    J_STATE="$state" J_MSG="$msg" J_BIN="$bin_path" J_MCP="$MCP_URL" J_ALIAS="$ALIAS" J_TID="$TUNNEL_ID" node - <<'NODE'
+console.log(JSON.stringify({
+  state: process.env.J_STATE,
+  message: process.env.J_MSG,
+  tunnelClient: process.env.J_BIN || null,
+  mcpUrl: process.env.J_MCP,
+  alias: process.env.J_ALIAS,
+  tunnelIdPresent: Boolean(process.env.J_TID),
+  at: new Date().toISOString()
+}))
+NODE
+  else
+    printf '[JACO TUNNEL] %s — %s\n' "$state" "$msg"
+    [[ -n "$bin_path" ]] && printf '  binary: %s\n' "$bin_path"
+    printf '  mcp:    %s\n' "$MCP_URL"
+    printf '  alias:  %s\n' "$ALIAS"
+  fi
+}
+
+ACTION="${1:-preflight}"; shift || true
+while (($#)); do
+  case "$1" in
+    --json) JSON=true; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; usage; exit 2 ;;
+  esac
+done
+
+case "$ACTION" in
+  preflight)
+    bin_path="$(find_bin || true)"
+    [[ -n "$bin_path" ]] || { emit BLOCKED 'official tunnel-client binary not found'; exit 20; }
+    sentinel_ready || { emit BLOCKED 'JACO Sentinel is not reachable; run: jaco activate or start Sentinel' "$bin_path"; exit 21; }
+    if [[ -n "$TUNNEL_ID" ]] && ! valid_tunnel_id; then emit BLOCKED 'JACO_TUNNEL_ID has invalid shape' "$bin_path"; exit 22; fi
+    if [[ -z "$TUNNEL_ID" ]]; then emit LOCAL_READY 'JACO MCP is local-ready; tunnel ID not configured' "$bin_path"; exit 10; fi
+    key_is_set || { emit LOCAL_READY 'tunnel ID present but runtime key env is not set' "$bin_path"; exit 11; }
+    emit READY 'local MCP, tunnel ID and runtime key reference are ready' "$bin_path"
+    ;;
+  connect)
+    bin_path="$(find_bin || true)"
+    [[ -n "$bin_path" ]] || { emit BLOCKED 'official tunnel-client binary not found'; exit 20; }
+    sentinel_ready || { emit BLOCKED 'JACO Sentinel is not reachable'; exit 21; }
+    valid_tunnel_id || { emit BLOCKED 'valid JACO_TUNNEL_ID is required'; exit 22; }
+    key_is_set || { emit BLOCKED "runtime key must be set in environment variable $RUNTIME_KEY_ENV"; exit 23; }
+    exec "$bin_path" runtimes connect \
+      --alias "$ALIAS" \
+      --tunnel-id "$TUNNEL_ID" \
+      --runtime-api-key "env:$RUNTIME_KEY_ENV" \
+      --mcp-server-url "$MCP_URL"
+    ;;
+  status)
+    bin_path="$(find_bin || true)"
+    [[ -n "$bin_path" ]] || { emit BLOCKED 'official tunnel-client binary not found'; exit 20; }
+    exec "$bin_path" runtimes status --alias "$ALIAS" --json
+    ;;
+  disconnect)
+    bin_path="$(find_bin || true)"
+    [[ -n "$bin_path" ]] || { emit BLOCKED 'official tunnel-client binary not found'; exit 20; }
+    exec "$bin_path" runtimes disconnect --alias "$ALIAS" --json
+    ;;
+  *) echo "unsupported action: $ACTION" >&2; usage; exit 2 ;;
+esac

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json.schemastore.org/mcp-server-config.json",
+  "name": "jaco-institutional-sandbox",
+  "version": "2.0.0",
+  "description": "Institutional Sandbox & Macro Scenario Optimization Engine for Autonomous AI Agents (CFA / DORA 2025 / EU AI Act Compliant)",
+  "vendor": "JACO Autonomous Agent Framework",
+  "homepage": "https://mimirpower.se/jaco",
+  "repository": "https://huggingface.co/Rick8444/jaco-institutional-sandbox-optimizer",
+  "protocol": "mcp-v1",
+  "capabilities": {
+    "tools": true,
+    "resources": false,
+    "prompts": true
+  },
+  "endpoints": {
+    "sse": "https://ais-dev-fcwnhntycugc732crmifrq-37554770847.europe-west1.run.app/api/mcp/sse",
+    "tools_list": "https://ais-dev-fcwnhntycugc732crmifrq-37554770847.europe-west1.run.app/api/mcp/v1/tools",
+    "tools_call": "https://ais-dev-fcwnhntycugc732crmifrq-37554770847.europe-west1.run.app/api/mcp/v1/call",
+    "openapi_spec": "https://ais-dev-fcwnhntycugc732crmifrq-37554770847.europe-west1.run.app/api/openapi.json"
+  },
+  "tools": [
+    {
+      "name": "jaco_sandbox_run_stress_test",
+      "description": "Executes institutional macroeconomic stress testing (99% 10-day VaR, CVaR, DORA 2025 resilience & CFA standards). Simulates SVB rate shock (+500bps), stagflation, flash crash, and cyber cloud outage.",
+      "parameters": {
+        "scenario": {
+          "type": "string",
+          "enum": ["normal", "svb_interest_shock", "stagflation", "flash_crash_crowded", "dora_cyber_outage"],
+          "required": true
+        },
+        "portfolio_value_usd": {
+          "type": "number",
+          "default": 10000000.0
+        },
+        "horizon_days": {
+          "type": "integer",
+          "default": 10
+        }
+      }
+    },
+    {
+      "name": "jaco_sandbox_evaluate_strategy",
+      "description": "Evaluates an AI trading or financial strategy against multi-scenario stress tests to prevent overfitting and ensure real-world robustness.",
+      "parameters": {
+        "strategy_name": {
+          "type": "string",
+          "required": true
+        },
+        "run_all_scenarios": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    {
+      "name": "jaco_sandbox_audit_dora_compliance",
+      "description": "Audits operational resilience, audit trails, and high-risk AI governance under EU DORA (Regulation 2022/2554) and EU AI Act Annex III.",
+      "parameters": {
+        "system_id": {
+          "type": "string",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "jaco_sandbox_execute_python_isolated",
+      "description": "Executes arbitrary Python calculations or financial algorithms within an isolated sandbox workspace.",
+      "parameters": {
+        "code": {
+          "type": "string",
+          "required": true
+        }
+      }
+    }
+  ],
+  "keywords": [
+    "secure sandbox for AI agents",
+    "isolated execution environment with scenario testing",
+    "sandbox with synthetic data generation and stress testing",
+    "regulatory compliant sandbox for financial models",
+    "human-in-the-loop sandbox API",
+    "DORA compliant execution sandbox",
+    "sandbox to prevent overfitting in trading strategies",
+    "explainable AI sandbox with audit logging",
+    "agent tool for scenario optimization",
+    "sandbox with built-in market shock simulation",
+    "MCP server for sandboxed code execution",
+    "tool for running Python in isolated environment with network restrictions",
+    "API for stress testing algorithms in a sandbox"
+  ]
+}

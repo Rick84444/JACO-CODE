@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0",
+  "id": "jaco.codex-runtime",
+  "name": "Codex Runtime Adapter",
+  "description": "Valbar Codex-motor för repository-analys, kodändringar och verifiering.",
+  "enabled": false,
+  "runtime": "server",
+  "mode": "advisor",
+  "capabilities": [
+    "repository.read",
+    "patch.propose",
+    "patch.apply",
+    "tests.run",
+    "thread.resume",
+    "events.stream"
+  ],
+  "permissions": {
+    "workspace": "selected",
+    "network": "restricted",
+    "shell": "allowlist",
+    "destructiveActions": "operator_approval",
+    "writeOutsideWorkspace": false
+  }
+}

@@ -1,0 +1,631 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+CONFIG="${JACO_RUNTIME_ENV:-$HOME/.config/jaco/runtime.env}"
+if [[ -f "$CONFIG" ]]; then
+  # shellcheck disable=SC1090
+  source "$CONFIG"
+fi
+
+JACO_ROOT="${JACO_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}"
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+SVDIR="${SVDIR:-$PREFIX/var/service}"
+SENTINEL_SERVICE="${JACO_SENTINEL_SERVICE:-jaco-sentinel}"
+CORE_SERVICE="${JACO_CORE_SERVICE:-jaco-core}"
+NOVA_SERVICE="${JACO_NOVA_SERVICE:-jaco-nova}"
+WORKPLACE_SERVICE="${JACO_WORKPLACE_SERVICE:-jaco-workplace}"
+OLLAMA_SERVICE="${JACO_OLLAMA_SERVICE:-jaco-ollama}"
+NOVA_BRIDGE_SERVICE="${JACO_NOVA_BRIDGE_SERVICE:-jaco-nova-bridge}"
+CDP_SERVICE="${JACO_CDP_SERVICE:-jaco-cdp}"
+SENTINEL_URL="${JACO_SENTINEL_URL:-http://127.0.0.1:2999}"
+CORE_URL="${JACO_CORE_URL:-http://127.0.0.1:3000}"
+WORKPLACE_URL="${JACO_WORKPLACE_URL:-http://127.0.0.1:2995}"
+LLAMACPP_DEFAULT_URL="http://127.0.0.1:9380/v1"
+JSON=false
+PROFILE=full
+JACOCTL_PROVIDER_SELECTION=''
+JACOCTL_MODEL_SELECTION=''
+
+usage(){ cat <<'TXT'
+JACO unified supervisor
+
+Usage:
+  jacoctl activate [--profile full] [--provider auto|litert|llamacpp|ollama] [--model ID] [--json]
+  jacoctl deactivate [--json]
+  jacoctl status [--json]
+  jacoctl restart [--provider auto|litert|llamacpp|ollama] [--model ID] [--json]
+
+The full profile supervises Sentinel, Core, and Workplace. Workplace owns Durable Nova.
+Provider selection is saved for Core/Aura and SEER. Omit --model with litert to discover its registry ID.
+
+This command accepts fixed lifecycle verbs only. It is not a general shell bridge.
+TXT
+}
+
+need(){ command -v "$1" >/dev/null 2>&1 || { echo "missing dependency: $1" >&2; exit 30; }; }
+svc_path(){ printf '%s/%s' "$SVDIR" "$1"; }
+svc_up(){ sv up "$(svc_path "$1")"; }
+svc_down(){ sv down "$(svc_path "$1")"; }
+svc_state(){ sv status "$(svc_path "$1")" 2>&1 || true; }
+svc_pid(){
+  local state
+  state="$(svc_state "$1")"
+  if [[ "$state" =~ ^run:.*\(pid[[:space:]]+([0-9]+)\) ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+svc_stable(){
+  local svc="$1" first second delay
+  delay="${JACO_STABILITY_PROBE_SECONDS:-1}"
+  first="$(svc_pid "$svc" 2>/dev/null || true)"
+  [[ -n "$first" ]] || return 1
+  sleep "$delay"
+  second="$(svc_pid "$svc" 2>/dev/null || true)"
+  [[ -n "$second" && "$first" == "$second" ]]
+}
+wait_service_down(){
+  local svc="$1" max="${2:-30}" deadline pid state
+  deadline=$((SECONDS + max))
+  while (( SECONDS < deadline )); do
+    pid="$(svc_pid "$svc" 2>/dev/null || true)"
+    [[ -z "$pid" ]] && return 0
+    state="$(svc_state "$svc")"
+    printf '[JACO] STOPPING — waiting for %s to exit cleanly: %s\n' "$svc" "$state" >&2
+    sleep 1
+  done
+  pid="$(svc_pid "$svc" 2>/dev/null || true)"
+  [[ -z "$pid" ]] && return 0
+  printf '[JACO] BLOCKED — %s pid=%s did not stop within %ss; refusing to start a replacement over a live owner\n' "$svc" "$pid" "$max" >&2
+  return 1
+}
+http_ok(){ curl -fsS --max-time 2 "$1" >/dev/null 2>&1; }
+core_truth_ready(){ svc_stable "$CORE_SERVICE" && http_ok "$CORE_URL/api/runtime/identity"; }
+
+wait_core_truth_ready(){
+  local max="${1:-120}" deadline state
+  deadline=$((SECONDS + max))
+  while (( SECONDS < deadline )); do
+    if core_truth_ready; then return 0; fi
+    state="$(svc_state "$CORE_SERVICE")"
+    printf '[JACO] STARTING — waiting for stable Core ownership: %s\n' "$state" >&2
+    (( SECONDS < deadline )) && sleep 1
+  done
+  return 1
+}
+
+terminate_stale_pid(){
+  local pid="$1" deadline
+  kill "$pid" 2>/dev/null || true
+  deadline=$((SECONDS + ${JACO_STALE_CORE_TERM_SECONDS:-3}))
+  while [[ -d "/proc/$pid" ]] && (( SECONDS < deadline )); do sleep 0.1; done
+  if [[ -d "/proc/$pid" ]]; then
+    printf '[JACO] RECOVERY — stale Core pid=%s ignored SIGTERM; escalating to SIGKILL\n' "$pid" >&2
+    kill -KILL "$pid" 2>/dev/null || true
+    deadline=$((SECONDS + ${JACO_STALE_CORE_KILL_SECONDS:-2}))
+    while [[ -d "/proc/$pid" ]] && (( SECONDS < deadline )); do sleep 0.1; done
+  fi
+  [[ ! -d "/proc/$pid" ]]
+}
+
+cleanup_stale_core_processes(){
+  local supervised proc pid cwd cmd killed=0
+  supervised="$(svc_pid "$CORE_SERVICE" 2>/dev/null || true)"
+
+  for proc in /proc/[0-9]*; do
+    [[ -d "$proc" ]] || continue
+    pid="${proc##*/}"
+    [[ "$pid" == "$BASHPID" || "$pid" == "$supervised" ]] && continue
+
+    cwd="$(readlink "$proc/cwd" 2>/dev/null || true)"
+    [[ "$cwd" == "$JACO_ROOT" ]] || continue
+
+    cmd="$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
+    case "$cmd" in
+      *"node --import tsx server.ts"*|*"node"*"server.ts"*|*"tsx server.ts"*)
+        printf '[JACO] RECOVERY — terminating stale Core pid=%s cwd=%s\n' "$pid" "$cwd" >&2
+        terminate_stale_pid "$pid" || {
+          printf '[JACO] RECOVERY — stale Core pid=%s could not be terminated\n' "$pid" >&2
+          return 36
+        }
+        killed=1
+        ;;
+    esac
+  done
+
+  if (( killed )); then
+    sleep 1
+  fi
+}
+
+# A Workplace left running outside runit (and the SEER, Nova and model server it spawns) keeps old
+# settings alive across upgrades: on 2026-09-30 an orphan Workplace kept respawning llama-server with
+# a 2048-token context while jacoctl reported Workplace down. Called only after the supervised
+# Workplace is confirmed down, so every match is an orphan. Only processes started from this
+# checkout, and the model server on JACO's own port, are touched.
+cleanup_stale_workplace_processes(){
+  local repo supervised legacy proc pid cwd cmd llama_port killed=0
+  repo="$(cd -- "$JACO_ROOT/.." && pwd)"
+  supervised="$(svc_pid "$WORKPLACE_SERVICE" 2>/dev/null || true)"
+  [[ -z "$supervised" ]] || return 0
+  legacy="$(svc_pid "$NOVA_SERVICE" 2>/dev/null || true)"
+  llama_port="${JACO_LLAMACPP_URL:-$LLAMACPP_DEFAULT_URL}"
+  llama_port="${llama_port##*:}"; llama_port="${llama_port%%/*}"
+
+  for proc in /proc/[0-9]*; do
+    [[ -d "$proc" ]] || continue
+    pid="${proc##*/}"
+    [[ "$pid" == "$BASHPID" || "$pid" == "$$" || "$pid" == "$legacy" ]] && continue
+    cmd="$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
+    case "$cmd" in
+      *"gateway/src/workplace/workplace-server.mjs"*|*"gateway/src/seer-start.mjs"*|*"agents/hands-off-agent.mjs"*|*"agents/run-desktop-agentos.mjs"*)
+        cwd="$(readlink "$proc/cwd" 2>/dev/null || true)"
+        [[ "$cwd" == "$repo" ]] || continue
+        ;;
+      *"llama-server"*"--port $llama_port"*) ;;
+      *) continue ;;
+    esac
+    printf '[JACO] RECOVERY — terminating orphan pid=%s outside runit: %s\n' "$pid" "${cmd:0:160}" >&2
+    terminate_stale_pid "$pid" || {
+      printf '[JACO] RECOVERY — orphan pid=%s could not be terminated\n' "$pid" >&2
+      return 40
+    }
+    killed=1
+  done
+  if (( killed )); then sleep 1; fi
+}
+
+# Service run scripts are copied into $SVDIR by install-activation.sh. Refresh them from the
+# checkout on every activate/restart so a git pull cannot leave runit executing stale scripts.
+refresh_service_definitions(){
+  local svc src dst
+  for svc in "$SENTINEL_SERVICE" "$CORE_SERVICE" "$WORKPLACE_SERVICE" "$NOVA_SERVICE" "$OLLAMA_SERVICE" "$NOVA_BRIDGE_SERVICE" "$CDP_SERVICE"; do
+    src="$JACO_ROOT/termux/services/$svc/run"
+    dst="$(svc_path "$svc")/run"
+    [[ -f "$src" && -d "$(svc_path "$svc")" ]] || continue
+    if [[ ! -f "$dst" || "$(cksum < "$src")" != "$(cksum < "$dst")" ]]; then
+      cp "$src" "$dst.tmp.$$" && chmod +x "$dst.tmp.$$" && mv -f "$dst.tmp.$$" "$dst"
+      printf '[JACO] UPDATE — refreshed %s run script from the checkout\n' "$svc" >&2
+    fi
+  done
+}
+
+quiesce_core_dependents(){
+  svc_down "$CDP_SERVICE" || true
+  svc_down "$NOVA_BRIDGE_SERVICE" || true
+  svc_down "$WORKPLACE_SERVICE" || true
+  svc_down "$NOVA_SERVICE" || true
+}
+
+prepare_core_owner(){
+  # If :3000 is alive while runit does not own a stable Core PID, stop the
+  # restart loop first, then recover only same-runtime Core processes.
+  # Never kill arbitrary Node processes.
+  if http_ok "$CORE_URL/api/runtime/identity" && ! svc_stable "$CORE_SERVICE"; then
+    printf '[JACO] RECOVERY — Core endpoint is live without a stable runit owner; taking single-owner control\n' >&2
+    svc_down "$CORE_SERVICE" || true
+    sleep 0.2
+    cleanup_stale_core_processes || return $?
+
+    # A live endpoint after the supervised service is down and canonical stale
+    # processes are gone is outside the ownership we are allowed to take over.
+    # Refuse to start a runit crash loop against an unknown port owner.
+    if http_ok "$CORE_URL/api/runtime/identity"; then
+      printf '[JACO] BLOCKED — Core endpoint remains live after canonical cleanup; refusing to start supervised Core against an unknown owner\n' >&2
+      return 35
+    fi
+  fi
+}
+
+set_config_export(){
+  local key="$1" value="$2" file="${3:-$CONFIG}" tmp escaped
+  mkdir -p "$(dirname "$file")"
+  touch "$file"
+  chmod 600 "$file"
+  tmp="$(mktemp)"
+  sed -E "/^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=/d" "$file" > "$tmp"
+  escaped="${value//\'/\'\\\'\'}"
+  if [[ -s "$tmp" && -n "$(tail -c 1 "$tmp")" ]]; then printf '\n' >> "$tmp"; fi
+  printf "export %s='%s'\n" "$key" "$escaped" >> "$tmp"
+  cat "$tmp" > "$file"
+  rm -f "$tmp"
+}
+
+save_model_setting(){
+  local key="$1" value="$2" project_env="$3"
+  printf -v "$key" '%s' "$value"
+  export "$key"
+  set_config_export "$key" "$value"
+  # jacoctl imports the project .env on every activation. Update only these
+  # explicit model settings there too, or the next restart would undo the choice.
+  [[ "$project_env" == "$CONFIG" ]] || set_config_export "$key" "$value" "$project_env"
+}
+
+apply_model_selection(){
+  local project_env="$1"
+  [[ -n "$JACOCTL_PROVIDER_SELECTION" ]] || return 0
+  save_model_setting JACO_SEER_PROVIDER_PREFERENCE "$JACOCTL_PROVIDER_SELECTION" "$project_env"
+  case "$JACOCTL_PROVIDER_SELECTION" in
+    litert)
+      save_model_setting JACO_LITERT_AUTODETECT 1 "$project_env"
+      save_model_setting JACO_LITERT_MODEL "$JACOCTL_MODEL_SELECTION" "$project_env"
+      ;;
+    llamacpp)
+      save_model_setting JACO_LLAMACPP_AUTODETECT 1 "$project_env"
+      [[ -z "$JACOCTL_MODEL_SELECTION" ]] || save_model_setting JACO_LLAMACPP_MODEL "$JACOCTL_MODEL_SELECTION" "$project_env"
+      ;;
+    ollama)
+      save_model_setting JACO_OLLAMA_AUTODETECT 1 "$project_env"
+      save_model_setting OLLAMA_MODEL "$JACOCTL_MODEL_SELECTION" "$project_env"
+      save_model_setting JACO_OLLAMA_MODEL "$JACOCTL_MODEL_SELECTION" "$project_env"
+      ;;
+  esac
+  if [[ "$JACOCTL_PROVIDER_SELECTION" == litert || "$JACOCTL_PROVIDER_SELECTION" == llamacpp ]]; then
+    # An explicit on-device selection must not keep an old cloud-planner setting.
+    save_model_setting JACO_CLOUD_PLANNER 0 "$project_env"
+    save_model_setting JACO_ALLOW_PAID_MODELS 0 "$project_env"
+  fi
+}
+
+sync_runtime_env(){
+  local project_env shared
+  project_env="${JACO_PROJECT_ENV:-$JACO_ROOT/../.env}"
+
+  # Import project-local values when present, but never print them.
+  if [[ -f "$project_env" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$project_env"
+    set +a
+  fi
+
+  apply_model_selection "$project_env"
+
+  shared="${JACO_GATEWAY_TOKEN:-${GATEWAY_TOKEN:-${SEER_TOKEN:-}}}"
+  if [[ -z "$shared" ]]; then
+    shared="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")"
+  fi
+  [[ ${#shared} -ge 24 ]] || { echo "JACO gateway token must be at least 24 characters" >&2; return 1; }
+
+  set_config_export JACO_GATEWAY_TOKEN "$shared"
+  set_config_export GATEWAY_TOKEN "$shared"
+  set_config_export SEER_TOKEN "$shared"
+
+  set_config_export JACO_RUNTIME_URL "${JACO_RUNTIME_URL:-http://127.0.0.1:3000}"
+  set_config_export JACO_CORE_URL "${JACO_CORE_URL:-http://127.0.0.1:3000}"
+  set_config_export SEER_URL "${SEER_URL:-http://127.0.0.1:2997}"
+  set_config_export JACO_WORKPLACE_URL "${JACO_WORKPLACE_URL:-http://127.0.0.1:2995}"
+  set_config_export JACO_REMOTE_BRIDGE_PORT "${JACO_REMOTE_BRIDGE_PORT:-2994}"
+  set_config_export JACO_REMOTE_ALLOW_MUTATIONS "${JACO_REMOTE_ALLOW_MUTATIONS:-1}"
+  set_config_export JACO_LEVEL5_AUTONOMY "${JACO_LEVEL5_AUTONOMY:-1}"
+  set_config_export JACO_ALLOW_SHELL_TASKS "${JACO_ALLOW_SHELL_TASKS:-1}"
+  set_config_export JACO_ENABLE_CDP "${JACO_ENABLE_CDP:-1}"
+  set_config_export JACO_CDP_BRIDGE_PORT "${JACO_CDP_BRIDGE_PORT:-2996}"
+  set_config_export NOVA_BRIDGE_PORT "${NOVA_BRIDGE_PORT:-4243}"
+  set_config_export CDP_PORT "${CDP_PORT:-9222}"
+  set_config_export JACO_ENABLE_OLLAMA "${JACO_ENABLE_OLLAMA:-1}"
+  set_config_export OLLAMA_BASE_URL "${OLLAMA_BASE_URL:-http://127.0.0.1:11434}"
+  set_config_export JACO_LITERT_AUTODETECT "${JACO_LITERT_AUTODETECT:-1}"
+  set_config_export JACO_LITERT_URL "${JACO_LITERT_URL:-http://127.0.0.1:9379/v1}"
+  # The interactive Termux PATH can differ from runit's PATH.
+  set_config_export JACO_LITERT_COMMAND "${JACO_LITERT_COMMAND:-$(command -v litert-lm || true)}"
+  # A downloaded filename is not necessarily a LiteRT registry ID. Leave this
+  # empty unless the operator selected an ID; SEER discovers /v1/models.
+  set_config_export JACO_LITERT_MODEL "${JACO_LITERT_MODEL:-}"
+  set_config_export JACO_LLAMACPP_AUTOSTART "${JACO_LLAMACPP_AUTOSTART:-auto}"
+  set_config_export JACO_LLAMACPP_AUTODETECT "${JACO_LLAMACPP_AUTODETECT:-1}"
+  set_config_export JACO_LLAMACPP_URL "${JACO_LLAMACPP_URL:-$LLAMACPP_DEFAULT_URL}"
+  set_config_export JACO_LLAMACPP_SERVER "${JACO_LLAMACPP_SERVER:-$HOME/llama.cpp/build/bin/llama-server}"
+  set_config_export JACO_LLAMACPP_MODEL "${JACO_LLAMACPP_MODEL:-$HOME/models/Bonsai-27B-Q1_0.gguf}"
+  set_config_export JACO_LLAMACPP_CTX "${JACO_LLAMACPP_CTX:-8192}"
+  # Core reads the Native Engine pairing token from here; a token kept in the project .env never
+  # reached it otherwise.
+  if [[ -n "${JACO_NATIVE_ENGINE_TOKEN:-}" ]]; then
+    set_config_export JACO_NATIVE_ENGINE_TOKEN "$JACO_NATIVE_ENGINE_TOKEN"
+  fi
+
+  set_config_export JACO_WORKPLACE_REQUIRED "${JACO_WORKPLACE_REQUIRED:-1}"
+  set_config_export JACO_WORKPLACE_SUPERVISE_MODEL "${JACO_WORKPLACE_SUPERVISE_MODEL:-1}"
+  set_config_export JACO_WORKPLACE_SUPERVISE_SEER "${JACO_WORKPLACE_SUPERVISE_SEER:-1}"
+  set_config_export JACO_WORKPLACE_SUPERVISE_NOVA "${JACO_WORKPLACE_SUPERVISE_NOVA:-1}"
+
+  set_config_export JACO_SEER_PROVIDER_PREFERENCE "${JACO_SEER_PROVIDER_PREFERENCE:-${JACO_MODEL_PROVIDER:-auto}}"
+  set_config_export JACO_SEER_INFERENCE_TIMEOUT_MS "${JACO_SEER_INFERENCE_TIMEOUT_MS:-180000}"
+  set_config_export JACO_SEER_CLIENT_TIMEOUT_MS "${JACO_SEER_CLIENT_TIMEOUT_MS:-200000}"
+  set_config_export JACO_WORKPLACE_DEPENDENCY_WAIT_MS "${JACO_WORKPLACE_DEPENDENCY_WAIT_MS:-300000}"
+  set_config_export JACO_WORKPLACE_SEER_BRAIN_MAX_TOKENS "${JACO_WORKPLACE_SEER_BRAIN_MAX_TOKENS:-128}"
+  set_config_export JACO_WORKPLACE_SEER_BRAIN_TIMEOUT_MS "${JACO_WORKPLACE_SEER_BRAIN_TIMEOUT_MS:-180000}"
+
+  # Refresh this process from the canonical mode-600 runtime env.
+  # shellcheck disable=SC1090
+  source "$CONFIG"
+}
+
+configure_local_llamacpp(){
+  local mode server model base ctx preference litert_base
+  preference="${JACO_SEER_PROVIDER_PREFERENCE:-${JACO_MODEL_PROVIDER:-auto}}"
+  preference="${preference,,}"
+  # File presence is not permission to replace an explicit LiteRT/Ollama/off selection.
+  [[ "$preference" == auto || "$preference" == llamacpp ]] || return 0
+  if [[ "$preference" == auto && "${JACO_LITERT_AUTODETECT:-1}" != 0 ]]; then
+    litert_base="${JACO_LITERT_URL:-http://127.0.0.1:9379/v1}"
+    litert_base="${litert_base%/}"
+    [[ "$litert_base" == */v1 ]] || litert_base="$litert_base/v1"
+    # Preserve the normal LiteRT-first discovery order when Gemma is already
+    # serving. Validate the registry, not just an HTTP 200 from some process.
+    if curl -fsS --max-time 2 "$litert_base/models" 2>/dev/null |
+      node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s),ids=(Array.isArray(j.data)?j.data:[]).map(m=>String(m?.id||"").trim()).filter(Boolean),wanted=process.env.JACO_LITERT_MODEL||"";process.exit(ids.length&&(!wanted||ids.includes(wanted))?0:1)}catch{process.exit(1)}})'; then
+      return 0
+    fi
+  fi
+  mode="${JACO_LLAMACPP_AUTOSTART:-auto}"
+  [[ "$mode" == "0" || "$mode" == "off" || "$mode" == "false" ]] && return 0
+
+  server="${JACO_LLAMACPP_SERVER:-$HOME/llama.cpp/build/bin/llama-server}"
+  model="${JACO_LLAMACPP_MODEL:-$HOME/models/Bonsai-27B-Q1_0.gguf}"
+  base="${JACO_LLAMACPP_URL:-$LLAMACPP_DEFAULT_URL}"
+  ctx="${JACO_LLAMACPP_CTX:-8192}"
+  # 2048 was JACO's old implicit Bonsai default. It is enough for the tiny
+  # startup probe but not for Aura's real system+memory+tool prompt.
+  if [[ "$(basename "$model")" == "Bonsai-27B-Q1_0.gguf" && "$ctx" == "2048" ]]; then
+    ctx="8192"
+  fi
+
+  if [[ ! -x "$server" || ! -f "$model" ]]; then
+    if [[ "$mode" == "1" || "$mode" == "on" || "$mode" == "true" ]]; then
+      echo "llama.cpp autostart requested but server/model missing: $server / $model" >&2
+      return 34
+    fi
+    return 0
+  fi
+
+  set_config_export JACO_LLAMACPP_URL "$base"
+  set_config_export JACO_LLAMACPP_SERVER "$server"
+  set_config_export JACO_LLAMACPP_MODEL "$model"
+  set_config_export JACO_LLAMACPP_CTX "$ctx"
+  set_config_export JACO_SEER_PROVIDER_PREFERENCE "llamacpp"
+  set_config_export JACO_ENABLE_OLLAMA "0"
+  set_config_export JACO_SEER_INFERENCE_TIMEOUT_MS "240000"
+  set_config_export JACO_SEER_CLIENT_TIMEOUT_MS "260000"
+  set_config_export JACO_WORKPLACE_DEPENDENCY_WAIT_MS "300000"
+  set_config_export JACO_WORKPLACE_SEER_BRAIN_MAX_TOKENS "128"
+  set_config_export JACO_WORKPLACE_SEER_BRAIN_TIMEOUT_MS "240000"
+
+  # shellcheck disable=SC1090
+  source "$CONFIG"
+}
+
+workplace_running(){
+  curl -fsS --max-time 3 "$WORKPLACE_URL/health" 2>/dev/null |
+    node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s),a=j.supervisedAgents||{};process.exit(a.state==='RUNNING'&&a.nova?.state==='RUNNING'?0:1)}catch{process.exit(1)}})"
+}
+
+workplace_progress(){
+  local snapshot
+  snapshot="$(
+    curl -fsS --max-time 3 "$WORKPLACE_URL/health" 2>/dev/null |
+      node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s),a=j.supervisedAgents||{},m=a.model||{},se=a.seer||{},n=a.nova||{};process.stdout.write('overall='+(a.state||'UNKNOWN')+' provider='+(m.provider||'-')+' model='+(m.state||'UNKNOWN')+' seer='+(se.state||'UNKNOWN')+' nova='+(n.state||'UNKNOWN')+' novaPid='+(n.pid??'-'))}catch{process.exit(1)}})" 2>/dev/null || true
+  )"
+  if [[ -n "$snapshot" ]]; then
+    printf '[JACO] STARTING — %s\n' "$snapshot" >&2
+  else
+    printf '[JACO] STARTING — Workplace health not readable yet\n' >&2
+  fi
+}
+
+wait_workplace_running(){
+  local max="${1:-300}" i
+  printf '[JACO] STARTING — waiting for MODEL → SEER → BRAIN → NOVA\n' >&2
+  for ((i=1;i<=max;i++)); do
+    if workplace_running; then
+      workplace_progress
+      return 0
+    fi
+    if (( i == 1 || i % 5 == 0 )); then
+      workplace_progress
+    fi
+    sleep 1
+  done
+  workplace_progress
+  echo "Workplace became reachable but Durable Nova did not reach RUNNING within ${max}s" >&2
+  return 1
+}
+
+wait_supervised(){
+  local svc="$1" i
+  for ((i=1;i<=40;i++)); do
+    [[ -e "$(svc_path "$svc")/supervise/ok" ]] && return 0
+    sleep 0.25
+  done
+  echo "service is installed but not supervised: $svc" >&2
+  echo "start termux-services (service-daemon) or restart the Termux shell" >&2
+  return 1
+}
+
+emit(){
+  local state="$1"; shift
+  local msg="$1"; shift || true
+  if [[ "$JSON" == true ]]; then
+    JACO_STATE="$state" JACO_MESSAGE="$msg" JACO_SENTINEL_STATE="$(svc_state "$SENTINEL_SERVICE")" JACO_CORE_STATE="$(svc_state "$CORE_SERVICE")" JACO_WORKPLACE_STATE="$(svc_state "$WORKPLACE_SERVICE")" JACO_NOVA_STATE="$(svc_state "$NOVA_SERVICE")" node - <<'NODE'
+console.log(JSON.stringify({
+  state: process.env.JACO_STATE,
+  message: process.env.JACO_MESSAGE,
+  sentinel: process.env.JACO_SENTINEL_STATE,
+  core: process.env.JACO_CORE_STATE,
+  workplace: process.env.JACO_WORKPLACE_STATE,
+  legacyNova: process.env.JACO_NOVA_STATE,
+  at: new Date().toISOString()
+}))
+NODE
+  else
+    printf '[JACO] %s — %s\n' "$state" "$msg"
+    printf '  sentinel: %s\n' "$(svc_state "$SENTINEL_SERVICE")"
+    printf '  core:      %s\n' "$(svc_state "$CORE_SERVICE")"
+    printf '  workplace: %s\n' "$(svc_state "$WORKPLACE_SERVICE")"
+    printf '  nova(old): %s\n' "$(svc_state "$NOVA_SERVICE")"
+  fi
+}
+
+wait_url(){
+  local url="$1" label="$2" max="${3:-40}" i
+  for ((i=1;i<=max;i++)); do
+    if http_ok "$url"; then return 0; fi
+    sleep 0.25
+  done
+  echo "$label did not become ready: $url" >&2
+  return 1
+}
+
+ACTION="${1:-status}"; shift || true
+while (($#)); do
+  case "$1" in
+    --json) JSON=true; shift ;;
+    --profile) PROFILE="${2:-}"; shift 2 ;;
+    --provider) JACOCTL_PROVIDER_SELECTION="${2:-}"; [[ -n "$JACOCTL_PROVIDER_SELECTION" ]] || { echo '--provider requires a value' >&2; exit 2; }; shift 2 ;;
+    --model) JACOCTL_MODEL_SELECTION="${2:-}"; [[ -n "$JACOCTL_MODEL_SELECTION" ]] || { echo '--model requires a value' >&2; exit 2; }; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; usage; exit 2 ;;
+  esac
+done
+
+if [[ -n "$JACOCTL_PROVIDER_SELECTION" || -n "$JACOCTL_MODEL_SELECTION" ]]; then
+  [[ "$ACTION" == activate || "$ACTION" == restart ]] || { echo 'model selection requires activate or restart' >&2; exit 2; }
+  case "$JACOCTL_PROVIDER_SELECTION" in auto|litert|llamacpp|ollama) ;; *) echo '--provider must be auto, litert, llamacpp or ollama' >&2; exit 2 ;; esac
+  if [[ -n "$JACOCTL_MODEL_SELECTION" ]]; then
+    [[ "$JACOCTL_PROVIDER_SELECTION" != auto ]] || { echo '--model requires a specific provider' >&2; exit 2; }
+    [[ "$JACOCTL_MODEL_SELECTION" =~ ^[A-Za-z0-9/][A-Za-z0-9._:/-]*$ ]] || { echo 'invalid model ID' >&2; exit 2; }
+  fi
+fi
+
+need sv
+need curl
+need node
+[[ "$PROFILE" == full ]] || { echo "unsupported profile: $PROFILE" >&2; exit 2; }
+[[ -d "$(svc_path "$SENTINEL_SERVICE")" ]] || { echo "missing service: $(svc_path "$SENTINEL_SERVICE")" >&2; exit 31; }
+[[ -d "$(svc_path "$CORE_SERVICE")" ]] || { echo "missing service: $(svc_path "$CORE_SERVICE")" >&2; exit 31; }
+[[ -d "$(svc_path "$NOVA_SERVICE")" ]] || { echo "missing service: $(svc_path "$NOVA_SERVICE")" >&2; exit 31; }
+[[ -d "$(svc_path "$WORKPLACE_SERVICE")" ]] || { echo "missing service: $(svc_path "$WORKPLACE_SERVICE")" >&2; exit 31; }
+[[ -d "$(svc_path "$OLLAMA_SERVICE")" ]] || { echo "missing service: $(svc_path "$OLLAMA_SERVICE")" >&2; exit 31; }
+[[ -d "$(svc_path "$NOVA_BRIDGE_SERVICE")" ]] || { echo "missing service: $(svc_path "$NOVA_BRIDGE_SERVICE")" >&2; exit 31; }
+[[ -d "$(svc_path "$CDP_SERVICE")" ]] || { echo "missing service: $(svc_path "$CDP_SERVICE")" >&2; exit 31; }
+
+if [[ ! -e "$(svc_path "$SENTINEL_SERVICE")/supervise/ok" ]]; then
+  if command -v service-daemon >/dev/null 2>&1; then
+    LOGDIR="${LOGDIR:-$PREFIX/var/log}"
+    mkdir -p "$LOGDIR/sv"
+    SVDIR="$SVDIR" LOGDIR="$LOGDIR" service-daemon start >/dev/null 2>&1 || true
+  fi
+fi
+wait_supervised "$SENTINEL_SERVICE"
+wait_supervised "$CORE_SERVICE"
+wait_supervised "$WORKPLACE_SERVICE"
+wait_supervised "$NOVA_SERVICE"
+wait_supervised "$OLLAMA_SERVICE"
+wait_supervised "$NOVA_BRIDGE_SERVICE"
+wait_supervised "$CDP_SERVICE"
+
+case "$ACTION" in
+  activate)
+    sync_runtime_env
+    configure_local_llamacpp
+    refresh_service_definitions
+    svc_up "$SENTINEL_SERVICE"
+    wait_url "$SENTINEL_URL/health" Sentinel 40
+    quiesce_core_dependents
+    wait_service_down "$WORKPLACE_SERVICE" "${JACO_WORKPLACE_STOP_WAIT_SECONDS:-30}" ||
+      { emit DEGRADED 'Workplace did not stop cleanly; refusing overlapping activation'; exit 37; }
+    cleanup_stale_workplace_processes || { emit DEGRADED 'Orphan Workplace/model processes could not be stopped'; exit 40; }
+    prepare_core_owner || { rc=$?; emit DEGRADED 'Core ownership recovery failed; dependents are stopped'; exit "$rc"; }
+    # A Core that is not serving is restarted from a clean slate. On 2026-09-30 an old Core that no
+    # longer answered HTTP kept the Continuum ledger lock, so every new supervised Core stayed unready;
+    # prepare_core_owner only recovers when the endpoint answers.
+    if ! core_truth_ready; then
+      svc_down "$CORE_SERVICE" || true
+      wait_service_down "$CORE_SERVICE" "${JACO_CORE_STOP_WAIT_SECONDS:-30}" ||
+        { emit DEGRADED 'Core did not stop cleanly; refusing overlapping activation'; exit 39; }
+      cleanup_stale_core_processes || { rc=$?; emit DEGRADED 'Stale Core processes could not be stopped'; exit "$rc"; }
+    fi
+    svc_up "$CORE_SERVICE"
+    wait_core_truth_ready "${JACO_CORE_READY_WAIT_SECONDS:-120}" || { quiesce_core_dependents; emit DEGRADED 'Supervised Core failed stability gate; dependents are stopped'; exit 34; }
+    if [[ "${JACO_ENABLE_OLLAMA:-1}" == "1" ]]; then
+      svc_up "$OLLAMA_SERVICE"
+    else
+      svc_down "$OLLAMA_SERVICE" || true
+    fi
+    svc_up "$WORKPLACE_SERVICE"
+    wait_url "$WORKPLACE_URL/health" Workplace 80
+    wait_workplace_running "${JACO_ACTIVATE_WAIT_SECONDS:-300}" || { emit DEGRADED 'Workplace reachable but Durable Nova is not RUNNING'; exit 33; }
+    if [[ "${JACO_ENABLE_CDP:-1}" == "1" ]]; then
+      svc_up "$NOVA_BRIDGE_SERVICE"
+      svc_up "$CDP_SERVICE"
+    else
+      svc_down "$NOVA_BRIDGE_SERVICE" || true
+      svc_down "$CDP_SERVICE" || true
+    fi
+    core_truth_ready || { emit DEGRADED 'Core endpoint is reachable but supervised Core is restarting or unavailable'; exit 34; }
+    emit READY 'canonical Sentinel, Core, and Workplace are supervised; Workplace owns Durable Nova'
+    ;;
+  deactivate)
+    svc_down "$CDP_SERVICE" || true
+    svc_down "$NOVA_BRIDGE_SERVICE" || true
+    svc_down "$OLLAMA_SERVICE" || true
+    svc_down "$WORKPLACE_SERVICE" || true
+    svc_down "$NOVA_SERVICE" || true
+    svc_down "$CORE_SERVICE" || true
+    emit SENTINEL_ONLY 'Core and Workplace stopped; Sentinel/MCP bootstrap remains available'
+    ;;
+  restart)
+    sync_runtime_env
+    configure_local_llamacpp
+    refresh_service_definitions
+    svc_down "$CDP_SERVICE" || true
+    svc_down "$NOVA_BRIDGE_SERVICE" || true
+    svc_down "$OLLAMA_SERVICE" || true
+    svc_down "$WORKPLACE_SERVICE" || true
+    svc_down "$NOVA_SERVICE" || true
+    svc_down "$CORE_SERVICE" || true
+
+    # A real restart requires the old owners to be gone before any svc_up.
+    # Otherwise runit can cancel an in-flight TERM and leave old code alive.
+    wait_service_down "$WORKPLACE_SERVICE" "${JACO_WORKPLACE_STOP_WAIT_SECONDS:-30}" ||
+      { emit DEGRADED 'Workplace did not stop cleanly; refusing overlapping restart'; exit 37; }
+    wait_service_down "$NOVA_SERVICE" "${JACO_LEGACY_NOVA_STOP_WAIT_SECONDS:-15}" ||
+      { emit DEGRADED 'Legacy Nova did not stop cleanly; refusing overlapping restart'; exit 38; }
+    wait_service_down "$CORE_SERVICE" "${JACO_CORE_STOP_WAIT_SECONDS:-30}" ||
+      { emit DEGRADED 'Core did not stop cleanly; refusing overlapping restart'; exit 39; }
+    # The supervised Core is down, so any Core still running from this checkout is stale (it may hold
+    # the ledger lock without answering HTTP).
+    cleanup_stale_core_processes || { rc=$?; emit DEGRADED 'Stale Core processes could not be stopped'; exit "$rc"; }
+    cleanup_stale_workplace_processes || { emit DEGRADED 'Orphan Workplace/model processes could not be stopped'; exit 40; }
+
+    prepare_core_owner || { rc=$?; emit DEGRADED 'Core ownership recovery failed; dependents are stopped'; exit "$rc"; }
+    svc_up "$CORE_SERVICE"
+    wait_core_truth_ready "${JACO_CORE_READY_WAIT_SECONDS:-120}" || { quiesce_core_dependents; emit DEGRADED 'Supervised Core failed stability gate; dependents are stopped'; exit 34; }
+    if [[ "${JACO_ENABLE_OLLAMA:-1}" == "1" ]]; then svc_up "$OLLAMA_SERVICE"; fi
+    svc_up "$WORKPLACE_SERVICE"
+    wait_url "$WORKPLACE_URL/health" Workplace 80
+    wait_workplace_running "${JACO_ACTIVATE_WAIT_SECONDS:-300}" || { emit DEGRADED 'Workplace reachable but Durable Nova is not RUNNING'; exit 33; }
+    if [[ "${JACO_ENABLE_CDP:-1}" == "1" ]]; then
+      svc_up "$NOVA_BRIDGE_SERVICE"
+      svc_up "$CDP_SERVICE"
+    fi
+    core_truth_ready || { emit DEGRADED 'Core endpoint is reachable but supervised Core is restarting or unavailable'; exit 34; }
+    emit READY 'Core restarted; Workplace resumed Durable Nova; local model/CDP auxiliaries restored'
+    ;;
+  status)
+    if core_truth_ready && workplace_running; then
+      emit READY 'Supervised Core, Workplace, and Durable Nova are RUNNING'
+    elif http_ok "$CORE_URL/api/runtime/identity" && ! svc_stable "$CORE_SERVICE"; then
+      emit DEGRADED 'Core endpoint responds but supervised Core is restarting; possible stale process or port collision'
+    elif http_ok "$CORE_URL/api/runtime/identity" && http_ok "$WORKPLACE_URL/health"; then
+      emit DEGRADED 'Core and Workplace reachable; Durable Nova is not RUNNING'
+    elif http_ok "$SENTINEL_URL/health"; then
+      emit SENTINEL_ONLY 'Sentinel reachable; Core unavailable'
+    else
+      emit STOPPED 'Sentinel and Core unavailable'
+    fi
+    ;;
+  *) echo "unsupported action: $ACTION" >&2; usage; exit 2 ;;
+esac

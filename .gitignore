@@ -1,0 +1,46 @@
+# Local agent/runtime state
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+.nova/
+.jaco/
+agents/.agent-state/
+.agent-state/
+.jaco-emergency-stop.json
+.checkpoints/
+latest-checkpoint.json
+
+# Dependencies and build output
+node_modules/
+dist/
+.gradle/
+
+# Local configuration and secrets
+*.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs and generated media
+logs/
+*.log
+NOVA_AUTONOMOUS_LOG.txt
+NOVA_PAYMENT_MONITOR.md
+*.png
+
+# Historical working material is retained under legacy/, not in active roots
+scratchpad/
+README.md.bak
+ecosystem.config.cjs
+
+# Private operational memory: never publish agent experience or operator data
+/memory/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Lite download output (tools/build-lite.mjs): inspect, never commit
+/build/
+
+# The Lite zip is copied in at deploy time, never committed
+/site/public/download/

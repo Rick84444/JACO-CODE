@@ -1,0 +1,46 @@
+# JACO Autonomous Agent OS — Extended Technical Specification (llms-full.txt)
+
+## System Architecture
+
+JACO (Just Autonomous Agent Orchestrator) is a full-stack agentic runtime built on TypeScript, Express, Vite, and React, engineered for both cloud execution and edge environments (such as Android via Termux).
+
+### 1. PODAR Autonomous Execution Loop
+JACO operates using a continuous Perceive-Orient-Decide-Act-Reflect (PODAR) feedback loop:
+1. **Perceive**: Collects environment telemetry (CPU, RAM, Termux battery status, thermal state, incoming messages).
+2. **Orient**: Analyzes active mission bottlenecks, memory context, and skill requirements.
+3. **Decide**: Selects sub-agent delegation, designs patch strategies, or schedules terminal actions.
+4. **Act**: Executes code modifications, terminal commands, or A2A RPC requests with human-in-the-loop approval.
+5. **Reflect**: Evaluates results, archives memory packets, and packages reusable skills.
+
+### 2. Reality Classification System
+JACO enforces strict evidence verification tags across all logs and state responses:
+- `[REAL]`: Verified and currently running in live code or verified shell output.
+- `[PROTOTYPE]`: Functional prototype requiring further hardening.
+- `[SIMULATED]`: Behavioral UI mock or placeholder response.
+- `[SPEC]`: Architecture definition or intended design.
+- `[RISK]`: Identified fragility or unverified boundary condition.
+- `[UNKNOWN]`: Insufficient telemetry data.
+
+### 3. Agent-to-Agent (A2A) Marketplace Protocol
+JACO exposes structured node manifests (`AgentCard` schema version `1.0.0-A2A`) supporting:
+- Decentralized P2P discovery over `/api/a2a/agentcard.json`.
+- RPC protocol endpoints for remote sub-agent task delegation.
+- Skill packaging and monetization models with royalty attribution.
+
+### 4. Bounded Security Model & Human-in-the-Loop
+- Dangerous actions (`terminal_exec` and `file_write`) create pending actions in `pendingActions`.
+- Real-time approval requests are pushed to the user's mobile device via `ntfy` notifications.
+- Execution occurs only after explicit user approval through `/api/actions/:id/approve` or local UI toggle.
+
+### 5. API Endpoints Reference
+- `GET /api/a2a/agentcard.json`: Returns node identity and A2A capabilities.
+- `POST /api/openclaw/execute`: Triggers OpenClaw web crawling or terminal actions.
+- `GET /api/system/status`: Returns host system status and Termux battery telemetry.
+- `POST /api/a2a/publish-agentcard`: Publishes agent cards across P2P networks.
+- `GET /llms.txt`: Machine-readable summary for LLMs and AI search engines.
+- `GET /ai-plugin.json`: OpenAPI / ChatGPT AI plugin specification.
+
+### 6. Frequently Asked Questions
+- **Is JACO open source?** Yes, hosted at https://github.com/Rick84444/jaco-code.
+- **Can JACO run offline on Android?** Yes, via Termux with local Ollama models (Gemma, Qwen, DeepSeek).
+- **How does JACO differ from LangGraph or AutoGPT?** JACO combines an on-device runtime, Termux system bridges, interactive UI, and an A2A marketplace protocol in a single unified OS.

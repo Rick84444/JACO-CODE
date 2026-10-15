@@ -1,0 +1,40 @@
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://mimirpower.se/#jaco",
+      "name": "JACO Autonomous Agent OS",
+      "alternateName": ["JACO", "JACO Runtime", "Just Autonomous Agent Orchestrator"],
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "Agentic AI Orchestrator & Runtime",
+      "operatingSystem": ["Android via Termux", "Linux", "Windows", "Docker / Cloud Run"],
+      "description": "A user-controlled multi-LLM runtime for persistent mission state, bounded tool execution, verification, audit logging, and local AI orchestration.",
+      "url": "https://mimirpower.se/jaco",
+      "downloadUrl": "https://github.com/Rick84444/jaco-code",
+      "softwareVersion": "1.0.0-A2A",
+      "license": "https://mimirpower.se/jaco/license",
+      "creator": {
+        "@type": "Organization",
+        "@id": "https://mimirpower.se/#organization",
+        "name": "Dick Jacobsson / Mimir Power"
+      },
+      "featureList": [
+        "PODAR Autonomous Execution Loop",
+        "Multi-LLM Orchestration (Gemini, Ollama, OpenAI)",
+        "Persistent Mission Memory & State Synchronization",
+        "Mandate-Driven Human-in-the-Loop Security Approvals",
+        "Termux Android Hardware Telemetry & API Integration",
+        "OpenClaw Web Scraping & Execution Engine",
+        "Agent-to-Agent (A2A) Marketplace & Protocol Specification"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "availability": "https://schema.org/OnlineOnly",
+        "url": "https://mimirpower.se/jaco"
+      }
+    }
+  ]
+}

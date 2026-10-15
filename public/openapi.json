@@ -1,0 +1,78 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "JACO Autonomous Agent OS API",
+    "description": "REST API and A2A RPC endpoints for JACO runtime node control, OpenClaw tools, and system state.",
+    "version": "1.0.0-A2A"
+  },
+  "servers": [
+    {
+      "url": "https://mimirpower.se",
+      "description": "Production Node Endpoint"
+    }
+  ],
+  "paths": {
+    "/api/a2a/agentcard.json": {
+      "get": {
+        "summary": "Get A2A AgentCard Manifest",
+        "description": "Returns the node identity, verified capabilities, supported protocols, and marketplace metadata.",
+        "responses": {
+          "200": {
+            "description": "Successful AgentCard Manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/system/status": {
+      "get": {
+        "summary": "Get System & Termux Telemetry",
+        "description": "Returns host CPU, RAM, Termux battery telemetry, and active process count.",
+        "responses": {
+          "200": {
+            "description": "System Status Payload"
+          }
+        }
+      }
+    },
+    "/api/openclaw/execute": {
+      "post": {
+        "summary": "Execute OpenClaw Tool Action",
+        "description": "Triggers an OpenClaw crawl or terminal action with human-in-the-loop approval or auto-approval.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": { "type": "string" },
+                  "url": { "type": "string" },
+                  "mode": { "type": "string", "enum": ["crawl", "extract", "search"] },
+                  "autoApprove": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result or queued action status"
+          }
+        }
+      }
+    },
+    "/api/actions": {
+      "get": {
+        "summary": "List Pending Security Actions",
+        "description": "Returns the list of pending approval actions requiring user verification."
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "schema": "jaco.reflective-futures.test-report.v1",
+  "generatedAtUTC": "2026-09-08T11:31:44.689381Z",
+  "releaseId": "jaco-code-0.22.0",
+  "sourceTreeVerification": {
+    "reflectiveStatic": "62/62 PASS",
+    "reflectiveBehavior": "14/14 PASS",
+    "continuumBehavior": "11/11 PASS",
+    "continuumStandalone": "PASS",
+    "a2aContinuum": "PASS",
+    "truthfulRuntime": "15/15 PASS",
+    "handsOffSeer": "49/49 PASS",
+    "connectedE2E": "7/7 PASS",
+    "wifiMcpContract": "PASS",
+    "gatewayStructural": "28/28 PASS",
+    "gatewaySecuritySdk": "PASS",
+    "secretPatternScan": "0 hits",
+    "rollupNative": "6/6 PASS",
+    "sqliteCjs": "7/7 PASS",
+    "tsTsxParser": "203/203 PASS",
+    "mjsSyntax": "76/76 PASS",
+    "bashSyntax": "18/18 PASS",
+    "jsonParse": "36/36 PASS"
+  },
+  "semanticTsc": {
+    "state": "NOT_VERIFIED",
+    "reason": "dependency/type-definition tree unavailable in build environment; tsc exited with module/type resolution errors"
+  },
+  "postZip": "PENDING_AT_SOURCE_FREEZE"
+}

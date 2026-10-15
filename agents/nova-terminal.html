@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NOVA Terminal</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0a0f;
+      color: #e0e0e0;
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      overflow: hidden;
+      height: 100vh;
+      padding: 12px;
+    }
+
+    .terminal {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100%;
+      border: 1px solid #333;
+      background: #000;
+    }
+
+    .header {
+      padding: 8px 12px;
+      border-bottom: 1px solid #333;
+      font-size: 11px;
+      color: #666;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .content {
+      overflow-y: auto;
+      padding: 12px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .line {
+      margin-bottom: 4px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .label {
+      color: #00ff88;
+      font-weight: bold;
+      display: inline-block;
+      width: 80px;
+    }
+
+    .info { color: #00aaff; }
+    .success { color: #00ff88; }
+    .warning { color: #ffaa00; }
+    .error { color: #ff003c; }
+    .action { color: #aa00ff; }
+    .track { color: #ff003c; }
+
+    .status-bar {
+      padding: 8px 12px;
+      border-top: 1px solid #333;
+      font-size: 11px;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 12px;
+      color: #666;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .stat-label {
+      font-size: 9px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .stat-value {
+      color: #00ff88;
+      font-weight: bold;
+      font-size: 13px;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #0a0a0f;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #333;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #555;
+    }
+  </style>
+</head>
+<body>
+  <div class="terminal">
+    <div class="header">
+      NOVA v1.0.0 Terminal | Agent ID: nova-1789395323394 | Mode: DISCOVER
+    </div>
+
+    <div class="content" id="output"></div>
+
+    <div class="status-bar">
+      <div class="stat">
+        <div class="stat-label">State</div>
+        <div class="stat-value" id="stat-state">DISCOVERING</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Platforms</div>
+        <div class="stat-value" id="stat-platforms">3</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Attempts</div>
+        <div class="stat-value" id="stat-attempts">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Revenue</div>
+        <div class="stat-value" id="stat-revenue">0 SEK</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Uptime</div>
+        <div class="stat-value" id="stat-uptime">0:00</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Connection</div>
+        <div class="stat-value" id="stat-connection">CONNECTING</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const output = document.getElementById('output');
+    const startTime = Date.now();
+    let attempts = 0;
+
+    function log(label, message, type = 'info') {
+      const line = document.createElement('div');
+      line.className = `line ${type}`;
+      const labelEl = document.createElement('span');
+      labelEl.className = 'label';
+      labelEl.textContent = `[${label}]`;
+      const msgEl = document.createElement('span');
+      msgEl.textContent = ` ${message}`;
+      line.appendChild(labelEl);
+      line.appendChild(msgEl);
+      output.appendChild(line);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function updateStats() {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const mins = Math.floor(elapsed / 60);
+      const secs = elapsed % 60;
+      document.getElementById('stat-uptime').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    // Simulate Nova execution log
+    const logs = [
+      { label: 'NOVA', msg: 'Mode: DISCOVER', type: 'info' },
+      { label: 'NOVA', msg: 'Autonomously discovering and registering on marketplaces...', type: 'info' },
+      { label: 'NOVA', msg: 'Attempting registration on a2acolony.com...', type: 'action' },
+      { label: 'CDP', msg: 'Navigating to https://a2acolony.com/', type: 'track' },
+      { label: 'NOVA', msg: 'Page loaded', type: 'success' },
+      { label: 'VISION', msg: 'Detected registration form (confidence: 0.87)', type: 'track' },
+      { label: 'TRACTION', msg: 'Target locked: Register button', type: 'track' },
+      { label: 'CDP', msg: 'Filling form fields...', type: 'action' },
+      { label: 'NOVA', msg: 'Attempting registration on a2amarket.live...', type: 'action' },
+      { label: 'CDP', msg: 'Navigating to https://a2amarket.live/', type: 'track' },
+      { label: 'NOVA', msg: 'Page loaded', type: 'success' },
+      { label: 'STRIPE', msg: 'Payment verification ready', type: 'success' },
+      { label: 'NOVA', msg: 'Attempting registration on agentverse.ai...', type: 'action' },
+      { label: 'CDP', msg: 'Navigating to https://agentverse.ai/', type: 'track' },
+      { label: 'VISION', msg: 'Marketplace interface detected', type: 'info' },
+    ];
+
+    logs.forEach((l, i) => {
+      setTimeout(() => {
+        log(l.label, l.msg, l.type);
+        attempts = Math.floor((i + 1) / 3);
+        document.getElementById('stat-attempts').textContent = attempts.toString();
+      }, i * 500);
+    });
+
+    // Connection status
+    const stateWs = new WebSocket('ws://127.0.0.1:8766');
+    stateWs.onopen = () => {
+      document.getElementById('stat-connection').textContent = 'CONNECTED';
+      document.getElementById('stat-connection').style.color = '#00ff88';
+    };
+    stateWs.onerror = () => {
+      document.getElementById('stat-connection').textContent = 'FAILED';
+      document.getElementById('stat-connection').style.color = '#ff003c';
+    };
+    stateWs.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'thought') {
+        log(msg.level.toUpperCase(), msg.message, msg.level);
+      } else if (msg.type === 'traction') {
+        document.getElementById('stat-state').textContent = msg.state.state;
+      }
+    };
+
+    // Update timer
+    setInterval(updateStats, 1000);
+
+    // Log initial startup
+    setTimeout(() => {
+      log('NOVA', 'Terminal initialized', 'success');
+      log('NOVA', 'Agent ID: nova-1789395323394', 'info');
+      log('NOVA', 'Connected to surveillance bridge', 'success');
+    }, 100);
+  </script>
+</body>
+</html>

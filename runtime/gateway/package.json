@@ -1,0 +1,28 @@
+{
+  "name": "@jaco/autonomus-gateway",
+  "version": "0.22.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/sentinel.mjs",
+    "mcp:stdio": "node src/mcp-stdio.mjs",
+    "test:unit": "node test/tool-registry.test.mjs && node test/security.test.mjs && node test/sdk-boundary.test.mjs && node test/github-bootstrap-control.test.mjs && bash test/jacoctl.test.sh",
+    "test:mcp": "node test/mcp-runtime.test.mjs",
+    "test:a2a": "node test/a2a-continuum.test.mjs && node test/a2a-v1-production.test.mjs",
+    "test": "npm run test:unit && npm run test:mcp && npm run test:a2a",
+    "a2a:start": "node src/a2a-server.mjs"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "1.1.0",
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "express": "^5.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0"
+  }
+}

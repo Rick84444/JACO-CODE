@@ -1,0 +1,91 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { ContinuumEventStore } from '../../src/server/continuum/eventStore.mjs';
+import { OperatorControl } from '../../src/server/continuum/operatorControl.mjs';
+import { MissionLedger } from '../../src/server/continuum/missionLedger.mjs';
+import { CommitmentGraph } from '../../src/server/continuum/commitmentGraph.mjs';
+import { EvidenceLedger } from '../../src/server/continuum/evidenceLedger.mjs';
+import { EconomicGovernor } from '../../src/server/continuum/economicGovernor.mjs';
+import { ContinuumModelRouter } from '../../src/server/continuum/modelRouter.mjs';
+import { ExecutionLeaseManager } from '../../src/server/continuum/leaseManager.mjs';
+import { RuntimeHub } from '../../src/server/continuum/runtimeHub.mjs';
+import { KnowledgeStore } from '../../src/server/continuum/knowledgeStore.mjs';
+import { HypothesisEngine } from '../../src/server/continuum/hypothesisEngine.mjs';
+import { CapabilityCompiler } from '../../src/server/continuum/capabilityCompiler.mjs';
+import { SemanticBrowserRuntime } from '../../src/server/continuum/semanticBrowser.mjs';
+import { ContinuumRuntime } from '../../src/server/continuum/continuumRuntime.mjs';
+
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-continuum-test-'));
+const pass=[];
+function ok(name,fn){return Promise.resolve().then(fn).then(()=>{pass.push(name);console.log(`PASS ${name}`);});}
+
+class FakeBrowserClient {
+  constructor(){this.n=0;this.receipts=[];}
+  async survey(){this.n+=1;return {fingerprint:'web:test:/:'+this.n,semanticSignature:'sem:test:'+this.n,page:{url:'https://example.test/app',title:'Example'},actionable:[{route:'#go',name:this.n===1?'Go':'Go now',controlType:'button',automationId:'go',patterns:['click'],stableKey:'go'}],nodesWalked:1,walkMs:1,budgetExhausted:false,recognised:this.n>1,semanticMatched:true,reuseAvailable:this.n>1};}
+  async observe(){return {page:{url:'https://example.test/app',title:'Example'},controls:[`BUTTON:go:${this.n}`],bodyLength:100+this.n};}
+  async executeVerified(action){const r={action_id:`a${this.receipts.length+1}`,action_type:action.type,started_at:new Date().toISOString(),finished_at:new Date().toISOString(),success:true,verified:true,before_hash:'x',after_hash:'y',page:{url:'https://example.test/app',title:'Example'},result:{ok:true},verification:{state_changed:true,semantic_required:Boolean(action.postcondition),semantic_satisfied:action.postcondition?true:null,level:action.postcondition?'SEMANTIC':'STATE_CHANGE'}};this.receipts.push(r);return r;}
+}
+class FakeSessions {constructor(){this.client=new FakeBrowserClient();this.attached=true;}getClient(){return this.attached?this.client:null;}snapshot(){return {attached:this.attached,cdpPort:9222,urlIncludes:'example.test',attachedAt:new Date().toISOString()};}async targets(){return [{type:'page',url:'https://example.test/app',title:'Example'}];}async attach(){this.attached=true;return this.snapshot();}async detach(){this.attached=false;}}
+
+try{
+  const events=new ContinuumEventStore(path.join(root,'ledger'));
+  await ok('event-store.hash-chain',()=>{events.append({stream:'test',type:'one',data:{x:1}});events.append({stream:'test',type:'two',data:{x:2}});assert.equal(events.verify().valid,true);assert.equal(events.verify().count,2);});
+
+  await ok('persistence.secret-redaction',()=>{const secret=['s','k','-','abcdefghijkl','mnopqrstuv','123456'].join('');const e=events.append({stream:'test',type:'secret',data:{apiKey:secret,nested:{authorization:'Bearer abcdefghijklmnop',safe:'ok'}}});assert.equal(e.data.apiKey,'[REDACTED]');assert.equal(e.data.nested.authorization,'[REDACTED]');assert.equal(e.data.nested.safe,'ok');const raw=fs.readFileSync(path.join(root,'ledger','events.jsonl'),'utf8');assert.equal(raw.includes(secret),false);});
+
+  const operator=new OperatorControl(root,events);
+  await ok('operator.emergency-latch',()=>{operator.emergencyStop('operator','test');assert.throws(()=>operator.assertExecutionAllowed(),/EMERGENCY_STOP_LATCHED/);assert.throws(()=>operator.resume(),/reset/i);operator.resetEmergency();operator.resume();assert.equal(operator.snapshot().mode,'RUNNING');});
+
+  const missions=new MissionLedger(root,events), commitments=new CommitmentGraph(root,events), evidence=new EvidenceLedger(root,events);
+  let mission,commitment,ev;
+  await ok('mission.commitment.evidence-state-machine',()=>{mission=missions.create({objective:'Build verified capability',state:'ACTIVE'});commitment=commitments.create({missionId:mission.id,title:'Verify step'});commitments.transition(commitment.id,'ACCEPTED');commitments.transition(commitment.id,'ACTIVE');commitments.transition(commitment.id,'VERIFYING');assert.throws(()=>commitments.transition(commitment.id,'FULFILLED'),/requires evidence/);ev=evidence.record({kind:'test',claim:'proof',verified:true,verificationMethod:'test',data:{ok:true}});commitments.transition(commitment.id,'FULFILLED',{evidenceRefs:[ev.id]});missions.transition(mission.id,'VERIFYING',{evidenceRefs:[ev.id]});assert.throws(()=>missions.transition(mission.id,'FULFILLED',{evidenceRefs:[]}),/requires evidence/);missions.transition(mission.id,'FULFILLED',{evidenceRefs:[ev.id]});assert.equal(missions.get(mission.id).state,'FULFILLED');});
+
+  const economic=new EconomicGovernor(root,events);
+  await ok('economic.default-deny-and-hard-cap',()=>{const denied=economic.authorizeCloud({estimatedUsd:0.01});assert.equal(denied.allowed,false);economic.updatePolicy({cloudEnabled:true,dailyCloudUsd:0.1,monthlyCloudUsd:0.2,maxCloudUsdPerTask:0.05});assert.equal(economic.authorizeCloud({estimatedUsd:0.06}).allowed,false);const allowed=economic.authorizeCloud({estimatedUsd:0.04});assert.equal(allowed.allowed,true);economic.settleCloud(allowed.reservationId,0.03,{input_tokens:10,output_tokens:10});assert.ok(economic.snapshot().state.dailySpentUsd>=0.03);});
+  await ok('model-router.remote-provider-always-requires-economic-authorization',async()=>{const gate=new EconomicGovernor(path.join(root,'remote-gate'),events);const remote={id:'remote-test',local:false,protocol:'openai-chat',baseUrl:'http://127.0.0.1:1',model:'test'};const providers={get:()=>remote,publicView:p=>p,candidates:()=>[{provider:remote,score:1,estimatedCostUsd:0}],markFailure:()=>{}};const router=new ContinuumModelRouter({events,economic:gate,operator,providers});await assert.rejects(router.reason({providerId:remote.id,prompt:'test'}),/CLOUD_BUDGET_REFUSED:CLOUD_DISABLED_BY_POLICY/);gate.updatePolicy({cloudEnabled:true},'test');await assert.rejects(router.reason({providerId:remote.id,prompt:'test'}),/CLOUD_BUDGET_REFUSED:COST_ESTIMATE_REQUIRED/);});
+  await ok('model-router.ambiguous-remote-failure-retains-budget-reservation',async()=>{const gate=new EconomicGovernor(path.join(root,'remote-unknown'),events);gate.updatePolicy({cloudEnabled:true},'test');const remote={id:'remote-unknown',local:false,protocol:'openai-chat',baseUrl:'http://127.0.0.1:1',model:'test'};const providers={get:()=>remote,publicView:p=>p,candidates:()=>[],markFailure:()=>{}};const router=new ContinuumModelRouter({events,economic:gate,operator,providers});await assert.rejects(router.reason({providerId:remote.id,prompt:'test',estimatedUsd:0.01}),/ALL_PROVIDERS_FAILED/);const reservations=Object.values(gate.snapshot().state.reservations);assert.equal(reservations.length,1);assert.equal(reservations[0].status,'UNKNOWN_OUTCOME');assert.equal(gate.snapshot().state.reservedUsd,0.01);});
+
+  const leases=new ExecutionLeaseManager(root,events,operator,economic);
+  let lease;
+  await ok('lease.bounded-and-high-consequence-checkpoint',()=>{lease=leases.issue({missionId:'m',agentId:'a',allowedActions:['browser.click'],maxActions:2,durationMs:60000});leases.authorize(lease.id,{action:'browser.click'});assert.throws(()=>leases.authorize(lease.id,{action:'browser.click',consequence:'PUBLISH'}),/CHECKPOINT_REQUIRED/);leases.consume(lease.id,{action:'browser.click',verified:true});assert.equal(leases.get(lease.id).actionsUsed,1);});
+
+  const hub=new RuntimeHub(root,events);
+  await ok('runtime-hub.agent-message-task',()=>{hub.registerAgent({id:'agent-a',capabilities:['MODEL_REASON']});hub.registerAgent({id:'agent-b',capabilities:['BROWSER_BATCH']});const msg=hub.sendMessage({from:'agent-a',to:'agent-b',type:'handoff',content:{x:1}});assert.equal(hub.inbox('agent-b')[0].id,msg.id);const task=hub.createTask({title:'Reason',kind:'MODEL_REASON',requirements:['MODEL_REASON']});assert.equal(hub.nextRunnableTask(['BROWSER_BATCH']),null);assert.equal(hub.nextRunnableTask(['MODEL_REASON']).id,task.id);hub.claimTask(task.id,'agent-a',null);const tev=evidence.record({kind:'task',claim:'done',verified:true,verificationMethod:'test'});hub.completeTask(task.id,{agentId:'agent-a',evidenceRefs:[tev.id]});assert.equal(hub.listTasks({status:'COMPLETED'}).length,1);});
+  await ok('runtime-hub.stale-active-task-never-replays-without-reconciliation',()=>{const task=hub.createTask({title:'Mutating browser batch',kind:'BROWSER_BATCH',requirements:['BROWSER_BATCH'],maxAttempts:3});hub.claimTask(task.id,'agent-b',null);hub.state.tasks[task.id].updatedAt=new Date(Date.now()-180000).toISOString();assert.deepEqual(hub.recoverStaleTasks({staleAfterMs:120000}),[task.id]);assert.equal(hub.listTasks({status:'UNKNOWN_OUTCOME'}).some(t=>t.id===task.id),true);assert.equal(hub.nextRunnableTask(['BROWSER_BATCH']),null);assert.throws(()=>hub.failTask(task.id,{retry:true}),/UNKNOWN_OUTCOME_RECONCILIATION_REQUIRED/);assert.throws(()=>hub.completeTask(task.id,{agentId:'agent-b',evidenceRefs:['claimed']}),/UNKNOWN_OUTCOME_RECONCILIATION_REQUIRED/);});
+
+  const knowledge=new KnowledgeStore(root,events,evidence), hypotheses=new HypothesisEngine(root,events,evidence);
+  await ok('knowledge.evidence-lifecycle-and-retrieval',()=>{
+    const pending=evidence.record({kind:'test',claim:'pending proof'});
+    assert.throws(()=>knowledge.put({id:'ko',purpose:'retry strategy',evidenceRefs:['missing']}),/not found/);
+    assert.throws(()=>knowledge.put({id:'ko',purpose:'retry strategy',evidenceRefs:[pending.id],verificationStatus:'VERIFIED'}),/not verified/);
+    const initial=knowledge.put({id:'ko',purpose:'retry strategy',confidence:0.9,evidenceRefs:[pending.id]});
+    assert.equal(initial.verificationStatus,'UNVERIFIED');
+    evidence.verify(pending.id,{method:'test'});
+    assert.equal(knowledge.setStatus('ko','VERIFIED').verificationStatus,'VERIFIED');
+    assert.equal(knowledge.search('retry')[0].id,'ko');
+    const revised=knowledge.put({id:'ko',purpose:'revised retry strategy'});
+    assert.equal(revised.verificationStatus,'UNVERIFIED');
+    assert.throws(()=>knowledge.setStatus('ko','STALE'),/reason required/);
+    assert.equal(knowledge.setStatus('ko','STALE',{reason:'repository contract changed'}).verificationStatus,'STALE');
+    assert.equal(knowledge.search('retry').length,0);
+    assert.equal(knowledge.search('retry',{includeInactive:true}).length,1);
+  });
+  await ok('hypothesis.evidence-ranked-selection',()=>{const set=hypotheses.createSet({problem:'choose',criteria:[{name:'success',weight:2,direction:'max'},{name:'cost',weight:1,direction:'min'}]});const a=hypotheses.addCandidate(set.id,{label:'A'}),b=hypotheses.addCandidate(set.id,{label:'B'});hypotheses.evaluate(set.id,a.id,{metrics:{success:0.9,cost:5},evidenceRefs:[ev.id]});hypotheses.evaluate(set.id,b.id,{metrics:{success:0.8,cost:1},evidenceRefs:[ev.id]});const ranked=hypotheses.rank(set.id);assert.equal(ranked[0].id,b.id);const selected=hypotheses.selectWinner(set.id);assert.equal(selected.winnerId,b.id);});
+  await ok('hypothesis.falsification-is-evidence-backed-and-not-selectable',()=>{const set=hypotheses.createSet({problem:'falsify',criteria:[{name:'success',weight:1,direction:'max'}]});const bad=hypotheses.addCandidate(set.id,{label:'bad'}),good=hypotheses.addCandidate(set.id,{label:'good'});const pending=evidence.record({kind:'test',claim:'unverified failure'});assert.throws(()=>hypotheses.evaluate(set.id,bad.id,{status:'FALSIFIED',reason:'failed',evidenceRefs:[pending.id]}),/not verified/);assert.throws(()=>hypotheses.evaluate(set.id,bad.id,{status:'VERIFIED'}),/requires evidenceRefs/);assert.throws(()=>hypotheses.evaluate(set.id,bad.id,{status:'DONE'}),/invalid hypothesis/);const falsified=hypotheses.evaluate(set.id,bad.id,{status:'FALSIFIED',reason:'experiment contradicted prediction',evidenceRefs:[ev.id],metrics:{success:1}});assert.equal(falsified.rejectionReason,'experiment contradicted prediction');assert.equal(hypotheses.rank(set.id).length,0);assert.throws(()=>hypotheses.selectWinner(set.id,bad.id),/not eligible/);assert.throws(()=>hypotheses.evaluate(set.id,bad.id,{status:'EVALUATED'}),/falsified candidate is closed/);hypotheses.evaluate(set.id,good.id,{status:'VERIFIED',evidenceRefs:[ev.id],metrics:{success:0.9}});assert.equal(hypotheses.selectWinner(set.id).winnerId,good.id);assert.throws(()=>hypotheses.evaluate(set.id,good.id,{status:'EVALUATED'}),/closed/);const recovered=new HypothesisEngine(root,events,evidence);assert.equal(recovered.get(set.id).candidates.find(c=>c.id===bad.id).status,'FALSIFIED');});
+
+  const compiler=new CapabilityCompiler(root,events,knowledge);
+  await ok('capability.compiler.requires-repeated-verified-success',()=>{const actions=[{type:'click',selector:{css:'#go'},postcondition:{type:'selector_exists',selector:'#done'}}];for(let i=0;i<3;i++)compiler.recordTrajectory({workflowKey:'publish-test',actions,verified:true,success:true,evidenceRefs:[ev.id]});const {capability}=compiler.compile('publish-test');assert.equal(capability.successCount,3);assert.equal(capability.status,'DRAFT_VERIFIED_PATTERN');compiler.promote(capability.id,{evidenceRefs:[ev.id]});assert.equal(compiler.get(capability.id).status,'ACTIVE');});
+
+  await ok('semantic-browser.delta-and-batch',async()=>{const fakeSessions=new FakeSessions();const browser=new SemanticBrowserRuntime({sessions:fakeSessions,events,evidence,leases,operator});const first=await browser.observeSemantic();const second=await browser.observeSemantic();assert.equal(first.delta.summary.initial,true);assert.equal(second.delta.changed,true);const l=leases.issue({missionId:'m2',agentId:'browser-agent',allowedActions:['browser.click'],maxActions:5,durationMs:60000});const batch=await browser.executeBatch({leaseId:l.id,confidence:0.95,actions:[{type:'click',selector:{css:'#go'},postcondition:{type:'selector_exists',selector:'#done'}}]});assert.equal(batch.completed,true);assert.equal(batch.receipts.length,1);});
+
+  await ok('scheduler.restartable-commitment-execution',async()=>{const runtimeRoot=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-continuum-scheduler-'));const rt=new ContinuumRuntime({workspaceRoot:runtimeRoot,browserSessions:new FakeSessions()});rt.models.reason=async()=>({provider:'fake-local',model:'test',text:'plan',usage:{inputTokens:1,outputTokens:1},costUsd:0});const m=rt.missions.create({objective:'Scheduler mission',state:'ACTIVE',operatorFinalSignoff:true});const c=rt.commitments.create({missionId:m.id,title:'Reason once',execution:{kind:'MODEL_REASON',payload:{prompt:'x'},consequence:'REVERSIBLE'}});rt.commitments.transition(c.id,'ACCEPTED');rt.scheduler.start({actor:'test',intervalMs:60000});const result=await rt.scheduler.tick();rt.scheduler.stop({actor:'test'});assert.equal(result.result?.result?.text,'plan');assert.equal(rt.commitments.get(c.id).state,'FULFILLED');assert.equal(rt.missions.get(m.id).state,'VERIFYING');});
+  await ok('scheduler.incomplete-browser-batch-requires-reconciliation',async()=>{const runtimeRoot=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-continuum-unknown-'));const rt=new ContinuumRuntime({workspaceRoot:runtimeRoot,browserSessions:new FakeSessions()});rt.browser.executeBatch=async()=>({completed:false,receipts:[],stopped:{reason:'forced_partial_result'}});const task=rt.hub.createTask({title:'Partial browser action',kind:'BROWSER_BATCH',requirements:['BROWSER_BATCH'],maxAttempts:3});rt.scheduler.start({actor:'test',intervalMs:60000});const result=await rt.scheduler.tick();rt.scheduler.stop({actor:'test'});assert.equal(result.taskId,task.id);assert.match(result.error,/BROWSER_BATCH_INCOMPLETE/);assert.equal(rt.hub.listTasks({status:'UNKNOWN_OUTCOME'}).some(t=>t.id===task.id),true);assert.equal(rt.hub.nextRunnableTask(['BROWSER_BATCH']),null);});
+  await ok('scheduler.restart-quarantines-even-recent-active-task',()=>{const runtimeRoot=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-continuum-restart-'));const first=new ContinuumRuntime({workspaceRoot:runtimeRoot,browserSessions:new FakeSessions()});const task=first.hub.createTask({title:'In-flight action',kind:'BROWSER_BATCH',requirements:['BROWSER_BATCH'],maxAttempts:3});first.hub.claimTask(task.id,'jaco-nova',null);const restarted=new ContinuumRuntime({workspaceRoot:runtimeRoot,browserSessions:new FakeSessions()});assert.equal(restarted.hub.listTasks({status:'UNKNOWN_OUTCOME'}).some(t=>t.id===task.id),true);assert.equal(restarted.hub.nextRunnableTask(['BROWSER_BATCH']),null);});
+  await ok('runtime-hub.reconciliation-requires-captured-verified-receipts',()=>{const runtimeRoot=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-continuum-reconcile-'));const rt=new ContinuumRuntime({workspaceRoot:runtimeRoot,browserSessions:new FakeSessions()});const task=rt.hub.createTask({title:'One browser action',kind:'BROWSER_BATCH',requirements:['BROWSER_BATCH'],payload:{actions:[{type:'click'}]}});rt.hub.claimTask(task.id,'jaco-nova',null);const receipt=rt.evidence.record({kind:'browser-action-receipt',claim:'action observed',verified:true,verificationMethod:'test',data:{action_id:'a1'}});rt.hub.markUnknownOutcome(task.id,{agentId:'jaco-nova',evidenceRefs:[receipt.id]});assert.throws(()=>rt.hub.reconcileUnknownTask(task.id,{resolution:'COMPLETED',evidenceRefs:['missing']}),/not found/);assert.throws(()=>rt.hub.reconcileUnknownTask(task.id,{resolution:'COMPLETED',evidenceRefs:[]}),/evidenceRefs required/);assert.equal(rt.hub.reconcileUnknownTask(task.id,{resolution:'COMPLETED',evidenceRefs:[receipt.id]}).status,'COMPLETED');});
+
+  console.log(`CONTINUUM_BEHAVIOR: PASS (${pass.length}/${pass.length})`);
+} finally {
+  fs.rmSync(root,{recursive:true,force:true});
+}

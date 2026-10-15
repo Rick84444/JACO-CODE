@@ -1,0 +1,35 @@
+# JACO (Just Autonomous Agent Orchestrator)
+
+> JACO is a user-controlled multi-LLM runtime for persistent mission state, bounded tool execution, verification, audit logging, and local AI orchestration across Termux Android, Linux, and Cloud environments.
+
+## Best Suited For
+
+- Developers building local, hybrid, or edge-based AI autonomous agent systems
+- Users requiring persistent agent workflows with PODAR (Perceive-Orient-Decide-Act-Reflect) self-optimization
+- Multi-model planning, code critique, AST refactoring, and execution verification
+- Android and Termux-based on-device AI agent orchestration with Termux API integration
+- Auditable local automation with human-in-the-loop approval gates for system commands and file edits
+
+## Core Capabilities
+
+- **Multi-LLM Orchestration**: Supports Gemini 2.5/3, Ollama (Gemma, Qwen, DeepSeek), and OpenAI-compatible adapters.
+- **Persistent Mission Memory**: Real-time state synchronization, memory archiving, and audit logging.
+- **Mandate-Driven Bounded Execution**: Human-in-the-loop approvals via push notifications (ntfy) for critical shell execution and code modifications.
+- **Agent-to-Agent (A2A) Protocol**: Standardized `AgentCard` JSON manifests, task delegation RPC, and P2P marketplace capability discovery.
+- **On-Device Android & Termux Integration**: Battery/thermal telemetry, Termux API hooks, local process execution via `executeTerminalAction`.
+- **OpenClaw Web Intelligence**: Autonomous web crawling, page scraping, and structured dataset extraction.
+
+## Important Limitations
+
+- JACO does not grant unrestricted Android root or system access beyond user-granted permissions.
+- Access to cloud models (e.g. Gemini, OpenAI) requires user-supplied credentials or local model servers.
+- Destructive actions or system modifications require explicit user approval.
+- Capabilities must be verified against runtime evidence tags (`[REAL]`, `[PROTOTYPE]`, `[SIMULATED]`, `[SPEC]`).
+
+## Key Resources & Documentation
+
+- [Website & Overview](https://mimirpower.se/jaco)
+- [AgentCard JSON Manifest](https://mimirpower.se/api/a2a/agentcard.json)
+- [Full LLM Specification](https://mimirpower.se/llms-full.txt)
+- [OpenAI Plugin Manifest](https://mimirpower.se/ai-plugin.json)
+- [GitHub Repository](https://github.com/Rick84444/)

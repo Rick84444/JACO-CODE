@@ -1,0 +1,178 @@
+openapi: 3.1.0
+info:
+  title: JACO Nova Gateway
+  version: 1.0.0
+  description: Authenticated gateway from ChatGPT/agents to JACO Nova CDP execution.
+servers:
+  - url: https://YOUR_PUBLIC_JACO_DOMAIN
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      operationId: jacoGatewayHealth
+      summary: Check JACO Gateway and Nova health
+      security: []
+      responses:
+        '200':
+          description: Gateway and Nova are healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /v1/nova/observe:
+    get:
+      operationId: novaObserve
+      summary: Observe the current browser state through Nova
+      responses:
+        '200':
+          description: Current browser observation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayResult'
+  /v1/nova/targets:
+    get:
+      operationId: novaTargets
+      summary: List browser targets visible to Nova
+      responses:
+        '200':
+          description: Browser targets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayResult'
+  /v1/nova/navigate:
+    post:
+      operationId: novaNavigate
+      summary: Navigate the active Nova-controlled browser tab
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  format: uri
+                settleMs:
+                  type: integer
+                  minimum: 0
+                  maximum: 20000
+      responses:
+        '200':
+          description: Navigation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayResult'
+  /v1/nova/click:
+    post:
+      operationId: novaClick
+      summary: Click a DOM target through Nova
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [selector]
+              properties:
+                selector:
+                  type: string
+                settleMs:
+                  type: integer
+                  minimum: 0
+                  maximum: 20000
+      responses:
+        '200':
+          description: Click result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayResult'
+  /v1/nova/type:
+    post:
+      operationId: novaType
+      summary: Type text into a DOM target through Nova
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [selector, text]
+              properties:
+                selector:
+                  type: string
+                text:
+                  type: string
+                  maxLength: 10000
+                settleMs:
+                  type: integer
+                  minimum: 0
+                  maximum: 20000
+      responses:
+        '200':
+          description: Type result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayResult'
+  /v1/nova/survey:
+    post:
+      operationId: novaSurvey
+      summary: Survey and persist the current browser route through Nova
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                label:
+                  type: string
+                  maxLength: 200
+      responses:
+        '200':
+          description: Survey result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayResult'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    GatewayResult:
+      type: object
+      required: [ok, requestId, operation, executedBy, observedAt, result]
+      properties:
+        ok:
+          type: boolean
+        requestId:
+          type: string
+        operation:
+          type: string
+        executedBy:
+          type: string
+          const: nova-cdp
+        observedAt:
+          type: string
+          format: date-time
+        result:
+          type: object
+          additionalProperties: true
+      additionalProperties: false

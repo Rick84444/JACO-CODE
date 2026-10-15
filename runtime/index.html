@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#050b11" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/branding/jaco-icon-192.png" />
+    <link rel="apple-touch-icon" href="/branding/jaco-icon-192.png" />
+    <title>JACO Autonomus IDE — Hands-Off Autonomous Development Workbench</title>
+    <meta name="description" content="JACO is a user-controlled agentic AI runtime for multi-LLM orchestration, persistent mission memory, bounded tool execution, and Android Termux integration." />
+    <link rel="author" href="/llms.txt" />
+    
+    <!-- Schema.org SoftwareApplication JSON-LD -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "@id": "https://mimirpower.se/#jaco",
+      "name": "JACO Autonomus IDE",
+      "alternateName": "JACO Autonomus IDE",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "Agentic AI Runtime",
+      "operatingSystem": ["Windows", "Linux", "Android via Termux"],
+      "description": "A user-controlled multi-LLM runtime for persistent mission state, bounded tool execution, verification, audit logging and local AI orchestration.",
+      "url": "https://mimirpower.se/jaco",
+      "downloadUrl": "https://github.com/Rick84444/jaco-code",
+      "softwareVersion": "1.0.0-A2A",
+      "license": "https://mimirpower.se/jaco/license",
+      "creator": {
+        "@type": "Organization",
+        "@id": "https://mimirpower.se/#organization",
+        "name": "Dick Jacobsson / Mimir Power"
+      },
+      "featureList": [
+        "Multi-LLM orchestration (Gemini, Ollama, OpenAI)",
+        "Persistent mission memory & audit logging",
+        "Mandate-driven approval gates for shell & file write",
+        "On-device Termux Android hardware telemetry & process bridges",
+        "OpenClaw web crawl & dataset extraction",
+        "Agent-to-Agent (A2A) P2P marketplace protocol"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "availability": "https://schema.org/OnlineOnly",
+        "url": "https://mimirpower.se/jaco"
+      }
+    }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
+

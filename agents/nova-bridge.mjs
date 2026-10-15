@@ -1,0 +1,299 @@
+// JACO Nova Bridge — Chrome CDP wrapper for agent browser control
+// Listens on port 4243, connects to Chrome CDP at port 9222
+// No external dependencies — uses Node.js 24+ built-in WebSocket + fetch
+
+import { timingSafeEqual } from 'node:crypto';
+import { createServer } from "http";
+import { writeFileSync, existsSync, readFileSync, mkdirSync, renameSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath, pathToFileURL } from "url";
+import { buildAgentCard, joinWorkplace } from "./lib/workplace-session.mjs";
+
+const CDP_PORT = parseInt(process.env.CDP_PORT || "9222");
+const BRIDGE_PORT = parseInt(process.env.NOVA_BRIDGE_PORT || "4243");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROUTES_FILE = join(__dirname, ".agent-state", "nova-routes.json");
+
+// ── CDP helpers ──────────────────────────────────────────────────────────────
+
+let selectedTabId = process.env.CDP_TARGET_ID || null;
+const TOKEN=process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '';
+const ORIGINS=new Set((process.env.JACO_BROWSER_ALLOWED_ORIGINS || '').split(',').map(s=>s.trim()).filter(Boolean));
+function allowed(url) { try {return ORIGINS.has(new URL(url).origin);} catch {return false;} }
+// Level-5 profile: Nova may READ the public web (navigate, observe, survey, screenshot). Input
+// (click/type) stays limited to JACO_BROWSER_ALLOWED_ORIGINS and the server-side spend guard.
+const READ_ANY_ORIGIN = process.env.JACO_BROWSER_READ_ANY_ORIGIN !== '0';
+function readable(url) {
+  try { const u=new URL(url); return u.href==='about:blank' || (READ_ANY_ORIGIN ? ['http:','https:'].includes(u.protocol) : ORIGINS.has(u.origin)); }
+  catch { return false; }
+}
+function authorized(req) { const a=Buffer.from(req.headers.authorization || ''),b=Buffer.from('Bearer '+TOKEN);return TOKEN.length>=24 && a.length===b.length && timingSafeEqual(a,b); }
+async function getTabs() {
+  const r = await fetch(`http://localhost:${CDP_PORT}/json`, {signal:AbortSignal.timeout(5000)});
+  if (!r.ok) throw new Error("CDP_HTTP_" + r.status);
+  return r.json();
+}
+
+// Nova works in its own tab. It used to pin the only allowed tab, which was the operator's IDE,
+// so every survey navigated the IDE away (and several open IDE tabs made the choice ambiguous).
+// CDP_TARGET_ID still pins an explicit tab when the operator wants that.
+let novaTabId = null;
+async function getActiveTab() {
+  const tabs = await getTabs();
+  if (selectedTabId) {
+    const pinned=tabs.find(t=>t.id===selectedTabId && t.type==='page' && t.webSocketDebuggerUrl && readable(t.url));
+    if (!pinned) throw new Error('SELECTED_TAB_CLOSED_OR_ORIGIN_DENIED');
+    return pinned;
+  }
+  const own = novaTabId && tabs.find(t=>t.id===novaTabId && t.type==='page' && t.webSocketDebuggerUrl);
+  if (own) return own;
+  const r = await fetch(`http://localhost:${CDP_PORT}/json/new?about:blank`, { method:'PUT', signal:AbortSignal.timeout(5000) });
+  if (!r.ok) throw new Error('CDP_NEW_TAB_FAILED_' + r.status);
+  const created = await r.json();
+  novaTabId = created.id;
+  return created;
+}
+
+export class CDPSession {
+  constructor(wsUrl) {
+    this.ws = new WebSocket(wsUrl);
+    this.msgId = 0;
+    this.pending = new Map();
+    this.ws.addEventListener("message", (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.id && this.pending.has(msg.id)) {
+        const { resolve, reject } = this.pending.get(msg.id);
+        this.pending.delete(msg.id);
+        if (msg.error) reject(new Error(msg.error.message));
+        else if (msg.result?.exceptionDetails) reject(new Error(msg.result.exceptionDetails.exception?.description || msg.result.exceptionDetails.text || "CDP_EVALUATION_FAILED"));
+        else resolve(msg.result);
+      }
+    });
+  }
+
+  async ready() {
+    if (this.ws.readyState === 1) return;
+    await new Promise((res, rej) => {
+      this.ws.addEventListener("open", res, { once: true });
+      this.ws.addEventListener("error", rej, { once: true });
+    });
+  }
+
+  send(method, params = {}, timeoutMs = 15000) {
+    const id = ++this.msgId;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`CDP timeout: ${method}`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: (v) => { clearTimeout(timer); resolve(v); },
+        reject:  (e) => { clearTimeout(timer); reject(e); },
+      });
+      this.ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+
+  close() { try { this.ws.close(); } catch {} }
+}
+
+export async function captureSession(session) {
+  // Background tabs may not submit compositor frames. Activate the owned Nova tab before capture.
+  await session.send('Page.bringToFront');
+  const result=await session.send('Page.captureScreenshot',{format:'png'});
+  if(typeof result.data!=='string'||!result.data.length)throw new Error('SCREENSHOT_DATA_MISSING');
+  return {ok:true,observed:true,mimeType:'image/png',...result};
+}
+
+async function withTab(fn, { input = false, missionOrigin = null } = {}) {
+  const tab = await getActiveTab();
+  const session = new CDPSession(tab.webSocketDebuggerUrl);
+  await session.ready();
+  try {
+    const current=await evaluate(session,'location.href');
+    if (!(input ? allowed(current) || (missionOrigin && new URL(current).origin===missionOrigin) : readable(current))) throw new Error('ORIGIN_DENIED');
+    return await fn(session, tab);
+  } finally {
+    session.close();
+  }
+}
+
+export function contractedBrowserOrigin(mission,{missionId,actionId,expectedUrl},kind) {
+  if(!mission || mission.id!==missionId || mission.status!=='ACTIVE' || mission.phase!=='EXECUTING' || mission.activeTask?.id!==actionId || mission.activeTask?.type!==`browser-${kind}`) return null;
+  let origin;try{const u=new URL(expectedUrl);if(u.protocol!=='http:'||u.hostname!=='127.0.0.1'||u.username||u.password)return null;origin=u.origin;}catch{return null;}
+  const receipts=mission.receipts||[],lastWrite=Math.max(-1,...receipts.filter(r=>['repo-write','repo-edit'].includes(r.type)&&r.ok&&r.verified).map(r=>Number(/:turn:(\d+)$/.exec(r.actionId||'')?.[1])||0));
+  const lastService=receipts.findLast(r=>{try{return r.type==='repo-service'&&r.result?.url&&new URL(r.result.url).origin===origin;}catch{return false;}});
+  const spec=mission.contract?.services?.find(s=>s.id===lastService?.input?.id);
+  if(!spec || !lastService.ok || !lastService.verified || lastService.result.state!=='READY' || lastService.result.identity!==spec.identity || Number(/:turn:(\d+)$/.exec(lastService.actionId||'')?.[1])<=lastWrite)return null;
+  const stopped=receipts.some(r=>r.type==='repo-service'&&r.input?.id===spec.id&&r.input?.action==='stop'&&r.ok&&Number(/:turn:(\d+)$/.exec(r.actionId||'')?.[1])>Number(/:turn:(\d+)$/.exec(lastService.actionId||'')?.[1]));
+  return stopped?null:origin;
+}
+
+async function missionBrowserGrant(body,kind) {
+  if(!/^mission-[A-Za-z0-9-]+$/.test(String(body.missionId||'')))return null;
+  const base=process.env.JACO_RUNTIME_URL||'http://127.0.0.1:3000';
+  const r=await fetch(base+`/api/connected/nova/missions/${encodeURIComponent(body.missionId)}`,{headers:{'x-gateway-token':TOKEN},signal:AbortSignal.timeout(5000)});
+  if(!r.ok)return null;return contractedBrowserOrigin((await r.json()).mission,body,kind);
+}
+
+// ── Bridge operations ────────────────────────────────────────────────────────
+
+export async function evaluate(session, expression) {
+  const r = await session.send("Runtime.evaluate", {expression, returnByValue:true, awaitPromise:true});
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text || "CDP_EVALUATION_FAILED");
+  return r.result?.value;
+}
+export async function observeSession(session) {
+  const data = await evaluate(session, `(() => {
+    const selector = e => { const parts=[]; while(e && e.nodeType===1) { let n=1,p=e; while((p=p.previousElementSibling)) if(p.tagName===e.tagName)n++; parts.unshift(e.tagName.toLowerCase()+':nth-of-type('+n+')'); e=e.parentElement; } return parts.join(' > '); };
+    // Visible controls first (viewport order), then the rest; plus the readable page text, so Nova
+    // can report what a page says instead of only its first 40 links and buttons.
+    const all=[...document.querySelectorAll('a,button,input,select,textarea,[role=button],[role=link],[role=tab]')].map(e=>{
+      const r=e.getBoundingClientRect(); const visible=r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden';
+      return {e,r,visible,text:(e.innerText || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.name || '').trim().replace(/\\s+/g,' ').slice(0,100)};
+    });
+    const ranked=[...all.filter(x=>x.visible&&x.text), ...all.filter(x=>x.visible&&!x.text), ...all.filter(x=>!x.visible)].slice(0,80);
+    const text=(document.body?.innerText||'').replace(/\\n{3,}/g,'\\n\\n').trim().slice(0,6000);
+    return {url:location.href,title:document.title,text,targets:ranked.map(({e,r,visible,text})=>({selector:selector(e),text,role:e.getAttribute('role')||e.tagName.toLowerCase(),visible,bbox:[r.x,r.y,r.width,r.height]}))};
+  })()`);
+  if (!data?.url) throw new Error('OBSERVATION_MISSING');
+  return {ok:true, observed:true, at:new Date().toISOString(), ...data};
+}
+export async function navigateSession(session, url, settleMs=1000) {
+  if (!['http:','https:'].includes(new URL(url).protocol)) throw new Error('INVALID_URL');
+  await session.send('Page.enable');
+  const result=await session.send('Page.navigate',{url});
+  if (result.errorText || result.isDownload) throw new Error(result.errorText || 'UNEXPECTED_DOWNLOAD');
+  await new Promise(r=>setTimeout(r,Math.min(5000,Math.max(0,settleMs))));
+  const observation=await observeSession(session);
+  const verified=observation.url===new URL(url).href;
+  return {ok:verified, verified, observation, ...(verified?{}:{error:'NAVIGATION_NOT_VERIFIED'})};
+}
+export async function actSession(session, {selector,text,expectedUrl,expect}, kind) {
+  if (typeof selector!=='string' || !selector) throw new Error('SELECTOR_REQUIRED');
+  if (kind==='type' && typeof text!=='string') throw new Error('TEXT_REQUIRED');
+  const before=await observeSession(session);
+  if (expectedUrl && before.url!==expectedUrl) throw new Error('STALE_PAGE');
+  const target=await evaluate(session, `(() => { const es=document.querySelectorAll(${JSON.stringify(selector)}); if(es.length!==1)return false; const e=es[0],r=e.getBoundingClientRect(); return !e.disabled&&r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden'; })()`);
+  if (!target) throw new Error('TARGET_NOT_UNIQUE_OR_ACTIONABLE');
+  const predicate = expect?.url ? `location.href===${JSON.stringify(expect.url)}` : expect?.selector ? `(() => {const e=document.querySelector(${JSON.stringify(expect.selector)}); if(!e)return false; const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden';})()` : null;
+  const alreadySatisfied=predicate ? await evaluate(session,predicate) : false;
+  try {
+    await evaluate(session, `(() => { const es=document.querySelectorAll(${JSON.stringify(selector)});if(es.length!==1)throw new Error('TARGET_CHANGED');const e=es[0];e.focus();${kind==='click' ? 'e.click();' : `e.value=${JSON.stringify(text)};e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));`}return true; })()`);
+    let verified=kind==='type' ? await evaluate(session, `document.querySelector(${JSON.stringify(selector)})?.value===${JSON.stringify(text)}`) : false;
+    // Real asynchronous postcondition: a click may await an API response before rendering.
+    if(kind==='click' && predicate && !alreadySatisfied){const deadline=Date.now()+5000;do{verified=Boolean(await evaluate(session,predicate));if(verified)break;await new Promise(r=>setTimeout(r,100));}while(Date.now()<deadline);}
+    return {ok:true,verified:Boolean(verified),observation:await observeSession(session)};
+  } catch(error) { return {ok:false,verified:false,outcomeUnknown:true,error:error.message}; }
+}
+async function navigate(url,settleMs) { return withTab(s=>navigateSession(s,url,settleMs)); }
+async function observe() { return withTab(observeSession); }
+async function survey(label) {
+  const data=await observe();
+  const routes=existsSync(ROUTES_FILE)?JSON.parse(readFileSync(ROUTES_FILE,'utf8')):{};
+  const key=label||data.title||data.url;
+  routes[key]={...data,label:key,surveyedAt:data.at};
+  mkdirSync(dirname(ROUTES_FILE),{recursive:true});
+  const temp=ROUTES_FILE+'.tmp';writeFileSync(temp,JSON.stringify(routes,null,2));renameSync(temp,ROUTES_FILE);
+  return {...data,label:key,elements:data.targets.length};
+}
+
+async function targets() {
+  const tabs = await getTabs();
+  return { ok: true, tabs: tabs.filter(t=>allowed(t.url)).map(t => ({ id:t.id, title: t.title, url: t.url, type: t.type })) };
+}
+
+// ── HTTP server ──────────────────────────────────────────────────────────────
+
+function json(res, data, status = 200) {
+  res.writeHead(status, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(data));
+}
+
+async function readBody(req) {
+  let size=0;const chunks=[];
+  for await (const chunk of req) {size+=chunk.length;if(size>65536)throw new Error('BODY_TOO_LARGE');chunks.push(chunk);}
+  return JSON.parse(Buffer.concat(chunks).toString() || '{}');
+}
+
+// Only the standalone process joins Workplace; importing the server (tests) leaves it ungated.
+let workplace = { allowed: true };
+
+export const server = createServer(async (req, res) => {
+  const url = new URL(req.url, `http://localhost:${BRIDGE_PORT}`);
+  try {
+    if (!authorized(req)) return json(res,{ok:false,error:'UNAUTHORIZED'},401);
+    if (!workplace.allowed && url.pathname !== '/health') return json(res,{ok:false,error:'WORKPLACE_UNSYNCED',state:workplace.state},503);
+    if (req.headers.origin) return json(res,{ok:false,error:'BROWSER_ORIGIN_DENIED'},403);
+    if (req.method==='POST' && ['/navigate','click','type'].includes(url.pathname) && process.env.JACO_GATEWAY_ALLOW_MUTATIONS!=='1') return json(res,{ok:false,error:'MUTATIONS_DISABLED'},403);
+    if (req.method === "GET" && url.pathname === "/health") {
+      const tabs = await getTabs();
+      return json(res, { ok: tabs.some(t=>t.type==="page" && t.webSocketDebuggerUrl), service: "nova-bridge", cdpPort: CDP_PORT });
+    }
+    if (req.method === "GET" && url.pathname === "/targets") {
+      return json(res, await targets());
+    }
+    if (req.method === 'GET' && url.pathname === '/screenshot') {
+      return json(res,await withTab(captureSession));
+    }
+    if (req.method === "GET" && url.pathname === "/observe") {
+      return json(res, await observe());
+    }
+    if (req.method === "POST" && url.pathname === "/navigate") {
+      const b = await readBody(req);
+      if (!readable(b.url)) return json(res,{ok:false,error:'ORIGIN_DENIED'},403);
+      return json(res, await navigate(b.url, b.settleMs));
+    }
+    if (req.method === "POST" && url.pathname === "/click") {
+      const b = await readBody(req);
+      const missionOrigin=await missionBrowserGrant(b,'click');
+      if (!b.expectedUrl || (!allowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
+      return json(res, await withTab(s=>actSession(s,b,"click"), { input: true,missionOrigin }));
+    }
+    if (req.method === "POST" && url.pathname === "/type") {
+      const b = await readBody(req);
+      const missionOrigin=await missionBrowserGrant(b,'type');
+      if (!b.expectedUrl || (!allowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
+      return json(res, await withTab(s=>actSession(s,b,"type"), { input: true,missionOrigin }));
+    }
+    if (req.method === "POST" && url.pathname === "/survey") {
+      const b = await readBody(req);
+      return json(res, await survey(b.label));
+    }
+    json(res, { error: "not found" }, 404);
+  } catch (e) {
+    json(res, { ok: false, error: e.message }, 500);
+  }
+});
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  workplace = { allowed: false, state: 'REGISTERING' };
+  server.listen(BRIDGE_PORT, "127.0.0.1", async () => {
+    console.log(`JACO Nova Bridge -> http://localhost:${BRIDGE_PORT} (CDP :${CDP_PORT})`);
+    let cdp = false;
+    try { cdp = (await getTabs()).some(t => t.type === 'page' && t.webSocketDebuggerUrl); } catch {}
+    workplace = await joinWorkplace({
+      card: buildAgentCard({
+        stableId: 'nova-bridge',
+        name: 'Nova Bridge',
+        agentType: 'runtime',
+        role: 'browser-actuator',
+        description: 'Authenticated Chrome CDP bridge used by Nova for observe, navigate, click, type and survey.',
+        capabilities: { browser_control: cdp, reasoning: false, terminal: false, filesystem_write: false, image_understanding: false },
+        tools: cdp ? ['targets', 'screenshot', 'observe', 'navigate', 'click', 'type', 'survey'] : [],
+        constraints: [
+          `CDP page reachable on :${CDP_PORT} at startup: ${cdp}`,
+          `Allowed origins: ${[...ORIGINS].join(', ') || 'none'}`,
+          `Mutations enabled: ${process.env.JACO_GATEWAY_ALLOW_MUTATIONS === '1'}`,
+        ],
+        preferredTasks: ['browser observation', 'browser actions on allowed origins'],
+      }),
+      log: (level, msg) => console.log(`${level.toUpperCase()} [workplace] ${msg}`),
+    });
+    if (!workplace.allowed) console.log('ERROR [workplace] Browser tools disabled until this process restarts with a READY Workplace session');
+    const stop = async () => { await workplace.end?.(); process.exit(0); };
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
+  });
+}
+

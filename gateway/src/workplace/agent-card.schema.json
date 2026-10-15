@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mimirpower.com/schemas/jaco.agent-card.v1.json",
+  "title": "JACO Agent Card v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema", "identity", "session", "role", "capabilities", "communication"],
+  "properties": {
+    "schema": { "const": "jaco.agent-card/v1" },
+    "identity": {
+      "type": "object",
+      "required": ["requested_name", "provider", "agent_type"],
+      "properties": {
+        "stable_id": { "type": "string", "minLength": 1 },
+        "requested_name": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": ["string", "null"] },
+        "agent_type": {
+          "enum": ["chat", "coding", "runtime", "strategic", "research", "sandbox", "human-proxy", "other"]
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "required": ["environment", "persistent", "sandboxed"],
+      "properties": {
+        "environment": { "type": "string", "minLength": 1 },
+        "persistent": { "type": "boolean" },
+        "sandboxed": { "type": "boolean" }
+      }
+    },
+    "role": {
+      "type": "object",
+      "required": ["primary", "description"],
+      "properties": {
+        "primary": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "Only capabilities actually available in this session may be true.",
+      "additionalProperties": true,
+      "properties": {
+        "reasoning": { "type": "boolean" },
+        "code_generation": { "type": "boolean" },
+        "code_edit": { "type": "boolean" },
+        "filesystem_read": { "type": "boolean" },
+        "filesystem_write": { "type": "boolean" },
+        "terminal": { "type": "boolean" },
+        "git_read": { "type": "boolean" },
+        "git_write": { "type": "boolean" },
+        "git_push": { "type": "boolean" },
+        "web": { "type": "boolean" },
+        "browser_control": { "type": "boolean" },
+        "desktop_control": { "type": "boolean" },
+        "image_understanding": { "type": "boolean" },
+        "database": { "type": "boolean" },
+        "testing": { "type": "boolean" },
+        "deployment": { "type": "boolean" },
+        "tools": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "constraints": { "type": "array", "items": { "type": "string" } },
+    "preferred_tasks": { "type": "array", "items": { "type": "string" } },
+    "communication": {
+      "type": "object",
+      "required": ["can_receive_messages", "can_receive_missions", "can_be_mentioned"],
+      "properties": {
+        "can_receive_messages": { "type": "boolean" },
+        "can_receive_missions": { "type": "boolean" },
+        "can_be_mentioned": { "type": "boolean" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "started_at": { "type": "string" },
+        "version": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

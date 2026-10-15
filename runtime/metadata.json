@@ -1,0 +1,14 @@
+{
+  "name": "JACO Cognitive Runtime — Reflective Futures",
+  "description": "Provider-neutral persistent agent runtime with capability-aware multi-agent dispatch, verified evidence, self/peer review, reversible soft sandboxes, A2A trust, and a rolling 90-day calibrated futures window.",
+  "requestFramePermissions": ["microphone", "camera"],
+  "majorCapabilities": [
+    "PROVIDER_NEUTRAL_REASONING_ROUTER",
+    "CAPABILITY_AWARE_MULTI_AGENT_DISPATCH",
+    "VERIFIED_SELF_AND_PEER_REVIEW",
+    "REVERSIBLE_SOFT_SANDBOX",
+    "A2A_TRUST_AND_DISPATCH",
+    "ROLLING_90_DAY_FORECAST_CALIBRATION"
+  ],
+  "truthBoundary": "Provider availability is never inferred from catalog entries; runtime probes and evidence determine availability."
+}

@@ -1,0 +1,47 @@
+#!/data/data/com.termux/files/usr/bin/sh
+set -eu
+
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+HOME="${HOME:-/data/data/com.termux/files/home}"
+TMPDIR="${TMPDIR:-$PREFIX/tmp}"
+PATH="$PREFIX/bin:$PREFIX/bin/applets:${PATH:-/system/bin}"
+mkdir -p "$TMPDIR"
+export PREFIX HOME TMPDIR PATH
+
+
+ENV_FILE="${JACO_RUNTIME_ENV:-$HOME/.config/jaco/runtime.env}"
+[ -f "$ENV_FILE" ] && . "$ENV_FILE"
+
+CANONICAL_RUNTIME="$HOME/jaco-code/runtime"
+
+if [ -z "${JACO_ROOT:-}" ] ||
+   [ ! -f "$JACO_ROOT/run_termux_node.sh" ] ||
+   [ ! -f "$JACO_ROOT/../gateway/src/workplace/workplace-server.mjs" ]; then
+  if [ -f "$CANONICAL_RUNTIME/run_termux_node.sh" ] &&
+     [ -f "$CANONICAL_RUNTIME/../gateway/src/workplace/workplace-server.mjs" ]; then
+    JACO_ROOT="$CANONICAL_RUNTIME"
+    export JACO_ROOT
+  else
+    echo "JACO_ROOT_INVALID: no canonical runtime checkout found" >&2
+    exit 41
+  fi
+fi
+
+REPO_ROOT="$(cd "$JACO_ROOT/.." && pwd)"
+cd "$REPO_ROOT"
+
+export JACO_WORKSPACE_ROOT="${JACO_WORKSPACE_ROOT:-$REPO_ROOT}"
+export JACO_WORKPLACE_HOST="${JACO_WORKPLACE_HOST:-127.0.0.1}"
+export JACO_WORKPLACE_PORT="${JACO_WORKPLACE_PORT:-2995}"
+export JACO_WORKPLACE_URL="${JACO_WORKPLACE_URL:-http://127.0.0.1:2995}"
+export JACO_WORKPLACE_REQUIRED="1"
+export JACO_WORKPLACE_SUPERVISE_MODEL="1"
+export JACO_WORKPLACE_SUPERVISE_SEER="1"
+export JACO_WORKPLACE_SUPERVISE_NOVA="1"
+export JACO_LEVEL5_AUTONOMY="${JACO_LEVEL5_AUTONOMY:-1}"
+export JACO_ALLOW_SHELL_TASKS="${JACO_ALLOW_SHELL_TASKS:-1}"
+export JACO_REMOTE_ALLOW_MUTATIONS="${JACO_REMOTE_ALLOW_MUTATIONS:-1}"
+export JACO_RUNTIME_URL="${JACO_RUNTIME_URL:-http://127.0.0.1:3000}"
+export SEER_URL="${SEER_URL:-http://127.0.0.1:2997}"
+
+exec "$PREFIX/bin/node" --experimental-sqlite gateway/src/workplace/workplace-server.mjs 2>&1

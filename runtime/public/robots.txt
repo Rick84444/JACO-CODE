@@ -1,0 +1,36 @@
+# RFC 9309 Compliant robots.txt
+# JACO Autonomous Agent OS - AI Crawl, GEO & AEO Discovery Policy
+
+User-agent: *
+Allow: /
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /ai-plugin.json
+Allow: /jaco-entity.jsonld
+Allow: /software-application.jsonld
+Allow: /organization.jsonld
+Allow: /faq.jsonld
+Allow: /api/a2a/agentcard.json
+Allow: /sitemap.xml
+Disallow: /api/approval/
+Disallow: /api/system/
+
+# AI Crawl Control & GEO Discovery
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+# GEO & AEO AI Machine-Readable Specifications
+Sitemap: https://mimirpower.se/sitemap.xml
+

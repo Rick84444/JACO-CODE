@@ -1,0 +1,166 @@
+name: Desktop AgentOS Gate
+
+on:
+  push:
+    branches:
+      - jaco-desktop-agentos-r1
+  pull_request:
+    paths:
+      - 'agents/desktop-agentos.mjs'
+      - 'agents/run-desktop-agentos.mjs'
+      - 'agents/setup-desktop-agentos.ps1'
+      - 'agents/grant-desktop-agentos.ps1'
+      - 'agents/start-all.ps1'
+      - 'agents/lib/mission-client.mjs'
+      - 'agents/lib/workplace-session.mjs'
+      - 'agents/lib/windows-wmi-read.mjs'
+      - 'agents/windows-wmi-read.ps1'
+      - 'tests/workplace/**'
+      - 'tests/nova/mission.test.mjs'
+      - 'runtime/src/server/connected/novaMissionControl.mjs'
+      - '.github/workflows/desktop-agentos-gate.yml'
+      - 'agents/lib/local-stack.mjs'
+      - 'tests/nova/startup-safety.test.mjs'
+      - 'tests/nova/remote-startup-contract.test.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  mission-contract:
+    name: Mission and executor contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      - name: Syntax check executor
+        run: |
+          node --check agents/desktop-agentos.mjs
+          node --check agents/run-desktop-agentos.mjs
+          node --check agents/lib/mission-client.mjs
+          node --check agents/lib/workplace-session.mjs
+          node --check agents/lib/windows-wmi-read.mjs
+          node --check runtime/src/server/connected/novaMissionControl.mjs
+
+      - name: Install locked test dependencies
+        # Install the locked runtime imports without browser/Electron downloads.
+        run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+
+      - name: Run Nova tests
+        run: npm test
+
+      - name: Run Workplace regression suite
+        run: npm run test:workplace
+
+      - name: Reject the reverted Remote Agent contract
+        shell: bash
+        run: |
+          if grep -R --line-number --fixed-string 'sendMission(' agents runtime/src/server/connected; then
+            echo 'Nonexistent MissionClient.sendMission contract found.' >&2
+            exit 1
+          fi
+          if grep -R --line-number --fixed-string 'remoteAgentsActive: true' agents; then
+            echo 'Static Remote Agent health claim found.' >&2
+            exit 1
+          fi
+
+  windows-contract:
+    name: Windows onboarding contract
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      # The startup contracts import local-stack.mjs, which needs dotenv.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+
+      - name: Syntax check executor
+        shell: pwsh
+        run: |
+          node --check agents/desktop-agentos.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'desktop-agentos syntax check failed' }
+          node --check agents/run-desktop-agentos.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'run-desktop-agentos syntax check failed' }
+          node --check agents/lib/windows-wmi-read.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'windows-wmi-read module syntax check failed' }
+
+      - name: Parse Windows PowerShell scripts
+        shell: powershell
+        run: |
+          $files = @(
+            'agents/setup-desktop-agentos.ps1',
+            'agents/grant-desktop-agentos.ps1',
+            'agents/start-all.ps1',
+            'agents/windows-wmi-read.ps1'
+          )
+          $failed = $false
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errors)
+            foreach ($parseError in $errors) {
+              $failed = $true
+              Write-Host ("PARSER_ERROR file={0} line={1} column={2} text=[{3}] message={4}" -f $file, $parseError.Extent.StartLineNumber, $parseError.Extent.StartColumnNumber, $parseError.Extent.Text, $parseError.Message)
+            }
+          }
+          if ($failed) { throw 'PowerShell 5.1 parser gate failed.' }
+
+      - name: Execute startup safety contracts on Windows
+        shell: powershell
+        run: |
+          $out = node --test --test-reporter=tap tests/nova/startup-safety.test.mjs tests/nova/remote-startup-contract.test.mjs | Out-String
+          $code = $LASTEXITCODE
+          Write-Output $out
+          # Surface failures as annotations so they are readable without the raw job log.
+          if ($code -ne 0) {
+            $lines = $out -split "`r?`n"
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+              if ($lines[$i] -match '^\s*not ok') { Write-Output ("::error title=startup-safety::" + (($lines[$i..([Math]::Min($i + 14, $lines.Count - 1))] -join ' | ') -replace '[\r\n]', ' ')) }
+            }
+            throw 'Startup safety contracts failed'
+          }
+
+      - name: Verify WMI bridge is read-only
+        shell: powershell
+        run: |
+          $src = Get-Content 'agents/windows-wmi-read.ps1' -Raw
+          if ($src -notmatch 'Get-CimInstance') { throw 'WMI bridge does not use CIM observation' }
+          if ($src -notmatch 'ValidateSet') { throw 'WMI query allowlist missing' }
+          if ($src -match 'Invoke-Expression|Start-Process|Invoke-Command') { throw 'WMI bridge exposes an unsafe execution primitive' }
+          $setup = Get-Content 'agents/setup-desktop-agentos.ps1' -Raw
+          if ($setup -notmatch "requiredTasks.*windows-wmi-read") { throw 'Desktop AgentOS onboarding does not enable windows-wmi-read' }
+          if ($setup -notmatch 'windows-wmi-read\.mjs') { throw 'Desktop AgentOS onboarding does not validate WMI module' }
+          if ($setup -notmatch 'windows-wmi-read\.ps1') { throw 'Desktop AgentOS onboarding does not validate WMI bridge' }
+
+      - name: Verify UIA bridge is packaged
+        shell: powershell
+        run: |
+          $bridge = 'runtime/scripts/windows/jaco-uia-bridge.ps1'
+          if (-not (Test-Path $bridge)) { throw "Missing UIA bridge: $bridge" }
+          $src = Get-Content $bridge -Raw
+          if ($src -notmatch 'InvokePattern') { throw 'UIA bridge lacks InvokePattern support' }
+          if ($src -notmatch 'ValuePattern') { throw 'UIA bridge lacks ValuePattern support' }
+
+      - name: Verify fail-closed AgentOS startup gate
+        shell: powershell
+        run: |
+          # Startup moved to agents/lib/local-stack.mjs; AgentOS enforces its own gates before its first turn.
+          $src = Get-Content 'agents/desktop-agentos.mjs' -Raw
+          if ($src -notmatch "evidenceState\s*!==\s*'OBSERVED'") { throw 'OBSERVED desktop gate missing' }
+          if ($src -notmatch 'singleWriter\s*!==\s*true') { throw 'ModelRelay single-writer gate missing' }
+          $start = (Get-Content 'agents/start-all.ps1' -Raw) + (Get-Content 'agents/lib/local-stack.mjs' -Raw)
+          if ($start -match 'google-remote-agent\.mjs') { throw 'Reverted Google Remote Agent wiring returned' }

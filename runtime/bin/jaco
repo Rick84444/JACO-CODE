@@ -1,0 +1,25 @@
+#!/data/data/com.termux/files/usr/bin/sh
+set -eu
+SELF_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+REPO_ROOT="$(CDPATH= cd -- "$SELF_DIR/../.." && pwd)"
+ACTION="${1:-activate}"
+
+# activate/status use the product-level CLI so Termux gets the same verified activation report
+# as Linux/macOS/Windows and the GUI. Lifecycle verbs that the product CLI does not own yet stay
+# on the canonical runit supervisor.
+case "$ACTION" in
+  activate|status)
+    if [ -f "$REPO_ROOT/agents/jaco-cli.mjs" ] && command -v node >/dev/null 2>&1; then
+      exec node "$REPO_ROOT/agents/jaco-cli.mjs" "$@"
+    fi
+    ;;
+esac
+
+if [ -x "$SELF_DIR/jacoctl" ]; then
+  exec "$SELF_DIR/jacoctl" "$@"
+fi
+if command -v jacoctl >/dev/null 2>&1; then
+  exec jacoctl "$@"
+fi
+printf '%s\n' 'jacoctl not found; run termux/install-activation.sh first.' >&2
+exit 127

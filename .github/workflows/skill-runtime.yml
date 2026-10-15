@@ -1,0 +1,60 @@
+name: Skill Runtime
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/src/server/skills/**'
+      - 'tests/nova/skill-runtime.test.mjs'
+      - 'agents/skills.config.mjs'
+      - 'package.json'
+      - 'runtime/src/server/forge/jacoForge.ts'
+      - 'runtime/src/server/continuum/capabilityCompiler.mjs'
+      - '.github/workflows/skill-runtime.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'runtime/src/server/skills/**'
+      - 'tests/nova/skill-runtime.test.mjs'
+      - 'agents/skills.config.mjs'
+      - 'package.json'
+      - 'runtime/src/server/forge/jacoForge.ts'
+      - 'runtime/src/server/continuum/capabilityCompiler.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  skill-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Syntax check
+        run: |
+          node --check runtime/src/server/skills/contracts.mjs
+          node --check runtime/src/server/skills/skillIndex.mjs
+          node --check runtime/src/server/skills/skillRunStore.mjs
+          node --check runtime/src/server/skills/skillExecutor.mjs
+          node --check runtime/src/server/skills/skillCompiler.mjs
+          node --check runtime/src/server/skills/skillIR.mjs
+          node --check runtime/src/server/skills/capabilityLinker.mjs
+          node --check runtime/src/server/skills/skillTelemetry.mjs
+          node --check runtime/src/server/skills/targetCompiler.mjs
+          node --check runtime/src/server/skills/skillMachine.mjs
+          node --check runtime/src/server/skills/traceNormalizer.mjs
+          node --check runtime/src/server/skills/executionProfiler.mjs
+          node --check runtime/src/server/skills/proceduralFamilyMiner.mjs
+          node --check runtime/src/server/skills/partialEvaluator.mjs
+          node --check runtime/src/server/skills/processVerifier.mjs
+          node --check runtime/src/server/skills/benchmarkArena.mjs
+          node --check runtime/src/server/skills/optimizationStore.mjs
+          node --check runtime/src/server/skills/adaptiveSkillOptimizer.mjs
+          node --check runtime/src/server/skills/skillRuntime.mjs
+          node --check runtime/src/server/continuum/capabilityCompiler.mjs
+      - name: Focused skill runtime tests
+        run: npm run test:skills
+      - name: Continuum capability compatibility test
+        run: node --test runtime/scripts/continuum/cognitive-kernel-v1.test.mjs

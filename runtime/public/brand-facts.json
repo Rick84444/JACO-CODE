@@ -1,0 +1,39 @@
+{
+  "entity": {
+    "name": "JACO Autonomous Agent OS",
+    "shortName": "JACO",
+    "legalName": "JACO Systems / Mimir Power",
+    "type": "SoftwareApplication",
+    "category": "Agentic AI Orchestrator & Runtime",
+    "version": "1.0.0-A2A",
+    "website": "https://mimirpower.se/jaco",
+    "repository": "https://github.com/Rick84444/jaco-code",
+    "license": "MIT / A2A Royalty-Free",
+    "primaryMaintainer": "JACO Autonomous Systems"
+  },
+  "deploymentTargets": [
+    "Android via Termux",
+    "Linux (Debian/Ubuntu/Alpine)",
+    "Windows Subsystem for Linux (WSL)",
+    "Docker / Cloud Run"
+  ],
+  "supportedLLMProviders": [
+    "Google Gemini API (Gemini 2.5/3)",
+    "Ollama Local Server (Gemma 4, Qwen 2.5, DeepSeek-Coder)",
+    "OpenAI-Compatible Custom REST Adapters"
+  ],
+  "keyCapabilities": [
+    "PODAR (Perceive-Orient-Decide-Act-Reflect) Autonomous Execution Loop",
+    "Multi-LLM Orchestration & Fallback Routing",
+    "Human-in-the-Loop Mobile Approvals via ntfy push notifications",
+    "Termux Android Hardware Telemetry (Battery, Thermal, Sensors)",
+    "OpenClaw Autonomous Web Crawling & Scraping",
+    "Agent-to-Agent (A2A) Marketplace Protocol & RPC Task Delegation"
+  ],
+  "verifiedBoundaries": {
+    "rootAccessRequired": false,
+    "userApprovalRequiredForCommands": true,
+    "userApprovalRequiredForFileEdits": true,
+    "unsolicitedFinancialCostPermitted": false
+  }
+}

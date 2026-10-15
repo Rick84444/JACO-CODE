@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import React from '../../runtime/node_modules/react/index.js';
+import { renderToStaticMarkup } from '../../runtime/node_modules/react-dom/server.node.js';
+import { AuraIntegrationsPanel } from '../../runtime/src/components/AuraIntegrationsPanel';
+const agents = [{agentId:'codex',name:'Codex Desktop',status:'BUSY',liveSessions:1,lastSeenAt:new Date().toISOString()},{agentId:'claude',name:'Claude Code',status:'OFFLINE',liveSessions:0,lastSeenAt:null}];
+const render = (reachable: boolean, age: number) => renderToStaticMarkup(React.createElement(AuraIntegrationsPanel,{providers:[{id:'custom',name:'Custom MCP',role:'tools',status:'READY',tools:[]}],busy:null,onConnect:()=>{},onHuggingFace:()=>{},notice:null,observedAt:new Date(Date.now()-age).toISOString(),workplace:{reachable,agents,error:null}}));
+test('shows live agents, offline clients, unknown clients and arbitrary MCP providers',()=>{const html=render(true,0);for(const text of ['Arbetar','Frånkopplad','Ej observerad','Custom MCP','Svarar']) assert.ok(html.includes(text),text);});
+test('stale observations cannot present agents or MCP providers as live',()=>{const html=render(true,30000);assert.match(html,/Okänd status/);assert.doesNotMatch(html,/>Arbetar</);assert.doesNotMatch(html,/>Svarar</);});
+test('Workplace outage cannot present cached agents as live',()=>{const html=render(false,0);assert.match(html,/Workplace kan inte bekräfta/);assert.doesNotMatch(html,/>Arbetar</);});

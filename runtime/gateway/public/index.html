@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>JACO Sentinel</title>
+<style>
+:root{font-family:Inter,system-ui,sans-serif;color-scheme:dark;background:#070a10;color:#edf3ff}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 20% 20%,#18243a 0,transparent 34%),#070a10}.panel{width:min(880px,92vw);border:1px solid #26344d;border-radius:24px;background:rgba(12,18,29,.9);padding:28px;box-shadow:0 24px 80px #0008}h1{margin:0 0 8px;font-size:clamp(28px,6vw,58px);letter-spacing:-.04em}.muted{color:#9badc7}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:24px 0}.card{border:1px solid #25334b;border-radius:16px;padding:16px;background:#0c1320}.label{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:#8095b5}.value{margin-top:7px;font-weight:700}.ok{color:#85f2ae}.bad{color:#ff9c9c}.actions{display:flex;gap:10px;flex-wrap:wrap}button{border:0;border-radius:13px;padding:13px 18px;font-weight:800;cursor:pointer;background:#edf3ff;color:#0b101a}button.secondary{background:#1b273b;color:#e9f1ff}pre{white-space:pre-wrap;max-height:260px;overflow:auto;background:#060910;border-radius:14px;padding:14px;color:#acc1e3}</style>
+</head>
+<body>
+<main class="panel">
+<div class="label">JACO AUTONOMUS IDE · ACTIVATION PLANE</div>
+<h1>Sentinel</h1>
+<p class="muted">Minimal lokal bootstrap. Startar kanonisk JACO Core utan att exponera godtyckligt shell.</p>
+<div class="grid">
+  <div class="card"><div class="label">Sentinel</div><div id="sentinel" class="value">CHECKING</div></div>
+  <div class="card"><div class="label">Core :3000</div><div id="core" class="value">CHECKING</div></div>
+  <div class="card"><div class="label">MCP</div><div id="mcp" class="value">CHECKING</div></div>
+</div>
+<div class="actions">
+  <button id="activate">ACTIVATE FULL JACO</button>
+  <button id="refresh" class="secondary">REFRESH</button>
+  <button id="open" class="secondary">OPEN AI STUDIO :3000</button>
+  <button id="deactivate" class="secondary">DEACTIVATE CORE</button>
+</div>
+<pre id="log">Ready.</pre>
+</main>
+<script>
+const nonce='__JACO_UI_NONCE__';
+const log=(v)=>document.querySelector('#log').textContent=typeof v==='string'?v:JSON.stringify(v,null,2);
+async function status(){const r=await fetch('/health',{cache:'no-store'});const j=await r.json();document.querySelector('#sentinel').textContent=j.status;document.querySelector('#sentinel').className='value ok';document.querySelector('#mcp').textContent='READY /mcp';document.querySelector('#mcp').className='value ok';const ok=j.core?.state==='READY';document.querySelector('#core').textContent=j.core?.state||'UNKNOWN';document.querySelector('#core').className='value '+(ok?'ok':'bad');log(j)}
+async function mutate(path,body={}){const r=await fetch(path,{method:'POST',headers:{'content-type':'application/json','x-jaco-ui-nonce':nonce},body:JSON.stringify(body)});const j=await r.json();log(j);await status();return j}
+document.querySelector('#activate').onclick=()=>mutate('/api/system/activate',{profile:'full'});
+document.querySelector('#deactivate').onclick=()=>mutate('/api/system/deactivate');
+document.querySelector('#refresh').onclick=status;
+document.querySelector('#open').onclick=()=>location.href='http://127.0.0.1:3000/';
+status().catch(e=>log(String(e)));
+</script>
+</body>
+</html>
