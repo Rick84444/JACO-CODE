@@ -240,3 +240,19 @@
 @media (prefers-reduced-motion:reduce) {
   .cognitive-workspace * { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
 }
+
+/* Keep recovery controls readable and usable with a touch keyboard. */
+@media (max-width:767px) {
+  .cognitive-contextbar { flex-direction:column; align-items:stretch; }
+  .cognitive-status { font-size:12px; max-width:none; }
+  .cognitive-view-tabs { overflow-x:auto; flex-shrink:0; }
+  .cognitive-view-tabs button { min-width:44px; min-height:44px; }
+  .cognitive-compose-modes button { font-size:12px; min-height:44px; }
+  .cognitive-live-mission-heading { flex-wrap:wrap; font-size:12px; }
+  .cognitive-live-mission-heading>button { min-height:40px; font-size:12px; }
+  .cognitive-live-mission-detail,.cognitive-operation-notice,.cognitive-connection-notice { font-size:12px; }
+  .cognitive-operation-notice { flex-wrap:wrap; }
+  .cognitive-operation-notice button { min-height:44px; }
+}
+
+.cognitive-workspace>.cognitive-operation-notice { flex-shrink:0; }

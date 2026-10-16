@@ -1,3 +1,4 @@
+import { readWorkspaceDrafts, writeWorkspaceDrafts } from '../lib/auraRecovery.mjs';
 import { readAuraResponse as json, acknowledgeSavedDraft } from '../lib/auraApi.mjs';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -306,11 +307,18 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [showTerminal, setShowTerminal] = useState(false);
   const [selectedEvidence, setSelectedEvidence] = useState<CognitiveEvent|null>(null);
   const [projectName, setProjectName] = useState('Arbetsyta');
+  const [projectRoot, setProjectRoot] = useState('');
+  const [draftStorageError, setDraftStorageError] = useState<string|null>(null);
+  const [draftNotice, setDraftNotice] = useState<string|null>(null);
+  const recoveryWritable = useRef(false);
   useEffect(() => {
     let active=true;
     fetch('/api/aura/workbench/project').then(json).then(data=>{
-      if(active && data.root) setProjectName(String(data.root).replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Arbetsyta');
-    }).catch(()=>{});
+      if(active && data.root) {
+        setProjectName(String(data.root).replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Arbetsyta');
+        restoreDrafts(String(data.root), true);
+      }
+    }).catch(()=>{if(active)setDraftStorageError('Projektet kunde inte läsas. Utkast kan inte återställas eller sparas för omladdning.');});
     const close=(event:KeyboardEvent)=>{if(event.key==='Escape')setSidePanelOpen(false);};
     window.addEventListener('keydown',close);
     return()=>{active=false;window.removeEventListener('keydown',close);};
@@ -326,6 +334,42 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const documentsRef=useRef(documents), draftsRef=useRef(drafts);
   documentsRef.current=documents; draftsRef.current=drafts;
   const [openFiles, setOpenFiles] = useState<string[]>([]);
+  const restoreDrafts = (root: string, initial = false) => {
+    recoveryWritable.current = false;
+    setDraftStorageError(null); setDraftNotice(null);
+    try {
+      const saved = readWorkspaceDrafts(window.sessionStorage, root);
+      setDocuments(current => initial ? {...saved.documents, ...current} : saved.documents);
+      setDrafts(current => initial ? {...saved.drafts, ...current} : saved.drafts);
+      const paths = Object.keys(saved.drafts);
+      setOpenFiles(current => initial ? [...new Set([...current, ...paths])] : paths);
+      setSelectedFile(current => initial && current ? current : paths[0] || null);
+      chatSession.setInput(current => initial && current ? current : saved.input);
+      if (paths.length || saved.input) setDraftNotice('Dina osparade utkast har återställts i den här fliken. Inget har skickats eller skrivits till projektet.');
+      recoveryWritable.current = true;
+    } catch {
+      setDocuments({}); setDrafts({}); setOpenFiles([]); setSelectedFile(null);
+      if (!initial) chatSession.setInput('');
+      setDraftStorageError('Sparade utkast kunde inte läsas. De har inte skrivits över. Kopiera ditt arbete innan du lämnar sidan.');
+    }
+    setProjectRoot(root);
+  };
+  useEffect(() => {
+    if (!projectRoot || !recoveryWritable.current) return;
+    try {
+      writeWorkspaceDrafts(window.sessionStorage, projectRoot, chatSession.input, drafts, documents);
+      setDraftStorageError(null);
+    } catch {
+      setDraftStorageError('Webbläsaren kunde inte spara utkasten. Kopiera texten eller spara filerna innan du laddar om eller lämnar sidan.');
+    }
+  }, [projectRoot, chatSession.input, drafts, documents]);
+  useEffect(() => {
+    const hasUnsaved = chatSession.input.length > 0 || !canSwitchProject(drafts, documents);
+    if (!hasUnsaved) return;
+    const beforeLeave = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', beforeLeave);
+    return () => window.removeEventListener('beforeunload', beforeLeave);
+  }, [chatSession.input, drafts, documents]);
   // The conversation remains mounted while the operator inspects code or evidence.
   const openChat = () => { setWorkspaceView('conversation'); setSidePanelOpen(false); window.dispatchEvent(new Event('jaco:aura:focus')); };
   const [sidebar, setSidebar] = useState<SidebarView>('explorer');
@@ -500,7 +544,12 @@ export const JacoAuraComputeIDE: React.FC = () => {
   };
 
   const updateDraft = (path: string, content: string) => {
-    setDrafts(current => ({ ...current, [path]: content }));
+    setDrafts(current => {
+      const next = { ...current };
+      if (content === documentsRef.current[path]?.content) delete next[path];
+      else next[path] = content;
+      return next;
+    });
   };
 
   const handleSaved = (next: AuraEditorFile) => {
@@ -931,12 +980,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
         <>
           <div className="px-3 pt-2">
             <AuraProjectPicker
-              disabled={!canSwitchProject(drafts)}
+              disabled={!canSwitchProject(drafts, documents)}
               onOpened={(root) => {
                 setProjectName(root.replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Arbetsyta');
-                setSelectedFile(null);
-                setOpenFiles([]);
-                setDocuments({});
+                restoreDrafts(root);
                 setProjectKey(key => key + 1);
                 void refresh();
               }}
@@ -1571,6 +1618,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   ];
   const remoteViewer = typeof window !== 'undefined' && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
   const signOut = async () => {
+    if ((chatSession.input.length > 0 || !canSwitchProject(drafts, documents)) && !window.confirm('Du har osparat arbete. Vill du ändå logga ut? Utkasten finns bara kvar i den här webbläsarfliken.')) return;
     try { await fetch('/ide-auth/logout', { method: 'POST' }); } finally { window.location.replace('/ide-login'); }
   };
   const status = liveWorkspaceStatus({ connection: cognitiveLive.connection, busy: chatSession.busy, missions, runtimeRunning: snapshot?.runtime?.running, error: connectionError });
@@ -1585,7 +1633,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
       </div>
       {runtimeError&&<div role="alert" className="cognitive-operation-notice">{runtimeError}<button type="button" onClick={()=>setRuntimeError(null)} aria-label="Stäng felmeddelandet"><X size={13}/></button></div>}
       <div className="cognitive-editor-body">
-        {editorFile && <div className="cognitive-editor-session" hidden={!fileView}><React.Suspense fallback={<div className="cognitive-empty-detail">Öppnar kodeditorn…</div>}><AuraCodeEditor file={editorFile} draft={drafts[editorFile.path]} onDraftChange={updateDraft} onSaved={handleSaved}/></React.Suspense></div>}
+        {editorFile && <div className="cognitive-editor-session" hidden={!fileView}><React.Suspense fallback={<div className="cognitive-empty-detail">Öppnar kodeditorn…</div>}><AuraCodeEditor file={editorFile} draft={drafts[editorFile.path]} onDraftChange={updateDraft} onSaved={handleSaved} onDiscard={() => {
+          if (!editorFile || !window.confirm('Kasta de osparade ändringarna i den här filen?')) return;
+          setDrafts(current => { const next = {...current}; delete next[editorFile.path]; return next; });
+        }}/></React.Suspense></div>}
         {!fileView && <div className="cognitive-empty-detail"><FileCode2 size={30}/><h2>{selectedFile ? 'Öppnar '+selectedFile+'…' : 'Koden, när du behöver den.'}</h2><p>Öppna en fil från projektet eller från en händelse i samtalet.</p><button type="button" className="cognitive-primary-outline" onClick={() => { setSidebar('explorer'); setSidePanelOpen(true); }}>Visa projektfiler</button></div>}
       </div>
       <button type="button" className="cognitive-dock-toggle" aria-expanded={showTerminal} onClick={() => setShowTerminal(v => !v)}><Terminal size={13}/>{showTerminal ? 'Dölj terminal & detaljer' : 'Öppna terminal & detaljer'}</button>
@@ -1701,7 +1752,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
     <div className="cognitive-detail-body">{canvasDetail}</div>
   </div>;
   return <>
-    <CognitiveWorkspace canvas={workspaceView} onCanvas={setWorkspaceView} conversation={renderChatContent()} detail={detail}
+    <CognitiveWorkspace notice={<>
+      {draftStorageError && <div role="alert" className="cognitive-operation-notice">{draftStorageError}</div>}
+    {draftNotice && <div role="status" className="cognitive-operation-notice">{draftNotice}<button type="button" aria-label="Stäng utkastmeddelandet" onClick={()=>setDraftNotice(null)}>Stäng</button></div>}
+    </>} canvas={workspaceView} onCanvas={setWorkspaceView} conversation={renderChatContent()} detail={detail}
       sidebar={sidebar} sidePanelOpen={sidePanelOpen} sidePanel={renderSidebar()}
       onSidebar={view => { setSidebar(view); setSidePanelOpen(current => sidebar === view ? !current : true); }}
       onCloseSidebar={() => setSidePanelOpen(false)} status={status} projectName={projectName}

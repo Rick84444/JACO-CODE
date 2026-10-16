@@ -1,3 +1,4 @@
+import { timestampChatMessages } from '../lib/auraRecovery.mjs';
 import { readAuraResponse as apiJson } from '../lib/auraApi.mjs';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, ArrowUpRight, MessageSquare, ChevronRight } from 'lucide-react';
@@ -42,12 +43,15 @@ interface AuraChatActivity {
 }
 
 export function useAuraChatSession() {
-  const [messages, setMessages] = useState<ChatMessage[]>([{
+  const [messages, updateMessages] = useState<ChatMessage[]>([{
     id: 'welcome',
     role: 'system',
     content: 'Fråga om arbetsytan eller skapa ett uppdrag. Anslutningsstatus avgörs när ett anrop görs.',
   }]);
+  const setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>> = action => updateMessages(current => timestampChatMessages(typeof action === 'function' ? action(current) : action));
   const [input, setInput] = useState('');
+  const [chatPhase, setChatPhase] = useState<'saving'|'model'|null>(null);
+  const chatController = useRef<AbortController|null>(null);
   const [busy, setBusy] = useState<'chat'|'goal'|'tool'|null>(null);
   const [toolArguments, setToolArguments] = useState('{}');
   const [storageReady, setStorageReady] = useState(false);
@@ -72,18 +76,18 @@ export function useAuraChatSession() {
     return () => {active=false;controller.abort();window.clearTimeout(retryTimer);};
   }, [storageRevision]);
   const retryStorage = () => setStorageRevision(value=>value+1);
-  const appendMessage = async (message:ChatMessage) => {
+  const appendMessage = async (message:ChatMessage, signal?:AbortSignal) => {
     try {
-      const data=await fetch('/api/aura/chat/session/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(message)}).then(apiJson);
+      const data=await fetch('/api/aura/chat/session/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(message),signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000)}).then(apiJson);
       setMessages(current=>current.some(m=>m.id===data.message.id)?current:[...current,data.message]);setStorageError(null);
     } catch(error:any) {
       // Keep the actual answer visible, but explicitly report that durable storage failed.
-      setMessages(current=>[...current,{...message,at:new Date().toISOString()}]);setStorageError(`Meddelandet visas men kunde inte sparas: ${error.message}`);
+      setMessages(current=>current.some(m=>m.id===message.id)?current:[...current,{...message,at:new Date().toISOString()}]);setStorageError(`Meddelandet visas men sparandet kunde inte bekräftas: ${error.message}`);
       if (message.role === 'user') throw error;
       return null;
     }
   };
-  return { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments };
+  return { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments, chatPhase, setChatPhase, chatController };
 }
 
 interface Props {
@@ -119,7 +123,8 @@ async function chatJson(response: Response) {
 }
 
 export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onOpenProviders, activity = [], missions = [], onCancelMission, onOpenWork, liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
-  const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments } = session;
+  const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments, chatPhase, setChatPhase, chatController } = session;
+  const pendingChat = useRef<{text:string;id:string}|null>(null);
   const [chatModel, setChatModel] = useState('seer');
   const [configuredModel, setConfiguredModel] = useState('seer');
   const [modelOverride, setModelOverride] = useState(false);
@@ -197,7 +202,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
   const feed=useMemo(()=>[
     ...messages.filter(m=>m.id!=='welcome').map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message})),
     ...liveEvents.map(event=>({kind:'event' as const,id:event.id,at:event.at,event})),
-  ].sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages,liveEvents]);
+  ].sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)),[messages,liveEvents]);
   const currentMission=missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
   const followLatest=()=>{followRef.current=true;setFollowing(true);if(scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;};
   useEffect(()=>{if(followRef.current && scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;},[feed,busy]);
@@ -208,11 +213,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
   useEffect(()=>{const focus=()=>inputRef.current?.focus();window.addEventListener('jaco:aura:focus',focus);return()=>window.removeEventListener('jaco:aura:focus',focus);},[]);
   const modelLabel=selectedProvider==='seer'?'JACO standard':`${selectedProvider}${chatModel?` / ${chatModel}`:''}`;
 
-  const history = useMemo(() => messages
-    .filter(m => m.role !== 'system')
-    .slice(-20)
-    .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', content: m.content })), [messages]);
-
   const ask = async (retry?: string) => {
     const text = (retry ?? input).trim();
     if (!text || busy || !storageReady) return;
@@ -220,12 +220,20 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
       setCatalogError('Välj en registrerad provider och ange modell före anrop.');
       return;
     }
-    if (retry === undefined) setInput('');
-    const user: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text };
+    const id = pendingChat.current?.text === text ? pendingChat.current.id : crypto.randomUUID();
+    pendingChat.current = { text, id };
+    const user: ChatMessage = { id, role: 'user', content: text };
+    const controller = new AbortController();
+    chatController.current = controller;
+    let phase: 'saving'|'model' = 'saving';
+    setChatPhase(phase);
     setBusy('chat');
     const started = performance.now();
     try {
-      if (retry === undefined) await appendMessage(user);
+      if (retry === undefined) await appendMessage(user, controller.signal);
+      if (retry === undefined) setInput(current => current === input ? '' : current);
+      controller.signal.throwIfAborted();
+      phase = 'model'; setChatPhase(phase);
       const ragContext: Array<{ source: string; content: any }> = [];
       if (liveEvents.length || currentMission) ragContext.push({
         source:'jaco://current-work',
@@ -263,11 +271,11 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
           model: selectedProvider === 'seer' ? undefined : chatModel,
           activeFilePath: activeFilePath || null,
           targetSubAgent: selectedTool?.kind === 'agent' ? (selectedTool.agentName || selectedTool.agentId) : undefined,
-          messagesHistory: [...history, { role: 'user', content: text }],
+          messagesHistory: [...messages.filter(m => m.role !== 'system' && m.id !== id).slice(-20).map(m => ({role:m.role === 'assistant' ? 'model' : 'user',content:m.content})), { role: 'user', content: text }],
           ragContext,
         }),
         // Longer than SEER's own provider chain; a hung request still ends in a message.
-        signal: AbortSignal.timeout(240_000),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]),
       }).then(chatJson);
       const answer=String(data.reply || data.text || '').trim();
       if(!answer) throw new Error('Modellen returnerade ett tomt svar.');
@@ -288,7 +296,8 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
             ? `tools: ${data.toolReceipts.map((r: any) => `${r.name} ${r.ok ? 'ok' : 'failed'}`).join(', ')}`
             : null,
         ].filter(Boolean).join(' · '),
-      });
+      }, controller.signal);
+      pendingChat.current = null;
       // No model answered and Aura gave its status answer: offer the one thing that would fix it.
       if (data.degraded && data.hint?.action) {
         setMessages(current => [...current, {
@@ -303,12 +312,13 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
         id: crypto.randomUUID(),
         role: 'system',
         // The runtime itself did not answer (stopped, restarting, or the request timed out); a refusal it did send carries a hint.
-        content: hint?.message || (error?.name === 'TimeoutError'
-          ? 'JACO fick inget svar från runtime på fyra minuter. Kontrollera anslutningen och försök igen.'
+        content: controller.signal.aborted ? 'Väntan avbröts. Servern kan fortfarande behandla anropet. Pågående uppdrag har inte avbrutits.' : hint?.message || (error?.name === 'TimeoutError'
+          ? phase === 'saving' ? 'Sparandet kunde inte bekräftas inom tio sekunder. Texten är kvar; kontrollera anslutningen innan du skickar igen.' : 'JACO fick inget svar från runtime på fyra minuter. Kontrollera anslutningen innan du skickar igen.'
           : `Chatten svarade inte: ${error?.message || String(error)}`),
         ...(hint?.action ? { action: { code: hint.action, label: hint.actionLabel || 'Öppna', retryText: text } } : {}),
       }]);
     } finally {
+      chatController.current = null; setChatPhase(null);
       setBusy(null);
     }
   };
@@ -475,7 +485,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
               :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><span className="cognitive-jaco-mark"/>JACO</div><ChatMarkdown text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>Svar & källor</summary><p>{message.meta}</p></details>}</article>
               :<div key={item.id} className="cognitive-system-message">{message.content}{message.action&&<button type="button" disabled={busy!==null} onClick={()=>void runAction(message.action!)}>{message.action.label}</button>}</div>;
           })}
-          {busy&&<div className="cognitive-response-wait" role="status"><Loader2 size={15} className="animate-spin"/>{busy==='goal'?'Registrerar uppdraget…':busy==='tool'?'Väntar på verktygets resultat…':'Väntar på modellens svar…'}</div>}
+          {busy&&<div className="cognitive-response-wait" role="status"><Loader2 size={15} className="animate-spin"/>{busy==='goal'?'Registrerar uppdraget…':busy==='tool'?'Väntar på verktygets resultat…':chatPhase==='saving'?'Sparar meddelandet…':'Väntar på modellens svar…'}{busy==='chat'&&<button type="button" onClick={()=>chatController.current?.abort()} className="cognitive-primary-outline">Avbryt väntan</button>}</div>}
         </div>
       </div>
       {!following&&<button type="button" className="cognitive-follow-latest" onClick={followLatest}><ArrowDown size={13}/>Följ senaste arbetet</button>}
@@ -508,7 +518,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
               value={input}
               onChange={event => setInput(event.target.value)}
               onKeyDown={event => {
-                if (event.key === 'Enter' && !event.shiftKey) {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
                   void submit();
                 }

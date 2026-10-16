@@ -21,7 +21,7 @@ export function projectLabel(root) {
   return segments[segments.length - 1];
 }
 
-export function canSwitchProject(drafts) {
+export function canSwitchProject(drafts, documents = {}) {
   if (drafts === null || typeof drafts !== 'object') return false;
-  return Object.keys(drafts).length === 0;
+  return Object.entries(drafts).every(([path, content]) => documents[path]?.content === content);
 }

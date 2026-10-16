@@ -5,6 +5,11 @@ on:
     paths:
       - 'runtime/src/components/Cognitive*.tsx'
       - 'runtime/src/components/AuraChatPanel.tsx'
+      - 'runtime/src/components/AuraCodeEditor.tsx'
+      - 'runtime/src/components/ProviderConnect.tsx'
+      - 'runtime/src/lib/auraRecovery.mjs'
+      - 'runtime/src/lib/auraProject.mjs'
+      - 'tests/nova/aura-recovery.test.mjs'
       - 'runtime/src/components/JacoAuraComputeIDE.tsx'
       - 'runtime/src/hooks/useCognitiveLive.ts'
       - 'runtime/src/cognitive-workspace.css'
@@ -20,10 +25,15 @@ on:
       - 'tests/nova/nova-activity-text.test.mjs'
       - '.github/workflows/cognitive-workspace-gate.yml'
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - 'runtime/src/components/Cognitive*.tsx'
       - 'runtime/src/components/AuraChatPanel.tsx'
+      - 'runtime/src/components/AuraCodeEditor.tsx'
+      - 'runtime/src/components/ProviderConnect.tsx'
+      - 'runtime/src/lib/auraRecovery.mjs'
+      - 'runtime/src/lib/auraProject.mjs'
+      - 'tests/nova/aura-recovery.test.mjs'
       - 'runtime/src/components/JacoAuraComputeIDE.tsx'
       - 'runtime/src/hooks/useCognitiveLive.ts'
       - 'runtime/src/cognitive-workspace.css'
@@ -58,7 +68,7 @@ jobs:
           npm run build:client
           npm run build:server
       - name: Evidence, durable replay, chat storage and GUI contracts
-        run: node --test tests/nova/cognitive-live.test.mjs tests/nova/aura-chat-session.test.mjs tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-gui-audit.test.mjs tests/nova/nova-activity-text.test.mjs tests/nova/aura-seer-chat.test.mjs
+        run: node --test tests/nova/aura-recovery.test.mjs runtime/src/lib/auraProject.test.mjs tests/nova/cognitive-live.test.mjs tests/nova/aura-chat-session.test.mjs tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-gui-audit.test.mjs tests/nova/nova-activity-text.test.mjs tests/nova/aura-seer-chat.test.mjs
       - name: Install isolated browser test tools
         run: |
           npm install --prefix "$RUNNER_TEMP/jaco-browser" --no-package-lock --no-audit --no-fund playwright@1.62.1

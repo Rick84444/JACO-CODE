@@ -21,13 +21,16 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
   const [error, setError] = useState('');
   const [scan, setScan] = useState<Scanned[] | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const [checkedAt, setCheckedAt] = useState<string|null>(null);
 
   const refresh = async () => {
     setScanning(true);
     try {
-      const body = await fetch('/api/aura/workbench/providers/scan').then(readAuraResponse);
-      if (body.success) setScan(body.providers);
-    } catch { /* the list just stays as it was */ }
+      const body = await fetch('/api/aura/workbench/providers/scan', {signal:AbortSignal.timeout(10000)}).then(readAuraResponse);
+      if (!Array.isArray(body.providers)) throw new Error('INVALID_PROVIDER_LIST');
+      setScan(body.providers); setScanError(''); setCheckedAt(new Date().toLocaleTimeString('sv-SE'));
+    } catch { setScanError('Aktuell anslutningsstatus är okänd. Kontrollen misslyckades; tidigare observationer är inte en ny verifiering.'); }
     finally { setScanning(false); }
   };
   useEffect(() => { void refresh(); }, []);
@@ -37,7 +40,7 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
     setBusy(true); setError(''); setResult(null);
     try {
       const body = await fetch('/api/aura/workbench/providers/key', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key.trim(), ...(provider ? { provider } : {}) }),
+        method: 'POST', signal: AbortSignal.timeout(20000), headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key.trim(), ...(provider ? { provider } : {}) }),
       }).then(readAuraResponse);
       if (!body.success) throw new Error(body.error || 'KEY_FAILED');
       setResult(body.result);
@@ -57,7 +60,7 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
         </button>
       </form>
       {error && <div className="text-[11px] text-red-300 break-words">{error}</div>}
-      {result?.state === 'READY' && <div className="flex items-center gap-1.5 text-[11px] text-emerald-300"><Check className="w-3.5 h-3.5" />{result.id} ansluten: {result.models?.length ?? 0} modeller, standard {result.defaultModel || '(ingen)'}</div>}
+      {result?.state === 'READY' && <div className="flex items-center gap-1.5 text-[11px] text-emerald-300"><Check className="w-3.5 h-3.5" />{result.id} svarar: {result.models?.length ?? 0} modeller, standard {result.defaultModel || '(ingen)'}. Modellsvar är inte testat; välj Använd för att prova.</div>}
       {result?.state === 'KEY_REJECTED' && <div className="text-[11px] text-red-300">{result.id} nekade nyckeln. Inget sparades.</div>}
       {result?.state === 'UNREACHABLE' && <div className="text-[11px] text-amber-300">{result.id} svarade inte just nu. Inget sparades, försök igen.</div>}
       {result?.state === 'UNKNOWN_KEY' && <div className="text-[11px] text-amber-300">JACO kände inte igen nyckeln. Ange tjänstens adress nedan, så provas den där.</div>}
@@ -68,16 +71,18 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
         </div>
       )}
       <div className="flex items-center justify-between pt-1">
-        <div className="text-[11px] text-slate-400">Vilka som är aktiva</div>
+        <div className="text-[11px] text-slate-400">Modellistor från tjänsterna</div>
         <button type="button" onClick={() => void refresh()} disabled={scanning} aria-label="Sök av" className="text-slate-400 hover:text-white disabled:opacity-40"><RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} /></button>
       </div>
+      {scanError && <p role="alert" className="text-sm text-amber-300">{scanError}</p>}
+      {checkedAt && <p className="text-xs text-slate-400">Senast kontrollerat {checkedAt}. Ett modellsvar testas med Använd.</p>}
       {scan && (
         <div className="space-y-0.5">
           {scan.map(p => (
             <div key={p.id} className="flex items-center gap-2 text-[11px]">
-              <span className={`h-2 w-2 rounded-full shrink-0 ${p.active ? 'bg-emerald-400' : p.state === 'NO_KEY' ? 'bg-slate-600' : 'bg-red-400'}`} />
+              <span className={`h-2 w-2 rounded-full shrink-0 ${scanError || scanning ? 'bg-slate-600' : p.active ? 'bg-cyan-400' : p.state === 'NO_KEY' ? 'bg-slate-600' : 'bg-red-400'}`} />
               <span className="text-slate-200">{p.id}</span>
-              <span className="text-slate-500 truncate">{p.active ? `${p.models} modeller${p.ms != null ? ` · ${p.ms} ms` : ''}` : STATE_TEXT[p.state]}</span>
+              <span className="text-slate-500 truncate">{scanError ? 'aktuell status okänd' : scanning ? 'kontrollerar…' : p.active ? `${p.models} modeller listade · svar ej testat` : STATE_TEXT[p.state]}</span>
             </div>
           ))}
         </div>
@@ -102,7 +107,7 @@ export const ProviderConnect: React.FC<{ onConnected: () => void | Promise<void>
     setBusy(true); setError('');
     try {
       const body = await fetch('/api/aura/workbench/secrets', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', signal: AbortSignal.timeout(20000), headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: found.apiKeyEnv, value: key.trim(), purpose: `${found.id} API` }),
       }).then(readAuraResponse);
       if (!body.success) throw new Error(body.error || 'KEY_NOT_SAVED');
@@ -117,7 +122,7 @@ export const ProviderConnect: React.FC<{ onConnected: () => void | Promise<void>
     setBusy(true); setError(''); setFound(null); setLastUrl(target.trim());
     try {
       const body = await fetch('/api/aura/workbench/providers/connect', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: target.trim() }),
+        method: 'POST', signal: AbortSignal.timeout(20000), headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: target.trim() }),
       }).then(readAuraResponse);
       if (!body.success) throw new Error(body.error || 'CONNECT_FAILED');
       setFound(body.discovery);
@@ -147,7 +152,7 @@ export const ProviderConnect: React.FC<{ onConnected: () => void | Promise<void>
       {error && <div className="text-[11px] text-red-300 break-words">{error}</div>}
       {found && (
         <div className="space-y-1.5 text-[11px]">
-          {found.state === 'READY' && <div className="flex items-center gap-1.5 text-emerald-300"><Check className="w-3.5 h-3.5" />{found.id} ansluten: {found.models.length} modeller, standard {found.defaultModel || '(ingen)'}</div>}
+          {found.state === 'READY' && <div className="flex items-center gap-1.5 text-emerald-300"><Check className="w-3.5 h-3.5" />{found.id} svarar: {found.models.length} modeller, standard {found.defaultModel || '(ingen)'}. Modellsvar är inte testat; välj Använd för att prova.</div>}
           {found.state === 'NEEDS_KEY' && <div className="flex items-start gap-1.5 text-amber-300"><KeyRound className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span>{found.id} svarar men kräver en API-nyckel.</span></div>}
           {found.state === 'KEY_REJECTED' && <div className="flex items-start gap-1.5 text-red-300"><KeyRound className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span>{found.id} nekade nyckeln. Klistra in en giltig.</span></div>}
           {(found.state === 'NEEDS_KEY' || found.state === 'KEY_REJECTED') && (
