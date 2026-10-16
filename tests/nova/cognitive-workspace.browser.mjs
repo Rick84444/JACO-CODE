@@ -19,7 +19,7 @@ const require=createRequire(path.join(release,'package.json'));
 const express=require('express');
 const {chromium}=await import(process.env.JACO_PLAYWRIGHT_MODULE || require.resolve('playwright'));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-ui-test-'));
-let bus=new DurableMissionBus(directory),chat=createAuraChatSession(bus),blockLive=false,blockSession=false,liteAck=false,rejectGoal=false;
+let bus=new DurableMissionBus(directory),chat=createAuraChatSession(bus),blockLive=false,blockSession=false,liteAck=false,rejectGoal=false,hangSave=false,hangChat=false,failScan=false;
 const workstream={snapshot:()=>({events:[]})},liveResponses=new Set(),requests=[];
 const code={ 'example.ts':'export const checked = true;\n',
   'preview.html':'<style>body{font-family:system-ui;padding:32px;color:#153345}h1{font-weight:500}</style><h1>Isolerad förhandsvisning</h1><p id="boundary"></p><script>try{window.parent.document.body.dataset.changed="unsafe";document.querySelector("#boundary").textContent="boundary failed";}catch{document.querySelector("#boundary").textContent="isolated";}</script>' };
@@ -65,11 +65,13 @@ app.put('/api/aura/workbench/file',(req,res)=>{
   if(req.body.expectedHash!==previous.hash)return res.status(409).json({success:false,error:'WORKBENCH_FILE_CONFLICT'});
   code[req.body.path]=req.body.content;res.json({...file(req.body.path),changed:true});
 });
+app.get('/api/aura/workbench/providers/scan',(_req,res)=>failScan?res.status(503).json({success:false,error:'OFFLINE'}):res.json({success:true,providers:[{id:'fixture',active:true,state:'ACTIVE',models:1,defaultModel:'model'}]}));
 app.get('/api/aura/chat/models',(_req,res)=>res.json({success:true,default:'seer',cloud:[],providers:[]}));
 app.get('/api/aura/chat/session',(_req,res)=>blockSession?res.status(503).json({success:false,error:'TEST_SESSION_DOWN'}):res.json({success:true,messages:chat.list()}));
-app.post('/api/aura/chat/session/messages',(req,res)=>res.json({success:true,message:chat.append(req.body)}));
+app.post('/api/aura/chat/session/messages',(req,res)=>{const message=chat.append(req.body);if(!hangSave)res.json({success:true,message});});
 app.post('/api/aura/chat',(req,res)=>{
   requests.push({kind:'chat',body:req.body});
+  if(hangChat)return;
   res.json({success:true,reply:'Testsvaret använder de observerade händelserna. Uppdraget fortsätter.',provider:'test-fixture',model:'no-inference'});
 });
 app.post('/api/aura/workbench/start-goal',(req,res)=>{
@@ -215,6 +217,7 @@ try {
   passed('Live connection interruption preserves the draft, exposes uncertainty and reconnects without duplicates');
   for(const response of liveResponses)response.end();
   bus.close();bus=new DurableMissionBus(directory);chat=createAuraChatSession(bus);
+  page.once('dialog',dialog=>dialog.accept());
   await page.reload({waitUntil:'networkidle'});
   await page.locator('[data-event-id="mission:5"]').waitFor();
   assert.equal(await page.locator('[data-event-id="mission:5"]').count(),1);
@@ -234,6 +237,88 @@ try {
   await page.getByText('Uppdragets registrering kunde inte bekräftas: TEST_GOAL_REJECTED',{exact:true}).waitFor();
   assert.equal(bus.listMissions(10).length,2);assert.equal(await input().inputValue(),'Detta ska inte registreras');
   passed('Rejected goal creation keeps the request text and never creates a false activation message');
+  // Recovery regressions use the production client with controlled network failures.
+  await page.getByRole('button',{name:'Fråga',exact:true}).click();
+  await input().fill('Utkast som ska överleva omladdning');
+  page.once('dialog',dialog=>dialog.accept());
+  await page.reload({waitUntil:'networkidle'});
+  await page.waitForFunction(()=>document.querySelector('textarea[aria-label="Meddelande till JACO"]')?.value==='Utkast som ska överleva omladdning');
+  assert.equal(requests.filter(r=>r.kind==='goal').length,2,'restoring must never submit a mission');
+  passed('Reload restores an unsent chat draft without dispatching it');
+
+  const chatCalls=requests.filter(r=>r.kind==='chat').length;
+  hangSave=true;
+  await input().fill('Långsamt sparande');
+  await page.getByRole('button',{name:'Skicka meddelande',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'Sparar meddelandet…'}).waitFor();
+  await page.getByText('Sparandet kunde inte bekräftas inom tio sekunder.',{exact:false}).waitFor({timeout:15000});
+  assert.equal(requests.filter(r=>r.kind==='chat').length,chatCalls,'no inference before a confirmed history write');
+  assert.equal(await input().inputValue(),'Långsamt sparande');
+  assert.equal(chat.list().filter(m=>m.role==='user'&&m.content==='Långsamt sparande').length,1);
+  hangSave=false;
+  await page.getByRole('button',{name:'Skicka meddelande',exact:true}).click();
+  await page.waitForFunction(()=>!document.querySelector('.cognitive-response-wait'));
+  assert.equal(chat.list().filter(m=>m.role==='user'&&m.content==='Långsamt sparande').length,1,'retry reconciles the same message id');
+  passed('History write timeout releases the composer and retry does not duplicate the saved user message');
+
+  hangChat=true;
+  const missionCount=bus.listMissions(10).length;
+  await input().fill('Avbryt bara väntan');
+  await page.getByRole('button',{name:'Skicka meddelande',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'Väntar på modellens svar…'}).waitFor();
+  await page.getByRole('button',{name:'Avbryt väntan',exact:true}).click();
+  await page.getByText('Väntan avbröts. Servern kan fortfarande behandla anropet.',{exact:false}).waitFor();
+  assert.equal(await input().inputValue(),'Avbryt bara väntan');
+  assert.equal(bus.listMissions(10).length,missionCount);
+  const timeline=await page.getByRole('log').innerText();
+  assert.ok(timeline.lastIndexOf('Väntan avbröts.')>timeline.lastIndexOf('Avbryt bara väntan'),'new errors follow the failed message');
+  hangChat=false;
+  passed('Cancelling a chat wait preserves text and missions, and puts the error at the end of the conversation');
+
+  await page.getByRole('button',{name:'Modellanslutningar',exact:true}).click();
+  await page.getByText('1 modeller listade · svar ej testat',{exact:true}).waitFor();
+  failScan=true;
+  await page.getByRole('button',{name:'Sök av',exact:true}).click();
+  await page.getByText('Aktuell anslutningsstatus är okänd.',{exact:false}).waitFor();
+  assert.equal(await page.getByText('1 modeller listade · svar ej testat',{exact:true}).count(),0);
+  await page.getByText('aktuell status okänd',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Stäng projektpanelen',exact:true}).last().click();
+  passed('Failed provider refresh replaces active status with explicit uncertainty');
+
+  await input().fill('');
+  await canvas('Kod').click();
+  await page.getByRole('button',{name:'Visa projektfiler',exact:true}).click();
+  await page.getByLabel('Repository tree',{exact:true}).getByRole('button',{name:'example.ts',exact:false}).click();
+  await page.locator('.monaco-editor textarea').focus();await page.keyboard.press('Control+KeyA');
+  await page.keyboard.insertText(code['example.ts']+'// temporary change');
+  await page.keyboard.press('Control+KeyA');await page.keyboard.insertText(code['example.ts']);
+  await page.getByRole('button',{name:'Projektfiler',exact:true}).click();
+  assert.equal(await page.getByText('Save or discard edits before switching project',{exact:true}).count(),0);
+  assert.equal(await page.getByPlaceholder('Absolute folder path').isVisible(),true);
+  await page.getByRole('button',{name:'Stäng projektpanelen',exact:true}).last().click();
+  passed('Editing and reverting to original content leaves project switching available');
+
+  await page.locator('.monaco-editor textarea').focus();await page.keyboard.press('Control+KeyA');
+  await page.keyboard.insertText('export const recoveredDraft = true;');
+  page.once('dialog',dialog=>dialog.accept());
+  await page.reload({waitUntil:'networkidle'});
+  await canvas('Kod').click();
+  await page.waitForFunction(()=>document.querySelector('.monaco-editor .view-lines')?.textContent.includes('recoveredDraft'));
+  code['example.ts']='export const newerDiskVersion = true;\n';
+  await page.getByRole('button',{name:'Läs senaste filen',exact:true}).waitFor();
+  await page.locator('.monaco-editor textarea').focus();await page.keyboard.press('Control+KeyS');
+  await page.getByText('File changed on disk. Reload before saving.',{exact:true}).waitFor();
+  assert.equal(code['example.ts'],'export const newerDiskVersion = true;\n');
+  passed('Reloaded code drafts retain their original hash and cannot overwrite newer server content');
+
+  await page.setViewportSize({width:390,height:844});
+  await canvas('Samtal').click();
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  const sendBox=await page.getByRole('button',{name:'Skicka meddelande',exact:true}).boundingBox();
+  assert.ok(sendBox && sendBox.y>=0 && sendBox.y+sendBox.height<=844,'mobile send control must remain inside the viewport with a recovery notice');
+  await screenshot('cognitive-workspace-recovery-mobile');
+  passed('Recovery controls fit the mobile viewport');
+
   assert.deepEqual(errors,[]);
   const report={status:'PASS',checks:results.length,browser:browser.version(),observedAt:new Date().toISOString(),scope:'Controlled UI integration; no inference, Android or operator runtime execution',clientIndexSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'dist/index.html'))).digest('hex'),results};
   console.log(JSON.stringify(report,null,2));
@@ -247,3 +332,4 @@ try {
 }finally {
   await browser.close();for(const response of liveResponses)response.end();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));bus.close();fs.rmSync(directory,{recursive:true,force:true});
 }
+

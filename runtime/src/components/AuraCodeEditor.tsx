@@ -18,11 +18,12 @@ interface Props {
   onDraftChange?: (path: string, content: string) => void;
   onSaved?: (file: AuraEditorFile) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onDiscard?: () => void;
 }
 
 
 
-export const AuraCodeEditor: React.FC<Props> = ({ file, draft, onDraftChange, onSaved, onDirtyChange }) => {
+export const AuraCodeEditor: React.FC<Props> = ({ file, draft, onDraftChange, onSaved, onDirtyChange, onDiscard }) => {
   const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState<'idle'|'saved'|'error'|'conflict'>('idle');
   const [message, setMessage] = useState<string | null>(null);
@@ -46,6 +47,7 @@ export const AuraCodeEditor: React.FC<Props> = ({ file, draft, onDraftChange, on
     try {
       const data = await fetch('/api/aura/workbench/file', {
         method: 'PUT',
+        signal: AbortSignal.timeout(15000),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: file.path, content: value, expectedHash: file.hash }),
       }).then(apiJson);
@@ -62,7 +64,7 @@ export const AuraCodeEditor: React.FC<Props> = ({ file, draft, onDraftChange, on
     } catch (error: any) {
       const conflict = String(error?.message || '').includes('WORKBENCH_FILE_CONFLICT');
       setSaveState(conflict ? 'conflict' : 'error');
-      setMessage(conflict ? 'File changed on disk. Reload before saving.' : (error?.message || String(error)));
+      setMessage(conflict ? 'File changed on disk. Reload before saving.' : error?.name === 'TimeoutError' ? 'Sparandet kunde inte bekräftas. Kontrollera filen innan du försöker igen; ditt utkast är kvar.' : (error?.message || String(error)));
     } finally {
       setSaving(false);
     }
@@ -97,6 +99,7 @@ export const AuraCodeEditor: React.FC<Props> = ({ file, draft, onDraftChange, on
           {saveState === 'saved' && <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />saved</span>}
           {(saveState === 'error' || saveState === 'conflict') && <span className="text-amber-400 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{saveState}</span>}
           <span>{dirty ? '● modified' : 'saved'} · {file.language}</span>
+          {dirty && onDiscard && <button type="button" onClick={onDiscard} disabled={saving} className="px-2 py-1 border border-[#3b3b3b] rounded text-slate-300">Kasta ändringar</button>}
           <button
             onClick={() => void save()}
             disabled={!dirty || saving}

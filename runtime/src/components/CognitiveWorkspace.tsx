@@ -10,7 +10,7 @@ interface Props {
   sidePanel:React.ReactNode;sidebar:Sidebar;sidePanelOpen:boolean;onSidebar:(view:Sidebar)=>void;onCloseSidebar:()=>void;
   status:{label:string;tone:string};projectName:string;branch?:string|null;changes:number;
   approvalCount:number;onApprovals:()=>void;onCommands:()=>void;onSignOut:()=>void;
-  lastObservedAt:string|null;error:string|null;
+  lastObservedAt:string|null;error:string|null;notice?:React.ReactNode;
 }
 const views=[['conversation',MessageSquare,'Samtal'],['code',Code2,'Kod'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
 const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter'],['revenue',CircleDollarSign,'Budget & ekonomi']] as const;
@@ -18,6 +18,7 @@ const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git
 export function CognitiveWorkspace(props:Props) {
   const hasCanvas=props.canvas!=='conversation';
   return <div className="cognitive-workspace" data-cognitive-workspace="true">
+    {props.notice}
     <header className="cognitive-topbar">
       <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">Live workspace</span></div>
       <div className="cognitive-project"><Folder size={14}/><span>{props.projectName}</span><ChevronRight size={12}/><span className="cognitive-branch">{props.branch || 'Projekt'}</span></div>
