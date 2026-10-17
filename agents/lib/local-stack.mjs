@@ -5,20 +5,10 @@ import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'dotenv';
+import { runtimeDirectory } from './runtime-directory.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-// A runtime is a directory whose server.ts serves the identity readiness probes. The repository root
-// also has a legacy server.ts without it; picking that one left startup waiting on a route that never exists.
-const isRuntime = dir => fs.existsSync(path.join(dir, 'package.json')) && fs.existsSync(path.join(dir, 'server.ts'))
-  && fs.readFileSync(path.join(dir, 'server.ts'), 'utf8').includes('/api/runtime/identity');
-export function runtimeDirectory(root, configured) {
-  if (configured) return path.resolve(root, configured);
-  if (isRuntime(root)) return root;
-  const candidates = fs.readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory())
-    .map(e => path.join(root, e.name)).filter(isRuntime);
-  if (candidates.length !== 1) throw new Error(candidates.length ? 'RUNTIME_DIR_AMBIGUOUS:set JACO_RUNTIME_DIR' : 'RUNTIME_DIR_MISSING:set JACO_RUNTIME_DIR');
-  return candidates[0];
-}
+export { runtimeDirectory };
 export function configuration(root = ROOT, inherited = process.env, overrides = {}) {
   root = path.resolve(root);
   const file = path.join(root, '.env');
@@ -189,12 +179,12 @@ export async function inspectStatus(c, services = [...definitions(c), ...novaRea
 }
 export async function activate(c, { open = false } = {}) {
   if (fs.existsSync(path.join(c.root, '.jaco-emergency-stop.json'))) throw new Error('EMERGENCY_STOP_ACTIVE');
-  if (c.env.GATEWAY_TOKEN.length < 24) throw new Error('GATEWAY_TOKEN_REQUIRED_MIN_24');
+  if (c.env.GATEWAY_TOKEN.length < 24) throw new Error('GATEWAY_TOKEN_REQUIRED_MIN_24:set JACO_GATEWAY_TOKEN in .env, or run "npm run setup"');
   if (!fs.existsSync(path.join(c.runtime, 'server.ts'))) throw new Error('RUNTIME_DIR_INVALID');
   if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('NODE_24_OR_NEWER_REQUIRED');
   if (!c.production) {
     try { createRequire(path.join(c.runtime, 'package.json')).resolve('tsx'); }
-    catch { throw new Error('RUNTIME_DEPENDENCIES_MISSING:install runtime dependencies'); }
+    catch { throw new Error(`RUNTIME_DEPENDENCIES_MISSING:run "npm run setup", or "npm install" in ${c.runtime}`); }
   }
   const dir = path.join(c.root, 'logs', 'startup'); fs.mkdirSync(dir, { recursive: true });
   const lock = path.join(dir, 'startup.lock');

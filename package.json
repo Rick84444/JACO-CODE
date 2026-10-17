@@ -8,6 +8,7 @@
     "jaco": "./agents/jaco-cli.mjs"
   },
   "scripts": {
+    "setup": "node scripts/setup.mjs",
     "jaco:start": "node agents/lib/local-stack.mjs --open",
     "jaco:activate": "node agents/jaco-cli.mjs activate",
     "jaco:status": "node agents/jaco-cli.mjs status",
@@ -82,6 +83,7 @@
   },
   "files": [
     "agents/jaco-cli.mjs",
+    "scripts/setup.mjs",
     "LICENSE",
     ".env.example",
     "agents/hands-off-agent.mjs",

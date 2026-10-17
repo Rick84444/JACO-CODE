@@ -25,9 +25,13 @@ JACO must not treat generated text, an attempted action or a passing transport c
 Node.js 24+ is required.
 
 ```bash
-npm ci
+npm run setup
 npm run jaco:start
 ```
+
+`npm run setup` installs the root package, then resolves, installs and builds the
+runtime. The runtime lives in its own directory whose name is still historical, so
+setup locates it instead of assuming a path; set `JACO_RUNTIME_DIR` to override.
 
 Then inspect observed activation state:
 
