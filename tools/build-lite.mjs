@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { createZip, readZip } from './lib/zip.mjs';
+import { runtimeDirectory } from '../agents/lib/runtime-directory.mjs';
 
 // What dist/server.cjs requires at run time (checked against the bundle: express, ws, zod,
 // @google/genai and typescript are required; dotenv and undici by the Nova agent bundle). vite is loaded only in dev.
@@ -222,7 +223,7 @@ export async function buildLite({ repoRoot, runtimeDir, outDir, install = defaul
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const args = process.argv.slice(2);
-  const runtimeDir = path.join(repoRoot, 'runtime');
+  const runtimeDir = runtimeDirectory(repoRoot, process.env.JACO_RUNTIME_DIR);
   const outIndex = args.indexOf('--out');
   const outDir = path.resolve(outIndex >= 0 ? args[outIndex + 1] : path.join(repoRoot, 'build', 'lite'));
   if (!args.includes('--no-build') || args.includes('--rebuild') || !fs.existsSync(path.join(runtimeDir, 'dist', 'server.cjs'))) {
