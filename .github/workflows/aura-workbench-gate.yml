@@ -35,6 +35,10 @@ on:
       - 'runtime/gateway/src/mcp-factory.mjs'
       - 'runtime/gateway/src/tool-registry.mjs'
       - 'runtime/gateway/src/tool-handlers.mjs'
+      - 'scripts/setup.mjs'
+      - 'tests/nova/setup.test.mjs'
+      - 'tests/nova/package-content.test.mjs'
+      - 'runtime/tools/.npmignore'
       - 'package.json'
       - 'package-lock.json'
       - 'runtime/src/components/AuraAgentBoard.tsx'
@@ -70,6 +74,10 @@ on:
       - 'runtime/gateway/src/mcp-factory.mjs'
       - 'runtime/gateway/src/tool-registry.mjs'
       - 'runtime/gateway/src/tool-handlers.mjs'
+      - 'scripts/setup.mjs'
+      - 'tests/nova/setup.test.mjs'
+      - 'tests/nova/package-content.test.mjs'
+      - 'runtime/tools/.npmignore'
       - 'package.json'
       - 'package-lock.json'
       - 'runtime/src/components/AuraAgentBoard.tsx'
@@ -86,6 +94,8 @@ jobs:
           node-version: '24'
       - name: Install locked contract dependencies
         run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - name: Setup and npm distribution
+        run: node --test tests/nova/setup.test.mjs tests/nova/package-content.test.mjs
       - name: Workbench truth contract
         run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs
       - name: Activation and provider truth regressions
@@ -124,43 +134,8 @@ jobs:
         run: npm ci --prefix gateway
       - name: VS Code MCP client handshake
         run: node ../tests/mcp/client-configs.test.mjs
-      - name: TypeScript — Workbench scope
-        shell: bash
-        run: |
-          set +e
-          npm run lint > "$RUNNER_TEMP/aura-tsc.txt" 2>&1
-          TSC_EXIT=$?
-          set -e
-          cat "$RUNNER_TEMP/aura-tsc.txt"
-          node - "$RUNNER_TEMP/aura-tsc.txt" "$TSC_EXIT" <<'NODE'
-          const fs = require('fs');
-          const report = fs.readFileSync(process.argv[2], 'utf8');
-          const tscExit = Number(process.argv[3]);
-          const server = fs.readFileSync('server.ts', 'utf8');
-          const rows = server.split(/\r?\n/);
-          const start = rows.findIndex(line => line.includes('// 4a. Aura Workbench')) + 1;
-          const end = rows.findIndex(line => line.includes('// 4b. Aura truthful runtime projection.')) + 1;
-          if (!start || !end || end <= start) {
-            console.error('Aura Workbench server markers are missing');
-            process.exit(1);
-          }
-          const errors = report.split(/\r?\n/).filter(line => /error TS\d+/.test(line));
-          const workbenchErrors = errors.filter(line => {
-            if (/^src\/components\/(JacoAuraComputeIDE|AuraRepositoryTree|AuraChatPanel|AuraRuntimeNucleus)\.tsx\(/.test(line)) return true;
-            const match = line.match(/^server\.ts\((\d+),/);
-            return match ? Number(match[1]) >= start && Number(match[1]) < end : false;
-          });
-          if (workbenchErrors.length) {
-            console.error('\nAura Workbench introduced TypeScript errors:');
-            console.error(workbenchErrors.join('\n'));
-            process.exit(1);
-          }
-          if (tscExit !== 0) {
-            console.log(`\nGlobal tsc still reports ${errors.length} pre-existing/out-of-scope error(s); none are in Aura Workbench.`);
-          } else {
-            console.log('\nGlobal TypeScript check is clean.');
-          }
-          NODE
+      - name: TypeScript — complete runtime
+        run: npm run lint
       - name: Server bundle
         run: npm run build:server
       - name: Client build

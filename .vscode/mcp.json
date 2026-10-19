@@ -1,0 +1,36 @@
+{
+  "servers": {
+    "jaco": {
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/runtime/tools/jaco-mcp-launch.mjs"
+      ],
+      "env": {
+        "JACO_MODEL_ID": "codex-vscode",
+        "JACO_AGENT_STABLE_ID": "vscode-codex-jaco",
+        "JACO_AGENT_NAME": "VS Code Codex",
+        "JACO_AGENT_PROVIDER": "openai",
+        "JACO_MCP_ALLOW_UPDATE": "1"
+      },
+      "type": "stdio"
+    },
+    "jaco-editor": {
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/runtime/tools/jaco-editor-mcp.mjs"
+      ],
+      "env": {
+        "JACO_RUNTIME_URL": "http://127.0.0.1:3000",
+        "JACO_WORKPLACE_URL": "http://127.0.0.1:2995"
+      },
+      "type": "stdio"
+    },
+    "jaco-connect": {
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/runtime/tools/jaco-connect-mcp.mjs"
+      ],
+      "type": "stdio"
+    }
+  }
+}

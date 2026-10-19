@@ -25,9 +25,11 @@ JACO must not treat generated text, an attempted action or a passing transport c
 Node.js 24+ is required.
 
 ```bash
-npm ci
+npm run setup
 npm run jaco:start
 ```
+
+Setup installs locked dependencies in the root, runtime and MCP gateway, and creates a local gateway token in `.env` if none is configured. Existing configuration is preserved. Install and start Ollama with a downloaded model before starting JACO, or configure another supported provider in `.env`. Setup does not download models or call paid providers.
 
 Then inspect observed activation state:
 
@@ -43,9 +45,8 @@ The intended user experience is one activation path: JACO discovers the local ru
 | --- | --- |
 | `agents/` | local execution compatibility layer, CLI and bounded repository/device tools |
 | `gateway/` | planning, mission orchestration, provider routing and optional coordination services |
-| `runtime/` | current canonical product runtime; historical directory name pending migration to `runtime/` |
+| `runtime/` | canonical product runtime |
 | `lite/` | portable JACO Lite distribution and installers |
-| `site/` | jacocode.com distribution surface |
 | `tests/` | regression and integration contracts |
 | `docs/` | current architecture and operator documentation |
 
