@@ -46,7 +46,7 @@ import { AuraProjectPicker } from './AuraProjectPicker';
 import { canSwitchProject } from '../lib/auraProject.mjs';
 import { AuraIntegrationsPanel } from './AuraIntegrationsPanel';
 import { NovaPlannerCard } from './NovaPlannerCard';
-import { ActivationCard } from './ActivationCard';
+import { ActivationCard, useActivationReport } from './ActivationCard';
 import { RevenueView } from './RevenueView';
 import { SkillsView } from './SkillsView';
 import { ProviderConnect } from './ProviderConnect';
@@ -298,6 +298,7 @@ const languageLabel = (path: string) => {
 
 export const JacoAuraComputeIDE: React.FC = () => {
   const chatSession = useAuraChatSession();
+  const activation = useActivationReport();
   const cognitiveLive = useCognitiveLive();
   const [workspaceView, setWorkspaceView] = useState<CognitiveCanvas>('conversation');
   const [codeOpened,setCodeOpened]=useState(false);
@@ -386,6 +387,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   }, [showApprovals]);
 
   const [approvalBusy, setApprovalBusy] = useState<string | null>(null);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
   const [probeReceipts, setProbeReceipts] = useState<Record<string, any>>({});
   const [useResult, setUseResult] = useState<Record<string, { ok: boolean; text: string }>>({});
   const [providerBusy, setProviderBusy] = useState<string | null>(null);
@@ -845,6 +847,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     const busyKey = `${approval.id}:${decision}`;
     if (approvalBusy) return;
     setApprovalBusy(busyKey);
+    setApprovalError(null);
     setRuntimeError(null);
     try {
       await fetch(`/api/aura/workbench/approvals/${encodeURIComponent(approval.id)}/decision`, {
@@ -857,18 +860,18 @@ export const JacoAuraComputeIDE: React.FC = () => {
       }).then(json);
       await refresh();
     } catch (error: any) {
-      setRuntimeError(error?.message || String(error));
+      setApprovalError(error?.message || String(error));
     } finally {
       setApprovalBusy(null);
     }
   };
 
   const approvalLabel = (action: string) => ({
-    approve: 'Approve',
-    reject: 'Reject',
-    confirm: 'Confirm result',
-    resume: 'Resume',
-    cancel: 'Cancel mission',
+    approve: 'Godkänn',
+    reject: 'Avslå',
+    confirm: 'Bekräfta resultat',
+    resume: 'Fortsätt',
+    cancel: 'Avsluta uppdrag',
   } as Record<string, string>)[action] || action;
 
   const probeProvider = async (id: string) => {
@@ -1301,7 +1304,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
               </div>
             )}
 
-            <div className="px-3 py-1.5 mt-2 text-[9px] uppercase tracking-wider text-slate-600">Product workflows</div>
+            <div className="px-3 py-1.5 mt-2 text-[9px] uppercase tracking-wider text-slate-600">Arbetsflöden</div>
             {AURA_PRODUCT_TOOLS.map(tool => (
               <button key={tool.id} onClick={() => openTool(tool)} className="w-full text-left px-3 py-2 border-b border-[#292929] hover:bg-[#2a2d2e]">
                 <div className="flex items-center gap-2">
@@ -1321,7 +1324,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
       <>
         <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400">Providers</div>
         <div className="flex-1 overflow-auto px-2 space-y-2">
-          <ActivationCard onActivated={() => { void refresh(); window.dispatchEvent(new Event('jaco:aura:provider-chosen')); }} />
           <EconomicBudgetPanel inline />
           <NovaPlannerCard />
           {(snapshot?.providers || []).map(provider => {
@@ -1346,7 +1348,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                       disabled={providerBusy === provider.id}
                       className="text-[11px] border border-[#444] px-2.5 py-1.5 rounded hover:bg-[#2b2b2b] disabled:opacity-40"
                     >
-                      {providerBusy === provider.id ? '…' : 'Probe'}
+                      {providerBusy === provider.id ? 'Testar…' : 'Testa'}
                     </button>
                   </div>
                 </div>
@@ -1374,7 +1376,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
             );
           })}
 
-          <ProviderConnect onConnected={() => refresh()} />
+          <ProviderConnect onConnected={async () => { await refresh(); window.dispatchEvent(new Event('jaco:aura:provider-chosen')); }} />
         </div>
       </>
     );
@@ -1392,6 +1394,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
       <div className="flex-1 min-h-0">
         <AuraChatPanel
           session={chatSession}
+          runControls={missions.some(item => item.status === 'ACTIVE') && activation.report?.ok && !activation.error ? null : <ActivationCard activation={activation} projectName={projectName}
+            onOpenProject={() => { setSidebar('explorer'); setSidePanelOpen(true); }}
+            onOpenProviders={() => { setSidebar('providers'); setSidePanelOpen(true); }}
+            onActivated={() => { void refresh().catch(() => {}); }} />}
           missions={missions}
           onCancelMission={cancelMission}
           onOpenWork={() => { setWorkspaceView('evidence'); }}
@@ -1478,36 +1484,38 @@ export const JacoAuraComputeIDE: React.FC = () => {
     </>
   );
 
+  // Approval Center remains the canonical decision surface; pending decisions also appear inline.
   const renderApprovals = () => showApprovals && (
 
       <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex justify-end" onClick={() => setShowApprovals(false)}>
-        <div className="h-[100dvh] max-h-[100dvh] w-full max-w-xl bg-[#111820] border-l border-[#30363d] shadow-2xl flex flex-col" onClick={event => event.stopPropagation()}>
+        <div role="dialog" aria-modal="true" aria-label="Beslut som behöver dig" className="h-[100dvh] max-h-[100dvh] w-full max-w-xl bg-[#111820] border-l border-[#30363d] shadow-2xl flex flex-col" onClick={event => event.stopPropagation()}>
           <div className="h-12 px-4 border-b border-[#30363d] flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-white">
                 <ShieldAlert className="w-4 h-4 text-amber-400" />
-                Approval Center
+                Beslut som behöver dig
                 <span className={`text-[10px] rounded border px-1.5 py-0.5 ${snapshot?.approvals?.count ? 'border-amber-700 text-amber-300' : 'border-emerald-800 text-emerald-300'}`}>
-                  {snapshot?.approvals?.count ?? 0} action required
+                  {snapshot?.approvals?.count ?? 0} väntande beslut
                 </span>
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">All real operator gates. Machine review and autonomous ALLOW actions are not shown here.</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Arbete som redan är tillåtet inom uppdraget fortsätter automatiskt. Här visas beslut som kräver dig.</div>
             </div>
-            <button onClick={() => setShowApprovals(false)} aria-label="Close Approval Center" className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded border border-[#343b45] text-xs text-slate-200 hover:text-white hover:bg-[#252b33]">
-              <X className="w-4 h-4" /> Close
+            <button onClick={() => setShowApprovals(false)} aria-label="Stäng beslutspanelen" className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded border border-[#343b45] text-xs text-slate-200 hover:text-white hover:bg-[#252b33]">
+              <X className="w-4 h-4" /> Stäng
             </button>
           </div>
 
           <div className="px-4 py-3 border-b border-[#252b33] bg-[#0d1117]">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Active autonomy mandates</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Aktiva behörigheter</div>
             <div className="mt-1 text-xs text-slate-300">
               {snapshot?.approvals?.activeMandates?.length
-                ? snapshot.approvals.activeMandates.map(m => `${m.name} · expires ${formatTime(m.expiresAt)}`).join(' · ')
-                : 'No active signed mandate observed.'}
+                ? snapshot.approvals.activeMandates.map(m => `${m.name} · gäller till ${formatTime(m.expiresAt)}`).join(' · ')
+                : 'Inga aktiva signerade mandat observerade.'}
             </div>
           </div>
 
           <div className="flex-1 overflow-auto p-4 space-y-3">
+            {approvalError && <p role="alert" className="text-sm text-amber-300">{approvalError}</p>}
             {(snapshot?.approvals?.items || []).map(approval => (
               <div key={approval.id} className="border border-[#343b45] bg-[#161b22] rounded-lg p-3">
                 <div className="flex items-start justify-between gap-3">
@@ -1523,7 +1531,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                 </div>
 
                 <div className="mt-3 border border-[#2b3139] rounded bg-[#0d1117] p-2">
-                  <div className="text-[9px] uppercase text-slate-600 mb-1">What changes / evidence</div>
+                  <div className="text-[9px] uppercase text-slate-600 mb-1">Vad beslutet gäller och tillgängliga belägg</div>
                   <pre className="text-[10px] leading-4 text-slate-400 whitespace-pre-wrap break-words overflow-hidden">{JSON.stringify(approval.details || {}, null, 2)}</pre>
                 </div>
 
@@ -1538,12 +1546,12 @@ export const JacoAuraComputeIDE: React.FC = () => {
                         disabled={Boolean(approvalBusy)}
                         className={`text-[10px] rounded px-3 py-1.5 border disabled:opacity-40 ${positive ? 'bg-[#0e639c] border-[#1177bb] text-white' : 'border-[#4a4f57] text-slate-300 hover:bg-[#252a31]'}`}
                       >
-                        {busy ? 'Working…' : approvalLabel(action)}
+                        {busy ? 'Sparar beslut…' : approvalLabel(action)}
                       </button>
                     );
                   })}
                   {!approval.actions.length && (
-                    <span className="text-[10px] text-amber-300">Configuration is required; this item cannot be blindly approved.</span>
+                    <span className="text-[10px] text-amber-300">En inställning behöver ändras. Visa orsaken ovan och åtgärda den innan du fortsätter.</span>
                   )}
                 </div>
               </div>
@@ -1552,8 +1560,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
             {!snapshot?.approvals?.items?.length && (
               <div className="h-full min-h-[240px] flex flex-col items-center justify-center text-center text-slate-500">
                 <CheckCircle2 className="w-8 h-8 text-emerald-500 mb-3" />
-                <div className="text-sm text-slate-300">No operator decisions pending</div>
-                <div className="text-[10px] mt-1">JACO is not waiting for an approval in any aggregated runtime gate.</div>
+                <div className="text-sm text-slate-300">Inga beslut väntar på dig</div>
+                <div className="text-[10px] mt-1">JACO väntar inte på något godkännande i de kontrollerade tjänsterna.</div>
               </div>
             )}
           </div>
@@ -1573,7 +1581,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const signOut = async () => {
     try { await fetch('/ide-auth/logout', { method: 'POST' }); } finally { window.location.replace('/ide-login'); }
   };
-  const status = liveWorkspaceStatus({ connection: cognitiveLive.connection, busy: chatSession.busy, missions, runtimeRunning: snapshot?.runtime?.running, error: connectionError });
+  const status = liveWorkspaceStatus({ connection: cognitiveLive.connection, busy: chatSession.busy, missions, runtimeRunning: snapshot?.runtime?.running, error: connectionError, activation, approvalCount: snapshot?.approvals?.count || 0 });
   const codeWorkspace = (
     <div className="cognitive-code-workspace">
       <div className="cognitive-file-tabs">
@@ -1700,8 +1708,31 @@ export const JacoAuraComputeIDE: React.FC = () => {
     {externalFile&&externalFile.path===selectedFile&&<div role="alert" className="cognitive-operation-notice">Filen har ändrats i arbetsytan. Ditt utkast är bevarat.<button type="button" onClick={acceptExternalFile}>Läs senaste filen</button></div>}
     <div className="cognitive-detail-body">{canvasDetail}</div>
   </div>;
+  const pendingDecision = snapshot?.approvals?.items?.[0];
+  const attention = pendingDecision ? <section className="cognitive-decision" aria-label="Beslut som behöver dig">
+    <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>JACO behöver ditt beslut</strong><span>{snapshot.approvals.count} väntande</span></div>
+    <h2>{pendingDecision.title}</h2>
+    <p>{pendingDecision.reason}</p>
+    {['command', 'targetFilePath', 'repoUrl'].map(key => typeof pendingDecision.details?.[key] === 'string' && pendingDecision.details[key] &&
+      <p key={key} className="cognitive-decision-context"><span>{({command:'Kommando',targetFilePath:'Fil',repoUrl:'Källa'})[key]}: </span><code>{pendingDecision.details[key]}</code></p>)}
+    <div className="cognitive-decision-actions">
+      {pendingDecision.actions.map(action => <button key={action} type="button" disabled={Boolean(approvalBusy)}
+        onClick={() => void resolveApproval(pendingDecision, action)}>{approvalBusy === `${pendingDecision.id}:${action}` ? 'Sparar beslut…' : approvalLabel(action)}</button>)}
+      <button type="button" onClick={() => setShowApprovals(true)}>Visa detaljer{snapshot.approvals.count > 1 ? ' och alla beslut' : ''}</button>
+    </div>
+    {!pendingDecision.actions.length && <p>En inställning behöver åtgärdas. Öppna detaljer för att se vad som saknas.</p>}
+    {approvalError && <p role="alert">Beslutet kunde inte sparas: {approvalError}</p>}
+  </section> : (snapshot?.seer?.blocker || runtimeError) ? <section className="cognitive-decision" aria-label="Det här behöver åtgärdas">
+    <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>Arbetet behöver hjälp</strong></div>
+    <p>{snapshot?.seer?.blocker || runtimeError}</p>
+    <div className="cognitive-decision-actions">
+      <button type="button" onClick={() => { setSidebar('providers'); setSidePanelOpen(true); }}>Modellanslutningar</button>
+      <button type="button" onClick={() => setWorkspaceView('evidence')}>Visa uppdrag och kontroller</button>
+      {runtimeError && <button type="button" onClick={() => setRuntimeError(null)}>Stäng meddelandet</button>}
+    </div>
+  </section> : null;
   return <>
-    <CognitiveWorkspace canvas={workspaceView} onCanvas={setWorkspaceView} conversation={renderChatContent()} detail={detail}
+    <CognitiveWorkspace attention={attention} canvas={workspaceView} onCanvas={setWorkspaceView} conversation={renderChatContent()} detail={detail}
       sidebar={sidebar} sidePanelOpen={sidePanelOpen} sidePanel={renderSidebar()}
       onSidebar={view => { setSidebar(view); setSidePanelOpen(current => sidebar === view ? !current : true); }}
       onCloseSidebar={() => setSidePanelOpen(false)} status={status} projectName={projectName}

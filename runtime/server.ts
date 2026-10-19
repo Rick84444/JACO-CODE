@@ -1559,7 +1559,7 @@ const notifyPhone = async (action) => {
         title: action.label || action.id,
         status: 'REVIEW',
         risk: 'MEDIUM',
-        reason: 'A local terminal or file action is waiting for explicit operator approval.',
+        reason: 'JACO vill köra ett lokalt kommando eller ändra en fil. Kontrollera åtgärden innan du godkänner.',
         createdAt: action.createdAt || null,
         actions: ['approve','reject'],
         details: action.type === 'terminal_exec'
@@ -1576,7 +1576,7 @@ const notifyPhone = async (action) => {
         title: source.manifest.packageName || source.repoUrl,
         status: 'REVIEW',
         risk: 'HIGH',
-        reason: 'Git source is staged and pinned, but executable MCP code must not gain authority until the operator approves its provenance.',
+        reason: 'Ett nytt verktyg har hämtats från Git. Kontrollera källan innan du tillåter att dess kod körs.',
         createdAt: source.importedAt,
         actions: ['approve','reject'],
         details: {
@@ -1601,7 +1601,7 @@ const notifyPhone = async (action) => {
         title: job.policy?.description || `${job.type} job`,
         status: 'REVIEW',
         risk: job.policy?.riskLevel || 'MEDIUM',
-        reason: 'The typed job gate requires operator approval before the worker may claim this job.',
+        reason: 'Det här arbetet kräver ditt godkännande innan det får starta.',
         createdAt: job.createdAt || null,
         actions: ['approve','reject'],
         details: {
@@ -1631,10 +1631,10 @@ const notifyPhone = async (action) => {
         status: 'REVIEW',
         risk: uncertain ? 'HIGH' : 'MEDIUM',
         reason: status === 'AWAITING_VERIFICATION'
-          ? 'Nova has proposed completion and the mission is waiting for an operator resolution.'
+          ? 'JACO föreslår att uppdraget är klart. Kontrollera resultatet och bekräfta eller avsluta uppdraget.'
           : uncertain
-            ? 'The mission is blocked with an uncertain outcome; JACO will not retry the mutation automatically.'
-            : 'The mission is blocked and requires an explicit resume or cancel decision.',
+            ? 'Det är osäkert om den senaste ändringen genomfördes. Kontrollera vad som hände innan du väljer att fortsätta.'
+            : 'Uppdraget har stannat. Kontrollera orsaken och välj om JACO ska fortsätta eller avsluta.',
         createdAt: mission.createdAt || mission.created_at || null,
         actions: status === 'AWAITING_VERIFICATION' ? ['confirm','cancel'] : ['resume','cancel'],
         details: {
@@ -1663,8 +1663,8 @@ const notifyPhone = async (action) => {
           status: 'REVIEW',
           risk: 'HIGH',
           reason: mandate
-            ? 'This mission references an autonomy mandate that is unsigned, disabled, or expired.'
-            : 'This mission references an autonomy mandate that no longer exists.',
+            ? 'Uppdragets behörighet är inte signerad, är avstängd eller har gått ut. Kontrollera omfattningen innan du godkänner.'
+            : 'Uppdragets behörighet finns inte längre. En giltig behörighet behöver konfigureras.',
           createdAt: mandate?.createdAt || null,
           actions: mandate ? ['approve','reject'] : [],
           details: {

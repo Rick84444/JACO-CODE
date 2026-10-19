@@ -41,10 +41,19 @@ on:
       - 'runtime/tools/.npmignore'
       - 'package.json'
       - 'package-lock.json'
+      - 'runtime/src/components/ActivationCard.tsx'
+      - 'runtime/src/components/CognitiveWorkspace.tsx'
+      - 'runtime/src/components/NovaPlannerCard.tsx'
+      - 'runtime/src/components/ProviderConnect.tsx'
+      - 'runtime/src/cognitive-workspace.css'
+      - 'runtime/src/lib/cognitiveEvents.mjs'
+      - 'runtime/src/lib/workspaceUx.test.tsx'
+      - 'tests/nova/workspace-readiness.test.mjs'
       - 'runtime/src/components/AuraAgentBoard.tsx'
       - '.github/workflows/aura-workbench-gate.yml'
   push:
     branches:
+      - main
       - master
     paths:
       - 'tests/nova/aura-truthful-gui.test.mjs'
@@ -80,6 +89,14 @@ on:
       - 'runtime/tools/.npmignore'
       - 'package.json'
       - 'package-lock.json'
+      - 'runtime/src/components/ActivationCard.tsx'
+      - 'runtime/src/components/CognitiveWorkspace.tsx'
+      - 'runtime/src/components/NovaPlannerCard.tsx'
+      - 'runtime/src/components/ProviderConnect.tsx'
+      - 'runtime/src/cognitive-workspace.css'
+      - 'runtime/src/lib/cognitiveEvents.mjs'
+      - 'runtime/src/lib/workspaceUx.test.tsx'
+      - 'tests/nova/workspace-readiness.test.mjs'
       - 'runtime/src/components/AuraAgentBoard.tsx'
       - '.github/workflows/aura-workbench-gate.yml'
 
@@ -136,6 +153,8 @@ jobs:
         run: node ../tests/mcp/client-configs.test.mjs
       - name: TypeScript — complete runtime
         run: npm run lint
+      - name: Workspace readiness and visible decisions
+        run: npm run test:workspace-ux && node --test ../tests/nova/workspace-readiness.test.mjs
       - name: Server bundle
         run: npm run build:server
       - name: Client build

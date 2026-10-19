@@ -50,7 +50,7 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
     <div className="border border-[#333] bg-[#181818] rounded p-2 space-y-2">
       <div className="text-xs font-semibold">Lägg till API-nyckel</div>
       <form onSubmit={e => { e.preventDefault(); void submit(); }} className="flex gap-1.5">
-        <input type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} placeholder="Klistra in en nyckel, JACO känner av tjänsten"
+        <input type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} aria-label="API-nyckel till modelltjänsten" placeholder="Klistra in en API-nyckel"
           className="flex-1 min-w-0 bg-[#111] border border-[#333] rounded px-2 py-1.5 text-xs outline-none focus:border-cyan-700" />
         <button type="submit" disabled={busy || !key.trim()} className="bg-[#0e639c] hover:bg-[#1177bb] disabled:opacity-40 rounded px-3 text-xs font-semibold">
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Spara'}
@@ -132,7 +132,7 @@ export const ProviderConnect: React.FC<{ onConnected: () => void | Promise<void>
     <div className="border border-[#333] bg-[#181818] rounded p-2 space-y-2">
       <div className="text-xs font-semibold">Anslut modell</div>
       <form onSubmit={e => { e.preventDefault(); void connect(); }} className="flex gap-1.5">
-        <input value={url} onChange={e => setUrl(e.target.value)} placeholder="Klistra in en adress, t.ex. deepseek.com"
+        <input value={url} onChange={e => setUrl(e.target.value)} aria-label="Modelltjänstens adress" placeholder="Adress, t.ex. deepseek.com"
           className="flex-1 min-w-0 bg-[#111] border border-[#333] rounded px-2 py-1.5 text-xs outline-none focus:border-cyan-700" />
         <button type="submit" disabled={busy || !url.trim()} className="bg-[#0e639c] hover:bg-[#1177bb] disabled:opacity-40 rounded px-3 text-xs font-semibold">
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Anslut'}

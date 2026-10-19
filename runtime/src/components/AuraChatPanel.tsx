@@ -88,6 +88,7 @@ export function useAuraChatSession() {
 
 interface Props {
   session: ReturnType<typeof useAuraChatSession>;
+  runControls?: React.ReactNode;
   onOpenProviders?: () => void;
   activeFilePath?: string | null;
   activeFileContent?: string | null;
@@ -118,7 +119,7 @@ async function chatJson(response: Response) {
   return data;
 }
 
-export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onOpenProviders, activity = [], missions = [], onCancelMission, onOpenWork, liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
+export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onOpenProviders, activity = [], missions = [], onCancelMission, onOpenWork, liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
   const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments } = session;
   const [chatModel, setChatModel] = useState('seer');
   const [configuredModel, setConfiguredModel] = useState('seer');
@@ -192,7 +193,16 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
   const [closeError,setCloseError]=useState<string|null>(null);
   const scrollRef=useRef<HTMLDivElement>(null);
   const followRef=useRef(true);
-  const [composeMode,setComposeMode]=useState<'chat'|'goal'>('chat');
+  const [composeMode,setComposeMode]=useState<'chat'|'goal'>('goal');
+  const requestRef = useRef<AbortController|null>(null);
+  const [waitingSeconds, setWaitingSeconds] = useState(0);
+  useEffect(() => {
+    if (busy !== 'chat') { setWaitingSeconds(0); return; }
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => setWaitingSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, [busy]);
+  useEffect(() => () => requestRef.current?.abort(), []);
   const [following,setFollowing]=useState(true);
   const feed=useMemo(()=>[
     ...messages.filter(m=>m.id!=='welcome').map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message})),
@@ -222,6 +232,8 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
     }
     if (retry === undefined) setInput('');
     const user: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text };
+    const controller = new AbortController();
+    requestRef.current = controller;
     setBusy('chat');
     const started = performance.now();
     try {
@@ -267,7 +279,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
           ragContext,
         }),
         // Longer than SEER's own provider chain; a hung request still ends in a message.
-        signal: AbortSignal.timeout(240_000),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]),
       }).then(chatJson);
       const answer=String(data.reply || data.text || '').trim();
       if(!answer) throw new Error('Modellen returnerade ett tomt svar.');
@@ -303,12 +315,15 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
         id: crypto.randomUUID(),
         role: 'system',
         // The runtime itself did not answer (stopped, restarting, or the request timed out); a refusal it did send carries a hint.
-        content: hint?.message || (error?.name === 'TimeoutError'
+        content: controller.signal.aborted
+          ? 'Du har avbrutit väntan på svaret. Ett pågående uppdrag fortsätter. Modellservern kan fortfarande behandla anropet.'
+          : hint?.message || (error?.name === 'TimeoutError'
           ? 'JACO fick inget svar från runtime på fyra minuter. Kontrollera anslutningen och försök igen.'
           : `Chatten svarade inte: ${error?.message || String(error)}`),
         ...(hint?.action ? { action: { code: hint.action, label: hint.actionLabel || 'Öppna', retryText: text } } : {}),
       }]);
     } finally {
+      if (requestRef.current === controller) requestRef.current = null;
       setBusy(null);
     }
   };
@@ -406,6 +421,8 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
         <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label="Chattinställningar" title="Modell och budget"><Settings2 size={15}/><span>{modelLabel}</span></button>
       </div>
 
+      {runControls && <div className="cognitive-run-controls">{runControls}</div>}
+
       {showSettings && (
         <div className="px-4 py-3 border-b border-[#1c2a36] bg-[#0e1720] space-y-2 text-xs max-h-[50%] overflow-auto">
           <label className="flex items-center gap-2 text-slate-400">Modell
@@ -465,7 +482,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
             <p>Beskriv det du vill få att fungera.<br/>Följ arbetet, pröva resultatet och forma nästa steg tillsammans.</p>
             <div className="cognitive-start-prompts">
               <button type="button" onClick={()=>prompt('Undersök det öppna projektet. Förklara vad som fungerar och vilka fel du faktiskt kan verifiera.','goal')}><SearchIcon/><span>Undersök mitt projekt<small>Förstå koden och nästa steg</small></span><ArrowUpRight size={14}/></button>
-              <button type="button" onClick={()=>prompt('Hjälp mig förbättra en funktion i projektet. Börja med att kartlägga den relevanta koden.')}><FileCode2 size={17}/><span>Utveckla vidare<small>Bygg på det som redan finns</small></span><ArrowUpRight size={14}/></button>
+              <button type="button" onClick={()=>prompt('Hjälp mig förbättra en funktion i projektet. Börja med att kartlägga den relevanta koden.','goal')}><FileCode2 size={17}/><span>Utveckla vidare<small>Bygg på det som redan finns</small></span><ArrowUpRight size={14}/></button>
             </div>
           </div>}
           {feed.map(item=>{
@@ -475,7 +492,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
               :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><span className="cognitive-jaco-mark"/>JACO</div><ChatMarkdown text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>Svar & källor</summary><p>{message.meta}</p></details>}</article>
               :<div key={item.id} className="cognitive-system-message">{message.content}{message.action&&<button type="button" disabled={busy!==null} onClick={()=>void runAction(message.action!)}>{message.action.label}</button>}</div>;
           })}
-          {busy&&<div className="cognitive-response-wait" role="status"><Loader2 size={15} className="animate-spin"/>{busy==='goal'?'Registrerar uppdraget…':busy==='tool'?'Väntar på verktygets resultat…':'Väntar på modellens svar…'}</div>}
+          {busy&&<div className="cognitive-response-wait"><span role="status"><Loader2 size={15} className="animate-spin"/>{busy==='goal'?'Registrerar uppdraget…':busy==='tool'?'Väntar på verktygets resultat…':'Väntar på modellens svar…'}</span>{busy==='chat' && <><time aria-label="Väntetid">{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>Avbryt svar</button></>}</div>}
         </div>
       </div>
       {!following&&<button type="button" className="cognitive-follow-latest" onClick={followLatest}><ArrowDown size={13}/>Följ senaste arbetet</button>}
@@ -508,7 +525,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
               value={input}
               onChange={event => setInput(event.target.value)}
               onKeyDown={event => {
-                if (event.key === 'Enter' && !event.shiftKey) {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
                   void submit();
                 }
@@ -534,13 +551,14 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
             )}
             <div className="cognitive-input-actions">
               <div className="cognitive-compose-modes" role="group" aria-label="Typ av meddelande">
-                <button type="button" aria-pressed={composeMode==='chat'} onClick={()=>setComposeMode('chat')}><MessageSquare size={12}/>Fråga</button>
                 <button type="button" aria-pressed={composeMode==='goal'} onClick={()=>setComposeMode('goal')}><Target size={12}/>Uppdrag</button>
+                <button type="button" aria-pressed={composeMode==='chat'} onClick={()=>setComposeMode('chat')}><MessageSquare size={12}/>Fråga</button>
               </div>
               <span className="cognitive-enter-hint">Shift + Enter för ny rad</span>
               <button type="submit" aria-label={composeMode==='goal'?'Starta uppdrag':'Skicka meddelande'} title={composeMode==='goal'?'Starta uppdrag':'Skicka'} disabled={!input.trim()||Boolean(busy)||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
             </div>
           </div>
+          <p className="cognitive-composer-help">{composeMode === 'goal' ? 'JACO arbetar inom uppdragets behörigheter. Beslut som kräver dig visas ovanför arbetet.' : 'Fråga om arbetet utan att starta ett nytt uppdrag.'}</p>
         </div>
       </form>
     </div>

@@ -52,9 +52,9 @@ export const NovaPlannerCard: React.FC = () => {
   return (
     <div className="border border-cyan-900 bg-[#0b1620] rounded p-2 space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <strong className="text-xs">Nova planner</strong>
+        <strong className="text-xs">Planeringsmodell</strong>
         <span className="text-[9px] text-slate-400 truncate">
-          {state ? (state.choice ? `${state.choice.provider} / ${state.choice.model}` : 'automatic chain') : 'loading'}
+          {state ? (state.choice ? `${state.choice.provider} / ${state.choice.model}` : 'Väljs automatiskt') : 'Hämtar…'}
         </span>
       </div>
       <select
@@ -65,14 +65,14 @@ export const NovaPlannerCard: React.FC = () => {
       >
         <option value={AUTO}>Automatiskt enligt serverns provider- och kostnadspolicy</option>
         {state?.choices.map(c => (
-          <optgroup key={c.provider} label={`${c.label}${c.paid ? ' - paid' : ''}${c.usable ? '' : c.keyConfigured ? ' - paid models off' : ' - no key'}`}>
+          <optgroup key={c.provider} label={`${c.label}${c.paid ? ' - kostar per anrop' : ''}${c.usable ? '' : c.keyConfigured ? ' - molnanrop avstängda' : ' - nyckel saknas'}`}>
             {c.models.map(m => <option key={m} value={`${c.provider}|${m}`} disabled={!c.usable}>{m}</option>)}
           </optgroup>
         ))}
       </select>
       {selectedOption?.paid && (
         <div className="text-[9px] text-amber-300">
-          Paid per call. Nova stops paid calls at {state?.paidUsdPerDay.toFixed(2)} USD per day. Routing follows the server policy.
+          Kostar per anrop. Dagsgräns: {state?.paidUsdPerDay.toFixed(2)} USD. Modeller väljs enligt dina inställningar.
         </div>
       )}
       <div className="flex gap-2">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Code2, PanelRightClose, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone } from 'lucide-react';
+import { MessageSquare, Code2, PanelRightClose, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone, MoreHorizontal } from 'lucide-react';
 import { JacoWordmark } from './JacoWordmark';
 import { CostChip } from './CostChip';
 
@@ -11,6 +11,7 @@ interface Props {
   status:{label:string;tone:string};projectName:string;branch?:string|null;changes:number;
   approvalCount:number;onApprovals:()=>void;onCommands:()=>void;onSignOut:()=>void;
   lastObservedAt:string|null;error:string|null;
+  attention?:React.ReactNode;
 }
 const views=[['conversation',MessageSquare,'Samtal'],['code',Code2,'Kod'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
 const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter'],['revenue',CircleDollarSign,'Budget & ekonomi']] as const;
@@ -19,11 +20,11 @@ export function CognitiveWorkspace(props:Props) {
   const hasCanvas=props.canvas!=='conversation';
   return <div className="cognitive-workspace" data-cognitive-workspace="true">
     <header className="cognitive-topbar">
-      <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">Live workspace</span></div>
+      <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">Din arbetsyta</span></div>
       <div className="cognitive-project"><Folder size={14}/><span>{props.projectName}</span><ChevronRight size={12}/><span className="cognitive-branch">{props.branch || 'Projekt'}</span></div>
       <div className="cognitive-top-actions">
         <CostChip onOpen={()=>props.onSidebar('providers')}/>
-        {props.approvalCount>0 && <button type="button" className="cognitive-approval-button" onClick={props.onApprovals}><CircleAlert size={14}/><span>{props.approvalCount} beslut</span></button>}
+        {props.approvalCount>0 && <button type="button" className="cognitive-approval-button" aria-label={`${props.approvalCount} beslut behöver dig`} onClick={props.onApprovals}><CircleAlert size={14}/><span>{props.approvalCount} beslut</span></button>}
         <button type="button" aria-label="Sök verktyg och kommandon" title="Sök · Ctrl+Shift+P" onClick={props.onCommands}><Search size={16}/></button>
       </div>
     </header>
@@ -40,10 +41,16 @@ export function CognitiveWorkspace(props:Props) {
         <div className="cognitive-contextbar">
           <div className="cognitive-status" data-tone={props.status.tone} role="status"><span/>{props.status.label}</div>
           <nav className="cognitive-view-tabs" aria-label="Arbetsyta">
-            {views.map(([id,Icon,label])=><button key={id} type="button" onClick={()=>props.onCanvas(id)} aria-label={label} title={label} aria-pressed={props.canvas===id}><Icon size={14}/><span>{label}</span></button>)}
+            {views.slice(0,3).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>props.onCanvas(id)} aria-label={label} title={label} aria-pressed={props.canvas===id}><Icon size={14}/><span>{label}</span></button>)}
+            <details className="cognitive-more-views">
+              <summary aria-label="Fler arbetsvyer"><MoreHorizontal size={16}/><span>{views.slice(3).find(view => view[0] === props.canvas)?.[2] || 'Mer'}</span></summary>
+              <div>{views.slice(3).map(([id, Icon, label]) => <button key={id} type="button" aria-pressed={props.canvas === id}
+                onClick={event => { props.onCanvas(id); event.currentTarget.closest('details')?.removeAttribute('open'); }}><Icon size={16}/>{label}</button>)}</div>
+            </details>
           </nav>
         </div>
         {props.error && <div className="cognitive-connection-notice" role="alert"><CircleAlert size={14}/><span>Runtime kan inte nås just nu. Tidigare observationer visas tills anslutningen är tillbaka.</span></div>}
+        {props.attention}
         <main className="cognitive-main" data-canvas={hasCanvas}>
           <section className="cognitive-conversation" aria-label="JACO livekonversation">{props.conversation}</section>
           <aside className="cognitive-canvas" hidden={!hasCanvas} aria-label="Aktuell arbetsyta">

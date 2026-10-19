@@ -110,14 +110,14 @@
 .cognitive-input-box textarea { min-height:64px; font-size:14px; line-height:1.8; }
 .cognitive-input-actions { display:flex; align-items:center; padding:4px 12px 10px; gap:9px; }
 .cognitive-compose-modes { display:flex; gap:3px; border-radius:7px; padding:2px; background:#080e1480; }
-.cognitive-compose-modes button { display:flex; align-items:center; gap:5px; padding:5px 9px; border-radius:5px; font-size:10px; color:#627988; }
+.cognitive-compose-modes button { display:flex; align-items:center; gap:5px; padding:5px 9px; border-radius:5px; font-size:12px; color:#a7bbc9; }
 .cognitive-compose-modes button[aria-pressed=true] { background:#1c2e3b; color:#b5d6e3; }
-.cognitive-enter-hint { font-size:9px; color:#4c6576; margin-left:auto; }
-.cognitive-send-button { margin-left:auto; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:9px; background:#78d4e1; color:#0d212b; }
+.cognitive-enter-hint { font-size:11px; color:#a0b7c8; margin-left:auto; }
+.cognitive-send-button { margin-left:auto; width:44px; height:44px; display:flex; align-items:center; justify-content:center; border-radius:9px; background:#78d4e1; color:#0d212b; }
 .cognitive-send-button:hover { background:#a1e7ed; }
 .cognitive-send-button:disabled { background:#28404f; color:#708fa0; opacity:.65!important; }
 .cognitive-live-mission { padding:13px 15px; border:1px solid #243541; border-radius:10px; background:#0d1720; margin-bottom:10px; }
-.cognitive-live-mission-heading { display:flex; align-items:center; gap:7px; font-size:9px; color:#718c9e; }
+.cognitive-live-mission-heading { display:flex; align-items:center; gap:7px; font-size:12px; color:#a7bbc9; }
 .cognitive-live-mission-heading>button { display:flex; align-items:center; gap:5px; color:#819aaa; margin-left:auto; }
 .cognitive-live-mission-heading>button+button { margin-left:8px; }
 .cognitive-mission-dot { width:5px; height:5px; background:#bd9867; border-radius:50%; }
@@ -194,17 +194,16 @@
   .cognitive-project>span { max-width:120px; }
   .cognitive-top-actions { gap:2px; }
   .cognitive-top-actions .cognitive-approval-button span { display:none; }
-  .cognitive-rail { width:44px; padding:12px 3px 8px; gap:7px; }
-  .cognitive-rail>button { width:36px; height:38px; border-radius:7px; }
-  .cognitive-rail>button:nth-last-child(4) { display:none; }
-  .cognitive-sidebar { left:44px; max-width:calc(100% - 44px); }
-  .cognitive-sidebar-scrim { left:44px; }
+  .cognitive-rail { width:52px; padding:12px 4px 8px; gap:7px; }
+  .cognitive-rail>button { width:44px; height:44px; border-radius:7px; }
+  .cognitive-sidebar { left:52px; max-width:calc(100% - 52px); }
+  .cognitive-sidebar-scrim { left:52px; }
   .cognitive-contextbar { gap:8px; padding:8px 10px; min-height:50px; }
-  .cognitive-status { font-size:9px; max-width:155px; gap:6px; line-height:1.4; }
+  .cognitive-status { font-size:12px; max-width:none; gap:6px; line-height:1.4; }
   .cognitive-status>span { width:5px; height:5px; }
   .cognitive-view-tabs { gap:1px; padding:2px; }
-  .cognitive-view-tabs button { padding:7px; min-height:32px; }
-  .cognitive-view-tabs button span { display:none; }
+  .cognitive-view-tabs button { padding:8px; min-height:44px; }
+  .cognitive-view-tabs button span { display:inline; }
   .cognitive-chat-heading { padding:12px 15px; min-height:44px; }
   .cognitive-chat-heading>button { max-width:180px; }
   .cognitive-chat-heading>button>span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
@@ -230,9 +229,9 @@
   .cognitive-footbar>span:first-child { gap:4px; }
   .cognitive-live-mission { padding:10px 12px; }
   .cognitive-live-mission>p { font-size:11px; }
-  .cognitive-live-mission-heading>button { font-size:8px; }
+  .cognitive-live-mission-heading>button { font-size:12px; }
   .cognitive-live-mission-heading { gap:5px; }
-  .cognitive-live-mission-detail { font-size:9px; }
+  .cognitive-live-mission-detail { font-size:12px; }
   .cognitive-connection-notice { padding:9px 14px; font-size:10px; }
   .cognitive-evidence { padding:22px 16px; }
   .cognitive-terminal-dock { height:220px; }
@@ -240,3 +239,52 @@
 @media (prefers-reduced-motion:reduce) {
   .cognitive-workspace * { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
 }
+
+/* Readiness and decisions stay in the work flow, rather than behind tool panels. */
+.cognitive-run-controls { padding:0 28px 12px; flex-shrink:0; max-height:35%; overflow:auto; }
+.cognitive-setup { border:1px solid #304454; border-radius:10px; padding:12px 14px; background:#0f1a24; font-size:12px; color:#b7c9d6; }
+.cognitive-setup[data-tone=waiting] { border-color:#665637; }
+.cognitive-setup-heading { display:flex; align-items:center; gap:9px; color:#e1eaf0; }
+.cognitive-setup-heading strong { flex:1; font-size:13px; font-weight:550; }
+.cognitive-setup-heading>button { display:flex; align-items:center; justify-content:center; width:44px; height:44px; margin:-8px 0; }
+.cognitive-setup p { margin:7px 0; line-height:1.6; overflow-wrap:anywhere; }
+.cognitive-setup-actions { display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:6px; }
+.cognitive-setup-actions button { min-height:44px; text-align:left; color:#b6dfeb; }
+.cognitive-setup-actions button:first-child { font-weight:550; }
+.cognitive-setup-details { border-top:1px solid #304454; margin-top:10px; padding-top:6px; }
+.cognitive-decision { background:#211c13; border:1px solid #6c5939; border-radius:10px; margin:10px 24px; padding:14px 18px; flex-shrink:0; max-height:40%; overflow:auto; }
+.cognitive-decision-title { display:flex; align-items:center; gap:9px; color:#e7ce9c; font-size:13px; }
+.cognitive-decision-title>span { margin-left:auto; font-size:12px; }
+.cognitive-decision h2 { font-size:14px; font-weight:550; margin:8px 0 4px; overflow-wrap:anywhere; }
+.cognitive-decision p { font-size:13px; color:#d0c5af; line-height:1.6; overflow-wrap:anywhere; }
+.cognitive-decision-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.cognitive-decision-actions button { min-height:44px; padding:8px 13px; border:1px solid #736044; border-radius:7px; color:#f0e4ca; font-size:13px; }
+.cognitive-decision-actions button:hover { background:#ffffff0b; }
+.cognitive-more-views { position:relative; }
+.cognitive-more-views>summary { list-style:none; display:flex; align-items:center; gap:6px; min-height:44px; padding:8px 10px; font-size:12px; cursor:pointer; }
+.cognitive-more-views>summary::-webkit-details-marker { display:none; }
+.cognitive-more-views>div { position:absolute; z-index:60; top:100%; right:0; min-width:185px; padding:6px; border:1px solid #344958; border-radius:9px; background:#111d27; box-shadow:0 10px 30px #0008; }
+.cognitive-more-views>div>button { display:flex; align-items:center; gap:10px; width:100%; min-height:44px; text-align:left; padding:8px 12px; font-size:13px; }
+.cognitive-response-wait { flex-wrap:wrap; }
+.cognitive-response-wait>span { display:flex; align-items:center; gap:9px; }
+.cognitive-response-wait>button { min-height:44px; padding:8px 12px; border:1px solid #3d5668; border-radius:7px; color:#c8e0ec; }
+.cognitive-composer-help { margin:8px 2px 0; color:#a0b4c3; font-size:12px; line-height:1.5; }
+.cognitive-live-mission-heading>button { min-height:44px; }
+.cognitive-view-tabs button { min-height:44px; }
+@media (max-width:767px) {
+  .cognitive-contextbar { flex-wrap:wrap; }
+  .cognitive-status { width:100%; }
+  .cognitive-view-tabs { width:100%; justify-content:space-between; }
+  .cognitive-view-tabs button { font-size:12px; gap:4px; }
+  .cognitive-run-controls { padding:0 12px 10px; max-height:30%; }
+  .cognitive-setup { padding:10px 12px; }
+  .cognitive-setup-actions { gap:0 12px; }
+  .cognitive-decision { margin:8px 10px; padding:12px; max-height:32%; }
+  .cognitive-decision-title { flex-wrap:wrap; }
+  .cognitive-enter-hint { display:none; }
+  .cognitive-input-box textarea { font-size:16px; }
+}
+
+.cognitive-rail { overflow-y:auto; }
+.cognitive-rail>button { flex-shrink:0; }
+.cognitive-decision-context code { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; color:#f0e4ca; }
