@@ -36,6 +36,7 @@ class HandsOffController(private val context: Context) {
         val requestedPackage = action["package_name"]?.jsonPrimitive?.contentOrNull
         if (!requestedPackage.isNullOrBlank()) require(requestedPackage in grant.allowedPackages) { "requested package is not allowlisted" }
         val service = HandsOffAccessibilityService.instance ?: error("Accessibility Service is not connected")
+        requireHandsOffTargetAllowed(type, grant.allowedPackages, requestedPackage, service.currentPackage())
         val result = when (type) {
             "observe_screen" -> service.observe()
             "open_app" -> {
