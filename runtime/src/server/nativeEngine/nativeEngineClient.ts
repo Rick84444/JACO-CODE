@@ -212,6 +212,7 @@ export async function requestNativeEngine<T = unknown>(
       }
       try {
         const envelope = JSON.parse(buffer.slice(0, newline));
+        if (envelope?.id !== request.id) { finish(new Error("Native engine response ID mismatch")); return; }
         if (envelope?.error) finish(new Error(String(envelope.error.message || 'Native engine request failed')));
         else finish(undefined, envelope?.result as T);
       } catch (error: any) {
@@ -233,9 +234,12 @@ async function getAndroidNativeHealth(): Promise<NativeEngineHealth> {
     const backend = ['npu', 'gpu', 'cpu'].includes(String(result?.backend).toLowerCase())
       ? String(result.backend).toLowerCase() as NativeBackend
       : 'unknown';
+    if (result?.serviceHealthy !== true || result?.product !== 'JACO Native Engine') {
+      return unavailable('Native engine returned an invalid health contract', started, 'android-tcp');
+    }
     return {
       reachable: true,
-      serviceHealthy: result?.serviceHealthy === true || result != null,
+      serviceHealthy: true,
       product: result?.product ? String(result.product) : 'JACO Native Engine',
       authenticated: true,
       healthy: result?.healthy === true,
@@ -327,6 +331,7 @@ export async function createNativeCompletion(input: {
   const result: any = await requestNativeEngine('completion.create', {
     request: {
       messages,
+      ...(input.modelId?.trim() ? { model: input.modelId.trim() } : {}),
       tools: Array.isArray(input.tools) ? input.tools : [],
       temperature: input.temperature,
     },

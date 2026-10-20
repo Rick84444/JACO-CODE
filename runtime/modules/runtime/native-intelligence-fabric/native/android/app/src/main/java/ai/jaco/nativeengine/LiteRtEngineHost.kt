@@ -27,9 +27,7 @@ class LiteRtEngineHost(private val context: Context) : AutoCloseable {
     }
     @Synchronized fun complete(system:String?,prompt:String,toolSpecs:List<JsonObject>,temperature:Double?):NativeCompletionResult {
         val active=engine?:error("No model loaded")
-        val tools=toolSpecs.map{spec->
-            val name=spec["name"]?.toString()?.trim('"')?:"tool";val description=spec["description"]?.toString()?:"\"JACO tool\"";val parameters=spec["inputSchema"]?.toString()?:"{\"type\":\"object\",\"properties\":{}}";val openApi="{\"name\":\"$name\",\"description\":$description,\"parameters\":$parameters}";tool(DescriptorTool(openApi))
-        }
+        val tools = toolSpecs.map { spec -> tool(DescriptorTool(normalizeNativeToolSpec(spec))) }
         val config=ConversationConfig(systemInstruction=system?.takeIf{it.isNotBlank()}?.let{Contents.of(it)},tools=tools,automaticToolCalling=false,samplerConfig=temperature?.let{SamplerConfig(topK=40,topP=0.95,temperature=it)})
         // LiteRT-LM 0.14: a reply is a list of typed contents; JACO returns its text parts.
         active.createConversation(config).use{conversation->val msg=conversation.sendMessage(prompt);val text=msg.contents.contents.filterIsInstance<Content.Text>().joinToString(""){it.text};return NativeCompletionResult(text,msg.toolCalls.map{it.name to argumentsJson(it.arguments)})}
