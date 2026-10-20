@@ -8,7 +8,10 @@ if [[ -f "$CONFIG" ]]; then
   source "$CONFIG"
 fi
 
-JACO_ROOT="${JACO_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}"
+# The invoked checkout owns its topology. An older runtime.env must never
+# redirect a freshly updated supervisor into an obsolete JACO release.
+JACO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+export JACO_ROOT
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 SVDIR="${SVDIR:-$PREFIX/var/service}"
 SENTINEL_SERVICE="${JACO_SENTINEL_SERVICE:-jaco-sentinel}"
@@ -31,6 +34,7 @@ usage(){ cat <<'TXT'
 JACO unified supervisor
 
 Usage:
+  jacoctl start [--profile full] [--provider litert] [--model ID]  (alias for activate)
   jacoctl activate [--profile full] [--provider auto|litert|llamacpp|ollama] [--model ID] [--json]
   jacoctl deactivate [--json]
   jacoctl status [--json]
@@ -120,7 +124,15 @@ cleanup_stale_core_processes(){
     [[ "$pid" == "$BASHPID" || "$pid" == "$supervised" ]] && continue
 
     cwd="$(readlink "$proc/cwd" 2>/dev/null || true)"
-    [[ "$cwd" == "$JACO_ROOT" ]] || continue
+    # Also recover an orphan from the historical standalone 0.21 runtime,
+    # but never an arbitrary process under HOME or another checkout.
+    if [[ "$cwd" != "$JACO_ROOT" ]]; then
+      case "$cwd" in
+        "$HOME"/JACO-Autonomus-IDE/JACO-Cognitive-Runtime-0.21.0-REFLECTIVE-FUTURES-RC1|\
+        "$HOME"/JACO-no-budget-test/JACO-Cognitive-Runtime-0.21.0-REFLECTIVE-FUTURES-RC1) ;;
+        *) continue ;;
+      esac
+    fi
 
     cmd="$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
     case "$cmd" in
@@ -479,6 +491,7 @@ wait_url(){
 }
 
 ACTION="${1:-status}"; shift || true
+[[ "$ACTION" == start ]] && ACTION=activate
 while (($#)); do
   case "$1" in
     --json) JSON=true; shift ;;
@@ -529,6 +542,8 @@ wait_supervised "$CDP_SERVICE"
 case "$ACTION" in
   activate)
     sync_runtime_env
+    # Persist the checkout we actually invoked; service run scripts use this.
+    set_config_export JACO_ROOT "$JACO_ROOT"
     configure_local_llamacpp
     refresh_service_definitions
     svc_up "$SENTINEL_SERVICE"
@@ -578,6 +593,7 @@ case "$ACTION" in
     ;;
   restart)
     sync_runtime_env
+    set_config_export JACO_ROOT "$JACO_ROOT"
     configure_local_llamacpp
     refresh_service_definitions
     svc_down "$CDP_SERVICE" || true
