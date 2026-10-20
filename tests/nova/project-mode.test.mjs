@@ -44,7 +44,7 @@ test('project graph policy routes to Nova with code tools only when a project is
   const policy = projectGraphPolicy(absolute);
   assert.equal(policy.project_root, absolute);
   assert.equal(policy.executor, 'nova');
-  assert.ok(PROJECT_TASKS.filter(t => t !== 'web-fetch').every(t => CODE_TASKS.has(t)));
+  assert.ok(PROJECT_TASKS.filter(t => !['web-fetch','mcp-call'].includes(t)).every(t => CODE_TASKS.has(t)));
   assert.ok(!PROJECT_TASKS.includes('git-push') && !PROJECT_TASKS.includes('git-merge'));
 });
 

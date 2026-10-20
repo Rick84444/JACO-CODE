@@ -40,8 +40,8 @@ export async function handle(msg, impl = shell) {
     if (!tool) return { jsonrpc: '2.0', id: msg.id, error: { code: -32602, message: `unknown tool ${msg.params?.name}` } };
     try {
       const result = await tool.run(msg.params?.arguments || {});
-      // A refused or failed command is a normal answer the agent reads and adapts to, not a protocol error.
-      return reply({ content: [{ type: 'text', text: text(result) }], ...(result?.refused ? { isError: true } : {}) });
+      // Command failure is a tool-level error with its real output, not a JSON-RPC protocol error.
+      return reply({ content: [{ type: 'text', text: text(result) }], ...(result?.refused || result?.ok === false ? { isError: true } : {}) });
     } catch (error) { return reply({ isError: true, content: [{ type: 'text', text: String(error?.message || error).split('\n')[0].slice(0, 300) }] }); }
   }
   if (msg.method === 'ping') return reply({});

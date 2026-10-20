@@ -9,6 +9,7 @@ interface SkillDetail extends SkillSummary { body: string; truncated: boolean }
 interface Proposal { key: string; kind: 'tool-note' | 'skill'; status: string; missionId: string; tool?: string; note?: string; id?: string; skillMd?: string; namedBy?: string | null; createdAt: string; installedAs?: string }
 
 export const SkillsView: React.FC = () => {
+  const [installing,setInstalling]=useState(false),[installId,setInstallId]=useState(''),[skillContent,setSkillContent]=useState(''),[testCommands,setTestCommands]=useState('');
   const [skills, setSkills] = useState<SkillSummary[] | null>(null);
   const [error, setError] = useState('');
   const [sourceErrors, setSourceErrors] = useState<Record<string, string>>({});
@@ -55,7 +56,7 @@ export const SkillsView: React.FC = () => {
 
   const select = async (id: string) => {
     const request = ++selectionRequest.current;
-    setOpen(null); setResult(''); setInput('');
+    setOpen(null); setResult(''); setInput(''); setTestCommands('');
     try {
       const body = await fetch(`/api/aura/workbench/skills/${encodeURIComponent(id)}`).then(readAuraResponse);
       if (!body.success) throw new Error(body.error);
@@ -67,7 +68,7 @@ export const SkillsView: React.FC = () => {
     setBusy(true); setResult('');
     try {
       const res = await fetch(`/api/aura/workbench/skills/${encodeURIComponent(open.id)}/run`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input, executor }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input, executor, testCommands:testCommands.split(/\r?\n/).filter(Boolean) }),
       });
       const body = await readAuraResponse(res);
       if (!body.success) throw new Error(body.error || `HTTP ${res.status}`);
@@ -84,6 +85,12 @@ export const SkillsView: React.FC = () => {
         <button onClick={() => void load()} className="text-[9px] text-cyan-400 hover:text-cyan-300">Refresh</button>
       </div>
       <div className="flex-1 overflow-auto px-2 space-y-2 text-[11px] min-w-0">
+        <details><summary>Lägg till en skill</summary>
+          <label>Skill-ID<input value={installId} placeholder="min-fardighet" onChange={e=>setInstallId(e.target.value)}/></label>
+          <label>Importera SKILL.md<input type="file" accept=".md,text/markdown,text/plain" onChange={async e=>{const file=e.target.files?.[0];if(file){if(file.size>24000){setError('Skill-filen är för stor.');return;}setSkillContent(await file.text());}}}/></label>
+          <label>SKILL.md<textarea rows={8} value={skillContent} onChange={e=>setSkillContent(e.target.value)} placeholder={'---\nname: Min färdighet\ndescription: Vad den gör\ntasks: [web-fetch]\n---\nInstruktioner för färdigheten.'}/></label>
+          <button type="button" disabled={installing||!installId||!skillContent} onClick={async()=>{setInstalling(true);setError('');try{const data=await fetch('/api/aura/workbench/skills/install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:installId,content:skillContent})}).then(readAuraResponse);setResult('Installerad: '+data.skill.name);setSkillContent('');setInstallId('');await load();}catch(error:any){setError(error.message);}finally{setInstalling(false);}}}>Installera skill</button>
+        </details>
         {Object.entries(sourceErrors).filter(([, message]) => message).map(([source, message]) => <div key={source} role="status" className="text-amber-300 p-2">{message}</div>)}
         {result && !open && <div role="alert" className="text-amber-300 p-2">{result}</div>}
         {error && <div className="border border-red-900 text-red-300 rounded p-2 break-words">{error}</div>}
@@ -125,7 +132,9 @@ export const SkillsView: React.FC = () => {
         {open && (
           <div className="border border-[#333] bg-[#141414] rounded p-2 space-y-2 min-w-0">
             <div className="text-[9px] text-slate-500 break-all">{open.source}</div>
+            {open.tasks.some(task=>task.startsWith('repo-')||task.startsWith('git-'))&&<p>Kodskills körs som uppdrag i det öppna Git-projektet, med ett eget projektkontrakt.</p>}
             <pre className="whitespace-pre-wrap break-words text-[10px] text-slate-300 max-h-64 overflow-auto">{open.body}{open.truncated ? '\n[truncated]' : ''}</pre>
+            {open.tasks.includes('repo-test')&&<label>Testkommandon, ett per rad<textarea value={testCommands} onChange={e=>setTestCommands(e.target.value)} placeholder="npm test"/></label>}
             <textarea disabled={busy} value={input} onChange={e => setInput(e.target.value)} rows={3} placeholder="Input for this run (e.g. what to look at)"
               className="w-full bg-[#0b0b0b] border border-[#333] rounded p-1 text-[11px] text-slate-200" />
             {executors.length > 1 && (

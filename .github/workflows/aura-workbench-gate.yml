@@ -50,6 +50,23 @@ on:
       - 'runtime/src/server/connected/auraAgentBoard.mjs'
       - 'runtime/src/lib/agentNetworkLayout.mjs'
       - 'tests/nova/agent-network.test.mjs'
+      - 'runtime/src/components/ConnectionsWorkspace.tsx'
+      - 'runtime/src/components/AttachmentPicker.tsx'
+      - 'runtime/src/components/McpServersPanel.tsx'
+      - 'runtime/src/components/SkillsView.tsx'
+      - 'runtime/src/server/connected/workspaceAttachments.mjs'
+      - 'runtime/src/server/connected/auraChatSession.mjs'
+      - 'runtime/src/server/connected/automaticConnections.mjs'
+      - 'runtime/src/server/connected/providerRegistry.mjs'
+      - 'runtime/src/server/mcp/stdioMcpHost.mjs'
+      - 'agents/lib/skills.mjs'
+      - 'runtime/gateway/src/jaco-client.mjs'
+      - 'tests/nova/workspace-integrations.test.mjs'
+      - 'runtime/tools/jaco-shell-mcp.mjs'
+      - 'runtime/src/server/browser/browserHandsOff.ts'
+      - 'runtime/src/server/browser/router.ts'
+      - 'tests/nova/aura-chat-session.test.mjs'
+      - 'runtime/gateway/test/tool-registry.test.mjs'
       - 'runtime/src/components/ActivationCard.tsx'
       - 'runtime/src/components/CognitiveWorkspace.tsx'
       - 'runtime/src/components/NovaPlannerCard.tsx'
@@ -107,6 +124,23 @@ on:
       - 'runtime/src/server/connected/auraAgentBoard.mjs'
       - 'runtime/src/lib/agentNetworkLayout.mjs'
       - 'tests/nova/agent-network.test.mjs'
+      - 'runtime/src/components/ConnectionsWorkspace.tsx'
+      - 'runtime/src/components/AttachmentPicker.tsx'
+      - 'runtime/src/components/McpServersPanel.tsx'
+      - 'runtime/src/components/SkillsView.tsx'
+      - 'runtime/src/server/connected/workspaceAttachments.mjs'
+      - 'runtime/src/server/connected/auraChatSession.mjs'
+      - 'runtime/src/server/connected/automaticConnections.mjs'
+      - 'runtime/src/server/connected/providerRegistry.mjs'
+      - 'runtime/src/server/mcp/stdioMcpHost.mjs'
+      - 'agents/lib/skills.mjs'
+      - 'runtime/gateway/src/jaco-client.mjs'
+      - 'tests/nova/workspace-integrations.test.mjs'
+      - 'runtime/tools/jaco-shell-mcp.mjs'
+      - 'runtime/src/server/browser/browserHandsOff.ts'
+      - 'runtime/src/server/browser/router.ts'
+      - 'tests/nova/aura-chat-session.test.mjs'
+      - 'runtime/gateway/test/tool-registry.test.mjs'
       - 'runtime/src/components/ActivationCard.tsx'
       - 'runtime/src/components/CognitiveWorkspace.tsx'
       - 'runtime/src/components/NovaPlannerCard.tsx'
@@ -174,7 +208,7 @@ jobs:
       - name: Execution test dependencies
         run: npm ci --prefix .. --ignore-scripts --omit=optional --no-audit --no-fund
       - name: Workspace readiness and visible decisions
-        run: npm run test:workspace-ux && node --test ../tests/nova/workspace-readiness.test.mjs ../tests/nova/agent-network.test.mjs
+        run: npm run test:workspace-ux && node --test ../tests/nova/workspace-readiness.test.mjs ../tests/nova/agent-network.test.mjs ../tests/nova/workspace-integrations.test.mjs
       - name: Server bundle
         run: npm run build:server
       - name: Client build

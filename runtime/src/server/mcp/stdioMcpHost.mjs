@@ -301,6 +301,14 @@ export class StdioMcpHost {
 
   servers() { return loadServerConfig(this); }
 
+  useWorkspaceRoot(root) {
+    const resolved=fs.realpathSync(root);
+    if(!fs.statSync(resolved).isDirectory())throw Error('MCP_WORKSPACE_NOT_DIRECTORY');
+    if(resolved===this.repoRoot)return;
+    this.repoRoot=resolved;
+    for(const id of ['filesystem','git','repo','shell']) { this.clients.get(id)?.stop();this.clients.delete(id); }
+  }
+
   readConfig() {
     try { const c = JSON.parse(fs.readFileSync(this.configFile, 'utf8')); c.servers ||= {}; return c; } catch { return { servers: {} }; }
   }

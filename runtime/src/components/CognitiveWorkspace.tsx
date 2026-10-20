@@ -3,7 +3,7 @@ import { MessageSquare, Code2, PanelRightClose, Eye, ShieldCheck, Folder, GitBra
 import { JacoWordmark } from './JacoWordmark';
 import { CostChip } from './CostChip';
 
-export type CognitiveCanvas='conversation'|'agents'|'code'|'preview'|'evidence'|'gameboard'|'voice';
+export type CognitiveCanvas='conversation'|'agents'|'code'|'preview'|'evidence'|'gameboard'|'voice'|'connections';
 type Sidebar='explorer'|'source-control'|'tools'|'skills'|'devices'|'providers'|'revenue';
 interface Props {
   canvas:CognitiveCanvas;onCanvas:(view:CognitiveCanvas)=>void;conversation:React.ReactNode;detail:React.ReactNode;
@@ -13,7 +13,7 @@ interface Props {
   lastObservedAt:string|null;error:string|null;
   attention?:React.ReactNode;
 }
-const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
+const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['connections',PlugZap,'Anslutningar'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
 const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter'],['revenue',CircleDollarSign,'Budget & ekonomi']] as const;
 
 export function CognitiveWorkspace(props:Props) {
@@ -41,10 +41,10 @@ export function CognitiveWorkspace(props:Props) {
         <div className="cognitive-contextbar">
           <div className="cognitive-status" data-tone={props.status.tone} role="status"><span/>{props.status.label}</div>
           <nav className="cognitive-view-tabs" aria-label="Arbetsyta">
-            {views.slice(0,3).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>props.onCanvas(id)} aria-label={label} title={label} aria-pressed={props.canvas===id}><Icon size={14}/><span>{label}</span></button>)}
+            {views.slice(0,4).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>props.onCanvas(id)} aria-label={label} title={label} aria-pressed={props.canvas===id}><Icon size={14}/><span>{label}</span></button>)}
             <details className="cognitive-more-views">
-              <summary aria-label="Fler arbetsvyer"><MoreHorizontal size={16}/><span>{views.slice(3).find(view => view[0] === props.canvas)?.[2] || 'Mer'}</span></summary>
-              <div>{views.slice(3).map(([id, Icon, label]) => <button key={id} type="button" aria-pressed={props.canvas === id}
+              <summary aria-label="Fler arbetsvyer"><MoreHorizontal size={16}/><span>{views.slice(4).find(view => view[0] === props.canvas)?.[2] || 'Mer'}</span></summary>
+              <div>{views.slice(4).map(([id, Icon, label]) => <button key={id} type="button" aria-pressed={props.canvas === id}
                 onClick={event => { props.onCanvas(id); event.currentTarget.closest('details')?.removeAttribute('open'); }}><Icon size={16}/>{label}</button>)}</div>
             </details>
           </nav>

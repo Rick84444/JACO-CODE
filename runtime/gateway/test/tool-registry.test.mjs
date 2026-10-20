@@ -23,7 +23,7 @@ const workplace = {
 };
 const h = createToolHandlers({ core, system, modelId:'test-model', workplace });
 
-assert.equal(JACO_MCP_TOOL_NAMES.length, 34);
+assert.equal(JACO_MCP_TOOL_NAMES.length, 35);
 assert.equal(JACO_MCP_TOOL_NAMES.some(n=>/evaluate|shell|exec|credential/i.test(n)), false);
 await h.jaco_identity();
 await h.jaco_browser_attach({urlIncludes:'127.0.0.1:3000',port:9222});

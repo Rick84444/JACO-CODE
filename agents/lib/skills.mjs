@@ -2,10 +2,10 @@
 // A skill is <root>/<id>/SKILL.md: frontmatter (name, description, tasks) and a markdown body of
 // instructions. Running a skill creates a Nova mission whose goal names the skill; the planner then
 // receives the body as state.skill, whichever model plans. tasks are the mission's allowedTasks.
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync, mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs';
+import { join, isAbsolute } from 'node:path';
 import { TASK_FIELDS } from './task-fields.mjs';
-import { CODE_TASKS } from './coding-contract.mjs';
+import { CODE_TASKS, normalizeCodingContract } from './coding-contract.mjs';
 
 const ID = /^[a-z][a-z0-9-]{1,60}$/;
 const MAX_BODY = 12_000;
@@ -28,13 +28,13 @@ export function parseSkill(text) {
   return { meta, body: m[2].trim() };
 }
 
-export function skillTasks(meta) {
+export function skillTasks(meta, { allowCode = false } = {}) {
   const tasks = Array.isArray(meta.tasks) ? meta.tasks : String(meta.tasks || '').split(',').map(s => s.trim()).filter(Boolean);
   const unknown = tasks.filter(t => !Object.hasOwn(TASK_FIELDS, t));
   if (unknown.length) throw new Error(`SKILL_TASK_UNKNOWN:${unknown.join(',')}`);
   // Code tasks need a coding contract; a skill run does not carry one yet.
   const code = tasks.filter(t => CODE_TASKS.has(t));
-  if (code.length) throw new Error(`SKILL_CODE_TASKS_NEED_CONTRACT:${code.join(',')}`);
+  if (code.length && !allowCode) throw new Error(`SKILL_CODE_TASKS_NEED_CONTRACT:${code.join(',')}`);
   if (!tasks.length) throw new Error('SKILL_TASKS_REQUIRED');
   return [...new Set(tasks)];
 }
@@ -46,7 +46,7 @@ function readSkill(root, id) {
   const { meta, body } = parseSkill(readFileSync(file, 'utf8'));
   return {
     id, name: String(meta.name || id), description: String(meta.description || '').slice(0, 500),
-    tasks: skillTasks(meta), body: body.slice(0, MAX_BODY), truncated: body.length > MAX_BODY, source: file,
+    tasks: skillTasks(meta, { allowCode: true }), body: body.slice(0, MAX_BODY), truncated: body.length > MAX_BODY, source: file,
   };
 }
 
@@ -110,4 +110,36 @@ export async function fetchSkill(id, { env = process.env, fetchImpl = fetch, run
   if (!res.ok || !body.skill) throw new Error(String(body.error || `HTTP_${res.status}`));
   const { name, description, body: instructions } = body.skill;
   return { id, name, description, instructions };
+}
+
+// Explicit operator installation; content remains a procedure, not executable setup code.
+export function installSkill(root, id, content) {
+  if (!ID.test(String(id || ''))) throw Error('SKILL_ID_INVALID');
+  if (typeof content !== 'string' || content.length > MAX_BODY * 2) throw Error('SKILL_TOO_LARGE');
+  const { meta, body } = parseSkill(content);
+  skillTasks(meta, { allowCode: true });
+  if (!body || body.length > MAX_BODY) throw Error('SKILL_BODY_INVALID');
+  mkdirSync(root, { recursive: true });
+  const dir = join(root, id);
+  if (existsSync(dir)) throw Error('SKILL_ALREADY_EXISTS');
+  const stage=join(root, `.${id}-${process.pid}-${Date.now()}`);
+  mkdirSync(stage);
+  try { writeFileSync(join(stage,'SKILL.md'),content,{flag:'wx',mode:0o600}); renameSync(stage,dir); }
+  catch(error){rmSync(stage,{recursive:true,force:true});throw error;}
+  return readSkill(root,id);
+}
+
+export function skillMissionSpec(skill, { input = '', executor = 'nova', projectRoot = '', testCommands = [] } = {}) {
+  const goal=skillMissionGoal(skill,input),allowedTasks=skillTasks({tasks:skill.tasks},{allowCode:true});
+  if(!allowedTasks.some(task=>CODE_TASKS.has(task)))return {goal,allowedTasks,executor};
+  if(executor!=='nova')throw Error('SKILL_CODE_RUN_LOCAL_ONLY');
+  if(!isAbsolute(String(projectRoot||'')))throw Error('SKILL_PROJECT_REQUIRED');
+  if(!Array.isArray(testCommands)||testCommands.some(command=>typeof command!=='string'||!command.trim()))throw Error('SKILL_TEST_COMMANDS_INVALID');
+  if(allowedTasks.includes('repo-test')&&!testCommands.length)throw Error('SKILL_TEST_COMMANDS_REQUIRED');
+  const contract=normalizeCodingContract({
+    objective:goal,scope:{allowed:['**']},acceptance:['Skill objective has observed receipts'],
+    execution:{autonomous:true,allow_git_commit:allowedTasks.includes('git-commit'),allow_git_push:false,allow_git_merge:false},
+    verification:{tests_required:allowedTasks.includes('repo-test'),falsifier_required:false,commands:testCommands},
+  });
+  return {goal,allowedTasks,executor,projectRoot,contract};
 }

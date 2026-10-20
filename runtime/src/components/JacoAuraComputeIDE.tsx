@@ -1,3 +1,4 @@
+import { ConnectionsWorkspace } from './ConnectionsWorkspace';
 import { readAuraResponse as json, acknowledgeSavedDraft } from '../lib/auraApi.mjs';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -330,6 +331,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [openFiles, setOpenFiles] = useState<string[]>([]);
   // The conversation remains mounted while the operator inspects code or evidence.
   const openChat = () => { setWorkspaceView('conversation'); setSidePanelOpen(false); window.dispatchEvent(new Event('jaco:aura:focus')); };
+  const [connectionsTab,setConnectionsTab]=useState('models');
   const [sidebar, setSidebar] = useState<SidebarView>('explorer');
   const [terminalMode, setTerminalMode] = useState<TerminalMode>('human');
   const [bottomPanel, setBottomPanel] = useState<BottomPanel>('missions');
@@ -809,7 +811,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const missionGoals = new Map(missions.map(m => [m.id, m.goal]));
   const missionPhase = String(mission?.phase || mission?.status || (latestMission ? `NO ACTIVE MISSION (latest ${latestMission.status})` : 'NO ACTIVE MISSION'));
 
-  const startGoal = async (explicitGoal?: string, toolHint?: AuraSelectedTool | null) => {
+  const startGoal = async (explicitGoal?: string, toolHint?: AuraSelectedTool | null, attachmentIds?: string[]) => {
     const trimmed = String(explicitGoal ?? goal).trim();
     if (!trimmed || missionSubmitting) return;
     setMissionSubmitting(true);
@@ -819,7 +821,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          goal: trimmed,
+          goal: trimmed, attachmentIds,
           toolHint: toolHint ? {
             kind: toolHint.kind,
             provider: toolHint.provider || null,
@@ -1397,12 +1399,12 @@ export const JacoAuraComputeIDE: React.FC = () => {
           session={chatSession}
           runControls={missions.some(item => item.status === 'ACTIVE') && activation.report?.ok && !activation.error ? null : <ActivationCard activation={activation} projectName={projectName}
             onOpenProject={() => { setSidebar('explorer'); setSidePanelOpen(true); }}
-            onOpenProviders={() => { setSidebar('providers'); setSidePanelOpen(true); }}
+            onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
             onActivated={() => { void refresh().catch(() => {}); }} />}
           missions={missions}
           onCancelMission={cancelMission}
           onOpenWork={() => { setWorkspaceView('evidence'); }}
-          onOpenProviders={() => { setSidePanelOpen(true); setSidebar('providers'); }}
+          onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
           activeFilePath={selectedFile}
           activeFileContent={fileView ? (drafts[fileView.path] ?? fileView.content) : null}
           selectedTool={selectedTool}
@@ -1419,7 +1421,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
           runtimeError={runtimeError}
           onOpenEvidence={(event) => { setSelectedEvidence(event); setWorkspaceView('evidence'); }}
           onOpenFile={openFile}
-          onStartGoal={async (text, tool) => { return await startGoal(text, tool); }}
+          onStartGoal={async (text, tool, attachments) => { return await startGoal(text, tool, attachments); }}
         />
       </div>
     </>
@@ -1698,6 +1700,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     </div>
   );
   const canvasDetail = <>
+    {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
     {workspaceView==='agents'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Öppnar agentkartan…</div>}><AuraAgentWorkspace goal={goal} onGoalChange={setGoal} onStartGoal={()=>{void startGoal().catch(()=>{});}} submitting={missionSubmitting} notice={missionNotice} onReview={()=>setWorkspaceView('evidence')} onCancelMission={cancelMission}/></React.Suspense>}
     {workspaceView==='gameboard'&&<CognitiveGameboard/>}
@@ -1728,7 +1731,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>Arbetet behöver hjälp</strong></div>
     <p>{snapshot?.seer?.blocker || runtimeError}</p>
     <div className="cognitive-decision-actions">
-      <button type="button" onClick={() => { setSidebar('providers'); setSidePanelOpen(true); }}>Modellanslutningar</button>
+      <button type="button" onClick={() => {setConnectionsTab('models');setWorkspaceView('connections');}}>Modellanslutningar</button>
       <button type="button" onClick={() => setWorkspaceView('evidence')}>Visa uppdrag och kontroller</button>
       {runtimeError && <button type="button" onClick={() => setRuntimeError(null)}>Stäng meddelandet</button>}
     </div>
@@ -1736,7 +1739,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   return <>
     <CognitiveWorkspace attention={attention} canvas={workspaceView} onCanvas={setWorkspaceView} conversation={renderChatContent()} detail={detail}
       sidebar={sidebar} sidePanelOpen={sidePanelOpen} sidePanel={renderSidebar()}
-      onSidebar={view => { setSidebar(view); setSidePanelOpen(current => sidebar === view ? !current : true); }}
+      onSidebar={view => { if(['tools','providers','skills'].includes(view)){setConnectionsTab(view==='tools'?'mcp':view==='providers'?'models':'skills');setWorkspaceView('connections');setSidePanelOpen(false);}else{setSidebar(view);setSidePanelOpen(current => sidebar === view ? !current : true);} }}
       onCloseSidebar={() => setSidePanelOpen(false)} status={status} projectName={projectName}
       branch={snapshot?.git?.branch} changes={snapshot?.git?.changes?.length || 0}
       approvalCount={snapshot?.approvals?.count || 0} onApprovals={() => setShowApprovals(true)}

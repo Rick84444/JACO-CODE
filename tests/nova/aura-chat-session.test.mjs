@@ -32,3 +32,18 @@ test('corruption or a lost installation key fails explicitly rather than returni
   fs.unlinkSync(path.join(bus.stateDir,'aura-chat','content.key'));
   assert.throws(()=>createAuraChatSession(bus),/CONTENT_KEY_MISSING/);
 });
+
+test('message attachments are resolved from stored uploads, encrypted and retained across reopen',t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-chat-refs-'));let bus=new DurableMissionBus(root);
+ t.after(()=>{bus.close();fs.rmSync(root,{recursive:true,force:true});});
+ const id='12345678-1234-1234-1234-123456789abc';
+ const resolveAttachments=ids=>ids.map(id=>({id,name:'Verified upload',fileCount:3}));
+ let chat=createAuraChatSession(bus,{resolveAttachments});
+ const input={id:'upload-message',role:'user',content:'Read these files',attachments:[{id,name:'forged label',fileCount:999}]};
+ const saved=chat.append(input);assert.equal(saved.attachments[0].name,'Verified upload');assert.equal(saved.attachments[0].fileCount,3);
+ assert.deepEqual(chat.append(input),saved);
+ assert.throws(()=>chat.append({...input,attachments:[]}),/CONFLICT/);
+ assert.throws(()=>chat.append({...input,id:'invalid',attachments:[{id:'../../root'}]}),/ATTACHMENTS_INVALID/);
+ const encrypted=bus.db.prepare('SELECT content FROM aura_chat_messages').get().content;assert.ok(!encrypted.includes('Verified upload'));
+ bus.close();bus=new DurableMissionBus(root);chat=createAuraChatSession(bus,{resolveAttachments});assert.deepEqual(chat.list()[0].attachments,saved.attachments);
+});

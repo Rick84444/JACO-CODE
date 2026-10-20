@@ -156,7 +156,7 @@ export class CdpBridge implements BrowserBridge {
   private nextId = 1;
   private readonly pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
-  private constructor(private readonly wsUrl: string) {}
+  private constructor(private readonly wsUrl: string, public readonly targetId?: string) {}
 
   /**
    * Attaches to a tab in a Chrome started with --remote-debugging-port. Matching
@@ -170,13 +170,15 @@ export class CdpBridge implements BrowserBridge {
     return targets.filter((target) => target.type === 'page' && Boolean(target.webSocketDebuggerUrl));
   }
 
-  public static async attach(port: number, urlIncludes: string): Promise<CdpBridge> {
+  public static async attach(port: number, urlIncludes: string, targetId?: string): Promise<CdpBridge> {
     const response = await fetch(`http://127.0.0.1:${port}/json/list`);
     if (!response.ok) throw new Error(`no CDP endpoint on port ${port} — start Chrome with --remote-debugging-port=${port}`);
-    const targets = (await response.json()) as Array<{ type: string; url: string; webSocketDebuggerUrl?: string }>;
-    const target = targets.find((t) => t.type === 'page' && t.url.includes(urlIncludes) && t.webSocketDebuggerUrl);
+    const targets = (await response.json()) as Array<{ id?: string; type: string; url: string; webSocketDebuggerUrl?: string }>;
+    const matches = targets.filter(t => t.type === 'page' && t.url.includes(urlIncludes) && t.webSocketDebuggerUrl && (!targetId || t.id === targetId));
+    if(matches.length>1)throw new Error('CDP_TARGET_AMBIGUOUS: specify targetId for the selected tab');
+    const target = matches[0];
     if (!target?.webSocketDebuggerUrl) throw new Error(`no open tab matching '${urlIncludes}'`);
-    const bridge = new CdpBridge(target.webSocketDebuggerUrl);
+    const bridge = new CdpBridge(target.webSocketDebuggerUrl, target.id);
     await bridge.connect();
     return bridge;
   }

@@ -58,7 +58,9 @@ test('two actual editor MCP processes coordinate over real Workplace HTTP and fa
   const alpha=await a.call('team_status'),beta=await b.call('team_status');
   assert.equal(alpha.state,'READY');assert.equal(beta.state,'READY');assert.notEqual(alpha.agentId,beta.agentId);
   assert.ok(beta.agents.agents.some(agent=>agent.requestedName==='Team Test Alpha'));
-  const posted=await a.call('team_post',{kind:'MESSAGE',body:'Review the temporary fixture',targets:[beta.agentId],eventId:'team-test-message'});
+  // A live sync can temporarily refuse the call after team_status. Retry only
+  // that explicit pre-execution refusal, retaining the same idempotent event ID.
+  const posted=await until(async()=>{const result=await a.call('team_post',{kind:'MESSAGE',body:'Review the temporary fixture',targets:[beta.agentId],eventId:'team-test-message'});return result.error!=='DEGRADED_UNSYNCED'&&result;},'first session synced before posting');
   assert.equal(posted.error,undefined);
   const inbox=await until(async()=>{const page=await b.call('team_inbox');return page.events.some(entry=>entry.event.body==='Review the temporary fixture')&&page;},'targeted team delivery');
   assert.equal(inbox.overflow,false);

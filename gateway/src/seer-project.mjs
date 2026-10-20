@@ -3,7 +3,7 @@ import path from 'node:path';
 // Project mode: a goal the operator starts while a project is open in the IDE is work on that
 // project. Nova runs each node in its own git worktree of the project (agents/lib/mission-worktree.mjs),
 // so the contract may cover the whole tree and commit there, but never push or merge.
-export const PROJECT_TASKS = ['repo-list', 'repo-read', 'repo-write', 'repo-edit', 'repo-test', 'repo-service', 'git-status', 'git-diff', 'git-commit', 'web-fetch'];
+export const PROJECT_TASKS = ['repo-list', 'repo-read', 'repo-write', 'repo-edit', 'repo-test', 'repo-service', 'git-status', 'git-diff', 'git-commit', 'web-fetch', 'mcp-call'];
 
 export function normalizeProjectRoot(value) {
   if (value == null || value === '') return null;

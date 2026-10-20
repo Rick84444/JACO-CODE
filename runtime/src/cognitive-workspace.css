@@ -359,3 +359,14 @@
   .agent-network-scroll { height:360px; min-height:300px; }
   .agent-network-detail { padding:16px; }
 }
+
+.connections-workspace{height:100%;overflow:auto;padding:20px;color:#cbd5e1;font-size:13px;display:flex;flex-direction:column;gap:14px}
+.connections-workspace>header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.connections-workspace h2{font-size:20px;color:#f1f5f9}.connections-workspace h3{font-size:15px;color:#e2e8f0;margin-bottom:10px}
+.connections-workspace>nav{display:flex;flex-wrap:wrap;gap:6px}.connections-workspace button,.cognitive-attachments button{min-height:40px;border:1px solid #334155;border-radius:8px;padding:8px 12px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.connections-workspace button[aria-pressed=true]{background:#153446;border-color:#22d3ee}.connections-workspace button:disabled,.cognitive-attachments button:disabled{opacity:.45}
+.connections-workspace article{border:1px solid #334155;border-radius:10px;padding:14px;margin:10px 0;overflow-wrap:anywhere}.connections-workspace article>span{float:right}.connections-workspace p{color:#94a3b8;font-size:12px;margin:8px 0}
+.connections-workspace select,.connections-workspace input,.connections-workspace textarea{background:#0c131e;border:1px solid #334155;border-radius:6px;padding:9px;width:100%;color:#e2e8f0}.connections-workspace label{display:block;margin:12px 0}.connections-workspace pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:450px;overflow:auto;background:#0b111b;padding:12px}
+.connection-model{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}.connection-model code{flex:1;min-width:140px;overflow-wrap:anywhere}
+.cognitive-attachments{margin-top:10px;font-size:12px;color:#94a3b8}.cognitive-attachments p{font-size:11px;margin:7px 0}.cognitive-attachments details{max-height:180px;overflow:auto;overflow-wrap:anywhere}.cognitive-attachments li{padding:3px}
+@media(max-width:640px){.connections-workspace{padding:12px}.connections-workspace button,.cognitive-attachments button{min-height:44px}.cognitive-view-tabs{overflow-x:auto}}

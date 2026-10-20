@@ -10,6 +10,7 @@ export interface BrowserSessionSnapshot {
   cdpPort: number;
   urlIncludes: string | null;
   attachedAt: string | null;
+  targetId?: string;
 }
 
 export class BrowserSessionManager {
@@ -22,20 +23,22 @@ export class BrowserSessionManager {
   constructor(private readonly workspaceRoot: string) {}
 
   snapshot(): BrowserSessionSnapshot {
-    return { attached: Boolean(this.client), cdpPort: this.cdpPort, urlIncludes: this.urlIncludes, attachedAt: this.attachedAt };
+    return { attached: Boolean(this.client), cdpPort: this.cdpPort, urlIncludes: this.urlIncludes, attachedAt: this.attachedAt, ...(this.bridge?.targetId?{targetId:this.bridge.targetId}:{}) };
   }
 
   getClient(): BrowserHandsOffClient | null { return this.client; }
 
   async targets(port = this.cdpPort) { return CdpBridge.listTargets(port); }
 
-  async attach(input: { port?: number; urlIncludes: string }): Promise<BrowserSessionSnapshot> {
+  async attach(input: { port?: number; urlIncludes: string; targetId?: string }): Promise<BrowserSessionSnapshot> {
     await this.detach();
     const port = Number(input.port || process.env.NOVA_CDP_PORT || 9222);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('invalid CDP port');
     const urlIncludes = String(input.urlIncludes || '').trim();
     if (!urlIncludes || urlIncludes.length > 300) throw new Error('urlIncludes must be 1-300 characters');
-    this.bridge = await CdpBridge.attach(port, urlIncludes);
+    const targetId = input.targetId;
+    if(targetId!==undefined && (typeof targetId!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(targetId)))throw new Error('CDP_TARGET_ID_INVALID');
+    this.bridge = await CdpBridge.attach(port, urlIncludes, targetId);
     this.client = new BrowserHandsOffClient(this.workspaceRoot, this.bridge);
     this.cdpPort = port;
     this.urlIncludes = urlIncludes;
@@ -72,8 +75,8 @@ export function createBrowserRouter(
 
   router.post('/attach', requireAuth, async (req, res) => {
     try {
-      const session = await sessions.attach({ port: req.body?.port, urlIncludes: req.body?.urlIncludes });
-      onEvent?.({ actor: 'BrowserHandsOff', type: 'browser.attached', message: `CDP attached to '${session.urlIncludes}' on :${session.cdpPort}`, verified: true });
+      const session = await sessions.attach({ port: req.body?.port, urlIncludes: req.body?.urlIncludes, targetId:req.body?.targetId });
+      onEvent?.({ actor: 'BrowserHandsOff', type: 'browser.attached', message: `CDP attached to '${session.urlIncludes}' on :${session.cdpPort}`, verified: true, receipt: session });
       res.json({ success: true, session });
     } catch (error) { fail(res, 409, error); }
   });

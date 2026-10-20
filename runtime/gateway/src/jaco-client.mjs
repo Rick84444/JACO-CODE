@@ -36,6 +36,7 @@ export class JacoCoreClient {
     return data;
   }
 
+  attachmentRead({id,path='',offset=0,limit=12000}) { return this.request(`/api/attachments/${encodeURIComponent(id)}?path=${encodeURIComponent(path)}&offset=${offset}&limit=${limit}`); }
   identity() { return this.request('/api/runtime/identity'); }
   unifiedStatus() { return this.request('/api/hands-off/unified/status'); }
   targets(port) { return this.request(`/api/browser/hands-off/targets${port ? `?port=${encodeURIComponent(port)}` : ''}`); }

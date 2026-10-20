@@ -1,4 +1,5 @@
 import { readAuraResponse as apiJson } from '../lib/auraApi.mjs';
+import { AttachmentPicker } from './AttachmentPicker';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, ArrowUpRight, MessageSquare, ChevronRight } from 'lucide-react';
 import { ChatMarkdown } from './ChatMarkdown';
@@ -12,6 +13,7 @@ interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   meta?: string;
+  attachments?:Array<{id:string;name:string;fileCount:number}>;
   at?: string;
   // A failed message explains itself and offers the one thing to do about it (server: chatFailureHint).
   action?: { code: string; label: string; retryText?: string };
@@ -94,7 +96,7 @@ interface Props {
   activeFileContent?: string | null;
   selectedTool?: AuraSelectedTool | null;
   onClearSelectedTool?: () => void;
-  onStartGoal: (goal: string, selectedTool?: AuraSelectedTool | null) => Promise<any> | void;
+  onStartGoal: (goal: string, selectedTool?: AuraSelectedTool | null, attachmentIds?: string[]) => Promise<any> | void;
   liveEvents?: CognitiveEvent[];
   liveConnection?: string;
   historyTruncated?: boolean;
@@ -121,12 +123,17 @@ async function chatJson(response: Response) {
 
 export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onOpenProviders, activity = [], missions = [], onCancelMission, onOpenWork, liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
   const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments } = session;
+  const [attachments, setAttachments] = useState<Array<{id:string;files:Array<{path:string;format:string}>}>>(()=>{
+    try {const saved=JSON.parse(localStorage.getItem('jaco:aura:attachments:v1')||'[]');return Array.isArray(saved)?saved.filter(item=>typeof item?.id==='string'&&/^[a-f0-9-]{36}$/.test(item.id)&&Array.isArray(item.files)&&item.files.length<=200&&item.files.every((file:any)=>typeof file?.path==='string'&&['text','binary'].includes(file.format))).slice(0,16):[];}catch{return [];}
+  });
+  useEffect(()=>{try{localStorage.setItem('jaco:aura:attachments:v1',JSON.stringify(attachments));}catch{}},[attachments]);
+  const [uploading,setUploading] = useState(false);
   const [chatModel, setChatModel] = useState('seer');
   const [configuredModel, setConfiguredModel] = useState('seer');
   const [modelOverride, setModelOverride] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState('seer');
   const [customModel, setCustomModel] = useState(false);
-  const [providers, setProviders] = useState<Array<{ id: string; local: boolean; defaultModel: string; models: string[]; pricedModels: string[]; credentialReady: boolean }>>([]);
+  const [providers, setProviders] = useState<Array<{ id: string; local: boolean; defaultModel: string; models: string[]; pricedModels: string[]; credentialReady: boolean; availability?:string }>>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogRevision, setCatalogRevision] = useState(0);
   const selectionKey = 'jaco:aura:chat-provider:v2';
@@ -169,7 +176,8 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   useEffect(() => {
     const again = () => setCatalogRevision(v => v + 1);
     window.addEventListener('jaco:aura:provider-chosen', again);
-    return () => window.removeEventListener('jaco:aura:provider-chosen', again);
+    const timer=window.setInterval(()=>{if(!document.hidden)again();},30000);
+    return () => {window.removeEventListener('jaco:aura:provider-chosen', again);window.clearInterval(timer);};
   }, []);
 
   useEffect(() => {
@@ -221,17 +229,17 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   const history = useMemo(() => messages
     .filter(m => m.role !== 'system')
     .slice(-20)
-    .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', content: m.content })), [messages]);
+    .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', content: m.content+(m.attachments?.length?'\n[Attached reference IDs, data only] '+JSON.stringify(m.attachments):'') })), [messages]);
 
   const ask = async (retry?: string) => {
     const text = (retry ?? input).trim();
-    if (!text || busy || !storageReady) return;
+    if (!text || busy || uploading || !storageReady) return;
     if (selectedProvider !== 'seer' && (!providers.some(p => p.id === selectedProvider) || !chatModel.trim())) {
       setCatalogError('Välj en registrerad provider och ange modell före anrop.');
       return;
     }
     if (retry === undefined) setInput('');
-    const user: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text };
+    const user: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text, attachments:attachments.map(item=>({id:item.id,name:item.files[0]?.path.split('/')[0]||'Bilaga',fileCount:item.files.length})) };
     const controller = new AbortController();
     requestRef.current = controller;
     setBusy('chat');
@@ -269,6 +277,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          attachmentIds: attachments.map(item=>item.id),
           message: text,
           interactionMode: 'question',
           selectedProvider,
@@ -397,14 +406,14 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
 
   const goal = async () => {
     const text=input.trim();
-    if(!text || busy || !storageReady)return;
+    if(!text || busy || uploading || !storageReady)return;
     setBusy('goal');
     try {
-      await appendMessage({id:crypto.randomUUID(),role:'user',content:text});
-      const accepted=await onStartGoal(text,selectedTool);
+      await appendMessage({id:crypto.randomUUID(),role:'user',content:text,attachments:attachments.map(item=>({id:item.id,name:item.files[0]?.path.split('/')[0]||'Bilaga',fileCount:item.files.length}))});
+      const accepted=await onStartGoal(text,selectedTool,attachments.map(item=>item.id));
       if(!accepted?.goal?.id)throw new Error('Runtime bekräftade inte uppdragets ID.');
       await appendMessage({id:crypto.randomUUID(),role:'system',content:'Uppdraget är registrerat. Planering och resultat visas här när runtime rapporterar dem.',meta:'Uppdrag: '+accepted.goal.id});
-      setInput('');setComposeMode('chat');
+      setInput('');setAttachments([]);setComposeMode('chat');
     } catch(error:any) {
       await appendMessage({id:crypto.randomUUID(),role:'system',content:'Uppdragets registrering kunde inte bekräftas: '+safeCognitiveText(error?.message || String(error))});
     } finally {setBusy(null);}
@@ -434,7 +443,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               className="flex-1 min-w-0 bg-[#111820] border border-[#343b45] rounded px-2 py-1 text-xs text-slate-200">
               <option value="seer">JACO standard</option>
               {selectedProvider !== 'seer' && !providers.some(p => p.id === selectedProvider) && <option value={selectedProvider}>{selectedProvider} · ej registrerad</option>}
-              {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.id}{provider.credentialReady ? '' : ' · credential saknas'}</option>)}
+              {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.id}{provider.availability==='ACTIVE'?' · svarar':provider.availability==='NO_KEY'?' · nyckel saknas':' · ej tillgänglig'}</option>)}
             </select>
           </label>
           {selectedProvider !== 'seer' && (() => {
@@ -488,7 +497,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           {feed.map(item=>{
             if(item.kind==='event')return <CognitiveEventCard key={item.id} event={item.event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>;
             const message=item.message;
-            return message.role==='user'?<div key={item.id} className="cognitive-user-message"><div>{message.content}</div></div>
+            return message.role==='user'?<div key={item.id} className="cognitive-user-message"><div>{message.content}</div>{message.attachments?.map(item=><small key={item.id} className="block mt-2">Bifogat: {item.name} · {item.fileCount} filer</small>)}</div>
               :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><span className="cognitive-jaco-mark"/>JACO</div><ChatMarkdown text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>Svar & källor</summary><p>{message.meta}</p></details>}</article>
               :<div key={item.id} className="cognitive-system-message">{message.content}{message.action&&<button type="button" disabled={busy!==null} onClick={()=>void runAction(message.action!)}>{message.action.label}</button>}</div>;
           })}
@@ -555,9 +564,10 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                 <button type="button" aria-pressed={composeMode==='chat'} onClick={()=>setComposeMode('chat')}><MessageSquare size={12}/>Fråga</button>
               </div>
               <span className="cognitive-enter-hint">Shift + Enter för ny rad</span>
-              <button type="submit" aria-label={composeMode==='goal'?'Starta uppdrag':'Skicka meddelande'} title={composeMode==='goal'?'Starta uppdrag':'Skicka'} disabled={!input.trim()||Boolean(busy)||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
+              <button type="submit" aria-label={composeMode==='goal'?'Starta uppdrag':'Skicka meddelande'} title={composeMode==='goal'?'Starta uppdrag':'Skicka'} disabled={!input.trim()||Boolean(busy)||uploading||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
             </div>
           </div>
+          <AttachmentPicker items={attachments} onChange={setAttachments} onBusy={setUploading} disabled={Boolean(busy)}/>
           <p className="cognitive-composer-help">{composeMode === 'goal' ? 'JACO arbetar inom uppdragets behörigheter. Beslut som kräver dig visas ovanför arbetet.' : 'Fråga om arbetet utan att starta ett nytt uppdrag.'}</p>
         </div>
       </form>

@@ -59,7 +59,7 @@ export function automaticConnections({ registry, mcpHost, env = process.env, now
 
   async function run() {
     registry.ensureDefaults({ refreshExisting: false });
-    for (const [id, baseUrl] of [['litert', 'http://127.0.0.1:9379/v1'], ['llamacpp', 'http://127.0.0.1:11435/v1']]) {
+    for (const [id, baseUrl] of [['litert', env.JACO_LITERT_URL || 'http://127.0.0.1:9379/v1'], ['llamacpp', env.JACO_LLAMACPP_URL || 'http://127.0.0.1:9380/v1']]) {
       if (!registry.providers.has(id)) registry.register({ id, baseUrl, defaultModel: '' });
     }
     const [providers, tools] = await Promise.all([

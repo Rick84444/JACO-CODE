@@ -57,3 +57,27 @@ test('agent constellation exposes real relationships and missing planning withou
   assert.doesNotMatch(missing,/API specialist/);
   assert.match(missing,/JACO, Samordnare, Inte nåbar/);
 });
+
+test('attachment controls distinguish uploaded copies and binary extraction limits',async()=>{
+  const {AttachmentPicker}=await import('../components/AttachmentPicker');
+  const html=renderToStaticMarkup(<AttachmentPicker items={[{id:'test',files:[{path:'notes/input.pdf',format:'binary'}]}]} onChange={noop} onBusy={noop} disabled={false}/>);
+  assert.match(html,/Bifoga filer/);assert.match(html,/Bifoga mapp/);
+  assert.match(html,/texttolkning saknas/);assert.match(html,/originalen ändras inte/);
+});
+
+test('connections workspace exposes live sources and the existing integration controls',async()=>{
+  const {ConnectionsWorkspace}=await import('../components/ConnectionsWorkspace');
+  const html=renderToStaticMarkup(<ConnectionsWorkspace onSelectTool={noop} onTabChange={noop}/>);
+  for(const label of ['Anslutningar','Lokala verktyg','Webbläsare / CDP','Skills','Väntar på modellernas svar'])assert.ok(html.includes(label),label);
+  assert.doesNotMatch(html,/Ingen tillgänglig modell observerad/,'no unobserved provider is claimed absent before the first response');
+});
+
+test('CDP refuses ambiguous URL-only attachment instead of choosing another identical tab',async()=>{
+ const {CdpBridge}=await import('../server/browser/browserHandsOff');
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>Response.json([{id:'first',type:'page',url:'about:blank',webSocketDebuggerUrl:'ws://127.0.0.1/first'},{id:'second',type:'page',url:'about:blank',webSocketDebuggerUrl:'ws://127.0.0.1/second'}]);
+ try {
+  await assert.rejects(CdpBridge.attach(9222,'about:blank'),/CDP_TARGET_AMBIGUOUS/);
+  await assert.rejects(CdpBridge.attach(9222,'about:blank','missing'),/no open tab/);
+ }finally{globalThis.fetch=original;}
+});

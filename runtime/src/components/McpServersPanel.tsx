@@ -80,7 +80,8 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
     setWorking('__add');
     try {
       await send('/api/aura/workbench/mcp/servers', 'POST', entry);
-      onChanged(`${entry.name} tillagd. Starta den för att se dess verktyg.`);
+      try { await send('/api/aura/workbench/mcp/start','POST',{providerId:entry.id}); onChanged(`${entry.name} ansluten. Verktygen är hämtade.`); }
+      catch(error:any) { onChanged(`${entry.name} sparad, men anslutningen misslyckades: ${error.message}`); }
       setDraft({ id: '', name: '', target: '', icon: 'mcp', agentAccess: 'read' }); setAdding(false);
     } catch (e: any) { setFormError(e.message); }
     finally { setWorking(null); }
@@ -110,7 +111,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
       </div>
       <p className="text-[9px] text-slate-500">Nycklar anges som ${'{'}NAMN{'}'} och läses från .env; de sparas aldrig i konfigurationen. Fjärrservrar (https) är alltid läsande för agenter.</p>
       {formError && <p role="status" className="text-[10px] text-amber-300 break-words">{formError}</p>}
-      <button onClick={() => void add()} disabled={working !== null} className="w-full rounded border border-cyan-800 py-1 text-[10px] text-cyan-300 disabled:opacity-40">{working === '__add' ? 'Sparar…' : 'Spara server'}</button>
+      <button onClick={() => void add()} disabled={working !== null} className="w-full rounded border border-cyan-800 py-1 text-[10px] text-cyan-300 disabled:opacity-40">{working === '__add' ? 'Ansluter…' : 'Spara och anslut'}</button>
     </div>}
 
     {providers.map(p => {

@@ -27,12 +27,6 @@ export class ProviderRegistry {
   save() { fs.writeFileSync(this.file, JSON.stringify([...this.providers.values()], null, 2), { mode: 0o600 }); }
 
   ensureDefaults({ refreshExisting = true } = {}) {
-    const llamaCppModel = String(
-      this.env.JACO_LLAMACPP_MODEL_ALIAS ||
-      this.env.JACO_LLAMACPP_MODEL_ID ||
-      this.env.JACO_LLAMACPP_MODEL ||
-      'Bonsai-27B-Q1_0.gguf'
-    ).split(/[\\/]/).pop() || 'Bonsai-27B-Q1_0.gguf';
     const defs = [
       ...(this.env.JACO_LITERT_URL ? [{
         id: 'litert',
@@ -45,11 +39,11 @@ export class ProviderRegistry {
       ...(this.env.JACO_LLAMACPP_URL ? [{
         id: 'llamacpp',
         kind: 'openai-compatible',
-        baseUrl: trimSlash(this.env.JACO_LLAMACPP_URL),
+        baseUrl: asV1(this.env.JACO_LLAMACPP_URL || 'http://127.0.0.1:9380/v1'),
         apiKeyEnv: null,
-        defaultModel: llamaCppModel,
+        defaultModel: String(this.env.JACO_LLAMACPP_MODEL_ALIAS || this.env.JACO_LLAMACPP_MODEL_ID || this.env.JACO_LLAMACPP_MODEL || '').split(/[\\/]/).pop() || '',
       }] : []),
-      { id: 'ollama', kind: 'openai-compatible', baseUrl: this.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434/v1', apiKeyEnv: 'OLLAMA_API_KEY', defaultModel: this.env.OLLAMA_MODEL || 'qwen2.5-coder:1.5b' },
+      { id: 'ollama', kind: 'openai-compatible', baseUrl: asV1(this.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434/v1'), apiKeyEnv: 'OLLAMA_API_KEY', defaultModel: this.env.OLLAMA_MODEL || 'qwen2.5-coder:1.5b' },
       { id: 'lmstudio', kind: 'openai-compatible', baseUrl: this.env.LMSTUDIO_BASE_URL || 'http://127.0.0.1:1234/v1', apiKeyEnv: 'LMSTUDIO_API_KEY', defaultModel: this.env.LMSTUDIO_MODEL || 'local-model' },
       ...(this.env.NOVA_LLM_ENDPOINT ? [{ id: 'nova', kind: 'openai-compatible', baseUrl: trimSlash(this.env.NOVA_LLM_ENDPOINT) + (this.env.NOVA_LLM_ENDPOINT.endsWith('/v1') ? '' : '/v1'), apiKeyEnv: 'NOVA_LLM_TOKEN', defaultModel: this.env.NOVA_LLM_MODEL || 'local-model' }] : []),
       ...(this.env.HUGGINGFACE_INFERENCE_BASE_URL ? [{ id: 'huggingface', kind: 'openai-compatible', baseUrl: trimSlash(this.env.HUGGINGFACE_INFERENCE_BASE_URL), apiKeyEnv: 'HUGGINGFACE_TOKEN', defaultModel: this.env.HUGGINGFACE_MODEL || '' }] : []),
@@ -132,7 +126,7 @@ export class ProviderRegistry {
       if (p.apiKeyEnv && !p.credentialConfigured && !local) return { id: p.id, active: false, state: 'NO_KEY', baseUrl: p.baseUrl, defaultModel: p.defaultModel, models: 0 };
       const r = await this.probe(p.id);
       const state = r.ok ? 'ACTIVE' : r.status === 401 || r.status === 403 ? 'KEY_REJECTED' : 'UNREACHABLE';
-      return { id: p.id, active: r.ok, state, baseUrl: p.baseUrl, defaultModel: p.defaultModel, models: r.models?.length || 0, ms: r.latencyMs };
+      return { id: p.id, active: r.ok, state, baseUrl: p.baseUrl, defaultModel: p.defaultModel, models: r.models?.length || 0, modelIds: r.models || [], observedAt: new Date().toISOString(), ms: r.latencyMs };
     }));
   }
 

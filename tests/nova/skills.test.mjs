@@ -30,7 +30,7 @@ test('SKILL.md frontmatter: name, description, list and comma tasks', () => {
 test('listing: first root wins, invalid ids skipped, malformed skills listed with their error', () => {
   const list = listSkills([a, b, path.join(dir, 'missing')]);
   assert.deepEqual(list.map(s => [s.id, s.name, s.error || null]), [
-    ['coder', 'coder', 'SKILL_CODE_TASKS_NEED_CONTRACT:repo-write'],
+    ['coder', 'Coder', null],
     ['look', 'Look', null],
     ['plain', 'plain', 'SKILL_FRONTMATTER_MISSING'],
   ]);
