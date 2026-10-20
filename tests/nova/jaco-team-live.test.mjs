@@ -65,7 +65,8 @@ test('two actual editor MCP processes coordinate over real Workplace HTTP and fa
   const inbox=await until(async()=>{const page=await b.call('team_inbox');return page.events.some(entry=>entry.event.body==='Review the temporary fixture')&&page;},'targeted team delivery');
   assert.equal(inbox.overflow,false);
   const resource='file:'+path.join(project,'README.md');
-  const lease=await a.call('team_claim',{resource,intent:'edit temporary fixture'});assert.ok(lease.claimId);
+  const lease=await until(async()=>{const r=await a.call('team_claim',{resource,intent:'edit temporary fixture'});return r.error!=='DEGRADED_UNSYNCED'&&r;},'first session synced before claiming');
+  assert.ok(lease.claimId,JSON.stringify(lease));
   // A session that has not finished its first sync answers DEGRADED_UNSYNCED, which is correct and transient (it showed on a
   // loaded CI runner). Wait that state out; the answer that finally comes must still be the conflict.
   const conflict=await until(async()=>{const r=await b.call('team_claim',{resource,intent:'conflicting edit'});return r.error!=='DEGRADED_UNSYNCED'&&r;},'second session synced');

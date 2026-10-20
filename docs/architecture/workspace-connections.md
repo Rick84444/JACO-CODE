@@ -4,6 +4,8 @@ Aura's Connections tab composes the existing provider registry, MCP host, browse
 session manager and SKILL.md catalog. There is no second tool executor or provider
 registry. The model list polls real `/models` observations every 30 seconds while
 visible. A listed model is not evidence of inference quality or native tool support.
+HTTP success is accepted only with a valid model catalog containing string IDs.
+Malformed catalogs provide no selectable models; repeated IDs appear once.
 
 The local command form calls the bundled shell MCP server. Read mode and project
 command mode are explicit; both use SafeShell's bounded program/argument execution,

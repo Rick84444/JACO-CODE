@@ -112,7 +112,16 @@ export class ProviderRegistry {
     try {
       const res = await fetch(`${trimSlash(p.baseUrl)}/models`, { headers: this.headers(p), signal: AbortSignal.timeout(5000) });
       const body = await res.text();
-      return { providerId: p.id, ok: res.ok, status: res.status, latencyMs: Date.now() - started, responseHash: sha(body), models: res.ok ? (JSON.parse(body)?.data || []).map(x => x?.id).filter(Boolean).slice(0, 100) : [] };
+      const observation = { providerId: p.id, status: res.status, latencyMs: Date.now() - started, responseHash: sha(body) };
+      if (!res.ok) return { ...observation, ok: false, models: [] };
+      // A successful HTTP response alone is not a usable model catalog. Keep arbitrary
+      // objects and numbers out of the model picker, and never invent IDs by coercion.
+      let data;
+      try { data = JSON.parse(body)?.data; } catch {}
+      if (!Array.isArray(data) || data.some(x => typeof x?.id !== 'string' || !x.id.trim())) {
+        return { ...observation, ok: false, models: [], error: 'PROVIDER_MODELS_INVALID' };
+      }
+      return { ...observation, ok: true, models: [...new Set(data.map(x => x.id))].slice(0, 100) };
     } catch (error) {
       return { providerId: p.id, ok: false, status: null, latencyMs: Date.now() - started, error: error instanceof Error ? error.message : String(error) };
     }

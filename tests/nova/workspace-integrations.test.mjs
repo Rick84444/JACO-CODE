@@ -78,6 +78,20 @@ test('provider observations return changing real model IDs, not configured defau
  model='second-model';assert.deepEqual((await registry.scan())[0].modelIds,['second-model']);
 });
 
+test('malformed HTTP-success model catalogs cannot become selectable models',async t=>{
+ const root=fixture(t);let payload='{}';
+ const server=http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(payload);});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ const registry=new ProviderRegistry(root,{});registry.providers.clear();registry.register({id:'catalog-test',baseUrl:`http://127.0.0.1:${server.address().port}/v1`});
+ for(const value of ['not json','{}','{"data":{}}','{"data":[{"id":42}]}','{"data":[{"id":{"name":"broken"}}]}','{"data":[{"id":"   "}]}','{"data":[{"id":"valid"},{}]}']) {
+  payload=value;const observed=(await registry.scan())[0];
+  assert.equal(observed.active,false,value);assert.deepEqual(observed.modelIds,[],value);
+  const probe=await registry.probe('catalog-test');assert.equal(probe.status,200);assert.equal(probe.error,'PROVIDER_MODELS_INVALID');
+ }
+ payload='{"data":[]}';assert.equal((await registry.scan())[0].active,true);
+ payload='{"data":[{"id":"real-model"},{"id":"real-model"}]}';assert.deepEqual((await registry.scan())[0].modelIds,['real-model']);
+});
+
 test('imported coding skills use bounded project contracts and explicit test commands',t=>{
  const root=fixture(t),skillText='---\nname: Code review\ndescription: Inspect and verify\ntasks: [repo-read, repo-edit, repo-test]\n---\nRead the project and verify the requested change.';
  installSkill(root,'code-review',skillText);const skill=loadSkill([root],'code-review');
