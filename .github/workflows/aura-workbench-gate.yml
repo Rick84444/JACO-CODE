@@ -41,6 +41,15 @@ on:
       - 'runtime/tools/.npmignore'
       - 'package.json'
       - 'package-lock.json'
+      - 'gateway/src/seer-mission-graph.mjs'
+      - 'runtime/src/server/connected/novaMissionControl.mjs'
+      - 'runtime/src/server/connected/cognitiveQuestionToolbox.mjs'
+      - 'agents/hands-off-agent.mjs'
+      - 'runtime/src/components/AgentConstellation.tsx'
+      - 'runtime/src/server/connected/agentNetwork.mjs'
+      - 'runtime/src/server/connected/auraAgentBoard.mjs'
+      - 'runtime/src/lib/agentNetworkLayout.mjs'
+      - 'tests/nova/agent-network.test.mjs'
       - 'runtime/src/components/ActivationCard.tsx'
       - 'runtime/src/components/CognitiveWorkspace.tsx'
       - 'runtime/src/components/NovaPlannerCard.tsx'
@@ -89,6 +98,15 @@ on:
       - 'runtime/tools/.npmignore'
       - 'package.json'
       - 'package-lock.json'
+      - 'gateway/src/seer-mission-graph.mjs'
+      - 'runtime/src/server/connected/novaMissionControl.mjs'
+      - 'runtime/src/server/connected/cognitiveQuestionToolbox.mjs'
+      - 'agents/hands-off-agent.mjs'
+      - 'runtime/src/components/AgentConstellation.tsx'
+      - 'runtime/src/server/connected/agentNetwork.mjs'
+      - 'runtime/src/server/connected/auraAgentBoard.mjs'
+      - 'runtime/src/lib/agentNetworkLayout.mjs'
+      - 'tests/nova/agent-network.test.mjs'
       - 'runtime/src/components/ActivationCard.tsx'
       - 'runtime/src/components/CognitiveWorkspace.tsx'
       - 'runtime/src/components/NovaPlannerCard.tsx'
@@ -153,8 +171,10 @@ jobs:
         run: node ../tests/mcp/client-configs.test.mjs
       - name: TypeScript — complete runtime
         run: npm run lint
+      - name: Execution test dependencies
+        run: npm ci --prefix .. --ignore-scripts --omit=optional --no-audit --no-fund
       - name: Workspace readiness and visible decisions
-        run: npm run test:workspace-ux && node --test ../tests/nova/workspace-readiness.test.mjs
+        run: npm run test:workspace-ux && node --test ../tests/nova/workspace-readiness.test.mjs ../tests/nova/agent-network.test.mjs
       - name: Server bundle
         run: npm run build:server
       - name: Client build

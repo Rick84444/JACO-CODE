@@ -34,6 +34,7 @@ const AuraCodeEditor = React.lazy(() => import('./AuraCodeEditor').then(module =
 import { AuraChatPanel, useAuraChatSession, type AuraSelectedTool } from './AuraChatPanel';
 import { AuraCommandPalette } from './AuraCommandPalette';
 import { CognitiveWorkspace, type CognitiveCanvas } from './CognitiveWorkspace';
+const AuraAgentWorkspace = React.lazy(() => import('./AuraAgentBoard').then(module => ({ default: module.AuraAgentWorkspace })));
 import { CognitiveGameboard } from './CognitiveGameboard';
 import { VoiceChannel } from './VoiceChannel';
 import { CognitiveEvidence } from './CognitiveEventCard';
@@ -1698,6 +1699,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   );
   const canvasDetail = <>
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
+    {workspaceView==='agents'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Öppnar agentkartan…</div>}><AuraAgentWorkspace goal={goal} onGoalChange={setGoal} onStartGoal={()=>{void startGoal().catch(()=>{});}} submitting={missionSubmitting} notice={missionNotice} onReview={()=>setWorkspaceView('evidence')} onCancelMission={cancelMission}/></React.Suspense>}
     {workspaceView==='gameboard'&&<CognitiveGameboard/>}
     {workspaceView==='voice'&&<VoiceChannel/>}
     {workspaceView==='preview'&&<CognitivePreview path={selectedFile} content={fileView ? (drafts[fileView.path] ?? fileView.content) : null} files={files} events={cognitiveEvents} onOpenFile={path => { openFile(path); setWorkspaceView('preview'); }}/>}

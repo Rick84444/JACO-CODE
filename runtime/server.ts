@@ -253,7 +253,7 @@ async function seerOperatorGoal(): Promise<string | null> {
   return value;
 }
 
-function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream }: { connectedRuntime: any; seerLiveWorkstream: any }) {
+function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam }: { connectedRuntime: any; seerLiveWorkstream: any; readAgentTeam?: () => Promise<any> }) {
   return {
     observe: async () => {
       const mission: any = connectedRuntime.novaMissions.current();
@@ -282,6 +282,18 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream }: { connectedR
           const rel = String(args?.path || '');
           if (!rel || AURA_TOOL_FORBIDDEN.test(rel)) throw new Error('path refused');
           return fs.readFileSync(resolveWorkspacePath(rel), 'utf8').slice(0, 20000);
+        },
+      },
+      agent_team: {
+        description: 'Observed coordinator, connected agents, durable task agents and their plans. args: {"agentId":"optional exact node id"}. A task agent is an execution context, not a separate process.',
+        run: async (args: any) => {
+          if (!readAgentTeam) throw new Error('AGENT_TEAM_UNAVAILABLE');
+          const board = await readAgentTeam();
+          const network = board.network;
+          const nodes = network.nodes.filter((node: any) => !args?.agentId || node.id === args.agentId || node.parentId === args.agentId);
+          return { observedAt:network.observedAt, planningAvailable:network.planningAvailable, coordinatorAvailable:network.coordinatorAvailable,
+            agents:nodes.slice(0,30).map((node:any)=>({id:node.id,name:node.name,kind:node.kind,status:node.status,parentId:node.parentId,purpose:String(node.purpose || '').slice(0,1200),missionIds:node.missionIds,planIds:node.planIds})),
+            plans:network.plans.slice(0,10),truncated:network.truncated || nodes.length > 30 };
         },
       },
       mission_get: {
@@ -1521,7 +1533,9 @@ const notifyPhone = async (action) => {
           : [];
         return {
           agentId: String(agent?.agentId || agent?.id || ''),
+          stableId: agent?.card?.identity?.stable_id || null,
           name: String(agent?.requestedName || agent?.name || 'unknown'),
+          model: agent?.model || agent?.card?.identity?.model || null,
           type: String(agent?.agentType || agent?.card?.identity?.agent_type || ''),
           role: agent?.card?.role?.primary ? String(agent.card.role.primary) : null,
           status: live[0]?.status || 'OFFLINE',
@@ -2186,12 +2200,28 @@ const notifyPhone = async (action) => {
     } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error) }); }
   });
 
+  const readAuraAgentBoard = async () => {
+    const [workplace, coordinator, planning] = await Promise.all([
+      getAuraWorkbenchWorkplace(), getAuraSeerHealth(),
+      (async () => {
+        try {
+          const token = process.env.SEER_TOKEN || process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || GATEWAY_TOKEN;
+          const response = await fetch(`${String(process.env.SEER_URL || 'http://127.0.0.1:2997').replace(/\/$/,'')}/cortex/mission-graphs`, {
+            headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(2500),
+          });
+          const graphs = await response.json();
+          return response.ok && Array.isArray(graphs) ? graphs : null;
+        } catch { return null; }
+      })(),
+    ]);
+    return buildAgentBoard({ bus: connectedRuntime.bus, control: connectedRuntime.novaMissions,
+      workplace, coordinator, graphs:planning, workers:connectedRuntime.bus.listWorkers(),
+      secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key)).map(([,value]) => value),
+    });
+  };
   app.get('/api/aura/workbench/agent-board', requireLocalUi, async (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.json(buildAgentBoard({ bus: connectedRuntime.bus, control: connectedRuntime.novaMissions,
-      workplace: await getAuraWorkbenchWorkplace(),
-      secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key)).map(([,value]) => value),
-    }));
+    res.json(await readAuraAgentBoard());
   });
 
   app.post('/api/aura/workbench/missions/:id/cancel', requireLocalUi, async (req, res) => {
@@ -4138,7 +4168,7 @@ const notifyPhone = async (action) => {
       }
 
       const auraState = auraEngineManager.getState();
-      const allTools=buildAuraToolbox({connectedRuntime,seerLiveWorkstream});
+      const allTools=buildAuraToolbox({connectedRuntime,seerLiveWorkstream,readAgentTeam:readAuraAgentBoard});
       const questionTools=questionMode ? cognitiveQuestionToolbox(allTools,()=>readCognitiveFeed({
         bus:connectedRuntime.bus,workstream:seerLiveWorkstream,limit:30,
         secrets:Object.entries(process.env).filter(([key])=>/secret|token|password|api_?key/i.test(key)).map(([,value])=>value).filter(Boolean),

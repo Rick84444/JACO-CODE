@@ -1,3 +1,4 @@
+import { projectAgentNetwork } from './agentNetwork.mjs';
 import { redactSensitive } from '../continuum/util.mjs';
 
 export function boardColumn(status, phase) {
@@ -11,7 +12,7 @@ export function boardColumn(status, phase) {
 
 // Only selected fields cross the operator UI boundary. Never forward raw cards,
 // sessions, observations, tool arguments or arbitrary result objects.
-export function buildAgentBoard({ bus, control, workplace, now = new Date().toISOString(), secrets = [] }) {
+export function buildAgentBoard({ bus, control, workplace, graphs = null, coordinator = null, workers = [], now = new Date().toISOString(), secrets = [] }) {
   const text = (value, max = 1000) => {
     if (typeof value !== 'string') return null;
     let safe = redactSensitive(value).replace(/\b(?:wps_|ghp_|github_pat_)[A-Za-z0-9_]+/g, '[REDACTED]')
@@ -36,8 +37,8 @@ export function buildAgentBoard({ bus, control, workplace, now = new Date().toIS
     };
   };
   const agents = (workplace?.agents || []).map(a => ({
-    agentId: text(a.agentId, 240), name: text(a.name, 160), role: text(a.role, 160),
-    status: text(a.status, 80), liveSessions: number(a.liveSessions), lastSeenAt: text(a.lastSeenAt, 80),
+    agentId: text(a.agentId, 240), stableId:text(a.stableId,160), name: text(a.name, 160), role: text(a.role, 160),
+    model: text(a.model,200), status: text(a.status, 80), liveSessions: number(a.liveSessions), lastSeenAt: text(a.lastSeenAt, 80),
     permissions: Object.fromEntries(Object.entries(a.permissions || {}).filter(([, v]) => typeof v === 'boolean').slice(0, 80).map(([k,v]) => [text(k,100),v])),
     tools: strings(a.tools, 40),
     sessions: (a.sessions || []).map(s => ({status:text(s.status,80),environment:text(s.environment,160),lastSeenAt:text(s.lastSeenAt,80)})),
@@ -92,6 +93,7 @@ export function buildAgentBoard({ bus, control, workplace, now = new Date().toIS
     } : null,
     memory: (workplace?.memory || []).slice(0,30).map(e => ({id:text(e.eventId,240),kind:text(e.kind,80),body:text(e.body,3000),at:text(e.createdAt,80),agentId:text(e.sender?.agentId,240)})),
     memoryState: workplace?.memoryState ? {owner:'Workplace',git:false,storage:text(workplace.memoryState.storage,80),latestSeq:number(workplace.memoryState.latestSeq)} : null,
+    network: projectAgentNetwork({agents,missions,graphs,coordinator,workers,missionTruncated:total !== null && total > missions.length,text,now}),
     agents, missions, total, statusCounts, limit: 200, truncated: total !== null && total > missions.length,
   };
 }

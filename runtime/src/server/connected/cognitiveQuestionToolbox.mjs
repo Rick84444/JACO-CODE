@@ -1,5 +1,5 @@
 // Questions inspect the current run. Starting work is the explicit mission action in the composer.
-const readTools = new Set(['health','repo_list','repo_read','mission_get','mission_list','git_status','git_log','seer_goals','seer_memory','web_fetch','policy_get']);
+const readTools = new Set(['health','repo_list','repo_read','mission_get','mission_list','agent_team','git_status','git_log','seer_goals','seer_memory','web_fetch','policy_get']);
 
 export function cognitiveQuestionToolbox(toolbox, readCurrentWork, operatorMessage = '') {
   const tools=Object.fromEntries(Object.entries(toolbox.tools || {}).filter(([name])=>readTools.has(name)));

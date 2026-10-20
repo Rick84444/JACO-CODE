@@ -1294,7 +1294,8 @@ export function compactMissionForBrain(mission = {}) {
   } : undefined;
   return {
     id: mission.id, goal: mission.goal, parent: parent ? { graphId: parent.graphId, nodeKey: parent.nodeKey,
-      mainGoal: parent.mainGoal, dependencies: parent.dependencies } : null, turn: mission.turn, failures: mission.failures,
+      mainGoal: parent.mainGoal, dependencies: parent.dependencies,
+      ...(parent.agent ? {agent:parent.agent} : {}) } : null, turn: mission.turn, failures: mission.failures,
     allowedTasks: mission.allowedTasks, contract, contractStatus: mission.contractStatus,
     ...(mission.answerReview ? { answerReview: mission.answerReview } : {}),
     receiptsTotal: receipts.length,
@@ -1417,7 +1418,7 @@ export function schemaOutputFor(provider, env = process.env) {
   if (mode === '0' || schemaOutputUnsupported.has(`${provider.name}/${provider.model}`)) return false;
   return mode === 'all' || LOCAL_OLLAMA.test(provider.name);
 }
-const REPLAN_NOTE = "\nInspect, plan, execute, verify. For a broad graph mission, call request_replan or return {\"replan\":true,\"reason\":\"why\",\"subgoals\":[{\"title\":\"step\",\"objective\":\"measurable result\"}]} with 2-8 sequential subgoals. SEER preserves authority; the last step verifies the original goal. Never split unknown outcomes or missing authorization.";
+const REPLAN_NOTE = "\nInspect, plan, execute, verify. For a broad graph mission, call request_replan or return {\"replan\":true,\"reason\":\"why\",\"subgoals\":[{\"title\":\"step\",\"objective\":\"measurable result\"}]} with 2-8 sequential subgoals. Use meaningful specialist titles for task agents. Each subgoal gets a durable context; it does not start a separate process. Delegate only when it helps the goal; there is no fixed team template. SEER preserves authority; the last step verifies the original goal. Never split unknown outcomes or missing authorization.";
 const NATIVE_TOOLS_NOTE ="\nTools are available as functions: answer by calling them (one call per step; several reading calls in one answer run in order), or call complete/blocked/request_replan. mcp__<server>__<tool> runs that MCP tool. You may add the continuity JSON object as message text.";
 
 // What the planner is told about the machine it runs on. The prompt used to say "The host is Windows" everywhere,

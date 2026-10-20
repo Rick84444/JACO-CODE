@@ -1,9 +1,9 @@
 import React from 'react';
-import { MessageSquare, Code2, PanelRightClose, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone, MoreHorizontal } from 'lucide-react';
+import { MessageSquare, Code2, PanelRightClose, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone, MoreHorizontal, Bot } from 'lucide-react';
 import { JacoWordmark } from './JacoWordmark';
 import { CostChip } from './CostChip';
 
-export type CognitiveCanvas='conversation'|'code'|'preview'|'evidence'|'gameboard'|'voice';
+export type CognitiveCanvas='conversation'|'agents'|'code'|'preview'|'evidence'|'gameboard'|'voice';
 type Sidebar='explorer'|'source-control'|'tools'|'skills'|'devices'|'providers'|'revenue';
 interface Props {
   canvas:CognitiveCanvas;onCanvas:(view:CognitiveCanvas)=>void;conversation:React.ReactNode;detail:React.ReactNode;
@@ -13,14 +13,14 @@ interface Props {
   lastObservedAt:string|null;error:string|null;
   attention?:React.ReactNode;
 }
-const views=[['conversation',MessageSquare,'Samtal'],['code',Code2,'Kod'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
+const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
 const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter'],['revenue',CircleDollarSign,'Budget & ekonomi']] as const;
 
 export function CognitiveWorkspace(props:Props) {
   const hasCanvas=props.canvas!=='conversation';
   return <div className="cognitive-workspace" data-cognitive-workspace="true">
     <header className="cognitive-topbar">
-      <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">Din arbetsyta</span></div>
+      <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">Aura</span></div>
       <div className="cognitive-project"><Folder size={14}/><span>{props.projectName}</span><ChevronRight size={12}/><span className="cognitive-branch">{props.branch || 'Projekt'}</span></div>
       <div className="cognitive-top-actions">
         <CostChip onOpen={()=>props.onSidebar('providers')}/>

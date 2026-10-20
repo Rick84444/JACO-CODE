@@ -298,6 +298,7 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
       idempotencyKey: `seer-graph:${graphId}:${item.key}:attempt:${item.attempt + 1}`,
       source: 'seer-mission-graph',
       parent:{graphId,nodeKey:key,mainGoal:graph.objective,dependencies:item.dependencies,
+        agent:{id:'task:'+JSON.stringify([graphId,key]),name:item.title,parentKey:item.strategy?.delegatedFrom || null,kind:'task-agent'},
         strategicBoard: compactStrategicBoard(graph.strategic_board), selectedMove: graph.strategic_board.moves.find(move => move.stepId === key)},
       ...(graph.policy?.executor ? {executor:graph.policy.executor} : {}),
       ...(Array.isArray(graph.policy?.allowedTasks) ? {allowedTasks:graph.policy.allowedTasks} : {}),
@@ -456,7 +457,7 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
         if (keys.has(key)) throw new Error('REPLACEMENT_NODE_EXISTS');
         keys.add(key);
         return { key, title: String(replacement.title || `${failed.title} (replan)`), objective: String(replacement.objective || failed.objective),
-          strategy: { ...failed.strategy, ...(replacement.strategy || {}) },
+          strategy: { ...failed.strategy, ...(replacement.strategy || {}), delegatedFrom: failedKey },
           contract: replacements.length > 1 ? structuredClone(failed.contract || {}) : replacement.contract || failed.contract || {},
           dependencies: uniqueStrings(replacement.dependencies ?? (index ? [replacements[index - 1].key] : failed.dependencies)) };
       });

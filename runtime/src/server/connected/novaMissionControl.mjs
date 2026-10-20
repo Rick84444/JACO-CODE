@@ -389,6 +389,7 @@ export class NovaMissionControl {
       metadata: { executor: normalizedExecutor, authority: 'SEER', allowedTasks: requestedTasks, mandateId: mandateId?.trim() || null, codingContract,
         ...(projectRoot ? { projectRoot: path.resolve(projectRoot) } : {}),
         ...(parent ? {parent:{graphId:String(parent.graphId).slice(0,200),nodeKey:String(parent.nodeKey).slice(0,120),mainGoal:parent.mainGoal,dependencies:Array.isArray(parent.dependencies)?parent.dependencies.map(String).slice(0,100):[],
+          ...(parent.agent ? {agent:{id:'task:'+JSON.stringify([String(parent.graphId).slice(0,200),String(parent.nodeKey).slice(0,120)]),name:String(parent.agent.name || goal).slice(0,300),parentKey:typeof parent.agent.parentKey === 'string' ? parent.agent.parentKey.slice(0,120) : null,kind:'task-agent'}} : {}),
           ...(parent.strategicBoard ? { strategicBoard: parent.strategicBoard, selectedMove: parent.selectedMove || null } : {}) }} : {}) },
     });
     this.db.prepare("INSERT OR IGNORE INTO nova_sessions(mission_id,phase) VALUES(?,'READY')").run(mission.id);
