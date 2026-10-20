@@ -90,6 +90,9 @@ async function handle(req,res){
   if(req.method==='POST'&&/^\/api\/continuum\/capabilities\/[^/]+\/promote$/.test(url.pathname)){const cid=url.pathname.split('/').at(-2);return ok(res,{capability:runtime.capabilities.promote(cid,{evidenceRefs:b.evidenceRefs||[]},actor(req,b))})}
   if(req.method==='POST'&&url.pathname==='/api/continuum/compression/trajectories')return ok(res,{knowledge:runtime.compressor.compressTrajectories({workflowKey:b.workflowKey,minimum:Number(b.minimum||5)})});
 
+  if(req.method==='GET'&&url.pathname==='/api/continuum/cognition/graph')return ok(res,{graph:runtime.cognition.graphSnapshot({limit:Number(url.searchParams.get('limit')||200),includeInactive:url.searchParams.get('includeInactive')==='true'})});
+  if(req.method==='GET'&&url.pathname==='/api/continuum/cognition/graph/search')return ok(res,{result:runtime.cognition.graphSearch(String(url.searchParams.get('q')||''),{limit:Number(url.searchParams.get('limit')||20),includeInactive:url.searchParams.get('includeInactive')==='true'})});
+  if(req.method==='GET'&&url.pathname==='/api/continuum/cognition/graph/neighbors')return ok(res,{result:runtime.cognition.graphNeighbors(String(url.searchParams.get('id')||''),{depth:Number(url.searchParams.get('depth')||1),limit:Number(url.searchParams.get('limit')||100),includeInactive:url.searchParams.get('includeInactive')==='true'})});
   if(req.method==='GET'&&url.pathname==='/api/continuum/cognition')return ok(res,{cognition:runtime.cognition.snapshot()});
   if(req.method==='GET'&&url.pathname==='/api/continuum/cognition/self-model')return ok(res,{selfModel:runtime.selfModel.snapshot()});
   if(req.method==='POST'&&url.pathname==='/api/continuum/cognition/repository/scan')return ok(res,{repository:runtime.cognition.refreshRepository({maxFiles:Number(b.maxFiles||5000),maxFileBytes:Number(b.maxFileBytes||768*1024),actor:actor(req,b)})});

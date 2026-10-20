@@ -9,6 +9,7 @@ import { EconomicGovernor } from './economicGovernor.mjs';
 import { ExecutionLeaseManager } from './leaseManager.mjs';
 import { RuntimeHub } from './runtimeHub.mjs';
 import { KnowledgeStore } from './knowledgeStore.mjs';
+import { CognitiveGraphProjection } from './cognitiveGraphProjection.mjs';
 import { HypothesisEngine } from './hypothesisEngine.mjs';
 import { CapabilityCompiler } from './capabilityCompiler.mjs';
 import { CognitiveCompressor } from './cognitiveCompressor.mjs';
@@ -63,6 +64,7 @@ export class ContinuumRuntime {
     });
     this.capabilities=new CapabilityCompiler(this.root,this.events,this.knowledge,this.evidence);
     this.repository=new SemanticRepositoryModel({workspaceRoot:this.workspaceRoot,stateRoot:this.root,events:this.events,evidence:this.evidence});
+    this.graph=new CognitiveGraphProjection({knowledge:this.knowledge,evidence:this.evidence,repository:this.repository});
     this.outcomes=new OutcomeKnowledgeCompiler({events:this.events,evidence:this.evidence,knowledge:this.knowledge,hypotheses:this.hypotheses});
     this.compressor=new CognitiveCompressor({events:this.events,knowledge:this.knowledge,capabilities:this.capabilities,evidence:this.evidence});
     this.browser=new SemanticBrowserRuntime({sessions:browserSessions,events:this.events,evidence:this.evidence,leases:this.leases,operator:this.operator});
@@ -79,7 +81,7 @@ export class ContinuumRuntime {
     this.a2a=new A2AClient(this.events,this.evidence,this.a2aTrust);
     this.scheduler=new ContinuumScheduler({root:this.root,events:this.events,operator:this.operator,hub:this.hub,missions:this.missions,commitments:this.commitments,evidence:this.evidence,browser:this.browser,models:this.models,capabilities:this.capabilities,compressor:this.compressor,reviews:this.reviews,deliberations:this.deliberations,future:this.future,sandboxes:this.sandboxes,risk:this.risk});
     this.selfModel=new RuntimeSelfModel({events:this.events,capabilities:this.capabilities,knowledge:this.knowledge,providers:this.providers,repository:this.repository,browser:this.browser,scheduler:this.scheduler,operator:this.operator});
-    this.cognition=new CognitiveKernel({repository:this.repository,selfModel:this.selfModel,outcomes:this.outcomes,compressor:this.compressor,knowledge:this.knowledge});
+    this.cognition=new CognitiveKernel({repository:this.repository,selfModel:this.selfModel,outcomes:this.outcomes,compressor:this.compressor,knowledge:this.knowledge,graph:this.graph});
     this.continuity=new CognitiveContinuityRuntime({events:this.events,selfModel:this.selfModel,hypotheses:this.hypotheses,knowledge:this.knowledge});
     this.startedAt=nowIso();
     this.events.append({stream:'runtime',type:'continuum.runtime_initialized',actor:'system',data:{releaseId:'jaco-code-0.22.0',workspaceRoot:this.workspaceRoot}});

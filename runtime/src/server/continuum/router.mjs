@@ -86,6 +86,9 @@ export function createContinuumRouter({workspaceRoot,browserSessions,requireAuth
   router.post('/capabilities/:id/promote',(req,res)=>{try{res.json({success:true,capability:runtime.capabilities.promote(req.params.id,{evidenceRefs:req.body?.evidenceRefs||[]},bodyActor(req))})}catch(e){fail(res,e)}});
   router.post('/compression/trajectories',(req,res)=>{try{res.json({success:true,knowledge:runtime.compressor.compressTrajectories({workflowKey:req.body?.workflowKey,minimum:Number(req.body?.minimum||5)})})}catch(e){fail(res,e)}});
 
+  router.get('/cognition/graph',(req,res)=>{try{res.json({success:true,graph:runtime.cognition.graphSnapshot({limit:Number(req.query.limit||200),includeInactive:req.query.includeInactive==='true'})})}catch(e){fail(res,e)}});
+  router.get('/cognition/graph/search',(req,res)=>{try{res.json({success:true,result:runtime.cognition.graphSearch(String(req.query.q||''),{limit:Number(req.query.limit||20),includeInactive:req.query.includeInactive==='true'})})}catch(e){fail(res,e)}});
+  router.get('/cognition/graph/neighbors',(req,res)=>{try{res.json({success:true,result:runtime.cognition.graphNeighbors(String(req.query.id||''),{depth:Number(req.query.depth||1),limit:Number(req.query.limit||100),includeInactive:req.query.includeInactive==='true'})})}catch(e){fail(res,e)}});
   router.get('/cognition',(_req,res)=>{try{res.json({success:true,cognition:runtime.cognition.snapshot()})}catch(e){fail(res,e)}});
   router.get('/cognition/self-model',(_req,res)=>{try{res.json({success:true,selfModel:runtime.selfModel.snapshot()})}catch(e){fail(res,e)}});
   router.get('/continuity',(_req,res)=>{try{res.json({success:true,continuity:runtime.continuity.snapshot()})}catch(e){fail(res,e)}});
