@@ -1,5 +1,6 @@
 import { readAuraResponse as apiJson } from '../lib/auraApi.mjs';
 import { AttachmentPicker } from './AttachmentPicker';
+import { CopyMessageButton } from './CopyMessageButton';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, ArrowUpRight, MessageSquare, ChevronRight } from 'lucide-react';
 import { ChatMarkdown } from './ChatMarkdown';
@@ -498,7 +499,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             if(item.kind==='event')return <CognitiveEventCard key={item.id} event={item.event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>;
             const message=item.message;
             return message.role==='user'?<div key={item.id} className="cognitive-user-message"><div>{message.content}</div>{message.attachments?.map(item=><small key={item.id} className="block mt-2">Bifogat: {item.name} · {item.fileCount} filer</small>)}</div>
-              :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><span className="cognitive-jaco-mark"/>JACO</div><ChatMarkdown text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>Svar & källor</summary><p>{message.meta}</p></details>}</article>
+              :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><span className="cognitive-jaco-mark"/>JACO</div><ChatMarkdown text={message.content}/><CopyMessageButton text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>Svar & källor</summary><p>{message.meta}</p></details>}</article>
               :<div key={item.id} className="cognitive-system-message">{message.content}{message.action&&<button type="button" disabled={busy!==null} onClick={()=>void runAction(message.action!)}>{message.action.label}</button>}</div>;
           })}
           {busy&&<div className="cognitive-response-wait"><span role="status"><Loader2 size={15} className="animate-spin"/>{busy==='goal'?'Registrerar uppdraget…':busy==='tool'?'Väntar på verktygets resultat…':'Väntar på modellens svar…'}</span>{busy==='chat' && <><time aria-label="Väntetid">{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>Avbryt svar</button></>}</div>}

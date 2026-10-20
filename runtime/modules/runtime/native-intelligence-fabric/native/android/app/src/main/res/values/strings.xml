@@ -2,4 +2,13 @@
 <resources>
     <string name="app_name">JACO Native Engine</string>
     <string name="hands_off_accessibility_description">Governed JACO screen observation and actions for explicitly allowlisted apps and short-lived grants.</string>
+    <string name="engine_start_failed">Motortjänsten kunde inte startas. Öppna appen igen och kontrollera Androids appinställningar.</string>
+    <string name="browser_unavailable">Ingen webbläsare kunde öppna Aura.</string>
+    <string name="import_first">Importera en modell först.</string>
+    <string name="invalid_model_input">Ange ett giltigt modell-ID och hela SHA-256-värdet (64 hextecken).</string>
+    <string name="recovery_token_copied">Token kopierad för lokal återställning. Dela den inte i chattar eller felrapporter.</string>
+    <string name="invalid_runtime_port">Porten måste vara mellan 1 och 65535.</string>
+    <string name="wait_for_operation">Vänta tills den pågående kontrollen eller åtgärden är klar.</string>
+    <string name="use_document_picker">Välj filen genom Androids dokumentväljare.</string>
+    <string name="import_progress_mb">Importerar %1$d MB…</string>
 </resources>

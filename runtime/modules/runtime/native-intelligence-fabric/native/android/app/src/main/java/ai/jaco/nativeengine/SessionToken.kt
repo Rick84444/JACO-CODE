@@ -41,8 +41,12 @@ object SessionToken {
     private fun key(): SecretKey {
         val ks = store()
         (ks.getKey(ALIAS, null) as? SecretKey)?.let { return it }
-        return try { generate(true) } catch (_: StrongBoxUnavailableException) { generate(false) }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) generateWithStrongBoxFallback() else generate(false)
     }
+
+    @android.annotation.TargetApi(28)
+    private fun generateWithStrongBoxFallback(): SecretKey =
+        try { generate(true) } catch (_: StrongBoxUnavailableException) { generate(false) }
 
     private fun encrypt(value: String): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -60,7 +64,7 @@ object SessionToken {
         return cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)).toString(Charsets.UTF_8)
     }
 
-    fun get(context: Context): String {
+    @Synchronized fun get(context: Context): String {
         val prefs = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
         val envelope = prefs.getString(KEY, null)
         if (!envelope.isNullOrBlank()) {
@@ -69,7 +73,7 @@ object SessionToken {
         return rotate(context)
     }
 
-    fun rotate(context: Context): String {
+    @Synchronized fun rotate(context: Context): String {
         val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val token = Base64.encodeToString(bytes, Base64.NO_WRAP or Base64.URL_SAFE)
         context.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putString(KEY, encrypt(token)).apply()

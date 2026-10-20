@@ -1,0 +1,10 @@
+<resources>
+    <color name="launcher_background">#0B1117</color>
+    <style name="Theme.Jaco" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#5EEAD4</item>
+        <item name="android:colorBackground">#0B1117</item>
+        <item name="android:windowBackground">#0B1117</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

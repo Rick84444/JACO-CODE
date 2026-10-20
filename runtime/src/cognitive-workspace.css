@@ -370,3 +370,8 @@
 .connection-model{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}.connection-model code{flex:1;min-width:140px;overflow-wrap:anywhere}
 .cognitive-attachments{margin-top:10px;font-size:12px;color:#94a3b8}.cognitive-attachments p{font-size:11px;margin:7px 0}.cognitive-attachments details{max-height:180px;overflow:auto;overflow-wrap:anywhere}.cognitive-attachments li{padding:3px}
 @media(max-width:640px){.connections-workspace{padding:12px}.connections-workspace button,.cognitive-attachments button{min-height:44px}.cognitive-view-tabs{overflow-x:auto}}
+
+.cognitive-copy-message { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }
+.cognitive-copy-message button { min-height:44px; padding:6px 12px; border:1px solid #343b45; border-radius:8px; color:#cbd5e1; background:transparent; }
+.cognitive-copy-message small { color:#94a3b8; }
+.cognitive-copy-message textarea { width:100%; min-height:140px; padding:10px; background:#111820; color:#e2e8f0; }
