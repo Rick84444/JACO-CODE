@@ -145,3 +145,65 @@ test('Android runtime transport distinguishes pre-action rejection from unknown 
   });
   assert.equal(serverError.outcomeUnknown,true);
 });
+
+test('SEER corrects an unread edit before execution and stays within a two-proposal budget',async()=>{
+ const prior=process.env.NOVA_BRAIN_MODE;process.env.NOVA_BRAIN_MODE='seer';
+ try {
+  const mission={id:'read-before-edit',goal:'Fix addition',allowedTasks:['repo-read','repo-edit'],receipts:[]};
+  const edit={task:{type:'repo-edit',data:{path:'src/add.mjs',old:'a-b',new:'a+b'}}};
+  let calls=0;
+  const result=await callBrain(loadState(),{mission},async(_url,options)=>{
+   const input=JSON.parse(options.body);calls++;
+   if(calls===2)assert.match(input.user,/READ_BEFORE_EDIT/);
+   return Response.json({ok:true,text:JSON.stringify(calls===1?edit:{task:{type:'repo-read',data:{path:'src/add.mjs'}}})});
+  });
+  assert.equal(calls,2);assert.equal(result.task.type,'repo-read');
+  calls=0;
+  await assert.rejects(callBrain(loadState(),{mission},async()=>{calls++;return Response.json({ok:true,text:JSON.stringify(edit)});}),/READ_BEFORE_EDIT/);
+  assert.equal(calls,2);
+ }finally{process.env.NOVA_BRAIN_MODE=prior;}
+});
+
+test('SEER accepts observed edit text but rejects invented text and does not retry provider failure',async()=>{
+ const prior=process.env.NOVA_BRAIN_MODE;process.env.NOVA_BRAIN_MODE='seer';
+ try {
+  const mission={id:'observed-edit',goal:'Fix addition',allowedTasks:['repo-read','repo-edit'],receipts:[{type:'repo-read',ok:true,verified:true,result:{path:'src/add.mjs',content:'return a - b;\r\n'}}]};
+  const proposal={task:{type:'repo-edit',data:{path:'src/add.mjs',old:'return a - b;\n',new:'return a + b;\n'}}};
+  const result=await callBrain(loadState(),{mission},async()=>Response.json({ok:true,text:JSON.stringify(proposal)}));
+  assert.equal(result.task.type,'repo-edit');
+  proposal.task.data.old='function invented() {}';
+  await assert.rejects(callBrain(loadState(),{mission},async()=>Response.json({ok:true,text:JSON.stringify(proposal)})),/EDIT_TEXT_NOT_OBSERVED/);
+  let calls=0;
+  await assert.rejects(callBrain(loadState(),{mission},async()=>{calls++;return Response.json({ok:false,error:'all_providers_failed'},{status:503});}),/all_providers_failed/);
+  assert.equal(calls,1);
+ }finally{process.env.NOVA_BRAIN_MODE=prior;}
+});
+
+test('edit planning normalizes contract paths and discards reads invalidated by an intervening edit',async()=>{
+ const {assertPlanTaskAllowed}=await import('../../agents/hands-off-agent.mjs');
+ const {normalizeCodingContract}=await import('../../agents/lib/coding-contract.mjs');
+ const mission={allowedTasks:['repo-edit'],contract:normalizeCodingContract({objective:'Edit observed code',scope:{allowed:['src/**']},acceptance:['Edit verified']}),receipts:[{type:'repo-read',ok:true,verified:true,result:{path:'src/a.mjs',content:'const value = 1;'}}]};
+ const proposal={task:{type:'repo-edit',data:{path:'./src/a.mjs',old:'value = 1',new:'value = 2'}}};
+ assert.doesNotThrow(()=>assertPlanTaskAllowed(proposal,mission));
+ mission.receipts.push({type:'repo-edit',ok:true,verified:true,result:{path:'src/a.mjs'}});
+ assert.throws(()=>assertPlanTaskAllowed(proposal,mission),/READ_BEFORE_EDIT/);
+});
+
+test('a coding prompt retains available tool contracts without advertising unrelated tool fields',async()=>{
+ const {brainSystemFor}=await import('../../agents/hands-off-agent.mjs');
+ const coding=brainSystemFor(['repo-read','repo-edit','repo-test'],false,'linux');
+ for(const field of ['repo-list/repo-read {path}','repo-edit {path,old,new,replaceAll?}','repo-test {command,kind}'])assert.ok(coding.includes(field),field);
+ for(const field of ['repo-write {','shell {','git-push {','invoke-worker {','github-create-repo {','browser-click {','web-fetch {'])assert.ok(!coding.includes(field),field);
+ assert.ok(coding.includes('command must be copied character-for-character'));
+ assert.ok(coding.includes('never read .env')||coding.includes('Never read .env'));
+ const browser=brainSystemFor(['browser-type'],false,'linux');
+ assert.ok(browser.includes('browser-type {name,text}'));
+ assert.ok(!browser.includes('browser-click {name,expect}'));
+ assert.ok(browser.includes('Never compose the literal text'));
+ const desktop=brainSystemFor(['screenshot'],false,'win32');
+ assert.ok(desktop.includes('screenshot {hwnd?'));
+ assert.ok(!desktop.includes('desktop-invoke {'));
+ const pointer=brainSystemFor(['mouse-click'],false,'win32');
+ assert.ok(pointer.includes('mouse-move/mouse-click {x,y}'));
+ assert.ok(!pointer.includes('key-press {'));
+});

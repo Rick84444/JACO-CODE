@@ -61,3 +61,31 @@ inherited budgets, dispatch identity, model context, executor binding and secret
 redaction. Rendering tests exercise the constellation and unavailable sources.
 These checks do not establish autonomous planning quality with a real model or
 visual usability on a physical device.
+
+### Real local model check
+
+With an existing llama.cpp server exposing an instruction model on loopback, run:
+
+```sh
+JACO_LIVE_MODEL_URL=http://127.0.0.1:9380/v1 node scripts/verify-local-agent.mjs
+```
+
+The script starts an isolated SEER, uses the actual Nova planner and executor to
+repair a small addition function, and requires observed test receipts plus an
+independent test invocation. It reopens the durable bus to check receipt recovery.
+The model chooses the actions; no predetermined action sequence substitutes for
+inference. Temporary code and state are removed afterward. No model is downloaded,
+no paid provider is enabled, and the operator's project is not changed.
+
+Use `JACO_LIVE_MODEL_CTX` to match the server's context (default 16384, minimum
+8192). A failed plan, missing model, or incomplete evidence makes the command fail.
+Passing this small task does not establish general planning quality, autonomous
+delegation, browser usability, or completion of a real project.
+
+Before executing a model-proposed edit, Nova checks that its replacement target
+appears in the current observed file content. SEER-backed planning permits one
+corrected proposal after a local validation rejection. Provider failures and tool
+execution outcomes are not retried by this correction path.
+Tool field descriptions are selected from the existing canonical instructions
+using the mission's allowed tasks. This reduces irrelevant prompt content without
+introducing a fixed action sequence or another tool registry.

@@ -43,9 +43,9 @@ test('providers that reject the key or cannot be reached are parked instead of r
 });
 
 test('the planner prompt drops instructions for tasks the mission cannot use', () => {
-  // Fixed to the Windows prompt (the host line differs per platform), which is what the size ratio below was set for.
+  // Compare a bounded coding mission with the complete canonical instruction set.
   const coding = brainSystemFor(['repo-read', 'repo-write', 'repo-test', 'git-commit', 'web-fetch'], false, 'win32');
-  const full = brainSystemFor(['android-tap', 'desktop-observe', 'browser-type', 'mouse-click', 'shell'], false, 'win32');
+  const full = brainSystemFor(undefined, false, 'win32');
   for (const marker of ['Android sequence', 'desktop-observe {hwnd}', 'Never compose the literal text', 'mouse-move/mouse-click']) {
     assert.equal(coding.includes(marker), false, marker);
     assert.equal(full.includes(marker), true, marker);

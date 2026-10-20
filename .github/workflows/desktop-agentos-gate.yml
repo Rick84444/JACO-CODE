@@ -3,10 +3,15 @@ name: Desktop AgentOS Gate
 on:
   push:
     branches:
+      - main
+      - master
       - jaco-desktop-agentos-r1
   pull_request:
     paths:
       - 'agents/desktop-agentos.mjs'
+      - 'agents/hands-off-agent.mjs'
+      - 'scripts/verify-local-agent.mjs'
+      - 'tests/nova/agent.test.mjs'
       - 'agents/run-desktop-agentos.mjs'
       - 'agents/setup-desktop-agentos.ps1'
       - 'agents/grant-desktop-agentos.ps1'
@@ -47,6 +52,8 @@ jobs:
           node --check agents/lib/mission-client.mjs
           node --check agents/lib/workplace-session.mjs
           node --check agents/lib/windows-wmi-read.mjs
+          node --check agents/lib/local-stack.mjs
+          node --check scripts/verify-local-agent.mjs
           node --check runtime/src/server/connected/novaMissionControl.mjs
 
       - name: Install locked test dependencies

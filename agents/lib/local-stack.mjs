@@ -94,6 +94,10 @@ export function executable(env, configured, name, candidates = []) {
   const paths = configured ? [path.resolve(configured)] : [...candidates, ...(env.PATH || env.Path || '').split(path.delimiter).filter(Boolean).map(p => path.join(p.replace(/^"|"$/g, ''), name))];
   return paths.find(p => fs.existsSync(p) && fs.statSync(p).isFile()) || null;
 }
+export function ollamaExecutable(env, platform = process.platform) {
+  return executable(env, env.JACO_OLLAMA_EXECUTABLE, platform === 'win32' ? 'ollama.exe' : 'ollama',
+    platform === 'win32' && env.LOCALAPPDATA ? [path.join(env.LOCALAPPDATA, 'Programs/Ollama/ollama.exe')] : []);
+}
 export function tunnelCommandMatches(command, config) {
   const match = String(command || '').match(/--config(?:=|\s+)(?:"([^"]+)"|'([^']+)'|(\S+))/i);
   const value = match?.[1] || match?.[2] || match?.[3];
@@ -236,7 +240,7 @@ export async function activate(c, { open = false } = {}) {
         const local = new URL(ollamaUrl);
         if (!['127.0.0.1', 'localhost'].includes(local.hostname)) throw new Error('OLLAMA_REMOTE_NOT_READY');
         if (await occupied(ollama.url)) throw new Error('PORT_CONFLICT:ollama');
-        const exe = executable(c.env, c.env.JACO_OLLAMA_EXECUTABLE, 'ollama.exe', c.env.LOCALAPPDATA ? [path.join(c.env.LOCALAPPDATA, 'Programs/Ollama/ollama.exe')] : []);
+        const exe = ollamaExecutable(c.env);
         if (!exe) throw new Error('OLLAMA_NOT_INSTALLED');
         c.env.OLLAMA_HOST = local.host;
         if (!pendingProcess(c, 'ollama')) await launch(c, { id: 'ollama', cwd: c.root, cmd: exe, args: ['serve'] });

@@ -5,7 +5,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { configuration, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess } from '../../agents/lib/local-stack.mjs';
+import { configuration, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess, ollamaExecutable } from '../../agents/lib/local-stack.mjs';
 const IDENTITY="app.get('/api/runtime/identity',()=>{});";
 function fixture(t, env = {}) {
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-start-test-'));
@@ -97,4 +97,18 @@ test('PowerShell wrapper preserves BOM and preflight has no launch effects',{ski
  const file=path.resolve('agents/start-all.ps1');assert.equal(fs.readFileSync(file,'utf8').charCodeAt(0),0xFEFF);
  const r=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',file,'-PreflightOnly'],{encoding:'utf8',windowsHide:true,timeout:20000});
  assert.equal(r.status,0,r.stderr);assert.equal(JSON.parse(r.stdout).schema,'jaco.startup-preflight/v1');
+});
+
+test('Ollama discovery uses the host binary name and preserves explicit configuration', t => {
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-ollama-path-'));
+ t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+ const unix=path.join(dir,'ollama'), windows=path.join(dir,'ollama.exe'), custom=path.join(dir,'custom-model-server');
+ for(const file of [unix,windows,custom])fs.writeFileSync(file,'fixture');
+ assert.equal(ollamaExecutable({PATH:dir},'linux'),unix);
+ assert.equal(ollamaExecutable({PATH:dir},'darwin'),unix);
+ assert.equal(ollamaExecutable({PATH:dir},'win32'),windows);
+ assert.equal(ollamaExecutable({PATH:dir,JACO_OLLAMA_EXECUTABLE:custom},'linux'),custom);
+ assert.equal(ollamaExecutable({PATH:dir,JACO_OLLAMA_EXECUTABLE:path.join(dir,'missing')},'linux'),null);
+ fs.unlinkSync(unix);
+ assert.equal(ollamaExecutable({PATH:dir},'linux'),null);
 });
