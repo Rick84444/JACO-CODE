@@ -302,3 +302,41 @@ test('transient mission-control failure is still retried on the next poll', asyn
   assert.equal(creates, 2);
   assert.equal(state.githubControl.issues['git:transient-001'], undefined);
 });
+
+
+test('forced Git-only mode never calls REST even if a GH token is configured', async () => {
+  const calls=[];
+  let restCalled=false;
+  const inbox=createGithubNovaControlInbox({
+    missionClient:{
+      async create(input) {calls.push(input);return {id:'mission-tokenless',status:'ACTIVE',phase:'READY',turn:0,failures:0,receipts:[]};},
+      async get() {return {id:'mission-tokenless',status:'ACTIVE',phase:'READY',turn:0,failures:0,receipts:[]};},
+      async resolve() {throw Error('unexpected');},
+    },
+    repo:'Rick84444/JACO-CODE',
+    token:'preexisting-gh-token-do-not-use',
+    transportMode:'git-ref',
+    actor:'Rick84444',
+    repoRoot:'/repo',
+    gitExecImpl:async (file,args)=>{
+      if(args[2]==='fetch') return {stdout:'',stderr:''};
+      if(args[2]==='show') return {stdout:JSON.stringify({
+        schema:'jaco.nova-control/v1',
+        commandId:'forced-git-only-001',
+        op:'mission.create',
+        goal:'Check local status safely',
+        allowedTasks:['git-status'],
+      }),stderr:''};
+      throw Error('Git receipt push unavailable in this fixture');
+    },
+    fetchImpl:async ()=>{restCalled=true;throw Error('REST MUST NOT BE USED');},
+  });
+  assert.equal(inbox.transport,'git-ref');
+  assert.equal(inbox.writeback,'git-ref-when-authorized');
+  const result=await inbox.poll({}, {force:true});
+  assert.equal(restCalled,false);
+  assert.equal(result.accepted.length,1);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].executor,'nova');
+  assert.equal(result.statusReceipt.error,'GIT_CONTROL_STATUS_PUSH_UNAVAILABLE');
+});
