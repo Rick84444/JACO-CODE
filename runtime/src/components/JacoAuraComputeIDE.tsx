@@ -42,6 +42,7 @@ import { CognitiveEvidence } from './CognitiveEventCard';
 import { CognitivePreview } from './CognitivePreview';
 import { AuraLiveStage } from './AuraLiveStage';
 import { auraStageCandidate, auraMaterialKind, stageFileAllowed } from '../lib/auraStage.mjs';
+import { auraPresence } from '../lib/auraPresence.mjs';
 import { useCognitiveLive, type CognitiveEvent } from '../hooks/useCognitiveLive';
 import { toCognitiveEvent, liveWorkspaceStatus } from '../lib/cognitiveEvents.mjs';
 import { JacoWordmark } from './JacoWordmark';
@@ -1666,6 +1667,21 @@ export const JacoAuraComputeIDE: React.FC = () => {
     try { await fetch('/ide-auth/logout', { method: 'POST' }); } finally { window.location.replace('/ide-login'); }
   };
   const status = liveWorkspaceStatus({ connection: cognitiveLive.connection, busy: chatSession.busy, missions, runtimeRunning: snapshot?.runtime?.running, error: connectionError, activation, approvalCount: snapshot?.approvals?.count || 0 });
+  const [presenceClock,setPresenceClock]=useState(()=>Date.now());
+  useEffect(()=>{
+    const timer=window.setInterval(()=>{if(document.visibilityState!=='hidden')setPresenceClock(Date.now());},5000);
+    return()=>window.clearInterval(timer);
+  },[]);
+  const currentMission=missions.find(item=>item.status==='ACTIVE')||
+    missions.find(item=>item.status==='BLOCKED'||item.status==='AWAITING_VERIFICATION')||null;
+  const presence=auraPresence({
+    now:presenceClock,connection:cognitiveLive.connection,lastObservedAt:cognitiveLive.lastObservedAt,
+    snapshotObservedAt:snapshot?.observedAt||null,runtimeRunning:snapshot?.runtime?.running??null,
+    mission:currentMission,agents:snapshot?.workplace?.agents||[],
+    provider:snapshot?.seer?.provider||null,model:snapshot?.seer?.model||null,
+    cdpState:snapshot?.integrations?.cdp?.state||'UNOBSERVED',
+    approvals:snapshot?.approvals?.count||0,latestEvent:cognitiveEvents.at(-1)||null
+  });
   const codeWorkspace = (
     <div className="cognitive-code-workspace">
       <div className="cognitive-file-tabs">
@@ -1800,7 +1816,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
     agentActivity={{
       connected:(snapshot?.workplace?.agents || []).filter(item=>item.status==='READY' || item.liveSessions>0).length,
       working:(snapshot?.workplace?.agents || []).reduce((count,item)=>count+Math.max(0,item.liveSessions || 0),0)
-    }}/>;
+    }}
+    presence={presence}/>;
   const canvasDetail = <>
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
