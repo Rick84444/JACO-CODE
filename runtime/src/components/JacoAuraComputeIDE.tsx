@@ -307,7 +307,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [workspaceView, setWorkspaceView] = useState<CognitiveCanvas>('conversation');
   const [workspacePinned, setWorkspacePinned] = useState(false);
   const [focusedEvent, setFocusedEvent] = useState<CognitiveEvent|null>(null);
-  const lastPresentedEvent = useRef<string|null>(null);
   const [stageSaveBusy, setStageSaveBusy] = useState(false);
   const [stageSaveNotice, setStageSaveNotice] = useState<string|null>(null);
   const chooseWorkspace = (view:CognitiveCanvas) => {
@@ -791,7 +790,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
   useEffect(()=>{
     if(workspacePinned || !candidate) return;
     if(candidate.event.id===focusedEvent?.id && (candidate.material!=='html' || candidate.event.evidence.path===selectedFile)) return;
-    lastPresentedEvent.current=candidate.event.id;
     setFocusedEvent(candidate.event);
     if(candidate.material==='html' && stageFileAllowed(candidate.event.evidence.path)) {
       setSelectedFile(candidate.event.evidence.path);
