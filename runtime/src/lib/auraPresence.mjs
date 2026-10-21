@@ -30,7 +30,9 @@ export function auraPresence({
   const lastAction=mission?.lastAction||null;
   const actionAge=ageInSeconds(lastAction?.at,now);
   const missionAge=ageInSeconds(mission?.updatedAt||mission?.createdAt,now);
-  const unconfirmedProgress=active && lastAction?.running!==true && (
+  // "running" can persist when a tool hangs. Mission timestamps, rather than
+  // a provider's RUNNING flag, determine whether recent activity is evidenced.
+  const unconfirmedProgress=active && (
     actionAge!==null ? actionAge>=90 : missionAge!==null && missionAge>=90);
   let mode='connecting',title='Ansluter till JACO',detail='Kontrollerar runtime och de observerade händelserna.';
   if(runtimeRunning===false){mode='offline';title='Runtime stoppad';detail='Serverns senaste tillstånd visar att exekveringen inte körs.';}
