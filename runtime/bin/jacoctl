@@ -10,7 +10,8 @@ fi
 
 # The invoked checkout owns its topology. An older runtime.env must never
 # redirect a freshly updated supervisor into an obsolete JACO release.
-JACO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+JACO_CHECKOUT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+JACO_ROOT="$JACO_CHECKOUT_ROOT"
 export JACO_ROOT
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 SVDIR="${SVDIR:-$PREFIX/var/service}"
@@ -86,7 +87,12 @@ wait_service_down(){
   return 1
 }
 http_ok(){ curl -fsS --max-time 2 "$1" >/dev/null 2>&1; }
-core_truth_ready(){ svc_stable "$CORE_SERVICE" && http_ok "$CORE_URL/api/runtime/identity"; }
+# A JSON 200 from an older checkout is NOT proof that current Core owns port 3000.
+core_identity_matches_release(){
+  curl -fsS --max-time 3 "$CORE_URL/api/runtime/identity" 2>/dev/null |
+    JACO_EXPECTED_RELEASE_ID="$EXPECTED_CORE_RELEASE_ID" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.exit(j.success===true&&j.releaseId===process.env.JACO_EXPECTED_RELEASE_ID?0:1)}catch{process.exit(1)}})'
+}
+core_truth_ready(){ svc_stable "$CORE_SERVICE" && core_identity_matches_release; }
 
 wait_core_truth_ready(){
   local max="${1:-120}" deadline state
@@ -215,10 +221,10 @@ prepare_core_owner(){
   # If :3000 is alive while runit does not own a stable Core PID, stop the
   # restart loop first, then recover only same-runtime Core processes.
   # Never kill arbitrary Node processes.
-  if http_ok "$CORE_URL/api/runtime/identity" && ! svc_stable "$CORE_SERVICE"; then
-    printf '[JACO] RECOVERY — Core endpoint is live without a stable runit owner; taking single-owner control\n' >&2
+  if http_ok "$CORE_URL/api/runtime/identity" && ! core_truth_ready; then
+    printf '[JACO] RECOVERY — Core endpoint is live but not owned by the current %s release; checking known orphan runtimes\n' "$EXPECTED_CORE_RELEASE_ID" >&2
     svc_down "$CORE_SERVICE" || true
-    sleep 0.2
+    wait_service_down "$CORE_SERVICE" "${JACO_CORE_STOP_WAIT_SECONDS:-30}" || return 39
     cleanup_stale_core_processes || return $?
 
     # A live endpoint after the supervised service is down and canonical stale
@@ -353,6 +359,10 @@ sync_runtime_env(){
   # Refresh this process from the canonical mode-600 runtime env.
   # shellcheck disable=SC1090
   source "$CONFIG"
+  # Importing project/env must not redirect service launch to an older checkout.
+  JACO_ROOT="$JACO_CHECKOUT_ROOT"
+  export JACO_ROOT
+  set_config_export JACO_ROOT "$JACO_CHECKOUT_ROOT"
 }
 
 configure_local_llamacpp(){
@@ -515,6 +525,7 @@ fi
 need sv
 need curl
 need node
+EXPECTED_CORE_RELEASE_ID="$(node -e 'const fs=require("node:fs");try{const r=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(typeof r.releaseId!=="string"||!r.releaseId)process.exit(1);process.stdout.write(r.releaseId)}catch{process.exit(1)}' "$JACO_CHECKOUT_ROOT/CURRENT_RELEASE.json")" || { echo "Current JACO runtime release metadata missing or invalid" >&2; exit 30; }
 [[ "$PROFILE" == full ]] || { echo "unsupported profile: $PROFILE" >&2; exit 2; }
 [[ -d "$(svc_path "$SENTINEL_SERVICE")" ]] || { echo "missing service: $(svc_path "$SENTINEL_SERVICE")" >&2; exit 31; }
 [[ -d "$(svc_path "$CORE_SERVICE")" ]] || { echo "missing service: $(svc_path "$CORE_SERVICE")" >&2; exit 31; }
@@ -562,6 +573,8 @@ case "$ACTION" in
         { emit DEGRADED 'Core did not stop cleanly; refusing overlapping activation'; exit 39; }
       cleanup_stale_core_processes || { rc=$?; emit DEGRADED 'Stale Core processes could not be stopped'; exit "$rc"; }
     fi
+    # Explicit activation must keep Core and Workplace supervised across crashes.
+    rm -f "$(svc_path "$CORE_SERVICE")/down" "$(svc_path "$WORKPLACE_SERVICE")/down"
     svc_up "$CORE_SERVICE"
     wait_core_truth_ready "${JACO_CORE_READY_WAIT_SECONDS:-120}" || { quiesce_core_dependents; emit DEGRADED 'Supervised Core failed stability gate; dependents are stopped'; exit 34; }
     if [[ "${JACO_ENABLE_OLLAMA:-1}" == "1" ]]; then
@@ -589,6 +602,7 @@ case "$ACTION" in
     svc_down "$WORKPLACE_SERVICE" || true
     svc_down "$NOVA_SERVICE" || true
     svc_down "$CORE_SERVICE" || true
+    touch "$(svc_path "$CORE_SERVICE")/down" "$(svc_path "$WORKPLACE_SERVICE")/down"
     emit SENTINEL_ONLY 'Core and Workplace stopped; Sentinel/MCP bootstrap remains available'
     ;;
   restart)
@@ -617,6 +631,8 @@ case "$ACTION" in
     cleanup_stale_workplace_processes || { emit DEGRADED 'Orphan Workplace/model processes could not be stopped'; exit 40; }
 
     prepare_core_owner || { rc=$?; emit DEGRADED 'Core ownership recovery failed; dependents are stopped'; exit "$rc"; }
+    # Explicit activation must keep Core and Workplace supervised across crashes.
+    rm -f "$(svc_path "$CORE_SERVICE")/down" "$(svc_path "$WORKPLACE_SERVICE")/down"
     svc_up "$CORE_SERVICE"
     wait_core_truth_ready "${JACO_CORE_READY_WAIT_SECONDS:-120}" || { quiesce_core_dependents; emit DEGRADED 'Supervised Core failed stability gate; dependents are stopped'; exit 34; }
     if [[ "${JACO_ENABLE_OLLAMA:-1}" == "1" ]]; then svc_up "$OLLAMA_SERVICE"; fi
@@ -633,8 +649,8 @@ case "$ACTION" in
   status)
     if core_truth_ready && workplace_running; then
       emit READY 'Supervised Core, Workplace, and Durable Nova are RUNNING'
-    elif http_ok "$CORE_URL/api/runtime/identity" && ! svc_stable "$CORE_SERVICE"; then
-      emit DEGRADED 'Core endpoint responds but supervised Core is restarting; possible stale process or port collision'
+    elif http_ok "$CORE_URL/api/runtime/identity" && ! core_truth_ready; then
+      emit DEGRADED "Port 3000 responds but Core is not the supervised $EXPECTED_CORE_RELEASE_ID release (stale process or port collision)"
     elif http_ok "$CORE_URL/api/runtime/identity" && http_ok "$WORKPLACE_URL/health"; then
       emit DEGRADED 'Core and Workplace reachable; Durable Nova is not RUNNING'
     elif http_ok "$SENTINEL_URL/health"; then
