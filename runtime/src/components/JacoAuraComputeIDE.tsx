@@ -1443,7 +1443,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
             onActivated={() => { void refresh().catch(() => {}); }} />}
           missions={missions}
           onCancelMission={cancelMission}
-          onOpenWork={() => { setWorkspaceView('evidence'); }}
+          onOpenWork={() => { setWorkspacePinned(false); setWorkspaceView('stage'); }}
           onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
           activeFilePath={selectedFile}
           activeFileContent={fileView ? (drafts[fileView.path] ?? fileView.content) : null}
@@ -1748,7 +1748,17 @@ export const JacoAuraComputeIDE: React.FC = () => {
     onOpenFile={openFile} htmlSource={stageFile?.content ?? null} htmlDraft={stageDraft}
     onDraftChange={value=>{if(stagePath)updateDraft(stagePath,value);}}
     onSaveDraft={()=>{if(stagePath)void saveStageDraft(stagePath);}} saveBusy={stageSaveBusy} saveNotice={stageSaveNotice}
-    cdpReady={snapshot?.integrations?.cdp?.state==='VERIFIED' || snapshot?.integrations?.cdp?.state==='OBSERVED'}/>;
+    cdpReady={snapshot?.integrations?.cdp?.state==='VERIFIED' || snapshot?.integrations?.cdp?.state==='OBSERVED'}
+    activeMission={missions.find(item=>item.status==='ACTIVE') ? {
+      id:missions.find(item=>item.status==='ACTIVE')!.id,
+      goal:String(missions.find(item=>item.status==='ACTIVE')!.goal || 'Pågående uppdrag'),
+      phase:missions.find(item=>item.status==='ACTIVE')!.phase || null,
+      status:'ACTIVE'
+    } : null}
+    agentActivity={{
+      connected:(snapshot?.workplace?.agents || []).filter(item=>item.status==='READY' || item.liveSessions>0).length,
+      working:(snapshot?.workplace?.agents || []).reduce((count,item)=>count+Math.max(0,item.liveSessions || 0),0)
+    }}/>;
   const canvasDetail = <>
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
