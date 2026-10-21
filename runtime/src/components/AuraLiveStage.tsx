@@ -21,6 +21,8 @@ type Props = {
   saveBusy: boolean;
   saveNotice: string | null;
   cdpReady: boolean;
+  activeMission: {id:string;goal:string;phase:string|null;status:string} | null;
+  agentActivity: {connected:number;working:number};
 };
 
 const time = (value: string) => {
@@ -32,7 +34,7 @@ const outcome = (event: CognitiveEvent) => ({
   failed: 'Misslyckades', unknown: 'Okänt utfall',
 }[event.evidence.outcome] || 'Observation');
 
-export function AuraLiveStage({ candidate, events, preview, previewReady, active, onInspect, onOpenFile, htmlSource, htmlDraft, onDraftChange, onSaveDraft, saveBusy, saveNotice, cdpReady }: Props) {
+export function AuraLiveStage({ candidate, events, preview, previewReady, active, onInspect, onOpenFile, htmlSource, htmlDraft, onDraftChange, onSaveDraft, saveBusy, saveNotice, cdpReady, activeMission, agentActivity }: Props) {
   const [editing,setEditing]=useState(false);
   const [screenshot,setScreenshot]=useState<{src:string;at:string}|null>(null);
   const [captureBusy,setCaptureBusy]=useState(false);
@@ -71,6 +73,12 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
       <h2>Auras arbetsyta</h2>
       <p>{active ? 'Aura arbetar. Inget nytt verifierbart material att visa ännu.' : 'När Aura hittar eller skapar något relevant visas det här automatiskt.'}</p>
       <span>Verkliga fynd, kod, bilder och resultat – inte råa händelseloggar.</span>
+      {activeMission && <section className="aura-live-mission-focus" aria-label="Verkligt pågående uppdrag">
+        <div className="aura-live-material-eyebrow"><Layers3 size={12}/> AKTUELLT UPPDRAG · {activeMission.phase || activeMission.status}</div>
+        <strong>{activeMission.goal}</strong>
+        <div><span>{agentActivity.working} rapporterade arbetsessioner</span><span>{agentActivity.connected} anslutna agenter</span></div>
+        <small>Aura följer observerade uppdrag; inget verifierat visuellt resultat ännu.</small>
+      </section>}
       {cdpReady && <button type="button" className="aura-live-capture-button" disabled={captureBusy} onClick={()=>void captureBrowser()}><Camera size={14}/>{captureBusy?'Hämtar bild…':'Visa aktiv CDP-flik'}</button>}
     </div> : <>
       <header className="aura-live-material-header">
@@ -111,6 +119,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
           {event.evidence.commit && <span className="aura-live-commit"><GitCommit size={13}/> {event.evidence.commit.slice(0,14)}</span>}
         </div>
       </div>}
+      {activeMission && <div className="aura-live-mission-strip" aria-label="Pågående agentarbete"><Layers3 size={14}/><span>{activeMission.goal}</span><small>{activeMission.phase || activeMission.status} · {agentActivity.working} arbetsessioner</small></div>}
       <div className="aura-live-context-actions">
         {cdpReady && <button type="button" disabled={captureBusy} onClick={()=>void captureBrowser()}><Camera size={14}/>{captureBusy?'Hämtar…':'Visa CDP-bild'}</button>}
         {material === 'html' && previewReady && <button type="button" onClick={()=>setEditing(value=>!value)}><Code2 size={14}/>{editing?'Dölj källkod':'Redigera arbetskopia'}</button>}
