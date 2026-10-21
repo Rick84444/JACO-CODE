@@ -72,6 +72,10 @@ test('CDP screenshots use only existing authorized read tool and remain bounded'
   assert.match(component,/providerId:'cdp',toolName:'nova_screenshot'/);
   assert.match(component,/png\.length>8_000_000/);
   assert.doesNotMatch(component,/nova_navigate|nova_click|nova_type/);
+  assert.match(component,/age>30_000/);
+  assert.match(component,/event\.evidence\.outcome==='verified'/);
+  assert.match(component,/event\.type==='NOVA_ACTION_RESULT'/);
+  assert.match(component,/document\.visibilityState==='hidden'/);
   const preview=fs.readFileSync(new URL('../../runtime/src/components/CognitivePreview.tsx',import.meta.url),'utf8');
   assert.match(preview,/strict\?'':'allow-scripts'/);
   assert.match(preview,/strict\?'&#39;none&#39;':'&#39;unsafe-inline&#39;'/);
