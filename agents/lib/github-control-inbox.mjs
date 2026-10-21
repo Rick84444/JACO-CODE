@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createGitControlReceiptPublisher } from './git-control-receipts.mjs';
 const execFileAsync = promisify(execFile);
 const DEFAULT_REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -34,6 +35,11 @@ export function createGithubNovaControlInbox({
   const effectivePollMs = token
     ? Math.max(5000, Number.isFinite(pollMs) ? pollMs : 15000)
     : Math.max(30000, Number.isFinite(pollMs) ? pollMs : 30000);
+  // One canonical mission inbox. Git without an API token uses a separate
+  // status ref for acknowledgements instead of introducing a second server.
+  const gitReceiptPublisher = token ? null : createGitControlReceiptPublisher({
+    repo, repoRoot, gitBin, gitExecImpl, log,
+  });
 
   async function api(path, options = {}) {
     const response = await fetchImpl(API + path, {
@@ -346,7 +352,7 @@ export function createGithubNovaControlInbox({
     actor,
     pollMs: effectivePollMs,
     transport,
-    writeback: token ? 'github' : 'local-only',
+    writeback: token ? 'github' : 'git-ref-when-authorized',
 
     async poll(state, { force = false } = {}) {
       const control = ensureState(state);
@@ -372,9 +378,13 @@ export function createGithubNovaControlInbox({
           const result = await acceptIssue(issue, control);
           if (result.accepted) accepted.push(result);
         }
+        // Best-effort telemetry: inability to push Git status must never block
+        // canonical Nova execution, nor cause duplicate mission creation.
+        const statusReceipt = gitReceiptPublisher ? await gitReceiptPublisher.publish(control) : null;
         control.lastError = null;
-        if (accepted.length || updates.length) log('info', `GitHub control: ${accepted.length} command(s), ${updates.length} status update(s)`);
-        return { enabled: true, accepted, updates };
+        if (accepted.length || updates.length || statusReceipt?.sent)
+          log('info', `GitHub control: ${accepted.length} command(s), ${updates.length} status update(s), receipt=${statusReceipt?.sent ? 'published' : statusReceipt?.reason || 'local'}`);
+        return { enabled: true, accepted, updates, statusReceipt };
       } catch (error) {
         control.lastError = String(error.message || error).slice(0, 500);
         log('warn', `GitHub control poll failed: ${control.lastError}`);
