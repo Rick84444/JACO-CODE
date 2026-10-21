@@ -693,7 +693,11 @@ export const JacoAuraComputeIDE: React.FC = () => {
       return;
     }
     if (tool.id === 'browser.cdp') {
-      void selectMcpToolByName('cdp', 'nova_targets');
+      // Reuse the canonical Connections workspace rather than opening a raw
+      // MCP tool result in the narrow left sidebar.
+      setConnectionsTab('browser');
+      setWorkspaceView('connections');
+      setSidePanelOpen(false);
       return;
     }
     if (tool.id === 'editor.vscode') {
