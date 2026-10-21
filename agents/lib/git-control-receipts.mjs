@@ -12,6 +12,18 @@ const execFileAsync = promisify(execFile);
 const STATUS_BRANCH = 'refs/heads/jaco-control-status';
 const STATUS_LOCAL_REF = 'refs/jaco/nova-control-status';
 const STATUS_PATH = '.jaco/nova-status.json';
+const ERROR_CODES = new Set([
+  'GITHUB_CONTROL_MARKER_REQUIRED','GITHUB_CONTROL_PAYLOAD_INVALID_SIZE',
+  'GITHUB_CONTROL_INVALID_JSON','GITHUB_CONTROL_SCHEMA_UNSUPPORTED',
+  'GITHUB_CONTROL_COMMAND_ID_INVALID','GITHUB_CONTROL_GOAL_REQUIRED',
+  'GITHUB_CONTROL_EXECUTOR_MUST_BE_NOVA','GITHUB_CONTROL_ALLOWED_TASKS_INVALID',
+  'GITHUB_CONTROL_CONTRACT_INVALID','GITHUB_CONTROL_MISSION_ID_REQUIRED',
+  'GITHUB_CONTROL_DECISION_INVALID','GITHUB_CONTROL_RESOLUTION_NOTE_REQUIRED',
+  'GITHUB_CONTROL_SPEND_APPROVAL_NOT_ALLOWED','GITHUB_CONTROL_OPERATION_UNSUPPORTED',
+  'INVALID_MISSION_ALLOWED_TASKS','GOAL_REQUIRED','IDEMPOTENCY_KEY_REQUIRED',
+  'CODING_CONTRACT_REQUIRED','NOVA_MISSION_NOT_FOUND',
+  'WINDOWS_WMI_REQUIRES_DESKTOP_AGENTOS',
+]);
 
 const bounded = (value, max = 160) => String(value ?? '').slice(0, max);
 const digits = value => Number.isFinite(Number(value)) ? Math.max(0, Math.trunc(Number(value))) : 0;
@@ -29,7 +41,8 @@ export function gitControlReceiptSnapshot(control) {
       commandId: bounded(entry.commandId),
       operation: entry.op === 'invalid' ? 'rejected' : entry.op === 'mission.resolve' ? 'mission.resolve' : 'mission.create',
       missionId: bounded(entry.missionId || '', 200) || null,
-      errorCode: /^[A-Z][A-Z0-9_]{3,79}$/.test(String(entry.error || '')) ? String(entry.error) : null,
+      errorCode: entry.status === 'REJECTED'
+        ? (ERROR_CODES.has(String(entry.error || '')) ? entry.error : 'COMMAND_REJECTED') : null,
       status: bounded(entry.status || 'UNKNOWN', 40),
       phase: bounded(entry.phase || '', 80) || null,
       turn: digits(entry.turn),
