@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ProviderConnect } from './ProviderConnect';
 import { McpServersPanel, type McpProvider, type McpTool } from './McpServersPanel';
 import { SkillsView } from './SkillsView';
+import { CdpStudio } from './CdpStudio';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 const request=async(url:string,body?:unknown)=>fetch(url,{...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),signal:AbortSignal.timeout(30000)}).then(readAuraResponse);
 const unwrap=(result:any)=>{const text=result?.content?.find((c:any)=>c.type==='text')?.text;try{return text?JSON.parse(text):result;}catch{return result;}};
@@ -10,7 +11,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
   const [localMode,setLocalMode]=useState('read');
   const [providers,setProviders]=useState<any[]>([]),[mcp,setMcp]=useState<any>(null);
   const [errors,setErrors]=useState<Record<string,string>>({}),[observed,setObserved]=useState(''),[busy,setBusy]=useState<string|null>(null),[notice,setNotice]=useState('');
-  const [port,setPort]=useState('9222'),[targets,setTargets]=useState<any[]|null>(null),[command,setCommand]=useState('git'),[args,setArgs]=useState('["status","--short"]'),[result,setResult]=useState<any>(null);
+  const [command,setCommand]=useState('git'),[args,setArgs]=useState('["status","--short"]'),[result,setResult]=useState<any>(null);
   const loading=useRef(false),alive=useRef(true);
   useEffect(()=>{setResult(null);},[initialTab]);
   const refresh=useCallback(async()=>{
@@ -47,9 +48,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
     {tab==='local'&&<section><h3>Kör ett lokalt verktyg</h3><p>Kommandot körs av JACOs lokala MCP-server. Resultat och fel kommer från den verkliga processen.</p><label>Körsätt<select value={localMode} onChange={e=>setLocalMode(e.target.value)}><option value="read">Endast läsning</option><option value="write">Projektkommando, kan ändra filer</option></select></label><label>Program<input value={command} onChange={e=>setCommand(e.target.value)}/></label><label>Argument som JSON-array<input value={args} onChange={e=>setArgs(e.target.value)}/></label>
       <button type="button" disabled={!!busy} onClick={()=>void act('local',async()=>{const parsed=JSON.parse(args);if(!Array.isArray(parsed)||parsed.some(x=>typeof x!=='string'))throw Error('Argument måste vara en array av strängar.');return call('shell',localMode==='read'?'shell_read':'shell_run',{command,args:parsed});})}>{busy==='local'?'Kör lokalt…':localMode==='read'?'Kör läsning lokalt':'Kör projektkommando'}</button>
       <p>Körning sker i det öppna projektet. Körsättet för projektkommandon kan ändra filer och köra projektets kod. Agenternas åtkomst hanteras separat under MCP.</p></section>}
-    {tab==='browser'&&<section><h3>Anslut en webbläsarflik</h3><p>Starta Chrome/Chromium med fjärrfelsökning på datorn där JACO körs. Flikarna läses från den angivna lokala CDP-porten.</p><label>CDP-port<input type="number" min="1" max="65535" value={port} onChange={e=>{setPort(e.target.value);setTargets(null);setResult(null);}}/></label><button type="button" disabled={!!busy} onClick={()=>void act('targets',async()=>{setTargets(null);const value=await call('jaco','jaco_browser_targets',{port:Number(port)});setTargets(value.targets||[]);return value;})}>Hämta öppna flikar</button>
-      {targets?.length===0&&<p>Inga styrbara flikar observerades.</p>}{targets?.map(t=><article key={t.id||t.url}><strong>{t.title||'Webbläsarflik'}</strong><p>{t.url}</p><button type="button" disabled={!!busy} onClick={()=>void act('attach',()=>call('jaco','jaco_browser_attach',{port:Number(port),urlIncludes:t.url.slice(0,300),targetId:t.id}))}>Anslut den här fliken</button></article>)}
-    </section>}
+    {tab==='browser'&&<CdpStudio/>}
     {tab==='skills'&&<SkillsView/>}
     {result&&tab!=='models'&&<section><h3>Senaste verktygsresultat</h3><pre>{JSON.stringify(result,null,2)}</pre></section>}
   </div>;
