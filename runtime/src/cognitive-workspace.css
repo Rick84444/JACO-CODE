@@ -463,3 +463,7 @@
 .aura-live-cdp-frame-bar button{font-size:10px;color:#b7dce7;border:1px solid #3b6474;border-radius:5px;padding:5px 8px}
 .aura-live-cdp-frame>small{padding:8px 12px;font-size:10px;color:#8a9eae}
 .aura-live-capture-error{padding:10px 28px;color:#f1bfa5;font-size:11px}
+
+.aura-live-standalone-cdp{flex:1;min-height:0;display:flex;flex-direction:column;align-items:stretch;background:#07121b}
+.aura-live-standalone-cdp img{flex:1;min-height:0;max-width:100%;width:100%;object-fit:contain;padding:18px}
+.aura-live-standalone-cdp>small{padding:9px 18px;text-align:center;font-size:10px;color:#7898ad}
