@@ -48,6 +48,7 @@ import { JacoWordmark } from './JacoWordmark';
 import { AuraRepositoryTree } from './AuraRepositoryTree';
 import { AuraProjectPicker } from './AuraProjectPicker';
 import { canSwitchProject } from '../lib/auraProject.mjs';
+import { readWorkspaceDrafts, writeWorkspaceDrafts } from '../lib/auraRecovery.mjs';
 import { AuraIntegrationsPanel } from './AuraIntegrationsPanel';
 import { NovaPlannerCard } from './NovaPlannerCard';
 import { ActivationCard, useActivationReport } from './ActivationCard';
@@ -320,11 +321,18 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [showTerminal, setShowTerminal] = useState(false);
   const [selectedEvidence, setSelectedEvidence] = useState<CognitiveEvent|null>(null);
   const [projectName, setProjectName] = useState('Arbetsyta');
+  const [projectRoot,setProjectRoot] = useState('');
+  const [draftStorageError,setDraftStorageError] = useState<string|null>(null);
+  const [draftNotice,setDraftNotice] = useState<string|null>(null);
+  const recoveryWritable=useRef(false);
   useEffect(() => {
     let active=true;
     fetch('/api/aura/workbench/project').then(json).then(data=>{
-      if(active && data.root) setProjectName(String(data.root).replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Arbetsyta');
-    }).catch(()=>{});
+      if(active && data.root) {
+        setProjectName(String(data.root).replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Arbetsyta');
+        restoreDrafts(String(data.root),true);
+      }
+    }).catch(()=>{if(active)setDraftStorageError('Projektets källa kunde inte läsas. Utkast kan inte sparas eller återställas säkert.');});
     const close=(event:KeyboardEvent)=>{if(event.key==='Escape')setSidePanelOpen(false);};
     window.addEventListener('keydown',close);
     return()=>{active=false;window.removeEventListener('keydown',close);};
@@ -340,6 +348,41 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const documentsRef=useRef(documents), draftsRef=useRef(drafts);
   documentsRef.current=documents; draftsRef.current=drafts;
   const [openFiles, setOpenFiles] = useState<string[]>([]);
+  const restoreDrafts=(root:string,initial=false)=>{
+    recoveryWritable.current=false;
+    setDraftStorageError(null);setDraftNotice(null);
+    try {
+      // Persistent per-origin/per-project recovery. Nothing is transmitted by this mechanism.
+      const saved=readWorkspaceDrafts(window.localStorage,root);
+      setDocuments(current=>initial?{...saved.documents,...current}:saved.documents);
+      setDrafts(current=>initial?{...saved.drafts,...current}:saved.drafts);
+      const paths=Object.keys(saved.drafts);
+      setOpenFiles(current=>initial?[...new Set([...current,...paths])]:paths);
+      setSelectedFile(current=>initial&&current?current:paths[0]||null);
+      if(paths.length)setDraftNotice('Lokala utkast återställda. Kontrollera filversionen före sparning.');
+      recoveryWritable.current=true;
+    }catch{
+      // Do not overwrite an unreadable existing archive with blank data.
+      if(!initial){setDocuments({});setDrafts({});setSelectedFile(null);setOpenFiles([]);}
+      setDraftStorageError('Utkasten kunde inte återställas. Sparad data lämnas orörd; kopiera nuvarande ändringar innan omladdning.');
+    }
+    setProjectRoot(root);
+  };
+  useEffect(()=>{
+    if(!projectRoot||!recoveryWritable.current)return;
+    try{
+      writeWorkspaceDrafts(window.localStorage,projectRoot,'',drafts,documents);
+      setDraftStorageError(null);
+    }catch{
+      setDraftStorageError('Webbläsarens lokala utkast kunde inte sparas. Spara projektfilen eller exportera arbetet innan omladdning.');
+    }
+  },[projectRoot,drafts,documents]);
+  useEffect(()=>{
+    if(canSwitchProject(drafts,documents))return;
+    const protect=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue='';};
+    window.addEventListener('beforeunload',protect);
+    return()=>window.removeEventListener('beforeunload',protect);
+  },[drafts,documents]);
   // The conversation remains mounted while the operator inspects code or evidence.
   const openChat = () => { setWorkspaceView('conversation'); setSidePanelOpen(false); window.dispatchEvent(new Event('jaco:aura:focus')); };
   const [connectionsTab,setConnectionsTab]=useState('models');
@@ -977,12 +1020,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
         <>
           <div className="px-3 pt-2">
             <AuraProjectPicker
-              disabled={!canSwitchProject(drafts)}
+              disabled={!canSwitchProject(drafts,documents)}
               onOpened={(root) => {
                 setProjectName(root.replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Arbetsyta');
-                setSelectedFile(null);
-                setOpenFiles([]);
-                setDocuments({});
+                restoreDrafts(root);
                 setProjectKey(key => key + 1);
                 void refresh();
               }}
@@ -1770,6 +1811,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
       <details className="cognitive-mission-details"><summary>Uppdrag & kontroller</summary>{renderMissionList()}</details></div>}
   </>;
   const detail=<div className="cognitive-detail-wrapper">
+    {draftStorageError&&<div role="alert" className="cognitive-operation-notice">{draftStorageError}</div>}
+    {draftNotice&&<div role="status" className="cognitive-operation-notice">{draftNotice}</div>}
     {externalFile&&externalFile.path===selectedFile&&<div role="alert" className="cognitive-operation-notice">Filen har ändrats i arbetsytan. Ditt utkast är bevarat.<button type="button" onClick={acceptExternalFile}>Läs senaste filen</button></div>}
     <div className="cognitive-detail-body">{canvasDetail}</div>
   </div>;
