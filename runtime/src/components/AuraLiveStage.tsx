@@ -67,6 +67,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
       <p>{active ? 'Aura arbetar. Inget nytt verifierbart material att visa ännu.' : 'När Aura hittar eller skapar något relevant visas det här automatiskt.'}</p>
       <span>Verkliga fynd, kod, bilder och resultat – inte råa händelseloggar.</span>
       {cdpReady && <button type="button" className="aura-live-capture-button" disabled={captureBusy} onClick={()=>void captureBrowser()}><Camera size={14}/>{captureBusy?'Hämtar bild…':'Visa aktiv CDP-flik'}</button>}
+      {screenshot && <div className="aura-live-empty-cdp"><img src={screenshot.src} alt="Faktiskt observerad CDP-skärmbild"/><small>Nova-bryggans fästa flik · {time(screenshot.at)}</small></div>}
     </div> : <>
       <header className="aura-live-material-header">
         <div className="aura-live-material-name">
