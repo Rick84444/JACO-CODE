@@ -452,3 +452,33 @@
 .aura-live-standalone-cdp{flex:1;min-height:0;display:flex;flex-direction:column;align-items:stretch;background:#07121b}
 .aura-live-standalone-cdp img{flex:1;min-height:0;max-width:100%;width:100%;object-fit:contain;padding:18px}
 .aura-live-standalone-cdp>small{padding:9px 18px;text-align:center;font-size:10px;color:#7898ad}
+
+/* Observability is always visible, but never conflates a responsive SSE socket
+   with an actually progressing mission. No decorative simulated telemetry. */
+.aura-presence{flex-shrink:0;background:linear-gradient(108deg,#0d2634 0%,#0b1a26 62%,#0a1520 100%);border-bottom:1px solid #2c4658;padding:13px 20px 12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.aura-presence-top{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
+.aura-presence-heading{display:flex;align-items:center;gap:12px;min-width:0}
+.aura-presence-light{width:10px;height:10px;border-radius:50%;background:#7d8b98;border:2px solid #acbbc25c;flex-shrink:0}
+.aura-presence[data-mode=working] .aura-presence-light{background:#58e3a9;border-color:#58e3a958;box-shadow:0 0 12px #51e0a66b}
+.aura-presence[data-mode=ready] .aura-presence-light,.aura-presence[data-mode=observed] .aura-presence-light{background:#78cde0;border-color:#78cde060}
+.aura-presence[data-mode=stalled] .aura-presence-light,.aura-presence[data-mode=blocked] .aura-presence-light{background:#e4ad66;border-color:#e4ad665e}
+.aura-presence[data-mode=offline] .aura-presence-light{background:#da6f71;border-color:#da6f715e}
+.aura-presence-state{display:flex;flex-direction:column;gap:3px;min-width:0}
+.aura-presence-state strong{color:#e5f5fb;font-size:15px;font-weight:620;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis}
+.aura-presence-state>span{font-size:10px;color:#92acbc}
+.aura-presence-signals{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;min-width:0}
+.aura-presence-signals>span{display:flex;align-items:center;gap:6px;max-width:250px;border:1px solid #294a58;background:#102939;padding:6px 9px;border-radius:6px;color:#adcfdb;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aura-presence-signals>span svg{flex-shrink:0;color:#75b9c8}
+.aura-presence-bottom{display:flex;align-items:center;gap:7px 14px;flex-wrap:wrap;min-width:0;color:#8daebf;font-size:11px}
+.aura-presence-bottom>span{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.aura-presence-phase{color:#cae3ed;font-weight:550}
+.aura-presence-step{flex:1;min-width:150px;line-height:1.5;overflow-wrap:anywhere}
+.aura-presence-step svg,.aura-presence-time svg{flex-shrink:0}
+.aura-presence-time{white-space:nowrap}
+.aura-presence-number{white-space:nowrap;color:#8ed0bc}
+.aura-presence-warning{white-space:nowrap;color:#f0c18b}
+.aura-live-empty-context{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;color:#80a5b8;font-size:10px}
+.aura-live-empty-context span{border:1px solid #2c4857;background:#102431;padding:6px 9px;border-radius:6px}
+@media(max-width:1000px){.aura-presence{padding:12px}.aura-presence-top{align-items:flex-start;flex-direction:column;gap:9px}.aura-presence-signals{justify-content:flex-start}.aura-presence-signals>span{max-width:210px}}
+@media(max-width:767px){.aura-presence{padding:11px 13px}.aura-presence-state strong{font-size:14px}.aura-presence-signals{gap:5px}.aura-presence-signals>span{padding:5px 7px;font-size:10px}.aura-presence-bottom{gap:6px 10px}.aura-presence-step{min-width:140px}}
+@media(prefers-reduced-motion:reduce){.aura-presence-light{animation:none!important}}
