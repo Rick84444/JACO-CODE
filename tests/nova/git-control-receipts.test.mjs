@@ -24,6 +24,17 @@ test('Git receipt payload is bounded metadata, never goals, credentials or tool 
   assert.equal(result.entries[0].commandId, 'command-001');
   assert.equal(result.entries[0].receipts, 3);
   assert.equal(result.authoritative, false);
+  const poisoned=gitControlReceiptSnapshot({issues:{x:{
+    commandId:'poisoned-command-001',transport:'git-ref',status:'REJECTED',
+    error:'SUPERSECRET',
+  }}});
+  assert.equal(poisoned.entries[0].errorCode,'COMMAND_REJECTED');
+  assert.equal(JSON.stringify(poisoned).includes('SUPERSECRET'),false);
+  const safe=gitControlReceiptSnapshot({issues:{x:{
+    commandId:'invalid-command-001',transport:'git-ref',status:'REJECTED',
+    error:'GITHUB_CONTROL_INVALID_JSON',
+  }}});
+  assert.equal(safe.entries[0].errorCode,'GITHUB_CONTROL_INVALID_JSON');
   for (const secret of ['PRIVATE GOAL','sk-secret','ghp_','PNG-RAW-BYTES','192.168.1.20']) {
     assert.equal(JSON.stringify(result).includes(secret), false);
   }
