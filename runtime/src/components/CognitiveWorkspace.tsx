@@ -1,12 +1,13 @@
 import React from 'react';
-import { MessageSquare, Code2, PanelRightClose, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone, MoreHorizontal, Bot } from 'lucide-react';
+import { MessageSquare, Code2, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone, Bot, Pin, PinOff } from 'lucide-react';
 import { JacoWordmark } from './JacoWordmark';
 import { CostChip } from './CostChip';
 
-export type CognitiveCanvas='conversation'|'agents'|'code'|'preview'|'evidence'|'gameboard'|'voice'|'connections';
+export type CognitiveCanvas='conversation'|'stage'|'agents'|'code'|'preview'|'evidence'|'gameboard'|'voice'|'connections';
 type Sidebar='explorer'|'source-control'|'tools'|'skills'|'devices'|'providers'|'revenue';
 interface Props {
   canvas:CognitiveCanvas;onCanvas:(view:CognitiveCanvas)=>void;conversation:React.ReactNode;detail:React.ReactNode;
+  stage:React.ReactNode;stagePinned:boolean;onTogglePin:()=>void;
   sidePanel:React.ReactNode;sidebar:Sidebar;sidePanelOpen:boolean;onSidebar:(view:Sidebar)=>void;onCloseSidebar:()=>void;
   status:{label:string;tone:string};projectName:string;branch?:string|null;changes:number;
   approvalCount:number;onApprovals:()=>void;onCommands:()=>void;onSignOut:()=>void;
@@ -17,7 +18,8 @@ const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['
 const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter'],['revenue',CircleDollarSign,'Budget & ekonomi']] as const;
 
 export function CognitiveWorkspace(props:Props) {
-  const hasCanvas=props.canvas!=='conversation';
+  const hasDetail=props.canvas!=='conversation' && props.canvas!=='stage';
+  const showStage=props.canvas!=='conversation';
   return <div className="cognitive-workspace" data-cognitive-workspace="true">
     <header className="cognitive-topbar">
       <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">Aura</span></div>
@@ -30,7 +32,7 @@ export function CognitiveWorkspace(props:Props) {
     </header>
     <div className="cognitive-body">
       <nav className="cognitive-rail" aria-label="Projektverktyg">
-        <button type="button" onClick={()=>{props.onCanvas('conversation');props.onCloseSidebar();}} aria-label="Visa samtalet" title="Samtal" className={!hasCanvas&&!props.sidePanelOpen?'active':''}><MessageSquare size={19}/></button>
+        <button type="button" onClick={()=>{props.onCanvas('conversation');props.onCloseSidebar();}} aria-label="Visa samtalet" title="Samtal" className={!showStage&&!props.sidePanelOpen?'active':''}><MessageSquare size={19}/></button>
         <span className="cognitive-rail-separator"/>
         {tools.map(([id,Icon,label])=><button key={id} type="button" onClick={()=>props.onSidebar(id)} aria-label={label} title={label} aria-pressed={props.sidePanelOpen&&props.sidebar===id} className={props.sidePanelOpen&&props.sidebar===id?'active':''}><Icon size={18}/>{id==='source-control'&&props.changes>0&&<span className="cognitive-rail-count">{props.changes}</span>}</button>)}
         <div className="cognitive-rail-spacer"/>
@@ -40,22 +42,24 @@ export function CognitiveWorkspace(props:Props) {
       <div className="cognitive-working-area">
         <div className="cognitive-contextbar">
           <div className="cognitive-status" data-tone={props.status.tone} role="status"><span/>{props.status.label}</div>
-          <nav className="cognitive-view-tabs" aria-label="Arbetsyta">
-            {views.slice(0,4).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>props.onCanvas(id)} aria-label={label} title={label} aria-pressed={props.canvas===id}><Icon size={14}/><span>{label}</span></button>)}
-            <details className="cognitive-more-views">
-              <summary aria-label="Fler arbetsvyer"><MoreHorizontal size={16}/><span>{views.slice(4).find(view => view[0] === props.canvas)?.[2] || 'Mer'}</span></summary>
-              <div>{views.slice(4).map(([id, Icon, label]) => <button key={id} type="button" aria-pressed={props.canvas === id}
-                onClick={event => { props.onCanvas(id); event.currentTarget.closest('details')?.removeAttribute('open'); }}><Icon size={16}/>{label}</button>)}</div>
-            </details>
-          </nav>
+          <button type="button" className="cognitive-mobile-focus" onClick={()=>props.onCanvas(showStage?'conversation':'stage')}>
+            {showStage ? <MessageSquare size={15}/> : <Eye size={15}/>}
+            {showStage ? 'Visa samtalet' : 'Visa Auras arbete'}
+          </button>
         </div>
         {props.error && <div className="cognitive-connection-notice" role="alert"><CircleAlert size={14}/><span>Runtime kan inte nås just nu. Tidigare observationer visas tills anslutningen är tillbaka.</span></div>}
         {props.attention}
-        <main className="cognitive-main" data-canvas={hasCanvas}>
-          <section className="cognitive-conversation" aria-label="JACO livekonversation">{props.conversation}</section>
-          <aside className="cognitive-canvas" hidden={!hasCanvas} aria-label="Aktuell arbetsyta">
-            <div className="cognitive-canvas-bar"><span>{views.find(v=>v[0]===props.canvas)?.[2]}</span><button type="button" onClick={()=>props.onCanvas('conversation')} aria-label="Stäng arbetsytan"><PanelRightClose size={16}/></button></div>
-            <div className="cognitive-canvas-content">{props.detail}</div>
+        <main className="cognitive-main" data-canvas="true" data-focus={showStage?'stage':'conversation'}>
+          <section className="cognitive-conversation" aria-label="Aura-konversation">{props.conversation}</section>
+          <aside className="cognitive-canvas" aria-label="Aura Live Workspace">
+            <div className="cognitive-canvas-bar">
+              <span>{hasDetail ? (views.find(v=>v[0]===props.canvas)?.[2] || 'Arbetsyta') : 'Aura Live Workspace'}</span>
+              <div className="cognitive-stage-actions">
+                {hasDetail ? <button type="button" onClick={()=>props.onCanvas('stage')} aria-label="Återgå till Auras arbete">Visa senaste arbetet</button>
+                  : <button type="button" onClick={props.onTogglePin} aria-pressed={props.stagePinned} aria-label={props.stagePinned?'Släpp fäst material':'Fäst visat material'} title={props.stagePinned?'Följ Auras arbete':'Behåll detta material'}>{props.stagePinned?<PinOff size={15}/>:<Pin size={15}/>}</button>}
+              </div>
+            </div>
+            <div className="cognitive-canvas-content">{hasDetail?props.detail:props.stage}</div>
           </aside>
         </main>
         <footer className="cognitive-footbar"><span><span className="cognitive-footer-dot"/>JACO CODE · Aura</span><span>{props.lastObservedAt ? 'Senast observerat '+new Date(props.lastObservedAt).toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : 'Väntar på första observationen'}</span></footer>
