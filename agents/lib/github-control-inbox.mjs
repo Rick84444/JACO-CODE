@@ -18,6 +18,7 @@ export function createGithubNovaControlInbox({
   fetchImpl = globalThis.fetch,
   repo = process.env.JACO_GITHUB_CONTROL_REPO || 'Rick84444/jaco-code',
   token = process.env.JACO_GITHUB_CONTROL_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '',
+  transportMode = process.env.JACO_GITHUB_CONTROL_TRANSPORT || 'auto',
   actor = process.env.JACO_GITHUB_CONTROL_ACTOR || String(repo).split('/')[0],
   pollMs = Number(process.env.JACO_GITHUB_CONTROL_POLL_MS || 15000),
   log = () => {},
@@ -31,13 +32,13 @@ export function createGithubNovaControlInbox({
   if (!missionClient) throw new Error('GITHUB_CONTROL_MISSION_CLIENT_REQUIRED');
   const [owner, name] = String(repo).split('/');
   const configured = Boolean(owner && name && actor);
-  const transport = token ? 'github-api' : 'git-ref';
-  const effectivePollMs = token
+  const transport = transportMode === 'git-ref' ? 'git-ref' : token ? 'github-api' : 'git-ref';
+  const effectivePollMs = transport === 'github-api'
     ? Math.max(5000, Number.isFinite(pollMs) ? pollMs : 15000)
     : Math.max(30000, Number.isFinite(pollMs) ? pollMs : 30000);
   // One canonical mission inbox. Git without an API token uses a separate
   // status ref for acknowledgements instead of introducing a second server.
-  const gitReceiptPublisher = token ? null : createGitControlReceiptPublisher({
+  const gitReceiptPublisher = transport === 'github-api' ? null : createGitControlReceiptPublisher({
     repo, repoRoot, gitBin, gitExecImpl, log,
   });
 
@@ -94,7 +95,7 @@ export function createGithubNovaControlInbox({
   }
 
   async function listCommands() {
-    if (!token) {
+    if (transport === 'git-ref') {
       const raw = await readGitControl();
       if (!raw) return [];
       return [{
@@ -123,7 +124,7 @@ export function createGithubNovaControlInbox({
   }
 
   async function postComment(issueNumber, body) {
-    if (!token) return null;
+    if (transport === 'git-ref') return null;
     return await api(`/repos/${owner}/${name}/issues/${issueNumber}/comments`, {
       method: 'POST',
       body: { body },
@@ -131,7 +132,7 @@ export function createGithubNovaControlInbox({
   }
 
   async function updateComment(commentId, body) {
-    if (!token) return null;
+    if (transport === 'git-ref') return null;
     return await api(`/repos/${owner}/${name}/issues/comments/${commentId}`, {
       method: 'PATCH',
       body: { body },
@@ -139,7 +140,7 @@ export function createGithubNovaControlInbox({
   }
 
   async function closeIssue(issueNumber) {
-    if (!token) return null;
+    if (transport === 'git-ref') return null;
     return await api(`/repos/${owner}/${name}/issues/${issueNumber}`, {
       method: 'PATCH',
       body: { state: 'closed', state_reason: 'completed' },
@@ -352,7 +353,7 @@ export function createGithubNovaControlInbox({
     actor,
     pollMs: effectivePollMs,
     transport,
-    writeback: token ? 'github' : 'git-ref-when-authorized',
+    writeback: transport === 'github-api' ? 'github' : 'git-ref-when-authorized',
 
     async poll(state, { force = false } = {}) {
       const control = ensureState(state);
