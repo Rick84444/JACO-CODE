@@ -214,7 +214,7 @@ test('tokenless Nova control reads Git ref, creates one durable mission, and per
   });
   assert.equal(inbox.enabled, true);
   assert.equal(inbox.transport, 'git-ref');
-  assert.equal(inbox.writeback, 'local-only');
+  assert.equal(inbox.writeback, 'git-ref-when-authorized');
   assert.equal(inbox.pollMs, 30000);
 
   const state = {};
