@@ -375,3 +375,71 @@
 .cognitive-copy-message button { min-height:44px; padding:6px 12px; border:1px solid #343b45; border-radius:8px; color:#cbd5e1; background:transparent; }
 .cognitive-copy-message small { color:#94a3b8; }
 .cognitive-copy-message textarea { width:100%; min-height:140px; padding:10px; background:#111820; color:#e2e8f0; }
+
+
+/* Aura Live Stage — one contextual material surface instead of competing tool tabs. */
+.cognitive-mobile-focus{display:none;align-items:center;gap:7px;padding:7px 11px;border:1px solid #284151;border-radius:8px;color:#a9d7e7;font-size:11px}
+.cognitive-stage-actions{display:flex;align-items:center;gap:6px}
+.cognitive-stage-actions button{min-width:32px;min-height:30px;padding:5px 10px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#8eacbd;font-size:11px}
+.cognitive-stage-actions button[aria-pressed=true]{color:#8ce4e5;background:#133744}
+.cognitive-stage-actions button:hover{background:#172a37}
+.cognitive-canvas{background:#080f17}
+.cognitive-canvas-content{overflow:hidden}
+.aura-live-stage{height:100%;overflow:auto;display:flex;flex-direction:column;color:#d6e5ef;background:radial-gradient(ellipse at 65% 6%,#0c2232 0%,#09131d 43%,#08111a 85%)}
+.aura-live-empty{flex:1;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:38px;color:#5f8ca7}
+.aura-live-empty h2{font-size:26px;font-weight:480;letter-spacing:-.04em;color:#d1e3ee}
+.aura-live-empty p{font-size:14px;line-height:1.75;max-width:430px;color:#a2b5c2}
+.aura-live-empty span{font-size:11px;color:#6d8595;max-width:400px}
+.aura-live-material-header{padding:26px 29px 20px;display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-shrink:0}
+.aura-live-material-eyebrow{display:flex;align-items:center;gap:7px;color:#71bbcc;font-size:10px;letter-spacing:.13em;font-weight:600}
+.aura-live-material-name{min-width:0}
+.aura-live-material-name h2{font-size:clamp(19px,2vw,28px);line-height:1.3;letter-spacing:-.045em;font-weight:530;color:#ecf5fc;margin:9px 0 6px;overflow-wrap:anywhere}
+.aura-live-material-name p{font-size:12px;color:#95abbc;line-height:1.65;max-width:690px;overflow-wrap:anywhere}
+.aura-live-evidence-state{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:10px;border:1px solid #34475a;padding:6px 10px;border-radius:40px;color:#aab6c2}
+.aura-live-evidence-state[data-outcome=verified]{color:#91e2c4;border-color:#285d50;background:#16332870}
+.aura-live-evidence-state[data-outcome=failed],.aura-live-evidence-state[data-outcome=unknown]{color:#ecbd94;border-color:#74513a}
+.aura-live-visual{flex:1;min-height:250px;margin:0 24px;border:1px solid #274052;border-radius:10px;overflow:hidden;background:#0c1621;box-shadow:0 16px 45px #0004;display:flex;flex-direction:column}
+.aura-live-visual>.cognitive-preview{flex:1;min-height:0}
+.aura-live-visual .cognitive-preview-address{background:#101f2b}
+.aura-live-visual iframe{height:100%}
+.aura-live-awaiting{flex:1;min-height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:26px;text-align:center;color:#77aec5}
+.aura-live-awaiting h3{color:#d3e6ef;font-size:16px}
+.aura-live-awaiting p{font-size:13px;color:#a2b5c5}
+.aura-live-awaiting small{font-size:11px;color:#718a9a;line-height:1.65;max-width:340px}
+.aura-live-event-focus{flex:1;min-height:240px;display:flex;align-items:center;justify-content:center;gap:20px;margin:0 27px;padding:36px;border:1px solid #ffffff10;border-radius:12px;background:linear-gradient(136deg,#15293870,#0c192280)}
+.aura-live-event-accent{color:#7bc6d6;border:1px solid #2b4c60;border-radius:14px;padding:17px;flex-shrink:0}
+.aura-live-event-focus>div:last-child{max-width:580px}
+.aura-live-event-focus strong{font-size:20px;color:#e8f4fb;font-weight:500;letter-spacing:-.025em}
+.aura-live-event-focus p{font-size:13px;color:#a3bdce;line-height:1.85;margin-top:10px;overflow-wrap:anywhere}
+.aura-live-event-error{margin-top:12px;font-size:11px;color:#f0bbaf;overflow-wrap:anywhere}
+.aura-live-commit{display:flex;align-items:center;gap:6px;margin-top:12px;color:#8ed8bf;font-family:monospace;font-size:11px}
+.aura-live-context-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:16px 28px;color:#718999}
+.aura-live-context-actions button,.aura-live-context-actions a{display:inline-flex;align-items:center;gap:8px;border:1px solid #2c485b;padding:9px 13px;border-radius:7px;color:#b7dbea;font-size:11px;background:#102633}
+.aura-live-context-actions button:hover,.aura-live-context-actions a:hover{background:#17384a}
+.aura-live-context-actions>span{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:10px}
+.aura-live-history{border-top:1px solid #203342;padding:13px 28px 16px;color:#8faaba;flex-shrink:0}
+.aura-live-history>summary{cursor:pointer;font-size:11px;user-select:none}
+.aura-live-history>summary span{font-size:10px;color:#617c91;margin-left:8px}
+.aura-live-history-items{margin-top:12px;max-height:240px;overflow:auto;border:1px solid #1f3646;border-radius:8px}
+.aura-live-history-items button{width:100%;display:flex;gap:10px;align-items:flex-start;text-align:left;border-bottom:1px solid #1c3040;padding:10px;color:#91aebf;font-size:11px}
+.aura-live-history-items button:last-child{border-bottom:0}
+.aura-live-history-items button:hover{background:#102534}
+.aura-live-history-items button>span:nth-child(2){flex:1;overflow-wrap:anywhere}
+.aura-live-history-items small{color:#8fd5e5;white-space:nowrap}
+.aura-live-history-items time{color:#6b8090;white-space:nowrap}
+.aura-live-history-indicator{width:7px;height:7px;flex-shrink:0;border-radius:50%;background:#5c7a8c;margin-top:4px}
+.aura-live-history-indicator[data-outcome=verified]{background:#4aba9c}
+.aura-live-history-indicator[data-outcome=failed]{background:#d38a87}
+@media(max-width:767px){
+  .cognitive-mobile-focus{display:inline-flex;min-height:37px}
+  .cognitive-main[data-focus=conversation]>.cognitive-conversation{display:flex;flex:1;width:100%;max-width:none}
+  .cognitive-main[data-focus=conversation]>.cognitive-canvas{display:none}
+  .cognitive-main[data-focus=stage]>.cognitive-conversation{display:none}
+  .cognitive-main[data-focus=stage]>.cognitive-canvas{display:flex;flex:1}
+  .aura-live-material-header{padding:18px 15px 14px;flex-wrap:wrap}
+  .aura-live-visual{margin:0 11px}
+  .aura-live-event-focus{margin:0 12px;padding:20px;gap:12px;flex-direction:column;text-align:center}
+  .aura-live-context-actions{padding:12px}
+  .aura-live-history{padding:12px}
+}
+@media(prefers-reduced-motion:reduce){.aura-live-stage *, .cognitive-mobile-focus{transition:none!important;animation:none!important}}
