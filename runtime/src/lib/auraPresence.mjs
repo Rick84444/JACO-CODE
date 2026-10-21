@@ -49,6 +49,7 @@ export function auraPresence({
   let step=lastAction?.text ? bounded(lastAction.text) : '';
   if(!step && active) step='Inget verktygssteg rapporterat ännu';
   if(!step && latestEvent?.text) step=bounded(latestEvent.text);
+  const stepAt=lastAction?.at||latestEvent?.at||null;
   const verified=Number.isFinite(mission?.verifiedReceipts)?mission.verifiedReceipts:null;
   const stepCount=Number.isFinite(mission?.step)?mission.step:null;
   const maxSteps=Number.isFinite(mission?.maxSteps)&&mission.maxSteps>0?mission.maxSteps:null;
@@ -58,8 +59,8 @@ export function auraPresence({
     modelLabel:provider&&model?bounded(provider)+' / '+bounded(model):provider?bounded(provider):'Modell ej observerad',
     cdpLabel:cdpState==='VERIFIED'?'CDP verifierad':cdpState==='OBSERVED'?'CDP ansluten':'CDP ej observerad',
     connectedAgents,workingSessions,approvals,missionGoal:bounded(mission?.goal),
-    phaseLabel:active?friendlyPhase(phase):state||'Inget uppdrag',step,stepAge:actionAge,
+    phaseLabel:active?friendlyPhase(phase):state||'Inget uppdrag',step,stepAge:ageInSeconds(stepAt,now),
     streamAge,snapshotAge,verified,stepCount,maxSteps,
-    latestAt:lastAction?.at||latestEvent?.at||null,
+    latestAt:stepAt,
   };
 }
