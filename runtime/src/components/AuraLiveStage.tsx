@@ -61,13 +61,17 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
   const material = candidate?.material;
   const url = event ? cognitiveLink(event.evidence.url) : null;
   return <div className="aura-live-stage" data-testid="aura-live-stage">
-    {!event ? <div className="aura-live-empty" role="status">
+    {!event ? screenshot ? <div className="aura-live-standalone-cdp" aria-label="Observerad webbläsarsida">
+      <div className="aura-live-cdp-frame-bar"><Camera size={13}/> Nova-bryggans fästa CDP-flik · {time(screenshot.at)}
+        <button type="button" onClick={()=>setScreenshot(null)}>Tillbaka</button></div>
+      <img src={screenshot.src} alt="Faktisk CDP-skärmbild utan modifiering"/>
+      <small>En stillbild från den anslutna fliken, inte en liveström.</small>
+    </div> : <div className="aura-live-empty" role="status">
       <ScanEye size={34} strokeWidth={1.25}/>
       <h2>Auras arbetsyta</h2>
       <p>{active ? 'Aura arbetar. Inget nytt verifierbart material att visa ännu.' : 'När Aura hittar eller skapar något relevant visas det här automatiskt.'}</p>
       <span>Verkliga fynd, kod, bilder och resultat – inte råa händelseloggar.</span>
       {cdpReady && <button type="button" className="aura-live-capture-button" disabled={captureBusy} onClick={()=>void captureBrowser()}><Camera size={14}/>{captureBusy?'Hämtar bild…':'Visa aktiv CDP-flik'}</button>}
-      {screenshot && <div className="aura-live-empty-cdp"><img src={screenshot.src} alt="Faktiskt observerad CDP-skärmbild"/><small>Nova-bryggans fästa flik · {time(screenshot.at)}</small></div>}
     </div> : <>
       <header className="aura-live-material-header">
         <div className="aura-live-material-name">
