@@ -83,14 +83,22 @@ export function CdpStudio() {
     try {
       const [{ payload }, history] = await Promise.all([
         invoke('nova_targets'),
-        fetch('/api/aura/workbench/mcp/calls', { cache: 'no-store', signal: AbortSignal.timeout(12000) })
+        // Reuse the canonical workbench activity feed, which includes CDP
+        // actions from the live workstream as well as their evidence status.
+        fetch('/api/aura/workbench', { cache: 'no-store', signal: AbortSignal.timeout(12000) })
           .then(readAuraResponse).catch(() => null),
       ]);
       const list = Array.isArray(payload?.tabs) ? payload.tabs : [];
       setTargets(list.slice(0, 60).filter((target: any) => typeof target?.id === 'string' && typeof target?.url === 'string')
         .map((target: any) => ({ id: target.id, title: String(target.title || '').slice(0, 300), url: target.url.slice(0, 1000), type: String(target.type || 'page') })));
       setSelectedId(current => list.some((item: any) => item?.id === current) ? current : (list[0]?.id || null));
-      if (Array.isArray(history?.calls)) setCalls(history.calls.filter((item: CallEntry) => item?.providerId === 'cdp').slice(-30).reverse());
+      if (Array.isArray(history?.activity)) setCalls(history.activity
+        .filter((item: any) => item?.type === 'mcp.tool.called' && item?.payload?.providerId === 'cdp')
+        .slice(-30).reverse().map((item: any) => ({
+          id: item.id, providerId: 'cdp', toolName: item.payload.toolName,
+          at: item.at, status: item.verified === true ? 'Registrerat anrop' : 'Resultat ej verifierat',
+          isError: item.payload.isError === true,
+        })));
       setLastProbe(new Date().toISOString());
     } catch (cause) {
       // Old observations are not erased or incorrectly reported as current.
