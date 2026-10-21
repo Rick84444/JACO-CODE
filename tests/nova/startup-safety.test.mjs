@@ -5,7 +5,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { configuration, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess, ollamaExecutable } from '../../agents/lib/local-stack.mjs';
+import { configuration, definitions, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess, ollamaExecutable } from '../../agents/lib/local-stack.mjs';
 const IDENTITY="app.get('/api/runtime/identity',()=>{});";
 function fixture(t, env = {}) {
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-start-test-'));
@@ -111,4 +111,19 @@ test('Ollama discovery uses the host binary name and preserves explicit configur
  assert.equal(ollamaExecutable({PATH:dir,JACO_OLLAMA_EXECUTABLE:path.join(dir,'missing')},'linux'),null);
  fs.unlinkSync(unix);
  assert.equal(ollamaExecutable({PATH:dir},'linux'),null);
+});
+
+test('runtime identity rejects a stale release despite matching package version', t => {
+ const initial=fixture(t);
+ const current='jaco-code-9.8.7';
+ fs.writeFileSync(path.join(initial.runtime,'CURRENT_RELEASE.json'), JSON.stringify({ version: initial.version, releaseId: current }));
+ const c=configuration(initial.root,{JACO_RUNTIME_DIR:initial.root});
+ assert.equal(c.releaseId,current);
+ const runtime=definitions(c).find(service=>service.id==='runtime');
+ const response={success:true,product:'JACO Autonomus IDE',version:c.version};
+ assert.equal(runtime.accept({...response,releaseId:current}),true);
+ assert.equal(runtime.accept({...response,releaseId:'jaco-code-older'}),false);
+ assert.equal(runtime.accept(response),false);
+ fs.writeFileSync(path.join(initial.runtime,'CURRENT_RELEASE.json'), JSON.stringify({ version: 'older', releaseId: current }));
+ assert.throws(()=>configuration(initial.root,{JACO_RUNTIME_DIR:initial.root}),/RUNTIME_RELEASE_VERSION_MISMATCH/);
 });
