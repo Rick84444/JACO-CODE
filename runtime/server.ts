@@ -2811,12 +2811,24 @@ const notifyPhone = async (action) => {
         arguments: args,
       });
       const failed = result?.isError === true;
+      // A screenshot is user-visible image data, not telemetry. Retain only
+      // a bounded proof fingerprint; never persist pixels in the live event log.
+      const receiptResult = providerId === 'cdp' && toolName === 'nova_screenshot'
+        ? (() => {
+            const image = Array.isArray(result?.content)
+              ? result.content.find((part: any) => part?.type === 'image' && part?.mimeType === 'image/png') : null;
+            const data = typeof image?.data === 'string' ? image.data : '';
+            return { screenshotDataOmitted: true, mimeType: image?.mimeType || null,
+              payloadPresent: data.length > 0,
+              payloadSha256: data ? crypto.createHash('sha256').update(data).digest('hex') : null };
+          })()
+        : result;
       seerLiveWorkstream.record({
         actor: 'Aura Tool Fabric',
         type: 'mcp.tool.called',
         message: `${providerId}.${toolName}`,
         verified: !failed,
-        receipt: { providerId, toolName, isError: failed, result },
+        receipt: { providerId, toolName, isError: failed, result: receiptResult },
       });
       res.status(failed ? 409 : 200).json({ success: !failed, providerId, toolName, result });
     } catch (error: any) {
