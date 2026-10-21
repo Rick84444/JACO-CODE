@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Camera, CheckCircle2, CircleAlert, Clock3, Code2, ExternalLink, Eye, FileCode2, GitCommit, Layers3, ScanEye, ShieldCheck } from 'lucide-react';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { auraStageHistory } from '../lib/auraStage.mjs';
@@ -40,6 +40,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
   const [captureBusy,setCaptureBusy]=useState(false);
   const [captureError,setCaptureError]=useState<string|null>(null);
   const [imageLoad,setImageLoad]=useState<'loading'|'loaded'|'failed'>('loading');
+  const lastAutoCapture=useRef<string|null>(null);
   useEffect(()=>{setEditing(false);setScreenshot(null);setCaptureError(null);setImageLoad('loading');},[candidate?.event.id]);
   const captureBrowser=async()=>{
     if(captureBusy || !cdpReady)return;
@@ -58,6 +59,19 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
     }catch(error:any){setCaptureError(String(error?.message||error));}
     finally{setCaptureBusy(false);}
   };
+  useEffect(()=>{
+    const event=candidate?.event;
+    if(!cdpReady || !event || event.id===lastAutoCapture.current)return;
+    // Old event streams may be replayed after a restart. Never display a fresh
+    // capture as though it belongs to a stale historical screenshot event.
+    const age=Date.now()-Date.parse(event.at);
+    const confirmed=event.evidence.outcome==='verified' && event.type==='NOVA_ACTION_RESULT'
+      && /läser en skärmbild|screenshot/i.test(event.text);
+    if(!confirmed || !Number.isFinite(age) || age<0 || age>30_000)return;
+    if(document.visibilityState==='hidden')return;
+    lastAutoCapture.current=event.id;
+    void captureBrowser();
+  },[candidate?.event.id,cdpReady]);
   const dirty = Boolean(htmlSource !== null && htmlDraft !== null && htmlSource !== htmlDraft);
   const event = candidate?.event || null;
   const history = auraStageHistory(events);
