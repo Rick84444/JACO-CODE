@@ -26,8 +26,12 @@ export function auraStageCandidate(events = []) {
         event.evidence.outcome === 'unknown') return { event, material: null };
     if (event.category === 'goal') return { event, material: null };
     if (['result','verification'].includes(event.category) &&
-        event.evidence.outcome === 'verified' &&
-        (event.evidence.commit || event.evidence.url)) return { event, material: null };
+        event.evidence.outcome === 'verified') {
+      // Verified test/code/deployment results deserve attention; repetitive
+      // repository reads and preflight receipts do not replace visual material.
+      const routine = /läser en fil|undersöker projektets filer|jaco_preflight|repo-read|read-file/i.test(event.text || '');
+      if (!routine || event.evidence.commit || event.evidence.url) return { event, material: null };
+    }
   }
   return null;
 }
