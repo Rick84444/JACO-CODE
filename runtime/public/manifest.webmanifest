@@ -1,7 +1,7 @@
 {
-  "name": "JACO IDE",
-  "short_name": "JACO",
-  "description": "JACO Autonomus IDE: missions, Aura, files and devices on your phone.",
+  "name": "JACO CODE — Aura",
+  "short_name": "Aura",
+  "description": "Aura är gränssnittet för JACO CODE: chat, projekt, agenter och verktyg.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -10,7 +10,6 @@
   "theme_color": "#050b11",
   "lang": "sv",
   "icons": [
-    { "src": "/branding/jaco-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/branding/jaco-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+    { "src": "/branding/jaco-orb.webp", "sizes": "any", "type": "image/webp", "purpose": "any" }
   ]
 }
