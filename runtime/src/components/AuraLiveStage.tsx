@@ -44,9 +44,18 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
   const [captureError,setCaptureError]=useState<string|null>(null);
   const [imageLoad,setImageLoad]=useState<'loading'|'loaded'|'failed'>('loading');
   const lastAutoCapture=useRef<string|null>(null);
-  useEffect(()=>{setEditing(false);setScreenshot(null);setCaptureError(null);setImageLoad('loading');},[candidate?.event.id]);
+  const captureEpoch=useRef(0);
+  useEffect(()=>{
+    // A screenshot belongs to the material visible when capture was requested.
+    // Invalidate pending network responses whenever Aura presents another item.
+    captureEpoch.current += 1;
+    setCaptureBusy(false);
+    setEditing(false);setScreenshot(null);setCaptureError(null);setImageLoad('loading');
+    return ()=>{captureEpoch.current += 1;};
+  },[candidate?.event.id]);
   const captureBrowser=async()=>{
     if(captureBusy || !cdpReady)return;
+    const epoch=++captureEpoch.current;
     setCaptureBusy(true);setCaptureError(null);
     try{
       const reply=await fetch('/api/aura/workbench/mcp/call',{
@@ -58,9 +67,12 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
       const png=Array.isArray(reply?.result?.content) ? reply.result.content.find((item:any)=>item?.type==='image' && item?.mimeType==='image/png')?.data : null;
       if(typeof png!=='string'||png.length<1||png.length>8_000_000||!/^[A-Za-z0-9+/=]+$/.test(png))
         throw Error('CDP_PNG_MISSING_OR_INVALID');
-      setScreenshot({src:'data:image/png;base64,'+png,at:new Date().toISOString()});
-    }catch(error:any){setCaptureError(String(error?.message||error));}
-    finally{setCaptureBusy(false);}
+      if(epoch===captureEpoch.current)
+        setScreenshot({src:'data:image/png;base64,'+png,at:new Date().toISOString()});
+    }catch(error:any){
+      if(epoch===captureEpoch.current)setCaptureError(String(error?.message||error));
+    }
+    finally{if(epoch===captureEpoch.current)setCaptureBusy(false);}
   };
   useEffect(()=>{
     const event=candidate?.event;
