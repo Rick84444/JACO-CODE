@@ -29,7 +29,7 @@ npm run setup
 npm run jaco:start
 ```
 
-Setup installs locked dependencies in the root, runtime and MCP gateway, and creates a local gateway token in `.env` if none is configured. Existing configuration is preserved. Install and start Ollama with a downloaded model before starting JACO, or configure another supported provider in `.env`. Setup does not download models or call paid providers.
+Setup installs dependencies in the root, runtime and MCP gateway (using lockfiles when present), **builds the canonical production client and server**, and creates a local gateway token in `.env` if none is configured. A failed build stops setup instead of reporting a successful installation. Existing configuration is preserved. Install and start Ollama with a downloaded model before starting JACO, or configure another supported provider in `.env`. Setup does not download models or call paid providers.
 
 Then inspect observed activation state:
 
