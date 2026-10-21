@@ -455,7 +455,7 @@
 
 /* Observability is always visible, but never conflates a responsive SSE socket
    with an actually progressing mission. No decorative simulated telemetry. */
-.aura-presence{flex-shrink:0;background:linear-gradient(108deg,#0d2634 0%,#0b1a26 62%,#0a1520 100%);border-bottom:1px solid #2c4658;padding:13px 20px 12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.aura-presence{position:sticky;top:0;z-index:5;flex-shrink:0;background:linear-gradient(108deg,#0d2634 0%,#0b1a26 62%,#0a1520 100%);border-bottom:1px solid #2c4658;padding:13px 20px 12px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .aura-presence-top{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
 .aura-presence-heading{display:flex;align-items:center;gap:12px;min-width:0}
 .aura-presence-light{width:10px;height:10px;border-radius:50%;background:#7d8b98;border:2px solid #acbbc25c;flex-shrink:0}
