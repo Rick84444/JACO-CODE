@@ -5,7 +5,7 @@ import { inspectWorkspaceImage } from '../../runtime/src/server/connected/worksp
 
 const png=Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]);
 const jpg=Buffer.from([255,216,255,225,0,0]);
-const webp=Buffer.from('RIFFabcdefghWEBP','ascii');
+const webp=Buffer.from('RIFFxxxxWEBP','ascii');
 
 test('legitimate image magic signatures are accepted only for matching extensions',()=>{
   assert.equal(inspectWorkspaceImage(png,'captures/screen.png'),'image/png');
