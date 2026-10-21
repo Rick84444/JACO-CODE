@@ -2811,12 +2811,24 @@ const notifyPhone = async (action) => {
         arguments: args,
       });
       const failed = result?.isError === true;
+      // PNG bytes are sensitive user content, not telemetry. Keep only a
+      // digest and bounded metadata in durable tool receipts.
+      const receiptResult = providerId === 'cdp' && toolName === 'nova_screenshot'
+        ? (() => {
+            const png = Array.isArray(result?.content)
+              ? result.content.find((item: any) => item?.type === 'image' && item?.mimeType === 'image/png') : null;
+            const data = typeof png?.data === 'string' ? png.data : '';
+            return { screenshotDataOmitted: true, mimeType: png?.mimeType || null,
+              payloadPresent: data.length > 0,
+              payloadSha256: data ? crypto.createHash('sha256').update(data).digest('hex') : null };
+          })()
+        : result;
       seerLiveWorkstream.record({
         actor: 'Aura Tool Fabric',
         type: 'mcp.tool.called',
         message: `${providerId}.${toolName}`,
         verified: !failed,
-        receipt: { providerId, toolName, isError: failed, result },
+        receipt: { providerId, toolName, isError: failed, result: receiptResult },
       });
       res.status(failed ? 409 : 200).json({ success: !failed, providerId, toolName, result });
     } catch (error: any) {
