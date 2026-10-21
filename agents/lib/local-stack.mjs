@@ -27,6 +27,14 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   const runtime = runtimeDirectory(root, env.JACO_RUNTIME_DIR);
   const manifest = JSON.parse(fs.readFileSync(path.join(runtime, 'package.json'), 'utf8'));
   if (typeof manifest.version !== 'string' || !manifest.version.trim()) throw new Error('RUNTIME_VERSION_MISSING');
+  const releasePath = path.join(runtime, 'CURRENT_RELEASE.json');
+  let releaseId = null;
+  if (fs.existsSync(releasePath)) {
+    const release = JSON.parse(fs.readFileSync(releasePath, 'utf8'));
+    if (release.version !== manifest.version) throw new Error('RUNTIME_RELEASE_VERSION_MISMATCH');
+    if (typeof release.releaseId !== 'string' || !release.releaseId.trim()) throw new Error('RUNTIME_RELEASE_ID_MISSING');
+    releaseId = release.releaseId;
+  }
   const port = (key, fallback) => {
     const n = Number(env[key] || fallback);
     if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error(`INVALID_PORT:${key}`);
@@ -53,7 +61,7 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   const built = fs.existsSync(path.join(runtime, 'dist/server.cjs')) && fs.existsSync(path.join(runtime, 'dist/index.html'));
   if (mode === 'production' && !built) throw new Error('PRODUCTION_BUILD_REQUIRED');
   const production = mode === 'production' || (mode === 'auto' && built);
-  return { root, runtime, version: manifest.version, env, ports, production, cdp: env.JACO_ENABLE_CDP === '1', tunnel: env.JACO_START_TUNNEL === '1' };
+  return { root, runtime, version: manifest.version, releaseId, env, ports, production, cdp: env.JACO_ENABLE_CDP === '1', tunnel: env.JACO_START_TUNNEL === '1' };
 }
 export function serviceEnvironment(config, kind) {
   const env = { ...config.env };
@@ -77,7 +85,7 @@ export function definitions(c) {
   const url = (id, p = '/health') => `http://127.0.0.1:${c.ports[id]}${p}`;
   const items = [
     svc('workplace', c.root, ['--experimental-sqlite', 'gateway/src/workplace/workplace-server.mjs'], url('workplace'), d => d.schema === 'jaco.workplace/v1' && d.status === 'READY'),
-    svc('runtime', c.runtime, c.production ? ['dist/server.cjs'] : ['--import', 'tsx', 'server.ts'], url('runtime', '/api/runtime/identity'), d => d.success === true && d.product === 'JACO Autonomus IDE' && d.version === c.version),
+    svc('runtime', c.runtime, c.production ? ['dist/server.cjs'] : ['--import', 'tsx', 'server.ts'], url('runtime', '/api/runtime/identity'), d => d.success === true && d.product === 'JACO Autonomus IDE' && d.version === c.version && (!c.releaseId || d.releaseId === c.releaseId)),
     svc('seer', c.root, [], url('seer'), d => d.ok === true && d.service === 'seer'),
     svc('remote', c.root, ['agents/remote-bridge.mjs'], url('remote'), d => d.ok === true && d.service === 'jaco-remote-bridge'),
     svc('a2a', c.runtime, ['gateway/src/a2a-server.mjs'], url('a2a'), d => d.success === true && d.product === 'JACO Continuum A2A Adapter'),
