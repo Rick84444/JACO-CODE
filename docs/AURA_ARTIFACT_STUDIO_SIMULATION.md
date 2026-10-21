@@ -3,6 +3,49 @@
 Datum: 2026-10-21. Status: **DESIGN + ISOLERAD PROTOTYPSIMULERING, EJ IMPLEMENTERAT I JACO**.
 Ärende: #6. Detta dokument ger underagenters **arbetskontrakt**. Det påstår inte att fristående AI-agenter arbetar i bakgrunden.
 
+
+## KORRIGERAD HUVUDDESIGN — 2026-10-21, förankrad i faktisk JACO-skärmbild
+
+**Det tidigare flik-/kortbaserade Scratchpad-konceptet är avvisat av operatören.** Prototypens fungerande säkerhetsidé (immutable source + sandboxed workcopy) behålls, men dess interaktions- och layoutmodell får INTE implementeras.
+
+### Screenshot-grounded baseline
+
+Skärmbilden på operatörens dator visar en stor JACO/Aura-chatt till vänster och en smalare högeryta märkt "Bakgrundsarbete". Där rullar många nära identiska händelser med statusmarkeringar, inklusive upprepade läsningar av samma fil och formuleringar om publicering. Användaren behöver själv tolka loggen. Bilden är visuell observation, inte påstående om att själva uppdragsmotorn inte fungerar. Den inskickade bildens frontend-build/commit är inte verifierad, så koppla inte blint skärmbilden till en viss React-komponent utan runtime-kontroll.
+
+### Ny invariant: En enda Aura Stage, inga användarstyrda verktygsflikar
+
+- **Vänster:** alltid Aura-konversation med kompakt mål-/beslutsyta. Förblir monterad; ingen separat "chat 2".
+- **Höger:** **en sammanhängande, maximal arbetsyta**, kallad `Aura Stage` internt. Ingen synlig flikrad för "CDP / Scratchpad / Agent / Terminal / Preview / Evidence". Dessa är presentationsformer i SAMMA canvas, som Aura väljer kontextuellt.
+- **Material först:** om Aura fångar bild, DOM/HTML eller fil, visas det som ett **stort faktiskt material** med källindikator, inte en liten bifogad fil i ett sidofält eller ett antal kort.
+- **Skapande:** när en HTML-kopia genereras sker redigering i samma stage, med direkt visuell respons. Bara användaren kan ge tillstånd att skriva till ett ägt projekt eller publicera något; extern källa förblir immutable.
+- **Bakgrundskörning:** komprimera repetitionshändelser till en progress-sammanfattning, t.ex. "12 läsningar – 1 fil – senaste verifierade steg". Om inget nytt resultat finns, förbli ärlig: "Arbetar – inget nytt verifierat resultat". Visa rålogg via en diskret inspektera-/historikåtgärd på begäran, **inte en permanent loggvägg**.
+- **CDP:** browser capture och skärmbild visas i stage. En liten overlay när användaren inspekterar DOM, klickar ett faktiskt observerat element eller öppnar konsollogg; inte ett extra tekniskt kontrollrum med sidofält.
+- **Agenter:** visa aktuell uppgiftsfördelning som en läsbar, kontextuell visuell overlay med verifierade agenter/missioner när det finns reella handoffs. Aldrig en permanent dekorativ nätverksgraf.
+- **Telefoni:** stage visar en tydlig samtalskontroll med korrekt providerstatus och explicit nummer-/kostnadsbeslut när Aura håller ett utgående samtal. Ingen uppringning utifrån enbart generativt textförslag.
+- **Operatörens kontroll:** endast diskreta `fäst material`, `visa historik`, `återgå till senaste`, `jämför original`, `föreslå ändring` som kontextuella affordances; inga navigationsflikar eller konfigurationspaneler i arbetsytan.
+- **Manuell pin:** om användaren fäster ett material får automatiska event INTE byta ut det. Nya fynd indikeras subtilt i chatten och kan öppnas när användaren väljer.
+- **Responsive:** stationär tvådelad layout (chatt ~45%, stage ~55%) med flexibla proportioner och möjlighet att dra gränsen. På telefonen visar man chatt eller stage med ett enda diskret fokusskifte, utan att skapa två olika funktioner.
+
+### Visuell och arkitektonisk acceptance gate
+
+1. En ny fångad skärmbild syns som **stor riktig skärmbild** i befintlig högeryta; ingen tab-switch för användaren.
+2. En HTML-fångst blir en källtrogen readonly-preview, medan en separat **kopia** kan modifieras med liveförhandsvisning; inga script/nätverksanrop från opålitlig HTML.
+3. När en agent testar en ändring byter stage till det mest relevanta faktiska resultatet — inte 200 duplicerade terminalrader.
+4. Vid 30 identiska progresshändelser ser användaren **högst en sammanslagen rad plus räknare**, inte 30 poster, och färdigräknare baseras endast på verifierade kvitton.
+5. Efter navigering/omstart finns aktiva pins, käll-id och redan sparade utkast kvar. Chattkontext bevaras.
+6. Om Aura saknar ett faktiskt resultat visas `INGET MATERIAL ÄNNU` eller senaste kända källa med tidsstämpel; aldrig fejkad skärmbild, simulerad progress eller "slutfört" utan belägg.
+7. Screenshot-vald sida motsvarar faktisk pin target och screenshot, annars visas mismatch tydligt.
+8. Den redan befintliga `CognitiveWorkspace`, `JacoAuraComputeIDE`, Evidence, MCP och missionsmotor återanvänds. Framtagna `CdpStudio`-dataadaptrar kan eventuellt återanvändas, men PR #7:s synliga flikar/sidofält är INTE slutlig design.
+
+### Operatörens exempel
+
+*Operatör:* "Aura, hämta sidan och gör den modernare."  
+*Aura (vänster):* "Jag hämtade sidan och skapade en redigerbar arbetskopia."  
+*Högerytan:* helhetsförhandsvisning av faktiska sidan. När nytt HTML/CSS-utkast genereras transformeras samma innehåll visuellt till arbetskopians aktuella version. Diskret möjlighet `Visa original` och `Granska ändringar`. Råa CDP- och filåtgärder går att inspektera vid behov, men tar inte över huvudytan.
+
+**Mät kvalitet med ett användartest:** efter 5 sekunders tittande ska operatören förstå *vad Aura visar*, *var materialet kommer från*, *om det går att ändra*, och *vad som händer närmast*. Om personen måste leta i flikar eller läsa rå JSON är designen underkänd.
+
+
 ## Vision
 
 Auras högra yta ska vara ett **levande arbetsbord** där användaren kan få se, redigera och vidareutveckla vad Aura faktiskt har hittat. En hämtad HTML-sida blir en oföränderlig källa och en separat redigerbar kopia; en skärmbild blir en bild med ankare/annotationer, aldrig en fabricerad DOM; ett dokument blir källmaterial med proveniens; agentkörningar blir tidsstämplade observerade händelser och kvitton. Samma arbetsyta återanvänds även för CDP, git-diff, tester och telefonikontroller.
