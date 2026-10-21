@@ -37,10 +37,6 @@
 .cognitive-status>span { width:6px; height:6px; background:#697d8c; border-radius:50%; flex-shrink:0; }
 .cognitive-status[data-tone=active]>span { background:#71d2e2; box-shadow:0 0 9px #65d8eb35; }
 .cognitive-status[data-tone=waiting]>span { background:#d0a56f; }
-.cognitive-view-tabs { display:flex; align-items:center; padding:3px; gap:3px; border:1px solid #ffffff09; background:#0b1219; border-radius:9px; flex-shrink:0; }
-.cognitive-view-tabs button { display:flex; align-items:center; gap:7px; padding:6px 10px; color:#798997; border-radius:6px; font-size:11px; min-height:28px; }
-.cognitive-view-tabs button:hover { color:#d0dce5; }
-.cognitive-view-tabs button[aria-pressed=true] { color:#d3e6ee; background:#1a2834; }
 .cognitive-main { flex:1; min-height:0; min-width:0; display:flex; }
 .cognitive-conversation { min-width:0; min-height:0; flex:1; display:flex; flex-direction:column; }
 .cognitive-main[data-canvas=true]>.cognitive-conversation { width:40%; flex:0 0 40%; max-width:580px; }
@@ -201,9 +197,6 @@
   .cognitive-contextbar { gap:8px; padding:8px 10px; min-height:50px; }
   .cognitive-status { font-size:12px; max-width:none; gap:6px; line-height:1.4; }
   .cognitive-status>span { width:5px; height:5px; }
-  .cognitive-view-tabs { gap:1px; padding:2px; }
-  .cognitive-view-tabs button { padding:8px; min-height:44px; }
-  .cognitive-view-tabs button span { display:inline; }
   .cognitive-chat-heading { padding:12px 15px; min-height:44px; }
   .cognitive-chat-heading>button { max-width:180px; }
   .cognitive-chat-heading>button>span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
@@ -260,22 +253,14 @@
 .cognitive-decision-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
 .cognitive-decision-actions button { min-height:44px; padding:8px 13px; border:1px solid #736044; border-radius:7px; color:#f0e4ca; font-size:13px; }
 .cognitive-decision-actions button:hover { background:#ffffff0b; }
-.cognitive-more-views { position:relative; }
-.cognitive-more-views>summary { list-style:none; display:flex; align-items:center; gap:6px; min-height:44px; padding:8px 10px; font-size:12px; cursor:pointer; }
-.cognitive-more-views>summary::-webkit-details-marker { display:none; }
-.cognitive-more-views>div { position:absolute; z-index:60; top:100%; right:0; min-width:185px; padding:6px; border:1px solid #344958; border-radius:9px; background:#111d27; box-shadow:0 10px 30px #0008; }
-.cognitive-more-views>div>button { display:flex; align-items:center; gap:10px; width:100%; min-height:44px; text-align:left; padding:8px 12px; font-size:13px; }
 .cognitive-response-wait { flex-wrap:wrap; }
 .cognitive-response-wait>span { display:flex; align-items:center; gap:9px; }
 .cognitive-response-wait>button { min-height:44px; padding:8px 12px; border:1px solid #3d5668; border-radius:7px; color:#c8e0ec; }
 .cognitive-composer-help { margin:8px 2px 0; color:#a0b4c3; font-size:12px; line-height:1.5; }
 .cognitive-live-mission-heading>button { min-height:44px; }
-.cognitive-view-tabs button { min-height:44px; }
 @media (max-width:767px) {
   .cognitive-contextbar { flex-wrap:wrap; }
   .cognitive-status { width:100%; }
-  .cognitive-view-tabs { width:100%; justify-content:space-between; }
-  .cognitive-view-tabs button { font-size:12px; gap:4px; }
   .cognitive-run-controls { padding:0 12px 10px; max-height:30%; }
   .cognitive-setup { padding:10px 12px; }
   .cognitive-setup-actions { gap:0 12px; }
