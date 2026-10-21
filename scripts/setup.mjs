@@ -19,23 +19,38 @@ export function ensureGatewayToken(root, env = process.env) {
   fs.chmodSync(file, 0o600);
 }
 
-export function setup(root, env = process.env) {
+// The injected spawn/logger are for isolated setup-contract tests only.
+export function setup(root, env = process.env, { spawn = spawnSync, logger = console } = {}) {
   if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('Node.js 24 or newer is required');
+
+  const runNpm = (cwd, args, label) => {
+    const npmScript = env.npm_execpath;
+    const executable = npmScript ? process.execPath : process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    const commandArgs = npmScript ? [npmScript, ...args] : args;
+    const result = spawn(executable, commandArgs, { cwd, env, stdio: 'inherit' });
+    if (result.error) throw new Error(`${label}: ${result.error.message}`, { cause: result.error });
+    if (result.status !== 0) throw new Error(`${label} (exit ${result.status ?? 'unknown'})`);
+  };
+
   for (const dir of ['', 'runtime', 'runtime/gateway']) {
     const cwd = path.join(root, dir);
-    // npm omits the root package-lock.json from published packages. Nested runtime locks ship.
+    if (!fs.existsSync(path.join(cwd, 'package.json'))) throw new Error(`SETUP_MANIFEST_MISSING:${dir || 'root'}`);
+    // npm omits the root lockfile from some published packages. Nested runtime locks ship.
     const command = fs.existsSync(path.join(cwd, 'package-lock.json')) ? 'ci' : 'install';
-    console.log(`Installing dependencies (${command}): ${dir || 'root'}`);
+    logger.log(`Installing dependencies (${command}): ${dir || 'root'}`);
     // Lifecycle downloads (Electron/Chromium) are optional; install browsers explicitly when needed.
-    const args = [command, '--ignore-scripts', '--no-audit', '--no-fund'];
-    const result = process.env.npm_execpath
-      ? spawnSync(process.execPath, [process.env.npm_execpath, ...args], { cwd, env, stdio: 'inherit' })
-      : spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', args, { cwd, env, stdio: 'inherit' });
-    if (result.error) throw result.error;
-    if (result.status !== 0) throw new Error(`Dependency installation failed: ${dir || 'root'}`);
+    runNpm(cwd, [command, '--ignore-scripts', '--no-audit', '--no-fund'], `Dependency installation failed: ${dir || 'root'}`);
   }
+
+  // The canonical startup auto-selects dist/ if it exists. Build both artifacts
+  // so clean installations start the same verified product in production mode.
+  const runtime = path.join(root, 'runtime');
+  logger.log('Building production client and server: runtime');
+  runNpm(runtime, ['run', 'build:client'], 'Production client build failed');
+  runNpm(runtime, ['run', 'build:server'], 'Production server build failed');
+
   ensureGatewayToken(root, env);
-  console.log('Setup complete. Configure a model provider, then run npm run jaco:start.');
+  logger.log('Setup complete. Configure a model provider, then run npm run jaco:start.');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
