@@ -68,6 +68,8 @@ export function createGitControlReceiptPublisher({
       const env = {
         ...process.env,
         GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never',
+        // Existing SSH agent credentials work; absent credentials fail quickly, not via prompts.
+        GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND || 'ssh -oBatchMode=yes -oConnectTimeout=5',
         GIT_AUTHOR_NAME: 'JACO Git Bridge',
         GIT_AUTHOR_EMAIL: 'jaco-git-bridge@users.noreply.github.com',
         GIT_COMMITTER_NAME: 'JACO Git Bridge',
@@ -110,7 +112,8 @@ export function createGitControlReceiptPublisher({
         log('warn', code + '; mission execution continues and status remains local');
         return { sent: false, error: code };
       } finally {
-        fs.rmSync(temporary, { recursive: true, force: true });
+        try { fs.rmSync(temporary, { recursive: true, force: true }); }
+        catch { log('warn', 'GIT_CONTROL_TEMP_CLEANUP_FAILED'); }
       }
     },
   };
