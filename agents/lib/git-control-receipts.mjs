@@ -27,8 +27,9 @@ export function gitControlReceiptSnapshot(control) {
     authoritative: false,
     entries: records.map(entry => ({
       commandId: bounded(entry.commandId),
-      operation: entry.op === 'mission.resolve' ? 'mission.resolve' : 'mission.create',
+      operation: entry.op === 'invalid' ? 'rejected' : entry.op === 'mission.resolve' ? 'mission.resolve' : 'mission.create',
       missionId: bounded(entry.missionId || '', 200) || null,
+      errorCode: /^[A-Z][A-Z0-9_]{3,79}$/.test(String(entry.error || '')) ? String(entry.error) : null,
       status: bounded(entry.status || 'UNKNOWN', 40),
       phase: bounded(entry.phase || '', 80) || null,
       turn: digits(entry.turn),
