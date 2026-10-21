@@ -443,3 +443,13 @@
   .aura-live-history{padding:12px}
 }
 @media(prefers-reduced-motion:reduce){.aura-live-stage *, .cognitive-mobile-focus{transition:none!important;animation:none!important}}
+
+/* On-demand HTML editor: same canvas, preview remains visible above. */
+.aura-live-inline-editor{height:clamp(180px,32vh,380px);display:flex;flex-direction:column;border-top:1px solid #2a4759;background:#0a161e;flex-shrink:0}
+.aura-live-inline-editor-title{display:flex;align-items:center;gap:8px;padding:8px 13px;color:#9ecfdb;font-size:11px}
+.aura-live-inline-editor-title span{margin-left:auto;color:#94aabc;font-size:10px}
+.aura-live-inline-editor textarea{flex:1;min-height:0;resize:vertical;width:100%;background:#0a1118;color:#d9e6ef;border:0;border-top:1px solid #203644;padding:12px 15px;outline-offset:-2px;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2}
+.aura-live-inline-editor-actions{display:flex;gap:8px;justify-content:flex-end;padding:8px 12px}
+.aura-live-inline-editor-actions button{border:1px solid #35566a;border-radius:6px;padding:6px 10px;color:#bcdeea;font-size:11px}
+.aura-live-inline-editor-actions button:first-child{background:#143c4a}
+.aura-live-inline-editor p{font-size:10px;color:#d6b995;padding:0 12px 8px}
