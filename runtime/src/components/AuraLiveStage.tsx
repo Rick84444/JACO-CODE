@@ -3,6 +3,7 @@ import { ArrowUpRight, Camera, CheckCircle2, CircleAlert, Clock3, Code2, Externa
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { auraStageHistory } from '../lib/auraStage.mjs';
 import { cognitiveLink } from '../lib/cognitiveEvents.mjs';
+import { readAuraResponse } from '../lib/auraApi.mjs';
 
 type Candidate = { event: CognitiveEvent; material: string | null } | null;
 type Props = {
@@ -19,6 +20,7 @@ type Props = {
   onSaveDraft: () => void;
   saveBusy: boolean;
   saveNotice: string | null;
+  cdpReady: boolean;
 };
 
 const time = (value: string) => {
@@ -30,9 +32,29 @@ const outcome = (event: CognitiveEvent) => ({
   failed: 'Misslyckades', unknown: 'Okänt utfall',
 }[event.evidence.outcome] || 'Observation');
 
-export function AuraLiveStage({ candidate, events, preview, previewReady, active, onInspect, onOpenFile, htmlSource, htmlDraft, onDraftChange, onSaveDraft, saveBusy, saveNotice }: Props) {
+export function AuraLiveStage({ candidate, events, preview, previewReady, active, onInspect, onOpenFile, htmlSource, htmlDraft, onDraftChange, onSaveDraft, saveBusy, saveNotice, cdpReady }: Props) {
   const [editing,setEditing]=useState(false);
-  useEffect(()=>{setEditing(false);},[candidate?.event.id]);
+  const [screenshot,setScreenshot]=useState<{src:string;at:string}|null>(null);
+  const [captureBusy,setCaptureBusy]=useState(false);
+  const [captureError,setCaptureError]=useState<string|null>(null);
+  useEffect(()=>{setEditing(false);setScreenshot(null);setCaptureError(null);},[candidate?.event.id]);
+  const captureBrowser=async()=>{
+    if(captureBusy || !cdpReady)return;
+    setCaptureBusy(true);setCaptureError(null);
+    try{
+      const reply=await fetch('/api/aura/workbench/mcp/call',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({providerId:'cdp',toolName:'nova_screenshot',arguments:{}}),
+        signal:AbortSignal.timeout(25000),cache:'no-store'
+      }).then(readAuraResponse);
+      if(reply?.result?.isError===true)throw Error('CDP_SCREENSHOT_TOOL_FAILED');
+      const png=Array.isArray(reply?.result?.content) ? reply.result.content.find((item:any)=>item?.type==='image' && item?.mimeType==='image/png')?.data : null;
+      if(typeof png!=='string'||png.length<1||png.length>8_000_000||!/^[A-Za-z0-9+/=]+$/.test(png))
+        throw Error('CDP_PNG_MISSING_OR_INVALID');
+      setScreenshot({src:'data:image/png;base64,'+png,at:new Date().toISOString()});
+    }catch(error:any){setCaptureError(String(error?.message||error));}
+    finally{setCaptureBusy(false);}
+  };
   const dirty = Boolean(htmlSource !== null && htmlDraft !== null && htmlSource !== htmlDraft);
   const event = candidate?.event || null;
   const history = auraStageHistory(events);
@@ -44,6 +66,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
       <h2>Auras arbetsyta</h2>
       <p>{active ? 'Aura arbetar. Inget nytt verifierbart material att visa ännu.' : 'När Aura hittar eller skapar något relevant visas det här automatiskt.'}</p>
       <span>Verkliga fynd, kod, bilder och resultat – inte råa händelseloggar.</span>
+      {cdpReady && <button type="button" className="aura-live-capture-button" disabled={captureBusy} onClick={()=>void captureBrowser()}><Camera size={14}/>{captureBusy?'Hämtar bild…':'Visa aktiv CDP-flik'}</button>}
     </div> : <>
       <header className="aura-live-material-header">
         <div className="aura-live-material-name">
@@ -56,7 +79,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
           {outcome(event)}
         </span>
       </header>
-      {material === 'html' && <div className="aura-live-visual" aria-label="Förhandsvisning av projektfil och arbetskopia">
+      {!screenshot && material === 'html' && <div className="aura-live-visual" aria-label="Förhandsvisning av projektfil och arbetskopia">
         {previewReady ? preview : <div className="aura-live-awaiting"><FileCode2 size={28}/><p>Öppnar den verifierade projektfilen…</p><small>En filhändelse är inte en färdig förhandsvisning förrän innehållet kan läsas.</small></div>}
         {editing && previewReady && <div className="aura-live-inline-editor" aria-label="Redigerbar HTML-arbetskopia">
           <div className="aura-live-inline-editor-title"><Code2 size={13}/> Lokal HTML-arbetskopia <span>{dirty?'Osparade ändringar':'Oförändrad'}</span></div>
@@ -65,12 +88,18 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
           {saveNotice && <p role="status">{saveNotice}</p>}
         </div>}
       </div>}
-      {material === 'image-reference' && <div className="aura-live-awaiting aura-live-visual">
+      {!screenshot && material === 'image-reference' && <div className="aura-live-awaiting aura-live-visual">
         <Camera size={38}/><h3>{event.evidence.path?.split('/').at(-1)}</h3>
         <p>Bildfilen har rapporterats i projektet.</p>
         <small>En verifierad bildhämtning med rätt mål och media-API krävs innan vi kan visa pixlarna här.</small>
       </div>}
-      {!material && <div className="aura-live-event-focus" data-outcome={event.evidence.outcome}>
+      {screenshot && <div className="aura-live-visual aura-live-cdp-frame" aria-label="Faktisk bild från CDP:s fästa webbläsarflik">
+        <div className="aura-live-cdp-frame-bar"><Camera size={13}/> Aktuell bild från Nova-bryggans fästa flik · {time(screenshot.at)}
+          <button type="button" onClick={()=>setScreenshot(null)}>Återgå till materialet</button></div>
+        <img src={screenshot.src} alt="Observerad PNG-skärmbild från den anslutna CDP-bryggan"/>
+        <small>Fliken kommer från bryggans aktiva mål, inte från en valbar lista. Inga webbläsaråtgärder utfördes.</small>
+      </div>}
+      {!screenshot && !material && <div className="aura-live-event-focus" data-outcome={event.evidence.outcome}>
         <div className="aura-live-event-accent">{event.evidence.outcome === 'verified' ? <ShieldCheck size={30} strokeWidth={1.3}/> : <Eye size={30} strokeWidth={1.3}/>}</div>
         <div><strong>{event.title}</strong><p>{event.text}</p>
           {event.evidence.error && <div className="aura-live-event-error">{event.evidence.error}</div>}
@@ -78,6 +107,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
         </div>
       </div>}
       <div className="aura-live-context-actions">
+        {cdpReady && <button type="button" disabled={captureBusy} onClick={()=>void captureBrowser()}><Camera size={14}/>{captureBusy?'Hämtar…':'Visa CDP-bild'}</button>}
         {material === 'html' && previewReady && <button type="button" onClick={()=>setEditing(value=>!value)}><Code2 size={14}/>{editing?'Dölj källkod':'Redigera arbetskopia'}</button>}
         {material === 'html' && event.evidence.path && <button type="button" onClick={() => onOpenFile(event.evidence.path!)}><FileCode2 size={14}/> Öppna i kodeditorn</button>}
         {url && <a href={url} rel="noopener noreferrer" target="_blank"><ExternalLink size={14}/> Öppna observerad länk <ArrowUpRight size={12}/></a>}
@@ -85,6 +115,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
         <span><Clock3 size={12}/> {time(event.at)}</span>
       </div>
     </>}
+    {captureError && <p role="alert" className="aura-live-capture-error">CDP-bilden kunde inte hämtas: {captureError}</p>}
     {history.length > 0 && <details className="aura-live-history">
       <summary>Visa körhistorik <span>{history.length} händelsetyper</span></summary>
       <div className="aura-live-history-items">
