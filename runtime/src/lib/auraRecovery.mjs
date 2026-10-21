@@ -3,7 +3,7 @@
 const keyFor = root => `jaco:workspace-drafts:v1:${root}`;
 const validRoot = root => typeof root === 'string' && root.length > 0 && root.length <= 2000;
 const validRelativePath = path => typeof path === 'string' && path.length > 0 && path.length <= 400 &&
-  !/^(?:[a-z]:|[\\/])/i.test(path) && !/(^|[\\/])\.\.?([\\/]|$)/.test(path) && !/[\\x00-\\x1f]/.test(path);
+  !/^(?:[a-z]:|[\\/])/i.test(path) && !/(^|[\\/])\.\.?([\\/]|$)/.test(path) && !/[\x00-\x1f]/.test(path);
 const MAX_ARCHIVE = 3_000_000;
 const MAX_FILES = 24;
 
