@@ -39,7 +39,8 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
   const [screenshot,setScreenshot]=useState<{src:string;at:string}|null>(null);
   const [captureBusy,setCaptureBusy]=useState(false);
   const [captureError,setCaptureError]=useState<string|null>(null);
-  useEffect(()=>{setEditing(false);setScreenshot(null);setCaptureError(null);},[candidate?.event.id]);
+  const [imageLoad,setImageLoad]=useState<'loading'|'loaded'|'failed'>('loading');
+  useEffect(()=>{setEditing(false);setScreenshot(null);setCaptureError(null);setImageLoad('loading');},[candidate?.event.id]);
   const captureBrowser=async()=>{
     if(captureBusy || !cdpReady)return;
     setCaptureBusy(true);setCaptureError(null);
@@ -101,10 +102,16 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
           {saveNotice && <p role="status">{saveNotice}</p>}
         </div>}
       </div>}
-      {!screenshot && material === 'image-reference' && <div className="aura-live-awaiting aura-live-visual">
-        <Camera size={38}/><h3>{event.evidence.path?.split('/').at(-1)}</h3>
-        <p>Bildfilen har rapporterats i projektet.</p>
-        <small>En verifierad bildhämtning med rätt mål och media-API krävs innan vi kan visa pixlarna här.</small>
+      {!screenshot && material === 'image-reference' && <div className="aura-live-visual aura-live-image-frame" aria-label="Faktisk bild från projektets arbetsyta">
+        {event.evidence.path && <img
+          key={event.id}
+          src={'/api/aura/workbench/image?path='+encodeURIComponent(event.evidence.path)}
+          alt={'Bild från projektfilen '+event.evidence.path}
+          onLoad={()=>setImageLoad('loaded')} onError={()=>setImageLoad('failed')}
+          hidden={imageLoad!=='loaded'}/>}
+        {imageLoad==='loading' && <div className="aura-live-awaiting"><Camera size={30}/><p>Läser bildfilen från projektet…</p></div>}
+        {imageLoad==='failed' && <div className="aura-live-awaiting"><CircleAlert size={26}/><h3>Bild kunde inte läsas</h3><p>Den rapporterade filen saknas eller är inte giltig PNG, JPEG eller WebP.</p></div>}
+        {imageLoad==='loaded' && <small>Aktuell bild från projektfilen. Originalbildens bytehash från agenthändelsen är inte verifierad.</small>}
       </div>}
       {screenshot && <div className="aura-live-visual aura-live-cdp-frame" aria-label="Faktisk bild från CDP:s fästa webbläsarflik">
         <div className="aura-live-cdp-frame-bar"><Camera size={13}/> Aktuell bild från Nova-bryggans fästa flik · {time(screenshot.at)}
