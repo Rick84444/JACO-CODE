@@ -789,13 +789,14 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const cognitiveEvents = cognitiveLive.events;
   const candidate = useMemo(()=>auraStageCandidate(cognitiveEvents),[cognitiveEvents]);
   useEffect(()=>{
-    if(workspacePinned || !candidate || candidate.event.id===lastPresentedEvent.current) return;
+    if(workspacePinned || !candidate) return;
+    if(candidate.event.id===focusedEvent?.id && (candidate.material!=='html' || candidate.event.evidence.path===selectedFile)) return;
     lastPresentedEvent.current=candidate.event.id;
     setFocusedEvent(candidate.event);
     if(candidate.material==='html' && stageFileAllowed(candidate.event.evidence.path)) {
       setSelectedFile(candidate.event.evidence.path);
     }
-  },[candidate?.event.id,workspacePinned,projectKey]);
+  },[candidate?.event.id,workspacePinned,projectKey,selectedFile]);
   const selectedStage = focusedEvent ? {event:focusedEvent,material:auraMaterialKind(focusedEvent)} : candidate;
   const stagePath = selectedStage?.material==='html' ? selectedStage.event.evidence.path : null;
   const stageFile = stagePath && selectedFile===stagePath ? fileView : null;
