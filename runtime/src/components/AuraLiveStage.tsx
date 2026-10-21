@@ -4,6 +4,7 @@ import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { auraStageHistory } from '../lib/auraStage.mjs';
 import { cognitiveLink } from '../lib/cognitiveEvents.mjs';
 import { readAuraResponse } from '../lib/auraApi.mjs';
+import { AuraPresence, type AuraPresenceView } from './AuraPresence';
 
 type Candidate = { event: CognitiveEvent; material: string | null } | null;
 type Props = {
@@ -24,6 +25,7 @@ type Props = {
   pinned: boolean;
   activeMission: {id:string;goal:string;phase:string|null;status:string} | null;
   agentActivity: {connected:number;working:number};
+  presence: AuraPresenceView;
 };
 
 const time = (value: string) => {
@@ -35,7 +37,7 @@ const outcome = (event: CognitiveEvent) => ({
   failed: 'Misslyckades', unknown: 'Okänt utfall',
 }[event.evidence.outcome] || 'Observation');
 
-export function AuraLiveStage({ candidate, events, preview, previewReady, active, onInspect, onOpenFile, htmlSource, htmlDraft, onDraftChange, onSaveDraft, saveBusy, saveNotice, cdpReady, pinned, activeMission, agentActivity }: Props) {
+export function AuraLiveStage({ candidate, events, preview, previewReady, active, onInspect, onOpenFile, htmlSource, htmlDraft, onDraftChange, onSaveDraft, saveBusy, saveNotice, cdpReady, pinned, activeMission, agentActivity, presence }: Props) {
   const [editing,setEditing]=useState(false);
   const [screenshot,setScreenshot]=useState<{src:string;at:string}|null>(null);
   const [captureBusy,setCaptureBusy]=useState(false);
@@ -79,6 +81,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
   const material = candidate?.material;
   const url = event ? cognitiveLink(event.evidence.url) : null;
   return <div className="aura-live-stage" data-testid="aura-live-stage">
+    <AuraPresence data={presence}/>
     {!event ? screenshot ? <div className="aura-live-standalone-cdp" aria-label="Observerad webbläsarsida">
       <div className="aura-live-cdp-frame-bar"><Camera size={13}/> Nova-bryggans fästa CDP-flik · {time(screenshot.at)}
         <button type="button" onClick={()=>setScreenshot(null)}>Tillbaka</button></div>
@@ -87,7 +90,8 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
     </div> : <div className="aura-live-empty" role="status">
       <ScanEye size={34} strokeWidth={1.25}/>
       <h2>Auras arbetsyta</h2>
-      <p>{active ? 'Aura arbetar. Inget nytt verifierbart material att visa ännu.' : 'När Aura hittar eller skapar något relevant visas det här automatiskt.'}</p>
+      <p>{presence.detail}</p>
+      <div className="aura-live-empty-context"><span>{presence.connectionLabel}</span><span>Senaste uppdragsläge: {presence.phaseLabel}</span></div>
       <span>Verkliga fynd, kod, bilder och resultat – inte råa händelseloggar.</span>
       {activeMission && <section className="aura-live-mission-focus" aria-label="Verkligt pågående uppdrag">
         <div className="aura-live-material-eyebrow"><Layers3 size={12}/> AKTUELLT UPPDRAG · {activeMission.phase || activeMission.status}</div>
