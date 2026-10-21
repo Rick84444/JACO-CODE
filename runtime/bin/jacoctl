@@ -267,6 +267,9 @@ apply_model_selection(){
   save_model_setting JACO_SEER_PROVIDER_PREFERENCE "$JACOCTL_PROVIDER_SELECTION" "$project_env"
   case "$JACOCTL_PROVIDER_SELECTION" in
     litert)
+      # The selected single local model must not also launch Ollama or a 27B llama.cpp model.
+      save_model_setting JACO_ENABLE_OLLAMA 0 "$project_env"
+      save_model_setting JACO_LLAMACPP_AUTOSTART off "$project_env"
       save_model_setting JACO_LITERT_AUTODETECT 1 "$project_env"
       save_model_setting JACO_LITERT_MODEL "$JACOCTL_MODEL_SELECTION" "$project_env"
       ;;
