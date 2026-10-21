@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowUpRight, Camera, CheckCircle2, CircleAlert, Clock3, Code2, ExternalLink, Eye, FileCode2, GitCommit, Layers3, ScanEye, ShieldCheck } from 'lucide-react';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { auraStageHistory } from '../lib/auraStage.mjs';
@@ -13,6 +13,12 @@ type Props = {
   active: boolean;
   onInspect: (event: CognitiveEvent) => void;
   onOpenFile: (path: string) => void;
+  htmlSource: string | null;
+  htmlDraft: string | null;
+  onDraftChange: (value: string) => void;
+  onSaveDraft: () => void;
+  saveBusy: boolean;
+  saveNotice: string | null;
 };
 
 const time = (value: string) => {
@@ -24,7 +30,10 @@ const outcome = (event: CognitiveEvent) => ({
   failed: 'Misslyckades', unknown: 'Okänt utfall',
 }[event.evidence.outcome] || 'Observation');
 
-export function AuraLiveStage({ candidate, events, preview, previewReady, active, onInspect, onOpenFile }: Props) {
+export function AuraLiveStage({ candidate, events, preview, previewReady, active, onInspect, onOpenFile, htmlSource, htmlDraft, onDraftChange, onSaveDraft, saveBusy, saveNotice }: Props) {
+  const [editing,setEditing]=useState(false);
+  useEffect(()=>{setEditing(false);},[candidate?.event.id]);
+  const dirty = Boolean(htmlSource !== null && htmlDraft !== null && htmlSource !== htmlDraft);
   const event = candidate?.event || null;
   const history = auraStageHistory(events);
   const material = candidate?.material;
@@ -47,8 +56,14 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
           {outcome(event)}
         </span>
       </header>
-      {material === 'html' && <div className="aura-live-visual" aria-label="Faktiskt observerad HTML från projektet">
+      {material === 'html' && <div className="aura-live-visual" aria-label="Förhandsvisning av projektfil och arbetskopia">
         {previewReady ? preview : <div className="aura-live-awaiting"><FileCode2 size={28}/><p>Öppnar den verifierade projektfilen…</p><small>En filhändelse är inte en färdig förhandsvisning förrän innehållet kan läsas.</small></div>}
+        {editing && previewReady && <div className="aura-live-inline-editor" aria-label="Redigerbar HTML-arbetskopia">
+          <div className="aura-live-inline-editor-title"><Code2 size={13}/> Lokal HTML-arbetskopia <span>{dirty?'Osparade ändringar':'Oförändrad'}</span></div>
+          <textarea aria-label="Redigera HTML-arbetskopia" spellCheck={false} value={htmlDraft ?? ''} onChange={event=>onDraftChange(event.target.value)}/>
+          <div className="aura-live-inline-editor-actions"><button type="button" disabled={!dirty || saveBusy} onClick={onSaveDraft}>{saveBusy?'Sparar…':'Spara till projektet'}</button><button type="button" onClick={()=>setEditing(false)}>Visa bara resultat</button></div>
+          {saveNotice && <p role="status">{saveNotice}</p>}
+        </div>}
       </div>}
       {material === 'image-reference' && <div className="aura-live-awaiting aura-live-visual">
         <Camera size={38}/><h3>{event.evidence.path?.split('/').at(-1)}</h3>
@@ -63,7 +78,8 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
         </div>
       </div>}
       <div className="aura-live-context-actions">
-        {material === 'html' && event.evidence.path && <button type="button" onClick={() => onOpenFile(event.evidence.path!)}><Code2 size={14}/> Redigera projektfil</button>}
+        {material === 'html' && previewReady && <button type="button" onClick={()=>setEditing(value=>!value)}><Code2 size={14}/>{editing?'Dölj källkod':'Redigera arbetskopia'}</button>}
+        {material === 'html' && event.evidence.path && <button type="button" onClick={() => onOpenFile(event.evidence.path!)}><FileCode2 size={14}/> Öppna i kodeditorn</button>}
         {url && <a href={url} rel="noopener noreferrer" target="_blank"><ExternalLink size={14}/> Öppna observerad länk <ArrowUpRight size={12}/></a>}
         <button type="button" onClick={() => onInspect(event)}><ShieldCheck size={14}/> Granska belägg</button>
         <span><Clock3 size={12}/> {time(event.at)}</span>
