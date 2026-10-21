@@ -58,7 +58,7 @@ export function CognitiveWorkspace(props:Props) {
             <div className="cognitive-canvas-content">{props.detail}</div>
           </aside>
         </main>
-        <footer className="cognitive-footbar"><span><span className="cognitive-footer-dot"/>JACO Cognitive IDE</span><span>{props.lastObservedAt ? 'Senast observerat '+new Date(props.lastObservedAt).toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : 'Väntar på första observationen'}</span></footer>
+        <footer className="cognitive-footbar"><span><span className="cognitive-footer-dot"/>JACO CODE · Aura</span><span>{props.lastObservedAt ? 'Senast observerat '+new Date(props.lastObservedAt).toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : 'Väntar på första observationen'}</span></footer>
       </div>
       {props.sidePanelOpen&&<>
         <button type="button" className="cognitive-sidebar-scrim" aria-label="Stäng projektpanelen" onClick={props.onCloseSidebar}/>
