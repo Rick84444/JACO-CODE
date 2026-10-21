@@ -245,11 +245,13 @@ export function createGithubNovaControlInbox({
         '### JACO Nova local — REJECTED',
         `- error: \`${String(error.message || error).slice(0, 300)}\``,
       ].join('\n')).catch(() => null);
-      control.issues[String(issue.number)] = {
-        commandId: null,
+      control.issues[issue.number == null ? 'git:invalid' : String(issue.number)] = {
+        commandId: issue.number == null ? 'invalid-control-ref' : null,
         op: 'invalid',
         missionId: null,
         commentId: comment?.id || null,
+        transport: issue.number == null ? 'git-ref' : 'github-api',
+        error: String(error?.message || 'GITHUB_CONTROL_INVALID').slice(0,100),
         status: 'REJECTED',
         closed: true,
       };
@@ -373,7 +375,7 @@ export function createGithubNovaControlInbox({
           if (issue.number == null) {
             try { commandId = parse(issue).commandId; } catch {}
           }
-          const key = issue.number == null && commandId ? `git:${commandId}` : String(issue.number);
+          const key = issue.number == null ? (commandId ? `git:${commandId}` : 'git:invalid') : String(issue.number);
           const record = control.issues[key];
           if (record && (record.closed || record.commandId)) continue;
           const result = await acceptIssue(issue, control);
