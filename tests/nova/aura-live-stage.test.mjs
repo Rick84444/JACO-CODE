@@ -36,6 +36,7 @@ test('Unverified or unsafe paths never become visual HTML or image material',()=
   assert.equal(auraMaterialKind(event('pending','result','Genererar HTML','unverified','src/index.html')),null);
   assert.equal(auraMaterialKind(event('image','result','Hämtad bild','verified','screenshots/a.png')),'image-reference');
   assert.equal(auraStageCandidate([event('raw','result','Läser en fil','verified','src/auth.ts')]),null);
+  assert.equal(auraStageCandidate([event('test','result','Kör tester: resultatet är verifierat.','verified')]).event.id,'test');
 });
 
 test('Stage history groups identical events per mission and keeps newest ID',()=>{
