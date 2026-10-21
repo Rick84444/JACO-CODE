@@ -35,3 +35,25 @@ test('new local errors receive a time after historic messages without rewriting 
   assert.equal(result[1].at,'2026-10-16T16:00:00.000Z');
   assert.deepEqual([...result].sort((a,b)=>Date.parse(a.at)-Date.parse(b.at)).map(x=>x.id),['old','error']);
 });
+
+
+test('persistent recovery rejects traversal and control characters in stored paths', () => {
+  const disk=storage();
+  const unsafe = ['/etc/secrets.html','../secrets.html','site/../secrets.html','C:/secrets.html','site/hi\\u0001.html'];
+  for(const path of unsafe) {
+    const altered={...file,path};
+    assert.throws(()=>writeWorkspaceDrafts(disk,'/one','',{[path]:'modified'},{[path]:altered}),/DRAFT_BASE_MISSING/);
+  }
+  assert.throws(()=>readWorkspaceDrafts({ getItem:()=>JSON.stringify({
+    version:1,root:'/one',input:'',files:[{file:{...file,path:'../outside.html'},draft:'modified'}]
+  })},'/one'),/DRAFT_FORMAT_INVALID/);
+});
+
+test('persistent recovery fails closed on oversized or corrupted archives', () => {
+  const disk=storage();
+  assert.throws(()=>writeWorkspaceDrafts(disk,'/one','',{'example.ts':'x'.repeat(3_000_001)},{'example.ts':file}),/DRAFT_ARCHIVE_TOO_LARGE/);
+  assert.throws(()=>writeWorkspaceDrafts(disk,'/one','',Object.fromEntries(Array.from({length:25},(_,i)=>['file'+i+'.ts','x'])),{}),/DRAFT_FILES_LIMIT/);
+  assert.throws(()=>readWorkspaceDrafts({getItem:()=>JSON.stringify({
+    version:1,root:'/one',input:'',files:Array.from({length:25},()=>({file,draft:'x'}))
+  })},'/one'),/DRAFT_FORMAT_INVALID/);
+});
