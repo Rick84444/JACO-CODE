@@ -9,6 +9,25 @@ BOOT=false
 
 command -v pkg >/dev/null || { echo 'Run inside Termux.' >&2; exit 1; }
 pkg install -y nodejs-lts curl termux-services
+
+# Core and Workplace import modules from the repository root (agents/ and
+# gateway/). runtime/node_modules does not satisfy those sibling imports.
+# Restore the locked root dependency tree before replacing any runit services,
+# so a missing dotenv cannot turn Core activation into a restart storm.
+REPO_ROOT="$(cd -- "$ROOT/.." && pwd)"
+[[ -f "$REPO_ROOT/package-lock.json" ]] || {
+  echo "JACO_ROOT_LOCKFILE_MISSING: expected $REPO_ROOT/package-lock.json" >&2
+  exit 42
+}
+if ! (cd "$REPO_ROOT" && node -e "require.resolve('dotenv')" >/dev/null 2>&1); then
+  printf '[JACO] Repairing missing repository-root dependencies before activation...\n'
+  (cd "$REPO_ROOT" && npm ci --ignore-scripts --omit=optional --no-audit --no-fund)
+fi
+(cd "$REPO_ROOT" && node --input-type=module -e "await import('./agents/lib/provider-env-import.mjs')") || {
+  echo "JACO_ROOT_IMPORT_FAILED: repository root dependencies are incomplete." >&2
+  exit 43
+}
+
 mkdir -p "$HOME/.config/jaco" "$HOME/.local/bin" "$SVDIR"
 ENV_FILE="$HOME/.config/jaco/runtime.env"
 touch "$ENV_FILE"

@@ -131,3 +131,16 @@ test('Termux runtime rebuilds Aura when frontend source hash changes',()=>{
   assert.match(runner,/CURRENT_UI_HASH/);
   assert.match(runner,/BUILT_UI_HASH/);
 });
+
+test('Termux activation repairs repository-root imports before touching runit service definitions',()=>{
+  const install=fs.readFileSync(path.join(runtime,'termux/install-activation.sh'),'utf8');
+  const rootDeps=install.indexOf('JACO_ROOT_LOCKFILE_MISSING');
+  const restore=install.indexOf('npm ci --ignore-scripts --omit=optional --no-audit --no-fund');
+  const smoke=install.indexOf("await import('./agents/lib/provider-env-import.mjs')");
+  const serviceReplace=install.indexOf('rm -rf "$SVDIR/$svc"');
+  assert(rootDeps>=0 && restore>rootDeps && smoke>restore);
+  assert(serviceReplace>smoke, 'runit definitions must not be replaced before the root import passes');
+  assert.match(install,/JACO_ROOT_IMPORT_FAILED/);
+  const workspace=fs.readFileSync(path.join(root,'gateway/src/workplace/workplace-server.mjs'),'utf8');
+  assert(workspace.includes("import 'dotenv/config'"));
+});
