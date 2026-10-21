@@ -76,6 +76,11 @@ test('CDP screenshots use only existing authorized read tool and remain bounded'
   assert.match(component,/event\.evidence\.outcome==='verified'/);
   assert.match(component,/event\.type==='NOVA_ACTION_RESULT'/);
   assert.match(component,/document\.visibilityState==='hidden'/);
+  // An earlier async screenshot must not replace a newer artifact.
+  assert.match(component,/captureEpoch\.current \+= 1/);
+  assert.match(component,/const epoch=\+\+captureEpoch\.current/);
+  assert.match(component,/if\(epoch===captureEpoch\.current\)/);
+  assert.match(component,/return \(\)=>\{captureEpoch\.current \+= 1;\}/);
   const preview=fs.readFileSync(new URL('../../runtime/src/components/CognitivePreview.tsx',import.meta.url),'utf8');
   assert.match(preview,/strict\?'':'allow-scripts'/);
   assert.match(preview,/strict\?'&#39;none&#39;':'&#39;unsafe-inline&#39;'/);
