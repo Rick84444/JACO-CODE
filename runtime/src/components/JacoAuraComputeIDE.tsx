@@ -1790,6 +1790,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     onDraftChange={value=>{if(stagePath)updateDraft(stagePath,value);}}
     onSaveDraft={()=>{if(stagePath)void saveStageDraft(stagePath);}} saveBusy={stageSaveBusy} saveNotice={stageSaveNotice}
     cdpReady={snapshot?.integrations?.cdp?.state==='VERIFIED' || snapshot?.integrations?.cdp?.state==='OBSERVED'}
+    pinned={workspacePinned}
     activeMission={missions.find(item=>item.status==='ACTIVE') ? {
       id:missions.find(item=>item.status==='ACTIVE')!.id,
       goal:String(missions.find(item=>item.status==='ACTIVE')!.goal || 'Pågående uppdrag'),
