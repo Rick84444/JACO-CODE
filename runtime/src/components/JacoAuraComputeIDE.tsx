@@ -1747,7 +1747,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
     onInspect={event=>{setSelectedEvidence(event);setWorkspacePinned(true);setWorkspaceView('evidence');}}
     onOpenFile={openFile} htmlSource={stageFile?.content ?? null} htmlDraft={stageDraft}
     onDraftChange={value=>{if(stagePath)updateDraft(stagePath,value);}}
-    onSaveDraft={()=>{if(stagePath)void saveStageDraft(stagePath);}} saveBusy={stageSaveBusy} saveNotice={stageSaveNotice}/>;
+    onSaveDraft={()=>{if(stagePath)void saveStageDraft(stagePath);}} saveBusy={stageSaveBusy} saveNotice={stageSaveNotice}
+    cdpReady={snapshot?.integrations?.cdp?.state==='VERIFIED' || snapshot?.integrations?.cdp?.state==='OBSERVED'}/>;
   const canvasDetail = <>
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
