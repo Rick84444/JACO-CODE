@@ -1740,7 +1740,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     </div>
   );
   const stagePreview = stagePath && stageFile && stageDraft!==null
-    ? <CognitivePreview path={stagePath} content={stageDraft} files={files} events={cognitiveEvents} onOpenFile={openFile}/>
+    ? <CognitivePreview strict path={stagePath} content={stageDraft} files={files} events={cognitiveEvents} onOpenFile={openFile}/>
     : null;
   const stage = <AuraLiveStage candidate={selectedStage} events={cognitiveEvents} preview={stagePreview}
     previewReady={Boolean(stagePreview)} active={status.tone==='active'}
