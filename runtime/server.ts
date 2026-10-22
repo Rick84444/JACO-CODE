@@ -53,6 +53,7 @@ import { stripeRevenueSnapshot } from "./src/server/revenue/stripeRevenue.mjs";
 import { automaticConnections } from "./src/server/connected/automaticConnections.mjs";
 import { liteChatAnswer } from "./src/server/connected/liteChatRouter.mjs";
 import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/mcp/stdioMcpHost.mjs";
+import { handlePaymentWebhook } from "./src/server/connected/paymentWebhook.mjs";
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
@@ -4464,33 +4465,24 @@ const notifyPhone = async (action) => {
     const sig = (req.headers['stripe-signature'] || req.headers['x-webhook-signature'] || '') as string;
     const { getPaymentProvider } = await import('./src/adapters/paymentAdapter');
     const paymentProvider = getPaymentProvider();
-
-    try {
-      // Only a signature-verified event may book revenue; anyone can POST an unsigned body.
-      if (!req.rawBody || !sig) {
-        pushLog('warn', 'Payment webhook rejected: missing signature', 'payment-webhook');
-        return res.status(400).json({ received: false, error: 'signature required' });
-      }
-      const verifiedEvent = await paymentProvider.verifyWebhook(req.rawBody, sig);
-      pushLog('success', `[PAYMENT WEBHOOK VERIFIED] Adapter: ${paymentProvider.providerName}, Event: ${verifiedEvent.type}, Hash: ${verifiedEvent.rawPayloadHash.substring(0, 12)}...`, 'payment-webhook');
-
-      if (verifiedEvent.type === 'payment.succeeded') {
+    // Only a signature-verified event is booked as revenue; an unverifiable request is refused (see paymentWebhook.mjs).
+    const outcome = await handlePaymentWebhook({
+      provider: paymentProvider,
+      rawBody: req.rawBody,
+      signature: sig,
+      log: (...args: any[]) => { pushLog(args[0], args[1], 'payment-webhook'); },
+      bookRevenue: async (verifiedEvent: any) => {
         auraEngineManager.addMemory(
-          `[VERIFIED PAYMENT SETTLED] Belopp: ${verifiedEvent.amount} ${verifiedEvent.currency}. Provider: ${paymentProvider.providerName}. Tx: ${verifiedEvent.transactionId}. Kund: ${verifiedEvent.customerEmail}`,
+          `[VERIFIED PAYMENT SETTLED] Belopp: ${verifiedEvent.amount} ${verifiedEvent.currency}. Provider: ${paymentProvider.providerName}. Tx: ${verifiedEvent.transactionId}. Kund: ${verifiedEvent.customerEmail || 'okänd'}`,
           'revenue',
           'high',
           `${paymentProvider.providerName} Webhook`,
           'agent-marketplace'
         );
         pushLog('success', `[INTÄKT BOKFÖRD] ${verifiedEvent.amount} ${verifiedEvent.currency} via ${paymentProvider.providerName}`, 'payment-webhook');
-      }
-
-      res.json({ received: true, provider: paymentProvider.providerName, eventId: verifiedEvent.eventId });
-    } catch (err: any) {
-      console.error(`[PAYMENT WEBHOOK FAILED]:`, err.message);
-      pushLog('error', `[PAYMENT FEL] ${err.message}`, 'payment-webhook');
-      return res.status(400).send(`Webhook Error: ${err.message}`);
-    }
+      },
+    });
+    return res.status(outcome.status).json(outcome.body);
   });
 
   app.get("/api/vault", requireOperator, (_req, res) => {

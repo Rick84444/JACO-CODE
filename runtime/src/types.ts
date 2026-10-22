@@ -1007,6 +1007,8 @@ export interface PaymentVerifiedEvent {
   transactionId: string;
   rawPayloadHash: string;
   timestamp: string;
+  /** True only when a payment provider's signature was verified; unverified events are never booked as revenue. */
+  verified: boolean;
 }
 
 export interface PaymentRefundResult {

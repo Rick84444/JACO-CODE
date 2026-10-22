@@ -1,5 +1,6 @@
 import { PaymentProvider, PaymentOrder, PaymentCheckoutResult, PaymentVerifiedEvent, PaymentRefundResult } from '../types';
 import crypto from 'crypto';
+import { verifyLedgerSignature, WebhookNotConfiguredError } from '../server/connected/paymentWebhook.mjs';
 
 /**
  * StripePaymentAdapter
@@ -52,7 +53,7 @@ export class StripePaymentAdapter implements PaymentProvider {
     const webhookSecret = secret || process.env.STRIPE_WEBHOOK_SECRET;
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (!webhookSecret || !stripeKey) {
-      throw new Error('STRIPE_WEBHOOK_SECRET eller STRIPE_SECRET_KEY är inte konfigurerat.');
+      throw new WebhookNotConfiguredError('STRIPE_WEBHOOK_SECRET eller STRIPE_SECRET_KEY är inte konfigurerat.');
     }
 
     const Stripe = (await import('stripe')).default;
@@ -72,7 +73,8 @@ export class StripePaymentAdapter implements PaymentProvider {
         customerEmail: dataObj.customer_details?.email || dataObj.customer_email,
         transactionId: dataObj.id,
         rawPayloadHash: payloadHash,
-        timestamp: new Date(event.created * 1000).toISOString()
+        timestamp: new Date(event.created * 1000).toISOString(),
+        verified: true
       };
     }
 
@@ -83,7 +85,8 @@ export class StripePaymentAdapter implements PaymentProvider {
       currency: 'SEK',
       transactionId: (event.data.object as any)?.id || 'N/A',
       rawPayloadHash: payloadHash,
-      timestamp: new Date(event.created * 1000).toISOString()
+      timestamp: new Date(event.created * 1000).toISOString(),
+      verified: true
     };
   }
 
@@ -124,18 +127,22 @@ export class OfflineLedgerPaymentAdapter implements PaymentProvider {
     };
   }
 
+  // A local ledger holds no money and no payment provider vouches for it, so even an authenticated event
+  // is returned as unverified: it never counts as revenue. Without JACO_LEDGER_WEBHOOK_SECRET it is refused.
   async verifyWebhook(rawBody: Buffer | string, signature: string): Promise<PaymentVerifiedEvent> {
+    verifyLedgerSignature(rawBody, signature);
     const payloadHash = crypto.createHash('sha256').update(rawBody).digest('hex');
     const parsed = typeof rawBody === 'string' ? JSON.parse(rawBody) : JSON.parse(rawBody.toString('utf-8'));
     return {
       eventId: `evt-ledger-${Date.now()}`,
       type: 'payment.succeeded',
-      amount: parsed.amount || 0,
+      amount: Number(parsed.amount) || 0,
       currency: parsed.currency || 'SEK',
-      customerEmail: parsed.customerEmail || 'peer@a2a.local',
+      customerEmail: parsed.customerEmail || undefined,
       transactionId: parsed.transactionId || `tx-local-${Date.now()}`,
       rawPayloadHash: payloadHash,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      verified: false
     };
   }
 

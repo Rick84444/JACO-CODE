@@ -9,7 +9,6 @@ import {
   Sparkles, 
   Search, 
   Filter, 
-  RefreshCw, 
   Lock, 
   Unlock, 
   Bot, 
@@ -36,7 +35,6 @@ export interface MarketplacePlugin {
   costEstimate: string; // e.g. "0 SEK / Gratis Lokal", "$0.002 / 1k tokens"
   maxBudgetSEK?: number;
   auditChecksum: string;
-  lastPingMs?: number;
   provider: string;
   capabilities: string[];
 }
@@ -55,7 +53,6 @@ export const VerifiedMarketplacesView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'approved' | 'pending' | 'free' | 'paid'>('all');
-  const [pingingId, setPingingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Marketplace plugins state
@@ -70,7 +67,6 @@ export const VerifiedMarketplacesView: React.FC = () => {
       isFinancialCost: false,
       costEstimate: '0 SEK / Lokal A2A-brygga',
       auditChecksum: 'sha256:7f8e9d4a0b2c1e8',
-      lastPingMs: 12,
       provider: 'JACO OS Core',
       capabilities: ['A2A-RPC Task Delegation', 'Capability Discovery', 'Proof-of-Execution Verification']
     },
@@ -84,7 +80,6 @@ export const VerifiedMarketplacesView: React.FC = () => {
       isFinancialCost: false,
       costEstimate: '0 SEK / 100% Lokal Hårdvara',
       auditChecksum: 'sha256:3a1c9e8b7d6f5a4',
-      lastPingMs: 18,
       provider: 'Ollama Local Bridge (192.168.1.114)',
       capabilities: ['Offline Inference', 'Zero API Cost Failover', 'Swedish Reasoning Engine']
     },
@@ -98,7 +93,6 @@ export const VerifiedMarketplacesView: React.FC = () => {
       isFinancialCost: false,
       costEstimate: '0 SEK / Öppen Webbskrapning',
       auditChecksum: 'sha256:9f8e7d6c5b4a3e2',
-      lastPingMs: 34,
       provider: 'OpenClaw Studio',
       capabilities: ['DOM Knowledge Scrape', 'Web Context Injection', 'Automated Search Fetching']
     },
@@ -112,7 +106,6 @@ export const VerifiedMarketplacesView: React.FC = () => {
       isFinancialCost: false,
       costEstimate: '0 SEK / Lokal NPU-Accelerering',
       auditChecksum: 'sha256:1b2c3d4e5f6a7b8',
-      lastPingMs: 8,
       provider: 'NPU Matrix Engine',
       capabilities: ['Tensor Kernel Optimization', 'Zero Regression Math', 'Quantum Matrix Emulation']
     },
@@ -126,7 +119,6 @@ export const VerifiedMarketplacesView: React.FC = () => {
       isFinancialCost: false,
       costEstimate: '0 SEK / Användarens Google OAuth',
       auditChecksum: 'sha256:8c7b6a5f4e3d2c1',
-      lastPingMs: 42,
       provider: 'Google Workspace Integration',
       capabilities: ['OAuth Sync', 'Keep Note Management', 'Context Injection']
     },
@@ -141,7 +133,6 @@ export const VerifiedMarketplacesView: React.FC = () => {
       costEstimate: 'Gratis kvaotpot → Därefter automatisk failover till lokal Ollama',
       maxBudgetSEK: 0,
       auditChecksum: 'sha256:2d3e4f5a6b7c8d9',
-      lastPingMs: 145,
       provider: 'Google AI Studio Cloud API',
       capabilities: ['Multimodal Analysis', 'Complex Coding Synthesis', 'Auto-Quota Failover']
     },
@@ -156,7 +147,6 @@ export const VerifiedMarketplacesView: React.FC = () => {
       costEstimate: '~0.02 SEK / 1k tokens (Kräver explicit godkännande)',
       maxBudgetSEK: 25,
       auditChecksum: 'sha256:5e6f7a8b9c0d1e2',
-      lastPingMs: 210,
       provider: 'DeepSeek Open API',
       capabilities: ['Math Theorem Verification', 'Large Refactoring Reasoning']
     },
@@ -170,7 +160,6 @@ export const VerifiedMarketplacesView: React.FC = () => {
       isFinancialCost: false,
       costEstimate: '0 SEK / Öppna Modeller',
       auditChecksum: 'sha256:4a3b2c1d0e9f8a7',
-      lastPingMs: 65,
       provider: 'HuggingFace Hub',
       capabilities: ['Open Tool Downloads', 'Model Quantization', 'Local Pipeline Execution']
     }
@@ -192,7 +181,7 @@ export const VerifiedMarketplacesView: React.FC = () => {
         if (!p.isApproved && p.isFinancialCost && requireFinancialApproval) {
           triggerToast(`[RISK / STRENG EKONOMI] ${p.name} kräver betalda API-anrop. Ekonomisk spärr bekräftad.`);
         } else {
-          triggerToast(`${p.name} är nu ${!p.isApproved ? 'GODKÄND & AKTIVERAD [REAL]' : 'DEAKTIVERAD'}`);
+          triggerToast(`${p.name} är nu ${!p.isApproved ? 'markerad som godkänd i denna vy (ingen körning ändrad)' : 'DEAKTIVERAD'}`);
         }
         return { ...p, isApproved: !p.isApproved };
       }
@@ -207,17 +196,7 @@ export const VerifiedMarketplacesView: React.FC = () => {
       }
       return p;
     }));
-    triggerToast('Alla kostnadsfria agentiska kapabiliteter godkända automatiskt [REAL]');
-  };
-
-  const handlePingPlugin = (id: string) => {
-    setPingingId(id);
-    setTimeout(() => {
-      const randomLatency = Math.floor(Math.random() * 25) + 8;
-      setPlugins(prev => prev.map(p => p.id === id ? { ...p, lastPingMs: randomLatency } : p));
-      setPingingId(null);
-      triggerToast(`Anslutningstest genomfört: Latens ${randomLatency}ms [REAL]`);
-    }, 600);
+    triggerToast('Alla kostnadsfria agentiska kapabiliteter markerade som godkända i denna vy (ingen körning ändrad)');
   };
 
   // Filter plugins
@@ -407,7 +386,6 @@ export const VerifiedMarketplacesView: React.FC = () => {
       {/* Capabilities Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filteredPlugins.map(plugin => {
-          const isPinging = pingingId === plugin.id;
 
           return (
             <div 
@@ -490,14 +468,9 @@ export const VerifiedMarketplacesView: React.FC = () => {
 
               {/* Action Controls */}
               <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-3">
-                <button
-                  onClick={() => handlePingPlugin(plugin.id)}
-                  disabled={isPinging}
-                  className="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 rounded-lg text-xs font-mono transition-colors flex items-center gap-1.5"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${isPinging ? 'animate-spin' : ''}`} />
-                  <span>{isPinging ? 'Pingar...' : `${plugin.lastPingMs || 15}ms Ping`}</span>
-                </button>
+                <span className="px-3 py-1.5 border border-slate-800 text-slate-500 rounded-lg text-xs font-mono">
+                  Latens: ej uppmätt
+                </span>
 
                 <button
                   onClick={() => handleToggleApproval(plugin.id)}
