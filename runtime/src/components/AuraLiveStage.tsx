@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Camera, CheckCircle2, CircleAlert, Clock3, Code2, ExternalLink, Eye, FileCode2, GitCommit, Layers3, ScanEye, ShieldCheck } from 'lucide-react';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
-import { auraStageHistory } from '../lib/auraStage.mjs';
+import { auraStageHistory, cdpRefreshDelay } from '../lib/auraStage.mjs';
 import { cognitiveLink } from '../lib/cognitiveEvents.mjs';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { AuraPresence, type AuraPresenceView } from './AuraPresence';
@@ -54,7 +54,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
     return ()=>{captureEpoch.current += 1;};
   },[candidate?.event.id]);
   const captureBrowser=async()=>{
-    if(captureBusy || !cdpReady)return;
+    if(captureBusy || !cdpReady)return false;
     const epoch=++captureEpoch.current;
     setCaptureBusy(true);setCaptureError(null);
     try{
@@ -69,8 +69,10 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
         throw Error('CDP_PNG_MISSING_OR_INVALID');
       if(epoch===captureEpoch.current)
         setScreenshot({src:'data:image/png;base64,'+png,at:new Date().toISOString()});
+      return true;
     }catch(error:any){
       if(epoch===captureEpoch.current)setCaptureError(String(error?.message||error));
+      return false;
     }
     finally{if(epoch===captureEpoch.current)setCaptureBusy(false);}
   };
@@ -87,6 +89,28 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
     lastAutoCapture.current=event.id;
     void captureBrowser();
   },[candidate?.event.id,cdpReady,pinned]);
+  // While a mission runs, a CDP still that is on screen is refreshed from the same read-only tool,
+  // so the stage follows the attached tab instead of freezing at the first capture. Paused when the
+  // material is pinned, the page is hidden or no mission is active; failures back off.
+  const latestCapture=useRef(captureBrowser);
+  latestCapture.current=captureBrowser;
+  const refreshFailures=useRef(0);
+  const showingCdp=Boolean(screenshot);
+  useEffect(()=>{
+    if(!cdpReady || pinned || !activeMission || !showingCdp)return;
+    let stopped=false, timer=0;
+    const schedule=()=>{timer=window.setTimeout(tick,cdpRefreshDelay(refreshFailures.current));};
+    const tick=async()=>{
+      if(stopped)return;
+      if(document.visibilityState!=='hidden'){
+        const ok=await latestCapture.current();
+        refreshFailures.current=ok?0:refreshFailures.current+1;
+      }
+      if(!stopped)schedule();
+    };
+    schedule();
+    return()=>{stopped=true;window.clearTimeout(timer);};
+  },[cdpReady,pinned,activeMission?.id,showingCdp]);
   const dirty = Boolean(htmlSource !== null && htmlDraft !== null && htmlSource !== htmlDraft);
   const event = candidate?.event || null;
   const history = auraStageHistory(events);

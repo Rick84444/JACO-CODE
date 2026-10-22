@@ -49,4 +49,13 @@ export function auraStageHistory(events = [], limit = 7) {
   return [...grouped.values()].reverse().slice(0, Math.max(1,Math.min(20,limit)));
 }
 
+// How long to wait before refreshing a displayed CDP still while a mission runs: 15 s, doubling after
+// each failed capture up to 2 minutes, so a broken bridge is not polled hard.
+export const CDP_REFRESH_MS = 15_000;
+export const CDP_REFRESH_MAX_MS = 120_000;
+export function cdpRefreshDelay(failures = 0) {
+  const n = Number.isInteger(failures) && failures > 0 ? Math.min(failures, 8) : 0;
+  return Math.min(CDP_REFRESH_MAX_MS, CDP_REFRESH_MS * 2 ** n);
+}
+
 export function stageFileAllowed(path) { return safeProjectPath(path); }

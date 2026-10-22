@@ -863,7 +863,9 @@ export const JacoAuraComputeIDE: React.FC = () => {
   };
   const selectedFileEvent=cognitiveEvents.filter(event=>event.evidence.path===selectedFile).at(-1)?.id;
   useEffect(()=>{
-    if(!selectedFile || !['code','preview'].includes(workspaceView)) return;
+    // The stage shows the same file as the editor and preview: keep it current when an agent rewrites it.
+    // On desktop the stage is visible in both the 'conversation' and 'stage' views.
+    if(!selectedFile || !['code','preview','stage','conversation'].includes(workspaceView)) return;
     let active=true, polling=false;
     setExternalFile(null);
     const observeFile=async()=>{
