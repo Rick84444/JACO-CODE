@@ -107,9 +107,6 @@ interface Props {
   onOpenFile?: (path:string)=>void;
   activity?: AuraChatActivity[];
   missions?: Array<{id:string;goal:string;status:string;cancelRequested?:boolean}>;
-  onCancelMission?: (id:string)=>Promise<void>;
-  // Opens the IDE's view of the running work (Missions panel).
-  onOpenWork?: (missionId?:string) => void;
 }
 
 
@@ -122,7 +119,7 @@ async function chatJson(response: Response) {
   return data;
 }
 
-export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onOpenProviders, activity = [], missions = [], onCancelMission, onOpenWork, liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
+export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
   const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments } = session;
   const [attachments, setAttachments] = useState<Array<{id:string;files:Array<{path:string;format:string}>}>>(()=>{
     try {const saved=JSON.parse(localStorage.getItem('jaco:aura:attachments:v1')||'[]');return Array.isArray(saved)?saved.filter(item=>typeof item?.id==='string'&&/^[a-f0-9-]{36}$/.test(item.id)&&Array.isArray(item.files)&&item.files.length<=200&&item.files.every((file:any)=>typeof file?.path==='string'&&['text','binary'].includes(file.format))).slice(0,16):[];}catch{return [];}
@@ -198,8 +195,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     return () => window.removeEventListener('jaco:aura:prefill', prefill);
   }, []);
 
-  const [closingMission,setClosingMission]=useState<string|null>(null);
-  const [closeError,setCloseError]=useState<string|null>(null);
   const scrollRef=useRef<HTMLDivElement>(null);
   const followRef=useRef(true);
   const [composeMode,setComposeMode]=useState<'chat'|'goal'>('goal');
@@ -422,8 +417,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   };
   const submit=()=>composeMode==='goal'?goal():ask();
   const prompt=(text:string,mode:'chat'|'goal'='chat')=>{setInput(text);setComposeMode(mode);inputRef.current?.focus();};
-  const activeDetail=currentMission as any;
-  const latestMissionObservation=currentMission ? liveEvents.filter(event=>event.missionId===currentMission.id).at(-1) : null;
 
   return (
     <div className="cognitive-chat h-full min-h-0 flex flex-col">
@@ -510,18 +503,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       {!following&&<button type="button" className="cognitive-follow-latest" onClick={followLatest}><ArrowDown size={13}/>Följ senaste arbetet</button>}
       <form onSubmit={event=>{event.preventDefault();void submit();}} className="cognitive-composer">
         <div className="cognitive-composer-inner">
-          {currentMission&&<section className="cognitive-live-mission" data-mission-id={currentMission.id}>
-            <div className="cognitive-live-mission-heading"><span className={'cognitive-mission-dot '+(currentMission.status==='ACTIVE'?'active':'')}/><span>Pågående uppdrag</span>
-              {onOpenWork&&<button type="button" onClick={()=>onOpenWork(currentMission.id)}>Visa arbete<ChevronRight size={12}/></button>}
-              {onCancelMission&&<button type="button" aria-label="Avsluta aktuellt uppdrag" disabled={closingMission===currentMission.id||Boolean(activeDetail.cancelRequested)} onClick={async()=>{
-                setClosingMission(currentMission.id);setCloseError(null);
-                try{await onCancelMission(currentMission.id);}catch(error:any){setCloseError(error.message);}finally{setClosingMission(null);}
-              }}><Square size={11}/>{activeDetail.cancelRequested?'Avslut begärt':'Avsluta'}</button>}
-            </div>
-            <p title={currentMission.goal}>{currentMission.goal}</p>
-            <div className="cognitive-live-mission-detail">{latestMissionObservation?.text || activeDetail.lastAction?.text || ({ACTIVE:'Väntar på nästa observation',BLOCKED:'Ett hinder behöver lösas',AWAITING_VERIFICATION:'Slutresultatet behöver verifieras'})[currentMission.status]}</div>
-            {closeError&&<div role="alert" className="cognitive-error">{closeError}</div>}
-          </section>}
           {currentMission&&<div className="cognitive-live-questions"><button type="button" onClick={()=>prompt('Vad har du upptäckt hittills i det aktuella uppdraget?')} disabled={Boolean(busy)}>Vad har du upptäckt?</button><button type="button" onClick={()=>prompt('Visa vad som faktiskt fungerar och vilka belägg som stöder det.')} disabled={Boolean(busy)}>Vad fungerar?</button></div>}
 
           {selectedTool && (

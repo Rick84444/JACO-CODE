@@ -42,6 +42,7 @@ import { VoiceChannel } from './VoiceChannel';
 import { CognitiveEvidence } from './CognitiveEventCard';
 import { CognitivePreview } from './CognitivePreview';
 import { AuraLiveStage } from './AuraLiveStage';
+import { MissionCard } from './MissionCard';
 import { auraStageCandidate, auraMaterialKind, stageFileAllowed } from '../lib/auraStage.mjs';
 import { auraPresence } from '../lib/auraPresence.mjs';
 import { useCognitiveLive, type CognitiveEvent } from '../hooks/useCognitiveLive';
@@ -1486,8 +1487,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
             onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
             onActivated={() => { void refresh().catch(() => {}); }} />}
           missions={missions}
-          onCancelMission={cancelMission}
-          onOpenWork={id => { setReviewMissionId(id||null); setWorkspacePinned(false); setWorkspaceView('stage'); }}
           onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
           activeFilePath={selectedFile}
           activeFileContent={fileView ? (drafts[fileView.path] ?? fileView.content) : null}
@@ -1801,7 +1800,11 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const stagePreview = stagePath && stageFile && stageDraft!==null
     ? <CognitivePreview strict path={stagePath} content={stageDraft} files={files} events={cognitiveEvents} onOpenFile={openFile}/>
     : null;
-  const stage = <AuraLiveStage candidate={selectedStage} events={cognitiveEvents} preview={stagePreview}
+  const sideMission = missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
+  const sideObservation = sideMission ? cognitiveEvents.filter(event=>event.missionId===sideMission.id).at(-1)?.text ?? null : null;
+  const stage = <div className="aura-stage-column">
+    {sideMission&&<MissionCard mission={sideMission as any} observation={sideObservation} onCancel={cancelMission} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/>}
+    <AuraLiveStage candidate={selectedStage} events={cognitiveEvents} preview={stagePreview}
     previewReady={Boolean(stagePreview)} active={status.tone==='active'}
     onInspect={event=>{setSelectedEvidence(event);setWorkspacePinned(true);setWorkspaceView('evidence');}}
     onOpenFile={openFile} htmlSource={stageFile?.content ?? null} htmlDraft={stageDraft}
@@ -1819,7 +1822,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
       connected:(snapshot?.workplace?.agents || []).filter(item=>item.status==='READY' || item.liveSessions>0).length,
       working:(snapshot?.workplace?.agents || []).reduce((count,item)=>count+Math.max(0,item.liveSessions || 0),0)
     }}
-    presence={presence}/>;
+    presence={presence}/>
+  </div>;
   const canvasDetail = <>
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
