@@ -5,6 +5,7 @@ import { auraStageHistory, cdpRefreshDelay } from '../lib/auraStage.mjs';
 import { cognitiveLink } from '../lib/cognitiveEvents.mjs';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { AuraPresence, type AuraPresenceView } from './AuraPresence';
+import { CapturedPage, type CapturedPageData } from './CapturedPage';
 
 type Candidate = { event: CognitiveEvent; material: string | null } | null;
 type Props = {
@@ -76,6 +77,27 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
     }
     finally{if(epoch===captureEpoch.current)setCaptureBusy(false);}
   };
+  // The operator asks for the attached page's markup; it stays on the stage until closed, so automatic
+  // events do not replace material the operator chose to work on.
+  const [capturedPage,setCapturedPage]=useState<CapturedPageData|null>(null);
+  const [pageBusy,setPageBusy]=useState(false);
+  const capturePageHtml=async()=>{
+    if(pageBusy || !cdpReady)return;
+    setPageBusy(true);setCaptureError(null);
+    try{
+      const reply=await fetch('/api/aura/workbench/mcp/call',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({providerId:'cdp',toolName:'nova_html',arguments:{}}),
+        signal:AbortSignal.timeout(25000),cache:'no-store'
+      }).then(readAuraResponse);
+      let page:any=null;
+      try{page=JSON.parse(reply?.result?.content?.[0]?.text||'null');}catch{}
+      if(reply?.result?.isError===true || page?.ok!==true)throw Error(page?.error||'CDP_HTML_TOOL_FAILED');
+      if(typeof page.html!=='string' || typeof page.url!=='string' || typeof page.sha256!=='string')throw Error('CDP_HTML_MISSING_OR_INVALID');
+      setCapturedPage({url:page.url,title:String(page.title||''),html:page.html,sha256:page.sha256,at:page.at||new Date().toISOString()});
+    }catch(error:any){setCaptureError(String(error?.message||error));}
+    finally{setPageBusy(false);}
+  };
   useEffect(()=>{
     const event=candidate?.event;
     if(!cdpReady || pinned || !event || event.id===lastAutoCapture.current)return;
@@ -118,8 +140,9 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
   const url = event ? cognitiveLink(event.evidence.url) : null;
   return <div className="aura-live-stage" data-testid="aura-live-stage">
     <AuraPresence data={presence}/>
-    {!event ? screenshot ? <div className="aura-live-standalone-cdp" aria-label="Observerad webbläsarsida">
+    {capturedPage ? <CapturedPage page={capturedPage} onClose={()=>setCapturedPage(null)}/> : !event ? screenshot ? <div className="aura-live-standalone-cdp" aria-label="Observerad webbläsarsida">
       <div className="aura-live-cdp-frame-bar"><Camera size={13}/> Nova-bryggans fästa CDP-flik · {time(screenshot.at)}
+        <button type="button" disabled={pageBusy} onClick={()=>void capturePageHtml()}>{pageBusy?'Hämtar sidan…':'Hämta HTML'}</button>
         <button type="button" onClick={()=>setScreenshot(null)}>Tillbaka</button></div>
       <img src={screenshot.src} alt="Faktisk CDP-skärmbild utan modifiering"/>
       <small>En stillbild från den anslutna fliken, inte en liveström.</small>
@@ -136,6 +159,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
         <small>Aura följer observerade uppdrag; inget verifierat visuellt resultat ännu.</small>
       </section>}
       {cdpReady && <button type="button" className="aura-live-capture-button" disabled={captureBusy} onClick={()=>void captureBrowser()}><Camera size={14}/>{captureBusy?'Hämtar bild…':'Visa aktiv CDP-flik'}</button>}
+      {cdpReady && <button type="button" className="aura-live-capture-button" disabled={pageBusy} onClick={()=>void capturePageHtml()}><Code2 size={14}/>{pageBusy?'Hämtar sidan…':'Hämta sidans HTML'}</button>}
     </div> : <>
       <header className="aura-live-material-header">
         <div className="aura-live-material-name">

@@ -555,3 +555,12 @@
 .aura-stage-column{height:100%;min-height:0;display:flex;flex-direction:column}
 .aura-stage-column>.cognitive-live-mission{flex-shrink:0;margin:12px 16px 0}
 .aura-stage-column>.aura-live-stage{flex:1;min-height:0}
+
+/* A page fetched through CDP as cleaned HTML: immutable original, editable copy, sandboxed live render. */
+.aura-captured-page{flex:1;min-height:0;display:flex;flex-direction:column;margin:12px 16px 16px;border:1px solid #274052;border-radius:10px;overflow:hidden;background:#0c1621}
+.aura-captured-page>.aura-live-cdp-frame-bar>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.aura-captured-actions{display:flex;gap:6px;flex-shrink:0}
+.aura-captured-actions button[aria-pressed=true]{color:#8ce4e5;border-color:#2f6b78;background:#123544}
+.aura-captured-frame{flex:1;min-height:220px;width:100%;border:0;background:#fff}
+.aura-captured-editor{height:clamp(160px,30vh,340px);flex-shrink:0;resize:vertical;border:0;border-top:1px solid #203644;background:#0a1118;color:#d9e6ef;padding:12px 15px;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+.aura-captured-page>small{padding:8px 12px;font-size:10px;color:#8a9eae;overflow-wrap:anywhere}

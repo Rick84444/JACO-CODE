@@ -2840,7 +2840,7 @@ const notifyPhone = async (action) => {
       // CDP is intentionally a specialist observation surface inside Aura.
       // Browser mutations must stay on BrowserHandsOff/ModelRelay rather than
       // becoming a second actuator path just because CDP can technically click.
-      if (providerId === 'cdp' && !['nova_targets','nova_observe','nova_screenshot'].includes(toolName)) {
+      if (providerId === 'cdp' && !['nova_targets','nova_observe','nova_screenshot','nova_html'].includes(toolName)) {
         throw new Error('CDP_DIRECT_MUTATION_DISABLED_USE_REMOTE_OR_BROWSER_HANDS_OFF');
       }
 
@@ -2859,6 +2859,14 @@ const notifyPhone = async (action) => {
             return { screenshotDataOmitted: true, mimeType: png?.mimeType || null,
               payloadPresent: data.length > 0,
               payloadSha256: data ? crypto.createHash('sha256').update(data).digest('hex') : null };
+          })()
+        : providerId === 'cdp' && toolName === 'nova_html'
+        ? (() => {
+            // Page markup is user content; the durable receipt keeps only where it came from and its digest.
+            let page: any = null;
+            try { page = JSON.parse(result?.content?.[0]?.text || 'null'); } catch {}
+            return { htmlOmitted: true, ok: page?.ok === true, url: typeof page?.url === 'string' ? page.url.slice(0, 500) : null,
+              bytes: Number(page?.bytes) || 0, sha256: typeof page?.sha256 === 'string' ? page.sha256 : null, error: page?.ok === true ? null : String(page?.error || '').slice(0, 80) };
           })()
         : result;
       seerLiveWorkstream.record({

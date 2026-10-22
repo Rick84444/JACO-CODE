@@ -2,7 +2,7 @@
 // Listens on port 4243, connects to Chrome CDP at port 9222
 // No external dependencies — uses Node.js 24+ built-in WebSocket + fetch
 
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, createHash } from 'node:crypto';
 import { createServer } from "http";
 import { writeFileSync, existsSync, readFileSync, mkdirSync, renameSync } from "fs";
 import { join, dirname } from "path";
@@ -159,6 +159,56 @@ export async function observeSession(session) {
   if (!data?.url) throw new Error('OBSERVATION_MISSING');
   return {ok:true, observed:true, at:new Date().toISOString(), ...data};
 }
+// Read-only page markup for the Aura stage. The page is cleaned inside the browser before anything
+// leaves it: no scripts, comments, form values, hidden fields, token/nonce metadata, event handlers or
+// data-* attributes. The copy is visually faithful (structure and styles), never a working replica.
+export const MAX_HTML_BYTES = 550_000;
+export const HTML_CLEANER = `(() => {
+  const root = document.documentElement.cloneNode(true);
+  root.querySelectorAll('script,noscript,template,iframe,object,embed,input[type=hidden]').forEach(e => e.remove());
+  root.querySelectorAll('meta').forEach(m => {
+    const n = (m.getAttribute('name') || m.getAttribute('property') || m.getAttribute('http-equiv') || '').toLowerCase();
+    if (/csrf|xsrf|token|nonce|session|auth|key|secret/.test(n)) m.remove();
+  });
+  root.querySelectorAll('input,textarea,select,option').forEach(e => {
+    e.removeAttribute('value'); e.removeAttribute('checked'); e.removeAttribute('selected');
+    if (e.tagName === 'TEXTAREA') e.textContent = '';
+  });
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+  const comments = []; while (walker.nextNode()) comments.push(walker.currentNode);
+  comments.forEach(c => c.remove());
+  root.querySelectorAll('*').forEach(e => {
+    for (const a of [...e.attributes]) {
+      const n = a.name.toLowerCase();
+      if (n.startsWith('data-') || n.startsWith('on') || n === 'nonce' || n === 'integrity') e.removeAttribute(a.name);
+    }
+  });
+  return { url: location.href, title: document.title, html: '<!doctype html>' + root.outerHTML };
+})()`;
+// Defence in depth: the bridge refuses markup that still carries anything the cleaner should have removed.
+export function uncleanHtmlReason(html) {
+  if (typeof html !== 'string') return 'HTML_MISSING';
+  if (/<script[\s>]/i.test(html)) return 'script';
+  if (/<!--/.test(html)) return 'comment';
+  if (/<input[^>]*\btype\s*=\s*["']?hidden/i.test(html)) return 'hidden-field';
+  if (/<(?:input|option)[^>]*\svalue\s*=/i.test(html)) return 'form-value';
+  if (/<[a-z][^>]*\son[a-z]+\s*=/i.test(html)) return 'event-handler';
+  if (/<[a-z][^>]*\sdata-[\w-]+\s*=/i.test(html)) return 'data-attribute';
+  return null;
+}
+export async function htmlSession(session, { isAllowed = allowed } = {}) {
+  // Check the origin before the page is read, so a disallowed page's markup never reaches this process.
+  const href = await evaluate(session, 'location.href');
+  if (!isAllowed(href)) return { ok: false, error: 'ORIGIN_DENIED' };
+  const data = await evaluate(session, HTML_CLEANER);
+  if (!data?.url || !isAllowed(data.url)) return { ok: false, error: 'ORIGIN_DENIED' };
+  const bytes = Buffer.byteLength(data.html || '');
+  if (bytes > MAX_HTML_BYTES) return { ok: false, error: 'HTML_TOO_LARGE', bytes };
+  const unclean = uncleanHtmlReason(data.html);
+  if (unclean) return { ok: false, error: 'HTML_NOT_CLEAN:' + unclean };
+  return { ok: true, observed: true, at: new Date().toISOString(), url: data.url, title: String(data.title || '').slice(0, 300),
+    html: data.html, bytes, sha256: createHash('sha256').update(data.html).digest('hex') };
+}
 export async function navigateSession(session, url, settleMs=1000) {
   if (!['http:','https:'].includes(new URL(url).protocol)) throw new Error('INVALID_URL');
   await session.send('Page.enable');
@@ -238,6 +288,9 @@ export const server = createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/observe") {
       return json(res, await observe());
+    }
+    if (req.method === "GET" && url.pathname === "/html") {
+      return json(res, await withTab(s=>htmlSession(s)));
     }
     if (req.method === "POST" && url.pathname === "/navigate") {
       const b = await readBody(req);
