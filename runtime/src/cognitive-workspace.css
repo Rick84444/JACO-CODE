@@ -125,7 +125,7 @@
 .cognitive-live-questions { display:flex; gap:14px; margin:10px 2px 14px; }
 .cognitive-live-questions>button { color:#6f93a6; font-size:10px; }
 .cognitive-live-questions>button:hover { color:#b5d8e4; }
-.cognitive-follow-latest { position:absolute; bottom:220px; left:50%; transform:translateX(-50%); display:flex; gap:6px; align-items:center; padding:8px 12px; background:#1c303e; border:1px solid #334957; color:#b3d3e0; border-radius:20px; box-shadow:0 8px 22px #0005; font-size:10px; z-index:2; white-space:nowrap; }
+.cognitive-follow-latest { display:flex; gap:6px; align-items:center; margin:0 0 8px auto; padding:6px 12px; background:#1c303e; border:1px solid #334957; color:#b3d3e0; border-radius:20px; font-size:11px; white-space:nowrap; }
 .cognitive-history-note { text-align:center; font-size:10px; color:#5f7688; margin:8px 0 28px; }
 .cognitive-sidebar { position:absolute; top:0; bottom:0; left:60px; width:340px; max-width:calc(100% - 60px); display:flex; flex-direction:column; background:#0c141c; border-right:1px solid #29404f; box-shadow:20px 0 55px #0008; z-index:41; }
 .cognitive-sidebar-scrim { position:absolute; inset:0 0 0 60px; background:#0005; z-index:40; }

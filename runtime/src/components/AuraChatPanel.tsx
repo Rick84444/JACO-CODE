@@ -500,9 +500,9 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           {busy&&<div className="cognitive-response-wait"><span role="status"><Loader2 size={15} className="animate-spin"/>{busy==='goal'?'Registrerar uppdraget…':busy==='tool'?'Väntar på verktygets resultat…':'Väntar på modellens svar…'}</span>{busy==='chat' && <><time aria-label="Väntetid">{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>Avbryt svar</button></>}</div>}
         </div>
       </div>
-      {!following&&<button type="button" className="cognitive-follow-latest" onClick={followLatest}><ArrowDown size={13}/>Följ senaste arbetet</button>}
       <form onSubmit={event=>{event.preventDefault();void submit();}} className="cognitive-composer">
         <div className="cognitive-composer-inner">
+          {!following&&<button type="button" className="cognitive-follow-latest" onClick={followLatest}><ArrowDown size={13}/>Följ senaste arbetet</button>}
           {currentMission&&<div className="cognitive-live-questions"><button type="button" onClick={()=>prompt('Vad har du upptäckt hittills i det aktuella uppdraget?')} disabled={Boolean(busy)}>Vad har du upptäckt?</button><button type="button" onClick={()=>prompt('Visa vad som faktiskt fungerar och vilka belägg som stöder det.')} disabled={Boolean(busy)}>Vad fungerar?</button></div>}
 
           {selectedTool && (

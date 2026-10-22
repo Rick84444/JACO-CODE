@@ -1482,7 +1482,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       <div className="flex-1 min-h-0">
         <AuraChatPanel
           session={chatSession}
-          runControls={missions.some(item => item.status === 'ACTIVE') && activation.report?.ok && !activation.error ? null : <ActivationCard activation={activation} projectName={projectName}
+          runControls={activation.report?.ok && !activation.error ? null : <ActivationCard activation={activation} projectName={projectName}
             onOpenProject={() => { setSidebar('explorer'); setSidePanelOpen(true); }}
             onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
             onActivated={() => { void refresh().catch(() => {}); }} />}
