@@ -52,8 +52,23 @@ if [[ "$CURRENT_BRANCH" != main ]]; then
   git -C "$ROOT" merge-base --is-ancestor HEAD FETCH_HEAD ||
     fail 'Current branch contains commits outside fetched main; cannot switch automatically.'
   if git -C "$ROOT" show-ref --quiet --verify refs/heads/main; then
-    git -C "$ROOT" merge-base --is-ancestor main FETCH_HEAD ||
-      fail 'Local main contains commits outside fetched main; refusing to rewrite them.'
+    if ! git -C "$ROOT" merge-base --is-ancestor main FETCH_HEAD; then
+      # Preserve divergent local main history as a Git tag before updating
+      # its branch pointer. This avoids accumulating deployment branches.
+      OLD_MAIN="$(git -C "$ROOT" rev-parse --verify refs/heads/main)"
+      SAVED_MAIN_TAG="jaco-main-before-aura-$(date -u +%Y%m%dT%H%M%S%N)"
+      git -C "$ROOT" tag "$SAVED_MAIN_TAG" "$OLD_MAIN" ||
+        fail 'Could not preserve the divergent local main commit.'
+      [[ "$(git -C "$ROOT" rev-parse --verify "refs/tags/$SAVED_MAIN_TAG")" == "$OLD_MAIN" ]] ||
+        fail 'Preserved main tag does not resolve to the original commit.'
+      printf 'Original local main: %s\nPreserved as tag: %s\nRemote target: %s\n' \
+        "$OLD_MAIN" "$SAVED_MAIN_TAG" "$(git -C "$ROOT" rev-parse FETCH_HEAD)" > "$BACKUP/preserved-local-main.txt"
+      say "Preserved local main commit $OLD_MAIN as Git tag $SAVED_MAIN_TAG."
+      # Refuse if local main is checked out by another worktree. No hard
+      # reset or working-tree cleanup is performed.
+      git -C "$ROOT" branch -f main FETCH_HEAD ||
+        fail "Cannot update local main; its previous state remains available as $SAVED_MAIN_TAG."
+    fi
     git -C "$ROOT" switch main ||
       fail 'Could not switch to main; inspect checkout and worktrees without resetting.'
   else

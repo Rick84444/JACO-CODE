@@ -112,7 +112,9 @@ function runGitUpgradeSegment(working) {
 say(){ :; }
 fail(){ echo "BLOCKED: $*" >&2; exit 1; }
 ${block}`;
-  return spawnSync('bash', ['-c', script], {encoding:'utf8', env:{...process.env, ROOT:working}});
+  const backup = path.join(path.dirname(working), 'upgrade-backup');
+  fs.mkdirSync(backup,{recursive:true});
+  return spawnSync('bash', ['-c', script], {encoding:'utf8', env:{...process.env, ROOT:working, BACKUP:backup}});
 }
 
 test('safe temporary branch becomes canonical main via fast-forward', t => {
@@ -152,7 +154,7 @@ test('detached HEAD upgrades by switching to main if ancestry is safe', t => {
   assert.equal(git(working,'rev-parse','HEAD'),latest);
 });
 
-test('unique local main commits prevent automatic switch from temporary branch', t => {
+test('unique local main commits are preserved under a Git tag before switching', t => {
   const {remote,working} = fixture(t);
   const base = git(working,'rev-parse','HEAD');
   fs.writeFileSync(path.join(working,'local-main.txt'), 'keep');
@@ -160,10 +162,43 @@ test('unique local main commits prevent automatic switch from temporary branch',
   git(working,'commit','-qm','local-main-unique');
   const originalMain = git(working,'rev-parse','HEAD');
   git(working,'switch','-qc','temporary-work',base);
+  const latest = advanceRemote(remote);
+  const result=runGitUpgradeSegment(working);
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(git(working,'branch','--show-current'),'main');
+  assert.equal(git(working,'rev-parse','main'),latest);
+  const tags=git(working,'tag','--list','jaco-main-before-aura-*').split(String.fromCharCode(10));
+  assert.equal(tags.length,1);
+  assert.equal(git(working,'rev-parse',tags[0]),originalMain);
+  const receipt=fs.readFileSync(path.join(path.dirname(working),'upgrade-backup/preserved-local-main.txt'),'utf8');
+  assert.match(receipt,/Original local main:/);
+  assert(receipt.includes(originalMain));
+});
+
+test('main checked out in another worktree is never rewritten', t => {
+  const {remote,working} = fixture(t);
+  const base=git(working,'rev-parse','HEAD');
+  fs.writeFileSync(path.join(working,'local-main.txt'),'keep');
+  git(working,'add','local-main.txt');
+  git(working,'commit','-qm','local-main-unique');
+  const originalMain=git(working,'rev-parse','main');
+  git(working,'switch','-qc','temporary-work',base);
+  git(working,'worktree','add','-q',path.join(path.dirname(working),'other'),'main');
   advanceRemote(remote);
   const result=runGitUpgradeSegment(working);
   assert.notEqual(result.status,0);
-  assert.match(result.stderr,/Local main contains commits outside fetched main/);
+  assert.match(result.stderr,/Cannot update local main/);
   assert.equal(git(working,'branch','--show-current'),'temporary-work');
   assert.equal(git(working,'rev-parse','main'),originalMain);
+  const tags=git(working,'tag','--list','jaco-main-before-aura-*').split(String.fromCharCode(10));
+  assert.equal(tags.length,1);
+  assert.equal(git(working,'rev-parse',tags[0]),originalMain);
+});
+
+test('divergent main backup happens before any local branch ref is changed', () => {
+  assert(source.includes('Preserved local main commit'));
+  assert(source.includes('preserved-local-main.txt'));
+  assert(source.includes('git -C "$ROOT" tag "$SAVED_MAIN_TAG" "$OLD_MAIN"'));
+  assert(at('git -C "$ROOT" tag "$SAVED_MAIN_TAG" "$OLD_MAIN"') < at('git -C "$ROOT" branch -f main FETCH_HEAD'));
+  assert(!source.includes('git reset --hard'));
 });
