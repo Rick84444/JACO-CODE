@@ -15,7 +15,6 @@ ROOT="$(git -C "${JACO_UPGRADE_REPO:-$HOME/JACO-CODE}" rev-parse --show-toplevel
 ORIGIN="$(git -C "$ROOT" remote get-url origin)"
 ORIGIN="${ORIGIN,,}"
 [[ "$ORIGIN" =~ ^(https://github\.com/|git@github\.com:)rick84444/jaco-code(\.git)?$ ]] || fail 'Unexpected Git origin; refusing to update a different repository.'
-[[ "$(git -C "$ROOT" branch --show-current)" == main ]] || fail 'Switch to the canonical main branch first.'
 [[ -f "$ROOT/runtime/bin/jacoctl" && -d "$ROOT/runtime/termux/services" ]] || fail 'JACO runtime structure missing.'
 RUNTIME="$ROOT/runtime"
 SVDIR="$PREFIX/var/service"
@@ -44,6 +43,25 @@ fi
 
 say 'Fetching current main without overwriting local files.'
 git -C "$ROOT" fetch --no-tags origin main
+
+# The checkout may be on a detached HEAD or a temporary branch. Promote to
+# canonical main only when the current commit and local main are ancestors of
+# the fetched main. This preserves unique branch commits for manual review.
+CURRENT_BRANCH="$(git -C "$ROOT" branch --show-current)"
+if [[ "$CURRENT_BRANCH" != main ]]; then
+  git -C "$ROOT" merge-base --is-ancestor HEAD FETCH_HEAD ||
+    fail 'Current branch contains commits outside fetched main; cannot switch automatically.'
+  if git -C "$ROOT" show-ref --quiet --verify refs/heads/main; then
+    git -C "$ROOT" merge-base --is-ancestor main FETCH_HEAD ||
+      fail 'Local main contains commits outside fetched main; refusing to rewrite them.'
+    git -C "$ROOT" switch main ||
+      fail 'Could not switch to main; inspect checkout and worktrees without resetting.'
+  else
+    git -C "$ROOT" switch -c main --track origin/main ||
+      fail 'Could not create main; inspect checkout without resetting.'
+  fi
+  say "Switched to canonical main from ${CURRENT_BRANCH:-detached HEAD}."
+fi
 git -C "$ROOT" merge --ff-only FETCH_HEAD || fail 'Git fast-forward blocked; existing files preserved.'
 TARGET="$(git -C "$ROOT" rev-parse HEAD)"
 say "Target commit: $TARGET"
