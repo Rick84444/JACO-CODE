@@ -78,7 +78,8 @@ test('launcher: Node version, arguments, free port, project folder and the serve
   assert.equal(ensureEconomicPolicy(dir), true);
   const policyFile = path.join(dir, '.jaco', 'continuum', 'economic-policy.json');
   const policy = JSON.parse(fs.readFileSync(policyFile, 'utf8'));
-  assert.ok(policy.maxCloudUsdPerTask >= 0.7, 'above the worst-case reservation of one agent call');
+  assert.equal(policy.cloudEnabled, true);
+  assert.deepEqual([policy.dailyCloudUsd, policy.monthlyCloudUsd, policy.maxCloudUsdPerTask], [undefined, undefined, undefined], 'no cost caps until the operator sets them');
   fs.writeFileSync(policyFile, JSON.stringify({ dailyCloudUsd: 2 }));
   assert.equal(ensureEconomicPolicy(dir), false);
   assert.equal(JSON.parse(fs.readFileSync(policyFile, 'utf8')).dailyCloudUsd, 2, 'a change the operator made is never overwritten');

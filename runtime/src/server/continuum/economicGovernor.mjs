@@ -4,13 +4,16 @@ import { atomicWriteJson, readJson, nowIso, makeId, safeNumber, deepClone } from
 
 const DEFAULT_POLICY = {
   schema:'jaco.continuum.economic-policy.v1',
-  cloudEnabled:false,
-  manualAuraCloudEnabled:false,
-  novaOllamaCloudEnabled:false,
+  // Operator decision 2026-10-22: cost limits are something the operator turns on, not built in. Cloud
+  // models are allowed and every cap is off (null) until the operator sets one in the budget panel.
+  // Outgoing payments and financial commitments are a separate, always-on rule (spendGuard, approval policy).
+  cloudEnabled:true,
+  manualAuraCloudEnabled:true,
+  novaOllamaCloudEnabled:true,
   currency:'USD',
-  dailyCloudUsd:1.00,
-  monthlyCloudUsd:20.00,
-  maxCloudUsdPerTask:0.25,
+  dailyCloudUsd:null,
+  monthlyCloudUsd:null,
+  maxCloudUsdPerTask:null,
   warningAtPercent:70,
   hardStopAtPercent:100,
   requirePositiveExpectedValueForRevenueMissions:true,
@@ -45,16 +48,18 @@ export class EconomicGovernor {
     if(!patch||typeof patch!=='object'||Array.isArray(patch))throw new Error('ECONOMIC_POLICY_INVALID');
     const next={...this.policy};
     for(const key of ['cloudEnabled','manualAuraCloudEnabled','novaOllamaCloudEnabled','requirePositiveExpectedValueForRevenueMissions','financialCommitmentRequiresOperatorApproval','disallowUnboundedRetries','disallowUnboundedAgentSpawn'])if(key in patch){if(typeof patch[key]!=='boolean')throw new Error(`ECONOMIC_POLICY_BOOLEAN_REQUIRED:${key}`);next[key]=patch[key];}
-    for(const key of ['dailyCloudUsd','monthlyCloudUsd','maxCloudUsdPerTask','warningAtPercent','hardStopAtPercent'])if(key in patch){if(typeof patch[key]!=='number'||!Number.isFinite(patch[key])||patch[key]<0)throw new Error(`ECONOMIC_POLICY_NUMBER_INVALID:${key}`);next[key]=patch[key];}
+    // A cap is a finite amount >= 0, or null to turn that cap off.
+    for(const key of ['dailyCloudUsd','monthlyCloudUsd','maxCloudUsdPerTask'])if(key in patch){if(patch[key]!==null&&(typeof patch[key]!=='number'||!Number.isFinite(patch[key])||patch[key]<0))throw new Error(`ECONOMIC_POLICY_NUMBER_INVALID:${key}`);next[key]=patch[key];}
+    for(const key of ['warningAtPercent','hardStopAtPercent'])if(key in patch){if(typeof patch[key]!=='number'||!Number.isFinite(patch[key])||patch[key]<0)throw new Error(`ECONOMIC_POLICY_NUMBER_INVALID:${key}`);next[key]=patch[key];}
     if(next.warningAtPercent>next.hardStopAtPercent||next.hardStopAtPercent>100)throw new Error('ECONOMIC_POLICY_PERCENT_INVALID');
-    if(process.env.JACO_ECONOMIC_ALLOW_HIGH_CAPS!=='1')for(const [key,max] of Object.entries(ECONOMIC_CAP_CEILING))if(key in patch&&next[key]>max)throw new Error(`ECONOMIC_POLICY_CAP_TOO_HIGH:${key}>${max}`);
     atomicWriteJson(this.policyFile,next);this.policy=next;this.events.append({stream:'economic',type:'economic.policy_updated',actor,data:this.policy});return this.snapshot();
   }
   headroom(){
     this.#rollPeriods();
     return {
-      dailyUsd:Math.max(0,this.policy.dailyCloudUsd-this.state.dailySpentUsd-this.state.reservedUsd),
-      monthlyUsd:Math.max(0,this.policy.monthlyCloudUsd-this.state.monthlySpentUsd-this.state.reservedUsd),
+      // null = no cap set, so no limit on headroom.
+      dailyUsd:this.policy.dailyCloudUsd==null?null:Math.max(0,this.policy.dailyCloudUsd-this.state.dailySpentUsd-this.state.reservedUsd),
+      monthlyUsd:this.policy.monthlyCloudUsd==null?null:Math.max(0,this.policy.monthlyCloudUsd-this.state.monthlySpentUsd-this.state.reservedUsd),
       cloudEnabled:this.policy.cloudEnabled,
     };
   }
@@ -62,16 +67,17 @@ export class EconomicGovernor {
     this.#rollPeriods();const estimate=Math.max(0,safeNumber(estimatedUsd,0));
     if(!this.policy.cloudEnabled && !(purpose==='manual-aura-chat' && this.policy.manualAuraCloudEnabled) && !(purpose==='nova-ollama-cloud' && this.policy.novaOllamaCloudEnabled))return {allowed:false,reason:'CLOUD_DISABLED_BY_POLICY'};
     if(estimate<=0)return {allowed:false,reason:'COST_ESTIMATE_REQUIRED'};
-    if(estimate>this.policy.maxCloudUsdPerTask)return {allowed:false,reason:'TASK_COST_LIMIT',limitUsd:this.policy.maxCloudUsdPerTask};
+    if(this.policy.maxCloudUsdPerTask!=null&&estimate>this.policy.maxCloudUsdPerTask)return {allowed:false,reason:'TASK_COST_LIMIT',limitUsd:this.policy.maxCloudUsdPerTask};
     const headroom=this.headroom();
-    if(estimate>headroom.dailyUsd)return {allowed:false,reason:'DAILY_BUDGET_LIMIT',headroomUsd:headroom.dailyUsd};
-    if(estimate>headroom.monthlyUsd)return {allowed:false,reason:'MONTHLY_BUDGET_LIMIT',headroomUsd:headroom.monthlyUsd};
+    if(headroom.dailyUsd!=null&&estimate>headroom.dailyUsd)return {allowed:false,reason:'DAILY_BUDGET_LIMIT',headroomUsd:headroom.dailyUsd};
+    if(headroom.monthlyUsd!=null&&estimate>headroom.monthlyUsd)return {allowed:false,reason:'MONTHLY_BUDGET_LIMIT',headroomUsd:headroom.monthlyUsd};
     if(this.policy.requirePositiveExpectedValueForRevenueMissions&&expectedValueUsd!==null&&safeNumber(expectedValueUsd,0)<estimate)return {allowed:false,reason:'NEGATIVE_EXPECTED_VALUE'};
     const reservationId=makeId('costres');
     this.state.reservations[reservationId]={reservationId,missionId,taskId,estimatedUsd:estimate,expectedValueUsd,purpose,...(metadata?{metadata}:{}),createdAt:nowIso()};
     this.state.reservedUsd+=estimate;this.#persist();
     this.events.append({stream:'economic',type:'cloud.cost_reserved',entityId:reservationId,actor:'economic-governor',data:this.state.reservations[reservationId]});
-    return {allowed:true,reservationId,estimatedUsd:estimate,headroomAfterUsd:Math.min(headroom.dailyUsd-estimate,headroom.monthlyUsd-estimate)};
+    const after=[headroom.dailyUsd,headroom.monthlyUsd].filter(v=>v!=null).map(v=>v-estimate);
+    return {allowed:true,reservationId,estimatedUsd:estimate,headroomAfterUsd:after.length?Math.min(...after):null};
   }
   settleCloud(reservationId,actualUsd,usage={}){
     this.#rollPeriods();const r=this.state.reservations[reservationId];if(!r)throw new Error(`unknown cost reservation '${reservationId}'`);
@@ -208,8 +214,5 @@ export class EconomicGovernor {
   #persist(){this.state.updatedAt=nowIso();atomicWriteJson(this.stateFile,this.state);}
 }
 
-// A cap is a statement of what the operator accepts to spend. Values far above anything the system has ever used
-// are refused unless the operator sets JACO_ECONOMIC_ALLOW_HIGH_CAPS=1, so a cap cannot silently say "100,000 USD".
-export const ECONOMIC_CAP_CEILING = { dailyCloudUsd: 200, monthlyCloudUsd: 2000, maxCloudUsdPerTask: 10 };
 
 export { DEFAULT_POLICY as DEFAULT_ECONOMIC_POLICY };
