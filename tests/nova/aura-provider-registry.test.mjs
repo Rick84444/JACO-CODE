@@ -42,6 +42,21 @@ test('Aura registers the same configured LiteRT model as SEER and refreshes stal
   assert.equal(restarted.defaultModel, 'gemma4-e2b');
 });
 
+test('connecting an address a known provider already serves updates that provider instead of adding a duplicate', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-provider-dedupe-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const registry = new ProviderRegistry(dir, {});
+  const before = registry.list().length;
+  const saved = registry.register({ id: 'local-11434', baseUrl: 'http://127.0.0.1:11434/v1/', defaultModel: 'gemma3:4b' });
+  assert.equal(saved.id, 'ollama', 'the known id is kept');
+  assert.equal(saved.defaultModel, 'gemma3:4b');
+  assert.equal(saved.apiKeyEnv, 'OLLAMA_API_KEY', 'an omitted key name keeps the known one');
+  assert.equal(registry.list().length, before);
+  assert.equal(registry.list().some(item => item.id === 'local-11434'), false);
+  const other = registry.register({ id: 'my-gateway', baseUrl: 'http://10.0.0.5:8080/v1' });
+  assert.equal(other.id, 'my-gateway', 'a new endpoint still gets its own entry');
+});
+
 test('Aura does not invent a LiteRT model ID when SEER will discover the registry', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-litert-auto-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
