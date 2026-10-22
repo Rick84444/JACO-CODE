@@ -109,7 +109,7 @@ interface Props {
   missions?: Array<{id:string;goal:string;status:string;cancelRequested?:boolean}>;
   onCancelMission?: (id:string)=>Promise<void>;
   // Opens the IDE's view of the running work (Missions panel).
-  onOpenWork?: () => void;
+  onOpenWork?: (missionId?:string) => void;
 }
 
 
@@ -213,10 +213,11 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   }, [busy]);
   useEffect(() => () => requestRef.current?.abort(), []);
   const [following,setFollowing]=useState(true);
+  const backgroundEvents=useMemo(()=>liveEvents.filter(event=>!event.missionId&&event.category==='observation'&&event.evidence.outcome==='observed'),[liveEvents]);
   const feed=useMemo(()=>[
     ...messages.filter(m=>m.id!=='welcome').map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message})),
-    ...liveEvents.map(event=>({kind:'event' as const,id:event.id,at:event.at,event})),
-  ].sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages,liveEvents]);
+    ...liveEvents.filter(event=>!backgroundEvents.includes(event)).map(event=>({kind:'event' as const,id:event.id,at:event.at,event})),
+  ].sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages,liveEvents,backgroundEvents]);
   const currentMission=missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
   const followLatest=()=>{followRef.current=true;setFollowing(true);if(scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;};
   useEffect(()=>{if(followRef.current && scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;},[feed,busy]);
@@ -484,6 +485,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       <div ref={scrollRef} onScroll={()=>{const el=scrollRef.current;if(el){const near=el.scrollHeight-el.scrollTop-el.clientHeight<80;followRef.current=near;setFollowing(near);}}} role="log" aria-live="polite" aria-relevant="additions" aria-label="JACO-konversation" className="cognitive-chat-scroll">
         <div className="cognitive-feed">
           {!storageReady && !storageError && <p className="cognitive-muted">Läser din sparade konversation…</p>}
+          {backgroundEvents.length>0&&<details className="cognitive-background-events"><summary>Aktivitet i bakgrunden ({backgroundEvents.length})</summary>{backgroundEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</details>}
           {historyTruncated&&<p className="cognitive-history-note">Det senaste arbetet visas. Äldre händelser finns kvar i uppdragshistoriken.</p>}
           {storageReady&&feed.length===0&&<div className="cognitive-welcome">
             <JacoWordmark size="lg"/>
@@ -510,7 +512,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         <div className="cognitive-composer-inner">
           {currentMission&&<section className="cognitive-live-mission" data-mission-id={currentMission.id}>
             <div className="cognitive-live-mission-heading"><span className={'cognitive-mission-dot '+(currentMission.status==='ACTIVE'?'active':'')}/><span>Pågående uppdrag</span>
-              {onOpenWork&&<button type="button" onClick={onOpenWork}>Visa arbete<ChevronRight size={12}/></button>}
+              {onOpenWork&&<button type="button" onClick={()=>onOpenWork(currentMission.id)}>Visa arbete<ChevronRight size={12}/></button>}
               {onCancelMission&&<button type="button" aria-label="Avsluta aktuellt uppdrag" disabled={closingMission===currentMission.id||Boolean(activeDetail.cancelRequested)} onClick={async()=>{
                 setClosingMission(currentMission.id);setCloseError(null);
                 try{await onCancelMission(currentMission.id);}catch(error:any){setCloseError(error.message);}finally{setClosingMission(null);}

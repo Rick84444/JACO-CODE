@@ -375,3 +375,71 @@
 .cognitive-copy-message button { min-height:44px; padding:6px 12px; border:1px solid #343b45; border-radius:8px; color:#cbd5e1; background:transparent; }
 .cognitive-copy-message small { color:#94a3b8; }
 .cognitive-copy-message textarea { width:100%; min-height:140px; padding:10px; background:#111820; color:#e2e8f0; }
+
+.mission-review{padding:16px;border-bottom:1px solid #343b45;font-size:13px;color:#cbd5e1}.mission-review header,.mission-review-patch>div{display:flex;justify-content:space-between;gap:12px;align-items:center}.mission-review h2{font-size:18px;color:#e2e8f0}.mission-review p{margin:10px 0;overflow-wrap:anywhere}.mission-review label{display:block;margin:12px 0}.mission-review select{display:block;width:100%;min-height:44px;margin-top:6px;background:#111820;color:#e2e8f0;border:1px solid #343b45;padding:8px;border-radius:6px}.mission-review button{min-height:44px;padding:8px 12px;border:1px solid #343b45;border-radius:6px;color:#cbd5e1}.mission-review-patch{margin-top:12px;max-width:100%;overflow:hidden}.mission-review-patch strong{overflow-wrap:anywhere;min-width:0}.mission-review pre{font:12px/1.65 monospace;overflow:auto;background:#0b1117;padding:10px;max-height:65vh}.mission-review-patch pre[data-wrap=true]{white-space:pre-wrap;overflow-wrap:anywhere}.mission-review-patch pre span{display:block;min-height:1.65em}.mission-review [data-kind=add]{background:#12372a;color:#b0f3cb}.mission-review [data-kind=remove]{background:#3b2027;color:#ffd0d4}.mission-review [data-kind=hunk]{color:#90d9ee}.mission-review-tests{margin:14px 0}.mission-review-tests summary{min-height:44px;padding:10px 0;cursor:pointer}.mission-review-tests article{border-top:1px solid #343b45;padding-top:10px}
+
+/* Phone navigation uses the same workspace state as the desktop controls. */
+.cognitive-mobile-nav { display:none; }
+.cognitive-mobile-menu { margin:auto auto 0; padding:0; width:100%; max-width:560px; max-height:85dvh; border:1px solid #2d3b48; border-radius:24px 24px 0 0; background:#101820; color:#d9e0e8; }
+.cognitive-mobile-menu::backdrop { background:#02060bb3; backdrop-filter:blur(4px); }
+.cognitive-mobile-menu-body { padding:20px 20px max(20px,env(safe-area-inset-bottom)); }
+.cognitive-mobile-menu header { display:flex; align-items:center; justify-content:space-between; }
+.cognitive-mobile-menu h2 { font-size:21px; font-weight:600; }
+.cognitive-mobile-menu header button { min-width:44px; min-height:44px; display:grid; place-items:center; }
+.cognitive-mobile-menu p { color:#a2b0bc; font-size:14px; margin:4px 0 20px; }
+.cognitive-mobile-menu-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.cognitive-mobile-menu-grid button { min-height:64px; display:flex; align-items:center; gap:10px; padding:12px; border:1px solid #293642; border-radius:12px; text-align:left; font-size:14px; }
+.cognitive-mobile-menu-grid button svg { flex-shrink:0; color:#90c5d0; }
+@media (max-width:767px) {
+  .cognitive-workspace { font-size:14px; }
+  .cognitive-rail,.cognitive-view-tabs,.cognitive-footbar { display:none; }
+  .cognitive-topbar { min-height:64px; padding:8px 16px; padding-top:max(8px,env(safe-area-inset-top)); gap:12px; }
+  .cognitive-brand img { height:30px; }
+  .cognitive-project { flex:1; margin:0; justify-content:flex-start; min-height:44px; font-size:13px; }
+  .cognitive-project>span { max-width:100%; }
+  .cognitive-top-actions>button { min-width:44px; min-height:44px; }
+  .cognitive-top-actions>button[title^="Sök"] { display:none; }
+  .cognitive-contextbar { min-height:34px; padding:4px 16px 8px; border-bottom:0; }
+  .cognitive-status { font-size:12px; color:#a2b0bc; }
+  .cognitive-mobile-nav { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); flex-shrink:0; padding:6px 8px max(6px,env(safe-area-inset-bottom)); border-top:1px solid #25313c; background:#0d141c; }
+  .cognitive-mobile-nav button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; min-height:52px; border-radius:12px; font-size:11px; color:#a0aebb; }
+  .cognitive-mobile-nav button[aria-pressed=true] { color:#c0f1f5; background:#1b303a; }
+  .cognitive-sidebar { left:0; width:100%; max-width:none; border:0; box-shadow:none; }
+  .cognitive-sidebar-scrim { left:0; }
+  .cognitive-sidebar-header { height:56px; padding:0 16px; font-size:15px; }
+  .cognitive-sidebar-header>button,.cognitive-canvas-bar button { min-width:44px; min-height:44px; display:grid; place-items:center; }
+  .cognitive-canvas-bar { height:48px; font-size:14px; }
+  .cognitive-chat-heading { padding:4px 16px; }
+  .cognitive-chat-scroll { padding:12px 20px 20px; overscroll-behavior:contain; }
+  .cognitive-assistant-message,.cognitive-user-message>div { font-size:15px; line-height:1.75; }
+  .cognitive-composer,.cognitive-main[data-canvas=true] .cognitive-composer { padding:8px 12px 10px; }
+  .cognitive-input-box { border-radius:18px; box-shadow:none; }
+  .cognitive-input-actions { flex-wrap:wrap; gap:6px; padding:4px 8px 8px; }
+  .cognitive-compose-modes button { min-height:44px; }
+  .cognitive-composer-help { font-size:11px; margin:6px 4px 0; }
+  .cognitive-welcome { min-height:0; padding:16px 0; }
+  .cognitive-welcome>img { height:48px; margin-bottom:20px; }
+  .cognitive-welcome h1 { font-size:28px; }
+  .cognitive-welcome>p { font-size:14px; line-height:1.65; }
+  .cognitive-start-prompts { margin:20px 0 0; gap:8px; }
+  .cognitive-start-prompts>button { min-height:60px; border-radius:14px; font-size:14px; }
+  .cognitive-start-prompts small { font-size:12px; }
+  .connections-workspace input,.connections-workspace select,.mission-review select { font-size:16px; }
+  .mission-review { padding:16px; }
+}
+.cognitive-cost-compact { display:none; }
+.cognitive-background-events { font-size:12px; color:#9bafbd; margin:0 0 12px; }
+.cognitive-background-events>summary { min-height:44px; padding:12px 0; cursor:pointer; }
+@media (max-width:767px) {
+  .cognitive-cost-full { display:none; }
+  .cognitive-cost-compact { display:inline; white-space:nowrap; }
+  .cognitive-top-actions button[aria-label="Visa kostnad live"] { min-height:44px; border:0; font-size:12px; padding:6px; }
+  .cognitive-cost-popover { position:fixed; top:72px; left:12px; right:12px; width:auto; max-height:calc(100dvh - 160px); overflow:auto; }
+  .cognitive-setup-actions { gap:4px 12px; }
+  .cognitive-setup-actions>button:first-child { border-radius:8px; padding:0 12px; background:#203b47; }
+}
+.jaco-wordmark { display:inline-block; flex-shrink:0; font-size:26px; font-weight:700; line-height:1.2; letter-spacing:-.06em; color:#e3edf3; user-select:none; }
+.jaco-wordmark-sm { font-size:22px; }
+.jaco-wordmark-lg { font-size:48px; }
+.cognitive-welcome>.jaco-wordmark { margin:0 auto 24px; }
+@media (max-width:767px) { .cognitive-brand .jaco-wordmark { font-size:23px; } .cognitive-welcome>.jaco-wordmark { font-size:36px; margin-bottom:16px; } }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { MessageSquare, Code2, PanelRightClose, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone, MoreHorizontal, Bot } from 'lucide-react';
 import { JacoWordmark } from './JacoWordmark';
 import { CostChip } from './CostChip';
@@ -13,15 +13,18 @@ interface Props {
   lastObservedAt:string|null;error:string|null;
   attention?:React.ReactNode;
 }
-const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['connections',PlugZap,'Anslutningar'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
+const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['connections',PlugZap,'Anslutningar'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Arbete'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
 const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter'],['revenue',CircleDollarSign,'Budget & ekonomi']] as const;
 
 export function CognitiveWorkspace(props:Props) {
+  const menu = useRef<HTMLDialogElement>(null);
+  const navigate = (view:CognitiveCanvas) => { props.onCloseSidebar(); props.onCanvas(view); menu.current?.close(); };
+  const openPanel = (view:Sidebar) => { props.onSidebar(view); menu.current?.close(); };
   const hasCanvas=props.canvas!=='conversation';
   return <div className="cognitive-workspace" data-cognitive-workspace="true">
     <header className="cognitive-topbar">
       <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">Aura</span></div>
-      <div className="cognitive-project"><Folder size={14}/><span>{props.projectName}</span><ChevronRight size={12}/><span className="cognitive-branch">{props.branch || 'Projekt'}</span></div>
+      <button type="button" className="cognitive-project" aria-label={`Öppna projekt: ${props.projectName}`} onClick={()=>openPanel('explorer')}><Folder size={14}/><span>{props.projectName}</span><ChevronRight size={12}/><span className="cognitive-branch">{props.branch || 'Projekt'}</span></button>
       <div className="cognitive-top-actions">
         <CostChip onOpen={()=>props.onSidebar('providers')}/>
         {props.approvalCount>0 && <button type="button" className="cognitive-approval-button" aria-label={`${props.approvalCount} beslut behöver dig`} onClick={props.onApprovals}><CircleAlert size={14}/><span>{props.approvalCount} beslut</span></button>}
@@ -68,5 +71,24 @@ export function CognitiveWorkspace(props:Props) {
         </aside>
       </>}
     </div>
+    <nav className="cognitive-mobile-nav" aria-label="Mobilnavigation">
+      {([['conversation', MessageSquare, 'Samtal'], ['agents', Bot, 'Agenter'], ['evidence', ShieldCheck, 'Arbete']] as const).map(([id, Icon, label]) =>
+        <button key={id} type="button" aria-pressed={!props.sidePanelOpen && props.canvas===id} onClick={()=>navigate(id)}><Icon size={21}/><span>{label}</span></button>)}
+      <button type="button" aria-pressed={props.sidePanelOpen && props.sidebar==='explorer'} onClick={()=>openPanel('explorer')}><Folder size={21}/><span>Filer</span></button>
+      <button type="button" aria-label="Fler funktioner" onClick={()=>menu.current?.showModal()}><MoreHorizontal size={21}/><span>Mer</span></button>
+    </nav>
+    <dialog ref={menu} className="cognitive-mobile-menu" aria-labelledby="mobile-menu-title" onClick={event=>{if(event.target===event.currentTarget)menu.current?.close();}}>
+      <div className="cognitive-mobile-menu-body">
+        <header><h2 id="mobile-menu-title">Din arbetsyta</h2><button type="button" aria-label="Stäng menyn" onClick={()=>menu.current?.close()}><X size={21}/></button></header>
+        <p>Modeller, verktyg och projektinställningar</p>
+        <div className="cognitive-mobile-menu-grid">
+          {views.filter(([id])=>!['conversation','agents','evidence'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>navigate(id)}><Icon size={20}/>{label}</button>)}
+          {tools.filter(([id])=>['source-control','devices','revenue'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>openPanel(id)}><Icon size={20}/>{label}</button>)}
+          <button type="button" onClick={()=>{menu.current?.close();props.onApprovals();}}><ShieldCheck size={20}/>Beslut{props.approvalCount>0 ? ` (${props.approvalCount})` : ''}</button>
+          <button type="button" onClick={()=>{menu.current?.close();props.onCommands();}}><Search size={20}/>Sök funktion</button>
+          <button type="button" onClick={()=>{menu.current?.close();props.onSignOut();}}><LogOut size={20}/>Logga ut</button>
+        </div>
+      </div>
+    </dialog>
   </div>;
 }

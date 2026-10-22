@@ -8,6 +8,8 @@ export const defaultGit = (args, cwd) => execFileSync('git', args, {
   cwd,
   encoding: 'utf8',
   windowsHide: true,
+  timeout: 60000,
+  maxBuffer: 4 * 1024 * 1024,
   stdio: ['ignore', 'pipe', 'pipe'],
 }).trim();
 
@@ -40,6 +42,7 @@ const assertStateOutside = (stateReal, projectReal) => {
   if (target === root || target.startsWith(root + path.sep)) throw new Error('STATE_INSIDE_PROJECT');
 };
 
+/** @param {{stateDir?:string, git?:typeof defaultGit}} [options] */
 export function createMissionWorktrees({ stateDir, git = defaultGit } = {}) {
   if (typeof stateDir !== 'string' || !stateDir.trim()) throw new Error('STATE_DIR_INVALID');
   const stateRoot = path.resolve(stateDir);
@@ -85,6 +88,33 @@ export function createMissionWorktrees({ stateDir, git = defaultGit } = {}) {
 
   return {
     pathFor,
+    inspect({ projectRoot, missionId } = {}) {
+      const { target, project } = guard(projectRoot, missionId);
+      const branch = `jaco/${missionId}`;
+      if (!fs.existsSync(target)) return { state: 'NOT_CREATED', branch, files: [], truncated: false };
+      if (fs.lstatSync(target).isSymbolicLink()) throw new Error('MISSION_WORKTREE_LINK_DENIED');
+      const read = (args, cwd = target) => git(['-c', 'core.fsmonitor=false', ...args], cwd);
+      const common = cwd => fs.realpathSync(path.resolve(cwd, read(['rev-parse', '--git-common-dir'], cwd)));
+      if (normalize(common(target)) !== normalize(common(project)) || read(['branch', '--show-current']) !== branch) throw new Error('MISSION_WORKTREE_MISMATCH');
+      const projectHead = read(['rev-parse', 'HEAD'], project);
+      const head = read(['rev-parse', 'HEAD']);
+      const base = read(['merge-base', head, projectHead]);
+      const tracked = read(['diff', '--no-ext-diff', '--no-textconv', '--name-only', '-z', base, '--']).split('\0').filter(Boolean);
+      const untracked = read(['ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean);
+      const files = [...new Set([...tracked, ...untracked])];
+      return { state: 'READY', path: target, branch, head, base, projectHead, files: files.slice(0, 500).map(name => ({ path: name, untracked: untracked.includes(name) })), truncated: files.length > 500 };
+    },
+    diff({ projectRoot, missionId, file } = {}) {
+      const observed = this.inspect({ projectRoot, missionId });
+      const entry = observed.files.find(item => item.path === file);
+      if (!entry) throw new Error('MISSION_REVIEW_FILE_NOT_FOUND');
+      const options = ['-c', 'core.fsmonitor=false', '--literal-pathspecs', 'diff', '--no-ext-diff', '--no-textconv', '--no-color'];
+      if (!entry.untracked) return git([...options, observed.base, '--', file], observed.path);
+      // git's no-index diff exits 1 when a new file has content. All other errors
+      // fail the read; diagnostics must never masquerade as a successful patch.
+      try { return git([...options, '--no-index', '--', process.platform === 'win32' ? 'NUL' : '/dev/null', path.join(observed.path, file)], observed.path); }
+      catch (error) { if (error.status === 1 && typeof error.stdout === 'string') return error.stdout; throw error; }
+    },
     ensure({ projectRoot, missionId } = {}) {
       const { target, project } = guard(projectRoot, missionId);
       const branchName = `jaco/${missionId}`;

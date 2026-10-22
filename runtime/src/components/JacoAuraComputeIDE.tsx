@@ -1,3 +1,4 @@
+import { MissionReview } from './MissionReview';
 import { ConnectionsWorkspace } from './ConnectionsWorkspace';
 import { readAuraResponse as json, acknowledgeSavedDraft } from '../lib/auraApi.mjs';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -354,6 +355,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   };
   const [terminalCommand, setTerminalCommand] = useState('');
   const [terminalNotice, setTerminalNotice] = useState<string | null>(null);
+  const [reviewMissionId,setReviewMissionId] = useState<string|null>(null);
   const [gitDiff, setGitDiff] = useState<{ path: string; worktree: string; staged: string } | null>(null);
   const [gitActionNotice, setGitActionNotice] = useState<string | null>(null);
   const [gitCommitMessage, setGitCommitMessage] = useState('');
@@ -1403,7 +1405,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
             onActivated={() => { void refresh().catch(() => {}); }} />}
           missions={missions}
           onCancelMission={cancelMission}
-          onOpenWork={() => { setWorkspaceView('evidence'); }}
+          onOpenWork={id => { setReviewMissionId(id||null); setWorkspaceView('evidence'); }}
           onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
           activeFilePath={selectedFile}
           activeFileContent={fileView ? (drafts[fileView.path] ?? fileView.content) : null}
@@ -1435,7 +1437,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
               return (
                 <div key={m.id} className={`min-w-0 overflow-hidden border rounded px-2 py-1.5 ${m.status === 'ACTIVE' ? 'border-cyan-800 bg-[#0b1620]' : 'border-[#2b2b2b] bg-[#141414]'}`}>
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className={`text-[9px] border rounded px-1 shrink-0 ${statusClass(m.status)}`}>{m.status}</span>
+                    <span className={`text-[9px] border rounded px-1 shrink-0 ${statusClass(m.status)}`}>{m.status}</span><button type="button" onClick={()=>{setReviewMissionId(m.id);setWorkspaceView('evidence');}}>Granska ändringar</button>
                     <span className="min-w-0 flex-1 text-slate-200 truncate" title={m.goal}>{m.goal}</span>
                     <span className="ml-auto text-[9px] text-slate-500 shrink-0">
                       steg {m.step}{m.maxSteps ? `/${m.maxSteps}` : ''} · {formatTime(m.updatedAt)}
@@ -1706,7 +1708,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     {workspaceView==='gameboard'&&<CognitiveGameboard/>}
     {workspaceView==='voice'&&<VoiceChannel/>}
     {workspaceView==='preview'&&<CognitivePreview path={selectedFile} content={fileView ? (drafts[fileView.path] ?? fileView.content) : null} files={files} events={cognitiveEvents} onOpenFile={path => { openFile(path); setWorkspaceView('preview'); }}/>}
-    {workspaceView==='evidence'&&<div className="cognitive-evidence-scroll"><CognitiveEvidence events={cognitiveEvents} selected={selectedEvidence} onSelect={setSelectedEvidence} onOpenFile={openFile}/>
+    {workspaceView==='evidence'&&<div className="cognitive-evidence-scroll"><MissionReview missions={missions} preferredMissionId={reviewMissionId} onDecisions={()=>setShowApprovals(true)}/><CognitiveEvidence events={cognitiveEvents} selected={selectedEvidence} onSelect={setSelectedEvidence} onOpenFile={openFile}/>
       <details className="cognitive-mission-details"><summary>Uppdrag & kontroller</summary>{renderMissionList()}</details></div>}
   </>;
   const detail=<div className="cognitive-detail-wrapper">

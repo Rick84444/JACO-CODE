@@ -89,9 +89,13 @@ test('Termux activation lets Workplace own SEER and Durable Nova against canonic
   assert.match(ctl,/svc_stable/);
   assert.match(ctl,/prepare_core_owner/);
   assert.match(ctl,/cleanup_stale_core_processes/);
-  assert.match(ctl,/Core endpoint is live without a stable runit owner/);
+  // Assert the ownership gate, not wording that changes with release diagnostics.
+  assert.match(ctl,/if http_ok "\$CORE_URL\/api\/runtime\/identity" && ! core_truth_ready; then/);
   assert.match(ctl,/readlink "\$proc\/cwd"/);
-  assert.match(ctl,/\[\[ "\$cwd" == "\$JACO_ROOT" \]\]/);
+  assert.match(ctl,/if \[\[ "\$cwd" != "\$JACO_ROOT" \]\]; then/);
+  const cwdGate=ctl.slice(ctl.indexOf('if [[ "$cwd" != "$JACO_ROOT" ]]; then'),ctl.indexOf('cmd="$(tr'));
+  assert.match(cwdGate,/case "\$cwd" in/);
+  assert.match(cwdGate,/\*\) continue ;;/);
   assert.match(ctl,/wait_service_down/);
   assert.match(ctl,/Workplace did not stop cleanly; refusing overlapping restart/);
   assert.match(ctl,/Core did not stop cleanly; refusing overlapping restart/);

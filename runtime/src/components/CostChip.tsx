@@ -59,9 +59,9 @@ export function CostChip({onOpen}:{onOpen?:()=>void}) {
   return <div className="relative">
     <button type="button" onClick={()=>setOpen(o=>!o)} aria-expanded={open} aria-label="Visa kostnad live"
       title="Uppmätt kostnad, uppdateras var 5:e sekund" className={`flex items-center gap-1.5 rounded border px-2 py-1 text-[11px] ${color}`}>
-      <CircleDollarSign size={14}/><span>{label}</span>
+      <CircleDollarSign size={14}/><span className="cognitive-cost-full">{label}</span><span className="cognitive-cost-compact">{error?'Kostnad ?':live?usd(live.today.usd):'Kostnad…'}</span>
     </button>
-    {open&&<div role="dialog" aria-label="Kostnad live" className="absolute right-0 z-50 mt-2 w-[22rem] rounded-lg border border-slate-700 bg-[#0e1720] p-3 text-xs shadow-xl space-y-3">
+    {open&&<div role="dialog" aria-label="Kostnad live" className="cognitive-cost-popover absolute right-0 z-50 mt-2 w-[22rem] rounded-lg border border-slate-700 bg-[#0e1720] p-3 text-xs shadow-xl space-y-3">
       {error&&<p role="alert" className="text-amber-300">Kunde inte läsa kostnad: {error}</p>}
       {live&&<>
         <section className="space-y-1">

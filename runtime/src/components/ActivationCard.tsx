@@ -85,7 +85,7 @@ export const ActivationCard: React.FC<{
         else void read();
       }}>{connect ? 'Anslut modell' : start ? 'Starta verktyg' : state.action === 'details' ? 'Visa vad som saknas' : 'Försök igen'}</button>}
       <button type="button" onClick={onOpenProject}>Projekt: {projectName}</button>
-      <button type="button" onClick={onOpenProviders}>Modellanslutningar</button>
+      {!connect&&<button type="button" onClick={onOpenProviders}>Modellanslutningar</button>}
       <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? 'Dölj detaljer' : 'Anslutningsdetaljer'}</button>
     </div>
     {error && <p role="alert">{error}</p>}

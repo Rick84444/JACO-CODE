@@ -1,3 +1,5 @@
+import { readMissionReview } from './src/server/connected/missionReview.mjs';
+import { createMissionWorktrees } from '../agents/lib/mission-worktree.mjs';
 import { createWorkspaceAttachments } from './src/server/connected/workspaceAttachments.mjs';
 import { gameboardProjection, simulateGameboardScenario } from "../agents/lib/gameboard-fabric.mjs";
 import { createGameboardExchange } from "../agents/lib/gameboard-exchange.mjs";
@@ -2116,6 +2118,15 @@ const notifyPhone = async (action) => {
   };
 
   app.use('/api/aura/workbench', createWorkbenchProjectBinding(projectRoot));
+
+  const reviewWorktrees = createMissionWorktrees({stateDir:process.env.JACO_WORKTREE_STATE_DIR || path.join(os.homedir(), '.jaco')});
+  app.get('/api/aura/workbench/missions/:id/review', requireLocalUi, (req, res) => {
+    try {
+      const mission=connectedRuntime.novaMissions.get(req.params.id);
+      res.setHeader('Cache-Control','no-store');
+      res.json({success:true,review:readMissionReview({mission,projectRoot:projectRoot.get(),worktrees:reviewWorktrees,file:req.query.path==null?null:String(req.query.path)})});
+    } catch(error:any) { res.status(409).json({success:false,error:error?.message||'MISSION_REVIEW_UNAVAILABLE'}); }
+  });
 
   app.get('/api/aura/workbench/git/diff', requireLocalUi, async (req, res) => {
     try { res.json({ success: true, ...(await readAuraGitDiff(String(req.query.path || ''))) }); }
