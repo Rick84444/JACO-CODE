@@ -41,12 +41,16 @@ import { CognitiveGameboard } from './CognitiveGameboard';
 import { VoiceChannel } from './VoiceChannel';
 import { CognitiveEvidence } from './CognitiveEventCard';
 import { CognitivePreview } from './CognitivePreview';
+import { AuraLiveStage } from './AuraLiveStage';
+import { auraStageCandidate, auraMaterialKind, stageFileAllowed } from '../lib/auraStage.mjs';
+import { auraPresence } from '../lib/auraPresence.mjs';
 import { useCognitiveLive, type CognitiveEvent } from '../hooks/useCognitiveLive';
 import { toCognitiveEvent, liveWorkspaceStatus } from '../lib/cognitiveEvents.mjs';
 import { JacoWordmark } from './JacoWordmark';
 import { AuraRepositoryTree } from './AuraRepositoryTree';
 import { AuraProjectPicker } from './AuraProjectPicker';
 import { canSwitchProject } from '../lib/auraProject.mjs';
+import { readWorkspaceDrafts, writeWorkspaceDrafts } from '../lib/auraRecovery.mjs';
 import { AuraIntegrationsPanel } from './AuraIntegrationsPanel';
 import { NovaPlannerCard } from './NovaPlannerCard';
 import { ActivationCard, useActivationReport } from './ActivationCard';
@@ -304,17 +308,33 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const activation = useActivationReport();
   const cognitiveLive = useCognitiveLive();
   const [workspaceView, setWorkspaceView] = useState<CognitiveCanvas>('conversation');
+  const [workspacePinned, setWorkspacePinned] = useState(false);
+  const [focusedEvent, setFocusedEvent] = useState<CognitiveEvent|null>(null);
+  const [stageSaveBusy, setStageSaveBusy] = useState(false);
+  const [stageSaveNotice, setStageSaveNotice] = useState<string|null>(null);
+  const chooseWorkspace = (view:CognitiveCanvas) => {
+    if(view === 'stage') setWorkspacePinned(false);
+    else if(view !== 'conversation') setWorkspacePinned(true);
+    setWorkspaceView(view);
+  };
   const [codeOpened,setCodeOpened]=useState(false);
   useEffect(()=>{if(workspaceView==='code')setCodeOpened(true);},[workspaceView]);
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const [selectedEvidence, setSelectedEvidence] = useState<CognitiveEvent|null>(null);
   const [projectName, setProjectName] = useState('Arbetsyta');
+  const [projectRoot,setProjectRoot] = useState('');
+  const [draftStorageError,setDraftStorageError] = useState<string|null>(null);
+  const [draftNotice,setDraftNotice] = useState<string|null>(null);
+  const recoveryWritable=useRef(false);
   useEffect(() => {
     let active=true;
     fetch('/api/aura/workbench/project').then(json).then(data=>{
-      if(active && data.root) setProjectName(String(data.root).replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Arbetsyta');
-    }).catch(()=>{});
+      if(active && data.root) {
+        setProjectName(String(data.root).replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Arbetsyta');
+        restoreDrafts(String(data.root),true);
+      }
+    }).catch(()=>{if(active)setDraftStorageError('Projektets källa kunde inte läsas. Utkast kan inte sparas eller återställas säkert.');});
     const close=(event:KeyboardEvent)=>{if(event.key==='Escape')setSidePanelOpen(false);};
     window.addEventListener('keydown',close);
     return()=>{active=false;window.removeEventListener('keydown',close);};
@@ -330,6 +350,41 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const documentsRef=useRef(documents), draftsRef=useRef(drafts);
   documentsRef.current=documents; draftsRef.current=drafts;
   const [openFiles, setOpenFiles] = useState<string[]>([]);
+  const restoreDrafts=(root:string,initial=false)=>{
+    recoveryWritable.current=false;
+    setDraftStorageError(null);setDraftNotice(null);
+    try {
+      // Persistent per-origin/per-project recovery. Nothing is transmitted by this mechanism.
+      const saved=readWorkspaceDrafts(window.localStorage,root);
+      setDocuments(current=>initial?{...saved.documents,...current}:saved.documents);
+      setDrafts(current=>initial?{...saved.drafts,...current}:saved.drafts);
+      const paths=Object.keys(saved.drafts);
+      setOpenFiles(current=>initial?[...new Set([...current,...paths])]:paths);
+      setSelectedFile(current=>initial&&current?current:paths[0]||null);
+      if(paths.length)setDraftNotice('Lokala utkast återställda. Kontrollera filversionen före sparning.');
+      recoveryWritable.current=true;
+    }catch{
+      // Do not overwrite an unreadable existing archive with blank data.
+      if(!initial){setDocuments({});setDrafts({});setSelectedFile(null);setOpenFiles([]);}
+      setDraftStorageError('Utkasten kunde inte återställas. Sparad data lämnas orörd; kopiera nuvarande ändringar innan omladdning.');
+    }
+    setProjectRoot(root);
+  };
+  useEffect(()=>{
+    if(!projectRoot||!recoveryWritable.current)return;
+    try{
+      writeWorkspaceDrafts(window.localStorage,projectRoot,'',drafts,documents);
+      setDraftStorageError(null);
+    }catch{
+      setDraftStorageError('Webbläsarens lokala utkast kunde inte sparas. Spara projektfilen eller exportera arbetet innan omladdning.');
+    }
+  },[projectRoot,drafts,documents]);
+  useEffect(()=>{
+    if(canSwitchProject(drafts,documents))return;
+    const protect=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue='';};
+    window.addEventListener('beforeunload',protect);
+    return()=>window.removeEventListener('beforeunload',protect);
+  },[drafts,documents]);
   // The conversation remains mounted while the operator inspects code or evidence.
   const openChat = () => { setWorkspaceView('conversation'); setSidePanelOpen(false); window.dispatchEvent(new Event('jaco:aura:focus')); };
   const [connectionsTab,setConnectionsTab]=useState('models');
@@ -489,6 +544,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const editorFile = workspaceView === 'code' ? (fileView || lastEditorFile.current) : lastEditorFile.current;
 
   const openFile = (path: string) => {
+    setWorkspacePinned(true);
     setWorkspaceView('code');
     setSidePanelOpen(false);
     setSelectedFile(path);
@@ -776,6 +832,34 @@ export const JacoAuraComputeIDE: React.FC = () => {
   // The server-redacted live contract is the only source for the conversational event feed.
   // Workbench activity repeats these events under different IDs and belongs in the raw dock only.
   const cognitiveEvents = cognitiveLive.events;
+  const candidate = useMemo(()=>auraStageCandidate(cognitiveEvents),[cognitiveEvents]);
+  useEffect(()=>{
+    if(workspacePinned || !candidate) return;
+    if(candidate.event.id===focusedEvent?.id && (candidate.material!=='html' || candidate.event.evidence.path===selectedFile)) return;
+    setFocusedEvent(candidate.event);
+    if(candidate.material==='html' && stageFileAllowed(candidate.event.evidence.path)) {
+      setSelectedFile(candidate.event.evidence.path);
+    }
+  },[candidate?.event.id,workspacePinned,projectKey,selectedFile]);
+  const selectedStage = focusedEvent ? {event:focusedEvent,material:auraMaterialKind(focusedEvent)} : candidate;
+  const stagePath = selectedStage?.material==='html' ? selectedStage.event.evidence.path : null;
+  const stageFile = stagePath && selectedFile===stagePath ? fileView : null;
+  const stageDraft = stageFile ? (drafts[stageFile.path] ?? stageFile.content) : null;
+  const saveStageDraft = async(path:string) => {
+    if(stageSaveBusy) return;
+    const source=documentsRef.current[path];
+    const draft=draftsRef.current[path];
+    if(!source?.hash || draft===undefined) return;
+    setStageSaveBusy(true);setStageSaveNotice(null);
+    try {
+      await fetch('/api/aura/workbench/file',{method:'PUT',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({path,content:draft,expectedHash:source.hash})}).then(json);
+      const next:FileResponse=await fetch(`/api/aura/workbench/file?path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(json);
+      handleSaved(next);
+      setStageSaveNotice('Ändringen är sparad i projektfilen.');
+    } catch(error:any) {setStageSaveNotice('Kunde inte spara: '+String(error?.message||error));}
+    finally {setStageSaveBusy(false);}
+  };
   const selectedFileEvent=cognitiveEvents.filter(event=>event.evidence.path===selectedFile).at(-1)?.id;
   useEffect(()=>{
     if(!selectedFile || !['code','preview'].includes(workspaceView)) return;
@@ -939,12 +1023,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
         <>
           <div className="px-3 pt-2">
             <AuraProjectPicker
-              disabled={!canSwitchProject(drafts)}
+              disabled={!canSwitchProject(drafts,documents)}
               onOpened={(root) => {
                 setProjectName(root.replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Arbetsyta');
-                setSelectedFile(null);
-                setOpenFiles([]);
-                setDocuments({});
+                restoreDrafts(root);
                 setProjectKey(key => key + 1);
                 void refresh();
               }}
@@ -1405,7 +1487,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
             onActivated={() => { void refresh().catch(() => {}); }} />}
           missions={missions}
           onCancelMission={cancelMission}
-          onOpenWork={id => { setReviewMissionId(id||null); setWorkspaceView('evidence'); }}
+          onOpenWork={id => { setReviewMissionId(id||null); setWorkspacePinned(false); setWorkspaceView('stage'); }}
           onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
           activeFilePath={selectedFile}
           activeFileContent={fileView ? (drafts[fileView.path] ?? fileView.content) : null}
@@ -1587,6 +1669,21 @@ export const JacoAuraComputeIDE: React.FC = () => {
     try { await fetch('/ide-auth/logout', { method: 'POST' }); } finally { window.location.replace('/ide-login'); }
   };
   const status = liveWorkspaceStatus({ connection: cognitiveLive.connection, busy: chatSession.busy, missions, runtimeRunning: snapshot?.runtime?.running, error: connectionError, activation, approvalCount: snapshot?.approvals?.count || 0 });
+  const [presenceClock,setPresenceClock]=useState(()=>Date.now());
+  useEffect(()=>{
+    const timer=window.setInterval(()=>{if(document.visibilityState!=='hidden')setPresenceClock(Date.now());},5000);
+    return()=>window.clearInterval(timer);
+  },[]);
+  const currentMission=missions.find(item=>item.status==='ACTIVE')||
+    missions.find(item=>item.status==='BLOCKED'||item.status==='AWAITING_VERIFICATION')||null;
+  const presence=auraPresence({
+    now:presenceClock,connection:cognitiveLive.connection,lastObservedAt:cognitiveLive.lastObservedAt,
+    snapshotObservedAt:snapshot?.observedAt||null,runtimeRunning:snapshot?.runtime?.running??null,
+    mission:currentMission,agents:snapshot?.workplace?.agents||[],
+    provider:snapshot?.seer?.provider||null,model:snapshot?.seer?.model||null,
+    cdpState:snapshot?.integrations?.cdp?.state||'UNOBSERVED',
+    approvals:snapshot?.approvals?.count||0,latestEvent:cognitiveEvents.at(-1)||null
+  });
   const codeWorkspace = (
     <div className="cognitive-code-workspace">
       <div className="cognitive-file-tabs">
@@ -1701,6 +1798,28 @@ export const JacoAuraComputeIDE: React.FC = () => {
             </div>)}
     </div>
   );
+  const stagePreview = stagePath && stageFile && stageDraft!==null
+    ? <CognitivePreview strict path={stagePath} content={stageDraft} files={files} events={cognitiveEvents} onOpenFile={openFile}/>
+    : null;
+  const stage = <AuraLiveStage candidate={selectedStage} events={cognitiveEvents} preview={stagePreview}
+    previewReady={Boolean(stagePreview)} active={status.tone==='active'}
+    onInspect={event=>{setSelectedEvidence(event);setWorkspacePinned(true);setWorkspaceView('evidence');}}
+    onOpenFile={openFile} htmlSource={stageFile?.content ?? null} htmlDraft={stageDraft}
+    onDraftChange={value=>{if(stagePath)updateDraft(stagePath,value);}}
+    onSaveDraft={()=>{if(stagePath)void saveStageDraft(stagePath);}} saveBusy={stageSaveBusy} saveNotice={stageSaveNotice}
+    cdpReady={snapshot?.integrations?.cdp?.state==='VERIFIED' || snapshot?.integrations?.cdp?.state==='OBSERVED'}
+    pinned={workspacePinned}
+    activeMission={missions.find(item=>item.status==='ACTIVE') ? {
+      id:missions.find(item=>item.status==='ACTIVE')!.id,
+      goal:String(missions.find(item=>item.status==='ACTIVE')!.goal || 'Pågående uppdrag'),
+      phase:missions.find(item=>item.status==='ACTIVE')!.phase || null,
+      status:'ACTIVE'
+    } : null}
+    agentActivity={{
+      connected:(snapshot?.workplace?.agents || []).filter(item=>item.status==='READY' || item.liveSessions>0).length,
+      working:(snapshot?.workplace?.agents || []).reduce((count,item)=>count+Math.max(0,item.liveSessions || 0),0)
+    }}
+    presence={presence}/>;
   const canvasDetail = <>
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
@@ -1712,6 +1831,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
       <details className="cognitive-mission-details"><summary>Uppdrag & kontroller</summary>{renderMissionList()}</details></div>}
   </>;
   const detail=<div className="cognitive-detail-wrapper">
+    {draftStorageError&&<div role="alert" className="cognitive-operation-notice">{draftStorageError}</div>}
+    {draftNotice&&<div role="status" className="cognitive-operation-notice">{draftNotice}</div>}
     {externalFile&&externalFile.path===selectedFile&&<div role="alert" className="cognitive-operation-notice">Filen har ändrats i arbetsytan. Ditt utkast är bevarat.<button type="button" onClick={acceptExternalFile}>Läs senaste filen</button></div>}
     <div className="cognitive-detail-body">{canvasDetail}</div>
   </div>;
@@ -1739,7 +1860,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
     </div>
   </section> : null;
   return <>
-    <CognitiveWorkspace attention={attention} canvas={workspaceView} onCanvas={setWorkspaceView} conversation={renderChatContent()} detail={detail}
+    <CognitiveWorkspace attention={attention} canvas={workspaceView} onCanvas={chooseWorkspace} conversation={renderChatContent()} detail={detail}
+      stage={stage} stagePinned={workspacePinned} onTogglePin={()=>setWorkspacePinned(value=>!value)}
       sidebar={sidebar} sidePanelOpen={sidePanelOpen} sidePanel={renderSidebar()}
       onSidebar={view => { if(['tools','providers','skills'].includes(view)){setConnectionsTab(view==='tools'?'mcp':view==='providers'?'models':'skills');setWorkspaceView('connections');setSidePanelOpen(false);}else{setSidebar(view);setSidePanelOpen(current => sidebar === view ? !current : true);} }}
       onCloseSidebar={() => setSidePanelOpen(false)} status={status} projectName={projectName}

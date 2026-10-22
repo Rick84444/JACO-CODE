@@ -21,7 +21,10 @@ export function projectLabel(root) {
   return segments[segments.length - 1];
 }
 
-export function canSwitchProject(drafts) {
-  if (drafts === null || typeof drafts !== 'object') return false;
-  return Object.keys(drafts).length === 0;
+export function canSwitchProject(drafts, documents = null) {
+  if (drafts === null || typeof drafts !== 'object' || Array.isArray(drafts)) return false;
+  if (!documents) return Object.keys(drafts).length === 0;
+  return Object.entries(drafts).every(([path, draft]) =>
+    Object.prototype.hasOwnProperty.call(documents, path) &&
+    documents[path]?.content === draft);
 }

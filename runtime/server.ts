@@ -1,6 +1,7 @@
 import { readMissionReview } from './src/server/connected/missionReview.mjs';
 import { createMissionWorktrees } from '../agents/lib/mission-worktree.mjs';
 import { createWorkspaceAttachments } from './src/server/connected/workspaceAttachments.mjs';
+import { inspectWorkspaceImage } from './src/server/connected/workspaceImage.mjs';
 import { gameboardProjection, simulateGameboardScenario } from "../agents/lib/gameboard-fabric.mjs";
 import { createGameboardExchange } from "../agents/lib/gameboard-exchange.mjs";
 import express from "express";
@@ -1227,6 +1228,18 @@ const notifyPhone = async (action) => {
     return { path: requested, content, size: stat.size, language: workbenchLanguage(requested), hash };
   };
 
+  const readAuraWorkbenchImage = (relativePath:string) => {
+    const requested=String(relativePath || '').trim().replace(/\\/g,'/');
+    if(!requested || AURA_TOOL_FORBIDDEN.test(requested) || !/\.(?:png|jpe?g|webp)$/i.test(requested))
+      throw Error('WORKBENCH_IMAGE_PATH_DENIED');
+    const full=resolveWorkspacePath(requested);
+    const stat=fs.statSync(full);
+    if(!stat.isFile() || stat.size <= 0 || stat.size > 6_000_000) throw Error('WORKBENCH_IMAGE_SIZE_OR_KIND');
+    const bytes=fs.readFileSync(full);
+    const mime=inspectWorkspaceImage(bytes,requested);
+    return {mime,bytes};
+  };
+
   const writeAuraWorkbenchFile = (relativePath: string, content: string, expectedHash?: string | null) => {
     const requested = String(relativePath || '').trim().replace(/\\/g, '/');
     if (!requested || requested.includes('\0')) throw new Error('INVALID_WORKBENCH_FILE_PATH');
@@ -2336,6 +2349,20 @@ const notifyPhone = async (action) => {
     catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
   });
 
+  // A local-only, read-only image stream. No SVG, no HTML, no arbitrary filesystem paths.
+  app.get('/api/aura/workbench/image',requireLocalUi,(req,res)=>{
+    try {
+      const {mime,bytes}=readAuraWorkbenchImage(String(req.query.path || ''));
+      res.setHeader('Content-Type',mime);
+      res.setHeader('X-Content-Type-Options','nosniff');
+      res.setHeader('Cache-Control','private, no-store, max-age=0');
+      res.setHeader('Content-Security-Policy',"default-src 'none'; sandbox");
+      res.send(bytes);
+    } catch(error:any){
+      res.status(400).json({success:false,error:error?.message || String(error)});
+    }
+  });
+
   app.put('/api/aura/workbench/file', requireLocalUi, (req, res) => {
     try {
       const saved = writeAuraWorkbenchFile(
@@ -2822,12 +2849,24 @@ const notifyPhone = async (action) => {
         arguments: args,
       });
       const failed = result?.isError === true;
+      // PNG bytes are sensitive user content, not telemetry. Keep only a
+      // digest and bounded metadata in durable tool receipts.
+      const receiptResult = providerId === 'cdp' && toolName === 'nova_screenshot'
+        ? (() => {
+            const png = Array.isArray(result?.content)
+              ? result.content.find((item: any) => item?.type === 'image' && item?.mimeType === 'image/png') : null;
+            const data = typeof png?.data === 'string' ? png.data : '';
+            return { screenshotDataOmitted: true, mimeType: png?.mimeType || null,
+              payloadPresent: data.length > 0,
+              payloadSha256: data ? crypto.createHash('sha256').update(data).digest('hex') : null };
+          })()
+        : result;
       seerLiveWorkstream.record({
         actor: 'Aura Tool Fabric',
         type: 'mcp.tool.called',
         message: `${providerId}.${toolName}`,
         verified: !failed,
-        receipt: { providerId, toolName, isError: failed, result },
+        receipt: { providerId, toolName, isError: failed, result: receiptResult },
       });
       res.status(failed ? 409 : 200).json({ success: !failed, providerId, toolName, result });
     } catch (error: any) {
