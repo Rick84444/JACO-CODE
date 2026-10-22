@@ -67,7 +67,7 @@ import { createEconomicBudgetRouter } from './src/server/connected/economicBudge
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
-import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec } from "../agents/lib/skills.mjs";
+import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec, fetchSkillFromUrl } from "../agents/lib/skills.mjs";
 import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy, policyFilePath, CLAIM_RESUME_NOTE } from "../agents/lib/approval-policy.mjs";
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
@@ -2716,6 +2716,18 @@ const notifyPhone = async (action) => {
   app.post('/api/aura/workbench/skills/install', requireLocalUi, (req, res) => {
     try { if(listSkills(skillRoots()).some((skill:any)=>skill.id===req.body?.id))throw Error('SKILL_ALREADY_EXISTS'); const skill=installSkill(path.join(WORKSPACE_ROOT,'.jaco','skills'),req.body?.id,req.body?.content); res.status(201).json({success:true,skill}); }
     catch(error:any){res.status(400).json({success:false,error:error.message});}
+  });
+  // Install a skill from an address (the operator's click is the approval). Same validation as a pasted skill.
+  app.post('/api/aura/workbench/skills/install-url', requireLocalUi, async (req, res) => {
+    try {
+      const fetched = await fetchSkillFromUrl(req.body?.url);
+      const id = String(req.body?.id || '').trim() || fetched.suggestedId;
+      if (listSkills(skillRoots()).some((skill:any)=>skill.id===id)) throw Error('SKILL_ALREADY_EXISTS');
+      const skill = installSkill(path.join(WORKSPACE_ROOT,'.jaco','skills'), id, fetched.content);
+      seerLiveWorkstream.record({ actor: 'Aura Skills', type: 'skill.installed', message: `${id} from ${fetched.url}`, verified: true,
+        receipt: { id, url: fetched.url, sha256: crypto.createHash('sha256').update(fetched.content).digest('hex') } });
+      res.status(201).json({ success: true, skill, source: fetched.url });
+    } catch (error:any) { res.status(400).json({ success: false, error: error.message }); }
   });
   app.get('/api/aura/workbench/skills', requireLocalUi, (_req, res) => {
     try { res.json({ success: true, skills: listSkills(skillRoots()) }); }

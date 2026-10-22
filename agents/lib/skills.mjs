@@ -129,6 +129,48 @@ export function installSkill(root, id, content) {
   return readSkill(root,id);
 }
 
+// A SKILL.md fetched from an address instead of pasted: HTTPS only, no credentials in the URL, no
+// local or private hosts, bounded size, and the same validation as a pasted skill. Nothing runs while
+// installing; the operator's install action is the approval. GitHub file pages map to their raw file.
+const PRIVATE_HOST = /^(localhost$|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.|\[?::1\]?$|\[?f[cd][0-9a-f]{2}:)/i;
+export function skillSourceUrl(input) {
+  let url;
+  try { url = new URL(String(input || '').trim()); } catch { throw new Error('SKILL_URL_INVALID'); }
+  if (url.protocol !== 'https:') throw new Error('SKILL_URL_HTTPS_REQUIRED');
+  if (url.username || url.password) throw new Error('SKILL_URL_CREDENTIALS_NOT_ALLOWED');
+  if (PRIVATE_HOST.test(url.hostname)) throw new Error('SKILL_URL_PRIVATE_HOST');
+  const blob = /^\/([^/]+)\/([^/]+)\/blob\/(.+)$/.exec(url.pathname);
+  if (url.hostname === 'github.com' && blob) return `https://raw.githubusercontent.com/${blob[1]}/${blob[2]}/${blob[3]}`;
+  return url.href;
+}
+// The id a fetched skill gets unless the operator names it: its name, else the folder or file it came from.
+export function skillIdFrom(meta, url) {
+  const parts = new URL(url).pathname.split('/').filter(Boolean);
+  const file = parts.at(-1) || '';
+  const base = /^skill\.md$/i.test(file) ? parts.at(-2) : file.replace(/\.md$/i, '');
+  for (const candidate of [meta?.name, base]) {
+    const id = String(candidate || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^[^a-z]+/, '').replace(/-+$/, '').slice(0, 61).replace(/-+$/, '');
+    if (ID.test(id)) return id;
+  }
+  throw new Error('SKILL_ID_REQUIRED');
+}
+export async function fetchSkillFromUrl(input, { fetchImpl = fetch } = {}) {
+  const url = skillSourceUrl(input);
+  const res = await fetchImpl(url, { redirect: 'follow', headers: { accept: 'text/markdown, text/plain;q=0.9, */*;q=0.1' }, signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`SKILL_URL_HTTP_${res.status}`);
+  const finalUrl = res.url || url;
+  skillSourceUrl(finalUrl); // a redirect must not lead to plain HTTP or a private host
+  if (Number(res.headers?.get?.('content-length')) > MAX_BODY * 2) throw new Error('SKILL_TOO_LARGE');
+  const content = await res.text();
+  if (content.length > MAX_BODY * 2) throw new Error('SKILL_TOO_LARGE');
+  if (/^\s*</.test(content)) throw new Error('SKILL_URL_NOT_MARKDOWN');
+  const { meta, body } = parseSkill(content);
+  skillTasks(meta, { allowCode: true });
+  if (!body || body.length > MAX_BODY) throw new Error('SKILL_BODY_INVALID');
+  return { url: finalUrl, content, suggestedId: skillIdFrom(meta, finalUrl), name: meta.name || '', description: meta.description || '' };
+}
+
 export function skillMissionSpec(skill, { input = '', executor = 'nova', projectRoot = '', testCommands = [] } = {}) {
   const goal=skillMissionGoal(skill,input),allowedTasks=skillTasks({tasks:skill.tasks},{allowCode:true});
   if(!allowedTasks.some(task=>CODE_TASKS.has(task)))return {goal,allowedTasks,executor};
