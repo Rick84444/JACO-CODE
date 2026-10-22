@@ -112,7 +112,8 @@ commit if it is not; the IDE tells you when it is missing). Write the goal in th
 - uses whichever model you connected, local or cloud.
 
 Autonomy defaults to level 5: verified work, typed jobs and staged MCP sources proceed within the existing contracts and budgets. Existing explicit autonomy settings are respected. Unknown results, policy stops and outgoing purchases are not automatically approved. Describe desired boundaries in the conversation; the agent must distinguish discussion from a saved, enforceable policy. Cloud
-spend is capped by `<project>/.jaco/continuum/economic-policy.json` (defaults: 1 USD per task, 5 USD per day,
-50 USD per month). Edit that file to change it; Lite never overwrites your changes.
+spend limits start at the highest values the budget accepts (10 USD per task, 200 per day, 2000 per month), so nothing
+stops work at first. Lower them in the IDE's budget panel or in `<project>/.jaco/continuum/economic-policy.json`; Lite never
+overwrites your changes.
 
 Licensed under the MIT License (see `LICENSE`).
