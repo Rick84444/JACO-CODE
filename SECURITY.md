@@ -21,7 +21,7 @@ Out of scope: a service you configured yourself with a weak key, attacks that ne
 - API keys are kept outside the project (`~/.jaco`), sealed with AES-256-GCM; the key file sits next to them, so this protects against accidents, not against someone who can read your user account.
 - Tool results are masked before a model sees them (`agents/lib/secret-capture.mjs`).
 - Jaco Drive is end-to-end encrypted on the device; the server stores ciphertext only.
-- The tracked repository must contain no keys. The Firebase *web* API key in `firebase-applet-config.json` is a public client identifier by design; access is controlled by Firebase security rules, not by hiding it.
+- The tracked repository must contain no keys, with no exemptions. `tests/nova/repo-has-no-secrets.test.mjs` fails the build on any key-shaped string in a tracked file.
 
 ## Supported versions
 

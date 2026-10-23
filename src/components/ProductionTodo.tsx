@@ -12,7 +12,7 @@ interface TodoTask {
 const INITIAL_TASKS: TodoTask[] = [
   {
     id: 't1',
-    title: 'Autentisering (Firebase Auth)',
+    title: 'Autentisering',
     description: 'Lås appen bakom inloggning (Google/Email). Just nu är appen öppen för alla. För att ta betalt måste varje användare ha ett unikt konto.',
     completed: false,
     category: 'auth'

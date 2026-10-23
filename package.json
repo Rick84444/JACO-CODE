@@ -96,7 +96,6 @@
     "runtime/index.html",
     "runtime/tsconfig.json",
     "runtime/vite.config.ts",
-    "runtime/firebase-applet-config.json",
     "runtime/src",
     "runtime/public",
     "runtime/modules",

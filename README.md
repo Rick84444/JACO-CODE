@@ -84,6 +84,21 @@ npm run build:client --prefix runtime
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md) before submitting changes.
 
+## Ownership and licence
+
+JACO Code is owned by Dick Jacobsson and published under the MIT Licence; see
+[LICENSE](LICENSE) for the terms and the copyright holder. "JACO", "JACO Code",
+"MIMIR", "SEER" and "Nova" are names used by that owner for this project. The MIT
+Licence grants rights to the software; it grants no rights to the names or to the
+jacocode.com domain.
+
 ## Open-source release note
 
-Do not publish the current private repository by simply changing its visibility. Historical commits previously contained credentials. A public release must be produced from a clean source snapshot after exposed historical credentials have been rotated or revoked.
+This repository is a clean source snapshot. Its root commit, `eebf427` ("JACO Code
+0.22.0 release candidate"), has no parent: the release was produced from the
+development repository with `tools/release-jaco-code.mjs`, which carries over no git
+history, operator keys, wallet, account or contact data.
+
+The development repository is a different matter. Its history did contain credentials.
+Those must be rotated or revoked on their own merits, whether or not it is ever
+published, and it must not be made public by changing its visibility.

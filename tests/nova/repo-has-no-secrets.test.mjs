@@ -16,8 +16,8 @@ const PATTERNS = [
   ['private key block', /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/],
   ['Stripe live key', /\b[rs]k_live_[A-Za-z0-9]{20,}\b/],
 ];
-// A Firebase web key identifies a client app and is public by design (see SECURITY.md).
-const ALLOWED = new Map([['AIza', new Set(['firebase-applet-config.json', 'src/lib/firebaseConfig.ts'])]]);
+// No file is exempt: the repository holds no keys at all (see SECURITY.md).
+const ALLOWED = new Map();
 
 test('no tracked file holds a key-shaped string', { skip: !fs.existsSync(path.join(root, '.git')) && 'not a git checkout' }, () => {
   const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 64 * 1024 * 1024 }).toString().split('\0').filter(Boolean);
