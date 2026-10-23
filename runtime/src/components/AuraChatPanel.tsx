@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, ArrowUpRight, MessageSquare, ChevronRight } from 'lucide-react';
 import { ChatMarkdown } from './ChatMarkdown';
 import { JacoWordmark } from './JacoWordmark';
+import { AuraAutonomyPanel } from './AuraAutonomyPanel';
 import { CognitiveEventCard } from './CognitiveEventCard';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
@@ -436,6 +437,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
 
       {showSettings && (
         <div className="px-4 py-3 border-b border-[#1c2a36] bg-[#0e1720] space-y-2 text-xs max-h-[50%] overflow-auto">
+          <AuraAutonomyPanel />
           <label className="flex items-center gap-2 text-slate-400">Modell
             <select aria-label="Aura provider" value={selectedProvider} onChange={event => {
               const next = event.target.value;

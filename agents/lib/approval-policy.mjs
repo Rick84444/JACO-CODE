@@ -52,18 +52,20 @@ export function policyFilePath(root = process.env.JACO_WORKSPACE_ROOT || process
   return path.join(root, '.jaco', 'policy', 'approval-policy.json');
 }
 
-// Effective policy: .env level, overridden by the policy file only when the operator granted rule edits.
+// Operator-selected level always overrides agent-managed policy, including after restart.
+// Reading an operator preference never grants agents permission to edit it.
 export function loadApprovalPolicy({ env = process.env, file = policyFilePath() } = {}) {
   const envLevel = clampLevel(env.JACO_AUTO_APPROVE_LEVEL ?? MAX_LEVEL) ?? 0;
   const editsGranted = env.JACO_POLICY_EDIT_GRANT === '1';
   let fromFile = null;
-  if (editsGranted) { try { fromFile = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {} }
-  const fileLevel = clampLevel(fromFile?.level);
+  try { fromFile = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+  const operatorLevel = clampLevel(fromFile?.operatorLevel);
+  const fileLevel = editsGranted ? clampLevel(fromFile?.level) : null;
   return {
-    level: fileLevel ?? envLevel,
+    level: operatorLevel ?? fileLevel ?? envLevel,
     editsGranted,
     extraBlocked: Array.isArray(fromFile?.extraBlocked) ? fromFile.extraBlocked.map(String).slice(0, 50) : [],
-    source: fileLevel != null ? 'policy-file' : 'env',
+    source: operatorLevel != null ? 'operator' : fileLevel != null ? 'policy-file' : 'env',
   };
 }
 
@@ -85,8 +87,32 @@ export function updateApprovalPolicy({ level, extraBlocked, reason, actor }, { e
   try { history = JSON.parse(fs.readFileSync(file, 'utf8')).history || []; } catch {}
   history.push({ at: new Date().toISOString(), actor: String(actor || 'agent'), reason: String(reason).slice(0, 500), from: current.level, to: next.level });
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ ...next, history: history.slice(-100) }, null, 2));
+  // An agent may never erase or override an explicit operator-level selection.
+  let prior = {};
+  try { prior = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+  fs.writeFileSync(file, JSON.stringify({ ...prior, ...next, history: history.slice(-100) }, null, 2));
   return { ...next, previousLevel: current.level };
+}
+
+// Called only by the authenticated operator UI. No agent edit grant is required.
+export function setOperatorApprovalLevel(level, { env = process.env, file = policyFilePath() } = {}) {
+  const selected = clampLevel(level);
+  if (selected == null || typeof level !== 'number') throw new Error('POLICY_LEVEL_INVALID');
+  let prior = {};
+  try { prior = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+  const before = loadApprovalPolicy({ env, file }).level;
+  const history = Array.isArray(prior.history) ? prior.history : [];
+  history.push({ at: new Date().toISOString(), actor: 'operator-ui', reason: 'operator selected autonomy level', from: before, to: selected });
+  const next = { ...prior, operatorLevel: selected, history: history.slice(-100) };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = file + '.operator-' + process.pid + '-' + Date.now();
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600, flag: 'wx' });
+    fs.renameSync(tmp, file);
+  } finally {
+    try { fs.unlinkSync(tmp); } catch {}
+  }
+  return loadApprovalPolicy({ env, file });
 }
 
 // Operator 2026-10-09: "utgift stopp räknar inte in våra llm api i det". JACO's own model usage (DeepSeek,
@@ -96,8 +122,14 @@ export function updateApprovalPolicy({ level, extraBlocked, reason, actor }, { e
 const LLM_API = /\b(deepseek|groq|openai|ollama|openrouter|anthropic|claude|gemini|qwen|mistral|hugging ?face|llm|språkmodell|language model|inference|tokens?|api[- ]?(keys?|nycklar|nyckel|kostnad(er)?|costs?|usage|credits?|saldo|balance))\b/i;
 const withoutLlmApi = text => String(text || '').split(/[.!?;,\n]+|\b(?:and|then|och|sedan|därefter)\b/i).filter(clause => clause && !LLM_API.test(clause)).join('. ');
 
+// Paying for API credits or a new paid plan is a purchase, unlike ordinary
+// inference usage already authorized by the operator's cloud budget.
+const API_CREDIT_PURCHASE = /(?:\b(?:top[- ]?up|buy|purchase|subscribe|add funds|add credits|pay for|start paid plan)\b|fyll\s+på|köp|prenumerera)[^.!?\n]{0,100}(?:\b(?:api|credits?|balance|subscription|plan|deepseek|groq|openai|openrouter|anthropic|claude|gemini|ollama|mistral)\b|krediter|saldo|abonnemang)/i;
+
 function spendRelated(mission, extraBlocked = []) {
-  const text = withoutLlmApi([mission.goal, ...(mission.receipts || []).map(r => `${r?.type || ''} ${r?.expectedOutcome || ''}.`)].join(' '));
+  const raw = [mission.goal, ...(mission.receipts || []).map(r => `${r?.type || ''} ${r?.expectedOutcome || ''}.`)].join(' ');
+  if (API_CREDIT_PURCHASE.test(raw)) return true;
+  const text = withoutLlmApi(raw);
   if (OUTGOING_SPEND.test(text)) return true;
   if (AMBIGUOUS_SPEND_TERM.test(text) && FINANCIAL_CONTEXT.test(text)) return true;
   return extraBlocked.some(pattern => { try { return new RegExp(pattern, 'i').test(text); } catch { return text.includes(pattern); } });

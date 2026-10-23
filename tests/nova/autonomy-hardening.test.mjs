@@ -19,6 +19,8 @@ test('spend guard blocks paying actions on every acting surface', () => {
   assert.ok(outgoingSpendCheck(t('browser-click', { name: 'Continue' }), { observation: { url: 'https://checkout.stripe.com/c/pay/cs_live_x' } }));
   assert.ok(outgoingSpendCheck(t('shell', { command: 'curl https://api.stripe.com/v1/payouts -d amount=100' })));
   assert.ok(outgoingSpendCheck(t('shell', { command: 'stripe transfers create --amount 500' })));
+  assert.ok(outgoingSpendCheck(t('shell', { command: 'Top up DeepSeek API credits now' })));
+  assert.ok(outgoingSpendCheck(t('invoke-worker', { prompt: 'Köp API-krediter för modellen' })));
 });
 
 test('spend guard lets normal work and incoming revenue through', () => {
@@ -26,6 +28,7 @@ test('spend guard lets normal work and incoming revenue through', () => {
   assert.equal(outgoingSpendCheck(t('type-text', { text: 'git checkout -b feature' })), null);
   assert.equal(outgoingSpendCheck(t('shell', { command: 'curl https://api.stripe.com/v1/checkout/sessions -d mode=payment' })), null);
   assert.equal(outgoingSpendCheck(t('shell', { command: 'curl https://api.stripe.com/v1/payment_links' })), null);
+  assert.equal(outgoingSpendCheck(t('shell', { command: 'Check DeepSeek API usage and token cost' })), null);
   assert.equal(outgoingSpendCheck(t('repo-read', { path: 'pay.md' })), null);
   assert.equal(outgoingSpendCheck(t('browser-survey-site', { url: 'https://example.com/checkout' })), null);
 });

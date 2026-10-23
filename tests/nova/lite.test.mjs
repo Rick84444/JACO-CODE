@@ -85,7 +85,7 @@ test('launcher: Node version, arguments, free port, project folder and the serve
   assert.equal(JSON.parse(fs.readFileSync(policyFile, 'utf8')).dailyCloudUsd, 2, 'a change the operator made is never overwritten');
   assert.equal(agentCommand(dir), null, 'no agent file, no agent');
   const agent = agentEnv({ env: {}, installDir: install, project: dir, url: 'http://127.0.0.1:3999', token: 'tok' });
-  assert.deepEqual([agent.JACO_LITE, agent.NOVA_BRAIN_MODE, agent.JACO_RUNTIME_URL, agent.JACO_AUTO_APPROVE_LEVEL, agent.JACO_POLICY_EDIT_GRANT], ['1', 'direct', 'http://127.0.0.1:3999', '5', '1']);
+  assert.deepEqual([agent.JACO_LITE, agent.NOVA_BRAIN_MODE, agent.JACO_RUNTIME_URL, agent.JACO_AUTO_APPROVE_LEVEL, agent.JACO_POLICY_EDIT_GRANT], ['1', 'direct', 'http://127.0.0.1:3999', '5', '0']);
   assert.equal(agentEnv({env:{JACO_AUTO_APPROVE_LEVEL:'1',JACO_POLICY_EDIT_GRANT:'0'},installDir:install,project:dir,url:'http://127.0.0.1:3999',token:'tok'}).JACO_AUTO_APPROVE_LEVEL,'1');
   assert.equal(JSON.stringify(agent).includes('OLLAMA'), false, 'the agent is not tied to one local server');
   const env = serverEnv({ env: { PATH: 'p' }, installDir: install, project: dir, port: 3999, token: 'tok' });

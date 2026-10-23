@@ -39,13 +39,21 @@ node start.mjs ~/my-project    # or a specific project folder
 On Windows you can double-click `START.cmd`; on macOS and Linux run `./start.sh`.
 
 ### Android / Termux (portable Lite)
-Install Termux and extract the **same JACO Lite ZIP** into Termux-accessible storage. From the extracted folder run:
+
+**JACO Lite has two separate distribution packages with the same Aura and runtime source:** Windows (installer/ZIP) and Android (`jaco-lite-android.zip`). The Android edition runs in Termux; a native Kotlin engine APK exists separately but is not included in this portable ZIP.
+
+Install from Termux (the installer selects the Android ZIP by platform and checks its SHA-256):
 
 ```sh
-bash START-ANDROID.sh
+curl -fsSL https://jacocode.com/install.sh | sh
+jaco-lite
 ```
 
-The launcher uses Node.js >=22.5, attempts to install `nodejs-lts` through Termux if needed, runs the identical bundled server and Codex Cognitive Live Workspace and keeps project state in `$HOME/.jaco`. Open the localhost URL printed by the launcher in your Android browser. **This is a Termux distribution, not an APK.** A packaged archive built on another OS is not guaranteed to work on Android until its dependencies and runtime are tested on a real device. Android device/Termux acceptance remains a release gate.
+Alternatively unpack the Android ZIP **inside Termux private home storage** and run `bash START-ANDROID.sh` in its extracted directory. Do not run the script directly out of a raw checkout, from `/sdcard`, or concurrently with the full runit-managed Core/Workplace. The installed `jaco-lite` command now goes through the same Android guard. It checks the package manifest, Node.js 22.5+, SQLite support and existing runit services, without stopping or killing other processes.
+
+The default project is `~/workspace` (override with `JACO_LITE_PROJECT`). LiteRT at `http://127.0.0.1:9379/v1` can be reused (override with `JACO_LITERT_URL`). An unavailable model does not prevent Aura from opening; model service startup is **not** performed by this launcher. Optional `JACO_ANDROID_WAKE_LOCK=1` acquires Termux Wake Lock if installed. It cannot override Android process termination or guarantee background survival.
+
+**Current limitations:** Portable Lite still runs its existing launcher, IDE, Workplace and Nova processes; it does *not* yet implement the proposed unified Android Compact Runtime or on-demand Nova lifecycle. The full SEER planner is not bundled with Lite. Android native-package compatibility, physical-device inference, background/screen-off behavior and durable mission resumption remain to be verified. Windows behavior is unchanged.
 
 ### Gameboard and simulation
 The `Spelplan` tab in Cognitive Live Workspace reads `/api/aura/workbench/gameboard` and shows stable numeric agent and MCP-tool IDs and, where SEER is connected, observed mission-graph forecasts. The simulation control accepts assumptions for a hypothetical tool chain; it neither invokes a tool nor claims a verified outcome. A Lite install without SEER reports `UNAVAILABLE` for the canonical strategic graph, rather than faking it; the hypothetical scenario simulator remains available. The durable revisioned exchange stores agent `OBSERVATION`, `HYPOTHESIS` and numeric `MOVE_PROPOSAL` entries with optimistic locking. Entries are self-reported, not verified and cannot invoke an executor. JACO Editor MCP exposes `gameboard_status`, `gameboard_events` and `gameboard_simulate` as read-only tools, plus the Workplace-synchronized `gameboard_publish` operation for clients that connect locally. Public ChatGPT access still requires the authenticated remote JacoEdit transport from PR #142 and its secure OAuth/Cloudflare deployment.
@@ -111,8 +119,8 @@ commit if it is not; the IDE tells you when it is missing). Write the goal in th
 - requires the project's own tests (for example `npm test`) to pass after its last change before it reports done;
 - uses whichever model you connected, local or cloud.
 
-Autonomy defaults to level 5: verified work, typed jobs and staged MCP sources proceed within the existing contracts and budgets. Existing explicit autonomy settings are respected. Unknown results, policy stops and outgoing purchases are not automatically approved. Describe desired boundaries in the conversation; the agent must distinguish discussion from a saved, enforceable policy. Cloud
-spend has no caps until you set them: turn on a daily, monthly or per-task limit in the IDE's budget panel (or in
-`<project>/.jaco/continuum/economic-policy.json`); an empty field means no cap. Lite never overwrites your changes.
+**Aura starts at autonomy level 5/5 on Windows and Android.** To lower autonomy, open **Chattinställningar → Autonomi**; the operator's choice is saved across restarts and cannot be raised by an agent. Agents do not receive permission to edit approval policies on a new Lite installation. Within the chosen level, verified coding, tools, delegated jobs and missions proceed without routine approval prompts.
+
+Purchases, subscriptions, payments and topping up paid API credits require explicit operator approval. Ordinary paid LLM inference is different: it follows the separate **Budget** settings. **Cloud models are allowed with configured credentials; no arbitrary USD caps are installed.** If you connect a billed API without setting a cap, actual charges can occur. You can disable cloud models or set daily, monthly and task caps in the budget panel; empty cap fields mean no cap. Lite does not overwrite previous preferences. Unverified or interrupted mutations and denied privileges are never silently re-executed.
 
 Licensed under the MIT License (see `LICENSE`).

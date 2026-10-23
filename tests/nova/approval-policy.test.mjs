@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { autoResolution, autoApprovalLevel, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy } from '../../agents/lib/approval-policy.mjs';
+import { autoResolution, autoApprovalLevel, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy, setOperatorApprovalLevel } from '../../agents/lib/approval-policy.mjs';
 
 const r = (type, extra = {}) => ({ ok: true, verified: true, type, ...extra });
 const awaiting = (receipts, extra = {}) => ({ id: 'm', status: 'AWAITING_VERIFICATION', goal: 'audit code', receipts, ...extra });
@@ -103,13 +103,32 @@ test('agents can change the rules only with the operator grant, with a reason, a
 
 test('level 5: our own LLM API usage is outside the spend stop, real outgoing spend still waits', () => {
   const llm = [
-    'Top up DeepSeek API credits so the planner can continue.',
     'Kontrollera API-kostnad och tokens för Groq och Ollama Cloud.',
     'The LLM inference cost was 0.02 USD within the budget.',
+    'Use DeepSeek to generate a development plan.',
   ];
   for (const goal of llm) assert.equal(autoResolution(awaiting([r('repo-read')], { goal }), { level: 5 })?.decision, 'confirm', goal);
-  for (const goal of ['Buy a domain for 12 USD.', 'Use DeepSeek to plan, then pay the hosting invoice.', 'Köp en prenumeration på verktyget.']) {
+  for (const goal of ['Buy a domain for 12 USD.', 'Use DeepSeek to plan, then pay the hosting invoice.', 'Köp en prenumeration på verktyget.', 'Top up DeepSeek API credits so the planner can continue.', 'Köp nya API-krediter för modellen.']) {
     assert.equal(autoResolution(awaiting([r('repo-read')], { goal }), { level: 5 }), null, goal);
   }
   assert.equal(autoApproveGate('JOB', 'Refresh the Groq API key usage report', { level: 5 }), true);
+});
+
+test('operator alone selects a persistent level even when agents cannot edit policy', t => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-operator-autonomy-'));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  const file = path.join(folder, 'policy.json');
+  const env = { JACO_AUTO_APPROVE_LEVEL: '5', JACO_POLICY_EDIT_GRANT: '0' };
+  assert.equal(loadApprovalPolicy({ env, file }).level, 5);
+  assert.equal(loadApprovalPolicy({ env, file }).editsGranted, false);
+  assert.equal(setOperatorApprovalLevel(2, { env, file }).level, 2);
+  assert.equal(loadApprovalPolicy({ env, file }).source, 'operator');
+  assert.throws(() => updateApprovalPolicy({ level: 5, reason: 'agent wants control' }, { env, file }), /POLICY_EDIT_NOT_GRANTED/);
+  assert.equal(loadApprovalPolicy({ env, file }).level, 2);
+  const agentGranted = { JACO_AUTO_APPROVE_LEVEL: '5', JACO_POLICY_EDIT_GRANT: '1' };
+  updateApprovalPolicy({ level: 5, reason: 'agent attempts to raise autonomy' }, { env: agentGranted, file });
+  assert.equal(loadApprovalPolicy({ env: agentGranted, file }).level, 2, 'agent level cannot override operator');
+  assert.equal(setOperatorApprovalLevel(5, { env, file }).level, 5);
+  assert.throws(() => setOperatorApprovalLevel('3', { env, file }), /POLICY_LEVEL_INVALID/);
+  assert.throws(() => setOperatorApprovalLevel(9, { env, file }), /POLICY_LEVEL_INVALID/);
 });
