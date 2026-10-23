@@ -26,8 +26,8 @@ export function CognitiveWorkspace(props:Props) {
       if (event.defaultPrevented || !event.ctrlKey && !event.metaKey || event.altKey || !event.shiftKey || event.repeat) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"], .monaco-editor, dialog[open]'))) return;
-      const views: Record<string, CognitiveCanvas> = { '1': 'stage', '2': 'code', '3': 'preview', '4': 'evidence' };
-      const view = views[event.key];
+      const views: Record<string, CognitiveCanvas> = { Digit1: 'stage', Digit2: 'code', Digit3: 'preview', Digit4: 'evidence' };
+      const view = views[event.code];
       if (!view) return;
       event.preventDefault();
       props.onCanvas(view);
