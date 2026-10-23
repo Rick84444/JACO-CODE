@@ -5,7 +5,7 @@ on:
       - 'runtime/modules/runtime/native-intelligence-fabric/native/android/**'
       - '.github/workflows/android-native.yml'
   push:
-    branches: [main, master]
+    branches: [main]
     paths:
       - 'runtime/modules/runtime/native-intelligence-fabric/native/android/**'
       - '.github/workflows/android-native.yml'

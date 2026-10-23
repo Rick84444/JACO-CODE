@@ -20,7 +20,7 @@ on:
       - 'tests/nova/nova-activity-text.test.mjs'
       - '.github/workflows/cognitive-workspace-gate.yml'
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - 'runtime/src/components/Cognitive*.tsx'
       - 'runtime/src/components/AuraChatPanel.tsx'

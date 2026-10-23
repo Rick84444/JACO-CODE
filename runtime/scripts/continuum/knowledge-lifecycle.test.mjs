@@ -53,8 +53,10 @@ try{
     },
   });
   assert.equal(promotedReceipt.status,201);
-  assert.equal(promotedReceipt.data.evidence.verified,true);
-  assert.equal(promotedReceipt.data.knowledge.verificationStatus,'VERIFIED');
+  // The canonical sink records a tool attestation, not independent proof: the
+  // caller cannot promote its own receipt to verified knowledge.
+  assert.equal(promotedReceipt.data.evidence.verified,false);
+  assert.equal(promotedReceipt.data.knowledge.verificationStatus,'UNVERIFIED');
   assert.equal(promotedReceipt.data.knowledge.reusable,false);
   const promotedKnowledgeId=promotedReceipt.data.knowledge.id;
   const duplicatePromotion=await request('/api/continuum/cognition/promotions/receipt',{
