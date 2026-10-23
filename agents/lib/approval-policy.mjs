@@ -124,7 +124,7 @@ const withoutLlmApi = text => String(text || '').split(/[.!?;,\n]+|\b(?:and|then
 
 // Paying for API credits or a new paid plan is a purchase, unlike ordinary
 // inference usage already authorized by the operator's cloud budget.
-const API_CREDIT_PURCHASE = /(?:\\b(?:top[- ]?up|buy|purchase|subscribe|add funds|add credits|pay for|start paid plan)\\b|fyll\\s+på|köp|prenumerera)[^.!?\\n]{0,100}(?:\\b(?:api|credits?|balance|subscription|plan|deepseek|groq|openai|openrouter|anthropic|claude|gemini|ollama|mistral)\\b|krediter|saldo|abonnemang)/i;
+const API_CREDIT_PURCHASE = /(?:\b(?:top[- ]?up|buy|purchase|subscribe|add funds|add credits|pay for|start paid plan)\b|fyll\s+på|köp|prenumerera)[^.!?\n]{0,100}(?:\b(?:api|credits?|balance|subscription|plan|deepseek|groq|openai|openrouter|anthropic|claude|gemini|ollama|mistral)\b|krediter|saldo|abonnemang)/i;
 
 function spendRelated(mission, extraBlocked = []) {
   const raw = [mission.goal, ...(mission.receipts || []).map(r => `${r?.type || ''} ${r?.expectedOutcome || ''}.`)].join(' ');
