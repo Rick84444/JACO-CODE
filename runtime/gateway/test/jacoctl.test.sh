@@ -2,6 +2,9 @@
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+# Failures in the integration fixture must name the exact failing assertion
+# instead of leaving a bare exit code after successful activation.
+trap 'rc=$?; case $- in *e*) printf "JACOCTL_TEST_FAILED line=%s command=%s exit=%s\\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2;; esac' ERR
 mkdir -p "$TMP/bin" \
   "$TMP/prefix/var/service/jaco-sentinel/supervise" \
   "$TMP/prefix/var/service/jaco-core/supervise" \
