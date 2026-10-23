@@ -196,10 +196,10 @@ export function serverEnv({ env, installDir, project, port, token }) {
     GATEWAY_TOKEN: token,
     JACO_GATEWAY_TOKEN: token,
     // The operator's own provider keys, the operator's own money: cloud calls are allowed, inside the
-    // budget panel's default limits (5 USD a day, 1 USD a task) that the operator can change.
+    // operator-set budget limits (no caps unless the operator configures them).
     JACO_CLOUD_ENABLED: env.JACO_CLOUD_ENABLED ?? 'true',
     JACO_AUTO_APPROVE_LEVEL: env.JACO_AUTO_APPROVE_LEVEL ?? '5',
-    JACO_POLICY_EDIT_GRANT: env.JACO_POLICY_EDIT_GRANT ?? '1',
+    JACO_POLICY_EDIT_GRANT: env.JACO_POLICY_EDIT_GRANT ?? '0',
   };
 }
 
@@ -228,7 +228,7 @@ export function agentEnv({ env, installDir, project, url, token }) {
     // Work autonomously within the mission contract and operator boundaries. Hard payment,
     // uncertain-outcome and policy stops remain in approval-policy.mjs at every level.
     JACO_AUTO_APPROVE_LEVEL: env.JACO_AUTO_APPROVE_LEVEL ?? '5',
-    JACO_POLICY_EDIT_GRANT: env.JACO_POLICY_EDIT_GRANT ?? '1',
+    JACO_POLICY_EDIT_GRANT: env.JACO_POLICY_EDIT_GRANT ?? '0',
   };
 }
 
