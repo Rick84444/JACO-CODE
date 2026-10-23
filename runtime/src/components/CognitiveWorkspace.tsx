@@ -23,7 +23,7 @@ export function CognitiveWorkspace(props:Props) {
   // code or using another control. No agent authority is changed by navigation.
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || !event.ctrlKey && !event.metaKey || event.altKey || event.shiftKey || event.repeat) return;
+      if (event.defaultPrevented || !event.ctrlKey && !event.metaKey || event.altKey || !event.shiftKey || event.repeat) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"], .monaco-editor, dialog[open]'))) return;
       const views: Record<string, CognitiveCanvas> = { '1': 'stage', '2': 'code', '3': 'preview', '4': 'evidence' };
@@ -63,7 +63,7 @@ export function CognitiveWorkspace(props:Props) {
           <div className="cognitive-status" data-tone={props.status.tone} role="status"><span/>{props.status.label}</div>
           <nav className="cognitive-stage-switcher" aria-label="Arbetsyta">
             {([['stage', Eye, 'Arbete'], ['code', Code2, 'Kod'], ['preview', Eye, 'Förhandsvisa'], ['evidence', ShieldCheck, 'Belägg']] as const).map(([view, Icon, label]) =>
-              <button key={view} type="button" title={label+' · Ctrl/Cmd+'+({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view]} aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{label}</span></button>)}
+              <button key={view} type="button" title={label+' · Ctrl/Cmd+Shift+'+({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view]} aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{label}</span></button>)}
           </nav>
           <button type="button" className="cognitive-mobile-focus" onClick={()=>props.onCanvas(showStage?'conversation':'stage')}>
             {showStage ? <MessageSquare size={15}/> : <Eye size={15}/>}
