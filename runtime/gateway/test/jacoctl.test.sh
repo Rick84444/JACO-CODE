@@ -137,7 +137,7 @@ node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit
 rm -f "$TMP/state/jaco-core"
 export STUB_FORCE_CORE_HTTP=1
 OUT_DEGRADED="$(bash "$ROOT/bin/jacoctl" status --json)"
-node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="DEGRADED" || !/supervised Core is restarting/.test(j.message)) process.exit(1)' "$OUT_DEGRADED"
+node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="DEGRADED" || !/Port 3000 responds but Core is not the supervised/.test(j.message)) process.exit(1)' "$OUT_DEGRADED"
 unset STUB_FORCE_CORE_HTTP
 : > "$TMP/state/jaco-core"
 
