@@ -151,9 +151,6 @@ import {
   syncFabric
 } from "./src/server/workspace/syncFabric.js";
 import {
-  mimirWorkspaceProvisioner
-} from "./src/server/workspace/workspaceProvisioner.js";
-import {
   workspaceMountRegistry
 } from "./src/server/workspace/mountRegistry.js";
 import {
@@ -3899,49 +3896,6 @@ const notifyPhone = async (action) => {
       res.json(resp);
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err.message });
-    }
-  });
-
-  // MimirPower Shared HTML Workspace Provisioning & Identity
-  app.get("/api/workspace/shared/identity", (_req, res) => {
-    try {
-      const identity = mimirWorkspaceProvisioner.getIdentity();
-      res.json({ success: true, identity });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  app.post("/api/workspace/shared/activate", async (req, res) => {
-    try {
-      const { domain, name } = req.body || {};
-      const result = await mimirWorkspaceProvisioner.activateSharedWorkspace({
-        domain: domain || String(process.env.JACO_WORKSPACE_DOMAIN || req.get('host') || 'localhost'),
-        name: name || 'JACO Workspace',
-        baseUrl: `${req.protocol}://${req.get('host') || 'localhost:3000'}`
-      });
-      res.json(result);
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  // Serve standalone HTML client directly on /workspace/:id
-  app.get("/workspace/:id", (req, res) => {
-    try {
-      const workspaceId = req.params.id;
-      const html = mimirWorkspaceProvisioner.generateStandaloneHtmlClient({
-        workspaceId,
-        workspaceName: 'JACO Workspace',
-        domain: String(process.env.JACO_WORKSPACE_DOMAIN || req.get('host') || 'localhost'),
-        workspaceKey: 'jws_auto',
-        baseServerUrl: `${req.protocol}://${req.get('host') || 'localhost:3000'}`,
-        publicUrl: `${String(process.env.JACO_PUBLIC_URL || `${req.protocol}://${req.get('host') || 'localhost:3000'}`).replace(/\/$/, '')}/workspace/${workspaceId}`
-      });
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.send(html);
-    } catch (err: any) {
-      res.status(500).send("Kunde inte generera HTML Workspace");
     }
   });
 

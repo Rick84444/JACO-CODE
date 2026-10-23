@@ -104,7 +104,7 @@ class RuntimeService {
       id: 'cloud-run-master-node',
       name: 'JACO Cloud Sovereign Hub',
       platform: 'cloud_container',
-      hostUrl: 'https://mimirpower.com',
+      hostUrl: String(process.env.JACO_PUBLIC_URL || ''),
       status: 'ACTIVE_LOOP',
       lastHeartbeat: new Date().toISOString(),
       telemetry: {

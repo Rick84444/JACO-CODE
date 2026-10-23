@@ -13,7 +13,7 @@
       "isVerifiedByAuditLogs": true,
       "evidence": "Executed in background runtime loop in server.ts with active telemetry logging and state retention.",
       "terminalLogProof": "[2026-07-29T17:42:11Z] [PODAR-LOOP] Tick #1482 completed in 12ms. Telemetry synced: CPU 18%, RAM 2.4GB.",
-      "evidenceUrl": "https://mimirpower.se/docs/runtime.md",
+      "evidenceUrl": "https://jacocode.se/docs/runtime.md",
       "lastVerifiedTimestamp": "2026-07-29T17:42:11Z",
       "auditChecksum": "sha256:9f8a3c...e81d"
     },
@@ -26,7 +26,7 @@
       "isVerifiedByAuditLogs": true,
       "evidence": "Native termux-battery-status subprocess integration and hardware NPU telemetry polling.",
       "terminalLogProof": "[2026-07-29T17:40:02Z] [TERMUX-EXEC] termux-battery-status exited 0 -> { percentage: 88, status: 'CHARGING', temp: 31.2 }",
-      "evidenceUrl": "https://mimirpower.se/docs/installation.md",
+      "evidenceUrl": "https://jacocode.se/docs/installation.md",
       "lastVerifiedTimestamp": "2026-07-29T17:40:02Z",
       "auditChecksum": "sha256:3a1b7c...f901"
     },
@@ -39,7 +39,7 @@
       "isVerifiedByAuditLogs": true,
       "evidence": "PendingAction approval pipeline with ntfy push notifications and mobile authorization callback.",
       "terminalLogProof": "[2026-07-29T17:38:15Z] [APPROVAL-GATE] Action act-9901 (terminal_exec) approved by operator via ntfy bearer token.",
-      "evidenceUrl": "https://mimirpower.se/docs/security.md",
+      "evidenceUrl": "https://jacocode.se/docs/security.md",
       "lastVerifiedTimestamp": "2026-07-29T17:38:15Z",
       "auditChecksum": "sha256:7e4d2a...110c"
     },
@@ -52,7 +52,7 @@
       "isVerifiedByAuditLogs": true,
       "evidence": "Subprocess execution via executeTerminalAction in server.ts with active output streaming.",
       "terminalLogProof": "[2026-07-29T17:35:00Z] [OPENCLAW-EXEC] openclaw crawl https://mimirpower.se -> 12 pages scraped, dataset saved.",
-      "evidenceUrl": "https://mimirpower.se/docs/runtime.md",
+      "evidenceUrl": "https://jacocode.se/docs/runtime.md",
       "lastVerifiedTimestamp": "2026-07-29T17:35:00Z",
       "auditChecksum": "sha256:82b90f...a024"
     },
@@ -65,7 +65,7 @@
       "isVerifiedByAuditLogs": true,
       "evidence": "Published JSON schema manifest served at /api/a2a/agentcard.json with node key signatures.",
       "terminalLogProof": "[2026-07-29T17:20:10Z] [A2A-RPC] GET /api/a2a/agentcard.json 200 OK -> 1.0.0-A2A valid manifest returned.",
-      "evidenceUrl": "https://mimirpower.se/api/a2a/agentcard.json",
+      "evidenceUrl": "https://jacocode.se/api/a2a/agentcard.json",
       "lastVerifiedTimestamp": "2026-07-29T17:20:10Z",
       "auditChecksum": "sha256:4c2d8e...b998"
     },
@@ -78,7 +78,7 @@
       "isVerifiedByAuditLogs": false,
       "evidence": "Simulated UI benchmark component without verified physical QPU execution logs.",
       "terminalLogProof": null,
-      "evidenceUrl": "https://mimirpower.se/docs/limitations.md",
+      "evidenceUrl": "https://jacocode.se/docs/limitations.md",
       "lastVerifiedTimestamp": null,
       "auditChecksum": null
     }

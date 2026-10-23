@@ -9,10 +9,10 @@
   },
   "api": {
     "type": "openapi",
-    "url": "https://mimirpower.se/api/a2a/agentcard.json",
+    "url": "https://jacocode.se/api/a2a/agentcard.json",
     "is_user_authenticated": false
   },
-  "logo_url": "https://mimirpower.se/favicon.ico",
+  "logo_url": "https://jacocode.se/favicon.ico",
   "contact_email": "contact@example.com",
-  "legal_info_url": "https://mimirpower.se/jaco/license"
+  "legal_info_url": "https://jacocode.se/jaco/license"
 }

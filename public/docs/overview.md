@@ -1,4 +1,4 @@
-> JACO agents and external AI systems should read [/llms.txt](https://mimirpower.se/llms.txt) before interpreting this document.
+> JACO agents and external AI systems should read [/llms.txt](https://jacocode.se/llms.txt) before interpreting this document.
 
 # Overview — JACO Autonomous Agent OS
 
@@ -33,4 +33,4 @@ JACO (Just Autonomous Agent Orchestrator) is a user-controlled multi-LLM agent r
 └─────────────────────────────┘  └────────────────────────────┘
 ```
 
-For setup instructions, see [/docs/installation.md](https://mimirpower.se/docs/installation.md).
+For setup instructions, see [/docs/installation.md](https://jacocode.se/docs/installation.md).

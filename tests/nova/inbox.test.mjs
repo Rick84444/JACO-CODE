@@ -27,7 +27,7 @@ const raw = [
 ].join('\r\n');
 
 test('signed delivery only; MIME, encoded words and quoted-printable are decoded', () => {
-  const body = JSON.stringify({ to: 'jaco-smithery@mimirpower.com', raw });
+  const body = JSON.stringify({ to: 'jaco-smithery@jacocode.se', raw });
   const sig = crypto.createHmac('sha256', 's3cret').update(body).digest('hex');
   assert.equal(verifySignature(body, sig, 's3cret'), true);
   assert.equal(verifySignature(body, sig, 'other'), false);
@@ -44,16 +44,16 @@ test('signed delivery only; MIME, encoded words and quoted-printable are decoded
 test('only jaco addresses are stored; reads are recent and newest first', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-inbox-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const env = { JACO_WORKSPACE_ROOT: dir, JACO_INBOX_DOMAIN: 'mimirpower.com' };
-  assert.equal(isJacoAddress('jaco+gh@mimirpower.com', env), true);
-  assert.equal(isJacoAddress('dick@mimirpower.com', env), false);
-  assert.equal(storeMessage({ to: 'dick@mimirpower.com', raw }, env).stored, false);
+  const env = { JACO_WORKSPACE_ROOT: dir, JACO_INBOX_DOMAIN: 'jacocode.se' };
+  assert.equal(isJacoAddress('jaco+gh@jacocode.se', env), true);
+  assert.equal(isJacoAddress('dick@jacocode.se', env), false);
+  assert.equal(storeMessage({ to: 'dick@jacocode.se', raw }, env).stored, false);
   const now = Date.parse('2026-10-03T20:00:00Z');
-  storeMessage({ to: 'jaco-smithery@mimirpower.com', raw, receivedAt: '2026-10-03T19:50:00Z' }, env, now);
-  storeMessage({ to: 'jaco-other@mimirpower.com', raw: 'Subject: hi\r\n\r\nhello', receivedAt: '2026-10-03T19:55:00Z' }, env, now);
-  storeMessage({ to: 'jaco-old@mimirpower.com', raw, receivedAt: '2026-10-03T17:00:00Z' }, env, now);
-  assert.deepEqual(readInbox({ sinceMinutes: 60 }, env, now).map(m => m.to), ['jaco-other@mimirpower.com', 'jaco-smithery@mimirpower.com']);
-  const [m] = readInbox({ to: 'JACO-SMITHERY@mimirpower.com' }, env, now);
+  storeMessage({ to: 'jaco-smithery@jacocode.se', raw, receivedAt: '2026-10-03T19:50:00Z' }, env, now);
+  storeMessage({ to: 'jaco-other@jacocode.se', raw: 'Subject: hi\r\n\r\nhello', receivedAt: '2026-10-03T19:55:00Z' }, env, now);
+  storeMessage({ to: 'jaco-old@jacocode.se', raw, receivedAt: '2026-10-03T17:00:00Z' }, env, now);
+  assert.deepEqual(readInbox({ sinceMinutes: 60 }, env, now).map(m => m.to), ['jaco-other@jacocode.se', 'jaco-smithery@jacocode.se']);
+  const [m] = readInbox({ to: 'JACO-SMITHERY@jacocode.se' }, env, now);
   assert.deepEqual([m.subject, m.codes], ['Verify your email', ['482913']]);
 });
 
@@ -61,9 +61,9 @@ test('Nova sees verification codes only as handles', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-inbox-nova-'));
   t.after(() => { fs.rmSync(dir, { recursive: true, force: true }); delete process.env.JACO_WORKSPACE_ROOT; });
   process.env.JACO_WORKSPACE_ROOT = dir;
-  storeMessage({ to: 'jaco-smithery@mimirpower.com', raw, receivedAt: new Date().toISOString() });
+  storeMessage({ to: 'jaco-smithery@jacocode.se', raw, receivedAt: new Date().toISOString() });
   const { executeTask } = await import('../../agents/hands-off-agent.mjs');
-  const r = await executeTask({ type: 'email-inbox', data: { to: 'jaco-smithery@mimirpower.com' } }, {}, null);
+  const r = await executeTask({ type: 'email-inbox', data: { to: 'jaco-smithery@jacocode.se' } }, {}, null);
   assert.equal(r.count, 1);
   const [msg] = r.messages;
   assert.match(msg.codes[0], /^secret:[0-9a-f]{12}$/);

@@ -10,7 +10,7 @@ import path from 'node:path';
 const KEEP_MS = 48 * 3600_000;
 const MAX_MESSAGES = 200;
 export const inboxFile = (env = process.env) => path.join(path.resolve(env.JACO_WORKSPACE_ROOT || process.cwd()), '.jaco', 'inbox', 'messages.json');
-export const inboxDomain = (env = process.env) => String(env.JACO_INBOX_DOMAIN || 'mimirpower.com').toLowerCase();
+export const inboxDomain = (env = process.env) => String(env.JACO_INBOX_DOMAIN || 'jacocode.se').toLowerCase();
 // jaco@, jaco-<site>@ and jaco+<site>@ belong to JACO; any other address on the domain is not read.
 export const isJacoAddress = (address, env = process.env) => new RegExp(`^jaco(?:[-+][a-z0-9.-]{1,40})?@${inboxDomain(env).replace(/\./g, '\\.')}$`, 'i').test(String(address || '').trim());
 

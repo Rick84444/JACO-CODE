@@ -32,5 +32,5 @@ User-agent: CCBot
 Allow: /
 
 # GEO & AEO AI Machine-Readable Specifications
-Sitemap: https://mimirpower.se/sitemap.xml
+Sitemap: https://jacocode.se/sitemap.xml
 

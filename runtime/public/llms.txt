@@ -28,8 +28,8 @@
 
 ## Key Resources & Documentation
 
-- [Website & Overview](https://mimirpower.se/jaco)
-- [AgentCard JSON Manifest](https://mimirpower.se/api/a2a/agentcard.json)
-- [Full LLM Specification](https://mimirpower.se/llms-full.txt)
-- [OpenAI Plugin Manifest](https://mimirpower.se/ai-plugin.json)
+- [Website & Overview](https://jacocode.se/jaco)
+- [AgentCard JSON Manifest](https://jacocode.se/api/a2a/agentcard.json)
+- [Full LLM Specification](https://jacocode.se/llms-full.txt)
+- [OpenAI Plugin Manifest](https://jacocode.se/ai-plugin.json)
 - [GitHub Repository](https://github.com/Rick84444/jaco-code)

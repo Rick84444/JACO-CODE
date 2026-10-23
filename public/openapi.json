@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "https://mimirpower.se",
+      "url": "https://jacocode.se",
       "description": "Production Node Endpoint"
     }
   ],

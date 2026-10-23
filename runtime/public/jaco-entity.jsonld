@@ -3,20 +3,20 @@
   "@graph": [
     {
       "@type": "SoftwareApplication",
-      "@id": "https://mimirpower.se/#jaco",
+      "@id": "https://jacocode.se/#jaco",
       "name": "JACO Autonomous Agent OS",
       "alternateName": ["JACO", "JACO Runtime", "Just Autonomous Agent Orchestrator"],
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "Agentic AI Orchestrator & Runtime",
       "operatingSystem": ["Android via Termux", "Linux", "Windows", "Docker / Cloud Run"],
       "description": "A user-controlled multi-LLM runtime for persistent mission state, bounded tool execution, verification, audit logging, and local AI orchestration.",
-      "url": "https://mimirpower.se/jaco",
+      "url": "https://jacocode.se/jaco",
       "downloadUrl": "https://github.com/Rick84444/jaco-code",
       "softwareVersion": "1.0.0-A2A",
-      "license": "https://mimirpower.se/jaco/license",
+      "license": "https://jacocode.se/jaco/license",
       "creator": {
         "@type": "Organization",
-        "@id": "https://mimirpower.se/#organization",
+        "@id": "https://jacocode.se/#organization",
         "name": "Dick Jacobsson / Mimir Power"
       },
       "featureList": [
@@ -33,7 +33,7 @@
         "price": "0",
         "priceCurrency": "USD",
         "availability": "https://schema.org/OnlineOnly",
-        "url": "https://mimirpower.se/jaco"
+        "url": "https://jacocode.se/jaco"
       }
     }
   ]

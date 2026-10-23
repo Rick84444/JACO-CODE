@@ -20,7 +20,7 @@ const opt = (name, fallback) => {
   return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : fallback;
 };
 
-const url = String(opt('url', process.env.JACO_A2A_PROBE_URL || 'https://a2a.mimirpower.com')).replace(/\/$/, '');
+const url = String(opt('url', process.env.JACO_A2A_PROBE_URL || 'https://a2a.jacocode.se')).replace(/\/$/, '');
 const text = opt('text', 'JACO A2A probe: reply with one short sentence confirming which model handled this task.');
 const skill = opt('skill', 'jaco_continuum_task');
 const timeoutMs = Number(opt('timeout-ms', 300000));

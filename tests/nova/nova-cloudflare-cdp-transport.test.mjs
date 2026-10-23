@@ -6,7 +6,7 @@ const previous = {
   NOVA_BRIDGE_URL: process.env.NOVA_BRIDGE_URL,
 };
 process.env.JACO_NOVA_TRANSPORT = 'gateway';
-process.env.NOVA_BRIDGE_URL = 'https://api.mimirpower.com';
+process.env.NOVA_BRIDGE_URL = 'https://api.jacocode.se';
 
 const { novaTransportPath, normalizeNovaTransportResult } = await import('../../agents/hands-off-agent.mjs');
 

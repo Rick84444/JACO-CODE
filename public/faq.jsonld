@@ -1,7 +1,7 @@
 {
   "@context": "https://schema.org",
   "@type": "FAQPage",
-  "@id": "https://mimirpower.se/#faq",
+  "@id": "https://jacocode.se/#faq",
   "mainEntity": [
     {
       "@type": "Question",

@@ -122,7 +122,7 @@ export class SyncFabric {
       { actor: 'ai-studio', runtimeId: 'aistudio-runtime-01', transport: 'POLLING_HEARTBEAT' },
       { actor: 'forge-compiler', runtimeId: 'forge-engine-01', transport: 'WEBSOCKET' },
       { actor: 'android-device', runtimeId: 'pixel-10-pro-termux', transport: 'FCM_SIGNAL' },
-      { actor: 'a2a-peer-node', runtimeId: 'mimirpower-a2a-broker', transport: 'WEBHOOK' }
+      { actor: 'a2a-peer-node', runtimeId: 'jaco-a2a-broker', transport: 'WEBHOOK' }
     ];
 
     for (const cp of configuredPeers) {
