@@ -83,6 +83,8 @@ test('EconomicGovernor authorizes manual Aura chat without enabling background c
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-aura-economic-'));
   try {
     const economic = new EconomicGovernor(root, { append() {} });
+    assert.equal(economic.snapshot().policy.cloudEnabled, true, 'cloud is on until the operator turns it off');
+    economic.updatePolicy({ cloudEnabled: false, manualAuraCloudEnabled: false, novaOllamaCloudEnabled: false }, 'operator');
     assert.equal(economic.authorizeCloud({ estimatedUsd: 0.01, purpose: 'manual-aura-chat' }).allowed, false);
     economic.updatePolicy({ manualAuraCloudEnabled: true, dailyCloudUsd: 1 }, 'operator');
     assert.equal(economic.snapshot().policy.cloudEnabled, false);

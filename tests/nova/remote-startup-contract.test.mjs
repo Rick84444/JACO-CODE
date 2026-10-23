@@ -18,12 +18,16 @@ test('Remote Bridge required; Workplace is the sole SEER and Nova owner',()=>{
  assert.equal(services.some(s=>s.id==='nova'),false);
  assert.equal(c.env.JACO_WORKPLACE_SUPERVISE_NOVA,'1');
 });
-test('CDP and tunnel require explicit opt-in',()=>{
- const c=configuration(root,{});assert.equal(c.cdp,false);assert.equal(c.tunnel,false);
+test('the agent connects its own browser by default; the ChatGPT gateway and tunnel stay opt-in',()=>{
+ const c=configuration(root,{});assert.equal(c.cdp,true);assert.equal(c.gateway,false);assert.equal(c.tunnel,false);
+ for(const id of ['novaBridge','cdp'])assert.ok(definitions(c).some(s=>s.id===id),id);
  assert.equal(definitions(c).some(s=>s.id==='gateway'),false);
- const enabled=configuration(root,{JACO_ENABLE_CDP:'1',JACO_START_TUNNEL:'1'});
- assert.equal(enabled.tunnel,true);
- for(const id of ['novaBridge','cdp','gateway'])assert.ok(definitions(enabled).some(s=>s.id===id));
+ const off=configuration(root,{JACO_ENABLE_CDP:'0'});assert.equal(off.cdp,false);
+ assert.equal(definitions(off).some(s=>['novaBridge','cdp','gateway'].includes(s.id)),false);
+ const legacy=configuration(root,{JACO_ENABLE_CDP:'1',JACO_START_TUNNEL:'1'});
+ assert.equal(legacy.tunnel,true);
+ for(const id of ['novaBridge','cdp','gateway'])assert.ok(definitions(legacy).some(s=>s.id===id),id);
+ assert.equal(configuration(root,{JACO_ENABLE_CHATGPT_GATEWAY:'1'}).gateway,true);
 });
 test('runtime must return the correct identity',()=>{
  const s=definitions(configuration(root,{})).find(s=>s.id==='runtime');

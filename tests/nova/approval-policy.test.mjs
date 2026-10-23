@@ -8,9 +8,10 @@ import { autoResolution, autoApprovalLevel, autoApproveGate, loadApprovalPolicy,
 const r = (type, extra = {}) => ({ ok: true, verified: true, type, ...extra });
 const awaiting = (receipts, extra = {}) => ({ id: 'm', status: 'AWAITING_VERIFICATION', goal: 'audit code', receipts, ...extra });
 
-test('level 0 never auto-resolves and invalid levels fall back to 0', () => {
+test('level 0 never auto-resolves, unset means the highest level, invalid levels fall back to 0', () => {
   assert.equal(autoResolution(awaiting([r('repo-read')]), { level: 0 }), null);
-  assert.equal(autoApprovalLevel({}), 0);
+  assert.equal(autoApprovalLevel({}), 5, 'full autonomy unless the operator lowers it');
+  assert.equal(autoApprovalLevel({ JACO_AUTO_APPROVE_LEVEL: '0' }), 0);
   assert.equal(autoApprovalLevel({ JACO_AUTO_APPROVE_LEVEL: '9' }), 0);
   assert.equal(autoApprovalLevel({ JACO_AUTO_APPROVE_LEVEL: '5' }), 5);
 });

@@ -6,7 +6,7 @@ interface Live {
   observedAt:string;seededAt:string|null;today:Totals;month:Totals;lastHourUsd:number;
   pending:{count:number;usd:number};unknown:{count:number;usd:number};
   governor:{dailySpentUsd:number;monthlySpentUsd:number;reservedUsd:number};
-  policy:{dailyCloudUsd:number;monthlyCloudUsd:number;maxCloudUsdPerTask:number;cloudEnabled:boolean};
+  policy:{dailyCloudUsd:number|null;monthlyCloudUsd:number|null;maxCloudUsdPerTask:number|null;cloudEnabled:boolean};
 }
 interface Balance { ok:boolean;usd?:number;error?:string;checkedAt?:string }
 interface Payload { live:Live;balances:{deepseek?:Balance};runwayMinutes:number|null }
@@ -49,10 +49,11 @@ export function CostChip({onOpen}:{onOpen?:()=>void}) {
   const live=data?.live;
   const balance=data?.balances.deepseek;
   const low=balance?.ok&&(balance.usd??0)<1;
-  const over=live?live.today.usd>=live.policy.dailyCloudUsd:false;
+  const over=live&&live.policy.dailyCloudUsd!=null?live.today.usd>=live.policy.dailyCloudUsd:false;
+  const capText=(n:number|null,digits?:number)=>n==null?'inget tak':usd(n,digits);
   const tone=error?'warn':over?'bad':data?.runwayMinutes!=null&&data.runwayMinutes<30?'bad':low?'warn':'ok';
   const color=tone==='bad'?'text-red-300 border-red-900':tone==='warn'?'text-amber-300 border-amber-800':'text-slate-200 border-slate-700';
-  const label=error?'Kostnad: ingen data':live?`Idag ${usd(live.today.usd)} av ${usd(live.policy.dailyCloudUsd,0)}${over?' (taket nått)':''} · ${usd(live.lastHourUsd)}/h${balance?.ok?` · saldo ${usd(balance.usd)}`:''}`:'Kostnad…';
+  const label=error?'Kostnad: ingen data':live?`Idag ${usd(live.today.usd)}${live.policy.dailyCloudUsd==null?'':` av ${usd(live.policy.dailyCloudUsd,0)}`}${over?' (taket nått)':''} · ${usd(live.lastHourUsd)}/h${balance?.ok?` · saldo ${usd(balance.usd)}`:''}`:'Kostnad…';
   const byProvider:Totals['byProvider']=live?.today.byProvider??{};
   const providers=Object.entries(byProvider).sort((a,b)=>b[1].usd-a[1].usd);
 
@@ -91,7 +92,7 @@ export function CostChip({onOpen}:{onOpen?:()=>void}) {
         <section className="space-y-1 border-t border-slate-800 pt-2">
           <h3 className="font-semibold text-slate-200">Styrsystemets räknare (försiktig)</h3>
           <div className="flex justify-between"><span className="text-slate-400">Idag / månad</span><span>{usd(live.governor.dailySpentUsd)} / {usd(live.governor.monthlySpentUsd)}</span></div>
-          <div className="flex justify-between"><span className="text-slate-400">Tak per dag / månad / uppgift</span><span>{usd(live.policy.dailyCloudUsd,0)} / {usd(live.policy.monthlyCloudUsd,0)} / {usd(live.policy.maxCloudUsdPerTask,2)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-400">Tak per dag / månad / uppgift</span><span>{capText(live.policy.dailyCloudUsd,0)} / {capText(live.policy.monthlyCloudUsd,0)} / {capText(live.policy.maxCloudUsdPerTask,2)}</span></div>
           {Math.abs(live.governor.monthlySpentUsd-live.month.usd)>1&&<button type="button" disabled={busy} onClick={()=>void recalibrate()} className="mt-1 w-full rounded border border-cyan-800 px-2 py-1 text-cyan-300 disabled:opacity-50">{busy?'Nollställer…':'Nollställ räknaren till uppmätt'}</button>}
         </section>
         <div className="flex justify-between items-center text-[10px] text-slate-500">

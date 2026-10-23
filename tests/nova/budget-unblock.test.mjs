@@ -37,7 +37,9 @@ test('the cloud switch and the release route work through the operator route', a
   t.after(() => new Promise(r => server.close(r)));
   const url = `http://127.0.0.1:${server.address().port}/budget`;
   const send = (method, p, body) => fetch(url + p, { method, headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }).then(r => r.json());
-  assert.equal(g.snapshot().policy.cloudEnabled, false, 'off by default');
+  assert.equal(g.snapshot().policy.cloudEnabled, true, 'on by default; caps are the operator choice');
+  assert.equal((await send('PATCH', '', { cloudEnabled: false })).economic.policy.cloudEnabled, false);
+  assert.equal(g.authorizeCloud({ estimatedUsd: 0.01, purpose: 'reasoning' }).reason, 'CLOUD_DISABLED_BY_POLICY');
   assert.equal((await send('PATCH', '', { cloudEnabled: true })).economic.policy.cloudEnabled, true);
   assert.equal(g.authorizeCloud({ estimatedUsd: 0.01, purpose: 'manual-aura-chat' }).allowed, true);
   const r = g.authorizeCloud({ estimatedUsd: 0.02, purpose: 'manual-aura-chat' }); g.markCloudOutcomeUnknown(r.reservationId);

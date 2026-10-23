@@ -56,7 +56,7 @@ test('reservations remain effective after lowering limits and restarting',t=>{
 });
 test('invalid policy patches cannot mutate saved or in-memory policy',t=>{
   const g=governor(t);g.updatePolicy({dailyCloudUsd:1});const before=fs.readFileSync(g.policyFile,'utf8'),policy=g.snapshot().policy;
-  for(const patch of [{dailyCloudUsd:-1},{dailyCloudUsd:Infinity},{dailyCloudUsd:'2'},{monthlyCloudUsd:null},{cloudEnabled:'false'},{warningAtPercent:101}])assert.throws(()=>g.updatePolicy(patch),/ECONOMIC_POLICY/);
+  for(const patch of [{dailyCloudUsd:-1},{dailyCloudUsd:Infinity},{dailyCloudUsd:'2'},{cloudEnabled:'false'},{warningAtPercent:101}])assert.throws(()=>g.updatePolicy(patch),/ECONOMIC_POLICY/);
   assert.equal(fs.readFileSync(g.policyFile,'utf8'),before);assert.deepEqual(g.snapshot().policy,policy);
 });
 test('a saved operator cloud-off policy overrides stale environment opt-in',t=>{
@@ -81,7 +81,7 @@ test('operator budget HTTP route validates permission, origin and fields and per
   assert.equal((await fetch(url,{method:'PATCH',headers:{...headers,origin:'https://foreign.example'},body:'{"dailyCloudUsd":2}'})).status,403);
   for(const body of [{dailyCloudUsd:'2'},{dailyCloudUsd:-1},{cloudEnabled:'true'},{autoApprove:true},{}])assert.equal((await fetch(url,{method:'PATCH',headers,body:JSON.stringify(body)})).status,400);
   const changed=await fetch(url,{method:'PATCH',headers,body:'{"dailyCloudUsd":2,"monthlyCloudUsd":20,"maxCloudUsdPerTask":0.05}'}).then(r=>r.json());
-  assert.equal(changed.success,true);assert.equal(changed.economic.policy.dailyCloudUsd,2);assert.equal(changed.economic.policy.cloudEnabled,false);
+  assert.equal(changed.success,true);assert.equal(changed.economic.policy.dailyCloudUsd,2);assert.equal(changed.economic.policy.cloudEnabled,true,'cloud is on until the operator turns it off');
   const observed=await fetch(url,{headers}).then(r=>r.json());assert.equal(observed.economic.policy.maxCloudUsdPerTask,0.05);
   const restarted=new EconomicGovernor(path.dirname(g.policyFile),{append(){}});assert.equal(restarted.snapshot().policy.dailyCloudUsd,2);
 });

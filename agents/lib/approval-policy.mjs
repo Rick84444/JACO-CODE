@@ -4,6 +4,7 @@
 // focused on the set goal; agents may update the rules when I grant it".
 //
 // Level (JACO_AUTO_APPROVE_LEVEL, or the policy file's "level" when rule edits are granted)
+//   Unset means the highest level (5); the operator lowers it with JACO_AUTO_APPROVE_LEVEL. An invalid value means 0.
 //   0  off: everything waits for the operator
 //   1  confirm verified read-only completions; resume a BLOCKED mission once after a transient failure
 //   2  + confirm verified code work when the coding contract is machine-verified (merge still needs green CI);
@@ -53,7 +54,7 @@ export function policyFilePath(root = process.env.JACO_WORKSPACE_ROOT || process
 
 // Effective policy: .env level, overridden by the policy file only when the operator granted rule edits.
 export function loadApprovalPolicy({ env = process.env, file = policyFilePath() } = {}) {
-  const envLevel = clampLevel(env.JACO_AUTO_APPROVE_LEVEL ?? 0) ?? 0;
+  const envLevel = clampLevel(env.JACO_AUTO_APPROVE_LEVEL ?? MAX_LEVEL) ?? 0;
   const editsGranted = env.JACO_POLICY_EDIT_GRANT === '1';
   let fromFile = null;
   if (editsGranted) { try { fromFile = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {} }
@@ -67,7 +68,7 @@ export function loadApprovalPolicy({ env = process.env, file = policyFilePath() 
 }
 
 export function autoApprovalLevel(env = process.env) {
-  return clampLevel(env.JACO_AUTO_APPROVE_LEVEL ?? 0) ?? 0;
+  return clampLevel(env.JACO_AUTO_APPROVE_LEVEL ?? MAX_LEVEL) ?? 0;
 }
 
 // Agents (SEER, Aura) may change the rules only with the operator's grant; the hard limits above stay.
