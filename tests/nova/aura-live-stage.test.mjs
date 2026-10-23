@@ -109,4 +109,7 @@ test('Stage clears captured HTML and screenshots on a project switch', () => {
   assert.match(live, /return \(\)=>\{captureEpoch\.current \+= 1;\}/);
   assert.match(live, /const \[capturedPage,setCapturedPage\]=useState/);
   assert.match(live, /setCapturedPage\(null\)/);
+  assert.match(live, /pageEpoch\.current \+= 1/);
+  assert.match(live, /const epoch=\+\+pageEpoch\.current/);
+  assert.match(live, /if\(epoch===pageEpoch\.current\) setCapturedPage/);
 });
