@@ -135,7 +135,13 @@ try {
   await input().fill('Behåll mitt utkast');
   await canvas('Kod').click();await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
-  await page.setViewportSize({width:393,height:852});await canvas('Belägg').click();await canvas('Samtal').click();
+  await page.setViewportSize({width:393,height:852});
+  await canvas('Arbete').click();
+  await page.getByTestId('aura-live-stage').waitFor();
+  assert.equal(await page.getByRole('navigation',{name:'Mobilnavigation'}).getByRole('button',{name:'Arbete',exact:true}).getAttribute('aria-pressed'),'true');
+  await canvas('Samtal').click();
+  await canvas('Belägg').click();
+  await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   passed('Desktop and mobile view changes retain the same draft and conversation session');
