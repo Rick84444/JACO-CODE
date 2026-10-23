@@ -175,7 +175,9 @@ try{
   const reopenedEvents=new ContinuumEventStore(path.join(state,'ledger'));
   const reopenedEvidence=new EvidenceLedger(state,reopenedEvents);
   const reopenedKnowledge=new KnowledgeStore(state,reopenedEvents,reopenedEvidence);
-  assert.equal(reopenedKnowledge.get(persistedReceiptKnowledgeId).verificationStatus,'VERIFIED');
+  // A tool attestation must stay unverified across a restart: reopening the
+  // stores may not upgrade its provenance (see the assertion at line 117).
+  assert.equal(reopenedKnowledge.get(persistedReceiptKnowledgeId).verificationStatus,'UNVERIFIED');
   assert.equal(reopenedKnowledge.get(persistedReceiptKnowledgeId).reusable,false);
   assert.equal(reopenedKnowledge.get(persistedDecisionKnowledgeId).verificationStatus,'VERIFIED');
   assert.equal(reopenedEvents.verify().valid,true);
