@@ -14,7 +14,7 @@ Current implementation owners:
 - `gateway/src/workplace/` — optional multi-process coordination.
 - `agents/hands-off-agent.mjs` — local execution compatibility surface.
 - `agents/lib/coding-contract.mjs` + `agents/lib/coding-workspace.mjs` — bounded repository mutation.
-- `runtime/` — canonical product runtime until the directory migration to `runtime/` is complete.
+- `runtime/` — canonical product runtime.
 
 Historical component names are implementation details. New files and APIs should use responsibility-based names.
 
