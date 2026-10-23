@@ -61,7 +61,7 @@ test('One stage is mounted by canonical IDE without permanent tool tabs or a sec
   assert.doesNotMatch(ui,/className="cognitive-view-tabs"/);
   assert.equal((ide.match(/<AuraChatPanel/g)||[]).length,1);
   assert.match(ide,/workspacePinned \|\| !candidate/);
-  assert.match(ide,/auraStageCandidate\(cognitiveEvents\)/);
+  assert.match(ide,/auraStageCandidate\(stageEvents\)/);
   assert.match(stage,/auraStageHistory\(events\)/);
   assert.match(stage,/onDraftChange/);
   assert.match(ide,/expectedHash:source\.hash/);
@@ -104,8 +104,9 @@ test('Live Stage is one-click discoverable, with touch-first work navigation', (
 
 test('Stage clears captured HTML and screenshots on a project switch', () => {
   const ide = fs.readFileSync(new URL('../../runtime/src/components/JacoAuraComputeIDE.tsx', import.meta.url), 'utf8');
-  assert.match(ide, /<AuraLiveStage key=\{projectKey\}/);
+  assert.match(ide, /<AuraLiveStage projectRevision=\{projectKey\}/);
   const live = fs.readFileSync(new URL('../../runtime/src/components/AuraLiveStage.tsx', import.meta.url), 'utf8');
   assert.match(live, /return \(\)=>\{captureEpoch\.current \+= 1;\}/);
   assert.match(live, /const \[capturedPage,setCapturedPage\]=useState/);
+  assert.match(live, /setCapturedPage\(null\)/);
 });
