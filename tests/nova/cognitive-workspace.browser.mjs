@@ -152,7 +152,7 @@ try {
   await input().fill('Behåll mitt utkast');
   await canvas('Kod').click();await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
-  await page.locator('.cognitive-topbar').click();
+  await page.locator('.cognitive-status').click();
   await page.keyboard.press('Control+Shift+Digit2');
   assert.equal(await page.getByRole('navigation',{name:'Arbetsyta'}).getByRole('button',{name:'Kod',exact:true}).getAttribute('aria-pressed'),'true');
   await page.keyboard.press('Control+Shift+Digit1');
