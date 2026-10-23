@@ -53,8 +53,12 @@ url="${*: -1}"
 case "$url" in
  *:2999/*) [[ -f "$STUB_STATE/jaco-sentinel" ]] ;;
  *:3000/*)
-   if [[ -f "$STUB_STATE/jaco-core" || "${STUB_FORCE_CORE_HTTP:-0}" == "1" ]]; then exit 0; fi
-   if [[ -n "${STUB_CORE_HTTP_PID:-}" && -d "/proc/$STUB_CORE_HTTP_PID" ]]; then exit 0; fi
+   if [[ -f "$STUB_STATE/jaco-core" || "${STUB_FORCE_CORE_HTTP:-0}" == "1" || ( -n "${STUB_CORE_HTTP_PID:-}" && -d "/proc/$STUB_CORE_HTTP_PID" ) ]]; then
+     if [[ "$url" == *"/api/runtime/identity" ]]; then
+       printf '{"success":true,"releaseId":"%s"}\n' "$STUB_CORE_RELEASE_ID"
+     fi
+     exit 0
+   fi
    exit 22
    ;;
  *:2995/*)
@@ -81,6 +85,9 @@ sed -i "s|__BONSAI_MODEL__|$TMP/home/models/Bonsai-27B-Q1_0.gguf|g" "$TMP/bin/cu
 chmod +x "$TMP/home/llama.cpp/build/bin/llama-server"
 chmod +x "$TMP/bin/sv" "$TMP/bin/curl"
 export STUB_STATE="$TMP/state"
+# The Core launcher now verifies an actual releaseId. Test doubles must return
+# a real identity response rather than an empty HTTP 200.
+export STUB_CORE_RELEASE_ID="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).releaseId" "$ROOT/CURRENT_RELEASE.json")"
 export HOME="$TMP/home"
 export PREFIX="$TMP/prefix"
 export PATH="$TMP/bin:$PATH"
