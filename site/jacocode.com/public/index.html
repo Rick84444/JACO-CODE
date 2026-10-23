@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>JACO – autonomous coding agent that proves every step</title>
+<meta name="description" content="An autonomous coding agent on your own machine and your own model. Every step leaves a receipt and every answer is checked. Free download, open source.">
+<link rel="canonical" href="https://jacocode.com/">
+<meta name="robots" content="index, follow, max-image-preview:large, max-video-preview:-1">
+<meta name="theme-color" content="#03080d">
+<link rel="icon" type="image/png" href="/brand/jaco-icon-192.png">
+<link rel="apple-touch-icon" href="/brand/jaco-icon-192.png">
+<link rel="stylesheet" href="/style.css?v=glass-4">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JACO">
+<meta property="og:url" content="https://jacocode.com/">
+<meta property="og:title" content="JACO – watch the agent work, then check every step">
+<meta property="og:description" content="An autonomous coding agent on your own machine and your own model. Every action leaves a receipt, and the final answer is checked against them.">
+<meta property="og:image" content="https://jacocode.com/replay/poster.jpg">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="720">
+<meta property="og:image:alt" content="A JACO Lite run with its receipts beside the recording">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="JACO – watch the agent work, then check every step">
+<meta name="twitter:description" content="An autonomous coding agent on your own machine and your own model. Every action leaves a receipt.">
+<meta name="twitter:image" content="https://jacocode.com/replay/poster.jpg">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://jacocode.com/#org",
+      "name": "JACO",
+      "url": "https://jacocode.com/",
+      "logo": "https://jacocode.com/brand/jaco-logo.png",
+      "email": "hello@jacocode.com",
+      "sameAs": [
+        "https://github.com/Rick84444/JACO-CODE",
+        "https://huggingface.co/spaces/Rick8444/JACO-Autonomous-IDE"
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://jacocode.com/#website",
+      "url": "https://jacocode.com/",
+      "name": "JACO",
+      "publisher": { "@id": "https://jacocode.com/#org" },
+      "inLanguage": "en"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://jacocode.com/#jaco-lite",
+      "name": "JACO Lite",
+      "description": "The JACO IDE and the Nova agent as one folder on your computer. Plans with the model you choose, acts with real tools, and leaves a receipt for every action.",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Windows",
+      "softwareRequirements": "Node.js 22.5 or newer",
+      "downloadUrl": "https://jacocode.com/download/jaco-lite.zip",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "publisher": { "@id": "https://jacocode.com/#org" }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "@id": "https://jacocode.com/#source",
+      "name": "JACO",
+      "codeRepository": "https://github.com/Rick84444/JACO-CODE",
+      "license": "https://opensource.org/license/mit",
+      "programmingLanguage": ["JavaScript", "TypeScript"],
+      "publisher": { "@id": "https://jacocode.com/#org" }
+    },
+    {
+      "@type": "VideoObject",
+      "@id": "https://jacocode.com/#replay",
+      "name": "JACO Lite evidence replay",
+      "description": "A real recording of JACO Lite adding a function and its test to a small project, with the receipts the run produced.",
+      "thumbnailUrl": "https://jacocode.com/replay/poster.jpg",
+      "contentUrl": "https://jacocode.com/replay/replay.mp4",
+      "uploadDate": "2026-10-10",
+      "duration": "PT51S"
+    }
+  ]
+}
+</script>
+<script src="/replay.js" defer></script>
+<script src="/sky.js?v=points-1" defer></script>
+<script src="/auth.js" defer></script>
+</head>
+<body>
+<div class="sky" aria-hidden="true"></div>
+<canvas id="waves" class="waves" aria-hidden="true"></canvas>
+
+<header class="top">
+  <a class="mark" href="/" aria-label="JACO home"><img src="/brand/jaco-logo.png" alt="JACO IDE" width="150" height="50"></a>
+  <nav aria-label="Main">
+    <a href="#replay">Replay</a>
+    <a href="#how">How it works</a>
+    <a href="#lite">JACO Lite</a>
+    <a href="#cloud">JacoCloud</a>
+    <a href="#agents">For agents</a>
+    <a href="#open">Open source</a>
+  </nav>
+  <a class="signin" id="signin" href="/auth/google">Sign in with Google</a>
+</header>
+
+<main>
+  <section class="hero">
+    <p class="kicker">Agentic. Safe. Simple.</p>
+    <h1>Watch the agent work.<br><span>Then check every step.</span></h1>
+    <p class="lede">An autonomous coding agent that works in your project, on your machine, with the model you choose. It runs inside a contract, works on its own branch, and has to pass your tests before it says it is done. Every action leaves a receipt.</p>
+    <p class="cta">
+      <a class="btn" href="#lite">Get JACO Lite, free</a>
+      <a class="ghost" href="#replay">See a real run</a>
+      <a class="ghost" href="https://github.com/Rick84444/JACO-CODE" rel="noopener">Source on GitHub</a>
+    </p>
+  </section>
+
+  <section id="replay" class="replay" aria-labelledby="replay-title">
+    <div class="replay-head">
+      <h2 id="replay-title">Evidence replay</h2>
+      <p id="replay-meta" class="meta">A real recording of JACO Lite fixing a task in a project, with the receipts it produced.</p>
+    </div>
+    <div class="stage">
+      <figure class="screen">
+        <video id="replay-video" src="/replay/replay.mp4" poster="/replay/poster.jpg" muted playsinline loop preload="metadata" aria-describedby="replay-meta"></video>
+        <div class="scrub" id="scrub" role="slider" tabindex="0" aria-label="Replay position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="scrub-fill" id="scrub-fill"></div>
+          <div class="scrub-marks" id="scrub-marks"></div>
+        </div>
+        <div class="under"><figcaption id="replay-caption">Loading the recording…</figcaption><button type="button" id="replay-full" class="full">Full screen</button></div>
+      </figure>
+      <aside class="proof" aria-label="Receipts, in step with the recording">
+        <div class="proof-head"><span class="dot"></span>Proof stream <span id="proof-count" class="count"></span></div>
+        <ol id="proof-list" class="proof-list"></ol>
+        <div id="proof-verdict" class="verdict" hidden></div>
+      </aside>
+    </div>
+    <p class="fine">Click a receipt to jump to that moment. This is the JACO Lite download, unpacked into an empty folder and run on a small project with a real model; the receipts and the answer check come from the run's own mission log. The model key was connected off screen.</p>
+  </section>
+
+  <section id="how" class="how" aria-labelledby="how-title">
+    <h2 id="how-title">How it works</h2>
+    <ol class="steps">
+      <li><b>Plan with your model.</b> Ollama, Groq, DeepSeek or any OpenAI-compatible endpoint. JACO keeps the model inside a contract: allowed tools, budgets, approvals.</li>
+      <li><b>Act with real tools.</b> Files, git, MCP servers and your own browser through CDP. Each step is a mission action with a lease, not a chat message.</li>
+      <li><b>Prove it.</b> Every action leaves a receipt. A separate model checks the final answer claim by claim against those receipts, and an answer that does not hold is sent back.</li>
+    </ol>
+  </section>
+
+  <section id="lite" class="lite" aria-labelledby="lite-title">
+    <h2 id="lite-title">JACO Lite</h2>
+    <p class="lead">The whole IDE and the Nova agent as one folder on your computer. Free. One command starts it, and nothing runs in our cloud.</p>
+    <div class="cards">
+      <article class="card">
+        <h3>Your model, any model</h3>
+        <p>Paste an API key, or point it at Ollama or LM Studio on your machine. JACO finds out what it is and checks it. No account with us.</p>
+      </article>
+      <article class="card">
+        <h3>An agent that has to prove it</h3>
+        <p>Give Nova a goal. It works on a separate git branch, never pushes or merges, and does not report done until your project&rsquo;s own tests pass.</p>
+      </article>
+      <article class="card">
+        <h3>Your code stays yours</h3>
+        <p>The server listens on your computer only. Keys are kept encrypted outside your project. Spending has a limit that you set.</p>
+      </article>
+    </div>
+    <div class="dl" id="lite-download">
+      <p class="cta"><a class="btn" href="/download/jaco-lite.zip">Download JACO Lite (zip, about 17 MB)</a> <a class="ghost" href="/download/jaco-lite.zip.sha256">SHA-256</a></p>
+      <ol class="install">
+        <li>Install Node.js 22.5 or newer if it is not already on your computer.</li>
+        <li>On Windows, right-click <code>jaco-lite.zip</code> and choose <strong>Extract All</strong>. Open the extracted folder.</li>
+        <li>Double-click <code>START.cmd</code> in that folder, or run <code>node start.mjs</code> from a terminal there.</li>
+        <li>The connection guide opens automatically. Connect your model, optionally configure Codex, Claude Code or VS Code, and test the JACO Editor tool.</li>
+      </ol>
+      <p class="status">Extract the whole ZIP before starting. Running START.cmd inside the ZIP only unpacks the launcher, leaving the application files behind.</p>
+
+      <p class="status">Tested on Windows. Built and checked end to end in a clean folder, with a real goal and the project&rsquo;s own tests passing.</p>
+    </div>
+  </section>
+
+  <section id="cloud" class="cloud" aria-labelledby="cloud-title">
+    <div>
+      <h2 id="cloud-title">JacoCloud</h2>
+      <p>Your own JACO, reachable from your phone. Pair a browser with a one-time code from the IDE on your computer, install it to the home screen, and follow or start missions from anywhere. Keys stay on your machine, every device can be revoked, and the terminal never leaves your desk.</p>
+      <p><a class="btn" href="https://ide.jacocode.com/ide-login">Sign in to JacoCloud</a></p>
+    </div>
+    <ul class="facts">
+      <li>One-time pairing code, 10 minutes</li>
+      <li>Session in an HttpOnly, Secure cookie</li>
+      <li>Revoke any device from the IDE</li>
+      <li>Terminal and shell stay local</li>
+    </ul>
+  </section>
+
+  <section id="agents" class="products" aria-labelledby="products-title">
+    <h2 id="products-title">For agents</h2>
+    <div class="cards">
+      <article class="card">
+        <h3>JACO Verify API</h3>
+        <p>Send an answer and its evidence; get every claim checked. 25 free checks a day, then 0.02 USD via x402.</p>
+        <p><a class="ghost" href="https://api.jacocode.com/v1/verify">https://api.jacocode.com/v1/verify</a></p>
+      </article>
+    </div>
+  </section>
+
+  <section id="open" class="open" aria-labelledby="open-title">
+    <h2 id="open-title">Open source</h2>
+    <p class="lead">Read the code, follow the work and try it where you already are.</p>
+    <div class="cards">
+      <article class="card link-card">
+        <h3><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</h3>
+        <p>The whole runtime, the agent and the IDE, MIT licensed. Read how the receipts and checks work, open an issue or send a change.</p>
+        <p><a class="ghost" href="https://github.com/Rick84444/JACO-CODE" rel="noopener">Rick84444/JACO-CODE</a></p>
+      </article>
+      <article class="card link-card">
+        <h3><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8.6" cy="10" r="1.3" fill="currentColor"/><circle cx="15.4" cy="10" r="1.3" fill="currentColor"/><path d="M7.8 14.2c1 1.6 2.5 2.4 4.2 2.4s3.2-.8 4.2-2.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Hugging Face</h3>
+        <p>The JACO Space on the Hugging Face Hub: local coding with Nova, MCP tools and verifiable results.</p>
+        <p><a class="ghost" href="https://huggingface.co/spaces/Rick8444/JACO-Autonomous-IDE" rel="noopener">Rick8444/JACO-Autonomous-IDE</a></p>
+      </article>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>Contact <a href="mailto:hello@jacocode.com">hello@jacocode.com</a> · <a href="https://api.jacocode.com/terms">Terms</a> · <a href="/privacy.html">Privacy</a> · <a href="https://github.com/Rick84444/JACO-CODE" rel="noopener">GitHub</a> · <a href="https://huggingface.co/spaces/Rick8444/JACO-Autonomous-IDE" rel="noopener">Hugging Face</a></p>
+  <p>&copy; 2026 JACO</p>
+</footer>
+</body>
+</html>
