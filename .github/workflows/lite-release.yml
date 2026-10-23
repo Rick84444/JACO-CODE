@@ -22,7 +22,7 @@ jobs:
           cache: npm
           cache-dependency-path: runtime/package-lock.json
       - run: npm ci --prefix runtime
-      - run: node --test tests/nova/lite-chat-routing.test.mjs tests/nova/lite.test.mjs tests/nova/lite-android.test.mjs tests/nova/aura-autonomy.test.mjs tests/nova/approval-policy.test.mjs tests/nova/lite-install.test.mjs tests/nova/gameboard-mcp-access.test.mjs tests/nova/automatic-connections.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/provider-env-selection.test.mjs
+      - run: node --test tests/nova/lite-chat-routing.test.mjs tests/nova/lite.test.mjs tests/nova/lite-android.test.mjs tests/nova/aura-autonomy.test.mjs tests/nova/approval-policy.test.mjs tests/nova/autonomy-hardening.test.mjs tests/nova/lite-install.test.mjs tests/nova/gameboard-mcp-access.test.mjs tests/nova/automatic-connections.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/provider-env-selection.test.mjs
       - run: npm run lint --prefix runtime
       - name: Build the actual download from this commit
         env:
