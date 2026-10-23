@@ -90,7 +90,21 @@ page.setDefaultTimeout(15000);
 const errors=[];page.on('pageerror',error=>{errors.push(error.stack||error.message);console.error("PAGE_ERROR "+(error.stack||error.message));});
 const results=[];const passed=name=>{results.push(name);console.log('PASS '+name);};
 const input=()=>page.getByRole('textbox',{name:'Meddelande till JACO'});
-const canvas=label=>page.getByRole('navigation',{name:'Arbetsyta'}).getByRole('button',{name:label,exact:true});
+// Exercise the same work navigation a real user sees at the current viewport.
+const canvas = label => ({ click: async () => {
+  const mobile = await page.evaluate(() => innerWidth < 768);
+  if (!mobile) {
+    if (label === 'Samtal') await page.getByRole('button', { name: 'Visa samtalet', exact: true }).click();
+    else await page.getByRole('navigation', { name: 'Arbetsyta' }).getByRole('button', { name: label, exact: true }).click();
+    return;
+  }
+  if (['Samtal', 'Arbete', 'Agenter'].includes(label)) {
+    await page.getByRole('navigation', { name: 'Mobilnavigation' }).getByRole('button', { name: label, exact: true }).click();
+    return;
+  }
+  await page.getByRole('navigation', { name: 'Mobilnavigation' }).getByRole('button', { name: 'Fler funktioner' }).click();
+  await page.getByRole('dialog', { name: 'Din arbetsyta' }).getByRole('button', { name: label, exact: true }).click();
+} });
 const screenshot=async name=>{
   if(!process.env.JACO_UI_SCREENSHOTS)return;
   fs.mkdirSync(process.env.JACO_UI_SCREENSHOTS,{recursive:true});
