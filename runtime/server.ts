@@ -63,6 +63,7 @@ import { createBalanceFetcher } from "./src/server/connected/providerBalances.mj
 import { createAuraChatSession } from './src/server/connected/auraChatSession.mjs';
 import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderCompletion, ollamaCloudCostUsd, novaProviderCostUsd, chatFallbackChoice, chatFailureHint } from "./src/server/connected/auraOllamaChat.mjs";
 import { createEconomicBudgetRouter } from './src/server/connected/economicBudget.mjs';
+import { createAuraAutonomyRouter } from './src/server/connected/auraAutonomy.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
@@ -4086,6 +4087,7 @@ const notifyPhone = async (action) => {
     .then((r: any) => { if (r?.seeded) console.log('[cost] live tally seeded from ledger:', r.events, 'events'); })
     .catch((error: any) => console.warn('[cost] tally seed failed:', error?.message || error));
   app.use('/api/aura/budget', createEconomicBudgetRouter({ economic: continuumSurface.runtime.economic, requireOperatorUi: requireLocalUi, getBalances: costBalances }));
+  app.use('/api/aura/autonomy', createAuraAutonomyRouter({ requireOperatorUi: requireLocalUi, policyFile: policyFilePath(WORKSPACE_ROOT) }));
 
   app.post('/api/nova/ollama-cost/reserve', requireAuth, (req, res) => {
     const providerId = String(req.body?.providerId || 'ollama-cloud');
