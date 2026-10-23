@@ -119,8 +119,8 @@ commit if it is not; the IDE tells you when it is missing). Write the goal in th
 - requires the project's own tests (for example `npm test`) to pass after its last change before it reports done;
 - uses whichever model you connected, local or cloud.
 
-Autonomy defaults to level 5: verified work, typed jobs and staged MCP sources proceed within the existing contracts and budgets. Existing explicit autonomy settings are respected. Unknown results, policy stops and outgoing purchases are not automatically approved. Describe desired boundaries in the conversation; the agent must distinguish discussion from a saved, enforceable policy. Cloud
-spend has no caps until you set them: turn on a daily, monthly or per-task limit in the IDE's budget panel (or in
-`<project>/.jaco/continuum/economic-policy.json`); an empty field means no cap. Lite never overwrites your changes.
+**Aura starts at autonomy level 5/5 on Windows and Android.** To lower autonomy, open **Chattinställningar → Autonomi**; the operator's choice is saved across restarts and cannot be raised by an agent. Agents do not receive permission to edit approval policies on a new Lite installation. Within the chosen level, verified coding, tools, delegated jobs and missions proceed without routine approval prompts.
+
+Purchases, subscriptions, payments and topping up paid API credits require explicit operator approval. Ordinary paid LLM inference is different: it follows the separate **Budget** settings. **Cloud models are allowed with configured credentials; no arbitrary USD caps are installed.** If you connect a billed API without setting a cap, actual charges can occur. You can disable cloud models or set daily, monthly and task caps in the budget panel; empty cap fields mean no cap. Lite does not overwrite previous preferences. Unverified or interrupted mutations and denied privileges are never silently re-executed.
 
 Licensed under the MIT License (see `LICENSE`).
