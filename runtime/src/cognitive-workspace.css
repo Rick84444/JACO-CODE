@@ -564,3 +564,17 @@
 .aura-captured-frame{flex:1;min-height:220px;width:100%;border:0;background:#fff}
 .aura-captured-editor{height:clamp(160px,30vh,340px);flex-shrink:0;resize:vertical;border:0;border-top:1px solid #203644;background:#0a1118;color:#d9e6ef;padding:12px 15px;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
 .aura-captured-page>small{padding:8px 12px;font-size:10px;color:#8a9eae;overflow-wrap:anywhere}
+
+/* One discoverable work surface: the chat stays primary, and outcomes are one click away. */
+.cognitive-stage-switcher{display:flex;align-items:center;gap:4px;margin-left:auto;min-width:0;max-width:100%;overflow-x:auto;scrollbar-width:thin}
+.cognitive-stage-switcher button{display:flex;align-items:center;justify-content:center;gap:7px;flex-shrink:0;min-height:36px;padding:7px 12px;border:1px solid transparent;border-radius:9px;font-size:12px;color:#96aabd;white-space:nowrap}
+.cognitive-stage-switcher button:hover{color:#e0f4fd;background:#162736}
+.cognitive-stage-switcher button[aria-pressed=true]{color:#c7f5ff;background:#153342;border-color:#2b6679}
+.cognitive-stage-actions button{gap:6px}
+@media(max-width:1000px) and (min-width:768px){
+  .cognitive-stage-switcher button{padding:7px 9px;gap:5px;font-size:11px}
+}
+@media(max-width:767px){
+  .cognitive-stage-switcher{display:none}
+  .cognitive-stage-actions button span{font-size:11px}
+}
