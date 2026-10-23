@@ -21,8 +21,13 @@ export function runtimeDirectory(root, configured) {
 }
 export function configuration(root = ROOT, inherited = process.env, overrides = {}) {
   root = path.resolve(root);
-  const file = path.join(root, '.env');
-  const env = { ...(fs.existsSync(file) ? parse(fs.readFileSync(file)) : {}), ...inherited, ...overrides };
+  // Credentials may live outside the checkout: JACO_ENV_FILE, then <root>/.env, then <state dir>/.env
+  // (JACO_STATE_DIR, else ~/.jaco). The home fallback only applies when the inherited environment names a home.
+  const home = inherited.USERPROFILE || inherited.HOME;
+  const stateDir = inherited.JACO_STATE_DIR || (home && path.join(home, '.jaco'));
+  const file = [inherited.JACO_ENV_FILE && path.resolve(root, inherited.JACO_ENV_FILE), path.join(root, '.env'), stateDir && path.join(stateDir, '.env')]
+    .find(candidate => candidate && fs.existsSync(candidate));
+  const env = { ...(file ? parse(fs.readFileSync(file)) : {}), ...inherited, ...overrides };
   delete env.NODE_TLS_REJECT_UNAUTHORIZED;
   const runtime = runtimeDirectory(root, env.JACO_RUNTIME_DIR);
   const manifest = JSON.parse(fs.readFileSync(path.join(runtime, 'package.json'), 'utf8'));
