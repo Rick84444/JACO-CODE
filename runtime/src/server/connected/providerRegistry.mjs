@@ -84,15 +84,19 @@ export class ProviderRegistry {
     const baseUrl = trimSlash(input?.baseUrl);
     const u = new URL(baseUrl);
     if (!['http:', 'https:'].includes(u.protocol)) throw new Error('UNSUPPORTED_PROVIDER_PROTOCOL');
+    // One entry per endpoint: connecting an address that a known provider already serves updates that
+    // provider instead of registering a second id for the same URL.
+    const same = [...this.providers.values()].find(p => p.id !== id && trimSlash(p.baseUrl) === baseUrl);
+    const target = same || this.providers.get(id);
     const provider = {
-      id,
+      id: same ? same.id : id,
       kind: 'openai-compatible',
       baseUrl,
-      apiKeyEnv: String(input?.apiKeyEnv || '').trim() || null,
-      defaultModel: String(input?.defaultModel || '').trim(),
-      createdAt: new Date().toISOString()
+      apiKeyEnv: String(input?.apiKeyEnv || '').trim() || (same ? same.apiKeyEnv : null),
+      defaultModel: String(input?.defaultModel || '').trim() || (same ? same.defaultModel : ''),
+      createdAt: target?.createdAt || new Date().toISOString()
     };
-    this.providers.set(id, provider); this.save();
+    this.providers.set(provider.id, provider); this.save();
     return { ...provider, credentialConfigured: Boolean(this.key(provider)) };
   }
 
