@@ -344,6 +344,9 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   // Bumped when the operator opens another project so the lazily cached tree starts over.
   const [projectKey, setProjectKey] = useState(0);
+  // The global event stream may contain receipts from the previous project.
+  // Never show those old artifacts as current project work after a switch.
+  const [stageProjectCutoff, setStageProjectCutoff] = useState(0);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [documents, setDocuments] = useState<Record<string, FileResponse>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -833,7 +836,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
   // The server-redacted live contract is the only source for the conversational event feed.
   // Workbench activity repeats these events under different IDs and belongs in the raw dock only.
   const cognitiveEvents = cognitiveLive.events;
-  const candidate = useMemo(()=>auraStageCandidate(cognitiveEvents),[cognitiveEvents]);
+  const stageEvents = useMemo(() => stageProjectCutoff
+    ? cognitiveEvents.filter(event => Date.parse(event.at) >= stageProjectCutoff)
+    : cognitiveEvents, [cognitiveEvents, stageProjectCutoff]);
+  const candidate = useMemo(()=>auraStageCandidate(stageEvents),[stageEvents]);
   useEffect(()=>{
     if(workspacePinned || !candidate) return;
     if(candidate.event.id===focusedEvent?.id && (candidate.material!=='html' || candidate.event.evidence.path===selectedFile)) return;
@@ -861,7 +867,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     } catch(error:any) {setStageSaveNotice('Kunde inte spara: '+String(error?.message||error));}
     finally {setStageSaveBusy(false);}
   };
-  const selectedFileEvent=cognitiveEvents.filter(event=>event.evidence.path===selectedFile).at(-1)?.id;
+  const selectedFileEvent=stageEvents.filter(event=>event.evidence.path===selectedFile).at(-1)?.id;
   useEffect(()=>{
     // The stage shows the same file as the editor and preview: keep it current when an agent rewrites it.
     // On desktop the stage is visible in both the 'conversation' and 'stage' views.
@@ -1030,6 +1036,13 @@ export const JacoAuraComputeIDE: React.FC = () => {
               onOpened={(root) => {
                 setProjectName(root.replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Arbetsyta');
                 restoreDrafts(root);
+                setStageProjectCutoff(Date.now());
+                setFocusedEvent(null);
+                setSelectedEvidence(null);
+                setWorkspacePinned(false);
+                setStageSaveNotice(null);
+                setReviewMissionId(null);
+                setWorkspaceView('conversation');
                 setProjectKey(key => key + 1);
                 void refresh();
               }}
@@ -1803,10 +1816,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
     ? <CognitivePreview strict path={stagePath} content={stageDraft} files={files} events={cognitiveEvents} onOpenFile={openFile}/>
     : null;
   const sideMission = missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
-  const sideObservation = sideMission ? cognitiveEvents.filter(event=>event.missionId===sideMission.id).at(-1)?.text ?? null : null;
+  const sideObservation = sideMission ? stageEvents.filter(event=>event.missionId===sideMission.id).at(-1)?.text ?? null : null;
   const stage = <div className="aura-stage-column">
     {sideMission&&<MissionCard mission={sideMission as any} observation={sideObservation} onCancel={cancelMission} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/>}
-    <AuraLiveStage key={projectKey} candidate={selectedStage} events={cognitiveEvents} preview={stagePreview}
+    <AuraLiveStage key={projectKey} candidate={selectedStage} events={stageEvents} preview={stagePreview}
     previewReady={Boolean(stagePreview)} active={status.tone==='active'}
     onInspect={event=>{setSelectedEvidence(event);setWorkspacePinned(true);setWorkspaceView('evidence');}}
     onOpenFile={openFile} htmlSource={stageFile?.content ?? null} htmlDraft={stageDraft}
