@@ -94,9 +94,9 @@ const errors=[];
 const expectedEditorCancels=[];
 page.on('pageerror',error=>{
   const detail=error.stack||error.message;
-  const fromMonaco=/assets\\/AuraCodeEditor-[^\\s]+\\.js/.test(detail);
-  const cancelled=/^Cancel(?:ed|led): Cancel(?:ed|led)(?:\\n|$)/.test(detail);
-  const duringDisposal=/\\.(?:dispose|cancel) \\(/.test(detail);
+  const fromMonaco=/assets\/AuraCodeEditor-[^\s]+\.js/.test(detail);
+  const cancelled=/^Cancel(?:ed|led): Cancel(?:ed|led)(?:\n|$)/.test(detail);
+  const duringDisposal=/\.(?:dispose|cancel) \(/.test(detail);
   if(fromMonaco && cancelled && duringDisposal){
     expectedEditorCancels.push(detail);
     console.log('MONACO_EXPECTED_DISPOSAL_CANCELLATION');
