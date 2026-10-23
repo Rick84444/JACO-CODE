@@ -87,7 +87,24 @@ const base='http://127.0.0.1:'+server.address().port;
 const browser=await chromium.launch({headless:true,...(process.env.JACO_BROWSER_EXECUTABLE?{executablePath:process.env.JACO_BROWSER_EXECUTABLE,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']}: {})});
 const page=await browser.newPage({viewport:{width:1440,height:960},deviceScaleFactor:1});
 page.setDefaultTimeout(15000);
-const errors=[];page.on('pageerror',error=>{errors.push(error.stack||error.message);console.error("PAGE_ERROR "+(error.stack||error.message));});
+// Monaco may reject an already-running language/model task when an editor is
+// deliberately disposed (e.g. after changing projects). This exact cancellation
+// is not an app exception; any other page error still fails the browser gate.
+const errors=[];
+const expectedEditorCancels=[];
+page.on('pageerror',error=>{
+  const detail=error.stack||error.message;
+  const fromMonaco=/assets\\/AuraCodeEditor-[^\\s]+\\.js/.test(detail);
+  const cancelled=/^Cancel(?:ed|led): Cancel(?:ed|led)(?:\\n|$)/.test(detail);
+  const duringDisposal=/\\.(?:dispose|cancel) \\(/.test(detail);
+  if(fromMonaco && cancelled && duringDisposal){
+    expectedEditorCancels.push(detail);
+    console.log('MONACO_EXPECTED_DISPOSAL_CANCELLATION');
+    return;
+  }
+  errors.push(detail);
+  console.error("PAGE_ERROR "+detail);
+});
 const results=[];const passed=name=>{results.push(name);console.log('PASS '+name);};
 const input=()=>page.getByRole('textbox',{name:'Meddelande till JACO'});
 // Exercise the same work navigation a real user sees at the current viewport.
@@ -254,7 +271,8 @@ try {
   await page.getByText('Uppdragets registrering kunde inte bekräftas: TEST_GOAL_REJECTED',{exact:true}).waitFor();
   assert.equal(bus.listMissions(10).length,2);assert.equal(await input().inputValue(),'Detta ska inte registreras');
   passed('Rejected goal creation keeps the request text and never creates a false activation message');
-  assert.deepEqual(errors,[]);
+  assert.deepEqual(errors,[], 'no unexpected uncaught app/browser errors');
+  if(expectedEditorCancels.length) console.log('Monaco disposal cancellations observed: '+expectedEditorCancels.length);
   const report={status:'PASS',checks:results.length,browser:browser.version(),observedAt:new Date().toISOString(),scope:'Controlled UI integration; no inference, Android or operator runtime execution',clientIndexSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'dist/index.html'))).digest('hex'),results};
   console.log(JSON.stringify(report,null,2));
   if(process.env.JACO_UI_SCREENSHOTS){
