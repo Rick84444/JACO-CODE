@@ -102,7 +102,7 @@ export JACO_ROOT="$TMP/jaco-root"; mkdir -p "$JACO_ROOT"
 # Run the exact supervisor bytes in an isolated checkout. Since the launcher
 # derives its canonical root from its own script path, pointing JACO_ROOT at
 # scratch via env alone is insufficient and would legitimately refuse takeover.
-mkdir -p "$JACO_ROOT/bin"
+mkdir -p "$JACO_ROOT/bin" "$JACO_ROOT/termux"
 cp "$ROOT/bin/jacoctl" "$JACO_ROOT/bin/jacoctl"
 cp "$ROOT/CURRENT_RELEASE.json" "$JACO_ROOT/CURRENT_RELEASE.json"
 cp -R "$ROOT/termux/services" "$JACO_ROOT/termux/"
