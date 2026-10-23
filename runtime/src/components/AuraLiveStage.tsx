@@ -10,6 +10,7 @@ import { CapturedPage, type CapturedPageData } from './CapturedPage';
 type Candidate = { event: CognitiveEvent; material: string | null } | null;
 type Props = {
   candidate: Candidate;
+  projectRevision: number;
   events: CognitiveEvent[];
   preview: React.ReactNode;
   previewReady: boolean;
@@ -38,7 +39,7 @@ const outcome = (event: CognitiveEvent) => ({
   failed: 'Misslyckades', unknown: 'Okänt utfall',
 }[event.evidence.outcome] || 'Observation');
 
-export function AuraLiveStage({ candidate, events, preview, previewReady, active, onInspect, onOpenFile, htmlSource, htmlDraft, onDraftChange, onSaveDraft, saveBusy, saveNotice, cdpReady, pinned, activeMission, agentActivity, presence }: Props) {
+export function AuraLiveStage({ candidate, projectRevision, events, preview, previewReady, active, onInspect, onOpenFile, htmlSource, htmlDraft, onDraftChange, onSaveDraft, saveBusy, saveNotice, cdpReady, pinned, activeMission, agentActivity, presence }: Props) {
   const [editing,setEditing]=useState(false);
   const [screenshot,setScreenshot]=useState<{src:string;at:string}|null>(null);
   const [captureBusy,setCaptureBusy]=useState(false);
@@ -53,7 +54,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
     setCaptureBusy(false);
     setEditing(false);setScreenshot(null);setCaptureError(null);setImageLoad('loading');
     return ()=>{captureEpoch.current += 1;};
-  },[candidate?.event.id]);
+  },[candidate?.event.id,projectRevision]);
   const captureBrowser=async()=>{
     if(captureBusy || !cdpReady)return false;
     const epoch=++captureEpoch.current;
@@ -80,6 +81,8 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
   // The operator asks for the attached page's markup; it stays on the stage until closed, so automatic
   // events do not replace material the operator chose to work on.
   const [capturedPage,setCapturedPage]=useState<CapturedPageData|null>(null);
+  // A captured external page must never survive a switch to another project.
+  useEffect(()=>{setCapturedPage(null);},[projectRevision]);
   const [pageBusy,setPageBusy]=useState(false);
   const capturePageHtml=async()=>{
     if(pageBusy || !cdpReady)return;
