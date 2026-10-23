@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { MessageSquare, Code2, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone, MoreHorizontal, Bot, Pin, PinOff } from 'lucide-react';
 import { JacoWordmark } from './JacoWordmark';
 import { CostChip } from './CostChip';
@@ -19,6 +19,22 @@ const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git
 
 export function CognitiveWorkspace(props:Props) {
   const menu = useRef<HTMLDialogElement>(null);
+  // Desktop shortcuts are intentionally inactive while composing chat, editing
+  // code or using another control. No agent authority is changed by navigation.
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !event.ctrlKey && !event.metaKey || event.altKey || event.shiftKey || event.repeat) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"], .monaco-editor, dialog[open]'))) return;
+      const views: Record<string, CognitiveCanvas> = { '1': 'stage', '2': 'code', '3': 'preview', '4': 'evidence' };
+      const view = views[event.key];
+      if (!view) return;
+      event.preventDefault();
+      props.onCanvas(view);
+    };
+    window.addEventListener('keydown', onShortcut);
+    return () => window.removeEventListener('keydown', onShortcut);
+  }, [props.onCanvas]);
   const navigate = (view:CognitiveCanvas) => { props.onCloseSidebar(); props.onCanvas(view); menu.current?.close(); };
   const openPanel = (view:Sidebar) => { props.onSidebar(view); menu.current?.close(); };
   const hasDetail=props.canvas!=='conversation' && props.canvas!=='stage';
@@ -47,7 +63,7 @@ export function CognitiveWorkspace(props:Props) {
           <div className="cognitive-status" data-tone={props.status.tone} role="status"><span/>{props.status.label}</div>
           <nav className="cognitive-stage-switcher" aria-label="Arbetsyta">
             {([['stage', Eye, 'Arbete'], ['code', Code2, 'Kod'], ['preview', Eye, 'Förhandsvisa'], ['evidence', ShieldCheck, 'Belägg']] as const).map(([view, Icon, label]) =>
-              <button key={view} type="button" aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{label}</span></button>)}
+              <button key={view} type="button" title={label+' · Ctrl/Cmd+'+({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view]} aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{label}</span></button>)}
           </nav>
           <button type="button" className="cognitive-mobile-focus" onClick={()=>props.onCanvas(showStage?'conversation':'stage')}>
             {showStage ? <MessageSquare size={15}/> : <Eye size={15}/>}
