@@ -62,9 +62,17 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: verified-jaco-lite
+          # windows-lite-smoke downloads this artifact and looks for the Windows
+          # zip, its .sha256 sibling and latest.json. build-lite.mjs writes the
+          # per-platform zips under platforms/, and latest.json is not a *.zip,
+          # so listing only build/lite/*.zip left all three out and that job
+          # could never find them.
           path: |
             build/lite/*.zip
             build/lite/*.sha256
+            build/lite/latest.json
+            build/lite/platforms/*.zip
+            build/lite/platforms/*.sha256
 
       # Only a tag publishes, and only the files this job already unpacked,
       # started and uninstalled above. latest.json carries the SHA-256 that
