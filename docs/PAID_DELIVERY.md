@@ -81,9 +81,9 @@ the quota runs out, a key for another skill is refused, and an unknown key is re
 
 Remaining operator steps in Stripe:
 
-1. Add the endpoint `https://jaco-license.dickjacobsson022.workers.dev/stripe/webhook` for
+1. Add the endpoint `https://<your-license-worker>/stripe/webhook` for
    `checkout.session.completed` and put its signing secret in `STRIPE_WEBHOOK_SECRET`
    (currently a placeholder, so real Stripe events would be rejected).
 2. Set the success URL on every payment link to
-   `https://jaco-license.dickjacobsson022.workers.dev/success?session_id={CHECKOUT_SESSION_ID}`.
+   `https://<your-license-worker>/success?session_id={CHECKOUT_SESSION_ID}`.
 3. Set `PRODUCT_MAP` so each payment link grants the right skill and quota.

@@ -138,7 +138,7 @@ export class WorkspaceMountRegistry {
           headCommit: 'f19f1631',
           commitMessage: 'feat(forge): Unified Mount Registry & MimirPower Sync',
           isDirty: false,
-          remoteUrl: 'https://github.com/dickjacobsson/jaco-app-next.git',
+          remoteUrl: 'https://github.com/example/jaco-app-next.git',
           trackingBranch: 'origin/main'
         },
         excludeRules: ['node_modules/**', 'dist/**', '.git/objects/**', '*.bin'],
@@ -171,7 +171,7 @@ export class WorkspaceMountRegistry {
           headCommit: 'e82b4a11',
           commitMessage: 'chore: initial termux bridge test',
           isDirty: false,
-          remoteUrl: 'https://github.com/dickjacobsson/jaco-app.git'
+          remoteUrl: 'https://github.com/example/jaco-app.git'
         },
         excludeRules: ['node_modules/**', 'dist/**', '.git/objects/**'],
         stats: {

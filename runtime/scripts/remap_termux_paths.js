@@ -9,20 +9,6 @@ import path from 'path';
 export function remapTermuxBuildPaths(options = {}) {
   const rootDir = options.rootDir || process.cwd();
   
-  // Ensure firebase-applet-config.json exists and is valid JSON
-  const fbConfigPath = path.join(rootDir, 'firebase-applet-config.json');
-  try {
-    if (!fs.existsSync(fbConfigPath) || fs.statSync(fbConfigPath).size === 0) {
-      throw new Error('Config missing or empty');
-    }
-    const content = fs.readFileSync(fbConfigPath, 'utf-8');
-    JSON.parse(content);
-  } catch (err) {
-    console.warn('⚠️ [TERMUX REMAPPER] Repairing invalid or missing firebase-applet-config.json...');
-    const defaultConfig = {};
-    fs.writeFileSync(fbConfigPath, JSON.stringify(defaultConfig, null, 2), 'utf-8');
-    console.log('✅ [TERMUX REMAPPER] Restored empty optional firebase-applet-config.json');
-  }
 
   const primaryTarget = path.join(rootDir, 'dist', 'server.cjs');
 
