@@ -152,6 +152,15 @@ try {
   await input().fill('Behåll mitt utkast');
   await canvas('Kod').click();await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
+  await page.locator('.cognitive-topbar').click();
+  await page.keyboard.press('Control+Shift+Digit2');
+  assert.equal(await page.getByRole('navigation',{name:'Arbetsyta'}).getByRole('button',{name:'Kod',exact:true}).getAttribute('aria-pressed'),'true');
+  await page.keyboard.press('Control+Shift+Digit1');
+  assert.equal(await page.getByRole('navigation',{name:'Arbetsyta'}).getByRole('button',{name:'Arbete',exact:true}).getAttribute('aria-pressed'),'true');
+  await input().focus();
+  await page.keyboard.press('Control+Shift+Digit4');
+  assert.equal(await page.getByRole('navigation',{name:'Arbetsyta'}).getByRole('button',{name:'Arbete',exact:true}).getAttribute('aria-pressed'),'true','editing chat must not switch views');
+  assert.equal(await input().inputValue(),'Behåll mitt utkast');
   await page.setViewportSize({width:393,height:852});
   await canvas('Arbete').click();
   await page.getByTestId('aura-live-stage').waitFor();
