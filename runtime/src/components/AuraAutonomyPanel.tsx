@@ -57,7 +57,7 @@ export function AuraAutonomyPanel() {
       </select>
     </label>
     <p className="text-slate-400">
-      Aura börjar på nivå 5. Bara du ändrar den här inställningen, som sparas över omstarter.
+      Aura börjar på nivå 5. Ditt val sparas över omstarter och kan inte ändras via agenternas policyverktyg.
       Kodarbete, verktyg och uppdrag fortsätter självständigt inom givna behörigheter.
       Köp, abonnemang och påfyllning av API-krediter kräver ditt godkännande.
     </p>
