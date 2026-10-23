@@ -61,6 +61,11 @@ jobs:
           node-version: '24.x'
       - name: Install locked test dependencies
         run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      # The root suite imports runtime modules, and those pull packages declared
+      # in runtime/package.json (qrcode-terminal, for one). Without this the job
+      # cannot pass: npm run setup installs both, so a contributor never sees it.
+      - name: Install the runtime packages the root suite imports
+        run: npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
       - name: Syntax check contract runtime
         run: |
           node --check agents/lib/coding-contract.mjs
