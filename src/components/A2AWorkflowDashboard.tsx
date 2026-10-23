@@ -353,7 +353,7 @@ export const A2AWorkflowDashboard: React.FC = () => {
   const handleSkillChange = (skillId: string) => {
     setSelectedSkill(skillId);
     if (skillId === 'skyfire_pay') {
-      setCustomPayloadJson(JSON.stringify({ amount_usdc: 1.5, buyer_tag: 'A2A-Client-Node', seller_service_id: '7b6e0f43-c64b-4a06-a4cd-e8d3bd6c5290' }, null, 2));
+      setCustomPayloadJson(JSON.stringify({ amount_usdc: 1.5, buyer_tag: 'A2A-Client-Node', seller_service_id: '' }, null, 2));
     } else if (skillId === 'create_payment') {
       setCustomPayloadJson(JSON.stringify({ name: 'JACO Premium Agent Skill', description: 'A2A P2P License', amount_sek: 150 }, null, 2));
     } else if (skillId === 'readiness_score') {
