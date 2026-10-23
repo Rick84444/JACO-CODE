@@ -53,9 +53,13 @@ try{
     },
   });
   assert.equal(promotedReceipt.status,201);
-  assert.equal(promotedReceipt.data.evidence.verified,true);
-  assert.equal(promotedReceipt.data.knowledge.verificationStatus,'VERIFIED');
+  // A self-attested tool receipt is an observation, not independent proof of an external result.
+  assert.equal(promotedReceipt.data.evidence.verified,false);
+  assert.equal(promotedReceipt.data.evidence.kind,'nova-action-receipt');
+  assert.equal(promotedReceipt.data.knowledge.verificationStatus,'UNVERIFIED');
+  assert.equal(promotedReceipt.data.knowledge.kind,'tool-attested-observation');
   assert.equal(promotedReceipt.data.knowledge.reusable,false);
+  assert.deepEqual(promotedReceipt.data.knowledge.evidenceRefs,[promotedReceipt.data.evidence.id]);
   const promotedKnowledgeId=promotedReceipt.data.knowledge.id;
   const duplicatePromotion=await request('/api/continuum/cognition/promotions/receipt',{
     missionId:'mission-http-1',
