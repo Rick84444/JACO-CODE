@@ -210,6 +210,11 @@ case "\${1:-}" in
   version|--version) sed -n 's/^  "version": "\(.*\)",\$/\1/p' "\$JACO_LITE_HOME/install.json"; exit 0 ;;
 esac
 [ -x "\$NODE" ] || { echo "jaco-lite: Node.js is missing. Run: jaco-lite update" >&2; exit 2; }
+# The installed command must use the Android launcher too, rather than bypass
+# its process-ownership and platform checks by calling start.mjs directly.
+if [ "$TERMUX" = 1 ]; then
+  exec "\${PREFIX:-/data/data/com.termux/files/usr}/bin/bash" "\$JACO_LITE_HOME/current/START-ANDROID.sh" "\$@"
+fi
 exec "\$NODE" "\$JACO_LITE_HOME/current/start.mjs" \$EXTRA_ARGS "\$@"
 LAUNCHER
 chmod +x "$HOME_DIR/bin/jaco-lite"
