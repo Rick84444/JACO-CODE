@@ -5,8 +5,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+// fileURLToPath, not URL.pathname: on Windows the pathname is /C:/..., which made this test skip itself.
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PATTERNS = [
   ['OpenAI-style key', /\bsk-(?:proj-|live-|ant-)?[A-Za-z0-9_-]{32,}\b/],
   ['GitHub token', /\bgh[pousr]_[A-Za-z0-9]{36,}\b/],
@@ -16,8 +18,8 @@ const PATTERNS = [
   ['private key block', /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/],
   ['Stripe live key', /\b[rs]k_live_[A-Za-z0-9]{20,}\b/],
 ];
-// A Firebase web key identifies a client app and is public by design (see SECURITY.md).
-const ALLOWED = new Map([['AIza', new Set(['firebase-applet-config.json', 'src/lib/firebaseConfig.ts'])]]);
+// Firebase settings come from VITE_FIREBASE_* variables; no tracked file may hold a Google API key.
+const ALLOWED = new Map();
 
 test('no tracked file holds a key-shaped string', { skip: !fs.existsSync(path.join(root, '.git')) && 'not a git checkout' }, () => {
   const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 64 * 1024 * 1024 }).toString().split('\0').filter(Boolean);

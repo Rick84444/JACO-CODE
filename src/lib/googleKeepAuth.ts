@@ -1,11 +1,15 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut } from 'firebase/auth';
-import { firebaseConfig } from './firebaseConfig';
+import { firebaseConfig, firebaseConfigured } from './firebaseConfig';
 import { GoogleKeepUser, KeepNote } from '../types';
 
-// Reuse existing app or initialize new
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+// Firebase starts on first use, and only when VITE_FIREBASE_* is configured; importing this module never throws.
+let authInstance: ReturnType<typeof getAuth> | null = null;
+const getKeepAuth = () => {
+  if (!firebaseConfigured) throw new Error('FIREBASE_NOT_CONFIGURED: set VITE_FIREBASE_* to enable Google Keep sign-in');
+  if (!authInstance) authInstance = getAuth(getApps().length > 0 ? getApp() : initializeApp(firebaseConfig));
+  return authInstance;
+};
 
 const provider = new GoogleAuthProvider();
 
@@ -20,7 +24,11 @@ export const initKeepAuth = (
   onAuthSuccess?: (user: User, token: string | null) => void,
   onAuthFailure?: () => void
 ) => {
-  return onAuthStateChanged(auth, async (user: User | null) => {
+  if (!firebaseConfigured) {
+    if (onAuthFailure) onAuthFailure();
+    return () => {};
+  }
+  return onAuthStateChanged(getKeepAuth(), async (user: User | null) => {
     if (user) {
       if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
     } else {
@@ -33,7 +41,7 @@ export const initKeepAuth = (
 export const signInWithGoogleKeep = async (): Promise<{ user: User; accessToken: string | null } | null> => {
   try {
     isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
+    const result = await signInWithPopup(getKeepAuth(), provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     cachedAccessToken = credential?.accessToken || null;
     return { user: result.user, accessToken: cachedAccessToken };
@@ -50,7 +58,7 @@ export const getKeepAccessToken = (): string | null => {
 };
 
 export const logoutGoogleKeep = async () => {
-  await signOut(auth);
+  if (authInstance) await signOut(authInstance);
   cachedAccessToken = null;
 };
 

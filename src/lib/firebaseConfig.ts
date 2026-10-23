@@ -10,16 +10,23 @@ export interface FirebaseAppletConfig {
   recaptchaSiteKey?: string;
 }
 
+// Firebase settings are the operator's configuration, not source: set them as VITE_FIREBASE_* variables
+// (for example in a local .env that is not committed). Without them the Google Keep sign-in is not available.
+const env = ((import.meta as any).env || {}) as Record<string, string | undefined>;
+const value = (name: string) => String(env[name] || '');
+
 export const firebaseConfig: FirebaseAppletConfig = {
-  projectId: 'gen-lang-client-0940572256',
-  appId: '1:689772220489:web:389f3a507cfe63cc34ef98',
-  apiKey: 'AIzaSyCU-NV_8LsEvTR0wONUw2VEnJV40rZt3GI',
-  authDomain: 'gen-lang-client-0940572256.firebaseapp.com',
-  storageBucket: 'gen-lang-client-0940572256.firebasestorage.app',
-  messagingSenderId: '689772220489',
-  measurementId: '',
-  oAuthClientId: '689772220489-u6pdgk8s3ttrnh4gm1e402oc62lc57hv.apps.googleusercontent.com',
-  recaptchaSiteKey: '',
+  projectId: value('VITE_FIREBASE_PROJECT_ID'),
+  appId: value('VITE_FIREBASE_APP_ID'),
+  apiKey: value('VITE_FIREBASE_API_KEY'),
+  authDomain: value('VITE_FIREBASE_AUTH_DOMAIN'),
+  storageBucket: value('VITE_FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: value('VITE_FIREBASE_MESSAGING_SENDER_ID'),
+  measurementId: value('VITE_FIREBASE_MEASUREMENT_ID'),
+  oAuthClientId: value('VITE_FIREBASE_OAUTH_CLIENT_ID'),
+  recaptchaSiteKey: value('VITE_FIREBASE_RECAPTCHA_SITE_KEY'),
 };
+
+export const firebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
 
 export default firebaseConfig;
