@@ -81,11 +81,17 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
   // The operator asks for the attached page's markup; it stays on the stage until closed, so automatic
   // events do not replace material the operator chose to work on.
   const [capturedPage,setCapturedPage]=useState<CapturedPageData|null>(null);
-  // A captured external page must never survive a switch to another project.
-  useEffect(()=>{setCapturedPage(null);},[projectRevision]);
   const [pageBusy,setPageBusy]=useState(false);
+  const pageEpoch=useRef(0);
+  // An in-flight CDP HTML response from another project must never repopulate the stage.
+  useEffect(()=>{
+    pageEpoch.current += 1;
+    setCapturedPage(null);
+    setPageBusy(false);
+  },[projectRevision]);
   const capturePageHtml=async()=>{
     if(pageBusy || !cdpReady)return;
+    const epoch=++pageEpoch.current;
     setPageBusy(true);setCaptureError(null);
     try{
       const reply=await fetch('/api/aura/workbench/mcp/call',{
@@ -97,9 +103,9 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
       try{page=JSON.parse(reply?.result?.content?.[0]?.text||'null');}catch{}
       if(reply?.result?.isError===true || page?.ok!==true)throw Error(page?.error||'CDP_HTML_TOOL_FAILED');
       if(typeof page.html!=='string' || typeof page.url!=='string' || typeof page.sha256!=='string')throw Error('CDP_HTML_MISSING_OR_INVALID');
-      setCapturedPage({url:page.url,title:String(page.title||''),html:page.html,sha256:page.sha256,at:page.at||new Date().toISOString()});
-    }catch(error:any){setCaptureError(String(error?.message||error));}
-    finally{setPageBusy(false);}
+      if(epoch===pageEpoch.current) setCapturedPage({url:page.url,title:String(page.title||''),html:page.html,sha256:page.sha256,at:page.at||new Date().toISOString()});
+    }catch(error:any){if(epoch===pageEpoch.current)setCaptureError(String(error?.message||error));}
+    finally{if(epoch===pageEpoch.current)setPageBusy(false);}
   };
   useEffect(()=>{
     const event=candidate?.event;
