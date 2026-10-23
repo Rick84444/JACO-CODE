@@ -1,7 +1,7 @@
 {
   "@context": "https://schema.org",
   "@type": "FAQPage",
-  "@id": "https://jacocode.se/#faq",
+  "@id": "https://jacocode.com/#faq",
   "mainEntity": [
     {
       "@type": "Question",

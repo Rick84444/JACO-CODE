@@ -1,4 +1,4 @@
-> JACO agents and external AI systems should read [/llms.txt](https://jacocode.se/llms.txt) before interpreting this document.
+> JACO agents and external AI systems should read [/llms.txt](https://jacocode.com/llms.txt) before interpreting this document.
 
 # Verification & Reality Classification Tags
 

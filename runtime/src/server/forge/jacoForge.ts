@@ -148,7 +148,7 @@ export class JacoForgeEngine {
     let autonomyTier: GoalContract['autonomyTier'] = 'LOCAL_AUTO';
 
     if (isSiteOps) {
-      goal = 'Production Upgrade & Optimization for jacocode.se';
+      goal = 'Production Upgrade & Optimization for jacocode.com';
       desiredOutcome = 'Modern, high-performance, validated production site without regression';
       fixedConstraints.push('Production site must remain reachable at all times', 'Automatic pre-change backup required');
       completionCriteria.push('TLS & DNS valid', 'Visual regression suite accepted', 'TTFB < 200ms');

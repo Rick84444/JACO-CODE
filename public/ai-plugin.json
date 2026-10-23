@@ -9,10 +9,10 @@
   },
   "api": {
     "type": "openapi",
-    "url": "https://jacocode.se/api/a2a/agentcard.json",
+    "url": "https://jacocode.com/api/a2a/agentcard.json",
     "is_user_authenticated": false
   },
-  "logo_url": "https://jacocode.se/favicon.ico",
+  "logo_url": "https://jacocode.com/favicon.ico",
   "contact_email": "contact@example.com",
-  "legal_info_url": "https://jacocode.se/jaco/license"
+  "legal_info_url": "https://jacocode.com/jaco/license"
 }

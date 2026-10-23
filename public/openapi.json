@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "https://jacocode.se",
+      "url": "https://jacocode.com",
       "description": "Production Node Endpoint"
     }
   ],
