@@ -99,10 +99,18 @@ export JACO_PROJECT_ENV="$TMP/project.env"
 # Stale-Core cleanup scans /proc for processes whose cwd is JACO_ROOT. Point it at a
 # scratch directory so the test can never match (and kill) a real runtime on this host.
 export JACO_ROOT="$TMP/jaco-root"; mkdir -p "$JACO_ROOT"
+# Run the exact supervisor bytes in an isolated checkout. Since the launcher
+# derives its canonical root from its own script path, pointing JACO_ROOT at
+# scratch via env alone is insufficient and would legitimately refuse takeover.
+mkdir -p "$JACO_ROOT/bin"
+cp "$ROOT/bin/jacoctl" "$JACO_ROOT/bin/jacoctl"
+cp "$ROOT/CURRENT_RELEASE.json" "$JACO_ROOT/CURRENT_RELEASE.json"
+cp -R "$ROOT/termux/services" "$JACO_ROOT/termux/"
+JACO_CTL="$JACO_ROOT/bin/jacoctl"
 cat > "$JACO_PROJECT_ENV" <<'ENV'
 JACO_GATEWAY_TOKEN=project-token-123456789012345678901234567890
 ENV
-OUT="$(bash "$ROOT/bin/jacoctl" activate --json)"
+OUT="$(bash "$JACO_CTL" activate --json)"
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit(1)' "$OUT"
 [[ -f "$TMP/state/jaco-sentinel" && -f "$TMP/state/jaco-core" && -f "$TMP/state/jaco-workplace" ]]
 grep -q "^export JACO_GATEWAY_TOKEN='project-token-" "$JACO_RUNTIME_ENV"
@@ -129,19 +137,19 @@ grep -q "^export JACO_SEER_PROVIDER_PREFERENCE='llamacpp'" "$JACO_RUNTIME_ENV"
 grep -q "^export JACO_WORKPLACE_SEER_BRAIN_MAX_TOKENS='128'" "$JACO_RUNTIME_ENV"
 grep -q "^export JACO_WORKPLACE_SEER_BRAIN_TIMEOUT_MS='240000'" "$JACO_RUNTIME_ENV"
 [[ "$(stat -c '%a' "$JACO_RUNTIME_ENV")" == "600" ]]
-OUT_STATUS="$(bash "$ROOT/bin/jacoctl" status --json)"
+OUT_STATUS="$(bash "$JACO_CTL" status --json)"
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit(1)' "$OUT_STATUS"
 
 # A stray/stale process may keep :3000 answering even while the supervised Core
 # is down. READY must follow the service graph, not only the HTTP port.
 rm -f "$TMP/state/jaco-core"
 export STUB_FORCE_CORE_HTTP=1
-OUT_DEGRADED="$(bash "$ROOT/bin/jacoctl" status --json)"
+OUT_DEGRADED="$(bash "$JACO_CTL" status --json)"
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="DEGRADED" || !/Port 3000 responds but Core is not the supervised/.test(j.message)) process.exit(1)' "$OUT_DEGRADED"
 unset STUB_FORCE_CORE_HTTP
 : > "$TMP/state/jaco-core"
 
-OUT2="$(bash "$ROOT/bin/jacoctl" deactivate --json)"
+OUT2="$(bash "$JACO_CTL" deactivate --json)"
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="SENTINEL_ONLY") process.exit(1)' "$OUT2"
 [[ -f "$TMP/state/jaco-sentinel" && ! -f "$TMP/state/jaco-core" ]]
 [[ ! -f "$TMP/state/jaco-workplace" && ! -f "$TMP/state/jaco-ollama" && ! -f "$TMP/state/jaco-nova-bridge" && ! -f "$TMP/state/jaco-cdp" ]]
@@ -159,20 +167,20 @@ STALE_PID=$!
 export STUB_CORE_HTTP_PID="$STALE_PID"
 export JACO_STALE_CORE_TERM_SECONDS=1
 export JACO_STALE_CORE_KILL_SECONDS=1
-OUT_RECOVER="$(bash "$ROOT/bin/jacoctl" activate --json)"
+OUT_RECOVER="$(bash "$JACO_CTL" activate --json)"
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit(1)' "$OUT_RECOVER"
 if kill -0 "$STALE_PID" 2>/dev/null; then
   echo "recognized stale Core survived takeover" >&2
   exit 1
 fi
-bash "$ROOT/bin/jacoctl" deactivate --json >/dev/null
+bash "$JACO_CTL" deactivate --json >/dev/null
 unset STUB_CORE_HTTP_PID JACO_STALE_CORE_TERM_SECONDS JACO_STALE_CORE_KILL_SECONDS
 
 # If an endpoint survives canonical cleanup while the supervised Core is down,
 # jacoctl must refuse to create a runit restart loop against an unknown owner.
 export STUB_FORCE_CORE_HTTP=1
 set +e
-OUT_BLOCKED="$(bash "$ROOT/bin/jacoctl" activate --json 2>/dev/null)"
+OUT_BLOCKED="$(bash "$JACO_CTL" activate --json 2>/dev/null)"
 RC_BLOCKED=$?
 set -e
 [[ "$RC_BLOCKED" -eq 35 ]]
@@ -186,23 +194,23 @@ export STUB_CORE_FLAP=1
 export JACO_STABILITY_PROBE_SECONDS=0
 export JACO_CORE_READY_WAIT_SECONDS=2
 set +e
-OUT_FLAP="$(bash "$ROOT/bin/jacoctl" activate --json 2>/dev/null)"
+OUT_FLAP="$(bash "$JACO_CTL" activate --json 2>/dev/null)"
 RC_FLAP=$?
 set -e
 [[ "$RC_FLAP" -eq 34 ]]
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="DEGRADED" || !/failed stability gate/.test(j.message)) process.exit(1)' "$OUT_FLAP"
 [[ -f "$TMP/state/jaco-core" && ! -f "$TMP/state/jaco-workplace" ]]
-bash "$ROOT/bin/jacoctl" deactivate --json >/dev/null
+bash "$JACO_CTL" deactivate --json >/dev/null
 unset STUB_CORE_FLAP JACO_STABILITY_PROBE_SECONDS JACO_CORE_READY_WAIT_SECONDS
 
 # Restart must not cancel an in-flight shutdown by issuing svc_up against the
 # old owner. If Workplace refuses TERM, restart fails closed before Core is
 # started again.
-bash "$ROOT/bin/jacoctl" activate --json >/dev/null
+bash "$JACO_CTL" activate --json >/dev/null
 export STUB_REFUSE_DOWN_SERVICE=jaco-workplace
 export JACO_WORKPLACE_STOP_WAIT_SECONDS=1
 set +e
-OUT_STUCK_RESTART="$(bash "$ROOT/bin/jacoctl" restart --json 2>/dev/null)"
+OUT_STUCK_RESTART="$(bash "$JACO_CTL" restart --json 2>/dev/null)"
 RC_STUCK_RESTART=$?
 set -e
 [[ "$RC_STUCK_RESTART" -eq 37 ]]
@@ -210,7 +218,7 @@ node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="DEGRADED" || !/Workp
 [[ -f "$TMP/state/jaco-workplace" ]]
 [[ ! -f "$TMP/state/jaco-core" ]]
 unset STUB_REFUSE_DOWN_SERVICE JACO_WORKPLACE_STOP_WAIT_SECONDS
-bash "$ROOT/bin/jacoctl" deactivate --json >/dev/null
+bash "$JACO_CTL" deactivate --json >/dev/null
 
 # Live 2026-09-30: an old Core that no longer answered HTTP kept the ledger lock, so every new
 # supervised Core stayed unready. activate must stop a silent stale Core from this checkout too.
@@ -220,10 +228,10 @@ bash "$ROOT/bin/jacoctl" deactivate --json >/dev/null
 ) &
 SILENT_CORE=$!
 export JACO_STALE_CORE_TERM_SECONDS=1 JACO_STALE_CORE_KILL_SECONDS=1
-OUT_SILENT="$(bash "$ROOT/bin/jacoctl" activate --json)"
+OUT_SILENT="$(bash "$JACO_CTL" activate --json)"
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit(1)' "$OUT_SILENT"
 if kill -0 "$SILENT_CORE" 2>/dev/null; then echo "silent stale Core survived activate" >&2; exit 1; fi
-bash "$ROOT/bin/jacoctl" deactivate --json >/dev/null
+bash "$JACO_CTL" deactivate --json >/dev/null
 unset JACO_STALE_CORE_TERM_SECONDS JACO_STALE_CORE_KILL_SECONDS
 
 # Live 2026-09-30: an orphan Workplace outside runit kept respawning llama-server with a 2048-token
@@ -242,7 +250,7 @@ export JACO_STALE_CORE_TERM_SECONDS=1 JACO_STALE_CORE_KILL_SECONDS=1
 # A run script changed by git pull must replace the copy runit executes.
 mkdir -p "$JACO_ROOT/termux/services/jaco-core"
 printf '#!/bin/sh\necho updated-core-run\n' > "$JACO_ROOT/termux/services/jaco-core/run"
-OUT_ORPHAN="$(bash "$ROOT/bin/jacoctl" activate --json)"
+OUT_ORPHAN="$(bash "$JACO_CTL" activate --json)"
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit(1)' "$OUT_ORPHAN"
 for pid in "$ORPHAN_WORKPLACE" "$ORPHAN_LLAMA"; do
   if kill -0 "$pid" 2>/dev/null; then echo "orphan pid=$pid survived activate" >&2; exit 1; fi
@@ -252,6 +260,6 @@ kill "$BYSTANDER" 2>/dev/null || true
 grep -q updated-core-run "$TMP/prefix/var/service/jaco-core/run"
 [[ -x "$TMP/prefix/var/service/jaco-core/run" ]]
 unset JACO_STALE_CORE_TERM_SECONDS JACO_STALE_CORE_KILL_SECONDS
-bash "$ROOT/bin/jacoctl" deactivate --json >/dev/null
+bash "$JACO_CTL" deactivate --json >/dev/null
 
 echo 'PASS jacoctl: fixed lifecycle verbs activate/deactivate/restart via runit service boundary'
