@@ -38,7 +38,7 @@ on:
       - '.github/workflows/seer-governor-canonical.yml'
   push:
     branches:
-      - 'master'
+      - 'main'
 
 jobs:
   strategic-kernel:

@@ -22,7 +22,28 @@ JACO must not treat generated text, an attempted action or a passing transport c
 
 ## Start
 
-Node.js 24+ is required.
+One command, and it picks the right path for the machine it is on:
+
+```bash
+./install.sh
+```
+
+| Machine | What it does | Needs |
+| --- | --- | --- |
+| Android (Termux) | installs JACO Lite, a prebuilt bundle, so the phone never runs `npm install` or a compiler | Node.js 22.5+ (`pkg install -y nodejs-lts`) |
+| macOS, Linux | installs the full runtime through `npm run setup`, then starts it | Node.js 24+ |
+
+`./install.sh --doctor` reports what is installed and names the start command. `./install.sh --help` lists the rest. Re-running it is safe.
+
+**On a phone, without cloning anything:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.sh | sh
+```
+
+That downloads the newest published build, refuses to install it unless its SHA-256 matches the signed manifest, and leaves a `jaco-lite` command behind. On Windows, in PowerShell, use `install.ps1` from the same folder.
+
+**The full runtime by hand**, if you would rather drive it yourself:
 
 ```bash
 npm run setup

@@ -2,7 +2,7 @@ name: Autonomous Coding Contract Gate
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - 'agents/hands-off-agent.mjs'
       - 'agents/lib/**'

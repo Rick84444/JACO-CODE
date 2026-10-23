@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-      - master
-      - jaco-desktop-agentos-r1
   pull_request:
     paths:
       - 'agents/desktop-agentos.mjs'

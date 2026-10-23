@@ -1,481 +1,244 @@
-#!/usr/bin/env bash
-
-# ==============================================================================
-# JACO AI Studio — Safe Android / Linux / macOS Installer
+#!/bin/sh
+# JACO installer. One command, every platform, from a clone of this repository.
 #
-# Usage:
-#   ./install.sh
-#   ./install.sh --clean
-#   ./install.sh --project-dir /path/to/project
-#   ./install.sh --zip /path/to/export.zip
-#   ./install.sh --lan
-#   ./install.sh --no-open
-# ==============================================================================
+#   ./install.sh                install what suits this machine, then start it
+#   ./install.sh --no-start     install only
+#   ./install.sh --doctor       say what is installed and whether it can start
+#   ./install.sh --lite         force the portable build (no npm install)
+#   ./install.sh --full         force the full development runtime
+#   ./install.sh --help
+#
+# It picks the path for you:
+#
+#   Android (Termux)   JACO Lite. A prebuilt bundle, so the phone never runs
+#                      npm install or a compiler.
+#   macOS, Linux       the full runtime through "npm run setup".
+#   Windows            see the two commands --help prints.
+#
+# Nothing here needs administrator rights, and nothing is written outside this
+# folder, $HOME/.local and (on Termux) $PREFIX/bin.
+#
+# Not having the newest Node.js is the one thing that stops an install, so this
+# script checks it first and prints the exact command that fixes it.
 
-set -Eeuo pipefail
-IFS=$'\n\t'
+set -eu
 
-DO_CLEAN=false
-OPEN_BROWSER=true
-LAN_MODE=false
-PROJECT_DIR=""
-ZIP_FILE=""
+MIN_NODE_LITE=22.5   # lite/start.mjs needs node:sqlite, which arrived in 22.5
+MIN_NODE_FULL=24     # the full runtime's engines field
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-TARGET_PORT="${PORT:-3000}"
-INSTALL_ROOT="${JACO_INSTALL_DIR:-$HOME/jaco-ai-studio}"
+MODE=auto
+START=1
 
-log() {
-    printf '[+] %s\n' "$*"
-}
-
-warn() {
-    printf '[!] %s\n' "$*" >&2
-}
-
-die() {
-    printf '[-] ERROR: %s\n' "$*" >&2
-    exit 1
-}
+say()  { printf '%s\n' "$*"; }
+step() { printf '\n==> %s\n' "$*"; }
+die()  { printf '\nJACO install stopped: %s\n' "$1" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
 
 usage() {
-    cat <<'EOF'
-JACO AI Studio Installer
+  cat <<'EOF'
+JACO installer
 
-Options:
-  --clean, -c             Remove root node_modules/ and dist/ before install
-  --project-dir <path>    Use an existing project directory
-  --zip <path>            Extract a specific AI Studio ZIP
-  --lan                   Bind server to 0.0.0.0 instead of 127.0.0.1
-  --no-open               Do not open the browser automatically
-  --help, -h              Show this help
+  ./install.sh                install what suits this machine, then start it
+  ./install.sh --no-start     install only
+  ./install.sh --doctor       say what is installed and whether it can start
+  ./install.sh --lite         force the portable build (no npm install)
+  ./install.sh --full         force the full development runtime
+  ./install.sh --help         this text
+
+On Android, open Termux and run:
+  pkg install -y git nodejs-lts && ./install.sh
+
+On Windows, in PowerShell:
+  irm https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.ps1 | iex
+
+Without a clone of this repository, on macOS, Linux or Termux:
+  curl -fsSL https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.sh | sh
+
+Retired options: --clean, --project-dir, --zip, --lan, --no-open. They belonged
+to an older flow that unpacked a ZIP from the Downloads folder. Pass a project
+folder and such options to the start command instead; --doctor names it.
 EOF
 }
 
-while (($# > 0)); do
-    case "$1" in
-        --clean|-c|clean)
-            DO_CLEAN=true
-            shift
-            ;;
-
-        --project-dir)
-            (($# >= 2)) || die "--project-dir requires a path."
-            PROJECT_DIR="$2"
-            shift 2
-            ;;
-
-        --zip)
-            (($# >= 2)) || die "--zip requires a ZIP path."
-            ZIP_FILE="$2"
-            shift 2
-            ;;
-
-        --lan)
-            LAN_MODE=true
-            shift
-            ;;
-
-        --no-open)
-            OPEN_BROWSER=false
-            shift
-            ;;
-
-        --help|-h)
-            usage
-            exit 0
-            ;;
-
-        *)
-            die "Unknown argument: $1"
-            ;;
-    esac
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --lite)     MODE=lite; shift ;;
+    --full)     MODE=full; shift ;;
+    --doctor)   MODE=doctor; shift ;;
+    --no-start) START=0; shift ;;
+    --help|-h)  usage; exit 0 ;;
+    --clean|-c|--lan|--no-open)
+      die "$1 belonged to the old ZIP installer and no longer does anything. Run ./install.sh --help" ;;
+    --project-dir|--zip)
+      die "$1 belonged to the old ZIP installer and no longer does anything. Run ./install.sh --help" ;;
+    *) die "unknown option $1. Run ./install.sh --help" ;;
+  esac
 done
 
-case "${CLEAN:-}" in
-    true|TRUE|1|yes|YES)
-        DO_CLEAN=true
-        ;;
+# --- which machine is this -----------------------------------------------
+
+TERMUX=0
+case "${PREFIX:-}" in */com.termux/*) TERMUX=1 ;; esac
+[ -n "${TERMUX_VERSION:-}" ] && TERMUX=1
+[ -d /data/data/com.termux/files/usr ] && TERMUX=1
+
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  Linux)  OS=linux ;;
+  Darwin) OS=macos ;;
+  MINGW*|MSYS*|CYGWIN*)
+    say "This looks like Windows. Use PowerShell instead:"
+    say "  irm https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.ps1 | iex"
+    exit 1 ;;
+  *) OS=unknown ;;
+esac
+[ "$TERMUX" = 1 ] && OS=android
+
+if [ "$MODE" = auto ]; then
+  if [ "$OS" = android ]; then MODE=lite; else MODE=full; fi
+fi
+
+# --- Node.js --------------------------------------------------------------
+
+# Compares dotted versions without needing sort -V, which Termux may not have.
+node_at_least() {
+  have node || return 1
+  node -e '
+    const need = process.argv[1].split(".").map(Number);
+    const got  = process.versions.node.split(".").map(Number);
+    for (let i = 0; i < need.length; i++) {
+      const a = got[i] || 0, b = need[i] || 0;
+      if (a > b) process.exit(0);
+      if (a < b) process.exit(1);
+    }
+    process.exit(0);
+  ' "$1" >/dev/null 2>&1
+}
+
+node_fix_hint() {
+  case "$OS" in
+    android) say "  pkg install -y nodejs-lts" ;;
+    macos)   say "  brew install node     (or install the LTS from https://nodejs.org)" ;;
+    *)       say "  install the current LTS from https://nodejs.org, or with nvm:"
+             say "  nvm install --lts && nvm use --lts" ;;
+  esac
+}
+
+require_node() {
+  want=$1
+  if ! have node; then
+    say "Node.js is not installed. JACO needs $want or newer."
+    node_fix_hint
+    die "install Node.js and run ./install.sh again"
+  fi
+  if ! node_at_least "$want"; then
+    say "Node.js $(node -v) is installed, but JACO needs $want or newer."
+    node_fix_hint
+    die "upgrade Node.js and run ./install.sh again"
+  fi
+  say "Node.js $(node -v) is new enough."
+}
+
+# --- doctor ---------------------------------------------------------------
+
+if [ "$MODE" = doctor ]; then
+  say "Machine:      $OS"
+  if have node; then say "Node.js:      $(node -v)"; else say "Node.js:      not installed"; fi
+  if have npm;  then say "npm:          $(npm -v)";  else say "npm:          not installed"; fi
+  say "Repository:   $HERE"
+  if [ -d "$HERE/node_modules" ]; then say "Root deps:    installed"; else say "Root deps:    missing (run ./install.sh)"; fi
+  if [ -f "$HERE/runtime/dist/server.cjs" ]; then say "Server build: present"; else say "Server build: missing (run ./install.sh)"; fi
+  if [ -f "$HERE/.env" ]; then say "Local .env:   present"; else say "Local .env:   missing (./install.sh writes a gateway token)"; fi
+  say ""
+  if [ "$OS" = android ]; then
+    say "Start it with:  sh lite/start.sh ~"
+    say "A phone should use JACO Lite. The one-line install, without a clone:"
+    say "  curl -fsSL https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.sh | sh"
+  else
+    say "Start it with:  npm run jaco:start"
+    say "Status:         npm run jaco:status"
+  fi
+  exit 0
+fi
+
+# --- the portable path (Android, and anyone who asks for it) --------------
+
+install_lite() {
+  step "Installing JACO Lite (portable, no npm install on this device)"
+  require_node "$MIN_NODE_LITE"
+
+  if [ "$OS" = android ]; then
+    for pkg_name in git unzip; do
+      have "$pkg_name" || { say "Installing $pkg_name"; pkg install -y "$pkg_name" >/dev/null 2>&1 || say "Could not install $pkg_name automatically; run: pkg install -y $pkg_name"; }
+    done
+  fi
+
+  # A published build is the fast path: no compiler, no npm install.
+  if have curl || have wget; then
+    step "Fetching the published build"
+    if sh "$HERE/lite/install.sh"; then
+      say ""
+      say "Installed. Start it with:  jaco-lite"
+      say "If the command is not found, add this to your shell profile:"
+      if [ "$OS" = android ]; then say "  export PATH=\"\$PREFIX/bin:\$PATH\""; else say "  export PATH=\"\$HOME/.local/bin:\$PATH\""; fi
+      return 0
+    fi
+    say ""
+    say "No published build could be fetched. Building one from this clone instead."
+    say "That is the slow path: it compiles on this device and needs about 1 GB free."
+  fi
+
+  step "Building the portable bundle from source"
+  have npm || die "npm is missing, so the bundle cannot be built here. Install Node.js with npm and run ./install.sh again"
+  ( cd "$HERE" && npm ci --prefix runtime --no-audit --no-fund ) || die "installing the runtime's dependencies failed. Re-run ./install.sh; if it keeps failing, report the npm error above"
+  ( cd "$HERE" && node tools/build-lite.mjs ) || die "building the portable bundle failed. The npm step above succeeded, so report the build error"
+
+  zip=$(ls -1 "$HERE"/build/lite/platforms/jaco-lite-android-*.zip 2>/dev/null | head -1)
+  [ -n "$zip" ] || zip=$(ls -1 "$HERE"/build/lite/jaco-lite-*.zip 2>/dev/null | head -1)
+  [ -n "$zip" ] || die "the build reported success but produced no zip in build/lite. Report this"
+  say ""
+  say "Built: $zip"
+  say "Install it with:  JACO_LITE_BASE_URL=file://$HERE/build/lite sh lite/install.sh"
+  say "Or start it straight from this clone:  sh lite/start.sh ~"
+}
+
+# --- the full runtime path (macOS, Linux) ---------------------------------
+
+install_full() {
+  step "Installing the full JACO runtime"
+  require_node "$MIN_NODE_FULL"
+  have npm || die "npm is missing. Install Node.js $MIN_NODE_FULL or newer, which includes npm, and run ./install.sh again"
+
+  step "Running npm run setup"
+  # setup.mjs installs the root, runtime and gateway manifests, builds the
+  # client and server, and writes a gateway token to .env if none is set. It
+  # stops on a failed build rather than reporting success.
+  ( cd "$HERE" && npm run setup ) || die "setup failed. The error above names the step; re-running ./install.sh is safe and resumes from a clean state"
+
+  say ""
+  say "Installed."
+  say "A model is the one thing JACO cannot provide for you. Either:"
+  say "  - install Ollama from https://ollama.com and pull a model, or"
+  say "  - put a provider key in .env (see .env.example)."
+}
+
+case "$MODE" in
+  lite) install_lite ;;
+  full) install_full ;;
+  *)    die "internal error: unknown mode $MODE" ;;
 esac
 
-trap 'die "Installer failed near line $LINENO."' ERR
+# --- start ----------------------------------------------------------------
 
-echo "----------------------------------------------------------------------"
-echo " JACO AI Studio — Safe On-Device / Server Installation"
-echo "----------------------------------------------------------------------"
-
-# ------------------------------------------------------------------------------
-# Environment detection
-# ------------------------------------------------------------------------------
-
-IS_TERMUX=false
-
-if [[ -n "${TERMUX_VERSION:-}" ]] ||
-   [[ -d "/data/data/com.termux/files/usr" ]]; then
-    IS_TERMUX=true
-    log "Detected Android Termux environment."
+if [ "$START" = 1 ]; then
+  if [ "$MODE" = full ] && [ -f "$HERE/runtime/dist/server.cjs" ]; then
+    step "Starting JACO"
+    say "Stop it with Ctrl-C. Next time, just run:  npm run jaco:start"
+    cd "$HERE" && exec npm run jaco:start
+  fi
+  say ""
+  say "Run ./install.sh --doctor for the start command for this machine."
 else
-    log "Detected standard Unix environment."
-fi
-
-# ------------------------------------------------------------------------------
-# Dependencies
-# ------------------------------------------------------------------------------
-
-if [[ "$IS_TERMUX" == true ]]; then
-    if [[ ! -d "$HOME/storage" ]] &&
-       command -v termux-setup-storage >/dev/null 2>&1; then
-        log "Requesting access to Android shared storage."
-        termux-setup-storage || warn "Storage permission was not completed."
-    fi
-
-    MISSING_TERMUX_PACKAGES=()
-
-    command -v node >/dev/null 2>&1 ||
-        MISSING_TERMUX_PACKAGES+=("nodejs-lts")
-
-    command -v git >/dev/null 2>&1 ||
-        MISSING_TERMUX_PACKAGES+=("git")
-
-    command -v curl >/dev/null 2>&1 ||
-        MISSING_TERMUX_PACKAGES+=("curl")
-
-    command -v unzip >/dev/null 2>&1 ||
-        MISSING_TERMUX_PACKAGES+=("unzip")
-
-    if ((${#MISSING_TERMUX_PACKAGES[@]} > 0)); then
-        log "Installing required Termux packages: ${MISSING_TERMUX_PACKAGES[*]}"
-        pkg update -y
-        pkg install -y "${MISSING_TERMUX_PACKAGES[@]}"
-    fi
-fi
-
-command -v node >/dev/null 2>&1 ||
-    die "Node.js is not installed."
-
-command -v npm >/dev/null 2>&1 ||
-    die "npm is not installed."
-
-command -v unzip >/dev/null 2>&1 ||
-    die "unzip is not installed."
-
-log "Node version: $(node --version)"
-log "npm version:  $(npm --version)"
-
-# ------------------------------------------------------------------------------
-# Project discovery
-# ------------------------------------------------------------------------------
-
-find_project_root() {
-    local search_root="$1"
-    local candidate
-    local candidates=()
-
-    while IFS= read -r candidate; do
-        candidates+=("$candidate")
-    done < <(
-        find "$search_root" \
-            -mindepth 1 \
-            -maxdepth 4 \
-            -type f \
-            -name package.json \
-            -not -path '*/node_modules/*' \
-            -not -path '*/dist/*' \
-            -not -path '*/.git/*' \
-            2>/dev/null
-    )
-
-    if ((${#candidates[@]} == 1)); then
-        dirname "${candidates[0]}"
-        return 0
-    fi
-
-    if ((${#candidates[@]} > 1)); then
-        warn "Multiple package.json files found:"
-        printf '    %s\n' "${candidates[@]}" >&2
-        return 2
-    fi
-
-    return 1
-}
-
-validate_zip_entries() {
-    local zip_path="$1"
-    local entry
-
-    while IFS= read -r entry; do
-        case "$entry" in
-            /*|../*|*/../*|*/..)
-                die "Unsafe ZIP entry detected: $entry"
-                ;;
-        esac
-    done < <(unzip -Z1 "$zip_path")
-}
-
-zip_contains_project() {
-    local zip_path="$1"
-
-    unzip -Z1 "$zip_path" |
-        grep -Eq '(^|/)package\.json$'
-}
-
-find_latest_project_zip() {
-    local download_dir="$1"
-    local zip_path
-    local newest_zip=""
-    local newest_time=0
-    local modified_time
-
-    while IFS= read -r -d '' zip_path; do
-        if ! zip_contains_project "$zip_path"; then
-            continue
-        fi
-
-        modified_time="$(
-            stat -c '%Y' "$zip_path" 2>/dev/null ||
-            stat -f '%m' "$zip_path" 2>/dev/null ||
-            printf '0'
-        )"
-
-        if ((modified_time > newest_time)); then
-            newest_time="$modified_time"
-            newest_zip="$zip_path"
-        fi
-    done < <(
-        find "$download_dir" \
-            -maxdepth 1 \
-            -type f \
-            -iname '*.zip' \
-            -print0 \
-            2>/dev/null
-    )
-
-    [[ -n "$newest_zip" ]] || return 1
-    printf '%s\n' "$newest_zip"
-}
-
-resolve_download_directory() {
-    local candidate
-
-    for candidate in \
-        "$HOME/storage/downloads" \
-        "/sdcard/Download" \
-        "$HOME/Downloads"
-    do
-        if [[ -d "$candidate" ]]; then
-            printf '%s\n' "$candidate"
-            return 0
-        fi
-    done
-
-    return 1
-}
-
-if [[ -n "$PROJECT_DIR" ]]; then
-    [[ -d "$PROJECT_DIR" ]] ||
-        die "Project directory does not exist: $PROJECT_DIR"
-
-    cd "$PROJECT_DIR"
-
-elif [[ -f package.json ]]; then
-    log "Using current directory as project root."
-
-else
-    DISCOVERED_ROOT=""
-
-    if DISCOVERED_ROOT="$(find_project_root ".")"; then
-        log "Found project root: $DISCOVERED_ROOT"
-        cd "$DISCOVERED_ROOT"
-
-    else
-        if [[ -z "$ZIP_FILE" && "$IS_TERMUX" == true ]]; then
-            DOWNLOAD_DIR=""
-
-            if DOWNLOAD_DIR="$(resolve_download_directory)"; then
-                log "Searching for an AI Studio ZIP in: $DOWNLOAD_DIR"
-
-                if ZIP_FILE="$(find_latest_project_zip "$DOWNLOAD_DIR")"; then
-                    log "Selected project ZIP: $ZIP_FILE"
-                fi
-            fi
-        fi
-
-        [[ -n "$ZIP_FILE" ]] ||
-            die "No package.json or suitable project ZIP was found."
-
-        [[ -f "$ZIP_FILE" ]] ||
-            die "ZIP file does not exist: $ZIP_FILE"
-
-        zip_contains_project "$ZIP_FILE" ||
-            die "ZIP does not contain package.json."
-
-        validate_zip_entries "$ZIP_FILE"
-
-        if [[ -e "$INSTALL_ROOT" && ! -f "$INSTALL_ROOT/package.json" ]]; then
-            if [[ -n "$(ls -A "$INSTALL_ROOT" 2>/dev/null || true)" ]]; then
-                die "Install directory is not empty: $INSTALL_ROOT"
-            fi
-        fi
-
-        mkdir -p "$INSTALL_ROOT"
-
-        log "Extracting project into: $INSTALL_ROOT"
-        unzip -q -o "$ZIP_FILE" -d "$INSTALL_ROOT"
-
-        if [[ -f "$INSTALL_ROOT/package.json" ]]; then
-            cd "$INSTALL_ROOT"
-        else
-            EXTRACTED_ROOT=""
-
-            if EXTRACTED_ROOT="$(find_project_root "$INSTALL_ROOT")"; then
-                cd "$EXTRACTED_ROOT"
-            else
-                die "Could not identify one unambiguous project root after extraction."
-            fi
-        fi
-    fi
-fi
-
-[[ -f package.json ]] ||
-    die "package.json is missing from resolved project root: $(pwd)"
-
-PROJECT_ROOT="$(pwd)"
-FULL_STACK=false
-RUNTIME_DIR=""
-if [[ -f agents/lib/local-stack.mjs ]]; then
-    FULL_STACK=true
-    [[ "$(node -p process.platform)" == win32 ]] || die "The full-stack launcher currently supports Windows. Unix/Termux full-stack installation is not release verified; no agent-only fallback will be started."
-
-fi
-log "Resolved project root: $PROJECT_ROOT"
-
-# ------------------------------------------------------------------------------
-# Package scripts
-# ------------------------------------------------------------------------------
-
-has_npm_script() {
-    local script_name="$1"
-
-    node - "$script_name" <<'NODE'
-const fs = require('fs');
-
-const scriptName = process.argv[2];
-const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-
-process.exit(
-  pkg.scripts &&
-  typeof pkg.scripts[scriptName] === 'string'
-    ? 0
-    : 1
-);
-NODE
-}
-
-# ------------------------------------------------------------------------------
-# Clean and dependency installation
-# ------------------------------------------------------------------------------
-
-if [[ "$DO_CLEAN" == true ]]; then
-    log "Removing root build artifacts."
-    rm -rf -- node_modules dist
-fi
-
-if [[ -f package-lock.json ]]; then
-    log "Installing locked dependencies with npm ci."
-    npm ci --no-audit --no-fund
-else
-    warn "package-lock.json is missing; dependency versions may not be reproducible."
-    log "Installing dependencies with npm install."
-    npm install --no-audit --no-fund
-fi
-
-# ------------------------------------------------------------------------------
-# Build
-# ------------------------------------------------------------------------------
-
-if [[ "$FULL_STACK" == true ]]; then
-    RUNTIME_DIR="$(node --input-type=module -e 'import {configuration} from "./agents/lib/local-stack.mjs";console.log(configuration().runtime)')"
-    [[ -f "$RUNTIME_DIR/package-lock.json" ]] || die "Locked runtime package is missing: $RUNTIME_DIR"
-    [[ "$LAN_MODE" == false ]] || die "Full-stack local startup binds loopback; configure authenticated remote access separately."
-    log "Installing and building the canonical runtime."
-    (cd "$RUNTIME_DIR" && npm ci --no-audit --no-fund && npm run build)
-elif has_npm_script build; then
-    log "Building current project source."
-    npm run build
-else
-    warn "No build script exists in package.json; skipping build."
-fi
-
-# ------------------------------------------------------------------------------
-# Runtime configuration
-# ------------------------------------------------------------------------------
-
-if [[ "$LAN_MODE" == true ]]; then
-    TARGET_HOST="0.0.0.0"
-    warn "LAN mode enabled. The service may be reachable by other devices."
-else
-    TARGET_HOST="127.0.0.1"
-fi
-
-export PORT="$TARGET_PORT"
-export HOST="$TARGET_HOST"
-
-LOCAL_URL="http://127.0.0.1:$TARGET_PORT"
-
-echo "----------------------------------------------------------------------"
-echo " Installation and build completed"
-echo " Project: $PROJECT_ROOT"
-echo " Host:    $TARGET_HOST"
-echo " Port:    $TARGET_PORT"
-echo " Local:   $LOCAL_URL"
-echo "----------------------------------------------------------------------"
-
-# ------------------------------------------------------------------------------
-# Browser
-# ------------------------------------------------------------------------------
-
-if [[ "$OPEN_BROWSER" == true && "$FULL_STACK" == false ]]; then
-    if command -v termux-open-url >/dev/null 2>&1; then
-        termux-open-url "$LOCAL_URL" >/dev/null 2>&1 &
-    elif command -v xdg-open >/dev/null 2>&1; then
-        xdg-open "$LOCAL_URL" >/dev/null 2>&1 &
-    elif command -v open >/dev/null 2>&1; then
-        open "$LOCAL_URL" >/dev/null 2>&1 &
-    fi
-fi
-
-# ------------------------------------------------------------------------------
-# Start server
-# ------------------------------------------------------------------------------
-
-if [[ "$FULL_STACK" == true ]]; then
-    log "Starting the canonical JACO stack."
-    if [[ "$OPEN_BROWSER" == true ]]; then
-        exec node agents/lib/local-stack.mjs --open
-    else
-        exec node agents/lib/local-stack.mjs
-    fi
-elif [[ -f dist/server.cjs ]]; then
-    log "Starting bundled Node server."
-    exec node dist/server.cjs
-
-elif has_npm_script start; then
-    log "Starting npm start script."
-    exec npm run start
-
-elif has_npm_script preview; then
-    log "Starting production preview server."
-    exec npm run preview -- \
-        --host "$TARGET_HOST" \
-        --port "$TARGET_PORT"
-
-elif has_npm_script dev; then
-    warn "No production start or preview script exists."
-    warn "Falling back to development server."
-
-    exec npm run dev -- \
-        --host "$TARGET_HOST" \
-        --port "$TARGET_PORT"
-
-else
-    die "No server.cjs, start, preview, or dev runtime was found."
+  say ""
+  say "Install only, as asked. ./install.sh --doctor names the start command."
 fi

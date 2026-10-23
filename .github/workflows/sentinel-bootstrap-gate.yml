@@ -15,7 +15,7 @@ on:
       - 'runtime/termux/install-activation.sh'
       - '.github/workflows/sentinel-bootstrap-gate.yml'
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - 'runtime/gateway/src/sentinel.mjs'
       - 'runtime/gateway/src/system-control.mjs'
