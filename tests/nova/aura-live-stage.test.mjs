@@ -85,3 +85,27 @@ test('CDP screenshots use only existing authorized read tool and remain bounded'
   assert.match(preview,/strict\?'':'allow-scripts'/);
   assert.match(preview,/strict\?'&#39;none&#39;':'&#39;unsafe-inline&#39;'/);
 });
+
+test('Live Stage is one-click discoverable, with touch-first work navigation', () => {
+  const read = path => fs.readFileSync(new URL('../../runtime/src/'+path, import.meta.url), 'utf8');
+  const ui = read('components/CognitiveWorkspace.tsx');
+  const css = read('cognitive-workspace.css');
+  assert.match(ui, /aria-label="Arbetsyta"/);
+  assert.match(ui, /\['stage', Eye, 'Arbete'\]/);
+  assert.match(ui, /\['evidence', ShieldCheck, 'Belägg'\]/);
+  assert.match(ui, /\['code', Code2, 'Kod'\]/);
+  assert.match(ui, /\['preview', Eye, 'Förhandsvisa'\]/);
+  assert.match(ui, /aria-pressed=\{props\.canvas===view/);
+  assert.match(ui, /\['stage', Eye, 'Arbete'\], \['agents', Bot, 'Agenter'\]/);
+  assert.match(ui, /views\.filter\(\(\[id\]\)=>!\['conversation','agents'\]\.includes\(id\)\)/);
+  assert.match(css, /\.cognitive-stage-switcher button\[aria-pressed=true\]/);
+  assert.match(css, /@media\(max-width:767px\)\{\s*\.cognitive-stage-switcher\{display:none\}/);
+});
+
+test('Stage clears captured HTML and screenshots on a project switch', () => {
+  const ide = fs.readFileSync(new URL('../../runtime/src/components/JacoAuraComputeIDE.tsx', import.meta.url), 'utf8');
+  assert.match(ide, /<AuraLiveStage key=\{projectKey\}/);
+  const live = fs.readFileSync(new URL('../../runtime/src/components/AuraLiveStage.tsx', import.meta.url), 'utf8');
+  assert.match(live, /return \(\)=>\{captureEpoch\.current \+= 1;\}/);
+  assert.match(live, /const \[capturedPage,setCapturedPage\]=useState/);
+});
