@@ -45,6 +45,10 @@ export function CognitiveWorkspace(props:Props) {
       <div className="cognitive-working-area">
         <div className="cognitive-contextbar">
           <div className="cognitive-status" data-tone={props.status.tone} role="status"><span/>{props.status.label}</div>
+          <nav className="cognitive-stage-switcher" aria-label="Arbetsyta">
+            {([['stage', Eye, 'Arbete'], ['code', Code2, 'Kod'], ['preview', Eye, 'Förhandsvisa'], ['evidence', ShieldCheck, 'Belägg']] as const).map(([view, Icon, label]) =>
+              <button key={view} type="button" aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{label}</span></button>)}
+          </nav>
           <button type="button" className="cognitive-mobile-focus" onClick={()=>props.onCanvas(showStage?'conversation':'stage')}>
             {showStage ? <MessageSquare size={15}/> : <Eye size={15}/>}
             {showStage ? 'Visa samtalet' : 'Visa Auras arbete'}
