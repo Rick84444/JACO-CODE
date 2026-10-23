@@ -25,6 +25,10 @@ const PAYMENT_PAGE = /(checkout\.stripe\.com|buy\.stripe\.com|billing\.stripe\.c
 // links, prices, products, balance reads) deliberately do not match.
 const OUTGOING_API = /(\/v1\/(payouts|transfers|topups|charges|payment_intents\/[^\s/]+\/confirm|issuing\/)|stripe\s+(payouts|transfers|topups|charges)\s+create|\bsendTransaction\b|\beth_sendTransaction\b|\bwallet\s+send\b|x402[^\n]{0,40}\bpay\b|skyfire[^\n]{0,40}\b(pay|transfer)\b)/i;
 
+// Explicit prepaid API-credit purchases are financial commitments, not model
+// inference calls. Check shell/worker payloads as well as browser pay buttons.
+const API_CREDIT_PURCHASE = /(?:\b(?:top[- ]?up|buy|purchase|subscribe|add credits|add funds|pay for)\b|fyll\s+på|köp|prenumerera)[^.!?\n]{0,100}(?:\b(?:api|credits?|subscription|deepseek|groq|openai|openrouter|anthropic|gemini|ollama|mistral)\b|krediter|saldo|abonnemang)/i;
+
 function textOf(task) {
   const d = task?.data || {};
   return [d.name, d.text, d.keys, d.command, d.prompt, d.worker, d.label, d.url,
@@ -45,7 +49,8 @@ export function outgoingSpendCheck(task, { observation = null } = {}) {
   const text = textOf(task);
   if (CARD_NUMBER.test(String(task?.data?.text || task?.data?.keys || ''))) return { reason: 'card number typed' };
   if (task.type === 'shell' || task.type === 'invoke-worker') {
-    return OUTGOING_API.test(text) ? { reason: 'money-out API call' } : null;
+    return OUTGOING_API.test(text) || API_CREDIT_PURCHASE.test(text)
+      ? { reason: 'money-out API or paid credit purchase' } : null;
   }
   // Clicking/invoking "Buy", "Pay", "Subscribe" commits; typing those words (e.g. "git checkout") does not.
   const clickLike = ['browser-click', 'desktop-invoke', 'desktop-action', 'mouse-click'].includes(task.type);
