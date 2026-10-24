@@ -63,7 +63,7 @@ import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifie
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
 import { createAuraChatSession } from './src/server/connected/auraChatSession.mjs';
-import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderCompletion, ollamaCloudCostUsd, novaProviderCostUsd, chatFallbackChoice, chatFailureHint } from "./src/server/connected/auraOllamaChat.mjs";
+import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderCompletion, ollamaCloudCostUsd, novaProviderCostUsd, estimatedInputTokens, chatFallbackChoice, chatFailureHint } from "./src/server/connected/auraOllamaChat.mjs";
 import { createEconomicBudgetRouter } from './src/server/connected/economicBudget.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
@@ -4116,7 +4116,7 @@ const notifyPhone = async (action) => {
     }
     const economic = continuumSurface.runtime.economic;
     let estimatedUsd: number;
-    try { estimatedUsd = novaProviderCostUsd(providerId, model, promptBytes, maxTokens, process.env); }
+    try { estimatedUsd = novaProviderCostUsd(providerId, model, estimatedInputTokens(promptBytes), maxTokens, process.env); }
     catch { return res.status(400).json({ success: false, error: 'NOVA_OLLAMA_MODEL_NOT_PRICED' }); }
     const authorization = economic.authorizeCloud({ estimatedUsd, purpose: 'nova-ollama-cloud', metadata: { providerId, model, promptBytes, maxTokens } });
     if (!authorization.allowed) return res.status(403).json({ success: false, error: authorization.reason });

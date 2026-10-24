@@ -68,6 +68,12 @@ export function modelPrice(providerId, model, env = process.env) {
 // billed, so its reservation is released at once instead of being held as "unknown".
 export const NOT_BILLED_FAILURE = /^PROVIDER_HTTP_(400|401|402|403|404|422|429):/;
 
+// Nova reserves cost before a call with the byte size of its JSON request, not a token count. Prices are per
+// token, so bytes are converted first; 3 bytes per token over-estimates for English and JSON, which keeps the
+// reservation on the safe side without blocking every call (settle charges the provider's real usage).
+export const PROMPT_BYTES_PER_TOKEN = 3;
+export const estimatedInputTokens = promptBytes => Math.ceil(Math.max(0, Number(promptBytes) || 0) / PROMPT_BYTES_PER_TOKEN);
+
 export function novaProviderCostUsd(providerId, model, inputTokens, outputTokens, env = process.env) {
   if (providerId === 'ollama-cloud') return ollamaCloudCostUsd(model, inputTokens, outputTokens, env);
   const price = modelPrice(providerId, model, env);
