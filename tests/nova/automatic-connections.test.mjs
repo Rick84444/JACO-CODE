@@ -36,6 +36,22 @@ test('unreachable providers are observations and nothing is started when tool au
   assert.equal(receipt.ok,false);
 });
 
+test('automatic connection replaces a missing built-in local model but preserves an operator model', async () => {
+  const providers = new Map([
+    ['ollama', { id:'ollama', baseUrl:'http://127.0.0.1:11434/v1', defaultModel:'missing-built-in' }],
+    ['custom', { id:'custom', baseUrl:'http://127.0.0.1:1234/v1', defaultModel:'operator-model', createdAt:'2026-10-22T00:00:00.000Z' }],
+  ]);
+  const registry = {
+    providers, ensureDefaults(){}, list:()=>[...providers.values()],
+    register(p){ providers.set(p.id,p); },
+    probe:async()=>({ok:true,models:['installed-model']}),
+  };
+  const receipt = await automaticConnections({registry,mcpHost:null,env:{}}).refresh();
+  assert.equal(providers.get('ollama').defaultModel,'installed-model');
+  assert.equal(providers.get('custom').defaultModel,'operator-model');
+  assert.equal(receipt.providers.find(p=>p.id==='ollama').state,'MODELS_AVAILABLE');
+});
+
 test('the full runtime connects every tool server by itself, restarts a crashed one with a growing pause and says what to do about a failure', async () => {
   let clock = 1_000, announced = [];
   const state = { a: 'STOPPED', b: 'STOPPED', hf: 'STOPPED', off: 'STOPPED' };

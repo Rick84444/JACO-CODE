@@ -33,12 +33,12 @@ export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {
     window.addEventListener('jaco:economic:refresh', changed);
     return () => { mounted.current = false; ++revision.current; window.clearInterval(timer); window.removeEventListener('jaco:economic:refresh', changed); };
   }, []);
-  // One switch for cloud models (Aura chat and Nova), saved at once; the limits below still apply.
+  // This operator switch only enables manual Aura chat; autonomous cloud remains separately gated.
   const setCloud = async (enabled: boolean) => {
     if (saveInFlight.current) return;
     saveInFlight.current = true; ++revision.current; setSaving(true); setError(null);
     try {
-      const data = await fetch('/api/aura/budget', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cloudEnabled: enabled }), signal: AbortSignal.timeout(10000) }).then(readAuraResponse);
+      const data = await fetch('/api/aura/budget', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ manualAuraCloudEnabled: enabled }), signal: AbortSignal.timeout(10000) }).then(readAuraResponse);
       if (mounted.current) setSnapshot(data.economic);
     } catch (e: any) { if (mounted.current) setError(`Kunde inte ändra: ${e.message}`); }
     finally { saveInFlight.current = false; if (mounted.current) setSaving(false); }
@@ -67,10 +67,10 @@ export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {
   const shown = inline || editing;
   const held = snapshot ? (Object.values(snapshot.state.reservations || {}) as { status?: string; estimatedUsd: number }[]).filter(r => r.status === 'UNKNOWN_OUTCOME') : [];
   const heldUsd = held.reduce((n, r) => n + r.estimatedUsd, 0);
-  const cloudOn = Boolean(snapshot && (snapshot.policy.cloudEnabled || (snapshot.policy.manualAuraCloudEnabled && snapshot.policy.novaOllamaCloudEnabled)));
+  const cloudOn = Boolean(snapshot && (snapshot.policy.cloudEnabled || snapshot.policy.manualAuraCloudEnabled));
   // The one sentence that says what stops a cloud answer right now (or that nothing does).
   const blocking = !snapshot ? null
-    : !cloudOn ? 'Molnmodeller är avstängda: chatten och Nova använder bara lokala modeller.'
+    : !cloudOn ? 'Molnmodeller är avstängda för manuell Aura-chatt. Autonoma molnanrop styrs separat.'
     : snapshot.headroom.dailyUsd <= 0 ? 'Dagens budget är slut. Höj gränsen eller frigör reserverat.'
     : snapshot.headroom.monthlyUsd <= 0 ? 'Månadens budget är slut. Höj gränsen.'
     : snapshot.policy.maxCloudUsdPerTask <= 0 ? 'Gränsen per uppgift är noll: inga betalda anrop går igenom.'
@@ -79,8 +79,8 @@ export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {
     <div className="flex justify-between gap-2"><strong className="text-slate-300">Gemensam molnbudget</strong><button type="button" disabled={saving} onClick={() => { setSaved(false); void refresh(); }} className="text-cyan-400">Uppdatera budget</button></div>
     {inline && snapshot && <>
       <label className="flex items-start gap-2 text-slate-200 cursor-pointer">
-        <input type="checkbox" checked={cloudOn} disabled={saving} onChange={e => void setCloud(e.target.checked)} className="mt-0.5 h-4 w-4" aria-label="Tillåt molnmodeller" />
-        <span><strong>Tillåt molnmodeller</strong><br /><span className="text-slate-400">Chatten och Nova får använda DeepSeek, Groq med flera, inom gränserna nedan. Av = bara lokala modeller.</span></span>
+        <input type="checkbox" checked={cloudOn} disabled={saving} onChange={e => void setCloud(e.target.checked)} className="mt-0.5 h-4 w-4" aria-label="Tillåt molnmodeller i manuell Aura-chatt" />
+        <span><strong>Tillåt moln i manuell Aura-chatt</strong><br /><span className="text-slate-400">Aura får använda anslutna molnmodeller inom budgeten. Nova och andra autonoma anrop öppnas inte av detta val.</span></span>
       </label>
       <p role="status" className={blocking ? 'text-amber-300' : 'text-emerald-400'}>{blocking || 'Inget blockerar molnanrop just nu.'}</p>
       {held.length > 0 && <p className="text-slate-400">{held.length} anrop med okänt utfall håller {money(heldUsd)} USD reserverat (frigörs av sig själva efter en stund). <button type="button" disabled={saving} onClick={() => void releaseHeld()} className="text-cyan-400 underline">Frigör nu</button></p>}

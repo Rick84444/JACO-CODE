@@ -4256,10 +4256,17 @@ const notifyPhone = async (action) => {
         return null;
       };
       const askOrConnected = async (choice: any) => {
+        const policy = continuumSurface.runtime.economic.snapshot().policy;
+        const cloudAllowed = policy.cloudEnabled || policy.manualAuraCloudEnabled;
+        if (!choice && !cloudAllowed) {
+          const local = await activeLocalChoice().catch(() => null);
+          if (!local) throw new Error('AURA_LOCAL_MODEL_UNAVAILABLE');
+          return await ask(local);
+        }
         try { return await ask(choice); }
         catch (error) {
           if (choice) throw error;
-          const fallback = chatFallbackChoice(connectedRuntime.providers) || await activeLocalChoice().catch(() => null);
+          const fallback = (await activeLocalChoice().catch(() => null)) || chatFallbackChoice(connectedRuntime.providers);
           if (!fallback) throw error;
           return await ask(fallback);
         }

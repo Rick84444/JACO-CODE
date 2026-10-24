@@ -82,6 +82,11 @@ test('operator budget HTTP route validates permission, origin and fields and per
   for(const body of [{dailyCloudUsd:'2'},{dailyCloudUsd:-1},{cloudEnabled:'true'},{autoApprove:true},{}])assert.equal((await fetch(url,{method:'PATCH',headers,body:JSON.stringify(body)})).status,400);
   const changed=await fetch(url,{method:'PATCH',headers,body:'{"dailyCloudUsd":2,"monthlyCloudUsd":20,"maxCloudUsdPerTask":0.05}'}).then(r=>r.json());
   assert.equal(changed.success,true);assert.equal(changed.economic.policy.dailyCloudUsd,2);assert.equal(changed.economic.policy.cloudEnabled,false);
+  const manual=await fetch(url,{method:'PATCH',headers,body:'{"manualAuraCloudEnabled":true}'}).then(r=>r.json());
+  assert.equal(manual.economic.policy.manualAuraCloudEnabled,true);
+  assert.equal(manual.economic.policy.cloudEnabled,false,'manual chat must not enable autonomous cloud');
+  assert.equal(g.authorizeCloud({estimatedUsd:0.01,purpose:'manual-aura-chat'}).allowed,true);
+  assert.equal(g.authorizeCloud({estimatedUsd:0.01,purpose:'reasoning'}).reason,'CLOUD_DISABLED_BY_POLICY');
   const observed=await fetch(url,{headers}).then(r=>r.json());assert.equal(observed.economic.policy.maxCloudUsdPerTask,0.05);
   const restarted=new EconomicGovernor(path.dirname(g.policyFile),{append(){}});assert.equal(restarted.snapshot().policy.dailyCloudUsd,2);
 });

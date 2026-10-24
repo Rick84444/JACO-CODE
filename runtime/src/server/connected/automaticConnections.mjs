@@ -69,8 +69,13 @@ export function automaticConnections({ registry, mcpHost, env = process.env, now
         if (!local && !p.credentialConfigured && p.apiKeyEnv) return { id: p.id, state: 'NO_KEY' };
         const result = await registry.probe(p.id);
         const models = (result.models || []).filter(m => !/embed|rerank|whisper|tts|image|moderation/i.test(m));
-        // Keep an explicit operator choice; automatic defaults are adopted only when no model was chosen.
-        if (result.ok && models.length && !p.defaultModel) registry.register({ ...p, defaultModel: models[0] });
+        // Keep an explicit operator choice. A built-in default, however, can be
+        // absent from the actual local server (for example after an Ollama model
+        // was removed); adopt an observed model instead of keeping a dead route.
+        const builtInLocal = ['ollama', 'litert', 'llamacpp', 'lmstudio'].includes(p.id) && !p.createdAt && local;
+        if (result.ok && models.length && (!p.defaultModel || (builtInLocal && !models.includes(p.defaultModel)))) {
+          registry.register({ ...p, defaultModel: models[0] });
+        }
         return { id: p.id, state: result.ok ? (models.length ? 'MODELS_AVAILABLE' : 'NO_CHAT_MODELS') : 'UNREACHABLE', models, toolCapability: 'UNTESTED' };
       })),
       connectTools(),
