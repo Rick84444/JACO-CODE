@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 
 function fixture(t) {
@@ -165,4 +166,32 @@ test('retry limits are respected after a claimed task expires', t => {
   assert.equal(bus.getTicket(ticket.id).status, 'FAILED');
   assert.equal(bus.getMission(mission.id).status, 'FAILED');
   assert.equal(bus.claimNext('worker-a', [ticket.capability]), null);
+});
+
+test('an abruptly terminated worker process cannot double-execute its external write', t => {
+  const { root, open, bus } = fixture(t);
+  bus.close();
+  const moduleUrl = new URL('../../runtime/src/server/connected/durableMissionBus.mjs', import.meta.url).href;
+  const script = [
+    \`import { DurableMissionBus } from \${JSON.stringify(moduleUrl)};\`,
+    "import fs from 'node:fs';",
+    \`const bus = new DurableMissionBus(\${JSON.stringify(root)});\`,
+    "bus.registerWorker('child', ['external.write']);",
+    "const mission = bus.createMission({ goal: 'Subprocess crash experiment' });",
+    "const ticket = bus.enqueueTicket({ missionId: mission.id, capability: 'external.write', title: 'Single external write' });",
+    "const claim = bus.claimNext('child', ['external.write']);",
+    "bus.start(ticket.id, 'child', claim.leaseToken);",
+    \`fs.appendFileSync(\${JSON.stringify(path.join(root, 'external-write.log'))}, 'once\\n');\`,
+    "bus.db.prepare('UPDATE tickets SET lease_expires_at=? WHERE id=?').run('2000-01-01T00:00:00.000Z', ticket.id);",
+    "process.exit(41);"
+  ].join('\\n');
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: process.cwd(), encoding: 'utf8', timeout: 15000
+  });
+  assert.equal(child.status, 41, child.stderr || 'Expected intentional abrupt exit');
+  const restarted = open();
+  const [ticket] = restarted.listTickets();
+  assert.equal(ticket.status, 'OUTCOME_UNKNOWN');
+  assert.equal(restarted.claimNext('another-worker', ['external.write']), null);
+  assert.equal(fs.readFileSync(path.join(root, 'external-write.log'), 'utf8'), 'once\\n');
 });
