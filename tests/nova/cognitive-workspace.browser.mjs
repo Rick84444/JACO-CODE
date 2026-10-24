@@ -87,10 +87,41 @@ const base='http://127.0.0.1:'+server.address().port;
 const browser=await chromium.launch({headless:true,...(process.env.JACO_BROWSER_EXECUTABLE?{executablePath:process.env.JACO_BROWSER_EXECUTABLE,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']}: {})});
 const page=await browser.newPage({viewport:{width:1440,height:960},deviceScaleFactor:1});
 page.setDefaultTimeout(15000);
-const errors=[];page.on('pageerror',error=>{errors.push(error.stack||error.message);console.error("PAGE_ERROR "+(error.stack||error.message));});
+// Monaco may reject an already-running language/model task when an editor is
+// deliberately disposed (e.g. after changing projects). This exact cancellation
+// is not an app exception; any other page error still fails the browser gate.
+const errors=[];
+const expectedEditorCancels=[];
+page.on('pageerror',error=>{
+  const detail=error.stack||error.message;
+  const fromMonaco=/assets\/AuraCodeEditor-[^\s]+\.js/.test(detail);
+  const cancelled=/^Cancel(?:ed|led): Cancel(?:ed|led)(?:\n|$)/.test(detail);
+  const duringDisposal=/\.(?:dispose|cancel) \(/.test(detail);
+  if(fromMonaco && cancelled && duringDisposal){
+    expectedEditorCancels.push(detail);
+    console.log('MONACO_EXPECTED_DISPOSAL_CANCELLATION');
+    return;
+  }
+  errors.push(detail);
+  console.error("PAGE_ERROR "+detail);
+});
 const results=[];const passed=name=>{results.push(name);console.log('PASS '+name);};
 const input=()=>page.getByRole('textbox',{name:'Meddelande till JACO'});
-const canvas=label=>page.getByRole('navigation',{name:'Arbetsyta'}).getByRole('button',{name:label,exact:true});
+// Exercise the same work navigation a real user sees at the current viewport.
+const canvas = label => ({ click: async () => {
+  const mobile = await page.evaluate(() => innerWidth < 768);
+  if (!mobile) {
+    if (label === 'Samtal') await page.getByRole('button', { name: 'Visa samtalet', exact: true }).click();
+    else await page.getByRole('navigation', { name: 'Arbetsyta' }).getByRole('button', { name: label, exact: true }).click();
+    return;
+  }
+  if (['Samtal', 'Arbete', 'Agenter'].includes(label)) {
+    await page.getByRole('navigation', { name: 'Mobilnavigation' }).getByRole('button', { name: label, exact: true }).click();
+    return;
+  }
+  await page.getByRole('navigation', { name: 'Mobilnavigation' }).getByRole('button', { name: 'Fler funktioner' }).click();
+  await page.getByRole('dialog', { name: 'Din arbetsyta' }).getByRole('button', { name: label, exact: true }).click();
+} });
 const screenshot=async name=>{
   if(!process.env.JACO_UI_SCREENSHOTS)return;
   fs.mkdirSync(process.env.JACO_UI_SCREENSHOTS,{recursive:true});
@@ -121,7 +152,22 @@ try {
   await input().fill('Behåll mitt utkast');
   await canvas('Kod').click();await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
-  await page.setViewportSize({width:393,height:852});await canvas('Belägg').click();await canvas('Samtal').click();
+  await page.locator('.cognitive-status').click();
+  await page.keyboard.press('Control+Shift+Digit2');
+  assert.equal(await page.getByRole('navigation',{name:'Arbetsyta'}).getByRole('button',{name:'Kod',exact:true}).getAttribute('aria-pressed'),'true');
+  await page.keyboard.press('Control+Shift+Digit1');
+  assert.equal(await page.getByRole('navigation',{name:'Arbetsyta'}).getByRole('button',{name:'Arbete',exact:true}).getAttribute('aria-pressed'),'true');
+  await input().focus();
+  await page.keyboard.press('Control+Shift+Digit4');
+  assert.equal(await page.getByRole('navigation',{name:'Arbetsyta'}).getByRole('button',{name:'Arbete',exact:true}).getAttribute('aria-pressed'),'true','editing chat must not switch views');
+  assert.equal(await input().inputValue(),'Behåll mitt utkast');
+  await page.setViewportSize({width:393,height:852});
+  await canvas('Arbete').click();
+  await page.getByTestId('aura-live-stage').waitFor();
+  assert.equal(await page.getByRole('navigation',{name:'Mobilnavigation'}).getByRole('button',{name:'Arbete',exact:true}).getAttribute('aria-pressed'),'true');
+  await canvas('Samtal').click();
+  await canvas('Belägg').click();
+  await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   passed('Desktop and mobile view changes retain the same draft and conversation session');
@@ -149,7 +195,7 @@ try {
   bus.event('NOVA_ACTION_STARTED',{missionId:mission.id,payload:{action:{id:'read-example',type:'repo-read',data:{path:'example.ts'}}}});
   await page.locator('[data-event-id="mission:2"]').waitFor();
   assert.equal(await page.locator('[data-event-id="mission:2"]').count(),1);
-  await page.locator('[data-mission-id]').waitFor({timeout:10000});
+  await page.locator('[data-mission-id]').waitFor({state:'attached',timeout:10000});
   passed('A real SSE event is inserted exactly once in the conversation with its mission');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'read-example',type:'repo-read',ok:true,verified:false,result:{path:'example.ts'}}});
   await page.getByText('Verifiering saknas',{exact:true}).waitFor();
@@ -234,7 +280,36 @@ try {
   await page.getByText('Uppdragets registrering kunde inte bekräftas: TEST_GOAL_REJECTED',{exact:true}).waitFor();
   assert.equal(bus.listMissions(10).length,2);assert.equal(await input().inputValue(),'Detta ska inte registreras');
   passed('Rejected goal creation keeps the request text and never creates a false activation message');
-  assert.deepEqual(errors,[]);
+  await page.setViewportSize({width:393,height:852});
+  await canvas('Arbete').click();
+  const follow=page.getByRole('button',{name:'Följ nytt arbete',exact:true});
+  if(await follow.count())await follow.click();
+  bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'stage-html',type:'repo-write',ok:true,verified:true,result:{path:'preview.html'}}});
+  const stage=page.getByTestId('aura-live-stage');
+  await stage.getByRole('button',{name:'Redigera arbetskopia',exact:true}).click();
+  const htmlDraft=stage.getByRole('textbox',{name:'Redigera HTML-arbetskopia',exact:true});
+  await htmlDraft.fill('<h1>Min bevarade arbetskopia</h1>');
+  assert.equal(await follow.getAttribute('aria-pressed'),'true','editing explicitly holds the current material');
+  await canvas('Samtal').click();await canvas('Arbete').click();
+  assert.equal(await follow.getAttribute('aria-pressed'),'true','mobile focus changes must preserve pin');
+  assert.equal(await htmlDraft.inputValue(),'<h1>Min bevarade arbetskopia</h1>');
+  bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'new-result',type:'repo-test',ok:true,verified:true,result:{exitCode:0}}});
+  const newest=bus.listEvents(1)[0];
+  await page.locator('[data-event-id="mission:'+newest.seq+'"]').waitFor({state:'attached'});
+  assert.equal(await htmlDraft.inputValue(),'<h1>Min bevarade arbetskopia</h1>');
+  passed('Inline editing holds material and mobile conversation switching preserves the pin and draft');
+  await follow.click();
+  bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'missing-html',type:'repo-write',ok:true,verified:true,result:{path:'missing.html'}}});
+  await stage.getByRole('heading',{name:'Förhandsvisningen kunde inte öppnas'}).waitFor();
+  assert.equal(await stage.getByText('Öppnar den verifierade projektfilen…',{exact:true}).count(),0);
+  code['missing.html']='<h1>Filen finns nu</h1>';
+  await stage.getByRole('button',{name:'Försök läsa filen igen'}).click();
+  await stage.frameLocator('iframe').getByRole('heading',{name:'Filen finns nu'}).waitFor();
+  assert.equal(await page.getByText('Arbetet behöver hjälp',{exact:true}).count(),0,'a repaired file read cannot leave a stale global failure');
+  passed('Missing material exposes an actionable error and retry reads the real file instead of spinning forever');
+  await screenshot('aura-stage-hardened-mobile');
+  assert.deepEqual(errors,[], 'no unexpected uncaught app/browser errors');
+  if(expectedEditorCancels.length) console.log('Monaco disposal cancellations observed: '+expectedEditorCancels.length);
   const report={status:'PASS',checks:results.length,browser:browser.version(),observedAt:new Date().toISOString(),scope:'Controlled UI integration; no inference, Android or operator runtime execution',clientIndexSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'dist/index.html'))).digest('hex'),results};
   console.log(JSON.stringify(report,null,2));
   if(process.env.JACO_UI_SCREENSHOTS){

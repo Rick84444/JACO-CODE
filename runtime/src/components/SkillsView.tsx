@@ -9,6 +9,7 @@ interface SkillDetail extends SkillSummary { body: string; truncated: boolean }
 interface Proposal { key: string; kind: 'tool-note' | 'skill'; status: string; missionId: string; tool?: string; note?: string; id?: string; skillMd?: string; namedBy?: string | null; createdAt: string; installedAs?: string }
 
 export const SkillsView: React.FC = () => {
+  const [skillUrl,setSkillUrl]=useState('');
   const [installing,setInstalling]=useState(false),[installId,setInstallId]=useState(''),[skillContent,setSkillContent]=useState(''),[testCommands,setTestCommands]=useState('');
   const [skills, setSkills] = useState<SkillSummary[] | null>(null);
   const [error, setError] = useState('');
@@ -86,6 +87,8 @@ export const SkillsView: React.FC = () => {
       </div>
       <div className="flex-1 overflow-auto px-2 space-y-2 text-[11px] min-w-0">
         <details><summary>Lägg till en skill</summary>
+          <label>Hämta från adress<input value={skillUrl} placeholder="https://github.com/…/SKILL.md" onChange={e=>setSkillUrl(e.target.value)}/></label>
+          <button type="button" disabled={installing||!skillUrl.trim()} onClick={async()=>{setInstalling(true);setError('');try{const data=await fetch('/api/aura/workbench/skills/install-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:skillUrl.trim(),id:installId.trim()||undefined})}).then(readAuraResponse);setResult('Installerad från adress: '+data.skill.name);setSkillUrl('');setInstallId('');await load();}catch(error:any){setError(error.message);}finally{setInstalling(false);}}}>Installera från adress</button>
           <label>Skill-ID<input value={installId} placeholder="min-fardighet" onChange={e=>setInstallId(e.target.value)}/></label>
           <label>Importera SKILL.md<input type="file" accept=".md,text/markdown,text/plain" onChange={async e=>{const file=e.target.files?.[0];if(file){if(file.size>24000){setError('Skill-filen är för stor.');return;}setSkillContent(await file.text());}}}/></label>
           <label>SKILL.md<textarea rows={8} value={skillContent} onChange={e=>setSkillContent(e.target.value)} placeholder={'---\nname: Min färdighet\ndescription: Vad den gör\ntasks: [web-fetch]\n---\nInstruktioner för färdigheten.'}/></label>

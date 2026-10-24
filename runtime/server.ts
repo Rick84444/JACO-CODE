@@ -1,6 +1,7 @@
 import { readMissionReview } from './src/server/connected/missionReview.mjs';
 import { createMissionWorktrees } from '../agents/lib/mission-worktree.mjs';
 import { createWorkspaceAttachments } from './src/server/connected/workspaceAttachments.mjs';
+import { inspectWorkspaceImage } from './src/server/connected/workspaceImage.mjs';
 import { gameboardProjection, simulateGameboardScenario } from "../agents/lib/gameboard-fabric.mjs";
 import { createGameboardExchange } from "../agents/lib/gameboard-exchange.mjs";
 import express from "express";
@@ -66,7 +67,7 @@ import { createEconomicBudgetRouter } from './src/server/connected/economicBudge
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
-import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec } from "../agents/lib/skills.mjs";
+import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec, fetchSkillFromUrl } from "../agents/lib/skills.mjs";
 import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy, policyFilePath, CLAIM_RESUME_NOTE } from "../agents/lib/approval-policy.mjs";
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
@@ -1227,6 +1228,18 @@ const notifyPhone = async (action) => {
     return { path: requested, content, size: stat.size, language: workbenchLanguage(requested), hash };
   };
 
+  const readAuraWorkbenchImage = (relativePath:string) => {
+    const requested=String(relativePath || '').trim().replace(/\\/g,'/');
+    if(!requested || AURA_TOOL_FORBIDDEN.test(requested) || !/\.(?:png|jpe?g|webp)$/i.test(requested))
+      throw Error('WORKBENCH_IMAGE_PATH_DENIED');
+    const full=resolveWorkspacePath(requested);
+    const stat=fs.statSync(full);
+    if(!stat.isFile() || stat.size <= 0 || stat.size > 6_000_000) throw Error('WORKBENCH_IMAGE_SIZE_OR_KIND');
+    const bytes=fs.readFileSync(full);
+    const mime=inspectWorkspaceImage(bytes,requested);
+    return {mime,bytes};
+  };
+
   const writeAuraWorkbenchFile = (relativePath: string, content: string, expectedHash?: string | null) => {
     const requested = String(relativePath || '').trim().replace(/\\/g, '/');
     if (!requested || requested.includes('\0')) throw new Error('INVALID_WORKBENCH_FILE_PATH');
@@ -2336,6 +2349,20 @@ const notifyPhone = async (action) => {
     catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
   });
 
+  // A local-only, read-only image stream. No SVG, no HTML, no arbitrary filesystem paths.
+  app.get('/api/aura/workbench/image',requireLocalUi,(req,res)=>{
+    try {
+      const {mime,bytes}=readAuraWorkbenchImage(String(req.query.path || ''));
+      res.setHeader('Content-Type',mime);
+      res.setHeader('X-Content-Type-Options','nosniff');
+      res.setHeader('Cache-Control','private, no-store, max-age=0');
+      res.setHeader('Content-Security-Policy',"default-src 'none'; sandbox");
+      res.send(bytes);
+    } catch(error:any){
+      res.status(400).json({success:false,error:error?.message || String(error)});
+    }
+  });
+
   app.put('/api/aura/workbench/file', requireLocalUi, (req, res) => {
     try {
       const saved = writeAuraWorkbenchFile(
@@ -2690,6 +2717,18 @@ const notifyPhone = async (action) => {
     try { if(listSkills(skillRoots()).some((skill:any)=>skill.id===req.body?.id))throw Error('SKILL_ALREADY_EXISTS'); const skill=installSkill(path.join(WORKSPACE_ROOT,'.jaco','skills'),req.body?.id,req.body?.content); res.status(201).json({success:true,skill}); }
     catch(error:any){res.status(400).json({success:false,error:error.message});}
   });
+  // Install a skill from an address (the operator's click is the approval). Same validation as a pasted skill.
+  app.post('/api/aura/workbench/skills/install-url', requireLocalUi, async (req, res) => {
+    try {
+      const fetched = await fetchSkillFromUrl(req.body?.url);
+      const id = String(req.body?.id || '').trim() || fetched.suggestedId;
+      if (listSkills(skillRoots()).some((skill:any)=>skill.id===id)) throw Error('SKILL_ALREADY_EXISTS');
+      const skill = installSkill(path.join(WORKSPACE_ROOT,'.jaco','skills'), id, fetched.content);
+      seerLiveWorkstream.record({ actor: 'Aura Skills', type: 'skill.installed', message: `${id} from ${fetched.url}`, verified: true,
+        receipt: { id, url: fetched.url, sha256: crypto.createHash('sha256').update(fetched.content).digest('hex') } });
+      res.status(201).json({ success: true, skill, source: fetched.url });
+    } catch (error:any) { res.status(400).json({ success: false, error: error.message }); }
+  });
   app.get('/api/aura/workbench/skills', requireLocalUi, (_req, res) => {
     try { res.json({ success: true, skills: listSkills(skillRoots()) }); }
     catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
@@ -2813,7 +2852,7 @@ const notifyPhone = async (action) => {
       // CDP is intentionally a specialist observation surface inside Aura.
       // Browser mutations must stay on BrowserHandsOff/ModelRelay rather than
       // becoming a second actuator path just because CDP can technically click.
-      if (providerId === 'cdp' && !['nova_targets','nova_observe','nova_screenshot'].includes(toolName)) {
+      if (providerId === 'cdp' && !['nova_targets','nova_observe','nova_screenshot','nova_html'].includes(toolName)) {
         throw new Error('CDP_DIRECT_MUTATION_DISABLED_USE_REMOTE_OR_BROWSER_HANDS_OFF');
       }
 
@@ -2822,12 +2861,32 @@ const notifyPhone = async (action) => {
         arguments: args,
       });
       const failed = result?.isError === true;
+      // PNG bytes are sensitive user content, not telemetry. Keep only a
+      // digest and bounded metadata in durable tool receipts.
+      const receiptResult = providerId === 'cdp' && toolName === 'nova_screenshot'
+        ? (() => {
+            const png = Array.isArray(result?.content)
+              ? result.content.find((item: any) => item?.type === 'image' && item?.mimeType === 'image/png') : null;
+            const data = typeof png?.data === 'string' ? png.data : '';
+            return { screenshotDataOmitted: true, mimeType: png?.mimeType || null,
+              payloadPresent: data.length > 0,
+              payloadSha256: data ? crypto.createHash('sha256').update(data).digest('hex') : null };
+          })()
+        : providerId === 'cdp' && toolName === 'nova_html'
+        ? (() => {
+            // Page markup is user content; the durable receipt keeps only where it came from and its digest.
+            let page: any = null;
+            try { page = JSON.parse(result?.content?.[0]?.text || 'null'); } catch {}
+            return { htmlOmitted: true, ok: page?.ok === true, url: typeof page?.url === 'string' ? page.url.slice(0, 500) : null,
+              bytes: Number(page?.bytes) || 0, sha256: typeof page?.sha256 === 'string' ? page.sha256 : null, error: page?.ok === true ? null : String(page?.error || '').slice(0, 80) };
+          })()
+        : result;
       seerLiveWorkstream.record({
         actor: 'Aura Tool Fabric',
         type: 'mcp.tool.called',
         message: `${providerId}.${toolName}`,
         verified: !failed,
-        receipt: { providerId, toolName, isError: failed, result },
+        receipt: { providerId, toolName, isError: failed, result: receiptResult },
       });
       res.status(failed ? 409 : 200).json({ success: !failed, providerId, toolName, result });
     } catch (error: any) {
