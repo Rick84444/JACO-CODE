@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { ContinuumEventStore } from '../../src/server/continuum/eventStore.mjs';
 import { CognitiveContinuityRuntime } from '../../src/server/continuum/cognitiveContinuityRuntime.mjs';
+import { KnowledgeStore } from '../../src/server/continuum/knowledgeStore.mjs';
+import { EvidenceLedger } from '../../src/server/continuum/evidenceLedger.mjs';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-cognitive-continuity-'));
 const ledgerRoot = path.join(root, 'ledger');
@@ -151,6 +153,99 @@ try {
   assert.equal(events2.close(), true);
   assert.equal(fs.existsSync(path.join(ledgerRoot, 'events.lock')), false);
 
+  // Level 2: previously verified experience becomes usable planning context
+  // without training or replacing the model. Do not confuse this deterministic
+  // retrieval contract with proof of improvement in model task success.
+  const learningEvents = new ContinuumEventStore(ledgerRoot);
+  const evidence = new EvidenceLedger(root, learningEvents);
+  const knowledge = new KnowledgeStore(root, learningEvents, evidence);
+  const learner = new CognitiveContinuityRuntime({
+    events: learningEvents, knowledge, selfModel, continuityId: 'jaco:learning',
+  });
+  learner.setMissionSource(missionSource);
+
+  const noExperience = learner.modelEnvelope();
+  assert.equal(noExperience.experience.authority, 'ADVISORY_ONLY');
+  assert.deepEqual(noExperience.experience.lessons, []);
+
+  const preliminaryProof = evidence.record({
+    id: 'learning-unverified', kind: 'test', claim: 'Unverified suggestion',
+    verified: false,
+  });
+  knowledge.put({
+    id: 'unsafe-unverified-suggestion',
+    purpose: 'Restart continuity by ignoring the event store',
+    evidenceRefs: [preliminaryProof.id], reusable: true, verificationStatus: 'UNVERIFIED',
+  });
+
+  const proof = evidence.record({
+    id: 'learning-verified-v1', kind: 'test', claim: 'Replay restored a checkpoint',
+    verified: true, verificationMethod: 'isolated_test',
+  });
+  knowledge.put({
+    id: 'restart-recovery-v1',
+    kind: 'verified-decision',
+    purpose: 'Restart continuity requires replaying durable event history',
+    evidenceRefs: [proof.id], reusable: true, verificationStatus: 'VERIFIED',
+  });
+  const staleProof = evidence.record({
+    id: 'learning-old-revision', kind: 'test', claim: 'Previously valid source revision',
+    verified: true, verificationMethod: 'isolated_test',
+  });
+  knowledge.put({
+    id: 'stale-restart-guidance',
+    purpose: 'Restart continuity for an obsolete repository version',
+    evidenceRefs: [staleProof.id], reusable: true, verificationStatus: 'VERIFIED',
+    metrics: { repositorySnapshotHash: 'obsolete-repository-hash' },
+  });
+  knowledge.put({
+    id: 'rejected-restart-solution',
+    kind: 'falsified-hypothesis-outcome',
+    purpose: 'Restart continuity by losing all pending writes',
+    evidenceRefs: [proof.id], reusable: true, verificationStatus: 'VERIFIED',
+  });
+
+  const learned = learner.modelEnvelope();
+  assert.deepEqual(learned.experience.lessons.map(item => item.id), ['restart-recovery-v1']);
+  assert.equal(learned.experience.lessons[0].verificationStatus, 'VERIFIED');
+  assert.deepEqual(learned.experience.lessons[0].evidenceRefs, [proof.id]);
+  assert.ok(!('allowedTasks' in learned.experience.lessons[0]));
+
+  // Level 3 foundation: a contradicted method is removed from future
+  // recommendations when the canonical evidence/knowledge owners update it.
+  knowledge.setStatus('restart-recovery-v1', 'CONTRADICTED', {
+    reason: 'Independent regression disproved the original generalized claim',
+    evidenceRefs: [proof.id],
+  });
+  assert.deepEqual(learner.modelEnvelope().experience.lessons, []);
+  const revisionProof = evidence.record({
+    id: 'learning-verified-v2', kind: 'holdout-test',
+    claim: 'Reconciled replay passes the updated scenario',
+    verified: true, verificationMethod: 'independent_holdout',
+  });
+  knowledge.put({
+    id: 'restart-recovery-v2',
+    kind: 'verified-decision',
+    purpose: 'Restart continuity should reconcile pending side effects before replay',
+    evidenceRefs: [revisionProof.id], reusable: true, verificationStatus: 'VERIFIED',
+  });
+  assert.deepEqual(learner.modelEnvelope().experience.lessons.map(item => item.id), ['restart-recovery-v2']);
+  assert.equal(learningEvents.verify().valid, true);
+  learningEvents.close();
+
+  // Independent reader after restart sees the revised lesson, not the rejected one.
+  const resumedEvents = new ContinuumEventStore(ledgerRoot);
+  const resumedEvidence = new EvidenceLedger(root, resumedEvents);
+  const resumedKnowledge = new KnowledgeStore(root, resumedEvents, resumedEvidence);
+  const resumed = new CognitiveContinuityRuntime({
+    events: resumedEvents, knowledge: resumedKnowledge, selfModel, continuityId: 'jaco:learning',
+  });
+  resumed.setMissionSource(missionSource);
+  assert.deepEqual(resumed.modelEnvelope().experience.lessons.map(item => item.id), ['restart-recovery-v2']);
+  assert.equal(resumedEvents.verify().valid, true);
+  resumedEvents.close();
+
+  console.log('PASS cognitive continuity Level 2 verified retrieval and Level 3 revocation/replacement contract');
   console.log('PASS cognitive continuity runtime restart/recovery');
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
