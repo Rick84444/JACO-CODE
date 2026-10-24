@@ -128,8 +128,8 @@ export class DurableMissionBus {
         Number(row.attempts) < Number(row.max_attempts) ? 'READY' : 'FAILED';
       const reason = next === 'OUTCOME_UNKNOWN' ? 'LEASE_EXPIRED_OUTCOME_UNKNOWN' :
         next === 'FAILED' ? 'LEASE_EXPIRED_RETRY_LIMIT' : null;
-      const updated = this.db.prepare("UPDATE tickets SET status=?, error=?, worker_id=NULL, lease_token=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=? WHERE id=? AND status=?")
-        .run(next, reason, now, row.id, row.status);
+      const updated = this.db.prepare("UPDATE tickets SET status=?, error=?, worker_id=NULL, lease_token=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=? WHERE id=? AND status=? AND lease_expires_at IS NOT NULL AND lease_expires_at < ?")
+        .run(next, reason, now, row.id, row.status, now);
       if (updated.changes !== 1) continue;
       if (row.worker_id) this.db.prepare("UPDATE workers SET status='IDLE', active_ticket_id=NULL WHERE id=? AND active_ticket_id=?").run(row.worker_id, row.id);
       const eventType = next === 'READY' ? 'LEASE_EXPIRED_REQUEUED' :
@@ -217,8 +217,9 @@ export class DurableMissionBus {
     return this.getTicket(ticketId);
   }
 
-  // Operator-only reconciliation entry point. Evidence is operator-attested, not
-  // automatically promoted to an independently verified execution receipt.
+  // Internal reconciliation hook: callers must enforce operator authorization;
+  // this method is not exposed through the HTTP API. Evidence remains operator-
+  // attested, never independently verified solely by this state transition.
   reconcileUnknownOutcome(ticketId, { decision, evidence = [], result = {}, reason = '' } = {}) {
     const row = this.db.prepare('SELECT * FROM tickets WHERE id=?').get(String(ticketId));
     if (!row || row.status !== 'OUTCOME_UNKNOWN') throw new Error('TICKET_OUTCOME_NOT_UNKNOWN');
