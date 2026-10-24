@@ -54,7 +54,7 @@ export function auraStatusHints(failures, { headroomUsd = null, localModels = []
   if (lite) { if (/LITE_NO_AVAILABLE_MODELS|NO_CHAT_MODELS_IMPORTED|UNREACHABLE|fetch failed|ECONNREFUSED|timeout/i.test(all)) hints.push('Ingen lokal AI-modell svarar. Kontrollera http://127.0.0.1:9379/v1/models. Om LiteRT är installerat: kör litert-lm serve --host 127.0.0.1 --port 9379 i en annan Termux-session. En modell måste också vara importerad. Alternativt anslut en provider under Providers.'); }
   else if (/fetch failed|ECONNREFUSED|SEER_BRAIN_HTTP_(0|5\d\d)|aborted|timeout/i.test(all)) hints.push('SEER svarar inte eller hann inte. Starta om tjänsterna med: node agents/lib/local-stack.mjs');
   if (localModels.length) hints.push(lite ? `Lokal Ollama-modell upptäcktes (${localModels.slice(0, 3).join(', ')}). JACO försöker använda den i Lite-läge.` : `Lokal modell finns på datorn (${localModels.slice(0, 3).join(', ')}). Välj Ollama under Chattinställningar för att få svar utan moln, långsammare men gratis.`);
-  if (!hints.length) hints.push('Försök igen om en stund. Felorsakerna nedan visar vad som hände.');
+  if (!hints.length) hints.push('Försök igen om en stund. Tekniska felorsaker finns under Svar & källor.');
   return hints;
 }
 
@@ -64,9 +64,6 @@ export function auraStatusReply(failures, observed = {}) {
     '',
     '**Vad du kan göra**',
     ...auraStatusHints(failures, observed).map(h => `- ${h}`),
-    '',
-    '**Vad som föll**',
-    ...failures.map(f => `- ${f}`),
   ].join('\n');
-  return { success: true, degraded: true, reply, text: reply, provider: 'aura', model: 'status', local: true, modelUsed: 'aura/status (ingen modell)', toolReceipts: [] };
+  return { success: true, degraded: true, reply, text: reply, provider: 'aura', model: 'status', local: true, modelUsed: 'aura/status (ingen modell)', failureReasons: failures, toolReceipts: [] };
 }

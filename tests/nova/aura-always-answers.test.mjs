@@ -42,7 +42,8 @@ test('when no model can answer, Aura answers itself, says so, and tells the oper
   assert.match(r.reply, /^Ingen AI-modell kunde svara just nu/);
   assert.match(r.reply, /DeepSeek-kontot är tomt/);
   assert.match(r.reply, /SEER svarar inte/);
-  assert.match(r.reply, /- deepseek\/deepseek-flash: PROVIDER_HTTP_402/);
+  assert.doesNotMatch(r.reply, /PROVIDER_HTTP_402/);
+  assert.match(r.failureReasons.join(' '), /deepseek\/deepseek-flash: PROVIDER_HTTP_402/);
   assert.equal(noModel[0].length, 2);
 });
 
@@ -51,7 +52,7 @@ test('without a chosen provider SEER is asked once; an empty SEER answer still e
   const r = await auraAlwaysAnswers({ choice: null, ask: async () => { calls++; return reply(''); }, status });
   assert.equal(calls, 1);
   assert.equal(r.degraded, true);
-  assert.match(r.reply, /SEER: AURA_EMPTY_REPLY/);
+  assert.match(r.failureReasons.join(' '), /SEER: AURA_EMPTY_REPLY/);
 });
 
 test('status hints: budget with headroom, used-up quota, local models, and a generic hint when nothing matches', () => {
@@ -59,5 +60,5 @@ test('status hints: budget with headroom, used-up quota, local models, and a gen
   assert.ok(hints.some(h => /molnbudget för i dag är slut\. Kvar i dag: 0\.16 USD/.test(h)));
   assert.ok(hints.some(h => /Gratiskvoten/.test(h)));
   assert.ok(hints.some(h => /gemma3:4b-cpu/.test(h)));
-  assert.deepEqual(auraStatusHints(['x: odd']), ['Försök igen om en stund. Felorsakerna nedan visar vad som hände.']);
+  assert.deepEqual(auraStatusHints(['x: odd']), ['Försök igen om en stund. Tekniska felorsaker finns under Svar & källor.']);
 });

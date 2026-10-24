@@ -296,6 +296,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         // Show which tools produced the evidence behind the answer.
         meta: [
           data.degraded ? 'JACO:s statussvar, ingen modell kunde svara' : null,
+          data.degraded && Array.isArray(data.failureReasons) ? data.failureReasons.join(' | ') : null,
           data.fallback ? `${data.fallback.from} kunde inte svara (${String(data.fallback.reason).slice(0, 60)}), svarade via JACO:s standardanslutning` : null,
           data.modelUsed || [data.provider, data.model].filter(Boolean).join('/'),
           `${((performance.now() - started) / 1000).toFixed(1)} s`,
@@ -338,7 +339,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   const runAction = async (action: NonNullable<ChatMessage['action']>) => {
     if (action.code === 'enable-cloud') {
       try {
-        await fetch('/api/aura/budget', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cloudEnabled: true }) }).then(apiJson);
+        await fetch('/api/aura/budget', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ manualAuraCloudEnabled: true }) }).then(apiJson);
         window.dispatchEvent(new Event('jaco:economic:refresh'));
         if (action.retryText) void ask(action.retryText);
       } catch (error: any) {
