@@ -113,3 +113,16 @@ test('Stage clears captured HTML and screenshots on a project switch', () => {
   assert.match(live, /const epoch=\+\+pageEpoch\.current/);
   assert.match(live, /if\(epoch===pageEpoch\.current\) setCapturedPage/);
 });
+
+test('routine reads of HTML and images never replace the material being delivered',()=>{
+ const created=event('created','result','HTML skapad','verified','index.html');
+ const reads=['other.html','photo.png'].map((path,index)=>event('read-'+index,'result','Läser en fil: resultatet är verifierat.','verified',path));
+ assert.equal(auraStageCandidate([created,...reads]).event.id,'created');
+ assert.equal(auraStageCandidate(reads),null);
+ assert.equal(auraStageCandidate([...reads,event('failure','result','Läser en fil: steget misslyckades','failed','other.html')]).event.id,'failure');
+});
+
+test('history orders groups by their latest actual occurrence, including interleaved repeats',()=>{
+ const history=auraStageHistory([event('a1','action','Läs A'),event('b1','action','Läs B'),event('a2','action','Läs A')]);
+ assert.deepEqual(history.map(entry=>[entry.event.id,entry.count]),[['a2',2],['b1',1]]);
+});

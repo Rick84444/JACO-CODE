@@ -311,11 +311,12 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [workspaceView, setWorkspaceView] = useState<CognitiveCanvas>('conversation');
   const [workspacePinned, setWorkspacePinned] = useState(false);
   const [focusedEvent, setFocusedEvent] = useState<CognitiveEvent|null>(null);
+  const [fileReadError,setFileReadError]=useState<{path:string;message:string}|null>(null);
+  const [fileReadRevision,setFileReadRevision]=useState(0);
   const [stageSaveBusy, setStageSaveBusy] = useState(false);
   const [stageSaveNotice, setStageSaveNotice] = useState<string|null>(null);
   const chooseWorkspace = (view:CognitiveCanvas) => {
-    if(view === 'stage') setWorkspacePinned(false);
-    else if(view !== 'conversation') setWorkspacePinned(true);
+    if(view !== 'stage' && view !== 'conversation') setWorkspacePinned(true);
     setWorkspaceView(view);
   };
   const [codeOpened,setCodeOpened]=useState(false);
@@ -514,18 +515,21 @@ export const JacoAuraComputeIDE: React.FC = () => {
   useEffect(() => {
     if (!selectedFile || documents[selectedFile]) return;
     let cancelled = false;
-    fetch(`/api/aura/workbench/file?path=${encodeURIComponent(selectedFile)}`, { cache: 'no-store' })
+    const controller=new AbortController();
+    setFileReadError(null);
+    fetch(`/api/aura/workbench/file?path=${encodeURIComponent(selectedFile)}`, { cache: 'no-store', signal:AbortSignal.any([controller.signal,AbortSignal.timeout(10000)]) })
       .then(json)
       .then(data => {
         if (!cancelled) setDocuments(current => ({ ...current, [selectedFile]: data }));
       })
       .catch(error => {
         if (!cancelled) {
-          setRuntimeError(`Unable to open ${selectedFile}: ${error?.message || String(error)}`);
+          setFileReadError({path:selectedFile,message:String(error?.message||error)});
+
         }
       });
-    return () => { cancelled = true; };
-  }, [selectedFile, documents]);
+    return () => { cancelled = true; controller.abort(); };
+  }, [selectedFile, documents, fileReadRevision, projectKey]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -879,6 +883,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       polling=true;
       try {
         const next:FileResponse=await fetch(`/api/aura/workbench/file?path=${encodeURIComponent(selectedFile)}`,{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(json);
+        if(active)setFileReadError(error=>error?.path===selectedFile?null:error);
         const previous=documentsRef.current[selectedFile];
         if(!active || !previous || previous.hash===next.hash) return;
         const draft=draftsRef.current[selectedFile];
@@ -887,7 +892,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
         setDocuments(current=>({...current,[selectedFile]:next}));
         setDrafts(current=>{if(current[selectedFile]!==previous.content)return current;const copy={...current};delete copy[selectedFile];return copy;});
         setExternalFile(null);
-      } catch(error:any) {if(active)setRuntimeError('Filen kunde inte uppdateras: '+String(error?.message||error));}
+      } catch(error:any) {if(active)setFileReadError({path:selectedFile,message:String(error?.message||error)});}
       finally {polling=false;}
     };
     void observeFile();
@@ -1818,15 +1823,16 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const sideMission = missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
   const sideObservation = sideMission ? stageEvents.filter(event=>event.missionId===sideMission.id).at(-1)?.text ?? null : null;
   const stage = <div className="aura-stage-column">
-    {sideMission&&<MissionCard mission={sideMission as any} observation={sideObservation} onCancel={cancelMission} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/>}
+    {sideMission&&<details className="aura-stage-mission-details"><summary>Uppdrag · {sideMission.goal}</summary><MissionCard mission={sideMission as any} observation={sideObservation} onCancel={cancelMission} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/></details>}
     <AuraLiveStage projectRevision={projectKey} candidate={selectedStage} events={stageEvents} preview={stagePreview}
+    previewError={fileReadError?.path===stagePath?fileReadError.message:null} onRetryPreview={()=>setFileReadRevision(value=>value+1)}
     previewReady={Boolean(stagePreview)} active={status.tone==='active'}
     onInspect={event=>{setSelectedEvidence(event);setWorkspacePinned(true);setWorkspaceView('evidence');}}
     onOpenFile={openFile} htmlSource={stageFile?.content ?? null} htmlDraft={stageDraft}
     onDraftChange={value=>{if(stagePath)updateDraft(stagePath,value);}}
     onSaveDraft={()=>{if(stagePath)void saveStageDraft(stagePath);}} saveBusy={stageSaveBusy} saveNotice={stageSaveNotice}
     cdpReady={snapshot?.integrations?.cdp?.state==='VERIFIED' || snapshot?.integrations?.cdp?.state==='OBSERVED'}
-    pinned={workspacePinned}
+    pinned={workspacePinned} onHoldMaterial={()=>setWorkspacePinned(true)}
     activeMission={missions.find(item=>item.status==='ACTIVE') ? {
       id:missions.find(item=>item.status==='ACTIVE')!.id,
       goal:String(missions.find(item=>item.status==='ACTIVE')!.goal || 'Pågående uppdrag'),
@@ -1850,6 +1856,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       <details className="cognitive-mission-details"><summary>Uppdrag & kontroller</summary>{renderMissionList()}</details></div>}
   </>;
   const detail=<div className="cognitive-detail-wrapper">
+    {fileReadError?.path===selectedFile&&<div role="alert" className="cognitive-operation-notice">Filen kunde inte läsas: {fileReadError.message}<button type="button" onClick={()=>setFileReadRevision(value=>value+1)}>Försök läsa filen igen</button></div>}
     {draftStorageError&&<div role="alert" className="cognitive-operation-notice">{draftStorageError}</div>}
     {draftNotice&&<div role="status" className="cognitive-operation-notice">{draftNotice}</div>}
     {externalFile&&externalFile.path===selectedFile&&<div role="alert" className="cognitive-operation-notice">Filen har ändrats i arbetsytan. Ditt utkast är bevarat.<button type="button" onClick={acceptExternalFile}>Läs senaste filen</button></div>}

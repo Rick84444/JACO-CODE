@@ -78,7 +78,7 @@ export function CognitiveWorkspace(props:Props) {
             <div className="cognitive-canvas-bar">
               <span>{hasDetail ? (views.find(v=>v[0]===props.canvas)?.[2] || 'Arbetsyta') : 'Auras arbete'}</span>
               <div className="cognitive-stage-actions">
-                {hasDetail ? <button type="button" onClick={()=>props.onCanvas('stage')} aria-label="Återgå till Auras arbete">Visa senaste arbetet</button>
+                {hasDetail ? <button type="button" onClick={()=>{if(props.stagePinned)props.onTogglePin();props.onCanvas('stage');}} aria-label="Återgå till Auras arbete">Visa senaste arbetet</button>
                   : <button type="button" onClick={props.onTogglePin} aria-pressed={props.stagePinned} aria-label={props.stagePinned?'Följ nytt arbete':'Fäst visat resultat'} title={props.stagePinned?'Följ Auras arbete':'Behåll detta resultat'}>{props.stagePinned?<><PinOff size={15}/><span>Följ arbetet</span></>:<><Pin size={15}/><span>Fäst resultat</span></>}</button>}
               </div>
             </div>

@@ -54,3 +54,32 @@ Efter att ha genomfört ett verkligt uppdrag räcker följande: **Helhetsbetyg 1
 Aura Live Stage är en separat utvecklingsgren tills den integreras med senaste `main`. CDP-stills är periodiska bilder, inte en videoström; browseraktionen sker via separat kontrollerad verktygsgräns. Nuvarande live-events saknar fullständig projektskopad historik: vid projektbyte döljs äldre stage-händelser tills nya observationer kommer. Sann per-projekt-historik behöver projekt-ID i strömmen. Android på telefon, verklig autonom exekvering och användarbetyg är ännu inte verifierade.
 
 **Definition av färdig för nuvarande GUI-acceptans:** Ett verkligt uppdrag fungerar och kan granskas från Aura på målmaskinen, relevant CI är grön, och operatören ger minst 8/10 utan P0-blockerare. Windows och Android bedöms separat när respektive version kan köras. Ingen extern testpanel krävs.
+
+## PR 13 hardening — 2026-10-24
+
+Verified in the isolated PR worktree, based on `127e72b`:
+
+- Verified routine reads of HTML/images do not replace delivered material.
+  Failed reads still surface as failures. Grouped history follows the latest
+  occurrence, even when repeated steps are interleaved.
+- Switching between mobile conversation and work preserves the material pin.
+  Starting inline HTML editing pins the material; the operator explicitly resumes
+  following new work. No new planner, event store or browser controller is added.
+- Initial file reads are bounded and abort on context change. Missing material
+  shows a retry action instead of an indefinite opening message. File-read errors
+  stay with the file and clear after recovery, without stale global blockers.
+- Mission details and connection/verification details are expandable. Connection
+  uncertainty, current step and required decisions remain visible. This gives the
+  visual result more room on a phone.
+
+Observed checks: TypeScript and client/server production build passed; root suite
+756 passed, 5 skipped; 26 targeted Stage/presence/recovery/refresh tests passed;
+9 workspace rendering tests passed. Chromium exercised the production React client
+in 19 controlled scenarios, including SSE/store recovery, conflicting edits, mobile
+pin retention and missing-file retry. The separate real Chromium/CDP sanitizer
+fixture passed 11 controls, including no unauthorized image/CSS request attempts.
+
+These are controlled browser/store tests, not inference or autonomous completion.
+No physical Android/Windows installation or owner rating was established. Existing
+project-ID gaps in the global event stream, durable visual revision history and
+integration with newer main work remain separate acceptance items. PR stays open.

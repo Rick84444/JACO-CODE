@@ -20,6 +20,8 @@ export function auraStageCandidate(events = []) {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (!event || !event.id || !event.evidence) continue;
+    const routine = /läser en fil|undersöker projektets filer|jaco_preflight|repo-read|read-file/i.test(event.text || '');
+    if (routine && event.evidence.outcome === 'verified' && !event.evidence.commit && !event.evidence.url) continue;
     const material = auraMaterialKind(event);
     if (material) return { event, material };
     if (event.category === 'blocked' || event.evidence.outcome === 'failed' ||
@@ -29,7 +31,6 @@ export function auraStageCandidate(events = []) {
         event.evidence.outcome === 'verified') {
       // Verified test/code/deployment results deserve attention; repetitive
       // repository reads and preflight receipts do not replace visual material.
-      const routine = /läser en fil|undersöker projektets filer|jaco_preflight|repo-read|read-file/i.test(event.text || '');
       if (!routine || event.evidence.commit || event.evidence.url) return { event, material: null };
     }
   }
@@ -43,7 +44,7 @@ export function auraStageHistory(events = [], limit = 7) {
     if (!event?.id || !['action','result','verification','blocked','goal','observation'].includes(event.category)) continue;
     const key = [event.missionId || '',event.category,event.text,event.evidence?.outcome || ''].join('::');
     const previous = grouped.get(key);
-    if (previous) grouped.set(key, {event, count: previous.count + 1});
+    if (previous) { grouped.delete(key); grouped.set(key, {event, count: previous.count + 1}); }
     else grouped.set(key, {event, count: 1});
   }
   return [...grouped.values()].reverse().slice(0, Math.max(1,Math.min(20,limit)));
