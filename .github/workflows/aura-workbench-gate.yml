@@ -211,9 +211,7 @@ jobs:
         run: npm ci --prefix .. --ignore-scripts --omit=optional --no-audit --no-fund
       - name: Workspace readiness and visible decisions
         run: npm run test:workspace-ux && node --test ../tests/nova/workspace-readiness.test.mjs ../tests/nova/agent-network.test.mjs ../tests/nova/workspace-integrations.test.mjs
-      - name: Server bundle
-        run: npm run build:server
-      - name: Client build
-        run: npm run build:client
+      - name: Production build (client before server)
+        run: npm run build
       - name: Production boot and IDE HTTP smoke
         run: node scripts/verify_production_boot.mjs
