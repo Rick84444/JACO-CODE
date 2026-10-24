@@ -173,18 +173,18 @@ test('an abruptly terminated worker process cannot double-execute its external w
   bus.close();
   const moduleUrl = new URL('../../runtime/src/server/connected/durableMissionBus.mjs', import.meta.url).href;
   const script = [
-    \`import { DurableMissionBus } from \${JSON.stringify(moduleUrl)};\`,
+    'import { DurableMissionBus } from ' + JSON.stringify(moduleUrl) + ';',
     "import fs from 'node:fs';",
-    \`const bus = new DurableMissionBus(\${JSON.stringify(root)});\`,
+    'const bus = new DurableMissionBus(' + JSON.stringify(root) + ');',
     "bus.registerWorker('child', ['external.write']);",
     "const mission = bus.createMission({ goal: 'Subprocess crash experiment' });",
     "const ticket = bus.enqueueTicket({ missionId: mission.id, capability: 'external.write', title: 'Single external write' });",
     "const claim = bus.claimNext('child', ['external.write']);",
     "bus.start(ticket.id, 'child', claim.leaseToken);",
-    \`fs.appendFileSync(\${JSON.stringify(path.join(root, 'external-write.log'))}, 'once\\n');\`,
+    'fs.appendFileSync(' + JSON.stringify(path.join(root, 'external-write.log')) + ',' + JSON.stringify('once\n') + ');',
     "bus.db.prepare('UPDATE tickets SET lease_expires_at=? WHERE id=?').run('2000-01-01T00:00:00.000Z', ticket.id);",
     "process.exit(41);"
-  ].join('\\n');
+  ].join('\n');
   const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
     cwd: process.cwd(), encoding: 'utf8', timeout: 15000
   });
@@ -193,5 +193,5 @@ test('an abruptly terminated worker process cannot double-execute its external w
   const [ticket] = restarted.listTickets();
   assert.equal(ticket.status, 'OUTCOME_UNKNOWN');
   assert.equal(restarted.claimNext('another-worker', ['external.write']), null);
-  assert.equal(fs.readFileSync(path.join(root, 'external-write.log'), 'utf8'), 'once\\n');
+  assert.equal(fs.readFileSync(path.join(root, 'external-write.log'), 'utf8'), 'once\n');
 });
