@@ -45,6 +45,16 @@ test('inherited configuration wins and configured listener ports are propagated'
  assert.equal(next.env.NOVA_BRIDGE_URL,next.env.JACO_NOVA_URL);assert.equal(next.env.JACO_ALLOW_PAID_MODELS,'0');
  assert.throws(()=>configuration(c.root,{PORT:'2995',JACO_RUNTIME_DIR:c.root}),/DUPLICATE_LISTENER_PORT/);
 });
+test('a checkout .env does not hide the credentials kept in the state directory',t=>{
+ const c=fixture(t),state=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-state-test-'));
+ t.after(()=>fs.rmSync(state,{recursive:true,force:true}));
+ fs.writeFileSync(path.join(state,'.env'),['JACO_GATEWAY_TOKEN=state-token-with-at-least-24-chars','JACO_WORKPLACE_TOKEN=state-workplace-token-24-chars',''].join('\n'));
+ fs.writeFileSync(path.join(c.root,'.env'),['JACO_HUB_URL=https://hub.example.test','JACO_WORKPLACE_TOKEN=checkout-workplace-token-24-char',''].join('\n'));
+ const next=configuration(c.root,{JACO_RUNTIME_DIR:c.root,JACO_STATE_DIR:state});
+ assert.equal(next.env.GATEWAY_TOKEN,'state-token-with-at-least-24-chars','the token exists only in the state directory');
+ assert.equal(next.env.JACO_HUB_URL,'https://hub.example.test');
+ assert.equal(next.env.JACO_WORKPLACE_TOKEN,'checkout-workplace-token-24-char','the checkout file is more specific than the state directory');
+});
 test('production mode requires both artifacts and sets production environment',t=>{
  const c=fixture(t,{JACO_START_MODE:'production'});
  assert.equal(c.production,true);assert.equal(serviceEnvironment(c,'runtime').NODE_ENV,'production');

@@ -21,13 +21,16 @@ export function runtimeDirectory(root, configured) {
 }
 export function configuration(root = ROOT, inherited = process.env, overrides = {}) {
   root = path.resolve(root);
-  // Credentials may live outside the checkout: JACO_ENV_FILE, then <root>/.env, then <state dir>/.env
-  // (JACO_STATE_DIR, else ~/.jaco). The home fallback only applies when the inherited environment names a home.
+  // Credentials may live outside the checkout. Every file that exists is read, the more specific one winning:
+  // JACO_ENV_FILE, then <root>/.env, then <state dir>/.env (JACO_STATE_DIR, else ~/.jaco; the home fallback only
+  // applies when the inherited environment names a home). Reading only the first file that exists let a
+  // checkout .env holding just the hub pairing hide the gateway token in the state directory.
   const home = inherited.USERPROFILE || inherited.HOME;
   const stateDir = inherited.JACO_STATE_DIR || (home && path.join(home, '.jaco'));
-  const file = [inherited.JACO_ENV_FILE && path.resolve(root, inherited.JACO_ENV_FILE), path.join(root, '.env'), stateDir && path.join(stateDir, '.env')]
-    .find(candidate => candidate && fs.existsSync(candidate));
-  const env = { ...(file ? parse(fs.readFileSync(file)) : {}), ...inherited, ...overrides };
+  const files = [stateDir && path.join(stateDir, '.env'), path.join(root, '.env'), inherited.JACO_ENV_FILE && path.resolve(root, inherited.JACO_ENV_FILE)]
+    .filter(candidate => candidate && fs.existsSync(candidate));
+  const fromFiles = Object.assign({}, ...files.map(file => parse(fs.readFileSync(file))));
+  const env = { ...fromFiles, ...inherited, ...overrides };
   delete env.NODE_TLS_REJECT_UNAUTHORIZED;
   const runtime = runtimeDirectory(root, env.JACO_RUNTIME_DIR);
   const manifest = JSON.parse(fs.readFileSync(path.join(runtime, 'package.json'), 'utf8'));
