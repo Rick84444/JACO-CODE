@@ -61,6 +61,10 @@ jobs:
           node-version: '24.x'
       - name: Install locked test dependencies
         run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      # The contract suite imports runtime modules (including the WhatsApp QR encoder).
+      # Runtime dependencies must be present; root npm ci alone cannot resolve them.
+      - name: Install locked runtime test dependencies
+        run: npm ci --prefix runtime --ignore-scripts --omit=optional --no-audit --no-fund
       - name: Syntax check contract runtime
         run: |
           node --check agents/lib/coding-contract.mjs

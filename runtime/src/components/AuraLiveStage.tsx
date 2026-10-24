@@ -10,9 +10,12 @@ import { CapturedPage, type CapturedPageData } from './CapturedPage';
 type Candidate = { event: CognitiveEvent; material: string | null } | null;
 type Props = {
   candidate: Candidate;
+  projectRevision: number;
   events: CognitiveEvent[];
   preview: React.ReactNode;
   previewReady: boolean;
+  previewError: string | null;
+  onRetryPreview: () => void;
   active: boolean;
   onInspect: (event: CognitiveEvent) => void;
   onOpenFile: (path: string) => void;
@@ -24,6 +27,7 @@ type Props = {
   saveNotice: string | null;
   cdpReady: boolean;
   pinned: boolean;
+  onHoldMaterial: () => void;
   activeMission: {id:string;goal:string;phase:string|null;status:string} | null;
   agentActivity: {connected:number;working:number};
   presence: AuraPresenceView;
@@ -38,7 +42,7 @@ const outcome = (event: CognitiveEvent) => ({
   failed: 'Misslyckades', unknown: 'Okänt utfall',
 }[event.evidence.outcome] || 'Observation');
 
-export function AuraLiveStage({ candidate, events, preview, previewReady, active, onInspect, onOpenFile, htmlSource, htmlDraft, onDraftChange, onSaveDraft, saveBusy, saveNotice, cdpReady, pinned, activeMission, agentActivity, presence }: Props) {
+export function AuraLiveStage({ candidate, projectRevision, events, preview, previewReady, previewError, onRetryPreview, active, onInspect, onOpenFile, htmlSource, htmlDraft, onDraftChange, onSaveDraft, saveBusy, saveNotice, cdpReady, pinned, onHoldMaterial, activeMission, agentActivity, presence }: Props) {
   const [editing,setEditing]=useState(false);
   const [screenshot,setScreenshot]=useState<{src:string;at:string}|null>(null);
   const [captureBusy,setCaptureBusy]=useState(false);
@@ -53,7 +57,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
     setCaptureBusy(false);
     setEditing(false);setScreenshot(null);setCaptureError(null);setImageLoad('loading');
     return ()=>{captureEpoch.current += 1;};
-  },[candidate?.event.id]);
+  },[candidate?.event.id,projectRevision]);
   const captureBrowser=async()=>{
     if(captureBusy || !cdpReady)return false;
     const epoch=++captureEpoch.current;
@@ -81,8 +85,16 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
   // events do not replace material the operator chose to work on.
   const [capturedPage,setCapturedPage]=useState<CapturedPageData|null>(null);
   const [pageBusy,setPageBusy]=useState(false);
+  const pageEpoch=useRef(0);
+  // An in-flight CDP HTML response from another project must never repopulate the stage.
+  useEffect(()=>{
+    pageEpoch.current += 1;
+    setCapturedPage(null);
+    setPageBusy(false);
+  },[projectRevision]);
   const capturePageHtml=async()=>{
     if(pageBusy || !cdpReady)return;
+    const epoch=++pageEpoch.current;
     setPageBusy(true);setCaptureError(null);
     try{
       const reply=await fetch('/api/aura/workbench/mcp/call',{
@@ -94,9 +106,9 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
       try{page=JSON.parse(reply?.result?.content?.[0]?.text||'null');}catch{}
       if(reply?.result?.isError===true || page?.ok!==true)throw Error(page?.error||'CDP_HTML_TOOL_FAILED');
       if(typeof page.html!=='string' || typeof page.url!=='string' || typeof page.sha256!=='string')throw Error('CDP_HTML_MISSING_OR_INVALID');
-      setCapturedPage({url:page.url,title:String(page.title||''),html:page.html,sha256:page.sha256,at:page.at||new Date().toISOString()});
-    }catch(error:any){setCaptureError(String(error?.message||error));}
-    finally{setPageBusy(false);}
+      if(epoch===pageEpoch.current) setCapturedPage({url:page.url,title:String(page.title||''),html:page.html,sha256:page.sha256,at:page.at||new Date().toISOString()});
+    }catch(error:any){if(epoch===pageEpoch.current)setCaptureError(String(error?.message||error));}
+    finally{if(epoch===pageEpoch.current)setPageBusy(false);}
   };
   useEffect(()=>{
     const event=candidate?.event;
@@ -173,7 +185,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
         </span>
       </header>
       {!screenshot && material === 'html' && <div className="aura-live-visual" aria-label="Förhandsvisning av projektfil och arbetskopia">
-        {previewReady ? preview : <div className="aura-live-awaiting"><FileCode2 size={28}/><p>Öppnar den verifierade projektfilen…</p><small>En filhändelse är inte en färdig förhandsvisning förrän innehållet kan läsas.</small></div>}
+        {previewReady ? preview : previewError ? <div className="aura-live-awaiting" role="alert"><CircleAlert size={28}/><h3>Förhandsvisningen kunde inte öppnas</h3><p>{previewError}</p><button type="button" className="aura-live-capture-button" onClick={onRetryPreview}>Försök läsa filen igen</button></div> : <div className="aura-live-awaiting"><FileCode2 size={28}/><p>Öppnar den verifierade projektfilen…</p><small>En filhändelse är inte en färdig förhandsvisning förrän innehållet kan läsas.</small></div>}
         {editing && previewReady && <div className="aura-live-inline-editor" aria-label="Redigerbar HTML-arbetskopia">
           <div className="aura-live-inline-editor-title"><Code2 size={13}/> Lokal HTML-arbetskopia <span>{dirty?'Osparade ändringar':'Oförändrad'}</span></div>
           <textarea aria-label="Redigera HTML-arbetskopia" spellCheck={false} value={htmlDraft ?? ''} onChange={event=>onDraftChange(event.target.value)}/>
@@ -208,7 +220,7 @@ export function AuraLiveStage({ candidate, events, preview, previewReady, active
       {activeMission && <div className="aura-live-mission-strip" aria-label="Pågående agentarbete"><Layers3 size={14}/><span>{activeMission.goal}</span><small>{activeMission.phase || activeMission.status} · {agentActivity.working} arbetsessioner</small></div>}
       <div className="aura-live-context-actions">
         {cdpReady && <button type="button" disabled={captureBusy} onClick={()=>void captureBrowser()}><Camera size={14}/>{captureBusy?'Hämtar…':'Visa CDP-bild'}</button>}
-        {material === 'html' && previewReady && <button type="button" onClick={()=>setEditing(value=>!value)}><Code2 size={14}/>{editing?'Dölj källkod':'Redigera arbetskopia'}</button>}
+        {material === 'html' && previewReady && <button type="button" onClick={()=>{if(!editing)onHoldMaterial();setEditing(value=>!value);}}><Code2 size={14}/>{editing?'Dölj källkod':'Redigera arbetskopia'}</button>}
         {material === 'html' && event.evidence.path && <button type="button" onClick={() => onOpenFile(event.evidence.path!)}><FileCode2 size={14}/> Öppna i kodeditorn</button>}
         {url && <a href={url} rel="noopener noreferrer" target="_blank"><ExternalLink size={14}/> Öppna observerad länk <ArrowUpRight size={12}/></a>}
         <button type="button" onClick={() => onInspect(event)}><ShieldCheck size={14}/> Granska belägg</button>

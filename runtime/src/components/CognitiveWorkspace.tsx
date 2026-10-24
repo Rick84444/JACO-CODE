@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { MessageSquare, Code2, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone, MoreHorizontal, Bot, Pin, PinOff } from 'lucide-react';
 import { JacoWordmark } from './JacoWordmark';
 import { CostChip } from './CostChip';
@@ -14,11 +14,27 @@ interface Props {
   lastObservedAt:string|null;error:string|null;
   attention?:React.ReactNode;
 }
-const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['connections',PlugZap,'Anslutningar'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Arbete'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
+const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['connections',PlugZap,'Anslutningar'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
 const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter'],['revenue',CircleDollarSign,'Budget & ekonomi']] as const;
 
 export function CognitiveWorkspace(props:Props) {
   const menu = useRef<HTMLDialogElement>(null);
+  // Desktop shortcuts are intentionally inactive while composing chat, editing
+  // code or using another control. No agent authority is changed by navigation.
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !event.ctrlKey && !event.metaKey || event.altKey || !event.shiftKey || event.repeat) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"], .monaco-editor, dialog[open]'))) return;
+      const views: Record<string, CognitiveCanvas> = { Digit1: 'stage', Digit2: 'code', Digit3: 'preview', Digit4: 'evidence' };
+      const view = views[event.code];
+      if (!view) return;
+      event.preventDefault();
+      props.onCanvas(view);
+    };
+    window.addEventListener('keydown', onShortcut);
+    return () => window.removeEventListener('keydown', onShortcut);
+  }, [props.onCanvas]);
   const navigate = (view:CognitiveCanvas) => { props.onCloseSidebar(); props.onCanvas(view); menu.current?.close(); };
   const openPanel = (view:Sidebar) => { props.onSidebar(view); menu.current?.close(); };
   const hasDetail=props.canvas!=='conversation' && props.canvas!=='stage';
@@ -45,6 +61,10 @@ export function CognitiveWorkspace(props:Props) {
       <div className="cognitive-working-area">
         <div className="cognitive-contextbar">
           <div className="cognitive-status" data-tone={props.status.tone} role="status"><span/>{props.status.label}</div>
+          <nav className="cognitive-stage-switcher" aria-label="Arbetsyta">
+            {([['stage', Eye, 'Arbete'], ['code', Code2, 'Kod'], ['preview', Eye, 'Förhandsvisa'], ['evidence', ShieldCheck, 'Belägg']] as const).map(([view, Icon, label]) =>
+              <button key={view} type="button" title={label+' · Ctrl/Cmd+Shift+'+({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view]} aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{label}</span></button>)}
+          </nav>
           <button type="button" className="cognitive-mobile-focus" onClick={()=>props.onCanvas(showStage?'conversation':'stage')}>
             {showStage ? <MessageSquare size={15}/> : <Eye size={15}/>}
             {showStage ? 'Visa samtalet' : 'Visa Auras arbete'}
@@ -56,10 +76,10 @@ export function CognitiveWorkspace(props:Props) {
           <section className="cognitive-conversation" aria-label="Aura-konversation">{props.conversation}</section>
           <aside className="cognitive-canvas" aria-label="Aura Live Workspace">
             <div className="cognitive-canvas-bar">
-              <span>{hasDetail ? (views.find(v=>v[0]===props.canvas)?.[2] || 'Arbetsyta') : 'Aura Live Workspace'}</span>
+              <span>{hasDetail ? (views.find(v=>v[0]===props.canvas)?.[2] || 'Arbetsyta') : 'Auras arbete'}</span>
               <div className="cognitive-stage-actions">
-                {hasDetail ? <button type="button" onClick={()=>props.onCanvas('stage')} aria-label="Återgå till Auras arbete">Visa senaste arbetet</button>
-                  : <button type="button" onClick={props.onTogglePin} aria-pressed={props.stagePinned} aria-label={props.stagePinned?'Släpp fäst material':'Fäst visat material'} title={props.stagePinned?'Följ Auras arbete':'Behåll detta material'}>{props.stagePinned?<PinOff size={15}/>:<Pin size={15}/>}</button>}
+                {hasDetail ? <button type="button" onClick={()=>{if(props.stagePinned)props.onTogglePin();props.onCanvas('stage');}} aria-label="Återgå till Auras arbete">Visa senaste arbetet</button>
+                  : <button type="button" onClick={props.onTogglePin} aria-pressed={props.stagePinned} aria-label={props.stagePinned?'Följ nytt arbete':'Fäst visat resultat'} title={props.stagePinned?'Följ Auras arbete':'Behåll detta resultat'}>{props.stagePinned?<><PinOff size={15}/><span>Följ arbetet</span></>:<><Pin size={15}/><span>Fäst resultat</span></>}</button>}
               </div>
             </div>
             <div className="cognitive-canvas-content">{hasDetail?props.detail:props.stage}</div>
@@ -76,7 +96,7 @@ export function CognitiveWorkspace(props:Props) {
       </>}
     </div>
     <nav className="cognitive-mobile-nav" aria-label="Mobilnavigation">
-      {([['conversation', MessageSquare, 'Samtal'], ['agents', Bot, 'Agenter'], ['evidence', ShieldCheck, 'Arbete']] as const).map(([id, Icon, label]) =>
+      {([['conversation', MessageSquare, 'Samtal'], ['stage', Eye, 'Arbete'], ['agents', Bot, 'Agenter']] as const).map(([id, Icon, label]) =>
         <button key={id} type="button" aria-pressed={!props.sidePanelOpen && props.canvas===id} onClick={()=>navigate(id)}><Icon size={21}/><span>{label}</span></button>)}
       <button type="button" aria-pressed={props.sidePanelOpen && props.sidebar==='explorer'} onClick={()=>openPanel('explorer')}><Folder size={21}/><span>Filer</span></button>
       <button type="button" aria-label="Fler funktioner" onClick={()=>menu.current?.showModal()}><MoreHorizontal size={21}/><span>Mer</span></button>
@@ -86,7 +106,7 @@ export function CognitiveWorkspace(props:Props) {
         <header><h2 id="mobile-menu-title">Din arbetsyta</h2><button type="button" aria-label="Stäng menyn" onClick={()=>menu.current?.close()}><X size={21}/></button></header>
         <p>Modeller, verktyg och projektinställningar</p>
         <div className="cognitive-mobile-menu-grid">
-          {views.filter(([id])=>!['conversation','agents','evidence'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>navigate(id)}><Icon size={20}/>{label}</button>)}
+          {views.filter(([id])=>!['conversation','agents'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>navigate(id)}><Icon size={20}/>{label}</button>)}
           {tools.filter(([id])=>['source-control','devices','revenue'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>openPanel(id)}><Icon size={20}/>{label}</button>)}
           <button type="button" onClick={()=>{menu.current?.close();props.onApprovals();}}><ShieldCheck size={20}/>Beslut{props.approvalCount>0 ? ` (${props.approvalCount})` : ''}</button>
           <button type="button" onClick={()=>{menu.current?.close();props.onCommands();}}><Search size={20}/>Sök funktion</button>

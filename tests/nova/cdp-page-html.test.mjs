@@ -68,3 +68,26 @@ test('the runtime allows nova_html and keeps only its origin, size and digest in
   const stage = fs.readFileSync(new URL('../../runtime/src/components/CapturedPage.tsx', import.meta.url), 'utf8');
   assert.match(stage, /sandbox=""/); assert.match(stage, /sanitizeAuraStageHtml/);
 });
+
+// Regressions for PR #13 review: URLs and element values that carried tokens past the cleaner and the gate.
+test('the bridge refuses markup whose links, images, styles or element values still carry query strings or values', async () => {
+  for (const html of ['<a href="https://shop.example/reset?token=abc">x</a>', '<img src="https://cdn.example/x.png?sig=SECRET">',
+    '<form action="/login?next=/admin#t">', '<img srcset="https://cdn.example/a.png?s=1 1x, https://cdn.example/b.png 2x">',
+    '<div style="background:url(https://cdn.example/bg.png?sig=1)">', '<style>.h{background:url("/bg.png#t")}</style>', '<style>.a{fill:url(#g?x)}</style>', '<div style="background:url(&quot;/bg.png?k=1&quot;)">',
+    '<link rel="stylesheet" href="https://cdn.example/a.css?session=1">']) {
+    assert.equal(uncleanHtmlReason(html), 'url-query', html);
+    const r = await htmlSession(session('https://shop.example/p', page(html)), { isAllowed: allowOnly('https://shop.example') });
+    assert.deepEqual(r, { ok: false, error: 'HTML_NOT_CLEAN:url-query' }, html);
+  }
+  assert.equal(uncleanHtmlReason('<button value="secret">x</button>'), 'form-value');
+  assert.equal(uncleanHtmlReason('<li value="3">x</li>'), 'form-value');
+  for (const html of ['<a href="#section">x</a>', '<a href="https://shop.example/p/item">x</a>', '<img src="data:image/png;base64,iVBORw0KGgo=">',
+    '<div style="color:red">x</div>', '<style>.a{fill:url("#paint0_linear")}</style>', '<div style="filter:url(#shadow)">x</div>', '<rect style="fill:url(&quot;#paint0_linear&quot;)"></rect>', '<style>.h{background:url("https://cdn.example/bg.png")}</style>', '<p>See url(x?y) or a?b=c in text</p>'])
+    assert.equal(uncleanHtmlReason(html), null, html);
+});
+
+test('the in-page cleaner strips URL queries and fragments, redacts opaque path segments and removes every value attribute', () => {
+  for (const part of ["u.origin + u.pathname", "opaque.test(s) ? 'redacted'", "'srcset'", "cssUrls(a.value)", "if (n === 'value') { e.removeAttribute('value')"])
+    assert.ok(HTML_CLEANER.includes(part), part);
+  assert.doesNotThrow(() => new Function('return ' + HTML_CLEANER.replace(/\(\)\s*$/, '')), 'the cleaner source parses as JavaScript');
+});

@@ -25,19 +25,20 @@ export function AuraPresence({data}:{data:AuraPresenceView}) {
           <span>{data.connectionLabel}</span>
         </div>
       </div>
-      <div className="aura-presence-signals" aria-label="Kopplingar">
+
+    </div>
+    <div className="aura-presence-bottom">
+
+      <span className="aura-presence-step"><Activity size={13}/>{data.step || data.detail}</span>
+      {data.step && <span className="aura-presence-time"><Clock3 size={12}/>{ageLabel(data.stepAge)}</span>}
+      {data.approvals>0 && <span className="aura-presence-warning"><CircleAlert size={12}/>{data.approvals} beslut</span>}
+    </div>
+    <details className="aura-presence-details"><summary>Anslutningar och verifiering</summary><div className="aura-presence-bottom"><span className="aura-presence-phase">{data.phaseLabel}</span>      {data.maxSteps!==null && data.stepCount!==null && <span className="aura-presence-number">Steg {data.stepCount}/{data.maxSteps}</span>}
+      {data.verified!==null && <span className="aura-presence-number"><CheckCheck size={12}/>{data.verified} verifierade steg</span>}
+</div>      <div className="aura-presence-signals" aria-label="Kopplingar">
         <span title="Verifierad modellidentitet från senast hämtade statusrapport"><PlugZap size={12}/>{data.modelLabel}</span>
         <span><Bot size={12}/>{data.connectedAgents} agenter · {data.workingSessions} sessioner</span>
         <span><Globe2 size={12}/>{data.cdpLabel}</span>
-      </div>
-    </div>
-    <div className="aura-presence-bottom">
-      <span className="aura-presence-phase"><Layers3 size={13}/>{data.phaseLabel}</span>
-      <span className="aura-presence-step"><Activity size={13}/>{data.step || data.detail}</span>
-      {data.step && <span className="aura-presence-time"><Clock3 size={12}/>{ageLabel(data.stepAge)}</span>}
-      {data.maxSteps!==null && data.stepCount!==null && <span className="aura-presence-number">Steg {data.stepCount}/{data.maxSteps}</span>}
-      {data.verified!==null && <span className="aura-presence-number"><CheckCheck size={12}/>{data.verified} verifierade steg</span>}
-      {data.approvals>0 && <span className="aura-presence-warning"><CircleAlert size={12}/>{data.approvals} beslut</span>}
-    </div>
+      </div></details>
   </section>;
 }

@@ -32,6 +32,6 @@ export const CapturedPage: React.FC<{ page: CapturedPageData; onClose: () => voi
       ? <iframe className="aura-captured-frame" title={'Förhandsvisning: ' + (page.title || page.url)} sandbox="" srcDoc={rendered.html} />
       : <p role="alert" className="aura-live-capture-error">Sidan kunde inte visas säkert: {rendered.error}</p>}
     {editing && <textarea className="aura-captured-editor" aria-label="Redigera arbetskopians HTML" spellCheck={false} value={draft} onChange={event => setDraft(event.target.value)} />}
-    <small>Rensad kopia av sidan: utan skript, formulärvärden, dolda fält och tokens. Ändringar påverkar bara den här kopian. Källa: {page.url} · sha256 {page.sha256.slice(0, 12)}</small>
+    <small>Rensad kopia av sidan: utan skript, formulärvärden, dolda fält, token-metadata och URL-parametrar. Synlig text på sidan följer med. Ändringar påverkar bara den här kopian. Källa: {page.url} · sha256 {page.sha256.slice(0, 12)}</small>
   </div>;
 };

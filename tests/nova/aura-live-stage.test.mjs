@@ -61,7 +61,7 @@ test('One stage is mounted by canonical IDE without permanent tool tabs or a sec
   assert.doesNotMatch(ui,/className="cognitive-view-tabs"/);
   assert.equal((ide.match(/<AuraChatPanel/g)||[]).length,1);
   assert.match(ide,/workspacePinned \|\| !candidate/);
-  assert.match(ide,/auraStageCandidate\(cognitiveEvents\)/);
+  assert.match(ide,/auraStageCandidate\(stageEvents\)/);
   assert.match(stage,/auraStageHistory\(events\)/);
   assert.match(stage,/onDraftChange/);
   assert.match(ide,/expectedHash:source\.hash/);
@@ -84,4 +84,45 @@ test('CDP screenshots use only existing authorized read tool and remain bounded'
   const preview=fs.readFileSync(new URL('../../runtime/src/components/CognitivePreview.tsx',import.meta.url),'utf8');
   assert.match(preview,/strict\?'':'allow-scripts'/);
   assert.match(preview,/strict\?'&#39;none&#39;':'&#39;unsafe-inline&#39;'/);
+});
+
+test('Live Stage is one-click discoverable, with touch-first work navigation', () => {
+  const read = path => fs.readFileSync(new URL('../../runtime/src/'+path, import.meta.url), 'utf8');
+  const ui = read('components/CognitiveWorkspace.tsx');
+  const css = read('cognitive-workspace.css');
+  assert.match(ui, /aria-label="Arbetsyta"/);
+  assert.match(ui, /\['stage', Eye, 'Arbete'\]/);
+  assert.match(ui, /\['evidence', ShieldCheck, 'Belägg'\]/);
+  assert.match(ui, /\['code', Code2, 'Kod'\]/);
+  assert.match(ui, /\['preview', Eye, 'Förhandsvisa'\]/);
+  assert.match(ui, /aria-pressed=\{props\.canvas===view/);
+  assert.match(ui, /\['stage', Eye, 'Arbete'\], \['agents', Bot, 'Agenter'\]/);
+  assert.match(ui, /views\.filter\(\(\[id\]\)=>!\['conversation','agents'\]\.includes\(id\)\)/);
+  assert.match(css, /\.cognitive-stage-switcher button\[aria-pressed=true\]/);
+  assert.match(css, /@media\(max-width:767px\)\{\s*\.cognitive-stage-switcher\{display:none\}/);
+});
+
+test('Stage clears captured HTML and screenshots on a project switch', () => {
+  const ide = fs.readFileSync(new URL('../../runtime/src/components/JacoAuraComputeIDE.tsx', import.meta.url), 'utf8');
+  assert.match(ide, /<AuraLiveStage projectRevision=\{projectKey\}/);
+  const live = fs.readFileSync(new URL('../../runtime/src/components/AuraLiveStage.tsx', import.meta.url), 'utf8');
+  assert.match(live, /return \(\)=>\{captureEpoch\.current \+= 1;\}/);
+  assert.match(live, /const \[capturedPage,setCapturedPage\]=useState/);
+  assert.match(live, /setCapturedPage\(null\)/);
+  assert.match(live, /pageEpoch\.current \+= 1/);
+  assert.match(live, /const epoch=\+\+pageEpoch\.current/);
+  assert.match(live, /if\(epoch===pageEpoch\.current\) setCapturedPage/);
+});
+
+test('routine reads of HTML and images never replace the material being delivered',()=>{
+ const created=event('created','result','HTML skapad','verified','index.html');
+ const reads=['other.html','photo.png'].map((path,index)=>event('read-'+index,'result','Läser en fil: resultatet är verifierat.','verified',path));
+ assert.equal(auraStageCandidate([created,...reads]).event.id,'created');
+ assert.equal(auraStageCandidate(reads),null);
+ assert.equal(auraStageCandidate([...reads,event('failure','result','Läser en fil: steget misslyckades','failed','other.html')]).event.id,'failure');
+});
+
+test('history orders groups by their latest actual occurrence, including interleaved repeats',()=>{
+ const history=auraStageHistory([event('a1','action','Läs A'),event('b1','action','Läs B'),event('a2','action','Läs A')]);
+ assert.deepEqual(history.map(entry=>[entry.event.id,entry.count]),[['a2',2],['b1',1]]);
 });
