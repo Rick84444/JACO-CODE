@@ -32,11 +32,11 @@ test('planner fallback when disabled or missing key makes no cloud request', asy
   }
 });
 
-test('planner permission does not authorize general inference or another cloud provider', async () => {
+test('JACO_ALLOW_PAID_MODELS=0 stops every cloud provider, planner or not', async () => {
   for (const [p, purpose] of [[provider, 'inference'], [{ ...provider, name: 'qwen' }, 'planner']]) {
     const failures = [];
     assert.equal(await invokeSeerProvider(p, args, {
-      env: { JACO_CLOUD_PLANNER: '1', DEEPSEEK_API_KEY: 'test-only' }, purpose,
+      env: { JACO_CLOUD_PLANNER: '1', JACO_ALLOW_PAID_MODELS: '0', DEEPSEEK_API_KEY: 'test-only' }, purpose,
       fetchFn: () => assert.fail('paid inference forbidden'), onFailure: f => failures.push(f),
     }), null);
     assert.equal(failures[0].code, 'PAID_PROVIDER_DISABLED');

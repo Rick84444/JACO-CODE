@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { discoverSeerLocalProvider, applySeerLocalProvider, invokeSeerProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt } from '../src/seer-model-provider.mjs';
+import { discoverSeerLocalProvider, applySeerLocalProvider, invokeSeerProvider, fetchRegisteredProviders, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt } from '../src/seer-model-provider.mjs';
 
 test('env-selected Ollama cloud model is validated through metadata without local weights', async () => {
   const calls = [];
@@ -211,4 +211,40 @@ test('8192 local context preserves Aura output capacity while bounding prompt', 
   assert.equal(budget.maxTokens, 1400);
   assert.ok(budget.system.length + budget.user.length <= budget.inputCharBudget + 64);
   assert.match(budget.user, /LATEST$/);
+});
+
+test('the cloud providers are the ones the runtime lists, not a built-in set', async () => {
+  const seen = [];
+  const providers = await fetchRegisteredProviders({
+    env: { JACO_RUNTIME_URL: 'http://127.0.0.1:3999/', JACO_GATEWAY_TOKEN: 'test-token' }, ttlMs: 0,
+    fetchFn: async (url, init) => {
+      seen.push({ url, token: init.headers['x-gateway-token'] });
+      return { ok: true, json: async () => ({ success: true, providers: [
+        { name: 'acme', url: 'https://llm.acme.test/v1/chat/completions', envKey: 'ACME_API_KEY', model: 'acme-1', local: false },
+        { name: 'broken', url: 'https://x.test/v1/chat/completions' },
+        { name: 'home', url: 'http://127.0.0.1:1234/v1/chat/completions', envKey: null, model: 'local-model', local: true },
+      ] }) };
+    },
+  });
+  assert.deepEqual(seen, [{ url: 'http://127.0.0.1:3999/api/connected/nova/planner-providers', token: 'test-token' }]);
+  assert.deepEqual(providers.map(p => [p.name, p.model, p.local]), [['acme', 'acme-1', false], ['home', 'local-model', true]]);
+});
+
+test('a runtime that does not answer yields no providers instead of an error', async () => {
+  assert.deepEqual(await fetchRegisteredProviders({ env: {}, ttlMs: 0, fetchFn: async () => { throw new Error('ECONNREFUSED'); } }), []);
+  assert.deepEqual(await fetchRegisteredProviders({ env: {}, ttlMs: 0, fetchFn: async () => ({ ok: false, status: 401 }) }), []);
+});
+
+test('a connected cloud provider runs unless paid models are switched off, and its key can come from the secret store', async () => {
+  const provider = { name: 'acme', url: 'https://llm.acme.test/v1/chat/completions', envKey: 'ACME_API_KEY', model: 'acme-1', local: false };
+  const reply = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'hej' }, finish_reason: 'stop' }] }) });
+  const off = [];
+  assert.equal(await invokeSeerProvider(provider, { system: 's', user: 'u' }, { env: { JACO_ALLOW_PAID_MODELS: '0', ACME_API_KEY: 'k' }, fetchFn: reply, onFailure: f => off.push(f.code) }), null);
+  assert.deepEqual(off, ['PAID_PROVIDER_DISABLED']);
+  const missing = [];
+  assert.equal(await invokeSeerProvider(provider, { system: 's', user: 'u' }, { env: { JACO_STATE_DIR: '/nonexistent-jaco-state' }, fetchFn: reply, onFailure: f => missing.push(f.code) }), null);
+  assert.deepEqual(missing, ['PROVIDER_KEY_MISSING']);
+  const result = await invokeSeerProvider(provider, { system: 's', user: 'u' }, { env: { ACME_API_KEY: 'k' }, fetchFn: reply });
+  assert.equal(result.text, 'hej');
+  assert.equal(result.local, false);
 });

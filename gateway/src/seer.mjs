@@ -18,7 +18,7 @@ import { buildSelfDevelopmentGraph } from './seer-self-development.mjs';
 import { createAutonomyLoop, shouldAutoConfirmNova } from './seer-autonomy-loop.mjs';
 import { createDevelopmentCycle, chooseGovernorFocus, governorBaseline } from './seer-development-cycle.mjs';
 import { createExperienceStore } from './seer-experience-store.mjs';
-import { discoverSeerLocalProvider, invokeSeerProvider, callSeerGovernorProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt } from './seer-model-provider.mjs';
+import { discoverSeerLocalProvider, fetchRegisteredProviders, invokeSeerProvider, callSeerGovernorProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt } from './seer-model-provider.mjs';
 import { createA2AColonyRevenueSync } from './a2acolony-revenue-sync.mjs';
 import { normalizeProjectRoot, projectNodeContract, projectGraphPolicy, projectGoalGraph, projectGoalDone } from './seer-project.mjs';
 
@@ -393,8 +393,7 @@ const agentRegistry = {
 // ── LLM bridge ────────────────────────────────────────────────────────────────
 // seer-start.mjs selects one verified local provider and exposes it through the
 // JACO_SEER_LOCAL_* contract. Direct seer.mjs launches keep backward-compatible
-// Ollama behavior for tests/advanced operators. Paid providers remain disabled
-// unless JACO_ALLOW_PAID_MODELS=1.
+// Ollama behavior for tests/advanced operators.
 const legacyOllamaRoot = String(process.env.OLLAMA_BASE_URL || 'http://localhost:11434')
   .replace(/\/+$/, '')
   .replace(/\/v1$/i, '');
@@ -427,34 +426,9 @@ let localProviderDiscovery = {
   lastReason: localLlmProvider ? null : 'bootstrap-no-provider',
 };
 
-const PAID_LLM_PROVIDERS = [
-  // Free tier first: tried before any metered provider when the local model fails.
-  {
-    name: 'groq',
-    url: 'https://api.groq.com/openai/v1/chat/completions',
-    envKey: 'GROQ_API_KEY',
-    model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
-    free: true,
-  },
-  {
-    name: 'deepseek',
-    url: 'https://api.deepseek.com/v1/chat/completions',
-    envKey: 'DEEPSEEK_API_KEY',
-    model: process.env.DEEPSEEK_MODEL || 'deepseek-flash',
-  },
-  {
-    name: 'qwen',
-    url: process.env.QWEN_BASE_URL ? `${process.env.QWEN_BASE_URL.replace(/\/$/, '')}/chat/completions` : 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
-    envKey: 'QWEN_API_KEY',
-    model: process.env.QWEN_MODEL || 'qwen-max',
-  },
-  {
-    name: 'gemini',
-    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    envKey: 'GEMINI_API_KEY',
-    model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
-  },
-];
+// Cloud providers are the ones the operator connected in the IDE: the runtime's provider registry, not a list
+// kept here (seer-model-provider.mjs fetchRegisteredProviders).
+const registeredProviders = () => fetchRegisteredProviders();
 
 function providerFromDiscovery(provider) {
   if (!provider) return null;
@@ -547,13 +521,14 @@ async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0
     };
   }
 
-  const configuredFallbacks = new Set(String(process.env.JACO_SEER_CLOUD_FALLBACKS || '').split(',').map(value => value.trim()).filter(Boolean));
-  // The operator's primary provider (JACO_PRIMARY_PROVIDER, the same switch Nova and the governor use)
-  // is tried before the free tier when it is an allowed fallback (operator 2026-10-08: run on DeepSeek).
+  // The operator's primary provider (JACO_PRIMARY_PROVIDER, the same switch Nova and the governor use) is tried
+  // first, then the other connected providers in the order the runtime lists them (cloud before local). The
+  // local model that already failed above is not asked again.
   const primary = String(process.env.JACO_PRIMARY_PROVIDER || '');
-  const ordered = [...PAID_LLM_PROVIDERS].sort((a, b) => Number(b.name === primary && configuredFallbacks.has(b.name)) - Number(a.name === primary && configuredFallbacks.has(a.name)));
-  for (const provider of ordered) {
-    if (!provider.free && !configuredFallbacks.has(provider.name)) continue;
+  const connected = (await registeredProviders())
+    .filter(provider => provider.url !== attemptedLocal?.url && provider.url !== localLlmProvider?.url)
+    .sort((a, b) => Number(b.name === primary) - Number(a.name === primary));
+  for (const provider of connected) {
     result = await invokeProvider(provider, args, failures);
     if (result) return result;
   }
@@ -564,7 +539,7 @@ async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0
 // cloud planning and the paid-model gate are enabled.
 async function callGovernorLLM({ system, user, image, max_tokens = 2048, temperature = 0.2 }) {
   return callSeerGovernorProvider({ system, user, image, max_tokens, temperature }, {
-    providers: PAID_LLM_PROVIDERS, fallback: callLLM,
+    providers: registeredProviders, fallback: callLLM,
     onFailure: failure => emit('provider.failed', failure),
     onUsed: provider => emit('governor.provider_used', provider),
   });
@@ -1193,7 +1168,7 @@ server.listen(PORT, '127.0.0.1', () => {
       tools: ['strategy', 'strategic-board', 'self-development', 'mission-graphs', 'missions', 'memory', 'active-memory', 'knowledge', 'capabilities', 'skills', 'observations', 'experiences', 'brain', 'dispatch'],
       constraints: [
         'Evidence before claim',
-        'Paid model providers stay disabled unless JACO_ALLOW_PAID_MODELS=1',
+        'Cloud model providers are the ones the operator connected; JACO_ALLOW_PAID_MODELS=0 turns paid models off',
         'Financial execution requires ModelRelay signed mandate; SEER cannot self-authorize spend',
         'Dispatch proposes candidates; it does not execute tasks',
         'Nova durable mission store remains authoritative for execution',

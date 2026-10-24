@@ -200,6 +200,23 @@ export function createWorkplaceAgentSupervisor({
     throw new Error('LOCAL_MODEL_PROVIDER_UNAVAILABLE');
   }
 
+  // A model the operator connected in the IDE counts as a brain: the runtime lists only providers that answer now,
+  // each with a model it really serves. Without this check a machine with no local model never got past
+  // WAITING_MODEL even though its connected cloud provider was ready.
+  async function detectConnectedProvider() {
+    try {
+      const token = normalizeToken(env);
+      const response = await fetchImpl(`${runtimeUrl}/api/connected/nova/planner-providers`, {
+        headers: token ? { 'x-gateway-token': token } : {}, signal: AbortSignal.timeout(20_000),
+      });
+      const data = response?.ok ? await response.json() : null;
+      const first = Array.isArray(data?.providers) ? data.providers.find(p => p?.name && p?.model) : null;
+      return first ? { id: String(first.name), url: String(first.url || '') } : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function ensureModel(waitMs) {
     const existing = await detectProvider();
     if (existing) {
@@ -207,6 +224,14 @@ export function createWorkplaceAgentSupervisor({
       modelState = 'READY';
       if (!modelChild) modelOwnership = 'external';
       return existing;
+    }
+
+    const connected = await detectConnectedProvider();
+    if (connected) {
+      modelProvider = connected.id;
+      modelState = 'READY';
+      if (!modelChild) modelOwnership = 'registry';
+      return connected;
     }
 
     const preference = String(env.JACO_SEER_PROVIDER_PREFERENCE || 'auto').trim().toLowerCase();

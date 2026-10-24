@@ -337,3 +337,50 @@ test('Nova cannot start when SEER health is up but real brain inference fails', 
 
   await supervisor.stop();
 });
+
+test('a connected cloud provider is enough: no local model is started or awaited', async()=>{
+  let pid=7100;
+  const spawns=[];
+  const supervisor=createWorkplaceAgentSupervisor({
+    root:'/repo',
+    env:{
+      JACO_WORKPLACE_SUPERVISE_MODEL:'1',
+      JACO_WORKPLACE_SUPERVISE_SEER:'1',
+      JACO_WORKPLACE_SUPERVISE_NOVA:'1',
+      JACO_GATEWAY_TOKEN:'local-token-12345678901234567890',
+      JACO_RUNTIME_URL:'http://127.0.0.1:3000',
+      SEER_URL:'http://127.0.0.1:2997',
+    },
+    spawnImpl:(cmd,args,opts)=>{
+      const child=fakeChild(++pid);
+      spawns.push({cmd,args,opts,child});
+      queueMicrotask(()=>child.emit('spawn'));
+      return child;
+    },
+    fetchImpl:async (url,init)=>{
+      const u=String(url);
+      if(u.endsWith('/api/runtime/identity')) return jsonResponse({});
+      if(u.endsWith('/api/connected/nova/planner-providers')){
+        assert.equal(init.headers['x-gateway-token'],'local-token-12345678901234567890');
+        return jsonResponse({success:true,providers:[{name:'acme',url:'https://llm.acme.test/v1/chat/completions',model:'acme-1',local:false}]});
+      }
+      if(u.endsWith(':2997/health')) return jsonResponse({ok:true});
+      if(u.endsWith(':2997/cortex/brain')) return jsonResponse({ok:true,text:'ready',provider:'acme',model:'acme-1',local:false});
+      return jsonResponse({},false,503);
+    },
+    log:()=>{},error:()=>{},
+    restartDelayMs:5,
+  });
+
+  await supervisor.start('http://127.0.0.1:2995');
+  await new Promise(r=>setTimeout(r,35));
+
+  assert.equal(spawns.length,1);
+  assert.deepEqual(spawns[0].args,['agents/hands-off-agent.mjs']);
+  const state=supervisor.snapshot();
+  assert.equal(state.model.ownership,'registry');
+  assert.equal(state.model.provider,'acme');
+  assert.equal(state.nova.state,'RUNNING');
+
+  await supervisor.stop();
+});

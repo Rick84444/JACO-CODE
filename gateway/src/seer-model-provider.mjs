@@ -4,8 +4,9 @@
 //   - LiteRT-LM (typically Android/Termux) is preferred when a healthy local
 //     OpenAI-compatible server is available.
 //   - Ollama is the deterministic desktop/local fallback.
-//   - Paid providers are not enabled here; seer.mjs still requires the
-//     existing explicit JACO_ALLOW_PAID_MODELS=1 gate.
+//   - Cloud providers are the ones the operator connected in the IDE (the runtime's provider registry,
+//     fetchRegisteredProviders below), never a list kept here. Like the rest of JACO they run unless
+//     JACO_ALLOW_PAID_MODELS=0 turns paid models off.
 //
 // Environment:
 //   JACO_SEER_PROVIDER_PREFERENCE=auto|llamacpp|litert|ollama|off
@@ -16,7 +17,34 @@
 //   OLLAMA_BASE_URL=http://127.0.0.1:11434
 //   OLLAMA_MODEL=<installed model> (JACO_OLLAMA_MODEL is accepted as alias)
 
+import { credential } from '../../agents/lib/secret-store.mjs';
+
 const trimSlash = value => String(value || '').replace(/\/+$/, '');
+
+// Same switch as the runtime and Nova: paid models run when a key is configured, unless set to 0.
+export const paidModelsAllowed = (env = process.env) => env.JACO_ALLOW_PAID_MODELS !== '0';
+
+// The providers the operator connected, as the runtime lists them (GET /api/connected/nova/planner-providers:
+// only providers that answer now, each with a model it really serves, cloud before local). Cached briefly so a
+// failing local model does not cost a registry probe per request.
+let registeredCache = { at: 0, providers: [] };
+export async function fetchRegisteredProviders({ env = process.env, fetchFn = globalThis.fetch, ttlMs = 30_000, now = Date.now() } = {}) {
+  if (now - registeredCache.at < ttlMs) return registeredCache.providers;
+  const token = env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '';
+  const base = trimSlash(env.JACO_RUNTIME_URL || `http://127.0.0.1:${env.PORT || 3000}`);
+  try {
+    const response = await fetchFn(`${base}/api/connected/nova/planner-providers`, {
+      headers: token ? { 'x-gateway-token': token } : {}, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    const providers = (Array.isArray(data?.providers) ? data.providers : [])
+      .filter(p => p && p.name && p.url && p.model)
+      .map(p => ({ name: String(p.name), url: String(p.url), envKey: p.envKey || null, model: String(p.model), local: p.local === true, source: 'registry' }));
+    registeredCache = { at: now, providers };
+    return providers;
+  } catch { return []; }
+}
 
 
 const clipHeadTail = (value, maxChars, tailFraction = 0.3) => {
@@ -125,8 +153,8 @@ export async function invokeSeerProvider(provider, args, {
     onFailure({ provider: provider.name, model: provider.model, code, ...(status ? { status } : {}) });
     return null;
   };
-  if (remote && env.JACO_ALLOW_PAID_MODELS !== '1') return fail('PAID_PROVIDER_DISABLED');
-  const key = provider.envKey ? env[provider.envKey] : null;
+  if (remote && !paidModelsAllowed(env)) return fail('PAID_PROVIDER_DISABLED');
+  const key = provider.envKey ? credential(provider.envKey, { env }) : null;
   if (provider.envKey && !key) return fail('PROVIDER_KEY_MISSING');
   const configuredTimeout = Number(env.JACO_SEER_INFERENCE_TIMEOUT_MS);
   const timeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0
@@ -173,9 +201,9 @@ export async function callSeerGovernorProvider(args, {
   // finish_reason=length, and every governor turn failed as GOVERNOR_OUTPUT_TRUNCATED).
   const cap = Math.max(1024, Number(env.SEER_GOVERNOR_MAX_TOKENS) || 8192);
   const normalized = { ...args, max_tokens: Math.min(cap, Math.max(1, Number(args.max_tokens) || cap)), temperature: args.temperature ?? 0.2 };
-  if (env.JACO_CLOUD_PLANNER === '1' && env.JACO_ALLOW_PAID_MODELS === '1') {
-    const provider = providers.find(p => p.name === env.JACO_PRIMARY_PROVIDER);
-    if (provider && (!provider.envKey || env[provider.envKey])) {
+  if (env.JACO_CLOUD_PLANNER === '1' && paidModelsAllowed(env)) {
+    const provider = (await (typeof providers === 'function' ? providers() : providers)).find(p => p.name === env.JACO_PRIMARY_PROVIDER);
+    if (provider && (!provider.envKey || credential(provider.envKey, { env }))) {
       const result = await invokeSeerProvider(provider, normalized, { env, fetchFn, purpose: 'planner', onFailure });
       if (result) { onUsed({ provider: provider.name, model: provider.model }); return result; }
     }

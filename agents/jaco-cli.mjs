@@ -41,6 +41,15 @@ export function gatewayToken(env = process.env, root = ROOT) {
   const direct = env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN;
   if (direct) return direct;
 
+  // Anywhere but Termux the stack this CLI starts reads the launcher's env file (local-stack.mjs), so that is
+  // the token it runs with. A leftover ~/.config/jaco/runtime.env from another install made activation report 401.
+  if (!isTermux(env)) {
+    for (const file of [env.JACO_ENV_FILE, path.join(env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco'), '.env')].filter(Boolean)) {
+      const t = tokenFromEnvFile(file);
+      if (t) return t;
+    }
+  }
+
   // Termux Core reads ~/.config/jaco/runtime.env. Read that canonical file before the older
   // ~/.jaco/gateway.token so a stale cloud-stack token cannot make activation report 401.
   const runtimeEnv = env.JACO_RUNTIME_ENV || path.join(os.homedir(), '.config', 'jaco', 'runtime.env');
