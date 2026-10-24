@@ -22,6 +22,7 @@ const PAGE = `<!doctype html><html><head>
 <script>window.secret='never'</script></head><body>
 <!-- internal note tok_RESET_9f2 -->
 <h1 class="hero">Butik</h1>
+<svg width="10" height="10"><defs><linearGradient id="paint0_linear"><stop offset="0"/></linearGradient></defs><rect id="grad" style="fill:url(#paint0_linear)" width="10" height="10"/></svg>
 <a id="reset" href="https://shop.example/reset?token=tok_RESET_9f2">Återställ</a>
 <a id="frag" href="/konto#frag_LINK_2a9">Konto</a>
 <a id="opaque" href="https://shop.example/invite/Zx9QmK2vLp8RtY4wNs6UbJ3hGf5DcA1eXqW7/accept">Bjud in</a>
@@ -58,6 +59,7 @@ try {
   ok(html.includes('https://cdn.example/p2.png 2x'), 'srcset candidates kept without queries');
   ok(/background:\s*url\("https:\/\/cdn\.example\/hero\.png"\)/.test(html), 'stylesheet url kept without query');
   ok(html.includes('color:#0ff') || html.includes('color: #0ff') || html.includes('color:#0ff;'), 'stylesheet otherwise intact');
+  ok(/url\((?:"|&quot;)#paint0_linear(?:"|&quot;)\)/.test(html), 'local SVG fragment reference kept and accepted by the gate');
   ok(!/javascript:/i.test(html), 'javascript: link removed');
   ok(!/<script/i.test(html) && !/onclick/i.test(html) && !/data-session/i.test(html), 'scripts, handlers and data attributes removed');
   ok(!/http-equiv="refresh"/i.test(html), 'meta refresh removed');

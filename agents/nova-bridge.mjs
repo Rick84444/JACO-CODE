@@ -218,9 +218,12 @@ export const HTML_CLEANER = `(() => {
 })()`;
 // Defence in depth: the bridge refuses markup that still carries anything the cleaner should have removed.
 const URL_ATTR_WITH_QUERY = /<[a-z][^>]*\s(?:href|src|action|formaction|poster|cite|background|longdesc|manifest|srcset|imagesrcset)\s*=\s*["']?(?!#)(?!data:image\/)[^"'>]*[?#]/i;
-const CSS_URL_WITH_QUERY = /url\(\s*["']?(?!data:image\/)[^)"']*[?#]/i;
+// A local fragment such as url(#paint0_linear) is what the cleaner keeps for SVG gradients and filters.
+const CSS_URL_WITH_QUERY = /url\(\s*["']?(?!#[A-Za-z0-9_-]{0,90}["']?\s*\))(?!data:image\/)[^)"']*[?#]/i;
+// outerHTML escapes quotes and ampersands in attribute values; read style attributes as the browser does.
+const decodeAttr = v => v.replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
 const cssParts = html => [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map(m => m[1])
-  .concat([...html.matchAll(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/gi)].map(m => m[2] ?? m[3] ?? ''));
+  .concat([...html.matchAll(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/gi)].map(m => decodeAttr(m[2] ?? m[3] ?? '')));
 export function uncleanHtmlReason(html) {
   if (typeof html !== 'string') return 'HTML_MISSING';
   if (/<script[\s>]/i.test(html)) return 'script';
