@@ -91,6 +91,8 @@ test('pending service process requires a matching creation time, not just a PID'
  assert.equal(pendingProcess(c,'runtime'),process.pid);
  fs.writeFileSync(file,JSON.stringify({pid:process.pid,birth:'wrong-process-birth'}));
  assert.throws(()=>pendingProcess(c,'runtime'),/PROCESS_OWNER_NOT_VERIFIED/);
+ fs.writeFileSync(file,JSON.stringify({pid:process.pid,birth:'2020-01-01T00:00:00.0000000Z'}));
+ assert.equal(pendingProcess(c,'runtime'),null,'the PID now belongs to a process created after the recorded one: the record is stale');
 });
 test('foreign listener blocks startup and stays running with failure evidence',async t=>{
  const server=http.createServer((q,r)=>{r.setHeader('content-type','application/json');r.end('{"success":true,"releaseId":"foreign"}');});

@@ -172,9 +172,16 @@ export function pendingProcess(c, id) {
   if (!fs.existsSync(file)) return null;
   const record = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (!Number.isInteger(record.pid) || record.pid < 1) throw new Error(`PROCESS_RECORD_INVALID:${id}`);
-  try { process.kill(record.pid, 0); } catch (e) { if (e.code === 'ESRCH') return null; throw e; }
-  if (!record.birth || processBirth(record.pid) !== record.birth) throw new Error(`PROCESS_OWNER_NOT_VERIFIED:${id}`);
-  return record.pid;
+  // EPERM means the PID is alive but belongs to another account or a service: whose it is is decided by its creation time.
+  try { process.kill(record.pid, 0); } catch (e) { if (e.code === 'ESRCH') return null; if (e.code !== 'EPERM') throw e; }
+  const birth = record.birth ? processBirth(record.pid) : null;
+  if (record.birth && birth === record.birth) return record.pid;
+  // A PID cannot be reused while its process lives, so a process created after the recorded one means the
+  // recorded process is gone (after a reboot the number belongs to something else): the record is stale, not
+  // a running service. Anything unverifiable still fails closed.
+  const recorded = Date.parse(record.birth), current = Date.parse(birth);
+  if (Number.isFinite(recorded) && Number.isFinite(current) && current > recorded) return null;
+  throw new Error(`PROCESS_OWNER_NOT_VERIFIED:${id}`);
 }
 export function recoverableListener(ownedPid,listenerPid) {
   return Number.isInteger(ownedPid)&&ownedPid>0&&ownedPid===listenerPid;
