@@ -10,9 +10,10 @@ const parse = (value, fallback = null) => {
   try { return value == null ? fallback : JSON.parse(value); } catch { return fallback; }
 };
 
-// Explicitly audited, non-mutating connected-runtime capabilities.
-// Never infer retry safety from a worker's success claim or from an arbitrary ticket payload.
-const SAFE_REPLAY_CAPABILITIES = new Set(['forge.plan', 'aura.reason', 'a2a.discover']);
+// Explicitly audited read-only discovery operation. Planning emits journal events
+// and model calls can incur costs, so neither is safe to replay after execution.
+// Never infer retry safety from a worker's claim or arbitrary ticket payload.
+const SAFE_REPLAY_CAPABILITIES = new Set(['a2a.discover']);
 const mayReplayAfterStart = capability => SAFE_REPLAY_CAPABILITIES.has(String(capability));
 
 
