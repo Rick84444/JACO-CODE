@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { ensureDir, canonicalJson, sha256, nowIso, makeId, redactSensitive } from './util.mjs';
 
 function readBootId() {
@@ -35,6 +36,19 @@ process.once('exit', () => {
   }
 });
 
+// Windows has no /proc: a process's creation time is the identity that tells a live writer from a PID that was
+// reused after a reboot. Only read on the rare path where a lock already exists.
+function readWindowsProcessCreatedAtMs(pid) {
+  if (process.platform !== 'win32' || !Number.isInteger(pid) || pid < 1) return null;
+  try {
+    const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CreationDate.ToUniversalTime().ToString('o')`],
+    { encoding: 'utf8', windowsHide: true, timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const ms = Date.parse(out);
+    return Number.isFinite(ms) ? ms : null;
+  } catch { return null; }
+}
+
 function pidAlive(pid) {
   try { process.kill(pid, 0); return true; } catch (error) { return error?.code === 'EPERM'; }
 }
@@ -43,7 +57,12 @@ function holderMatchesLiveProcess(holder) {
   if (!holder || holder.host !== os.hostname() || !pidAlive(Number(holder.pid))) return false;
   // Legacy locks lack a stable process identity. Fail closed for them while the
   // PID is alive; newly written locks can distinguish PID reuse safely.
-  if (!holder.bootId || !holder.startTicks) return true;
+  if (!holder.bootId || !holder.startTicks) {
+    // The writer is older than its lock: a process created after the lock was taken cannot be the writer.
+    const created = readWindowsProcessCreatedAtMs(Number(holder.pid));
+    const lockedAt = Date.parse(holder.startedAt);
+    return !(created !== null && Number.isFinite(lockedAt) && created > lockedAt + 2000);
+  }
   const bootId = readBootId();
   const startTicks = readProcessStartTicks(Number(holder.pid));
   if (!bootId || !startTicks) return true;

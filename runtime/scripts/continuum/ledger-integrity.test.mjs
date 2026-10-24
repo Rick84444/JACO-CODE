@@ -66,6 +66,19 @@ new ContinuumEventStore(${JSON.stringify(dir)}); console.log('HELD'); setInterva
     assert.notEqual(holder.ownerId, 'stale-owner');
   });
 
+  await ok('lock.windows-reused-pid-is-not-treated-as-live-writer', async () => {
+    if (process.platform !== 'win32') return; // Windows process identity path (creation time)
+    const dir = path.join(work, 'pid-reuse-win');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'events.lock'), JSON.stringify({
+      pid: process.pid, host: os.hostname(), startedAt: '2020-01-01T00:00:00.000Z', ownerId: 'stale-owner',
+    }));
+    const store = new ContinuumEventStore(dir);
+    store.append({ stream: 'test', type: 'after.windows.pid.reuse' });
+    const holder = JSON.parse(fs.readFileSync(path.join(dir, 'events.lock'), 'utf8'));
+    assert.notEqual(holder.ownerId, 'stale-owner');
+  });
+
   await ok('append.refuses-foreign-writes', async () => {
     const dir = path.join(work, 'foreign');
     const store = new ContinuumEventStore(dir);
