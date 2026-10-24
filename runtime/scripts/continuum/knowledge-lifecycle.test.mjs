@@ -53,8 +53,12 @@ try{
     },
   });
   assert.equal(promotedReceipt.status,201);
-  assert.equal(promotedReceipt.data.evidence.verified,true);
-  assert.equal(promotedReceipt.data.knowledge.verificationStatus,'VERIFIED');
+  // A tool's self-attested success is a historical observation, not independent
+  // verification of its effect. This contract must agree with effect-evidence tests.
+  assert.equal(promotedReceipt.data.evidence.verified,false);
+  assert.equal(promotedReceipt.data.evidence.verificationMethod,'durable_nova_tool_attestation');
+  assert.equal(promotedReceipt.data.knowledge.verificationStatus,'UNVERIFIED');
+  assert.equal(promotedReceipt.data.knowledge.kind,'tool-attested-observation');
   assert.equal(promotedReceipt.data.knowledge.reusable,false);
   const promotedKnowledgeId=promotedReceipt.data.knowledge.id;
   const duplicatePromotion=await request('/api/continuum/cognition/promotions/receipt',{
