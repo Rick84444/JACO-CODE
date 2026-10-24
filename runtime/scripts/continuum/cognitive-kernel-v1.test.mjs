@@ -175,7 +175,8 @@ try{
   const reopenedEvents=new ContinuumEventStore(path.join(state,'ledger'));
   const reopenedEvidence=new EvidenceLedger(state,reopenedEvents);
   const reopenedKnowledge=new KnowledgeStore(state,reopenedEvents,reopenedEvidence);
-  assert.equal(reopenedKnowledge.get(persistedReceiptKnowledgeId).verificationStatus,'VERIFIED');
+  // A persisted tool-attested receipt remains UNVERIFIED without independent effect evidence.
+  assert.equal(reopenedKnowledge.get(persistedReceiptKnowledgeId).verificationStatus,'UNVERIFIED');
   assert.equal(reopenedKnowledge.get(persistedReceiptKnowledgeId).reusable,false);
   assert.equal(reopenedKnowledge.get(persistedDecisionKnowledgeId).verificationStatus,'VERIFIED');
   assert.equal(reopenedEvents.verify().valid,true);
