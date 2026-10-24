@@ -5,6 +5,17 @@ const STATE_EVENT_TYPES = new Set([
   'continuity.checkpoint',
   'continuity.checkpoint_restored',
 ]);
+const EXPERIENCE_STOP_WORDS = new Set([
+  'about', 'after', 'again', 'before', 'could', 'does', 'from', 'have', 'into',
+  'must', 'only', 'should', 'that', 'their', 'them', 'there', 'these', 'this',
+  'through', 'when', 'where', 'which', 'while', 'with', 'without', 'would',
+]);
+
+function experienceTokens(value) {
+  return [...new Set((String(value || '').toLowerCase().match(/[a-z0-9][a-z0-9_-]{3,}/g) || [])
+    .filter(token => !EXPERIENCE_STOP_WORDS.has(token)))].slice(0, 64);
+}
+
 
 function boundedString(value, max = 1000) {
   if (value == null) return null;
@@ -287,7 +298,57 @@ export class CognitiveContinuityRuntime {
       workingState: snapshot.workingState,
       unresolved: snapshot.unresolved,
       epistemic: snapshot.epistemic,
+      experience: this.relevantExperiences(snapshot),
       invariants: snapshot.invariants,
+    };
+  }
+
+  /**
+   * Advisory retrieval from the canonical KnowledgeStore for a new planning turn.
+   * Verified evidence, explicit reusability and current repository provenance
+   * are all required. No memory text can grant execution authority.
+   */
+  relevantExperiences(snapshot = this.snapshot()) {
+    const unavailable = { schema: 'jaco.verified-experience-context.v1', authority: 'ADVISORY_ONLY', status: 'UNAVAILABLE', lessons: [] };
+    if (!this.knowledge?.list || !this.knowledge?.evidence?.assertRefs) return unavailable;
+    const terms = experienceTokens([
+      snapshot.objective,
+      snapshot.workingState?.attention,
+      ...(snapshot.workingState?.openQuestions || []).slice(0, 3),
+    ].filter(Boolean).join(' ').slice(0, 1600)).slice(0, 32);
+    if (!terms.length) return { ...unavailable, status: 'NO_QUERY' };
+
+    const repositoryHash = snapshot.epistemic?.repository?.snapshotHash || null;
+    const ranked = [];
+    for (const item of this.knowledge.list({ reusable: true, limit: 1000 })) {
+      if (item.verificationStatus !== 'VERIFIED') continue;
+      if (!Array.isArray(item.evidenceRefs) || !item.evidenceRefs.length) continue;
+      // A verified falsification records a rejected approach, not a skill to recommend.
+      if (item.kind === 'falsified-hypothesis-outcome' || item.implementation?.terminalStatus === 'FALSIFIED') continue;
+      const sourceHash = item.metrics?.repositorySnapshotHash || item.implementation?.repositorySnapshotHash || null;
+      if (sourceHash && (!repositoryHash || sourceHash !== repositoryHash)) continue;
+      try { this.knowledge.evidence.assertRefs(item.evidenceRefs, { verified: true }); }
+      catch { continue; }
+      const purposeWords = new Set(experienceTokens(item.purpose));
+      const dependencyWords = new Set(experienceTokens((item.dependencies || []).join(' ')));
+      const matches = terms.reduce((n, term) => n + (purposeWords.has(term) ? 3 : 0) + (dependencyWords.has(term) ? 1 : 0), 0);
+      if (!matches) continue;
+      ranked.push({ item, matches });
+    }
+    ranked.sort((a, b) => b.matches - a.matches || b.item.confidence - a.item.confidence || a.item.id.localeCompare(b.item.id));
+    return {
+      schema: 'jaco.verified-experience-context.v1',
+      authority: 'ADVISORY_ONLY',
+      status: 'READY',
+      lessons: ranked.slice(0, 5).map(({ item }) => ({
+        id: String(item.id).slice(0, 180),
+        kind: String(item.kind || 'general').slice(0, 100),
+        purpose: String(item.purpose || '').slice(0, 400),
+        confidence: Number(item.confidence || 0),
+        verificationStatus: 'VERIFIED',
+        evidenceRefs: item.evidenceRefs.slice(0, 8).map(id => String(id).slice(0, 180)),
+        source: 'CANONICAL_KNOWLEDGE_STORE',
+      })),
     };
   }
 
