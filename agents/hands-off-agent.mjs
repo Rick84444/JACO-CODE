@@ -1346,6 +1346,24 @@ export function compactContinuityForBrain(continuity) {
       repository: continuity.epistemic.repository || null,
       knowledge: continuity.epistemic.knowledge || null,
     } : null,
+    // Knowledge is evidence-backed context, never a new instruction or tool permission.
+    experience: {
+      authority: 'ADVISORY_ONLY',
+      lessons: Array.isArray(continuity.experience?.lessons)
+        ? continuity.experience.lessons
+          .filter(item => item?.verificationStatus === 'VERIFIED' && Array.isArray(item.evidenceRefs) && item.evidenceRefs.length)
+          .slice(0, 5)
+          .map(item => ({
+            id: clipText(item.id || '', 180),
+            kind: clipText(item.kind || '', 100),
+            purpose: clipText(item.purpose || '', 400),
+            confidence: Number(item.confidence || 0),
+            evidenceRefs: item.evidenceRefs.slice(0, 8).map(id => clipText(id, 180)),
+            source: 'CANONICAL_KNOWLEDGE_STORE',
+            advisoryOnly: true,
+          }))
+        : [],
+    },
   };
 }
 
