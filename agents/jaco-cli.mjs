@@ -61,6 +61,12 @@ export function gatewayToken(env = process.env, root = ROOT) {
     if (stateToken) return stateToken;
   } catch { /* next */ }
 
+  // The launcher's env file outside the checkout (JACO_ENV_FILE, else <state dir>/.env), as local-stack reads it.
+  for (const file of [env.JACO_ENV_FILE, path.join(env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco'), '.env')].filter(Boolean)) {
+    const t = tokenFromEnvFile(file);
+    if (t) return t;
+  }
+
   // Portable/cloud starters may persist the token in a checkout .env.
   const dirs = [root, ...fs.readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map(e => path.join(root, e.name))];
   for (const dir of dirs) {

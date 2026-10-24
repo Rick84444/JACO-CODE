@@ -16,6 +16,48 @@ async function call(fetchImpl, baseUrl, token, method, route, body, timeoutMs = 
 }
 const errorText = error => String(error?.message || error).split('\n')[0].slice(0, 160);
 
+// A probe that keeps the answer even when the service reports itself unhealthy (for example HTTP 503 with a reason).
+async function probe(fetchImpl, url, timeoutMs = 8000) {
+  try {
+    const res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' });
+    let data = null; try { data = await res.json(); } catch {}
+    return { reached: true, status: res.status, data };
+  } catch (error) { return { reached: false, status: null, data: null, error: errorText(error) }; }
+}
+
+// Remote access (operator 2026-10-22: "it should be part of activation"): the public IDE address, the ChatGPT
+// gateway and the browser it needs. Checked only when the operator configured remote access, so a local-only
+// install is not reported as broken. Every line comes from a request that was made.
+export async function remoteReport({ env = process.env, fetchImpl = fetch } = {}) {
+  const ideHost = String(env.JACO_IDE_PUBLIC_HOST || '').trim().toLowerCase();
+  const publicGateway = String(env.JACO_GATEWAY_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+  const gatewayWanted = env.JACO_ENABLE_CHATGPT_GATEWAY === '1' || env.JACO_ENABLE_CDP === '1' || Boolean(publicGateway);
+  const remote = { configured: Boolean(ideHost || gatewayWanted), ide: null, gateway: null, problems: [] };
+  if (!remote.configured) return remote;
+  if (!ideHost) remote.problems.push('Fjärr-IDE saknar adress: sätt JACO_IDE_PUBLIC_HOST (t.ex. ide.dindomän.se) i ~/.jaco/.env.');
+  else {
+    const r = await probe(fetchImpl, `https://${ideHost}/ide-login`);
+    remote.ide = { host: ideHost, reachable: r.reached && r.status === 200, status: r.status, error: r.error || null };
+    if (!remote.ide.reachable) remote.problems.push(`Fjärr-IDE https://${ideHost}/ide-login svarar inte (${r.status ?? r.error}). Kontrollera att tunneln kör och pekar på runtimeporten.`);
+  }
+  if (gatewayWanted) {
+    const local = await probe(fetchImpl, `http://127.0.0.1:${Number(env.JACO_GATEWAY_PORT) || 4250}/health`);
+    const browser = local.data?.nova?.state || (local.data?.nova?.ok === true ? 'READY' : null);
+    remote.gateway = { up: local.reached, healthy: local.data?.ok === true, status: local.status, browser, publicUrl: publicGateway || null, publicReachable: null };
+    if (!local.reached) remote.problems.push('ChatGPT-gatewayen svarar inte lokalt. Starta stacken med JACO_ENABLE_CHATGPT_GATEWAY=1.');
+    else if (local.data?.ok !== true) remote.problems.push(browser === 'CDP_UNREACHABLE'
+      ? 'Gatewayen kör men Nova-bryggan når ingen Chrome (CDP_UNREACHABLE). Stacken startar Chrome själv om JACO_ENABLE_CDP inte är 0; en gammal installation kan behöva startas om från JACO-CODE.'
+      : `Gatewayen kör men rapporterar fel (${browser || `HTTP ${local.status}`}).`);
+    if (!publicGateway) remote.problems.push('Gatewayens publika adress saknas: sätt JACO_GATEWAY_PUBLIC_URL (den adress tunneln pekar på gatewayporten) i ~/.jaco/.env.');
+    else {
+      const pub = await probe(fetchImpl, `${publicGateway}/health`);
+      remote.gateway.publicReachable = pub.reached && (pub.status === 200 || pub.status === 503);
+      if (!remote.gateway.publicReachable) remote.problems.push(`Gatewayens publika adress ${publicGateway} når inte gatewayen (${pub.status ?? pub.error}). Kontrollera tunnelns ingång.`);
+    }
+  }
+  return remote;
+}
+
 export async function runtimeUp({ baseUrl, fetchImpl = fetch } = {}) {
   try { return (await call(fetchImpl, baseUrl, '', 'GET', '/api/runtime/identity', null, 4000)).version || true; }
   catch { return false; }
@@ -33,6 +75,7 @@ export async function activationReport({
   startTools = true,
   requireWorkplace = process.env.JACO_WORKPLACE_REQUIRED !== '0',
   requireSupervisor = Boolean(process.env.TERMUX_VERSION) || /com\.termux/.test(process.env.PREFIX || ''),
+  env = process.env,
 } = {}) {
   const report = {
     schema: 'jaco.activation/v2',
@@ -138,6 +181,8 @@ export async function activationReport({
     }
     if (report.planner.reachable === false && report.planner.why !== 'NO_ACTIVE_PROVIDER') report.problems.push(`Novas planerare ${report.planner.provider || '(ingen)'} svarar inte (${report.planner.why}). Välj en annan under Providers > Använd.`);
   } catch (error) { report.problems.push(`Kunde inte läsa planeringsvalet: ${errorText(error)}`); }
+  report.remote = await remoteReport({ env, fetchImpl });
+  report.problems.push(...report.remote.problems);
   if (report.providers.length && !report.providers.some(p => p.active)) report.problems.push('Ingen modell-provider svarar. Klistra in en API-nyckel under Providers eller starta en lokal modell (Ollama).');
 
   const workplaceReady = !requireWorkplace || (report.workplace.up === true && report.workplace.state === 'RUNNING' && report.workplace.novaState === 'RUNNING');
@@ -165,6 +210,11 @@ export function formatReport(r) {
   for (const s of r.tools.servers) out.push(`  ${s.status === 'READY' ? 'ok ' : '-- '} ${s.id.padEnd(12)} ${s.status === 'READY' ? `${s.tools} verktyg${s.started ? ' (startades nu)' : ''}` : s.error ? `fel: ${s.error}` : 'stoppad'}`);
   out.push('', 'Modeller:');
   for (const p of r.providers) out.push(`  ${p.active ? 'ok ' : '-- '} ${String(p.id).padEnd(14)} ${p.active ? `${p.models} modeller${p.ms != null ? `, ${p.ms} ms` : ''}` : PROVIDER_TEXT[p.state] || p.state}`);
+  if (r.remote?.configured) {
+    out.push('', 'Fjärråtkomst:');
+    if (r.remote.ide) out.push(`  ${r.remote.ide.reachable ? 'ok ' : '-- '} IDE        https://${r.remote.ide.host}/ide-login ${r.remote.ide.reachable ? 'svarar' : `svarar inte (${r.remote.ide.status ?? r.remote.ide.error})`}`);
+    if (r.remote.gateway) out.push(`  ${r.remote.gateway.healthy ? 'ok ' : '-- '} Gateway    ${r.remote.gateway.up ? (r.remote.gateway.healthy ? 'frisk' : `kör, fel: ${r.remote.gateway.browser || r.remote.gateway.status}`) : 'svarar inte'}${r.remote.gateway.publicUrl ? ` · publik ${r.remote.gateway.publicUrl} ${r.remote.gateway.publicReachable ? 'nås' : 'nås inte'}` : ''}`);
+  }
   if (r.planner) out.push('', `Nova planerar med: ${r.planner.provider ? `${r.planner.provider} / ${r.planner.model || '?'}` : '(ingen)'} [${r.planner.source}] ${r.planner.reachable === true ? 'svarar' : r.planner.reachable === false ? 'SVARAR INTE' : 'nyckel finns, ej provad'}`);
   if (r.problems.length) out.push('', 'Att åtgärda:', ...r.problems.map(p => `  ! ${p}`));
   return out.join('\n');
