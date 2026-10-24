@@ -160,40 +160,76 @@ export async function observeSession(session) {
   return {ok:true, observed:true, at:new Date().toISOString(), ...data};
 }
 // Read-only page markup for the Aura stage. The page is cleaned inside the browser before anything
-// leaves it: no scripts, comments, form values, hidden fields, token/nonce metadata, event handlers or
-// data-* attributes. The copy is visually faithful (structure and styles), never a working replica.
+// leaves it: no scripts, comments, element values, hidden fields, token/nonce metadata, event handlers,
+// data-* attributes, or URL query strings and fragments (where links, images and redirects carry
+// tokens, signatures and session ids). Long opaque path segments are redacted for the same reason.
+// The tool result reaches the calling agent, so this cleaning is what keeps such values out of model
+// context; the durable receipt only keeps a digest. Text visible on the page is returned as shown.
+// The copy is visually faithful (structure and styles), never a working replica.
 export const MAX_HTML_BYTES = 550_000;
 export const HTML_CLEANER = `(() => {
   const root = document.documentElement.cloneNode(true);
   root.querySelectorAll('script,noscript,template,iframe,object,embed,input[type=hidden]').forEach(e => e.remove());
   root.querySelectorAll('meta').forEach(m => {
     const n = (m.getAttribute('name') || m.getAttribute('property') || m.getAttribute('http-equiv') || '').toLowerCase();
-    if (/csrf|xsrf|token|nonce|session|auth|key|secret/.test(n)) m.remove();
+    if (/csrf|xsrf|token|nonce|session|auth|key|secret|refresh/.test(n)) m.remove();
   });
-  root.querySelectorAll('input,textarea,select,option').forEach(e => {
-    e.removeAttribute('value'); e.removeAttribute('checked'); e.removeAttribute('selected');
-    if (e.tagName === 'TEXTAREA') e.textContent = '';
-  });
+  root.querySelectorAll('textarea').forEach(e => { e.textContent = ''; });
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
   const comments = []; while (walker.nextNode()) comments.push(walker.currentNode);
   comments.forEach(c => c.remove());
+  const opaque = /^[A-Za-z0-9_~-]{32,}$/;
+  const plain = value => {
+    const v = String(value || '').trim();
+    if (/^#[A-Za-z0-9_-]{0,90}$/.test(v)) return v;
+    if (/^data:image\\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+\\/=]+$/i.test(v)) return v;
+    let u; try { u = new URL(v, location.href); } catch { return null; }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return u.origin + u.pathname.split('/').map(s => opaque.test(s) ? 'redacted' : s).join('/');
+  };
+  const cssUrls = css => String(css || '').replace(/url\\(\\s*(['"]?)(.*?)\\1\\s*\\)/gi, (_, q, inner) => {
+    const p = plain(inner); return p ? 'url("' + p.replace(/"/g, '%22') + '")' : 'none';
+  });
+  const URL_ATTRS = new Set(['href', 'src', 'action', 'formaction', 'poster', 'cite', 'background', 'longdesc', 'manifest', 'xlink:href']);
+  root.querySelectorAll('style').forEach(s => { s.textContent = cssUrls(s.textContent); });
   root.querySelectorAll('*').forEach(e => {
     for (const a of [...e.attributes]) {
       const n = a.name.toLowerCase();
-      if (n.startsWith('data-') || n.startsWith('on') || n === 'nonce' || n === 'integrity') e.removeAttribute(a.name);
+      if (n.startsWith('data-') || n.startsWith('on') || n === 'nonce' || n === 'integrity' || n === 'ping') { e.removeAttribute(a.name); continue; }
+      if (n === 'value') { e.removeAttribute('value'); continue; }
+      if (n === 'checked' || n === 'selected') { e.removeAttribute(a.name); continue; }
+      if (URL_ATTRS.has(n)) {
+        const p = plain(a.value);
+        if (p === null) e.removeAttribute(a.name); else if (p !== a.value) e.setAttribute(a.name, p);
+        continue;
+      }
+      if (n === 'srcset' || n === 'imagesrcset') {
+        const list = a.value.split(/\\s*,\\s+/).map(c => { const [u, ...d] = c.trim().split(/\\s+/); const p = plain(u); return p ? [p, ...d].join(' ') : ''; }).filter(Boolean);
+        if (list.length) e.setAttribute(a.name, list.join(', ')); else e.removeAttribute(a.name);
+        continue;
+      }
+      if (n === 'style') { e.setAttribute('style', cssUrls(a.value)); continue; }
+      if (n === 'content' && e.tagName === 'META' && /^\\s*https?:/i.test(a.value)) {
+        const p = plain(a.value); if (p) e.setAttribute('content', p); else e.removeAttribute('content');
+      }
     }
   });
   return { url: location.href, title: document.title, html: '<!doctype html>' + root.outerHTML };
 })()`;
 // Defence in depth: the bridge refuses markup that still carries anything the cleaner should have removed.
+const URL_ATTR_WITH_QUERY = /<[a-z][^>]*\s(?:href|src|action|formaction|poster|cite|background|longdesc|manifest|srcset|imagesrcset)\s*=\s*["']?(?!#)(?!data:image\/)[^"'>]*[?#]/i;
+const CSS_URL_WITH_QUERY = /url\(\s*["']?(?!data:image\/)[^)"']*[?#]/i;
+const cssParts = html => [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map(m => m[1])
+  .concat([...html.matchAll(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/gi)].map(m => m[2] ?? m[3] ?? ''));
 export function uncleanHtmlReason(html) {
   if (typeof html !== 'string') return 'HTML_MISSING';
   if (/<script[\s>]/i.test(html)) return 'script';
   if (/<!--/.test(html)) return 'comment';
   if (/<input[^>]*\btype\s*=\s*["']?hidden/i.test(html)) return 'hidden-field';
-  if (/<(?:input|option)[^>]*\svalue\s*=/i.test(html)) return 'form-value';
+  if (/<[a-z][^>]*\svalue\s*=/i.test(html)) return 'form-value';
   if (/<[a-z][^>]*\son[a-z]+\s*=/i.test(html)) return 'event-handler';
   if (/<[a-z][^>]*\sdata-[\w-]+\s*=/i.test(html)) return 'data-attribute';
+  if (URL_ATTR_WITH_QUERY.test(html) || cssParts(html).some(css => CSS_URL_WITH_QUERY.test(css))) return 'url-query';
   return null;
 }
 export async function htmlSession(session, { isAllowed = allowed } = {}) {

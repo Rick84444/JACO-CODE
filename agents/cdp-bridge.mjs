@@ -8,7 +8,7 @@ const definitions=[
   ['nova_targets','List allowed browser tabs','GET','/targets',{}],
   ['nova_observe','Observe the pinned allowed page','GET','/observe',{}],
   ['nova_screenshot','Capture the pinned allowed page','GET','/screenshot',{}],
-  ['nova_html','Read the pinned allowed page as cleaned HTML: no scripts, comments, form values, hidden fields, tokens, event handlers or data attributes','GET','/html',{}],
+  ['nova_html','Read the pinned allowed page as cleaned HTML: no scripts, comments, element values, hidden fields, token metadata, event handlers, data attributes, or URL query strings and fragments. Visible page text is returned as shown','GET','/html',{}],
   ['nova_navigate','Navigate within configured origins','POST','/navigate',{url:{type:'string'}}],
   ['nova_click','Click a unique selector and verify an explicit transition','POST','/click',{selector:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}}}],
   ['nova_type','Set a field and read back the value','POST','/type',{selector:{type:'string'},expectedUrl:{type:'string'},text:{type:'string'}}],
