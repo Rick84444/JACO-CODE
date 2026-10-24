@@ -10,6 +10,12 @@ const parse = (value, fallback = null) => {
   try { return value == null ? fallback : JSON.parse(value); } catch { return fallback; }
 };
 
+// Explicitly audited, non-mutating connected-runtime capabilities.
+// Never infer retry safety from a worker's success claim or from an arbitrary ticket payload.
+const SAFE_REPLAY_CAPABILITIES = new Set(['forge.plan', 'aura.reason', 'a2a.discover']);
+const mayReplayAfterStart = capability => SAFE_REPLAY_CAPABILITIES.has(String(capability));
+
+
 export class DurableMissionBus {
   constructor(workspaceRoot, options = {}) {
     this.workspaceRoot = workspaceRoot;
@@ -110,11 +116,26 @@ export class DurableMissionBus {
   }
 
   requeueExpiredLeases() {
-    const expired = this.db.prepare("SELECT id,mission_id,worker_id FROM tickets WHERE status IN ('CLAIMED','RUNNING','VERIFYING') AND lease_expires_at IS NOT NULL AND lease_expires_at < ?").all(nowIso());
+    const now = nowIso();
+    const expired = this.db.prepare("SELECT id,mission_id,worker_id,status,capability,attempts,max_attempts FROM tickets WHERE status IN ('CLAIMED','RUNNING','VERIFYING') AND lease_expires_at IS NOT NULL AND lease_expires_at < ?").all(now);
     for (const row of expired) {
-      this.db.prepare("UPDATE tickets SET status='READY', worker_id=NULL, lease_token=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=? WHERE id=?").run(nowIso(), row.id);
-      if (row.worker_id) this.db.prepare("UPDATE workers SET status='IDLE', active_ticket_id=NULL WHERE id=?").run(row.worker_id);
-      this.event('LEASE_EXPIRED_REQUEUED', { missionId: row.mission_id, ticketId: row.id, workerId: row.worker_id, payload: {} });
+      // A claim that never entered RUNNING can be retried; an already running mutating
+      // operation could have committed its external effect before the worker crashed.
+      const replayable = row.status === 'CLAIMED' ||
+        (row.status === 'RUNNING' && mayReplayAfterStart(row.capability));
+      const next = !replayable ? 'OUTCOME_UNKNOWN' :
+        Number(row.attempts) < Number(row.max_attempts) ? 'READY' : 'FAILED';
+      const reason = next === 'OUTCOME_UNKNOWN' ? 'LEASE_EXPIRED_OUTCOME_UNKNOWN' :
+        next === 'FAILED' ? 'LEASE_EXPIRED_RETRY_LIMIT' : null;
+      const updated = this.db.prepare("UPDATE tickets SET status=?, error=?, worker_id=NULL, lease_token=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=? WHERE id=? AND status=?")
+        .run(next, reason, now, row.id, row.status);
+      if (updated.changes !== 1) continue;
+      if (row.worker_id) this.db.prepare("UPDATE workers SET status='IDLE', active_ticket_id=NULL WHERE id=? AND active_ticket_id=?").run(row.worker_id, row.id);
+      const eventType = next === 'READY' ? 'LEASE_EXPIRED_REQUEUED' :
+        next === 'FAILED' ? 'LEASE_EXPIRED_RETRY_LIMIT' : 'LEASE_EXPIRED_OUTCOME_UNKNOWN';
+      this.event(eventType, { missionId: row.mission_id, ticketId: row.id, workerId: row.worker_id,
+        payload: { previousStatus: row.status, capability: row.capability, requiresReconciliation: next === 'OUTCOME_UNKNOWN' } });
+      this.refreshMission(row.mission_id);
     }
     return expired.length;
   }
@@ -122,7 +143,7 @@ export class DurableMissionBus {
   claimNext(workerId, capabilities, leaseMs = 30_000) {
     this.requeueExpiredLeases();
     const caps = new Set(capabilities.map(String));
-    const candidates = this.db.prepare("SELECT * FROM tickets WHERE status='READY' ORDER BY priority DESC, created_at ASC").all();
+    const candidates = this.db.prepare("SELECT t.* FROM tickets t JOIN missions m ON m.id=t.mission_id WHERE t.status='READY' AND m.status='ACTIVE' ORDER BY t.priority DESC, t.created_at ASC").all();
     for (const row of candidates) {
       const ticket = this.hydrateTicket(row);
       if (!caps.has(ticket.capability) || !this.dependenciesDone(ticket)) continue;
@@ -180,14 +201,39 @@ export class DurableMissionBus {
 
   fail(ticketId, workerId, leaseToken, error, { retry = true } = {}) {
     const row = this.assertLease(ticketId, workerId, leaseToken);
-    const canRetry = retry && Number(row.attempts) < Number(row.max_attempts);
-    const next = canRetry ? 'READY' : 'FAILED';
+    const replayable = row.status === 'CLAIMED' ||
+      (row.status === 'RUNNING' && mayReplayAfterStart(row.capability));
+    const uncertain = !replayable && ['RUNNING', 'VERIFYING'].includes(row.status);
+    const canRetry = !uncertain && retry && Number(row.attempts) < Number(row.max_attempts);
+    const next = uncertain ? 'OUTCOME_UNKNOWN' : canRetry ? 'READY' : 'FAILED';
     this.db.prepare('UPDATE tickets SET status=?, error=?, worker_id=NULL, lease_token=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=? WHERE id=?')
       .run(next, String(error || 'worker failed'), nowIso(), ticketId);
-    this.db.prepare("UPDATE workers SET status='IDLE', active_ticket_id=NULL, heartbeat_at=? WHERE id=?").run(nowIso(), workerId);
-    this.event(canRetry ? 'TICKET_RETRY' : 'TICKET_FAILED', { missionId: row.mission_id, ticketId, workerId, payload: { error: String(error || '') } });
+    this.db.prepare("UPDATE workers SET status='IDLE', active_ticket_id=NULL, heartbeat_at=? WHERE id=? AND active_ticket_id=?").run(nowIso(), workerId, ticketId);
+    this.event(uncertain ? 'TICKET_OUTCOME_UNKNOWN' : canRetry ? 'TICKET_RETRY' : 'TICKET_FAILED',
+      { missionId: row.mission_id, ticketId, workerId, payload: { error: String(error || ''), previousStatus: row.status,
+        requiresReconciliation: uncertain } });
     this.refreshMission(row.mission_id);
     return this.getTicket(ticketId);
+  }
+
+  // Operator-only reconciliation entry point. Evidence is operator-attested, not
+  // automatically promoted to an independently verified execution receipt.
+  reconcileUnknownOutcome(ticketId, { decision, evidence = [], result = {}, reason = '' } = {}) {
+    const row = this.db.prepare('SELECT * FROM tickets WHERE id=?').get(String(ticketId));
+    if (!row || row.status !== 'OUTCOME_UNKNOWN') throw new Error('TICKET_OUTCOME_NOT_UNKNOWN');
+    if (!['NO_EFFECT', 'COMPLETED', 'FAILED'].includes(decision)) throw new Error('INVALID_RECONCILIATION_DECISION');
+    if (!Array.isArray(evidence) || evidence.length === 0) throw new Error('RECONCILIATION_EVIDENCE_REQUIRED');
+    if (typeof reason !== 'string' || reason.trim().length < 8) throw new Error('RECONCILIATION_REASON_REQUIRED');
+    if (decision === 'NO_EFFECT' && Number(row.attempts) >= Number(row.max_attempts)) throw new Error('RETRY_LIMIT_REACHED');
+    const next = decision === 'NO_EFFECT' ? 'READY' : decision === 'COMPLETED' ? 'DONE' : 'FAILED';
+    const now = nowIso();
+    this.db.prepare('UPDATE tickets SET status=?, result_json=?, evidence_json=?, error=?, updated_at=? WHERE id=? AND status=?')
+      .run(next, decision === 'COMPLETED' ? json({ ...result, reconciliation: 'OPERATOR_ATTESTED' }) : row.result_json,
+        json(evidence), decision === 'FAILED' ? reason.trim() : null, now, row.id, 'OUTCOME_UNKNOWN');
+    this.event('TICKET_OUTCOME_RECONCILED', { missionId: row.mission_id, ticketId: row.id,
+      payload: { decision, reason: reason.trim().slice(0, 500), evidenceCount: evidence.length, verification: 'OPERATOR_ATTESTED' } });
+    this.refreshMission(row.mission_id);
+    return this.getTicket(row.id);
   }
 
   refreshMission(missionId) {
@@ -195,7 +241,8 @@ export class DurableMissionBus {
     const map = Object.fromEntries(counts.map(r => [r.status, Number(r.n)]));
     const total = Object.values(map).reduce((a, b) => a + b, 0);
     let status = 'ACTIVE';
-    if ((map.FAILED || 0) > 0 && (map.READY || 0) === 0 && (map.CLAIMED || 0) === 0 && (map.RUNNING || 0) === 0) status = 'FAILED';
+    if ((map.OUTCOME_UNKNOWN || 0) > 0) status = 'BLOCKED';
+    else if ((map.FAILED || 0) > 0 && (map.READY || 0) === 0 && (map.CLAIMED || 0) === 0 && (map.RUNNING || 0) === 0) status = 'FAILED';
     else if (total > 0 && (map.DONE || 0) === total) status = 'DONE';
     this.db.prepare('UPDATE missions SET status=?, updated_at=? WHERE id=?').run(status, nowIso(), missionId);
     return this.getMission(missionId);
