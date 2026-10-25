@@ -54,7 +54,9 @@ test('READY requires canonical Sentinel, Core and Workplace PID owners, not HTTP
     '      */jaco-workplace) pid="$JACO_TEST_WORKPLACE_PID";;',
     '      *) echo "down: synthetic"; exit 0;;',
     '    esac',
-    '    printf "run: %s: (pid %s) 100s\\n" "$2" "$pid";;',
+    // Runit reports the service PID first and the svlogd PID last.
+    // A greedy PID regex incorrectly selects the log PID and blocks activation.
+    '    printf "run: %s: (pid %s) 100s; run: log: (pid 999999) 100s\\n" "$2" "$pid";;',
     '  *) exit 1;;',
     'esac',
   ]);
