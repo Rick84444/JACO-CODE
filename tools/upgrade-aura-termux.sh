@@ -10,16 +10,13 @@ fail(){ say "BLOCKED: $*" >&2; exit 1; }
 trap 'rc=$?; say "FAILED (exit $rc). No automatic rollback or deletion of state. Read the output before retrying." >&2' ERR
 
 [[ -n "${PREFIX:-}" && "$PREFIX" == */com.termux/files/usr ]] || fail 'This procedure is for Termux only.'
-for tool in git node npm sv service-daemon curl readlink pgrep; do command -v "$tool" >/dev/null 2>&1 || fail "Missing command: $tool"; done
+for tool in git node npm sv curl readlink; do command -v "$tool" >/dev/null 2>&1 || fail "Missing command: $tool"; done
 ROOT="$(git -C "${JACO_UPGRADE_REPO:-$HOME/JACO-CODE}" rev-parse --show-toplevel)" || fail 'JACO checkout not found'
 ORIGIN="$(git -C "$ROOT" remote get-url origin)"
 ORIGIN="${ORIGIN,,}"
 [[ "$ORIGIN" =~ ^(https://github\.com/|git@github\.com:)rick84444/jaco-code(\.git)?$ ]] || fail 'Unexpected Git origin; refusing to update a different repository.'
 [[ -f "$ROOT/runtime/bin/jacoctl" && -d "$ROOT/runtime/termux/services" ]] || fail 'JACO runtime structure missing.'
 RUNTIME="$ROOT/runtime"
-SVDIR="$PREFIX/var/service"
-LOGDIR="$PREFIX/var/log"
-PIDFILE="$PREFIX/var/run/service-daemon.pid"
 BACKUP_ROOT="$HOME/.jaco/upgrade-backups"
 mkdir -p "$BACKUP_ROOT"
 BACKUP="$BACKUP_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-$$"
@@ -121,82 +118,12 @@ NODE
 [[ -s "$RUNTIME/dist/index.html" ]] || fail 'Frontend build did not produce dist/index.html.'
 say 'Build completed; preparing supervised process takeover.'
 
-# If the service daemon died, create runit down-markers BEFORE restoring it.
-# These are activation policy files, not data/knowledge/ledger files.
-for svc in jaco-sentinel jaco-core jaco-workplace jaco-nova jaco-ollama jaco-nova-bridge jaco-cdp; do
-  [[ -d "$SVDIR/$svc" ]] || fail "Installed service $svc is missing."
-  touch "$SVDIR/$svc/down"
-done
-if ! pgrep -f "^$PREFIX/bin/runsvdir([[:space:]]|$)" >/dev/null 2>&1; then
-  if [[ -s "$PIDFILE" ]]; then
-    old_pid="$(cat "$PIDFILE")"
-    if [[ "$old_pid" =~ ^[0-9]+$ ]] && kill -0 "$old_pid" 2>/dev/null; then
-      fail "Saved daemon PID $old_pid is still alive; inspect before restarting runit."
-    fi
-    mv -- "$PIDFILE" "$BACKUP/service-daemon.pid.stale"
-  fi
-  say 'Starting missing runsvdir; all JACO services initially disabled to prevent duplicate launches.'
-  SVDIR="$SVDIR" LOGDIR="$LOGDIR" service-daemon start
-fi
-for i in $(seq 1 20); do
-  if sv status "$SVDIR/jaco-sentinel" 2>&1 | grep -Eq '^(run:|down:)'; then break; fi
-  sleep 1
-done
-for svc in jaco-sentinel jaco-core jaco-workplace; do
-  sv status "$SVDIR/$svc" 2>&1 | grep -Eq '^(run:|down:)' || fail "No live runsv control for $svc."
-done
-
-# Ask live runsv supervisors to stop their children. This is idempotent.
-say 'Stopping previously supervised JACO services.'
-for svc in jaco-cdp jaco-nova-bridge jaco-nova jaco-ollama jaco-workplace jaco-core jaco-sentinel; do
-  sv down "$SVDIR/$svc" >/dev/null || fail "Cannot stop runsv service $svc"
-done
-
-# When runsvdir died earlier, its Node children became orphans. Only terminate
-# the three precisely identified, existing-checkout entrypoints. Never use pkill node.
-known_pids=()
-for proc in /proc/[0-9]*; do
-  [[ -r "$proc/cmdline" ]] || continue
-  pid="${proc##*/}"
-  cwd="$(readlink "$proc/cwd" 2>/dev/null || true)"
-  cmd="$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
-  case "$cwd|$cmd" in
-    "$RUNTIME|"*"server.ts"*) known_pids+=("$pid");;
-    "$RUNTIME/gateway|"*"src/sentinel.mjs"*) known_pids+=("$pid");;
-    "$ROOT|"*"gateway/src/workplace/workplace-server.mjs"*) known_pids+=("$pid");;
-  esac
-done
-if ((${#known_pids[@]})); then
-  say "Terminating only confirmed old JACO runtime owners (PIDs: ${known_pids[*]})."
-  for pid in "${known_pids[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
-  for i in $(seq 1 25); do
-    alive=false
-    for pid in "${known_pids[@]}"; do
-      if [[ -r "/proc/$pid/cmdline" ]] && [[ -n "$(tr -d '\0' < "/proc/$pid/cmdline" 2>/dev/null)" ]]; then alive=true; fi
-    done
-    [[ "$alive" == false ]] && break
-    sleep 1
-  done
-  for pid in "${known_pids[@]}"; do
-    if [[ -r "/proc/$pid/cmdline" ]] && [[ -n "$(tr -d '\0' < "/proc/$pid/cmdline" 2>/dev/null)" ]]; then
-      fail "Old JACO process $pid did not stop after SIGTERM; refusing unsafe double start."
-    fi
-  done
-fi
-# Fail closed if ports still belong to an unidentified process.
-for port in 2999 3000 2995; do
-  if curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
-    fail "Port $port still serves health after stopping known owners; refusing duplicate launch."
-  fi
-done
-
-# Sentinel stays always-on; Core and Workplace are enabled explicitly by jacoctl.
-rm -f "$SVDIR/jaco-sentinel/down"
-
-# jacoctl refreshes runit run scripts, checks Core release ownership and
-# only starts Workplace after Core is stable.
-say 'Starting canonical JACO supervisor (Core -> Workplace -> Nova).'
-bash "$RUNTIME/bin/jacoctl" activate
+# A single lifecycle owner must handle all managed services. The previous
+# duplicate shutdown path left Sentinel/Core/Workplace down when an orphan
+# answered on :2995; do not create persistent down-markers here.
+# jacoctl handles known orphan checkouts and refuses unknown port owners.
+say 'Restarting the canonical JACO supervisor (Sentinel -> Core -> Workplace -> Nova).'
+bash "$RUNTIME/bin/jacoctl" restart
 say 'Verifying Core release, runsv status and new UI.'
 status="$(bash "$RUNTIME/bin/jacoctl" status)"
 printf '%s\n' "$status"

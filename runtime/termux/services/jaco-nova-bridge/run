@@ -7,12 +7,12 @@ PATH="$PREFIX/bin:$PREFIX/bin/applets:${PATH:-/system/bin}"
 export PREFIX HOME TMPDIR PATH
 ENV_FILE="${JACO_RUNTIME_ENV:-$HOME/.config/jaco/runtime.env}"
 [ -f "$ENV_FILE" ] && . "$ENV_FILE"
-# Same checkout as Core and Workplace: the parent of JACO_ROOT, not a fixed home path.
-if [ -n "${JACO_ROOT:-}" ] && [ -f "$JACO_ROOT/../agents/nova-bridge.mjs" ]; then
-  REPO_ROOT="${JACO_REPO_ROOT:-$(cd "$JACO_ROOT/.." && pwd)}"
-else
-  REPO_ROOT="${JACO_REPO_ROOT:-$HOME/jaco-code}"
-fi
+# Never auto-fallback to an older checkout when runtime.env is missing or stale.
+[ -f "$ENV_FILE" ] && [ -n "${JACO_ROOT:-}" ] && [ -f "$JACO_ROOT/../agents/nova-bridge.mjs" ] || {
+  echo "JACO_ROOT_INVALID: configure the installed checkout in $ENV_FILE" >&2
+  exit 41
+}
+REPO_ROOT="$(cd "$JACO_ROOT/.." && pwd)"
 cd "$REPO_ROOT"
 [ "${JACO_ENABLE_CDP:-0}" = "1" ] || { echo "JACO_ENABLE_CDP_DISABLED" >&2; exit 0; }
 export NOVA_BRIDGE_PORT="${NOVA_BRIDGE_PORT:-4243}"

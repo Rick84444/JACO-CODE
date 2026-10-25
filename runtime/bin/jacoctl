@@ -62,6 +62,38 @@ svc_pid(){
   fi
   return 1
 }
+# An HTTP response from an old checkout must never count as canonical ownership.
+svc_owner_matches_checkout(){
+  local svc="$1" pid cwd cmd expected needle
+  pid="$(svc_pid "$svc" 2>/dev/null || true)"
+  [[ -n "$pid" && -r "/proc/$pid/cmdline" ]] || return 1
+  cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
+  cmd="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+  case "$svc" in
+    "$SENTINEL_SERVICE") expected="$JACO_ROOT/gateway"; needle="src/sentinel.mjs" ;;
+    "$CORE_SERVICE") expected="$JACO_ROOT"; needle="server.ts" ;;
+    "$WORKPLACE_SERVICE") expected="$(cd "$JACO_ROOT/.." && pwd)"; needle="gateway/src/workplace/workplace-server.mjs" ;;
+    *) return 1 ;;
+  esac
+  [[ "$cwd" == "$expected" && "$cmd" == *"$needle"* ]]
+}
+
+sentinel_truth_ready(){
+  svc_stable "$SENTINEL_SERVICE" && svc_owner_matches_checkout "$SENTINEL_SERVICE" && http_ok "$SENTINEL_URL/health"
+}
+
+wait_sentinel_ready(){
+  local i
+  for ((i=1;i<=40;i++)); do
+    if svc_owner_matches_checkout "$SENTINEL_SERVICE" && http_ok "$SENTINEL_URL/health"; then
+      sentinel_truth_ready && return 0
+    fi
+    sleep 0.25
+  done
+  printf '[JACO] BLOCKED — Sentinel is not owned by canonical checkout %s or health is down\n' "$JACO_ROOT" >&2
+  return 1
+}
+
 svc_stable(){
   local svc="$1" first second delay
   delay="${JACO_STABILITY_PROBE_SECONDS:-1}"
@@ -92,7 +124,7 @@ core_identity_matches_release(){
   curl -fsS --max-time 3 "$CORE_URL/api/runtime/identity" 2>/dev/null |
     JACO_EXPECTED_RELEASE_ID="$EXPECTED_CORE_RELEASE_ID" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.exit(j.success===true&&j.releaseId===process.env.JACO_EXPECTED_RELEASE_ID?0:1)}catch{process.exit(1)}})'
 }
-core_truth_ready(){ svc_stable "$CORE_SERVICE" && core_identity_matches_release; }
+core_truth_ready(){ svc_stable "$CORE_SERVICE" && svc_owner_matches_checkout "$CORE_SERVICE" && core_identity_matches_release; }
 
 wait_core_truth_ready(){
   local max="${1:-120}" deadline state
@@ -134,6 +166,7 @@ cleanup_stale_core_processes(){
     # but never an arbitrary process under HOME or another checkout.
     if [[ "$cwd" != "$JACO_ROOT" ]]; then
       case "$cwd" in
+        "$HOME"/jaco-code/runtime|\
         "$HOME"/JACO-Autonomus-IDE/JACO-Cognitive-Runtime-0.21.0-REFLECTIVE-FUTURES-RC1|\
         "$HOME"/JACO-no-budget-test/JACO-Cognitive-Runtime-0.21.0-REFLECTIVE-FUTURES-RC1) ;;
         *) continue ;;
@@ -180,7 +213,7 @@ cleanup_stale_workplace_processes(){
     case "$cmd" in
       *"gateway/src/workplace/workplace-server.mjs"*|*"gateway/src/seer-start.mjs"*|*"agents/hands-off-agent.mjs"*|*"agents/run-desktop-agentos.mjs"*)
         cwd="$(readlink "$proc/cwd" 2>/dev/null || true)"
-        [[ "$cwd" == "$repo" ]] || continue
+        [[ "$cwd" == "$repo" || "$cwd" == "$HOME/jaco-code" ]] || continue
         ;;
       *"llama-server"*"--port $llama_port"*) ;;
       *) continue ;;
@@ -193,6 +226,26 @@ cleanup_stale_workplace_processes(){
     killed=1
   done
   if (( killed )); then sleep 1; fi
+}
+
+# Stop a legacy or orphan Sentinel only when its executable and cwd match the
+# installed checkout or the single known historic lowercase JACO checkout.
+# Never search and kill arbitrary Node processes.
+cleanup_stale_sentinel_processes(){
+  local supervised proc pid cwd cmd
+  supervised="$(svc_pid "$SENTINEL_SERVICE" 2>/dev/null || true)"
+  [[ -z "$supervised" ]] || return 0
+  for proc in /proc/[0-9]*; do
+    [[ -r "$proc/cmdline" ]] || continue
+    pid="${proc##*/}"
+    [[ "$pid" == "$BASHPID" ]] && continue
+    cmd="$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
+    [[ "$cmd" == *"src/sentinel.mjs"* ]] || continue
+    cwd="$(readlink "$proc/cwd" 2>/dev/null || true)"
+    [[ "$cwd" == "$JACO_ROOT/gateway" || "$cwd" == "$HOME/jaco-code/runtime/gateway" ]] || continue
+    printf '[JACO] RECOVERY — terminating orphan Sentinel pid=%s cwd=%s\n' "$pid" "$cwd" >&2
+    terminate_stale_pid "$pid" || return 40
+  done
 }
 
 # Service run scripts are copied into $SVDIR by install-activation.sh. Refresh them from the
@@ -423,6 +476,7 @@ configure_local_llamacpp(){
 }
 
 workplace_running(){
+  svc_owner_matches_checkout "$WORKPLACE_SERVICE" || return 1
   curl -fsS --max-time 3 "$WORKPLACE_URL/health" 2>/dev/null |
     node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s),a=j.supervisedAgents||{};process.exit(a.state==='RUNNING'&&a.nova?.state==='RUNNING'?0:1)}catch{process.exit(1)}})"
 }
@@ -538,20 +592,22 @@ EXPECTED_CORE_RELEASE_ID="$(node -e 'const fs=require("node:fs");try{const r=JSO
 [[ -d "$(svc_path "$NOVA_BRIDGE_SERVICE")" ]] || { echo "missing service: $(svc_path "$NOVA_BRIDGE_SERVICE")" >&2; exit 31; }
 [[ -d "$(svc_path "$CDP_SERVICE")" ]] || { echo "missing service: $(svc_path "$CDP_SERVICE")" >&2; exit 31; }
 
-if [[ ! -e "$(svc_path "$SENTINEL_SERVICE")/supervise/ok" ]]; then
+if [[ "$ACTION" != status && ! -e "$(svc_path "$SENTINEL_SERVICE")/supervise/ok" ]]; then
   if command -v service-daemon >/dev/null 2>&1; then
     LOGDIR="${LOGDIR:-$PREFIX/var/log}"
     mkdir -p "$LOGDIR/sv"
     SVDIR="$SVDIR" LOGDIR="$LOGDIR" service-daemon start >/dev/null 2>&1 || true
   fi
 fi
-wait_supervised "$SENTINEL_SERVICE"
-wait_supervised "$CORE_SERVICE"
-wait_supervised "$WORKPLACE_SERVICE"
-wait_supervised "$NOVA_SERVICE"
-wait_supervised "$OLLAMA_SERVICE"
-wait_supervised "$NOVA_BRIDGE_SERVICE"
-wait_supervised "$CDP_SERVICE"
+if [[ "$ACTION" != status ]]; then
+  wait_supervised "$SENTINEL_SERVICE"
+  wait_supervised "$CORE_SERVICE"
+  wait_supervised "$WORKPLACE_SERVICE"
+  wait_supervised "$NOVA_SERVICE"
+  wait_supervised "$OLLAMA_SERVICE"
+  wait_supervised "$NOVA_BRIDGE_SERVICE"
+  wait_supervised "$CDP_SERVICE"
+fi
 
 case "$ACTION" in
   activate)
@@ -560,8 +616,15 @@ case "$ACTION" in
     set_config_export JACO_ROOT "$JACO_ROOT"
     configure_local_llamacpp
     refresh_service_definitions
+    # A pre-existing but wrong-checkout Sentinel is not repaired by sv up.
+    if ! sentinel_truth_ready; then
+      svc_down "$SENTINEL_SERVICE" || true
+      wait_service_down "$SENTINEL_SERVICE" 30 || { emit DEGRADED 'Sentinel did not stop cleanly'; exit 39; }
+      cleanup_stale_sentinel_processes || { emit DEGRADED 'Orphan Sentinel could not be stopped'; exit 40; }
+    fi
+    rm -f "$(svc_path "$SENTINEL_SERVICE")/down"
     svc_up "$SENTINEL_SERVICE"
-    wait_url "$SENTINEL_URL/health" Sentinel 40
+    wait_sentinel_ready || { emit DEGRADED 'Canonical Sentinel is unavailable'; exit 34; }
     quiesce_core_dependents
     wait_service_down "$WORKPLACE_SERVICE" "${JACO_WORKPLACE_STOP_WAIT_SECONDS:-30}" ||
       { emit DEGRADED 'Workplace did not stop cleanly; refusing overlapping activation'; exit 37; }
@@ -595,7 +658,7 @@ case "$ACTION" in
       svc_down "$NOVA_BRIDGE_SERVICE" || true
       svc_down "$CDP_SERVICE" || true
     fi
-    core_truth_ready || { emit DEGRADED 'Core endpoint is reachable but supervised Core is restarting or unavailable'; exit 34; }
+    sentinel_truth_ready && core_truth_ready && workplace_running || { emit DEGRADED 'Canonical Sentinel/Core/Workplace ownership failed after activation'; exit 34; }
     emit READY 'canonical Sentinel, Core, and Workplace are supervised; Workplace owns Durable Nova'
     ;;
   deactivate)
@@ -619,6 +682,7 @@ case "$ACTION" in
     svc_down "$WORKPLACE_SERVICE" || true
     svc_down "$NOVA_SERVICE" || true
     svc_down "$CORE_SERVICE" || true
+    svc_down "$SENTINEL_SERVICE" || true
 
     # A real restart requires the old owners to be gone before any svc_up.
     # Otherwise runit can cancel an in-flight TERM and leave old code alive.
@@ -628,12 +692,18 @@ case "$ACTION" in
       { emit DEGRADED 'Legacy Nova did not stop cleanly; refusing overlapping restart'; exit 38; }
     wait_service_down "$CORE_SERVICE" "${JACO_CORE_STOP_WAIT_SECONDS:-30}" ||
       { emit DEGRADED 'Core did not stop cleanly; refusing overlapping restart'; exit 39; }
+    wait_service_down "$SENTINEL_SERVICE" 30 ||
+      { emit DEGRADED 'Sentinel did not stop cleanly; refusing overlapping restart'; exit 39; }
+    cleanup_stale_sentinel_processes || { emit DEGRADED 'Orphan Sentinel could not be stopped'; exit 40; }
     # The supervised Core is down, so any Core still running from this checkout is stale (it may hold
     # the ledger lock without answering HTTP).
     cleanup_stale_core_processes || { rc=$?; emit DEGRADED 'Stale Core processes could not be stopped'; exit "$rc"; }
     cleanup_stale_workplace_processes || { emit DEGRADED 'Orphan Workplace/model processes could not be stopped'; exit 40; }
 
     prepare_core_owner || { rc=$?; emit DEGRADED 'Core ownership recovery failed; dependents are stopped'; exit "$rc"; }
+    rm -f "$(svc_path "$SENTINEL_SERVICE")/down"
+    svc_up "$SENTINEL_SERVICE"
+    wait_sentinel_ready || { emit DEGRADED 'Canonical Sentinel unavailable after restart'; exit 34; }
     # Explicit activation must keep Core and Workplace supervised across crashes.
     rm -f "$(svc_path "$CORE_SERVICE")/down" "$(svc_path "$WORKPLACE_SERVICE")/down"
     svc_up "$CORE_SERVICE"
@@ -646,20 +716,22 @@ case "$ACTION" in
       svc_up "$NOVA_BRIDGE_SERVICE"
       svc_up "$CDP_SERVICE"
     fi
-    core_truth_ready || { emit DEGRADED 'Core endpoint is reachable but supervised Core is restarting or unavailable'; exit 34; }
+    sentinel_truth_ready && core_truth_ready && workplace_running || { emit DEGRADED 'Canonical Sentinel/Core/Workplace ownership failed after restart'; exit 34; }
     emit READY 'Core restarted; Workplace resumed Durable Nova; local model/CDP auxiliaries restored'
     ;;
   status)
-    if core_truth_ready && workplace_running; then
-      emit READY 'Supervised Core, Workplace, and Durable Nova are RUNNING'
+    if sentinel_truth_ready && core_truth_ready && workplace_running; then
+      emit READY 'Supervised Sentinel, Core, Workplace, and Durable Nova are RUNNING'
+    elif core_truth_ready && workplace_running; then
+      emit DEGRADED 'Core and Workplace are running but canonical Sentinel is unavailable'
     elif http_ok "$CORE_URL/api/runtime/identity" && ! core_truth_ready; then
       emit DEGRADED "Port 3000 responds but Core is not the supervised $EXPECTED_CORE_RELEASE_ID release (stale process or port collision)"
-    elif http_ok "$CORE_URL/api/runtime/identity" && http_ok "$WORKPLACE_URL/health"; then
-      emit DEGRADED 'Core and Workplace reachable; Durable Nova is not RUNNING'
-    elif http_ok "$SENTINEL_URL/health"; then
-      emit SENTINEL_ONLY 'Sentinel reachable; Core unavailable'
+    elif http_ok "$WORKPLACE_URL/health" && ! workplace_running; then
+      emit DEGRADED 'Port 2995 responds but Workplace does not belong to the canonical supervisor'
+    elif sentinel_truth_ready; then
+      emit SENTINEL_ONLY 'Canonical Sentinel is ready; Core unavailable'
     else
-      emit STOPPED 'Sentinel and Core unavailable'
+      emit STOPPED 'Canonical Sentinel/Core are unavailable'
     fi
     ;;
   *) echo "unsupported action: $ACTION" >&2; usage; exit 2 ;;
