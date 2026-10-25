@@ -71,3 +71,46 @@ test('self-development requires explicit scope and acceptance criteria', () => {
     scope: { allowed: ['src/**'] },
   }), /ACCEPTANCE_REQUIRED/);
 });
+
+test('stabilization requires falsification and independent verification without expanding release permission', () => {
+  const graph = buildSelfDevelopmentGraph({
+    mode: 'stabilize', objective: 'Repair repeated API failures',
+    scope: { allowed: ['src/**'] }, acceptance: ['API failure reproduced and repaired'],
+    execution: { allow_git_push: false },
+    verification: { commands: ['npm test'], required_stages: ['api', 'browser'],
+      falsifier_required: false, independent_verification: false },
+  });
+  const contract = graph.nodes[0].contract;
+  assert.equal(graph.policy.mode, 'contract-bound-stabilization');
+  assert.equal(contract.verification.independent_verification, true);
+  assert.equal(contract.verification.falsifier_required, true);
+  assert.deepEqual(contract.verification.required_stages, ['api', 'browser']);
+  assert.equal(graph.policy.git_push, false);
+  assert.equal(contract.execution.allow_git_push, false);
+});
+
+test('self-development rejects empty checks and invalid verification stages', () => {
+  const base = { objective: 'Repair service', scope: { allowed: ['src/**'] }, acceptance: ['works'] };
+  assert.throws(() => buildSelfDevelopmentGraph({ ...base, verification: { commands: [] } }), /VERIFICATION_COMMAND_REQUIRED/);
+  assert.throws(() => buildSelfDevelopmentGraph({ ...base, verification: { required_stages: ['imagined'] } }), /VERIFICATION_STAGE_INVALID/);
+  assert.throws(() => buildSelfDevelopmentGraph({ ...base, mode: 'unbounded' }), /MODE_UNSUPPORTED/);
+});
+
+test('service definitions survive self-development and completion still needs runtime evidence', async () => {
+  const { contractVerificationStatus } = await import('../../agents/lib/coding-contract.mjs');
+  const service = { id: 'api', entry: 'src/server.mjs', healthPath: '/health', identity: 'test-api' };
+  const graph = buildSelfDevelopmentGraph({
+    mode: 'stabilize', objective: 'Stabilize API', scope: { allowed: ['src/**'] },
+    acceptance: ['API responds'], services: [service], verification: { required_stages: ['api', 'service'] },
+  });
+  const contract = graph.nodes[0].contract;
+  assert.deepEqual(contract.services, [service]);
+  const status = contractVerificationStatus(contract, [
+    { type: 'repo-test', ok: true, verified: true, result: { kind: 'test' } },
+    { type: 'repo-test', ok: true, verified: true, result: { kind: 'falsifier' } },
+  ]);
+  assert.equal(status.machineVerified, false);
+  assert.ok(status.missing.includes('independent_verification'));
+  assert.ok(status.missing.some(item => item.includes('api')));
+  assert.ok(status.missing.some(item => item.includes('service')));
+});
