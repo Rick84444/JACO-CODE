@@ -65,6 +65,10 @@ case "$cmd" in
    fi
    ;;
  status)
+   if [[ -f "$STUB_STATE/supervisor-down" ]]; then
+     printf 'fail: %s: runsv not running\\n' "$path" >&2
+     exit 111
+   fi
    if [[ -f "$marker" ]]; then
      if [[ "$name" == "jaco-core" && "${STUB_CORE_FLAP:-0}" == "1" ]]; then
        counter="$STUB_STATE/core-pid-counter"
@@ -81,6 +85,14 @@ case "$cmd" in
    ;;
  *) exit 2 ;;
 esac
+SH
+cat > "$TMP/bin/service-daemon" <<'SH'
+#!/usr/bin/env bash
+set -eu
+[[ "${1:-}" == restart ]] || exit 2
+[[ ! -f "$STUB_STATE/repair-refused" ]] || exit 32
+rm -f "$STUB_STATE/supervisor-down"
+printf 'recovered\\n' >> "$STUB_STATE/daemon-restarts"
 SH
 cat > "$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
@@ -119,7 +131,7 @@ SH
 touch "$TMP/home/models/Bonsai-27B-Q1_0.gguf"
 sed -i "s|__BONSAI_MODEL__|$TMP/home/models/Bonsai-27B-Q1_0.gguf|g" "$TMP/bin/curl"
 chmod +x "$TMP/home/llama.cpp/build/bin/llama-server"
-chmod +x "$TMP/bin/sv" "$TMP/bin/curl"
+chmod +x "$TMP/bin/sv" "$TMP/bin/curl" "$TMP/bin/service-daemon"
 export STUB_STATE="$TMP/state"
 # The Core launcher now verifies an actual releaseId. Test doubles must return
 # a real identity response rather than an empty HTTP 200.
@@ -143,7 +155,12 @@ JACO_CTL="$JACO_ROOT/bin/jacoctl"
 cat > "$JACO_PROJECT_ENV" <<'ENV'
 JACO_GATEWAY_TOKEN=project-token-123456789012345678901234567890
 ENV
+# Android may kill all runsv children while stale supervise/ok still exists.
+# jacoctl must recover service-daemon before stopping or replacing anything.
+touch "$TMP/state/supervisor-down"
 OUT="$(bash "$JACO_CTL" activate --json)"
+[[ -f "$TMP/state/daemon-restarts" && ! -e "$TMP/state/supervisor-down" ]]
+[[ "$(wc -l < "$TMP/state/daemon-restarts")" -eq 1 ]]
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit(1)' "$OUT"
 [[ -f "$TMP/state/jaco-sentinel" && -f "$TMP/state/jaco-core" && -f "$TMP/state/jaco-workplace" ]]
 grep -q "^export JACO_GATEWAY_TOKEN='project-token-" "$JACO_RUNTIME_ENV"
@@ -298,5 +315,15 @@ grep -q updated-core-run "$TMP/prefix/var/service/jaco-core/run"
 [[ -x "$TMP/prefix/var/service/jaco-core/run" ]]
 unset JACO_STALE_CORE_TERM_SECONDS JACO_STALE_CORE_KILL_SECONDS
 bash "$JACO_CTL" deactivate --json >/dev/null
+
+# If runsv recovery is impossible, fail before terminating supervised processes.
+touch "$TMP/state/supervisor-down" "$TMP/state/repair-refused"
+set +e
+BLOCKED_SUPERVISOR="$(bash "$JACO_CTL" restart --json 2>/dev/null)"
+RC_SUPERVISOR=$?
+set -e
+[[ "$RC_SUPERVISOR" -eq 32 ]]
+[[ "$(wc -l < "$TMP/state/daemon-restarts")" -eq 1 ]]
+rm -f "$TMP/state/supervisor-down" "$TMP/state/repair-refused"
 
 echo 'PASS jacoctl: fixed lifecycle verbs activate/deactivate/restart via runit service boundary'
