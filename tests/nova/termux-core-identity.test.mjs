@@ -17,7 +17,7 @@ test('Termux supervisor script is valid bash', () => {
 
 test('Core identity is checked against the checkout release, not HTTP 200 alone', () => {
   assert.match(script, /EXPECTED_CORE_RELEASE_ID=.*CURRENT_RELEASE\.json/);
-  assert.match(script, /core_truth_ready\(\)\{ svc_stable "\$CORE_SERVICE" && core_identity_matches_release;/);
+  assert.match(script, /core_truth_ready\(\)\{ svc_stable "\$CORE_SERVICE" && svc_owner_matches_checkout "\$CORE_SERVICE" && core_identity_matches_release;/);
 });
 
 const identityParserLine = script.split('\n').find(line => line.includes('JACO_EXPECTED_RELEASE_ID="$EXPECTED_CORE_RELEASE_ID" node -e'));
