@@ -238,7 +238,7 @@ cleanup_stale_sentinel_processes(){
   for proc in /proc/[0-9]*; do
     [[ -r "$proc/cmdline" ]] || continue
     pid="${proc##*/}"
-    [[ "$pid" == "$BASHPID" || "$pid" == "$" ]] && continue
+    [[ "$pid" == "$BASHPID" ]] && continue
     cmd="$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
     [[ "$cmd" == *"src/sentinel.mjs"* ]] || continue
     cwd="$(readlink "$proc/cwd" 2>/dev/null || true)"
