@@ -1843,13 +1843,14 @@ const notifyPhone = async (action) => {
 
   const buildAuraWorkbenchSnapshot = async () => {
     const observedAt = new Date().toISOString();
-    const git = await getAuraWorkbenchGitStatus();
-    const mcp = await getAuraMcpFabric();
+    // Independent read-only observations must not add their network waits together.
+    const [git, mcp, workplace, seerHealth] = await Promise.all([
+      getAuraWorkbenchGitStatus(), getAuraMcpFabric(),
+      getAuraWorkbenchWorkplace(), getAuraSeerHealth(),
+    ]);
     const live = seerLiveWorkstream.snapshot();
     const mission = connectedRuntime.novaMissions.current();
     const missionEvents = connectedRuntime.bus.listEvents(100);
-    const workplace = await getAuraWorkbenchWorkplace();
-    const seerHealth = await getAuraSeerHealth();
     const observedLocalModel = seerHealth.health?.local_model || null;
     const activeProviderId = String(observedLocalModel?.provider || live.provider || '').trim();
     const activeModelId = String(observedLocalModel?.model || live.model || '').trim();

@@ -460,12 +460,14 @@ export const JacoAuraComputeIDE: React.FC = () => {
   // The file list changes rarely and is expensive; the snapshot is cheap and drives live state.
   const refresh = async ({ includeFiles = true }: { includeFiles?: boolean } = {}) => {
     const [workbenchResult, filesResult] = await Promise.allSettled([
-      fetch('/api/aura/workbench', { cache: 'no-store', signal: AbortSignal.timeout(10000) }).then(json),
+      fetch('/api/aura/workbench', { cache: 'no-store', signal: AbortSignal.timeout(10000) }).then(json).then(value => {
+        setSnapshot(value);
+        setConnectionError(null);
+        return value;
+      }),
       includeFiles ? fetch('/api/aura/workbench/files', { cache: 'no-store', signal: AbortSignal.timeout(10000) }).then(json) : Promise.resolve(null),
     ]);
     if (workbenchResult.status === 'rejected') throw workbenchResult.reason;
-    setSnapshot(workbenchResult.value);
-    setConnectionError(null);
     const workspaceFiles = filesResult.status === 'fulfilled' ? filesResult.value : null;
     if(filesResult.status === 'rejected') setRuntimeError('Projektfilerna kunde inte läsas: '+String(filesResult.reason?.message || filesResult.reason));
     if (workspaceFiles) {

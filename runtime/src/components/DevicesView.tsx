@@ -1,6 +1,6 @@
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { useUiLanguage } from '../i18n/UiLanguage';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // Devices view: other computers and the phone that work with this hub (src/server/connected/deviceAccess.mjs).
 // Two kinds: 'nova' (the device runs its own Nova for missions routed to it) and 'ide' (a browser signed
@@ -37,22 +37,35 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
   const [copied, setCopied] = useState<string | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
 
+  const loading = useRef(false);
   const load = async () => {
+    if (loading.current) return;
+    loading.current = true;
     try {
-      const body = await fetch('/api/aura/workbench/devices').then(readAuraResponse);
+      const body = await fetch('/api/aura/workbench/devices', { signal: AbortSignal.timeout(10000) }).then(readAuraResponse);
       if (!body.success) throw new Error(body.error || 'DEVICES_UNAVAILABLE');
       setDevices(body.devices); setHubUrl(body.hubUrl); setIdeUrl(body.ideUrl || null); setViewer(body.viewer || { remote: false }); setError('');
       // A pending code is finished once its device or browser has joined.
       setInvite(current => current && body.devices.some((d: Device) => d.name === current.name && d.kind === current.kind && !d.revokedAt
         && Date.parse(d.createdAt) > Date.parse(current.expiresAt) - 600_000) ? null : current);
     } catch (e: any) { setError(String(e?.message || e)); }
+    finally { loading.current = false; }
   };
   useEffect(() => {
     void load();
-    const poll = setInterval(() => void load(), 15_000);
-    const clock = setInterval(() => setNow(Date.now()), 1000);
-    return () => { clearInterval(poll); clearInterval(clock); };
+    const poll = setInterval(() => { if (document.visibilityState !== 'hidden') void load(); }, 15_000);
+    return () => clearInterval(poll);
   }, []);
+  useEffect(() => {
+    if (!invite) return;
+    setNow(Date.now());
+    const clock = setInterval(() => {
+      const time = Date.now();
+      if (document.visibilityState !== 'hidden') setNow(time);
+      if (time >= Date.parse(invite.expiresAt)) clearInterval(clock);
+    }, 1000);
+    return () => clearInterval(clock);
+  }, [invite]);
 
   const createInvite = async () => {
     if (busy) return;
