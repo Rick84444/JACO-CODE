@@ -68,7 +68,7 @@ svc_owner_matches_checkout(){
   pid="$(svc_pid "$svc" 2>/dev/null || true)"
   [[ -n "$pid" && -r "/proc/$pid/cmdline" ]] || return 1
   cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
-  cmd="$(tr '\\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+  cmd="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
   case "$svc" in
     "$SENTINEL_SERVICE") expected="$JACO_ROOT/gateway"; needle="src/sentinel.mjs" ;;
     "$CORE_SERVICE") expected="$JACO_ROOT"; needle="server.ts" ;;
@@ -90,7 +90,7 @@ wait_sentinel_ready(){
     fi
     sleep 0.25
   done
-  printf '[JACO] BLOCKED — Sentinel is not owned by canonical checkout %s or health is down\\n' "$JACO_ROOT" >&2
+  printf '[JACO] BLOCKED — Sentinel is not owned by canonical checkout %s or health is down\n' "$JACO_ROOT" >&2
   return 1
 }
 
@@ -239,11 +239,11 @@ cleanup_stale_sentinel_processes(){
     [[ -r "$proc/cmdline" ]] || continue
     pid="${proc##*/}"
     [[ "$pid" == "$BASHPID" || "$pid" == "$" ]] && continue
-    cmd="$(tr '\\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
+    cmd="$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
     [[ "$cmd" == *"src/sentinel.mjs"* ]] || continue
     cwd="$(readlink "$proc/cwd" 2>/dev/null || true)"
     [[ "$cwd" == "$JACO_ROOT/gateway" || "$cwd" == "$HOME/jaco-code/runtime/gateway" ]] || continue
-    printf '[JACO] RECOVERY — terminating orphan Sentinel pid=%s cwd=%s\\n' "$pid" "$cwd" >&2
+    printf '[JACO] RECOVERY — terminating orphan Sentinel pid=%s cwd=%s\n' "$pid" "$cwd" >&2
     terminate_stale_pid "$pid" || return 40
   done
 }
