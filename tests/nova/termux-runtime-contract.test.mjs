@@ -70,7 +70,8 @@ test('Termux activation lets Workplace own SEER and Durable Nova against canonic
   assert.match(install,/ensure_export JACO_WORKPLACE_SUPERVISE_MODEL "1"/);
   assert.match(install,/ensure_export JACO_WORKPLACE_SUPERVISE_SEER "1"/);
   assert.match(workplace,/JACO_WORKPLACE_REQUIRED=.*1/);
-  assert.match(workplace,/CANONICAL_RUNTIME=.*jaco-code\/runtime/);
+  assert.doesNotMatch(workplace,/CANONICAL_RUNTIME|\$HOME\/jaco-code\/runtime/);
+  assert.match(workplace,/\[ -f "\$ENV_FILE" \] && \[ -n/);
   assert.match(workplace,/JACO_ROOT_INVALID/);
   assert.match(workplace,/gateway\/src\/workplace\/workplace-server\.mjs/);
   assert.match(workplace,/PREFIX=.*\/data\/data\/com\.termux\/files\/usr/);
