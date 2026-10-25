@@ -88,7 +88,11 @@ const browser=await chromium.launch({headless:true,...(process.env.JACO_BROWSER_
 const page=await browser.newPage({viewport:{width:1440,height:960},deviceScaleFactor:1});
 page.setDefaultTimeout(15000);
 // Existing functional contract uses Swedish labels; English is verified independently below.
-await page.addInitScript(() => { if (localStorage.getItem('jaco:aura:ui-language:v1') === null) localStorage.setItem('jaco:aura:ui-language:v1', 'sv'); });
+await page.addInitScript(() => {
+  // Sandbox previews intentionally have no storage origin; never weaken their isolation.
+  try { if (localStorage.getItem('jaco:aura:ui-language:v1') === null) localStorage.setItem('jaco:aura:ui-language:v1', 'sv'); }
+  catch { /* Opaque-origin preview frame. */ }
+});
 // Monaco may reject an already-running language/model task when an editor is
 // deliberately disposed (e.g. after changing projects). This exact cancellation
 // is not an app exception; any other page error still fails the browser gate.
