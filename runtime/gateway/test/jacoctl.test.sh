@@ -227,10 +227,14 @@ export STUB_CORE_FLAP=1
 export JACO_STABILITY_PROBE_SECONDS=0
 export JACO_CORE_READY_WAIT_SECONDS=2
 set +e
-OUT_FLAP="$(bash "$JACO_CTL" activate --json 2>/dev/null)"
+OUT_FLAP="$(bash "$JACO_CTL" activate --json 2>"$TMP/flap-stderr.log")"
 RC_FLAP=$?
 set -e
-[[ "$RC_FLAP" -eq 34 ]]
+if [[ "$RC_FLAP" -ne 34 ]]; then
+  printf "FLAP_ACTUAL_RC=%s stdout=%s\n" "$RC_FLAP" "$OUT_FLAP" >&2
+  cat "$TMP/flap-stderr.log" >&2
+  exit 1
+fi
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="DEGRADED" || !/failed stability gate/.test(j.message)) process.exit(1)' "$OUT_FLAP"
 [[ -f "$TMP/state/jaco-core" && ! -f "$TMP/state/jaco-workplace" ]]
 bash "$JACO_CTL" deactivate --json >/dev/null
