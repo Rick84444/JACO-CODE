@@ -66,3 +66,19 @@ test('Anthropic OpenAI-compat chat omits invalid low temperature', async t => {
     assert.equal(Object.hasOwn(seenBody, 'temperature'), false, 'Claude compatibility request must not send temperature 0.2');
   } finally { globalThis.fetch = realFetch; }
 });
+
+test('scan discovers credentials added after startup without making inference calls', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-provider-refresh-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const env = { JACO_STATE_DIR: dir };
+  const registry = new ProviderRegistry(dir, env);
+  assert.equal(registry.list().some(p => p.id === 'groq'), false);
+  const { SecretStore } = await import('../../agents/lib/secret-store.mjs');
+  new SecretStore({ env }).set('GROQ_API_KEY', 'test-only-credential');
+  const probed = [];
+  registry.probe = async id => { probed.push(id); return { ok: false, status: 401 }; };
+  const result = await registry.scan();
+  assert.ok(probed.includes('groq'));
+  assert.equal(result.find(p => p.id === 'groq').state, 'KEY_REJECTED');
+  assert.equal(JSON.stringify(result).includes('test-only-credential'), false);
+});

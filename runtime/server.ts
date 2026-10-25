@@ -3019,6 +3019,7 @@ const notifyPhone = async (action) => {
       const saved = new SecretStore().set(req.body?.name, req.body?.value, { source: 'operator', purpose: req.body?.purpose });
       // Effective at once in this process (providers read process.env[<KEY>]); other JACO processes read the store.
       if (isExportableSecret(saved.name)) process.env[saved.name] = String(req.body.value);
+      connectedRuntime.providers.ensureDefaults();
       seerLiveWorkstream.record({ actor: 'Aura Workbench', type: 'secret.stored', message: `Key stored: ${saved.name}`, verified: true, receipt: { name: saved.name, length: saved.length } });
       res.status(201).json({ success: true, secret: saved });
     } catch (error: any) {
