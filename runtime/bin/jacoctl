@@ -53,6 +53,13 @@ svc_path(){ printf '%s/%s' "$SVDIR" "$1"; }
 svc_up(){ sv up "$(svc_path "$1")"; }
 svc_down(){ sv down "$(svc_path "$1")"; }
 svc_state(){ sv status "$(svc_path "$1")" 2>&1 || true; }
+# A leftover supervise/ok FIFO is not evidence that runsv is alive.
+svc_control_live(){
+  local state
+  state="$(svc_state "$1")"
+  [[ "$state" == run:* || "$state" == down:* ]]
+}
+
 svc_pid(){
   local state
   state="$(svc_state "$1")"
@@ -107,9 +114,14 @@ wait_service_down(){
   local svc="$1" max="${2:-30}" deadline pid state
   deadline=$((SECONDS + max))
   while (( SECONDS < deadline )); do
-    pid="$(svc_pid "$svc" 2>/dev/null || true)"
-    [[ -z "$pid" ]] && return 0
     state="$(svc_state "$svc")"
+    case "$state" in
+      down:*) return 0 ;;
+      run:*) ;;
+      *) printf '[JACO] BLOCKED — runsv supervision lost for %s during shutdown: %s\n' "$svc" "$state" >&2; return 42 ;;
+    esac
+    pid="$(svc_pid "$svc" 2>/dev/null || true)"
+    [[ -n "$pid" ]] || { printf '[JACO] BLOCKED — cannot identify supervised PID for %s: %s\n' "$svc" "$state" >&2; return 42; }
     printf '[JACO] STOPPING — waiting for %s to exit cleanly: %s\n' "$svc" "$state" >&2
     sleep 1
   done
@@ -515,12 +527,39 @@ wait_workplace_running(){
 wait_supervised(){
   local svc="$1" i
   for ((i=1;i<=40;i++)); do
-    [[ -e "$(svc_path "$svc")/supervise/ok" ]] && return 0
+    if [[ -e "$(svc_path "$svc")/supervise/ok" ]] && svc_control_live "$svc"; then return 0; fi
     sleep 0.25
   done
-  echo "service is installed but not supervised: $svc" >&2
-  echo "start termux-services (service-daemon) or restart the Termux shell" >&2
+  printf '[JACO] BLOCKED — runsv for %s is not responsive: %s\n' "$svc" "$(svc_state "$svc")" >&2
   return 1
+}
+
+# Recover a dead runsvdir once, before touching or killing any JACO service.
+# The former test of supervise/ok alone passed with dead runsv processes,
+# causing svc down failures to be mistaken for clean exits.
+ensure_live_supervision(){
+  local svc broken=()
+  for svc in "$SENTINEL_SERVICE" "$CORE_SERVICE" "$WORKPLACE_SERVICE" "$NOVA_SERVICE" "$OLLAMA_SERVICE" "$NOVA_BRIDGE_SERVICE" "$CDP_SERVICE"; do
+    if [[ ! -e "$(svc_path "$svc")/supervise/ok" ]] || ! svc_control_live "$svc"; then broken+=("$svc"); fi
+  done
+  (("${#broken[@]}" == 0)) && return 0
+  printf '[JACO] RECOVERY — runsv unavailable for %s; restarting Termux service-daemon once\n' "${broken[*]}" >&2
+  # This restarts the shared runsvdir and can briefly interrupt other Termux services.
+  command -v service-daemon >/dev/null 2>&1 || {
+    printf '[JACO] BLOCKED — termux-services service-daemon is missing\n' >&2
+    return 42
+  }
+  if ! SVDIR="$SVDIR" LOGDIR="${LOGDIR:-$PREFIX/var/log}" service-daemon restart >&2; then
+    printf '[JACO] BLOCKED — service-daemon restart failed; no JACO processes were touched\n' >&2
+    return 42
+  fi
+  for svc in "$SENTINEL_SERVICE" "$CORE_SERVICE" "$WORKPLACE_SERVICE" "$NOVA_SERVICE" "$OLLAMA_SERVICE" "$NOVA_BRIDGE_SERVICE" "$CDP_SERVICE"; do
+    wait_supervised "$svc" || {
+      printf '[JACO] BLOCKED — runsv did not recover for %s; no process takeover attempted\n' "$svc" >&2
+      return 42
+    }
+  done
+  printf '[JACO] RECOVERY — runsv control restored for all JACO services\n' >&2
 }
 
 emit(){
@@ -592,21 +631,9 @@ EXPECTED_CORE_RELEASE_ID="$(node -e 'const fs=require("node:fs");try{const r=JSO
 [[ -d "$(svc_path "$NOVA_BRIDGE_SERVICE")" ]] || { echo "missing service: $(svc_path "$NOVA_BRIDGE_SERVICE")" >&2; exit 31; }
 [[ -d "$(svc_path "$CDP_SERVICE")" ]] || { echo "missing service: $(svc_path "$CDP_SERVICE")" >&2; exit 31; }
 
-if [[ "$ACTION" != status && ! -e "$(svc_path "$SENTINEL_SERVICE")/supervise/ok" ]]; then
-  if command -v service-daemon >/dev/null 2>&1; then
-    LOGDIR="${LOGDIR:-$PREFIX/var/log}"
-    mkdir -p "$LOGDIR/sv"
-    SVDIR="$SVDIR" LOGDIR="$LOGDIR" service-daemon start >/dev/null 2>&1 || true
-  fi
-fi
 if [[ "$ACTION" != status ]]; then
-  wait_supervised "$SENTINEL_SERVICE"
-  wait_supervised "$CORE_SERVICE"
-  wait_supervised "$WORKPLACE_SERVICE"
-  wait_supervised "$NOVA_SERVICE"
-  wait_supervised "$OLLAMA_SERVICE"
-  wait_supervised "$NOVA_BRIDGE_SERVICE"
-  wait_supervised "$CDP_SERVICE"
+  # Refuse destructive cleanup unless all runsv controls are genuinely live.
+  ensure_live_supervision || exit 42
 fi
 
 case "$ACTION" in
