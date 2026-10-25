@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"
+cleanup(){
+  for pidfile in "$TMP"/state/*.pid; do
+    [[ -f "$pidfile" ]] || continue
+    pid="$(cat "$pidfile")"
+    [[ "$pid" == 123 ]] || kill "$pid" 2>/dev/null || true
+  done
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
 # Failures in the integration fixture must name the exact failing assertion
 # instead of leaving a bare exit code after successful activation.
 trap 'rc=$?; case $- in *e*) printf "JACOCTL_TEST_FAILED line=%s command=%s exit=%s\\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2;; esac' ERR
@@ -27,20 +36,44 @@ cat > "$TMP/bin/sv" <<'SH'
 #!/usr/bin/env bash
 set -eu
 cmd="$1"; path="$2"; name="$(basename "$path")"; marker="$STUB_STATE/$name"
+pidfile="$marker.pid"
 case "$cmd" in
- up) : > "$marker" ;;
+ up)
+   : > "$marker"
+   if [[ -s "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then exit 0; fi
+   cwd=''; entry=''
+   case "$name" in
+     jaco-sentinel) cwd="$JACO_ROOT/gateway"; entry="src/sentinel.mjs" ;;
+     jaco-core) cwd="$JACO_ROOT"; entry="server.ts" ;;
+     jaco-workplace) cwd="$(cd "$JACO_ROOT/.." && pwd)"; entry="gateway/src/workplace/workplace-server.mjs" ;;
+   esac
+   if [[ -n "$entry" ]]; then
+     (cd "$cwd" && exec -a "node $entry" sleep 300) >/dev/null 2>&1 &
+     echo $! > "$pidfile"
+   else
+     echo 123 > "$pidfile"
+   fi
+   ;;
  down)
-   if [[ "${STUB_REFUSE_DOWN_SERVICE:-}" != "$name" ]]; then rm -f "$marker"; fi
+   if [[ "\${STUB_REFUSE_DOWN_SERVICE:-}" != "$name" ]]; then
+     rm -f "$marker"
+     if [[ -s "$pidfile" ]]; then
+       pid="$(cat "$pidfile")"
+       [[ "$pid" == 123 ]] || kill "$pid" 2>/dev/null || true
+       rm -f "$pidfile"
+     fi
+   fi
    ;;
  status)
    if [[ -f "$marker" ]]; then
-     if [[ "$name" == "jaco-core" && "${STUB_CORE_FLAP:-0}" == "1" ]]; then
+     if [[ "$name" == "jaco-core" && "\${STUB_CORE_FLAP:-0}" == "1" ]]; then
        counter="$STUB_STATE/core-pid-counter"
        n=0; [[ -f "$counter" ]] && n="$(cat "$counter")"
        n=$((n+1)); printf '%s' "$n" > "$counter"
        echo "run: $name: (pid $((100+n))) 0s"
      else
-       echo "run: $name: (pid 123) 1s"
+       pid="$(cat "$pidfile" 2>/dev/null || echo 123)"
+       echo "run: $name: (pid $pid) 1s"
      fi
    else
      echo "down: $name: 0s"
@@ -98,7 +131,7 @@ export JACO_RUNTIME_ENV="$TMP/runtime.env"
 export JACO_PROJECT_ENV="$TMP/project.env"
 # Stale-Core cleanup scans /proc for processes whose cwd is JACO_ROOT. Point it at a
 # scratch directory so the test can never match (and kill) a real runtime on this host.
-export JACO_ROOT="$TMP/jaco-root"; mkdir -p "$JACO_ROOT"
+export JACO_ROOT="$TMP/jaco-root"; mkdir -p "$JACO_ROOT/gateway"
 # Run the exact supervisor bytes in an isolated checkout. Since the launcher
 # derives its canonical root from its own script path, pointing JACO_ROOT at
 # scratch via env alone is insufficient and would legitimately refuse takeover.
