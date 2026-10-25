@@ -122,3 +122,24 @@ test('executors and workers share reasoning instructions; unavailable SEER is ex
   assert.match(worker, /"stepId":"repair"/);
   assert.match(worker, /"allowed":\["src\/\*\*"\]/);
 });
+
+test('strategic context rejects crossed snapshots and never resurrects a removed live move', async () => {
+  const mission = { goal: 'assigned', metadata: { parent: {
+    graphId: 'graph-a', nodeKey: 'step-a',
+    strategicBoard: { schema: 'jaco.aura-strategic-board/v1', missionId: 'graph-b', objective: 'WRONG_BOARD' },
+    selectedMove: { stepId: 'step-b', title: 'WRONG_MOVE' },
+  } } };
+  const stale = await readStrategicContext(mission);
+  assert.equal(stale.board, null);
+  assert.equal(stale.selectedMove, null);
+  assert.doesNotMatch(workerStrategicPrompt('work', mission, stale), /WRONG_BOARD|WRONG_MOVE/);
+  mission.metadata.parent.selectedMove = { stepId: 'step-a', title: 'REMOVED_MOVE' };
+  const live = await readStrategicContext(mission, { seerUrl: 'http://seer.test', token: 'test',
+    fetchImpl: async () => ({ ok: true, json: async () => ({ board: {
+      schema: 'jaco.aura-strategic-board/v1', missionId: 'graph-a', moves: [],
+    } }) }),
+  });
+  assert.equal(live.fresh, true);
+  assert.equal(live.selectedMove, null);
+  assert.doesNotMatch(workerStrategicPrompt('work', mission, live), /REMOVED_MOVE|WRONG_BOARD/);
+});

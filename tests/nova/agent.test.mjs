@@ -207,3 +207,18 @@ test('a coding prompt retains available tool contracts without advertising unrel
  assert.ok(pointer.includes('mouse-move/mouse-click {x,y}'));
  assert.ok(!pointer.includes('key-press {'));
 });
+
+test('planner emits bounded content-free metrics for a valid proposal and a failed call',async()=>{
+ const prior=process.env.NOVA_BRAIN_MODE;process.env.NOVA_BRAIN_MODE='seer';
+ try {
+  const state=loadState();state.plannerMetrics=Array.from({length:30},()=>({old:true}));
+  const mission={id:'metrics',goal:'Private goal must not enter metrics',allowedTasks:['repo-read'],receipts:[]};
+  await callBrain(state,{mission},async()=>Response.json({ok:true,text:JSON.stringify({task:{type:'repo-read',data:{path:'src/a.mjs'}}})}));
+  assert.equal(state.plannerMetrics.length,20);
+  const metric=state.plannerMetrics.at(-1);
+  assert.equal(metric.proposalReturned,true);assert.ok(metric.elapsedMs>=0);assert.ok(metric.contextChars>0);assert.ok(metric.systemChars>0);
+  assert.ok(!JSON.stringify(metric).includes(mission.goal));
+  await assert.rejects(callBrain(state,{mission},async()=>Response.json({ok:false,error:'offline'},{status:503})),/offline/);
+  assert.equal(state.plannerMetrics.at(-1).proposalReturned,false);
+ }finally{process.env.NOVA_BRAIN_MODE=prior;}
+});

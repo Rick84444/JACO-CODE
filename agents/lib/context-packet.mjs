@@ -211,3 +211,44 @@ export function validateEscalationAdvice(value) {
     notes: value.notes ? text(value.notes, 1600) : null,
   });
 }
+
+// The execution contract, current file bytes and verification state are never
+// shortened here. Only redundant/historical presentation is compacted.
+export function compactPlannerStep(context, {profile='compact'} = {}) {
+  if(profile === 'standard') return context;
+  const out={...context};
+  if(context.preflight?.toolContracts) {
+    const {toolContracts,...preflight}=context.preflight;
+    out.preflight={...preflight,toolContractsSource:'Allowed task fields are defined in the system prompt or native tool schemas.'};
+  }
+  if(Array.isArray(context.mission?.recentReceipts)) {
+    const receipts=context.mission.recentReceipts;
+    out.mission={...context.mission,recentReceipts:receipts.map((receipt,index)=>{
+      if(index>=receipts.length-3 || receipt.ok!==true || receipt.verified!==true || receipt.error || !['repo-read','repo-list','git-status','health-check'].includes(receipt.type)) return receipt;
+      // Preserve receipt identity and input: the planner can still cite a completed
+      // step and distinguish its target. Do not hide failed or uncertain outcomes.
+      const {result,...summary}=receipt;
+      return {...summary,result:'Earlier verified result summarized; current file content is in openFiles. Do not repeat a completed mutation to recover its output.'};
+    })};
+  }
+  if(Array.isArray(context.repository?.entries)&&context.repository.entries.length>30) {
+    const names=new Set((context.mission?.openFiles||[]).map(file=>String(file.path).split('/')[0]));
+    const entries=context.repository.entries;
+    const ordered=[...entries.filter(entry=>names.has(entry.name)),...entries.filter(entry=>!names.has(entry.name))];
+    out.repository={...context.repository,entries:ordered.slice(0,30),entriesOmitted:entries.length-30,
+      inventoryNote:'Partial root inventory. Use repo-list on a concrete directory when more names are needed.'};
+  }
+  return out;
+}
+
+// Keep every callable schema and its authority. Spend descriptive tokens on the
+// relevant tools, rather than hiding a capability a later step may need.
+export function focusPlannerToolDescriptions(tools, mission) {
+  const terms=new Set(String(mission?.goal||'').toLowerCase().match(/[a-z0-9_]{3,}/g)||[]);
+  const recent=new Set((mission?.receipts||[]).slice(-3).map(r=>r.input?.tool||r.input?.toolName).filter(Boolean));
+  const ranked=tools.map((tool,index)=>({tool,index,score:(recent.has(tool.name)?100:0)+
+    (String(tool.name+' '+tool.description).toLowerCase().match(/[a-z0-9_]{3,}/g)||[]).reduce((sum,term)=>sum+(terms.has(term)?1:0),0)}))
+    .sort((a,b)=>b.score-a.score||a.index-b.index);
+  const selected=new Set(ranked.slice(0,8).map(item=>item.index));
+  return tools.map((tool,index)=>selected.has(index)?tool:{...tool,description:''});
+}

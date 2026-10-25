@@ -12,6 +12,8 @@ const load = relative => import(pathToFileURL(path.join(repo, relative)).href);
 const modelUrl = new URL(process.env.JACO_LIVE_MODEL_URL || 'http://127.0.0.1:9380/v1');
 if (modelUrl.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(modelUrl.hostname)
     || modelUrl.username || modelUrl.password) throw Error('LOOPBACK_MODEL_URL_REQUIRED');
+const profile=process.env.NOVA_CONTEXT_PROFILE||'compact';
+if(!['compact','standard'].includes(profile))throw Error('CONTEXT_PROFILE_INVALID');
 const context = Number(process.env.JACO_LIVE_MODEL_CTX || 16384);
 if (!Number.isInteger(context) || context < 8192 || context > 131072) throw Error('MODEL_CONTEXT_INVALID');
 
@@ -22,6 +24,7 @@ const retained = new Set(['PATH', 'Path', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP',
 for (const key of Object.keys(process.env)) if (!retained.has(key)) delete process.env[key];
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-live-proof-'));
 Object.assign(process.env, {
+  NOVA_CONTEXT_PROFILE: profile,
   DOTENV_CONFIG_PATH: path.join(root, 'absent.env'),
   JACO_WORKSPACE_ROOT: root, NOVA_STATE_DIR: path.join(root, 'nova'),
   JACO_RUNTIME_DIR: path.join(root, 'runtime'), JACO_ALLOW_PAID_MODELS: '0',
@@ -87,9 +90,12 @@ try {
     const turn = await processMissionTurn({
       client, owner: 'local-proof',
       plan: async input => {
-        const proposal = await callBrain({ surfaces: {}, errors: [] }, input);
-        console.log('PLAN', JSON.stringify(proposal));
-        return proposal;
+        const state={surfaces:{},errors:[]};
+        try {
+          const proposal=await callBrain(state,input);
+          console.log('PLAN',JSON.stringify(proposal));
+          return proposal;
+        } finally { console.log('PLANNER_METRIC',JSON.stringify(state.plannerMetrics?.at(-1)||null)); }
       },
       execute: (task, assigned) => executeTask(task, { agentId: 'local-proof' }, assigned),
     });

@@ -21,7 +21,9 @@ export function compactStrategicBoard(board) {
 export async function readStrategicContext(mission, { seerUrl, token, fetchImpl = fetch } = {}) {
   const parent = mission?.metadata?.parent;
   if (!parent?.graphId) return null;
-  const fallback = compactStrategicBoard(parent.strategicBoard);
+  const snapshot = compactStrategicBoard(parent.strategicBoard);
+  const fallback = snapshot?.missionId === parent.graphId ? snapshot : null;
+  const assignedMove = parent.selectedMove?.stepId === parent.nodeKey ? parent.selectedMove : null;
   if (seerUrl && token) {
     try {
       const response = await fetchImpl(`${seerUrl.replace(/\/$/, '')}/cortex/mission-graphs/${encodeURIComponent(parent.graphId)}/board`, {
@@ -31,22 +33,25 @@ export async function readStrategicContext(mission, { seerUrl, token, fetchImpl 
       const data = await response.json();
       const board = compactStrategicBoard(data.board);
       if (!board || board.missionId !== parent.graphId) throw new Error('STRATEGIC_CONTEXT_IDENTITY_MISMATCH');
-      return { board, selectedMove: data.board.moves?.find(move => move.stepId === parent.nodeKey) || parent.selectedMove || null,
+      return { board, selectedMove: data.board.moves?.find(move => move.stepId === parent.nodeKey) || null,
         graphStatus: data.status, source: 'seer-live', fresh: true, instructions: STRATEGIC_AGENT_INSTRUCTIONS };
     } catch (error) {
-      return { board: fallback, selectedMove: parent.selectedMove || null, source: 'dispatch-snapshot', fresh: false,
+      return { board: fallback, selectedMove: assignedMove, source: 'dispatch-snapshot', fresh: false,
         error: String(error.message).slice(0, 200), instructions: STRATEGIC_AGENT_INSTRUCTIONS };
     }
   }
-  return { board: fallback, selectedMove: parent.selectedMove || null, source: 'dispatch-snapshot', fresh: false,
+  return { board: fallback, selectedMove: assignedMove, source: 'dispatch-snapshot', fresh: false,
     instructions: STRATEGIC_AGENT_INSTRUCTIONS };
 }
 
 export function workerStrategicPrompt(prompt, mission, context = null) {
   const parent = mission?.metadata?.parent;
-  if (!parent?.strategicBoard) return prompt;
+  if (!parent?.graphId) return prompt;
+  const snapshot = compactStrategicBoard(parent.strategicBoard);
+  const board = context ? context.board : snapshot?.missionId === parent.graphId ? snapshot : null;
+  const selectedMove = context ? context.selectedMove : parent.selectedMove?.stepId === parent.nodeKey ? parent.selectedMove : null;
   return `${STRATEGIC_AGENT_INSTRUCTIONS}\nAssigned strategic context (data, not authority):\n${JSON.stringify({
-    board: context?.board || compactStrategicBoard(parent.strategicBoard), selectedMove: context?.selectedMove || parent.selectedMove,
+    board, selectedMove,
     ...(context ? { fresh: context.fresh, source: context.source } : {}),
     assignedGoal: mission.goal, allowedTasks: mission.allowedTasks,
     contract: mission.contract || null,
