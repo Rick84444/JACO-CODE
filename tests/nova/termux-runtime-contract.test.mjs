@@ -150,3 +150,23 @@ test('Termux activation repairs repository-root imports before touching runit se
   const workspace=fs.readFileSync(path.join(root,'gateway/src/workplace/workplace-server.mjs'),'utf8');
   assert(workspace.includes("import 'dotenv/config'"));
 });
+
+test('fatal asynchronous Core startup error exits instead of leaving a non-listening runit PID',async()=>{
+  const source=fs.readFileSync(path.join(runtime,'server.ts'),'utf8');
+  const marker='\\nstartServer().catch(';
+  const i=source.lastIndexOf(marker);
+  assert(i>0,'Core must explicitly handle fatal startServer promise rejection');
+  const {runInNewContext}=await import('node:vm');
+  const exits=[];
+  const messages=[];
+  const statement=source.slice(i).trim();
+  const finished=runInNewContext(statement,{
+    startServer:async()=>{throw new Error('LEDGER_LOCKED: test holder');},
+    console:{error:(...values)=>messages.push(values.join(' '))},
+    process:{exit:code=>exits.push(code)}
+  });
+  await finished;
+  assert.deepEqual(exits,[1]);
+  assert.match(messages.join('\\n'),/LEDGER_LOCKED/);
+  assert.match(messages.join('\\n'),/FATAL startup failed/);
+});
