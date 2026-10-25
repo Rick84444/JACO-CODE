@@ -26,6 +26,44 @@ test('tracked changes are backed up before fast-forward; untracked files are ret
   assert(at('stash push') < at('merge --ff-only FETCH_HEAD'));
 });
 
+test('Git fast-forward reloads changed upgrade entrypoint before the old takeover code can run', t => {
+  const {remote, working} = fixture(t);
+  const relative = 'tools/upgrade-aura-termux.sh';
+  const remoteScript = path.join(remote, relative);
+  fs.mkdirSync(path.dirname(remoteScript), {recursive:true});
+  fs.writeFileSync(remoteScript, '#!/usr/bin/env bash\necho OLD > "$JACO_TEST_REEXEC_RECEIPT"\n');
+  git(remote, 'add', relative);
+  git(remote, 'commit', '-qm', 'old entrypoint');
+  git(working, 'fetch', '--no-tags', 'origin', 'main');
+  git(working, 'merge', '--ff-only', 'FETCH_HEAD');
+
+  fs.writeFileSync(remoteScript, '#!/usr/bin/env bash\nprintf "new-entrypoint\\n" > "$JACO_TEST_REEXEC_RECEIPT"\n');
+  git(remote, 'add', relative);
+  git(remote, 'commit', '-qm', 'new entrypoint');
+
+  const start=at('PRE_UPDATE_HEAD="$(git -C "$ROOT" rev-parse HEAD)"');
+  const end=at('[[ -f "$ROOT/runtime/src/components/CognitiveWorkspace.tsx" ]]');
+  assert(start>0 && end>start, 'self-reload must be in the Git-update segment');
+  const block=source.slice(start,end);
+  const receipt=path.join(path.dirname(working),'reexec-receipt');
+  const backup=path.join(path.dirname(working),'upgrade-backup');
+  fs.mkdirSync(backup, {recursive:true});
+  const shell = `set -Eeuo pipefail
+say(){ :; }
+fail(){ echo "BLOCKED: $*" >&2; exit 1; }
+${block}
+printf "old-control-flow\\n" >> "$JACO_TEST_REEXEC_RECEIPT"`;
+  const run=spawnSync('bash',['-c',shell],{
+    encoding:'utf8',
+    env:{...process.env,ROOT:working,BACKUP:backup,JACO_TEST_REEXEC_RECEIPT:receipt},
+    timeout:15000,
+  });
+  assert.equal(run.status,0,run.stderr);
+  assert.equal(fs.readFileSync(receipt,'utf8').trim(),'new-entrypoint',
+    'old in-memory script must be replaced by the new script before service takeover');
+  assert.equal(git(working,'rev-parse','HEAD'),git(remote,'rev-parse','HEAD'));
+});
+
 test('Aura is built before any process takeover', () => {
   assert.match(source, /Expected mobile Aura navigation is missing from source/);
   assert.match(source, /node scripts\/ensure_rollup_native\.mjs/);

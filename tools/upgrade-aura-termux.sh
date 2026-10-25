@@ -38,6 +38,9 @@ if ! git -C "$ROOT" diff --quiet -- runtime/package-lock.json; then
 fi
 # Intentionally keep untracked files such as .shaders/ in place.
 
+# Capture the on-disk revision of the entrypoint before the fast-forward.
+# Bash keeps executing its previously parsed program even if Git replaces this file.
+PRE_UPDATE_HEAD="$(git -C "$ROOT" rev-parse HEAD)"
 say 'Fetching current main without overwriting local files.'
 git -C "$ROOT" fetch --no-tags origin main
 
@@ -77,6 +80,17 @@ fi
 git -C "$ROOT" merge --ff-only FETCH_HEAD || fail 'Git fast-forward blocked; existing files preserved.'
 TARGET="$(git -C "$ROOT" rev-parse HEAD)"
 say "Target commit: $TARGET"
+# If Git replaced this script, do not keep executing its old, in-memory
+# takeover logic. Restart the checked-out entrypoint once, before builds or
+# any service changes. The second invocation sees the same HEAD and proceeds.
+if ! git -C "$ROOT" diff --quiet "$PRE_UPDATE_HEAD" "$TARGET" -- tools/upgrade-aura-termux.sh; then
+  if [[ "${JACO_UPGRADE_SCRIPT_REEXEC:-0}" == 1 ]]; then
+    fail 'Upgrade entrypoint changed again after a reload; refusing stale process-control code.'
+  fi
+  say 'Upgrade entrypoint changed during Git update; loading the new script before touching services.'
+  export JACO_UPGRADE_SCRIPT_REEXEC=1
+  exec bash "$ROOT/tools/upgrade-aura-termux.sh"
+fi
 [[ -f "$ROOT/runtime/src/components/CognitiveWorkspace.tsx" ]] || fail 'New Aura workspace source missing.'
 grep -R -q 'Mobilnavigation' "$ROOT/runtime/src/components" || fail 'Expected mobile Aura navigation is missing from source.'
 
