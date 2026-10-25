@@ -211,7 +211,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
         {imageLoad==='loaded' && <small>{tr('Aktuell bild från projektfilen. Originalbildens bytehash från agenthändelsen är inte verifierad.','Current image from project file. The source image hash from the agent event is not verified.')}</small>}
       </div>}
       {screenshot && <div className="aura-live-visual aura-live-cdp-frame" aria-label={tr('Faktisk bild från CDP:s fästa webbläsarflik','Actual image from attached CDP browser tab')}>
-        <div className="aura-live-cdp-frame-bar"><Camera size={13}/> {tr('Aktuell bild från Nova-bryggans fästa flik','Current screenshot from Nova bridge attached tab')} · {time(screenshot.at)}
+        <div className="aura-live-cdp-frame-bar"><Camera size={13}/> {tr('Aktuell bild från Nova-bryggans fästa flik','Current screenshot from Nova bridge attached tab')} · {time(screenshot.at, language)}
           <button type="button" onClick={()=>setScreenshot(null)}>{tr('Återgå till materialet','Return to material')}</button></div>
         <img src={screenshot.src} alt={tr('Observerad PNG-skärmbild från den anslutna CDP-bryggan','Observed PNG screenshot from the connected CDP bridge')}/>
         <small>{tr('Fliken kommer från bryggans aktiva mål, inte från en valbar lista. Inga webbläsaråtgärder utfördes.','The tab comes from the bridge’s active target, not a selectable list. No browser actions were performed.')}</small>
