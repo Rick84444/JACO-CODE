@@ -56,7 +56,7 @@ svc_state(){ sv status "$(svc_path "$1")" 2>&1 || true; }
 svc_pid(){
   local state
   state="$(svc_state "$1")"
-  if [[ "$state" =~ ^run:.*\(pid[[:space:]]+([0-9]+)\) ]]; then
+  if [[ "$state" =~ ^run:[[:space:]]+[^[:space:]]+:[[:space:]]+\(pid[[:space:]]+([0-9]+)\) ]]; then
     printf '%s' "${BASH_REMATCH[1]}"
     return 0
   fi
