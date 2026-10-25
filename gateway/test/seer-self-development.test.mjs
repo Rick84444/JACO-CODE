@@ -114,3 +114,13 @@ test('service definitions survive self-development and completion still needs ru
   assert.ok(status.missing.some(item => item.includes('api')));
   assert.ok(status.missing.some(item => item.includes('service')));
 });
+
+test('self-development keeps canonical contract restrictions and explicit commit requirements', () => {
+  const base = { objective: 'Repair source', scope: { allowed: ['src/**'], forbidden: ['src/private/**'] }, acceptance: ['tests pass'] };
+  const graph = buildSelfDevelopmentGraph({ ...base, execution: { allow_git_commit: true, require_git_commit: false } });
+  assert.equal(graph.nodes[0].contract.execution.require_git_commit, false);
+  assert.deepEqual(graph.policy.protected_paths, graph.nodes[0].contract.scope.forbidden);
+  graph.policy.protected_paths.push('display-only');
+  assert.equal(graph.nodes[0].contract.scope.forbidden.includes('display-only'), false);
+  assert.throws(() => buildSelfDevelopmentGraph({ ...base, services: false }), /CODING_SERVICES_INVALID/);
+});

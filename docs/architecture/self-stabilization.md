@@ -35,3 +35,8 @@ A verification receipt is not proof that the installed phone runtime was repaire
 Validation: 16 self-development/integration/coding-contract tests passed, including
 real temporary Git workspace execution and missing independent/API/service evidence
 blocking completion. JavaScript syntax and whitespace checks passed.
+
+Follow-up cleanup: service validation/defaults stay in the canonical contract
+normalizer. Explicit `require_git_commit` is preserved, and graph policy reports
+that contract's complete forbidden paths using an independent copy. Repair UI
+submission falls back to the actual error/status when the report has no problems.

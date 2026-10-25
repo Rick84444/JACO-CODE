@@ -4,7 +4,7 @@ export const SELF_DEVELOPMENT_SCHEMA = 'jaco.self-development/v1';
 
 // Level-5 self-development may improve canonical runtime components. Secret
 // files remain denied by the coding-contract defaults; truth comes from tests,
- // receipts and Git history rather than a static protected-source list.
+// receipts and Git history rather than a static protected-source list.
 const PROTECTED_SELF_MODIFICATION_PATHS = [];
 
 const SAFE_NPM_SCRIPTS = /^(?:test(?::[A-Za-z0-9_.-]+)?|lint|build|typecheck|check(?::[A-Za-z0-9_.-]+)?)$/;
@@ -54,11 +54,12 @@ export function buildSelfDevelopmentGraph(input = {}) {
     schema: 'jaco.coding-contract/v1',
     objective,
     scope: { allowed, forbidden },
-    services: input.services || [],
+    services: input.services,
     acceptance,
     execution: {
       autonomous: true,
       allow_git_commit: input.execution?.allow_git_commit !== false,
+      require_git_commit: input.execution?.require_git_commit,
       allow_git_push: input.execution?.allow_git_push !== false,
       allow_git_merge: input.execution?.allow_git_merge !== false,
       require_human_before_destructive_action: false,
@@ -67,7 +68,7 @@ export function buildSelfDevelopmentGraph(input = {}) {
       tests_required: true,
       falsifier_required: stabilize || input.verification?.falsifier_required !== false,
       independent_verification: stabilize || input.verification?.independent_verification === true,
-      required_stages: input.verification?.required_stages || [],
+      required_stages: input.verification?.required_stages,
       receipt_required: true,
       commands,
     },
@@ -83,7 +84,7 @@ export function buildSelfDevelopmentGraph(input = {}) {
       autonomy: 'closed-loop',
       authority: 'operator-authenticated-seer',
       mutation_scope: allowed,
-      protected_paths: PROTECTED_SELF_MODIFICATION_PATHS,
+      protected_paths: [...contract.scope.forbidden],
       release: 'verified-autonomous',
       git_push: contract.execution.allow_git_push,
       deploy: true,

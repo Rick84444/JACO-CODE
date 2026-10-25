@@ -80,7 +80,7 @@ export const ActivationCard: React.FC<{
     if (!onRepair || repairPending.current || repairBlocked || repairState !== 'idle') return;
     repairPending.current = true;
     setRepairState('sending');
-    try { await onRepair(report?.problems || [error || state.label]); setRepairState('accepted'); }
+    try { await onRepair(report?.problems?.length ? report.problems : [error || state.label]); setRepairState('accepted'); }
     catch { setRepairState('uncertain'); }
     finally { repairPending.current = false; }
   };
