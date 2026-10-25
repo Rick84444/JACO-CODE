@@ -1,7 +1,7 @@
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { activationReadiness } from '../lib/cognitiveEvents.mjs';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Check, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Loader2, Check, AlertTriangle, RefreshCw, X } from 'lucide-react';
 import { useUiLanguage } from '../i18n/UiLanguage';
 
 // One report for the workspace and its status bar. Read checks never activate services.
@@ -66,11 +66,24 @@ export const ActivationCard: React.FC<{
   onOpenProviders: () => void;
   onOpenProject: () => void;
   projectName: string;
-}> = ({ activation, onActivated, onOpenProviders, onOpenProject, projectName }) => {
+  onRepair?: (problems: string[]) => Promise<void>;
+  repairBlocked?: boolean;
+}> = ({ activation, onActivated, onOpenProviders, onOpenProject, projectName, onRepair, repairBlocked }) => {
   const { tr } = useUiLanguage();
   const { report, loading, starting, error, read } = activation;
   const state = activationReadiness(activation);
   const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [repairState, setRepairState] = useState<'idle'|'sending'|'accepted'|'uncertain'>('idle');
+  const repairPending = useRef(false);
+  const repair = async () => {
+    if (!onRepair || repairPending.current || repairBlocked || repairState !== 'idle') return;
+    repairPending.current = true;
+    setRepairState('sending');
+    try { await onRepair(report?.problems || [error || state.label]); setRepairState('accepted'); }
+    catch { setRepairState('uncertain'); }
+    finally { repairPending.current = false; }
+  };
   const labels: Record<string,string> = {
     'Status kunde inte hämtas':'Status unavailable',
     'Kontrollerar vad som är redo':'Checking readiness',
@@ -91,13 +104,20 @@ export const ActivationCard: React.FC<{
   const localized = (value:string) => tr(value, labels[value] || value);
   const connect = state.action === 'connect';
   const start = state.action === 'activate';
+  if (dismissed) return <div className="cognitive-setup-collapsed"><button type="button" onClick={() => setDismissed(false)}><AlertTriangle size={14}/>{tr('Visa driftstatus','Show runtime status')}</button></div>;
   return <section className="cognitive-setup" aria-label={tr('Kom igång med JACO','Get started with JACO')} data-tone={state.tone}>
     <div className="cognitive-setup-heading">
       {loading ? <Loader2 size={16} className="animate-spin"/> : report?.ok && !error ? <Check size={16}/> : <AlertTriangle size={16}/>}
       <strong role="status">{starting ? tr('Startar anslutna verktyg…','Starting connected tools…') : localized(state.label)}</strong>
       <button type="button" onClick={() => void read()} disabled={loading} aria-label={tr('Kontrollera status igen','Check status again')} title={tr('Kontrollera igen','Refresh')}><RefreshCw size={16}/></button>
+      <button type="button" onClick={() => setDismissed(true)} aria-label={tr('Stäng statuspanelen','Dismiss status panel')}><X size={16}/></button>
     </div>
     {(!report?.ok || error) && <p>{localized(state.detail)}</p>}
+    {onRepair && !report?.ok && <div className="cognitive-repair-action">
+      <button type="button" disabled={loading || repairBlocked || repairState !== 'idle'} onClick={() => void repair()}>{repairState === 'sending' ? tr('Registrerar…','Registering…') : repairState === 'accepted' ? tr('Felsökningsuppdrag registrerat','Repair mission registered') : tr('Låt Aura försöka lösa felen','Let Aura try to fix the errors')}</button>
+      {repairBlocked && <p>{tr('Ett uppdrag pågår. Vänta tills det är klart.','A mission is running. Wait for it to finish.')}</p>}
+      {repairState === 'uncertain' && <p role="alert">{tr('Registreringen kunde inte bekräftas. Kontrollera uppdragen före nytt försök.','Registration could not be confirmed. Check missions before retrying.')}</p>}
+    </div>}
     <div className="cognitive-setup-actions">
       {state.action !== 'wait' && state.action !== 'goal' && <button type="button" disabled={loading} onClick={async () => {
         if (connect) onOpenProviders();

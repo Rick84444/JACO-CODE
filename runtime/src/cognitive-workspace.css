@@ -608,3 +608,7 @@
   .cognitive-live-questions { display:none; }
   .cognitive-composer-help { display:none; }
 }
+.cognitive-setup-collapsed { display:flex; justify-content:flex-end; padding:4px 12px; }
+.cognitive-setup-collapsed button { display:flex; align-items:center; gap:8px; min-height:44px; font-size:12px; color:#b7c9d6; }
+.cognitive-repair-action button { min-height:44px; padding:8px 12px; border-radius:8px; background:#203b47; color:#d5eff4; }
+.cognitive-repair-action button:disabled { opacity:.6; }
