@@ -92,7 +92,7 @@ set -eu
 [[ "${1:-}" == restart ]] || exit 2
 [[ ! -f "$STUB_STATE/repair-refused" ]] || exit 32
 rm -f "$STUB_STATE/supervisor-down"
-printf 'recovered\\n' >> "$STUB_STATE/daemon-restarts"
+printf 'recovered\n' >> "$STUB_STATE/daemon-restarts"
 SH
 cat > "$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
