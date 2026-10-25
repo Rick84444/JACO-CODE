@@ -34,6 +34,10 @@ test('Termux service scripts refuse silent fallback to another checkout', () => 
 
 test('READY requires canonical Sentinel, Core and Workplace PID owners, not HTTP alone', {skip:process.platform!=='linux'}, async () => {
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-termux-ownership-'));
+  const services=path.join(temp,'services');
+  for (const name of ['jaco-sentinel','jaco-core','jaco-workplace','jaco-nova','jaco-ollama','jaco-nova-bridge','jaco-cdp']) {
+    fs.mkdirSync(path.join(services,name),{recursive:true});
+  }
   const mockbin=path.join(temp,'bin');
   fs.mkdirSync(mockbin);
   const mock=(name,lines)=>{
