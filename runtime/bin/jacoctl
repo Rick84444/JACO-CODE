@@ -754,7 +754,13 @@ case "$ACTION" in
     elif http_ok "$CORE_URL/api/runtime/identity" && ! core_truth_ready; then
       emit DEGRADED "Port 3000 responds but Core is not the supervised $EXPECTED_CORE_RELEASE_ID release (stale process or port collision)"
     elif http_ok "$WORKPLACE_URL/health" && ! workplace_running; then
-      emit DEGRADED 'Port 2995 responds but Workplace does not belong to the canonical supervisor'
+      if ! svc_owner_matches_checkout "$WORKPLACE_SERVICE"; then
+        emit DEGRADED 'Workplace HTTP responds but the process is not owned by the canonical supervisor'
+      elif ! http_ok "$CORE_URL/api/runtime/identity"; then
+        emit DEGRADED 'Canonical Workplace is waiting: Core HTTP unavailable on port 3000; SEER/Nova cannot start'
+      else
+        emit DEGRADED 'Canonical Workplace responds but supervised SEER/Nova are not RUNNING'
+      fi
     elif sentinel_truth_ready; then
       emit SENTINEL_ONLY 'Canonical Sentinel is ready; Core unavailable'
     else
