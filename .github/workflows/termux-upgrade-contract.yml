@@ -1,0 +1,43 @@
+name: Termux Upgrade Contract
+
+on:
+  pull_request:
+    paths:
+      - 'tools/upgrade-aura-termux.sh'
+      - 'runtime/bin/jacoctl'
+      - 'runtime/termux/services/**'
+      - 'tests/nova/termux-aura-upgrade.test.mjs'
+      - 'tests/nova/termux-canonical-supervisor.test.mjs'
+      - 'tests/nova/termux-runtime-contract.test.mjs'
+      - '.github/workflows/termux-upgrade-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/upgrade-aura-termux.sh'
+      - 'runtime/bin/jacoctl'
+      - 'runtime/termux/services/**'
+      - 'tests/nova/termux-aura-upgrade.test.mjs'
+      - 'tests/nova/termux-canonical-supervisor.test.mjs'
+      - 'tests/nova/termux-runtime-contract.test.mjs'
+      - '.github/workflows/termux-upgrade-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - name: Validate shell scripts
+        run: |
+          bash -n tools/upgrade-aura-termux.sh
+          bash -n runtime/bin/jacoctl
+          for script in runtime/termux/services/*/run; do sh -n "$script"; done
+      - name: Verify Git self-update and service ownership regressions
+        run: |
+          node --test tests/nova/termux-aura-upgrade.test.mjs tests/nova/termux-canonical-supervisor.test.mjs tests/nova/termux-runtime-contract.test.mjs
