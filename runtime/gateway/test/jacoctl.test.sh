@@ -55,7 +55,7 @@ case "$cmd" in
    fi
    ;;
  down)
-   if [[ "\${STUB_REFUSE_DOWN_SERVICE:-}" != "$name" ]]; then
+   if [[ "${STUB_REFUSE_DOWN_SERVICE:-}" != "$name" ]]; then
      rm -f "$marker"
      if [[ -s "$pidfile" ]]; then
        pid="$(cat "$pidfile")"
@@ -66,7 +66,7 @@ case "$cmd" in
    ;;
  status)
    if [[ -f "$marker" ]]; then
-     if [[ "$name" == "jaco-core" && "\${STUB_CORE_FLAP:-0}" == "1" ]]; then
+     if [[ "$name" == "jaco-core" && "${STUB_CORE_FLAP:-0}" == "1" ]]; then
        counter="$STUB_STATE/core-pid-counter"
        n=0; [[ -f "$counter" ]] && n="$(cat "$counter")"
        n=$((n+1)); printf '%s' "$n" > "$counter"
