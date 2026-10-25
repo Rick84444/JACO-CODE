@@ -94,7 +94,8 @@ test('Termux activation lets Workplace own SEER and Durable Nova against canonic
   assert.match(ctl,/if http_ok "\$CORE_URL\/api\/runtime\/identity" && ! core_truth_ready; then/);
   assert.match(ctl,/readlink "\$proc\/cwd"/);
   assert.match(ctl,/if \[\[ "\$cwd" != "\$JACO_ROOT" \]\]; then/);
-  const cwdGate=ctl.slice(ctl.indexOf('if [[ "$cwd" != "$JACO_ROOT" ]]; then'),ctl.indexOf('cmd="$(tr'));
+  const cwdStart=ctl.indexOf('if [[ "$cwd" != "$JACO_ROOT" ]]; then');
+  const cwdGate=ctl.slice(cwdStart,ctl.indexOf('cmd="$(tr',cwdStart));
   assert.match(cwdGate,/case "\$cwd" in/);
   assert.match(cwdGate,/\*\) continue ;;/);
   assert.match(ctl,/wait_service_down/);
