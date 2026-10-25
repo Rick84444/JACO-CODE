@@ -1,3 +1,4 @@
+import { sharedObservation } from './src/server/connected/sharedObservation.mjs';
 import { readMissionReview } from './src/server/connected/missionReview.mjs';
 import { createMissionWorktrees } from '../agents/lib/mission-worktree.mjs';
 import { createWorkspaceAttachments } from './src/server/connected/workspaceAttachments.mjs';
@@ -687,7 +688,7 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   });
 
   const connections = automaticConnections({ registry: connectedRuntime.providers, mcpHost, onToolsStarted: ({ started, failed }: any) => {
-    auraMcpFabricCache = null;
+    getAuraMcpFabric.invalidate();
     console.log(`[JACO] tool servers started: ${started.join(', ') || 'none'}${failed.length ? `; not started: ${failed.map((f: any) => `${f.id}: ${f.error.slice(0, 80)}`).join('; ')}` : ''}`);
     seerLiveWorkstream.record({ actor: 'JACO runtime', type: 'tools.autostarted', message: `Tool servers started: ${started.length}, not started: ${failed.length}`, verified: failed.length === 0, receipt: { started, failed } });
   } });
@@ -1403,7 +1404,7 @@ const notifyPhone = async (action) => {
     return providers[id] || null;
   };
 
-  const callAuraMcpRpc = async (providerId: string, method: string, params: any = undefined) => {
+  const callAuraMcpRpc = async (providerId: string, method: string, params: any = undefined, signal?: AbortSignal) => {
     if (!auraMcpProviderConfig(providerId) && mcpHost.servers()[providerId]) {
       if (method === 'tools/list') return { tools: await mcpHost.listTools(providerId) };
       if (method === 'tools/call') return mcpHost.call(providerId, String(params?.name || ''), params?.arguments || {});
@@ -1424,7 +1425,7 @@ const notifyPhone = async (action) => {
         method,
         ...(params === undefined ? {} : { params }),
       }),
-      signal: AbortSignal.timeout(25_000),
+      signal: signal || AbortSignal.timeout(25_000),
     });
     const payload: any = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload?.error || `MCP_HTTP_${response.status}`);
@@ -1440,11 +1441,8 @@ const notifyPhone = async (action) => {
     try { return JSON.parse(text); } catch { return { text }; }
   };
 
-  let auraMcpFabricCache: { at: number; value: any } | null = null;
-
-  const getAuraMcpFabric = async () => {
-    const now = Date.now();
-    if (auraMcpFabricCache && now - auraMcpFabricCache.at < 2500) return auraMcpFabricCache.value;
+  const getAuraMcpFabric = sharedObservation(async () => {
+    const signal = AbortSignal.timeout(4000);
 
     const providerIds = ['remote','cdp'];
     const providers = await Promise.all(providerIds.map(async id => {
@@ -1454,11 +1452,11 @@ const notifyPhone = async (action) => {
       let observation: any = null;
       let error: string | null = null;
       try {
-        const response = await fetch(`${config.endpoint}/health`, { signal: AbortSignal.timeout(1200) });
+        const response = await fetch(`${config.endpoint}/health`, { signal: AbortSignal.any([signal, AbortSignal.timeout(1200)]) });
         health = await response.json().catch(() => null);
         if (!response.ok) throw new Error(`HTTP_${response.status}`);
         if (GATEWAY_TOKEN.length >= 24) {
-          const listed: any = await callAuraMcpRpc(id, 'tools/list');
+          const listed: any = await callAuraMcpRpc(id, 'tools/list', undefined, signal);
           tools = Array.isArray(listed?.tools) ? listed.tools.map((tool: any) => ({
             name: String(tool?.name || ''),
             description: String(tool?.description || ''),
@@ -1468,8 +1466,8 @@ const notifyPhone = async (action) => {
 
           if (id === 'remote') {
             const [statusResult, windowsResult] = await Promise.allSettled([
-              callAuraMcpRpc('remote', 'tools/call', { name: 'remote_status', arguments: {} }),
-              callAuraMcpRpc('remote', 'tools/call', { name: 'remote_windows', arguments: {} }),
+              callAuraMcpRpc('remote', 'tools/call', { name: 'remote_status', arguments: {} }, signal),
+              callAuraMcpRpc('remote', 'tools/call', { name: 'remote_windows', arguments: {} }, signal),
             ]);
             observation = {
               status: statusResult.status === 'fulfilled' ? parseAuraMcpTextResult(statusResult.value) : { ok: false, error: String(statusResult.reason) },
@@ -1481,7 +1479,7 @@ const notifyPhone = async (action) => {
                 targets: parseAuraMcpTextResult(await callAuraMcpRpc('cdp', 'tools/call', {
                   name: 'nova_targets',
                   arguments: {},
-                })),
+                }, signal)),
               };
             } catch (probeError: any) {
               observation = { targets: { ok: false, error: probeError?.message || String(probeError) } };
@@ -1496,11 +1494,11 @@ const notifyPhone = async (action) => {
         name: config.name,
         endpoint: config.endpoint,
         role: config.role,
-        status: health?.ok === true ? 'READY' : 'UNAVAILABLE',
+        status: health?.ok === true && !signal.aborted && !error ? 'READY' : 'UNAVAILABLE',
         health,
         observation,
         tools,
-        error,
+        error: signal.aborted ? 'MCP_OBSERVATION_TIMEOUT' : error,
       };
     }));
 
@@ -1516,9 +1514,8 @@ const notifyPhone = async (action) => {
       sources: auraMcpSources.list(),
       recentCalls: mcpHost.recentCalls(20),
     };
-    auraMcpFabricCache = { at: now, value };
     return value;
-  };
+  });
 
   const getAuraWorkbenchWorkplace = async () => {
     const base = String(process.env.JACO_WORKPLACE_URL || 'http://127.0.0.1:2995').replace(/\/+$/, '');
@@ -2318,7 +2315,7 @@ const notifyPhone = async (action) => {
     try {
       const root = projectRoot.set(String(req.body?.path || ''));
       mcpHost.useWorkspaceRoot(root);
-      auraMcpFabricCache = null;
+      getAuraMcpFabric.invalidate();
       seerLiveWorkstream.record({
         actor: 'Aura Explorer',
         type: 'workspace.project.opened',
@@ -2551,7 +2548,7 @@ const notifyPhone = async (action) => {
   app.post('/api/aura/workbench/mcp/huggingface', requireLocalUi, (req, res) => {
     try {
       mcpHost.configureHuggingFace({ enabled: req.body?.enabled !== false, tokenEnv: String(req.body?.tokenEnv || '') });
-      auraMcpFabricCache = null;
+      getAuraMcpFabric.invalidate();
       res.json({ success: true, configured: req.body?.enabled !== false, connected: false });
     } catch { res.status(400).json({ success: false, error: 'MCP_CONFIGURATION_INVALID' }); }
   });
@@ -2641,7 +2638,7 @@ const notifyPhone = async (action) => {
     try {
       const id = String(req.body?.providerId || '');
       const tools = await mcpHost.start(id);
-      auraMcpFabricCache = null;
+      getAuraMcpFabric.invalidate();
       res.json({ success: true, providerId: id, tools: tools.map((t: any) => t.name) });
     } catch (error: any) {
       res.status(409).json({ success: false, error: error?.message || String(error) });
@@ -2666,12 +2663,12 @@ const notifyPhone = async (action) => {
       const result: any = await mcpHost.call(server, tool, args, { actor: 'agent', readOnly: req.body?.mode !== 'write' });
       const failed = result?.isError === true;
       seerLiveWorkstream.record({ actor: 'JACO MCP host', type: 'mcp.tool.called', message: `${server}.${tool}`, verified: !failed, receipt: { server, tool, isError: failed } });
-      auraMcpFabricCache = null;
+      getAuraMcpFabric.invalidate();
       res.status(failed ? 409 : 200).json({ success: !failed, server, tool, result });
     } catch (error: any) {
       const message = error?.message || String(error);
       seerLiveWorkstream.record({ actor: 'JACO MCP host', type: 'mcp.tool.refused', message: `${server}.${tool}: ${message}`, verified: false, receipt: { server, tool, error: message } });
-      auraMcpFabricCache = null;
+      getAuraMcpFabric.invalidate();
       res.status(409).json({ success: false, server, tool, error: message });
     }
   });
@@ -2689,7 +2686,7 @@ const notifyPhone = async (action) => {
     try {
       const id = String(req.body?.id || '');
       const server = mcpHost.saveServer(id, req.body || {});
-      auraMcpFabricCache = null;
+      getAuraMcpFabric.invalidate();
       seerLiveWorkstream.record({ actor: 'Aura Tool Fabric', type: 'mcp.server.saved', message: `MCP server ${id} saved (${server?.transport}, agents: ${server?.agentAccess})`, verified: true, receipt: { id, transport: server?.transport, agentAccess: server?.agentAccess } });
       res.status(201).json({ success: true, server });
     } catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
@@ -2698,7 +2695,7 @@ const notifyPhone = async (action) => {
     if (!localOperatorOnly(req, res)) return;
     try {
       const result = mcpHost.removeServer(String(req.params.id || ''));
-      auraMcpFabricCache = null;
+      getAuraMcpFabric.invalidate();
       seerLiveWorkstream.record({ actor: 'Aura Tool Fabric', type: 'mcp.server.removed', message: `MCP server ${result.id} ${result.removed ? 'removed' : 'disabled'}`, verified: true, receipt: result });
       res.json({ success: true, ...result });
     } catch (error: any) { res.status(/UNKNOWN/.test(error?.message) ? 404 : 400).json({ success: false, error: error?.message || String(error) }); }
@@ -2708,7 +2705,7 @@ const notifyPhone = async (action) => {
     try {
       const id = String(req.params.id || '');
       const server = mcpHost.setAccess(id, { agentAccess: req.body?.agentAccess, deny: req.body?.deny });
-      auraMcpFabricCache = null;
+      getAuraMcpFabric.invalidate();
       seerLiveWorkstream.record({ actor: 'Aura Tool Fabric', type: 'mcp.access.changed', message: `Agents on ${id}: ${server?.agentAccess}${server?.deny?.length ? `, denied ${server.deny.join(', ')}` : ''}`, verified: true, receipt: { id, agentAccess: server?.agentAccess, deny: server?.deny } });
       res.json({ success: true, server });
     } catch (error: any) { res.status(/UNKNOWN/.test(error?.message) ? 404 : 400).json({ success: false, error: error?.message || String(error) }); }
@@ -2942,7 +2939,7 @@ const notifyPhone = async (action) => {
   app.post('/api/jaco/activate', requireLocalUi, async (_req, res) => {
     try {
       const report = await activationReport({ baseUrl: activationBase(), token: GATEWAY_TOKEN, startTools: true });
-      auraMcpFabricCache = null;
+      getAuraMcpFabric.invalidate();
       seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'jaco.activated', message: `Activation: ${report.tools.toolCount} tools, ${report.providers.filter((p: any) => p.active).length} providers answering${report.ok ? '' : `, ${report.problems.length} to fix`}`, verified: report.ok, receipt: { ok: report.ok, tools: report.tools.toolCount, problems: report.problems } });
       res.json({ success: true, report });
     } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
