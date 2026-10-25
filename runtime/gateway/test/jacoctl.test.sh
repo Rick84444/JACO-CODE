@@ -36,6 +36,10 @@ cat > "$TMP/bin/sv" <<'SH'
 #!/usr/bin/env bash
 set -eu
 cmd="$1"; path="$2"; name="$(basename "$path")"; marker="$STUB_STATE/$name"
+if [[ -f "$STUB_STATE/runsv-lost" ]]; then
+  printf 'fail: %s: runsv not running\n' "$path" >&2
+  exit 1
+fi
 pidfile="$marker.pid"
 case "$cmd" in
  up)
@@ -82,6 +86,14 @@ case "$cmd" in
  *) exit 2 ;;
 esac
 SH
+cat > "$TMP/bin/service-daemon" <<'SH'
+#!/usr/bin/env bash
+set -eu
+[[ "${1:-}" == restart ]] || exit 2
+[[ ! -f "$STUB_STATE/deny-daemon-restart" ]] || exit 1
+rm -f "$STUB_STATE/runsv-lost"
+printf 'restart\n' >> "$STUB_STATE/daemon-restarts"
+SH
 cat > "$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
 set -eu
@@ -119,7 +131,7 @@ SH
 touch "$TMP/home/models/Bonsai-27B-Q1_0.gguf"
 sed -i "s|__BONSAI_MODEL__|$TMP/home/models/Bonsai-27B-Q1_0.gguf|g" "$TMP/bin/curl"
 chmod +x "$TMP/home/llama.cpp/build/bin/llama-server"
-chmod +x "$TMP/bin/sv" "$TMP/bin/curl"
+chmod +x "$TMP/bin/sv" "$TMP/bin/curl" "$TMP/bin/service-daemon"
 export STUB_STATE="$TMP/state"
 # The Core launcher now verifies an actual releaseId. Test doubles must return
 # a real identity response rather than an empty HTTP 200.
@@ -172,6 +184,27 @@ grep -q "^export JACO_WORKPLACE_SEER_BRAIN_TIMEOUT_MS='240000'" "$JACO_RUNTIME_E
 [[ "$(stat -c '%a' "$JACO_RUNTIME_ENV")" == "600" ]]
 OUT_STATUS="$(bash "$JACO_CTL" status --json)"
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit(1)' "$OUT_STATUS"
+
+# Live Android regression: supervise/ok can survive while runsvdir has no running
+# supervisors. status MUST NOT restart the daemon; restart MUST repair it once
+# before any JACO shutdown or orphan termination.
+touch "$STUB_STATE/runsv-lost"
+OUT_STATUS_LOST="$(bash "$JACO_CTL" status --json)"
+node -e 'const j=JSON.parse(process.argv[1]); if(j.state==="READY") process.exit(1)' "$OUT_STATUS_LOST"
+[[ -f "$STUB_STATE/runsv-lost" && ! -f "$STUB_STATE/daemon-restarts" ]]
+# Fail closed if the daemon itself cannot be repaired. Existing JACO processes remain.
+touch "$STUB_STATE/deny-daemon-restart"
+set +e
+OUT_DAEMON_BLOCKED="$(bash "$JACO_CTL" restart --json 2>/dev/null)"
+RC_DAEMON_BLOCKED=$?
+set -e
+[[ "$RC_DAEMON_BLOCKED" -eq 42 ]]
+[[ -f "$STUB_STATE/jaco-sentinel" && -f "$STUB_STATE/jaco-core" && -f "$STUB_STATE/jaco-workplace" ]]
+rm -f "$STUB_STATE/deny-daemon-restart"
+OUT_RESTORED="$(bash "$JACO_CTL" restart --json)"
+node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit(1)' "$OUT_RESTORED"
+[[ ! -f "$STUB_STATE/runsv-lost" ]]
+[[ "$(wc -l < "$STUB_STATE/daemon-restarts")" -eq 1 ]]
 
 # A stray/stale process may keep :3000 answering even while the supervised Core
 # is down. READY must follow the service graph, not only the HTTP port.
