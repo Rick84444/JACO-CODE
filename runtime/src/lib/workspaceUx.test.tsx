@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderToStaticMarkup as renderMarkup } from 'react-dom/server';
+import { UiLanguageProvider } from '../i18n/UiLanguage';
 import { ActivationCard } from '../components/ActivationCard';
 import { CognitiveWorkspace } from '../components/CognitiveWorkspace';
 import { AuraChatPanel } from '../components/AuraChatPanel';
 
+const renderToStaticMarkup = (node: React.ReactNode) => renderMarkup(<UiLanguageProvider initialLanguage="sv">{node}</UiLanguageProvider>);
 const noop = () => {};
 const activationProps = {onOpenProject:noop,onOpenProviders:noop,projectName:'My project'};
 
