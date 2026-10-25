@@ -6881,4 +6881,10 @@ const notifyPhone = async (action) => {
   });
 
 }
-startServer();
+ // Initialization failures (e.g. LEDGER_LOCKED) happen before HTTP listen().
+ // The global unhandledRejection observer must not keep a dead Core PID alive;
+ // runit needs an actual exit, so canonical activation can recover the owner.
+startServer().catch(error => {
+  console.error('[runtime] FATAL startup failed; Core never reached HTTP READY:', error?.stack || error);
+  process.exit(1);
+});
