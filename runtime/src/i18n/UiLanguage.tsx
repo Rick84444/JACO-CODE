@@ -13,7 +13,8 @@ interface UiLanguageContextValue {
 
 const UiLanguageContext = createContext<UiLanguageContextValue | null>(null);
 
-function initialLanguage(): UiLanguage {
+function readStoredLanguage(): UiLanguage {
+  if (typeof window === 'undefined') return 'en';
   try {
     return window.localStorage.getItem(UI_LANGUAGE_STORAGE_KEY) === 'sv' ? 'sv' : 'en';
   } catch {
@@ -21,8 +22,8 @@ function initialLanguage(): UiLanguage {
   }
 }
 
-export function UiLanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguage] = useState<UiLanguage>(initialLanguage);
+export function UiLanguageProvider({ children, initialLanguage }: { children: React.ReactNode; initialLanguage?: UiLanguage }) {
+  const [language, setLanguage] = useState<UiLanguage>(() => initialLanguage ?? readStoredLanguage());
   useEffect(() => {
     document.documentElement.lang = language;
     try { window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, language); } catch { /* Storage can be unavailable. */ }
