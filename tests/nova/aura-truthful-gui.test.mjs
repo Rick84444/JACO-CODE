@@ -67,7 +67,7 @@ test('canonical Aura is a writable IDE workspace rather than a read-only dashboa
   assert.match(chat, /source: selectedTool\.skillSource/);
   assert.match(chat, /Starta uppdrag/);
   assert.match(chat, /selectedTool/);
-  assert.match(chat, /role="log".*aria-label="JACO-konversation"/);
+  assert.match(chat, /role="log".*aria-label=\{tr\('JACO-konversation',\s*'JACO conversation'\)\}/);
   // Operator 2026-10-11: real observed steps belong in the same conversation.
   assert.match(chat, /CognitiveEventCard/);
   assert.match(chat, /source:'jaco:\/\/current-work'/);
@@ -247,7 +247,7 @@ test('the single canonical conversation stays mounted while contextual views cha
   assert.equal((source.match(/<AuraChatPanel/g)||[]).length,1);
   assert.match(source, /conversation=\{renderChatContent\(\)\}/);
   assert.match(workspace, /className="cognitive-conversation".*props\.conversation/);
-  assert.match(workspace, /aria-label="Visa samtalet"/);
+  assert.match(workspace, /aria-label=\{tr\('Visa samtalet',\s*'Show conversation'\)\}/);
   assert.doesNotMatch(workspace, /hasCanvas&&.*cognitive-conversation/);
   // Mobile hides the conversation with CSS, preserving its draft and the controller.
   assert.match(css, /cognitive-main\[data-canvas=true\]>.cognitive-conversation \{ display:none;/);

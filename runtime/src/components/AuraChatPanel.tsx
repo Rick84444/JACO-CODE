@@ -4,6 +4,7 @@ import { CopyMessageButton } from './CopyMessageButton';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, ArrowUpRight, MessageSquare, ChevronRight } from 'lucide-react';
 import { ChatMarkdown } from './ChatMarkdown';
+import { useUiLanguage } from '../i18n/UiLanguage';
 import { JacoWordmark } from './JacoWordmark';
 import { CognitiveEventCard } from './CognitiveEventCard';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
@@ -45,10 +46,11 @@ interface AuraChatActivity {
 }
 
 export function useAuraChatSession() {
+  const { tr } = useUiLanguage();
   const [messages, setMessages] = useState<ChatMessage[]>([{
     id: 'welcome',
     role: 'system',
-    content: 'Fråga om arbetsytan eller skapa ett uppdrag. Anslutningsstatus avgörs när ett anrop görs.',
+    content: tr('Fråga om arbetsytan eller skapa ett uppdrag. Anslutningsstatus avgörs när ett anrop görs.', 'Ask about the workspace or create a mission. Connection status is verified when a call is made.'),
   }]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState<'chat'|'goal'|'tool'|null>(null);
@@ -121,6 +123,7 @@ async function chatJson(response: Response) {
 
 export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
   const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments } = session;
+  const { tr } = useUiLanguage();
   const [attachments, setAttachments] = useState<Array<{id:string;files:Array<{path:string;format:string}>}>>(()=>{
     try {const saved=JSON.parse(localStorage.getItem('jaco:aura:attachments:v1')||'[]');return Array.isArray(saved)?saved.filter(item=>typeof item?.id==='string'&&/^[a-f0-9-]{36}$/.test(item.id)&&Array.isArray(item.files)&&item.files.length<=200&&item.files.every((file:any)=>typeof file?.path==='string'&&['text','binary'].includes(file.format))).slice(0,16):[];}catch{return [];}
   });
@@ -421,24 +424,24 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   return (
     <div className="cognitive-chat h-full min-h-0 flex flex-col">
       <div className="cognitive-chat-heading">
-        <span><span className="cognitive-jaco-mark"/>JACO <span className="cognitive-chat-subtitle">Samtal & skapande</span></span>
-        <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label="Chattinställningar" title="Modell och budget"><Settings2 size={15}/><span>{modelLabel}</span></button>
+        <span><span className="cognitive-jaco-mark"/>JACO <span className="cognitive-chat-subtitle">{tr('Samtal & skapande','Conversation & creation')}</span></span>
+        <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label={tr('Chattinställningar','Chat settings')} title={tr('Modell och budget','Model and budget')}><Settings2 size={15}/><span>{modelLabel}</span></button>
       </div>
 
       {runControls && <div className="cognitive-run-controls">{runControls}</div>}
 
       {showSettings && (
         <div className="px-4 py-3 border-b border-[#1c2a36] bg-[#0e1720] space-y-2 text-xs max-h-[50%] overflow-auto">
-          <label className="flex items-center gap-2 text-slate-400">Modell
+          <label className="flex items-center gap-2 text-slate-400">{tr('Modell','Model')}
             <select aria-label="Aura provider" value={selectedProvider} onChange={event => {
               const next = event.target.value;
               const model = providers.find(p => p.id === next)?.defaultModel || '';
               setSelectedProvider(next); setChatModel(model); saveSelection(next, model);
             }} disabled={busy !== null || !storageReady}
               className="flex-1 min-w-0 bg-[#111820] border border-[#343b45] rounded px-2 py-1 text-xs text-slate-200">
-              <option value="seer">JACO standard</option>
-              {selectedProvider !== 'seer' && !providers.some(p => p.id === selectedProvider) && <option value={selectedProvider}>{selectedProvider} · ej registrerad</option>}
-              {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.id}{provider.availability==='ACTIVE'?' · svarar':provider.availability==='NO_KEY'?' · nyckel saknas':' · ej tillgänglig'}</option>)}
+              <option value="seer">{tr('JACO standard','JACO default')}</option>
+              {selectedProvider !== 'seer' && !providers.some(p => p.id === selectedProvider) && <option value={selectedProvider}>{selectedProvider} · {tr('ej registrerad','not registered')}</option>}
+              {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.id}{provider.availability==='ACTIVE'?' · responding':provider.availability==='NO_KEY'?' · no key':' · unavailable'}</option>)}
             </select>
           </label>
           {selectedProvider !== 'seer' && (() => {
@@ -448,68 +451,68 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             const pick = (model: string) => { setChatModel(model); saveSelection(selectedProvider, model); };
             return typed
               ? <div className="flex gap-2">
-                  <input aria-label="Aura modell" value={chatModel} maxLength={128} disabled={busy !== null || !storageReady} onChange={e => pick(e.target.value)} placeholder="Modellnamn" className="flex-1 min-w-0 text-sm px-2 py-1.5 bg-[#111820] border border-[#343b45] rounded" />
-                  {listed.length > 0 && <button type="button" className="text-[11px] text-cyan-400" onClick={() => { setCustomModel(false); if (!listed.includes(chatModel)) pick(listed[0]); }}>Välj ur lista</button>}
+                  <input aria-label={tr('Aura modell','Aura model')} value={chatModel} maxLength={128} disabled={busy !== null || !storageReady} onChange={e => pick(e.target.value)} placeholder={tr('Modellnamn','Model name')} className="flex-1 min-w-0 text-sm px-2 py-1.5 bg-[#111820] border border-[#343b45] rounded" />
+                  {listed.length > 0 && <button type="button" className="text-[11px] text-cyan-400" onClick={() => { setCustomModel(false); if (!listed.includes(chatModel)) pick(listed[0]); }}>{tr('Välj ur lista','Choose from list')}</button>}
                 </div>
               : <select aria-label="Aura modell" value={listed.includes(chatModel) ? chatModel : ''} disabled={busy !== null || !storageReady}
                   onChange={e => e.target.value === '__other' ? setCustomModel(true) : pick(e.target.value)}
                   className="w-full text-sm px-2 py-1.5 bg-[#111820] border border-[#343b45] rounded text-slate-200">
-                  {!listed.includes(chatModel) && <option value="">{chatModel || 'Välj modell'}</option>}
+                  {!listed.includes(chatModel) && <option value="">{chatModel || tr('Välj modell','Choose model')}</option>}
                   {listed.map(model => <option key={model} value={model}>{model}</option>)}
-                  <option value="__other">Annan modell…</option>
+                  <option value="__other">{tr('Annan modell…','Other model…')}</option>
                 </select>;
           })()}
           <div className="flex flex-wrap gap-3 text-[11px] text-cyan-400">
-            <button disabled={busy !== null || !storageReady} onClick={() => setCatalogRevision(v => v + 1)}>Uppdatera providerlista</button>
-            {onOpenProviders && <button onClick={onOpenProviders}>Hantera providers</button>}
+            <button disabled={busy !== null || !storageReady} onClick={() => setCatalogRevision(v => v + 1)}>{tr('Uppdatera providerlista','Refresh provider list')}</button>
+            {onOpenProviders && <button onClick={onOpenProviders}>{tr('Hantera providers','Manage providers')}</button>}
             {modelOverride && <button type="button" disabled={busy !== null || !storageReady} onClick={() => {
               setSelectedProvider(configuredModel.startsWith('ollama:') ? 'ollama' : 'seer');
               setChatModel(configuredModel.startsWith('ollama:') ? configuredModel.slice(7) : '');
               setModelOverride(false);
               try { localStorage.removeItem(modelStorageKey); localStorage.removeItem(selectionKey); } catch {}
-            }} title="Use the model configured in JACO">Standardmodell</button>}
+            }} title="Use the model configured in JACO">{tr('Standardmodell','Default model')}</button>}
           </div>
-          {selectedProvider !== 'seer' && providers.find(p => p.id === selectedProvider) && !providers.find(p => p.id === selectedProvider)!.credentialReady && <p className="text-[11px] text-amber-300">Provider saknar konfigurerad credential.</p>}
+          {selectedProvider !== 'seer' && providers.find(p => p.id === selectedProvider) && !providers.find(p => p.id === selectedProvider)!.credentialReady && <p className="text-[11px] text-amber-300">{tr('Provider saknar konfigurerad credential.','Provider credentials are not configured.')}</p>}
         </div>
       )}
       {catalogError && <p role="alert" className="px-4 py-2 text-xs text-amber-300 border-b border-[#1c2a36]">{catalogError}</p>}
-      {storageError && <div role="alert" className="px-4 py-2 text-xs text-amber-300">{storageError}{!storageReady&&<button type="button" className="ml-3 underline" onClick={retryStorage}>Försök läsa igen</button>}</div>}
+      {storageError && <div role="alert" className="px-4 py-2 text-xs text-amber-300">{storageError}{!storageReady&&<button type="button" className="ml-3 underline" onClick={retryStorage}>{tr('Försök läsa igen','Retry reading')}</button>}</div>}
 
-      <div ref={scrollRef} onScroll={()=>{const el=scrollRef.current;if(el){const near=el.scrollHeight-el.scrollTop-el.clientHeight<80;followRef.current=near;setFollowing(near);}}} role="log" aria-live="polite" aria-relevant="additions" aria-label="JACO-konversation" className="cognitive-chat-scroll">
+      <div ref={scrollRef} onScroll={()=>{const el=scrollRef.current;if(el){const near=el.scrollHeight-el.scrollTop-el.clientHeight<80;followRef.current=near;setFollowing(near);}}} role="log" aria-live="polite" aria-relevant="additions" aria-label={tr('JACO-konversation','JACO conversation')} className="cognitive-chat-scroll">
         <div className="cognitive-feed">
-          {!storageReady && !storageError && <p className="cognitive-muted">Läser din sparade konversation…</p>}
-          {backgroundEvents.length>0&&<details className="cognitive-background-events"><summary>Aktivitet i bakgrunden ({backgroundEvents.length})</summary>{backgroundEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</details>}
-          {historyTruncated&&<p className="cognitive-history-note">Det senaste arbetet visas. Äldre händelser finns kvar i uppdragshistoriken.</p>}
+          {!storageReady && !storageError && <p className="cognitive-muted">{tr('Läser din sparade konversation…','Loading your saved conversation…')}</p>}
+          {backgroundEvents.length>0&&<details className="cognitive-background-events"><summary>{tr('Aktivitet i bakgrunden','Background activity')} ({backgroundEvents.length})</summary>{backgroundEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</details>}
+          {historyTruncated&&<p className="cognitive-history-note">{tr('Det senaste arbetet visas. Äldre händelser finns kvar i uppdragshistoriken.','The latest work is shown. Older events remain in mission history.')}</p>}
           {storageReady&&feed.length===0&&<div className="cognitive-welcome">
             <JacoWordmark size="lg"/>
-            <div className="cognitive-section-kicker">Din idé. Ett sammanhängande arbete.</div>
-            <h1>Vad vill du skapa?</h1>
-            <p>Beskriv det du vill få att fungera.<br/>Följ arbetet, pröva resultatet och forma nästa steg tillsammans.</p>
+            <div className="cognitive-section-kicker">{tr('Din idé. Ett sammanhängande arbete.','Your idea. One continuous workflow.')}</div>
+            <h1>{tr('Vad vill du skapa?','What would you like to build?')}</h1>
+            <p>{tr('Beskriv det du vill få att fungera.','Describe what you want to make work.')}<br/>{tr('Följ arbetet, pröva resultatet och forma nästa steg tillsammans.','Follow the work, test the outcome, and shape the next step together.')}</p>
             <div className="cognitive-start-prompts">
-              <button type="button" onClick={()=>prompt('Undersök det öppna projektet. Förklara vad som fungerar och vilka fel du faktiskt kan verifiera.','goal')}><SearchIcon/><span>Undersök mitt projekt<small>Förstå koden och nästa steg</small></span><ArrowUpRight size={14}/></button>
-              <button type="button" onClick={()=>prompt('Hjälp mig förbättra en funktion i projektet. Börja med att kartlägga den relevanta koden.','goal')}><FileCode2 size={17}/><span>Utveckla vidare<small>Bygg på det som redan finns</small></span><ArrowUpRight size={14}/></button>
+              <button type="button" onClick={()=>prompt(tr('Undersök det öppna projektet. Förklara vad som fungerar och vilka fel du faktiskt kan verifiera.','Inspect the open project. Explain what works and which defects you can actually verify.'),'goal')}><SearchIcon/><span>{tr('Undersök mitt projekt','Inspect my project')}<small>{tr('Förstå koden och nästa steg','Understand the code and next steps')}</small></span><ArrowUpRight size={14}/></button>
+              <button type="button" onClick={()=>prompt(tr('Hjälp mig förbättra en funktion i projektet. Börja med att kartlägga den relevanta koden.','Help improve one feature in this project. Start by mapping the relevant code.'),'goal')}><FileCode2 size={17}/><span>{tr('Utveckla vidare','Develop further')}<small>{tr('Bygg på det som redan finns','Build on what already exists')}</small></span><ArrowUpRight size={14}/></button>
             </div>
           </div>}
           {feed.map(item=>{
             if(item.kind==='event')return <CognitiveEventCard key={item.id} event={item.event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>;
             const message=item.message;
-            return message.role==='user'?<div key={item.id} className="cognitive-user-message"><div>{message.content}</div>{message.attachments?.map(item=><small key={item.id} className="block mt-2">Bifogat: {item.name} · {item.fileCount} filer</small>)}</div>
-              :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><span className="cognitive-jaco-mark"/>JACO</div><ChatMarkdown text={message.content}/><CopyMessageButton text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>Svar & källor</summary><p>{message.meta}</p></details>}</article>
+            return message.role==='user'?<div key={item.id} className="cognitive-user-message"><div>{message.content}</div>{message.attachments?.map(item=><small key={item.id} className="block mt-2">{tr('Bifogat','Attached')}: {item.name} · {item.fileCount} {tr('filer','files')}</small>)}</div>
+              :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><span className="cognitive-jaco-mark"/>JACO</div><ChatMarkdown text={message.content}/><CopyMessageButton text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>{tr('Svar & källor','Answer & sources')}</summary><p>{message.meta}</p></details>}</article>
               :<div key={item.id} className="cognitive-system-message">{message.content}{message.action&&<button type="button" disabled={busy!==null} onClick={()=>void runAction(message.action!)}>{message.action.label}</button>}</div>;
           })}
-          {busy&&<div className="cognitive-response-wait"><span role="status"><Loader2 size={15} className="animate-spin"/>{busy==='goal'?'Registrerar uppdraget…':busy==='tool'?'Väntar på verktygets resultat…':'Väntar på modellens svar…'}</span>{busy==='chat' && <><time aria-label="Väntetid">{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>Avbryt svar</button></>}</div>}
+          {busy&&<div className="cognitive-response-wait"><span role="status"><Loader2 size={15} className="animate-spin"/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
         </div>
       </div>
       <form onSubmit={event=>{event.preventDefault();void submit();}} className="cognitive-composer">
         <div className="cognitive-composer-inner">
-          {!following&&<button type="button" className="cognitive-follow-latest" onClick={followLatest}><ArrowDown size={13}/>Följ senaste arbetet</button>}
-          {currentMission&&<div className="cognitive-live-questions"><button type="button" onClick={()=>prompt('Vad har du upptäckt hittills i det aktuella uppdraget?')} disabled={Boolean(busy)}>Vad har du upptäckt?</button><button type="button" onClick={()=>prompt('Visa vad som faktiskt fungerar och vilka belägg som stöder det.')} disabled={Boolean(busy)}>Vad fungerar?</button></div>}
+          {!following&&<button type="button" className="cognitive-follow-latest" onClick={followLatest}><ArrowDown size={13}/>{tr('Följ senaste arbetet','Follow latest work')}</button>}
+          {currentMission&&<div className="cognitive-live-questions"><button type="button" onClick={()=>prompt(tr('Vad har du upptäckt hittills i det aktuella uppdraget?','What have you discovered so far in the current mission?'))} disabled={Boolean(busy)}>{tr('Vad har du upptäckt?','What have you found?')}</button><button type="button" onClick={()=>prompt(tr('Visa vad som faktiskt fungerar och vilka belägg som stöder det.','Show what actually works and the evidence supporting it.'))} disabled={Boolean(busy)}>{tr('Vad fungerar?','What works?')}</button></div>}
 
           {selectedTool && (
             <div className="mb-2 px-3 py-1.5 rounded-lg bg-[#111820] border border-[#263544] text-xs flex items-center gap-2">
-              <span className="text-slate-500">{selectedTool.kind === 'agent' ? 'Agent' : selectedTool.kind === 'skill' ? 'Skill' : 'MCP-verktyg'}</span>
+              <span className="text-slate-500">{selectedTool.kind === 'agent' ? 'Agent' : selectedTool.kind === 'skill' ? 'Skill' : tr('MCP-verktyg','MCP tool')}</span>
               <span className="text-cyan-300 truncate">{selectedTool.label}</span>
-              <button type="button" onClick={onClearSelectedTool} aria-label="Ta bort valt verktyg" className="ml-auto text-slate-500 hover:text-slate-200">×</button>
+              <button type="button" onClick={onClearSelectedTool} aria-label={tr('Ta bort valt verktyg','Remove selected tool')} className="ml-auto text-slate-500 hover:text-slate-200">×</button>
             </div>
           )}
           <div className="cognitive-input-box">
@@ -524,8 +527,8 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                 }
               }}
               rows={2}
-              aria-label="Meddelande till JACO"
-              placeholder={composeMode==='goal'?'Beskriv det JACO ska bygga eller lösa…':'Skriv till JACO. Du kan fråga medan arbetet pågår…'}
+              aria-label={tr('Meddelande till JACO','Message to JACO')}
+              placeholder={composeMode==='goal'?tr('Beskriv det JACO ska bygga eller lösa…','Describe what JACO should build or solve…'):tr('Skriv till JACO. Du kan fråga medan arbetet pågår…','Message JACO. You can ask questions while work continues…')}
               className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-[14px] leading-6 text-slate-100 outline-none placeholder:text-slate-600"
             />
             {selectedTool && ['mcp','skill'].includes(selectedTool.kind) && (
@@ -533,26 +536,26 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                 <input
                   value={toolArguments}
                   onChange={event => setToolArguments(event.target.value)}
-                  placeholder={selectedTool.kind === 'skill' ? 'Skill-argument som JSON, t.ex. {"input":"value"}' : 'MCP-argument som JSON, t.ex. {"surface":"DESKTOP"}'}
+                  placeholder={selectedTool.kind === 'skill' ? tr('Skill-argument som JSON, t.ex. {"input":"value"}','Skill arguments as JSON, e.g. {"input":"value"}') : tr('MCP-argument som JSON, t.ex. {"surface":"DESKTOP"}','MCP arguments as JSON, e.g. {"surface":"DESKTOP"}')}
                   className="flex-1 bg-[#111820] border border-[#30363d] rounded px-2 py-1.5 text-xs font-mono text-slate-300 outline-none focus:border-cyan-800"
                 />
                 <button type="button" onClick={() => void runSelectedTool()} disabled={Boolean(busy)}
                   className="px-3 py-1.5 text-xs border border-violet-800 text-violet-300 rounded hover:bg-violet-950/30 disabled:opacity-40">
-                  {busy === 'tool' ? 'Kör…' : selectedTool.kind === 'skill' ? 'Kör skill' : 'Kör MCP'}
+                  {busy === 'tool' ? tr('Kör…','Running…') : selectedTool.kind === 'skill' ? tr('Kör skill','Run skill') : tr('Kör MCP','Run MCP')}
                 </button>
               </div>
             )}
             <div className="cognitive-input-actions">
-              <div className="cognitive-compose-modes" role="group" aria-label="Typ av meddelande">
-                <button type="button" aria-pressed={composeMode==='goal'} onClick={()=>setComposeMode('goal')}><Target size={12}/>Uppdrag</button>
-                <button type="button" aria-pressed={composeMode==='chat'} onClick={()=>setComposeMode('chat')}><MessageSquare size={12}/>Fråga</button>
+              <div className="cognitive-compose-modes" role="group" aria-label={tr('Typ av meddelande','Message type')}>
+                <button type="button" aria-pressed={composeMode==='goal'} onClick={()=>setComposeMode('goal')}><Target size={12}/>{tr('Uppdrag','Mission')}</button>
+                <button type="button" aria-pressed={composeMode==='chat'} onClick={()=>setComposeMode('chat')}><MessageSquare size={12}/>{tr('Fråga','Ask')}</button>
               </div>
-              <span className="cognitive-enter-hint">Shift + Enter för ny rad</span>
-              <button type="submit" aria-label={composeMode==='goal'?'Starta uppdrag':'Skicka meddelande'} title={composeMode==='goal'?'Starta uppdrag':'Skicka'} disabled={!input.trim()||Boolean(busy)||uploading||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
+              <span className="cognitive-enter-hint">{tr('Shift + Enter för ny rad','Shift + Enter for new line')}</span>
+              <button type="submit" aria-label={composeMode==='goal'?tr('Starta uppdrag','Start mission'):tr('Skicka meddelande','Send message')} title={composeMode==='goal'?tr('Starta uppdrag','Start mission'):tr('Skicka','Send')} disabled={!input.trim()||Boolean(busy)||uploading||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
             </div>
           </div>
           <AttachmentPicker items={attachments} onChange={setAttachments} onBusy={setUploading} disabled={Boolean(busy)}/>
-          <p className="cognitive-composer-help">{composeMode === 'goal' ? 'JACO arbetar inom uppdragets behörigheter. Beslut som kräver dig visas ovanför arbetet.' : 'Fråga om arbetet utan att starta ett nytt uppdrag.'}</p>
+          <p className="cognitive-composer-help">{composeMode === 'goal' ? tr('JACO arbetar inom uppdragets behörigheter. Beslut som kräver dig visas ovanför arbetet.','JACO works within mission permissions. Decisions requiring you appear above the work.') : tr('Fråga om arbetet utan att starta ett nytt uppdrag.','Ask about ongoing work without starting a new mission.')}</p>
         </div>
       </form>
     </div>

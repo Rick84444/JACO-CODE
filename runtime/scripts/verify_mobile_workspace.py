@@ -16,6 +16,7 @@ with sync_playwright() as p:
         page = browser.new_page(viewport={'width': width, 'height': height}, is_mobile=True, has_touch=True)
         failures = []
         page.on('pageerror', lambda error: failures.append(str(error)))
+        page.add_init_script("localStorage.setItem('jaco:aura:ui-language:v1', 'sv')")
         page.goto(base, wait_until='domcontentloaded')
         nav = page.get_by_role('navigation', name='Mobilnavigation')
         nav.wait_for()
@@ -66,6 +67,7 @@ with sync_playwright() as p:
         print(f'PASS {width}px: navigation, project panel, draft retention, menu focus, integrations, cost, short viewport; no JS errors')
         page.close()
     desktop = browser.new_page(viewport={'width': 1440, 'height': 900})
+    desktop.add_init_script("localStorage.setItem('jaco:aura:ui-language:v1', 'sv')")
     desktop.goto(base, wait_until='domcontentloaded')
     desktop.locator('.cognitive-rail').wait_for()
     assert not desktop.get_by_role('navigation', name='Mobilnavigation').is_visible()
