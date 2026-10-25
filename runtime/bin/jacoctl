@@ -166,8 +166,8 @@ cleanup_stale_core_processes(){
     # but never an arbitrary process under HOME or another checkout.
     if [[ "$cwd" != "$JACO_ROOT" ]]; then
       case "$cwd" in
-        "$HOME"/jaco-code/runtime|\\
-        "$HOME"/JACO-Autonomus-IDE/JACO-Cognitive-Runtime-0.21.0-REFLECTIVE-FUTURES-RC1|\\
+        "$HOME"/jaco-code/runtime|\
+        "$HOME"/JACO-Autonomus-IDE/JACO-Cognitive-Runtime-0.21.0-REFLECTIVE-FUTURES-RC1|\
         "$HOME"/JACO-no-budget-test/JACO-Cognitive-Runtime-0.21.0-REFLECTIVE-FUTURES-RC1) ;;
         *) continue ;;
       esac
