@@ -12,11 +12,14 @@ Source-confirmed issues corrected:
 - Device polling could overlap and had no timeout. Reads now have an in-flight
   guard and 10-second timeout; hidden pages skip automatic reads.
 
-Remaining bottleneck: MCP tool RPC has a 25-second timeout while the workbench
-client times out after 10 seconds. A stalled observation can outlive its caller.
-The fabric cache stores completed values, not in-flight work, so concurrent
-clients may duplicate these probes. This needs a separate bounded observation
-lifecycle; do not label cached or timed-out browser observations live.
+MCP follow-up fix: automatic fabric observations now share a four-second abort
+signal across health, tool discovery and observation RPCs. Explicit tool execution
+keeps its existing timeout. Concurrent readers share in-flight observation work;
+the 2.5-second cache lifetime starts on completion. Configuration invalidation
+prevents an older pending response from repopulating the cache. Timed-out providers
+are unavailable with MCP_OBSERVATION_TIMEOUT, even when health previously passed.
+Ten targeted integration/cache tests passed, covering coalescing, completion-based
+TTL, retry after failure and invalidation races. Runtime TypeScript checks passed.
 
 Validation: runtime TypeScript check and 23 device/GUI regression tests passed.
 No phone profiling or real inference timing was performed. These are code-level
