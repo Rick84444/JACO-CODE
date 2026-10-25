@@ -86,7 +86,7 @@ test('Termux activation lets Workplace own SEER and Durable Nova against canonic
   assert.match(ctl,/overall=.*provider=.*model=.*seer=.*nova=/);
   assert.match(ctl,/wait_workplace_running/);
   assert.match(ctl,/core_truth_ready/);
-  assert.match(ctl,/supervised Core is restarting/);
+  assert.match(ctl,/Canonical Sentinel\/Core\/Workplace ownership failed/);
   assert.match(ctl,/svc_stable/);
   assert.match(ctl,/prepare_core_owner/);
   assert.match(ctl,/cleanup_stale_core_processes/);
