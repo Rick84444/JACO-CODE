@@ -1,4 +1,5 @@
 import { readAuraResponse } from '../lib/auraApi.mjs';
+import { useUiLanguage } from '../i18n/UiLanguage';
 import React, { useEffect, useState } from 'react';
 
 // Devices view: other computers and the phone that work with this hub (src/server/connected/deviceAccess.mjs).
@@ -17,9 +18,11 @@ const ago = (iso: string | null) => {
   if (s < 172800) return `${Math.round(s / 3600)} h sedan`;
   return new Date(iso).toLocaleDateString('sv-SE');
 };
-const KIND_LABEL: Record<Kind, string> = { nova: 'Nova på enheten', ide: 'Webbläsare (IDE)' };
 
-export const DevicesView: React.FC = () => {
+
+export const DevicesView: React.FC<{ browser?: { targetCount: number; error: string | null }; onInspectBrowser?: () => void }> = ({ browser, onInspectBrowser }) => {
+  const { tr } = useUiLanguage();
+  const KIND_LABEL = { nova: tr('Lokal agent', 'Local agent'), ide: tr('Webbläsare', 'Browser') };
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [hubUrl, setHubUrl] = useState<string | null>(null);
   const [ideUrl, setIdeUrl] = useState<string | null>(null);
@@ -100,16 +103,22 @@ export const DevicesView: React.FC = () => {
   const revoked = devices?.filter(d => d.revokedAt) || [];
 
   return (
-    <>
+    <section className="device-workspace flex flex-col min-h-0 flex-1">
       <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400 flex items-center justify-between">
-        <span>Enheter</span>
-        <button onClick={() => void load()} className="text-[9px] text-cyan-400 hover:text-cyan-300">Uppdatera</button>
+        <span>{tr('Enheter', 'Devices')}</span>
+        <button onClick={() => void load()} className="text-[9px] text-cyan-400 hover:text-cyan-300">{tr('Uppdatera', 'Refresh')}</button>
       </div>
       <div className="flex-1 overflow-auto px-2 space-y-2 text-[11px] min-w-0">
         {actionError && <div role="alert" className="border border-red-900 text-red-300 rounded p-2 break-words">{actionError}</div>}
         {error && <div className="border border-red-900 text-red-300 rounded p-2 break-words">{error}</div>}
-        <div className="text-[10px] text-slate-500 px-1">
-          Telefonen och andra datorer kan antingen köra en egen Nova åt hubben eller öppna det här IDE:t i webbläsaren. Varje nyckel kan spärras när som helst.
+        <div className="device-summary" aria-live="polite">
+          <span>{active.filter(d => d.online).length} {tr('anslutna enheter', 'connected devices')}</span>
+          <span>{error ? tr('Status inaktuell', 'Status outdated') : tr('Registrerade', 'Registered')}: {active.length}</span>
+        </div>
+        <div className="device-browser">
+          <strong>{tr('Webbläsarkontroll', 'Browser control')}</strong>
+          <p>{browser?.error ? tr('Kontakten behöver kontrolleras', 'Connection needs attention') : browser?.targetCount ? `${browser.targetCount} ${tr('observerade flikar', 'observed tabs')}` : tr('Ingen webbläsarflik observerad', 'No browser tab observed')}</p>
+          <button type="button" onClick={onInspectBrowser} disabled={!onInspectBrowser}>{tr('Inspektera webbläsare', 'Inspect browser')}</button>
         </div>
         {viewer.remote && (
           <div className="border border-cyan-900 bg-[#10202a] rounded p-2 text-[10px] text-cyan-200">
@@ -119,13 +128,13 @@ export const DevicesView: React.FC = () => {
 
         <div className="border border-[#333] bg-[#1d1d1d] rounded p-2 space-y-1.5 min-w-0">
           <div className="flex items-center justify-between">
-            <span className="text-slate-100">Den här datorn</span>
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-900 text-emerald-200">hubb</span>
+            <span className="text-slate-100">{tr('Den här datorn', 'This host')}</span>
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-900 text-emerald-200">{tr('hubb', 'Host')}</span>
           </div>
-          <div className="text-[9px] text-slate-500">nova · tar alla uppdrag som inte riktas till en enhet</div>
+          <div className="text-[9px] text-slate-500">{tr('Standardvärd för uppdrag', 'Default mission host')}</div>
         </div>
 
-        {!devices && !error && <div className="text-slate-500 px-1">Läser enheter…</div>}
+        {!devices && !error && <div className="text-slate-500 px-1">{tr('Läser enheter…', 'Loading devices…')}</div>}
         {active.map(d => (
           <div key={keyOf(d)} className="border border-[#333] bg-[#1d1d1d] rounded p-2 space-y-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
@@ -139,18 +148,18 @@ export const DevicesView: React.FC = () => {
             {confirmRevoke === keyOf(d) ? (
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-[9px] text-amber-300">{d.kind === 'ide' ? 'Logga ut webbläsaren?' : 'Spärra nyckeln? Enheten måste parkopplas igen.'}</span>
-                <button disabled={busy} onClick={() => void revoke(d)} className="px-1.5 py-0.5 rounded bg-red-900 hover:bg-red-800 text-white text-[9px]">Spärra</button>
-                <button onClick={() => setConfirmRevoke(null)} className="px-1.5 py-0.5 rounded bg-[#333] text-slate-200 text-[9px]">Avbryt</button>
+                <button disabled={busy} onClick={() => void revoke(d)} className="px-1.5 py-0.5 rounded bg-red-900 hover:bg-red-800 text-white text-[9px]">{tr('Spärra', 'Revoke')}</button>
+                <button onClick={() => setConfirmRevoke(null)} className="px-1.5 py-0.5 rounded bg-[#333] text-slate-200 text-[9px]">{tr('Avbryt', 'Cancel')}</button>
               </div>
             ) : (
-              <button onClick={() => setConfirmRevoke(keyOf(d))} className="text-[9px] text-red-300 hover:text-red-200">Spärra nyckel</button>
+              <button onClick={() => setConfirmRevoke(keyOf(d))} className="text-[9px] text-red-300 hover:text-red-200">{tr('Spärra nyckel', 'Revoke access')}</button>
             )}
           </div>
         ))}
 
         <div className="border border-cyan-900 bg-[#10202a] rounded p-2 space-y-1.5 min-w-0">
-          <div className="text-slate-100">Lägg till enhet</div>
-          {!(kind === 'ide' ? ideUrl : hubUrl) && <p role="status" className="text-amber-300">{kind === 'ide' ? 'IDE-adress saknas. Konfigurera JACO_IDE_PUBLIC_HOST.' : 'Hubbadress saknas. Konfigurera JACO_GATEWAY_PUBLIC_URL.'}</p>}
+          <div className="text-slate-100">{tr('Lägg till enhet', 'Add device')}</div>
+          {!(kind === 'ide' ? ideUrl : hubUrl) && <p role="status" className="text-amber-300">{kind === 'ide' ? tr('En delbar IDE-adress behövs för parkoppling.', 'Pairing requires a shareable IDE address.') : tr('En delbar hubbadress behövs för parkoppling.', 'Pairing requires a shareable hub address.')}</p>}
           {!invite ? (
             <>
               <div className="grid grid-cols-2 gap-1">
@@ -163,9 +172,9 @@ export const DevicesView: React.FC = () => {
                 ? 'Öppna IDE:t i mobilens webbläsare, som vscode.dev. Inloggningen gäller 30 dagar på den enheten.'
                 : 'Enheten kör en egen Nova och tar bara uppdrag som riktas till den.'}</div>
               <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void createInvite(); }}
-                placeholder="namn, t.ex. telefon eller laptop" className="w-full bg-[#0b0b0b] border border-[#333] rounded p-1 text-[11px] text-slate-200" />
+                aria-label={tr('Enhetsnamn', 'Device name')} placeholder={tr('telefon eller laptop', 'phone or laptop')} className="w-full bg-[#0b0b0b] border border-[#333] rounded p-1 text-[11px] text-slate-200" />
               <button onClick={() => void createInvite()} disabled={busy || !name.trim() || !(kind === 'ide' ? ideUrl : hubUrl)}
-                className="px-2 py-1 rounded bg-cyan-800 hover:bg-cyan-700 text-white text-[10px] disabled:opacity-40">Skapa parkopplingskod</button>
+                className="px-2 py-1 rounded bg-cyan-800 hover:bg-cyan-700 text-white text-[10px] disabled:opacity-40">{tr('Skapa parkopplingskod', 'Create pairing code')}</button>
             </>
           ) : secondsLeft > 0 ? (
             <>
@@ -184,12 +193,12 @@ export const DevicesView: React.FC = () => {
                   <button onClick={() => void copy(c.id, c.text)} className="px-2 py-1 rounded bg-cyan-800 hover:bg-cyan-700 text-white text-[10px]">{copied === c.id ? 'Kopierat' : 'Kopiera'}</button>
                 </div>
               ))}
-              <button onClick={() => setInvite(null)} className="px-2 py-1 rounded bg-[#333] text-slate-200 text-[10px]">Klar</button>
+              <button onClick={() => setInvite(null)} className="px-2 py-1 rounded bg-[#333] text-slate-200 text-[10px]">{tr('Klar', 'Done')}</button>
             </>
           ) : (
             <>
               <div className="text-[10px] text-amber-300">Koden för {invite.name} har gått ut.</div>
-              <button onClick={() => { setName(invite.name); setKind(invite.kind); setInvite(null); }} className="px-2 py-1 rounded bg-[#333] text-slate-200 text-[10px]">Skapa ny kod</button>
+              <button onClick={() => { setName(invite.name); setKind(invite.kind); setInvite(null); }} className="px-2 py-1 rounded bg-[#333] text-slate-200 text-[10px]">{tr('Skapa ny kod', 'Create new code')}</button>
             </>
           )}
         </div>
@@ -198,6 +207,6 @@ export const DevicesView: React.FC = () => {
           <div className="text-[9px] text-slate-600 px-1 break-words">Spärrade: {revoked.map(d => `${d.name} (${d.kind})`).join(', ')}</div>
         )}
       </div>
-    </>
+    </section>
   );
 };

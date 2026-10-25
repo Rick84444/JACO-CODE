@@ -1263,7 +1263,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
 
     if (sidebar === 'revenue') return <RevenueView />;
     if (sidebar === 'skills') return <SkillsView />;
-    if (sidebar === 'devices') return <DevicesView />;
+    if (sidebar === 'devices') return <DevicesView browser={snapshot?.integrations?.cdp} onInspectBrowser={() => void selectMcpToolByName('cdp', 'nova_targets')} />;
 
     if (sidebar === 'tools') {
       return (
