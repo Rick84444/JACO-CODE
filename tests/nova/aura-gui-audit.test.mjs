@@ -47,7 +47,7 @@ test('active GUI keeps one conversation controller while contextual workspaces c
   assert.doesNotMatch(ide, /data-aura-primary-conversation/);
   // The chat shows the conversation; budget and provider settings sit behind its settings button.
   const chat = read('components/AuraChatPanel.tsx');
-  assert.match(chat, /aria-label="Chattinställningar"/);
+  assert.match(chat, /aria-label=\{tr\('Chattinställningar',\s*'Chat settings'\)\}/);
   assert.match(chat, /\{showSettings && \(/);
   assert.doesNotMatch(chat, /arbetsuppdatering/);
   assert.doesNotMatch(ide, /initialFileSelected/);
