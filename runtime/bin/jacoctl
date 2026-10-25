@@ -512,15 +512,52 @@ wait_workplace_running(){
   return 1
 }
 
+# supervise/ok can remain on disk after Android kills runsvdir/runsv.
+# Require a real response from the live supervisor, not a stale filesystem marker.
+service_supervised(){
+  local state
+  state="$(sv status "$(svc_path "$1")" 2>&1)" || return 1
+  [[ "$state" == run:* || "$state" == down:* ]]
+}
+
 wait_supervised(){
   local svc="$1" i
   for ((i=1;i<=40;i++)); do
-    [[ -e "$(svc_path "$svc")/supervise/ok" ]] && return 0
+    service_supervised "$svc" && return 0
     sleep 0.25
   done
-  echo "service is installed but not supervised: $svc" >&2
-  echo "start termux-services (service-daemon) or restart the Termux shell" >&2
+  printf '[JACO] BLOCKED — runsv is not supervising %s\\n' "$svc" >&2
   return 1
+}
+
+# Recover at most once per lifecycle invocation. This also covers a live
+# runsvdir whose individual runsv children died (a PID check cannot detect it).
+# No JACO process is killed or replaced until every supervisor responds.
+ensure_runit_supervision(){
+  local svc healthy=true
+  for svc in "$SENTINEL_SERVICE" "$CORE_SERVICE" "$WORKPLACE_SERVICE" "$NOVA_SERVICE" "$OLLAMA_SERVICE" "$NOVA_BRIDGE_SERVICE" "$CDP_SERVICE"; do
+    if ! service_supervised "$svc"; then
+      printf '[JACO] SUPERVISOR — %s has no live runsv\\n' "$svc" >&2
+      healthy=false
+    fi
+  done
+  [[ "$healthy" == true ]] && return 0
+  command -v service-daemon >/dev/null 2>&1 || {
+    printf '[JACO] BLOCKED — termux-services service-daemon is missing\\n' >&2
+    return 32
+  }
+  printf '[JACO] RECOVERY — restarting termux-services runsvdir once; preserving mission and model state\\n' >&2
+  # The Termux service-daemon is the only authority for runsvdir, not this script.
+  local logdir="${LOGDIR:-$PREFIX/var/log}"
+  mkdir -p "$logdir/sv"
+  if ! SVDIR="$SVDIR" LOGDIR="$logdir" service-daemon restart >&2; then
+    printf '[JACO] BLOCKED — service-daemon restart failed\\n' >&2
+    return 32
+  fi
+  for svc in "$SENTINEL_SERVICE" "$CORE_SERVICE" "$WORKPLACE_SERVICE" "$NOVA_SERVICE" "$OLLAMA_SERVICE" "$NOVA_BRIDGE_SERVICE" "$CDP_SERVICE"; do
+    wait_supervised "$svc" || return 32
+  done
+  printf '[JACO] RECOVERY — all seven runsv supervisors respond\\n' >&2
 }
 
 emit(){
@@ -592,21 +629,10 @@ EXPECTED_CORE_RELEASE_ID="$(node -e 'const fs=require("node:fs");try{const r=JSO
 [[ -d "$(svc_path "$NOVA_BRIDGE_SERVICE")" ]] || { echo "missing service: $(svc_path "$NOVA_BRIDGE_SERVICE")" >&2; exit 31; }
 [[ -d "$(svc_path "$CDP_SERVICE")" ]] || { echo "missing service: $(svc_path "$CDP_SERVICE")" >&2; exit 31; }
 
-if [[ "$ACTION" != status && ! -e "$(svc_path "$SENTINEL_SERVICE")/supervise/ok" ]]; then
-  if command -v service-daemon >/dev/null 2>&1; then
-    LOGDIR="${LOGDIR:-$PREFIX/var/log}"
-    mkdir -p "$LOGDIR/sv"
-    SVDIR="$SVDIR" LOGDIR="$LOGDIR" service-daemon start >/dev/null 2>&1 || true
-  fi
-fi
+# Status remains strictly read-only. Activation/restart first repair runsv
+# supervision, before issuing sv down, orphan cleanup, or start commands.
 if [[ "$ACTION" != status ]]; then
-  wait_supervised "$SENTINEL_SERVICE"
-  wait_supervised "$CORE_SERVICE"
-  wait_supervised "$WORKPLACE_SERVICE"
-  wait_supervised "$NOVA_SERVICE"
-  wait_supervised "$OLLAMA_SERVICE"
-  wait_supervised "$NOVA_BRIDGE_SERVICE"
-  wait_supervised "$CDP_SERVICE"
+  ensure_runit_supervision || { printf '[JACO] BLOCKED — supervisor recovery failed; no process takeover attempted\\n' >&2; exit 32; }
 fi
 
 case "$ACTION" in
