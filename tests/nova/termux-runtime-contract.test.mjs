@@ -153,7 +153,7 @@ test('Termux activation repairs repository-root imports before touching runit se
 
 test('fatal asynchronous Core startup error exits instead of leaving a non-listening runit PID',async()=>{
   const source=fs.readFileSync(path.join(runtime,'server.ts'),'utf8');
-  const marker='\\nstartServer().catch(';
+  const marker='\nstartServer().catch(';
   const i=source.lastIndexOf(marker);
   assert(i>0,'Core must explicitly handle fatal startServer promise rejection');
   const {runInNewContext}=await import('node:vm');
@@ -167,6 +167,6 @@ test('fatal asynchronous Core startup error exits instead of leaving a non-liste
   });
   await finished;
   assert.deepEqual(exits,[1]);
-  assert.match(messages.join('\\n'),/LEDGER_LOCKED/);
-  assert.match(messages.join('\\n'),/FATAL startup failed/);
+  assert.match(messages.join('\n'),/LEDGER_LOCKED/);
+  assert.match(messages.join('\n'),/FATAL startup failed/);
 });
