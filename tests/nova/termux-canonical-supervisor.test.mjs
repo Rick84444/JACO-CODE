@@ -63,7 +63,7 @@ test('READY requires canonical Sentinel, Core and Workplace PID owners, not HTTP
   mock('curl',[
     '#!/bin/sh',
     'case "$*" in',
-    '  *api/runtime/identity*) printf "%s\\n" "$JACO_TEST_CORE_IDENTITY";;',
+    '  *api/runtime/identity*) [ "${JACO_TEST_CORE_DOWN:-0}" = "1" ] && exit 7; printf "%s\\n" "$JACO_TEST_CORE_IDENTITY";;',
     '  *2995/health*) printf \'{"supervisedAgents":{"state":"RUNNING","nova":{"state":"RUNNING"}}}\\n\';;',
     '  *) printf "{}\\n";;',
     'esac',
@@ -103,6 +103,13 @@ test('READY requires canonical Sentinel, Core and Workplace PID owners, not HTTP
     const right=run(canonicalSentinel);
     assert.equal(right.status,0,right.stderr);
     assert.match(right.stdout,/\[JACO\] READY/);
+    const absentCore=spawnSync('bash',[ctl,'status'],{
+      encoding:'utf8', timeout:10000,
+      env:{...common,JACO_TEST_SENTINEL_PID:String(canonicalSentinel),JACO_TEST_CORE_DOWN:'1'}
+    });
+    assert.equal(absentCore.status,0,absentCore.stderr);
+    assert.match(absentCore.stdout,/Core HTTP unavailable on port 3000/);
+    assert.doesNotMatch(absentCore.stdout,/does not belong to the canonical supervisor/);
   } finally {
     for (const child of processes) child.kill('SIGTERM');
     fs.rmSync(temp,{recursive:true,force:true});
