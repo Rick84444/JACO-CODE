@@ -18,7 +18,7 @@ const PATTERNS = [
   ['private key block', /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/],
   ['Stripe live key', /\b[rs]k_live_[A-Za-z0-9]{20,}\b/],
 ];
-// Firebase settings come from VITE_FIREBASE_* variables; no tracked file may hold a Google API key.
+// No file is exempt: the repository holds no keys at all (see SECURITY.md).
 const ALLOWED = new Map();
 
 test('no tracked file holds a key-shaped string', { skip: !fs.existsSync(path.join(root, '.git')) && 'not a git checkout' }, () => {

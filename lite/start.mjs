@@ -107,16 +107,15 @@ export function ensureProject(dir, fsImpl = fs) {
   if (!fsImpl.existsSync(ignore)) fsImpl.writeFileSync(ignore, '*\n');
 }
 
-// The budget guard's limits for a first start. They are the operator's own keys and money, so the defaults are modest
-// and visible in the IDE's budget panel, where they can be changed. Written only when no policy exists yet, so a
-// change the operator made is never overwritten. A model without a stated price is accounted at a deliberately high
-// reference price, which makes the worst-case reservation for one agent call about 0.65 USD: the per-task limit must
-// be above that or the agent cannot plan at all.
+// The budget guard's first-start policy: cloud models allowed and no cost caps. Caps are something the operator
+// turns on in the IDE's budget panel, not something JACO decides. Written only when no policy exists yet, so a
+// change the operator made is never overwritten. Outgoing purchases are not covered by this budget and still
+// wait for the operator (spendGuard).
 export function ensureEconomicPolicy(project, fsImpl = fs) {
   const file = path.join(project, '.jaco', 'continuum', 'economic-policy.json');
   if (fsImpl.existsSync(file)) return false;
   fsImpl.mkdirSync(path.dirname(file), { recursive: true });
-  fsImpl.writeFileSync(file, `${JSON.stringify({ cloudEnabled: true, manualAuraCloudEnabled: true, novaOllamaCloudEnabled: true, dailyCloudUsd: 5, monthlyCloudUsd: 50, maxCloudUsdPerTask: 1 }, null, 2)}
+  fsImpl.writeFileSync(file, `${JSON.stringify({ cloudEnabled: true, manualAuraCloudEnabled: true, novaOllamaCloudEnabled: true }, null, 2)}
 `);
   return true;
 }

@@ -50,7 +50,12 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   };
   const ports = { runtime: port('PORT', 3000), workplace: port('JACO_WORKPLACE_PORT', 2995), seer: port('SEER_PORT', 2997), remote: port('JACO_REMOTE_BRIDGE_PORT', 2994), a2a: port('JACO_A2A_PORT', 2998), novaBridge: port('NOVA_BRIDGE_PORT', 4243), cdp: port('JACO_CDP_BRIDGE_PORT', 2996), gateway: port('JACO_GATEWAY_PORT', 4250) };
   ports.chrome = port('CDP_PORT', 9222);
-  const enabledPorts = Object.entries(ports).filter(([key]) => env.JACO_ENABLE_CDP === '1' || !['chrome','cdp','novaBridge','gateway'].includes(key)).map(([, value]) => value);
+  // Operator 2026-10-22: the agent connects its own browser. Chrome (a dedicated JACO profile), the Nova bridge
+  // and the CDP MCP start by default; JACO_ENABLE_CDP=0 turns them off. The ChatGPT gateway stays opt-in
+  // (JACO_ENABLE_CHATGPT_GATEWAY=1, or the earlier JACO_ENABLE_CDP=1 that used to start it).
+  const cdp = env.JACO_ENABLE_CDP !== '0';
+  const gateway = env.JACO_ENABLE_CHATGPT_GATEWAY === '1' || env.JACO_ENABLE_CDP === '1';
+  const enabledPorts = Object.entries(ports).filter(([key]) => key === 'gateway' ? gateway : ['chrome','cdp','novaBridge'].includes(key) ? cdp : true).map(([, value]) => value);
   if (new Set(enabledPorts).size !== enabledPorts.length) throw new Error('DUPLICATE_LISTENER_PORT');
   for (const [key, name] of Object.entries({runtime:'PORT',workplace:'JACO_WORKPLACE_PORT',seer:'SEER_PORT',remote:'JACO_REMOTE_BRIDGE_PORT',a2a:'JACO_A2A_PORT',novaBridge:'NOVA_BRIDGE_PORT',cdp:'JACO_CDP_BRIDGE_PORT',gateway:'JACO_GATEWAY_PORT',chrome:'CDP_PORT'})) env[name] = String(ports[key]);
   Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_RUNTIME_DIR: runtime });
@@ -69,7 +74,7 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   const built = fs.existsSync(path.join(runtime, 'dist/server.cjs')) && fs.existsSync(path.join(runtime, 'dist/index.html'));
   if (mode === 'production' && !built) throw new Error('PRODUCTION_BUILD_REQUIRED');
   const production = mode === 'production' || (mode === 'auto' && built);
-  return { root, runtime, version: manifest.version, releaseId, env, ports, production, cdp: env.JACO_ENABLE_CDP === '1', tunnel: env.JACO_START_TUNNEL === '1' };
+  return { root, runtime, version: manifest.version, releaseId, env, ports, production, cdp, gateway, tunnel: env.JACO_START_TUNNEL === '1' };
 }
 export function serviceEnvironment(config, kind) {
   const env = { ...config.env };
@@ -101,8 +106,8 @@ export function definitions(c) {
   if (c.cdp) items.push(
     svc('novaBridge', c.root, ['agents/nova-bridge.mjs'], url('novaBridge'), d => d.ok === true && d.service === 'nova-bridge'),
     svc('cdp', c.root, ['agents/cdp-bridge.mjs'], url('cdp'), d => d.ok === true && d.service === 'jaco-cdp-mcp'),
-    svc('gateway', c.root, ['gateway/src/chatgpt-nova-gateway.mjs'], url('gateway'), d => d.ok === true && d.service === 'jaco-chatgpt-nova-gateway'),
   );
+  if (c.gateway) items.push(svc('gateway', c.root, ['gateway/src/chatgpt-nova-gateway.mjs'], url('gateway'), d => d.ok === true && d.service === 'jaco-chatgpt-nova-gateway'));
   for (const item of items) if (item.id === 'workplace') item.token = c.env.JACO_WORKPLACE_TOKEN || '';
   return items;
 }

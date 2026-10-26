@@ -4,7 +4,6 @@
   "version": "0.22.0",
   "type": "module",
   "scripts": {
-    "prebuild": "node -e \"const fs=require('fs'); const p='firebase-applet-config.json'; try { if(!fs.existsSync(p)||!fs.readFileSync(p,'utf8').trim()){fs.writeFileSync(p,'{}');} else { JSON.parse(fs.readFileSync(p,'utf8')); } } catch(e){ fs.writeFileSync(p,'{}'); }\"",
     "dev": "tsx server.ts",
     "build": "npm run build:client && npm run build:server",
     "start": "node dist/server.cjs",
@@ -69,7 +68,6 @@
     "d3": "^7.9.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
-    "firebase": "^12.16.0",
     "lucide-react": "^0.546.0",
     "monaco-editor": "^0.52.2",
     "motion": "^12.23.24",

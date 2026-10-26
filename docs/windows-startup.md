@@ -15,7 +15,8 @@ Root `.env` supplies configuration; inherited process environment takes preceden
 | `JACO_RUNTIME_DIR` | Optional runtime path, relative or absolute |
 | `JACO_START_MODE` | `auto` prefers a complete build; `source` uses tsx; `production` requires `dist/server.cjs` and `dist/index.html` |
 | `PORT`, `JACO_WORKPLACE_PORT`, `SEER_PORT`, `JACO_REMOTE_BRIDGE_PORT`, `JACO_A2A_PORT` | Core listeners; established ports remain defaults |
-| `JACO_ENABLE_CDP=1` | Explicit opt-in to Chrome and browser bridges |
+| `JACO_ENABLE_CDP=0` | Turns off Chrome (dedicated JACO profile) and the browser bridges, which start by default so the agent connects its own browser |
+| `JACO_ENABLE_CHATGPT_GATEWAY=1` | Starts the ChatGPT Nova gateway (opt-in; `JACO_ENABLE_CDP=1` still starts it for existing setups) |
 | `CDP_PORT`, `NOVA_BRIDGE_PORT`, `JACO_CDP_BRIDGE_PORT`, `JACO_GATEWAY_PORT` | Browser and gateway listeners |
 | `JACO_CHROME_EXECUTABLE`, `JACO_OLLAMA_EXECUTABLE`, `JACO_CLOUDFLARED_EXECUTABLE` | Optional executable paths; vendor locations and PATH are fallbacks |
 | `JACO_CHROME_PROFILE_DIR` | Optional dedicated Chrome profile directory |

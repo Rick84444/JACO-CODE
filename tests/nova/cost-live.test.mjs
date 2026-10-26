@@ -134,12 +134,12 @@ test('recalibrating sets the counters to measured spend, drops expired estimates
   assert.equal(event.data.expiredExcludedUsd, 40);
 });
 
-test('a cap far above anything used is refused unless explicitly allowed', () => {
+test('cost caps belong to the operator: none is built in, any amount can be set, and null turns a cap off', () => {
   const { g } = governor();
-  assert.throws(() => g.updatePolicy({ monthlyCloudUsd: 100000 }), /ECONOMIC_POLICY_CAP_TOO_HIGH:monthlyCloudUsd/);
-  assert.throws(() => g.updatePolicy({ maxCloudUsdPerTask: 50 }), /ECONOMIC_POLICY_CAP_TOO_HIGH:maxCloudUsdPerTask/);
+  assert.equal(g.updatePolicy({ monthlyCloudUsd: 100000, maxCloudUsdPerTask: 50 }).policy.monthlyCloudUsd, 100000, 'no hidden ceiling');
   assert.equal(g.updatePolicy({ dailyCloudUsd: 20, monthlyCloudUsd: 100, maxCloudUsdPerTask: 0.25 }).policy.monthlyCloudUsd, 100);
-  process.env.JACO_ECONOMIC_ALLOW_HIGH_CAPS = '1';
-  try { assert.equal(g.updatePolicy({ monthlyCloudUsd: 5000 }).policy.monthlyCloudUsd, 5000); }
-  finally { delete process.env.JACO_ECONOMIC_ALLOW_HIGH_CAPS; }
+  assert.equal(g.authorizeCloud({ estimatedUsd: 0.5, purpose: 'reasoning' }).reason, 'TASK_COST_LIMIT');
+  const off = g.updatePolicy({ dailyCloudUsd: null, monthlyCloudUsd: null, maxCloudUsdPerTask: null });
+  assert.deepEqual([off.policy.dailyCloudUsd, off.headroom.dailyUsd, off.headroom.monthlyUsd], [null, null, null]);
+  assert.equal(g.authorizeCloud({ estimatedUsd: 50, purpose: 'reasoning' }).allowed, true, 'no cap, no budget stop');
 });

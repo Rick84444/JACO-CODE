@@ -4162,7 +4162,7 @@ const notifyPhone = async (action) => {
   // today's budget headroom and the local models on this computer.
   const auraStatusAnswer = async (_question: string, failures: string[]) => {
     let headroomUsd: number | null = null;
-    try { headroomUsd = Number(continuumSurface.runtime.economic.snapshot().headroom.dailyUsd); } catch {}
+    try { const daily = continuumSurface.runtime.economic.snapshot().headroom.dailyUsd; headroomUsd = daily == null ? null : Number(daily); } catch {}
     let localModels: string[] = [];
     try {
       const r = await fetch(`${String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/$/, '')}/api/tags`, { signal: AbortSignal.timeout(1500) });

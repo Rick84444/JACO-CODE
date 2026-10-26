@@ -26,7 +26,7 @@ export function createEconomicBudgetRouter({ economic, requireOperatorUi, getBal
   router.patch('/', (req, res) => {
     try {
       const body = req.body;
-      // Manual Aura chat can be enabled without also authorizing autonomous cloud execution.
+      // Manual Aura chat can be enabled without also authorizing autonomous cloud execution. Each cap is a number, or null for no cap.
       const keys = ['dailyCloudUsd', 'monthlyCloudUsd', 'maxCloudUsdPerTask', 'cloudEnabled', 'manualAuraCloudEnabled'];
       if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length || Object.keys(body).some(k => !keys.includes(k))) throw new Error('BUDGET_FIELDS_INVALID');
       const economicState = economic.updatePolicy(body, 'operator-ui');
