@@ -92,4 +92,5 @@ test('mission events stay out of the conversation and are reachable from the act
   assert.doesNotMatch(html,/Anslutningen bröts/);
   assert.match(html,/Aktivitet \(2\)/);
   assert.match(html,/aria-label="1 hinder"/);
+  assert.match(html,/aria-label="Minne"/);
 });

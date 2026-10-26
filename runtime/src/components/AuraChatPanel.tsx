@@ -2,7 +2,7 @@ import { readAuraResponse as apiJson } from '../lib/auraApi.mjs';
 import { AttachmentPicker } from './AttachmentPicker';
 import { CopyMessageButton } from './CopyMessageButton';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, Activity, ArrowUpRight, MessageSquare, ChevronRight } from 'lucide-react';
+import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, Activity, Brain, ArrowUpRight, MessageSquare, ChevronRight } from 'lucide-react';
 import { ChatMarkdown } from './ChatMarkdown';
 import { JacoWordmark } from './JacoWordmark';
 import { CognitiveEventCard } from './CognitiveEventCard';
@@ -210,6 +210,13 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
   // The conversation holds only what was said. Mission events live in the activity drawer, opened from the heading.
   const feed=useMemo(()=>messages.filter(m=>m.id!=='welcome').map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message})).sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages]);
   const [showActivity,setShowActivity]=useState(false);
+  // What the operator asked JACO to remember ("Kom ihåg …"). The server adds these to every chat request.
+  const [showMemory,setShowMemory]=useState(false);
+  const [memories,setMemories]=useState<Array<{id:string;text:string;saidAt:string}>>([]);
+  const [memoryError,setMemoryError]=useState<string|null>(null);
+  const loadMemories=async()=>{try{const data=await fetch('/api/aura/memory',{cache:'no-store'}).then(apiJson);setMemories(data.memories||[]);setMemoryError(null);}catch(error:any){setMemoryError(`Minnet kunde inte läsas: ${error.message}`);}};
+  useEffect(()=>{void loadMemories();},[]);
+  const forget=async(id:string)=>{try{await fetch(`/api/aura/memory/${encodeURIComponent(id)}`,{method:'DELETE'}).then(apiJson);}catch(error:any){setMemoryError(`Kunde inte glömma: ${error.message}`);}await loadMemories();};
   const attentionEvents=useMemo(()=>liveEvents.filter(event=>event.category==='blocked'||event.evidence.outcome==='unknown'),[liveEvents]);
   const currentMission=missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
   const followLatest=()=>{followRef.current=true;setFollowing(true);if(scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;};
@@ -241,6 +248,11 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
     const started = performance.now();
     try {
       if (retry === undefined) await appendMessage(user);
+      const remembered = retry === undefined ? /^(?:kom ihåg|remember)\b[\s:,]*(.+)$/is.exec(text)?.[1]?.trim() : null;
+      if (remembered) {
+        try { await fetch('/api/aura/memory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceMessageId:user.id,text:remembered})}).then(apiJson); await loadMemories(); }
+        catch (error:any) { setMemoryError(`Kunde inte spara minnet: ${error.message}`); }
+      }
       const ragContext: Array<{ source: string; content: any }> = [];
       if (liveEvents.length || currentMission) ragContext.push({
         source:'jaco://current-work',
@@ -423,6 +435,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
         <span><span className="cognitive-jaco-mark"/>JACO <span className="cognitive-chat-subtitle">Samtal & skapande</span></span>
         <span className="cognitive-chat-tools">
           <button type="button" onClick={()=>setShowActivity(v=>!v)} aria-expanded={showActivity} aria-label="Aktivitet" title="Vad JACO gör och vad som hindrar"><Activity size={15}/><span>Aktivitet{liveEvents.length>0?` (${liveEvents.length})`:''}</span>{attentionEvents.length>0&&<b className="cognitive-attention-dot" role="status" aria-label={`${attentionEvents.length} hinder`}/>}</button>
+          <button type="button" onClick={()=>setShowMemory(v=>!v)} aria-expanded={showMemory} aria-label="Minne" title="Det du bett JACO komma ihåg"><Brain size={15}/><span>Minne{memories.length>0?` (${memories.length})`:''}</span></button>
           <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label="Chattinställningar" title="Modell och budget"><Settings2 size={15}/><span>{modelLabel}</span></button>
         </span>
       </div>
@@ -477,6 +490,13 @@ export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, active
           {liveEvents.length===0?<p className="cognitive-muted">Ingen aktivitet att visa.</p>:liveEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}
         </div>
       )}
+      {showMemory && (
+        <div className="cognitive-activity-drawer" role="region" aria-label="Minne">
+          {memories.length===0?<p className="cognitive-muted">JACO minns inget ännu. Börja ett meddelande med "Kom ihåg" så sparas det, med dina egna ord.</p>
+            :memories.map(memory=><div key={memory.id} className="cognitive-memory-item"><div>{memory.text}<small>Du sa det {new Date(memory.saidAt).toLocaleString('sv-SE')}</small></div><button type="button" onClick={()=>void forget(memory.id)}>Glöm</button></div>)}
+        </div>
+      )}
+      {memoryError && <p role="alert" className="px-4 py-2 text-xs text-amber-300 border-b border-[#1c2a36]">{memoryError}</p>}
       {catalogError && <p role="alert" className="px-4 py-2 text-xs text-amber-300 border-b border-[#1c2a36]">{catalogError}</p>}
       {storageError && <div role="alert" className="px-4 py-2 text-xs text-amber-300">{storageError}{!storageReady&&<button type="button" className="ml-3 underline" onClick={retryStorage}>Försök läsa igen</button>}</div>}
 

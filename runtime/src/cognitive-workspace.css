@@ -64,6 +64,10 @@
 .cognitive-chat-tools>button:hover { color:#b5d8e4; }
 .cognitive-attention-dot { width:7px; height:7px; border-radius:50%; background:#e0a64a; }
 .cognitive-activity-drawer { max-height:45%; overflow:auto; padding:12px 28px; border-bottom:1px solid #1c2a36; background:#0e1720; display:flex; flex-direction:column; gap:14px; }
+.cognitive-memory-item { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; font-size:12px; color:#c9d6df; }
+.cognitive-memory-item small { display:block; margin-top:3px; font-size:10px; color:#687e8f; }
+.cognitive-memory-item button { color:#6f93a6; font-size:10px; flex-shrink:0; }
+.cognitive-memory-item button:hover { color:#e0a64a; }
 .cognitive-chat-heading>button { display:flex; align-items:center; gap:7px; color:#687e8f; font-size:10px; min-width:24px; }
 .cognitive-jaco-mark { display:inline-block; width:10px; height:10px; background:linear-gradient(135deg,#a2eefa,#235779); border:1px solid #7fc0dc8c; border-radius:50%; box-shadow:0 0 8px #67d6e525; }
 .cognitive-chat-scroll { flex:1; min-height:0; overflow:auto; padding:10px 38px 30px; scroll-padding-bottom:30px; }

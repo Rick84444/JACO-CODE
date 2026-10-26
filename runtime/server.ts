@@ -62,7 +62,7 @@ import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
-import { createAuraChatSession } from './src/server/connected/auraChatSession.mjs';
+import { createAuraChatSession, operatorMemoryContext } from './src/server/connected/auraChatSession.mjs';
 import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderCompletion, ollamaCloudCostUsd, novaProviderCostUsd, estimatedInputTokens, chatFallbackChoice, chatFailureHint } from "./src/server/connected/auraOllamaChat.mjs";
 import { createEconomicBudgetRouter } from './src/server/connected/economicBudget.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
@@ -2175,6 +2175,18 @@ const notifyPhone = async (action) => {
     try { res.json({success:true,message:auraChatSession.append(req.body)}); }
     catch (error: any) { res.status(409).json({success:false,error:error.message}); }
   });
+  app.get('/api/aura/memory', requireLocalUi, (_req, res) => {
+    try { res.setHeader('Cache-Control','no-store'); res.json({success:true,memories:auraChatSession.memories()}); }
+    catch (error: any) { res.status(503).json({success:false,error:error.message}); }
+  });
+  app.post('/api/aura/memory', requireLocalUi, (req, res) => {
+    try { res.json({success:true,memory:auraChatSession.remember(req.body)}); }
+    catch (error: any) { res.status(400).json({success:false,error:error.message}); }
+  });
+  app.delete('/api/aura/memory/:id', requireLocalUi, (req, res) => {
+    try { const forgotten = auraChatSession.forget(req.params.id); res.status(forgotten ? 200 : 404).json({success:forgotten,...(forgotten ? {} : {error:'AURA_MEMORY_NOT_FOUND'})}); }
+    catch (error: any) { res.status(503).json({success:false,error:error.message}); }
+  });
 
   // A single SQLite-backed writer for structured, unverified agent contributions.
   const gameboardExchange = createGameboardExchange(connectedRuntime.bus.db);
@@ -4174,7 +4186,7 @@ const notifyPhone = async (action) => {
   app.post("/api/aura/chat", requireLocalUi, async (req, res) => {
     try {
       const { message, activeFilePath, targetSubAgent, selectedModel, selectedProvider, model, messagesHistory, interactionMode } = req.body;
-      const ragContext = [...(Array.isArray(req.body.ragContext) ? req.body.ragContext : []), ...attachmentContext(req.body.attachmentIds)];
+      const ragContext = [...operatorMemoryContext(auraChatSession.memories()), ...(Array.isArray(req.body.ragContext) ? req.body.ragContext : []), ...attachmentContext(req.body.attachmentIds)];
       const userMsg = String(message || "Hej");
       const connectedSession = req.body?.connectedSession;
       const connectedId = connectedSession && typeof connectedSession.id === 'string' && /^[A-Za-z0-9:_-]{1,110}$/.test(connectedSession.id)
