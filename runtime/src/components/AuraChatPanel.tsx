@@ -2,7 +2,7 @@ import { readAuraResponse as apiJson } from '../lib/auraApi.mjs';
 import { AttachmentPicker } from './AttachmentPicker';
 import { CopyMessageButton } from './CopyMessageButton';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, ArrowUpRight, MessageSquare, ChevronRight } from 'lucide-react';
+import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, Activity, ArrowUpRight, MessageSquare, ChevronRight } from 'lucide-react';
 import { ChatMarkdown } from './ChatMarkdown';
 import { JacoWordmark } from './JacoWordmark';
 import { CognitiveEventCard } from './CognitiveEventCard';
@@ -91,7 +91,6 @@ export function useAuraChatSession() {
 
 interface Props {
   session: ReturnType<typeof useAuraChatSession>;
-  runControls?: React.ReactNode;
   onOpenProviders?: () => void;
   activeFilePath?: string | null;
   activeFileContent?: string | null;
@@ -119,7 +118,7 @@ async function chatJson(response: Response) {
   return data;
 }
 
-export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
+export const AuraChatPanel: React.FC<Props> = ({ session, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
   const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments } = session;
   const [attachments, setAttachments] = useState<Array<{id:string;files:Array<{path:string;format:string}>}>>(()=>{
     try {const saved=JSON.parse(localStorage.getItem('jaco:aura:attachments:v1')||'[]');return Array.isArray(saved)?saved.filter(item=>typeof item?.id==='string'&&/^[a-f0-9-]{36}$/.test(item.id)&&Array.isArray(item.files)&&item.files.length<=200&&item.files.every((file:any)=>typeof file?.path==='string'&&['text','binary'].includes(file.format))).slice(0,16):[];}catch{return [];}
@@ -208,11 +207,10 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   }, [busy]);
   useEffect(() => () => requestRef.current?.abort(), []);
   const [following,setFollowing]=useState(true);
-  const backgroundEvents=useMemo(()=>liveEvents.filter(event=>!event.missionId&&event.category==='observation'&&event.evidence.outcome==='observed'),[liveEvents]);
-  const feed=useMemo(()=>[
-    ...messages.filter(m=>m.id!=='welcome').map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message})),
-    ...liveEvents.filter(event=>!backgroundEvents.includes(event)).map(event=>({kind:'event' as const,id:event.id,at:event.at,event})),
-  ].sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages,liveEvents,backgroundEvents]);
+  // The conversation holds only what was said. Mission events live in the activity drawer, opened from the heading.
+  const feed=useMemo(()=>messages.filter(m=>m.id!=='welcome').map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message})).sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages]);
+  const [showActivity,setShowActivity]=useState(false);
+  const attentionEvents=useMemo(()=>liveEvents.filter(event=>event.category==='blocked'||event.evidence.outcome==='unknown'),[liveEvents]);
   const currentMission=missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
   const followLatest=()=>{followRef.current=true;setFollowing(true);if(scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;};
   useEffect(()=>{if(followRef.current && scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;},[feed,busy]);
@@ -423,10 +421,11 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     <div className="cognitive-chat h-full min-h-0 flex flex-col">
       <div className="cognitive-chat-heading">
         <span><span className="cognitive-jaco-mark"/>JACO <span className="cognitive-chat-subtitle">Samtal & skapande</span></span>
-        <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label="Chattinställningar" title="Modell och budget"><Settings2 size={15}/><span>{modelLabel}</span></button>
+        <span className="cognitive-chat-tools">
+          <button type="button" onClick={()=>setShowActivity(v=>!v)} aria-expanded={showActivity} aria-label="Aktivitet" title="Vad JACO gör och vad som hindrar"><Activity size={15}/><span>Aktivitet{liveEvents.length>0?` (${liveEvents.length})`:''}</span>{attentionEvents.length>0&&<b className="cognitive-attention-dot" role="status" aria-label={`${attentionEvents.length} hinder`}/>}</button>
+          <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label="Chattinställningar" title="Modell och budget"><Settings2 size={15}/><span>{modelLabel}</span></button>
+        </span>
       </div>
-
-      {runControls && <div className="cognitive-run-controls">{runControls}</div>}
 
       {showSettings && (
         <div className="px-4 py-3 border-b border-[#1c2a36] bg-[#0e1720] space-y-2 text-xs max-h-[50%] overflow-auto">
@@ -473,13 +472,17 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           {selectedProvider !== 'seer' && providers.find(p => p.id === selectedProvider) && !providers.find(p => p.id === selectedProvider)!.credentialReady && <p className="text-[11px] text-amber-300">Provider saknar konfigurerad credential.</p>}
         </div>
       )}
+      {showActivity && (
+        <div className="cognitive-activity-drawer" role="region" aria-label="Aktivitet">
+          {liveEvents.length===0?<p className="cognitive-muted">Ingen aktivitet att visa.</p>:liveEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}
+        </div>
+      )}
       {catalogError && <p role="alert" className="px-4 py-2 text-xs text-amber-300 border-b border-[#1c2a36]">{catalogError}</p>}
       {storageError && <div role="alert" className="px-4 py-2 text-xs text-amber-300">{storageError}{!storageReady&&<button type="button" className="ml-3 underline" onClick={retryStorage}>Försök läsa igen</button>}</div>}
 
       <div ref={scrollRef} onScroll={()=>{const el=scrollRef.current;if(el){const near=el.scrollHeight-el.scrollTop-el.clientHeight<80;followRef.current=near;setFollowing(near);}}} role="log" aria-live="polite" aria-relevant="additions" aria-label="JACO-konversation" className="cognitive-chat-scroll">
         <div className="cognitive-feed">
           {!storageReady && !storageError && <p className="cognitive-muted">Läser din sparade konversation…</p>}
-          {backgroundEvents.length>0&&<details className="cognitive-background-events"><summary>Aktivitet i bakgrunden ({backgroundEvents.length})</summary>{backgroundEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</details>}
           {historyTruncated&&<p className="cognitive-history-note">Det senaste arbetet visas. Äldre händelser finns kvar i uppdragshistoriken.</p>}
           {storageReady&&feed.length===0&&<div className="cognitive-welcome">
             <JacoWordmark size="lg"/>
@@ -492,7 +495,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             </div>
           </div>}
           {feed.map(item=>{
-            if(item.kind==='event')return <CognitiveEventCard key={item.id} event={item.event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>;
             const message=item.message;
             return message.role==='user'?<div key={item.id} className="cognitive-user-message"><div>{message.content}</div>{message.attachments?.map(item=><small key={item.id} className="block mt-2">Bifogat: {item.name} · {item.fileCount} filer</small>)}</div>
               :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><span className="cognitive-jaco-mark"/>JACO</div><ChatMarkdown text={message.content}/><CopyMessageButton text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>Svar & källor</summary><p>{message.meta}</p></details>}</article>
@@ -504,7 +506,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       <form onSubmit={event=>{event.preventDefault();void submit();}} className="cognitive-composer">
         <div className="cognitive-composer-inner">
           {!following&&<button type="button" className="cognitive-follow-latest" onClick={followLatest}><ArrowDown size={13}/>Följ senaste arbetet</button>}
-          {currentMission&&<div className="cognitive-live-questions"><button type="button" onClick={()=>prompt('Vad har du upptäckt hittills i det aktuella uppdraget?')} disabled={Boolean(busy)}>Vad har du upptäckt?</button><button type="button" onClick={()=>prompt('Visa vad som faktiskt fungerar och vilka belägg som stöder det.')} disabled={Boolean(busy)}>Vad fungerar?</button></div>}
 
           {selectedTool && (
             <div className="mb-2 px-3 py-1.5 rounded-lg bg-[#111820] border border-[#263544] text-xs flex items-center gap-2">
@@ -548,12 +549,10 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                 <button type="button" aria-pressed={composeMode==='goal'} onClick={()=>setComposeMode('goal')}><Target size={12}/>Uppdrag</button>
                 <button type="button" aria-pressed={composeMode==='chat'} onClick={()=>setComposeMode('chat')}><MessageSquare size={12}/>Fråga</button>
               </div>
-              <span className="cognitive-enter-hint">Shift + Enter för ny rad</span>
               <button type="submit" aria-label={composeMode==='goal'?'Starta uppdrag':'Skicka meddelande'} title={composeMode==='goal'?'Starta uppdrag':'Skicka'} disabled={!input.trim()||Boolean(busy)||uploading||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
             </div>
           </div>
           <AttachmentPicker items={attachments} onChange={setAttachments} onBusy={setUploading} disabled={Boolean(busy)}/>
-          <p className="cognitive-composer-help">{composeMode === 'goal' ? 'JACO arbetar inom uppdragets behörigheter. Beslut som kräver dig visas ovanför arbetet.' : 'Fråga om arbetet utan att starta ett nytt uppdrag.'}</p>
         </div>
       </form>
     </div>

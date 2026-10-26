@@ -1502,10 +1502,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
       <div className="flex-1 min-h-0">
         <AuraChatPanel
           session={chatSession}
-          runControls={activation.report?.ok && !activation.error ? null : <ActivationCard activation={activation} projectName={projectName}
-            onOpenProject={() => { setSidebar('explorer'); setSidePanelOpen(true); }}
-            onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
-            onActivated={() => { void refresh().catch(() => {}); }} />}
           missions={missions}
           onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
           activeFilePath={selectedFile}
@@ -1846,7 +1842,13 @@ export const JacoAuraComputeIDE: React.FC = () => {
     presence={presence}/>
   </div>;
   const canvasDetail = <>
-    {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
+    {workspaceView==='connections'&&<div className="h-full min-h-0 flex flex-col">
+      {!(activation.report?.ok && !activation.error) && <ActivationCard activation={activation} projectName={projectName}
+        onOpenProject={() => { setSidebar('explorer'); setSidePanelOpen(true); }}
+        onOpenProviders={() => { setConnectionsTab('models'); }}
+        onActivated={() => { void refresh().catch(() => {}); }} />}
+      <div className="flex-1 min-h-0"><ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/></div>
+    </div>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
     {workspaceView==='agents'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Öppnar agentkartan…</div>}><AuraAgentWorkspace goal={goal} onGoalChange={setGoal} onStartGoal={()=>{void startGoal().catch(()=>{});}} submitting={missionSubmitting} notice={missionNotice} onReview={()=>setWorkspaceView('evidence')} onCancelMission={cancelMission}/></React.Suspense>}
     {workspaceView==='gameboard'&&<CognitiveGameboard/>}

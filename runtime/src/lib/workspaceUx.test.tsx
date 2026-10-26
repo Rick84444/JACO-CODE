@@ -36,10 +36,10 @@ test('decisions are outside the canvas so switching to code does not hide them',
 
 test('chat exposes response cancellation separately from the running mission', () => {
   const session:any={messages:[],setMessages:noop,appendMessage:async()=>{},storageReady:true,storageError:null,retryStorage:noop,input:'',setInput:noop,busy:'chat',setBusy:noop,toolArguments:'{}',setToolArguments:noop};
-  const html=renderToStaticMarkup(<AuraChatPanel session={session} onStartGoal={noop} runControls={<section>Setup action</section>}/>);
+  const html=renderToStaticMarkup(<AuraChatPanel session={session} onStartGoal={noop}/>);
   assert.match(html,/Avbryt svar/);
   assert.match(html,/aria-label="Väntetid"/);
-  assert.match(html,/Setup action/);
+  assert.doesNotMatch(html,/Setup action/);
   assert.match(html,/aria-pressed="true"[^>]*>[\s\S]*?Uppdrag/);
 });
 
@@ -84,12 +84,12 @@ test('CDP refuses ambiguous URL-only attachment instead of choosing another iden
  }finally{globalThis.fetch=original;}
 });
 
-test('routine background observations are grouped while mission blockers stay in the conversation', () => {
+test('mission events stay out of the conversation and are reachable from the activity drawer', () => {
   const session:any={messages:[],setMessages:noop,appendMessage:async()=>{},storageReady:true,storageError:null,retryStorage:noop,input:'',setInput:noop,busy:null,setBusy:noop,toolArguments:'{}',setToolArguments:noop};
   const event:any={id:'background',at:'2026-10-22T10:00:00Z',type:'mission.dispatch.started',category:'observation',title:'Ny observation',text:'Dispatcher started',missionId:null,evidence:{outcome:'observed'}};
   const html=renderToStaticMarkup(<AuraChatPanel session={session} onStartGoal={noop} liveEvents={[event,{...event,id:'blocked',category:'blocked',title:'Arbetet har ett hinder',text:'Anslutningen bröts',evidence:{outcome:'unknown'}}]}/>);
-  const grouped=html.slice(html.indexOf('<details class="cognitive-background-events"'),html.indexOf('</details>')+10);
-  assert.match(grouped,/Dispatcher started/);
-  assert.doesNotMatch(grouped,/Anslutningen bröts/);
-  assert.match(html,/Anslutningen bröts/);
+  assert.doesNotMatch(html,/Dispatcher started/);
+  assert.doesNotMatch(html,/Anslutningen bröts/);
+  assert.match(html,/Aktivitet \(2\)/);
+  assert.match(html,/aria-label="1 hinder"/);
 });
