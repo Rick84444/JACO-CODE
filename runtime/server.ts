@@ -37,7 +37,8 @@ import { liveMissionView } from './src/server/connected/liveMission.mjs';
 import { discoverProvider, identifyKey } from './src/server/connected/providerDiscovery.mjs';
 import { catalogById, catalogProvider } from './src/server/connected/providerCatalog.mjs';
 import { activationReport } from '../agents/lib/activate.mjs';
-import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret } from '../agents/lib/secret-store.mjs';
+import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret, validateSecretName } from '../agents/lib/secret-store.mjs';
+import { listVaultSecrets, runVaultHelper } from '../agents/lib/vault-tools.mjs';
 hydrateEnvFromStore(process.env);
 // Paid models run when their key is configured, within the budget; JACO_ALLOW_PAID_MODELS=0 turns them off.
 const paidModelsAllowed = () => process.env.JACO_ALLOW_PAID_MODELS !== '0';
@@ -3027,6 +3028,42 @@ const notifyPhone = async (action) => {
     }
   });
 
+  // Bridge the existing Windows JACO Credential Manager vault to the canonical encrypted store.
+  // Listing is metadata only; nothing is imported or deleted without an explicit operator action.
+  app.get('/api/aura/workbench/vault/windows', requireLocalUi, async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (process.platform !== 'win32') return res.json({ success: true, available: false, keys: [], reason: 'WINDOWS_ONLY' });
+    try {
+      const result = await listVaultSecrets({ prefix: 'JACO' });
+      if (!result.ok) return res.json({ success: true, available: false, keys: [], reason: 'WINDOWS_VAULT_UNAVAILABLE' });
+      res.json({ success: true, available: true, keys: (result.keys || []).filter((key: string) => /^[A-Z][A-Z0-9_]{1,127}$/.test(key)) });
+    } catch {
+      res.json({ success: true, available: false, keys: [], reason: 'WINDOWS_VAULT_UNAVAILABLE' });
+    }
+  });
+  app.post('/api/aura/workbench/vault/import-windows', requireLocalUi, async (req, res) => {
+    // This is an explicit, additive import: old DPAPI credentials remain untouched.
+    if (process.platform !== 'win32') return res.status(400).json({ success: false, error: 'WINDOWS_ONLY' });
+    try {
+      const name = validateSecretName(req.body?.name);
+      const store = new SecretStore();
+      if (store.has(name)) return res.status(409).json({ success: false, error: 'SECRET_ALREADY_EXISTS' });
+      const listed = await listVaultSecrets({ prefix: 'JACO' });
+      if (!listed.ok || !listed.keys?.includes(name)) return res.status(404).json({ success: false, error: 'WINDOWS_VAULT_KEY_NOT_FOUND' });
+      // Do not use env fallback: prove the value was read from JACO's Windows vault.
+      const retrieved = await runVaultHelper(['-Action', 'Get', '-Key', name, '-Prefix', 'JACO']);
+      if (!retrieved?.ok || typeof retrieved.value !== 'string' || !retrieved.value) return res.status(424).json({ success: false, error: 'WINDOWS_VAULT_READ_FAILED' });
+      const secret = store.set(name, retrieved.value, { source: 'windows-vault-import', purpose: 'Explicit import from JACO Windows Vault' });
+      if (isExportableSecret(name) && !process.env[name]) process.env[name] = retrieved.value;
+      connectedRuntime.providers.ensureDefaults();
+      seerLiveWorkstream.record({ actor: 'Aura Vault', type: 'vault.credential.imported', verified: true,
+        message: `Windows Vault credential imported: ${name}`, receipt: { name, source: 'windows-credential-manager', valueExposed: false } });
+      res.status(201).json({ success: true, secret });
+    } catch (error: any) {
+      res.status(400).json({ success: false, error: error?.message === 'INVALID_SECRET_NAME' ? 'INVALID_SECRET_NAME' : 'WINDOWS_VAULT_IMPORT_FAILED' });
+    }
+  });
+
   // Connect from a URL alone (src/server/connected/providerDiscovery.mjs): JACO recognises or probes
   // the service, lists its models, picks a default and registers it. Nothing is registered for a URL
   // that does not answer like a model API; the key is only ever read from the environment.
@@ -4507,7 +4544,8 @@ const notifyPhone = async (action) => {
     res.sendFile(scriptPath);
   });
 
-  app.delete("/api/vault/:id", (req, res) => {
+  // Legacy in-memory-only Vault; never expose unauthenticated destructive operations.
+  app.delete("/api/vault/:id", requireOperator, (req, res) => {
     const { id } = req.params;
     auraEngineManager.deleteVaultItem(id);
     const vaultItems = auraEngineManager.getVaultItems().map(({ keyOrPassword, ...item }) => ({
