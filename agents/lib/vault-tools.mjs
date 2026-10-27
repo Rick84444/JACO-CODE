@@ -1,11 +1,23 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { SecretStore } from './secret-store.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(HERE, '..', '..');
-const HELPER_SCRIPT = path.join(ROOT, 'agents', 'vault-tool-helper.ps1');
+// The production runtime is bundled to CJS; import.meta.url is unavailable inside it.
+// Resolve from whichever known package/workspace parent actually owns this script.
+export function windowsVaultHelperPath({ moduleFile = typeof __filename === 'string' ? __filename : import.meta.url, cwd = process.cwd() } = {}) {
+  const here = moduleFile.startsWith('file:') ? path.dirname(fileURLToPath(moduleFile)) : path.dirname(moduleFile);
+  const candidates = [
+    path.resolve(here, '..', '..'), path.resolve(here, '..', '..', '..'),
+    path.resolve(cwd, '..'), cwd,
+  ];
+  for (const root of candidates) {
+    const script = path.join(root, 'agents', 'vault-tool-helper.ps1');
+    if (fs.existsSync(script)) return script;
+  }
+  throw new Error('WINDOWS_VAULT_HELPER_NOT_FOUND');
+}
 // Outside Windows there is no DPAPI: JACO's encrypted store (secret-store.mjs) is the vault, so the
 // agents' sign-up flow (vault-generate-secret, secret-store, vault:<key>) works in the cloud and on Android.
 const useStore = () => process.platform !== 'win32';
@@ -86,12 +98,14 @@ export function runVaultHelper(args = [], timeoutMs = 10_000, { input = null, sp
     }
 
     let child;
+    let helper;
+    try { helper = windowsVaultHelperPath(); } catch { return resolve({ ok: false, error: 'WINDOWS_VAULT_HELPER_NOT_FOUND' }); }
     try { child = spawnFn('powershell.exe', [
       '-NoLogo',
       '-NoProfile',
       '-NonInteractive',
       '-ExecutionPolicy', 'Bypass',
-      '-File', HELPER_SCRIPT,
+      '-File', helper,
       ...args
     ], {
       windowsHide: true,
