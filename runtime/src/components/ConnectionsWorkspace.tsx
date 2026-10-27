@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ProviderConnect } from './ProviderConnect';
+import { ApiVaultPanel } from './ApiVaultPanel';
 import { McpServersPanel, type McpProvider, type McpTool } from './McpServersPanel';
 import { SkillsView } from './SkillsView';
 import { readAuraResponse } from '../lib/auraApi.mjs';
@@ -32,8 +33,8 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
   };
   return <div className="connections-workspace">
     <header><h2>Anslutningar</h2><button type="button" onClick={()=>void refresh()}>Uppdatera</button></header>
-    <p>Modeller, lokala verktyg och färdigheter. Listorna uppdateras var 30:e sekund.</p>
-    <nav aria-label="Anslutningstyp">{[['models','Modeller'],['local','Lokala verktyg'],['mcp','MCP'],['browser','Webbläsare / CDP'],['skills','Skills']].map(([id,label])=><button key={id} type="button" aria-pressed={tab===id} onClick={()=>{onTabChange(id);setResult(null);}}>{label}</button>)}</nav>
+    <p>Modeller, API & Vault, lokala verktyg och färdigheter. Modeller och MCP uppdateras var 30:e sekund.</p>
+    <nav aria-label="Anslutningstyp">{[['models','Modeller'],['local','Lokala verktyg'],['mcp','MCP'],['browser','Webbläsare / CDP'],['skills','Skills'],['vault','API & Vault']].map(([id,label])=><button key={id} type="button" aria-pressed={tab===id} onClick={()=>{onTabChange(id);setResult(null);}}>{label}</button>)}</nav>
     {observed&&<p>Senast kontrollerat {new Date(observed).toLocaleTimeString('sv-SE')}</p>}
     {Object.entries(errors).map(([source,message])=><p key={source} role="alert">{source}: {message}. Tidigare värden kan vara föråldrade.</p>)}
     {notice&&<p role="alert">{notice}</p>}
@@ -50,6 +51,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
     {tab==='browser'&&<section><h3>Anslut en webbläsarflik</h3><p>Starta Chrome/Chromium med fjärrfelsökning på datorn där JACO körs. Flikarna läses från den angivna lokala CDP-porten.</p><label>CDP-port<input type="number" min="1" max="65535" value={port} onChange={e=>{setPort(e.target.value);setTargets(null);setResult(null);}}/></label><button type="button" disabled={!!busy} onClick={()=>void act('targets',async()=>{setTargets(null);const value=await call('jaco','jaco_browser_targets',{port:Number(port)});setTargets(value.targets||[]);return value;})}>Hämta öppna flikar</button>
       {targets?.length===0&&<p>Inga styrbara flikar observerades.</p>}{targets?.map(t=><article key={t.id||t.url}><strong>{t.title||'Webbläsarflik'}</strong><p>{t.url}</p><button type="button" disabled={!!busy} onClick={()=>void act('attach',()=>call('jaco','jaco_browser_attach',{port:Number(port),urlIncludes:t.url.slice(0,300),targetId:t.id}))}>Anslut den här fliken</button></article>)}
     </section>}
+    {tab==='vault'&&<ApiVaultPanel onChanged={refresh}/>}
     {tab==='skills'&&<SkillsView/>}
     {result&&tab!=='models'&&<section><h3>Senaste verktygsresultat</h3><pre>{JSON.stringify(result,null,2)}</pre></section>}
   </div>;
