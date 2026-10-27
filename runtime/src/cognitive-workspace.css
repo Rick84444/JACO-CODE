@@ -599,3 +599,23 @@
 .aura-presence-bottom>.aura-presence-step { flex-basis:100%; min-width:0; }
 .aura-presence-details .aura-presence-bottom { padding:4px 0 10px; }
 @media(max-width:767px) { .aura-presence { padding:10px 13px; gap:5px; } .aura-presence-details>summary { min-height:44px; } }
+
+/* Keep follow controls in layout flow, including when a mobile keyboard opens. */
+.cognitive-follow-latest { position:static; transform:none; flex-shrink:0; min-height:36px; }
+.device-workspace { font-size:14px; }
+.device-workspace button { min-height:44px; font-size:13px; }
+.device-workspace input { min-height:44px; font-size:16px; padding:8px 12px; }
+.device-summary { display:flex; flex-wrap:wrap; gap:8px; padding:8px 0; }
+.device-summary span { border:1px solid #30414f; border-radius:16px; padding:5px 10px; color:#b9cedb; }
+.device-browser { padding:14px; border:1px solid #30414f; border-radius:12px; background:#111d27; }
+.device-browser p { margin:6px 0; color:#a9bdcc; }
+.device-browser button { color:#8edce8; }
+@media(max-width:760px) {
+  .cognitive-composer textarea { min-height:56px; max-height:120px; }
+  .cognitive-live-questions { display:none; }
+  .cognitive-composer-help { display:none; }
+}
+.cognitive-setup-collapsed { display:flex; justify-content:flex-end; padding:4px 12px; }
+.cognitive-setup-collapsed button { display:flex; align-items:center; gap:8px; min-height:44px; font-size:12px; color:#b7c9d6; }
+.cognitive-repair-action button { min-height:44px; padding:8px 12px; border-radius:8px; background:#203b47; color:#d5eff4; }
+.cognitive-repair-action button:disabled { opacity:.6; }

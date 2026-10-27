@@ -14,7 +14,7 @@ import { ConnectedRuntime } from '../src/server/connected/connectedRuntime.mjs';
 const pass=[]; const ok=(name,fn)=>Promise.resolve().then(fn).then(()=>{pass.push(name);console.log('PASS',name)});
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-0191-'));
 
-await ok('mission bus durable lease/restart/requeue', async()=>{
+await ok('mission bus durable lease/restart/uncertain-outcome quarantine', async()=>{
   const bus=new DurableMissionBus(tmp,{stateDir:path.join(tmp,'bus1')});
   bus.registerWorker('w',['cap']);
   const m=bus.createMission({goal:'durable',idempotencyKey:'k1'});
@@ -24,7 +24,12 @@ await ok('mission bus durable lease/restart/requeue', async()=>{
   const reopened=new DurableMissionBus(tmp,{stateDir:path.join(tmp,'bus1')});
   assert.equal(reopened.getTicket(t.id).status,'RUNNING');
   reopened.db.prepare("UPDATE tickets SET lease_expires_at=? WHERE id=?").run(new Date(Date.now()-1000).toISOString(),t.id);
-  assert.equal(reopened.requeueExpiredLeases(),1); assert.equal(reopened.getTicket(t.id).status,'READY'); reopened.close();
+  assert.equal(reopened.requeueExpiredLeases(),1);
+  assert.equal(reopened.getTicket(t.id).status,'OUTCOME_UNKNOWN');
+  assert.equal(reopened.getMission(m.id).status,'BLOCKED');
+  reopened.registerWorker('w2',['cap']);
+  assert.equal(reopened.claimNext('w2',['cap']),null,'uncertain side effects must not replay automatically');
+  reopened.close();
 });
 
 let wpPage={id:1,slug:'home',status:'publish',title:{raw:'Old'},content:{raw:'<p>Old</p>'},link:''};

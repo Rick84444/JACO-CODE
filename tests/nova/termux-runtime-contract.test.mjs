@@ -70,7 +70,8 @@ test('Termux activation lets Workplace own SEER and Durable Nova against canonic
   assert.match(install,/ensure_export JACO_WORKPLACE_SUPERVISE_MODEL "1"/);
   assert.match(install,/ensure_export JACO_WORKPLACE_SUPERVISE_SEER "1"/);
   assert.match(workplace,/JACO_WORKPLACE_REQUIRED=.*1/);
-  assert.match(workplace,/CANONICAL_RUNTIME=.*jaco-code\/runtime/);
+  assert.doesNotMatch(workplace,/CANONICAL_RUNTIME|\$HOME\/jaco-code\/runtime/);
+  assert.match(workplace,/\[ -f "\$ENV_FILE" \] && \[ -n/);
   assert.match(workplace,/JACO_ROOT_INVALID/);
   assert.match(workplace,/gateway\/src\/workplace\/workplace-server\.mjs/);
   assert.match(workplace,/PREFIX=.*\/data\/data\/com\.termux\/files\/usr/);
@@ -85,7 +86,7 @@ test('Termux activation lets Workplace own SEER and Durable Nova against canonic
   assert.match(ctl,/overall=.*provider=.*model=.*seer=.*nova=/);
   assert.match(ctl,/wait_workplace_running/);
   assert.match(ctl,/core_truth_ready/);
-  assert.match(ctl,/supervised Core is restarting/);
+  assert.match(ctl,/Canonical Sentinel\/Core\/Workplace ownership failed/);
   assert.match(ctl,/svc_stable/);
   assert.match(ctl,/prepare_core_owner/);
   assert.match(ctl,/cleanup_stale_core_processes/);
@@ -93,7 +94,8 @@ test('Termux activation lets Workplace own SEER and Durable Nova against canonic
   assert.match(ctl,/if http_ok "\$CORE_URL\/api\/runtime\/identity" && ! core_truth_ready; then/);
   assert.match(ctl,/readlink "\$proc\/cwd"/);
   assert.match(ctl,/if \[\[ "\$cwd" != "\$JACO_ROOT" \]\]; then/);
-  const cwdGate=ctl.slice(ctl.indexOf('if [[ "$cwd" != "$JACO_ROOT" ]]; then'),ctl.indexOf('cmd="$(tr'));
+  const cwdStart=ctl.indexOf('if [[ "$cwd" != "$JACO_ROOT" ]]; then');
+  const cwdGate=ctl.slice(cwdStart,ctl.indexOf('cmd="$(tr',cwdStart));
   assert.match(cwdGate,/case "\$cwd" in/);
   assert.match(cwdGate,/\*\) continue ;;/);
   assert.match(ctl,/wait_service_down/);
@@ -147,4 +149,24 @@ test('Termux activation repairs repository-root imports before touching runit se
   assert.match(install,/JACO_ROOT_IMPORT_FAILED/);
   const workspace=fs.readFileSync(path.join(root,'gateway/src/workplace/workplace-server.mjs'),'utf8');
   assert(workspace.includes("import 'dotenv/config'"));
+});
+
+test('fatal asynchronous Core startup error exits instead of leaving a non-listening runit PID',async()=>{
+  const source=fs.readFileSync(path.join(runtime,'server.ts'),'utf8');
+  const marker='\nstartServer().catch(';
+  const i=source.lastIndexOf(marker);
+  assert(i>0,'Core must explicitly handle fatal startServer promise rejection');
+  const {runInNewContext}=await import('node:vm');
+  const exits=[];
+  const messages=[];
+  const statement=source.slice(i).trim();
+  const finished=runInNewContext(statement,{
+    startServer:async()=>{throw new Error('LEDGER_LOCKED: test holder');},
+    console:{error:(...values)=>messages.push(values.join(' '))},
+    process:{exit:code=>exits.push(code)}
+  });
+  await finished;
+  assert.deepEqual(exits,[1]);
+  assert.match(messages.join('\n'),/LEDGER_LOCKED/);
+  assert.match(messages.join('\n'),/FATAL startup failed/);
 });

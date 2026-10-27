@@ -87,6 +87,12 @@ const base='http://127.0.0.1:'+server.address().port;
 const browser=await chromium.launch({headless:true,...(process.env.JACO_BROWSER_EXECUTABLE?{executablePath:process.env.JACO_BROWSER_EXECUTABLE,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']}: {})});
 const page=await browser.newPage({viewport:{width:1440,height:960},deviceScaleFactor:1});
 page.setDefaultTimeout(15000);
+// Existing functional contract uses Swedish labels; English is verified independently below.
+await page.addInitScript(() => {
+  // Sandbox previews intentionally have no storage origin; never weaken their isolation.
+  try { if (localStorage.getItem('jaco:aura:ui-language:v1') === null) localStorage.setItem('jaco:aura:ui-language:v1', 'sv'); }
+  catch { /* Opaque-origin preview frame. */ }
+});
 // Monaco may reject an already-running language/model task when an editor is
 // deliberately disposed (e.g. after changing projects). This exact cancellation
 // is not an app exception; any other page error still fails the browser gate.
@@ -132,6 +138,17 @@ const screenshot=async name=>{
   await page.screenshot({path:path.join(process.env.JACO_UI_SCREENSHOTS,name+'.png')});
 };
 try {
+  const english = await browser.newPage({viewport:{width:1440,height:900}});
+  try {
+    await english.goto(base,{waitUntil:'domcontentloaded'});
+    assert.equal(await english.evaluate(() => document.documentElement.lang),'en','English must be the default on a fresh browser');
+    await english.getByRole('navigation',{name:'Workspace'}).getByRole('button',{name:'Work',exact:true}).waitFor();
+    await english.getByRole('combobox',{name:'Language'}).selectOption('sv');
+    await english.getByRole('navigation',{name:'Arbetsyta'}).getByRole('button',{name:'Arbete',exact:true}).waitFor();
+    await english.reload({waitUntil:'domcontentloaded'});
+    assert.equal(await english.evaluate(() => document.documentElement.lang),'sv','Operator language preference must persist');
+    passed('New IDE sessions default to English; Swedish toggle persists across reload');
+  } finally { await english.close(); }
   blockSession=true;
   await page.goto(base,{waitUntil:'networkidle'});
   await page.getByRole('button',{name:'Försök läsa igen'}).waitFor();
@@ -152,7 +169,7 @@ try {
   await input().fill('Behåll mitt utkast');
   await canvas('Kod').click();await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
-  await page.locator('.cognitive-status').click();
+  await page.locator('.cognitive-contextbar').click();
   await page.keyboard.press('Control+Shift+Digit2');
   assert.equal(await page.getByRole('navigation',{name:'Arbetsyta'}).getByRole('button',{name:'Kod',exact:true}).getAttribute('aria-pressed'),'true');
   await page.keyboard.press('Control+Shift+Digit1');

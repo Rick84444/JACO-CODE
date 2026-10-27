@@ -158,9 +158,19 @@ export class ConnectedRuntime {
       this.record('mission.ticket.done', `${claimed.capability} completed with ${output.evidence.length} evidence item(s)`, true, { missionId: claimed.missionId, ticketId: claimed.id });
       return completed;
     } catch (error) {
-      try { this.bus.fail(claimed.id, worker.id, lease, error instanceof Error ? error.message : String(error)); } catch {}
-      this.seerLive?.update?.({ phase: 'DEGRADED', activeModule: worker.metadata?.role || worker.id, blocker: error instanceof Error ? error.message : String(error), action: { surface: 'NONE', type: claimed.capability, status: 'REJECTED' } });
-      this.record('mission.ticket.failed', `${claimed.capability}: ${error instanceof Error ? error.message : String(error)}`, false, { missionId: claimed.missionId, ticketId: claimed.id });
+      let outcome = null;
+      try { outcome = this.bus.fail(claimed.id, worker.id, lease, error instanceof Error ? error.message : String(error)); } catch {
+        // A lease may expire before failure is persisted. The lease reaper will
+        // reconcile its status; never claim that this action was safely retried.
+      }
+      const status = outcome?.status || this.bus.getTicket(claimed.id)?.status || 'UNKNOWN';
+      const unconfirmed = status === 'OUTCOME_UNKNOWN' || ['CLAIMED', 'RUNNING', 'VERIFYING', 'UNKNOWN'].includes(status);
+      this.seerLive?.update?.({ phase: 'DEGRADED', activeModule: worker.metadata?.role || worker.id,
+        blocker: error instanceof Error ? error.message : String(error),
+        action: { surface: 'NONE', type: claimed.capability, status: unconfirmed ? 'UNCONFIRMED' : 'REJECTED' } });
+      this.record(unconfirmed ? 'mission.ticket.outcome_unconfirmed' : 'mission.ticket.failed',
+        `${claimed.capability}: ${error instanceof Error ? error.message : String(error)}`, false,
+        { missionId: claimed.missionId, ticketId: claimed.id, status });
       return null;
     }
   }

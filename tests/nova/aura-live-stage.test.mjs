@@ -90,7 +90,7 @@ test('Live Stage is one-click discoverable, with touch-first work navigation', (
   const read = path => fs.readFileSync(new URL('../../runtime/src/'+path, import.meta.url), 'utf8');
   const ui = read('components/CognitiveWorkspace.tsx');
   const css = read('cognitive-workspace.css');
-  assert.match(ui, /aria-label="Arbetsyta"/);
+  assert.match(ui, /aria-label=\{tr\('Arbetsyta',\s*'Workspace'\)\}/);
   assert.match(ui, /\['stage', Eye, 'Arbete'\]/);
   assert.match(ui, /\['evidence', ShieldCheck, 'Belägg'\]/);
   assert.match(ui, /\['code', Code2, 'Kod'\]/);

@@ -1,3 +1,4 @@
+import { compactPlannerStep, focusPlannerToolDescriptions } from './lib/context-packet.mjs';
 /**
  * JACO Hands-Off Agent v3.0 — Long-running autonomous daemon
  *
@@ -1256,7 +1257,7 @@ const OPEN_FILES_TOTAL_CHARS = 24_000;
 export function openFilesForBrain(receipts = []) {
   const latest = new Map();
   for (const receipt of receipts) {
-    if (receipt?.type === 'repo-read' && receipt.ok && typeof receipt.result?.content === 'string') latest.set(receipt.result.path, receipt.result);
+    if (receipt?.type === 'repo-read' && receipt.ok && typeof receipt.result?.content === 'string') { latest.delete(receipt.result.path); latest.set(receipt.result.path, receipt.result); }
     if ((receipt?.type === 'repo-write' || receipt?.type === 'repo-edit') && receipt.ok && receipt.result?.path) latest.delete(receipt.result.path);
   }
   let budget = OPEN_FILES_TOTAL_CHARS;
@@ -1554,14 +1555,24 @@ function assertTaskAllowed(next, mission) {
   }
 }
 
-export async function callBrain(state, { mission, observation, continuity = null }, fetchImpl = fetch) {
+export async function callBrain(state, input, fetchImpl = fetch) {
+  const started=performance.now();
+  state.plannerInputMetrics=null;
+  let completed=false;
+  try { const result=await callBrainStep(state,input,fetchImpl);completed=true;return result; }
+  finally {
+    const metric={...(state.plannerInputMetrics||{}),elapsedMs:Math.round(performance.now()-started),proposalReturned:completed};
+    state.plannerMetrics=[...(Array.isArray(state.plannerMetrics)?state.plannerMetrics:[]).slice(-19),metric];
+  }
+}
+async function callBrainStep(state, { mission, observation, continuity = null }, fetchImpl = fetch) {
   await refreshConnectedProviders(fetchImpl);
   const strategicContext = await readStrategicContext(mission, {
     seerUrl: process.env.SEER_URL || 'http://127.0.0.1:2997',
     token: process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || process.env.SEER_TOKEN,
     fetchImpl,
   });
-  const ctx = {
+  let ctx = {
     // Models have no clock: without this a planner wrote an invented date into a file (2026-09-29).
     now: new Date().toISOString(),
     mission: compactMissionForBrain(mission),
@@ -1600,6 +1611,10 @@ export async function callBrain(state, { mission, observation, continuity = null
     try { ctx.skills = await fetchSkillList({ runtimeUrl: CONFIG.runtimeUrl }); } catch {}
   }
 
+  const profile=process.env.NOVA_CONTEXT_PROFILE==='standard'?'standard':'compact';
+  const originalContextChars=JSON.stringify(ctx).length;
+  ctx=compactPlannerStep(ctx,{profile});
+  state.plannerInputMetrics={profile,originalContextChars,contextChars:JSON.stringify(ctx).length};
   const userMsg = "Current state:\n" + JSON.stringify(ctx) + "\nChoose the next task for mission.goal.";
   // With native tools the MCP catalog is in the tool list itself, with full schemas.
   const { mcpTools: _catalog, learnedTaskNotes: _notes, ...nativeCtx } = ctx;
@@ -1615,6 +1630,7 @@ export async function callBrain(state, { mission, observation, continuity = null
     }
   }
   const system = brainSystemFor(mission?.allowedTasks, Boolean(mission?.metadata?.parent?.graphId));
+  state.plannerInputMetrics.systemChars=system.length;
   if (process.env.NOVA_BRAIN_MODE !== 'direct') {
     let correction = '';
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -1672,7 +1688,9 @@ Plans already rejected this turn (do not repeat them): ${rejectedPlans.slice(-3)
       continue;
     }
     console.log(`[DEBUG] Trying provider: ${provider.name} model: ${provider.model}`);
-    const native = nativeToolsFor(provider) ? plannerTools(mission?.allowedTasks || [], mcpCatalogTools(), learnedTaskNotes(), Boolean(mission?.metadata?.parent?.graphId)) : null;
+    const native = nativeToolsFor(provider) ? plannerTools(mission?.allowedTasks || [], profile==='compact'?focusPlannerToolDescriptions(mcpCatalogTools(),mission):mcpCatalogTools(), learnedTaskNotes(), Boolean(mission?.metadata?.parent?.graphId)) : null;
+    state.plannerInputMetrics.nativeToolsCount=native?.tools.length||0;
+    state.plannerInputMetrics.nativeToolsChars=native?JSON.stringify(native.tools).length:0;
     try {
       const requestBody = {
           model: provider.model,
@@ -1906,6 +1924,7 @@ async function agentIntroExtras(mission) {
 }
 
 async function runAgentLoop(state) {
+  let introExtras;
   const peek = await missionClient.current();
   // Coding-contract missions keep the contract planner (preflight, repository context, gates).
   if (peek?.contract) return null;
@@ -1919,11 +1938,14 @@ async function runAgentLoop(state) {
         try { await mcpCatalog({ runtimeUrl: CONFIG.runtimeUrl, write }); }
         catch (error) { log('warn', 'agent', `MCP catalog unavailable: ${String(error?.message || error).slice(0, 120)}`); }
       }
-      return plannerTools(permitted, mcpCatalogTools({ write }), learnedTaskNotes(), false);
+      const catalog = mcpCatalogTools({ write });
+      return plannerTools(permitted, process.env.NOVA_CONTEXT_PROFILE === 'standard'
+        ? catalog : focusPlannerToolDescriptions(catalog, mission), learnedTaskNotes(), false);
     },
+    refreshIntro: true,
     intro: async mission => {
-      // Use the claimed mission, not the earlier peek, to prevent context crossover.
-      const extras = await agentIntroExtras(mission);
+      // Use this run's mission, not the earlier peek. Home/skill data is loaded once.
+      const extras = introExtras ??= await agentIntroExtras(mission);
       if (process.env.JACO_CONTEXT_PACKET_OFF === '1') return introMessage(mission, extras);
       const strategicContext = await readStrategicContext(mission, {
         seerUrl: process.env.SEER_URL || 'http://127.0.0.1:2997',

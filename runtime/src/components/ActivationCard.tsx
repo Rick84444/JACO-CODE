@@ -1,7 +1,8 @@
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { activationReadiness } from '../lib/cognitiveEvents.mjs';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Check, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Loader2, Check, AlertTriangle, RefreshCw, X } from 'lucide-react';
+import { useUiLanguage } from '../i18n/UiLanguage';
 
 // One report for the workspace and its status bar. Read checks never activate services.
 interface Report {
@@ -14,6 +15,7 @@ interface Report {
 }
 
 export function useActivationReport() {
+  const { tr } = useUiLanguage();
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -30,7 +32,7 @@ export function useActivationReport() {
         method: start ? 'POST' : 'GET', cache: 'no-store',
         signal: AbortSignal.timeout(start ? 180_000 : 60_000),
       }).then(readAuraResponse);
-      if (!body.success || !body.report) throw new Error('Status kunde inte hämtas från JACO.');
+      if (!body.success || !body.report) throw new Error(tr('Status kunde inte hämtas från JACO.','Could not retrieve JACO status.'));
       if (mounted.current) setReport(body.report);
     } catch (e: any) { if (mounted.current) setError(String(e?.message || e)); }
     finally {
@@ -64,35 +66,74 @@ export const ActivationCard: React.FC<{
   onOpenProviders: () => void;
   onOpenProject: () => void;
   projectName: string;
-}> = ({ activation, onActivated, onOpenProviders, onOpenProject, projectName }) => {
+  onRepair?: (problems: string[]) => Promise<void>;
+  repairBlocked?: boolean;
+}> = ({ activation, onActivated, onOpenProviders, onOpenProject, projectName, onRepair, repairBlocked }) => {
+  const { tr } = useUiLanguage();
   const { report, loading, starting, error, read } = activation;
   const state = activationReadiness(activation);
   const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [repairState, setRepairState] = useState<'idle'|'sending'|'accepted'|'uncertain'>('idle');
+  const repairPending = useRef(false);
+  const repair = async () => {
+    if (!onRepair || repairPending.current || repairBlocked || repairState !== 'idle') return;
+    repairPending.current = true;
+    setRepairState('sending');
+    try { await onRepair(report?.problems?.length ? report.problems : [error || state.label]); setRepairState('accepted'); }
+    catch { setRepairState('uncertain'); }
+    finally { repairPending.current = false; }
+  };
+  const labels: Record<string,string> = {
+    'Status kunde inte hämtas':'Status unavailable',
+    'Kontrollerar vad som är redo':'Checking readiness',
+    'JACO behöver startas':'Start JACO',
+    'Anslut en modell för att börja':'Connect a model to begin',
+    'Välj en modell som svarar':'Choose a working model',
+    'Verktygen behöver startas':'Tools need to be started',
+    'Agentkörningen behöver kontrolleras':'Agent runtime needs inspection',
+    'Redo för ditt uppdrag':'Ready for your mission',
+    'Kontrollera anslutningen och försök igen.':'Check the connection and retry.',
+    'Kontrollerar modell, verktyg och agentkörning.':'Checking model, tools and agent runtime.',
+    'Starta JACO på datorn och kontrollera anslutningen igen.':'Start JACO and check the connection again.',
+    'Välj en lokal modell eller anslut en modelltjänst.':'Select a local model or connect a model provider.',
+    'Den valda planeringsmodellen har inte kunnat verifieras.':'The selected planning model has not been verified.',
+    'Starta de anslutna verktygen så att JACO kan arbeta i projektet.':'Start connected tools so JACO can work in the project.',
+    'Modellen svarar, men alla förutsättningar för körning är inte uppfyllda.':'The model responds, but not all execution requirements are met.',
+  };
+  const localized = (value:string) => tr(value, labels[value] || value);
   const connect = state.action === 'connect';
   const start = state.action === 'activate';
-  return <section className="cognitive-setup" aria-label="Kom igång med JACO" data-tone={state.tone}>
+  if (dismissed) return <div className="cognitive-setup-collapsed"><button type="button" onClick={() => setDismissed(false)}><AlertTriangle size={14}/>{tr('Visa driftstatus','Show runtime status')}</button></div>;
+  return <section className="cognitive-setup" aria-label={tr('Kom igång med JACO','Get started with JACO')} data-tone={state.tone}>
     <div className="cognitive-setup-heading">
       {loading ? <Loader2 size={16} className="animate-spin"/> : report?.ok && !error ? <Check size={16}/> : <AlertTriangle size={16}/>}
-      <strong role="status">{starting ? 'Startar anslutna verktyg…' : state.label}</strong>
-      <button type="button" onClick={() => void read()} disabled={loading} aria-label="Kontrollera status igen" title="Kontrollera igen"><RefreshCw size={16}/></button>
+      <strong role="status">{starting ? tr('Startar anslutna verktyg…','Starting connected tools…') : localized(state.label)}</strong>
+      <button type="button" onClick={() => void read()} disabled={loading} aria-label={tr('Kontrollera status igen','Check status again')} title={tr('Kontrollera igen','Refresh')}><RefreshCw size={16}/></button>
+      <button type="button" onClick={() => setDismissed(true)} aria-label={tr('Stäng statuspanelen','Dismiss status panel')}><X size={16}/></button>
     </div>
-    {(!report?.ok || error) && <p>{state.detail}</p>}
+    {(!report?.ok || error) && <p>{localized(state.detail)}</p>}
+    {onRepair && !report?.ok && <div className="cognitive-repair-action">
+      <button type="button" disabled={loading || repairBlocked || repairState !== 'idle'} onClick={() => void repair()}>{repairState === 'sending' ? tr('Registrerar…','Registering…') : repairState === 'accepted' ? tr('Felsökningsuppdrag registrerat','Repair mission registered') : tr('Låt Aura försöka lösa felen','Let Aura try to fix the errors')}</button>
+      {repairBlocked && <p>{tr('Ett uppdrag pågår. Vänta tills det är klart.','A mission is running. Wait for it to finish.')}</p>}
+      {repairState === 'uncertain' && <p role="alert">{tr('Registreringen kunde inte bekräftas. Kontrollera uppdragen före nytt försök.','Registration could not be confirmed. Check missions before retrying.')}</p>}
+    </div>}
     <div className="cognitive-setup-actions">
       {state.action !== 'wait' && state.action !== 'goal' && <button type="button" disabled={loading} onClick={async () => {
         if (connect) onOpenProviders();
         else if (start) { await read(true); onActivated?.(); }
         else if (state.action === 'details') setOpen(true);
         else void read();
-      }}>{connect ? 'Anslut modell' : start ? 'Starta verktyg' : state.action === 'details' ? 'Visa vad som saknas' : 'Försök igen'}</button>}
-      <button type="button" onClick={onOpenProject}>Projekt: {projectName}</button>
-      {!connect&&<button type="button" onClick={onOpenProviders}>Modellanslutningar</button>}
-      <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? 'Dölj detaljer' : 'Anslutningsdetaljer'}</button>
+      }}>{connect ? tr('Anslut modell','Connect model') : start ? tr('Starta verktyg','Start tools') : state.action === 'details' ? tr('Visa vad som saknas','Show missing requirements') : tr('Försök igen','Retry')}</button>}
+      <button type="button" onClick={onOpenProject}>{tr('Projekt','Project')}: {projectName}</button>
+      {!connect&&<button type="button" onClick={onOpenProviders}>{tr('Modellanslutningar','Model connections')}</button>}
+      <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? tr('Dölj detaljer','Hide details') : tr('Anslutningsdetaljer','Connection details')}</button>
     </div>
     {error && <p role="alert">{error}</p>}
     {open && report && <div className="cognitive-setup-details">
-      <p>{report.tools.toolCount} verktyg · {report.providers.filter(p => p.active).length} av {report.providers.length} modelltjänster svarar</p>
+      <p>{report.tools.toolCount} {tr('verktyg','tools')} · {report.providers.filter(p => p.active).length} {tr('av','of')} {report.providers.length} {tr('modelltjänster svarar','model providers responding')}</p>
       {report.problems.map((problem, i) => <p key={i}>{problem}</p>)}
-      {report.tools.servers.map(server => <p key={server.id}>{server.id}: {server.status === 'READY' ? `${server.tools} verktyg` : server.error || 'inte redo'}</p>)}
+      {report.tools.servers.map(server => <p key={server.id}>{server.id}: {server.status === 'READY' ? `${server.tools} ${tr('verktyg','tools')}` : server.error || tr('inte redo','not ready')}</p>)}
     </div>}
   </section>;
 };

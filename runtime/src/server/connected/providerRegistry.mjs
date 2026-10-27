@@ -134,6 +134,8 @@ export class ProviderRegistry {
   // Which providers answer right now (operator 2026-10-09: JACO should sense which are active). A cloud provider
   // that needs a key and has none is "no key", not probed; the rest are asked in parallel for their models.
   async scan() {
+    // Keys may have been stored by another agent process since startup.
+    this.ensureDefaults();
     return Promise.all(this.list().map(async p => {
       const local = /^(localhost|127\.|\[?::1)/.test(new URL(p.baseUrl).hostname);
       if (p.apiKeyEnv && !p.credentialConfigured && !local) return { id: p.id, active: false, state: 'NO_KEY', baseUrl: p.baseUrl, defaultModel: p.defaultModel, models: 0 };

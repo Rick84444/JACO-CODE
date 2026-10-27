@@ -12,20 +12,12 @@ export PREFIX HOME TMPDIR PATH
 ENV_FILE="${JACO_RUNTIME_ENV:-$HOME/.config/jaco/runtime.env}"
 [ -f "$ENV_FILE" ] && . "$ENV_FILE"
 
-CANONICAL_RUNTIME="$HOME/jaco-code/runtime"
-
-if [ -z "${JACO_ROOT:-}" ] ||
-   [ ! -f "$JACO_ROOT/run_termux_node.sh" ] ||
-   [ ! -f "$JACO_ROOT/../gateway/src/workplace/workplace-server.mjs" ]; then
-  if [ -f "$CANONICAL_RUNTIME/run_termux_node.sh" ] &&
-     [ -f "$CANONICAL_RUNTIME/../gateway/src/workplace/workplace-server.mjs" ]; then
-    JACO_ROOT="$CANONICAL_RUNTIME"
-    export JACO_ROOT
-  else
-    echo "JACO_ROOT_INVALID: no canonical runtime checkout found" >&2
-    exit 41
-  fi
-fi
+# Runit must never silently execute the obsolete ~/jaco-code checkout.
+# jacoctl writes the canonical JACO_ROOT into the mode-600 runtime.env.
+[ -f "$ENV_FILE" ] && [ -n "${JACO_ROOT:-}" ] && [ -f "$JACO_ROOT/run_termux_node.sh" ] || {
+  echo "JACO_ROOT_INVALID: configure the installed checkout in $ENV_FILE" >&2
+  exit 41
+}
 
 REPO_ROOT="$(cd "$JACO_ROOT/.." && pwd)"
 cd "$REPO_ROOT"

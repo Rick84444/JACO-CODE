@@ -265,3 +265,21 @@ test('async tool discovery uses the exact claimed mission before planning, with 
   assert.equal(result.completed,true);
   assert.deepEqual(inspected,[{id:mission.id,permissions:['web-fetch']}]);
 });
+
+test('refresh replaces one mission packet with updated receipt state between turns', async t => {
+  const s = setup(t, ['health-check']);
+  s.control.create({ goal: 'Check service', idempotencyKey: 'refresh-packet', allowedTasks: ['health-check'] });
+  const model = scripted([
+    { tool_calls: [call('health-check', {})] },
+    { tool_calls: [call('complete', { reason: 'Service checked' })] },
+  ]);
+  const result = await run(s, model, async () => ({ ok: true, verified: true }), {
+    refreshIntro: true,
+    intro: mission => `BOARD receipts=${mission.receipts?.length || 0}`,
+  });
+  assert.equal(result.completed, true);
+  assert.equal(model.seen[0][1].content, 'BOARD receipts=0');
+  assert.equal(model.seen[1][1].content, 'BOARD receipts=1');
+  assert.equal(model.seen[1].filter(m => m.content?.startsWith('BOARD')).length, 1);
+  assert.ok(model.seen[1].some(m => m.role === 'tool'));
+});

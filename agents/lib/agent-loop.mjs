@@ -67,7 +67,7 @@ export function contextPacketIntro(mission, {
  */
 export async function runAgentMission({
   client, owner, chat, toolsFor, execute, system,
-  observe = async () => null, intro = introMessage, acceptMission = null,
+  observe = async () => null, intro = introMessage, refreshIntro = false, acceptMission = null,
   onActivity = async () => {}, onReceipt = async () => {}, log = () => {},
   maxSteps = 40, maxModelErrors = 3, maxIdleReplies = 2,
   maxContextChars = 60_000, onCondense = () => {}, stuck = new StuckDetector(),
@@ -109,6 +109,8 @@ export async function runAgentMission({
     // Steps bound the work; turns bound the conversation (refusals and retries do not count as steps).
     while (steps < maxSteps && turns++ < maxSteps * 2) {
       await onActivity({ phase: 'PLANNING', missionId: mission.id });
+      // Replace the retained mission packet; never accumulate duplicate board snapshots.
+      if (refreshIntro && turns > 1) messages[1] = { role: 'user', content: await intro(mission) };
       const condensed = condenseMessages(messages, { maxChars: maxContextChars });
       if (condensed.condensed) {
         messages.splice(0, messages.length, ...condensed.messages);

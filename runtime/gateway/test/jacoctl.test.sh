@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"
+cleanup(){
+  for pidfile in "$TMP"/state/*.pid; do
+    [[ -f "$pidfile" ]] || continue
+    pid="$(cat "$pidfile")"
+    [[ "$pid" == 123 ]] || kill "$pid" 2>/dev/null || true
+  done
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
 # Failures in the integration fixture must name the exact failing assertion
 # instead of leaving a bare exit code after successful activation.
 trap 'rc=$?; case $- in *e*) printf "JACOCTL_TEST_FAILED line=%s command=%s exit=%s\\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2;; esac' ERR
@@ -27,10 +36,37 @@ cat > "$TMP/bin/sv" <<'SH'
 #!/usr/bin/env bash
 set -eu
 cmd="$1"; path="$2"; name="$(basename "$path")"; marker="$STUB_STATE/$name"
+if [[ -f "$STUB_STATE/runsv-lost" ]]; then
+  printf 'fail: %s: runsv not running\n' "$path" >&2
+  exit 1
+fi
+pidfile="$marker.pid"
 case "$cmd" in
- up) : > "$marker" ;;
+ up)
+   : > "$marker"
+   if [[ -s "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then exit 0; fi
+   cwd=''; entry=''
+   case "$name" in
+     jaco-sentinel) cwd="$JACO_ROOT/gateway"; entry="src/sentinel.mjs" ;;
+     jaco-core) cwd="$JACO_ROOT"; entry="server.ts" ;;
+     jaco-workplace) cwd="$(cd "$JACO_ROOT/.." && pwd)"; entry="gateway/src/workplace/workplace-server.mjs" ;;
+   esac
+   if [[ -n "$entry" ]]; then
+     (cd "$cwd" && exec -a "node $entry" sleep 300) >/dev/null 2>&1 &
+     echo $! > "$pidfile"
+   else
+     echo 123 > "$pidfile"
+   fi
+   ;;
  down)
-   if [[ "${STUB_REFUSE_DOWN_SERVICE:-}" != "$name" ]]; then rm -f "$marker"; fi
+   if [[ "${STUB_REFUSE_DOWN_SERVICE:-}" != "$name" ]]; then
+     rm -f "$marker"
+     if [[ -s "$pidfile" ]]; then
+       pid="$(cat "$pidfile")"
+       [[ "$pid" == 123 ]] || kill "$pid" 2>/dev/null || true
+       rm -f "$pidfile"
+     fi
+   fi
    ;;
  status)
    if [[ -f "$marker" ]]; then
@@ -40,7 +76,8 @@ case "$cmd" in
        n=$((n+1)); printf '%s' "$n" > "$counter"
        echo "run: $name: (pid $((100+n))) 0s"
      else
-       echo "run: $name: (pid 123) 1s"
+       pid="$(cat "$pidfile" 2>/dev/null || echo 123)"
+       echo "run: $name: (pid $pid) 1s"
      fi
    else
      echo "down: $name: 0s"
@@ -48,6 +85,14 @@ case "$cmd" in
    ;;
  *) exit 2 ;;
 esac
+SH
+cat > "$TMP/bin/service-daemon" <<'SH'
+#!/usr/bin/env bash
+set -eu
+[[ "${1:-}" == restart ]] || exit 2
+[[ ! -f "$STUB_STATE/deny-daemon-restart" ]] || exit 1
+rm -f "$STUB_STATE/runsv-lost"
+printf 'restart\n' >> "$STUB_STATE/daemon-restarts"
 SH
 cat > "$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
@@ -86,7 +131,7 @@ SH
 touch "$TMP/home/models/Bonsai-27B-Q1_0.gguf"
 sed -i "s|__BONSAI_MODEL__|$TMP/home/models/Bonsai-27B-Q1_0.gguf|g" "$TMP/bin/curl"
 chmod +x "$TMP/home/llama.cpp/build/bin/llama-server"
-chmod +x "$TMP/bin/sv" "$TMP/bin/curl"
+chmod +x "$TMP/bin/sv" "$TMP/bin/curl" "$TMP/bin/service-daemon"
 export STUB_STATE="$TMP/state"
 # The Core launcher now verifies an actual releaseId. Test doubles must return
 # a real identity response rather than an empty HTTP 200.
@@ -98,7 +143,7 @@ export JACO_RUNTIME_ENV="$TMP/runtime.env"
 export JACO_PROJECT_ENV="$TMP/project.env"
 # Stale-Core cleanup scans /proc for processes whose cwd is JACO_ROOT. Point it at a
 # scratch directory so the test can never match (and kill) a real runtime on this host.
-export JACO_ROOT="$TMP/jaco-root"; mkdir -p "$JACO_ROOT"
+export JACO_ROOT="$TMP/jaco-root"; mkdir -p "$JACO_ROOT/gateway"
 # Run the exact supervisor bytes in an isolated checkout. Since the launcher
 # derives its canonical root from its own script path, pointing JACO_ROOT at
 # scratch via env alone is insufficient and would legitimately refuse takeover.
@@ -139,6 +184,27 @@ grep -q "^export JACO_WORKPLACE_SEER_BRAIN_TIMEOUT_MS='240000'" "$JACO_RUNTIME_E
 [[ "$(stat -c '%a' "$JACO_RUNTIME_ENV")" == "600" ]]
 OUT_STATUS="$(bash "$JACO_CTL" status --json)"
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit(1)' "$OUT_STATUS"
+
+# Live Android regression: supervise/ok can survive while runsvdir has no running
+# supervisors. status MUST NOT restart the daemon; restart MUST repair it once
+# before any JACO shutdown or orphan termination.
+touch "$STUB_STATE/runsv-lost"
+OUT_STATUS_LOST="$(bash "$JACO_CTL" status --json)"
+node -e 'const j=JSON.parse(process.argv[1]); if(j.state==="READY") process.exit(1)' "$OUT_STATUS_LOST"
+[[ -f "$STUB_STATE/runsv-lost" && ! -f "$STUB_STATE/daemon-restarts" ]]
+# Fail closed if the daemon itself cannot be repaired. Existing JACO processes remain.
+touch "$STUB_STATE/deny-daemon-restart"
+set +e
+OUT_DAEMON_BLOCKED="$(bash "$JACO_CTL" restart --json 2>/dev/null)"
+RC_DAEMON_BLOCKED=$?
+set -e
+[[ "$RC_DAEMON_BLOCKED" -eq 42 ]]
+[[ -f "$STUB_STATE/jaco-sentinel" && -f "$STUB_STATE/jaco-core" && -f "$STUB_STATE/jaco-workplace" ]]
+rm -f "$STUB_STATE/deny-daemon-restart"
+OUT_RESTORED="$(bash "$JACO_CTL" restart --json)"
+node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit(1)' "$OUT_RESTORED"
+[[ ! -f "$STUB_STATE/runsv-lost" ]]
+[[ "$(wc -l < "$STUB_STATE/daemon-restarts")" -eq 1 ]]
 
 # A stray/stale process may keep :3000 answering even while the supervised Core
 # is down. READY must follow the service graph, not only the HTTP port.
@@ -194,10 +260,14 @@ export STUB_CORE_FLAP=1
 export JACO_STABILITY_PROBE_SECONDS=0
 export JACO_CORE_READY_WAIT_SECONDS=2
 set +e
-OUT_FLAP="$(bash "$JACO_CTL" activate --json 2>/dev/null)"
+OUT_FLAP="$(bash "$JACO_CTL" activate --json 2>"$TMP/flap-stderr.log")"
 RC_FLAP=$?
 set -e
-[[ "$RC_FLAP" -eq 34 ]]
+if [[ "$RC_FLAP" -ne 34 ]]; then
+  printf "FLAP_ACTUAL_RC=%s stdout=%s\n" "$RC_FLAP" "$OUT_FLAP" >&2
+  cat "$TMP/flap-stderr.log" >&2
+  exit 1
+fi
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="DEGRADED" || !/failed stability gate/.test(j.message)) process.exit(1)' "$OUT_FLAP"
 [[ -f "$TMP/state/jaco-core" && ! -f "$TMP/state/jaco-workplace" ]]
 bash "$JACO_CTL" deactivate --json >/dev/null

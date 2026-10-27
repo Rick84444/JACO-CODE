@@ -233,3 +233,9 @@ test('the cap resets on a new day and has a sane default', () => {
   assert.equal(paidCallLimit({}), 300);
   assert.equal(paidCallLimit({ JACO_NOVA_PAID_CALLS_PER_DAY: 'nonsense' }), 300);
 });
+
+test('rereading an older file moves it to the newest observed file slot',()=>{
+ const read=(path,content)=>({type:'repo-read',ok:true,result:{path,content}});
+ const files=openFilesForBrain([read('first','old'),read('second','other'),read('first','current')]);
+ assert.equal(files[0].path,'first');assert.equal(files[0].content,'current');
+});
