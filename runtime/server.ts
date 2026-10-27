@@ -1,3 +1,4 @@
+import { readAuraServiceHealth } from '../agents/lib/aura-service-health.mjs';
 import { sharedObservation } from './src/server/connected/sharedObservation.mjs';
 import { readMissionReview } from './src/server/connected/missionReview.mjs';
 import { createMissionWorktrees } from '../agents/lib/mission-worktree.mjs';
@@ -231,15 +232,7 @@ function resolveWorkspacePath(relativePath) {
 // start_goal only creates a durable Nova mission, which stays under contract and operator gates.
 const AURA_TOOL_FORBIDDEN = /(^|[\\/])(\.git|node_modules)([\\/]|$)|(^|[\\/])\.env|secret|credential|\.pem$|\.key$/i;
 async function auraServiceHealth() {
-  const services: Record<string, number> = { workplace: 2995, seer: 2997, substrate: 3000, novaBridge: 4243, gateway: 4250, cdpBridge: 2996, chromeCdp: 9222, ollama: 11434 };
-  const out: Record<string, string> = {};
-  await Promise.all(Object.entries(services).map(async ([name, port]) => {
-    try {
-      const r = await fetch(`http://127.0.0.1:${port}/${port === 9222 ? 'json/version' : port === 11434 ? 'api/tags' : 'health'}`, { signal: AbortSignal.timeout(1500) });
-      out[name] = `up (${r.status})`;
-    } catch { out[name] = 'DOWN'; }
-  }));
-  return out;
+  return readAuraServiceHealth({ env: process.env });
 }
 // The operator's standing goal lives in SEER (seer.operator_primary_goal, else JACO_ROOT_GOAL_ID).
 // Cached for a minute: the workbench snapshot is polled every few seconds.
