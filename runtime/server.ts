@@ -696,7 +696,7 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
       if (process.platform !== 'win32') return;
       windowsModelDiscovery = await loadWindowsModelKeys({
         env: process.env, list: () => listVaultSecrets({ prefix: 'JACO' }),
-        read: (name: string) => runVaultHelper(['-Action', 'Get', '-Key', name, '-Prefix', 'JACO']),
+        read: (name: string) => runVaultHelper(['-Action', 'Get', '-Key', name, '-Prefix', 'JACO'], 6000),
       });
     },
     onToolsStarted: ({ started, failed }: any) => {
