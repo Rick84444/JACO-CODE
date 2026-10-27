@@ -110,6 +110,13 @@ test('READY requires canonical Sentinel, Core and Workplace PID owners, not HTTP
     assert.equal(absentCore.status,0,absentCore.stderr);
     assert.match(absentCore.stdout,/Core HTTP unavailable on port 3000/);
     assert.doesNotMatch(absentCore.stdout,/does not belong to the canonical supervisor/);
+    const waitingNova=spawnSync('bash',[ctl,'status'],{
+      encoding:'utf8', timeout:10000,
+      env:{...common,JACO_TEST_SENTINEL_PID:String(canonicalSentinel),JACO_TEST_WORKPLACE_JSON:JSON.stringify({supervisedAgents:{state:'WAITING_SEER',model:{state:'READY'},seer:{state:'STARTING'},nova:{state:'DISABLED',supervised:true}}})}
+    });
+    assert.equal(waitingNova.status,0,waitingNova.stderr);
+    assert.match(waitingNova.stdout,/Canonical Workplace responds but supervised SEER\/Nova are not RUNNING/);
+    assert.match(waitingNova.stdout,/dependency: overall=WAITING_SEER model=READY seer=STARTING nova=DISABLED supervised=yes lastNovaExit=-/);
   } finally {
     for (const child of processes) child.kill('SIGTERM');
     fs.rmSync(temp,{recursive:true,force:true});
