@@ -11,7 +11,7 @@ const trimSlash = value => String(value || '').replace(/\/+$/, '');
 export function normalizeProviderUrl(raw) {
   let text = String(raw || '').trim();
   if (!text) throw new Error('PROVIDER_URL_REQUIRED');
-  if (/\\s/.test(text)) throw new Error('INVALID_PROVIDER_URL');
+  if (/\s/.test(text)) throw new Error('INVALID_PROVIDER_URL');
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) text = `${/^(localhost|127\.|10\.|192\.168\.|\[?::1)/.test(text) ? 'http' : 'https'}://${text}`;
   const url = new URL(text);
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('UNSUPPORTED_PROVIDER_PROTOCOL');
