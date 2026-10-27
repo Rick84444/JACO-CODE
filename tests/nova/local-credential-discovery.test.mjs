@@ -56,7 +56,7 @@ test('existing Windows vault model credentials are loaded locally without cloud 
     list:async()=>({ok:true,keys:['GEMINI_API_KEY','CDP_API_KEY_SECRET','STRIPE_SECRET_KEY','GEMINI_API_KEY']}),
     read:async key=>{read.push(key); return {ok:true,value:'private-gemini-value'};}
   });
-  assert.deepEqual(read,['GEMINI_API_KEY','GEMINI_API_KEY']);
+  assert.deepEqual(read,['GEMINI_API_KEY']);
   assert.equal(env.GEMINI_API_KEY,'private-gemini-value');
   assert.equal(env.CDP_API_KEY_SECRET,undefined);
   assert.equal(env.STRIPE_SECRET_KEY,undefined);
