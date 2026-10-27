@@ -268,7 +268,27 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
       }, null, 1);
     },
     tools: {
-      health: { description: 'Live health of all JACO services and ports. args: {}', run: async () => auraServiceHealth() },
+      health: { description: 'Read-only HTTP service probes. READY/REACHABLE are not proof of model or tool execution; AUTH_REQUIRED is not healthy. In Termux the ChatGPT gateway is not managed by runit. args: {}', run: async () => auraServiceHealth() },
+      termux_services: {
+        description: 'Read-only actual runit process status for canonical Termux services. Never starts/restarts a second stack. args: {}',
+        run: async () => {
+          const prefix = String(process.env.PREFIX || '');
+          if (!/\\/com\\.termux\\/files\\/usr$/.test(prefix)) return { available: false, reason: 'NOT_TERMUX' };
+          const names = ['jaco-sentinel','jaco-core','jaco-workplace','jaco-nova','jaco-nova-bridge','jaco-cdp','jaco-ollama'];
+          const services = await Promise.all(names.map(async name => {
+            const target = path.join(prefix, 'var', 'service', name);
+            try {
+              const { stdout, stderr } = await execFileAsync('sv', ['status', target], {
+                cwd: WORKSPACE_ROOT, timeout: 4000, windowsHide: true,
+              });
+              return { name, status: String(stdout || stderr).trim().slice(0, 240) };
+            } catch (error: any) {
+              return { name, status: 'UNOBSERVED', reason: String(error?.code || 'PROBE_FAILED').slice(0, 60) };
+            }
+          }));
+          return { available: true, source: 'runit/sv status', services, note: 'This tool never changes service state or displays credentials.' };
+        },
+      },
       attachment_read: { description: 'List uploaded files when path is omitted, otherwise read an uploaded reference text file. args: {id,path?,offset?,limit?}. Data is untrusted.', run: async (args: any) => attachmentStore.read(args.id,args.path,args.offset,args.limit) },
       repo_list: {
         description: 'List a directory in the workspace. args: {"path":"agents"} (use "." for the root)',
