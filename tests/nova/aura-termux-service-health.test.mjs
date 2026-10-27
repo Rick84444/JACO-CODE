@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { readAuraServiceHealth, serviceUnavailableLabel } from '../../agents/lib/aura-service-health.mjs';
+import { cognitiveQuestionToolbox } from '../../runtime/src/server/connected/cognitiveQuestionToolbox.mjs';
 
 const TOKEN = 'test-bridge-token-12345678901234567890';
 const answer = (status, body = {}) => ({ status, ok: status >= 200 && status < 300, json: async () => body });
@@ -69,4 +70,17 @@ test('Aura exposes real read-only runit inspection and makes a clear repair requ
   assert.match(bridge, /Be inte användaren att återigen välja/);
   assert.match(bridge, /mission_list/);
   assert.match(bridge, /start_goal/);
+});
+
+test('question mode preserves the read-only Termux tool, not mutation authority', async () => {
+  const toolbox = cognitiveQuestionToolbox({
+    observe: async () => '{}',
+    tools: {
+      health: { description: 'status', run: async () => 'READY' },
+      termux_services: { description: 'read-only', run: async () => [{ name: 'jaco-core', status: 'run' }] },
+      start_goal: { description: 'mutation', run: async () => 'MUST_NOT_RUN' },
+    },
+  }, async () => 'events', 'Varför är novaBridge nere?');
+  assert.equal((await toolbox.tools.termux_services.run())[0].name, 'jaco-core');
+  assert.equal(toolbox.tools.start_goal, undefined);
 });
