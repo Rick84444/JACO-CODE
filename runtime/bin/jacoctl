@@ -493,6 +493,12 @@ workplace_running(){
     node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s),a=j.supervisedAgents||{};process.exit(a.state==='RUNNING'&&a.nova?.state==='RUNNING'?0:1)}catch{process.exit(1)}})"
 }
 
+# Status must explain the reason that Nova is not running, not merely report DEGRADED.
+workplace_status_summary(){
+  curl -fsS --max-time 3 "$WORKPLACE_URL/health" 2>/dev/null |
+    node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s),a=j.supervisedAgents||{},m=a.model||{},se=a.seer||{},n=a.nova||{};process.stdout.write('overall='+(a.state||'UNKNOWN')+' model='+(m.state||'UNKNOWN')+' seer='+(se.state||'UNKNOWN')+' nova='+(n.state||'UNKNOWN')+' supervised='+(n.supervised===true?'yes':'no')+' lastNovaExit='+(n.lastExit?.code??'-'))}catch{process.exit(1)}})"
+}
+
 workplace_progress(){
   local snapshot
   snapshot="$(
@@ -760,6 +766,10 @@ case "$ACTION" in
         emit DEGRADED 'Canonical Workplace is waiting: Core HTTP unavailable on port 3000; SEER/Nova cannot start'
       else
         emit DEGRADED 'Canonical Workplace responds but supervised SEER/Nova are not RUNNING'
+        if [[ "$JSON" != true ]]; then
+          diagnostic="$(workplace_status_summary 2>/dev/null || true)"
+          [[ -z "$diagnostic" ]] || printf '  dependency: %s\n' "$diagnostic"
+        fi
       fi
     elif sentinel_truth_ready; then
       emit SENTINEL_ONLY 'Canonical Sentinel is ready; Core unavailable'
