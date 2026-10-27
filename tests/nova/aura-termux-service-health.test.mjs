@@ -1,0 +1,72 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { readAuraServiceHealth, serviceUnavailableLabel } from '../../agents/lib/aura-service-health.mjs';
+
+const TOKEN = 'test-bridge-token-12345678901234567890';
+const answer = (status, body = {}) => ({ status, ok: status >= 200 && status < 300, json: async () => body });
+
+test('Termux probes authenticate the real Nova bridge and never mistake a 401 for healthy', async () => {
+  const called = [];
+  const state = await readAuraServiceHealth({
+    env: { PREFIX: '/data/data/com.termux/files/usr', JACO_GATEWAY_TOKEN: TOKEN,
+      JACO_ENABLE_CDP: '1', JACO_ENABLE_OLLAMA: '0' },
+    platform: 'android',
+    fetchImpl: async (url, options) => {
+      const u = new URL(url);
+      called.push({ port: u.port, headers: options.headers });
+      if (u.port === '4243') {
+        assert.equal(options.headers.Authorization, 'Bearer ' + TOKEN);
+        return answer(200, { service: 'nova-bridge', ok: false });
+      }
+      if (['4250', '9222', '11434'].includes(u.port)) throw Error('ECONNREFUSED');
+      if (u.port === '2996') return answer(200, { ok: true });
+      return answer(200);
+    },
+  });
+  assert.equal(state.novaBridge, 'UNHEALTHY (200)');
+  assert.equal(state.cdpBridge, 'READY (200)');
+  assert.equal(state.chromeCdp, 'NOT_CONNECTED (BROWSER_DEBUG_PORT)');
+  assert.equal(state.gateway, 'NOT_SUPERVISED (TERMUX)');
+  assert.equal(state.ollama, 'DISABLED (MODEL_POLICY)');
+  assert.equal(state.substrate, 'REACHABLE (200)');
+  assert.equal(called.length, 8);
+});
+
+test('401, non-2xx and boolean-negative responses never masquerade as healthy', async () => {
+  const state = await readAuraServiceHealth({
+    env: { PREFIX: '/data/data/com.termux/files/usr', JACO_ENABLE_CHATGPT_GATEWAY: '1' },
+    platform: 'android',
+    fetchImpl: async url => {
+      const port = new URL(url).port;
+      if (port === '4243') return answer(401, { ok: false });
+      if (port === '4250') return answer(503, { error: 'unavailable' });
+      if (port === '2995') return answer(200, { success: false });
+      return answer(200, { status: 'READY' });
+    },
+  });
+  assert.equal(state.novaBridge, 'AUTH_REQUIRED (401)');
+  assert.equal(state.gateway, 'UNHEALTHY (503)');
+  assert.equal(state.workplace, 'UNHEALTHY (200)');
+  assert.equal(state.seer, 'READY (200)');
+});
+
+test('configured CDP and Ollama distinguish disabled from unreachable', () => {
+  assert.equal(serviceUnavailableLabel('novaBridge', { JACO_ENABLE_CDP: '0' }, 'android'), 'DISABLED (CDP_POLICY)');
+  assert.equal(serviceUnavailableLabel('chromeCdp', { JACO_ENABLE_CDP: '0' }, 'android'), 'DISABLED (CDP_POLICY)');
+  assert.equal(serviceUnavailableLabel('ollama', { JACO_ENABLE_OLLAMA: '1' }, 'android'), 'DOWN');
+  assert.equal(serviceUnavailableLabel('gateway', { JACO_ENABLE_CHATGPT_GATEWAY: '1' }, 'android'), 'DOWN');
+  assert.equal(serviceUnavailableLabel('gateway', { PREFIX: '/data/data/com.termux/files/usr' }, 'linux'), 'NOT_SUPERVISED (TERMUX)');
+});
+
+test('Aura exposes real read-only runit inspection and makes a clear repair request actionable', () => {
+  const server = fs.readFileSync('runtime/server.ts', 'utf8');
+  const bridge = fs.readFileSync('agents/lib/aura-seer-chat.mjs', 'utf8');
+  assert.match(server, /readAuraServiceHealth\(\{ env: process\.env \}\)/);
+  assert.match(server, /termux_services:/);
+  assert.match(server, /execFileAsync\('sv', \['status', target\]/);
+  assert.doesNotMatch(server.slice(server.indexOf('termux_services:'), server.indexOf('attachment_read:', server.indexOf('termux_services:'))), /'restart'|'up'|'down'/);
+  assert.match(bridge, /Be inte användaren att återigen välja/);
+  assert.match(bridge, /mission_list/);
+  assert.match(bridge, /start_goal/);
+});
