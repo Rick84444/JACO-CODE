@@ -11,9 +11,11 @@ const trimSlash = value => String(value || '').replace(/\/+$/, '');
 export function normalizeProviderUrl(raw) {
   let text = String(raw || '').trim();
   if (!text) throw new Error('PROVIDER_URL_REQUIRED');
+  if (/\\s/.test(text)) throw new Error('INVALID_PROVIDER_URL');
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) text = `${/^(localhost|127\.|10\.|192\.168\.|\[?::1)/.test(text) ? 'http' : 'https'}://${text}`;
   const url = new URL(text);
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('UNSUPPORTED_PROVIDER_PROTOCOL');
+  if (url.username || url.password) throw new Error('PROVIDER_URL_MUST_NOT_CONTAIN_CREDENTIALS');
   url.hash = '';
   return url;
 }
@@ -49,7 +51,7 @@ const candidatesFor = url => {
 async function get(fetchImpl, href, headers, timeoutMs) {
   const started = Date.now();
   try {
-    const res = await fetchImpl(href, { headers, signal: AbortSignal.timeout(timeoutMs) });
+    const res = await fetchImpl(href, { headers, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) });
     const text = await res.text();
     let json = null; try { json = JSON.parse(text); } catch { /* not JSON */ }
     return { href, status: res.status, ms: Date.now() - started, json };
@@ -72,7 +74,9 @@ export async function discoverProvider(rawUrl, { env = process.env, fetchImpl = 
   const url = normalizeProviderUrl(rawUrl);
   const preferredModel = url.searchParams.get('model') || '';
   const known = knownProvider(url);
-  const id = known?.id || providerIdFromUrl(url);
+  const candidateId = providerIdFromUrl(url);
+  // An operator-defined endpoint must never replace a catalog provider with the same ID.
+  const id = known?.id || (catalogById(candidateId) ? `custom-${candidateId}` : candidateId);
   const apiKeyEnv = known?.apiKeyEnv || `${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
   const key = keyFor(apiKeyEnv) || '';
   const headers = { accept: 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) };
@@ -80,12 +84,17 @@ export async function discoverProvider(rawUrl, { env = process.env, fetchImpl = 
   const result = (state, extra) => ({ id, known: Boolean(known), apiKeyEnv, credentialConfigured: Boolean(key), state, evidence, ...extra });
 
   const bases = known ? [known.baseUrl] : candidatesFor(url);
+  // Never send a pasted secret over cleartext off the current device.
+  if (key && bases.some(base => {
+    const endpoint = new URL(base);
+    return endpoint.protocol !== 'https:' && !['localhost', '127.0.0.1', '::1', '[::1]'].includes(endpoint.hostname);
+  })) throw new Error('PROVIDER_KEY_REQUIRES_HTTPS');
   let authWall = null;
   for (const base of bases) {
     const r = await get(fetchImpl, `${base}/models`, headers, timeoutMs);
     evidence.push({ url: r.href, status: r.status, ms: r.ms, ...(r.error ? { error: r.error } : {}) });
     const models = r.status === 200 ? modelIds(r.json) : null;
-    if (models) return result('READY', { baseUrl: base, models, defaultModel: pickDefaultModel(models, preferredModel) });
+    if (models?.length) return result('READY', { baseUrl: base, models, defaultModel: pickDefaultModel(models, preferredModel) });
     if ((r.status === 401 || r.status === 403) && !authWall) authWall = base;
   }
   // Ollama's native listing, when the OpenAI-compatible path is closed or the URL was the bare host.
@@ -93,7 +102,7 @@ export async function discoverProvider(rawUrl, { env = process.env, fetchImpl = 
     const r = await get(fetchImpl, `${url.origin}/api/tags`, headers, timeoutMs);
     evidence.push({ url: r.href, status: r.status, ms: r.ms, ...(r.error ? { error: r.error } : {}) });
     const models = r.status === 200 ? modelIds(r.json) : null;
-    if (models) return result('READY', { baseUrl: `${url.origin}/v1`, models, defaultModel: pickDefaultModel(models, preferredModel), kind: 'ollama' });
+    if (models?.length) return result('READY', { baseUrl: `${url.origin}/v1`, models, defaultModel: pickDefaultModel(models, preferredModel), kind: 'ollama' });
   }
   // Without a model list (no key yet, or rejected) a known service still gets its usual model, so the
   // provider works the moment a valid key is saved.
