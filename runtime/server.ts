@@ -37,7 +37,10 @@ import { liveMissionView } from './src/server/connected/liveMission.mjs';
 import { discoverProvider, identifyKey } from './src/server/connected/providerDiscovery.mjs';
 import { CATALOG as PROVIDER_CATALOG, catalogById, catalogProvider } from './src/server/connected/providerCatalog.mjs';
 import { activationReport } from '../agents/lib/activate.mjs';
-import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret } from '../agents/lib/secret-store.mjs';
+import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret, validateSecretName } from '../agents/lib/secret-store.mjs';
+import { listVaultSecrets, runVaultHelper } from '../agents/lib/vault-tools.mjs';
+import { loadLocalJacoEnv, loadWindowsModelKeys, LOCAL_SERVICE_KEYS } from '../agents/lib/local-credential-discovery.mjs';
+const localEnvDiscovery = loadLocalJacoEnv();
 hydrateEnvFromStore(process.env);
 // Paid models run when their key is configured, within the budget; JACO_ALLOW_PAID_MODELS=0 turns them off.
 const paidModelsAllowed = () => process.env.JACO_ALLOW_PAID_MODELS !== '0';
@@ -687,7 +690,16 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
     }
   });
 
-  const connections = automaticConnections({ registry: connectedRuntime.providers, mcpHost, onToolsStarted: ({ started, failed }: any) => {
+  let windowsModelDiscovery: { sourceAvailable: boolean; configured: string[] } = { sourceAvailable: false, configured: [] };
+  const connections = automaticConnections({ registry: connectedRuntime.providers, mcpHost,
+    loadCredentials: async () => {
+      if (process.platform !== 'win32') return;
+      windowsModelDiscovery = await loadWindowsModelKeys({
+        env: process.env, list: () => listVaultSecrets({ prefix: 'JACO' }),
+        read: (name: string) => runVaultHelper(['-Action', 'Get', '-Key', name, '-Prefix', 'JACO'], 6000),
+      });
+    },
+    onToolsStarted: ({ started, failed }: any) => {
     getAuraMcpFabric.invalidate();
     console.log(`[JACO] tool servers started: ${started.join(', ') || 'none'}${failed.length ? `; not started: ${failed.map((f: any) => `${f.id}: ${f.error.slice(0, 80)}`).join('; ')}` : ''}`);
     seerLiveWorkstream.record({ actor: 'JACO runtime', type: 'tools.autostarted', message: `Tool servers started: ${started.length}, not started: ${failed.length}`, verified: failed.length === 0, receipt: { started, failed } });
@@ -695,6 +707,20 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   app.get('/api/aura/workbench/connections', requireLocalUi, async (_req, res) => {
     try { res.json({ success: true, ...(await connections.refresh()) }); }
     catch { res.status(503).json({ success: false, error: 'CONNECTION_REFRESH_FAILED' }); }
+  });
+  // Metadata only. Existing env, encrypted store and legacy Windows vault remain the owners.
+  app.get('/api/aura/workbench/vault/discovery', requireLocalUiSameOrigin, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const state = new SecretStore();
+    const stored = new Set(state.list().map((item: any) => item.name));
+    res.json({ success: true,
+      localEnvFiles: localEnvDiscovery.observedFiles,
+      localEnvImported: localEnvDiscovery.loaded.map((item: any) => item.name),
+      windowsModelLoaded: windowsModelDiscovery.configured,
+      configured: LOCAL_SERVICE_KEYS.filter((name: string) => Boolean(process.env[name]) || stored.has(name))
+        .map((name: string) => ({ name, source: process.env[name] ? 'local-env-or-runtime' : 'encrypted-store', state: 'CONFIGURED_NOT_VERIFIED' })),
+      note: 'No secret values are returned; configured does not mean connected. Only model catalog endpoints are automatically probed.'
+    });
   });
 
   // Cognitive continuity reads the existing durable Nova mission authority.
@@ -3030,6 +3056,42 @@ const notifyPhone = async (action) => {
     }
   });
 
+  // Bridge the existing Windows JACO Credential Manager vault to the canonical encrypted store.
+  // Listing is metadata only; nothing is imported or deleted without an explicit operator action.
+  app.get('/api/aura/workbench/vault/windows', requireLocalUiSameOrigin, async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (process.platform !== 'win32') return res.json({ success: true, available: false, keys: [], reason: 'WINDOWS_ONLY' });
+    try {
+      const result = await listVaultSecrets({ prefix: 'JACO' });
+      if (!result.ok) return res.json({ success: true, available: false, keys: [], reason: 'WINDOWS_VAULT_UNAVAILABLE' });
+      res.json({ success: true, available: true, keys: (result.keys || []).filter((key: string) => /^[A-Z][A-Z0-9_]{1,127}$/.test(key)) });
+    } catch {
+      res.json({ success: true, available: false, keys: [], reason: 'WINDOWS_VAULT_UNAVAILABLE' });
+    }
+  });
+  app.post('/api/aura/workbench/vault/import-windows', requireLocalUiSameOrigin, async (req, res) => {
+    // This is an explicit, additive import: old DPAPI credentials remain untouched.
+    if (process.platform !== 'win32') return res.status(400).json({ success: false, error: 'WINDOWS_ONLY' });
+    try {
+      const name = validateSecretName(req.body?.name);
+      const store = new SecretStore();
+      if (store.has(name)) return res.status(409).json({ success: false, error: 'SECRET_ALREADY_EXISTS' });
+      const listed = await listVaultSecrets({ prefix: 'JACO' });
+      if (!listed.ok || !listed.keys?.includes(name)) return res.status(404).json({ success: false, error: 'WINDOWS_VAULT_KEY_NOT_FOUND' });
+      // Do not use env fallback: prove the value was read from JACO's Windows vault.
+      const retrieved = await runVaultHelper(['-Action', 'Get', '-Key', name, '-Prefix', 'JACO']);
+      if (!retrieved?.ok || typeof retrieved.value !== 'string' || !retrieved.value) return res.status(424).json({ success: false, error: 'WINDOWS_VAULT_READ_FAILED' });
+      const secret = store.set(name, retrieved.value, { source: 'windows-vault-import', purpose: 'Explicit import from JACO Windows Vault' });
+      if (isExportableSecret(name) && !process.env[name]) process.env[name] = retrieved.value;
+      connectedRuntime.providers.ensureDefaults();
+      seerLiveWorkstream.record({ actor: 'Aura Vault', type: 'vault.credential.imported', verified: true,
+        message: `Windows Vault credential imported: ${name}`, receipt: { name, source: 'windows-credential-manager', valueExposed: false } });
+      res.status(201).json({ success: true, secret });
+    } catch (error: any) {
+      res.status(400).json({ success: false, error: error?.message === 'INVALID_SECRET_NAME' ? 'INVALID_SECRET_NAME' : 'WINDOWS_VAULT_IMPORT_FAILED' });
+    }
+  });
+
   // Expose provider choices without key-shape coupling or exposing stored credentials.
   app.get('/api/aura/workbench/providers/catalog', requireLocalUi, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -4524,7 +4586,8 @@ const notifyPhone = async (action) => {
     res.sendFile(scriptPath);
   });
 
-  app.delete("/api/vault/:id", (req, res) => {
+  // Legacy in-memory-only Vault; never expose unauthenticated destructive operations.
+  app.delete("/api/vault/:id", requireOperator, (req, res) => {
     const { id } = req.params;
     auraEngineManager.deleteVaultItem(id);
     const vaultItems = auraEngineManager.getVaultItems().map(({ keyOrPassword, ...item }) => ({
