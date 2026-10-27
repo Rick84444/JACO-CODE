@@ -5,7 +5,7 @@
 
 import { CATALOG as KNOWN, keyCandidates, catalogById } from './providerCatalog.mjs';
 
-const NON_CHAT = /embed|whisper|tts|dall-e|image|moderation|rerank|audio|transcribe|vision-preview|guard/i;
+const NON_CHAT = /embed|whisper|tts|dall-e|image|moderation|rerank|audio|transcribe|vision-preview|guard|imagen|veo|aqa/i;
 const trimSlash = value => String(value || '').replace(/\/+$/, '');
 
 export function normalizeProviderUrl(raw) {
@@ -20,7 +20,8 @@ export function normalizeProviderUrl(raw) {
 
 export function knownProvider(url) {
   const host = url.hostname.toLowerCase();
-  const hit = KNOWN.find(k => k.match.test(host));
+  // A bare service name ("gemini", "groq") names the catalog entry; it is not a host to probe.
+  const hit = (!host.includes('.') && catalogById(host)) || KNOWN.find(k => k.match.test(host));
   return hit ? { id: hit.id, baseUrl: hit.baseUrl, apiKeyEnv: hit.apiKeyEnv, defaultModel: hit.defaultModel || '' } : null;
 }
 
@@ -60,7 +61,7 @@ async function get(fetchImpl, href, headers, timeoutMs) {
 
 const modelIds = json => {
   const list = Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : null;
-  return list ? list.map(m => (typeof m === 'string' ? m : m?.id || m?.name || m?.model)).filter(Boolean).map(String).slice(0, 200) : null;
+  return list ? list.map(m => (typeof m === 'string' ? m : m?.id || m?.name || m?.model)).filter(Boolean).map(m => String(m).replace(/^models\//, '')).slice(0, 200) : null;
 };
 
 /**
@@ -86,7 +87,7 @@ export async function discoverProvider(rawUrl, { env = process.env, fetchImpl = 
     evidence.push({ url: r.href, status: r.status, ms: r.ms, ...(r.error ? { error: r.error } : {}) });
     const models = r.status === 200 ? modelIds(r.json) : null;
     if (models) return result('READY', { baseUrl: base, models, defaultModel: pickDefaultModel(models, preferredModel) });
-    if ((r.status === 401 || r.status === 403) && !authWall) authWall = base;
+    if ((r.status === 401 || r.status === 403 || (known && r.status >= 400 && r.status < 500)) && !authWall) authWall = base;
   }
   // Ollama's native listing, when the OpenAI-compatible path is closed or the URL was the bare host.
   if (!known) {
@@ -122,6 +123,7 @@ export async function identifyKey(key, { provider = '', fetchImpl = fetch, timeo
   const base = { id: entry.id, apiKeyEnv: entry.apiKeyEnv, baseUrl: entry.baseUrl, evidence };
   const models = r.status === 200 ? modelIds(r.json) : null;
   if (models) return { ...base, state: 'READY', models, defaultModel: pickDefaultModel(models, entry.defaultModel || '') };
-  if (r.status === 401 || r.status === 403) return { ...base, state: 'KEY_REJECTED', models: [], defaultModel: entry.defaultModel || '' };
+  // Gemini refuses a bad key with 400 rather than 401; any 4xx from the service's own API is a refusal.
+  if (r.status >= 400 && r.status < 500) return { ...base, state: 'KEY_REJECTED', models: [], defaultModel: entry.defaultModel || '' };
   return { ...base, state: 'UNREACHABLE', models: [], defaultModel: entry.defaultModel || '' };
 }

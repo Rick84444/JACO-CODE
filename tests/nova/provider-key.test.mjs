@@ -74,3 +74,8 @@ test('scan reports active, keyless and refused providers', async () => {
     assert.equal(by.ollama.state, 'UNREACHABLE');
   } finally { globalThis.fetch = realFetch; }
 });
+
+test('a Gemini key refused with 400 is reported as refused, not as an unreachable service', async () => {
+  const refused = await identifyKey('AIzaNotAValidKey', { fetchImpl: spy(400, { error: { message: 'Please pass a valid API key' } }) });
+  assert.equal(refused.id, 'gemini'); assert.equal(refused.state, 'KEY_REJECTED');
+});

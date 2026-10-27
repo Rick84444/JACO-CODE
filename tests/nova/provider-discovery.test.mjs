@@ -64,3 +64,16 @@ test('URL helpers', () => {
   assert.equal(pickDefaultModel(['text-embedding-3', 'gpt-x'], ''), 'gpt-x');
   assert.equal(pickDefaultModel(['a', 'b'], 'b'), 'b');
 });
+
+test('Gemini is recognised by name or product site, and its 404 without a key means a key is needed', async () => {
+  const listing = 'https://generativelanguage.googleapis.com/v1beta/openai/models';
+  for (const typed of ['gemini', 'gemini.google.com', 'aistudio.google.com']) {
+    const { fetchImpl, seen } = stub({ [listing]: { status: 404, body: { error: { code: 404 } } } });
+    const d = await discoverProvider(typed, { env: {}, fetchImpl });
+    assert.equal(d.id, 'gemini', typed); assert.equal(d.state, 'NEEDS_KEY', typed);
+    assert.deepEqual(seen.map(s => s.href), [listing], 'only the Gemini API is asked, never a host called "gemini"');
+  }
+  const { fetchImpl } = stub({ [listing]: { body: { data: [{ id: 'models/text-embedding-004' }, { id: 'models/imagen-3.0' }, { id: 'models/gemini-2.5-flash' }] } } });
+  const ready = await discoverProvider('gemini', { env: { GEMINI_API_KEY: 'AIza-test' }, fetchImpl });
+  assert.equal(ready.state, 'READY'); assert.equal(ready.defaultModel, 'gemini-2.5-flash', 'model ids are used without the "models/" prefix and image models are not the default');
+});

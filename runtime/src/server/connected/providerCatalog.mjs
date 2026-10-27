@@ -12,7 +12,7 @@ export const CATALOG = [
   { match: /(^|\.)together\.(xyz|ai)$/, id: 'together', baseUrl: 'https://api.together.xyz/v1', apiKeyEnv: 'TOGETHER_API_KEY', modelEnv: 'TOGETHER_MODEL' },
   { match: /(^|\.)mistral\.ai$/, id: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKeyEnv: 'MISTRAL_API_KEY', modelEnv: 'MISTRAL_MODEL' },
   { match: /(^|\.)anthropic\.com$|(^|\.)claude\.(ai|com)$/, id: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', apiKeyEnv: 'ANTHROPIC_API_KEY', keyPrefix: /^sk-ant-/ },
-  { match: /(^|\.)(googleapis\.com|ai\.google\.dev|aistudio\.google\.com)$/, id: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', apiKeyEnv: 'GEMINI_API_KEY', modelEnv: 'GEMINI_MODEL', keyPrefix: /^AIza/ },
+  { match: /(^|\.)(googleapis\.com|ai\.google\.dev|aistudio\.google\.com|gemini\.google\.com)$/, id: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', apiKeyEnv: 'GEMINI_API_KEY', modelEnv: 'GEMINI_MODEL', keyPrefix: /^AIza/ },
   { match: /(^|\.)x\.ai$/, id: 'xai', baseUrl: 'https://api.x.ai/v1', apiKeyEnv: 'XAI_API_KEY', keyPrefix: /^xai-/ },
   { match: /(^|\.)(dashscope[-a-z]*\.aliyuncs\.com|qwen\.ai)$/, id: 'qwen', baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', apiKeyEnv: 'QWEN_API_KEY', defaultModel: 'qwen-max', modelEnv: 'QWEN_MODEL', baseEnv: 'QWEN_BASE_URL', keyPrefix: /^sk-[a-f0-9]{32}$/i },
   { match: /(^|\.)huggingface\.co$/, id: 'huggingface', baseUrl: 'https://router.huggingface.co/v1', apiKeyEnv: 'HUGGINGFACE_TOKEN', keyPrefix: /^hf_/ },
