@@ -29,6 +29,9 @@ test('Vault uses the existing encrypted SecretStore, not the old in-memory AuraE
 test('Coinbase CDP key ID is rehydrated but NOVA-managed secrets stay private', () => {
   assert.equal(isExportableSecret('CDP_API_KEY_ID'), true);
   assert.equal(isExportableSecret('CDP_API_KEY_SECRET'), true);
+  assert.equal(isExportableSecret('STRIPE_SECRET_KEY'), true);
+  assert.equal(isExportableSecret('COINBASE_COMMERCE_KEY'), true);
+  assert.equal(isExportableSecret('CDP_WALLET_SECRET'), true);
   assert.equal(isExportableSecret('NOVA_EXAMPLE_API_KEY'), false);
   assert.equal(isExportableSecret('NOVA_EXAMPLE_PASSWORD'), false);
 });
