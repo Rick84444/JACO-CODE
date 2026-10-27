@@ -813,7 +813,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       if (action === 'commit') setGitCommitMessage('');
       await refresh();
     } catch (error: any) {
-      setGitActionNotice(`Git action not queued: ${error?.message || String(error)}`);
+      setGitActionNotice(`Git ${action} failed: ${error?.message || String(error)}`);
     } finally {
       setGitBusy(null);
     }
