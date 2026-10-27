@@ -19,9 +19,11 @@ export function remedyFor(error = '') {
   return 'Försöker igen automatiskt; se serverns logg om felet kvarstår.';
 }
 
-export function automaticConnections({ registry, mcpHost, env = process.env, now = Date.now, onToolsStarted = (_event) => {} }) {
+export function automaticConnections({ registry, mcpHost, env = process.env, now = Date.now, loadCredentials = null, onToolsStarted = (_event) => {} }) {
   let inFlight = null, at = -Infinity, receipt = { observedAt: null, providers: [], tools: [], problems: [], ok: false };
   const retry = new Map(); // id -> { attempts, nextTry, error }
+  // One bounded boot attempt; never re-read the Windows vault on a 30-second connection tick.
+  let credentialsLoaded = false;
   const autoStart = env.JACO_AUTO_START_TOOLS !== '0';
 
   async function connectTools() {
@@ -58,6 +60,12 @@ export function automaticConnections({ registry, mcpHost, env = process.env, now
   }
 
   async function run() {
+    if (!credentialsLoaded) {
+      credentialsLoaded = true;
+      if (typeof loadCredentials === 'function') {
+        try { await loadCredentials(); } catch { /* connection discovery continues without vault */ }
+      }
+    }
     registry.ensureDefaults({ refreshExisting: false });
     for (const [id, baseUrl] of [['litert', env.JACO_LITERT_URL || 'http://127.0.0.1:9379/v1'], ['llamacpp', env.JACO_LLAMACPP_URL || 'http://127.0.0.1:9380/v1']]) {
       if (!registry.providers.has(id)) registry.register({ id, baseUrl, defaultModel: '' });

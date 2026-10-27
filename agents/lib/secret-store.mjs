@@ -125,7 +125,7 @@ export function credential(name, { env = process.env, store = null } = {}) {
 // in each JACO process at startup, so every component that reads process.env[<NAME>] sees them without
 // being changed one by one. The environment still wins. Agent-made passwords (NOVA_*) are not exported:
 // they are only ever typed through vault:<key>.
-const EXPORTABLE = /^(?!NOVA_)[A-Z][A-Z0-9_]*(_API_KEY|_TOKEN|_SECRET)$/;
+const EXPORTABLE = /^(?!NOVA_)(?:[A-Z][A-Z0-9_]*(_API_KEY|_TOKEN|_SECRET|_SECRET_KEY|_COMMERCE_KEY)|CDP_API_KEY_ID)$/;
 export function hydrateEnvFromStore(env = process.env, store = null) {
   const loaded = [];
   try {
