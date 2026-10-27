@@ -49,6 +49,7 @@ export function loadLocalJacoEnv({ cwd = process.cwd(), env = process.env, fsImp
 // Windows Credential Manager's JACO namespace is a legacy credential source.
 // Only recognised model provider keys are read automatically for safe /models discovery.
 // Payments, trading, cloud deploy or account mutations are NEVER attempted by this helper.
+/** @param {{ env?: Record<string, string | undefined>, list?: (() => Promise<{ok?: boolean, keys?: string[]}>), read?: ((name: string) => Promise<{ok?: boolean, value?: string}>) }} [options] */
 export async function loadWindowsModelKeys({ env = process.env, list, read } = {}) {
   if (typeof list !== 'function' || typeof read !== 'function') return { sourceAvailable: false, configured: [] };
   const configured = [];
