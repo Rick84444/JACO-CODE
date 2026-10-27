@@ -60,7 +60,7 @@ test('existing Windows vault model credentials are loaded locally without cloud 
   assert.equal(env.GEMINI_API_KEY,'private-gemini-value');
   assert.equal(env.CDP_API_KEY_SECRET,undefined);
   assert.equal(env.STRIPE_SECRET_KEY,undefined);
-  assert.deepEqual(result.configured,['GEMINI_API_KEY','GEMINI_API_KEY']);
+  assert.deepEqual(result.configured,['GEMINI_API_KEY']);
   assert.ok(!JSON.stringify(result).includes('private-gemini-value'));
 });
 
