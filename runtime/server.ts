@@ -2160,6 +2160,9 @@ const notifyPhone = async (action) => {
         status: action.status,
         actionId: action.id,
         result: action.result || null,
+        // readAuraResponse reads a top-level error, not result.output.
+        // Keep the actual command failure visible instead of HTTP_409.
+        ...(action.status !== 'executed' ? { error: String(action.result?.output || 'GIT_COMMAND_FAILED').trim().slice(0, 1200) } : {}),
       });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error?.message || String(error) });
