@@ -110,7 +110,7 @@ export class ProviderRegistry {
     const p = this.providers.get(String(providerId)); if (!p) throw new Error('PROVIDER_NOT_FOUND');
     const started = Date.now();
     try {
-      const res = await fetch(`${trimSlash(p.baseUrl)}/models`, { headers: this.headers(p), signal: AbortSignal.timeout(5000) });
+      const res = await fetch(`${trimSlash(p.baseUrl)}/models`, { headers: this.headers(p), redirect: 'error', signal: AbortSignal.timeout(5000) });
       const body = await res.text();
       const observation = { providerId: p.id, status: res.status, latencyMs: Date.now() - started, responseHash: sha(body) };
       if (!res.ok) return { ...observation, ok: false, models: [] };
