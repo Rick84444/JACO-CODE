@@ -57,15 +57,18 @@ export async function loadWindowsModelKeys({ env = process.env, list, read } = {
   try { found = await list(); } catch { return { sourceAvailable: false, configured }; }
   if (!found?.ok) return { sourceAvailable: false, configured };
   const allowed = new Set(CATALOG.map(item => item.apiKeyEnv));
-  const present = [...new Set(found.keys || [])].filter(key => allowed.has(key) && !env[key]).slice(0, 25);
-  for (const name of present) {
-    try {
-      const result = await read(name);
-      if (result?.ok && typeof result.value === 'string' && result.value) {
-        env[name] = result.value;
-        configured.push(name);
-      }
-    } catch { /* missing/locked DPAPI key fails closed */ }
+  const present = [...new Set(found.keys || [])].filter(key => allowed.has(key) && !env[key]).slice(0, 12);
+  // A stalled DPAPI helper must not serialize 12 individual subprocess timeouts.
+  for (let i = 0; i < present.length; i += 4) {
+    await Promise.all(present.slice(i, i + 4).map(async name => {
+      try {
+        const result = await read(name);
+        if (result?.ok && typeof result.value === 'string' && result.value) {
+          env[name] = result.value;
+          configured.push(name);
+        }
+      } catch { /* missing/locked DPAPI key fails closed */ }
+    }));
   }
   return { sourceAvailable: true, configured };
 }
