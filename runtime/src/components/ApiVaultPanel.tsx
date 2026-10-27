@@ -3,6 +3,7 @@ import { readAuraResponse } from '../lib/auraApi.mjs';
 
 type Secret = { name: string; configured: boolean; purpose?: string; source?: string; updatedAt?: string };
 type WindowsVault = { available: boolean; keys: string[]; reason?: string };
+type Discovery = { localEnvFiles: string[]; localEnvImported: string[]; windowsModelLoaded: string[]; configured: Array<{ name: string; source: string; state: string }> };
 const EXAMPLES = [
   { label: 'Välj referens för en tjänst', name: '' },
   { label: 'Coinbase CDP — API key ID', name: 'CDP_API_KEY_ID' },
@@ -18,6 +19,7 @@ const KEY_NAME = /^[A-Z][A-Z0-9_]{1,127}$/;
 export function ApiVaultPanel({ onChanged }: { onChanged?: () => void | Promise<void> }) {
   const [secrets, setSecrets] = useState<Secret[] | null>(null);
   const [windows, setWindows] = useState<WindowsVault | null>(null);
+  const [discovery, setDiscovery] = useState<Discovery | null>(null);
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [purpose, setPurpose] = useState('');
@@ -28,11 +30,14 @@ export function ApiVaultPanel({ onChanged }: { onChanged?: () => void | Promise<
     const results = await Promise.allSettled([
       fetch('/api/aura/workbench/secrets', { cache: 'no-store' }).then(readAuraResponse),
       fetch('/api/aura/workbench/vault/windows', { cache: 'no-store' }).then(readAuraResponse),
+      fetch('/api/aura/workbench/vault/discovery', { cache: 'no-store' }).then(readAuraResponse),
     ]);
     if (results[0].status === 'fulfilled') setSecrets(results[0].value.secrets || []);
     else { setSecrets(null); setError('JACO:s krypterade Vault kunde inte läsas.'); }
     if (results[1].status === 'fulfilled') setWindows(results[1].value);
     else setWindows({ available: false, keys: [], reason: 'WINDOWS_VAULT_UNAVAILABLE' });
+    if (results[2].status === 'fulfilled') setDiscovery(results[2].value);
+    else setDiscovery(null);
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
@@ -78,6 +83,12 @@ export function ApiVaultPanel({ onChanged }: { onChanged?: () => void | Promise<
     <p>Samma krypterade SecretStore som JACO-runtime använder. Endast namn och status visas, aldrig nyckelvärden. Lagrad betyder inte ansluten eller API-verifierad.</p>
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
+    <h4>Automatisk lokal anslutning</h4>
+    {discovery ? <div>
+      <p>JACO har upptäckt {discovery.configured.length} kända autentiseringsreferenser och {discovery.localEnvFiles.length} lokala JACO-konfigurationsfiler. Nyckelvärden visas aldrig.</p>
+      {discovery.configured.length ? <p>Lokalt konfigurerade: {discovery.configured.map(item => item.name).join(', ')}.</p> : <p>Inga kända nycklar observerades i aktiv runtime. Lokala modellservrar och MCP-verktyg kan fortfarande ansluta utan API-nyckel.</p>}
+      <p>JACO verifierar modellernas kataloger och tillåtna MCP-verktyg automatiskt. Övriga tjänster är endast konfigurerade tills en behörig adapter har testats. Inga köp, överföringar eller publiceringar görs av denna kontroll.</p>
+    </div> : <p>Ingen aktuell upptäcktsrapport. Kontrollera att runtime svarar.</p>}
     <form onSubmit={e => void save(e)}>
       <h4>Lägg till en tjänstnyckel</h4>
       <label>Tjänst
