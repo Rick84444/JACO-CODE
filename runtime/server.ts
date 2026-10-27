@@ -35,7 +35,7 @@ import { ConnectedRuntime, mountConnectedRoutes } from './src/server/connected/c
 import { createIdeRemoteGate, upgradeAllowed, ideHost } from './src/server/connected/ideAccess.mjs';
 import { liveMissionView } from './src/server/connected/liveMission.mjs';
 import { discoverProvider, identifyKey } from './src/server/connected/providerDiscovery.mjs';
-import { catalogById, catalogProvider } from './src/server/connected/providerCatalog.mjs';
+import { CATALOG as PROVIDER_CATALOG, catalogById, catalogProvider } from './src/server/connected/providerCatalog.mjs';
 import { activationReport } from '../agents/lib/activate.mjs';
 import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret } from '../agents/lib/secret-store.mjs';
 hydrateEnvFromStore(process.env);
@@ -3030,15 +3030,29 @@ const notifyPhone = async (action) => {
     }
   });
 
-  // Connect from a URL alone (src/server/connected/providerDiscovery.mjs): JACO recognises or probes
-  // the service, lists its models, picks a default and registers it. Nothing is registered for a URL
-  // that does not answer like a model API; the key is only ever read from the environment.
+  // Expose provider choices without key-shape coupling or exposing stored credentials.
+  app.get('/api/aura/workbench/providers/catalog', requireLocalUi, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, providers: PROVIDER_CATALOG.map(({ id, baseUrl }) => ({ id, baseUrl })) });
+  });
+
+  // A known or custom URL can be verified with an explicitly supplied one-time key.
+  // Do not persist a submitted key unless model discovery succeeds.
   app.post('/api/aura/workbench/providers/connect', requireLocalUi, async (req, res) => {
     try {
-      const found: any = await discoverProvider(req.body?.url, { env: process.env, keyFor: (name: string) => credential(name) });
-      const provider = found.state === 'UNREACHABLE' ? null : connectedRuntime.providers.register({
-        id: found.id, baseUrl: found.baseUrl, apiKeyEnv: found.apiKeyEnv, defaultModel: found.defaultModel,
+      const submittedKey = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
+      const found: any = await discoverProvider(req.body?.url, {
+        env: process.env, keyFor: (name: string) => submittedKey || credential(name),
       });
+      if (submittedKey && found.state === 'READY') {
+        const saved = new SecretStore().set(found.apiKeyEnv, submittedKey, { source: 'operator', purpose: `${found.id} API` });
+        if (isExportableSecret(saved.name)) process.env[saved.name] = submittedKey;
+      }
+      // KEY_REJECTED and UNREACHABLE must not become registered/active providers.
+      const provider = (found.state === 'READY' || (found.state === 'NEEDS_KEY' && !submittedKey))
+        ? connectedRuntime.providers.register({
+          id: found.id, baseUrl: found.baseUrl, apiKeyEnv: found.apiKeyEnv, defaultModel: found.defaultModel,
+        }) : null;
       seerLiveWorkstream.record({
         actor: 'Aura Workbench', type: 'provider.discovered',
         message: `Provider ${found.id} from URL: ${found.state}${found.models.length ? `, ${found.models.length} models` : ''}`,
