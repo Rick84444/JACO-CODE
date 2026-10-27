@@ -39,6 +39,8 @@ import { catalogById, catalogProvider } from './src/server/connected/providerCat
 import { activationReport } from '../agents/lib/activate.mjs';
 import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret, validateSecretName } from '../agents/lib/secret-store.mjs';
 import { listVaultSecrets, runVaultHelper } from '../agents/lib/vault-tools.mjs';
+import { loadLocalJacoEnv, loadWindowsModelKeys, LOCAL_SERVICE_KEYS } from '../agents/lib/local-credential-discovery.mjs';
+const localEnvDiscovery = loadLocalJacoEnv();
 hydrateEnvFromStore(process.env);
 // Paid models run when their key is configured, within the budget; JACO_ALLOW_PAID_MODELS=0 turns them off.
 const paidModelsAllowed = () => process.env.JACO_ALLOW_PAID_MODELS !== '0';
@@ -688,7 +690,16 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
     }
   });
 
-  const connections = automaticConnections({ registry: connectedRuntime.providers, mcpHost, onToolsStarted: ({ started, failed }: any) => {
+  let windowsModelDiscovery: { sourceAvailable: boolean; configured: string[] } = { sourceAvailable: false, configured: [] };
+  const connections = automaticConnections({ registry: connectedRuntime.providers, mcpHost,
+    loadCredentials: async () => {
+      if (process.platform !== 'win32') return;
+      windowsModelDiscovery = await loadWindowsModelKeys({
+        env: process.env, list: () => listVaultSecrets({ prefix: 'JACO' }),
+        read: (name: string) => runVaultHelper(['-Action', 'Get', '-Key', name, '-Prefix', 'JACO']),
+      });
+    },
+    onToolsStarted: ({ started, failed }: any) => {
     getAuraMcpFabric.invalidate();
     console.log(`[JACO] tool servers started: ${started.join(', ') || 'none'}${failed.length ? `; not started: ${failed.map((f: any) => `${f.id}: ${f.error.slice(0, 80)}`).join('; ')}` : ''}`);
     seerLiveWorkstream.record({ actor: 'JACO runtime', type: 'tools.autostarted', message: `Tool servers started: ${started.length}, not started: ${failed.length}`, verified: failed.length === 0, receipt: { started, failed } });
@@ -696,6 +707,20 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   app.get('/api/aura/workbench/connections', requireLocalUi, async (_req, res) => {
     try { res.json({ success: true, ...(await connections.refresh()) }); }
     catch { res.status(503).json({ success: false, error: 'CONNECTION_REFRESH_FAILED' }); }
+  });
+  // Metadata only. Existing env, encrypted store and legacy Windows vault remain the owners.
+  app.get('/api/aura/workbench/vault/discovery', requireLocalUi, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const state = new SecretStore();
+    const stored = new Set(state.list().map((item: any) => item.name));
+    res.json({ success: true,
+      localEnvFiles: localEnvDiscovery.observedFiles,
+      localEnvImported: localEnvDiscovery.loaded.map((item: any) => item.name),
+      windowsModelLoaded: windowsModelDiscovery.configured,
+      configured: LOCAL_SERVICE_KEYS.filter((name: string) => Boolean(process.env[name]) || stored.has(name))
+        .map((name: string) => ({ name, source: process.env[name] ? 'local-env-or-runtime' : 'encrypted-store', state: 'CONFIGURED_NOT_VERIFIED' })),
+      note: 'No secret values are returned; configured does not mean connected. Only model catalog endpoints are automatically probed.'
+    });
   });
 
   // Cognitive continuity reads the existing durable Nova mission authority.
