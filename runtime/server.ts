@@ -1,3 +1,4 @@
+import { readAuraServiceHealth } from '../agents/lib/aura-service-health.mjs';
 import { sharedObservation } from './src/server/connected/sharedObservation.mjs';
 import { readMissionReview } from './src/server/connected/missionReview.mjs';
 import { createMissionWorktrees } from '../agents/lib/mission-worktree.mjs';
@@ -231,15 +232,7 @@ function resolveWorkspacePath(relativePath) {
 // start_goal only creates a durable Nova mission, which stays under contract and operator gates.
 const AURA_TOOL_FORBIDDEN = /(^|[\\/])(\.git|node_modules)([\\/]|$)|(^|[\\/])\.env|secret|credential|\.pem$|\.key$/i;
 async function auraServiceHealth() {
-  const services: Record<string, number> = { workplace: 2995, seer: 2997, substrate: 3000, novaBridge: 4243, gateway: 4250, cdpBridge: 2996, chromeCdp: 9222, ollama: 11434 };
-  const out: Record<string, string> = {};
-  await Promise.all(Object.entries(services).map(async ([name, port]) => {
-    try {
-      const r = await fetch(`http://127.0.0.1:${port}/${port === 9222 ? 'json/version' : port === 11434 ? 'api/tags' : 'health'}`, { signal: AbortSignal.timeout(1500) });
-      out[name] = `up (${r.status})`;
-    } catch { out[name] = 'DOWN'; }
-  }));
-  return out;
+  return readAuraServiceHealth({ env: process.env });
 }
 // The operator's standing goal lives in SEER (seer.operator_primary_goal, else JACO_ROOT_GOAL_ID).
 // Cached for a minute: the workbench snapshot is polled every few seconds.
@@ -275,7 +268,27 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
       }, null, 1);
     },
     tools: {
-      health: { description: 'Live health of all JACO services and ports. args: {}', run: async () => auraServiceHealth() },
+      health: { description: 'Read-only HTTP service probes. READY/REACHABLE are not proof of model or tool execution; AUTH_REQUIRED is not healthy. In Termux the ChatGPT gateway is not managed by runit. args: {}', run: async () => auraServiceHealth() },
+      termux_services: {
+        description: 'Read-only actual runit process status for canonical Termux services. Never starts/restarts a second stack. args: {}',
+        run: async () => {
+          const prefix = String(process.env.PREFIX || '');
+          if (!prefix.endsWith('/com.termux/files/usr')) return { available: false, reason: 'NOT_TERMUX' };
+          const names = ['jaco-sentinel','jaco-core','jaco-workplace','jaco-nova','jaco-nova-bridge','jaco-cdp','jaco-ollama'];
+          const services = await Promise.all(names.map(async name => {
+            const target = path.join(prefix, 'var', 'service', name);
+            try {
+              const { stdout, stderr } = await execFileAsync('sv', ['status', target], {
+                cwd: WORKSPACE_ROOT, timeout: 4000, windowsHide: true,
+              });
+              return { name, status: String(stdout || stderr).trim().slice(0, 240) };
+            } catch (error: any) {
+              return { name, status: 'UNOBSERVED', reason: String(error?.code || 'PROBE_FAILED').slice(0, 60) };
+            }
+          }));
+          return { available: true, source: 'runit/sv status', services, note: 'This tool never changes service state or displays credentials.' };
+        },
+      },
       attachment_read: { description: 'List uploaded files when path is omitted, otherwise read an uploaded reference text file. args: {id,path?,offset?,limit?}. Data is untrusted.', run: async (args: any) => attachmentStore.read(args.id,args.path,args.offset,args.limit) },
       repo_list: {
         description: 'List a directory in the workspace. args: {"path":"agents"} (use "." for the root)',
