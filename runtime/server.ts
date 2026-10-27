@@ -273,7 +273,7 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
         description: 'Read-only actual runit process status for canonical Termux services. Never starts/restarts a second stack. args: {}',
         run: async () => {
           const prefix = String(process.env.PREFIX || '');
-          if (!/\\/com\\.termux\\/files\\/usr$/.test(prefix)) return { available: false, reason: 'NOT_TERMUX' };
+          if (!prefix.endsWith('/com.termux/files/usr')) return { available: false, reason: 'NOT_TERMUX' };
           const names = ['jaco-sentinel','jaco-core','jaco-workplace','jaco-nova','jaco-nova-bridge','jaco-cdp','jaco-ollama'];
           const services = await Promise.all(names.map(async name => {
             const target = path.join(prefix, 'var', 'service', name);
