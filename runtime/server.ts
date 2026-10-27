@@ -709,7 +709,7 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
     catch { res.status(503).json({ success: false, error: 'CONNECTION_REFRESH_FAILED' }); }
   });
   // Metadata only. Existing env, encrypted store and legacy Windows vault remain the owners.
-  app.get('/api/aura/workbench/vault/discovery', requireLocalUi, (_req, res) => {
+  app.get('/api/aura/workbench/vault/discovery', requireLocalUiSameOrigin, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     const state = new SecretStore();
     const stored = new Set(state.list().map((item: any) => item.name));
@@ -3055,7 +3055,7 @@ const notifyPhone = async (action) => {
 
   // Bridge the existing Windows JACO Credential Manager vault to the canonical encrypted store.
   // Listing is metadata only; nothing is imported or deleted without an explicit operator action.
-  app.get('/api/aura/workbench/vault/windows', requireLocalUi, async (_req, res) => {
+  app.get('/api/aura/workbench/vault/windows', requireLocalUiSameOrigin, async (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     if (process.platform !== 'win32') return res.json({ success: true, available: false, keys: [], reason: 'WINDOWS_ONLY' });
     try {
@@ -3066,7 +3066,7 @@ const notifyPhone = async (action) => {
       res.json({ success: true, available: false, keys: [], reason: 'WINDOWS_VAULT_UNAVAILABLE' });
     }
   });
-  app.post('/api/aura/workbench/vault/import-windows', requireLocalUi, async (req, res) => {
+  app.post('/api/aura/workbench/vault/import-windows', requireLocalUiSameOrigin, async (req, res) => {
     // This is an explicit, additive import: old DPAPI credentials remain untouched.
     if (process.platform !== 'win32') return res.status(400).json({ success: false, error: 'WINDOWS_ONLY' });
     try {
