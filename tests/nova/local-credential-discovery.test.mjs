@@ -79,7 +79,7 @@ test('automatic connection waits for bounded Vault boot, then discovers a model'
   const a=await manager.refresh();
   await manager.refresh({force:true});
   assert.equal(loaded,1);
-  assert.equal(probed,2);
+  assert.equal(probed,6, 'Gemini plus the two built-in local endpoints are probed on both refreshes');
   assert.equal(a.providers.find(x=>x.id==='gemini').state,'MODELS_AVAILABLE');
   assert.ok(!JSON.stringify(a).includes('opaque-secret'));
 });
