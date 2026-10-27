@@ -56,7 +56,7 @@ export async function loadWindowsModelKeys({ env = process.env, list, read } = {
   try { found = await list(); } catch { return { sourceAvailable: false, configured }; }
   if (!found?.ok) return { sourceAvailable: false, configured };
   const allowed = new Set(CATALOG.map(item => item.apiKeyEnv));
-  const present = (found.keys || []).filter(key => allowed.has(key) && !env[key]).slice(0, 25);
+  const present = [...new Set(found.keys || [])].filter(key => allowed.has(key) && !env[key]).slice(0, 25);
   for (const name of present) {
     try {
       const result = await read(name);
