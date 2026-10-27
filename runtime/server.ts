@@ -1439,20 +1439,24 @@ const notifyPhone = async (action) => {
     try { return JSON.parse(text); } catch { return { text }; }
   };
 
+  // The remote and CDP bridges are optional. A bridge whose tool calls failed is not asked again for a
+  // minute, so a hung bridge costs one bounded wait instead of slowing every status read.
+  const optionalBridgeBackoff = new Map<string, number>();
   const getAuraMcpFabric = sharedObservation(async () => {
-    const signal = AbortSignal.timeout(4000);
-
     const providerIds = ['remote','cdp'];
     const providers = await Promise.all(providerIds.map(async id => {
+      const signal = AbortSignal.timeout(4000);
       const config = auraMcpProviderConfig(id)!;
       let health: any = null;
       let tools: any[] = [];
       let observation: any = null;
       let error: string | null = null;
+      const backedOff = (optionalBridgeBackoff.get(id) || 0) > Date.now();
       try {
         const response = await fetch(`${config.endpoint}/health`, { signal: AbortSignal.any([signal, AbortSignal.timeout(1200)]) });
         health = await response.json().catch(() => null);
         if (!response.ok) throw new Error(`HTTP_${response.status}`);
+        if (backedOff) throw new Error('MCP_OBSERVATION_BACKOFF');
         if (GATEWAY_TOKEN.length >= 24) {
           const listed: any = await callAuraMcpRpc(id, 'tools/list', undefined, signal);
           tools = Array.isArray(listed?.tools) ? listed.tools.map((tool: any) => ({
@@ -1487,6 +1491,9 @@ const notifyPhone = async (action) => {
       } catch (e: any) {
         error = e?.message || String(e);
       }
+      const failed = signal.aborted || (observation?.status?.ok === false && observation?.windows?.ok === false);
+      if (failed && !backedOff) optionalBridgeBackoff.set(id, Date.now() + 60_000);
+      else if (!failed && !error) optionalBridgeBackoff.delete(id);
       return {
         id,
         name: config.name,
@@ -1497,6 +1504,7 @@ const notifyPhone = async (action) => {
         observation,
         tools,
         error: signal.aborted ? 'MCP_OBSERVATION_TIMEOUT' : error,
+        optional: true,
       };
     }));
 
@@ -1513,7 +1521,7 @@ const notifyPhone = async (action) => {
       recentCalls: mcpHost.recentCalls(20),
     };
     return value;
-  });
+  }, { stale: true });
 
   const getAuraWorkbenchWorkplace = async () => {
     const base = String(process.env.JACO_WORKPLACE_URL || 'http://127.0.0.1:2995').replace(/\/+$/, '');
