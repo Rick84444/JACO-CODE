@@ -1,9 +1,7 @@
 /** Read-only, bounded projection of the local deterministic developer-cycle ledger. */
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
-const ZERO='0'.repeat(64);
-const HASH=x=>createHash('sha256').update(x).digest('hex');
+import { parseCycleLedger } from '../../../../agents/lib/cognitive-cycle-ledger.mjs';
 const MAX_BYTES=8_000_000;
 const MAX_EVENTS=2000;
 const MAX_TIMELINE=30;
@@ -20,25 +18,12 @@ function safeStateRoot(workspaceRoot){
  }
  return root;
 }
-function sealedEvents(text){
- if(text&&!text.endsWith('\n'))throw Error('CYCLE_LEDGER_INCOMPLETE');
- let prev=ZERO;const events=[];
- for(const line of text.split('\n')){
-  if(!line)continue;
-  if(events.length>=MAX_EVENTS)throw Error('CYCLE_LEDGER_TOO_LARGE');
-  const ev=JSON.parse(line),{hash:stored,...unsigned}=ev;
-  const check=HASH(JSON.stringify(unsigned));
-  if(!ev||ev.seq!==events.length+1||ev.prev!==prev||stored!==check)throw Error('CYCLE_LEDGER_INTEGRITY_FAILED');
-  prev=stored;events.push(ev);
- }
- return events;
-}
 export function readAutonomousCycleBoard(workspaceRoot){
  const observedAt=new Date().toISOString();const root=safeStateRoot(workspaceRoot);
  const file=path.join(root,'events.jsonl');
  const basic={success:true,schema:'jaco.autonomous-cycle-board/v1',observedAt,mode:'DETERMINISTIC_SIMULATION',state:'NOT_STARTED',source:'LOCAL_LEDGER',liveProcessObserved:false,mainMergeVerified:false,evidenceLevel:'HASH_CHAIN_ONLY'};
  if(!fs.existsSync(file))return {...basic,summary:null,lastEventAt:null,timeline:[]};
- const events=sealedEvents(readRegular(file));
+ const events=parseCycleLedger(readRegular(file),{maxBytes:MAX_BYTES,maxEvents:MAX_EVENTS,integrityError:'CYCLE_LEDGER_INTEGRITY_FAILED'});
  if(!events.length)return {...basic,summary:null,lastEventAt:null,timeline:[]};
  const complete=events.filter(e=>e.type==='cycle.completed');
  const last=events.at(-1);

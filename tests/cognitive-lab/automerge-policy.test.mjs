@@ -34,7 +34,7 @@ test('all green and no protected changes allows scoped, exact-SHA squash merge',
  assert.equal(out.merged.length,1);assert.equal(out.merged[0].sha,sha);assert.equal(out.merged[0].merge_method,'squash');
 });
 test('governance and verification authority changes require human review, regardless of green CI',async()=>{
- for(const file of ['.github/workflows/technical-debt-gate.yml','scripts/verify-technical-debt.mjs','runtime/src/server/continuum/evidenceLedger.mjs','runtime/src/server/continuum/leaseManager.mjs']){
+ for(const file of ['.github/workflows/technical-debt-gate.yml','scripts/verify-technical-debt.mjs','runtime/src/server/continuum/evidenceLedger.mjs','runtime/src/server/continuum/leaseManager.mjs','agents/lib/cognitive-cycle-ledger.mjs','agents/cognitive-lab/autonomous-cycles/cycle-runtime.mjs','agents/cognitive-lab/autonomous-cycles/cycle-reviewer.mjs','agents/cognitive-lab/autonomous-cycles/debt-steward.mjs','runtime/src/server/connected/autonomousCycleBoard.mjs']){
   const out=await evaluate({changes:[file]});assert.equal(out.merged.length,0,file);assert.match(out.infos.join(' '),/human review/);
  }
 });
