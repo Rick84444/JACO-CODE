@@ -1,5 +1,5 @@
 import { nowIso } from './util.mjs';
-import { assertLocalModelEndpoint, validateInferenceText } from './localInferenceTrust.mjs';
+import { assertLocalModelEndpoint, validateInferenceText, isCloudModelName, assertInstalledOllamaModel } from './localInferenceTrust.mjs';
 
 function outputTextResponses(raw){if(typeof raw?.output_text==='string')return raw.output_text;const t=[];for(const item of raw?.output||[])for(const part of item?.content||[])if(part?.type==='output_text'&&typeof part.text==='string')t.push(part.text);return t.join('\n');}
 function outputTextChat(raw){return String(raw?.choices?.[0]?.message?.content||'');}
@@ -63,12 +63,13 @@ export class ContinuumModelRouter {
   }
   async #call(p,input){
     assertLocalModelEndpoint(p);
-    const prompt=String(input.prompt||'');const instructions=input.instructions?String(input.instructions):null;const max=Math.max(16,Math.min(Number(input.maxOutputTokens||1200),8192));const timeout=Math.max(5_000,Math.min(Number(input.timeoutMs||180_000),600_000));const model=String(input.model||p.model||'').trim();if(!model)throw new Error('MODEL_NOT_CONFIGURED');const headers=headersFor(p);const redirect=p.local?'error':'follow';
+    const prompt=String(input.prompt||'');const instructions=input.instructions?String(input.instructions):null;const max=Math.max(16,Math.min(Number(input.maxOutputTokens||1200),8192));const timeout=Math.max(5_000,Math.min(Number(input.timeoutMs||180_000),600_000));const model=String(input.model||p.model||'').trim();if(!model)throw new Error('MODEL_NOT_CONFIGURED');if(p.local&&isCloudModelName(model))throw Error('LOCAL_CLOUD_MODEL_FORBIDDEN');const headers=headersFor(p);const redirect=p.local?'error':'follow';
     if(p.protocol==='ollama'){
+      if(p.local)await assertInstalledOllamaModel({baseUrl:p.baseUrl,model});
       const configuredCtx=Number(process.env.JACO_OLLAMA_NUM_CTX||4096);
       const numCtx=Number.isSafeInteger(configuredCtx)&&configuredCtx>=1024&&configuredCtx<=32768?configuredCtx:4096;
       const numPredict=Math.min(max,Math.max(128,Math.floor(numCtx/4)));
-      const response=await fetch(`${p.baseUrl}/api/generate`,{method:'POST',headers,redirect,body:JSON.stringify({model,prompt,system:instructions||undefined,stream:false,options:{num_ctx:numCtx,num_predict:numPredict}}),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);if(raw.done!==true)throw Error('OLLAMA_INFERENCE_NOT_COMPLETE');return {model,text:validateInferenceText(raw.response,'OLLAMA'),responseId:null,usage:{inputTokens:raw.prompt_eval_count||null,outputTokens:raw.eval_count||null},costUsd:0,raw:{done:raw.done,doneReason:raw.done_reason}};
+      const response=await fetch(`${p.baseUrl}/api/generate`,{method:'POST',headers,redirect,body:JSON.stringify({model,prompt,system:instructions||undefined,stream:false,options:{num_ctx:numCtx,num_predict:numPredict}}),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);if(raw.done!==true)throw Error('OLLAMA_INFERENCE_NOT_COMPLETE');if(p.local&&isCloudModelName(raw.model))throw Error('LOCAL_CLOUD_MODEL_REPLY_FORBIDDEN');return {model,text:validateInferenceText(raw.response,'OLLAMA'),responseId:null,usage:{inputTokens:raw.prompt_eval_count||null,outputTokens:raw.eval_count||null},costUsd:0,raw:{done:raw.done,doneReason:raw.done_reason}};
     }
     if(p.protocol==='openai-responses'){
       const response=await fetch(`${p.baseUrl}/responses`,{method:'POST',headers,redirect,body:JSON.stringify({model,input:prompt,max_output_tokens:max,...(instructions?{instructions}:{})}),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);return {model:raw.model||model,text:validateInferenceText(outputTextResponses(raw)),responseId:raw.id||null,usage:raw.usage||null,costUsd:Number(input.actualUsd||0)};

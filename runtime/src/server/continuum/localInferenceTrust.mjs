@@ -22,3 +22,29 @@ export function validateInferenceText(text, label = 'PROVIDER') {
   if (typeof text !== 'string' || !text.trim()) throw new Error(`${label}_EMPTY_INFERENCE`);
   return text;
 }
+
+// A localhost Ollama daemon may proxy :cloud models to remote datacenters.
+// Verify the *installed model manifest*, not just the daemon's socket address.
+export function isCloudModelName(model) {
+  return /(?::cloud|-cloud)$/i.test(String(model || '').trim());
+}
+const modelId = name => {
+  const value = String(name || '').trim().toLowerCase();
+  return value.includes(':') ? value : `${value}:latest`;
+};
+export async function assertInstalledOllamaModel({baseUrl,model,fetchImpl=globalThis.fetch,timeoutMs=3000}) {
+  if(isCloudModelName(model))throw Error('OLLAMA_CLOUD_MODEL_NOT_LOCAL');
+  const response=await fetchImpl(`${baseUrl}/api/tags`,{
+    method:'GET',redirect:'error',signal:AbortSignal.timeout(timeoutMs),
+  });
+  if(!response?.ok)throw Error('OLLAMA_MODEL_CATALOG_UNAVAILABLE');
+  const info=await response.json();
+  if(!Array.isArray(info?.models))throw Error('OLLAMA_MODEL_CATALOG_INVALID');
+  const entry=info.models.find(item=>modelId(item?.name||item?.model)===modelId(model));
+  if(!entry)throw Error('OLLAMA_MODEL_NOT_INSTALLED');
+  if(isCloudModelName(entry.name||entry.model)||
+     String(entry.remote_host||'').trim()||String(entry.remote_model||'').trim()||
+     !Number.isSafeInteger(entry.size)||entry.size<=0)
+    throw Error('OLLAMA_MODEL_NOT_VERIFIABLY_LOCAL');
+  return {name:entry.name||entry.model,size:entry.size};
+}

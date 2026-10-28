@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isOnDeviceModelEndpoint } from '../../src/server/continuum/localInferenceTrust.mjs';
+import { isOnDeviceModelEndpoint, isCloudModelName, assertInstalledOllamaModel } from '../../src/server/continuum/localInferenceTrust.mjs';
 import { ProviderRegistry } from '../../src/server/continuum/providerRegistry.mjs';
 import { ContinuumModelRouter } from '../../src/server/continuum/modelRouter.mjs';
 
@@ -21,6 +21,8 @@ function fixture(){
 const success=data=>new Response(JSON.stringify(data),{status:200,headers:{'content-type':'application/json'}});
 const ollama=(text='ready',done=true)=>success({model:'test-small',response:text,done,eval_count:2});
 const chat=(text='yes')=>success({model:'local',choices:[{message:{content:text},finish_reason:'stop'}]});
+const installed=(extra={})=>success({models:[{name:'test-small:latest',size:550_000_000,...extra}]});
+const ollamaFetch=(text='ready',done=true,info={})=>async(url)=>url.endsWith('/api/tags')?installed(info):ollama(text,done);
 
 // These tests never require a model download or real network. Every mock is
 // explicitly separated from the genuine on-device inference probe.
@@ -36,9 +38,9 @@ test('registry rejects cloud endpoint mislabeled local without mutating provider
 });
 test('local-only inference never calls any remote provider or cloud authorization',async()=>{
  const x=fixture(),before=globalThis.fetch;let calls=[];
- try{globalThis.fetch=async(url,options)=>{calls.push({url,options});return ollama()};
+ try{globalThis.fetch=async(url,options)=>{calls.push({url,options});return url.endsWith('/api/tags')?installed():ollama()};
   const r=await x.router.reason({prompt:'hi',localOnly:true,requiredCapabilities:['text']});
-  assert.equal(r.providerId,'ollama-local');assert.equal(x.billed,0);assert.equal(calls.length,1);assert.match(calls[0].url,/127\.0\.0\.1/);assert.equal(calls[0].options.redirect,'error');
+  assert.equal(r.providerId,'ollama-local');assert.equal(x.billed,0);assert.equal(calls.length,2);assert.match(calls[0].url,/127\.0\.0\.1/);assert.equal(calls[0].options.redirect,'error');assert.equal(calls[1].options.redirect,'error');
  }finally{globalThis.fetch=before;x.dispose()}
 });
 test('forcing a remote provider with localOnly true fails before fetch or charge',async()=>{
@@ -64,7 +66,7 @@ test('legacy corrupted provider claiming local with remote URL cannot be invoked
 });
 test('Ollama HTTP 200 with empty response must not be counted as success',async()=>{
  const x=fixture(),before=globalThis.fetch;
- try{globalThis.fetch=async()=>ollama('',true);
+ try{globalThis.fetch=ollamaFetch('',true);
   await assert.rejects(x.router.reason({providerId:'ollama-local',prompt:'say ready',localOnly:true}),/OLLAMA_EMPTY_INFERENCE/);
   assert.equal(x.providers.get('ollama-local').stats.successes,0);
   assert.ok(x.events.some(e=>e.type==='model.provider_failed'));
@@ -72,7 +74,7 @@ test('Ollama HTTP 200 with empty response must not be counted as success',async(
 });
 test('Ollama truncated or unfinished reply does not count as inference',async()=>{
  const x=fixture(),before=globalThis.fetch;
- try{globalThis.fetch=async()=>ollama('partial',false);
+ try{globalThis.fetch=ollamaFetch('partial',false);
   await assert.rejects(x.router.reason({providerId:'ollama-local',prompt:'say ready',localOnly:true}),/OLLAMA_INFERENCE_NOT_COMPLETE/);
   assert.equal(x.providers.get('ollama-local').stats.successes,0);
  }finally{globalThis.fetch=before;x.dispose()}
@@ -94,14 +96,14 @@ test('local llama.cpp response succeeds without touching remote budget',async()=
 });
 test('explicit probe runs real generation contract but never asserts agent/system READY',async()=>{
  const x=fixture(),before=globalThis.fetch;
- try{globalThis.fetch=async()=>ollama('ready');
+ try{globalThis.fetch=ollamaFetch('ready');
   const result=await x.router.probeLocalModel({providerId:'ollama-local',timeoutMs:5000});
   assert.equal(result.status,'INFERENCE_VERIFIED');assert.equal(result.cloudUsed,false);assert.equal(result.systemReady,false);assert.equal(result.agentToolsVerified,false);
  }finally{globalThis.fetch=before;x.dispose()}
 });
 test('explicit probe reports unusable local model as failed, not READY',async()=>{
  const x=fixture(),before=globalThis.fetch;
- try{globalThis.fetch=async()=>ollama('');
+ try{globalThis.fetch=ollamaFetch('');
   const result=await x.router.probeLocalModel({providerId:'ollama-local',timeoutMs:5000});
   assert.equal(result.status,'INFERENCE_FAILED');assert.equal(result.systemReady,false);
  }finally{globalThis.fetch=before;x.dispose()}
@@ -129,17 +131,17 @@ test('explicitly disabled providers cannot be forced',async()=>{
 });
 test('Ollama inference has a bounded context to reduce on-device memory pressure',async()=>{
  const x=fixture(),before=globalThis.fetch,old=process.env.JACO_OLLAMA_NUM_CTX;
- try{let opts;process.env.JACO_OLLAMA_NUM_CTX='999999999';globalThis.fetch=async(_u,o)=>{opts=JSON.parse(o.body).options;return ollama()};
+ try{let opts;process.env.JACO_OLLAMA_NUM_CTX='999999999';globalThis.fetch=async(u,o)=>{if(u.endsWith('/api/tags'))return installed();opts=JSON.parse(o.body).options;return ollama()};
   await x.router.reason({providerId:'ollama-local',prompt:'hello',maxOutputTokens:4000});
   assert.equal(opts.num_ctx,4096);assert.ok(opts.num_predict<=1024);
  }finally{globalThis.fetch=before;old===undefined?delete process.env.JACO_OLLAMA_NUM_CTX:process.env.JACO_OLLAMA_NUM_CTX=old;x.dispose()}
 });
 test('only one potentially expensive inference probe runs at a time',async()=>{
  const x=fixture(),before=globalThis.fetch;let wake;
- try{globalThis.fetch=()=>new Promise(resolve=>{wake=()=>resolve(ollama())});
+ try{globalThis.fetch=(url)=>url.endsWith('/api/tags')?Promise.resolve(installed()):new Promise(resolve=>{wake=()=>resolve(ollama())});
   const first=x.router.probeLocalModel({providerId:'ollama-local',timeoutMs:5000});
   const second=await x.router.probeLocalModel({providerId:'ollama-local',timeoutMs:5000});
-  assert.equal(second.status,'INFERENCE_BUSY');wake();
+  assert.equal(second.status,'INFERENCE_BUSY');await new Promise(r=>setImmediate(r));assert.equal(typeof wake,'function');wake();
   assert.equal((await first).status,'INFERENCE_VERIFIED');
  }finally{globalThis.fetch=before;x.dispose()}
 });
@@ -154,4 +156,39 @@ test('Android LiteRT-LM local model is discoverable by Continuum without cloud',
   const result=await x.router.reason({providerId:'litert-env',prompt:'hello',localOnly:true});
   assert.equal(result.text,'LiteRT inference works');assert.equal(result.costUsd,0);assert.equal(x.billed,0);
  }finally{globalThis.fetch=before;for(const k of vars)old[k]===undefined?delete process.env[k]:process.env[k]=old[k];x.dispose()}
+});
+
+test('Ollama cloud suffix is rejected even through localhost',async()=>{
+ const x=fixture(),before=globalThis.fetch;let calls=0;
+ try{x.providers.register({id:'ollama-local',protocol:'ollama',local:true,baseUrl:'http://127.0.0.1:11434',model:'gpt-oss:120b-cloud'});
+  globalThis.fetch=async()=>{calls++;return installed()};
+  await assert.rejects(x.router.reason({providerId:'ollama-local',prompt:'secret',localOnly:true}),/LOCAL_CLOUD_MODEL_FORBIDDEN/);
+  assert.equal(calls,0);assert.equal(isCloudModelName('glm-4.7:cloud'),true);
+ }finally{globalThis.fetch=before;x.dispose()}
+});
+test('Ollama installed model manifest must prove a local non-remote weight file',async()=>{
+ const x=fixture(),before=globalThis.fetch;
+ try{for(const info of [{remote_host:'https://ollama.com'},{remote_model:'gpt-oss:120b-cloud'},{size:0}]){
+   globalThis.fetch=ollamaFetch('ready',true,info);
+   await assert.rejects(x.router.reason({providerId:'ollama-local',prompt:'no cloud',localOnly:true}),/OLLAMA_MODEL_NOT_VERIFIABLY_LOCAL/);
+  }
+ }finally{globalThis.fetch=before;x.dispose()}
+});
+test('missing local Ollama model must fail before POST generate',async()=>{
+ const x=fixture(),before=globalThis.fetch;let posts=0;
+ try{globalThis.fetch=async(url)=>url.endsWith('/api/tags')?success({models:[]}):(posts++,ollama());
+  await assert.rejects(x.router.reason({providerId:'ollama-local',prompt:'no model',localOnly:true}),/OLLAMA_MODEL_NOT_INSTALLED/);
+  assert.equal(posts,0);
+ }finally{globalThis.fetch=before;x.dispose()}
+});
+test('local Ollama catalog may not redirect to an external host',async()=>{
+ const x=fixture(),before=globalThis.fetch;let redirect;
+ try{globalThis.fetch=async(url,o)=>{redirect=o.redirect;return success({models:[]})};
+  await assert.rejects(x.router.reason({providerId:'ollama-local',prompt:'test',localOnly:true}),/OLLAMA_MODEL_NOT_INSTALLED/);
+  assert.equal(redirect,'error');
+ }finally{globalThis.fetch=before;x.dispose()}
+});
+test('Ollama model manifest trust check is strict for locally cached aliases',async()=>{
+ const malformed=async()=>success({models:[{name:'test-small:latest',remote_host:'https://host.invalid',size:123}]});
+ await assert.rejects(assertInstalledOllamaModel({baseUrl:'http://127.0.0.1:11434',model:'test-small',fetchImpl:malformed}),/OLLAMA_MODEL_NOT_VERIFIABLY_LOCAL/);
 });
