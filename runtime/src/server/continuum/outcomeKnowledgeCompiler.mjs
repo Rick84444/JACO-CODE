@@ -94,7 +94,7 @@ export class OutcomeKnowledgeCompiler {
       if(evidenceItem?.data?.receiptHash!==receiptHash)throw new Error('receipt evidence hash collision');
       if(evidenceItem.verified!==false)throw new Error('existing receipt evidence provenance mismatch');
     }else{
-      evidenceItem=this.evidence.record({
+      evidenceItem=this.evidence.recordInternal({
         id:evidenceId,
         kind:'nova-action-receipt',
         claim:`Durable Nova reported successful observation for task ${task}; external truth has not been independently verified`,

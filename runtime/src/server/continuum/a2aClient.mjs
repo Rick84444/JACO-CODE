@@ -16,7 +16,7 @@ export class A2AClient {
     const card=response.json;const errors=validateAgentCard(card);if(errors.length)throw new Error(`A2A_AGENT_CARD_INVALID:${errors.slice(0,5).join('; ')}`);
     const signed=Array.isArray(card.signatures)&&card.signatures.length>0;
     // What is verified is that this URL served this card. Who operates the peer is not verified: signatures are not checked.
-    const ev=this.evidence.record({kind:'a2a-agent-card',claim:`Agent Card "${card.name}" served at ${cardUrl}`,source:String(cardUrl),verified:true,verificationMethod:'HTTP response from guarded outbound request; peer identity not verified',data:{name:card.name,version:card.version,protocolVersion:card.supportedInterfaces?.[0]?.protocolVersion,skills:card.skills||[],extensions:card.capabilities?.extensions||[],securitySchemes:Object.keys(card.securitySchemes||{}),cardHash:`sha256:${sha256(canonicalJson(card))}`,identityVerified:false,signed,signatureVerified:false}},'a2a-client');
+    const ev=this.evidence.recordInternal({kind:'a2a-agent-card',claim:`Agent Card "${card.name}" served at ${cardUrl}`,source:String(cardUrl),verified:true,verificationMethod:'HTTP response from guarded outbound request; peer identity not verified',data:{name:card.name,version:card.version,protocolVersion:card.supportedInterfaces?.[0]?.protocolVersion,skills:card.skills||[],extensions:card.capabilities?.extensions||[],securitySchemes:Object.keys(card.securitySchemes||{}),cardHash:`sha256:${sha256(canonicalJson(card))}`,identityVerified:false,signed,signatureVerified:false}},'a2a-client');
     const peer=this.trust?.observe(base,card,ev.id,'a2a-client')||null;
     this.events.append({stream:'a2a',type:'a2a.agent_discovered',actor:'a2a-client',data:{name:card.name,baseUrl:String(base),evidenceRef:ev.id,peerId:peer?.id||null,identityVerified:false}});
     return {card,evidenceRef:ev.id,peer,discoveredAt:nowIso()};
@@ -45,7 +45,7 @@ export class A2AClient {
     const target=this.#peer({peerId,baseUrl});
     try{
       const {id,url,result}=await this.#call(target,'SendMessage',{message,configuration,metadata},{bearerEnv});
-      const ev=this.evidence.record({kind:'a2a-outbound-receipt',claim:`A2A SendMessage accepted by ${target.peer.name}`,source:String(url),verified:true,verificationMethod:'JSON-RPC success response; acceptance is not completion',data:{requestId:id,peerId:target.peer.id,result}},'a2a-client');
+      const ev=this.evidence.recordInternal({kind:'a2a-outbound-receipt',claim:`A2A SendMessage accepted by ${target.peer.name}`,source:String(url),verified:true,verificationMethod:'JSON-RPC success response; acceptance is not completion',data:{requestId:id,peerId:target.peer.id,result}},'a2a-client');
       this.trust.markOutcome(target.peer.id,{success:true,evidenceRefs:[ev.id]});
       this.events.append({stream:'a2a',type:'a2a.message_sent',entityId:id,actor:'a2a-client',data:{agent:target.peer.name,evidenceRef:ev.id,peerId:target.peer.id}});
       return {result,evidenceRef:ev.id,peerId:target.peer.id};

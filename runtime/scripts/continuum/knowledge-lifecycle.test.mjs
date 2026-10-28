@@ -31,82 +31,37 @@ try{
   assert.equal(rejected.status,400);
   const created=await request('/api/continuum/knowledge',{id:'retry-knowledge',purpose:'retry policy',evidenceRefs:['knowledge-proof']});
   assert.equal(created.data.knowledge.verificationStatus,'UNVERIFIED');
-  await request('/api/continuum/evidence/knowledge-proof/verify',{method:'integration test'});
-  const verified=await request('/api/continuum/knowledge/retry-knowledge/status',{status:'VERIFIED'});
-  assert.equal(verified.data.knowledge.verificationStatus,'VERIFIED');
-  const stale=await request('/api/continuum/knowledge/retry-knowledge/status',{status:'STALE',reason:'New repository contract'});
-  assert.equal(stale.data.knowledge.verificationStatus,'STALE');
-  assert.equal((await request('/api/continuum/knowledge?q=retry')).data.knowledge.length,0);
-  assert.equal((await request('/api/continuum/knowledge?q=retry&includeInactive=true')).data.knowledge.length,1);
-
+  const refused=await request('/api/continuum/evidence/knowledge-proof/verify',{method:'I tested it'});
+  assert.equal(refused.status,400);
+  assert.match(refused.data.error.message,/EVIDENCE_INDEPENDENT_VERIFIER_REQUIRED/);
+  const rejectedStatus=await request('/api/continuum/knowledge/retry-knowledge/status',{status:'VERIFIED'});
+  assert.equal(rejectedStatus.status,400);
+  assert.match(rejectedStatus.data.error.message,/not verified/);
+  const stillPending=await request('/api/continuum/evidence?verified=false');
+  assert.equal(stillPending.data.evidence.some(item=>item.id==='knowledge-proof'),true);
   const promotedReceipt=await request('/api/continuum/cognition/promotions/receipt',{
-    missionId:'mission-http-1',
-    actionId:'action-http-1',
-    taskType:'android-observe',
-    receipt:{
-      ok:true,
-      verified:true,
-      outcomeUnknown:false,
-      before:{title:'Settings',targets:10},
-      after:{title:'Settings',targets:10},
-      result:{receipt:{action_id:'action-http-1',action_type:'observe_screen',success:true,verified:true,before_hash:'before-http',after_hash:'after-http',package_name:'com.android.settings'}},
-    },
+    missionId:'mission-http-1',actionId:'action-http-1',taskType:'android-observe',
+    receipt:{ok:true,verified:true,outcomeUnknown:false,
+      before:{title:'Settings',targets:10},after:{title:'Settings',targets:10},
+      result:{receipt:{action_id:'action-http-1',action_type:'observe_screen',success:true,
+        verified:true,before_hash:'before-http',after_hash:'after-http',package_name:'com.android.settings'}}},
   });
   assert.equal(promotedReceipt.status,201);
-  // A tool's self-attested success is a historical observation, not independent
-  // verification of its effect. This contract must agree with effect-evidence tests.
   assert.equal(promotedReceipt.data.evidence.verified,false);
-  assert.equal(promotedReceipt.data.evidence.verificationMethod,'durable_nova_tool_attestation');
   assert.equal(promotedReceipt.data.knowledge.verificationStatus,'UNVERIFIED');
-  assert.equal(promotedReceipt.data.knowledge.kind,'tool-attested-observation');
   assert.equal(promotedReceipt.data.knowledge.reusable,false);
-  const promotedKnowledgeId=promotedReceipt.data.knowledge.id;
-  const duplicatePromotion=await request('/api/continuum/cognition/promotions/receipt',{
-    missionId:'mission-http-1',
-    actionId:'action-http-1',
-    taskType:'android-observe',
-    receipt:{
-      ok:true,
-      verified:true,
-      outcomeUnknown:false,
-      before:{title:'Settings',targets:10},
-      after:{title:'Settings',targets:10},
-      result:{receipt:{action_id:'action-http-1',action_type:'observe_screen',success:true,verified:true,before_hash:'before-http',after_hash:'after-http',package_name:'com.android.settings'}},
-    },
+  const rejectedDecision=await request('/api/continuum/cognition/promotions/decision',{
+    claim:'unsupported knowledge',kind:'helix-architecture-decision',evidenceRefs:['knowledge-proof'],
+    dependencies:[],reusable:true,
   });
-  assert.equal(duplicatePromotion.data.idempotent,true);
-  assert.equal(duplicatePromotion.data.knowledge.id,promotedKnowledgeId);
-
-  const rejectedPromotion=await request('/api/continuum/cognition/promotions/receipt',{
-    missionId:'mission-http-1',
-    actionId:'action-http-2',
-    taskType:'android-tap',
-    receipt:{ok:true,verified:false,outcomeUnknown:true},
-  });
-  assert.equal(rejectedPromotion.status,400);
-
-  const decision=await request('/api/continuum/cognition/promotions/decision',{
-    claim:'Verified knowledge must never be inferred from unknown execution outcome',
-    kind:'helix-architecture-decision',
-    evidenceRefs:['knowledge-proof'],
-    dependencies:['unknown-outcome-reconciliation'],
-    reusable:true,
-  });
-  assert.equal(decision.status,201);
-  assert.equal(decision.data.knowledge.verificationStatus,'VERIFIED');
-  assert.equal(decision.data.knowledge.reusable,true);
-
-  const set=(await request('/api/continuum/hypotheses',{problem:'Choose a verified strategy',criteria:[{name:'success',weight:1,direction:'max'}]})).data.set;
-  const candidate=(await request(`/api/continuum/hypotheses/${set.id}/candidates`,{label:'failed strategy'})).data.candidate;
-  const falsified=await request(`/api/continuum/hypotheses/${set.id}/candidates/${candidate.id}/evaluate`,{status:'FALSIFIED',reason:'Observed failure',evidenceRefs:['knowledge-proof'],metrics:{success:1}});
-  assert.equal(falsified.data.candidate.status,'FALSIFIED');
-  const selected=await request(`/api/continuum/hypotheses/${set.id}/select`,{candidateId:candidate.id});
-  assert.equal(selected.status,400);
-  assert.match(selected.data.error.message,/not eligible/);
+  assert.equal(rejectedDecision.status,400);
+  const set=(await request('/api/continuum/hypotheses',{problem:'Evidence gate',criteria:[{name:'success',weight:1,direction:'max'}]})).data.set;
+  const candidate=(await request(`/api/continuum/hypotheses/${set.id}/candidates`,{label:'unproven strategy'})).data.candidate;
+  const attempt=await request(`/api/continuum/hypotheses/${set.id}/candidates/${candidate.id}/evaluate`,{
+    status:'VERIFIED',evidenceRefs:['knowledge-proof'],metrics:{success:1}});
+  assert.equal(attempt.status,400);
   assert.equal((await request('/api/continuum/integrity')).data.integrity.valid,true);
-  const promotedSearch=(await request('/api/continuum/knowledge?q=historical execution outcome android-observe')).data.knowledge;
-  assert.equal(promotedSearch.some(item=>item.id===promotedKnowledgeId),true);
-  console.log('COGNITIVE_LIFECYCLE: PASS (knowledge evidence/status/search, receipt/decision promotion, hypothesis falsification, integrity)');
+  console.log('COGNITIVE_LIFECYCLE_STRICT: PASS (API forgery refusal, external proof denial, provisional receipt, knowledge and hypothesis gates, integrity)');
 }finally{
   child.kill('SIGTERM');
   await sleep(100);

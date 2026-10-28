@@ -56,6 +56,7 @@ import { validateMcpCall, callMcpTool, mcpCatalog, mcpCatalogTools, learnedTaskN
 import { plannerTools, planFromToolCalls, planSchema } from './lib/native-tools.mjs';
 import { runAgentMission, introMessage, contextPacketIntro } from './lib/agent-loop.mjs';
 import { agentHomeDir, loadHome, HOME_LIMITS } from './lib/agent-home.mjs';
+import { loadCognitiveCapsule, assertCognitiveCapsuleTask } from './lib/cognitive-capsule.mjs';
 import { digest } from './lib/claim-check.mjs';
 import { skillIdOfGoal, fetchSkill, fetchSkillList } from './lib/skills.mjs';
 import { STRATEGIC_AGENT_INSTRUCTIONS, readStrategicContext, workerStrategicPrompt } from './lib/strategic-context.mjs';
@@ -72,6 +73,15 @@ function atomicJson(file, value) {
   const temp = `${file}.${randomUUID()}.tmp`;
   writeFileSync(temp, JSON.stringify(value, null, 2), { mode: 0o600 });
   renameSync(temp, file);
+}
+
+// Cognitive Capsule is an opt-in restriction on the canonical mission's task list.
+// Its on-disk prompt/memory never grant permissions or replace MissionClient authority.
+function novaCapsule(mission, { withMemory = false } = {}) {
+  return loadCognitiveCapsule(agentHomeDir('nova'), { agentId: 'nova', mission, withMemory });
+}
+function capsuleAllowedTasks(mission) {
+  return novaCapsule(mission).allowedTasks;
 }
 
 // Module-level state reference (set in main, read by lawnmower/nova helpers)
@@ -1522,6 +1532,7 @@ export function assertPlanTaskAllowed(proposal, mission) {
 
 function assertTaskAllowed(next, mission) {
   if (!mission.allowedTasks.includes(next.type)) throw new Error(`PLAN_TASK_NOT_ALLOWED:${String(next.type).slice(0, 60)}`);
+  assertCognitiveCapsuleTask(agentHomeDir('nova'), { agentId: 'nova', mission, task: next.type });
   let data = next.data || {};
   const last = (mission.receipts || []).findLast(r => r.type === next.type);
   if (last?.ok === false && /ENOENT|CODING_PATH|CODING_SCOPE|INVALID_URL/.test(String(last.error || '')) &&
@@ -1572,10 +1583,13 @@ async function callBrainStep(state, { mission, observation, continuity = null },
     token: process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || process.env.SEER_TOKEN,
     fetchImpl,
   });
+  const capsule = novaCapsule(mission);
+  const planningAllowedTasks = capsule.allowedTasks;
   let ctx = {
     // Models have no clock: without this a planner wrote an invented date into a file (2026-09-29).
     now: new Date().toISOString(),
-    mission: compactMissionForBrain(mission),
+    mission: compactMissionForBrain({ ...mission, allowedTasks: planningAllowedTasks }),
+    ...(capsule.enabled ? { cognitiveCapsule: { fingerprint: capsule.fingerprint, identity: capsule.identity.slice(0, 6000), skills: capsule.skills, allowedTasks: planningAllowedTasks } } : {}),
     observation: compactObservation(observation),
     continuity: compactContinuityForBrain(continuity),
     ...(strategicContext ? { strategicContext } : {}),
@@ -1587,27 +1601,27 @@ async function callBrainStep(state, { mission, observation, continuity = null },
   // JACO's MCP tools (read-only), when the mission may use them: any connected server is usable, whichever
   // model plans. A catalog failure only leaves the list out.
   // (Not under the test runner: unit tests must not start the live runtime's MCP servers.)
-  if (!process.env.NODE_TEST_CONTEXT && Array.isArray(mission?.allowedTasks) && (mission.allowedTasks.includes('mcp-call') || mission.allowedTasks.includes('mcp-write'))) {
-    try { ctx.mcpTools = await mcpCatalog({ runtimeUrl: CONFIG.runtimeUrl, write: mission.allowedTasks.includes('mcp-write') }); } catch {}
+  if (!process.env.NODE_TEST_CONTEXT && Array.isArray(mission?.allowedTasks) && (planningAllowedTasks.includes('mcp-call') || planningAllowedTasks.includes('mcp-write'))) {
+    try { ctx.mcpTools = await mcpCatalog({ runtimeUrl: CONFIG.runtimeUrl, write: planningAllowedTasks.includes('mcp-write') }); } catch {}
     // Approved notes for Nova's own tasks, learned from earlier mistakes (MCP tools carry theirs inline).
-    const learned = Object.fromEntries(Object.entries(learnedTaskNotes()).filter(([task]) => mission.allowedTasks.includes(task)));
+    const learned = Object.fromEntries(Object.entries(learnedTaskNotes()).filter(([task]) => planningAllowedTasks.includes(task)));
     if (Object.keys(learned).length) ctx.learnedTaskNotes = learned;
   }
   // A skill run ("Skill <id>: ..."): the skill's instructions are the procedure for the goal. If the
   // skill cannot be read the planner is told so instead of guessing the procedure.
   const skillId = skillIdOfGoal(mission?.goal);
-  if (skillId && !process.env.NODE_TEST_CONTEXT) {
+  if (skillId && planningAllowedTasks.includes('skill-load') && !process.env.NODE_TEST_CONTEXT) {
     try { ctx.skill = await fetchSkill(skillId, { runtimeUrl: CONFIG.runtimeUrl }); }
     catch (error) { ctx.skill = { id: skillId, error: clipText(error?.message || error, 200) }; }
   }
   // A skill Nova loaded itself (skill-load) is the procedure from then on, in full.
   const loaded = !ctx.skill && Array.isArray(mission?.receipts) ? mission.receipts.findLast(r => r.type === 'skill-load' && r.ok && r.result?.instructions) : null;
-  if (loaded) ctx.skill = { id: loaded.result.id, name: loaded.result.name, instructions: loaded.result.instructions };
+  if (loaded && planningAllowedTasks.includes('skill-load')) ctx.skill = { id: loaded.result.id, name: loaded.result.name, instructions: loaded.result.instructions };
   // JACO's own e-mail addresses for sign-ups; mail to them is read with email-inbox.
-  if (Array.isArray(mission?.allowedTasks) && mission.allowedTasks.includes('email-inbox')) ctx.inbox = { addressPattern: `jaco-<site>@${inboxDomain()}` };
+  if (Array.isArray(mission?.allowedTasks) && planningAllowedTasks.includes('email-inbox')) ctx.inbox = { addressPattern: `jaco-<site>@${inboxDomain()}` };
   // Otherwise the catalog, so the planner can pick a fitting procedure (as Claude matches skills by
   // their description).
-  if (!ctx.skill && !process.env.NODE_TEST_CONTEXT && Array.isArray(mission?.allowedTasks) && mission.allowedTasks.includes('skill-load')) {
+  if (!ctx.skill && !process.env.NODE_TEST_CONTEXT && Array.isArray(mission?.allowedTasks) && planningAllowedTasks.includes('skill-load')) {
     try { ctx.skills = await fetchSkillList({ runtimeUrl: CONFIG.runtimeUrl }); } catch {}
   }
 
@@ -1629,7 +1643,7 @@ async function callBrainStep(state, { mission, observation, continuity = null },
       if(createHash("sha256").update(bytes).digest("hex")===screenshotReceipt.result?.imageSha256) image = "data:image/png;base64," + bytes.toString("base64");
     }
   }
-  const system = brainSystemFor(mission?.allowedTasks, Boolean(mission?.metadata?.parent?.graphId));
+  const system = brainSystemFor(planningAllowedTasks, Boolean(mission?.metadata?.parent?.graphId));
   state.plannerInputMetrics.systemChars=system.length;
   if (process.env.NOVA_BRAIN_MODE !== 'direct') {
     let correction = '';
@@ -1688,7 +1702,7 @@ Plans already rejected this turn (do not repeat them): ${rejectedPlans.slice(-3)
       continue;
     }
     console.log(`[DEBUG] Trying provider: ${provider.name} model: ${provider.model}`);
-    const native = nativeToolsFor(provider) ? plannerTools(mission?.allowedTasks || [], profile==='compact'?focusPlannerToolDescriptions(mcpCatalogTools(),mission):mcpCatalogTools(), learnedTaskNotes(), Boolean(mission?.metadata?.parent?.graphId)) : null;
+    const native = nativeToolsFor(provider) ? plannerTools(planningAllowedTasks, profile==='compact'?focusPlannerToolDescriptions(mcpCatalogTools(),mission):mcpCatalogTools(), learnedTaskNotes(), Boolean(mission?.metadata?.parent?.graphId)) : null;
     state.plannerInputMetrics.nativeToolsCount=native?.tools.length||0;
     state.plannerInputMetrics.nativeToolsChars=native?JSON.stringify(native.tools).length:0;
     try {
@@ -1702,7 +1716,7 @@ Plans already rejected this turn (do not repeat them): ${rejectedPlans.slice(-3)
           ],
           ...(native ? { tools: native.tools, tool_choice: "auto" } : {}),
           // Local models cannot leave the plan's structure: decoding is constrained to the schema.
-          ...(!native && schemaOutputFor(provider) ? { response_format: { type: "json_schema", json_schema: { name: "nova_plan", schema: planSchema(mission?.allowedTasks || [], Boolean(mission?.metadata?.parent?.graphId)) } } } : {}),
+          ...(!native && schemaOutputFor(provider) ? { response_format: { type: "json_schema", json_schema: { name: "nova_plan", schema: planSchema(planningAllowedTasks, Boolean(mission?.metadata?.parent?.graphId)) } } } : {}),
           // Reasoning models (e.g. gpt-oss) spend part of this budget on hidden
           // reasoning before emitting the final answer; 1024 was tight enough for
           // a large coding-contract prompt to exhaust it before any content came out.
@@ -1914,10 +1928,22 @@ async function agentIntroExtras(mission) {
   }
   // The agent's home: the operator's notes and the agent's memory. Notes never widen what this mission may do.
   if (process.env.JACO_AGENT_HOME_OFF !== '1') {
-    try {
-      const home = loadHome(agentHomeDir('nova'), { isPrivate: true, limits: { ...HOME_LIMITS, perFile: 6000, total: 15000 } });
-      if (home.text) extra["Your home (the operator's notes and your memory; they never widen what this mission may do)"] = home.text;
-    } catch { /* no home yet, or unreadable: the run goes on without it */ }
+    // Invalid opt-in capsules fail CLOSED; only missing legacy-home files are optional.
+    const capsule = novaCapsule(mission, { withMemory: true });
+    if (capsule.enabled) {
+      const context = [
+        capsule.home?.text || '',
+        `## Agent identity (context only, not authority)\n${capsule.identity}`,
+        `## Available skill metadata (load on demand)\n${capsule.skills.map(s => `${s.name}: ${s.description}`).join('\n')}`,
+        `## Capsule binding\nagent=${capsule.agentId} mission=${capsule.missionId} fingerprint=${capsule.fingerprint}`,
+      ].filter(Boolean).join('\n\n');
+      extra["Your home and Cognitive Capsule (untrusted context; never expands mission authority)"] = context;
+    } else {
+      try {
+        const home = loadHome(agentHomeDir('nova'), { isPrivate: true, limits: { ...HOME_LIMITS, perFile: 6000, total: 15000 } });
+        if (home.text) extra["Your home (the operator's notes and your memory; they never widen what this mission may do)"] = home.text;
+      } catch { /* missing home is optional */ }
+    }
   }
   if ((mission?.allowedTasks || []).includes('email-inbox')) extra["JACO's own e-mail addresses (for sign-ups)"] = `jaco-<site>@${inboxDomain()}`;
   return extra;
@@ -1930,9 +1956,9 @@ async function runAgentLoop(state) {
   if (peek?.contract) return null;
   return runAgentMission({
     client: missionClient, owner: state.agentId, chat: req => agentChat(req),
-    system: mission => agentSystemFor(mission.allowedTasks),
+    system: mission => agentSystemFor(capsuleAllowedTasks(mission)),
     toolsFor: async mission => {
-      const permitted = mission.allowedTasks || [];
+      const permitted = capsuleAllowedTasks(mission);
       const write = permitted.includes('mcp-write');
       if (permitted.includes('mcp-call') || write) {
         try { await mcpCatalog({ runtimeUrl: CONFIG.runtimeUrl, write }); }

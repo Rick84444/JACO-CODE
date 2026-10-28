@@ -36,7 +36,7 @@ export class ReviewCouncil {
       if(active&&now-Date.parse(a.progressAt||active.updatedAt||active.createdAt)>staleAfterMs){reason='Active task has no verified progress heartbeat';targetId=active.id;}
       else if(!active&&capableQueued.length&&now-Date.parse(a.progressAt||a.lastHeartbeatAt||a.registeredAt)>staleAfterMs&&!a.idleJustification){reason='Live capable agent is idle while runnable work exists without justification';targetId=capableQueued[0].id;}
       if(!reason)continue;
-      const ev=this.evidence.record({kind:'agent-stall-detection',claim:reason,source:'review-council',verified:true,verificationMethod:'deterministic runtime-hub liveness/task audit',data:{agentId:a.id,targetTaskId:targetId,staleAfterMs}},'review-council');
+      const ev=this.evidence.recordInternal({kind:'agent-stall-detection',claim:reason,source:'review-council',verified:true,verificationMethod:'deterministic runtime-hub liveness/task audit',data:{agentId:a.id,targetTaskId:targetId,staleAfterMs}},'review-council');
       const review=this.submit({reviewerAgentId,targetAgentId:a.id,targetType:'agent-runtime',targetId,kind:'IDLE_STALL',severity:'MEDIUM',claim:reason,evidenceRefs:[ev.id]},reviewerAgentId);const validated=this.validate(review.id,{validatorAgentId:'system-deterministic',evidenceRefs:[ev.id],valid:true});findings.push(validated);
     }
     return findings;

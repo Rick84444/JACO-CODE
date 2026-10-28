@@ -13,8 +13,8 @@ try {
   const evidence=new EvidenceLedger(root,events);
   const hypotheses=new HypothesisEngine(root,events,evidence);
 
-  const pending=evidence.record({kind:'observation',claim:'preliminary signal only'});
-  const terminal=evidence.record({kind:'experiment',claim:'verified contradiction',verified:true,verificationMethod:'test'});
+  const pending=evidence.recordInternal({kind:'observation',claim:'preliminary signal only'});
+  const terminal=evidence.recordInternal({kind:'experiment',claim:'verified contradiction',verified:true,verificationMethod:'test'});
   const falsificationSet=hypotheses.createSet({problem:'Can verified terminal evidence supersede preliminary evidence?',criteria:[{name:'success',weight:1,direction:'max'}]});
   const rejected=hypotheses.addCandidate(falsificationSet.id,{label:'candidate with preliminary evidence'});
   hypotheses.evaluate(falsificationSet.id,rejected.id,{status:'EVALUATED',evidenceRefs:[pending.id],metrics:{success:0.8}});
@@ -25,8 +25,8 @@ try {
   assert.equal(hypotheses.rank(falsificationSet.id).length,0);
   assert.throws(()=>hypotheses.selectWinner(falsificationSet.id,rejected.id),/not eligible/);
 
-  const pendingForWinner=evidence.record({kind:'observation',claim:'early unverified support'});
-  const winnerProof=evidence.record({kind:'experiment',claim:'verified success',verified:true,verificationMethod:'test'});
+  const pendingForWinner=evidence.recordInternal({kind:'observation',claim:'early unverified support'});
+  const winnerProof=evidence.recordInternal({kind:'experiment',claim:'verified success',verified:true,verificationMethod:'test'});
   const selectionSet=hypotheses.createSet({problem:'Can a verified terminal evaluation be selected with unverified provenance retained?',criteria:[{name:'success',weight:1,direction:'max'}]});
   const winner=hypotheses.addCandidate(selectionSet.id,{label:'eventual winner'});
   hypotheses.evaluate(selectionSet.id,winner.id,{status:'EVALUATED',evidenceRefs:[pendingForWinner.id],metrics:{success:0.6}});
