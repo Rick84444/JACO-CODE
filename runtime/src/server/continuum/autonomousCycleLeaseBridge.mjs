@@ -150,7 +150,14 @@ export class AutonomousCycleLeaseBridge {
     return this.status();
   }
   stopForOperator(reason='operator pause'){
-    if(this.active) return this.stop({leaseId:this.active.leaseId,reason});
-    return this.status();
+    // Emergency stop MUST NOT depend on the health of the local lab journal or
+    // IDE projector. A broken/unreadable journal cannot veto canonical e-stop.
+    const job=this.active;
+    if(!job)return {stopRequested:false};
+    job.stopRequested=true;job.state='STOPPING';
+    try { job.child?.kill('SIGKILL') } catch {}
+    try { this.leases.revoke(job.leaseId,'operator',String(reason).slice(0,200)) }
+    catch { /* parent Continuum operator STOP still must execute */ }
+    return {stopRequested:true};
   }
 }

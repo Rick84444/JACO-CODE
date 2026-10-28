@@ -85,3 +85,14 @@ test('paused canonical operator rejects lease issuance, and nonmatching stop can
   assert.equal(ended.state,'RECONCILIATION_REQUIRED');
  }finally{e.dispose()}
 });
+
+test('emergency-stop path does not depend on a readable Cognitive Lab journal',()=>{
+ const e=setup();try{
+  const state=path.join(e.workspaceRoot,'.jaco','autonomous-cycles');fs.mkdirSync(state,{recursive:true});
+  fs.writeFileSync(path.join(state,'events.jsonl'),'{broken\n');
+  assert.throws(()=>e.bridge.status(),/CYCLE_LEDGER_INTEGRITY_FAILED/);
+  assert.doesNotThrow(()=>e.bridge.stopForOperator('emergency stop'));
+  const stopped=e.operator.emergencyStop('operator','test');
+  assert.equal(stopped.emergencyLatched,true);
+ }finally{e.dispose()}
+});
