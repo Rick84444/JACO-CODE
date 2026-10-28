@@ -22,7 +22,7 @@ Authenticated `POST /api/continuum/models/local/probe` (existing Continuum route
 
 On-device diagnoses must be run on the actual Android/Termux machine or computer with the model installed. CI tests mock provider HTTP responses to verify protocol and fail-closed behaviour without downloading weights. There is no claim of having successfully run the user's physical model yet.
 
-For a local-only startup, configure `JACO_LOCAL_ONLY=1` and restart the locally running Ollama daemon with `OLLAMA_NO_CLOUD=1` (or `disable_ollama_cloud: true` in the Ollama server config) when using Ollama. The JACO flag controls Continuum routing; the Ollama flag disables Ollama's own cloud capability. For stronger isolation, apply an outbound network policy to the inference process as well.
+For a local-only startup, Termux `jacoctl` now defaults to `JACO_LOCAL_ONLY=1` and writes `OLLAMA_NO_CLOUD=1`; the supervised Ollama service exports it. On non-Termux installations, set `JACO_LOCAL_ONLY=1` yourself and restart the locally running Ollama daemon with `OLLAMA_NO_CLOUD=1` (or `disable_ollama_cloud: true` in the Ollama server config) when using Ollama. The JACO flag controls Continuum routing; the Ollama flag disables Ollama's own cloud capability. If JACO attaches to an already-running external Ollama daemon, it cannot enforce that daemon's configuration: verify it separately. A local OpenAI-compatible relay can also forward upstream, so treat the relay itself as a trusted process. For stronger isolation, apply an outbound network policy to the inference process as well.
 
 Configure one of the on-device models: `JACO_OLLAMA_MODEL`, `JACO_LITERT_MODEL` (with `JACO_LITERT_URL=http://127.0.0.1:9379/v1`), `JACO_LLAMACPP_MODEL` (with `JACO_LLAMACPP_URL=http://127.0.0.1:9380/v1`) or `JACO_LMSTUDIO_MODEL`.
 
@@ -45,4 +45,4 @@ Sources (original technical documentation):
 
 ## Test and compatibility
 
-`node --test runtime/scripts/continuum/local-inference-hardening.test.mjs` executes 23 isolation tests. They use fake HTTP responses, with no internet request and no cloud spend. The Continuum CI workflow runs them alongside the existing runtime, single-writer and reflective-futures contracts; GitHub merge approval requires an exact-head SHA with green relevant checks.
+`node --test runtime/scripts/continuum/local-inference-hardening.test.mjs` executes 24 isolation tests. They use fake HTTP responses, with no internet request and no cloud spend. The Continuum CI workflow runs them alongside the existing runtime, single-writer and reflective-futures contracts; GitHub merge approval requires an exact-head SHA with green relevant checks.

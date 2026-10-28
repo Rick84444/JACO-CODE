@@ -393,6 +393,9 @@ sync_runtime_env(){
   set_config_export CDP_PORT "${CDP_PORT:-9222}"
   set_config_export JACO_ENABLE_OLLAMA "${JACO_ENABLE_OLLAMA:-1}"
   set_config_export OLLAMA_BASE_URL "${OLLAMA_BASE_URL:-http://127.0.0.1:11434}"
+  # Continuum is local-only by default; Ollama has a separate upstream-cloud switch.
+  set_config_export JACO_LOCAL_ONLY "${JACO_LOCAL_ONLY:-1}"
+  set_config_export OLLAMA_NO_CLOUD "${OLLAMA_NO_CLOUD:-1}"
   set_config_export JACO_LITERT_AUTODETECT "${JACO_LITERT_AUTODETECT:-1}"
   set_config_export JACO_LITERT_URL "${JACO_LITERT_URL:-http://127.0.0.1:9379/v1}"
   # The interactive Termux PATH can differ from runit's PATH.

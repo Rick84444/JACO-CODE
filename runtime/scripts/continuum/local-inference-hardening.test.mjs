@@ -192,3 +192,12 @@ test('Ollama model manifest trust check is strict for locally cached aliases',as
  const malformed=async()=>success({models:[{name:'test-small:latest',remote_host:'https://host.invalid',size:123}]});
  await assert.rejects(assertInstalledOllamaModel({baseUrl:'http://127.0.0.1:11434',model:'test-small',fetchImpl:malformed}),/OLLAMA_MODEL_NOT_VERIFIABLY_LOCAL/);
 });
+
+test('Termux supervised startup defaults both Continuum and Ollama to local-only',()=>{
+ const root=path.resolve(import.meta.dirname,'../../..');
+ const ctl=fs.readFileSync(path.join(root,'runtime/bin/jacoctl'),'utf8');
+ const run=fs.readFileSync(path.join(root,'runtime/termux/services/jaco-ollama/run'),'utf8');
+ assert.match(ctl,/set_config_export JACO_LOCAL_ONLY "\$\{JACO_LOCAL_ONLY:-1\}"/);
+ assert.match(ctl,/set_config_export OLLAMA_NO_CLOUD "\$\{OLLAMA_NO_CLOUD:-1\}"/);
+ assert.match(run,/export OLLAMA_NO_CLOUD="\$\{OLLAMA_NO_CLOUD:-1\}"/);
+});

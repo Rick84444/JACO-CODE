@@ -7,6 +7,8 @@ PATH="$PREFIX/bin:$PREFIX/bin/applets:${PATH:-/system/bin}"
 export PREFIX HOME TMPDIR PATH
 ENV_FILE="${JACO_RUNTIME_ENV:-$HOME/.config/jaco/runtime.env}"
 [ -f "$ENV_FILE" ] && . "$ENV_FILE"
+# Supervised Ollama must not proxy :cloud models unless explicitly allowed.
+export OLLAMA_NO_CLOUD="${OLLAMA_NO_CLOUD:-1}"
 BASE="${OLLAMA_BASE_URL:-http://127.0.0.1:11434}"
 ROOT="${BASE%/v1}"; ROOT="${ROOT%/}"
 if curl -fsS --max-time 2 "$ROOT/api/tags" >/dev/null 2>&1; then
