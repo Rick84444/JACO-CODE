@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { isOnDeviceModelEndpoint, isCloudModelName, assertInstalledOllamaModel } from '../../src/server/continuum/localInferenceTrust.mjs';
@@ -200,4 +201,34 @@ test('Termux supervised startup defaults both Continuum and Ollama to local-only
  assert.match(ctl,/set_config_export JACO_LOCAL_ONLY "\$\{JACO_LOCAL_ONLY:-1\}"/);
  assert.match(ctl,/set_config_export OLLAMA_NO_CLOUD "\$\{OLLAMA_NO_CLOUD:-1\}"/);
  assert.match(run,/export OLLAMA_NO_CLOUD="\$\{OLLAMA_NO_CLOUD:-1\}"/);
+});
+
+test('real loopback HTTP transport proves a local manifest and an actual text reply',async()=>{
+ const requests=[];
+ const server=http.createServer((req,res)=>{
+  requests.push(req.url);res.setHeader('content-type','application/json');
+  if(req.url==='/api/tags')res.end(JSON.stringify({models:[{name:'test-small:latest',size:10000}]}));
+  else if(req.url==='/api/generate')res.end(JSON.stringify({model:'test-small',done:true,response:'local transport works'}));
+  else {res.statusCode=404;res.end('{}')}
+ });
+ await new Promise((resolve,reject)=>server.once('error',reject).listen(0,'127.0.0.1',resolve));
+ const x=fixture();
+ try{const port=server.address().port;
+  x.providers.register({id:'ollama-local',protocol:'ollama',local:true,baseUrl:`http://127.0.0.1:${port}`,model:'test-small',enabled:true});
+  const r=await x.router.probeLocalModel({providerId:'ollama-local',timeoutMs:5000});
+  assert.equal(r.status,'INFERENCE_VERIFIED');assert.equal(x.billed,0);
+  assert.deepEqual(requests,['/api/tags','/api/generate']);
+ }finally{x.dispose();await new Promise(resolve=>server.close(resolve))}
+});
+test('real localhost redirect is refused; no external model HTTP call is followed',async()=>{
+ const server=http.createServer((req,res)=>{
+  if(req.url==='/api/tags'){res.setHeader('content-type','application/json');res.end(JSON.stringify({models:[{name:'test-small:latest',size:5000}]}));return}
+  res.statusCode=302;res.setHeader('location','https://untrusted.invalid/collect');res.end();
+ });
+ await new Promise((resolve,reject)=>server.once('error',reject).listen(0,'127.0.0.1',resolve));
+ const x=fixture();
+ try{x.providers.register({id:'ollama-local',protocol:'ollama',local:true,baseUrl:`http://127.0.0.1:${server.address().port}`,model:'test-small',enabled:true});
+  const r=await x.router.probeLocalModel({providerId:'ollama-local',timeoutMs:5000});
+  assert.equal(r.status,'INFERENCE_FAILED');assert.equal(x.billed,0);assert.equal(x.providers.get('ollama-local').stats.successes,0);
+ }finally{x.dispose();await new Promise(resolve=>server.close(resolve))}
 });

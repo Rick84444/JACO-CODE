@@ -45,4 +45,4 @@ Sources (original technical documentation):
 
 ## Test and compatibility
 
-`node --test runtime/scripts/continuum/local-inference-hardening.test.mjs` executes 24 isolation tests. They use fake HTTP responses, with no internet request and no cloud spend. The Continuum CI workflow runs them alongside the existing runtime, single-writer and reflective-futures contracts; GitHub merge approval requires an exact-head SHA with green relevant checks.
+`node --test runtime/scripts/continuum/local-inference-hardening.test.mjs` executes 26 isolation/integration tests. Most use mocked model responses; two start a real loopback HTTP test fixture to verify the request/response and redirect-denial transport without running model weights, contacting the public internet or incurring cloud spend. The Continuum CI workflow runs them alongside the existing runtime, single-writer and reflective-futures contracts; GitHub merge approval requires an exact-head SHA with green relevant checks.
