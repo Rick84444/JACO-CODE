@@ -54,7 +54,25 @@ export function AutonomousCyclesPanel() {
     }catch(e){if(!signal?.aborted)setError(e instanceof Error?e.message:'Kunde inte läsa utvecklingsjournalen.');}
     finally{if(!signal?.aborted)setLoading(false);}
   },[]);
-  useEffect(()=>{const controller=new AbortController();void refresh(controller.signal);return()=>controller.abort();},[refresh]);
+  useEffect(() => {
+    let mounted = true;
+    let request: AbortController | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const poll = async () => {
+      if (!mounted) return;
+      if (document.visibilityState !== 'hidden') {
+        request = new AbortController();
+        await refresh(request.signal);
+      }
+      if (mounted) timer = setTimeout(() => void poll(), 5000);
+    };
+    void poll();
+    return () => {
+      mounted = false;
+      request?.abort();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [refresh]);
   const summary=record?.summary;
   const progress=summary?Math.max(0,Math.min(100,Math.round(summary.cycles/Math.max(1,summary.targetCycles)*100))):0;
   const completed=record?.state==='COMPLETED';
@@ -84,7 +102,7 @@ export function AutonomousCyclesPanel() {
         <div className="h-2 rounded bg-slate-800 overflow-hidden" role="progressbar" aria-label="Genomförda cykler" aria-valuenow={summary.cycles} aria-valuemin={0} aria-valuemax={summary.targetCycles}>
           <div className="h-full bg-cyan-500" style={{width:`${progress}%`}}/>
         </div>
-        <p className="text-[11px] text-slate-400">Senaste journalhändelse: {formattedTime(record?.lastEventAt??null)} · Datakälla: lokal, sparad historik</p>
+        <p className="text-[11px] text-slate-400">Senaste journalhändelse: {formattedTime(record?.lastEventAt??null)} · Datakälla: lokal, sparad historik · Kontrolleras var femte sekund när vyn är synlig</p>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
         {[

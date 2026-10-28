@@ -33,6 +33,9 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const trigger = context.payload.workflow_run;
+            if (trigger.event !== 'pull_request') {
+              core.info('Ignoring non-PR workflow runs'); return;
+            }
             const sha = trigger.head_sha;
             if (!/^[a-f0-9]{40}$/.test(sha || '')) throw Error('UNTRUSTED_HEAD_SHA');
             // These two run on every qualifying PR. Other triggered workflows must also succeed.
@@ -43,6 +46,22 @@ jobs:
               if (pr.head.repo?.full_name !== `${owner}/${repo}`) continue;
               if (!pr.head.ref.startsWith('feat/jaco-autonomous-')) continue;
               if ((pr.labels || []).some(x => ['do-not-merge','hold','manual-review'].includes(x.name))) continue;
+              // CI rules and verification authority must never be changed by a PR
+              // that benefits from automatic merging. Such work needs human review.
+              const changes = await github.paginate(github.rest.pulls.listFiles, {
+                owner, repo, pull_number:pr.number, per_page:100,
+              });
+              const protectedChanges = changes.map(f => f.filename).filter(file =>
+                file.startsWith('.github/') ||
+                file === 'scripts/verify-technical-debt.mjs' ||
+                file === 'tests/cognitive-lab/automerge-policy.test.mjs' ||
+                file === 'agents/lib/cognitive-evidence-authority.mjs' ||
+                file === 'runtime/src/server/continuum/evidenceLedger.mjs' ||
+                file === 'runtime/src/server/continuum/leaseManager.mjs');
+              if (protectedChanges.length) {
+                core.info(`PR #${pr.number}: governance changes require human review: ${protectedChanges.join(', ')}`);
+                continue;
+              }
               const workflows = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
                 owner, repo, head_sha:sha, event:'pull_request', per_page:100,
               });
