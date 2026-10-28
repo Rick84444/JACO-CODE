@@ -37,6 +37,12 @@ export function createContinuumRouter({workspaceRoot,browserSessions,requireAuth
   router.post('/evidence',(req,res)=>{try{res.status(201).json({success:true,evidence:runtime.evidence.record(req.body||{},bodyActor(req))})}catch(e){fail(res,e)}});
   router.post('/evidence/:id/verify',(req,res)=>{try{res.json({success:true,evidence:runtime.evidence.verify(req.params.id,{method:req.body?.method,actor:bodyActor(req),data:req.body?.data})})}catch(e){fail(res,e)}});
 
+  // Canonical single-writer lease-backed execution of the deterministic lab.
+  router.get('/autonomous-cycles/status',(_req,res)=>{try{res.json({success:true,...runtime.autonomousCycles.status()})}catch(e){fail(res,e,409)}});
+  router.post('/autonomous-cycles/lease',(req,res)=>{try{res.status(201).json({success:true,lease:runtime.autonomousCycles.issueLease({durationMs:req.body?.durationMs},bodyActor(req))})}catch(e){fail(res,e,409)}});
+  router.post('/autonomous-cycles/run',(req,res)=>{try{res.status(202).json({success:true,...runtime.autonomousCycles.start(req.body||{})})}catch(e){fail(res,e,409)}});
+  router.post('/autonomous-cycles/stop',(req,res)=>{try{res.json({success:true,...runtime.autonomousCycles.stop({leaseId:req.body?.leaseId,reason:req.body?.reason})})}catch(e){fail(res,e,409)}});
+
   router.get('/leases',(req,res)=>res.json({success:true,leases:runtime.leases.list({activeOnly:req.query.active==='true'})}));
   router.post('/leases',(req,res)=>{try{res.status(201).json({success:true,lease:runtime.leases.issue(req.body||{},bodyActor(req))})}catch(e){fail(res,e)}});
   router.post('/leases/:id/revoke',(req,res)=>{try{res.json({success:true,lease:runtime.leases.revoke(req.params.id,bodyActor(req),req.body?.reason)})}catch(e){fail(res,e)}});
