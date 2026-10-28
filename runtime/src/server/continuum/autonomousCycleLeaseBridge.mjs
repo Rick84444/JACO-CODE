@@ -4,17 +4,18 @@
  * covers only the fixed, isolated TaskEngine lab under .jaco/autonomous-cycles.
  * Its single writer is the existing Continuum runtime process.
  */
+import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { inspectCycles, MAX_CYCLES } from '../../../../agents/cognitive-lab/autonomous-cycles/cycle-runtime.mjs';
+import { pathToFileURL } from 'node:url';
 import { readAutonomousCycleBoard } from '../connected/autonomousCycleBoard.mjs';
 
 export const CYCLE_AGENT_ID = 'jaco-cognitive-lab-executor';
 export const CYCLE_MISSION_ID = 'jaco-cognitive-lab';
 export const CYCLE_ACTION = 'COGNITIVE_LAB_RUN';
-const RUNNER = fileURLToPath(new URL('../../../../agents/cognitive-lab/autonomous-cycles/run.mjs', import.meta.url));
+const MAX_CYCLES=33; // Fixed, versioned deterministic lab contract.
+const RUNNER_REL=path.join('agents','cognitive-lab','autonomous-cycles','run.mjs');
 const MAX_LEASE_MS = 15 * 60_000;
 const MAX_STEP_MS = 45_000;
 const MAX_OUTPUT = 16_384;
@@ -30,16 +31,46 @@ function requiredOperationId(value) {
 function codeOf(error){return String(error instanceof Error?error.message:error).slice(0,350)}
 
 export class AutonomousCycleLeaseBridge {
-  constructor({workspaceRoot,leases,operator,events,spawnChild=spawn,runScript=RUNNER}) {
+  constructor({workspaceRoot,leases,operator,events,spawnChild=spawn,runScript=null}) {
     this.workspaceRoot=path.resolve(workspaceRoot);
     this.stateRoot=path.join(this.workspaceRoot,'.jaco','autonomous-cycles');
     this.leases=leases;this.operator=operator;this.events=events;
     this.spawnChild=spawnChild;this.runScript=runScript;
     this.active=null;this.last=null;
   }
+  #trustedRunner(){
+    // ESM scripts intentionally remain OUTSIDE the esbuild CommonJS server bundle.
+    // Lite distributions do not carry these dev-only scripts: fail closed on use,
+    // but never crash the user-facing server on startup.
+    const candidates=this.runScript?[this.runScript]:[
+      path.join(process.cwd(),RUNNER_REL),
+      path.resolve(process.cwd(),'..',RUNNER_REL),
+      ...(typeof __filename==='string'?[path.resolve(path.dirname(__filename),'..','..',RUNNER_REL)]:[]),
+    ];
+    for(const file of candidates){
+      try{
+        const actual=fs.realpathSync(file);
+        const stat=fs.lstatSync(file);
+        const moduleFile=path.join(path.dirname(actual),'cycle-runtime.mjs');
+        if(!stat.isFile()||stat.isSymbolicLink()||!fs.statSync(moduleFile).isFile())continue;
+        return actual;
+      }catch{}
+    }
+    throw Error('CYCLE_RUNTIME_NOT_INSTALLED');
+  }
+  async #inspect(){
+    const script=this.#trustedRunner();
+    // A computed absolute file URL keeps esbuild from bundling the ESM lab
+    // into dist/server.cjs where import.meta would be undefined.
+    const moduleUrl=pathToFileURL(path.join(path.dirname(script),'cycle-runtime.mjs')).href;
+    const {inspectCycles}=await import(moduleUrl);
+    if(typeof inspectCycles!=='function')throw Error('CYCLE_RUNTIME_INSPECTOR_MISSING');
+    return inspectCycles(this.stateRoot);
+  }
   issueLease({durationMs=MAX_LEASE_MS}={},actor='operator'){
     positiveInteger(durationMs,MAX_LEASE_MS,'CYCLE_LEASE_DURATION');
     if (this.active) throw Error('CYCLE_RUN_ALREADY_ACTIVE');
+    this.#trustedRunner();
     return this.leases.issue({
       missionId:CYCLE_MISSION_ID,agentId:CYCLE_AGENT_ID,
       allowedActions:[CYCLE_ACTION],forbiddenActions:[],durationMs,
@@ -53,12 +84,13 @@ export class AutonomousCycleLeaseBridge {
     // The IDE's existing projector is untrusted for attestations, but validates
     // format/chain and is sufficient to display local deterministic progress.
     const board=readAutonomousCycleBoard(this.workspaceRoot);
+    let installed=true;try{this.#trustedRunner()}catch{installed=false}
     const unknown=this.#unknown();
     return {schema:'jaco.continuum.cognitive-lab-lease.v1',simulation:'DETERMINISTIC',
-      state:this.active?(this.active.stopRequested?'STOPPING':'RUNNING'):unknown.length?'RECONCILIATION_REQUIRED':this.last?.state||board.state,
+      state:this.active?(this.active.stopRequested?'STOPPING':'RUNNING'):unknown.length?'RECONCILIATION_REQUIRED':!installed?'UNAVAILABLE':this.last?.state||board.state,
       run:this.active?this.#public(this.active):this.last?this.#public(this.last):null,
       unresolved:unknown.slice(0,10),board,
-      remoteMainUpdated:false,independentModelDecisions:false};
+      runtimeInstalled:installed,remoteMainUpdated:false,independentModelDecisions:false};
   }
   #public(run){return {state:run.state,leaseId:run.leaseId,operationId:run.operationId,
     targetCycle:run.until,lastCompletedCycle:run.lastCompletedCycle,startedAt:run.startedAt,
@@ -66,6 +98,7 @@ export class AutonomousCycleLeaseBridge {
   start({leaseId,operationId,until}={}){
     if (this.active) throw Error('CYCLE_RUN_ALREADY_ACTIVE');
     if (this.#unknown().length) throw Error('CYCLE_RECONCILIATION_REQUIRED');
+    this.#trustedRunner();
     const target=positiveInteger(until,MAX_CYCLES,'CYCLE_TARGET');
     const opId=requiredOperationId(operationId);
     if (typeof leaseId!=='string'||!leaseId.trim()) throw Error('CYCLE_LEASE_ID_REQUIRED');
@@ -97,11 +130,11 @@ export class AutonomousCycleLeaseBridge {
         if(l.revoked||l.generation!==job.generation||Date.now()>=Date.parse(l.expiresAt))throw Error('CYCLE_LEASE_FENCED');
         await this.#oneCycle(job,cycle,Date.parse(l.expiresAt));
         if(job.stopRequested)throw Error('CYCLE_RUN_STOP_REQUESTED');
-        const proof=inspectCycles(this.stateRoot); // verifies HMAC reviewer receipts and hash chain
+        const proof=await this.#inspect(); // verifies HMAC reviewer receipts and hash chain
         if(proof.cycles!==cycle)throw Error('CYCLE_RECEIPT_COUNT_MISMATCH');
         job.lastCompletedCycle=cycle;
       }
-      const verified=inspectCycles(this.stateRoot);
+      const verified=await this.#inspect();
       if(verified.cycles!==job.until)throw Error('CYCLE_FINAL_ATTESTATION_MISMATCH');
       const receiptRef=`cycle-ledger-sha256:${verified.ledgerTip}`;
       this.leases.finishAction(job.leaseId,{operationId:job.operationId,generation:job.generation,receiptRef});
@@ -121,7 +154,7 @@ export class AutonomousCycleLeaseBridge {
   #oneCycle(job,cycle,leaseDeadline){return new Promise((resolve,reject)=>{
     const timeoutMs=Math.min(MAX_STEP_MS,leaseDeadline-Date.now());
     if(timeoutMs<100) return reject(Error('CYCLE_LEASE_EXPIRED'));
-    const child=this.spawnChild(process.execPath,[this.runScript,'run','--state',this.stateRoot,'--until',String(cycle)],{
+    const child=this.spawnChild(process.execPath,[this.#trustedRunner(),'run','--state',this.stateRoot,'--until',String(cycle)],{
       cwd:this.workspaceRoot,stdio:['ignore','pipe','pipe'],
       env:{PATH:process.env.PATH||'',HOME:process.env.HOME||os.tmpdir(),TMPDIR:process.env.TMPDIR||os.tmpdir(),LANG:'C.UTF-8'},
     });

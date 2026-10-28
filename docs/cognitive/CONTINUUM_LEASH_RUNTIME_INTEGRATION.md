@@ -33,3 +33,7 @@ POST requires the existing JACO operator authorization middleware; the Continuum
 `node --test tests/cognitive-lab/*.test.mjs tests/nova/cognitive-capsule.test.mjs`
 
 The lease bridge's tests cover invalid scope, one-shot budgets, real execution and receipt, replay denial, stop/fencing/restart-unknown, and operator pause.
+
+### Lite/CommonJS packaging
+
+The production IDE server is built as `dist/server.cjs`. The lab's ESM runner (`cycle-runtime.mjs`) uses `import.meta.url` and must **never** be imported statically by that CJS entrypoint. The adapter computes a fixed, trusted on-disk runner path and loads the ESM inspector dynamically **only after an operator lease starts a run**. The small downloadable Lite package does not include the lab source tree; it reports `UNAVAILABLE` while the IDE and Continuum still boot normally. This is intentional and covered by a negative regression test. Full source installations can run the lab under a scoped lease.

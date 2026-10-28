@@ -29,12 +29,13 @@ type CycleStatus = {
 type LeasedCycleStatus = {
   success: boolean;
   schema: 'jaco.continuum.cognitive-lab-lease.v1';
-  state: 'NOT_STARTED'|'RECORDED'|'COMPLETED'|'RUNNING'|'STOPPING'|'RECONCILIATION_REQUIRED';
+  state: 'NOT_STARTED'|'RECORDED'|'COMPLETED'|'RUNNING'|'STOPPING'|'RECONCILIATION_REQUIRED'|'UNAVAILABLE';
   simulation: 'DETERMINISTIC';
   run: null | {leaseId:string;operationId:string;targetCycle:number;lastCompletedCycle:number;error:string|null;receiptRef:string|null};
   unresolved: Array<{leaseId:string;operationId:string;status:string}>;
   remoteMainUpdated: false;
   independentModelDecisions: false;
+  runtimeInstalled: boolean;
 };
 const labels: Record<string, string> = {
   'mission.scoped':'Krav fastställda', 'git.researched':'Git-historik undersökt',
@@ -143,12 +144,13 @@ export function AutonomousCyclesPanel() {
       </div>
       <p className="text-xs text-slate-400">En körning ändrar bara labbets lokala .jaco-arbetsyta. Kräver riktig Continuum-lease; inget automatiskt GitHub-merge eller molnkostnad.</p>
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={leaseBusy||live?.state==='RUNNING'||live?.state==='STOPPING'||live?.state==='RECONCILIATION_REQUIRED'} onClick={()=>void mutateLease('lease')} className="px-3 py-2 border border-cyan-800 text-xs rounded disabled:opacity-40">Ge 5 min lease</button>
-        <button type="button" disabled={leaseBusy||!lease||!live||live.state==='RUNNING'||live.state==='STOPPING'||live.state==='RECONCILIATION_REQUIRED'||record?.state==='COMPLETED'} onClick={()=>void mutateLease('run')} className="px-3 py-2 rounded bg-cyan-900/70 text-xs disabled:opacity-40">Kör nästa 3 cykler</button>
+        <button type="button" disabled={leaseBusy||live?.state==='RUNNING'||live?.state==='STOPPING'||live?.state==='RECONCILIATION_REQUIRED'||live?.state==='UNAVAILABLE'} onClick={()=>void mutateLease('lease')} className="px-3 py-2 border border-cyan-800 text-xs rounded disabled:opacity-40">Ge 5 min lease</button>
+        <button type="button" disabled={leaseBusy||!lease||!live||live.state==='RUNNING'||live.state==='STOPPING'||live.state==='RECONCILIATION_REQUIRED'||live.state==='UNAVAILABLE'||record?.state==='COMPLETED'} onClick={()=>void mutateLease('run')} className="px-3 py-2 rounded bg-cyan-900/70 text-xs disabled:opacity-40">Kör nästa 3 cykler</button>
         <button type="button" disabled={leaseBusy||!live?.run?.leaseId||!['RUNNING','STOPPING'].includes(live?.state||'')} onClick={()=>void mutateLease('stop')} className="px-3 py-2 border border-red-900 text-red-200 text-xs rounded disabled:opacity-40">Stoppa</button>
       </div>
       {lease && <p className="text-xs text-slate-500 break-all">Lease {lease.id} · Utgår {formattedTime(lease.expiresAt)}</p>}
       {live?.run && <p className="text-xs text-slate-400 break-words">Operation {live.run.operationId} · Genomförd cykel {live.run.lastCompletedCycle}/{live.run.targetCycle}{live.run.receiptRef?` · Lokalt kvitto ${live.run.receiptRef}`:''}</p>}
+      {live?.state==='UNAVAILABLE' && <p role="status" className="text-xs text-amber-200">Utvecklingsmotorn finns inte i denna installation. Continuum och IDE fungerar fortfarande; den fullständiga JACO-källkodsinstallationen krävs för att köra laboratoriet.</p>}
       {live?.state==='RECONCILIATION_REQUIRED' && <p role="alert" className="text-xs text-amber-200">Osäkert utfall efter stopp/krasch. Ingen automatisk omkörning. Kräver manuell avstämning av journal och lease.</p>}
       {leaseNotice && <p role="status" className="text-xs text-cyan-200">{leaseNotice}</p>}
       {leaseError && <p role="alert" className="text-xs text-amber-300">Continuum: {leaseError}. Ansluten IDE-session eller giltig gateway-autentisering kan krävas.</p>}

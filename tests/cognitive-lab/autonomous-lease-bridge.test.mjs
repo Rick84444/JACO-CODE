@@ -96,3 +96,13 @@ test('emergency-stop path does not depend on a readable Cognitive Lab journal',(
   assert.equal(stopped.emergencyLatched,true);
  }finally{e.dispose()}
 });
+
+test('Lite-style installation without ESM lab files remains startable and reports unavailable',()=>{
+ const e=setup();try{
+  const bridge=new AutonomousCycleLeaseBridge({workspaceRoot:e.workspaceRoot,leases:e.leases,operator:e.operator,events:{append(){}},runScript:path.join(e.workspaceRoot,'missing','run.mjs')});
+  const status=bridge.status();
+  assert.equal(status.state,'UNAVAILABLE');assert.equal(status.runtimeInstalled,false);
+  assert.throws(()=>bridge.issueLease(),/CYCLE_RUNTIME_NOT_INSTALLED/);
+  assert.equal(e.leases.list().length,0);
+ }finally{e.dispose()}
+});
