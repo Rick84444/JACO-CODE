@@ -7,6 +7,7 @@ import { CommitmentGraph } from './commitmentGraph.mjs';
 import { EvidenceLedger } from './evidenceLedger.mjs';
 import { EconomicGovernor } from './economicGovernor.mjs';
 import { ExecutionLeaseManager } from './leaseManager.mjs';
+import { AutonomousCycleLeaseBridge } from './autonomousCycleLeaseBridge.mjs';
 import { RuntimeHub } from './runtimeHub.mjs';
 import { KnowledgeStore } from './knowledgeStore.mjs';
 import { CognitiveGraphProjection } from './cognitiveGraphProjection.mjs';
@@ -42,6 +43,7 @@ export class ContinuumRuntime {
     this.commitments=new CommitmentGraph(this.root,this.events,this.evidence);
     this.economic=new EconomicGovernor(this.root,this.events,this.evidence);
     this.leases=new ExecutionLeaseManager(this.root,this.events,this.operator,this.economic);
+    this.autonomousCycles=new AutonomousCycleLeaseBridge({workspaceRoot:this.workspaceRoot,leases:this.leases,operator:this.operator,events:this.events});
     this.hub=new RuntimeHub(this.root,this.events,this.evidence);
     this.knowledge=new KnowledgeStore(this.root,this.events,this.evidence);
     this.hypotheses=new HypothesisEngine(this.root,this.events,this.evidence);
@@ -89,10 +91,11 @@ export class ContinuumRuntime {
   status(){const eventIntegrity=this.events.verify(),missions=this.missions.list({limit:1000}),commitments=this.commitments.list(),repository=this.repository.snapshot();return {schema:'jaco.continuum.status.v2',releaseId:'jaco-code-0.22.0',version:'0.22.0',startedAt:this.startedAt,operator:this.operator.snapshot(),eventIntegrity,counts:{missions:missions.length,activeMissions:missions.filter(m=>m.state==='ACTIVE').length,commitments:commitments.length,activeCommitments:commitments.filter(c=>['ACTIVE','VERIFYING','BLOCKED'].includes(c.state)).length,agents:this.hub.listAgents().length,knowledge:this.knowledge.list({limit:1000}).length,capabilities:this.capabilities.list().length,reviews:this.reviews.list().length,deliberations:this.deliberations.list().length,sandboxes:this.sandboxes.list().filter(s=>s.status==='ACTIVE').length,a2aPeers:this.a2aTrust.list().length},economic:this.economic.snapshot(),browser:this.browser.status(),scheduler:this.scheduler.snapshot(),providers:{count:this.providers.list().length,items:this.providers.list()},repository:{status:repository.status,snapshotHash:repository.snapshotHash||null,summary:repository.summary||null,updatedAt:repository.updatedAt||null},skills:this.skills.skillMachineSnapshot({limit:20}),reviews:{scores:this.reviews.scores().slice(0,20)},future:this.future.snapshot(),risk:this.risk.policySnapshot(),revenue:{signals:this.revenue.listSignals({limit:1000}).length,opportunities:this.revenue.rank({limit:1000}).length},truth:{persistentRuntime:true,chatSessionRequired:false,providerNeutralRouting:true,forcedConclusion:false,peerReviewRewardRequiresIndependentValidation:true,softSandboxIsFilesystemIsolationNotKernelBoundary:true,futureSimulationAlwaysSynthetic:true,futureWindowDays:90,cloudReasoning:this.economic.snapshot().policy.cloudEnabled?'POLICY_ENABLED':'DEFAULT_DENY',financialCommitments:'OPERATOR_APPROVAL_REQUIRED',evidenceReferentialIntegrity:'ENFORCED_ON_CRITICAL_TRANSITIONS',semanticRepositoryModel:true,runtimeSelfModel:'DERIVED_NOT_PARALLEL_STORE',outcomeKnowledgeCompiler:true,cognitiveCompression:'HOLDOUT_GATED',cognitiveKernel:true,cognitiveContinuity:'EVENT_SOURCED_WORKING_STATE_OVER_CANONICAL_STORES',canonicalSkillRuntimeOwner:'CONTINUUM_RUNTIME'}};}
   setDurableMissionSource(source){return this.continuity.setMissionSource(source,{authority:'CONNECTED_DURABLE_NOVA'});}
   missionCapsule(id){return this.missions.capsule(id,{commitments:this.commitments.list({missionId:id}),agentState:this.hub.listAgents().filter(a=>a.currentMissionId===id),economic:this.economic.snapshot(),operator:this.operator.snapshot()});}
-  pause(actor='operator',reason){const state=this.operator.pause(actor,reason);this.scheduler.suspend({actor,reason:'runtime paused'});this.leases.revokeAll(actor,'runtime paused');return state;}
+  pause(actor='operator',reason){this.autonomousCycles.stopForOperator('operator pause');const state=this.operator.pause(actor,reason);this.scheduler.suspend({actor,reason:'runtime paused'});this.leases.revokeAll(actor,'runtime paused');return state;}
   resume(actor='operator',reason){const state=this.operator.resume(actor,reason);if(this.scheduler.snapshot().enabled&&!this.scheduler.snapshot().timerActive)this.scheduler.start({actor,persist:false});return state;}
-  emergencyStop(actor='operator',reason){const state=this.operator.emergencyStop(actor,reason);this.scheduler.stop({actor,reason:'emergency stop'});this.leases.revokeAll(actor,'emergency stop');return state;}
+  emergencyStop(actor='operator',reason){this.autonomousCycles.stopForOperator('operator emergency stop');const state=this.operator.emergencyStop(actor,reason);this.scheduler.stop({actor,reason:'emergency stop'});this.leases.revokeAll(actor,'emergency stop');return state;}
   close(){
+    try{this.autonomousCycles.stopForOperator('runtime closing')}catch{}
     try { this.scheduler.stop({actor:'runtime',reason:'runtime shutdown'}); } catch {}
     try { this.leases.revokeAll('runtime','runtime shutdown'); } catch {}
     return this.events.close();

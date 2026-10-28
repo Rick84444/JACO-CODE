@@ -26,6 +26,16 @@ type CycleStatus = {
     cycle: number; phase: string | null; accepted: boolean | null; blockers: string[];
   }>;
 };
+type LeasedCycleStatus = {
+  success: boolean;
+  schema: 'jaco.continuum.cognitive-lab-lease.v1';
+  state: 'NOT_STARTED'|'RECORDED'|'COMPLETED'|'RUNNING'|'STOPPING'|'RECONCILIATION_REQUIRED';
+  simulation: 'DETERMINISTIC';
+  run: null | {leaseId:string;operationId:string;targetCycle:number;lastCompletedCycle:number;error:string|null;receiptRef:string|null};
+  unresolved: Array<{leaseId:string;operationId:string;status:string}>;
+  remoteMainUpdated: false;
+  independentModelDecisions: false;
+};
 const labels: Record<string, string> = {
   'mission.scoped':'Krav fastställda', 'git.researched':'Git-historik undersökt',
   'code.changed':'Kodförslag', 'debt.cleaned':'Teknisk skuld rensad',
@@ -41,6 +51,46 @@ export function AutonomousCyclesPanel() {
   const [record,setRecord]=useState<CycleStatus|null>(null);
   const [error,setError]=useState<string|null>(null);
   const [loading,setLoading]=useState(false);
+  const [lease,setLease]=useState<{id:string;expiresAt:string}|null>(null);
+  const [live,setLive]=useState<LeasedCycleStatus|null>(null);
+  const [leaseBusy,setLeaseBusy]=useState(false);
+  const [leaseError,setLeaseError]=useState<string|null>(null);
+  const [leaseNotice,setLeaseNotice]=useState<string|null>(null);
+  const readLease=useCallback(async (signal?:AbortSignal)=>{
+    try {
+      const response=await fetch('/api/continuum/autonomous-cycles/status',{
+        cache:'no-store',signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(6000)]) : AbortSignal.timeout(6000),
+      });
+      const result=await readAuraResponse(response) as LeasedCycleStatus;
+      if(result.schema!=='jaco.continuum.cognitive-lab-lease.v1')throw Error('Fel version på körleash.');
+      if(!signal?.aborted){setLive(result);setLeaseError(null)}
+    } catch(e){if(!signal?.aborted)setLeaseError(e instanceof Error?e.message:'Continuum kan inte nås.')}
+  },[]);
+  const mutateLease=useCallback(async (operation:'lease'|'run'|'stop')=>{
+    setLeaseBusy(true);setLeaseError(null);setLeaseNotice(null);
+    try {
+      const id=live?.run?.leaseId||lease?.id;
+      const current=record?.summary?.cycles||0;
+      const body=operation==='lease'?{durationMs:5*60_000}:operation==='run'?{
+        leaseId:lease?.id,operationId:`ide-${crypto.randomUUID()}`,until:Math.min(33,current+3),
+      }:{leaseId:id,reason:'operator stopped in IDE'};
+      const response=await fetch(`/api/continuum/autonomous-cycles/${operation}`,{
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),
+      });
+      const result=await readAuraResponse(response);
+      if(operation==='lease'){
+        if(!result.lease?.id)throw Error('Leasens ID saknas.');
+        setLease({id:result.lease.id,expiresAt:result.lease.expiresAt});
+        setLeaseNotice('Execution lease skapad: ett lokalt uppdrag, 0 USD molnbudget.');
+      } else {
+        setLeaseNotice(operation==='run'?'Körning startad. Journalen uppdateras automatiskt.':'Stopp begärt; osäkert utfall spärras.');
+      }
+      await readLease();
+    } catch(e){setLeaseError(e instanceof Error?e.message:'Kunde inte ändra körleash.');}
+    finally {setLeaseBusy(false)}
+  },[lease,live,readLease,record?.summary?.cycles]);
+
+
   const refresh=useCallback(async (signal?:AbortSignal) => {
     setLoading(true);
     try {
@@ -62,7 +112,7 @@ export function AutonomousCyclesPanel() {
       if (!mounted) return;
       if (document.visibilityState !== 'hidden') {
         request = new AbortController();
-        await refresh(request.signal);
+        await Promise.all([refresh(request.signal),readLease(request.signal)]);
       }
       if (mounted) timer = setTimeout(() => void poll(), 5000);
     };
@@ -72,7 +122,7 @@ export function AutonomousCyclesPanel() {
       request?.abort();
       if (timer !== null) clearTimeout(timer);
     };
-  }, [refresh]);
+  }, [refresh,readLease]);
   const summary=record?.summary;
   const progress=summary?Math.max(0,Math.min(100,Math.round(summary.cycles/Math.max(1,summary.targetCycles)*100))):0;
   const completed=record?.state==='COMPLETED';
@@ -86,6 +136,23 @@ export function AutonomousCyclesPanel() {
         <RefreshCw className={`w-3.5 h-3.5 ${loading?'animate-spin':''}`}/> {loading?'Hämtar…':'Uppdatera'}
       </button>
     </header>
+    <div className="rounded-lg border border-cyan-900/70 bg-[#061420] p-3 space-y-2" data-testid="cognitive-lease-controls">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <strong className="text-sm">Continuum Execution Leash</strong>
+        <span className="text-xs text-slate-400">{live?.state||'Ej ansluten'} · Enbart deterministiskt laboratorium</span>
+      </div>
+      <p className="text-xs text-slate-400">En körning ändrar bara labbets lokala .jaco-arbetsyta. Kräver riktig Continuum-lease; inget automatiskt GitHub-merge eller molnkostnad.</p>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={leaseBusy||live?.state==='RUNNING'||live?.state==='STOPPING'||live?.state==='RECONCILIATION_REQUIRED'} onClick={()=>void mutateLease('lease')} className="px-3 py-2 border border-cyan-800 text-xs rounded disabled:opacity-40">Ge 5 min lease</button>
+        <button type="button" disabled={leaseBusy||!lease||!live||live.state==='RUNNING'||live.state==='STOPPING'||live.state==='RECONCILIATION_REQUIRED'||record?.state==='COMPLETED'} onClick={()=>void mutateLease('run')} className="px-3 py-2 rounded bg-cyan-900/70 text-xs disabled:opacity-40">Kör nästa 3 cykler</button>
+        <button type="button" disabled={leaseBusy||!live?.run?.leaseId||!['RUNNING','STOPPING'].includes(live?.state||'')} onClick={()=>void mutateLease('stop')} className="px-3 py-2 border border-red-900 text-red-200 text-xs rounded disabled:opacity-40">Stoppa</button>
+      </div>
+      {lease && <p className="text-xs text-slate-500 break-all">Lease {lease.id} · Utgår {formattedTime(lease.expiresAt)}</p>}
+      {live?.run && <p className="text-xs text-slate-400 break-words">Operation {live.run.operationId} · Genomförd cykel {live.run.lastCompletedCycle}/{live.run.targetCycle}{live.run.receiptRef?` · Lokalt kvitto ${live.run.receiptRef}`:''}</p>}
+      {live?.state==='RECONCILIATION_REQUIRED' && <p role="alert" className="text-xs text-amber-200">Osäkert utfall efter stopp/krasch. Ingen automatisk omkörning. Kräver manuell avstämning av journal och lease.</p>}
+      {leaseNotice && <p role="status" className="text-xs text-cyan-200">{leaseNotice}</p>}
+      {leaseError && <p role="alert" className="text-xs text-amber-300">Continuum: {leaseError}. Ansluten IDE-session eller giltig gateway-autentisering kan krävas.</p>}
+    </div>
     {error && <div role="alert" className="rounded border border-amber-800 bg-amber-950/30 p-3 text-xs text-amber-200">Kan inte verifiera den lokala journalen: {error}. Tidigare observationer är inte aktuell status.</div>}
     {!record&&!error && <p role="status" className="text-xs text-slate-400">Läser lokal utvecklingsjournal…</p>}
     {record?.state==='NOT_STARTED' && <div className="rounded-lg border border-[#23445a] bg-[#081622] p-4 space-y-2">
