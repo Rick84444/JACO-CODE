@@ -1,0 +1,23 @@
+# Always-on gate for autonomy-owned PRs. No write permissions or agent credentials.
+name: Autonomous Delivery Gate
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  required-autonomous-validation:
+    if: startsWith(github.head_ref, 'feat/jaco-autonomous-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - name: Validate deterministic agent code and review gates
+        run: node --test tests/cognitive-lab/*.test.mjs tests/nova/cognitive-capsule.test.mjs
+      - name: Install runtime dependencies for static type safety
+        run: npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
+      - name: Validate IDE type contracts
+        run: npm run lint --prefix runtime

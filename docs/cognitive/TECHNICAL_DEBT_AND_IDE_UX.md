@@ -9,9 +9,9 @@
 
 ## GitHub green-to-main policy
 
-Trusted default-branch workflow `Autonomous Green-to-Main` can merge **only** pull requests with same-repository branch prefix `feat/jaco-autonomous-`, targeting `main`, that are ready for review with no blocking `CHANGES_REQUESTED` review or hold label. Eight explicit workflows (including `Technical Debt Steward Gate`) must have concluded `success` for exactly the current PR head SHA. No PR code is executed with a write token in that workflow.
+Trusted default-branch workflow `Autonomous Green-to-Main` can merge **only** pull requests with same-repository branch prefix `feat/jaco-autonomous-`, targeting `main`, that are ready for review with no blocking `CHANGES_REQUESTED` review or hold label. Two always-running gates (`Autonomous Delivery Gate` and `Technical Debt Steward Gate`) are mandatory. **Every other PR workflow that actually ran for the exact current head SHA must also have concluded `success`**. Missing mandatory, pending, skipped or failed workflows prevent automatic merge. No PR code is executed with a write token in that workflow.
 
-- An ordinary PR or one with missing/skipped/failed/pending checks is NOT automatically merged. This is intentionally fail-closed and may hold a legitimate update when a workflow has path filters.
+- Ordinary PRs and PRs with missing mandatory, pending, skipped or failed checks are NOT merged. Optional path-filtered workflows do not need to exist, but if they ran, they must pass. This is fail-closed for all checks applicable to the exact commit.
 - On first introduction, the new auto-merge workflow is not active until committed on `main`. Updates to the workflow require separate review. The workflow will not merge the branch containing its own unreviewed change.
 - A successful deterministic simulation is **not sufficient** to merge: GitHub must independently run the required checks.
 - This is not GitHub branch protection, external signed review or production deployment proof. Set up branch protection/rulesets and real agent provenance for higher assurance.

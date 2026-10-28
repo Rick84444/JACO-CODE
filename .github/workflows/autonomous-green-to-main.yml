@@ -4,6 +4,7 @@ name: Autonomous Green-to-Main
 on:
   workflow_run:
     workflows:
+      - Autonomous Delivery Gate
       - Cognitive Autonomous Cycles
       - Technical Debt Steward Gate
       - Autonomous Coding Contract Gate
@@ -34,12 +35,8 @@ jobs:
             const trigger = context.payload.workflow_run;
             const sha = trigger.head_sha;
             if (!/^[a-f0-9]{40}$/.test(sha || '')) throw Error('UNTRUSTED_HEAD_SHA');
-            const required = [
-              'Cognitive Autonomous Cycles', 'Technical Debt Steward Gate',
-              'Autonomous Coding Contract Gate', 'Desktop AgentOS Gate',
-              'Continuum Cognitive Gate', 'Aura Workbench Gate',
-              'Cognitive Live Workspace', 'JACO Lite download',
-            ];
+            // These two run on every qualifying PR. Other triggered workflows must also succeed.
+            const required = ['Autonomous Delivery Gate','Technical Debt Steward Gate'];
             const pulls = await github.paginate(github.rest.pulls.list, {owner, repo, state:'open', per_page:100});
             for (const pr of pulls) {
               if (pr.head.sha !== sha || pr.base.ref !== 'main' || pr.draft) continue;
@@ -51,12 +48,15 @@ jobs:
               });
               const latest = new Map();
               for (const run of workflows) {
-                if (!required.includes(run.name) || run.head_sha !== sha) continue;
+                if (run.head_sha !== sha || run.name === 'Autonomous Green-to-Main') continue;
                 const prev = latest.get(run.name);
                 if (!prev || run.created_at > prev.created_at ||
                     (run.created_at === prev.created_at && run.run_attempt > prev.run_attempt)) latest.set(run.name,run);
               }
-              const unfinished = required.filter(name => latest.get(name)?.status !== 'completed' || latest.get(name)?.conclusion !== 'success');
+              const unfinished = [...new Set([
+                ...required.filter(name => !latest.has(name)),
+                ...[...latest.entries()].filter(([,run]) => run.status !== 'completed' || run.conclusion !== 'success').map(([name]) => name),
+              ])];
               if (unfinished.length) { core.info(`PR #${pr.number}: awaiting required CI: ${unfinished.join(', ')}`); continue; }
               const reviews = await github.paginate(github.rest.pulls.listReviews, {owner,repo,pull_number:pr.number});
               const byReviewer = new Map();
