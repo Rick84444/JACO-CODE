@@ -8,6 +8,9 @@ on:
       - 'tests/cognitive-lab/**'
       - 'tests/nova/cognitive-capsule.test.mjs'
       - 'runtime/src/server/continuum/leaseManager.mjs'
+      - 'runtime/src/server/connected/autonomousCycleBoard.mjs'
+      - 'runtime/src/components/AutonomousCyclesPanel.tsx'
+      - 'runtime/src/components/AuraAgentBoard.tsx'
       - '.github/workflows/cognitive-autonomous-cycles.yml'
   pull_request:
     paths:
@@ -16,6 +19,9 @@ on:
       - 'tests/cognitive-lab/**'
       - 'tests/nova/cognitive-capsule.test.mjs'
       - 'runtime/src/server/continuum/leaseManager.mjs'
+      - 'runtime/src/server/connected/autonomousCycleBoard.mjs'
+      - 'runtime/src/components/AutonomousCyclesPanel.tsx'
+      - 'runtime/src/components/AuraAgentBoard.tsx'
       - '.github/workflows/cognitive-autonomous-cycles.yml'
 
 permissions:
@@ -30,5 +36,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
-      - name: Validate role boundaries, evidence and 33 development cycles
+      - name: Validate roles, debt gate, ledger UI and 33 development cycles
         run: node --test tests/cognitive-lab/*.test.mjs tests/nova/cognitive-capsule.test.mjs

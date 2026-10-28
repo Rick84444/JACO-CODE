@@ -1,0 +1,72 @@
+# Trusted default-branch workflow. NEVER checks out or executes PR code with a write token.
+# Only branches created with the explicit jaco-autonomous- namespace qualify.
+name: Autonomous Green-to-Main
+on:
+  workflow_run:
+    workflows:
+      - Cognitive Autonomous Cycles
+      - Technical Debt Steward Gate
+      - Autonomous Coding Contract Gate
+      - Desktop AgentOS Gate
+      - Continuum Cognitive Gate
+      - Aura Workbench Gate
+      - Cognitive Live Workspace
+      - JACO Lite download
+    types: [completed]
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+concurrency:
+  group: jaco-automerge-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+jobs:
+  gated-merge:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Merge only qualifying same-repo PRs after all required workflows succeed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const trigger = context.payload.workflow_run;
+            const sha = trigger.head_sha;
+            if (!/^[a-f0-9]{40}$/.test(sha || '')) throw Error('UNTRUSTED_HEAD_SHA');
+            const required = [
+              'Cognitive Autonomous Cycles', 'Technical Debt Steward Gate',
+              'Autonomous Coding Contract Gate', 'Desktop AgentOS Gate',
+              'Continuum Cognitive Gate', 'Aura Workbench Gate',
+              'Cognitive Live Workspace', 'JACO Lite download',
+            ];
+            const pulls = await github.paginate(github.rest.pulls.list, {owner, repo, state:'open', per_page:100});
+            for (const pr of pulls) {
+              if (pr.head.sha !== sha || pr.base.ref !== 'main' || pr.draft) continue;
+              if (pr.head.repo?.full_name !== `${owner}/${repo}`) continue;
+              if (!pr.head.ref.startsWith('feat/jaco-autonomous-')) continue;
+              if ((pr.labels || []).some(x => ['do-not-merge','hold','manual-review'].includes(x.name))) continue;
+              const workflows = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+                owner, repo, head_sha:sha, event:'pull_request', per_page:100,
+              });
+              const latest = new Map();
+              for (const run of workflows) {
+                if (!required.includes(run.name) || run.head_sha !== sha) continue;
+                const prev = latest.get(run.name);
+                if (!prev || run.created_at > prev.created_at ||
+                    (run.created_at === prev.created_at && run.run_attempt > prev.run_attempt)) latest.set(run.name,run);
+              }
+              const unfinished = required.filter(name => latest.get(name)?.status !== 'completed' || latest.get(name)?.conclusion !== 'success');
+              if (unfinished.length) { core.info(`PR #${pr.number}: awaiting required CI: ${unfinished.join(', ')}`); continue; }
+              const reviews = await github.paginate(github.rest.pulls.listReviews, {owner,repo,pull_number:pr.number});
+              const byReviewer = new Map();
+              for (const review of reviews) byReviewer.set(review.user?.login, review.state);
+              if ([...byReviewer.values()].includes('CHANGES_REQUESTED')) {
+                core.info(`PR #${pr.number}: change request blocks autonomous merge`); continue;
+              }
+              const current = (await github.rest.pulls.get({owner,repo,pull_number:pr.number})).data;
+              if (current.head.sha !== sha || current.base.ref !== 'main' || current.draft || current.mergeable !== true) continue;
+              await github.rest.pulls.merge({owner,repo,pull_number:pr.number,sha,merge_method:'squash',
+                commit_title:`feat(jaco): verified autonomous delivery #${pr.number}`});
+              core.notice(`Merged verified autonomous PR #${pr.number} from ${sha} into main`);
+            }

@@ -72,6 +72,7 @@ import { createEconomicBudgetRouter } from './src/server/connected/economicBudge
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
+import { readAutonomousCycleBoard } from "./src/server/connected/autonomousCycleBoard.mjs";
 import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec, fetchSkillFromUrl } from "../agents/lib/skills.mjs";
 import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy, policyFilePath, CLAIM_RESUME_NOTE } from "../agents/lib/approval-policy.mjs";
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
@@ -2286,6 +2287,16 @@ const notifyPhone = async (action) => {
       secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key)).map(([,value]) => value),
     });
   };
+  // Read-only projection. Never executes model decisions or reports local Git as merged main.
+  app.get('/api/aura/workbench/autonomous-cycles', requireLocalUi, (_req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(readAutonomousCycleBoard(WORKSPACE_ROOT));
+    } catch (error: any) {
+      res.status(409).json({ success: false, error: String(error?.message || error) });
+    }
+  });
+
   app.get('/api/aura/workbench/agent-board', requireLocalUi, async (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json(await readAuraAgentBoard());
