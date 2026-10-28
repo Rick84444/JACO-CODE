@@ -56,6 +56,11 @@ jobs:
                 file === 'scripts/verify-technical-debt.mjs' ||
                 file === 'tests/cognitive-lab/automerge-policy.test.mjs' ||
                 file === 'agents/lib/cognitive-evidence-authority.mjs' ||
+                file === 'agents/lib/cognitive-cycle-ledger.mjs' ||
+                file === 'agents/cognitive-lab/autonomous-cycles/cycle-reviewer.mjs' ||
+                file === 'agents/cognitive-lab/autonomous-cycles/debt-steward.mjs' ||
+                file === 'agents/cognitive-lab/autonomous-cycles/cycle-runtime.mjs' ||
+                file === 'runtime/src/server/connected/autonomousCycleBoard.mjs' ||
                 file === 'runtime/src/server/continuum/evidenceLedger.mjs' ||
                 file === 'runtime/src/server/continuum/leaseManager.mjs');
               if (protectedChanges.length) {

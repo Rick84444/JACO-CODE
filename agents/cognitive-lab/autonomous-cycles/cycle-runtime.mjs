@@ -13,13 +13,13 @@ import {spawnSync} from 'node:child_process';
 import {ExecutionLeaseManager} from '../../../runtime/src/server/continuum/leaseManager.mjs';
 import {CognitiveProgressGovernor} from '../../lib/cognitive-progress.mjs';
 import {cleanTechnicalDebt} from './debt-steward.mjs';
+import { CYCLE_ZERO_HASH as ZERO, hashCycleEvent, parseCycleLedger } from '../../lib/cognitive-cycle-ledger.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE=path.join(here,'task-engine.template.mjs');
 const REVIEWER=path.join(here,'cycle-reviewer.mjs');
 export const PHASES=Object.freeze(['validation','dedupe','retry','abort','persistence','fencing','permission','receipt','isolation','budgetPersistence','concurrency']);
 export const MAX_CYCLES=PHASES.length*3;
-const ZERO='0'.repeat(64);
 const PERMISSIONS=Object.freeze({
   'user-agent':['scope'],
   'git-researcher':['inspect-diff','inspect-history'],
@@ -31,7 +31,6 @@ const PERMISSIONS=Object.freeze({
   'senior-developer':['approve','reject','observe'],
 });
 const hash=x=>createHash('sha256').update(x).digest('hex');
-const jsonHash=x=>hash(JSON.stringify(x));
 const canonical=x=>JSON.stringify(Object.fromEntries(Object.keys(x).sort().map(k=>[k,x[k]])));
 function result(cmd,args,{cwd,timeout=12000}={}) {
   const proc=spawnSync(cmd,args,{cwd,encoding:'utf8',timeout,maxBuffer:600000,env:{...process.env,GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:os.devNull}});
@@ -54,12 +53,13 @@ function allowed(role,action){if(!PERMISSIONS[role]?.includes(action))throw new 
 function authorityKey(root){const file=path.join(root,'.cycle-authority.key');if(!fs.existsSync(file))fs.writeFileSync(file,randomBytes(32),{mode:0o600,flag:'wx'});const stat=fs.lstatSync(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size!==32||(stat.mode&0o077)!==0)throw new Error('AUTHORITY_KEY_UNSAFE');return fs.readFileSync(file)}
 function sign(root,payload){const mac=createHmac('sha256',authorityKey(root)).update(canonical(payload)).digest('hex');return {...payload,mac}}
 function verify(root,record){if(!record||!/^[a-f0-9]{64}$/.test(record.mac||''))return false;const {mac,...payload}=record;const actual=createHmac('sha256',authorityKey(root)).update(canonical(payload)).digest();return timingSafeEqual(actual,Buffer.from(mac,'hex'))}
-function eventHash(item){const {hash:ignored,...rest}=item;return jsonHash(rest)}
-export function readCycleLedger(root){const file=path.join(validateRoot(root),'events.jsonl');if(!fs.existsSync(file))return [];
- const text=fs.readFileSync(file,'utf8');if(text.length>20e6||text&&!text.endsWith('\n'))throw new Error('CYCLE_LEDGER_INCOMPLETE');
- let prev=ZERO;return text.split('\n').filter(Boolean).map((line,i)=>{const e=JSON.parse(line);if(e.seq!==i+1||e.prev!==prev||e.hash!==eventHash(e))throw new Error(`CYCLE_LEDGER_TAMPERED:${i+1}`);prev=e.hash;return e});
+export function readCycleLedger(root){
+ const file=path.join(validateRoot(root),'events.jsonl');
+ if(!fs.existsSync(file))return [];
+ safeFile(file);
+ return parseCycleLedger(fs.readFileSync(file,'utf8'));
 }
-function writer(root){let log=readCycleLedger(root);return (type,role,data)=>{if(!PERMISSIONS[role]&&role!=='controller')throw new Error('UNKNOWN_ACTOR');const e={schema:'jaco.autonomous-cycle-event/v1',seq:log.length+1,at:new Date().toISOString(),type,role,data,prev:log.at(-1)?.hash??ZERO};e.hash=eventHash(e);fs.appendFileSync(safeFile(path.join(root,'events.jsonl')),JSON.stringify(e)+'\n',{mode:0o600});log.push(e);return e};}
+function writer(root){let log=readCycleLedger(root);return (type,role,data)=>{if(!PERMISSIONS[role]&&role!=='controller')throw new Error('UNKNOWN_ACTOR');const e={schema:'jaco.autonomous-cycle-event/v1',seq:log.length+1,at:new Date().toISOString(),type,role,data,prev:log.at(-1)?.hash??ZERO};e.hash=hashCycleEvent(e);fs.appendFileSync(safeFile(path.join(root,'events.jsonl')),JSON.stringify(e)+'\n',{mode:0o600});log.push(e);return e};}
 function candidateSource(features){const rendered=fs.readFileSync(TEMPLATE,'utf8').replace('/*__FEATURES__*/',JSON.stringify(features));if(rendered.includes('__FEATURES__'))throw new Error('UNFILLED_TEMPLATE');return rendered;}
 function evidencePath(root,cycle){return path.join(root,'evidence',`cycle-${String(cycle).padStart(2,'0')}.json`)}
 function verifyOldReports(root,ledger){for(const entry of ledger.filter(x=>x.type==='review.attested')){const file=evidencePath(root,entry.data.cycle);if(!fs.existsSync(file))throw new Error('REVIEW_EVIDENCE_MISSING');const proof=JSON.parse(fs.readFileSync(file,'utf8'));if(!verify(root,proof)||proof.cycle!==entry.data.cycle||proof.codeHash!==entry.data.codeHash||proof.passed!==entry.data.passed||proof.total!==entry.data.total)throw new Error('REVIEW_EVIDENCE_TAMPERED');}}
@@ -175,6 +175,6 @@ export async function runCycles(state,{until=MAX_CYCLES}={}){
 }
 export function adversarialChecks(state){const root=validateRoot(state),proof=JSON.parse(fs.readFileSync(evidencePath(root,MAX_CYCLES),'utf8'));const forged={...proof,passed:proof.passed+1};
  let forbidden=false;try{allowed('developer','approve')}catch(e){forbidden=e.message.startsWith('ROLE_CAPABILITY_DENIED')}
- const journal=readCycleLedger(root);const tamperDetection=journal.length>0&&journal.at(-1).hash===eventHash(journal.at(-1));
+ const journal=readCycleLedger(root);const tamperDetection=journal.length>0&&journal.at(-1).hash===hashCycleEvent(journal.at(-1));
  return{forgedProofRejected:!verify(root,forged),developerCannotApprove:forbidden,ledgerIntegrityVerified:tamperDetection};
 }
