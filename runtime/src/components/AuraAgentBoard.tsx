@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Bot, Plus, ListChecks, X } from 'lucide-react';
 import { AgentConstellation, type AgentNetworkSnapshot } from './AgentConstellation';
 import { readAuraResponse } from '../lib/auraApi.mjs';
+import { AutonomousCyclesPanel } from './AutonomousCyclesPanel';
 
 interface BoardReceipt {
   actionId: string | null; type: string | null; at: string | null;
@@ -50,7 +51,7 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
     catch (error) { setCancelError(error instanceof Error ? error.message : 'Kunde inte avsluta uppdraget.'); }
     finally { setCancellingId(null); }
   }
-  const [view, setView] = useState<'network'|'missions'>('network');
+  const [view, setView] = useState<'network'|'missions'|'cycles'>('network');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -75,6 +76,7 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
         <div className="agent-board-view-switch" role="group" aria-label="Visa agenter eller uppdrag">
           <button type="button" aria-pressed={view==='network'} onClick={()=>setView('network')}>Sfärer och planer</button>
           <button type="button" aria-pressed={view==='missions'} onClick={()=>setView('missions')}>Uppdrag och resultat</button>
+          <button type="button" aria-pressed={view==='cycles'} onClick={()=>setView('cycles')}>Autonom utveckling</button>
         </div>
         <div className={`text-xs ${stale ? 'text-amber-300' : 'text-slate-500'}`} role="status">
           {stale ? 'Föråldrad observation — ' : 'Observerat: '}{time(snapshot?.observedAt)}{error ? ` · ${error}` : ''}
@@ -97,7 +99,7 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
           <select aria-label="Filtrera uppdrag" value={filter} onChange={e => setFilter(e.target.value)} className="bg-[#07111b] border border-[#123047] rounded px-2 text-xs"><option value="open">Öppna</option><option value="all">Alla utom avbrutna</option><option value="cancelled">Avbrutna</option></select>
         </div>}
       </header>
-      {view==='network' ? <AgentConstellation network={snapshot?.network || null} error={error} memory={snapshot?.memory || []}
+      {view==='cycles' ? <AutonomousCyclesPanel /> : view==='network' ? <AgentConstellation network={snapshot?.network || null} error={error} memory={snapshot?.memory || []}
         onSelectMission={id=>{setSelectedId(id);setView('missions');}}/> : <div className="flex-1 min-h-0 overflow-auto">
         <section aria-label="Registrerade agenter" className="p-3 border-b border-[#123047]">
           <h3 className="text-xs text-slate-400 mb-2">Vilka finns här?</h3>

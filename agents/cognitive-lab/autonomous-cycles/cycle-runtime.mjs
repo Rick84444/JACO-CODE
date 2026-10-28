@@ -12,6 +12,7 @@ import { createHash,createHmac,randomBytes,randomUUID,timingSafeEqual } from 'no
 import {spawnSync} from 'node:child_process';
 import {ExecutionLeaseManager} from '../../../runtime/src/server/continuum/leaseManager.mjs';
 import {CognitiveProgressGovernor} from '../../lib/cognitive-progress.mjs';
+import {cleanTechnicalDebt} from './debt-steward.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE=path.join(here,'task-engine.template.mjs');
@@ -25,6 +26,7 @@ const PERMISSIONS=Object.freeze({
   'developer':['propose'],
   'autonomous-developer':['repair'],
   'debugger':['diagnose'],
+  'technical-debt-steward':['audit-debt','clean-debt'],
   'reviewer':['verify'],
   'senior-developer':['approve','reject','observe'],
 });
@@ -102,7 +104,7 @@ function runLease(root,cycle){const events={append(){}};const mgr=new ExecutionL
 }
 export function inspectCycles(state){const root=validateRoot(state);const log=readCycleLedger(root);if(log.length)verifyOldReports(root,log);const complete=log.filter(x=>x.type==='cycle.completed'),fixed=complete.filter(x=>x.data.mode==='repair'&&x.data.accepted).length,rejected=complete.filter(x=>!x.data.accepted).length;let gitCommits=0;
  const repo=path.join(root,'work');if(fs.existsSync(path.join(repo,'.git')))gitCommits=Number(git(repo,'rev-list','--count','HEAD'));
- return{schema:'jaco.autonomous-cycles-summary/v1',simulation:'DETERMINISTIC',cycles:complete.length,maxCycles:MAX_CYCLES,fixesAccepted:fixed,proposalsRejected:rejected,regressionCycles:complete.filter(x=>x.data.mode==='regression').length,reviewCasesExecuted:complete.reduce((n,x)=>n+x.data.total,0),reviewCasesPassed:complete.reduce((n,x)=>n+x.data.passed,0),actualGitCommits:gitCommits,events:log.length,ledgerTip:log.at(-1)?.hash??ZERO,completed:complete.length===MAX_CYCLES,skillsPromoted:fs.existsSync(path.join(root,'knowledge.json'))?JSON.parse(fs.readFileSync(path.join(root,'knowledge.json'),'utf8')).accepted.length:0};
+ return{schema:'jaco.autonomous-cycles-summary/v1',simulation:'DETERMINISTIC',cycles:complete.length,maxCycles:MAX_CYCLES,fixesAccepted:fixed,proposalsRejected:rejected,regressionCycles:complete.filter(x=>x.data.mode==='regression').length,reviewCasesExecuted:complete.reduce((n,x)=>n+x.data.total,0),reviewCasesPassed:complete.reduce((n,x)=>n+x.data.passed,0),actualGitCommits:gitCommits,debtAudits:log.filter(x=>x.type==='debt.audited').length,debtCleanups:log.filter(x=>x.type==='debt.cleaned').length,debtBlockers:log.filter(x=>x.type==='debt.blocked').length,events:log.length,ledgerTip:log.at(-1)?.hash??ZERO,completed:complete.length===MAX_CYCLES,skillsPromoted:fs.existsSync(path.join(root,'knowledge.json'))?JSON.parse(fs.readFileSync(path.join(root,'knowledge.json'),'utf8')).accepted.length:0};
 }
 export async function runCycles(state,{until=MAX_CYCLES}={}){
  if(!Number.isInteger(until)||until<1||until>MAX_CYCLES)throw new Error('INVALID_CYCLE_LIMIT');
@@ -123,12 +125,26 @@ export async function runCycles(state,{until=MAX_CYCLES}={}){
     write('code.changed',role,{cycle,mode,phase,codeHash:hash(fs.readFileSync(source))});
    }else{lease.authorize('senior-developer','observe');write('regression.started','senior-developer',{cycle,phase,previouslyApproved:true});}
    lease.authorize('git-researcher','inspect-diff');const changed=git(work,'diff','--name-only');if(mode!=='regression'&&changed!=='task-engine.mjs')throw new Error('UNEXPECTED_GIT_MUTATION');if(mode==='regression'&&changed)throw new Error('REGRESSION_DIRTY_WORKTREE');
+   // The Debt Steward is a real source-to-source transformation step. It cannot approve itself.
+   lease.authorize('technical-debt-steward','audit-debt');
+   const debt=cleanTechnicalDebt(fs.readFileSync(source,'utf8'));
+   if(debt.changed){
+    lease.authorize('technical-debt-steward','clean-debt');
+    fs.writeFileSync(source,debt.source,{flag:'w'});
+    write('debt.cleaned','technical-debt-steward',{cycle,phase,beforeHash:debt.beforeHash,afterHash:debt.afterHash,removedCandidateComments:debt.removedCandidateComments});
+   }
+   write('debt.audited','technical-debt-steward',{cycle,phase,accepted:debt.accepted,blockers:debt.blockers,codeHash:debt.afterHash});
+   if(!debt.accepted){
+    write('debt.blocked','technical-debt-steward',{cycle,phase,blockers:debt.blockers});
+    throw new Error(`TECHNICAL_DEBT_BLOCKED:${debt.blockers.join(',')}`);
+   }
+   if(hash(fs.readFileSync(source))!==debt.afterHash)throw new Error('DEBT_SOURCE_CHANGED_BEFORE_REVIEW');
    const opId=`cycle-${cycle}-review`;const reservation=lease.reserve('reviewer','verify',opId);
    let review;try{review=reviewChild(source,i+1,cycle===MAX_CYCLES);lease.finish('reviewer',opId,reservation,`sha256:${review.report.codeHash}`);}catch(e){throw new Error(`UNCERTAIN_REVIEW_OUTCOME:${e.message}`)}
    const r=review.report;
-   const sealed=sign(root,{schema:'jaco.autonomous-review-proof/v1',cycle,phase,codeHash:r.codeHash,reviewerHash:hash(fs.readFileSync(REVIEWER)),passed:r.passed,total:r.total,accepted:r.accepted,exitCode:review.exitCode,stdoutHash:review.stdoutHash,stderrHash:review.stderrHash,cases:r.cases});
+   const sealed=sign(root,{schema:'jaco.autonomous-review-proof/v1',cycle,phase,codeHash:r.codeHash,reviewerHash:hash(fs.readFileSync(REVIEWER)),passed:r.passed,total:r.total,accepted:r.accepted,exitCode:review.exitCode,stdoutHash:review.stdoutHash,stderrHash:review.stderrHash,debtHash:debt.afterHash,debtCleaned:debt.changed,debtBlockers:debt.blockers,cases:r.cases});
    saveJson(evidencePath(root,cycle),sealed);
-   write('review.attested','reviewer',{cycle,phase,mode,codeHash:r.codeHash,passed:r.passed,total:r.total,accepted:r.accepted,failed:r.cases.filter(x=>!x.passed).map(x=>x.name)});
+   write('review.attested','reviewer',{cycle,phase,mode,codeHash:r.codeHash,passed:r.passed,total:r.total,accepted:r.accepted,debtAccepted:debt.accepted,debtHash:debt.afterHash,failed:r.cases.filter(x=>!x.passed).map(x=>x.name)});
    if(!r.accepted){
     lease.authorize('debugger','diagnose');const diagnosis=r.cases.filter(x=>!x.passed).map(x=>x.name);
     write('debug.diagnosed','debugger',{cycle,phase,failed:diagnosis,remedy:`enable and verify ${phase} contract; do not bypass failing assertions`});
@@ -138,10 +154,11 @@ export async function runCycles(state,{until=MAX_CYCLES}={}){
     // git show strips trailing newlines; source hash is the actual commit content, not narrative.
     if(git(work,'status','--porcelain'))throw new Error('REJECT_ROLLBACK_INCOMPLETE');
    }else{
+    if(!debt.accepted || debt.afterHash!==r.codeHash)throw new Error('SENIOR_DEBT_GATE_FAILED');
     lease.authorize('senior-developer','approve');
     // Standalone deterministic progress guard: a new passing implementation is distinct.
     const governor=new CognitiveProgressGovernor({maxSteps:1,maxStalls:0});governor.before(`${phase}:${r.codeHash}`);governor.observe(`${phase}:${r.codeHash}`,{passed:r.passed,total:r.total,codeHash:r.codeHash});
-    write('senior.approved','senior-developer',{cycle,phase,mode,codeHash:r.codeHash,tests:r.total,verification:'child-exit+HMAC'});
+    write('senior.approved','senior-developer',{cycle,phase,mode,codeHash:r.codeHash,tests:r.total,verification:'child-exit+HMAC',debtGate:'clean-and-reviewed'});
     if(mode==='repair'){
       git(work,'add','task-engine.mjs');git(work,'commit','-qm',`feat(task-engine): independently verify ${phase}`);
       const commit=git(work,'rev-parse','HEAD');

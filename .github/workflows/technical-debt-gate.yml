@@ -1,0 +1,24 @@
+name: Technical Debt Steward Gate
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  check-new-debt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - name: Verify deterministic debt checks
+        run: node --test tests/cognitive-lab/debt-steward.test.mjs tests/cognitive-lab/technical-debt-gate.test.mjs
+      - name: Refuse new unresolved debt in changed code
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/verify-technical-debt.mjs "$BASE_SHA"
