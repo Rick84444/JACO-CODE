@@ -19,10 +19,13 @@ export function assessOperationalAccountability({events=[],integrity=null,operat
   const categories={startup:0,calculation:0,integration:0,execution:0};
   const incidents=[],seen=new Set();
   for(const event of events){
-    const category=FAILURES[event?.type];
+    const category=Object.hasOwn(FAILURES,event?.type)?FAILURES[event.type]:null;
     if(!category || event.stream==='simulation' || event.data?.simulation==='DETERMINISTIC')continue;
     const operation=short(event.data?.operationId ?? event.entityId);
-    const key=category==='execution' && operation?'execution:'+operation:'event:'+String(event.sequence);
+    const leaseScope=short(event.data?.leaseId ?? (event.stream==='lease'?event.entityId:null));
+    const key=category==='execution' && operation
+      ?'execution:'+(leaseScope??'unknown-lease')+':'+operation
+      :'event:'+String(event.sequence);
     if(seen.has(key))continue;
     seen.add(key);categories[category]++;
     incidents.push({sequence:event.sequence??null,at:event.timestamp??null,

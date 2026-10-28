@@ -39,3 +39,15 @@ test('bad source arguments are rejected',()=>{
  assert.throws(()=>check({events:null}),/ACCOUNTABILITY_SOURCE_INVALID/);
  assert.throws(()=>check({leases:null}),/ACCOUNTABILITY_SOURCE_INVALID/);
 });
+
+test('same operation id on two leases is two distinct failures',()=>{
+ const events=[ev(1,'lease.action_unknown',{stream:'lease',entityId:'lease-1',data:{operationId:'same'}}),
+               ev(2,'lease.action_unknown',{stream:'lease',entityId:'lease-2',data:{operationId:'same'}})];
+ assert.equal(check({events,integrity:{...good,count:2}}).historicalPenaltyUnits,2);
+});
+test('prototype property names do not become incident classifications',()=>{
+ const events=[ev(1,'constructor'),ev(2,'__proto__')];
+ const x=check({events,integrity:{...good,count:2}});
+ assert.equal(x.historicalPenaltyUnits,0);
+ assert.deepEqual(x.categories,{startup:0,calculation:0,integration:0,execution:0});
+});
