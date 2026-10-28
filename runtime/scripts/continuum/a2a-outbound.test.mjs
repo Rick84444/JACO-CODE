@@ -90,10 +90,10 @@ try{
 
   // Operator trust is tied to a card: a changed card must be approved again.
   const runtime=new ContinuumRuntime({workspaceRoot:path.join(work,'trust-unit')});
-  const ev1=runtime.evidence.record({kind:'a2a-agent-card',claim:'card v1',source:'test',verified:true,verificationMethod:'test',data:{}},'test');
+  const ev1=runtime.evidence.recordInternal({kind:'a2a-agent-card',claim:'card v1',source:'test',verified:true,verificationMethod:'test',data:{}},'test');
   const p1=runtime.a2aTrust.observe('https://peer.example',{name:'Peer',version:'1',supportedInterfaces:[]},ev1.id);
   runtime.a2aTrust.setOperatorTrust(p1.id,0.9);
-  const ev2=runtime.evidence.record({kind:'a2a-agent-card',claim:'card v2',source:'test',verified:true,verificationMethod:'test',data:{}},'test');
+  const ev2=runtime.evidence.recordInternal({kind:'a2a-agent-card',claim:'card v2',source:'test',verified:true,verificationMethod:'test',data:{}},'test');
   const p2=runtime.a2aTrust.observe('https://peer.example',{name:'Peer',version:'2',supportedInterfaces:[]},ev2.id);
   assert.equal(p2.operatorTrust,null);assert.ok(p2.cardChangedAt);
   runtime.scheduler?.stop?.();

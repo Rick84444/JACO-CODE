@@ -39,8 +39,8 @@ try{
   assert.ok(repository.query('verify').some(file=>file.path==='src/verify.mjs'));
   assert.deepEqual(repository.dependencies('src/gateway.mjs').imports,['src/verify.mjs']);
 
-  const preliminary=evidence.record({kind:'observation',claim:'early observation'});
-  const terminal=evidence.record({kind:'test',claim:'experiment falsified candidate',verified:true,verificationMethod:'test'});
+  const preliminary=evidence.recordInternal({kind:'observation',claim:'early observation'});
+  const terminal=evidence.recordInternal({kind:'test',claim:'experiment falsified candidate',verified:true,verificationMethod:'test'});
   const set=hypotheses.createSet({id:'set-1',missionId:'mission-1',problem:'choose implementation',criteria:[{name:'success',weight:1,direction:'max'}]});
   const candidate=hypotheses.addCandidate(set.id,{id:'candidate-a',label:'unsafe retry',proposal:{strategy:'retry without receipt'}});
   hypotheses.evaluate(set.id,candidate.id,{status:'EVALUATED',evidenceRefs:[preliminary.id],metrics:{success:0.4}});
@@ -57,7 +57,7 @@ try{
   assert.throws(()=>outcomeCompiler.compileHypothesis({setId:set.id,candidateId:candidate.id,contradictsKnowledgeIds:['x'],supersedesKnowledgeIds:['x']}),/both CONTRADICTED and SUPERSEDED/);
 
   const trajectoryEvidence=[];
-  for(let i=0;i<3;i++)trajectoryEvidence.push(evidence.record({id:`trajectory-proof-${i}`,kind:'test',claim:`trajectory ${i}`,verified:true,verificationMethod:'test'}));
+  for(let i=0;i<3;i++)trajectoryEvidence.push(evidence.recordInternal({id:`trajectory-proof-${i}`,kind:'test',claim:`trajectory ${i}`,verified:true,verificationMethod:'test'}));
   const action={type:'click',selector:{css:'#go'},postcondition:{type:'selector_exists',selector:'#done'}};
   capabilities.recordTrajectory({workflowKey:'repo-fix',actions:[action],verified:true,success:true,evidenceRefs:[trajectoryEvidence[0].id]});
   capabilities.recordTrajectory({workflowKey:'repo-fix',actions:[action],verified:true,success:true,evidenceRefs:[trajectoryEvidence[1].id]});
@@ -80,7 +80,7 @@ try{
 
   const sourceIds=[];
   for(let i=0;i<3;i++){
-    const proof=evidence.record({id:`knowledge-proof-${i}`,kind:'test',claim:`verified retry lesson ${i}`,verified:true,verificationMethod:'test'});
+    const proof=evidence.recordInternal({id:`knowledge-proof-${i}`,kind:'test',claim:`verified retry lesson ${i}`,verified:true,verificationMethod:'test'});
     const item=knowledge.put({id:`lesson-${i}`,kind:'lesson',purpose:`Retry lesson ${i} requires verified receipt before replay`,confidence:0.9,evidenceRefs:[proof.id],usedIn:[`mission-${i}`],dependencies:['verified-receipt'],failureModes:['unsafe-replay'],verificationStatus:'VERIFIED'});
     sourceIds.push(item.id);
   }
@@ -94,7 +94,7 @@ try{
   assert.equal(pattern.implementation.summary.distinctEvidenceCount,3);
   assert.equal(pattern.implementation.summary.independentEvidenceSetCount,3);
   assert.throws(()=>compressor.validatePattern(pattern.id,{evidenceRefs:[pattern.evidenceRefs[0]]}),/independent/);
-  const holdout=evidence.record({kind:'holdout-test',claim:'historical replay confirmed receipt-before-replay invariant',verified:true,verificationMethod:'historical_replay'});
+  const holdout=evidence.recordInternal({kind:'holdout-test',claim:'historical replay confirmed receipt-before-replay invariant',verified:true,verificationMethod:'historical_replay'});
   const validated=compressor.validatePattern(pattern.id,{evidenceRefs:[holdout.id]});
   assert.equal(validated.verificationStatus,'VERIFIED');
   assert.equal(validated.reusable,true);

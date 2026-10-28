@@ -23,7 +23,7 @@ export class SemanticBrowserRuntime {
     const warnings=[...(!survey?['SURVEY_UNAVAILABLE_OBSERVE_FALLBACK']:[]),...(survey?.budgetExhausted?['SURVEY_BUDGET_EXHAUSTED']:[]),...(survey&&!survey.semanticMatched&&survey.recognised?['SEMANTIC_DRIFT']:[])];
     const state={schema:'jaco.continuum.semantic-browser-state.v1',stateId:`bst_${sha256(canonicalJson({page,elements,fingerprint:survey?.fingerprint??null,semanticSignature:survey?.semanticSignature??null})).slice(0,20)}`,observedAt:nowIso(),page,fingerprint:survey?.fingerprint||null,semanticSignature:survey?.semanticSignature||null,recognised:Boolean(survey?.recognised),semanticMatched:Boolean(survey?.semanticMatched),reuseAvailable:Boolean(survey?.reuseAvailable),budgetExhausted:Boolean(survey?.budgetExhausted),interactiveCount:elements.length,elements,warnings,rawSummary:{bodyLength:observation?.bodyLength??null,controlsObserved:rawControls.length}};
     const previous=this.previousByTarget.get(key)||null;const delta=this.diff(previous,state);this.previousByTarget.set(key,state);
-    const evidence=this.evidence.record({kind:'browser-semantic-state',claim:`Observed ${state.page?.title||state.page?.url||'browser state'}`,source:'chrome-cdp',verified:true,verificationMethod:'CDP survey + DOM observation',data:{state,delta}},'browser-runtime');
+    const evidence=this.evidence.recordInternal({kind:'browser-semantic-state',claim:`Observed ${state.page?.title||state.page?.url||'browser state'}`,source:'chrome-cdp',verified:true,verificationMethod:'CDP survey + DOM observation',data:{state,delta}},'browser-runtime');
     this.events.append({stream:'browser',type:'browser.semantic_observed',entityId:state.stateId,actor:'browser-runtime',data:{url:state.page?.url,interactiveCount:state.interactiveCount,deltaSummary:delta.summary,evidenceRef:evidence.id}});
     return {state,delta,evidenceRef:evidence.id};
   }
@@ -41,15 +41,31 @@ export class SemanticBrowserRuntime {
     if(HIGH_CONSEQUENCE.has(consequence))return 1;if(semanticDrift||unknownPage)return 2;if(confidence>=0.95)return 40;if(confidence>=0.85)return 20;if(confidence>=0.7)return 8;return 2;
   }
 
-  async executeBatch({leaseId,actions,confidence=0.7,stopOn=['verification_failed','refusal','page_semantic_drift'],checkpointEvery=null}={}){
+  async executeBatch({leaseId,actions,agentId=null,missionId=null,operationScope=null,confidence=0.7,stopOn=['verification_failed','refusal','page_semantic_drift'],checkpointEvery=null}={}){
     this.operator.assertExecutionAllowed();const client=this.sessions.getClient();if(!client)throw new Error('BROWSER_SESSION_NOT_ATTACHED');if(!Array.isArray(actions)||!actions.length)throw new Error('actions are required');
     const allowed=Math.min(actions.length,this.recommendedBatchSize({confidence,consequence:actions.some(a=>HIGH_CONSEQUENCE.has(a.consequence))?'PUBLISH':'REVERSIBLE'}));const receipts=[];let stopped=null;let previousSemantic=null;
     for(let i=0;i<allowed;i++){
-      this.operator.assertExecutionAllowed();const item=actions[i]||{};const consequence=String(item.consequence||'REVERSIBLE');this.leases.authorize(leaseId,{action:`browser.${item.type}`,consequence});
+      this.operator.assertExecutionAllowed();const item=actions[i]||{};const consequence=String(item.consequence||'REVERSIBLE');
+      // Preconditions must be checked before reserving a budget slot.
       if(HIGH_CONSEQUENCE.has(consequence)&&item.operatorCheckpoint!==true){stopped={index:i,reason:`OPERATOR_CHECKPOINT_REQUIRED:${consequence}`};break;}
       if((consequence!=='REVERSIBLE'||['click','navigate'].includes(item.type))&&!item.postcondition&&item.requireSemanticVerification!==false){stopped={index:i,reason:'SEMANTIC_POSTCONDITION_REQUIRED'};break;}
-      const receipt=await client.executeVerified(item);const ev=this.evidence.record({kind:'browser-action-receipt',claim:`Browser ${item.type} ${receipt.verified?'verified':'not verified'}`,source:'browser-hands-off',verified:Boolean(receipt.verified),verificationMethod:receipt.verification?.level||'UNVERIFIED',data:receipt},'browser-runtime');
-      receipts.push({index:i,receipt,evidenceRef:ev.id});this.leases.consume(leaseId,{action:`browser.${item.type}`,consequence,verified:Boolean(receipt.verified),receiptRef:ev.id});
+      const contextLease=this.leases.get(leaseId);
+      const resolvedAgentId=agentId??contextLease.agentId;
+      const resolvedMissionId=missionId??contextLease.missionId;
+      const stableScope=operationScope||`batch-${sha256(canonicalJson({leaseId,actions})).slice(0,24)}`;
+      const operationId=`${stableScope}:${i}`;
+      // This durable write precedes the irreversible external action.
+      const hold=this.leases.beginAction(leaseId,{operationId,action:`browser.${item.type}`,consequence,agentId:resolvedAgentId,missionId:resolvedMissionId});
+      let receipt,ev;
+      try {
+        receipt=await client.executeVerified(item);
+        ev=this.evidence.recordInternal({kind:'browser-action-receipt',claim:`Browser ${item.type} ${receipt.verified?'verified':'not verified'}`,source:'browser-hands-off',verified:Boolean(receipt.verified),verificationMethod:receipt.verification?.level||'UNVERIFIED',data:receipt},'browser-runtime');
+        this.leases.finishAction(leaseId,{operationId,generation:hold.generation,receiptRef:ev.id});
+      } catch(error) {
+        this.leases.markUnknown(leaseId,{operationId,reason:error instanceof Error?error.message:String(error)});
+        throw error;
+      }
+      receipts.push({index:i,receipt,evidenceRef:ev.id,operationId});
       if(receipt.refusal&&stopOn.includes('refusal')){stopped={index:i,reason:`REFUSAL:${receipt.refusal}`};break;}if(!receipt.verified&&stopOn.includes('verification_failed')){stopped={index:i,reason:'VERIFICATION_FAILED'};break;}
       if(checkpointEvery&&((i+1)%Number(checkpointEvery)===0)){const obs=await this.observeSemantic({label:`batch-checkpoint-${i+1}`});if(previousSemantic&&obs.delta.summary?.pageChanged&&stopOn.includes('page_semantic_drift')){stopped={index:i,reason:'PAGE_CHANGED_AT_CHECKPOINT',stateId:obs.state.stateId};break;}previousSemantic=obs.state;}
     }
