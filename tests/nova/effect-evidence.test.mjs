@@ -45,7 +45,8 @@ function sink() {
       evidence: {
         exists: id => evidenceRecords.has(id),
         get: id => evidenceRecords.get(id),
-        record: row => { evidenceRecords.set(row.id, row); return row; },
+        record: () => { throw new Error('untrusted evidence cannot record canonical internal receipts'); },
+        recordInternal: row => { evidenceRecords.set(row.id, row); return row; },
       },
       knowledge: {
         get: id => { if (!knowledgeRecords.has(id)) throw new Error('not found'); return knowledgeRecords.get(id); },

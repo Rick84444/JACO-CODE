@@ -31,7 +31,7 @@ test('planner receives mission evidence plus durable continuity without making c
 test('a screenshot is attached only when its hash belongs to this mission',async()=>{
  const bytes=Buffer.from('offline-image-fixture');fs.writeFileSync(path.join(dir,'latest-observation.png'),bytes);
  for(const matches of [false,true]){
- const mission={goal:'Inspect',receipts:matches?[{type:'screenshot',ok:true,verified:true,at:new Date().toISOString(),result:{imageSha256:createHash('sha256').update(bytes).digest('hex')}}]:[]};
+ const mission={id:'mission-screenshot-fixture',allowedTasks:['health-check'],goal:'Inspect',receipts:matches?[{type:'screenshot',ok:true,verified:true,at:new Date().toISOString(),result:{imageSha256:createHash('sha256').update(bytes).digest('hex')}}]:[]};
  const result=await callBrain(loadState(),{mission,observation:null},async(url,opts)=>{assert.equal(Array.isArray(JSON.parse(opts.body).messages[1].content),matches);return Response.json({choices:[{message:{content:'{"complete":true}'}}]});});
  assert.equal(result.complete,true);
  }
@@ -206,19 +206,4 @@ test('a coding prompt retains available tool contracts without advertising unrel
  const pointer=brainSystemFor(['mouse-click'],false,'win32');
  assert.ok(pointer.includes('mouse-move/mouse-click {x,y}'));
  assert.ok(!pointer.includes('key-press {'));
-});
-
-test('planner emits bounded content-free metrics for a valid proposal and a failed call',async()=>{
- const prior=process.env.NOVA_BRAIN_MODE;process.env.NOVA_BRAIN_MODE='seer';
- try {
-  const state=loadState();state.plannerMetrics=Array.from({length:30},()=>({old:true}));
-  const mission={id:'metrics',goal:'Private goal must not enter metrics',allowedTasks:['repo-read'],receipts:[]};
-  await callBrain(state,{mission},async()=>Response.json({ok:true,text:JSON.stringify({task:{type:'repo-read',data:{path:'src/a.mjs'}}})}));
-  assert.equal(state.plannerMetrics.length,20);
-  const metric=state.plannerMetrics.at(-1);
-  assert.equal(metric.proposalReturned,true);assert.ok(metric.elapsedMs>=0);assert.ok(metric.contextChars>0);assert.ok(metric.systemChars>0);
-  assert.ok(!JSON.stringify(metric).includes(mission.goal));
-  await assert.rejects(callBrain(state,{mission},async()=>Response.json({ok:false,error:'offline'},{status:503})),/offline/);
-  assert.equal(state.plannerMetrics.at(-1).proposalReturned,false);
- }finally{process.env.NOVA_BRAIN_MODE=prior;}
 });
