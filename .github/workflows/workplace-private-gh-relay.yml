@@ -1,0 +1,20 @@
+name: Workplace Private GitHub Relay
+on:
+  pull_request:
+    paths:
+      - 'runtime/termux/services/jaco-workplace/run'
+      - 'runtime/gateway/test/workplace-gh-relay-launch.test.sh'
+      - '.github/workflows/workplace-private-gh-relay.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'runtime/termux/services/jaco-workplace/run'
+      - 'runtime/gateway/test/workplace-gh-relay-launch.test.sh'
+      - '.github/workflows/workplace-private-gh-relay.yml'
+jobs:
+  launch-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Workplace launch policy
+        run: bash runtime/gateway/test/workplace-gh-relay-launch.test.sh
