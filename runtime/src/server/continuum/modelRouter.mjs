@@ -1,4 +1,5 @@
 import { nowIso } from './util.mjs';
+import { assertLocalModelEndpoint, validateInferenceText, isCloudModelName, assertInstalledOllamaModel } from './localInferenceTrust.mjs';
 
 function outputTextResponses(raw){if(typeof raw?.output_text==='string')return raw.output_text;const t=[];for(const item of raw?.output||[])for(const part of item?.content||[])if(part?.type==='output_text'&&typeof part.text==='string')t.push(part.text);return t.join('\n');}
 function outputTextChat(raw){return String(raw?.choices?.[0]?.message?.content||'');}
@@ -7,22 +8,27 @@ function outputTextGemini(raw){return (raw?.candidates?.[0]?.content?.parts||[])
 function headersFor(p){const h={'content-type':'application/json'};const secret=p.secretEnv?String(process.env[p.secretEnv]||''):'';if(p.protocol.startsWith('openai-')&&secret)h.authorization=`Bearer ${secret}`;if(p.protocol==='anthropic-messages'&&secret){h['x-api-key']=secret;h['anthropic-version']='2023-06-01';}return h;}
 
 export class ContinuumModelRouter {
-  constructor({events,economic,operator,providers}){this.events=events;this.economic=economic;this.operator=operator;this.providers=providers;}
+  constructor({events,economic,operator,providers}){this.events=events;this.economic=economic;this.operator=operator;this.providers=providers;this.localProbeActive=false;}
   listProviders(){return this.providers.list();}
   registerProvider(input,actor='operator'){return this.providers.register(input,actor);}
   updateProviderPolicy(input,actor='operator'){return this.providers.updatePolicy(input,actor);}
   async listLocalModels(){
-    const locals=this.providers.list().filter(p=>p.local&&p.protocol==='ollama');const out=[];
-    for(const p of locals){try{const r=await fetch(`${p.baseUrl}/api/tags`,{signal:AbortSignal.timeout(3000)});if(r.ok){const data=await r.json();for(const m of data.models||[])out.push({...m,providerId:p.id});}}catch{}}
+    const locals=this.providers.list().filter(p=>{if(!p.local||p.protocol!=='ollama')return false;try{assertLocalModelEndpoint(p);return true}catch{return false}});const out=[];
+    for(const p of locals){try{const r=await fetch(`${p.baseUrl}/api/tags`,{signal:AbortSignal.timeout(3000),redirect:'error'});if(r.ok){const data=await r.json();for(const m of data.models||[])out.push({...m,providerId:p.id});}}catch{}}
     return out;
   }
   async reason(input={}){
     this.operator.assertExecutionAllowed();
-    const forced=String(input.providerId||'').trim();const candidates=forced?[{provider:this.providers.publicView(this.providers.get(forced)),score:Infinity,estimatedCostUsd:Number(input.estimatedUsd||0)}]:this.providers.candidates(input);
-    if(!candidates.length)throw new Error('NO_ELIGIBLE_PROVIDER');
+    const localOnly=input.localOnly===true || process.env.JACO_LOCAL_ONLY==='1';
+    const forced=String(input.providerId||'').trim();
+    const target=forced?this.providers.publicView(this.providers.get(forced)):null;
+    if(target?.enabled===false)throw Error('PROVIDER_DISABLED');
+    const candidates=(target?[{provider:target,score:Infinity,estimatedCostUsd:Number(input.estimatedUsd||0)}]:this.providers.candidates(input)).filter(c=>!localOnly||c.provider.local);
+    if(!candidates.length)throw new Error(localOnly?'NO_ELIGIBLE_LOCAL_PROVIDER':'NO_ELIGIBLE_PROVIDER');
     const failures=[];
     for(const candidate of candidates){const p=candidate.provider;const started=Date.now();
       try{
+        assertLocalModelEndpoint(p);
         const estimatedUsd=Number(input.estimatedUsd??candidate.estimatedCostUsd??0);let reservation=null;
         // Every remote request must cross the economic gate, including a forced provider
         // and a provider with missing or zero pricing. The governor rejects unknown cost.
@@ -32,28 +38,56 @@ export class ContinuumModelRouter {
     }
     const e=new Error(`ALL_PROVIDERS_FAILED:${failures.map(x=>`${x.providerId}:${x.error}`).join(' | ').slice(0,2000)}`);e.failures=failures;throw e;
   }
+  /** An explicit, real inference check; health/tags alone cannot establish model usability. */
+  async probeLocalModel({providerId=null,timeoutMs=90000}={}) {
+    const timeout=Number(timeoutMs);
+    if(!Number.isSafeInteger(timeout)||timeout<5000||timeout>180000)throw Error('LOCAL_PROBE_TIMEOUT_INVALID');
+    const started=Date.now();
+    if(this.localProbeActive)return {schema:'jaco.local-inference-probe/v1',status:'INFERENCE_BUSY',providerId:providerId||null,systemReady:false,agentToolsVerified:false,cloudUsed:false};
+    this.localProbeActive=true;
+    try {
+      const result=await this.reason({
+        providerId:providerId||undefined,localOnly:true,requiredCapabilities:['text'],
+        prompt:'Respond with one short word that confirms you can generate text.',
+        maxOutputTokens:128,timeoutMs:timeout,purpose:'on-device-inference-probe',
+      });
+      return {schema:'jaco.local-inference-probe/v1',status:'INFERENCE_VERIFIED',
+        providerId:result.providerId,model:result.model,latencyMs:Date.now()-started,
+        cloudUsed:false,agentToolsVerified:false,systemReady:false};
+    } catch(error) {
+      return {schema:'jaco.local-inference-probe/v1',status:'INFERENCE_FAILED',
+        providerId:providerId||null,model:null,latencyMs:Date.now()-started,
+        cloudUsed:false,agentToolsVerified:false,systemReady:false,
+        errorCode:String(error?.message||error).split(':')[0].slice(0,80)};
+    } finally {this.localProbeActive=false;}
+  }
   async #call(p,input){
-    const prompt=String(input.prompt||'');const instructions=input.instructions?String(input.instructions):null;const max=Math.max(16,Math.min(Number(input.maxOutputTokens||1200),8192));const timeout=Math.max(5_000,Math.min(Number(input.timeoutMs||180_000),600_000));const model=String(input.model||p.model||'').trim();if(!model)throw new Error('MODEL_NOT_CONFIGURED');const headers=headersFor(p);
+    assertLocalModelEndpoint(p);
+    const prompt=String(input.prompt||'');const instructions=input.instructions?String(input.instructions):null;const max=Math.max(16,Math.min(Number(input.maxOutputTokens||1200),8192));const timeout=Math.max(5_000,Math.min(Number(input.timeoutMs||180_000),600_000));const model=String(input.model||p.model||'').trim();if(!model)throw new Error('MODEL_NOT_CONFIGURED');if(p.local&&isCloudModelName(model))throw Error('LOCAL_CLOUD_MODEL_FORBIDDEN');const headers=headersFor(p);const redirect=p.local?'error':'follow';
     if(p.protocol==='ollama'){
-      const response=await fetch(`${p.baseUrl}/api/generate`,{method:'POST',headers,body:JSON.stringify({model,prompt,system:instructions||undefined,stream:false,options:{num_predict:max}}),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);return {model,text:String(raw.response||''),responseId:null,usage:{inputTokens:raw.prompt_eval_count||null,outputTokens:raw.eval_count||null},costUsd:0,raw:{done:raw.done,doneReason:raw.done_reason}};
+      if(p.local)await assertInstalledOllamaModel({baseUrl:p.baseUrl,model});
+      const configuredCtx=Number(process.env.JACO_OLLAMA_NUM_CTX||4096);
+      const numCtx=Number.isSafeInteger(configuredCtx)&&configuredCtx>=1024&&configuredCtx<=32768?configuredCtx:4096;
+      const numPredict=Math.min(max,Math.max(128,Math.floor(numCtx/4)));
+      const response=await fetch(`${p.baseUrl}/api/generate`,{method:'POST',headers,redirect,body:JSON.stringify({model,prompt,system:instructions||undefined,stream:false,options:{num_ctx:numCtx,num_predict:numPredict}}),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);if(raw.done!==true)throw Error('OLLAMA_INFERENCE_NOT_COMPLETE');if(p.local&&isCloudModelName(raw.model))throw Error('LOCAL_CLOUD_MODEL_REPLY_FORBIDDEN');return {model,text:validateInferenceText(raw.response,'OLLAMA'),responseId:null,usage:{inputTokens:raw.prompt_eval_count||null,outputTokens:raw.eval_count||null},costUsd:0,raw:{done:raw.done,doneReason:raw.done_reason}};
     }
     if(p.protocol==='openai-responses'){
-      const response=await fetch(`${p.baseUrl}/responses`,{method:'POST',headers,body:JSON.stringify({model,input:prompt,max_output_tokens:max,...(instructions?{instructions}:{})}),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);return {model:raw.model||model,text:outputTextResponses(raw),responseId:raw.id||null,usage:raw.usage||null,costUsd:Number(input.actualUsd||0)};
+      const response=await fetch(`${p.baseUrl}/responses`,{method:'POST',headers,redirect,body:JSON.stringify({model,input:prompt,max_output_tokens:max,...(instructions?{instructions}:{})}),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);return {model:raw.model||model,text:validateInferenceText(outputTextResponses(raw)),responseId:raw.id||null,usage:raw.usage||null,costUsd:Number(input.actualUsd||0)};
     }
     if(p.protocol==='openai-chat'){
-      const messages=[...(instructions?[{role:'system',content:instructions}]:[]),{role:'user',content:prompt}];const response=await fetch(`${p.baseUrl}/chat/completions`,{method:'POST',headers,body:JSON.stringify({model,messages,max_tokens:max,temperature:input.temperature??0.2,...(input.reasoningEffort?{reasoning_effort:String(input.reasoningEffort)}:{})}),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);
+      const messages=[...(instructions?[{role:'system',content:instructions}]:[]),{role:'user',content:prompt}];const response=await fetch(`${p.baseUrl}/chat/completions`,{method:'POST',headers,redirect,body:JSON.stringify({model,messages,max_tokens:max,temperature:input.temperature??0.2,...(input.reasoningEffort?{reasoning_effort:String(input.reasoningEffort)}:{})}),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);
       const text=outputTextChat(raw);
       // Reasoning models (DeepSeek, o-series) spend the token budget on reasoning_content first. When
       // max_tokens runs out there the answer is empty, which must fail loudly instead of looking like
       // a successful empty result — the call was still billed.
       if(!text && raw?.choices?.[0]?.message?.reasoning_content)throw new Error(`PROVIDER_REASONING_TRUNCATED:${model} spent ${raw?.usage?.completion_tokens||max} output tokens on reasoning and returned no answer; raise maxOutputTokens`);
-      return {model:raw.model||model,text,responseId:raw.id||null,usage:raw.usage||null,costUsd:Number(input.actualUsd||0)};
+      return {model:raw.model||model,text:validateInferenceText(text),responseId:raw.id||null,usage:raw.usage||null,costUsd:Number(input.actualUsd||0)};
     }
     if(p.protocol==='anthropic-messages'){
-      const body={model,max_tokens:max,messages:[{role:'user',content:prompt}],...(instructions?{system:instructions}:{})};const response=await fetch(`${p.baseUrl}/v1/messages`,{method:'POST',headers,body:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);return {model:raw.model||model,text:outputTextAnthropic(raw),responseId:raw.id||null,usage:raw.usage||null,costUsd:Number(input.actualUsd||0)};
+      const body={model,max_tokens:max,messages:[{role:'user',content:prompt}],...(instructions?{system:instructions}:{})};const response=await fetch(`${p.baseUrl}/v1/messages`,{method:'POST',headers,redirect,body:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);return {model:raw.model||model,text:validateInferenceText(outputTextAnthropic(raw)),responseId:raw.id||null,usage:raw.usage||null,costUsd:Number(input.actualUsd||0)};
     }
     if(p.protocol==='google-generate-content'){
-      const secret=p.secretEnv?String(process.env[p.secretEnv]||''):'';if(!secret)throw new Error('PROVIDER_SECRET_NOT_CONFIGURED');const url=`${p.baseUrl}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(secret)}`;const body={contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:max},...(instructions?{systemInstruction:{parts:[{text:instructions}]}}:{})};const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);return {model,text:outputTextGemini(raw),responseId:raw.responseId||null,usage:raw.usageMetadata||null,costUsd:Number(input.actualUsd||0)};
+      const secret=p.secretEnv?String(process.env[p.secretEnv]||''):'';if(!secret)throw new Error('PROVIDER_SECRET_NOT_CONFIGURED');const url=`${p.baseUrl}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(secret)}`;const body={contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:max},...(instructions?{systemInstruction:{parts:[{text:instructions}]}}:{})};const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},redirect,body:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});const raw=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`PROVIDER_HTTP_${response.status}:${JSON.stringify(raw).slice(0,400)}`);return {model,text:validateInferenceText(outputTextGemini(raw)),responseId:raw.responseId||null,usage:raw.usageMetadata||null,costUsd:Number(input.actualUsd||0)};
     }
     throw new Error(`UNSUPPORTED_PROVIDER_PROTOCOL:${p.protocol}`);
   }

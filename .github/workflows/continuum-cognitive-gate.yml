@@ -48,6 +48,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Continuum regression suite
         run: npm run test:continuum-runtime
+      - name: Local-first inference and no-cloud fallback contracts
+        run: node --test scripts/continuum/local-inference-hardening.test.mjs
       - name: Core lifecycle and single-writer contract
         run: bash gateway/test/jacoctl.test.sh
       - name: Reflective futures regression

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { assertLocalModelEndpoint, isOnDeviceModelEndpoint } from './localInferenceTrust.mjs';
 import { atomicWriteJson, readJson, nowIso, deepClone, redactSensitive, safeNumber } from './util.mjs';
 
 const PROTOCOLS = new Set(['ollama','openai-responses','openai-chat','anthropic-messages','google-generate-content']);
@@ -48,6 +49,7 @@ export class ProviderRegistry {
       registeredAt:existing.registeredAt||nowIso(),updatedAt:nowIso(),revision:Number(existing.revision||0)+1,
     };
     if(!item.baseUrl)throw new Error('provider.baseUrl is required');
+    assertLocalModelEndpoint(item);
     this.state.providers[id]=item;this.#save();this.events.append({stream:'model',type:existing.id?'provider.updated':'provider.registered',entityId:id,actor,data:{...item,secretEnv:item.secretEnv}});return this.publicView(item);
   }
   remove(id,actor='operator'){if(!this.state.providers[id])return false;delete this.state.providers[id];this.#save();this.events.append({stream:'model',type:'provider.removed',entityId:id,actor,data:{}});return true;}
@@ -60,13 +62,14 @@ export class ProviderRegistry {
   }
   list(){return Object.values(this.state.providers).map(x=>this.publicView(x));}
   get(id){const p=this.state.providers[id];if(!p)throw new Error(`provider '${id}' not found`);return deepClone(p);}
-  publicView(p){return {...deepClone(p),secretConfigured:secretAvailable(p.secretEnv),secretEnv:p.secretEnv||null,reliability:Number(reliability(p.stats).toFixed(4))};}
+  publicView(p){return {...deepClone(p),localEndpointTrusted:Boolean(p.local&&isOnDeviceModelEndpoint(p.baseUrl)),secretConfigured:secretAvailable(p.secretEnv),secretEnv:p.secretEnv||null,reliability:Number(reliability(p.stats).toFixed(4))};}
   candidates(input={}){
     const required=uniqueStrings(input.requiredCapabilities||[]);const now=Date.now();const policy=this.state.policy;
     const estimateInputTokens=Math.max(1,Math.ceil(String(input.prompt||'').length/4));const estimateOutputTokens=Math.max(16,Number(input.maxOutputTokens||1200));
     const items=[];
     for(const p of Object.values(this.state.providers)){
       if(!p.enabled)continue;if(!secretAvailable(p.secretEnv))continue;
+      if(p.local){try{assertLocalModelEndpoint(p)}catch{continue}}
       if(required.length&&policy.requireCapabilityMatch&&required.some(c=>!p.capabilities.includes(c)))continue;
       const lastFailureMs=p.stats?.lastFailureAt?Date.parse(p.stats.lastFailureAt):0;
       if(lastFailureMs&&now-lastFailureMs<policy.failureCooldownMs&&!p.stats?.lastSuccessAt)continue;
@@ -84,6 +87,9 @@ export class ProviderRegistry {
     const seeds=[];
     const ollama=process.env.JACO_OLLAMA_URL||'http://127.0.0.1:11434';seeds.push({id:'ollama-local',name:'Ollama Local',protocol:'ollama',baseUrl:ollama,model:process.env.JACO_OLLAMA_MODEL||'',local:true,priority:10,capabilities:['reasoning','text','code']});
     if(process.env.OPENAI_API_KEY&&process.env.JACO_OPENAI_MODEL)seeds.push({id:'openai-env',name:'OpenAI (env)',protocol:'openai-responses',baseUrl:process.env.JACO_OPENAI_BASE_URL||'https://api.openai.com/v1',model:process.env.JACO_OPENAI_MODEL,secretEnv:'OPENAI_API_KEY',capabilities:['reasoning','text','code','long-context'],priority:0});
+    // Android LiteRT-LM exposes the same local OpenAI-compatible chat path as SEER.
+    // Only register an on-device URL: the trust check on register() is fail-closed.
+    if(process.env.JACO_LITERT_URL)seeds.push({id:'litert-env',name:'LiteRT-LM (env)',protocol:'openai-chat',baseUrl:process.env.JACO_LITERT_URL,model:process.env.JACO_LITERT_MODEL||'',local:true,capabilities:['reasoning','text'],priority:15});
     // llama.cpp's llama-server speaks the OpenAI chat protocol. JACO_LLAMACPP_URL is the same variable
     // jacoctl exports for SEER, so a local GGUF brain (e.g. Bonsai on Termux) also serves Continuum/A2A work.
     if(process.env.JACO_LLAMACPP_URL)seeds.push({id:'llamacpp-env',name:'llama.cpp (env)',protocol:'openai-chat',baseUrl:process.env.JACO_LLAMACPP_URL,model:String(process.env.JACO_LLAMACPP_MODEL||'').split(/[\\/]/).pop().replace(/\.gguf$/i,''),local:true,capabilities:['reasoning','text','code'],priority:0});

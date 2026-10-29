@@ -126,6 +126,17 @@ export function createContinuumRouter({workspaceRoot,browserSessions,requireAuth
   // Reasoning goes through the router so every cloud call passes the economic gate and lands in the
   // event log. Planners and other callers must never talk to a provider directly.
   router.post('/models/reason',async(req,res)=>{try{res.json({success:true,result:await runtime.models.reason(req.body||{})})}catch(e){fail(res,e)}});
+  // The authenticated operator explicitly requests an on-device text-generation test.
+  // INFERENCE_VERIFIED is not a claim of tool-calling capability or full system READY.
+  router.post('/models/local/probe',async(req,res)=>{
+    try {
+      const result=await runtime.models.probeLocalModel({
+        providerId:req.body?.providerId??null,timeoutMs:req.body?.timeoutMs??90000,
+      });
+      const success=result.status==='INFERENCE_VERIFIED';
+      res.status(success?200:result.status==='INFERENCE_BUSY'?409:503).json({success,result});
+    } catch(e){fail(res,e,409)}
+  });
 
   router.get('/reviews',(req,res)=>res.json({success:true,reviews:runtime.reviews.list({status:req.query.status||null,targetAgentId:req.query.targetAgentId||null,reviewerAgentId:req.query.reviewerAgentId||null})}));
   router.get('/reviews/scores',(_req,res)=>res.json({success:true,scores:runtime.reviews.scores()}));
