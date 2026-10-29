@@ -39,6 +39,7 @@ Usage:
   jacoctl activate [--profile full] [--provider auto|litert|llamacpp|ollama] [--model ID] [--json]
   jacoctl deactivate [--json]
   jacoctl status [--json]
+  jacoctl repair-supervisor [--json] (JACO-only recovery, leaves Core/Workplace DOWN)
   jacoctl restart [--provider auto|litert|llamacpp|ollama] [--model ID] [--json]
 
 The full profile supervises Sentinel, Core, and Workplace. Workplace owns Durable Nova.
@@ -551,15 +552,19 @@ ensure_live_supervision(){
   for svc in "$SENTINEL_SERVICE" "$CORE_SERVICE" "$WORKPLACE_SERVICE" "$NOVA_SERVICE" "$OLLAMA_SERVICE" "$NOVA_BRIDGE_SERVICE" "$CDP_SERVICE"; do
     if [[ ! -e "$(svc_path "$svc")/supervise/ok" ]] || ! svc_control_live "$svc"; then broken+=("$svc"); fi
   done
+  local repair="$JACO_ROOT/termux/reconcile-runit.sh"
+  # A PPid=1 runsv may answer 'sv status' after runsvdir was killed.
+  # Check actual supervisor ownership even when every control responds.
+  if [[ -f "$repair" ]] && ! bash "$repair" --check >/dev/null 2>&1; then
+    broken+=("supervisor-tree")
+  fi
   (("${#broken[@]}" == 0)) && return 0
-  printf '[JACO] RECOVERY — runsv unavailable for %s; restarting Termux service-daemon once\n' "${broken[*]}" >&2
-  # This restarts the shared runsvdir and can briefly interrupt other Termux services.
-  command -v service-daemon >/dev/null 2>&1 || {
-    printf '[JACO] BLOCKED — termux-services service-daemon is missing\n' >&2
-    return 42
-  }
-  if ! SVDIR="$SVDIR" LOGDIR="${LOGDIR:-$PREFIX/var/log}" service-daemon restart >&2; then
-    printf '[JACO] BLOCKED — service-daemon restart failed; no JACO processes were touched\n' >&2
+  printf '[JACO] RECOVERY — runit split for %s; performing JACO-only repair\n' "${broken[*]}" >&2
+  [[ -f "$repair" ]] || { echo "[JACO] BLOCKED — JACO runit reconciler missing" >&2; return 42; }
+  # Never use service-daemon restart: that SIGKILLs all runsv instances
+  # and can strand Core/Workplace/SEER/LiteRT outside their supervisor.
+  if ! bash "$repair" --apply; then
+    echo "[JACO] BLOCKED — scoped repair failed; no global supervisor restart attempted" >&2
     return 42
   fi
   for svc in "$SENTINEL_SERVICE" "$CORE_SERVICE" "$WORKPLACE_SERVICE" "$NOVA_SERVICE" "$OLLAMA_SERVICE" "$NOVA_BRIDGE_SERVICE" "$CDP_SERVICE"; do
@@ -640,12 +645,16 @@ EXPECTED_CORE_RELEASE_ID="$(node -e 'const fs=require("node:fs");try{const r=JSO
 [[ -d "$(svc_path "$NOVA_BRIDGE_SERVICE")" ]] || { echo "missing service: $(svc_path "$NOVA_BRIDGE_SERVICE")" >&2; exit 31; }
 [[ -d "$(svc_path "$CDP_SERVICE")" ]] || { echo "missing service: $(svc_path "$CDP_SERVICE")" >&2; exit 31; }
 
-if [[ "$ACTION" != status ]]; then
+if [[ "$ACTION" != status && "$ACTION" != repair-supervisor ]]; then
   # Refuse destructive cleanup unless all runsv controls are genuinely live.
   ensure_live_supervision || exit 42
 fi
 
 case "$ACTION" in
+  repair-supervisor)
+    bash "$JACO_ROOT/termux/reconcile-runit.sh" --apply || exit 42
+    emit RECOVERING 'JACO runit reconciled; Sentinel requested UP and expensive Core/Workplace held DOWN'
+    ;;
   activate)
     sync_runtime_env
     # Persist the checkout we actually invoked; service run scripts use this.
@@ -756,7 +765,10 @@ case "$ACTION" in
     emit READY 'Core restarted; Workplace resumed Durable Nova; local model/CDP auxiliaries restored'
     ;;
   status)
-    if sentinel_truth_ready && core_truth_ready && workplace_running; then
+    if [[ -f "$JACO_ROOT/termux/reconcile-runit.sh" ]] &&
+       ! bash "$JACO_ROOT/termux/reconcile-runit.sh" --check >/dev/null 2>&1; then
+      emit DEGRADED 'Split or missing runsvdir detected; use repair-supervisor (no automatic port takeover)'
+    elif sentinel_truth_ready && core_truth_ready && workplace_running; then
       emit READY 'Supervised Sentinel, Core, Workplace, and Durable Nova are RUNNING'
     elif core_truth_ready && workplace_running; then
       emit DEGRADED 'Core and Workplace are running but canonical Sentinel is unavailable'

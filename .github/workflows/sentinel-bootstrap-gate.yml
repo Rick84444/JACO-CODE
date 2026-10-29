@@ -13,6 +13,10 @@ on:
       - 'runtime/gateway/package.json'
       - 'runtime/gateway/package-lock.json'
       - 'runtime/termux/install-activation.sh'
+      - 'runtime/termux/reconcile-runit.sh'
+      - 'runtime/bin/jacoctl'
+      - 'runtime/gateway/test/reconcile-runit.test.sh'
+      - 'runtime/gateway/test/jacoctl.test.sh'
       - '.github/workflows/sentinel-bootstrap-gate.yml'
   push:
     branches: [master]
@@ -56,6 +60,9 @@ jobs:
           node --check gateway/test/github-bootstrap-control.test.mjs
           node --check gateway/test/system-control-update.test.mjs
           bash -n termux/install-activation.sh
+          bash -n termux/reconcile-runit.sh
           bash -n termux/restart-sentinel-after-delay.sh
+      - name: Scoped runit repair regression
+        run: bash gateway/test/reconcile-runit.test.sh
       - name: Gateway regression suite
         run: npm test --prefix gateway
