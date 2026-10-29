@@ -1,0 +1,35 @@
+name: JACO SDK native ESM contract
+on:
+  pull_request:
+    paths:
+      - 'runtime/src/sdk/**'
+      - 'runtime/bin/jaco-sdk.mjs'
+      - 'runtime/gateway/test/jaco-client.test.mjs'
+      - '.github/workflows/sdk-native-esm.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'runtime/src/sdk/**'
+      - 'runtime/bin/jaco-sdk.mjs'
+      - 'runtime/gateway/test/jaco-client.test.mjs'
+      - '.github/workflows/sdk-native-esm.yml'
+jobs:
+  sdk-contract:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Check native ESM modules
+        run: |
+          node --check runtime/src/sdk/jaco-client.mjs
+          node --check runtime/bin/jaco-sdk.mjs
+      - name: Run SDK contract suite
+        run: node --test runtime/gateway/test/jaco-client.test.mjs
+      - name: Smoke CLI help
+        run: node runtime/bin/jaco-sdk.mjs --help
