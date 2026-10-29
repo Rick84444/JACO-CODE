@@ -238,6 +238,7 @@ test('default Git control reader fetches isolated ref without touching checkout'
     async runFile(file,args){
       calls.push([file,...args]);
       if(args[2]==='fetch') return {stdout:'',stderr:''};
+      if(args[2]==='ls-tree') return {stdout:'.jaco/bootstrap-control.json\n',stderr:''};
       if(args[2]==='show') return {stdout:JSON.stringify({
         schema:'jaco.bootstrap-control/v1',
         commandId:'git-ref-default-001',
@@ -265,6 +266,60 @@ test('default Git control reader fetches isolated ref without touching checkout'
     '+refs/heads/jaco-control:refs/jaco/bootstrap-control'
   ]);
   assert.deepEqual(calls[1],[
+    'git','-C','/repo','ls-tree','--name-only','refs/jaco/bootstrap-control','--','.jaco/bootstrap-control.json'
+  ]);
+  assert.deepEqual(calls[2],[
     'git','-C','/repo','show','refs/jaco/bootstrap-control:.jaco/bootstrap-control.json'
   ]);
+});
+
+test('tokenless Git control branch without instruction is a quiet no-op, not a polling failure', async () => {
+  const calls = [];
+  let dispatched = false;
+  const control = createGithubBootstrapControl({
+    system: {
+      repoRoot: '/repo',
+      gitBin: 'git',
+      async runFile(_bin, args) {
+        calls.push(args);
+        if (args[2] === 'fetch') return { stdout: '', stderr: '' };
+        if (args[2] === 'ls-tree') return { stdout: '.jaco/nova-control.json\\n', stderr: '' };
+        throw new Error('git show must never run when the instruction is absent');
+      },
+      async status(){ dispatched = true; },
+      async activate(){ dispatched = true; },
+      async restart(){ dispatched = true; },
+      async update(){ dispatched = true; },
+    },
+    enabled: true,
+    repo: 'Rick84444/jaco-code',
+    actor: 'Rick84444',
+    token: '',
+    stateFile: stateFile(),
+  });
+  const first = await control.pollOnce();
+  const second = await control.pollOnce();
+  assert.deepEqual(first.processed, []);
+  assert.deepEqual(second.processed, []);
+  assert.equal(dispatched, false);
+  assert.equal(control.status().lastError, null);
+  assert.equal(control.status().transport, 'git-ref');
+  assert.deepEqual(calls.map(args => args[2]), ['fetch', 'ls-tree', 'fetch', 'ls-tree']);
+});
+
+test('tokenless Git bootstrap still surfaces real fetch failures', async () => {
+  const control = createGithubBootstrapControl({
+    system: {
+      repoRoot: '/repo',
+      gitBin: 'git',
+      async runFile(){ throw new Error('GIT_FETCH_FAILED'); },
+    },
+    enabled: true,
+    repo: 'Rick84444/jaco-code',
+    actor: 'Rick84444',
+    token: '',
+    stateFile: stateFile(),
+  });
+  await assert.rejects(control.pollOnce(), /GIT_FETCH_FAILED/);
+  assert.match(control.status().lastError, /GIT_FETCH_FAILED/);
 });
