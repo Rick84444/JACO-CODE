@@ -36,4 +36,20 @@ export JACO_REMOTE_ALLOW_MUTATIONS="${JACO_REMOTE_ALLOW_MUTATIONS:-1}"
 export JACO_RUNTIME_URL="${JACO_RUNTIME_URL:-http://127.0.0.1:3000}"
 export SEER_URL="${SEER_URL:-http://127.0.0.1:2997}"
 
+# Optional, explicit GitHub CLI transport for the PRIVATE Workplace relay.
+# Only this service receives the token; it is never stored in runtime.env.
+if [ "${JACO_CHATGPT_WORKPLACE_GH_CLI:-0}" = "1" ] && [ -z "${JACO_CHATGPT_WORKPLACE_TOKEN:-}" ]; then
+  [ -n "${JACO_CHATGPT_WORKPLACE_REPO:-}" ] && [ -n "${JACO_CHATGPT_WORKPLACE_ACTOR:-}" ] || {
+    echo "JACO_CHATGPT_RELAY_PRIVATE_REPO_AND_ACTOR_REQUIRED" >&2
+    exit 45
+  }
+  command -v gh >/dev/null 2>&1 || { echo "JACO_CHATGPT_RELAY_GH_CLI_MISSING" >&2; exit 45; }
+  JACO_CHATGPT_WORKPLACE_TOKEN="$(gh auth token 2>/dev/null)" || {
+    echo "JACO_CHATGPT_RELAY_GH_AUTH_REQUIRED" >&2
+    exit 45
+  }
+  [ -n "$JACO_CHATGPT_WORKPLACE_TOKEN" ] || { echo "JACO_CHATGPT_RELAY_GH_TOKEN_EMPTY" >&2; exit 45; }
+  export JACO_CHATGPT_WORKPLACE_TOKEN
+fi
+
 exec "$PREFIX/bin/node" --experimental-sqlite gateway/src/workplace/workplace-server.mjs 2>&1
