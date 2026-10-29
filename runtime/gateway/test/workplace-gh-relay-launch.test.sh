@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-ROOT="$(cd -- "$(dirname -- "\${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/prefix/bin" "$TMP/home" "$TMP/workspace/runtime"
@@ -8,9 +8,9 @@ mkdir -p "$TMP/prefix/bin" "$TMP/home" "$TMP/workspace/runtime"
 ln -s "$(command -v mkdir)" "$TMP/prefix/bin/mkdir"
 cat > "$TMP/prefix/bin/node" <<'SH'
 #!/bin/sh
-[ "\${JACO_CHATGPT_WORKPLACE_TOKEN:-}" = 'synthetic-test-only-token' ] && present=1 || present=0
+[ "${JACO_CHATGPT_WORKPLACE_TOKEN:-}" = 'synthetic-test-only-token' ] && present=1 || present=0
 printf 'TOKEN_PRESENT=%s\n' "$present"
-printf 'REPO=%s\n' "\${JACO_CHATGPT_WORKPLACE_REPO:-unset}"
+printf 'REPO=%s\n' "${JACO_CHATGPT_WORKPLACE_REPO:-unset}"
 SH
 cat > "$TMP/prefix/bin/gh" <<'SH'
 #!/bin/sh
