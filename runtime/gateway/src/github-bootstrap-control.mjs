@@ -105,6 +105,14 @@ export function createGithubBootstrapControl({
       'origin',
       `+${gitControlRef}:${gitControlLocalRef}`,
     ]);
+    // A control branch may legitimately exist without a bootstrap instruction.
+    // Distinguish an absent file from a failed Git fetch, missing ref or bad payload:
+    // only the absent file is a quiet no-op; everything else still fails closed.
+    const { stdout: entries } = await system.runFile(gitBin, [
+      '-C', system.repoRoot,
+      'ls-tree', '--name-only', gitControlLocalRef, '--', gitControlPath,
+    ]);
+    if (!String(entries || '').split(/\r?\n/).includes(gitControlPath)) return '';
     const { stdout } = await system.runFile(gitBin, [
       '-C', system.repoRoot,
       'show', `${gitControlLocalRef}:${gitControlPath}`,
