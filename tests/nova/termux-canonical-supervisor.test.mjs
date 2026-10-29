@@ -85,11 +85,23 @@ test('READY requires canonical Sentinel, Core and Workplace PID owners, not HTTP
     assert.ok(legacySentinel && canonicalSentinel && core && workplace);
     await new Promise(resolve=>setTimeout(resolve,100));
     const release=JSON.parse(fs.readFileSync(path.join(runtime,'CURRENT_RELEASE.json'),'utf8')).releaseId;
+    // Read-only JACO status now validates that runsv belongs to one real
+    // runsvdir tree. Provide that topology via an isolated synthetic /proc,
+    // not a blanket bypass of the production ownership check.
+    const fakeProc=path.join(temp,'proc');
+    const fakeMaster=path.join(fakeProc,'900001');
+    fs.mkdirSync(fakeMaster,{recursive:true});
+    const runsvdirExe=path.join(process.env.PREFIX || '/data/data/com.termux/files/usr','bin','runsvdir');
+    fs.symlinkSync(runsvdirExe,path.join(fakeMaster,'exe'));
+    fs.writeFileSync(path.join(fakeMaster,'cmdline'),Buffer.from('runsvdir\\0'+path.join(temp,'services')+'\\0'));
+    fs.writeFileSync(path.join(fakeMaster,'status'),'Name:\\trunsvdir\\nPPid:\\t1\\n');
     const common={
       ...process.env,
       HOME:temp,
       PATH:mockbin+path.delimiter+process.env.PATH,
       SVDIR:path.join(temp,'services'),
+      JACO_TEST_MODE:'1',
+      JACO_TEST_PROC_ROOT:fakeProc,
       JACO_STABILITY_PROBE_SECONDS:'0',
       JACO_TEST_CORE_IDENTITY:JSON.stringify({success:true,releaseId:release}),
       JACO_TEST_CORE_PID:String(core),
