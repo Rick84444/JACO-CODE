@@ -56,16 +56,16 @@ test('READY requires canonical Sentinel, Core and Workplace PID owners, not HTTP
     '    esac',
     // Runit reports the service PID first and the svlogd PID last.
     // A greedy PID regex incorrectly selects the log PID and blocks activation.
-    '    printf "run: %s: (pid %s) 100s; run: log: (pid 999999) 100s\\n" "$2" "$pid";;',
+    '    printf "run: %s: (pid %s) 100s; run: log: (pid 999999) 100s\n" "$2" "$pid";;',
     '  *) exit 1;;',
     'esac',
   ]);
   mock('curl',[
     '#!/bin/sh',
     'case "$*" in',
-    '  *api/runtime/identity*) [ "${JACO_TEST_CORE_DOWN:-0}" = "1" ] && exit 7; printf "%s\\n" "$JACO_TEST_CORE_IDENTITY";;',
-    '  *2995/health*) if [ -n "${JACO_TEST_WORKPLACE_JSON:-}" ]; then printf "%s\\n" "$JACO_TEST_WORKPLACE_JSON"; else printf \'{"supervisedAgents":{"state":"RUNNING","nova":{"state":"RUNNING"}}}\\n\'; fi;;',
-    '  *) printf "{}\\n";;',
+    '  *api/runtime/identity*) [ "${JACO_TEST_CORE_DOWN:-0}" = "1" ] && exit 7; printf "%s\n" "$JACO_TEST_CORE_IDENTITY";;',
+    '  *2995/health*) if [ -n "${JACO_TEST_WORKPLACE_JSON:-}" ]; then printf "%s\n" "$JACO_TEST_WORKPLACE_JSON"; else printf \'{"supervisedAgents":{"state":"RUNNING","nova":{"state":"RUNNING"}}}\n\'; fi;;',
+    '  *) printf "{}\n";;',
     'esac',
   ]);
   mock('service-daemon',['#!/bin/sh','echo "status must be read-only" >&2','exit 99']);
@@ -85,11 +85,23 @@ test('READY requires canonical Sentinel, Core and Workplace PID owners, not HTTP
     assert.ok(legacySentinel && canonicalSentinel && core && workplace);
     await new Promise(resolve=>setTimeout(resolve,100));
     const release=JSON.parse(fs.readFileSync(path.join(runtime,'CURRENT_RELEASE.json'),'utf8')).releaseId;
+    // Read-only JACO status now validates that runsv belongs to one real
+    // runsvdir tree. Provide that topology via an isolated synthetic /proc,
+    // not a blanket bypass of the production ownership check.
+    const fakeProc=path.join(temp,'proc');
+    const fakeMaster=path.join(fakeProc,'900001');
+    fs.mkdirSync(fakeMaster,{recursive:true});
+    const runsvdirExe=path.join(process.env.PREFIX || '/data/data/com.termux/files/usr','bin','runsvdir');
+    fs.symlinkSync(runsvdirExe,path.join(fakeMaster,'exe'));
+    fs.writeFileSync(path.join(fakeMaster,'cmdline'),Buffer.from('runsvdir\0'+path.join(temp,'services')+'\0'));
+    fs.writeFileSync(path.join(fakeMaster,'status'),'Name:\trunsvdir\nPPid:\t1\n');
     const common={
       ...process.env,
       HOME:temp,
       PATH:mockbin+path.delimiter+process.env.PATH,
       SVDIR:path.join(temp,'services'),
+      JACO_TEST_MODE:'1',
+      JACO_TEST_PROC_ROOT:fakeProc,
       JACO_STABILITY_PROBE_SECONDS:'0',
       JACO_TEST_CORE_IDENTITY:JSON.stringify({success:true,releaseId:release}),
       JACO_TEST_CORE_PID:String(core),

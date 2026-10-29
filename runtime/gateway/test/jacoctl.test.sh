@@ -88,11 +88,8 @@ esac
 SH
 cat > "$TMP/bin/service-daemon" <<'SH'
 #!/usr/bin/env bash
-set -eu
-[[ "${1:-}" == restart ]] || exit 2
-[[ ! -f "$STUB_STATE/deny-daemon-restart" ]] || exit 1
-rm -f "$STUB_STATE/runsv-lost"
-printf 'restart\n' >> "$STUB_STATE/daemon-restarts"
+echo "UNSAFE_GLOBAL_DAEMON_RESTART_USED" >&2
+exit 99
 SH
 cat > "$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
@@ -151,6 +148,20 @@ mkdir -p "$JACO_ROOT/bin" "$JACO_ROOT/termux"
 cp "$ROOT/bin/jacoctl" "$JACO_ROOT/bin/jacoctl"
 cp "$ROOT/CURRENT_RELEASE.json" "$JACO_ROOT/CURRENT_RELEASE.json"
 cp -R "$ROOT/termux/services" "$JACO_ROOT/termux/"
+# Isolated test reconciler: changes only fixture flags and never signals host processes.
+cat > "$JACO_ROOT/termux/reconcile-runit.sh" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  --check) [[ ! -f "$STUB_STATE/runsv-lost" ]] ;;
+  --apply)
+    [[ ! -f "$STUB_STATE/deny-daemon-restart" ]] || exit 42
+    rm -f "$STUB_STATE/runsv-lost"
+    printf 'scoped-repair\n' >> "$STUB_STATE/scoped-repairs"
+    ;;
+  *) exit 2 ;;
+esac
+SH
+
 JACO_CTL="$JACO_ROOT/bin/jacoctl"
 cat > "$JACO_PROJECT_ENV" <<'ENV'
 JACO_GATEWAY_TOKEN=project-token-123456789012345678901234567890
@@ -186,13 +197,13 @@ OUT_STATUS="$(bash "$JACO_CTL" status --json)"
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit(1)' "$OUT_STATUS"
 
 # Live Android regression: supervise/ok can survive while runsvdir has no running
-# supervisors. status MUST NOT restart the daemon; restart MUST repair it once
-# before any JACO shutdown or orphan termination.
+# supervisors. status MUST NOT modify supervision; restart MUST use scoped repair once
+# before starting a new Core/Workplace.
 touch "$STUB_STATE/runsv-lost"
 OUT_STATUS_LOST="$(bash "$JACO_CTL" status --json)"
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state==="READY") process.exit(1)' "$OUT_STATUS_LOST"
-[[ -f "$STUB_STATE/runsv-lost" && ! -f "$STUB_STATE/daemon-restarts" ]]
-# Fail closed if the daemon itself cannot be repaired. Existing JACO processes remain.
+[[ -f "$STUB_STATE/runsv-lost" && ! -f "$STUB_STATE/scoped-repairs" ]]
+# Fail closed if the scoped reconciler refuses repair. Existing JACO processes remain.
 touch "$STUB_STATE/deny-daemon-restart"
 set +e
 OUT_DAEMON_BLOCKED="$(bash "$JACO_CTL" restart --json 2>/dev/null)"
@@ -204,7 +215,7 @@ rm -f "$STUB_STATE/deny-daemon-restart"
 OUT_RESTORED="$(bash "$JACO_CTL" restart --json)"
 node -e 'const j=JSON.parse(process.argv[1]); if(j.state!=="READY") process.exit(1)' "$OUT_RESTORED"
 [[ ! -f "$STUB_STATE/runsv-lost" ]]
-[[ "$(wc -l < "$STUB_STATE/daemon-restarts")" -eq 1 ]]
+[[ "$(wc -l < "$STUB_STATE/scoped-repairs")" -eq 1 ]]
 
 # A stray/stale process may keep :3000 answering even while the supervised Core
 # is down. READY must follow the service graph, not only the HTTP port.
