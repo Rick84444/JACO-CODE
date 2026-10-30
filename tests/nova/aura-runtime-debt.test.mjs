@@ -87,7 +87,8 @@ test('new Termux installs default to Lean; full profile remains explicit', () =>
   assert.doesNotMatch(core, /startWorkerLoop\('worker_main'/);
   assert.doesNotMatch(core, /loadLegacyHeartbeat|startAutonomousHeartbeat|autonomousHeartbeat\.js/);
   assert.equal(fs.existsSync(path.join(process.cwd(), 'runtime/src/server/plan/autonomousHeartbeat.ts')), false);
-  assert.match(core, /LEGACY_PLAN_EXECUTION_RETIRED/);
+  assert.match(core, /mountLegacyPlanRoutes/);
+  assert.match(source('runtime/src/server/plan/legacyPlanRoutes.mjs'), /LEGACY_PLAN_EXECUTION_RETIRED/);
   assert.match(core, /auraLean \? 5000 : 1200/);
   assert.match(core, /auraLean \? 180_000 : 30_000/);
 });
