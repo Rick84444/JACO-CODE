@@ -203,12 +203,18 @@ export async function inspectStatus(c, services = [...definitions(c), ...novaRea
     const p = await probe(s, c.env.GATEWAY_TOKEN);
     return { id: p.id, state: p.state, url: p.url, http: p.http ?? null, observedAt: new Date().toISOString() };
   }));
-  const startup = readStartupEvidence(c.root);
+  // An injected, standalone service probe has no canonical installation to
+  // reconcile. Only the real startup configuration requires the durable receipt.
+  const canonical = Boolean(c?.root && c?.runtime && c?.ports);
+  const startup = canonical ? readStartupEvidence(c.root) : null;
   const servicesReady = observed.length > 0 && observed.every(s => s.state === 'READY');
-  return { schema: 'jaco.local-startup/v1', state: servicesReady && startup.ok ? 'READY' : servicesReady ? 'DEGRADED' : 'BLOCKED',
+  const state = !servicesReady ? 'BLOCKED' : startup && !startup.ok ? 'DEGRADED' : 'READY';
+  return { schema: 'jaco.local-startup/v1', state,
     startedAt, observedAt: new Date().toISOString(), runtime: c.runtime,
-    scope: 'fresh service readiness and canonical startup evidence; no task execution verified',
-    startup, services: observed };
+    scope: canonical
+      ? 'fresh service readiness and canonical startup evidence; no task execution verified'
+      : 'fresh service readiness only; no task execution verified',
+    ...(startup ? { startup } : {}), services: observed };
 }
 export async function activate(c, { open = false } = {}) {
   if (fs.existsSync(path.join(c.root, '.jaco-emergency-stop.json'))) throw new Error('EMERGENCY_STOP_ACTIVE');
