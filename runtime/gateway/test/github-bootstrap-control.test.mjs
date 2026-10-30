@@ -380,3 +380,30 @@ test('GitHub bootstrap system.health returns independent Core and Workplace rece
   assert.match(notes[1],/Aura operator: .NOT_INDEPENDENTLY_PROBED./);
   assert.ok(!notes[1].includes('NEVER-PUBLISH'));
 });
+
+test('failed Windows coldstart is logged without private paths, closed and never replayed',async()=>{
+  const errors=[], notes=[], actions=[]; let remoteOpen=true;
+  const fetchImpl=async(url,opts={})=>{
+    const m=opts.method||'GET';
+    if(m==='GET'&&url.includes('/issues?')) return response(200,remoteOpen ? [{
+      number:123,title:'[JACO BOOT] coldstart',user:{login:'Rick84444'},
+      body:'<!-- jaco-bootstrap-control:v1 -->\n'+JSON.stringify({
+        schema:'jaco.bootstrap-control/v1',commandId:'windows-coldstart-000123',op:'system.activate'
+      })}]:[]);
+    if(m==='POST'&&url.endsWith('/issues/123/comments')){notes.push(JSON.parse(opts.body).body);return response(201,{id:22})}
+    if(m==='PATCH'&&url.endsWith('/issues/123')){remoteOpen=false;return response(200,{state:'closed'})}
+    throw Error('unexpected HTTP '+m+' '+url);
+  };
+  const system={async activate(){actions.push('activate');throw Error('C:\\Users\\operator\\private\\TOKEN=secret');}};
+  const control=createGithubBootstrapControl({system,fetchImpl,enabled:true,token:'secure',
+    repo:'Rick84444/jaco-code',actor:'Rick84444',stateFile:stateFile()});
+  const first=await control.pollOnce();
+  assert.equal(first.processed[0].status,'FAILED');
+  assert.equal(remoteOpen,false);
+  assert.equal(actions.length,1);
+  assert.ok(notes[1].includes('TARGET_EXECUTION_FAILED'));
+  assert.ok(!notes[1].includes('Users'));
+  assert.ok(!notes[1].includes('secret'));
+  assert.deepEqual((await control.pollOnce()).processed,[]);
+  assert.equal(actions.length,1);
+});
