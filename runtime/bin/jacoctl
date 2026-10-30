@@ -43,6 +43,7 @@ Usage:
   jacoctl restart [--provider auto|litert|llamacpp|ollama] [--model ID] [--json]
 
 The full profile supervises Sentinel, Core, and Workplace. Workplace owns Durable Nova.
+Aura Lean is the Termux default; set JACO_AURA_LEAN=0 in the private runtime.env to restore legacy background workers.
 Provider selection is saved for Core/Aura and SEER. Omit --model with litert to discover its registry ID.
 
 This command accepts fixed lifecycle verbs only. It is not a general shell bridge.
@@ -359,7 +360,7 @@ apply_model_selection(){
 sync_runtime_env(){
   local project_env shared requested_aura_lean
   # runtime.env may opt in even when project .env has old defaults.
-  requested_aura_lean="${JACO_AURA_LEAN:-0}"
+  requested_aura_lean="${JACO_AURA_LEAN:-}"
   project_env="${JACO_PROJECT_ENV:-$JACO_ROOT/../.env}"
 
   # Import project-local values when present, but never print them.
@@ -371,8 +372,10 @@ sync_runtime_env(){
   fi
 
   apply_model_selection "$project_env"
-  if [[ "$requested_aura_lean" == "1" ]]; then JACO_AURA_LEAN=1; fi
-  [[ "${JACO_AURA_LEAN:-0}" == "0" || "${JACO_AURA_LEAN:-0}" == "1" ]] || {
+  # A single Aura is the default on Termux. Existing explicit 0/1 always wins.
+  [[ -z "$requested_aura_lean" ]] || JACO_AURA_LEAN="$requested_aura_lean"
+  JACO_AURA_LEAN="${JACO_AURA_LEAN:-1}"
+  [[ "$JACO_AURA_LEAN" == "0" || "$JACO_AURA_LEAN" == "1" ]] || {
     echo "JACO_AURA_LEAN must be 0 or 1" >&2; return 1;
   }
 
@@ -392,7 +395,7 @@ sync_runtime_env(){
   set_config_export JACO_WORKPLACE_URL "${JACO_WORKPLACE_URL:-http://127.0.0.1:2995}"
   set_config_export JACO_REMOTE_BRIDGE_PORT "${JACO_REMOTE_BRIDGE_PORT:-2994}"
   set_config_export JACO_REMOTE_ALLOW_MUTATIONS "${JACO_REMOTE_ALLOW_MUTATIONS:-1}"
-  set_config_export JACO_AURA_LEAN "${JACO_AURA_LEAN:-0}"
+  set_config_export JACO_AURA_LEAN "${JACO_AURA_LEAN:-1}"
   set_config_export JACO_LEVEL5_AUTONOMY "${JACO_LEVEL5_AUTONOMY:-1}"
   set_config_export JACO_ALLOW_SHELL_TASKS "${JACO_ALLOW_SHELL_TASKS:-1}"
   set_config_export JACO_ENABLE_CDP "${JACO_ENABLE_CDP:-1}"
