@@ -60,8 +60,9 @@ export class CDPSession {
     this.msgId = 0;
     this.pending = new Map();
     this.ws.addEventListener("message", (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.id && this.pending.has(msg.id)) {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg?.id && this.pending.has(msg.id)) {
         const { resolve, reject } = this.pending.get(msg.id);
         this.pending.delete(msg.id);
         if (msg.error) reject(new Error(msg.error.message));
@@ -151,7 +152,8 @@ export async function probeCdpBrowser({
       if (t?.type !== 'page' || typeof t.webSocketDebuggerUrl !== 'string') return false;
       try {
         const ws = new URL(t.webSocketDebuggerUrl);
-        return ['ws:', 'wss:'].includes(ws.protocol) && ['127.0.0.1', 'localhost', '[::1]'].includes(ws.hostname)
+        return ws.protocol === 'ws:' && ['127.0.0.1', 'localhost', '[::1]'].includes(ws.hostname)
+          && Number(ws.port) === CDP_PORT && ws.pathname.startsWith('/devtools/page/')
           && !ws.username && !ws.password;
       } catch { return false; }
     });
@@ -161,7 +163,10 @@ export async function probeCdpBrowser({
       error: selectedId ? 'CDP_PINNED_TARGET_UNAVAILABLE' : 'CDP_NO_DEBUGGABLE_PAGE',
       targets: pages.length,
     };
-    session = sessionFactory(target.webSocketDebuggerUrl);
+    const socket = new URL(target.webSocketDebuggerUrl);
+    // Chrome may advertise localhost even when the DevTools TCP forward is IPv4-only.
+    if (socket.hostname === 'localhost') socket.hostname = '127.0.0.1';
+    session = sessionFactory(socket.href);
     await session.ready(5000);
     const reply = await session.send('Runtime.evaluate', { expression: '1+1', returnByValue: true }, 5000);
     if (reply?.result?.value !== 2 || reply?.exceptionDetails) {
