@@ -65,7 +65,7 @@ test('remote update installs dependencies where a package file changed, and nowh
   assert.equal(installs.length,2);
   assert.ok(installs.some(cwd=>cwd.replace(/\\/g,'/').endsWith('/repo/runtime')));
   assert.ok(installs.some(cwd=>cwd.replace(/\\/g,'/').endsWith('/repo/gateway')));
-  assert.deepEqual(result.dependenciesInstalled.sort(),['runtime','gateway']);
+  assert.deepEqual(result.dependenciesInstalled.sort(),['gateway','runtime']);
   const restartIndex=calls.findIndex(x=>x.join(' ').includes('jacoctl restart'));
   assert.ok(calls.findIndex(x=>x[0]==='npm')<restartIndex,'dependencies are installed before the restart');
 });
