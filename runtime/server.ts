@@ -2252,7 +2252,7 @@ const notifyPhone = async (action) => {
   });
 
   const readAuraAgentBoard = async () => {
-    const [workplace, coordinator, planning] = await Promise.all([
+    const [workplace, coordinator, planning, services] = await Promise.all([
       getAuraWorkbenchWorkplace(), getAuraSeerHealth(),
       (async () => {
         try {
@@ -2264,9 +2264,11 @@ const notifyPhone = async (action) => {
           return response.ok && Array.isArray(graphs) ? graphs : null;
         } catch { return null; }
       })(),
+      auraServiceHealth(),
     ]);
     return buildAgentBoard({ bus: connectedRuntime.bus, control: connectedRuntime.novaMissions,
-      workplace, coordinator, graphs:planning, workers:connectedRuntime.bus.listWorkers(), tools:mcpHost.status(),
+      workplace, coordinator, graphs:planning, workers:connectedRuntime.bus.listWorkers(),
+      tools:mcpHost.status(), services,
       secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key)).map(([,value]) => value),
     });
   };
