@@ -19,6 +19,8 @@ export class SystemControl {
     npmBin = process.env.JACO_NPM_BIN || 'npm',
     execFileImpl = execFileAsync,
     spawnImpl = spawn,
+    fetchImpl = fetch,
+    workplaceUrl = process.env.JACO_WORKPLACE_URL || 'http://127.0.0.1:2995',
   }) {
     this.jacoctl = jacoctl;
     this.allowMcpActivation = allowMcpActivation;
@@ -32,6 +34,8 @@ export class SystemControl {
     this.npmBin = npmBin;
     this.execFileImpl = execFileImpl;
     this.spawnImpl = spawnImpl;
+    this.fetchImpl = fetchImpl;
+    this.workplaceUrl = String(workplaceUrl).replace(/\/$/, '');
     this.sentinelRestartHelper = join(runtimeRoot, 'termux', 'restart-sentinel-after-delay.sh');
   }
 
@@ -50,6 +54,45 @@ export class SystemControl {
     let parsed;
     try { parsed = JSON.parse(stdout); } catch { parsed = { stdout: stdout.trim(), stderr: stderr.trim() }; }
     return parsed;
+  }
+
+  // Independent, bounded, read-only target-host probes. No shell, Git or remote network.
+  async health() {
+    const workplaceTarget = new URL(this.workplaceUrl);
+    if (workplaceTarget.protocol !== 'http:' ||
+        !['127.0.0.1','localhost','[::1]'].includes(workplaceTarget.hostname) ||
+        workplaceTarget.username || workplaceTarget.password) {
+      throw new Error('JACO_HEALTH_WORKPLACE_MUST_BE_LOOPBACK');
+    }
+    const [coreProbe, workplaceProbe] = await Promise.allSettled([
+      this.core.request
+        ? this.core.request('/api/runtime/identity', {signal:AbortSignal.timeout(4000)})
+        : this.core.identity(),
+      this.fetchImpl(this.workplaceUrl + '/health', {
+        method:'GET', redirect:'error', signal:AbortSignal.timeout(4000),
+      }).then(async response => {
+        if (!response.ok) throw new Error('WORKPLACE_HTTP_NOT_OK');
+        const body = await response.json();
+        if (body?.product !== 'JACO Workplace') throw new Error('WRONG_WORKPLACE_IDENTITY');
+        return body;
+      }),
+    ]);
+    const coreUp = coreProbe.status === 'fulfilled' &&
+      coreProbe.value && coreProbe.value.success !== false;
+    const w = workplaceProbe.status === 'fulfilled' ? workplaceProbe.value : null;
+    const workplaceUp = Boolean(w);
+    const wpState = w?.supervisedAgents?.state === 'RUNNING' ? 'RUNNING'
+      : workplaceUp ? 'DEGRADED' : 'DOWN';
+    const novaState = w?.supervisedAgents?.nova?.state === 'RUNNING' ? 'RUNNING'
+      : workplaceUp ? 'DEGRADED' : 'DOWN';
+    const status = coreUp && wpState === 'RUNNING' && novaState === 'RUNNING'
+      ? 'READY' : coreUp || workplaceUp ? 'DEGRADED' : 'DOWN';
+    return {
+      schema:'jaco.service-health/v1', status,
+      core:{up:Boolean(coreUp)},
+      workplace:{up:workplaceUp,state:wpState,novaState},
+      aura:{state:'NOT_INDEPENDENTLY_PROBED'},
+    };
   }
 
   async status() {
