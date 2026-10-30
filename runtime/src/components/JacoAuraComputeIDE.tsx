@@ -37,8 +37,10 @@ import { AuraChatPanel, useAuraChatSession, type AuraSelectedTool } from './Aura
 import { AuraCommandPalette } from './AuraCommandPalette';
 import { CognitiveWorkspace, type CognitiveCanvas } from './CognitiveWorkspace';
 const AuraAgentWorkspace = React.lazy(() => import('./AuraAgentBoard').then(module => ({ default: module.AuraAgentWorkspace })));
-import { CognitiveGameboard } from './CognitiveGameboard';
-import { VoiceChannel } from './VoiceChannel';
+// Loaded only when the operator opens this workspace; idle Aura stays small.
+const CognitiveGameboard = React.lazy(() => import('./CognitiveGameboard').then(module => ({ default: module.CognitiveGameboard })));
+// Loaded only when the operator opens this workspace; idle Aura stays small.
+const VoiceChannel = React.lazy(() => import('./VoiceChannel').then(module => ({ default: module.VoiceChannel })));
 import { CognitiveEvidence } from './CognitiveEventCard';
 import { CognitivePreview } from './CognitivePreview';
 import { AuraLiveStage } from './AuraLiveStage';
@@ -55,11 +57,14 @@ import { readWorkspaceDrafts, writeWorkspaceDrafts } from '../lib/auraRecovery.m
 import { AuraIntegrationsPanel } from './AuraIntegrationsPanel';
 import { NovaPlannerCard } from './NovaPlannerCard';
 import { ActivationCard, useActivationReport } from './ActivationCard';
-import { RevenueView } from './RevenueView';
-import { SkillsView } from './SkillsView';
+// Loaded only when the operator opens this workspace; idle Aura stays small.
+const RevenueView = React.lazy(() => import('./RevenueView').then(module => ({ default: module.RevenueView })));
+// Loaded only when the operator opens this workspace; idle Aura stays small.
+const SkillsView = React.lazy(() => import('./SkillsView').then(module => ({ default: module.SkillsView })));
 import { ProviderConnect } from './ProviderConnect';
 import { EconomicBudgetPanel } from './EconomicBudgetPanel';
-import { DevicesView } from './DevicesView';
+// Loaded only when the operator opens this workspace; idle Aura stays small.
+const DevicesView = React.lazy(() => import('./DevicesView').then(module => ({ default: module.DevicesView })));
 import { McpServersPanel, type McpCallRecord } from './McpServersPanel';
 import { describeNovaResult, describeNovaTask, type NovaMissionSummary } from '../lib/novaActivityText';
 import { AURA_PRODUCT_TOOLS, type AuraProductTool } from '../lib/auraToolRegistry';
@@ -1263,9 +1268,9 @@ export const JacoAuraComputeIDE: React.FC = () => {
       );
     }
 
-    if (sidebar === 'revenue') return <RevenueView />;
-    if (sidebar === 'skills') return <SkillsView />;
-    if (sidebar === 'devices') return <DevicesView browser={snapshot?.integrations?.cdp} onInspectBrowser={() => void selectMcpToolByName('cdp', 'nova_targets')} />;
+    if (sidebar === 'revenue') return <React.Suspense fallback={<div className="p-3 text-xs">Öppnar ekonomi…</div>}><RevenueView /></React.Suspense>;
+    if (sidebar === 'skills') return <React.Suspense fallback={<div className="p-3 text-xs">Öppnar skills…</div>}><SkillsView /></React.Suspense>;
+    if (sidebar === 'devices') return <React.Suspense fallback={<div className="p-3 text-xs">Öppnar enheter…</div>}><DevicesView browser={snapshot?.integrations?.cdp} onInspectBrowser={() => void selectMcpToolByName('cdp', 'nova_targets')} /></React.Suspense>;
 
     if (sidebar === 'tools') {
       return (
@@ -1856,8 +1861,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
     {workspaceView==='agents'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Öppnar agentkartan…</div>}><AuraAgentWorkspace goal={goal} onGoalChange={setGoal} onStartGoal={()=>{void startGoal().catch(()=>{});}} submitting={missionSubmitting} notice={missionNotice} onReview={()=>setWorkspaceView('evidence')} onCancelMission={cancelMission}/></React.Suspense>}
-    {workspaceView==='gameboard'&&<CognitiveGameboard/>}
-    {workspaceView==='voice'&&<VoiceChannel/>}
+    {workspaceView==='gameboard'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Öppnar uppdragsplaner…</div>}><CognitiveGameboard/></React.Suspense>}
+    {workspaceView==='voice'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Öppnar röstkanalen…</div>}><VoiceChannel/></React.Suspense>}
     {workspaceView==='preview'&&<CognitivePreview path={selectedFile} content={fileView ? (drafts[fileView.path] ?? fileView.content) : null} files={files} events={cognitiveEvents} onOpenFile={path => { openFile(path); setWorkspaceView('preview'); }}/>}
     {workspaceView==='evidence'&&<div className="cognitive-evidence-scroll"><MissionReview missions={missions} preferredMissionId={reviewMissionId} onDecisions={()=>setShowApprovals(true)}/><CognitiveEvidence events={cognitiveEvents} selected={selectedEvidence} onSelect={setSelectedEvidence} onOpenFile={openFile}/>
       <details className="cognitive-mission-details"><summary>Uppdrag & kontroller</summary>{renderMissionList()}</details></div>}
