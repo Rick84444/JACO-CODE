@@ -10,6 +10,11 @@ const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const TERMINAL = new Set(['DONE', 'CANCELLED', 'AWAITING_VERIFICATION']);
+const MISSION_STATES = new Set(['ACTIVE', 'BLOCKED', 'DONE', 'CANCELLED', 'AWAITING_VERIFICATION', 'QUEUED']);
+const PHASES = new Set(['READY', 'PLANNING', 'EXECUTING', 'DONE', 'BLOCKED']);
+const FUNCTION_NAMES = new Set(['reason', 'plan', 'execute', 'memory', 'tools', 'verify']);
+const SERVICE_NAMES = ['substrate','workplace','seer','novaBridge','cdpBridge','chromeCdp','gateway','ollama'];
+const HEALTH_LABEL = /^(?:READY|REACHABLE|DISCOVERABLE|UNVERIFIED|UNHEALTHY|AUTH_REQUIRED|DOWN|DISABLED|NOT_CONNECTED|NOT_SUPERVISED)(?: \([A-Z0-9_ :-]{1,48}\))?$/;
 const PROGRAM_BRANDS = new WeakSet();
 
 export class AuraAdkError extends Error {
@@ -112,12 +117,12 @@ const programRequired = program => {
 const stateOf = body => {
   const mission = body?.mission || body;
   if (!record(mission) || typeof mission.status !== 'string') reject('ADK_MISSION_SCHEMA_INVALID');
-  const status = mission.status;
+  const status = MISSION_STATES.has(mission.status) ? mission.status : 'UNKNOWN';
   const receipts = Array.isArray(mission.receipts) ? mission.receipts : null;
   return {
     schema: 'jaco.adk.mission-observation/v1',
     id: checkId(mission.id, 'MISSION_ID'), status,
-    phase: typeof mission.phase === 'string' ? mission.phase : null,
+    phase: PHASES.has(mission.phase) ? mission.phase : null,
     observedAt: new Date().toISOString(),
     receiptCount: receipts ? receipts.length : null,
     verifiedSteps: receipts ? receipts.filter(r => r?.verified === true && r?.ok === true && r?.outcomeUnknown !== true).length : null,
@@ -176,6 +181,30 @@ export class AuraAdk {
     const age = Date.now() - Date.parse(body.observedAt || '');
     if (!Number.isFinite(age) || age < -5000 || age > this.maxObservationAgeMs)
       reject('ADK_AURA_OBSERVATION_STALE');
+    if (body.aura.oversight.schema !== 'jaco.aura-oversight/v1')
+      reject('ADK_AURA_SCHEMA_MISMATCH');
+    // Copy only reviewed fields. Unknown future payloads must not leak data into
+    // ADK telemetry, dashboards or downstream developer logs.
+    const observation = body.aura.oversight;
+    const n = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+    const services = Object.fromEntries(SERVICE_NAMES.map(name => {
+      const label = observation.services?.[name];
+      return [name, typeof label === 'string' && HEALTH_LABEL.test(label) ? label : 'UNOBSERVED'];
+    }));
+    const browserState = ['BLOCKED','DISABLED','UNOBSERVED','VERIFIED_RECENT'].includes(observation.browser?.state)
+      ? observation.browser.state : 'UNOBSERVED';
+    const oversight = {
+      schema: 'jaco.aura-oversight/v1',
+      browser: { state: browserState },
+      services,
+      missions: {
+        active: n(observation.missions?.active),
+        blocked: n(observation.missions?.blocked),
+        awaitingVerification: n(observation.missions?.awaitingVerification),
+        visibleUnknownOutcomes: n(observation.missions?.visibleUnknownOutcomes),
+        visibleWindowTruncated: observation.missions?.visibleWindowTruncated === true,
+      },
+    };
     const result = {
       schema: 'jaco.adk.runtime/v1',
       operator: 'aura',
@@ -185,8 +214,11 @@ export class AuraAdk {
         missions: body.sources?.missions?.available === true,
       },
       runtimeConsolidated: false,
-      functions: (body.aura.functions || []).map(f => ({ id: f.id, state: f.state })),
-      oversight: body.aura.oversight,
+      functions: (Array.isArray(body.aura.functions) ? body.aura.functions : [])
+        .filter(f => FUNCTION_NAMES.has(f?.id)).slice(0,6)
+        .map(f => ({ id: f.id, state: typeof f.state === 'string' && /^[A-Z_]{1,40}$/.test(f.state)
+          ? f.state : 'UNOBSERVED' })),
+      oversight,
     };
     this.emit('runtime.observed', { degraded: !result.sources.workplace || !result.sources.missions });
     return result;
