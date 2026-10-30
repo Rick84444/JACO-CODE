@@ -77,3 +77,28 @@ test('Aura board is the default, while technical agents remain inspectable and o
   assert.match(chat,/SEER är hennes interna planeringsfunktion/);
   assert.match(chat,/Nova\/ModelRelay är hennes interna utförandefunktion/);
 });
+
+test('Aura question mode can inspect the live control plane without mutation authority',async()=>{
+  let reads=0;
+  const toolbox=cognitiveQuestionToolbox({tools:{
+    aura_runtime:{run:async()=>{reads++;return {identity:{id:'aura'},oversight:{browser:{state:'BLOCKED'}}};}},
+    start_goal:{run:async()=>assert.fail('no mission dispatch from a diagnostic question')},
+    shell_exec:{run:async()=>assert.fail('no shell execution from a diagnostic question')},
+  }},()=>({}),'Hur mår Aura och Chrome?');
+  const result=await toolbox.tools.aura_runtime.run({});
+  assert.equal(result.identity.id,'aura');
+  assert.equal(result.oversight.browser.state,'BLOCKED');
+  assert.equal(reads,1);
+  assert.equal(toolbox.tools.start_goal,undefined);
+  assert.equal(toolbox.tools.shell_exec,undefined);
+});
+test('Aura exposes a real live read-only oversight route and no second agent owner',()=>{
+  const server=read('runtime/server.ts');
+  assert.match(server,/aura_runtime:/);
+  assert.match(server,/readAgentTeam\(\)/);
+  assert.match(server,/auraServiceHealth\(\)/);
+  assert.match(server,/tools:mcpHost\.status\(\), services,/);
+  const ui=read('runtime/src/components/AuraAgentBoard.tsx');
+  assert.match(ui,/Auras kontrollplan/);
+  assert.match(ui,/oversight\.browser\.state/);
+});
