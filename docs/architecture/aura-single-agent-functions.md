@@ -57,10 +57,11 @@ are down.
 
 ## Optional resource-reduction profile (Termux)
 
-The profile is opt-in with `JACO_AURA_LEAN=1` in the existing mode-600
-`~/.config/jaco/runtime.env` configuration, activated through the canonical
-`runtime/bin/jacoctl activate` or `restart` **only when runit supervision
-is healthy and interrupting any active mission is acceptable**.
+`JACO_AURA_LEAN=1` is the new Termux default. Older installations with an
+explicit value in the existing mode-600 `~/.config/jaco/runtime.env` retain
+that value. Change the profile only through the canonical
+`runtime/bin/jacoctl activate` or `restart` **when runit supervision is
+healthy and interrupting any active mission is acceptable**.
 
 When enabled:
 - Core sets `JACO_AUTO_START_TOOLS=0`. The existing MCP catalog and policy
