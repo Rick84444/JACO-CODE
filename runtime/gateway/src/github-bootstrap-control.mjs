@@ -5,13 +5,28 @@ import { homedir } from 'node:os';
 const API = 'https://api.github.com';
 const MARKER = '<!-- jaco-bootstrap-control:v1 -->';
 const TITLE_PREFIX = '[JACO BOOT]';
-const ALLOWED_OPS = new Set(['system.status', 'system.activate', 'system.restart', 'system.update']);
+const ALLOWED_OPS = new Set(['system.status', 'system.health', 'system.activate', 'system.restart', 'system.update']);
 
 
 // Public GitHub issues are a transport, not a place for diagnostic payloads.
 // Only explicit status enums / bounded counters may cross this boundary.
 // Aura itself is not separately probed by jaco.activation/v2.
 export function safeBootstrapHealthLines(result) {
+  if (result?.schema === 'jaco.service-health/v1') {
+    const core = result.core?.up === true ? 'UP' : result.core?.up === false ? 'DOWN' : 'UNVERIFIED';
+    const workplace = ['RUNNING','DEGRADED','DOWN'].includes(result.workplace?.state)
+      ? result.workplace.state : 'UNVERIFIED';
+    const nova = ['RUNNING','DEGRADED','DOWN'].includes(result.workplace?.novaState)
+      ? result.workplace.novaState : 'UNVERIFIED';
+    const overall = ['READY','DEGRADED','DOWN'].includes(result.status) ? result.status : 'UNVERIFIED';
+    return ['#### Verified loopback services (allowlisted)',
+      '- Core: `' + core + '`',
+      '- Workplace: `' + workplace + '`',
+      '- Durable Nova: `' + nova + '`',
+      '- Aura operator: `NOT_INDEPENDENTLY_PROBED`',
+      '- Service health: `' + overall + '`',
+    ];
+  }
   if (!result || result.schema !== 'jaco.activation/v2') return [];
   const core = result.runtime?.up === true ? 'UP' : result.runtime?.up === false ? 'DOWN' : 'UNVERIFIED';
   const workplace = result.workplace?.required === false ? 'NOT_REQUIRED'
@@ -201,6 +216,7 @@ export function createGithubBootstrapControl({
 
   async function execute(command) {
     if (command.op === 'system.status') return system.status();
+    if (command.op === 'system.health') return system.health();
     if (command.op === 'system.activate') return system.activate('full', { fromMcp: false });
     if (command.op === 'system.restart') return system.restart({ fromMcp: false });
     if (command.op === 'system.update') return system.update({ fromMcp: false });
