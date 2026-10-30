@@ -352,3 +352,31 @@ test('GitHub status body reports verified degraded health instead of misleading 
   assert.match(writes[1],/Workplace: .DOWN./);
   assert.ok(!writes[1].includes('SECRET'));
 });
+
+test('GitHub bootstrap system.health returns independent Core and Workplace receipt',async()=>{
+  const notes=[];
+  const fetchImpl=async(url,opts={})=>{
+    const m=opts.method||'GET';
+    if (m==='GET'&&url.includes('/issues?'))return response(200,[{
+      number:77,title:'[JACO BOOT] health',user:{login:'Rick84444'},
+      body:'<!-- jaco-bootstrap-control:v1 -->\n'+JSON.stringify({schema:'jaco.bootstrap-control/v1',commandId:'health-probe-v1-00077',op:'system.health'})
+    }]);
+    if(m==='POST'&&url.endsWith('/issues/77/comments')){notes.push(JSON.parse(opts.body).body);return response(201,{id:1})}
+    if(m==='PATCH'&&url.endsWith('/issues/77'))return response(200,{state:'closed'});
+    throw Error('Unexpected request');
+  };
+  let called=0;
+  const system={health:async()=>{called++;return {
+    schema:'jaco.service-health/v1',status:'DEGRADED',
+    core:{up:true},workplace:{up:false,state:'DOWN',novaState:'DOWN'},
+    aura:{state:'NOT_INDEPENDENTLY_PROBED'},secret:'NEVER-PUBLISH'
+  }}};
+  const control=createGithubBootstrapControl({system,fetchImpl,enabled:true,token:'test-token',repo:'Rick84444/jaco-code',actor:'Rick84444',stateFile:stateFile()});
+  const done=await control.pollOnce();
+  assert.equal(called,1);
+  assert.equal(done.processed[0].status,'DEGRADED');
+  assert.match(notes[1],/Core: .UP./);
+  assert.match(notes[1],/Workplace: .DOWN./);
+  assert.match(notes[1],/Aura operator: .NOT_INDEPENDENTLY_PROBED./);
+  assert.ok(!notes[1].includes('NEVER-PUBLISH'));
+});
