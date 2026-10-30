@@ -24,6 +24,7 @@ interface BoardMission {
 }
 export interface AgentBoardSnapshot {
   success: boolean; schema: string; observedAt: string;
+  aura?: { identity: { id: string; name: string; agentCount: number; meaning: string }; runtimeConsolidated: boolean; functions: Array<{ id: string; name: string; implementation: string; authority: string; reads: string[]; state: string; detail: string }> };
   network?: AgentNetworkSnapshot;
   sources: Record<'workplace' | 'missions', { available: boolean; observedAt: string | null; error: string | null }>;
   agents: Array<{ agentId: string; name: string; role: string | null; status: string; liveSessions: number | null; lastSeenAt: string | null; permissions: Record<string, boolean>; tools: string[]; sessions?: Array<{status:string;environment:string|null;lastSeenAt:string|null}> }>;
@@ -51,7 +52,7 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
     catch (error) { setCancelError(error instanceof Error ? error.message : 'Kunde inte avsluta uppdraget.'); }
     finally { setCancellingId(null); }
   }
-  const [view, setView] = useState<'network'|'missions'|'cycles'>('network');
+  const [view, setView] = useState<'functions'|'network'|'missions'|'cycles'>('functions');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -68,13 +69,14 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
     <div className="h-full min-h-0 flex flex-col bg-[#02070c] text-slate-200" data-testid="agent-board">
       <header className="p-3 border-b border-[#123047] space-y-2 shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <Bot className="w-4 h-4 text-cyan-400" /><h2 className="font-semibold text-sm">JACO och agenterna</h2>
+          <Bot className="w-4 h-4 text-cyan-400" /><h2 className="font-semibold text-sm">Aura · funktioner och uppdrag</h2>
           <span className="text-xs text-slate-500">{snapshot?.total ?? '?'} uppdrag totalt</span>
           <button className="ml-auto border border-cyan-900 rounded px-2 py-1 text-xs flex gap-1 items-center" onClick={() => setNewGoal(!newGoal)}><Plus className="w-3 h-3" />Nytt uppdrag</button>
           <button className="border border-[#123047] rounded px-2 py-1 text-xs" onClick={onReview}>Granska resultat</button>
         </div>
-        <div className="agent-board-view-switch" role="group" aria-label="Visa agenter eller uppdrag">
-          <button type="button" aria-pressed={view==='network'} onClick={()=>setView('network')}>Sfärer och planer</button>
+        <div className="agent-board-view-switch" role="group" aria-label="Visa Aura-funktioner, uppdrag eller teknisk karta">
+          <button type="button" aria-pressed={view==='functions'} onClick={()=>setView('functions')}>Aura-funktioner</button>
+          <button type="button" aria-pressed={view==='network'} onClick={()=>setView('network')}>Teknisk karta</button>
           <button type="button" aria-pressed={view==='missions'} onClick={()=>setView('missions')}>Uppdrag och resultat</button>
           <button type="button" aria-pressed={view==='cycles'} onClick={()=>setView('cycles')}>Autonom utveckling</button>
         </div>
@@ -99,10 +101,26 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
           <select aria-label="Filtrera uppdrag" value={filter} onChange={e => setFilter(e.target.value)} className="bg-[#07111b] border border-[#123047] rounded px-2 text-xs"><option value="open">Öppna</option><option value="all">Alla utom avbrutna</option><option value="cancelled">Avbrutna</option></select>
         </div>}
       </header>
-      {view==='cycles' ? <AutonomousCyclesPanel /> : view==='network' ? <AgentConstellation network={snapshot?.network || null} error={error} memory={snapshot?.memory || []}
+      {view==='functions' ? <div className="flex-1 min-h-0 overflow-auto p-3 space-y-3" data-testid="aura-functions">
+        <section className="rounded border border-cyan-900 bg-[#07111b] p-4">
+          <h3 className="text-base font-semibold text-cyan-200">Aura</h3>
+          <p className="text-xs text-slate-300 mt-1">Din enda operatörsagent. Resonemang, planering, utförande, minne, verktyg och verifiering är hennes funktioner.</p>
+          <p className="text-xs text-slate-500 mt-2">Funktionernas status kommer från observerade tjänster och kvitton, inte från påståenden om att en modell arbetar.</p>
+        </section>
+        <section aria-label="Auras funktioner" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {snapshot?.aura?.functions.map(fn => <article key={fn.id} className="rounded border border-[#123047] bg-[#050b11] p-3 space-y-1">
+            <div className="flex gap-2 items-center justify-between"><h4 className="font-medium text-sm">{fn.name}</h4><span className={['UNAVAILABLE','NO_MODEL_OBSERVED','NO_WORKER_OBSERVED'].includes(fn.state) ? 'text-xs text-amber-300' : 'text-xs text-slate-400'}>{fn.state}</span></div>
+            <p className="text-xs text-slate-300">{fn.detail}</p>
+            <details><summary className="text-xs text-slate-500 cursor-pointer">Teknisk funktion</summary><p className="text-xs text-slate-400 mt-1">{fn.implementation} · {fn.authority}</p></details>
+          </article>)}
+          {snapshot && !snapshot.aura && <p className="text-xs text-amber-300">Den installerade runtime-versionen rapporterar ännu inte Auras funktionsstatus.</p>}
+          {!snapshot && <p className="text-xs text-slate-400">Hämtar observerad funktionsstatus…</p>}
+        </section>
+        <p className="text-xs text-slate-500">SEER, Nova och Workplace är fortfarande interna runtime-tjänster. De har inte slagits samman till en OS-process. Tidigare uppdrag och kvitton finns kvar under Uppdrag och resultat.</p>
+      </div> : view==='cycles' ? <AutonomousCyclesPanel /> : view==='network' ? <AgentConstellation network={snapshot?.network || null} error={error} memory={snapshot?.memory || []}
         onSelectMission={id=>{setSelectedId(id);setView('missions');}}/> : <div className="flex-1 min-h-0 overflow-auto">
-        <section aria-label="Registrerade agenter" className="p-3 border-b border-[#123047]">
-          <h3 className="text-xs text-slate-400 mb-2">Vilka finns här?</h3>
+        <details className="p-3 border-b border-[#123047]" aria-label="Tekniska Workplace-sessioner">
+          <summary className="text-xs text-slate-400 mb-2 cursor-pointer">Tekniska Workplace-sessioner (inte separata Aura-personligheter)</summary>
           <button onClick={() => setShowOffline(!showOffline)} className="text-xs text-cyan-300 mb-2">{showOffline ? 'Dölj frånkopplade' : `Visa frånkopplade (${snapshot?.summary?.offline ?? '?'})`}</button>
           <div className="flex gap-2 overflow-x-auto pb-1">{snapshot?.agents.filter(a => showOffline || (a.liveSessions || 0) > 0).map(a => <article key={a.agentId} className="min-w-[210px] max-w-[280px] border border-[#123047] rounded p-2 text-xs bg-[#050b11]">
             <div className="font-medium">{a.name} <span className="text-cyan-500">{a.status === 'BUSY' ? 'Rapporterar arbete' : (a.liveSessions || 0) > 0 ? 'I kontakt' : 'Frånkopplad'}</span></div>
@@ -112,8 +130,8 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
             {a.sessions?.filter(session => ['READY','AVAILABLE','BUSY'].includes(session.status)).map((session,i) => <p key={i} className="text-slate-500">{session.environment || 'Enhet ej uppgiven'}</p>)}
             <details><summary className="text-slate-500 mt-1 cursor-pointer">Tekniska detaljer</summary><p className="text-[10px] text-slate-500 mt-1 break-words">Behörigheter: {Object.entries(a.permissions).filter(([,allowed]) => allowed).map(([key]) => key).join(', ') || 'Inga observerade'}</p></details>
           </article>)}</div>
-          {snapshot?.sources.workplace.available && !snapshot.agents.length && <p className="text-xs text-slate-500">Inga registrerade agenter i observationen.</p>}
-        </section>
+          {snapshot?.sources.workplace.available && !snapshot.agents.length && <p className="text-xs text-slate-500">Inga registrerade sessioner i observationen.</p>}
+        </details>
         <section className="p-3 border-b border-[#123047]" aria-label="Gemensamt minne">
           <button onClick={() => setShowMemory(!showMemory)} className="text-sm text-cyan-200">{showMemory ? 'Dölj' : 'Visa'} det teamet minns ({snapshot?.memory?.length ?? '?'})</button>
           <p className="text-xs text-slate-400 mt-1">{snapshot?.memoryState ? 'Sparat i Workplace på hubben · innehållet krypterat · synkas inte via Git' : 'Minneslagrets tillstånd är inte observerat.'}</p>
