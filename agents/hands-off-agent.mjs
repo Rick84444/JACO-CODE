@@ -1813,7 +1813,11 @@ const missionClient = DEVICE_MODE
 const githubControl = createGithubNovaControlInbox({
   missionClient,
   log: (level, message) => log(level, "github-control", message),
-  ...(process.env.JACO_LITE === '1' && !process.env.JACO_GITHUB_CONTROL_REPO ? { repo: '' } : {}),
+  // Aura is the sole operator ingress. Nova still polls the canonical Mission
+  // Bus for work, but must not consume a separate GitHub operator command stream.
+  ...(process.env.JACO_AURA_ONLY_OPERATOR === '1' ||
+      (process.env.JACO_LITE === '1' && !process.env.JACO_GITHUB_CONTROL_REPO)
+    ? { repo: '' } : {}),
 });
 const BROWSER_TASKS = new Set(['browser-survey-site', 'browser-click', 'browser-type']);
 // Only browser missions need the page; for coding/desktop/web-fetch missions it was noise in the
