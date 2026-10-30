@@ -451,6 +451,10 @@ configure_local_llamacpp(){
   local mode server model base ctx preference litert_base
   preference="${JACO_SEER_PROVIDER_PREFERENCE:-${JACO_MODEL_PROVIDER:-auto}}"
   preference="${preference,,}"
+  # Aura Lean must never discover a 27B llama.cpp file and silently make it
+  # the preferred model because Gemma missed a 2-second readiness probe.
+  # Explicit --provider llamacpp remains supported.
+  if [[ "${JACO_AURA_LEAN:-0}" == "1" && "$preference" == auto ]]; then return 0; fi
   # File presence is not permission to replace an explicit LiteRT/Ollama/off selection.
   [[ "$preference" == auto || "$preference" == llamacpp ]] || return 0
   if [[ "$preference" == auto && "${JACO_LITERT_AUTODETECT:-1}" != 0 ]]; then
