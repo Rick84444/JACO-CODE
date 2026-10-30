@@ -96,7 +96,7 @@ test('foreign listener blocks startup and stays running with failure evidence',a
 test('PowerShell wrapper preserves BOM and preflight has no launch effects',{skip:process.platform!=='win32'},()=>{
  const file=path.resolve('agents/start-all.ps1');assert.equal(fs.readFileSync(file,'utf8').charCodeAt(0),0xFEFF);
  const r=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',file,'-PreflightOnly'],{encoding:'utf8',windowsHide:true,timeout:20000});
- assert.equal(r.status,0,r.stderr);assert.equal(JSON.parse(r.stdout).schema,'jaco.startup-preflight/v1');
+ assert.equal(r.status,0,`Windows preflight stdout: ${r.stdout}\nWindows preflight stderr: ${r.stderr}`);assert.equal(JSON.parse(r.stdout).schema,'jaco.startup-preflight/v1');
 });
 
 test('Ollama discovery uses the host binary name and preserves explicit configuration', t => {
