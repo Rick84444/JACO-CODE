@@ -407,3 +407,36 @@ test('failed Windows coldstart is logged without private paths, closed and never
   assert.deepEqual((await control.pollOnce()).processed,[]);
   assert.equal(actions.length,1);
 });
+
+test('authenticated owner can inspect only a fingerprint-matched Nova receipt',async()=>{
+  const fingerprint='a'.repeat(64), writes=[], calls=[];
+  const system={async verifyNovaMission(hash){
+    calls.push(hash);
+    return {schema:'jaco.nova-receipt-summary/v1',status:'OBSERVED',matched:true,
+      executed:true,missionId:'mission_01',missionState:'ACTIVE',phase:'READY',
+      receipts:1,verifiedReceipts:1,verifiedHealthChecks:1,verifiedTask:'health-check',
+      secrets:'NEVER_PRINT_THIS_SECRET'};
+  }};
+  const fetchImpl=async(url,opts={})=>{
+    const method=opts.method||'GET';
+    if(method==='GET'&&url.includes('/issues?'))return response(200,[{
+      number:777,title:'[JACO BOOT] Nova receipt',user:{login:'Rick84444'},
+      body:'<!-- jaco-bootstrap-control:v1 -->\n'+JSON.stringify({
+        schema:'jaco.bootstrap-control/v1',commandId:'read-only-nova-receipt-001',
+        op:'system.nova-receipt',goalSha256:fingerprint,
+      })}]);
+    if(method==='POST'&&url.includes('/issues/777/comments')){writes.push(JSON.parse(opts.body).body);return response(201,{id:88})}
+    if(method==='PATCH'&&url.endsWith('/issues/777'))return response(200,{state:'closed'});
+    throw Error('Unexpected HTTP operation '+method);
+  };
+  const control=createGithubBootstrapControl({
+    system,fetchImpl,enabled:true,repo:'Rick84444/jaco-code',
+    token:'token',actor:'Rick84444',stateFile:stateFile(),
+  });
+  const result=await control.pollOnce();
+  assert.equal(result.processed[0].status,'OBSERVED');
+  assert.deepEqual(calls,[fingerprint]);
+  assert.equal(writes.length,2);
+  assert.match(writes[1],/Verified health checks: \`1\`/);
+  assert.doesNotMatch(writes.join('\\n'),/NEVER_PRINT_THIS_SECRET/);
+});
