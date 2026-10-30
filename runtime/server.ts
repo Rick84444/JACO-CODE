@@ -291,6 +291,21 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
           return fs.readFileSync(resolveWorkspacePath(rel), 'utf8').slice(0, 20000);
         },
       },
+      aura_runtime: {
+        description: 'Read the one Aura operator runtime: six capabilities, observed service health, browser attestation, mission blockers and uncertain outcomes. Read-only; does not activate tools or grant authority. args: {}',
+        run: async () => {
+          if (!readAgentTeam) throw new Error('AURA_RUNTIME_UNAVAILABLE');
+          const board = await readAgentTeam();
+          return {
+            observedAt: board.observedAt,
+            identity: board.aura?.identity || null,
+            runtimeConsolidated: false,
+            sources: board.sources,
+            functions: board.aura?.functions || [],
+            oversight: board.aura?.oversight || null,
+          };
+        },
+      },
       agent_team: {
         description: 'Observed coordinator, connected agents, durable task agents and their plans. args: {"agentId":"optional exact node id"}. A task agent is an execution context, not a separate process.',
         run: async (args: any) => {
