@@ -23,6 +23,12 @@ on:
       - 'runtime/src/server/mcp/auraMcpSourceRegistry.ts'
       - 'agents/lib/aura-seer-chat.mjs'
       - 'agents/cdp-bridge.mjs'
+      - 'agents/nova-bridge.mjs'
+      - 'agents/lib/aura-service-health.mjs'
+      - 'runtime/src/server/connected/auraOversight.mjs'
+      - 'tests/nova/aura-cdp-truth.test.mjs'
+      - 'tests/nova/aura-oversight.test.mjs'
+      - 'tests/nova/aura-termux-service-health.test.mjs'
       - 'gateway/src/workplace/workplace-store.mjs'
       - 'gateway/src/workplace/workplace-server.mjs'
       - 'tests/nova/aura-seer-chat.test.mjs'
@@ -53,8 +59,6 @@ on:
       - 'tests/nova/aura-single-agent-functions.test.mjs'
       - 'runtime/src/lib/agentNetworkLayout.mjs'
       - 'tests/nova/agent-network.test.mjs'
-      - 'runtime/src/server/connected/auraFunctions.mjs'
-      - 'tests/nova/aura-single-agent-functions.test.mjs'
       - 'runtime/src/components/ConnectionsWorkspace.tsx'
       - 'runtime/src/components/AttachmentPicker.tsx'
       - 'runtime/src/components/McpServersPanel.tsx'
@@ -102,6 +106,12 @@ on:
       - 'runtime/src/server/mcp/auraMcpSourceRegistry.ts'
       - 'agents/lib/aura-seer-chat.mjs'
       - 'agents/cdp-bridge.mjs'
+      - 'agents/nova-bridge.mjs'
+      - 'agents/lib/aura-service-health.mjs'
+      - 'runtime/src/server/connected/auraOversight.mjs'
+      - 'tests/nova/aura-cdp-truth.test.mjs'
+      - 'tests/nova/aura-oversight.test.mjs'
+      - 'tests/nova/aura-termux-service-health.test.mjs'
       - 'gateway/src/workplace/workplace-store.mjs'
       - 'gateway/src/workplace/workplace-server.mjs'
       - 'tests/nova/aura-seer-chat.test.mjs'
@@ -132,8 +142,6 @@ on:
       - 'tests/nova/aura-single-agent-functions.test.mjs'
       - 'runtime/src/lib/agentNetworkLayout.mjs'
       - 'tests/nova/agent-network.test.mjs'
-      - 'runtime/src/server/connected/auraFunctions.mjs'
-      - 'tests/nova/aura-single-agent-functions.test.mjs'
       - 'runtime/src/components/ConnectionsWorkspace.tsx'
       - 'runtime/src/components/AttachmentPicker.tsx'
       - 'runtime/src/components/McpServersPanel.tsx'
@@ -177,6 +185,8 @@ jobs:
         run: node --test tests/nova/setup.test.mjs tests/nova/package-content.test.mjs
       - name: Workbench truth contract
         run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs tests/nova/aura-single-agent-functions.test.mjs
+      - name: Aura control plane, browser WebSocket and false-READY regressions
+        run: node --experimental-sqlite --test tests/nova/aura-cdp-truth.test.mjs tests/nova/aura-oversight.test.mjs tests/nova/cdp-mcp.test.mjs tests/nova/bridges.test.mjs tests/nova/aura-termux-service-health.test.mjs tests/nova/aura-agent-board.test.mjs
       - name: Activation and provider truth regressions
         run: |
           node --check agents/jaco-cli.mjs
