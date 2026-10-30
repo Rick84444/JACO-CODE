@@ -1,11 +1,12 @@
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
+import { safeNovaReceiptLines } from './nova-receipt-inspector.mjs';
 
 const API = 'https://api.github.com';
 const MARKER = '<!-- jaco-bootstrap-control:v1 -->';
 const TITLE_PREFIX = '[JACO BOOT]';
-const ALLOWED_OPS = new Set(['system.status', 'system.health', 'system.activate', 'system.restart', 'system.update']);
+const ALLOWED_OPS = new Set(['system.status', 'system.health', 'system.activate', 'system.restart', 'system.update', 'system.nova-receipt']);
 
 
 // Public GitHub issues are a transport, not a place for diagnostic payloads.
@@ -158,6 +159,11 @@ export function createGithubBootstrapControl({
     if (!/^[a-zA-Z0-9._:-]{6,160}$/.test(commandId)) throw new Error('GITHUB_BOOTSTRAP_COMMAND_ID_INVALID');
     const op = String(payload.op || '').trim();
     if (!ALLOWED_OPS.has(op)) throw new Error('GITHUB_BOOTSTRAP_OPERATION_UNSUPPORTED');
+    if (op === 'system.nova-receipt') {
+      const goalSha256 = String(payload.goalSha256 || '').trim();
+      if (!/^[a-f0-9]{64}$/.test(goalSha256)) throw new Error('GITHUB_BOOTSTRAP_GOAL_SHA256_INVALID');
+      return { commandId, op, goalSha256 };
+    }
     return { commandId, op };
   }
 
@@ -234,6 +240,7 @@ export function createGithubBootstrapControl({
   async function execute(command) {
     if (command.op === 'system.status') return system.status();
     if (command.op === 'system.health') return system.health();
+    if (command.op === 'system.nova-receipt') return system.verifyNovaMission(command.goalSha256);
     if (command.op === 'system.activate') return system.activate('full', { fromMcp: false });
     if (command.op === 'system.restart') return system.restart({ fromMcp: false });
     if (command.op === 'system.update') return system.update({ fromMcp: false });
@@ -283,14 +290,17 @@ export function createGithubBootstrapControl({
             ]);
           }
           const result = await execute(command);
-          const reported = result?.schema === 'jaco.activation/v2'
+          const reported = result?.schema === 'jaco.nova-receipt-summary/v1'
+            ? (result.matched === true ? 'OBSERVED' : 'DEGRADED')
+            : result?.schema === 'jaco.activation/v2'
             ? (result.ok === true ? 'READY' : 'DEGRADED')
             : result?.error ? 'DEGRADED'
             : result?.state || result?.status || (command.op === 'system.status' ? 'OBSERVED' : 'READY');
           // The issue is public: an untrusted runtime status must never become free-form text.
           const state = ['READY', 'RUNNING', 'DEGRADED', 'FAILED', 'OBSERVED', 'UPDATED'].includes(reported)
             ? reported : 'UNVERIFIED';
-          const healthLines = safeBootstrapHealthLines(result);
+          const healthLines = result?.schema === 'jaco.nova-receipt-summary/v1'
+            ? safeNovaReceiptLines(result) : safeBootstrapHealthLines(result);
           if (issue.number != null) {
             await comment(issue.number, [
               '<!-- jaco-bootstrap-status:v1 -->',
