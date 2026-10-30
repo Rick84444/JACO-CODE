@@ -85,7 +85,7 @@ test('MCP goal routes into canonical Aura start-goal in single-operator mode',as
     assert.equal(new URL(calls[0].url).pathname,'/api/aura/workbench/start-goal');
     assert.deepEqual(JSON.parse(calls[0].opts.body),{goal:'Inspect local system',horizon:'short'});
     assert.equal(calls[0].opts.headers['x-gateway-token'],'test-credential');
-    await assert.rejects(core.seerGoal({goal:''}),/AURA_GOAL_REQUIRED_OR_TOO_LONG/);
+    assert.throws(()=>core.seerGoal({goal:''}),/AURA_GOAL_REQUIRED_OR_TOO_LONG/);
     assert.equal(calls.length,1);
   }finally{
     if(original===undefined)delete process.env.JACO_AURA_ONLY_OPERATOR;
@@ -99,7 +99,7 @@ test('Windows Aura-only profile retires direct operator bypass routes but not No
   const connected=readFileSync(resolve(root,'runtime/src/server/connected/connectedRuntime.mjs'),'utf8');
   const nova=readFileSync(resolve(root,'agents/hands-off-agent.mjs'),'utf8');
   const win=readFileSync(resolve(root,'runtime/bin/windows-local-hub-env.mjs'),'utf8');
-  assert.match(server,/app.post\\('\/api\/aura\/missions', requireLocalUi/);
+  assert.match(server,/app\.post\('\/api\/aura\/missions', requireLocalUi/);
   assert.match(server,/AURA_ONLY_USE_START_GOAL/);
   assert.match(connected,/AURA_ONLY_USE_START_GOAL/);
   assert.match(nova,/JACO_AURA_ONLY_OPERATOR === '1'/);
