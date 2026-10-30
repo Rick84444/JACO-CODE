@@ -193,8 +193,17 @@ export class ConnectedRuntime {
   start(intervalMs = 1200) {
     if (this.running) return;
     this.running = true;
-    const run = () => this.tick().catch(error => this.record('mission.dispatch.error', error instanceof Error ? error.message : String(error), false));
-    void run(); this.timer = setInterval(run, Math.max(500, Number(intervalMs) || 1200));
+    // The next timer must not overlap a slow SQLite lease/learning transaction.
+    // Protects the sole durable bus from duplicate work during CPU-bound inference.
+    let tickInFlight = false;
+    const run = () => {
+      if (tickInFlight) return;
+      tickInFlight = true;
+      void this.tick()
+        .catch(error => this.record('mission.dispatch.error', error instanceof Error ? error.message : String(error), false))
+        .finally(() => { tickInFlight = false; });
+    };
+    run(); this.timer = setInterval(run, Math.max(500, Number(intervalMs) || 1200));
     this.record('mission.dispatch.started', `Durable Mission Bus dispatcher started at ${intervalMs}ms`, true);
   }
   stop() { if (this.timer) clearInterval(this.timer); this.timer = null; this.running = false; this.syncSeer(); }
