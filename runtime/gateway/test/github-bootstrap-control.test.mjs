@@ -339,7 +339,7 @@ test('GitHub status body reports verified degraded health instead of misleading 
   const writes=[];
   const fetchImpl=async (url,opts={})=>{
     const m=opts.method||'GET';
-    if (m==='GET'&&url.includes('/issues?')) return response(200,[{number:45,title:'[JACO BOOT] health',user:{login:'Rick84444'},body:'<!-- jaco-bootstrap-control:v1 -->\\n'+JSON.stringify({schema:'jaco.bootstrap-control/v1',commandId:'health-status-0001',op:'system.status'})}]);
+    if (m==='GET'&&url.includes('/issues?')) return response(200,[{number:45,title:'[JACO BOOT] health',user:{login:'Rick84444'},body:'<!-- jaco-bootstrap-control:v1 -->\n'+JSON.stringify({schema:'jaco.bootstrap-control/v1',commandId:'health-status-0001',op:'system.status'})}]);
     if(m==='POST'&&url.endsWith('/issues/45/comments')){writes.push(JSON.parse(opts.body).body);return response(201,{id:1})}
     if(m==='PATCH'&&url.endsWith('/issues/45'))return response(200,{state:'closed'});
     throw Error('unexpected');
@@ -348,7 +348,7 @@ test('GitHub status body reports verified degraded health instead of misleading 
   const bridge=createGithubBootstrapControl({system:sys,fetchImpl,token:'test',enabled:true,repo:'Rick84444/jaco-code',actor:'Rick84444',stateFile:stateFile()});
   const r=await bridge.pollOnce();
   assert.equal(r.processed[0].status,'DEGRADED');
-  assert.match(writes[1],/status: \\*\\*DEGRADED\\*\\*/);
+  assert.match(writes[1],/status: \*\*DEGRADED\*\*/);
   assert.match(writes[1],/Workplace: .DOWN./);
   assert.ok(!writes[1].includes('SECRET'));
 });
