@@ -36,3 +36,13 @@ export function readStartupEvidence(root, { fileSystem = fs } = {}) {
     return evaluateStartupEvidence(null);
   }
 }
+
+export function reconcileStartupActivation(report, evidence) {
+  const startup = evidence || evaluateStartupEvidence(null);
+  const problems = Array.isArray(report?.problems) ? [...report.problems] : [];
+  if (!startup.ok) {
+    problems.push('Windows startup is not fully READY (phase=' + startup.phase +
+      ', browserAttachment=' + startup.browserAttachment + ').');
+  }
+  return { ...report, startup, problems, ok: report?.ok === true && startup.ok };
+}
