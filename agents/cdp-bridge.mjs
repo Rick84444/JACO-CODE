@@ -19,7 +19,35 @@ export function createCdpFacade({token=process.env.JACO_GATEWAY_TOKEN || process
     let id=null;
     try {
       const path=new URL(req.url,'http://localhost').pathname;
-      if (req.method==='GET' && path==='/health') return send(res,200,{ok:true,service:'jaco-cdp-mcp',protocol:'2025-03-26',browserVerified:false});
+      if (req.method==='GET' && path==='/health') {
+        // A listening MCP facade is NOT a working browser. Nova must attest a
+        // recent real CDP WebSocket evaluation AND Workplace authority.
+        if (token.length < 24) return send(res,503,{ok:false,service:'jaco-cdp-mcp',
+          browserVerified:false,state:'BLOCKED',error:'GATEWAY_TOKEN_MISSING'});
+        try {
+          const response = await fetchImpl(base+'/health', {
+            headers:{Authorization:'Bearer '+token}, signal:AbortSignal.timeout(3500),
+          });
+          const upstream = await response.json().catch(()=>null);
+          const age = upstream?.verificationAgeMs;
+          const ready = response.ok && upstream?.ok === true &&
+            upstream?.browserVerified === true && upstream?.state === 'READY' &&
+            Number.isFinite(age) && age >= 0 && age <= 4000 &&
+            typeof upstream?.verifiedAt === 'string' &&
+            Number.isFinite(Date.parse(upstream.verifiedAt)) &&
+            Math.abs(Date.now() - Date.parse(upstream.verifiedAt) - age) < 5000;
+          return send(res,ready?200:503,{
+            ok:ready,service:'jaco-cdp-mcp',protocol:'2025-03-26',
+            browserVerified:ready,state:ready?'READY':'BLOCKED',
+            ...(ready?{verifiedAt:upstream.verifiedAt,verificationAgeMs:age}:{error:
+              typeof upstream?.error === 'string' && /^[A-Z0-9_]{3,64}$/.test(upstream.error)
+                ? upstream.error : 'CDP_UPSTREAM_UNVERIFIED'}),
+          });
+        } catch {
+          return send(res,503,{ok:false,service:'jaco-cdp-mcp',browserVerified:false,
+            state:'BLOCKED',error:'CDP_BRIDGE_UNREACHABLE'});
+        }
+      }
       const a=Buffer.from(req.headers.authorization || ''),b=Buffer.from('Bearer '+token);
       if (token.length<24 || a.length!==b.length || !timingSafeEqual(a,b)) return send(res,401,{error:'UNAUTHORIZED'});
       if (req.headers.origin) return send(res,403,{error:'BROWSER_ORIGIN_DENIED'});
