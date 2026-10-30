@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SystemControl } from '../src/system-control.mjs';
 
-function fixture({ tracked='', branch='master', before='aaa', after='bbb', runtimeState='READY', changedFiles='' } = {}) {
+function fixture({ tracked='', branch='main', before='aaa', after='bbb', runtimeState='READY', changedFiles='' } = {}) {
   const calls=[];
   const spawned=[];
   const execFileImpl=async(file,args,options={})=>{
@@ -41,7 +41,7 @@ function fixture({ tracked='', branch='master', before='aaa', after='bbb', runti
   return {system,calls,spawned};
 }
 
-test('remote update fast-forwards master, restarts runtime, then schedules Sentinel restart', async()=>{
+test('remote update fast-forwards main, restarts runtime, then schedules Sentinel restart', async()=>{
   const {system,calls,spawned}=fixture();
   const result=await system.update({fromMcp:false});
   assert.equal(result.state,'UPDATED');
@@ -50,8 +50,8 @@ test('remote update fast-forwards master, restarts runtime, then schedules Senti
   assert.equal(result.changed,true);
   assert.equal(result.runtime,'READY');
   assert.equal(result.sentinelRestartScheduled,true);
-  assert.ok(calls.some(x=>x.join(' ').includes('git -C /repo fetch origin master')));
-  assert.ok(calls.some(x=>x.join(' ').includes('git -C /repo merge --ff-only origin/master')));
+  assert.ok(calls.some(x=>x.join(' ').includes('git -C /repo fetch origin main')));
+  assert.ok(calls.some(x=>x.join(' ').includes('git -C /repo merge --ff-only origin/main')));
   assert.ok(calls.some(x=>x.join(' ').includes('/runtime/bin/jacoctl restart --json')));
   assert.equal(spawned.length,1);
   assert.equal(spawned[0].file,'/bin/bash');
@@ -95,7 +95,7 @@ test('MCP update requires its own explicit capability, separate from activation'
   assert.equal(calls.some(x=>x.includes('fetch')),false);
 });
 
-test('remote update refuses non-master checkout', async()=>{
+test('remote update refuses non-main checkout', async()=>{
   const {system,calls}=fixture({branch:'feature/local'});
   await assert.rejects(system.update({fromMcp:false}),/REMOTE_UPDATE_BRANCH_UNSUPPORTED/);
   assert.equal(calls.some(x=>x.includes('fetch')),false);
