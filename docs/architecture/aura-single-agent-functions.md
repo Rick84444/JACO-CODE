@@ -55,6 +55,27 @@ They currently own durable graphs, execution leases, retries and evidence.
 The core must never silently fabricate a READY function when those services
 are down.
 
+## Optional resource-reduction profile (Termux)
+
+The profile is opt-in with `JACO_AURA_LEAN=1` in the existing mode-600
+`~/.config/jaco/runtime.env` configuration, activated through the canonical
+`runtime/bin/jacoctl activate` or `restart` **only when runit supervision
+is healthy and interrupting any active mission is acceptable**.
+
+When enabled:
+- Core sets `JACO_AUTO_START_TOOLS=0`. The existing MCP catalog and policy
+  stay intact; the named server is started lazily when explicitly used.
+- `jacoctl` holds the auxiliary CDP (:2996) and Nova Browser Bridge (:4243)
+  services down, even if the ordinary CDP setting defaults to enabled.
+- Workplace/SEER/Nova continue their canonical durable responsibilities.
+  No new scheduler or parallel background agent is created.
+- Ollama remains available as an operator-selected fallback so a failing Gemma
+  does not automatically leave Aura without inference.
+
+Setting `JACO_AURA_LEAN=0` restores the ordinary startup behavior on the
+next deliberate activation/restart. It does not destroy configurations or
+delete models. A genuine one-process consolidation is **not** implied.
+
 ## Subsequent migration gates
 
 1. Measure on-device memory, crashes, service lifecycle and real chat completions
