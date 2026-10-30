@@ -10,6 +10,8 @@ on:
       - 'runtime/gateway/src/system-control.mjs'
       - 'runtime/gateway/src/config.mjs'
       - 'runtime/gateway/src/github-bootstrap-control.mjs'
+      - 'runtime/gateway/test/nova-receipt-inspector.test.mjs'
+      - 'runtime/gateway/src/nova-receipt-inspector.mjs'
       - 'runtime/gateway/src/shell-inspector.mjs'
       - 'runtime/gateway/src/jaco-client.mjs'
       - 'runtime/gateway/src/tool-registry.mjs'
@@ -45,6 +47,8 @@ on:
       - 'runtime/gateway/src/system-control.mjs'
       - 'runtime/gateway/src/config.mjs'
       - 'runtime/gateway/src/github-bootstrap-control.mjs'
+      - 'runtime/gateway/test/nova-receipt-inspector.test.mjs'
+      - 'runtime/gateway/src/nova-receipt-inspector.mjs'
       - 'runtime/gateway/src/shell-inspector.mjs'
       - 'runtime/gateway/src/jaco-client.mjs'
       - 'runtime/gateway/src/tool-registry.mjs'
@@ -89,6 +93,8 @@ jobs:
       - name: Syntax
         run: |
           node --check gateway/src/github-bootstrap-control.mjs
+          node --check gateway/src/nova-receipt-inspector.mjs
+          node --check gateway/test/nova-receipt-inspector.test.mjs
           node --check gateway/src/sentinel.mjs
           node --check bin/sentinel-windows.mjs
           node --check bin/windows-local-hub-env.mjs
