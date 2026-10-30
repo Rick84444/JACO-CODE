@@ -2,6 +2,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { inspectShell, shellInspectionOptions } from '../src/shell-inspector.mjs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 test('shell inspector exposes an explicit read-only command catalog', () => {
   assert.deepEqual(shellInspectionOptions(),['git_status','git_diff_stat','git_recent_commits','node_version','npm_version']);
@@ -41,4 +45,15 @@ test('shell inspector reports failures without echoing raw command line or inher
   assert.equal(result.ok,false);
   assert.equal(result.error,'INSPECTION_COMMAND_FAILED');
   assert.ok(!JSON.stringify(result).includes('SECRET_COMMAND_FAILED'));
+});
+
+test('live executable smoke: read actual Node version via allowlisted no-shell runner', async () => {
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+  const result = await inspectShell('node_version', {
+    repoRoot,
+    runFile: promisify(execFile),
+  }, {enabled:true});
+  assert.equal(result.ok,true,JSON.stringify(result));
+  assert.equal(result.exitCode,0);
+  assert.equal(result.stdout.trim(),process.version);
 });
