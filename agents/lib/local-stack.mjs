@@ -366,7 +366,9 @@ export async function main(args = process.argv.slice(2)) {
 }
 if (process.env.JACO_LITE !== '1' && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().then(r => {
   console.log(JSON.stringify(r, null, 2));
-  if (r.state !== 'READY') process.exitCode = 1;
+  // Preflight is read-only and has no READY state. Only startup/status results
+  // should influence the command exit code.
+  if (r.schema === 'jaco.local-startup/v1' && r.state !== 'READY') process.exitCode = 1;
 }).catch(e => {
   console.error(e.message);
   const dir = path.join(ROOT, 'logs/startup');
