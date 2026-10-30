@@ -18,6 +18,7 @@ function portOf(name, env) {
 }
 
 export function serviceUnavailableLabel(name, env = {}, platform = process.platform) {
+  if (['cdpBridge','novaBridge'].includes(name) && env.JACO_AURA_LEAN === '1') return 'DISABLED (AURA_LEAN)';
   if (['chromeCdp', 'cdpBridge', 'novaBridge'].includes(name) && env.JACO_ENABLE_CDP === '0') return 'DISABLED (CDP_POLICY)';
   if (name === 'ollama' && env.JACO_ENABLE_OLLAMA === '0') return 'DISABLED (MODEL_POLICY)';
   // Termux's canonical jacoctl does not start the optional ChatGPT gateway.
