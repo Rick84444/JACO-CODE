@@ -155,7 +155,7 @@ test('bounded poll timeout leaves durable server mission unchanged',async()=>{
     reads++;return {mission:{id:'mission-1',status:'ACTIVE'}};
   }}});
   await assert.rejects(()=>adk.awaitMission('mission-1',{intervalMs:250,timeoutMs:300}),
-    /ADK_WAIT_TIMEOUT/);
+    e => e instanceof AuraAdkError && e.code === 'ADK_WAIT_TIMEOUT' && e.outcomeUnknown === false);
   assert.ok(reads>=1);
 });
 test('cancel requires operator authorization and does not claim immediate cancellation',async()=>{
@@ -228,4 +228,16 @@ test('real loopback HTTP contract: token, read board, submit goal and inspect mi
     assert.ok(requests.every(r=>r.token==='test-only-token'));
     assert.deepEqual(requests[1].body,{goal:'Audit'});
   }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
+});
+
+test('a lookalike or forged frozen manifest does not gain execution authority', async()=>{
+  let requests=0;
+  const adk=createAuraAdk({client:{request:async()=>{requests++;return {success:true,goal:{id:'goal-1'}};}}});
+  const fake=Object.freeze({
+    schema:'jaco.adk.program/v1', id:'fake', version:'1.0.0',
+    description:'Spoofed', execution:Object.freeze({type:'goal'}),
+    readTools:Object.freeze([]), operatorIdentity:'aura',
+  });
+  await assert.rejects(()=>adk.dispatch(fake,{goal:'Audit',operatorAuthorized:true}),/ADK_DEFINE_PROGRAM_FIRST/);
+  assert.equal(requests,0);
 });
