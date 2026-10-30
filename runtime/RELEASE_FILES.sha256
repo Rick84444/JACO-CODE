@@ -284,7 +284,6 @@ c904bfaaa938afbd6f7dc2c5f8fca781d70dc1ee9885bda65d24087d628ba2f7  ./src/server/m
 aac8c2ac348021955c29bf8e0631b993763e8bb5561449976597c1275a74df73  ./src/server/modelPool/providers/ollamaProvider.ts
 91394d35ba8e606bd9c26f7eafdba93e060dc43f298f72862135c74e6cdcbfad  ./src/server/nativeEngine/nativeEngineClient.ts
 98fd2802334d7535e505687c8a2c5e9b2844906d2fa30c70889a7b2944f592c5  ./src/server/nova/traction.ts
-8bbbffbb09f9a1bfeed290573dbb3d215f83edee29b237807ba71ede00ecb43a  ./src/server/plan/autonomousHeartbeat.ts
 1f89fc0c08247fa0be69b42a8669ed56546e0c5d11fd209f61871b86390cb260  ./src/server/plan/planDb.ts
 1ab363622c96e75a747a33370fdb34956927608649c537aa2d094afe19df123b  ./src/server/plan/planDecide.ts
 2159aa416694675edd99fec25997316d6a2241fd628b32e01a00ccf2ee0060c4  ./src/server/plan/planStore.ts

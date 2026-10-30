@@ -85,10 +85,9 @@ test('new Termux installs default to Lean; full profile remains explicit', () =>
   assert.match(ctl, /if \[\[ "\$\{JACO_AURA_LEAN:-0\}" == "1" && "\$preference" == auto \]\]; then return 0; fi/);
   assert.match(run, /export JACO_AUTO_START_TOOLS=0/);
   assert.doesNotMatch(core, /startWorkerLoop\('worker_main'/);
-  assert.match(core, /if \(!auraLean\) \{[\s\S]*?loadLegacyHeartbeat\(\)/);
-  assert.match(core, /legacyHeartbeatPromise \?\?= import\('\.\/src\/server\/plan\/autonomousHeartbeat\.js'\)/);
-  assert.doesNotMatch(core, /^import\s*\{[\s\S]*?\}\s*from\s*["']\.\/src\/server\/plan\/autonomousHeartbeat\.js["'];/m,
-    'Aura startup must not import the heavy old model/market/command stack');
+  assert.doesNotMatch(core, /loadLegacyHeartbeat|startAutonomousHeartbeat|autonomousHeartbeat\.js/);
+  assert.equal(fs.existsSync(path.join(process.cwd(), 'runtime/src/server/plan/autonomousHeartbeat.ts')), false);
+  assert.match(core, /LEGACY_PLAN_EXECUTION_RETIRED/);
   assert.match(core, /auraLean \? 5000 : 1200/);
   assert.match(core, /auraLean \? 180_000 : 30_000/);
 });
