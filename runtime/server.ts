@@ -98,7 +98,6 @@ import { runCodeRefactor } from './src/server/agents/workers/codeRefactorWorker.
 import { runQualityAudit } from './src/server/agents/workers/qualityAuditorWorker.js';
 import { runGitOps } from './src/server/agents/workers/gitOpsWorker.js';
 import { submitToGate } from "./src/server/gate/approvalGate.js";
-import { startWorkerLoop, stopWorkerLoop, isWorkerRunning } from "./src/server/agents/workerRunner.js";
 import {
   startAutonomousHeartbeat,
   stopAutonomousHeartbeat,
@@ -5441,7 +5440,8 @@ const notifyPhone = async (action) => {
   app.get("/api/workers/status", (_req, res) => {
     return res.json({
       success: true,
-      isRunning: isWorkerRunning(),
+      // The old polling worker was a no-op. The durable mission dispatcher is independent.
+      isRunning: false,
       nodes: listNodes()
     });
   });
@@ -6953,7 +6953,6 @@ const notifyPhone = async (action) => {
     runtimeShuttingDown = true;
     void (async () => {
       stopJobReaper();
-      stopWorkerLoop();
       stopAutonomousHeartbeat();
       try { connectedRuntime.stop(); } catch {}
       if (activeCloudflareProcess) {
@@ -6971,17 +6970,23 @@ const notifyPhone = async (action) => {
 
   httpServer.listen(PORT, HOST, () => {
     console.log(`JACO Agentic AI Studio running on http://${HOST}:${PORT} [Sync Fabric WS on /ws/sync]`);
-    // Starta den funktionella worker-loopen och autonoma heartbeat schemaläggaren
-    startWorkerLoop('worker_main', 1500);
-    startAutonomousHeartbeat(15000);
-    connectedRuntime.start(Number(process.env.JACO_MISSION_BUS_TICK_MS || 1200));
-    // The system connects tools and providers by itself, at boot and then every 30 s: a server that stopped or crashed is
-    // started again with a growing pause, and what cannot be fixed is reported with a remedy (/api/connections/refresh,
-    // jaco activate). JACO_AUTO_START_TOOLS=0 turns the tool part off.
+    // Aura Lean has one canonical durable mission dispatcher. The legacy plan
+    // heartbeat can execute separate plans/commands and must not race Nova.
+    // It remains available via explicit legacy operator endpoints for migration.
+    const auraLean = process.env.JACO_AURA_LEAN === '1';
+    if (!auraLean) {
+      startAutonomousHeartbeat(15000);
+      recordHeartbeat('worker_main', 'Legacy Functional Worker Node');
+    }
+    // Idle phone: 5s durable lease/queue maintenance vs 1.2s in full mode.
+    connectedRuntime.start(Number(process.env.JACO_MISSION_BUS_TICK_MS || (auraLean ? 5000 : 1200)));
+    // First scan still occurs at boot. Explicit refresh remains available.
+    // In Aura Lean poll passive provider catalogs less frequently to reduce
+    // concurrent /v1/models requests during local Gemma inference.
     setTimeout(() => { void connections.refresh({ force: true }).catch(() => {}); }, 2000).unref();
-    const connectionTimer = setInterval(() => { void connections.refresh({ force: true }).catch(() => {}); }, 30000);
+    const scanIntervalMs = auraLean ? 180_000 : 30_000;
+    const connectionTimer = setInterval(() => { void connections.refresh({ force: true }).catch(() => {}); }, scanIntervalMs);
     connectionTimer.unref();
-    recordHeartbeat('worker_main', 'Primary Functional Worker Node');
   });
 
 }
