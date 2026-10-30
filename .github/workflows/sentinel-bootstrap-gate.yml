@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'runtime/gateway/src/sentinel.mjs'
+      - 'runtime/bin/sentinel-windows.mjs'
+      - 'runtime/bin/windows-local-hub-env.mjs'
+      - 'runtime/bin/windows-local-hub-env.test.mjs'
       - 'runtime/gateway/src/system-control.mjs'
       - 'runtime/gateway/src/config.mjs'
       - 'runtime/gateway/src/github-bootstrap-control.mjs'
@@ -36,6 +39,9 @@ on:
     branches: [main]
     paths:
       - 'runtime/gateway/src/sentinel.mjs'
+      - 'runtime/bin/sentinel-windows.mjs'
+      - 'runtime/bin/windows-local-hub-env.mjs'
+      - 'runtime/bin/windows-local-hub-env.test.mjs'
       - 'runtime/gateway/src/system-control.mjs'
       - 'runtime/gateway/src/config.mjs'
       - 'runtime/gateway/src/github-bootstrap-control.mjs'
@@ -84,6 +90,8 @@ jobs:
         run: |
           node --check gateway/src/github-bootstrap-control.mjs
           node --check gateway/src/sentinel.mjs
+          node --check bin/sentinel-windows.mjs
+          node --check bin/windows-local-hub-env.mjs
           node --check gateway/src/system-control.mjs
           node --check ../agents/lib/local-stack.mjs
           node --check ../agents/lib/startup-evidence.mjs
@@ -102,3 +110,4 @@ jobs:
         run: |
           node ../agents/lib/startup-evidence.test.mjs
           node scripts/continuum/ledger-integrity.test.mjs
+          node --test bin/windows-local-hub-env.test.mjs

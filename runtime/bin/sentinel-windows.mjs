@@ -6,11 +6,15 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { applyWindowsHubRole } from './windows-local-hub-env.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const { parse } = createRequire(path.join(repo, 'package.json'))('dotenv');
 const envFile = path.join(repo, '.env');
 for (const [key, value] of Object.entries(fs.existsSync(envFile) ? parse(fs.readFileSync(envFile)) : {})) process.env[key] ??= value;
+// Local hub role remains authoritative across Windows logins, even when .env
+// still contains an old remote pairing. No .env file is changed or exposed.
+applyWindowsHubRole(process.env);
 // Same rule as the local stack: the receiver talks to GitHub and never with certificate checks off.
 delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
 
