@@ -225,7 +225,7 @@ export async function activate(c, { open = false } = {}) {
     fs.unlinkSync(lock); fs.writeFileSync(lock, String(process.pid), { flag: 'wx' });
   }
   const startedAt = new Date().toISOString();
-  const result = { schema: 'jaco.local-startup/v1', runId: `${process.pid}-${Date.now()}`, startedAt, observedAt: startedAt, sequence: 0, state: 'STARTING', phase: 'preflight', runtime: c.runtime, services: [] };
+  const result = { schema: 'jaco.local-startup/v1', runId: `${process.pid}-${Date.now()}`, startedAt, observedAt: startedAt, sequence: 0, state: 'STARTING', phase: 'preflight', runtime: c.runtime, services: [], expected: { browserAttachment: c.cdp }, browserAttachment: c.cdp ? 'PENDING' : 'NOT_REQUIRED', warnings: [] };
   const checkpoint = phase => { result.phase = phase; result.sequence++; result.observedAt = new Date().toISOString(); save(c, result); };
   try {
     checkpoint('preflight');
@@ -234,16 +234,30 @@ export async function activate(c, { open = false } = {}) {
       const observed = await probe(service, c.env.GATEWAY_TOKEN);
       if (observed.state !== 'READY' && await occupied(service.url) && !ownsListener(c,service)) throw new Error(`PORT_CONFLICT_OR_UNHEALTHY:${service.id}`);
     }
+    let chromeAvailable = !c.cdp;
     if (c.cdp) {
-      const chrome = { id: 'chrome', url: `http://127.0.0.1:${c.ports.chrome}/json/version`, accept: d => Boolean(d.webSocketDebuggerUrl) };
-      if ((await probe(chrome)).state !== 'READY') {
-        if (await occupied(chrome.url)) throw new Error('PORT_CONFLICT:chrome');
-        const exe = executable(c.env, c.env.JACO_CHROME_EXECUTABLE, 'chrome.exe', [c.env.ProgramFiles, c.env['ProgramFiles(x86)'], c.env.LOCALAPPDATA].filter(Boolean).map(p => path.join(p, 'Google/Chrome/Application/chrome.exe')));
-        if (!exe) throw new Error('CHROME_NOT_INSTALLED');
-        const profile = c.env.JACO_CHROME_PROFILE_DIR || (c.env.LOCALAPPDATA && path.join(c.env.LOCALAPPDATA, 'JACO/Chrome-CDP'));
-        if (!profile) throw new Error('CHROME_PROFILE_DIR_REQUIRED');
-        if (!pendingProcess(c, 'chrome')) await launch(c, { id: 'chrome', cwd: c.root, cmd: exe, args: [`--remote-debugging-port=${c.ports.chrome}`, '--remote-debugging-address=127.0.0.1', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', `--user-data-dir=${path.resolve(c.root, profile)}`, 'about:blank'] });
-        await waitReady(chrome, '', 30000);
+      checkpoint('chrome');
+      try {
+        const chrome = { id: 'chrome', url: `http://127.0.0.1:${c.ports.chrome}/json/version`, accept: d => Boolean(d.webSocketDebuggerUrl) };
+        if ((await probe(chrome)).state !== 'READY') {
+          if (await occupied(chrome.url)) throw new Error('PORT_CONFLICT:chrome');
+          const exe = executable(c.env, c.env.JACO_CHROME_EXECUTABLE, 'chrome.exe', [c.env.ProgramFiles, c.env['ProgramFiles(x86)'], c.env.LOCALAPPDATA].filter(Boolean).map(p => path.join(p, 'Google/Chrome/Application/chrome.exe')));
+          if (!exe) throw new Error('CHROME_NOT_INSTALLED');
+          const profile = c.env.JACO_CHROME_PROFILE_DIR || (c.env.LOCALAPPDATA && path.join(c.env.LOCALAPPDATA, 'JACO/Chrome-CDP'));
+          if (!profile) throw new Error('CHROME_PROFILE_DIR_REQUIRED');
+          if (!pendingProcess(c, 'chrome')) await launch(c, { id: 'chrome', cwd: c.root, cmd: exe, args: [`--remote-debugging-port=${c.ports.chrome}`, '--remote-debugging-address=127.0.0.1', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', `--user-data-dir=${path.resolve(c.root, profile)}`, 'about:blank'] });
+          await waitReady(chrome, '', 30000);
+        }
+        chromeAvailable = true;
+        result.chrome = 'READY';
+      } catch (error) {
+        // Chrome is optional for Core, Workplace and SEER: preserve the failure
+        // as DEGRADED, without retrying or touching another user's Chrome.
+        chromeAvailable = false;
+        result.chrome = 'UNAVAILABLE';
+        const known = ['CHROME_NOT_INSTALLED', 'CHROME_PROFILE_DIR_REQUIRED', 'PORT_CONFLICT:chrome'];
+        result.warnings.push(known.includes(error?.message) ? error.message : 'CHROME_START_FAILED');
+        checkpoint('chrome-degraded');
       }
     }
     const ollamaUrl = (c.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/v1\/?$/, '').replace(/\/$/, '');
@@ -281,20 +295,32 @@ export async function activate(c, { open = false } = {}) {
     result.services.push({ id: 'nova', state: 'READY', owner: 'workplace' });
     if (c.cdp) {
       checkpoint('browser-attachment');
-      const base = `http://127.0.0.1:${c.ports.chrome}`;
-      const tabsResponse = await fetch(base + '/json/list', { signal: AbortSignal.timeout(5000) });
-      const tabs = await tabsResponse.json();
-      if (!tabsResponse.ok || !Array.isArray(tabs)) throw new Error('CHROME_TARGET_LIST_INVALID');
-      let target = tabs.find(t => { try { const u = new URL(t.url); return t.type === 'page' && ['127.0.0.1','localhost'].includes(u.hostname) && Number(u.port) === c.ports.runtime; } catch { return false; } });
-      if (!target) {
-        const created = await fetch(base + '/json/new?' + encodeURI(c.env.JACO_RUNTIME_URL), { method: 'PUT', signal: AbortSignal.timeout(5000) });
-        target = await created.json();
-        if (!created.ok || !target.webSocketDebuggerUrl) throw new Error('CHROME_TARGET_CREATE_FAILED');
+      if (!chromeAvailable) {
+        result.browserAttachment = 'UNAVAILABLE';
+        result.warnings.push('BROWSER_CHROME_UNAVAILABLE');
+      } else {
+        try {
+          const base = `http://127.0.0.1:${c.ports.chrome}`;
+          const tabsResponse = await fetch(base + '/json/list', { signal: AbortSignal.timeout(5000) });
+          const tabs = await tabsResponse.json();
+          if (!tabsResponse.ok || !Array.isArray(tabs)) throw new Error('CHROME_TARGET_LIST_INVALID');
+          let target = tabs.find(t => { try { const u = new URL(t.url); return t.type === 'page' && ['127.0.0.1','localhost'].includes(u.hostname) && Number(u.port) === c.ports.runtime; } catch { return false; } });
+          if (!target) {
+            const created = await fetch(base + '/json/new?' + encodeURI(c.env.JACO_RUNTIME_URL), { method: 'PUT', signal: AbortSignal.timeout(5000) });
+            target = await created.json();
+            if (!created.ok || !target.webSocketDebuggerUrl) throw new Error('CHROME_TARGET_CREATE_FAILED');
+          }
+          const response = await fetch(c.env.JACO_RUNTIME_URL + '/api/continuum/browser/attach', { method: 'POST', headers: { 'content-type': 'application/json', 'x-gateway-token': c.env.GATEWAY_TOKEN }, body: JSON.stringify({ port: c.ports.chrome, urlIncludes: target.url }), signal: AbortSignal.timeout(15000) });
+          const attached = await response.json();
+          if (!response.ok || attached.success !== true) throw new Error('BROWSER_ATTACHMENT_FAILED');
+          result.browserAttachment = 'ATTACHED';
+        } catch (error) {
+          result.browserAttachment = 'FAILED';
+          const known = ['CHROME_TARGET_LIST_INVALID', 'CHROME_TARGET_CREATE_FAILED', 'BROWSER_ATTACHMENT_FAILED'];
+          result.warnings.push(known.includes(error?.message) ? error.message : 'BROWSER_ATTACHMENT_FAILED');
+        }
       }
-      const response = await fetch(c.env.JACO_RUNTIME_URL + '/api/continuum/browser/attach', { method: 'POST', headers: { 'content-type': 'application/json', 'x-gateway-token': c.env.GATEWAY_TOKEN }, body: JSON.stringify({ port: c.ports.chrome, urlIncludes: target.url }), signal: AbortSignal.timeout(15000) });
-      const attached = await response.json();
-      if (!response.ok || attached.success !== true) throw new Error('BROWSER_ATTACHMENT_FAILED');
-      result.browserAttachment = 'ATTACHED';
+      checkpoint(result.browserAttachment === 'ATTACHED' ? 'browser-attached' : 'browser-degraded');
     }
     if (c.tunnel) {
       checkpoint('tunnel');
@@ -312,7 +338,7 @@ export async function activate(c, { open = false } = {}) {
       }
       result.tunnel = 'PROCESS_PRESENT_PUBLIC_REACHABILITY_UNVERIFIED';
     }
-    result.state = 'READY'; result.completedAt = new Date().toISOString(); checkpoint('complete');
+    result.state = result.warnings.length || (c.cdp && result.browserAttachment !== 'ATTACHED') ? 'DEGRADED' : 'READY'; result.completedAt = new Date().toISOString(); checkpoint('complete');
     if (open) { const child = spawn('explorer.exe', [c.env.JACO_RUNTIME_URL], { windowsHide: true, detached: true, stdio: 'ignore' }); child.unref(); }
     return result;
   } catch (error) { result.state = 'BLOCKED'; result.error = error.message; result.completedAt = new Date().toISOString(); checkpoint(result.phase); throw error; }
@@ -328,7 +354,7 @@ export async function main(args = process.argv.slice(2)) {
 }
 if (process.env.JACO_LITE !== '1' && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().then(r => {
   console.log(JSON.stringify(r, null, 2));
-  if (r.state === 'BLOCKED') process.exitCode = 1;
+  if (r.state !== 'READY') process.exitCode = 1;
 }).catch(e => {
   console.error(e.message);
   const dir = path.join(ROOT, 'logs/startup');
