@@ -450,13 +450,30 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
         },
       },
       start_goal: {
-        description: 'Create a durable Nova mission for an operator goal. Nova executes it under contract and approval gates. args: {"goal":"..."}',
+        description: 'Activate the canonical Aura operator goal through SEER strategy. Internal execution remains in the durable Mission Bus. args: {"goal":"..."}',
         run: async (args: any) => {
           const goal = String(args?.goal || '').trim();
-          if (!goal) throw new Error('goal required');
-          const mission: any = connectedRuntime.novaMissions.create({ goal, source: 'aura-chat', idempotencyKey: `aura-chat-${Date.now()}-${crypto.randomUUID()}` });
-          seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'nova.mission.created', message: `Durable Nova mission created from chat: ${mission.id}`, verified: true, receipt: { missionId: mission.id } });
-          return { created: true, id: mission.id, status: mission.status };
+          if (!goal || goal.length > 12000) throw new Error('GOAL_REQUIRED_OR_TOO_LONG');
+          const base = new URL(String(process.env.SEER_URL || 'http://127.0.0.1:2997'));
+          if (base.protocol !== 'http:' || !['127.0.0.1','localhost','[::1]'].includes(base.hostname)
+            || base.username || base.password || base.search || base.hash) throw new Error('AURA_SEER_LOOPBACK_REQUIRED');
+          const token = process.env.SEER_TOKEN || process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '';
+          if (token.length < 24) throw new Error('SEER_TOKEN_REQUIRED_MIN_24');
+          const response = await fetch(new URL('/cortex/strategy/start',base), {
+            method:'POST',
+            headers: {'content-type':'application/json',Authorization:`Bearer ${token}`},
+            body:JSON.stringify({goal,priority:1,horizon:'medium'}),
+            signal:AbortSignal.timeout(15000),
+          });
+          const received: any = await response.json().catch(() => ({}));
+          if (!response.ok || received?.schema !== 'jaco.operator-goal/v1' || !received?.goal?.id)
+            throw new Error('AURA_CANONICAL_GOAL_REJECTED');
+          const goalId = String(received.goal.id);
+          seerLiveWorkstream.record({ actor:'Aura Chat', type:'strategy.operator_goal.activated',
+            message:`Canonical operator goal activated: ${goalId}`,
+            verified:true, receipt:{goalId} });
+          return { accepted:true, goalId, status:'ACCEPTED',
+            execution:'NOT_VERIFIED', route:'aura-seer-strategy' };
         },
       },
     },
@@ -3281,6 +3298,11 @@ const notifyPhone = async (action) => {
   // This is intentionally loopback-only; remote clients must use the authenticated
   // /api/connected/nova/missions endpoint instead.
   app.post('/api/aura/missions', requireLocalUi, (req, res) => {
+    // The legacy bridge previously bypassed Aura's strategy authority and
+    // created an executor mission directly. In sole-operator mode it is retired.
+    if (process.env.JACO_AURA_ONLY_OPERATOR === '1') {
+      return res.status(410).json({success:false,error:'AURA_ONLY_USE_START_GOAL'});
+    }
     try {
       const goal = String(req.body?.goal || '').trim();
       if (!goal) return res.status(400).json({ success: false, error: 'GOAL_REQUIRED' });
