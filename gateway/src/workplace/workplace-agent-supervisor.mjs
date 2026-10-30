@@ -7,9 +7,9 @@ function normalizeToken(env = {}) {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function probe(url, fetchImpl) {
+async function probe(url, fetchImpl, timeoutMs = 2_500) {
   try {
-    const response = await fetchImpl(url, { signal: AbortSignal.timeout(2_500) });
+    const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
     return Boolean(response?.ok);
   } catch {
     return false;
@@ -73,6 +73,11 @@ export function createWorkplaceAgentSupervisor({
   let novaChild = null;
   let stopping = false;
   let restartTimer = null;
+  let launching = false;
+  let restartAttempts = 0;
+  let lastHealthyAt = 0;
+  const providerProbeTimeoutMs = Math.max(2_500, Math.min(10_000,
+    Number(env.JACO_LITERT_HEALTH_TIMEOUT_MS) || (env.JACO_AURA_LEAN === '1' ? 8_000 : 2_500)));
   let aggregateState = 'DISABLED';
   let workplaceUrl = null;
 
@@ -163,39 +168,47 @@ export function createWorkplaceAgentSupervisor({
   function schedule(fn) {
     if (stopping) return;
     if (restartTimer) clearTimeout(restartTimer);
+    // Repeated native model crashes must not churn every two seconds forever.
+    // A healthy runtime that survived one minute resets the exponential backoff.
+    if (lastHealthyAt && Date.now() - lastHealthyAt >= 60_000) restartAttempts = 0;
+    const delayMs = Math.min(60_000, restartDelayMs * (2 ** Math.min(restartAttempts++, 6)));
     restartTimer = setTimeout(() => {
       restartTimer = null;
       void fn();
-    }, restartDelayMs);
+    }, delayMs);
+    restartTimer.unref?.();
   }
 
   async function detectProvider() {
     const preference = String(env.JACO_SEER_PROVIDER_PREFERENCE || 'auto').trim().toLowerCase();
     if (preference === 'llamacpp') {
-      if (await probe(`${llamaCppV1}/models`, fetchImpl)) return { id: 'llamacpp', url: llamaCppV1 };
+      if (await probe(`${llamaCppV1}/models`, fetchImpl, providerProbeTimeoutMs)) return { id: 'llamacpp', url: llamaCppV1 };
       return null;
     }
     if (preference === 'litert') {
-      if (await probe(`${litertV1}/models`, fetchImpl)) return { id: 'litert', url: litertV1 };
+      if (await probe(`${litertV1}/models`, fetchImpl, providerProbeTimeoutMs)) return { id: 'litert', url: litertV1 };
       return null;
     }
     if (preference === 'ollama') {
-      if (await probe(`${ollamaBase}/api/tags`, fetchImpl)) return { id: 'ollama', url: ollamaBase };
+      if (await probe(`${ollamaBase}/api/tags`, fetchImpl, providerProbeTimeoutMs)) return { id: 'ollama', url: ollamaBase };
       return null;
     }
-    if (await probe(`${litertV1}/models`, fetchImpl)) return { id: 'litert', url: litertV1 };
-    if (await probe(`${llamaCppV1}/models`, fetchImpl)) return { id: 'llamacpp', url: llamaCppV1 };
-    if (await probe(`${ollamaBase}/api/tags`, fetchImpl)) return { id: 'ollama', url: ollamaBase };
+    if (await probe(`${litertV1}/models`, fetchImpl, providerProbeTimeoutMs)) return { id: 'litert', url: litertV1 };
+    if (await probe(`${llamaCppV1}/models`, fetchImpl, providerProbeTimeoutMs)) return { id: 'llamacpp', url: llamaCppV1 };
+    if (await probe(`${ollamaBase}/api/tags`, fetchImpl, providerProbeTimeoutMs)) return { id: 'ollama', url: ollamaBase };
     return null;
   }
 
   async function waitForProvider(waitMs) {
     const deadline = Date.now() + waitMs;
-    while (Date.now() < deadline) {
+    let nextDelay = 1000;
+    while (!stopping && Date.now() < deadline) {
       const provider = await detectProvider();
       if (provider) return provider;
       const remaining = deadline - Date.now();
-      if (remaining > 0) await sleep(Math.min(500, remaining));
+      if (remaining > 0) await sleep(Math.min(nextDelay, remaining));
+      // Avoid repeated /v1/models aborts while Gemma is warming up or busy.
+      nextDelay = Math.min(nextDelay * 2, 8000);
     }
     throw new Error('LOCAL_MODEL_PROVIDER_UNAVAILABLE');
   }
@@ -400,6 +413,7 @@ export function createWorkplaceAgentSupervisor({
     child.once('spawn', () => {
       novaState = 'RUNNING';
       aggregateState = 'RUNNING';
+      lastHealthyAt = Date.now();
     });
     child.once('exit', (code, signal) => {
       lastNovaExit = { code, signal, at: new Date().toISOString() };
@@ -419,7 +433,8 @@ export function createWorkplaceAgentSupervisor({
   }
 
   async function launch() {
-    if (!enabled || stopping) return;
+    if (!enabled || stopping || launching) return;
+    launching = true;
     const waitMs = Number(env.JACO_WORKPLACE_DEPENDENCY_WAIT_MS || env.JACO_WORKPLACE_NOVA_RUNTIME_WAIT_MS || 300_000);
 
     aggregateState = 'WAITING_RUNTIME';
@@ -450,6 +465,8 @@ export function createWorkplaceAgentSupervisor({
       aggregateState = 'DEPENDENCY_FAILED';
       error(`[JACO Workplace] agent supervisor dependency failed: ${cause?.message || cause}`);
       schedule(launch);
+    } finally {
+      launching = false;
     }
   }
 

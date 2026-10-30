@@ -16,6 +16,9 @@ export class ProviderRegistry {
     this.file = path.join(this.stateDir, 'providers.json');
     fs.mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
     this.providers = new Map();
+    // Deduplicate overlapping /v1/models probes and bound idle polling on Android.
+    this.probeCache = new Map();
+    this.probeInFlight = new Map();
     this.load();
     this.ensureDefaults();
   }
@@ -92,7 +95,9 @@ export class ProviderRegistry {
       defaultModel: String(input?.defaultModel || '').trim(),
       createdAt: new Date().toISOString()
     };
-    this.providers.set(id, provider); this.save();
+    this.providers.set(id, provider);
+    this.probeCache.delete(id);
+    this.save();
     return { ...provider, credentialConfigured: Boolean(this.key(provider)) };
   }
 
@@ -106,38 +111,80 @@ export class ProviderRegistry {
     return headers;
   }
 
-  async probe(providerId) {
-    const p = this.providers.get(String(providerId)); if (!p) throw new Error('PROVIDER_NOT_FOUND');
-    const started = Date.now();
-    try {
-      const res = await fetch(`${trimSlash(p.baseUrl)}/models`, { headers: this.headers(p), redirect: 'error', signal: AbortSignal.timeout(5000) });
-      const body = await res.text();
-      const observation = { providerId: p.id, status: res.status, latencyMs: Date.now() - started, responseHash: sha(body) };
-      if (!res.ok) return { ...observation, ok: false, models: [] };
-      // A successful HTTP response alone is not a usable model catalog. Keep arbitrary
-      // objects and numbers out of the model picker, and never invent IDs by coercion.
-      let data;
-      try { data = JSON.parse(body)?.data; } catch {}
-      if (!Array.isArray(data) || data.some(x => typeof x?.id !== 'string' || !x.id.trim())) {
-        return { ...observation, ok: false, models: [], error: 'PROVIDER_MODELS_INVALID' };
+  // A single in-flight /models request is shared by independent UI, runtime and
+  // planner observers. Only passive discovery uses a TTL; explicit probe() stays
+  // fresh by default. Cached observations retain their actual observedAt time.
+  async probe(providerId, { maxAgeMs = 0 } = {}) {
+    const id = String(providerId);
+    const p = this.providers.get(id);
+    if (!p) throw new Error('PROVIDER_NOT_FOUND');
+    const fingerprint = [p.baseUrl, p.defaultModel, p.apiKeyEnv || ''].join('\u0000');
+    const maxAge = Math.max(0, Math.min(300_000, Number(maxAgeMs) || 0));
+    const cached = this.probeCache.get(id);
+    if (maxAge > 0 && cached?.fingerprint === fingerprint &&
+        Date.now() - cached.at >= 0 && Date.now() - cached.at < maxAge) {
+      return cached.result;
+    }
+
+    const pending = this.probeInFlight.get(id);
+    if (pending?.fingerprint === fingerprint) return pending.promise;
+
+    const promise = (async () => {
+      const started = Date.now();
+      let result;
+      try {
+        const res = await fetch(`${trimSlash(p.baseUrl)}/models`, {
+          headers: this.headers(p), redirect: 'error', signal: AbortSignal.timeout(5000),
+        });
+        const body = await res.text();
+        const observation = {
+          providerId: p.id, status: res.status, latencyMs: Date.now() - started,
+          responseHash: sha(body), observedAt: new Date(started).toISOString(),
+        };
+        if (!res.ok) {
+          result = { ...observation, ok: false, models: [] };
+        } else {
+          let data;
+          try { data = JSON.parse(body)?.data; } catch {}
+          if (!Array.isArray(data) || data.some(x => typeof x?.id !== 'string' || !x.id.trim())) {
+            result = { ...observation, ok: false, models: [], error: 'PROVIDER_MODELS_INVALID' };
+          } else {
+            result = { ...observation, ok: true, models: [...new Set(data.map(x => x.id))].slice(0, 100) };
+          }
+        }
+      } catch (error) {
+        result = {
+          providerId: p.id, ok: false, status: null, latencyMs: Date.now() - started,
+          observedAt: new Date(started).toISOString(),
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
-      return { ...observation, ok: true, models: [...new Set(data.map(x => x.id))].slice(0, 100) };
-    } catch (error) {
-      return { providerId: p.id, ok: false, status: null, latencyMs: Date.now() - started, error: error instanceof Error ? error.message : String(error) };
+      // Never commit an observation from an obsolete provider endpoint.
+      const current = this.providers.get(id);
+      if (current && [current.baseUrl, current.defaultModel, current.apiKeyEnv || ''].join('\u0000') === fingerprint) {
+        this.probeCache.set(id, { at: started, fingerprint, result });
+      }
+      return result;
+    })();
+    this.probeInFlight.set(id, { fingerprint, promise });
+    try {
+      return await promise;
+    } finally {
+      if (this.probeInFlight.get(id)?.promise === promise) this.probeInFlight.delete(id);
     }
   }
 
   // Which providers answer right now (operator 2026-10-09: JACO should sense which are active). A cloud provider
   // that needs a key and has none is "no key", not probed; the rest are asked in parallel for their models.
-  async scan() {
+  async scan({ maxAgeMs = this.env.JACO_AURA_LEAN === '1' ? 60_000 : 0 } = {}) {
     // Keys may have been stored by another agent process since startup.
     this.ensureDefaults();
     return Promise.all(this.list().map(async p => {
       const local = /^(localhost|127\.|\[?::1)/.test(new URL(p.baseUrl).hostname);
       if (p.apiKeyEnv && !p.credentialConfigured && !local) return { id: p.id, active: false, state: 'NO_KEY', baseUrl: p.baseUrl, defaultModel: p.defaultModel, models: 0 };
-      const r = await this.probe(p.id);
+      const r = await this.probe(p.id, { maxAgeMs });
       const state = r.ok ? 'ACTIVE' : r.status === 401 || r.status === 403 ? 'KEY_REJECTED' : 'UNREACHABLE';
-      return { id: p.id, active: r.ok, state, baseUrl: p.baseUrl, defaultModel: p.defaultModel, models: r.models?.length || 0, modelIds: r.models || [], observedAt: new Date().toISOString(), ms: r.latencyMs };
+      return { id: p.id, active: r.ok, state, baseUrl: p.baseUrl, defaultModel: p.defaultModel, models: r.models?.length || 0, modelIds: r.models || [], observedAt: r.observedAt || new Date().toISOString(), ms: r.latencyMs };
     }));
   }
 

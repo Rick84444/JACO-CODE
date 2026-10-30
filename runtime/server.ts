@@ -98,14 +98,13 @@ import { runCodeRefactor } from './src/server/agents/workers/codeRefactorWorker.
 import { runQualityAudit } from './src/server/agents/workers/qualityAuditorWorker.js';
 import { runGitOps } from './src/server/agents/workers/gitOpsWorker.js';
 import { submitToGate } from "./src/server/gate/approvalGate.js";
-import { startWorkerLoop, stopWorkerLoop, isWorkerRunning } from "./src/server/agents/workerRunner.js";
-import {
-  startAutonomousHeartbeat,
-  stopAutonomousHeartbeat,
-  getHeartbeatState,
-  tickAutonomousHeartbeat,
-  executeJacoFinalSignoff
-} from "./src/server/plan/autonomousHeartbeat.js";
+// The historic plan heartbeat imports its own model pool, market watchers and
+// command executor. Keep it out of Aura's idle startup import graph.
+// Its explicit legacy endpoints remain available for historical plans.
+type LegacyHeartbeat = typeof import('./src/server/plan/autonomousHeartbeat.js');
+let legacyHeartbeatPromise: Promise<LegacyHeartbeat> | null = null;
+const loadLegacyHeartbeat = () =>
+  legacyHeartbeatPromise ??= import('./src/server/plan/autonomousHeartbeat.js');
 import { updateProviderEndpoint } from "./src/server/modelPool/poolManager.js";
 import { recordHeartbeat, listNodes } from "./src/server/state/nodeStatus.js";
 import {
@@ -5441,7 +5440,8 @@ const notifyPhone = async (action) => {
   app.get("/api/workers/status", (_req, res) => {
     return res.json({
       success: true,
-      isRunning: isWorkerRunning(),
+      // The old polling worker was a no-op. The durable mission dispatcher is independent.
+      isRunning: false,
       nodes: listNodes()
     });
   });
@@ -5679,26 +5679,26 @@ const notifyPhone = async (action) => {
     }
   });
 
-  app.get("/api/plans/heartbeat/status", (req, res) => {
+  app.get("/api/plans/heartbeat/status", async (req, res) => {
     try {
-      const heartbeat = getHeartbeatState();
+      const heartbeat = (await loadLegacyHeartbeat()).getHeartbeatState();
       return res.json({ success: true, heartbeat });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err?.message });
     }
   });
 
-  app.post("/api/plans/heartbeat/toggle", (req, res) => {
+  app.post("/api/plans/heartbeat/toggle", async (req, res) => {
     try {
       const { enable, intervalMs } = req.body || {};
       if (enable === true) {
-        startAutonomousHeartbeat(intervalMs || 12000);
+        (await loadLegacyHeartbeat()).startAutonomousHeartbeat(intervalMs || 12000);
         pushLog('info', `[Autonomous Heartbeat] Autonom schema-ping startad (Intervall: ${intervalMs || 12000}ms)`, 'heartbeat');
       } else {
-        stopAutonomousHeartbeat();
+        (await loadLegacyHeartbeat()).stopAutonomousHeartbeat();
         pushLog('info', '[Autonomous Heartbeat] Autonom schema-ping pausad', 'heartbeat');
       }
-      return res.json({ success: true, heartbeat: getHeartbeatState() });
+      return res.json({ success: true, heartbeat: (await loadLegacyHeartbeat()).getHeartbeatState() });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err?.message });
     }
@@ -5707,17 +5707,17 @@ const notifyPhone = async (action) => {
   app.post("/api/plans/heartbeat/tick-now", async (req, res) => {
     try {
       pushLog('info', '[Autonomous Heartbeat] Manuell schema-ping triggad', 'heartbeat');
-      const result = await tickAutonomousHeartbeat();
-      return res.json({ success: true, tickResult: result, heartbeat: getHeartbeatState() });
+      const result = await (await loadLegacyHeartbeat()).tickAutonomousHeartbeat();
+      return res.json({ success: true, tickResult: result, heartbeat: (await loadLegacyHeartbeat()).getHeartbeatState() });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err?.message });
     }
   });
 
-  app.post("/api/plans/:id/jaco-final-signoff", (req, res) => {
+  app.post("/api/plans/:id/jaco-final-signoff", async (req, res) => {
     try {
       const { operatorName, notes } = req.body || {};
-      const plan = executeJacoFinalSignoff(req.params.id, operatorName || 'JACO Master Operator', notes);
+      const plan = (await loadLegacyHeartbeat()).executeJacoFinalSignoff(req.params.id, operatorName || 'JACO Master Operator', notes);
       if (!plan) {
         return res.status(404).json({ success: false, error: "Plan hittades inte." });
       }
@@ -6953,8 +6953,9 @@ const notifyPhone = async (action) => {
     runtimeShuttingDown = true;
     void (async () => {
       stopJobReaper();
-      stopWorkerLoop();
-      stopAutonomousHeartbeat();
+      if (legacyHeartbeatPromise) {
+        try { (await legacyHeartbeatPromise).stopAutonomousHeartbeat(); } catch {}
+      }
       try { connectedRuntime.stop(); } catch {}
       if (activeCloudflareProcess) {
         try { activeCloudflareProcess.kill('SIGTERM'); } catch {}
@@ -6971,17 +6972,25 @@ const notifyPhone = async (action) => {
 
   httpServer.listen(PORT, HOST, () => {
     console.log(`JACO Agentic AI Studio running on http://${HOST}:${PORT} [Sync Fabric WS on /ws/sync]`);
-    // Starta den funktionella worker-loopen och autonoma heartbeat schemaläggaren
-    startWorkerLoop('worker_main', 1500);
-    startAutonomousHeartbeat(15000);
-    connectedRuntime.start(Number(process.env.JACO_MISSION_BUS_TICK_MS || 1200));
-    // The system connects tools and providers by itself, at boot and then every 30 s: a server that stopped or crashed is
-    // started again with a growing pause, and what cannot be fixed is reported with a remedy (/api/connections/refresh,
-    // jaco activate). JACO_AUTO_START_TOOLS=0 turns the tool part off.
+    // Aura Lean has one canonical durable mission dispatcher. The legacy plan
+    // heartbeat can execute separate plans/commands and must not race Nova.
+    // It remains available via explicit legacy operator endpoints for migration.
+    const auraLean = process.env.JACO_AURA_LEAN === '1';
+    if (!auraLean) {
+      void loadLegacyHeartbeat()
+        .then(module => module.startAutonomousHeartbeat(15000))
+        .catch(error => console.warn('[legacy-plan] heartbeat unavailable:', error?.message || error));
+      recordHeartbeat('worker_main', 'Legacy Functional Worker Node');
+    }
+    // Idle phone: 5s durable lease/queue maintenance vs 1.2s in full mode.
+    connectedRuntime.start(Number(process.env.JACO_MISSION_BUS_TICK_MS || (auraLean ? 5000 : 1200)));
+    // First scan still occurs at boot. Explicit refresh remains available.
+    // In Aura Lean poll passive provider catalogs less frequently to reduce
+    // concurrent /v1/models requests during local Gemma inference.
     setTimeout(() => { void connections.refresh({ force: true }).catch(() => {}); }, 2000).unref();
-    const connectionTimer = setInterval(() => { void connections.refresh({ force: true }).catch(() => {}); }, 30000);
+    const scanIntervalMs = auraLean ? 180_000 : 30_000;
+    const connectionTimer = setInterval(() => { void connections.refresh({ force: true }).catch(() => {}); }, scanIntervalMs);
     connectionTimer.unref();
-    recordHeartbeat('worker_main', 'Primary Functional Worker Node');
   });
 
 }

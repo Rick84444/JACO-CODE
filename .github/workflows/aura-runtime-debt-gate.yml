@@ -1,0 +1,55 @@
+name: Aura Runtime Debt Gate
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/bin/jacoctl'
+      - 'runtime/termux/install-activation.sh'
+      - 'runtime/termux/aura-footprint.sh'
+      - 'runtime/server.ts'
+      - 'runtime/src/server/connected/providerRegistry.mjs'
+      - 'runtime/src/server/connected/automaticConnections.mjs'
+      - 'runtime/src/server/connected/connectedRuntime.mjs'
+      - 'runtime/src/components/JacoAuraComputeIDE.tsx'
+      - 'gateway/src/workplace/workplace-agent-supervisor.mjs'
+      - 'agents/lib/aura-service-health.mjs'
+      - 'tests/nova/aura-runtime-debt.test.mjs'
+      - '.github/workflows/aura-runtime-debt-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'runtime/bin/jacoctl'
+      - 'runtime/termux/install-activation.sh'
+      - 'runtime/termux/aura-footprint.sh'
+      - 'runtime/server.ts'
+      - 'runtime/src/server/connected/providerRegistry.mjs'
+      - 'runtime/src/server/connected/automaticConnections.mjs'
+      - 'runtime/src/server/connected/connectedRuntime.mjs'
+      - 'runtime/src/components/JacoAuraComputeIDE.tsx'
+      - 'gateway/src/workplace/workplace-agent-supervisor.mjs'
+      - 'agents/lib/aura-service-health.mjs'
+      - 'tests/nova/aura-runtime-debt.test.mjs'
+      - '.github/workflows/aura-runtime-debt-gate.yml'
+
+jobs:
+  runtime-debt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked root dependencies
+        run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - name: Syntax and no-destructive scripts
+        run: |
+          bash -n runtime/bin/jacoctl
+          bash -n runtime/termux/install-activation.sh
+          bash -n runtime/termux/aura-footprint.sh
+          node --check gateway/src/workplace/workplace-agent-supervisor.mjs
+          node --check runtime/src/server/connected/providerRegistry.mjs
+      - name: Runtime lean and model lifecycle regression
+        run: |
+          node --test tests/nova/aura-runtime-debt.test.mjs tests/nova/aura-lean-termux.test.mjs tests/nova/automatic-connections.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/aura-termux-service-health.test.mjs
+          node --test tests/workplace/workplace-supervisor.test.mjs

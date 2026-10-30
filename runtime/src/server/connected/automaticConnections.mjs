@@ -75,7 +75,7 @@ export function automaticConnections({ registry, mcpHost, env = process.env, now
         const host = new URL(p.baseUrl).hostname;
         const local = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
         if (!local && !p.credentialConfigured && p.apiKeyEnv) return { id: p.id, state: 'NO_KEY' };
-        const result = await registry.probe(p.id);
+        const result = await registry.probe(p.id, { maxAgeMs: env.JACO_AURA_LEAN === '1' ? 60_000 : 0 });
         const models = (result.models || []).filter(m => !/embed|rerank|whisper|tts|image|moderation/i.test(m));
         // Keep an explicit operator choice; automatic defaults are adopted only when no model was chosen.
         if (result.ok && models.length && !p.defaultModel) registry.register({ ...p, defaultModel: models[0] });

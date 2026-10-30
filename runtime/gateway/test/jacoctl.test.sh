@@ -163,7 +163,10 @@ esac
 SH
 
 JACO_CTL="$JACO_ROOT/bin/jacoctl"
+# This fixture exercises the old automatic llama.cpp + Ollama suppression path.
+# It explicitly opts out of the new Aura Lean default; separate tests assert lean behavior.
 cat > "$JACO_PROJECT_ENV" <<'ENV'
+JACO_AURA_LEAN=0
 JACO_GATEWAY_TOKEN=project-token-123456789012345678901234567890
 ENV
 OUT="$(bash "$JACO_CTL" activate --json)"
