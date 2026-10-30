@@ -80,12 +80,24 @@ test('service takeover is solely owned by the canonical supervisor', () => {
   assert.doesNotMatch(commands, /\bpkill\b|\bkillall\b|\bkill -KILL\b|\bkill -TERM\b/);
 });
 
-test('requires READY, expected Core identity and HTTP 200 before success', () => {
-  assert.match(source, /bash "\$RUNTIME\/bin\/jacoctl" restart/);
+test('fast upgrade checks exact Core identity and GUI without claiming full readiness', () => {
+  assert.match(source, /bash "\$RUNTIME\/bin\/jacoctl" restart --fast/);
   assert.match(source, /bash "\$RUNTIME\/bin\/jacoctl" status/);
-  assert(source.includes('JACO supervisor does not report READY.'));
+  assert.match(source, /readiness=STARTING/);
+  assert.match(source, /model\/SEER\/Durable Nova not yet READY/);
   assert.match(source, /live\.releaseId!==release\.releaseId/);
   assert.match(source, /http_code.*200/);
+});
+
+test('fast startup bypasses model waits but requires canonical ownership and retains strict READY', () => {
+  const ctl = fs.readFileSync(path.join(root, 'runtime/bin/jacoctl'), 'utf8');
+  assert.match(ctl, /--fast\) FAST=true/);
+  assert.match(ctl, /wait_workplace_owner 10/);
+  assert.match(ctl, /svc_owner_matches_checkout "\$WORKPLACE_SERVICE"/);
+  assert.match(ctl, /wait_core_truth_ready/);
+  assert.match(ctl, /if workplace_running; then[\s\S]*emit READY[\s\S]*emit STARTING/);
+  assert.match(ctl, /status\)[\s\S]*sentinel_truth_ready && core_truth_ready && workplace_running/);
+  assert.doesNotMatch(ctl, /killall node|pkill node/);
 });
 
 test('non-main upgrade is guarded and switches only after lockfile backup', () => {
