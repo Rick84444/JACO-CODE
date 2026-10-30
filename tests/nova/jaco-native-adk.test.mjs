@@ -241,3 +241,30 @@ test('a lookalike or forged frozen manifest does not gain execution authority', 
   await assert.rejects(()=>adk.dispatch(fake,{goal:'Audit',operatorAuthorized:true}),/ADK_DEFINE_PROGRAM_FIRST/);
   assert.equal(requests,0);
 });
+
+test('untrusted runtime status and oversight fields never leak through ADK projections',async()=>{
+  const events=[];
+  const secret='eyJ-sensitive-token-do-not-log';
+  const adk=createAuraAdk({client:{request:async path=>{
+    if(path.endsWith('/agent-board'))return board({aura:{
+      ...board().aura,
+      functions:[{id:'reason',state:secret},{id:'fake-function',state:'READY'}],
+      oversight:{schema:'jaco.aura-oversight/v1',browser:{state:secret},
+        services:{workplace:secret,seer:'READY (200)'},
+        missions:{active:'100',blocked:1,awaitingVerification:0,
+          visibleUnknownOutcomes:0,visibleWindowTruncated:false},
+        secrets:{token:secret}},
+    }});
+    return {mission:{id:'mission-1',status:secret,phase:secret}};
+  }},onEvent:e=>events.push(e)});
+  const runtime=await adk.inspect();
+  assert.equal(runtime.oversight.services.workplace,'UNOBSERVED');
+  assert.equal(runtime.oversight.services.seer,'READY (200)');
+  assert.equal(runtime.oversight.browser.state,'UNOBSERVED');
+  assert.equal(runtime.oversight.missions.active,null);
+  assert.deepEqual(runtime.functions,[{id:'reason',state:'UNOBSERVED'}]);
+  const mission=await adk.mission('mission-1');
+  assert.equal(mission.status,'UNKNOWN');
+  assert.equal(mission.phase,null);
+  assert.ok(!JSON.stringify([events,runtime,mission]).includes(secret));
+});
