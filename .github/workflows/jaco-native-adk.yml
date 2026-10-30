@@ -1,0 +1,62 @@
+name: JACO Native ADK Contract
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/src/adk/**'
+      - 'runtime/src/sdk/jaco-client.mjs'
+      - 'runtime/bin/jaco-sdk.mjs'
+      - 'runtime/examples/adk-repository-audit.mjs'
+      - 'tests/nova/jaco-native-adk.test.mjs'
+      - 'docs/architecture/jaco-native-adk.md'
+      - '.github/workflows/jaco-native-adk.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'runtime/src/adk/**'
+      - 'runtime/src/sdk/jaco-client.mjs'
+      - 'runtime/bin/jaco-sdk.mjs'
+      - 'runtime/examples/adk-repository-audit.mjs'
+      - 'tests/nova/jaco-native-adk.test.mjs'
+      - 'docs/architecture/jaco-native-adk.md'
+      - '.github/workflows/jaco-native-adk.yml'
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntax / no extra runtime dependency
+        run: |
+          node --check runtime/src/adk/aura-adk.mjs
+          node --check runtime/bin/jaco-sdk.mjs
+          node --check runtime/examples/adk-repository-audit.mjs
+      - name: ADK and SDK contract plus live loopback HTTP fixture
+        run: |
+          node --test tests/nova/jaco-native-adk.test.mjs runtime/gateway/test/jaco-client.test.mjs
+      - name: Native CLI entrypoints
+        run: |
+          node runtime/bin/jaco-sdk.mjs --help
+          node runtime/examples/adk-repository-audit.mjs --help
+      - name: Only Aura owns development programs
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const source=readFileSync('runtime/src/adk/aura-adk.mjs','utf8');
+          for (const forbidden of ['child_process','new Worker(', 'spawn(', 'exec(', 'eval(',
+            'service-daemon', 'runsvdir', '.env', 'process.exit(']) {
+            assert.ok(!source.includes(forbidden), 'ADK must not add standalone agent authority: '+forbidden);
+          }
+          assert.ok(source.includes('/api/aura/workbench/start-goal'));
+          assert.ok(source.includes('/api/aura/workbench/skills/'));
+          assert.ok(source.includes('/api/connected/nova/missions/'));
+          NODE
