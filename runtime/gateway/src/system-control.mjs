@@ -2,6 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { dirname, join, resolve } from 'node:path';
 import { readStartupEvidence } from '../../../agents/lib/startup-evidence.mjs';
+import { inspectNovaMissionReceipt } from './nova-receipt-inspector.mjs';
 const execFileAsync = promisify(execFile);
 
 export class SystemControl {
@@ -131,6 +132,12 @@ export class SystemControl {
       try { core = await this.core.identity(); } catch {}
       return { sentinel: 'RUNNING', supervisor: 'UNAVAILABLE', core, error: error instanceof Error ? error.message : String(error) };
     }
+  }
+
+  // Read-only, exact fingerprint match against the authenticated local
+  // Core Mission Bus; public issues only receive a safe projection.
+  async verifyNovaMission(goalSha256) {
+    return inspectNovaMissionReceipt(this.core, goalSha256);
   }
 
   async activate(profile = 'full', { fromMcp = true } = {}) {
