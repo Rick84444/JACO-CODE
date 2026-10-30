@@ -17,6 +17,12 @@ ENV_FILE="${JACO_RUNTIME_ENV:-$HOME/.config/jaco/runtime.env}"
   exit 41
 }
 cd "$JACO_ROOT"
+# Aura Lean: keep the MCP catalog, but do not spawn all providers on boot.
+# Calling a tool explicitly can still start its existing MCP server.
+if [ "${JACO_AURA_LEAN:-0}" = "1" ]; then
+  export JACO_AUTO_START_TOOLS=0
+fi
+
 export HOST="${HOST:-127.0.0.1}"
 export PORT="${PORT:-3000}"
 exec "$PREFIX/bin/bash" "$JACO_ROOT/run_termux_node.sh" 2>&1

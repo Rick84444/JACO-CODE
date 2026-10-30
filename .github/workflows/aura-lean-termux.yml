@@ -1,0 +1,31 @@
+name: Aura Lean Termux
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/bin/jacoctl'
+      - 'runtime/termux/services/jaco-core/run'
+      - 'tests/nova/aura-lean-termux.test.mjs'
+      - '.github/workflows/aura-lean-termux.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'runtime/bin/jacoctl'
+      - 'runtime/termux/services/jaco-core/run'
+      - 'tests/nova/aura-lean-termux.test.mjs'
+      - '.github/workflows/aura-lean-termux.yml'
+
+jobs:
+  lean-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check bash and Termux launcher syntax
+        run: |
+          bash -n runtime/bin/jacoctl
+          sh -n runtime/termux/services/jaco-core/run
+      - name: Verify opt-in Aura Lean and regular mode
+        run: node --test tests/nova/aura-lean-termux.test.mjs
