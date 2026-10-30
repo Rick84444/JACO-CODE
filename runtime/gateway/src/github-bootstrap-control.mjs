@@ -306,15 +306,19 @@ export function createGithubBootstrapControl({
             op: command.op,
             status: 'FAILED',
           };
-          persistState();
+          // A failed activation may already have partially changed the host.
+          // Persist the attempted command before network writeback: never auto-retry it.
+          remember(command.commandId);
           if (issue.number != null) {
             await comment(issue.number, [
               '<!-- jaco-bootstrap-status:v1 -->',
               '### JACO Sentinel bootstrap — FAILED',
               `- command: \`${command.commandId}\``,
               `- operation: \`${command.op}\``,
-              `- error: \`${String(error?.message || error).slice(0, 500)}\``,
+              '- error: `TARGET_EXECUTION_FAILED`',
+              '- details: available only on the target host; not published to this issue.',
             ]).catch(() => {});
+            await close(issue.number).catch(() => {});
           }
           processed.push({ issue: issue.number, status: 'FAILED' });
         }
