@@ -45,7 +45,9 @@ export class SystemControl {
   }
 
   async runCtl(args) {
-    const { stdout, stderr } = await this.runFile(this.jacoctl, args, {
+    // Windows has no bash jacoctl wrapper; a Node entry point runs under the current Node executable.
+    const [file, argv] = this.jacoctl.endsWith('.mjs') ? [process.execPath, [this.jacoctl, ...args]] : [this.jacoctl, args];
+    const { stdout, stderr } = await this.runFile(file, argv, {
     });
     let parsed;
     try { parsed = JSON.parse(stdout); } catch { parsed = { stdout: stdout.trim(), stderr: stderr.trim() }; }

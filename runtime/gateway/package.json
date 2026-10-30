@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node src/sentinel.mjs",
     "mcp:stdio": "node src/mcp-stdio.mjs",
-    "test:unit": "node test/tool-registry.test.mjs && node test/security.test.mjs && node test/sdk-boundary.test.mjs && node test/github-bootstrap-control.test.mjs && bash test/jacoctl.test.sh",
+    "test:unit": "node test/tool-registry.test.mjs && node test/security.test.mjs && node test/sdk-boundary.test.mjs && node test/github-bootstrap-control.test.mjs && node test/system-control-node-ctl.test.mjs && bash test/jacoctl.test.sh",
     "test:mcp": "node test/mcp-runtime.test.mjs",
     "test:a2a": "node test/a2a-continuum.test.mjs && node test/a2a-v1-production.test.mjs",
     "test": "npm run test:unit && npm run test:mcp && npm run test:a2a",
