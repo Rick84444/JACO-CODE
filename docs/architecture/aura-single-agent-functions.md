@@ -107,8 +107,10 @@ A file removed from Git does not by itself reduce resident memory or process cou
   module import were removed. The compatibility status endpoint reports
   `isRunning:false` rather than inventing a functional worker.
 - The legacy `autonomousHeartbeat` loop (its own plan/command execution
-  authority) no longer auto-starts in Lean. Its historical plans and explicit
-  legacy endpoints remain intact pending a durable migration.
+  authority) no longer auto-starts in Lean. Its model-pool / market-watch /
+  command-executor module tree is now **dynamically imported** on explicit
+  legacy endpoint use instead of every Aura/Core boot. Its historical plans,
+  signoff API and explicit legacy endpoints remain intact pending migration.
 - Durable Mission Bus keeps its canonical leases, receipts and owner.
   Its idle dispatcher cadence defaults to 5 seconds in Lean (1.2 seconds
   in full mode); overlapping ticks are suppressed in both modes.
