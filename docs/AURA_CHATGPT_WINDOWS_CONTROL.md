@@ -8,6 +8,48 @@ The Windows receiver `runtime/bin/sentinel-windows.mjs` was committed in PR #66 
 
 MCP is the rich operating channel, protected by JACO Sentinel's existing bearer, host/origin checks, Core authentication and the per-tool/mission policies. Its availability from an external ChatGPT session requires an explicitly connected MCP client; a healthy Cloudflare Tunnel or a GitHub command receipt is not that proof.
 
+## One Aura operator, no competing Nova command channel
+
+The Windows local hub sets `JACO_AURA_ONLY_OPERATOR=1`. Aura is the only
+operator-facing goal authority. SEER remains the canonical strategy function;
+Core keeps the durable Mission Bus, leases and evidence; Nova still executes
+internal tasks. This is **not** a claim that the OS services have been combined
+into one process.
+
+- The Aura IDE `POST /api/aura/workbench/start-goal` remains the canonical
+  operator command path and uses `/cortex/strategy/start` with SEER.
+- Aura Chat's `start_goal` invokes that same SEER strategy contract.
+- The MCP `jaco_seer_goal` function uses the Aura start-goal endpoint when
+  the sole-operator profile is active.
+- The legacy `POST /api/aura/missions` and `POST /api/connected/goals`
+  reject direct parallel operator missions with HTTP 410 in that profile.
+- Nova's old GitHub control inbox is disabled in the Windows sole-operator
+  profile, while it continues polling the *internal* Mission Bus.
+
+### First remote command: fixed Aura acceptance
+
+`[JACO AURA]` issues containing `<!-- jaco-aura-control:v1 -->` have one
+publicly transportable operation: `aura.acceptance`, schema
+`jaco.aura-command/v1`. It carries only `schema`, `commandId` and `op`.
+No arbitrary goal text, shell, file path, credential, execution contract or
+tool arguments are accepted through public GitHub issues.
+
+The command invokes the existing local-only Aura start-goal route using the
+Sentinel's authenticated local Core client and a fixed observation-only goal.
+Sentinel persists the command ID **before** invocation: uncertain outcomes are
+never silently retried. The response contains only the allowlisted canonical
+SEER goal ID and `ACCEPTED`. Neither a mission, a planner turn, a model
+completion nor a tool call can be claimed from a goal-acceptance receipt.
+
+Older Sentinel builds ignore the `[JACO AURA]` title. After a controlled
+Windows update, a new Sentinel receiver picks up a single pending Aura issue.
+Nova must not receive another GitHub command for the same goal.
+
+Acceptance on the physical host requires fresh health, the Aura issue
+`ACCEPTED` receipt with goal ID, a subsequent SEER-to-Mission Bus linkage,
+and a true verified Nova tool receipt if execution is claimed. No unattended
+restart, paid API call or direct Nova operator command is part of this patch.
+
 ## Additional MCP tools
 
 | Tool | Behavior |
