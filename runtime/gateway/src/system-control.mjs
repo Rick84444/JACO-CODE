@@ -79,11 +79,11 @@ export class SystemControl {
     if (tracked) throw new Error('REMOTE_UPDATE_TRACKED_CHANGES: clean or stash tracked changes before remote update');
 
     const branch = (await this.runFile(this.gitBin, ['-C', this.repoRoot, 'branch', '--show-current'])).stdout.trim();
-    if (branch !== 'master') throw new Error(`REMOTE_UPDATE_BRANCH_UNSUPPORTED:${branch || 'DETACHED'}`);
+    if (branch !== 'main') throw new Error(`REMOTE_UPDATE_BRANCH_UNSUPPORTED:${branch || 'DETACHED'}`);
 
     const before = (await this.runFile(this.gitBin, ['-C', this.repoRoot, 'rev-parse', 'HEAD'])).stdout.trim();
-    await this.runFile(this.gitBin, ['-C', this.repoRoot, 'fetch', 'origin', 'master']);
-    await this.runFile(this.gitBin, ['-C', this.repoRoot, 'merge', '--ff-only', 'origin/master']);
+    await this.runFile(this.gitBin, ['-C', this.repoRoot, 'fetch', 'origin', 'main']);
+    await this.runFile(this.gitBin, ['-C', this.repoRoot, 'merge', '--ff-only', 'origin/main']);
     const after = (await this.runFile(this.gitBin, ['-C', this.repoRoot, 'rev-parse', 'HEAD'])).stdout.trim();
 
     // New dependencies arrive with the pull; the runtime only installs when tsx is missing.
