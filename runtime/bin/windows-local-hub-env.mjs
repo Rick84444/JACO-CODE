@@ -8,5 +8,8 @@ export function applyWindowsHubRole(env) {
   env.JACO_DEVICE_KEY = '';
   env.JACO_NOVA_EXECUTOR = 'nova';
   env.JACO_WORKPLACE_SCOPE = 'local';
+  // Only Aura accepts operator goals. Nova still executes durable missions
+  // but cannot poll its historical direct GitHub command inbox.
+  env.JACO_AURA_ONLY_OPERATOR = '1';
   return { localHub: true };
 }
