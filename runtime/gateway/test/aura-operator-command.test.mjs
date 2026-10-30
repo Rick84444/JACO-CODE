@@ -62,5 +62,5 @@ test('public projection is fully bounded and never prints source or private deta
 test('the only first-command prompt is observation-oriented and disallows mutations',()=>{
   assert.match(AURA_ACCEPTANCE_GOAL,/observation-only/);
   assert.match(AURA_ACCEPTANCE_GOAL,/do not change files/);
-  assert.match(AURA_ACCEPTANCE_GOAL,/No parallel Nova/i);
+  assert.match(AURA_ACCEPTANCE_GOAL,/Do not create a parallel Nova/);
 });
