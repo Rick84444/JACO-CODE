@@ -1,11 +1,10 @@
 {
   "schema": "jaco.nova-control/v1",
-  "commandId": "chatgpt-aura-cdp-probe-20261021-1948",
+  "commandId": "aura-windows-nova-first-probe-20261030-2230-v1",
   "op": "mission.create",
-  "goal": "READ-ONLY handoff probe from ChatGPT to existing local JACO Nova/Aura runtime. Report project branch and git status, whether CDP bridge and browser targets respond, and whether live GUI uses Aura Live Workspace. No edits, navigation, starting or stopping services, commits, merges, spending, or secret disclosure. Report only actual receipts.",
+  "goal": "Read-only Aura/Nova acceptance test on this local Windows JACO host: inspect git status and Core health, verify action receipt and return missionId. Do not edit files, run arbitrary shell, contact external services, interact with browsers, start or stop services, or use paid models.",
   "allowedTasks": [
     "git-status",
-    "health-check",
-    "repo-list"
+    "health-check"
   ]
 }
