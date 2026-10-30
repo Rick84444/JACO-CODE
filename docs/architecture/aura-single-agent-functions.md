@@ -92,3 +92,56 @@ delete models. A genuine one-process consolidation is **not** implied.
 
 The central distinction is **one agent identity** now versus **one OS process**
 after a separate, explicitly verified migration. The latter cannot be assumed.
+
+
+## 2026-10-30: Runtime debt reduction (Aura Lean default on Termux)
+
+This is **runtime resource debt** removal, not indiscriminate deletion of source.
+A file removed from Git does not by itself reduce resident memory or process count.
+
+- New Termux installs default to `JACO_AURA_LEAN=1`. An existing explicit
+  `JACO_AURA_LEAN=0` remains authoritative. `jacoctl` preserves the operator's
+  explicit choice in the private mode-600 runtime environment.
+- The old `startWorkerLoop` was already a deprecated no-op but was still
+  imported and called on every Core boot; the boot call and its obsolete
+  module import were removed. The compatibility status endpoint reports
+  `isRunning:false` rather than inventing a functional worker.
+- The legacy `autonomousHeartbeat` loop (its own plan/command execution
+  authority) no longer auto-starts in Lean. Its historical plans and explicit
+  legacy endpoints remain intact pending a durable migration.
+- Durable Mission Bus keeps its canonical leases, receipts and owner.
+  Its idle dispatcher cadence defaults to 5 seconds in Lean (1.2 seconds
+  in full mode); overlapping ticks are suppressed in both modes.
+- Automatic provider/MCP discovery runs every 180 seconds in Lean (30 seconds
+  in full mode), with an initial and operator-triggered refresh still possible.
+  Passive provider model-list checks reuse a 60-second observation cache and
+  coalesce simultaneous requests. Explicit probes remain fresh and timestamps
+  reflect when data was *actually* observed.
+- Workplace LiteRT model probes allow up to 8 seconds in Lean rather than
+  2.5 seconds; probe retries back off and supervisor restart retries are
+  exponential (capped at 60 seconds), not unbounded 2-second crash storms.
+  The real Nova/SEER startup inference check is **not** removed.
+- Automatically discovering a 27B llama.cpp model does not silently replace
+  the operator's preferred model in Lean when Gemma takes too long to answer.
+  An explicit llama.cpp selection remains possible.
+- Optional CDP/MCP background processes remain opt-in/lazy. Dormant large
+  UI panels are loaded only when opened.
+
+### Evidence and limitations
+
+The source/CI checks verify code contracts, not observed RAM savings on the
+operator's Android device. For a device baseline and comparison use the
+**read-only** command `bash runtime/termux/aura-footprint.sh` before and after
+a deliberate, supervised activation. It prints canonical JACO process labels
+and resident memory (VmRSS KiB); the sum double-counts shared pages and is
+not equivalent to PSS or proof of an Android low-memory kill.
+
+The Core / Workplace / SEER / Durable Nova boundaries are not yet a single OS
+process. Replacing those processes requires lease, evidence, memory migration
+and failure-recovery tests. Do not remove or rewrite the existing mission
+database, ledger, approval policies, identity/token store or `.env`.
+
+Rollback to the full startup behavior is an explicit
+`JACO_AURA_LEAN=0` in `~/.config/jaco/runtime.env`, followed by a **planned**
+canonical activation/restart only when runit is healthy and active missions
+can safely be interrupted. No auto-repair or port takeover is added here.
