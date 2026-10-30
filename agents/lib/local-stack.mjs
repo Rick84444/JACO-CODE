@@ -5,6 +5,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'dotenv';
+import { readStartupEvidence } from './startup-evidence.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // A runtime is a directory whose server.ts serves the identity readiness probes. The repository root
@@ -202,7 +203,12 @@ export async function inspectStatus(c, services = [...definitions(c), ...novaRea
     const p = await probe(s, c.env.GATEWAY_TOKEN);
     return { id: p.id, state: p.state, url: p.url, http: p.http ?? null, observedAt: new Date().toISOString() };
   }));
-  return { schema: 'jaco.local-startup/v1', state: observed.length && observed.every(s => s.state === 'READY') ? 'READY' : 'BLOCKED', startedAt, observedAt: new Date().toISOString(), runtime: c.runtime, scope: 'fresh service readiness; no task execution verified', services: observed };
+  const startup = readStartupEvidence(c.root);
+  const servicesReady = observed.length > 0 && observed.every(s => s.state === 'READY');
+  return { schema: 'jaco.local-startup/v1', state: servicesReady && startup.ok ? 'READY' : servicesReady ? 'DEGRADED' : 'BLOCKED',
+    startedAt, observedAt: new Date().toISOString(), runtime: c.runtime,
+    scope: 'fresh service readiness and canonical startup evidence; no task execution verified',
+    startup, services: observed };
 }
 export async function activate(c, { open = false } = {}) {
   if (fs.existsSync(path.join(c.root, '.jaco-emergency-stop.json'))) throw new Error('EMERGENCY_STOP_ACTIVE');
