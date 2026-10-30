@@ -7,6 +7,20 @@ on:
       - 'runtime/gateway/src/system-control.mjs'
       - 'runtime/gateway/src/config.mjs'
       - 'runtime/gateway/src/github-bootstrap-control.mjs'
+      - 'runtime/gateway/src/shell-inspector.mjs'
+      - 'runtime/gateway/src/jaco-client.mjs'
+      - 'runtime/gateway/src/tool-registry.mjs'
+      - 'runtime/gateway/src/tool-handlers.mjs'
+      - 'runtime/gateway/test/tool-registry.test.mjs'
+      - 'runtime/gateway/test/shell-inspector.test.mjs'
+      - 'runtime/gateway/test/system-control-health.test.mjs'
+      - 'runtime/gateway/test/system-control-node-exit.test.mjs'
+      - 'runtime/src/server/continuum/eventStore.mjs'
+      - 'runtime/scripts/continuum/ledger-integrity.test.mjs'
+      - 'agents/lib/local-stack.mjs'
+      - 'agents/lib/startup-evidence.mjs'
+      - 'agents/lib/startup-evidence.test.mjs'
+      - 'agents/jaco-cli.mjs'
       - 'runtime/gateway/test/github-bootstrap-control.test.mjs'
       - 'runtime/gateway/test/system-control-update.test.mjs'
       - 'runtime/termux/restart-sentinel-after-delay.sh'
@@ -19,12 +33,26 @@ on:
       - 'runtime/gateway/test/jacoctl.test.sh'
       - '.github/workflows/sentinel-bootstrap-gate.yml'
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - 'runtime/gateway/src/sentinel.mjs'
       - 'runtime/gateway/src/system-control.mjs'
       - 'runtime/gateway/src/config.mjs'
       - 'runtime/gateway/src/github-bootstrap-control.mjs'
+      - 'runtime/gateway/src/shell-inspector.mjs'
+      - 'runtime/gateway/src/jaco-client.mjs'
+      - 'runtime/gateway/src/tool-registry.mjs'
+      - 'runtime/gateway/src/tool-handlers.mjs'
+      - 'runtime/gateway/test/tool-registry.test.mjs'
+      - 'runtime/gateway/test/shell-inspector.test.mjs'
+      - 'runtime/gateway/test/system-control-health.test.mjs'
+      - 'runtime/gateway/test/system-control-node-exit.test.mjs'
+      - 'runtime/src/server/continuum/eventStore.mjs'
+      - 'runtime/scripts/continuum/ledger-integrity.test.mjs'
+      - 'agents/lib/local-stack.mjs'
+      - 'agents/lib/startup-evidence.mjs'
+      - 'agents/lib/startup-evidence.test.mjs'
+      - 'agents/jaco-cli.mjs'
       - 'runtime/gateway/test/github-bootstrap-control.test.mjs'
       - 'runtime/gateway/test/system-control-update.test.mjs'
       - 'runtime/termux/restart-sentinel-after-delay.sh'
@@ -57,6 +85,10 @@ jobs:
           node --check gateway/src/github-bootstrap-control.mjs
           node --check gateway/src/sentinel.mjs
           node --check gateway/src/system-control.mjs
+          node --check ../agents/lib/local-stack.mjs
+          node --check ../agents/lib/startup-evidence.mjs
+          node --check ../agents/jaco-cli.mjs
+          node --check src/server/continuum/eventStore.mjs
           node --check gateway/test/github-bootstrap-control.test.mjs
           node --check gateway/test/system-control-update.test.mjs
           bash -n termux/install-activation.sh
@@ -66,3 +98,7 @@ jobs:
         run: bash gateway/test/reconcile-runit.test.sh
       - name: Gateway regression suite
         run: npm test --prefix gateway
+      - name: Windows startup contract and Continuum ledger regression
+        run: |
+          node ../agents/lib/startup-evidence.test.mjs
+          node scripts/continuum/ledger-integrity.test.mjs

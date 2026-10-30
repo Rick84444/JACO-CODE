@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { ensureDir, canonicalJson, sha256, nowIso, makeId, redactSensitive } from './util.mjs';
 
 function readBootId() {
@@ -17,11 +18,51 @@ function readProcessStartTicks(pid) {
   } catch { return null; }
 }
 
+function readWindowsProcessBirth(pid) {
+  if (process.platform !== 'win32' || !Number.isSafeInteger(pid) || pid < 1) return null;
+  try {
+    const script = '$p=Get-CimInstance Win32_Process -Filter "ProcessId=' + pid + '"; if($p){$p.CreationDate.ToUniversalTime().ToString(\'o\')}';
+    return execFileSync('powershell.exe', ['-NoProfile','-NonInteractive','-Command',script], {
+      encoding: 'utf8', windowsHide: true, timeout: 15000,
+    }).trim() || null;
+  } catch { return null; }
+}
+
+/**
+ * A PID can be reused. Windows has no /proc boot/start ticks, so compare WMI
+ * CreationDate instead. For legacy Windows locks without a birth stamp, the
+ * existing startedAt is sufficient to PROVE reuse only if the current process
+ * was born significantly after the lock was created. Unknown identity fails closed.
+ */
+export function matchesLedgerProcessIdentity(holder, {
+  platform = process.platform,
+  bootId = null,
+  startTicks = null,
+  processBirth = null,
+} = {}) {
+  if (platform === 'win32') {
+    if (!processBirth) return true; // cannot prove a stale lock
+    if (holder?.processBirth) {
+      const previous = Date.parse(String(holder.processBirth));
+      const current = Date.parse(String(processBirth));
+      if (Number.isFinite(previous) && Number.isFinite(current)) return previous === current;
+      return String(holder.processBirth) === String(processBirth);
+    }
+    const recorded = Date.parse(String(holder?.startedAt || ''));
+    const live = Date.parse(String(processBirth));
+    if (Number.isFinite(recorded) && Number.isFinite(live) && live > recorded + 5000) return false;
+    return true; // legacy ambiguous identity remains locked
+  }
+  if (!holder?.bootId || !holder?.startTicks || !bootId || !startTicks) return true;
+  return holder.bootId === bootId && String(holder.startTicks) === String(startTicks);
+}
+
 const PROCESS_LOCK_OWNER = Object.freeze({
   pid: process.pid,
   host: os.hostname(),
   bootId: readBootId(),
   startTicks: readProcessStartTicks(process.pid),
+  processBirth: readWindowsProcessBirth(process.pid),
   ownerId: makeId('ledger-writer'),
 });
 
@@ -41,13 +82,12 @@ function pidAlive(pid) {
 
 function holderMatchesLiveProcess(holder) {
   if (!holder || holder.host !== os.hostname() || !pidAlive(Number(holder.pid))) return false;
-  // Legacy locks lack a stable process identity. Fail closed for them while the
-  // PID is alive; newly written locks can distinguish PID reuse safely.
-  if (!holder.bootId || !holder.startTicks) return true;
-  const bootId = readBootId();
-  const startTicks = readProcessStartTicks(Number(holder.pid));
-  if (!bootId || !startTicks) return true;
-  return holder.bootId === bootId && String(holder.startTicks) === String(startTicks);
+  return matchesLedgerProcessIdentity(holder, {
+    platform: process.platform,
+    bootId: process.platform === 'win32' ? null : readBootId(),
+    startTicks: process.platform === 'win32' ? null : readProcessStartTicks(Number(holder.pid)),
+    processBirth: process.platform === 'win32' ? readWindowsProcessBirth(Number(holder.pid)) : null,
+  });
 }
 
 function isCurrentProcessLock(holder) {

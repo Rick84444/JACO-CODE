@@ -27,6 +27,10 @@ on:
       - 'runtime/src/server/connected/novaMissionControl.mjs'
       - '.github/workflows/desktop-agentos-gate.yml'
       - 'agents/lib/local-stack.mjs'
+      - 'runtime/gateway/src/shell-inspector.mjs'
+      - 'runtime/gateway/test/shell-inspector.test.mjs'
+      - 'runtime/gateway/test/tool-registry.test.mjs'
+      - 'runtime/gateway/test/system-control-node-exit.test.mjs'
       - 'tests/nova/startup-safety.test.mjs'
       - 'tests/nova/remote-startup-contract.test.mjs'
 
@@ -142,6 +146,12 @@ jobs:
             }
             throw 'Startup safety contracts failed'
           }
+
+      - name: Aura MCP and bounded shell execution on Windows
+        shell: pwsh
+        run: |
+          node --test --test-reporter=tap runtime/gateway/test/shell-inspector.test.mjs runtime/gateway/test/tool-registry.test.mjs runtime/gateway/test/system-control-node-exit.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'AURA_MCP_AND_SHELL_CONTRACT_FAILED' }
 
       - name: Verify WMI bridge is read-only
         shell: powershell

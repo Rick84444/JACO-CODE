@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { dirname, join, resolve } from 'node:path';
+import { readStartupEvidence } from '../../../agents/lib/startup-evidence.mjs';
 const execFileAsync = promisify(execFile);
 
 export class SystemControl {
@@ -19,6 +20,8 @@ export class SystemControl {
     npmBin = process.env.JACO_NPM_BIN || 'npm',
     execFileImpl = execFileAsync,
     spawnImpl = spawn,
+    fetchImpl = fetch,
+    workplaceUrl = process.env.JACO_WORKPLACE_URL || 'http://127.0.0.1:2995',
   }) {
     this.jacoctl = jacoctl;
     this.allowMcpActivation = allowMcpActivation;
@@ -32,6 +35,8 @@ export class SystemControl {
     this.npmBin = npmBin;
     this.execFileImpl = execFileImpl;
     this.spawnImpl = spawnImpl;
+    this.fetchImpl = fetchImpl;
+    this.workplaceUrl = String(workplaceUrl).replace(/\/$/, '');
     this.sentinelRestartHelper = join(runtimeRoot, 'termux', 'restart-sentinel-after-delay.sh');
   }
 
@@ -45,15 +50,82 @@ export class SystemControl {
   }
 
   async runCtl(args) {
-    const { stdout, stderr } = await this.runFile(this.jacoctl, args, {
-    });
+    // Windows uses the canonical Node CLI; Termux retains its executable wrapper.
+    const nodeCli = typeof this.jacoctl === 'string' && this.jacoctl.endsWith('.mjs');
+    const file = nodeCli ? process.execPath : this.jacoctl;
+    const argv = nodeCli ? [this.jacoctl, ...args] : args;
+    let stdout, stderr;
+    try {
+      ({ stdout, stderr } = await this.runFile(file, argv));
+    } catch (error) {
+      // The CLI deliberately exits 1 for DEGRADED but still emits a structured
+      // jaco.activation/v2 report. Preserve it; do not turn a nonzero exit
+      // into a generic failure or publish raw stderr/local paths in GitHub.
+      try {
+        const parsed = JSON.parse(String(error?.stdout || ''));
+        if (parsed?.schema === 'jaco.activation/v2' && typeof parsed.ok === 'boolean') return parsed;
+      } catch {}
+      throw error;
+    }
     let parsed;
-    try { parsed = JSON.parse(stdout); } catch { parsed = { stdout: stdout.trim(), stderr: stderr.trim() }; }
+    try { parsed = JSON.parse(stdout); }
+    catch { parsed = { stdout: String(stdout || '').trim(), stderr: String(stderr || '').trim() }; }
     return parsed;
   }
 
+  // Independent, bounded, read-only target-host probes. No shell, Git or remote network.
+  async health() {
+    const workplaceTarget = new URL(this.workplaceUrl);
+    if (workplaceTarget.protocol !== 'http:' ||
+        !['127.0.0.1','localhost','[::1]'].includes(workplaceTarget.hostname) ||
+        workplaceTarget.username || workplaceTarget.password) {
+      throw new Error('JACO_HEALTH_WORKPLACE_MUST_BE_LOOPBACK');
+    }
+    const [coreProbe, workplaceProbe] = await Promise.allSettled([
+      this.core.request
+        ? this.core.request('/api/runtime/identity', {signal:AbortSignal.timeout(4000)})
+        : this.core.identity(),
+      this.fetchImpl(this.workplaceUrl + '/health', {
+        method:'GET', redirect:'error', signal:AbortSignal.timeout(4000),
+      }).then(async response => {
+        if (!response.ok) throw new Error('WORKPLACE_HTTP_NOT_OK');
+        const body = await response.json();
+        if (body?.product !== 'JACO Workplace') throw new Error('WRONG_WORKPLACE_IDENTITY');
+        return body;
+      }),
+    ]);
+    const coreUp = coreProbe.status === 'fulfilled' &&
+      coreProbe.value && coreProbe.value.success !== false;
+    const w = workplaceProbe.status === 'fulfilled' ? workplaceProbe.value : null;
+    const workplaceUp = Boolean(w);
+    const wpState = w?.supervisedAgents?.state === 'RUNNING' ? 'RUNNING'
+      : workplaceUp ? 'DEGRADED' : 'DOWN';
+    const novaState = w?.supervisedAgents?.nova?.state === 'RUNNING' ? 'RUNNING'
+      : workplaceUp ? 'DEGRADED' : 'DOWN';
+    const startup = String(this.jacoctl || '').endsWith('.mjs')
+      ? readStartupEvidence(this.repoRoot) : null;
+    const status = coreUp && wpState === 'RUNNING' && novaState === 'RUNNING'
+      ? (startup && !startup.ok ? 'DEGRADED' : 'READY')
+      : coreUp || workplaceUp ? 'DEGRADED' : 'DOWN';
+    return {
+      schema:'jaco.service-health/v1', status,
+      core:{up:Boolean(coreUp)},
+      workplace:{up:workplaceUp,state:wpState,novaState},
+      aura:{state:'NOT_INDEPENDENTLY_PROBED'},
+      ...(startup ? { startup } : {}),
+    };
+  }
+
   async status() {
-    try { return await this.runCtl(['status', '--json']); }
+    try {
+      const report = await this.runCtl(['status', '--json']);
+      if (String(this.jacoctl || '').endsWith('.mjs') && report?.schema === 'jaco.activation/v2') {
+        const startup = readStartupEvidence(this.repoRoot);
+        const ok = report.ok === true && startup.ok;
+        return { ...report, startup, ok };
+      }
+      return report;
+    }
     catch (error) {
       let core = null;
       try { core = await this.core.identity(); } catch {}

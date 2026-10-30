@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createGithubBootstrapControl } from '../src/github-bootstrap-control.mjs';
+import { createGithubBootstrapControl, safeBootstrapHealthLines } from '../src/github-bootstrap-control.mjs';
 
 function stateFile() {
   return join(mkdtempSync(join(tmpdir(), 'jaco-bootstrap-test-')), 'state.json');
@@ -322,4 +322,88 @@ test('tokenless Git bootstrap still surfaces real fetch failures', async () => {
   });
   await assert.rejects(control.pollOnce(), /GIT_FETCH_FAILED/);
   assert.match(control.status().lastError, /GIT_FETCH_FAILED/);
+});
+
+test('GitHub health receipt uses strict allowlists and never leaks model tokens or paths', () => {
+  const secret = 'SECRET123-CANNOT-LEAK';
+  const state = {schema:'jaco.activation/v2',ok:false,runtime:{up:true,secret},workplace:{required:true,up:false,secret},planner:{reachable:false,model:secret},tools:{toolCount:0,servers:[secret]},problems:[secret]};
+  const lines = safeBootstrapHealthLines(state).join('\n');
+  assert.match(lines, /Core: .UP./);
+  assert.match(lines, /Workplace: .DOWN./);
+  assert.match(lines, /Aura operator: .NOT_INDEPENDENTLY_PROBED./);
+  assert.match(lines, /End-to-end activation: .DEGRADED./);
+  assert.ok(!lines.includes(secret));
+  assert.deepEqual(safeBootstrapHealthLines({state:'READY'}), []);
+});
+test('GitHub status body reports verified degraded health instead of misleading OBSERVED', async () => {
+  const writes=[];
+  const fetchImpl=async (url,opts={})=>{
+    const m=opts.method||'GET';
+    if (m==='GET'&&url.includes('/issues?')) return response(200,[{number:45,title:'[JACO BOOT] health',user:{login:'Rick84444'},body:'<!-- jaco-bootstrap-control:v1 -->\n'+JSON.stringify({schema:'jaco.bootstrap-control/v1',commandId:'health-status-0001',op:'system.status'})}]);
+    if(m==='POST'&&url.endsWith('/issues/45/comments')){writes.push(JSON.parse(opts.body).body);return response(201,{id:1})}
+    if(m==='PATCH'&&url.endsWith('/issues/45'))return response(200,{state:'closed'});
+    throw Error('unexpected');
+  };
+  const sys={status:async()=>({schema:'jaco.activation/v2',ok:false,runtime:{up:true},workplace:{required:true,up:false},planner:{reachable:false},tools:{toolCount:0},problems:['token=SECRET']})};
+  const bridge=createGithubBootstrapControl({system:sys,fetchImpl,token:'test',enabled:true,repo:'Rick84444/jaco-code',actor:'Rick84444',stateFile:stateFile()});
+  const r=await bridge.pollOnce();
+  assert.equal(r.processed[0].status,'DEGRADED');
+  assert.match(writes[1],/status: \*\*DEGRADED\*\*/);
+  assert.match(writes[1],/Workplace: .DOWN./);
+  assert.ok(!writes[1].includes('SECRET'));
+});
+
+test('GitHub bootstrap system.health returns independent Core and Workplace receipt',async()=>{
+  const notes=[];
+  const fetchImpl=async(url,opts={})=>{
+    const m=opts.method||'GET';
+    if (m==='GET'&&url.includes('/issues?'))return response(200,[{
+      number:77,title:'[JACO BOOT] health',user:{login:'Rick84444'},
+      body:'<!-- jaco-bootstrap-control:v1 -->\n'+JSON.stringify({schema:'jaco.bootstrap-control/v1',commandId:'health-probe-v1-00077',op:'system.health'})
+    }]);
+    if(m==='POST'&&url.endsWith('/issues/77/comments')){notes.push(JSON.parse(opts.body).body);return response(201,{id:1})}
+    if(m==='PATCH'&&url.endsWith('/issues/77'))return response(200,{state:'closed'});
+    throw Error('Unexpected request');
+  };
+  let called=0;
+  const system={health:async()=>{called++;return {
+    schema:'jaco.service-health/v1',status:'DEGRADED',
+    core:{up:true},workplace:{up:false,state:'DOWN',novaState:'DOWN'},
+    aura:{state:'NOT_INDEPENDENTLY_PROBED'},secret:'NEVER-PUBLISH'
+  }}};
+  const control=createGithubBootstrapControl({system,fetchImpl,enabled:true,token:'test-token',repo:'Rick84444/jaco-code',actor:'Rick84444',stateFile:stateFile()});
+  const done=await control.pollOnce();
+  assert.equal(called,1);
+  assert.equal(done.processed[0].status,'DEGRADED');
+  assert.match(notes[1],/Core: .UP./);
+  assert.match(notes[1],/Workplace: .DOWN./);
+  assert.match(notes[1],/Aura operator: .NOT_INDEPENDENTLY_PROBED./);
+  assert.ok(!notes[1].includes('NEVER-PUBLISH'));
+});
+
+test('failed Windows coldstart is logged without private paths, closed and never replayed',async()=>{
+  const errors=[], notes=[], actions=[]; let remoteOpen=true;
+  const fetchImpl=async(url,opts={})=>{
+    const m=opts.method||'GET';
+    if(m==='GET'&&url.includes('/issues?')) return response(200,remoteOpen ? [{
+      number:123,title:'[JACO BOOT] coldstart',user:{login:'Rick84444'},
+      body:'<!-- jaco-bootstrap-control:v1 -->\n'+JSON.stringify({
+        schema:'jaco.bootstrap-control/v1',commandId:'windows-coldstart-000123',op:'system.activate'
+      })}]:[]);
+    if(m==='POST'&&url.endsWith('/issues/123/comments')){notes.push(JSON.parse(opts.body).body);return response(201,{id:22})}
+    if(m==='PATCH'&&url.endsWith('/issues/123')){remoteOpen=false;return response(200,{state:'closed'})}
+    throw Error('unexpected HTTP '+m+' '+url);
+  };
+  const system={async activate(){actions.push('activate');throw Error('C:\\Users\\operator\\private\\TOKEN=secret');}};
+  const control=createGithubBootstrapControl({system,fetchImpl,enabled:true,token:'secure',
+    repo:'Rick84444/jaco-code',actor:'Rick84444',stateFile:stateFile()});
+  const first=await control.pollOnce();
+  assert.equal(first.processed[0].status,'FAILED');
+  assert.equal(remoteOpen,false);
+  assert.equal(actions.length,1);
+  assert.ok(notes[1].includes('TARGET_EXECUTION_FAILED'));
+  assert.ok(!notes[1].includes('Users'));
+  assert.ok(!notes[1].includes('secret'));
+  assert.deepEqual((await control.pollOnce()).processed,[]);
+  assert.equal(actions.length,1);
 });

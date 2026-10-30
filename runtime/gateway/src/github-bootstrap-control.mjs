@@ -5,7 +5,73 @@ import { homedir } from 'node:os';
 const API = 'https://api.github.com';
 const MARKER = '<!-- jaco-bootstrap-control:v1 -->';
 const TITLE_PREFIX = '[JACO BOOT]';
-const ALLOWED_OPS = new Set(['system.status', 'system.activate', 'system.restart', 'system.update']);
+const ALLOWED_OPS = new Set(['system.status', 'system.health', 'system.activate', 'system.restart', 'system.update']);
+
+
+// Public GitHub issues are a transport, not a place for diagnostic payloads.
+// Only explicit status enums / bounded counters may cross this boundary.
+// Aura itself is not separately probed by jaco.activation/v2.
+export function safeBootstrapHealthLines(result) {
+  if (result?.schema === 'jaco.service-health/v1') {
+    const core = result.core?.up === true ? 'UP' : result.core?.up === false ? 'DOWN' : 'UNVERIFIED';
+    const workplace = ['RUNNING','DEGRADED','DOWN'].includes(result.workplace?.state)
+      ? result.workplace.state : 'UNVERIFIED';
+    const nova = ['RUNNING','DEGRADED','DOWN'].includes(result.workplace?.novaState)
+      ? result.workplace.novaState : 'UNVERIFIED';
+    const overall = ['READY','DEGRADED','DOWN'].includes(result.status) ? result.status : 'UNVERIFIED';
+    const startupState = ['READY','DEGRADED','BLOCKED','STARTING'].includes(result.startup?.state)
+      ? result.startup.state : 'UNVERIFIED';
+    const browserAttachment = ['ATTACHED','FAILED','UNAVAILABLE','PENDING','NOT_REQUIRED'].includes(result.startup?.browserAttachment)
+      ? result.startup.browserAttachment : 'UNVERIFIED';
+    return ['#### Verified loopback services (allowlisted)',
+      '- Core: `' + core + '`',
+      '- Workplace: `' + workplace + '`',
+      '- Durable Nova: `' + nova + '`',
+      '- Aura operator: `NOT_INDEPENDENTLY_PROBED`',
+      '- Service health: `' + overall + '`',
+      ...(result.startup ? ['- Windows startup: `' + startupState + '`',
+        '- Browser attachment: `' + browserAttachment + '`'] : []),
+    ];
+  }
+  if (!result || result.schema !== 'jaco.activation/v2') return [];
+  const core = result.runtime?.up === true ? 'UP' : result.runtime?.up === false ? 'DOWN' : 'UNVERIFIED';
+  const workplace = result.workplace?.required === false ? 'NOT_REQUIRED'
+    : result.workplace?.up === false ? 'DOWN'
+    : result.workplace?.up === true && result.workplace?.state === 'RUNNING' ? 'RUNNING'
+    : result.workplace?.up === true ? 'DEGRADED' : 'UNVERIFIED';
+  const nova = result.workplace?.required === false ? 'NOT_REQUIRED'
+    : result.workplace?.novaState === 'RUNNING' ? 'RUNNING'
+    : result.workplace?.up === false ? 'DOWN'
+    : result.workplace?.novaState ? 'DEGRADED' : 'UNVERIFIED';
+  const planner = result.planner?.reachable === true ? 'REACHABLE'
+    : result.planner?.reachable === false ? 'UNREACHABLE' : 'UNVERIFIED';
+  const count = Number.isSafeInteger(result.tools?.toolCount) && result.tools.toolCount >= 0 && result.tools.toolCount <= 100000
+    ? String(result.tools.toolCount) : 'UNVERIFIED';
+  const overall = result.ok === true ? 'READY' : 'DEGRADED';
+  const startupState = ['READY', 'DEGRADED', 'BLOCKED', 'STARTING'].includes(result.startup?.state)
+    ? result.startup.state : 'UNVERIFIED';
+  const browserAttachment = ['ATTACHED', 'FAILED', 'UNAVAILABLE', 'PENDING', 'NOT_REQUIRED'].includes(result.startup?.browserAttachment)
+    ? result.startup.browserAttachment : 'UNVERIFIED';
+  const startupPhase = ['preflight', 'browser-attachment', 'complete', 'other'].includes(result.startup?.phase)
+    ? result.startup.phase : 'UNVERIFIED';
+  return [
+    '#### Verified service signals (allowlisted)',
+    '- Core: `' + core + '`',
+    '- Workplace: `' + workplace + '`',
+    '- Durable Nova: `' + nova + '`',
+    '- Aura operator: `NOT_INDEPENDENTLY_PROBED`',
+    '- Selected planner: `' + planner + '`',
+    '- Active tools: `' + count + '`',
+    '- End-to-end activation: `' + overall + '`',
+    ...(result.startup ? [
+      '- Windows startup: `' + startupState + '`',
+      '- Browser attachment: `' + browserAttachment + '`',
+      '- Startup phase: `' + startupPhase + '`',
+    ] : []),
+    '',
+    'These signals come from the local activation report, not from Cloudflare tunnel status.',
+  ];
+}
 
 export function createGithubBootstrapControl({
   system,
@@ -167,6 +233,7 @@ export function createGithubBootstrapControl({
 
   async function execute(command) {
     if (command.op === 'system.status') return system.status();
+    if (command.op === 'system.health') return system.health();
     if (command.op === 'system.activate') return system.activate('full', { fromMcp: false });
     if (command.op === 'system.restart') return system.restart({ fromMcp: false });
     if (command.op === 'system.update') return system.update({ fromMcp: false });
@@ -216,7 +283,14 @@ export function createGithubBootstrapControl({
             ]);
           }
           const result = await execute(command);
-          const state = result?.state || result?.status || (command.op === 'system.status' ? 'OBSERVED' : 'READY');
+          const reported = result?.schema === 'jaco.activation/v2'
+            ? (result.ok === true ? 'READY' : 'DEGRADED')
+            : result?.error ? 'DEGRADED'
+            : result?.state || result?.status || (command.op === 'system.status' ? 'OBSERVED' : 'READY');
+          // The issue is public: an untrusted runtime status must never become free-form text.
+          const state = ['READY', 'RUNNING', 'DEGRADED', 'FAILED', 'OBSERVED', 'UPDATED'].includes(reported)
+            ? reported : 'UNVERIFIED';
+          const healthLines = safeBootstrapHealthLines(result);
           if (issue.number != null) {
             await comment(issue.number, [
               '<!-- jaco-bootstrap-status:v1 -->',
@@ -224,6 +298,8 @@ export function createGithubBootstrapControl({
               `- command: \`${command.commandId}\``,
               `- operation: \`${command.op}\``,
               `- status: **${String(state).slice(0, 80)}**`,
+              '',
+              ...(healthLines.length ? healthLines : ['- Service evidence: `NOT_AVAILABLE` (only command completion was reported).']),
               '',
               'Sentinel executed a fixed JACO lifecycle verb; no arbitrary shell was exposed.',
             ]);
@@ -247,15 +323,19 @@ export function createGithubBootstrapControl({
             op: command.op,
             status: 'FAILED',
           };
-          persistState();
+          // A failed activation may already have partially changed the host.
+          // Persist the attempted command before network writeback: never auto-retry it.
+          remember(command.commandId);
           if (issue.number != null) {
             await comment(issue.number, [
               '<!-- jaco-bootstrap-status:v1 -->',
               '### JACO Sentinel bootstrap — FAILED',
               `- command: \`${command.commandId}\``,
               `- operation: \`${command.op}\``,
-              `- error: \`${String(error?.message || error).slice(0, 500)}\``,
+              '- error: `TARGET_EXECUTION_FAILED`',
+              '- details: available only on the target host; not published to this issue.',
             ]).catch(() => {});
+            await close(issue.number).catch(() => {});
           }
           processed.push({ issue: issue.number, status: 'FAILED' });
         }
