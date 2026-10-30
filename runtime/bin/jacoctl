@@ -357,7 +357,9 @@ apply_model_selection(){
 }
 
 sync_runtime_env(){
-  local project_env shared
+  local project_env shared requested_aura_lean
+  # runtime.env may opt in even when project .env has old defaults.
+  requested_aura_lean="${JACO_AURA_LEAN:-0}"
   project_env="${JACO_PROJECT_ENV:-$JACO_ROOT/../.env}"
 
   # Import project-local values when present, but never print them.
@@ -369,6 +371,10 @@ sync_runtime_env(){
   fi
 
   apply_model_selection "$project_env"
+  if [[ "$requested_aura_lean" == "1" ]]; then JACO_AURA_LEAN=1; fi
+  [[ "${JACO_AURA_LEAN:-0}" == "0" || "${JACO_AURA_LEAN:-0}" == "1" ]] || {
+    echo "JACO_AURA_LEAN must be 0 or 1" >&2; return 1;
+  }
 
   shared="${JACO_GATEWAY_TOKEN:-${GATEWAY_TOKEN:-${SEER_TOKEN:-}}}"
   if [[ -z "$shared" ]]; then
@@ -386,6 +392,7 @@ sync_runtime_env(){
   set_config_export JACO_WORKPLACE_URL "${JACO_WORKPLACE_URL:-http://127.0.0.1:2995}"
   set_config_export JACO_REMOTE_BRIDGE_PORT "${JACO_REMOTE_BRIDGE_PORT:-2994}"
   set_config_export JACO_REMOTE_ALLOW_MUTATIONS "${JACO_REMOTE_ALLOW_MUTATIONS:-1}"
+  set_config_export JACO_AURA_LEAN "${JACO_AURA_LEAN:-0}"
   set_config_export JACO_LEVEL5_AUTONOMY "${JACO_LEVEL5_AUTONOMY:-1}"
   set_config_export JACO_ALLOW_SHELL_TASKS "${JACO_ALLOW_SHELL_TASKS:-1}"
   set_config_export JACO_ENABLE_CDP "${JACO_ENABLE_CDP:-1}"
@@ -696,7 +703,7 @@ case "$ACTION" in
     svc_up "$WORKPLACE_SERVICE"
     wait_url "$WORKPLACE_URL/health" Workplace 80
     wait_workplace_running "${JACO_ACTIVATE_WAIT_SECONDS:-300}" || { emit DEGRADED 'Workplace reachable but Durable Nova is not RUNNING'; exit 33; }
-    if [[ "${JACO_ENABLE_CDP:-1}" == "1" ]]; then
+    if [[ "${JACO_ENABLE_CDP:-1}" == "1" && "${JACO_AURA_LEAN:-0}" != "1" ]]; then
       svc_up "$NOVA_BRIDGE_SERVICE"
       svc_up "$CDP_SERVICE"
     else
@@ -757,9 +764,12 @@ case "$ACTION" in
     svc_up "$WORKPLACE_SERVICE"
     wait_url "$WORKPLACE_URL/health" Workplace 80
     wait_workplace_running "${JACO_ACTIVATE_WAIT_SECONDS:-300}" || { emit DEGRADED 'Workplace reachable but Durable Nova is not RUNNING'; exit 33; }
-    if [[ "${JACO_ENABLE_CDP:-1}" == "1" ]]; then
+    if [[ "${JACO_ENABLE_CDP:-1}" == "1" && "${JACO_AURA_LEAN:-0}" != "1" ]]; then
       svc_up "$NOVA_BRIDGE_SERVICE"
       svc_up "$CDP_SERVICE"
+    else
+      svc_down "$NOVA_BRIDGE_SERVICE" || true
+      svc_down "$CDP_SERVICE" || true
     fi
     sentinel_truth_ready && core_truth_ready && workplace_running || { emit DEGRADED 'Canonical Sentinel/Core/Workplace ownership failed after restart'; exit 34; }
     emit READY 'Core restarted; Workplace resumed Durable Nova; local model/CDP auxiliaries restored'
