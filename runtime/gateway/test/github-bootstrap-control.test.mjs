@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createGithubBootstrapControl } from '../src/github-bootstrap-control.mjs';
+import { createGithubBootstrapControl, safeBootstrapHealthLines } from '../src/github-bootstrap-control.mjs';
 
 function stateFile() {
   return join(mkdtempSync(join(tmpdir(), 'jaco-bootstrap-test-')), 'state.json');
@@ -322,4 +322,33 @@ test('tokenless Git bootstrap still surfaces real fetch failures', async () => {
   });
   await assert.rejects(control.pollOnce(), /GIT_FETCH_FAILED/);
   assert.match(control.status().lastError, /GIT_FETCH_FAILED/);
+});
+
+test('GitHub health receipt uses strict allowlists and never leaks model tokens or paths', () => {
+  const secret = 'SECRET123-CANNOT-LEAK';
+  const state = {schema:'jaco.activation/v2',ok:false,runtime:{up:true,secret},workplace:{required:true,up:false,secret},planner:{reachable:false,model:secret},tools:{toolCount:0,servers:[secret]},problems:[secret]};
+  const lines = safeBootstrapHealthLines(state).join('\n');
+  assert.match(lines, /Core: .UP./);
+  assert.match(lines, /Workplace: .DOWN./);
+  assert.match(lines, /Aura operator: .NOT_INDEPENDENTLY_PROBED./);
+  assert.match(lines, /End-to-end activation: .DEGRADED./);
+  assert.ok(!lines.includes(secret));
+  assert.deepEqual(safeBootstrapHealthLines({state:'READY'}), []);
+});
+test('GitHub status body reports verified degraded health instead of misleading OBSERVED', async () => {
+  const writes=[];
+  const fetchImpl=async (url,opts={})=>{
+    const m=opts.method||'GET';
+    if (m==='GET'&&url.includes('/issues?')) return response(200,[{number:45,title:'[JACO BOOT] health',user:{login:'Rick84444'},body:'<!-- jaco-bootstrap-control:v1 -->\\n'+JSON.stringify({schema:'jaco.bootstrap-control/v1',commandId:'health-status-0001',op:'system.status'})}]);
+    if(m==='POST'&&url.endsWith('/issues/45/comments')){writes.push(JSON.parse(opts.body).body);return response(201,{id:1})}
+    if(m==='PATCH'&&url.endsWith('/issues/45'))return response(200,{state:'closed'});
+    throw Error('unexpected');
+  };
+  const sys={status:async()=>({schema:'jaco.activation/v2',ok:false,runtime:{up:true},workplace:{required:true,up:false},planner:{reachable:false},tools:{toolCount:0},problems:['token=SECRET']})};
+  const bridge=createGithubBootstrapControl({system:sys,fetchImpl,token:'test',enabled:true,repo:'Rick84444/jaco-code',actor:'Rick84444',stateFile:stateFile()});
+  const r=await bridge.pollOnce();
+  assert.equal(r.processed[0].status,'DEGRADED');
+  assert.match(writes[1],/status: \\*\\*DEGRADED\\*\\*/);
+  assert.match(writes[1],/Workplace: .DOWN./);
+  assert.ok(!writes[1].includes('SECRET'));
 });
