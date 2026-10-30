@@ -13,7 +13,7 @@ export const AURA_FUNCTION_DEFINITIONS = Object.freeze([
 const observed = (ready, fallback = 'UNOBSERVED') => ready ? 'OBSERVED' : fallback;
 
 export function projectAuraFunctions({ workplace = null, coordinator = null, graphs = null,
-  missions = null, workers = [], tools = null, now = new Date().toISOString() } = {}) {
+  missions = null, workers = [], tools = null, now = new Date().toISOString(), safeText = value => String(value ?? '').slice(0, 200) } = {}) {
   const workplaceReachable = workplace?.reachable === true;
   const seerReachable = coordinator?.reachable === true;
   const model = seerReachable ? coordinator?.health?.local_model : null;
@@ -36,10 +36,10 @@ export function projectAuraFunctions({ workplace = null, coordinator = null, gra
     verify: !visibleMissions ? 'UNAVAILABLE' : verifiedSteps > 0 ? 'EVIDENCE_OBSERVED' : 'NO_EVIDENCE_OBSERVED',
   };
   const detail = {
-    reason: model?.model || 'Ingen fungerande inferens verifierad',
+    reason: model?.model ? safeText(model.model) : 'Ingen fungerande inferens verifierad',
     plan: Array.isArray(graphs) ? String(graphs.length) + ' observerade plangrafer' : 'Plangrafer ej observerade',
     execute: String(active.length) + ' aktiva uppdrag, ' + String(freshWorkers) + ' färska körprocesser',
-    memory: workplace?.memoryState?.storage || 'Minneslager ej verifierat',
+    memory: workplace?.memoryState?.storage ? safeText(workplace.memoryState.storage) : 'Minneslager ej verifierat',
     tools: connectedTools === null ? 'Verktygsstatus saknas' : String(connectedTools) + ' anslutna MCP-servrar; inga anrop garanteras',
     verify: verifiedSteps === null ? 'Kvitton kan inte läsas' : String(verifiedSteps) + ' rapporterade verifierade verktygssteg; inte bevis på slutmål',
   };
