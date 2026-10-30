@@ -2283,7 +2283,7 @@ const notifyPhone = async (action) => {
       })(),
     ]);
     return buildAgentBoard({ bus: connectedRuntime.bus, control: connectedRuntime.novaMissions,
-      workplace, coordinator, graphs:planning, workers:connectedRuntime.bus.listWorkers(),
+      workplace, coordinator, graphs:planning, workers:connectedRuntime.bus.listWorkers(), tools:mcpHost.status(),
       secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key)).map(([,value]) => value),
     });
   };

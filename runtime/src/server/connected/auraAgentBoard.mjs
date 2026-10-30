@@ -1,4 +1,5 @@
 import { projectAgentNetwork } from './agentNetwork.mjs';
+import { projectAuraFunctions } from './auraFunctions.mjs';
 import { redactSensitive } from '../continuum/util.mjs';
 
 export function boardColumn(status, phase) {
@@ -12,7 +13,7 @@ export function boardColumn(status, phase) {
 
 // Only selected fields cross the operator UI boundary. Never forward raw cards,
 // sessions, observations, tool arguments or arbitrary result objects.
-export function buildAgentBoard({ bus, control, workplace, graphs = null, coordinator = null, workers = [], now = new Date().toISOString(), secrets = [] }) {
+export function buildAgentBoard({ bus, control, workplace, graphs = null, coordinator = null, workers = [], tools = null, now = new Date().toISOString(), secrets = [] }) {
   const text = (value, max = 1000) => {
     if (typeof value !== 'string') return null;
     let safe = redactSensitive(value).replace(/\b(?:wps_|ghp_|github_pat_)[A-Za-z0-9_]+/g, '[REDACTED]')
@@ -93,6 +94,7 @@ export function buildAgentBoard({ bus, control, workplace, graphs = null, coordi
     } : null,
     memory: (workplace?.memory || []).slice(0,30).map(e => ({id:text(e.eventId,240),kind:text(e.kind,80),body:text(e.body,3000),at:text(e.createdAt,80),agentId:text(e.sender?.agentId,240)})),
     memoryState: workplace?.memoryState ? {owner:'Workplace',git:false,storage:text(workplace.memoryState.storage,80),latestSeq:number(workplace.memoryState.latestSeq)} : null,
+    aura: projectAuraFunctions({ workplace, coordinator, graphs, missions: missionError ? null : missions, workers, tools, now, safeText: text }),
     network: projectAgentNetwork({agents,missions,graphs,coordinator,workers,missionTruncated:total !== null && total > missions.length,text,now}),
     agents, missions, total, statusCounts, limit: 200, truncated: total !== null && total > missions.length,
   };
