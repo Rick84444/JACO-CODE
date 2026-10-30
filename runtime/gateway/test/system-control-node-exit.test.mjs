@@ -55,3 +55,25 @@ test('Windows status is DEGRADED when Core is running but starter was blocked',a
     assert.equal(result.startup.state,'BLOCKED');
   }finally{fs.rmSync(root,{recursive:true,force:true})}
 });
+
+test('independent Windows service health is DEGRADED while browser attachment is blocked',async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-windows-health-'));
+  try {
+    fs.mkdirSync(path.join(root,'logs','startup'),{recursive:true});
+    fs.writeFileSync(path.join(root,'logs','startup','status.json'),JSON.stringify({
+      schema:'jaco.local-startup/v1',state:'BLOCKED',phase:'browser-attachment',
+      browserAttachment:'FAILED',expected:{browserAttachment:true}
+    }));
+    const system=new SystemControl({
+      jacoctl:path.join(root,'agents','jaco-cli.mjs'),repoRoot:root,runtimeRoot:path.join(root,'runtime'),
+      core:{request:async()=>({success:true})},
+      fetchImpl:async()=>({ok:true,json:async()=>({product:'JACO Workplace',supervisedAgents:{
+        state:'RUNNING',nova:{state:'RUNNING'}}})}),
+    });
+    const result=await system.health();
+    assert.equal(result.core.up,true);
+    assert.equal(result.workplace.state,'RUNNING');
+    assert.equal(result.status,'DEGRADED');
+    assert.equal(result.startup.browserAttachment,'FAILED');
+  }finally{fs.rmSync(root,{recursive:true,force:true})}
+});
