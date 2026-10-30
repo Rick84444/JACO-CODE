@@ -421,7 +421,7 @@ test('authenticated owner can inspect only a fingerprint-matched Nova receipt',a
     const method=opts.method||'GET';
     if(method==='GET'&&url.includes('/issues?'))return response(200,[{
       number:777,title:'[JACO BOOT] Nova receipt',user:{login:'Rick84444'},
-      body:'<!-- jaco-bootstrap-control:v1 -->\\n'+JSON.stringify({
+      body:'<!-- jaco-bootstrap-control:v1 -->\n'+JSON.stringify({
         schema:'jaco.bootstrap-control/v1',commandId:'read-only-nova-receipt-001',
         op:'system.nova-receipt',goalSha256:fingerprint,
       })}]);
