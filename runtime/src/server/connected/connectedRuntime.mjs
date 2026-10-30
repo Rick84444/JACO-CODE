@@ -223,7 +223,15 @@ export function mountConnectedRoutes(app, requireAuth, runtime) {
   app.get('/api/connected/missions', requireAuth, (req, res) => ok(res, { missions: runtime.bus.listMissions(Number(req.query.limit || 100)) }));
   app.get('/api/connected/tickets', requireAuth, (req, res) => ok(res, { tickets: runtime.bus.listTickets({ status: req.query.status ? String(req.query.status) : null, missionId: req.query.missionId ? String(req.query.missionId) : null, limit: Number(req.query.limit || 200) }) }));
   app.get('/api/connected/events', requireAuth, (req, res) => ok(res, { events: runtime.bus.listEvents(Number(req.query.limit || 200)) }));
-  app.post('/api/connected/goals', requireAuth, (req, res) => { try { ok(res, runtime.createGoal(req.body || {})); } catch (e) { fail(res, e); } });
+  app.post('/api/connected/goals', requireAuth, (req, res) => {
+    // Compatibility route for pre-Aura external clients. In the sole-operator
+    // runtime profile it would create a competing primary goal in the bus.
+    if (process.env.JACO_AURA_ONLY_OPERATOR === '1') {
+      return res.status(410).json({ success:false, error:'AURA_ONLY_USE_START_GOAL' });
+    }
+    try { ok(res, runtime.createGoal(req.body || {})); }
+    catch (e) { fail(res, e); }
+  });
   app.post('/api/connected/tick', requireAuth, async (_req, res) => { try { ok(res, { connected: await runtime.tick() }); } catch (e) { fail(res, e, 500); } });
   app.post('/api/connected/dispatcher/start', requireAuth, (req, res) => { runtime.start(Number(req.body?.intervalMs || 1200)); ok(res, { running: true }); });
   app.post('/api/connected/dispatcher/stop', requireAuth, (_req, res) => { runtime.stop(); ok(res, { running: false }); });

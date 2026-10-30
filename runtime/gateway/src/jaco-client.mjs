@@ -50,7 +50,18 @@ export class JacoCoreClient {
 
   connectedStatus() { return this.request('/api/connected/status'); }
   seerLive() { return this.request('/api/seer/live'); }
-  seerGoal(args) { return this.request('/api/connected/goals', { method:'POST', body:JSON.stringify(args) }); }
+  seerGoal(args) {
+    if (process.env.JACO_AURA_ONLY_OPERATOR === '1') {
+      const goal = String(args?.goal || '').trim();
+      if (!goal || goal.length > 12000) throw new Error('AURA_GOAL_REQUIRED_OR_TOO_LONG');
+      // In sole-operator mode every MCP goal enters the same Aura/SEER strategy
+      // route as the IDE. Never create a parallel Core or direct Nova mission.
+      return this.request('/api/aura/workbench/start-goal', {
+        method:'POST', body:JSON.stringify({goal,horizon:args?.horizon || 'medium'}),
+      });
+    }
+    return this.request('/api/connected/goals', { method:'POST', body:JSON.stringify(args) });
+  }
   missionList(limit=100) { return this.request(`/api/connected/missions?limit=${encodeURIComponent(limit)}`); }
   missionTickets(args={}) { const q=new URLSearchParams(); if(args.missionId)q.set('missionId',args.missionId); if(args.status)q.set('status',args.status); q.set('limit',String(args.limit||200)); return this.request(`/api/connected/tickets?${q}`); }
   missionTick() { return this.request('/api/connected/tick',{method:'POST',body:'{}'}); }

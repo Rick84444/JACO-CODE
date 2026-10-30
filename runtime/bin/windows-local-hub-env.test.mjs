@@ -15,8 +15,10 @@ test('Windows Sentinel remains local hub despite stale joined-device .env values
   assert.equal(result.localHub,true);
   assert.equal(env.JACO_HUB_URL,'');
   assert.equal(env.JACO_DEVICE_KEY,'');
+  assert.equal(env.JACO_AURA_ONLY_OPERATOR,'1');
   assert.equal(env.JACO_NOVA_EXECUTOR,'nova');
   assert.equal(env.JACO_WORKPLACE_SCOPE,'local');
+  assert.equal(env.JACO_AURA_ONLY_OPERATOR,'1');
   assert.equal(env.JACO_GATEWAY_TOKEN,'secret-not-to-touch');
   assert.equal(env.JACO_CHROME_PROFILE_DIR,'C:/JACO/Chrome-CDP-agent');
   assert.equal(Boolean(env.JACO_HUB_URL&&env.JACO_DEVICE_KEY),false);

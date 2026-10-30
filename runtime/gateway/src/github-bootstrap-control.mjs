@@ -2,10 +2,13 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { safeNovaReceiptLines } from './nova-receipt-inspector.mjs';
+import { safeAuraAcceptanceLines } from './aura-operator-command.mjs';
 
 const API = 'https://api.github.com';
 const MARKER = '<!-- jaco-bootstrap-control:v1 -->';
 const TITLE_PREFIX = '[JACO BOOT]';
+const AURA_MARKER = '<!-- jaco-aura-control:v1 -->';
+const AURA_TITLE_PREFIX = '[JACO AURA]';
 const ALLOWED_OPS = new Set(['system.status', 'system.health', 'system.activate', 'system.restart', 'system.update', 'system.nova-receipt']);
 
 
@@ -147,18 +150,28 @@ export function createGithubBootstrapControl({
 
   function parse(issue) {
     const raw = String(issue.body || '');
-    const markerAt = raw.indexOf(MARKER);
+    const auraCommand = String(issue.title || '').startsWith(AURA_TITLE_PREFIX);
+    const marker = auraCommand ? AURA_MARKER : MARKER;
+    const markerAt = raw.indexOf(marker);
     if (markerAt < 0) throw new Error('GITHUB_BOOTSTRAP_MARKER_REQUIRED');
-    const after = raw.slice(markerAt + MARKER.length);
+    const after = raw.slice(markerAt + marker.length);
     const fenced = after.match(/\`\`\`json\s*([\s\S]*?)\s*\`\`\`/i);
     const jsonText = (fenced ? fenced[1] : after).trim();
     let payload;
     try { payload = JSON.parse(jsonText); } catch { throw new Error('GITHUB_BOOTSTRAP_INVALID_JSON'); }
-    if (payload?.schema !== 'jaco.bootstrap-control/v1') throw new Error('GITHUB_BOOTSTRAP_SCHEMA_UNSUPPORTED');
+    if (auraCommand) {
+      if (payload?.schema !== 'jaco.aura-command/v1' || payload?.op !== 'aura.acceptance')
+        throw new Error('GITHUB_AURA_OPERATION_UNSUPPORTED');
+      if (Object.keys(payload).some(k => !['schema','commandId','op'].includes(k)))
+        throw new Error('GITHUB_AURA_FIELDS_UNSUPPORTED');
+    } else if (payload?.schema !== 'jaco.bootstrap-control/v1') {
+      throw new Error('GITHUB_BOOTSTRAP_SCHEMA_UNSUPPORTED');
+    }
     const commandId = String(payload.commandId || '').trim();
     if (!/^[a-zA-Z0-9._:-]{6,160}$/.test(commandId)) throw new Error('GITHUB_BOOTSTRAP_COMMAND_ID_INVALID');
     const op = String(payload.op || '').trim();
-    if (!ALLOWED_OPS.has(op)) throw new Error('GITHUB_BOOTSTRAP_OPERATION_UNSUPPORTED');
+    if (auraCommand ? op !== 'aura.acceptance' : !ALLOWED_OPS.has(op))
+      throw new Error('GITHUB_BOOTSTRAP_OPERATION_UNSUPPORTED');
     if (op === 'system.nova-receipt') {
       const goalSha256 = String(payload.goalSha256 || '').trim();
       if (!/^[a-f0-9]{64}$/.test(goalSha256)) throw new Error('GITHUB_BOOTSTRAP_GOAL_SHA256_INVALID');
@@ -216,8 +229,8 @@ export function createGithubBootstrapControl({
     return (Array.isArray(issues) ? issues : []).filter(issue =>
       !issue.pull_request &&
       issue.user?.login === actor &&
-      String(issue.title || '').startsWith(TITLE_PREFIX) &&
-      String(issue.body || '').includes(MARKER)
+      ((String(issue.title || '').startsWith(TITLE_PREFIX) && String(issue.body || '').includes(MARKER)) ||
+       (String(issue.title || '').startsWith(AURA_TITLE_PREFIX) && String(issue.body || '').includes(AURA_MARKER)))
     );
   }
 
@@ -238,6 +251,7 @@ export function createGithubBootstrapControl({
   }
 
   async function execute(command) {
+    if (command.op === 'aura.acceptance') return system.startAuraAcceptance();
     if (command.op === 'system.status') return system.status();
     if (command.op === 'system.health') return system.health();
     if (command.op === 'system.nova-receipt') return system.verifyNovaMission(command.goalSha256);
@@ -289,17 +303,25 @@ export function createGithubBootstrapControl({
               '- status: **RUNNING**',
             ]);
           }
+          // Aura goals mutate durable strategic state. Journal the command BEFORE
+          // invoking the local operator route so a crash cannot replay it.
+          // A missing response is UNKNOWN, never an invitation to retry.
+          if (command.op === 'aura.acceptance') remember(command.commandId);
           const result = await execute(command);
-          const reported = result?.schema === 'jaco.nova-receipt-summary/v1'
+          const reported = result?.schema === 'jaco.aura-operator-command/v1'
+            ? (result.status === 'ACCEPTED' ? 'ACCEPTED' : 'UNVERIFIED')
+            : result?.schema === 'jaco.nova-receipt-summary/v1'
             ? (result.matched === true ? 'OBSERVED' : 'DEGRADED')
             : result?.schema === 'jaco.activation/v2'
             ? (result.ok === true ? 'READY' : 'DEGRADED')
             : result?.error ? 'DEGRADED'
             : result?.state || result?.status || (command.op === 'system.status' ? 'OBSERVED' : 'READY');
           // The issue is public: an untrusted runtime status must never become free-form text.
-          const state = ['READY', 'RUNNING', 'DEGRADED', 'FAILED', 'OBSERVED', 'UPDATED'].includes(reported)
+          const state = ['READY', 'RUNNING', 'DEGRADED', 'FAILED', 'OBSERVED', 'UPDATED', 'ACCEPTED'].includes(reported)
             ? reported : 'UNVERIFIED';
-          const healthLines = result?.schema === 'jaco.nova-receipt-summary/v1'
+          const healthLines = result?.schema === 'jaco.aura-operator-command/v1'
+            ? safeAuraAcceptanceLines(result)
+            : result?.schema === 'jaco.nova-receipt-summary/v1'
             ? safeNovaReceiptLines(result) : safeBootstrapHealthLines(result);
           if (issue.number != null) {
             await comment(issue.number, [

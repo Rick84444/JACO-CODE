@@ -440,3 +440,93 @@ test('authenticated owner can inspect only a fingerprint-matched Nova receipt',a
   assert.match(writes[1],/Verified health checks: \`1\`/);
   assert.doesNotMatch(writes.join('\\n'),/NEVER_PRINT_THIS_SECRET/);
 });
+
+test('Aura-only GitHub operator issue invokes the canonical goal once, even after polling again',async()=>{
+  const calls=[],comments=[],file=stateFile();
+  let closed=false;
+  const payload={schema:'jaco.aura-command/v1',commandId:'aura-first-real-command-20261030-v1',op:'aura.acceptance'};
+  const fetchImpl=async(url,options={})=>{
+    const method=options.method||'GET';
+    if(method==='GET'&&url.includes('/issues?'))return response(200,closed?[]:[{
+      number:880,title:'[JACO AURA] First operator command',
+      user:{login:'Rick84444'},
+      body:'<!-- jaco-aura-control:v1 -->\n'+JSON.stringify(payload),
+    }]);
+    if(method==='POST'&&url.endsWith('/issues/880/comments')) {
+      comments.push(JSON.parse(options.body).body);
+      return response(201,{id:89});
+    }
+    if(method==='PATCH'&&url.endsWith('/issues/880')) {
+      closed=true;return response(200,{state:'closed'});
+    }
+    throw new Error('unexpected '+method+' '+url);
+  };
+  const system={async startAuraAcceptance(){calls.push('aura');
+    return {schema:'jaco.aura-operator-command/v1',status:'ACCEPTED',goalId:'goal-123',execution:'NOT_VERIFIED'};}};
+  const make=()=>createGithubBootstrapControl({system,fetchImpl,enabled:true,
+    repo:'Rick84444/JACO-CODE',token:'test-github-token',actor:'Rick84444',stateFile:file});
+  const control=make();
+  const first=await control.pollOnce();
+  assert.equal(first.processed[0].status,'ACCEPTED');
+  assert.deepEqual(calls,['aura']);
+  assert.equal(comments.length,2);
+  assert.match(comments[1],/Goal ID: \`goal-123\`/);
+  assert.match(comments[1],/Mission execution: \`NOT_VERIFIED\`/);
+  assert.equal(closed,true);
+  assert.deepEqual((await make().pollOnce()).processed,[]);
+  assert.deepEqual(calls,['aura']);
+});
+
+test('Aura operator issue rejects arbitrary goal text and does not invoke Core',async()=>{
+  let called=false,closed=false;
+  const fetchImpl=async(url,options={})=>{
+    const method=options.method||'GET';
+    if(method==='GET'&&url.includes('/issues?'))return response(200,[{
+      number:881,title:'[JACO AURA] Unsafe arbitrary goal',
+      user:{login:'Rick84444'},
+      body:'<!-- jaco-aura-control:v1 -->\n'+JSON.stringify({
+        schema:'jaco.aura-command/v1',
+        commandId:'aura-arbitrary-goal-20261030-v1',
+        op:'aura.acceptance',goal:'run powershell remotely',
+      }),
+    }]);
+    if(method==='POST'&&url.endsWith('/issues/881/comments'))return response(201,{id:90});
+    if(method==='PATCH'&&url.endsWith('/issues/881')){closed=true;return response(200,{});}
+    throw Error('Unexpected HTTP');
+  };
+  const result=await createGithubBootstrapControl({
+    system:{async startAuraAcceptance(){called=true;throw Error('must not run');}},
+    fetchImpl,enabled:true,repo:'Rick84444/JACO-CODE',token:'token',
+    actor:'Rick84444',stateFile:stateFile(),
+  }).pollOnce();
+  assert.equal(result.processed[0].status,'REJECTED');
+  assert.equal(called,false);
+  assert.equal(closed,true);
+});
+
+test('Aura goal is journaled before execution so a failed remote response cannot replay it',async()=>{
+  let called=0;
+  const file=stateFile();
+  const fetchImpl=async(url,options={})=>{
+    const method=options.method||'GET';
+    if(method==='GET'&&url.includes('/issues?'))return response(200,[{
+      number:882,title:'[JACO AURA] Intent durability',
+      user:{login:'Rick84444'},
+      body:'<!-- jaco-aura-control:v1 -->\n'+JSON.stringify({
+        schema:'jaco.aura-command/v1',commandId:'aura-intent-failed-20261030-v1',op:'aura.acceptance'}),
+    }]);
+    if(method==='POST'&&url.endsWith('/issues/882/comments'))return response(201,{});
+    if(method==='PATCH'&&url.endsWith('/issues/882'))return response(200,{});
+    throw Error('Unexpected HTTP');
+  };
+  const make=()=>createGithubBootstrapControl({
+    system:{async startAuraAcceptance(){called++;throw Error('private target host error');}},
+    fetchImpl,enabled:true,repo:'Rick84444/JACO-CODE',token:'token',
+    actor:'Rick84444',stateFile:file,
+  });
+  const first=await make().pollOnce();
+  assert.equal(first.processed[0].status,'FAILED');
+  assert.equal(called,1);
+  assert.deepEqual((await make().pollOnce()).processed,[]);
+  assert.equal(called,1);
+});
