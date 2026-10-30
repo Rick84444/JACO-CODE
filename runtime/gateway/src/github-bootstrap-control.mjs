@@ -250,10 +250,13 @@ export function createGithubBootstrapControl({
             ]);
           }
           const result = await execute(command);
-          const state = result?.state || result?.status
-            || (result?.schema === 'jaco.activation/v2' ? (result.ok === true ? 'READY' : 'DEGRADED') : null)
-            || (result?.error ? 'DEGRADED' : null)
-            || (command.op === 'system.status' ? 'OBSERVED' : 'READY');
+          const reported = result?.schema === 'jaco.activation/v2'
+            ? (result.ok === true ? 'READY' : 'DEGRADED')
+            : result?.error ? 'DEGRADED'
+            : result?.state || result?.status || (command.op === 'system.status' ? 'OBSERVED' : 'READY');
+          // The issue is public: an untrusted runtime status must never become free-form text.
+          const state = ['READY', 'RUNNING', 'DEGRADED', 'FAILED', 'OBSERVED', 'UPDATED'].includes(reported)
+            ? reported : 'UNVERIFIED';
           const healthLines = safeBootstrapHealthLines(result);
           if (issue.number != null) {
             await comment(issue.number, [
