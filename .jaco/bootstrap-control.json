@@ -1,0 +1,5 @@
+{
+  "schema": "jaco.bootstrap-control/v1",
+  "commandId": "aura-git-ref-status-20261030-2001-v1",
+  "op": "system.status"
+}
