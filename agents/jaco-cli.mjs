@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { activationReport, formatReport, runtimeUp } from './lib/activate.mjs';
 import { homeCli } from './lib/home-cli.mjs';
+import { readStartupEvidence, reconcileStartupActivation } from './lib/startup-evidence.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -77,11 +78,19 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     say(`Startar stacken: ${plan.label}`);
     const started = spawnSync(plan.cmd, plan.args, { cwd: ROOT, stdio: json ? 'ignore' : ['ignore', process.stderr, process.stderr], env });
     if (started.status !== 0) say(`Startkommandot avslutades med kod ${started.status ?? 'okänd'}; kontrollerar ändå om runtimen svarar.`);
-    for (let waited = 0; waited < 90_000 && !(await runtimeUp({ baseUrl })); waited += 2000) await sleep(2000);
+    // A canonical launcher BLOCKED checkpoint must not cause 90 seconds of
+    // misleading additional polling; partial starts are reported below.
+    const startup = process.platform === 'win32' ? readStartupEvidence(ROOT) : null;
+    if (!startup || !['BLOCKED', 'DEGRADED'].includes(startup.state)) {
+      for (let waited = 0; waited < 90_000 && !(await runtimeUp({ baseUrl })); waited += 2000) await sleep(2000);
+    }
   }
 
-  const report = await activationReport({ baseUrl, token: gatewayToken(env), startTools: command === 'activate' && !argv.includes('--no-tools') });
-  process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : `${formatReport(report)}\n`);
+  const observed = await activationReport({ baseUrl, token: gatewayToken(env), startTools: command === 'activate' && !argv.includes('--no-tools') });
+  const report = process.platform === 'win32'
+    ? reconcileStartupActivation(observed, readStartupEvidence(ROOT))
+    : observed;
+  process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : `${formatReport(report)}${report.startup ? '\nWindows startup: ' + report.startup.state + ' (browser=' + report.startup.browserAttachment + ')' : ''}\n`);
   return report.ok ? 0 : 1;
 }
 
