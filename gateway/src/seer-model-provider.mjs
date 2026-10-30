@@ -38,7 +38,20 @@ const clipTail = (value, maxChars) => {
 };
 
 /**
- * Fit a normal SEER request inside a local llama.cpp context window.
+ * Context window a SEER request must fit for this provider, or null for a remote provider (no budget).
+ * Every local model gets one: Ollama on a laptop GPU evaluates roughly 30-120 prompt tokens/s, so an
+ * unbounded 12000-char memory block plus a development-cycle prompt ran past the 180 s local timeout on
+ * every cycle (2026-10-30: 800 consecutive all_providers_failed with gemma3:4b PROVIDER_TIMEOUT).
+ */
+export function seerLocalContextTokens(provider, env = process.env) {
+  const llamaCpp = provider?.name === 'llamacpp' || String(env.JACO_SEER_PROVIDER_PREFERENCE || '').toLowerCase() === 'llamacpp';
+  if (llamaCpp) return Number(env.JACO_LLAMACPP_CTX) || 8192;
+  if (!provider || provider.local === false || provider.envKey) return null;
+  return Number(env.JACO_SEER_LOCAL_CTX) || 4096;
+}
+
+/**
+ * Fit a normal SEER request inside a local model's context window.
  * The current user message is at the tail of the user prompt, so tail clipping
  * preserves the operator's latest instruction. System clipping preserves both
  * the canonical rules at the head and tool contracts at the tail.

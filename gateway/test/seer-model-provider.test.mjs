@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { discoverSeerLocalProvider, applySeerLocalProvider, invokeSeerProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt } from '../src/seer-model-provider.mjs';
+import { discoverSeerLocalProvider, applySeerLocalProvider, invokeSeerProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt, seerLocalContextTokens } from '../src/seer-model-provider.mjs';
 
 test('env-selected Ollama cloud model is validated through metadata without local weights', async () => {
   const calls = [];
@@ -211,4 +211,16 @@ test('8192 local context preserves Aura output capacity while bounding prompt', 
   assert.equal(budget.maxTokens, 1400);
   assert.ok(budget.system.length + budget.user.length <= budget.inputCharBudget + 64);
   assert.match(budget.user, /LATEST$/);
+});
+
+test('every local SEER model gets a context budget, remote models do not', () => {
+  const ollama = { name: 'ollama', url: 'http://127.0.0.1:11434/v1/chat/completions', model: 'gemma3:4b', local: true, envKey: null };
+  assert.equal(seerLocalContextTokens(ollama, {}), 4096);
+  assert.equal(seerLocalContextTokens(ollama, { JACO_SEER_LOCAL_CTX: '6144' }), 6144);
+  assert.equal(seerLocalContextTokens({ ...ollama, name: 'llamacpp' }, {}), 8192);
+  assert.equal(seerLocalContextTokens({ ...ollama, name: 'llamacpp' }, { JACO_LLAMACPP_CTX: '2048' }), 2048);
+  assert.equal(seerLocalContextTokens(ollama, { JACO_SEER_PROVIDER_PREFERENCE: 'llamacpp' }), 8192);
+  assert.equal(seerLocalContextTokens({ name: 'gemini', model: 'gemini-2.0-flash', envKey: 'GEMINI_API_KEY' }, {}), null);
+  assert.equal(seerLocalContextTokens({ ...ollama, local: false }, {}), null);
+  assert.equal(seerLocalContextTokens(null, {}), null);
 });

@@ -18,7 +18,7 @@ import { buildSelfDevelopmentGraph } from './seer-self-development.mjs';
 import { createAutonomyLoop, shouldAutoConfirmNova } from './seer-autonomy-loop.mjs';
 import { createDevelopmentCycle, chooseGovernorFocus, governorBaseline } from './seer-development-cycle.mjs';
 import { createExperienceStore } from './seer-experience-store.mjs';
-import { discoverSeerLocalProvider, invokeSeerProvider, callSeerGovernorProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt } from './seer-model-provider.mjs';
+import { discoverSeerLocalProvider, invokeSeerProvider, callSeerGovernorProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt, seerLocalContextTokens } from './seer-model-provider.mjs';
 import { createA2AColonyRevenueSync } from './a2acolony-revenue-sync.mjs';
 import { normalizeProjectRoot, projectNodeContract, projectGraphPolicy, projectGoalGraph, projectGoalDone } from './seer-project.mjs';
 
@@ -503,15 +503,14 @@ async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0
 
   if (!startup_probe && memoryLimit > 0) {
     const activeMemory = JSON.stringify(buildActiveMemoryContext());
-    const wantsLlamaCpp = attemptedLocal?.name === 'llamacpp'
-      || String(process.env.JACO_SEER_PROVIDER_PREFERENCE || '').toLowerCase() === 'llamacpp';
-    if (wantsLlamaCpp) {
+    const localContextTokens = seerLocalContextTokens(attemptedLocal);
+    if (localContextTokens) {
       const budget = budgetSeerLocalPrompt({
         system: systemPrompt,
         user: userPrompt,
         memory: activeMemory.slice(0, memoryLimit),
         maxTokens: max_tokens,
-        contextTokens: Number(process.env.JACO_LLAMACPP_CTX || 8192),
+        contextTokens: localContextTokens,
       });
       systemPrompt = budget.system;
       userPrompt = budget.user;
