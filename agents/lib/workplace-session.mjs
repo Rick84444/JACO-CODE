@@ -4,6 +4,12 @@
 
 import { bootstrapJacoAgent } from '../../gateway/src/workplace/workplace-client.mjs';
 
+// A machine joined to a Hub has JACO_HUB_URL and JACO_DEVICE_KEY. JACO_NODE_ROLE=hub marks the machine that is
+// the Hub itself, so leftover device credentials (for example in .env after an earlier pairing) are ignored.
+export function hubDeviceLinked(env = process.env) {
+  return env.JACO_NODE_ROLE !== 'hub' && Boolean(env.JACO_HUB_URL && env.JACO_DEVICE_KEY);
+}
+
 export function buildAgentCard({ stableId, name, agentType, role, description, environment = 'jaco-runtime', capabilities = {}, tools = [], constraints = [], preferredTasks = [], version = 'unknown' }) {
   return {
     schema: 'jaco.agent-card/v1',
@@ -32,7 +38,7 @@ export async function joinWorkplace({
   // A locally supervised agent can receive missions from a remote Hub while
   // maintaining a strictly authenticated session with its local Workplace.
   // Only explicit local supervision overrides the standard joined-device route.
-  const linked = env.JACO_WORKPLACE_SCOPE !== 'local' && Boolean(env.JACO_HUB_URL && env.JACO_DEVICE_KEY);
+  const linked = env.JACO_WORKPLACE_SCOPE !== 'local' && hubDeviceLinked(env);
   const baseUrl = linked ? String(env.JACO_HUB_URL).replace(/\/+$/, '') + '/v1/device/workplace' : env.JACO_WORKPLACE_URL || '';
   if (linked) { const u=new URL(baseUrl); if (u.protocol!=='https:' && !['127.0.0.1','localhost','::1'].includes(u.hostname)) throw Error('WORKPLACE_HUB_HTTPS_REQUIRED'); }
   const liveSyncMs = Math.max(250, Math.min(Number(syncMs ?? env.JACO_WORKPLACE_SYNC_MS ?? 2_000) || 2_000, 60_000));

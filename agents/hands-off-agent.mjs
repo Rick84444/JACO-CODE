@@ -35,7 +35,7 @@ import { seerCompletion } from './lib/seer-client.mjs';
 import { budgetedNovaOllamaCall } from './lib/nova-ollama-cost.mjs';
 import { novaTiming, planningDeadline } from './lib/nova-timing.mjs';
 import { MissionClient, processMissionTurn, checkedReceipt, planTasks, BATCHABLE } from './lib/mission-client.mjs';
-import { buildAgentCard, joinWorkplace } from './lib/workplace-session.mjs';
+import { buildAgentCard, hubDeviceLinked, joinWorkplace } from './lib/workplace-session.mjs';
 import { createCodingWorkspace } from './lib/coding-workspace.mjs';
 import { createMissionWorktrees } from './lib/mission-worktree.mjs';
 import { homedir } from 'os';
@@ -1800,7 +1800,7 @@ Plans already rejected this turn (do not repeat them): ${rejectedPlans.slice(-3)
 
 // A Nova on a joined device gets its missions from the hub (JACO_HUB_URL, its own JACO_DEVICE_KEY) and
 // only runs missions routed to it (JACO_NOVA_EXECUTOR=nova@<device>); its tools still run locally.
-const DEVICE_MODE = Boolean(process.env.JACO_HUB_URL && process.env.JACO_DEVICE_KEY);
+const DEVICE_MODE = hubDeviceLinked(process.env);
 if (DEVICE_MODE && !/^nova@[a-z0-9][a-z0-9-]{1,39}$/.test(String(process.env.JACO_NOVA_EXECUTOR || ""))) {
   console.error("JACO_HUB_URL is set: JACO_NOVA_EXECUTOR must be nova@<device name> as given when the device was added.");
   process.exit(2);
