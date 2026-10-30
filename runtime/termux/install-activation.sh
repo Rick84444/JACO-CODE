@@ -61,6 +61,9 @@ ensure_export JACO_CORE_URL "http://127.0.0.1:3000"
 ensure_export JACO_RUNTIME_URL "http://127.0.0.1:3000"
 ensure_export SEER_URL "http://127.0.0.1:2997"
 ensure_export JACO_WORKPLACE_URL "http://127.0.0.1:2995"
+# New installs run one operator agent by default; explicit existing settings win.
+# The mode-600 runtime env remains the only persisted profile source.
+ensure_export JACO_AURA_LEAN "1"
 ensure_export JACO_WORKPLACE_REQUIRED "1"
 ensure_export JACO_WORKPLACE_SUPERVISE_MODEL "1"
 ensure_export JACO_WORKPLACE_SUPERVISE_SEER "1"
