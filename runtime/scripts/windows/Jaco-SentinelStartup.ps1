@@ -7,7 +7,7 @@ param(
   [switch]$Status
 )
 $ErrorActionPreference = 'Stop'
-if (@($Install,$Remove,$Status | Where-Object { $_ }).Count -ne 1) {
+if ((@([bool]$Install, [bool]$Remove, [bool]$Status) | Where-Object { $_ }).Count -ne 1) {
   throw 'Specify exactly one of -Install, -Remove, or -Status'
 }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
