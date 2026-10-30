@@ -14,7 +14,7 @@ const fake = createServer(async (req, res) => {
 fake.listen(0, '127.0.0.1'); await once(fake,'listening');
 const { port } = fake.address();
 const core = new JacoCoreClient({ baseUrl:`http://127.0.0.1:${port}`, token:'secret', modelId:'test-model', timeoutMs:2000 });
-const system = { status:async()=>({state:'READY'}), activate:async p=>({state:'READY',profile:p}), update:async()=>({state:'UPDATED'}) };
+const system = { status:async()=>({state:'READY'}), health:async()=>({schema:'jaco.service-health/v1',status:'READY'}), activate:async p=>({state:'READY',profile:p}), update:async()=>({state:'UPDATED'}) };
 const workplace = {
   status:()=>({state:'READY',agentId:'agent:codex:test'}),
   agents:async()=>({agents:[{agentId:'agent:claude:test'}]}),
@@ -23,9 +23,10 @@ const workplace = {
 };
 const h = createToolHandlers({ core, system, modelId:'test-model', workplace });
 
-assert.equal(JACO_MCP_TOOL_NAMES.length, 38);
+assert.equal(JACO_MCP_TOOL_NAMES.length, 39);
 assert.equal(JACO_MCP_TOOL_NAMES.some(n=>/evaluate|shell_exec|bash_shell|credential/i.test(n)), false);
 await h.jaco_identity();
+assert.equal((await h.jaco_system_health()).status,'READY');
 await h.jaco_browser_attach({urlIncludes:'127.0.0.1:3000',port:9222});
 await h.jaco_relay_action({surface:'BROWSER',mandateId:'m1',consequence:'READ',action:{type:'observe'}});
 await h.jaco_connected_status();
