@@ -49,8 +49,12 @@ on:
       - 'runtime/src/components/AgentConstellation.tsx'
       - 'runtime/src/server/connected/agentNetwork.mjs'
       - 'runtime/src/server/connected/auraAgentBoard.mjs'
+      - 'runtime/src/server/connected/auraFunctions.mjs'
+      - 'tests/nova/aura-single-agent-functions.test.mjs'
       - 'runtime/src/lib/agentNetworkLayout.mjs'
       - 'tests/nova/agent-network.test.mjs'
+      - 'runtime/src/server/connected/auraFunctions.mjs'
+      - 'tests/nova/aura-single-agent-functions.test.mjs'
       - 'runtime/src/components/ConnectionsWorkspace.tsx'
       - 'runtime/src/components/AttachmentPicker.tsx'
       - 'runtime/src/components/McpServersPanel.tsx'
@@ -124,8 +128,12 @@ on:
       - 'runtime/src/components/AgentConstellation.tsx'
       - 'runtime/src/server/connected/agentNetwork.mjs'
       - 'runtime/src/server/connected/auraAgentBoard.mjs'
+      - 'runtime/src/server/connected/auraFunctions.mjs'
+      - 'tests/nova/aura-single-agent-functions.test.mjs'
       - 'runtime/src/lib/agentNetworkLayout.mjs'
       - 'tests/nova/agent-network.test.mjs'
+      - 'runtime/src/server/connected/auraFunctions.mjs'
+      - 'tests/nova/aura-single-agent-functions.test.mjs'
       - 'runtime/src/components/ConnectionsWorkspace.tsx'
       - 'runtime/src/components/AttachmentPicker.tsx'
       - 'runtime/src/components/McpServersPanel.tsx'
@@ -168,7 +176,7 @@ jobs:
       - name: Setup and npm distribution
         run: node --test tests/nova/setup.test.mjs tests/nova/package-content.test.mjs
       - name: Workbench truth contract
-        run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs
+        run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs tests/nova/aura-single-agent-functions.test.mjs
       - name: Activation and provider truth regressions
         run: |
           node --check agents/jaco-cli.mjs
