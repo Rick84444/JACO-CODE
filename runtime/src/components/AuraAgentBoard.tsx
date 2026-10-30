@@ -24,7 +24,11 @@ interface BoardMission {
 }
 export interface AgentBoardSnapshot {
   success: boolean; schema: string; observedAt: string;
-  aura?: { identity: { id: string; name: string; agentCount: number; meaning: string }; runtimeConsolidated: boolean; functions: Array<{ id: string; name: string; implementation: string; authority: string; reads: string[]; state: string; detail: string }> };
+  aura?: { identity: { id: string; name: string; agentCount: number; meaning: string }; runtimeConsolidated: boolean; functions: Array<{ id: string; name: string; implementation: string; authority: string; reads: string[]; state: string; detail: string }>;
+    oversight?: { schema:string; observedAt:string; scope:string; runtimeConsolidated:boolean;
+      services:Record<string,string>; browser:{state:string;meaning:string};
+      missions:{active:number|null;blocked:number|null;awaitingVerification:number|null;visibleUnknownOutcomes:number|null;visibleWindowTruncated:boolean} };
+  };
   network?: AgentNetworkSnapshot;
   sources: Record<'workplace' | 'missions', { available: boolean; observedAt: string | null; error: string | null }>;
   agents: Array<{ agentId: string; name: string; role: string | null; status: string; liveSessions: number | null; lastSeenAt: string | null; permissions: Record<string, boolean>; tools: string[]; sessions?: Array<{status:string;environment:string|null;lastSeenAt:string|null}> }>;
@@ -107,6 +111,26 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
           <p className="text-xs text-slate-300 mt-1">Din enda operatörsagent. Resonemang, planering, utförande, minne, verktyg och verifiering är hennes funktioner.</p>
           <p className="text-xs text-slate-500 mt-2">Funktionernas status kommer från observerade tjänster och kvitton, inte från påståenden om att en modell arbetar.</p>
         </section>
+        {snapshot?.aura?.oversight && <section aria-label="Auras driftsöversikt" className="rounded border border-[#123047] bg-[#050b11] p-3 space-y-2">
+          <div className="flex flex-wrap gap-2 justify-between items-center">
+            <h4 className="text-sm font-semibold text-cyan-200">Auras kontrollplan</h4>
+            <span className="text-xs text-slate-400">Browser: {snapshot.aura.oversight.browser.state}</span>
+          </div>
+          <p className="text-xs text-slate-400">{snapshot.aura.oversight.browser.meaning}</p>
+          <p className="text-xs text-slate-300">Uppdrag: {snapshot.aura.oversight.missions.active ?? '?'} aktiva · {snapshot.aura.oversight.missions.blocked ?? '?'} blockerade · {snapshot.aura.oversight.missions.awaitingVerification ?? '?'} väntar på verifiering</p>
+          <p className="text-xs text-slate-400">Osäkra senaste utfall i visade uppdrag: {snapshot.aura.oversight.missions.visibleUnknownOutcomes ?? '?'}{snapshot.aura.oversight.missions.visibleWindowTruncated ? ' (begränsat urval)' : ''}</p>
+          <details className="text-xs">
+            <summary className="cursor-pointer text-cyan-300">Tjänster · observerad hälsa</summary>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+              {Object.entries(snapshot.aura.oversight.services).map(([name,state]) =>
+                <div key={name} className="flex justify-between gap-2 border border-[#123047] rounded p-2">
+                  <span className="text-slate-300">{name}</span>
+                  <span className={state.startsWith('READY') || state.startsWith('DISCOVERABLE') ? 'text-slate-300' : 'text-amber-300'}>{state}</span>
+                </div>)}
+            </div>
+          </details>
+          <p className="text-xs text-slate-500">Observerad tjänststatus är inte bevis för slutfört uppdrag. Ingen kontrollfunktion ger nya behörigheter.</p>
+        </section>}
         <section aria-label="Auras funktioner" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {snapshot?.aura?.functions.map(fn => <article key={fn.id} className="rounded border border-[#123047] bg-[#050b11] p-3 space-y-1">
             <div className="flex gap-2 items-center justify-between"><h4 className="font-medium text-sm">{fn.name}</h4><span className={['UNAVAILABLE','NO_MODEL_OBSERVED','NO_WORKER_OBSERVED'].includes(fn.state) ? 'text-xs text-amber-300' : 'text-xs text-slate-400'}>{fn.state}</span></div>
