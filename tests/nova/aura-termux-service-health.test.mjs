@@ -26,12 +26,12 @@ test('Termux probes authenticate the real Nova bridge and never mistake a 401 fo
     },
   });
   assert.equal(state.novaBridge, 'UNHEALTHY (200)');
-  assert.equal(state.cdpBridge, 'READY (200)');
+  assert.equal(state.cdpBridge, 'UNVERIFIED (200)');
   assert.equal(state.chromeCdp, 'NOT_CONNECTED (BROWSER_DEBUG_PORT)');
   assert.equal(state.gateway, 'NOT_SUPERVISED (TERMUX)');
   assert.equal(state.ollama, 'DISABLED (MODEL_POLICY)');
   assert.equal(state.substrate, 'REACHABLE (200)');
-  assert.equal(called.length, 8);
+  assert.equal(called.length, 7, 'disabled Ollama is not probed');
 });
 
 test('401, non-2xx and boolean-negative responses never masquerade as healthy', async () => {
@@ -83,4 +83,38 @@ test('question mode preserves the read-only Termux tool, not mutation authority'
   }, async () => 'events', 'Varför är novaBridge nere?');
   assert.equal((await toolbox.tools.termux_services.run())[0].name, 'jaco-core');
   assert.equal(toolbox.tools.start_goal, undefined);
+});
+
+test('Aura marks CDP READY only with recent WebSocket evidence, never a legacy facade', async () => {
+  const verifiedAt = new Date().toISOString();
+  const state = await readAuraServiceHealth({
+    env: { JACO_ENABLE_CDP:'1', JACO_GATEWAY_TOKEN:TOKEN },
+    fetchImpl: async url => {
+      const port = new URL(url).port;
+      if (port === '4243' || port === '2996') return answer(200,{
+        ok:true, state:'READY', browserVerified:true, verificationAgeMs:0, verifiedAt,
+      });
+      if (port === '9222') return answer(200,{webSocketDebuggerUrl:'ws://127.0.0.1:9222/devtools/browser/local'});
+      return answer(200,{ok:true});
+    },
+  });
+  assert.equal(state.cdpBridge,'READY (200)');
+  assert.equal(state.novaBridge,'READY (200)');
+  assert.equal(state.chromeCdp,'DISCOVERABLE (200)');
+});
+
+test('Aura Lean does not poll deliberately dormant browser adapters', async()=>{
+  const visited=[];
+  const state=await readAuraServiceHealth({
+    env:{JACO_AURA_LEAN:'1',JACO_ENABLE_CDP:'1',JACO_ENABLE_OLLAMA:'0'},
+    platform:'android',
+    fetchImpl:async url=>{
+      visited.push(new URL(url).port);
+      throw Error('not listening');
+    },
+  });
+  assert.equal(state.novaBridge,'DISABLED (AURA_LEAN)');
+  assert.equal(state.cdpBridge,'DISABLED (AURA_LEAN)');
+  assert.equal(state.ollama,'DISABLED (MODEL_POLICY)');
+  assert.ok(!visited.includes('4243') && !visited.includes('2996') && !visited.includes('11434'));
 });

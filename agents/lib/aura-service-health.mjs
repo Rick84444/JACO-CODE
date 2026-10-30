@@ -31,6 +31,14 @@ export function serviceUnavailableLabel(name, env = {}, platform = process.platf
 export async function readAuraServiceHealth({ env = process.env, platform = process.platform, fetchImpl = fetch } = {}) {
   const result = {};
   await Promise.all(Object.keys(DEFAULT_PORTS).map(async name => {
+    // Avoid polling deliberately dormant Termux adapters on every board
+    // refresh. DISABLED means configuration intent, not proven process exit.
+    if ((['cdpBridge','novaBridge'].includes(name) && env.JACO_AURA_LEAN === '1') ||
+        (['cdpBridge','novaBridge','chromeCdp'].includes(name) && env.JACO_ENABLE_CDP === '0') ||
+        (name === 'ollama' && env.JACO_ENABLE_OLLAMA === '0')) {
+      result[name] = serviceUnavailableLabel(name, env, platform);
+      return;
+    }
     const token = name === 'novaBridge' ? String(env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '') : '';
     const url = `http://127.0.0.1:${portOf(name, env)}${pathFor(name)}`;
     try {
@@ -48,6 +56,25 @@ export async function readAuraServiceHealth({ env = process.env, platform = proc
       }
       let body = null;
       try { body = await response.json(); } catch { /* Response without JSON proves only HTTP reachability. */ }
+      // A historical MCP facade returned HTTP 200, ok:true while Chrome was
+      // absent. Browser bridges now require a recent WebSocket attestation.
+      if (name === 'novaBridge' || name === 'cdpBridge') {
+        const age = body?.verificationAgeMs;
+        const receiptFresh = Number.isFinite(age) && age >= 0 && age <= 4000
+          && typeof body?.verifiedAt === 'string' && Number.isFinite(Date.parse(body.verifiedAt))
+          && Math.abs(Date.now() - Date.parse(body.verifiedAt) - age) < 5000;
+        result[name] = body?.ok === true && body?.browserVerified === true &&
+          body?.state === 'READY' && receiptFresh ? `READY (${response.status})`
+          : body?.ok === false ? `UNHEALTHY (${response.status})`
+          : `UNVERIFIED (${response.status})`;
+        return;
+      }
+      // Discovery proves only a DevTools HTTP endpoint, not a live CDP socket.
+      if (name === 'chromeCdp') {
+        result[name] = typeof body?.webSocketDebuggerUrl === 'string'
+          ? `DISCOVERABLE (${response.status})` : `UNVERIFIED (${response.status})`;
+        return;
+      }
       if (body?.ok === false || body?.success === false || ['DOWN', 'ERROR', 'FAILED'].includes(body?.status)) {
         result[name] = `UNHEALTHY (${response.status})`;
         return;

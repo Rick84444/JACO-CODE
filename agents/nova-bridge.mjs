@@ -29,7 +29,7 @@ function readable(url) {
 }
 function authorized(req) { const a=Buffer.from(req.headers.authorization || ''),b=Buffer.from('Bearer '+TOKEN);return TOKEN.length>=24 && a.length===b.length && timingSafeEqual(a,b); }
 async function getTabs() {
-  const r = await fetch(`http://localhost:${CDP_PORT}/json`, {signal:AbortSignal.timeout(5000)});
+  const r = await fetch(`http://127.0.0.1:${CDP_PORT}/json`, {signal:AbortSignal.timeout(5000)});
   if (!r.ok) throw new Error("CDP_HTTP_" + r.status);
   return r.json();
 }
@@ -47,7 +47,7 @@ async function getActiveTab() {
   }
   const own = novaTabId && tabs.find(t=>t.id===novaTabId && t.type==='page' && t.webSocketDebuggerUrl);
   if (own) return own;
-  const r = await fetch(`http://localhost:${CDP_PORT}/json/new?about:blank`, { method:'PUT', signal:AbortSignal.timeout(5000) });
+  const r = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?about:blank`, { method:'PUT', signal:AbortSignal.timeout(5000) });
   if (!r.ok) throw new Error('CDP_NEW_TAB_FAILED_' + r.status);
   const created = await r.json();
   novaTabId = created.id;
@@ -60,8 +60,9 @@ export class CDPSession {
     this.msgId = 0;
     this.pending = new Map();
     this.ws.addEventListener("message", (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.id && this.pending.has(msg.id)) {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg?.id && this.pending.has(msg.id)) {
         const { resolve, reject } = this.pending.get(msg.id);
         this.pending.delete(msg.id);
         if (msg.error) reject(new Error(msg.error.message));
@@ -71,11 +72,29 @@ export class CDPSession {
     });
   }
 
-  async ready() {
+  async ready(timeoutMs = 5000) {
     if (this.ws.readyState === 1) return;
-    await new Promise((res, rej) => {
-      this.ws.addEventListener("open", res, { once: true });
-      this.ws.addEventListener("error", rej, { once: true });
+    if (this.ws.readyState === 3) throw new Error('CDP_WEBSOCKET_CLOSED');
+    await new Promise((resolve, reject) => {
+      let done = false;
+      const finish = error => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        this.ws.removeEventListener('open', onOpen);
+        this.ws.removeEventListener('error', onError);
+        this.ws.removeEventListener('close', onClose);
+        error ? reject(error) : resolve();
+      };
+      const onOpen = () => finish();
+      const onError = () => finish(new Error('CDP_WEBSOCKET_ERROR'));
+      const onClose = () => finish(new Error('CDP_WEBSOCKET_CLOSED'));
+      const timer = setTimeout(() => finish(new Error('CDP_WEBSOCKET_TIMEOUT')), timeoutMs);
+      this.ws.addEventListener('open', onOpen);
+      this.ws.addEventListener('error', onError);
+      this.ws.addEventListener('close', onClose);
+      if (this.ws.readyState === 1) onOpen();
+      else if (this.ws.readyState === 3) onClose();
     });
   }
 
@@ -117,6 +136,83 @@ async function withTab(fn, { input = false, missionOrigin = null } = {}) {
     session.close();
   }
 }
+
+// Aura browser readiness is an observed CDP command, never just an HTTP listener.
+// The probe is read-only and does not create tabs or navigate the operator's page.
+export async function probeCdpBrowser({
+  listTabs = getTabs,
+  sessionFactory = url => new CDPSession(url),
+  selectedId = selectedTabId,
+} = {}) {
+  let session = null;
+  try {
+    const tabs = await listTabs();
+    if (!Array.isArray(tabs)) return { ok: false, state: 'BLOCKED', browserVerified: false, error: 'CDP_TARGET_LIST_INVALID' };
+    const pages = tabs.filter(t => {
+      if (t?.type !== 'page' || typeof t.webSocketDebuggerUrl !== 'string') return false;
+      try {
+        const ws = new URL(t.webSocketDebuggerUrl);
+        return ws.protocol === 'ws:' && ['127.0.0.1', 'localhost', '[::1]'].includes(ws.hostname)
+          && Number(ws.port) === CDP_PORT && ws.pathname.startsWith('/devtools/page/')
+          && !ws.username && !ws.password;
+      } catch { return false; }
+    });
+    const target = selectedId ? pages.find(t => t.id === selectedId && readable(t.url)) : pages[0];
+    if (!target) return {
+      ok: false, state: 'BLOCKED', browserVerified: false,
+      error: selectedId ? 'CDP_PINNED_TARGET_UNAVAILABLE' : 'CDP_NO_DEBUGGABLE_PAGE',
+      targets: pages.length,
+    };
+    const socket = new URL(target.webSocketDebuggerUrl);
+    // Chrome may advertise localhost even when the DevTools TCP forward is IPv4-only.
+    if (socket.hostname === 'localhost') socket.hostname = '127.0.0.1';
+    session = sessionFactory(socket.href);
+    await session.ready(5000);
+    const reply = await session.send('Runtime.evaluate', { expression: '1+1', returnByValue: true }, 5000);
+    if (reply?.result?.value !== 2 || reply?.exceptionDetails) {
+      return { ok: false, state: 'BLOCKED', browserVerified: false, error: 'CDP_EVALUATION_UNVERIFIED' };
+    }
+    return { ok: true, state: 'READY', browserVerified: true, targets: pages.length };
+  } catch (error) {
+    const code = String(error?.cause?.code || error?.code || error?.message || 'UNKNOWN').slice(0, 80);
+    return { ok: false, state: 'BLOCKED', browserVerified: false, error: 'CDP_CONNECTION_FAILED',
+      detail: /^CDP_[A-Z_]+$|^ECONN[A-Z_]+$/.test(code) ? code : 'TRANSPORT_ERROR' };
+  } finally {
+    try { session?.close(); } catch {}
+  }
+}
+
+// One in-flight probe per bridge, with a short, bounded receipt lifetime.
+// An expired receipt is never READY. Polling does not wait on a slow WebSocket.
+export function createBrowserHealthMonitor(probe, {
+  clock = Date.now, refreshMs = 1500, validityMs = 4000,
+} = {}) {
+  let latest = null, finishedAt = 0, pending = null;
+  return {
+    status() {
+      const now = clock();
+      if (!pending && (!latest || now - finishedAt >= refreshMs)) {
+        pending = Promise.resolve().then(() => probe()).then(value => {
+          latest = value?.ok === true && value?.browserVerified === true && value?.state === 'READY'
+            ? value : { ok: false, state: 'BLOCKED', browserVerified: false,
+              error: value?.error || 'CDP_PROBE_UNVERIFIED' };
+          finishedAt = clock();
+        }, () => {
+          latest = { ok: false, state: 'BLOCKED', browserVerified: false, error: 'CDP_CONNECTION_FAILED' };
+          finishedAt = clock();
+        }).finally(() => { pending = null; });
+      }
+      const age = now - finishedAt;
+      if (latest?.ok === true && age >= 0 && age <= validityMs) {
+        return { ...latest, verifiedAt: new Date(finishedAt).toISOString(), verificationAgeMs: age };
+      }
+      return { ok: false, state: pending ? 'VERIFYING' : 'BLOCKED', browserVerified: false,
+        error: pending && !latest ? 'CDP_PROBE_PENDING' : latest?.error || 'CDP_PROBE_NOT_VERIFIED' };
+    },
+    async settle() { if (pending) await pending; },
+  };
+}
+const browserHealth = createBrowserHealthMonitor(probeCdpBrowser);
 
 export function contractedBrowserOrigin(mission,{missionId,actionId,expectedUrl},kind) {
   if(!mission || mission.id!==missionId || mission.status!=='ACTIVE' || mission.phase!=='EXECUTING' || mission.activeTask?.id!==actionId || mission.activeTask?.type!==`browser-${kind}`) return null;
@@ -316,8 +412,11 @@ export const server = createServer(async (req, res) => {
     if (req.headers.origin) return json(res,{ok:false,error:'BROWSER_ORIGIN_DENIED'},403);
     if (req.method==='POST' && ['/navigate','click','type'].includes(url.pathname) && process.env.JACO_GATEWAY_ALLOW_MUTATIONS!=='1') return json(res,{ok:false,error:'MUTATIONS_DISABLED'},403);
     if (req.method === "GET" && url.pathname === "/health") {
-      const tabs = await getTabs();
-      return json(res, { ok: tabs.some(t=>t.type==="page" && t.webSocketDebuggerUrl), service: "nova-bridge", cdpPort: CDP_PORT });
+      const result = workplace.allowed ? browserHealth.status() :
+        { ok: false, state: 'BLOCKED', browserVerified: false, error: 'WORKPLACE_UNSYNCED' };
+      const ready = result.ok === true && result.browserVerified === true && workplace.allowed;
+      return json(res, { ...result, ok: ready, state: ready ? 'READY' : 'BLOCKED',
+        service: 'nova-bridge', cdpPort: CDP_PORT }, ready ? 200 : 503);
     }
     if (req.method === "GET" && url.pathname === "/targets") {
       return json(res, await targets());
