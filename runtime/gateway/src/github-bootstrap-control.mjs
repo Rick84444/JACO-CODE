@@ -19,12 +19,18 @@ export function safeBootstrapHealthLines(result) {
     const nova = ['RUNNING','DEGRADED','DOWN'].includes(result.workplace?.novaState)
       ? result.workplace.novaState : 'UNVERIFIED';
     const overall = ['READY','DEGRADED','DOWN'].includes(result.status) ? result.status : 'UNVERIFIED';
+    const startupState = ['READY','DEGRADED','BLOCKED','STARTING'].includes(result.startup?.state)
+      ? result.startup.state : 'UNVERIFIED';
+    const browserAttachment = ['ATTACHED','FAILED','UNAVAILABLE','PENDING','NOT_REQUIRED'].includes(result.startup?.browserAttachment)
+      ? result.startup.browserAttachment : 'UNVERIFIED';
     return ['#### Verified loopback services (allowlisted)',
       '- Core: `' + core + '`',
       '- Workplace: `' + workplace + '`',
       '- Durable Nova: `' + nova + '`',
       '- Aura operator: `NOT_INDEPENDENTLY_PROBED`',
       '- Service health: `' + overall + '`',
+      ...(result.startup ? ['- Windows startup: `' + startupState + '`',
+        '- Browser attachment: `' + browserAttachment + '`'] : []),
     ];
   }
   if (!result || result.schema !== 'jaco.activation/v2') return [];
@@ -42,6 +48,12 @@ export function safeBootstrapHealthLines(result) {
   const count = Number.isSafeInteger(result.tools?.toolCount) && result.tools.toolCount >= 0 && result.tools.toolCount <= 100000
     ? String(result.tools.toolCount) : 'UNVERIFIED';
   const overall = result.ok === true ? 'READY' : 'DEGRADED';
+  const startupState = ['READY', 'DEGRADED', 'BLOCKED', 'STARTING'].includes(result.startup?.state)
+    ? result.startup.state : 'UNVERIFIED';
+  const browserAttachment = ['ATTACHED', 'FAILED', 'UNAVAILABLE', 'PENDING', 'NOT_REQUIRED'].includes(result.startup?.browserAttachment)
+    ? result.startup.browserAttachment : 'UNVERIFIED';
+  const startupPhase = ['preflight', 'browser-attachment', 'complete', 'other'].includes(result.startup?.phase)
+    ? result.startup.phase : 'UNVERIFIED';
   return [
     '#### Verified service signals (allowlisted)',
     '- Core: `' + core + '`',
@@ -51,6 +63,11 @@ export function safeBootstrapHealthLines(result) {
     '- Selected planner: `' + planner + '`',
     '- Active tools: `' + count + '`',
     '- End-to-end activation: `' + overall + '`',
+    ...(result.startup ? [
+      '- Windows startup: `' + startupState + '`',
+      '- Browser attachment: `' + browserAttachment + '`',
+      '- Startup phase: `' + startupPhase + '`',
+    ] : []),
     '',
     'These signals come from the local activation report, not from Cloudflare tunnel status.',
   ];
