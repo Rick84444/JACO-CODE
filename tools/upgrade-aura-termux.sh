@@ -137,14 +137,22 @@ say 'Build completed; preparing supervised process takeover.'
 # answered on :2995; do not create persistent down-markers here.
 # jacoctl handles known orphan checkouts and refuses unknown port owners.
 say 'Restarting the canonical JACO supervisor (Sentinel -> Core -> Workplace -> Nova).'
-bash "$RUNTIME/bin/jacoctl" restart
+bash "$RUNTIME/bin/jacoctl" restart --fast
 say 'Verifying Core release, runsv status and new UI.'
 status="$(bash "$RUNTIME/bin/jacoctl" status)"
 printf '%s\n' "$status"
-grep -q '\[JACO\] READY' <<< "$status" || fail 'JACO supervisor does not report READY.'
+if grep -q '\[JACO\] READY' <<< "$status"; then
+  readiness=READY
+else
+  readiness=STARTING
+fi
 identity="$(curl -fsS --max-time 5 http://127.0.0.1:3000/api/runtime/identity)"
 node -e 'const fs=require("fs"); const release=JSON.parse(fs.readFileSync(process.argv[1])); const live=JSON.parse(process.argv[2]); if(live.releaseId!==release.releaseId||!live.success)process.exit(1)' "$RUNTIME/CURRENT_RELEASE.json" "$identity" || fail 'Core returned wrong release identity.'
 http_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:3000/)"
 [[ "$http_code" == 200 ]] || fail "Aura GUI endpoint HTTP $http_code"
-say "SUCCESS. Aura built from $TARGET, HTTP 200, supervisor READY."
+if [[ "$readiness" == READY ]]; then
+  say "SUCCESS. Aura built from $TARGET, HTTP 200, supervisor READY."
+else
+  say "STARTING. Aura built from $TARGET, Core/UI HTTP 200; model/SEER/Durable Nova not yet READY. Run: bash runtime/bin/jacoctl status"
+fi
 say "Preserved backups: $BACKUP. Untracked files were not modified."
