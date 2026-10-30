@@ -31,6 +31,14 @@ export function serviceUnavailableLabel(name, env = {}, platform = process.platf
 export async function readAuraServiceHealth({ env = process.env, platform = process.platform, fetchImpl = fetch } = {}) {
   const result = {};
   await Promise.all(Object.keys(DEFAULT_PORTS).map(async name => {
+    // Avoid polling deliberately dormant Termux adapters on every board
+    // refresh. DISABLED means configuration intent, not proven process exit.
+    if ((['cdpBridge','novaBridge'].includes(name) && env.JACO_AURA_LEAN === '1') ||
+        (['cdpBridge','novaBridge','chromeCdp'].includes(name) && env.JACO_ENABLE_CDP === '0') ||
+        (name === 'ollama' && env.JACO_ENABLE_OLLAMA === '0')) {
+      result[name] = serviceUnavailableLabel(name, env, platform);
+      return;
+    }
     const token = name === 'novaBridge' ? String(env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '') : '';
     const url = `http://127.0.0.1:${portOf(name, env)}${pathFor(name)}`;
     try {
