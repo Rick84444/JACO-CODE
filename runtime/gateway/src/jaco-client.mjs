@@ -54,6 +54,10 @@ export class JacoCoreClient {
   missionList(limit=100) { return this.request(`/api/connected/missions?limit=${encodeURIComponent(limit)}`); }
   missionTickets(args={}) { const q=new URLSearchParams(); if(args.missionId)q.set('missionId',args.missionId); if(args.status)q.set('status',args.status); q.set('limit',String(args.limit||200)); return this.request(`/api/connected/tickets?${q}`); }
   missionTick() { return this.request('/api/connected/tick',{method:'POST',body:'{}'}); }
+  mcpCatalog() { return this.request('/api/mcp/tools'); }
+  mcpRead({server,tool,args={}}) {
+    return this.request('/api/mcp/call',{method:'POST',body:JSON.stringify({server,tool,arguments:args,mode:'read'})});
+  }
   providers() { return this.request('/api/connected/providers'); }
   providerRegister(args) { return this.request('/api/connected/providers',{method:'POST',body:JSON.stringify(args)}); }
   providerProbe(id) { return this.request(`/api/connected/providers/${encodeURIComponent(id)}/probe`,{method:'POST',body:'{}'}); }
