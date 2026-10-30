@@ -2,7 +2,7 @@
 
 ## Scope and truth boundary
 
-The GitHub issues marked `[JACO BOOT]` are **bootstrap-only**: `system.status`, `system.activate`, `system.restart` and `system.update` are fixed verbs. The receiver checks the issue creator and deduplicates command IDs. Do not add free-form shell, file writes, prompts, credentials, or a general MCP proxy to this channel.
+The GitHub issues marked `[JACO BOOT]` are **bootstrap-only**: `system.status`, `system.health`, `system.activate`, `system.restart` and `system.update` are fixed verbs. The receiver checks the issue creator and deduplicates command IDs. Do not add free-form shell, file writes, prompts, credentials, or a general MCP proxy to this channel.
 
 The Windows receiver `runtime/bin/sentinel-windows.mjs` must first be committed from the Windows workstation and verified on its real host. The public repository does not yet contain it; no startup shortcut is installed by this PR.
 
@@ -12,6 +12,7 @@ MCP is the rich operating channel, protected by JACO Sentinel's existing bearer,
 
 | Tool | Behavior |
 | --- | --- |
+| `jaco_system_health` | Reads Core/Workplace/Durable Nova readiness through independent loopback probes |
 | `jaco_mcp_catalog` | Reads the actual Core MCP host's tool catalog, status and agent-access policy |
 | `jaco_mcp_read` | Calls an existing MCP tool with `mode=read`; the canonical Core denies writes |
 | `jaco_shell_inspect` | Optional fixed, local read-only diagnostics using no command interpreter |
@@ -20,7 +21,7 @@ Shell inspector operations: `git_status`, `git_diff_stat`, `git_recent_commits`,
 
 **No arbitrary shell is provided here.** To execute mutating shell/code tasks, use the existing Aura mission/executor/approval path, then collect its verified receipt. Never bypass the runtime's signed mandates and scope policy by smuggling commands into GitHub issues.
 
-All 35 existing JACO MCP tools remain available; these 3 additions bring the registered catalog to 38. Tool registration alone is not proof a provider or host capability is active.
+All 35 existing JACO MCP tools remain available; the three MCP/shell tools and `jaco_system_health` bring the registered catalog to 39. Tool registration alone is not proof a provider or host capability is active.
 
 ## Public health receipts
 
