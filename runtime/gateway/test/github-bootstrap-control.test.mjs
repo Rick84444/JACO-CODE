@@ -530,3 +530,55 @@ test('Aura goal is journaled before execution so a failed remote response cannot
   assert.deepEqual((await make().pollOnce()).processed,[]);
   assert.equal(called,1);
 });
+
+function auraIssueFixture(number) {
+  const comments=[]; let closed=false;
+  const payload={schema:'jaco.aura-command/v1',commandId:`aura-readiness-${number}-v1`,op:'aura.acceptance'};
+  const fetchImpl=async(url,options={})=>{
+    const method=options.method||'GET';
+    if(method==='GET'&&url.includes('/issues?'))return response(200,closed?[]:[{
+      number,title:'[JACO AURA] readiness',user:{login:'Rick84444'},
+      body:'<!-- jaco-aura-control:v1 -->\n'+JSON.stringify(payload)}]);
+    if(method==='POST'&&url.endsWith(`/issues/${number}/comments`)){comments.push(JSON.parse(options.body).body);return response(201,{id:1});}
+    if(method==='PATCH'&&url.endsWith(`/issues/${number}`)){closed=true;return response(200,{state:'closed'});}
+    throw new Error('unexpected '+method+' '+url);
+  };
+  return {fetchImpl,comments,isClosed:()=>closed};
+}
+
+test('Aura goal waits, untouched, while Core starts and is created exactly once when it is ready',async()=>{
+  const {fetchImpl,comments,isClosed}=auraIssueFixture(901);
+  let ready=false,clock=0; const goals=[];
+  const system={auraReady:async()=>ready,
+    async startAuraAcceptance(){goals.push('goal');return {schema:'jaco.aura-operator-command/v1',status:'ACCEPTED',goalId:'goal-901',execution:'NOT_VERIFIED'};}};
+  const file=stateFile();
+  const control=createGithubBootstrapControl({system,fetchImpl,enabled:true,token:'t',repo:'Rick84444/jaco-code',actor:'Rick84444',stateFile:file,now:()=>clock});
+  assert.equal((await control.pollOnce()).processed[0].status,'WAITING');
+  clock=60000;
+  assert.equal((await control.pollOnce()).processed[0].status,'WAITING');
+  assert.deepEqual(goals,[]); assert.deepEqual(comments,[]); assert.equal(isClosed(),false);
+  ready=true; clock=90000;
+  assert.equal((await control.pollOnce()).processed[0].status,'ACCEPTED');
+  assert.deepEqual(goals,['goal']); assert.equal(isClosed(),true);
+  // A Sentinel restarted after acceptance never creates a second goal.
+  const again=createGithubBootstrapControl({system,fetchImpl,enabled:true,token:'t',repo:'Rick84444/jaco-code',actor:'Rick84444',stateFile:file});
+  assert.deepEqual((await again.pollOnce()).processed,[]);
+  assert.deepEqual(goals,['goal']);
+});
+
+test('Aura goal that never finds a ready ingress ends as NOT_READY without creating a goal',async()=>{
+  const {fetchImpl,comments,isClosed}=auraIssueFixture(902);
+  let clock=0; const goals=[];
+  const system={auraReady:async()=>{throw new Error('ECONNREFUSED C:\Users\private');},
+    async startAuraAcceptance(){goals.push('goal');return {};}};
+  const control=createGithubBootstrapControl({system,fetchImpl,enabled:true,token:'t',repo:'Rick84444/jaco-code',actor:'Rick84444',stateFile:stateFile(),now:()=>clock,auraReadinessTimeoutMs:180000});
+  assert.equal((await control.pollOnce()).processed[0].status,'WAITING');
+  clock=180000;
+  assert.equal((await control.pollOnce()).processed[0].status,'NOT_READY');
+  assert.deepEqual(goals,[]);
+  assert.equal(isClosed(),true);
+  assert.match(comments[0],/NOT_READY/);
+  assert.match(comments[0],/No goal was created/);
+  assert.doesNotMatch(comments[0],/private|ECONNREFUSED/);
+  assert.deepEqual((await control.pollOnce()).processed,[]);
+});

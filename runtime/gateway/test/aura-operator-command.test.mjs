@@ -106,3 +106,19 @@ test('Windows Aura-only profile retires direct operator bypass routes but not No
   assert.match(win,/JACO_AURA_ONLY_OPERATOR = '1'/);
   assert.match(nova,/new MissionClient\(CONFIG.runtimeUrl/);
 });
+
+test('Aura ingress is ready only with authenticated Core and a healthy loopback SEER',async()=>{
+  const { auraIngressReady } = await import('../src/aura-operator-command.mjs');
+  const core=(status)=>({request:async path=>{assert.equal(path,'/api/connected/status');if(status instanceof Error)throw status;return status;}});
+  const seer=(body,ok=true)=>async()=>({ok,json:async()=>body});
+  const healthy={ok:true,service:'seer'};
+  assert.equal(await auraIngressReady(core({success:true}),{fetchImpl:seer(healthy)}),true);
+  assert.equal(await auraIngressReady(core(new Error('JACO_CORE_HTTP_401')),{fetchImpl:seer(healthy)}),false);
+  assert.equal(await auraIngressReady(core({success:false}),{fetchImpl:seer(healthy)}),false);
+  assert.equal(await auraIngressReady(core({success:true}),{fetchImpl:seer(healthy,false)}),false);
+  assert.equal(await auraIngressReady(core({success:true}),{fetchImpl:async()=>{throw new Error('ECONNREFUSED')}}),false);
+  assert.equal(await auraIngressReady(core({success:true}),{fetchImpl:seer({ok:true,service:'other'})}),false);
+  let called=false;
+  assert.equal(await auraIngressReady(core({success:true}),{seerUrl:'https://seer.example.com',fetchImpl:async()=>{called=true;return {ok:true,json:async()=>healthy}}}),false);
+  assert.equal(called,false);
+});

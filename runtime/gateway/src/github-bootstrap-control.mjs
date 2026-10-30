@@ -90,8 +90,13 @@ export function createGithubBootstrapControl({
   gitControlLocalRef = process.env.JACO_GIT_BOOTSTRAP_LOCAL_REF || 'refs/jaco/bootstrap-control',
   gitControlPath = process.env.JACO_GIT_BOOTSTRAP_PATH || '.jaco/bootstrap-control.json',
   gitReadImpl = null,
+  auraReadinessTimeoutMs = Number(process.env.JACO_AURA_READINESS_TIMEOUT_MS || 180000),
+  now = () => Date.now(),
 } = {}) {
   if (!system) throw new Error('GITHUB_BOOTSTRAP_SYSTEM_REQUIRED');
+  // commandId -> first poll that found Aura's ingress not ready. In memory only: nothing was journaled
+  // or created, so a Sentinel restart simply starts the bounded wait again.
+  const auraNotReadySince = new Map();
   const [owner, name] = String(repo).split('/');
   const configured = Boolean(enabled && owner && name && actor);
   const loadState = () => {
@@ -292,6 +297,39 @@ export function createGithubBootstrapControl({
           continue;
         }
         if (handled.has(command.commandId)) continue;
+
+        // Sentinel starts before the stack at Windows sign-in. An Aura goal taken while Core or SEER is
+        // still starting failed and could never be retried (2026-10-30, issue #81). Leave the issue
+        // untouched until the ingress answers; only a bounded timeout ends it, as NOT_READY.
+        if (command.op === 'aura.acceptance' && typeof system.auraReady === 'function') {
+          const ready = await system.auraReady().catch(() => false);
+          if (!ready) {
+            const since = auraNotReadySince.get(command.commandId) ?? now();
+            auraNotReadySince.set(command.commandId, since);
+            if (now() - since < auraReadinessTimeoutMs) {
+              processed.push({ issue: issue.number, status: 'WAITING' });
+              continue;
+            }
+            auraNotReadySince.delete(command.commandId);
+            // No goal was created, so recording the command cannot hide a duplicate; it stops repeats.
+            remember(command.commandId);
+            durable.lastProcessed = { at: new Date().toISOString(), issue: issue.number ?? null, commandId: command.commandId, op: command.op, status: 'NOT_READY' };
+            persistState();
+            if (issue.number != null) {
+              await comment(issue.number, [
+                '<!-- jaco-bootstrap-status:v1 -->',
+                '### JACO Sentinel bootstrap — NOT_READY',
+                `- command: \`${command.commandId}\``,
+                `- operation: \`${command.op}\``,
+                `- Aura ingress (Core and SEER) did not become ready within ${Math.round(auraReadinessTimeoutMs / 1000)} s. No goal was created; send a new command ID.`,
+              ]).catch(() => {});
+              await close(issue.number).catch(() => {});
+            }
+            processed.push({ issue: issue.number, status: 'NOT_READY' });
+            continue;
+          }
+          auraNotReadySince.delete(command.commandId);
+        }
 
         try {
           if (issue.number != null) {

@@ -14,6 +14,26 @@ export const AURA_ACCEPTANCE_GOAL = [
 
 const GOAL_ID = /^[a-zA-Z0-9_.:-]{1,160}$/;
 
+// Aura's ingress is ready when Core answers an authenticated Mission Bus read (/api/runtime/identity is
+// public, so it proves nothing about the token) and the loopback SEER planner reports healthy. Any
+// error, non-loopback SEER URL or unexpected body counts as not ready.
+export async function auraIngressReady(core, {
+  seerUrl = process.env.SEER_URL || 'http://127.0.0.1:2997', fetchImpl = globalThis.fetch, timeoutMs = 4000,
+} = {}) {
+  try {
+    const seer = new URL(String(seerUrl));
+    if (seer.protocol !== 'http:' || !['127.0.0.1','localhost','[::1]'].includes(seer.hostname) || seer.username || seer.password) return false;
+    const status = await core.request('/api/connected/status');
+    if (status?.success !== true) return false;
+    const response = await fetchImpl(new URL('/health', seer), { redirect: 'error', signal: AbortSignal.timeout(timeoutMs) });
+    if (!response.ok) return false;
+    const body = await response.json();
+    return body?.ok === true && body?.service === 'seer';
+  } catch {
+    return false;
+  }
+}
+
 export async function submitAuraAcceptance(core) {
   if (typeof core?.request !== 'function') throw new Error('AURA_CORE_REQUIRED');
   const url = new URL(String(core.baseUrl || ''));
