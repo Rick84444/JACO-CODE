@@ -48,6 +48,25 @@ export async function readAuraServiceHealth({ env = process.env, platform = proc
       }
       let body = null;
       try { body = await response.json(); } catch { /* Response without JSON proves only HTTP reachability. */ }
+      // A historical MCP facade returned HTTP 200, ok:true while Chrome was
+      // absent. Browser bridges now require a recent WebSocket attestation.
+      if (name === 'novaBridge' || name === 'cdpBridge') {
+        const age = body?.verificationAgeMs;
+        const receiptFresh = Number.isFinite(age) && age >= 0 && age <= 4000
+          && typeof body?.verifiedAt === 'string' && Number.isFinite(Date.parse(body.verifiedAt))
+          && Math.abs(Date.now() - Date.parse(body.verifiedAt) - age) < 5000;
+        result[name] = body?.ok === true && body?.browserVerified === true &&
+          body?.state === 'READY' && receiptFresh ? `READY (${response.status})`
+          : body?.ok === false ? `UNHEALTHY (${response.status})`
+          : `UNVERIFIED (${response.status})`;
+        return;
+      }
+      // Discovery proves only a DevTools HTTP endpoint, not a live CDP socket.
+      if (name === 'chromeCdp') {
+        result[name] = typeof body?.webSocketDebuggerUrl === 'string'
+          ? `DISCOVERABLE (${response.status})` : `UNVERIFIED (${response.status})`;
+        return;
+      }
       if (body?.ok === false || body?.success === false || ['DOWN', 'ERROR', 'FAILED'].includes(body?.status)) {
         result[name] = `UNHEALTHY (${response.status})`;
         return;
