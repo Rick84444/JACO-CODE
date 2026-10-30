@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { ContinuumEventStore } from '../../src/server/continuum/eventStore.mjs';
+import { ContinuumEventStore, matchesLedgerProcessIdentity } from '../../src/server/continuum/eventStore.mjs';
 import { repairLedger, scanLedger } from './repair-ledger.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -64,6 +64,24 @@ new ContinuumEventStore(${JSON.stringify(dir)}); console.log('HELD'); setInterva
     const holder = JSON.parse(fs.readFileSync(path.join(dir, 'events.lock'), 'utf8'));
     assert.equal(holder.pid, process.pid);
     assert.notEqual(holder.ownerId, 'stale-owner');
+  });
+
+  await ok('lock.windows-new-writer-has-stable-process-birth', async () => {
+    const old = { pid: 4520, startedAt:'2026-10-24T07:00:00.000Z', host:os.hostname() };
+    assert.equal(matchesLedgerProcessIdentity(old, {
+      platform:'win32', processBirth:'2026-10-30T21:30:00.000Z',
+    }), false, 'Windows PID reused after lock creation is proven stale');
+    assert.equal(matchesLedgerProcessIdentity(old, {
+      platform:'win32', processBirth:'2026-10-24T06:59:59.000Z',
+    }), true, 'original owner potentially alive must remain locked');
+    assert.equal(matchesLedgerProcessIdentity(old, { platform:'win32', processBirth:null }), true,
+      'missing process birth is ambiguous and must fail closed');
+    assert.equal(matchesLedgerProcessIdentity({pid:4520,startedAt:'unknown'}, {
+      platform:'win32', processBirth:'2026-10-30T21:30:00.000Z',
+    }), true, 'malformed legacy lock creation time must fail closed');
+    const current = {pid:4520, processBirth:'2026-10-30T20:00:00Z'};
+    assert.equal(matchesLedgerProcessIdentity(current,{platform:'win32',processBirth:'2026-10-30T20:00:00.000Z'}),true);
+    assert.equal(matchesLedgerProcessIdentity(current,{platform:'win32',processBirth:'2026-10-30T21:30:00.000Z'}),false);
   });
 
   await ok('append.refuses-foreign-writes', async () => {
