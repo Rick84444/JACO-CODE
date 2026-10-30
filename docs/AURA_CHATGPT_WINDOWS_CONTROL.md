@@ -4,7 +4,7 @@
 
 The GitHub issues marked `[JACO BOOT]` are **bootstrap-only**: `system.status`, `system.health`, `system.activate`, `system.restart` and `system.update` are fixed verbs. The receiver checks the issue creator and deduplicates command IDs. Do not add free-form shell, file writes, prompts, credentials, or a general MCP proxy to this channel.
 
-The Windows receiver `runtime/bin/sentinel-windows.mjs` must first be committed from the Windows workstation and verified on its real host. The public repository does not yet contain it; no startup shortcut is installed by this PR.
+The Windows receiver `runtime/bin/sentinel-windows.mjs` was committed in PR #66 and requires target-host validation; merge #66 before deploying this PR. No startup shortcut is installed by this PR.
 
 MCP is the rich operating channel, protected by JACO Sentinel's existing bearer, host/origin checks, Core authentication and the per-tool/mission policies. Its availability from an external ChatGPT session requires an explicitly connected MCP client; a healthy Cloudflare Tunnel or a GitHub command receipt is not that proof.
 
@@ -31,6 +31,38 @@ Core, Workplace, Durable Nova, planner, active tool count and aggregate health. 
 If the Windows receiver returns only a short `{state:'READY'}` response, the issue reports `Service evidence: NOT_AVAILABLE`. This is **not** a verified Core/Workplace/Aura health check.
 
 Do not post log text, command line, local paths, hostnames, provider names, credentials or raw runtime result objects in public issues.
+
+## Cold-start truth and recoverable browser failure
+
+Cold-start incident #69 proved that Core, Workplace, SEER, CDP-MCP and Chrome can all listen while `browser-attachment` is still `BLOCKED`. A successful TCP/HTTP probe, a `jaco.activation/v2` report with `ok:true`, or a listening Chrome port must **not** alone imply end-to-end `READY`.
+
+The launcher now writes `jaco.local-startup/v1` with an explicit browser-attachment requirement. When Chrome itself fails to launch or attach:
+
+- Core, Workplace and SEER may continue startup;
+- `browserAttachment` is `FAILED` or `UNAVAILABLE`, and startup becomes `DEGRADED` rather than `READY`;
+- local CLI status and ChatGPT bootstrap status reconcile with the durable startup checkpoint;
+- only allowlisted state, attachment and phase enums enter public GitHub receipts;
+- nonzero CLI exit codes containing valid JSON retain the structured report, without posting stdout/stderr.
+
+A missing or legacy checkpoint with no browser-attachment proof is `UNVERIFIED`, **not** `READY`. An opt-out `JACO_ENABLE_CDP=0` may complete without browser attachment.
+
+### Windows Continuum ledger owner verification
+
+`events.lock` includes `processBirth` (Windows WMI process CreationDate) in addition to the existing Unix boot ID/start ticks. A legacy Windows lock with a live but reused PID is reclaimable only when the **current** process was born more than five seconds *after* the lock's `startedAt`. Unknown process start time, malformed legacy dates and ambiguous live owners remain locked. Only the lock file is eligible for replacement; ledger events are neither discarded nor rewritten. Never delete a live lock by hand.
+
+### Merge and target-host verification
+
+PR #60 fixes canonical `main` update flow. PR #66 adds the Windows receiver. This PR adds end-to-end readiness evidence and Windows ledger fixes. Keep each suite's `test:unit` entries when integrating; do not discard the PR #66 Node-CLI regression.
+
+After CI and controlled integration, explicitly verify on the Windows target:
+- stop the stack while retaining exactly one Sentinel;
+- command `system.activate` and confirm Core/Workplace/SEER operate even if Chrome is deliberately unavailable;
+- verify the command receipt is `DEGRADED` whenever browser attachment fails;
+- verify an **authenticated** browser attachment to the dedicated Chrome profile succeeds and the durable startup checkpoint is `READY` before claiming full readiness;
+- simulate a stale Windows ledger PID (process born after the old lock) in an isolated temporary ledger only; verify a live matching owner is never evicted;
+- test Sentinel autostart only after operator installation, without replacing the current service session.
+
+Do not retry an incomplete activation while it is still marked RUNNING. Never trigger an unapproved live Chrome restart/attachment as part of a code-only PR.
 
 ## Windows per-user autostart (explicit opt-in)
 
