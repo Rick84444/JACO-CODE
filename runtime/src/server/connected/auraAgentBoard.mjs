@@ -94,7 +94,7 @@ export function buildAgentBoard({ bus, control, workplace, graphs = null, coordi
     } : null,
     memory: (workplace?.memory || []).slice(0,30).map(e => ({id:text(e.eventId,240),kind:text(e.kind,80),body:text(e.body,3000),at:text(e.createdAt,80),agentId:text(e.sender?.agentId,240)})),
     memoryState: workplace?.memoryState ? {owner:'Workplace',git:false,storage:text(workplace.memoryState.storage,80),latestSeq:number(workplace.memoryState.latestSeq)} : null,
-    aura: projectAuraFunctions({ workplace, coordinator, graphs, missions: missionError ? null : missions, workers, tools, now }),
+    aura: projectAuraFunctions({ workplace, coordinator, graphs, missions: missionError ? null : missions, workers, tools, now, safeText: text }),
     network: projectAgentNetwork({agents,missions,graphs,coordinator,workers,missionTruncated:total !== null && total > missions.length,text,now}),
     agents, missions, total, statusCounts, limit: 200, truncated: total !== null && total > missions.length,
   };
