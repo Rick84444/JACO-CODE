@@ -1,10 +1,9 @@
 {
   "schema": "jaco.nova-control/v1",
-  "commandId": "aura-windows-nova-first-probe-20261030-2230-v1",
+  "commandId": "aura-real-nova-smoke-20261030-2252-v1",
   "op": "mission.create",
-  "goal": "Read-only Aura/Nova acceptance test on this local Windows JACO host: inspect git status and Core health, verify action receipt and return missionId. Do not edit files, run arbitrary shell, contact external services, interact with browsers, start or stop services, or use paid models.",
+  "goal": "AURA LIVE ACCEPTANCE: Perform exactly one read-only JACO Core health-check on the local Windows runtime. Record the real tool outcome and a durable Nova receipt; no file writes, browser navigation, payments, installations, process controls, git mutations, or external communications. End only with evidence, not a simulated success.",
   "allowedTasks": [
-    "git-status",
     "health-check"
   ]
 }
