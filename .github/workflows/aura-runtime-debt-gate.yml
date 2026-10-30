@@ -14,6 +14,8 @@ on:
       - 'gateway/src/workplace/workplace-agent-supervisor.mjs'
       - 'agents/lib/aura-service-health.mjs'
       - 'tests/nova/aura-runtime-debt.test.mjs'
+      - 'runtime/src/server/plan/legacyPlanRoutes.mjs'
+      - 'tests/nova/aura-legacy-plan-retirement.test.mjs'
       - '.github/workflows/aura-runtime-debt-gate.yml'
   push:
     branches: [main]
@@ -29,6 +31,8 @@ on:
       - 'gateway/src/workplace/workplace-agent-supervisor.mjs'
       - 'agents/lib/aura-service-health.mjs'
       - 'tests/nova/aura-runtime-debt.test.mjs'
+      - 'runtime/src/server/plan/legacyPlanRoutes.mjs'
+      - 'tests/nova/aura-legacy-plan-retirement.test.mjs'
       - '.github/workflows/aura-runtime-debt-gate.yml'
 
 jobs:
@@ -49,7 +53,8 @@ jobs:
           bash -n runtime/termux/aura-footprint.sh
           node --check gateway/src/workplace/workplace-agent-supervisor.mjs
           node --check runtime/src/server/connected/providerRegistry.mjs
+          node --check runtime/src/server/plan/legacyPlanRoutes.mjs
       - name: Runtime lean and model lifecycle regression
         run: |
-          node --test tests/nova/aura-runtime-debt.test.mjs tests/nova/aura-lean-termux.test.mjs tests/nova/automatic-connections.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/aura-termux-service-health.test.mjs
+          node --test tests/nova/aura-legacy-plan-retirement.test.mjs tests/nova/aura-runtime-debt.test.mjs tests/nova/aura-lean-termux.test.mjs tests/nova/automatic-connections.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/aura-termux-service-health.test.mjs
           node --test tests/workplace/workplace-supervisor.test.mjs
