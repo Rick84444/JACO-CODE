@@ -48,8 +48,11 @@ try{
   });
   assert.equal(promotedReceipt.status,201);
   assert.equal(promotedReceipt.data.evidence.verified,false);
+  assert.equal(promotedReceipt.data.evidence.kind,'nova-action-receipt');
   assert.equal(promotedReceipt.data.knowledge.verificationStatus,'UNVERIFIED');
   assert.equal(promotedReceipt.data.knowledge.reusable,false);
+  assert.equal(promotedReceipt.data.knowledge.kind,'tool-attested-observation');
+  assert.deepEqual(promotedReceipt.data.knowledge.evidenceRefs,[promotedReceipt.data.evidence.id]);
   const rejectedDecision=await request('/api/continuum/cognition/promotions/decision',{
     claim:'unsupported knowledge',kind:'helix-architecture-decision',evidenceRefs:['knowledge-proof'],
     dependencies:[],reusable:true,
