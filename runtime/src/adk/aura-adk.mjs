@@ -10,7 +10,7 @@ const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const TERMINAL = new Set(['DONE', 'CANCELLED', 'AWAITING_VERIFICATION']);
-const RISK = new Set(['read', 'write', 'high-impact']);
+const PROGRAM_BRANDS = new WeakSet();
 
 export class AuraAdkError extends Error {
   constructor(code, message = code, { outcomeUnknown = false, cause } = {}) {
@@ -93,17 +93,19 @@ export function defineAuraProgram(spec) {
     seen.add(key);
     return { providerId, toolName, mode: 'read' };
   });
-  return freeze({
+  const program = freeze({
     schema: 'jaco.adk.program/v1',
     id: spec.id, version: spec.version, description: spec.description.trim(),
     execution: { type: spec.execution.type, ...(spec.execution.type === 'skill' ? { skillId: spec.execution.skillId } : {}) },
     readTools,
     operatorIdentity: 'aura',
   });
+  PROGRAM_BRANDS.add(program);
+  return program;
 }
 const programRequired = program => {
   if (!record(program) || program.schema !== 'jaco.adk.program/v1' || program.operatorIdentity !== 'aura'
-      || !Object.isFrozen(program)) reject('ADK_DEFINE_PROGRAM_FIRST');
+      || !Object.isFrozen(program) || !PROGRAM_BRANDS.has(program)) reject('ADK_DEFINE_PROGRAM_FIRST');
   return program;
 };
 
