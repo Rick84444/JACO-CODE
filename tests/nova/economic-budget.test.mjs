@@ -84,7 +84,15 @@ test('operator budget HTTP route validates permission, origin and fields and per
   const changed=await fetch(url,{method:'PATCH',headers,body:'{"dailyCloudUsd":2,"monthlyCloudUsd":20,"maxCloudUsdPerTask":0.05}'}).then(r=>r.json());
   assert.equal(changed.success,true);assert.equal(changed.economic.policy.dailyCloudUsd,2);assert.equal(changed.economic.policy.cloudEnabled,true,'cloud is on until the operator turns it off');
   const observed=await fetch(url,{headers}).then(r=>r.json());assert.equal(observed.economic.policy.maxCloudUsdPerTask,0.05);
-  const restarted=new EconomicGovernor(path.dirname(g.policyFile),{append(){}});assert.equal(restarted.snapshot().policy.dailyCloudUsd,2);
+  const shutdown=await fetch(url,{method:'PATCH',headers,body:JSON.stringify({cloudEnabled:false})}).then(r=>r.json());
+  assert.equal(shutdown.economic.policy.cloudEnabled,false);
+  assert.equal(shutdown.economic.policy.manualAuraCloudEnabled,true,'legacy manual flag still true, must not bypass master off');
+  assert.equal(shutdown.economic.policy.novaOllamaCloudEnabled,true,'legacy Nova flag still true, must not bypass master off');
+  for (const purpose of ['reasoning','manual-aura-chat','nova-ollama-cloud'])
+    assert.equal(g.authorizeCloud({estimatedUsd:0.001,purpose}).reason,'CLOUD_DISABLED_BY_POLICY',purpose);
+  const restarted=new EconomicGovernor(path.dirname(g.policyFile),{append(){}});
+  assert.equal(restarted.snapshot().policy.dailyCloudUsd,2);
+  assert.equal(restarted.authorizeCloud({estimatedUsd:0.001,purpose:'nova-ollama-cloud'}).reason,'CLOUD_DISABLED_BY_POLICY');
 });
 
 test('an unsettled reservation stops holding headroom once it is older than any call: counted as spent on its own day', t => {
