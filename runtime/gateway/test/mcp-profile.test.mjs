@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createMcpHandler } from '@modelcontextprotocol/server';
 import { createToolRegistry } from '../src/tool-registry.mjs';
 import {
   JACO_MCP_COGNITIVE_READ,
@@ -73,4 +74,30 @@ test('dedicated tunnel launcher pins read-only profile before loading stdio modu
   const loaded=source.indexOf("await import('./mcp-stdio.mjs')");
   assert.ok(gate>=0 && loaded>gate,'fail closed even if an inherited environment selected full');
   assert.ok(!source.includes("process.env.JACO_MCP_TOOL_PROFILE || 'full'"));
+});
+
+
+test('real MCP server SDK JSON-RPC tools/list exposes only four external read tools', async () => {
+  const { buildJacoMcpServer } = await import('../src/mcp-factory.mjs');
+  const handler = createMcpHandler(() => buildJacoMcpServer({
+    core:{},system:{},modelId:'private-chatgpt-test',profile:'cognitive-read',
+  }));
+  try {
+    const response = await handler.fetch(new Request('http://test.local/mcp',{
+      method:'POST',
+      headers:{'content-type':'application/json','accept':'application/json, text/event-stream'},
+      body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/list'}),
+    }));
+    assert.equal(response.status,200,'server responded successfully to an actual tools/list request');
+    const body=await response.text();
+    const messages=body.split(/\r?\n/).filter(line => line.startsWith('data: '))
+      .map(line => JSON.parse(line.slice(6)));
+    const reply=messages.find(message => Array.isArray(message?.result?.tools));
+    assert.ok(reply,'MCP SDK response must contain tools/list, not an error or an empty heartbeat');
+    assert.deepEqual(reply.result.tools.map(t => t.name),
+      ['jaco_identity','jaco_system_health','jaco_cognitive_context','jaco_knowledge_search']);
+    assert.ok(reply.result.tools.every(t => t.annotations?.readOnlyHint === true));
+  } finally {
+    await handler.close();
+  }
 });
