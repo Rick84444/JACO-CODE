@@ -73,7 +73,11 @@ export class EconomicGovernor {
   }
   authorizeCloud({missionId=null,taskId=null,estimatedUsd=0,expectedValueUsd=null,purpose='reasoning',metadata=null}={}){
     this.#rollPeriods();const estimate=Math.max(0,safeNumber(estimatedUsd,0));
-    if(!this.policy.cloudEnabled && !(purpose==='manual-aura-chat' && this.policy.manualAuraCloudEnabled) && !(purpose==='nova-ollama-cloud' && this.policy.novaOllamaCloudEnabled))return {allowed:false,reason:'CLOUD_DISABLED_BY_POLICY'};
+    // Master switch is fail-closed. Legacy channel enable flags can further restrict
+    // spending, but must never override an operator's explicit CLOUD OFF decision.
+    if(!this.policy.cloudEnabled)return {allowed:false,reason:'CLOUD_DISABLED_BY_POLICY'};
+    if(purpose==='manual-aura-chat'&&!this.policy.manualAuraCloudEnabled)return {allowed:false,reason:'CLOUD_DISABLED_BY_POLICY'};
+    if(purpose==='nova-ollama-cloud'&&!this.policy.novaOllamaCloudEnabled)return {allowed:false,reason:'CLOUD_DISABLED_BY_POLICY'};
     if(estimate<=0)return {allowed:false,reason:'COST_ESTIMATE_REQUIRED'};
     if(this.policy.maxCloudUsdPerTask!=null&&estimate>this.policy.maxCloudUsdPerTask)return {allowed:false,reason:'TASK_COST_LIMIT',limitUsd:this.policy.maxCloudUsdPerTask};
     const headroom=this.headroom();
