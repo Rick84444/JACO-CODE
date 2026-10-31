@@ -27,10 +27,44 @@ export function validateVerifyRequest(body) {
 // Evidence item n is cited in the answer as [#n]. Each item becomes a verified receipt for the checker.
 export async function verifyAnswer(body, { env = process.env, fetchImpl = fetch } = {}) {
   const { answer, evidence } = validateVerifyRequest(body);
-  const receipts = evidence.map(e => ({ actionId: `verify:turn:${e.n}`, type: 'evidence', ok: true, verified: true, input: e.source ? { source: e.source } : {}, result: { output: e.text } }));
-  const r = await checkClaims(answer, receipts, { env, fetchImpl });
+  // The caller supplied the excerpts. They are input for a *consistency* check,
+  // not authenticated tool receipts or independently verified primary sources.
+  const receipts = evidence.map(e => ({
+    actionId: `verify:turn:${e.n}`, type: 'caller-supplied-evidence',
+    ok: true, verified: false, input: e.source ? { source: e.source } : {},
+    result: { output: e.text },
+  }));
+
+  // Public verify calls must not silently use paid cloud judges merely because
+  // a Groq/Ollama Cloud key exists in the gateway process. Cloud reasoning may
+  // only be added later via a per-request EconomicGovernor reservation.
+  const localBase = String(env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434');
+  let safeLocal = false;
+  try {
+    const u = new URL(localBase);
+    safeLocal = u.protocol === 'http:'
+      && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname.toLowerCase())
+      && !u.username && !u.password;
+  } catch {}
+  const localOnlyEnv = {
+    ...env, GROQ_API_KEY: '', OLLAMA_API_KEY: '',
+    OLLAMA_BASE_URL: safeLocal ? localBase : 'http://127.0.0.1:11434',
+  };
+  const r = await checkClaims(answer, receipts, { env: localOnlyEnv, fetchImpl });
+
+  const rejected = r.unsupportedFacts.length > 0 || r.contradicted.length > 0;
+  const modelReviewComplete = r.claims > 0 && r.judged === r.claims && r.unclear === 0
+    && !r.judgeError && r.partial.length === 0;
+  const verdict = rejected ? 'UNSUPPORTED' : modelReviewComplete
+    ? 'SUPPORTED_BY_SUPPLIED_EVIDENCE' : 'INCONCLUSIVE';
   return {
-    ok: r.ok,
+    // Never claim a successful verification when the independent judge is
+    // missing, partial, errored or produced an unclear verdict.
+    ok: verdict === 'SUPPORTED_BY_SUPPLIED_EVIDENCE',
+    verdict,
+    scope: 'CLAIM_EVIDENCE_CONSISTENCY_ONLY',
+    evidenceProvenance: 'CALLER_SUPPLIED_UNVERIFIED',
+    sourceAuthenticity: 'NOT_CHECKED',
     claims: r.claims,
     factsChecked: r.facts,
     unsupportedFacts: r.unsupportedFacts.map(u => ({ fact: u.fact, claim: u.text })),
@@ -38,7 +72,7 @@ export async function verifyAnswer(body, { env = process.env, fetchImpl = fetch 
     unclear: r.unclear,
     judged: r.judged,
     judge: r.judge ? 'independent model' : null,
-    judgeError: r.judgeError ? 'judge unavailable; facts were checked by rules only' : null,
+    judgeError: r.judgeError ? 'local judge unavailable or incomplete; no positive verification' : null,
   };
 }
 
@@ -46,7 +80,7 @@ export function verifyOffer(env = process.env) {
   const base = String(env.JACO_GATEWAY_PUBLIC_URL || '').replace(/\/+$/, '');
   return {
     service: 'jaco-verify',
-    description: 'Checks an AI answer against the evidence it rests on. Concrete facts (hashes, paths, versions, dates, URLs, names) are matched against the evidence; other claims are judged by an independent model. A list presented as complete is flagged when the evidence names more items.',
+    description: 'Checks whether claims in an AI answer are consistent with caller-supplied evidence. This does not authenticate evidence sources or establish external truth. When local independent model review is unavailable or incomplete the result is INCONCLUSIVE, not a successful verification. No paid cloud judges are used.',
     price: { amount: VERIFY_PRICE_USD, currency: 'USD', free: `${FREE_PER_DAY} checks per client per day`, paid: 'x402, USDC on Base, per check' },
     request: { method: 'POST', url: `${base}/v1/verify`, body: { answer: 'The release is 3.14.8 [#1].', evidence: [{ text: 'Python 3.14.8 - Sept. 30, 2026', source: 'https://www.python.org/downloads/' }] } },
     citation: 'Cite evidence item n as [#n] in the answer; uncited claims are checked against all evidence.',
