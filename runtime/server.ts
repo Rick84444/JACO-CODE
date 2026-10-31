@@ -78,7 +78,7 @@ import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec
 import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy, policyFilePath, CLAIM_RESUME_NOTE } from "../agents/lib/approval-policy.mjs";
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
-import { plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
+import { plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
 import { INITIAL_MODELS, INITIAL_CODE_FILES, INITIAL_DEVICES, INITIAL_TERMINAL_LOGS } from "./src/mockData.js";
 import { OllamaModel, CodeFile } from "./src/types.js";
 import {
@@ -4338,7 +4338,7 @@ const notifyPhone = async (action) => {
     const maxTokens = Number(req.body?.maxTokens);
     const disabled = String(process.env.JACO_DISABLED_PROVIDERS || '').split(',').map(s => s.trim());
     if (!paidModelsAllowed() || disabled.includes(providerId)) return res.status(403).json({ success: false, error: 'NOVA_PROVIDER_DISABLED' });
-    if (!validProviderId(providerId) || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(model) ||
+    if (!validProviderId(providerId) || !validPlannerModelId(model) ||
         (providerId === 'ollama-cloud' && (!configuredModel || model !== configuredModel)) || !Number.isInteger(promptBytes) || promptBytes < 1 || promptBytes > 200000 ||
         !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 32768) {
       return res.status(400).json({ success: false, error: 'NOVA_OLLAMA_COST_INPUT_INVALID' });
