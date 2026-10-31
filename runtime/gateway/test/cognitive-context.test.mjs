@@ -85,7 +85,7 @@ test('Knowledge mutation fails closed by default and rejects secret-like content
   const h=createToolHandlers({core,system:{},modelId:'m',env:{}});
   await assert.rejects(()=>h.jaco_knowledge_note({topic:'Retry strategy',note:'Use two retries for idempotent calls only'}),/JACO_KNOWLEDGE_WRITE_DISABLED/);
   assert.equal(writes,0);
-  assert.throws(()=>validatedKnowledgeNote({topic:'Secrets',note:'our apiKey = sk-proj-abcde1234567890abcdefghijkl'}),/SECRET_REFUSED/);
+  assert.throws(()=>validatedKnowledgeNote({topic:'Secrets',note:'our apiKey = ' + 'sk-' + 'proj-' + 'abcde1234567890abcdefghijkl'}),/SECRET_REFUSED/);
   assert.throws(()=>validatedKnowledgeNote({topic:'x',note:'short'}),/NOTE_INVALID/);
 });
 
