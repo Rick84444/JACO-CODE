@@ -125,7 +125,9 @@ export async function testPlannerModel({ provider, model }, { env = process.env,
   const endpoint = new URL(choice.url);
   const loopback = endpoint.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname);
   const cloudRelay = /(?:-cloud|:cloud)$/i.test(String(model));
-  const metered = !loopback && !/:free$/i.test(String(model));
+  // Only OpenRouter's explicit :free tier is classified as non-billable.
+  // An arbitrary connected HTTPS provider cannot bypass Continuum by naming a model ":free".
+  const metered = !loopback && !(provider === 'openrouter' && /:free$/i.test(String(model)));
   const started = Date.now();
   try {
     if (loopback && cloudRelay) throw new Error('OLLAMA_CLOUD_RELAY_NOT_RESERVABLE');
