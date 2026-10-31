@@ -50,7 +50,13 @@ export async function verifyAnswer(body, { env = process.env, fetchImpl = fetch 
     ...env, GROQ_API_KEY: '', OLLAMA_API_KEY: '',
     OLLAMA_BASE_URL: safeLocal ? localBase : 'http://127.0.0.1:11434',
   };
-  const r = await checkClaims(answer, receipts, { env: localOnlyEnv, fetchImpl });
+  // For an answer with no numbered citations, preserve the public API contract:
+  // compare every claim against *all* submitted excerpts. The canonical claim
+  // checker inherits a citation-only trailing line for preceding claims.
+  const hasCitation = /\[[^\]\n]*#\s*\d[^\]\n]*\]/.test(answer);
+  const reviewAnswer = hasCitation ? answer
+    : answer + '\n[' + evidence.map(e => '#' + e.n).join(', ') + ']';
+  const r = await checkClaims(reviewAnswer, receipts, { env: localOnlyEnv, fetchImpl });
 
   const rejected = r.unsupportedFacts.length > 0 || r.contradicted.length > 0;
   const modelReviewComplete = r.claims > 0 && r.judged === r.claims && r.unclear === 0
