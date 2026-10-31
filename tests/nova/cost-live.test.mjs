@@ -143,3 +143,33 @@ test('cost caps belong to the operator: none is built in, any amount can be set,
   assert.deepEqual([off.policy.dailyCloudUsd, off.headroom.dailyUsd, off.headroom.monthlyUsd], [null, null, null]);
   assert.equal(g.authorizeCloud({ estimatedUsd: 50, purpose: 'reasoning' }).allowed, true, 'no cap, no budget stop');
 });
+
+test('uncapped autonomous cloud calls trip a persisted burst fuse but manual Aura chat remains available', () => {
+  const { g, dir } = governor({ dailyCloudUsd: null, monthlyCloudUsd: null, maxCloudUsdPerTask: null });
+  const policy = g.snapshot().policy;
+  assert.equal(policy.maxAutonomousCloudCallsPer15m, 12);
+  for (let i = 0; i < 12; i++) assert.equal(g.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' }).allowed, true, String(i));
+  const blocked = g.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' });
+  assert.equal(blocked.reason, 'AUTONOMOUS_CLOUD_BURST_LIMIT');
+  assert.equal(g.liveSnapshot().autonomousCloudCallsLast15m, 12);
+  const restarted = new EconomicGovernor(dir, events());
+  assert.equal(restarted.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' }).reason, 'AUTONOMOUS_CLOUD_BURST_LIMIT', 'process restart cannot reset the fuse');
+  assert.equal(restarted.authorizeCloud({ estimatedUsd: 0.01, purpose: 'manual-aura-chat' }).allowed, true, 'operator Aura conversation can still work');
+  restarted.state.autonomousCloudCalls = restarted.state.autonomousCloudCalls.map(() => Date.now() - 16 * 60_000);
+  assert.equal(restarted.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' }).allowed, true, 'calls resume after the window');
+});
+
+test('Aura budget policy can configure the autonomous fuse without changing monetary caps', () => {
+  const { g } = governor({ dailyCloudUsd: null, monthlyCloudUsd: null, maxCloudUsdPerTask: null });
+  for (const value of [0, -1, 0.5, Infinity, '12', 10001]) {
+    assert.throws(() => g.updatePolicy({ maxAutonomousCloudCallsPer15m: value }), /ECONOMIC_POLICY_AUTONOMOUS_CALL_LIMIT_INVALID/);
+  }
+  g.updatePolicy({ maxAutonomousCloudCallsPer15m: 2 });
+  assert.equal(g.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' }).allowed, true);
+  assert.equal(g.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' }).allowed, true);
+  assert.equal(g.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' }).reason, 'AUTONOMOUS_CLOUD_BURST_LIMIT');
+  const off = g.updatePolicy({ maxAutonomousCloudCallsPer15m: null });
+  assert.equal(off.policy.maxAutonomousCloudCallsPer15m, null);
+  assert.equal(g.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' }).allowed, true);
+  assert.deepEqual([off.policy.dailyCloudUsd, off.policy.monthlyCloudUsd, off.policy.maxCloudUsdPerTask], [null,null,null]);
+});
