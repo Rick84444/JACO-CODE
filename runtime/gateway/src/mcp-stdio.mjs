@@ -14,6 +14,9 @@ const system = new SystemControl({
   core,
 });
 const workplace = new McpWorkplaceBridge({ modelId: config.modelId });
-void workplace.start();
-void serveStdio(() => buildJacoMcpServer({ core, system, modelId: config.modelId, workplace }));
-console.error('[JACO MCP] stdio ready; protocol negotiation is owned by official MCP SDK v2');
+const profile = process.env.JACO_MCP_TOOL_PROFILE || 'full';
+// Read-only external connections do not start a Workplace bridge. The dedicated
+// collaboration profile enables messaging but NOT mission creation or shell.
+if (profile !== 'cognitive-read') void workplace.start();
+void serveStdio(() => buildJacoMcpServer({ core, system, modelId: config.modelId, workplace, profile }));
+console.error('[JACO MCP] stdio ready (tool profile: ' + profile + '); protocol negotiation is owned by official MCP SDK v2');
