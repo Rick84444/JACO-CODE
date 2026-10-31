@@ -28,8 +28,13 @@ test('Fresh context uses canonical Continuum envelope and economic policy, strip
     async continuityEnvelope(){requests.push('continuity');return {envelope:{
       schema:'jaco.cognitive-continuity-envelope.v1',revision:14,missionAuthority:'CONNECTED_DURABLE_NOVA',
       objective:'Fix current PR',workingState:{branch:'main',sessionToken:'MUST_NOT_LEAK',scope:'read-only'},
-      focus:{goal:'diagnose'},unresolved:{questions:['verify Windows host'],hypotheses:[{id:'hyp-1',problem:'Runtime startup order'}]},
-      epistemic:{status:'UNVERIFIED',apiKey:'MUST_NOT_LEAK'},
+      focus:{goal:'diagnose'},unresolved:{questions:['verify Windows host'],hypotheses:[{
+        id:'hyp-1',problem:'Runtime startup order',missionId:'mission-1',
+        candidates:[{id:'cand-1',label:'Delay Sentinel',status:'TESTING'}],
+      }]},
+      epistemic:{status:'UNVERIFIED',apiKey:'MUST_NOT_LEAK',
+        repository:{verificationStatus:'UNVERIFIED'},knowledge:{count:3},
+        capabilities:[{capability:'safe-rollback',state:'VERIFIED',verifiedAttempts:5,conservativeReliability:0.96}]},
       invariants:{missionStateOwnedExternally:true,knowledgeOwnedByKnowledgeStore:true},
     }};},
     async economicSnapshot(){requests.push('economic');return {economic:{
@@ -48,6 +53,11 @@ test('Fresh context uses canonical Continuum envelope and economic policy, strip
   assert.equal(context.continuity.revision,14);
   assert.equal(context.continuity.unresolved.questions[0],'verify Windows host');
   assert.equal(context.continuity.unresolved.hypotheses[0].id,'hyp-1');
+  assert.deepEqual(context.continuity.unresolved.hypotheses[0].candidates[0],
+    {id:'cand-1',label:'Delay Sentinel',status:'TESTING'});
+  assert.deepEqual(context.continuity.epistemic.capabilities[0],
+    {capability:'safe-rollback',state:'VERIFIED',verifiedAttempts:5,conservativeReliability:0.96});
+  assert.equal(context.continuity.epistemic.repository.verificationStatus,'UNVERIFIED');
   assert.equal(context.continuity.invariants.knowledgeOwnedByKnowledgeStore,true);
   assert.equal(context.authority.auraSoleOperator,'EXPECTED_BY_POLICY_NOT_INDEPENDENTLY_PROBED');
   assert.equal(context.economic.cloudEnabled,false);
