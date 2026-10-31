@@ -78,7 +78,7 @@ const NON_TEXT_MODEL = [
 ];
 // The same allow-list is enforced by Aura's planner choice, probe and Continuum reservation.
 // Valid connected models may include /, @ and +, and may be up to 160 characters.
-export const validPlannerModelId = value => /^[\\w.:/@+-]{1,160}$/.test(String(value || ''));
+export const validPlannerModelId = value => /^[\w.:/@+-]{1,160}$/.test(String(value || ''));
 
 export function nonTextModelKind(model) {
   return NON_TEXT_MODEL.find(([, pattern]) => pattern.test(String(model || '')))?.[0] || null;
