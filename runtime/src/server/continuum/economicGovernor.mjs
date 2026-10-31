@@ -1,6 +1,10 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { atomicWriteJson, readJson, nowIso, makeId, safeNumber, deepClone } from './util.mjs';
+import {
+  defaultGeminiQuotaProfile, validGeminiQuotaProfile, inspectGeminiQuota,
+  recordGeminiQuotaReservation, reconcileGeminiQuotaUsage, markGeminiQuotaBackoff, geminiQuotaSnapshot,
+} from '../aura/geminiQuota.mjs';
 
 const DEFAULT_POLICY = {
   schema:'jaco.continuum.economic-policy.v1',
@@ -40,13 +44,28 @@ export class EconomicGovernor {
     this.policyFile=path.join(root,'economic-policy.json');
     this.stateFile=path.join(root,'economic-state.json');
     this.events=events;this.evidence=evidence;
+    this.geminiQuotaFile=path.join(root,'gemini-quota-profile.json');
+    this.geminiQuotaProfile=readJson(this.geminiQuotaFile,defaultGeminiQuotaProfile());
+    if(!validGeminiQuotaProfile(this.geminiQuotaProfile)) throw new Error('GEMINI_QUOTA_PROFILE_INVALID');
     this.policy={...DEFAULT_POLICY,...(readJson(this.policyFile,{})||{})};
     if(!fs.existsSync(this.policyFile)&&process.env.JACO_CLOUD_ENABLED==='true')this.policy.cloudEnabled=true;
     this.state=readJson(this.stateFile,{day:periodKey('day'),month:periodKey('month'),dailySpentUsd:0,monthlySpentUsd:0,reservedUsd:0,reservations:{},autonomousCloudCalls:[],revenueUsd:0,updatedAt:nowIso()});
     if(!this.state.tally||typeof this.state.tally!=='object')this.state.tally={days:{},buckets:{}};
     this.#rollPeriods();this.#persist();
   }
-  snapshot(){this.#rollPeriods();return {policy:deepClone(this.policy),state:deepClone(this.state),headroom:this.headroom()};}
+  snapshot(){this.#rollPeriods();return {policy:deepClone(this.policy),state:deepClone(this.state),headroom:this.headroom(),geminiQuota:this.geminiQuotaSnapshot()};}
+  geminiQuotaSnapshot(){return geminiQuotaSnapshot(this.state,this.geminiQuotaProfile);}
+  updateGeminiQuotaProfile(patch,actor='operator'){
+    if(!patch||typeof patch!=='object'||Array.isArray(patch)||!patch.models||typeof patch.models!=='object'||Array.isArray(patch.models)||
+       Object.keys(patch.models).length===0) throw new Error('GEMINI_QUOTA_PROFILE_INVALID');
+    const profile={...this.geminiQuotaProfile,source:'operator-ai-studio-snapshot',observedAt:patch.observedAt||this.geminiQuotaProfile.observedAt,
+      projectAssociationVerified:false,
+      models:{...this.geminiQuotaProfile.models,...patch.models}};
+    if(!validGeminiQuotaProfile(profile)) throw new Error('GEMINI_QUOTA_PROFILE_INVALID');
+    atomicWriteJson(this.geminiQuotaFile,profile);this.geminiQuotaProfile=profile;
+    this.events.append({stream:'economic',type:'gemini.quota_profile_updated',actor,data:{observedAt:profile.observedAt,models:Object.keys(patch.models).length,source:profile.source}});
+    return this.geminiQuotaSnapshot();
+  }
   updatePolicy(patch,actor='operator'){
     if(!patch||typeof patch!=='object'||Array.isArray(patch))throw new Error('ECONOMIC_POLICY_INVALID');
     const next={...this.policy};
@@ -87,7 +106,14 @@ export class EconomicGovernor {
     // Durable circuit breaker: a graph can keep spending even when the operator deliberately removes
     // daily/monthly/per-call USD ceilings. Count successful reservations, not merely provider replies,
     // including calls whose outcome later became unknown. Single-writer runtime serializes reservations.
-    const autonomous=purpose==='nova-ollama-cloud';
+    // Also count native Gemini Continuum routing as autonomous work. Otherwise the
+    // historical 2600-call SEER/Continuum loop could bypass the 12/15m emergency fuse.
+    const autonomous=purpose==='nova-ollama-cloud' ||
+      (purpose!=='manual-aura-chat' && metadata?.providerId==='gemini');
+    const geminiQuotaCheck = metadata?.providerId==='gemini'
+      ? inspectGeminiQuota(this.state,this.geminiQuotaProfile,
+          {model:metadata.model,inputTokenBudget:metadata?.auraCostQuote?.maxInputTokens ?? metadata?.promptBytes}) : null;
+    if(geminiQuotaCheck && !geminiQuotaCheck.allowed) return geminiQuotaCheck;
     const cutoff=Date.now()-15*60_000;
     const recent=(Array.isArray(this.state.autonomousCloudCalls)?this.state.autonomousCloudCalls:[])
       .filter(at=>Number.isFinite(at)&&at>cutoff&&at<=Date.now());
@@ -98,6 +124,7 @@ export class EconomicGovernor {
     this.state.reservations[reservationId]={reservationId,missionId,taskId,estimatedUsd:estimate,expectedValueUsd,purpose,...(metadata?{metadata}:{}),createdAt:nowIso()};
     this.state.reservedUsd+=estimate;
     if(autonomous)this.state.autonomousCloudCalls=[...recent,Date.now()];
+    if(geminiQuotaCheck)recordGeminiQuotaReservation(this.state,geminiQuotaCheck,reservationId);
     this.#persist();
     this.events.append({stream:'economic',type:'cloud.cost_reserved',entityId:reservationId,actor:'economic-governor',data:this.state.reservations[reservationId]});
     const after=[headroom.dailyUsd,headroom.monthlyUsd].filter(v=>v!=null).map(v=>v-estimate);
@@ -106,6 +133,8 @@ export class EconomicGovernor {
   settleCloud(reservationId,actualUsd,usage={}){
     this.#rollPeriods();const r=this.state.reservations[reservationId];if(!r)throw new Error(`unknown cost reservation '${reservationId}'`);
     const actual=Math.max(0,safeNumber(actualUsd,r.estimatedUsd));
+    if(r.metadata?.providerId==='gemini')
+      reconcileGeminiQuotaUsage(this.state,reservationId,Number(usage?.prompt_tokens));
     this.#book('settled',providerKey(r),{actualUsd:actual,estimatedUsd:r.estimatedUsd});
     this.state.reservedUsd=Math.max(0,this.state.reservedUsd-r.estimatedUsd);
     delete this.state.reservations[reservationId];
@@ -120,7 +149,10 @@ export class EconomicGovernor {
     return this.snapshot();
   }
   releaseReservation(reservationId,reason='not_used'){
-    const r=this.state.reservations[reservationId];if(!r)return this.snapshot();this.state.reservedUsd=Math.max(0,this.state.reservedUsd-r.estimatedUsd);delete this.state.reservations[reservationId];this.#persist();this.events.append({stream:'economic',type:'cloud.cost_released',entityId:reservationId,actor:'economic-governor',data:{reason}});return this.snapshot();
+    const r=this.state.reservations[reservationId];if(!r)return this.snapshot();
+    if(r.metadata?.providerId==='gemini' && /\b429\b/.test(String(reason)))
+      markGeminiQuotaBackoff(this.state,r.metadata.model);
+    this.state.reservedUsd=Math.max(0,this.state.reservedUsd-r.estimatedUsd);delete this.state.reservations[reservationId];this.#persist();this.events.append({stream:'economic',type:'cloud.cost_released',entityId:reservationId,actor:'economic-governor',data:{reason}});return this.snapshot();
   }
   // Sets the conservative counters to what was measured (settled provider usage), dropping the part that came from
   // reservations that expired unconfirmed. Recorded as an event with before and after.
