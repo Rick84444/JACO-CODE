@@ -10,7 +10,7 @@ Code and CI are not a live ChatGPT connection. No tunnel ID, OpenAI runtime key 
 - Unknown profile names fail at initialization. Neither cognitive profile exposes goal creation, Nova mission mutation, shell, system update, provider chat, relay or WordPress writes.
 
 ## Why use the official Secure MCP Tunnel
-OpenAI Secure MCP Tunnel connects local stdio MCP servers by outbound HTTPS without exposing inbound ports. The existing JACO stdio entry point is runtime/gateway/src/mcp-stdio.mjs. Do NOT expose Core :3000, Sentinel :2999, Nova :4243 or Chrome CDP :9222 to the Internet.
+OpenAI Secure MCP Tunnel connects local stdio MCP servers by outbound HTTPS without exposing inbound ports. The dedicated safe JACO stdio entry point is runtime/gateway/src/mcp-cognitive-stdio.mjs. It forces the read-only profile even if an ambient environment variable was incorrect. Do NOT expose Core :3000, Sentinel :2999, Nova :4243 or Chrome CDP :9222 to the Internet.
 
 References (verify latest command syntax and entitlement):
 - https://developers.openai.com/api/docs/guides/secure-mcp-tunnels
@@ -35,7 +35,7 @@ Important: installing Plugin Creator is NOT the same as having account/workspace
 
 5. Configure the local stdio MCP server (replace placeholders ON THE HOST, not in this chat). The process environment must still have JACO_MCP_TOOL_PROFILE=cognitive-read:
 
-    tunnel-client init --sample sample_mcp_stdio_local --profile jaco-cognitive --tunnel-id <TUNNEL_ID> --mcp-command "node <ABSOLUTE_JACO_REPO_PATH>/runtime/gateway/src/mcp-stdio.mjs"
+    tunnel-client init --sample sample_mcp_stdio_local --profile jaco-cognitive --tunnel-id <TUNNEL_ID> --mcp-command "node <ABSOLUTE_JACO_REPO_PATH>/runtime/gateway/src/mcp-cognitive-stdio.mjs"
     tunnel-client doctor --profile jaco-cognitive --explain
     tunnel-client run --profile jaco-cognitive
 
@@ -44,14 +44,14 @@ Important: installing Plugin Creator is NOT the same as having account/workspace
 6. In ChatGPT Plugins > + > Add custom MCP server > Tunnel, select the tunnel and finish authorized authentication and risk acknowledgement. If no Add custom MCP server action exists on the account, the live ChatGPT connection is blocked by account access, not by JACO code.
 
 7. Verify from a genuine ChatGPT MCP tool call:
-   - Only four tools are discovered (not 42).
+   - Only four tools are discovered (not 42). If more are found, immediately disconnect the MCP plugin rather than relying on text instructions.
    - jaco_identity returns the real JACO runtime identity.
    - jaco_cognitive_context reports fresh Core/Continuum revision and economic policy.
    - jaco_knowledge_search reads a known durable item with explicit verification status.
    - Core down produces a hard error, not cached READY.
    - Goal, update, shell and relay tools are NOT advertised.
 
-8. Optional collaboration only after read-only validation: select cognitive-collaborate explicitly, which permits Workplace messages and exposes an unverified knowledge-note tool; note mutation remains blocked without a second operator opt-in. Restart the dedicated tunnel child to refresh discovery, not an existing Nova mission.
+8. Optional collaboration only after read-only validation: deliberately switch to the legacy mcp-stdio.mjs entry point with JACO_MCP_TOOL_PROFILE=cognitive-collaborate, which permits Workplace messages and exposes an unverified knowledge-note tool; note mutation remains blocked without a second operator opt-in. Restart the dedicated tunnel child to refresh discovery, not an existing Nova mission. Never set JACO_MCP_TOOL_PROFILE=full for any ChatGPT tunnel.
 
 ## Security, billing, and acceptance
 - Connection authentication/tunnel identity is distinct from Core credentials. Do not log or export API keys in ChatGPT.
