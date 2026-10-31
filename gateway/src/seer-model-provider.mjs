@@ -132,6 +132,16 @@ export function providerOutputTruncated(result) {
 
 // One request implementation for general inference and explicitly enabled planning.
 // Authorization policy must never be implemented by deleting credential metadata.
+// On-device governor plans can require longer than the default interactive
+// 180-second timeout (measured ~6.7 tokens/s on Windows). The extra budget is
+// confined to strategic planning; no new cloud permission or spending is granted.
+export function seerProviderTimeoutMs({ env = process.env, remote = false, purpose = 'inference' } = {}) {
+  const configured = Number(env.JACO_SEER_INFERENCE_TIMEOUT_MS);
+  if (Number.isFinite(configured) && configured > 0)
+    return Math.min(2147483647, Math.floor(configured));
+  return remote ? 60000 : purpose === 'planner' ? 600000 : 180000;
+}
+
 export async function invokeSeerProvider(provider, args, {
   env = process.env, fetchFn = globalThis.fetch, purpose = 'inference', onFailure = () => {},
 } = {}) {
@@ -144,9 +154,7 @@ export async function invokeSeerProvider(provider, args, {
   if (remote && env.JACO_ALLOW_PAID_MODELS !== '1') return fail('PAID_PROVIDER_DISABLED');
   const key = provider.envKey ? env[provider.envKey] : null;
   if (provider.envKey && !key) return fail('PROVIDER_KEY_MISSING');
-  const configuredTimeout = Number(env.JACO_SEER_INFERENCE_TIMEOUT_MS);
-  const timeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0
-    ? Math.min(2147483647, Math.floor(configuredTimeout)) : remote ? 60000 : 180000;
+  const timeout = seerProviderTimeoutMs({ env, remote, purpose });
   try {
     const headers = { 'Content-Type': 'application/json' };
     if (key) headers.Authorization = `Bearer ${key}`;
@@ -196,7 +204,9 @@ export async function callSeerGovernorProvider(args, {
       if (result) { onUsed({ provider: provider.name, model: provider.model }); return result; }
     }
   }
-  return fallback(normalized);
+  // Preserve the strategic purpose for the local fallback so only governor
+  // planning gets the longer bounded local timeout, not ordinary Aura chat.
+  return fallback({ ...normalized, purpose: 'planner' });
 }
 const timeoutMs = env => Math.max(250, Number(env.JACO_SEER_MODEL_DISCOVERY_TIMEOUT_MS || 2500));
 
