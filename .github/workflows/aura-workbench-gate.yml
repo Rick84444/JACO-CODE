@@ -10,6 +10,8 @@ on:
       - 'tools/build-lite.mjs'
       - 'runtime/src/components/CognitiveGameboard.tsx'
       - 'runtime/src/components/JacoAuraComputeIDE.tsx'
+      - 'runtime/src/lib/novaActivityText.ts'
+      - 'tests/nova/nova-activity-text.test.mjs'
       - 'runtime/server.ts'
       - 'runtime/src/App.tsx'
       - 'runtime/src/components/AuraChatPanel.tsx'
@@ -184,7 +186,7 @@ jobs:
       - name: Setup and npm distribution
         run: node --test tests/nova/setup.test.mjs tests/nova/package-content.test.mjs
       - name: Workbench truth contract
-        run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs tests/nova/aura-single-agent-functions.test.mjs
+        run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs tests/nova/aura-single-agent-functions.test.mjs tests/nova/nova-activity-text.test.mjs
       - name: Aura control plane, browser WebSocket and false-READY regressions
         run: node --experimental-sqlite --test tests/nova/aura-cdp-truth.test.mjs tests/nova/aura-oversight.test.mjs tests/nova/cdp-mcp.test.mjs tests/nova/bridges.test.mjs tests/nova/aura-termux-service-health.test.mjs tests/nova/aura-agent-board.test.mjs
       - name: Activation and provider truth regressions
