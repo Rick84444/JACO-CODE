@@ -237,3 +237,24 @@ test('Aura model probes use the actual runtime PORT and price non-OpenRouter :fr
   assert.equal(probe.ok, true);
   assert.deepEqual(endpoints.map(u => u.pathname), ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/settle']);
 });
+
+test('Aura and Continuum accept the same model IDs, including @, + and 160 characters', async () => {
+  const { validPlannerModelId } = await import('../../agents/lib/planner-choice.mjs');
+  const longId = 'p/' + 'm'.repeat(158);
+  for (const model of ['team/model@v1', 'team/model+revision', longId]) assert.equal(validPlannerModelId(model), true, model);
+  for (const model of ['bad model', 'models?unsafe', 'p/' + 'm'.repeat(159)]) assert.equal(validPlannerModelId(model), false, model);
+  const extra = { team: { label: 'Team', paid: true, keyEnv: null, url: 'https://team.example/v1/chat/completions', models: ['team/model@v1', 'team/model+revision', longId] } };
+  assert.equal(validatePlannerChoice({ provider: 'team', model: 'team/model@v1' }, {}, extra).model, 'team/model@v1');
+  const paths = [];
+  const result = await testPlannerModel({ provider: 'team', model: 'team/model@v1' }, {
+    env: { JACO_ALLOW_PAID_MODELS: '1' }, extra,
+    fetchImpl: async (url, init) => {
+      const path = new URL(url).pathname; paths.push(path);
+      if (path.endsWith('/reserve')) { assert.equal(JSON.parse(init.body).model, 'team/model@v1'); return Response.json({ success: true, reservationId: 'model-id-test' }); }
+      if (path.endsWith('/settle')) return Response.json({ success: true });
+      return Response.json({ choices: [{ message: { content: 'OK' } }], usage: { prompt_tokens: 4, completion_tokens: 2 } });
+    },
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(paths, ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/settle']);
+});
