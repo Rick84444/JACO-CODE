@@ -101,11 +101,18 @@ export function auraCostSettlement(quote, usage) {
       !Number.isSafeInteger(quote.maxInputTokens) || quote.maxInputTokens < 1 ||
       !Number.isSafeInteger(quote.maxOutputTokens) || quote.maxOutputTokens < 1 ||
       ![quote.inputUsdPerMillion, quote.outputUsdPerMillion, quote.estimatedUsd]
-        .every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0)) {
+        .every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0) ||
+      Math.abs(quote.estimatedUsd -
+        (quote.maxInputTokens * quote.inputUsdPerMillion +
+          quote.maxOutputTokens * quote.outputUsdPerMillion) / 1_000_000) >
+        Math.max(1e-12, quote.estimatedUsd * 1e-9)) {
     throw new Error('AURA_COST_QUOTE_INVALID');
   }
-  const inputTokens = Number(usage?.prompt_tokens);
-  const outputTokens = Number(usage?.completion_tokens);
+  if (usage?.prompt_tokens == null || usage?.completion_tokens == null) {
+    throw new Error('AURA_COST_USAGE_OUTSIDE_RESERVATION');
+  }
+  const inputTokens = Number(usage.prompt_tokens);
+  const outputTokens = Number(usage.completion_tokens);
   if (!Number.isSafeInteger(inputTokens) || !Number.isSafeInteger(outputTokens) ||
       inputTokens < 0 || outputTokens < 0 ||
       inputTokens > quote.maxInputTokens || outputTokens > quote.maxOutputTokens) {
