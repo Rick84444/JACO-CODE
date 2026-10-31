@@ -60,20 +60,88 @@ test('runtime and Nova resolve the same choice file through JACO_RUNTIME_DIR', (
   assert.equal(plannerChoiceFile({ JACO_RUNTIME_DIR: runtimeDir, JACO_WORKSPACE_ROOT: path.join(dir, 'checkout') }), path.join(runtimeDir, '.jaco', 'state', 'provider-preference.json'));
 });
 
-test('a model test reports the answer and latency, or why there was none', async () => {
-  const keyed = { DEEPSEEK_API_KEY: 'x' };
-  const ok = await testPlannerModel({ provider: 'deepseek', model: 'deepseek-v4-pro' }, {
-    env: keyed,
-    fetchImpl: async (url, init) => {
-      assert.equal(JSON.parse(init.body).model, 'deepseek-v4-pro');
-      return new Response(JSON.stringify({ choices: [{ message: { content: ' OK ' } }], usage: { total_tokens: 12 } }));
+test('Aura model probe always uses shared Continuum reserve/settle for a metered model', async () => {
+  const env = { DEEPSEEK_API_KEY: 'x', JACO_ALLOW_PAID_MODELS: '1' };
+  const paths = [];
+  const fetchImpl = async (url, init) => {
+    paths.push(new URL(url).pathname);
+    if (url.endsWith('/reserve')) {
+      assert.equal(JSON.parse(init.body).providerId, 'deepseek');
+      return Response.json({ success: true, reservationId: 'probe-1' });
+    }
+    if (url.endsWith('/settle')) return Response.json({ success: true, costUsd: 0.001 });
+    assert.equal(JSON.parse(init.body).model, 'deepseek-v4-pro');
+    return Response.json({ choices: [{ message: { content: ' OK ' } }], usage: { prompt_tokens: 10, completion_tokens: 2 } });
+  };
+  const ok = await testPlannerModel({ provider: 'deepseek', model: 'deepseek-v4-pro' }, { env, fetchImpl });
+  assert.equal(ok.ok, true); assert.equal(ok.reply, 'OK'); assert.equal(typeof ok.latencyMs, 'number');
+  assert.deepEqual(paths, ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/settle']);
+});
+
+test('Aura probe refuses unapproved spend or denied reservation before contacting a provider', async () => {
+  const calls = [];
+  const fetchImpl = async url => { calls.push(new URL(url).pathname); return Response.json({ success: false, error: 'AUTONOMOUS_CLOUD_BURST_LIMIT' }, { status: 403 }); };
+  const off = await testPlannerModel({ provider: 'deepseek', model: 'deepseek-flash' }, { env: { DEEPSEEK_API_KEY: 'x', JACO_ALLOW_PAID_MODELS: '0' }, fetchImpl });
+  assert.equal(off.ok, false); assert.match(off.error, /PAID_PROVIDER_DISABLED/); assert.deepEqual(calls, []);
+  const denied = await testPlannerModel({ provider: 'deepseek', model: 'deepseek-flash' }, { env: { DEEPSEEK_API_KEY: 'x', JACO_ALLOW_PAID_MODELS: '1' }, fetchImpl });
+  assert.equal(denied.ok, false); assert.match(denied.error, /AUTONOMOUS_CLOUD_BURST_LIMIT/);
+  assert.deepEqual(calls, ['/api/nova/ollama-cost/reserve']);
+});
+
+test('Aura model probe releases definite no-charge failures and retains uncertain outcomes', async () => {
+  const events = [];
+  const fetchImpl = async (url, init) => {
+    const path = new URL(url).pathname;
+    events.push(path);
+    if (path.endsWith('/reserve')) return Response.json({ success: true, reservationId: 'r' });
+    if (path.endsWith('/release') || path.endsWith('/unknown')) return Response.json({ success: true });
+    if (path.endsWith('/chat/completions')) return Response.json({ error: { message: 'Insufficient Balance' } }, { status: 402 });
+    throw new Error('unexpected request');
+  };
+  const rejected = await testPlannerModel({ provider: 'deepseek', model: 'deepseek-flash' }, { env: { DEEPSEEK_API_KEY: 'x', JACO_ALLOW_PAID_MODELS: '1' }, fetchImpl });
+  assert.equal(rejected.ok, false); assert.equal(rejected.status, 402); assert.match(rejected.error, /Insufficient/);
+  assert.deepEqual(events, ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/release']);
+  const stalledEvents = [];
+  const stalled = await testPlannerModel({ provider: 'deepseek', model: 'deepseek-flash' }, {
+    env: { DEEPSEEK_API_KEY: 'x', JACO_ALLOW_PAID_MODELS: '1' },
+    fetchImpl: async url => {
+      const p = new URL(url).pathname; stalledEvents.push(p);
+      if (p.endsWith('/reserve')) return Response.json({ success: true, reservationId: 'r2' });
+      if (p.endsWith('/unknown')) return Response.json({ success: true });
+      throw new Error('The operation was aborted due to timeout');
     },
   });
-  assert.equal(ok.ok, true); assert.equal(ok.reply, 'OK'); assert.equal(typeof ok.latencyMs, 'number');
-  const stalled = await testPlannerModel({ provider: 'deepseek', model: 'deepseek-flash' }, { env: keyed, fetchImpl: async () => { throw new Error('The operation was aborted due to timeout'); } });
   assert.equal(stalled.ok, false); assert.match(stalled.error, /timeout/);
-  const rejected = await testPlannerModel({ provider: 'deepseek', model: 'deepseek-flash' }, { env: keyed, fetchImpl: async () => new Response(JSON.stringify({ error: { message: 'Insufficient Balance' } }), { status: 402 }) });
-  assert.equal(rejected.ok, false); assert.equal(rejected.status, 402); assert.match(rejected.error, /Insufficient/);
+  assert.deepEqual(stalledEvents, ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/unknown']);
+});
+
+test('keyless HTTPS providers remain budgeted; real loopback local models are free', async () => {
+  const extra = { team: { label: 'Team', paid: true, keyEnv: null, url: 'https://llm.team.test/v1/chat/completions', models: ['qwen3:32b'] } };
+  const metered = [];
+  const result = await testPlannerModel({ provider: 'team', model: 'qwen3:32b' }, {
+    env: { JACO_ALLOW_PAID_MODELS: '1' }, extra,
+    fetchImpl: async (url, init) => {
+      const p = new URL(url).pathname; metered.push(p);
+      if (p.endsWith('/reserve')) return Response.json({ success: true, reservationId: 'keyless' });
+      if (p.endsWith('/settle')) return Response.json({ success: true });
+      assert.equal(init.headers.Authorization, undefined);
+      return Response.json({ choices: [{ message: { content: 'OK' } }], usage: { prompt_tokens: 2, completion_tokens: 2 } });
+    },
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(metered, ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/settle']);
+  const localCalls = [];
+  const local = await testPlannerModel({ provider: 'ollama', model: 'gemma3:4b' }, {
+    env: {},
+    fetchImpl: async url => { localCalls.push(new URL(url).pathname); return Response.json({ choices: [{ message: { content: 'OK' } }] }); },
+  });
+  assert.equal(local.ok, true);
+  assert.deepEqual(localCalls, ['/v1/chat/completions']);
+  const refused = await testPlannerModel({ provider: 'ollama', model: 'gpt-oss:120b-cloud' }, {
+    env: { OLLAMA_MODEL: 'gpt-oss:120b-cloud' },
+    fetchImpl: async () => assert.fail('an Ollama cloud relay cannot be treated as free local inference'),
+  });
+  assert.equal(refused.ok, false); assert.match(refused.error, /OLLAMA_CLOUD_RELAY_NOT_RESERVABLE/);
 });
 
 // Operator 2026-10-13: a provider connected from a URL or a key, and a model the fixed list does not know,
