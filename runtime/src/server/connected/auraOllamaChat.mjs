@@ -72,7 +72,11 @@ export async function manualAuraProviderCompletion({ providerId, model, system, 
       priceSource: settlement.priceSource, providerInvoiceVerified: false };
   } catch (error) {
     if (reservation) {
-      if (NOT_BILLED_FAILURE.test(String(error?.message || ''))) economic.releaseReservation(reservation, 'provider refused the call; no inference');
+      if (NOT_BILLED_FAILURE.test(String(error?.message || ''))) {
+        // Preserve rate-limit status for Google's durable per-model cooldown.
+        const status = /^PROVIDER_HTTP_(\d{3}):/.exec(String(error?.message || ''))?.[1] || 'unknown';
+        economic.releaseReservation(reservation, 'provider returned HTTP ' + status + ' without generation');
+      }
       else economic.markCloudOutcomeUnknown(reservation, 'provider request failed after dispatch');
     }
     throw error;
