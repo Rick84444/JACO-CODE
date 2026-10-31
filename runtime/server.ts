@@ -67,7 +67,7 @@ import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifie
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
 import { createAuraChatSession } from './src/server/connected/auraChatSession.mjs';
-import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderCompletion, ollamaCloudCostUsd, novaProviderCostUsd, chatFallbackChoice, chatFailureHint } from "./src/server/connected/auraOllamaChat.mjs";
+import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderCompletion, ollamaCloudCostUsd, novaProviderCostUsd, modelPrice, chatFallbackChoice, chatFailureHint } from "./src/server/connected/auraOllamaChat.mjs";
 import { createEconomicBudgetRouter } from './src/server/connected/economicBudget.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
@@ -4346,7 +4346,11 @@ const notifyPhone = async (action) => {
     let estimatedUsd: number;
     try { estimatedUsd = novaProviderCostUsd(providerId, model, promptBytes, maxTokens, process.env); }
     catch { return res.status(400).json({ success: false, error: 'NOVA_OLLAMA_MODEL_NOT_PRICED' }); }
-    const authorization = economic.authorizeCloud({ estimatedUsd, purpose: 'nova-ollama-cloud', metadata: { providerId, model, promptBytes, maxTokens } });
+    // Billing provenance: a reference price is NOT proof of the provider's invoice.
+    // Expose the source in the durable reservation/settlement ledger for reconciliation.
+    const priceSource = providerId === 'ollama-cloud' ? 'configured' : modelPrice(providerId, model, process.env).source;
+    const authorization = economic.authorizeCloud({ estimatedUsd, purpose: 'nova-ollama-cloud',
+      metadata: { providerId, model, promptBytes, maxTokens, priceSource, providerInvoiceVerified: false } });
     if (!authorization.allowed) return res.status(403).json({ success: false, error: authorization.reason });
     res.json({ success: true, reservationId: authorization.reservationId });
   });
@@ -4365,7 +4369,7 @@ const notifyPhone = async (action) => {
     }
     const actualUsd = novaProviderCostUsd(reservation.metadata.providerId || 'ollama-cloud', reservation.metadata.model, inputTokens, outputTokens, process.env);
     economic.settleCloud(reservation.reservationId, actualUsd, { prompt_tokens: inputTokens, completion_tokens: outputTokens });
-    res.json({ success: true, costUsd: actualUsd });
+    res.json({ success: true, costUsd: actualUsd, priceSource: reservation.metadata.priceSource || 'unknown', providerInvoiceVerified: false });
   });
 
   // The provider answered with a definite error (no generation, no charge): the reservation is released, not left
