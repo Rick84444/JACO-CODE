@@ -1,3 +1,4 @@
+import { validProviderId } from '../../runtime/src/server/connected/providerRegistry.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -118,3 +119,10 @@ test('a model called :free is only unmetered on OpenRouter, not arbitrary connec
   assert.equal(g.authorizeCloud({ estimatedUsd: cost, purpose: 'nova-ollama-cloud', metadata: { providerId: 'custom' } }).allowed, true);
 });
 
+
+test('Continuum cost reservations use the same provider IDs as the Aura registry', () => {
+  for (const id of ['team_llm', 'team.llm', '123provider', 'deepseek', 'ollama-cloud'])
+    assert.equal(validProviderId(id), true, id);
+  for (const id of ['UPPERCASE', 'space provider', '../escape', 'x'])
+    assert.equal(validProviderId(id), false, id);
+});
