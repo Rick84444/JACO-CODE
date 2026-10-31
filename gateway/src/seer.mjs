@@ -954,6 +954,7 @@ const server = createServer(async (req, res) => {
       memory.set('seer.operator_primary_goal', {
         id: goal.id,
         statement: goal.statement,
+        invariants: goal.invariants,
         activated_at: new Date().toISOString(),
         source: 'operator-start-prompt',
         tool_hint: toolHint,
