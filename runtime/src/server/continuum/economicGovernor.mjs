@@ -56,7 +56,8 @@ export class EconomicGovernor {
   snapshot(){this.#rollPeriods();return {policy:deepClone(this.policy),state:deepClone(this.state),headroom:this.headroom(),geminiQuota:this.geminiQuotaSnapshot()};}
   geminiQuotaSnapshot(){return geminiQuotaSnapshot(this.state,this.geminiQuotaProfile);}
   updateGeminiQuotaProfile(patch,actor='operator'){
-    if(!patch||typeof patch!=='object'||Array.isArray(patch)||!patch.models||typeof patch.models!=='object'||Array.isArray(patch.models)) throw new Error('GEMINI_QUOTA_PROFILE_INVALID');
+    if(!patch||typeof patch!=='object'||Array.isArray(patch)||!patch.models||typeof patch.models!=='object'||Array.isArray(patch.models)||
+       Object.keys(patch.models).length===0) throw new Error('GEMINI_QUOTA_PROFILE_INVALID');
     const profile={...this.geminiQuotaProfile,source:'operator-ai-studio-snapshot',observedAt:patch.observedAt||this.geminiQuotaProfile.observedAt,
       projectAssociationVerified:false,
       models:{...this.geminiQuotaProfile.models,...patch.models}};
