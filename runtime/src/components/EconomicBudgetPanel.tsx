@@ -107,7 +107,7 @@ export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {
         <summary className="text-cyan-300 cursor-pointer">Gemini · verkliga modellgränser från AI Studio ({Object.keys(snapshot.geminiQuota.models).length} modeller)</summary>
         <p className="text-amber-200">Importerat {snapshot.geminiQuota.observedAt}. Detta är en operatörsrapporterad AI Studio-snapshot, INTE ett levande Google-kvotsaldo. Gränserna gäller per Google-projekt; bara anrop från denna JACO-runtime räknas här. Rate limits är inte pris eller bevis på gratisnivå.</p>
         <div className="max-h-60 overflow-auto space-y-2" role="table" aria-label="Gemini kvoter per modell">
-          {Object.entries(snapshot.geminiQuota.models)
+          {(Object.entries(snapshot.geminiQuota.models) as [string, GeminiQuotaModel][])
             .filter(([key, q]) => key === 'gemini-2.5-flash' || key === 'gemini-2.5-flash-lite' || key === 'gemini-2.5-pro' || q.usedRpm > 0 || q.usedRpd > 0)
             .slice(0, 15).map(([model, q]) => <div key={model} role="row" className="rounded border border-[#343b45] px-2 py-1">
               <strong className="text-slate-200" role="cell">{q.label || model}</strong>
