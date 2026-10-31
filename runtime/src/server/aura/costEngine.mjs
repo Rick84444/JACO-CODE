@@ -67,7 +67,8 @@ export function novaProviderCostUsd(providerId, model, inputTokens, outputTokens
 // Aura alone owns the estimate and token-based cost calculation; Continuum owns
 // authorization, burst limits, reservation persistence and economic receipts.
 // Quotes snapshot the exact configured/reference rates at reservation time.
-export function auraCostQuote({ providerId, model, promptBytes, maxTokens, env = process.env } = {}) {
+/** @param {{providerId: string, model: string, promptBytes: number, maxTokens: number, env?: NodeJS.ProcessEnv}} options */
+export function auraCostQuote({ providerId, model, promptBytes, maxTokens, env = process.env }) {
   if (typeof providerId !== 'string' || !providerId || typeof model !== 'string' || !model ||
       !Number.isSafeInteger(promptBytes) || promptBytes < 1 ||
       !Number.isSafeInteger(maxTokens) || maxTokens < 1) {
