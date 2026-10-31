@@ -76,6 +76,10 @@ const NON_TEXT_MODEL = [
   ['attributed-qa', /(^|[-_/.:])aqa([-_/.:]|$)/i],
   ['moderation', /moderation|guard([-_/.:]|$)/i],
 ];
+// The same allow-list is enforced by Aura's planner choice, probe and Continuum reservation.
+// Valid connected models may include /, @ and +, and may be up to 160 characters.
+export const validPlannerModelId = value => /^[\\w.:/@+-]{1,160}$/.test(String(value || ''));
+
 export function nonTextModelKind(model) {
   return NON_TEXT_MODEL.find(([, pattern]) => pattern.test(String(model || '')))?.[0] || null;
 }
@@ -94,7 +98,7 @@ export function validatePlannerChoice({ provider, model } = {}, env = process.en
   if (!choice) throw new Error(`PLANNER_PROVIDER_UNKNOWN:${provider}`);
   const chosenModel = String(model || choice.models[0] || '');
   // A connected provider may serve more than its listing shows; only the fixed ones are held to their list.
-  if (!chosenModel || (!choice.models.includes(chosenModel) && !(choice.dynamic && /^[\w.:/@+-]{1,160}$/.test(chosenModel)))) throw new Error(`PLANNER_MODEL_UNKNOWN:${provider}/${model}`);
+  if (!validPlannerModelId(chosenModel) || (!choice.models.includes(chosenModel) && !choice.dynamic)) throw new Error(`PLANNER_MODEL_UNKNOWN:${provider}/${model}`);
   const kind = nonTextModelKind(chosenModel);
   if (kind) throw new Error(`PLANNER_MODEL_NOT_TEXT:${kind}`);
   if (choice.keyEnv && !keyOf(choice, env)) throw new Error(`PLANNER_KEY_MISSING:${choice.keyEnv}`);
@@ -115,7 +119,7 @@ export function clearPlannerChoice(file) { rmSync(file, { force: true }); }
 // A paid model costs a fraction of a cent per test.
 export async function testPlannerModel({ provider, model }, { env = process.env, fetchImpl = fetch, timeoutMs = 60_000, extra = {} } = {}) {
   const choice = plannerChoices(env, extra)[provider];
-  if (!choice || !(choice.models.includes(model) || (choice.dynamic && model))) throw new Error(`PLANNER_MODEL_UNKNOWN:${provider}/${model}`);
+  if (!choice || !validPlannerModelId(model) || !(choice.models.includes(model) || choice.dynamic)) throw new Error(`PLANNER_MODEL_UNKNOWN:${provider}/${model}`);
   const kind = nonTextModelKind(model);
   if (kind) return { ok: false, provider, model, latencyMs: 0, error: `PLANNER_MODEL_NOT_TEXT:${kind}` };
   const key = choice.keyEnv ? credential(choice.keyEnv, { env }) : '';
