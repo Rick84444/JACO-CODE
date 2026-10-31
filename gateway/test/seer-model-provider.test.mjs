@@ -232,3 +232,25 @@ test('governor goal context is relevance-ordered and budgeted, never the raw pas
   assert.ok(chars < 2600, `goal block is ${chars} chars, raw was ${goals.reduce((s, g) => s + g.statement.length, 0)}`);
   assert.equal(clipGoalStatement('a\n\n b', 10), 'a b');
 });
+
+test('only local strategic planning receives a ten-minute timeout by default', async () => {
+  const { seerProviderTimeoutMs, callSeerGovernorProvider } = await import('../src/seer-model-provider.mjs');
+  assert.equal(seerProviderTimeoutMs({ env: {}, remote: false, purpose: 'planner' }), 600000);
+  assert.equal(seerProviderTimeoutMs({ env: {}, remote: false, purpose: 'inference' }), 180000);
+  assert.equal(seerProviderTimeoutMs({ env: {}, remote: true, purpose: 'planner' }), 60000);
+  assert.equal(seerProviderTimeoutMs({ env: { JACO_SEER_INFERENCE_TIMEOUT_MS: '240000' }, remote: false, purpose: 'planner' }), 240000);
+  assert.equal(seerProviderTimeoutMs({ env: { JACO_SEER_INFERENCE_TIMEOUT_MS: '180000' }, remote: false, purpose: 'planner' }), 180000);
+  assert.equal(seerProviderTimeoutMs({ env: { JACO_SEER_INFERENCE_TIMEOUT_MS: '0' }, remote: false, purpose: 'planner' }), 600000);
+
+  let forwarded = null;
+  let paidUsed = false;
+  const output = await callSeerGovernorProvider({ system: 'policy', user: 'goal', max_tokens: 3000 }, {
+    providers: [{ name: 'gemini', model: 'gemini-2.5-flash', local: false, envKey: 'GEMINI_API_KEY', url: 'https://example.invalid' }],
+    env: { JACO_CLOUD_PLANNER: '1', JACO_ALLOW_PAID_MODELS: '0', JACO_PRIMARY_PROVIDER: 'gemini' },
+    fetchFn: async () => { paidUsed = true; throw Error('must not contact cloud'); },
+    fallback: async args => { forwarded = args; return { ok: true, text: 'local output' }; },
+  });
+  assert.equal(output.ok, true);
+  assert.equal(forwarded.purpose, 'planner');
+  assert.equal(paidUsed, false);
+});
