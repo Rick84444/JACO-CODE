@@ -5,7 +5,7 @@ const redactText=(value,n=1000)=>typeof value==='string'?value.slice(0,n)
   .replace(/\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}/gi,'[REDACTED]'):null;
 const clip=(value,n=1000)=>redactText(value,n);
 const asFinite=(v)=>typeof v==='number'&&Number.isFinite(v)?v:null;
-const toList=(value,limit=12)=>Array.isArray(value)?value.slice(0,limit).map(v=>typeof v==='string'?v.slice(0,400):safeJson(v,2)):[];
+const toList=(value,limit=12)=>Array.isArray(value)?value.slice(0,limit).map(v=>typeof v==='string'?clip(v,400):safeJson(v,3)):[];
 
 function safeJson(value,depth=3){
   if(depth<=0)return '[depth-limit]';
@@ -20,6 +20,35 @@ function safeJson(value,depth=3){
     out[key.slice(0,80)]=safeJson(v,depth-1);
   }
   return out;
+}
+// Explicitly project the real CognitiveContinuityRuntime.modelEnvelope shape.
+// A generic recursion limit silently discarded hypothesis candidates and capability
+// reliability fields, precisely the evidence a remote engineer needs for diagnosis.
+function projectUnresolved(value){
+  if(!value||typeof value!=='object')return {questions:[],hypotheses:[]};
+  return {
+    questions:toList(value.questions,16),
+    hypotheses:(Array.isArray(value.hypotheses)?value.hypotheses:[]).slice(0,12).map(set=>({
+      id:clip(set?.id,150),missionId:clip(set?.missionId,150),
+      problem:clip(set?.problem,600),
+      candidates:(Array.isArray(set?.candidates)?set.candidates:[]).slice(0,12).map(c=>({
+        id:clip(c?.id,150),label:clip(c?.label,300),status:clip(c?.status,80),
+      })),
+    })),
+  };
+}
+function projectEpistemic(value){
+  if(!value||typeof value!=='object')return null;
+  return {
+    unknowns:toList(value.unknowns,16),
+    repository:safeJson(value.repository,3),
+    knowledge:safeJson(value.knowledge,3),
+    capabilities:(Array.isArray(value.capabilities)?value.capabilities:[]).slice(0,32).map(c=>({
+      capability:clip(c?.capability,250),state:clip(c?.state,80),
+      verifiedAttempts:Number.isSafeInteger(c?.verifiedAttempts)?c.verifiedAttempts:null,
+      conservativeReliability:asFinite(c?.conservativeReliability),
+    })),
+  };
 }
 const SAFE_STATES=new Set(['READY','DEGRADED','DOWN','RUNNING','STARTING','UNAVAILABLE','UNVERIFIED']);
 const safeState=(v)=>SAFE_STATES.has(v)?v:'UNVERIFIED';
@@ -38,7 +67,7 @@ export function projectCognitiveContext({continuity,health,economic}={}){
       missionAuthority:clip(e.missionAuthority,100),objective:safeJson(e.objective,3),
       focus:safeJson(e.focus,3),workingState:safeJson(e.workingState,3),
       // Continuum emits unresolved:{questions,hypotheses} and invariants:{...flags}, not arrays.
-      unresolved:safeJson(e.unresolved,4),epistemic:safeJson(e.epistemic,3),invariants:safeJson(e.invariants,3),
+      unresolved:projectUnresolved(e.unresolved),epistemic:projectEpistemic(e.epistemic),invariants:safeJson(e.invariants,3),
     } : {state:'UNAVAILABLE'},
     service:{
       status:safeState(health?.status),
