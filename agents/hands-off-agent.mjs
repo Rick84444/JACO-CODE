@@ -1991,6 +1991,9 @@ async function runAgentLoop(state) {
     },
     acceptMission: mission => acceptNovaMission(mission, missionClient.executor),
     observe: observeForPlanning,
+    // Without this the loop's model errors, stalls and failed releases were silent: a mission stayed
+    // ACTIVE with no claim and nothing in the activity log said why (2026-10-30).
+    log: (level, message) => log(level, "agent-loop", message),
     execute: async (task, mission) => { const result = await executeTask(task, state, mission); return BROWSER_TASKS.has(task.type) || task.type === "web-fetch" ? redactDeep(result) : result; },
     onActivity: async ({ phase, missionId }) => {
       try { await activeWorkplace?.setActivity(phase === 'READY' ? 'READY' : 'BUSY', missionId); }
