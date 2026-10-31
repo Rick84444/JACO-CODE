@@ -35,4 +35,21 @@ assert.equal(listed.tools.some(t=>/evaluate|shell|exec|credential/i.test(t.name)
 const result=await client.callTool({name:'jaco_identity',arguments:{}});
 assert.match(JSON.stringify(result),/JACO Autonomus IDE/);
 await client.close();
-console.log('PASS MCP runtime: official SDK client/server negotiated 42 scoped tools and called JACO identity');
+
+// The actual official SDK discovery must respect the same least-privilege
+// profile as the registry unit tests; a tunnel must never see 42 privileged tools.
+const readOnlyHandler=createMcpHandler(() => buildJacoMcpServer({
+  core,system,modelId:'chatgpt-cognitive-client',profile:'cognitive-read'
+}));
+const readOnlyClient=new Client({name:'chatgpt-cognitive-test',version:'1.0.0'});
+const readOnlyTransport=new StreamableHTTPClientTransport(new URL('http://cognitive.test/mcp'),{
+  fetch:(url,init)=>readOnlyHandler.fetch(new Request(url,init)),
+});
+await readOnlyClient.connect(readOnlyTransport);
+const visible=await readOnlyClient.listTools();
+assert.deepEqual(visible.tools.map(t=>t.name),[
+  'jaco_identity','jaco_system_health','jaco_cognitive_context','jaco_knowledge_search'
+]);
+assert.equal(visible.tools.some(t=>/goal|update|relay|shell|note|post/.test(t.name)),false);
+await readOnlyClient.close();
+console.log('PASS MCP runtime: official SDK negotiated 42 local tools and exactly four read-only ChatGPT tools');
