@@ -49,7 +49,7 @@ import { createGithubNovaControlInbox } from './lib/github-control-inbox.mjs';
 import { enqueueVerifiedReceiptPromotion, flushLivingCorePromotions, ensureLivingCorePromotionState } from './lib/living-core-promotion.mjs';
 import { TASK_FIELDS, taskContract } from './lib/task-fields.mjs';
 import { CODE_TASKS, validateCodingTask } from './lib/coding-contract.mjs';
-import { plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
+import { nonTextModelKind, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
 import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs';
 import { validateRepoScanTask, runRepoScanTask } from './lib/repo-scan.mjs';
 import { validateMcpCall, callMcpTool, mcpCatalog, mcpCatalogTools, learnedTaskNotes } from './lib/mcp-tools.mjs';
@@ -1217,7 +1217,8 @@ export function orderedBrainProviders(env = process.env) {
   // e.g. a provider whose key is rejected (qwen: HTTP 401 on 2026-10-01).
   const disabled = new Set(String(env.JACO_DISABLED_PROVIDERS || '').split(',').map(s => s.trim()).filter(Boolean));
   return [...first.map(entry), ...pool.filter(p => !first.includes(p.name))]
-    .filter(p => !disabled.has(p.name) && !(p.name === 'ollama' && /(?:-cloud|:cloud)$/i.test(p.model))
+    // A speech, embedding or image model configured for a provider (e.g. GEMINI_MODEL) cannot plan.
+    .filter(p => !disabled.has(p.name) && !nonTextModelKind(p.model) && !(p.name === 'ollama' && /(?:-cloud|:cloud)$/i.test(p.model))
       && (!operator || p.name === operator.provider || !isPaidProvider(p)));
 }
 

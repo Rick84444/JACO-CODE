@@ -2476,6 +2476,23 @@ const notifyPhone = async (action) => {
     }
   });
 
+  // Sentinel waits on this before it submits a canonical Aura goal: Core passed the
+  // operator check, and SEER accepted Core's bearer token on a read-only route.
+  app.get('/api/aura/workbench/readiness', requireLocalUi, requireOperator, async (_req, res) => {
+    const core = { reachable: true, authenticated: true };
+    if (process.env.JACO_LITE === '1') return res.json({ success: true, schema: 'jaco.aura-readiness/v1', ready: true, core, seer: { required: false } });
+    const base = String(process.env.SEER_URL || 'http://127.0.0.1:2997').replace(/\/+$/, '');
+    const token = process.env.SEER_TOKEN || process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || GATEWAY_TOKEN;
+    let seer = { required: true, reachable: false, authenticated: false };
+    try {
+      const response = await fetch(`${base}/cortex/strategy/goals?status=active`, {
+        headers: { Authorization: `Bearer ${token || ''}` }, redirect: 'error', signal: AbortSignal.timeout(3000),
+      });
+      seer = { required: true, reachable: true, authenticated: response.ok };
+    } catch {}
+    res.json({ success: true, schema: 'jaco.aura-readiness/v1', ready: seer.authenticated, core, seer });
+  });
+
   app.post('/api/aura/workbench/start-goal', requireLocalUi, async (req, res) => {
     try {
       const originalGoal = String(req.body?.goal || '').trim();
@@ -3032,7 +3049,12 @@ const notifyPhone = async (action) => {
       if (provider === 'auto') {
         clearPlannerChoice(plannerChoicePath);
       } else {
-        writePlannerChoice(plannerChoicePath, validatePlannerChoice({ provider, model: req.body?.model }, process.env, await connectedPlannerChoices(true)), 'operator');
+        const extra = await connectedPlannerChoices(true);
+        const valid = validatePlannerChoice({ provider, model: req.body?.model }, process.env, extra);
+        // Only a model that has just answered a short text request becomes Nova's planner.
+        const probe = await testPlannerModel(valid, { extra, timeoutMs: 30_000 });
+        if (!probe.ok) return res.status(422).json({ success: false, error: 'PLANNER_MODEL_TEXT_PROBE_FAILED', probe });
+        writePlannerChoice(plannerChoicePath, valid, 'operator');
       }
       const state = await plannerState();
       seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'nova.planner.chosen', message: `Nova planner: ${state.choice ? `${state.choice.provider}/${state.choice.model}` : 'automatic chain'}`, verified: true, receipt: { choice: state.choice } });

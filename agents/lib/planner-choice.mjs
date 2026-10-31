@@ -65,10 +65,27 @@ export function plannerChoiceFile(env = process.env) {
   return join(env.JACO_RUNTIME_DIR || env.JACO_WORKSPACE_ROOT || process.cwd(), '.jaco', 'state', 'provider-preference.json');
 }
 
+// Provider listings mix chat models with speech, embedding, image and video models. Those cannot
+// plan: a saved gemini-2.5-pro-preview-tts answered every Nova turn with HTTP 400 (2026-10-31).
+const NON_TEXT_MODEL = [
+  ['tts', /(^|[-_/.:])tts([-_/.:]|$)|text-to-speech/i],
+  ['embedding', /embed/i],
+  ['audio', /(^|[-_/.:])(native-audio|audio|whisper|transcribe|live)([-_/.:]|$)/i],
+  ['image', /(^|[-_/.:])(imagen|image|dall-e|flux|stable-diffusion)([-_/.:]|$)/i],
+  ['video', /(^|[-_/.:])veo([-_/.:]|$)/i],
+  ['attributed-qa', /(^|[-_/.:])aqa([-_/.:]|$)/i],
+  ['moderation', /moderation|guard([-_/.:]|$)/i],
+];
+export function nonTextModelKind(model) {
+  return NON_TEXT_MODEL.find(([, pattern]) => pattern.test(String(model || '')))?.[0] || null;
+}
+
+// A saved choice of a model that cannot plan is ignored (the file is kept for the operator to see),
+// so Nova falls back to its automatic chain instead of failing every turn.
 export function readPlannerChoice(file) {
   try {
     const saved = JSON.parse(readFileSync(file, 'utf8'));
-    return saved && typeof saved.provider === 'string' ? saved : null;
+    return saved && typeof saved.provider === 'string' && !nonTextModelKind(saved.model) ? saved : null;
   } catch { return null; }
 }
 
@@ -78,6 +95,8 @@ export function validatePlannerChoice({ provider, model } = {}, env = process.en
   const chosenModel = String(model || choice.models[0] || '');
   // A connected provider may serve more than its listing shows; only the fixed ones are held to their list.
   if (!chosenModel || (!choice.models.includes(chosenModel) && !(choice.dynamic && /^[\w.:/@+-]{1,160}$/.test(chosenModel)))) throw new Error(`PLANNER_MODEL_UNKNOWN:${provider}/${model}`);
+  const kind = nonTextModelKind(chosenModel);
+  if (kind) throw new Error(`PLANNER_MODEL_NOT_TEXT:${kind}`);
   if (choice.keyEnv && !keyOf(choice, env)) throw new Error(`PLANNER_KEY_MISSING:${choice.keyEnv}`);
   if (choice.paid && env.JACO_ALLOW_PAID_MODELS === '0') throw new Error('PLANNER_PAID_MODELS_DISABLED:JACO_ALLOW_PAID_MODELS');
   return { provider: String(provider), model: chosenModel, paid: choice.paid };
@@ -97,6 +116,8 @@ export function clearPlannerChoice(file) { rmSync(file, { force: true }); }
 export async function testPlannerModel({ provider, model }, { env = process.env, fetchImpl = fetch, timeoutMs = 60_000, extra = {} } = {}) {
   const choice = plannerChoices(env, extra)[provider];
   if (!choice || !(choice.models.includes(model) || (choice.dynamic && model))) throw new Error(`PLANNER_MODEL_UNKNOWN:${provider}/${model}`);
+  const kind = nonTextModelKind(model);
+  if (kind) return { ok: false, provider, model, latencyMs: 0, error: `PLANNER_MODEL_NOT_TEXT:${kind}` };
   const key = choice.keyEnv ? credential(choice.keyEnv, { env }) : 'ollama';
   if (!key) throw new Error(`PLANNER_KEY_MISSING:${choice.keyEnv}`);
   const started = Date.now();

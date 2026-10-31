@@ -117,3 +117,31 @@ test('Nova plans with the operator\'s chosen connected provider, which is not in
   const local = orderedBrainProviders(env)[0];
   assert.equal(local.name, 'ollama'); assert.equal(local.model, 'qwen2.5-coder:1.5b');
 });
+
+// 2026-10-31: the GUI saved gemini/models/gemini-2.5-pro-preview-tts as Nova's planner; every turn failed with HTTP 400.
+test('speech, embedding, image and video models are never planners', async () => {
+  const { nonTextModelKind, readPlannerChoice } = await import('../../agents/lib/planner-choice.mjs');
+  for (const [model, kind] of [['models/gemini-2.5-pro-preview-tts', 'tts'], ['text-embedding-004', 'embedding'],
+    ['models/gemini-embedding-001', 'embedding'], ['imagen-4.0-generate-001', 'image'], ['veo-3.0-generate-preview', 'video'],
+    ['gemini-2.5-flash-native-audio-dialog', 'audio'], ['whisper-large-v3', 'audio'], ['models/aqa', 'attributed-qa']]) {
+    assert.equal(nonTextModelKind(model), kind, model);
+  }
+  for (const model of ['models/gemini-2.5-flash', 'deepseek-v4-pro', 'openai/gpt-oss-120b', 'gemma3:4b', 'qwen/qwen3.8-27b:free'])
+    assert.equal(nonTextModelKind(model), null, model);
+
+  const extra = { gemini: { label: 'Gemini', paid: true, keyEnv: null, url: 'https://example.invalid/v1/chat/completions', models: ['models/gemini-2.5-pro-preview-tts', 'models/gemini-2.5-flash'] } };
+  assert.throws(() => validatePlannerChoice({ provider: 'gemini', model: 'models/gemini-2.5-pro-preview-tts' }, {}, extra), /PLANNER_MODEL_NOT_TEXT:tts/);
+  let called = false;
+  const probe = await testPlannerModel({ provider: 'gemini', model: 'models/gemini-2.5-pro-preview-tts' }, { env: {}, extra, fetchImpl: async () => { called = true; } });
+  assert.equal(probe.ok, false);
+  assert.match(probe.error, /PLANNER_MODEL_NOT_TEXT:tts/);
+  assert.equal(called, false);
+
+  // An already saved non-text choice is ignored, not deleted: Nova falls back to its automatic chain.
+  const saved = path.join(dir, 'tts-choice.json');
+  writePlannerChoice(saved, { provider: 'gemini', model: 'models/gemini-2.5-pro-preview-tts' }, 'operator');
+  assert.equal(readPlannerChoice(saved), null);
+  assert.ok(fs.existsSync(saved));
+  const chain = orderedBrainProviders({ JACO_PLANNER_CHOICE_FILE: saved, GEMINI_MODEL: 'x' });
+  assert.equal(chain.some(p => p.chosen), false);
+});

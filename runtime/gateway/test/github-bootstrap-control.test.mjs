@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createGithubBootstrapControl, safeBootstrapHealthLines } from '../src/github-bootstrap-control.mjs';
@@ -461,7 +461,7 @@ test('Aura-only GitHub operator issue invokes the canonical goal once, even afte
     }
     throw new Error('unexpected '+method+' '+url);
   };
-  const system={async startAuraAcceptance(){calls.push('aura');
+  const system={async auraReadiness(){return {ready:true,attempts:1};},async startAuraAcceptance(){calls.push('aura');
     return {schema:'jaco.aura-operator-command/v1',status:'ACCEPTED',goalId:'goal-123',execution:'NOT_VERIFIED'};}};
   const make=()=>createGithubBootstrapControl({system,fetchImpl,enabled:true,
     repo:'Rick84444/JACO-CODE',token:'test-github-token',actor:'Rick84444',stateFile:file});
@@ -520,7 +520,7 @@ test('Aura goal is journaled before execution so a failed remote response cannot
     throw Error('Unexpected HTTP');
   };
   const make=()=>createGithubBootstrapControl({
-    system:{async startAuraAcceptance(){called++;throw Error('private target host error');}},
+    system:{async auraReadiness(){return {ready:true,attempts:1};},async startAuraAcceptance(){called++;throw Error('private target host error');}},
     fetchImpl,enabled:true,repo:'Rick84444/JACO-CODE',token:'token',
     actor:'Rick84444',stateFile:file,
   });
@@ -529,4 +529,58 @@ test('Aura goal is journaled before execution so a failed remote response cannot
   assert.equal(called,1);
   assert.deepEqual((await make().pollOnce()).processed,[]);
   assert.equal(called,1);
+});
+
+test('delayed Core: NOT_READY keeps the Aura command open and unjournaled, then registers exactly one goal',async()=>{
+  const file=stateFile(),comments=[];
+  let closed=false,ready=false,goals=0,probes=0;
+  const fetchImpl=async(url,options={})=>{
+    const method=options.method||'GET';
+    if(method==='GET'&&url.includes('/issues?'))return response(200,closed?[]:[{
+      number:883,title:'[JACO AURA] Cold start',user:{login:'Rick84444'},
+      body:'<!-- jaco-aura-control:v1 -->\n'+JSON.stringify({schema:'jaco.aura-command/v1',commandId:'aura-cold-start-20261031-v1',op:'aura.acceptance'}),
+    }]);
+    if(method==='POST'&&url.endsWith('/issues/883/comments')){comments.push(JSON.parse(options.body).body);return response(201,{});}
+    if(method==='PATCH'&&url.endsWith('/issues/883')){closed=true;return response(200,{});}
+    throw Error('Unexpected HTTP');
+  };
+  const system={
+    async auraReadiness(){probes++;return ready?{ready:true,attempts:1}:{ready:false,reason:'SEER_UNREACHABLE',attempts:30};},
+    async startAuraAcceptance(){goals++;return {schema:'jaco.aura-operator-command/v1',status:'ACCEPTED',goalId:'goal-cold-1',execution:'NOT_VERIFIED'};},
+  };
+  const make=()=>createGithubBootstrapControl({system,fetchImpl,enabled:true,repo:'Rick84444/JACO-CODE',token:'token',actor:'Rick84444',stateFile:file});
+  const control=make();
+  assert.equal((await control.pollOnce()).processed[0].status,'NOT_READY');
+  assert.equal((await control.pollOnce()).processed[0].status,'NOT_READY');
+  assert.equal(goals,0);
+  assert.equal(closed,false);
+  assert.equal(comments.length,1);
+  assert.match(comments[0],/NOT_READY/);
+  assert.match(comments[0],/SEER_UNREACHABLE/);
+  assert.deepEqual(JSON.parse(readFileSync(file,'utf8')).handled,[]);
+  ready=true;
+  // A restarted Sentinel still sees an open, unjournaled command and may submit it once.
+  assert.equal((await make().pollOnce()).processed[0].status,'ACCEPTED');
+  assert.equal(goals,1);
+  assert.equal(closed,true);
+  assert.deepEqual((await make().pollOnce()).processed,[]);
+  assert.equal(goals,1);
+  assert.equal(probes,3);
+});
+
+test('Aura command without a readiness probe fails closed as NOT_READY',async()=>{
+  let goals=0;
+  const fetchImpl=async(url,options={})=>{
+    const method=options.method||'GET';
+    if(method==='GET'&&url.includes('/issues?'))return response(200,[{
+      number:884,title:'[JACO AURA] No probe',user:{login:'Rick84444'},
+      body:'<!-- jaco-aura-control:v1 -->\n'+JSON.stringify({schema:'jaco.aura-command/v1',commandId:'aura-no-probe-20261031-v1',op:'aura.acceptance'}),
+    }]);
+    if(method==='POST')return response(201,{});
+    throw Error('Unexpected HTTP');
+  };
+  const result=await createGithubBootstrapControl({system:{async startAuraAcceptance(){goals++;}},fetchImpl,enabled:true,
+    repo:'Rick84444/JACO-CODE',token:'token',actor:'Rick84444',stateFile:stateFile()}).pollOnce();
+  assert.equal(result.processed[0].status,'NOT_READY');
+  assert.equal(goals,0);
 });

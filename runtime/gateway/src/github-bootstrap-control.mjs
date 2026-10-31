@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { safeNovaReceiptLines } from './nova-receipt-inspector.mjs';
-import { safeAuraAcceptanceLines } from './aura-operator-command.mjs';
+import { safeAuraAcceptanceLines, safeAuraNotReadyLines } from './aura-operator-command.mjs';
 
 const API = 'https://api.github.com';
 const MARKER = '<!-- jaco-bootstrap-control:v1 -->';
@@ -127,6 +127,8 @@ export function createGithubBootstrapControl({
     ? Math.max(5000, Number.isFinite(pollMs) ? pollMs : 15000)
     : Math.max(30000, Number.isFinite(pollMs) ? pollMs : 30000);
   let inFlight = false;
+  // One NOT_READY comment per command and process; later polls retry quietly.
+  const notReadyAnnounced = new Set();
 
   async function api(path, options = {}) {
     const response = await fetchImpl(API + path, {
@@ -293,6 +295,38 @@ export function createGithubBootstrapControl({
         }
         if (handled.has(command.commandId)) continue;
 
+        // Readiness comes before the journal: nothing has been created yet, so a
+        // NOT_READY command stays open and unjournaled and a later poll may retry it.
+        if (command.op === 'aura.acceptance') {
+          let readiness = null;
+          try { readiness = typeof system.auraReadiness === 'function' ? await system.auraReadiness() : { ready: false, reason: 'READINESS_PROBE_UNAVAILABLE' }; }
+          catch { readiness = { ready: false, reason: 'CORE_UNREACHABLE' }; }
+          if (readiness?.ready !== true) {
+            durable.lastProcessed = {
+              at: new Date().toISOString(),
+              issue: issue.number ?? null,
+              commandId: command.commandId,
+              op: command.op,
+              status: 'NOT_READY',
+            };
+            persistState();
+            if (issue.number != null && !notReadyAnnounced.has(command.commandId)) {
+              notReadyAnnounced.add(command.commandId);
+              await comment(issue.number, [
+                '<!-- jaco-bootstrap-status:v1 -->',
+                '### JACO Sentinel bootstrap',
+                `- command: \`${command.commandId}\``,
+                `- operation: \`${command.op}\``,
+                '- status: **NOT_READY**',
+                '',
+                ...safeAuraNotReadyLines(readiness),
+              ]).catch(() => {});
+            }
+            processed.push({ issue: issue.number, status: 'NOT_READY' });
+            continue;
+          }
+        }
+
         try {
           if (issue.number != null) {
             await comment(issue.number, [
@@ -303,8 +337,8 @@ export function createGithubBootstrapControl({
               '- status: **RUNNING**',
             ]);
           }
-          // Aura goals mutate durable strategic state. Journal the command BEFORE
-          // invoking the local operator route so a crash cannot replay it.
+          // Aura goals mutate durable strategic state. Journal the command after
+          // readiness but BEFORE invoking the operator route so a crash cannot replay it.
           // A missing response is UNKNOWN, never an invitation to retry.
           if (command.op === 'aura.acceptance') remember(command.commandId);
           const result = await execute(command);

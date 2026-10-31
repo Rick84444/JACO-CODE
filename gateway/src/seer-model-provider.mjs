@@ -83,6 +83,22 @@ export function budgetSeerLocalPrompt({
   };
 }
 
+export function clipGoalStatement(text, maxChars) {
+  const value = String(text || '').replace(/\s+/g, ' ').trim();
+  return value.length <= maxChars ? value : value.slice(0, Math.max(0, maxChars - 1)) + '…';
+}
+
+// Relevance-ordered goal context for the governor: the goals this turn works on keep most of
+// their text, every other goal shrinks to a headline. Two pasted behaviour contracts as active
+// goals once made a ~45k-token governor prompt that a 4B local model could not finish.
+export function compactGovernorGoals(goals = [], { focusIds = [], focusChars = 1500, otherChars = 200, maxGoals = 6 } = {}) {
+  const focus = new Set(focusIds.filter(Boolean));
+  return [...goals]
+    .sort((a, b) => Number(focus.has(b.id)) - Number(focus.has(a.id)))
+    .slice(0, maxGoals)
+    .map(goal => ({ ...goal, statement: clipGoalStatement(goal.statement, focus.has(goal.id) ? focusChars : otherChars) }));
+}
+
 export function extractGovernorJson(text) {
   const source = String(text ?? '');
   const start = source.indexOf('{');
