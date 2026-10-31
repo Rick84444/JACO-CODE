@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 
 type Limits = { dailyCloudUsd: number | null; monthlyCloudUsd: number | null; maxCloudUsdPerTask: number | null; maxAutonomousCloudCallsPer15m: number | null };
-type Snapshot = { policy: Limits & { manualAuraCloudEnabled: boolean; novaOllamaCloudEnabled: boolean; cloudEnabled: boolean }; state: { dailySpentUsd: number; reservedUsd: number; reservations?: Record<string, { status?: string; estimatedUsd: number }> }; headroom: { dailyUsd: number; monthlyUsd: number } };
+type GeminiQuotaModel = { label?: string; category?: string; rpm: number | null; tpm: number | null; rpd: number | null; usedRpm: number; usedTpm: number; usedRpd: number; cooldownUntil?: number | null };
+type GeminiQuotaSnapshot = { source: string; observedAt: string; projectAssociationVerified: boolean; providerUsageIncluded: boolean; localOnly: boolean; pacificDay: string; models: Record<string, GeminiQuotaModel> };
+type Snapshot = { policy: Limits & { manualAuraCloudEnabled: boolean; novaOllamaCloudEnabled: boolean; cloudEnabled: boolean }; state: { dailySpentUsd: number; reservedUsd: number; reservations?: Record<string, { status?: string; estimatedUsd: number }> }; headroom: { dailyUsd: number | null; monthlyUsd: number | null }; geminiQuota?: GeminiQuotaSnapshot };
 const fields = [ ['dailyCloudUsd', 'USD per dygn'], ['monthlyCloudUsd', 'USD per månad'], ['maxCloudUsdPerTask', 'USD per uppgift'] ] as const;
 const money = (n: number) => n.toLocaleString('sv-SE', { maximumFractionDigits: 6 });
 // A cap the operator has not set is shown as such, never as a number.
@@ -101,6 +103,20 @@ export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {
       <p className="text-slate-300">Autonom säkerhetsspärr: {snapshot.policy.maxAutonomousCloudCallsPer15m == null ? 'avstängd' : `${snapshot.policy.maxAutonomousCloudCallsPer15m} betalda anrop per 15 minuter`}. Styr Nova och SEER, inte din manuella Aura-chatt.</p>
       <p className="text-slate-400">Tokenbaserat kostnadsunderlag idag: {money(snapshot.state.dailySpentUsd)} USD · Reserverat: {money(snapshot.state.reservedUsd)} USD · Kvar idag: {snapshot.headroom.dailyUsd == null ? 'inget tak' : `${money(snapshot.headroom.dailyUsd)} USD`}</p>
       <p className="text-slate-500">USD-beloppen beräknas med JACO:s konfigurerade priser eller referenspriser och är inte avstämda mot leverantörens faktura.</p>
+      {snapshot.geminiQuota && <details className="border border-[#343b45] rounded p-2 space-y-2">
+        <summary className="text-cyan-300 cursor-pointer">Gemini · verkliga modellgränser från AI Studio ({Object.keys(snapshot.geminiQuota.models).length} modeller)</summary>
+        <p className="text-amber-200">Importerat {snapshot.geminiQuota.observedAt}. Detta är en operatörsrapporterad AI Studio-snapshot, INTE ett levande Google-kvotsaldo. Gränserna gäller per Google-projekt; bara anrop från denna JACO-runtime räknas här. Rate limits är inte pris eller bevis på gratisnivå.</p>
+        <div className="max-h-60 overflow-auto space-y-2" role="table" aria-label="Gemini kvoter per modell">
+          {(Object.entries(snapshot.geminiQuota.models) as [string, GeminiQuotaModel][])
+            .filter(([key, q]) => key === 'gemini-2.5-flash' || key === 'gemini-2.5-flash-lite' || key === 'gemini-2.5-pro' || q.usedRpm > 0 || q.usedRpd > 0)
+            .slice(0, 15).map(([model, q]) => <div key={model} role="row" className="rounded border border-[#343b45] px-2 py-1">
+              <strong className="text-slate-200" role="cell">{q.label || model}</strong>
+              <p className="text-slate-400" role="cell">RPM {q.usedRpm.toLocaleString('sv-SE')} / {q.rpm?.toLocaleString('sv-SE') ?? 'obegränsat'} · TPM {q.usedTpm.toLocaleString('sv-SE')} / {q.tpm?.toLocaleString('sv-SE') ?? 'obegränsat'} · RPD {q.usedRpd.toLocaleString('sv-SE')} / {q.rpd?.toLocaleString('sv-SE') ?? 'obegränsat'}</p>
+              {q.cooldownUntil && q.cooldownUntil > Date.now() && <p className="text-amber-300">Google 429: spärrad tills {new Date(q.cooldownUntil).toLocaleTimeString('sv-SE')}</p>}
+            </div>)}
+        </div>
+        <p className="text-slate-500">RPD återställs vid midnatt Pacific-tid. JACO lämnar säkerhetsmarginal på 10 % och behåller autonom anropsbegränsning separat. Övriga modeller kan hämtas via /api/aura/budget/gemini-quotas.</p>
+      </details>}
       <p hidden={inline} className="text-slate-500">Aura moln: {snapshot.policy.cloudEnabled && snapshot.policy.manualAuraCloudEnabled ? 'tillåtet inom budget' : 'avstängt'} · Nova molnproviders: {snapshot.policy.cloudEnabled && snapshot.policy.novaOllamaCloudEnabled ? 'tillåtet inom budget' : 'avstängt'}</p>
       <p hidden={inline} className="text-slate-400">Du styr gemensamma kostnadstak här. Separat stoppar den autonoma säkerhetsspärren överdrivna anropsserier, även när USD-taken är avstängda.</p>
       {((snapshot.headroom.dailyUsd != null && snapshot.headroom.dailyUsd <= 0) || (snapshot.headroom.monthlyUsd != null && snapshot.headroom.monthlyUsd <= 0) || (snapshot.policy.maxCloudUsdPerTask != null && snapshot.policy.maxCloudUsdPerTask <= 0)) && <p role="status" className="text-amber-300">Budgeten stoppar nya betalda anrop. Reserverade belopp räknas in tills utfallet är fastställt.</p>}
