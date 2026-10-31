@@ -1044,12 +1044,13 @@ const server = createServer(async (req, res) => {
       if (GET && operation === 'ready') return json(res, missionGraph.ready(graphId));
       if (POST && operation === 'cancel') {
         const payload = await body(req);
-        // Stopping work is not abandoning the goal: cancelling an A2A task also cancelled the operator's
-        // Aura goal and cleared the primary goal (2026-10-31). The goal ends only on an explicit
-        // cancel_goal here or through POST /cortex/strategy/goals/:id/cancel.
+        // Stopping work is never implicit consent to abandon its strategic goal.
+        // In particular, reject the legacy cancel_goal switch before changing
+        // any graph; strategic cancellation requires its own confirmed endpoint.
+        if (payload.cancel_goal === true) {
+          return json(res, { error: 'STRATEGIC_GOAL_CANCEL_REQUIRES_CONFIRMED_ROUTE' }, 400);
+        }
         const graph = missionGraph.cancel(graphId, {reason:payload.reason || 'Operator stopped this work from Aura',actor:'operator'});
-        const goalId = graph.policy?.strategic_goal_id;
-        if (payload.cancel_goal === true && goalId && strategy.goals.get(goalId)) cancelStrategicGoal(goalId);
         return json(res, graph);
       }
       if (POST && operation === 'checkpoints') return json(res, missionGraph.checkpoint(graphId, await body(req)), 201);
