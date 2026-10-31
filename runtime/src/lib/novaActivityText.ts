@@ -59,6 +59,9 @@ export interface NovaMissionSummary {
   step: number;
   maxSteps: number | null;
   source: string | null;
+  // Minimal parent link for Aura's explicit "Avsluta mål" action; never expose
+  // private mission metadata or capabilities in the UI projection.
+  metadata?: { parent: { graphId: string } };
   createdAt: string | null;
   updatedAt: string | null;
   lastAction: { text: string; at: string | null; result: ReturnType<typeof describeNovaResult> | null; running: boolean } | null;
@@ -86,6 +89,10 @@ export function summarizeNovaMission(mission: any, lastStarted: any = null, comp
     step: Number(mission?.turn ?? receipts.length) || 0,
     maxSteps: Number(mission?.contract?.budget?.max_steps) || null,
     source: mission?.source || null,
+    ...(typeof mission?.metadata?.parent?.graphId === 'string' &&
+        /^[a-zA-Z0-9_-]{1,160}$/.test(mission.metadata.parent.graphId)
+      ? { metadata: { parent: { graphId: mission.metadata.parent.graphId } } }
+      : {}),
     createdAt: mission?.createdAt || null,
     updatedAt: mission?.updatedAt || null,
     lastAction: running
