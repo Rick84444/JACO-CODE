@@ -76,6 +76,10 @@ const NON_TEXT_MODEL = [
   ['attributed-qa', /(^|[-_/.:])aqa([-_/.:]|$)/i],
   ['moderation', /moderation|guard([-_/.:]|$)/i],
 ];
+// The same allow-list is enforced by Aura's planner choice, probe and Continuum reservation.
+// Valid connected models may include /, @ and +, and may be up to 160 characters.
+export const validPlannerModelId = value => /^[\w.:/@+-]{1,160}$/.test(String(value || ''));
+
 export function nonTextModelKind(model) {
   return NON_TEXT_MODEL.find(([, pattern]) => pattern.test(String(model || '')))?.[0] || null;
 }
@@ -94,7 +98,7 @@ export function validatePlannerChoice({ provider, model } = {}, env = process.en
   if (!choice) throw new Error(`PLANNER_PROVIDER_UNKNOWN:${provider}`);
   const chosenModel = String(model || choice.models[0] || '');
   // A connected provider may serve more than its listing shows; only the fixed ones are held to their list.
-  if (!chosenModel || (!choice.models.includes(chosenModel) && !(choice.dynamic && /^[\w.:/@+-]{1,160}$/.test(chosenModel)))) throw new Error(`PLANNER_MODEL_UNKNOWN:${provider}/${model}`);
+  if (!validPlannerModelId(chosenModel) || (!choice.models.includes(chosenModel) && !choice.dynamic)) throw new Error(`PLANNER_MODEL_UNKNOWN:${provider}/${model}`);
   const kind = nonTextModelKind(chosenModel);
   if (kind) throw new Error(`PLANNER_MODEL_NOT_TEXT:${kind}`);
   if (choice.keyEnv && !keyOf(choice, env)) throw new Error(`PLANNER_KEY_MISSING:${choice.keyEnv}`);
@@ -115,25 +119,36 @@ export function clearPlannerChoice(file) { rmSync(file, { force: true }); }
 // A paid model costs a fraction of a cent per test.
 export async function testPlannerModel({ provider, model }, { env = process.env, fetchImpl = fetch, timeoutMs = 60_000, extra = {} } = {}) {
   const choice = plannerChoices(env, extra)[provider];
-  if (!choice || !(choice.models.includes(model) || (choice.dynamic && model))) throw new Error(`PLANNER_MODEL_UNKNOWN:${provider}/${model}`);
+  if (!choice || !validPlannerModelId(model) || !(choice.models.includes(model) || choice.dynamic)) throw new Error(`PLANNER_MODEL_UNKNOWN:${provider}/${model}`);
   const kind = nonTextModelKind(model);
   if (kind) return { ok: false, provider, model, latencyMs: 0, error: `PLANNER_MODEL_NOT_TEXT:${kind}` };
-  const key = choice.keyEnv ? credential(choice.keyEnv, { env }) : 'ollama';
-  if (!key) throw new Error(`PLANNER_KEY_MISSING:${choice.keyEnv}`);
+  const key = choice.keyEnv ? credential(choice.keyEnv, { env }) : '';
+  if (choice.keyEnv && !key) throw new Error(`PLANNER_KEY_MISSING:${choice.keyEnv}`);
+  // Aura owns the provider switch. Every potentially billable probe must use the same
+  // Continuum reservation as SEER and Nova; the previous path only budgeted ollama-cloud.
+  const endpoint = new URL(choice.url);
+  const loopback = endpoint.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname);
+  const cloudRelay = /(?:-cloud|:cloud)$/i.test(String(model));
+  // Only OpenRouter's explicit :free tier is classified as non-billable.
+  // An arbitrary connected HTTPS provider cannot bypass Continuum by naming a model ":free".
+  const metered = !loopback && !(provider === 'openrouter' && /:free$/i.test(String(model)));
   const started = Date.now();
   try {
+    if (loopback && cloudRelay) throw new Error('OLLAMA_CLOUD_RELAY_NOT_RESERVABLE');
+    if (!loopback && endpoint.protocol !== 'https:') throw new Error('PLANNER_ENDPOINT_UNTRUSTED');
+    if (metered && env.JACO_ALLOW_PAID_MODELS !== '1') throw new Error('PAID_PROVIDER_DISABLED');
     const requestBody = { model, messages: [{ role: 'user', content: 'Reply with the single word OK.' }], max_tokens: 200 };
-    const cloudResult = provider === 'ollama-cloud'
-      ? await budgetedNovaOllamaCall({ provider: { model, url: choice.url, key }, requestBody,
-        runtimeUrl: env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000', token: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '',
+    const cloudResult = metered
+      ? await budgetedNovaOllamaCall({ provider: { name: provider, model, url: choice.url, key }, requestBody,
+        runtimeUrl: env.JACO_RUNTIME_URL || `http://127.0.0.1:${Number(env.PORT) || 3000}`, token: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '',
         fetchImpl, signal: AbortSignal.timeout(timeoutMs) }) : null;
     const res = cloudResult?.response || await fetchImpl(choice.url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) },
       body: JSON.stringify(requestBody),
       signal: AbortSignal.timeout(timeoutMs),
     });
-    const data = cloudResult?.data || await res.json().catch(() => null);
+    const data = cloudResult?.data ?? await res.json().catch(() => null);
     const reply = data?.choices?.[0]?.message?.content ?? null;
     const latencyMs = Date.now() - started;
     if (!res.ok || !reply) return { ok: false, provider, model, latencyMs, status: res.status, error: String(data?.error?.message || 'no answer').slice(0, 300) };

@@ -27,7 +27,7 @@ export function createEconomicBudgetRouter({ economic, requireOperatorUi, getBal
     try {
       const body = req.body;
       // cloudEnabled is the one switch for cloud models (Aura chat and Nova alike). Each cap is a number, or null for no cap.
-      const keys = ['dailyCloudUsd', 'monthlyCloudUsd', 'maxCloudUsdPerTask', 'cloudEnabled'];
+      const keys = ['dailyCloudUsd', 'monthlyCloudUsd', 'maxCloudUsdPerTask', 'maxAutonomousCloudCallsPer15m', 'cloudEnabled'];
       if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length || Object.keys(body).some(k => !keys.includes(k))) throw new Error('BUDGET_FIELDS_INVALID');
       const economicState = economic.updatePolicy(body, 'operator-ui');
       res.json({ success: true, economic: economicState });

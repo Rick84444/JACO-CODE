@@ -14,6 +14,9 @@ const DEFAULT_POLICY = {
   dailyCloudUsd:null,
   monthlyCloudUsd:null,
   maxCloudUsdPerTask:null,
+  // Independent runaway fuse for autonomous SEER/Nova inference. Monetary caps remain the operator's choice.
+  // The manual Aura conversation is exempt; a runaway graph cannot generate unlimited calls in a burst.
+  maxAutonomousCloudCallsPer15m:12,
   warningAtPercent:70,
   hardStopAtPercent:100,
   requirePositiveExpectedValueForRevenueMissions:true,
@@ -39,7 +42,7 @@ export class EconomicGovernor {
     this.events=events;this.evidence=evidence;
     this.policy={...DEFAULT_POLICY,...(readJson(this.policyFile,{})||{})};
     if(!fs.existsSync(this.policyFile)&&process.env.JACO_CLOUD_ENABLED==='true')this.policy.cloudEnabled=true;
-    this.state=readJson(this.stateFile,{day:periodKey('day'),month:periodKey('month'),dailySpentUsd:0,monthlySpentUsd:0,reservedUsd:0,reservations:{},revenueUsd:0,updatedAt:nowIso()});
+    this.state=readJson(this.stateFile,{day:periodKey('day'),month:periodKey('month'),dailySpentUsd:0,monthlySpentUsd:0,reservedUsd:0,reservations:{},autonomousCloudCalls:[],revenueUsd:0,updatedAt:nowIso()});
     if(!this.state.tally||typeof this.state.tally!=='object')this.state.tally={days:{},buckets:{}};
     this.#rollPeriods();this.#persist();
   }
@@ -50,6 +53,11 @@ export class EconomicGovernor {
     for(const key of ['cloudEnabled','manualAuraCloudEnabled','novaOllamaCloudEnabled','requirePositiveExpectedValueForRevenueMissions','financialCommitmentRequiresOperatorApproval','disallowUnboundedRetries','disallowUnboundedAgentSpawn'])if(key in patch){if(typeof patch[key]!=='boolean')throw new Error(`ECONOMIC_POLICY_BOOLEAN_REQUIRED:${key}`);next[key]=patch[key];}
     // A cap is a finite amount >= 0, or null to turn that cap off.
     for(const key of ['dailyCloudUsd','monthlyCloudUsd','maxCloudUsdPerTask'])if(key in patch){if(patch[key]!==null&&(typeof patch[key]!=='number'||!Number.isFinite(patch[key])||patch[key]<0))throw new Error(`ECONOMIC_POLICY_NUMBER_INVALID:${key}`);next[key]=patch[key];}
+    if('maxAutonomousCloudCallsPer15m' in patch){
+      const limit=patch.maxAutonomousCloudCallsPer15m;
+      if(limit!==null&&(!Number.isInteger(limit)||limit<1||limit>10000))throw new Error('ECONOMIC_POLICY_AUTONOMOUS_CALL_LIMIT_INVALID');
+      next.maxAutonomousCloudCallsPer15m=limit;
+    }
     for(const key of ['warningAtPercent','hardStopAtPercent'])if(key in patch){if(typeof patch[key]!=='number'||!Number.isFinite(patch[key])||patch[key]<0)throw new Error(`ECONOMIC_POLICY_NUMBER_INVALID:${key}`);next[key]=patch[key];}
     if(next.warningAtPercent>next.hardStopAtPercent||next.hardStopAtPercent>100)throw new Error('ECONOMIC_POLICY_PERCENT_INVALID');
     atomicWriteJson(this.policyFile,next);this.policy=next;this.events.append({stream:'economic',type:'economic.policy_updated',actor,data:this.policy});return this.snapshot();
@@ -72,9 +80,21 @@ export class EconomicGovernor {
     if(headroom.dailyUsd!=null&&estimate>headroom.dailyUsd)return {allowed:false,reason:'DAILY_BUDGET_LIMIT',headroomUsd:headroom.dailyUsd};
     if(headroom.monthlyUsd!=null&&estimate>headroom.monthlyUsd)return {allowed:false,reason:'MONTHLY_BUDGET_LIMIT',headroomUsd:headroom.monthlyUsd};
     if(this.policy.requirePositiveExpectedValueForRevenueMissions&&expectedValueUsd!==null&&safeNumber(expectedValueUsd,0)<estimate)return {allowed:false,reason:'NEGATIVE_EXPECTED_VALUE'};
+    // Durable circuit breaker: a graph can keep spending even when the operator deliberately removes
+    // daily/monthly/per-call USD ceilings. Count successful reservations, not merely provider replies,
+    // including calls whose outcome later became unknown. Single-writer runtime serializes reservations.
+    const autonomous=purpose==='nova-ollama-cloud';
+    const cutoff=Date.now()-15*60_000;
+    const recent=(Array.isArray(this.state.autonomousCloudCalls)?this.state.autonomousCloudCalls:[])
+      .filter(at=>Number.isFinite(at)&&at>cutoff&&at<=Date.now());
+    const burstLimit=this.policy.maxAutonomousCloudCallsPer15m;
+    if(autonomous&&burstLimit!=null&&recent.length>=burstLimit)
+      return {allowed:false,reason:'AUTONOMOUS_CLOUD_BURST_LIMIT',limit:burstLimit,windowMinutes:15};
     const reservationId=makeId('costres');
     this.state.reservations[reservationId]={reservationId,missionId,taskId,estimatedUsd:estimate,expectedValueUsd,purpose,...(metadata?{metadata}:{}),createdAt:nowIso()};
-    this.state.reservedUsd+=estimate;this.#persist();
+    this.state.reservedUsd+=estimate;
+    if(autonomous)this.state.autonomousCloudCalls=[...recent,Date.now()];
+    this.#persist();
     this.events.append({stream:'economic',type:'cloud.cost_reserved',entityId:reservationId,actor:'economic-governor',data:this.state.reservations[reservationId]});
     const after=[headroom.dailyUsd,headroom.monthlyUsd].filter(v=>v!=null).map(v=>v-estimate);
     return {allowed:true,reservationId,estimatedUsd:estimate,headroomAfterUsd:after.length?Math.min(...after):null};
@@ -187,7 +207,9 @@ export class EconomicGovernor {
       today:sum(today),month:sum(month),lastHourUsd,
       pending:{count:pendingCount,usd:pendingUsd},unknown,
       governor:{dailySpentUsd:this.state.dailySpentUsd,monthlySpentUsd:this.state.monthlySpentUsd,reservedUsd:this.state.reservedUsd},
-      policy:{dailyCloudUsd:this.policy.dailyCloudUsd,monthlyCloudUsd:this.policy.monthlyCloudUsd,maxCloudUsdPerTask:this.policy.maxCloudUsdPerTask,cloudEnabled:this.policy.cloudEnabled},
+      policy:{dailyCloudUsd:this.policy.dailyCloudUsd,monthlyCloudUsd:this.policy.monthlyCloudUsd,maxCloudUsdPerTask:this.policy.maxCloudUsdPerTask,cloudEnabled:this.policy.cloudEnabled,maxAutonomousCloudCallsPer15m:this.policy.maxAutonomousCloudCallsPer15m},
+      autonomousCloudCallsLast15m:(Array.isArray(this.state.autonomousCloudCalls)?this.state.autonomousCloudCalls:[]).filter(at=>Number.isFinite(at)&&at>Date.now()-15*60_000).length,
+      billingVerification:'UNRECONCILED_ESTIMATE_FROM_PROVIDER_TOKENS_AND_CONFIGURED_OR_REFERENCE_RATE',
     };
   }
   // Fills the tally from the ledger once (history before the tally existed). Events at or after the cutoff are
