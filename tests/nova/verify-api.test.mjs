@@ -104,3 +104,26 @@ test('non-local judge endpoint cannot become a paid side channel through OLLAMA_
   assert.ok(urls.length>0);
   assert.ok(urls.every(url=>url.startsWith('http://127.0.0.1:11434/')));
 });
+
+
+test('uncited claims are checked against all supplied excerpts and cannot silently pass unjudged', async () => {
+  const observed = [];
+  const r = await verifyAnswer({
+    answer: 'The version is 3.14.8.',
+    evidence: ['Version 3.14.8.', 'Release notes match version 3.14.8.'],
+  },{
+    env:{},
+    fetchImpl:async(url,opts)=>{
+      const payload=JSON.parse(opts.body);
+      observed.push(payload.messages?.[1]?.content||'');
+      return new Response(JSON.stringify({choices:[{message:{content:
+        '{"verdicts":[{"id":"C0","verdict":"supported","why":"both excerpts support version 3.14.8"}]}'}}]}));
+    },
+  });
+  assert.equal(r.claims,1);
+  assert.equal(r.judged,1);
+  assert.equal(r.verdict,'SUPPORTED_BY_SUPPLIED_EVIDENCE');
+  assert.equal(r.ok,true);
+  assert.match(observed[0], /\[#1\]/);
+  assert.match(observed[0], /\[#2\]/);
+});
