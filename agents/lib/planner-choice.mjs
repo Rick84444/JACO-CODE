@@ -118,22 +118,31 @@ export async function testPlannerModel({ provider, model }, { env = process.env,
   if (!choice || !(choice.models.includes(model) || (choice.dynamic && model))) throw new Error(`PLANNER_MODEL_UNKNOWN:${provider}/${model}`);
   const kind = nonTextModelKind(model);
   if (kind) return { ok: false, provider, model, latencyMs: 0, error: `PLANNER_MODEL_NOT_TEXT:${kind}` };
-  const key = choice.keyEnv ? credential(choice.keyEnv, { env }) : 'ollama';
-  if (!key) throw new Error(`PLANNER_KEY_MISSING:${choice.keyEnv}`);
+  const key = choice.keyEnv ? credential(choice.keyEnv, { env }) : '';
+  if (choice.keyEnv && !key) throw new Error(`PLANNER_KEY_MISSING:${choice.keyEnv}`);
+  // Aura owns the provider switch. Every potentially billable probe must use the same
+  // Continuum reservation as SEER and Nova; the previous path only budgeted ollama-cloud.
+  const endpoint = new URL(choice.url);
+  const loopback = endpoint.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname);
+  const cloudRelay = /(?:-cloud|:cloud)$/i.test(String(model));
+  const metered = !loopback && !/:free$/i.test(String(model));
   const started = Date.now();
   try {
+    if (loopback && cloudRelay) throw new Error('OLLAMA_CLOUD_RELAY_NOT_RESERVABLE');
+    if (!loopback && endpoint.protocol !== 'https:') throw new Error('PLANNER_ENDPOINT_UNTRUSTED');
+    if (metered && env.JACO_ALLOW_PAID_MODELS !== '1') throw new Error('PAID_PROVIDER_DISABLED');
     const requestBody = { model, messages: [{ role: 'user', content: 'Reply with the single word OK.' }], max_tokens: 200 };
-    const cloudResult = provider === 'ollama-cloud'
-      ? await budgetedNovaOllamaCall({ provider: { model, url: choice.url, key }, requestBody,
+    const cloudResult = metered
+      ? await budgetedNovaOllamaCall({ provider: { name: provider, model, url: choice.url, key }, requestBody,
         runtimeUrl: env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000', token: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '',
         fetchImpl, signal: AbortSignal.timeout(timeoutMs) }) : null;
     const res = cloudResult?.response || await fetchImpl(choice.url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) },
       body: JSON.stringify(requestBody),
       signal: AbortSignal.timeout(timeoutMs),
     });
-    const data = cloudResult?.data || await res.json().catch(() => null);
+    const data = cloudResult?.data ?? await res.json().catch(() => null);
     const reply = data?.choices?.[0]?.message?.content ?? null;
     const latencyMs = Date.now() - started;
     if (!res.ok || !reply) return { ok: false, provider, model, latencyMs, status: res.status, error: String(data?.error?.message || 'no answer').slice(0, 300) };
