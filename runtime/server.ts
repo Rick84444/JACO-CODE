@@ -1707,6 +1707,9 @@ const notifyPhone = async (action) => {
       const uncertain = mission?.phase === 'INTERRUPTED' ||
         latest?.outcomeUnknown === true ||
         (latest?.ok === true && latest?.verified !== true);
+      // Confirm needs a verified receipt (VERIFIED_RECEIPT_REQUIRED); without one, offering it
+      // only produced an error when the operator clicked (2026-10-31).
+      const confirmable = status === 'AWAITING_VERIFICATION' && receipts.some((r: any) => r?.ok === true && r?.verified === true);
       items.push({
         id: `mission:${mission.id}`,
         kind: 'MISSION',
@@ -1714,13 +1717,15 @@ const notifyPhone = async (action) => {
         title: mission.goal || mission.id,
         status: 'REVIEW',
         risk: uncertain ? 'HIGH' : 'MEDIUM',
-        reason: status === 'AWAITING_VERIFICATION'
+        reason: confirmable
           ? 'JACO föreslår att uppdraget är klart. Kontrollera resultatet och bekräfta eller avsluta uppdraget.'
+          : status === 'AWAITING_VERIFICATION'
+            ? 'JACO föreslår att uppdraget är klart, men inget steg har ett verifierat kvitto. Det kan inte bekräftas. Låt JACO försöka igen eller avsluta uppdraget.'
           : uncertain
             ? 'Det är osäkert om den senaste ändringen genomfördes. Kontrollera vad som hände innan du väljer att fortsätta.'
             : 'Uppdraget har stannat. Kontrollera orsaken och välj om JACO ska fortsätta eller avsluta.',
         createdAt: mission.createdAt || mission.created_at || null,
-        actions: status === 'AWAITING_VERIFICATION' ? ['confirm','cancel'] : ['resume','cancel'],
+        actions: confirmable ? ['confirm','cancel'] : ['resume','cancel'],
         details: {
           missionId: mission.id,
           phase: mission.phase || status,

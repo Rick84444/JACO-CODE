@@ -60,6 +60,7 @@ import { loadCognitiveCapsule, assertCognitiveCapsuleTask } from './lib/cognitiv
 import { digest } from './lib/claim-check.mjs';
 import { skillIdOfGoal, fetchSkill, fetchSkillList } from './lib/skills.mjs';
 import { STRATEGIC_AGENT_INSTRUCTIONS, readStrategicContext, workerStrategicPrompt } from './lib/strategic-context.mjs';
+import { readAuraServiceHealth } from './lib/aura-service-health.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = process.env.NOVA_STATE_DIR || join(__dirname, '.agent-state');
@@ -2104,17 +2105,33 @@ async function detectSurfaces(state) {
   return { ok: true, observed: true, surfaces: { ...state.surfaces } };
 }
 
-async function runHealthCheck(state) {
-  log("info", "health", "Checking all workers...");
-  const results = await workerTools.healthCheckAll();
-  let healthy = 0, degraded = 0;
-  for (const [worker, result] of Object.entries(results)) {
+// The local runtime decides the outcome: Core must answer its authenticated identity API and
+// Workplace must report READY. Core's /health is the GUI fallback page, so it proves nothing.
+// The remote paid A2A skill workers are optional and only reported; when all twelve were
+// unreachable every "JACO Core health-check" failed although Core was up (2026-10-31).
+export const REQUIRED_HEALTH_SERVICES = ['core', 'workplace'];
+const coreIdentityStatus = () => runtime.identity()
+  .then(id => typeof id?.product === 'string' ? 'READY (identity)' : 'UNVERIFIED (identity)')
+  .catch(error => `DOWN (${String(error?.message || error).slice(0, 80)})`);
+export async function runHealthCheck(state, {
+  readCore = coreIdentityStatus, readServices = readAuraServiceHealth, checkWorkers = () => workerTools.healthCheckAll(),
+} = {}) {
+  log("info", "health", "Checking local runtime and workers...");
+  const [core, probed, workers] = await Promise.all([readCore(), readServices(), checkWorkers()]);
+  const services = { core, ...probed };
+  let healthy = 0;
+  for (const [worker, result] of Object.entries(workers)) {
     state.workerStatus[worker] = { ok: result.ok, checkedAt: Date.now() };
-    if (result.ok) healthy++; else degraded++;
+    if (result.ok) healthy++;
   }
-  log(degraded === 0 ? "ok" : "warn", "health", `${healthy}/${SKILLS.length} healthy`);
+  const down = REQUIRED_HEALTH_SERVICES.filter(name => !String(services[name] || '').startsWith('READY'));
+  log(down.length ? "warn" : "ok", "health", `runtime ${down.length ? `DOWN: ${down.join(',')}` : 'READY'}; workers ${healthy}/${Object.keys(workers).length} healthy`);
   state.lastHealthCheck = Date.now();
-  return { ok: degraded === 0, observed: true, workers: results, ...(degraded ? { error: "WORKERS_DEGRADED" } : {}) };
+  return {
+    ok: down.length === 0, observed: true, services, required: REQUIRED_HEALTH_SERVICES,
+    workers, workersHealthy: healthy,
+    ...(down.length ? { error: `RUNTIME_SERVICES_DOWN:${down.join(',')}` } : {}),
+  };
 }
 
 async function runRevenueCheck(state) {
