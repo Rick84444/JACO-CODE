@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { dirname, join, resolve } from 'node:path';
 import { readStartupEvidence } from '../../../agents/lib/startup-evidence.mjs';
 import { inspectNovaMissionReceipt } from './nova-receipt-inspector.mjs';
-import { submitAuraAcceptance } from './aura-operator-command.mjs';
+import { submitAuraAcceptance, waitForAuraReadiness } from './aura-operator-command.mjs';
 const execFileAsync = promisify(execFile);
 
 export class SystemControl {
@@ -140,6 +140,10 @@ export class SystemControl {
   // Canonical Aura/SEER operator goal. Never dispatch directly to Nova.
   async startAuraAcceptance() {
     return submitAuraAcceptance(this.core);
+  }
+
+  async auraReadiness(options) {
+    return waitForAuraReadiness(this.core, options);
   }
 
   async verifyNovaMission(goalSha256) {

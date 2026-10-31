@@ -212,3 +212,23 @@ test('8192 local context preserves Aura output capacity while bounding prompt', 
   assert.ok(budget.system.length + budget.user.length <= budget.inputCharBudget + 64);
   assert.match(budget.user, /LATEST$/);
 });
+
+test('governor goal context is relevance-ordered and budgeted, never the raw pasted documents', async () => {
+  const { compactGovernorGoals, clipGoalStatement } = await import('../src/seer-model-provider.mjs');
+  const contract = 'Master Behavior Contract '.repeat(2000);
+  const goals = [
+    { id: 'contract-a', priority: 1, statement: contract },
+    { id: 'contract-b', priority: 1, statement: contract },
+    { id: 'aura-goal', priority: 1, statement: 'Aura: assess the real local Windows JACO runtime. ' + 'Observe. '.repeat(400) },
+    ...Array.from({ length: 7 }, (_, i) => ({ id: `g${i}`, priority: 2, statement: `goal ${i}` })),
+  ];
+  const compact = compactGovernorGoals(goals, { focusIds: ['aura-goal', null] });
+  assert.equal(compact[0].id, 'aura-goal');
+  assert.equal(compact.length, 6);
+  assert.ok(compact[0].statement.length <= 1500);
+  assert.match(compact[0].statement, /^Aura: assess/);
+  assert.ok(compact.slice(1).every(goal => goal.statement.length <= 200));
+  const chars = compact.reduce((sum, goal) => sum + goal.statement.length, 0);
+  assert.ok(chars < 2600, `goal block is ${chars} chars, raw was ${goals.reduce((s, g) => s + g.statement.length, 0)}`);
+  assert.equal(clipGoalStatement('a\n\n b', 10), 'a b');
+});

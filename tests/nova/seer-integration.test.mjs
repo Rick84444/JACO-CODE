@@ -30,7 +30,9 @@ test('real SEER forwards Nova context, routes local inference and disables paid 
     const context=await (await fetch(base+'/cortex/context/claude',{headers})).json();assert.equal(context.nova.mission.id,'m1');
     const proxy=await (await fetch(base+'/cortex/nova/current',{headers})).json();assert.equal(proxy.mission.goal,'local fixture');
     const ask=()=>fetch(base+'/cortex/brain',{method:'POST',headers,body:JSON.stringify({system:'rules',user:'mission receipt',max_tokens:999999})});
-    const brain=await (await ask()).json();assert.equal(brain.ok,true);assert.equal(brain.provider,'litert');assert.equal(brain.model,'test-gemma');assert.equal(brain.local,true);assert.equal(seen.max_tokens,2048);assert.equal(seen.model,'test-gemma');
+    const brain=await (await ask()).json();assert.equal(brain.ok,true);assert.equal(brain.provider,'litert');assert.equal(brain.model,'test-gemma');assert.equal(brain.local,true);
+    // On-device models get a context budget: output is held to 20% of the default 8192-token window.
+    assert.equal(seen.max_tokens,1638);assert.equal(seen.model,'test-gemma');
     assert.match(seen.messages[0].content,/\[JACO ACTIVE MEMORY\]/);
 
     const ready=await (await fetch(base+'/cortex/brain',{

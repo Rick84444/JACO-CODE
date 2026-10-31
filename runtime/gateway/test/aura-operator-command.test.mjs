@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { submitAuraAcceptance, safeAuraAcceptanceLines, AURA_ACCEPTANCE_GOAL } from '../src/aura-operator-command.mjs';
+import { submitAuraAcceptance, safeAuraAcceptanceLines, safeAuraNotReadyLines, waitForAuraReadiness, AURA_ACCEPTANCE_GOAL } from '../src/aura-operator-command.mjs';
 
 test('Aura sends canonical fixed operator goal over local Core and never targets Nova API',async()=>{
   const calls=[];
@@ -105,4 +105,46 @@ test('Windows Aura-only profile retires direct operator bypass routes but not No
   assert.match(nova,/JACO_AURA_ONLY_OPERATOR === '1'/);
   assert.match(win,/JACO_AURA_ONLY_OPERATOR = '1'/);
   assert.match(nova,/new MissionClient\(CONFIG.runtimeUrl/);
+});
+
+const readinessReceipt = (seer = { required: true, reachable: true, authenticated: true }) =>
+  ({ success: true, schema: 'jaco.aura-readiness/v1', ready: true, core: { reachable: true, authenticated: true }, seer });
+const fakeClock = () => { let t = 0; return { now: () => t, sleep: async ms => { t += ms; } }; };
+
+test('cold start: readiness waits for Core and SEER before reporting ready', async () => {
+  const replies = [
+    () => { throw new Error('JACO_CORE_UNAVAILABLE: fetch failed'); },
+    () => readinessReceipt({ required: true, reachable: false, authenticated: false }),
+    () => readinessReceipt({ required: true, reachable: true, authenticated: false }),
+    () => readinessReceipt(),
+  ];
+  const paths = [];
+  const core = { baseUrl: 'http://127.0.0.1:3000', async request(path, options) {
+    paths.push([path, options.method]); return replies[paths.length - 1]();
+  } };
+  const result = await waitForAuraReadiness(core, { timeoutMs: 60000, intervalMs: 3000, ...fakeClock() });
+  assert.deepEqual(result, { ready: true, attempts: 4 });
+  assert.ok(paths.every(([path, method]) => path === '/api/aura/workbench/readiness' && method === 'GET'));
+});
+
+test('readiness timeout is NOT_READY with a bounded, enumerated blocker', async () => {
+  let calls = 0;
+  const core = { baseUrl: 'http://localhost:3000', async request() { calls++; return readinessReceipt({ required: true, reachable: true, authenticated: false }); } };
+  const result = await waitForAuraReadiness(core, { timeoutMs: 9000, intervalMs: 3000, ...fakeClock() });
+  assert.equal(result.ready, false);
+  assert.equal(result.reason, 'SEER_AUTH_REJECTED');
+  assert.equal(calls, 4);
+  const lines = safeAuraNotReadyLines({ reason: 'C:/Users/secret' }).join('\n');
+  assert.match(lines, /NOT_READY/);
+  assert.match(lines, /Blocker: `UNVERIFIED`/);
+  assert.doesNotMatch(lines, /secret/);
+});
+
+test('readiness classifies auth rejection, missing probe and forged receipts; Lite needs no SEER', async () => {
+  const run = reply => waitForAuraReadiness({ baseUrl: 'http://127.0.0.1:3000', async request() { return reply(); } }, { timeoutMs: 0, ...fakeClock() });
+  assert.equal((await run(() => { throw new Error('JACO_CORE_HTTP_401: OPERATOR_AUTH_REQUIRED'); })).reason, 'CORE_AUTH_REJECTED');
+  assert.equal((await run(() => { throw new Error('JACO_CORE_HTTP_404: NOT_FOUND'); })).reason, 'READINESS_PROBE_UNAVAILABLE');
+  assert.equal((await run(() => ({ success: true, schema: 'jaco.other/v1' }))).reason, 'READINESS_RECEIPT_INVALID');
+  assert.equal((await run(() => readinessReceipt({ required: false }))).ready, true);
+  await assert.rejects(waitForAuraReadiness({ baseUrl: 'http://10.0.0.2:3000', request: async () => readinessReceipt() }), /AURA_OPERATOR_LOOPBACK_REQUIRED/);
 });

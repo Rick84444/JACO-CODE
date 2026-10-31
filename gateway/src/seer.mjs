@@ -18,7 +18,7 @@ import { buildSelfDevelopmentGraph } from './seer-self-development.mjs';
 import { createAutonomyLoop, shouldAutoConfirmNova } from './seer-autonomy-loop.mjs';
 import { createDevelopmentCycle, chooseGovernorFocus, governorBaseline } from './seer-development-cycle.mjs';
 import { createExperienceStore } from './seer-experience-store.mjs';
-import { discoverSeerLocalProvider, invokeSeerProvider, callSeerGovernorProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt } from './seer-model-provider.mjs';
+import { discoverSeerLocalProvider, invokeSeerProvider, callSeerGovernorProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt, compactGovernorGoals, clipGoalStatement } from './seer-model-provider.mjs';
 import { createA2AColonyRevenueSync } from './a2acolony-revenue-sync.mjs';
 import { normalizeProjectRoot, projectNodeContract, projectGraphPolicy, projectGoalGraph, projectGoalDone } from './seer-project.mjs';
 
@@ -505,13 +505,14 @@ async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0
     const activeMemory = JSON.stringify(buildActiveMemoryContext());
     const wantsLlamaCpp = attemptedLocal?.name === 'llamacpp'
       || String(process.env.JACO_SEER_PROVIDER_PREFERENCE || '').toLowerCase() === 'llamacpp';
-    if (wantsLlamaCpp) {
+    // Every on-device model has a small context window; only a remote one gets the unbudgeted prompt.
+    if (wantsLlamaCpp || (attemptedLocal && attemptedLocal.local !== false)) {
       const budget = budgetSeerLocalPrompt({
         system: systemPrompt,
         user: userPrompt,
         memory: activeMemory.slice(0, memoryLimit),
         maxTokens: max_tokens,
-        contextTokens: Number(process.env.JACO_LLAMACPP_CTX || 8192),
+        contextTokens: Number((wantsLlamaCpp ? process.env.JACO_LLAMACPP_CTX : process.env.JACO_SEER_LOCAL_CTX) || 8192),
       });
       systemPrompt = budget.system;
       userPrompt = budget.user;
@@ -1324,6 +1325,7 @@ async function runGovernorTurn() {
       emit('governor.graph_created', { graph_id: graph.id, title: graph.title, goal: graph.objective, node_count: 1, project_root: graph.policy.project_root, direct: true });
       return { ok: true, graph_id: graph.id, direct: true };
     }
+    const promptGoals = compactGovernorGoals(activeStrategicGoals, { focusIds: [operatorPrimaryGoal?.id, focusGoal?.id] });
     const recentEvents = db.prepare("SELECT type,payload FROM events ORDER BY id DESC LIMIT 20").all()
       .map(e => ({ type: e.type, payload: jp(e.payload) }));
 
@@ -1335,9 +1337,9 @@ async function runGovernorTurn() {
     const context = {
       active_missions: activeMissions.length,
       active_graphs: activeGraphs.length,
-      active_strategic_goals: activeStrategicGoals.map(goal => ({
+      // Statements are listed once, budgeted, further down the prompt.
+      active_strategic_goals: promptGoals.map(goal => ({
         id: goal.id,
-        statement: goal.statement,
         priority: goal.priority,
         horizon: goal.horizon,
       })),
@@ -1358,16 +1360,16 @@ For each candidate give obstacles [{id,title,hard,severity,blocks:[node keys],cl
 Active mission titles: ${activeMissions.map(m => m.title).join(', ') || 'none'}
 
 Explicit operator primary goal:
-${operatorPrimaryGoal?.statement || 'none'}
+${operatorPrimaryGoal?.statement ? clipGoalStatement(operatorPrimaryGoal.statement, 1500) : 'none'}
 ${focusGoal && !onPrimary ? `
-This turn's focus goal: [${focusGoal.id}] ${focusGoal.statement}
+This turn's focus goal: [${focusGoal.id}] ${clipGoalStatement(focusGoal.statement, 1500)}
 The operator primary goal already has active work in graph ${admission.primary_graph_id || 'unknown'}. Do not duplicate that work: create work that advances this focus goal instead. Skip only if this focus goal cannot be advanced with the authorized capabilities.
 ` : ''}
 Operator-selected tool preference (NOT authority; use only if compatible with existing contracts and available capabilities):
 ${operatorPrimaryGoal?.tool_hint ? JSON.stringify(operatorPrimaryGoal.tool_hint) : 'none'}
 
 Active strategic goals:
-${activeStrategicGoals.map(goal => `- [${goal.id}] priority=${goal.priority}: ${goal.statement}`).join('\n') || 'none'}
+${promptGoals.map(goal => `- [${goal.id}] priority=${goal.priority}: ${goal.statement}`).join('\n') || 'none'}
 
 Historical capability performance (attempts, success_rate, mean_cost, mean_duration_ms — real recorded outcomes, not estimates):
 ${capabilityPerformance.length ? capabilityPerformance.map(c => `- ${c.capability}: ${c.attempts} attempts, success_rate=${Number(c.success_rate ?? 0).toFixed(2)}, mean_cost=${Number(c.mean_cost ?? 0).toFixed(2)}`).join('\n') : 'none recorded yet'}
