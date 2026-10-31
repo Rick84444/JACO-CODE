@@ -47,11 +47,9 @@ export function auraProviderPrices(env = process.env) {
   return configured;
 }
 
-// A model nobody wrote a price for used to be unusable (AURA_PROVIDER_MODEL_NOT_PRICED), so every new
-// provider needed hand-written JSON before its first answer. Now: a configured price wins; ":free"
-// models cost nothing; anything else is accounted at a deliberately high reference price (USD per 1M
-// tokens, override with JACO_AURA_DEFAULT_PRICE_JSON). Reserving and settling at a worst-case price
-// keeps the budget safe: the real bill can only be lower.
+// A model without a configured provider rate is accounted using a reference rate (USD per
+// million tokens). This is NOT a verified provider invoice or a guaranteed upper bound:
+// a provider can charge more or less. Persist the source for later reconciliation.
 export const REFERENCE_PRICE = { input: 3, output: 15 };
 export function modelPrice(providerId, model, env = process.env) {
   const configured = auraProviderPrices(env)[`${providerId}/${model}`];
@@ -107,7 +105,8 @@ export async function manualAuraProviderCompletion({ providerId, model, system, 
   let reservation = null;
   if (!local) {
     const estimate = (bytes * price.input + MAX_OUTPUT_TOKENS * price.output) / 1e6;
-    const auth = economic.authorizeCloud({ estimatedUsd: estimate, purpose: 'manual-aura-chat', metadata: { providerId, model } });
+    const auth = economic.authorizeCloud({ estimatedUsd: estimate, purpose: 'manual-aura-chat',
+      metadata: { providerId, model, priceSource: configured ? 'configured' : price.source, providerInvoiceVerified: false } });
     if (!auth.allowed) throw new Error(`AURA_CLOUD_DENIED:${auth.reason}`);
     reservation = auth.reservationId;
   }
@@ -122,7 +121,8 @@ export async function manualAuraProviderCompletion({ providerId, model, system, 
     }
     const costUsd = (input * price.input + output * price.output) / 1e6;
     economic.settleCloud(reservation, costUsd, result.usage);
-    return { text: result.content, provider: providerId, model: result.model || model, local: false, costStatus: 'SETTLED', costUsd };
+    return { text: result.content, provider: providerId, model: result.model || model, local: false, costStatus: 'SETTLED', costUsd,
+      priceSource: configured ? 'configured' : price.source, providerInvoiceVerified: false };
   } catch (error) {
     if (reservation) {
       if (NOT_BILLED_FAILURE.test(String(error?.message || ''))) economic.releaseReservation(reservation, 'provider refused the call; no inference');
@@ -143,7 +143,8 @@ export async function manualAuraOllamaCompletion({ model, system, user, temperat
   // Bytes bound the number of input tokens for these text prompts. Reserve the
   // worst case before sending; missing usage or a transport error stays unknown.
   const estimatedUsd = ollamaCloudCostUsd(model, promptBytes, MAX_OUTPUT_TOKENS, env);
-  const authorization = economic.authorizeCloud({ estimatedUsd, purpose: 'manual-aura-chat' });
+  const authorization = economic.authorizeCloud({ estimatedUsd, purpose: 'manual-aura-chat',
+    metadata: { providerId: 'ollama-cloud', model, priceSource: 'configured', providerInvoiceVerified: false } });
   if (!authorization.allowed) throw new Error(`AURA_CLOUD_DENIED:${authorization.reason}`);
 
   try {
@@ -159,7 +160,8 @@ export async function manualAuraOllamaCompletion({ model, system, user, temperat
     }
     const actualUsd = ollamaCloudCostUsd(model, inputTokens, outputTokens, env);
     economic.settleCloud(authorization.reservationId, actualUsd, result.usage);
-    return { text: result.content, provider: 'ollama', model, local: false, costStatus: 'SETTLED', costUsd: actualUsd };
+    return { text: result.content, provider: 'ollama', model, local: false, costStatus: 'SETTLED', costUsd: actualUsd,
+      priceSource: 'configured', providerInvoiceVerified: false };
   } catch (error) {
     if (/^PROVIDER_HTTP_402:/.test(String(error?.message || ''))) {
       economic.releaseReservation(authorization.reservationId, 'provider subscription required; no inference');
