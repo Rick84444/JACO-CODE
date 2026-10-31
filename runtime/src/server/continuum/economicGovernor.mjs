@@ -106,7 +106,10 @@ export class EconomicGovernor {
     // Durable circuit breaker: a graph can keep spending even when the operator deliberately removes
     // daily/monthly/per-call USD ceilings. Count successful reservations, not merely provider replies,
     // including calls whose outcome later became unknown. Single-writer runtime serializes reservations.
-    const autonomous=purpose==='nova-ollama-cloud';
+    // Also count native Gemini Continuum routing as autonomous work. Otherwise the
+    // historical 2600-call SEER/Continuum loop could bypass the 12/15m emergency fuse.
+    const autonomous=purpose==='nova-ollama-cloud' ||
+      (purpose!=='manual-aura-chat' && metadata?.providerId==='gemini');
     const geminiQuotaCheck = metadata?.providerId==='gemini'
       ? inspectGeminiQuota(this.state,this.geminiQuotaProfile,
           {model:metadata.model,inputTokenBudget:metadata?.auraCostQuote?.maxInputTokens ?? metadata?.promptBytes}) : null;
