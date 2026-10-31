@@ -632,6 +632,18 @@ async function createNovaGraphMission(spec) {
   return novaMission;
 }
 
+// The explicit end of a strategic goal: its open graphs stop (dispatch reconciliation then stops their
+// Nova missions) and it is no longer the operator's primary goal. History stays as it is.
+function cancelStrategicGoal(goalId, reason = 'Operator ended the strategic goal') {
+  if (!strategy.goals.get(goalId)) throw new Error('STRATEGIC_GOAL_NOT_FOUND');
+  const graphs = missionGraph.list().filter(graph => graph.policy?.strategic_goal_id === goalId && ['ACTIVE','NEEDS_REPLAN'].includes(graph.status))
+    .map(graph => missionGraph.cancel(graph.id, { reason, actor: 'operator' }).id);
+  const goal = strategy.goals.cancel(goalId);
+  const primary = memory.get('seer.operator_primary_goal');
+  if (primary?.id === goalId) memory.set('seer.operator_primary_goal', null, 'operator');
+  return { goal, cancelledGraphs: graphs };
+}
+
 async function cancelNovaGraphMission(id) {
   const response = await fetch(`${process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000'}/api/connected/nova/missions/${encodeURIComponent(id)}/cancel`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-gateway-token': process.env.GATEWAY_TOKEN || TOKEN },
@@ -887,6 +899,12 @@ const server = createServer(async (req, res) => {
     if (GET && path === '/cortex/strategy/state') return json(res, strategy.state());
     if (GET && path === '/cortex/strategy/goals') return json(res, strategy.goals.list(url.searchParams.get('status') || 'active'));
     if (POST && path === '/cortex/strategy/goals') return json(res, strategy.goals.create(await body(req)), 201);
+    const goalCancelMatch = path.match(/^\/cortex\/strategy\/goals\/([^/]+)\/cancel$/);
+    if (POST && goalCancelMatch) {
+      const payload = await body(req);
+      if (payload.confirm !== true) return json(res, { error: 'GOAL_CANCEL_CONFIRM_REQUIRED' }, 400);
+      return json(res, cancelStrategicGoal(decodeURIComponent(goalCancelMatch[1]), payload.reason));
+    }
     if (POST && path === '/cortex/strategy/start') {
       const payload = await body(req);
       const statement = String(payload.goal || payload.statement || '').trim();
@@ -1026,10 +1044,12 @@ const server = createServer(async (req, res) => {
       if (GET && operation === 'ready') return json(res, missionGraph.ready(graphId));
       if (POST && operation === 'cancel') {
         const payload = await body(req);
-        const graph = missionGraph.cancel(graphId, {reason:payload.reason || 'Operator closed the goal from Aura',actor:'operator'});
-        if (graph.policy?.strategic_goal_id && strategy.goals.get(graph.policy.strategic_goal_id)) strategy.goals.cancel(graph.policy.strategic_goal_id);
-        const primary = memory.get('seer.operator_primary_goal');
-        if (primary?.id && primary.id === graph.policy?.strategic_goal_id) memory.set('seer.operator_primary_goal', null, 'operator');
+        // Stopping work is not abandoning the goal: cancelling an A2A task also cancelled the operator's
+        // Aura goal and cleared the primary goal (2026-10-31). The goal ends only on an explicit
+        // cancel_goal here or through POST /cortex/strategy/goals/:id/cancel.
+        const graph = missionGraph.cancel(graphId, {reason:payload.reason || 'Operator stopped this work from Aura',actor:'operator'});
+        const goalId = graph.policy?.strategic_goal_id;
+        if (payload.cancel_goal === true && goalId && strategy.goals.get(goalId)) cancelStrategicGoal(goalId);
         return json(res, graph);
       }
       if (POST && operation === 'checkpoints') return json(res, missionGraph.checkpoint(graphId, await body(req)), 201);
