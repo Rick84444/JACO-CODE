@@ -1,5 +1,6 @@
 import { inspectShell } from './shell-inspector.mjs';
-export function createToolHandlers({ core, system, modelId, workplace = null }) {
+import { projectCognitiveContext, projectKnowledgeSearch, validatedKnowledgeNote } from './cognitive-context.mjs';
+export function createToolHandlers({ core, system, modelId, workplace = null, env = process.env }) {
   return Object.freeze({
     jaco_attachment_read: async a=>core.attachmentRead(a),
     jaco_identity: async()=>core.identity(), jaco_system_status:async()=>system.status(), jaco_system_health:async()=>system.health(), jaco_system_activate:async({profile='full'}={})=>system.activate(profile), jaco_system_update:async()=>system.update(),
@@ -8,6 +9,26 @@ export function createToolHandlers({ core, system, modelId, workplace = null }) 
     jaco_shell_inspect:async({operation})=>inspectShell(operation,system),
     jaco_mcp_catalog:async()=>core.mcpCatalog(),
     jaco_mcp_read:async({server,tool,args={}})=>core.mcpRead({server,tool,args}),
+    // The existing Continuum is the single runtime/memory authority, not ChatGPT's chat history.
+    jaco_cognitive_context:async()=> {
+      const [continuity,economic,health]=await Promise.all([
+        core.continuityEnvelope(),core.economicSnapshot(),system.health(),
+      ]);
+      return projectCognitiveContext({continuity,economic,health});
+    },
+    jaco_knowledge_search:async({query,limit=10})=>
+      projectKnowledgeSearch(await core.knowledgeSearch(query,Math.min(10,limit))),
+    jaco_knowledge_note:async({topic,note})=>{
+      if(env.JACO_MCP_ALLOW_KNOWLEDGE_WRITE!=='1')throw Error('JACO_KNOWLEDGE_WRITE_DISABLED');
+      const body=validatedKnowledgeNote({topic,note});
+      const response=await core.knowledgeNote(body);
+      if(response?.knowledge?.verificationStatus!=='UNVERIFIED' ||
+          response?.knowledge?.kind!=='assistant-note')throw Error('JACO_KNOWLEDGE_NOTE_RECEIPT_INVALID');
+      return {schema:'jaco.chatgpt-knowledge-note-receipt/v1',
+        id:response.knowledge.id,revision:response.knowledge.revision,
+        verificationStatus:'UNVERIFIED',reusable:false,
+        authority:'canonical-continuum-knowledge-store',promoted:false};
+    },
     jaco_connected_status:async()=>core.connectedStatus(), jaco_seer_live:async()=>core.seerLive(), jaco_seer_goal:async a=>core.seerGoal(a), jaco_mission_list:async({limit=100}={})=>core.missionList(limit), jaco_mission_tickets:async(a={})=>core.missionTickets(a), jaco_mission_tick:async()=>core.missionTick(),
     jaco_providers:async()=>core.providers(), jaco_provider_register:async a=>core.providerRegister(a), jaco_provider_probe:async({id})=>core.providerProbe(id), jaco_aura_provider_chat:async a=>core.auraProviderChat(a),
     jaco_wordpress_status:async()=>core.wordpressStatus(), jaco_wordpress_pages:async(a={})=>core.wordpressPages(a), jaco_wordpress_update_page:async a=>core.wordpressUpdate(a), jaco_wordpress_improve:async a=>core.wordpressImprove(a), jaco_wordpress_apply_css:async a=>core.wordpressCss({...a,modelId}),
@@ -21,4 +42,4 @@ export function createToolHandlers({ core, system, modelId, workplace = null }) 
     }
   });
 }
-export const JACO_MCP_TOOL_NAMES=Object.freeze(['jaco_attachment_read','jaco_identity','jaco_system_status','jaco_system_health','jaco_system_activate','jaco_system_update','jaco_hands_off_status','jaco_browser_targets','jaco_browser_attach','jaco_browser_survey','jaco_nova_begin','jaco_nova_target','jaco_mandates','jaco_relay_action','jaco_browser_receipts','jaco_shell_inspect','jaco_mcp_catalog','jaco_mcp_read','jaco_connected_status','jaco_seer_live','jaco_seer_goal','jaco_mission_list','jaco_mission_tickets','jaco_mission_tick','jaco_providers','jaco_provider_register','jaco_provider_probe','jaco_aura_provider_chat','jaco_wordpress_status','jaco_wordpress_pages','jaco_wordpress_update_page','jaco_wordpress_improve','jaco_wordpress_apply_css','jaco_a2a_discover','jaco_a2a_outbound','jaco_workplace_status','jaco_workplace_agents','jaco_workplace_inbox','jaco_workplace_post']);
+export const JACO_MCP_TOOL_NAMES=Object.freeze(['jaco_attachment_read','jaco_identity','jaco_system_status','jaco_system_health','jaco_system_activate','jaco_system_update','jaco_hands_off_status','jaco_browser_targets','jaco_browser_attach','jaco_browser_survey','jaco_nova_begin','jaco_nova_target','jaco_mandates','jaco_relay_action','jaco_browser_receipts','jaco_shell_inspect','jaco_mcp_catalog','jaco_mcp_read','jaco_cognitive_context','jaco_knowledge_search','jaco_knowledge_note','jaco_connected_status','jaco_seer_live','jaco_seer_goal','jaco_mission_list','jaco_mission_tickets','jaco_mission_tick','jaco_providers','jaco_provider_register','jaco_provider_probe','jaco_aura_provider_chat','jaco_wordpress_status','jaco_wordpress_pages','jaco_wordpress_update_page','jaco_wordpress_improve','jaco_wordpress_apply_css','jaco_a2a_discover','jaco_a2a_outbound','jaco_workplace_status','jaco_workplace_agents','jaco_workplace_inbox','jaco_workplace_post']);

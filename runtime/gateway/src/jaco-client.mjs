@@ -48,6 +48,20 @@ export class JacoCoreClient {
   relayAction(args) { return this.request('/api/relay/action', { method: 'POST', body: JSON.stringify(args) }); }
   browserReceipts(limit = 20) { return this.request(`/api/browser/hands-off/receipts?limit=${encodeURIComponent(limit)}`); }
 
+  // Authenticated, bounded Continuum access. Never route memory through public GitHub.
+  continuityEnvelope() { return this.request('/api/continuum/continuity/model-envelope'); }
+  economicSnapshot() { return this.request('/api/continuum/economic'); }
+  knowledgeSearch(query,limit=10) {
+    const q=new URLSearchParams({q:String(query),limit:String(Math.min(10,Math.max(1,limit)))});
+    return this.request('/api/continuum/knowledge?'+q);
+  }
+  // Only exposed behind a second opt-in in the MCP handler; store notes as
+  // UNVERIFIED knowledge, never a trusted Skill or a verified executable fact.
+  knowledgeNote(body) {
+    return this.request('/api/continuum/knowledge',{
+      method:'POST',body:JSON.stringify(body),
+    });
+  }
   connectedStatus() { return this.request('/api/connected/status'); }
   seerLive() { return this.request('/api/seer/live'); }
   seerGoal(args) {

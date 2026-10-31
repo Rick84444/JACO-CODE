@@ -27,7 +27,7 @@ const client=new Client({name:'jaco-test-client',version:'1.0.0'});
 const transport=new StreamableHTTPClientTransport(new URL('http://test.local/mcp'),{fetch:(url,init)=>handler.fetch(new Request(url,init))});
 await client.connect(transport);
 const listed=await client.listTools();
-assert.equal(listed.tools.length,34);
+assert.equal(listed.tools.length,42);
 for (const required of ['jaco_identity','jaco_system_update','jaco_seer_goal','jaco_aura_provider_chat','jaco_wordpress_improve','jaco_a2a_discover','jaco_workplace_status','jaco_workplace_agents','jaco_workplace_inbox','jaco_workplace_post']) {
   assert.equal(listed.tools.some(t=>t.name===required),true,`missing ${required}`);
 }
@@ -35,4 +35,4 @@ assert.equal(listed.tools.some(t=>/evaluate|shell|exec|credential/i.test(t.name)
 const result=await client.callTool({name:'jaco_identity',arguments:{}});
 assert.match(JSON.stringify(result),/JACO Autonomus IDE/);
 await client.close();
-console.log('PASS MCP runtime: official SDK client/server negotiated 33 semantic tools and called JACO identity');
+console.log('PASS MCP runtime: official SDK client/server negotiated 42 scoped tools and called JACO identity');

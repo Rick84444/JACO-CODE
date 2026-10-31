@@ -23,7 +23,7 @@ const workplace = {
 };
 const h = createToolHandlers({ core, system, modelId:'test-model', workplace });
 
-assert.equal(JACO_MCP_TOOL_NAMES.length, 39);
+assert.equal(JACO_MCP_TOOL_NAMES.length, 42);
 assert.equal(JACO_MCP_TOOL_NAMES.some(n=>/evaluate|shell_exec|bash_shell|credential/i.test(n)), false);
 await h.jaco_identity();
 assert.equal((await h.jaco_system_health()).status,'READY');
