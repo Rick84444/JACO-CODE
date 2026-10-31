@@ -51,7 +51,7 @@ export function chooseGovernorFocus(graphs, { primary = null, goals = [], maxAct
   if (next) {
     return {
       allowed: true,
-      focus: { id: next.id, statement: clean(next.statement) },
+      focus: { id: next.id, statement: clean(next.statement), invariants: Array.isArray(next.invariants) ? [...next.invariants] : [] },
       primary: false,
       primary_graph_id: active.find(graph => graph.policy?.strategic_goal_id === primary.id)?.id || null,
     };

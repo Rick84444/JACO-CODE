@@ -10,7 +10,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, renameSync } from 'node:fs';
 import { buildAgentCard, joinWorkplace } from '../../agents/lib/workplace-session.mjs';
-import { createStrategicKernel, SEER_PURPOSE } from './seer-strategy.mjs';
+import { createStrategicKernel, SEER_PURPOSE, goalTaskScope } from './seer-strategy.mjs';
 import { createMissionGraph } from './seer-mission-graph.mjs';
 import { createMissionDispatcher } from './seer-mission-dispatch.mjs';
 import { STRATEGIC_AGENT_INSTRUCTIONS } from '../../agents/lib/strategic-context.mjs';
@@ -954,6 +954,7 @@ const server = createServer(async (req, res) => {
       memory.set('seer.operator_primary_goal', {
         id: goal.id,
         statement: goal.statement,
+        invariants: goal.invariants,
         activated_at: new Date().toISOString(),
         source: 'operator-start-prompt',
         tool_hint: toolHint,
@@ -1352,7 +1353,7 @@ async function runGovernorTurn() {
     const focusGoal = admission.focus || null;
     if (focusGoal && !onPrimary) emit('governor.focus_next_goal', { goal_id: focusGoal.id, primary_goal_id: operatorPrimaryGoal?.id || null, primary_graph_id: admission.primary_graph_id });
     // Project mode: the operator's instruction on their own repository is executed as given.
-    if (onPrimary && operatorPrimaryGoal?.project_root) {
+    if (onPrimary && operatorPrimaryGoal?.project_root && !focusGoal?.invariants?.includes('observation_only')) {
       if (projectGoalDone(missionGraph.list(), operatorPrimaryGoal.id)) {
         emit('governor.skipped', { allowed: false, reason: 'project_goal_verified', goal_id: operatorPrimaryGoal.id });
         return { ok: true, skipped: 'project_goal_verified' };
@@ -1558,7 +1559,7 @@ If no new work is needed (system already has enough active work), respond with: 
       return;
     }
 
-    const projectRoot = onPrimary ? operatorPrimaryGoal?.project_root || null : null;
+    const projectRoot = onPrimary && !focusGoal?.invariants?.includes('observation_only') ? operatorPrimaryGoal?.project_root || null : null;
     const graph = missionGraph.create({
       title: chosen.title,
       objective: chosen.goal,
@@ -1575,6 +1576,7 @@ If no new work is needed (system already has enough active work), respond with: 
         strategic_decision_id: decideResult.decision.id,
         strategic_prediction_id: decideResult.prediction?.id || null,
         strategic_capability: validCandidates.find(c => c.title === chosen.title)?.capability || 'novel',
+        ...goalTaskScope(focusGoal),
       },
       nodes: chosen.nodes.map(n => ({
         key: n.key,

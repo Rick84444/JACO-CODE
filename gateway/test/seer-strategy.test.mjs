@@ -11,6 +11,7 @@ import {
   updateBelief,
   createStrategicKernel,
   SEER_PURPOSE,
+  goalTaskScope,
   SEER_STARTUP_GOALS,
 } from '../src/seer-strategy.mjs';
 
@@ -79,4 +80,15 @@ test('fresh strategic kernel seeds canonical user-value A2A startup goal', () =>
   assert.ok(goal.invariants.includes('evidence_before_marketing_claim'));
   assert.equal(SEER_STARTUP_GOALS[0].id, goal.id);
   db.close();
+});
+
+// 2026-10-31: the missions of an observation-only Aura goal were allowed browser-click, mcp-write, github-create-repo,
+// vault-* and email-inbox. The goal now carries invariant observation_only and its graphs get only observing tasks.
+test('an observation-only goal scopes its graphs to observing tasks; other goals keep the default', () => {
+  const scoped = goalTaskScope({ invariants: ['operator_authority', 'observation_only'] }).allowedTasks;
+  for (const task of ['health-check', 'detect-surfaces', 'mcp-call']) assert.ok(scoped.includes(task), task);
+  for (const task of ['repo-list', 'repo-read', 'git-status', 'git-diff', 'windows-wmi-read', 'browser-click', 'browser-type', 'desktop-action', 'mcp-write', 'github-create-repo', 'vault-get-secret', 'secret-store', 'email-inbox', 'repo-write', 'invoke-worker'])
+    assert.equal(scoped.includes(task), false, task);
+  assert.deepEqual(goalTaskScope({ invariants: ['operator_authority'] }), {});
+  assert.deepEqual(goalTaskScope(null), {});
 });

@@ -6,6 +6,7 @@ import path from 'node:path';
 import {DurableMissionBus} from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import {NovaMissionControl, validateTask, mountNovaMissionRoutes, compactTaskInput} from '../../runtime/src/server/connected/novaMissionControl.mjs';
 import {MissionClient,processMissionTurn,checkedReceipt} from '../../agents/lib/mission-client.mjs';
+import {goalTaskScope} from '../../gateway/src/seer-strategy.mjs';
 function setup(t, allowedTasks=['health-check','browser-click']) {
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'nova-test-'));
  let clock=Date.now();
@@ -61,6 +62,15 @@ test('review can confirm verified work',async t=>{const s=setup(t);const m=await
 test('three planning errors stop repeated model calls',t=>{const s=setup(t);const m=s.control.create(goal);for(let i=0;i<3;i++){const {token}=s.control.claim(m.id,'a');s.control.release(m.id,{owner:'a',token,error:'NO_PROVIDER'});}assert.equal(s.control.get(m.id).status,'BLOCKED');});
 test('blocked oldest mission does not starve later active work',t=>{const s=setup(t);const first=s.control.create({...goal,idempotencyKey:'blocked-first'});for(let i=0;i<3;i++){const {token}=s.control.claim(first.id,'a');s.control.release(first.id,{owner:'a',token,error:'NO_PROVIDER'});}assert.equal(s.control.get(first.id).status,'BLOCKED');const second=s.control.create({...goal,idempotencyKey:'active-second'});assert.equal(s.control.current().id,second.id);assert.ok(s.control.claim(second.id,'b').token);});
 test('coding tools require an explicit coding contract',t=>{const s=setup(t,['health-check','repo-read','repo-write','repo-test','git-status','git-diff','git-commit']);const plain=s.control.create({...goal,idempotencyKey:'plain-no-code'});assert.deepEqual(plain.allowedTasks,['health-check']);assert.throws(()=>s.control.create({...goal,idempotencyKey:'explicit-no-contract',allowedTasks:['repo-read']}),/CODING_CONTRACT_REQUIRED/);const contract={schema:'jaco.coding-contract/v1',objective:'Inspect bounded source',scope:{allowed:['agents/**']},acceptance:['inspection evidence exists'],execution:{autonomous:true,allow_git_commit:false},verification:{tests_required:false,receipt_required:true,commands:[]}};const coded=s.control.create({...goal,idempotencyKey:'contract-code',allowedTasks:['repo-read'],contract});assert.deepEqual(coded.allowedTasks,['repo-read']);assert.equal(coded.contract.schema,'jaco.coding-contract/v1');});
+test('observation-only graph task scope is accepted by the real Nova mission constructor',t=>{
+ const scoped=goalTaskScope({invariants:['operator_authority','observation_only']}).allowedTasks;
+ const s=setup(t,scoped);
+ const mission=s.control.create({goal:'Run exactly one read-only health check',idempotencyKey:'observation-only-host',allowedTasks:scoped,executor:'nova'});
+ assert.deepEqual(mission.allowedTasks,scoped);
+ assert.ok(mission.allowedTasks.includes('health-check'));
+ for(const forbidden of ['repo-read','windows-wmi-read','browser-click','mcp-write','vault-get-secret'])
+   assert.equal(mission.allowedTasks.includes(forbidden),false,forbidden);
+});
 test('task permission and schema are enforced',()=>{assert.throws(()=>validateTask({type:'shell',data:{command:'anything'}},['health-check']),/NOT_ALLOWED/);assert.throws(()=>validateTask({type:'browser-click',data:{}},['browser-click']),/REQUIRED/);assert.throws(()=>validateTask({type:'mouse-click',data:{x:NaN,y:0}},['mouse-click']),/COORDINATE/);assert.throws(()=>validateTask({type:'screenshot',data:{outFile:'custom'}},['screenshot']),/RUNTIME_OWNED/);});
 test('adaptive screenshot task is bounded and runtime-owned',()=>{
  const checked=validateTask({type:'screenshot',data:{hwnd:123,mode:'adaptive',maxWidth:768,maxHeight:512},expectedOutcome:'fresh terminal ROI'},['screenshot']);
@@ -317,6 +327,19 @@ test('successful unrelated reads no longer reset repeated identical failures',as
    await run({type:'web-fetch',data:{url:'https://example.test/missing'}},{ok:false,error:'WEB_FETCH_EXPECTATION_FAILED',status:404});
  }
  const after=s.control.get(m.id);assert.equal(after.status,'BLOCKED');assert.equal(after.failures,1);assert.match(after.replanRequest.reason,/failed 5 times/);
+});
+
+// 2026-10-31: the planner sent a rejected shell read as {command,args} and {args,command} alternately; compared
+// with JSON.stringify those were different actions, so the failure count never reached its limit (8 retries).
+test('repeated failures of the same action count across reordered argument keys',async t=>{
+ const s=setup(t,['mcp-call','health-check']);const m=await s.client.create({...goal,idempotencyKey:'stall-keys',source:'seer-mission-graph',parent:{graphId:'g',nodeKey:'keys',mainGoal:'Original'}});
+ const run=(task,result)=>processMissionTurn({client:s.client,owner:'nova',plan:async()=>({task}),execute:async()=>result});
+ for(let i=0;i<5;i++){
+   if(i)await run({type:'health-check',data:{}},{ok:true});
+   const data=i%2?{server:'shell',tool:'shell_read',arguments:{command:'tasklist',args:['/FI','x']}}:{arguments:{args:['/FI','x'],command:'tasklist'},tool:'shell_read',server:'shell'};
+   await run({type:'mcp-call',data},{ok:false,error:'MCP_TOOL_ERROR'});
+ }
+ const after=s.control.get(m.id);assert.equal(after.status,'BLOCKED');assert.match(after.replanRequest.reason,/failed 5 times/);
 });
 
 test('operator cancellation waits for the in-flight receipt and never claims success',t=>{

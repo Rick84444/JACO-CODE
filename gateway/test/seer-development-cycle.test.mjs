@@ -145,7 +145,7 @@ test('watchdog preserves provider backoff after restart', async () => {
 
 test('when the primary goal already has work, the free slot goes to the next goal without work', () => {
   const primary = { id: 'rev', statement: 'first revenue' };
-  const goals = [{ id: 'dist', statement: 'distribution' }, { id: 'old', statement: 'older goal' }, { id: 'rev', statement: 'first revenue' }];
+  const goals = [{ id: 'dist', statement: 'distribution', invariants: ['observation_only'] }, { id: 'old', statement: 'older goal' }, { id: 'rev', statement: 'first revenue' }];
   const busyPrimary = [{ id: 'g1', status: 'ACTIVE', policy: { strategic_goal_id: 'rev' } }];
   // Nothing active: the primary goal is the focus.
   assert.deepEqual(chooseGovernorFocus([], { primary, goals, maxActive: 2 }), { allowed: true, focus: primary, primary: true });
@@ -154,6 +154,7 @@ test('when the primary goal already has work, the free slot goes to the next goa
   assert.equal(next.allowed, true);
   assert.equal(next.primary, false);
   assert.equal(next.focus.id, 'dist');
+  assert.deepEqual(next.focus.invariants, ['observation_only'], 'read-only constraint survives secondary focus selection');
   assert.equal(next.primary_graph_id, 'g1');
   // A goal that already has work is not picked again.
   const both = [...busyPrimary, { id: 'g2', status: 'ACTIVE', policy: { strategic_goal_id: 'dist' } }];

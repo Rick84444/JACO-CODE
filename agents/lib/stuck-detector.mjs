@@ -3,14 +3,19 @@
 //   repeat      the same tool with the same arguments gave the same result 3 times in a row
 //   error-loop  4 steps in a row failed with the same error, whatever they were called with
 //   ping-pong   two different steps alternating A,B,A,B,A,B with identical results
+//   recurring   the same call made 4 times in the window, interleaved with other steps, whatever it returned
+//   poll-limit  the same call 8 times in the window even back to back, whatever it returned
 // The loop nudges the model once with a hint; if the next window is stuck again it stops and says so.
 import crypto from 'node:crypto';
 
-const digest = value => crypto.createHash('sha1').update(typeof value === 'string' ? value : JSON.stringify(value ?? null)).digest('hex').slice(0, 16);
+// Key order does not make a different call: a planner sent {command,args} and {args,command} alternately.
+const stable = value => JSON.stringify(value ?? null, (_k, v) => v && typeof v === 'object' && !Array.isArray(v)
+  ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);
+const digest = value => crypto.createHash('sha1').update(typeof value === 'string' ? value : stable(value)).digest('hex').slice(0, 16);
 
 export class StuckDetector {
-  constructor({ repeat = 3, errorRun = 4, pingPong = 6 } = {}) {
-    this.limits = { repeat, errorRun, pingPong };
+  constructor({ repeat = 3, errorRun = 4, pingPong = 6, recurring = 4, pollLimit = 8 } = {}) {
+    this.limits = { repeat, errorRun, pingPong, recurring, pollLimit };
     this.steps = [];
     this.nudges = 0;
   }
@@ -28,7 +33,7 @@ export class StuckDetector {
   }
 
   check() {
-    const s = this.steps, { repeat, errorRun, pingPong } = this.limits;
+    const s = this.steps, { repeat, errorRun, pingPong, recurring, pollLimit } = this.limits;
     const tail = n => s.slice(-n);
     if (s.length >= repeat) {
       const t = tail(repeat);
@@ -47,6 +52,17 @@ export class StuckDetector {
       const a = t[0], b = t[1];
       const alternates = a.call !== b.call && t.every((x, i) => x.call === (i % 2 ? b.call : a.call) && x.outcome === (i % 2 ? b.outcome : a.outcome));
       if (alternates) return { stuck: true, kind: 'ping-pong', hint: `You are alternating between ${a.name} and ${b.name} and getting the same results every time. Neither step moves the goal forward: decide what is missing and do something else, or call blocked.` };
+    }
+    // A cycle of three or more steps (a rejected shell read, then two status reads, again and again: 23 paid
+    // turns on 2026-10-31) escapes the patterns above, and status results differ by their timestamps.
+    // Back-to-back calls are a poll and stay allowed up to pollLimit (a status read whose timestamp changes
+    // each time looked like progress 40 times in a row, 2026-10-31); a call that keeps coming back between
+    // other steps counts from the recurring limit.
+    const last = s.at(-1);
+    const at = last ? s.flatMap((x, i) => x.call === last.call ? [i] : []) : [];
+    const interleaved = at.length >= recurring && at.at(-1) - at[0] + 1 > at.length;
+    if (interleaved || at.length >= pollLimit) {
+      return { stuck: true, kind: interleaved ? 'recurring' : 'poll-limit', hint: `You have called ${last.name} with the same arguments ${at.length} times in this run. ${last.ok ? 'You already have its result: use it' : `It keeps failing (${last.error.slice(0, 120)}): it will not work`}. Complete the step with the evidence you have, do something different, or call blocked and say what you are waiting for.` };
     }
     return { stuck: false };
   }

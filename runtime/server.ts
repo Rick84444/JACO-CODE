@@ -2560,6 +2560,8 @@ const notifyPhone = async (action) => {
         goal,
         priority: 1,
         horizon: req.body?.horizon || 'medium',
+        // An observation-only goal: SEER gives its missions only observing tasks.
+        ...(req.body?.observationOnly === true ? { invariants: ['observation_only'] } : {}),
         tool_hint: toolHint?.toolName ? toolHint : null,
         project_root: path.resolve(openProject) === path.resolve(WORKSPACE_ROOT) ? null : openProject,
       });

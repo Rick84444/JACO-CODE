@@ -2,7 +2,7 @@
 // The executor can attest that a call returned successfully. It cannot independently
 // attest that an external mutation achieved its intended postcondition.
 // No field from a model/tool payload can self-assign INDEPENDENTLY_VERIFIED.
-const OBSERVATION_TASKS = new Set([
+export const OBSERVATION_TASKS = new Set([
   'detect-surfaces','health-check','check-revenue','web-fetch',
   'desktop-windows','desktop-observe','android-status','android-observe',
   'windows-wmi-read','screenshot','get-cursor','repo-list','repo-read',
