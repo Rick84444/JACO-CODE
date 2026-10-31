@@ -22,6 +22,7 @@ on:
       - 'gateway/src/seer-self-development.mjs'
       - 'gateway/test/seer-strategy.test.mjs'
       - 'gateway/test/seer-model-provider.test.mjs'
+      - 'gateway/test/seer-goal-cancel.test.mjs'
       - 'tests/nova/seer-integration.test.mjs'
       - 'agents/start-all.ps1'
       - 'agents/desktop-agentos.mjs'
@@ -66,11 +67,12 @@ jobs:
           node --check runtime/src/server/connected/novaMissionControl.mjs
           node --check gateway/src/seer-self-development.mjs
           node --check gateway/src/seer.mjs
+          node --check gateway/test/seer-goal-cancel.test.mjs
           node --check gateway/test/seer-self-development-integration.test.mjs
           node --check gateway/test/seer-autonomy-loop.test.mjs
           node --check gateway/test/seer-autonomy-resolution.test.mjs
       - name: Strategic kernel tests
-        run: node --test gateway/test/seer-model-provider.test.mjs gateway/test/seer-experience-store.test.mjs gateway/test/seer-strategy.test.mjs gateway/test/seer-mission-graph.test.mjs gateway/test/seer-autonomy-loop.test.mjs gateway/test/seer-development-cycle.test.mjs gateway/test/seer-autonomy-resolution.test.mjs gateway/test/seer-self-development.test.mjs gateway/test/seer-self-development-integration.test.mjs tests/nova/seer-integration.test.mjs tests/nova/aura-seer-chat.test.mjs
+        run: node --test gateway/test/seer-goal-cancel.test.mjs gateway/test/seer-model-provider.test.mjs gateway/test/seer-experience-store.test.mjs gateway/test/seer-strategy.test.mjs gateway/test/seer-mission-graph.test.mjs gateway/test/seer-autonomy-loop.test.mjs gateway/test/seer-development-cycle.test.mjs gateway/test/seer-autonomy-resolution.test.mjs gateway/test/seer-self-development.test.mjs gateway/test/seer-self-development-integration.test.mjs tests/nova/seer-integration.test.mjs tests/nova/aura-seer-chat.test.mjs
       - name: Autonomous executor and recovery contracts
         run: node --experimental-sqlite --test --test-timeout=30000 tests/nova/desktop-coding-execution.test.mjs tests/workplace/workplace-supervisor.test.mjs tests/nova/remote-startup-contract.test.mjs
       - name: Runtime smoke test
