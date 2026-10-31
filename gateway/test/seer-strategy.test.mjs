@@ -86,8 +86,8 @@ test('fresh strategic kernel seeds canonical user-value A2A startup goal', () =>
 // vault-* and email-inbox. The goal now carries invariant observation_only and its graphs get only observing tasks.
 test('an observation-only goal scopes its graphs to observing tasks; other goals keep the default', () => {
   const scoped = goalTaskScope({ invariants: ['operator_authority', 'observation_only'] }).allowedTasks;
-  for (const task of ['health-check', 'detect-surfaces', 'repo-read', 'mcp-call']) assert.ok(scoped.includes(task), task);
-  for (const task of ['browser-click', 'browser-type', 'desktop-action', 'mcp-write', 'github-create-repo', 'vault-get-secret', 'secret-store', 'email-inbox', 'repo-write', 'invoke-worker'])
+  for (const task of ['health-check', 'detect-surfaces', 'mcp-call']) assert.ok(scoped.includes(task), task);
+  for (const task of ['repo-list', 'repo-read', 'git-status', 'git-diff', 'windows-wmi-read', 'browser-click', 'browser-type', 'desktop-action', 'mcp-write', 'github-create-repo', 'vault-get-secret', 'secret-store', 'email-inbox', 'repo-write', 'invoke-worker'])
     assert.equal(scoped.includes(task), false, task);
   assert.deepEqual(goalTaskScope({ invariants: ['operator_authority'] }), {});
   assert.deepEqual(goalTaskScope(null), {});
