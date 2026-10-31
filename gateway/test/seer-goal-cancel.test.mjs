@@ -48,6 +48,13 @@ test('cancelling a graph keeps its goal; the goal ends only on an explicit, conf
 
   const goal = (await call('/cortex/strategy/goals', { statement: 'Observe the local runtime', horizon: 'short' })).data;
   const first = await graphFor(goal.id, 'Off-target work');
+  // An old client cannot end a goal by smuggling cancel_goal into a graph request.
+  const bypass = await call(`/cortex/mission-graphs/${first.id}/cancel`, { cancel_goal: true, reason: 'bypass' });
+  assert.equal(bypass.status, 400);
+  assert.equal(bypass.data.error, 'STRATEGIC_GOAL_CANCEL_REQUIRES_CONFIRMED_ROUTE');
+  assert.equal((await call(`/cortex/mission-graphs/${first.id}`)).data.status, 'ACTIVE');
+  assert.equal(await goalStatus(goal.id), 'active');
+
   const stopped = await call(`/cortex/mission-graphs/${first.id}/cancel`, { reason: 'stop this work only' });
   assert.equal(stopped.status, 200);
   assert.equal(stopped.data.status, 'CANCELLED');
