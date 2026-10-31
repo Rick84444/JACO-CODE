@@ -213,3 +213,27 @@ test('speech, embedding, image and video models are never planners', async () =>
   const chain = orderedBrainProviders({ JACO_PLANNER_CHOICE_FILE: saved, GEMINI_MODEL: 'x' });
   assert.equal(chain.some(p => p.chosen), false);
 });
+
+test('Aura model probes use the actual runtime PORT and price non-OpenRouter :free providers', async () => {
+  const extra = { custom: { label: 'custom', paid: true, keyEnv: null, url: 'https://other.test/v1/chat/completions', models: ['custom-model:free'] } };
+  const endpoints = [];
+  const probe = await testPlannerModel({ provider: 'custom', model: 'custom-model:free' }, {
+    env: { PORT: '4000', JACO_ALLOW_PAID_MODELS: '1' }, extra,
+    fetchImpl: async (url, init) => {
+      const parsed = new URL(url);
+      endpoints.push(parsed);
+      if (parsed.pathname.endsWith('/reserve')) {
+        assert.equal(parsed.port, '4000');
+        assert.equal(JSON.parse(init.body).providerId, 'custom');
+        return Response.json({ success: true, reservationId: 'custom-free-suffix' });
+      }
+      if (parsed.pathname.endsWith('/settle')) {
+        assert.equal(parsed.port, '4000');
+        return Response.json({ success: true });
+      }
+      return Response.json({ choices: [{ message: { content: 'OK' } }], usage: { prompt_tokens: 5, completion_tokens: 2 } });
+    },
+  });
+  assert.equal(probe.ok, true);
+  assert.deepEqual(endpoints.map(u => u.pathname), ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/settle']);
+});
