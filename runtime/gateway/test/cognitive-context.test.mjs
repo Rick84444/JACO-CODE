@@ -28,8 +28,9 @@ test('Fresh context uses canonical Continuum envelope and economic policy, strip
     async continuityEnvelope(){requests.push('continuity');return {envelope:{
       schema:'jaco.cognitive-continuity-envelope.v1',revision:14,missionAuthority:'CONNECTED_DURABLE_NOVA',
       objective:'Fix current PR',workingState:{branch:'main',sessionToken:'MUST_NOT_LEAK',scope:'read-only'},
-      focus:{goal:'diagnose'},unresolved:['verify Windows host'],
-      epistemic:{status:'UNVERIFIED',apiKey:'MUST_NOT_LEAK'},invariants:['do not delete .env'],
+      focus:{goal:'diagnose'},unresolved:{questions:['verify Windows host'],hypotheses:[{id:'hyp-1',problem:'Runtime startup order'}]},
+      epistemic:{status:'UNVERIFIED',apiKey:'MUST_NOT_LEAK'},
+      invariants:{missionStateOwnedExternally:true,knowledgeOwnedByKnowledgeStore:true},
     }};},
     async economicSnapshot(){requests.push('economic');return {economic:{
       policy:{cloudEnabled:false,manualAuraCloudEnabled:true,novaOllamaCloudEnabled:true,
@@ -45,6 +46,10 @@ test('Fresh context uses canonical Continuum envelope and economic policy, strip
   assert.equal(context.service.core,'UP');
   assert.equal(context.service.aura,'NOT_INDEPENDENTLY_PROBED');
   assert.equal(context.continuity.revision,14);
+  assert.equal(context.continuity.unresolved.questions[0],'verify Windows host');
+  assert.equal(context.continuity.unresolved.hypotheses[0].id,'hyp-1');
+  assert.equal(context.continuity.invariants.knowledgeOwnedByKnowledgeStore,true);
+  assert.equal(context.authority.auraSoleOperator,'EXPECTED_BY_POLICY_NOT_INDEPENDENTLY_PROBED');
   assert.equal(context.economic.cloudEnabled,false);
   assert.equal(context.economic.dailyCapUsd,1);
   assert.equal(context.economic.autonomousCallsPer15m,12);
@@ -86,6 +91,12 @@ test('Knowledge mutation fails closed by default and rejects secret-like content
   await assert.rejects(()=>h.jaco_knowledge_note({topic:'Retry strategy',note:'Use two retries for idempotent calls only'}),/JACO_KNOWLEDGE_WRITE_DISABLED/);
   assert.equal(writes,0);
   assert.throws(()=>validatedKnowledgeNote({topic:'Secrets',note:'our apiKey = ' + 'sk-' + 'proj-' + 'abcde1234567890abcdefghijkl'}),/SECRET_REFUSED/);
+  assert.throws(()=>validatedKnowledgeNote({topic:'Credential discovery',note:'Found Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456 in a debug trace.'}),/SECRET_REFUSED/);
+  const sanitised=projectCognitiveContext({continuity:{envelope:{
+    schema:'jaco.cognitive-continuity-envelope.v1',objective:'Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456',
+    workingState:{context:'Bearer abcdefghijklmnopqrstuvwxyz123456'},unresolved:{questions:[]},invariants:{},
+  }}});
+  assert.ok(!JSON.stringify(sanitised).includes('abcdefghijklmnopqrstuvwxyz123456'));
   assert.throws(()=>validatedKnowledgeNote({topic:'x',note:'short'}),/NOTE_INVALID/);
 });
 
