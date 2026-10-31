@@ -86,7 +86,7 @@ export function validatedKnowledgeNote({topic,note}={}){
   const text=t+'\n'+n;
   // Reject obvious credential material rather than persisting it in searchable memory.
   if(/\bBearer\s+[^\s,;]{8,}/i.test(text) ||
-     /-----BEGIN [A-Z ]*PRIVATE KEY-----|AIza[\w-]{24,}|gh[pousr]_[A-Za-z0-9]{20,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|(?:api.?key|password|bearer|token)\s*[:=]\s*\S+/i.test(text)) 
+     /-----BEGIN [A-Z ]*PRIVATE KEY-----|AIza[\w-]{24,}|gh[pousr]_[A-Za-z0-9]{20,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|(?:api.?key|password|bearer|token)\s*[:=]\s*\S+/i.test(text))
     throw Error('JACO_KNOWLEDGE_NOTE_SECRET_REFUSED');
   return {
     kind:'assistant-note',purpose:t,reasoningSummary:n,
