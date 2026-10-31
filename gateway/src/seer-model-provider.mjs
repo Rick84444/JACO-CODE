@@ -6,6 +6,8 @@
 //   - Ollama is the deterministic desktop/local fallback.
 //   - Paid providers are not enabled here; seer.mjs still requires the
 //     existing explicit JACO_ALLOW_PAID_MODELS=1 gate.
+//   - Aura owns the model choice: resolveAuraPlanner/invokeAuraPlanner below let SEER plan with
+//     the model the operator picked in Aura, a paid one under the runtime's Continuum ceiling.
 //
 // Environment:
 //   JACO_SEER_PROVIDER_PREFERENCE=auto|llamacpp|litert|ollama|off
@@ -15,6 +17,10 @@
 //   JACO_LITERT_MODEL=<registered model id>
 //   OLLAMA_BASE_URL=http://127.0.0.1:11434
 //   OLLAMA_MODEL=<installed model> (JACO_OLLAMA_MODEL is accepted as alias)
+
+import { plannerChoiceFile, plannerChoices, readPlannerChoice } from '../../agents/lib/planner-choice.mjs';
+import { budgetedNovaOllamaCall } from '../../agents/lib/nova-ollama-cost.mjs';
+import { credential } from '../../agents/lib/secret-store.mjs';
 
 const trimSlash = value => String(value || '').replace(/\/+$/, '');
 
@@ -143,7 +149,7 @@ export function seerProviderTimeoutMs({ env = process.env, remote = false, purpo
 }
 
 export async function invokeSeerProvider(provider, args, {
-  env = process.env, fetchFn = globalThis.fetch, purpose = 'inference', onFailure = () => {},
+  env = process.env, fetchFn = globalThis.fetch, purpose = 'inference', onFailure = () => {}, paidAuthorized = false,
 } = {}) {
   if (!provider) return null;
   const remote = provider.local === false || Boolean(provider.envKey);
@@ -151,7 +157,8 @@ export async function invokeSeerProvider(provider, args, {
     onFailure({ provider: provider.name, model: provider.model, code, ...(status ? { status } : {}) });
     return null;
   };
-  if (remote && env.JACO_ALLOW_PAID_MODELS !== '1') return fail('PAID_PROVIDER_DISABLED');
+  // paidAuthorized: the call is already bounded by a Continuum reservation (invokeAuraPlanner).
+  if (remote && (env.JACO_ALLOW_PAID_MODELS === '0' || (!paidAuthorized && env.JACO_ALLOW_PAID_MODELS !== '1'))) return fail('PAID_PROVIDER_DISABLED');
   const key = provider.envKey ? env[provider.envKey] : null;
   if (provider.envKey && !key) return fail('PROVIDER_KEY_MISSING');
   const timeout = seerProviderTimeoutMs({ env, remote, purpose });
@@ -200,7 +207,11 @@ export async function callSeerGovernorProvider(args, {
   if (env.JACO_CLOUD_PLANNER === '1' && env.JACO_ALLOW_PAID_MODELS === '1') {
     const provider = providers.find(p => p.name === env.JACO_PRIMARY_PROVIDER);
     if (provider && (!provider.envKey || env[provider.envKey])) {
-      const result = await invokeSeerProvider(provider, normalized, { env, fetchFn, purpose: 'planner', onFailure });
+      const result = await invokeAuraPlanner(provider, normalized, {
+        env, fetchFn, purpose: 'planner', onFailure,
+        runtimeUrl: env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000',
+        token: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || env.SEER_TOKEN || '',
+      });
       if (result) { onUsed({ provider: provider.name, model: provider.model }); return result; }
     }
   }
@@ -208,6 +219,85 @@ export async function callSeerGovernorProvider(args, {
   // planning gets the longer bounded local timeout, not ordinary Aura chat.
   return fallback({ ...normalized, purpose: 'planner' });
 }
+// Aura owns the model choice (agents/lib/planner-choice.mjs, written from Aura's GUI), so SEER plans with the
+// model the operator picked there instead of a second registry of its own. Before this SEER only had a local
+// 4B model that timed out on every governor turn while Aura's chosen model was idle (2026-10-31).
+// JACO_PRIMARY_PROVIDER stays authoritative, as it is for Nova; it is handled by callSeerGovernorProvider.
+// Distinguish local inference from metered remote inference based on the actual
+// transport, never solely on a provider's self-declared `local` attribute.
+export function seerModelEndpointAllowed(url, local) {
+  try {
+    const parsed = new URL(String(url || ''));
+    if (parsed.username || parsed.password || parsed.hash) return false;
+    if (local) return parsed.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname);
+    return parsed.protocol === 'https:';
+  } catch { return false; }
+}
+
+let connectedCache = { at: 0, runtimeUrl: '', providers: [] };
+export async function resolveAuraPlanner({
+  env = process.env, fetchFn = globalThis.fetch, runtimeUrl, token = '', cacheMs = 60000, now = Date.now,
+  readChoice = () => readPlannerChoice(plannerChoiceFile(env)),
+} = {}) {
+  const saved = readChoice();
+  if (!saved || saved.by !== 'operator' || env.JACO_PRIMARY_PROVIDER) return null;
+  // The providers connected in Aura, with their real URLs (the same list Nova plans from), read at most once a minute.
+  if (now() - connectedCache.at >= cacheMs || connectedCache.runtimeUrl !== runtimeUrl) {
+    try {
+      const response = await fetchFn(`${trimSlash(runtimeUrl)}/api/connected/nova/planner-providers`, {
+        headers: { 'x-gateway-token': token }, signal: AbortSignal.timeout(20000),
+      });
+      const body = await response.json();
+      connectedCache = { at: now(), runtimeUrl, providers: Array.isArray(body?.providers) ? body.providers : [] };
+    } catch { /* the fixed choices below still resolve a listed provider */ }
+  }
+  const connected = connectedCache.providers.find(p => p?.name === saved.provider) || null;
+  const fixed = plannerChoices(env)[saved.provider];
+  const url = connected?.url || fixed?.url;
+  const model = saved.model || connected?.model;
+  if (!url || !model) return null;
+  const local = connected ? Boolean(connected.local) : fixed?.paid === false && !fixed?.keyEnv;
+  if (!seerModelEndpointAllowed(url, local)) return null;
+  return { name: saved.provider, url, model, local, envKey: local ? null : (connected?.envKey || fixed?.keyEnv || null), source: 'aura-choice' };
+}
+
+// A paid Aura choice is reserved in the runtime's Continuum economic governor before the call and settled
+// with the real usage after it: the same hard daily ceiling Nova's paid calls use. A refused reservation
+// (ceiling reached) or any failure returns null, and SEER continues with its local chain.
+export async function invokeAuraPlanner(provider, args, {
+  env = process.env, fetchFn = globalThis.fetch, runtimeUrl, token = '', onFailure = () => {},
+  credentialFn = credential, budgetedCall = budgetedNovaOllamaCall, purpose = 'inference',
+} = {}) {
+  if (!provider) return null;
+  const fail = code => { onFailure({ provider: provider.name, model: provider.model, code, source: 'aura-choice' }); return null; };
+  if (!seerModelEndpointAllowed(provider.url, Boolean(provider.local))) return fail('PROVIDER_ENDPOINT_UNTRUSTED');
+  if (provider.local) return invokeSeerProvider({ ...provider, envKey: null, local: true }, args, { env, fetchFn, purpose, onFailure });
+  // SEER never promotes a GUI choice into implicit spend authorization.
+  // The operator must explicitly enable paid inference; Continuum still
+  // enforces the pre-existing per-call, daily and monthly reservation caps.
+  if (env.JACO_ALLOW_PAID_MODELS !== '1') return fail('PAID_PROVIDER_DISABLED');
+  const key = provider.envKey ? credentialFn(provider.envKey, { env }) : '';
+  if (!key) return fail('PROVIDER_KEY_MISSING');
+  let refused = null;
+  const reservedFetch = async (url, init) => {
+    try {
+      const result = await budgetedCall({ provider: { name: provider.name, model: provider.model, url, key },
+        requestBody: JSON.parse(init.body), runtimeUrl, token, fetchImpl: fetchFn, signal: init.signal });
+      return new Response(result.rawBody, { status: result.response.status, headers: { 'content-type': 'application/json' } });
+    } catch (error) {
+      // Only the runtime's own error codes are reported; never raw provider text.
+      const code = String(error?.message || '');
+      refused = /^[A-Z][A-Z0-9_:]{2,80}$/.test(code) ? code : null;
+      throw error;
+    }
+  };
+  const result = await invokeSeerProvider({ ...provider, local: false }, args, {
+    env: { ...env, [provider.envKey]: key }, fetchFn: reservedFetch, purpose, onFailure, paidAuthorized: true,
+  });
+  if (!result && refused) fail(refused);
+  return result;
+}
+
 const timeoutMs = env => Math.max(250, Number(env.JACO_SEER_MODEL_DISCOVERY_TIMEOUT_MS || 2500));
 
 function asV1(value, fallback) {

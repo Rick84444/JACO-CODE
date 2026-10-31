@@ -2342,6 +2342,36 @@ const notifyPhone = async (action) => {
     } catch (error:any) { res.status(409).json({success:false,error:error.message}); }
   });
 
+  // Ending the strategic goal behind a mission is a separate operator decision from stopping the mission
+  // (above): SEER ends the goal, stops its open graphs and clears it as the primary goal; their Nova
+  // missions are stopped here at once instead of at SEER's next reconciliation.
+  app.post('/api/aura/workbench/missions/:id/end-goal', requireLocalUi, async (req, res) => {
+    try {
+      if (req.body?.confirm !== true) return res.status(400).json({success:false,error:'GOAL_CANCEL_CONFIRM_REQUIRED'});
+      const control = connectedRuntime.novaMissions;
+      const graphId = control.get(req.params.id).metadata?.parent?.graphId;
+      if (!graphId) return res.status(409).json({success:false,error:'MISSION_HAS_NO_STRATEGIC_GOAL'});
+      const base = String(process.env.SEER_URL || 'http://127.0.0.1:2997').replace(/\/+$/, '');
+      const token = process.env.SEER_TOKEN || process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || GATEWAY_TOKEN;
+      const readGraph = async (id: string) => {
+        const response = await fetch(`${base}/cortex/mission-graphs/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
+        const data: any = await response.json().catch(() => ({}));
+        if (!response.ok || data?.error) throw new Error(data?.error || `SEER_HTTP_${response.status}`);
+        return data;
+      };
+      const goalId = (await readGraph(graphId)).policy?.strategic_goal_id;
+      if (!goalId) return res.status(409).json({success:false,error:'MISSION_HAS_NO_STRATEGIC_GOAL'});
+      const ended = await callCanonicalSeer(`/cortex/strategy/goals/${encodeURIComponent(goalId)}/cancel`, {confirm:true,reason:'Operatören avslutar målet från Aura.'});
+      const graphs = await Promise.all([...new Set([graphId, ...(ended.cancelledGraphs || [])])].map(readGraph));
+      const ids = [...new Set([req.params.id, ...graphs.flatMap((graph: any) => (graph.nodes || []).map((node: any) => node.nova_mission_id).filter(Boolean))])] as string[];
+      const missions = ids.map(id => {
+        try { return control.requestCancel(id); }
+        catch (error:any) { if (error.message === 'NOVA_MISSION_NOT_FOUND') return {id,status:'MISSING'}; throw error; }
+      });
+      res.json({success:true,goal:ended.goal,cancelledGraphs:ended.cancelledGraphs || [],missions});
+    } catch (error:any) { res.status(409).json({success:false,error:error.message}); }
+  });
+
   app.get('/api/aura/workbench/live', requireLocalUi, createCognitiveStreamHandler({ bus: connectedRuntime.bus, workstream: seerLiveWorkstream, secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key)).map(([,value]) => value).filter(Boolean) }));
 
   app.get('/api/aura/workbench', requireLocalUi, async (_req, res) => {

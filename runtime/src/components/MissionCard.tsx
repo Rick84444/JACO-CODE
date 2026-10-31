@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronRight, Square } from 'lucide-react';
 
-export interface MissionCardMission { id: string; goal: string; status: string; cancelRequested?: boolean; lastAction?: { text?: string } }
+export interface MissionCardMission { id: string; goal: string; status: string; cancelRequested?: boolean; lastAction?: { text?: string }; metadata?: { parent?: { graphId?: string } } }
 
 const WAITING: Record<string, string> = {
   ACTIVE: 'Väntar på nästa observation',
@@ -9,13 +9,15 @@ const WAITING: Record<string, string> = {
   AWAITING_VERIFICATION: 'Slutresultatet behöver verifieras',
 };
 
-// The running mission, shown beside the work (not inside the conversation).
+// The running mission, shown beside the work (not inside the conversation). "Avsluta" stops this work and
+// keeps the goal; "Avsluta mål" ends the strategic goal behind it, a separate decision that is confirmed first.
 export const MissionCard: React.FC<{
   mission: MissionCardMission;
   observation?: string | null;
   onOpenWork?: (missionId?: string) => void;
   onCancel?: (id: string) => Promise<void>;
-}> = ({ mission, observation, onOpenWork, onCancel }) => {
+  onEndGoal?: (id: string) => Promise<void>;
+}> = ({ mission, observation, onOpenWork, onCancel, onEndGoal }) => {
   const [closing, setClosing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return <section className="cognitive-live-mission" data-mission-id={mission.id}>
@@ -25,6 +27,11 @@ export const MissionCard: React.FC<{
         setClosing(true); setError(null);
         try { await onCancel(mission.id); } catch (e: any) { setError(e.message); } finally { setClosing(false); }
       }}><Square size={11} />{mission.cancelRequested ? 'Avslut begärt' : 'Avsluta'}</button>}
+      {onEndGoal && mission.metadata?.parent?.graphId && <button type="button" aria-label="Avsluta det strategiska målet" disabled={closing} onClick={async () => {
+        if (!window.confirm('Avsluta hela målet? Allt arbete för målet stoppas och målet planeras inte igen.')) return;
+        setClosing(true); setError(null);
+        try { await onEndGoal(mission.id); } catch (e: any) { setError(e.message); } finally { setClosing(false); }
+      }}>Avsluta mål</button>}
     </div>
     <p title={mission.goal}>{mission.goal}</p>
     <div className="cognitive-live-mission-detail">{observation || mission.lastAction?.text || WAITING[mission.status]}</div>
