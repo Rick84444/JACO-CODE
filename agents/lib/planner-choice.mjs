@@ -136,7 +136,7 @@ export async function testPlannerModel({ provider, model }, { env = process.env,
     const requestBody = { model, messages: [{ role: 'user', content: 'Reply with the single word OK.' }], max_tokens: 200 };
     const cloudResult = metered
       ? await budgetedNovaOllamaCall({ provider: { name: provider, model, url: choice.url, key }, requestBody,
-        runtimeUrl: env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000', token: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '',
+        runtimeUrl: env.JACO_RUNTIME_URL || `http://127.0.0.1:${Number(env.PORT) || 3000}`, token: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '',
         fetchImpl, signal: AbortSignal.timeout(timeoutMs) }) : null;
     const res = cloudResult?.response || await fetchImpl(choice.url, {
       method: 'POST',
