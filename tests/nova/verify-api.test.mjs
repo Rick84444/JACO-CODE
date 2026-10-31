@@ -127,3 +127,20 @@ test('uncited claims are checked against all supplied excerpts and cannot silent
   assert.match(observed[0], /\[#1\]/);
   assert.match(observed[0], /\[#2\]/);
 });
+
+
+test('duplicate supported model verdicts for C0 do not impersonate a missing C1 verdict', async () => {
+  const result = await verifyAnswer({
+    answer:'The version is 3.14.8 [#1].\nThe release notes were updated today [#1].',
+    evidence:['Version 3.14.8. Release notes updated today.'],
+  },{
+    env:{},
+    fetchImpl:async()=>new Response(JSON.stringify({choices:[{message:{content:
+      '{"verdicts":[{"id":"C0","verdict":"supported"},{"id":"C0","verdict":"supported"}]}'}}]})),
+  });
+  assert.equal(result.claims,2);
+  assert.equal(result.judged,1);
+  assert.equal(result.ok,false);
+  assert.equal(result.verdict,'INCONCLUSIVE');
+  assert.ok(result.unclear>=1);
+});
