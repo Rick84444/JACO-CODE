@@ -178,7 +178,7 @@ export async function manualAuraOllamaCompletion({ model, system, user, temperat
 const FALLBACK_ORDER = ['groq', 'deepseek', 'openrouter', 'gemini', 'qwen', 'mistral', 'together', 'xai', 'openai', 'anthropic'];
 export function chatFallbackChoice(providers, env = process.env) {
   const ready = auraChatProviderCatalog(providers, env).filter(p => !p.local && p.credentialReady && p.defaultModel);
-  const rank = p => (/:free$/i.test(p.defaultModel) ? -1 : (i => (i < 0 ? FALLBACK_ORDER.length : i))(FALLBACK_ORDER.indexOf(p.id)));
+  const rank = p => (p.id === 'openrouter' && /:free$/i.test(p.defaultModel) ? -1 : (i => (i < 0 ? FALLBACK_ORDER.length : i))(FALLBACK_ORDER.indexOf(p.id)));
   const best = ready.sort((a, b) => rank(a) - rank(b))[0];
   return best ? { providerId: best.id, model: best.defaultModel } : null;
 }
