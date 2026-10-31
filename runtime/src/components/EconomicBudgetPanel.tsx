@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 
-type Limits = { dailyCloudUsd: number | null; monthlyCloudUsd: number | null; maxCloudUsdPerTask: number | null };
+type Limits = { dailyCloudUsd: number | null; monthlyCloudUsd: number | null; maxCloudUsdPerTask: number | null; maxAutonomousCloudCallsPer15m: number | null };
 type Snapshot = { policy: Limits & { manualAuraCloudEnabled: boolean; novaOllamaCloudEnabled: boolean; cloudEnabled: boolean }; state: { dailySpentUsd: number; reservedUsd: number; reservations?: Record<string, { status?: string; estimatedUsd: number }> }; headroom: { dailyUsd: number; monthlyUsd: number } };
 const fields = [ ['dailyCloudUsd', 'USD per dygn'], ['monthlyCloudUsd', 'USD per månad'], ['maxCloudUsdPerTask', 'USD per uppgift'] ] as const;
 const money = (n: number) => n.toLocaleString('sv-SE', { maximumFractionDigits: 6 });
 // A cap the operator has not set is shown as such, never as a number.
 const cap = (n: number | null, unit: string) => n == null ? `inget tak ${unit}` : `${money(n)} USD${unit}`;
 const draftOf = (n: number | null) => n == null ? '' : String(n);
+const draftForPolicy = (policy: Limits) => ({ ...Object.fromEntries(fields.map(([key]) => [key, draftOf(policy[key])])), maxAutonomousCloudCallsPer15m: draftOf(policy.maxAutonomousCloudCallsPer15m) });
 
 // inline: the Providers view shows the limits as fields you can change straight away (one Spara button).
 export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {}) {
@@ -26,7 +27,7 @@ export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {
     const request = ++revision.current;
     try {
       const data = await fetch('/api/aura/budget', { signal: AbortSignal.timeout(10000) }).then(readAuraResponse);
-      if (mounted.current && request === revision.current) { setSnapshot(data.economic); setError(null); if (inline) setDirty(d => { if (!d) setDraft(Object.fromEntries(fields.map(([key]) => [key, draftOf(data.economic.policy[key])]))); return d; }); }
+      if (mounted.current && request === revision.current) { setSnapshot(data.economic); setError(null); if (inline) setDirty(d => { if (!d) setDraft(draftForPolicy(data.economic.policy)); return d; }); }
     } catch (e: any) { if (mounted.current && request === revision.current) setError(e.message); }
   };
   useEffect(() => {
@@ -59,8 +60,12 @@ export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {
     event.preventDefault();
     if (saveInFlight.current) return;
     // An empty field turns that cap off; a value must be zero or more.
-    const patch = Object.fromEntries(fields.map(([key]) => [key, draft[key]?.trim() ? Number(draft[key]) : null]));
-    if (Object.values(patch).some(n => n !== null && (!Number.isFinite(n) || n < 0))) { setError('Ange ett belopp som är noll eller större, eller lämna fältet tomt för inget tak.'); return; }
+    const dollars = Object.fromEntries(fields.map(([key]) => [key, draft[key]?.trim() ? Number(draft[key]) : null]));
+    if (Object.values(dollars).some(n => n !== null && (!Number.isFinite(n) || n < 0))) { setError('Ange ett belopp som är noll eller större, eller lämna fältet tomt för inget tak.'); return; }
+    const burstText = draft.maxAutonomousCloudCallsPer15m?.trim() || '';
+    const burst = burstText ? Number(burstText) : null;
+    if (burst != null && (!Number.isInteger(burst) || burst < 1 || burst > 10000)) { setError('Autonom spärr måste vara ett heltal mellan 1 och 10 000, eller tomt för avstängt.'); return; }
+    const patch = { ...dollars, maxAutonomousCloudCallsPer15m: burst };
     saveInFlight.current = true; ++revision.current; setSaving(true); setSaved(false); setError(null);
     try {
       const data = await fetch('/api/aura/budget', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch), signal: AbortSignal.timeout(10000) }).then(readAuraResponse);
@@ -91,15 +96,18 @@ export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {
     </>}
     {snapshot ? <>
       <p className="text-slate-300">{cap(snapshot.policy.dailyCloudUsd, '/dygn')} · {cap(snapshot.policy.monthlyCloudUsd, '/månad')} · {cap(snapshot.policy.maxCloudUsdPerTask, '/uppgift')}</p>
-      <p className="text-slate-400">Bokfört idag: {money(snapshot.state.dailySpentUsd)} USD · Reserverat: {money(snapshot.state.reservedUsd)} USD · Kvar idag: {snapshot.headroom.dailyUsd == null ? 'inget tak' : `${money(snapshot.headroom.dailyUsd)} USD`}</p>
+      <p className="text-slate-300">Autonom säkerhetsspärr: {snapshot.policy.maxAutonomousCloudCallsPer15m == null ? 'avstängd' : `${snapshot.policy.maxAutonomousCloudCallsPer15m} betalda anrop per 15 minuter`}. Styr Nova och SEER, inte din manuella Aura-chatt.</p>
+      <p className="text-slate-400">Tokenbaserat kostnadsunderlag idag: {money(snapshot.state.dailySpentUsd)} USD · Reserverat: {money(snapshot.state.reservedUsd)} USD · Kvar idag: {snapshot.headroom.dailyUsd == null ? 'inget tak' : `${money(snapshot.headroom.dailyUsd)} USD`}</p>
+      <p className="text-slate-500">USD-beloppen beräknas med JACO:s konfigurerade priser eller referenspriser och är inte avstämda mot leverantörens faktura.</p>
       <p hidden={inline} className="text-slate-500">Aura moln: {snapshot.policy.cloudEnabled || snapshot.policy.manualAuraCloudEnabled ? 'tillåtet inom budget' : 'avstängt'} · Nova molnproviders: {snapshot.policy.cloudEnabled || snapshot.policy.novaOllamaCloudEnabled ? 'tillåtet inom budget' : 'avstängt'}</p>
-      <p hidden={inline} className="text-slate-400">Du styr den gemensamma kostnadsgränsen här. Nova har inga separata dygnsgränser eller anropstak per provider.</p>
+      <p hidden={inline} className="text-slate-400">Du styr gemensamma kostnadstak här. Separat stoppar den autonoma säkerhetsspärren överdrivna anropsserier, även när USD-taken är avstängda.</p>
       {((snapshot.headroom.dailyUsd != null && snapshot.headroom.dailyUsd <= 0) || (snapshot.headroom.monthlyUsd != null && snapshot.headroom.monthlyUsd <= 0) || (snapshot.policy.maxCloudUsdPerTask != null && snapshot.policy.maxCloudUsdPerTask <= 0)) && <p role="status" className="text-amber-300">Budgeten stoppar nya betalda anrop. Reserverade belopp räknas in tills utfallet är fastställt.</p>}
-      {!inline && !editing && <button type="button" onClick={() => { setDraft(Object.fromEntries(fields.map(([key]) => [key, draftOf(snapshot.policy[key])]))); setEditing(true); setSaved(false); }} className="text-cyan-400">Ändra budget</button>}
+      {!inline && !editing && <button type="button" onClick={() => { setDraft(draftForPolicy(snapshot.policy)); setEditing(true); setSaved(false); }} className="text-cyan-400">Ändra budget</button>}
     </> : <p className="text-slate-500">Budget ej observerad.</p>}
     {shown && (inline ? snapshot : true) && <form onSubmit={save} className="space-y-2">
       {fields.map(([key, label]) => <label key={key} className="flex items-center justify-between gap-2 text-slate-300">{label}<input aria-label={label} type="number" min="0" step="any" placeholder="Inget tak" value={draft[key] || ''} disabled={saving} onChange={e => { setDirty(true); setSaved(false); setDraft(d => ({ ...d, [key]: e.target.value })); }} className={`${inline ? 'w-28 px-2 py-1 text-sm' : 'w-24 px-1 py-0.5'} bg-[#111820] border border-[#343b45] rounded`} /></label>)}
-      <p className="text-slate-500">Gäller Aura, Nova och övriga budgeterade molnanrop tillsammans. Tomt fält = inget tak. Noll stoppar nya betalda anrop. Ändringen sparas över omstarter.</p>
+      <label className="flex items-center justify-between gap-2 text-slate-300">Autonoma molnanrop / 15 min<input aria-label="Autonoma molnanrop per 15 minuter" type="number" min="1" max="10000" step="1" placeholder="Avstängd" value={draft.maxAutonomousCloudCallsPer15m || ''} disabled={saving} onChange={e => { setDirty(true); setSaved(false); setDraft(d => ({ ...d, maxAutonomousCloudCallsPer15m: e.target.value })); }} className={`${inline ? 'w-28 px-2 py-1 text-sm' : 'w-24 px-1 py-0.5'} bg-[#111820] border border-[#343b45] rounded`} /></label>
+      <p className="text-slate-500">USD-taken gäller Aura, Nova och SEER gemensamt. Tomt USD-fält = inget kostnadstak. Den autonoma spärren gäller enbart SEER/Nova, även utan USD-tak; tomt fält stänger av den. Ändringarna överlever omstart.</p>
       <div className="flex gap-3"><button type="submit" disabled={saving || (inline && !dirty)} className={inline ? 'bg-[#0e639c] hover:bg-[#1177bb] disabled:opacity-40 rounded px-3 py-1.5 text-xs font-semibold text-white' : 'text-cyan-400'}>{saving ? 'Sparar…' : 'Spara budget'}</button>{!inline && <button type="button" disabled={saving} onClick={() => setEditing(false)} className="text-slate-400">Avbryt</button>}</div>
     </form>}
     {saved && <p role="status" className="text-emerald-400">Budgeten är sparad och avläst från runtime.</p>}
