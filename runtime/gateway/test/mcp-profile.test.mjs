@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createToolRegistry } from '../src/tool-registry.mjs';
 import {
   JACO_MCP_COGNITIVE_READ,
@@ -63,4 +64,13 @@ test('collaboration profile cannot write a knowledge note without explicit opera
   await assert.rejects(() => handlers.jaco_knowledge_note({
     topic:'Research notes',note:'Only an operator-approved, clearly unverified note may persist.',
   }),/JACO_KNOWLEDGE_WRITE_DISABLED/);
+});
+
+
+test('dedicated tunnel launcher pins read-only profile before loading stdio module', () => {
+  const source = readFileSync(new URL('../src/mcp-cognitive-stdio.mjs',import.meta.url),'utf8');
+  const gate=source.indexOf("process.env.JACO_MCP_TOOL_PROFILE = 'cognitive-read'");
+  const loaded=source.indexOf("await import('./mcp-stdio.mjs')");
+  assert.ok(gate>=0 && loaded>gate,'fail closed even if an inherited environment selected full');
+  assert.ok(!source.includes("process.env.JACO_MCP_TOOL_PROFILE || 'full'"));
 });
