@@ -225,6 +225,9 @@ export async function callSeerGovernorProvider(args, {
 // JACO_PRIMARY_PROVIDER stays authoritative, as it is for Nova; it is handled by callSeerGovernorProvider.
 // Distinguish local inference from metered remote inference based on the actual
 // transport, never solely on a provider's self-declared `local` attribute.
+// Ollama models inferred in the cloud and relayed through the local daemon.
+const OLLAMA_CLOUD_RELAY = /(?:-cloud|:cloud)$/i;
+
 export function seerModelEndpointAllowed(url, local) {
   try {
     const parsed = new URL(String(url || ''));
@@ -270,14 +273,20 @@ export async function invokeAuraPlanner(provider, args, {
 } = {}) {
   if (!provider) return null;
   const fail = code => { onFailure({ provider: provider.name, model: provider.model, code, source: 'aura-choice' }); return null; };
+  // An Ollama "-cloud"/":cloud" model is served through the local daemon at localhost but inferred (and billed)
+  // in the cloud. It has no reservable price here, so it is refused rather than treated as local and free
+  // (same suffix rule as agents/hands-off-agent.mjs and auraOllamaChat.mjs).
+  if (OLLAMA_CLOUD_RELAY.test(String(provider.model || ''))) return fail('OLLAMA_CLOUD_RELAY_NOT_RESERVABLE');
   if (!seerModelEndpointAllowed(provider.url, Boolean(provider.local))) return fail('PROVIDER_ENDPOINT_UNTRUSTED');
   if (provider.local) return invokeSeerProvider({ ...provider, envKey: null, local: true }, args, { env, fetchFn, purpose, onFailure });
   // SEER never promotes a GUI choice into implicit spend authorization.
   // The operator must explicitly enable paid inference; Continuum still
   // enforces the pre-existing per-call, daily and monthly reservation caps.
   if (env.JACO_ALLOW_PAID_MODELS !== '1') return fail('PAID_PROVIDER_DISABLED');
+  // Authentication is separate from locality: a connected HTTPS server registered without a credential
+  // requirement is called without a key, under the same paid gate and Continuum reservation.
   const key = provider.envKey ? credentialFn(provider.envKey, { env }) : '';
-  if (!key) return fail('PROVIDER_KEY_MISSING');
+  if (provider.envKey && !key) return fail('PROVIDER_KEY_MISSING');
   let refused = null;
   const reservedFetch = async (url, init) => {
     try {
@@ -291,8 +300,8 @@ export async function invokeAuraPlanner(provider, args, {
       throw error;
     }
   };
-  const result = await invokeSeerProvider({ ...provider, local: false }, args, {
-    env: { ...env, [provider.envKey]: key }, fetchFn: reservedFetch, purpose, onFailure, paidAuthorized: true,
+  const result = await invokeSeerProvider({ ...provider, envKey: key ? provider.envKey : null, local: false }, args, {
+    env: key ? { ...env, [provider.envKey]: key } : env, fetchFn: reservedFetch, purpose, onFailure, paidAuthorized: true,
   });
   if (!result && refused) fail(refused);
   return result;
@@ -410,7 +419,7 @@ async function discoverOllama({ env, fetchFn }) {
     if (requested && !candidates.includes(requested)) {
       // Explicit cloud selections may be served by the daemon without a local
       // weights entry. Probe metadata only; never generate, pull, or change model.
-      const cloudSelection = /(?:-cloud|:cloud)$/i.test(requested);
+      const cloudSelection = OLLAMA_CLOUD_RELAY.test(requested);
       if (!cloudSelection) return { provider: null, reason: `ollama-model-not-installed:${requested}`, candidates };
       const show = await fetchFn(`${root}/api/show`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -426,7 +435,7 @@ async function discoverOllama({ env, fetchFn }) {
     if (!requested && !candidates.length) return { provider: null, reason: 'ollama-no-models' };
     const model = requested || candidates[0];
     const selectedEntry = installed.find(entry => entry.name === model);
-    const cloud = /(?:-cloud|:cloud)$/i.test(model) || Boolean(selectedEntry?.remote_model || selectedEntry?.remote_host);
+    const cloud = OLLAMA_CLOUD_RELAY.test(model) || Boolean(selectedEntry?.remote_model || selectedEntry?.remote_host);
     return {
       provider: {
         id: 'ollama',
