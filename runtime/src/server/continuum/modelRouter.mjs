@@ -1,5 +1,6 @@
 import { nowIso } from './util.mjs';
 import { assertLocalModelEndpoint, validateInferenceText, isCloudModelName, assertInstalledOllamaModel } from './localInferenceTrust.mjs';
+import { auraCostQuote, auraCostSettlement } from '../aura/costEngine.mjs';
 
 function outputTextResponses(raw){if(typeof raw?.output_text==='string')return raw.output_text;const t=[];for(const item of raw?.output||[])for(const part of item?.content||[])if(part?.type==='output_text'&&typeof part.text==='string')t.push(part.text);return t.join('\n');}
 function outputTextChat(raw){return String(raw?.choices?.[0]?.message?.content||'');}
@@ -29,11 +30,38 @@ export class ContinuumModelRouter {
     for(const candidate of candidates){const p=candidate.provider;const started=Date.now();
       try{
         assertLocalModelEndpoint(p);
-        const estimatedUsd=Number(input.estimatedUsd??candidate.estimatedCostUsd??0);let reservation=null;
-        // Every remote request must cross the economic gate, including a forced provider
-        // and a provider with missing or zero pricing. The governor rejects unknown cost.
-        if(!p.local){reservation=this.economic.authorizeCloud({missionId:input.missionId||null,taskId:input.taskId||null,estimatedUsd,expectedValueUsd:input.expectedValueUsd??null,purpose:input.purpose||'reasoning'});if(!reservation.allowed){failures.push({providerId:p.id,error:`CLOUD_BUDGET_REFUSED:${reservation.reason}`});continue;}}
-        try{const result=await this.#call(p,input);const latencyMs=Date.now()-started;this.providers.markSuccess(p.id,latencyMs);if(reservation?.reservationId)this.economic.settleCloud(reservation.reservationId,Number(input.actualUsd??estimatedUsd),result.usage||{});const out={...result,providerId:p.id,provider:p.id,protocol:p.protocol,latencyMs,routeScore:candidate.score,finishedAt:nowIso()};this.events.append({stream:'model',type:'model.provider_completed',entityId:result.responseId||null,actor:'model-router',data:{providerId:p.id,protocol:p.protocol,model:out.model,latencyMs,usage:out.usage,costUsd:out.costUsd||0}});return out;}catch(error){if(reservation?.reservationId){const message=error instanceof Error?error.message:String(error);if(/^(PROVIDER_HTTP_|MODEL_NOT_CONFIGURED|PROVIDER_SECRET_NOT_CONFIGURED|UNSUPPORTED_PROVIDER_PROTOCOL)/.test(message))this.economic.releaseReservation(reservation.reservationId,'confirmed_request_failure');else this.economic.markCloudOutcomeUnknown(reservation.reservationId,message);}throw error;}
+        // Google's native generateContent path (including provider ID "gemini-env") must use
+        // Aura's canonical quote + the same per-project quota governor as Aura, SEER and Nova.
+        // Avoid trusting caller-supplied actualUsd/estimatedUsd when Gemini input was observed.
+        const googleModel = !p.local && (p.protocol==='google-generate-content' || p.id==='gemini' || p.id==='gemini-env');
+        const model=String(input.model||p.model||'').trim();
+        const quote=googleModel ? auraCostQuote({providerId:'gemini',model,
+          promptBytes:Math.max(1,Buffer.byteLength(JSON.stringify({prompt:input.prompt||'',instructions:input.instructions||''}),'utf8')),
+          maxTokens:Math.max(16,Math.min(Number(input.maxOutputTokens||1200),8192))}) : null;
+        const estimatedUsd=quote?.estimatedUsd ?? Number(input.estimatedUsd??candidate.estimatedCostUsd??0);let reservation=null;
+        // Every remote request must cross the economic gate, including a forced provider.
+        if(!p.local){reservation=this.economic.authorizeCloud({missionId:input.missionId||null,taskId:input.taskId||null,estimatedUsd,expectedValueUsd:input.expectedValueUsd??null,purpose:input.purpose||'reasoning',
+          ...(quote?{metadata:{providerId:'gemini',model,auraCostQuote:quote,priceSource:quote.priceSource,providerInvoiceVerified:false}}:{})});
+          if(!reservation.allowed){failures.push({providerId:p.id,error:`CLOUD_BUDGET_REFUSED:${reservation.reason}`});continue;}}
+        try{const result=await this.#call(p,input);const latencyMs=Date.now()-started;this.providers.markSuccess(p.id,latencyMs);
+          let costStatus='SETTLED';
+          if(reservation?.reservationId){
+            if(quote){
+              const u=result.usage||{};
+              const inputTokens=u.promptTokenCount??u.prompt_tokens;
+              const visible=u.candidatesTokenCount??u.completion_tokens;
+              const thoughts=u.thoughtsTokenCount??0;
+              let settlement;
+              try{settlement=auraCostSettlement(quote,{
+                prompt_tokens:inputTokens,completion_tokens:
+                  Number.isSafeInteger(visible)&&Number.isSafeInteger(thoughts)?visible+thoughts:null,
+              });}
+              catch{this.economic.markCloudOutcomeUnknown(reservation.reservationId,'native Gemini token usage incomplete or outside quoted bounds');costStatus='OUTCOME_UNKNOWN';}
+              if(settlement)this.economic.settleCloud(reservation.reservationId,settlement.costUsd,
+                {prompt_tokens:settlement.inputTokens,completion_tokens:settlement.outputTokens});
+            }else this.economic.settleCloud(reservation.reservationId,Number(input.actualUsd??estimatedUsd),result.usage||{});
+          }
+          const out={...result,providerId:p.id,provider:p.id,protocol:p.protocol,latencyMs,routeScore:candidate.score,costStatus,finishedAt:nowIso()};this.events.append({stream:'model',type:'model.provider_completed',entityId:result.responseId||null,actor:'model-router',data:{providerId:p.id,protocol:p.protocol,model:out.model,latencyMs,usage:out.usage,costUsd:out.costUsd||0}});return out;}catch(error){if(reservation?.reservationId){const message=error instanceof Error?error.message:String(error);if(/^(PROVIDER_HTTP_|MODEL_NOT_CONFIGURED|PROVIDER_SECRET_NOT_CONFIGURED|UNSUPPORTED_PROVIDER_PROTOCOL)/.test(message))this.economic.releaseReservation(reservation.reservationId,/^PROVIDER_HTTP_429:/.test(message)?'provider returned HTTP 429 without generation':'confirmed_request_failure');else this.economic.markCloudOutcomeUnknown(reservation.reservationId,message);}throw error;}
       }catch(error){const message=error instanceof Error?error.message:String(error);this.providers.markFailure(p.id,message);failures.push({providerId:p.id,error:message});this.events.append({stream:'model',type:'model.provider_failed',entityId:p.id,actor:'model-router',data:{error:message}});if(forced)break;}
     }
     const e=new Error(`ALL_PROVIDERS_FAILED:${failures.map(x=>`${x.providerId}:${x.error}`).join(' | ').slice(0,2000)}`);e.failures=failures;throw e;
