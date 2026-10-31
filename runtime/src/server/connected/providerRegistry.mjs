@@ -1,3 +1,7 @@
+// Provider IDs are shared across Aura's registry and Continuum cost reservations.
+// Never let a model be selectable but impossible to reserve due to different syntax.
+export const validProviderId = value => /^[a-z0-9][a-z0-9._-]{1,63}$/.test(String(value || ''));
+
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -83,7 +87,7 @@ export class ProviderRegistry {
 
   register(input) {
     const id = String(input?.id || '').trim().toLowerCase();
-    if (!/^[a-z0-9][a-z0-9._-]{1,63}$/.test(id)) throw new Error('INVALID_PROVIDER_ID');
+    if (!validProviderId(id)) throw new Error('INVALID_PROVIDER_ID');
     const baseUrl = trimSlash(input?.baseUrl);
     const u = new URL(baseUrl);
     if (!['http:', 'https:'].includes(u.protocol)) throw new Error('UNSUPPORTED_PROVIDER_PROTOCOL');
