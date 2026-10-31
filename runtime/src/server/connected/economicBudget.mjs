@@ -13,6 +13,18 @@ export function createEconomicBudgetRouter({ economic, requireOperatorUi, getBal
     next();
   });
   router.get('/', (_req, res) => res.json({ success: true, economic: economic.snapshot() }));
+  // Operator-imported project quotas, not an AI Studio live quota feed. Report source and
+  // that only this JACO runtime's requests are counted in local rate windows.
+  router.get('/gemini-quotas', (_req, res) =>
+    res.json({ success: true, quota: economic.geminiQuotaSnapshot() }));
+  router.patch('/gemini-quotas', (req, res) => {
+    try {
+      const body = req.body;
+      if (!body || typeof body !== 'object' || Array.isArray(body) ||
+          Object.keys(body).some(k => !['models','observedAt'].includes(k))) throw new Error('GEMINI_QUOTA_PATCH_INVALID');
+      res.json({ success: true, quota: economic.updateGeminiQuotaProfile(body,'operator-ui') });
+    } catch (error) { res.status(400).json({ success: false, error: String(error?.message || error) }); }
+  });
   // Live cost for the IDE: settled spend (measured), what is still unconfirmed, and the real prepaid balance.
   router.get('/live', async (_req, res) => {
     try {
