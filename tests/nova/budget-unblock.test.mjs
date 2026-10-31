@@ -78,16 +78,21 @@ test('models need no hand-written price: configured wins, :free costs nothing, a
   const paid = harness(null);
   const r = await manualAuraProviderCompletion(ask, { providers: paid.providers, economic: paid.economic, env: {} });
   assert.equal(r.costStatus, 'SETTLED'); assert.equal(paid.calls.length, 1);
-  const free = harness(null); free.providers.list = () => [{ ...provider('newprov'), defaultModel: 'a:free' }];
-  const f = await manualAuraProviderCompletion({ ...ask, model: 'a:free' }, { providers: free.providers, economic: free.economic, env: {} });
-  assert.equal(f.costStatus, 'FREE'); assert.equal(free.costs.length, 0, 'no reservation for a free model');
+  const free = harness(null, 'openrouter'); free.providers.list = () => [{ ...provider('openrouter'), defaultModel: 'a:free' }];
+  const f = await manualAuraProviderCompletion({ ...ask, providerId: 'openrouter', model: 'a:free' }, { providers: free.providers, economic: free.economic, env: {} });
+  assert.equal(f.costStatus, 'FREE'); assert.equal(free.costs.length, 0, 'verified OpenRouter free suffix needs no reservation');
+  const disguised = harness(null); disguised.providers.list = () => [{ ...provider('newprov'), defaultModel: 'a:free' }];
+  const paidNamedFree = await manualAuraProviderCompletion({ ...ask, model: 'a:free' }, { providers: disguised.providers, economic: disguised.economic, env: {} });
+  assert.equal(paidNamedFree.costStatus, 'SETTLED');
+  assert.deepEqual(disguised.costs.map(c => c[0]), ['reserve', 'settle'], 'unknown providers cannot claim free billing by naming their model :free');
 });
 
 test('the default chat falls back to a connected provider: free models first, then the usual order', () => {
   const list = (...ps) => ({ list: () => ps });
   assert.equal(chatFallbackChoice(list(provider('openai'), provider('deepseek'), provider('groq')), {}).providerId, 'groq');
   assert.equal(chatFallbackChoice(list(provider('openai'), provider('deepseek')), {}).providerId, 'deepseek');
-  assert.equal(chatFallbackChoice(list(provider('openai'), { ...provider('zed'), defaultModel: 'q:free' }), {}).providerId, 'zed');
+  assert.equal(chatFallbackChoice(list(provider('openai'), { ...provider('openrouter'), defaultModel: 'q:free' }), {}).providerId, 'openrouter');
+  assert.equal(chatFallbackChoice(list(provider('deepseek'), { ...provider('zed'), defaultModel: 'q:free' }), {}).providerId, 'deepseek', 'unknown providers never get free-tier preference from a suffix');
   assert.equal(chatFallbackChoice(list({ ...provider('deepseek'), credentialConfigured: false }), {}), null, 'no key, no fallback');
   assert.equal(chatFallbackChoice(list({ id: 'ollama', baseUrl: 'http://127.0.0.1:11434/v1', defaultModel: 'm' }), {}), null, 'local providers are not the fallback');
 });
