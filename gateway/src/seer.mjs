@@ -1352,7 +1352,7 @@ async function runGovernorTurn() {
     const focusGoal = admission.focus || null;
     if (focusGoal && !onPrimary) emit('governor.focus_next_goal', { goal_id: focusGoal.id, primary_goal_id: operatorPrimaryGoal?.id || null, primary_graph_id: admission.primary_graph_id });
     // Project mode: the operator's instruction on their own repository is executed as given.
-    if (onPrimary && operatorPrimaryGoal?.project_root) {
+    if (onPrimary && operatorPrimaryGoal?.project_root && !focusGoal?.invariants?.includes('observation_only')) {
       if (projectGoalDone(missionGraph.list(), operatorPrimaryGoal.id)) {
         emit('governor.skipped', { allowed: false, reason: 'project_goal_verified', goal_id: operatorPrimaryGoal.id });
         return { ok: true, skipped: 'project_goal_verified' };
@@ -1558,7 +1558,7 @@ If no new work is needed (system already has enough active work), respond with: 
       return;
     }
 
-    const projectRoot = onPrimary ? operatorPrimaryGoal?.project_root || null : null;
+    const projectRoot = onPrimary && !focusGoal?.invariants?.includes('observation_only') ? operatorPrimaryGoal?.project_root || null : null;
     const graph = missionGraph.create({
       title: chosen.title,
       objective: chosen.goal,
