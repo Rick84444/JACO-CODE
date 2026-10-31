@@ -245,3 +245,22 @@ test('manual Aura Gemini 429 triggers the same per-model pause', async t => {
   const subsequent=rate(g,'gemini-2.5-flash',100,'manual-aura-chat');
   assert.equal(subsequent.reason,'GEMINI_PROVIDER_BACKOFF');
 });
+
+
+test('native Gemini reasoning obeys same 12-in-15m autonomous fuse without a monetary cap', t => {
+  const {g} = create(t);
+  g.updatePolicy({dailyCloudUsd:null,monthlyCloudUsd:null,maxCloudUsdPerTask:null});
+  for(let i=0;i<12;i++){
+    const authorized=g.authorizeCloud({purpose:'reasoning',estimatedUsd:0.001,
+      metadata:{providerId:'gemini',model:'gemini-2.5-flash',auraCostQuote:{maxInputTokens:30}}});
+    assert.equal(authorized.allowed,true, String(i));
+    g.settleCloud(authorized.reservationId,0.0002,{prompt_tokens:12,completion_tokens:2});
+  }
+  const blocked=g.authorizeCloud({purpose:'reasoning',estimatedUsd:0.001,
+    metadata:{providerId:'gemini',model:'gemini-2.5-flash',auraCostQuote:{maxInputTokens:30}}});
+  assert.equal(blocked.reason,'AUTONOMOUS_CLOUD_BURST_LIMIT');
+  assert.equal(g.geminiQuotaSnapshot().models['gemini-2.5-flash'].usedRpd,12);
+  assert.equal(g.authorizeCloud({purpose:'manual-aura-chat',estimatedUsd:0.001,
+    metadata:{providerId:'gemini',model:'gemini-2.5-flash',auraCostQuote:{maxInputTokens:30}}}).allowed,true,
+    'Aura operator may still inspect and recover when autonomous work trips');
+});
