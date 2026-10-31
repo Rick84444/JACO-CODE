@@ -11,6 +11,8 @@ import {
   geminiQuotaSnapshot,
 } from '../../runtime/src/server/aura/geminiQuota.mjs';
 import { createEconomicBudgetRouter } from '../../runtime/src/server/connected/economicBudget.mjs';
+import { ContinuumModelRouter } from '../../runtime/src/server/continuum/modelRouter.mjs';
+import { manualAuraProviderCompletion } from '../../runtime/src/server/connected/auraOllamaChat.mjs';
 
 const create = (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-gemini-rate-'));
@@ -166,4 +168,80 @@ test('a disabled Aura master cloud switch takes priority over any Gemini quota',
   g.updatePolicy({cloudEnabled:false,manualAuraCloudEnabled:true,novaOllamaCloudEnabled:true});
   assert.equal(rate(g).reason,'CLOUD_DISABLED_BY_POLICY');
   assert.equal(g.geminiQuotaSnapshot().models['gemini-2.5-flash'].usedRpd,0);
+});
+
+
+test('native Gemini ContinuumModelRouter obeys Aura quota and settles Google usageMetadata', async t => {
+  const {g} = create(t);
+  const original = globalThis.fetch;
+  const prevKey = process.env.TEST_QUOTA_GEMINI_KEY;
+  process.env.TEST_QUOTA_GEMINI_KEY = 'stub-key-never-network';
+  const provider={id:'gemini-env',name:'Gemini',protocol:'google-generate-content',local:false,
+    baseUrl:'https://generativelanguage.googleapis.com/v1beta',model:'gemini-2.5-flash',
+    secretEnv:'TEST_QUOTA_GEMINI_KEY',enabled:true};
+  let calls=0;
+  globalThis.fetch=async () => {
+    calls++;
+    return Response.json({
+      candidates:[{content:{parts:[{text:'OK'}]}}],
+      usageMetadata:{promptTokenCount:20,candidatesTokenCount:4,thoughtsTokenCount:2},
+    });
+  };
+  t.after(() => {
+    globalThis.fetch=original;
+    if(prevKey===undefined)delete process.env.TEST_QUOTA_GEMINI_KEY;
+    else process.env.TEST_QUOTA_GEMINI_KEY=prevKey;
+  });
+  const records=[];
+  const router=new ContinuumModelRouter({events:{append:x=>records.push(x)},economic:g,
+    operator:{assertExecutionAllowed(){}},
+    providers:{
+      get:()=>provider,publicView:()=>provider,list:()=>[provider],
+      markSuccess(){},markFailure(){},
+    },
+  });
+  const out=await router.reason({providerId:'gemini-env',prompt:'ping',maxOutputTokens:128});
+  assert.equal(out.text,'OK');
+  assert.equal(out.costStatus,'SETTLED');
+  assert.equal(calls,1);
+  const q=g.geminiQuotaSnapshot().models['gemini-2.5-flash'];
+  assert.equal(q.usedRpm,1);
+  assert.equal(q.usedTpm,20,'native promptTokenCount reconciles conservative input budget');
+  const settled=records.find(x=>x.type==='cloud.cost_settled');
+  assert.ok(settled);
+  assert.equal(settled.data.metadata.providerId,'gemini');
+  assert.equal(settled.data.metadata.auraCostQuote.schema,'jaco.aura-cost-quote/v1');
+  assert.equal(settled.data.usage.completion_tokens,6,'thought tokens count in reported output usage');
+  assert.ok(settled.data.actualUsd>0);
+});
+
+test('native Gemini ContinuumModelRouter recognizes 429 and prevents repeated model dispatch', async t => {
+  const {g} = create(t);
+  const orig=globalThis.fetch, prior=process.env.TEST_QUOTA_GEMINI_KEY;
+  process.env.TEST_QUOTA_GEMINI_KEY='stub-key';
+  let calls=0;
+  globalThis.fetch=async()=>{calls++;return Response.json({error:{code:429,message:'RESOURCE_EXHAUSTED'}},{status:429});};
+  t.after(()=>{globalThis.fetch=orig;if(prior===undefined)delete process.env.TEST_QUOTA_GEMINI_KEY;else process.env.TEST_QUOTA_GEMINI_KEY=prior;});
+  const provider={id:'gemini-env',protocol:'google-generate-content',local:false,
+    baseUrl:'https://generativelanguage.googleapis.com/v1beta',model:'gemini-2.5-flash',secretEnv:'TEST_QUOTA_GEMINI_KEY',enabled:true};
+  const router=new ContinuumModelRouter({events:{append(){}},economic:g,operator:{assertExecutionAllowed(){}},
+    providers:{get:()=>provider,publicView:()=>provider,list:()=>[provider],markSuccess(){},markFailure(){}}});
+  await assert.rejects(()=>router.reason({providerId:'gemini-env',prompt:'ping'}),/PROVIDER_HTTP_429/);
+  assert.equal(g.geminiQuotaSnapshot().models['gemini-2.5-flash'].usedRpd,1);
+  assert.ok(g.geminiQuotaSnapshot().models['gemini-2.5-flash'].cooldownUntil>Date.now());
+  await assert.rejects(()=>router.reason({providerId:'gemini-env',prompt:'ping'}),/GEMINI_PROVIDER_BACKOFF/);
+  assert.equal(calls,1,'only one real provider attempt, not an automatic expensive retry');
+});
+
+test('manual Aura Gemini 429 triggers the same per-model pause', async t => {
+  const {g}=create(t);
+  const providers={
+    list:()=>[{id:'gemini',baseUrl:'https://gemini.test/v1beta/openai',defaultModel:'gemini-2.5-flash',credentialConfigured:true}],
+    chat:async()=>{throw Error('PROVIDER_HTTP_429:RESOURCE_EXHAUSTED');},
+  };
+  await assert.rejects(()=>manualAuraProviderCompletion({providerId:'gemini',model:'gemini-2.5-flash',system:'s',user:'u'},
+    {providers,economic:g,env:{}}),/PROVIDER_HTTP_429/);
+  assert.equal(g.geminiQuotaSnapshot().models['gemini-2.5-flash'].usedRpd,1);
+  const subsequent=rate(g,'gemini-2.5-flash',100,'manual-aura-chat');
+  assert.equal(subsequent.reason,'GEMINI_PROVIDER_BACKOFF');
 });
