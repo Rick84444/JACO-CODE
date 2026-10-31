@@ -144,6 +144,28 @@ test('quota update validates data, is durable, and does not alter any USD caps',
   assert.ok(events.list.some(e=>e.type==='gemini.quota_profile_updated'));
 });
 
+test('AI Studio imported aliases are canonical and cannot silently bypass reduced limits', t => {
+  const { g,root }=create(t);
+  g.updateGeminiQuotaProfile({observedAt:'2026-10-31',models:{
+    'models/gemini-2.0-flash': {label:'Gemini 2 Flash',category:'text',rpm:1,tpm:1000,rpd:1},
+  }});
+  const quota=g.geminiQuotaSnapshot();
+  assert.equal(quota.models['gemini-2-flash'].rpm,1);
+  assert.equal(quota.models['gemini-2.0-flash'],undefined,'alias is not stored separately');
+  // Even alias requests must consume the same canonical bucket.
+  const a=rate(g,'gemini-2.0-flash',20);
+  assert.equal(a.allowed,true);
+  assert.equal(rate(g,'gemini-2-flash',20).reason,'GEMINI_PROJECT_RPM_LIMIT');
+  const rebooted=new EconomicGovernor(root,{append(){}});
+  assert.equal(rebooted.geminiQuotaSnapshot().models['gemini-2-flash'].usedRpd,1);
+  assert.throws(()=>g.updateGeminiQuotaProfile({models:{
+    'gemini-2-flash':{rpm:100,tpm:10000,rpd:100},
+    'gemini-2.0-flash':{rpm:200,tpm:20000,rpd:200},
+  }}),/GEMINI_QUOTA_MODEL_ALIAS_CONFLICT/);
+  assert.equal(g.geminiQuotaSnapshot().models['gemini-2-flash'].rpm,1,
+    'failed alias collision leaves the existing policy unchanged');
+});
+
 test('Aura budget router returns model quota snapshot, validates authenticated import', async t => {
   const { g }=create(t);
   const router=createEconomicBudgetRouter({economic:g,requireOperatorUi:(_req,_res,next)=>next()});
