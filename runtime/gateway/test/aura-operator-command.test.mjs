@@ -25,6 +25,7 @@ test('Aura sends canonical fixed operator goal over local Core and never targets
   const body=JSON.parse(calls[0].options.body);
   assert.equal(body.goal,AURA_ACCEPTANCE_GOAL);
   assert.equal(body.horizon,'short');
+  assert.equal(body.observationOnly,true,'the observation-only goal is scoped to observing tasks in SEER');
   assert.match(body.goal,/Aura: assess/);
   assert.doesNotMatch(JSON.stringify(calls),/\/api\/connected\/nova\/missions|\/api\/connected\/goals/);
   const lines=safeAuraAcceptanceLines(result).join('\n');

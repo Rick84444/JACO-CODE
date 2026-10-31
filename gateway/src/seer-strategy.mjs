@@ -1,4 +1,5 @@
 import { evaluateStrategicCandidate } from './seer-strategic-board.mjs';
+import { OBSERVATION_TASKS } from '../../agents/lib/effect-evidence.mjs';
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, Number(value) || 0));
 const asNumber = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -63,6 +64,14 @@ export const SEER_STARTUP_GOALS = Object.freeze([
     ],
   }),
 ]);
+
+// The task scope a goal grants its graphs. An observation-only goal (invariant observation_only, set by Aura)
+// gets only observing tasks; mcp-call runs in read mode. Without this its missions were allowed to click, type,
+// write through MCP and read the vault (2026-10-31). Any other goal leaves the scope to Nova's defaults.
+export function goalTaskScope(goal) {
+  return Array.isArray(goal?.invariants) && goal.invariants.includes('observation_only')
+    ? { allowedTasks: [...OBSERVATION_TASKS, 'mcp-call'] } : {};
+}
 
 export function computeOpportunityScore(candidate = {}, context = {}) {
   const success = clamp(candidate.success_probability ?? candidate.confidence ?? 0.5);

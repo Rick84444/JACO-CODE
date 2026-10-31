@@ -37,6 +37,30 @@ test('stuck: A,B,A,B,A,B with identical results is ping-pong; a nudge starts a f
   assert.equal(d.check().stuck, false);
 });
 
+// 2026-10-31: a Nova step cycled a rejected shell read (its keys in either order) with two status reads for
+// 23 paid turns. No call ran three times in a row and the status results differed by their timestamps.
+test('stuck: a call that keeps recurring between other steps is caught, whatever its key order; a poll is not', () => {
+  const d = new StuckDetector();
+  const shell = i => step('shell.shell_read', i % 2 ? { command: 'tasklist', args: ['/FI', 'x'] } : { args: ['/FI', 'x'], command: 'tasklist' }, false, null, 'MCP_TOOL_ERROR');
+  const verdicts = [];
+  for (let i = 0; i < 4; i++) {
+    d.record(shell(i)); verdicts.push(d.check());
+    d.record(step('jaco.jaco_system_status', {}, true, { at: i })); verdicts.push(d.check());
+    d.record(step('jaco.jaco_workplace_status', {}, true, { at: i })); verdicts.push(d.check());
+  }
+  const first = verdicts.findIndex(v => v.stuck);
+  assert.equal(first, 9, 'caught at the fourth shell read, before the cycle continues');
+  assert.equal(verdicts[first].kind, 'recurring');
+  assert.match(verdicts[first].hint, /shell_read.*4 times.*MCP_TOOL_ERROR/s);
+  const poll = new StuckDetector();
+  for (const n of [1, 2, 3, 4, 5]) poll.record(step('web-fetch', { url: 'https://deploy.test/status' }, true, { state: String(n) }));
+  assert.equal(poll.check().stuck, false, 'back-to-back polling with new results is still progress');
+  // ...but not without end: 40 back-to-back status reads (new timestamp each time) were 40 paid turns.
+  const status = new StuckDetector();
+  const kinds = Array.from({ length: 8 }, (_, i) => { status.record(step('jaco.jaco_seer_live', {}, true, { at: i })); return status.check().kind || null; });
+  assert.deepEqual(kinds, [null, null, null, null, null, null, null, 'poll-limit']);
+});
+
 const assistant = (id, name, args) => ({ role: 'assistant', content: '', tool_calls: [{ id, type: 'function', function: { name, arguments: JSON.stringify(args) } }] });
 const tool = (id, ok, extra = 'x'.repeat(2000)) => ({ role: 'tool', tool_call_id: id, content: JSON.stringify({ ok, error: ok ? undefined : 'ENOENT', data: extra }) });
 const conversation = n => {

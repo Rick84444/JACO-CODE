@@ -88,6 +88,7 @@ export async function submitAuraAcceptance(core) {
     body: JSON.stringify({
       goal: AURA_ACCEPTANCE_GOAL,
       horizon: 'short',
+      observationOnly: true,
     }),
   });
   if (result?.success !== true || result?.schema !== 'jaco.operator-goal/v1' ||

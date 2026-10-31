@@ -10,7 +10,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, renameSync } from 'node:fs';
 import { buildAgentCard, joinWorkplace } from '../../agents/lib/workplace-session.mjs';
-import { createStrategicKernel, SEER_PURPOSE } from './seer-strategy.mjs';
+import { createStrategicKernel, SEER_PURPOSE, goalTaskScope } from './seer-strategy.mjs';
 import { createMissionGraph } from './seer-mission-graph.mjs';
 import { createMissionDispatcher } from './seer-mission-dispatch.mjs';
 import { STRATEGIC_AGENT_INSTRUCTIONS } from '../../agents/lib/strategic-context.mjs';
@@ -1575,6 +1575,7 @@ If no new work is needed (system already has enough active work), respond with: 
         strategic_decision_id: decideResult.decision.id,
         strategic_prediction_id: decideResult.prediction?.id || null,
         strategic_capability: validCandidates.find(c => c.title === chosen.title)?.capability || 'novel',
+        ...goalTaskScope(focusGoal),
       },
       nodes: chosen.nodes.map(n => ({
         key: n.key,

@@ -576,7 +576,10 @@ export class NovaMissionControl {
     // argument), so reading steps get five consecutive failures before the mission stops; actions three.
     // Interleaved successful searches must not reset repeated failures of the same action.
     // Count only since its last verified success, and never reinterpret an unknown outcome.
-    const sameAction = r => r.type === record.type && JSON.stringify(r.input) === JSON.stringify(record.input);
+    // Compared by the canonical input hash: the planner reorders keys ({command,args} vs {args,command}), and
+    // JSON.stringify counted those as different actions, so a rejected shell read was retried 8 times (2026-10-31).
+    const sameAction = r => r.type === record.type && (r.inputHash && record.inputHash
+      ? r.inputHash === record.inputHash : JSON.stringify(r.input) === JSON.stringify(record.input));
     const previousSuccess = receipts.findLastIndex(r => sameAction(r) && r.ok && r.verified);
     const repeatedFailures = receipts.slice(previousSuccess + 1).filter(r => sameAction(r) && r.ok === false && !r.outcomeUnknown).length;
     const stalled = !uncertain && !record.ok && repeatedFailures >= (BATCHABLE.has(action.type) ? 5 : 3);

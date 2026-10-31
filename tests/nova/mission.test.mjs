@@ -319,6 +319,19 @@ test('successful unrelated reads no longer reset repeated identical failures',as
  const after=s.control.get(m.id);assert.equal(after.status,'BLOCKED');assert.equal(after.failures,1);assert.match(after.replanRequest.reason,/failed 5 times/);
 });
 
+// 2026-10-31: the planner sent a rejected shell read as {command,args} and {args,command} alternately; compared
+// with JSON.stringify those were different actions, so the failure count never reached its limit (8 retries).
+test('repeated failures of the same action count across reordered argument keys',async t=>{
+ const s=setup(t,['mcp-call','health-check']);const m=await s.client.create({...goal,idempotencyKey:'stall-keys',source:'seer-mission-graph',parent:{graphId:'g',nodeKey:'keys',mainGoal:'Original'}});
+ const run=(task,result)=>processMissionTurn({client:s.client,owner:'nova',plan:async()=>({task}),execute:async()=>result});
+ for(let i=0;i<5;i++){
+   if(i)await run({type:'health-check',data:{}},{ok:true});
+   const data=i%2?{server:'shell',tool:'shell_read',arguments:{command:'tasklist',args:['/FI','x']}}:{arguments:{args:['/FI','x'],command:'tasklist'},tool:'shell_read',server:'shell'};
+   await run({type:'mcp-call',data},{ok:false,error:'MCP_TOOL_ERROR'});
+ }
+ const after=s.control.get(m.id);assert.equal(after.status,'BLOCKED');assert.match(after.replanRequest.reason,/failed 5 times/);
+});
+
 test('operator cancellation waits for the in-flight receipt and never claims success',t=>{
  const s=setup(t);const m=s.control.create({...goal,idempotencyKey:'cancel-flight'});const lease=s.control.claim(m.id,'nova');const action=s.control.begin(m.id,{owner:'nova',token:lease.token,task});
  assert.equal(s.control.requestCancel(m.id).cancelRequested,true);assert.equal(s.control.get(m.id).phase,'EXECUTING');
