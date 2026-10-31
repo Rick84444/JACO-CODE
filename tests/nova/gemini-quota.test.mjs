@@ -172,7 +172,7 @@ test('a disabled Aura master cloud switch takes priority over any Gemini quota',
 
 
 test('native Gemini ContinuumModelRouter obeys Aura quota and settles Google usageMetadata', async t => {
-  const {g} = create(t);
+  const {g,events} = create(t);
   const original = globalThis.fetch;
   const prevKey = process.env.TEST_QUOTA_GEMINI_KEY;
   process.env.TEST_QUOTA_GEMINI_KEY = 'stub-key-never-network';
@@ -207,7 +207,7 @@ test('native Gemini ContinuumModelRouter obeys Aura quota and settles Google usa
   const q=g.geminiQuotaSnapshot().models['gemini-2.5-flash'];
   assert.equal(q.usedRpm,1);
   assert.equal(q.usedTpm,20,'native promptTokenCount reconciles conservative input budget');
-  const settled=records.find(x=>x.type==='cloud.cost_settled');
+  const settled=events.list.find(x=>x.type==='cloud.cost_settled');
   assert.ok(settled);
   assert.equal(settled.data.metadata.providerId,'gemini');
   assert.equal(settled.data.metadata.auraCostQuote.schema,'jaco.aura-cost-quote/v1');
