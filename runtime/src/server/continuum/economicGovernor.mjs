@@ -2,7 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { atomicWriteJson, readJson, nowIso, makeId, safeNumber, deepClone } from './util.mjs';
 import {
-  defaultGeminiQuotaProfile, validGeminiQuotaProfile, inspectGeminiQuota,
+  defaultGeminiQuotaProfile, validGeminiQuotaProfile, canonicalGeminiQuotaModels, inspectGeminiQuota,
   recordGeminiQuotaReservation, reconcileGeminiQuotaUsage, markGeminiQuotaBackoff, geminiQuotaSnapshot,
 } from '../aura/geminiQuota.mjs';
 
@@ -47,6 +47,13 @@ export class EconomicGovernor {
     this.geminiQuotaFile=path.join(root,'gemini-quota-profile.json');
     this.geminiQuotaProfile=readJson(this.geminiQuotaFile,defaultGeminiQuotaProfile());
     if(!validGeminiQuotaProfile(this.geminiQuotaProfile)) throw new Error('GEMINI_QUOTA_PROFILE_INVALID');
+    // Safely migrate a previously persisted alias profile; conflicting aliases are
+    // rejected rather than choosing arbitrary limits for a paid model.
+    const loadedModels=canonicalGeminiQuotaModels(this.geminiQuotaProfile.models);
+    if(Object.keys(loadedModels).some(id=>!Object.hasOwn(this.geminiQuotaProfile.models,id))){
+      this.geminiQuotaProfile={...this.geminiQuotaProfile,models:loadedModels};
+      atomicWriteJson(this.geminiQuotaFile,this.geminiQuotaProfile);
+    }
     this.policy={...DEFAULT_POLICY,...(readJson(this.policyFile,{})||{})};
     if(!fs.existsSync(this.policyFile)&&process.env.JACO_CLOUD_ENABLED==='true')this.policy.cloudEnabled=true;
     this.state=readJson(this.stateFile,{day:periodKey('day'),month:periodKey('month'),dailySpentUsd:0,monthlySpentUsd:0,reservedUsd:0,reservations:{},autonomousCloudCalls:[],revenueUsd:0,updatedAt:nowIso()});
@@ -58,9 +65,10 @@ export class EconomicGovernor {
   updateGeminiQuotaProfile(patch,actor='operator'){
     if(!patch||typeof patch!=='object'||Array.isArray(patch)||!patch.models||typeof patch.models!=='object'||Array.isArray(patch.models)||
        Object.keys(patch.models).length===0) throw new Error('GEMINI_QUOTA_PROFILE_INVALID');
+    const requested=canonicalGeminiQuotaModels(patch.models);
     const profile={...this.geminiQuotaProfile,source:'operator-ai-studio-snapshot',observedAt:patch.observedAt||this.geminiQuotaProfile.observedAt,
       projectAssociationVerified:false,
-      models:{...this.geminiQuotaProfile.models,...patch.models}};
+      models:{...this.geminiQuotaProfile.models,...requested}};
     if(!validGeminiQuotaProfile(profile)) throw new Error('GEMINI_QUOTA_PROFILE_INVALID');
     atomicWriteJson(this.geminiQuotaFile,profile);this.geminiQuotaProfile=profile;
     this.events.append({stream:'economic',type:'gemini.quota_profile_updated',actor,data:{observedAt:profile.observedAt,models:Object.keys(patch.models).length,source:profile.source}});
