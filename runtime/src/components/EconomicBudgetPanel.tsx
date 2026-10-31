@@ -76,7 +76,9 @@ export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {
   const shown = inline || editing;
   const held = snapshot ? (Object.values(snapshot.state.reservations || {}) as { status?: string; estimatedUsd: number }[]).filter(r => r.status === 'UNKNOWN_OUTCOME') : [];
   const heldUsd = held.reduce((n, r) => n + r.estimatedUsd, 0);
-  const cloudOn = Boolean(snapshot && (snapshot.policy.cloudEnabled || (snapshot.policy.manualAuraCloudEnabled && snapshot.policy.novaOllamaCloudEnabled)));
+  // Never claim cloud is off/on from the legacy channel flags: the canonical
+  // EconomicGovernor treats cloudEnabled as the master kill switch.
+  const cloudOn = Boolean(snapshot?.policy.cloudEnabled);
   // The one sentence that says what stops a cloud answer right now (or that nothing does).
   const blocking = !snapshot ? null
     : !cloudOn ? 'Molnmodeller är avstängda: chatten och Nova använder bara lokala modeller.'
@@ -99,7 +101,7 @@ export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {
       <p className="text-slate-300">Autonom säkerhetsspärr: {snapshot.policy.maxAutonomousCloudCallsPer15m == null ? 'avstängd' : `${snapshot.policy.maxAutonomousCloudCallsPer15m} betalda anrop per 15 minuter`}. Styr Nova och SEER, inte din manuella Aura-chatt.</p>
       <p className="text-slate-400">Tokenbaserat kostnadsunderlag idag: {money(snapshot.state.dailySpentUsd)} USD · Reserverat: {money(snapshot.state.reservedUsd)} USD · Kvar idag: {snapshot.headroom.dailyUsd == null ? 'inget tak' : `${money(snapshot.headroom.dailyUsd)} USD`}</p>
       <p className="text-slate-500">USD-beloppen beräknas med JACO:s konfigurerade priser eller referenspriser och är inte avstämda mot leverantörens faktura.</p>
-      <p hidden={inline} className="text-slate-500">Aura moln: {snapshot.policy.cloudEnabled || snapshot.policy.manualAuraCloudEnabled ? 'tillåtet inom budget' : 'avstängt'} · Nova molnproviders: {snapshot.policy.cloudEnabled || snapshot.policy.novaOllamaCloudEnabled ? 'tillåtet inom budget' : 'avstängt'}</p>
+      <p hidden={inline} className="text-slate-500">Aura moln: {snapshot.policy.cloudEnabled && snapshot.policy.manualAuraCloudEnabled ? 'tillåtet inom budget' : 'avstängt'} · Nova molnproviders: {snapshot.policy.cloudEnabled && snapshot.policy.novaOllamaCloudEnabled ? 'tillåtet inom budget' : 'avstängt'}</p>
       <p hidden={inline} className="text-slate-400">Du styr gemensamma kostnadstak här. Separat stoppar den autonoma säkerhetsspärren överdrivna anropsserier, även när USD-taken är avstängda.</p>
       {((snapshot.headroom.dailyUsd != null && snapshot.headroom.dailyUsd <= 0) || (snapshot.headroom.monthlyUsd != null && snapshot.headroom.monthlyUsd <= 0) || (snapshot.policy.maxCloudUsdPerTask != null && snapshot.policy.maxCloudUsdPerTask <= 0)) && <p role="status" className="text-amber-300">Budgeten stoppar nya betalda anrop. Reserverade belopp räknas in tills utfallet är fastställt.</p>}
       {!inline && !editing && <button type="button" onClick={() => { setDraft(draftForPolicy(snapshot.policy)); setEditing(true); setSaved(false); }} className="text-cyan-400">Ändra budget</button>}

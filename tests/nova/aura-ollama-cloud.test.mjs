@@ -79,19 +79,28 @@ test('manual Aura Cloud releases reservation after a clear subscription rejectio
   assert.deepEqual(h.events.map(e => e[0]), ['reserve', 'chat', 'release']);
 });
 
-test('EconomicGovernor authorizes manual Aura chat without enabling background cloud work', () => {
+test('EconomicGovernor master cloud switch denies every paid path, regardless of legacy subflags', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-aura-economic-'));
   try {
     const economic = new EconomicGovernor(root, { append() {} });
-    assert.equal(economic.snapshot().policy.cloudEnabled, true, 'cloud is on until the operator turns it off');
-    economic.updatePolicy({ cloudEnabled: false, manualAuraCloudEnabled: false, novaOllamaCloudEnabled: false }, 'operator');
+    assert.equal(economic.snapshot().policy.cloudEnabled, true);
+    assert.equal(economic.snapshot().policy.manualAuraCloudEnabled, true);
+    assert.equal(economic.snapshot().policy.novaOllamaCloudEnabled, true);
+    economic.updatePolicy({ cloudEnabled: false }, 'operator');
+    for (const purpose of ['reasoning', 'manual-aura-chat', 'nova-ollama-cloud']) {
+      assert.equal(economic.authorizeCloud({ estimatedUsd: 0.01, purpose }).reason,
+        'CLOUD_DISABLED_BY_POLICY', 'master switch must block ' + purpose);
+    }
+    economic.updatePolicy({ manualAuraCloudEnabled: true, novaOllamaCloudEnabled: true }, 'operator');
     assert.equal(economic.authorizeCloud({ estimatedUsd: 0.01, purpose: 'manual-aura-chat' }).allowed, false);
-    economic.updatePolicy({ manualAuraCloudEnabled: true, dailyCloudUsd: 1 }, 'operator');
-    assert.equal(economic.snapshot().policy.cloudEnabled, false);
-    assert.equal(economic.authorizeCloud({ estimatedUsd: 0.01, purpose: 'reasoning' }).allowed, false);
+    assert.equal(economic.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' }).allowed, false);
+    const restarted = new EconomicGovernor(root, { append() {} });
+    assert.equal(restarted.authorizeCloud({ estimatedUsd: 0.01, purpose: 'manual-aura-chat' }).reason,
+      'CLOUD_DISABLED_BY_POLICY', 'the operator shutdown persists across restart');
+    economic.updatePolicy({ cloudEnabled: true, manualAuraCloudEnabled: true, novaOllamaCloudEnabled: false }, 'operator');
     assert.equal(economic.authorizeCloud({ estimatedUsd: 0.01, purpose: 'manual-aura-chat' }).allowed, true);
-    economic.updatePolicy({ novaOllamaCloudEnabled: true }, 'operator');
-    assert.equal(economic.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' }).allowed, true);
+    assert.equal(economic.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' }).reason,
+      'CLOUD_DISABLED_BY_POLICY', 'channel-specific opt-out is respected with master on');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
