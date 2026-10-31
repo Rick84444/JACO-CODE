@@ -74,3 +74,15 @@ test('the planner\'s completion reason travels with the completion proposal', as
   assert.equal(out.awaitingVerification, true);
   assert.deepEqual(released, [{ owner: 'nova', token: 't', completionProposed: true, completionReason: 'The last 5 commits changed skills/ and agents/lib/.' }]);
 });
+
+test('Aura mission summary includes only safe graph ID so Avsluta mål is actionable', () => {
+  const mission = {
+    id:'mission-1', goal:'Inspect runtime', status:'ACTIVE',
+    metadata:{ parent:{graphId:'mvvq24c5-5nsaa',privateToken:'DO_NOT_EXPOSE'},secrets:'DO_NOT_EXPOSE'},
+  };
+  const summary=summarizeNovaMission(mission);
+  assert.deepEqual(summary.metadata,{parent:{graphId:'mvvq24c5-5nsaa'}});
+  assert.doesNotMatch(JSON.stringify(summary),/DO_NOT_EXPOSE/);
+  const invalid=summarizeNovaMission({...mission,metadata:{parent:{graphId:'../unsafe?secret=1'}}});
+  assert.equal(invalid.metadata,undefined);
+});
