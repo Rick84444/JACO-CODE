@@ -481,13 +481,21 @@ async function refreshLocalProvider() {
 }
 
 async function invokeProvider(provider, { system, user, image, max_tokens, temperature }, failures = [], purpose = 'inference') {
-  return invokeSeerProvider(provider, { system, user, image, max_tokens, temperature }, {
-    purpose,
-    onFailure: failure => {
-      failures.push(failure);
-      emit('provider.failed', failure);
-    },
-  });
+  const onFailure = failure => {
+    failures.push(failure);
+    emit('provider.failed', failure);
+  };
+  const args = { system, user, image, max_tokens, temperature };
+  // Every remote fallback, including old provider lists, must reserve against
+  // the same Continuum ledger before reaching any metered model endpoint.
+  if (provider && (provider.local === false || provider.envKey)) {
+    return invokeAuraPlanner({ ...provider, local: false }, args, {
+      purpose, onFailure,
+      runtimeUrl: process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000',
+      token: process.env.GATEWAY_TOKEN || TOKEN,
+    });
+  }
+  return invokeSeerProvider(provider, args, { purpose, onFailure });
 }
 
 async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0.3, startup_probe = false, memory_chars, purpose = 'inference' }) {
