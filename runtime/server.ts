@@ -33,6 +33,7 @@ import { createContinuumRouter } from './src/server/continuum/router.mjs';
 import { createModelRelayRouter } from './src/server/relay/modelRelay.js';
 import { actuatorLeases } from './src/server/handsOff/actuatorLease.js';
 import { ConnectedRuntime, mountConnectedRoutes } from './src/server/connected/connectedRuntime.mjs';
+import { validProviderId } from './src/server/connected/providerRegistry.mjs';
 import { createIdeRemoteGate, upgradeAllowed, ideHost } from './src/server/connected/ideAccess.mjs';
 import { liveMissionView } from './src/server/connected/liveMission.mjs';
 import { discoverProvider, identifyKey } from './src/server/connected/providerDiscovery.mjs';
@@ -4337,7 +4338,7 @@ const notifyPhone = async (action) => {
     const maxTokens = Number(req.body?.maxTokens);
     const disabled = String(process.env.JACO_DISABLED_PROVIDERS || '').split(',').map(s => s.trim());
     if (!paidModelsAllowed() || disabled.includes(providerId)) return res.status(403).json({ success: false, error: 'NOVA_PROVIDER_DISABLED' });
-    if (!/^[a-z][a-z0-9-]{0,63}$/.test(providerId) || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(model) ||
+    if (!validProviderId(providerId) || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(model) ||
         (providerId === 'ollama-cloud' && (!configuredModel || model !== configuredModel)) || !Number.isInteger(promptBytes) || promptBytes < 1 || promptBytes > 200000 ||
         !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 32768) {
       return res.status(400).json({ success: false, error: 'NOVA_OLLAMA_COST_INPUT_INVALID' });
