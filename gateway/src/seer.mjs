@@ -18,7 +18,7 @@ import { buildSelfDevelopmentGraph } from './seer-self-development.mjs';
 import { createAutonomyLoop, shouldAutoConfirmNova } from './seer-autonomy-loop.mjs';
 import { createDevelopmentCycle, chooseGovernorFocus, governorBaseline } from './seer-development-cycle.mjs';
 import { createExperienceStore } from './seer-experience-store.mjs';
-import { discoverSeerLocalProvider, invokeSeerProvider, callSeerGovernorProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt, compactGovernorGoals, clipGoalStatement } from './seer-model-provider.mjs';
+import { discoverSeerLocalProvider, invokeSeerProvider, callSeerGovernorProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt, compactGovernorGoals, clipGoalStatement, resolveAuraPlanner, invokeAuraPlanner } from './seer-model-provider.mjs';
 import { createA2AColonyRevenueSync } from './a2acolony-revenue-sync.mjs';
 import { normalizeProjectRoot, projectNodeContract, projectGraphPolicy, projectGoalGraph, projectGoalDone } from './seer-project.mjs';
 
@@ -491,46 +491,52 @@ async function invokeProvider(provider, { system, user, image, max_tokens, tempe
 }
 
 async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0.3, startup_probe = false, memory_chars, purpose = 'inference' }) {
-  max_tokens = Math.min(2048, Math.max(1, Number(max_tokens) || 1024));
+  // A cloud model gets the full request (the governor asks for 8192: a cut-off plan is a failed turn);
+  // local models keep the 2048 ceiling and the context budget below.
+  const requestedTokens = Math.min(8192, Math.max(1, Number(max_tokens) || 1024));
+  max_tokens = Math.min(2048, requestedTokens);
+  const runtime = { runtimeUrl: process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000', token: process.env.GATEWAY_TOKEN || TOKEN };
+  const aura = startup_probe ? null : await resolveAuraPlanner(runtime);
+  const auraResult = aura ? await invokeAuraPlanner(aura, await seerPromptFor(aura, { system, user, image, temperature, memory_chars, startup_probe }, aura.local ? max_tokens : requestedTokens), {
+    ...runtime, purpose, onFailure: failure => emit('provider.failed', failure),
+  }) : null;
+  if (auraResult) { emit('provider.used', { provider: aura.name, model: aura.model, source: 'aura-choice' }); return auraResult; }
+  return callSeerLocalChain({ system, user, image, max_tokens, temperature, startup_probe, memory_chars, purpose });
+}
+
+// The request shape for one provider: every on-device model has a small context window and gets the
+// budgeted prompt; only a remote one gets the unbudgeted prompt.
+async function seerPromptFor(target, { system, user, image, temperature, memory_chars, startup_probe }, max_tokens) {
   let systemPrompt = String(system || '');
   let userPrompt = String(user || '');
-  const attemptedLocal = localLlmProvider;
   // A caller that brings its own live state (Aura chat) can ask for a smaller memory block: on a CPU
   // model every 1000 characters cost several seconds of prompt evaluation (2026-10-04: 12000 chars made
   // a one-word Aura answer take 60-90 s). 0 leaves the block out.
   const memoryLimit = memory_chars == null || !Number.isFinite(Number(memory_chars))
     ? Number(process.env.SEER_MEMORY_BLOCK_CHARS) || 12000
     : Math.min(Number(process.env.SEER_MEMORY_BLOCK_CHARS) || 12000, Math.max(0, Math.floor(Number(memory_chars))));
-
   if (!startup_probe && memoryLimit > 0) {
     const activeMemory = JSON.stringify(buildActiveMemoryContext());
-    const wantsLlamaCpp = attemptedLocal?.name === 'llamacpp'
-      || String(process.env.JACO_SEER_PROVIDER_PREFERENCE || '').toLowerCase() === 'llamacpp';
-    // Every on-device model has a small context window; only a remote one gets the unbudgeted prompt.
-    if (wantsLlamaCpp || (attemptedLocal && attemptedLocal.local !== false)) {
+    const wantsLlamaCpp = target?.name === 'llamacpp'
+      || (target?.local !== false && String(process.env.JACO_SEER_PROVIDER_PREFERENCE || '').toLowerCase() === 'llamacpp');
+    if (wantsLlamaCpp || (target && target.local !== false)) {
       const budget = budgetSeerLocalPrompt({
-        system: systemPrompt,
-        user: userPrompt,
-        memory: activeMemory.slice(0, memoryLimit),
-        maxTokens: max_tokens,
+        system: systemPrompt, user: userPrompt, memory: activeMemory.slice(0, memoryLimit), maxTokens: max_tokens,
         contextTokens: Number((wantsLlamaCpp ? process.env.JACO_LLAMACPP_CTX : process.env.JACO_SEER_LOCAL_CTX) || 8192),
       });
       systemPrompt = budget.system;
       userPrompt = budget.user;
       max_tokens = budget.maxTokens;
     } else {
-      const memoryBlock = activeMemory.slice(0, memoryLimit);
-      systemPrompt = `${systemPrompt}\n\n[JACO ACTIVE MEMORY]\n${memoryBlock}\n[/JACO ACTIVE MEMORY]`;
+      systemPrompt = `${systemPrompt}\n\n[JACO ACTIVE MEMORY]\n${activeMemory.slice(0, memoryLimit)}\n[/JACO ACTIVE MEMORY]`;
     }
   }
+  return { system: systemPrompt, user: userPrompt, image, max_tokens, temperature };
+}
 
-  const args = {
-    system: systemPrompt,
-    user: userPrompt,
-    image,
-    max_tokens,
-    temperature,
-  };
+async function callSeerLocalChain({ system, user, image, max_tokens = 1024, temperature = 0.3, startup_probe = false, memory_chars, purpose = 'inference' }) {
+  const attemptedLocal = localLlmProvider;
+  const args = await seerPromptFor(attemptedLocal, { system, user, image, temperature, memory_chars, startup_probe }, max_tokens);
   const failures = [];
   let result = await invokeProvider(attemptedLocal, args, failures, purpose);
   if (result) return result;

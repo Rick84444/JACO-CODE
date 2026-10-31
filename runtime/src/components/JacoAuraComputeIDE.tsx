@@ -1504,6 +1504,13 @@ export const JacoAuraComputeIDE: React.FC = () => {
     await refresh({ includeFiles: false });
   };
 
+  const endMissionGoal = async (id: string) => {
+    await fetch(`/api/aura/workbench/missions/${encodeURIComponent(id)}/end-goal`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }),
+    }).then(json);
+    await refresh({ includeFiles: false });
+  };
+
   const renderChatContent = () => (
     <>
       <div className="flex-1 min-h-0">
@@ -1835,7 +1842,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const sideMission = missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
   const sideObservation = sideMission ? stageEvents.filter(event=>event.missionId===sideMission.id).at(-1)?.text ?? null : null;
   const stage = <div className="aura-stage-column">
-    {sideMission&&<details className="aura-stage-mission-details"><summary>Uppdrag · {sideMission.goal}</summary><MissionCard mission={sideMission as any} observation={sideObservation} onCancel={cancelMission} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/></details>}
+    {sideMission&&<details className="aura-stage-mission-details"><summary>Uppdrag · {sideMission.goal}</summary><MissionCard mission={sideMission as any} observation={sideObservation} onCancel={cancelMission} onEndGoal={endMissionGoal} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/></details>}
     <AuraLiveStage projectRevision={projectKey} candidate={selectedStage} events={stageEvents} preview={stagePreview}
     previewError={fileReadError?.path===stagePath?fileReadError.message:null} onRetryPreview={()=>setFileReadRevision(value=>value+1)}
     previewReady={Boolean(stagePreview)} active={status.tone==='active'}
