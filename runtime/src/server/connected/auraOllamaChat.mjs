@@ -54,7 +54,7 @@ export const REFERENCE_PRICE = { input: 3, output: 15 };
 export function modelPrice(providerId, model, env = process.env) {
   const configured = auraProviderPrices(env)[`${providerId}/${model}`];
   if (configured) return { ...configured, source: 'configured' };
-  if (/:free$/i.test(String(model))) return { input: 0, output: 0, free: true, source: 'free' };
+  if (providerId === 'openrouter' && /:free$/i.test(String(model))) return { input: 0, output: 0, free: true, source: 'free' };
   let reference = REFERENCE_PRICE;
   try {
     const custom = JSON.parse(env.JACO_AURA_DEFAULT_PRICE_JSON || 'null');
