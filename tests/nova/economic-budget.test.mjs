@@ -7,7 +7,7 @@ import test from 'node:test';
 import { EconomicGovernor } from '../../runtime/src/server/continuum/economicGovernor.mjs';
 import { createEconomicBudgetRouter } from '../../runtime/src/server/connected/economicBudget.mjs';
 import { manualAuraProviderCompletion } from '../../runtime/src/server/connected/auraOllamaChat.mjs';
-import { novaProviderCostUsd } from '../../runtime/src/server/connected/auraOllamaChat.mjs';
+import { novaProviderCostUsd, modelPrice } from '../../runtime/src/server/connected/auraOllamaChat.mjs';
 import { budgetedNovaOllamaCall } from '../../agents/lib/nova-ollama-cost.mjs';
 const express = createRequire(new URL('../../runtime/package.json', import.meta.url))('express');
 function governor(t) {
@@ -108,3 +108,13 @@ test('an unsettled reservation stops holding headroom once it is older than any 
   assert.equal(events.filter(e => e.type === 'cloud.cost_expired').length, 2);
   assert.equal(g.authorizeCloud({ estimatedUsd: 0.5, purpose: 'nova-ollama-cloud' }).allowed, true);
 });
+
+test('a model called :free is only unmetered on OpenRouter, not arbitrary connected providers', t => {
+  const g = governor(t);
+  assert.equal(modelPrice('openrouter', 'listed:free', {}).source, 'free');
+  assert.equal(modelPrice('custom', 'listed:free', {}).source, 'reference');
+  const cost = novaProviderCostUsd('custom', 'listed:free', 1000, 200, {});
+  assert.ok(cost > 0, 'a custom provider may bill for a model named free');
+  assert.equal(g.authorizeCloud({ estimatedUsd: cost, purpose: 'nova-ollama-cloud', metadata: { providerId: 'custom' } }).allowed, true);
+});
+
