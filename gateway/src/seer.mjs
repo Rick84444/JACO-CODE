@@ -480,8 +480,9 @@ async function refreshLocalProvider() {
   return localLlmProvider;
 }
 
-async function invokeProvider(provider, { system, user, image, max_tokens, temperature }, failures = []) {
+async function invokeProvider(provider, { system, user, image, max_tokens, temperature }, failures = [], purpose = 'inference') {
   return invokeSeerProvider(provider, { system, user, image, max_tokens, temperature }, {
+    purpose,
     onFailure: failure => {
       failures.push(failure);
       emit('provider.failed', failure);
@@ -489,7 +490,7 @@ async function invokeProvider(provider, { system, user, image, max_tokens, tempe
   });
 }
 
-async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0.3, startup_probe = false, memory_chars }) {
+async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0.3, startup_probe = false, memory_chars, purpose = 'inference' }) {
   max_tokens = Math.min(2048, Math.max(1, Number(max_tokens) || 1024));
   let systemPrompt = String(system || '');
   let userPrompt = String(user || '');
@@ -531,14 +532,14 @@ async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0
     temperature,
   };
   const failures = [];
-  let result = await invokeProvider(attemptedLocal, args, failures);
+  let result = await invokeProvider(attemptedLocal, args, failures, purpose);
   if (result) return result;
 
   try {
     const refreshed = await refreshLocalProvider();
     // Discovery is not a retry budget: do not immediately repeat the same failed request.
     result = refreshed && (refreshed.url !== attemptedLocal?.url || refreshed.model !== attemptedLocal?.model)
-      ? await invokeProvider(refreshed, args, failures) : null;
+      ? await invokeProvider(refreshed, args, failures, purpose) : null;
     if (result) return result;
   } catch (error) {
     localProviderDiscovery = {
@@ -555,7 +556,7 @@ async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0
   const ordered = [...PAID_LLM_PROVIDERS].sort((a, b) => Number(b.name === primary && configuredFallbacks.has(b.name)) - Number(a.name === primary && configuredFallbacks.has(a.name)));
   for (const provider of ordered) {
     if (!provider.free && !configuredFallbacks.has(provider.name)) continue;
-    result = await invokeProvider(provider, args, failures);
+    result = await invokeProvider(provider, args, failures, purpose);
     if (result) return result;
   }
   return { ok: false, text: null, error: 'all_providers_failed', failures: failures.slice(-8) };
