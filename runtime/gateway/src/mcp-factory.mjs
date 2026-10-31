@@ -15,10 +15,11 @@ export function selectJacoMcpTools(registry, profile = process.env.JACO_MCP_TOOL
   if(profile === 'full') return registry;
   if(profile !== 'cognitive-read' && profile !== 'cognitive-collaborate')
     throw new Error('JACO_MCP_TOOL_PROFILE_INVALID');
-  const allowed = new Set(profile === 'cognitive-read'
-    ? JACO_MCP_COGNITIVE_READ : JACO_MCP_COGNITIVE_COLLABORATE);
-  const result = registry.filter(tool => allowed.has(tool.name));
-  if(result.length !== allowed.size) throw new Error('JACO_MCP_COGNITIVE_PROFILE_INCOMPLETE');
+  const allowed = profile === 'cognitive-read'
+    ? JACO_MCP_COGNITIVE_READ : JACO_MCP_COGNITIVE_COLLABORATE;
+  const byName = new Map(registry.map(tool => [tool.name, tool]));
+  const result = allowed.map(name => byName.get(name));
+  if(result.some(tool => !tool)) throw new Error('JACO_MCP_COGNITIVE_PROFILE_INCOMPLETE');
   return result;
 }
 
