@@ -118,3 +118,38 @@ test('untrusted model URL cannot skip reservation by self-declaring local', asyn
   assert.deepEqual(failures,['PROVIDER_ENDPOINT_UNTRUSTED']);
   assert.equal(calls.length,0);
 });
+
+// Review P1 on #94: gpt-oss:120b-cloud is served at localhost by the Ollama daemon but inferred and billed in
+// the cloud. As a "local" choice it skipped the Continuum reservation and JACO_ALLOW_PAID_MODELS=0.
+test('an Ollama cloud-relayed model is refused even at localhost, with paid models on or off', async () => {
+  const { calls, fetchFn } = network();
+  const failures = [];
+  for (const env of [{ JACO_ALLOW_PAID_MODELS: '0' }, { JACO_ALLOW_PAID_MODELS: '1' }]) {
+    for (const model of ['gpt-oss:120b-cloud', 'qwen3-coder:480b-cloud', 'deepseek-v3.1:671b:cloud']) {
+      const result = await invokeAuraPlanner({ name: 'ollama', url: 'http://127.0.0.1:11434/v1/chat/completions', model, local: true, envKey: null },
+        { system: 's', user: 'u', image: 'data:image/png;base64,AA', max_tokens: 100 }, { env, fetchFn, runtimeUrl: RUNTIME, onFailure: f => failures.push(f.code) });
+      assert.equal(result, null);
+    }
+  }
+  assert.equal(calls.length, 0, 'no provider call and no reservation');
+  assert.deepEqual([...new Set(failures)], ['OLLAMA_CLOUD_RELAY_NOT_RESERVABLE']);
+});
+
+// Review P2 on #94: a connected HTTPS server registered without a credential requirement was always refused
+// as PROVIDER_KEY_MISSING. It now runs under the same paid gate and reservation, without an Authorization header.
+test('a keyless connected HTTPS provider is reserved and called without a key; it still needs the paid opt-in', async () => {
+  const KEYLESS = { name: 'team-llm', url: 'https://llm.team.test/v1/chat/completions', envKey: null, model: 'qwen3:32b', local: false };
+  const off = network();
+  const failures = [];
+  assert.equal(await invokeAuraPlanner(KEYLESS, { system: 's', user: 'u', max_tokens: 100 }, { env: {}, fetchFn: off.fetchFn, runtimeUrl: RUNTIME, onFailure: f => failures.push(f.code) }), null);
+  assert.deepEqual(failures, ['PAID_PROVIDER_DISABLED']);
+  assert.equal(off.calls.length, 0);
+  const { calls, fetchFn } = network({ answer: 'ok' });
+  const result = await invokeAuraPlanner(KEYLESS, { system: 's', user: 'u', max_tokens: 100 }, {
+    env: { JACO_ALLOW_PAID_MODELS: '1' }, fetchFn, runtimeUrl: RUNTIME, credentialFn: () => assert.fail('no credential lookup for a keyless provider') });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls.map(c => new URL(c.url).pathname), ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/settle']);
+  assert.equal(calls[1].headers.Authorization, undefined);
+  // Locality is still decided by the endpoint: plain HTTP off loopback stays refused.
+  assert.equal(seerModelEndpointAllowed('http://192.168.1.20:8080/v1/chat/completions', false), false);
+});

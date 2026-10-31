@@ -30,7 +30,7 @@ export async function budgetedNovaOllamaCall({ provider, requestBody, runtimeUrl
   try {
     const response = await fetchImpl(provider.url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.key}` },
+      headers: { 'Content-Type': 'application/json', ...(provider.key ? { Authorization: `Bearer ${provider.key}` } : {}) },
       body: JSON.stringify(requestBody), signal,
     });
     const rawBody = await response.text();
