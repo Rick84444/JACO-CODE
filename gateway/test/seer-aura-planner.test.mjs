@@ -2,7 +2,7 @@
 // reservation (the real budgetedNovaOllamaCall, with the runtime and the provider faked at the HTTP level).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveAuraPlanner, invokeAuraPlanner } from '../src/seer-model-provider.mjs';
+import { resolveAuraPlanner, invokeAuraPlanner, seerModelEndpointAllowed, callSeerGovernorProvider } from '../src/seer-model-provider.mjs';
 
 const RUNTIME = 'http://runtime.test';
 const GEMINI = { name: 'gemini', url: 'https://gemini.test/v1beta/openai/chat/completions', envKey: 'GEMINI_API_KEY', model: 'models/gemini-2.5-flash', local: false };
@@ -38,7 +38,7 @@ test('the operator choice in Aura resolves to the connected provider; JACO_PRIMA
 test('a paid Aura choice is reserved in Continuum, called with its key and settled with real usage', async () => {
   const { calls, fetchFn } = network({ answer: '{"plan":1}' });
   const result = await invokeAuraPlanner(GEMINI, { system: 's', user: 'u', max_tokens: 8192, temperature: 0.2 }, {
-    env: {}, fetchFn, runtimeUrl: RUNTIME, credentialFn: () => 'gemini-key' });
+    env: { JACO_ALLOW_PAID_MODELS: '1' }, fetchFn, runtimeUrl: RUNTIME, credentialFn: () => 'gemini-key' });
   assert.equal(result.ok, true);
   assert.equal(result.text, '{"plan":1}');
   assert.deepEqual(calls.map(c => new URL(c.url).pathname), ['/api/nova/ollama-cost/reserve', '/v1beta/openai/chat/completions', '/api/nova/ollama-cost/settle']);
@@ -52,7 +52,7 @@ test('a refused reservation (ceiling reached) makes no provider call and reports
   const { calls, fetchFn } = network({ reserve: { success: false, error: 'DAILY_BUDGET_LIMIT' } });
   const failures = [];
   const result = await invokeAuraPlanner(GEMINI, { system: 's', user: 'u', max_tokens: 100 }, {
-    env: {}, fetchFn, runtimeUrl: RUNTIME, credentialFn: () => 'gemini-key', onFailure: f => failures.push(f) });
+    env: { JACO_ALLOW_PAID_MODELS: '1' }, fetchFn, runtimeUrl: RUNTIME, credentialFn: () => 'gemini-key', onFailure: f => failures.push(f) });
   assert.equal(result, null);
   assert.deepEqual(calls.map(c => new URL(c.url).pathname), ['/api/nova/ollama-cost/reserve']);
   assert.ok(failures.some(f => f.code === 'DAILY_BUDGET_LIMIT'), JSON.stringify(failures));
@@ -62,11 +62,59 @@ test('JACO_ALLOW_PAID_MODELS=0 or a missing key stops a paid choice before any r
   const { calls, fetchFn } = network();
   const failures = [];
   assert.equal(await invokeAuraPlanner(GEMINI, { system: 's', user: 'u', max_tokens: 100 }, { env: { JACO_ALLOW_PAID_MODELS: '0' }, fetchFn, runtimeUrl: RUNTIME, credentialFn: () => 'k', onFailure: f => failures.push(f.code) }), null);
-  assert.equal(await invokeAuraPlanner(GEMINI, { system: 's', user: 'u', max_tokens: 100 }, { env: {}, fetchFn, runtimeUrl: RUNTIME, credentialFn: () => '', onFailure: f => failures.push(f.code) }), null);
+  assert.equal(await invokeAuraPlanner(GEMINI, { system: 's', user: 'u', max_tokens: 100 }, { env: { JACO_ALLOW_PAID_MODELS: '1' }, fetchFn, runtimeUrl: RUNTIME, credentialFn: () => '', onFailure: f => failures.push(f.code) }), null);
   assert.deepEqual(failures, ['PAID_PROVIDER_DISABLED', 'PROVIDER_KEY_MISSING']);
   assert.equal(calls.length, 0);
   const local = await invokeAuraPlanner({ name: 'ollama', url: 'http://127.0.0.1:11434/v1/chat/completions', model: 'gemma3:4b', local: true, envKey: null },
     { system: 's', user: 'u', max_tokens: 100 }, { env: {}, fetchFn, runtimeUrl: RUNTIME });
   assert.equal(local.ok, true);
   assert.deepEqual(calls.map(c => new URL(c.url).pathname), ['/v1/chat/completions']);
+});
+
+test('SEER fails closed on missing paid opt-in, even if Aura has saved Gemini', async () => {
+  const { calls, fetchFn } = network();
+  const failures = [];
+  const result = await invokeAuraPlanner(GEMINI, { system:'s', user:'u', max_tokens:100 }, {
+    env:{}, fetchFn, runtimeUrl:RUNTIME,
+    credentialFn:()=> 'key',
+    onFailure:f=>failures.push(f.code),
+  });
+  assert.equal(result,null);
+  assert.deepEqual(failures,['PAID_PROVIDER_DISABLED']);
+  assert.equal(calls.length,0);
+});
+
+test('even the legacy primary-cloud governor path reserves through Continuum', async () => {
+  const { calls, fetchFn } = network({ answer:'{"plan":true}' });
+  const env = {
+    JACO_CLOUD_PLANNER:'1', JACO_ALLOW_PAID_MODELS:'1',
+    JACO_PRIMARY_PROVIDER:'gemini', JACO_RUNTIME_URL:RUNTIME,
+    GEMINI_API_KEY:'private-fixture-key', GATEWAY_TOKEN:'fixture-gateway',
+  };
+  const r = await callSeerGovernorProvider({ system:'s', user:'u', max_tokens:200 }, {
+    providers:[GEMINI], env, fetchFn,
+    fallback: async()=>{throw Error('primary should have succeeded');},
+  });
+  assert.equal(r.ok,true);
+  assert.deepEqual(calls.map(c=>new URL(c.url).pathname),[
+    '/api/nova/ollama-cost/reserve','/v1beta/openai/chat/completions','/api/nova/ollama-cost/settle'
+  ]);
+});
+
+test('untrusted model URL cannot skip reservation by self-declaring local', async () => {
+  assert.equal(seerModelEndpointAllowed('https://gemini.test/v1beta/openai/chat/completions',false),true);
+  assert.equal(seerModelEndpointAllowed('http://127.0.0.1:11434/v1/chat/completions',true),true);
+  assert.equal(seerModelEndpointAllowed('http://external.example/v1/chat/completions',true),false);
+  assert.equal(seerModelEndpointAllowed('http://external.example/v1/chat/completions',false),false);
+  assert.equal(seerModelEndpointAllowed('https://username:password@gemini.test/v1/chat/completions',false),false);
+  const { calls, fetchFn } = network();
+  const failures=[];
+  const result=await invokeAuraPlanner({
+    name:'ollama',local:true,model:'gemma3:4b',url:'http://external.example/v1/chat/completions'
+  },{system:'test',user:'test',max_tokens:100},{
+    env:{},runtimeUrl:RUNTIME,fetchFn,onFailure:f=>failures.push(f.code),
+  });
+  assert.equal(result,null);
+  assert.deepEqual(failures,['PROVIDER_ENDPOINT_UNTRUSTED']);
+  assert.equal(calls.length,0);
 });
