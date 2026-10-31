@@ -207,7 +207,11 @@ export async function callSeerGovernorProvider(args, {
   if (env.JACO_CLOUD_PLANNER === '1' && env.JACO_ALLOW_PAID_MODELS === '1') {
     const provider = providers.find(p => p.name === env.JACO_PRIMARY_PROVIDER);
     if (provider && (!provider.envKey || env[provider.envKey])) {
-      const result = await invokeSeerProvider(provider, normalized, { env, fetchFn, purpose: 'planner', onFailure });
+      const result = await invokeAuraPlanner(provider, normalized, {
+        env, fetchFn, purpose: 'planner', onFailure,
+        runtimeUrl: env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000',
+        token: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || env.SEER_TOKEN || '',
+      });
       if (result) { onUsed({ provider: provider.name, model: provider.model }); return result; }
     }
   }
@@ -219,6 +223,17 @@ export async function callSeerGovernorProvider(args, {
 // model the operator picked there instead of a second registry of its own. Before this SEER only had a local
 // 4B model that timed out on every governor turn while Aura's chosen model was idle (2026-10-31).
 // JACO_PRIMARY_PROVIDER stays authoritative, as it is for Nova; it is handled by callSeerGovernorProvider.
+// Distinguish local inference from metered remote inference based on the actual
+// transport, never solely on a provider's self-declared `local` attribute.
+export function seerModelEndpointAllowed(url, local) {
+  try {
+    const parsed = new URL(String(url || ''));
+    if (parsed.username || parsed.password || parsed.hash) return false;
+    if (local) return parsed.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname);
+    return parsed.protocol === 'https:';
+  } catch { return false; }
+}
+
 let connectedCache = { at: 0, runtimeUrl: '', providers: [] };
 export async function resolveAuraPlanner({
   env = process.env, fetchFn = globalThis.fetch, runtimeUrl, token = '', cacheMs = 60000, now = Date.now,
@@ -242,6 +257,7 @@ export async function resolveAuraPlanner({
   const model = saved.model || connected?.model;
   if (!url || !model) return null;
   const local = connected ? Boolean(connected.local) : fixed?.paid === false && !fixed?.keyEnv;
+  if (!seerModelEndpointAllowed(url, local)) return null;
   return { name: saved.provider, url, model, local, envKey: local ? null : (connected?.envKey || fixed?.keyEnv || null), source: 'aura-choice' };
 }
 
@@ -253,9 +269,13 @@ export async function invokeAuraPlanner(provider, args, {
   credentialFn = credential, budgetedCall = budgetedNovaOllamaCall, purpose = 'inference',
 } = {}) {
   if (!provider) return null;
-  if (provider.local) return invokeSeerProvider({ ...provider, envKey: null, local: true }, args, { env, fetchFn, purpose, onFailure });
   const fail = code => { onFailure({ provider: provider.name, model: provider.model, code, source: 'aura-choice' }); return null; };
-  if (env.JACO_ALLOW_PAID_MODELS === '0') return fail('PAID_PROVIDER_DISABLED');
+  if (!seerModelEndpointAllowed(provider.url, Boolean(provider.local))) return fail('PROVIDER_ENDPOINT_UNTRUSTED');
+  if (provider.local) return invokeSeerProvider({ ...provider, envKey: null, local: true }, args, { env, fetchFn, purpose, onFailure });
+  // SEER never promotes a GUI choice into implicit spend authorization.
+  // The operator must explicitly enable paid inference; Continuum still
+  // enforces the pre-existing per-call, daily and monthly reservation caps.
+  if (env.JACO_ALLOW_PAID_MODELS !== '1') return fail('PAID_PROVIDER_DISABLED');
   const key = provider.envKey ? credentialFn(provider.envKey, { env }) : '';
   if (!key) return fail('PROVIDER_KEY_MISSING');
   let refused = null;
