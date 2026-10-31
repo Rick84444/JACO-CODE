@@ -116,3 +116,17 @@ test('two words joined by a slash are prose, not a path fact; real paths still a
   assert.ok(!facts.includes('and/or'));
   assert.ok(facts.includes('agents/lib/claim-check.mjs'));
 });
+
+
+test('duplicate independent-model verdict IDs are not counted as two independently reviewed claims', () => {
+  const repeated = parseVerdicts(JSON.stringify({verdicts:[
+    {id:'C0',verdict:'supported',why:'first'},
+    {id:'C0',verdict:'supported',why:'same claim again'},
+  ]}),[0,1]);
+  assert.deepEqual(repeated,[{i:0,verdict:'unclear',why:'duplicate verdicts for the same claim: model review is ambiguous'}]);
+  const contradictory = parseVerdicts(JSON.stringify({verdicts:[
+    {id:'C0',verdict:'supported',why:'first'},
+    {id:'C0',verdict:'contradicted',why:'second'},
+  ]}),[0,1]);
+  assert.equal(contradictory[0].verdict,'contradicted','a repeated contradiction must not be downgraded');
+});

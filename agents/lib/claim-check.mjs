@@ -133,8 +133,24 @@ export function parseVerdicts(text, claimIds) {
   const verdicts = JSON.parse(match[0]).verdicts;
   if (!Array.isArray(verdicts)) throw new Error('JUDGE_NO_VERDICTS');
   const idOf = v => Number(/^C?(\d+)$/i.exec(String(v?.id ?? v?.i ?? ''))?.[1] ?? NaN);
-  return verdicts.filter(v => claimIds.includes(idOf(v)) && ['supported', 'contradicted', 'unclear'].includes(v.verdict))
+  const selected = verdicts.filter(v => claimIds.includes(idOf(v))
+    && ['supported', 'contradicted', 'unclear'].includes(v.verdict))
     .map(v => ({ i: idOf(v), verdict: v.verdict, why: String(v.why || '').slice(0, 200) }));
+  // A judge response with repeated IDs cannot satisfy distinct-claim coverage.
+  // Collapse duplicates conservatively: contradiction wins, otherwise UNCLEAR.
+  // This protects the paid Verify API and every other consumer of claim-check.
+  const byClaim = new Map();
+  for (const verdict of selected) {
+    const prior = byClaim.get(verdict.i);
+    if (!prior) { byClaim.set(verdict.i, verdict); continue; }
+    byClaim.set(verdict.i, {
+      i: verdict.i,
+      verdict: prior.verdict === 'contradicted' || verdict.verdict === 'contradicted'
+        ? 'contradicted' : 'unclear',
+      why: 'duplicate verdicts for the same claim: model review is ambiguous',
+    });
+  }
+  return [...byClaim.values()];
 }
 
 // The same model under different providers' names ('openai/gpt-oss-120b' on Groq, 'gpt-oss:120b' on
