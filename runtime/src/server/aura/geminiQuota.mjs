@@ -68,6 +68,21 @@ export function normalizedGeminiModel(model) {
   return API_ALIASES[id] || id;
 }
 
+// A single canonical quota namespace must be shared by AI Studio imports and runtime
+// dispatch. Refuse aliases that collide in one import rather than allowing property
+// insertion order to silently override the more restrictive quota.
+export function canonicalGeminiQuotaModels(models) {
+  if (!models || typeof models !== 'object' || Array.isArray(models))
+    throw new Error('GEMINI_QUOTA_PROFILE_INVALID');
+  const canonical = Object.create(null);
+  for (const [inputId, limits] of Object.entries(models)) {
+    const id = normalizedGeminiModel(inputId);
+    if (Object.hasOwn(canonical, id)) throw new Error('GEMINI_QUOTA_MODEL_ALIAS_CONFLICT:' + id);
+    canonical[id] = limits;
+  }
+  return canonical;
+}
+
 export function pacificQuotaDay(at = Date.now()) {
   const fields = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
