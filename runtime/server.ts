@@ -68,7 +68,8 @@ import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifie
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
 import { createAuraChatSession } from './src/server/connected/auraChatSession.mjs';
-import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderCompletion, ollamaCloudCostUsd, novaProviderCostUsd, modelPrice, chatFallbackChoice, chatFailureHint } from "./src/server/connected/auraOllamaChat.mjs";
+import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderCompletion, chatFallbackChoice, chatFailureHint } from "./src/server/connected/auraOllamaChat.mjs";
+import { auraCostQuote, auraCostSettlement } from "./src/server/aura/costEngine.mjs";
 import { createEconomicBudgetRouter } from './src/server/connected/economicBudget.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
@@ -4344,14 +4345,14 @@ const notifyPhone = async (action) => {
       return res.status(400).json({ success: false, error: 'NOVA_OLLAMA_COST_INPUT_INVALID' });
     }
     const economic = continuumSurface.runtime.economic;
-    let estimatedUsd: number;
-    try { estimatedUsd = novaProviderCostUsd(providerId, model, promptBytes, maxTokens, process.env); }
+    // Aura quotes the exact per-token rates once. Continuum only authorizes and journals.
+    // The pricing snapshot is durable, so a provider-price update cannot rewrite a call's bill.
+    let quote: ReturnType<typeof auraCostQuote>;
+    try { quote = auraCostQuote({ providerId, model, promptBytes, maxTokens, env: process.env }); }
     catch { return res.status(400).json({ success: false, error: 'NOVA_OLLAMA_MODEL_NOT_PRICED' }); }
-    // Billing provenance: a reference price is NOT proof of the provider's invoice.
-    // Expose the source in the durable reservation/settlement ledger for reconciliation.
-    const priceSource = providerId === 'ollama-cloud' ? 'configured' : modelPrice(providerId, model, process.env).source;
-    const authorization = economic.authorizeCloud({ estimatedUsd, purpose: 'nova-ollama-cloud',
-      metadata: { providerId, model, promptBytes, maxTokens, priceSource, providerInvoiceVerified: false } });
+    const authorization = economic.authorizeCloud({ estimatedUsd: quote.estimatedUsd, purpose: 'nova-ollama-cloud',
+      metadata: { providerId, model, promptBytes, maxTokens, priceSource: quote.priceSource,
+        auraCostQuote: quote, providerInvoiceVerified: false } });
     if (!authorization.allowed) return res.status(403).json({ success: false, error: authorization.reason });
     res.json({ success: true, reservationId: authorization.reservationId });
   });
@@ -4361,16 +4362,18 @@ const notifyPhone = async (action) => {
     const reservation = economic.state.reservations[String(req.body?.reservationId || '')];
     if (!reservation || reservation.purpose !== 'nova-ollama-cloud') return res.status(404).json({ success: false, error: 'NOVA_COST_RESERVATION_NOT_FOUND' });
     const usage = req.body?.usage || {};
-    const inputTokens = Number(usage.prompt_tokens);
-    const outputTokens = Number(usage.completion_tokens);
-    if (!Number.isInteger(inputTokens) || !Number.isInteger(outputTokens) || inputTokens < 0 || outputTokens < 0 ||
-        inputTokens > reservation.metadata.promptBytes || outputTokens > reservation.metadata.maxTokens) {
-      economic.markCloudOutcomeUnknown(reservation.reservationId, 'provider usage missing or outside reserved bounds');
+    // A pre-upgrade reservation has no rate snapshot: never recalculate its cost at
+    // a potentially different price and present the result as authoritative.
+    let calculated: ReturnType<typeof auraCostSettlement>;
+    try { calculated = auraCostSettlement(reservation.metadata?.auraCostQuote, usage); }
+    catch {
+      economic.markCloudOutcomeUnknown(reservation.reservationId, 'Aura price snapshot or bounded provider usage unavailable');
       return res.status(409).json({ success: false, error: 'NOVA_CLOUD_COST_OUTCOME_UNKNOWN' });
     }
-    const actualUsd = novaProviderCostUsd(reservation.metadata.providerId || 'ollama-cloud', reservation.metadata.model, inputTokens, outputTokens, process.env);
-    economic.settleCloud(reservation.reservationId, actualUsd, { prompt_tokens: inputTokens, completion_tokens: outputTokens });
-    res.json({ success: true, costUsd: actualUsd, priceSource: reservation.metadata.priceSource || 'unknown', providerInvoiceVerified: false });
+    economic.settleCloud(reservation.reservationId, calculated.costUsd,
+      { prompt_tokens: calculated.inputTokens, completion_tokens: calculated.outputTokens });
+    res.json({ success: true, costUsd: calculated.costUsd,
+      priceSource: calculated.priceSource, providerInvoiceVerified: false });
   });
 
   // The provider answered with a definite error (no generation, no charge): the reservation is released, not left
