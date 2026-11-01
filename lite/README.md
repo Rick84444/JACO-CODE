@@ -4,14 +4,14 @@ The JACO IDE on your own computer, free, with your own AI models. One folder, on
 
 ## Install (recommended)
 
-One command installs JACO Lite, checks the download against its SHA-256, brings its own Node.js if yours is older than 22.5, needs no administrator rights and keeps everything in one folder:
+After the first verified GitHub Release is published, these commands install JACO Lite, check the download against its SHA-256, bring their own Node.js if yours is older than 22.5, need no administrator rights and keep everything in one folder:
 
 ```sh
 # Windows (PowerShell)
-irm https://jacocode.com/install.ps1 | iex
+irm https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.ps1 | iex
 
 # Linux, and Android in Termux (experimental, not verified on a phone yet)
-curl -fsSL https://jacocode.com/install.sh | sh
+curl -fsSL https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.sh | sh
 ```
 
 Then, in any project folder: `jaco-lite`. Later:
@@ -23,7 +23,7 @@ Then, in any project folder: `jaco-lite`. Later:
 | `jaco-lite doctor` | shows what is installed and whether it can start |
 | `jaco-lite uninstall` | removes it (your projects and `~/.jaco` are not touched) |
 
-Where things go: `~/.local/share/jaco-lite` on Linux (`~/.jaco-lite` in Termux) and `%LOCALAPPDATA%\JACO Lite` on Windows, with the `jaco-lite` command in `~/.local/bin` (Windows: the folder is added to your user PATH, plus a Start menu entry). Options are environment variables: `JACO_LITE_HOME`, `JACO_LITE_BASE_URL`, `JACO_LITE_NO_MODIFY_PATH=1`, `JACO_LITE_NO_SHORTCUT=1`; the top of each script lists them. Read the scripts first if you like: [install.sh](https://jacocode.com/install.sh), [install.ps1](https://jacocode.com/install.ps1).
+Where things go: `~/.local/share/jaco-lite` on Linux (`~/.jaco-lite` in Termux) and `%LOCALAPPDATA%\JACO Lite` on Windows, with the `jaco-lite` command in `~/.local/bin` (Windows: the folder is added to your user PATH, plus a Start menu entry). Options are environment variables: `JACO_LITE_HOME`, `JACO_LITE_BASE_URL`, `JACO_LITE_NO_MODIFY_PATH=1`, `JACO_LITE_NO_SHORTCUT=1`; the top of each script lists them. Read the scripts first if you like: [install.sh](https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.sh), [install.ps1](https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.ps1).
 
 The Node.js it downloads is the official build from nodejs.org, checked against nodejs.org's `SHASUMS256.txt` over HTTPS (not against the GPG signature).
 
@@ -78,7 +78,7 @@ JACO discovers running local models and uses credentials already configured in i
 Keys are kept in `~/.jaco` (outside your project), sealed with AES-256-GCM. The key file sits next to
 them, so this protects against accidents (git, screenshots, backups of the project), not against
 someone who can already read your user account. Nothing leaves your computer except the requests you
-send to the provider you connected, and one public file, `jacocode.com/download/latest.json`, that Lite fetches
+send to the provider you connected, and one public file, `https://github.com/Rick84444/JACO-CODE/releases/latest/download/latest.json`, that Lite fetches
 at start to tell you if a newer version exists (it carries nothing about you or your project, but the request
 reaches our server logs like any visit). It never downloads or installs anything by itself. Turn it off with
 `JACO_LITE_NO_UPDATE_CHECK=1`.
