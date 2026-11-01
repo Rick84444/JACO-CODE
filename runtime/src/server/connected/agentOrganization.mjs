@@ -82,6 +82,7 @@ export class AgentOrganization {
     this.auditFile = path.join(this.dir, 'audit.jsonl');
     this.now = now;
     this.state = this.load();
+    this.committedState = structuredClone(this.state);
   }
 
   load() {
@@ -106,8 +107,16 @@ export class AgentOrganization {
   save(state = this.state) {
     fs.mkdirSync(this.dir, { recursive: true });
     const tmp = `${this.file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
-    fs.renameSync(tmp, this.file);
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
+      fs.renameSync(tmp, this.file);
+      // Publish a new authorization snapshot only after durable file replacement succeeds.
+      this.committedState = structuredClone(state);
+    } catch (error) {
+      if (this.committedState) this.state = structuredClone(this.committedState);
+      try { fs.rmSync(tmp, { force: true }); } catch {}
+      throw error;
+    }
   }
 
   audit(actor, action, details) {
@@ -347,7 +356,7 @@ export class AgentOrganization {
   setStatus(id, status, actor = OPERATOR) {
     this.requireAuthority(actor, id);
     const agent = this.agent(id);
-    const allowed = { approve: ['pending'], pause: ['active', 'pending'], resume: ['paused'] };
+    const allowed = { approve: ['pending'], pause: ['active'], resume: ['paused'] };
     if (!allowed[status]) throw new Error('STATUS_INVALID');
     if (!allowed[status].includes(agent.status)) throw new Error(`AGENT_${agent.status.toUpperCase()}`);
     if (status === 'approve' && actor !== OPERATOR) throw new Error('OPERATOR_APPROVAL_REQUIRED');
@@ -408,7 +417,7 @@ export class AgentOrganization {
 }
 
 // Operator UI adapter: every change through these routes is made by the operator (local UI only, same origin).
-export function createAgentOrganizationRouter({ organization, requireOperatorUi }) {
+export function createAgentOrganizationRouter({ organization, requireOperatorUi, requireMutationAuth = (_req, res) => res.status(403).json({ success: false, error: 'OPERATOR_AUTH_REQUIRED' }) }) {
   const router = express.Router();
   router.use(requireOperatorUi);
   router.use((req, res, next) => {
@@ -419,6 +428,10 @@ export function createAgentOrganizationRouter({ organization, requireOperatorUi 
     }
     next();
   });
+  // Read-only organization queries may be local; any mutation needs a separate operator credential.
+  router.use((req, res, next) => req.method === 'GET' || req.method === 'HEAD'
+    ? next()
+    : requireMutationAuth(req, res, next));
   const handle = run => (req, res) => {
     try { res.json({ success: true, ...run(req) }); }
     catch (error) { res.status(error.message === 'AGENT_NOT_FOUND' ? 404 : 400).json({ success: false, error: error.message }); }
