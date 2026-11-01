@@ -1,6 +1,6 @@
 # JACO Lite installer for Windows (PowerShell 5.1 or newer, no administrator rights).
 #
-#   irm https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.ps1 | iex
+#   irm https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.ps1 | iex
 #
 # What it does, in order, and nothing else:
 #   1. reads https://github.com/Rick84444/JACO-CODE/releases/latest/download/latest.json and picks the Windows file
@@ -181,7 +181,7 @@ try {
   $self = $ScriptPath
   if ($self -and (Test-Path -LiteralPath $self) -and ((Resolve-Path $self).Path -ne (Join-Path $InstallDir 'install.ps1'))) { Copy-Item -LiteralPath $self -Destination (Join-Path $InstallDir 'install.ps1') -Force }
   elseif (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'install.ps1'))) {
-    try { Invoke-WebRequest -UseBasicParsing -Uri (Env 'JACO_LITE_INSTALL_URL' 'https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.ps1') -OutFile (Join-Path $work 'install.ps1.new'); if ((Get-Item (Join-Path $work 'install.ps1.new')).Length -gt 0) { Copy-Item (Join-Path $work 'install.ps1.new') (Join-Path $InstallDir 'install.ps1') -Force } } catch { }
+    try { Invoke-WebRequest -UseBasicParsing -Uri (Env 'JACO_LITE_INSTALL_URL' 'https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.ps1') -OutFile (Join-Path $work 'install.ps1.new'); if ((Get-Item (Join-Path $work 'install.ps1.new')).Length -gt 0) { Copy-Item (Join-Path $work 'install.ps1.new') (Join-Path $InstallDir 'install.ps1') -Force } } catch { }
   }
   $launcher = @'
 @echo off
