@@ -33,6 +33,7 @@ on:
       - 'runtime/gateway/test/system-control-node-exit.test.mjs'
       - 'tests/nova/startup-safety.test.mjs'
       - 'tests/nova/remote-startup-contract.test.mjs'
+      - 'tests/nova/browser-attach-target-id.test.mjs'
 
 permissions:
   contents: read
@@ -135,7 +136,7 @@ jobs:
       - name: Execute startup safety contracts on Windows
         shell: powershell
         run: |
-          $out = node --test --test-reporter=tap tests/nova/startup-safety.test.mjs tests/nova/remote-startup-contract.test.mjs | Out-String
+          $out = node --test --test-reporter=tap tests/nova/startup-safety.test.mjs tests/nova/remote-startup-contract.test.mjs tests/nova/browser-attach-target-id.test.mjs | Out-String
           $code = $LASTEXITCODE
           Write-Output $out
           # Surface failures as annotations so they are readable without the raw job log.

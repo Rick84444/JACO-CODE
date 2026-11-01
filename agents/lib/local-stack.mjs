@@ -8,6 +8,17 @@ import { parse } from 'dotenv';
 import { readStartupEvidence } from './startup-evidence.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+// Pin browser startup to one concrete Chrome page. A URL alone can match multiple
+// JACO tabs; Browser Hands-Off intentionally refuses ambiguous targets.
+export function browserAttachPayload(target, port) {
+  const targetId = String(target?.id || '');
+  const urlIncludes = String(target?.url || '');
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(targetId) || !target?.webSocketDebuggerUrl || !urlIncludes) {
+    throw new Error('CHROME_TARGET_ID_INVALID');
+  }
+  return { port, urlIncludes, targetId };
+}
 // A runtime is a directory whose server.ts serves the identity readiness probes. The repository root
 // also has a legacy server.ts without it; picking that one left startup waiting on a route that never exists.
 const isRuntime = dir => fs.existsSync(path.join(dir, 'package.json')) && fs.existsSync(path.join(dir, 'server.ts'))
@@ -316,19 +327,20 @@ export async function activate(c, { open = false } = {}) {
           const tabsResponse = await fetch(base + '/json/list', { signal: AbortSignal.timeout(5000) });
           const tabs = await tabsResponse.json();
           if (!tabsResponse.ok || !Array.isArray(tabs)) throw new Error('CHROME_TARGET_LIST_INVALID');
-          let target = tabs.find(t => { try { const u = new URL(t.url); return t.type === 'page' && ['127.0.0.1','localhost'].includes(u.hostname) && Number(u.port) === c.ports.runtime; } catch { return false; } });
+          let target = tabs.find(t => { try { const u = new URL(t.url); return t.type === 'page' && Boolean(t.id && t.webSocketDebuggerUrl) && ['127.0.0.1','localhost'].includes(u.hostname) && Number(u.port) === c.ports.runtime; } catch { return false; } });
           if (!target) {
             const created = await fetch(base + '/json/new?' + encodeURI(c.env.JACO_RUNTIME_URL), { method: 'PUT', signal: AbortSignal.timeout(5000) });
             target = await created.json();
             if (!created.ok || !target.webSocketDebuggerUrl) throw new Error('CHROME_TARGET_CREATE_FAILED');
           }
-          const response = await fetch(c.env.JACO_RUNTIME_URL + '/api/continuum/browser/attach', { method: 'POST', headers: { 'content-type': 'application/json', 'x-gateway-token': c.env.GATEWAY_TOKEN }, body: JSON.stringify({ port: c.ports.chrome, urlIncludes: target.url }), signal: AbortSignal.timeout(15000) });
-          const attached = await response.json();
-          if (!response.ok || attached.success !== true) throw new Error('BROWSER_ATTACHMENT_FAILED');
+          const payload = browserAttachPayload(target, c.ports.chrome);
+          const response = await fetch(c.env.JACO_RUNTIME_URL + '/api/continuum/browser/attach', { method: 'POST', headers: { 'content-type': 'application/json', 'x-gateway-token': c.env.GATEWAY_TOKEN }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15000) });
+          const attached = await response.json().catch(() => null);
+          if (!response.ok || attached?.success !== true || attached.session?.attached !== true || attached.session?.targetId !== payload.targetId) throw new Error('BROWSER_ATTACHMENT_FAILED');
           result.browserAttachment = 'ATTACHED';
         } catch (error) {
           result.browserAttachment = 'FAILED';
-          const known = ['CHROME_TARGET_LIST_INVALID', 'CHROME_TARGET_CREATE_FAILED', 'BROWSER_ATTACHMENT_FAILED'];
+          const known = ['CHROME_TARGET_LIST_INVALID', 'CHROME_TARGET_CREATE_FAILED', 'CHROME_TARGET_ID_INVALID', 'BROWSER_ATTACHMENT_FAILED'];
           result.warnings.push(known.includes(error?.message) ? error.message : 'BROWSER_ATTACHMENT_FAILED');
         }
       }

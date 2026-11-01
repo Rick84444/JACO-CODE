@@ -107,7 +107,7 @@ async function handle(req,res){
   if(req.method==='POST'&&/^\/api\/continuum\/cognition\/patterns\/[^/]+\/validate$/.test(url.pathname)){const kid=url.pathname.split('/').at(-2);return ok(res,{pattern:runtime.cognition.validatePattern(kid,{evidenceRefs:b.evidenceRefs||[]},actor(req,b))})}
 
   if(req.method==='GET'&&url.pathname==='/api/continuum/browser/targets')return ok(res,{targets:await runtime.browser.targets(Number(url.searchParams.get('port')||9222))});
-  if(req.method==='POST'&&url.pathname==='/api/continuum/browser/attach')return ok(res,{session:await runtime.browser.attach({port:b.port,urlIncludes:b.urlIncludes})});
+  if(req.method==='POST'&&url.pathname==='/api/continuum/browser/attach')return ok(res,{session:await runtime.browser.attach({port:b.port,urlIncludes:b.urlIncludes,targetId:b.targetId})});
   if(req.method==='POST'&&url.pathname==='/api/continuum/browser/detach'){await runtime.browser.detach();return ok(res,{})}
   if(req.method==='POST'&&url.pathname==='/api/continuum/browser/observe')return ok(res,await runtime.browser.observeSemantic(b));
   if(req.method==='POST'&&url.pathname==='/api/continuum/browser/batch')return ok(res,{result:await runtime.browser.executeBatch(b)});
