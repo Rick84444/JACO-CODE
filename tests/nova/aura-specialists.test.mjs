@@ -45,12 +45,18 @@ test('operator creates real persisted agent records, folders and zero-permission
     assert.equal(agent.model.kind, 'local');
     assert.equal(agent.model.model, '');
     assert.deepEqual(organization.decide(agent.id, 'files.read'), {
-      allowed: false, needsApproval: false, reason: 'PERMISSION_NOT_GRANTED',
+      allowed: false, reason: 'PERMISSION_NOT_GRANTED', at: agent.id, needsApproval: false,
     });
     for (const f of ['rules.md', 'skills', 'memory', 'mcp.json'])
       assert.ok(fs.existsSync(path.join(root, 'org', 'agents', spec.id, f)));
+    const sop = path.join(root, 'org', 'agents', spec.id, 'procedures', 'operating-procedure.md');
+    assert.ok(fs.existsSync(sop), 'role SOP must be materialized for ' + spec.id);
+    assert.match(fs.readFileSync(sop, 'utf8'), /^# /);
+    fs.writeFileSync(sop, 'Operator customized SOP');
   }
   const restart = new AgentOrganization(root);
+  restart.ensureFolder('grokbot-analyst');
+  assert.equal(fs.readFileSync(path.join(root, 'org', 'agents', 'grokbot-analyst', 'procedures', 'operating-procedure.md'), 'utf8'), 'Operator customized SOP');
   assert.equal(restart.snapshot().agents.length, 5);
   assert.equal(restart.snapshot().agents.filter(a => AURA_SPECIALISTS.some(b => b.id === a.id)).length, 4);
 });
