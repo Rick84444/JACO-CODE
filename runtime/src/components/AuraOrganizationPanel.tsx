@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { wouldCompleteTrifecta } from '../lib/organizationRisk.mjs';
+import { AURA_SPECIALISTS, provisionAuraSpecialists } from '../lib/auraSpecialistBlueprints.mjs';
 import { Bot, BriefcaseBusiness, Check, ChevronRight, KeyRound, Plus, RefreshCw, ShieldAlert, ShieldCheck, Users, X } from 'lucide-react';
 
 type Locale = 'en' | 'sv';
@@ -53,6 +54,11 @@ const translations = {
     profileSaved: 'Profile saved', permissionSaved: 'Mandate updated',
     credentialNeeded: 'Enter your operator credential before changing the organization.',
     noExecution: 'These settings do not yet restrict Nova, MCP, chat, email or external processes.',
+    teamTitle: 'Aura specialist team', teamInstall: 'Create four specialists',
+    teamPreview: 'Research, architecture, debugging and user acceptance. Each agent starts at L1 with zero budget, zero permissions and no active model execution.',
+    teamConfirm: 'Create four agent records under Aura? This changes the local organization register but does not start any worker or grant access.',
+    teamCreated: 'Specialists registered', teamExists: 'All four specialists already exist.',
+    teamPartial: 'A partial failure may have registered some agents; refresh the organization and retry safely.',
   },
   sv: {
     title: 'Agentorganisation', subtitle: 'Operatör → Aura → underagenter', refresh: 'Uppdatera',
@@ -73,6 +79,11 @@ const translations = {
     profileSaved: 'Profil sparad', permissionSaved: 'Mandat uppdaterat',
     credentialNeeded: 'Ange operatörsnyckeln innan du ändrar organisationen.',
     noExecution: 'Inställningarna begränsar ännu inte Nova, MCP, chatt, e-post eller externa processer.',
+    teamTitle: 'Auras specialistteam', teamInstall: 'Skapa fyra specialister',
+    teamPreview: 'Omvärldsanalys, arkitektur, felsökning och användartest. Alla startar på L1 med noll budget, inga behörigheter och utan att någon modell startas.',
+    teamConfirm: 'Skapa fyra agenter under Aura? Detta ändrar det lokala organisationsregistret men startar inga arbetare eller tilldelar åtkomst.',
+    teamCreated: 'Specialister registrerade', teamExists: 'Alla fyra specialister finns redan.',
+    teamPartial: 'Några agenter kan ha registrerats innan felet. Uppdatera organisationen och försök igen.',
   },
 } as const;
 
@@ -175,6 +186,24 @@ export function AuraOrganizationPanel() {
     });
     if (success) { setShowCreate(false); setDraft(emptyAgent); }
   }
+  async function installSpecialists() {
+    if (!operatorKey.trim()) { setError(t.credentialNeeded); return; }
+    if (!window.confirm(t.teamConfirm)) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await provisionAuraSpecialists({
+        readAgents: async () => (await api('GET')).organization.agents as Agent[],
+        createAgent: async definition => { await api('POST', '/agents', definition); },
+      });
+      await refresh();
+      setNotice(result.created.length ? t.teamCreated + ': ' + result.created.join(', ') : t.teamExists);
+    } catch (cause) {
+      await refresh();
+      setError((cause instanceof Error ? cause.message : String(cause)) + '. ' + t.teamPartial);
+    } finally { setBusy(false); }
+  }
   const managers = (parent: string) => agents.filter(agent => agent.reportsTo === parent);
   const branch = (parent: string, depth = 0): React.ReactNode => managers(parent).map(agent => (
     <React.Fragment key={agent.id}>
@@ -225,6 +254,17 @@ export function AuraOrganizationPanel() {
             <ShieldCheck size={15} className="text-emerald-400"/>
           </div>
           {branch('operator')}
+          <section aria-label="Aura specialist team" className="space-y-2 rounded-lg border border-cyan-900/60 bg-[#0b1e2b] p-3">
+            <h3 className="text-sm font-semibold text-cyan-200">{t.teamTitle}</h3>
+            <p className="text-xs text-slate-400">{t.teamPreview}</p>
+            <div className="space-y-1">
+              {AURA_SPECIALISTS.map(agent => <div key={agent.id} className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate">{agent.name}</span>
+                <span className="shrink-0 text-slate-500">{agents.some(row => row.id === agent.id) ? 'Registered' : 'Not registered'}</span>
+              </div>)}
+            </div>
+            <button data-testid="create-aura-specialists" type="button" disabled={busy} onClick={() => void installSpecialists()} className={buttonClass + ' w-full'}>{t.teamInstall}</button>
+          </section>
           <button type="button" disabled={busy} onClick={() => setShowCreate(value => !value)} className={buttonClass + ' flex w-full items-center justify-center gap-2'}><Plus size={15}/>{t.create}</button>
           {showCreate && <div className="space-y-2 rounded-lg border border-[#284359] p-3">
             {(['name','title','task','goal','mail','model','providerId'] as const).map(field => <label key={field} className="block text-xs text-slate-400">{field === 'title' ? t.role : field === 'mail' ? t.email : field === 'task' ? t.task : field === 'goal' ? t.goal : field === 'model' ? t.model : field === 'name' ? t.name : 'Provider ID'}

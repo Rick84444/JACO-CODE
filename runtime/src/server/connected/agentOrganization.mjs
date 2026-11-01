@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { validProviderId } from './providerRegistry.mjs';
+import { AURA_SPECIALISTS, SPECIALIST_PROCEDURES } from '../../lib/auraSpecialistBlueprints.mjs';
 
 // The operator's agent company. The operator is CEO, Aura is vice CEO, and every other agent reports to someone.
 // One store holds who exists, what each agent may do (mandate) and how each should work (traits).
@@ -132,6 +133,16 @@ export class AgentOrganization {
     if (!fs.existsSync(rules)) fs.writeFileSync(rules, '# Rules\n\nRules the agent must never break. One rule per line.\n');
     const mcp = path.join(root, 'mcp.json');
     if (!fs.existsSync(mcp)) fs.writeFileSync(mcp, `${JSON.stringify({ servers: {} }, null, 2)}\n`);
+    // Human-readable role SOPs only, never authority. Existing operator-authored SOPs win.
+    const template = AURA_SPECIALISTS.find(a => a.id === id);
+    const procedure = template && this.state?.agents?.[id]?.name === template.name
+      ? SPECIALIST_PROCEDURES[id] : null;
+    if (procedure) {
+      const dir = path.join(root, 'procedures');
+      fs.mkdirSync(dir, { recursive: true });
+      try { fs.writeFileSync(path.join(dir, 'operating-procedure.md'), procedure, { flag: 'wx', mode: 0o600 }); }
+      catch (error) { if (error.code !== 'EEXIST') throw error; }
+    }
   }
 
   folder(id) { return path.join(this.dir, 'agents', id); }

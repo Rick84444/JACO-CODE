@@ -87,6 +87,8 @@ on:
       - 'runtime/src/lib/workspaceUx.test.tsx'
       - 'tests/nova/workspace-readiness.test.mjs'
       - 'runtime/src/components/AuraAgentBoard.tsx'
+      - 'runtime/src/lib/auraSpecialistBlueprints.mjs'
+      - 'tests/nova/aura-specialists.test.mjs'
       - 'runtime/src/server/connected/agentOrganization.mjs'
       - 'tests/nova/agent-organization.test.mjs'
       - 'runtime/src/components/AuraOrganizationPanel.tsx'
@@ -175,6 +177,8 @@ on:
       - 'runtime/src/lib/workspaceUx.test.tsx'
       - 'tests/nova/workspace-readiness.test.mjs'
       - 'runtime/src/components/AuraAgentBoard.tsx'
+      - 'runtime/src/lib/auraSpecialistBlueprints.mjs'
+      - 'tests/nova/aura-specialists.test.mjs'
       - 'runtime/src/server/connected/agentOrganization.mjs'
       - 'tests/nova/agent-organization.test.mjs'
       - 'runtime/src/components/AuraOrganizationPanel.tsx'
@@ -242,7 +246,7 @@ jobs:
       - name: Workspace readiness and visible decisions
         run: npm run test:workspace-ux && node --test ../tests/nova/workspace-readiness.test.mjs ../tests/nova/agent-network.test.mjs ../tests/nova/workspace-integrations.test.mjs
       - name: Organization mandate and risk preview regressions
-        run: node --test ../tests/nova/agent-organization.test.mjs ../tests/nova/aura-organization-ui.test.mjs
+        run: node --test ../tests/nova/agent-organization.test.mjs ../tests/nova/aura-organization-ui.test.mjs ../tests/nova/aura-specialists.test.mjs
       - name: Production build (client before server)
         run: npm run build
       - name: Production boot and IDE HTTP smoke
