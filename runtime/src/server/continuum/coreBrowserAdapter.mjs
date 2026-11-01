@@ -4,7 +4,7 @@ export class CoreBrowserSessionsAdapter {
   async call(path,{method='GET',body=null}={}){const r=await fetch(`${this.baseUrl}${path}`,{method,headers:this.headers(body!==null),body:body===null?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`CORE_BROWSER_${r.status}:${data?.error?.message||data?.error||JSON.stringify(data).slice(0,300)}`);return data;}
   snapshot(){return {...this.session,executionSubstrate:this.baseUrl};}
   async targets(port=9222){const d=await this.call(`/api/browser/hands-off/targets?port=${encodeURIComponent(port)}`);return d.targets||[];}
-  async attach(input={}){const d=await this.call('/api/browser/hands-off/attach',{method:'POST',body:{port:input.port||9222,urlIncludes:input.urlIncludes}});this.session={...(d.session||{}),executionSubstrate:this.baseUrl};return this.snapshot();}
+  async attach(input={}){const d=await this.call('/api/browser/hands-off/attach',{method:'POST',body:{port:input.port||9222,urlIncludes:input.urlIncludes,targetId:input.targetId}});this.session={...(d.session||{}),executionSubstrate:this.baseUrl};return this.snapshot();}
   async detach(){await this.call('/api/browser/hands-off/detach',{method:'POST',body:{}});this.session={attached:false,cdpPort:9222,urlIncludes:null,attachedAt:null};}
   getClient(){if(!this.session.attached)return null;return {
     survey:async(label)=>{const d=await this.call('/api/browser/hands-off/survey',{method:'POST',body:{label}});return d.survey;},
