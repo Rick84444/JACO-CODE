@@ -55,7 +55,7 @@ test('One stage is mounted by canonical IDE without permanent tool tabs or a sec
   const base=new URL('../../runtime/src/components/',import.meta.url);
   const read=name=>fs.readFileSync(new URL(name,base),'utf8');
   const ui=read('CognitiveWorkspace.tsx'),ide=read('JacoAuraComputeIDE.tsx'),stage=read('AuraLiveStage.tsx');
-  assert.match(ui,/aria-label="Aura Live Workspace"/);
+  assert.match(ui,/aria-label=\{uiText\("Aura Live Workspace"\)\}/);
   assert.match(ui,/hasDetail\?props\.detail:props\.stage/);
   assert.match(ui,/aria-pressed=\{props\.stagePinned\}/);
   assert.doesNotMatch(ui,/className="cognitive-view-tabs"/);
@@ -91,12 +91,12 @@ test('Live Stage is one-click discoverable, with touch-first work navigation', (
   const ui = read('components/CognitiveWorkspace.tsx');
   const css = read('cognitive-workspace.css');
   assert.match(ui, /aria-label=\{tr\('Arbetsyta',\s*'Workspace'\)\}/);
-  assert.match(ui, /\['stage', Eye, 'Arbete'\]/);
-  assert.match(ui, /\['evidence', ShieldCheck, 'Belägg'\]/);
-  assert.match(ui, /\['code', Code2, 'Kod'\]/);
-  assert.match(ui, /\['preview', Eye, 'Förhandsvisa'\]/);
+  assert.match(ui, /\['stage', Eye, uiText\("Work"\)\]/);
+  assert.match(ui, /\['evidence', ShieldCheck, uiText\("Evidence"\)\]/);
+  assert.match(ui, /\['code', Code2, uiText\("Code"\)\]/);
+  assert.match(ui, /\['preview', Eye, uiText\("Preview"\)\]/);
   assert.match(ui, /aria-pressed=\{props\.canvas===view/);
-  assert.match(ui, /\['stage', Eye, 'Arbete'\], \['agents', Bot, 'Agenter'\]/);
+  assert.match(ui, /\['stage', Eye, uiText\("Work"\)\], \['agents', Bot, uiText\("Agents"\)\]/);
   assert.match(ui, /views\.filter\(\(\[id\]\)=>!\['conversation','agents'\]\.includes\(id\)\)/);
   assert.match(css, /\.cognitive-stage-switcher button\[aria-pressed=true\]/);
   assert.match(css, /@media\(max-width:767px\)\{\s*\.cognitive-stage-switcher\{display:none\}/);

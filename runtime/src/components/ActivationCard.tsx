@@ -69,7 +69,7 @@ export const ActivationCard: React.FC<{
   onRepair?: (problems: string[]) => Promise<void>;
   repairBlocked?: boolean;
 }> = ({ activation, onActivated, onOpenProviders, onOpenProject, projectName, onRepair, repairBlocked }) => {
-  const { tr } = useUiLanguage();
+  const { tr, t: uiText } = useUiLanguage();
   const { report, loading, starting, error, read } = activation;
   const state = activationReadiness(activation);
   const [open, setOpen] = useState(false);
@@ -133,7 +133,7 @@ export const ActivationCard: React.FC<{
     {open && report && <div className="cognitive-setup-details">
       <p>{report.tools.toolCount} {tr('verktyg','tools')} · {report.providers.filter(p => p.active).length} {tr('av','of')} {report.providers.length} {tr('modelltjänster svarar','model providers responding')}</p>
       {report.problems.map((problem, i) => <p key={i}>{problem}</p>)}
-      {report.tools.servers.map(server => <p key={server.id}>{server.id}: {server.status === 'READY' ? `${server.tools} ${tr('verktyg','tools')}` : server.error || tr('inte redo','not ready')}</p>)}
+      {report.tools.servers.map(server => <p key={server.id}>{server.id}: {server.status === 'READY' ? uiText("{0} {1}", [server.tools, tr('verktyg','tools')]) : server.error || tr('inte redo','not ready')}</p>)}
     </div>}
   </section>;
 };

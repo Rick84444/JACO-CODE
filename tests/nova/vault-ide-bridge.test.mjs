@@ -39,14 +39,14 @@ test('Coinbase CDP key ID is rehydrated but NOVA-managed secrets stay private', 
 test('canonical Aura Connections tab embeds persistent API Vault', () => {
   const workspace = read('runtime/src/components/ConnectionsWorkspace.tsx');
   const panel = read('runtime/src/components/ApiVaultPanel.tsx');
-  assert.match(workspace, /\['vault','API & Vault'\]/);
+  assert.match(workspace, /\['vault',uiText\("API & credentials"\)\]/);
   assert.match(workspace, /tab==='vault'&&<ApiVaultPanel/);
   assert.match(panel, /\/api\/aura\/workbench\/secrets/);
   assert.match(panel, /\/api\/aura\/workbench\/vault\/windows/);
   assert.match(panel, /\/api\/aura\/workbench\/vault\/import-windows/);
   assert.doesNotMatch(panel, /fetch\(['"]\/api\/vault['"]/);
   assert.match(panel, /Coinbase CDP/);
-  assert.match(panel, /Inte API-verifierad/);
+  assert.match(panel, /Stored · API access not verified/);
   assert.match(panel, /secrets\?\.some\(secret => secret.name === key\)/);
 });
 

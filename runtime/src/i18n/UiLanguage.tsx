@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { productText } from './productText.mjs';
 
 // UI language is deliberately independent from the language used by model prompts.
 // English is the default for public distribution; the operator can always select Swedish.
@@ -9,6 +10,7 @@ interface UiLanguageContextValue {
   language: UiLanguage;
   setLanguage: (next: UiLanguage) => void;
   tr: (swedish: string, english: string) => string;
+  t: (english: string, values?: readonly unknown[]) => string;
 }
 
 const UiLanguageContext = createContext<UiLanguageContextValue | null>(null);
@@ -31,7 +33,8 @@ export function UiLanguageProvider({ children, initialLanguage }: { children: Re
 
   return <UiLanguageContext.Provider value={{
     language, setLanguage,
-    tr: (swedish, english) => language === 'sv' ? swedish : english,
+    tr: (swedish, english) => language === 'sv' ? swedish : productText(english, 'en'),
+    t: (english, values = []) => productText(english, language, values),
   }}>{children}</UiLanguageContext.Provider>;
 }
 

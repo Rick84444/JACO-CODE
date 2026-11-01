@@ -39,7 +39,7 @@ test('observed model, workers, tools and receipts remain separate from goal acce
   assert.equal(state.execute,'OBSERVED');
   assert.equal(state.verify,'EVIDENCE_OBSERVED');
   assert.equal(state.tools,'OBSERVED');
-  assert.match(f.functions.find(x=>x.id==='verify').detail,/inte bevis på slutmål/);
+  assert.match(f.functions.find(x=>x.id==='verify').detail,/task completion is checked separately/);
   assert.equal(f.runtimeConsolidated,false);
 });
 
@@ -68,7 +68,7 @@ test('Aura board is the default, while technical agents remain inspectable and o
   const backend=read('runtime/src/server/connected/auraAgentBoard.mjs');
   assert.match(ui,/useState<'functions'\|'network'\|'missions'\|'cycles'>\('functions'\)/);
   assert.match(ui,/snapshot\?\.aura\?\.functions/);
-  assert.match(ui,/Tekniska Workplace-sessioner/);
+  assert.match(ui,/uiText\("Execution sessions/);
   assert.match(backend,/projectAuraFunctions/);
   assert.match(backend,/projectAgentNetwork/);
   assert.match(backend,/missionStatusCounts/);
@@ -99,6 +99,6 @@ test('Aura exposes a real live read-only oversight route and no second agent own
   assert.match(server,/auraServiceHealth\(\)/);
   assert.match(server,/tools:mcpHost\.status\(\), services,/);
   const ui=read('runtime/src/components/AuraAgentBoard.tsx');
-  assert.match(ui,/Auras kontrollplan/);
+  assert.match(ui,/uiText\("Aura system controls"\)/);
   assert.match(ui,/oversight\.browser\.state/);
 });

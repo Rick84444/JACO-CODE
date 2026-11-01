@@ -27,9 +27,9 @@ export function projectAuraOversight({
     services,
     browser: {
       state: browser,
-      meaning: browser === 'VERIFIED_RECENT' ? 'Fresh WebSocket-evaluation + Workplace authority, not a completed browser mission'
-        : browser === 'DISABLED' ? 'Aura Lean intentionally keeps CDP adapters stopped'
-          : browser === 'UNOBSERVED' ? 'Service observation unavailable' : 'One or more CDP/Workplace gates are unverified',
+      meaning: browser === 'VERIFIED_RECENT' ? 'Browser control connection recently verified; no completed browser task observed'
+        : browser === 'DISABLED' ? 'Browser automation is turned off'
+          : browser === 'UNOBSERVED' ? 'Service observation unavailable' : 'One or more browser connection checks are incomplete',
     },
     missions: {
       active: count('ACTIVE'), blocked: count('BLOCKED'),

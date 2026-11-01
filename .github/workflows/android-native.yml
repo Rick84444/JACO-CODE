@@ -1,4 +1,4 @@
-name: Android native engine
+name: JACO Android installer
 on:
   pull_request:
     paths:
@@ -31,7 +31,15 @@ jobs:
         run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
       - name: Kotlin regression tests, APK and Android lint
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+      - name: Prepare installable preview and checksum
+        run: |
+          mkdir -p build/distribution
+          cp app/build/outputs/apk/debug/app-debug.apk build/distribution/JACO-Android-preview.apk
+          cd build/distribution
+          sha256sum JACO-Android-preview.apk > JACO-Android-preview.apk.sha256
+          printf '%s\n' 'JACO Android 0.22.0 preview' 'Install the APK and approve Android installation. Open JACO for setup.' 'This preview uses a debug signing key. Production distribution needs a stable release signing key.' 'The APK contains the local AI engine and Android controls. The full Aura workspace requires the matching Termux runtime package or a trusted HTTPS JACO hub.' > README.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: android-native-debug
-          path: runtime/modules/runtime/native-intelligence-fabric/native/android/app/build/outputs/apk/debug/app-debug.apk
+          name: JACO-Android-preview
+          path: runtime/modules/runtime/native-intelligence-fabric/native/android/build/distribution/
+          if-no-files-found: error

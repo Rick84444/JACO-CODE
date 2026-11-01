@@ -9,14 +9,11 @@ export function providerEnvFiles(project) {
   return fs.readdirSync(project, { withFileTypes: true })
     .filter(e => e.isFile() && /^\.env(?:\.[a-zA-Z0-9_-]+)?$/.test(e.name)).map(e => e.name).sort();
 }
-export function importProviderEnv({ project, file, confirmed, store = new SecretStore() }) {
+export function importProviderEnvText({ text, confirmed, store = new SecretStore() }) {
   if (confirmed !== true) throw Error('ENV_IMPORT_CONFIRMATION_REQUIRED');
-  if (typeof file !== 'string' || !/^\.env(?:\.[a-zA-Z0-9_-]+)?$/.test(file)) throw Error('ENV_FILE_NOT_ALLOWED');
-  const root = fs.realpathSync(project); const candidate = path.join(root, file);
-  if (fs.lstatSync(candidate).isSymbolicLink() || path.dirname(fs.realpathSync(candidate)) !== root) throw Error('ENV_FILE_NOT_ALLOWED');
-  if (fs.statSync(candidate).size > 128 * 1024) throw Error('ENV_FILE_TOO_LARGE');
+  if (typeof text !== 'string' || Buffer.byteLength(text) > 128 * 1024) throw Error('ENV_FILE_TOO_LARGE');
   let data;
-  try { data = parse(fs.readFileSync(candidate)); } catch { throw Error('ENV_READ_FAILED'); }
+  try { data = parse(text); } catch { throw Error('ENV_READ_FAILED'); }
   const imported = [], kept = [];
   for (const p of CATALOG) {
     const value = data[p.apiKeyEnv];
@@ -25,5 +22,14 @@ export function importProviderEnv({ project, file, confirmed, store = new Secret
     store.set(p.apiKeyEnv, value, { source: 'operator-selected-env', purpose: 'Model provider connection' });
     imported.push(p.id);
   }
-  return { state: 'STORED', imported, kept, note: 'Nyckelvärden visas inte. Befintliga nycklar har bevarats. Sparad nyckel betyder inte verifierad modellanslutning.' };
+  return { state: 'STORED', imported, kept, note: 'Key values are hidden. Existing keys were kept. A saved key does not verify a model connection.' };
+}
+
+export function importProviderEnv({ project, file, confirmed, store = new SecretStore() }) {
+  if (confirmed !== true) throw Error('ENV_IMPORT_CONFIRMATION_REQUIRED');
+  if (typeof file !== 'string' || !/^\.env(?:\.[a-zA-Z0-9_-]+)?$/.test(file)) throw Error('ENV_FILE_NOT_ALLOWED');
+  const root = fs.realpathSync(project); const candidate = path.join(root, file);
+  if (fs.lstatSync(candidate).isSymbolicLink() || path.dirname(fs.realpathSync(candidate)) !== root) throw Error('ENV_FILE_NOT_ALLOWED');
+  if (fs.statSync(candidate).size > 128 * 1024) throw Error('ENV_FILE_TOO_LARGE');
+  return importProviderEnvText({ text: fs.readFileSync(candidate, 'utf8'), confirmed: true, store });
 }

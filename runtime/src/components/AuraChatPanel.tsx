@@ -46,7 +46,7 @@ interface AuraChatActivity {
 }
 
 export function useAuraChatSession() {
-  const { tr } = useUiLanguage();
+  const { tr, t: uiText } = useUiLanguage();
   const [messages, setMessages] = useState<ChatMessage[]>([{
     id: 'welcome',
     role: 'system',
@@ -69,7 +69,7 @@ export function useAuraChatSession() {
         setStorageReady(true); setStorageError(null);
       } catch(error:any) {
         if (!active) return;
-        setStorageError(`Chatthistoriken kunde inte läsas: ${safeCognitiveText(error.message)}`);
+        setStorageError(`Could not read conversation history: ${safeCognitiveText(error.message)}`);
         retryTimer=window.setTimeout(load,5000);
       }
     };
@@ -83,7 +83,7 @@ export function useAuraChatSession() {
       setMessages(current=>current.some(m=>m.id===data.message.id)?current:[...current,data.message]);setStorageError(null);
     } catch(error:any) {
       // Keep the actual answer visible, but explicitly report that durable storage failed.
-      setMessages(current=>[...current,{...message,at:new Date().toISOString()}]);setStorageError(`Meddelandet visas men kunde inte sparas: ${error.message}`);
+      setMessages(current=>[...current,{...message,at:new Date().toISOString()}]);setStorageError(`The message is visible but could not be saved: ${error.message}`);
       if (message.role === 'user') throw error;
       return null;
     }
@@ -122,6 +122,7 @@ async function chatJson(response: Response) {
 }
 
 export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
+  const { t: uiText } = useUiLanguage();
   const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments } = session;
   const { tr } = useUiLanguage();
   const [attachments, setAttachments] = useState<Array<{id:string;files:Array<{path:string;format:string}>}>>(()=>{
@@ -167,9 +168,9 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         setSelectedProvider(chosen.provider);
         setChatModel(chosen.model || '');
         setModelOverride(Boolean(choice || valid));
-        setCatalogError(chosen.provider !== 'seer' && !registered.some((p: any) => p.id === chosen.provider) ? 'Sparad provider är inte registrerad. Registrera den igen innan du skickar.' : null);
+        setCatalogError(chosen.provider !== 'seer' && !registered.some((p: any) => p.id === chosen.provider) ? uiText("The saved provider is not registered. Connect it again before sending a message.") : null);
       }
-    }).catch(error => { if (active) setCatalogError(`Providerlista otillgänglig: ${error.message}`); });
+    }).catch(error => { if (active) setCatalogError(uiText("Provider list unavailable: {0}", [error.message])); });
     return () => { active = false; };
   }, [catalogRevision]);
 
@@ -224,7 +225,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   // The input grows with its text, up to about ten lines.
   useEffect(()=>{const el=inputRef.current;if(!el)return;el.style.height='auto';el.style.height=`${Math.min(260,el.scrollHeight)}px`;},[input]);
   useEffect(()=>{const focus=()=>inputRef.current?.focus();window.addEventListener('jaco:aura:focus',focus);return()=>window.removeEventListener('jaco:aura:focus',focus);},[]);
-  const modelLabel=selectedProvider==='seer'?'JACO standard':`${selectedProvider}${chatModel?` / ${chatModel}`:''}`;
+  const modelLabel=selectedProvider==='seer'?uiText("JACO default"):`${selectedProvider}${chatModel?` / ${chatModel}`:''}`;
 
   const history = useMemo(() => messages
     .filter(m => m.role !== 'system')
@@ -235,11 +236,11 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     const text = (retry ?? input).trim();
     if (!text || busy || uploading || !storageReady) return;
     if (selectedProvider !== 'seer' && (!providers.some(p => p.id === selectedProvider) || !chatModel.trim())) {
-      setCatalogError('Välj en registrerad provider och ange modell före anrop.');
+      setCatalogError(uiText("Choose a registered provider and a model before sending a message."));
       return;
     }
     if (retry === undefined) setInput('');
-    const user: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text, attachments:attachments.map(item=>({id:item.id,name:item.files[0]?.path.split('/')[0]||'Bilaga',fileCount:item.files.length})) };
+    const user: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text, attachments:attachments.map(item=>({id:item.id,name:item.files[0]?.path.split('/')[0]||uiText("Attachment"),fileCount:item.files.length})) };
     const controller = new AbortController();
     requestRef.current = controller;
     setBusy('chat');
@@ -306,7 +307,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             ? `Cloud $${Number(data.providerReceipt.costUsd || 0).toFixed(4)}`
             : data.providerReceipt?.costStatus === 'OUTCOME_UNKNOWN' ? 'Cloud cost pending reconciliation' : null,
           Array.isArray(data.toolReceipts) && data.toolReceipts.length
-            ? `tools: ${data.toolReceipts.map((r: any) => `${r.name} ${r.ok ? 'ok' : 'failed'}`).join(', ')}`
+            ? `tools: ${data.toolReceipts.map((r: any) => uiText("{0} {1}", [r.name, r.ok ? 'ok' : 'failed'])).join(', ')}`
             : null,
         ].filter(Boolean).join(' · '),
       });
@@ -314,7 +315,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       if (data.degraded && data.hint?.action) {
         setMessages(current => [...current, {
           id: crypto.randomUUID(), role: 'system', content: data.hint.message,
-          action: { code: data.hint.action, label: data.hint.actionLabel || 'Öppna', retryText: text },
+          action: { code: data.hint.action, label: data.hint.actionLabel || uiText("Open"), retryText: text },
         }]);
       }
     } catch (error: any) {
@@ -325,11 +326,11 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         role: 'system',
         // The runtime itself did not answer (stopped, restarting, or the request timed out); a refusal it did send carries a hint.
         content: controller.signal.aborted
-          ? 'Du har avbrutit väntan på svaret. Ett pågående uppdrag fortsätter. Modellservern kan fortfarande behandla anropet.'
+          ? uiText("You stopped waiting for the response. Active tasks continue. The model server may still be processing this request.")
           : hint?.message || (error?.name === 'TimeoutError'
-          ? 'JACO fick inget svar från runtime på fyra minuter. Kontrollera anslutningen och försök igen.'
-          : `Chatten svarade inte: ${error?.message || String(error)}`),
-        ...(hint?.action ? { action: { code: hint.action, label: hint.actionLabel || 'Öppna', retryText: text } } : {}),
+          ? uiText("JACO did not receive a system response within four minutes. Check the connection and try again.")
+          : uiText("The conversation did not respond: {0}", [error?.message || String(error)])),
+        ...(hint?.action ? { action: { code: hint.action, label: hint.actionLabel || uiText("Open"), retryText: text } } : {}),
       }]);
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
@@ -345,7 +346,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         window.dispatchEvent(new Event('jaco:economic:refresh'));
         if (action.retryText) void ask(action.retryText);
       } catch (error: any) {
-        setMessages(current => [...current, { id: crypto.randomUUID(), role: 'system', content: `Kunde inte slå på moln: ${error?.message || String(error)}` }]);
+        setMessages(current => [...current, { id: crypto.randomUUID(), role: 'system', content: uiText("Could not enable cloud models: {0}", [error?.message || String(error)]) }]);
       }
       return;
     }
@@ -409,13 +410,13 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     if(!text || busy || uploading || !storageReady)return;
     setBusy('goal');
     try {
-      await appendMessage({id:crypto.randomUUID(),role:'user',content:text,attachments:attachments.map(item=>({id:item.id,name:item.files[0]?.path.split('/')[0]||'Bilaga',fileCount:item.files.length}))});
+      await appendMessage({id:crypto.randomUUID(),role:'user',content:text,attachments:attachments.map(item=>({id:item.id,name:item.files[0]?.path.split('/')[0]||uiText("Attachment"),fileCount:item.files.length}))});
       const accepted=await onStartGoal(text,selectedTool,attachments.map(item=>item.id));
-      if(!accepted?.goal?.id)throw new Error('Runtime bekräftade inte uppdragets ID.');
-      await appendMessage({id:crypto.randomUUID(),role:'system',content:'Uppdraget är registrerat. Planering och resultat visas här när runtime rapporterar dem.',meta:'Uppdrag: '+accepted.goal.id});
+      if(!accepted?.goal?.id)throw new Error(uiText("The server did not confirm the task ID."));
+      await appendMessage({id:crypto.randomUUID(),role:'system',content:uiText("The task is registered. Planning and results appear here when reported by JACO."),meta:uiText("Task: ")+accepted.goal.id});
       setInput('');setAttachments([]);setComposeMode('chat');
     } catch(error:any) {
-      await appendMessage({id:crypto.randomUUID(),role:'system',content:'Uppdragets registrering kunde inte bekräftas: '+safeCognitiveText(error?.message || String(error))});
+      await appendMessage({id:crypto.randomUUID(),role:'system',content:uiText("Task registration could not be confirmed: ")+safeCognitiveText(error?.message || String(error))});
     } finally {setBusy(null);}
   };
   const submit=()=>composeMode==='goal'?goal():ask();
@@ -424,7 +425,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   return (
     <div className="cognitive-chat h-full min-h-0 flex flex-col">
       <div className="cognitive-chat-heading">
-        <span><span className="cognitive-jaco-mark"/>JACO <span className="cognitive-chat-subtitle">{tr('Samtal & skapande','Conversation & creation')}</span></span>
+        <span><span className="cognitive-jaco-mark"/>{uiText("JACO")}{' '}<span className="cognitive-chat-subtitle">{tr('Samtal & skapande','Conversation & creation')}</span></span>
         <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label={tr('Chattinställningar','Chat settings')} title={tr('Modell och budget','Model and budget')}><Settings2 size={15}/><span>{modelLabel}</span></button>
       </div>
 
@@ -433,7 +434,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       {showSettings && (
         <div className="px-4 py-3 border-b border-[#1c2a36] bg-[#0e1720] space-y-2 text-xs max-h-[50%] overflow-auto">
           <label className="flex items-center gap-2 text-slate-400">{tr('Modell','Model')}
-            <select aria-label="Aura provider" value={selectedProvider} onChange={event => {
+            <select aria-label={uiText("Aura provider")} value={selectedProvider} onChange={event => {
               const next = event.target.value;
               const model = providers.find(p => p.id === next)?.defaultModel || '';
               setSelectedProvider(next); setChatModel(model); saveSelection(next, model);
@@ -454,7 +455,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                   <input aria-label={tr('Aura modell','Aura model')} value={chatModel} maxLength={128} disabled={busy !== null || !storageReady} onChange={e => pick(e.target.value)} placeholder={tr('Modellnamn','Model name')} className="flex-1 min-w-0 text-sm px-2 py-1.5 bg-[#111820] border border-[#343b45] rounded" />
                   {listed.length > 0 && <button type="button" className="text-[11px] text-cyan-400" onClick={() => { setCustomModel(false); if (!listed.includes(chatModel)) pick(listed[0]); }}>{tr('Välj ur lista','Choose from list')}</button>}
                 </div>
-              : <select aria-label="Aura modell" value={listed.includes(chatModel) ? chatModel : ''} disabled={busy !== null || !storageReady}
+              : <select aria-label={uiText("Aura model")} value={listed.includes(chatModel) ? chatModel : ''} disabled={busy !== null || !storageReady}
                   onChange={e => e.target.value === '__other' ? setCustomModel(true) : pick(e.target.value)}
                   className="w-full text-sm px-2 py-1.5 bg-[#111820] border border-[#343b45] rounded text-slate-200">
                   {!listed.includes(chatModel) && <option value="">{chatModel || tr('Välj modell','Choose model')}</option>}
@@ -470,13 +471,13 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               setChatModel(configuredModel.startsWith('ollama:') ? configuredModel.slice(7) : '');
               setModelOverride(false);
               try { localStorage.removeItem(modelStorageKey); localStorage.removeItem(selectionKey); } catch {}
-            }} title="Use the model configured in JACO">{tr('Standardmodell','Default model')}</button>}
+            }} title={uiText("Use the model configured in JACO")}>{tr('Standardmodell','Default model')}</button>}
           </div>
           {selectedProvider !== 'seer' && providers.find(p => p.id === selectedProvider) && !providers.find(p => p.id === selectedProvider)!.credentialReady && <p className="text-[11px] text-amber-300">{tr('Provider saknar konfigurerad credential.','Provider credentials are not configured.')}</p>}
         </div>
       )}
-      {catalogError && <p role="alert" className="px-4 py-2 text-xs text-amber-300 border-b border-[#1c2a36]">{catalogError}</p>}
-      {storageError && <div role="alert" className="px-4 py-2 text-xs text-amber-300">{storageError}{!storageReady&&<button type="button" className="ml-3 underline" onClick={retryStorage}>{tr('Försök läsa igen','Retry reading')}</button>}</div>}
+      {catalogError && <p role="alert" className="px-4 py-2 text-xs text-amber-300 border-b border-[#1c2a36]">{uiText(catalogError)}</p>}
+      {storageError && <div role="alert" className="px-4 py-2 text-xs text-amber-300">{uiText(storageError)}{!storageReady&&<button type="button" className="ml-3 underline" onClick={retryStorage}>{tr('Försök läsa igen','Retry reading')}</button>}</div>}
 
       <div ref={scrollRef} onScroll={()=>{const el=scrollRef.current;if(el){const near=el.scrollHeight-el.scrollTop-el.clientHeight<80;followRef.current=near;setFollowing(near);}}} role="log" aria-live="polite" aria-relevant="additions" aria-label={tr('JACO-konversation','JACO conversation')} className="cognitive-chat-scroll">
         <div className="cognitive-feed">
@@ -497,10 +498,10 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             if(item.kind==='event')return <CognitiveEventCard key={item.id} event={item.event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>;
             const message=item.message;
             return message.role==='user'?<div key={item.id} className="cognitive-user-message"><div>{message.content}</div>{message.attachments?.map(item=><small key={item.id} className="block mt-2">{tr('Bifogat','Attached')}: {item.name} · {item.fileCount} {tr('filer','files')}</small>)}</div>
-              :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><span className="cognitive-jaco-mark"/>JACO</div><ChatMarkdown text={message.content}/><CopyMessageButton text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>{tr('Svar & källor','Answer & sources')}</summary><p>{message.meta}</p></details>}</article>
-              :<div key={item.id} className="cognitive-system-message">{message.content}{message.action&&<button type="button" disabled={busy!==null} onClick={()=>void runAction(message.action!)}>{message.action.label}</button>}</div>;
+              :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><span className="cognitive-jaco-mark"/>{uiText("JACO")}</div><ChatMarkdown text={message.content}/><CopyMessageButton text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>{tr('Svar & källor','Answer & sources')}</summary><p>{message.meta}</p></details>}</article>
+              :<div key={item.id} className="cognitive-system-message">{uiText(message.content)}{message.action&&<button type="button" disabled={busy!==null} onClick={()=>void runAction(message.action!)}>{uiText(message.action.label)}</button>}</div>;
           })}
-          {busy&&<div className="cognitive-response-wait"><span role="status"><Loader2 size={15} className="animate-spin"/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
+          {busy&&<div className="cognitive-response-wait"><span role="status"><Loader2 size={15} className="animate-spin"/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} {' '}{uiText("s")}</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
         </div>
       </div>
       <form onSubmit={event=>{event.preventDefault();void submit();}} className="cognitive-composer">

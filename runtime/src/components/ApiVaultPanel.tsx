@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../i18n/UiLanguage';
 import React, { useCallback, useEffect, useState } from 'react';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 
@@ -5,18 +6,19 @@ type Secret = { name: string; configured: boolean; purpose?: string; source?: st
 type WindowsVault = { available: boolean; keys: string[]; reason?: string };
 type Discovery = { localEnvFiles: string[]; localEnvImported: string[]; windowsModelLoaded: string[]; configured: Array<{ name: string; source: string; state: string }> };
 const EXAMPLES = [
-  { label: 'Välj referens för en tjänst', name: '' },
+  { label: "Choose a service credential", name: '' },
   { label: 'Coinbase CDP — API key ID', name: 'CDP_API_KEY_ID' },
   { label: 'Coinbase CDP — API key secret', name: 'CDP_API_KEY_SECRET' },
   { label: 'Coinbase Commerce', name: 'COINBASE_COMMERCE_KEY' },
   { label: 'Cloudflare — API token', name: 'CLOUDFLARE_API_TOKEN' },
   { label: 'Stripe — API secret', name: 'STRIPE_SECRET_KEY' },
   { label: 'GitHub — personal access token', name: 'GITHUB_TOKEN' },
-  { label: 'Egen tjänst', name: 'CUSTOM_API_KEY' },
+  { label: "Custom service", name: 'CUSTOM_API_KEY' },
 ];
 const KEY_NAME = /^[A-Z][A-Z0-9_]{1,127}$/;
 
 export function ApiVaultPanel({ onChanged }: { onChanged?: () => void | Promise<void> }) {
+  const { t: uiText } = useUiLanguage();
   const [secrets, setSecrets] = useState<Secret[] | null>(null);
   const [windows, setWindows] = useState<WindowsVault | null>(null);
   const [discovery, setDiscovery] = useState<Discovery | null>(null);
@@ -33,7 +35,7 @@ export function ApiVaultPanel({ onChanged }: { onChanged?: () => void | Promise<
       fetch('/api/aura/workbench/vault/discovery', { cache: 'no-store' }).then(readAuraResponse),
     ]);
     if (results[0].status === 'fulfilled') setSecrets(results[0].value.secrets || []);
-    else { setSecrets(null); setError('JACO:s krypterade Vault kunde inte läsas.'); }
+    else { setSecrets(null); setError(uiText("JACO’s encrypted credential store could not be read.")); }
     if (results[1].status === 'fulfilled') setWindows(results[1].value);
     else setWindows({ available: false, keys: [], reason: 'WINDOWS_VAULT_UNAVAILABLE' });
     if (results[2].status === 'fulfilled') setDiscovery(results[2].value);
@@ -46,19 +48,19 @@ export function ApiVaultPanel({ onChanged }: { onChanged?: () => void | Promise<
     if (busy) return;
     setError(''); setNotice('');
     const key = name.trim().toUpperCase();
-    if (!KEY_NAME.test(key)) { setError('Använd ett namn som CUSTOM_API_KEY, med versaler, siffror och understreck.'); return; }
-    if (!value.trim()) { setError('Ange nyckeln eller token som ska lagras.'); return; }
-    if (secrets?.some(secret => secret.name === key)) { setError('Nyckeln finns redan. Befintliga nycklar skrivs inte över från detta formulär.'); return; }
+    if (!KEY_NAME.test(key)) { setError(uiText("Use a name such as CUSTOM_API_KEY, with uppercase letters, numbers and underscores.")); return; }
+    if (!value.trim()) { setError(uiText("Enter the key or token to save.")); return; }
+    if (secrets?.some(secret => secret.name === key)) { setError(uiText("This key already exists. This form does not replace existing keys.")); return; }
     setBusy('save');
     try {
       await fetch('/api/aura/workbench/secrets', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: key, value: value.trim(), purpose: purpose.trim() || key }),
       }).then(readAuraResponse);
-      setValue(''); setNotice(`${key} lagrad krypterat. Ingen extern API-anslutning har verifierats ännu.`);
+      setValue(''); setNotice(uiText("{0} saved with encryption. External API access has not been verified yet.", [key]));
       await refresh();
       await onChanged?.();
-    } catch (err: any) { setError(err?.message || 'Nyckeln kunde inte sparas.'); }
+    } catch (err: any) { setError(err?.message || uiText("The key could not be saved.")); }
     finally { setBusy(''); }
   };
 
@@ -70,62 +72,58 @@ export function ApiVaultPanel({ onChanged }: { onChanged?: () => void | Promise<
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: key }),
       }).then(readAuraResponse);
-      setNotice(`${key} kopierad till JACO:s krypterade Vault. Originalet i Windows är oförändrat.`);
+      setNotice(uiText("{0} copied to JACO’s encrypted credential store. The Windows original is preserved.", [key]));
       await refresh();
       await onChanged?.();
-    } catch (err: any) { setError(`Import av ${key}: ${err?.message || 'misslyckades'}`); }
+    } catch (err: any) { setError(uiText("Import of {0}: {1}", [key, err?.message || uiText("failed")])); }
     finally { setBusy(''); }
   };
 
   const imported = new Set(secrets?.map(s => s.name) || []);
-  return <section aria-label="API och Vault">
-    <h3>API &amp; Vault</h3>
-    <p>Samma krypterade SecretStore som JACO-runtime använder. Endast namn och status visas, aldrig nyckelvärden. Lagrad betyder inte ansluten eller API-verifierad.</p>
+  return <section aria-label={uiText("API and credentials")}>
+    <h3>{uiText("API & credentials")}</h3>
+    <p>{uiText("Manage JACO’s encrypted credentials. Only names and status are shown. Saved credentials still need a successful connection test.")}</p>
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    <h4>Automatisk lokal anslutning</h4>
+    <h4>{uiText("Local connection discovery")}</h4>
     {discovery ? <div>
-      <p>JACO har upptäckt {discovery.configured.length} kända autentiseringsreferenser och {discovery.localEnvFiles.length} lokala JACO-konfigurationsfiler. Nyckelvärden visas aldrig.</p>
-      {discovery.configured.length ? <p>Lokalt konfigurerade: {discovery.configured.map(item => item.name).join(', ')}.</p> : <p>Inga kända nycklar observerades i aktiv runtime. Lokala modellservrar och MCP-verktyg kan fortfarande ansluta utan API-nyckel.</p>}
-      <p>JACO verifierar modellernas kataloger och tillåtna MCP-verktyg automatiskt. Övriga tjänster är endast konfigurerade tills en behörig adapter har testats. Inga köp, överföringar eller publiceringar görs av denna kontroll.</p>
-    </div> : <p>Ingen aktuell upptäcktsrapport. Kontrollera att runtime svarar.</p>}
+      <p>{uiText("JACO found")}{' '}{discovery.configured.length} {' '}{uiText("known credential references and")}{' '}{discovery.localEnvFiles.length} {' '}{uiText("local JACO configuration files. Credential values are never displayed.")}</p>
+      {discovery.configured.length ? <p>{uiText("Configured locally:")}{' '}{discovery.configured.map(item => item.name).join(', ')}.</p> : <p>{uiText("No known keys were observed in the running system. Local models and tools can still connect without an API key.")}</p>}
+      <p>{uiText("JACO checks model catalogs and permitted tools automatically. Other services remain configured until their connection has been tested. This check does not make purchases, transfers or publications.")}</p>
+    </div> : <p>{uiText("No current discovery report. Check that JACO is running.")}</p>}
     <form onSubmit={e => void save(e)}>
-      <h4>Lägg till en tjänstnyckel</h4>
-      <label>Tjänst
-        <select aria-label="Välj tjänst" value={EXAMPLES.some(x => x.name === name) ? name : ''} onChange={e => { setName(e.target.value); setPurpose(e.target.selectedOptions[0]?.text || ''); }}>
-          {EXAMPLES.map(x => <option key={x.label} value={x.name}>{x.label}</option>)}
+      <h4>{uiText("Add a service key")}</h4>
+      <label>{uiText("Service")}{' '}<select aria-label={uiText("Choose service")} value={EXAMPLES.some(x => x.name === name) ? name : ''} onChange={e => { setName(e.target.value); setPurpose(e.target.selectedOptions[0]?.text || ''); }}>
+          {EXAMPLES.map(x => <option key={x.label} value={x.name}>{uiText(x.label)}</option>)}
         </select>
       </label>
-      <label>Vault-referens
-        <input aria-label="Vault-referens" value={name} onChange={e => setName(e.target.value.toUpperCase())} placeholder="MIN_TJANST_API_KEY" autoComplete="off" />
+      <label>{uiText("Credential name")}{' '}<input aria-label={uiText("Credential name")} value={name} onChange={e => setName(e.target.value.toUpperCase())} placeholder={uiText("MY_SERVICE_API_KEY")} autoComplete="off" />
       </label>
-      <label>API-nyckel / token
-        <input aria-label="API-nyckel i Vault" type="password" value={value} onChange={e => setValue(e.target.value)} autoComplete="off" placeholder="Klistra in hemligheten" />
+      <label>{uiText("API key / token")}{' '}<input aria-label={uiText("API key in credential store")} type="password" value={value} onChange={e => setValue(e.target.value)} autoComplete="off" placeholder={uiText("Paste the credential")} />
       </label>
-      <label>Beskrivning (valfri)
-        <input aria-label="Vault-beskrivning" value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Tjänstens användning" />
+      <label>{uiText("Description (optional)")}{' '}<input aria-label={uiText("Credential description")} value={purpose} onChange={e => setPurpose(e.target.value)} placeholder={uiText("What the service is used for")} />
       </label>
-      <button type="submit" disabled={!!busy || !value.trim() || !KEY_NAME.test(name.trim())}> {busy === 'save' ? 'Sparar…' : 'Spara i Vault'} </button>
+      <button type="submit" disabled={!!busy || !value.trim() || !KEY_NAME.test(name.trim())}> {busy === 'save' ? uiText("Saving…") : uiText("Save credential")} </button>
     </form>
-    <h4>Lagrat i JACO Vault</h4>
-    {secrets === null ? <p>Status kunde inte verifieras.</p> : secrets.length === 0 ? <p>Inga nycklar observerade i den krypterade lagringen.</p> :
+    <h4>{uiText("Stored credentials")}</h4>
+    {secrets === null ? <p>{uiText("Status could not be verified.")}</p> : secrets.length === 0 ? <p>{uiText("No keys observed in the encrypted credential store.")}</p> :
       secrets.map(secret => <article key={secret.name}>
-        <strong>{secret.name}</strong> <span> Lagrad · Inte API-verifierad</span>
+        <strong>{secret.name}</strong> <span> {' '}{uiText("Stored · API access not verified")}</span>
         {secret.purpose && <p>{secret.purpose}</p>}
-        <small>Källa: {secret.source || 'okänd'}{secret.updatedAt ? ` · Uppdaterad ${secret.updatedAt}` : ''}</small>
+        <small>{uiText("Source:")}{' '}{secret.source || uiText("unknown")}{secret.updatedAt ? uiText(" · Updated {0}", [secret.updatedAt]) : ''}</small>
       </article>)}
-    <h4>Äldre Windows Vault (DPAPI)</h4>
-    {!windows ? <p>Kontrollerar Windows Credential Manager…</p> :
-      !windows.available ? <p>{windows.reason === 'WINDOWS_ONLY' ? 'Windows Credential Manager finns inte på denna enhet.' : 'Windows Vault kunde inte kontrolleras.'}</p> :
-      windows.keys.length === 0 ? <p>Inga JACO-nycklar hittades i Windows Credential Manager.</p> :
-      <><p>Nycklar här kan importeras individuellt. Ingenting raderas ur Windows Vault, och inga befintliga JACO-nycklar skrivs över.</p>
+    <h4>{uiText("Windows credentials (DPAPI)")}</h4>
+    {!windows ? <p>{uiText("Checking Windows Credential Manager…")}</p> :
+      !windows.available ? <p>{windows.reason === 'WINDOWS_ONLY' ? uiText("Windows Credential Manager is not available on this device.") : uiText("Windows credentials could not be checked.")}</p> :
+      windows.keys.length === 0 ? <p>{uiText("No JACO keys found in Windows Credential Manager.")}</p> :
+      <><p>{uiText("Import keys individually. The originals stay in Windows Credential Manager and existing JACO keys are preserved.")}</p>
         {windows.keys.map(key => <article key={key}>
-          <strong>{key}</strong> <span>{imported.has(key) ? 'Finns redan i JACO Vault' : 'Endast Windows Vault'}</span>
+          <strong>{key}</strong> <span>{imported.has(key) ? uiText("Already stored in JACO") : uiText("Windows credentials only")}</span>
           {!imported.has(key) && <button type="button" disabled={!!busy} onClick={() => void importWindows(key)}>
-            {busy === key ? 'Importerar…' : 'Importera till JACO'}
+            {busy === key ? uiText("Importing…") : uiText("Import into JACO")}
           </button>}
         </article>)}</>}
-    <button type="button" disabled={!!busy} onClick={() => void refresh()}>Kontrollera Vault igen</button>
-    <p>Vault lagrar autentiseringsuppgifter. API-anrop, OAuth och externa skrivåtgärder behöver fortfarande en ansluten tjänsteadapter eller ett MCP-verktyg med rätt behörighet.</p>
+    <button type="button" disabled={!!busy} onClick={() => void refresh()}>{uiText("Check credentials again")}</button>
+    <p>{uiText("Credentials are stored here. API calls, OAuth and external changes require a connected service or tool with the appropriate permission.")}</p>
   </section>;
 }

@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../i18n/UiLanguage';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Wrench, ShieldCheck, X } from 'lucide-react';
 import { AURA_PRODUCT_TOOLS, type AuraProductTool } from '../lib/auraToolRegistry';
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export const AuraCommandPalette: React.FC<Props> = ({ open, onClose, onOpenTool }) => {
+  const { t: uiText, language } = useUiLanguage();
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -22,11 +24,11 @@ export const AuraCommandPalette: React.FC<Props> = ({ open, onClose, onOpenTool 
     const q = query.trim().toLowerCase();
     const source = q
       ? AURA_PRODUCT_TOOLS.filter(tool =>
-          [tool.id, tool.title, tool.description, tool.category, tool.command, ...tool.aliases]
+          [tool.id, tool.title, uiText(tool.title), tool.description, uiText(tool.description), tool.category, uiText(tool.category), tool.command, ...tool.aliases]
             .some(value => String(value).toLowerCase().includes(q)))
       : AURA_PRODUCT_TOOLS;
     return source.slice(0, 80);
-  }, [query]);
+  }, [query, language]);
 
   useEffect(() => {
     if (!open) return;
@@ -54,7 +56,7 @@ export const AuraCommandPalette: React.FC<Props> = ({ open, onClose, onOpenTool 
                 onClose();
               }
             }}
-            placeholder="Type a command or capability…"
+            placeholder={uiText("Type a command or capability…")}
             className="flex-1 bg-transparent outline-none text-sm text-slate-100 placeholder:text-slate-600"
           />
           <button onClick={onClose} className="p-1 text-slate-500 hover:text-slate-300"><X className="w-4 h-4" /></button>
@@ -69,20 +71,20 @@ export const AuraCommandPalette: React.FC<Props> = ({ open, onClose, onOpenTool 
               <Wrench className="w-4 h-4 mt-0.5 text-cyan-400 shrink-0" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-100">{tool.title}</span>
-                  <span className="text-[9px] text-slate-500">{tool.category}</span>
+                  <span className="text-xs text-slate-100">{uiText(tool.title)}</span>
+                  <span className="text-[9px] text-slate-500">{uiText(tool.category)}</span>
                   {tool.authority !== 'ALLOW' && (
                     <span className="text-[9px] border border-amber-800 text-amber-300 rounded px-1 flex items-center gap-1">
-                      <ShieldCheck className="w-2.5 h-2.5" />{tool.authority}
+                      <ShieldCheck className="w-2.5 h-2.5" />{uiText(tool.authority === 'REVIEW' ? 'Approval required' : 'Verification required')}
                     </span>
                   )}
                 </div>
-                <div className="text-[10px] text-slate-500 mt-0.5 truncate">{tool.description}</div>
+                <div className="text-[10px] text-slate-500 mt-0.5 truncate">{uiText(tool.description)}</div>
               </div>
               <span className="text-[9px] font-mono text-slate-600 shrink-0">{tool.command}</span>
             </button>
           ))}
-          {!items.length && <div className="p-5 text-xs text-slate-500">No matching capability.</div>}
+          {!items.length && <div className="p-5 text-xs text-slate-500">{uiText("No matching capability.")}</div>}
         </div>
       </div>
     </div>

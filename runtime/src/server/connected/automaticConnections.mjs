@@ -60,6 +60,13 @@ export function automaticConnections({ registry, mcpHost, env = process.env, now
   }
 
   async function run() {
+    if (env.JACO_PROVIDER_DISCOVERY === '0') {
+      // First-run setup and the operator's discovery preference must not probe
+      // endpoints, load the vault or start programs in the background.
+      receipt = { observedAt: new Date(now()).toISOString(), providers: [], tools: await connectTools(), problems: [], ok: false, state: 'DISCOVERY_DISABLED' };
+      at = now();
+      return receipt;
+    }
     if (!credentialsLoaded) {
       credentialsLoaded = true;
       if (typeof loadCredentials === 'function') {

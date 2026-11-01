@@ -1,0 +1,119 @@
+name: JACO product installers
+on:
+  pull_request:
+    paths:
+      - 'packaging/**'
+      - 'lite/**'
+      - 'tools/build*'
+      - 'tools/verify-product-setup.mjs'
+      - 'runtime/**'
+      - 'agents/lib/provider-env-import.mjs'
+      - 'tests/nova/**'
+      - '.github/workflows/product-installers.yml'
+  push:
+    branches: [main]
+    paths: ['packaging/**', 'lite/**', 'runtime/**', 'tools/build*', '.github/workflows/product-installers.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: product-installers-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  runtime:
+    name: Verify and package the canonical runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      JACO_BUILD_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      JACO_LITE_NO_UPDATE_CHECK: '1'
+      JACO_ALLOW_PAID_MODELS: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: runtime/package-lock.json
+      - run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - run: npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
+      - name: Setup, language and release regressions
+        run: node --test tests/nova/installation-setup.test.mjs tests/nova/connection-setup.test.mjs tests/nova/product-language.test.mjs tests/nova/windows-installer.test.mjs tests/nova/automatic-connections.test.mjs tests/nova/provider-onboarding.test.mjs tests/nova/lite.test.mjs
+      - name: Native engine protocol integration
+        working-directory: runtime
+        run: node --import tsx --test src/server/nativeEngine/pairing.test.ts
+      - run: npm run lint --prefix runtime
+      - run: npm run test:workspace-ux --prefix runtime
+      - run: npm run build --prefix runtime
+      - name: Build source-identified portable runtime archives
+        run: node tools/build-lite.mjs --no-build
+      - name: First-run acceptance against the actual package
+        run: node tools/verify-product-setup.mjs build/lite/stage/jaco-lite-0.22.0
+      - name: Verify the portable download
+        env:
+          DEEPSEEK_API_KEY: ''
+          GROQ_API_KEY: ''
+        run: node tools/verify-lite.mjs build/lite/jaco-lite-0.22.0.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JACO-runtime-bundles
+          path: |
+            build/lite/*.zip
+            build/lite/*.sha256
+            build/lite/*.receipt.json
+            build/lite/latest.json
+            build/lite/platforms/*.zip
+            build/lite/platforms/*.sha256
+            build/lite/platforms/*.receipt.json
+          if-no-files-found: error
+  windows:
+    name: Build and install Windows Setup
+    needs: runtime
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      JACO_LITE_NO_UPDATE_CHECK: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: JACO-runtime-bundles
+          path: build/downloads
+      - name: Extract the exact verified runtime
+        shell: pwsh
+        run: |
+          $archive = Get-Item build/downloads/jaco-lite-0.22.0.zip
+          $expected = ((Get-Content "$($archive.FullName).sha256" -Raw) -split '\s+')[0]
+          if ((Get-FileHash $archive.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'RUNTIME_ARCHIVE_CHECKSUM_MISMATCH' }
+          Expand-Archive $archive.FullName build/runtime -Force
+      - name: Install the installer compiler
+        shell: pwsh
+        run: choco install nsis --no-progress --yes
+      - name: Build a real offline per-user Setup executable
+        shell: pwsh
+        run: |
+          node tools/build-windows-installer.mjs --stage build/runtime/jaco-lite-0.22.0 --out build/installers --arch x64 --source-commit '${{ github.event.pull_request.head.sha || github.sha }}' --makensis 'C:\Program Files (x86)\NSIS\makensis.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'SETUP_BUILD_FAILED' }
+      - name: Install, consent, restart, stop and remove on a fresh Windows host
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem build/installers -Filter 'JACO-Setup-*.exe' | Select-Object -First 1
+          if (-not $setup) { throw 'SETUP_EXECUTABLE_MISSING' }
+          & packaging/windows/verify-install.ps1 -Installer $setup.FullName -ExpectedCommit '${{ github.event.pull_request.head.sha || github.sha }}'
+          if ($LASTEXITCODE -ne 0) { throw 'WINDOWS_INSTALL_ACCEPTANCE_FAILED' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JACO-Windows-Setup-x64
+          path: |
+            build/installers/*.exe
+            build/installers/*.sha256
+            build/installers/*.receipt.json
+            build/installers/*.windows-host.json
+          if-no-files-found: error

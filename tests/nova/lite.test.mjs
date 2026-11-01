@@ -102,7 +102,7 @@ test('builder: stages dist without maps, adds launcher and license, scans for se
   const deps = Object.fromEntries(LITE_DEPENDENCIES.map(n => [n, '^1.0.0']));
   fs.writeFileSync(path.join(runtime, 'package.json'), JSON.stringify({ version: '9.9.9', dependencies: deps }));
   fs.mkdirSync(path.join(repo, 'lite'));
-  for (const f of ['start.mjs', 'START.cmd', 'start.sh', 'START-ANDROID.sh', 'README.md', 'connect.html', 'connect.js', 'connect.css']) fs.writeFileSync(path.join(repo, 'lite', f), `// ${f}\n`);
+  for (const f of ['start.mjs', 'setup-state.mjs', 'START.cmd', 'start.sh', 'START-ANDROID.sh', 'README.md', 'connect.html', 'connect.js', 'connect.css']) fs.writeFileSync(path.join(repo, 'lite', f), `// ${f}\n`);
   fs.writeFileSync(path.join(repo, 'LICENSE'), 'MIT');
   const install = stage => { fs.mkdirSync(path.join(stage, 'node_modules', '.bin'), { recursive: true }); fs.writeFileSync(path.join(stage, 'node_modules', 'express.js'), 'x'); fs.writeFileSync(path.join(stage, 'node_modules', '.bin', 'shim.cmd'), 'x'); fs.mkdirSync(path.join(stage, 'node_modules', '@img'), { recursive: true }); fs.writeFileSync(path.join(stage, 'node_modules', '@img', 'sharp.node'), 'x'); };
   const bundleNova = async outfile => fs.writeFileSync(outfile, '// nova');

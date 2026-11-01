@@ -2,12 +2,12 @@
 // existing runtime, not independently spawned agents or a second scheduler.
 // This module is read-only: it never grants permissions or executes a mission.
 export const AURA_FUNCTION_DEFINITIONS = Object.freeze([
-  { id: 'reason', name: 'Resonemang', implementation: 'SEER + vald modell', authority: 'model-inference', reads: ['health'] },
-  { id: 'plan', name: 'Planering', implementation: 'SEER Strategic Governor', authority: 'existing-goal-contract', reads: ['seer_goals'] },
-  { id: 'execute', name: 'Utförande', implementation: 'Durable Nova', authority: 'existing-mission-lease', reads: ['mission_list', 'mission_get'] },
-  { id: 'memory', name: 'Minne', implementation: 'Workplace + kanoniska minneslager', authority: 'existing-memory-policy', reads: ['seer_memory'] },
-  { id: 'tools', name: 'Verktyg', implementation: 'MCP Tool Fabric', authority: 'existing-tool-policy', reads: ['repo_list', 'git_status'] },
-  { id: 'verify', name: 'Verifiering', implementation: 'Mission receipts + kontraktsgrindar', authority: 'evidence-before-claim', reads: ['mission_get', 'runtime_events'] },
+  { id: 'reason', name: 'Reasoning', implementation: 'Planner + selected model', authority: 'model-inference', reads: ['health'] },
+  { id: 'plan', name: 'Planning', implementation: 'Task planner', authority: 'existing-goal-contract', reads: ['seer_goals'] },
+  { id: 'execute', name: 'Execution', implementation: 'Persistent task executor', authority: 'existing-mission-lease', reads: ['mission_list', 'mission_get'] },
+  { id: 'memory', name: 'Memory', implementation: 'Project memory stores', authority: 'existing-memory-policy', reads: ['seer_memory'] },
+  { id: 'tools', name: 'Tools', implementation: 'MCP connections', authority: 'existing-tool-policy', reads: ['repo_list', 'git_status'] },
+  { id: 'verify', name: 'Verification', implementation: 'Task results and acceptance checks', authority: 'evidence-before-claim', reads: ['mission_get', 'runtime_events'] },
 ]);
 
 const observed = (ready, fallback = 'UNOBSERVED') => ready ? 'OBSERVED' : fallback;
@@ -36,12 +36,12 @@ export function projectAuraFunctions({ workplace = null, coordinator = null, gra
     verify: !visibleMissions ? 'UNAVAILABLE' : verifiedSteps > 0 ? 'EVIDENCE_OBSERVED' : 'NO_EVIDENCE_OBSERVED',
   };
   const detail = {
-    reason: model?.model ? safeText(model.model) : 'Ingen fungerande inferens verifierad',
-    plan: Array.isArray(graphs) ? String(graphs.length) + ' observerade plangrafer' : 'Plangrafer ej observerade',
-    execute: String(active.length) + ' aktiva uppdrag, ' + String(freshWorkers) + ' färska körprocesser',
-    memory: workplace?.memoryState?.storage ? safeText(workplace.memoryState.storage) : 'Minneslager ej verifierat',
-    tools: connectedTools === null ? 'Verktygsstatus saknas' : String(connectedTools) + ' anslutna MCP-servrar; inga anrop garanteras',
-    verify: verifiedSteps === null ? 'Kvitton kan inte läsas' : String(verifiedSteps) + ' rapporterade verifierade verktygssteg; inte bevis på slutmål',
+    reason: model?.model ? safeText(model.model) : 'No working inference verified',
+    plan: Array.isArray(graphs) ? String(graphs.length) + ' observed task plans' : 'Task plans have not been observed',
+    execute: String(active.length) + ' active tasks, ' + String(freshWorkers) + ' recently observed workers',
+    memory: workplace?.memoryState?.storage ? safeText(workplace.memoryState.storage) : 'Memory store not verified',
+    tools: connectedTools === null ? 'Tool status unavailable' : String(connectedTools) + ' connected tool servers; tool execution has not been verified',
+    verify: verifiedSteps === null ? 'Task results cannot be read' : String(verifiedSteps) + ' tool steps reported as verified; task completion is checked separately',
   };
   return {
     schema: 'jaco.aura-functions/v1',
