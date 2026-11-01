@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 let serverSdk, clientSdk, clientHttp;
 try {
   serverSdk = await import('@modelcontextprotocol/server');
+  // Client 2.0.0 exports the HTTP transport from its root; the old ./streamableHttp subpath made this
+  // whole suite SKIP silently even with the SDK installed.
   clientSdk = await import('@modelcontextprotocol/client');
-  clientHttp = await import('@modelcontextprotocol/client/streamableHttp');
+  clientHttp = clientSdk;
 } catch (error) {
   console.log('SKIP MCP runtime: official SDK packages are not installed in this build environment');
   process.exit(0);
@@ -31,7 +33,8 @@ assert.equal(listed.tools.length,42);
 for (const required of ['jaco_identity','jaco_system_update','jaco_seer_goal','jaco_aura_provider_chat','jaco_wordpress_improve','jaco_a2a_discover','jaco_workplace_status','jaco_workplace_agents','jaco_workplace_inbox','jaco_workplace_post']) {
   assert.equal(listed.tools.some(t=>t.name===required),true,`missing ${required}`);
 }
-assert.equal(listed.tools.some(t=>/evaluate|shell|exec|credential/i.test(t.name)),false);
+// Same boundary as tool-registry.test.mjs: jaco_shell_inspect is the allow-listed, disabled-by-default inspector.
+assert.equal(listed.tools.some(t=>/evaluate|shell_exec|bash_shell|credential/i.test(t.name)),false);
 const result=await client.callTool({name:'jaco_identity',arguments:{}});
 assert.match(JSON.stringify(result),/JACO Autonomus IDE/);
 await client.close();
