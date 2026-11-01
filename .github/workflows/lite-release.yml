@@ -3,7 +3,7 @@ on:
   pull_request:
     paths: ['lite/**', 'tools/build-lite.mjs', 'tools/verify-lite.mjs', 'tools/serve-dir.mjs', 'tests/nova/lite-install.test.mjs', 'tests/nova/*connections*', 'tests/nova/lite.test.mjs', 'tests/nova/gameboard-mcp-access.test.mjs', 'tests/nova/lite-chat-routing.test.mjs', 'site/**', 'agents/lib/aura-seer-chat.mjs', 'runtime/server.ts', 'runtime/src/server/**', '.github/workflows/lite-release.yml']
   push:
-    branches: [master]
+    branches: [main]
     paths: ['lite/**', 'tools/build-lite.mjs', 'tools/verify-lite.mjs', 'tools/serve-dir.mjs', 'site/**', 'agents/**', 'runtime/**', '.github/workflows/lite-release.yml']
 permissions:
   contents: read
