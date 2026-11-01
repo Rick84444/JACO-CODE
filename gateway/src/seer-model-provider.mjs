@@ -10,7 +10,7 @@
 //     the model the operator picked in Aura, a paid one under the runtime's Continuum ceiling.
 //
 // Environment:
-//   JACO_SEER_PROVIDER_PREFERENCE=auto|llamacpp|litert|ollama|off
+//   JACO_SEER_PROVIDER_PREFERENCE=auto|llamacpp|litert|ollama|off|aura
 //   JACO_LLAMACPP_URL=http://127.0.0.1:9380/v1
 //   JACO_LLAMACPP_MODEL=<registered model id>
 //   JACO_LITERT_URL=http://127.0.0.1:9379/v1
@@ -461,10 +461,10 @@ export async function discoverSeerLocalProvider({
   if (typeof fetchFn !== 'function') throw new Error('fetchFn is required');
 
   const preference = String(env.JACO_SEER_PROVIDER_PREFERENCE || env.JACO_MODEL_PROVIDER || 'auto').trim().toLowerCase();
-  if (!['auto', 'llamacpp', 'litert', 'ollama', 'off'].includes(preference)) {
-    throw new Error('JACO_SEER_PROVIDER_PREFERENCE must be auto, llamacpp, litert, ollama or off');
+  if (!['auto', 'llamacpp', 'litert', 'ollama', 'off', 'aura'].includes(preference)) {
+    throw new Error('JACO_SEER_PROVIDER_PREFERENCE must be auto, llamacpp, litert, ollama, off or aura');
   }
-  if (preference === 'off') {
+  if (preference === 'off' || preference === 'aura') {
     return { provider: null, preference, attempts: [], reason: 'local-provider-disabled' };
   }
 

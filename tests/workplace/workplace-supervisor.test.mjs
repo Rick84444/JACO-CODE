@@ -337,3 +337,73 @@ test('Nova cannot start when SEER health is up but real brain inference fails', 
 
   await supervisor.stop();
 });
+
+test('Aura-only startup skips all local model probes and waits for actual selected-model inference', async t => {
+  const spawns = [], calls = [];
+  let releaseBrain;
+  const brain = new Promise(resolve => { releaseBrain = resolve; });
+  let supervisor;
+  supervisor = createWorkplaceAgentSupervisor({
+    env: { JACO_WORKPLACE_SUPERVISE_MODEL: '0', JACO_WORKPLACE_SUPERVISE_SEER: '1',
+      JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_SEER_PROVIDER_PREFERENCE: 'aura',
+      JACO_GATEWAY_TOKEN: 'fixture-gateway-token' },
+    fetchImpl: async url => {
+      calls.push(String(url));
+      if (String(url).endsWith('/api/runtime/identity')) return jsonResponse({});
+      if (String(url).endsWith('/health')) return jsonResponse({});
+      if (String(url).endsWith('/cortex/brain')) return brain;
+      assert.fail('Unexpected local model probe: ' + url);
+    },
+    spawnImpl: (cmd, args) => {
+      const child = fakeChild(12000 + spawns.length);
+      spawns.push({ cmd, args, child });
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    }, log: () => {}, error: () => {},
+  });
+  t.after(() => supervisor.stop());
+  await supervisor.start('http://127.0.0.1:2995');
+  for (let i=0;i<100 && !calls.some(u=>u.endsWith('/cortex/brain'));i++) await new Promise(r=>setTimeout(r,2));
+  assert.equal(supervisor.snapshot().state, 'VERIFYING_SEER_BRAIN');
+  assert.equal(supervisor.snapshot().model.state, 'WAITING_SELECTED_PROVIDER');
+  assert.equal(spawns.length, 0, 'no Nova before inference succeeds');
+  releaseBrain(jsonResponse({ ok: true, text: 'JACO_SEER_READY', provider: 'fixture-cloud', local: false }));
+  for (let i=0;i<100 && !spawns.length;i++) await new Promise(r=>setTimeout(r,2));
+  assert.equal(supervisor.snapshot().state, 'RUNNING');
+  assert.equal(supervisor.snapshot().model.provider, 'fixture-cloud');
+  assert.equal(supervisor.snapshot().model.pid, null);
+  assert.deepEqual(spawns.map(s=>s.args), [['agents/hands-off-agent.mjs']]);
+});
+
+test('stopping during a runtime probe cannot later start model or agents', async () => {
+  let release;
+  const response = new Promise(resolve => { release = resolve; });
+  const supervisor = createWorkplaceAgentSupervisor({
+    env: { JACO_WORKPLACE_SUPERVISE_MODEL: '1' },
+    fetchImpl: async () => response,
+    spawnImpl: () => assert.fail('spawn after stop'), log: () => {}, error: () => {},
+  });
+  await supervisor.start('http://127.0.0.1:2995');
+  await supervisor.stop();
+  release(jsonResponse({}));
+  await new Promise(r=>setTimeout(r,20));
+  assert.equal(supervisor.snapshot().state, 'STOPPED');
+});
+
+test('shutdown does not await a second exit from an already-exited child', async () => {
+  let child;
+  const supervisor = createWorkplaceAgentSupervisor({
+    env: { JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_GATEWAY_TOKEN: 'fixture-token' },
+    fetchImpl: async url => String(url).endsWith('/cortex/brain')
+      ? jsonResponse({ ok: true, text: 'ready' }) : jsonResponse({}),
+    spawnImpl: () => { child = fakeChild(); queueMicrotask(()=>child.emit('spawn')); return child; },
+    log: () => {}, error: () => {},
+  });
+  await supervisor.start('http://127.0.0.1:2995');
+  for (let i=0;i<100 && !child;i++) await new Promise(r=>setTimeout(r,2));
+  assert.ok(child);
+  child.exitCode = 0;
+  child.kill = () => assert.fail('must not signal already-exited PID');
+  await supervisor.stop();
+  assert.equal(supervisor.snapshot().state, 'STOPPED');
+});
