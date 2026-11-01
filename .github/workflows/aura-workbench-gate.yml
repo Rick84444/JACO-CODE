@@ -89,8 +89,6 @@ on:
       - 'runtime/src/components/AuraAgentBoard.tsx'
       - 'runtime/src/server/connected/agentOrganization.mjs'
       - 'tests/nova/agent-organization.test.mjs'
-      - 'runtime/src/server/connected/agentOrganization.mjs'
-      - 'tests/nova/agent-organization.test.mjs'
       - '.github/workflows/aura-workbench-gate.yml'
   push:
     branches:
@@ -174,6 +172,8 @@ on:
       - 'runtime/src/lib/workspaceUx.test.tsx'
       - 'tests/nova/workspace-readiness.test.mjs'
       - 'runtime/src/components/AuraAgentBoard.tsx'
+      - 'runtime/src/server/connected/agentOrganization.mjs'
+      - 'tests/nova/agent-organization.test.mjs'
       - '.github/workflows/aura-workbench-gate.yml'
 
 jobs:
