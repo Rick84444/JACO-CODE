@@ -31,9 +31,9 @@ test('startup pins the chosen Chrome page rather than an ambiguous shared URL', 
 
 test('startup requires the returned attached session and the selected target identity', () => {
   const startup = read('agents/lib/local-stack.mjs');
-  assert.match(startup, /body: JSON\\.stringify\\(payload\\)/);
-  assert.match(startup, /attached\\.session\\?\\.attached !== true/);
-  assert.match(startup, /attached\\.session\\?\\.targetId !== payload\\.targetId/);
+  assert.match(startup, /body: JSON\.stringify\(payload\)/);
+  assert.match(startup, /attached\.session\?\.attached !== true/);
+  assert.match(startup, /attached\.session\?\.targetId !== payload\.targetId/);
 });
 
 test('Continuum HTTP and sidecar paths forward targetId through the existing browser owner', () => {
@@ -42,9 +42,9 @@ test('Continuum HTTP and sidecar paths forward targetId through the existing bro
   const adapter = read('runtime/src/server/continuum/coreBrowserAdapter.mjs');
   const browserRouter = read('runtime/src/server/browser/router.ts');
   const browserClient = read('runtime/src/server/browser/browserHandsOff.ts');
-  assert.match(router, /targetId:req\\.body\\?\\.targetId/);
-  assert.match(standalone, /targetId:b\\.targetId/);
-  assert.match(adapter, /targetId:input\\.targetId/);
-  assert.match(browserRouter, /CdpBridge\\.attach\\(port, urlIncludes, targetId\\)/);
-  assert.match(browserClient, /t\\.id === targetId/);
+  assert.match(router, /targetId:req\.body\?\.targetId/);
+  assert.match(standalone, /targetId:b\.targetId/);
+  assert.match(adapter, /targetId:input\.targetId/);
+  assert.match(browserRouter, /CdpBridge\.attach\(port, urlIncludes, targetId\)/);
+  assert.match(browserClient, /t\.id === targetId/);
 });
