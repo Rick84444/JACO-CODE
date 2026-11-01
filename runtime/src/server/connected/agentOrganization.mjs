@@ -24,7 +24,8 @@ export const AURA = 'aura';
 // Cloud models are trusted infrastructure here; their spend is bounded by budget, not by this rule.
 export const PERMISSIONS = {
   'files.read': { risk: 'low', exposure: ['private'], label: 'Läsa projekt och filer' },
-  'mail.receive': { risk: 'low', exposure: ['untrusted'], label: 'Ta emot mail' },
+  'mail.internal': { risk: 'low', exposure: [], label: 'Mail med andra agenter i organisationen' },
+  'mail.receive': { risk: 'low', exposure: ['untrusted'], label: 'Ta emot mail utifrån' },
   'files.write': { risk: 'medium', exposure: [], label: 'Skriva i projektmappen' },
   'commands.run': { risk: 'medium', exposure: ['external'], label: 'Köra kommandon och tester' },
   'git.branch': { risk: 'medium', exposure: ['external'], label: 'Commit och push till egen gren' },
@@ -87,7 +88,7 @@ export class AgentOrganization {
   load() {
     if (!fs.existsSync(this.file)) {
       const at = this.now();
-      const state = { version: 1, agents: { [AURA]: {
+      const state = { version: 1, contacts: [], agents: { [AURA]: {
         id: AURA, name: 'Aura', title: 'Vice VD', reportsTo: OPERATOR, model: checkModel(null), mail: '', task: '', goal: '',
         status: 'active', createdBy: OPERATOR, createdAt: at, mandate: emptyMandate(), traits: defaultTraits(),
       } } };
@@ -99,6 +100,7 @@ export class AgentOrganization {
     try {
       const state = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if (state?.version !== 1 || !state.agents?.[AURA]) throw new Error('shape');
+      state.contacts ||= [];
       return state;
     } catch { throw new Error('ORGANIZATION_STATE_CORRUPT'); }
   }
@@ -185,15 +187,89 @@ export class AgentOrganization {
   }
 
   // The runtime question: may this agent do this now, and does the operator have to approve this action first?
-  decide(id, key) {
+  // tainted: the session has already taken in untrusted content (for example a message from a tainted sender), which
+  // counts as the untrusted leg of the Rule of Two even when the agent holds no untrusted permission.
+  decide(id, key, { tainted = false } = {}) {
     const check = this.authorize(id, key);
     if (!check.allowed) return { ...check, needsApproval: false };
     const { risk, exposure } = PERMISSIONS[key];
     const outbound = exposure.includes('external');
-    if (outbound && this.exposure(id).trifecta) return { allowed: true, needsApproval: true, reason: 'RULE_OF_TWO' };
+    const own = this.exposure(id);
+    if (outbound && (own.trifecta || (tainted && own.private))) return { allowed: true, needsApproval: true, reason: 'RULE_OF_TWO' };
     const asks = AUTONOMY[this.effectiveAutonomy(id)].needsApproval;
     const needsApproval = asks.includes(risk) || (risk === 'high' && outbound && asks.includes('high-external'));
     return { allowed: true, needsApproval, reason: needsApproval ? 'AUTONOMY_LEVEL' : 'WITHIN_MANDATE' };
+  }
+
+  // Seniority in the chart: Aura is 1, her reports 2, and so on. The operator is 0.
+  rank(id) { return id === OPERATOR ? 0 : this.managers(id).length + 1; }
+
+  // Who an agent may write to, with rank and relation, so it knows whom it may ask and who may give it work.
+  directory(id) {
+    this.agent(id);
+    const relation = other => this.isAbove(other, id) ? (this.agent(id).reportsTo === other ? 'manager' : 'senior')
+      : this.isAbove(id, other) ? (this.agent(other).reportsTo === id ? 'report' : 'junior') : 'peer';
+    return Object.values(this.state.agents)
+      .filter(a => a.id !== id && a.mail && a.status === 'active')
+      .map(a => ({ id: a.id, name: a.name, title: a.title, mail: a.mail, rank: this.rank(a.id), relation: relation(a.id), mayAssignWork: this.isAbove(a.id, id) }))
+      .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+  }
+
+  // External addresses the operator has approved, per agent. canAssign lets the address give the agent work.
+  setContact(input = {}, actor = OPERATOR) {
+    if (actor !== OPERATOR) throw new Error('OPERATOR_APPROVAL_REQUIRED');
+    const address = text(input.address, 120, 'CONTACT_ADDRESS_INVALID').toLowerCase();
+    if (!MAIL.test(address)) throw new Error('CONTACT_ADDRESS_INVALID');
+    if (Object.values(this.state.agents).some(a => a.mail.toLowerCase() === address)) throw new Error('CONTACT_IS_AGENT');
+    const agents = Array.isArray(input.agents) ? input.agents.map(String) : [];
+    if (!agents.length || agents.some(id => !this.state.agents[id])) throw new Error('CONTACT_AGENTS_INVALID');
+    const contact = { address, name: optionalText(input.name, 80, 'CONTACT_NAME_INVALID'), agents, canAssign: input.canAssign === true, approvedAt: this.now() };
+    this.state.contacts = [...this.state.contacts.filter(c => c.address !== address), contact];
+    this.save();
+    this.audit(actor, 'contact.approved', { address, agents, canAssign: contact.canAssign });
+    return contact;
+  }
+
+  removeContact(address, actor = OPERATOR) {
+    if (actor !== OPERATOR) throw new Error('OPERATOR_APPROVAL_REQUIRED');
+    const before = this.state.contacts.length;
+    this.state.contacts = this.state.contacts.filter(c => c.address !== String(address).toLowerCase());
+    if (this.state.contacts.length === before) throw new Error('CONTACT_NOT_FOUND');
+    this.save();
+    this.audit(actor, 'contact.removed', { address });
+    return { removed: address };
+  }
+
+  // Whether a message may reach an agent, how far it is trusted, and whether it may give the agent work.
+  // A From header proves nothing: Email Routing does not hand a Worker reliable SPF/DKIM verdicts, so an internal
+  // message must carry JACO's own signature (signed) and an external one a verified DKIM pass (authenticated).
+  // Content is never trusted as instructions: anything from outside, or from an agent that reads outside content,
+  // arrives tainted and makes the receiving session count as untrusted for the Rule of Two.
+  mailPolicy(fromAddress, toId, { signed = false, authenticated = false } = {}) {
+    const to = this.state.agents[toId];
+    if (!to || to.status !== 'active') return { accept: false, reason: 'RECIPIENT_NOT_ACTIVE' };
+    const from = String(fromAddress || '').trim().toLowerCase();
+    const sender = Object.values(this.state.agents).find(a => a.mail && a.mail.toLowerCase() === from);
+    if (sender) {
+      if (!signed) return { accept: false, reason: 'INTERNAL_SENDER_UNSIGNED' };
+      if (sender.status !== 'active') return { accept: false, reason: 'SENDER_NOT_ACTIVE' };
+      if (!this.authorize(sender.id, 'mail.internal').allowed || !this.authorize(toId, 'mail.internal').allowed) return { accept: false, reason: 'INTERNAL_MAIL_NOT_GRANTED' };
+      return { accept: true, trust: 'internal', sender: sender.id, rank: this.rank(sender.id), mayAssignWork: this.isAbove(sender.id, toId), tainted: this.exposure(sender.id).untrusted };
+    }
+    const contact = this.state.contacts.find(c => c.address === from && c.agents.includes(toId));
+    if (!contact) return { accept: false, reason: 'SENDER_NOT_APPROVED' };
+    if (!authenticated) return { accept: false, reason: 'SENDER_NOT_AUTHENTICATED' };
+    if (!this.authorize(toId, 'mail.receive').allowed) return { accept: false, reason: 'PERMISSION_NOT_GRANTED' };
+    return { accept: true, trust: 'approved-contact', sender: contact.address, mayAssignWork: contact.canAssign, tainted: true };
+  }
+
+  // A manager follows its branch: the audit trail of a report, never of a peer or a senior.
+  activity(observer, id, { limit = 100 } = {}) {
+    this.agent(id);
+    if (observer !== OPERATOR && (observer === id || !this.state.agents[observer] || !this.isAbove(observer, id))) throw new Error('AGENT_AUTHORITY_DENIED');
+    if (!fs.existsSync(this.auditFile)) return [];
+    return fs.readFileSync(this.auditFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+      .filter(entry => entry.agent === id || entry.actor === id).slice(-Math.max(1, Math.min(500, limit)));
   }
 
   effectiveBudgetUsdPerDay(id) {
@@ -399,9 +475,11 @@ export class AgentOrganization {
           budgetUsdPerDay: this.effectiveBudgetUsdPerDay(agent.id),
           traits: this.effectiveTraits(agent.id),
           autonomy: this.effectiveAutonomy(agent.id),
+          rank: this.rank(agent.id),
           exposure: this.exposure(agent.id),
         },
       })),
+      contacts: this.state.contacts,
       catalog: { permissions: PERMISSIONS, traits: TRAITS, autonomy: AUTONOMY, grantDays: GRANT_DAYS },
     };
   }
@@ -435,5 +513,9 @@ export function createAgentOrganizationRouter({ organization, requireOperatorUi 
   router.post('/agents/:id/:status(approve|pause|resume)', handle(req => ({ agent: organization.setStatus(req.params.id, req.params.status) })));
   router.get('/agents/:id/weights', handle(req => organization.workingWeights(req.params.id)));
   router.get('/agents/:id/decide/:key', handle(req => ({ decision: organization.decide(req.params.id, req.params.key) })));
+  router.get('/agents/:id/directory', handle(req => ({ directory: organization.directory(req.params.id) })));
+  router.get('/agents/:id/activity', handle(req => ({ activity: organization.activity(OPERATOR, req.params.id) })));
+  router.put('/contacts', handle(req => ({ contact: organization.setContact(req.body) })));
+  router.delete('/contacts/:address', handle(req => organization.removeContact(req.params.address)));
   return router;
 }
