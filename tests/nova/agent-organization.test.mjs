@@ -1,0 +1,126 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import test from 'node:test';
+import { AgentOrganization, createAgentOrganizationRouter } from '../../runtime/src/server/connected/agentOrganization.mjs';
+const express = createRequire(new URL('../../runtime/package.json', import.meta.url))('express');
+
+function org(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-org-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return { root, organization: new AgentOrganization(root) };
+}
+
+test('Aura starts as vice CEO under the operator with no powers, its own folder, and survives restart', t => {
+  const { root, organization } = org(t);
+  const aura = organization.snapshot().agents.find(a => a.id === 'aura');
+  assert.equal(aura.reportsTo, 'operator');
+  assert.deepEqual(aura.effective.permissions, []);
+  for (const file of ['rules.md', 'mcp.json', 'skills', 'memory']) assert.ok(fs.existsSync(path.join(root, 'org', 'agents', 'aura', file)), file);
+  organization.setPermission('aura', 'files.read', true);
+  assert.equal(new AgentOrganization(root).authorize('aura', 'files.read').allowed, true);
+  // An unreadable store must not be replaced by a fresh one with every mandate reset.
+  fs.writeFileSync(path.join(root, 'org', 'organization.json'), '{broken');
+  assert.throws(() => new AgentOrganization(root), /ORGANIZATION_STATE_CORRUPT/);
+});
+
+test('a report holds a permission only while its whole chain holds it and is active', t => {
+  const { organization } = org(t);
+  organization.setPermission('aura', 'files.write', true);
+  organization.createAgent({ name: 'Ekonomi', title: 'Accountant', mail: 'jaco-ekonomi@jacocode.com' });
+  organization.setPermission('ekonomi', 'files.write', true);
+  assert.equal(organization.authorize('ekonomi', 'files.write').allowed, true);
+  assert.throws(() => organization.setPermission('ekonomi', 'commands.run', true), /MANAGER_LACKS_PERMISSION/);
+
+  organization.setPermission('aura', 'files.write', false);
+  assert.deepEqual(organization.authorize('ekonomi', 'files.write'), { allowed: false, reason: 'MANAGER_LACKS_PERMISSION', at: 'aura' });
+  organization.setPermission('aura', 'files.write', true);
+  organization.setStatus('aura', 'pause');
+  assert.equal(organization.authorize('ekonomi', 'files.write').reason, 'MANAGER_NOT_ACTIVE');
+  organization.setStatus('aura', 'resume');
+  assert.equal(organization.authorize('ekonomi', 'files.write').allowed, true);
+});
+
+test('high risk needs the operator and an accepted risk; payments can never be granted', t => {
+  const { organization } = org(t);
+  assert.throws(() => organization.setPermission('aura', 'mail.send', true), /RISK_ACCEPTANCE_REQUIRED/);
+  organization.setPermission('aura', 'mail.send', true, 'operator', { acceptRisk: true });
+  assert.ok(organization.agent('aura').mandate.permissions['mail.send'].riskAcceptedAt);
+  assert.throws(() => organization.setPermission('aura', 'payments', true, 'operator', { acceptRisk: true }), /PERMISSION_LOCKED/);
+  assert.equal(organization.authorize('aura', 'payments').reason, 'OPERATOR_APPROVAL_REQUIRED');
+
+  organization.createAgent({ name: 'Marknad' });
+  assert.throws(() => organization.setPermission('marknad', 'mail.send', true, 'aura', { acceptRisk: true }), /HIGH_RISK_OPERATOR_ONLY/);
+  organization.setPermission('aura', 'files.read', true);
+  organization.setPermission('marknad', 'files.read', true, 'aura');
+  assert.equal(organization.authorize('marknad', 'files.read').allowed, true);
+  assert.throws(() => organization.setPermission('aura', 'files.read', false, 'marknad'), /AGENT_AUTHORITY_DENIED/);
+});
+
+test('an agent hires only within its quota, and hires wait for the operator', t => {
+  const { organization } = org(t);
+  assert.throws(() => organization.createAgent({ name: 'Hjälpare' }, 'aura'), /PERMISSION_NOT_GRANTED/);
+  organization.setPermission('aura', 'agents.create', true, 'operator', { acceptRisk: true });
+  assert.throws(() => organization.createAgent({ name: 'Hjälpare' }, 'aura'), /SUB_AGENT_QUOTA_REACHED/);
+  organization.setLimits('aura', { maxSubAgents: 1 });
+  const hire = organization.createAgent({ name: 'Hjälpare' }, 'aura');
+  assert.equal(hire.status, 'pending');
+  assert.throws(() => organization.createAgent({ name: 'En till' }, 'aura'), /SUB_AGENT_QUOTA_REACHED/);
+  organization.setPermission('aura', 'files.read', true);
+  organization.setPermission('hjalpare', 'files.read', true, 'aura');
+  assert.equal(organization.authorize('hjalpare', 'files.read').reason, 'AGENT_NOT_ACTIVE');
+  assert.throws(() => organization.setStatus('hjalpare', 'approve', 'aura'), /OPERATOR_APPROVAL_REQUIRED/);
+  assert.throws(() => organization.setLimits('aura', { autoApproveSubAgents: true }, 'aura'), /AGENT_AUTHORITY_DENIED/);
+  organization.setStatus('hjalpare', 'approve');
+  assert.equal(organization.authorize('hjalpare', 'files.read').allowed, true);
+
+  organization.setStatus('hjalpare', 'pause');
+  assert.throws(() => organization.setStatus('hjalpare', 'resume', 'aura'), /OPERATOR_APPROVAL_REQUIRED/);
+});
+
+test('traits and budget are capped by the manager and compile into enforceable weights', t => {
+  const { organization } = org(t);
+  organization.setTraits('aura', { toolUse: 80, agency: 60, freedom: 30, rigor: 90, reporting: 100 });
+  organization.setLimits('aura', { budgetUsdPerDay: 2 });
+  organization.createAgent({ name: 'Utveckling' });
+  assert.throws(() => organization.setTraits('utveckling', { freedom: 50 }), /TRAIT_ABOVE_MANAGER/);
+  assert.throws(() => organization.setLimits('utveckling', { budgetUsdPerDay: 3 }), /BUDGET_ABOVE_MANAGER/);
+  organization.setTraits('utveckling', { toolUse: 70, agency: 60, rigor: 10 });
+  organization.setLimits('utveckling', { budgetUsdPerDay: 1.5 });
+
+  const { weights, brief } = organization.workingWeights('utveckling');
+  assert.deepEqual(weights, { maxToolCallsPerStep: 14, stepsBeforeCheckIn: 12, scope: 'task', mayProposeGoals: false, evidence: 'self-check', reportEveryMinutes: 128 });
+  assert.match(brief, /Verktyg 70%: högst 14 verktygsanrop per steg/);
+
+  // Lowering the manager lowers the branch without rewriting the report's own settings.
+  organization.setTraits('aura', { toolUse: 20 });
+  organization.setLimits('aura', { budgetUsdPerDay: 0.5 });
+  assert.equal(organization.workingWeights('utveckling').weights.maxToolCallsPerStep, 4);
+  assert.equal(organization.effectiveBudgetUsdPerDay('utveckling'), 0.5);
+  assert.equal(organization.agent('utveckling').traits.toolUse, 70);
+});
+
+test('operator UI routes reject cross-origin calls and require the risk to be accepted', async t => {
+  const { organization } = org(t);
+  const app = express();
+  app.use(express.json());
+  app.use('/org', createAgentOrganizationRouter({ organization, requireOperatorUi: (_req, _res, next) => next() }));
+  const server = app.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  await new Promise(resolve => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}/org`;
+  const call = (route, method, body, headers = {}) => fetch(base + route, { method, headers: { 'content-type': 'application/json', ...headers }, body: body && JSON.stringify(body) })
+    .then(async r => ({ status: r.status, data: await r.json() }));
+
+  assert.equal((await call('/agents', 'POST', { name: 'Ekonomi' }, { origin: 'https://evil.example' })).status, 403);
+  const created = await call('/agents', 'POST', { name: 'Ekonomi', title: 'Accountant', task: 'Bokför kvitton', model: { kind: 'api', providerId: 'xai', model: 'grok-4.3' } });
+  assert.equal(created.data.agent.reportsTo, 'aura');
+  const risky = await call('/agents/aura/permissions/publish', 'PUT', { granted: true });
+  assert.deepEqual([risky.status, risky.data.error], [400, 'RISK_ACCEPTANCE_REQUIRED']);
+  assert.equal((await call('/agents/aura/permissions/publish', 'PUT', { granted: true, acceptRisk: true })).status, 200);
+  assert.equal((await call('/agents/nobody/weights', 'GET')).status, 404);
+  const { data } = await call('/', 'GET');
+  assert.deepEqual(data.organization.agents.find(a => a.id === 'aura').effective.permissions, ['publish']);
+});
