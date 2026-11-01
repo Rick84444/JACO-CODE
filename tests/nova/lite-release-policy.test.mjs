@@ -8,7 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const load = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const workflow = load('.github/workflows/lite-release.yml');
 const base = 'https://github.com/Rick84444/JACO-CODE/releases/latest/download';
-const raw = 'https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/';
+const raw = 'https://github.com/Rick84444/JACO-CODE/releases/latest/download/';
 
 test('a normal push to main verifies, but never publishes', () => {
   assert.match(workflow, /push:\n    branches: \[main\]/);
