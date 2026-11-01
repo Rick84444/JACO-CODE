@@ -115,7 +115,7 @@ export function createContinuumRouter({workspaceRoot,browserSessions,requireAuth
   router.post('/cognition/patterns/:id/validate',(req,res)=>{try{res.json({success:true,pattern:runtime.cognition.validatePattern(req.params.id,{evidenceRefs:req.body?.evidenceRefs||[]},bodyActor(req))})}catch(e){fail(res,e)}});
 
   router.get('/browser/targets',async(req,res)=>{try{res.json({success:true,targets:await runtime.browser.targets(Number(req.query.port||9222))})}catch(e){fail(res,e,503)}});
-  router.post('/browser/attach',async(req,res)=>{try{res.json({success:true,session:await runtime.browser.attach({port:req.body?.port,urlIncludes:req.body?.urlIncludes})})}catch(e){fail(res,e,503)}});
+  router.post('/browser/attach',async(req,res)=>{try{res.json({success:true,session:await runtime.browser.attach({port:req.body?.port,urlIncludes:req.body?.urlIncludes,targetId:req.body?.targetId})})}catch(e){fail(res,e,503)}});
   router.post('/browser/detach',async(_req,res)=>{try{await runtime.browser.detach();res.json({success:true})}catch(e){fail(res,e)}});
   router.post('/browser/observe',async(req,res)=>{try{res.json({success:true,...await runtime.browser.observeSemantic(req.body||{})})}catch(e){fail(res,e,503)}});
   router.post('/browser/batch',async(req,res)=>{try{res.json({success:true,result:await runtime.browser.executeBatch(req.body||{})})}catch(e){fail(res,e,409)}});
