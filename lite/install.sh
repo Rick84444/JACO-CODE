@@ -1,7 +1,7 @@
 #!/bin/sh
 # JACO Lite installer for macOS, Linux and Android (Termux).
 #
-#   curl -fsSL https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.sh | sh
+#   curl -fsSL https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.sh | sh
 #
 # What it does, in order, and nothing else:
 #   1. reads https://github.com/Rick84444/JACO-CODE/releases/latest/download/latest.json and picks the file for this machine
@@ -70,7 +70,7 @@ OS="$(uname -s)"; ARCH="$(uname -m)"
 case "$OS" in
   Linux) KIND=universal; NODE_OS=linux ;;
   Darwin) KIND=universal; NODE_OS=darwin ;;
-  *) die "this installer is for macOS, Linux and Termux. On Windows use:  irm https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.ps1 | iex" ;;
+  *) die "this installer is for macOS, Linux and Termux. On Windows use:  irm https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.ps1 | iex" ;;
 esac
 [ "$TERMUX" = 1 ] && KIND=android
 case "$ARCH" in
@@ -182,7 +182,7 @@ LAUNCH_ARGS=""; [ "$TERMUX" = 1 ] && LAUNCH_ARGS="--no-open"
 # a copy of this installer, so  jaco-lite update  works offline from the script (the download itself is fetched fresh)
 if [ -f "$0" ] && grep -q "JACO Lite installer" "$0" 2>/dev/null; then cp "$0" "$HOME_DIR/install.sh" 2>/dev/null || true  # (same file when run as  jaco-lite update)
 else
-  if fetch "${JACO_LITE_INSTALL_URL:-https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.sh}" > "$WORK/install.sh.new" 2>/dev/null && [ -s "$WORK/install.sh.new" ]; then cp "$WORK/install.sh.new" "$HOME_DIR/install.sh"; fi
+  if fetch "${JACO_LITE_INSTALL_URL:-https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.sh}" > "$WORK/install.sh.new" 2>/dev/null && [ -s "$WORK/install.sh.new" ]; then cp "$WORK/install.sh.new" "$HOME_DIR/install.sh"; fi
 fi
 
 cat > "$HOME_DIR/bin/jaco-lite" <<LAUNCHER
