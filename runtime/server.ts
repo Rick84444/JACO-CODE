@@ -71,6 +71,7 @@ import { createAuraChatSession } from './src/server/connected/auraChatSession.mj
 import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderCompletion, chatFallbackChoice, chatFailureHint } from "./src/server/connected/auraOllamaChat.mjs";
 import { auraCostQuote, auraCostSettlement } from "./src/server/aura/costEngine.mjs";
 import { createEconomicBudgetRouter } from './src/server/connected/economicBudget.mjs';
+import { AgentOrganization, createAgentOrganizationRouter } from './src/server/connected/agentOrganization.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
@@ -657,6 +658,18 @@ function requireLocalUiSameOrigin(req: express.Request, res: express.Response, n
     return res.status(403).json({ success: false, error: 'CROSS_ORIGIN_TERMINAL_DENIED' });
   }
   return requireLocalUi(req, res, next);
+}
+
+// Organization mutation credential is separate from the generic gateway token shared with tools.
+// No configured token means read-only organization UI, never a privileged localhost bypass.
+function requireOrganizationMutationAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const expected = String(process.env.JACO_ORG_OPERATOR_TOKEN || '');
+  const provided = String(req.headers['x-jaco-operator-token'] || '');
+  if (!expected || provided.length !== expected.length ||
+      !crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) {
+    return res.status(401).json({ success: false, error: 'ORGANIZATION_OPERATOR_AUTH_REQUIRED' });
+  }
+  next();
 }
 
 function requireLocalUi(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -4330,6 +4343,10 @@ const notifyPhone = async (action) => {
     .then((r: any) => { if (r?.seeded) console.log('[cost] live tally seeded from ledger:', r.events, 'events'); })
     .catch((error: any) => console.warn('[cost] tally seed failed:', error?.message || error));
   app.use('/api/aura/budget', createEconomicBudgetRouter({ economic: continuumSurface.runtime.economic, requireOperatorUi: requireLocalUi, getBalances: costBalances }));
+  const agentOrganization = new AgentOrganization(path.resolve(process.env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco')));
+  app.use('/api/aura/organization', createAgentOrganizationRouter({
+    organization: agentOrganization, requireOperatorUi: requireLocalUi, requireMutationAuth: requireOrganizationMutationAuth,
+  }));
 
   app.post('/api/nova/ollama-cost/reserve', requireAuth, (req, res) => {
     const providerId = String(req.body?.providerId || 'ollama-cloud');
