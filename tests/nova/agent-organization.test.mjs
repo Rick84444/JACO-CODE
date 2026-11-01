@@ -106,12 +106,14 @@ test('operator UI routes reject cross-origin calls and require the risk to be ac
   const { organization } = org(t);
   const app = express();
   app.use(express.json());
-  app.use('/org', createAgentOrganizationRouter({ organization, requireOperatorUi: (_req, _res, next) => next() }));
+  app.use('/org', createAgentOrganizationRouter({ organization, requireOperatorUi: (_req, _res, next) => next(),
+    requireMutationAuth: (req, res, next) => req.get('x-jaco-operator-token') === 'test-operator-only'
+      ? next() : res.status(401).json({ success: false, error: 'ORGANIZATION_OPERATOR_AUTH_REQUIRED' }) }));
   const server = app.listen(0, '127.0.0.1');
   t.after(() => server.close());
   await new Promise(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}/org`;
-  const call = (route, method, body, headers = {}) => fetch(base + route, { method, headers: { 'content-type': 'application/json', ...headers }, body: body && JSON.stringify(body) })
+  const call = (route, method, body, headers = {}) => fetch(base + route, { method, headers: { 'content-type': 'application/json', 'x-jaco-operator-token': 'test-operator-only', ...headers }, body: body && JSON.stringify(body) })
     .then(async r => ({ status: r.status, data: await r.json() }));
 
   assert.equal((await call('/agents', 'POST', { name: 'Ekonomi' }, { origin: 'https://evil.example' })).status, 403);
@@ -180,4 +182,54 @@ test('high-risk grants expire and must be renewed', t => {
   assert.deepEqual(organization.authorize('aura', 'browser'), { allowed: false, reason: 'GRANT_EXPIRED', at: 'aura' });
   organization.setPermission('aura', 'browser', true, 'operator', { acceptRisk: true });
   assert.equal(organization.authorize('aura', 'browser').allowed, true);
+});
+
+
+test('pending hire cannot bypass operator approval through pause and resume', t => {
+  const { organization } = org(t);
+  organization.setPermission('aura', 'agents.create', true, 'operator', { acceptRisk: true });
+  organization.setPermission('aura', 'files.read', true);
+  organization.setLimits('aura', { maxSubAgents: 2 });
+  const hire = organization.createAgent({ name: 'Candidate' }, 'aura');
+  organization.setPermission(hire.id, 'files.read', true, 'aura');
+  assert.equal(organization.authorize(hire.id, 'files.read').allowed, false);
+  assert.throws(() => organization.setStatus(hire.id, 'pause', 'aura'), /AGENT_PENDING/);
+  assert.throws(() => organization.setStatus(hire.id, 'resume', 'aura'), /AGENT_PENDING/);
+  assert.equal(organization.authorize(hire.id, 'files.read').allowed, false);
+});
+
+test('failed persistent write cannot publish in-memory permission, limits or status', t => {
+  const { organization, root } = org(t);
+  const tempPath = path.join(root, 'org', 'organization.json.' + process.pid + '.tmp');
+  fs.mkdirSync(tempPath);
+  try {
+    assert.throws(() => organization.setPermission('aura', 'files.read', true), /EISDIR|EEXIST|EPERM/);
+    assert.equal(organization.authorize('aura', 'files.read').allowed, false);
+    assert.throws(() => organization.setLimits('aura', { autonomy: 5 }), /EISDIR|EEXIST|EPERM/);
+    assert.equal(organization.agent('aura').mandate.autonomy, 1);
+    assert.throws(() => organization.setStatus('aura', 'pause'), /EISDIR|EEXIST|EPERM/);
+    assert.equal(organization.agent('aura').status, 'active');
+  } finally {
+    fs.rmSync(tempPath, { recursive: true, force: true });
+  }
+  assert.equal(new AgentOrganization(root).authorize('aura', 'files.read').allowed, false);
+});
+
+test('organization writes fail closed without an operator mutation authenticator', async t => {
+  const { organization } = org(t);
+  const app = express();
+  app.use(express.json());
+  app.use('/org', createAgentOrganizationRouter({ organization, requireOperatorUi: (_req, _res, next) => next() }));
+  const server = app.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  await new Promise(resolve => server.once('listening', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port + '/org';
+  const read = await fetch(base);
+  assert.equal(read.status, 200);
+  const write = await fetch(base + '/agents/aura/permissions/publish', {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ granted: true, acceptRisk: true }),
+  });
+  assert.equal(write.status, 403);
+  assert.equal(organization.authorize('aura', 'publish').allowed, false);
 });
