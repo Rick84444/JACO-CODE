@@ -66,7 +66,7 @@ test('Aura function inspection adds no mutation or new agent creation tool',asyn
 test('Aura board is the default, while technical agents remain inspectable and old missions persist',()=>{
   const ui=read('runtime/src/components/AuraAgentBoard.tsx');
   const backend=read('runtime/src/server/connected/auraAgentBoard.mjs');
-  assert.match(ui,/useState<'functions'\|'network'\|'missions'\|'cycles'>\('functions'\)/);
+  assert.match(ui,/useState<'functions'\|'organization'\|'network'\|'missions'\|'cycles'>\('functions'\)/);
   assert.match(ui,/snapshot\?\.aura\?\.functions/);
   assert.match(ui,/Tekniska Workplace-sessioner/);
   assert.match(backend,/projectAuraFunctions/);

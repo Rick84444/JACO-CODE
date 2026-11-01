@@ -89,6 +89,9 @@ on:
       - 'runtime/src/components/AuraAgentBoard.tsx'
       - 'runtime/src/server/connected/agentOrganization.mjs'
       - 'tests/nova/agent-organization.test.mjs'
+      - 'runtime/src/components/AuraOrganizationPanel.tsx'
+      - 'runtime/src/lib/organizationRisk.mjs'
+      - 'tests/nova/aura-organization-ui.test.mjs'
       - '.github/workflows/aura-workbench-gate.yml'
   push:
     branches:
@@ -174,6 +177,9 @@ on:
       - 'runtime/src/components/AuraAgentBoard.tsx'
       - 'runtime/src/server/connected/agentOrganization.mjs'
       - 'tests/nova/agent-organization.test.mjs'
+      - 'runtime/src/components/AuraOrganizationPanel.tsx'
+      - 'runtime/src/lib/organizationRisk.mjs'
+      - 'tests/nova/aura-organization-ui.test.mjs'
       - '.github/workflows/aura-workbench-gate.yml'
 
 jobs:
@@ -236,7 +242,7 @@ jobs:
       - name: Workspace readiness and visible decisions
         run: npm run test:workspace-ux && node --test ../tests/nova/workspace-readiness.test.mjs ../tests/nova/agent-network.test.mjs ../tests/nova/workspace-integrations.test.mjs
       - name: Organization mandate and risk preview regressions
-        run: node --test ../tests/nova/agent-organization.test.mjs
+        run: node --test ../tests/nova/agent-organization.test.mjs ../tests/nova/aura-organization-ui.test.mjs
       - name: Production build (client before server)
         run: npm run build
       - name: Production boot and IDE HTTP smoke

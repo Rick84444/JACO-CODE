@@ -3,6 +3,7 @@ import { Bot, Plus, ListChecks, X } from 'lucide-react';
 import { AgentConstellation, type AgentNetworkSnapshot } from './AgentConstellation';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { AutonomousCyclesPanel } from './AutonomousCyclesPanel';
+const AuraOrganizationPanel = React.lazy(() => import('./AuraOrganizationPanel').then(module => ({ default: module.AuraOrganizationPanel })));
 
 interface BoardReceipt {
   actionId: string | null; type: string | null; at: string | null;
@@ -56,7 +57,7 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
     catch (error) { setCancelError(error instanceof Error ? error.message : 'Kunde inte avsluta uppdraget.'); }
     finally { setCancellingId(null); }
   }
-  const [view, setView] = useState<'functions'|'network'|'missions'|'cycles'>('functions');
+  const [view, setView] = useState<'functions'|'organization'|'network'|'missions'|'cycles'>('functions');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -80,6 +81,7 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
         </div>
         <div className="agent-board-view-switch" role="group" aria-label="Visa Aura-funktioner, uppdrag eller teknisk karta">
           <button type="button" aria-pressed={view==='functions'} onClick={()=>setView('functions')}>Aura-funktioner</button>
+          <button type="button" aria-pressed={view==='organization'} onClick={()=>setView('organization')}>Organization</button>
           <button type="button" aria-pressed={view==='network'} onClick={()=>setView('network')}>Teknisk karta</button>
           <button type="button" aria-pressed={view==='missions'} onClick={()=>setView('missions')}>Uppdrag och resultat</button>
           <button type="button" aria-pressed={view==='cycles'} onClick={()=>setView('cycles')}>Autonom utveckling</button>
@@ -105,7 +107,8 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
           <select aria-label="Filtrera uppdrag" value={filter} onChange={e => setFilter(e.target.value)} className="bg-[#07111b] border border-[#123047] rounded px-2 text-xs"><option value="open">Öppna</option><option value="all">Alla utom avbrutna</option><option value="cancelled">Avbrutna</option></select>
         </div>}
       </header>
-      {view==='functions' ? <div className="flex-1 min-h-0 overflow-auto p-3 space-y-3" data-testid="aura-functions">
+      {view==='organization' ? <React.Suspense fallback={<div className="p-4 text-xs text-slate-400">Loading organization…</div>}><AuraOrganizationPanel /></React.Suspense>
+      : view==='functions' ? <div className="flex-1 min-h-0 overflow-auto p-3 space-y-3" data-testid="aura-functions">
         <section className="rounded border border-cyan-900 bg-[#07111b] p-4">
           <h3 className="text-base font-semibold text-cyan-200">Aura</h3>
           <p className="text-xs text-slate-300 mt-1">Din enda operatörsagent. Resonemang, planering, utförande, minne, verktyg och verifiering är hennes funktioner.</p>
