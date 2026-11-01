@@ -8,6 +8,7 @@ fi
 DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # Keep the user's project and runtime state outside the extracted installation.
 PROJECT="${JACO_LITE_PROJECT:-$HOME}"
+export JACO_REQUIRE_SETUP="${JACO_REQUIRE_SETUP:-1}"
 echo "JACO Lite Android · Project: $PROJECT"
 if ! node --experimental-sqlite -e "require('node:sqlite')" >/dev/null 2>&1; then
   echo "JACO Lite requires Node.js with node:sqlite. Check 'node --version'; upgrade Termux nodejs-lts if needed." >&2

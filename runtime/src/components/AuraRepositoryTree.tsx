@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../i18n/UiLanguage';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, FileCode2, Folder, FolderOpen, Loader2 } from 'lucide-react';
 
@@ -94,6 +95,7 @@ export const AuraRepositoryTree: React.FC<Props> = ({
   gitChanges = [],
   onOpen,
 }) => {
+  const { t: uiText } = useUiLanguage();
   const gitByPath = useMemo(() => new Map(gitChanges.map(change => [change.path, change])), [gitChanges]);
   const searchTree = useMemo(() => buildSearchTree(files, query), [files, query]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -252,20 +254,20 @@ export const AuraRepositoryTree: React.FC<Props> = ({
   if (searching) {
     const nodes = sortSearchNodes(searchTree.children.values());
     return (
-      <div className="flex-1 min-h-0 overflow-auto" aria-label="Repository tree search results">
+      <div className="flex-1 min-h-0 overflow-auto" aria-label={uiText("Repository tree search results")}>
         {nodes.map(node => renderSearchNode(node, 0))}
-        {!nodes.length && <div className="p-3 text-[10px] text-slate-600">No files match the current filter.</div>}
+        {!nodes.length && <div className="p-3 text-[10px] text-slate-600">{uiText("No files match the current filter.")}</div>}
       </div>
     );
   }
 
   const rootEntries = directories[''] || [];
   return (
-    <div className="flex-1 min-h-0 overflow-auto" aria-label="Repository tree">
+    <div className="flex-1 min-h-0 overflow-auto" aria-label={uiText("Repository tree")}>
       {rootEntries.map(entry => renderLazyEntry(entry, 0))}
-      {loading.has('') && !rootEntries.length && <div className="p-3 text-[10px] text-slate-500">Loading workspace…</div>}
+      {loading.has('') && !rootEntries.length && <div className="p-3 text-[10px] text-slate-500">{uiText("Loading workspace…")}</div>}
       {loadErrors[''] && <div className="p-3 text-[10px] text-amber-400">{loadErrors['']}</div>}
-      {!loading.has('') && !loadErrors[''] && !rootEntries.length && <div className="p-3 text-[10px] text-slate-600">No supported workspace entries observed.</div>}
+      {!loading.has('') && !loadErrors[''] && !rootEntries.length && <div className="p-3 text-[10px] text-slate-600">{uiText("No supported workspace entries observed.")}</div>}
     </div>
   );
 };

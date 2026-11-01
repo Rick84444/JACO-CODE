@@ -44,9 +44,9 @@ test('canonical Aura is a writable IDE workspace rather than a read-only dashboa
   assert.match(source, /file\/rename/);
   assert.match(source, /file\/delete/);
   assert.match(source, /Source Control/);
-  assert.match(source, />\s*Fetch\s*</);
-  assert.match(source, />\s*Pull\s*</);
-  assert.match(source, /Live agent tools/);
+  assert.match(source, /uiText\("Fetch"\)/);
+  assert.match(source, /uiText\("Pull"\)/);
+  assert.match(source, /Available agent tools/);
   assert.match(source, /AuraIntegrationsPanel/);
   assert.match(source, /Git MCP sources/);
   assert.match(source, /mcp\/import-git/);
@@ -232,7 +232,7 @@ test('legacy Aura engine is not imported by the Workbench component', () => {
 });
 test('Aura distinguishes canonical Skill Runtime from A2A package trust', () => {
   const source = read(path.join(runtimeRoot, 'src/components/JacoAuraComputeIDE.tsx'));
-  assert.match(source, /Continuum Skill Runtime/);
+  assert.match(source, /Skill library/);
   assert.match(source, /skillRuntime/);
   assert.match(source, /skillSource: skill\.source/);
   assert.match(source, /<SkillsView/);

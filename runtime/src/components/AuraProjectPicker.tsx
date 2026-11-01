@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../i18n/UiLanguage';
 import React, { useEffect, useState } from 'react';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { isAbsoluteProjectPath, projectLabel } from '../lib/auraProject.mjs';
@@ -14,6 +15,7 @@ export const AuraProjectPicker: React.FC<{ disabled?: boolean; onOpened: (root: 
   disabled = false,
   onOpened,
 }) => {
+  const { t: uiText } = useUiLanguage();
   const [project, setProject] = useState<ProjectData>({});
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
@@ -65,13 +67,13 @@ export const AuraProjectPicker: React.FC<{ disabled?: boolean; onOpened: (root: 
         {project.git ? ' git' : ''}
       </div>
       {disabled ? (
-        <div className="text-amber-400">Save or discard edits before switching project</div>
+        <div className="text-amber-400">{uiText("Save or discard edits before switching project")}</div>
       ) : (
         <>
           <div className="flex items-center gap-1">
             <input
               className="min-w-0 flex-1 border border-[#3a3a3a] bg-[#1f1f1f] px-1 py-0.5 text-[11px]"
-              placeholder="Absolute folder path"
+              placeholder={uiText("Absolute folder path")}
               value={input}
               onChange={(event) => setInput(event.target.value)}
             />
@@ -80,8 +82,7 @@ export const AuraProjectPicker: React.FC<{ disabled?: boolean; onOpened: (root: 
               disabled={!canOpen}
               onClick={() => openProject(input.trim())}
             >
-              Open
-            </button>
+              {uiText("Open")}{' '}</button>
           </div>
           {history.length > 1 ? (
             <select

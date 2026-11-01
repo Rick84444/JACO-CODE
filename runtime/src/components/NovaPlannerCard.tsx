@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../i18n/UiLanguage';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import React, { useEffect, useState } from 'react';
 
@@ -10,6 +11,7 @@ interface TestResult { ok: boolean; provider: string; model: string; latencyMs: 
 const AUTO = 'auto';
 
 export const NovaPlannerCard: React.FC = () => {
+  const { t: uiText } = useUiLanguage();
   const [state, setState] = useState<PlannerState | null>(null);
   const [selected, setSelected] = useState(AUTO);
   const [busy, setBusy] = useState<'save' | 'test' | null>(null);
@@ -52,28 +54,27 @@ export const NovaPlannerCard: React.FC = () => {
   return (
     <div className="border border-cyan-900 bg-[#0b1620] rounded p-2 space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <strong className="text-xs">Planeringsmodell</strong>
+        <strong className="text-xs">{uiText("Planning model")}</strong>
         <span className="text-[9px] text-slate-400 truncate">
-          {state ? (state.choice ? `${state.choice.provider} / ${state.choice.model}` : 'Väljs automatiskt') : 'Hämtar…'}
+          {state ? (state.choice ? `${state.choice.provider} / ${state.choice.model}` : uiText("Selected automatically")) : uiText("Loading…")}
         </span>
       </div>
       <select
-        aria-label="Nova planeringsmodell" disabled={!state || busy !== null}
+        aria-label={uiText("Task planning model")} disabled={!state || busy !== null}
         value={selected}
         onChange={e => { setSelected(e.target.value); setTest(null); }}
         className="w-full bg-[#111] border border-[#333] rounded px-2 py-1.5 text-xs outline-none"
       >
-        <option value={AUTO}>Automatiskt enligt serverns provider- och kostnadspolicy</option>
+        <option value={AUTO}>{uiText("Automatic, using your model and spending settings")}</option>
         {state?.choices.map(c => (
-          <optgroup key={c.provider} label={`${c.label}${c.paid ? ' - kostar per anrop' : ''}${c.usable ? '' : c.keyConfigured ? ' - molnanrop avstängda' : ' - nyckel saknas'}`}>
+          <optgroup key={c.provider} label={`${c.label}${c.paid ? uiText(" - billed per request") : ''}${c.usable ? '' : c.keyConfigured ? uiText(" - cloud calls disabled") : uiText(" - key required")}`}>
             {c.models.map(m => <option key={m} value={`${c.provider}|${m}`} disabled={!c.usable}>{m}</option>)}
           </optgroup>
         ))}
       </select>
       {selectedOption?.paid && (
         <div className="text-[9px] text-amber-300">
-          Kostar per anrop. Dagsgräns: {state?.paidUsdPerDay.toFixed(2)} USD. Modeller väljs enligt dina inställningar.
-        </div>
+          {uiText("Billed per request. Daily limit:")}{' '}{state?.paidUsdPerDay.toFixed(2)} {' '}{uiText("USD. Models follow your settings.")}{' '}</div>
       )}
       <div className="flex gap-2">
         <button
@@ -88,7 +89,7 @@ export const NovaPlannerCard: React.FC = () => {
           disabled={busy !== null || !state || selected === current}
           className="flex-1 text-[10px] border border-cyan-700 text-cyan-200 px-2 py-1 rounded hover:bg-cyan-950 disabled:opacity-40"
         >
-          {busy === 'save' ? 'Saving…' : 'Use for Nova'}
+          {busy === 'save' ? 'Saving…' : uiText("Use for tasks")}
         </button>
       </div>
       {test && (

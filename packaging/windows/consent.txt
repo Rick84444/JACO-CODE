@@ -1,0 +1,13 @@
+JACO installation
+
+Setup installs JACO, Node.js with npm/npx, and portable Git for your Windows account. It does not replace Windows and does not require administrator access. Bundled development tools are available to JACO without changing your system PATH.
+
+The installation stays in your local Programs folder. Your workspace, settings, provider credentials and activity stay in a separate JACO data folder. Uninstall removes the application and keeps your data.
+
+After installation, JACO opens a setup guide. You choose whether it may discover local model services, import provider settings from a file you select, connect external providers, start tools or execute tasks. Setup does not grant those permissions, enable paid calls or read other applications' credential stores.
+
+Desktop shortcuts and launch at Windows sign-in are optional. Nothing is published to the Internet by this installer.
+
+JACO is provided under the MIT License. Read the bundled LICENSE for the full license text.
+
+Select the agreement checkbox to approve installation on this computer.

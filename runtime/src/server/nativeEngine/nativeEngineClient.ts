@@ -178,8 +178,9 @@ export async function requestNativeEngine<T = unknown>(
   method: string,
   params: Record<string, unknown> = {},
   timeoutMs = 30_000,
+  connection: { token?: string; port?: number } = {},
 ): Promise<T> {
-  const pairingToken = token();
+  const pairingToken = connection.token ?? token();
   if (!pairingToken) {
     throw new Error('JACO_NATIVE_ENGINE_TOKEN is not configured');
   }
@@ -191,7 +192,7 @@ export async function requestNativeEngine<T = unknown>(
   };
 
   return await new Promise<T>((resolve, reject) => {
-    const socket = net.createConnection({ host, port: port() });
+    const socket = net.createConnection({ host, port: connection.port ?? port() });
     let buffer = '';
     let settled = false;
     const finish = (error?: Error, value?: T) => {

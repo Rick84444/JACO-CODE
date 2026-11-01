@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../i18n/UiLanguage';
 import { auraErrorMessage, observedMoney as money } from '../lib/auraApi.mjs';
 import React, { useEffect, useState } from 'react';
 
@@ -16,6 +17,7 @@ interface RevenueSnapshot {
 }
 
 export const RevenueView: React.FC = () => {
+  const { t: uiText } = useUiLanguage();
   const [data, setData] = useState<RevenueSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const load = async (refresh = false) => {
@@ -35,35 +37,34 @@ export const RevenueView: React.FC = () => {
   return (
     <>
       <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400 flex items-center justify-between">
-        <span>Revenue · Stripe</span>
+        <span>{uiText("Revenue · Stripe")}</span>
         <button onClick={() => void load(true)} disabled={loading} className="text-[9px] text-cyan-400 hover:text-cyan-300 disabled:opacity-40">{loading ? 'Fetching…' : 'Refresh'}</button>
       </div>
       <div className="flex-1 overflow-auto px-2 space-y-2 text-[11px]">
-        {!data && <div className="text-slate-500 px-1">Fetching from Stripe…</div>}
-        {data && data.configured === false && <div className="border border-amber-900 text-amber-300 rounded p-2">Stripe är inte konfigurerat för denna installation.</div>}
-        {data?.error && <div className="border border-red-900 text-red-300 rounded p-2 break-words">Stripe could not be read: {data.error}</div>}
+        {!data && <div className="text-slate-500 px-1">{uiText("Fetching from Stripe…")}</div>}
+        {data && data.configured === false && <div className="border border-amber-900 text-amber-300 rounded p-2">{uiText("Stripe is not configured for this installation.")}</div>}
+        {data?.error && <div className="border border-red-900 text-red-300 rounded p-2 break-words">{uiText("Stripe could not be read:")}{' '}{data.error}</div>}
         {data?.success && data.configured && !data.error && (
           <>
             <div className="border border-[#333] bg-[#1d1d1d] rounded p-2 space-y-1">
-              <div className="text-[9px] text-slate-500">PAID, LAST 30 DAYS</div>
+              <div className="text-[9px] text-slate-500">{uiText("PAID, LAST 30 DAYS")}</div>
               <div className="text-lg text-white font-semibold">{money(d30?.revenue)}</div>
               <div className="text-[10px] text-slate-400">
-                {d30?.paidCharges ?? 'Ej observerat'} paid charge(s) · checkout: {d30?.checkoutSessionsPaid ?? '?'} paid of {d30?.checkoutSessionsCreated ?? '?'} started
-                {d30 && !d30.complete && <span className="text-amber-400"> (first 500 only)</span>}
+                {d30?.paidCharges ?? uiText("Not observed")} {' '}{uiText("paid charge(s) · checkout:")}{' '}{d30?.checkoutSessionsPaid ?? '?'} {' '}{uiText("paid of")}{' '}{d30?.checkoutSessionsCreated ?? '?'} {' '}{uiText("started")}{' '}{d30 && !d30.complete && <span className="text-amber-400"> {' '}{uiText("(first 500 only)")}</span>}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-1 border border-[#333] bg-[#1d1d1d] rounded p-2 text-[10px]">
-              <span className="text-slate-500">balance available</span><span className="text-slate-200">{money(data.balance?.available)}</span>
-              <span className="text-slate-500">balance pending</span><span className="text-slate-200">{money(data.balance?.pending)}</span>
-              <span className="text-slate-500">mode</span><span className="text-slate-200">{data.mode}</span>
-              <span className="text-slate-500">payments / payouts</span>
+              <span className="text-slate-500">{uiText("balance available")}</span><span className="text-slate-200">{money(data.balance?.available)}</span>
+              <span className="text-slate-500">{uiText("balance pending")}</span><span className="text-slate-200">{money(data.balance?.pending)}</span>
+              <span className="text-slate-500">{uiText("mode")}</span><span className="text-slate-200">{data.mode}</span>
+              <span className="text-slate-500">{uiText("payments / payouts")}</span>
               <span className={data.account?.chargesEnabled && data.account?.payoutsEnabled ? 'text-emerald-300' : 'text-amber-300'}>
                 {data.account?.chargesEnabled ? 'enabled' : 'disabled'} / {data.account?.payoutsEnabled ? 'enabled' : 'disabled'}
               </span>
             </div>
             <div className="border border-[#333] bg-[#1d1d1d] rounded p-2">
-              <div className="text-[9px] text-slate-500 mb-1">LATEST CHARGES</div>
-              {(data.recentCharges || []).length === 0 && <div className="text-slate-500">Inga betalningar finns i den hämtade listan.</div>}
+              <div className="text-[9px] text-slate-500 mb-1">{uiText("LATEST CHARGES")}</div>
+              {(data.recentCharges || []).length === 0 && <div className="text-slate-500">{uiText("No payments in the retrieved list.")}</div>}
               {(data.recentCharges || []).map(c => (
                 <div key={c.id} className="flex gap-2 text-[10px] py-0.5 min-w-0">
                   <span className="text-slate-500 shrink-0">{c.created.slice(0, 10)}</span>
@@ -72,7 +73,7 @@ export const RevenueView: React.FC = () => {
                 </div>
               ))}
             </div>
-            <div className="text-[9px] text-slate-600 px-1">fetched {new Date(data.fetchedAt).toLocaleTimeString()} · read-only</div>
+            <div className="text-[9px] text-slate-600 px-1">{uiText("fetched")}{' '}{new Date(data.fetchedAt).toLocaleTimeString()} {' '}{uiText("· read-only")}</div>
           </>
         )}
       </div>

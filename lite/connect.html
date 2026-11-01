@@ -1,19 +1,35 @@
 <!doctype html>
-<html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Kom igång med JACO</title><link rel="stylesheet" href="/connect.css"><script src="/connect.js" defer></script></head>
-<body><main><p class="kicker">JACO · ANSLUTNINGAR</p><h1>Kom igång utan att redigera konfigurationsfiler.</h1>
-<p>JACO startar de lokala tjänsterna åt dig. Välj sedan de anslutningar du vill använda.</p>
-<section><h2>1. Din lokala installation</h2><p id="status" role="status">Kontrollerar installationen…</p><p id="project"></p>
-<button id="refresh">Kontrollera igen</button><a class="button" href="/">Öppna IDE och anslut modell</a>
-<h3>Har du redan modellnycklar i projektets .env?</h3><p>Välj en fil nedan om du vill importera kända modellnycklar till JACOs krypterade lager. Inga värden visas i chatten. Andra nycklar och befintliga sparade nycklar lämnas orörda.</p>
-<label for="env-file">Fil i det här projektet</label> <select id="env-file"><option value="">Välj fil</option></select>
-<button id="import-env">Importera valda modellnycklar säkert</button><p id="env-status" role="status"></p></section>
-<section><h2>2. Anslut ditt AI-verktyg</h2><p>Valfritt. Du behöver bara ansluta verktyg som du använder. Claude Code och VS Code konfigureras i projektet; Codex konfigureras för ditt användarkonto. Befintliga inställningar sparas med backup. Befintliga JACO-poster ändras inte automatiskt.</p>
-<div class="actions"><button data-client="codex">Anslut Codex</button><button data-client="claude">Anslut Claude Code</button><button data-client="vscode">Anslut VS Code</button></div>
-<p id="client-status" role="status">När du har sparat: öppna samma projekt i klienten och ladda om dess MCP-anslutningar. Klienten kan behöva ditt godkännande.</p>
-<button id="check">Testa JACO Editor-verktyget</button><p id="check-status" role="status">Testet läser projektinformation. Det ändrar inga projektfiler.</p></section>
-<section><h2>3. Mobil och JacoCloud</h2><p id="cloud">Kontrollerar adressen…</p><a id="cloud-link" hidden rel="noreferrer" target="_blank">Öppna din installations inloggning</a>
-<p>Skapa en engångskod under <strong>Enheter</strong> i IDE:t och ange koden på den andra enheten. Datorn måste vara på och JACO igång. Lokal MCP och modellanslutning fungerar utan Cloud.</p>
-<p>Om du saknar en publik adress behövs en egen autentiserad fjärranslutning. Guiden öppnar inte din dator mot internet automatiskt.</p></section>
-<p id="error" role="alert"></p><a class="button" href="/">Fortsätt till JACO</a>
-</main></body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JACO Setup</title><link rel="stylesheet" href="/connect.css"><script src="/connect.js" defer></script></head>
+<body><main>
+<header><a class="brand" href="/">JACO<span>OS</span></a><label class="language"><span data-i18n="language">Language</span><select id="language" aria-label="Language"><option value="en">English</option><option value="sv">Svenska</option></select></label></header>
+<p class="kicker" data-i18n="welcome">YOUR WORKSPACE. YOUR MODELS.</p><h1 data-i18n="title">Make yourself at home.</h1>
+<p class="intro" data-i18n="intro">Set up Aura, connect your models and choose how JACO works on this device.</p>
+<p id="status" class="status" role="status" aria-live="polite">Checking your installation…</p><p id="project" class="path"></p>
+<form id="setup-form">
+<section><div class="section-number">01</div><h2 data-i18n="preferences">Choose how JACO starts</h2>
+<p data-i18n="preferencesHelp">Your choices are saved on this device. Task permissions and spending limits remain available in Settings.</p>
+<label class="choice"><input type="checkbox" id="discover-local" checked><span><strong data-i18n="discover">Find available models</strong><small data-i18n="discoverHelp">Check known local model servers and saved provider connections. Files and your local network are not searched.</small></span></label>
+<label class="choice"><input type="checkbox" id="connect-tools" checked><span><strong data-i18n="tools">Connect installed tools</strong><small data-i18n="toolsHelp">Start the bundled project tools. Each tool keeps its configured read or write permissions.</small></span></label>
+<label class="choice"><input type="checkbox" id="run-agent" checked><span><strong data-i18n="agent">Enable Aura to carry out tasks</strong><small data-i18n="agentHelp">Aura can execute tasks you assign within their permissions. Purchases and unresolved results still need your attention.</small></span></label>
+<label class="choice"><input type="checkbox" id="cloud-models"><span><strong data-i18n="cloudModels">Allow connected cloud models</strong><small data-i18n="cloudModelsHelp">Task content can be sent to your selected provider, which may charge for API use. No spending cap is added unless you set one in Settings.</small></span></label>
+</section>
+<section><div class="section-number">02</div><h2 data-i18n="models">Connect your models</h2>
+<p data-i18n="modelsHelp">Use a model already running on this device, or import your own provider keys. You can also connect a provider later in Aura.</p>
+<button type="button" id="scan-local" class="secondary" data-i18n="scan">Find local models</button><p id="model-status" role="status"></p><ul id="local-models"></ul>
+<details><summary data-i18n="importTitle">Import model API keys from an environment file</summary>
+<p data-i18n="importHelp">Only recognised model API keys are copied to JACO’s encrypted credential store. Existing keys are kept. File contents stay out of the conversation.</p>
+<label for="env-file" data-i18n="projectFile">A file in this project</label><select id="env-file"><option value="">Choose a file</option></select><button type="button" id="import-env" class="secondary" data-i18n="importProject">Import selected file</button>
+<label class="file-picker"><span data-i18n="chooseEnv">Or choose your own environment file</span><input id="env-upload" type="file" accept=".env,.local,.txt,text/plain"></label>
+<p id="env-status" role="status"></p></details>
+</section>
+<section><div class="section-number">03</div><h2 data-i18n="external">Connect another AI client</h2><p data-i18n="externalHelp">Optional. Give Codex, Claude Code or VS Code access to this project through JACO MCP. Existing configuration is backed up; existing JACO entries need review.</p>
+<div class="actions"><button type="button" data-client="codex" class="secondary">Codex</button><button type="button" data-client="claude" class="secondary">Claude Code</button><button type="button" data-client="vscode" class="secondary">VS Code</button></div>
+<p id="client-status" role="status" data-i18n="clientHelp">After saving, open this project in the client, reload its MCP connections and approve JACO there.</p><button type="button" id="check" class="secondary" data-i18n="checkTool">Check the project connection</button><p id="check-status" role="status"></p>
+</section>
+<details class="devices"><summary data-i18n="devices">Connect your phone or another device</summary><p id="cloud"></p><a id="cloud-link" hidden rel="noreferrer" target="_blank" data-i18n="openLogin">Open your installation’s sign-in page</a><p data-i18n="devicesHelp">Create a one-time code in Aura’s Devices view and enter it on the other device. Remote access needs your own configured HTTPS address. The host must remain on.</p></details>
+<p id="error" role="alert"></p>
+<label class="choice accept"><input type="checkbox" id="accept"><span data-i18n="accept">I have reviewed these settings and approve this setup.</span></label>
+<div class="finish"><button id="finish" type="submit" disabled data-i18n="finish">Save and open Aura</button><button id="refresh" type="button" class="text-button" data-i18n="refresh">Check again</button></div><p id="finish-status" role="status" aria-live="polite"></p>
+<p class="footnote" data-i18n="footnote">JACO runs locally. Saved credentials, an available model list and a completed task are checked separately.</p>
+</form></main></body></html>

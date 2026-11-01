@@ -41,13 +41,14 @@ const time = (value: string, language: 'en' | 'sv') => {
 const outcome = (event: CognitiveEvent, language: 'en' | 'sv') => ({
   verified: language === 'sv' ? 'Verifierat' : 'Verified',
   unverified: language === 'sv' ? 'Inte verifierat' : 'Unverified',
-  observed: language === 'sv' ? 'Observerat' : 'Observed',
+  observed: language === 'sv' ? "Observed" : 'Observed',
   failed: language === 'sv' ? 'Misslyckades' : 'Failed',
-  unknown: language === 'sv' ? 'Okänt utfall' : 'Unknown outcome',
+  unknown: language === 'sv' ? "Unknown outcome" : 'Unknown outcome',
 }[event.evidence.outcome] || (language === 'sv' ? 'Observation' : 'Observation'));
 
 
 export function AuraLiveStage({ candidate, projectRevision, events, preview, previewReady, previewError, onRetryPreview, active, onInspect, onOpenFile, htmlSource, htmlDraft, onDraftChange, saveBusy, saveNotice, onSaveDraft, cdpReady, pinned, onHoldMaterial, activeMission, agentActivity, presence }: Props) {
+  const { t: uiText } = useUiLanguage();
   const { tr, language } = useUiLanguage();
   const [editing,setEditing]=useState(false);
   const [screenshot,setScreenshot]=useState<{src:string;at:string}|null>(null);
@@ -167,8 +168,8 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
     </div> : <div className="aura-live-empty" role="status">
       <ScanEye size={34} strokeWidth={1.25}/>
       <h2>{tr('Auras arbetsyta','Aura workspace')}</h2>
-      <p>{presence.detail}</p>
-      <div className="aura-live-empty-context"><span>{presence.connectionLabel}</span><span>{tr('Senaste uppdragsläge','Latest mission phase')}: {presence.phaseLabel}</span></div>
+      <p>{uiText(presence.detail)}</p>
+      <div className="aura-live-empty-context"><span>{uiText(presence.connectionLabel)}</span><span>{tr('Senaste uppdragsläge','Latest mission phase')}: {uiText(presence.phaseLabel)}</span></div>
       <span>{tr('Verkliga fynd, kod, bilder och resultat – inte råa händelseloggar.','Real findings, code, images and results – not raw event logs.')}</span>
       {activeMission && <section className="aura-live-mission-focus" aria-label={tr('Verkligt pågående uppdrag','Observed active mission')}>
         <div className="aura-live-material-eyebrow"><Layers3 size={12}/> {tr('AKTUELLT UPPDRAG','ACTIVE MISSION')} · {activeMission.phase || activeMission.status}</div>
@@ -183,7 +184,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
         <div className="aura-live-material-name">
           <div className="aura-live-material-eyebrow"><Layers3 size={13}/> {material === 'html' ? tr('PROJEKTFÖRHANDSVISNING','PROJECT PREVIEW') : material === 'image-reference' ? tr('BILDREFERENS','IMAGE REFERENCE') : event.category === 'blocked' ? tr('ARBETET BEHÖVER HJÄLP','ACTION REQUIRED') : tr('OBSERVATION FRÅN JACO','JACO OBSERVATION')}</div>
           <h2>{material === 'html' ? (event.evidence.path?.split('/').at(-1) || 'HTML') : event.title}</h2>
-          <p>{event.text}</p>
+          <p>{event.category === 'goal' ? event.text : uiText(event.text)}</p>
         </div>
         <span className="aura-live-evidence-state" data-outcome={event.evidence.outcome}>
           {event.evidence.outcome === 'verified' ? <CheckCircle2 size={14}/> : <CircleAlert size={14}/>}
@@ -218,7 +219,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
       </div>}
       {!screenshot && !material && <div className="aura-live-event-focus" data-outcome={event.evidence.outcome}>
         <div className="aura-live-event-accent">{event.evidence.outcome === 'verified' ? <ShieldCheck size={30} strokeWidth={1.3}/> : <Eye size={30} strokeWidth={1.3}/>}</div>
-        <div><strong>{event.title}</strong><p>{event.text}</p>
+        <div><strong>{uiText(event.title)}</strong><p>{event.category === 'goal' ? event.text : uiText(event.text)}</p>
           {event.evidence.error && <div className="aura-live-event-error">{event.evidence.error}</div>}
           {event.evidence.commit && <span className="aura-live-commit"><GitCommit size={13}/> {event.evidence.commit.slice(0,14)}</span>}
         </div>

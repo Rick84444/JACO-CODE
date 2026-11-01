@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../i18n/UiLanguage';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import React, { useEffect, useState } from 'react';
 import { Loader2, Check, KeyRound, X, RefreshCw } from 'lucide-react';
@@ -10,11 +11,12 @@ interface Discovery { id: string; state: 'READY' | 'NEEDS_KEY' | 'KEY_REJECTED' 
 
 interface Scanned { id: string; active: boolean; state: 'ACTIVE' | 'NO_KEY' | 'KEY_REJECTED' | 'UNREACHABLE'; defaultModel: string; models: number; ms?: number }
 interface KeyResult { state: 'READY' | 'KEY_REJECTED' | 'UNREACHABLE' | 'AMBIGUOUS' | 'UNKNOWN_KEY'; id?: string; models?: string[]; defaultModel?: string; candidates?: string[] }
-const STATE_TEXT: Record<Scanned['state'], string> = { ACTIVE: 'aktiv', NO_KEY: 'ingen nyckel', KEY_REJECTED: 'nyckeln nekas', UNREACHABLE: 'svarar inte' };
+const STATE_TEXT: Record<Scanned['state'], string> = { ACTIVE: "active", NO_KEY: "no key", KEY_REJECTED: "key rejected", UNREACHABLE: "not responding" };
 
 // Paste an API key: JACO senses the service from the key, checks it, stores and registers it, then lists
 // which providers are active right now (POST /providers/key, GET /providers/scan).
 const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onChanged }) => {
+  const { t: uiText } = useUiLanguage();
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<KeyResult | null>(null);
@@ -36,7 +38,7 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
     void refresh();
     void fetch('/api/aura/workbench/providers/catalog').then(readAuraResponse)
       .then(data => setCatalog(data.providers || []))
-      .catch(() => setError('Kunde inte läsa leverantörslistan. Försök med API-adressen nedan.'));
+      .catch(() => setError(uiText("Could not read the provider list. Try an API address below.")));
   }, []);
 
   const submit = async (provider = providerChoice) => {
@@ -55,33 +57,33 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
 
   return (
     <div className="border border-[#333] bg-[#181818] rounded p-2 space-y-2">
-      <div className="text-xs font-semibold">Lägg till API-nyckel</div>
-      <select value={providerChoice} onChange={e => setProviderChoice(e.target.value)} aria-label="Välj API-leverantör"
+      <div className="text-xs font-semibold">{uiText("Add API key")}</div>
+      <select value={providerChoice} onChange={e => setProviderChoice(e.target.value)} aria-label={uiText("Choose API provider")}
         className="w-full bg-[#111] border border-[#333] rounded px-2 py-1.5 text-xs">
-        <option value="">Identifiera automatiskt</option>
+        <option value="">{uiText("Detect automatically")}</option>
         {catalog.map(p => <option key={p.id} value={p.id}>{p.id}</option>)}
       </select>
       <form onSubmit={e => { e.preventDefault(); void submit(); }} className="flex gap-1.5">
-        <input type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} aria-label="API-nyckel till modelltjänsten" placeholder="Klistra in en API-nyckel"
+        <input type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} aria-label={uiText("Model service API key")} placeholder={uiText("Paste an API key")}
           className="flex-1 min-w-0 bg-[#111] border border-[#333] rounded px-2 py-1.5 text-xs outline-none focus:border-cyan-700" />
         <button type="submit" disabled={busy || !key.trim()} className="bg-[#0e639c] hover:bg-[#1177bb] disabled:opacity-40 rounded px-3 text-xs font-semibold">
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Spara'}
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : uiText("Save")}
         </button>
       </form>
       {error && <div className="text-[11px] text-red-300 break-words">{error}</div>}
-      {result?.state === 'READY' && <div className="flex items-center gap-1.5 text-[11px] text-emerald-300"><Check className="w-3.5 h-3.5" />{result.id} ansluten: {result.models?.length ?? 0} modeller, standard {result.defaultModel || '(ingen)'}</div>}
-      {result?.state === 'KEY_REJECTED' && <div className="text-[11px] text-red-300">{result.id} nekade nyckeln. Inget sparades.</div>}
-      {result?.state === 'UNREACHABLE' && <div className="text-[11px] text-amber-300">{result.id} svarade inte just nu. Inget sparades, försök igen.</div>}
-      {result?.state === 'UNKNOWN_KEY' && <div className="text-[11px] text-amber-300">Nyckelns format känns inte igen. Välj leverantör ovan eller använd en egen API-adress nedan.</div>}
+      {result?.state === 'READY' && <div className="flex items-center gap-1.5 text-[11px] text-emerald-300"><Check className="w-3.5 h-3.5" />{result.id} {' '}{uiText("connected:")}{' '}{result.models?.length ?? 0} {' '}{uiText("models, default")}{' '}{result.defaultModel || uiText("(none)")}</div>}
+      {result?.state === 'KEY_REJECTED' && <div className="text-[11px] text-red-300">{result.id} {' '}{uiText("rejected the key. Nothing was saved.")}</div>}
+      {result?.state === 'UNREACHABLE' && <div className="text-[11px] text-amber-300">{result.id} {' '}{uiText("did not respond. Nothing was saved; try again.")}</div>}
+      {result?.state === 'UNKNOWN_KEY' && <div className="text-[11px] text-amber-300">{uiText("The key format is not recognized. Select a provider above or enter a custom API address below.")}</div>}
       {result?.state === 'AMBIGUOUS' && (
         <div className="space-y-1">
-          <div className="text-[11px] text-amber-300">Nyckeln passar flera tjänster. Vilken är den för? Den skickas bara dit du väljer.</div>
+          <div className="text-[11px] text-amber-300">{uiText("This key format matches several services. Choose the service that should receive it.")}</div>
           <div className="flex flex-wrap gap-1">{result.candidates?.map(c => <button key={c} type="button" onClick={() => void submit(c)} className="text-[11px] rounded-full border border-[#555] px-2.5 py-0.5 hover:text-white">{c}</button>)}</div>
         </div>
       )}
       <div className="flex items-center justify-between pt-1">
-        <div className="text-[11px] text-slate-400">Vilka som är aktiva</div>
-        <button type="button" onClick={() => void refresh()} disabled={scanning} aria-label="Sök av" className="text-slate-400 hover:text-white disabled:opacity-40"><RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} /></button>
+        <div className="text-[11px] text-slate-400">{uiText("Active connections")}</div>
+        <button type="button" onClick={() => void refresh()} disabled={scanning} aria-label={uiText("Scan")} className="text-slate-400 hover:text-white disabled:opacity-40"><RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} /></button>
       </div>
       {scan && (
         <div className="space-y-0.5">
@@ -89,7 +91,7 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
             <div key={p.id} className="flex items-center gap-2 text-[11px]">
               <span className={`h-2 w-2 rounded-full shrink-0 ${p.active ? 'bg-emerald-400' : p.state === 'NO_KEY' ? 'bg-slate-600' : 'bg-red-400'}`} />
               <span className="text-slate-200">{p.id}</span>
-              <span className="text-slate-500 truncate">{p.active ? `${p.models} modeller${p.ms != null ? ` · ${p.ms} ms` : ''}` : STATE_TEXT[p.state]}</span>
+              <span className="text-slate-500 truncate">{p.active ? uiText("{0} models{1}", [p.models, p.ms != null ? ` · ${p.ms} ms` : '']) : uiText(STATE_TEXT[p.state])}</span>
             </div>
           ))}
         </div>
@@ -101,6 +103,7 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
 const EXAMPLES = ['deepseek.com', 'groq.com', 'openrouter.ai', 'http://127.0.0.1:11434'];
 
 export const ProviderConnect: React.FC<{ onConnected: () => void | Promise<void> }> = ({ onConnected }) => {
+  const { t: uiText } = useUiLanguage();
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [found, setFound] = useState<Discovery | null>(null);
@@ -128,39 +131,39 @@ export const ProviderConnect: React.FC<{ onConnected: () => void | Promise<void>
     <div className="space-y-2">
     <KeyAndActive onChanged={onConnected} />
     <div className="border border-[#333] bg-[#181818] rounded p-2 space-y-2">
-      <div className="text-xs font-semibold">Anslut modell</div>
+      <div className="text-xs font-semibold">{uiText("Connect model")}</div>
       <form onSubmit={e => { e.preventDefault(); void connect(); }} className="space-y-1.5">
         <div className="flex gap-1.5">
-        <input value={url} onChange={e => setUrl(e.target.value)} aria-label="Modelltjänstens adress" placeholder="Adress, t.ex. deepseek.com"
+        <input value={url} onChange={e => setUrl(e.target.value)} aria-label={uiText("Model service address")} placeholder={uiText("Address, for example deepseek.com")}
           className="flex-1 min-w-0 bg-[#111] border border-[#333] rounded px-2 py-1.5 text-xs outline-none focus:border-cyan-700" />
         <button type="submit" disabled={busy || !url.trim()} className="bg-[#0e639c] hover:bg-[#1177bb] disabled:opacity-40 rounded px-3 text-xs font-semibold">
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Anslut'}
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : uiText("Connect")}
         </button>
         </div>
         <input type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)}
-          aria-label="API-nyckel för egen modelltjänst" placeholder="API-nyckel (valfri för lokal modell)"
+          aria-label={uiText("API key for a custom model service")} placeholder={uiText("API key (optional for local models)")}
           className="w-full bg-[#111] border border-[#333] rounded px-2 py-1.5 text-xs outline-none focus:border-cyan-700" />
-        <div className="text-[10px] text-slate-500">Nyckeln skickas bara till vald API-adress och sparas först efter lyckad modellkontroll.</div>
+        <div className="text-[10px] text-slate-500">{uiText("The key is sent to the selected API address and saved after a successful model check.")}</div>
       </form>
       {!found && !busy && (
         <div className="flex flex-wrap gap-1">
           {EXAMPLES.map(x => <button key={x} type="button" onClick={() => { setUrl(x); void connect(x); }} className="text-[10px] rounded-full border border-[#333] px-2 py-0.5 text-slate-400 hover:text-white">{x}</button>)}
         </div>
       )}
-      {busy && <div className="text-[11px] text-cyan-300">JACO undersöker adressen…</div>}
+      {busy && <div className="text-[11px] text-cyan-300">{uiText("JACO is checking the address…")}</div>}
       {error && <div className="text-[11px] text-red-300 break-words">{error}</div>}
       {found && (
         <div className="space-y-1.5 text-[11px]">
-          {found.state === 'READY' && <div className="flex items-center gap-1.5 text-emerald-300"><Check className="w-3.5 h-3.5" />{found.id} ansluten: {found.models.length} modeller, standard {found.defaultModel || '(ingen)'}</div>}
-          {found.state === 'NEEDS_KEY' && <div className="flex items-start gap-1.5 text-amber-300"><KeyRound className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span>{found.id} svarar men kräver en API-nyckel.</span></div>}
-          {found.state === 'KEY_REJECTED' && <div className="flex items-start gap-1.5 text-red-300"><KeyRound className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span>{found.id} nekade nyckeln. Klistra in en giltig.</span></div>}
+          {found.state === 'READY' && <div className="flex items-center gap-1.5 text-emerald-300"><Check className="w-3.5 h-3.5" />{found.id} {' '}{uiText("connected:")}{' '}{found.models.length} {' '}{uiText("models, default")}{' '}{found.defaultModel || uiText("(none)")}</div>}
+          {found.state === 'NEEDS_KEY' && <div className="flex items-start gap-1.5 text-amber-300"><KeyRound className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span>{found.id} {' '}{uiText("responded and requires an API key.")}</span></div>}
+          {found.state === 'KEY_REJECTED' && <div className="flex items-start gap-1.5 text-red-300"><KeyRound className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span>{found.id} {' '}{uiText("rejected the key. Enter a valid key.")}</span></div>}
           {(found.state === 'NEEDS_KEY' || found.state === 'KEY_REJECTED') && (
-            <div className="text-[11px] text-slate-400">Ange nyckeln i fältet ovan och välj Anslut. Ingen nyckel sparas innan leverantören verifierats.</div>
+            <div className="text-[11px] text-slate-400">{uiText("Enter the key above and select Connect. The key is saved after the provider check succeeds.")}</div>
           )}
-          {found.state === 'UNREACHABLE' && <div className="flex items-start gap-1.5 text-red-300"><X className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span>Inget modell-API svarade på den adressen. Ingenting registrerades.</span></div>}
+          {found.state === 'UNREACHABLE' && <div className="flex items-start gap-1.5 text-red-300"><X className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span>{uiText("No model API responded at that address. No connection was saved.")}</span></div>}
           <details className="text-slate-500">
-            <summary className="cursor-pointer">Vad JACO provade ({found.evidence.length})</summary>
-            {found.evidence.map((e, i) => <div key={i} className="font-mono break-all">{e.status ?? e.error ?? '—'} · {e.ms} ms · {e.url}</div>)}
+            <summary className="cursor-pointer">{uiText("Addresses checked (")}{found.evidence.length})</summary>
+            {found.evidence.map((e, i) => <div key={i} className="font-mono break-all">{e.status ?? e.error ?? '—'} · {e.ms} {' '}{uiText("ms ·")}{' '}{e.url}</div>)}
           </details>
         </div>
       )}

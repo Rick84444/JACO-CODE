@@ -86,7 +86,8 @@ test('automatic connection waits for bounded Vault boot, then discovers a model'
 
 test('runtime exposes name-only local environment inventory in authenticated Aura Vault', () => {
   const src=fs.readFileSync(path.resolve('runtime/server.ts'),'utf8');
-  assert.match(src,/const localEnvDiscovery = loadLocalJacoEnv\(\)/);
+  assert.match(src,/const localEnvDiscovery = process\.env\.JACO_SETUP_PENDING === '1'/);
+  assert.match(src,/\? \{ rootFound: false, observedFiles: \[\], loaded: \[\] \} : loadLocalJacoEnv\(\)/);
   assert.match(src,/app\.get\('\/api\/aura\/workbench\/vault\/discovery', requireLocalUi/);
   assert.match(src,/localEnvDiscovery\.loaded\.map\(\(item: any\) => item\.name\)/);
   assert.match(src,/windowsModelLoaded: windowsModelDiscovery\.configured/);

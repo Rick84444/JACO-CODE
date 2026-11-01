@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../i18n/UiLanguage';
 import { readAuraResponse as apiJson } from '../lib/auraApi.mjs';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { type Monaco } from '@monaco-editor/react';
@@ -23,6 +24,7 @@ interface Props {
 
 
 export const AuraCodeEditor: React.FC<Props> = ({ file, draft, onDraftChange, onSaved, onDirtyChange }) => {
+  const { t: uiText } = useUiLanguage();
   const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState<'idle'|'saved'|'error'|'conflict'>('idle');
   const [message, setMessage] = useState<string | null>(null);
@@ -86,7 +88,7 @@ export const AuraCodeEditor: React.FC<Props> = ({ file, draft, onDraftChange, on
   };
 
   if (!file) {
-    return <div className="h-full flex items-center justify-center text-xs text-slate-500">Open a file from Explorer.</div>;
+    return <div className="h-full flex items-center justify-center text-xs text-slate-500">{uiText("Open a file from Explorer.")}</div>;
   }
 
   return (
@@ -94,18 +96,17 @@ export const AuraCodeEditor: React.FC<Props> = ({ file, draft, onDraftChange, on
       <div className="h-8 px-3 border-b border-[#2b2b2b] flex items-center justify-between text-[10px] text-slate-500 shrink-0">
         <div className="truncate">{file.path}</div>
         <div className="flex items-center gap-2">
-          {saveState === 'saved' && <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />saved</span>}
+          {saveState === 'saved' && <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{uiText("saved")}</span>}
           {(saveState === 'error' || saveState === 'conflict') && <span className="text-amber-400 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{saveState}</span>}
           <span>{dirty ? '● modified' : 'saved'} · {file.language}</span>
           <button
             onClick={() => void save()}
             disabled={!dirty || saving}
             className="px-2 py-1 border border-[#3b3b3b] rounded text-slate-300 hover:bg-[#2a2d2e] disabled:opacity-30 flex items-center gap-1"
-            title="Save (Ctrl/Cmd+S)"
+            title={uiText("Save (Ctrl/Cmd+S)")}
           >
             {saving ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-            Save
-          </button>
+            {uiText("Save")}{' '}</button>
         </div>
       </div>
       {message && <div className={`px-3 py-1 text-[10px] border-b border-[#2b2b2b] ${saveState === 'error' || saveState === 'conflict' ? 'text-amber-300 bg-amber-950/20' : 'text-slate-400'}`}>{message}</div>}

@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../i18n/UiLanguage';
 import React, { useMemo, useState } from 'react';
 import { FileCode2, RotateCcw, X } from 'lucide-react';
 import { sanitizeAuraStageHtml } from '../lib/auraSafeHtml.mjs';
@@ -8,6 +9,7 @@ export interface CapturedPageData { url: string; title: string; html: string; sh
 // copy and sees it rendered live. Both render only after sanitizing, in a sandbox without scripts.
 // Nothing here writes to a project or to the page.
 export const CapturedPage: React.FC<{ page: CapturedPageData; onClose: () => void }> = ({ page, onClose }) => {
+  const { t: uiText } = useUiLanguage();
   const [draft, setDraft] = useState(page.html);
   const [view, setView] = useState<'copy' | 'original'>('copy');
   const [editing, setEditing] = useState(false);
@@ -17,21 +19,21 @@ export const CapturedPage: React.FC<{ page: CapturedPageData; onClose: () => voi
     catch (error: any) { return { ok: false, html: '', error: String(error?.message || error) }; }
   }, [shown]);
   const changed = draft !== page.html;
-  return <div className="aura-captured-page" aria-label="Hämtad webbsida">
+  return <div className="aura-captured-page" aria-label={uiText("Captured webpage")}>
     <div className="aura-live-cdp-frame-bar">
-      <span title={page.url}><FileCode2 size={13} /> {page.title || page.url} · hämtad {new Date(page.at).toLocaleTimeString()}</span>
+      <span title={page.url}><FileCode2 size={13} /> {page.title || page.url} {' '}{uiText("· captured")}{' '}{new Date(page.at).toLocaleTimeString()}</span>
       <span className="aura-captured-actions">
-        <button type="button" aria-pressed={view === 'copy'} onClick={() => setView('copy')}>Arbetskopia{changed ? ' (ändrad)' : ''}</button>
-        <button type="button" aria-pressed={view === 'original'} onClick={() => setView('original')}>Original</button>
-        <button type="button" aria-pressed={editing} onClick={() => { setView('copy'); setEditing(v => !v); }}>{editing ? 'Dölj HTML' : 'Redigera HTML'}</button>
-        {changed && <button type="button" onClick={() => setDraft(page.html)}><RotateCcw size={11} /> Återställ</button>}
-        <button type="button" aria-label="Stäng hämtad sida" onClick={onClose}><X size={12} /></button>
+        <button type="button" aria-pressed={view === 'copy'} onClick={() => setView('copy')}>{uiText("Working copy")}{changed ? uiText(" (modified)") : ''}</button>
+        <button type="button" aria-pressed={view === 'original'} onClick={() => setView('original')}>{uiText("Original")}</button>
+        <button type="button" aria-pressed={editing} onClick={() => { setView('copy'); setEditing(v => !v); }}>{editing ? uiText("Hide HTML") : uiText("Edit HTML")}</button>
+        {changed && <button type="button" onClick={() => setDraft(page.html)}><RotateCcw size={11} /> {' '}{uiText("Reset")}</button>}
+        <button type="button" aria-label={uiText("Close captured page")} onClick={onClose}><X size={12} /></button>
       </span>
     </div>
     {rendered.ok
-      ? <iframe className="aura-captured-frame" title={'Förhandsvisning: ' + (page.title || page.url)} sandbox="" srcDoc={rendered.html} />
-      : <p role="alert" className="aura-live-capture-error">Sidan kunde inte visas säkert: {rendered.error}</p>}
-    {editing && <textarea className="aura-captured-editor" aria-label="Redigera arbetskopians HTML" spellCheck={false} value={draft} onChange={event => setDraft(event.target.value)} />}
-    <small>Rensad kopia av sidan: utan skript, formulärvärden, dolda fält, token-metadata och URL-parametrar. Synlig text på sidan följer med. Ändringar påverkar bara den här kopian. Källa: {page.url} · sha256 {page.sha256.slice(0, 12)}</small>
+      ? <iframe className="aura-captured-frame" title={uiText("Preview: ") + (page.title || page.url)} sandbox="" srcDoc={rendered.html} />
+      : <p role="alert" className="aura-live-capture-error">{uiText("The page could not be displayed safely:")}{' '}{rendered.error}</p>}
+    {editing && <textarea className="aura-captured-editor" aria-label={uiText("Edit working copy HTML")} spellCheck={false} value={draft} onChange={event => setDraft(event.target.value)} />}
+    <small>{uiText("A sanitized copy without scripts, form values, hidden fields, token metadata or URL parameters. Visible page text is included. Edits affect this copy only. Source:")}{' '}{page.url} {' '}{uiText("· sha256")}{' '}{page.sha256.slice(0, 12)}</small>
   </div>;
 };

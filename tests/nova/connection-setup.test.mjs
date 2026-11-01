@@ -44,10 +44,10 @@ test('setup routes all use the local same-origin guard and missing MCP cannot co
   const routes = []; const guard = () => {};
   const app = { get: (...args) => routes.push(args), post: (...args) => routes.push(args) };
   mountConnectionSetup(app, guard, { env: { JACO_RELEASE_ROOT: '/nonexistent-jaco' }, fetchImpl: async () => { throw Error('offline'); } });
-  assert.equal(routes.length, 4); for (const r of routes) assert.equal(r[1], guard);
+  assert.equal(routes.length, 7); for (const r of routes) assert.equal(r[1], guard);
   let result; const res = { status: () => res, json: data => { result = data; } };
   await routes[0][2]({}, res);
   assert.equal(result.workplace, false); assert.equal(result.mcpIncluded, false); assert.equal(result.cloud.configured, false);
-  routes[2][2]({ body: { client: 'codex' } }, res);
+  routes.find(r => r[0].endsWith('/client'))[2]({ body: { client: 'codex' } }, res);
   assert.equal(result.error, 'MCP_NOT_INCLUDED');
 });

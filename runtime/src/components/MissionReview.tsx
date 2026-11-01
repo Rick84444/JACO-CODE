@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../i18n/UiLanguage';
 import React, { useEffect, useState } from 'react';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 
@@ -10,6 +11,7 @@ interface Review {
   patch:{path:string;content:string;truncated:boolean}|null;
 }
 export function MissionReview({missions,preferredMissionId,onDecisions}:{missions:Mission[];preferredMissionId?:string|null;onDecisions:()=>void}) {
+  const { t: uiText } = useUiLanguage();
   const [id,setId]=useState(()=>{try{return preferredMissionId||localStorage.getItem('jaco:aura:review-mission:v1')||missions[0]?.id||'';}catch{return preferredMissionId||missions[0]?.id||'';}});
   const [file,setFile]=useState(''),[review,setReview]=useState<Review|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false),[wrap,setWrap]=useState(true),[revision,setRevision]=useState(0);
   useEffect(()=>{if(preferredMissionId){setId(preferredMissionId);setFile('');}},[preferredMissionId]);
@@ -28,38 +30,38 @@ export function MissionReview({missions,preferredMissionId,onDecisions}:{mission
   const patch=current?.patch?.path===file?current.patch:null;
   const paths=current?.workspace.files||[];
   const patchLines=patch?.content.split('\n')||[];
-  return <section className="mission-review" aria-label="Granska agentens ändringar">
-    <header><h2>Agentens resultat</h2><button type="button" onClick={()=>setRevision(value=>value+1)}>Uppdatera</button></header>
-    <p>Ändringarna läses från uppdragets egen arbetskopia. Ditt öppna projekt ändras inte av denna granskning.</p>
-    <label>Uppdrag<select value={id} onChange={event=>{setId(event.target.value);setFile('');setReview(null);}}>
-      {!missions.some(m=>m.id===id)&&id&&<option value={id}>Tidigare valt uppdrag</option>}
-      {!missions.length&&!id&&<option value="">Inga uppdrag observerade</option>}
+  return <section className="mission-review" aria-label={uiText("Review task changes")}>
+    <header><h2>{uiText("Task results")}</h2><button type="button" onClick={()=>setRevision(value=>value+1)}>{uiText("Refresh")}</button></header>
+    <p>{uiText("Changes are read from the task’s own workspace. Reviewing them does not change your open project.")}</p>
+    <label>{uiText("Task")}<select value={id} onChange={event=>{setId(event.target.value);setFile('');setReview(null);}}>
+      {!missions.some(m=>m.id===id)&&id&&<option value={id}>{uiText("Previously selected task")}</option>}
+      {!missions.length&&!id&&<option value="">{uiText("No tasks observed")}</option>}
       {missions.map(m=><option key={m.id} value={m.id}>{m.goal.slice(0,100)} · {m.status}</option>)}
     </select></label>
-    {loading&&<p role="status">Läser uppdragets aktuella resultat…</p>}
-    {error&&<p role="alert">Granskningen kunde inte uppdateras: {error}. Tidigare observationer kan vara föråldrade.</p>}
+    {loading&&<p role="status">{uiText("Reading current task results…")}</p>}
+    {error&&<p role="alert">{uiText("Could not refresh the review:")}{' '}{error}{uiText(". Earlier observations may be out of date.")}</p>}
     {current&&<>
-      <p>{current.status} · {current.phase} · Observerat {new Date(current.observedAt).toLocaleTimeString('sv-SE')}</p>
-      {current.contractStatus&&<p>{current.contractStatus.machineVerified?'Uppdragets registrerade kontroller är uppfyllda.':'Återstår i uppdragets kontroller: '+current.contractStatus.missing.join(', ')}</p>}
-      <p>Testbelägg gäller den registrerade körningen. Granskningen kör inte nya tester och bekräftar inte senare manuella ändringar.</p>
-      {['BLOCKED','AWAITING_VERIFICATION'].includes(current.status)&&<button type="button" onClick={onDecisions}>Visa hinder och tillgängliga beslut</button>}
-      {current.workspace.state==='NOT_CREATED'&&<p>Agentens arbetskopia har inte skapats ännu.</p>}
-      {current.workspace.state==='NOT_PROJECT_MISSION'&&<p>Detta uppdrag har ingen separat projektarbetskopia.</p>}
+      <p>{current.status} · {current.phase} {' '}{uiText("· Observed")}{' '}{new Date(current.observedAt).toLocaleTimeString('sv-SE')}</p>
+      {current.contractStatus&&<p>{current.contractStatus.machineVerified?uiText("The task’s recorded checks have passed."):uiText("Remaining task checks: ")+current.contractStatus.missing.join(', ')}</p>}
+      <p>{uiText("Test results apply to the recorded run. This review does not run new tests or verify later manual changes.")}</p>
+      {['BLOCKED','AWAITING_VERIFICATION'].includes(current.status)&&<button type="button" onClick={onDecisions}>{uiText("View blockers and available decisions")}</button>}
+      {current.workspace.state==='NOT_CREATED'&&<p>{uiText("The task workspace has not been created yet.")}</p>}
+      {current.workspace.state==='NOT_PROJECT_MISSION'&&<p>{uiText("This task does not have a separate project workspace.")}</p>}
       {current.workspace.state==='READY'&&<>
-        <p>{paths.length} ändrade filer · {current.workspace.branch}</p>
-        {!!current.workspace.hiddenFiles&&<p>{current.workspace.hiddenFiles} filer ligger utanför uppdragets läsbara omfattning.</p>}
-        {current.workspace.truncated&&<p>Fillistan är begränsad till de första 500 observerade filerna.</p>}
-        {!paths.length&&<p>Inga filändringar observerade mot den gemensamma Git-utgångspunkten.</p>}
-        {paths.length>0&&<label>Ändrad fil<select value={file} onChange={event=>setFile(event.target.value)}><option value="">Välj en fil att granska</option>{paths.map(entry=><option key={entry.path} value={entry.path}>{entry.path}{entry.untracked?' · ny fil':''}</option>)}</select></label>}
-        {patch&&<div className="mission-review-patch"><div><strong>{patch.path}</strong><button type="button" onClick={()=>setWrap(value=>!value)} aria-pressed={wrap}>Radbrytning</button></div>
-          {patch.truncated&&<p>Diffen är avkortad. Granska hela ändringen lokalt före ett slutligt beslut.</p>}
-          {patchLines.length>3000&&<p>De första 3000 raderna visas. Granska hela diffen lokalt.</p>}
+        <p>{paths.length} {' '}{uiText("changed files ·")}{' '}{current.workspace.branch}</p>
+        {!!current.workspace.hiddenFiles&&<p>{current.workspace.hiddenFiles} {' '}{uiText("files are outside the task’s readable scope.")}</p>}
+        {current.workspace.truncated&&<p>{uiText("Showing the first 500 observed files.")}</p>}
+        {!paths.length&&<p>{uiText("No file changes observed against the shared Git base.")}</p>}
+        {paths.length>0&&<label>{uiText("Changed file")}<select value={file} onChange={event=>setFile(event.target.value)}><option value="">{uiText("Choose a file to review")}</option>{paths.map(entry=><option key={entry.path} value={entry.path}>{entry.path}{entry.untracked?uiText(" · new file"):''}</option>)}</select></label>}
+        {patch&&<div className="mission-review-patch"><div><strong>{patch.path}</strong><button type="button" onClick={()=>setWrap(value=>!value)} aria-pressed={wrap}>{uiText("Wrap lines")}</button></div>
+          {patch.truncated&&<p>{uiText("This diff is truncated. Review the complete change locally before making a final decision.")}</p>}
+          {patchLines.length>3000&&<p>{uiText("Showing the first 3000 lines. Review the full diff locally.")}</p>}
           <pre data-wrap={wrap}>{patchLines.slice(0,3000).map((line,index)=><span key={index} data-kind={line.startsWith('+')&&!line.startsWith('+++')?'add':line.startsWith('-')&&!line.startsWith('---')?'remove':line.startsWith('@@')?'hunk':'context'}>{line||' '}</span>)}</pre>
         </div>}
       </>}
-      <details className="mission-review-tests"><summary>Registrerade testkörningar ({current.tests.length})</summary>
-        {!current.tests.length&&<p>Inga testkörningar registrerade.</p>}
-        {current.tests.map((test,index)=><article key={test.actionId||index}><strong>{test.ok&&test.verified?'Godkänd testkörning':'Testkörning ej verifierad'}</strong><p>{test.command}</p><pre>{test.output||'Ingen testutdata registrerad.'}</pre></article>)}
+      <details className="mission-review-tests"><summary>{uiText("Recorded test runs (")}{current.tests.length})</summary>
+        {!current.tests.length&&<p>{uiText("No test runs recorded.")}</p>}
+        {current.tests.map((test,index)=><article key={test.actionId||index}><strong>{test.ok&&test.verified?uiText("Verified test run"):uiText("Test run not verified")}</strong><p>{test.command}</p><pre>{test.output||uiText("No test output recorded.")}</pre></article>)}
       </details>
     </>}
   </section>;

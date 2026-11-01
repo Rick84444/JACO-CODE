@@ -89,8 +89,8 @@ test('server stores a submitted custom key only after verified model discovery',
 
 test('Aura supports explicit selection and one-step custom URL+key entry', () => {
   const source = fs.readFileSync(path.resolve('runtime/src/components/ProviderConnect.tsx'), 'utf8');
-  assert.match(source, /aria-label="Välj API-leverantör"/);
+  assert.match(source, /aria-label=\{uiText\("Choose API provider"\)\}/);
   assert.match(source, /providerChoice/);
-  assert.match(source, /aria-label="API-nyckel för egen modelltjänst"/);
+  assert.match(source, /aria-label=\{uiText\("API key for a custom model service"\)\}/);
   assert.match(source, /\{ url: target\.trim\(\), \.\.\.\(key\.trim\(\) \? \{ key: key\.trim\(\) \} : \{\}\) \}/);
 });

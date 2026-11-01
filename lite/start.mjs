@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { readSetup, installationEnv } from './setup-state.mjs';
 
 export const MIN_NODE = '22.5';
 export const DEFAULT_PORT = 3000;
@@ -111,11 +112,11 @@ export function ensureProject(dir, fsImpl = fs) {
 // turns on in the IDE's budget panel, not something JACO decides. Written only when no policy exists yet, so a
 // change the operator made is never overwritten. Outgoing purchases are not covered by this budget and still
 // wait for the operator (spendGuard).
-export function ensureEconomicPolicy(project, fsImpl = fs) {
+export function ensureEconomicPolicy(project, fsImpl = fs, { cloudEnabled = true } = {}) {
   const file = path.join(project, '.jaco', 'continuum', 'economic-policy.json');
   if (fsImpl.existsSync(file)) return false;
   fsImpl.mkdirSync(path.dirname(file), { recursive: true });
-  fsImpl.writeFileSync(file, `${JSON.stringify({ cloudEnabled: true, manualAuraCloudEnabled: true, novaOllamaCloudEnabled: true }, null, 2)}
+  fsImpl.writeFileSync(file, `${JSON.stringify({ cloudEnabled, manualAuraCloudEnabled: cloudEnabled, novaOllamaCloudEnabled: cloudEnabled }, null, 2)}
 `);
   return true;
 }
@@ -303,7 +304,8 @@ export function updateNotice(result, env = process.env) {
 }
 
 export async function main(argv = process.argv.slice(2), deps = {}) {
-  const env = deps.env ?? process.env;
+  const launchEnv = deps.env ?? process.env;
+  let env = launchEnv;
   const out = deps.out ?? (line => process.stdout.write(`${line}\n`));
   const err = deps.err ?? (line => process.stderr.write(`${line}\n`));
   const installDir = deps.installDir ?? path.dirname(fileURLToPath(import.meta.url));
@@ -334,6 +336,10 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     if (args.whatsappCheck || run.status !== 0) return run.status ?? 1;
   }
   const project = resolveProject({ project: args.project, cwd: deps.cwd ?? process.cwd(), installDir });
+  const setup = readSetup(project, fsImpl);
+  env = installationEnv(launchEnv, setup);
+  const setupPending = env.JACO_SETUP_PENDING === '1';
+  const agentEnabled = args.agent && !setupPending && (env.JACO_REQUIRE_SETUP !== '1' || setup?.runAgent === true);
   let port;
   try { port = await (deps.findPort ?? findFreePort)(args.port ?? DEFAULT_PORT, { strict: args.port !== null }); }
   catch (error) {
@@ -354,7 +360,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   }
 
   ensureProject(project, fsImpl);
-  ensureEconomicPolicy(project, fsImpl);
+  ensureEconomicPolicy(project, fsImpl, { cloudEnabled: !setupPending });
   // Every Lite installation owns its loopback Workplace; never attach to an unrelated installation.
   const workplacePort = await (deps.findPort ?? findFreePort)(2995);
   const workplaceUrl = 'http://' + HOST + ':' + workplacePort;
@@ -384,9 +390,9 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   workplace.stdout?.on('data', c => workplaceLog?.write(c));
   workplace.stderr?.on('data', c => workplaceLog?.write(c));
   workplace.once('exit', (code, signal) => { workplaceAlive = false; processStopped('workplace', workplace, code, signal); workplaceLog?.end(); });
-  workplace.once('error', e => { workplaceAlive = false; lifecycle({ component:'workplace', event:'SPAWN_ERROR', reason: e.code || 'UNKNOWN' }); err('Anslutningstjänsten kunde inte startas: ' + e.message); });
+  workplace.once('error', e => { workplaceAlive = false; lifecycle({ component:'workplace', event:'SPAWN_ERROR', reason: e.code || 'UNKNOWN' }); err('The connection service could not start: ' + e.message); });
   if (!await waitForHealth(workplaceUrl, { alive: () => workplaceAlive, fetchImpl: deps.fetchImpl, timeoutMs: deps.healthTimeoutMs, expectedProduct: 'JACO Workplace' })) {
-    shutdownRequested = true; workplace.kill(); err('JACO Workplace kunde inte startas. Se .jaco/workplace.log.'); return 5;
+    shutdownRequested = true; workplace.kill(); err('The connection service could not start. See .jaco/workplace.log.'); return 5;
   }
   const connectedEnv = { ...env, JACO_WORKPLACE_URL: workplaceUrl, JACO_WORKPLACE_REQUIRED: '1',
     JACO_WORKPLACE_TOKEN: '', JACO_HUB_URL: '', JACO_DEVICE_KEY: '' };
@@ -429,11 +435,44 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     if (tail.trim()) err(`--- last server output (full log: ${logFile}) ---\n${tail.trim()}`);
     return 5;
   }
-  lifecycle({ component: 'ide', event: 'READY', pid: child.pid ?? null, port, agentEnabled: args.agent, workplacePid: workplace.pid ?? null });
+  lifecycle({ component: 'ide', event: 'READY', pid: child.pid ?? null, port, agentEnabled, setupPending, workplacePid: workplace.pid ?? null });
   out('JACO Lite is running.');
   out(`  IDE:      ${url}`);
   out(`  Project:  ${project}`);
-  const agentCmd = args.agent ? agentCommand(installDir, deps.execPath, fsImpl) : null;
+  if (setupPending) {
+    const setupUrl = url + '/connect.html';
+    out('  Setup:    ' + setupUrl);
+    out('Complete setup in your browser. Model requests and agent execution wait for your approval.');
+    if (args.open) (deps.open ?? openBrowser)(setupUrl);
+    let poll;
+    const accepted = await Promise.race([
+      finished.then(() => false),
+      new Promise(resolve => {
+        poll = setInterval(() => { if (readSetup(project, fsImpl)) resolve(true); }, 500);
+      }),
+    ]);
+    clearInterval(poll);
+    const intentionalSetupStop = shutdownRequested;
+    // Wait for the exact owned children to exit before reopening the durable stores.
+    // An unknown exit blocks the restart instead of launching competing runtimes.
+    const owned = [child, workplace];
+    const stopped = owned.map(proc => new Promise(resolve => {
+      if (proc.exitCode != null || proc.signalCode != null) return resolve(true);
+      let timeout;
+      const done = result => { clearTimeout(timeout); resolve(result); };
+      proc.once('exit', () => done(true));
+      proc.once('error', () => done(false));
+      timeout = setTimeout(() => done(false), 7000);
+    }));
+    stop();
+    const known = (await Promise.all(stopped)).every(Boolean);
+    log?.end();
+    if (!deps.noSignals) { process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); }
+    if (!known) { err('JACO could not confirm shutdown. Check the running services before starting again.'); return 5; }
+    if (accepted) return main(argv, { ...deps, env: launchEnv });
+    return intentionalSetupStop ? 0 : 1;
+  }
+  const agentCmd = agentEnabled ? agentCommand(installDir, deps.execPath, fsImpl) : null;
   if (agentCmd) {
     fsImpl.mkdirSync(path.join(project, '.jaco', 'nova-state'), { recursive: true });
     const agentLog = fsImpl.createWriteStream ? fsImpl.createWriteStream(path.join(project, '.jaco', 'nova.log'), { flags: 'a' }) : null;
@@ -454,7 +493,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
       agentLog?.write(`\n[nova failed to start: ${error.message}]\n`);
     });
   }
-  out(`  Agent:    ${agentCmd ? 'Nova is running: give it a goal in the chat (log: .jaco/nova.log)' : args.agent ? 'not part of this installation' : 'off (--no-agent)'}`);
+  out(`  Agent:    ${agentCmd ? 'Aura execution is running: give it a task in the chat (log: .jaco/nova.log)' : !agentEnabled ? 'off (setup preference or --no-agent)' : 'not part of this installation'}`);
   out('  Stop:     press Ctrl+C in this window');
   // Never blocks the start: a failed or slow check prints nothing. Tests that inject a fetch skip the real one.
   const updateFetch = deps.updateFetch ?? (deps.fetchImpl ? null : fetch);
@@ -464,7 +503,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   out('');
   out('JACO discovers available local models, connects configured providers and starts its bundled tools.');
   out('Write your goal in the conversation. Chat settings and the connection guide are optional overrides.');
-  out('  Anslutningar: ' + url + '/connect.html');
+  out('  Setup:    ' + url + '/connect.html');
   if (args.open) (deps.open ?? openBrowser)(url);
   const code = await finished;
   const intentionalStop = shutdownRequested;

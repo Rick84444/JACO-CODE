@@ -42,8 +42,9 @@ import { activationReport } from '../agents/lib/activate.mjs';
 import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret, validateSecretName } from '../agents/lib/secret-store.mjs';
 import { listVaultSecrets, runVaultHelper } from '../agents/lib/vault-tools.mjs';
 import { loadLocalJacoEnv, loadWindowsModelKeys, LOCAL_SERVICE_KEYS } from '../agents/lib/local-credential-discovery.mjs';
-const localEnvDiscovery = loadLocalJacoEnv();
-hydrateEnvFromStore(process.env);
+const localEnvDiscovery = process.env.JACO_SETUP_PENDING === '1'
+  ? { rootFound: false, observedFiles: [], loaded: [] } : loadLocalJacoEnv();
+if (process.env.JACO_SETUP_PENDING !== '1') hydrateEnvFromStore(process.env);
 // Paid models run when their key is configured, within the budget; JACO_ALLOW_PAID_MODELS=0 turns them off.
 const paidModelsAllowed = () => process.env.JACO_ALLOW_PAID_MODELS !== '0';
 import { createProjectRoot } from './src/server/projectRoot.mjs';
@@ -73,6 +74,7 @@ import { auraCostQuote, auraCostSettlement } from "./src/server/aura/costEngine.
 import { createEconomicBudgetRouter } from './src/server/connected/economicBudget.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
+import { mountNativeEngineSetup } from './src/server/nativeEngine/pairing.js';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
 import { readAutonomousCycleBoard } from "./src/server/connected/autonomousCycleBoard.mjs";
 import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec, fetchSkillFromUrl } from "../agents/lib/skills.mjs";
@@ -577,6 +579,14 @@ async function startServer() {
   app.use(createIdeRemoteGate(ideDevices, {
     onEvent: (event: any) => seerLiveWorkstream.record({ actor: 'Remote IDE', type: event.type, message: `Remote IDE signed in on ${event.device}`, verified: true, receipt: event }),
   }));
+  if (process.env.JACO_SETUP_PENDING === '1') {
+    app.get('/', (_req, res) => res.redirect('/connect.html'));
+    app.use('/api', (req, res, next) => {
+      const route = req.path;
+      if (route === '/runtime/identity' || route.startsWith('/aura/workbench/setup') || route.startsWith('/startup/native/pair/')) return next();
+      return res.status(409).json({ success: false, error: 'SETUP_REQUIRED', setupUrl: '/connect.html' });
+    });
+  }
   // Every state-changing /api request needs the gateway token or must come from the local IDE
   // page itself. The runtime is reachable through a tunnel, so a route that forgets its own guard
   // must not become remotely writable. Listed routes authenticate on their own (signatures,
@@ -1148,8 +1158,15 @@ const notifyPhone = async (action) => {
       success: true,
       product: 'JACO Autonomus IDE',
       version: JSON.parse(fs.readFileSync(path.join(process.env.JACO_RELEASE_ROOT || process.cwd(), 'package.json'), 'utf8')).version,
+      sourceCommit: (() => {
+        try {
+          const release = JSON.parse(fs.readFileSync(path.join(process.env.JACO_RELEASE_ROOT || process.cwd(), 'release.json'), 'utf8'));
+          return /^[a-f0-9]{40}$/.test(String(release.sourceCommit || '')) ? release.sourceCommit : null;
+        } catch { return null; }
+      })(),
       releaseId: 'jaco-code-0.22.0',
       canonicalGui: 'JACO Autonomous IDE',
+      setupPending: process.env.JACO_SETUP_PENDING === '1',
       primaryPort: PORT,
       // Only surfaces this runtime can actually drive. The list used to be fixed, so a PC runtime with
       // no paired phone advertised Android and Nova offered Android tools that could only fail.
@@ -2935,7 +2952,17 @@ const notifyPhone = async (action) => {
   // Joined devices (src/server/connected/deviceAccess.mjs): the IDE lists them, creates one-time
   // pairing codes and revokes keys. A key is never shown; the device exchanges the code for it.
   // kind 'nova': a device's Nova; kind 'ide': a browser signed in to the remote IDE (ideAccess.mjs).
-  mountConnectionSetup(app, requireLocalUiSameOrigin, { project: process.env.JACO_WORKSPACE_ROOT || process.cwd(), onProviderImport: () => connectedRuntime.providers.ensureDefaults() });
+  mountConnectionSetup(app, requireLocalUiSameOrigin, {
+    project: process.env.JACO_WORKSPACE_ROOT || process.cwd(),
+    registry: connectedRuntime.providers,
+    onProviderImport: () => connectedRuntime.providers.ensureDefaults(),
+    onSetup: (choices: any) => continuumSurface.runtime.economic.updatePolicy({
+      cloudEnabled: choices.cloudModels, manualAuraCloudEnabled: choices.cloudModels, novaOllamaCloudEnabled: choices.cloudModels,
+    }, 'operator-setup'),
+  });
+  mountNativeEngineSetup(app, requireLocalUiSameOrigin, {
+    registry: connectedRuntime.providers, runtimeUrl: `http://127.0.0.1:${PORT}`,
+  });
   const hubUrl = () => String(process.env.JACO_GATEWAY_PUBLIC_URL || '').replace(/\/+$/, '') || null;
   const devLabel = (d: any) => d.kind === 'ide' ? `remote IDE on ${d.name}` : d.executor;
   mountDeviceWorkplace(app, connectedRuntime.devices, {baseUrl:process.env.JACO_WORKPLACE_URL || 'http://127.0.0.1:2995',token:process.env.JACO_WORKPLACE_TOKEN || ''});

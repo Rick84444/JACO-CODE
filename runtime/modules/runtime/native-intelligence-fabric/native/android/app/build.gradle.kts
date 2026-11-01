@@ -2,8 +2,12 @@ plugins { id("com.android.application"); kotlin("android") }
 android {
   namespace = "ai.jaco.nativeengine"
   compileSdk = 36
-  defaultConfig { applicationId = "ai.jaco.nativeengine"; minSdk = 26; targetSdk = 36; versionCode = 14; versionName = "0.17.0" }
-  buildTypes { release { isMinifyEnabled = false } }
+  defaultConfig { applicationId = "ai.jaco.nativeengine"; minSdk = 26; targetSdk = 36; versionCode = 15; versionName = "0.22.0" }
+  buildTypes {
+    debug { versionNameSuffix = "-preview" }
+    release { isMinifyEnabled = false }
+  }
+  buildFeatures { buildConfig = true }
   compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 }
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }

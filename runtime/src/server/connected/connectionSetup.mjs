@@ -3,7 +3,50 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { createEditorServer } from '../../../tools/jaco-editor-mcp.mjs';
-import { providerEnvFiles, importProviderEnv } from '../../../../agents/lib/provider-env-import.mjs';
+import { providerEnvFiles, importProviderEnv, importProviderEnvText } from '../../../../agents/lib/provider-env-import.mjs';
+import { readSetup, saveSetup, validateSetup } from '../../../../lite/setup-state.mjs';
+
+export const LOCAL_MODEL_ENDPOINTS = Object.freeze([
+  { id: 'ollama', baseUrl: 'http://127.0.0.1:11434/v1' },
+  { id: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1' },
+  { id: 'litert', baseUrl: 'http://127.0.0.1:9379/v1' },
+  { id: 'llamacpp', baseUrl: 'http://127.0.0.1:9380/v1' },
+]);
+
+// A bounded scan of known loopback services, never a home-directory, LAN or key scan.
+export async function discoverLocalModels({ confirmed, registry, fetchImpl = fetch } = {}) {
+  if (confirmed !== true) throw Error('LOCAL_DISCOVERY_CONFIRMATION_REQUIRED');
+  const observedAt = new Date().toISOString();
+  const providers = await Promise.all(LOCAL_MODEL_ENDPOINTS.map(async provider => {
+    try {
+      const response = await fetchImpl(provider.baseUrl + '/models', { redirect: 'error', signal: AbortSignal.timeout(2500), headers: { accept: 'application/json' } });
+      if (!response.ok || !String(response.headers.get('content-type') || '').includes('application/json')) throw Error('MODELS_UNAVAILABLE');
+      const reader = response.body.getReader();
+      const chunks = []; let length = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          length += value.byteLength;
+          if (length > 256 * 1024) { await reader.cancel(); throw Error('MODEL_LIST_TOO_LARGE'); }
+          chunks.push(value);
+        }
+      } finally { reader.releaseLock(); }
+      const data = JSON.parse(Buffer.concat(chunks).toString('utf8'))?.data;
+      if (!Array.isArray(data) || data.some(item => typeof item?.id !== 'string' || !item.id.trim())) throw Error('MODEL_LIST_INVALID');
+      const models = [...new Set(data.map(item => item.id))].slice(0, 100);
+      if (models.length && registry) {
+        const previous = registry.providers.get(provider.id);
+        // Explicitly scanning defaults must not replace a customised endpoint.
+        if (!previous || previous.baseUrl === provider.baseUrl) registry.register({ ...previous, ...provider,
+          defaultModel: models.includes(previous?.defaultModel) ? previous.defaultModel : models.find(id => !/embed|rerank|whisper|tts|image|moderation/i.test(id)) || '',
+        });
+      }
+      return { ...provider, state: models.length ? 'MODELS_AVAILABLE' : 'NO_MODELS', models, evidence: 'MODEL_LIST_READ', inference: 'UNTESTED' };
+    } catch { return { ...provider, state: 'UNAVAILABLE', models: [], inference: 'UNTESTED' }; }
+  }));
+  return { observedAt, providers };
+}
 
 // One owner for client configuration. Never replaces a pre-existing JACO entry or trust settings.
 export function clientConfig(client, { project, home = os.homedir(), command = process.execPath, entry, runtimeUrl, workplaceUrl }) {
@@ -51,9 +94,9 @@ export function installClient(config) {
       fs.renameSync(temp, config.file);
     } finally { if (fs.existsSync(temp)) fs.unlinkSync(temp); }
   }
-  return { state: 'CONFIGURED', file: config.file, backup, next: 'Starta om klienten, öppna projektet och godkänn JACO MCP där. Konfiguration är inte samma sak som en aktiv klient.' };
+  return { state: 'CONFIGURED', file: config.file, backup, next: 'Restart the client, open this project and approve JACO MCP there. A saved configuration does not verify an active client.' };
 }
-export function mountConnectionSetup(app, guard, { env = process.env, project = process.cwd(), home = os.homedir(), fetchImpl = fetch, onProviderImport = () => {} } = {}) {
+export function mountConnectionSetup(app, guard, { env = process.env, project = process.cwd(), home = os.homedir(), fetchImpl = fetch, onProviderImport = () => {}, registry = null, onSetup = (_choices) => {} } = {}) {
   const install = env.JACO_RELEASE_ROOT || process.cwd();
   const entry = path.join(install, 'dist', 'jaco-editor.mjs');
   const workplaceUrl = env.JACO_WORKPLACE_URL || 'http://127.0.0.1:2995';
@@ -63,12 +106,29 @@ export function mountConnectionSetup(app, guard, { env = process.env, project = 
     let workplace = false;
     try { const r = await fetchImpl(workplaceUrl + '/health', { signal: AbortSignal.timeout(2000) }); const d = await r.json(); workplace = r.ok && d.product === 'JACO Workplace'; } catch { /* reported below */ }
     res.json({ success: true, project, runtimeUrl, envFiles: providerEnvFiles(project), mcpIncluded: fs.existsSync(entry), workplace,
+      setup: readSetup(project), setupPending: env.JACO_SETUP_PENDING === '1',
       cloud: { configured: Boolean(env.JACO_IDE_PUBLIC_HOST), url: env.JACO_IDE_PUBLIC_HOST ? 'https://' + env.JACO_IDE_PUBLIC_HOST + '/ide-login' : null },
-      next: !fs.existsSync(entry) ? 'Installationen saknar JACO Editor MCP. Hämta det uppdaterade Lite-paketet.' : !workplace ? 'Starta JACO med START.cmd så att anslutningstjänsten startar automatiskt.' : 'Välj klient, spara anslutningen och kontrollera verktygen.' });
+      next: !fs.existsSync(entry) ? 'The project tool server is missing. Reinstall a complete JACO download.' : !workplace ? 'Start JACO from its installed shortcut to start the connection service.' : 'Review setup, connect a model and continue to Aura.' });
+  });
+  app.post('/api/aura/workbench/setup/complete', guard, (req, res) => {
+    try {
+      const choices = validateSetup(req.body);
+      onSetup(choices);
+      const setup = saveSetup(project, req.body);
+      res.json({ success: true, setup, restartRequired: true });
+    } catch (error) { res.status(409).json({ success: false, error: /^SETUP_|^ECONOMIC_/.test(error.message) ? error.message : 'SETUP_SAVE_FAILED' }); }
+  });
+  app.post('/api/aura/workbench/setup/discover-local', guard, async (req, res) => {
+    try { res.json({ success: true, ...await discoverLocalModels({ confirmed: req.body?.confirmed, registry, fetchImpl }) }); }
+    catch (error) { res.status(409).json({ success: false, error: error.message }); }
   });
   app.post('/api/aura/workbench/setup/import-env', guard, (req, res) => {
     try { const result = importProviderEnv({ project, file: req.body?.file, confirmed: req.body?.confirmed }); onProviderImport(); res.json({ success: true, ...result }); }
     catch (e) { res.status(409).json({ success: false, error: /^ENV_/.test(e.message) ? e.message : 'ENV_IMPORT_FAILED' }); }
+  });
+  app.post('/api/aura/workbench/setup/import-env-text', guard, (req, res) => {
+    try { const result = importProviderEnvText({ text: req.body?.text, confirmed: req.body?.confirmed }); onProviderImport(); res.json({ success: true, ...result }); }
+    catch (error) { res.status(409).json({ success: false, error: /^ENV_/.test(error.message) ? error.message : 'ENV_IMPORT_FAILED' }); }
   });
   app.post('/api/aura/workbench/setup/client', guard, (req, res) => {
     try {
@@ -87,7 +147,7 @@ export function mountConnectionSetup(app, guard, { env = process.env, project = 
       const result = await server.handle({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'project', arguments: {} } });
       if (result.result?.isError) throw Error(result.result.content[0].text);
       res.json({ success: true, state: 'TOOL_VERIFIED', tool: 'project', project: JSON.parse(result.result.content[0].text), at: new Date().toISOString(),
-        note: 'JACO Editor och Workplace svarar. Detta test bevisar inte att en extern klient har laddat sin konfiguration.' });
+        note: 'The project tool and local coordination service responded. This does not verify that an external client loaded its configuration.' });
     } catch (e) { res.status(503).json({ success: false, error: e.message }); }
     finally { await server.close(); checking = false; }
   });
