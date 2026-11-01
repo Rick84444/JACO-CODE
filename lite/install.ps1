@@ -1,9 +1,9 @@
 # JACO Lite installer for Windows (PowerShell 5.1 or newer, no administrator rights).
 #
-#   irm https://jacocode.com/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.ps1 | iex
 #
 # What it does, in order, and nothing else:
-#   1. reads https://jacocode.com/download/latest.json and picks the Windows file
+#   1. reads https://github.com/Rick84444/JACO-CODE/releases/latest/download/latest.json and picks the Windows file
 #   2. downloads it and refuses to go on unless its SHA-256 matches latest.json
 #   3. uses the Node.js you have if it is 22.5 or newer; otherwise downloads the official Node.js LTS zip from
 #      nodejs.org into the JACO folder (checked against nodejs.org's SHASUMS256.txt)
@@ -19,14 +19,14 @@
 #   jaco-lite uninstall   remove it (your projects and %USERPROFILE%\.jaco are not touched)
 #
 # Environment (all optional): JACO_LITE_HOME (default %LOCALAPPDATA%\JACO Lite), JACO_LITE_BASE_URL (default
-# https://jacocode.com/download), JACO_LITE_NODE_DIST_URL (default https://nodejs.org/dist/latest-v24.x),
+# https://github.com/Rick84444/JACO-CODE/releases/latest/download), JACO_LITE_NODE_DIST_URL (default https://nodejs.org/dist/latest-v24.x),
 # JACO_LITE_FORCE=1, JACO_LITE_NO_MODIFY_PATH=1, JACO_LITE_NO_SHORTCUT=1, JACO_LITE_YES=1 (uninstall without asking).
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is many times faster without the progress bar
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
 
 function Env([string]$name, [string]$default) { $v = [Environment]::GetEnvironmentVariable($name); if ($v) { $v } else { $default } }
-$BaseUrl = (Env 'JACO_LITE_BASE_URL' 'https://jacocode.com/download').TrimEnd('/')
+$BaseUrl = (Env 'JACO_LITE_BASE_URL' 'https://github.com/Rick84444/JACO-CODE/releases/latest/download').TrimEnd('/')
 $NodeDist = (Env 'JACO_LITE_NODE_DIST_URL' 'https://nodejs.org/dist/latest-v24.x').TrimEnd('/')
 $LocalApp = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME '.local/share' }
 $InstallDir = Env 'JACO_LITE_HOME' (Join-Path $LocalApp 'JACO Lite')
@@ -181,7 +181,7 @@ try {
   $self = $ScriptPath
   if ($self -and (Test-Path -LiteralPath $self) -and ((Resolve-Path $self).Path -ne (Join-Path $InstallDir 'install.ps1'))) { Copy-Item -LiteralPath $self -Destination (Join-Path $InstallDir 'install.ps1') -Force }
   elseif (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'install.ps1'))) {
-    try { Invoke-WebRequest -UseBasicParsing -Uri (Env 'JACO_LITE_INSTALL_URL' 'https://jacocode.com/install.ps1') -OutFile (Join-Path $work 'install.ps1.new'); if ((Get-Item (Join-Path $work 'install.ps1.new')).Length -gt 0) { Copy-Item (Join-Path $work 'install.ps1.new') (Join-Path $InstallDir 'install.ps1') -Force } } catch { }
+    try { Invoke-WebRequest -UseBasicParsing -Uri (Env 'JACO_LITE_INSTALL_URL' 'https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.ps1') -OutFile (Join-Path $work 'install.ps1.new'); if ((Get-Item (Join-Path $work 'install.ps1.new')).Length -gt 0) { Copy-Item (Join-Path $work 'install.ps1.new') (Join-Path $InstallDir 'install.ps1') -Force } } catch { }
   }
   $launcher = @'
 @echo off
