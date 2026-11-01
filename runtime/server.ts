@@ -72,6 +72,7 @@ import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderComp
 import { auraCostQuote, auraCostSettlement } from "./src/server/aura/costEngine.mjs";
 import { createEconomicBudgetRouter } from './src/server/connected/economicBudget.mjs';
 import { AgentOrganization, createAgentOrganizationRouter } from './src/server/connected/agentOrganization.mjs';
+import { AgentReputation, createAgentBoardRouter } from './src/server/connected/agentReputation.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
@@ -4333,6 +4334,8 @@ const notifyPhone = async (action) => {
   app.use('/api/aura/budget', createEconomicBudgetRouter({ economic: continuumSurface.runtime.economic, requireOperatorUi: requireLocalUi, getBalances: costBalances }));
   const agentOrganization = new AgentOrganization(path.resolve(process.env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco')));
   app.use('/api/aura/organization', createAgentOrganizationRouter({ organization: agentOrganization, requireOperatorUi: requireLocalUi }));
+  const agentReputation = new AgentReputation(path.resolve(process.env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco')), agentOrganization);
+  app.use('/api/aura/board', createAgentBoardRouter({ reputation: agentReputation, requireOperatorUi: requireLocalUi }));
 
   app.post('/api/nova/ollama-cost/reserve', requireAuth, (req, res) => {
     const providerId = String(req.body?.providerId || 'ollama-cloud');

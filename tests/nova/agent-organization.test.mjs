@@ -181,3 +181,51 @@ test('high-risk grants expire and must be renewed', t => {
   organization.setPermission('aura', 'browser', true, 'operator', { acceptRisk: true });
   assert.equal(organization.authorize('aura', 'browser').allowed, true);
 });
+
+test('mail: agents know the ranking, internal mail must be signed, outside mail is approved, authenticated and tainted', t => {
+  const { organization } = org(t);
+  organization.updateProfile('aura', { mail: 'aura@jacocode.com' });
+  organization.createAgent({ name: 'Ekonomi', mail: 'ekonomi@jacocode.com' });
+  organization.createAgent({ name: 'Marknad', mail: 'marknad@jacocode.com' });
+  const book = organization.directory('ekonomi');
+  assert.deepEqual(book.map(e => [e.id, e.rank, e.relation, e.mayAssignWork]), [['aura', 1, 'manager', true], ['marknad', 2, 'peer', false]]);
+
+  assert.equal(organization.mailPolicy('aura@jacocode.com', 'ekonomi', { signed: true }).reason, 'INTERNAL_MAIL_NOT_GRANTED');
+  for (const id of ['aura', 'ekonomi', 'marknad']) organization.setPermission(id, 'mail.internal', true);
+  assert.equal(organization.mailPolicy('aura@jacocode.com', 'ekonomi').reason, 'INTERNAL_SENDER_UNSIGNED', 'a From header alone is spoofable');
+  assert.deepEqual(organization.mailPolicy('AURA@jacocode.com', 'ekonomi', { signed: true }),
+    { accept: true, trust: 'internal', sender: 'aura', rank: 1, mayAssignWork: true, tainted: false });
+  assert.equal(organization.mailPolicy('marknad@jacocode.com', 'ekonomi', { signed: true }).mayAssignWork, false, 'a peer informs, never assigns');
+
+  assert.equal(organization.mailPolicy('kund@example.com', 'ekonomi', { authenticated: true }).reason, 'SENDER_NOT_APPROVED');
+  organization.setContact({ address: 'Kund@Example.com', name: 'Kund', agents: ['ekonomi'] });
+  assert.throws(() => organization.setContact({ address: 'x@example.com', agents: ['ekonomi'] }, 'aura'), /OPERATOR_APPROVAL_REQUIRED/);
+  assert.equal(organization.mailPolicy('kund@example.com', 'ekonomi').reason, 'SENDER_NOT_AUTHENTICATED');
+  assert.equal(organization.mailPolicy('kund@example.com', 'ekonomi', { authenticated: true }).reason, 'PERMISSION_NOT_GRANTED');
+  organization.setPermission('aura', 'mail.receive', true);
+  organization.setPermission('ekonomi', 'mail.receive', true);
+  assert.deepEqual(organization.mailPolicy('kund@example.com', 'ekonomi', { authenticated: true }),
+    { accept: true, trust: 'approved-contact', sender: 'kund@example.com', mayAssignWork: false, tainted: true });
+  // An agent that reads outside mail passes that taint on to whoever it writes to.
+  assert.equal(organization.mailPolicy('ekonomi@jacocode.com', 'aura', { signed: true }).tainted, true);
+});
+
+test('a tainted session is the untrusted leg of the Rule of Two', t => {
+  const { organization } = org(t);
+  organization.setLimits('aura', { autonomy: 5 });
+  organization.setPermission('aura', 'files.read', true);
+  organization.setPermission('aura', 'git.branch', true);
+  assert.equal(organization.decide('aura', 'git.branch').needsApproval, false);
+  assert.deepEqual(organization.decide('aura', 'git.branch', { tainted: true }), { allowed: true, needsApproval: true, reason: 'RULE_OF_TWO' });
+});
+
+test('a manager follows its branch, never its seniors or peers', t => {
+  const { organization } = org(t);
+  organization.createAgent({ name: 'Ekonomi' });
+  organization.createAgent({ name: 'Marknad' });
+  organization.setPermission('aura', 'files.read', true);
+  organization.setPermission('ekonomi', 'files.read', true, 'aura');
+  assert.ok(organization.activity('aura', 'ekonomi').some(e => e.action === 'permission.granted' && e.agent === 'ekonomi'));
+  assert.throws(() => organization.activity('ekonomi', 'aura'), /AGENT_AUTHORITY_DENIED/);
+  assert.throws(() => organization.activity('ekonomi', 'marknad'), /AGENT_AUTHORITY_DENIED/);
+});
