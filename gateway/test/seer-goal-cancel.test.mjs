@@ -17,7 +17,7 @@ async function until(read, accept, timeout = 10000) {
   throw new Error('RUNTIME_RESULT_TIMEOUT');
 }
 
-test('cancelling a graph keeps its goal; the goal ends only on an explicit, confirmed cancel', { timeout: 20000 }, async t => {
+async function startSeer(t, env = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-seer-goal-cancel-'));
   const token = 'seer-goal-cancel-test-1234567890abcdef';
   const child = spawn(process.execPath, ['gateway/src/seer.mjs'], {
@@ -26,7 +26,7 @@ test('cancelling a graph keeps its goal; the goal ends only on an explicit, conf
       JACO_WORKPLACE_REQUIRED: '0', JACO_WORKPLACE_URL: 'http://127.0.0.1:9',
       SEER_AUTONOMY_LOOP_MS: '0', SEER_GOVERNOR_INTERVAL_MS: '0', A2ACOLONY_SYNC_INTERVAL_MS: '0',
       JACO_ALLOW_PAID_MODELS: '0', JACO_LITERT_URL: 'http://127.0.0.1:9/v1', OLLAMA_BASE_URL: 'http://127.0.0.1:9',
-      JACO_SEER_MODEL_DISCOVERY_TIMEOUT_MS: '100',
+      JACO_SEER_MODEL_DISCOVERY_TIMEOUT_MS: '100', ...env,
     }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   const exited = new Promise(resolve => child.once('exit', resolve));
@@ -35,12 +35,16 @@ test('cancelling a graph keeps its goal; the goal ends only on an explicit, conf
   child.stdout.on('data', data => output += data);
   child.stderr.on('data', data => output += data);
   const port = await until(() => /JACO_SEER_LISTENING port=(\d+)/.exec(output)?.[1], Boolean);
-  const call = async (route, payload) => {
+  return async (route, payload) => {
     const response = await fetch(`http://127.0.0.1:${port}${route}`, { method: payload ? 'POST' : 'GET',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       ...(payload ? { body: JSON.stringify(payload) } : {}) });
     return { status: response.status, data: await response.json() };
   };
+}
+
+test('cancelling a graph keeps its goal; the goal ends only on an explicit, confirmed cancel', { timeout: 20000 }, async t => {
+  const call = await startSeer(t);
   const goalStatus = async id => (await call('/cortex/strategy/goals?status=')).data.find(goal => goal.id === id)?.status;
   const graphFor = async (goalId, title) => (await call('/cortex/mission-graphs', { title, objective: title,
     policy: { strategic_goal_id: goalId, allowedTasks: ['health-check'] },
@@ -71,4 +75,28 @@ test('cancelling a graph keeps its goal; the goal ends only on an explicit, conf
   assert.equal(ended.data.goal.status, 'cancelled');
   assert.deepEqual(ended.data.cancelledGraphs, [second.id]);
   assert.equal((await call(`/cortex/mission-graphs/${second.id}`)).data.status, 'CANCELLED');
+});
+
+// 2026-10-31: after every goal had been ended, SEER kept planning its own goal-less graphs every ~10 minutes.
+// Clearing the primary goal stored {} (memory.set serialises null as {}), and the governor read {} as
+// "the operator has a goal". An ended or cleared primary goal must leave the governor idle.
+test('ending the primary goal clears it instead of leaving {} behind', { timeout: 30000 }, async t => {
+  const call = await startSeer(t);
+  const started = await call('/cortex/strategy/start', { goal: 'Observe the local runtime', horizon: 'short' });
+  assert.ok([200, 201].includes(started.status), JSON.stringify(started.data));
+  const goalId = started.data.goal?.id || started.data.id;
+  assert.equal((await call('/cortex/memory/seer.operator_primary_goal')).data.value?.id, goalId);
+  assert.equal((await call(`/cortex/strategy/goals/${goalId}/cancel`, { confirm: true, reason: 'operator ends it' })).status, 200);
+  assert.equal((await call('/cortex/memory/seer.operator_primary_goal')).data.value, null, 'the cleared primary goal must not linger as {}');
+});
+
+test('a legacy {} primary goal does not let the governor plan goal-less work', { timeout: 30000 }, async t => {
+  const call = await startSeer(t, { SEER_GOVERNOR_INTERVAL_MS: '60000' });
+  // The value older builds left behind; the governor's startup turn runs 1.5 s after start.
+  await call('/cortex/memory', { key: 'seer.operator_primary_goal', value: {}, source: 'operator' });
+  const skipped = await until(async () => (await call('/cortex/events')).data
+    .find(event => event.type === 'governor.skipped'), Boolean, 15000);
+  assert.equal(skipped.payload.reason, 'no_operator_goal');
+  const graphs = (await call('/cortex/mission-graphs')).data;
+  assert.equal((Array.isArray(graphs) ? graphs : graphs.graphs || []).length, 0, 'no graph may be planned without an operator goal');
 });

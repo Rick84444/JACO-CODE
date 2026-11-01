@@ -360,8 +360,16 @@ function seedSystemMemoryImage() {
 }
 seedSystemMemoryImage();
 
+// The operator's primary goal, only while it names a goal that is still active. Clearing it used to store {}
+// (memory.set serialises null as {}), which the governor read as "the operator has a goal" and kept planning
+// goal-less work every few minutes after every goal had been ended (2026-10-31).
+function activeOperatorPrimaryGoal() {
+  const primary = memory.get('seer.operator_primary_goal');
+  return primary?.id && strategy.goals.get(primary.id)?.status === 'active' ? primary : null;
+}
+
 function buildActiveMemoryContext() {
-  const operatorGoal = memory.get('seer.operator_primary_goal');
+  const operatorGoal = activeOperatorPrimaryGoal();
   const experienceQuery = operatorGoal?.statement || '';
   return {
     system_memory: memory.all('system.'),
@@ -655,7 +663,7 @@ function cancelStrategicGoal(goalId, reason = 'Operator ended the strategic goal
     .map(graph => missionGraph.cancel(graph.id, { reason, actor: 'operator' }).id);
   const goal = strategy.goals.cancel(goalId);
   const primary = memory.get('seer.operator_primary_goal');
-  if (primary?.id === goalId) memory.set('seer.operator_primary_goal', null, 'operator');
+  if (primary?.id === goalId) memory.del('seer.operator_primary_goal');
   return { goal, cancelledGraphs: graphs };
 }
 
@@ -1328,7 +1336,7 @@ async function runGovernorTurn() {
     const activeMissions = missions.list ? missions.list('active') : db.prepare("SELECT id,title,goal,status FROM missions WHERE status='active' LIMIT 10").all();
     const activeGraphs = missionGraph.list().filter(g => ['ACTIVE','NEEDS_REPLAN'].includes(g.status));
     const activeStrategicGoals = strategy.goals.list('active').slice(0, 10);
-    const operatorPrimaryGoal = memory.get('seer.operator_primary_goal');
+    const operatorPrimaryGoal = activeOperatorPrimaryGoal();
     const admission = chooseGovernorFocus(missionGraph.list(), {
       primary: operatorPrimaryGoal,
       goals: strategy.goals.list('active'),
