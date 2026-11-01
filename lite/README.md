@@ -8,10 +8,10 @@ After the first verified GitHub Release is published, these commands install JAC
 
 ```sh
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.ps1 | iex
+irm https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.ps1 | iex
 
 # Linux, and Android in Termux (experimental, not verified on a phone yet)
-curl -fsSL https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.sh | sh
+curl -fsSL https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.sh | sh
 ```
 
 Then, in any project folder: `jaco-lite`. Later:
@@ -23,7 +23,7 @@ Then, in any project folder: `jaco-lite`. Later:
 | `jaco-lite doctor` | shows what is installed and whether it can start |
 | `jaco-lite uninstall` | removes it (your projects and `~/.jaco` are not touched) |
 
-Where things go: `~/.local/share/jaco-lite` on Linux (`~/.jaco-lite` in Termux) and `%LOCALAPPDATA%\JACO Lite` on Windows, with the `jaco-lite` command in `~/.local/bin` (Windows: the folder is added to your user PATH, plus a Start menu entry). Options are environment variables: `JACO_LITE_HOME`, `JACO_LITE_BASE_URL`, `JACO_LITE_NO_MODIFY_PATH=1`, `JACO_LITE_NO_SHORTCUT=1`; the top of each script lists them. Read the scripts first if you like: [install.sh](https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.sh), [install.ps1](https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.ps1).
+Where things go: `~/.local/share/jaco-lite` on Linux (`~/.jaco-lite` in Termux) and `%LOCALAPPDATA%\JACO Lite` on Windows, with the `jaco-lite` command in `~/.local/bin` (Windows: the folder is added to your user PATH, plus a Start menu entry). Options are environment variables: `JACO_LITE_HOME`, `JACO_LITE_BASE_URL`, `JACO_LITE_NO_MODIFY_PATH=1`, `JACO_LITE_NO_SHORTCUT=1`; the top of each script lists them. Read the scripts first if you like: [install.sh](https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.sh), [install.ps1](https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.ps1).
 
 The Node.js it downloads is the official build from nodejs.org, checked against nodejs.org's `SHASUMS256.txt` over HTTPS (not against the GPG signature).
 
