@@ -1,10 +1,10 @@
 #!/bin/sh
 # JACO Lite installer for macOS, Linux and Android (Termux).
 #
-#   curl -fsSL https://jacocode.com/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.sh | sh
 #
 # What it does, in order, and nothing else:
-#   1. reads https://jacocode.com/download/latest.json and picks the file for this machine
+#   1. reads https://github.com/Rick84444/JACO-CODE/releases/latest/download/latest.json and picks the file for this machine
 #   2. downloads it and refuses to go on unless its SHA-256 matches latest.json
 #   3. uses the Node.js you have if it is new enough; otherwise downloads the official Node.js LTS build from
 #      nodejs.org into the JACO folder (checked against nodejs.org's SHASUMS256.txt). Termux gets nodejs-lts from pkg.
@@ -21,13 +21,13 @@
 #
 # Environment (all optional):
 #   JACO_LITE_HOME          install folder (default ~/.local/share/jaco-lite, Termux ~/.jaco-lite)
-#   JACO_LITE_BASE_URL      where latest.json and the zips are (default https://jacocode.com/download)
+#   JACO_LITE_BASE_URL      where latest.json and the zips are (default https://github.com/Rick84444/JACO-CODE/releases/latest/download)
 #   JACO_LITE_NODE_DIST_URL where Node.js builds are (default https://nodejs.org/dist/latest-v24.x)
 #   JACO_LITE_BIN_DIR       where the command goes (default ~/.local/bin, Termux $PREFIX/bin)
 #   JACO_LITE_FORCE=1       install even if this build is already installed
 set -eu
 
-BASE_URL="${JACO_LITE_BASE_URL:-https://jacocode.com/download}"
+BASE_URL="${JACO_LITE_BASE_URL:-https://github.com/Rick84444/JACO-CODE/releases/latest/download}"
 NODE_DIST="${JACO_LITE_NODE_DIST_URL:-https://nodejs.org/dist/latest-v24.x}"
 TERMUX=0
 case "${PREFIX:-}" in */com.termux/*) TERMUX=1 ;; esac
@@ -70,7 +70,7 @@ OS="$(uname -s)"; ARCH="$(uname -m)"
 case "$OS" in
   Linux) KIND=universal; NODE_OS=linux ;;
   Darwin) KIND=universal; NODE_OS=darwin ;;
-  *) die "this installer is for macOS, Linux and Termux. On Windows use:  irm https://jacocode.com/install.ps1 | iex" ;;
+  *) die "this installer is for macOS, Linux and Termux. On Windows use:  irm https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.ps1 | iex" ;;
 esac
 [ "$TERMUX" = 1 ] && KIND=android
 case "$ARCH" in
@@ -182,7 +182,7 @@ LAUNCH_ARGS=""; [ "$TERMUX" = 1 ] && LAUNCH_ARGS="--no-open"
 # a copy of this installer, so  jaco-lite update  works offline from the script (the download itself is fetched fresh)
 if [ -f "$0" ] && grep -q "JACO Lite installer" "$0" 2>/dev/null; then cp "$0" "$HOME_DIR/install.sh" 2>/dev/null || true  # (same file when run as  jaco-lite update)
 else
-  if fetch "${JACO_LITE_INSTALL_URL:-https://jacocode.com/install.sh}" > "$WORK/install.sh.new" 2>/dev/null && [ -s "$WORK/install.sh.new" ]; then cp "$WORK/install.sh.new" "$HOME_DIR/install.sh"; fi
+  if fetch "${JACO_LITE_INSTALL_URL:-https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.sh}" > "$WORK/install.sh.new" 2>/dev/null && [ -s "$WORK/install.sh.new" ]; then cp "$WORK/install.sh.new" "$HOME_DIR/install.sh"; fi
 fi
 
 cat > "$HOME_DIR/bin/jaco-lite" <<LAUNCHER
