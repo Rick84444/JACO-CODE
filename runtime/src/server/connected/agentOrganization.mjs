@@ -417,7 +417,7 @@ export class AgentOrganization {
 }
 
 // Operator UI adapter: every change through these routes is made by the operator (local UI only, same origin).
-export function createAgentOrganizationRouter({ organization, requireOperatorUi, requireMutationAuth = (_req, res) => res.status(403).json({ success: false, error: 'OPERATOR_AUTH_REQUIRED' }) }) {
+export function createAgentOrganizationRouter({ organization, requireOperatorUi, requireMutationAuth = (_req, res, _next) => res.status(403).json({ success: false, error: 'OPERATOR_AUTH_REQUIRED' }) }) {
   const router = express.Router();
   router.use(requireOperatorUi);
   router.use((req, res, next) => {
