@@ -48,14 +48,14 @@ Published assets include the three stable-name ZIPs, `latest.json`, `SHA256SUMS`
 
 ```sh
 # Linux/macOS / Termux (Android Termux support remains experimental)
-curl -fsSL https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.sh | sh
+curl -fsSL https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.sh | sh
 ```
 
 ```powershell
 # Windows PowerShell
-irm https://raw.githubusercontent.com/Rick84444/JACO-CODE/main/lite/install.ps1 | iex
+irm https://github.com/Rick84444/JACO-CODE/releases/latest/download/install.ps1 | iex
 ```
 
-The installer defaults to `https://github.com/Rick84444/JACO-CODE/releases/latest/download` for the manifest and archives, verifies downloaded ZIP SHA-256 before installation and supports an override with `JACO_LITE_BASE_URL`. The source URL serves the currently merged installer; the release assets serve the verified ZIP bytes. These public URLs will **not** work as installation endpoints before the first published GitHub Release.
+The installer defaults to `https://github.com/Rick84444/JACO-CODE/releases/latest/download` for the manifest and archives, verifies downloaded ZIP SHA-256 before installation and supports an override with `JACO_LITE_BASE_URL`. The installer scripts and the ZIP archives are fetched from the same tested GitHub Release; neither depends on a mutable raw-main script. These public URLs will **not** work as installation endpoints before the first published GitHub Release.
 
 This release process does not automatically deploy `jacocode.com`, configure Cloudflare, change DNS, publish a signed installer, or certify device-specific functionality. Those are separate acceptance gates.
