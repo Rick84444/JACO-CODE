@@ -50,6 +50,7 @@ export function auraStatusHints(failures, { headroomUsd = null, localModels = []
   const hints = [];
   if (/402|Insufficient Balance/i.test(all)) hints.push('DeepSeek-kontot är tomt. Fyll på på platform.deepseek.com, eller välj en annan modell i Chattinställningar.');
   if (/429|usage limit/i.test(all)) hints.push('Gratiskvoten hos en molnleverantör är slut (Ollama Cloud eller Groq). Den fylls på av leverantören efter en tid.');
+  if (/AURA_CHAT_PROMPT_TOO_LARGE|AURA_CHAT_MESSAGE_TOO_LARGE_FOR_CONTEXT/i.test(all)) hints.push('Kontexten överskrider den valda modellens säkra gräns. Minska historiken eller välj en modell med större kontextfönster i Providers.');
   if (/BUDGET_LIMIT|TASK_COST_LIMIT/i.test(all)) hints.push(`JACO:s molnbudget för i dag är slut.${headroomUsd === null ? '' : ` Kvar i dag: ${Number(headroomUsd).toFixed(2)} USD.`} Den nollställs vid midnatt UTC (02:00 svensk tid), eller så kan du höja den under Chattinställningar.`);
   if (lite) { if (/LITE_NO_AVAILABLE_MODELS|NO_CHAT_MODELS_IMPORTED|UNREACHABLE|fetch failed|ECONNREFUSED|timeout/i.test(all)) hints.push('Ingen lokal AI-modell svarar. Kontrollera http://127.0.0.1:9379/v1/models. Om LiteRT är installerat: kör litert-lm serve --host 127.0.0.1 --port 9379 i en annan Termux-session. En modell måste också vara importerad. Alternativt anslut en provider under Providers.'); }
   else if (/fetch failed|ECONNREFUSED|SEER_BRAIN_HTTP_(0|5\d\d)|aborted|timeout/i.test(all)) hints.push('SEER svarar inte eller hann inte. Starta om tjänsterna med: node agents/lib/local-stack.mjs');

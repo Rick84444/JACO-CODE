@@ -9,7 +9,14 @@ export {
 } from '../aura/costEngine.mjs';
 
 const MAX_OUTPUT_TOKENS = 700;
-const MAX_PROMPT_BYTES = 24000;
+const LOCAL_PROMPT_BYTES = 12000;
+const REMOTE_PROMPT_BYTES = 48000;
+
+export function auraPromptByteLimit({ local, cloudRelay = false } = {}) {
+  // Do not increase local context speculatively. Remote providers may accept more
+  // context, but their actual token window remains provider-specific.
+  return local && !cloudRelay ? LOCAL_PROMPT_BYTES : REMOTE_PROMPT_BYTES;
+}
 
 export function auraOllamaModelCatalog(env = process.env) {
   const prices = ollamaCloudPrices(env);
@@ -42,7 +49,7 @@ export async function manualAuraProviderCompletion({ providerId, model, system, 
   }
   if (typeof system !== 'string' || typeof user !== 'string') throw new Error('AURA_CHAT_PROMPT_INVALID');
   const bytes = Buffer.byteLength(system + user, 'utf8');
-  if (bytes > MAX_PROMPT_BYTES) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
+  if (bytes > auraPromptByteLimit({ local: entry.local, cloudRelay: /(?:-cloud|:cloud)$/.test(model) })) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
   const configured = auraProviderPrices(env)[`${providerId}/${model}`];
   // A cloud model can be served through a loopback relay; its suffix must not bypass cost accounting.
   const isCloudSuffix = /(?:-cloud|:cloud)$/.test(model);
@@ -89,7 +96,7 @@ export async function manualAuraOllamaCompletion({ model, system, user, temperat
   if (!auraOllamaModelCatalog(env).includes(model)) throw new Error('AURA_CLOUD_MODEL_NOT_CONFIGURED');
   if (typeof system !== 'string' || typeof user !== 'string') throw new Error('AURA_CHAT_PROMPT_INVALID');
   const promptBytes = Buffer.byteLength(system + user, 'utf8');
-  if (promptBytes > MAX_PROMPT_BYTES) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
+  if (promptBytes > auraPromptByteLimit({ local:false, cloudRelay:true })) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
 
   // Bytes bound the number of input tokens for these text prompts. Reserve the
   // worst case before sending; missing usage or a transport error stays unknown.

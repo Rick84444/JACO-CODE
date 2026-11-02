@@ -4511,6 +4511,15 @@ const notifyPhone = async (action) => {
       const providerChoice = typeof selectedProvider === 'string' && selectedProvider !== 'seer'
         ? { providerId: selectedProvider, model: String(model || '') }
         : cloudModel ? { providerId: 'ollama', model: cloudModel } : null;
+      // Chat uses the operator's *existing* shared planner-model choice directly where
+      // that provider is registered. This avoids scheduling interactive dialogue behind
+      // SEER's planner HTTP route; the same provider cost governor still applies.
+      const sharedModel = selectedProvider === 'seer' || !selectedProvider
+        ? readPlannerChoice(plannerChoiceFile()) : null;
+      const connectedModel = sharedModel && auraChatProviderCatalog(connectedRuntime.providers)
+        .find(p => p.id === sharedModel.provider && p.credentialReady && sharedModel.model);
+      const chatChoice = providerChoice || (connectedModel
+        ? { providerId: sharedModel.provider, model: sharedModel.model } : null);
       if (!selectedProvider && selectedModel && selectedModel !== 'seer' && (!cloudModel || !auraOllamaModelCatalog().includes(cloudModel))) {
         return res.status(400).json({ success: false, error: 'AURA_MODEL_NOT_AVAILABLE' });
       }
@@ -4545,6 +4554,11 @@ const notifyPhone = async (action) => {
         chatMode: planningMode ? 'planning' : questionMode ? 'manual' : 'action',
         persona: auraState?.currentPersona || "default",
         toolbox: questionTools,
+        // Keep small local inference below its configured context; allow larger remote
+        // models more retrieved knowledge without silently increasing local memory use.
+        contextChars: choice && !auraChatProviderCatalog(connectedRuntime.providers)
+          .find(p => p.id === choice.providerId)?.local ? Number(process.env.JACO_AURA_REMOTE_CONTEXT_CHARS || 24000)
+          : Number(process.env.JACO_AURA_LOCAL_CONTEXT_CHARS || 7500),
         ...(choice ? { complete: (args: any) => manualAuraProviderCompletion({ ...args, ...choice }, {
           providers: connectedRuntime.providers, economic: continuumSurface.runtime.economic,
         }) } : {}),
@@ -4582,7 +4596,7 @@ const notifyPhone = async (action) => {
       // candidate. Explicit operator choices are tried first, never silently replaced.
       const liteResult = process.env.JACO_LITE === '1'
         ? await liteChatAnswer({
-          choice: providerChoice,
+          choice: chatChoice,
           providers: connectedRuntime.providers,
           ask: ask,
           cloudChoice: () => chatFallbackChoice(connectedRuntime.providers),
@@ -4597,14 +4611,14 @@ const notifyPhone = async (action) => {
           ? await auraStatusAnswer(userMsg, liteResult.failures)
           : liteResult
         : await auraAlwaysAnswers({
-          choice: providerChoice,
+          choice: chatChoice,
           ask: askOrConnected,
           status: failures => auraStatusAnswer(userMsg, failures),
           onFallback: (fallback, r) => void seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.provider.fallback', message: `${fallback.from} could not answer (${fallback.reason.slice(0, 80)}); answered via SEER ${r.provider}/${r.model}`, verified: true, receipt: { from: fallback.from, to: `${r.provider}/${r.model}`, reason: fallback.reason } }),
           onNoModel: failures => void seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.no_model_answer', message: `No model could answer; Aura answered with observed status (${failures.length} failures)`, verified: true, receipt: { failures } }),
         });
 
-      const routeLabel = process.env.JACO_LITE === '1' ? 'Lite direct provider' : 'SEER';
+      const routeLabel = process.env.JACO_LITE === '1' ? 'Lite direct provider' : chatChoice ? 'Aura direct model' : 'SEER';
       seerLiveWorkstream.update({
         activeModule: 'Aura',
         provider: result.provider,
