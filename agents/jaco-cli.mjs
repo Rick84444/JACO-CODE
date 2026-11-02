@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { activationReport, formatReport, runtimeUp } from './lib/activate.mjs';
 import { homeCli } from './lib/home-cli.mjs';
+import { runTerminalIDE } from './lib/terminal-ide.mjs';
 import { readStartupEvidence, reconcileStartupActivation } from './lib/startup-evidence.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -63,6 +64,27 @@ export function gatewayToken(env = process.env, root = ROOT) {
 }
 
 export async function main(argv = process.argv.slice(2), env = process.env) {
+  if (argv[0] === 'ide' || (argv.length === 0 && process.stdin.isTTY)) {
+    const opts = argv[0] === 'ide' ? argv.slice(1) : argv;
+    if (opts.includes('--help')) {
+      process.stdout.write('Usage: jaco ide [--project PATH] [--no-start] [--help]\\nOpens the JACO Terminal IDE; does not create a second runtime.\\n');
+      return 0;
+    }
+    const index = opts.indexOf('--project');
+    if (opts.some((arg, i) => arg !== '--no-start' && arg !== '--project' && (index < 0 || i !== index + 1))) {
+      process.stderr.write('Usage: jaco ide [--project PATH] [--no-start]\\n');
+      return 2;
+    }
+    if (index >= 0 && !opts[index + 1]) {
+      process.stderr.write('Missing --project PATH\\n');
+      return 2;
+    }
+    return runTerminalIDE({
+      project: index >= 0 ? opts[index + 1] : process.cwd(),
+      env, root: ROOT,
+      activate: opts.includes('--no-start') ? null : () => main(['activate', '--no-tools'], env),
+    });
+  }
   if (argv[0] === 'home') return homeCli(argv.slice(1), env);
   const command = argv.find(a => !a.startsWith('--')) || 'activate';
   const json = argv.includes('--json');
