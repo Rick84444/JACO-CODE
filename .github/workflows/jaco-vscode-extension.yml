@@ -1,0 +1,52 @@
+name: JACO VS Code Extension
+
+on:
+  pull_request:
+    paths:
+      - 'extensions/jaco-vscode/**'
+      - 'runtime/src/server/security/vscodeEmbed.mjs'
+      - 'runtime/server.ts'
+      - 'tests/nova/jaco-vscode-embed.test.mjs'
+      - '.github/workflows/jaco-vscode-extension.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'extensions/jaco-vscode/**'
+      - 'runtime/src/server/security/vscodeEmbed.mjs'
+      - 'runtime/server.ts'
+      - 'tests/nova/jaco-vscode-embed.test.mjs'
+      - '.github/workflows/jaco-vscode-extension.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-vsix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify security and extension contracts
+        run: |
+          node --check extensions/jaco-vscode/extension.cjs
+          node --check extensions/jaco-vscode/lib/bridge.cjs
+          node --test extensions/jaco-vscode/test/bridge.test.cjs tests/nova/jaco-vscode-embed.test.mjs
+      - name: Package local installable extension
+        working-directory: extensions/jaco-vscode
+        run: npx --yes @vscode/vsce package --no-dependencies --out ../../jaco-cognitive-ide.vsix
+      - name: Verify VSIX archive
+        run: |
+          unzip -t jaco-cognitive-ide.vsix
+          unzip -l jaco-cognitive-ide.vsix | grep 'extension/extension.cjs'
+          unzip -l jaco-cognitive-ide.vsix | grep 'extension/lib/bridge.cjs'
+          unzip -l jaco-cognitive-ide.vsix | grep 'extension/media/jaco.svg'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jaco-cognitive-ide-vsix
+          path: jaco-cognitive-ide.vsix
+          if-no-files-found: error
+          retention-days: 30
