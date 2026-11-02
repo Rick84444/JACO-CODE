@@ -7,10 +7,23 @@ import { ActivationCard } from '../components/ActivationCard';
 import { CognitiveWorkspace } from '../components/CognitiveWorkspace';
 import { AuraChatPanel } from '../components/AuraChatPanel';
 import { AuraOrganizationPanel } from '../components/AuraOrganizationPanel';
+import { CognitiveGameboard } from '../components/CognitiveGameboard';
 
 const renderToStaticMarkup = (node: React.ReactNode) => renderMarkup(<UiLanguageProvider initialLanguage="sv">{node}</UiLanguageProvider>);
 const noop = () => {};
 const activationProps = {onOpenProject:noop,onOpenProviders:noop,projectName:'My project'};
+
+test('strategy gameboard renders English by default and follows global Swedish selection', () => {
+  const english=renderMarkup(<UiLanguageProvider initialLanguage="en"><CognitiveGameboard /></UiLanguageProvider>);
+  const swedish=renderMarkup(<UiLanguageProvider initialLanguage="sv"><CognitiveGameboard /></UiLanguageProvider>);
+  assert.match(english,/aria-label="Shared gameboard"/);
+  assert.match(english,/Aura strategy/);
+  assert.match(english,/Simulate without execution/);
+  assert.doesNotMatch(english,/>SEER:/);
+  assert.match(swedish,/aria-label="Gemensam spelplan"/);
+  assert.match(swedish,/Auras strategi/);
+  assert.match(swedish,/Simulera utan exekvering/);
+});
 
 test('organization follows the global English/Swedish language selector', () => {
   const english=renderMarkup(<UiLanguageProvider initialLanguage="en"><AuraOrganizationPanel /></UiLanguageProvider>);
