@@ -81,12 +81,6 @@
     "test": "node --test test/*.test.cjs",
     "check": "node --check extension.cjs && node --check lib/bridge.cjs"
   },
-  "files": [
-    "extension.cjs",
-    "lib/bridge.cjs",
-    "media/jaco.svg",
-    "README.md"
-  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/Rick84444/JACO-CODE.git"
