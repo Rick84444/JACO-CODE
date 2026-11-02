@@ -308,7 +308,9 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     setBusy('chat');
     const started = performance.now();
     try {
-      if (retry === undefined) await appendMessage(user);
+      // Each prompt and its eventual reply share a stable id in the existing
+      // encrypted runtime chat session, including after network disconnects.
+      await appendMessage(user);
       const ragContext: Array<{ source: string; content: any }> = [];
       if (liveEvents.length || currentMission) ragContext.push({
         source:'jaco://current-work',
@@ -342,6 +344,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         body: JSON.stringify({
           attachmentIds: attachments.map(item=>item.id),
           message: text,
+          connectedSession: { id: user.id, source: 'Aura GUI' },
           interactionMode: runMode === 'planning' ? 'planning' : 'question',
           selectedProvider,
           model: selectedProvider === 'seer' ? undefined : chatModel,
@@ -356,7 +359,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       const answer=String(data.reply || data.text || '').trim();
       if(!answer) throw new Error('Modellen returnerade ett tomt svar.');
       await appendMessage({
-        id: crypto.randomUUID(),
+        id: `${user.id}:reply`,
         role: 'assistant',
         content: answer,
         // Show which tools produced the evidence behind the answer.
