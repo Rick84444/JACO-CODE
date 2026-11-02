@@ -59,6 +59,27 @@ test('Termux Workplace respects disabled model supervision and shares Core plann
   }
 });
 
+test('Termux Workplace resolves Aura planner choice from Core workspace, not runtime dir', t => {
+  const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-planner-workspace-'));
+  t.after(()=>fs.rmSync(tmp,{recursive:true,force:true}));
+  const prefix=path.join(tmp,'prefix'),runtime=path.join(tmp,'checkout','runtime'),cfg=path.join(tmp,'runtime.env');
+  const explicitWorkspace=path.join(tmp,'operator-workspace');
+  fs.mkdirSync(path.join(prefix,'bin'),{recursive:true});
+  fs.mkdirSync(runtime,{recursive:true});
+  fs.writeFileSync(path.join(runtime,'run_termux_node.sh'),'');
+  fs.writeFileSync(path.join(prefix,'bin','node'), '#!/bin/sh\nprintf "CHOICE=%s\\n" "$JACO_PLANNER_CHOICE_FILE"\n', {mode:0o755});
+  for(const workspace of [null, explicitWorkspace]){
+    const exported=workspace ? `export JACO_WORKSPACE_ROOT='${workspace}'\\n` : '';
+    fs.writeFileSync(cfg,`export JACO_ROOT='${runtime}'\\n`+exported);
+    const run=spawnSync('sh',[path.join(root,'runtime/termux/services/jaco-workplace/run')],{
+      env:{PATH:process.env.PATH,PREFIX:prefix,HOME:tmp,JACO_RUNTIME_ENV:cfg},
+      encoding:'utf8',
+    });
+    assert.equal(run.status,0,run.stderr);
+    assert.equal(run.stdout.trim(),`CHOICE=${workspace || runtime}/.jaco/state/provider-preference.json`);
+  }
+});
+
 test('Aura activation persists routing without enabling spend; runtime model-off survives stale project defaults', t => {
   const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-provider-sync-'));
   t.after(()=>fs.rmSync(tmp,{recursive:true,force:true}));
