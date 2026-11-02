@@ -8,15 +8,6 @@ const answered = r => r && typeof r.reply === 'string' && r.reply.trim();
 
 // ask(choice): one Aura turn with that provider choice (null = SEER's route); throws when it cannot answer.
 // status(failures): Aura's status answer. onFallback/onNoModel: workstream records.
-/**
- * @param {{
- *   choice: { providerId: string, model?: string } | null,
- *   ask: (choice: any) => Promise<any>,
- *   status: (failures: string[]) => Promise<any> | any,
- *   onFallback?: (fallback: { from: string, reason: string }, result: any) => void,
- *   onNoModel?: (failures: string[]) => void,
- * }} options
- */
 export function auraChatDeadlines(env = process.env) {
   const ms = (key, fallback) => { const v = Number(env[key]); return Number.isFinite(v) && v >= 1000 ? v : fallback; };
   return { chosenMs: ms('JACO_AURA_CHAT_CHOSEN_MS', 120_000), defaultMs: ms('JACO_AURA_CHAT_DEFAULT_MS', 90_000), fallbackMs: ms('JACO_AURA_CHAT_FALLBACK_MS', 45_000) };
@@ -30,6 +21,15 @@ export function answerWithin(work, ms) {
   return Promise.race([work, late]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * @param {{
+ *   choice: { providerId: string, model?: string } | null,
+ *   ask: (choice: any) => Promise<any>,
+ *   status: (failures: string[]) => Promise<any> | any,
+ *   onFallback?: (fallback: { from: string, reason: string }, result: any) => void,
+ *   onNoModel?: (failures: string[]) => void,
+ * }} options
+ */
 export async function auraAlwaysAnswers({ choice, ask, status, onFallback = () => {}, onNoModel = () => {} }) {
   const failures = [];
   let fallback = null;
