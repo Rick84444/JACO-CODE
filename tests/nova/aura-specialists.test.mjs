@@ -99,6 +99,14 @@ test('an existing ID with a different owner or name is not overwritten', async t
   assert.equal(organization.snapshot().agents.length, 2);
 });
 
+test('legacy named research agent is not duplicated or silently migrated', async t => {
+  const { organization } = setup(t);
+  organization.createAgent({ id: 'grokbot-analyst', name: 'Prior research agent' });
+  await assert.rejects(provisionAuraSpecialists(wire(organization)), /LEGACY_RESEARCH_AGENT_REQUIRES_OPERATOR_MIGRATION/);
+  assert.equal(organization.snapshot().agents.length, 2);
+  assert.equal(organization.snapshot().agents.some(a => a.id === 'ecosystem-analyst'), false);
+});
+
 test('the dashboard exposes an explicit operator-authenticated creation action', () => {
   const ui = fs.readFileSync(new URL('../../runtime/src/components/AuraOrganizationPanel.tsx', import.meta.url), 'utf8');
   assert.match(ui, /create-aura-specialists/);
