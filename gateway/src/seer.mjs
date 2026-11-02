@@ -1626,6 +1626,10 @@ const developmentCycle = createDevelopmentCycle({
   memory,
   emit,
   runTurn: async ({ reason, eventKey }) => {
+    // Operator mission/graph callbacks remain active, but they must not create
+    // an independent LLM reasoning turn merely because strategy state changed.
+    // A legacy governor requires an explicit opt-in, not an implicit timer.
+    if (!(GOVERNOR_INTERVAL_MS > 0)) return { ok: true, skipped: true, reason: 'AURA_SINGLE_AGENT_GOVERNOR_DISABLED' };
     emit('development_cycle.governor_turn', { reason, event_key: eventKey || null });
     const result = await runGovernorTurn();
     if (result?.ok === false) throw new Error(result.error || 'GOVERNOR_TURN_FAILED');
