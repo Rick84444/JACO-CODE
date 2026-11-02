@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** JACO SDK CLI. Zero dependencies; does not start services automatically. */
 import { JacoClient } from '../src/sdk/jaco-client.mjs';
+import { createAuraAdk } from '../src/adk/aura-adk.mjs';
 
 const args = process.argv.slice(2);
 const command = args.shift() || 'help';
@@ -13,7 +14,7 @@ function option(name, fallback = '') {
   return value;
 }
 if (command === 'help' || command === '--help' || command === '-h') {
-  console.log('JACO SDK CLI - native JavaScript (Node 22+)\nUsage: node runtime/bin/jaco-sdk.mjs <status|providers|tools|missions|file|chat|mission> [argument] [--endpoint URL] [--token TOKEN]\nMutating commands require explicit invocation.');
+  console.log('JACO SDK CLI - native JavaScript (Node 22+)\nUsage: node runtime/bin/jaco-sdk.mjs <status|providers|tools|missions|file|chat|mission|adk:inspect|adk:mission> [argument] [--endpoint URL] [--token TOKEN]\nMutating commands require explicit invocation.');
   process.exit(0);
 }
 try {
@@ -24,6 +25,11 @@ try {
   let result;
   switch (command) {
     case 'status': result = await client.workbench.status(); break;
+    case 'adk:inspect': result = await createAuraAdk({client}).inspect(); break;
+    case 'adk:mission':
+      if (!arg) throw new Error('adk:mission requires a Nova mission ID');
+      result = await createAuraAdk({client}).mission(arg);
+      break;
     case 'providers': result = await client.providers.list(); break;
     case 'tools': result = await client.tools.list(); break;
     case 'missions': result = await client.missions.list(); break;
