@@ -21,6 +21,10 @@ The extension verifies `/api/runtime/identity` and a dedicated `GET /vscode-embe
 
 The `/vscode-embed` exception is deliberately limited to **direct loopback GET/HEAD requests** when opted in. It relaxes only the page's framing headers for VS Code webview origins. Normal `/`, API responses, other pages, external tunnels and cross-origin mutation rules retain their standard protections. JACO's browser-only command routes are not granted to the extension host.
 
+## Open from the JACO GUI
+
+The VS Code button in the JACO GUI's left rail opens `vscode://jacocode.jaco-cognitive-ide/open`, which runs **JACO: Open Full IDE** in VS Code. The browser or VS Code may ask you to confirm. The extension accepts only that fixed path and no parameters. The button is hidden for remote viewers and inside the VS Code tab itself. The extension also activates at VS Code startup so the status bar item is always available.
+
 ## Extension commands
 
 - **JACO: Open Full IDE**: open the existing JACO GUI in a VS Code editor pane, preserving the original functions and layout.

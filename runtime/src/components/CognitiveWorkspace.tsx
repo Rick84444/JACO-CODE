@@ -5,6 +5,8 @@ import { CostChip } from './CostChip';
 import { JacoWindowsUpdates } from './JacoWindowsUpdates';
 import { useUiLanguage } from '../i18n/UiLanguage';
 
+const VSCODE_OPEN_URL = 'vscode://jacocode.jaco-cognitive-ide/open';
+
 export type CognitiveCanvas='conversation'|'stage'|'agents'|'code'|'preview'|'evidence'|'gameboard'|'voice'|'connections';
 type Sidebar='explorer'|'source-control'|'tools'|'skills'|'devices'|'providers'|'revenue';
 interface Props {
@@ -68,6 +70,8 @@ const EN_LABELS: Record<string, string> = {
 export function CognitiveWorkspace(props:Props) {
   const { language, setLanguage, tr } = useUiLanguage();
   const L = (text: string) => tr(text, EN_LABELS[text] || text);
+  // Local browser only: a remote viewer's VS Code cannot reach this runtime, and the VS Code tab is already open.
+  const canOpenInVsCode = ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname) && window.self === window.top;
   const menu = useRef<HTMLDialogElement>(null);
   // Desktop shortcuts are intentionally inactive while composing chat, editing
   // code or using another control. No agent authority is changed by navigation.
@@ -107,6 +111,7 @@ export function CognitiveWorkspace(props:Props) {
         <span className="cognitive-rail-separator"/>
         {tools.map(([id,Icon,label])=><button key={id} type="button" onClick={()=>props.onSidebar(id)} aria-label={L(label)} title={L(label)} aria-pressed={props.sidePanelOpen&&props.sidebar===id} className={props.sidePanelOpen&&props.sidebar===id?'active':''}><Icon size={18}/>{id==='source-control'&&props.changes>0&&<span className="cognitive-rail-count">{props.changes}</span>}</button>)}
         <div className="cognitive-rail-spacer"/>
+        {canOpenInVsCode && <button type="button" onClick={()=>{window.location.href=VSCODE_OPEN_URL;}} aria-label={tr('Öppna JACO i VS Code','Open JACO in VS Code')} title={tr('Öppna JACO i VS Code','Open JACO in VS Code')}><Code2 size={17}/></button>}
         <button type="button" onClick={props.onApprovals} aria-label={tr('Visa beslut som kräver godkännande', 'Show decisions requiring approval')} title={tr('Godkännanden', 'Approvals')}><ShieldCheck size={18}/></button>
         <button type="button" onClick={props.onSignOut} aria-label={L('Logga ut')} title={L('Logga ut')}><LogOut size={17}/></button>
       </nav>
