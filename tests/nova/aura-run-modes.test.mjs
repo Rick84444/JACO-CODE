@@ -5,6 +5,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { AURA_RUN_MODES, initialAuraRunMode, normalizeAuraRunMode, normalizeAuraChatMode, normalizeAuraMissionMode } from '../../runtime/src/lib/auraRunModes.mjs';
 import { cognitiveActivationPreview } from '../../runtime/src/lib/auraCognitiveActivation.mjs';
+import { buildAuraSeerPrompts } from '../../agents/lib/aura-seer-chat.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = path => fs.readFileSync(root + '/' + path,'utf8');
@@ -71,6 +72,18 @@ test('Malformed, empty and unavailable knowledge never become verified or execut
   assert.equal(result.permission,'NO_GRANT_PER_STEP_POLICY_REQUIRED');
 });
 
+test('Planning system instruction survives a completely full RAG budget on all tool rounds', () => {
+  const huge = Array.from({length: 8}, (_,i)=>({source:'file-'+i,content:'x'.repeat(6000)}));
+  const planning = buildAuraSeerPrompts({message:'Create a rollout plan', chatMode:'planning', ragContext:huge});
+  const manual = buildAuraSeerPrompts({message:'Create a rollout plan', chatMode:'manual', ragContext:huge});
+  assert.match(planning.system,/RUN_MODE: PLANNING/);
+  assert.match(planning.system,/skapa inte uppdrag/);
+  assert.match(manual.system,/RUN_MODE: MANUAL/);
+  assert.doesNotMatch(manual.system,/RUN_MODE: PLANNING/);
+  assert.equal(planning.user.includes('SOURCE: file-7'),false,'late context is truncated in this reproduction');
+  assert.ok(planning.system.length > 1000,'system instruction is not truncated with RAG');
+});
+
 test('The current GUI has a single compact label, inline build flow and no popup on autonomous selection', () => {
   const gui = read('runtime/src/components/AuraChatPanel.tsx');
   const css = read('runtime/src/cognitive-workspace.css');
@@ -93,6 +106,8 @@ test('The current GUI has a single compact label, inline build flow and no popup
   assert.match(parent,/executionMode \? \{ executionMode \}/);
   assert.match(backend,/normalizedInteractionMode === 'planning'/);
   assert.match(backend,/planningMode \? '' : userMsg/);
+  assert.match(backend,/chatMode: planningMode \? 'planning' : questionMode \? 'manual' : 'action'/);
+  assert.doesNotMatch(backend,/jaco:\/\/run-mode\/planning/);
   assert.match(backend,/cognitiveActivationPreview/);
   assert.match(backend,/normalizeAuraMissionMode\(req.body\?\.executionMode\)/);
   assert.match(backend,/app.get\('\/api\/aura\/chat\/cognitive-activation'/);
