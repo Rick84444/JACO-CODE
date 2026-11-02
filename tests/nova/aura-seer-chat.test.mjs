@@ -220,10 +220,11 @@ test('tool transcript retains recent receipts and bounds each model round', () =
     text:'header'+i+' '+('X'.repeat(10000))+' ending'+i,
   }));
   const output=renderAuraToolTranscript(entries);
-  assert.ok(output.includes('Earlier tool results omitted: 5'));
+  assert.ok(output.includes('EARLIER_TOOL_OBSERVATIONS (5'));
+  assert.ok(output.includes('file0.ts'), 'earlier result keeps a bounded evidence reference');
   assert.ok(output.includes('file7.ts'));
   assert.ok(output.includes('ending7'));
-  assert.ok(!output.includes('file0.ts'));
+  assert.ok(!output.includes('header0 '+('X'.repeat(10000))), 'original long tool output must not be forwarded');
   assert.ok(output.length<8000,'latest three tool results must not grow the prompt without bound');
 });
 
