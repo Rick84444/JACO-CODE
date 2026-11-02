@@ -101,7 +101,7 @@ export async function runAgentMission({
     try {
       const { token } = await client.claim(mission.id, owner);
       lease = { owner, token };
-      await client.release(mission.id, { ...lease, steerVersion: modelSteerVersion, completionProposed: true, completionReason: answer.slice(0, 4000) });
+      await client.release(mission.id, { ...lease, ...(modelSteerVersion ? { steerVersion: modelSteerVersion } : {}), completionProposed: true, completionReason: answer.slice(0, 4000) });
       return null;
     } catch (error) {
       if (lease) await client.release(mission.id, lease).catch(() => {});
@@ -109,7 +109,7 @@ export async function runAgentMission({
     }
   };
   const end = async (outcome, release) => {
-    try { await withLease(lease => client.release(mission.id, { ...lease, steerVersion: modelSteerVersion, ...release })); }
+    try { await withLease(lease => client.release(mission.id, { ...lease, ...(modelSteerVersion ? { steerVersion: modelSteerVersion } : {}), ...release })); }
     catch (error) {
       if (errorText(error).includes('NOVA_STEER_STALE')) {
         // A later operator instruction supersedes this model proposal.
@@ -206,7 +206,7 @@ export async function runAgentMission({
         try {
           const claimed = await client.claim(mission.id, owner);
           lease = { owner, token: claimed.token };
-          begun = await client.begin(mission.id, { ...lease, steerVersion: modelSteerVersion, task });
+          begun = await client.begin(mission.id, { ...lease, ...(modelSteerVersion ? { steerVersion: modelSteerVersion } : {}), task });
         } catch (error) {
           // Refused before anything ran (not allowed, invalid fields, needs approval): the model hears
           // why and the mission keeps its failure budget.
