@@ -7,7 +7,7 @@ import path from 'node:path';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nova-planner-choice-'));
 process.env.NOVA_STATE_DIR = dir;
 process.env.NOVA_BRAIN_MODE = 'direct';
-const { orderedBrainProviders, brainCandidates } = await import('../../agents/hands-off-agent.mjs');
+const { orderedBrainProviders, brainCandidates, setConnectedProvidersForTest } = await import('../../agents/hands-off-agent.mjs');
 const { plannerChoiceFile, validatePlannerChoice, writePlannerChoice, clearPlannerChoice, testPlannerModel } = await import('../../agents/lib/planner-choice.mjs');
 
 const file = path.join(dir, 'provider-preference.json');
@@ -283,4 +283,18 @@ test('Aura and Continuum accept the same model IDs, including @, + and 160 chara
   });
   assert.equal(result.ok, true);
   assert.deepEqual(paths, ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/settle']);
+});
+
+test('custom connected provider is the sole candidate when operator pinned it',()=>{
+  const dynamic={name:'custom-local',url:'http://127.0.0.1:9000/v1/chat/completions',model:'custom-code-8b',free:true};
+  writePlannerChoice(file,{provider:dynamic.name,model:dynamic.model},'operator');
+  setConnectedProvidersForTest([dynamic]);
+  try {
+    const candidates=brainCandidates({JACO_PLANNER_CHOICE_FILE:file});
+    assert.deepEqual(candidates.map(p=>[p.name,p.model]),[[dynamic.name,dynamic.model]]);
+    assert.equal(candidates[0].chosen,true);
+  } finally {
+    setConnectedProvidersForTest([]);
+    clearPlannerChoice(file);
+  }
 });
