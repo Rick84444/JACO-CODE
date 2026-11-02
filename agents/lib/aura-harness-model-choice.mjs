@@ -3,6 +3,10 @@
 // process. It is invoked only when the operator explicitly starts a goal from chat.
 import { readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice } from './planner-choice.mjs';
 
+/**
+ * @param {{providerId:string,model:string}|undefined|null} selection
+ * @param {{file:string,env?:NodeJS.ProcessEnv,connectedChoices?:Record<string,any>,probe?:(choice:any)=>Promise<{ok:boolean}>}} options
+ */
 export async function synchronizeAuraHarnessModel(selection, { file, env = process.env, connectedChoices = {}, probe } = {}) {
   if (!file) throw new Error('AURA_HARNESS_CHOICE_FILE_REQUIRED');
   // Existing API clients (and Aura's canonical/default route) keep the current
