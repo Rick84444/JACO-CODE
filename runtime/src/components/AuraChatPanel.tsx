@@ -294,25 +294,15 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     .slice(-20)
     .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', content: m.content+(m.attachments?.length?'\n[Attached reference IDs, data only] '+JSON.stringify(m.attachments):'') })), [messages]);
 
-  const ask = async (retry?: string) => {
-    const text = (retry ?? input).trim();
-    if (!text || busy || uploading || !storageReady) return;
-    if (selectedProvider !== 'seer' && (!providers.some(p => p.id === selectedProvider) || !chatModel.trim())) {
-      setCatalogError('Välj en registrerad provider och ange modell före anrop.');
-      return;
-    }
+  const [chatControlBusy,setChatControlBusy]=useState(false);
+  // This command lane is independent of a pending chat inference. A stop/steer
+  // request never cancels the chat HTTP request or the mission's in-flight tool.
+  const executeChatMissionCommand = async (text:string,controlCommand:ReturnType<typeof parseAuraMissionCommand>,retry?:string) => {
+    if (!controlCommand || chatControlBusy || uploading || !storageReady) return;
     if (retry === undefined) setInput('');
-    const user: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text, attachments:attachments.map(item=>({id:item.id,name:item.files[0]?.path.split('/')[0]||'Bilaga',fileCount:item.files.length})) };
-    const controller = new AbortController();
-    requestRef.current = controller;
-    setBusy('chat');
-    const started = performance.now();
+    setChatControlBusy(true);
     try {
-      if (retry === undefined) await appendMessage(user);
-      // Explicit user commands use existing authenticated mission controls, never LLM tool guesses.
-      // Questions in every mode remain read-only and do not interrupt durable execution.
-      const controlCommand=parseAuraMissionCommand(text);
-      if (controlCommand) {
+      if (retry === undefined) await appendMessage({id:crypto.randomUUID(),role:'user',content:text});
         const candidates=missions.filter(m=>['ACTIVE','AWAITING_VERIFICATION','BLOCKED'].includes(m.status) && !m.cancelRequested);
         const active=candidates.length===1 ? candidates[0] : null;
         if (!active) {
@@ -346,7 +336,32 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             content:tr('Uppdragskontrollen misslyckades: ','Mission control failed: ')+safeCognitiveText(error?.message || String(error))});
         }
         return;
-      }
+    } catch (error:any) {
+      setMessages(current=>[...current,{id:crypto.randomUUID(),role:'system',
+        content:tr('Kunde inte skicka kommandot: ','Could not send the command: ')+safeCognitiveText(error?.message || String(error))}]);
+    } finally {
+      setChatControlBusy(false);
+    }
+  };
+
+  const ask = async (retry?: string) => {
+    const text = (retry ?? input).trim();
+    if (!text || uploading || !storageReady) return;
+    const controlCommand=parseAuraMissionCommand(text);
+    if (controlCommand) { await executeChatMissionCommand(text,controlCommand,retry); return; }
+    if (busy) return;
+    if (selectedProvider !== 'seer' && (!providers.some(p => p.id === selectedProvider) || !chatModel.trim())) {
+      setCatalogError('Välj en registrerad provider och ange modell före anrop.');
+      return;
+    }
+    if (retry === undefined) setInput('');
+    const user: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text, attachments:attachments.map(item=>({id:item.id,name:item.files[0]?.path.split('/')[0]||'Bilaga',fileCount:item.files.length})) };
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setBusy('chat');
+    const started = performance.now();
+    try {
+      if (retry === undefined) await appendMessage(user);
       const ragContext: Array<{ source: string; content: any }> = [];
       if (liveEvents.length || currentMission) ragContext.push({
         source:'jaco://current-work',
@@ -786,7 +801,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                 className="rounded border border-cyan-700 px-2 py-1.5 text-xs text-cyan-200 disabled:opacity-40">
                 {tr('Starta uppdrag','Start mission')}
               </button>}
-              <button data-testid="jaco-chat-send" type="submit" aria-label={tr('Skicka meddelande','Send message')} title={tr('Skicka','Send')} disabled={!input.trim()||Boolean(busy)||uploading||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
+              <button data-testid="jaco-chat-send" type="submit" aria-label={tr('Skicka meddelande','Send message')} title={tr('Skicka','Send')} disabled={!input.trim()||(Boolean(busy)&&!parseAuraMissionCommand(input))||chatControlBusy||uploading||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
             </div>
           </div>
           <AttachmentPicker items={attachments} onChange={setAttachments} onBusy={setUploading} disabled={Boolean(busy)}/>
