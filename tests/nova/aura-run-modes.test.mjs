@@ -105,7 +105,9 @@ test('The current GUI has a single compact label, inline build flow and no popup
   assert.match(css, /prefers-reduced-motion:reduce/);
   assert.match(parent,/executionMode \? \{ executionMode \}/);
   assert.match(backend,/normalizedInteractionMode === 'planning'/);
-  assert.match(backend,/planningMode \? '' : userMsg/);
+  assert.match(backend,/const questionTools=questionMode \? cognitiveQuestionToolbox\(allTools/);
+  assert.doesNotMatch(backend,/planningMode \? '' : userMsg/);
+  assert.doesNotMatch(read('runtime/src/server/connected/cognitiveQuestionToolbox.mjs'),/tools\.policy_update\s*=/);
   assert.match(backend,/chatMode: planningMode \? 'planning' : questionMode \? 'manual' : 'action'/);
   assert.doesNotMatch(backend,/jaco:\/\/run-mode\/planning/);
   assert.match(backend,/cognitiveActivationPreview/);

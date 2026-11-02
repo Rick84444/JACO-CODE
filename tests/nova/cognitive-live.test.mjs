@@ -159,12 +159,20 @@ test('a disconnected or slow stream releases its timers and never fabricates rec
 });
 
 
-test('explicit conversational policy requests expose only the policy action, not mission mutations', async()=>{
-  const original={observe:async()=>'',tools:{policy_update:{run:async()=>({saved:true})},start_goal:{run:async()=>{throw Error('must not run');}}}};
-  for(const message of ['Jag vill minska godkännanden','Ändra autonominivå till 4','Godkänn inte publicering automatiskt']) {
+test('Manual and Planning never elevate a read-only question into a policy mutation', async()=>{
+  let writes=0;
+  const original={observe:async()=>'',tools:{
+    policy_update:{run:async()=>{writes++;return {saved:true};}},
+    start_goal:{run:async()=>{writes++;throw Error('must not run');}},
+    policy_get:{run:async()=>({level:2})},
+  }};
+  for(const message of ['Jag vill minska godkännanden','Ändra autonominivå till 4','Godkänn inte publicering automatiskt',
+    'Varför ändra policyn?','Hur minskar jag godkännanden?','Vad händer med reglerna?']) {
+    // A third argument from legacy callers must never widen tool capabilities.
     const t=cognitiveQuestionToolbox(original,()=>({}),message);
-    assert.ok(t.tools.policy_update); assert.equal(t.tools.start_goal,undefined);
-    assert.deepEqual(await t.tools.policy_update.run(),{saved:true});
+    assert.equal(t.tools.policy_update,undefined,'no write tool for '+message);
+    assert.equal(t.tools.start_goal,undefined,'no mission tool for '+message);
+    assert.deepEqual(await t.tools.policy_get.run(),{level:2});
   }
-  for(const message of ['Varför ändra policyn?','Hur minskar jag godkännanden?','Vad händer med reglerna?','Jag vill se koden']) assert.equal(cognitiveQuestionToolbox(original,()=>({}),message).tools.policy_update,undefined);
+  assert.equal(writes,0);
 });
