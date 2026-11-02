@@ -413,3 +413,64 @@ test('opaque MCP in-flight call is INTERRUPTED instead of replaying on restart',
   assert.equal(s.control.get(m.id).phase,'INTERRUPTED');
   assert.equal(s.control.get(m.id).status,'BLOCKED');
 });
+
+test('operator steering is durable, idempotent and never expands tools or the coding contract', t => {
+  const s=setup(t);
+  const m=s.control.create(goal);
+  const before=s.control.get(m.id);
+  const requestId='12345678-1234-1234-1234-123456789abc';
+  const first=s.control.steer(m.id,{instruction:'Inspect the configuration first, then continue',requestId});
+  assert.equal(first.replayed,false);
+  assert.equal(first.steering.authority,'context_only');
+  assert.ok(first.steering.revision>0);
+  const repeat=s.control.steer(m.id,{instruction:'Inspect the configuration first, then continue',requestId});
+  assert.equal(repeat.replayed,true);
+  assert.equal(repeat.steering.revision,first.steering.revision);
+  assert.deepEqual(s.control.get(m.id).allowedTasks,before.allowedTasks);
+  assert.equal(s.control.get(m.id).goal,before.goal);
+  assert.throws(()=>s.control.steer(m.id,{instruction:' ',requestId:'22222222-2222-2222-2222-222222222222'}),/INSTRUCTION_INVALID/);
+  s.reopen();
+  assert.equal(s.control.get(m.id).steering.revision,first.steering.revision);
+  assert.match(s.control.get(m.id).steering.instruction,/configuration first/);
+});
+
+test('a new operator direction invalidates stale planning before any action can start',async t=>{
+  const s=setup(t);
+  const m=await s.client.create(goal);
+  let executed=0,revision=0;
+  const result=await processMissionTurn({client:s.client,owner:'nova',
+    plan:async({mission})=>{
+      assert.equal(mission.steering,null);
+      revision=s.control.steer(m.id,{instruction:'First inspect current status',requestId:'33333333-3333-3333-3333-333333333333'}).steering.revision;
+      return {task};
+    },
+    execute:async()=>{executed++;return {ok:true};},
+  });
+  assert.equal(result.steeringUpdated,true);
+  assert.equal(executed,0);
+  assert.equal(s.control.get(m.id).status,'ACTIVE');
+  assert.equal(s.control.get(m.id).phase,'READY');
+  assert.equal(s.control.get(m.id).failures,0);
+  const next=await processMissionTurn({client:s.client,owner:'nova',plan:async({mission})=>{
+    assert.equal(mission.steering.revision,revision);
+    return {task};
+  },execute:async()=>{executed++;return {ok:true};}});
+  assert.equal(next.executed,true);
+  assert.equal(executed,1);
+});
+
+test('steering while a tool executes waits for its receipt and rejects stale completion',t=>{
+  const s=setup(t);const m=s.control.create(goal);
+  const {token}=s.control.claim(m.id,'nova');const lease={owner:'nova',token};
+  const action=s.control.begin(m.id,{...lease,task});
+  const update=s.control.steer(m.id,{instruction:'Prefer reading the configuration',requestId:'44444444-4444-4444-4444-444444444444'});
+  assert.equal(s.control.get(m.id).phase,'EXECUTING');
+  const done=s.control.finish(m.id,{...lease,actionId:action.id,receipt:{ok:true,verified:true}});
+  assert.equal(done.status,'ACTIVE');
+  assert.equal(done.receipts.length,1);
+  assert.equal(done.steering.revision,update.steering.revision);
+  const next=s.control.claim(m.id,'nova');
+  assert.throws(()=>s.control.release(m.id,{owner:'nova',token:next.token,steerVersion:0,completionProposed:true,completionReason:'old plan'}),/NOVA_STEER_STALE/);
+  s.control.release(m.id,{owner:'nova',token:next.token});
+  assert.equal(s.control.get(m.id).status,'ACTIVE');
+});
