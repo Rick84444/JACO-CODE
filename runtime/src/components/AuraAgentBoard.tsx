@@ -143,7 +143,7 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
           {snapshot && !snapshot.aura && <p className="text-xs text-amber-300">The installed runtime version does not yet report Aura's function status.</p>}
           {!snapshot && <p className="text-xs text-slate-400">Fetching observed function status…</p>}
         </section>
-        <p className="text-xs text-slate-500">SEER, Nova and Workplace are still internal runtime services. They have not been merged into one OS process. Earlier missions and receipts remain under Missions and results.</p>
+        <p className="text-xs text-slate-500">Aura owns strategy and execution. The underlying services still run separately for durability and compatibility; mission history and receipts remain under Missions and results.</p>
       </div> : view==='cycles' ? <AutonomousCyclesPanel /> : view==='network' ? <AgentConstellation network={snapshot?.network || null} error={error} memory={snapshot?.memory || []}
         onSelectMission={id=>{setSelectedId(id);setView('missions');}}/> : <div className="flex-1 min-h-0 overflow-auto">
         <details className="p-3 border-b border-[#123047]" aria-label="Technical Workplace sessions">
@@ -200,7 +200,7 @@ export function AuraAgentBoard({ snapshot, error, goal, onGoalChange, onStartGoa
           {selected.blocker && <p className="text-amber-300 mt-2">Blocker: {selected.blocker}</p>}
           <p className="mt-3 text-slate-400">Machine gate: {selected.contractStatus ? selected.contractStatus.machineVerified ? 'Satisfied per contract check' : `Missing: ${selected.contractStatus.missing.join(', ')}` : 'No code contract check observed'}</p>
           {selected.preflight && <p className="mt-2">Preflight: {selected.preflight.status} · {time(selected.preflight.at)} · {selected.preflight.knowledgeRecords} prior lessons{selected.preflight.blockers.length ? ` · Blockers: ${selected.preflight.blockers.join(', ')}` : ''}</p>}
-          {selected.replanRequest && <div className="mt-2 text-amber-200"><p>Replan requested from SEER: {selected.replanRequest.reason}</p>{selected.replanRequest.subgoals.length > 0 && <ol className="list-decimal pl-5 mt-1">{selected.replanRequest.subgoals.map((s,i)=><li key={i}><strong>{s.title}</strong> — {s.objective}</li>)}</ol>}<p className="text-slate-400 mt-1">The request is saved. Execution and verification are reported in the missions' own receipts.</p></div>}
+          {selected.replanRequest && <div className="mt-2 text-amber-200"><p>Replan requested from Aura strategy: {selected.replanRequest.reason}</p>{selected.replanRequest.subgoals.length > 0 && <ol className="list-decimal pl-5 mt-1">{selected.replanRequest.subgoals.map((s,i)=><li key={i}><strong>{s.title}</strong> — {s.objective}</li>)}</ol>}<p className="text-slate-400 mt-1">The request is saved. Execution and verification are reported in the missions' own receipts.</p></div>}
           {selected.execution && <p className="mt-2">Latest saved receipts: {selected.execution.verifiedActions} verified steps · Failed: {selected.execution.failedActions} · Remaining: {selected.execution.remaining.join(', ') || 'No missing machine gates'}</p>}
           {selected.execution?.recovery && <p className="mt-2 text-amber-300">Recovery: {selected.execution.recovery.code} · {selected.execution.recovery.next}</p>}
           <p className="mt-2 text-slate-500">Verified tool steps and HTTP status do not by themselves prove the main goal is met.</p>
