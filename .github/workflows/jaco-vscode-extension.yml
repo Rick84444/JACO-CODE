@@ -102,4 +102,4 @@ jobs:
         run: |
           test -f ../../jaco-cognitive-ide.vsix
           unzip -t ../../jaco-cognitive-ide.vsix
-          npx --yes @vscode/vsce@4.0.2 publish --oidc --no-dependencies
+          npx --yes @vscode/vsce@4.0.0 publish --oidc --no-dependencies

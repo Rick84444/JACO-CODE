@@ -42,7 +42,7 @@ Run `node --test extensions/jaco-vscode/test/*.test.cjs tests/nova/jaco-vscode-e
 
 ## Marketplace release (OIDC)
 
-GitHub Actions workflow: `.github/workflows/jaco-vscode-extension.yml`. The `publish-marketplace` job runs only on `main`, after `build-vsix` succeeds. Automatic publishing requires a change in `extensions/jaco-vscode/package.json` version. Manual publishing requires the `workflow_dispatch` input `publish=true`. The job uses `@vscode/vsce@4.0.2 publish --oidc` and `id-token: write`; no PAT is stored in the workflow.
+GitHub Actions workflow: `.github/workflows/jaco-vscode-extension.yml`. The `publish-marketplace` job runs only on `main`, after `build-vsix` succeeds. Automatic publishing requires a change in `extensions/jaco-vscode/package.json` version. Manual publishing requires the `workflow_dispatch` input `publish=true`. The job uses the published `@vscode/vsce@4.0.0 publish --oidc` and `id-token: write`; no PAT is stored in the workflow.
 
 Create the matching policy on the existing Visual Studio Marketplace publisher **jacocode** under Trusted Publishing:
 
