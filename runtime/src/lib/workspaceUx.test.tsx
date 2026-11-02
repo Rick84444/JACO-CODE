@@ -6,10 +6,22 @@ import { UiLanguageProvider } from '../i18n/UiLanguage';
 import { ActivationCard } from '../components/ActivationCard';
 import { CognitiveWorkspace } from '../components/CognitiveWorkspace';
 import { AuraChatPanel } from '../components/AuraChatPanel';
+import { AuraOrganizationPanel } from '../components/AuraOrganizationPanel';
 
 const renderToStaticMarkup = (node: React.ReactNode) => renderMarkup(<UiLanguageProvider initialLanguage="sv">{node}</UiLanguageProvider>);
 const noop = () => {};
 const activationProps = {onOpenProject:noop,onOpenProviders:noop,projectName:'My project'};
+
+test('organization follows the global English/Swedish language selector', () => {
+  const english=renderMarkup(<UiLanguageProvider initialLanguage="en"><AuraOrganizationPanel /></UiLanguageProvider>);
+  const swedish=renderMarkup(<UiLanguageProvider initialLanguage="sv"><AuraOrganizationPanel /></UiLanguageProvider>);
+  assert.match(english,/Agent Organization/);
+  assert.match(english,/Operator approval credential/);
+  assert.doesNotMatch(english,/Operatörens godkännandenyckel/);
+  assert.match(swedish,/Agentorganisation/);
+  assert.match(swedish,/Operatörens godkännandenyckel/);
+  assert.doesNotMatch(swedish,/Operator approval credential/);
+});
 
 test('a failed initial status request offers retry without a permanent loading state', () => {
   const html=renderToStaticMarkup(<ActivationCard {...activationProps} activation={{report:null,loading:false,starting:false,error:'offline',read:async()=>{}}}/>);
