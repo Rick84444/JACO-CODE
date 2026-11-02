@@ -1,7 +1,9 @@
 // Opt-in, loopback-only framing exception for the existing JACO GUI inside a VS Code Webview.
 // Never relax '/' or any other route: production forbids all framing by default.
 export const VSCODE_EMBED_PATH = '/vscode-embed';
-export const VSCODE_FRAME_ANCESTORS = "frame-ancestors https://*.vscode-webview.net vscode-webview:";
+// Chromium evaluates the *entire* ancestor chain: the JACO iframe is inside a VS Code webview,
+// which itself is nested under the desktop workbench origin vscode-file://vscode-app.
+export const VSCODE_FRAME_ANCESTORS = "frame-ancestors https://*.vscode-webview.net vscode-webview: vscode-file://vscode-app";
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 export function vscodeEmbedAllowed(req, env = process.env) {
