@@ -1310,6 +1310,7 @@ export function compactMissionForBrain(mission = {}) {
       mainGoal: parent.mainGoal, dependencies: parent.dependencies,
       ...(parent.agent ? {agent:parent.agent} : {}) } : null, turn: mission.turn, failures: mission.failures,
     allowedTasks: mission.allowedTasks, contract, contractStatus: mission.contractStatus,
+    ...(mission.steering ? { steering: mission.steering } : {}),
     ...(mission.answerReview ? { answerReview: mission.answerReview } : {}),
     receiptsTotal: receipts.length,
     openFiles: openFilesForBrain(receipts),
