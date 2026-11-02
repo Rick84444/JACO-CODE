@@ -99,8 +99,8 @@ test('Aura setup guidance requires consent, keeps secrets out of generic tools a
   assert.match(system,/outside the model context, chat history/);
   assert.match(system,/Sign-in, passwords, MFA and CAPTCHA are done by the operator/);
   assert.match(system,/A question or an offer is not a completed mission/);
-  assert.match(system,/start_goal enbart när operatören beställt arbetet/);
-  assert.match(system,/Manual\/Planning är alltid läsande/);
+  assert.match(system,/start_goal only when the operator ordered the work/);
+  assert.match(system,/Manual\/Planning are always read-only/);
   assert.match(system,/Never promise that a larger model will be faster/);
 });
 
