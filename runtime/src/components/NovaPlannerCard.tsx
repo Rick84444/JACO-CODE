@@ -1,7 +1,7 @@
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import React, { useEffect, useState } from 'react';
 
-// Operator switch for Nova's planner model (GET/POST /api/nova/planner). Nova reads the choice on its
+// Aura's execution planner model switch (legacy transport: GET/POST /api/nova/planner). The existing runtime reads the choice on its
 // next planning turn; "Test" makes one small real call so the model is seen answering before a switch.
 interface PlannerOption { provider: string; label: string; paid: boolean; models: string[]; keyConfigured: boolean; usable: boolean }
 interface PlannerState { choice: { provider: string; model: string; by: string; at: string } | null; choices: PlannerOption[]; paidUsdPerDay: number }
@@ -58,7 +58,7 @@ export const NovaPlannerCard: React.FC = () => {
         </span>
       </div>
       <select
-        aria-label="Nova planning model" disabled={!state || busy !== null}
+        aria-label="Aura planning model" disabled={!state || busy !== null}
         value={selected}
         onChange={e => { setSelected(e.target.value); setTest(null); }}
         className="w-full bg-[#111] border border-[#333] rounded px-2 py-1.5 text-xs outline-none"
@@ -88,7 +88,7 @@ export const NovaPlannerCard: React.FC = () => {
           disabled={busy !== null || !state || selected === current}
           className="flex-1 text-[10px] border border-cyan-700 text-cyan-200 px-2 py-1 rounded hover:bg-cyan-950 disabled:opacity-40"
         >
-          {busy === 'save' ? 'Saving…' : 'Use for Nova'}
+          {busy === 'save' ? 'Saving…' : 'Use for Aura'}
         </button>
       </div>
       {test && (
