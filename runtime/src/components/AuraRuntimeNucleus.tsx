@@ -60,7 +60,7 @@ export const AuraRuntimeNucleus: React.FC<AuraRuntimeNucleusProps> = ({
       pending,
       nodes: [
         { id: 'workplace', label: 'WORKPLACE', state: workplace?.reachable ? 'OBSERVED' : 'UNOBSERVED' as RailState, detail: workplace?.reachable ? workplace.status : 'not observed' },
-        { id: 'seer', label: 'SEER', state: seer?.phase ? 'OBSERVED' : 'UNOBSERVED' as RailState, detail: seer?.phase || 'not observed' },
+        { id: 'seer', label: 'STRATEGY', state: seer?.phase ? 'OBSERVED' : 'UNOBSERVED' as RailState, detail: seer?.phase || 'not observed' },
         { id: 'mission', label: 'MISSION', state: pending > 0 ? 'AWAITING_REVIEW' : missionObserved ? 'OBSERVED' : 'UNOBSERVED' as RailState, detail: pending > 0 ? `${pending} approval(s) waiting` : missionState || 'no mission' },
         { id: 'tools', label: 'TOOL FABRIC', state: observedMcp.length ? 'OBSERVED' : 'UNOBSERVED' as RailState, detail: observedMcp.length ? observedMcp.map(provider => provider.name).join(', ') : 'no MCP runtime observed' },
         { id: 'evidence', label: 'EVIDENCE', state: verifiedReceipts ? 'VERIFIED' : 'UNOBSERVED' as RailState, detail: verifiedReceipts ? `${verifiedReceipts} verified receipt(s)${mission?.id ? '' : ' (latest mission)'}` : 'no verified receipt observed' },
@@ -77,7 +77,9 @@ export const AuraRuntimeNucleus: React.FC<AuraRuntimeNucleusProps> = ({
 
   const activePaths = view.nodes.filter(node => node.state !== 'UNOBSERVED').length;
   const currentPhase = String(mission?.phase || mission?.status || seer?.phase || 'IDLE').toUpperCase();
-  const currentActor = seer?.activeModule || (mission?.id ? 'NOVA MISSION' : 'JACO');
+  const currentActor = seer?.activeModule === 'SEER' ? 'AURA · STRATEGY'
+    : seer?.activeModule === 'Nova' ? 'AURA · EXECUTION'
+    : seer?.activeModule || (mission?.id ? 'AURA · EXECUTION' : 'AURA');
 
   return (
     <section
