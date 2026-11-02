@@ -193,7 +193,6 @@ test('a connected provider and any model it serves can be chosen; a fixed one is
   assert.throws(() => _validate({ provider: 'nope', model: 'm' }, env, EXTRA), /PLANNER_PROVIDER_UNKNOWN/);
 });
 
-const { setConnectedProvidersForTest } = await import('../../agents/hands-off-agent.mjs');
 test('Nova plans with the operator\'s chosen connected provider, which is not in its fixed chain', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pc-'));
   const file = path.join(dir, 'provider-preference.json');
