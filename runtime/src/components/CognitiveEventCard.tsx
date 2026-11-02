@@ -10,7 +10,7 @@ const labelByLocale={
 const icons:Record<string,React.ElementType>={goal:Target,action:Play,observation:Search,plan:GitBranch,decision:GitBranch,blocked:CircleAlert,result:Check,verification:ShieldCheck,recovered:Check};
 export const CognitiveEventCard:React.FC<{event:CognitiveEvent;onInspect?:(event:CognitiveEvent)=>void;onOpenFile?:(path:string)=>void}> = ({event,onInspect,onOpenFile}) => {
   const {language,tr}=useUiLanguage();
-  const labels=labelByLocale[language];
+  const labels: Record<string,string> = labelByLocale[language];
   const evidence=event.evidence;
   const Icon=evidence.outcome==='failed'?X:evidence.outcome==='unknown'?CircleHelp:icons[event.category] || Search;
   const file=evidence.path && !/^(\/|[a-z]:)|(^|\/)\.\.(\/|$)/i.test(evidence.path) ? evidence.path : null;
@@ -31,7 +31,7 @@ export const CognitiveEventCard:React.FC<{event:CognitiveEvent;onInspect?:(event
 
 export function CognitiveEvidence({events,selected,onSelect,onOpenFile}:{events:CognitiveEvent[];selected?:CognitiveEvent|null;onSelect:(event:CognitiveEvent)=>void;onOpenFile:(path:string)=>void}) {
   const {language,tr}=useUiLanguage();
-  const labels=labelByLocale[language];
+  const labels: Record<string,string> = labelByLocale[language];
   const results=events.filter(e=>['result','verification','blocked'].includes(e.category));
   const verified=results.filter(e=>e.evidence.outcome==='verified').length;
   return <div className="cognitive-evidence">
