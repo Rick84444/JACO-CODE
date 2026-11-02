@@ -108,7 +108,8 @@ async function runMissionTurn({ client, owner, plan, execute, observe = async ()
       // one it doesn't have the capability to do. Surface that reason directly instead of letting
       // it look like a generic planning failure, so a human reviewing a BLOCKED mission sees why.
       const reason = String(proposal.reason || '').slice(0, 500) || 'no allowedTasks capability matches mission.goal';
-      await client.release(mission.id, { ...lease, steerVersion, error: `PLANNER_BLOCKED:${reason}` }).catch(() => {});
+      try { await client.release(mission.id, { ...lease, steerVersion, error: `PLANNER_BLOCKED:${reason}` }); }
+      catch (error) { if (error.message === 'NOVA_STEER_STALE') throw error; }
       return { executed: false, blocked: true, reason };
     }
     if (proposal?.deferred === true) {
