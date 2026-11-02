@@ -1,0 +1,35 @@
+# Aura Chat: Manual, Planning, Full Autonomous and Build Agent
+
+This is **one** JACO GUI inside the browser and the VS Code full-GUI extension. No second agent, planner, permission registry or model process was created.
+
+## Operator experience
+
+The composer displays **only the selected execution mode**. Clicking its text opens a small inline choice between:
+
+| Mode | Dispatch | Changes and tools |
+|---|---|---|
+| **Manual** (default) | `POST /api/aura/chat` with `interactionMode:question` | Read-only cognitive conversation; never creates a mission |
+| **Planning** | `POST /api/aura/chat` with `interactionMode:planning` | Read-only tools and verified knowledge/skill metadata, no new mission, no policy update |
+| **Full Autonomous** | `POST /api/aura/workbench/start-goal` with `executionMode:autonomous` | The **existing** SEER/Nova durable mission and current approvals/budgets/mission mandates. No capability elevation |
+
+The active Full Autonomous label glows/pulses softly blue and respects `prefers-reduced-motion`. Selecting a mode never starts work; pressing Send is the explicit dispatch. No `window.confirm` popup appears merely for switching modes. After a successfully submitted mission the composer returns to Manual. Full Autonomous is **not** restored from browser storage on reload.
+
+Clicking **Build Agent** opens a compact form inside the conversation. Typing `build agent` in the Manual/Planning composer does the same. Name, role, responsibility, success criteria and an operator credential are supplied to the **existing** `POST /api/aura/organization/agents`. A successful record is under Aura, with `L1`, no permissions, no paid model budget, no started worker and no invented communication identity. Its token is only held in component memory, not localStorage. No autonomous model output can bypass the operator-authenticated endpoint by claiming to be the operator.
+
+## Knowledge and Skills
+
+For each chat turn, the backend uses existing **Continuum KnowledgeStore** and **Skill Runtime** to retrieve compact candidates. Only evidence-backed `verificationStatus: VERIFIED` knowledge and `status: ACTIVE` skills are included in this optional, read-only context. Invalid/stale facts, candidate/retired skills and unavailable catalogs yield no fabricated matches.
+
+The composer can show small live counts for matching verified knowledge and eligible skill candidates. Full details remain in existing Skills/Knowledge views; we do not create another modal or catalog.
+
+**Critical:** discovery is not activation permission. Every skill proposal is explicitly tagged `DISCOVERED_NOT_AUTHORIZED`. Running a skill's procedure requires the current mission, operator-approved scope, per-step tool permission, budget and approval constraints. This PR does **not** claim that `AgentOrganization.decide()` is wired into every Nova and Skill Runtime execution step; that enforcement is the next hardening task. A chat mode cannot override an existing deny.
+
+## Acceptance
+
+- Invalid interaction modes yield HTTP 400, instead of silently changing a command into ordinary chat.
+- Manual/Planning use only the read-oriented toolbox; Planning does not include the previously available policy-change exception.
+- Full Autonomous creates a durable canonical mission, never a second in-GUI executor, and returns a real acknowledged ID.
+- The default remains Manual on every new session; one single selected-mode label and a subtle pulse in Full Autonomous.
+- Build Agent stays within the existing operator-key route; no API key is sent to an LLM, no auto-grant.
+- Knowledge must have verified evidence; skill candidates must be ACTIVE, with **no** execution authority inferred.
+- Pass contract/unit tests, TypeScript, production frontend/backend build, and target-host browser interaction. CI does not by itself prove local Windows/Termux or VS Code behavior.

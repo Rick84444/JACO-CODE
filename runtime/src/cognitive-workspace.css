@@ -108,6 +108,21 @@
 .cognitive-compose-modes { display:flex; gap:3px; border-radius:7px; padding:2px; background:#080e1480; }
 .cognitive-compose-modes button { display:flex; align-items:center; gap:5px; padding:5px 9px; border-radius:5px; font-size:12px; color:#a7bbc9; }
 .cognitive-compose-modes button[aria-pressed=true] { background:#1c2e3b; color:#b5d6e3; }
+/* Show one compact mode label; autonomous is a quiet, motion-safe blue glow. */
+.cognitive-compose-modes button.jaco-autonomous-active {
+  color:#84caff;
+  background:transparent;
+  text-shadow:0 0 5px rgba(57,150,245,.30);
+  animation:jaco-autonomous-pulse 3.6s ease-in-out infinite;
+}
+@keyframes jaco-autonomous-pulse {
+  0%,100% { color:#81baf0; text-shadow:0 0 4px rgba(57,150,245,.22); }
+  50% { color:#bee5ff; text-shadow:0 0 10px rgba(57,150,245,.55); }
+}
+@media (prefers-reduced-motion:reduce) {
+  .cognitive-compose-modes button.jaco-autonomous-active { animation:none; }
+}
+
 .cognitive-enter-hint { font-size:11px; color:#a0b7c8; margin-left:auto; }
 .cognitive-send-button { margin-left:auto; width:44px; height:44px; display:flex; align-items:center; justify-content:center; border-radius:9px; background:#78d4e1; color:#0d212b; }
 .cognitive-send-button:hover { background:#a1e7ed; }

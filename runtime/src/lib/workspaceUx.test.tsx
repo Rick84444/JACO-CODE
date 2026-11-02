@@ -42,7 +42,10 @@ test('chat exposes response cancellation separately from the running mission', (
   assert.match(html,/Avbryt svar/);
   assert.match(html,/aria-label="Väntetid"/);
   assert.match(html,/Setup action/);
-  assert.match(html,/aria-pressed="true"[^>]*>[\s\S]*?Uppdrag/);
+  assert.match(html,/data-testid="jaco-run-mode-toggle"/);
+  assert.match(html,/Manual/);
+  assert.doesNotMatch(html,/jaco-autonomous-active/);
+  assert.match(html,/jaco-build-agent-toggle/);
 });
 
 test('agent constellation exposes real relationships and missing planning without inventing agents', async () => {
