@@ -1,8 +1,27 @@
-# Aura harness: one operator model, existing execution owners
+# Aura harness: one agent, internal strategy and execution runtimes
 
-This increment unifies **model selection**, not process ownership. Aura is the
-single operator-facing identity; the SEER strategic planner and the Nova local
-executor retain their durable mission, lease, tool and evidence responsibilities.
+**Aura is the only primary agent identity.** Her strategy and execution
+capabilities remain separate internal runtimes for isolation and recovery,
+not competing agent personas, independent agent cards or separate operator
+conversation targets. No new scheduler, database or agent process is created.
+
+The legacy `gateway/src/seer.mjs` service maintains the existing mission graph,
+beliefs, checkpoints and strategic API for compatibility, but it no longer
+registers `seer` in Workplace or as its own agent registry identity.
+Dispatch uses authenticated **read-only Workplace discovery** and ignores any
+historical SEER sessions. The executor's legacy `stableId=nova` remains unchanged
+so saved leases and Workplace identities are not orphaned; its agent card is
+presented as **Aura**. The operator agent constellation has one Aura root
+and models old SEER/Nova services as internal capabilities.
+
+Legacy `SEER_GOVERNOR_INTERVAL_MS` is now **off by default**, including the
+installation example. The event-triggered development cycle also refuses
+independent LLM governor turns while disabled. The ordinary operator-initiated
+Aura mission graph and existing tool/verification flow are unaffected.
+Advanced deployments can explicitly opt into the legacy governor, but
+doing so is not the recommended single-agent mode. Existing process/service
+names and compatible `/cortex/*` endpoints are migration internals, not
+user-visible agent identities.
 
 ## End-to-end selection
 
