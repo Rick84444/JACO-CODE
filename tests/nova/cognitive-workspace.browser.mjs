@@ -197,7 +197,7 @@ try {
 
   await canvas('Spelplan').click();
   await page.locator('section[aria-label="Gemensam spelplan"]').waitFor();
-  await page.getByText('SEER: UNAVAILABLE').waitFor();
+  await page.getByText('Auras strategi: UNAVAILABLE').waitFor();
   await page.locator('section[aria-label="Gemensam spelplan"] input[list="gameboard-tools"]').first().fill('mcp:git:git_status');
   await page.getByRole('button',{name:'Simulera utan exekvering'}).click();
   await page.getByText('Verkställt: nej', {exact:false}).waitFor();
