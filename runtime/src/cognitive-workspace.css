@@ -647,3 +647,32 @@
 .aura-activity li[data-outcome=verified] .aura-activity-dot{background:#58e3a9}
 .aura-activity li[data-outcome=failed] .aura-activity-dot{background:#da6f71}
 .aura-activity li[data-outcome=unknown] .aura-activity-dot,.aura-activity li[data-outcome=unverified] .aura-activity-dot{background:#e4ad66}
+/* The answer is what the operator came for: the chat keeps the height, and its scrollbar can be seen and grabbed. */
+.cognitive-chat-scroll { scrollbar-width:auto; scrollbar-color:#4d6a7d transparent; }
+.cognitive-workspace .cognitive-chat-scroll::-webkit-scrollbar { width:12px; }
+.cognitive-workspace .cognitive-chat-scroll::-webkit-scrollbar-thumb { background:#4d6a7d; border:2px solid transparent; background-clip:padding-box; border-radius:8px; }
+.cognitive-workspace .cognitive-chat-scroll::-webkit-scrollbar-thumb:hover { background:#7096ad; border:2px solid transparent; background-clip:padding-box; }
+@media(min-width:761px) {
+  .cognitive-contextbar { min-height:40px; padding-top:3px; padding-bottom:3px; }
+  .cognitive-chat-heading { min-height:32px; padding:5px 24px; }
+  .cognitive-chat-scroll,.cognitive-main[data-canvas=true] .cognitive-chat-scroll { padding:8px 20px 12px 24px; }
+  .cognitive-composer,.cognitive-main[data-canvas=true] .cognitive-composer { padding:4px 20px 8px; }
+  .cognitive-live-questions { margin:2px 2px 4px; }
+  .cognitive-input-box textarea { min-height:44px; line-height:1.6; }
+  .cognitive-input-actions { padding:2px 10px 6px; }
+  .cognitive-send-button { width:36px; height:36px; }
+  .cognitive-attachments { margin-top:4px; }
+  .cognitive-attachments button { min-height:28px; padding:2px 10px; font-size:12px; }
+}
+/* On a short window every line counts; the mode explanation stays in the mode picker. */
+@media(min-width:761px) and (max-height:900px) {
+  .cognitive-composer-help { display:none; }
+}
+.cognitive-workspace .cognitive-chat-scroll::-webkit-scrollbar-thumb { min-height:56px; }
+.cognitive-long-message { max-height:12em; overflow:hidden; -webkit-mask-image:linear-gradient(#000 70%,transparent); mask-image:linear-gradient(#000 70%,transparent); }
+.cognitive-long-message-toggle,.cognitive-feed-older { display:block; min-height:32px; font-size:12px; color:#8edce8; }
+.cognitive-long-message-toggle:hover,.cognitive-feed-older:hover { color:#c0f1f5; }
+.cognitive-feed-older { margin:0 auto 12px; padding:4px 12px; border:1px solid #30414f; border-radius:8px; }
+.cognitive-mission-row { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; margin:0 2px 4px; }
+.cognitive-mission-row:empty { display:none; }
+.cognitive-mission-row .cognitive-live-questions { margin:0; flex:1; min-width:0; }
