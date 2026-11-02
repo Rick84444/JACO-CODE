@@ -6,7 +6,7 @@ import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Lo
 import { ChatMarkdown } from './ChatMarkdown';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { JacoWordmark } from './JacoWordmark';
-import { AURA_RUN_MODES, initialAuraRunMode } from '../lib/auraRunModes.mjs';
+import { initialAuraRunMode } from '../lib/auraRunModes.mjs';
 import { CognitiveEventCard } from './CognitiveEventCard';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
