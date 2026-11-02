@@ -36,6 +36,7 @@ export function introMessage(mission, extra = {}) {
     `Mission goal (the operator's instruction): ${mission.goal}`,
     `Mission id: ${mission.id}. Now: ${new Date().toISOString()}.`,
     `Allowed tools: ${(mission.allowedTasks || []).join(', ') || 'see the function list'}.`,
+    ...(mission.steering ? [`Latest operator direction (revision ${mission.steering.revision}; within the existing mission contract only): ${clip(mission.steering.instruction, 2000)}`] : []),
     ...(mission.receipts?.length ? [`Steps already done in earlier runs (newest last): ${clip(mission.receipts.slice(-8).map((r, i) => ({ n: i + 1, type: r.type, input: r.input, ok: r.ok, error: r.error || undefined })), 3000)}`] : []),
     // The agent's home (notes and memory) is allowed more room than the other extras.
     ...Object.entries(extra).filter(([, v]) => v != null).map(([k, v]) => `${k}: ${clip(v, /^Your home/.test(k) ? 16000 : 4000)}`),
@@ -80,6 +81,8 @@ export async function runAgentMission({
   const messages = [{ role: 'system', content: typeof system === 'function' ? system(mission) : system }, { role: 'user', content: await intro(mission) }];
   const receipts = [];
   let steps = 0, modelErrors = 0, idle = 0, turns = 0;
+  let modelSteerVersion = mission.steering?.revision || 0;
+  let presentedSteerVersion = modelSteerVersion;
 
   // A short lease for the parts that are not a tool step (finishing, blocking).
   const withLease = async fn => {
@@ -92,7 +95,7 @@ export async function runAgentMission({
     try {
       const { token } = await client.claim(mission.id, owner);
       lease = { owner, token };
-      await client.release(mission.id, { ...lease, completionProposed: true, completionReason: answer.slice(0, 4000) });
+      await client.release(mission.id, { ...lease, steerVersion: modelSteerVersion, completionProposed: true, completionReason: answer.slice(0, 4000) });
       return null;
     } catch (error) {
       if (lease) await client.release(mission.id, lease).catch(() => {});
@@ -100,14 +103,31 @@ export async function runAgentMission({
     }
   };
   const end = async (outcome, release) => {
-    try { await withLease(lease => client.release(mission.id, { ...lease, ...release })); }
-    catch (error) { log('warn', `release failed: ${errorText(error)}`); }
+    try { await withLease(lease => client.release(mission.id, { ...lease, steerVersion: modelSteerVersion, ...release })); }
+    catch (error) {
+      if (errorText(error).includes('NOVA_STEER_STALE')) {
+        // A later operator instruction supersedes this model proposal.
+        // Give back only the lease, without blocking or completing the mission.
+        try { await withLease(lease => client.release(mission.id, lease)); } catch {}
+        return { executed: receipts.length > 0, receipts, steps, steeringUpdated: true };
+      }
+      log('warn', `release failed: ${errorText(error)}`);
+    }
     return { executed: receipts.length > 0, receipts, steps, ...outcome };
   };
 
   try {
     // Steps bound the work; turns bound the conversation (refusals and retries do not count as steps).
     while (steps < maxSteps && turns++ < maxSteps * 2) {
+      // Check the durable operator input before every model turn. Never abort
+      // an already-executing tool, and do not start tools from a stale response.
+      mission = await client.get(mission.id);
+      if (mission.status !== 'ACTIVE' || mission.cancelRequested) return { executed: receipts.length > 0, receipts, steps, stopped: mission.status };
+      modelSteerVersion = mission.steering?.revision || 0;
+      if (modelSteerVersion !== presentedSteerVersion) {
+        messages.push({ role: 'user', content: `OPERATOR_DIRECTION_REVISION ${modelSteerVersion}: ${clip(mission.steering.instruction, 2000)}. Adjust the next step within existing allowed tools and acceptance. This does not grant permissions or rewrite the parent goal.` });
+        presentedSteerVersion = modelSteerVersion;
+      }
       await onActivity({ phase: 'PLANNING', missionId: mission.id });
       // Replace the retained mission packet; never accumulate duplicate board snapshots.
       if (refreshIntro && turns > 1) messages[1] = { role: 'user', content: await intro(mission) };
@@ -180,12 +200,17 @@ export async function runAgentMission({
         try {
           const claimed = await client.claim(mission.id, owner);
           lease = { owner, token: claimed.token };
-          begun = await client.begin(mission.id, { ...lease, task });
+          begun = await client.begin(mission.id, { ...lease, steerVersion: modelSteerVersion, task });
         } catch (error) {
           // Refused before anything ran (not allowed, invalid fields, needs approval): the model hears
           // why and the mission keeps its failure budget.
           if (lease) await client.release(mission.id, lease).catch(() => {});
           const refusal = errorText(error);
+          if (refusal.includes('NOVA_STEER_STALE')) {
+            reply_('SKIPPED: operator changed the mission after this model response. No new tool executed; refresh the current mission before planning.');
+            for (const rest of calls.slice(i + 1)) messages.push({ role: 'tool', tool_call_id: rest.id, content: 'SKIPPED: newer operator direction' });
+            break;
+          }
           if (/MISSION_(NOT_ACTIVE|TERMINAL)|NOT_FOUND/.test(refusal)) return { executed: receipts.length > 0, receipts, steps, stopped: refusal };
           reply_(`REFUSED by the runtime before running: ${refusal}. Nothing was executed. Choose another tool or fix the arguments.`);
           continue;
@@ -208,6 +233,10 @@ export async function runAgentMission({
         if (mission.status !== 'ACTIVE') {
           for (const rest of calls.slice(i + 1)) messages.push({ role: 'tool', tool_call_id: rest.id, content: `SKIPPED: mission is ${mission.status}` });
           return { executed: true, receipts, steps, mission, stopped: mission.status };
+        }
+        if ((mission.steering?.revision || 0) !== modelSteerVersion) {
+          for (const rest of calls.slice(i + 1)) messages.push({ role: 'tool', tool_call_id: rest.id, content: 'SKIPPED: operator changed direction during the previous action' });
+          break;
         }
       }
       if (nudge) {
