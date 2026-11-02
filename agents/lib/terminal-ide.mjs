@@ -166,6 +166,15 @@ export async function joinPairedDevice({ root, hub, code, spawnImpl = spawn }) {
 }
 
 function isValidDeviceName(name) { return /^[a-z][a-z0-9-]{1,39}$/.test(name); }
+export async function deviceRequest(client, verb, name) {
+  // The terminal's SDK client owns the active gateway identity. Do not invoke a helper
+  // that only reads a stale root .env (cloud-stack/Termux use different credential files).
+  if (verb === 'list') return client.request('/api/connected/devices');
+  if (verb === 'invite' && isValidDeviceName(name)) {
+    return client.request('/api/connected/devices/invite', { method: 'POST', body: { name } });
+  }
+  throw new Error('JACO_DEVICE_COMMAND_INVALID');
+}
 function printableResult(result) {
   if (typeof result?.response === 'string' && result.response.trim()) return result.response;
   return JSON.stringify(result, null, 2);
@@ -173,11 +182,12 @@ function printableResult(result) {
 export async function runTerminalIDE({
   project = process.cwd(), env = process.env, input = process.stdin, output = process.stdout,
   root = path.resolve(import.meta.dirname, '../..'), activate, runner = execFile,
+  resolveToken = () => env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', clientFactory = config => new JacoClient(config),
 } = {}) {
   const cwd = existingDir(project);
   const endpoint = safeRuntimeUrl(env.JACO_RUNTIME_URL || 'http://127.0.0.1:' + (env.PORT || 3000));
   const workplaceUrl = safeRuntimeUrl(env.JACO_WORKPLACE_URL || 'http://127.0.0.1:2995');
-  const client = new JacoClient({ endpoint, token: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', timeoutMs: 25000, retries: 0 });
+  let client;
   const write = line => output.write(String(line) + '\n');
   write('\nJACO  |  Terminal Cognitive IDE');
   write('Project: ' + cwd);
@@ -189,6 +199,8 @@ export async function runTerminalIDE({
       write(code === 0 ? 'Activation: runtime report completed.' : 'Activation: DEGRADED or BLOCKED; /status for details.');
     } catch (error) { write('Activation: FAILED — ' + short(error)); }
   }
+  // Startup may generate a new gateway token. Never capture credentials before activation.
+  client = clientFactory({ endpoint, token: resolveToken(), timeoutMs: 25000, retries: 0 });
   write(HELP);
   const rl = createInterface({ input, output, terminal: Boolean(input.isTTY), historySize: 0 });
   // Disable readline history: device pairing codes and user prompts are not retained.
@@ -253,8 +265,17 @@ export async function runTerminalIDE({
               if (command.verb === 'invite' && (command.args.length !== 1 || !isValidDeviceName(command.args[0]))) throw new Error('Usage: /devices invite <lowercase-name>');
               if (command.verb === 'list' && command.args.length) throw new Error('Usage: /devices list');
               if (command.verb === 'invite' && await ask('INVITE ' + command.args[0]) !== 'INVITE ' + command.args[0]) { write('Cancelled.'); break; }
-              const result = await runner(process.execPath, [path.join(root, 'tools', 'device.mjs'), command.verb, ...command.args], { cwd: root, windowsHide: true, timeout: 20000, maxBuffer: 128 * 1024 });
-              write(clean(result.stdout));
+              const data = await deviceRequest(client, command.verb, command.args[0]);
+              if (command.verb === 'list') {
+                const devices = Array.isArray(data.devices) ? data.devices : [];
+                if (!devices.length) write('No paired devices observed.');
+                for (const device of devices) write([device.name, device.executor, device.revokedAt ? 'revoked' : device.online ? 'online' : 'paired', device.lastSeenAt || 'never'].join('  |  '));
+              } else {
+                const invite = data.invite;
+                if (!invite?.code || !invite?.executor) throw new Error('DEVICE_PAIRING_RECEIPT_MISSING');
+                write('One-time pairing code for ' + invite.executor + ': ' + invite.code);
+                write('Expires at ' + invite.expiresAt + '. Enter it on the other device with /devices join <hub-url>.');
+              }
             }
             break;
           }
