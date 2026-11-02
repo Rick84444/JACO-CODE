@@ -59,11 +59,13 @@ function fixedPlannerChoices(env = process.env) {
   };
 }
 
-// Shared by the runtime (its working directory is JACO_RUNTIME_DIR) and Nova (which runs from the
-// main checkout and finds the runtime through JACO_RUNTIME_DIR in .env).
+// Core writes the operator's model selection under WORKSPACE_ROOT/.jaco/state.
+// An explicit cross-process path always wins; otherwise WORKSPACE_ROOT takes
+// precedence over the directory used to launch a Node runtime. This keeps the
+// same file visible from Core, SEER and the local executor on Windows/Termux.
 export function plannerChoiceFile(env = process.env) {
   if (env.JACO_PLANNER_CHOICE_FILE) return env.JACO_PLANNER_CHOICE_FILE;
-  return join(env.JACO_RUNTIME_DIR || env.JACO_WORKSPACE_ROOT || process.cwd(), '.jaco', 'state', 'provider-preference.json');
+  return join(env.JACO_WORKSPACE_ROOT || env.JACO_RUNTIME_DIR || process.cwd(), '.jaco', 'state', 'provider-preference.json');
 }
 
 // Provider listings mix chat models with speech, embedding, image and video models. Those cannot
