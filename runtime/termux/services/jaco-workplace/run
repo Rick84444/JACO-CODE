@@ -22,6 +22,14 @@ ENV_FILE="${JACO_RUNTIME_ENV:-$HOME/.config/jaco/runtime.env}"
 REPO_ROOT="$(cd "$JACO_ROOT/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Core writes the operator choice at WORKSPACE_ROOT/.jaco/state. Core's default
+# cwd is JACO_ROOT, but an explicitly configured workspace overrides that.
+# Workplace runs from REPO_ROOT: neither its cwd nor JACO_RUNTIME_DIR may
+# silently move the planner-choice file away from Core's actual location.
+if [ -z "${JACO_PLANNER_CHOICE_FILE:-}" ]; then
+  PLANNER_ROOT="${JACO_WORKSPACE_ROOT:-$JACO_ROOT}"
+  export JACO_PLANNER_CHOICE_FILE="$PLANNER_ROOT/.jaco/state/provider-preference.json"
+fi
 export JACO_WORKSPACE_ROOT="${JACO_WORKSPACE_ROOT:-$REPO_ROOT}"
 # Match Core's planner-choice location, independent of Workplace's cwd.
 export JACO_RUNTIME_DIR="${JACO_RUNTIME_DIR:-$JACO_ROOT}"
