@@ -207,13 +207,35 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     catch { return 'manual'; }
   });
   const [showModePicker,setShowModePicker]=useState(false);
+  const [showBuildAgent,setShowBuildAgent]=useState(false);
+  const [agentDraft,setAgentDraft]=useState({name:'',title:'',task:'',goal:''});
+  const [agentKey,setAgentKey]=useState('');
+  const [agentCreating,setAgentCreating]=useState(false);
+  const [agentMessage,setAgentMessage]=useState<string|null>(null);
+  const buildAgent = async () => {
+    if (agentCreating || !agentDraft.name.trim() || !agentKey.trim()) return;
+    setAgentCreating(true); setAgentMessage(null);
+    try {
+      const response=await fetch('/api/aura/organization/agents',{
+        method:'POST',cache:'no-store',credentials:'same-origin',
+        headers:{'Content-Type':'application/json','x-jaco-operator-token':agentKey},
+        body:JSON.stringify({
+          name:agentDraft.name.trim(),title:agentDraft.title.trim(),
+          task:agentDraft.task.trim(),goal:agentDraft.goal.trim(),
+          reportsTo:'aura',model:{kind:'local',providerId:'ollama',model:''},
+        }),
+      });
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok||data.success===false||!data.agent?.id)throw new Error(data.error||'AGENT_CREATE_NOT_CONFIRMED');
+      setAgentMessage(tr('Agent registrerad utan verktygsbehörigheter: ','Agent registered without tool permissions: ')+data.agent.id);
+      setAgentDraft({name:'',title:'',task:'',goal:''});setAgentKey('');
+    }catch(error:any){
+      setAgentMessage(tr('Kunde inte skapa agent: ','Could not create agent: ')+String(error?.message||error).slice(0,200));
+    }finally{setAgentCreating(false);}
+  };
   const composeMode = AURA_RUN_MODES[runMode].createsMission ? 'goal' : 'chat';
   const selectRunMode = (next:'manual'|'planning'|'autonomous') => {
     if (busy) return;
-    if (next === 'autonomous' && !window.confirm(tr(
-      'Full Autonomous startar ett riktigt uppdrag under JACO:s nuvarande mandat, godkännanden och budget. Ingen obegränsad datoråtkomst ges. Fortsätt?',
-      'Full Autonomous creates a real mission within JACO’s current permissions, approvals and budget. It does not grant unrestricted computer access. Continue?'
-    ))) return;
     setRunMode(next);
     setShowModePicker(false);
     try { localStorage.setItem('jaco:aura:run-mode:v1', next === 'autonomous' ? 'manual' : next); } catch {}
@@ -251,6 +273,10 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   const ask = async (retry?: string) => {
     const text = (retry ?? input).trim();
     if (!text || busy || uploading || !storageReady) return;
+    // Intentional local command: never send an agent-creation request to a model as authority.
+    if (retry === undefined && /^\/?build agent$/i.test(text)) {
+      setShowBuildAgent(true);setShowModePicker(false);setInput('');return;
+    }
     if (selectedProvider !== 'seer' && (!providers.some(p => p.id === selectedProvider) || !chatModel.trim())) {
       setCatalogError('Välj en registrerad provider och ange modell före anrop.');
       return;
@@ -559,6 +585,38 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               <button type="button" onClick={()=>setShowModePicker(false)} className="text-xs text-slate-400 hover:text-white">{tr('Stäng','Close')}</button>
             </section>
           )}
+          {showBuildAgent && (
+            <section data-testid="jaco-build-agent-panel" aria-label="Build Agent"
+              className="mb-2 rounded-lg border border-slate-700 bg-[#101923] p-3 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-cyan-200">Build Agent</span>
+                <button type="button" onClick={()=>setShowBuildAgent(false)} aria-label={tr('Stäng agentbyggaren','Close agent builder')} className="text-slate-400">×</button>
+              </div>
+              <p className="text-slate-400">{tr(
+                'Skapar en agent under Aura utan verktygsbehörigheter eller budget. Ingen agentprocess startas.',
+                'Registers an agent under Aura with zero tool permissions and budget. No worker starts.'
+              )}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <input aria-label="Agent name" placeholder="Agent name" maxLength={60} value={agentDraft.name}
+                  onChange={e=>setAgentDraft(x=>({...x,name:e.target.value}))} className="rounded bg-[#0c141d] border border-slate-700 p-2"/>
+                <input aria-label="Agent role" placeholder="Role" maxLength={60} value={agentDraft.title}
+                  onChange={e=>setAgentDraft(x=>({...x,title:e.target.value}))} className="rounded bg-[#0c141d] border border-slate-700 p-2"/>
+              </div>
+              <input aria-label="Agent task" placeholder="Task / area of responsibility" maxLength={2000} value={agentDraft.task}
+                onChange={e=>setAgentDraft(x=>({...x,task:e.target.value}))} className="w-full rounded bg-[#0c141d] border border-slate-700 p-2"/>
+              <input aria-label="Agent goal" placeholder="Success criteria" maxLength={2000} value={agentDraft.goal}
+                onChange={e=>setAgentDraft(x=>({...x,goal:e.target.value}))} className="w-full rounded bg-[#0c141d] border border-slate-700 p-2"/>
+              <input aria-label="Organization operator credential" type="password" autoComplete="off"
+                placeholder="JACO_ORG_OPERATOR_TOKEN (session only)" value={agentKey}
+                onChange={e=>setAgentKey(e.target.value)} className="w-full rounded bg-[#0c141d] border border-slate-700 p-2"/>
+              {agentMessage && <p role="status" className="text-slate-300">{agentMessage}</p>}
+              <button data-testid="jaco-build-agent-submit" type="button" onClick={()=>void buildAgent()}
+                disabled={agentCreating||!agentDraft.name.trim()||!agentKey.trim()}
+                className="border border-cyan-800 rounded px-3 py-1.5 text-cyan-200 disabled:opacity-40">
+                {agentCreating?tr('Skapar…','Creating…'):tr('Registrera agent','Register agent')}
+              </button>
+            </section>
+          )}
           <div className="cognitive-input-box">
             <textarea
               ref={inputRef}
@@ -592,12 +650,19 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             <div className="cognitive-input-actions">
               <div className="cognitive-compose-modes" role="group" aria-label={tr('Agentens körläge','Agent execution mode')}>
                 <button type="button" data-testid="jaco-run-mode-toggle" aria-haspopup="dialog" aria-expanded={showModePicker}
-                  onClick={()=>setShowModePicker(value=>!value)} disabled={Boolean(busy)}>
+                  data-run-mode={runMode}
+                  className={runMode==='autonomous'?'jaco-autonomous-active':''}
+                  onClick={()=>{setShowBuildAgent(false);setShowModePicker(value=>!value);}} disabled={Boolean(busy)}>
                   <Target size={12}/>
                   {runMode==='manual' ? 'Manual' : runMode==='planning' ? 'Planning' : 'Full Autonomous'}
                   <ChevronRight size={12}/>
                 </button>
               </div>
+              <button data-testid="jaco-build-agent-toggle" type="button"
+                className="text-[11px] text-slate-400 hover:text-cyan-300"
+                aria-expanded={showBuildAgent} onClick={()=>{setShowModePicker(false);setShowBuildAgent(v=>!v);}}>
+                <Bot size={12} className="inline mr-1"/>Build Agent
+              </button>
               <span className="cognitive-enter-hint">{tr('Shift + Enter för ny rad','Shift + Enter for new line')}</span>
               <button type="submit" aria-label={composeMode==='goal'?tr('Starta uppdrag','Start mission'):tr('Skicka meddelande','Send message')} title={composeMode==='goal'?tr('Starta uppdrag','Start mission'):tr('Skicka','Send')} disabled={!input.trim()||Boolean(busy)||uploading||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
             </div>
