@@ -87,7 +87,13 @@ export async function runAgentMission({
   // A short lease for the parts that are not a tool step (finishing, blocking).
   const withLease = async fn => {
     const { token } = await client.claim(mission.id, owner);
-    return fn({ owner, token });
+    const lease = { owner, token };
+    try { return await fn(lease); }
+    catch (error) {
+      // A rejected planning result must not strand a lease until timeout.
+      await client.release(mission.id, lease).catch(() => {});
+      throw error;
+    }
   };
   // null when the runtime accepted the proposed completion, else the reason it refused.
   const proposeCompletion = async answer => {
