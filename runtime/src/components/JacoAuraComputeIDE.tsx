@@ -1497,6 +1497,16 @@ export const JacoAuraComputeIDE: React.FC = () => {
     );
   };
 
+  const steerMission = async (id: string, instruction: string, requestId: string) => {
+    const result = await fetch(`/api/aura/workbench/missions/${encodeURIComponent(id)}/steer`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instruction, requestId }),
+    }).then(json);
+    if (!result?.steering?.revision || result.missionId !== id) throw new Error('STEER_ACKNOWLEDGEMENT_INVALID');
+    await refresh({ includeFiles: false });
+    return result;
+  };
+
   const cancelMission = async (id: string) => {
     await fetch(`/api/aura/workbench/missions/${encodeURIComponent(id)}/cancel`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
@@ -1527,6 +1537,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
             onActivated={() => { void refresh().catch(() => {}); }} />}
           missions={missions}
           onCancelMission={cancelMission}
+          onSteerMission={steerMission}
           onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
           activeFilePath={selectedFile}
           activeFileContent={fileView ? (drafts[fileView.path] ?? fileView.content) : null}
