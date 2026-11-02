@@ -86,7 +86,9 @@ test('Aura exposes one active chat surface and routes it through canonical SEER'
   assert.match(app,/<JacoAuraComputeIDE \/>/);
   assert.match(panel,/\/api\/aura\/chat/);
   assert.match(panel,/Starta uppdrag/);
-  assert.match(panel,/interactionMode: 'question'/);
+  assert.match(panel,/interactionMode: runMode === 'planning' \? 'planning' : 'question'/);
+  assert.match(panel,/initialAuraRunMode/);
+  assert.match(server,/normalizeAuraChatMode/);
   assert.match(server,/cognitiveQuestionToolbox/);
   assert.match(panel,/jaco:aura:prefill/);
 });
