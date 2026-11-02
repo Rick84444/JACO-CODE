@@ -525,7 +525,7 @@ export async function generateGeminiContentSafely(options: {
   model?: string;
   config?: any;
 }) {
-  if (!aiClient) throw new Error("Gemini API Client är inte initierad (GEMINI_API_KEY saknas).");
+  if (!aiClient) throw new Error("Gemini API Client is not initialized (GEMINI_API_KEY is missing).");
   const requested = options.model || "gemini-2.5-flash";
   const cascade = [
     requested,
@@ -554,7 +554,7 @@ export async function generateGeminiContentSafely(options: {
       throw err;
     }
   }
-  throw lastErr || new Error("Alla Gemini modeller i kaskaden misslyckades.");
+  throw lastErr || new Error("All Gemini models in the cascade failed.");
 }
 async function startServer() {
   const app = express();
@@ -627,12 +627,12 @@ function requireAuth(req: express.Request, res: express.Response, next: express.
   if (!GATEWAY_TOKEN) {
     const isDirectLocalhost = !isProxied && (clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "::ffff:127.0.0.1");
     if (!isDirectLocalhost) {
-       console.warn(`[AUTH FAIL] GATEWAY_TOKEN saknas för icke-lokalt/proxy-anrop från IP: ${clientIp}, Host: ${forwardedHost || req.headers.host}`);
+       console.warn(`[AUTH FAIL] GATEWAY_TOKEN missing for non-local/proxy request from IP: ${clientIp}, Host: ${forwardedHost || req.headers.host}`);
        return res.status(401).json({
          success: false,
          error: {
            code: "UNAUTHORIZED_GATEWAY_TOKEN_REQUIRED",
-           message: "GATEWAY_TOKEN krävs för extern eller proxy gateway-åtkomst."
+           message: "GATEWAY_TOKEN is required for external or proxy gateway access."
          }
        });
     }
@@ -641,12 +641,12 @@ function requireAuth(req: express.Request, res: express.Response, next: express.
 
   const token = req.headers['x-gateway-token'] || req.query.token;
   if (token !== GATEWAY_TOKEN) {
-    console.warn(`[AUTH FAIL] Ogiltigt GATEWAY_TOKEN från IP: ${clientIp}`);
+    console.warn(`[AUTH FAIL] Invalid GATEWAY_TOKEN from IP: ${clientIp}`);
     return res.status(401).json({
       success: false,
       error: {
         code: "UNAUTHORIZED_INVALID_TOKEN",
-        message: "Ogiltig eller saknad x-gateway-token autentisering."
+        message: "Invalid or missing x-gateway-token authentication."
       }
     });
   }
@@ -966,7 +966,7 @@ const notifyPhone = async (action) => {
           targetPath: action.targetFilePath || path.basename(safePath),
           beforeHash,
           afterHash,
-          diffSummary: `${action.newContent.split('\n').length} rader skrivna`,
+          diffSummary: `${action.newContent.split('\n').length} lines written`,
           verifiedAt: new Date().toISOString()
         };
 
@@ -1095,7 +1095,7 @@ const notifyPhone = async (action) => {
           stdout = resExec.stdout;
         }
       }
-      res.json({ success: true, processes: stdout.trim() || "Inga aktiva processer identifierades på värdsystemet." });
+      res.json({ success: true, processes: stdout.trim() || "No active processes were identified on the host system." });
     } catch (err: any) {
       console.warn("[PROCESS TELEMETRY] Process listing fallback activated:", err.message);
       res.json({
@@ -1124,7 +1124,7 @@ const notifyPhone = async (action) => {
   app.post("/api/a2a/skills/install", (req, res) => {
     const { id, name, version, description, code, authorNodeId, inputSchema, outputSchema, tags } = req.body;
     if (!id || !name || !code) {
-      return res.status(400).json({ success: false, error: "id, name och code krävs för att installera skill." });
+      return res.status(400).json({ success: false, error: "id, name and code are required to install a skill." });
     }
     const result = installSkillPackage({
       id,
@@ -1664,7 +1664,7 @@ const notifyPhone = async (action) => {
         title: action.label || action.id,
         status: 'REVIEW',
         risk: 'MEDIUM',
-        reason: 'JACO vill köra ett lokalt kommando eller ändra en fil. Kontrollera åtgärden innan du godkänner.',
+        reason: 'JACO wants to run a local command or change a file. Check the action before you approve.',
         createdAt: action.createdAt || null,
         actions: ['approve','reject'],
         details: action.type === 'terminal_exec'
@@ -1681,7 +1681,7 @@ const notifyPhone = async (action) => {
         title: source.manifest.packageName || source.repoUrl,
         status: 'REVIEW',
         risk: 'HIGH',
-        reason: 'Ett nytt verktyg har hämtats från Git. Kontrollera källan innan du tillåter att dess kod körs.',
+        reason: 'A new tool has been fetched from Git. Check the source before you allow its code to run.',
         createdAt: source.importedAt,
         actions: ['approve','reject'],
         details: {
@@ -1706,7 +1706,7 @@ const notifyPhone = async (action) => {
         title: job.policy?.description || `${job.type} job`,
         status: 'REVIEW',
         risk: job.policy?.riskLevel || 'MEDIUM',
-        reason: 'Det här arbetet kräver ditt godkännande innan det får starta.',
+        reason: 'This work requires your approval before it can start.',
         createdAt: job.createdAt || null,
         actions: ['approve','reject'],
         details: {
@@ -1739,12 +1739,12 @@ const notifyPhone = async (action) => {
         status: 'REVIEW',
         risk: uncertain ? 'HIGH' : 'MEDIUM',
         reason: confirmable
-          ? 'JACO föreslår att uppdraget är klart. Kontrollera resultatet och bekräfta eller avsluta uppdraget.'
+          ? 'JACO proposes that the mission is complete. Check the result and confirm or end the mission.'
           : status === 'AWAITING_VERIFICATION'
-            ? 'JACO föreslår att uppdraget är klart, men inget steg har ett verifierat kvitto. Det kan inte bekräftas. Låt JACO försöka igen eller avsluta uppdraget.'
+            ? 'JACO proposes that the mission is complete, but no step has a verified receipt. It cannot be confirmed. Let JACO try again or end the mission.'
           : uncertain
-            ? 'Det är osäkert om den senaste ändringen genomfördes. Kontrollera vad som hände innan du väljer att fortsätta.'
-            : 'Uppdraget har stannat. Kontrollera orsaken och välj om JACO ska fortsätta eller avsluta.',
+            ? 'It is uncertain whether the latest change was carried out. Check what happened before you choose to continue.'
+            : 'The mission has stopped. Check the cause and choose whether JACO should continue or end it.',
         createdAt: mission.createdAt || mission.created_at || null,
         actions: confirmable ? ['confirm','cancel'] : ['resume','cancel'],
         details: {
@@ -1773,8 +1773,8 @@ const notifyPhone = async (action) => {
           status: 'REVIEW',
           risk: 'HIGH',
           reason: mandate
-            ? 'Uppdragets behörighet är inte signerad, är avstängd eller har gått ut. Kontrollera omfattningen innan du godkänner.'
-            : 'Uppdragets behörighet finns inte längre. En giltig behörighet behöver konfigureras.',
+            ? 'The mission mandate is unsigned, disabled or expired. Check its scope before you approve.'
+            : 'The mission mandate no longer exists. A valid mandate needs to be configured.',
           createdAt: mandate?.createdAt || null,
           actions: mandate ? ['approve','reject'] : [],
           details: {
@@ -1933,7 +1933,7 @@ const notifyPhone = async (action) => {
     const activeProviderId = String(observedLocalModel?.provider || live.provider || '').trim();
     const activeModelId = String(observedLocalModel?.model || live.model || '').trim();
     // What each provider is used for, so the IDE does not show a working planner as merely "REGISTERED"
-    // (operator 2026-10-03: "hur aktiverar jag providers"). SEER and Aura chat use the observed local
+    // (operator 2026-10-03: "how do I activate providers"). SEER and Aura chat use the observed local
     // model; Nova follows the configured primary provider and then eligible fallbacks.
     let plannerChoice: any = process.env.JACO_PRIMARY_PROVIDER
       ? { provider: process.env.JACO_PRIMARY_PROVIDER, model: plannerChoices(process.env)[process.env.JACO_PRIMARY_PROVIDER]?.models[0] || null }
@@ -2369,7 +2369,7 @@ const notifyPhone = async (action) => {
       const parent = mission.metadata?.parent;
       let ids = [mission.id];
       if (parent?.graphId) {
-        const graph = await callCanonicalSeer(`/cortex/mission-graphs/${encodeURIComponent(parent.graphId)}/cancel`, {reason:'Operatören avslutar uppdraget från Aura.'});
+        const graph = await callCanonicalSeer(`/cortex/mission-graphs/${encodeURIComponent(parent.graphId)}/cancel`, {reason:'The operator ends the mission from Aura.'});
         ids = [...new Set([mission.id,...graph.nodes.map((node:any)=>node.nova_mission_id).filter(Boolean)])] as string[];
       }
       const results = ids.map(id => {
@@ -2399,7 +2399,7 @@ const notifyPhone = async (action) => {
       };
       const goalId = (await readGraph(graphId)).policy?.strategic_goal_id;
       if (!goalId) return res.status(409).json({success:false,error:'MISSION_HAS_NO_STRATEGIC_GOAL'});
-      const ended = await callCanonicalSeer(`/cortex/strategy/goals/${encodeURIComponent(goalId)}/cancel`, {confirm:true,reason:'Operatören avslutar målet från Aura.'});
+      const ended = await callCanonicalSeer(`/cortex/strategy/goals/${encodeURIComponent(goalId)}/cancel`, {confirm:true,reason:'The operator ends the goal from Aura.'});
       const graphs = await Promise.all([...new Set([graphId, ...(ended.cancelledGraphs || [])])].map(readGraph));
       const ids = [...new Set([req.params.id, ...graphs.flatMap((graph: any) => (graph.nodes || []).map((node: any) => node.nova_mission_id).filter(Boolean))])] as string[];
       const missions = ids.map(id => {
@@ -3074,7 +3074,7 @@ const notifyPhone = async (action) => {
       const listed: any = (p.apiKeyEnv && !p.credentialConfigured && !local) ? null : await connectedRuntime.providers.probe(p.id).catch(() => null);
       const models = [...new Set([p.defaultModel, ...((listed?.ok ? listed.models : []) as string[]).filter(m => !NON_CHAT.test(m))].filter(Boolean))] as string[];
       if (!models.length) return null;
-      return [p.id, { label: `${p.id}${local ? ' (lokal)' : ''}`, paid: Boolean(p.apiKeyEnv) && !local && !models.every((m: string) => /:free$/.test(m)), keyEnv: (local && !p.credentialConfigured) ? null : (p.apiKeyEnv || null), url: `${String(p.baseUrl).replace(/\/+$/, '')}/chat/completions`, models }] as const;
+      return [p.id, { label: `${p.id}${local ? ' (local)' : ''}`, paid: Boolean(p.apiKeyEnv) && !local && !models.every((m: string) => /:free$/.test(m)), keyEnv: (local && !p.credentialConfigured) ? null : (p.apiKeyEnv || null), url: `${String(p.baseUrl).replace(/\/+$/, '')}/chat/completions`, models }] as const;
     }));
     connectedChoiceCache = { at: Date.now(), sig, value: Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, any]>) };
     return connectedChoiceCache.value;
@@ -3857,7 +3857,7 @@ const notifyPhone = async (action) => {
     catch (error: any) { res.status(409).json({ success: false, error: String(error?.message || error) }); }
   });
   app.post('/api/aura/workbench/voice/test', requireLocalUi, async (_req, res) => {
-    const result = await voice.send({ text: 'Hej, det här är Aura. Om du hör och ser det här fungerar kanalen.' });
+    const result = await voice.send({ text: 'Hi, this is Aura. If you can hear and see this, the channel works.' });
     res.status(result.ok ? 200 : 409).json({ success: result.ok, ...result });
   });
   app.post('/api/aura/workbench/voice/unlink', requireLocalUi, async (_req, res) => res.json({ success: true, voice: await voice.unlink() }));
@@ -3870,7 +3870,7 @@ const notifyPhone = async (action) => {
       const response = await runtimeService.processAgentCall(req.body);
       res.json(response);
     } catch (err: any) {
-      res.status(500).json({ success: false, error: err?.message || "Kunde inte bearbeta agent-anrop." });
+      res.status(500).json({ success: false, error: err?.message || "Could not process the agent call." });
     }
   });
 
@@ -3905,7 +3905,7 @@ const notifyPhone = async (action) => {
     try {
       const { intervalMs } = req.body || {};
       const running = runtimeService.startAutonomousLoop(intervalMs);
-      res.json({ success: true, running, message: "Autonom PODAR-hjärtslagsslinga aktiverad på servern." });
+      res.json({ success: true, running, message: "Autonomous PODAR heartbeat loop activated on the server." });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -3914,7 +3914,7 @@ const notifyPhone = async (action) => {
   app.post("/api/runtime/autonomous/stop", (_req, res) => {
     try {
       const running = runtimeService.stopAutonomousLoop();
-      res.json({ success: true, running, message: "Autonom slinga pausad." });
+      res.json({ success: true, running, message: "Autonomous loop paused." });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -3924,7 +3924,7 @@ const notifyPhone = async (action) => {
     try {
       const { goal } = req.body || {};
       if (!goal || typeof goal !== 'string') {
-        return res.status(400).json({ success: false, error: "Ett giltigt mål krävs." });
+        return res.status(400).json({ success: false, error: "A valid goal is required." });
       }
       runtimeService.setAutonomousGoal(goal);
       res.json({ success: true, goal });
@@ -3937,7 +3937,7 @@ const notifyPhone = async (action) => {
     try {
       const { nodeId, telemetry, currentGoal } = req.body;
       if (!nodeId) {
-        return res.status(400).json({ success: false, error: "nodeId krävs för heartbeat." });
+        return res.status(400).json({ success: false, error: "nodeId is required for heartbeat." });
       }
       const updatedNode = runtimeService.updateHeartbeat(nodeId, telemetry, currentGoal);
       res.json({ success: true, node: updatedNode });
@@ -3946,7 +3946,7 @@ const notifyPhone = async (action) => {
     }
   });
 
-  // Central Heartbeat Endpoint för App.tsx och anslutna noder (GET & POST)
+  // Central Heartbeat Endpoint for App.tsx and connected nodes (GET & POST)
   app.all(["/api/heartbeat", "/api/runtime/heartbeat-ping"], (req, res) => {
     try {
       const nodeId = req.body?.nodeId || req.query?.nodeId || 'local-client-node';
@@ -3954,7 +3954,7 @@ const notifyPhone = async (action) => {
         timestamp: new Date().toISOString(),
         platform: 'web_client'
       };
-      const currentGoal = req.body?.currentGoal || 'Autonom lokal runtime synkronisering';
+      const currentGoal = req.body?.currentGoal || 'Autonomous local runtime synchronization';
       const updatedNode = runtimeService.updateHeartbeat(String(nodeId), telemetry, String(currentGoal));
       const autoStatus = runtimeService.getAutonomousStatus();
 
@@ -3969,7 +3969,7 @@ const notifyPhone = async (action) => {
         totalCycles: autoStatus.cycleCount,
         activeGoal: autoStatus.goal,
         node: updatedNode,
-        message: 'JACO Runtime Heartbeat mottaget och bekräftat.'
+        message: 'JACO Runtime Heartbeat received and acknowledged.'
       });
     } catch (err: any) {
       return res.json({
@@ -4164,7 +4164,7 @@ const notifyPhone = async (action) => {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.send(html);
     } catch (err: any) {
-      res.status(500).send("Kunde inte generera HTML Workspace");
+      res.status(500).send("Could not generate HTML Workspace");
     }
   });
 
@@ -4276,7 +4276,7 @@ const notifyPhone = async (action) => {
         taskId: taskId || "unknown",
         responderNodeId: getLocalNodeIdentity().nodeId,
         success: false,
-        error: "taskId och skillId är obligatoriska parametrar.",
+        error: "taskId and skillId are required parameters.",
         executionTimeMs: 0,
         checksum: ""
       });
@@ -4469,7 +4469,7 @@ const notifyPhone = async (action) => {
     try {
       const { message, activeFilePath, targetSubAgent, selectedModel, selectedProvider, model, messagesHistory, interactionMode } = req.body;
       const ragContext = [...(Array.isArray(req.body.ragContext) ? req.body.ragContext : []), ...attachmentContext(req.body.attachmentIds)];
-      const userMsg = String(message || "Hej");
+      const userMsg = String(message || "Hi");
       const cognitiveActivation = cognitiveActivationPreview(userMsg, {
         knowledge: continuumSurface.runtime.knowledge,
         skills: continuumSurface.runtime.skills,
@@ -4624,7 +4624,7 @@ const notifyPhone = async (action) => {
         provider: result.provider,
         model: result.model,
         phase: result.degraded ? 'DEGRADED' : 'VERIFYING',
-        latestVerifiedProgress: result.degraded ? 'Ingen modell svarade; statussvar visat' : `Aura GUI completion via ${routeLabel} ${result.provider}/${result.model}`,
+        latestVerifiedProgress: result.degraded ? 'No model answered; status answer shown' : `Aura GUI completion via ${routeLabel} ${result.provider}/${result.model}`,
       });
       seerLiveWorkstream.record({
         actor: 'Aura GUI',
@@ -4661,7 +4661,7 @@ const notifyPhone = async (action) => {
     if (typeof apiKey === "string" && apiKey.trim().length > 0) {
       auraEngineManager.setStripeApiKey(apiKey.trim());
       process.env.STRIPE_SECRET_KEY = apiKey.trim();
-      return res.json({ success: true, message: "[STRIPE SECRET KEY UPDATED] Stripe API-nyckel är nu sparad och aktiv i minnet." });
+      return res.json({ success: true, message: "[STRIPE SECRET KEY UPDATED] Stripe API key is now saved and active in memory." });
     }
     res.status(400).json({ error: "apiKey is required" });
   });
@@ -4680,7 +4680,7 @@ const notifyPhone = async (action) => {
     if (!stripeKey) {
       return res.status(400).json({
         success: false,
-        error: "STRIPE_SECRET_KEY är inte konfigurerad i miljövariablerna (.env) eller inställningarna."
+        error: "STRIPE_SECRET_KEY is not configured in the environment variables (.env) or settings."
       });
     }
 
@@ -4722,11 +4722,11 @@ const notifyPhone = async (action) => {
       if (!response.ok) {
         return res.status(response.status).json({
           success: false,
-          error: session.error?.message || "Misslyckades att skapa Stripe Checkout-session"
+          error: session.error?.message || "Failed to create Stripe Checkout session"
         });
       }
 
-      pushLog('success', `Skapade Stripe Checkout Session ${session.id} för ${amount} ${currency.toUpperCase()}`, 'stripe-checkout');
+      pushLog('success', `Created Stripe Checkout Session ${session.id} for ${amount} ${currency.toUpperCase()}`, 'stripe-checkout');
       return res.json({
         success: true,
         sessionId: session.id,
@@ -4735,7 +4735,7 @@ const notifyPhone = async (action) => {
     } catch (err: any) {
       return res.status(500).json({
         success: false,
-        error: `Stripe Checkout fel: ${err?.message}`
+        error: `Stripe Checkout error: ${err?.message}`
       });
     }
   });
@@ -4757,19 +4757,19 @@ const notifyPhone = async (action) => {
 
       if (verifiedEvent.type === 'payment.succeeded') {
         auraEngineManager.addMemory(
-          `[VERIFIED PAYMENT SETTLED] Belopp: ${verifiedEvent.amount} ${verifiedEvent.currency}. Provider: ${paymentProvider.providerName}. Tx: ${verifiedEvent.transactionId}. Kund: ${verifiedEvent.customerEmail}`,
+          `[VERIFIED PAYMENT SETTLED] Amount: ${verifiedEvent.amount} ${verifiedEvent.currency}. Provider: ${paymentProvider.providerName}. Tx: ${verifiedEvent.transactionId}. Customer: ${verifiedEvent.customerEmail}`,
           'revenue',
           'high',
           `${paymentProvider.providerName} Webhook`,
           'agent-marketplace'
         );
-        pushLog('success', `[INTÄKT BOKFÖRD] ${verifiedEvent.amount} ${verifiedEvent.currency} via ${paymentProvider.providerName}`, 'payment-webhook');
+        pushLog('success', `[REVENUE BOOKED] ${verifiedEvent.amount} ${verifiedEvent.currency} via ${paymentProvider.providerName}`, 'payment-webhook');
       }
 
       res.json({ received: true, provider: paymentProvider.providerName, eventId: verifiedEvent.eventId });
     } catch (err: any) {
       console.error(`[PAYMENT WEBHOOK FAILED]:`, err.message);
-      pushLog('error', `[PAYMENT FEL] ${err.message}`, 'payment-webhook');
+      pushLog('error', `[PAYMENT ERROR] ${err.message}`, 'payment-webhook');
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
   });
@@ -4977,11 +4977,11 @@ const notifyPhone = async (action) => {
     const cfConfig = auraEngineManager.getCloudflareConfig();
     auraEngineManager.updateCloudflareConfig({
       totalRequestsReceived: cfConfig.totalRequestsReceived + 1,
-      lastWebhookTimestamp: new Date().toLocaleTimeString("sv-SE")
+      lastWebhookTimestamp: new Date().toLocaleTimeString("en-US")
     });
 
-    const title = payload.title || payload.missionTitle || payload.head_commit?.message || "Inkommande Cloudflare/Git Webhook Uppdrag";
-    const description = payload.description || payload.missionDesc || `Exekveringsbegäran mottagen via Cloudflare Tunnel/Worker från ${req.headers['x-forwarded-for'] || req.ip}`;
+    const title = payload.title || payload.missionTitle || payload.head_commit?.message || "Incoming Cloudflare/Git Webhook Mission";
+    const description = payload.description || payload.missionDesc || `Execution request received via Cloudflare Tunnel/Worker from ${req.headers['x-forwarded-for'] || req.ip}`;
     
     const createdMission = auraEngineManager.createGitMission({
       title: `[CF/Git Webhook] ${title}`,
@@ -5158,7 +5158,7 @@ const notifyPhone = async (action) => {
         modelsCount: models.length,
         localModels: [],
         activeModel,
-        note: 'Privat LAN IP eller localhost i molnet kräver tunnel (ngrok) eller OLLAMA_ORIGINS="*" i din lokala dator/telefon.'
+        note: 'A private LAN IP or localhost in the cloud requires a tunnel (ngrok) or OLLAMA_ORIGINS="*" on your local computer/phone.'
       }
     });
   });
@@ -5215,7 +5215,7 @@ const notifyPhone = async (action) => {
     } catch (err: any) {
       return res.status(502).json({
         success: false,
-        error: `Kunde inte nå lokal Ollama-server på ${hostUrl}: ${err.message}`
+        error: `Could not reach the local Ollama server at ${hostUrl}: ${err.message}`
       });
     }
   });
@@ -5260,7 +5260,7 @@ const notifyPhone = async (action) => {
           const data = await response.json();
           const content = data.message?.content || data.response;
           if (content) {
-            pushLog('ollama', `[Ollama Chat Proxy] Genererade svar med modell [${cleanModelName}] via ${rawHost}`, 'ollama-chat');
+            pushLog('ollama', `[Ollama Chat Proxy] Generated response with model [${cleanModelName}] via ${rawHost}`, 'ollama-chat');
             return res.json({ success: true, text: content, model: cleanModelName, endpointUsed: rawHost });
           }
         }
@@ -5284,7 +5284,7 @@ const notifyPhone = async (action) => {
             const dataV1 = await resV1.json();
             const content = dataV1.choices?.[0]?.message?.content;
             if (content) {
-              pushLog('ollama', `[Ollama v1 Chat] Genererade svar med modell [${cleanModelName}] via ${rawHost}`, 'ollama-chat');
+              pushLog('ollama', `[Ollama v1 Chat] Generated response with model [${cleanModelName}] via ${rawHost}`, 'ollama-chat');
               return res.json({ success: true, text: content, model: cleanModelName, endpointUsed: rawHost });
             }
           }
@@ -5294,9 +5294,9 @@ const notifyPhone = async (action) => {
 
     return res.status(502).json({
       success: false,
-      error: `Ingen lokal Ollama-server svarade på försök mot (${endpointsToTry.join(', ')}). Kontrollera att Ollama körs och har API tillgängligt.`,
+      error: `No local Ollama server answered attempts against (${endpointsToTry.join(', ')}). Check that Ollama is running and its API is available.`,
       configuredHost: hostUrl || "http://127.0.0.1:11434",
-      troubleshooting: "Om Ollama körs på din dator/telefon: Använd en Ngrok-tunnel (ngrok http 11434) eller sätt OLLAMA_ORIGINS=\"*\"."
+      troubleshooting: "If Ollama runs on your computer/phone: use an Ngrok tunnel (ngrok http 11434) or set OLLAMA_ORIGINS=\"*\"."
     });
   });
 
@@ -5399,7 +5399,7 @@ const notifyPhone = async (action) => {
     res.json({
       success: true,
       gatewayPort: 3000,
-      note: "Port 3000 är den primära låsta Cloud-porten. Alla interna Android/Termux-plugins dirigeras automatiskt via reverse-proxy på Port 3000 utan port-krockar.",
+      note: "Port 3000 is the primary locked cloud port. All internal Android/Termux plugins are routed automatically via a reverse proxy on port 3000 without port conflicts.",
       plugins: pluginStatuses,
       tunnelInfo: {
         activeBridgeUrl: "http://127.0.0.1:3000/api/android/proxy",
@@ -5409,7 +5409,7 @@ const notifyPhone = async (action) => {
   });
 
   app.post("/api/android/autodiscover", async (_req, res) => {
-    pushLog('info', '[Android Hub] Kör automatisk port-skanning och plugin-upptäckt för Android/Termux...', 'android-hub');
+    pushLog('info', '[Android Hub] Running automatic port scan and plugin discovery for Android/Termux...', 'android-hub');
     const discovered: any[] = [];
 
     for (const plugin of knownAndroidPluginPorts) {
@@ -5423,7 +5423,7 @@ const notifyPhone = async (action) => {
             status: 'CONNECTED',
             proxyEndpoint: `/api/android/proxy/${plugin.internalPort}`
           });
-          pushLog('success', `[Android Hub] Hittade aktivt plugin: ${plugin.name} på intern port ${plugin.internalPort} -> Länkad till Port 3000 proxy`, 'android-hub');
+          pushLog('success', `[Android Hub] Found active plugin: ${plugin.name} on internal port ${plugin.internalPort} -> Linked to port 3000 proxy`, 'android-hub');
         }
       } catch {
         // Plugin not listening on this port currently
@@ -5432,7 +5432,7 @@ const notifyPhone = async (action) => {
 
     res.json({
       success: true,
-      message: `Skanning klar. Upptäckte ${discovered.length} aktiva Android-plugins länkade till Port 3000.`,
+      message: `Scan complete. Discovered ${discovered.length} active Android plugins linked to port 3000.`,
       discoveredCount: discovered.length,
       discoveredPlugins: discovered
     });
@@ -5442,7 +5442,7 @@ const notifyPhone = async (action) => {
   app.all(["/api/android/proxy/:targetPort", "/api/android/proxy/:targetPort/*"], requireOperator, async (req, res) => {
     const targetPort = parseInt(req.params.targetPort, 10);
     if (isNaN(targetPort) || !ANDROID_PROXY_PORTS.has(targetPort)) {
-      return res.status(403).json({ success:false, error: "Porten är inte tillåten av Android Proxy Router allowlist." });
+      return res.status(403).json({ success:false, error: "The port is not allowed by the Android Proxy Router allowlist." });
     }
 
     // Extract subpath after /api/android/proxy/<targetPort>
@@ -5486,9 +5486,9 @@ const notifyPhone = async (action) => {
     } catch (err: any) {
       return res.status(502).json({
         success: false,
-        error: `Android Proxy Router kunde inte nå tjänsten på 127.0.0.1:${targetPort}`,
+        error: `Android Proxy Router could not reach the service at 127.0.0.1:${targetPort}`,
         details: err.message,
-        suggestion: `Säkerställ att pluginet körs lokalt i Termux/Android på port ${targetPort}. Port 3000 vidarebefordrar anropet automatiskt.`
+        suggestion: `Make sure the plugin is running locally in Termux/Android on port ${targetPort}. Port 3000 forwards the call automatically.`
       });
     }
   });
@@ -5551,7 +5551,7 @@ const notifyPhone = async (action) => {
     try {
       const { type, payload, priority, requiresApproval, governanceCategory, riskLevel, description } = req.body || {};
       if (!type) {
-        return res.status(400).json({ success: false, error: "Fältet 'type' är obligatoriskt" });
+        return res.status(400).json({ success: false, error: "The 'type' field is required" });
       }
       const job = enqueue({
         type,
@@ -5581,7 +5581,7 @@ const notifyPhone = async (action) => {
     try {
       const job = getJob(req.params.id);
       if (!job) {
-        return res.status(404).json({ success: false, error: "Jobb hittades inte" });
+        return res.status(404).json({ success: false, error: "Job not found" });
       }
       return res.json({ success: true, job });
     } catch (err: any) {
@@ -5594,9 +5594,9 @@ const notifyPhone = async (action) => {
       const { operatorName = "Operator" } = req.body || {};
       const job = approve(req.params.id, operatorName);
       if (!job) {
-        return res.status(400).json({ success: false, error: "Kunde inte godkänna jobb (finns ej eller väntar inte på godkännande)" });
+        return res.status(400).json({ success: false, error: "Could not approve job (does not exist or is not awaiting approval)" });
       }
-      pushLog('info', `[Approval Gate] Jobb ${job.id} godkänt av ${operatorName}`, 'approval-gate');
+      pushLog('info', `[Approval Gate] Job ${job.id} approved by ${operatorName}`, 'approval-gate');
       return res.json({ success: true, job });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err?.message });
@@ -5605,12 +5605,12 @@ const notifyPhone = async (action) => {
 
   app.post("/api/jobs/:id/reject", (req, res) => {
     try {
-      const { reason = "Avvisad av operatören" } = req.body || {};
+      const { reason = "Rejected by the operator" } = req.body || {};
       const job = reject(req.params.id, reason);
       if (!job) {
-        return res.status(400).json({ success: false, error: "Kunde inte avvisa jobb (finns ej eller väntar inte på godkännande)" });
+        return res.status(400).json({ success: false, error: "Could not reject job (does not exist or is not awaiting approval)" });
       }
-      pushLog('warn', `[Approval Gate] Jobb ${job.id} avvisat: "${reason}"`, 'approval-gate');
+      pushLog('warn', `[Approval Gate] Job ${job.id} rejected: "${reason}"`, 'approval-gate');
       return res.json({ success: true, job });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err?.message });
@@ -5658,7 +5658,7 @@ const notifyPhone = async (action) => {
   app.post("/api/market-watch/scan", async (req, res) => {
     try {
       const { targetId, queryTopic } = req.body || {};
-      pushLog('info', `[Market Watch] Startar OpenClaw konkurrentskanning för ${targetId || 'alla mål'}...`, 'market-watch');
+      pushLog('info', `[Market Watch] Starting OpenClaw competitor scan for ${targetId || 'all targets'}...`, 'market-watch');
       const result = await marketWatchService.executeOpenClawScrape(targetId, queryTopic);
       pushLog('success', `[Market Watch] ${result.message}`, 'market-watch');
       return res.json({
@@ -5678,10 +5678,10 @@ const notifyPhone = async (action) => {
       const { enabled, intervalSeconds } = req.body || {};
       if (enabled === false) {
         marketWatchService.stopPeriodicScan();
-        pushLog('info', '[Market Watch] Periodisk övervakning pausad.', 'market-watch');
+        pushLog('info', '[Market Watch] Periodic monitoring paused.', 'market-watch');
       } else {
         marketWatchService.startPeriodicScan(intervalSeconds);
-        pushLog('success', `[Market Watch] Periodisk övervakning aktiverad (${marketWatchService.getState().pollingIntervalSeconds}s intervall).`, 'market-watch');
+        pushLog('success', `[Market Watch] Periodic monitoring enabled (${marketWatchService.getState().pollingIntervalSeconds}s interval).`, 'market-watch');
       }
       return res.json({ success: true, state: marketWatchService.getState() });
     } catch (err: any) {
@@ -5789,7 +5789,7 @@ const notifyPhone = async (action) => {
           }
         } catch {}
       } else {
-        errorMessage = `Server svarade med HTTP ${tagsRes.status}`;
+        errorMessage = `Server answered with HTTP ${tagsRes.status}`;
       }
     } catch (err: any) {
       errorMessage = err.message || 'Connection timed out or host unreachable';
@@ -5862,7 +5862,7 @@ const notifyPhone = async (action) => {
     } catch (err: any) {
       return res.status(500).json({
         success: false,
-        error: err?.message || "Kunde inte hämta LM Studio status"
+        error: err?.message || "Could not fetch LM Studio status"
       });
     }
   });
@@ -5875,7 +5875,7 @@ const notifyPhone = async (action) => {
       if (mode && !['advisor', 'executor', 'autonomous'].includes(mode)) {
         return res.status(400).json({
           success: false,
-          error: "Ogiltigt läge. Måste vara 'advisor', 'executor' eller 'autonomous'."
+          error: "Invalid mode. Must be 'advisor', 'executor' or 'autonomous'."
         });
       }
 
@@ -5889,7 +5889,7 @@ const notifyPhone = async (action) => {
       });
       return res.json({ success: true, manifest: updated });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Kunde inte uppdatera LM Studio inställningar" });
+      return res.status(500).json({ success: false, error: err?.message || "Could not update LM Studio settings" });
     }
   });
 
@@ -5900,7 +5900,7 @@ const notifyPhone = async (action) => {
       const verification = await lmStudioRuntimeAdapter.verifyIntegration(hostUrl, workspacePath);
       return res.json({ success: true, verification });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Kunde inte verifiera LM Studio integration" });
+      return res.status(500).json({ success: false, error: err?.message || "Could not verify LM Studio integration" });
     }
   });
 
@@ -5924,11 +5924,11 @@ const notifyPhone = async (action) => {
       } = req.body || {};
 
       if (objective && typeof objective !== 'string') {
-        return res.status(400).json({ success: false, error: "objective måste vara en sträng." });
+        return res.status(400).json({ success: false, error: "objective must be a string." });
       }
 
       if (mode && !['advisor', 'executor', 'autonomous'].includes(mode)) {
-        return res.status(400).json({ success: false, error: "Ogiltigt läge. Måste vara 'advisor', 'executor' eller 'autonomous'." });
+        return res.status(400).json({ success: false, error: "Invalid mode. Must be 'advisor', 'executor' or 'autonomous'." });
       }
 
       const manifest = lmStudioThreadStore.getManifest();
@@ -5936,7 +5936,7 @@ const notifyPhone = async (action) => {
 
       const contract: LMStudioMissionContract = {
         missionId,
-        objective: objective || "LM Studio lokal modellanalys",
+        objective: objective || "LM Studio local model analysis",
         workspacePath: workspacePath || process.cwd(),
         mode: mode || manifest.mode || "advisor",
         hostUrl: hostUrl || manifest.hostUrl,
@@ -5968,7 +5968,7 @@ const notifyPhone = async (action) => {
         status: "STARTED"
       });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Kunde inte starta LM Studio mission" });
+      return res.status(500).json({ success: false, error: err?.message || "Could not start LM Studio mission" });
     }
   });
 
@@ -5986,7 +5986,7 @@ const notifyPhone = async (action) => {
         pendingApprovals
       });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Kunde inte hämta LM Studio mission" });
+      return res.status(500).json({ success: false, error: err?.message || "Could not fetch LM Studio mission" });
     }
   });
 
@@ -5997,7 +5997,7 @@ const notifyPhone = async (action) => {
       const cancelled = lmStudioRuntimeAdapter.cancelMission(missionId);
       return res.json({ success: true, cancelled });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Kunde inte avbryta mission" });
+      return res.status(500).json({ success: false, error: err?.message || "Could not cancel mission" });
     }
   });
 
@@ -6058,8 +6058,8 @@ const notifyPhone = async (action) => {
         ? `### Terminal Process Output\n\`\`\`bash\n$ ${action.command}\n${action.result.output}\n\`\`\``
         : `OpenClaw action queued for terminal execution (ID: ${action.id}). Status: ${action.status}`,
       aiSummary: action.result?.output 
-        ? `Exekverade terminal-process via executeTerminalAction. Status: ${action.status}`
-        : `Åtgärd skapad (ID: ${action.id}). Väntar på godkännande.`,
+        ? `Ran terminal process via executeTerminalAction. Status: ${action.status}`
+        : `Action created (ID: ${action.id}). Waiting for approval.`,
       assignedModel: model,
       actionId: action.id,
       commandOutput: action.result?.output || ''
@@ -6111,10 +6111,10 @@ const notifyPhone = async (action) => {
 
       const mappedLMStudio: any[] = lmStudioLogs.map((l: any) => ({
         id: l.id || `lmstudio_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-        timestamp: l.timestamp ? new Date(l.timestamp).toLocaleTimeString("sv-SE") : new Date().toLocaleTimeString("sv-SE"),
+        timestamp: l.timestamp ? new Date(l.timestamp).toLocaleTimeString("en-US") : new Date().toLocaleTimeString("en-US"),
         category: 'Agent Workflow',
         action: l.action || 'LM Studio Execution Event',
-        details: l.details || 'LM Studio inferens-händelse.',
+        details: l.details || 'LM Studio inference event.',
         status: l.status || 'SUCCESS',
         actor: 'LM Studio Adapter',
         isAutonomous: true,
@@ -6130,7 +6130,7 @@ const notifyPhone = async (action) => {
         totalCount: combinedLogs.length
       });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Kunde inte hämta auditloggar" });
+      return res.status(500).json({ success: false, error: err?.message || "Could not fetch audit logs" });
     }
   });
 
@@ -6206,11 +6206,11 @@ const notifyPhone = async (action) => {
         id: t.name,
         name: String(t.name).split(':')[0],
         tag: String(t.name).split(':')[1] || 'latest',
-        size: t.size ? `${(t.size / 1e9).toFixed(1)} GB` : 'okänd',
+        size: t.size ? `${(t.size / 1e9).toFixed(1)} GB` : 'unknown',
         currentDigest: t.digest || null,
         modifiedAt: t.modified_at || null,
         hasUpdate: false,
-        updateNotes: 'Okänt: Ollama har inget API för uppdateringskontroll. Kör "ollama pull <modell>" för senaste build.'
+        updateNotes: 'Unknown: Ollama has no API for update checks. Run "ollama pull <model>" for the latest build.'
       }));
       return res.json({ success: true, execMethod: `${base}/api/tags`, updatesAvailable: false, updatesAvailableCount: 0, updateStatusKnown: false, installedModels });
     } catch (err: any) {
@@ -6341,7 +6341,7 @@ const notifyPhone = async (action) => {
     activeCloudflareTunnel.status = 'idle';
     activeCloudflareTunnel.logs.push(`[cloudflared] Tunnel process stopped by user request.`);
     activeCloudflareTunnel.url = undefined;
-    pushLog('info', `[Cloudflare Tunnel] Tunnel stoppad.`, 'cloudflare-tunnel');
+    pushLog('info', `[Cloudflare Tunnel] Tunnel stopped.`, 'cloudflare-tunnel');
 
     res.json({
       success: true,
@@ -6456,15 +6456,15 @@ const notifyPhone = async (action) => {
       { key: "RENDER_API_KEY", label: "Render Deployment Key", service: "Render Cloud Hosting & Microservices" },
       { key: "GITHUB_TOKEN", label: "GitHub Access Token", service: "GitHub Repo Integration & A2A Publishing" },
       { key: "OPENCLAW_API_KEY", label: "OpenClaw API Key", service: "OpenClaw Web Scraping & Execution" },
-      { key: "OLLAMA_API_KEY", label: "Ollama / OpenClaw Token", service: "Lokal LLM & NPU Slutledning" },
+      { key: "OLLAMA_API_KEY", label: "Ollama / OpenClaw Token", service: "Local LLM & NPU Inference" },
       { key: "JACO_MCP_WORKER_URL", label: "JACO MCP Cloudflare Worker", service: "Cloudflare Worker MCP Bridge (jaco-mcp-bridge)" },
-      { key: "NTFY_TOPIC", label: "NTFY Mobile Push Topic", service: "Mobil Godkännande-push (ntfy.sh)" }
+      { key: "NTFY_TOPIC", label: "NTFY Mobile Push Topic", service: "Mobile Approval Push (ntfy.sh)" }
     ];
 
     const envAudit = keysToCheck.map(item => {
       const val = process.env[item.key];
       const isSet = !!(val && val.trim().length > 0);
-      const masked = isSet ? "*****" : "Ej konfigurerad";
+      const masked = isSet ? "*****" : "Not configured";
 
       return {
         key: item.key,
@@ -6505,14 +6505,14 @@ const notifyPhone = async (action) => {
       return res.json({
         success: true,
         key: cleanKey,
-        message: `Secret '${cleanKey}' är nu uppdaterad och aktiv i servermiljön.`
+        message: `Secret '${cleanKey}' is now updated and active in the server environment.`
       });
     } else {
       delete process.env[cleanKey];
       return res.json({
         success: true,
         key: cleanKey,
-        message: `Secret '${cleanKey}' har tagits bort från servermiljön.`
+        message: `Secret '${cleanKey}' has been removed from the server environment.`
       });
     }
   });
@@ -6586,7 +6586,7 @@ const notifyPhone = async (action) => {
       },
       handshakeTime: new Date().toISOString(),
       expiresInSeconds: 3600,
-      message: "Säker Android Keystore handshake verifierad utan klartext-exponering."
+      message: "Secure Android Keystore handshake verified without plaintext exposure."
     });
   });
 
