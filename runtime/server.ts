@@ -3076,7 +3076,7 @@ const notifyPhone = async (action) => {
 
   // Nova's planner model, chosen by the operator in the GUI (IDE sidebar Providers > Nova planner). Nova reads the
   // same file on every planning turn (agents/lib/planner-choice.mjs).
-  const plannerChoicePath = path.join(WORKSPACE_ROOT, '.jaco', 'state', 'provider-preference.json');
+  const plannerChoicePath = plannerChoiceFile({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT });
   // The providers the operator connected (registry), with the chat models each really lists, offered to Nova next
   // to the fixed ones (agents/lib/planner-choice.mjs). Probed in parallel and cached for 60 s: the GUI reads this on
   // every open, and an unreachable provider must not make the list slow or empty.
