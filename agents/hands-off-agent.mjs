@@ -1898,6 +1898,10 @@ export function agentSystemFor(allowedTasks, platform = process.platform) {
 
 // One model turn with native tools: the first available provider in Nova's chain answers.
 export async function agentChat({ messages, tools }, fetchImpl = fetch, env = process.env) {
+  // A chosen connected provider may not be in the fixed provider list. Native
+  // turns must refresh the same discovered registry as structured turns before
+  // deciding whether that exact operator model is available.
+  await refreshConnectedProviders(fetchImpl, env);
   const failures = [];
   for (const provider of brainCandidates(env)) {
     if (isPaidProvider(provider) && !paidModelsAllowed(env)) { failures.push(`${provider.name}:PAID_DISABLED`); continue; }
