@@ -876,6 +876,11 @@ const server = createServer(async (req, res) => {
       ok: true,
       service: 'seer',
       strategic_governor: true,
+      // This is a capability health report, not an independently registered
+      // agent. A stale timer setting alone cannot activate autonomous reasoning.
+      agent_identity: 'aura',
+      capability: 'strategy',
+      independent_governor_enabled: GOVERNOR_INTERVAL_MS > 0,
       purpose_id: state.purpose?.id || null,
       open_predictions: state.open_predictions.length,
       autonomy: {
