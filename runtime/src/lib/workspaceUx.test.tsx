@@ -50,19 +50,19 @@ test('chat exposes response cancellation separately from the running mission', (
 
 test('agent constellation exposes real relationships and missing planning without inventing agents', async () => {
   const { AgentConstellation } = await import('../components/AgentConstellation');
-  const network:any={schema:'jaco.agent-network/v1',observedAt:new Date().toISOString(),coordinatorId:'root',nodes:[
-    {id:'root',kind:'coordinator',name:'JACO',role:'Samordnare',parentId:null,status:'CONNECTED',purpose:'Coordinate actual work',model:null,source:'SEER',missionIds:[],planIds:[]},
-    {id:'research',kind:'task-agent',name:'API specialist',role:'Uppdragsagent',parentId:'root',status:'READY',purpose:'Inspect actual interfaces',model:null,source:'SEER Mission Graph',missionIds:[],planIds:['plan'],dependencies:[]},
-  ],links:[{from:'root',to:'research',kind:'delegation'}],plans:[{id:'plan',title:'Research the interface',objective:'Understand the actual code',status:'ACTIVE',agentIds:['research'],replans:[]}],planningAvailable:true,coordinatorAvailable:true,truncated:false};
+  const network:any={schema:'jaco.agent-network/v1',observedAt:new Date().toISOString(),coordinatorId:'coordinator:aura',nodes:[
+    {id:'coordinator:aura',kind:'coordinator',name:'Aura',role:'Huvudagent',parentId:null,status:'CONNECTED',purpose:'Coordinate actual work',model:null,source:'Aura runtime',missionIds:[],planIds:[]},
+    {id:'research',kind:'task-agent',name:'API specialist',role:'Uppdragskontext',parentId:'coordinator:aura',status:'READY',purpose:'Inspect actual interfaces',model:null,source:'Aura Strategy Runtime',missionIds:[],planIds:['plan'],dependencies:[]},
+  ],links:[{from:'coordinator:aura',to:'research',kind:'delegation'}],plans:[{id:'plan',title:'Research the interface',objective:'Understand the actual code',status:'ACTIVE',agentIds:['research'],replans:[]}],planningAvailable:true,coordinatorAvailable:true,truncated:false};
   const html=renderToStaticMarkup(<AgentConstellation network={network} error={null} onSelectMission={noop}/>);
-  assert.match(html,/API specialist, Uppdragsagent, Redo/);
+  assert.match(html,/API specialist, Uppdragskontext, Redo/);
   assert.match(html,/data-kind="delegation"/);
   assert.match(html,/Inspect actual interfaces|Research the interface/);
   assert.doesNotMatch(html,/Samordnaren svarar inte/);
   const missing=renderToStaticMarkup(<AgentConstellation network={{...network,planningAvailable:false,coordinatorAvailable:false,nodes:[{...network.nodes[0],status:'UNAVAILABLE'}],links:[],plans:[]}} error={null} onSelectMission={noop}/>);
   assert.match(missing,/Planerna kunde inte hämtas/);
   assert.doesNotMatch(missing,/API specialist/);
-  assert.match(missing,/JACO, Samordnare, Inte nåbar/);
+  assert.match(missing,/Aura, Samordnare, Inte nåbar/);
 });
 
 test('attachment controls distinguish uploaded copies and binary extraction limits',async()=>{
