@@ -81,7 +81,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     }
     return runTerminalIDE({
       project: index >= 0 ? opts[index + 1] : process.cwd(),
-      env: { ...env, JACO_GATEWAY_TOKEN: gatewayToken(env) }, root: ROOT,
+      env, root: ROOT, resolveToken: () => gatewayToken(env),
       activate: opts.includes('--no-start') ? null : () => main(['activate', '--no-tools'], env),
     });
   }
