@@ -918,7 +918,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const missionGoals = new Map(missions.map(m => [m.id, m.goal]));
   const missionPhase = String(mission?.phase || mission?.status || (latestMission ? `NO ACTIVE MISSION (latest ${latestMission.status})` : 'NO ACTIVE MISSION'));
 
-  const startGoal = async (explicitGoal?: string, toolHint?: AuraSelectedTool | null, attachmentIds?: string[], executionMode?: 'autonomous') => {
+  const startGoal = async (explicitGoal?: string, toolHint?: AuraSelectedTool | null, attachmentIds?: string[], executionMode?: 'autonomous', harnessModel?: {providerId:string;model:string}) => {
     const trimmed = String(explicitGoal ?? goal).trim();
     if (!trimmed || missionSubmitting) return;
     setMissionSubmitting(true);
@@ -929,6 +929,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           goal: trimmed, attachmentIds, ...(executionMode ? { executionMode } : {}),
+          ...(harnessModel ? { harnessModel } : {}),
           toolHint: toolHint ? {
             kind: toolHint.kind,
             provider: toolHint.provider || null,
@@ -1555,7 +1556,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
           runtimeError={runtimeError}
           onOpenEvidence={(event) => { setSelectedEvidence(event); setWorkspaceView('evidence'); }}
           onOpenFile={openFile}
-          onStartGoal={async (text, tool, attachments, executionMode) => { return await startGoal(text, tool, attachments, executionMode); }}
+          onStartGoal={async (text, tool, attachments, executionMode, harnessModel) => { return await startGoal(text, tool, attachments, executionMode, harnessModel); }}
         />
       </div>
     </>
