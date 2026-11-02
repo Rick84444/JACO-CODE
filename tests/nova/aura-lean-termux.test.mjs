@@ -69,8 +69,8 @@ test('Termux Workplace resolves Aura planner choice from Core workspace, not run
   fs.writeFileSync(path.join(runtime,'run_termux_node.sh'),'');
   fs.writeFileSync(path.join(prefix,'bin','node'), '#!/bin/sh\nprintf "CHOICE=%s\\n" "$JACO_PLANNER_CHOICE_FILE"\n', {mode:0o755});
   for(const workspace of [null, explicitWorkspace]){
-    const exported=workspace ? `export JACO_WORKSPACE_ROOT='${workspace}'\\n` : '';
-    fs.writeFileSync(cfg,`export JACO_ROOT='${runtime}'\\n`+exported);
+    const exported=workspace ? `export JACO_WORKSPACE_ROOT='${workspace}'\n` : '';
+    fs.writeFileSync(cfg,`export JACO_ROOT='${runtime}'\n`+exported);
     const run=spawnSync('sh',[path.join(root,'runtime/termux/services/jaco-workplace/run')],{
       env:{PATH:process.env.PATH,PREFIX:prefix,HOME:tmp,JACO_RUNTIME_ENV:cfg},
       encoding:'utf8',
