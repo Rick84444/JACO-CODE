@@ -283,3 +283,46 @@ test('refresh replaces one mission packet with updated receipt state between tur
   assert.equal(model.seen[1].filter(m => m.content?.startsWith('BOARD')).length, 1);
   assert.ok(model.seen[1].some(m => m.role === 'tool'));
 });
+
+test('native tool loop discards a stale model action and reads latest operator direction', async t => {
+  const s=setup(t,['web-fetch']);
+  const m=s.control.create({goal:'Inspect the service',idempotencyKey:'steer-native-1',allowedTasks:['web-fetch']});
+  const calls=[],seen=[];
+  let turns=0;
+  const model={chat:async({messages})=>{
+    seen.push(JSON.stringify(messages));
+    turns++;
+    if(turns===1){
+      s.control.steer(m.id,{instruction:'Use the updated endpoint, not the old one',requestId:'55555555-5555-5555-5555-555555555555'});
+      return {tool_calls:[call('web-fetch',{url:'https://old.example.test'})]};
+    }
+    if(turns===2)return {tool_calls:[call('web-fetch',{url:'https://new.example.test'})]};
+    return {tool_calls:[call('complete',{reason:'Updated endpoint inspected [#1]'})]};
+  }};
+  const result=await run(s,model,async(task)=>{calls.push(task.data.url);return {ok:true,verified:true};});
+  assert.equal(result.completed,true);
+  assert.deepEqual(calls,['https://new.example.test']);
+  assert.match(seen[1],/OPERATOR_DIRECTION_REVISION/);
+  assert.match(seen[1],/updated endpoint/);
+  assert.equal(s.control.get(m.id).status,'AWAITING_VERIFICATION');
+});
+
+test('native tool loop finishes the in-flight action but skips other stale calls',async t=>{
+  const s=setup(t,['web-fetch']);
+  const m=s.control.create({goal:'Check service availability',idempotencyKey:'steer-native-2',allowedTasks:['web-fetch']});
+  const calls=[];let turns=0;
+  const model={chat:async()=>{
+    turns++;
+    if(turns===1)return {tool_calls:[call('web-fetch',{url:'https://first.test'}),call('web-fetch',{url:'https://obsolete.test'})]};
+    if(turns===2)return {tool_calls:[call('web-fetch',{url:'https://replacement.test'})]};
+    return {tool_calls:[call('complete',{reason:'Both checked [#1][#2]'})]};
+  }};
+  const result=await run(s,model,async task=>{
+    calls.push(task.data.url);
+    if(task.data.url==='https://first.test')s.control.steer(m.id,{instruction:'Replace the second endpoint',requestId:'66666666-6666-6666-6666-666666666666'});
+    return {ok:true,verified:true};
+  });
+  assert.equal(result.completed,true);
+  assert.deepEqual(calls,['https://first.test','https://replacement.test']);
+  assert.equal(s.control.get(m.id).receipts.length,2);
+});
