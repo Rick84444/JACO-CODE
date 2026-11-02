@@ -84,6 +84,7 @@ import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPoli
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
 import { plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
+import { synchronizeAuraHarnessModel } from "../agents/lib/aura-harness-model-choice.mjs";
 import { INITIAL_MODELS, INITIAL_CODE_FILES, INITIAL_DEVICES, INITIAL_TERMINAL_LOGS } from "./src/mockData.js";
 import { OllamaModel, CodeFile } from "./src/types.js";
 import {
@@ -2585,6 +2586,18 @@ const notifyPhone = async (action) => {
         skillId: rawToolHint.skillId == null ? null : String(rawToolHint.skillId).slice(0,240),
         toolName: String(rawToolHint.toolName || '').slice(0,240),
       } : null;
+      // The chosen Aura chat model is the same provider/model consumed by SEER and
+      // the local executor on their next turn. Validate it against the *existing*
+      // runtime registry and atomically persist the one canonical choice before
+      // dispatch. Never probe a billable model outside Continuum or silently
+      // substitute a different one. Absent selection preserves legacy callers.
+      let harnessModel: any = null;
+      if (req.body?.harnessModel !== undefined) {
+        const connected = await connectedPlannerChoices(true);
+        harnessModel = synchronizeAuraHarnessModel(req.body.harnessModel, {
+          file: plannerChoicePath, env: process.env, connectedChoices: connected,
+        });
+      }
       // A goal started while an operator project is open is work on that project, not on JACO.
       const openProject = projectRoot.get();
       // JACO Lite has no SEER: the runtime creates the Nova mission itself, with the project's tests required.
@@ -2594,7 +2607,8 @@ const notifyPhone = async (action) => {
         seerLiveWorkstream.update({ primaryGoal: goal, activeModule: 'Nova' });
         seerLiveWorkstream.record({ actor: 'Aura Workbench', type: 'nova.mission.created', message: `Lite goal started as Nova mission ${created.mission.id}`, verified: true,
           receipt: { missionId: created.mission.id, testsRequired: created.testsRequired, testCommand: created.testCommand } });
-        return res.status(201).json({ success: true, lite: true, executionMode, mission: created.mission, testsRequired: created.testsRequired, testCommand: created.testCommand, initialized: created.initialized });
+        return res.status(201).json({ success: true, lite: true, executionMode, mission: created.mission, testsRequired: created.testsRequired, testCommand: created.testCommand, initialized: created.initialized,
+          ...(harnessModel ? { harnessModel: { ...harnessModel, verifiedInference: false, appliesAt: 'next_model_turn' } } : {}) });
       }
       const result = await callCanonicalSeer('/cortex/strategy/start', {
         goal,
@@ -2613,10 +2627,12 @@ const notifyPhone = async (action) => {
         verified: true,
         receipt: { goalId: result?.goal?.id || null, developmentCycle: result?.development_cycle || null, requestedExecutionMode: executionMode },
       });
-      res.status(201).json({ success: true, ...result, executionMode });
+      res.status(201).json({ success: true, ...result, executionMode,
+        ...(harnessModel ? { harnessModel: { ...harnessModel, verifiedInference: false, appliesAt: 'next_model_turn' } } : {}) });
     } catch (error: any) {
       const code = String(error?.message || error);
-      res.status(code === 'AURA_MISSION_MODE_INVALID' ? 400 : 503).json({ success: false, error: code });
+      const badChoice = /^(AURA_HARNESS_|PLANNER_)/.test(code);
+      res.status(code === 'PLANNER_ENV_PRIMARY_AUTHORITATIVE' ? 409 : badChoice || code === 'AURA_MISSION_MODE_INVALID' ? 400 : 503).json({ success: false, error: code });
     }
   });
 
