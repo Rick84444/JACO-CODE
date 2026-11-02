@@ -4558,7 +4558,7 @@ const notifyPhone = async (action) => {
         // models more retrieved knowledge without silently increasing local memory use.
         contextChars: choice && !auraChatProviderCatalog(connectedRuntime.providers)
           .find(p => p.id === choice.providerId)?.local ? Number(process.env.JACO_AURA_REMOTE_CONTEXT_CHARS || 24000)
-          : Number(process.env.JACO_AURA_LOCAL_CONTEXT_CHARS || 7500),
+          : Number(process.env.JACO_AURA_LOCAL_CONTEXT_CHARS || 5200),
         ...(choice ? { complete: (args: any) => manualAuraProviderCompletion({ ...args, ...choice }, {
           providers: connectedRuntime.providers, economic: continuumSurface.runtime.economic,
         }) } : {}),
