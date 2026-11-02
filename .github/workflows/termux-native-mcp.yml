@@ -8,7 +8,7 @@ on:
       - 'tests/nova/termux-native-mcp.test.mjs'
       - '.github/workflows/termux-native-mcp.yml'
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - 'runtime/tools/jaco-git-mcp.mjs'
       - 'runtime/tools/jaco-fetch-mcp.mjs'

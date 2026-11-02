@@ -11,7 +11,7 @@ on:
       - 'runtime/src/server/continuum/capabilityCompiler.mjs'
       - '.github/workflows/skill-runtime.yml'
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - 'runtime/src/server/skills/**'
       - 'tests/nova/skill-runtime.test.mjs'
