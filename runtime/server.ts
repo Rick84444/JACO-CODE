@@ -4505,8 +4505,22 @@ const notifyPhone = async (action) => {
       const connectedSource = String(connectedSession?.source || 'Connected channel').slice(0, 80);
       const connectedReplyId = connectedId ? `${connectedId}:reply` : null;
       const previousReply = connectedReplyId ? auraChatSession.get(connectedReplyId) : null;
-      if (previousReply) return res.json({ success: true, reply: previousReply.content, text: previousReply.content, replayed: true, connectedSession: connectedId });
-      if (connectedId) auraChatSession.append({ id: connectedId, role: 'user', content: userMsg, meta: connectedSource });
+      if (previousReply) {
+        const priorInput = auraChatSession.get(connectedId!);
+        // Never replay another prompt's result just because its session key
+        // collided. A completed inference remains recoverable after a lost HTTP
+        // response without repeating any model call or tool invocation.
+        if (priorInput?.role !== 'user' || priorInput.content !== userMsg) {
+          return res.status(409).json({ success: false, error: 'AURA_CHAT_REPLAY_INPUT_CONFLICT' });
+        }
+        return res.json({ success: true, reply: previousReply.content, text: previousReply.content, replayed: true, connectedSession: connectedId });
+      }
+      if (connectedId) auraChatSession.append({
+        id: connectedId, role: 'user', content: userMsg, meta: connectedSource,
+        ...(Array.isArray(req.body?.attachmentIds) ? {
+          attachments: req.body.attachmentIds.map((id: string) => ({ id })),
+        } : {}),
+      });
       const sendChatResult = (result: any) => {
         if (connectedReplyId) auraChatSession.append({
           id: connectedReplyId, role: 'assistant', content: String(result.reply || result.text || ''),
