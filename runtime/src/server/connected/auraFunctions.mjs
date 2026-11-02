@@ -2,9 +2,9 @@
 // existing runtime, not independently spawned agents or a second scheduler.
 // This module is read-only: it never grants permissions or executes a mission.
 export const AURA_FUNCTION_DEFINITIONS = Object.freeze([
-  { id: 'reason', name: 'Reasoning', implementation: 'SEER + selected model', authority: 'model-inference', reads: ['health'] },
-  { id: 'plan', name: 'Planning', implementation: 'SEER Strategic Governor', authority: 'existing-goal-contract', reads: ['seer_goals'] },
-  { id: 'execute', name: 'Execution', implementation: 'Durable Nova', authority: 'existing-mission-lease', reads: ['mission_list', 'mission_get'] },
+  { id: 'reason', name: 'Reasoning', implementation: 'Aura model runtime', authority: 'model-inference', reads: ['health'] },
+  { id: 'plan', name: 'Planning', implementation: 'Aura strategy runtime', authority: 'existing-goal-contract', reads: ['seer_goals'] },
+  { id: 'execute', name: 'Execution', implementation: 'Aura durable execution', authority: 'existing-mission-lease', reads: ['mission_list', 'mission_get'] },
   { id: 'memory', name: 'Memory', implementation: 'Workplace + canonical memory layers', authority: 'existing-memory-policy', reads: ['seer_memory'] },
   { id: 'tools', name: 'Tools', implementation: 'MCP Tool Fabric', authority: 'existing-tool-policy', reads: ['repo_list', 'git_status'] },
   { id: 'verify', name: 'Verification', implementation: 'Mission receipts + contract gates', authority: 'evidence-before-claim', reads: ['mission_get', 'runtime_events'] },
