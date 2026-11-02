@@ -79,8 +79,9 @@ export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {
   const held = snapshot ? (Object.values(snapshot.state.reservations || {}) as { status?: string; estimatedUsd: number }[]).filter(r => r.status === 'UNKNOWN_OUTCOME') : [];
   const heldUsd = held.reduce((n, r) => n + r.estimatedUsd, 0);
   // Never claim cloud is off/on from the legacy channel flags: the canonical
-  // EconomicGovernor treats cloudEnabled as the master kill switch.
-  const cloudOn = Boolean(snapshot?.policy.cloudEnabled);
+  // EconomicGovernor treats cloudEnabled as the master kill switch, and a saved channel flag can still deny chat.
+  // Show what chat actually gets, so the switch never reads as on while every answer is denied.
+  const cloudOn = Boolean(snapshot?.policy.cloudEnabled && snapshot?.policy.manualAuraCloudEnabled);
   // The one sentence that says what stops a cloud answer right now (or that nothing does).
   const blocking = !snapshot ? null
     : !cloudOn ? 'Molnmodeller är avstängda: chatten och Nova använder bara lokala modeller.'

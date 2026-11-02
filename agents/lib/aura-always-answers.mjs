@@ -8,6 +8,19 @@ const answered = r => r && typeof r.reply === 'string' && r.reply.trim();
 
 // ask(choice): one Aura turn with that provider choice (null = SEER's route); throws when it cannot answer.
 // status(failures): Aura's status answer. onFallback/onNoModel: workstream records.
+export function auraChatDeadlines(env = process.env) {
+  const ms = (key, fallback) => { const v = Number(env[key]); return Number.isFinite(v) && v >= 1000 ? v : fallback; };
+  return { chosenMs: ms('JACO_AURA_CHAT_CHOSEN_MS', 120_000), defaultMs: ms('JACO_AURA_CHAT_DEFAULT_MS', 90_000), fallbackMs: ms('JACO_AURA_CHAT_FALLBACK_MS', 45_000) };
+}
+
+// A model that does not answer in time must not leave the operator without a reply. The late result is dropped:
+// its cost and receipts are still settled by the call itself.
+export function answerWithin(work, ms) {
+  let timer;
+  const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`AURA_MODEL_TIMEOUT after ${Math.round(ms / 1000)} s`)), ms); });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
+
 /**
  * @param {{
  *   choice: { providerId: string, model?: string } | null,
@@ -48,6 +61,8 @@ export async function auraAlwaysAnswers({ choice, ask, status, onFallback = () =
 export function auraStatusHints(failures, { headroomUsd = null, localModels = [], lite = false } = {}) {
   const all = failures.join(' | ');
   const hints = [];
+  if (/CLOUD_DISABLED_BY_POLICY/.test(all)) hints.push('Molnmodeller är avstängda för chatten. Slå på "Tillåt molnmodeller" under Budget & ekonomi (dollarikonen till vänster), så svarar jag inom din budget.');
+  if (/AURA_MODEL_TIMEOUT/.test(all)) hints.push('Modellen hann inte svara. En lokal modell på en dator med lite ledigt minne kan vara för långsam: välj en molnmodell i Chattinställningar.');
   if (/402|Insufficient Balance/i.test(all)) hints.push('DeepSeek-kontot är tomt. Fyll på på platform.deepseek.com, eller välj en annan modell i Chattinställningar.');
   if (/429|usage limit/i.test(all)) hints.push('Gratiskvoten hos en molnleverantör är slut (Ollama Cloud eller Groq). Den fylls på av leverantören efter en tid.');
   if (/AURA_CHAT_PROMPT_TOO_LARGE|AURA_CHAT_MESSAGE_TOO_LARGE_FOR_CONTEXT/i.test(all)) hints.push('Kontexten överskrider den valda modellens säkra gräns. Minska historiken eller välj en modell med större kontextfönster i Providers.');
