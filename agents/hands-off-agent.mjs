@@ -1386,7 +1386,17 @@ const MODEL_FALLBACKS = {
   deepseek: () => process.env.DEEPSEEK_FALLBACK_MODEL || "deepseek-v4-pro",
 };
 export function brainCandidates(env = process.env) {
-  return orderedBrainProviders(env).flatMap(p => {
+  const ordered = orderedBrainProviders(env);
+  const saved = !env.JACO_PRIMARY_PROVIDER ? readPlannerChoice(plannerChoiceFile(env)) : null;
+  // Operator-picked Aura model is a pinned route, not a hint. Replacing it with
+  // an unrelated local/free provider changes the model, tool compatibility and
+  // privacy expectations without consent. The existing automatic chain remains
+  // available only when no operator choice is pinned.
+  if (saved?.by === 'operator') {
+    const exact = ordered.find(p => p.name === saved.provider && p.model === saved.model);
+    return exact ? [{ ...exact, chosen: true }] : [];
+  }
+  return ordered.flatMap(p => {
     const fallback = MODEL_FALLBACKS[p.name]?.();
     return fallback && fallback !== p.model ? [p, { ...p, model: fallback }] : [p];
   });
