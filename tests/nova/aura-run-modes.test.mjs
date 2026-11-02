@@ -15,6 +15,7 @@ test('Manual and Planning cannot create a mission; Full Autonomous never represe
   assert.equal(AURA_RUN_MODES.manual.createsMission, false);
   assert.equal(AURA_RUN_MODES.planning.createsMission, false);
   assert.equal(AURA_RUN_MODES.autonomous.createsMission, true);
+  assert.equal(AURA_RUN_MODES.autonomous.interactionMode, 'question');
   assert.equal(AURA_RUN_MODES.planning.interactionMode, 'planning');
   assert.equal(normalizeAuraRunMode('autonomous').executionMode, 'autonomous');
   assert.throws(() => normalizeAuraRunMode('unlimited'), /AURA_RUN_MODE_UNKNOWN/);
@@ -99,7 +100,11 @@ test('The current GUI has a single compact label, inline build flow and no popup
   assert.match(gui,/x-jaco-operator-token/);
   assert.match(gui,/reportsTo:'aura'/);
   assert.match(gui,/Build Agent is a local UI action in every mode/);
-  assert.match(gui,/return composeMode==='goal'\?goal\(\):ask\(\)/);
+  assert.match(gui,/return ask\\(\\); \\/\\/ Every mode retains normal conversation/);
+  assert.match(gui,/data-testid="jaco-chat-send"/);
+  assert.match(gui,/data-testid="jaco-start-mission"/);
+  assert.match(gui,/onClick=\\{\\(\\)=>void goal\\(\\)\\}/);
+  assert.doesNotMatch(gui,/return composeMode/);
   assert.doesNotMatch(gui,/window\.confirm\(tr\([\s\S]{0,160}Full Autonomous/);
   assert.match(css,/@keyframes jaco-autonomous-pulse/);
   assert.match(css, /prefers-reduced-motion:reduce/);

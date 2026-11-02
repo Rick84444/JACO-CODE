@@ -17,6 +17,12 @@ on:
       - 'tests/nova/jaco-vscode-embed.test.mjs'
       - '.github/workflows/jaco-vscode-extension.yml'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish verified VSIX using Marketplace Trusted Publishing'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -50,3 +56,50 @@ jobs:
           path: jaco-cognitive-ide.vsix
           if-no-files-found: error
           retention-days: 30
+
+  publish-marketplace:
+    needs: build-vsix
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check intentional extension version bump
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_PUBLISH: ${{ inputs.publish }}
+        shell: bash
+        run: |
+          current=$(node -p "require('./extensions/jaco-vscode/package.json').version")
+          if [ "$EVENT_NAME" = 'workflow_dispatch' ]; then
+            if [ "$MANUAL_PUBLISH" = 'true' ]; then echo 'ready=true' >> "$GITHUB_OUTPUT"; fi
+            exit 0
+          fi
+          previous=$(git show HEAD^:extensions/jaco-vscode/package.json 2>/dev/null | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{try{process.stdout.write(JSON.parse(s).version)}catch{}})" || true)
+          if [ -n "$previous" ] && [ "$current" != "$previous" ]; then
+            echo "Publishing version change: $previous -> $current"
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'No extension version bump; Marketplace publication skipped.'
+          fi
+      - name: Verify VSIX artifact
+        if: steps.release.outputs.ready == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: jaco-cognitive-ide-vsix
+      - name: Verify VSIX and publish with GitHub OIDC
+        if: steps.release.outputs.ready == 'true'
+        working-directory: extensions/jaco-vscode
+        run: |
+          test -f ../../jaco-cognitive-ide.vsix
+          unzip -t ../../jaco-cognitive-ide.vsix
+          npx --yes @vscode/vsce@4.0.2 publish --oidc --no-dependencies
