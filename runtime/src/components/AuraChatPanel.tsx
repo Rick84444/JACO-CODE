@@ -100,7 +100,7 @@ interface Props {
   activeFileContent?: string | null;
   selectedTool?: AuraSelectedTool | null;
   onClearSelectedTool?: () => void;
-  onStartGoal: (goal: string, selectedTool?: AuraSelectedTool | null, attachmentIds?: string[], executionMode?: 'autonomous') => Promise<any> | void;
+  onStartGoal: (goal: string, selectedTool?: AuraSelectedTool | null, attachmentIds?: string[], executionMode?: 'autonomous', harnessModel?: {providerId:string;model:string}) => Promise<any> | void;
   onCancelMission?: (id: string) => Promise<void>;
   onSteerMission?: (id: string, instruction: string, requestId: string) => Promise<{steering:{revision:number};missionId:string}>;
   liveEvents?: CognitiveEvent[];
@@ -513,9 +513,17 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     setBusy('goal');
     try {
       await appendMessage({id:crypto.randomUUID(),role:'user',content:text,attachments:attachments.map(item=>({id:item.id,name:item.files[0]?.path.split('/')[0]||'Bilaga',fileCount:item.files.length}))});
-      const accepted=await onStartGoal(text,selectedTool,attachments.map(item=>item.id),'autonomous');
+      // A direct provider selection is part of this same operator-issued goal.
+      // Core validates and persists it for SEER and the local executor before
+      // dispatch; JACO standard keeps the canonical currently selected model.
+      const harnessModel = selectedProvider === 'seer' ? undefined : {providerId:selectedProvider,model:chatModel};
+      const accepted=await onStartGoal(text,selectedTool,attachments.map(item=>item.id),'autonomous',harnessModel);
       if(!accepted?.goal?.id)throw new Error('Runtime bekräftade inte uppdragets ID.');
-      await appendMessage({id:crypto.randomUUID(),role:'system',content:'Uppdraget är registrerat. Planering och resultat visas här när runtime rapporterar dem.',meta:'Uppdrag: '+accepted.goal.id});
+      const routed = accepted.harnessModel?.choice;
+      await appendMessage({id:crypto.randomUUID(),role:'system',
+        content: routed ? `Uppdraget är registrerat med vald modell ${routed.provider}/${routed.model}. Planering och resultat visas här när runtime rapporterar dem.`
+          : 'Uppdraget är registrerat. Planering och resultat visas här när runtime rapporterar dem.',
+        meta:'Uppdrag: '+accepted.goal.id});
       setInput('');setAttachments([]);setRunMode('manual');
     } catch(error:any) {
       await appendMessage({id:crypto.randomUUID(),role:'system',content:'Uppdragets registrering kunde inte bekräftas: '+safeCognitiveText(error?.message || String(error))});
