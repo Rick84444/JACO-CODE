@@ -276,8 +276,8 @@ test('Aura context grows only for explicitly larger provider budgets and preserv
   const extended=buildAuraSeerPrompts({...context,contextChars:24000});
   assert.ok(small.user.length<=7500);
   assert.ok(extended.user.length<=24000 && extended.user.length>small.user.length);
-  assert.ok(small.user.endsWith('CURRENT_USER_MESSAGE:\\n'+query));
-  assert.ok(extended.user.endsWith('CURRENT_USER_MESSAGE:\\n'+query));
+  assert.ok(small.user.endsWith('CURRENT_USER_MESSAGE:\n'+query));
+  assert.ok(extended.user.endsWith('CURRENT_USER_MESSAGE:\n'+query));
   assert.match(small.user,/TOOL_TRANSCRIPT/);
   assert.match(small.user,/RECENT_CONVERSATION/);
   assert.throws(()=>buildAuraSeerPrompts({message:'x'.repeat(10000),contextChars:7500}),/AURA_CHAT_MESSAGE_TOO_LARGE_FOR_CONTEXT/);
