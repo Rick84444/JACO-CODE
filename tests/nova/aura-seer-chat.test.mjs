@@ -206,7 +206,7 @@ test('operator message survives large prior context and is always the latest pro
     ragContext:'R'.repeat(12000),
     toolTranscript:'T'.repeat(28000),
   });
-  assert.ok(user.endsWith('CURRENT_USER_MESSAGE:\\n'+goal), 'latest operator message must be at the truncation-safe tail');
+  assert.ok(user.endsWith('CURRENT_USER_MESSAGE:\n'+goal), 'latest operator message must be at the truncation-safe tail');
   assert.equal(user.match(/TOOL_TRANSCRIPT/g)?.length,1);
   assert.ok(user.indexOf('TOOL_TRANSCRIPT')<user.indexOf('CURRENT_USER_MESSAGE'));
   assert.ok(user.length<28000,'oversized tool history must not be forwarded to the model');
@@ -261,6 +261,6 @@ test('a model cannot execute a sixth tool or expose an unexecuted TOOL_CALL as s
   assert.equal(out.providerReceipt.costStatus,'FREE');
   assert.equal(out.providerReceipt.costUsd,0);
   assert.equal(out.providerReceipt.modelCalls,6);
-  assert.ok(seen.at(-1).endsWith('CURRENT_USER_MESSAGE:\\nUndersök felet, men hitta inte på vad som körts.'));
+  assert.ok(seen.at(-1).endsWith('CURRENT_USER_MESSAGE:\nUndersök felet, men hitta inte på vad som körts.'));
   assert.ok(seen.at(-1).length<9000,'tool receipts should not create a runaway prompt');
 });
