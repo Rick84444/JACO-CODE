@@ -1,6 +1,6 @@
-# Grok Bot competitive research — 2026-11-01
+# Autonomous Agent Ecosystem Research — 2026-11-01
 
-**Owner in JACO:** `grokbot-analyst` (Competitive Research Lead, reports to Aura).  
+**Owner in JACO:** `ecosystem-analyst` (Competitive Research Lead, reports to Aura).  
 **Evidence classes:** [OFFICIAL] vendor documentation, [USER REPORT] unverified first-hand account, [INDEPENDENT] third-party analysis, [INFERRED] engineering consequence for JACO.  
 **Scope:** public product behavior only; Grok Bot source code, internal prompts, security implementation and model runtime are **not** public evidence. This is a research baseline, not proof that a JACO subagent has run.
 
@@ -31,7 +31,7 @@
 
 | Agent ID | Role | Deliverable | Acceptance evidence |
 | --- | --- | --- | --- |
-| `grokbot-analyst` | Research / competitor analysis | Weekly delta of primary docs, independent feedback, claims vs facts and ranked product hypotheses | Each claim linked to the specific source; changed claims dated; no proprietary-code assertions |
+| `ecosystem-analyst` | Research / competitor analysis | Weekly delta of primary docs, independent feedback, claims vs facts and ranked product hypotheses | Each claim linked to the specific source; changed claims dated; no proprietary-code assertions |
 | `senior-developer` | Architecture / implementation | Narrow PR that extends an **existing** JACO owner, not a parallel orchestrator | Unit + integration tests, security consequences, review, build and host proof where applicable |
 | `reliability-debugger` | Root-cause / runtime verification | Repro, log/evidence refs, falsifier, minimal regression and post-fix receipt | Deterministic red-before/green-after plus real-host receipt for host-specific bugs |
 | `user-advocate` | Operator UX / acceptance | Usability checklist and friction report for installation, model settings, task assignment and approvals | Real operator journey or explicit “not observed”; no fabricated user session |
