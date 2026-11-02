@@ -4524,7 +4524,15 @@ const notifyPhone = async (action) => {
       const sendChatResult = (result: any) => {
         if (connectedReplyId) auraChatSession.append({
           id: connectedReplyId, role: 'assistant', content: String(result.reply || result.text || ''),
-          meta: [connectedSource, result.modelUsed || [result.provider, result.model].filter(Boolean).join('/')].filter(Boolean).join(' · '),
+          meta: [
+            connectedSource,
+            result.modelUsed || [result.provider, result.model].filter(Boolean).join('/'),
+            result.providerReceipt?.costStatus === 'SETTLED'
+              ? `Cloud ${Number(result.providerReceipt.costUsd || 0).toFixed(4)}`
+              : result.providerReceipt?.costStatus === 'OUTCOME_UNKNOWN' ? 'Cloud cost pending reconciliation' : null,
+            Array.isArray(result.toolReceipts) && result.toolReceipts.length
+              ? `tools: ${result.toolReceipts.map((item: any) => `${item.name} ${item.ok ? 'ok' : 'failed'}`).join(', ')}` : null,
+          ].filter(Boolean).join(' · '),
         });
         res.json({ ...result, cognitiveActivation: {
           knowledgeCount: cognitiveActivation.knowledge.length,
