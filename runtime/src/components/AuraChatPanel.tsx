@@ -6,6 +6,7 @@ import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Lo
 import { ChatMarkdown } from './ChatMarkdown';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { JacoWordmark } from './JacoWordmark';
+import { AURA_RUN_MODES, initialAuraRunMode } from '../lib/auraRunModes.mjs';
 import { CognitiveEventCard } from './CognitiveEventCard';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
@@ -99,7 +100,7 @@ interface Props {
   activeFileContent?: string | null;
   selectedTool?: AuraSelectedTool | null;
   onClearSelectedTool?: () => void;
-  onStartGoal: (goal: string, selectedTool?: AuraSelectedTool | null, attachmentIds?: string[]) => Promise<any> | void;
+  onStartGoal: (goal: string, selectedTool?: AuraSelectedTool | null, attachmentIds?: string[], executionMode?: 'autonomous') => Promise<any> | void;
   liveEvents?: CognitiveEvent[];
   liveConnection?: string;
   historyTruncated?: boolean;
@@ -200,7 +201,23 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
 
   const scrollRef=useRef<HTMLDivElement>(null);
   const followRef=useRef(true);
-  const [composeMode,setComposeMode]=useState<'chat'|'goal'>('goal');
+  // The selected mode changes dispatch, not privileges; only manual/planning survive reload.
+  const [runMode,setRunMode]=useState<'manual'|'planning'|'autonomous'>(()=>{
+    try { return initialAuraRunMode(localStorage.getItem('jaco:aura:run-mode:v1')); }
+    catch { return 'manual'; }
+  });
+  const [showModePicker,setShowModePicker]=useState(false);
+  const composeMode = AURA_RUN_MODES[runMode].createsMission ? 'goal' : 'chat';
+  const selectRunMode = (next:'manual'|'planning'|'autonomous') => {
+    if (busy) return;
+    if (next === 'autonomous' && !window.confirm(tr(
+      'Full Autonomous startar ett riktigt uppdrag under JACO:s nuvarande mandat, godkännanden och budget. Ingen obegränsad datoråtkomst ges. Fortsätt?',
+      'Full Autonomous creates a real mission within JACO’s current permissions, approvals and budget. It does not grant unrestricted computer access. Continue?'
+    ))) return;
+    setRunMode(next);
+    setShowModePicker(false);
+    try { localStorage.setItem('jaco:aura:run-mode:v1', next === 'autonomous' ? 'manual' : next); } catch {}
+  };
   const requestRef = useRef<AbortController|null>(null);
   const [waitingSeconds, setWaitingSeconds] = useState(0);
   useEffect(() => {
@@ -279,7 +296,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         body: JSON.stringify({
           attachmentIds: attachments.map(item=>item.id),
           message: text,
-          interactionMode: 'question',
+          interactionMode: runMode === 'planning' ? 'planning' : 'question',
           selectedProvider,
           model: selectedProvider === 'seer' ? undefined : chatModel,
           activeFilePath: activeFilePath || null,
@@ -410,16 +427,21 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     setBusy('goal');
     try {
       await appendMessage({id:crypto.randomUUID(),role:'user',content:text,attachments:attachments.map(item=>({id:item.id,name:item.files[0]?.path.split('/')[0]||'Bilaga',fileCount:item.files.length}))});
-      const accepted=await onStartGoal(text,selectedTool,attachments.map(item=>item.id));
+      const accepted=await onStartGoal(text,selectedTool,attachments.map(item=>item.id),'autonomous');
       if(!accepted?.goal?.id)throw new Error('Runtime bekräftade inte uppdragets ID.');
       await appendMessage({id:crypto.randomUUID(),role:'system',content:'Uppdraget är registrerat. Planering och resultat visas här när runtime rapporterar dem.',meta:'Uppdrag: '+accepted.goal.id});
-      setInput('');setAttachments([]);setComposeMode('chat');
+      setInput('');setAttachments([]);setRunMode('manual');
     } catch(error:any) {
       await appendMessage({id:crypto.randomUUID(),role:'system',content:'Uppdragets registrering kunde inte bekräftas: '+safeCognitiveText(error?.message || String(error))});
     } finally {setBusy(null);}
   };
   const submit=()=>composeMode==='goal'?goal():ask();
-  const prompt=(text:string,mode:'chat'|'goal'='chat')=>{setInput(text);setComposeMode(mode);inputRef.current?.focus();};
+  const prompt=(text:string,mode:'chat'|'goal'='chat')=>{
+    setInput(text);
+    // Suggested tasks open in read-only planning first; the operator selects Full Autonomous.
+    setRunMode(mode==='goal'?'planning':'manual');
+    inputRef.current?.focus();
+  };
 
   return (
     <div className="cognitive-chat h-full min-h-0 flex flex-col">
@@ -515,6 +537,28 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               <button type="button" onClick={onClearSelectedTool} aria-label={tr('Ta bort valt verktyg','Remove selected tool')} className="ml-auto text-slate-500 hover:text-slate-200">×</button>
             </div>
           )}
+          {showModePicker && (
+            <section role="dialog" aria-label={tr('Välj agentläge','Choose agent mode')}
+              className="mb-2 rounded-lg border border-cyan-900/60 bg-[#101923] p-3 space-y-2" data-testid="jaco-run-mode-panel">
+              <div className="text-xs font-semibold text-cyan-200">{tr('Välj hur JACO arbetar','Choose how JACO works')}</div>
+              <div role="group" aria-label={tr('Körläge','Execution mode')} className="grid gap-2">
+                {([
+                  ['manual', 'Manual', tr('Samtal och läsverktyg. Inga nya uppdrag eller ändringar.','Conversation and read tools only. No new missions or changes.')],
+                  ['planning', 'Planning', tr('Analysera, jämför och skapa en plan. Endast läsverktyg, inga policyändringar.','Research, compare and propose a plan. Read tools only; no policy changes.')],
+                  ['autonomous', 'Full Autonomous', tr('Starta ett varaktigt SEER/Nova-uppdrag. Befintliga mandat, budget och godkännanden gäller.','Start a durable SEER/Nova mission. Existing permissions, budgets and approvals still apply.')],
+                ] as const).map(([value,label,help])=>(
+                  <button type="button" key={value} aria-pressed={runMode===value}
+                    onClick={()=>selectRunMode(value)} disabled={Boolean(busy)}
+                    className={`flex flex-col items-start rounded border px-3 py-2 text-left text-xs ${runMode===value?'border-cyan-500 bg-cyan-950/30 text-cyan-100':'border-slate-700 text-slate-200 hover:border-slate-500'}`}>
+                    <span className="font-semibold">{label}</span>
+                    <span className="mt-1 text-slate-400">{help}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-500">{tr('Detta är ett arbetsläge, inte en behörighetsökning.','This selects a workflow, not additional privileges.')}</p>
+              <button type="button" onClick={()=>setShowModePicker(false)} className="text-xs text-slate-400 hover:text-white">{tr('Stäng','Close')}</button>
+            </section>
+          )}
           <div className="cognitive-input-box">
             <textarea
               ref={inputRef}
@@ -546,16 +590,22 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               </div>
             )}
             <div className="cognitive-input-actions">
-              <div className="cognitive-compose-modes" role="group" aria-label={tr('Typ av meddelande','Message type')}>
-                <button type="button" aria-pressed={composeMode==='goal'} onClick={()=>setComposeMode('goal')}><Target size={12}/>{tr('Uppdrag','Mission')}</button>
-                <button type="button" aria-pressed={composeMode==='chat'} onClick={()=>setComposeMode('chat')}><MessageSquare size={12}/>{tr('Fråga','Ask')}</button>
+              <div className="cognitive-compose-modes" role="group" aria-label={tr('Agentens körläge','Agent execution mode')}>
+                <button type="button" data-testid="jaco-run-mode-toggle" aria-haspopup="dialog" aria-expanded={showModePicker}
+                  onClick={()=>setShowModePicker(value=>!value)} disabled={Boolean(busy)}>
+                  <Target size={12}/>
+                  {runMode==='manual' ? 'Manual' : runMode==='planning' ? 'Planning' : 'Full Autonomous'}
+                  <ChevronRight size={12}/>
+                </button>
               </div>
               <span className="cognitive-enter-hint">{tr('Shift + Enter för ny rad','Shift + Enter for new line')}</span>
               <button type="submit" aria-label={composeMode==='goal'?tr('Starta uppdrag','Start mission'):tr('Skicka meddelande','Send message')} title={composeMode==='goal'?tr('Starta uppdrag','Start mission'):tr('Skicka','Send')} disabled={!input.trim()||Boolean(busy)||uploading||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
             </div>
           </div>
           <AttachmentPicker items={attachments} onChange={setAttachments} onBusy={setUploading} disabled={Boolean(busy)}/>
-          <p className="cognitive-composer-help">{composeMode === 'goal' ? tr('JACO arbetar inom uppdragets behörigheter. Beslut som kräver dig visas ovanför arbetet.','JACO works within mission permissions. Decisions requiring you appear above the work.') : tr('Fråga om arbetet utan att starta ett nytt uppdrag.','Ask about ongoing work without starting a new mission.')}</p>
+          <p className="cognitive-composer-help">{runMode==='autonomous' ? tr('Full Autonomous använder befintliga uppdragsmandat. Ingen fri terminalåtkomst ges.','Full Autonomous uses existing mission mandates. No unrestricted shell access is granted.')
+            : runMode==='planning' ? tr('Planning läser och föreslår. Inga verktygsändringar eller uppdrag startas.','Planning observes and proposes; no tool mutations or missions start.')
+            : tr('Manual svarar med läsverktyg utan att starta ett uppdrag.','Manual answers using read tools without starting a mission.')}</p>
         </div>
       </form>
     </div>
