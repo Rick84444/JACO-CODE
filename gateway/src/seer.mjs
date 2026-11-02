@@ -10,6 +10,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, renameSync } from 'node:fs';
 import { buildAgentCard, joinWorkplace } from '../../agents/lib/workplace-session.mjs';
+import { plannerChoiceFile, readPlannerChoice } from '../../agents/lib/planner-choice.mjs';
 import { createStrategicKernel, SEER_PURPOSE, goalTaskScope } from './seer-strategy.mjs';
 import { createMissionGraph } from './seer-mission-graph.mjs';
 import { createMissionDispatcher } from './seer-mission-dispatch.mjs';
@@ -512,7 +513,12 @@ async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0
   const requestedTokens = Math.min(8192, Math.max(1, Number(max_tokens) || 1024));
   max_tokens = Math.min(2048, requestedTokens);
   const runtime = { runtimeUrl: process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000', token: process.env.GATEWAY_TOKEN || TOKEN };
-  const auraOnly = process.env.JACO_SEER_PROVIDER_PREFERENCE === 'aura';
+  // An explicit Aura selection is a pinned single-model route, independent of
+  // whether the old environment preference flag was set. Never silently plan
+  // with an unrelated local model after the operator's chosen model fails.
+  const pinned = !process.env.JACO_PRIMARY_PROVIDER &&
+    readPlannerChoice(plannerChoiceFile(process.env))?.by === 'operator';
+  const auraOnly = process.env.JACO_SEER_PROVIDER_PREFERENCE === 'aura' || pinned;
   const aura = startup_probe && !auraOnly ? null : await resolveAuraPlanner(runtime);
   const auraResult = aura ? await invokeAuraPlanner(aura, await seerPromptFor(aura, { system, user, image, temperature, memory_chars, startup_probe }, aura.local ? max_tokens : requestedTokens), {
     ...runtime, purpose, onFailure: failure => emit('provider.failed', failure),
