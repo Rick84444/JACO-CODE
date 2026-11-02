@@ -154,7 +154,7 @@ test('operational Shack closes actual failing code through SEER HTTP -> Nova -> 
   assert.equal(done.status, 'VERIFIED');
   assert.equal(done.strategic_board.progress, 1);
   assert.equal(done.strategic_board.forecast.terminalProbability, 1);
-  assert.equal((await request('/cortex/strategic-board')).owner, 'seer');
+  assert.equal((await request('/cortex/strategic-board')).owner, 'aura');
   const content = fs.readFileSync(path.join(root, 'src/value.mjs'));
   t.diagnostic(`REAL_RESULT: initial test exit=${initialFailure}; repaired test exit=0; dispatch=${dispatchOrder.join(' -> ')}; graph=${done.status}; sha256=${createHash('sha256').update(content).digest('hex')}; model inference not exercised`);
 });
