@@ -259,7 +259,7 @@ test('a model cannot execute a sixth tool or expose an unexecuted TOOL_CALL as s
   assert.equal(turns,6,'bounded tool loop performs only the final summary inference');
   assert.deepEqual(executed,[1,2,3,4,5]);
   assert.equal(out.toolReceipts.length,5);
-  assert.match(out.reply,/inte utfört det sista föreslagna anropet/);
+  assert.match(out.reply,/did not execute the last suggested call/);
   assert.doesNotMatch(out.reply,/TOOL_CALL/);
   assert.equal(out.providerReceipt.costStatus,'FREE');
   assert.equal(out.providerReceipt.costUsd,0);
