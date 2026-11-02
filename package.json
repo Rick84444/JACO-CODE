@@ -27,7 +27,8 @@
     "test:self-development": "node --experimental-sqlite --test gateway/test/seer-self-development.test.mjs gateway/test/seer-self-development-integration.test.mjs",
     "verify:self-development": "npm test && npm run test:self-development",
     "verify:browser-live": "node tests/nova/nova-live-functions.mjs",
-    "setup": "node scripts/setup.mjs"
+    "setup": "node scripts/setup.mjs",
+    "jaco:ide": "node agents/jaco-cli.mjs ide"
   },
   "keywords": [
     "agent-runtime",
