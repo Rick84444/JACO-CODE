@@ -50,6 +50,7 @@ import { enqueueVerifiedReceiptPromotion, flushLivingCorePromotions, ensureLivin
 import { TASK_FIELDS, taskContract } from './lib/task-fields.mjs';
 import { CODE_TASKS, validateCodingTask } from './lib/coding-contract.mjs';
 import { nonTextModelKind, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
+import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs';
 import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs';
 import { validateRepoScanTask, runRepoScanTask } from './lib/repo-scan.mjs';
 import { validateMcpCall, callMcpTool, mcpCatalog, mcpCatalogTools, learnedTaskNotes } from './lib/mcp-tools.mjs';
@@ -2023,9 +2024,18 @@ async function runAgentLoop(state) {
 }
 
 async function runBrain(state) {
-  if (process.env.NOVA_AGENT_LOOP !== '0') {
+  const selected = brainCandidates()[0];
+  const selectedProtocol = auraHarnessPlannerProtocol(selected, {
+    nativeToolsAllowed: selected ? nativeToolsFor(selected) : true,
+    nativeToolsRejected: Boolean(selected && agentToolsUnsupported.has(`${selected.name}/${selected.model}`)),
+  });
+  if (process.env.NOVA_AGENT_LOOP !== '0' && selectedProtocol === 'native') {
     const result = await runAgentLoop(state);
-    if (result) { state.lastBrainTick = state.ticks; return result; }
+    // An explicit chosen model that rejects native function calls can use the
+    // existing structured planner on the SAME provider. No unrelated model
+    // fallback, no duplicated mission or new execution authority.
+    const unsupported = selected?.chosen && agentToolsUnsupported.has(`${selected.name}/${selected.model}`);
+    if (result && !(result.deferred && unsupported)) { state.lastBrainTick = state.ticks; return result; }
   }
   const turn = await processMissionTurn({
     client: missionClient, owner: state.agentId,
