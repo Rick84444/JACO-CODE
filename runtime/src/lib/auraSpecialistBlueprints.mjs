@@ -39,6 +39,11 @@ export const AURA_SPECIALISTS = Object.freeze([
 export function planAuraSpecialistProvision(agents) {
   if (!Array.isArray(agents)) throw new Error('ORGANIZATION_AGENTS_INVALID');
   const byId = new Map(agents.map(a => [a?.id, a]));
+  // Existing identities may be referenced by grants, handoffs and receipts.
+  // An operator must explicitly reconcile a retired ID; never create a duplicate or rewrite history.
+  if (byId.has('grokbot-analyst')) {
+    throw new Error('LEGACY_RESEARCH_AGENT_REQUIRES_OPERATOR_MIGRATION');
+  }
   const missing = [];
   const present = [];
   for (const specialist of AURA_SPECIALISTS) {
