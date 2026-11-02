@@ -67,7 +67,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (argv[0] === 'ide' || (argv.length === 0 && process.stdin.isTTY)) {
     const opts = argv[0] === 'ide' ? argv.slice(1) : argv;
     if (opts.includes('--help')) {
-      process.stdout.write('Usage: jaco ide [--project PATH] [--no-start] [--help]\\nOpens the JACO Terminal IDE; does not create a second runtime.\\n');
+      process.stdout.write('Usage: jaco ide [--project PATH] [--no-start] [--help]\\nOpens the JACO Terminal IDE; does not create a second runtime.\n');
       return 0;
     }
     const index = opts.indexOf('--project');
@@ -75,13 +75,13 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       process.stderr.write('Usage: jaco ide [--project PATH] [--no-start]\\n');
       return 2;
     }
-    if (index >= 0 && !opts[index + 1]) {
+    if (index >= 0 && (!opts[index + 1] || opts[index + 1].startsWith('--'))) {
       process.stderr.write('Missing --project PATH\\n');
       return 2;
     }
     return runTerminalIDE({
       project: index >= 0 ? opts[index + 1] : process.cwd(),
-      env, root: ROOT,
+      env: { ...env, JACO_GATEWAY_TOKEN: gatewayToken(env) }, root: ROOT,
       activate: opts.includes('--no-start') ? null : () => main(['activate', '--no-tools'], env),
     });
   }
