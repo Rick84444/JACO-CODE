@@ -15,7 +15,7 @@ export interface AgentNetworkSnapshot {
   plans:Array<{id:string;title:string;objective:string;status:string;agentIds:string[];replans:Array<{reason:string;from:string;to:string}>}>;
   planningAvailable:boolean;coordinatorAvailable:boolean;truncated:boolean;
 }
-const kindLabel={coordinator:'Samordnare',agent:'Ansluten agent',worker:'Körprocess','task-agent':'Uppdragsagent'};
+const kindLabel={coordinator:'Samordnare',agent:'Ansluten agent',worker:'Körprocess','task-agent':'Uppdragskontext'};
 const labels:Record<string,string>={CONNECTED:'I kontakt',UNAVAILABLE:'Inte nåbar',OFFLINE:'Frånkopplad',READY:'Redo',AVAILABLE:'Tillgänglig',IDLE:'Vilar',BUSY:'Rapporterar arbete',ACTIVE:'Aktiv',BLOCKED:'Väntar på förutsättning',DISPATCHED:'Tilldelad för körning',RUNNING:'Arbetar',PLANNING:'Planerar',EXECUTING:'Arbetar',VERIFIED:'Verifierad',DONE:'Avslutad',FAILED:'Misslyckad',SUPERSEDED:'Ersatt av underplan',CANCELLED:'Avbruten',NEEDS_REPLAN:'Omplanering behövs',AWAITING_VERIFICATION:'Väntar på kontroll',EXHAUSTED:'Gränsen nådd'};
 const tone=(status:string)=>['RUNNING','BUSY','ACTIVE','EXECUTING','PLANNING'].includes(status)?'active':['VERIFIED','DONE','CONNECTED','READY','AVAILABLE'].includes(status)?'ready':['BLOCKED','FAILED','UNAVAILABLE','NEEDS_REPLAN','EXHAUSTED'].includes(status)?'waiting':'quiet';
 const statusText=(status:string)=>labels[status]||'Tillstånd ej tolkat';
@@ -77,17 +77,17 @@ export function AgentConstellation({network,error,onSelectMission,memory=[]}:{ne
           </div></div>
         </div>
         <div className="agent-network-pagination"><span>{filtered.length} agenter / uppdragskontexter{filtered.length>60?` · sida ${currentPage+1} av ${Math.ceil(filtered.length/60)}`:''}</span>{filtered.length>60&&<><button type="button" disabled={currentPage===0} onClick={()=>setPage(currentPage-1)}>Föregående</button><button type="button" disabled={(currentPage+1)*60>=filtered.length} onClick={()=>setPage(currentPage+1)}>Nästa</button></>}</div>
-        <p className="agent-network-note">Uppdragsagenter har egna mål och beständiga körkontexter. De kan dela körprocess. Sfärerna visar relationer och tillstånd, inte privata tankar.</p>
+        <p className="agent-network-note">Aura är huvudagenten. Undernoder är uppdragskontexter och observerade verktyg eller delegerade resurser, inte separata agentidentiteter utan särskilt mandat. Sfärerna visar tillstånd, inte privata tankar.</p>
       </section>
       {selected&&<aside ref={detailRef} className="agent-network-detail" aria-label="Vald agents mål och plan">
         <p className="agent-detail-kicker">{kindLabel[selected.kind]} · {statusText(selected.status)}</p><h3>{selected.name}</h3>
-        {selected.kind==='coordinator'&&<p>Aura är ditt gränssnitt. JACO håller ihop målet, fördelar arbetet efter behov och följer upp resultaten.</p>}
+        {selected.kind==='coordinator'&&<p>Aura är din agent. Hennes strategi, minne, verktyg och exekvering arbetar inom samma uppdragskontrakt och följs upp med kvitton.</p>}
         {selected.purpose&&<section><h4>Uppgift</h4><p>{selected.purpose}</p></section>}
         {selected.model&&<p>Observerad modell: {selected.model}</p>}
         {selected.parentId&&<button type="button" className="agent-detail-link" onClick={()=>setSelectedId(selected.parentId)}>Delegerad av {network.nodes.find(n=>n.id===selected.parentId)?.name||'samordnaren'}</button>}
         {selected.blocker&&<p className="agent-network-warning">Hinder: {selected.blocker}</p>}
         {selected.executorId&&<button type="button" className="agent-detail-link" onClick={()=>setSelectedId(selected.executorId!)}>Körs av {network.nodes.find(n=>n.id===selected.executorId)?.name}</button>}
-        {children.length>0&&<section><h4>Underagenter · {children.length}</h4>{children.map(node=><button className="agent-detail-row" type="button" key={node.id} onClick={()=>setSelectedId(node.id)}><span>{node.name}</span><small>{statusText(node.status)}</small></button>)}</section>}
+        {children.length>0&&<section><h4>Undernoder · {children.length}</h4>{children.map(node=><button className="agent-detail-row" type="button" key={node.id} onClick={()=>setSelectedId(node.id)}><span>{node.name}</span><small>{statusText(node.status)}</small></button>)}</section>}
         {assignments.length>0&&<section><h4>Tilldelade uppdrag</h4>{assignments.map(node=><button className="agent-detail-row" type="button" key={node.id} onClick={()=>setSelectedId(node.id)}>{node.name}</button>)}</section>}
         <section><h4>Planer och nästa steg</h4>{!plans.length&&<p>Ingen plan är kopplad till denna agent i den aktuella observationen.</p>}{plans.map(plan=><article className="agent-detail-plan" key={plan.id}><strong>{plan.title}</strong><p>{plan.objective}</p><ul>{plan.agentIds.map(id=>network.nodes.find(n=>n.id===id)).filter(Boolean).map(node=><li key={node!.id}><button type="button" onClick={()=>setSelectedId(node!.id)}>{node!.name}</button><small>{statusText(node!.status)}</small>{node!.dependencies?.length ? <p>Efter: {node!.dependencies.map(id=>network.nodes.find(n=>n.id===id)?.name||'tidigare steg').join(', ')}</p> : null}</li>)}</ul>{plan.replans.length>0&&<details><summary>Varför planen ändrades</summary>{plan.replans.map((replan,index)=><p key={index}>{replan.reason}</p>)}</details>}</article>)}</section>
         {Boolean(selected.nextSteps?.length)&&<section><h4>Föreslagen omplanering</h4>{selected.nextSteps!.map((step,index)=><p key={index}><strong>{step.title}</strong> — {step.objective}</p>)}</section>}
