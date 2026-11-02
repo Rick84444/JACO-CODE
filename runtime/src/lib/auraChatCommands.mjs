@@ -1,5 +1,6 @@
 // Explicit operator actions in the conversation. Ordinary language is never
 // interpreted by the model as permission to mutate a durable mission.
+/** @returns {{kind:'stop'} | {kind:'steer', instruction:string} | null} */
 export function parseAuraMissionCommand(message = '') {
   const text = String(message).trim();
   if (/^(?:stoppa|avsluta) (?:det )?(?:pågående )?uppdraget[.!]?$/i.test(text) || /^stop (?:the )?(?:current )?mission[.!]?$/i.test(text)) return { kind:'stop' };
