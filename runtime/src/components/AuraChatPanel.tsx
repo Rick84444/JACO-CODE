@@ -7,6 +7,7 @@ import { ChatMarkdown } from './ChatMarkdown';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { JacoWordmark } from './JacoWordmark';
 import { initialAuraRunMode } from '../lib/auraRunModes.mjs';
+import { parseAuraMissionCommand } from '../lib/auraChatCommands.mjs';
 import { CognitiveEventCard } from './CognitiveEventCard';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
@@ -308,6 +309,44 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     const started = performance.now();
     try {
       if (retry === undefined) await appendMessage(user);
+      // Explicit user commands use existing authenticated mission controls, never LLM tool guesses.
+      // Questions in every mode remain read-only and do not interrupt durable execution.
+      const controlCommand=parseAuraMissionCommand(text);
+      if (controlCommand) {
+        const candidates=missions.filter(m=>['ACTIVE','AWAITING_VERIFICATION','BLOCKED'].includes(m.status) && !m.cancelRequested);
+        const active=candidates.length===1 ? candidates[0] : null;
+        if (!active) {
+          await appendMessage({id:crypto.randomUUID(),role:'system',
+            content:candidates.length>1
+              ? tr('Flera uppdrag är aktiva. Välj uppdraget i arbetsytan innan du stoppar eller ändrar det.','Multiple missions are active. Select the mission before stopping or steering it.')
+              : tr('Inget aktivt uppdrag hittades att ändra eller stoppa.','No active mission was found to change or stop.')});
+          return;
+        }
+        if (attachments.length) {
+          await appendMessage({id:crypto.randomUUID(),role:'system',
+            content:tr('Kontrollkommandon kan inte skickas med bilagor.','Mission control commands cannot contain attachments.')});
+          return;
+        }
+        try {
+          if (controlCommand.kind==='stop') {
+            if (!onCancelMission) throw new Error('MISSION_STOP_NOT_AVAILABLE');
+            await onCancelMission(active.id);
+            await appendMessage({id:crypto.randomUUID(),role:'system',
+              content:tr('Stopp begärt. Pågående steg kan fortfarande avslutas; kontrollera uppdragets slutstatus.','Stop requested. An in-flight step may still finish; check the mission final status.'),
+              meta:'Mission '+active.id+' · cancellation requested'});
+          } else {
+            if (!onSteerMission || active.status!=='ACTIVE') throw new Error('MISSION_STEER_NOT_AVAILABLE');
+            const updated=await onSteerMission(active.id,controlCommand.instruction,crypto.randomUUID());
+            await appendMessage({id:crypto.randomUUID(),role:'system',
+              content:tr('Instruktionen är sparad för nästa planeringsgräns; pågående verktyg avbryts inte.','Direction saved for the next planning boundary; in-flight tools are not interrupted.'),
+              meta:'Mission '+active.id+' · steer revision '+updated.steering.revision});
+          }
+        } catch (error:any) {
+          await appendMessage({id:crypto.randomUUID(),role:'system',
+            content:tr('Uppdragskontrollen misslyckades: ','Mission control failed: ')+safeCognitiveText(error?.message || String(error))});
+        }
+        return;
+      }
       const ragContext: Array<{ source: string; content: any }> = [];
       if (liveEvents.length || currentMission) ragContext.push({
         source:'jaco://current-work',

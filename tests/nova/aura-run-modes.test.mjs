@@ -155,3 +155,18 @@ test('Aura steering uses the existing operator UI and mission runtime without mo
   assert.ok(control.includes("throw new Error('NOVA_STEER_STALE')"));
   assert.ok(!server.includes("app.post('/api/connected/nova/missions/:id/steer'"));
 });
+
+test('explicit conversation controls stop or steer only named durable work and never reinterpret questions', async () => {
+  const { parseAuraMissionCommand } = await import('../../runtime/src/lib/auraChatCommands.mjs');
+  assert.deepEqual(parseAuraMissionCommand('Stoppa uppdraget'),{kind:'stop'});
+  assert.deepEqual(parseAuraMissionCommand('Stop current mission'),{kind:'stop'});
+  assert.deepEqual(parseAuraMissionCommand('Ändra uppdraget: Använd endast läsverktyg'),{kind:'steer',instruction:'Använd endast läsverktyg'});
+  for(const question of ['Hur stoppar jag uppdraget?','Kan du ändra uppdraget?','Gör så här istället','Stoppa alla jobb','Ändra uppdraget: ']) {
+    assert.equal(parseAuraMissionCommand(question),null,question);
+  }
+  const gui=read('runtime/src/components/AuraChatPanel.tsx');
+  assert.ok(gui.includes('parseAuraMissionCommand(text)'));
+  assert.ok(gui.includes('await onCancelMission(active.id)'));
+  assert.ok(gui.includes('await onSteerMission(active.id,controlCommand.instruction,crypto.randomUUID())'));
+  assert.ok(gui.includes('candidates.length>1'));
+});
