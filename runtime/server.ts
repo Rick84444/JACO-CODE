@@ -2594,8 +2594,9 @@ const notifyPhone = async (action) => {
       let harnessModel: any = null;
       if (req.body?.harnessModel !== undefined) {
         const connected = await connectedPlannerChoices(true);
-        harnessModel = synchronizeAuraHarnessModel(req.body.harnessModel, {
+        harnessModel = await synchronizeAuraHarnessModel(req.body.harnessModel, {
           file: plannerChoicePath, env: process.env, connectedChoices: connected,
+          probe: valid => testPlannerModel(valid, { env: process.env, extra: connected, timeoutMs: 30_000 }),
         });
       }
       // A goal started while an operator project is open is work on that project, not on JACO.
