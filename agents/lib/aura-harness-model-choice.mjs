@@ -3,7 +3,7 @@
 // process. It is invoked only when the operator explicitly starts a goal from chat.
 import { readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice } from './planner-choice.mjs';
 
-export function synchronizeAuraHarnessModel(selection, { file, env = process.env, connectedChoices = {} } = {}) {
+export async function synchronizeAuraHarnessModel(selection, { file, env = process.env, connectedChoices = {}, probe } = {}) {
   if (!file) throw new Error('AURA_HARNESS_CHOICE_FILE_REQUIRED');
   // Existing API clients (and Aura's canonical/default route) keep the current
   // planner selection; never reset a running system on an omitted preference.
@@ -28,9 +28,15 @@ export function synchronizeAuraHarnessModel(selection, { file, env = process.env
   if (before?.by === 'operator' && before.provider === providerId && before.model === model) {
     return { synchronized: true, choice: { provider: providerId, model, by: 'operator' }, changed: false, source: 'operator' };
   }
+  // A plain text completion is an availability probe, not proof of native tool
+  // calling. The probe runs through the EXISTING Continuum cloud reservation;
+  // never use a direct unmetered provider fetch here.
+  if (typeof probe !== 'function') throw new Error('AURA_HARNESS_MODEL_PROBE_REQUIRED');
+  const check = await probe(validated);
+  if (check?.ok !== true) throw new Error('AURA_HARNESS_MODEL_TEXT_PROBE_FAILED');
   const saved = writePlannerChoice(file, { provider: providerId, model }, 'operator');
   return {
     synchronized: true, choice: { provider: saved.provider, model: saved.model, by: saved.by },
-    changed: true, source: 'operator',
+    changed: true, source: 'operator', verifiedText: true, verifiedToolCalling: false,
   };
 }
