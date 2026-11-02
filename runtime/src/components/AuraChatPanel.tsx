@@ -11,6 +11,18 @@ import { parseAuraMissionCommand } from '../lib/auraChatCommands.mjs';
 import { CognitiveEventCard } from './CognitiveEventCard';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
+import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
+
+// A long pasted message must not push the answers out of reach; the whole text is one click away.
+const LongMessage: React.FC<{ text: string }> = ({ text }) => {
+  const { tr } = useUiLanguage();
+  const [open, setOpen] = useState(false);
+  if (!isLongChatMessage(text)) return <div>{text}</div>;
+  return <div>
+    <div className={open ? '' : 'cognitive-long-message'}>{text}</div>
+    <button type="button" className="cognitive-long-message-toggle" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? tr('Visa mindre', 'Show less') : tr('Visa hela meddelandet', 'Show full message')}</button>
+  </div>;
+};
 
 interface ChatMessage {
   id: string;
@@ -284,8 +296,10 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   useEffect(()=>{if(followRef.current && scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;},[feed,busy]);
   const [showSettings,setShowSettings]=useState(false);
   const inputRef=useRef<HTMLTextAreaElement>(null);
-  // The input grows with its text, up to about ten lines.
-  useEffect(()=>{const el=inputRef.current;if(!el)return;el.style.height='auto';el.style.height=`${Math.min(260,el.scrollHeight)}px`;},[input]);
+  const [feedLimit,setFeedLimit]=useState(CHAT_FEED_PAGE);
+  const {visible:visibleFeed,olderCount}=useMemo(()=>chatFeedWindow(feed,feedLimit),[feed,feedLimit]);
+  // The input grows with its text, but never takes more than a quarter of the window from the answers.
+  useEffect(()=>{const el=inputRef.current;if(!el)return;el.style.height='auto';el.style.height=`${Math.min(Math.round(window.innerHeight*0.25),el.scrollHeight)}px`;},[input]);
   useEffect(()=>{const focus=()=>inputRef.current?.focus();window.addEventListener('jaco:aura:focus',focus);return()=>window.removeEventListener('jaco:aura:focus',focus);},[]);
   const modelLabel=selectedProvider==='seer'?'JACO standard':`${selectedProvider}${chatModel?` / ${chatModel}`:''}`;
 
@@ -661,10 +675,11 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               <button type="button" onClick={()=>prompt(tr('Hjälp mig förbättra en funktion i projektet. Börja med att kartlägga den relevanta koden.','Help improve one feature in this project. Start by mapping the relevant code.'),'goal')}><FileCode2 size={17}/><span>{tr('Utveckla vidare','Develop further')}<small>{tr('Bygg på det som redan finns','Build on what already exists')}</small></span><ArrowUpRight size={14}/></button>
             </div>
           </div>}
-          {feed.map(item=>{
+          {olderCount>0&&<button type="button" className="cognitive-feed-older" onClick={()=>setFeedLimit(limit=>limit+CHAT_FEED_PAGE)}>{tr(`Visa äldre (${olderCount})`,`Show older (${olderCount})`)}</button>}
+          {visibleFeed.map(item=>{
             if(item.kind==='event')return <CognitiveEventCard key={item.id} event={item.event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>;
             const message=item.message;
-            return message.role==='user'?<div key={item.id} className="cognitive-user-message"><div>{message.content}</div>{message.attachments?.map(item=><small key={item.id} className="block mt-2">{tr('Bifogat','Attached')}: {item.name} · {item.fileCount} {tr('filer','files')}</small>)}</div>
+            return message.role==='user'?<div key={item.id} className="cognitive-user-message"><LongMessage text={message.content}/>{message.attachments?.map(item=><small key={item.id} className="block mt-2">{tr('Bifogat','Attached')}: {item.name} · {item.fileCount} {tr('filer','files')}</small>)}</div>
               :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><span className="cognitive-jaco-mark"/>JACO</div><ChatMarkdown text={message.content}/><CopyMessageButton text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>{tr('Svar & källor','Answer & sources')}</summary><p>{message.meta}</p></details>}</article>
               :<div key={item.id} className="cognitive-system-message">{message.content}{message.action&&<button type="button" disabled={busy!==null} onClick={()=>void runAction(message.action!)}>{message.action.label}</button>}</div>;
           })}
@@ -674,8 +689,10 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       <form onSubmit={event=>{event.preventDefault();void submit();}} className="cognitive-composer">
         <div className="cognitive-composer-inner">
           {!following&&<button type="button" className="cognitive-follow-latest" onClick={followLatest}><ArrowDown size={13}/>{tr('Följ senaste arbetet','Follow latest work')}</button>}
+          <div className="cognitive-mission-row">
           {currentMission&&<div className="cognitive-live-questions"><button type="button" onClick={()=>prompt(tr('Vad har du upptäckt hittills i det aktuella uppdraget?','What have you discovered so far in the current mission?'))} disabled={Boolean(busy)}>{tr('Vad har du upptäckt?','What have you found?')}</button><button type="button" onClick={()=>prompt(tr('Visa vad som faktiskt fungerar och vilka belägg som stöder det.','Show what actually works and the evidence supporting it.'))} disabled={Boolean(busy)}>{tr('Vad fungerar?','What works?')}</button></div>}
-          {currentMission && onCancelMission && !currentMission.cancelRequested && <button type="button" disabled={Boolean(missionStopBusy)} onClick={()=>void stopCurrentMission(currentMission.id)} className="mx-2 mb-2 rounded border border-rose-900 px-3 py-1.5 text-xs text-rose-200 disabled:opacity-50" aria-label={tr('Stoppa pågående uppdrag','Stop current mission')}>{missionStopBusy ? tr('Begär stopp…','Requesting stop…') : tr('Stoppa uppdrag','Stop mission')}</button>}
+          {currentMission && onCancelMission && !currentMission.cancelRequested && <button type="button" disabled={Boolean(missionStopBusy)} onClick={()=>void stopCurrentMission(currentMission.id)} className="rounded border border-rose-900 px-3 py-1.5 text-xs text-rose-200 disabled:opacity-50" aria-label={tr('Stoppa pågående uppdrag','Stop current mission')}>{missionStopBusy ? tr('Begär stopp…','Requesting stop…') : tr('Stoppa uppdrag','Stop mission')}</button>}
+          </div>
           {missionStopNotice&&<p role="status" className="mx-3 mb-2 text-xs text-slate-300">{missionStopNotice}</p>}
           {missionSteerNotice&&<p role="status" className="mx-3 mb-2 text-xs text-slate-300">{missionSteerNotice}</p>}
 
