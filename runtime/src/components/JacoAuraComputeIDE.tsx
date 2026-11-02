@@ -1526,6 +1526,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
             onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
             onActivated={() => { void refresh().catch(() => {}); }} />}
           missions={missions}
+          onCancelMission={cancelMission}
           onOpenProviders={() => {setConnectionsTab('models');setWorkspaceView('connections');}}
           activeFilePath={selectedFile}
           activeFileContent={fileView ? (drafts[fileView.path] ?? fileView.content) : null}
