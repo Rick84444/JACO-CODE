@@ -9,7 +9,8 @@ import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, renameSync } from 'node:fs';
-import { buildAgentCard, joinWorkplace } from '../../agents/lib/workplace-session.mjs';
+import { hubDeviceLinked } from '../../agents/lib/workplace-session.mjs';
+import { JacoWorkplaceClient } from './workplace/workplace-client.mjs';
 import { plannerChoiceFile, readPlannerChoice } from '../../agents/lib/planner-choice.mjs';
 import { createStrategicKernel, SEER_PURPOSE, goalTaskScope } from './seer-strategy.mjs';
 import { createMissionGraph } from './seer-mission-graph.mjs';
@@ -395,7 +396,10 @@ const agentRegistry = {
   list() {
     const cutoff = now() - 60;
     db.prepare("UPDATE agents SET status='stale' WHERE last_ping < ? AND status='active'").run(cutoff);
-    return db.prepare('SELECT * FROM agents').all().map(agent => ({ ...agent, capabilities: jp(agent.capabilities, []) }));
+    // Legacy versions registered SEER as an agent. Keep the historical row
+    // (audit compatibility), but never expose it as an independent agent.
+    return db.prepare("SELECT * FROM agents WHERE id <> 'seer'").all()
+      .map(agent => ({ ...agent, capabilities: jp(agent.capabilities, []) }));
   },
 };
 
@@ -623,8 +627,25 @@ function buildClaudeContext() {
   };
 }
 
-// ── Workplace ─────────────────────────────────────────────────────────────────
-let workplace = { state: 'REGISTERING', error: null };
+// ── Aura's read-only Workplace discovery ───────────────────────────────────────
+// Strategy is an internal Aura capability, NOT a Workplace agent. Discovery
+// uses the existing authenticated read API; no registration, heartbeat,
+// session, model loop or agent authority is created for SEER.
+const workplaceLocation = (() => {
+  const linked = process.env.JACO_WORKPLACE_SCOPE !== 'local' && hubDeviceLinked(process.env);
+  const baseUrl = linked ? String(process.env.JACO_HUB_URL).replace(/\\/+$/, '') + '/v1/device/workplace'
+    : String(process.env.JACO_WORKPLACE_URL || '');
+  const token = linked ? process.env.JACO_DEVICE_KEY : process.env.JACO_WORKPLACE_TOKEN;
+  if (linked) {
+    const url = new URL(baseUrl);
+    if (url.protocol !== 'https:' && !['localhost', '127.0.0.1', '::1'].includes(url.hostname)) {
+      throw new Error('WORKPLACE_HUB_HTTPS_REQUIRED');
+    }
+  }
+  return baseUrl && token ? { baseUrl, token } : null;
+})();
+const workplaceObserver = workplaceLocation
+  ? new JacoWorkplaceClient({ ...workplaceLocation, timeoutMs: 5_000 }) : null;
 
 function auth(req) {
   const header = req.headers.authorization || '';
@@ -1030,7 +1051,7 @@ const server = createServer(async (req, res) => {
     if (POST && path === '/cortex/mission-graphs') return json(res, missionGraph.create(await body(req)), 201);
 
     if (GET && path === '/cortex/strategic-board') return json(res, {
-      owner: 'seer', instructions: STRATEGIC_AGENT_INSTRUCTIONS,
+      owner: 'aura', component: 'strategy', instructions: STRATEGIC_AGENT_INSTRUCTIONS,
       graphs: missionGraph.context(),
     });
     const boardMatch = path.match(/^\/cortex\/mission-graphs\/([^/]+)\/board$/);
@@ -1137,19 +1158,34 @@ const server = createServer(async (req, res) => {
 
     if (GET && path === '/cortex/agents') return json(res, agentRegistry.list());
     if (POST && path === '/cortex/agents/ping') {
-      agentRegistry.ping(await body(req));
-      return json(res, { ok: true, strategic_context: { owner: 'seer', path: '/cortex/strategic-board',
+      const entry = await body(req);
+      if (String(entry?.id || '').toLowerCase() === 'seer') {
+        return json(res, { error: 'SEER_INTERNAL_CAPABILITY_NOT_AGENT' }, 409);
+      }
+      agentRegistry.ping(entry);
+      return json(res, { ok: true, strategic_context: { owner: 'aura', path: '/cortex/strategic-board',
         instructions: STRATEGIC_AGENT_INSTRUCTIONS, authority: 'context only' } });
     }
 
     // Dispatch only proposes synchronized Workplace candidates; it does not execute.
     if (POST && path === '/cortex/dispatch') {
       const payload = await body(req);
-      if (workplace.state !== 'READY') return json(res, { error: 'WORKPLACE_UNSYNCED', state: workplace.state, detail: workplace.error }, 503);
+      if (!workplaceObserver) return json(res, { error: 'WORKPLACE_UNSYNCED', state: 'UNCONFIGURED' }, 503);
+      // A successful authenticated registry read proves Workplace can answer now.
+      // No stale READY flag or separate registered SEER session is involved.
+      let agents;
+      try {
+        ({ agents } = await workplaceObserver.agents());
+        if (!Array.isArray(agents)) throw new Error('WORKPLACE_AGENTS_INVALID');
+      } catch {
+        return json(res, { error: 'WORKPLACE_UNSYNCED', state: 'UNAVAILABLE' }, 503);
+      }
       const requires = Array.isArray(payload.requires) ? payload.requires.map(String) : [];
-      const { agents } = await workplace.client.agents();
       const candidates = agents
-        .filter(agent => agent.agentId !== workplace.registration.agentId)
+        // Old SEER sessions may remain stored until expiry after an upgrade.
+        // They are not executors and must never be advertised for dispatch.
+        .filter(agent => agent?.card?.identity?.stable_id !== 'seer'
+          && agent?.card?.role?.primary !== 'strategic-governor')
         .map(agent => ({ ...agent, working: agent.sessions.filter(session => ['READY', 'AVAILABLE'].includes(session.status)) }))
         .filter(agent => agent.working.length && requires.every(required => agent.card?.capabilities?.[required] === true))
         .map(agent => ({
@@ -1220,48 +1256,8 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  /cortex/mission-graphs       — SEER-owned long-horizon DAG orchestration');
   console.log('  /cortex/memory               — persistent key-value compatibility memory');
 
-  agentRegistry.ping({
-    id: 'seer',
-    name: 'JACO SEER Strategic Governor',
-    capabilities: ['strategy', 'beliefs', 'prediction-ledger', 'economic-observation', 'mission-orchestration', 'self-development', 'active-memory', 'knowledge-retrieval', 'capability-routing', 'skill-selection', 'memory', 'missions', 'dispatch', 'observe'],
-  });
-
-  joinWorkplace({
-    card: buildAgentCard({
-      stableId: 'seer',
-      name: 'SEER',
-      agentType: 'strategic',
-      role: 'strategic-governor',
-      description: 'JACO strategic cognitive core. Maintains purpose, beliefs, alternatives, predictions and capability/economic evidence; routes execution through canonical Nova and ModelRelay rather than creating a second executor.',
-      capabilities: {
-        reasoning: true,
-        strategy: true,
-        database: true,
-        memory: true,
-        capability_routing: true,
-        skill_selection: true,
-        terminal: false,
-        filesystem_write: false,
-        browser_control: false,
-        desktop_control: false,
-        deployment: false,
-      },
-      tools: ['strategy', 'strategic-board', 'self-development', 'mission-graphs', 'missions', 'memory', 'active-memory', 'knowledge', 'capabilities', 'skills', 'observations', 'experiences', 'brain', 'dispatch'],
-      constraints: [
-        'Evidence before claim',
-        'Paid model providers stay disabled unless JACO_ALLOW_PAID_MODELS=1',
-        'Financial execution requires ModelRelay signed mandate; SEER cannot self-authorize spend',
-        'Dispatch proposes candidates; it does not execute tasks',
-        'Nova durable mission store remains authoritative for execution',
-        'SEER owns Mission Graph dependencies, checkpoints and replanning; Aura is presentation only',
-        'In-flight recovery fails closed and requires reconciliation before redispatch',
-        'Self-development is coding-contract bound; no implicit push, deploy or root-authority mutation',
-      ],
-      preferredTasks: ['strategy', 'planning', 'hypothesis-comparison', 'dispatch', 'memory'],
-    }),
-    disabled: 'capability dispatch stays disabled',
-    log: (level, message) => console.log(`${level.toUpperCase()} [workplace] ${message}`),
-  }).then(session => { workplace = session; });
+  // No agentRegistry.ping or Workplace join here: the SEER code is Aura's
+  // private strategy/mission-graph service, not a separate reasoning agent.
 
   emit('strategy.started', {
     purpose_id: strategy.state().purpose?.id || null,
@@ -1290,12 +1286,14 @@ server.listen(PORT, '127.0.0.1', () => {
 // ── Autonomous Governor Loop ───────────────────────────────────────────────────
 // Periodically: observe system state → ask LLM what the highest-value next goal is
 // → if novel and passes execution gate, create a Mission Graph automatically.
-// Controlled by SEER_GOVERNOR_INTERVAL_MS (default 5 min). Disable: set to 0.
-const GOVERNOR_INTERVAL_MS = parseInt(process.env.SEER_GOVERNOR_INTERVAL_MS ?? '300000');
+// Disabled by default; explicit SEER_GOVERNOR_INTERVAL_MS enables legacy mode.
+// Aura owns autonomous intent. Do not start an independent strategic model
+// conversation at process startup; legacy operators may explicitly opt in.
+const GOVERNOR_INTERVAL_MS = parseInt(process.env.SEER_GOVERNOR_INTERVAL_MS ?? '0');
 let governorInFlight = false;
 let governorTimer = null;
 
-const GOVERNOR_SYSTEM = `You are JACO's Strategic Governor.
+const GOVERNOR_SYSTEM = `You are Aura's strategic planning capability, not a separate agent.
 Purpose: ${SEER_PURPOSE.statement}
 Invariants: operator_authority, evidence_before_claim, no_external_spend_without_signed_mandate, legal_and_policy_compliant_operation, reversible_by_default.
 Respond ONLY with valid JSON — no markdown, no prose.`;
