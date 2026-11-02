@@ -123,3 +123,16 @@ test('The Build Agent operator action uses the existing dedicated organization a
   assert.match(org,/requireMutationAuth\(req, res, next\)/);
   assert.doesNotMatch(gui,/eval\(|new Function|localStorage\.setItem\('agentKey'/);
 });
+
+test('Aura chat exposes canonical mission stop without conflating it with response cancellation', () => {
+  const gui = read('runtime/src/components/AuraChatPanel.tsx');
+  const parent = read('runtime/src/components/JacoAuraComputeIDE.tsx');
+  const server = read('runtime/server.ts');
+  assert.ok(gui.includes('onCancelMission?: (id: string) => Promise<void>'));
+  assert.ok(gui.includes('onClick={()=>void stopCurrentMission(currentMission.id)}'));
+  assert.ok(gui.includes('await onCancelMission(id)'));
+  assert.ok(gui.includes('requestRef.current?.abort()'));
+  assert.ok(parent.includes('onCancelMission={cancelMission}'));
+  assert.ok(server.includes("app.post('/api/aura/workbench/missions/:id/cancel'"));
+  assert.ok(!gui.includes('Starta ett varaktigt SEER/Nova-uppdrag'));
+});
