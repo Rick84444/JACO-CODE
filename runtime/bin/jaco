@@ -8,7 +8,7 @@ ACTION="${1:-activate}"
 # as Linux/macOS/Windows and the GUI. Lifecycle verbs that the product CLI does not own yet stay
 # on the canonical runit supervisor.
 case "$ACTION" in
-  activate|status)
+  activate|status|ide)
     if [ -f "$REPO_ROOT/agents/jaco-cli.mjs" ] && command -v node >/dev/null 2>&1; then
       exec node "$REPO_ROOT/agents/jaco-cli.mjs" "$@"
     fi
