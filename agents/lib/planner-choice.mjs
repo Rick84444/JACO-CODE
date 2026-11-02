@@ -3,7 +3,8 @@
 // switch applies from the next turn without a restart. Only the providers and models listed here
 // can be chosen. A paid choice still needs JACO_ALLOW_PAID_MODELS=1 and stays under Nova's daily
 // dollar ceiling (JACO_NOVA_PAID_USD_PER_DAY).
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { budgetedNovaOllamaCall } from './nova-ollama-cost.mjs';
 import { credential } from './secret-store.mjs';
@@ -107,9 +108,17 @@ export function validatePlannerChoice({ provider, model } = {}, env = process.en
 }
 
 export function writePlannerChoice(file, { provider, model }, by = 'operator', now = new Date()) {
-  mkdirSync(dirname(file), { recursive: true });
+  // The planner is read by Core, SEER and the local executor. Atomic replace
+  // prevents an interrupted write from making the selected model disappear.
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const saved = { provider, model, by, at: now.toISOString() };
-  writeFileSync(file, JSON.stringify(saved, null, 2));
+  const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(saved, null, 2), { mode: 0o600, flag: 'wx' });
+    renameSync(tmp, file);
+  } finally {
+    try { rmSync(tmp, { force: true }); } catch {}
+  }
   return saved;
 }
 
