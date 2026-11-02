@@ -77,6 +77,10 @@ Use **existing** device registry and pairing, not a new socket or token store.
 
 Non-loopback runtime connections require HTTPS and existing gateway authentication. The CLI never creates a public tunnel or synchronizes private state through Git.
 
+## Existing research-agent identity
+
+The new JACO-owned research specialist is **Ecosystem Analyst** (`ecosystem-analyst`). The earlier template used a competitor-branded agent ID. If that legacy ID exists in the host's organization store, new-team provisioning refuses to create a duplicate or silently migrate credentials, receipts and directory ownership. Review/migrate that existing identity explicitly via an operator-approved migration procedure before creating the new team. On a fresh installation only the new name/ID is created.
+
 ## Next release gates
 
 - CI: tests for terminal command parsing, Git admission/cleanliness, explicit confirmation, one-time pairing over stdin, workspace MCP setup wiring, and Windows launch command; typecheck and full root tests.
