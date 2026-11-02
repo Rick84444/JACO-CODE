@@ -1024,7 +1024,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       const chosen = planner?.choice?.model || model;
       try { localStorage.setItem('jaco:aura:chat-provider:v2', JSON.stringify({ provider: provider.id, model: chosen })); } catch { /* the chat then keeps its own choice */ }
       window.dispatchEvent(new Event('jaco:aura:provider-chosen'));
-      setUseResult(current => ({ ...current, [provider.id]: { ok: true, text: `${provider.id} / ${chosen} verified (${tested.result.latencyMs ?? '?'} ms) and now used for chat and Nova` } }));
+      setUseResult(current => ({ ...current, [provider.id]: { ok: true, text: `${provider.id} / ${chosen} verified (${tested.result.latencyMs ?? '?'} ms) and now used for Aura chat and execution` } }));
     } catch (error: any) {
       const code = String(error?.message || error);
       const why = /PLANNER_KEY_MISSING/.test(code) ? 'key missing, add it under Add API key'
