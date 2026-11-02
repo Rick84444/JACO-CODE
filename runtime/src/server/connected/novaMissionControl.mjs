@@ -323,7 +323,7 @@ export class NovaMissionControl {
     if (!sessionColumns.has('budget_turn_base')) this.db.exec('ALTER TABLE nova_sessions ADD COLUMN budget_turn_base INTEGER NOT NULL DEFAULT 0');
     if (!sessionColumns.has('budget_started_at')) this.db.exec('ALTER TABLE nova_sessions ADD COLUMN budget_started_at INTEGER');
     this.transactionDepth = 0;
-    for (const name of ['create','claim','preflight','begin','finish','release','resolve','requestCancel']) {
+    for (const name of ['create','claim','preflight','begin','finish','release','resolve','requestCancel','steer']) {
       const operation=this[name].bind(this);
       this[name]=(...args)=> {
         if (this.transactionDepth) return operation(...args);
@@ -411,7 +411,19 @@ export class NovaMissionControl {
       preflight: this.bus.lastMissionEvent(id,'NOVA_PREFLIGHT')?.payload || null,
       replanRequest: this.bus.lastMissionEvent(id,'NOVA_REPLAN_REQUEST')?.payload || null,
       cancelRequested: !TERMINAL.has(base.status) && Boolean(this.bus.lastMissionEvent(id,'NOVA_CANCEL_REQUEST')),
+      // Immutable operator instructions share this mission's durable event ledger.
+      // Revision is the event sequence: a stale model proposal cannot start a tool after a steer.
+      steering: this.latestSteering(id),
       ...this.answerReview(id, base.status) };
+  }
+
+  latestSteering(id) {
+    const event = this.bus.lastMissionEvent(id, 'NOVA_OPERATOR_STEER');
+    return event ? {
+      revision: event.seq, instruction: event.payload.instruction,
+      requestedAt: event.ts, requestId: event.payload.requestId,
+      authority: 'context_only',
+    } : null;
   }
 
   // After a claim check rejected the last answer and the mission was resumed, the planner gets the
@@ -525,9 +537,11 @@ export class NovaMissionControl {
     this.bus.event('NOVA_PREFLIGHT',{missionId:id,workerId:owner,payload});return {report:payload};
   }
 
-  begin(id, { owner, token, task }) {
+  begin(id, { owner, token, task, steerVersion }) {
     const row = this.assertLease(id, owner, token);
     const mission = this.get(id);
+    const currentVersion = mission.steering?.revision || 0;
+    if ((currentVersion || steerVersion !== undefined) && steerVersion !== currentVersion) throw new Error('NOVA_STEER_STALE');
     if (row.phase !== 'PLANNING' || mission.status !== 'ACTIVE') throw new Error('NOVA_NOT_PLANNING');
     if (mission.cancelRequested) throw new Error('MISSION_CANCEL_REQUESTED');
     if (mission.contract) {
@@ -596,9 +610,15 @@ export class NovaMissionControl {
     return this.get(id);
   }
 
-  release(id, { owner, token, error = null, completionProposed = false, completionReason = null, replanRequest = null }) {
+  release(id, { owner, token, error = null, completionProposed = false, completionReason = null, replanRequest = null, steerVersion }) {
     const row = this.assertLease(id, owner, token);
     if (row.phase !== 'PLANNING') throw new Error('EXECUTION_REQUIRES_RECEIPT');
+    // A stale model may always give back its lease, but may not complete, replan or
+    // block a mission based on instructions that have already been superseded.
+    if (completionProposed || replanRequest || /^PLANNER_BLOCKED/.test(String(error || ''))) {
+      const currentVersion = this.latestSteering(id)?.revision || 0;
+      if ((currentVersion || steerVersion !== undefined) && steerVersion !== currentVersion) throw new Error('NOVA_STEER_STALE');
+    }
     if (this.bus.lastMissionEvent(id,'NOVA_CANCEL_REQUEST')) {
       this.db.prepare("UPDATE nova_sessions SET owner=NULL,token=NULL,lease_until=NULL WHERE mission_id=?").run(id);
       this.finishRequestedCancel(id);
@@ -647,6 +667,22 @@ export class NovaMissionControl {
   answer(id) {
     const payload = this.bus.lastMissionEvent(id, 'NOVA_PLANNING_RESULT')?.payload;
     return typeof payload?.reason === 'string' ? payload.reason : null;
+  }
+
+  steer(id, { instruction, requestId } = {}) {
+    if (typeof instruction !== 'string' || !instruction.trim() || instruction.length > 2000) throw new Error('OPERATOR_STEER_INSTRUCTION_INVALID');
+    if (typeof requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f-]{27,50}$/i.test(requestId)) throw new Error('OPERATOR_STEER_REQUEST_ID_INVALID');
+    const mission = this.get(id);
+    const existing = this.db.prepare("SELECT seq,ts,payload_json FROM events WHERE mission_id=? AND type='NOVA_OPERATOR_STEER' AND json_extract(payload_json,'$.requestId')=? ORDER BY seq DESC LIMIT 1").get(id, requestId);
+    if (existing) return { steering: {
+      revision: existing.seq, instruction: JSON.parse(existing.payload_json).instruction,
+      requestedAt: existing.ts, requestId, authority: 'context_only',
+    }, replayed: true };
+    if (mission.status !== 'ACTIVE' || mission.cancelRequested) throw new Error('OPERATOR_STEER_MISSION_NOT_ACTIVE');
+    // No plan, goal, tool, budget, permission, contract or running action is mutated.
+    // Each instruction is a later-model-turn input, not an authority grant.
+    this.bus.event('NOVA_OPERATOR_STEER', { missionId: id, payload: { requestId, instruction: instruction.trim() } });
+    return { steering: this.latestSteering(id), replayed: false };
   }
 
   requestCancel(id, note = 'Operatören avslutar uppdraget från Aura.') {
