@@ -91,7 +91,10 @@ test('Aura strategy discovers READY Workplace agents without ever registering SE
   const seer = await startProcess(t, ['--experimental-sqlite', 'gateway/src/seer.mjs'], {
     SEER_PORT: '0', SEER_STATE_DIR: seerDir, JACO_GATEWAY_TOKEN: SEER_TOKEN,
     JACO_RUNTIME_URL: 'http://127.0.0.1:9', OLLAMA_BASE_URL: 'http://127.0.0.1:9',
-    JACO_WORKPLACE_URL: wp.url, JACO_WORKPLACE_TOKEN: TRANSPORT
+    JACO_WORKPLACE_URL: wp.url, JACO_WORKPLACE_TOKEN: TRANSPORT,
+    // Simulates a carried-over 2026-10 installation setting. Without Aura's
+    // explicit new opt-in, it must not start an independent model governor.
+    SEER_GOVERNOR_INTERVAL_MS: '100',
   }, /JACO SEER(?: Strategic Governor)? :(\d+)/);
   t.after(() => fs.rmSync(seerDir, { recursive: true, force: true }));
   const base = `http://127.0.0.1:${seer.port}`;
@@ -103,6 +106,11 @@ test('Aura strategy discovers READY Workplace agents without ever registering SE
   const observer = new JacoWorkplaceClient({ baseUrl: wp.url, token: TRANSPORT });
   assert.deepEqual((await observer.agents()).agents, [],
     'the strategy service must never register a second Workplace agent');
+  const health = await fetch(base+'/health').then(response=>response.json());
+  assert.equal(health.agent_identity, 'aura');
+  assert.equal(health.capability, 'strategy');
+  assert.equal(health.independent_governor_enabled, false,
+    'stale 5-minute governor configuration must not launch another LLM');
 
   // A historical SEER identity left by an old installation must not become
   // an execution candidate even if it advertises browser_control.
