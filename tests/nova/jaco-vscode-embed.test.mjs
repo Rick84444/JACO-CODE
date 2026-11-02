@@ -44,6 +44,7 @@ test('only the exact local embed route allows VS Code webview ancestors', () => 
   assert.equal(embedded.headers.has('x-frame-options'), false);
   assert.equal(embedded.headers.get('x-jaco-embed'), 'vscode-v1');
   assert.match(embedded.headers.get('content-security-policy'), /frame-ancestors https:\/\/\*\.vscode-webview\.net vscode-webview:/);
+  assert.match(embedded.headers.get('content-security-policy'), /vscode-file:\/\/vscode-app/);
   assert.match(embedded.headers.get('content-security-policy'), /script-src 'self'/);
   assert.match(embedded.headers.get('content-security-policy'), /object-src 'none'/);
   for (const p of ['/', '/vscode-embed/', '/ide-login', '/api/aura/chat', '/assets/app.js']) {
