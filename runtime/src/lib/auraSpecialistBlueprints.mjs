@@ -7,7 +7,7 @@ export const AURA_SPECIALISTS = Object.freeze([
     name: 'Ecosystem Analyst',
     title: 'Competitive Research Lead',
     reportsTo: 'aura',
-    task: 'Research major autonomous-agent products, including Cursor's Grok Bot, Codex, Claude Code and others. Evaluate architecture, primary sources, praise, criticisms and reproducible evidence; identify what changed since the last review.',
+    task: 'Research major autonomous-agent products, including Cursor Grok Bot, Codex, Claude Code and others. Evaluate architecture, primary sources, praise, criticisms and reproducible evidence; identify what changed since the last review.',
     goal: 'Deliver sourced competitive intelligence covering capabilities, architecture, reliability, pricing, privacy and user friction, with falsifiable JACO product experiments; never invent access to proprietary implementation.',
   }),
   Object.freeze({
