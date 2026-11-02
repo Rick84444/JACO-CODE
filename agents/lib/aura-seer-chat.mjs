@@ -114,7 +114,7 @@ const MAX_TOOL_ROUNDS = 5;
 const clipToolResult = (value, limit) => {
   const input = String(value ?? '');
   if (input.length <= limit) return input;
-  const marker = '\\n...[tool output truncated]...\\n';
+  const marker = '\n...[tool output truncated]...\n';
   const available = limit - marker.length;
   const front = Math.floor(available * 0.7);
   return input.slice(0, front) + marker + input.slice(-(available - front));
@@ -126,8 +126,8 @@ export function renderAuraToolTranscript(entries = []) {
   return [
     ...(omitted ? [`[Earlier tool results omitted: ${omitted}; see verified receipts]`] : []),
     ...recent.map((item, index) =>
-      `TOOL_CALL ${clipToolResult(JSON.stringify(item.call), 500)}\\nTOOL_RESULT (${item.ok ? 'ok' : 'error'}, ${item.at}):\\n${clipToolResult(item.text, index === recent.length - 1 ? 4000 : 900)}`),
-  ].join('\\n\\n');
+      `TOOL_CALL ${clipToolResult(JSON.stringify(item.call), 500)}\nTOOL_RESULT (${item.ok ? 'ok' : 'error'}, ${item.at}):\n${clipToolResult(item.text, index === recent.length - 1 ? 4000 : 900)}`),
+  ].join('\n\n');
 }
 
 export function summarizeAuraModelCosts(costs = []) {
