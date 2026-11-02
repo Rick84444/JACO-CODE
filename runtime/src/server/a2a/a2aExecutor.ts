@@ -317,7 +317,7 @@ export async function handleLocalA2AExecution(request: A2ATaskRequest): Promise<
   if (request.skillId === 'code-review-audit') {
     const code = request.parameters?.code || '';
     const issues: string[] = [];
-    if (code.includes('eval(')) issues.push('Warning: unsafe eval() detected in the code.');
+    if (/\beval\(/.test(code)) issues.push('Warning: unsafe dynamic code evaluation detected in the code.');
     if (code.includes('autoApprove: true')) issues.push('Warning: autoApprove bypasses safety gates.');
     
     const resultObj = {
