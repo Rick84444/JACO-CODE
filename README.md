@@ -63,6 +63,12 @@ There should be one implementation owner per responsibility. Historical prototyp
 - Completion claims require receipts or other observable evidence.
 - Hardware, browser, provider and deployment claims require target-specific verification; unit tests are not substitutes.
 
+## Verified Lite distribution
+
+The local Lite installer uses **GitHub Releases** as its verified download channel. A normal push to `main` never publishes an installer. A new release requires an existing version tag at the current `main` commit, manual `PUBLISH` confirmation, successful Linux and Windows package checks and byte-for-byte external download verification. Android/Termux is experimental; the distributable is not an APK or OS installer.
+
+See [the release and installation contract](docs/LITE_RELEASE.md). Public download links become usable only after the first verified GitHub Release is actually published.
+
 ## Development
 
 Run the focused test for the subsystem you changed, then the affected repository gates.

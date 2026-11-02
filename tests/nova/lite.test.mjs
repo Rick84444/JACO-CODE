@@ -266,11 +266,11 @@ test('Lite says where a newer download is, reads only latest.json, and never blo
     fs.writeFileSync(path.join(dir, 'release.json'), JSON.stringify(release));
     const latest = { schema: 'jaco.lite-latest/v1', version: '1', sourceCommit: 'b'.repeat(40), builtAt: '2026-10-13T10:00:00.000Z',
       files: { universal: { file: 'jaco-lite.zip', sha256: '1'.repeat(64) }, windows: { file: 'jaco-lite-windows.zip', sha256: '2'.repeat(64) }, android: { file: 'jaco-lite-android.zip', sha256: '3'.repeat(64) } } };
-    const serve = body => async (url, init) => { assert.equal(url, 'https://jacocode.com/download/latest.json'); assert.ok(init.signal, 'it has a timeout'); assert.ok(!init.headers.authorization && !init.headers.cookie, 'no identifier is sent'); return { ok: true, status: 200, json: async () => body }; };
+    const serve = body => async (url, init) => { assert.equal(url, 'https://github.com/Rick84444/JACO-CODE/releases/latest/download/latest.json'); assert.ok(init.signal, 'it has a timeout'); assert.ok(!init.headers.authorization && !init.headers.cookie, 'no identifier is sent'); return { ok: true, status: 200, json: async () => body }; };
     const win = await checkForUpdate({ installDir: dir, fetchImpl: serve(latest), platform: 'win32', env: {} });
-    assert.equal(win.state, 'UPDATE'); assert.equal(win.url, 'https://jacocode.com/download/jaco-lite-windows.zip'); assert.equal(win.sha256, '2'.repeat(64));
-    assert.equal((await checkForUpdate({ installDir: dir, fetchImpl: serve(latest), platform: 'linux', env: { TERMUX_VERSION: '0.118' } })).url, 'https://jacocode.com/download/jaco-lite-android.zip');
-    assert.equal((await checkForUpdate({ installDir: dir, fetchImpl: serve(latest), platform: 'linux', env: {} })).url, 'https://jacocode.com/download/jaco-lite.zip');
+    assert.equal(win.state, 'UPDATE'); assert.equal(win.url, 'https://github.com/Rick84444/JACO-CODE/releases/latest/download/jaco-lite-windows.zip'); assert.equal(win.sha256, '2'.repeat(64));
+    assert.equal((await checkForUpdate({ installDir: dir, fetchImpl: serve(latest), platform: 'linux', env: { TERMUX_VERSION: '0.118' } })).url, 'https://github.com/Rick84444/JACO-CODE/releases/latest/download/jaco-lite-android.zip');
+    assert.equal((await checkForUpdate({ installDir: dir, fetchImpl: serve(latest), platform: 'linux', env: {} })).url, 'https://github.com/Rick84444/JACO-CODE/releases/latest/download/jaco-lite.zip');
     assert.match(updateNotice(win, {}).join('\n'), /newer JACO Lite is available[\s\S]*jaco-lite-windows\.zip[\s\S]*SHA-256 2{64}/);
     const viaInstaller = updateNotice(win, { JACO_LITE_INSTALLER: '1' }).join('\n');
     assert.match(viaInstaller, /jaco-lite update/); assert.match(viaInstaller, /jaco-lite rollback/); assert.doesNotMatch(viaInstaller, /Unzip it/, 'an installed copy is told the command, not to unzip');

@@ -30,7 +30,7 @@ export const HELP = [
   '  --no-agent       start the IDE without the Nova agent',
   '  --check          check this installation and print what would start, then exit',
   '  --verbose        also print the server log',
-  '  (set JACO_LITE_NO_UPDATE_CHECK=1 to stop it looking for a newer download on jacocode.com)',
+  '  (set JACO_LITE_NO_UPDATE_CHECK=1 to stop it looking for a newer download on GitHub Releases)',
   '  --whatsapp +NN…  let agents message you on WhatsApp: shows a QR code to scan with the agent\'s phone, then starts as usual',
   '  --whatsapp-check check that WhatsApp support and a voice engine are available, then exit',
   '  --help           print this text',
@@ -264,10 +264,10 @@ export function openBrowser(url, platform = process.platform, spawnImpl = spawn)
   } catch { return false; }
 }
 
-// A newer download on jacocode.com (operator 2026-10-13: "Lite needs updating"). The launcher only READS
+// A newer download on GitHub Releases (operator 2026-10-13: "Lite needs updating"). The launcher only READS
 // latest.json (no identifier is sent) and prints where the newer file is; it never downloads or runs anything.
 // JACO_LITE_NO_UPDATE_CHECK=1 turns it off.
-export const UPDATE_URL = 'https://jacocode.com/download/latest.json';
+export const UPDATE_URL = 'https://github.com/Rick84444/JACO-CODE/releases/latest/download/latest.json';
 const PUBLIC_FILES = new Set(['jaco-lite.zip', 'jaco-lite-windows.zip', 'jaco-lite-android.zip']);
 export function platformFor({ release = null, platform = process.platform, env = process.env } = {}) {
   if (release?.platform === 'windows' || release?.platform === 'android') return release.platform;
@@ -291,7 +291,7 @@ export async function checkForUpdate({ installDir, fetchImpl = fetch, env = proc
     if (!isNewer(local, latest)) return { state: 'CURRENT' };
     const entry = latest.files?.[platformFor({ release: local, platform, env })] || latest.files?.universal;
     if (!entry || !PUBLIC_FILES.has(entry.file)) return { state: 'UNKNOWN', reason: 'NO_DOWNLOAD_LISTED' };
-    return { state: 'UPDATE', file: entry.file, url: `https://jacocode.com/download/${entry.file}`, sha256: /^[a-f0-9]{64}$/.test(entry.sha256 || '') ? entry.sha256 : null, builtAt: latest.builtAt, installedBuiltAt: local.builtAt };
+    return { state: 'UPDATE', file: entry.file, url: `https://github.com/Rick84444/JACO-CODE/releases/latest/download/${entry.file}`, sha256: /^[a-f0-9]{64}$/.test(entry.sha256 || '') ? entry.sha256 : null, builtAt: latest.builtAt, installedBuiltAt: local.builtAt };
   } catch (error) { return { state: 'UNKNOWN', reason: String(error?.name === 'TimeoutError' ? 'TIMEOUT' : error?.message || error).slice(0, 80) }; }
 }
 export function updateNotice(result, env = process.env) {
