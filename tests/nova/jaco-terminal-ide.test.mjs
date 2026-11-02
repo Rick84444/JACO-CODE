@@ -4,12 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import {
   parseTerminalCommand, safeRuntimeUrl, enforceGitVerb, gitAdmission, gitContext,
-  terminalGitCommand, joinPairedDevice,
+  terminalGitCommand, joinPairedDevice, deviceRequest, runTerminalIDE,
 } from '../../agents/lib/terminal-ide.mjs';
 
 function project(t) {
@@ -69,7 +70,9 @@ test('Git push on main is blocked; pull refuses uncommitted work and a missing u
   assert.deepEqual(gitAdmission('sync', { branch: 'feat/work', dirty: false, upstream: null }), {
     allowed: false, reason: 'JACO_GIT_UPSTREAM_MISSING',
   });
-  assert.equal(gitAdmission('push', { branch: 'feat/work', dirty: false, upstream: 'origin/feat/work' }).allowed, true);
+  assert.equal(gitAdmission('push', { branch: 'feat/work', dirty: false, upstream: 'origin/feat/work', remote: 'origin', remoteRef: 'refs/heads/feat/work' }).allowed, true);
+  assert.equal(gitAdmission('push', { branch: 'feat/work', dirty: false, upstream: 'origin/feat/work' }).reason, 'JACO_GIT_PUSH_TARGET_UNVERIFIED');
+  assert.equal(gitAdmission('push', { branch: 'feat/work', dirty: false, upstream: 'origin/main', remote: 'origin', remoteRef: 'refs/heads/main' }).reason, 'JACO_PROTECTED_REMOTE_BRANCH_PUSH_DENIED');
 });
 
 test('fetch refuses to run without the exact interactive branch confirmation', async t => {
@@ -131,10 +134,85 @@ test('VS Code MCP uses the canonical installer and existing device pairing tools
   const cli = fs.readFileSync(path.join(root, 'agents/jaco-cli.mjs'), 'utf8');
   const termux = fs.readFileSync(path.join(root, 'runtime/bin/jaco'), 'utf8');
   assert.match(terminal, /clientConfig, installClient/);
-  assert.match(terminal, /tools', 'device.mjs/);
+  assert.match(terminal, /api\/connected\/devices/);
   assert.match(terminal, /tools', 'join-hub.mjs/);
   assert.match(terminal, /git', \['-C', project/);
   assert.match(cli, /runTerminalIDE/);
   assert.match(termux, /activate\|status\|ide/);
   assert.ok(require('../../package.json').files.includes('JACO-Terminal.cmd'));
+});
+
+
+test('push.default=matching cannot push main when the operator confirmed only a feature branch', async t => {
+  const { dir, git } = project(t);
+  const remote = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-bare-remote-'));
+  t.after(() => fs.rmSync(remote, { recursive:true, force:true }));
+  execFileSync('git', ['init', '--bare', remote], { encoding:'utf8', windowsHide:true });
+  const remoteGit = (...args) => execFileSync('git', ['--git-dir', remote, ...args], { encoding:'utf8', windowsHide:true }).trim();
+  git('remote', 'add', 'origin', remote);
+  git('push', '-u', 'origin', 'main');
+  const initialRemoteMain = remoteGit('rev-parse', 'refs/heads/main');
+
+  git('checkout', '-b', 'feature');
+  fs.writeFileSync(path.join(dir, 'feature.txt'), 'initial\n');
+  git('add', 'feature.txt'); git('commit', '-m', 'Feature initial');
+  git('push', '-u', 'origin', 'feature');
+  git('config', 'push.default', 'matching');
+
+  git('checkout', 'main');
+  fs.writeFileSync(path.join(dir, 'README.md'), 'local main only\n');
+  git('add', 'README.md'); git('commit', '-m', 'Do not push main');
+  git('checkout', 'feature');
+  fs.writeFileSync(path.join(dir, 'feature.txt'), 'advance feature\n');
+  git('add', 'feature.txt'); git('commit', '-m', 'Feature advance');
+
+  const state = await gitContext(dir);
+  assert.equal(state.remote, 'origin');
+  assert.equal(state.remoteRef, 'refs/heads/feature');
+  const requested = [];
+  await terminalGitCommand({
+    project: dir, verb: 'push',
+    confirm: async gate => { requested.push(gate); return gate; },
+    write: () => {},
+  });
+  assert.deepEqual(requested, ['PUSH feature TO origin/feature']);
+  assert.equal(remoteGit('rev-parse', 'refs/heads/main'), initialRemoteMain);
+  assert.equal(remoteGit('rev-parse', 'refs/heads/feature'), git('rev-parse', 'HEAD').trim());
+});
+
+test('device control calls reuse the current authenticated SDK rather than stale .env', async () => {
+  const calls = [];
+  const client = { request: async (url, options) => {
+    calls.push({ url, options });
+    return url.endsWith('/invite') ? { invite: { code: 'code', executor: 'nova@pixel' } } : { devices: [] };
+  } };
+  assert.deepEqual(await deviceRequest(client, 'list'), { devices: [] });
+  assert.deepEqual((await deviceRequest(client, 'invite', 'pixel')).invite.executor, 'nova@pixel');
+  assert.deepEqual(calls, [
+    { url: '/api/connected/devices', options: undefined },
+    { url: '/api/connected/devices/invite', options: { method: 'POST', body: { name: 'pixel' } } },
+  ]);
+  await assert.rejects(deviceRequest(client, 'invite', '../unsafe'), /JACO_DEVICE_COMMAND_INVALID/);
+});
+
+test('terminal reads a token generated during activation before constructing SDK client', async t => {
+  const { dir } = project(t);
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const seen = [];
+  let token = '';
+  const closeInput = setTimeout(() => input.end('/exit\n'), 15);
+  t.after(() => clearTimeout(closeInput));
+  const code = await runTerminalIDE({
+    project: dir, input, output, env: { JACO_RUNTIME_URL: 'http://127.0.0.1:3000' },
+    activate: async () => { token = 'generated-after-start'; return 0; },
+    resolveToken: () => token,
+    clientFactory: config => {
+      seen.push(config);
+      return { workbench: { status: async () => ({ success: true }) } };
+    },
+  });
+  assert.equal(code, 0);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].token, 'generated-after-start');
 });
