@@ -15,6 +15,7 @@ test('Manual and Planning cannot create a mission; Full Autonomous never represe
   assert.equal(AURA_RUN_MODES.manual.createsMission, false);
   assert.equal(AURA_RUN_MODES.planning.createsMission, false);
   assert.equal(AURA_RUN_MODES.autonomous.createsMission, true);
+  assert.equal(AURA_RUN_MODES.autonomous.interactionMode, 'question');
   assert.equal(AURA_RUN_MODES.planning.interactionMode, 'planning');
   assert.equal(normalizeAuraRunMode('autonomous').executionMode, 'autonomous');
   assert.throws(() => normalizeAuraRunMode('unlimited'), /AURA_RUN_MODE_UNKNOWN/);
@@ -99,7 +100,11 @@ test('The current GUI has a single compact label, inline build flow and no popup
   assert.match(gui,/x-jaco-operator-token/);
   assert.match(gui,/reportsTo:'aura'/);
   assert.match(gui,/Build Agent is a local UI action in every mode/);
-  assert.match(gui,/return composeMode==='goal'\?goal\(\):ask\(\)/);
+  assert.ok(gui.includes('return ask(); // Every mode retains normal conversation; mission start is explicit.'));
+  assert.match(gui,/data-testid="jaco-chat-send"/);
+  assert.match(gui,/data-testid="jaco-start-mission"/);
+  assert.ok(gui.includes('onClick={()=>void goal()}'));
+  assert.doesNotMatch(gui,/return composeMode/);
   assert.doesNotMatch(gui,/window\.confirm\(tr\([\s\S]{0,160}Full Autonomous/);
   assert.match(css,/@keyframes jaco-autonomous-pulse/);
   assert.match(css, /prefers-reduced-motion:reduce/);
@@ -149,4 +154,19 @@ test('Aura steering uses the existing operator UI and mission runtime without mo
   assert.ok(control.includes("this.bus.event('NOVA_OPERATOR_STEER'"));
   assert.ok(control.includes("throw new Error('NOVA_STEER_STALE')"));
   assert.ok(!server.includes("app.post('/api/connected/nova/missions/:id/steer'"));
+});
+
+test('explicit conversation controls stop or steer only named durable work and never reinterpret questions', async () => {
+  const { parseAuraMissionCommand } = await import('../../runtime/src/lib/auraChatCommands.mjs');
+  assert.deepEqual(parseAuraMissionCommand('Stoppa uppdraget'),{kind:'stop'});
+  assert.deepEqual(parseAuraMissionCommand('Stop current mission'),{kind:'stop'});
+  assert.deepEqual(parseAuraMissionCommand('Ändra uppdraget: Använd endast läsverktyg'),{kind:'steer',instruction:'Använd endast läsverktyg'});
+  for(const question of ['Hur stoppar jag uppdraget?','Kan du ändra uppdraget?','Gör så här istället','Stoppa alla jobb','Ändra uppdraget: ']) {
+    assert.equal(parseAuraMissionCommand(question),null,question);
+  }
+  const gui=read('runtime/src/components/AuraChatPanel.tsx');
+  assert.ok(gui.includes('parseAuraMissionCommand(text)'));
+  assert.ok(gui.includes('await onCancelMission(active.id)'));
+  assert.ok(gui.includes('await onSteerMission(active.id,controlCommand.instruction,crypto.randomUUID())'));
+  assert.ok(gui.includes('candidates.length>1'));
 });

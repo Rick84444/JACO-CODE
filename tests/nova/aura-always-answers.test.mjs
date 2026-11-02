@@ -1,7 +1,7 @@
 // Operator 2026-10-09: "viktigast i hela ide att man alltid kan få svar och hjälp".
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { auraAlwaysAnswers, auraStatusReply, auraStatusHints } from '../../agents/lib/aura-always-answers.mjs';
+import { auraAlwaysAnswers, auraStatusReply, auraStatusHints, answerWithin, auraChatDeadlines } from '../../agents/lib/aura-always-answers.mjs';
 
 const reply = (text, provider = 'groq') => ({ success: true, reply: text, text, provider, model: 'm' });
 const status = failures => auraStatusReply(failures);
@@ -60,4 +60,17 @@ test('status hints: budget with headroom, used-up quota, local models, and a gen
   assert.ok(hints.some(h => /free quota/.test(h)));
   assert.ok(hints.some(h => /gemma3:4b-cpu/.test(h)));
   assert.deepEqual(auraStatusHints(['x: odd']), ['Try again in a moment. The failure causes below show what happened.']);
+});
+
+test('a model that never answers ends in a timeout the status answer can explain', async () => {
+  await assert.rejects(answerWithin(new Promise(() => {}), 20), /AURA_MODEL_TIMEOUT/);
+  assert.equal(await answerWithin(Promise.resolve('ok'), 1000), 'ok');
+  assert.ok(auraStatusHints(['SEER: AURA_MODEL_TIMEOUT after 90 s']).some(h => /Chat settings/.test(h)));
+  assert.ok(auraStatusHints(['deepseek/x: AURA_CLOUD_DENIED:CLOUD_DISABLED_BY_POLICY']).some(h => /Allow cloud models/.test(h)));
+});
+
+test('chat deadlines have defaults and ignore invalid overrides', () => {
+  assert.deepEqual(auraChatDeadlines({}), { chosenMs: 120000, defaultMs: 90000, fallbackMs: 45000 });
+  assert.equal(auraChatDeadlines({ JACO_AURA_CHAT_DEFAULT_MS: '5000' }).defaultMs, 5000);
+  assert.equal(auraChatDeadlines({ JACO_AURA_CHAT_DEFAULT_MS: 'soon' }).defaultMs, 90000);
 });

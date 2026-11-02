@@ -2,7 +2,7 @@
   "name": "jaco-cognitive-ide",
   "displayName": "JACO Cognitive IDE",
   "description": "The full local JACO IDE inside VS Code, using the existing JACO runtime and MCP connections.",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "publisher": "jacocode",
   "private": true,
   "license": "MIT",

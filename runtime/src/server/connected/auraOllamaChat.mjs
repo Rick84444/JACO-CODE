@@ -9,7 +9,14 @@ export {
 } from '../aura/costEngine.mjs';
 
 const MAX_OUTPUT_TOKENS = 700;
-const MAX_PROMPT_BYTES = 24000;
+const LOCAL_PROMPT_BYTES = 12000;
+const REMOTE_PROMPT_BYTES = 48000;
+
+export function auraPromptByteLimit({ local, cloudRelay = false } = {}) {
+  // Do not increase local context speculatively. Remote providers may accept more
+  // context, but their actual token window remains provider-specific.
+  return local && !cloudRelay ? LOCAL_PROMPT_BYTES : REMOTE_PROMPT_BYTES;
+}
 
 export function auraOllamaModelCatalog(env = process.env) {
   const prices = ollamaCloudPrices(env);
@@ -42,7 +49,7 @@ export async function manualAuraProviderCompletion({ providerId, model, system, 
   }
   if (typeof system !== 'string' || typeof user !== 'string') throw new Error('AURA_CHAT_PROMPT_INVALID');
   const bytes = Buffer.byteLength(system + user, 'utf8');
-  if (bytes > MAX_PROMPT_BYTES) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
+  if (bytes > auraPromptByteLimit({ local: entry.local, cloudRelay: /(?:-cloud|:cloud)$/.test(model) })) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
   const configured = auraProviderPrices(env)[`${providerId}/${model}`];
   // A cloud model can be served through a loopback relay; its suffix must not bypass cost accounting.
   const isCloudSuffix = /(?:-cloud|:cloud)$/.test(model);
@@ -89,7 +96,7 @@ export async function manualAuraOllamaCompletion({ model, system, user, temperat
   if (!auraOllamaModelCatalog(env).includes(model)) throw new Error('AURA_CLOUD_MODEL_NOT_CONFIGURED');
   if (typeof system !== 'string' || typeof user !== 'string') throw new Error('AURA_CHAT_PROMPT_INVALID');
   const promptBytes = Buffer.byteLength(system + user, 'utf8');
-  if (promptBytes > MAX_PROMPT_BYTES) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
+  if (promptBytes > auraPromptByteLimit({ local:false, cloudRelay:true })) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
 
   // Bytes bound the number of input tokens for these text prompts. Reserve the
   // worst case before sending; missing usage or a transport error stays unknown.
@@ -126,8 +133,8 @@ export async function manualAuraOllamaCompletion({ model, system, user, temperat
 // provider the operator has connected (key saved, not local), through the budgeted path, so a message
 // is answered instead of failing. Free models first, then the usual cheap ones, then any other.
 const FALLBACK_ORDER = ['groq', 'deepseek', 'openrouter', 'gemini', 'qwen', 'mistral', 'together', 'xai', 'openai', 'anthropic'];
-export function chatFallbackChoice(providers, env = process.env) {
-  const ready = auraChatProviderCatalog(providers, env).filter(p => !p.local && p.credentialReady && p.defaultModel);
+export function chatFallbackChoice(providers, env = process.env, { exclude = null } = {}) {
+  const ready = auraChatProviderCatalog(providers, env).filter(p => !p.local && p.credentialReady && p.defaultModel && p.id !== exclude);
   const rank = p => (p.id === 'openrouter' && /:free$/i.test(p.defaultModel) ? -1 : (i => (i < 0 ? FALLBACK_ORDER.length : i))(FALLBACK_ORDER.indexOf(p.id)));
   const best = ready.sort((a, b) => rank(a) - rank(b))[0];
   return best ? { providerId: best.id, model: best.defaultModel } : null;

@@ -4,7 +4,7 @@ This VS Code extension opens **the complete existing JACO GUI** inside a full-si
 
 ## Install for development
 
-Open `extensions/jaco-vscode` as a VS Code extension development project (F5 in an Extension Development Host) or package the folder with VS Code's `@vscode/vsce` into a `.vsix`, then choose **Extensions: Install from VSIX...**. This source change does not automatically publish to the VS Code Marketplace.
+Open `extensions/jaco-vscode` as a VS Code extension development project (F5 in an Extension Development Host) or package the folder with VS Code's `@vscode/vsce` into a `.vsix`, then choose **Extensions: Install from VSIX...**. Pull-request builds only package and test the VSIX. Merging a verified extension version bump to `main` triggers Marketplace Trusted Publishing; a manual GitHub Actions run may also publish when explicitly requested. Publication is verified only after the publish job succeeds.
 
 VS Code 1.96+ is required. The extension uses Node's built-ins and needs no runtime npm dependencies.
 
@@ -39,3 +39,16 @@ JACO's full GUI already includes its Git, MCP and Devices features. This extensi
 ## Verification
 
 Run `node --test extensions/jaco-vscode/test/*.test.cjs tests/nova/jaco-vscode-embed.test.mjs` from the repository root. Also run the Aura Workbench lint/build/production smoke gate. A real VS Code Extension Development Host and real browser launch are necessary to establish GUI acceptance; CI unit tests alone do not prove that a rendered webview loaded.
+
+## Marketplace release (OIDC)
+
+GitHub Actions workflow: `.github/workflows/jaco-vscode-extension.yml`. The `publish-marketplace` job runs only on `main`, after `build-vsix` succeeds. Automatic publishing requires a change in `extensions/jaco-vscode/package.json` version. Manual publishing requires the `workflow_dispatch` input `publish=true`. The job uses the published `@vscode/vsce@4.1.0 publish --oidc` and `id-token: write`; no PAT is stored in the workflow.
+
+Create the matching policy on the existing Visual Studio Marketplace publisher **jacocode** under Trusted Publishing:
+
+- Repository owner: `Rick84444`
+- Repository: `JACO-CODE`
+- Workflow: `jaco-vscode-extension.yml`
+- Environment: empty (this workflow does not use a deployment environment)
+
+A successful VSIX build does **not** prove Marketplace publication. Publishing will fail if this policy or publisher ownership is missing. The extension embeds the currently installed local JACO Core; shipping a new VSIX alone does not upgrade Core on Windows or Android.
