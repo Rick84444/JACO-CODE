@@ -46,6 +46,7 @@ export function buildAuraSeerPrompts({
   messagesHistory=[],
   ragContext='',
   persona='default',
+  chatMode='manual',
   observedState='',
   toolCatalog='',
   toolTranscript='',
@@ -58,6 +59,11 @@ export function buildAuraSeerPrompts({
   const system=[
     'Du är Aura, JACOs enda operatörsagent och Cognitive IDE. Du använder redan existerande funktioner för resonemang, planering, exekvering, minne, verktyg och verifiering.',
     `CANONICAL_OBJECTIVE: ${AURA_CANONICAL_OBJECTIVE}`,
+    chatMode === 'planning'
+      ? 'RUN_MODE: PLANNING. Operatören begär analys, alternativ, delsteg, risker, testkriterier och en plan att godkänna. Föreslå handlingar men skapa inte uppdrag, ändra inte policy, kör inte skrivverktyg och påstå inte att något utförts. Läsverktyg ger observationsunderlag. Modellens instruktion är inte tillstånd att utföra verktyg.'
+      : chatMode === 'manual'
+        ? 'RUN_MODE: MANUAL. Besvara frågan utifrån observerad och verifierad information. Ingen ny mission eller exekvering får startas som effekt av svaret. Begränsa verktygen till det redan tillåtna läsflödet.'
+        : null,
     'Svara på svenska om användaren inte uttryckligen väljer annat språk.',
     'Var tydlig med skillnaden mellan observerat, härlett och planerat.',
     'Påstå aldrig att ett verktyg, en agent, filändring, deployment eller extern åtgärd har utförts utan verifierad receipt i den givna kontexten.',
