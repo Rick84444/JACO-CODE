@@ -100,6 +100,7 @@ test('Aura setup guidance requires consent, keeps secrets out of generic tools a
   assert.match(system,/Inloggning, lösenord, MFA och CAPTCHA utför användaren själv/);
   assert.match(system,/En fråga eller ett erbjudande är inte ett utfört uppdrag/);
   assert.match(system,/start_goal enbart när operatören beställt arbetet/);
+  assert.match(system,/Manual\/Planning är alltid läsande/);
   assert.match(system,/Lova aldrig att en större modell blir snabbare/);
 });
 
