@@ -33,3 +33,7 @@ The composer can show small live counts for matching verified knowledge and elig
 - Build Agent stays within the existing operator-key route; no API key is sent to an LLM, no auto-grant.
 - Knowledge must have verified evidence; skill candidates must be ACTIVE, with **no** execution authority inferred.
 - Pass contract/unit tests, TypeScript, production frontend/backend build, and target-host browser interaction. CI does not by itself prove local Windows/Termux or VS Code behavior.
+
+## Operator stop from the conversation
+
+The Aura conversation may request cancellation of an observed active mission through the existing `/api/aura/workbench/missions/:id/cancel` route. The runtime keeps its own graph-cancellation and mission-receipt semantics. A successful request confirms that stop was requested, not that an in-flight tool or the complete mission has already stopped. This control is separate from cancelling a chat response. Operator steering/modification of a running mission is not implemented by this change and must not be represented as a completed capability.
