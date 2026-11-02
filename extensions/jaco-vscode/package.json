@@ -1,0 +1,88 @@
+{
+  "name": "jaco-cognitive-ide",
+  "displayName": "JACO Cognitive IDE",
+  "description": "The full local JACO IDE inside VS Code, using the existing JACO runtime and MCP connections.",
+  "version": "0.1.0",
+  "publisher": "jacocode",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "main": "./extension.cjs",
+  "activationEvents": [
+    "onView:jaco.workspace",
+    "onCommand:jaco.openFullGUI",
+    "onCommand:jaco.startRuntime",
+    "onCommand:jaco.openBrowser",
+    "onCommand:jaco.openTerminal"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "jaco.openFullGUI",
+        "title": "JACO: Open Full IDE",
+        "category": "JACO"
+      },
+      {
+        "command": "jaco.startRuntime",
+        "title": "JACO: Start Runtime",
+        "category": "JACO"
+      },
+      {
+        "command": "jaco.openBrowser",
+        "title": "JACO: Open in External Browser",
+        "category": "JACO"
+      },
+      {
+        "command": "jaco.openTerminal",
+        "title": "JACO: Open Terminal IDE",
+        "category": "JACO"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "jaco",
+          "title": "JACO",
+          "icon": "media/jaco.svg"
+        }
+      ]
+    },
+    "views": {
+      "jaco": [
+        {
+          "id": "jaco.workspace",
+          "name": "Workspace"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "JACO",
+      "properties": {
+        "jaco.runtimeUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:3000",
+          "description": "Local running JACO Core URL. This extension deliberately does not embed remote hosts."
+        },
+        "jaco.checkoutPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional absolute path to the JACO-CODE checkout used by Start Runtime and Terminal IDE. Otherwise the active workspace must be the JACO-CODE checkout."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "check": "node --check extension.cjs && node --check lib/bridge.cjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rick84444/JACO-CODE.git"
+  }
+}

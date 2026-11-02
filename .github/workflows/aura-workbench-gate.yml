@@ -97,6 +97,9 @@ on:
       - 'tools/join-hub.mjs'
       - 'runtime/src/sdk/jaco-client.mjs'
       - 'runtime/src/server/connected/agentOrganization.mjs'
+      - 'runtime/src/server/security/vscodeEmbed.mjs'
+      - 'tests/nova/jaco-vscode-embed.test.mjs'
+      - 'extensions/jaco-vscode/**'
       - 'tests/nova/agent-organization.test.mjs'
       - 'runtime/src/components/AuraOrganizationPanel.tsx'
       - 'runtime/src/lib/organizationRisk.mjs'
@@ -194,6 +197,9 @@ on:
       - 'tools/join-hub.mjs'
       - 'runtime/src/sdk/jaco-client.mjs'
       - 'runtime/src/server/connected/agentOrganization.mjs'
+      - 'runtime/src/server/security/vscodeEmbed.mjs'
+      - 'tests/nova/jaco-vscode-embed.test.mjs'
+      - 'extensions/jaco-vscode/**'
       - 'tests/nova/agent-organization.test.mjs'
       - 'runtime/src/components/AuraOrganizationPanel.tsx'
       - 'runtime/src/lib/organizationRisk.mjs'
@@ -217,6 +223,11 @@ jobs:
         run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs tests/nova/aura-single-agent-functions.test.mjs tests/nova/nova-activity-text.test.mjs
       - name: Aura control plane, browser WebSocket and false-READY regressions
         run: node --experimental-sqlite --test tests/nova/aura-cdp-truth.test.mjs tests/nova/aura-oversight.test.mjs tests/nova/cdp-mcp.test.mjs tests/nova/bridges.test.mjs tests/nova/aura-termux-service-health.test.mjs tests/nova/aura-agent-board.test.mjs
+      - name: Full JACO GUI VS Code extension safety contract
+        run: |
+          node --check extensions/jaco-vscode/extension.cjs
+          node --check extensions/jaco-vscode/lib/bridge.cjs
+          node --test tests/nova/jaco-vscode-embed.test.mjs extensions/jaco-vscode/test/bridge.test.cjs
       - name: Activation and provider truth regressions
         run: |
           node --check agents/jaco-cli.mjs

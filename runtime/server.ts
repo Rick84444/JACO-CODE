@@ -35,6 +35,7 @@ import { actuatorLeases } from './src/server/handsOff/actuatorLease.js';
 import { ConnectedRuntime, mountConnectedRoutes } from './src/server/connected/connectedRuntime.mjs';
 import { validProviderId } from './src/server/connected/providerRegistry.mjs';
 import { createIdeRemoteGate, upgradeAllowed, ideHost } from './src/server/connected/ideAccess.mjs';
+import { mountVscodeEmbedHeaders } from './src/server/security/vscodeEmbed.mjs';
 import { liveMissionView } from './src/server/connected/liveMission.mjs';
 import { discoverProvider, identifyKey } from './src/server/connected/providerDiscovery.mjs';
 import { CATALOG as PROVIDER_CATALOG, catalogById, catalogProvider } from './src/server/connected/providerCatalog.mjs';
@@ -578,6 +579,9 @@ async function startServer() {
   app.use(createIdeRemoteGate(ideDevices, {
     onEvent: (event: any) => seerLiveWorkstream.record({ actor: 'Remote IDE', type: event.type, message: `Remote IDE signed in on ${event.device}`, verified: true, receipt: event }),
   }));
+  // The original full GUI can be framed only on /vscode-embed, after the remote IDE gate,
+  // with explicit local opt-in. Every other page retains CSP frame-ancestors 'none'.
+  mountVscodeEmbedHeaders(app);
   // Every state-changing /api request needs the gateway token or must come from the local IDE
   // page itself. The runtime is reachable through a tunnel, so a route that forgets its own guard
   // must not become remotely writable. Listed routes authenticate on their own (signatures,
