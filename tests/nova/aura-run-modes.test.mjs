@@ -78,7 +78,7 @@ test('Planning system instruction survives a completely full RAG budget on all t
   const planning = buildAuraSeerPrompts({message:'Create a rollout plan', chatMode:'planning', ragContext:huge});
   const manual = buildAuraSeerPrompts({message:'Create a rollout plan', chatMode:'manual', ragContext:huge});
   assert.match(planning.system,/RUN_MODE: PLANNING/);
-  assert.match(planning.system,/skapa inte uppdrag/);
+  assert.match(planning.system,/do not create missions/);
   assert.match(manual.system,/RUN_MODE: MANUAL/);
   assert.doesNotMatch(manual.system,/RUN_MODE: PLANNING/);
   assert.equal(planning.user.includes('SOURCE: file-7'),false,'late context is truncated in this reproduction');
