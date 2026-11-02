@@ -128,7 +128,9 @@ test('the canonical coordinator registration is merged without guessing from a d
     {agentId:'other',stableId:'external',name:'SEER',role:'assistant',liveSessions:1,status:'READY'},
   ]}}).network;
   assert.equal(network.nodes.filter(n=>n.kind==='coordinator').length,1);
-  assert.equal(network.nodes.find(n=>n.kind==='coordinator').source,'SEER + Workplace');
+  assert.equal(network.nodes.find(n=>n.kind==='coordinator').source,'Aura runtime');
+  assert.equal(network.nodes[0].name,'Aura');
+  assert.equal(network.coordinatorId,'coordinator:aura');
   assert.ok(network.nodes.some(n=>n.id==='agent:other'));
   assert.ok(!network.nodes.some(n=>n.id==='agent:registered-seer'));
 });
