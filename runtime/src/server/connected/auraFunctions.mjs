@@ -2,10 +2,10 @@
 // existing runtime, not independently spawned agents or a second scheduler.
 // This module is read-only: it never grants permissions or executes a mission.
 export const AURA_FUNCTION_DEFINITIONS = Object.freeze([
-  { id: 'reason', name: 'Resonemang', implementation: 'SEER + vald modell', authority: 'model-inference', reads: ['health'] },
-  { id: 'plan', name: 'Planering', implementation: 'SEER Strategic Governor', authority: 'existing-goal-contract', reads: ['seer_goals'] },
-  { id: 'execute', name: 'Utförande', implementation: 'Durable Nova', authority: 'existing-mission-lease', reads: ['mission_list', 'mission_get'] },
-  { id: 'memory', name: 'Minne', implementation: 'Workplace + kanoniska minneslager', authority: 'existing-memory-policy', reads: ['seer_memory'] },
+  { id: 'reason', name: 'Resonemang', implementation: 'Aura Model Runtime', authority: 'model-inference', reads: ['health'] },
+  { id: 'plan', name: 'Planering', implementation: 'Aura Strategy Runtime', authority: 'existing-goal-contract', reads: ['seer_goals'] },
+  { id: 'execute', name: 'Utförande', implementation: 'Aura Durable Execution', authority: 'existing-mission-lease', reads: ['mission_list', 'mission_get'] },
+  { id: 'memory', name: 'Minne', implementation: 'Aura Memory + Workplace', authority: 'existing-memory-policy', reads: ['seer_memory'] },
   { id: 'tools', name: 'Verktyg', implementation: 'MCP Tool Fabric', authority: 'existing-tool-policy', reads: ['repo_list', 'git_status'] },
   { id: 'verify', name: 'Verifiering', implementation: 'Mission receipts + kontraktsgrindar', authority: 'evidence-before-claim', reads: ['mission_get', 'runtime_events'] },
 ]);
