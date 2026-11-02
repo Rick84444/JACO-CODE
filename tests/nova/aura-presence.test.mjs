@@ -41,10 +41,13 @@ test('A responsive connection cannot conceal a stale or stuck mission',()=>{
   assert.equal(p.mode,'stalled');
   assert.match(p.title,/No new work results/);
 });
-test('Stale transport or runtime STOP always overrides an active mission',()=>{
-  assert.equal(auraPresence({...live,lastObservedAt:at(25),mission:active()}).mode,'offline');
-  assert.equal(auraPresence({...live,snapshotObservedAt:at(28),mission:active()}).mode,'offline');
-  assert.equal(auraPresence({...live,connection:'reconnecting',mission:active()}).mode,'offline');
+test('A short interruption reconnects quietly and never claims progress; silence or a stop is red',()=>{
+  for(const state of [{lastObservedAt:at(25)},{snapshotObservedAt:at(28)},{connection:'reconnecting'}]){
+    const p=auraPresence({...live,...state,mission:active()});
+    assert.equal(p.mode,'reconnecting');assert.equal(p.connected,false);assert.equal(p.connectionLabel,'Reconnecting…');
+  }
+  const silent=auraPresence({...live,lastObservedAt:at(90),snapshotObservedAt:at(90),connection:'reconnecting',mission:active()});
+  assert.equal(silent.mode,'offline');assert.equal(silent.title,'Connection lost');
   assert.equal(auraPresence({...live,runtimeRunning:false,mission:active()}).mode,'offline');
 });
 test('Approvals and blocked missions are not labeled working',()=>{

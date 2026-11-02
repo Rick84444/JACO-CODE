@@ -627,3 +627,23 @@
 .cognitive-setup-collapsed button { display:flex; align-items:center; gap:8px; min-height:44px; font-size:12px; color:#b7c9d6; }
 .cognitive-repair-action button { min-height:44px; padding:8px 12px; border-radius:8px; background:#203b47; color:#d5eff4; }
 .cognitive-repair-action button:disabled { opacity:.6; }
+.aura-presence[data-mode=reconnecting] .aura-presence-light,.aura-presence[data-mode=connecting] .aura-presence-light{background:#78cde0;border-color:#78cde058}
+.aura-activity{padding:12px 28px 14px;border-bottom:1px solid #203342;flex-shrink:0;font-size:13px;color:#c5d4df}
+.aura-activity>header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.aura-activity>header strong{font-size:14px;color:#e6f2f7}
+.aura-activity>header>span:last-child{font-size:12px;color:#8faaba}
+.aura-activity-pulse{width:9px;height:9px;border-radius:50%;background:#536472;flex-shrink:0}
+.aura-activity-pulse[data-active=true]{background:#58e3a9;box-shadow:0 0 10px #51e0a66b;animation:aura-activity-pulse 1.8s ease-in-out infinite}
+@keyframes aura-activity-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.aura-activity-pulse[data-active=true]{animation:none}}
+.aura-activity-goal{margin:6px 0 0;color:#a9bdcc;font-size:12px;line-height:1.45}
+.aura-activity-empty{margin:8px 0 0;color:#8faaba;font-size:12px}
+.aura-activity ol{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:2px;max-height:190px;overflow:auto}
+.aura-activity li{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:8px;min-height:26px}
+.aura-activity li button{text-align:left;color:#c5d4df;font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.aura-activity li button:hover{color:#fff;text-decoration:underline}
+.aura-activity li time{font-size:11px;color:#70899b}
+.aura-activity-dot{width:7px;height:7px;border-radius:50%;background:#78cde0}
+.aura-activity li[data-outcome=verified] .aura-activity-dot{background:#58e3a9}
+.aura-activity li[data-outcome=failed] .aura-activity-dot{background:#da6f71}
+.aura-activity li[data-outcome=unknown] .aura-activity-dot,.aura-activity li[data-outcome=unverified] .aura-activity-dot{background:#e4ad66}

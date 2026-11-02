@@ -10,6 +10,7 @@ const friendlyPhase=phase=>({
   BLOCKED:'Blocked',QUEUED:'Queued',AWAITING_VERIFICATION:'Awaiting verification',
 })[String(phase||'').toUpperCase()]||'Mission registered';
 const bounded=s=>String(s||'').slice(0,220);
+const LOST_AFTER_SECONDS=60;
 export function auraPresence({
   now=Date.now(),connection='connecting',lastObservedAt=null,
   snapshotObservedAt=null,runtimeRunning=null,mission=null,
@@ -21,6 +22,9 @@ export function auraPresence({
   const streamLive=connection==='live' && streamAge!==null && streamAge<15;
   const snapshotLive=snapshotAge!==null && snapshotAge<20;
   const connected=streamLive && snapshotLive && runtimeRunning===true;
+  // One fresh source means JACO still answers, so a dropped stream or a slow status read is only a reconnect.
+  // Red is kept for a stopped runtime or when nothing has been heard for a full minute.
+  const heardRecently=streamLive||snapshotLive||(streamAge!==null&&streamAge<LOST_AFTER_SECONDS)||(snapshotAge!==null&&snapshotAge<LOST_AFTER_SECONDS);
   const workingSessions=Array.isArray(agents)?agents.reduce((count,a)=>count+Math.max(0,Number(a?.liveSessions)||0),0):0;
   const connectedAgents=Array.isArray(agents)?agents.filter(a=>a?.status==='READY'||Number(a?.liveSessions)>0).length:0;
   const state=String(mission?.status||'');
@@ -36,8 +40,14 @@ export function auraPresence({
     actionAge!==null ? actionAge>=90 : missionAge!==null && missionAge>=90);
   let mode='connecting',title='Connecting to JACO',detail='Checking the runtime and the observed events.';
   if(runtimeRunning===false){mode='offline';title='Runtime stopped';detail="The server's latest state shows that execution is not running.";}
+  else if(!connected&&heardRecently){
+    mode='reconnecting';title='Refreshing status';detail='JACO is reconnecting. Nothing is wrong with your work.';
+  }
+  else if(!connected&&connection==='connecting'&&streamAge===null&&snapshotAge===null){
+    mode='connecting';
+  }
   else if(!connected){
-    mode='offline';title='Status cannot be verified';
+    mode='offline';title='Connection lost';
     detail=connection==='reconnecting'||connection==='unavailable'
       ? 'The event stream is not responding. The results last shown may be old.'
       : !snapshotLive ? "The workspace status report is too old or missing." : 'Waiting for a fresh event stream.';
@@ -55,7 +65,7 @@ export function auraPresence({
   const maxSteps=Number.isFinite(mission?.maxSteps)&&mission.maxSteps>0?mission.maxSteps:null;
   return {
     mode,title,detail,connected,streamLive,snapshotLive,
-    connectionLabel:!snapshotLive?'Status stale':!streamLive?'Stream missing':runtimeRunning===false?'Runtime stopped':'JACO connected',
+    connectionLabel:runtimeRunning===false?'Runtime stopped':connected?'JACO connected':heardRecently?'Reconnecting…':'No answer from JACO',
     modelLabel:provider&&model?bounded(provider)+' / '+bounded(model):provider?bounded(provider):'Model not observed',
     cdpLabel:cdpState==='VERIFIED'?'CDP verified':cdpState==='OBSERVED'?'CDP connected':'CDP not observed',
     connectedAgents,workingSessions,approvals,missionGoal:bounded(mission?.goal),

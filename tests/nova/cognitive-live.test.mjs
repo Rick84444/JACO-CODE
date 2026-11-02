@@ -154,8 +154,27 @@ test('a disconnected or slow stream releases its timers and never fabricates rec
   res.write=frame=>{frames++;assert.equal(frame.includes('runtime.recovered'),false);return false;};
   res.end=()=>{ended=true;};
   const bus={listEvents:()=>[],getMission:()=>null};
-  createCognitiveStreamHandler({bus,workstream})(req,res);
-  assert.equal(ended,true);assert.equal(frames,1);assert.equal(res.listenerCount('close'),0);
+  createCognitiveStreamHandler({bus,workstream,drainTimeoutMs:1})(req,res);
+  assert.equal(ended,false,'a full buffer is not a disconnect');assert.equal(frames,1);
+  return new Promise(resolve=>setTimeout(resolve,30)).then(()=>{
+    assert.equal(ended,true,'a client that never drains is closed');assert.equal(res.listenerCount('close'),0);assert.equal(res.listenerCount('drain'),0);
+  });
+});
+
+test('a large first packet keeps the stream open and publishing after the buffer drains',async()=>{
+  const req=new EventEmitter();req.query={};req.get=()=>undefined;
+  const res=new EventEmitter();let ended=false,frames=0,full=true;
+  res.status=()=>res;res.set=()=>res;res.flushHeaders=()=>{};
+  res.write=()=>{frames++;return !full;};
+  res.end=()=>{ended=true;};
+  const bus={listEvents:()=>[],getMission:()=>null};
+  createCognitiveStreamHandler({bus,workstream,intervalMs:100,drainTimeoutMs:5000})(req,res);
+  await new Promise(resolve=>setTimeout(resolve,250));
+  assert.equal(frames,1,'nothing is written while the buffer is full');
+  full=false;res.emit('drain');
+  await new Promise(resolve=>setTimeout(resolve,250));
+  assert.ok(frames>1);assert.equal(ended,false);
+  res.emit('close');assert.equal(ended,true);
 });
 
 
@@ -166,4 +185,14 @@ test('Manual and Planning never advertise policy updates even when requested exp
     assert.equal(t.tools.policy_update,undefined);
     assert.equal(t.tools.start_goal,undefined);
   }
+});
+
+test('the activity list shows the current mission, newest first, with repeats folded',async()=>{
+  const {auraActivityFeed}=await import('../../runtime/src/lib/auraStage.mjs');
+  const step=(id,text,missionId='m1')=>({id,text,missionId,at:'2026-11-02T10:00:00Z',evidence:{outcome:'observed'}});
+  const events=[step('1','Read file'),step('2','Run tests'),step('3','Run tests'),step('4','Other work','m2'),step('5','Write file')];
+  const feed=auraActivityFeed(events,'m1');
+  assert.deepEqual(feed.map(item=>[item.event.id,item.count]),[['5',1],['3',2],['1',1]]);
+  assert.equal(auraActivityFeed(events,null,2).length,2);
+  assert.deepEqual(auraActivityFeed(undefined),[]);
 });
