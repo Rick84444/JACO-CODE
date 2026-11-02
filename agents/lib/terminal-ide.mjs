@@ -72,15 +72,28 @@ export async function gitContext(project, runner = execFile) {
   const branch = (await execGit(project, ['branch', '--show-current'], runner)).trim();
   if (!branch) throw new Error('JACO_GIT_DETACHED_HEAD');
   const status = (await execGit(project, ['status', '--porcelain=v1'], runner)).trim();
-  let upstream = null;
-  try { upstream = (await execGit(project, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], runner)).trim(); }
-  catch { /* No tracking branch: branch may be local only. */ }
-  return { root, branch, dirty: Boolean(status), upstream };
+  let upstream = null, remote = null, remoteRef = null;
+  try {
+    upstream = (await execGit(project, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], runner)).trim();
+    const configuredRemote = (await execGit(project, ['config', '--get', 'branch.' + branch + '.remote'], runner)).trim();
+    const configuredRef = (await execGit(project, ['config', '--get', 'branch.' + branch + '.merge'], runner)).trim();
+    const remotes = (await execGit(project, ['remote'], runner)).split(/\r?\n/).map(x => x.trim());
+    if (remotes.includes(configuredRemote) && /^[a-z0-9][a-z0-9._/-]*$/i.test(configuredRemote) &&
+        configuredRef.startsWith('refs/heads/') && configuredRef.length < 250 &&
+        !configuredRef.includes('..') && !configuredRef.includes('@{') &&
+        !configuredRef.endsWith('/') && !configuredRef.includes('//')) {
+      remote = configuredRemote;
+      remoteRef = configuredRef;
+    }
+  } catch { /* A tracking branch is not proof of a valid explicit push target. */ }
+  return { root, branch, dirty: Boolean(status), upstream, remote, remoteRef };
 }
 export function gitAdmission(verb, context) {
   if (!MUTATING_GIT.has(verb)) return { allowed: true };
   if (!context.branch) return { allowed: false, reason: 'JACO_GIT_DETACHED_HEAD' };
   if (verb === 'push' && /^(main|master|production|release)$/i.test(context.branch)) return { allowed: false, reason: 'JACO_PROTECTED_BRANCH_PUSH_DENIED' };
+  if (verb === 'push' && (!context.remote || !context.remoteRef)) return { allowed: false, reason: 'JACO_GIT_PUSH_TARGET_UNVERIFIED' };
+  if (verb === 'push' && /\/((main|master|production|release))$/i.test(context.remoteRef)) return { allowed: false, reason: 'JACO_PROTECTED_REMOTE_BRANCH_PUSH_DENIED' };
   if (['pull','sync','push'].includes(verb) && !context.upstream) return { allowed: false, reason: 'JACO_GIT_UPSTREAM_MISSING' };
   if (['pull','sync'].includes(verb) && context.dirty) return { allowed: false, reason: 'JACO_GIT_WORKTREE_DIRTY' };
   return { allowed: true };
@@ -99,7 +112,8 @@ async function gitAction({ project, verb, runner = execFile, confirm, write }) {
   const context = await gitContext(project, runner);
   const decision = gitAdmission(verb, context);
   if (!decision.allowed) throw new Error(decision.reason);
-  const gate = verb.toUpperCase() + ' ' + context.branch;
+  const gate = verb.toUpperCase() + ' ' + context.branch +
+    (verb === 'push' ? ' TO ' + context.remote + '/' + context.remoteRef.slice('refs/heads/'.length) : '');
   if (await confirm(gate) !== gate) { write('Cancelled; Git state unchanged by JACO.'); return; }
   if (verb === 'fetch') { write(await execGit(project, ['fetch', '--prune'], runner) || 'Fetch completed.'); return; }
   if (verb === 'pull') { write(await execGit(project, ['pull', '--ff-only'], runner) || 'Fast-forward complete.'); return; }
@@ -109,7 +123,11 @@ async function gitAction({ project, verb, runner = execFile, confirm, write }) {
     write(await execGit(project, ['merge', '--ff-only', '@{upstream}'], runner) || 'Fast-forward complete.');
     return;
   }
-  if (verb === 'push') { write(await execGit(project, ['push', '--porcelain'], runner) || 'Push completed.'); return; }
+  if (verb === 'push') {
+    // Explicitly bind exactly one destination to the confirmation; push.default=matching is unsafe.
+    write(await execGit(project, ['push', '--porcelain', '--', context.remote, 'HEAD:' + context.remoteRef], runner) || 'Push completed.');
+    return;
+  }
 }
 export async function terminalGitCommand(options) { return gitAction(options); }
 
