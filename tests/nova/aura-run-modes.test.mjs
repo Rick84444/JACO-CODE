@@ -136,3 +136,17 @@ test('Aura chat exposes canonical mission stop without conflating it with respon
   assert.ok(server.includes("app.post('/api/aura/workbench/missions/:id/cancel'"));
   assert.ok(!gui.includes('Starta ett varaktigt SEER/Nova-uppdrag'));
 });
+
+test('Aura steering uses the existing operator UI and mission runtime without model relays',()=>{
+  const gui=read('runtime/src/components/AuraChatPanel.tsx');
+  const parent=read('runtime/src/components/JacoAuraComputeIDE.tsx');
+  const server=read('runtime/server.ts');
+  const control=read('runtime/src/server/connected/novaMissionControl.mjs');
+  assert.ok(gui.includes('data-testid="jaco-steer-mission"'));
+  assert.ok(gui.includes('await onSteerMission(id, instruction, crypto.randomUUID())'));
+  assert.ok(parent.includes('onSteerMission={steerMission}'));
+  assert.ok(server.includes("app.post('/api/aura/workbench/missions/:id/steer', requireLocalUi"));
+  assert.ok(control.includes("this.bus.event('NOVA_OPERATOR_STEER'"));
+  assert.ok(control.includes("throw new Error('NOVA_STEER_STALE')"));
+  assert.ok(!server.includes("app.post('/api/connected/nova/missions/:id/steer'"));
+});
