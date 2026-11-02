@@ -6,7 +6,8 @@ import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Lo
 import { ChatMarkdown } from './ChatMarkdown';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { JacoWordmark } from './JacoWordmark';
-import { AURA_RUN_MODES, initialAuraRunMode } from '../lib/auraRunModes.mjs';
+import { initialAuraRunMode } from '../lib/auraRunModes.mjs';
+import { parseAuraMissionCommand } from '../lib/auraChatCommands.mjs';
 import { CognitiveEventCard } from './CognitiveEventCard';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
@@ -257,7 +258,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       setAgentMessage(tr('Kunde inte skapa agent: ','Could not create agent: ')+String(error?.message||error).slice(0,200));
     }finally{setAgentCreating(false);}
   };
-  const composeMode = AURA_RUN_MODES[runMode].createsMission ? 'goal' : 'chat';
   const selectRunMode = (next:'manual'|'planning'|'autonomous') => {
     if (busy) return;
     setRunMode(next);
@@ -294,9 +294,62 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     .slice(-20)
     .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', content: m.content+(m.attachments?.length?'\n[Attached reference IDs, data only] '+JSON.stringify(m.attachments):'') })), [messages]);
 
+  const [chatControlBusy,setChatControlBusy]=useState(false);
+  // This command lane is independent of a pending chat inference. A stop/steer
+  // request never cancels the chat HTTP request or the mission's in-flight tool.
+  const executeChatMissionCommand = async (text:string,controlCommand:ReturnType<typeof parseAuraMissionCommand>,retry?:string) => {
+    if (!controlCommand || chatControlBusy || uploading || !storageReady) return;
+    if (retry === undefined) setInput('');
+    setChatControlBusy(true);
+    try {
+      if (retry === undefined) await appendMessage({id:crypto.randomUUID(),role:'user',content:text});
+        const candidates=missions.filter(m=>['ACTIVE','AWAITING_VERIFICATION','BLOCKED'].includes(m.status) && !m.cancelRequested);
+        const active=candidates.length===1 ? candidates[0] : null;
+        if (!active) {
+          await appendMessage({id:crypto.randomUUID(),role:'system',
+            content:candidates.length>1
+              ? tr('Flera uppdrag är aktiva. Välj uppdraget i arbetsytan innan du stoppar eller ändrar det.','Multiple missions are active. Select the mission before stopping or steering it.')
+              : tr('Inget aktivt uppdrag hittades att ändra eller stoppa.','No active mission was found to change or stop.')});
+          return;
+        }
+        if (attachments.length) {
+          await appendMessage({id:crypto.randomUUID(),role:'system',
+            content:tr('Kontrollkommandon kan inte skickas med bilagor.','Mission control commands cannot contain attachments.')});
+          return;
+        }
+        try {
+          if (controlCommand.kind==='stop') {
+            if (!onCancelMission) throw new Error('MISSION_STOP_NOT_AVAILABLE');
+            await onCancelMission(active.id);
+            await appendMessage({id:crypto.randomUUID(),role:'system',
+              content:tr('Stopp begärt. Pågående steg kan fortfarande avslutas; kontrollera uppdragets slutstatus.','Stop requested. An in-flight step may still finish; check the mission final status.'),
+              meta:'Mission '+active.id+' · cancellation requested'});
+          } else {
+            if (!onSteerMission || active.status!=='ACTIVE' || typeof controlCommand.instruction !== 'string') throw new Error('MISSION_STEER_NOT_AVAILABLE');
+            const updated=await onSteerMission(active.id,controlCommand.instruction,crypto.randomUUID());
+            await appendMessage({id:crypto.randomUUID(),role:'system',
+              content:tr('Instruktionen är sparad för nästa planeringsgräns; pågående verktyg avbryts inte.','Direction saved for the next planning boundary; in-flight tools are not interrupted.'),
+              meta:'Mission '+active.id+' · steer revision '+updated.steering.revision});
+          }
+        } catch (error:any) {
+          await appendMessage({id:crypto.randomUUID(),role:'system',
+            content:tr('Uppdragskontrollen misslyckades: ','Mission control failed: ')+safeCognitiveText(error?.message || String(error))});
+        }
+        return;
+    } catch (error:any) {
+      setMessages(current=>[...current,{id:crypto.randomUUID(),role:'system',
+        content:tr('Kunde inte skicka kommandot: ','Could not send the command: ')+safeCognitiveText(error?.message || String(error))}]);
+    } finally {
+      setChatControlBusy(false);
+    }
+  };
+
   const ask = async (retry?: string) => {
     const text = (retry ?? input).trim();
-    if (!text || busy || uploading || !storageReady) return;
+    if (!text || uploading || !storageReady) return;
+    const controlCommand=parseAuraMissionCommand(text);
+    if (controlCommand) { await executeChatMissionCommand(text,controlCommand,retry); return; }
+    if (busy) return;
     if (selectedProvider !== 'seer' && (!providers.some(p => p.id === selectedProvider) || !chatModel.trim())) {
       setCatalogError('Välj en registrerad provider och ange modell före anrop.');
       return;
@@ -516,7 +569,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       const accepted=await onStartGoal(text,selectedTool,attachments.map(item=>item.id),'autonomous');
       if(!accepted?.goal?.id)throw new Error('Runtime bekräftade inte uppdragets ID.');
       await appendMessage({id:crypto.randomUUID(),role:'system',content:'Uppdraget är registrerat. Planering och resultat visas här när runtime rapporterar dem.',meta:'Uppdrag: '+accepted.goal.id});
-      setInput('');setAttachments([]);setRunMode('manual');
+      setInput('');setAttachments([]); // Mode is retained; chat is still available while the mission runs.
     } catch(error:any) {
       await appendMessage({id:crypto.randomUUID(),role:'system',content:'Uppdragets registrering kunde inte bekräftas: '+safeCognitiveText(error?.message || String(error))});
     } finally {setBusy(null);}
@@ -527,7 +580,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       setShowBuildAgent(true);setShowModePicker(false);setInput('');
       return;
     }
-    return composeMode==='goal'?goal():ask();
+    return ask(); // Every mode retains normal conversation; mission start is explicit.
   };
   const prompt=(text:string,mode:'chat'|'goal'='chat')=>{
     setInput(text);
@@ -700,7 +753,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               }}
               rows={2}
               aria-label={tr('Meddelande till JACO','Message to JACO')}
-              placeholder={composeMode==='goal'?tr('Beskriv det JACO ska bygga eller lösa…','Describe what JACO should build or solve…'):tr('Skriv till JACO. Du kan fråga medan arbetet pågår…','Message JACO. You can ask questions while work continues…')}
+              placeholder={tr('Skriv till JACO. Du kan fråga medan arbetet pågår…','Message JACO. You can ask questions while work continues…')}
               className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-[14px] leading-6 text-slate-100 outline-none placeholder:text-slate-600"
             />
             {selectedTool && ['mcp','skill'].includes(selectedTool.kind) && (
@@ -742,7 +795,13 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                 <Bot size={12} className="inline mr-1"/>Build Agent
               </button>
               <span className="cognitive-enter-hint">{tr('Shift + Enter för ny rad','Shift + Enter for new line')}</span>
-              <button type="submit" aria-label={composeMode==='goal'?tr('Starta uppdrag','Start mission'):tr('Skicka meddelande','Send message')} title={composeMode==='goal'?tr('Starta uppdrag','Start mission'):tr('Skicka','Send')} disabled={!input.trim()||Boolean(busy)||uploading||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
+              {runMode==='autonomous' && <button data-testid="jaco-start-mission" type="button" onClick={()=>void goal()}
+                disabled={!input.trim()||Boolean(busy)||uploading||!storageReady}
+                title={tr('Starta ett nytt uppdrag med befintliga behörigheter','Start a new mission within existing permissions')}
+                className="rounded border border-cyan-700 px-2 py-1.5 text-xs text-cyan-200 disabled:opacity-40">
+                {tr('Starta uppdrag','Start mission')}
+              </button>}
+              <button data-testid="jaco-chat-send" type="submit" aria-label={tr('Skicka meddelande','Send message')} title={tr('Skicka','Send')} disabled={!input.trim()||(Boolean(busy)&&!parseAuraMissionCommand(input))||chatControlBusy||uploading||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
             </div>
           </div>
           <AttachmentPicker items={attachments} onChange={setAttachments} onBusy={setUploading} disabled={Boolean(busy)}/>
@@ -752,7 +811,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               {tr(' Föreslagna skills',' Skill candidates')}: {cognitiveSuggestions.skills}
               <span title={tr('Ett skillförslag ger inte verktygsbehörighet. Varje steg kontrolleras av runtimen.','Skill discovery grants no tool permissions. Each step must pass runtime checks.')}> · <span className="text-cyan-700">◇</span></span>
             </p>}
-          <p className="cognitive-composer-help">{runMode==='autonomous' ? tr('Full Autonomous använder befintliga uppdragsmandat. Ingen fri terminalåtkomst ges.','Full Autonomous uses existing mission mandates. No unrestricted shell access is granted.')
+          <p className="cognitive-composer-help">{runMode==='autonomous' ? tr('Chatten fortsätter som vanligt. Starta uppdrag separat; stoppa eller ändra pågående uppdrag med kontrollerna ovan.','Conversation remains available. Start a mission separately; use the controls above to stop or steer running work.')
             : runMode==='planning' ? tr('Planning läser och föreslår. Inga verktygsändringar eller uppdrag startas.','Planning observes and proposes; no tool mutations or missions start.')
             : tr('Manual svarar med läsverktyg utan att starta ett uppdrag.','Manual answers using read tools without starting a mission.')}</p>
         </div>

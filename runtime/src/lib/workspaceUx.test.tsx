@@ -98,3 +98,14 @@ test('routine background observations are grouped while mission blockers stay in
   assert.doesNotMatch(grouped,/Anslutningen bröts/);
   assert.match(html,/Anslutningen bröts/);
 });
+
+test('explicit mission controls are still sendable while an unrelated chat answer is pending', () => {
+  const session:any={messages:[],setMessages:noop,appendMessage:async()=>{},storageReady:true,storageError:null,
+    retryStorage:noop,input:'Stoppa uppdraget',setInput:noop,busy:'chat',setBusy:noop,toolArguments:'{}',setToolArguments:noop};
+  const controlHtml=renderToStaticMarkup(<AuraChatPanel session={session} onStartGoal={noop}/>);
+  const button=controlHtml.match(/<button data-testid="jaco-chat-send"[^>]*>/)?.[0] || '';
+  assert.ok(button && !button.includes('disabled'), 'control input must remain sendable while a chat model thinks');
+  const ordinaryHtml=renderToStaticMarkup(<AuraChatPanel session={{...session,input:'Vad gör du nu?'}} onStartGoal={noop}/>);
+  const ordinaryButton=ordinaryHtml.match(/<button data-testid="jaco-chat-send"[^>]*>/)?.[0] || '';
+  assert.ok(ordinaryButton.includes('disabled'), 'ordinary second model turn remains bounded');
+});
