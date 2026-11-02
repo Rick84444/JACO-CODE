@@ -1287,9 +1287,13 @@ server.listen(PORT, '127.0.0.1', () => {
 // Periodically: observe system state → ask LLM what the highest-value next goal is
 // → if novel and passes execution gate, create a Mission Graph automatically.
 // Disabled by default; explicit SEER_GOVERNOR_INTERVAL_MS enables legacy mode.
-// Aura owns autonomous intent. Do not start an independent strategic model
-// conversation at process startup; legacy operators may explicitly opt in.
-const GOVERNOR_INTERVAL_MS = parseInt(process.env.SEER_GOVERNOR_INTERVAL_MS ?? '0');
+// Aura owns all independent reasoning. Old installations can still contain
+// SEER_GOVERNOR_INTERVAL_MS=300000; that setting alone must not reactivate
+// SEER's autonomous LLM loop on upgrade. Require a distinct explicit legacy
+// opt-in to preserve advanced deployments without silently creating an agent.
+const LEGACY_GOVERNOR_ENABLED = process.env.JACO_AURA_LEGACY_GOVERNOR === '1';
+const GOVERNOR_INTERVAL_MS = LEGACY_GOVERNOR_ENABLED
+  ? Math.max(0, Number(process.env.SEER_GOVERNOR_INTERVAL_MS || 0)) : 0;
 let governorInFlight = false;
 let governorTimer = null;
 
