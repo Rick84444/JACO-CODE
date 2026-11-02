@@ -48,7 +48,25 @@ legacy behavior. CI checks build/contracts. Device-level proof still needs
 an actual Windows and Termux run with a selected provider, a mission, steering,
 restart and real tool receipts.
 
-Remaining work: one durable chat-request identity/recovery contract, and
-convergence of legacy JSON planning and native function calling behind a
-capability-driven model adapter. Native tool support cannot be inferred from
-a successful plain text completion.
+## Chat request identity and model capability fallback
+
+The existing encrypted `aura_chat_messages` SQLite table now uses the GUI
+message UUID as its connected-session request identity. Completed replies have
+the deterministic key `<request-id>:reply`. On a lost HTTP response or browser
+reload, the persisted user turn and response can be recovered without making a
+second model call; a replay with a different user message fails with
+`AURA_CHAT_REPLAY_INPUT_CONFLICT`. Unfinished inference after a process crash
+is **not** reported as completed, and is not automatically retried as an external
+mutation. Full exactly-once semantics for an in-flight provider request (or
+billing after a dropped provider response) still requires a durable request
+state and explicit reconciliation.
+
+For the selected provider, native tool calling is preferred when supported.
+If it is disabled for this model or a provider rejects function calls, Nova
+reuses its **existing structured planning path with the same pinned provider**.
+This is a compatibility step, not a completed single-protocol refactor.
+A plain text probe verifies only text inference, never native tool support.
+
+Remaining work: unify tool protocol adapters and introduce the durable
+in-flight request reconciliation state. A physical live inference, restart,
+disconnect, stop/steer and tool-receipt acceptance run remains required.
