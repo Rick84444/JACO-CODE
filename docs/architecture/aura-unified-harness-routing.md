@@ -14,14 +14,20 @@ so saved leases and Workplace identities are not orphaned; its agent card is
 presented as **Aura**. The operator agent constellation has one Aura root
 and models old SEER/Nova services as internal capabilities.
 
-Legacy `SEER_GOVERNOR_INTERVAL_MS` is now **off by default**, including the
-installation example. The event-triggered development cycle also refuses
-independent LLM governor turns while disabled. The ordinary operator-initiated
-Aura mission graph and existing tool/verification flow are unaffected.
-Advanced deployments can explicitly opt into the legacy governor, but
-doing so is not the recommended single-agent mode. Existing process/service
-names and compatible `/cortex/*` endpoints are migration internals, not
-user-visible agent identities.
+Legacy `SEER_GOVERNOR_INTERVAL_MS` is **not sufficient** to start the
+self-scheduled SEER model governor, even on upgraded installations that still
+have `300000` saved. Background strategic reasoning requires the **new**
+explicit `JACO_AURA_LEGACY_GOVERNOR=1` opt-in *and* a positive interval.
+This opt-in is not the recommended Aura-only mode.
+
+An **operator-issued** Full Autonomous goal still goes through
+`/cortex/strategy/start` → `developmentCycle.trigger('operator-goal')`
+→ a **single on-demand Aura strategy planning call**; blocking this trigger
+would falsely acknowledge the user's goal without building a plan. All other
+unsolicited governor triggers skip model inference with legacy mode disabled.
+The existing mission graph's deterministic reconciliation/dispatch loop remains
+operational. Process/service names and compatible `/cortex/*` endpoints are
+migration internals, not user-visible agent identities.
 
 ## End-to-end selection
 
