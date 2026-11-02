@@ -633,7 +633,7 @@ function buildClaudeContext() {
 // session, model loop or agent authority is created for SEER.
 const workplaceLocation = (() => {
   const linked = process.env.JACO_WORKPLACE_SCOPE !== 'local' && hubDeviceLinked(process.env);
-  const baseUrl = linked ? String(process.env.JACO_HUB_URL).replace(/\\/+$/, '') + '/v1/device/workplace'
+  const baseUrl = linked ? String(process.env.JACO_HUB_URL).replace(/\/+$/, '') + '/v1/device/workplace'
     : String(process.env.JACO_WORKPLACE_URL || '');
   const token = linked ? process.env.JACO_DEVICE_KEY : process.env.JACO_WORKPLACE_TOKEN;
   if (linked) {
