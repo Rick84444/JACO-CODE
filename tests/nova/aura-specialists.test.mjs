@@ -18,7 +18,7 @@ const wire = organization => ({
 
 test('exactly four explicit specialists report to Aura, with no credentials', () => {
   assert.deepEqual(AURA_SPECIALISTS.map(a => a.id), [
-    'grokbot-analyst', 'senior-developer', 'reliability-debugger', 'user-advocate',
+    'ecosystem-analyst', 'senior-developer', 'reliability-debugger', 'user-advocate',
   ]);
   for (const spec of AURA_SPECIALISTS) {
     assert.equal(spec.reportsTo, 'aura');
@@ -55,8 +55,8 @@ test('operator creates real persisted agent records, folders and zero-permission
     fs.writeFileSync(sop, 'Operator customized SOP');
   }
   const restart = new AgentOrganization(root);
-  restart.ensureFolder('grokbot-analyst');
-  assert.equal(fs.readFileSync(path.join(root, 'org', 'agents', 'grokbot-analyst', 'procedures', 'operating-procedure.md'), 'utf8'), 'Operator customized SOP');
+  restart.ensureFolder('ecosystem-analyst');
+  assert.equal(fs.readFileSync(path.join(root, 'org', 'agents', 'ecosystem-analyst', 'procedures', 'operating-procedure.md'), 'utf8'), 'Operator customized SOP');
   assert.equal(restart.snapshot().agents.length, 5);
   assert.equal(restart.snapshot().agents.filter(a => AURA_SPECIALISTS.some(b => b.id === a.id)).length, 4);
 });
@@ -93,7 +93,7 @@ test('partial failure can be retried without duplicates', async t => {
 
 test('an existing ID with a different owner or name is not overwritten', async t => {
   const { organization } = setup(t);
-  organization.createAgent({ id: 'grokbot-analyst', name: 'Unknown', reportsTo: 'aura' });
+  organization.createAgent({ id: 'ecosystem-analyst', name: 'Unknown', reportsTo: 'aura' });
   assert.throws(() => planAuraSpecialistProvision(organization.snapshot().agents), /SPECIALIST_ID_CONFLICT/);
   await assert.rejects(provisionAuraSpecialists(wire(organization)), /SPECIALIST_ID_CONFLICT/);
   assert.equal(organization.snapshot().agents.length, 2);
