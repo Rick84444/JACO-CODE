@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { auraChatViaSeer, buildAuraSeerPrompts, AURA_CANONICAL_OBJECTIVE } from '../../agents/lib/aura-seer-chat.mjs';
+import { auraChatViaSeer, buildAuraSeerPrompts, AURA_CANONICAL_OBJECTIVE, renderAuraToolTranscript, summarizeAuraModelCosts } from '../../agents/lib/aura-seer-chat.mjs';
 import { seerCompletion, seerCompletionResult } from '../../agents/lib/seer-client.mjs';
 
 const root=process.cwd();
@@ -98,7 +98,9 @@ test('Aura setup guidance requires consent, keeps secrets out of generic tools a
   assert.match(system,/Läs aldrig \.env med repo_read, shell/);
   assert.match(system,/utanför modellkontext, chatthistorik/);
   assert.match(system,/Inloggning, lösenord, MFA och CAPTCHA utför användaren själv/);
-  assert.match(system,/En fråga eller ett erbjudande är inte ett utfört Nova-uppdrag/);
+  assert.match(system,/En fråga eller ett erbjudande är inte ett utfört uppdrag/);
+  assert.match(system,/start_goal enbart när operatören beställt arbetet/);
+  assert.match(system,/Manual\/Planning är alltid läsande/);
   assert.match(system,/Lova aldrig att en större modell blir snabbare/);
 });
 
@@ -196,4 +198,72 @@ test('Aura chat nudges the model once when it announces a tool instead of callin
     assert.equal(calls,1);
     assert.equal(out.reply,'Två uppdrag är aktiva.');
   });
+});
+
+test('operator message survives large prior context and is always the latest prompt content', () => {
+  const goal='SVARA PÅ DEN HÄR AKTUELLA FRÅGAN';
+  const {user}=buildAuraSeerPrompts({
+    message:goal,
+    observedState:'old:'.repeat(1200),
+    ragContext:'R'.repeat(12000),
+    toolTranscript:'T'.repeat(28000),
+  });
+  assert.ok(user.endsWith('CURRENT_USER_MESSAGE:\n'+goal), 'latest operator message must be at the truncation-safe tail');
+  assert.equal(user.match(/TOOL_TRANSCRIPT/g)?.length,1);
+  assert.ok(user.indexOf('TOOL_TRANSCRIPT')<user.indexOf('CURRENT_USER_MESSAGE'));
+  assert.ok(user.length<28000,'oversized tool history must not be forwarded to the model');
+});
+
+test('tool transcript retains recent receipts and bounds each model round', () => {
+  const entries=Array.from({length:8},(_,i)=>({
+    call:{name:'repo_read',args:{path:'file'+i+'.ts'}},
+    ok:true,at:'2026-11-02T12:00:00.000Z',
+    text:'header'+i+' '+('X'.repeat(10000))+' ending'+i,
+  }));
+  const output=renderAuraToolTranscript(entries);
+  assert.ok(output.includes('EARLIER_TOOL_OBSERVATIONS (5'));
+  assert.ok(output.includes('file0.ts'), 'earlier result keeps a bounded evidence reference');
+  assert.ok(output.includes('file7.ts'));
+  assert.ok(output.includes('ending7'));
+  assert.ok(!output.includes('header0 '+('X'.repeat(10000))), 'original long tool output must not be forwarded');
+  assert.ok(output.length<8000,'latest three tool results must not grow the prompt without bound');
+});
+
+test('FREE/LOCAL model usage is not misreported as unknown cloud spend', () => {
+  assert.equal(summarizeAuraModelCosts([{status:'FREE'}]).costStatus,'FREE');
+  assert.equal(summarizeAuraModelCosts([{status:'LOCAL'},{status:'FREE'}]).costStatus,'LOCAL');
+  assert.deepEqual(summarizeAuraModelCosts([{status:'FREE'},{status:'SETTLED',usd:0.001}]),{
+    costStatus:'SETTLED',costUsd:0.001,modelCalls:2,
+  });
+  assert.equal(summarizeAuraModelCosts([{status:'SETTLED',usd:0.001},{status:'OUTCOME_UNKNOWN'}]).costStatus,'OUTCOME_UNKNOWN');
+  assert.equal(summarizeAuraModelCosts([{status:'FREE'},{status:'unknown'}]).costStatus,'OUTCOME_UNKNOWN');
+  assert.equal(summarizeAuraModelCosts([]),null);
+});
+
+test('a model cannot execute a sixth tool or expose an unexecuted TOOL_CALL as success', async () => {
+  const seen=[], executed=[];
+  let turns=0;
+  const out=await auraChatViaSeer({
+    message:'Undersök felet, men hitta inte på vad som körts.',
+    complete:async ({user})=>{
+      seen.push(user);
+      turns++;
+      return {provider:'fixture',model:'free-model',local:false,costStatus:'FREE',text:
+        'TOOL_CALL '+JSON.stringify({name:'inspect',args:{step:turns}})};
+    },
+    toolbox:{observe:async()=>'system OK',tools:{inspect:{description:'read-only inspection',run:async ({step})=>{
+      executed.push(step);
+      return {observed:true,text:'O'.repeat(10000)+'receipt'+step};
+    }}}},
+  });
+  assert.equal(turns,6,'bounded tool loop performs only the final summary inference');
+  assert.deepEqual(executed,[1,2,3,4,5]);
+  assert.equal(out.toolReceipts.length,5);
+  assert.match(out.reply,/inte utfört det sista föreslagna anropet/);
+  assert.doesNotMatch(out.reply,/TOOL_CALL/);
+  assert.equal(out.providerReceipt.costStatus,'FREE');
+  assert.equal(out.providerReceipt.costUsd,0);
+  assert.equal(out.providerReceipt.modelCalls,6);
+  assert.ok(seen.at(-1).endsWith('CURRENT_USER_MESSAGE:\nUndersök felet, men hitta inte på vad som körts.'));
+  assert.ok(seen.at(-1).length<9000,'tool receipts should not create a runaway prompt');
 });
