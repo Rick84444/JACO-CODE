@@ -18,7 +18,7 @@ async function check() {
   const ffmpeg = hasFfmpeg();
   console.log(`ffmpeg: ${ffmpeg ? 'found (voice notes)' : 'not found (the text goes out; install ffmpeg for voice notes)'}`);
   try {
-    const sound = await synthesize('JACO kan prata.');
+    const sound = await synthesize('JACO can speak.');
     console.log(`voice: ${sound.engine}, ${sound.ptt ? 'voice note' : 'audio file'}`);
     (await import('node:fs')).rmSync(sound.file, { force: true });
   } catch (error) { console.log(`voice: ${String(error?.message || error)}`); }
@@ -32,7 +32,7 @@ async function link(number) {
   console.log(`The agent will message ${channel.setOwner(number)} and no one else. This uses WhatsApp's unofficial web protocol: use a separate number for the agent, not your main account.`);
   try {
     await channel.link({ waitMs: 180_000 });
-    const result = await channel.send({ text: 'Aura är kopplad. Jag skriver här när ett uppdrag är klart eller behöver dig.' });
+    const result = await channel.send({ text: 'Aura is linked. I will write here when a mission is done or needs you.' });
     console.log(result.ok ? `Linked. Test message sent${result.sentVoice ? ' with voice' : ` (no voice: ${result.voiceSkipped})`}.` : `Linked, but the test message did not go out: ${result.reason}`);
     channel.close();
     process.exit(0);

@@ -13,9 +13,10 @@ export function cognitiveQuestionToolbox(toolbox, readCurrentWork, operatorMessa
   // An explicit request to change approvals is an operator action, even in the conversation view.
   // Ordinary status questions still expose no mutation tools. Existing grant and hard stops apply.
   const request = String(operatorMessage).trim();
-  const policyRequest = /^(?:jag vill (?:att du )?|ändra |sätt |minska |öka |blockera |godkänn inte )/i.test(request)
-    && /godkänn|approve|autonomi|polic|regler/i.test(request)
-    && !/^(?:hur|varför|kan du förklara|vad händer)/i.test(request);
+  // Swedish and English phrasings are both recognised (the operator often writes Swedish).
+  const policyRequest = /^(?:jag vill (?:att du )?|ändra |sätt |minska |öka |blockera |godkänn inte |i want (?:you to )?|change |set |reduce |lower |increase |raise |block |do not approve |don't approve )/i.test(request)
+    && /godkänn|approv|autonomi|autonom|polic|regler|rules/i.test(request)
+    && !/^(?:hur|varför|kan du förklara|vad händer|how\b|why\b|can you explain|what happens)/i.test(request);
   if (policyRequest && toolbox.tools?.policy_update) tools.policy_update = toolbox.tools.policy_update;
   const currentWork={
     description:'Observed current mission events and evidence. These are runtime observations, not inferred thoughts. args: {}',

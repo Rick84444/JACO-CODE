@@ -55,9 +55,9 @@ const StepCard: React.FC<{ step: Step; autoOpen: boolean }> = ({ step, autoOpen 
       <div className="flex items-start gap-2">
         <Icon className="mt-0.5 h-4 w-4 shrink-0 text-cyan-400" />
         <span className="flex-1 text-[13px] text-slate-200 break-words">{describeNovaTask({ type: step.type, data: step.input })}</span>
-        {state === 'ok' && <Check className="h-4 w-4 shrink-0 text-emerald-400" aria-label="verifierat" />}
-        {state === 'unverified' && <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" aria-label="inte verifierat" />}
-        {state === 'failed' && <X className="h-4 w-4 shrink-0 text-red-400" aria-label="misslyckades" />}
+        {state === 'ok' && <Check className="h-4 w-4 shrink-0 text-emerald-400" aria-label="verified" />}
+        {state === 'unverified' && <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" aria-label="not verified" />}
+        {state === 'failed' && <X className="h-4 w-4 shrink-0 text-red-400" aria-label="failed" />}
       </div>
       {step.error && <div className="mt-1 text-[12px] text-red-300 break-words">{step.error}</div>}
       {step.url && <a href={step.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mt-1 block text-[12px] text-cyan-300 underline break-all">{step.url}</a>}
@@ -75,7 +75,7 @@ const MissionThread: React.FC<{ id: string; onGone: (id: string) => void }> = ({
     source.addEventListener('mission', (e: MessageEvent) => { setM(JSON.parse(e.data)); setLost(''); });
     source.addEventListener('failure', () => { source.close(); onGone(id); });
     // EventSource reconnects by itself; say so instead of looking frozen.
-    source.onerror = () => setLost(source.readyState === EventSource.CLOSED ? '' : 'Tappade kontakten, återansluter…');
+    source.onerror = () => setLost(source.readyState === EventSource.CLOSED ? '' : 'Connection lost, reconnecting…');
     return () => source.close();
   }, [id]);
 
@@ -84,13 +84,13 @@ const MissionThread: React.FC<{ id: string; onGone: (id: string) => void }> = ({
     try {
       await fetch(`/api/aura/workbench/approvals/${encodeURIComponent(`mission:${id}`)}/decision`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision, note: `Bygg-vyn: ${decision}` }),
+        body: JSON.stringify({ decision, note: `Build view: ${decision}` }),
       }).then(readAuraResponse);
-    } catch (e: any) { setLost(`Kunde inte ${decision}: ${e?.message || e}`); }
+    } catch (e: any) { setLost(`Could not ${decision}: ${e?.message || e}`); }
     finally { setBusy(''); }
   };
 
-  if (!m) return <div className="text-[12px] text-slate-500 px-1">Laddar uppdrag…</div>;
+  if (!m) return <div className="text-[12px] text-slate-500 px-1">Loading mission…</div>;
   const working = m.status === 'ACTIVE';
   return (
     <div className="space-y-2">
@@ -99,27 +99,27 @@ const MissionThread: React.FC<{ id: string; onGone: (id: string) => void }> = ({
       {working && (
         <div className="flex items-center gap-2 px-1 text-[13px] text-cyan-300">
           <Loader2 className="h-4 w-4 animate-spin" />
-          {m.activeTask ? `Nova: ${describeNovaTask(m.activeTask)}` : 'Nova planerar nästa steg…'}
+          {m.activeTask ? `Nova: ${describeNovaTask(m.activeTask)}` : 'Nova is planning the next step…'}
         </div>
       )}
       {m.answer && <div className="max-w-[90%] rounded-2xl rounded-bl-sm bg-[#13212e] px-3 py-2 text-[14px] text-slate-100 whitespace-pre-wrap break-words">{m.answer}</div>}
       {m.status === 'AWAITING_VERIFICATION' && (
         <div className="flex flex-wrap gap-2">
-          <span className="w-full text-[12px] text-amber-300">Nova anser att det är klart. Stämmer det?</span>
-          <button disabled={!!busy} onClick={() => decide('confirm')} className="rounded-full bg-emerald-600 px-4 py-2 text-[13px] text-white">Godkänn</button>
-          <button disabled={!!busy} onClick={() => decide('resume')} className="rounded-full bg-[#1d3347] px-4 py-2 text-[13px] text-slate-100">Fortsätt jobba</button>
-          <button disabled={!!busy} onClick={() => decide('cancel')} className="rounded-full bg-[#2a1a1a] px-4 py-2 text-[13px] text-red-200">Avbryt</button>
+          <span className="w-full text-[12px] text-amber-300">Nova considers this done. Is that right?</span>
+          <button disabled={!!busy} onClick={() => decide('confirm')} className="rounded-full bg-emerald-600 px-4 py-2 text-[13px] text-white">Approve</button>
+          <button disabled={!!busy} onClick={() => decide('resume')} className="rounded-full bg-[#1d3347] px-4 py-2 text-[13px] text-slate-100">Keep working</button>
+          <button disabled={!!busy} onClick={() => decide('cancel')} className="rounded-full bg-[#2a1a1a] px-4 py-2 text-[13px] text-red-200">Cancel</button>
         </div>
       )}
       {m.status === 'BLOCKED' && (
         <div className="flex flex-wrap gap-2">
-          <span className="w-full text-[12px] text-amber-300">Nova har stannat och behöver dig.</span>
-          <button disabled={!!busy} onClick={() => decide('resume')} className="rounded-full bg-[#1d3347] px-4 py-2 text-[13px] text-slate-100">Försök igen</button>
-          <button disabled={!!busy} onClick={() => decide('cancel')} className="rounded-full bg-[#2a1a1a] px-4 py-2 text-[13px] text-red-200">Avbryt</button>
+          <span className="w-full text-[12px] text-amber-300">Nova has stopped and needs you.</span>
+          <button disabled={!!busy} onClick={() => decide('resume')} className="rounded-full bg-[#1d3347] px-4 py-2 text-[13px] text-slate-100">Retry</button>
+          <button disabled={!!busy} onClick={() => decide('cancel')} className="rounded-full bg-[#2a1a1a] px-4 py-2 text-[13px] text-red-200">Cancel</button>
         </div>
       )}
-      {m.status === 'DONE' && <div className="text-[12px] text-emerald-400 px-1">Klart</div>}
-      {m.status === 'CANCELLED' && <div className="text-[12px] text-slate-500 px-1">Avbrutet</div>}
+      {m.status === 'DONE' && <div className="text-[12px] text-emerald-400 px-1">Done</div>}
+      {m.status === 'CANCELLED' && <div className="text-[12px] text-slate-500 px-1">Cancelled</div>}
       {lost && <div className="text-[12px] text-amber-300 px-1">{lost}</div>}
     </div>
   );
@@ -145,7 +145,7 @@ export const BuildView: React.FC = () => {
       if (!body.success) throw new Error(body.error || 'MISSION_NOT_CREATED');
       setText('');
       remember([...ids.filter(x => x !== body.mission.id), body.mission.id]);
-    } catch (e: any) { setError(`Uppdraget skapades inte: ${e?.message || e}`); }
+    } catch (e: any) { setError(`The mission was not created: ${e?.message || e}`); }
     finally { setBusy(false); }
   };
 
@@ -154,8 +154,8 @@ export const BuildView: React.FC = () => {
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-6">
         {ids.length === 0 && (
           <div className="mt-10 px-4 text-center text-slate-400">
-            <div className="text-[18px] text-slate-200">Vad vill du bygga?</div>
-            <div className="mt-2 text-[13px]">Skriv vad du vill ha gjort. Du ser varje steg Nova tar, live, och varje fil som ändras.</div>
+            <div className="text-[18px] text-slate-200">What do you want to build?</div>
+            <div className="mt-2 text-[13px]">Write what you want done. You see every step Nova takes, live, and every file that changes.</div>
           </div>
         )}
         {ids.map(id => <MissionThread key={id} id={id} onGone={gone => remember(ids.filter(x => x !== gone))} />)}
@@ -166,10 +166,10 @@ export const BuildView: React.FC = () => {
         <textarea
           value={text} onChange={e => setText(e.target.value)} rows={1}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
-          placeholder="Vad vill du bygga?"
+          placeholder="What do you want to build?"
           className="flex-1 resize-none rounded-2xl bg-[#0b1620] px-4 py-3 text-[16px] text-slate-100 placeholder:text-slate-500 outline-none focus:ring-1 focus:ring-cyan-600 max-h-40"
         />
-        <button type="submit" disabled={busy || !text.trim()} aria-label="Skicka" className="h-12 w-12 shrink-0 rounded-full bg-cyan-600 disabled:bg-[#1d3347] flex items-center justify-center">
+        <button type="submit" disabled={busy || !text.trim()} aria-label="Send" className="h-12 w-12 shrink-0 rounded-full bg-cyan-600 disabled:bg-[#1d3347] flex items-center justify-center">
           {busy ? <Loader2 className="h-5 w-5 animate-spin text-white" /> : <Send className="h-5 w-5 text-white" />}
         </button>
       </form>

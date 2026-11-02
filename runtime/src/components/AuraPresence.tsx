@@ -10,13 +10,13 @@ export type AuraPresenceView = {
   streamAge:number|null;snapshotAge:number|null;
 };
 const ageLabel=(seconds:number|null)=>{
-  if(seconds===null)return 'Tid ej observerad';
-  if(seconds<60)return seconds+' sek sedan';
-  if(seconds<3600)return Math.floor(seconds/60)+' min sedan';
-  return Math.floor(seconds/3600)+' tim sedan';
+  if(seconds===null)return 'Time not observed';
+  if(seconds<60)return seconds+' s ago';
+  if(seconds<3600)return Math.floor(seconds/60)+' min ago';
+  return Math.floor(seconds/3600)+' h ago';
 };
 export function AuraPresence({data}:{data:AuraPresenceView}) {
-  return <section className="aura-presence" data-mode={data.mode} aria-label="JACO:s observerade system- och arbetsstatus" data-testid="aura-presence">
+  return <section className="aura-presence" data-mode={data.mode} aria-label="JACO's observed system and work status" data-testid="aura-presence">
     <div className="aura-presence-top">
       <div className="aura-presence-heading">
         <span className="aura-presence-light" aria-hidden="true"/>
@@ -31,13 +31,13 @@ export function AuraPresence({data}:{data:AuraPresenceView}) {
 
       <span className="aura-presence-step"><Activity size={13}/>{data.step || data.detail}</span>
       {data.step && <span className="aura-presence-time"><Clock3 size={12}/>{ageLabel(data.stepAge)}</span>}
-      {data.approvals>0 && <span className="aura-presence-warning"><CircleAlert size={12}/>{data.approvals} beslut</span>}
+      {data.approvals>0 && <span className="aura-presence-warning"><CircleAlert size={12}/>{data.approvals} {data.approvals===1?'decision':'decisions'}</span>}
     </div>
-    <details className="aura-presence-details"><summary>Anslutningar och verifiering</summary><div className="aura-presence-bottom"><span className="aura-presence-phase">{data.phaseLabel}</span>      {data.maxSteps!==null && data.stepCount!==null && <span className="aura-presence-number">Steg {data.stepCount}/{data.maxSteps}</span>}
-      {data.verified!==null && <span className="aura-presence-number"><CheckCheck size={12}/>{data.verified} verifierade steg</span>}
-</div>      <div className="aura-presence-signals" aria-label="Kopplingar">
-        <span title="Verifierad modellidentitet från senast hämtade statusrapport"><PlugZap size={12}/>{data.modelLabel}</span>
-        <span><Bot size={12}/>{data.connectedAgents} agenter · {data.workingSessions} sessioner</span>
+    <details className="aura-presence-details"><summary>Connections and verification</summary><div className="aura-presence-bottom"><span className="aura-presence-phase">{data.phaseLabel}</span>      {data.maxSteps!==null && data.stepCount!==null && <span className="aura-presence-number">Step {data.stepCount}/{data.maxSteps}</span>}
+      {data.verified!==null && <span className="aura-presence-number"><CheckCheck size={12}/>{data.verified} verified steps</span>}
+</div>      <div className="aura-presence-signals" aria-label="Connections">
+        <span title="Verified model identity from the latest status report"><PlugZap size={12}/>{data.modelLabel}</span>
+        <span><Bot size={12}/>{data.connectedAgents} agents · {data.workingSessions} sessions</span>
         <span><Globe2 size={12}/>{data.cdpLabel}</span>
       </div></details>
   </section>;

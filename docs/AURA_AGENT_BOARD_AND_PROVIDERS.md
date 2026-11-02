@@ -1,19 +1,19 @@
-# Aura: Agenttavla och provider-val
+# Aura: Agent board and provider choice
 
-Agenttavlan är en läsande vy över Workplace och Durable Nova. Rapporterad DONE, agentkontakt och verifierade verktygssteg är skilda observationer; inget av dem ersätter huvudmålets acceptansbevis. Vyn använder Auras befintliga uppdateringsloop och gör inga modell-anrop. Skapande och granskning använder befintliga SEER- och godkännandevägar.
+The agent board is a read-only view of Workplace and Durable Nova. Reported DONE, agent contact and verified tool steps are separate observations; none of them replaces the main goal's acceptance evidence. The view uses Aura's existing refresh loop and makes no model calls. Creation and review use the existing SEER and approval paths.
 
-## Byta modell för manuell chatt
+## Switching the model for manual chat
 
-1. Välj en registrerad provider i **Aura provider**.
-2. Skriv modellnamnet i **Aura modell**. Förslag är inte en låst lista.
-3. Valet sparas i denna webbläsares localStorage. **Default** återgår till serverns standard. **Uppdatera providerlista** hämtar nya registreringar; **Hantera providers** öppnar befintlig providerhantering.
+1. Choose a registered provider in **Aura provider**.
+2. Type the model name in **Aura model**. Suggestions are not a locked list.
+3. The choice is saved in this browser's localStorage. **Default** returns to the server's default. **Refresh provider list** fetches new registrations; **Manage providers** opens the existing provider management.
 
-Backend skickar ett explicit val genom befintlig ProviderRegistry. Saknad provider, credential eller prissättning ger fel före dispatch; explicit provider byts inte automatiskt. SEER-alternativet använder befintlig SEER-routing. Valet gäller manuell Aura-chatt och ändrar inte Novas autonoma modellkonfiguration.
+The backend sends an explicit choice through the existing ProviderRegistry. A missing provider, credential or pricing fails before dispatch; an explicit provider is not switched automatically. The SEER option uses the existing SEER routing. The choice applies to manual Aura chat and does not change Nova's autonomous model configuration.
 
-Molnmodeller kräver konservativ prisinformation. Befintlig Ollama-konfiguration återanvänds. Övriga modeller använder `JACO_AURA_PROVIDER_PRICES_JSON`, med nyckel `provider-id/modellnamn` och positiva `input`/`output` i USD per miljon tokens. Konfigurera verkliga aktuella priser, inte påhittade exempel. Högst 1 USD/dygn inklusive reservationer kontrolleras genom befintlig EconomicGovernor. Saknad usage eller transportfel efter dispatch lämnar reservationen som okänt utfall.
+Cloud models require conservative pricing information. The existing Ollama configuration is reused. Other models use `JACO_AURA_PROVIDER_PRICES_JSON`, keyed by `provider-id/model-name` with positive `input`/`output` in USD per million tokens. Configure real current prices, not invented examples. At most 1 USD per day including reservations is enforced through the existing EconomicGovernor. Missing usage or a transport error after dispatch leaves the reservation as an unknown outcome.
 
-Loopback-endpoints behandlas som lokala, förutom kända/prissatta molnmodeller och modellnamn med `-cloud` eller `:cloud`. En lokal proxy för andra betalmodeller måste därför ha explicit prissättning. Budgeten är en lokal anropsgrind, inte en garanti om leverantörens fakturering eller abonnemangsavgifter. Modellfältet installerar inte modeller eller skapar leverantörskonton.
+Loopback endpoints are treated as local, except known/priced cloud models and model names with `-cloud` or `:cloud`. A local proxy for other paid models must therefore have explicit pricing. The budget is a local call gate, not a guarantee about the provider's billing or subscription fees. The model field does not install models or create provider accounts.
 
-## Leveransens verifieringsgräns
+## The delivery's verification boundary
 
-Verifieringsrapporter ska skilja källkod, byggda artefakter, isolerad runtime och installerad runtime. Browserprov med en kopia av verkliga persistenta uppdrag bevisar visning av den kopian; det bevisar inte att dessa uppdrag exekverades under provet. En installerad server behöver ladda den nya backend- och frontend-versionen innan funktionerna gäller där.
+Verification reports must distinguish source code, built artifacts, an isolated runtime and an installed runtime. A browser check with a copy of real persistent missions proves display of that copy; it does not prove that those missions were executed during the check. An installed server needs to load the new backend and frontend version before the features apply there.

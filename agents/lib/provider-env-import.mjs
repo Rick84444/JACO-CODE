@@ -25,5 +25,5 @@ export function importProviderEnv({ project, file, confirmed, store = new Secret
     store.set(p.apiKeyEnv, value, { source: 'operator-selected-env', purpose: 'Model provider connection' });
     imported.push(p.id);
   }
-  return { state: 'STORED', imported, kept, note: 'Nyckelvärden visas inte. Befintliga nycklar har bevarats. Sparad nyckel betyder inte verifierad modellanslutning.' };
+  return { state: 'STORED', imported, kept, note: 'Key values are not shown. Existing keys were kept. A stored key does not mean a verified model connection.' };
 }

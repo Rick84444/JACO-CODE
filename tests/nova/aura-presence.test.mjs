@@ -19,11 +19,11 @@ test('SSE and snapshot both fresh are required to report a connected runtime',()
   const p=auraPresence(live);
   assert.equal(p.mode,'observed');
   assert.equal(p.connected,true);
-  assert.equal(p.connectionLabel,'JACO ansluten');
+  assert.equal(p.connectionLabel,'JACO connected');
   assert.match(p.modelLabel,/gemma4-e2b/);
   assert.equal(p.connectedAgents,1);
   assert.equal(p.workingSessions,1);
-  assert.equal(p.cdpLabel,'CDP ansluten');
+  assert.equal(p.cdpLabel,'CDP connected');
   assert.notEqual(p.mode,'working','live sockets and sessions are not mission proof');
 });
 test('An active mission with a recent actual action exposes progress',()=>{
@@ -39,7 +39,7 @@ test('A responsive connection cannot conceal a stale or stuck mission',()=>{
   const p=auraPresence({...live,mission:active(185)});
   assert.equal(p.connected,true);
   assert.equal(p.mode,'stalled');
-  assert.match(p.title,/Inga nya arbetsresultat/);
+  assert.match(p.title,/No new work results/);
 });
 test('Stale transport or runtime STOP always overrides an active mission',()=>{
   assert.equal(auraPresence({...live,lastObservedAt:at(25),mission:active()}).mode,'offline');
@@ -54,8 +54,8 @@ test('Approvals and blocked missions are not labeled working',()=>{
 test('Missing provider and idle mission are visible, never inferred',()=>{
   const p=auraPresence({...live,model:null,provider:null,agents:[],cdpState:'UNOBSERVED'});
   assert.equal(p.mode,'ready');
-  assert.equal(p.modelLabel,'Modell ej observerad');
-  assert.equal(p.cdpLabel,'CDP ej observerad');
+  assert.equal(p.modelLabel,'Model not observed');
+  assert.equal(p.cdpLabel,'CDP not observed');
   assert.equal(p.verified,null);
 });
 test('The real IDE wires fresh runtime, SSE, mission and model information to the same stage',()=>{

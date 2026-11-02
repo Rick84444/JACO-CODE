@@ -3,17 +3,17 @@
 /**
  * JACO Continuum Edge Agent (PODAR Loop Client)
  *
- * Körs på Android Termux, Linux eller lokal nod och ansluter till den
- * verkliga Continuum RuntimeHub (0.21) via /api/continuum/hub/*.
+ * Runs on Android Termux, Linux or a local node and connects to the
+ * real Continuum RuntimeHub (0.21) via /api/continuum/hub/*.
  *
- * Ersätter den tidigare /api/runtime/agent-call-klienten, som pratade med
- * en route som inte finns i Continuum-servern och som vid hub-fel
- * fabricerade ett success:true-svar med ett låtsad L4-bevis. Den routen
- * och det beteendet är borttagna: en oåtkomlig hub rapporteras nu som
- * exakt det, och l4Proof kommer uteslutande från Continuums verkliga
- * Evidence Ledger (sha256 av den faktiskt lagrade payloaden).
+ * Replaces the earlier /api/runtime/agent-call client, which talked to
+ * a route that does not exist in the Continuum server and which, on hub errors,
+ * fabricated a success:true response with a fake L4 proof. That route
+ * and that behaviour are removed: an unreachable hub is now reported as
+ * exactly that, and l4Proof comes exclusively from Continuum's real
+ * Evidence Ledger (sha256 of the actually stored payload).
  *
- * Zero-Emoji Mandate: Använder enbart ANSI-färger och tekniska taggar.
+ * Zero-Emoji Mandate: uses only ANSI colours and technical tags.
  */
 
 import os from 'os';
@@ -24,20 +24,20 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-// Konfiguration via miljövariabler eller standardvärden.
-// Continuum-servern (src/server/continuum/standalone-server.mjs) binder
-// som standard till port 3020, inte 3000.
+// Configuration via environment variables or defaults.
+// The Continuum server (src/server/continuum/standalone-server.mjs) binds
+// to port 3020 by default, not 3000.
 const HUB_URL = (process.env.JACO_CONTINUUM_URL || process.env.JACO_HUB_URL || 'http://127.0.0.1:3020').replace(/\/+$/, '');
 const HUB_TOKEN = process.env.JACO_CONTINUUM_TOKEN || '';
 const NODE_ID = process.env.JACO_NODE_ID || `termux-node-${os.hostname()}-${process.pid}`;
 const NODE_NAME = process.env.JACO_NODE_NAME || `JACO Edge Node (${os.platform()})`;
 const INTERVAL_MS = parseInt(process.env.JACO_INTERVAL_MS || '6000', 10);
-const CURRENT_GOAL = process.env.JACO_GOAL || 'Autonom lokal hårdvaru- och AST-övervakning';
+const CURRENT_GOAL = process.env.JACO_GOAL || 'Autonomous local hardware and AST monitoring';
 const CAPABILITIES = (process.env.JACO_NODE_CAPABILITIES || 'edge-telemetry,edge-observation')
   .split(',').map(s => s.trim()).filter(Boolean);
-// Kinds av hub-tasks den här noden är beredd att hämta och utföra.
-// Håll denna lista snäv: edge-noden ska inte tysta ta på sig godtyckliga
-// uppgifter den inte har verklig exekveringslogik för.
+// Kinds of hub tasks this node is prepared to fetch and execute.
+// Keep this list narrow: the edge node must not silently take on arbitrary
+// tasks it has no real execution logic for.
 const CLAIMABLE_TASK_KINDS = new Set(['EDGE_TELEMETRY_SYNC', 'GENERIC']);
 
 const BUFFER_PATH = path.join(process.cwd(), '.jaco', 'edge-runtime', `${NODE_ID}.buffer.jsonl`);
@@ -49,7 +49,7 @@ let cycleCount = 0;
 let isRunning = true;
 let agentRegistered = false;
 
-// ANSI Färgkoder för strukturerad terminalutskrift
+// ANSI colour codes for structured terminal output
 const colors = {
   reset: '\x1b[0m',
   bright: '\x1b[1m',
@@ -69,7 +69,7 @@ function log(tag: string, message: string, color: string = colors.cyan) {
 }
 
 /**
- * Samla in realtids-telemetri från enheten (Android Termux eller Linux)
+ * Collect real-time telemetry from the device (Android Termux or Linux)
  */
 async function collectDeviceTelemetry() {
   const totalMem = Math.round(os.totalmem() / 1024 / 1024);
@@ -99,7 +99,7 @@ async function collectDeviceTelemetry() {
         }
       }
     } catch {
-      // Ignorera om otillgängligt
+      // Ignore if unavailable
     }
   }
 
@@ -119,9 +119,9 @@ async function collectDeviceTelemetry() {
 class ContinuumUnavailableError extends Error {}
 
 /**
- * Lågnivåanrop mot Continuum RuntimeHub. Kastar ContinuumUnavailableError
- * vid nätverksfel/timeout eller icke-2xx-svar, istället för att fabricera
- * ett lokalt "lyckat" resultat.
+ * Low-level call to the Continuum RuntimeHub. Throws ContinuumUnavailableError
+ * on network error/timeout or a non-2xx response, instead of fabricating
+ * a local "successful" result.
  */
 async function callContinuum(pathname: string, method: 'GET' | 'POST', payload?: any) {
   const url = `${HUB_URL}${pathname}`;
@@ -158,8 +158,8 @@ async function callContinuum(pathname: string, method: 'GET' | 'POST', payload?:
 }
 
 /**
- * Registrera noden som en verklig Continuum-agent (idempotent: samma
- * agent-id uppdateras vid omregistrering istället för att dubbliceras).
+ * Register the node as a real Continuum agent (idempotent: the same
+ * agent id is updated on re-registration instead of being duplicated).
  */
 async function ensureAgentRegistered() {
   await callContinuum('/api/continuum/hub/agents', 'POST', {
@@ -173,18 +173,18 @@ async function ensureAgentRegistered() {
     metadata: { platform: os.platform(), goal: CURRENT_GOAL }
   });
   agentRegistered = true;
-  log('[REGISTER]', `Agent ${NODE_ID} registrerad i Continuum RuntimeHub (${HUB_URL})`, colors.green);
+  log('[REGISTER]', `Agent ${NODE_ID} registered in Continuum RuntimeHub (${HUB_URL})`, colors.green);
 }
 
 /**
- * Spara telemetri som verklig, hash-kedjad evidence i Continuum Evidence
- * Ledger. Returnerar evidence-id + det verkliga contentHash-baserade
- * L4-beviset (aldrig ett lokalt påhittat sha256).
+ * Store telemetry as real, hash-chained evidence in the Continuum Evidence
+ * Ledger. Returns the evidence id + the real contentHash-based
+ * L4 proof (never a locally invented sha256).
  */
 async function recordTelemetryEvidence(phase: PodarPhase, telemetry: any) {
   const result = await callContinuum('/api/continuum/evidence', 'POST', {
     kind: 'edge-telemetry-observation',
-    claim: `Nod ${NODE_ID} observerade lokal hårdvarutelemetri under PODAR-fas ${phase}`,
+    claim: `Node ${NODE_ID} observed local hardware telemetry during PODAR phase ${phase}`,
     source: `edge-node:${NODE_ID}`,
     verified: true,
     verificationMethod: 'deterministic os.cpus()/os.freemem()/os.totalmem() + termux-battery-status/thermal_zone read',
@@ -203,9 +203,9 @@ async function heartbeat(status: string, idleJustification: string | null, curre
 }
 
 /**
- * Försök hämta och utföra en väntande hub-task vars krav den här noden
- * uppfyller. Håller sig strikt till CLAIMABLE_TASK_KINDS: noden ska inte
- * låtsas kunna göra generellt agentarbete den inte har logik för.
+ * Try to fetch and execute a queued hub task whose requirements this node
+ * meets. Sticks strictly to CLAIMABLE_TASK_KINDS: the node must not
+ * pretend it can do general agent work it has no logic for.
  */
 async function tryClaimAndRunTask(evidenceId: string): Promise<string | null> {
   const { tasks } = await callContinuum('/api/continuum/hub/tasks?status=QUEUED', 'GET');
@@ -227,21 +227,21 @@ async function tryClaimAndRunTask(evidenceId: string): Promise<string | null> {
     `/api/continuum/hub/tasks/${encodeURIComponent(candidate.id)}/claim`, 'POST',
     { agentId: NODE_ID, leaseId: lease.id }
   );
-  log('[TASK-CLAIM]', `Hämtade task ${claimed.id} (${claimed.kind})`, colors.blue);
+  log('[TASK-CLAIM]', `Claimed task ${claimed.id} (${claimed.kind})`, colors.blue);
 
   await callContinuum(`/api/continuum/hub/tasks/${encodeURIComponent(claimed.id)}/complete`, 'POST', {
     agentId: NODE_ID,
     status: 'COMPLETED',
     evidenceRefs: [evidenceId]
   });
-  log('[TASK-COMPLETE]', `Task ${claimed.id} slutförd med evidence ${evidenceId}`, colors.green);
+  log('[TASK-COMPLETE]', `Task ${claimed.id} completed with evidence ${evidenceId}`, colors.green);
   return claimed.id;
 }
 
 /**
- * Buffra en observation lokalt när hubben är onåbar. Ingen fabricerad
- * "success"-status skickas till loggen; det som skrivs är sanningsenligt
- * att detta ännu inte är verifierat arbete.
+ * Buffer an observation locally when the hub is unreachable. No fabricated
+ * "success" status is sent to the log; what is written truthfully states
+ * that this is not yet verified work.
  */
 function bufferLocally(record: any) {
   const dir = path.dirname(BUFFER_PATH);
@@ -250,23 +250,23 @@ function bufferLocally(record: any) {
 }
 
 /**
- * Vid återanslutning: skicka buffrade observationer som evidence och töm
- * bufferten. Best-effort; om hubben blir onåbar igen mitt i flush lämnas
- * resten av bufferten kvar för nästa försök.
+ * On reconnect: send buffered observations as evidence and empty
+ * the buffer. Best effort; if the hub becomes unreachable again mid-flush,
+ * the rest of the buffer is kept for the next attempt.
  */
 async function flushBufferIfAny() {
   if (!fs.existsSync(BUFFER_PATH)) return;
   const lines = fs.readFileSync(BUFFER_PATH, 'utf8').split('\n').filter(Boolean);
   if (!lines.length) { fs.unlinkSync(BUFFER_PATH); return; }
 
-  log('[FLUSH]', `Skickar ${lines.length} buffrade observationer till Continuum...`, colors.yellow);
+  log('[FLUSH]', `Sending ${lines.length} buffered observations to Continuum...`, colors.yellow);
   let sent = 0;
   for (const line of lines) {
     try {
       const record = JSON.parse(line);
       await callContinuum('/api/continuum/evidence', 'POST', {
         kind: 'edge-telemetry-observation',
-        claim: `Nod ${NODE_ID} (buffrad) observerade lokal hårdvarutelemetri under PODAR-fas ${record.phase}`,
+        claim: `Node ${NODE_ID} (buffered) observed local hardware telemetry during PODAR phase ${record.phase}`,
         source: `edge-node:${NODE_ID}`,
         verified: true,
         verificationMethod: 'deterministic os telemetry read, buffered while hub unreachable',
@@ -274,7 +274,7 @@ async function flushBufferIfAny() {
       });
       sent++;
     } catch {
-      break; // Hubben blev onåbar igen; lämna resten i bufferten.
+      break; // The hub became unreachable again; leave the rest in the buffer.
     }
   }
   const remaining = lines.slice(sent);
@@ -283,23 +283,23 @@ async function flushBufferIfAny() {
   } else {
     fs.unlinkSync(BUFFER_PATH);
   }
-  log('[FLUSH]', `${sent}/${lines.length} buffrade observationer skickade.`, colors.green);
+  log('[FLUSH]', `${sent}/${lines.length} buffered observations sent.`, colors.green);
 }
 
 /**
- * Huvudloop för den autonoma körtiden
+ * Main loop of the autonomous runtime
  */
 async function runLoop() {
   console.log('\n' + '='.repeat(70));
-  log('[INIT]', `JACO Continuum Edge Agent startad på nod: ${NODE_ID}`, colors.green);
-  log('[CONFIG]', `Continuum Target: ${HUB_URL} | Intervall: ${INTERVAL_MS}ms`, colors.cyan);
-  log('[GOAL]', `Aktivt mål: ${CURRENT_GOAL}`, colors.yellow);
+  log('[INIT]', `JACO Continuum Edge Agent started on node: ${NODE_ID}`, colors.green);
+  log('[CONFIG]', `Continuum Target: ${HUB_URL} | Interval: ${INTERVAL_MS}ms`, colors.cyan);
+  log('[GOAL]', `Active goal: ${CURRENT_GOAL}`, colors.yellow);
   console.log('='.repeat(70) + '\n');
 
   while (isRunning) {
     cycleCount++;
     const telemetry = await collectDeviceTelemetry();
-    log(`[PODAR:${currentPhase}]`, `Cykel #${cycleCount} | CPU: ${telemetry.cpuUsagePercent}% | RAM: ${telemetry.ramUsedMb}/${telemetry.ramTotalMb}MB | NPU: ${telemetry.npuAccelerated ? 'JA' : 'NEJ'}`, colors.cyan);
+    log(`[PODAR:${currentPhase}]`, `Cycle #${cycleCount} | CPU: ${telemetry.cpuUsagePercent}% | RAM: ${telemetry.ramUsedMb}/${telemetry.ramTotalMb}MB | NPU: ${telemetry.npuAccelerated ? 'YES' : 'NO'}`, colors.cyan);
 
     try {
       if (!agentRegistered) {
@@ -308,14 +308,14 @@ async function runLoop() {
       }
 
       const evidence = await recordTelemetryEvidence(currentPhase, telemetry);
-      log('[EVIDENCE]', `Sparad i Continuum Evidence Ledger: ${evidence.id}`, colors.dim);
+      log('[EVIDENCE]', `Stored in Continuum Evidence Ledger: ${evidence.id}`, colors.dim);
       log('[L4-PROOF]', evidence.contentHash, colors.yellow);
 
       let claimedTaskId: string | null = null;
       try {
         claimedTaskId = await tryClaimAndRunTask(evidence.id);
       } catch (taskErr: any) {
-        log('[WARN]', `Kunde inte hämta/utföra hub-task: ${taskErr.message}`, colors.yellow);
+        log('[WARN]', `Could not fetch/execute hub task: ${taskErr.message}`, colors.yellow);
       }
 
       await heartbeat(
@@ -329,7 +329,7 @@ async function runLoop() {
 
     } catch (err: any) {
       agentRegistered = false;
-      log('[ERROR]', `Continuum onåbar (${err.message}). Bufferar observation lokalt.`, colors.red);
+      log('[ERROR]', `Continuum unreachable (${err.message}). Buffering observation locally.`, colors.red);
       bufferLocally({ nodeId: NODE_ID, phase: currentPhase, cycle: cycleCount, telemetry, observedAt: new Date().toISOString() });
       log('[STATE]', 'hubConnected=false executionState=BUFFERING assignedAgent=null verifiedWorkPerformed=false', colors.gray);
     }
@@ -339,13 +339,13 @@ async function runLoop() {
 }
 
 process.on('SIGINT', () => {
-  log('[SHUTDOWN]', 'Avbryter JACO Continuum Edge Agent graciöst...', colors.yellow);
+  log('[SHUTDOWN]', 'Stopping JACO Continuum Edge Agent gracefully...', colors.yellow);
   isRunning = false;
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  log('[SHUTDOWN]', 'SIGTERM mottaget. Stänger ner noden...', colors.yellow);
+  log('[SHUTDOWN]', 'SIGTERM received. Shutting down the node...', colors.yellow);
   isRunning = false;
   process.exit(0);
 });

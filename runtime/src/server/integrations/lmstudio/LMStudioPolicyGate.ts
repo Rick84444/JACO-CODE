@@ -58,7 +58,7 @@ export class LMStudioPolicyGate {
           valid: false,
           canonicalPath: targetAbs,
           canonicalWorkspace,
-          error: `Sökvägsöverskridande blockerat: ${targetSubPath} ligger utanför workspace ${canonicalWorkspace}`
+          error: `Path traversal blocked: ${targetSubPath} is outside workspace ${canonicalWorkspace}`
         };
       }
 
@@ -69,7 +69,7 @@ export class LMStudioPolicyGate {
             valid: false,
             canonicalPath: canonicalTarget,
             canonicalWorkspace,
-            error: `Symlink-bypass blockerat: ${targetSubPath} pekar utanför workspace`
+            error: `Symlink bypass blocked: ${targetSubPath} points outside the workspace`
           };
         }
         return { valid: true, canonicalPath: canonicalTarget, canonicalWorkspace };
@@ -81,7 +81,7 @@ export class LMStudioPolicyGate {
         valid: false,
         canonicalPath: targetSubPath,
         canonicalWorkspace: baseWorkspace,
-        error: `Kunde inte verifiera kanonisk sökväg: ${err?.message || err}`
+        error: `Could not verify canonical path: ${err?.message || err}`
       };
     }
   }
@@ -98,7 +98,7 @@ export class LMStudioPolicyGate {
     if (!pluginEnabled) {
       errors.push({
         code: 'PLUGIN_DISABLED',
-        message: 'LM Studio Runtime Adapter plugin är avstängt som standard. Aktivera i inställningarna.',
+        message: 'The LM Studio Runtime Adapter plugin is disabled by default. Enable it in settings.',
         category: 'configuration',
         retryable: false
       });
@@ -108,14 +108,14 @@ export class LMStudioPolicyGate {
     if (!contract.workspacePath) {
       errors.push({
         code: 'MISSING_WORKSPACE',
-        message: 'Workspace-sökväg saknas eller kan inte verifieras.',
+        message: 'Workspace path is missing or cannot be verified.',
         category: 'configuration',
         retryable: false
       });
     } else if (!fs.existsSync(contract.workspacePath)) {
       errors.push({
         code: 'INVALID_WORKSPACE',
-        message: `Angiven workspace-mapp finns inte: ${contract.workspacePath}`,
+        message: `The specified workspace folder does not exist: ${contract.workspacePath}`,
         category: 'configuration',
         retryable: false
       });
@@ -126,7 +126,7 @@ export class LMStudioPolicyGate {
       if (!canonical.valid) {
         errors.push({
           code: 'PATH_TRAVERSAL_RISK',
-          message: canonical.error || 'Path traversal upptäckt i workspace.',
+          message: canonical.error || 'Path traversal detected in workspace.',
           category: 'permission',
           retryable: false
         });
@@ -139,7 +139,7 @@ export class LMStudioPolicyGate {
         if (denied.some((d) => p.includes(d))) {
           errors.push({
             code: 'DENIED_PATH_REQUESTED',
-            message: `Begärd sökväg (${p}) matchar spärrad lista (${denied.join(', ')})`,
+            message: `Requested path (${p}) matches the deny list (${denied.join(', ')})`,
             category: 'policy',
             retryable: false
           });
@@ -152,7 +152,7 @@ export class LMStudioPolicyGate {
         if (!this.isCommandAllowed(cmd, contract.allowedCommands)) {
           errors.push({
             code: 'COMMAND_NOT_ALLOWLISTED',
-            message: `Kommando ej i allowlist: ${cmd}`,
+            message: `Command not in allowlist: ${cmd}`,
             category: 'policy',
             retryable: false
           });
@@ -186,7 +186,7 @@ export class LMStudioPolicyGate {
       return {
         approvalNeeded: true,
         riskClass: 'HIGH',
-        reason: 'Advisor-läge tillåter inte direkt filskrivning utan operatörsgodkännande.'
+        reason: 'Advisor mode does not allow direct file writes without operator approval.'
       };
     }
 
@@ -194,7 +194,7 @@ export class LMStudioPolicyGate {
       return {
         approvalNeeded: true,
         riskClass: 'HIGH',
-        reason: 'Borttagning av filer kräver alltid operatörsgodkännande.'
+        reason: 'Deleting files always requires operator approval.'
       };
     }
 
@@ -202,7 +202,7 @@ export class LMStudioPolicyGate {
       return {
         approvalNeeded: true,
         riskClass: 'CRITICAL',
-        reason: 'Ändringar i konfigurationsfiler med hemligheter kräver explicit godkännande.'
+        reason: 'Changes to configuration files containing secrets require explicit approval.'
       };
     }
 
@@ -211,14 +211,14 @@ export class LMStudioPolicyGate {
         return {
           approvalNeeded: true,
           riskClass: 'CRITICAL',
-          reason: `Högrisk-kommando (${command}) stoppat av safety-gate.`
+          reason: `High-risk command (${command}) stopped by the safety gate.`
         };
       }
       if (command.includes('npm install') || command.includes('npm add')) {
         return {
           approvalNeeded: true,
           riskClass: 'MEDIUM',
-          reason: 'Paketinstallation kräver operatörsgodkännande.'
+          reason: 'Package installation requires operator approval.'
         };
       }
     }
@@ -226,7 +226,7 @@ export class LMStudioPolicyGate {
     return {
       approvalNeeded: false,
       riskClass: 'LOW',
-      reason: 'Lågriskåtgärd godkänd av automatiskt kontrakt.'
+      reason: 'Low-risk action approved by automatic contract.'
     };
   }
 

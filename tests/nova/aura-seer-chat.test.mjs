@@ -95,11 +95,11 @@ test('Aura exposes one active chat surface and routes it through canonical SEER'
 test('Aura setup guidance requires consent, keeps secrets out of generic tools and separates offers from execution',()=>{
   const {system}=buildAuraSeerPrompts({message:'Hjälp mig koppla upp JACO'});
   assert.match(system,/\/connect\.html/);
-  assert.match(system,/Läs aldrig \.env med repo_read, shell/);
-  assert.match(system,/utanför modellkontext, chatthistorik/);
-  assert.match(system,/Inloggning, lösenord, MFA och CAPTCHA utför användaren själv/);
-  assert.match(system,/En fråga eller ett erbjudande är inte ett utfört Nova-uppdrag/);
-  assert.match(system,/Lova aldrig att en större modell blir snabbare/);
+  assert.match(system,/Never read \.env with repo_read, shell/);
+  assert.match(system,/outside the model context, chat history/);
+  assert.match(system,/Sign-in, passwords, MFA and CAPTCHA are done by the operator/);
+  assert.match(system,/A question or an offer is not a completed Nova mission/);
+  assert.match(system,/Never promise that a larger model will be faster/);
 });
 
 test('Aura structured workspace and selected-tool context survives prompt construction',()=>{
@@ -125,7 +125,7 @@ test('Aura canonical strategic goal replaces legacy primary goals without PODAR 
   ]) {
     const source=fs.readFileSync(file,'utf8');
     assert.match(source,/AURA_CANONICAL_GOAL_ID = "aura-canonical-objective-v1"/);
-    assert.match(source,/Verifierbar autonom IDE-yta från mål till receipt/);
+    assert.match(source,/Verifiable autonomous IDE surface from goal to receipt/);
     assert.match(source,/legacyIds = new Set\(\["goal-1", "goal-2", "goal-3"\]\)/);
     assert.match(source,/status: "paused"/);
     assert.match(source,/g\.id !== AURA_CANONICAL_GOAL_ID/);
