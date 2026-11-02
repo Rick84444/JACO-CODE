@@ -77,5 +77,9 @@ test('extension entry exposes a real activity bar command and uses VS Code forwa
   assert.match(ext, /makeWebviewHtml/);
   assert.match(ext, /JACO_VSCODE_EMBED: '1'/);
   assert.match(ext, /vscode\.workspace\.isTrusted/);
+  assert.ok(pkg.activationEvents.includes('onUri'));
+  assert.ok(pkg.activationEvents.includes('onStartupFinished'));
+  assert.ok(ext.includes("uri.path === '/open'"));
+  assert.ok(!/uri\.(query|fragment)/.test(ext), 'a link cannot pass parameters');
   assert.doesNotMatch(ext, /https?:\/\/jacocode\.com\/api\/aura/);
 });

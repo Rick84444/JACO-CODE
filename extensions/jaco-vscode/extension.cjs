@@ -105,6 +105,10 @@ function activate(context) {
   register('jaco.startRuntime', () => openTerminalCommand('activate'));
   register('jaco.openTerminal', () => openTerminalCommand('ide'));
   register('jaco.openBrowser', openBrowser);
+  // The JACO GUI's VS Code button. Only this fixed path opens anything; a link cannot pass parameters.
+  context.subscriptions.push(vscode.window.registerUriHandler({
+    handleUri: uri => { if (uri.path === '/open') void openFullGUI(context); },
+  }));
   context.subscriptions.push(vscode.window.registerTreeDataProvider('jaco.workspace', new WorkspaceTree()));
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   status.text = '$(hubot) JACO';
