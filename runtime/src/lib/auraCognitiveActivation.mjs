@@ -7,10 +7,14 @@ export function cognitiveActivationPreview(goal, { knowledge, skills } = {}) {
   if (!query) return empty;
   let foundKnowledge = [];
   let foundSkills = [];
-  try { foundKnowledge = Array.isArray(knowledge?.search?.(query, { limit: 12 })) ? knowledge.search(query, {limit: 12}) : []; }
-  catch { /* unavailable memory is not knowledge */ }
-  try { foundSkills = Array.isArray(skills?.search?.(query, { limit: 10 })) ? skills.search(query, {limit: 10}) : []; }
-  catch { /* no catalog, no invented skills */ }
+  try {
+    const items = knowledge?.search?.(query, { limit: 12 });
+    if (Array.isArray(items)) foundKnowledge = items;
+  } catch { /* unavailable memory is not knowledge */ }
+  try {
+    const items = skills?.search?.(query, { limit: 10 });
+    if (Array.isArray(items)) foundSkills = items;
+  } catch { /* no catalog, no invented skills */ }
   const verified = foundKnowledge.filter(item =>
     item?.verificationStatus === 'VERIFIED' && Array.isArray(item.evidenceRefs) && item.evidenceRefs.length > 0
   ).slice(0, 5).map(item => ({
