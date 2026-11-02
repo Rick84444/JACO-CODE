@@ -61,7 +61,7 @@ export async function auraAlwaysAnswers({ choice, ask, status, onFallback = () =
 export function auraStatusHints(failures, { headroomUsd = null, localModels = [], lite = false } = {}) {
   const all = failures.join(' | ');
   const hints = [];
-  if (/CLOUD_DISABLED_BY_POLICY/.test(all)) hints.push('Molnmodeller är avstängda för chatten. Slå på "Tillåt molnmodeller" under Modellanslutningar, så svarar jag inom din budget.');
+  if (/CLOUD_DISABLED_BY_POLICY/.test(all)) hints.push('Molnmodeller är avstängda för chatten. Slå på "Tillåt molnmodeller" under Budget & ekonomi (dollarikonen till vänster), så svarar jag inom din budget.');
   if (/AURA_MODEL_TIMEOUT/.test(all)) hints.push('Modellen hann inte svara. En lokal modell på en dator med lite ledigt minne kan vara för långsam: välj en molnmodell i Chattinställningar.');
   if (/402|Insufficient Balance/i.test(all)) hints.push('DeepSeek-kontot är tomt. Fyll på på platform.deepseek.com, eller välj en annan modell i Chattinställningar.');
   if (/429|usage limit/i.test(all)) hints.push('Gratiskvoten hos en molnleverantör är slut (Ollama Cloud eller Groq). Den fylls på av leverantören efter en tid.');
