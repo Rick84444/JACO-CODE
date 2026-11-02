@@ -512,11 +512,15 @@ async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0
   const requestedTokens = Math.min(8192, Math.max(1, Number(max_tokens) || 1024));
   max_tokens = Math.min(2048, requestedTokens);
   const runtime = { runtimeUrl: process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000', token: process.env.GATEWAY_TOKEN || TOKEN };
-  const aura = startup_probe ? null : await resolveAuraPlanner(runtime);
+  const auraOnly = process.env.JACO_SEER_PROVIDER_PREFERENCE === 'aura';
+  const aura = startup_probe && !auraOnly ? null : await resolveAuraPlanner(runtime);
   const auraResult = aura ? await invokeAuraPlanner(aura, await seerPromptFor(aura, { system, user, image, temperature, memory_chars, startup_probe }, aura.local ? max_tokens : requestedTokens), {
     ...runtime, purpose, onFailure: failure => emit('provider.failed', failure),
   }) : null;
   if (auraResult) { emit('provider.used', { provider: aura.name, model: aura.model, source: 'aura-choice' }); return auraResult; }
+  // Explicit Aura routing never falls back to a stale local selection. The
+  // existing invocation retains paid opt-in, credential and Continuum gates.
+  if (auraOnly) return { ok: false, error: aura ? 'AURA_PROVIDER_INFERENCE_FAILED' : 'AURA_PROVIDER_CHOICE_REQUIRED' };
   return callSeerLocalChain({ system, user, image, max_tokens, temperature, startup_probe, memory_chars, purpose });
 }
 

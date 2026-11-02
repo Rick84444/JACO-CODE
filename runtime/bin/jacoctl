@@ -37,14 +37,15 @@ JACO unified supervisor
 
 Usage:
   jacoctl start [--profile full] [--provider litert] [--model ID]  (alias for activate)
-  jacoctl activate [--profile full] [--provider auto|litert|llamacpp|ollama] [--model ID] [--fast] [--json]
+  jacoctl activate [--profile full] [--provider auto|litert|llamacpp|ollama|aura] [--model ID] [--fast] [--json]
   jacoctl deactivate [--json]
   jacoctl status [--json]
   jacoctl repair-supervisor [--json] (JACO-only recovery, leaves Core/Workplace DOWN)
-  jacoctl restart [--provider auto|litert|llamacpp|ollama] [--model ID] [--fast] [--json]
+  jacoctl restart [--provider auto|litert|llamacpp|ollama|aura] [--model ID] [--fast] [--json]
 
 The full profile supervises Sentinel, Core, and Workplace. Workplace owns Durable Nova.
 Aura Lean is the Termux default; set JACO_AURA_LEAN=0 in the private runtime.env to restore legacy background workers.
+The aura provider uses the operator-saved IDE planner choice without starting local models.
 Provider selection is saved for Core/Aura and SEER. Omit --model with litert to discover its registry ID.
 
 This command accepts fixed lifecycle verbs only. It is not a general shell bridge.
@@ -334,7 +335,15 @@ apply_model_selection(){
   [[ -n "$JACOCTL_PROVIDER_SELECTION" ]] || return 0
   save_model_setting JACO_SEER_PROVIDER_PREFERENCE "$JACOCTL_PROVIDER_SELECTION" "$project_env"
   case "$JACOCTL_PROVIDER_SELECTION" in
+    aura)
+      # Use the operator's saved Aura planner choice; never start local weights.
+      # API credentials and paid-call authorization remain unchanged.
+      save_model_setting JACO_WORKPLACE_SUPERVISE_MODEL 0 "$project_env"
+      save_model_setting JACO_ENABLE_OLLAMA 0 "$project_env"
+      save_model_setting JACO_LLAMACPP_AUTOSTART off "$project_env"
+      ;;
     litert)
+      save_model_setting JACO_WORKPLACE_SUPERVISE_MODEL 1 "$project_env"
       # The selected single local model must not also launch Ollama or a 27B llama.cpp model.
       save_model_setting JACO_ENABLE_OLLAMA 0 "$project_env"
       save_model_setting JACO_LLAMACPP_AUTOSTART off "$project_env"
@@ -342,6 +351,7 @@ apply_model_selection(){
       save_model_setting JACO_LITERT_MODEL "$JACOCTL_MODEL_SELECTION" "$project_env"
       ;;
     llamacpp)
+      save_model_setting JACO_WORKPLACE_SUPERVISE_MODEL 1 "$project_env"
       save_model_setting JACO_LLAMACPP_AUTODETECT 1 "$project_env"
       [[ -z "$JACOCTL_MODEL_SELECTION" ]] || save_model_setting JACO_LLAMACPP_MODEL "$JACOCTL_MODEL_SELECTION" "$project_env"
       ;;
@@ -359,9 +369,10 @@ apply_model_selection(){
 }
 
 sync_runtime_env(){
-  local project_env shared requested_aura_lean
+  local project_env shared requested_aura_lean requested_supervise_model
   # runtime.env may opt in even when project .env has old defaults.
   requested_aura_lean="${JACO_AURA_LEAN:-}"
+  requested_supervise_model="${JACO_WORKPLACE_SUPERVISE_MODEL:-}"
   project_env="${JACO_PROJECT_ENV:-$JACO_ROOT/../.env}"
 
   # Import project-local values when present, but never print them.
@@ -372,6 +383,7 @@ sync_runtime_env(){
     set +a
   fi
 
+  [[ -z "$requested_supervise_model" ]] || JACO_WORKPLACE_SUPERVISE_MODEL="$requested_supervise_model"
   apply_model_selection "$project_env"
   # A single Aura is the default on Termux. Existing explicit 0/1 always wins.
   [[ -z "$requested_aura_lean" ]] || JACO_AURA_LEAN="$requested_aura_lean"
@@ -659,7 +671,10 @@ fi
 
 if [[ -n "$JACOCTL_PROVIDER_SELECTION" || -n "$JACOCTL_MODEL_SELECTION" ]]; then
   [[ "$ACTION" == activate || "$ACTION" == restart ]] || { echo 'model selection requires activate or restart' >&2; exit 2; }
-  case "$JACOCTL_PROVIDER_SELECTION" in auto|litert|llamacpp|ollama) ;; *) echo '--provider must be auto, litert, llamacpp or ollama' >&2; exit 2 ;; esac
+  case "$JACOCTL_PROVIDER_SELECTION" in auto|litert|llamacpp|ollama|aura) ;; *) echo '--provider must be auto, litert, llamacpp, ollama or aura' >&2; exit 2 ;; esac
+  if [[ "$JACOCTL_PROVIDER_SELECTION" == aura && -n "$JACOCTL_MODEL_SELECTION" ]]; then
+    echo 'Select the Aura provider/model in the IDE; --provider aura does not accept --model' >&2; exit 2
+  fi
   if [[ -n "$JACOCTL_MODEL_SELECTION" ]]; then
     [[ "$JACOCTL_PROVIDER_SELECTION" != auto ]] || { echo '--model requires a specific provider' >&2; exit 2; }
     [[ "$JACOCTL_MODEL_SELECTION" =~ ^[A-Za-z0-9/][A-Za-z0-9._:/-]*$ ]] || { echo 'invalid model ID' >&2; exit 2; }

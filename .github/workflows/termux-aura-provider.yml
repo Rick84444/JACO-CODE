@@ -1,0 +1,49 @@
+name: Termux Aura provider startup
+on:
+  pull_request:
+    paths:
+      - 'runtime/bin/jacoctl'
+      - 'runtime/termux/services/jaco-core/run'
+      - 'runtime/termux/services/jaco-workplace/run'
+      - 'gateway/src/seer*.mjs'
+      - 'gateway/src/workplace/workplace-agent-supervisor.mjs'
+      - 'tests/nova/aura-lean-termux.test.mjs'
+      - 'tests/nova/seer-aura-startup.test.mjs'
+      - 'tests/workplace/workplace-supervisor.test.mjs'
+      - '.github/workflows/termux-aura-provider.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'runtime/bin/jacoctl'
+      - 'runtime/termux/services/jaco-core/run'
+      - 'runtime/termux/services/jaco-workplace/run'
+      - 'gateway/src/seer*.mjs'
+      - 'gateway/src/workplace/workplace-agent-supervisor.mjs'
+      - 'tests/nova/aura-lean-termux.test.mjs'
+      - 'tests/nova/seer-aura-startup.test.mjs'
+      - 'tests/workplace/workplace-supervisor.test.mjs'
+      - '.github/workflows/termux-aura-provider.yml'
+permissions:
+  contents: read
+jobs:
+  provider-startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - name: Syntax
+        run: |
+          bash -n runtime/bin/jacoctl
+          sh -n runtime/termux/services/jaco-core/run
+          sh -n runtime/termux/services/jaco-workplace/run
+          node --check gateway/src/seer.mjs
+          node --check gateway/src/seer-model-provider.mjs
+          node --check gateway/src/workplace/workplace-agent-supervisor.mjs
+      - name: Provider, startup and shutdown regression tests (no external model calls)
+        run: |
+          node --test tests/nova/aura-lean-termux.test.mjs tests/nova/seer-aura-startup.test.mjs tests/nova/seer-integration.test.mjs tests/workplace/workplace-supervisor.test.mjs gateway/test/seer-aura-planner.test.mjs gateway/test/seer-model-provider.test.mjs
+          bash runtime/gateway/test/workplace-gh-relay-launch.test.sh

@@ -17,6 +17,7 @@ ENV_FILE="${JACO_RUNTIME_ENV:-$HOME/.config/jaco/runtime.env}"
   exit 41
 }
 cd "$JACO_ROOT"
+export JACO_RUNTIME_DIR="${JACO_RUNTIME_DIR:-$JACO_ROOT}"
 # Aura Lean: keep the MCP catalog, but do not spawn all providers on boot.
 # Calling a tool explicitly can still start its existing MCP server.
 if [ "${JACO_AURA_LEAN:-0}" = "1" ]; then

@@ -34,7 +34,9 @@ async function waitForJson(url, fetchImpl, timeoutMs = 120_000) {
 }
 
 async function terminate(child) {
-  if (!child) return;
+  // An exit may have happened before stop() installed its listener. Waiting
+  // for a second exit event would leave Workplace's shutdown stuck forever.
+  if (!child || child.exitCode != null || child.signalCode != null) return;
   await new Promise(resolve => {
     const timer = setTimeout(() => {
       try { child.kill('SIGKILL'); } catch {}
@@ -214,7 +216,15 @@ export function createWorkplaceAgentSupervisor({
   }
 
   async function ensureModel(waitMs) {
+    if (env.JACO_SEER_PROVIDER_PREFERENCE === 'aura') {
+      // The existing SEER brain probe verifies Aura's saved choice below.
+      // No local discovery, model spawn, or implied cloud permission here.
+      modelState = 'WAITING_SELECTED_PROVIDER';
+      modelOwnership = 'external';
+      return;
+    }
     const existing = await detectProvider();
+    if (stopping) return;
     if (existing) {
       modelProvider = existing.id;
       modelState = 'READY';
@@ -302,7 +312,9 @@ export function createWorkplaceAgentSupervisor({
   }
 
   async function ensureSeer(waitMs) {
-    if (await probe(`${seerUrl}/health`, fetchImpl)) {
+    const healthy = await probe(`${seerUrl}/health`, fetchImpl);
+    if (stopping) return;
+    if (healthy) {
       seerState = 'READY';
       if (!seerChild) seerOwnership = 'external';
       return;
@@ -362,7 +374,7 @@ export function createWorkplaceAgentSupervisor({
     const requestTimeoutMs = Math.max(5_000, Number(env.JACO_WORKPLACE_SEER_BRAIN_TIMEOUT_MS || env.JACO_SEER_INFERENCE_TIMEOUT_MS || 180_000));
     let lastError = null;
 
-    while (Date.now() < deadline) {
+    while (!stopping && Date.now() < deadline) {
       try {
         const response = await fetchImpl(`${seerUrl}/cortex/brain`, {
           method: 'POST',
@@ -440,6 +452,7 @@ export function createWorkplaceAgentSupervisor({
     aggregateState = 'WAITING_RUNTIME';
     try {
       await waitForJson(`${runtimeUrl}/api/runtime/identity`, fetchImpl, waitMs);
+      if (stopping) return;
 
       aggregateState = 'WAITING_MODEL';
       await ensureModel(waitMs);
@@ -451,6 +464,7 @@ export function createWorkplaceAgentSupervisor({
 
       aggregateState = 'VERIFYING_SEER_BRAIN';
       const brain = await waitForSeerBrain(waitMs);
+      if (stopping) return;
       seerState = 'READY';
       modelState = 'READY';
       if (brain?.provider) modelProvider = String(brain.provider);
@@ -462,6 +476,7 @@ export function createWorkplaceAgentSupervisor({
         aggregateState = 'RUNNING';
       }
     } catch (cause) {
+      if (stopping) return;
       aggregateState = 'DEPENDENCY_FAILED';
       error(`[JACO Workplace] agent supervisor dependency failed: ${cause?.message || cause}`);
       schedule(launch);
