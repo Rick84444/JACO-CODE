@@ -38,6 +38,7 @@ const categories = {
   NOVA_PLANNING_RESULT: ['plan', 'Nästa steg'],
   NOVA_REPLAN_REQUEST: ['decision', 'Planen behöver ändras'],
   NOVA_CANCEL_REQUEST: ['decision', 'Avslut begärt'],
+  NOVA_OPERATOR_STEER: ['decision', 'Ny instruktion köad'],
   NOVA_SPEND_BLOCKED: ['blocked', 'Betalning väntar på dig'],
   NOVA_CLAIM_CHECK: ['verification', 'Kontroll av påståenden'],
   'autonomy.replanned': ['decision', 'Planen har ändrats'],

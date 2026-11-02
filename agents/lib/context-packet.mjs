@@ -97,6 +97,7 @@ export function buildContextPacket({
     objective: text(board?.objective || mission.goal, 3000),
     subgoal: text(mission.goal, 2000),
     selectedMove: selectedMoveOf(strategicContext),
+    steering: mission.steering ? { revision: mission.steering.revision, instruction: text(mission.steering.instruction, 2000), requestedAt: mission.steering.requestedAt, authority: 'context_only' } : null,
     graph: board ? {
       goalId: text(board.goalId, 160),
       graphStatus: text(strategicContext?.graphStatus, 120),

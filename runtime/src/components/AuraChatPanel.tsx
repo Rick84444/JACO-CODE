@@ -101,6 +101,8 @@ interface Props {
   selectedTool?: AuraSelectedTool | null;
   onClearSelectedTool?: () => void;
   onStartGoal: (goal: string, selectedTool?: AuraSelectedTool | null, attachmentIds?: string[], executionMode?: 'autonomous') => Promise<any> | void;
+  onCancelMission?: (id: string) => Promise<void>;
+  onSteerMission?: (id: string, instruction: string, requestId: string) => Promise<{steering:{revision:number};missionId:string}>;
   liveEvents?: CognitiveEvent[];
   liveConnection?: string;
   historyTruncated?: boolean;
@@ -122,7 +124,7 @@ async function chatJson(response: Response) {
   return data;
 }
 
-export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
+export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onCancelMission, onSteerMission, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
   const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments } = session;
   const { tr } = useUiLanguage();
   const [attachments, setAttachments] = useState<Array<{id:string;files:Array<{path:string;format:string}>}>>(()=>{
@@ -130,6 +132,10 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   });
   useEffect(()=>{try{localStorage.setItem('jaco:aura:attachments:v1',JSON.stringify(attachments));}catch{}},[attachments]);
   const [uploading,setUploading] = useState(false);
+  const [missionStopBusy,setMissionStopBusy] = useState<string|null>(null);
+  const [missionStopNotice,setMissionStopNotice] = useState<string|null>(null);
+  const [missionSteerBusy,setMissionSteerBusy] = useState(false);
+  const [missionSteerNotice,setMissionSteerNotice] = useState<string|null>(null);
   const [chatModel, setChatModel] = useState('seer');
   const [configuredModel, setConfiguredModel] = useState('seer');
   const [modelOverride, setModelOverride] = useState(false);
@@ -463,6 +469,44 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     }
   };
 
+  // Send to the durable execution ledger, not to a second LLM and not as a new goal.
+  const steerCurrentMission = async (id: string) => {
+    const instruction = input.trim();
+    if (!onSteerMission || !instruction || missionSteerBusy || !storageReady || uploading || attachments.length) return;
+    setMissionSteerBusy(true);
+    setMissionSteerNotice(null);
+    try {
+      const result = await onSteerMission(id, instruction, crypto.randomUUID());
+      setInput(previous => previous.trim() === instruction ? '' : previous);
+      setMissionSteerNotice(tr('Ändringen sparades för nästa planeringssteg. Pågående verktyg avbryts inte.', 'Direction saved for the next planning step. Running tools are not interrupted.'));
+      try {
+        await appendMessage({ id: crypto.randomUUID(), role: 'user', content: instruction, meta: `Steer · mission ${id} · revision ${result.steering.revision}` });
+      } catch {
+        setMissionSteerNotice(tr('Ändringen sparades men chatthistoriken kunde inte uppdateras.', 'Direction was saved but chat history could not be updated.'));
+      }
+    } catch (error: any) {
+      setMissionSteerNotice(tr('Ändringen sparades inte: ', 'Direction was not saved: ') + safeCognitiveText(error?.message || String(error)));
+    } finally {
+      setMissionSteerBusy(false);
+    }
+  };
+
+  // Mission stop is distinct from aborting an HTTP chat response.
+  // The canonical runtime owns cancellation, graph propagation and receipts.
+  const stopCurrentMission = async (id: string) => {
+    if (!onCancelMission || missionStopBusy) return;
+    setMissionStopBusy(id);
+    setMissionStopNotice(null);
+    try {
+      await onCancelMission(id);
+      setMissionStopNotice(tr('Stopp begärt. Kontrollera slutstatus i uppdraget.', 'Stop requested. Check the mission for its final status.'));
+    } catch (error: any) {
+      setMissionStopNotice(tr('Stopp kunde inte begäras: ', 'Could not request stop: ') + safeCognitiveText(error?.message || String(error)));
+    } finally {
+      setMissionStopBusy(null);
+    }
+  };
+
   const goal = async () => {
     const text=input.trim();
     if(!text || busy || uploading || !storageReady)return;
@@ -578,6 +622,9 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         <div className="cognitive-composer-inner">
           {!following&&<button type="button" className="cognitive-follow-latest" onClick={followLatest}><ArrowDown size={13}/>{tr('Följ senaste arbetet','Follow latest work')}</button>}
           {currentMission&&<div className="cognitive-live-questions"><button type="button" onClick={()=>prompt(tr('Vad har du upptäckt hittills i det aktuella uppdraget?','What have you discovered so far in the current mission?'))} disabled={Boolean(busy)}>{tr('Vad har du upptäckt?','What have you found?')}</button><button type="button" onClick={()=>prompt(tr('Visa vad som faktiskt fungerar och vilka belägg som stöder det.','Show what actually works and the evidence supporting it.'))} disabled={Boolean(busy)}>{tr('Vad fungerar?','What works?')}</button></div>}
+          {currentMission && onCancelMission && !currentMission.cancelRequested && <button type="button" disabled={Boolean(missionStopBusy)} onClick={()=>void stopCurrentMission(currentMission.id)} className="mx-2 mb-2 rounded border border-rose-900 px-3 py-1.5 text-xs text-rose-200 disabled:opacity-50" aria-label={tr('Stoppa pågående uppdrag','Stop current mission')}>{missionStopBusy ? tr('Begär stopp…','Requesting stop…') : tr('Stoppa uppdrag','Stop mission')}</button>}
+          {missionStopNotice&&<p role="status" className="mx-3 mb-2 text-xs text-slate-300">{missionStopNotice}</p>}
+          {missionSteerNotice&&<p role="status" className="mx-3 mb-2 text-xs text-slate-300">{missionSteerNotice}</p>}
 
           {selectedTool && (
             <div className="mb-2 px-3 py-1.5 rounded-lg bg-[#111820] border border-[#263544] text-xs flex items-center gap-2">
@@ -594,7 +641,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                 {([
                   ['manual', 'Manual', tr('Samtal och läsverktyg. Inga nya uppdrag eller ändringar.','Conversation and read tools only. No new missions or changes.')],
                   ['planning', 'Planning', tr('Analysera, jämför och skapa en plan. Endast läsverktyg, inga policyändringar.','Research, compare and propose a plan. Read tools only; no policy changes.')],
-                  ['autonomous', 'Full Autonomous', tr('Starta ett varaktigt SEER/Nova-uppdrag. Befintliga mandat, budget och godkännanden gäller.','Start a durable SEER/Nova mission. Existing permissions, budgets and approvals still apply.')],
+                  ['autonomous', 'Full Autonomous', tr('Starta ett varaktigt Aura-uppdrag. Befintliga mandat, budget och godkännanden gäller.','Start a durable Aura mission. Existing permissions, budgets and approvals still apply.')],
                 ] as const).map(([value,label,help])=>(
                   <button type="button" key={value} aria-pressed={runMode===value}
                     onClick={()=>selectRunMode(value)} disabled={Boolean(busy)}
@@ -681,6 +728,14 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                   <ChevronRight size={12}/>
                 </button>
               </div>
+              {currentMission?.status==='ACTIVE' && !currentMission.cancelRequested && onSteerMission && (
+                <button data-testid="jaco-steer-mission" type="button" onClick={()=>void steerCurrentMission(currentMission.id)}
+                  disabled={!input.trim() || Boolean(missionSteerBusy) || !storageReady || uploading || attachments.length > 0}
+                  title={tr('Ändra nästa arbetssteg inom uppdragets befintliga behörigheter och kontrakt','Change the next work step within existing mission permissions and contract')}
+                  className="text-[11px] text-cyan-300 hover:text-cyan-100 disabled:opacity-40">
+                  {missionSteerBusy ? tr('Sparar ändring…','Saving direction…') : tr('Ändra uppdrag','Steer mission')}
+                </button>
+              )}
               <button data-testid="jaco-build-agent-toggle" type="button"
                 className="text-[11px] text-slate-400 hover:text-cyan-300"
                 aria-expanded={showBuildAgent} onClick={()=>{setShowModePicker(false);setShowBuildAgent(v=>!v);}}>

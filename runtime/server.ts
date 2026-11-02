@@ -2345,6 +2345,23 @@ const notifyPhone = async (action) => {
     res.json(await readAuraAgentBoard());
   });
 
+  // Operator direction is persisted without another model call or an execution interrupt.
+  // Only the authenticated local Aura UI may submit it; worker API tokens cannot steer.
+  app.post('/api/aura/workbench/missions/:id/steer', requireLocalUi, (req, res) => {
+    try {
+      const { steering, replayed } = connectedRuntime.novaMissions.steer(req.params.id, req.body || {});
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(202).json({
+        success: true, missionId: req.params.id, steering, replayed,
+        queuedForNextPlanningBoundary: true, executionInterrupted: false,
+      });
+    } catch (error: any) {
+      const code = String(error?.message || error);
+      res.status(code.startsWith('OPERATOR_STEER_INSTRUCTION_') || code.startsWith('OPERATOR_STEER_REQUEST_ID_') ? 400 : 409)
+        .json({ success: false, error: code });
+    }
+  });
+
   app.post('/api/aura/workbench/missions/:id/cancel', requireLocalUi, async (req, res) => {
     try {
       const control = connectedRuntime.novaMissions;

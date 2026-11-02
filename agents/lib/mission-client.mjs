@@ -87,6 +87,7 @@ async function runMissionTurn({ client, owner, plan, execute, observe = async ()
   if (typeof acceptMission === 'function' && !(await acceptMission(current))) return { executed: false, mission: current, skipped: 'executor_mismatch' };
   const { mission, token } = await client.claim(current.id, owner);
   const lease = { owner, token };
+  const steerVersion = mission.steering?.revision || 0;
   await onActivity({ phase: 'PLANNING', missionId: mission.id });
   let task;
   let planned = [];
@@ -95,11 +96,11 @@ async function runMissionTurn({ client, owner, plan, execute, observe = async ()
     before = await observe(mission).catch(() => null);
     const proposal = await plan({ mission, observation: before || mission.observation, lease });
     if (proposal?.replan === true) {
-      await client.release(mission.id, { ...lease, replanRequest: { reason: proposal.reason, subgoals: proposal.subgoals } });
+      await client.release(mission.id, { ...lease, ...(steerVersion ? { steerVersion } : {}), replanRequest: { reason: proposal.reason, subgoals: proposal.subgoals } });
       return { executed: false, replanRequested: true };
     }
     if (proposal?.complete === true) {
-      await client.release(mission.id, { ...lease, completionProposed: true, completionReason: String(proposal.reason || '').slice(0, 4000) });
+      await client.release(mission.id, { ...lease, ...(steerVersion ? { steerVersion } : {}), completionProposed: true, completionReason: String(proposal.reason || '').slice(0, 4000) });
       return { executed: false, awaitingVerification: true };
     }
     if (proposal?.blocked === true) {
@@ -107,7 +108,8 @@ async function runMissionTurn({ client, owner, plan, execute, observe = async ()
       // one it doesn't have the capability to do. Surface that reason directly instead of letting
       // it look like a generic planning failure, so a human reviewing a BLOCKED mission sees why.
       const reason = String(proposal.reason || '').slice(0, 500) || 'no allowedTasks capability matches mission.goal';
-      await client.release(mission.id, { ...lease, error: `PLANNER_BLOCKED:${reason}` }).catch(() => {});
+      try { await client.release(mission.id, { ...lease, ...(steerVersion ? { steerVersion } : {}), error: `PLANNER_BLOCKED:${reason}` }); }
+      catch (error) { if (error.message === 'NOVA_STEER_STALE') throw error; }
       return { executed: false, blocked: true, reason };
     }
     if (proposal?.deferred === true) {
@@ -119,15 +121,16 @@ async function runMissionTurn({ client, owner, plan, execute, observe = async ()
     planned = planTasks(proposal);
     if (!planned.length) throw new Error('NO_NEXT_TASK');
     if (repeatsVerifiedAction(mission, planned[0], before)) {
-      await client.release(mission.id, { ...lease, completionProposed: true, completionReason: 'REPEAT_OF_VERIFIED_ACTION' });
+      await client.release(mission.id, { ...lease, ...(steerVersion ? { steerVersion } : {}), completionProposed: true, completionReason: 'REPEAT_OF_VERIFIED_ACTION' });
       return { executed: false, awaitingVerification: true, reason: 'REPEAT_OF_VERIFIED_ACTION' };
     }
-    task = await client.begin(mission.id, { ...lease, task: planned[0] });
+    task = await client.begin(mission.id, { ...lease, ...(steerVersion ? { steerVersion } : {}), task: planned[0] });
     await onActivity({ phase: 'EXECUTING', missionId: mission.id });
   } catch (error) {
     // A failed/lost begin response may have persisted EXECUTING. The server
     // rejects release in that state and blocks it on lease expiry.
-    await client.release(mission.id, { ...lease, error: error.message }).catch(() => {});
+    await client.release(mission.id, { ...lease, ...(error.message === 'NOVA_STEER_STALE' ? {} : { error: error.message }) }).catch(() => {});
+    if (error.message === 'NOVA_STEER_STALE') return { executed: false, steeringUpdated: true };
     throw error;
   }
   const runOne = async (current, currentLease, currentBefore) => {
@@ -152,7 +155,7 @@ async function runMissionTurn({ client, owner, plan, execute, observe = async ()
     try {
       const claimed = await client.claim(mission.id, owner);
       nextLease = { owner, token: claimed.token };
-      task = await client.begin(mission.id, { ...nextLease, task: nextTask });
+      task = await client.begin(mission.id, { ...nextLease, ...(steerVersion ? { steerVersion } : {}), task: nextTask });
     } catch (error) {
       if (nextLease) await client.release(mission.id, { ...nextLease, error: error.message }).catch(() => {});
       break;
