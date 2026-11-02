@@ -4519,16 +4519,13 @@ const notifyPhone = async (action) => {
         bus:connectedRuntime.bus,workstream:seerLiveWorkstream,limit:30,
         secrets:Object.entries(process.env).filter(([key])=>/secret|token|password|api_?key/i.test(key)).map(([,value])=>value).filter(Boolean),
       }), planningMode ? '' : userMsg) : allTools;
-      const planningContext = planningMode ? [{
-        source: 'jaco://run-mode/planning',
-        content: 'Operator selected PLANNING: research and propose a structured plan with assumptions, alternatives, required checks and explicit approval boundaries. Do not execute changes, create a goal, alter policy, or report simulated work as verified.',
-      }] : [];
       const ask = (choice: any) => auraChatViaSeer({
         message: userMsg,
         activeFilePath,
         targetSubAgent,
         messagesHistory: messagesHistory || [],
-        ragContext: [...ragContext, ...planningContext],
+        ragContext,
+        chatMode: planningMode ? 'planning' : questionMode ? 'manual' : 'action',
         persona: auraState?.currentPersona || "default",
         toolbox: questionTools,
         ...(choice ? { complete: (args: any) => manualAuraProviderCompletion({ ...args, ...choice }, {
