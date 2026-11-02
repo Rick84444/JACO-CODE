@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { synchronizeAuraHarnessModel } from '../../agents/lib/aura-harness-model-choice.mjs';
+import { synchronizeAuraHarnessModel, auraHarnessPlannerProtocol } from '../../agents/lib/aura-harness-model-choice.mjs';
 import { readPlannerChoice, writePlannerChoice } from '../../agents/lib/planner-choice.mjs';
 
 function setup(t) {
@@ -77,4 +77,17 @@ test('UI and backend route share the selection rather than spawning another mode
   assert.match(server,/await synchronizeAuraHarnessModel\(req\.body\.harnessModel/);
   assert.match(server,/testPlannerModel\(valid/);
   assert.match(seer,/const auraOnly = process\.env\.JACO_SEER_PROVIDER_PREFERENCE === 'aura' \|\| pinned/);
+});
+
+test('same chosen model falls back to structured planning protocol, not another provider',()=>{
+  const pinned={name:'ollama',model:'gemma3:4b',chosen:true};
+  assert.equal(auraHarnessPlannerProtocol(pinned,{nativeToolsAllowed:false}),'structured');
+  assert.equal(auraHarnessPlannerProtocol(pinned,{nativeToolsRejected:true}),'structured');
+  assert.equal(auraHarnessPlannerProtocol(pinned,{nativeToolsAllowed:true}),'native');
+  assert.equal(auraHarnessPlannerProtocol({name:'ollama',model:'gemma3:4b'}, {nativeToolsAllowed:false}),'native',
+    'automatic chains keep their legacy policies');
+  const repo=path.resolve(import.meta.dirname,'../..');
+  const runner=fs.readFileSync(path.join(repo,'agents/hands-off-agent.mjs'),'utf8');
+  assert.match(runner,/selectedProtocol === 'native'/);
+  assert.match(runner,/result\.deferred && unsupported/);
 });
