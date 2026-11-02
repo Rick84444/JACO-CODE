@@ -32,7 +32,7 @@ const HELP = [
 ].join('\n');
 
 const short = value => String(value?.message || value).split('\n')[0].slice(0, 300);
-const clean = value => String(value).replace(/\u001b\[[0-9;]*m/g, '').slice(0, 30000);
+const clean = value => String(value).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').slice(0, 30000);
 const existingDir = candidate => {
   const absolute = path.resolve(candidate);
   if (!fs.statSync(absolute).isDirectory()) throw new Error('JACO_PROJECT_NOT_DIRECTORY');
@@ -118,6 +118,35 @@ function launchDetached(cmd, args, options = {}) {
   child.on('error', err => { process.stderr.write('Launch failed: ' + short(err) + '\n'); });
   child.unref();
 }
+export async function joinPairedDevice({ root, hub, code, spawnImpl = spawn }) {
+  const script = path.join(root, 'tools', 'join-hub.mjs');
+  return new Promise((resolve, reject) => {
+    const child = spawnImpl(process.execPath, [script, hub, '--code-stdin'], {
+      cwd: root, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '', stderr = '', finished = false;
+    const timer = setTimeout(() => { child.kill(); finish(new Error('PAIRING_TIMEOUT')); }, 45000);
+    function finish(error) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(clean(stdout));
+    }
+    child.stdout?.on('data', data => {
+      stdout += String(data);
+      if (stdout.length > 128 * 1024) { child.kill(); finish(new Error('PAIRING_OUTPUT_TOO_LARGE')); }
+    });
+    child.stderr?.on('data', data => {
+      stderr += String(data);
+      if (stderr.length > 128 * 1024) { child.kill(); finish(new Error('PAIRING_OUTPUT_TOO_LARGE')); }
+    });
+    child.on('error', error => finish(error));
+    child.on('close', status => finish(status === 0 ? null : new Error(clean(stderr).slice(0, 250) || 'PAIRING_FAILED')));
+    child.stdin?.end(code + '\n');
+  });
+}
+
 function isValidDeviceName(name) { return /^[a-z][a-z0-9-]{1,39}$/.test(name); }
 function printableResult(result) {
   if (typeof result?.response === 'string' && result.response.trim()) return result.response;
@@ -200,9 +229,8 @@ export async function runTerminalIDE({
               if (await ask('JOIN') !== 'JOIN') { write('Cancelled.'); break; }
               const code = (await rl.question('One-time pairing code (not saved in history): ')).trim();
               if (!/^[a-z0-9-]{4,160}$/i.test(code)) throw new Error('JACO_PAIRING_CODE_INVALID');
-              // The established helper takes argv; do not leak the code in logs or error messages.
-              const result = await runner(process.execPath, [path.join(root, 'tools', 'join-hub.mjs'), hub, code], { cwd: root, windowsHide: true, timeout: 45000, maxBuffer: 128 * 1024 });
-              write(clean(result.stdout));
+              // The established helper receives the OTP over stdin, not a visible process argument.
+              write(await joinPairedDevice({ root, hub, code }));
             } else {
               if (command.verb === 'invite' && (command.args.length !== 1 || !isValidDeviceName(command.args[0]))) throw new Error('Usage: /devices invite <lowercase-name>');
               if (command.verb === 'list' && command.args.length) throw new Error('Usage: /devices list');
