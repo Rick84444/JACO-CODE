@@ -4532,10 +4532,12 @@ const notifyPhone = async (action) => {
 
       const auraState = auraEngineManager.getState();
       const allTools=buildAuraToolbox({connectedRuntime,seerLiveWorkstream,readAgentTeam:readAuraAgentBoard});
+      // Manual and Planning share a strictly read-only toolbox. Operator prose never
+      // upgrades tool authority; explicit mutations use the action/mission path.
       const questionTools=questionMode ? cognitiveQuestionToolbox(allTools,()=>readCognitiveFeed({
         bus:connectedRuntime.bus,workstream:seerLiveWorkstream,limit:30,
         secrets:Object.entries(process.env).filter(([key])=>/secret|token|password|api_?key/i.test(key)).map(([,value])=>value).filter(Boolean),
-      }), planningMode ? '' : userMsg) : allTools;
+      })) : allTools;
       const ask = (choice: any) => auraChatViaSeer({
         message: userMsg,
         activeFilePath,
