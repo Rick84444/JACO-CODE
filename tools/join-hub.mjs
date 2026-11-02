@@ -29,7 +29,17 @@ export function updateEnv(text, values) {
 }
 
 async function main() {
-  const [hubArg, code] = process.argv.slice(2);
+  const [hubArg, codeArg] = process.argv.slice(2);
+  let code = codeArg;
+  // Optional stdin mode keeps a one-time pairing code out of the OS process argument list.
+  if (codeArg === '--code-stdin') {
+    let incoming = '';
+    for await (const chunk of process.stdin) {
+      incoming += chunk.toString('utf8');
+      if (incoming.length > 4096) throw Error('PAIRING_CODE_TOO_LARGE');
+    }
+    code = incoming.trim();
+  }
   if (!hubArg || !code) {
     console.log('usage: node tools/join-hub.mjs <hub-url> <pairing-code>');
     process.exitCode = 1;
