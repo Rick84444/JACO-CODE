@@ -212,6 +212,24 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   const [agentKey,setAgentKey]=useState('');
   const [agentCreating,setAgentCreating]=useState(false);
   const [agentMessage,setAgentMessage]=useState<string|null>(null);
+  const [cognitiveSuggestions,setCognitiveSuggestions]=useState<{knowledge:number;skills:number}|null>(null);
+  useEffect(()=>{
+    const query=input.trim();
+    if(query.length<8){setCognitiveSuggestions(null);return;}
+    const controller=new AbortController();
+    const timer=window.setTimeout(()=>{
+      const args=new URLSearchParams({q:query.slice(0,360)});
+      fetch('/api/aura/chat/cognitive-activation?'+args,{signal:controller.signal,cache:'no-store'})
+        .then(r=>r.ok?r.json():null)
+        .then(data=>{
+          if(controller.signal.aborted)return;
+          const active=data?.activation;
+          setCognitiveSuggestions(active&&Array.isArray(active.knowledge)&&Array.isArray(active.skills)
+            ? {knowledge:active.knowledge.length,skills:active.skills.length}:null);
+        }).catch(()=>{if(!controller.signal.aborted)setCognitiveSuggestions(null);});
+    },400);
+    return ()=>{controller.abort();window.clearTimeout(timer);};
+  },[input]);
   const buildAgent = async () => {
     if (agentCreating || !agentDraft.name.trim() || !agentKey.trim()) return;
     setAgentCreating(true); setAgentMessage(null);
@@ -344,6 +362,8 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           data.degraded ? 'JACO:s statussvar, ingen modell kunde svara' : null,
           data.fallback ? `${data.fallback.from} kunde inte svara (${String(data.fallback.reason).slice(0, 60)}), svarade via JACO:s standardanslutning` : null,
           data.modelUsed || [data.provider, data.model].filter(Boolean).join('/'),
+          data.cognitiveActivation?.knowledgeCount ? `knowledge: ${data.cognitiveActivation.knowledgeCount} verified` : null,
+          data.cognitiveActivation?.activeSkillCandidates ? `skill candidates: ${data.cognitiveActivation.activeSkillCandidates} (not granted)` : null,
           `${((performance.now() - started) / 1000).toFixed(1)} s`,
           data.providerReceipt?.costStatus === 'SETTLED'
             ? `Cloud $${Number(data.providerReceipt.costUsd || 0).toFixed(4)}`
@@ -668,6 +688,12 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             </div>
           </div>
           <AttachmentPicker items={attachments} onChange={setAttachments} onBusy={setUploading} disabled={Boolean(busy)}/>
+          {cognitiveSuggestions && (cognitiveSuggestions.knowledge>0||cognitiveSuggestions.skills>0) &&
+            <p data-testid="jaco-cognitive-suggestions" className="text-[10px] text-slate-500 px-1">
+              {tr('Verifierad kunskap','Verified knowledge')}: {cognitiveSuggestions.knowledge} ·
+              {tr(' Föreslagna skills',' Skill candidates')}: {cognitiveSuggestions.skills}
+              <span title={tr('Ett skillförslag ger inte verktygsbehörighet. Varje steg kontrolleras av runtimen.','Skill discovery grants no tool permissions. Each step must pass runtime checks.')}> · <span className="text-cyan-700">◇</span></span>
+            </p>}
           <p className="cognitive-composer-help">{runMode==='autonomous' ? tr('Full Autonomous använder befintliga uppdragsmandat. Ingen fri terminalåtkomst ges.','Full Autonomous uses existing mission mandates. No unrestricted shell access is granted.')
             : runMode==='planning' ? tr('Planning läser och föreslår. Inga verktygsändringar eller uppdrag startas.','Planning observes and proposes; no tool mutations or missions start.')
             : tr('Manual svarar med läsverktyg utan att starta ett uppdrag.','Manual answers using read tools without starting a mission.')}</p>
