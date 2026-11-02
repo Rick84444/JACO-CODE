@@ -2,7 +2,7 @@ import { AURA_FUNCTION_DEFINITIONS } from './auraFunctions.mjs';
 // Questions inspect the current run. Starting work is the explicit mission action in the composer.
 const readTools = new Set(['attachment_read','health','termux_services','repo_list','repo_read','mission_get','mission_list','agent_team','aura_runtime','git_status','git_log','seer_goals','seer_memory','web_fetch','policy_get']);
 
-export function cognitiveQuestionToolbox(toolbox, readCurrentWork) {
+export function cognitiveQuestionToolbox(toolbox, readCurrentWork, _operatorMessage = '') {
   const tools=Object.fromEntries(Object.entries(toolbox.tools || {}).filter(([name])=>readTools.has(name)));
   // Aura capabilities are stable contracts, not a claim that a service is healthy.
   // This read-only introspection tool adds no agent, permission or subprocess.
