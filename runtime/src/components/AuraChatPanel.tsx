@@ -291,10 +291,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   const ask = async (retry?: string) => {
     const text = (retry ?? input).trim();
     if (!text || busy || uploading || !storageReady) return;
-    // Intentional local command: never send an agent-creation request to a model as authority.
-    if (retry === undefined && /^\/?build agent$/i.test(text)) {
-      setShowBuildAgent(true);setShowModePicker(false);setInput('');return;
-    }
     if (selectedProvider !== 'seer' && (!providers.some(p => p.id === selectedProvider) || !chatModel.trim())) {
       setCatalogError('Välj en registrerad provider och ange modell före anrop.');
       return;
@@ -481,7 +477,14 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       await appendMessage({id:crypto.randomUUID(),role:'system',content:'Uppdragets registrering kunde inte bekräftas: '+safeCognitiveText(error?.message || String(error))});
     } finally {setBusy(null);}
   };
-  const submit=()=>composeMode==='goal'?goal():ask();
+  const submit=()=>{
+    // Build Agent is a local UI action in every mode, never a model directive or a mission.
+    if(/^\/?build agent$/i.test(input.trim())) {
+      setShowBuildAgent(true);setShowModePicker(false);setInput('');
+      return;
+    }
+    return composeMode==='goal'?goal():ask();
+  };
   const prompt=(text:string,mode:'chat'|'goal'='chat')=>{
     setInput(text);
     // Suggested tasks open in read-only planning first; the operator selects Full Autonomous.
