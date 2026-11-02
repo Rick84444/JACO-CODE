@@ -17,7 +17,7 @@ export const AURA_RUN_MODES = Object.freeze({
     id: 'autonomous',
     executionMode: 'autonomous',
     createsMission: true,
-    scope: 'durable mission via canonical SEER/Nova under existing budgets, approvals and tools',
+    scope: 'durable mission via the canonical Aura runtime under existing budgets, approvals and tools',
   }),
 });
 
