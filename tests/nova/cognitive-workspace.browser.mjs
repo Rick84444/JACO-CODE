@@ -289,7 +289,9 @@ try {
   await page.getByRole('button',{name:/Full Autonomous/}).last().click();
   await page.getByRole('button',{name:'Starta uppdrag',exact:true}).click();
   await page.getByText('Uppdraget är registrerat. Planering och resultat visas här när runtime rapporterar dem.',{exact:true}).waitFor();
-  await page.waitForFunction(()=>document.querySelector('[data-testid="jaco-run-mode-toggle"]')?.textContent.includes('Manual'));
+  await page.waitForFunction(()=>document.querySelector('[data-testid="jaco-run-mode-toggle"]')?.textContent.includes('Full Autonomous'));
+  await input().fill('Förklara uppdragets status');
+  assert.equal(await page.getByTestId('jaco-chat-send').isEnabled(),true,'chat is still available in Full Autonomous while the mission runs');
   assert.equal(requests.filter(r=>r.kind==='goal').length,1);
   passed('Lite mission acknowledgements are accepted without claiming completed work');
   rejectGoal=true;await input().fill('Detta ska inte registreras');
