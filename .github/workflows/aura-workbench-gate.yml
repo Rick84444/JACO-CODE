@@ -88,6 +88,9 @@ on:
       - 'tests/nova/workspace-readiness.test.mjs'
       - 'runtime/src/components/AuraAgentBoard.tsx'
       - 'runtime/src/lib/auraSpecialistBlueprints.mjs'
+      - 'runtime/src/lib/auraRunModes.mjs'
+      - 'runtime/src/lib/auraCognitiveActivation.mjs'
+      - 'tests/nova/aura-run-modes.test.mjs'
       - 'tests/nova/aura-specialists.test.mjs'
       - 'agents/jaco-cli.mjs'
       - 'agents/lib/terminal-ide.mjs'
@@ -188,6 +191,9 @@ on:
       - 'tests/nova/workspace-readiness.test.mjs'
       - 'runtime/src/components/AuraAgentBoard.tsx'
       - 'runtime/src/lib/auraSpecialistBlueprints.mjs'
+      - 'runtime/src/lib/auraRunModes.mjs'
+      - 'runtime/src/lib/auraCognitiveActivation.mjs'
+      - 'tests/nova/aura-run-modes.test.mjs'
       - 'tests/nova/aura-specialists.test.mjs'
       - 'agents/jaco-cli.mjs'
       - 'agents/lib/terminal-ide.mjs'
@@ -228,6 +234,11 @@ jobs:
           node --check extensions/jaco-vscode/extension.cjs
           node --check extensions/jaco-vscode/lib/bridge.cjs
           node --test tests/nova/jaco-vscode-embed.test.mjs extensions/jaco-vscode/test/bridge.test.cjs
+      - name: Aura run mode and cognitive activation safety contracts
+        run: |
+          node --check runtime/src/lib/auraRunModes.mjs
+          node --check runtime/src/lib/auraCognitiveActivation.mjs
+          node --test tests/nova/aura-run-modes.test.mjs
       - name: Activation and provider truth regressions
         run: |
           node --check agents/jaco-cli.mjs
