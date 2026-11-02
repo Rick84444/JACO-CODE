@@ -44,3 +44,12 @@ export async function synchronizeAuraHarnessModel(selection, { file, env = proce
     changed: true, source: 'operator', verifiedText: true, verifiedToolCalling: false,
   };
 }
+
+/**
+ * Choose the protocol, not a different model. Native function calls are best
+ * when supported; a selected provider without tool-call support uses JACO's
+ * existing schema/text planner and the SAME pinned provider/model.
+ */
+export function auraHarnessPlannerProtocol(provider, { nativeToolsAllowed = true, nativeToolsRejected = false } = {}) {
+  return provider?.chosen && (!nativeToolsAllowed || nativeToolsRejected) ? 'structured' : 'native';
+}
