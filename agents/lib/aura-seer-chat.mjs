@@ -122,9 +122,13 @@ const clipToolResult = (value, limit) => {
 
 export function renderAuraToolTranscript(entries = []) {
   const recent = entries.slice(-3);
-  const omitted = entries.length - recent.length;
+  const earlier = entries.slice(0, -3);
   return [
-    ...(omitted ? [`[Earlier tool results omitted: ${omitted}; see verified receipts]`] : []),
+    ...(earlier.length ? [
+      `EARLIER_TOOL_OBSERVATIONS (${earlier.length}, bounded summaries; not completion evidence):\n` +
+      earlier.slice(-8).map(item =>
+        `${clipToolResult(JSON.stringify(item.call), 105)} ${item.ok ? 'ok' : 'error'}: ${clipToolResult(item.text, 120)}`).join('\n'),
+    ] : []),
     ...recent.map((item, index) =>
       `TOOL_CALL ${clipToolResult(JSON.stringify(item.call), 500)}\nTOOL_RESULT (${item.ok ? 'ok' : 'error'}, ${item.at}):\n${clipToolResult(item.text, index === recent.length - 1 ? 4000 : 900)}`),
   ].join('\n\n');
