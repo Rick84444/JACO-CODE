@@ -57,25 +57,25 @@ export interface PlanStep {
   id: string;
   subgoalId: string;
   description: string;
-  toolName: string;           // pekar på ett verktyg: git, terminal, model.generate, etc.
-  expectedOutcome: string;    // vad steget ska uppnå
+  toolName: string;           // points to a tool: git, terminal, model.generate, etc.
+  expectedOutcome: string;    // what the step should achieve
   status: StepStatus;
-  jobId: string | null;       // kopplar till JobRecord i job queue
+  jobId: string | null;       // links to a JobRecord in the job queue
   attempts: number;
   lastResult: string | null;
   
-  // Blueprint & exekveringsdetaljer
-  assignedAgent?: string;     // F.ex. 'Code Refactor Agent', 'Security Auditor Agent', 'Marketplace Broker'
-  liveCommand?: string;       // Det faktiska CLI/API-kommandot som körs under steget
-  estimatedMinutes?: number;  // Tidsåtgång
-  plannedStart?: string;      // Planerad starttid (ISO)
-  plannedEnd?: string;        // Planerad sluttid (ISO)
-  actualCompletedAt?: string; // Faktisk tidpunkt för slutförande
+  // Blueprint & execution details
+  assignedAgent?: string;     // E.g. 'Code Refactor Agent', 'Security Auditor Agent', 'Marketplace Broker'
+  liveCommand?: string;       // The actual CLI/API command run during the step
+  estimatedMinutes?: number;  // Time required
+  plannedStart?: string;      // Planned start time (ISO)
+  plannedEnd?: string;        // Planned end time (ISO)
+  actualCompletedAt?: string; // Actual completion time
   progressPercent?: number;   // 0 - 100%
-  toolsRequired?: string[];   // Lista med specifika verktyg/binärer (t.ex. ['git', 'tsc', 'ripgrep', 'esbuild'])
-  howToComplete?: string;     // Steg-för-steg instruktion för hur det slutförs
-  userActionRequired?: string;// Vad operatören manuellt behöver åtgärda/godkänna
-  auditLogs?: StepAuditLog[]; // Fullständig audit-logg för detta steg
+  toolsRequired?: string[];   // List of specific tools/binaries (e.g. ['git', 'tsc', 'ripgrep', 'esbuild'])
+  howToComplete?: string;     // Step-by-step instructions for completing it
+  userActionRequired?: string;// What the operator must fix/approve manually
+  auditLogs?: StepAuditLog[]; // Full audit log for this step
   webResearch?: {
     query: string;
     summary: string;
@@ -92,16 +92,16 @@ export interface Subgoal {
   assignedAgents?: string[];
   plannedDate?: string;
   estimatedDurationHours?: number;
-  strategicValue?: string;    // Resonerad vinst/nytta för helheten
-  targetMilestone?: string;   // Slutmål för just detta delmål
-  howItIsCompleted?: string;  // Strategisk förklaring till hur det slutförs
-  whatUserMustFix?: string;   // Vad operatören behöver göra
+  strategicValue?: string;    // Reasoned benefit for the whole
+  targetMilestone?: string;   // End goal for this particular subgoal
+  howItIsCompleted?: string;  // Strategic explanation of how it is completed
+  whatUserMustFix?: string;   // What the operator needs to do
   webResearchSummary?: string;
   webSources?: WebSearchResultItem[];
-  // Minneskoppling & Externa Mätmål
-  linkedMemoryIds?: string[];           // ID till relaterade minnesnoder i IndexedDB MemoryStore
-  linkedCompressedMemory?: string;       // Komprimerad insikt från konkurrentanalys som stärker detta delmål
-  externalMeasurementTarget?: {          // Externt mätbart mål kopplat till delmålet
+  // Memory links & external measurement targets
+  linkedMemoryIds?: string[];           // IDs of related memory nodes in IndexedDB MemoryStore
+  linkedCompressedMemory?: string;       // Compressed insight from competitor analysis that strengthens this subgoal
+  externalMeasurementTarget?: {          // External measurable target linked to the subgoal
     metricKey: string;
     targetValue: number;
     currentValue: number;
@@ -119,21 +119,21 @@ export interface Plan {
   updatedAt: string;
   status: 'active' | 'awaiting_jaco_final_approval' | 'completed' | 'abandoned';
   subgoals: Subgoal[];
-  /** Räknar konsekutiva misslyckanden på aktuellt delmål — triggar omplanering. */
+  /** Counts consecutive failures on the current subgoal — triggers replanning. */
   consecutiveFailures: number;
 
-  // Övergripande blueprint-metadata
-  finalObjective?: string;     // Det ultimata slutmålet
+  // Overall blueprint metadata
+  finalObjective?: string;     // The ultimate end goal
   estimatedTotalHours?: number;
   overallProgressPercent?: number;
-  valueProposition?: string;   // Resonemang kring vinst, effektivitet och ROI
-  riskAssessment?: string;     // Identifierade risker och mitigering
+  valueProposition?: string;   // Reasoning about benefit, efficiency and ROI
+  riskAssessment?: string;     // Identified risks and mitigation
   activeAgentsCount?: number;
 
-  // Autonomi, Minnesanknytning & Externa Mätmål
-  linkedMemoryIds?: string[];               // Kopplade minnesreferenser för hela planen
-  compressedMemoryDigest?: string;          // Sammanfattad komprimerad kunskap som använts vid generering
-  externalMeasurementTargets?: Array<{      // Externa mätbara mål för hela planen
+  // Autonomy, memory links & external measurement targets
+  linkedMemoryIds?: string[];               // Linked memory references for the whole plan
+  compressedMemoryDigest?: string;          // Summarized compressed knowledge used during generation
+  externalMeasurementTargets?: Array<{      // External measurable targets for the whole plan
     id: string;
     title: string;
     metricKey: string;
@@ -143,7 +143,7 @@ export interface Plan {
     status: 'pending' | 'achieved' | 'measuring' | 'failed';
   }>;
 
-  // Inre Resonemang & Gatekeeper
+  // Inner reasoning & gatekeeper
   jacoFinalApproval?: JacoFinalApproval;
   innerReasoningLogs?: InnerReasoningLogEntry[];
   blockers?: SystemBlocker[];
@@ -151,7 +151,7 @@ export interface Plan {
   autoExecutedStepsCount?: number;
 }
 
-/** Hittar nästa steg som ska köras: första 'pending' steget i aktivt delmål. */
+/** Finds the next step to run: the first 'pending' step in the active subgoal. */
 export function getNextStep(plan: Plan): { step: PlanStep; subgoal: Subgoal } | null {
   for (const subgoal of plan.subgoals) {
     if (subgoal.status === 'abandoned' || subgoal.status === 'completed') continue;
@@ -162,15 +162,15 @@ export function getNextStep(plan: Plan): { step: PlanStep; subgoal: Subgoal } | 
 }
 
 /**
- * Avgör om planen behöver omplaneras. Detta är den explicita "strategibyte"-
- * triggern — utan den fortsätter agenten bara köra samma delplan tills
- * den tar slut, även om den uppenbart inte fungerar.
+ * Decides whether the plan needs replanning. This is the explicit "change of strategy"
+ * trigger — without it the agent just keeps running the same sub-plan until
+ * it runs out, even when it obviously is not working.
  */
 export function needsReplanning(plan: Plan, failureThreshold: number = 2): boolean {
   return plan.consecutiveFailures >= failureThreshold;
 }
 
-/** Markerar ett steg klart eller misslyckat och uppdaterar räknaren för omplanering. */
+/** Marks a step done or failed and updates the replanning counter. */
 export function recordStepOutcome(
   plan: Plan,
   stepId: string,
@@ -190,7 +190,7 @@ export function recordStepOutcome(
     ),
   }));
 
-  // Kontrollera om hela delmålet blev completed (alla steg är completed)
+  // Check whether the whole subgoal is completed (all steps completed)
   const finalSubgoals = updatedSubgoals.map((subgoal) => {
     if (subgoal.status === 'abandoned' || subgoal.status === 'completed') return subgoal;
     const allStepsDone = subgoal.steps.length > 0 && subgoal.steps.every((s) => s.status === 'completed');
@@ -200,7 +200,7 @@ export function recordStepOutcome(
     return subgoal;
   });
 
-  // Kontrollera om hela planen blev completed (alla subgoals completed/abandoned)
+  // Check whether the whole plan is completed (all subgoals completed/abandoned)
   const allSubgoalsDone = finalSubgoals.every((sg) => sg.status === 'completed' || sg.status === 'abandoned');
   const planStatus = allSubgoalsDone ? 'completed' : plan.status;
 
@@ -213,7 +213,7 @@ export function recordStepOutcome(
   };
 }
 
-/** Markerar ett delmål som övergivet — resten av dess steg körs aldrig. */
+/** Marks a subgoal as abandoned — the rest of its steps never run. */
 export function abandonSubgoal(plan: Plan, subgoalId: string): Plan {
   return {
     ...plan,

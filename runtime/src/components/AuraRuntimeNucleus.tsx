@@ -52,7 +52,7 @@ export const AuraRuntimeNucleus: React.FC<AuraRuntimeNucleusProps> = ({
       : Number(latestMission?.verifiedReceipts || 0);
     const observedMcp = (mcpProviders || []).filter(provider => provider.status === 'READY');
     const pending = Number(approvalCount || 0);
-    const missionState = String(mission?.status || mission?.phase || (latestMission ? `senaste ${latestMission.status}` : '')).toUpperCase();
+    const missionState = String(mission?.status || mission?.phase || (latestMission ? `latest ${latestMission.status}` : '')).toUpperCase();
     const missionObserved = Boolean(mission?.id || latestMission?.id || seer?.phase || seer?.activeModule);
 
     return {
@@ -107,7 +107,7 @@ export const AuraRuntimeNucleus: React.FC<AuraRuntimeNucleusProps> = ({
             <JacoWordmark size="sm" />
             <div className="hidden 2xl:block min-w-0">
               <div className="text-[8px] tracking-[0.24em] text-cyan-200/80">COGNITIVE RUNTIME</div>
-              <div className="text-[7px] tracking-[0.15em] text-slate-600 mt-0.5">RUNTIME · OBSERVERAT TILLSTÅND</div>
+              <div className="text-[7px] tracking-[0.15em] text-slate-600 mt-0.5">RUNTIME · OBSERVED STATE</div>
             </div>
           </div>
           <div className="text-right">

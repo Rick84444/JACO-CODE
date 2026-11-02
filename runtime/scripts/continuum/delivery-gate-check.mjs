@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
 /**
- * Kvalitetsgrind för externa leveranser (t.ex. innan en JACO-agent får
- * markera en betald a2acolony/a2amarket-uppgift som slutförd).
+ * Quality gate for external deliveries (e.g. before a JACO agent may
+ * mark a paid a2acolony/a2amarket task as completed).
  *
- * Kör det vendorade Python-verktyget tools/delivery_gate (från
- * jaco_agency_2.zip) mot en källfil/mapp + valfria kommandon som MÅSTE
- * lyckas, och sparar det verkliga, deterministiska utfallet som riktig
- * Continuum-evidence - inte en påstådd status, ett faktiskt exekverat
- * kommandos exit-kod.
+ * Runs the vendored Python tool tools/delivery_gate (from
+ * jaco_agency_2.zip) against a source file/folder + optional commands that MUST
+ * succeed, and stores the real, deterministic outcome as real
+ * Continuum evidence - not a claimed status, an actually executed
+ * command's exit code.
  *
- * Exit-koder speglar delivery_gate självt:
- *   0 = PASS       (evidence sparad, verified:true, kan gå vidare)
- *   1 = BLOCKED     (stubbar/ogrundade siffror hittade - stoppa leveransen)
- *   2 = UNPROVEN    (inget kommando kördes - inget bevisat)
+ * Exit codes mirror delivery_gate itself:
+ *   0 = PASS       (evidence stored, verified:true, may proceed)
+ *   1 = BLOCKED     (stubs/unfounded numbers found - stop the delivery)
+ *   2 = UNPROVEN    (no command was run - nothing proven)
  *
- * Användning:
- *   node scripts/continuum/delivery-gate-check.mjs <källa> \
- *     --run "<testkommando>" [--run "<fler>"] \
+ * Usage:
+ *   node scripts/continuum/delivery-gate-check.mjs <source> \
+ *     --run "<test command>" [--run "<more>"] \
  *     [--continuum http://127.0.0.1:3020] [--actor <agentId>]
  */
 
@@ -34,7 +34,7 @@ const continuumUrl = (args.includes('--continuum') ? args[args.indexOf('--contin
 const actor = args.includes('--actor') ? args[args.indexOf('--actor') + 1] : 'delivery-gate';
 
 if (!source) {
-  console.error('Användning: delivery-gate-check.mjs <källa> --run "<testkommando>" [...]');
+  console.error('Usage: delivery-gate-check.mjs <source> --run "<test command>" [...]');
   process.exit(2);
 }
 
@@ -49,10 +49,10 @@ console.log(proc.stdout);
 if (proc.stderr) console.error(proc.stderr);
 
 let result = null;
-try { result = JSON.parse(fs.readFileSync(jsonOut, 'utf8')); } catch { /* kvarstår null om gate kraschade helt */ }
+try { result = JSON.parse(fs.readFileSync(jsonOut, 'utf8')); } catch { /* stays null if the gate crashed completely */ }
 
 if (!result) {
-  console.error('[FAIL] delivery_gate producerade ingen JSON - kan inte spara evidence, betrakta som BLOCKED.');
+  console.error('[FAIL] delivery_gate produced no JSON - cannot store evidence, treat as BLOCKED.');
   process.exit(1);
 }
 
@@ -72,12 +72,12 @@ try {
   });
   const body = await res.json();
   if (body?.success) {
-    console.log(`[EVIDENCE] Sparad i Continuum: ${body.evidence.id} (${continuumUrl})`);
+    console.log(`[EVIDENCE] Stored in Continuum: ${body.evidence.id} (${continuumUrl})`);
   } else {
-    console.error(`[WARN] Kunde inte spara evidence i Continuum: ${JSON.stringify(body).slice(0, 300)}`);
+    console.error(`[WARN] Could not store evidence in Continuum: ${JSON.stringify(body).slice(0, 300)}`);
   }
 } catch (err) {
-  console.error(`[WARN] Continuum onåbar (${err.message}) - gate-resultatet gäller ändå lokalt, bara inte sparat som evidence.`);
+  console.error(`[WARN] Continuum unreachable (${err.message}) - the gate result still applies locally, just not stored as evidence.`);
 }
 
 if (result.verdict === 'BLOCKED') process.exit(1);

@@ -39,9 +39,9 @@ test('when no model can answer, Aura answers itself, says so, and tells the oper
   assert.equal(r.success, true);
   assert.equal(r.degraded, true);
   assert.deepEqual([r.provider, r.model], ['aura', 'status'], 'never presented as a model answer');
-  assert.match(r.reply, /^Ingen AI-modell kunde svara just nu/);
-  assert.match(r.reply, /DeepSeek-kontot är tomt/);
-  assert.match(r.reply, /SEER svarar inte/);
+  assert.match(r.reply, /^No AI model could answer right now/);
+  assert.match(r.reply, /The DeepSeek account is empty/);
+  assert.match(r.reply, /SEER is not answering/);
   assert.match(r.reply, /- deepseek\/deepseek-flash: PROVIDER_HTTP_402/);
   assert.equal(noModel[0].length, 2);
 });
@@ -56,8 +56,8 @@ test('without a chosen provider SEER is asked once; an empty SEER answer still e
 
 test('status hints: budget with headroom, used-up quota, local models, and a generic hint when nothing matches', () => {
   const hints = auraStatusHints(['groq: AURA_CLOUD_DENIED:DAILY_BUDGET_LIMIT', 'ollama-cloud: PROVIDER_HTTP_429 You reached the Free usage limit'], { headroomUsd: 0.16, localModels: ['gemma3:4b-cpu'] });
-  assert.ok(hints.some(h => /molnbudget för i dag är slut\. Kvar i dag: 0\.16 USD/.test(h)));
-  assert.ok(hints.some(h => /Gratiskvoten/.test(h)));
+  assert.ok(hints.some(h => /cloud budget for today is used up\. Headroom today: 0\.16 USD/.test(h)));
+  assert.ok(hints.some(h => /free quota/.test(h)));
   assert.ok(hints.some(h => /gemma3:4b-cpu/.test(h)));
-  assert.deepEqual(auraStatusHints(['x: odd']), ['Försök igen om en stund. Felorsakerna nedan visar vad som hände.']);
+  assert.deepEqual(auraStatusHints(['x: odd']), ['Try again in a moment. The failure causes below show what happened.']);
 });

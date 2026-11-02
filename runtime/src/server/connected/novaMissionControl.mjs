@@ -685,7 +685,7 @@ export class NovaMissionControl {
     return { steering: this.latestSteering(id), replayed: false };
   }
 
-  requestCancel(id, note = 'Operatören avslutar uppdraget från Aura.') {
+  requestCancel(id, note = 'The operator ends the mission from Aura.') {
     const mission = this.get(id);
     if (TERMINAL.has(mission.status)) return mission;
     this.bus.event('NOVA_CANCEL_REQUEST', {missionId:id,payload:{note:String(note).slice(0,1000)}});

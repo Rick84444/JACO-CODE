@@ -46,7 +46,7 @@ test('canonical Aura Connections tab embeds persistent API Vault', () => {
   assert.match(panel, /\/api\/aura\/workbench\/vault\/import-windows/);
   assert.doesNotMatch(panel, /fetch\(['"]\/api\/vault['"]/);
   assert.match(panel, /Coinbase CDP/);
-  assert.match(panel, /Inte API-verifierad/);
+  assert.match(panel, /Not API-verified/);
   assert.match(panel, /secrets\?\.some\(secret => secret.name === key\)/);
 });
 

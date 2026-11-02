@@ -26,6 +26,7 @@ const EN_LABELS: Record<string, string> = {
   "Förhandsvisa": "Preview",
   "Belägg": "Evidence",
   "Spelplan": "Gameboard",
+  "Arbetsyta": "Workspace",
   "Projektfiler": "Project files",
   "Git & ändringar": "Git & changes",
   "Verktyg": "Tools",
@@ -139,7 +140,7 @@ export function CognitiveWorkspace(props:Props) {
       {props.sidePanelOpen&&<>
         <button type="button" className="cognitive-sidebar-scrim" aria-label={tr('Stäng projektpanelen','Close project panel')} onClick={props.onCloseSidebar}/>
         <aside className="cognitive-sidebar" aria-label={L(tools.find(t=>t[0]===props.sidebar)?.[2] || '')}>
-          <div className="cognitive-sidebar-header"><span>{tools.find(t=>t[0]===props.sidebar)?.[2]}</span><button type="button" onClick={props.onCloseSidebar} aria-label="Stäng projektpanelen"><X size={16}/></button></div>
+          <div className="cognitive-sidebar-header"><span>{L(tools.find(t=>t[0]===props.sidebar)?.[2] || '')}</span><button type="button" onClick={props.onCloseSidebar} aria-label={tr('Stäng projektpanelen','Close project panel')}><X size={16}/></button></div>
           <div className="cognitive-sidebar-content">{props.sidePanel}</div>
         </aside>
       </>}
@@ -156,7 +157,7 @@ export function CognitiveWorkspace(props:Props) {
         <p>{tr('Modeller, verktyg och projektinställningar','Models, tools and project settings')}</p>
         <div className="cognitive-mobile-menu-grid">
           {views.filter(([id])=>!['conversation','agents'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>navigate(id)}><Icon size={20}/>{L(label)}</button>)}
-          {tools.filter(([id])=>['source-control','devices','revenue'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>openPanel(id)}><Icon size={20}/>{label}</button>)}
+          {tools.filter(([id])=>['source-control','devices','revenue'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>openPanel(id)}><Icon size={20}/>{L(label)}</button>)}
           <button type="button" onClick={()=>{menu.current?.close();props.onApprovals();}}><ShieldCheck size={20}/>{L('Beslut')}{props.approvalCount>0 ? ` (${props.approvalCount})` : ''}</button>
           <button type="button" onClick={()=>{menu.current?.close();props.onCommands();}}><Search size={20}/>{L('Sök funktion')}</button>
           <button type="button" onClick={()=>{menu.current?.close();props.onSignOut();}}><LogOut size={20}/>{L('Logga ut')}</button>

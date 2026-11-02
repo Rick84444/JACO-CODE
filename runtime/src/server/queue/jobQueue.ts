@@ -3,8 +3,8 @@ import path from 'path';
 import crypto from 'crypto';
 import { JobRecord, JobStatus, JobType, EnqueueOptions } from './jobTypes';
 
-// In-Memory map med asynkron fil-persistens till .jaco/job_queue.json
-// Detta ger blixtsnabb access och noll C++ kompileringsberoenden (fungerar direkt i alla miljöer: Node, Bun, Cloud Run och Termux).
+// In-memory map with asynchronous file persistence to .jaco/job_queue.json
+// This gives very fast access and zero C++ build dependencies (works directly in every environment: Node, Bun, Cloud Run and Termux).
 
 const STORAGE_DIR = path.join(process.cwd(), '.jaco');
 const STORAGE_FILE = path.join(STORAGE_DIR, 'job_queue.json');
@@ -173,7 +173,7 @@ export function listJobs(filter?: { status?: JobStatus; type?: JobType }): JobRe
     list = list.filter((j) => j.type === filter.type);
   }
 
-  // Sortera efter prioritet (högst först), därefter datum
+  // Sort by priority (highest first), then by date
   return list.sort((a, b) => {
     if (b.priority !== a.priority) {
       return b.priority - a.priority;
@@ -248,7 +248,7 @@ export function markFailed(id: string, error: string): JobRecord | undefined {
   job.retryCount += 1;
 
   if (job.retryCount < job.maxRetries) {
-    // Försök igen: återgå till 'queued'
+    // Retry: return to 'queued'
     job.status = 'queued';
     job.error = `[Attempt ${job.retryCount}/${job.maxRetries} Failed]: ${error}`;
   } else {

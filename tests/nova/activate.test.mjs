@@ -47,7 +47,7 @@ test('stopped tool servers are started and counted; a working stack reports ok',
   assert.equal(r.planner.reachable, true);
   assert.deepEqual(r.problems, []);
   assert.equal(r.ok, true);
-  assert.match(formatReport(r), /Verktyg: 17 i 3 av 3 servrar/);
+  assert.match(formatReport(r), /Tools: 17 in 3 of 3 servers/);
 });
 
 test('Termux supervisor ownership is part of READY truth when required', async () => {
@@ -55,7 +55,7 @@ test('Termux supervisor ownership is part of READY truth when required', async (
   const r = await activationReport({ baseUrl: 'http://x', workplaceUrl: 'http://w', sentinelUrl: 'http://s', token: 't', fetchImpl: fakeRuntime(g), requireSupervisor: true });
   assert.equal(r.supervisor.state, 'DEGRADED');
   assert.equal(r.ok, false);
-  assert.ok(r.problems.some(p => /supervisor.*inte READY/i.test(p)));
+  assert.ok(r.problems.some(p => /supervisor.*not READY/i.test(p)));
 });
 
 test('Workplace/Durable Nova are part of READY truth, not just Core/tools/provider', async () => {
@@ -79,7 +79,7 @@ test('a selected planner that was not actually scanned cannot make READY true', 
 test('a tool server that cannot start is named, and the stack is not ok', async () => {
   const r = await activationReport({ baseUrl: 'http://x', token: 't', fetchImpl: fakeRuntime({ ...GOOD(), startFails: ['fetch'] }) });
   assert.equal(r.ok, false);
-  assert.ok(r.problems.some(p => /fetch startade inte: spawn npx ENOENT/.test(p)));
+  assert.ok(r.problems.some(p => /Tool server fetch did not start: spawn npx ENOENT/.test(p)));
   assert.equal(r.tools.toolCount, 16);
 });
 
@@ -94,14 +94,14 @@ test('a planner the GUI chose that does not answer is reported with what to do',
   const r = await activationReport({ baseUrl: 'http://x', token: 't', fetchImpl: fakeRuntime(g) });
   assert.equal(r.planner.reachable, false);
   assert.equal(r.planner.why, 'NO_KEY');
-  assert.ok(r.problems.some(p => /deepseek svarar inte \(NO_KEY\)/.test(p)));
+  assert.ok(r.problems.some(p => /deepseek is not answering \(NO_KEY\)/.test(p)));
   assert.equal(r.ok, false);
 });
 
 test('no choice made: the first provider that answers is named as the automatic planner', async () => {
   const g = GOOD(); g.planner = { choice: null, choices: [] };
   const r = await activationReport({ baseUrl: 'http://x', token: 't', fetchImpl: fakeRuntime(g) });
-  assert.equal(r.planner.source, 'automatiskt');
+  assert.equal(r.planner.source, 'automatic');
   assert.equal(r.planner.provider, 'deepseek');
 });
 
@@ -109,7 +109,7 @@ test('no provider answers at all is a problem with a way out', async () => {
   const g = GOOD(); g.scan = [{ id: 'ollama', active: false, state: 'UNREACHABLE' }]; g.planner = { choice: null, choices: [] };
   const r = await activationReport({ baseUrl: 'http://x', token: 't', fetchImpl: fakeRuntime(g) });
   assert.equal(r.ok, false);
-  assert.ok(r.problems.some(p => /Ingen modell-provider svarar/.test(p)));
+  assert.ok(r.problems.some(p => /No model provider is answering/.test(p)));
 });
 
 test('a runtime that is down is reported plainly', async () => {
@@ -117,7 +117,7 @@ test('a runtime that is down is reported plainly', async () => {
   assert.equal(await runtimeUp({ baseUrl: 'http://x', fetchImpl: dead }), false);
   const r = await activationReport({ baseUrl: 'http://x', fetchImpl: dead });
   assert.equal(r.runtime.up, false);
-  assert.match(formatReport(r), /JACO-runtime svarar inte/);
+  assert.match(formatReport(r), /The JACO runtime is not answering/);
 });
 
 import fs from 'node:fs';

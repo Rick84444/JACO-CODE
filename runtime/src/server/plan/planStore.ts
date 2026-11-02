@@ -32,7 +32,7 @@ export function createPlan(
       subgoalId,
       description: st.description,
       toolName: st.toolName || 'system',
-      expectedOutcome: st.expectedOutcome || 'Slutfört utan fel',
+      expectedOutcome: st.expectedOutcome || 'Completed without errors',
       status: 'pending',
       jobId: null,
       attempts: 0,
@@ -128,7 +128,7 @@ export function addSubgoalToPlan(
     subgoalId,
     description: st.description,
     toolName: st.toolName || 'terminal.exec',
-    expectedOutcome: st.expectedOutcome || 'Slutfört utan fel',
+    expectedOutcome: st.expectedOutcome || 'Completed without errors',
     status: 'pending',
     jobId: null,
     attempts: 0,
@@ -140,15 +140,15 @@ export function addSubgoalToPlan(
     plannedEnd: new Date(now.getTime() + (st.estimatedMinutes || 20) * 60000).toISOString(),
     progressPercent: 0,
     toolsRequired: st.toolsRequired || ['git', 'node'],
-    howToComplete: st.howToComplete || 'Exekveras i en isolerad sandlåda och valideras med TypeScript linter.',
-    userActionRequired: st.userActionRequired || 'Ingen manuell åtgärd krävs.',
+    howToComplete: st.howToComplete || 'Runs in an isolated sandbox and is validated with the TypeScript linter.',
+    userActionRequired: st.userActionRequired || 'No manual action required.',
     auditLogs: [
       {
         timestamp: now.toISOString(),
         actor: st.assignedAgent || 'Operator Action',
         action: 'Subgoal Step Added',
         result: 'info',
-        details: 'Dynamiskt under-delmål tillagt av operatören'
+        details: 'Dynamic sub-subgoal added by the operator'
       }
     ]
   }));
@@ -160,13 +160,13 @@ export function addSubgoalToPlan(
     status: 'pending',
     progressPercent: 0,
     assignedAgents: subgoalInput.assignedAgents || ['Code Refactor Agent'],
-    plannedDate: now.toLocaleDateString('sv-SE'),
+    plannedDate: now.toLocaleDateString('en-US'),
     estimatedDurationHours: subgoalInput.estimatedDurationHours || 2,
-    strategicValue: subgoalInput.strategicValue || 'Bidrar till att uppfylla huvudmålets delkrav.',
-    targetMilestone: subgoalInput.targetMilestone || 'Alla understeg genomförda och verifierade.',
-    howItIsCompleted: subgoalInput.howItIsCompleted || 'Genomförs via standardiserad under-agent loop.',
-    whatUserMustFix: subgoalInput.whatUserMustFix || 'Ingen åtgärd krävs.',
-    webResearchSummary: 'Syntetiserad analys för tillagt under-delmål.',
+    strategicValue: subgoalInput.strategicValue || 'Contributes to meeting the primary goal sub-requirements.',
+    targetMilestone: subgoalInput.targetMilestone || 'All sub-steps completed and verified.',
+    howItIsCompleted: subgoalInput.howItIsCompleted || 'Carried out via a standardized sub-agent loop.',
+    whatUserMustFix: subgoalInput.whatUserMustFix || 'No action required.',
+    webResearchSummary: 'Synthesized analysis for the added sub-subgoal.',
     steps
   };
 

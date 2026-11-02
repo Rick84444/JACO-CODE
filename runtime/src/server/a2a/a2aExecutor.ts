@@ -141,7 +141,7 @@ export function validateA2AContract(contractId: string, rawPayload: any): A2ACon
       return {
         valid: false,
         contractId,
-        violations: [`Okänt eller oregistrerat kontrakt-ID: '${contractId}'`]
+        violations: [`Unknown or unregistered contract ID: '${contractId}'`]
       };
   }
 }
@@ -186,7 +186,7 @@ export function routeA2APayloadWithContract(options: {
       success: false,
       status: 'TRIPPED_CIRCUIT_BREAKER_QUARANTINED',
       circuitBreaker: cb,
-      rejectionMessage: `A2A Circuit Breaker är TRIPPAD (OPEN) för nodparet [${agentPair}]. Manuell operatörsgranskning krävs i approvalGate.`
+      rejectionMessage: `A2A circuit breaker is TRIPPED (OPEN) for node pair [${agentPair}]. Manual operator review is required in approvalGate.`
     };
   }
 
@@ -219,7 +219,7 @@ export function routeA2APayloadWithContract(options: {
       status: 'REJECTED_LOCAL_RETRY',
       circuitBreaker: cb,
       violations: validation.violations,
-      rejectionMessage: `Kontraktsvalidering misslyckades (${cb.consecutiveFailures}/${cb.maxFailuresAllowed}). Agent [${sourceAgent}] måste åtgärda sin payload lokalt: ${validation.violations.join('; ')}`
+      rejectionMessage: `Contract validation failed (${cb.consecutiveFailures}/${cb.maxFailuresAllowed}). Agent [${sourceAgent}] must fix its payload locally: ${validation.violations.join('; ')}`
     };
   }
 
@@ -252,7 +252,7 @@ export function routeA2APayloadWithContract(options: {
   // Escalate to Approval Gate for Human Governance
   submitToGate({
     type: 'quality_audit',
-    description: `[A2A CIRCUIT BREAKER TRIPPED] Nodpar [${agentPair}] misslyckades med kontrakt '${contractId}' ${cb.consecutiveFailures} gånger. Karantänfil: ${qFileName}`,
+    description: `[A2A CIRCUIT BREAKER TRIPPED] Node pair [${agentPair}] failed contract '${contractId}' ${cb.consecutiveFailures} times. Quarantine file: ${qFileName}`,
     targetPath: qFilePath,
     payload: quarantineRecord,
     priority: 95
@@ -264,7 +264,7 @@ export function routeA2APayloadWithContract(options: {
     circuitBreaker: cb,
     violations: validation.violations,
     quarantineFilePath: qFilePath,
-    rejectionMessage: `A2A Circuit Breaker TRIPPAD! Misslyckades ${cb.consecutiveFailures} gånger. Payload har satts i karantän i '${qFileName}' och skickats till approvalGate.`
+    rejectionMessage: `A2A circuit breaker TRIPPED! Failed ${cb.consecutiveFailures} times. Payload quarantined in '${qFileName}' and sent to approvalGate.`
   };
 }
 
@@ -300,7 +300,7 @@ export async function handleLocalA2AExecution(request: A2ATaskRequest): Promise<
     request.parameters = routingResult.validatedPayload;
   }
 
-  // 1. Testa om skillen finns installerad lokalt
+  // 1. Check whether the skill is installed locally
   const execResult = await executeLocalSkill(request.skillId, request.parameters);
   if (execResult.success) {
     return {
@@ -313,17 +313,17 @@ export async function handleLocalA2AExecution(request: A2ATaskRequest): Promise<
     };
   }
 
-  // 2. Om inbyggd kapabilitet
+  // 2. Built-in capability
   if (request.skillId === 'code-review-audit') {
     const code = request.parameters?.code || '';
     const issues: string[] = [];
-    if (code.includes('eval(')) issues.push('Varning: Osäker eval() detekterades i koden.');
-    if (code.includes('autoApprove: true')) issues.push('Varning: autoApprove kringgår säkerhetsgrindar.');
+    if (code.includes('eval(')) issues.push('Warning: unsafe eval() detected in the code.');
+    if (code.includes('autoApprove: true')) issues.push('Warning: autoApprove bypasses safety gates.');
     
     const resultObj = {
       issues,
       score: issues.length === 0 ? 100 : Math.max(20, 100 - issues.length * 40),
-      summary: issues.length === 0 ? 'Koden passerade granskningen utan uppenbara defekter.' : 'Defekter påträffade.',
+      summary: issues.length === 0 ? 'The code passed review with no obvious defects.' : 'Defects found.',
     };
 
     const str = JSON.stringify(resultObj);
@@ -341,7 +341,7 @@ export async function handleLocalA2AExecution(request: A2ATaskRequest): Promise<
     taskId: request.taskId,
     responderNodeId: localIdent.nodeId,
     success: false,
-    error: `Ingen kapabilitet med id '${request.skillId}' kunde exekveras.`,
+    error: `No capability with id '${request.skillId}' could be executed.`,
     executionTimeMs: Date.now() - startTime,
     checksum: '',
   };
@@ -367,7 +367,7 @@ export async function delegateTaskToRemotePeer(
     clearTimeout(timeout);
 
     if (!res.ok) {
-      throw new Error(`Fjärrnod svarade med status HTTP ${res.status}`);
+      throw new Error(`Remote node responded with status HTTP ${res.status}`);
     }
 
     const data: A2ATaskResponse = await res.json();
@@ -378,7 +378,7 @@ export async function delegateTaskToRemotePeer(
       taskId: request.taskId,
       responderNodeId: 'unknown',
       success: false,
-      error: err?.message || 'Misslyckades att nå fjärrnod.',
+      error: err?.message || 'Failed to reach remote node.',
       executionTimeMs: 0,
       checksum: '',
     };

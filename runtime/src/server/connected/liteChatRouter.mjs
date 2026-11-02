@@ -70,7 +70,7 @@ export async function liteChatAnswer({ providers, choice = null, ask, cloudChoic
       return answer;
     } catch (error) { failures.push(`${key}: ${safeReason(error)}`); }
   }
-  if (failures.length === 0) failures.push('LITE_NO_AVAILABLE_MODELS: Ingen registrerad lokal modell eller tillåten molnleverantör kunde väljas');
+  if (failures.length === 0) failures.push('LITE_NO_AVAILABLE_MODELS: No registered local model or allowed cloud provider could be selected');
   for (const observation of local.observations.filter(o => o.error))
     failures.push(`${observation.provider}: ${observation.error}`);
   return { degraded: true, failures, candidateCount:attempted.size };

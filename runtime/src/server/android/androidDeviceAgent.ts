@@ -148,7 +148,7 @@ export class AndroidDeviceAgent {
       modelVersion: 'JACO Device Agent 1.0 (android.torch.set)'
     });
 
-    const msgState = state === 'on' ? 'tänd' : 'släckt';
+    const msgState = state === 'on' ? 'on' : 'off';
     return {
       capability: 'android.torch.set',
       state: this.currentTorchState,
@@ -159,8 +159,8 @@ export class AndroidDeviceAgent {
       traceId,
       evidenceRecord,
       message: success
-        ? `Ficklampan är nu ${msgState}. Verifierad hårdvarurespons (${durationMs.toFixed(1)}ms, Hash: ${actionHash.substring(0, 16)}...).`
-        : `[RISK] Kunde inte ändra ficklampans status: ${rawOutput}`
+        ? `The torch is now ${msgState}. Verified hardware response (${durationMs.toFixed(1)}ms, Hash: ${actionHash.substring(0, 16)}...).`
+        : `[RISK] Could not change the torch state: ${rawOutput}`
     };
   }
 
@@ -210,7 +210,7 @@ export class AndroidDeviceAgent {
 
   /**
    * Natural Language / Voice Intent Router for Android Device Control
-   * Handles commands like "Aura, tänd lampan" or "Aura, släck lampan"
+   * Handles commands like "Aura, tänd lampan" / "Aura, turn on the torch" (Swedish and English)
    */
   public async executeVoiceIntent(prompt: string): Promise<{
     handled: boolean;
@@ -227,7 +227,9 @@ export class AndroidDeviceAgent {
       clean.includes('sätt på lampan') ||
       clean.includes('sätt på ficklampan') ||
       clean.includes('turn on torch') ||
+      clean.includes('turn on the torch') ||
       clean.includes('turn on flashlight') ||
+      clean.includes('turn on the flashlight') ||
       clean === 'android.torch.set on'
     ) {
       const res = await this.setTorch('on');
@@ -245,7 +247,9 @@ export class AndroidDeviceAgent {
       clean.includes('stäng av lampan') ||
       clean.includes('stäng av ficklampan') ||
       clean.includes('turn off torch') ||
+      clean.includes('turn off the torch') ||
       clean.includes('turn off flashlight') ||
+      clean.includes('turn off the flashlight') ||
       clean === 'android.torch.set off'
     ) {
       const res = await this.setTorch('off');
@@ -260,13 +264,15 @@ export class AndroidDeviceAgent {
       clean.includes('lampans status') ||
       clean.includes('är lampan tänd') ||
       clean.includes('ficklampans status') ||
-      clean.includes('torch status')
+      clean.includes('torch status') ||
+      clean.includes('flashlight status') ||
+      clean.includes('is the torch on')
     ) {
       const status = await this.getStatus();
-      const stMsg = status.torchState === 'on' ? 'tänd' : (status.torchState === 'off' ? 'släckt' : 'okänd');
+      const stMsg = status.torchState === 'on' ? 'on' : (status.torchState === 'off' ? 'off' : 'unknown');
       return {
         handled: true,
-        response: `Ficklampans status är: ${stMsg}.`,
+        response: `Torch status: ${stMsg}.`,
         result: status
       };
     }

@@ -66,7 +66,7 @@ test('without a session the tunnel shows only the login page', t => {
   assert.doesNotMatch(String(s.run({path: '/ide-login'}).body), /<script>(?!<\/script>)[^<]/);
   assert.match(String(s.run({path: '/ide-login'}).body), /<script src="\/ide-login\.js"><\/script>/);
   const login = s.run({path: '/ide-login'});
-  assert.match(String(login.body), /Parkopplingskod/);
+  assert.match(String(login.body), /Pairing code/);
   assert.equal(login.passed, false);
 });
 

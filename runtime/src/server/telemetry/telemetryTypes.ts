@@ -7,11 +7,11 @@
  */
 
 export type EvidenceClass = 
-  | 'MEASURED'      // Verifierad fysisk/kernel-mätning via sysfs/proc/perf/API
-  | 'DERIVED'       // Deterministiskt matematiskt härledd från verifierade basmätningar
-  | 'ESTIMATED'     // Statistisk inferens eller Bayesian prior
-  | 'SIMULATED'     // Mockad eller simulerad i UI/testläge
-  | 'UNAVAILABLE';  // Ingen tillgänglig sensor/mätare (aldrig fallback till gissningar)
+  | 'MEASURED'      // Verified physical/kernel measurement via sysfs/proc/perf/API
+  | 'DERIVED'       // Deterministically derived from verified base measurements
+  | 'ESTIMATED'     // Statistical inference or Bayesian prior
+  | 'SIMULATED'     // Mocked or simulated in UI/test mode
+  | 'UNAVAILABLE';  // No sensor/meter available (never falls back to guesses)
 
 export type TelemetryMetricType = 'gauge' | 'counter' | 'histogram' | 'event';
 
