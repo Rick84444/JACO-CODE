@@ -325,7 +325,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               content:tr('Stopp begärt. Pågående steg kan fortfarande avslutas; kontrollera uppdragets slutstatus.','Stop requested. An in-flight step may still finish; check the mission final status.'),
               meta:'Mission '+active.id+' · cancellation requested'});
           } else {
-            if (!onSteerMission || active.status!=='ACTIVE') throw new Error('MISSION_STEER_NOT_AVAILABLE');
+            if (!onSteerMission || active.status!=='ACTIVE' || typeof controlCommand.instruction !== 'string') throw new Error('MISSION_STEER_NOT_AVAILABLE');
             const updated=await onSteerMission(active.id,controlCommand.instruction,crypto.randomUUID());
             await appendMessage({id:crypto.randomUUID(),role:'system',
               content:tr('Instruktionen är sparad för nästa planeringsgräns; pågående verktyg avbryts inte.','Direction saved for the next planning boundary; in-flight tools are not interrupted.'),
