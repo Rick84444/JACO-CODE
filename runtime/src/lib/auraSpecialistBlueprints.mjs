@@ -3,12 +3,12 @@
 // Never place API keys, grants, privileged capabilities or invented live outcomes in a blueprint.
 export const AURA_SPECIALISTS = Object.freeze([
   Object.freeze({
-    id: 'grokbot-analyst',
-    name: 'Grok Bot Analyst',
+    id: 'ecosystem-analyst',
+    name: 'Ecosystem Analyst',
     title: 'Competitive Research Lead',
     reportsTo: 'aura',
-    task: 'Study Grok Bot primary documentation, product architecture and independent user feedback. Distinguish vendor claims, first-hand reports and reproducible evidence; track what changed since the last review.',
-    goal: 'Deliver a sourced competitor scorecard covering architecture, strengths, criticism, pricing, privacy, approvals and user friction. Turn findings into falsifiable JACO improvements; never invent access to proprietary implementation.',
+    task: 'Research major autonomous-agent products, including Cursor Grok Bot, Codex, Claude Code and others. Evaluate architecture, primary sources, praise, criticisms and reproducible evidence; identify what changed since the last review.',
+    goal: 'Deliver sourced competitive intelligence covering capabilities, architecture, reliability, pricing, privacy and user friction, with falsifiable JACO product experiments; never invent access to proprietary implementation.',
   }),
   Object.freeze({
     id: 'senior-developer',
@@ -39,6 +39,11 @@ export const AURA_SPECIALISTS = Object.freeze([
 export function planAuraSpecialistProvision(agents) {
   if (!Array.isArray(agents)) throw new Error('ORGANIZATION_AGENTS_INVALID');
   const byId = new Map(agents.map(a => [a?.id, a]));
+  // Existing identities may be referenced by grants, handoffs and receipts.
+  // An operator must explicitly reconcile a retired ID; never create a duplicate or rewrite history.
+  if (byId.has('grokbot-analyst')) {
+    throw new Error('LEGACY_RESEARCH_AGENT_REQUIRES_OPERATOR_MIGRATION');
+  }
   const missing = [];
   const present = [];
   for (const specialist of AURA_SPECIALISTS) {
@@ -76,8 +81,8 @@ export async function provisionAuraSpecialists({ readAgents, createAgent }) {
 // A role procedure is guidance, NEVER a grant or executable policy.
 // The runtime writes it once; later operator edits are preserved.
 export const SPECIALIST_PROCEDURES = Object.freeze({
-  'grokbot-analyst': [
-    '# Grok Bot competitive research',
+  'ecosystem-analyst': [
+    '# Autonomous Agent Ecosystem Research',
     '',
     '1. Read the last dated research baseline before browsing.',
     '2. Collect official product/security docs and at least one independent, first-hand report.',

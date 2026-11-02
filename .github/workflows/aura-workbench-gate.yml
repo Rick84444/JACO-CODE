@@ -89,6 +89,13 @@ on:
       - 'runtime/src/components/AuraAgentBoard.tsx'
       - 'runtime/src/lib/auraSpecialistBlueprints.mjs'
       - 'tests/nova/aura-specialists.test.mjs'
+      - 'agents/jaco-cli.mjs'
+      - 'agents/lib/terminal-ide.mjs'
+      - 'tests/nova/jaco-terminal-ide.test.mjs'
+      - 'runtime/bin/jaco'
+      - 'JACO-Terminal.cmd'
+      - 'tools/join-hub.mjs'
+      - 'runtime/src/sdk/jaco-client.mjs'
       - 'runtime/src/server/connected/agentOrganization.mjs'
       - 'tests/nova/agent-organization.test.mjs'
       - 'runtime/src/components/AuraOrganizationPanel.tsx'
@@ -179,6 +186,13 @@ on:
       - 'runtime/src/components/AuraAgentBoard.tsx'
       - 'runtime/src/lib/auraSpecialistBlueprints.mjs'
       - 'tests/nova/aura-specialists.test.mjs'
+      - 'agents/jaco-cli.mjs'
+      - 'agents/lib/terminal-ide.mjs'
+      - 'tests/nova/jaco-terminal-ide.test.mjs'
+      - 'runtime/bin/jaco'
+      - 'JACO-Terminal.cmd'
+      - 'tools/join-hub.mjs'
+      - 'runtime/src/sdk/jaco-client.mjs'
       - 'runtime/src/server/connected/agentOrganization.mjs'
       - 'tests/nova/agent-organization.test.mjs'
       - 'runtime/src/components/AuraOrganizationPanel.tsx'
@@ -206,8 +220,10 @@ jobs:
       - name: Activation and provider truth regressions
         run: |
           node --check agents/jaco-cli.mjs
+          node --check agents/lib/terminal-ide.mjs
+          node --check tools/join-hub.mjs
           node --check agents/lib/activate.mjs
-          node --test tests/nova/activate.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/planner-choice.test.mjs
+          node --test tests/nova/jaco-terminal-ide.test.mjs tests/nova/activate.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/planner-choice.test.mjs
           bash -n runtime/bin/jaco
       - name: Gameboard projection and deterministic simulator
         run: node --experimental-sqlite --test tests/nova/gameboard-fabric.test.mjs tests/nova/gameboard-exchange.test.mjs
