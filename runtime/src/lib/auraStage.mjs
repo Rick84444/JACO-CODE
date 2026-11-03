@@ -60,3 +60,29 @@ export function cdpRefreshDelay(failures = 0) {
 }
 
 export function stageFileAllowed(path) { return safeProjectPath(path); }
+
+// A conclusive result is the one thing the operator should never have to go looking for:
+// the work either produced verified evidence, failed, or ended with an unknown outcome.
+// Returning the event lets the workspace show the receipt without being asked, which is
+// the same bound the live stage uses for its own automatic capture.
+export const EVIDENCE_SURFACE_MAX_AGE_MS = 30_000;
+export function evidenceToSurface(events = [], {
+  now = Date.now(), pinned = false, hidden = false, handledId = null,
+  maxAgeMs = EVIDENCE_SURFACE_MAX_AGE_MS,
+} = {}) {
+  // A view the operator pinned is their explicit choice and is never taken from them,
+  // and a hidden tab must not collect a surface change the operator did not see happen.
+  if (pinned || hidden || !Array.isArray(events)) return null;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    const outcome = event?.evidence?.outcome;
+    if (outcome !== 'verified' && outcome !== 'failed' && outcome !== 'unknown') continue;
+    // Only the newest conclusive result decides. Already surfaced means nothing new happened.
+    if (event.id === handledId) return null;
+    // History is replayed after a restart; a replayed receipt must never appear to be fresh.
+    const age = now - Date.parse(event.at);
+    if (!Number.isFinite(age) || age < 0 || age > maxAgeMs) return null;
+    return event;
+  }
+  return null;
+}

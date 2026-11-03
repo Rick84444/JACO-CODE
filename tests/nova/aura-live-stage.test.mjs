@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { auraStageCandidate, auraMaterialKind, auraStageHistory, stageFileAllowed } from '../../runtime/src/lib/auraStage.mjs';
+import { auraStageCandidate, auraMaterialKind, auraStageHistory, stageFileAllowed,
+  evidenceToSurface, EVIDENCE_SURFACE_MAX_AGE_MS } from '../../runtime/src/lib/auraStage.mjs';
 
 const event = (id, category, text, outcome='observed', path=null, more={})=>({
   id, category, text, missionId:'mission-1', at:'2026-10-21T12:00:00Z', type:'NOVA_ACTION_RESULT',
@@ -125,4 +126,50 @@ test('routine reads of HTML and images never replace the material being delivere
 test('history orders groups by their latest actual occurrence, including interleaved repeats',()=>{
  const history=auraStageHistory([event('a1','action','Läs A'),event('b1','action','Läs B'),event('a2','action','Läs A')]);
  assert.deepEqual(history.map(entry=>[entry.event.id,entry.count]),[['a2',2],['b1',1]]);
+});
+
+// Evidence surfaces itself: the operator should not have to open a tab to learn that the
+// work finished and is provable. These cover the four reasons it must stay quiet instead.
+const at = (now, ageMs) => new Date(now - ageMs).toISOString();
+const result = (id, outcome, when) => ({
+  id, category:'result', text:'Resultat', missionId:'mission-1', at:when, type:'NOVA_ACTION_RESULT',
+  evidence:{outcome,path:null,url:null,commit:null,exitCode:null,error:null},
+});
+
+test('A fresh conclusive result surfaces itself, whichever conclusion it reached',()=>{
+  const now=Date.parse('2026-11-03T12:00:00Z');
+  for(const outcome of ['verified','failed','unknown']){
+    const list=[result('observed-1','observed',at(now,1_000)),result('r',outcome,at(now,1_000))];
+    assert.equal(evidenceToSurface(list,{now})?.id,'r',outcome);
+  }
+});
+
+test('An inconclusive feed surfaces nothing',()=>{
+  const now=Date.parse('2026-11-03T12:00:00Z');
+  const list=[result('a','observed',at(now,1_000)),result('b','unverified',at(now,500))];
+  assert.equal(evidenceToSurface(list,{now}),null);
+  assert.equal(evidenceToSurface([],{now}),null);
+});
+
+test('A pinned view is the operator\'s choice and is never taken from them',()=>{
+  const now=Date.parse('2026-11-03T12:00:00Z');
+  const list=[result('r','verified',at(now,1_000))];
+  assert.equal(evidenceToSurface(list,{now,pinned:true}),null);
+  assert.equal(evidenceToSurface(list,{now,hidden:true}),null,'a hidden tab saw nothing happen');
+});
+
+test('Replayed history never surfaces as though it just happened',()=>{
+  const now=Date.parse('2026-11-03T12:00:00Z');
+  assert.equal(evidenceToSurface([result('old','verified',at(now,EVIDENCE_SURFACE_MAX_AGE_MS+1))],{now}),null);
+  assert.equal(evidenceToSurface([result('fresh','verified',at(now,EVIDENCE_SURFACE_MAX_AGE_MS-1))],{now})?.id,'fresh');
+  assert.equal(evidenceToSurface([result('skewed','verified',at(now,-5_000))],{now}),null,'a future timestamp is not evidence of freshness');
+  assert.equal(evidenceToSurface([result('broken','verified','not-a-date')],{now}),null);
+});
+
+test('The same receipt surfaces once, and a newer one surfaces again',()=>{
+  const now=Date.parse('2026-11-03T12:00:00Z');
+  const first=[result('r1','verified',at(now,1_000))];
+  assert.equal(evidenceToSurface(first,{now,handledId:'r1'}),null,'nothing new happened');
+  const second=[...first,result('r2','verified',at(now,200))];
+  assert.equal(evidenceToSurface(second,{now,handledId:'r1'})?.id,'r2');
 });

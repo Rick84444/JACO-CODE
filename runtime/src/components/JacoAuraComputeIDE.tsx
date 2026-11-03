@@ -45,7 +45,7 @@ import { CognitiveEvidence } from './CognitiveEventCard';
 import { CognitivePreview } from './CognitivePreview';
 import { AuraLiveStage } from './AuraLiveStage';
 import { MissionCard } from './MissionCard';
-import { auraStageCandidate, auraMaterialKind, stageFileAllowed } from '../lib/auraStage.mjs';
+import { auraStageCandidate, auraMaterialKind, stageFileAllowed, evidenceToSurface } from '../lib/auraStage.mjs';
 import { auraPresence } from '../lib/auraPresence.mjs';
 import { useCognitiveLive, type CognitiveEvent } from '../hooks/useCognitiveLive';
 import { toCognitiveEvent, liveWorkspaceStatus } from '../lib/cognitiveEvents.mjs';
@@ -859,6 +859,22 @@ export const JacoAuraComputeIDE: React.FC = () => {
       setSelectedFile(candidate.event.evidence.path);
     }
   },[candidate?.event.id,workspacePinned,projectKey,selectedFile]);
+  const surfacedEvidence=useRef<string|null>(null);
+  useEffect(()=>{
+    // Knowing that the work is done and provable is the product's whole promise, so the
+    // receipt comes to the operator instead of waiting behind a tab they must remember.
+    // evidenceToSurface holds every reason to stay quiet: a pinned view, a hidden tab,
+    // replayed history, and a receipt already shown.
+    const event=evidenceToSurface(cognitiveEvents,{
+      pinned:workspacePinned,
+      hidden:typeof document!=='undefined'&&document.visibilityState==='hidden',
+      handledId:surfacedEvidence.current,
+    });
+    if(!event) return;
+    surfacedEvidence.current=event.id;
+    setSelectedEvidence(event);
+    setWorkspaceView('evidence');
+  },[cognitiveEvents,workspacePinned]);
   const selectedStage = focusedEvent ? {event:focusedEvent,material:auraMaterialKind(focusedEvent)} : candidate;
   const stagePath = selectedStage?.material==='html' ? selectedStage.event.evidence.path : null;
   const stageFile = stagePath && selectedFile===stagePath ? fileView : null;
