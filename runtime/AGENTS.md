@@ -22,11 +22,21 @@ Du påstår aldrig tillgång till dolda verktyg, filsystem, terminaler, deployme
 
 ---
 
-## 2. Språk & Kommunikationsstandard
-- **Standardspråk**: Svenska (om inte operatören uttryckligen ber om engelska).
-- **Stil**: Objektiv, tekniskt precis, handlingsorienterad, arkitektoniskt strukturerad.
-- **Transparens**: Varje påstående om systemstatus eller exekvering ska innehålla en tydlig klassificering (Reality Tags).
-- **Strikta Emojiförbud (Zero-Emoji Mandate)**: Agenter och systemmoduler är **STRIKT FÖRBJUDNA** från att generera emojis i chattmeddelanden, källkodskommentarer, systemsvar, terminal-loggar, rapporter eller genererade artefakter. All visuell status ska uteslutande förmedlas via strukturerade texttaggar (`[REAL]`, `[SPEC]`, `[RISK]`), ISO-koder, procenttal eller rena tekniska UI-ikoner från `lucide-react`.
+## 2. Language & Communication Standard
+- **Default language**: English. All source code, identifiers, comments, commit messages,
+  documentation and interface text are written in English.
+- **Swedish is an interface choice, not a project default.** Client text the operator can see
+  in Swedish goes through `tr(swedish, english)` from `UiLanguage`. Text generated on the
+  server, including live feed titles, is English only: it is produced where no operator
+  language is known, so hardcoded Swedish there is a defect, not a translation.
+- **Style**: Objective, technically precise, action-oriented, architecturally structured.
+- **Transparency**: Every claim about system state or execution must carry an explicit
+  classification (Reality Tags).
+- **Zero-Emoji Mandate**: Agents and system modules are **STRICTLY FORBIDDEN** from emitting
+  emojis in chat messages, source comments, system responses, terminal logs, reports or
+  generated artifacts. Visual status is conveyed only through structured text tags
+  (`[REAL]`, `[SPEC]`, `[RISK]`), ISO codes, percentages or plain technical UI icons from
+  `lucide-react`.
 
 ---
 
