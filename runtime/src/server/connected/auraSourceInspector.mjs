@@ -101,8 +101,8 @@ export function createAuraSourceInspector({ candidateRoots = [] } = {}) {
         if (!info.isFile() || !EXTENSIONS.has(path.extname(name)) || info.size > MAX_FILE_BYTES || scannedBytes + info.size > MAX_SEARCH_BYTES) continue;
         scannedFiles++; scannedBytes += info.size;
         const contents = fs.readFileSync(next, 'utf8');
-        if (contents.includes('\\0')) continue;
-        const lines = contents.split(/\\r?\\n/);
+        if (contents.includes('\0')) continue;
+        const lines = contents.split(/\r?\n/);
         for (let i = 0; i < lines.length && matches.length < 20; i++) {
           if (lines[i].toLowerCase().includes(needle)) matches.push({
             path: path.relative(root, next).split(path.sep).join('/'), line: i + 1,
@@ -115,7 +115,7 @@ export function createAuraSourceInspector({ candidateRoots = [] } = {}) {
     if (!st.isFile() || !EXTENSIONS.has(path.extname(actual))) throw new Error('JACO_SOURCE_FILE_TYPE_REFUSED');
     if (st.size > MAX_FILE_BYTES) throw new Error('JACO_SOURCE_FILE_TOO_LARGE');
     const data = fs.readFileSync(actual, 'utf8');
-    if (data.includes('\\0')) throw new Error('JACO_SOURCE_BINARY_REFUSED');
+    if (data.includes('\0')) throw new Error('JACO_SOURCE_BINARY_REFUSED');
     const start = Number.isSafeInteger(Number(offset)) && Number(offset) >= 0 ? Number(offset) : 0;
     const requested = Number.isSafeInteger(Number(limit)) ? Number(limit) : 12_000;
     const count = Math.min(MAX_RESPONSE_CHARS, Math.max(1, requested));
