@@ -9,7 +9,7 @@
 // validates the task against the mission's allowed tasks, contract and approvals), execute, finish
 // with a receipt. A step the runtime refuses is reported to the model and costs the mission nothing;
 // a step that runs and fails counts against the mission's failure budget as before.
-import { checkedReceipt } from './mission-client.mjs';
+import { BATCHABLE, checkedReceipt } from './mission-client.mjs';
 import { redactDeep } from './secret-capture.mjs';
 import { StuckDetector } from './stuck-detector.mjs';
 import { condenseMessages } from './condenser.mjs';
@@ -69,6 +69,7 @@ export function contextPacketIntro(mission, {
 export async function runAgentMission({
   client, owner, chat, toolsFor, execute, system,
   observe = async () => null, intro = introMessage, refreshIntro = false, acceptMission = null,
+  preflight = null,
   onActivity = async () => {}, onReceipt = async () => {}, log = () => {},
   maxSteps = 40, maxModelErrors = 3, maxIdleReplies = 2,
   maxContextChars = 60_000, onCondense = () => {}, stuck = new StuckDetector(),
@@ -123,6 +124,30 @@ export async function runAgentMission({
   };
 
   try {
+    // Coding contracts are first-class native missions. Run the SAME repository,
+    // runtime and browser preflight as the structured planner before asking the
+    // model for a step. Preflight has a real planning lease; it cannot grant
+    // tools, change the coding contract or bypass the runtime begin/finish gates.
+    if (mission.contract && typeof preflight === 'function') {
+      let lease = null;
+      try {
+        const claimed = await client.claim(mission.id, owner);
+        lease = { owner, token: claimed.token };
+        const review = await preflight({ mission, lease });
+        await client.release(mission.id, lease);
+        lease = null;
+        if (review?.blocked) {
+          const reason = String(review.reason || 'Coding preflight rejected').slice(0, 500);
+          return end({ blocked: true, reason }, { error: `PLANNER_BLOCKED:${reason}` });
+        }
+      } catch (error) {
+        if (lease) await client.release(mission.id, lease).catch(() => {});
+        const latest = await client.get(mission.id).catch(() => null);
+        // A budget or cancellation gate may have already terminated the mission.
+        if (latest && latest.status !== 'ACTIVE') return { executed: false, stopped: latest.status, reason: errorText(error) };
+        return { executed: false, deferred: true, reason: `PREFLIGHT_FAILED:${errorText(error)}` };
+      }
+    }
     // Steps bound the work; turns bound the conversation (refusals and retries do not count as steps).
     while (steps < maxSteps && turns++ < maxSteps * 2) {
       // Check the durable operator input before every model turn. Never abort
@@ -242,6 +267,12 @@ export async function runAgentMission({
         }
         if ((mission.steering?.revision || 0) !== modelSteerVersion) {
           for (const rest of calls.slice(i + 1)) messages.push({ role: 'tool', tool_call_id: rest.id, content: 'SKIPPED: operator changed direction during the previous action' });
+          break;
+        }
+        // A model must see the result of any state-changing action before
+        // proposing another one. It may batch reads and tests, never writes.
+        if (!BATCHABLE.has(task.type)) {
+          for (const rest of calls.slice(i + 1)) messages.push({ role: 'tool', tool_call_id: rest.id, content: 'SKIPPED: observe the previous mutation receipt and replan the next action' });
           break;
         }
       }
