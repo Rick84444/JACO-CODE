@@ -1,8 +1,8 @@
 // Durable at-most-once dispatch for identified browser writes. A lost response
 // is not permission to execute the same action again.
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, openSync, writeSync, fsyncSync, closeSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, openSync, writeSync, fsyncSync, closeSync, readFileSync, renameSync } from 'node:fs';
+import { join, resolve, dirname } from 'node:path';
 
 const ACTION_ID = /^[A-Za-z0-9][A-Za-z0-9:_-]{7,127}$/;
 function canonical(value) {
@@ -13,7 +13,31 @@ function canonical(value) {
 const hash = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 const blocked = (actionId, error, extra = {}) => ({ ok: false, verified: false, actionId, error, ...extra });
 
-export function createBrowserActionJournal(directory) {
+function syncDirectory(directory) {
+  // POSIX directory fsync makes file creation/rename durable; if unsupported,
+  // block the write rather than promise at-most-once after a power failure.
+  const fd = openSync(directory, 'r');
+  try { fsyncSync(fd); }
+  finally { closeSync(fd); }
+}
+
+function ensureDurableDirectory(directory, syncDir) {
+  // Always resync the entire ancestor chain. An earlier initialization may
+  // have created directories but failed before their parent entries were
+  // durable; checking existsSync alone is insufficient on a later retry.
+  const chain = [];
+  let cursor = resolve(directory);
+  for (;;) {
+    chain.push(cursor);
+    const parent = dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  for (const candidate of chain.reverse()) syncDir(candidate);
+}
+
+export function createBrowserActionJournal(directory, { syncDir = syncDirectory } = {}) {
   if (!directory) throw new Error('ACTION_JOURNAL_DIRECTORY_REQUIRED');
   return {
     async execute({ actionId, kind, payload, perform }) {
@@ -21,7 +45,7 @@ export function createBrowserActionJournal(directory) {
       if (!['navigate', 'click', 'type'].includes(kind) || typeof perform !== 'function') return blocked(actionId, 'ACTION_INVALID');
       const fingerprint = hash({ kind, payload });
       const file = join(directory, hash(actionId) + '.json');
-      try { mkdirSync(directory, { recursive: true, mode: 0o700 }); }
+      try { ensureDurableDirectory(directory, syncDir); }
       catch { return blocked(actionId, 'ACTION_JOURNAL_UNAVAILABLE'); }
       const entry = { actionId, fingerprint, status: 'PENDING', createdAt: new Date().toISOString() };
       let fd;
@@ -30,6 +54,8 @@ export function createBrowserActionJournal(directory) {
         fd = openSync(file, 'wx', 0o600);
         try { writeSync(fd, JSON.stringify(entry)); fsyncSync(fd); }
         finally { closeSync(fd); }
+        // The claim must be visible after a power loss BEFORE browser dispatch.
+        syncDir(directory);
       } catch (error) {
         if (fd !== undefined) return blocked(actionId, 'ACTION_JOURNAL_UNAVAILABLE');
         if (error?.code !== 'EEXIST') return blocked(actionId, 'ACTION_JOURNAL_UNAVAILABLE');
@@ -37,7 +63,11 @@ export function createBrowserActionJournal(directory) {
         try { prior = JSON.parse(readFileSync(file, 'utf8')); }
         catch { return blocked(actionId, 'ACTION_JOURNAL_UNREADABLE', { outcomeUnknown: true }); }
         if (prior.actionId !== actionId || prior.fingerprint !== fingerprint) return blocked(actionId, 'ACTION_ID_CONFLICT');
-        if (prior.status === 'VERIFIED') return { ok: true, verified: true, actionId, replayed: true, receiptId: prior.receiptId };
+        if (prior.status === 'VERIFIED') {
+          try { syncDir(directory); }
+          catch { return blocked(actionId, 'ACTION_JOURNAL_UNAVAILABLE', { outcomeUnknown: true }); }
+          return { ok: true, verified: true, actionId, replayed: true, receiptId: prior.receiptId };
+        }
         return blocked(actionId, 'ACTION_RECONCILIATION_REQUIRED', { outcomeUnknown: true });
       }
       try {
@@ -46,7 +76,13 @@ export function createBrowserActionJournal(directory) {
         const receiptId = randomUUID();
         const updated = { ...entry, status: verified ? 'VERIFIED' : 'UNKNOWN', receiptId, finishedAt: new Date().toISOString() };
         const tmp = file + '.' + randomUUID() + '.tmp';
-        try { writeFileSync(tmp, JSON.stringify(updated), { flag: 'wx', mode: 0o600 }); renameSync(tmp, file); }
+        try {
+          const receiptFd = openSync(tmp, 'wx', 0o600);
+          try { writeSync(receiptFd, JSON.stringify(updated)); fsyncSync(receiptFd); }
+          finally { closeSync(receiptFd); }
+          renameSync(tmp, file);
+          syncDir(directory);
+        }
         catch { return blocked(actionId, 'ACTION_JOURNAL_UPDATE_FAILED', { outcomeUnknown: true }); }
         return { ...result, actionId, receiptId, ...(!verified ? { verified: false, outcomeUnknown: true } : {}) };
       } catch {
