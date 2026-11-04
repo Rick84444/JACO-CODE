@@ -67,7 +67,7 @@ test('Aura exposes real read-only runit inspection and makes a clear repair requ
   assert.match(server, /termux_services:/);
   assert.match(server, /execFileAsync\('sv', \['status', target\]/);
   assert.doesNotMatch(server.slice(server.indexOf('termux_services:'), server.indexOf('attachment_read:', server.indexOf('termux_services:'))), /'restart'|'up'|'down'/);
-  assert.match(bridge, /Be inte användaren att återigen välja/);
+  assert.match(bridge, /Do not ask the operator again to choose/);
   assert.match(bridge, /mission_list/);
   assert.match(bridge, /start_goal/);
 });

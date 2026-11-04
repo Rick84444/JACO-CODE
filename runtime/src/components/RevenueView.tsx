@@ -40,7 +40,7 @@ export const RevenueView: React.FC = () => {
       </div>
       <div className="flex-1 overflow-auto px-2 space-y-2 text-[11px]">
         {!data && <div className="text-slate-500 px-1">Fetching from Stripe…</div>}
-        {data && data.configured === false && <div className="border border-amber-900 text-amber-300 rounded p-2">Stripe är inte konfigurerat för denna installation.</div>}
+        {data && data.configured === false && <div className="border border-amber-900 text-amber-300 rounded p-2">Stripe is not configured for this installation.</div>}
         {data?.error && <div className="border border-red-900 text-red-300 rounded p-2 break-words">Stripe could not be read: {data.error}</div>}
         {data?.success && data.configured && !data.error && (
           <>
@@ -48,7 +48,7 @@ export const RevenueView: React.FC = () => {
               <div className="text-[9px] text-slate-500">PAID, LAST 30 DAYS</div>
               <div className="text-lg text-white font-semibold">{money(d30?.revenue)}</div>
               <div className="text-[10px] text-slate-400">
-                {d30?.paidCharges ?? 'Ej observerat'} paid charge(s) · checkout: {d30?.checkoutSessionsPaid ?? '?'} paid of {d30?.checkoutSessionsCreated ?? '?'} started
+                {d30?.paidCharges ?? 'Not observed'} paid charge(s) · checkout: {d30?.checkoutSessionsPaid ?? '?'} paid of {d30?.checkoutSessionsCreated ?? '?'} started
                 {d30 && !d30.complete && <span className="text-amber-400"> (first 500 only)</span>}
               </div>
             </div>
@@ -63,7 +63,7 @@ export const RevenueView: React.FC = () => {
             </div>
             <div className="border border-[#333] bg-[#1d1d1d] rounded p-2">
               <div className="text-[9px] text-slate-500 mb-1">LATEST CHARGES</div>
-              {(data.recentCharges || []).length === 0 && <div className="text-slate-500">Inga betalningar finns i den hämtade listan.</div>}
+              {(data.recentCharges || []).length === 0 && <div className="text-slate-500">No payments in the fetched list.</div>}
               {(data.recentCharges || []).map(c => (
                 <div key={c.id} className="flex gap-2 text-[10px] py-0.5 min-w-0">
                   <span className="text-slate-500 shrink-0">{c.created.slice(0, 10)}</span>

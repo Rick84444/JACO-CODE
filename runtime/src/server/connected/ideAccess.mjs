@@ -27,8 +27,8 @@ export function ideSessionOf(req, registry) {
 }
 
 const loginPage = () => `<!doctype html>
-<html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#050b11"><title>JACO IDE - logga in</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#050b11"><title>JACO IDE - sign in</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#050b11;color:#e2e8f0;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:16px}
 main{width:100%;max-width:380px}h1{font-size:22px;margin:0 0 4px;letter-spacing:.02em}p{color:#94a3b8;font-size:14px;margin:0 0 20px}
@@ -36,10 +36,10 @@ label{display:block;font-size:13px;color:#94a3b8;margin-bottom:6px}input{width:1
 button{width:100%;margin-top:14px;padding:14px;border:0;border-radius:10px;background:#0e7490;color:#fff;font-size:16px;font-weight:600}button:disabled{opacity:.5}
 #msg{min-height:22px;margin-top:12px;font-size:14px;color:#fca5a5}small{display:block;margin-top:24px;color:#64748b;font-size:12px}
 </style></head><body><main>
-<h1>JACO IDE</h1><p>Skapa en kod på datorn: Enheter, Lägg till enhet, Webbläsare. Koden gäller en gång i 10 minuter.</p>
-<form id="f"><label for="c">Parkopplingskod</label><input id="c" autocomplete="one-time-code" inputmode="text" placeholder="XXXXX-XXXXX" maxlength="11" required>
-<button id="b" type="submit">Logga in</button><div id="msg" role="status"></div></form>
-<small>Inloggningen gäller i ${SESSION_DAYS} dagar på den här enheten och kan spärras från datorn.</small>
+<h1>JACO IDE</h1><p>Create a code on the computer: Devices, Add device, Browser. The code is valid once, for 10 minutes.</p>
+<form id="f"><label for="c">Pairing code</label><input id="c" autocomplete="one-time-code" inputmode="text" placeholder="XXXXX-XXXXX" maxlength="11" required>
+<button id="b" type="submit">Sign in</button><div id="msg" role="status"></div></form>
+<small>The sign-in lasts ${SESSION_DAYS} days on this device and can be revoked from the computer.</small>
 </main><script src="/ide-login.js"></script></body></html>`;
 
 // A file of its own: the production CSP is script-src 'self', which blocks inline scripts. Inline, the
@@ -48,8 +48,8 @@ export const LOGIN_SCRIPT = `const f=document.getElementById('f'),b=document.get
 f.addEventListener('submit',async e=>{e.preventDefault();b.disabled=true;m.textContent='';
 try{const r=await fetch('/ide-auth/pair',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:document.getElementById('c').value})});
 const d=await r.json().catch(()=>({}));if(r.ok&&d.success){location.replace('/');return}
-m.textContent=d.error==='PAIRING_CODE_INVALID_OR_EXPIRED'?'Fel eller utgången kod. Skapa en ny på datorn.':d.error==='TOO_MANY_ATTEMPTS'||d.error==='PAIRING_LOCKED_TRY_LATER'?'För många försök. Vänta och försök igen.':'Inloggningen misslyckades ('+(d.error||r.status)+').'}
-catch{m.textContent='Hubben svarar inte.'}b.disabled=false});
+m.textContent=d.error==='PAIRING_CODE_INVALID_OR_EXPIRED'?'Wrong or expired code. Create a new one on the computer.':d.error==='TOO_MANY_ATTEMPTS'||d.error==='PAIRING_LOCKED_TRY_LATER'?'Too many attempts. Wait and try again.':'Sign-in failed ('+(d.error||r.status)+').'}
+catch{m.textContent='The hub is not responding.'}b.disabled=false});
 `;
 
 // Mounted first, before every route, static file and the Vite dev server.

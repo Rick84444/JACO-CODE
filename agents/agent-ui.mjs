@@ -25,7 +25,7 @@ if (!existsSync(CHAT_INBOX)) writeFileSync(CHAT_INBOX, "[]");
 if (!existsSync(CHAT_LOG)) writeFileSync(CHAT_LOG, "[]");
 
 const HTML = `<!DOCTYPE html>
-<html lang="sv">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -95,36 +95,36 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 <div class="header">
   <div class="pulse" id="pulse"></div>
   <h1>JACO Agent</h1>
-  <span class="status" id="hdr-status">Ansluter...</span>
+  <span class="status" id="hdr-status">Connecting...</span>
 </div>
 <div class="tabs">
-  <div class="tab active" onclick="switchTab('log')">Aktivitet</div>
+  <div class="tab active" onclick="switchTab('log')">Activity</div>
   <div class="tab" onclick="switchTab('state')">Status</div>
-  <div class="tab" onclick="switchTab('chat')">Chatt</div>
+  <div class="tab" onclick="switchTab('chat')">Chat</div>
 </div>
 
 <div id="log-panel"></div>
 
 <div id="state-panel">
   <div class="state-grid">
-    <div class="state-card"><h3>Revenue</h3><div class="state-val" id="s-rev">$0</div><div class="state-sub" id="s-rev-sub">0 transaktioner</div></div>
-    <div class="state-card"><h3>Tasks</h3><div class="state-val" id="s-tasks">0</div><div class="state-sub" id="s-tasks-sub">0 misslyckade</div></div>
+    <div class="state-card"><h3>Revenue</h3><div class="state-val" id="s-rev">$0</div><div class="state-sub" id="s-rev-sub">0 transactions</div></div>
+    <div class="state-card"><h3>Tasks</h3><div class="state-val" id="s-tasks">0</div><div class="state-sub" id="s-tasks-sub">0 failed</div></div>
     <div class="state-card"><h3>Ticks</h3><div class="state-val" id="s-ticks">0</div><div class="state-sub" id="s-uptime">Uptime: -</div></div>
-    <div class="state-card"><h3>Queue</h3><div class="state-val" id="s-queue">0</div><div class="state-sub">väntande uppgifter</div></div>
+    <div class="state-card"><h3>Queue</h3><div class="state-val" id="s-queue">0</div><div class="state-sub">queued tasks</div></div>
   </div>
   <div class="state-card" style="margin-top:8px">
-    <h3>Ytor (surfaces)</h3>
+    <h3>Surfaces</h3>
     <div id="s-surfaces"></div>
   </div>
 </div>
 
 <div id="chat-panel">
   <div id="chat-messages">
-    <div class="msg msg-agent"><div class="sender">JACO</div>Hej! Jag är din autonoma agent. Fråga vad du vill — eller ge mig ett uppdrag.</div>
+    <div class="msg msg-agent"><div class="sender">JACO</div>Hi! I am your autonomous agent. Ask anything — or give me a mission.</div>
   </div>
   <div class="chat-input-row">
-    <textarea id="chat-input" placeholder="Skriv ett meddelande eller uppdrag..." onkeydown="chatKey(event)"></textarea>
-    <button id="chat-send" onclick="sendChat()">Skicka</button>
+    <textarea id="chat-input" placeholder="Write a message or mission..." onkeydown="chatKey(event)"></textarea>
+    <button id="chat-send" onclick="sendChat()">Send</button>
   </div>
 </div>
 
@@ -153,7 +153,7 @@ function connectSSE() {
     document.getElementById('pulse').style.background = 'var(--green)';
   };
   sseSource.onerror = () => {
-    document.getElementById('hdr-status').textContent = 'Återansluter...';
+    document.getElementById('hdr-status').textContent = 'Reconnecting...';
     document.getElementById('pulse').style.background = 'var(--yellow)';
     setTimeout(connectSSE, 3000);
   };
@@ -171,7 +171,7 @@ function appendLog(entry) {
   const panel = document.getElementById('log-panel');
   const div = document.createElement('div');
   div.className = 'log-entry level-' + (entry.level||'info');
-  const ts = entry.ts ? new Date(entry.ts).toLocaleTimeString('sv-SE') : '';
+  const ts = entry.ts ? new Date(entry.ts).toLocaleTimeString('en-US') : '';
   div.innerHTML = \`<span class="log-ts">\${ts}</span><span class="log-icon"></span><span class="log-body"><span class="log-comp">[\${entry.component||''}]</span> <span class="log-msg">\${escHtml(entry.message||'')}</span></span>\`;
   panel.appendChild(div);
   logCount++;
@@ -185,9 +185,9 @@ async function refreshState() {
   try {
     const r = await fetch('/state'); const s = await r.json();
     document.getElementById('s-rev').textContent = '$' + (s.revenue?.total||0).toFixed(2);
-    document.getElementById('s-rev-sub').textContent = (s.revenue?.transactions?.length||0) + ' transaktioner';
+    document.getElementById('s-rev-sub').textContent = (s.revenue?.transactions?.length||0) + ' transactions';
     document.getElementById('s-tasks').textContent = s.completedTasks||0;
-    document.getElementById('s-tasks-sub').textContent = (s.failedTasks||0) + ' misslyckade';
+    document.getElementById('s-tasks-sub').textContent = (s.failedTasks||0) + ' failed';
     document.getElementById('s-ticks').textContent = s.ticks||0;
     const up = s.startedAt ? Math.floor((Date.now()-s.startedAt)/60000) : 0;
     document.getElementById('s-uptime').textContent = 'Uptime: '+up+'min';

@@ -77,9 +77,9 @@ test('cancelling a graph keeps its goal; the goal ends only on an explicit, conf
   assert.equal((await call(`/cortex/mission-graphs/${second.id}`)).data.status, 'CANCELLED');
 });
 
-// 2026-10-31: after every goal had been ended, SEER kept planning its own goal-less graphs every ~10 minutes.
-// Clearing the primary goal stored {} (memory.set serialises null as {}), and the governor read {} as
-// "the operator has a goal". An ended or cleared primary goal must leave the governor idle.
+// The old governor used to create goal-less graphs after a cancelled goal.
+// The Aura-only runtime no longer starts a self-scheduled governor. Legacy goal
+// clearing remains important, but old timer env values must not revive it.
 test('ending the primary goal clears it instead of leaving {} behind', { timeout: 30000 }, async t => {
   const call = await startSeer(t);
   const started = await call('/cortex/strategy/start', { goal: 'Observe the local runtime', horizon: 'short' });
@@ -90,13 +90,19 @@ test('ending the primary goal clears it instead of leaving {} behind', { timeout
   assert.equal((await call('/cortex/memory/seer.operator_primary_goal')).data.value, null, 'the cleared primary goal must not linger as {}');
 });
 
-test('a legacy {} primary goal does not let the governor plan goal-less work', { timeout: 30000 }, async t => {
+test('stale legacy governor settings cannot start a second agent or plan goal-less work', { timeout: 15000 }, async t => {
   const call = await startSeer(t, { SEER_GOVERNOR_INTERVAL_MS: '60000' });
-  // The value older builds left behind; the governor's startup turn runs 1.5 s after start.
+  // The historical value is still present, but the 1.5-second legacy
+  // startup-governor callback must not run without a fresh Aura opt-in.
   await call('/cortex/memory', { key: 'seer.operator_primary_goal', value: {}, source: 'operator' });
-  const skipped = await until(async () => (await call('/cortex/events')).data
-    .find(event => event.type === 'governor.skipped'), Boolean, 15000);
-  assert.equal(skipped.payload.reason, 'no_operator_goal');
+  const health = await call('/health');
+  assert.equal(health.data.agent_identity, 'aura');
+  assert.equal(health.data.independent_governor_enabled, false);
+  await new Promise(resolve => setTimeout(resolve, 1700));
+  const events = (await call('/cortex/events')).data;
+  assert.ok(!events.some(event => event.type === 'development_cycle.governor_turn'),
+    'stale SEER_GOVERNOR_INTERVAL_MS must not trigger independent model reasoning');
   const graphs = (await call('/cortex/mission-graphs')).data;
-  assert.equal((Array.isArray(graphs) ? graphs : graphs.graphs || []).length, 0, 'no graph may be planned without an operator goal');
+  assert.equal((Array.isArray(graphs) ? graphs : graphs.graphs || []).length, 0,
+    'no graph may be planned without an operator goal');
 });

@@ -48,11 +48,11 @@ export interface SystemModuleRoute {
 }
 
 export type EvidenceClass = 
-  | 'MEASURED'      // Verifierad fysisk/kernel-mätning via sysfs/proc/perf/API
-  | 'DERIVED'       // Deterministiskt matematiskt härledd från verifierade basmätningar
-  | 'ESTIMATED'     // Statistisk inferens eller Bayesian prior
-  | 'SIMULATED'     // Mockad eller simulerad i UI/testläge
-  | 'UNAVAILABLE';  // Ingen tillgänglig sensor/mätare (aldrig fallback till gissningar)
+  | 'MEASURED'      // Verified physical/kernel measurement via sysfs/proc/perf/API
+  | 'DERIVED'       // Deterministically derived from verified base measurements
+  | 'ESTIMATED'     // Statistical inference or Bayesian prior
+  | 'SIMULATED'     // Mocked or simulated in UI/test mode
+  | 'UNAVAILABLE';  // No available sensor/meter (never fall back to guesses)
 
 export interface DeviceTelemetry {
   batteryLevel: number; // old
@@ -854,13 +854,13 @@ export interface ContractEvaluationLog {
 
 export interface IntuitionContract {
   id: string;
-  humanIntuitionGoal: string; // Mänsklig intuition & slutmål
+  humanIntuitionGoal: string; // Human intuition & end goal
   clarifyingQuestionsAsked?: string[];
   operatorAnswers?: Record<string, string>;
-  fixedRules: string[]; // Fasta regler & guardrails (t.ex. budget, termiska gränser, teknikstack)
+  fixedRules: string[]; // Fixed rules & guardrails (e.g. budget, thermal limits, tech stack)
   status: IntuitionContractStatus;
   progressPercent: number; // calculated from verified goal progress, NOT premature 100%
-  isFulfilled: boolean; // Contract stays false until human intuition slutmål is proven
+  isFulfilled: boolean; // Contract stays false until the human intuition end goal is proven
   subGoals: ContractSubGoal[];
   dynamicallyCreatedSkills: { name: string; category: string; createdAt: string }[];
   generatedTools: { toolId: string; title: string; targetFile?: string; createdAt: string }[];

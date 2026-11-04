@@ -81,12 +81,12 @@ export async function checkProviderHealth(providerName: string): Promise<ModelPr
     const res = await pingOllama(p.endpoint);
     p.isHealthy = res.isHealthy;
     p.latencyMs = res.latencyMs;
-    p.details = res.error || (res.models.length > 0 ? `Modeller: ${res.models.join(', ')}` : 'Nåbar utan modeller');
+    p.details = res.error || (res.models.length > 0 ? `Models: ${res.models.join(', ')}` : 'Reachable without models');
   } else if (p.type === 'gemini') {
     const res = await pingGemini();
     p.isHealthy = res.isHealthy;
     p.latencyMs = res.latencyMs;
-    p.details = res.error || (res.hasApiKey ? 'Aktiv med giltig GEMINI_API_KEY' : 'Saknar API-nyckel');
+    p.details = res.error || (res.hasApiKey ? 'Active with valid GEMINI_API_KEY' : 'API key missing');
   }
 
   return p;
@@ -121,8 +121,8 @@ export function routeRequest(taskCategory: string, requiresPrivacy: boolean = fa
       return {
         provider: npu,
         reason: isGeminiInCooldown
-          ? 'Lokal on-device inferens aktiv under Gemini kvot-cooldown (429 mitigation)'
-          : 'Lokal on-device inferens prioriterad för fullständig datasekretess',
+          ? 'Local on-device inference active during Gemini quota cooldown (429 mitigation)'
+          : 'Local on-device inference prioritized for full data privacy',
         taskCategory
       };
     }
@@ -132,20 +132,20 @@ export function routeRequest(taskCategory: string, requiresPrivacy: boolean = fa
       return {
         provider: ollama,
         reason: isGeminiInCooldown
-          ? 'Lokal Ollama prioriterad under Gemini kvot-cooldown (429 mitigation)'
-          : 'Lokal Ollama prioriterad för lokal offline-exekvering',
+          ? 'Local Ollama prioritized during Gemini quota cooldown (429 mitigation)'
+          : 'Local Ollama prioritized for local offline execution',
         taskCategory
       };
     }
   }
 
-  // För komplex kodgranskning eller molnkapacitet om Gemini inte är i cooldown
+  // For complex code review or cloud capacity when Gemini is not in cooldown
   if (!isGeminiInCooldown) {
     const gemini = providers.find((p) => p.type === 'gemini' && p.isHealthy);
     if (gemini) {
       return {
         provider: gemini,
-        reason: 'Molnbaserad Gemini för avancerat multimodalt resonemang',
+        reason: 'Cloud Gemini for advanced multimodal reasoning',
         taskCategory
       };
     }
@@ -153,7 +153,7 @@ export function routeRequest(taskCategory: string, requiresPrivacy: boolean = fa
 
   return {
     provider: providers[0],
-    reason: 'Standard fallback-leverantör',
+    reason: 'Default fallback provider',
     taskCategory
   };
 }
@@ -235,6 +235,6 @@ export function updateProviderEndpoint(providerType: 'ollama' | 'gemini' | 'lite
   if (p) {
     p.endpoint = newEndpoint;
     p.isHealthy = true; // reset health when endpoint changes
-    console.log(`[ModelPool] Uppdaterade ${providerType} endpoint till ${newEndpoint}`);
+    console.log(`[ModelPool] Updated ${providerType} endpoint to ${newEndpoint}`);
   }
 }

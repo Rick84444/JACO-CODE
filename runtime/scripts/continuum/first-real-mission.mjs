@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * Kör en verklig mission genom hela Continuum-kedjan mot en LIVE server:
+ * Runs a real mission through the whole Continuum chain against a LIVE server:
  * mission -> commitment -> hub task -> edge agent claim/complete -> review
  * -> evidence -> mission FULFILLED.
  *
- * Detta är en intern kapabilitetsvalidering, INTE en extern A2A-affär:
- * det finns ingen extern motpart i den här miljön, så inget
- * intäkts-/settlement-steg körs eller fabriceras. Nästa verkliga
- * milstolpe är att koppla in en faktisk extern A2A-peer.
+ * This is an internal capability validation, NOT an external A2A deal:
+ * there is no external counterparty in this environment, so no
+ * revenue/settlement step is run or fabricated. The next real
+ * milestone is to connect an actual external A2A peer.
  *
- * Förutsätter: Continuum-servern körs redan (t.ex. på :3020) och att en
- * edge-agent (scripts/jaco-runtime-daemon.ts) är ansluten och pollar
- * EDGE_TELEMETRY_SYNC-tasks.
+ * Assumes: the Continuum server is already running (e.g. on :3020) and that an
+ * edge agent (scripts/jaco-runtime-daemon.ts) is connected and polling
+ * EDGE_TELEMETRY_SYNC tasks.
  */
 
 const HUB_URL = process.env.JACO_CONTINUUM_URL || 'http://127.0.0.1:3020';
@@ -59,7 +59,7 @@ async function main() {
   log('CHECK', `Eligible edge agent: ${edgeAgent.id}`);
 
   const mission = (await call('/api/continuum/missions', 'POST', {
-    objective: 'Verifiera end-to-end att Continuum Edge Bridge (PODAR) registrerar en nod, håller LIVE, hämtar en verklig hub-task och slutför den med verifierad evidence.',
+    objective: 'Verify end to end that the Continuum Edge Bridge (PODAR) registers a node, stays LIVE, fetches a real hub task and completes it with verified evidence.',
     state: 'ACTIVE',
     priority: 60,
     tags: ['internal-validation', 'edge-bridge', 'first-real-task'],
@@ -69,8 +69,8 @@ async function main() {
 
   const commitment = (await call('/api/continuum/commitments', 'POST', {
     missionId: mission.id,
-    title: 'Edge agent hämtar och slutför en EDGE_TELEMETRY_SYNC hub-task',
-    description: 'Verifierar att claim/complete-flödet i runtimeHub fungerar med den reparerade PODAR-bryggan.',
+    title: 'Edge agent fetches and completes an EDGE_TELEMETRY_SYNC hub task',
+    description: 'Verifies that the claim/complete flow in runtimeHub works with the repaired PODAR bridge.',
     execution: { kind: 'EDGE_TELEMETRY_SYNC', consequence: 'REVERSIBLE' },
   })).commitment;
   log('COMMITMENT', `created ${commitment.id}`);
@@ -94,9 +94,9 @@ async function main() {
   }
   log('TASK', `completed by ${completed.assignedAgentId}, evidenceRefs=${JSON.stringify(completed.evidenceRefs)}`);
 
-  // Legitim peer-review: kör den deterministiska idle-audit-mekanismen som
-  // SEER faktiskt äger, mot verklig hub-state. Det uppfinner inga fynd -
-  // om inget avvikande hittas är noll findings ett sant resultat.
+  // Legitimate peer review: run the deterministic idle-audit mechanism that
+  // SEER actually owns, against real hub state. It invents no findings -
+  // if nothing anomalous is found, zero findings is a true result.
   const audit = await call('/api/continuum/reviews/audit-idle', 'POST', {
     reviewerAgentId: 'jaco-seer', staleAfterMs: 120_000,
   });

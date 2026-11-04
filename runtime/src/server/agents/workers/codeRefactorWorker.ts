@@ -22,22 +22,22 @@ export interface CodeRefactorResult {
 const PROJECT_ROOT = process.cwd();
 
 /**
- * Säkerställer att filPath faktiskt hamnar innanför projektroten.
- * Blockerar path traversal (t.ex. '../../etc/passwd').
+ * Ensures that filePath actually resolves inside the project root.
+ * Blocks path traversal (e.g. '../../etc/passwd').
  */
 function resolveSafePath(filePath: string): string {
   const resolved = path.resolve(PROJECT_ROOT, filePath);
   const normalizedRoot = PROJECT_ROOT + path.sep;
   if (resolved !== PROJECT_ROOT && !resolved.startsWith(normalizedRoot)) {
-    throw new Error(`Path traversal blockerad: '${filePath}' ligger utanför projektroten.`);
+    throw new Error(`Path traversal blocked: '${filePath}' is outside the project root.`);
   }
   return resolved;
 }
 
 /**
- * Riktig syntaxkontroll via TypeScripts publika compiler-API (transpileModule).
- * Fångar parse-fel (obalanserade block, trasig JSX etc). Detta är en syntax-
- * kontroll, inte en fullständig typkontroll — för det, se qualityAuditorWorker.
+ * Real syntax check via the TypeScript public compiler API (transpileModule).
+ * Catches parse errors (unbalanced blocks, broken JSX etc). This is a syntax
+ * check, not a full type check; for that, see qualityAuditorWorker.
  */
 function checkSyntax(filePath: string, content: string): { valid: boolean; diagnostics: string[] } {
   const ext = path.extname(filePath).toLowerCase();
@@ -60,7 +60,7 @@ function checkSyntax(filePath: string, content: string): { valid: boolean; diagn
     const text = ts.flattenDiagnosticMessageText(d.messageText, '\n');
     if (d.file && d.start !== undefined) {
       const { line } = d.file.getLineAndCharacterOfPosition(d.start);
-      return `${text} (rad ${line + 1})`;
+      return `${text} (line ${line + 1})`;
     }
     return text;
   });
@@ -83,17 +83,17 @@ export async function runCodeRefactor(payload: CodeRefactorPayload): Promise<Cod
   const { filePath, instruction, newContent } = payload;
 
   if (!filePath) {
-    throw new Error('filePath saknas i payload');
+    throw new Error('filePath missing from payload');
   }
   if (typeof newContent !== 'string' || newContent.length === 0) {
-    throw new Error('newContent saknas eller är tom — inget att skriva.');
+    throw new Error('newContent is missing or empty — nothing to write.');
   }
 
-  // Försvar i djupled: enqueue via /api/jobs/enqueue kringgår approvalGate,
-  // så policy valideras här igen innan disk berörs.
+  // Defense in depth: enqueue via /api/jobs/enqueue bypasses approvalGate,
+  // so policy is validated again here before the disk is touched.
   const policyCheck = evaluateFilePath(filePath, 'write');
   if (!policyCheck.allowed) {
-    throw new Error(policyCheck.reason || `Åtkomst nekad för '${filePath}'`);
+    throw new Error(policyCheck.reason || `Access denied for '${filePath}'`);
   }
 
   const absolutePath = resolveSafePath(filePath);
@@ -109,7 +109,7 @@ export async function runCodeRefactor(payload: CodeRefactorPayload): Promise<Cod
       filePath,
       syntaxValid: false,
       linesChanged: 0,
-      message: `Refaktorering '${instruction}' avbröts: syntaxfel i föreslagen kod.`,
+      message: `Refactoring '${instruction}' aborted: syntax error in proposed code.`,
       diagnostics
     };
   }
@@ -124,6 +124,6 @@ export async function runCodeRefactor(payload: CodeRefactorPayload): Promise<Cod
     filePath,
     syntaxValid: true,
     linesChanged,
-    message: `Refaktorering '${instruction}' genomförd och skriven till ${filePath}.`
+    message: `Refactoring '${instruction}' completed and written to ${filePath}.`
   };
 }

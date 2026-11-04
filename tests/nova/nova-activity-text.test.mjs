@@ -9,19 +9,19 @@ const { DurableMissionBus } = await import('../../runtime/src/server/connected/d
 const { NovaMissionControl } = await import('../../runtime/src/server/connected/novaMissionControl.mjs');
 
 test('actions are named with what they act on', () => {
-  assert.equal(describeNovaTask({ type: 'github-create-repo', data: { name: 'cloudflare-ts-deploy', private: true } }), 'skapa GitHub-repo cloudflare-ts-deploy (privat)');
-  assert.equal(describeNovaTask({ type: 'repo-write', data: { path: 'tests/nova/x.test.mjs' } }), 'skriv filen tests/nova/x.test.mjs');
-  assert.equal(describeNovaTask({ type: 'repo-test', data: { command: 'npm test', kind: 'falsifier' } }), 'kör falsifieringstest: npm test');
-  assert.equal(describeNovaTask({ type: 'browser-click', data: { name: 'Create repository' } }), 'klicka på "Create repository"');
+  assert.equal(describeNovaTask({ type: 'github-create-repo', data: { name: 'cloudflare-ts-deploy', private: true } }), 'create GitHub repo cloudflare-ts-deploy (private)');
+  assert.equal(describeNovaTask({ type: 'repo-write', data: { path: 'tests/nova/x.test.mjs' } }), 'write file tests/nova/x.test.mjs');
+  assert.equal(describeNovaTask({ type: 'repo-test', data: { command: 'npm test', kind: 'falsifier' } }), 'run falsifier test: npm test');
+  assert.equal(describeNovaTask({ type: 'browser-click', data: { name: 'Create repository' } }), 'click "Create repository"');
   assert.equal(describeNovaTask({ type: 'something-new' }), 'something-new');
 });
 
 test('results show the link, or the error, and never claim more than the receipt', () => {
   const repo = { ok: true, verified: true, result: { url: 'https://github.com/Rick84444/cloudflare-ts-deploy', existed: false } };
   assert.deepEqual(describeNovaResult(repo), { text: 'https://github.com/Rick84444/cloudflare-ts-deploy', url: 'https://github.com/Rick84444/cloudflare-ts-deploy', state: 'verified' });
-  assert.equal(describeNovaResult({ ok: true, verified: true, result: { url: 'https://x.test', existed: true } }).text, 'fanns redan');
+  assert.equal(describeNovaResult({ ok: true, verified: true, result: { url: 'https://x.test', existed: true } }).text, 'already existed');
   assert.equal(describeNovaResult({ ok: true, verified: false, result: {} }).state, 'unverified');
-  assert.deepEqual(describeNovaResult({ ok: false, verified: false, error: 'NO_TARGET' }), { text: 'misslyckades: NO_TARGET', url: null, state: 'failed' });
+  assert.deepEqual(describeNovaResult({ ok: false, verified: false, error: 'NO_TARGET' }), { text: 'failed: NO_TARGET', url: null, state: 'failed' });
   assert.equal(describeNovaResult({ ok: false, result: { url: 'javascript:alert(1)' } }).url, null);
   const contradictory = [
     {ok:false,verified:true,error:'FAILED'},
@@ -44,11 +44,11 @@ test('a mission summary names its last action from the bus and its step budget',
   const started = bus.lastMissionEvent(m.id, 'NOVA_ACTION_STARTED');
   assert.equal(started.payload.action.id, action.id);
   const running = summarizeNovaMission(control.get(m.id), started.payload.action);
-  assert.deepEqual([running.lastAction.running, running.lastAction.text], [true, 'skapa GitHub-repo demo-repo (privat)']);
+  assert.deepEqual([running.lastAction.running, running.lastAction.text], [true, 'create GitHub repo demo-repo (private)']);
   control.finish(m.id, { owner: 'nova', token: lease.token, actionId: action.id, receipt: { ok: true, verified: true, result: { url: 'https://github.com/o/demo-repo' } } });
   const done = summarizeNovaMission(control.get(m.id), bus.lastMissionEvent(m.id, 'NOVA_ACTION_STARTED').payload.action);
   assert.equal(done.lastAction.running, false);
-  assert.equal(done.lastAction.text, 'skapa GitHub-repo demo-repo (privat)');
+  assert.equal(done.lastAction.text, 'create GitHub repo demo-repo (private)');
   assert.equal(done.lastAction.result.url, 'https://github.com/o/demo-repo');
   assert.deepEqual([done.step, done.maxSteps, done.verifiedReceipts], [1, null, 1]);
   assert.equal(bus.lastMissionEvent(m.id, 'NO_SUCH_EVENT'), null);

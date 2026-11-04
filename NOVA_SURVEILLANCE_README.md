@@ -17,7 +17,7 @@ Nova Surveillance is a transparent execution layer that shows exactly what an au
 │  │  │                 │    │ Reidentify:        │   │  │
 │  │  └─────────────────┘    └─────────────────────┘   │  │
 │  │                                                    │  │
-│  │  [Tankeflöde — Agent Reasoning]:                   │  │
+│  │  [Thought stream — Agent Reasoning]:               │  │
 │  │  [THINK] Navigating to aacolony.com...           │  │
 │  │  [DECIDE] Found registration form                 │  │
 │  │  [TRACK] Target locked: "Register" button         │  │
@@ -31,7 +31,7 @@ Key features:
 -  Traction Box — Green bounding box around target element
 -  Prediction Dot — Red dot showing where Nova will click next
 -  State Machine — IDLE → ACQUIRING → LOCKED → VERIFYING → COMPLETE
--  Tankeflöde — Chronological log of agent decisions
+-  Thought stream — Chronological log of agent decisions
 -  Telemetry — FPS, confidence score, reidentification count, uptime
 ---
   Architecture
@@ -327,7 +327,7 @@ GUI shows:
 . Green box around "Register" button
 . Red dot showing click prediction
 . Telemetry: FPS=, Confidence=%, State=VERIFYING
-. Tankeflöde logs each step
+. The thought stream logs each step
 ---
   Production Deployment
 For production agents, surveillance can be:

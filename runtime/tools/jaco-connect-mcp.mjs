@@ -96,7 +96,7 @@ const TOOLS = [
   },
   {
     name: 'request_account',
-    description: 'Ask Nova to create an account on a service and an API key for JACO, autonomously: JACO\'s own e-mail address and inbox for verification, a generated password, the key captured from the page into the encrypted store under keyName, then connect_provider when the service is a model API. Nova stops and asks the operator where a CAPTCHA, phone number, payment card or identity document is required, and never accepts terms that cost money. Returns the mission id; follow it in the IDE (Bygg).',
+    description: 'Ask Nova to create an account on a service and an API key for JACO, autonomously: JACO\'s own e-mail address and inbox for verification, a generated password, the key captured from the page into the encrypted store under keyName, then connect_provider when the service is a model API. Nova stops and asks the operator where a CAPTCHA, phone number, payment card or identity document is required, and never accepts terms that cost money. Returns the mission id; follow it in the IDE (Build).',
     inputSchema: { type: 'object', properties: {
       service: { type: 'string', description: 'service name, e.g. "Groq"' },
       url: { type: 'string', description: 'sign-up or console URL' },
@@ -109,13 +109,13 @@ const TOOLS = [
       const slug = String(service).toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
       const key = validateSecretName(keyName || `${slug}_API_KEY`);
       const goal = [
-        `Skapa ett konto för JACO på ${service} (${target.href}) och en API-nyckel.`,
-        `Använd JACOs egen e-postadress enligt state.inbox.addressPattern (jaco-${slug.toLowerCase()}@...) och ett lösenord från vault-generate-secret {key:"NOVA_${slug}_PASSWORD"}; verifiera e-posten med email-inbox.`,
-        `Skapa sedan en API-nyckel i tjänstens konsol och spara den med secret-store under ${key}. Skriv aldrig ut nyckeln.`,
-        'Stanna och fråga operatören om CAPTCHA, telefonnummer, betalkort eller ID-handling krävs, och godkänn aldrig villkor som kostar pengar.',
+        `Create an account for JACO on ${service} (${target.href}) and an API key.`,
+        `Use JACO's own e-mail address according to state.inbox.addressPattern (jaco-${slug.toLowerCase()}@...) and a password from vault-generate-secret {key:"NOVA_${slug}_PASSWORD"}; verify the e-mail with email-inbox.`,
+        `Then create an API key in the service's console and store it with secret-store under ${key}. Never print the key.`,
+        'Stop and ask the operator if a CAPTCHA, phone number, payment card or identity document is required, and never accept terms that cost money.',
       ].join(' ');
       const { mission } = await runtime('POST', '/api/aura/missions', { goal, idempotencyKey: `request-account-${slug.toLowerCase()}-${Date.now()}` });
-      return { missionId: mission.id, status: mission.status, keyName: key, follow: 'IDE > Bygg, or GET /api/aura/missions/:id/stream' };
+      return { missionId: mission.id, status: mission.status, keyName: key, follow: 'IDE > Build, or GET /api/aura/missions/:id/stream' };
     },
   },
 ];

@@ -1,14 +1,14 @@
 {
   "name": "JACO CODE — Aura",
   "short_name": "Aura",
-  "description": "Aura är gränssnittet för JACO CODE: chat, projekt, agenter och verktyg.",
+  "description": "Aura is the interface for JACO CODE: chat, projects, agents and tools.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#02070c",
   "theme_color": "#050b11",
-  "lang": "sv",
+  "lang": "en",
   "icons": [
     { "src": "/branding/jaco-orb.webp", "sizes": "any", "type": "image/webp", "purpose": "any" }
   ]

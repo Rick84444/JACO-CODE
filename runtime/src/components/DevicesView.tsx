@@ -11,12 +11,12 @@ interface Device { name: string; kind: Kind; executor: string | null; createdAt:
 interface Invite { name: string; kind: Kind; executor: string | null; code: string; expiresAt: string }
 
 const ago = (iso: string | null) => {
-  if (!iso) return 'aldrig';
+  if (!iso) return 'never';
   const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
-  if (s < 90) return `${s} s sedan`;
-  if (s < 5400) return `${Math.round(s / 60)} min sedan`;
-  if (s < 172800) return `${Math.round(s / 3600)} h sedan`;
-  return new Date(iso).toLocaleDateString('sv-SE');
+  if (s < 90) return `${s} s ago`;
+  if (s < 5400) return `${Math.round(s / 60)} min ago`;
+  if (s < 172800) return `${Math.round(s / 3600)} h ago`;
+  return new Date(iso).toLocaleDateString('en-US');
 };
 
 
@@ -69,9 +69,9 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
 
   const createInvite = async () => {
     if (busy) return;
-    if (!(kind === 'ide' ? ideUrl : hubUrl)) { setActionError('Konfigurera anslutningsadressen innan parkoppling.'); return; }
+    if (!(kind === 'ide' ? ideUrl : hubUrl)) { setActionError(tr('Konfigurera anslutningsadressen innan parkoppling.', 'Configure the connection address before pairing.')); return; }
     const wanted = name.trim().toLowerCase();
-    if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(wanted)) { setActionError('Namnet får bara innehålla a-z, 0-9 och bindestreck (2-40 tecken).'); return; }
+    if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(wanted)) { setActionError(tr('Namnet får bara innehålla a-z, 0-9 och bindestreck (2-40 tecken).', 'The name may only contain a-z, 0-9 and hyphens (2-40 characters).')); return; }
     setBusy(true); setActionError('');
     try {
       const body = await fetch('/api/aura/workbench/devices/invite', {
@@ -79,7 +79,7 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
       }).then(readAuraResponse);
       if (!body.success) throw new Error(body.error);
       setInvite(body.invite); setHubUrl(body.hubUrl); setIdeUrl(body.ideUrl || null); setName(''); setCopied(null); setError('');
-    } catch (e: any) { setActionError(`Parkoppling kunde inte bekräftas. Kontrollera enhetslistan före nytt försök: ${String(e?.message || e)}`); }
+    } catch (e: any) { setActionError(`${tr('Parkoppling kunde inte bekräftas. Kontrollera enhetslistan före nytt försök', 'Pairing could not be confirmed. Check the device list before trying again')}: ${String(e?.message || e)}`); }
     finally { setBusy(false); }
   };
   const keyOf = (d: { name: string; kind: Kind }) => `${d.kind}:${d.name}`;
@@ -91,7 +91,7 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
       const body = await fetch(`/api/aura/workbench/devices/${encodeURIComponent(d.name)}?kind=${d.kind}`, { method: 'DELETE' }).then(readAuraResponse);
       if (!body.success) throw new Error(body.error);
       await load();
-    } catch (e: any) { setActionError(`Spärrning kunde inte bekräftas. Kontrollera enhetens status: ${String(e?.message || e)}`); }
+    } catch (e: any) { setActionError(`${tr('Spärrning kunde inte bekräftas. Kontrollera enhetens status', 'Revocation could not be confirmed. Check the device status')}: ${String(e?.message || e)}`); }
     finally { setBusy(false); }
   };
 
@@ -100,17 +100,17 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
     try {
       const body=await fetch('/api/aura/workbench/devices/'+encodeURIComponent(d.name)+'/memory', {method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({allowed:!d.memoryAccess})}).then(readAuraResponse);
       if (!body.success) throw Error(body.error);await load();
-    } catch (e:any) {setActionError('Minnesbehörigheten kunde inte bekräftas. Uppdatera listan: '+e.message);}
+    } catch (e:any) {setActionError(tr('Minnesbehörigheten kunde inte bekräftas. Uppdatera listan: ', 'Memory access could not be confirmed. Refresh the list: ')+e.message);}
     finally {setBusy(false);}
   };
   const hub = hubUrl;
   const commands = invite?.kind === 'nova' && hub ? [
-    { id: 'termux', label: 'Android (Termux), i JACO-mappen efter git pull', text: `bash tools/termux-device.sh join ${hub} ${invite.code}` },
-    { id: 'pc', label: 'Dator, i JACO-mappen efter git pull', text: `node tools/join-hub.mjs ${hub} ${invite.code}` },
+    { id: 'termux', label: tr('Android (Termux), i JACO-mappen efter git pull', 'Android (Termux), in the JACO folder after git pull'), text: `bash tools/termux-device.sh join ${hub} ${invite.code}` },
+    { id: 'pc', label: tr('Dator, i JACO-mappen efter git pull', 'Computer, in the JACO folder after git pull'), text: `node tools/join-hub.mjs ${hub} ${invite.code}` },
   ] : [];
   const secondsLeft = invite ? Math.max(0, Math.round((Date.parse(invite.expiresAt) - now) / 1000)) : 0;
   const copy = async (id: string, text: string) => {
-    try { await navigator.clipboard.writeText(text); setCopied(id); } catch { setCopied(null); setActionError('Kopiering misslyckades. Markera och kopiera texten manuellt.'); }
+    try { await navigator.clipboard.writeText(text); setCopied(id); } catch { setCopied(null); setActionError(tr('Kopiering misslyckades. Markera och kopiera texten manuellt.', 'Copy failed. Select and copy the text manually.')); }
   };
   const active = devices?.filter(d => !d.revokedAt) || [];
   const revoked = devices?.filter(d => d.revokedAt) || [];
@@ -135,7 +135,7 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
         </div>
         {viewer.remote && (
           <div className="border border-cyan-900 bg-[#10202a] rounded p-2 text-[10px] text-cyan-200">
-            Du är inloggad på distans som <span className="text-white">{viewer.name}</span>. Terminalen finns bara på datorn.
+            {tr('Du är inloggad på distans som', 'You are signed in remotely as')} <span className="text-white">{viewer.name}</span>. {tr('Terminalen finns bara på datorn.', 'The terminal is only available on the host.')}
           </div>
         )}
 
@@ -153,14 +153,14 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
             <div className="flex items-center justify-between gap-2">
               <span className="text-slate-100 truncate">{d.name} <span className="text-[9px] text-slate-500">{KIND_LABEL[d.kind]}</span></span>
               <span className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 ${d.online ? 'bg-emerald-900 text-emerald-200' : d.lastSeenAt ? 'bg-[#333] text-slate-300' : 'bg-amber-900 text-amber-200'}`}>
-                {d.online ? (d.kind === 'ide' ? 'aktiv' : 'ansluten') : d.lastSeenAt ? (d.kind === 'ide' ? 'inloggad' : 'ej ansluten') : 'väntar på första kontakt'}
+                {d.online ? (d.kind === 'ide' ? tr('aktiv', 'active') : tr('ansluten', 'connected')) : d.lastSeenAt ? (d.kind === 'ide' ? tr('inloggad', 'signed in') : tr('ej ansluten', 'not connected')) : tr('väntar på första kontakt', 'waiting for first contact')}
               </span>
             </div>
-            <div className="text-[9px] text-slate-500 break-all">{d.executor ? `${d.executor} · ` : ''}senaste kontakt {ago(d.lastSeenAt)} · parkopplad {new Date(d.createdAt).toLocaleDateString('sv-SE')}</div>
-            {d.kind === 'nova' && <div className="py-1"><p className="text-slate-400">Delat minne: {d.memoryAccess ? 'Tillåtet' : 'Ej tillåtet'}</p>{!viewer.remote && <button disabled={busy} onClick={() => void memoryAccess(d)} className="text-cyan-300 py-1">{d.memoryAccess ? 'Stäng minnesåtkomst' : 'Tillåt delat minne på denna enhet'}</button>}</div>}
+            <div className="text-[9px] text-slate-500 break-all">{d.executor ? `${d.executor} · ` : ''}{tr('senaste kontakt', 'last contact')} {ago(d.lastSeenAt)} · {tr('parkopplad', 'paired')} {new Date(d.createdAt).toLocaleDateString('en-US')}</div>
+            {d.kind === 'nova' && <div className="py-1"><p className="text-slate-400">{tr('Delat minne', 'Shared memory')}: {d.memoryAccess ? tr('Tillåtet', 'Allowed') : tr('Ej tillåtet', 'Not allowed')}</p>{!viewer.remote && <button disabled={busy} onClick={() => void memoryAccess(d)} className="text-cyan-300 py-1">{d.memoryAccess ? tr('Stäng minnesåtkomst', 'Revoke memory access') : tr('Tillåt delat minne på denna enhet', 'Allow shared memory on this device')}</button>}</div>}
             {confirmRevoke === keyOf(d) ? (
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[9px] text-amber-300">{d.kind === 'ide' ? 'Logga ut webbläsaren?' : 'Spärra nyckeln? Enheten måste parkopplas igen.'}</span>
+                <span className="text-[9px] text-amber-300">{d.kind === 'ide' ? tr('Logga ut webbläsaren?', 'Sign out this browser?') : tr('Spärra nyckeln? Enheten måste parkopplas igen.', 'Revoke the key? The device must be paired again.')}</span>
                 <button disabled={busy} onClick={() => void revoke(d)} className="px-1.5 py-0.5 rounded bg-red-900 hover:bg-red-800 text-white text-[9px]">{tr('Spärra', 'Revoke')}</button>
                 <button onClick={() => setConfirmRevoke(null)} className="px-1.5 py-0.5 rounded bg-[#333] text-slate-200 text-[9px]">{tr('Avbryt', 'Cancel')}</button>
               </div>
@@ -182,8 +182,8 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
                 ))}
               </div>
               <div className="text-[9px] text-slate-500">{kind === 'ide'
-                ? 'Öppna IDE:t i mobilens webbläsare, som vscode.dev. Inloggningen gäller 30 dagar på den enheten.'
-                : 'Enheten kör en egen Nova och tar bara uppdrag som riktas till den.'}</div>
+                ? tr('Öppna IDE:t i mobilens webbläsare, som vscode.dev. Inloggningen gäller 30 dagar på den enheten.', 'Open the IDE in the phone browser, like vscode.dev. The sign-in lasts 30 days on that device.')
+                : tr('Enheten kör en egen Nova och tar bara uppdrag som riktas till den.', 'The device runs its own Nova and only takes missions routed to it.')}</div>
               <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void createInvite(); }}
                 aria-label={tr('Enhetsnamn', 'Device name')} placeholder={tr('telefon eller laptop', 'phone or laptop')} className="w-full bg-[#0b0b0b] border border-[#333] rounded p-1 text-[11px] text-slate-200" />
               <button onClick={() => void createInvite()} disabled={busy || !name.trim() || !(kind === 'ide' ? ideUrl : hubUrl)}
@@ -191,33 +191,33 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
             </>
           ) : secondsLeft > 0 ? (
             <>
-              <div className="text-[10px] text-slate-400">Kod för <span className="text-cyan-300">{invite.name}</span> ({KIND_LABEL[invite.kind]}), gäller en gång i {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}</div>
+              <div className="text-[10px] text-slate-400">{tr('Kod för', 'Code for')} <span className="text-cyan-300">{invite.name}</span> ({KIND_LABEL[invite.kind]}), {tr('gäller en gång i', 'single use, valid for')} {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}</div>
               <div className="font-mono text-[18px] tracking-[0.2em] text-white text-center py-1 select-all">{invite.code}</div>
               {invite.kind === 'ide' ? (
                 <div className="text-[10px] text-slate-300 space-y-1">
-                  <div>Öppna i mobilens webbläsare och skriv koden:</div>
-                  <div className="font-mono text-[12px] text-cyan-200 break-all select-all">{ideUrl || 'IDE-adress saknas. Konfigurera JACO_IDE_PUBLIC_HOST på servern.'}</div>
-                  <div className="text-[9px] text-slate-500">I Chrome: meny, Lägg till på startskärmen, så öppnas IDE:t som en app.</div>
+                  <div>{tr('Öppna i mobilens webbläsare och skriv koden:', 'Open in the phone browser and enter the code:')}</div>
+                  <div className="font-mono text-[12px] text-cyan-200 break-all select-all">{ideUrl || tr('IDE-adress saknas. Konfigurera JACO_IDE_PUBLIC_HOST på servern.', 'IDE address missing. Configure JACO_IDE_PUBLIC_HOST on the server.')}</div>
+                  <div className="text-[9px] text-slate-500">{tr('I Chrome: meny, Lägg till på startskärmen, så öppnas IDE:t som en app.', 'In Chrome: menu, Add to Home screen, and the IDE opens as an app.')}</div>
                 </div>
               ) : commands.map(c => (
                 <div key={c.id} className="space-y-1">
                   <div className="text-[10px] text-slate-400">{c.label}:</div>
                   <pre className="whitespace-pre-wrap break-all font-mono text-[10px] text-slate-200 bg-[#0b0b0b] border border-[#333] rounded p-1.5 select-all">{c.text}</pre>
-                  <button onClick={() => void copy(c.id, c.text)} className="px-2 py-1 rounded bg-cyan-800 hover:bg-cyan-700 text-white text-[10px]">{copied === c.id ? 'Kopierat' : 'Kopiera'}</button>
+                  <button onClick={() => void copy(c.id, c.text)} className="px-2 py-1 rounded bg-cyan-800 hover:bg-cyan-700 text-white text-[10px]">{copied === c.id ? tr('Kopierat', 'Copied') : tr('Kopiera', 'Copy')}</button>
                 </div>
               ))}
               <button onClick={() => setInvite(null)} className="px-2 py-1 rounded bg-[#333] text-slate-200 text-[10px]">{tr('Klar', 'Done')}</button>
             </>
           ) : (
             <>
-              <div className="text-[10px] text-amber-300">Koden för {invite.name} har gått ut.</div>
+              <div className="text-[10px] text-amber-300">{tr('Koden för', 'The code for')} {invite.name} {tr('har gått ut.', 'has expired.')}</div>
               <button onClick={() => { setName(invite.name); setKind(invite.kind); setInvite(null); }} className="px-2 py-1 rounded bg-[#333] text-slate-200 text-[10px]">{tr('Skapa ny kod', 'Create new code')}</button>
             </>
           )}
         </div>
 
         {revoked.length > 0 && (
-          <div className="text-[9px] text-slate-600 px-1 break-words">Spärrade: {revoked.map(d => `${d.name} (${d.kind})`).join(', ')}</div>
+          <div className="text-[9px] text-slate-600 px-1 break-words">{tr('Spärrade', 'Revoked')}: {revoked.map(d => `${d.name} (${d.kind})`).join(', ')}</div>
         )}
       </div>
     </section>

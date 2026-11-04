@@ -85,13 +85,16 @@ test('Nova declares only the surfaces it detected', () => {
   assert.equal(browser.capabilities.desktop_control, false);
 });
 
-test('SEER registers itself and dispatches only to READY agents with the required capabilities', async t => {
+test('Aura strategy discovers READY Workplace agents without ever registering SEER as an agent', async t => {
   const wp = await startWorkplace(t);
   const seerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-seer-dispatch-'));
   const seer = await startProcess(t, ['--experimental-sqlite', 'gateway/src/seer.mjs'], {
     SEER_PORT: '0', SEER_STATE_DIR: seerDir, JACO_GATEWAY_TOKEN: SEER_TOKEN,
     JACO_RUNTIME_URL: 'http://127.0.0.1:9', OLLAMA_BASE_URL: 'http://127.0.0.1:9',
-    JACO_WORKPLACE_URL: wp.url, JACO_WORKPLACE_TOKEN: TRANSPORT
+    JACO_WORKPLACE_URL: wp.url, JACO_WORKPLACE_TOKEN: TRANSPORT,
+    // Simulates a carried-over 2026-10 installation setting. Without Aura's
+    // explicit new opt-in, it must not start an independent model governor.
+    SEER_GOVERNOR_INTERVAL_MS: '100',
   }, /JACO SEER(?: Strategic Governor)? :(\d+)/);
   t.after(() => fs.rmSync(seerDir, { recursive: true, force: true }));
   const base = `http://127.0.0.1:${seer.port}`;
@@ -100,14 +103,21 @@ test('SEER registers itself and dispatches only to READY agents with the require
     return { status: r.status, body: await r.json() };
   };
 
-  // Wait until SEER reports its own Workplace session.
   const observer = new JacoWorkplaceClient({ baseUrl: wp.url, token: TRANSPORT });
-  for (let i = 0; i < 50; i++) {
-    const seerAgent = (await observer.agents()).agents.find(a => a.requestedName === 'SEER');
-    if (seerAgent?.sessions.some(s => s.status === 'READY')) break;
-    await new Promise(r => setTimeout(r, 100));
-  }
+  assert.deepEqual((await observer.agents()).agents, [],
+    'the strategy service must never register a second Workplace agent');
+  const health = await fetch(base+'/health').then(response=>response.json());
+  assert.equal(health.agent_identity, 'aura');
+  assert.equal(health.capability, 'strategy');
+  assert.equal(health.independent_governor_enabled, false,
+    'stale 5-minute governor configuration must not launch another LLM');
 
+  // A historical SEER identity left by an old installation must not become
+  // an execution candidate even if it advertises browser_control.
+  const { client: legacySeer } = await bootstrapJacoAgent(buildAgentCard({
+    stableId:'seer', name:'SEER', agentType:'strategic', role:'strategic-governor',
+    description:'historical agent row',capabilities:{browser_control:true},
+  }), { baseUrl: wp.url, token: TRANSPORT });
   const { client: browserAgent } = await bootstrapJacoAgent(card('browser-agent'), { baseUrl: wp.url, token: TRANSPORT });
   const unsynced = new JacoWorkplaceClient({ baseUrl: wp.url, token: TRANSPORT });
   await unsynced.register(card('never-ready'));
@@ -122,10 +132,20 @@ test('SEER registers itself and dispatches only to READY agents with the require
 
   await browserAgent.end();
   assert.equal((await dispatch(['browser_control'])).body.candidates.length, 0);
+  await legacySeer.end();
+
+  // Local legacy registry route must not allow SEER to reappear as an agent.
+  const refused = await fetch(base+'/cortex/agents/ping', { method:'POST',
+    headers:{authorization:`Bearer ${SEER_TOKEN}`,'content-type':'application/json'},
+    body: JSON.stringify({id:'seer',name:'SEER'}),
+  });
+  assert.equal(refused.status,409);
+  const listed = await fetch(base+'/cortex/agents',{headers:{authorization:`Bearer ${SEER_TOKEN}`}});
+  assert.ok(!(await listed.json()).some(item=>item.id==='seer'));
 
   await wp.stop();
   await seer.stop();
-  assert.match(seer.output(), /READY as agent:seer/);
+  assert.doesNotMatch(seer.output(), /READY as agent:seer/);
 });
 
 test('SEER without Workplace keeps serving but refuses dispatch', async t => {

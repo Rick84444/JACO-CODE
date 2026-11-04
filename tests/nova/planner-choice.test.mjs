@@ -7,7 +7,7 @@ import path from 'node:path';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nova-planner-choice-'));
 process.env.NOVA_STATE_DIR = dir;
 process.env.NOVA_BRAIN_MODE = 'direct';
-const { orderedBrainProviders, brainCandidates } = await import('../../agents/hands-off-agent.mjs');
+const { orderedBrainProviders, brainCandidates, setConnectedProvidersForTest } = await import('../../agents/hands-off-agent.mjs');
 const { plannerChoiceFile, validatePlannerChoice, writePlannerChoice, clearPlannerChoice, testPlannerModel } = await import('../../agents/lib/planner-choice.mjs');
 
 const file = path.join(dir, 'provider-preference.json');
@@ -55,9 +55,35 @@ test('Ollama Cloud planner models come from environment', () => {
   assert.deepEqual(validatePlannerChoice({ provider: 'ollama-cloud', model: 'another-priced-model' }, env).model, 'another-priced-model');
 });
 
-test('runtime and Nova resolve the same choice file through JACO_RUNTIME_DIR', () => {
+test('Core, SEER and Nova resolve the same model preference from workspace with explicit override', () => {
   const runtimeDir = path.join(dir, 'runtime');
-  assert.equal(plannerChoiceFile({ JACO_RUNTIME_DIR: runtimeDir, JACO_WORKSPACE_ROOT: path.join(dir, 'checkout') }), path.join(runtimeDir, '.jaco', 'state', 'provider-preference.json'));
+  const workspace = path.join(dir, 'checkout');
+  assert.equal(plannerChoiceFile({ JACO_RUNTIME_DIR: runtimeDir, JACO_WORKSPACE_ROOT: workspace }),
+    path.join(workspace, '.jaco', 'state', 'provider-preference.json'));
+  assert.equal(plannerChoiceFile({ JACO_RUNTIME_DIR: runtimeDir }),
+    path.join(runtimeDir, '.jaco', 'state', 'provider-preference.json'));
+  assert.equal(plannerChoiceFile({ JACO_WORKSPACE_ROOT: workspace, JACO_PLANNER_CHOICE_FILE: file }),file);
+});
+
+test('explicit operator model cannot silently fall back to a different provider or model', () => {
+  const runtimeEnv={ JACO_PLANNER_CHOICE_FILE:file };
+  writePlannerChoice(file,{provider:'deepseek',model:'deepseek-v4-pro'},'operator');
+  assert.deepEqual(brainCandidates(runtimeEnv).map(p=>[p.name,p.model]),[['deepseek','deepseek-v4-pro']]);
+  assert.deepEqual(brainCandidates({...runtimeEnv,JACO_DISABLED_PROVIDERS:'deepseek'}),[],
+    'disabled operator provider must defer, not silently use local inferencing');
+  assert.ok(brainCandidates({...runtimeEnv,JACO_PRIMARY_PROVIDER:'groq'}).length>1,
+    'an authoritative environment primary retains legacy fallback policy');
+  clearPlannerChoice(file);
+  assert.ok(brainCandidates(runtimeEnv).length>1,'automatic mode retains existing fallback candidates');
+});
+
+test('shared operator choice is atomic and private on disk',()=>{
+  writePlannerChoice(file,{provider:'groq',model:'openai/gpt-oss-20b'},'operator');
+  const value=JSON.parse(fs.readFileSync(file,'utf8'));
+  assert.equal(value.model,'openai/gpt-oss-20b');
+  assert.deepEqual(fs.readdirSync(path.dirname(file)).filter(name=>name.endsWith('.tmp')),[]);
+  if(process.platform!=='win32')assert.equal(fs.statSync(file).mode&0o777,0o600);
+  clearPlannerChoice(file);
 });
 
 test('Aura model probe always uses shared Continuum reserve/settle for a metered model', async () => {
@@ -167,7 +193,6 @@ test('a connected provider and any model it serves can be chosen; a fixed one is
   assert.throws(() => _validate({ provider: 'nope', model: 'm' }, env, EXTRA), /PLANNER_PROVIDER_UNKNOWN/);
 });
 
-const { setConnectedProvidersForTest } = await import('../../agents/hands-off-agent.mjs');
 test('Nova plans with the operator\'s chosen connected provider, which is not in its fixed chain', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pc-'));
   const file = path.join(dir, 'provider-preference.json');
@@ -257,4 +282,18 @@ test('Aura and Continuum accept the same model IDs, including @, + and 160 chara
   });
   assert.equal(result.ok, true);
   assert.deepEqual(paths, ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/settle']);
+});
+
+test('custom connected provider is the sole candidate when operator pinned it',()=>{
+  const dynamic={name:'custom-local',url:'http://127.0.0.1:9000/v1/chat/completions',model:'custom-code-8b',free:true};
+  writePlannerChoice(file,{provider:dynamic.name,model:dynamic.model},'operator');
+  setConnectedProvidersForTest([dynamic]);
+  try {
+    const candidates=brainCandidates({JACO_PLANNER_CHOICE_FILE:file});
+    assert.deepEqual(candidates.map(p=>[p.name,p.model]),[[dynamic.name,dynamic.model]]);
+    assert.equal(candidates[0].chosen,true);
+  } finally {
+    setConnectedProvidersForTest([]);
+    clearPlannerChoice(file);
+  }
 });

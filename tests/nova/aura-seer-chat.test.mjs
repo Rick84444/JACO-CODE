@@ -95,13 +95,13 @@ test('Aura exposes one active chat surface and routes it through canonical SEER'
 test('Aura setup guidance requires consent, keeps secrets out of generic tools and separates offers from execution',()=>{
   const {system}=buildAuraSeerPrompts({message:'Hjälp mig koppla upp JACO'});
   assert.match(system,/\/connect\.html/);
-  assert.match(system,/Läs aldrig \.env med repo_read, shell/);
-  assert.match(system,/utanför modellkontext, chatthistorik/);
-  assert.match(system,/Inloggning, lösenord, MFA och CAPTCHA utför användaren själv/);
-  assert.match(system,/En fråga eller ett erbjudande är inte ett utfört uppdrag/);
-  assert.match(system,/start_goal enbart när operatören beställt arbetet/);
-  assert.match(system,/Manual\/Planning är alltid läsande/);
-  assert.match(system,/Lova aldrig att en större modell blir snabbare/);
+  assert.match(system,/Never read \.env with repo_read, shell/);
+  assert.match(system,/outside the model context, chat history/);
+  assert.match(system,/Sign-in, passwords, MFA and CAPTCHA are done by the operator/);
+  assert.match(system,/A question or an offer is not a completed mission/);
+  assert.match(system,/start_goal only when the operator has ordered the work/);
+  assert.match(system,/Manual\/Planning are always read-only/);
+  assert.match(system,/Never promise that a larger model will be faster/);
 });
 
 test('Aura structured workspace and selected-tool context survives prompt construction',()=>{
@@ -127,7 +127,7 @@ test('Aura canonical strategic goal replaces legacy primary goals without PODAR 
   ]) {
     const source=fs.readFileSync(file,'utf8');
     assert.match(source,/AURA_CANONICAL_GOAL_ID = "aura-canonical-objective-v1"/);
-    assert.match(source,/Verifierbar autonom IDE-yta från mål till receipt/);
+    assert.match(source,/Verifiable autonomous IDE surface from goal to receipt/);
     assert.match(source,/legacyIds = new Set\(\["goal-1", "goal-2", "goal-3"\]\)/);
     assert.match(source,/status: "paused"/);
     assert.match(source,/g\.id !== AURA_CANONICAL_GOAL_ID/);
@@ -259,7 +259,7 @@ test('a model cannot execute a sixth tool or expose an unexecuted TOOL_CALL as s
   assert.equal(turns,6,'bounded tool loop performs only the final summary inference');
   assert.deepEqual(executed,[1,2,3,4,5]);
   assert.equal(out.toolReceipts.length,5);
-  assert.match(out.reply,/inte utfört det sista föreslagna anropet/);
+  assert.match(out.reply,/did not carry out the last proposed call/);
   assert.doesNotMatch(out.reply,/TOOL_CALL/);
   assert.equal(out.providerReceipt.costStatus,'FREE');
   assert.equal(out.providerReceipt.costUsd,0);

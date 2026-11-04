@@ -84,7 +84,7 @@ class RuntimeService {
   private autonomousTimer: NodeJS.Timeout | null = null;
   private serverPodarPhase: 'PERCEIVE' | 'ORIENT' | 'DECIDE' | 'ACT' | 'REFLECT' = 'PERCEIVE';
   private autonomousCycleCount: number = 0;
-  private autonomousGoal: string = 'Autonom NPU-accelererad orkestrering & A2A-marknadsövervakning';
+  private autonomousGoal: string = 'Autonomous NPU-accelerated orchestration & A2A market monitoring';
 
   constructor() {
     this.memoryDir = path.join(process.cwd(), '.jaco', 'memory', 'runtime');
@@ -93,13 +93,13 @@ class RuntimeService {
         fs.mkdirSync(this.memoryDir, { recursive: true });
       }
     } catch {
-      // Ignorera fel vid initiering
+      // Ignore errors during initialization
     }
 
-    // Samla verifierad hårdvarutelemetri från start via TelemetryFabric (inga mockade tal)
+    // Collect verified hardware telemetry from the start via TelemetryFabric (no mocked numbers)
     const initialHw = telemetryFabric.collectNodeHardwareMetrics();
 
-    // Registrera grundläggande Cloud Run Master Node med verkliga mätvärden
+    // Register the base Cloud Run Master Node with real measurements
     this.registerNode({
       id: 'cloud-run-master-node',
       name: 'JACO Cloud Sovereign Hub',
@@ -123,7 +123,7 @@ class RuntimeService {
       lastL4Proof: 'sha256:' + crypto.createHash('sha256').update('cloud-master-init').digest('hex')
     });
 
-    // Starta den autonoma server-slingan direkt
+    // Start the autonomous server loop immediately
     this.startAutonomousLoop();
   }
 
@@ -186,13 +186,13 @@ class RuntimeService {
   }
 
   /**
-   * Utför ett autonomt PODAR-hjärtslag (Perceive -> Orient -> Decide -> Act -> Reflect) direkt på servern
+   * Runs an autonomous PODAR heartbeat (Perceive -> Orient -> Decide -> Act -> Reflect) directly on the server
    */
   private async runAutonomousHeartbeatTick(): Promise<void> {
     this.autonomousCycleCount++;
     const timestamp = new Date().toISOString();
 
-    // 1. Telemetrisamling via TelemetryFabric 1.0 (Inga Math.random())
+    // 1. Telemetry collection via TelemetryFabric 1.0 (no Math.random())
     const hw = telemetryFabric.collectNodeHardwareMetrics();
     const ramUsedMb = hw.memory.heapUsedMb;
     const ramTotalMb = hw.memory.heapTotalMb;
@@ -209,7 +209,7 @@ class RuntimeService {
       hardwareDetails: hw
     };
 
-    // Emit point till Telemetry Fabric
+    // Emit point to Telemetry Fabric
     telemetryFabric.emitPoint({
       metric: 'jaco.runtime.cpu.utilization',
       value: hw.cpu.utilizationPercent,
@@ -225,11 +225,11 @@ class RuntimeService {
       }
     });
 
-    // Uppdatera Master-noden
+    // Update the master node
     const masterNode = this.updateHeartbeat('cloud-run-master-node', telemetry, this.autonomousGoal);
     masterNode.totalAgentCalls = (masterNode.totalAgentCalls || 0) + 1;
 
-    // Processa genom agent call engine
+    // Process through the agent call engine
     const phase = this.serverPodarPhase;
     let nextPhase: 'PERCEIVE' | 'ORIENT' | 'DECIDE' | 'ACT' | 'REFLECT' = 'ORIENT';
     if (phase === 'PERCEIVE') nextPhase = 'ORIENT';
@@ -243,14 +243,14 @@ class RuntimeService {
     const actions: RuntimeAction[] = [];
 
     if (phase === 'PERCEIVE') {
-      reasoning = `Telemetri avläst: Heap ${ramUsedMb}MB / ${ramTotalMb}MB, CPU ${cpuUsagePercent}%.`;
-      decision = 'Ingen åtgärd; fast fasrotation (ingen beslutsmodell i denna slinga).';
+      reasoning = `Telemetry read: Heap ${ramUsedMb}MB / ${ramTotalMb}MB, CPU ${cpuUsagePercent}%.`;
+      decision = 'No action; fixed phase rotation (no decision model in this loop).';
     } else if (phase === 'ORIENT') {
-      reasoning = `Mål \"${this.autonomousGoal}\" registrerat. Ingen regelkontroll körs i denna slinga.`;
-      decision = 'Ingen åtgärd.';
+      reasoning = `Goal \"${this.autonomousGoal}\" registered. No rule check runs in this loop.`;
+      decision = 'No action.';
     } else if (phase === 'DECIDE') {
-      reasoning = `Köar sparning av cykelstatus.`;
-      decision = 'Spara cykelstatus (väntar på exekvering).';
+      reasoning = `Queuing save of cycle status.`;
+      decision = 'Save cycle status (awaiting execution).';
       actions.push({
         id: 'act-' + crypto.randomBytes(4).toString('hex'),
         type: 'save_memory',
@@ -259,8 +259,8 @@ class RuntimeService {
         status: 'PENDING'
       });
     } else if (phase === 'ACT') {
-      reasoning = `Cykel #${this.autonomousCycleCount}: köar sparning av telemetri.`;
-      decision = 'Spara telemetri (väntar på exekvering).';
+      reasoning = `Cycle #${this.autonomousCycleCount}: queuing telemetry save.`;
+      decision = 'Save telemetry (awaiting execution).';
       actions.push({
         id: 'act-' + crypto.randomBytes(4).toString('hex'),
         type: 'telemetry_log',
@@ -269,8 +269,8 @@ class RuntimeService {
         status: 'PENDING'
       });
     } else {
-      reasoning = `Cykel #${this.autonomousCycleCount} avslutad.`;
-      decision = 'Återgår till PERCEIVE för nästa autonoma hjärtslag.';
+      reasoning = `Cycle #${this.autonomousCycleCount} finished.`;
+      decision = 'Returning to PERCEIVE for the next autonomous heartbeat.';
     }
 
     const proofData = `cloud-master-node:${timestamp}:${phase}:${decision}`;
@@ -293,7 +293,7 @@ class RuntimeService {
       try {
         this.genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       } catch (err) {
-        console.warn('[RuntimeService] Kunde inte initialisera Gemini SDK:', err);
+        console.warn('[RuntimeService] Could not initialize Gemini SDK:', err);
       }
     }
     return this.genAI;
@@ -329,7 +329,7 @@ class RuntimeService {
           hardwareDetails: hw
         },
         activeAgent: 'Nova-Agent',
-        currentGoal: currentGoal || 'Autonom lokal hårdvaru- och AST-övervakning',
+        currentGoal: currentGoal || 'Autonomous local hardware and AST monitoring',
         totalAgentCalls: 0
       };
     } else {
@@ -380,7 +380,7 @@ class RuntimeService {
     let decision = '';
     const assignedAgent = req.platform === 'android_termux' ? 'Nova-Agent (NPU Core)' : 'Neo-Architect (Master Core)';
 
-    // Generera autonoma åtgärder baserat på tillstånd och telemetri
+    // Generate autonomous actions based on state and telemetry
     const ai = this.getGenAI();
     let generatedByAI = false;
 
@@ -388,20 +388,20 @@ class RuntimeService {
       try {
         const response = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
-          contents: `Du är JACO Master Agent. En runtime på plattformen "${req.platform || 'android_termux'}" anropar dig med följande telemetri och mål:
-Mål: ${req.currentGoal || 'Autonom systemoptimering'}
-Fas: ${currentPhase}
-Prompt / Händelse: ${req.context.customPrompt}
-Telemetri: ${JSON.stringify(req.telemetry || {})}
+          contents: `You are the JACO Master Agent. A runtime on the platform "${req.platform || 'android_termux'}" calls you with the following telemetry and goal:
+Goal: ${req.currentGoal || 'Autonomous system optimization'}
+Phase: ${currentPhase}
+Prompt / Event: ${req.context.customPrompt}
+Telemetry: ${JSON.stringify(req.telemetry || {})}
 
-Generera ett kort, precist JSON-svar med formatet:
+Generate a short, precise JSON answer in the format:
 {
-  "reasoning": "Teknisk motivering utan emojis",
-  "decision": "Systembeslut",
+  "reasoning": "Technical rationale without emojis",
+  "decision": "System decision",
   "actions": [
     {
       "type": "telemetry_log" | "save_memory" | "shell_command",
-      "target": "filnamn eller modul",
+      "target": "file name or module",
       "payload": {}
     }
   ]
@@ -412,8 +412,8 @@ Generera ett kort, precist JSON-svar med formatet:
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
-          reasoning = parsed.reasoning || 'Kognitiv driftanalys utförd.';
-          decision = parsed.decision || 'Uppdaterade systemtillstånd.';
+          reasoning = parsed.reasoning || 'Cognitive operations analysis performed.';
+          decision = parsed.decision || 'Updated system state.';
           if (Array.isArray(parsed.actions)) {
             parsed.actions.forEach((act: any) => {
               actions.push({
@@ -428,14 +428,14 @@ Generera ett kort, precist JSON-svar med formatet:
           generatedByAI = true;
         }
       } catch (err) {
-        console.warn('[RuntimeService] AI-anrop föll tillbaka på lokal deterministisk logik:', err);
+        console.warn('[RuntimeService] AI call fell back to local deterministic logic:', err);
       }
     }
 
     if (!generatedByAI) {
       if (currentPhase === 'PERCEIVE') {
-        reasoning = `Avläste telemetri från nod ${nodeId}: CPU ${node.telemetry.cpuUsagePercent}%, RAM ${node.telemetry.ramUsedMb}MB / ${node.telemetry.ramTotalMb}MB (Truth: ${node.telemetry.truth || 'DERIVED'}), NPU ${node.telemetry.npuAccelerated ? 'Aktiv (MEASURED)' : 'Passiv (UNAVAILABLE)'}.`;
-        decision = 'Loggar telemetri.';
+        reasoning = `Read telemetry from node ${nodeId}: CPU ${node.telemetry.cpuUsagePercent}%, RAM ${node.telemetry.ramUsedMb}MB / ${node.telemetry.ramTotalMb}MB (Truth: ${node.telemetry.truth || 'DERIVED'}), NPU ${node.telemetry.npuAccelerated ? 'Active (MEASURED)' : 'Passive (UNAVAILABLE)'}.`;
+        decision = 'Logging telemetry.';
         actions.push({
           id: 'act-' + crypto.randomBytes(4).toString('hex'),
           type: 'telemetry_log',
@@ -444,8 +444,8 @@ Generera ett kort, precist JSON-svar med formatet:
           status: 'PENDING'
         });
       } else if (currentPhase === 'ORIENT') {
-        reasoning = `Mål \"${req.currentGoal || 'Autonom systemoptimering'}\" registrerat. Ingen regelkontroll körs utan beslutsmodell.`;
-        decision = 'Sparar fasstatus.';
+        reasoning = `Goal \"${req.currentGoal || 'Autonomous system optimization'}\" registered. No rule check runs without a decision model.`;
+        decision = 'Saving phase status.';
         actions.push({
           id: 'act-' + crypto.randomBytes(4).toString('hex'),
           type: 'save_memory',
@@ -454,14 +454,14 @@ Generera ett kort, precist JSON-svar med formatet:
           status: 'PENDING'
         });
       } else if (currentPhase === 'DECIDE') {
-        reasoning = 'Ingen beslutsmodell anropades (kräver customPrompt och GEMINI_API_KEY).';
-        decision = 'Ingen åtgärd.';
+        reasoning = 'No decision model was called (requires customPrompt and GEMINI_API_KEY).';
+        decision = 'No action.';
       } else if (currentPhase === 'ACT') {
-        reasoning = 'Inga uppdrag att exekvera i denna fas.';
-        decision = 'Ingen åtgärd.';
+        reasoning = 'No missions to execute in this phase.';
+        decision = 'No action.';
       } else {
-        reasoning = 'Cykel avslutad.';
-        decision = 'Återgå till PERCEIVE för nästa autonoma cykel.';
+        reasoning = 'Cycle finished.';
+        decision = 'Return to PERCEIVE for the next autonomous cycle.';
       }
     }
 
@@ -469,7 +469,7 @@ Generera ett kort, precist JSON-svar med formatet:
     const l4Proof = 'sha256:' + crypto.createHash('sha256').update(proofData).digest('hex');
     node.lastL4Proof = l4Proof;
 
-    // Spara handlingar i historik
+    // Save actions in history
     actions.forEach(a => {
       a.l4Proof = l4Proof;
       this.actionHistory.unshift(a);

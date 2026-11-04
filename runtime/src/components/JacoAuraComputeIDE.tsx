@@ -329,7 +329,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const [selectedEvidence, setSelectedEvidence] = useState<CognitiveEvent|null>(null);
-  const [projectName, setProjectName] = useState('Arbetsyta');
+  const [projectName, setProjectName] = useState('Workspace');
   const [projectRoot,setProjectRoot] = useState('');
   const [draftStorageError,setDraftStorageError] = useState<string|null>(null);
   const [draftNotice,setDraftNotice] = useState<string|null>(null);
@@ -338,10 +338,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
     let active=true;
     fetch('/api/aura/workbench/project').then(json).then(data=>{
       if(active && data.root) {
-        setProjectName(String(data.root).replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Arbetsyta');
+        setProjectName(String(data.root).replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Workspace');
         restoreDrafts(String(data.root),true);
       }
-    }).catch(()=>{if(active)setDraftStorageError('Projektets källa kunde inte läsas. Utkast kan inte sparas eller återställas säkert.');});
+    }).catch(()=>{if(active)setDraftStorageError('The project source could not be read. Drafts cannot be saved or restored safely.');});
     const close=(event:KeyboardEvent)=>{if(event.key==='Escape')setSidePanelOpen(false);};
     window.addEventListener('keydown',close);
     return()=>{active=false;window.removeEventListener('keydown',close);};
@@ -371,12 +371,12 @@ export const JacoAuraComputeIDE: React.FC = () => {
       const paths=Object.keys(saved.drafts);
       setOpenFiles(current=>initial?[...new Set([...current,...paths])]:paths);
       setSelectedFile(current=>initial&&current?current:paths[0]||null);
-      if(paths.length)setDraftNotice('Lokala utkast återställda. Kontrollera filversionen före sparning.');
+      if(paths.length)setDraftNotice('Local drafts restored. Check the file version before saving.');
       recoveryWritable.current=true;
     }catch{
       // Do not overwrite an unreadable existing archive with blank data.
       if(!initial){setDocuments({});setDrafts({});setSelectedFile(null);setOpenFiles([]);}
-      setDraftStorageError('Utkasten kunde inte återställas. Sparad data lämnas orörd; kopiera nuvarande ändringar innan omladdning.');
+      setDraftStorageError('Drafts could not be restored. Saved data is left untouched; copy current changes before reloading.');
     }
     setProjectRoot(root);
   };
@@ -386,7 +386,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       writeWorkspaceDrafts(window.localStorage,projectRoot,'',drafts,documents);
       setDraftStorageError(null);
     }catch{
-      setDraftStorageError('Webbläsarens lokala utkast kunde inte sparas. Spara projektfilen eller exportera arbetet innan omladdning.');
+      setDraftStorageError('Local browser drafts could not be saved. Save the project file or export the work before reloading.');
     }
   },[projectRoot,drafts,documents]);
   useEffect(()=>{
@@ -413,9 +413,9 @@ export const JacoAuraComputeIDE: React.FC = () => {
       await fetch('/api/aura/workbench/mcp/huggingface', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, tokenEnv }) }).then(json);
       if (enabled) {
         const result = await fetch('/api/aura/workbench/mcp/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({providerId:'huggingface'}) }).then(json);
-        setIntegrationNotice(`Hugging Face ansluten. ${result.tools?.length ?? 0} verktyg upptäckta.`);
-      } else setIntegrationNotice('Hugging Face frånkopplad.');
-    } catch (error: any) { setIntegrationNotice(`Hugging Face kunde inte anslutas: ${error?.message || String(error)}`); }
+        setIntegrationNotice(`Hugging Face connected. ${result.tools?.length ?? 0} tools discovered.`);
+      } else setIntegrationNotice('Hugging Face disconnected.');
+    } catch (error: any) { setIntegrationNotice(`Hugging Face could not connect: ${error?.message || String(error)}`); }
     finally { setMcpStarting(null); void refresh(); }
   };
   const [terminalCommand, setTerminalCommand] = useState('');
@@ -437,7 +437,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       const result = await fetch('/api/aura/workbench/github/login', { method: 'POST' }).then(json);
       setGitActionNotice(result.started ? 'GitHub login opened in your browser. Refresh the account status after signing in.' : result.reason);
       await refreshGithubAuth();
-    } catch (error: any) { setGitActionNotice(/NOT_FOUND/.test(error?.message || '') ? 'GitHub-inloggning saknas i den körande backend-versionen. Uppdatera och starta om Aura-servern; omladdning av GUI:t räcker inte.' : `GitHub login: ${error?.message || String(error)}`); }
+    } catch (error: any) { setGitActionNotice(/NOT_FOUND/.test(error?.message || '') ? 'GitHub sign-in is missing from the running backend version. Update and restart the Aura server; reloading the GUI is not enough.' : `GitHub login: ${error?.message || String(error)}`); }
   };
   const [fileMutation, setFileMutation] = useState<{ mode: 'create' | 'rename' | 'delete'; value: string } | null>(null);
   const [fileMutationBusy, setFileMutationBusy] = useState(false);
@@ -474,7 +474,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     ]);
     if (workbenchResult.status === 'rejected') throw workbenchResult.reason;
     const workspaceFiles = filesResult.status === 'fulfilled' ? filesResult.value : null;
-    if(filesResult.status === 'rejected') setRuntimeError('Projektfilerna kunde inte läsas: '+String(filesResult.reason?.message || filesResult.reason));
+    if(filesResult.status === 'rejected') setRuntimeError('Project files could not be read: '+String(filesResult.reason?.message || filesResult.reason));
     if (workspaceFiles) {
       // Conversation is the primary IDE surface. Repository discovery must not steal focus by
       // auto-opening the first file; files only become active after an explicit operator action.
@@ -874,8 +874,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
         body:JSON.stringify({path,content:draft,expectedHash:source.hash})}).then(json);
       const next:FileResponse=await fetch(`/api/aura/workbench/file?path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(json);
       handleSaved(next);
-      setStageSaveNotice('Ändringen är sparad i projektfilen.');
-    } catch(error:any) {setStageSaveNotice('Kunde inte spara: '+String(error?.message||error));}
+      setStageSaveNotice('The change is saved to the project file.');
+    } catch(error:any) {setStageSaveNotice('Could not save: '+String(error?.message||error));}
     finally {setStageSaveBusy(false);}
   };
   const selectedFileEvent=stageEvents.filter(event=>event.evidence.path===selectedFile).at(-1)?.id;
@@ -907,7 +907,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     return()=>{active=false;window.clearInterval(timer);};
   },[selectedFile,workspaceView,projectKey,selectedFileEvent]);
   const acceptExternalFile=()=>{
-    if(!externalFile || !window.confirm('Läs den senaste filen och ersätt ditt osparade utkast?'))return;
+    if(!externalFile || !window.confirm('Load the latest file and replace your unsaved draft?'))return;
     setDocuments(current=>({...current,[externalFile.path]:externalFile}));
     setDrafts(current=>{const next={...current};delete next[externalFile.path];return next;});
     setExternalFile(null);
@@ -918,7 +918,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const missionGoals = new Map(missions.map(m => [m.id, m.goal]));
   const missionPhase = String(mission?.phase || mission?.status || (latestMission ? `NO ACTIVE MISSION (latest ${latestMission.status})` : 'NO ACTIVE MISSION'));
 
-  const startGoal = async (explicitGoal?: string, toolHint?: AuraSelectedTool | null, attachmentIds?: string[], executionMode?: 'autonomous') => {
+  const startGoal = async (explicitGoal?: string, toolHint?: AuraSelectedTool | null, attachmentIds?: string[], executionMode?: 'autonomous', harnessModel?: {providerId:string;model:string}) => {
     const trimmed = String(explicitGoal ?? goal).trim();
     if (!trimmed || missionSubmitting) return;
     setMissionSubmitting(true);
@@ -929,6 +929,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           goal: trimmed, attachmentIds, ...(executionMode ? { executionMode } : {}),
+          ...(harnessModel ? { harnessModel } : {}),
           toolHint: toolHint ? {
             kind: toolHint.kind,
             provider: toolHint.provider || null,
@@ -942,11 +943,11 @@ export const JacoAuraComputeIDE: React.FC = () => {
       if (explicitGoal == null) setGoal('');
       const acceptedGoal = data.goal || data.mission;
       if (!acceptedGoal?.id) throw new Error('GOAL_ACKNOWLEDGEMENT_INVALID');
-      setMissionNotice(`Uppdrag registrerat: ${acceptedGoal.id}`);
+      setMissionNotice(`Mission registered: ${acceptedGoal.id}`);
       void refresh({ includeFiles: false }).catch(() => {});
       return { ...data, goal: acceptedGoal };
     } catch (error: any) {
-      setMissionNotice(`Uppdragets registrering kunde inte bekräftas: ${error?.message || String(error)}`);
+      setMissionNotice(`Mission registration could not be confirmed: ${error?.message || String(error)}`);
       throw error;
     } finally {
       setMissionSubmitting(false);
@@ -977,11 +978,11 @@ export const JacoAuraComputeIDE: React.FC = () => {
   };
 
   const approvalLabel = (action: string) => ({
-    approve: 'Godkänn',
-    reject: 'Avslå',
-    confirm: 'Bekräfta resultat',
-    resume: 'Fortsätt',
-    cancel: 'Avsluta uppdrag',
+    approve: 'Approve',
+    reject: 'Reject',
+    confirm: 'Confirm result',
+    resume: 'Resume',
+    cancel: 'Cancel mission',
   } as Record<string, string>)[action] || action;
 
   const probeProvider = async (id: string) => {
@@ -1003,7 +1004,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const useProviderEverywhere = async (provider: any) => {
     setProviderBusy(provider.id);
     try {
-      // Fail closed: "Använd" must mean a real completion worked, not merely that a key string exists.
+      // Fail closed: "Use" must mean a real completion worked, not merely that a key string exists.
       // Read the server's current model list, test the exact model, then persist the choice.
       const plannerState = await fetch('/api/nova/planner', { cache: 'no-store' }).then(json);
       const option = (plannerState?.choices || []).find((item: any) => item.provider === provider.id);
@@ -1024,15 +1025,15 @@ export const JacoAuraComputeIDE: React.FC = () => {
       const chosen = planner?.choice?.model || model;
       try { localStorage.setItem('jaco:aura:chat-provider:v2', JSON.stringify({ provider: provider.id, model: chosen })); } catch { /* the chat then keeps its own choice */ }
       window.dispatchEvent(new Event('jaco:aura:provider-chosen'));
-      setUseResult(current => ({ ...current, [provider.id]: { ok: true, text: `${provider.id} / ${chosen} verifierad (${tested.result.latencyMs ?? '?'} ms) och används nu för chatten och Nova` } }));
+      setUseResult(current => ({ ...current, [provider.id]: { ok: true, text: `${provider.id} / ${chosen} verified (${tested.result.latencyMs ?? '?'} ms) and now used for chat and Nova` } }));
     } catch (error: any) {
       const code = String(error?.message || error);
-      const why = /PLANNER_KEY_MISSING/.test(code) ? 'nyckel saknas, lägg in den under Lägg till API-nyckel'
-        : /PAID_MODELS_DISABLED/.test(code) ? 'betalda modeller är avstängda'
-        : /PLANNER_ENV_PRIMARY/.test(code) ? 'servern styr valet via JACO_PRIMARY_PROVIDER'
-        : /MODEL_TEST_FAILED/.test(code) ? code.replace(/^MODEL_TEST_FAILED:/, 'modellen svarade inte: ')
+      const why = /PLANNER_KEY_MISSING/.test(code) ? 'key missing, add it under Add API key'
+        : /PAID_MODELS_DISABLED/.test(code) ? 'paid models are turned off'
+        : /PLANNER_ENV_PRIMARY/.test(code) ? 'the server controls the choice via JACO_PRIMARY_PROVIDER'
+        : /MODEL_TEST_FAILED/.test(code) ? code.replace(/^MODEL_TEST_FAILED:/, 'the model did not answer: ')
         : code;
-      setUseResult(current => ({ ...current, [provider.id]: { ok: false, text: `Kunde inte välja ${provider.id}: ${why}` } }));
+      setUseResult(current => ({ ...current, [provider.id]: { ok: false, text: `Could not select ${provider.id}: ${why}` } }));
     } finally {
       setProviderBusy(null);
     }
@@ -1046,7 +1047,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
             <AuraProjectPicker
               disabled={!canSwitchProject(drafts,documents)}
               onOpened={(root) => {
-                setProjectName(root.replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Arbetsyta');
+                setProjectName(root.replace(/\\/g,'/').split('/').filter(Boolean).at(-1) || 'Workspace');
                 restoreDrafts(root);
                 setStageProjectCutoff(Date.now());
                 setFocusedEvent(null);
@@ -1268,9 +1269,9 @@ export const JacoAuraComputeIDE: React.FC = () => {
       );
     }
 
-    if (sidebar === 'revenue') return <React.Suspense fallback={<div className="p-3 text-xs">Öppnar ekonomi…</div>}><div className="flex-1 overflow-auto px-2 py-2 space-y-3"><EconomicBudgetPanel inline /><RevenueView /></div></React.Suspense>;
-    if (sidebar === 'skills') return <React.Suspense fallback={<div className="p-3 text-xs">Öppnar skills…</div>}><SkillsView /></React.Suspense>;
-    if (sidebar === 'devices') return <React.Suspense fallback={<div className="p-3 text-xs">Öppnar enheter…</div>}><DevicesView browser={snapshot?.integrations?.cdp} onInspectBrowser={() => void selectMcpToolByName('cdp', 'nova_targets')} /></React.Suspense>;
+    if (sidebar === 'revenue') return <React.Suspense fallback={<div className="p-3 text-xs">Opening budget…</div>}><div className="flex-1 overflow-auto px-2 py-2 space-y-3"><EconomicBudgetPanel inline /><RevenueView /></div></React.Suspense>;
+    if (sidebar === 'skills') return <React.Suspense fallback={<div className="p-3 text-xs">Opening skills…</div>}><SkillsView /></React.Suspense>;
+    if (sidebar === 'devices') return <React.Suspense fallback={<div className="p-3 text-xs">Opening devices…</div>}><DevicesView browser={snapshot?.integrations?.cdp} onInspectBrowser={() => void selectMcpToolByName('cdp', 'nova_targets')} /></React.Suspense>;
 
     if (sidebar === 'tools') {
       return (
@@ -1419,7 +1420,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
               </div>
             )}
 
-            <div className="px-3 py-1.5 mt-2 text-[9px] uppercase tracking-wider text-slate-600">Arbetsflöden</div>
+            <div className="px-3 py-1.5 mt-2 text-[9px] uppercase tracking-wider text-slate-600">Workflows</div>
             {AURA_PRODUCT_TOOLS.map(tool => (
               <button key={tool.id} onClick={() => openTool(tool)} className="w-full text-left px-3 py-2 border-b border-[#292929] hover:bg-[#2a2d2e]">
                 <div className="flex items-center gap-2">
@@ -1456,28 +1457,28 @@ export const JacoAuraComputeIDE: React.FC = () => {
                       disabled={providerBusy === provider.id || provider.disabled}
                       className="text-[11px] border border-cyan-700 text-cyan-200 px-2.5 py-1.5 rounded hover:bg-cyan-950 disabled:opacity-40"
                     >
-                      Använd
+                      Use
                     </button>
                     <button
                       onClick={() => void probeProvider(provider.id)}
                       disabled={providerBusy === provider.id}
                       className="text-[11px] border border-[#444] px-2.5 py-1.5 rounded hover:bg-[#2b2b2b] disabled:opacity-40"
                     >
-                      {providerBusy === provider.id ? 'Testar…' : 'Testa'}
+                      {providerBusy === provider.id ? 'Testing…' : 'Test'}
                     </button>
                   </div>
                 </div>
                 <div className="text-[10px] mt-1">
                   {provider.disabled
-                    ? <span className="text-slate-500">avstängd (JACO_DISABLED_PROVIDERS)</span>
+                    ? <span className="text-slate-500">disabled (JACO_DISABLED_PROVIDERS)</span>
                     : provider.roles?.length
-                      ? <span className="text-emerald-300">används för: {provider.roles.join(' · ')}</span>
-                      : <span className="text-slate-500">används inte</span>}
+                      ? <span className="text-emerald-300">used for: {provider.roles.join(' · ')}</span>
+                      : <span className="text-slate-500">not in use</span>}
                 </div>
                 <div className="text-[10px] text-slate-500 mt-1 truncate">{provider.baseUrl}</div>
                 <div className="grid grid-cols-2 gap-1 mt-2 text-[10px]">
                   <span>model</span><span className="text-slate-300 truncate">{provider.defaultModel || 'not set'}</span>
-                  <span>API-nyckel</span><span className={provider.credentialConfigured ? 'text-emerald-300' : 'text-slate-400'}>{provider.credentialConfigured ? 'Konfigurerad' : provider.apiKeyEnv ? 'Ej konfigurerad' : 'Ingen referens angiven'}</span>
+                  <span>API key</span><span className={provider.credentialConfigured ? 'text-emerald-300' : 'text-slate-400'}>{provider.credentialConfigured ? 'Configured' : provider.apiKeyEnv ? 'Not configured' : 'No reference set'}</span>
                 </div>
                 {useResult[provider.id] && (
                   <div className={`mt-2 text-[11px] border rounded p-1.5 ${statusClass(useResult[provider.id].ok ? 'VERIFIED' : 'FAILED')}`}>{useResult[provider.id].text}</div>
@@ -1555,7 +1556,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
           runtimeError={runtimeError}
           onOpenEvidence={(event) => { setSelectedEvidence(event); setWorkspaceView('evidence'); }}
           onOpenFile={openFile}
-          onStartGoal={async (text, tool, attachments, executionMode) => { return await startGoal(text, tool, attachments, executionMode); }}
+          onStartGoal={async (text, tool, attachments, executionMode, harnessModel) => { return await startGoal(text, tool, attachments, executionMode, harnessModel); }}
         />
       </div>
     </>
@@ -1563,21 +1564,21 @@ export const JacoAuraComputeIDE: React.FC = () => {
 
   const renderMissionList = () => (
     <>
-            {missions.length === 0 && <div className="text-slate-500 p-1">Inga uppdrag observerade.</div>}
+            {missions.length === 0 && <div className="text-slate-500 p-1">No missions observed.</div>}
             {missions.map(m => {
               const result = m.lastAction?.result;
               return (
                 <div key={m.id} className={`min-w-0 overflow-hidden border rounded px-2 py-1.5 ${m.status === 'ACTIVE' ? 'border-cyan-800 bg-[#0b1620]' : 'border-[#2b2b2b] bg-[#141414]'}`}>
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className={`text-[9px] border rounded px-1 shrink-0 ${statusClass(m.status)}`}>{m.status}</span><button type="button" onClick={()=>{setReviewMissionId(m.id);setWorkspaceView('evidence');}}>Granska ändringar</button>
+                    <span className={`text-[9px] border rounded px-1 shrink-0 ${statusClass(m.status)}`}>{m.status}</span><button type="button" onClick={()=>{setReviewMissionId(m.id);setWorkspaceView('evidence');}}>Review changes</button>
                     <span className="min-w-0 flex-1 text-slate-200 truncate" title={m.goal}>{m.goal}</span>
                     <span className="ml-auto text-[9px] text-slate-500 shrink-0">
-                      steg {m.step}{m.maxSteps ? `/${m.maxSteps}` : ''} · {formatTime(m.updatedAt)}
+                      step {m.step}{m.maxSteps ? `/${m.maxSteps}` : ''} · {formatTime(m.updatedAt)}
                     </span>
                   </div>
                   {m.lastAction && (
                     <div className="mt-0.5 text-[10px] flex gap-1.5 min-w-0">
-                      <span className="text-slate-500 shrink-0">{m.lastAction.running ? 'Kör nu:' : 'Senast:'}</span>
+                      <span className="text-slate-500 shrink-0">{m.lastAction.running ? 'Running now:' : 'Latest:'}</span>
                       <span className="min-w-0 text-slate-300 truncate">{m.lastAction.text}</span>
                       {result && (
                         <span className={`truncate ${result.state === 'verified' ? 'text-emerald-400' : result.state === 'failed' ? 'text-amber-400' : 'text-slate-400'}`}>
@@ -1588,26 +1589,26 @@ export const JacoAuraComputeIDE: React.FC = () => {
                   )}
                   {m.answer && (
                     <details className="mt-1 text-[10px] min-w-0">
-                      <summary className="cursor-pointer text-cyan-300 truncate">Svar: {m.answer.split('\n')[0]}</summary>
+                      <summary className="cursor-pointer text-cyan-300 truncate">Answer: {m.answer.split('\n')[0]}</summary>
                       <div className="mt-1 whitespace-pre-wrap break-words text-slate-300 max-h-60 overflow-auto">{m.answer}</div>
                       <div className={`mt-1 text-[9px] ${!m.evidence?.cited.length ? 'text-slate-500' : m.evidence.ok ? 'text-emerald-400' : 'text-amber-400'}`}>
                         {!m.evidence?.cited.length
-                          ? 'Belägg: svaret hänvisar inte till några steg'
+                          ? 'Evidence: the answer cites no steps'
                           : m.evidence.ok
-                            ? `Belägg: ${m.evidence.verified.length}/${m.evidence.cited.length} citerade steg är verifierade kvitton`
-                            : `Belägg saknas: ${[...m.evidence.missing, ...m.evidence.unverified].map(n => `#${n}`).join(', ')} finns inte som verifierat kvitto, så svaret godkänns inte automatiskt`}
+                            ? `Evidence: ${m.evidence.verified.length}/${m.evidence.cited.length} cited steps are verified receipts`
+                            : `Evidence missing: ${[...m.evidence.missing, ...m.evidence.unverified].map(n => `#${n}`).join(', ')} not found as a verified receipt, so the answer is not approved automatically`}
                       </div>
                       {!m.claimCheck && m.status === 'AWAITING_VERIFICATION' && (
-                        <div className="mt-0.5 text-[9px] text-slate-400">Påståendena kontrolleras mot beläggen…</div>
+                        <div className="mt-0.5 text-[9px] text-slate-400">Claims are being checked against the evidence…</div>
                       )}
                       {m.claimCheck && (
                         <div className={`mt-0.5 text-[9px] ${m.claimCheck.ok ? 'text-emerald-400' : 'text-amber-400'}`}>
                           {m.claimCheck.ok
-                            ? `Påståenden: ${m.claimCheck.claims} kontrollerade (${m.claimCheck.facts} fakta mot kvittona${m.claimCheck.judged ? `, ${m.claimCheck.judged} bedömda av ${m.claimCheck.judge}` : ''}), inget motsägs`
+                            ? `Claims: ${m.claimCheck.claims} checked (${m.claimCheck.facts} facts against the receipts${m.claimCheck.judged ? `, ${m.claimCheck.judged} judged by ${m.claimCheck.judge}` : ''}), none contradicted`
                             : m.claimCheck.error
-                              ? `Påståendena kunde inte kontrolleras: ${m.claimCheck.error}`
-                              : `${m.claimCheck.problems.length} påstående(n) håller inte mot beläggen:`}
-                          {m.claimCheck.partial.length > 0 && ` (avkortade belägg: ${m.claimCheck.partial.map(n => `#${n}`).join(', ')})`}
+                              ? `Claims could not be checked: ${m.claimCheck.error}`
+                              : `${m.claimCheck.problems.length} claim(s) do not hold against the evidence:`}
+                          {m.claimCheck.partial.length > 0 && ` (truncated evidence: ${m.claimCheck.partial.map(n => `#${n}`).join(', ')})`}
                           {!m.claimCheck.ok && m.claimCheck.problems.map((p, i) => (
                             <div key={i} className="ml-2 text-amber-300">- {p.text} <span className="text-slate-400">({p.why})</span></div>
                           ))}
@@ -1625,29 +1626,29 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const renderApprovals = () => showApprovals && (
 
       <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex justify-end" onClick={() => setShowApprovals(false)}>
-        <div role="dialog" aria-modal="true" aria-label="Beslut som behöver dig" className="h-[100dvh] max-h-[100dvh] w-full max-w-xl bg-[#111820] border-l border-[#30363d] shadow-2xl flex flex-col" onClick={event => event.stopPropagation()}>
+        <div role="dialog" aria-modal="true" aria-label="Decisions that need you" className="h-[100dvh] max-h-[100dvh] w-full max-w-xl bg-[#111820] border-l border-[#30363d] shadow-2xl flex flex-col" onClick={event => event.stopPropagation()}>
           <div className="h-12 px-4 border-b border-[#30363d] flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-white">
                 <ShieldAlert className="w-4 h-4 text-amber-400" />
-                Beslut som behöver dig
+                Decisions that need you
                 <span className={`text-[10px] rounded border px-1.5 py-0.5 ${snapshot?.approvals?.count ? 'border-amber-700 text-amber-300' : 'border-emerald-800 text-emerald-300'}`}>
-                  {snapshot?.approvals?.count ?? 0} väntande beslut
+                  {snapshot?.approvals?.count ?? 0} pending decisions
                 </span>
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Arbete som redan är tillåtet inom uppdraget fortsätter automatiskt. Här visas beslut som kräver dig.</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Work already permitted within the mission continues automatically. Decisions that require you are shown here.</div>
             </div>
-            <button onClick={() => setShowApprovals(false)} aria-label="Stäng beslutspanelen" className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded border border-[#343b45] text-xs text-slate-200 hover:text-white hover:bg-[#252b33]">
-              <X className="w-4 h-4" /> Stäng
+            <button onClick={() => setShowApprovals(false)} aria-label="Close decisions panel" className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded border border-[#343b45] text-xs text-slate-200 hover:text-white hover:bg-[#252b33]">
+              <X className="w-4 h-4" /> Close
             </button>
           </div>
 
           <div className="px-4 py-3 border-b border-[#252b33] bg-[#0d1117]">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Aktiva behörigheter</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Active mandates</div>
             <div className="mt-1 text-xs text-slate-300">
               {snapshot?.approvals?.activeMandates?.length
-                ? snapshot.approvals.activeMandates.map(m => `${m.name} · gäller till ${formatTime(m.expiresAt)}`).join(' · ')
-                : 'Inga aktiva signerade mandat observerade.'}
+                ? snapshot.approvals.activeMandates.map(m => `${m.name} · valid until ${formatTime(m.expiresAt)}`).join(' · ')
+                : 'No active signed mandates observed.'}
             </div>
           </div>
 
@@ -1668,7 +1669,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                 </div>
 
                 <div className="mt-3 border border-[#2b3139] rounded bg-[#0d1117] p-2">
-                  <div className="text-[9px] uppercase text-slate-600 mb-1">Vad beslutet gäller och tillgängliga belägg</div>
+                  <div className="text-[9px] uppercase text-slate-600 mb-1">What the decision covers and available evidence</div>
                   <pre className="text-[10px] leading-4 text-slate-400 whitespace-pre-wrap break-words overflow-hidden">{JSON.stringify(approval.details || {}, null, 2)}</pre>
                 </div>
 
@@ -1683,12 +1684,12 @@ export const JacoAuraComputeIDE: React.FC = () => {
                         disabled={Boolean(approvalBusy)}
                         className={`text-[10px] rounded px-3 py-1.5 border disabled:opacity-40 ${positive ? 'bg-[#0e639c] border-[#1177bb] text-white' : 'border-[#4a4f57] text-slate-300 hover:bg-[#252a31]'}`}
                       >
-                        {busy ? 'Sparar beslut…' : approvalLabel(action)}
+                        {busy ? 'Saving decision…' : approvalLabel(action)}
                       </button>
                     );
                   })}
                   {!approval.actions.length && (
-                    <span className="text-[10px] text-amber-300">En inställning behöver ändras. Visa orsaken ovan och åtgärda den innan du fortsätter.</span>
+                    <span className="text-[10px] text-amber-300">A setting needs to change. See the reason above and fix it before continuing.</span>
                   )}
                 </div>
               </div>
@@ -1697,8 +1698,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
             {!snapshot?.approvals?.items?.length && (
               <div className="h-full min-h-[240px] flex flex-col items-center justify-center text-center text-slate-500">
                 <CheckCircle2 className="w-8 h-8 text-emerald-500 mb-3" />
-                <div className="text-sm text-slate-300">Inga beslut väntar på dig</div>
-                <div className="text-[10px] mt-1">JACO väntar inte på något godkännande i de kontrollerade tjänsterna.</div>
+                <div className="text-sm text-slate-300">No decisions are waiting for you</div>
+                <div className="text-[10px] mt-1">JACO is not waiting for any approval in the checked services.</div>
               </div>
             )}
           </div>
@@ -1707,12 +1708,12 @@ export const JacoAuraComputeIDE: React.FC = () => {
   );
 
   const MOBILE_MORE: [SidebarView, typeof Folder, string][] = [
-    ['devices', MonitorSmartphone, 'Enheter'],
+    ['devices', MonitorSmartphone, 'Devices'],
     ['skills', BookOpen, 'Skills'],
     ['source-control', GitBranch, 'Git'],
-    ['tools', Wrench, 'Verktyg'],
-    ['providers', PlugZap, 'Modeller'],
-    ['revenue', CircleDollarSign, 'Intäkter'],
+    ['tools', Wrench, 'Tools'],
+    ['providers', PlugZap, 'Models'],
+    ['revenue', CircleDollarSign, 'Revenue'],
   ];
   const remoteViewer = typeof window !== 'undefined' && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
   const signOut = async () => {
@@ -1732,23 +1733,24 @@ export const JacoAuraComputeIDE: React.FC = () => {
     mission:currentMission,agents:snapshot?.workplace?.agents||[],
     provider:snapshot?.seer?.provider||null,model:snapshot?.seer?.model||null,
     cdpState:snapshot?.integrations?.cdp?.state||'UNOBSERVED',
-    approvals:snapshot?.approvals?.count||0,latestEvent:cognitiveEvents.at(-1)||null
+    approvals:snapshot?.approvals?.count||0,latestEvent:cognitiveEvents.at(-1)||null,
+    runtimeBlocker:snapshot?.seer?.blocker||null
   });
   const codeWorkspace = (
     <div className="cognitive-code-workspace">
       <div className="cognitive-file-tabs">
         {openFiles.map(path => <div key={path} className={selectedFile === path ? 'active' : ''}>
           <button type="button" onClick={() => setSelectedFile(path)}><FileCode2 size={13}/><span>{path.split('/').at(-1)}</span>{drafts[path] !== undefined && drafts[path] !== documents[path]?.content && <span className="cognitive-dirty-dot"/>}</button>
-          <button type="button" aria-label={'Stäng '+path} onClick={() => closeFile(path)}><X size={12}/></button>
+          <button type="button" aria-label={'Close '+path} onClick={() => closeFile(path)}><X size={12}/></button>
         </div>)}
-        <button type="button" className="cognitive-file-picker" onClick={() => { setSidebar('explorer'); setSidePanelOpen(true); }}><Folder size={14}/>Öppna fil</button>
+        <button type="button" className="cognitive-file-picker" onClick={() => { setSidebar('explorer'); setSidePanelOpen(true); }}><Folder size={14}/>Open file</button>
       </div>
-      {runtimeError&&<div role="alert" className="cognitive-operation-notice">{runtimeError}<button type="button" onClick={()=>setRuntimeError(null)} aria-label="Stäng felmeddelandet"><X size={13}/></button></div>}
+      {runtimeError&&<div role="alert" className="cognitive-operation-notice">{runtimeError}<button type="button" onClick={()=>setRuntimeError(null)} aria-label="Dismiss error message"><X size={13}/></button></div>}
       <div className="cognitive-editor-body">
-        {editorFile && <div className="cognitive-editor-session" hidden={!fileView}><React.Suspense fallback={<div className="cognitive-empty-detail">Öppnar kodeditorn…</div>}><AuraCodeEditor file={editorFile} draft={drafts[editorFile.path]} onDraftChange={updateDraft} onSaved={handleSaved}/></React.Suspense></div>}
-        {!fileView && <div className="cognitive-empty-detail"><FileCode2 size={30}/><h2>{selectedFile ? 'Öppnar '+selectedFile+'…' : 'Koden, när du behöver den.'}</h2><p>Öppna en fil från projektet eller från en händelse i samtalet.</p><button type="button" className="cognitive-primary-outline" onClick={() => { setSidebar('explorer'); setSidePanelOpen(true); }}>Visa projektfiler</button></div>}
+        {editorFile && <div className="cognitive-editor-session" hidden={!fileView}><React.Suspense fallback={<div className="cognitive-empty-detail">Opening code editor…</div>}><AuraCodeEditor file={editorFile} draft={drafts[editorFile.path]} onDraftChange={updateDraft} onSaved={handleSaved}/></React.Suspense></div>}
+        {!fileView && <div className="cognitive-empty-detail"><FileCode2 size={30}/><h2>{selectedFile ? 'Opening '+selectedFile+'…' : 'The code, when you need it.'}</h2><p>Open a file from the project or from an event in the conversation.</p><button type="button" className="cognitive-primary-outline" onClick={() => { setSidebar('explorer'); setSidePanelOpen(true); }}>Show project files</button></div>}
       </div>
-      <button type="button" className="cognitive-dock-toggle" aria-expanded={showTerminal} onClick={() => setShowTerminal(v => !v)}><Terminal size={13}/>{showTerminal ? 'Dölj terminal & detaljer' : 'Öppna terminal & detaljer'}</button>
+      <button type="button" className="cognitive-dock-toggle" aria-expanded={showTerminal} onClick={() => setShowTerminal(v => !v)}><Terminal size={13}/>{showTerminal ? 'Hide terminal & details' : 'Open terminal & details'}</button>
       {showTerminal && (            <div className="cognitive-terminal-dock min-h-0 min-w-0 flex flex-col">
               <div className="h-9 px-3 flex items-center justify-between border-b border-[#2b2b2b] shrink-0">
                 <div className="flex items-center gap-4 text-[11px] h-full">
@@ -1854,7 +1856,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const sideMission = missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
   const sideObservation = sideMission ? stageEvents.filter(event=>event.missionId===sideMission.id).at(-1)?.text ?? null : null;
   const stage = <div className="aura-stage-column">
-    {sideMission&&<details className="aura-stage-mission-details"><summary>Uppdrag · {sideMission.goal}</summary><MissionCard mission={sideMission as any} observation={sideObservation} onCancel={cancelMission} onEndGoal={endMissionGoal} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/></details>}
+    {sideMission&&<details className="aura-stage-mission-details"><summary>Mission · {sideMission.goal}</summary><MissionCard mission={sideMission as any} observation={sideObservation} onCancel={cancelMission} onEndGoal={endMissionGoal} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/></details>}
     <AuraLiveStage projectRevision={projectKey} candidate={selectedStage} events={stageEvents} preview={stagePreview}
     previewError={fileReadError?.path===stagePath?fileReadError.message:null} onRetryPreview={()=>setFileReadRevision(value=>value+1)}
     previewReady={Boolean(stagePreview)} active={status.tone==='active'}
@@ -1866,54 +1868,54 @@ export const JacoAuraComputeIDE: React.FC = () => {
     pinned={workspacePinned} onHoldMaterial={()=>setWorkspacePinned(true)}
     activeMission={missions.find(item=>item.status==='ACTIVE') ? {
       id:missions.find(item=>item.status==='ACTIVE')!.id,
-      goal:String(missions.find(item=>item.status==='ACTIVE')!.goal || 'Pågående uppdrag'),
+      goal:String(missions.find(item=>item.status==='ACTIVE')!.goal || 'Running mission'),
       phase:missions.find(item=>item.status==='ACTIVE')!.phase || null,
       status:'ACTIVE'
     } : null}
     agentActivity={{
       connected:(snapshot?.workplace?.agents || []).filter(item=>item.status==='READY' || item.liveSessions>0).length,
-      working:(snapshot?.workplace?.agents || []).reduce((count,item)=>count+Math.max(0,item.liveSessions || 0),0)
+      working:presence.workingSessions
     }}
     presence={presence}/>
   </div>;
   const canvasDetail = <>
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
-    {workspaceView==='agents'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Öppnar agentkartan…</div>}><AuraAgentWorkspace goal={goal} onGoalChange={setGoal} onStartGoal={()=>{void startGoal().catch(()=>{});}} submitting={missionSubmitting} notice={missionNotice} onReview={()=>setWorkspaceView('evidence')} onCancelMission={cancelMission}/></React.Suspense>}
-    {workspaceView==='gameboard'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Öppnar uppdragsplaner…</div>}><CognitiveGameboard/></React.Suspense>}
-    {workspaceView==='voice'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Öppnar röstkanalen…</div>}><VoiceChannel/></React.Suspense>}
+    {workspaceView==='agents'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening agent map…</div>}><AuraAgentWorkspace goal={goal} onGoalChange={setGoal} onStartGoal={()=>{void startGoal().catch(()=>{});}} submitting={missionSubmitting} notice={missionNotice} onReview={()=>setWorkspaceView('evidence')} onCancelMission={cancelMission}/></React.Suspense>}
+    {workspaceView==='gameboard'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening mission plans…</div>}><CognitiveGameboard/></React.Suspense>}
+    {workspaceView==='voice'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening voice channel…</div>}><VoiceChannel/></React.Suspense>}
     {workspaceView==='preview'&&<CognitivePreview path={selectedFile} content={fileView ? (drafts[fileView.path] ?? fileView.content) : null} files={files} events={cognitiveEvents} onOpenFile={path => { openFile(path); setWorkspaceView('preview'); }}/>}
     {workspaceView==='evidence'&&<div className="cognitive-evidence-scroll"><MissionReview missions={missions} preferredMissionId={reviewMissionId} onDecisions={()=>setShowApprovals(true)}/><CognitiveEvidence events={cognitiveEvents} selected={selectedEvidence} onSelect={setSelectedEvidence} onOpenFile={openFile}/>
-      <details className="cognitive-mission-details"><summary>Uppdrag & kontroller</summary>{renderMissionList()}</details></div>}
+      <details className="cognitive-mission-details"><summary>Missions & checks</summary>{renderMissionList()}</details></div>}
   </>;
   const detail=<div className="cognitive-detail-wrapper">
-    {fileReadError?.path===selectedFile&&<div role="alert" className="cognitive-operation-notice">Filen kunde inte läsas: {fileReadError.message}<button type="button" onClick={()=>setFileReadRevision(value=>value+1)}>Försök läsa filen igen</button></div>}
+    {fileReadError?.path===selectedFile&&<div role="alert" className="cognitive-operation-notice">The file could not be read: {fileReadError.message}<button type="button" onClick={()=>setFileReadRevision(value=>value+1)}>Retry reading file</button></div>}
     {draftStorageError&&<div role="alert" className="cognitive-operation-notice">{draftStorageError}</div>}
     {draftNotice&&<div role="status" className="cognitive-operation-notice">{draftNotice}</div>}
-    {externalFile&&externalFile.path===selectedFile&&<div role="alert" className="cognitive-operation-notice">Filen har ändrats i arbetsytan. Ditt utkast är bevarat.<button type="button" onClick={acceptExternalFile}>Läs senaste filen</button></div>}
+    {externalFile&&externalFile.path===selectedFile&&<div role="alert" className="cognitive-operation-notice">The file changed in the workspace. Your draft is preserved.<button type="button" onClick={acceptExternalFile}>Load latest file</button></div>}
     <div className="cognitive-detail-body">{canvasDetail}</div>
   </div>;
   const pendingDecision = snapshot?.approvals?.items?.[0];
-  const attention = pendingDecision ? <section className="cognitive-decision" aria-label="Beslut som behöver dig">
-    <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>JACO behöver ditt beslut</strong><span>{snapshot.approvals.count} väntande</span></div>
+  const attention = pendingDecision ? <section className="cognitive-decision" aria-label="Decisions that need you">
+    <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>JACO needs your decision</strong><span>{snapshot.approvals.count} pending</span></div>
     <h2>{pendingDecision.title}</h2>
     <p>{pendingDecision.reason}</p>
     {['command', 'targetFilePath', 'repoUrl'].map(key => typeof pendingDecision.details?.[key] === 'string' && pendingDecision.details[key] &&
-      <p key={key} className="cognitive-decision-context"><span>{({command:'Kommando',targetFilePath:'Fil',repoUrl:'Källa'})[key]}: </span><code>{pendingDecision.details[key]}</code></p>)}
+      <p key={key} className="cognitive-decision-context"><span>{({command:'Command',targetFilePath:'File',repoUrl:'Source'})[key]}: </span><code>{pendingDecision.details[key]}</code></p>)}
     <div className="cognitive-decision-actions">
       {pendingDecision.actions.map(action => <button key={action} type="button" disabled={Boolean(approvalBusy)}
-        onClick={() => void resolveApproval(pendingDecision, action)}>{approvalBusy === `${pendingDecision.id}:${action}` ? 'Sparar beslut…' : approvalLabel(action)}</button>)}
-      <button type="button" onClick={() => setShowApprovals(true)}>Visa detaljer{snapshot.approvals.count > 1 ? ' och alla beslut' : ''}</button>
+        onClick={() => void resolveApproval(pendingDecision, action)}>{approvalBusy === `${pendingDecision.id}:${action}` ? 'Saving decision…' : approvalLabel(action)}</button>)}
+      <button type="button" onClick={() => setShowApprovals(true)}>Show details{snapshot.approvals.count > 1 ? ' and all decisions' : ''}</button>
     </div>
-    {!pendingDecision.actions.length && <p>En inställning behöver åtgärdas. Öppna detaljer för att se vad som saknas.</p>}
-    {approvalError && <p role="alert">Beslutet kunde inte sparas: {approvalError}</p>}
-  </section> : (snapshot?.seer?.blocker || runtimeError) ? <section className="cognitive-decision" aria-label="Det här behöver åtgärdas">
-    <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>Arbetet behöver hjälp</strong></div>
+    {!pendingDecision.actions.length && <p>A setting needs fixing. Open details to see what is missing.</p>}
+    {approvalError && <p role="alert">The decision could not be saved: {approvalError}</p>}
+  </section> : (snapshot?.seer?.blocker || runtimeError) ? <section className="cognitive-decision" aria-label="This needs attention">
+    <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>The work needs help</strong></div>
     <p>{snapshot?.seer?.blocker || runtimeError}</p>
     <div className="cognitive-decision-actions">
-      <button type="button" onClick={() => {setConnectionsTab('models');setWorkspaceView('connections');}}>Modellanslutningar</button>
-      <button type="button" onClick={() => setWorkspaceView('evidence')}>Visa uppdrag och kontroller</button>
-      {runtimeError && <button type="button" onClick={() => setRuntimeError(null)}>Stäng meddelandet</button>}
+      <button type="button" onClick={() => {setConnectionsTab('models');setWorkspaceView('connections');}}>Model connections</button>
+      <button type="button" onClick={() => setWorkspaceView('evidence')}>Show missions and checks</button>
+      {runtimeError && <button type="button" onClick={() => setRuntimeError(null)}>Dismiss message</button>}
     </div>
   </section> : null;
   return <>

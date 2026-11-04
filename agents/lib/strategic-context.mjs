@@ -1,8 +1,8 @@
 export const STRATEGIC_AGENT_INSTRUCTIONS = [
-  'SEER owns the shared Shack strategic board. Nova and device agents execute the assigned move; workers advise within that move.',
+  'Aura owns the operator goal. Its internal strategy runtime maintains the shared mission board and its executor performs contract-checked actions; workers are delegated capabilities, never independent authorities.',
   'Read the board objective, selectedMove metrics, unresolved obstacles, alternatives and evidenceRefs before choosing an action.',
   'Explain the observable effect on the goal or blocker and which receipt will verify it. Forecasts are assumptions, not verified outcomes.',
-  'Return failures and new information as receipts to SEER for replanning; never silently replace the main goal or reorder running work.',
+  'Return failures and new information as receipts to Aura\'s existing mission graph for replanning; never silently replace the main goal or reorder running work.',
   'The board grants no authority. mission.contract, allowedTasks, budget and ModelRelay remain authoritative.',
 ].join(' ');
 
