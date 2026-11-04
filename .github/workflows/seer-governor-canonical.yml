@@ -77,6 +77,8 @@ jobs:
         run: node --test gateway/test/seer-aura-planner.test.mjs gateway/test/seer-goal-cancel.test.mjs gateway/test/seer-model-provider.test.mjs gateway/test/seer-experience-store.test.mjs gateway/test/seer-strategy.test.mjs gateway/test/seer-mission-graph.test.mjs gateway/test/seer-autonomy-loop.test.mjs gateway/test/seer-development-cycle.test.mjs gateway/test/seer-autonomy-resolution.test.mjs gateway/test/seer-self-development.test.mjs gateway/test/seer-self-development-integration.test.mjs tests/nova/seer-integration.test.mjs tests/nova/aura-seer-chat.test.mjs
       - name: Autonomous executor and recovery contracts
         run: node --experimental-sqlite --test --test-timeout=30000 tests/nova/desktop-coding-execution.test.mjs tests/workplace/workplace-supervisor.test.mjs tests/nova/remote-startup-contract.test.mjs
+      - name: Aura-only real Workplace registration and dispatch
+        run: node --experimental-sqlite --test --test-timeout=30000 tests/workplace/agents-join.test.mjs
       - name: Runtime smoke test
         env:
           JACO_GATEWAY_TOKEN: ci-seer-governor-token-1234567890

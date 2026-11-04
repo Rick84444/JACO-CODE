@@ -3,7 +3,8 @@
 // switch applies from the next turn without a restart. Only the providers and models listed here
 // can be chosen. A paid choice still needs JACO_ALLOW_PAID_MODELS=1 and stays under Nova's daily
 // dollar ceiling (JACO_NOVA_PAID_USD_PER_DAY).
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { budgetedNovaOllamaCall } from './nova-ollama-cost.mjs';
 import { credential } from './secret-store.mjs';
@@ -58,11 +59,13 @@ function fixedPlannerChoices(env = process.env) {
   };
 }
 
-// Shared by the runtime (its working directory is JACO_RUNTIME_DIR) and Nova (which runs from the
-// main checkout and finds the runtime through JACO_RUNTIME_DIR in .env).
+// Core writes the operator's model selection under WORKSPACE_ROOT/.jaco/state.
+// An explicit cross-process path always wins; otherwise WORKSPACE_ROOT takes
+// precedence over the directory used to launch a Node runtime. This keeps the
+// same file visible from Core, SEER and the local executor on Windows/Termux.
 export function plannerChoiceFile(env = process.env) {
   if (env.JACO_PLANNER_CHOICE_FILE) return env.JACO_PLANNER_CHOICE_FILE;
-  return join(env.JACO_RUNTIME_DIR || env.JACO_WORKSPACE_ROOT || process.cwd(), '.jaco', 'state', 'provider-preference.json');
+  return join(env.JACO_WORKSPACE_ROOT || env.JACO_RUNTIME_DIR || process.cwd(), '.jaco', 'state', 'provider-preference.json');
 }
 
 // Provider listings mix chat models with speech, embedding, image and video models. Those cannot
@@ -107,9 +110,17 @@ export function validatePlannerChoice({ provider, model } = {}, env = process.en
 }
 
 export function writePlannerChoice(file, { provider, model }, by = 'operator', now = new Date()) {
-  mkdirSync(dirname(file), { recursive: true });
+  // The planner is read by Core, SEER and the local executor. Atomic replace
+  // prevents an interrupted write from making the selected model disappear.
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const saved = { provider, model, by, at: now.toISOString() };
-  writeFileSync(file, JSON.stringify(saved, null, 2));
+  const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(saved, null, 2), { mode: 0o600, flag: 'wx' });
+    renameSync(tmp, file);
+  } finally {
+    try { rmSync(tmp, { force: true }); } catch {}
+  }
   return saved;
 }
 

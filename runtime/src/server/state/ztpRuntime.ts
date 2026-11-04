@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 // ==========================================
-// 1. LATTICES (Djup Immutabilitet & CRDTs)
+// 1. LATTICES (Deep Immutability & CRDTs)
 // ==========================================
 
 export interface JoinSemilattice<T> {
@@ -25,7 +25,7 @@ export class EpochRegister implements JoinSemilattice<any> {
     const { epoch: e1, counter: c1, nodeId: n1 } = this.generation;
     const { epoch: e2, counter: c2, nodeId: n2 } = other.generation;
 
-    // Lexikografisk jämförelse av klockan
+    // Lexicographic comparison of the clock
     if (e2 > e1 || (e2 === e1 && c2 > c1) || (e2 === e1 && c2 === c1 && n2 > n1)) {
       return other;
     }
@@ -33,7 +33,7 @@ export class EpochRegister implements JoinSemilattice<any> {
       return this;
     }
 
-    // Deterministisk tie-breaker via SHA-256 om klockorna av någon anledning är exakt lika
+    // Deterministic tie-breaker via SHA-256 if the clocks are for some reason exactly equal
     const hashSelf = crypto.createHash('sha256').update(JSON.stringify(this.value)).digest('hex');
     const hashOther = crypto.createHash('sha256').update(JSON.stringify(other.value)).digest('hex');
     
@@ -195,7 +195,7 @@ export class ZTPRuntime {
       indexTree: {}
     };
 
-    // Automatisk återställning från WAL-journal om den existerar
+    // Automatic recovery from the WAL journal if it exists
     this.recoverFromJournal();
   }
 
@@ -240,41 +240,41 @@ export class ZTPRuntime {
           }
         };
       } catch (err) {
-        console.warn(`[ZTPRuntime] Fel vid uppspelning av journal-rad seq=${record?.seq}:`, err);
+        console.warn(`[ZTPRuntime] Error replaying journal line seq=${record?.seq}:`, err);
       }
     }
   }
 
-  /** Lock-free read: returnerar direkt pekaren till den oföränderliga snapshoten */
+  /** Lock-free read: returns the pointer to the immutable snapshot directly */
   snapshotRead(): StateSnapshot {
     return this.currentSnapshot;
   }
 
-  /** O(1) uppslagning i det materialiserade trädet */
+  /** O(1) lookup in the materialized tree */
   pointRead(key: string): any {
     const field = this.currentSnapshot.indexTree[key];
     if (!field) return undefined;
     return typeof field.getValue === 'function' ? field.getValue() : field;
   }
 
-  /** Hämtar rå register-metadata (Epoch, Generation, Node) */
+  /** Returns raw register metadata (Epoch, Generation, Node) */
   pointReadRegister(key: string): EpochRegister | undefined {
     return this.currentSnapshot.indexTree[key];
   }
 
-  /** Genererar nästa sekvensnummer för noden */
+  /** Generates the next sequence number for the node */
   nextSeq(): number {
     this.sequenceCounter += 1;
     return this.sequenceCounter;
   }
 
-  /** Icke-blockerande ingest för agenter */
+  /** Non-blocking ingest for agents */
   dispatch(seq: number, key: string, delta: JoinSemilattice<any>): void {
     this.inbox.push({ seq, key, delta });
     this.triggerMaterialization();
   }
 
-  /** Högnivå-helper för att skriva tillstånd deterministiskt */
+  /** High-level helper to write state deterministically */
   recordState(key: string, value: any, options?: { epoch?: number; counter?: number; nodeId?: string }): { seq: number; key: string } {
     const seq = options?.counter ?? this.nextSeq();
     const epoch = options?.epoch ?? this.currentEpoch;
@@ -285,7 +285,7 @@ export class ZTPRuntime {
     return { seq, key };
   }
 
-  /** Returnerar alla materialiserade värden som en ren JSON-struktur */
+  /** Returns all materialized values as a plain JSON structure */
   getAllValues(): Record<string, any> {
     const result: Record<string, any> = {};
     for (const [k, v] of Object.entries(this.currentSnapshot.indexTree)) {
@@ -294,7 +294,7 @@ export class ZTPRuntime {
     return result;
   }
 
-  /** Hämtar råa loggposter för granskning */
+  /** Returns raw log entries for review */
   getJournalHistory(limit = 100): JournalRecord[] {
     const records = this.journal.readAllRecords();
     return records.slice(-limit);
@@ -353,7 +353,7 @@ export function getZTPRuntime(): ZTPRuntime {
     const defaultJournalPath = path.join(process.cwd(), '.jaco', 'data', 'ztp-main.journal');
     globalZTPInstance = new ZTPRuntime('jaco_studio_main', defaultJournalPath);
 
-    // Initialisera grundläggande systemtillstånd om tomt
+    // Initialize base system state if empty
     if (!globalZTPInstance.pointRead('system_status')) {
       globalZTPInstance.recordState('system_status', 'OPERATIONAL');
       globalZTPInstance.recordState('manifold_drift_control', 0.0000);

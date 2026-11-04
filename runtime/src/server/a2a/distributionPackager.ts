@@ -40,7 +40,7 @@ export function generateDistributablePackages(): {
       version: '1.4.0',
       priceSek: 65,
       stripePaymentUrl: 'https://ais-dev-fcwnhntycugc732crmifrq-37554770847.europe-west1.run.app/?payment_status=success&skill=skill-ast-refactor',
-      description: 'Syntax- och AST-verifierad refaktorering för TypeScript/Node.js utan regressioner.',
+      description: 'Syntax- and AST-verified refactoring for TypeScript/Node.js without regressions.',
       codeSnippet: `export function refactorAST(sourceCode, rules) {
   // Pure AST transformation with zero regression guarantees
   return { success: true, optimizedCode: sourceCode, rulesApplied: Object.keys(rules || {}).length };
@@ -52,7 +52,7 @@ export function generateDistributablePackages(): {
       version: '2.1.0',
       priceSek: 85,
       stripePaymentUrl: 'https://ais-dev-fcwnhntycugc732crmifrq-37554770847.europe-west1.run.app/?payment_status=success&skill=skill-npu-acceleration',
-      description: 'Hårdvaruaccelererad NPU/DSP-delegat för Android Pixel och Snapdragon (Hexagon).',
+      description: 'Hardware-accelerated NPU/DSP delegate for Android Pixel and Snapdragon (Hexagon).',
       codeSnippet: `export async function delegateToTensorNpu(tensorBuffer) {
   // Direct LiteRT-LM C++ JNI bridge execution
   return { delegated: true, latencyMs: 1.4, flops: "14.2 TOPS" };
@@ -64,7 +64,7 @@ export function generateDistributablePackages(): {
       version: '1.2.0',
       priceSek: 45,
       stripePaymentUrl: 'https://ais-dev-fcwnhntycugc732crmifrq-37554770847.europe-west1.run.app/?payment_status=success&skill=skill-sandbox-verification',
-      description: 'Automatisk DORA- och sandlådegranskning av A2A-kommandon före runtime-exekvering.',
+      description: 'Automatic DORA and sandbox review of A2A commands before runtime execution.',
       codeSnippet: `export function verifySandboxSafety(commandPayload) {
   const allowed = ['crypto', 'path', 'util'];
   return { isSafe: true, riskScore: 0.02, allowedModules: allowed };
@@ -76,7 +76,7 @@ export function generateDistributablePackages(): {
       version: '1.0.8',
       priceSek: 120,
       stripePaymentUrl: 'https://ais-dev-fcwnhntycugc732crmifrq-37554770847.europe-west1.run.app/?payment_status=success&skill=skill-gitops-automation',
-      description: 'Autonoma commit- och rollback-kedjor med SHA-256 checkpoints för GitHub.',
+      description: 'Autonomous commit and rollback chains with SHA-256 checkpoints for GitHub.',
       codeSnippet: `export async function syncGitOps(repo, branch) {
   return { synced: true, targetRepo: repo, targetBranch: branch, commitHash: "sha256_verified" };
 }`
@@ -131,27 +131,27 @@ export function generateDistributablePackages(): {
 
     // Write README.md for GitHub distribution
     const readmeContent = `# ${item.name}
-> Distribuerad via [JACO Autonomus IDE](https://github.com/${baseRepo}) & [Hugging Face](https://huggingface.co/${hfAuthor})
+> Distributed via [JACO Autonomus IDE](https://github.com/${baseRepo}) & [Hugging Face](https://huggingface.co/${hfAuthor})
 
-## Översikt
+## Overview
 ${item.description}
 
 - **Version**: \`${item.version}\`
-- **Författare**: \`${hfAuthor}\`
-- **Pris**: \`${item.priceSek} SEK\` (Engångslicens / A2A Pay-per-use)
-- **SHA-256 Verifiering**: \`${checksum}\`
+- **Author**: \`${hfAuthor}\`
+- **Price**: \`${item.priceSek} SEK\` (One-time license / A2A pay-per-use)
+- **SHA-256 verification**: \`${checksum}\`
 
-## Installation via A2A eller Node.js
+## Installation via A2A or Node.js
 \`\`\`bash
 npm install @jaco-skills/${item.skillId}
 \`\`\`
 
-## Köp Licens & A2A Token
-För att erhålla obegränsad access-token och registrera noden i ditt kluster:
-[Köp Licens via Stripe](${item.stripePaymentUrl})
+## Buy License & A2A Token
+To obtain an unlimited access token and register the node in your cluster:
+[Buy License via Stripe](${item.stripePaymentUrl})
 
-## Säkerhet & Verifiering
-Detta paket har granskats och verifierats av JACO Quality Auditor med noll regressionsfel.
+## Security & Verification
+This package has been reviewed and verified by JACO Quality Auditor with zero regression failures.
 `;
 
     fs.writeFileSync(path.join(packageFolder, 'README.md'), readmeContent, 'utf8');

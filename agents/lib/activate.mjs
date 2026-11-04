@@ -47,7 +47,7 @@ export async function activationReport({
     ok: false,
   };
   const version = await runtimeUp({ baseUrl, fetchImpl });
-  if (!version) { report.problems.push('JACO-runtime svarar inte. Starta stacken med: jaco activate'); return report; }
+  if (!version) { report.problems.push('The JACO runtime is not answering. Start the stack with: jaco activate'); return report; }
   report.runtime = { up: true, version: version === true ? null : version };
 
   // On Termux, functional HTTP health is not enough: Sentinel/jacoctl owns the canonical runit tree.
@@ -57,10 +57,10 @@ export async function activationReport({
       const sentinel = await call(fetchImpl, sentinelUrl.replace(/\/+$/, ''), '', 'GET', '/api/system/status', null, 5000);
       const state = String(sentinel?.status?.state || sentinel?.status?.supervisor || 'UNKNOWN');
       report.supervisor = { required: true, up: true, state };
-      if (state !== 'READY') report.problems.push(`Kanonisk supervisor är inte READY (${state}).`);
+      if (state !== 'READY') report.problems.push(`The canonical supervisor is not READY (${state}).`);
     } catch (error) {
       report.supervisor = { required: true, up: false, state: 'UNAVAILABLE' };
-      report.problems.push(`Sentinel/supervisor svarar inte: ${errorText(error)}`);
+      report.problems.push(`Sentinel/supervisor is not answering: ${errorText(error)}`);
     }
   } else {
     report.supervisor = { required: false, up: null, state: 'NOT_REQUIRED' };
@@ -79,11 +79,11 @@ export async function activationReport({
         novaState: supervised.nova?.state || null,
       };
       if (supervised.state !== 'RUNNING' || supervised.nova?.state !== 'RUNNING') {
-        report.problems.push(`Workplace/Durable Nova är inte RUNNING (workplace=${supervised.state || 'UNKNOWN'}, nova=${supervised.nova?.state || 'UNKNOWN'}).`);
+        report.problems.push(`Workplace/Durable Nova is not RUNNING (workplace=${supervised.state || 'UNKNOWN'}, nova=${supervised.nova?.state || 'UNKNOWN'}).`);
       }
     } catch (error) {
       report.workplace = { required: true, up: false, state: null, novaState: null };
-      report.problems.push(`Workplace svarar inte: ${errorText(error)}`);
+      report.problems.push(`Workplace is not answering: ${errorText(error)}`);
     }
   } else {
     report.workplace = { required: false, up: null, state: 'NOT_REQUIRED', novaState: 'NOT_REQUIRED' };
@@ -105,13 +105,13 @@ export async function activationReport({
     report.tools.servers = queue.map(({ agentAccess, ...rest }) => rest);
     report.tools.ready = queue.filter(s => s.status === 'READY').length;
     report.tools.toolCount = queue.reduce((n, s) => n + (s.status === 'READY' ? s.tools : 0), 0);
-    for (const s of queue.filter(s => s.error)) report.problems.push(`Verktygsservern ${s.id} startade inte: ${s.error}`);
-  } catch (error) { report.problems.push(`Kunde inte läsa verktygen: ${errorText(error)}`); }
-  if (report.tools.toolCount === 0) report.problems.push('Inga verktyg är aktiva: agenter kan inte läsa filer, köra git eller hämta sidor.');
+    for (const s of queue.filter(s => s.error)) report.problems.push(`Tool server ${s.id} did not start: ${s.error}`);
+  } catch (error) { report.problems.push(`Could not read the tools: ${errorText(error)}`); }
+  if (report.tools.toolCount === 0) report.problems.push('No tools are active: agents cannot read files, run git or fetch pages.');
 
   // Providers: which answer right now.
   try { report.providers = (await call(fetchImpl, baseUrl, token, 'GET', '/api/aura/workbench/providers/scan')).providers || []; }
-  catch (error) { report.problems.push(`Kunde inte avsöka providers: ${errorText(error)}`); }
+  catch (error) { report.problems.push(`Could not scan providers: ${errorText(error)}`); }
 
   // The planner the GUI chose, and whether it can answer.
   try {
@@ -131,14 +131,14 @@ export async function activationReport({
         why: seen ? seen.state : opt ? (opt.usable ? 'NOT_PROBED' : opt.keyConfigured ? 'PAID_MODELS_OFF' : 'NO_KEY') : 'UNKNOWN_PROVIDER',
       };
     };
-    if (state.choice) report.planner = describe(state.choice.provider, state.choice.model, state.choice.by === 'environment' ? 'miljö' : 'GUI');
+    if (state.choice) report.planner = describe(state.choice.provider, state.choice.model, state.choice.by === 'environment' ? 'environment' : 'GUI');
     else {
       const first = report.providers.find(p => p.active);
-      report.planner = first ? describe(first.id, first.defaultModel, 'automatiskt') : { provider: null, model: null, source: 'automatiskt', reachable: false, why: 'NO_ACTIVE_PROVIDER' };
+      report.planner = first ? describe(first.id, first.defaultModel, 'automatic') : { provider: null, model: null, source: 'automatic', reachable: false, why: 'NO_ACTIVE_PROVIDER' };
     }
-    if (report.planner.reachable === false && report.planner.why !== 'NO_ACTIVE_PROVIDER') report.problems.push(`Novas planerare ${report.planner.provider || '(ingen)'} svarar inte (${report.planner.why}). Välj en annan under Providers > Använd.`);
-  } catch (error) { report.problems.push(`Kunde inte läsa planeringsvalet: ${errorText(error)}`); }
-  if (report.providers.length && !report.providers.some(p => p.active)) report.problems.push('Ingen modell-provider svarar. Klistra in en API-nyckel under Providers eller starta en lokal modell (Ollama).');
+    if (report.planner.reachable === false && report.planner.why !== 'NO_ACTIVE_PROVIDER') report.problems.push(`Nova's planner ${report.planner.provider || '(none)'} is not answering (${report.planner.why}). Choose another under Providers > Use.`);
+  } catch (error) { report.problems.push(`Could not read the planner choice: ${errorText(error)}`); }
+  if (report.providers.length && !report.providers.some(p => p.active)) report.problems.push('No model provider is answering. Paste an API key under Providers or start a local model (Ollama).');
 
   const workplaceReady = !requireWorkplace || (report.workplace.up === true && report.workplace.state === 'RUNNING' && report.workplace.novaState === 'RUNNING');
   const supervisorReady = !requireSupervisor || (report.supervisor.up === true && report.supervisor.state === 'READY');
@@ -154,18 +154,18 @@ export async function activationReport({
   return report;
 }
 
-const PROVIDER_TEXT = { ACTIVE: 'aktiv', NO_KEY: 'ingen nyckel', KEY_REJECTED: 'nyckeln nekas', UNREACHABLE: 'svarar inte' };
+const PROVIDER_TEXT = { ACTIVE: 'active', NO_KEY: 'no key', KEY_REJECTED: 'key rejected', UNREACHABLE: 'not answering' };
 export function formatReport(r) {
   const out = [];
-  out.push(`JACO ${r.ok ? 'är aktivt' : 'är inte helt aktivt'}${r.runtime.version ? ` (runtime ${r.runtime.version})` : ''}`);
+  out.push(`JACO ${r.ok ? 'is active' : 'is not fully active'}${r.runtime.version ? ` (runtime ${r.runtime.version})` : ''}`);
   if (!r.runtime.up) { out.push(...r.problems.map(p => `  ! ${p}`)); return out.join('\n'); }
-  if (r.supervisor?.required) out.push('', `Supervisor: ${r.supervisor.up ? r.supervisor.state || 'UNKNOWN' : 'SVARAR INTE'}`);
-  if (r.workplace?.required) out.push('', `Workplace/Nova: ${r.workplace.up ? `${r.workplace.state || 'UNKNOWN'} / ${r.workplace.novaState || 'UNKNOWN'}` : 'SVARAR INTE'}`);
-  out.push('', `Verktyg: ${r.tools.toolCount} i ${r.tools.ready} av ${r.tools.servers.length} servrar`);
-  for (const s of r.tools.servers) out.push(`  ${s.status === 'READY' ? 'ok ' : '-- '} ${s.id.padEnd(12)} ${s.status === 'READY' ? `${s.tools} verktyg${s.started ? ' (startades nu)' : ''}` : s.error ? `fel: ${s.error}` : 'stoppad'}`);
-  out.push('', 'Modeller:');
-  for (const p of r.providers) out.push(`  ${p.active ? 'ok ' : '-- '} ${String(p.id).padEnd(14)} ${p.active ? `${p.models} modeller${p.ms != null ? `, ${p.ms} ms` : ''}` : PROVIDER_TEXT[p.state] || p.state}`);
-  if (r.planner) out.push('', `Nova planerar med: ${r.planner.provider ? `${r.planner.provider} / ${r.planner.model || '?'}` : '(ingen)'} [${r.planner.source}] ${r.planner.reachable === true ? 'svarar' : r.planner.reachable === false ? 'SVARAR INTE' : 'nyckel finns, ej provad'}`);
-  if (r.problems.length) out.push('', 'Att åtgärda:', ...r.problems.map(p => `  ! ${p}`));
+  if (r.supervisor?.required) out.push('', `Supervisor: ${r.supervisor.up ? r.supervisor.state || 'UNKNOWN' : 'NOT ANSWERING'}`);
+  if (r.workplace?.required) out.push('', `Workplace/Nova: ${r.workplace.up ? `${r.workplace.state || 'UNKNOWN'} / ${r.workplace.novaState || 'UNKNOWN'}` : 'NOT ANSWERING'}`);
+  out.push('', `Tools: ${r.tools.toolCount} in ${r.tools.ready} of ${r.tools.servers.length} servers`);
+  for (const s of r.tools.servers) out.push(`  ${s.status === 'READY' ? 'ok ' : '-- '} ${s.id.padEnd(12)} ${s.status === 'READY' ? `${s.tools} tools${s.started ? ' (started now)' : ''}` : s.error ? `error: ${s.error}` : 'stopped'}`);
+  out.push('', 'Models:');
+  for (const p of r.providers) out.push(`  ${p.active ? 'ok ' : '-- '} ${String(p.id).padEnd(14)} ${p.active ? `${p.models} models${p.ms != null ? `, ${p.ms} ms` : ''}` : PROVIDER_TEXT[p.state] || p.state}`);
+  if (r.planner) out.push('', `Nova plans with: ${r.planner.provider ? `${r.planner.provider} / ${r.planner.model || '?'}` : '(none)'} [${r.planner.source}] ${r.planner.reachable === true ? 'answering' : r.planner.reachable === false ? 'NOT ANSWERING' : 'key present, not probed'}`);
+  if (r.problems.length) out.push('', 'To fix:', ...r.problems.map(p => `  ! ${p}`));
   return out.join('\n');
 }

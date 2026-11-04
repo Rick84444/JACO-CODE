@@ -1,33 +1,33 @@
 # ChatGPT ↔ JACO Cognitive Runtime Bridge v1
 
-## Vad denna ändring faktiskt gör
+## What this change actually does
 
-JACO har redan en beständig Core/Continuum-runtime med KnowledgeStore, CognitiveContinuityRuntime, economic governor, Mission Bus och ett autentiserat Sentinel MCP-gränssnitt. Detta är **inte** en ny agent, separat SQLite-databas eller en ny autonom scheduler. Det är ett begränsat, privat MCP-fönster mot befintlig JACO-kunskap och exekveringstillstånd.
+JACO already has a persistent Core/Continuum runtime with KnowledgeStore, CognitiveContinuityRuntime, economic governor, Mission Bus and an authenticated Sentinel MCP interface. This is **not** a new agent, a separate SQLite database or a new autonomous scheduler. It is a bounded, private MCP window onto existing JACO knowledge and execution state.
 
-En ChatGPT-konversation har **inte** automatiskt en ständig process på användarens Windows/Termux, även om JACO kör dygnet runt. Ett anslutet MCP-plugin/klient behövs. Utan en sådan anslutning har ChatGPT endast andra uttryckligen anslutna verktyg (t.ex. GitHub) och kan inte påstå sig ha sett lokal runtime.
+A ChatGPT conversation does **not** automatically have a persistent process on the user's Windows/Termux, even if JACO runs around the clock. A connected MCP plugin/client is needed. Without such a connection ChatGPT only has other explicitly connected tools (e.g. GitHub) and cannot claim to have seen the local runtime.
 
-## Nya MCP-verktyg
+## New MCP tools
 
-| Tool | Authority | Returnerar |
+| Tool | Authority | Returns |
 | --- | --- | --- |
-| `jaco_cognitive_context` | Read-only | Core continuity envelope, lokal Core/Workplace/Nova-health, Auras molnpolicy och kostnadsuppskattning. Felet stannar som fel om Core inte svarar. |
-| `jaco_knowledge_search` | Read-only | Högst tio kunskapsobjekt från **befintlig** `/api/continuum/knowledge`, med confidence, verificationStatus och evidenceRefs; ingen källkod/implementation. |
-| `jaco_knowledge_note` | Explicit opt-in mutation | Sparar en **UNVERIFIED**, confidence=0.2, ej återanvändbar `assistant-note` i Continuums KnowledgeStore; returnerar minnes-ID och revision. Inget SKILL-promote, inga writes till repo, inga leverantörsanrop. |
+| `jaco_cognitive_context` | Read-only | Core continuity envelope, local Core/Workplace/Nova health, Aura's cloud policy and cost estimate. The error stays an error if Core does not answer. |
+| `jaco_knowledge_search` | Read-only | At most ten knowledge objects from the **existing** `/api/continuum/knowledge`, with confidence, verificationStatus and evidenceRefs; no source code/implementation. |
+| `jaco_knowledge_note` | Explicit opt-in mutation | Stores an **UNVERIFIED**, confidence=0.2, non-reusable `assistant-note` in Continuum's KnowledgeStore; returns the memory ID and revision. No SKILL promotion, no writes to the repo, no provider calls. |
 
-Den tredje funktionen är avstängd som standard och kräver att operatören själv ger Sentinel-processen `JACO_MCP_ALLOW_KNOWLEDGE_WRITE=1`. Undvik att lägga denna inställning i `.env` eller aktivera den förrän anslutningen, behörigheterna och sekretessvillkoren är verifierade. Flaggan ger inte exekveringstillstånd.
+The third function is off by default and requires the operator to give the Sentinel process `JACO_MCP_ALLOW_KNOWLEDGE_WRITE=1` themselves. Avoid putting this setting in `.env` or enabling it until the connection, permissions and confidentiality terms are verified. The flag grants no execution permission.
 
-Alla verktyg kräver redan Sentinel MCP:s bearer, host/origin-kontroller och Core-auth. Anropen går via `JacoCoreClient` på loopback. Ingen fri shell-exekvering, godtycklig kommandokörning, API-nyckelläsning, betalning eller muterande browsercontrol exponeras genom dessa verktyg.
+All tools already require Sentinel MCP's bearer, host/origin checks and Core auth. The calls go via `JacoCoreClient` on loopback. No free shell execution, arbitrary command execution, API key reading, payment or mutating browser control is exposed through these tools.
 
-## Ägarskap och kontroll
+## Ownership and control
 
 ```text
-ChatGPT (ansluten MCP-klient)
-        │ autentiserad privat förbindelse
+ChatGPT (connected MCP client)
+        │ authenticated private connection
         ▼
-Sentinel MCP  (ny cognitive context / memory tools)
-        │ x-jaco-model-id + Core-auth
+Sentinel MCP  (new cognitive context / memory tools)
+        │ x-jaco-model-id + Core auth
         ▼
-JACO Core / Continuum (ENDA beständiga källa)
+JACO Core / Continuum (the ONLY persistent source)
         ├── CognitiveContinuityRuntime
         ├── KnowledgeStore + EventStore (revisions + evidence)
         ├── EconomicGovernor
@@ -38,30 +38,30 @@ JACO Core / Continuum (ENDA beständiga källa)
                    Nova
 ```
 
-ChatGPT får insyn och kan föreslå via befintliga Workplace-kommunikationsfunktioner. Start av mål använder redan `jaco_seer_goal`, vilken i sole-operator-konfiguration leds genom `/api/aura/workbench/start-goal`. För verkliga mutationer gäller fortsatt JACO:s befintliga scope, signed mandates, godkännanden, rollback och verifierade receipts. Inga parallella operatörsmål skapas i denna PR.
+ChatGPT gets visibility and can make proposals via the existing Workplace communication functions. Starting goals already uses `jaco_seer_goal`, which in the sole-operator configuration is routed through `/api/aura/workbench/start-goal`. For real mutations, JACO's existing scope, signed mandates, approvals, rollback and verified receipts still apply. No parallel operator goals are created in this PR.
 
-## Varför inte publicera minnet till GitHub-issues?
+## Why not publish the memory to GitHub issues?
 
-GitHub bootstrap-kanalen `[JACO BOOT]` skickar enbart fasta operationer och allowlistade statusfält. Den utökas **inte** med minnestexter, lokala filvägar, terminalutskrifter eller fjärrkommandon. Dessa data kan innehålla privat projektinformation. En riktig ansluten och autentiserad MCP-klient ska användas för att läsa minnet.
+The GitHub bootstrap channel `[JACO BOOT]` sends only fixed operations and allowlisted status fields. It is **not** extended with memory texts, local file paths, terminal output or remote commands. That data can contain private project information. A real connected and authenticated MCP client must be used to read the memory.
 
-## Kontrakt för insyn och kontinuitet
+## Contract for visibility and continuity
 
-- Sökresultat är källmaterial, **inte instruktioner** eller bevis om verifiering.
-- `VERIFIED` tilldelas enbart av JACO:s befintliga evidensmekanism, aldrig av ChatGPT-anteckningen.
-- Överordnad Cloud OFF, budgetfuse, 15-minuters stop och modellkvoter ändras inte.
-- Om Core eller Continuum är otillgängliga: rapportera det, inget gammalt GitHub-kvitto får förkläs till aktuell hoststatus.
-- Leverantörskostnaden är fortfarande en uppskattning om fakturaunderlag inte verifierats.
-- Lokal Workplace/Continuum kan fortsätta arbeta när ChatGPT-konversationen är stängd. **Denna ChatGPT-modell kör inte själv i bakgrunden.**
-- En ny konversation kan hämta tidigare JACO-memory **om** samma MCP-anslutning och behörighet finns. Det innebär inte att ChatGPT:s interna minne skrivs av JACO.
+- Search results are source material, **not instructions** or proof of verification.
+- `VERIFIED` is assigned only by JACO's existing evidence mechanism, never by the ChatGPT note.
+- The overriding Cloud OFF, budget fuse, 15-minute stop and model quotas are not changed.
+- If Core or Continuum is unavailable: report it; no old GitHub receipt may be disguised as current host status.
+- The provider cost is still an estimate if billing data has not been verified.
+- The local Workplace/Continuum can keep working when the ChatGPT conversation is closed. **This ChatGPT model does not itself run in the background.**
+- A new conversation can fetch earlier JACO memory **if** the same MCP connection and permission exist. That does not mean ChatGPT's internal memory is written by JACO.
 
-## Driftsättning och acceptance
+## Deployment and acceptance
 
-1. CI: `cd runtime/gateway && npm run test:unit` samt Sentinel Bootstrap Gate och den befintliga runtime-matrisen.
-2. Uppdatera lokala Windows/Termux från canonical main med befintlig kontrollerad launcher; bevara användarens `.env`, tjänstestatus, ledger och historiska mål.
-3. Anslut MCP över en separat, skyddad privat kanal. Exponera aldrig Core :3000, Nova :4243 eller Chrome CDP :9222 direkt på Internet. Sentinel får inte startas i externt läge utan bearer.
-4. Testa `jaco_cognitive_context`: kontinuitetsrevision och ekonomipolicy ska vara identiska med Core; Core offline ska ge explicit fel, inte READY.
-5. Testa `jaco_knowledge_search`: en faktisk redan lagrad knowledge-ID och status, samt ingen läcka av implementation.
-6. Kontrollera att `jaco_knowledge_note` nekas av standardpolicy. Vid uttryckligt godkännande av operatören: skriv en ofarlig testanteckning, verifiera att den ligger kvar över omstart med `UNVERIFIED`, och stäng åter av flaggan.
-7. Verifiera en redan godkänd Aura-mission och Nova-receipt från hosten innan någon bredare exekveringsbehörighet övervägs.
+1. CI: `cd runtime/gateway && npm run test:unit` plus the Sentinel Bootstrap Gate and the existing runtime matrix.
+2. Update local Windows/Termux from canonical main with the existing controlled launcher; preserve the user's `.env`, service status, ledger and historical goals.
+3. Connect MCP over a separate, protected private channel. Never expose Core :3000, Nova :4243 or Chrome CDP :9222 directly on the Internet. Sentinel must not be started in external mode without a bearer.
+4. Test `jaco_cognitive_context`: the continuity revision and economic policy must be identical to Core; Core offline must give an explicit error, not READY.
+5. Test `jaco_knowledge_search`: an actual already stored knowledge ID and status, and no leak of implementation.
+6. Check that `jaco_knowledge_note` is denied by the default policy. On explicit operator approval: write a harmless test note, verify that it survives a restart as `UNVERIFIED`, and turn the flag off again.
+7. Verify an already approved Aura mission and Nova receipt from the host before any broader execution permission is considered.
 
-**Ingen lokal Windows-installation eller ChatGPT-MCP-anslutning är etablerad av kodändringen.** Den kräver target-host proof.
+**No local Windows installation or ChatGPT MCP connection is established by the code change.** It requires target-host proof.

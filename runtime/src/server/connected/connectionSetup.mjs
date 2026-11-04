@@ -51,7 +51,7 @@ export function installClient(config) {
       fs.renameSync(temp, config.file);
     } finally { if (fs.existsSync(temp)) fs.unlinkSync(temp); }
   }
-  return { state: 'CONFIGURED', file: config.file, backup, next: 'Starta om klienten, öppna projektet och godkänn JACO MCP där. Konfiguration är inte samma sak som en aktiv klient.' };
+  return { state: 'CONFIGURED', file: config.file, backup, next: 'Restart the client, open the project and approve JACO MCP there. Configuration is not the same as an active client.' };
 }
 export function mountConnectionSetup(app, guard, { env = process.env, project = process.cwd(), home = os.homedir(), fetchImpl = fetch, onProviderImport = () => {} } = {}) {
   const install = env.JACO_RELEASE_ROOT || process.cwd();
@@ -64,7 +64,7 @@ export function mountConnectionSetup(app, guard, { env = process.env, project = 
     try { const r = await fetchImpl(workplaceUrl + '/health', { signal: AbortSignal.timeout(2000) }); const d = await r.json(); workplace = r.ok && d.product === 'JACO Workplace'; } catch { /* reported below */ }
     res.json({ success: true, project, runtimeUrl, envFiles: providerEnvFiles(project), mcpIncluded: fs.existsSync(entry), workplace,
       cloud: { configured: Boolean(env.JACO_IDE_PUBLIC_HOST), url: env.JACO_IDE_PUBLIC_HOST ? 'https://' + env.JACO_IDE_PUBLIC_HOST + '/ide-login' : null },
-      next: !fs.existsSync(entry) ? 'Installationen saknar JACO Editor MCP. Hämta det uppdaterade Lite-paketet.' : !workplace ? 'Starta JACO med START.cmd så att anslutningstjänsten startar automatiskt.' : 'Välj klient, spara anslutningen och kontrollera verktygen.' });
+      next: !fs.existsSync(entry) ? 'The installation is missing JACO Editor MCP. Download the updated Lite package.' : !workplace ? 'Start JACO with START.cmd so the connection service starts automatically.' : 'Choose a client, save the connection and check the tools.' });
   });
   app.post('/api/aura/workbench/setup/import-env', guard, (req, res) => {
     try { const result = importProviderEnv({ project, file: req.body?.file, confirmed: req.body?.confirmed }); onProviderImport(); res.json({ success: true, ...result }); }
@@ -87,7 +87,7 @@ export function mountConnectionSetup(app, guard, { env = process.env, project = 
       const result = await server.handle({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'project', arguments: {} } });
       if (result.result?.isError) throw Error(result.result.content[0].text);
       res.json({ success: true, state: 'TOOL_VERIFIED', tool: 'project', project: JSON.parse(result.result.content[0].text), at: new Date().toISOString(),
-        note: 'JACO Editor och Workplace svarar. Detta test bevisar inte att en extern klient har laddat sin konfiguration.' });
+        note: 'JACO Editor and Workplace respond. This test does not prove that an external client has loaded its configuration.' });
     } catch (e) { res.status(503).json({ success: false, error: e.message }); }
     finally { await server.close(); checking = false; }
   });

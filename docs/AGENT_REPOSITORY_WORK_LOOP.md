@@ -1,143 +1,143 @@
-# Prioriterad arbetsloop för JACO-agenter
+# Prioritized work loop for JACO agents
 
-Status: SPEC för hela loopen; varje iteration får separat evidensstatus.
-Operatörsbeslut 2026-09-23: underagenter får granska och städa repot; commit, push och merge är godkända inom uppgiften och nedanstående verifieringsgränser.
+Status: SPEC for the whole loop; each iteration gets a separate evidence status.
+Operator decision 2026-09-23: sub-agents may review and clean up the repository; commit, push and merge are approved within the task and the verification limits below.
 
-## Mål och mandat
+## Goal and mandate
 
-Gör den befintliga JACO-runtime:n stabil vid uppstart, modelloberoende, återupptagbar och verifierbar. Integrera canonical ägare; bygg inga parallella agent-, Vault-, planerings- eller synksystem.
+Make the existing JACO runtime stable at startup, model-independent, resumable and verifiable. Integrate canonical owners; build no parallel agent, Vault, planning or sync systems.
 
-Godkännandet är inte tillstånd att radera okända arbetsfiler, publicera hemligheter, kringgå skyddsregler, använda obegränsad betald inferens, ändra ekonomiska spärrar eller avbryta andras aktiva uppdrag. En startbegäran får inte automatiskt exponera nya publika endpoints. Begär beslut om kostnad, destruktiv migration eller ny säkerhetspolicy behövs.
+The approval is not permission to delete unknown working files, publish secrets, bypass protection rules, use unbounded paid inference, change economic locks or abort other people's active missions. A start request must not automatically expose new public endpoints. Request a decision when cost, a destructive migration or a new security policy is involved.
 
-Detta dokument är en körinstruktion och backlog, inte en installerad bakgrundsscheduler. Ingen kontinuerlig drift eller framtida automatisk körning får påstås utan att en sådan mekanism faktiskt har konfigurerats.
+This document is a run instruction and backlog, not an installed background scheduler. No continuous operation or future automatic run may be claimed unless such a mechanism has actually been configured.
 
-## Agentroller och ägarskap
+## Agent roles and ownership
 
-| Roll | Ansvar | Begränsning |
+| Role | Responsibility | Restriction |
 | --- | --- | --- |
-| Samordnare/integratör | Huvudmål, aktuell backlog, Workspace, filansvar, integration, Git-leverans | Enda Git-skrivaren för iterationen |
-| Uppstartsagent | Startordning, identitetskontroll, konfiguration, timeout, processägarskap | Inga produktionsstopp utan samordning |
-| Runtime-agent | Provider-routing, bounded retries, durable missions, receipts | Inga modell- eller kostnadsöverstyrningar |
-| Repo-agent | Genererade filer, ignore-regler, dokumentation och bevisad död kod | Inga okända filer raderas; ingen massformatering |
-| Oberoende granskare | Felvägar, sekretess, testkvalitet, diff och accepteranskriterier | Granskar inte sin egen ändring som oberoende bevis |
+| Coordinator/integrator | Main goal, current backlog, Workspace, file ownership, integration, Git delivery | The only Git writer for the iteration |
+| Startup agent | Start order, identity check, configuration, timeout, process ownership | No production stops without coordination |
+| Runtime agent | Provider routing, bounded retries, durable missions, receipts | No model or cost overrides |
+| Repository agent | Generated files, ignore rules, documentation and proven dead code | No unknown files are deleted; no mass formatting |
+| Independent reviewer | Failure paths, secrecy, test quality, diff and acceptance criteria | Does not review its own change as independent evidence |
 
-Högst tre avgränsade underuppgifter parallellt per samordnare. Roller kan växla mellan iterationer. Alla agenter måste läsa AGENTS.md, masterkontraktet, bootstrapkontraktet och eventuella närmare instruktioner; registrera eget sanningsenligt agentkort; synka, ACK:a och publicera READY före delat arbete. Saknas Workplace: DEGRADED_UNSYNCED, inga påhittade samordningsbeslut.
+At most three bounded subtasks in parallel per coordinator. Roles may switch between iterations. All agents must read AGENTS.md, the master contract, the bootstrap contract and any closer instructions; register their own truthful agent card; sync, ACK and publish READY before shared work. If Workplace is missing: DEGRADED_UNSYNCED, no invented coordination decisions.
 
-## Loop: från observation till verifierad leverans
+## Loop: from observation to verified delivery
 
-### 1. Läs verkligt tillstånd
+### 1. Read the real state
 
-- Identifiera checkout, remote, branch, HEAD, origin/master och faktisk remote SHA. Hämta aktuell remote-status före integration.
-- Lista dirty/untracked filer. Märk dem med känd ägare eller UNKNOWN; ta inte med dem automatiskt.
-- Läs Workplace DECISION, CLAIM, HANDOFF, ERROR och aktuella uppdrag. Samordningshistorik är ledtrådar, inte Git- eller runtime-bevis.
-- Identifiera aktiva processer, port, produktidentitet, startkälla och uppdragsägare utan att skriva ut hemliga processargument.
-- Dokumentera Current State, Target State, Gap, Constraints, Risk och Verification Plan.
+- Identify checkout, remote, branch, HEAD, origin/master and the actual remote SHA. Fetch the current remote status before integration.
+- List dirty/untracked files. Label them with a known owner or UNKNOWN; do not include them automatically.
+- Read Workplace DECISION, CLAIM, HANDOFF, ERROR and current missions. Coordination history is a lead, not Git or runtime evidence.
+- Identify active processes, port, product identity, start source and mission owner without printing secret process arguments.
+- Document Current State, Target State, Gap, Constraints, Risk and Verification Plan.
 
-### 2. Välj nästa prioriterade uppgift
+### 2. Choose the next prioritized task
 
-Välj högsta olösta risk som kan avgränsas och verifieras. En blockerad fysisk enhet hindrar inte oberoende källkodsarbete. Flytta inte till UI-polish medan runtime correctness är olöst.
+Choose the highest unresolved risk that can be bounded and verified. A blocked physical device does not prevent independent source code work. Do not move to UI polish while runtime correctness is unresolved.
 
-Varje arbetspaket ska innehålla: id, huvudmål, prioritet, canonical owner, filscope, ansvarig agent, beroenden, reproduktion, acceptanskriterier, testkommandon, stoppvillkor, rollback och evidenslänkar. Sätt inte godtyckliga tidslöften.
+Every work package must contain: id, main goal, priority, canonical owner, file scope, responsible agent, dependencies, reproduction, acceptance criteria, test commands, stop conditions, rollback and evidence links. Do not set arbitrary time promises.
 
-### 3. Tilldela och säkra filansvar
+### 3. Assign and secure file ownership
 
-- Samordnaren delegerar konkret filscope och förväntad evidens.
-- Agenten tar Workspace-claim. Konflikt betyder samordning, inte överskrivning.
-- Förnya claim och heartbeat under arbetet. Publicera betydande fynd när de upptäcks.
-- Använd PROGRESS/RESULT endast med verkligt missionId; annars FINDING/HANDOFF.
+- The coordinator delegates a concrete file scope and expected evidence.
+- The agent takes a Workspace claim. A conflict means coordination, not overwriting.
+- Renew the claim and heartbeat during the work. Publish significant findings when they are discovered.
+- Use PROGRESS/RESULT only with a real missionId; otherwise FINDING/HANDOFF.
 
-### 4. Reproducera och implementera
+### 4. Reproduce and implement
 
-- Skapa regressionstest för det observerade felet där möjligt.
-- Välj minsta kompletta förändring i befintlig ägare; inga alternativa motorer eller låtsasframgångar.
-- Modellval kommer från explicit konfiguration/capabilities. Fallback kräver uttrycklig policy och befintlig kostnads-/privacy-gate.
-- Retries har deadline, försöksbudget, backoff och cancellation. Muterande operationer får inte upprepas vid okänt utfall utan reconciliation.
-- Kritisk state skrivs durabelt innan framgång rapporteras. Secret values får inte hamna i argv, logg, testfixture, rapport eller Git.
+- Create a regression test for the observed bug where possible.
+- Choose the smallest complete change in the existing owner; no alternative engines or fake successes.
+- Model choice comes from explicit configuration/capabilities. Fallback requires an explicit policy and the existing cost/privacy gate.
+- Retries have a deadline, attempt budget, backoff and cancellation. Mutating operations must not be repeated on an unknown outcome without reconciliation.
+- Critical state is written durably before success is reported. Secret values must not end up in argv, logs, test fixtures, reports or Git.
 
-### 5. Verifiera i lager
+### 5. Verify in layers
 
-1. Syntax, schema, lint/typecheck och relevant build.
-2. Enhetstester för normalfall samt saknad konfiguration, authfel, nätfel, timeout, dubbla anrop och felaktig respons.
-3. Integration genom den faktiska registreringen/importen/routen, inte en orphan-modul.
-4. Isolerat runtime-test med kontrollerad state och egna portar. Testfixtures får inte oavsiktligt ärva operatörens .env.
-5. Samordnad målmaskinsverifiering när ägarskap och behörighet är klarlagda.
-6. Persistens och återhämtning: avbrott/restart, samma idempotency key, inga dubbla sidoeffekter, verifierbar slutreceipt.
+1. Syntax, schema, lint/typecheck and the relevant build.
+2. Unit tests for the normal case plus missing configuration, auth errors, network errors, timeout, duplicate calls and malformed responses.
+3. Integration through the actual registration/import/route, not an orphan module.
+4. Isolated runtime test with controlled state and its own ports. Test fixtures must not unintentionally inherit the operator's .env.
+5. Coordinated target-machine verification once ownership and permissions are clear.
+6. Persistence and recovery: interruption/restart, the same idempotency key, no duplicate side effects, a verifiable final receipt.
 
-HTTP 200 räcker aldrig ensamt. Kontrollera produktidentitet, schema, payload och förväntad postcondition. Model metadata är inte inferensbevis. En seedad Android-peer är inte en ansluten enhet. En passerad testsuite med intern live-skip är inte fullstackbevis.
+HTTP 200 alone is never enough. Check product identity, schema, payload and the expected postcondition. Model metadata is not inference evidence. A seeded Android peer is not a connected device. A passed test suite with an internal live skip is not full-stack evidence.
 
-### 6. Oberoende granskning
+### 6. Independent review
 
-Granskaren kontrollerar scoped diff, anslutning till runtime, felvägar, permissions, race conditions, secret-risk och evidens. Kritiska/höga fynd blockerar merge. Ändrad kod efter granskning kräver ny relevant granskning och tester; gamla gröna resultat gäller inte automatiskt.
+The reviewer checks the scoped diff, connection to the runtime, failure paths, permissions, race conditions, secret risk and evidence. Critical/high findings block merge. Code changed after review requires a new relevant review and tests; old green results do not apply automatically.
 
-### 7. Commit, push och merge
+### 7. Commit, push and merge
 
-- Samordnaren granskar exakt fillista och diff. Stage:a uttryckliga sökvägar, aldrig allt i ett delat dirty repo.
-- Kontrollera hemligheter och oavsiktliga miljö-/statefiler. Dokumentera baseline, tester och kvarvarande begränsningar.
-- Commit och push på avgränsad branch; skapa eller uppdatera rätt PR. Undvik duplicerade PR:er för samma patch.
-- Kontrollera aktuell base/master och hantera drift utan att skriva över andras ändringar. Kör tester igen efter konfliktlösning.
-- Merge är godkänd endast när obligatoriska kontroller är gröna på exakt aktuell head, granskningen är klar och merge är möjlig. Saknade kontroller räknas inte som gröna; använd aldrig admin-bypass.
-- En avgränsad källkodsfix kan mergas med dokumenterat återstående drifttest, men får då inte kallas fullt driftsverifierad.
-- Verifiera remote master efter merge och kopplingen till PR/commit. Rapportera MERGED separat från TARGET-HOST VERIFIED.
+- The coordinator reviews the exact file list and diff. Stage explicit paths, never everything in a shared dirty repository.
+- Check for secrets and unintended environment/state files. Document the baseline, tests and remaining limitations.
+- Commit and push on a bounded branch; create or update the right PR. Avoid duplicate PRs for the same patch.
+- Check the current base/master and handle drift without overwriting other people's changes. Run the tests again after conflict resolution.
+- Merge is approved only when the required checks are green on the exact current head, the review is done and the merge is possible. Missing checks do not count as green; never use an admin bypass.
+- A bounded source code fix may be merged with a documented remaining operational test, but must then not be called fully operationally verified.
+- Verify the remote master after merge and the link to the PR/commit. Report MERGED separately from TARGET-HOST VERIFIED.
 
-### 8. Uppstart och driftsättning
+### 8. Startup and deployment
 
-- Kontrollera att ingen annan agent äger pågående mutation/reload. Dokumentera aktiva Nova-missions och återhämtningsläge.
-- Kör sidoeffektsfri preflight: exekverbara filer, konfiguration utan värden, portar, dependencies och rätt produktidentitet.
-- En upptagen port är inte en frisk JACO-tjänst. Adoptera endast verifierad rätt tjänst med tydligt ägarskap; annars avbryt innan dubbla processer startas.
-- Läs den valda installationens startkontrakt. Root npm start, Windows-stack, Continuum CLI och Android/Termux är inte utbytbara startkommandon.
-- Starta bara nödvändiga komponenter i verifierad beroendeordning. Starta inte handelsloopar, publika tunnlar eller valfria tjänster implicit.
-- Vid misslyckande: spara sanerad evidens, stoppa endast processer som iterationen själv startat och äger. Ingen blind kill-all eller reset.
-- Kontrollera verkligt begränsat uppdrag: plan -> execution -> durable receipt -> evidens -> verifierat resultat. Behåll operator review där kontraktet kräver det.
+- Check that no other agent owns an ongoing mutation/reload. Document active Nova missions and the recovery mode.
+- Run a side-effect-free preflight: executables, configuration without values, ports, dependencies and the right product identity.
+- A busy port is not a healthy JACO service. Adopt only a verified correct service with clear ownership; otherwise abort before duplicate processes are started.
+- Read the chosen installation's start contract. Root npm start, the Windows stack, the Continuum CLI and Android/Termux are not interchangeable start commands.
+- Start only the necessary components in a verified dependency order. Do not start trading loops, public tunnels or optional services implicitly.
+- On failure: save sanitized evidence, stop only processes the iteration itself started and owns. No blind kill-all or reset.
+- Check a real bounded mission: plan -> execution -> durable receipt -> evidence -> verified result. Keep operator review where the contract requires it.
 
-### 9. Reflektera, lämna över och välj nästa varv
+### 9. Reflect, hand over and choose the next round
 
-Publicera strukturerat worked, failed, unexpected, root_causes, reusable_patterns, future_improvements och knowledge_updates. Varje slutsats har provenance och verifieringsstatus; gammal evidens kan bli STALE.
+Publish structured worked, failed, unexpected, root_causes, reusable_patterns, future_improvements and knowledge_updates. Every conclusion has provenance and a verification status; old evidence can become STALE.
 
-Uppdatera backlog, aktuell risk, nästa ägare och reproduktionssteg. Avsluta/releasa claims. Fortsätt nästa oberoende uppgift medan mandat och kontext gäller. Vid behov av ny behörighet eller verkligt användarbeslut: rapportera blockeraren och begär endast det som saknas.
+Update the backlog, the current risk, the next owner and the reproduction steps. Close/release claims. Continue with the next independent task while the mandate and context apply. When a new permission or a real user decision is needed: report the blocker and request only what is missing.
 
-## Prioriterad backlog och acceptans
+## Prioritized backlog and acceptance
 
-### P0 — sanningsenlig säkerhet och säkra starter
+### P0 — truthful security and safe starts
 
-**P0.1 Native Vault-status och handshake.** Nuvarande granskning har funnit framgång/StrongBox-claims utan verifierad Android-broker. Canonical routeägare måste identifieras mot befintligt Vault. Acceptans: frånvarande broker ger unavailable/unverified, inga lyckade native import/lease-claims; verklig konfigurerad broker verifierar identitet/challenge och ger durabel evidens. Inga hemligheter i svar/logg.
+**P0.1 Native Vault status and handshake.** The current review has found success/StrongBox claims without a verified Android broker. The canonical route owner must be identified against the existing Vault. Acceptance: an absent broker gives unavailable/unverified, no successful native import/lease claims; a real configured broker verifies identity/challenge and gives durable evidence. No secrets in responses/logs.
 
-**P0.2 Uppstartens sidoeffekter.** Preflight före Vault-import och processstart; bevara operatörens betald-provider-policy; förhindra tyst tapp av Vault-laddade runtime-credentials. Acceptans: saknad prerequisite eller portkonflikt startar ingenting; giltig konfiguration förblir oförändrad; inga secret values i diagnostik.
+**P0.2 Side effects of startup.** Preflight before Vault import and process start; preserve the operator's paid-provider policy; prevent silent loss of Vault-loaded runtime credentials. Acceptance: a missing prerequisite or port conflict starts nothing; a valid configuration remains unchanged; no secret values in diagnostics.
 
-### P1 — explicit routing, processägarskap och återhämtning
+### P1 — explicit routing, process ownership and recovery
 
-**P1.1 Modellval från konfiguration.** Avlägsna oavsiktlig DeepSeek-överstyrning i governor och automatisk betald fallback. Skilj allmän provider-selection från lokal discovery. Acceptans: varje stödd provider startar utan lokal-enum-krasch; vald Ollama-failure anropar ingen annan provider om fallback inte explicit tillåtits. Ingen Gemma-ersättning för vald cloudmodell.
+**P1.1 Model choice from configuration.** Remove the unintended DeepSeek override in the governor and the automatic paid fallback. Separate general provider selection from local discovery. Acceptance: every supported provider starts without a local-enum crash; a failure of the chosen Ollama calls no other provider unless fallback is explicitly allowed. No Gemma substitute for a chosen cloud model.
 
-**P1.2 En canonical startup-ägare per driftläge.** Dokumentera Windows-stack, Continuum och Termux; förbättra identitetsvaliderad adoption samt spawn error/health deadline. Acceptans: andra startförsöket skapar inga dubletter; fel tjänst på port stoppas inte/adopteras inte; misslyckad child-start ger tydligt fel och korrekt exitstatus.
+**P1.2 One canonical startup owner per operating mode.** Document the Windows stack, Continuum and Termux; improve identity-validated adoption and the spawn error/health deadline. Acceptance: a second start attempt creates no duplicates; a wrong service on a port is not stopped/adopted; a failed child start gives a clear error and the correct exit status.
 
-**P1.3 Nova/SEER bounded execution.** Acceptans: provider-timeout och permanent authfel leder till begränsade försök och explicit blockerad status; restart återställer mission och receipts utan dubbel mutation; UNKNOWN_OUTCOME reconcileras.
+**P1.3 Nova/SEER bounded execution.** Acceptance: a provider timeout and a permanent auth error lead to bounded attempts and an explicit blocked status; a restart restores the mission and receipts without duplicate mutation; UNKNOWN_OUTCOME is reconciled.
 
-**P1.4 Verklig Android/desktop-synk.** Hämta icke-hemlig anslutningskonfiguration från Git/Workspace-ägaren. Acceptans: fysisk enhetsidentitet, autentiserad heartbeat, schema, sekvens/ACK, durabel round-trip och återanslutning efter restart. Seedad OFFLINE-post räcker inte. Kräver tillgänglig enhet; blockera bara enhetsberoende steg.
+**P1.4 Real Android/desktop sync.** Fetch the non-secret connection configuration from the Git/Workspace owner. Acceptance: physical device identity, authenticated heartbeat, schema, sequence/ACK, durable round trip and reconnection after restart. A seeded OFFLINE entry is not enough. Requires an available device; block only the device-dependent steps.
 
-### P2 — repohygien och verifieringsbredd
+### P2 — repository hygiene and verification breadth
 
-**P2.1 Ignore och hemligheter.** Skydda verkliga .env-varianter men behåll explicita exempelmallar; granska diagnostik utan att skriva ut innehåll. Acceptans: negativa och positiva ignore-tester; inga riktiga nycklar eller sessiontokens i scoped Git-diff.
+**P2.1 Ignore and secrets.** Protect real .env variants but keep explicit example templates; review diagnostics without printing contents. Acceptance: negative and positive ignore tests; no real keys or session tokens in the scoped Git diff.
 
-**P2.2 Dubblerade/överblivna filer.** Inventera tracked .bak, genererad state och alternativa startdokument. Bevisa frånvaro av imports, packnings-/buildreferenser och runtimeanvändning före borttagning. Okända eller användarägda filer lämnas kvar med ägarfråga. Git-spårad borttagning ska vara återställbar.
+**P2.2 Duplicated/leftover files.** Inventory tracked .bak, generated state and alternative start documents. Prove the absence of imports, packaging/build references and runtime use before removal. Unknown or user-owned files are left in place with an ownership question. A Git-tracked removal must be restorable.
 
-**P2.3 Reproducerbar CI.** Låsta beroenden, relevanta path filters, Windows/Termux-specifika kontrakt och tydliga live-skip-statusar. Acceptans: grönt på exakt PR-head och korrekt felstatus för verkligt misslyckad runtime-testning.
+**P2.3 Reproducible CI.** Locked dependencies, relevant path filters, Windows/Termux-specific contracts and clear live-skip statuses. Acceptance: green on the exact PR head and the correct failure status for a really failed runtime test.
 
-### P3 — kunskap och långtidsevidens
+### P3 — knowledge and long-term evidence
 
-Extrahera återanvändbara felmönster efter verifierade iterationer. Bygg uthållighetstest med begränsad kostnad och explicit avbrott, minnes-/processmätning och restart recovery. UI-polish kommer efter dessa correctness-gates.
+Extract reusable failure patterns after verified iterations. Build an endurance test with bounded cost and explicit interruption, memory/process measurement and restart recovery. UI polish comes after these correctness gates.
 
-## Iterationsjournal
+## Iteration journal
 
-Varje iteration ska rapportera följande utan att likställa nivåerna:
+Every iteration must report the following without equating the levels:
 
-| Fält | Innehåll |
+| Field | Content |
 | --- | --- |
-| ID och huvudmål | Backlog-id, konkret scope och canonical owner |
-| Baseline | Checkout, branch, lokal SHA, remote SHA, andra dirty filer |
-| Agenter | Agent-id, ansvar, filclaims och granskare |
-| Ändring | Exakt fillista och varför |
-| Evidens | Kommandon/resultat, skip, CI-run, runtime-observationer |
-| Git | Commit, PR, head SHA, merge/master SHA eller NOT_MERGED |
-| Drift | NOT_RELOADED / IMPLEMENTED_UNVERIFIED / TARGET-HOST VERIFIED |
-| Återstående | Blockerare, nästa steg, rollback och ägare |
+| ID and main goal | Backlog id, concrete scope and canonical owner |
+| Baseline | Checkout, branch, local SHA, remote SHA, other dirty files |
+| Agents | Agent id, responsibility, file claims and reviewer |
+| Change | Exact file list and why |
+| Evidence | Commands/results, skips, CI run, runtime observations |
+| Git | Commit, PR, head SHA, merge/master SHA or NOT_MERGED |
+| Operation | NOT_RELOADED / IMPLEMENTED_UNVERIFIED / TARGET-HOST VERIFIED |
+| Remaining | Blockers, next step, rollback and owner |
 
-Första pågående iterationen omfattar avgränsad uppstartshärdning och repo-hygien. Hela backloggen är inte färdig eller schemalagd bara för att detta dokument finns.
+The first ongoing iteration covers bounded startup hardening and repository hygiene. The whole backlog is not finished or scheduled just because this document exists.

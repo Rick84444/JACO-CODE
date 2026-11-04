@@ -23,15 +23,16 @@ export function readCognitiveFeed({ bus, workstream, after = 0, limit = 300, sec
   };
 }
 
-export function createCognitiveStreamHandler({ bus, workstream, intervalMs = 1500, secrets = [] }) {
+export function createCognitiveStreamHandler({ bus, workstream, intervalMs = 1500, secrets = [], drainTimeoutMs = 20_000 }) {
   return (req, res) => {
     let after = cursorValue(req.get('last-event-id') || req.query.after);
-    let closed = false, timer, heartbeat;
+    let closed = false, blocked = false, timer, heartbeat, drainTimer;
     const seenVolatile = new Set();
+    const drained = () => { blocked = false; clearTimeout(drainTimer); };
     const close = () => {
       if (closed) return;
-      closed = true; clearInterval(timer); clearInterval(heartbeat);
-      req.off('aborted', close); res.off('close', close);
+      closed = true; clearInterval(timer); clearInterval(heartbeat); clearTimeout(drainTimer);
+      req.off('aborted', close); res.off('close', close); res.off('drain', drained);
       res.end();
     };
     res.status(200).set({
@@ -41,11 +42,17 @@ export function createCognitiveStreamHandler({ bus, workstream, intervalMs = 150
     });
     res.flushHeaders();
     const write = data => {
-      if (closed) return;
-      if (!res.write(data)) close(); // Slow clients replay from their last received cursor.
+      if (closed || blocked) return;
+      if (res.write(data)) return;
+      // A full socket buffer is normal after the history packet. Wait for it to drain; only a client that
+      // stays stuck is closed, and it replays from its last received cursor.
+      blocked = true;
+      res.once('drain', drained);
+      drainTimer = setTimeout(close, drainTimeoutMs);
+      drainTimer.unref?.();
     };
     const publish = () => {
-      if (closed) return;
+      if (closed || blocked) return;
       try {
         const packet = readCognitiveFeed({bus, workstream, after, secrets});
         packet.events = packet.events.filter(event => {

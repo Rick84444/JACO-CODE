@@ -38,8 +38,14 @@ export function buildAgentBoard({ bus, control, workplace, graphs = null, coordi
       },
     };
   };
-  const agents = (workplace?.agents || []).map(a => ({
-    agentId: text(a.agentId, 240), stableId:text(a.stableId,160), name: text(a.name, 160), role: text(a.role, 160),
+  const agents = (workplace?.agents || [])
+    // Ignore a previously persisted SEER Workplace identity: it is an internal
+    // Aura strategy component, not an agent to display or count.
+    .filter(a => !(a.stableId === 'seer' && a.role === 'strategic-governor'))
+    .map(a => ({
+    agentId: text(a.agentId, 240), stableId:text(a.stableId,160),
+    name: text(a.stableId === 'nova' ? 'Aura' : a.name, 160),
+    role: text(a.stableId === 'nova' ? 'Aura execution runtime' : a.role, 160),
     model: text(a.model,200), status: text(a.status, 80), liveSessions: number(a.liveSessions), lastSeenAt: text(a.lastSeenAt, 80),
     permissions: Object.fromEntries(Object.entries(a.permissions || {}).filter(([, v]) => typeof v === 'boolean').slice(0, 80).map(([k,v]) => [text(k,100),v])),
     tools: strings(a.tools, 40),

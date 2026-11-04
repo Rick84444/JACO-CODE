@@ -50,10 +50,14 @@ test('unavailable sources remain unknown rather than healthy empty states', t =>
 test('team counts live identities once and does not count offline work reports',t=>{
   const {bus,control}=fixture(t);
   const result=buildAgentBoard({bus,control,workplace:{reachable:true,agents:[
-    {agentId:'a',name:'Nova',status:'BUSY',liveSessions:2,sessions:[{status:'BUSY'},{status:'READY'}]},
-    {agentId:'b',name:'SEER',status:'READY',liveSessions:1,sessions:[{status:'READY'}]},
+    {agentId:'a',stableId:'nova',role:'execution',name:'Nova',status:'BUSY',liveSessions:2,sessions:[{status:'BUSY'},{status:'READY'}]},
+    {agentId:'b',stableId:'seer',role:'strategic-governor',name:'SEER',status:'READY',liveSessions:1,sessions:[{status:'READY'}]},
     {agentId:'c',name:'Old Codex',status:'BUSY',liveSessions:0,sessions:[{status:'OFFLINE'}]},
   ]}});
-  assert.deepEqual(result.summary,{connected:2,reportingWork:1,offline:1,activeMissions:0});
+  assert.deepEqual(result.summary,{connected:1,reportingWork:1,offline:1,activeMissions:0});
+  assert.equal(result.agents.length,2);
+  assert.equal(result.agents[0].name,'Aura');
+  assert.equal(result.network.nodes.filter(node=>node.kind==='coordinator').length,1);
+  assert.equal(result.network.nodes[0].name,'Aura');
   assert.equal(buildAgentBoard({bus,control,workplace:{reachable:false}}).summary,null);
 });

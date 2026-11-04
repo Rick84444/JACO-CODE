@@ -28,38 +28,38 @@ export function MissionReview({missions,preferredMissionId,onDecisions}:{mission
   const patch=current?.patch?.path===file?current.patch:null;
   const paths=current?.workspace.files||[];
   const patchLines=patch?.content.split('\n')||[];
-  return <section className="mission-review" aria-label="Granska agentens ändringar">
-    <header><h2>Agentens resultat</h2><button type="button" onClick={()=>setRevision(value=>value+1)}>Uppdatera</button></header>
-    <p>Ändringarna läses från uppdragets egen arbetskopia. Ditt öppna projekt ändras inte av denna granskning.</p>
-    <label>Uppdrag<select value={id} onChange={event=>{setId(event.target.value);setFile('');setReview(null);}}>
-      {!missions.some(m=>m.id===id)&&id&&<option value={id}>Tidigare valt uppdrag</option>}
-      {!missions.length&&!id&&<option value="">Inga uppdrag observerade</option>}
+  return <section className="mission-review" aria-label="Review the agent's changes">
+    <header><h2>Agent results</h2><button type="button" onClick={()=>setRevision(value=>value+1)}>Refresh</button></header>
+    <p>Changes are read from the mission's own working copy. Your open project is not changed by this review.</p>
+    <label>Mission<select value={id} onChange={event=>{setId(event.target.value);setFile('');setReview(null);}}>
+      {!missions.some(m=>m.id===id)&&id&&<option value={id}>Previously selected mission</option>}
+      {!missions.length&&!id&&<option value="">No missions observed</option>}
       {missions.map(m=><option key={m.id} value={m.id}>{m.goal.slice(0,100)} · {m.status}</option>)}
     </select></label>
-    {loading&&<p role="status">Läser uppdragets aktuella resultat…</p>}
-    {error&&<p role="alert">Granskningen kunde inte uppdateras: {error}. Tidigare observationer kan vara föråldrade.</p>}
+    {loading&&<p role="status">Reading the mission's current results…</p>}
+    {error&&<p role="alert">The review could not be refreshed: {error}. Earlier observations may be stale.</p>}
     {current&&<>
-      <p>{current.status} · {current.phase} · Observerat {new Date(current.observedAt).toLocaleTimeString('sv-SE')}</p>
-      {current.contractStatus&&<p>{current.contractStatus.machineVerified?'Uppdragets registrerade kontroller är uppfyllda.':'Återstår i uppdragets kontroller: '+current.contractStatus.missing.join(', ')}</p>}
-      <p>Testbelägg gäller den registrerade körningen. Granskningen kör inte nya tester och bekräftar inte senare manuella ändringar.</p>
-      {['BLOCKED','AWAITING_VERIFICATION'].includes(current.status)&&<button type="button" onClick={onDecisions}>Visa hinder och tillgängliga beslut</button>}
-      {current.workspace.state==='NOT_CREATED'&&<p>Agentens arbetskopia har inte skapats ännu.</p>}
-      {current.workspace.state==='NOT_PROJECT_MISSION'&&<p>Detta uppdrag har ingen separat projektarbetskopia.</p>}
+      <p>{current.status} · {current.phase} · Observed {new Date(current.observedAt).toLocaleTimeString('en-US')}</p>
+      {current.contractStatus&&<p>{current.contractStatus.machineVerified?"The mission's registered checks are satisfied.":"Remaining in the mission's checks: "+current.contractStatus.missing.join(', ')}</p>}
+      <p>Test evidence applies to the registered run. This review does not run new tests and does not confirm later manual changes.</p>
+      {['BLOCKED','AWAITING_VERIFICATION'].includes(current.status)&&<button type="button" onClick={onDecisions}>Show blockers and available decisions</button>}
+      {current.workspace.state==='NOT_CREATED'&&<p>The agent's working copy has not been created yet.</p>}
+      {current.workspace.state==='NOT_PROJECT_MISSION'&&<p>This mission has no separate project working copy.</p>}
       {current.workspace.state==='READY'&&<>
-        <p>{paths.length} ändrade filer · {current.workspace.branch}</p>
-        {!!current.workspace.hiddenFiles&&<p>{current.workspace.hiddenFiles} filer ligger utanför uppdragets läsbara omfattning.</p>}
-        {current.workspace.truncated&&<p>Fillistan är begränsad till de första 500 observerade filerna.</p>}
-        {!paths.length&&<p>Inga filändringar observerade mot den gemensamma Git-utgångspunkten.</p>}
-        {paths.length>0&&<label>Ändrad fil<select value={file} onChange={event=>setFile(event.target.value)}><option value="">Välj en fil att granska</option>{paths.map(entry=><option key={entry.path} value={entry.path}>{entry.path}{entry.untracked?' · ny fil':''}</option>)}</select></label>}
-        {patch&&<div className="mission-review-patch"><div><strong>{patch.path}</strong><button type="button" onClick={()=>setWrap(value=>!value)} aria-pressed={wrap}>Radbrytning</button></div>
-          {patch.truncated&&<p>Diffen är avkortad. Granska hela ändringen lokalt före ett slutligt beslut.</p>}
-          {patchLines.length>3000&&<p>De första 3000 raderna visas. Granska hela diffen lokalt.</p>}
+        <p>{paths.length} changed files · {current.workspace.branch}</p>
+        {!!current.workspace.hiddenFiles&&<p>{current.workspace.hiddenFiles} files are outside the mission's readable scope.</p>}
+        {current.workspace.truncated&&<p>The file list is limited to the first 500 observed files.</p>}
+        {!paths.length&&<p>No file changes observed against the shared Git base.</p>}
+        {paths.length>0&&<label>Changed file<select value={file} onChange={event=>setFile(event.target.value)}><option value="">Choose a file to review</option>{paths.map(entry=><option key={entry.path} value={entry.path}>{entry.path}{entry.untracked?' · new file':''}</option>)}</select></label>}
+        {patch&&<div className="mission-review-patch"><div><strong>{patch.path}</strong><button type="button" onClick={()=>setWrap(value=>!value)} aria-pressed={wrap}>Line wrap</button></div>
+          {patch.truncated&&<p>The diff is truncated. Review the whole change locally before a final decision.</p>}
+          {patchLines.length>3000&&<p>The first 3000 lines are shown. Review the whole diff locally.</p>}
           <pre data-wrap={wrap}>{patchLines.slice(0,3000).map((line,index)=><span key={index} data-kind={line.startsWith('+')&&!line.startsWith('+++')?'add':line.startsWith('-')&&!line.startsWith('---')?'remove':line.startsWith('@@')?'hunk':'context'}>{line||' '}</span>)}</pre>
         </div>}
       </>}
-      <details className="mission-review-tests"><summary>Registrerade testkörningar ({current.tests.length})</summary>
-        {!current.tests.length&&<p>Inga testkörningar registrerade.</p>}
-        {current.tests.map((test,index)=><article key={test.actionId||index}><strong>{test.ok&&test.verified?'Godkänd testkörning':'Testkörning ej verifierad'}</strong><p>{test.command}</p><pre>{test.output||'Ingen testutdata registrerad.'}</pre></article>)}
+      <details className="mission-review-tests"><summary>Registered test runs ({current.tests.length})</summary>
+        {!current.tests.length&&<p>No test runs registered.</p>}
+        {current.tests.map((test,index)=><article key={test.actionId||index}><strong>{test.ok&&test.verified?'Passed test run':'Test run not verified'}</strong><p>{test.command}</p><pre>{test.output||'No test output registered.'}</pre></article>)}
       </details>
     </>}
   </section>;

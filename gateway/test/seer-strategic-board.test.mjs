@@ -116,7 +116,7 @@ test('executors and workers share reasoning instructions; unavailable SEER is ex
   const stale = await readStrategicContext(mission, { seerUrl: 'http://seer.test', token: 'private', fetchImpl: async () => { throw new Error('offline'); } });
   assert.equal(stale.fresh, false);
   assert.equal(stale.source, 'dispatch-snapshot');
-  assert.match(brainSystemFor(['repo-read'], true), /SEER owns the shared Shack/);
+  assert.match(brainSystemFor(['repo-read'], true), /Aura owns the operator goal/);
   const worker = workerStrategicPrompt('Inspect failure', mission);
   assert.match(worker, /receipt.*verify/);
   assert.match(worker, /"stepId":"repair"/);

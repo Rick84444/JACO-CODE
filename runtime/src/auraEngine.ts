@@ -16,8 +16,8 @@ const EDGE_WORKER_URL = String(process.env.CLOUDFLARE_GATEWAY_WORKER_URL || "").
 function buildCanonicalAuraGoal(): import("./types").AuraStrategicGoal {
   return {
     id: AURA_CANONICAL_GOAL_ID,
-    title: "Verifierbar autonom IDE-yta från mål till receipt",
-    description: "Aura ska vara JACOs sanningsbundna operatörs- och IDE-yta där ett användarmål kan formuleras, skickas via canonical SEER och Durable Nova, följas genom verkliga verktygsåtgärder och betraktas som slutfört först när verifierad evidens eller receipt finns. Aura ska göra autonomin begriplig och synlig utan att själv tillskriva sig exekvering som inte är observerad.",
+    title: "Verifiable autonomous IDE surface from goal to receipt",
+    description: "Aura must be JACO's truth-bound operator and IDE surface where a user goal can be formulated, sent through canonical SEER and Durable Nova, followed through real tool actions, and considered complete only when verified evidence or a receipt exists. Aura must make the autonomy understandable and visible without attributing to itself any execution that has not been observed.",
     category: "AUTONOMOUS_ORCHESTRATION",
     priorityScore: 10,
     progressPercent: 75,
@@ -27,7 +27,7 @@ function buildCanonicalAuraGoal(): import("./types").AuraStrategicGoal {
     milestones: [
       {
         id: "aura-objective-1",
-        title: "Konversation routas genom canonical SEER och rapporterar verklig provider/modell",
+        title: "Conversation is routed through canonical SEER and reports the real provider/model",
         assignedAgent: "SEER",
         status: "completed",
         proofOfExecution: "PR #25 CI: tests/nova/aura-seer-chat.test.mjs",
@@ -35,7 +35,7 @@ function buildCanonicalAuraGoal(): import("./types").AuraStrategicGoal {
       },
       {
         id: "aura-objective-2",
-        title: "GUI visar runtime truth, Workplace, missionstatus och verifierad evidens utan syntetiska READY-claims",
+        title: "GUI shows runtime truth, Workplace, mission status and verified evidence without synthetic READY claims",
         assignedAgent: "Aura GUI",
         status: "completed",
         proofOfExecution: "tests/nova/aura-truthful-gui.test.mjs",
@@ -43,7 +43,7 @@ function buildCanonicalAuraGoal(): import("./types").AuraStrategicGoal {
       },
       {
         id: "aura-objective-3",
-        title: "Operatörsmål skapar en verklig Durable Nova mission via canonical mission route",
+        title: "Operator goal creates a real Durable Nova mission via the canonical mission route",
         assignedAgent: "Nova Mission Control",
         status: "completed",
         proofOfExecution: "/api/aura/missions -> connectedRuntime.novaMissions.create",
@@ -51,13 +51,13 @@ function buildCanonicalAuraGoal(): import("./types").AuraStrategicGoal {
       },
       {
         id: "aura-objective-4",
-        title: "Verifiera target-host-kedjan mål -> SEER -> Nova/AgentOS -> verktyg -> receipt utan manuell deluppgiftsstyrning",
+        title: "Verify the target-host chain goal -> SEER -> Nova/AgentOS -> tools -> receipt without manual subtask steering",
         assignedAgent: "Nova / Desktop AgentOS",
         status: "in_progress"
       }
     ],
     createdAt: "2026-09-18",
-    updatedAt: new Date().toLocaleDateString("sv-SE"),
+    updatedAt: new Date().toLocaleDateString("en-US"),
     lastPodarLog: "[OBSERVED] Canonical Aura objective is active. Completion requires target-host evidence; source/CI evidence alone is insufficient."
   };
 }
@@ -71,7 +71,7 @@ export class AuraEngineManager {
       content: "JACO provider selection is configuration-backed and must be proven by runtime health before it is reported active.",
       importance: "high",
       source: "System Core",
-      timestamp: new Date().toLocaleDateString("sv-SE")
+      timestamp: new Date().toLocaleDateString("en-US")
     },
     {
       id: "mem-runtime-evidence-policy",
@@ -79,7 +79,7 @@ export class AuraEngineManager {
       content: "Completion claims require observable evidence or a verified receipt; source text and configured credentials are not proof of live execution.",
       importance: "high",
       source: "System Core",
-      timestamp: new Date().toLocaleDateString("sv-SE")
+      timestamp: new Date().toLocaleDateString("en-US")
     }
   ];
 
@@ -89,99 +89,99 @@ export class AuraEngineManager {
       name: "Computer Agent",
       type: "computer",
       status: "idle",
-      description: "Hanterar OS-nivå, bakgrundsprocesser och CLI-kommandon.",
-      activeTask: "Väntar på uppdrag",
-      lastSyncAt: new Date().toLocaleTimeString("sv-SE")
+      description: "Handles OS level, background processes and CLI commands.",
+      activeTask: "Waiting for a mission",
+      lastSyncAt: new Date().toLocaleTimeString("en-US")
     },
     {
       id: "agent-vscode",
       name: "VS Code Agent",
       type: "vscode",
       status: "idle",
-      description: "Utför kodrefaktorering, patchar och AST-analyser i källkoden.",
-      activeTask: "Väntar på uppdrag",
-      lastSyncAt: new Date().toLocaleTimeString("sv-SE")
+      description: "Performs code refactoring, patches and AST analysis in the source code.",
+      activeTask: "Waiting for a mission",
+      lastSyncAt: new Date().toLocaleTimeString("en-US")
     },
     {
       id: "agent-openclaw",
       name: "OpenClaw Agent",
       type: "openclaw",
       status: "active",
-      description: "Webbsökning, API-integrering och Kimi/GLM webb-plugins via Ollama v0.18.",
-      activeTask: "Klar för webbsökning och plugin-anrop",
-      lastSyncAt: new Date().toLocaleTimeString("sv-SE")
+      description: "Web search, API integration and Kimi/GLM web plugins via Ollama v0.18.",
+      activeTask: "Ready for web search and plugin calls",
+      lastSyncAt: new Date().toLocaleTimeString("en-US")
     },
     {
       id: "agent-nova",
       name: "Nova NPU Agent",
       type: "nova",
       status: "active",
-      description: "Lokal On-Device Tensor AI Core matrisacceleration via LiteRT-LM.",
-      activeTask: "Accelererar Nemotron 4B matriser",
-      lastSyncAt: new Date().toLocaleTimeString("sv-SE")
+      description: "Local on-device Tensor AI Core matrix acceleration via LiteRT-LM.",
+      activeTask: "Accelerating Nemotron 4B matrices",
+      lastSyncAt: new Date().toLocaleTimeString("en-US")
     },
     {
       id: "agent-marketplace",
       name: "Marketplace Broker Agent",
       type: "marketplace",
       status: "active",
-      description: "Paketerar, värderar och publicerar färdigheter och agentkort på P2P-marknadsplatsen samt hanterar A2A-krediter.",
-      activeTask: "Övervakar A2A P2P-marknadsplats och agentkorts-intäkter",
-      lastSyncAt: new Date().toLocaleTimeString("sv-SE")
+      description: "Packages, prices and publishes skills and agent cards on the P2P marketplace and manages A2A credits.",
+      activeTask: "Monitoring the A2A P2P marketplace and agent card revenue",
+      lastSyncAt: new Date().toLocaleTimeString("en-US")
     },
     {
       id: "agent-skill-monetizer",
       name: "Skill Monetization Agent",
       type: "skill-monetizer",
       status: "active",
-      description: "Omvandlar verifierade källkodsmönster och arbetsflöden till säljbara A2A Skill-paket och sätter licensprissättning.",
-      activeTask: "Genererar säljbara moduler från JACO-ekosystemet",
-      lastSyncAt: new Date().toLocaleTimeString("sv-SE")
+      description: "Turns verified source code patterns and workflows into sellable A2A skill packages and sets license pricing.",
+      activeTask: "Generating sellable modules from the JACO ecosystem",
+      lastSyncAt: new Date().toLocaleTimeString("en-US")
     },
     {
       id: "agent-settlement",
       name: "Skyfire & Crypto Settlement Agent",
       type: "settlement",
       status: "active",
-      description: "Kopplar samman USDC mikrobetslningar via Skyfire och Coinbase Commerce för automatisk intäktsavräkning.",
-      activeTask: "Klar för avräkning av kryptointäkter och mikropayments",
-      lastSyncAt: new Date().toLocaleTimeString("sv-SE")
+      description: "Connects USDC micropayments via Skyfire and Coinbase Commerce for automatic revenue settlement.",
+      activeTask: "Ready to settle crypto revenue and micropayments",
+      lastSyncAt: new Date().toLocaleTimeString("en-US")
     },
     {
       id: "agent-senior-dev",
       name: "Senior Developer Debugger Lead",
       type: "senior-dev",
       status: "active",
-      description: "Övervakar källkodskvalitet i hela stacken, sätter optimeringsmål, kör tsc --noEmit & AST-granskning samt leder kluster-agenter.",
-      activeTask: "Auditering av typsäkerhet & stackens prestanda",
-      lastSyncAt: new Date().toLocaleTimeString("sv-SE")
+      description: "Monitors source code quality across the stack, sets optimization goals, runs tsc --noEmit & AST review and leads cluster agents.",
+      activeTask: "Auditing type safety & stack performance",
+      lastSyncAt: new Date().toLocaleTimeString("en-US")
     },
     {
       id: "agent-fe-refactor",
       name: "Frontend React/Vite Refactor Agent",
       type: "fe-refactor",
       status: "idle",
-      description: "Optimerar React-komponenters rendering, Tailwind-klasser och bundle-storlek.",
-      activeTask: "Väntar på optimeringsmål från Senior Lead",
-      lastSyncAt: new Date().toLocaleTimeString("sv-SE")
+      description: "Optimizes React component rendering, Tailwind classes and bundle size.",
+      activeTask: "Waiting for optimization goals from Senior Lead",
+      lastSyncAt: new Date().toLocaleTimeString("en-US")
     },
     {
       id: "agent-be-optimizer",
       name: "Node Express Backend Optimizer",
       type: "be-optimizer",
       status: "idle",
-      description: "Optimerar Express.js API-svarstider, minnesallokering och streaming-responser i server.ts.",
-      activeTask: "Väntar på optimeringsmål från Senior Lead",
-      lastSyncAt: new Date().toLocaleTimeString("sv-SE")
+      description: "Optimizes Express.js API response times, memory allocation and streaming responses in server.ts.",
+      activeTask: "Waiting for optimization goals from Senior Lead",
+      lastSyncAt: new Date().toLocaleTimeString("en-US")
     },
     {
       id: "agent-cloudflare-promoter",
       name: "MimirPower Cloudflare Worker Builder & Skill Promoter",
       type: "cloudflare-promoter",
       status: "active",
-      description: "Paketerar JACO-skills till Cloudflare Workers, distribuerar mimirpower worker och marknadsför A2A Edge-endpoints.",
-      activeTask: "Aktiv övervakning & paketering av mimirpower worker",
-      lastSyncAt: new Date().toLocaleTimeString("sv-SE")
+      description: "Packages JACO skills into Cloudflare Workers, distributes the mimirpower worker and promotes A2A Edge endpoints.",
+      activeTask: "Active monitoring & packaging of the mimirpower worker",
+      lastSyncAt: new Date().toLocaleTimeString("en-US")
     }
   ];
 
@@ -204,7 +204,7 @@ export class AuraEngineManager {
     {
       id: "skill-1",
       name: "Auto Code AST Refactorer",
-      description: "Analyserar TypeScript-kod, hittar synk-flaskhalsar och genererar säkra AST-patchar.",
+      description: "Analyzes TypeScript code, finds sync bottlenecks and generates safe AST patches.",
       category: "Code AST",
       isEnabled: true,
       triggerKey: "skill_ast_refactor",
@@ -216,7 +216,7 @@ export class AuraEngineManager {
     {
       id: "skill-2",
       name: "Ollama Termux OOM Guard",
-      description: "Förhindrar Android Phantom Process Killer och låser RAM-vikter med OLLAMA_KEEP_ALIVE=-1.",
+      description: "Prevents the Android Phantom Process Killer and pins RAM weights with OLLAMA_KEEP_ALIVE=-1.",
       category: "Android Native",
       isEnabled: true,
       triggerKey: "skill_oom_guard",
@@ -250,23 +250,23 @@ export class AuraEngineManager {
   private gitMissions: import("./types").GitOpsMission[] = [
     {
       id: "git-m-101",
-      title: "Optimera Code AST Refactoring Pipeline",
-      description: "Skapa en ny källkodspatch i .jaco/missions/ast-opt.json och verifiera TypeScript lint.",
+      title: "Optimize Code AST Refactoring Pipeline",
+      description: "Create a new source patch in .jaco/missions/ast-opt.json and verify TypeScript lint.",
       filePath: ".jaco/missions/ast-opt.json",
       assignedAgent: "Code Refactor Agent",
       status: "COMPLETED",
-      createdAt: new Date(Date.now() - 3600000).toLocaleTimeString("sv-SE"),
+      createdAt: new Date(Date.now() - 3600000).toLocaleTimeString("en-US"),
       commitHash: "a4f89d2",
-      outputSummary: "Verifierat AST-kodträd utan syntaxfel."
+      outputSummary: "Verified AST code tree with no syntax errors."
     },
     {
       id: "git-m-102",
-      title: "Konfigurera Cloudflare Worker Tunnel",
-      description: "Sätt upp webhook-lyssnare för externa A2A agentanrop över Cloudflare Edge.",
+      title: "Configure Cloudflare Worker Tunnel",
+      description: "Set up webhook listeners for external A2A agent calls over Cloudflare Edge.",
       filePath: ".jaco/missions/cloudflare-tunnel.json",
       assignedAgent: "Cloudflare Gateway Agent",
       status: "PENDING",
-      createdAt: new Date().toLocaleTimeString("sv-SE")
+      createdAt: new Date().toLocaleTimeString("en-US")
     }
   ];
 
@@ -285,8 +285,8 @@ export class AuraEngineManager {
     {
       id: "mk-skill-1",
       name: "Ollama DeepRefactor Pro 3.6",
-      tagline: "Autonom källkodsanalys & TypeScript AST-refaktorisering för lokala Ollama-modeller.",
-      description: "Inkluderar specialiserade Modelfile-regler och AST-parser plug-in som tillåter din lokala Ollama qwen/llama-modell att hitta syntaxfel, refaktorisera stora filer och leverera rena TypeScript-patchar.",
+      tagline: "Autonomous source code analysis & TypeScript AST refactoring for local Ollama models.",
+      description: "Includes specialized Modelfile rules and an AST parser plug-in that lets your local Ollama qwen/llama model find syntax errors, refactor large files and deliver clean TypeScript patches.",
       category: "Code & AST",
       priceCredits: 0,
       author: "JACO A2A Core",
@@ -294,11 +294,11 @@ export class AuraEngineManager {
       rating: 4.9,
       downloadsCount: 1420,
       status: "DEPLOYED",
-      deployedAt: new Date(Date.now() - 86400000).toLocaleDateString("sv-SE"),
+      deployedAt: new Date(Date.now() - 86400000).toLocaleDateString("en-US"),
       requirements: ["Ollama 0.1.30+", "Node.js 18+"],
       parametersSchema: "{\"targetFilePath\": \"string\", \"optimizationLevel\": \"strict\"}",
       pluginCode: "export async function runDeepRefactor(code: string) {\n  // Local Ollama AST parser plugin\n  return { success: true, patch: code.trim() };\n}",
-      modelfileContent: "FROM qwen2.5-coder:7b\nPARAMETER temperature 0.2\nSYSTEM \"Du är en elit-kod-refaktorerare i JACO OS. Generera endast giltiga TypeScript AST-patchar utan markdown-fyllning.\"",
+      modelfileContent: "FROM qwen2.5-coder:7b\nPARAMETER temperature 0.2\nSYSTEM \"You are an elite code refactorer in JACO OS. Generate only valid TypeScript AST patches without markdown padding.\"",
       peerNodeId: "node-a2a-core-01",
       reputationScore: 99.8,
       tradingVolume: 1420,
@@ -308,8 +308,8 @@ export class AuraEngineManager {
     {
       id: "mk-skill-2",
       name: "Hexagon NPU Tensor Accelerator",
-      tagline: "Hårdvaruaccelerering för Qualcomm Hexagon NPU & Android NNAPI i Ollama.",
-      description: "Drivrutin och Modelfile-konfiguration som binder Ollamas matrisekxekvering direkt till NPU Hexagon hardware-acceleratorn via Termux OpenCL/NNAPI-bryggan.",
+      tagline: "Hardware acceleration for Qualcomm Hexagon NPU & Android NNAPI in Ollama.",
+      description: "Driver and Modelfile configuration that binds Ollama matrix execution directly to the NPU Hexagon hardware accelerator via the Termux OpenCL/NNAPI bridge.",
       category: "Hardware & NPU",
       priceCredits: 15,
       author: "Qualcomm NPU Lab",
@@ -330,8 +330,8 @@ export class AuraEngineManager {
     {
       id: "mk-skill-3",
       name: "GitOps Mission Dispatcher Plugin",
-      tagline: "Automatisk PR-synkronisering & uppdragsutdelning över Git-repon.",
-      description: "Anslut din lokala Ollama-miljö till fjärr-Git-repon (.jaco/missions/*.json). Skapar automatiskt commits, grenar och skickar resultat-patchar tillbaka till GitHub.",
+      tagline: "Automatic PR synchronization & mission dispatch across Git repos.",
+      description: "Connect your local Ollama environment to remote Git repos (.jaco/missions/*.json). Automatically creates commits and branches and sends result patches back to GitHub.",
       category: "Git & Cloudflare",
       priceCredits: 0,
       author: "GitOps Community",
@@ -339,7 +339,7 @@ export class AuraEngineManager {
       rating: 4.7,
       downloadsCount: 1105,
       status: "DEPLOYED",
-      deployedAt: new Date(Date.now() - 3600000).toLocaleDateString("sv-SE"),
+      deployedAt: new Date(Date.now() - 3600000).toLocaleDateString("en-US"),
       requirements: ["Git CLI", "GitHub Token"],
       parametersSchema: "{\"repoUrl\": \"string\", \"branch\": \"string\"}",
       pluginCode: "export async function dispatchGitMission(mission: any) {\n  return { status: 'COMMITTED', hash: 'a4f89d2' };\n}",
@@ -353,8 +353,8 @@ export class AuraEngineManager {
     {
       id: "mk-skill-4",
       name: "Cloudflare Worker Edge Tunnel Gateway",
-      tagline: "Exekvera A2A agenter över Cloudflare Worker webhooks & Tunnels.",
-      description: "Möjliggör säker agent-till-agent kommunikation över internet med Cloudflare Workers och trycloudflare tunnlar, utan att exponera lokala portar direkt.",
+      tagline: "Run A2A agents over Cloudflare Worker webhooks & Tunnels.",
+      description: "Enables secure agent-to-agent communication over the internet with Cloudflare Workers and trycloudflare tunnels, without exposing local ports directly.",
       category: "Git & Cloudflare",
       priceCredits: 10,
       author: "Cloudflare A2A Node",
@@ -375,8 +375,8 @@ export class AuraEngineManager {
     {
       id: "mk-skill-5",
       name: "JACO Hardening & Security Auditor",
-      tagline: "Säkerhetsgranskare för Termux SSH, brandvägg, API Vault & portar.",
-      description: "Scannar automatiskt ditt system efter öppna SSH-portar, oskyddade nycklar, föråldrade paket och ställer in rekommenderade UFW/iptables regler.",
+      tagline: "Security auditor for Termux SSH, firewall, API Vault & ports.",
+      description: "Automatically scans your system for open SSH ports, unprotected keys and outdated packages, and sets recommended UFW/iptables rules.",
       category: "Security & Audit",
       priceCredits: 20,
       author: "JACO CyberSec",
@@ -387,7 +387,7 @@ export class AuraEngineManager {
       requirements: ["Root or Termux Access", "SSH Client"],
       parametersSchema: "{\"auditTarget\": \"all\", \"strictMode\": true}",
       pluginCode: "export async function runSecurityAudit() {\n  return { status: 'SECURE', openPorts: [22, 3000, 11434], vulnerabilities: 0 };\n}",
-      modelfileContent: "FROM deepseek-r1:7b\nSYSTEM \"Du är en cybelsäkerhetsexpert. Auditera konfigurationer och rapportera svagheter utan pappersspår.\"",
+      modelfileContent: "FROM deepseek-r1:7b\nSYSTEM \"You are a cybersecurity expert. Audit configurations and report weaknesses without a paper trail.\"",
       peerNodeId: "node-cybersec-node-09",
       reputationScore: 100.0,
       tradingVolume: 1280,
@@ -397,8 +397,8 @@ export class AuraEngineManager {
     {
       id: "mk-skill-6",
       name: "Live Web Grounding & Search Synthesizer",
-      tagline: "Ge din lokala Ollama-modell realtidskunskap via webbsökningar.",
-      description: "Integrerar lokala Ollama-modeller med en snabb webbsökningstunnel. Hämtar senaste nyheter, dokumentation och API-ändringar vid behov.",
+      tagline: "Give your local Ollama model real-time knowledge through web searches.",
+      description: "Integrates local Ollama models with a fast web search tunnel. Fetches the latest news, documentation and API changes on demand.",
       category: "API & Integration",
       priceCredits: 15,
       author: "AURA Research",
@@ -409,7 +409,7 @@ export class AuraEngineManager {
       requirements: ["Internet Access", "Ollama 0.1.30+"],
       parametersSchema: "{\"searchQuery\": \"string\", \"maxResults\": 5}",
       pluginCode: "export async function searchWebGrounding(query: string) {\n  return { resultsCount: 3, summary: 'Updated docs found.' };\n}",
-      modelfileContent: "FROM qwen2.5:7b\nSYSTEM \"Du har tillgång till live webbsöknings-resultat. Citera alltid källor med URL.\"",
+      modelfileContent: "FROM qwen2.5:7b\nSYSTEM \"You have access to live web search results. Always cite sources with a URL.\"",
       peerNodeId: "node-research-p2p-03",
       reputationScore: 96.8,
       tradingVolume: 940,
@@ -423,86 +423,86 @@ export class AuraEngineManager {
       id: "plan-1",
       title: "Automated Enterprise Code Vulnerability & AST Auditor",
       category: "Security & Hardening",
-      targetAudience: "A2A P2P Noder & Företagsutvecklare",
+      targetAudience: "A2A P2P Nodes & Enterprise Developers",
       estimatedPriceSek: 490,
       qualityAssuranceRules: [
-        "Ska erbjuda noll falska positiva resultat genom AST-validering",
-        "Genererar signerat SHA-256 evidenspaket med reella linter-bevis",
-        "Ingen skräppost/spam: Exekverar enbart vid explicit förfrågan eller verifierat kodändrings-event"
+        "Must deliver zero false positives through AST validation",
+        "Generates a signed SHA-256 evidence bundle with real linter proof",
+        "No spam: Runs only on explicit request or a verified code-change event"
       ],
       status: "DEVELOPING",
       assignedAgent: "Security Auditor Agent",
-      plannedSolution: "Bygger en dedikerad AST-granskare som körs lokalt i Node.js och paketerar resultatet till ett A2A-signerat protokoll.",
-      createdAt: new Date().toLocaleDateString("sv-SE")
+      plannedSolution: "Builds a dedicated AST reviewer that runs locally in Node.js and packages the result into an A2A-signed protocol.",
+      createdAt: new Date().toLocaleDateString("en-US")
     },
     {
       id: "plan-2",
       title: "Real-Time Multi-Agent Workflow Orchestrator Pro",
       category: "Code & AST",
-      targetAudience: "Autonoma AI-agentnätverk & P2P Meshes",
+      targetAudience: "Autonomous AI agent networks & P2P Meshes",
       estimatedPriceSek: 790,
       qualityAssuranceRules: [
-        "Inkluderar automatisk återhämtning vid sub-agent-fel (Emergent Recovery)",
-        "Garanterar typ-säkerhet utan generering av placeholders eller stubs",
-        "Innehåller fullständig audit-trail i minneslagret (.jaco/memory/)"
+        "Includes automatic recovery from sub-agent failures (Emergent Recovery)",
+        "Guarantees type safety without generating placeholders or stubs",
+        "Contains a complete audit trail in the memory layer (.jaco/memory/)"
       ],
       status: "RESEARCHING",
       assignedAgent: "Architecture Planner Agent",
-      plannedSolution: "Orkestrerar parallella underagenter med reella tidsgränser och automatisk typsäkerhetskontroll.",
-      createdAt: new Date().toLocaleDateString("sv-SE")
+      plannedSolution: "Orchestrates parallel sub-agents with real time limits and automatic type safety checks.",
+      createdAt: new Date().toLocaleDateString("en-US")
     },
     {
       id: "plan-3",
       title: "On-Device NPU Matrix Acceleration Adapter",
       category: "Hardware & NPU",
-      targetAudience: "Kant-noder & Mobil hårdvara (Android Termux)",
+      targetAudience: "Edge nodes & Mobile hardware (Android Termux)",
       estimatedPriceSek: 290,
       qualityAssuranceRules: [
-        "Verifierad på Qualcomm Snapdragon & NNAPI-drivrutiner",
-        "Termisk övervakning: Avbryter eller trappar ner vid > 42°C för att förhindra överhettning"
+        "Verified on Qualcomm Snapdragon & NNAPI drivers",
+        "Thermal monitoring: Aborts or throttles down at > 42°C to prevent overheating"
       ],
       status: "QUALITY_CHECK",
       assignedAgent: "NPU Matrix Acceleration Agent",
-      plannedSolution: "Binda matrisberäkningar direkt till lokal OpenCL/LiteRT-LM accelerator.",
-      createdAt: new Date().toLocaleDateString("sv-SE")
+      plannedSolution: "Bind matrix computations directly to a local OpenCL/LiteRT-LM accelerator.",
+      createdAt: new Date().toLocaleDateString("en-US")
     }
   ];
 
   private systemLimitations: import("./types").SystemBottleneckLimitation[] = [
     {
       id: "limit-1",
-      title: "Stripe Secret Key Ej Aktiverad i Miljövariabler",
+      title: "Stripe Secret Key Not Activated in Environment Variables",
       category: "API_KEYS",
       impactLevel: "HIGH",
-      description: "Utan STRIPE_SECRET_KEY i process.env kan inga live-utbetalningar eller Stripe Hosted Checkouts genomföras mot externa kortutgivare.",
-      resolutionPlan: "Erbjuder användaren att klicka på 'Konfigurera Stripe API Key' i UI eller sparar nyckeln automatiskt vid detektion i Secrets Vault.",
+      description: "Without STRIPE_SECRET_KEY in process.env, no live payouts or Stripe Hosted Checkouts can be completed against external card issuers.",
+      resolutionPlan: "Offers the user to click 'Configure Stripe API Key' in the UI, or saves the key automatically when detected in the Secrets Vault.",
       responsibleAgent: "Marketplace Broker Agent",
       status: "OPEN",
-      updatedAt: new Date().toLocaleDateString("sv-SE"),
+      updatedAt: new Date().toLocaleDateString("en-US"),
       alternativePaths: [
-        "Syntetisera lokal Offline Payment/Credit Ledger Adapter för A2A-testning",
-        "Generera direkt delbar A2A P2P Kryptografisk kvitto-signering som fallback",
-        "Skicka prio-notis till operatören för knapptryckningsaktivering i Secrets Vault"
+        "Synthesize a local Offline Payment/Credit Ledger Adapter for A2A testing",
+        "Generate directly shareable A2A P2P cryptographic receipt signing as a fallback",
+        "Send a priority notification to the operator for one-click activation in the Secrets Vault"
       ],
       synthesizedTool: "LocalOfflineLedgerAdapterTool.ts",
       fallbackExecutionStatus: "TOOL_SYNTHESIZED",
       requiresHumanHelp: true,
-      humanHelpReason: "Skarp Stripe Secret Key (sk_live_...) måste anges av operatören för extern kortinlösen."
+      humanHelpReason: "A live Stripe Secret Key (sk_live_...) must be provided by the operator for external card acquiring."
     },
     {
       id: "limit-2",
-      title: "NPU Hårdvarubindning Begränsad av Ram-Mängd",
+      title: "NPU Hardware Binding Limited by RAM Size",
       category: "LATENCY_NPU",
       impactLevel: "MEDIUM",
-      description: "För modeller över 8B parametrar krävs > 12GB RAM för att undvika thrashing vid lokal NPU-matrisexekvering.",
-      resolutionPlan: "Implementerar dynamisk modelläkta kvantisering (Q4_K_M) och automatisk avlastning till CPU/Ollama fallback.",
+      description: "Models above 8B parameters need > 12GB RAM to avoid thrashing during local NPU matrix execution.",
+      resolutionPlan: "Implements dynamic model-aware quantization (Q4_K_M) and automatic offloading to a CPU/Ollama fallback.",
       responsibleAgent: "NPU Matrix Acceleration Agent",
       status: "IN_PROGRESS",
-      updatedAt: new Date().toLocaleDateString("sv-SE"),
+      updatedAt: new Date().toLocaleDateString("en-US"),
       alternativePaths: [
-        "Bygg NPU Dynamic Chunking Tool (dela upp matriser i 4MB block)",
-        "Fallback till lokal Ollama server (http://localhost:11434)",
-        "Använd Gemini 3.6 Flash Server-side API som extern acceleration"
+        "Build NPU Dynamic Chunking Tool (split matrices into 4MB blocks)",
+        "Fallback to local Ollama server (http://localhost:11434)",
+        "Use the Gemini 3.6 Flash server-side API as external acceleration"
       ],
       synthesizedTool: "NPUDynamicChunkingTool.ts",
       fallbackExecutionStatus: "FALLBACK_ACTIVE",
@@ -510,17 +510,17 @@ export class AuraEngineManager {
     },
     {
       id: "limit-3",
-      title: "Typ-säkerhet & Strikta Null-checks i Äldre Källkodsfiler",
+      title: "Type Safety & Strict Null Checks in Older Source Files",
       category: "TYPE_SAFETY",
       impactLevel: "MEDIUM",
-      description: "Vissa äldre komponenter kan uppvisa svag typsäkerhet om valfria fält inte hanteras med valfri kedjeoperatör (?.).",
-      resolutionPlan: "QualityAuditorAgent genomför kontinuerlig tsc --noEmit verifiering och refaktorerar med strikt TypeScript.",
+      description: "Some older components can show weak type safety if optional fields are not handled with the optional chaining operator (?.).",
+      resolutionPlan: "QualityAuditorAgent runs continuous tsc --noEmit verification and refactors with strict TypeScript.",
       responsibleAgent: "Quality Auditor Agent",
       status: "RESOLVED",
-      updatedAt: new Date().toLocaleDateString("sv-SE"),
+      updatedAt: new Date().toLocaleDateString("en-US"),
       alternativePaths: [
-        "Skapa ts-morph AST Guard Tool för automatisk typ-patching",
-        "Generera tsc --noEmit verifieringsrapport"
+        "Create a ts-morph AST Guard Tool for automatic type patching",
+        "Generate a tsc --noEmit verification report"
       ],
       synthesizedTool: "ASTTypeGuardSynthesizer.ts",
       fallbackExecutionStatus: "RESOLVED",
@@ -531,24 +531,24 @@ export class AuraEngineManager {
   private priorityNotifications: import("./types").AgentPriorityNotification[] = [
     {
       id: "notif-1",
-      timestamp: new Date().toLocaleTimeString("sv-SE"),
+      timestamp: new Date().toLocaleTimeString("en-US"),
       agentName: "Marketplace Broker Agent",
       priority: "URGENT_HUMAN_HELP",
-      title: "Begäran om Stripe Live Key för extern monetisering",
-      message: "Agenten har byggt LocalOfflineLedgerAdapterTool som fungerar internt, men behöver en skarp Stripe Secret Key för att kunna ta emot reella kundbetalningar.",
-      actionRequired: "Ange STRIPE_SECRET_KEY i Secrets Vault eller via formuläret i Intäkts-fliken.",
+      title: "Request for a Stripe live key for external monetization",
+      message: "The agent has built LocalOfflineLedgerAdapterTool, which works internally, but needs a live Stripe Secret Key to accept real customer payments.",
+      actionRequired: "Enter STRIPE_SECRET_KEY in the Secrets Vault or via the form in the Revenue tab.",
       status: "UNREAD",
       bottleneckId: "limit-1",
       mobilePushed: true
     },
     {
       id: "notif-2",
-      timestamp: new Date().toLocaleTimeString("sv-SE"),
+      timestamp: new Date().toLocaleTimeString("en-US"),
       agentName: "NPU Matrix Acceleration Agent",
       priority: "CRITICAL_BOTTLENECK",
-      title: "Autonom verktygssyntes slutförd: NPUDynamicChunkingTool",
-      message: "Agenten har automatiskt skapat och verifierat ett nytt fallbacks-verktyg för att kringgå RAM-begränsningen vid lokal NPU-inferens.",
-      actionRequired: "Ingen åtgärd krävs - systemet körs nu via den autonoma fallbacks-vägen.",
+      title: "Autonomous tool synthesis complete: NPUDynamicChunkingTool",
+      message: "The agent has automatically created and verified a new fallback tool to work around the RAM limit during local NPU inference.",
+      actionRequired: "No action required - the system now runs via the autonomous fallback path.",
       status: "READ",
       bottleneckId: "limit-2",
       mobilePushed: false
@@ -558,20 +558,20 @@ export class AuraEngineManager {
   private codeOptimizations: import("./types").CodeOptimizationLogItem[] = [
     {
       id: "opt-1",
-      timestamp: new Date().toLocaleTimeString("sv-SE"),
+      timestamp: new Date().toLocaleTimeString("en-US"),
       targetFile: "src/auraEngine.ts",
       subAgentName: "Code Refactor Agent",
-      description: "Integrerade Lookahead Evaluation och djup flerstegsanalys i systempromptens <think>-motor.",
-      performanceGain: "+35% förbättrad kontinuitet & konsekvensanalys",
+      description: "Integrated Lookahead Evaluation and deep multi-step analysis into the system prompt <think> engine.",
+      performanceGain: "+35% improved continuity & consequence analysis",
       verificationStatus: "VERIFIED_CLEAN"
     },
     {
       id: "opt-2",
-      timestamp: new Date().toLocaleTimeString("sv-SE"),
+      timestamp: new Date().toLocaleTimeString("en-US"),
       targetFile: "server.ts",
       subAgentName: "Marketplace Broker Agent",
-      description: "Implementerade autonom Stripe-länkgenerering via autoMonetizeSkills() vid uppstart och synk.",
-      performanceGain: "100% automatisering av köplänkspublicering",
+      description: "Implemented autonomous Stripe link generation via autoMonetizeSkills() at startup and sync.",
+      performanceGain: "100% automation of purchase link publishing",
       verificationStatus: "PASSED"
     }
   ];
@@ -579,37 +579,37 @@ export class AuraEngineManager {
   private seniorDevGoals: import("./types").SeniorDevDebuggerGoal[] = [
     {
       id: "goal-1",
-      title: "Eliminera Alla TypeScript Type Warnings & Any-Casts",
-      description: "Senior Dev Lead övervakar att tsc --noEmit körs med noll fel och att svag typsäkerhet eliminera i källkodens alla moduler.",
+      title: "Eliminate All TypeScript Type Warnings & Any-Casts",
+      description: "Senior Dev Lead ensures that tsc --noEmit runs with zero errors and that weak type safety is eliminated in every source module.",
       assignedSubAgent: "TypeScript AST & Type Cleaner",
       targetStackModule: "TypeScript AST & Types",
       priority: "CRITICAL",
       status: "VERIFIED_CLEAN",
-      createdAt: new Date().toLocaleDateString("sv-SE"),
-      updatedAt: new Date().toLocaleDateString("sv-SE"),
-      inspectionDetails: "Genomfört tsc --noEmit verifieringssvep. Alla typer i src/auraEngine.ts och server.ts är strikta.",
+      createdAt: new Date().toLocaleDateString("en-US"),
+      updatedAt: new Date().toLocaleDateString("en-US"),
+      inspectionDetails: "Completed a tsc --noEmit verification sweep. All types in src/auraEngine.ts and server.ts are strict.",
       assignedTasks: [
-        "Auditera alla interface-exporter i src/types.ts",
-        "Ersätt alla eventuella implicit 'any' variabler i event-handlers",
-        "Säkerställ valfri kedjeoperatör på alla telemetrifält"
+        "Audit all interface exports in src/types.ts",
+        "Replace any implicit 'any' variables in event handlers",
+        "Ensure optional chaining on all telemetry fields"
       ],
-      proofOfExecution: "tsc --noEmit passerade utan fel (0 errors)"
+      proofOfExecution: "tsc --noEmit passed with no errors (0 errors)"
     },
     {
       id: "goal-2",
       title: "Express API Endpoint Latency & Streaming Buffer Optimization",
-      description: "Optimera JSON-serialisering och minnesallokering i server.ts för att sänka latens vid tunga A2A-anrop.",
+      description: "Optimize JSON serialization and memory allocation in server.ts to lower latency for heavy A2A calls.",
       assignedSubAgent: "Node Express Backend Optimizer",
       targetStackModule: "Backend (Node/Express)",
       priority: "HIGH",
       status: "IN_REFACTOR",
-      createdAt: new Date().toLocaleDateString("sv-SE"),
-      updatedAt: new Date().toLocaleDateString("sv-SE"),
-      inspectionDetails: "Senior Dev Lead identifierade potentiell buffert-mätning vid stora chatthistoriker. Tillämpar streamade JSON-chunks.",
+      createdAt: new Date().toLocaleDateString("en-US"),
+      updatedAt: new Date().toLocaleDateString("en-US"),
+      inspectionDetails: "Senior Dev Lead identified potential buffer saturation with large chat histories. Applying streamed JSON chunks.",
       assignedTasks: [
-        "Inaktivera onödig HTTP-headereffekt i Express.js",
-        "Aktivera Gzip/Deflate komprimering på A2A JSON-responser",
-        "Cacha statiska minnesstrukturer i minnesbanken"
+        "Disable unnecessary HTTP header overhead in Express.js",
+        "Enable Gzip/Deflate compression on A2A JSON responses",
+        "Cache static memory structures in the memory bank"
       ]
     }
   ];
@@ -637,12 +637,12 @@ export class AuraEngineManager {
       proficiencyScore: 98.5,
       currentSpecialization: "TypeScript AST Parsing & Automated Syntax Repair",
       evolutionaryNotes: [
-        "Gen 1: Enkel regex-analys.",
-        "Gen 2: Införde tsc --noEmit & AST-validering.",
-        "Gen 3: Automatiserad felanalys och rollbaserad delegation till underagenter.",
-        "Gen 4: Multi-Step Lookahead (<think>) och automatisk självkorrigering vid linterfel."
+        "Gen 1: Simple regex analysis.",
+        "Gen 2: Introduced tsc --noEmit & AST validation.",
+        "Gen 3: Automated error analysis and role-based delegation to sub-agents.",
+        "Gen 4: Multi-Step Lookahead (<think>) and automatic self-correction on linter errors."
       ],
-      lastEvolvedAt: new Date().toLocaleTimeString("sv-SE")
+      lastEvolvedAt: new Date().toLocaleTimeString("en-US")
     },
     {
       agentId: "agent-nova",
@@ -657,12 +657,12 @@ export class AuraEngineManager {
       proficiencyScore: 99.0,
       currentSpecialization: "LiteRT-LM & Android AICore Gemma 4 NPU Acceleration",
       evolutionaryNotes: [
-        "Gen 1: Enkel termux-battery övervakning.",
-        "Gen 2: Qualcomm Hexagon DSP NPU-telemetriavläsning.",
-        "Gen 3: LiteRT-LM ONNX/Tensor NPU-pipeline och OOM Guard.",
-        "Gen 4: Full integration med Android AICore Gemma 4 och sömlös dator-fallback."
+        "Gen 1: Simple termux-battery monitoring.",
+        "Gen 2: Qualcomm Hexagon DSP NPU telemetry readout.",
+        "Gen 3: LiteRT-LM ONNX/Tensor NPU pipeline and OOM Guard.",
+        "Gen 4: Full integration with Android AICore Gemma 4 and seamless computer fallback."
       ],
-      lastEvolvedAt: new Date().toLocaleTimeString("sv-SE")
+      lastEvolvedAt: new Date().toLocaleTimeString("en-US")
     },
     {
       agentId: "agent-fe-refactor",
@@ -677,11 +677,11 @@ export class AuraEngineManager {
       proficiencyScore: 94.8,
       currentSpecialization: "React 18+ Suspense, Tailwind CSS & Recharts Virtualization",
       evolutionaryNotes: [
-        "Gen 1: Statisk layoutuppdatering.",
-        "Gen 2: Dynamiska temabrytningar och sub-tab separation.",
-        "Gen 3: Zero-lag DOM-rendering och anti-slop designstandarder."
+        "Gen 1: Static layout updates.",
+        "Gen 2: Dynamic theme switching and sub-tab separation.",
+        "Gen 3: Zero-lag DOM rendering and anti-slop design standards."
       ],
-      lastEvolvedAt: new Date().toLocaleTimeString("sv-SE")
+      lastEvolvedAt: new Date().toLocaleTimeString("en-US")
     },
     {
       agentId: "agent-be-optimizer",
@@ -696,11 +696,11 @@ export class AuraEngineManager {
       proficiencyScore: 96.2,
       currentSpecialization: "Port 3000 Multi-Proxy Routing & Self-Healing Watchdog",
       evolutionaryNotes: [
-        "Gen 1: Grundläggande REST endpoints.",
-        "Gen 2: SSE token streaming och termux native socket.",
+        "Gen 1: Basic REST endpoints.",
+        "Gen 2: SSE token streaming and termux native socket.",
         "Gen 3: Port 3000 Multi-Plugin Reverse Proxy & Watchdog Auto-Recovery."
       ],
-      lastEvolvedAt: new Date().toLocaleTimeString("sv-SE")
+      lastEvolvedAt: new Date().toLocaleTimeString("en-US")
     },
     {
       agentId: "agent-computer",
@@ -715,49 +715,49 @@ export class AuraEngineManager {
       proficiencyScore: 93.4,
       currentSpecialization: "Safe Subprocess Spawning & Deadlock Breaking",
       evolutionaryNotes: [
-        "Gen 1: Råa shell-kommandon.",
-        "Gen 2: Timeout guardrails och sandlåde-isolering.",
-        "Gen 3: Automatisk processåterhämtning och zombie-killing vid hängningar."
+        "Gen 1: Raw shell commands.",
+        "Gen 2: Timeout guardrails and sandbox isolation.",
+        "Gen 3: Automatic process recovery and zombie killing on hangs."
       ],
-      lastEvolvedAt: new Date().toLocaleTimeString("sv-SE")
+      lastEvolvedAt: new Date().toLocaleTimeString("en-US")
     }
   ];
 
   private mistakeLessons: import("./types").MistakeLessonItem[] = [
     {
       id: "lesson-1",
-      timestamp: new Date(Date.now() - 3600000 * 2).toLocaleTimeString("sv-SE"),
+      timestamp: new Date(Date.now() - 3600000 * 2).toLocaleTimeString("en-US"),
       agentId: "agent-be-optimizer",
       agentName: "Node Express Backend Optimizer",
-      failedAction: "Direkt anrop till intern plugin-port 11434 i molnmiljö",
-      rootCause: "Port 11434 är inte externt exponerad i Cloud Run containern (endast Port 3000 är tillåten).",
-      pivotedStrategy: "Etablerade automatisk reverse proxy på /api/android/proxy/:port över Port 3000.",
-      recoveryResolution: "Inga externa portkrockar och alla mobila plugins nås sömlöst över Port 3000.",
-      avoidanceRule: "Exponera aldrig interna portar direkt till klienten; använd alltid Port 3000 Proxy Hub.",
+      failedAction: "Direct call to internal plugin port 11434 in a cloud environment",
+      rootCause: "Port 11434 is not externally exposed in the Cloud Run container (only port 3000 is allowed).",
+      pivotedStrategy: "Established an automatic reverse proxy at /api/android/proxy/:port over port 3000.",
+      recoveryResolution: "No external port conflicts, and all mobile plugins are reached seamlessly over port 3000.",
+      avoidanceRule: "Never expose internal ports directly to the client; always use the Port 3000 Proxy Hub.",
       verificationPassed: true
     },
     {
       id: "lesson-2",
-      timestamp: new Date(Date.now() - 3600000 * 4).toLocaleTimeString("sv-SE"),
+      timestamp: new Date(Date.now() - 3600000 * 4).toLocaleTimeString("en-US"),
       agentId: "agent-senior-dev",
       agentName: "Senior Developer Debugger Lead",
-      failedAction: "Tyst fallback till svagare modell utan SLA- och capability-logg",
-      rootCause: "Användaren eller operatören fick ingen indikation om varför en modell byttes vid timeout.",
-      pivotedStrategy: "Införde transparent telemetri och explicit felorsakslogg vid varje modellskifte.",
-      recoveryResolution: "Varje fallback loggar SLA, latency, token-kapacitet och orsak.",
-      avoidanceRule: "Genomför aldrig tysta modellbyten utan att registrera telemetri.",
+      failedAction: "Silent fallback to a weaker model without an SLA and capability log",
+      rootCause: "The user or operator got no indication of why a model was switched on timeout.",
+      pivotedStrategy: "Introduced transparent telemetry and an explicit failure-cause log on every model switch.",
+      recoveryResolution: "Every fallback logs SLA, latency, token capacity and cause.",
+      avoidanceRule: "Never perform silent model switches without recording telemetry.",
       verificationPassed: true
     },
     {
       id: "lesson-3",
-      timestamp: new Date(Date.now() - 3600000 * 8).toLocaleTimeString("sv-SE"),
+      timestamp: new Date(Date.now() - 3600000 * 8).toLocaleTimeString("en-US"),
       agentId: "agent-computer",
       agentName: "Local Computer & Termux Shell Bridge",
-      failedAction: "npm install i tom katalog utan att först kopiera package.json",
-      rootCause: "Installationsskriptet antog att källkodskatalog och ZIP redan packats upp i ~/jaco-android.",
-      pivotedStrategy: "Uppdaterade installationsflödet till att automatiskt verifiera och packa upp ZIP före npm install.",
-      recoveryResolution: "Zero-friction installation som alltid verifierar filtillstånd före paketinstallation.",
-      avoidanceRule: "State precedes action: verifiera alltid att package.json existerar före npm install.",
+      failedAction: "npm install in an empty directory without first copying package.json",
+      rootCause: "The install script assumed the source directory and ZIP had already been unpacked in ~/jaco-android.",
+      pivotedStrategy: "Updated the install flow to automatically verify and unpack the ZIP before npm install.",
+      recoveryResolution: "Zero-friction installation that always verifies file state before package installation.",
+      avoidanceRule: "State precedes action: always verify that package.json exists before npm install.",
       verificationPassed: true
     }
   ];
@@ -765,20 +765,20 @@ export class AuraEngineManager {
   private activePivotPlans: import("./types").StrategyPivotPlan[] = [
     {
       id: "pivot-auto-healer-1",
-      originalGoal: "Exekvera On-Device Android AICore Gemma 4 Inferens",
-      detectedFailure: "LiteRT NPU drivrutin svarade inte inom 1200ms timeout",
+      originalGoal: "Run On-Device Android AICore Gemma 4 Inference",
+      detectedFailure: "LiteRT NPU driver did not respond within the 1200ms timeout",
       rootCauseCategory: "TIMEOUT_DEADLOCK",
-      pivotedApproachTitle: "Sömlös Växling till Lokal Dator-Bridge (Ollama på DicksDator) med NPU Fallback",
+      pivotedApproachTitle: "Seamless Switch to Local Computer Bridge (Ollama on DicksDator) with NPU Fallback",
       steps: [
-        { stepIndex: 1, phase: "DIAGNOSE_ROOT_CAUSE", description: "Identifiera orsaken till NPU timeout i Termux.", status: "completed", output: "Termux NPU delvis belastad av bakgrundsprocess." },
-        { stepIndex: 2, phase: "FORMULATE_ALTERNATIVE", description: "Välj närmaste högpresterande nod i klustret.", status: "completed", output: "Valde DicksDator (Ollama qwen2.5-coder:7b via SSH tunnel)." },
-        { stepIndex: 3, phase: "SELF_DEBUG_PATCH", description: "Dirigera om inferensen via lokal dator-bridge.", status: "completed", output: "Anrop slussat till 127.0.0.1:11434 via bridge utan dataförlust." },
-        { stepIndex: 4, phase: "VERIFY_AND_BENCHMARK", description: "Mät svarstid och verifiera svarets kvalitet.", status: "completed", output: "38 tokens/sekund erhållet med 100% typsäkerhet." },
-        { stepIndex: 5, phase: "RECORD_LESSON", description: "Registrera felorsak och lärdom i minnesbanken.", status: "completed", output: "Lärdom sparad till agent-evolution-log." }
+        { stepIndex: 1, phase: "DIAGNOSE_ROOT_CAUSE", description: "Identify the cause of the NPU timeout in Termux.", status: "completed", output: "Termux NPU partially loaded by a background process." },
+        { stepIndex: 2, phase: "FORMULATE_ALTERNATIVE", description: "Choose the nearest high-performance node in the cluster.", status: "completed", output: "Chose DicksDator (Ollama qwen2.5-coder:7b via SSH tunnel)." },
+        { stepIndex: 3, phase: "SELF_DEBUG_PATCH", description: "Reroute inference via the local computer bridge.", status: "completed", output: "Call routed to 127.0.0.1:11434 via the bridge without data loss." },
+        { stepIndex: 4, phase: "VERIFY_AND_BENCHMARK", description: "Measure response time and verify response quality.", status: "completed", output: "38 tokens/second achieved with 100% type safety." },
+        { stepIndex: 5, phase: "RECORD_LESSON", description: "Record the failure cause and lesson in the memory bank.", status: "completed", output: "Lesson saved to agent-evolution-log." }
       ],
       status: "RESOLVED",
-      createdAt: new Date(Date.now() - 1800000).toLocaleTimeString("sv-SE"),
-      resolvedAt: new Date(Date.now() - 1750000).toLocaleTimeString("sv-SE"),
+      createdAt: new Date(Date.now() - 1800000).toLocaleTimeString("en-US"),
+      resolvedAt: new Date(Date.now() - 1750000).toLocaleTimeString("en-US"),
       evolutionLessonSaved: true
     }
   ];
@@ -792,7 +792,7 @@ export class AuraEngineManager {
     npuTemperatureC: 37.4,
     npuTokensPerSec: 42.5,
     isSandboxed: true,
-    lastHeartbeat: new Date().toLocaleTimeString("sv-SE")
+    lastHeartbeat: new Date().toLocaleTimeString("en-US")
   };
 
   private watchdogHeartbeat = {
@@ -800,7 +800,7 @@ export class AuraEngineManager {
     uptimeSeconds: 14200,
     activeProcessesCount: 4,
     autoHealedIncidentsCount: 12,
-    lastHealthCheck: new Date().toLocaleTimeString("sv-SE")
+    lastHealthCheck: new Date().toLocaleTimeString("en-US")
   };
 
   constructor() {
@@ -892,7 +892,7 @@ export class AuraEngineManager {
       this.chatHistory.push({
         role,
         content,
-        timestamp: new Date().toLocaleDateString("sv-SE") + " " + new Date().toLocaleTimeString("sv-SE"),
+        timestamp: new Date().toLocaleDateString("en-US") + " " + new Date().toLocaleTimeString("en-US"),
         modelUsed
       });
       if (this.chatHistory.length > 100) {
@@ -924,7 +924,7 @@ export class AuraEngineManager {
   public recordMistakeLesson(lesson: Omit<import("./types").MistakeLessonItem, 'id' | 'timestamp'>) {
     const newLesson: import("./types").MistakeLessonItem = {
       id: `lesson-${Date.now()}`,
-      timestamp: new Date().toLocaleTimeString("sv-SE"),
+      timestamp: new Date().toLocaleTimeString("en-US"),
       ...lesson
     };
     this.mistakeLessons.unshift(newLesson);
@@ -932,14 +932,14 @@ export class AuraEngineManager {
 
     // Save lesson permanently in cognitive memory
     this.addMemory(
-      `[EVOLUTION LESSON] Agent ${lesson.agentName} lärde sig: ${lesson.avoidanceRule} (Orsak: ${lesson.rootCause})`,
+      `[EVOLUTION LESSON] Agent ${lesson.agentName} learned: ${lesson.avoidanceRule} (Cause: ${lesson.rootCause})`,
       'learned_skill',
       'high',
       'Agent Supervision Matrix'
     );
 
     // Evolve target agent record
-    this.evolveSubAgent(lesson.agentId, false, `Undvik: ${lesson.avoidanceRule}`);
+    this.evolveSubAgent(lesson.agentId, false, `Avoid: ${lesson.avoidanceRule}`);
     return newLesson;
   }
 
@@ -965,7 +965,7 @@ export class AuraEngineManager {
     if (agent.totalMissions % 15 === 0) {
       agent.generation++;
     }
-    agent.lastEvolvedAt = new Date().toLocaleTimeString("sv-SE");
+    agent.lastEvolvedAt = new Date().toLocaleTimeString("en-US");
   }
 
   public async triggerStrategyPivot(
@@ -974,16 +974,16 @@ export class AuraEngineManager {
     rootCauseCategory: 'AST_SYNTAX_ERROR' | 'PORT_CONFLICT' | 'DEPENDENCY_MISSING' | 'TIMEOUT_DEADLOCK' | 'HARDWARE_OOM' | 'UNKNOWN' = 'UNKNOWN'
   ): Promise<import("./types").StrategyPivotPlan> {
     const planId = `pivot-${Date.now()}`;
-    let alternativeTitle = "Automatisk Självläkning & Resursslussning";
+    let alternativeTitle = "Automatic Self-Healing & Resource Rerouting";
     
     if (rootCauseCategory === 'PORT_CONFLICT') {
-      alternativeTitle = "Omdirigering till Port 3000 Multi-Proxy Router";
+      alternativeTitle = "Redirect to Port 3000 Multi-Proxy Router";
     } else if (rootCauseCategory === 'AST_SYNTAX_ERROR') {
-      alternativeTitle = "Senior Dev AST Parsing & Automatisk Syntaxreparation";
+      alternativeTitle = "Senior Dev AST Parsing & Automatic Syntax Repair";
     } else if (rootCauseCategory === 'TIMEOUT_DEADLOCK') {
-      alternativeTitle = "Fallback till Lokal Dator-Bridge (Ollama/LM Studio)";
+      alternativeTitle = "Fallback to Local Computer Bridge (Ollama/LM Studio)";
     } else if (rootCauseCategory === 'DEPENDENCY_MISSING') {
-      alternativeTitle = "Automatiserad ZIP-extraktion & npm install verifiering";
+      alternativeTitle = "Automated ZIP extraction & npm install verification";
     }
 
     const pivotPlan: import("./types").StrategyPivotPlan = {
@@ -996,42 +996,42 @@ export class AuraEngineManager {
         {
           stepIndex: 1,
           phase: 'DIAGNOSE_ROOT_CAUSE',
-          description: `Diagnostisera rotorsak för: "${detectedFailure.substring(0, 80)}"`,
+          description: `Diagnose root cause for: "${detectedFailure.substring(0, 80)}"`,
           status: 'completed',
-          output: `Identifierade rotorsaksklass: ${rootCauseCategory}`
+          output: `Identified root cause class: ${rootCauseCategory}`
         },
         {
           stepIndex: 2,
           phase: 'FORMULATE_ALTERNATIVE',
-          description: `Formulera alternativ återhämtningsväg (${alternativeTitle})`,
+          description: `Formulate an alternative recovery path (${alternativeTitle})`,
           status: 'completed',
-          output: `Valde alternativ strategi med noll risk för driftstopp.`
+          output: `Chose an alternative strategy with zero downtime risk.`
         },
         {
           stepIndex: 3,
           phase: 'SELF_DEBUG_PATCH',
-          description: `Exekvera automatisk självkorrigerande patch eller omdirigering`,
+          description: `Run an automatic self-correcting patch or redirect`,
           status: 'completed',
-          output: `Applicerat och aktiverat fallback-subsystem.`
+          output: `Applied and activated the fallback subsystem.`
         },
         {
           stepIndex: 4,
           phase: 'VERIFY_AND_BENCHMARK',
-          description: `Verifiera systemstabilitet och hälsa efter pivot`,
+          description: `Verify system stability and health after the pivot`,
           status: 'completed',
-          output: `Verifiering godkänd: 100% funktionsduglighet återställd.`
+          output: `Verification passed: 100% functionality restored.`
         },
         {
           stepIndex: 5,
           phase: 'RECORD_LESSON',
-          description: `Dokumentera lärdom och uppdatera agenternas kunskapsbas`,
+          description: `Document the lesson and update the agents' knowledge base`,
           status: 'completed',
-          output: `Lärdom sparad i det persistenta minneslagret.`
+          output: `Lesson saved in the persistent memory layer.`
         }
       ],
       status: 'RESOLVED',
-      createdAt: new Date().toLocaleTimeString("sv-SE"),
-      resolvedAt: new Date().toLocaleTimeString("sv-SE"),
+      createdAt: new Date().toLocaleTimeString("en-US"),
+      resolvedAt: new Date().toLocaleTimeString("en-US"),
       evolutionLessonSaved: true
     };
 
@@ -1045,8 +1045,8 @@ export class AuraEngineManager {
       failedAction: goal,
       rootCause: detectedFailure,
       pivotedStrategy: alternativeTitle,
-      recoveryResolution: `Autonom återhämtning genomförd via plan ${planId}`,
-      avoidanceRule: `Identifiera ${rootCauseCategory} tidigt och växla till ${alternativeTitle} före blockering.`,
+      recoveryResolution: `Autonomous recovery completed via plan ${planId}`,
+      avoidanceRule: `Identify ${rootCauseCategory} early and switch to ${alternativeTitle} before blocking.`,
       verificationPassed: true
     });
 
@@ -1074,7 +1074,7 @@ export class AuraEngineManager {
         const data = await response.json();
         const latencyMs = Date.now() - startTime;
         return {
-          text: data.response || "Inget svar från lokal LiteRT Gemma.",
+          text: data.response || "No response from local LiteRT Gemma.",
           hardwareUsed: "Android AICore / LiteRT NPU (Qualcomm Hexagon DSP)",
           latencyMs,
           tokensPerSec: Math.round((data.eval_count || 30) / (latencyMs / 1000))
@@ -1118,17 +1118,17 @@ export class AuraEngineManager {
       // 1. Sandbox Specific Shell Execution
       if (toolName === 'execute_shell' || toolName === 'sandbox_execute_bash' || toolName === 'aura_sandbox_run_bash') {
         const cmd = args?.command || args?.cmd;
-        if (!cmd) return { success: false, output: 'Saknas kommandoparameter (command).' };
+        if (!cmd) return { success: false, output: 'Missing command parameter (command).' };
         const sandboxDir = path.join(process.cwd(), 'sandbox_workspace');
         if (!fsSync.existsSync(sandboxDir)) {
           fsSync.mkdirSync(sandboxDir, { recursive: true });
         }
         try {
           const { stdout, stderr } = await execAsync(cmd, { cwd: sandboxDir, timeout: 15000 });
-          const out = (stdout || stderr || 'Kommando exekverades i sandlådan utan fel (exit code 0).').substring(0, 3000);
+          const out = (stdout || stderr || 'Command ran in the sandbox without errors (exit code 0).').substring(0, 3000);
           return { success: true, output: out };
         } catch (execErr: any) {
-          return { success: false, output: execErr.stderr || execErr.message || 'Fel vid shell-exekvering' };
+          return { success: false, output: execErr.stderr || execErr.message || 'Shell execution error' };
         }
       }
 
@@ -1136,14 +1136,14 @@ export class AuraEngineManager {
       if (toolName === 'write_file' || toolName === 'sandbox_write_file' || toolName === 'aura_sandbox_write_file') {
         const filePath = args?.path || args?.filePath || args?.filename;
         const content = args?.content || args?.diffSnippet || '';
-        if (!filePath) return { success: false, output: 'Saknas filsökväg (path).' };
+        if (!filePath) return { success: false, output: 'Missing file path (path).' };
         
         const sandboxDir = path.join(process.cwd(), 'sandbox_workspace');
         const targetPath = path.isAbsolute(filePath) ? filePath : path.join(sandboxDir, path.basename(filePath));
         await fs.mkdir(path.dirname(targetPath), { recursive: true });
         await fs.writeFile(targetPath, content, 'utf-8');
-        this.addMemory(`[SANDBOX WRITE] Skapade/uppdaterade fil i sandlåda: ${path.basename(filePath)}`, 'code_ast', 'high', 'Auto Engine');
-        return { success: true, output: `Fil '${path.basename(filePath)}' sparades framgångsrikt i sandlådan (${content.length} tecken, ${content.split('\n').length} rader).` };
+        this.addMemory(`[SANDBOX WRITE] Created/updated file in sandbox: ${path.basename(filePath)}`, 'code_ast', 'high', 'Auto Engine');
+        return { success: true, output: `File '${path.basename(filePath)}' saved to the sandbox (${content.length} characters, ${content.split('\n').length} lines).` };
       }
 
       // 3. Sandbox Direct Code Execution
@@ -1158,7 +1158,7 @@ export class AuraEngineManager {
         let runnerCmd = language === 'python' ? `python3 "${targetFile}" || python "${targetFile}"` : `node "${targetFile}"`;
         try {
           const { stdout, stderr } = await execAsync(runnerCmd, { cwd: sandboxDir, timeout: 15000 });
-          const out = stdout || stderr || 'Körd med statuskod 0.';
+          const out = stdout || stderr || 'Ran with status code 0.';
           return { success: true, output: `[SANDBOX RUN - ${language.toUpperCase()}]\n${out}` };
         } catch (runErr: any) {
           return { success: false, output: `[EXEC ERROR]\n${runErr.stderr || runErr.message}` };
@@ -1168,7 +1168,7 @@ export class AuraEngineManager {
       // 4. Sandbox File Read
       if (toolName === 'read_file' || toolName === 'sandbox_read_file') {
         const filePath = args?.path || args?.filePath;
-        if (!filePath) return { success: false, output: 'Saknas filsökväg (path).' };
+        if (!filePath) return { success: false, output: 'Missing file path (path).' };
         const sandboxDir = path.join(process.cwd(), 'sandbox_workspace');
         const candidatePaths = [
           path.resolve(process.cwd(), filePath),
@@ -1180,14 +1180,14 @@ export class AuraEngineManager {
             return { success: true, output: content.substring(0, 4000) };
           }
         }
-        return { success: false, output: `Fil hittades inte: ${filePath}` };
+        return { success: false, output: `File not found: ${filePath}` };
       }
 
       if (toolName === 'add_memory') {
         const { content, category } = args;
-        if (!content) return { success: false, output: 'Saknas minnesinnehåll (content).' };
+        if (!content) return { success: false, output: 'Missing memory content (content).' };
         this.addMemory(content, category || 'system', 'high', 'Tool Execution');
-        return { success: true, output: `Minne tillagt: "${content}"` };
+        return { success: true, output: `Memory added: "${content}"` };
       }
 
       if (toolName === 'manage_subagent') {
@@ -1195,16 +1195,16 @@ export class AuraEngineManager {
         const target = this.subAgents.find(a => a.id === agentId);
         if (target) {
           target.status = status || 'active';
-          target.activeTask = activeTask || 'Uppdrag pågår';
-          target.lastSyncAt = new Date().toLocaleTimeString("sv-SE");
-          return { success: true, output: `Under-agent '${target.name}' uppdaterad (${status}: ${activeTask}).` };
+          target.activeTask = activeTask || 'Mission in progress';
+          target.lastSyncAt = new Date().toLocaleTimeString("en-US");
+          return { success: true, output: `Sub-agent '${target.name}' updated (${status}: ${activeTask}).` };
         }
-        return { success: false, output: `Kunde inte hitta under-agent '${agentId}'.` };
+        return { success: false, output: `Could not find sub-agent '${agentId}'.` };
       }
 
       if (toolName === 'create_skill_plugin') {
         const created = this.createSkillPlugin(args);
-        return { success: true, output: `Skill '${created.name}' (${created.id}) skapad och persisterad.` };
+        return { success: true, output: `Skill '${created.name}' (${created.id}) created and persisted.` };
       }
 
       if (toolName === 'git_push_execution_patch') {
@@ -1215,17 +1215,17 @@ export class AuraEngineManager {
           await fs.writeFile(absPath, content, 'utf-8');
         }
         try {
-          await execAsync(`git add . && git commit -m "${commitMessage || 'Autonom agent patch'}"`);
-          return { success: true, output: `Git commit genomförd: "${commitMessage}"` };
+          await execAsync(`git add . && git commit -m "${commitMessage || 'Autonomous agent patch'}"`);
+          return { success: true, output: `Git commit completed: "${commitMessage}"` };
         } catch (e: any) {
-          return { success: true, output: `Ändringar sparade lokalt. Git-notering: ${e.message}` };
+          return { success: true, output: `Changes saved locally. Git note: ${e.message}` };
         }
       }
 
       if (toolName === 'save_api_credential') {
         const { serviceName, category, keyOrPassword, notes } = args;
         const saved = this.saveVaultItem({ serviceName, category, keyOrPassword, notes });
-        return { success: true, output: `Nyckel för '${serviceName}' sparad i valv (${saved.id}).` };
+        return { success: true, output: `Key for '${serviceName}' saved in the vault (${saved.id}).` };
       }
 
       if (toolName === 'retrieve_api_credential') {
@@ -1233,13 +1233,13 @@ export class AuraEngineManager {
         const match = this.vaultItems.find(v => v.serviceName.toLowerCase().includes(serviceName?.toLowerCase()));
         return {
           success: !!match,
-          output: match ? `Hittade nyckel för ${match.serviceName}` : `Ingen nyckel för ${serviceName}`
+          output: match ? `Found key for ${match.serviceName}` : `No key for ${serviceName}`
         };
       }
 
-      return { success: false, output: `Okänt verktyg: ${toolName}` };
+      return { success: false, output: `Unknown tool: ${toolName}` };
     } catch (err: any) {
-      return { success: false, output: `Verktygsfel (${toolName}): ${err.message}` };
+      return { success: false, output: `Tool error (${toolName}): ${err.message}` };
     }
   }
 
@@ -1324,7 +1324,7 @@ export class AuraEngineManager {
 
     let augmentedText = text;
     if (toolResults.length > 0) {
-      augmentedText += `\n\n[AUTONOM VERKTYGSEXEKVERING SLUTFÖRD]:\n` +
+      augmentedText += `\n\n[AUTONOMOUS TOOL EXECUTION COMPLETE]:\n` +
         toolResults.map(r => `- **${r.tool}**: ${r.result}`).join('\n');
     }
 
@@ -1355,7 +1355,7 @@ export class AuraEngineManager {
               ...goal,
               status: "paused",
               priorityScore: Math.min(Number(goal.priorityScore) || 0, 8),
-              updatedAt: new Date().toLocaleDateString("sv-SE"),
+              updatedAt: new Date().toLocaleDateString("en-US"),
               lastPodarLog: "[MIGRATED] Legacy Aura objective paused; canonical operator/IDE objective is authoritative."
             }
           : goal
@@ -1414,10 +1414,10 @@ export class AuraEngineManager {
     const activeGoals = this.strategicGoals.filter(g => (g.status === 'active' || g.status === 'planning') && g.id !== AURA_CANONICAL_GOAL_ID);
     if (activeGoals.length === 0) {
       this.isAutonomousLoopActive = false;
-      const idleLog = '[PODAR ENGINE] Alla strategiska mål är 100% slutförda. PODAR-slingan står i vänteläge (IDLE) - redo för nytt uppdrag.';
+      const idleLog = '[PODAR ENGINE] All strategic goals are 100% complete. The PODAR loop is idle (IDLE) - ready for a new mission.';
       return {
         phase: 'REFLECT' as const,
-        targetGoal: 'Inga aktiva mål',
+        targetGoal: 'No active goals',
         log: idleLog,
         goals: this.strategicGoals
       };
@@ -1425,20 +1425,20 @@ export class AuraEngineManager {
 
     // Pick top goal by priority
     const topGoal = activeGoals.sort((a, b) => b.priorityScore - a.priorityScore)[0];
-    const timeStr = new Date().toLocaleTimeString("sv-SE");
+    const timeStr = new Date().toLocaleTimeString("en-US");
 
     let podarLog = "";
     switch (this.currentPodarPhase) {
       case 'PERCEIVE':
-        podarLog = `[PERCEIVE ${timeStr}] Telemetri & minnesregister avläst för mål: "${topGoal.title}". System NPU/CPU status: PASSED.`;
+        podarLog = `[PERCEIVE ${timeStr}] Telemetry & memory registers read for goal: "${topGoal.title}". System NPU/CPU status: PASSED.`;
         break;
       case 'ORIENT':
-        podarLog = `[ORIENT ${timeStr}] Utvärderar milstolpar & resursbehov för agent: ${topGoal.targetAgent}. Status: ${topGoal.progressPercent}%.`;
+        podarLog = `[ORIENT ${timeStr}] Evaluating milestones & resource needs for agent: ${topGoal.targetAgent}. Status: ${topGoal.progressPercent}%.`;
         break;
       case 'DECIDE': {
         // Creating Stripe prices or payment links is an outgoing financial action and needs the
         // operator; the loop never does it on its own.
-        podarLog = `[DECIDE ${timeStr}] Väljer exekveringsväg för målet.`;
+        podarLog = `[DECIDE ${timeStr}] Choosing an execution path for the goal.`;
         break;
       }
       case 'ACT': {
@@ -1449,16 +1449,16 @@ export class AuraEngineManager {
           
           try {
             const { stdout, stderr } = await execAsync('npx tsc --noEmit');
-            const output = (stdout || stderr || 'Källkod verifierad utan typfel.').trim();
+            const output = (stdout || stderr || 'Source code verified with no type errors.').trim();
             const isClean = !output.includes('error TS');
             m.status = isClean ? 'completed' : 'in_progress';
-            m.proofOfExecution = `[REEL KONTROLL ${timeStr}] AST tsc check: ${isClean ? 'PASSED (0 fel)' : 'Typer kräver åtgärd'}. ${output.substring(0, 100)}`;
-            m.completedAt = isClean ? new Date().toLocaleDateString("sv-SE") : undefined;
-            podarLog = `[ACT ${timeStr}] Exekverade autonom källkodskontroll för "${m.title}". Resultat: ${isClean ? 'VERIFIERAD OK' : 'Typvarning upptäckt'}.`;
+            m.proofOfExecution = `[REAL CHECK ${timeStr}] AST tsc check: ${isClean ? 'PASSED (0 errors)' : 'Types need attention'}. ${output.substring(0, 100)}`;
+            m.completedAt = isClean ? new Date().toLocaleDateString("en-US") : undefined;
+            podarLog = `[ACT ${timeStr}] Ran autonomous source check for "${m.title}". Result: ${isClean ? 'VERIFIED OK' : 'Type warning detected'}.`;
           } catch (execErr: any) {
-            const errSummary = (execErr.stdout || execErr.message || 'Kontrollfel').substring(0, 100);
-            m.proofOfExecution = `[REEL KONTROLL ${timeStr}] tsc fel: ${errSummary}`;
-            podarLog = `[ACT ${timeStr}] Autonom PODAR-kontroll kördes: ${errSummary}`;
+            const errSummary = (execErr.stdout || execErr.message || 'Check error').substring(0, 100);
+            m.proofOfExecution = `[REAL CHECK ${timeStr}] tsc errors: ${errSummary}`;
+            podarLog = `[ACT ${timeStr}] Autonomous PODAR check ran: ${errSummary}`;
           }
 
           // Calculate new progress percent
@@ -1470,18 +1470,19 @@ export class AuraEngineManager {
         } else {
           topGoal.progressPercent = 100;
           topGoal.status = 'completed';
-          podarLog = `[ACT ${timeStr}] Mål "${topGoal.title}" har slutfört alla milstolpar och är nu markerat som SLUTFÖRT (100%).`;
+          podarLog = `[ACT ${timeStr}] Goal "${topGoal.title}" has completed all milestones and is now marked COMPLETED (100%).`;
         }
         this.totalMissionsExecuted += 1;
         break;
       }
       case 'REFLECT':
         if (topGoal.status === 'completed') {
-          podarLog = `[REFLECT ${timeStr}] Målet "${topGoal.title}" är 100% verifierat och slutfört! Systemet redo för nästa uppdrag.`;
-          const alreadyLogged = this.memory.some(m => m.content.includes(`[PODAR COMPLETED] Mål "${topGoal.title}"`));
+          podarLog = `[REFLECT ${timeStr}] Goal "${topGoal.title}" is 100% verified and complete. System ready for the next mission.`;
+          // The Swedish form is kept so memories persisted before the English wording are still recognised.
+          const alreadyLogged = this.memory.some(m => m.content.includes(`[PODAR COMPLETED] Goal "${topGoal.title}"`) || m.content.includes(`[PODAR COMPLETED] Mål "${topGoal.title}"`));
           if (!alreadyLogged) {
             this.addMemory(
-              `[PODAR COMPLETED] Mål "${topGoal.title}" är 100% verifierat och slutfört.`,
+              `[PODAR COMPLETED] Goal "${topGoal.title}" is 100% verified and complete.`,
               'mission_result',
               'high',
               'PODAR Engine',
@@ -1489,13 +1490,13 @@ export class AuraEngineManager {
             );
           }
         } else {
-          podarLog = `[REFLECT ${timeStr}] Utvärdering slutförd. Resultat persisterat i minneslager för agent: ${topGoal.targetAgent}.`;
+          podarLog = `[REFLECT ${timeStr}] Evaluation complete. Result persisted in the memory layer for agent: ${topGoal.targetAgent}.`;
         }
         break;
     }
 
     topGoal.lastPodarLog = podarLog;
-    topGoal.updatedAt = new Date().toLocaleDateString("sv-SE");
+    topGoal.updatedAt = new Date().toLocaleDateString("en-US");
     this.saveGoalsToDisk();
 
     return {
@@ -1513,8 +1514,8 @@ export class AuraEngineManager {
   public createStrategicGoal(goalData: Partial<import("./types").AuraStrategicGoal>) {
     const newGoal: import("./types").AuraStrategicGoal = {
       id: `goal-${Date.now()}`,
-      title: goalData.title || "Nytt Strategiskt Mål",
-      description: goalData.description || "Ingen beskrivning angiven.",
+      title: goalData.title || "New Strategic Goal",
+      description: goalData.description || "No description provided.",
       category: goalData.category || "AUTONOMOUS_ORCHESTRATION",
       priorityScore: goalData.priorityScore || 8.5,
       progressPercent: 0,
@@ -1522,11 +1523,11 @@ export class AuraEngineManager {
       realityTag: goalData.realityTag || "[REAL]",
       targetAgent: goalData.targetAgent || "agent-computer",
       milestones: goalData.milestones || [
-        { id: `m-${Date.now()}-1`, title: "Inledande specifikation & arkitekturutvärdering", assignedAgent: goalData.targetAgent || "Computer Agent", status: "pending" }
+        { id: `m-${Date.now()}-1`, title: "Initial specification & architecture evaluation", assignedAgent: goalData.targetAgent || "Computer Agent", status: "pending" }
       ],
-      createdAt: new Date().toLocaleDateString("sv-SE"),
-      updatedAt: new Date().toLocaleDateString("sv-SE"),
-      lastPodarLog: "[PERCEIVE] Mål skapat och tillagt i den autonoma PODAR-kön."
+      createdAt: new Date().toLocaleDateString("en-US"),
+      updatedAt: new Date().toLocaleDateString("en-US"),
+      lastPodarLog: "[PERCEIVE] Goal created and added to the autonomous PODAR queue."
     };
 
     this.strategicGoals.unshift(newGoal);
@@ -1538,7 +1539,7 @@ export class AuraEngineManager {
     const goal = this.strategicGoals.find(g => g.id === goalId);
     if (!goal) return null;
 
-    Object.assign(goal, updates, { updatedAt: new Date().toLocaleDateString("sv-SE") });
+    Object.assign(goal, updates, { updatedAt: new Date().toLocaleDateString("en-US") });
     this.saveGoalsToDisk();
     return goal;
   }
@@ -1568,7 +1569,7 @@ export class AuraEngineManager {
           category: item.category || 'api_key',
           keyOrPassword: item.keyOrPassword,
           notes: item.notes || '',
-          updatedAt: new Date().toLocaleDateString("sv-SE")
+          updatedAt: new Date().toLocaleDateString("en-US")
         };
         return this.vaultItems[idx];
       }
@@ -1579,7 +1580,7 @@ export class AuraEngineManager {
       category: item.category || 'api_key',
       keyOrPassword: item.keyOrPassword,
       notes: item.notes || '',
-      updatedAt: new Date().toLocaleDateString("sv-SE"),
+      updatedAt: new Date().toLocaleDateString("en-US"),
       isEncrypted: true
     };
     this.vaultItems.unshift(newItem);
@@ -1616,7 +1617,7 @@ export class AuraEngineManager {
       manifestJson: JSON.stringify({ name: skillData.name, version: '1.0.0' }, null, 2),
       author: 'JACO Agentic Synthesizer',
       version: '1.0.0',
-      createdAt: new Date().toLocaleDateString("sv-SE")
+      createdAt: new Date().toLocaleDateString("en-US")
     };
     this.customSkills.unshift(newSkill);
 
@@ -1661,7 +1662,7 @@ export class AuraEngineManager {
   public createApprovalRequest(reqData: { agentName: string; actionType: import("./types").AgenticApprovalRequest['actionType']; title: string; details: string; commandOrPath?: string; codeSnippet?: string }) {
     const req: import("./types").AgenticApprovalRequest = {
       id: `req-${Date.now()}`,
-      timestamp: new Date().toLocaleTimeString("sv-SE"),
+      timestamp: new Date().toLocaleTimeString("en-US"),
       status: 'pending',
       ...reqData
     };
@@ -1673,7 +1674,7 @@ export class AuraEngineManager {
     const target = this.approvalRequests.find(r => r.id === id);
     if (target) {
       target.status = status;
-      target.resolvedAt = new Date().toLocaleTimeString("sv-SE");
+      target.resolvedAt = new Date().toLocaleTimeString("en-US");
     }
     return target;
   }
@@ -1699,7 +1700,7 @@ export class AuraEngineManager {
       filePath: mission.filePath || `.jaco/missions/task-${Date.now()}.json`,
       assignedAgent: mission.assignedAgent || "Aura Orchestrator",
       status: "PENDING",
-      createdAt: new Date().toLocaleTimeString("sv-SE")
+      createdAt: new Date().toLocaleTimeString("en-US")
     };
     this.gitMissions.unshift(created);
     return created;
@@ -1734,21 +1735,21 @@ export class AuraEngineManager {
 
   public deployMarketplaceSkill(skillId: string) {
     const item = this.marketplaceSkills.find(s => s.id === skillId);
-    if (!item) return { success: false, error: "Skill hittades inte" };
+    if (!item) return { success: false, error: "Skill not found" };
 
     if (item.status === "DEPLOYED") {
-      return { success: true, message: "Skill är redan distribuerad till Ollama", item };
+      return { success: true, message: "Skill is already deployed to Ollama", item };
     }
 
     if (this.a2aUserCredits < item.priceCredits) {
-      return { success: false, error: "Otillräckliga A2A Credits för köp" };
+      return { success: false, error: "Insufficient A2A credits for purchase" };
     }
 
     // Deduct credits and update item status
     this.a2aUserCredits -= item.priceCredits;
     item.status = "DEPLOYED";
     item.downloadsCount += 1;
-    item.deployedAt = new Date().toLocaleDateString("sv-SE");
+    item.deployedAt = new Date().toLocaleDateString("en-US");
 
     // Automatically synthesize into active custom skills for Ollama
     this.createSkillPlugin({
@@ -1762,7 +1763,7 @@ export class AuraEngineManager {
 
     return {
       success: true,
-      message: `Skill '${item.name}' har köpts och distribuerats till lokala Ollama-miljön!`,
+      message: `Skill '${item.name}' has been purchased and deployed to the local Ollama environment.`,
       item,
       creditsRemaining: this.a2aUserCredits,
       marketplaceSkills: this.marketplaceSkills,
@@ -1774,16 +1775,16 @@ export class AuraEngineManager {
     const newItem: import("./types").MarketplaceSkillItem = {
       id: `mk-custom-${Date.now()}`,
       name: skillData.name || "Custom Ollama Plugin",
-      tagline: skillData.tagline || "Publicerad av användare",
-      description: skillData.description || "Ingen beskrivning angiven.",
+      tagline: skillData.tagline || "Published by user",
+      description: skillData.description || "No description provided.",
       category: skillData.category || "LLM & Ollama",
       priceCredits: skillData.priceCredits || 0,
-      author: skillData.author || "Användare (JACO A2A Node)",
+      author: skillData.author || "User (JACO A2A Node)",
       version: skillData.version || "1.0.0",
       rating: 5.0,
       downloadsCount: 1,
       status: "DEPLOYED",
-      deployedAt: new Date().toLocaleDateString("sv-SE"),
+      deployedAt: new Date().toLocaleDateString("en-US"),
       requirements: skillData.requirements || ["Ollama 0.1.30+"],
       parametersSchema: skillData.parametersSchema || "{}",
       pluginCode: skillData.pluginCode || "// Custom Plugin Code",
@@ -1816,8 +1817,8 @@ export class AuraEngineManager {
       termuxLightLux: 165,
       termuxPowerStatus: "AC Charging",
       gateStatus: "PASSED",
-      gateMessage: "Mission Gate Passed: Hårdvarans termiska gränser & batteri är i optimalt skick.",
-      evaluatedAt: new Date().toLocaleTimeString("sv-SE")
+      gateMessage: "Mission Gate Passed: Hardware thermal limits & battery are in optimal condition.",
+      evaluatedAt: new Date().toLocaleTimeString("en-US")
     };
   }
 
@@ -1847,11 +1848,11 @@ export class AuraEngineManager {
         price: 350,
         assignedAgent: "Code Refactor Agent",
         rules: [
-          "Endast verifierbara AST-transformationer utan hittepå-kod",
-          "Körs med noll bieffekter på projektets övriga filer",
-          "Bygger reella tsc-typprövningar före leverans"
+          "Only verifiable AST transformations with no made-up code",
+          "Runs with zero side effects on the project's other files",
+          "Builds real tsc type checks before delivery"
         ],
-        solution: "Syntetiserar modulära AST-regler och validerar med tsc --noEmit."
+        solution: "Synthesizes modular AST rules and validates with tsc --noEmit."
       },
       {
         title: "Zero-Latency Local LLM Context Compressor",
@@ -1860,22 +1861,22 @@ export class AuraEngineManager {
         price: 250,
         assignedAgent: "Ollama Matrix Agent",
         rules: [
-          "Kompression utan förlust av semantisk mening (>80% bibehållen nyckelkontext)",
-          "Sänker token-förbrukning och minskar svarstid i A2A-slingan"
+          "Compression without loss of semantic meaning (>80% key context retained)",
+          "Lowers token consumption and reduces response time in the A2A loop"
         ],
-        solution: "Använder heuristisk AST/vektor-extraktion för att minska prompt-längd."
+        solution: "Uses heuristic AST/vector extraction to reduce prompt length."
       },
       {
         title: "Real-Time CyberSec Vault & Secret Leak Prevention Guard",
         category: "Security & Hardening" as const,
-        targetAudience: "Säkerhetsmedvetna JACO-operatörer",
+        targetAudience: "Security-conscious JACO operators",
         price: 590,
         assignedAgent: "Security Auditor Agent",
         rules: [
-          "Skannar källkod och miljövariabler efter känsliga nycklar före varje git-commit",
-          "Säkrar Secrets Vault med AES-256 lokalt i .jaco/vault/"
+          "Scans source code and environment variables for sensitive keys before every git commit",
+          "Secures the Secrets Vault with AES-256 locally in .jaco/vault/"
         ],
-        solution: "Skapar pre-commit hooks och realtidsscannar känsliga strängmönster."
+        solution: "Creates pre-commit hooks and scans sensitive string patterns in real time."
       }
     ];
 
@@ -1891,14 +1892,14 @@ export class AuraEngineManager {
       status: "DEVELOPING",
       assignedAgent: idea.assignedAgent,
       plannedSolution: idea.solution,
-      createdAt: new Date().toLocaleDateString("sv-SE")
+      createdAt: new Date().toLocaleDateString("en-US")
     };
 
     this.monetizationPlans.unshift(newPlan);
     this.saveStrategyToDisk();
 
     this.addMemory(
-      `[AUTONOM STRATEGI] Ny professionell produkt planerad: "${newPlan.title}" (${newPlan.estimatedPriceSek} SEK). Kvalitetsregel: ${newPlan.qualityAssuranceRules[0]}`,
+      `[AUTONOMOUS STRATEGY] New professional product planned: "${newPlan.title}" (${newPlan.estimatedPriceSek} SEK). Quality rule: ${newPlan.qualityAssuranceRules[0]}`,
       'revenue',
       'high',
       newPlan.assignedAgent,
@@ -1989,7 +1990,7 @@ export class AuraEngineManager {
       workerUrl,
       invocationsCount,
       earnedUsd,
-      completedAt: new Date().toLocaleDateString("sv-SE"),
+      completedAt: new Date().toLocaleDateString("en-US"),
       status: "VERIFIED",
       proofSignature: `sig_${Math.random().toString(36).substring(2, 8)}`
     };
@@ -2002,7 +2003,7 @@ export class AuraEngineManager {
 
     this.saveStrategyToDisk();
     this.addMemory(
-      `[REVENUE ATTRIBUTION RECORDED] ${item.agentName} slutförde uppdrag "${taskTitle}" via Cloudflare Worker "${workerName}" (+${invocationsCount} anrop, +$${earnedUsd} USD).`,
+      `[REVENUE ATTRIBUTION RECORDED] ${item.agentName} completed mission "${taskTitle}" via Cloudflare Worker "${workerName}" (+${invocationsCount} calls, +$${earnedUsd} USD).`,
       "revenue",
       "high",
       item.agentName
@@ -2012,37 +2013,37 @@ export class AuraEngineManager {
   }
 
   public async executeSeniorDevOptimizationSprint(targetModule?: string) {
-    const timestamp = new Date().toLocaleTimeString("sv-SE");
+    const timestamp = new Date().toLocaleTimeString("en-US");
     let verificationStatus: "VERIFIED_CLEAN" | "PASSED" = "VERIFIED_CLEAN";
     let goalStatus: "VERIFIED_CLEAN" | "AUDITING" | "IN_REFACTOR" | "PAUSED" = "VERIFIED_CLEAN";
     let auditLog = "Real TypeScript AST audit: tsc --noEmit passed cleanly with 0 compilation errors.";
 
     try {
       await execAsync("npx tsc --noEmit", { cwd: process.cwd(), timeout: 20000 });
-      auditLog = "Reell AST- & typsäkerhetsgranskning slutförd: 0 fel hittades i hela källkodsträdet.";
+      auditLog = "Real AST & type safety review complete: 0 errors found in the whole source tree.";
     } catch (err: any) {
       verificationStatus = "PASSED";
       goalStatus = "AUDITING";
-      auditLog = `Typkontrollvarning: ${err.stdout || err.message || 'Linter hittade mindre varningar'}`;
+      auditLog = `Type check warning: ${err.stdout || err.message || 'Linter found minor warnings'}`;
     }
     
     const newGoal: import("./types").SeniorDevDebuggerGoal = {
       id: `goal-${Date.now()}`,
-      title: `Stack Code Refactoring & AST Sprint: ${targetModule || 'Helhetsanalys'}`,
-      description: "Senior Developer Debugger Lead utförde automatisk tsc --noEmit verifiering och optimerade källkoden.",
+      title: `Stack Code Refactoring & AST Sprint: ${targetModule || 'Full analysis'}`,
+      description: "Senior Developer Debugger Lead ran automatic tsc --noEmit verification and optimized the source code.",
       assignedSubAgent: "Senior Developer Debugger Lead",
       targetStackModule: (targetModule as any) || "TypeScript AST & Types",
       priority: "CRITICAL",
       status: goalStatus,
-      createdAt: new Date().toLocaleDateString("sv-SE"),
-      updatedAt: new Date().toLocaleDateString("sv-SE"),
+      createdAt: new Date().toLocaleDateString("en-US"),
+      updatedAt: new Date().toLocaleDateString("en-US"),
       inspectionDetails: auditLog,
       assignedTasks: [
-        "Auditera källkodsfiler i src/ och server.ts",
-        "Säkerställ att tsc --noEmit & linter passerar med 0 fel",
-        "Dokumentera prestanda- och latensförbättringar"
+        "Audit source files in src/ and server.ts",
+        "Ensure tsc --noEmit & linter pass with 0 errors",
+        "Document performance and latency improvements"
       ],
-      proofOfExecution: "tsc --noEmit & build verifierad grön"
+      proofOfExecution: "tsc --noEmit & build verified green"
     };
     this.seniorDevGoals.unshift(newGoal);
 
@@ -2051,8 +2052,8 @@ export class AuraEngineManager {
       timestamp,
       targetFile: targetModule === 'Backend (Node/Express)' ? 'server.ts' : 'src/auraEngine.ts',
       subAgentName: "Senior Developer Debugger Lead",
-      description: "Optimerade källkoden med strikt AST-parsning, eliminerade oanvända variabler och minskade latens.",
-      performanceGain: "+40% snabbare typsäkerhet & exekvering",
+      description: "Optimized the source code with strict AST parsing, eliminated unused variables and reduced latency.",
+      performanceGain: "+40% faster type safety & execution",
       verificationStatus,
       seniorGoalId: newGoal.id,
       astErrorsFixed: 0
@@ -2061,7 +2062,7 @@ export class AuraEngineManager {
 
     this.saveStrategyToDisk();
     this.addMemory(
-      `[SENIOR DEV OPTIMIZATION] ${newGoal.title}. Resultat: ${verificationStatus}.`,
+      `[SENIOR DEV OPTIMIZATION] ${newGoal.title}. Result: ${verificationStatus}.`,
       "code_ast",
       "high",
       "Senior Developer Debugger Lead"
@@ -2071,7 +2072,7 @@ export class AuraEngineManager {
   }
 
   public async buildAndPromoteCloudflareWorker(workerName: string = "mimirpower", customWorkerUrl?: string) {
-    const timestamp = new Date().toLocaleTimeString("sv-SE");
+    const timestamp = new Date().toLocaleTimeString("en-US");
     const targetUrl = customWorkerUrl || EDGE_WORKER_URL;
     let cfVerified = false;
     let cfTokenStatusMsg = "MimirPower Edge Ready";
@@ -2090,7 +2091,7 @@ export class AuraEngineManager {
         let verifyData = await verifyRes.json();
         if (verifyData.success) {
           cfVerified = true;
-          cfTokenStatusMsg = `Cloudflare Token verifierad (${verifyData.result?.status || 'active'})`;
+          cfTokenStatusMsg = `Cloudflare Token verified (${verifyData.result?.status || 'active'})`;
           console.log(`[AuraEngine] Cloudflare Account API Token active: ${verifyData.result?.id}`);
         } else {
           // Fallback to user token verify endpoint
@@ -2100,7 +2101,7 @@ export class AuraEngineManager {
           verifyData = await verifyRes.json();
           if (verifyData.success) {
             cfVerified = true;
-            cfTokenStatusMsg = "Cloudflare User API Token aktiv";
+            cfTokenStatusMsg = "Cloudflare User API Token active";
           }
         }
       } catch (e) {
@@ -2112,7 +2113,7 @@ export class AuraEngineManager {
     const workersDir = path.join(process.cwd(), '.jaco', 'workers');
     const workerScriptPath = path.join(workersDir, `${workerName}.js`);
     const scriptCode = `/**
- * [AUTONOMT CLOUDFLARE WORKER PAKET] - JACO OS MimirPower Edge Node & Sales Gateway
+ * [AUTONOMOUS CLOUDFLARE WORKER PACKAGE] - JACO OS MimirPower Edge Node & Sales Gateway
  * Worker Name: ${workerName}
  * Edge Gateway URL: ${targetUrl}
  * Cloudflare API Verified: ${cfVerified}
@@ -2285,7 +2286,7 @@ export default {
         const deployJson = await deployRes.json();
         if (deployJson.success) {
           directApiDeployResult = deployJson.result;
-          cfTokenStatusMsg += ` | Deployad till Cloudflare Edge (${deployJson.result?.id || workerName})`;
+          cfTokenStatusMsg += ` | Deployed to Cloudflare Edge (${deployJson.result?.id || workerName})`;
           console.log(`[AuraEngine] Directly deployed worker ${workerName} to Cloudflare via API!`);
         }
       } catch (err) {
@@ -2309,7 +2310,7 @@ export default {
       boundSkills: this.customSkills.map(s => s.id),
       workerScriptSnippet: `export default { fetch: (req) => new Response('MimirPower Worker ${workerName} Ready (${cfTokenStatusMsg})') }`,
       totalCallsReceived: 1,
-      lastDeployedAt: new Date().toLocaleDateString("sv-SE"),
+      lastDeployedAt: new Date().toLocaleDateString("en-US"),
       routes: [`/api/a2a/${workerName}/*`, `/worker/${workerName}`],
       kvBindings: ["MIMIR_SKILLS_KV", "JACO_AGENT_MEM"],
       promotedSkillName: `MimirPower Cloudflare Edge ${workerName}`
@@ -2324,7 +2325,7 @@ export default {
 
     this.saveStrategyToDisk();
     this.addMemory(
-      `[CLOUDFLARE WORKER PROMOTED] Worker "${workerName}" publicerad till Edge: ${targetUrl} (${cfTokenStatusMsg})`,
+      `[CLOUDFLARE WORKER PROMOTED] Worker "${workerName}" published to Edge: ${targetUrl} (${cfTokenStatusMsg})`,
       "system",
       "high",
       "MimirPower Cloudflare Worker Builder & Skill Promoter"
@@ -2338,10 +2339,10 @@ export default {
     if (item) {
       item.status = 'RESOLVED';
       item.fallbackExecutionStatus = 'RESOLVED';
-      item.updatedAt = new Date().toLocaleDateString("sv-SE");
+      item.updatedAt = new Date().toLocaleDateString("en-US");
       this.saveStrategyToDisk();
       this.addMemory(
-        `[FLASKHALS LÖSD] Begränsning "${item.title}" markerad som RESOLVED av ${item.responsibleAgent}.`,
+        `[BOTTLENECK RESOLVED] Limitation "${item.title}" marked RESOLVED by ${item.responsibleAgent}.`,
         'mission_result',
         'medium',
         item.responsibleAgent
@@ -2357,12 +2358,12 @@ export default {
   public addPriorityNotification(notifData: Partial<import("./types").AgentPriorityNotification>) {
     const notif: import("./types").AgentPriorityNotification = {
       id: `notif-${Date.now()}`,
-      timestamp: new Date().toLocaleTimeString("sv-SE"),
+      timestamp: new Date().toLocaleTimeString("en-US"),
       agentName: notifData.agentName || "JACO OS System Agent",
       priority: notifData.priority || "URGENT_HUMAN_HELP",
-      title: notifData.title || "Notis om Agent-hjälpbehov",
-      message: notifData.message || "En agent begär operatörshjälp eller bekräftelse.",
-      actionRequired: notifData.actionRequired || "Granska i gränssnittet",
+      title: notifData.title || "Agent help-needed notification",
+      message: notifData.message || "An agent is requesting operator help or confirmation.",
+      actionRequired: notifData.actionRequired || "Review in the UI",
       status: "UNREAD",
       bottleneckId: notifData.bottleneckId,
       mobilePushed: !!notifData.mobilePushed
@@ -2370,7 +2371,7 @@ export default {
     this.priorityNotifications.unshift(notif);
     this.saveStrategyToDisk();
     this.addMemory(
-      `[PRIO NOTIS SENT] ${notif.agentName}: ${notif.title} (${notif.priority})`,
+      `[PRIORITY NOTIFICATION SENT] ${notif.agentName}: ${notif.title} (${notif.priority})`,
       "system",
       "high",
       notif.agentName
@@ -2390,13 +2391,13 @@ export default {
   public synthesizeFallbackTool(id: string) {
     const lim = this.systemLimitations.find(l => l.id === id);
     if (!lim) {
-      return { success: false, error: "Begränsning hittades inte" };
+      return { success: false, error: "Limitation not found" };
     }
 
     const toolName = lim.synthesizedTool || `Custom${lim.category}FallbackAdapterTool.ts`;
     lim.fallbackExecutionStatus = 'FALLBACK_ACTIVE';
     lim.status = 'IN_PROGRESS';
-    lim.updatedAt = new Date().toLocaleDateString("sv-SE");
+    lim.updatedAt = new Date().toLocaleDateString("en-US");
 
     // Physically write synthesized tool file to src/tools/ directory
     try {
@@ -2407,7 +2408,7 @@ export default {
       const toolFilePath = path.join(toolsDir, toolName);
       if (!fsSync.existsSync(toolFilePath)) {
         const toolCode = `/**
- * [AUTONOMT SYNTETISERAT VERKTYG] - JACO OS Agent Framework
+ * [AUTONOMOUSLY SYNTHESIZED TOOL] - JACO OS Agent Framework
  * Target Bottleneck: ${lim.title} (${lim.id})
  * Responsible Agent: ${lim.responsibleAgent}
  * Created At: ${new Date().toISOString()}
@@ -2443,16 +2444,16 @@ export class ${toolName.replace(/\.ts$/, '')} {
     const opt = this.logCodeOptimization(
       `src/tools/${toolName}`,
       lim.responsibleAgent,
-      `Autonomt syntetiserat fallbacks-verktyg för ${lim.title}. Aktiverade alternativ väg: ${lim.alternativePaths?.[0] || 'Alternativ adapter'}.`,
-      "100% oberoende exekvering utan stopp"
+      `Autonomously synthesized fallback tool for ${lim.title}. Activated alternative path: ${lim.alternativePaths?.[0] || 'Alternative adapter'}.`,
+      "100% independent execution without stopping"
     );
 
     const notif = this.addPriorityNotification({
       agentName: lim.responsibleAgent,
       priority: "CRITICAL_BOTTLENECK",
-      title: `Autonomt verktyg skapat: ${toolName}`,
-      message: `Agenten avbröt inte vid begränsningen "${lim.title}". Istället byggdes ${toolName} och exekveringen fortsätter via fallback.`,
-      actionRequired: lim.requiresHumanHelp ? lim.humanHelpReason : "Systemet körs autonomt vidare via fallbacks-vägen.",
+      title: `Autonomous tool created: ${toolName}`,
+      message: `The agent did not stop at the limitation "${lim.title}". Instead ${toolName} was built and execution continues via fallback.`,
+      actionRequired: lim.requiresHumanHelp ? lim.humanHelpReason : "The system keeps running autonomously via the fallback path.",
       bottleneckId: lim.id
     });
 
@@ -2464,7 +2465,7 @@ export class ${toolName.replace(/\.ts$/, '')} {
   public logCodeOptimization(targetFile: string, subAgentName: string, description: string, performanceGain: string) {
     const opt: import("./types").CodeOptimizationLogItem = {
       id: `opt-${Date.now()}`,
-      timestamp: new Date().toLocaleTimeString("sv-SE"),
+      timestamp: new Date().toLocaleTimeString("en-US"),
       targetFile,
       subAgentName,
       description,
@@ -2516,7 +2517,7 @@ export class ${toolName.replace(/\.ts$/, '')} {
       importance,
       source,
       agentId,
-      timestamp: new Date().toLocaleDateString("sv-SE") + " " + new Date().toLocaleTimeString("sv-SE")
+      timestamp: new Date().toLocaleDateString("en-US") + " " + new Date().toLocaleTimeString("en-US")
     };
     this.memory.unshift(item);
 
@@ -2585,10 +2586,10 @@ export class ${toolName.replace(/\.ts$/, '')} {
    */
   public dispatchToSpecificAgent(agentId: string, taskDescription: string, payload?: any) {
     const targetAgent = this.subAgents.find(a => a.id === agentId || a.type === agentId);
-    if (!targetAgent) return { success: false, error: `Under-agent med ID '${agentId}' hittades inte.`, availableAgents: this.subAgents.map(a => ({ id: a.id, name: a.name })) };
+    if (!targetAgent) return { success: false, error: `Sub-agent with ID '${agentId}' was not found.`, availableAgents: this.subAgents.map(a => ({ id: a.id, name: a.name })) };
     targetAgent.status = 'idle';
     targetAgent.activeTask = 'Awaiting durable Mission Bus ticket';
-    targetAgent.lastSyncAt = new Date().toLocaleTimeString("sv-SE");
+    targetAgent.lastSyncAt = new Date().toLocaleTimeString("en-US");
     this.addMemory(`[DISPATCH REQUEST] ${targetAgent.name}: "${taskDescription}" — execution not claimed without durable ticket/receipt`, 'mission_result', 'medium', 'Aura compatibility adapter', targetAgent.id);
     return { success: true, accepted: true, executionState: 'QUEUED_UNVERIFIED', agent: targetAgent, task: taskDescription, payload: payload ?? null, output: null };
   }
@@ -2605,7 +2606,7 @@ export class ${toolName.replace(/\.ts$/, '')} {
     if (!skill) {
       return {
         success: false,
-        error: `Ingen installerad skill hittades för '${skillIdOrTrigger}'.`
+        error: `No installed skill found for '${skillIdOrTrigger}'.`
       };
     }
 
@@ -2616,7 +2617,7 @@ export class ${toolName.replace(/\.ts$/, '')} {
 
     // Log execution to agent memory scoped to skill
     this.addMemory(
-      `[SKILL EXECUTION] Exekverade enskild skill '${skill.name}' (${skill.id})`,
+      `[SKILL EXECUTION] Ran single skill '${skill.name}' (${skill.id})`,
       'learned_skill',
       'medium',
       `Skill: ${skill.name}`,
@@ -2627,9 +2628,9 @@ export class ${toolName.replace(/\.ts$/, '')} {
       success: true,
       skillId: skill.id,
       skillName: skill.name,
-      executedAt: new Date().toLocaleTimeString("sv-SE"),
+      executedAt: new Date().toLocaleTimeString("en-US"),
       inputParams,
-      result: `Skill '${skill.name}' exekverades framgångsrikt på isolerad exekveringsväg.`,
+      result: `Skill '${skill.name}' ran successfully on an isolated execution path.`,
       pluginCodeSnippet: ('pluginCode' in skill) ? (skill as any).pluginCode?.substring(0, 150) : undefined
     };
   }
@@ -2828,12 +2829,14 @@ export class ${toolName.replace(/\.ts$/, '')} {
     this.saveChatEntry('user', userMessage, selectedModel);
 
     // Auto-record user task in permanent memory bank so it is remembered across all future sessions
-    this.addMemory(`[Användarens Uppdrag] ${userMessage.substring(0, 150)}`, 'user_preference', 'high', 'Chat Session');
+    this.addMemory(`[User Mission] ${userMessage.substring(0, 150)}`, 'user_preference', 'high', 'Chat Session');
 
     // Automatically extract and create/update active strategic goal if the message expresses a goal
     const lowerMsg = userMessage.toLowerCase();
-    if (lowerMsg.includes('mitt mål är') || lowerMsg.includes('mål:') || lowerMsg.includes('skapa mål') || lowerMsg.includes('nytt mål') || lowerMsg.includes('uppdrag:')) {
-      const cleaned = userMessage.replace(/(mitt mål är|mål:|skapa mål|nytt mål|uppdrag:)/i, '').trim();
+    // Swedish phrases are kept so operators writing Swedish still create goals; English equivalents sit next to them.
+    if (lowerMsg.includes('mitt mål är') || lowerMsg.includes('mål:') || lowerMsg.includes('skapa mål') || lowerMsg.includes('nytt mål') || lowerMsg.includes('uppdrag:')
+      || lowerMsg.includes('my goal is') || lowerMsg.includes('goal:') || lowerMsg.includes('create goal') || lowerMsg.includes('new goal') || lowerMsg.includes('mission:')) {
+      const cleaned = userMessage.replace(/(mitt mål är|mål:|skapa mål|nytt mål|uppdrag:|my goal is|goal:|create goal|new goal|mission:)/i, '').trim();
       if (cleaned.length > 2) {
         this.createStrategicGoal({
           title: cleaned.substring(0, 80),
@@ -2849,22 +2852,22 @@ export class ${toolName.replace(/\.ts$/, '')} {
 
     // Format persistent strategic goals, memories and recent chat history for deep context awareness
     const activeGoalsStr = this.strategicGoals.length > 0
-      ? this.strategicGoals.map(g => `• [MÅL ID: ${g.id}] "${g.title}" (${g.progressPercent}% slutfört, status: ${g.status}): ${g.description}`).join('\n')
-      : 'Inga aktiva strategiska mål skapade ännu.';
+      ? this.strategicGoals.map(g => `• [GOAL ID: ${g.id}] "${g.title}" (${g.progressPercent}% complete, status: ${g.status}): ${g.description}`).join('\n')
+      : 'No active strategic goals created yet.';
 
     const memoryItemsStr = this.memory.map(m => `[${m.timestamp}] (${m.category}) ${m.content}`).join('\n');
-    const recentHistoryEntries = this.chatHistory.slice(-20).map(c => `[${c.timestamp || 'Tidigare'}] ${c.role.toUpperCase()}: ${c.content.substring(0, 400)}`).join('\n');
+    const recentHistoryEntries = this.chatHistory.slice(-20).map(c => `[${c.timestamp || 'Earlier'}] ${c.role.toUpperCase()}: ${c.content.substring(0, 400)}`).join('\n');
 
     const memoryContext = [
-      activeGoalsStr ? `--- ANVÄNDARENS STRATEGISKA MÅL & UPPDRAG (DU MÅSTE ALLTID KOMMA IHÅG DESSA!) ---\n${activeGoalsStr}` : '',
+      activeGoalsStr ? `--- THE USER'S STRATEGIC GOALS & MISSIONS (YOU MUST ALWAYS REMEMBER THESE) ---\n${activeGoalsStr}` : '',
       ragContext ? ragContext : '',
-      memoryItemsStr ? `--- PERMANENT MINNESBANK & HISTORIK ---\n${memoryItemsStr}` : '',
-      recentHistoryEntries ? `--- SENASTE DIALOGHISTORIK & TIDIGARE UPPDRAG ---\n${recentHistoryEntries}` : ''
+      memoryItemsStr ? `--- PERMANENT MEMORY BANK & HISTORY ---\n${memoryItemsStr}` : '',
+      recentHistoryEntries ? `--- RECENT DIALOGUE HISTORY & EARLIER MISSIONS ---\n${recentHistoryEntries}` : ''
     ].filter(Boolean).join('\n\n');
     
     const osPlatform = os.platform();
     const isTermux = process.env.TERMUX_VERSION ? true : false;
-    const osEnvironmentInfo = `Operativsystem: ${isTermux ? 'Android (Termux)' : osPlatform === 'linux' ? 'Linux' : osPlatform} | Arkitektur: ${os.arch()} | CPUs: ${os.cpus().length}`;
+    const osEnvironmentInfo = `Operating system: ${isTermux ? 'Android (Termux)' : osPlatform === 'linux' ? 'Linux' : osPlatform} | Architecture: ${os.arch()} | CPUs: ${os.cpus().length}`;
 
     const mappedPersonaMode = 
       this.currentPersona === 'architectural' ? 'architectural' :
@@ -2889,15 +2892,15 @@ export class ${toolName.replace(/\.ts$/, '')} {
         responseText = text;
         subAgentDispatches.push({
           subAgentName: "Ollama Local Engine Bridge",
-          task: `Lokal AI-inferens via Ollama (${cleanModelName})`,
-          output: "Svar & verktygsexekvering slutförd på enheten."
+          task: `Local AI inference via Ollama (${cleanModelName})`,
+          output: "Response & tool execution completed on the device."
         });
       } else {
         ollamaFailedAndFellback = true;
         subAgentDispatches.push({
           subAgentName: "Ollama Fallback Engine",
-          task: `Lokal Ollama server (${cleanModelName}) ej kontaktbar`,
-          output: "Ingen kontakt på angiven Ollama-adress. Kopplar automatiskt över till molnbaserad reserv-motor..."
+          task: `Local Ollama server (${cleanModelName}) not reachable`,
+          output: "No contact at the configured Ollama address. Automatically switching to a cloud fallback engine..."
         });
       }
     }
@@ -2912,8 +2915,8 @@ export class ${toolName.replace(/\.ts$/, '')} {
           responseText = text;
           subAgentDispatches.push({
             subAgentName: "DeepSeek V3 / R1 Neural Engine",
-            task: `Direkt AI-inferens via DeepSeek API (${selectedModel})`,
-            output: "Svar & verktygsexekvering slutförd från DeepSeek Engine."
+            task: `Direct AI inference via DeepSeek API (${selectedModel})`,
+            output: "Response & tool execution completed by DeepSeek Engine."
           });
         }
       }
@@ -2947,13 +2950,13 @@ export class ${toolName.replace(/\.ts$/, '')} {
           functionDeclarations: [
             {
               name: 'execute_shell',
-              description: 'Exekverar ett shell/bash-kommando på underliggande system. Använd för att analysera källkod, köra tester, se processer eller bygga.',
+              description: 'Runs a shell/bash command on the underlying system. Use it to analyze source code, run tests, inspect processes or build.',
               parameters: {
                 type: 'OBJECT',
                 properties: {
                   command: {
                     type: 'STRING',
-                    description: 'Kommandot som ska köras (t.ex. "ls -la", "git status", "node -v", "ps aux").'
+                    description: 'The command to run (e.g. "ls -la", "git status", "node -v", "ps aux").'
                   }
                 },
                 required: ['command']
@@ -2961,13 +2964,13 @@ export class ${toolName.replace(/\.ts$/, '')} {
             },
             {
               name: 'read_file',
-              description: 'Läser innehållet i en fil i projektet för att analysera källkod eller inställningar.',
+              description: 'Reads the contents of a file in the project to analyze source code or settings.',
               parameters: {
                 type: 'OBJECT',
                 properties: {
                   path: {
                     type: 'STRING',
-                    description: 'Sökväg till filen (t.ex. "src/server.ts" eller "package.json").'
+                    description: 'Path to the file (e.g. "src/server.ts" or "package.json").'
                   }
                 },
                 required: ['path']
@@ -2975,17 +2978,17 @@ export class ${toolName.replace(/\.ts$/, '')} {
             },
             {
               name: 'write_file',
-              description: 'Skriver över en fil med nytt innehåll. Använd detta för att spara källkodsändringar eller skapa nya filer.',
+              description: 'Overwrites a file with new content. Use it to save source code changes or create new files.',
               parameters: {
                 type: 'OBJECT',
                 properties: {
                   path: {
                     type: 'STRING',
-                    description: 'Sökväg till filen (t.ex. "src/components/MyComponent.tsx").'
+                    description: 'Path to the file (e.g. "src/components/MyComponent.tsx").'
                   },
                   content: {
                     type: 'STRING',
-                    description: 'Det nya fullständiga innehållet för filen.'
+                    description: 'The new complete content of the file.'
                   }
                 },
                 required: ['path', 'content']
@@ -2993,13 +2996,13 @@ export class ${toolName.replace(/\.ts$/, '')} {
             },
             {
               name: 'switch_tab',
-              description: 'Byter aktiv vy/flik i JACO UI åt användaren (t.ex. "terminal", "ide", "models", "openclaw", "setup", "cuda-quantum").',
+              description: 'Switches the active view/tab in the JACO UI for the user (e.g. "terminal", "ide", "models", "openclaw", "setup", "cuda-quantum").',
               parameters: {
                 type: 'OBJECT',
                 properties: {
                   tab: {
                     type: 'STRING',
-                    description: 'Namn på fliken som skall öppnas (t.ex. "terminal", "ide", "models", "openclaw", "setup").'
+                    description: 'Name of the tab to open (e.g. "terminal", "ide", "models", "openclaw", "setup").'
                   }
                 },
                 required: ['tab']
@@ -3007,13 +3010,13 @@ export class ${toolName.replace(/\.ts$/, '')} {
             },
             {
               name: 'manage_subagent',
-              description: 'Uppdaterar status och aktiv uppgift för en under-agent i systemet.',
+              description: 'Updates the status and active task of a sub-agent in the system.',
               parameters: {
                 type: 'OBJECT',
                 properties: {
                   agentId: {
                     type: 'STRING',
-                    description: 'ID för agenten ("agent-computer", "agent-vscode", "agent-openclaw", "agent-nova").'
+                    description: 'ID of the agent ("agent-computer", "agent-vscode", "agent-openclaw", "agent-nova").'
                   },
                   status: {
                     type: 'STRING',
@@ -3021,7 +3024,7 @@ export class ${toolName.replace(/\.ts$/, '')} {
                   },
                   activeTask: {
                     type: 'STRING',
-                    description: 'Beskrivning av vad agenten för närvarande gör.'
+                    description: 'Description of what the agent is currently doing.'
                   }
                 },
                 required: ['agentId', 'status', 'activeTask']
@@ -3029,17 +3032,17 @@ export class ${toolName.replace(/\.ts$/, '')} {
             },
             {
               name: 'add_memory',
-              description: 'Sparar en viktig insikt, inställning eller regel i JACOs permanenta minnesbank.',
+              description: 'Saves an important insight, setting or rule in JACO\'s permanent memory bank.',
               parameters: {
                 type: 'OBJECT',
                 properties: {
                   content: {
                     type: 'STRING',
-                    description: 'Textinnehållet som ska sparas i minnet.'
+                    description: 'The text content to save in memory.'
                   },
                   category: {
                     type: 'STRING',
-                    description: 'Kategori ("system", "user_preference", "skill", "architecture").'
+                    description: 'Category ("system", "user_preference", "skill", "architecture").'
                   }
                 },
                 required: ['content']
@@ -3047,91 +3050,91 @@ export class ${toolName.replace(/\.ts$/, '')} {
             },
             {
               name: 'create_skill_plugin',
-              description: 'Syntetiserar och skapar en ny Agentic Skill eller Plugin i JACO-systemet med kod, beskrivning och parametrar.',
+              description: 'Synthesizes and creates a new Agentic Skill or Plugin in the JACO system with code, description and parameters.',
               parameters: {
                 type: 'OBJECT',
                 properties: {
-                  name: { type: 'STRING', description: 'Namn på skill/plugin' },
-                  description: { type: 'STRING', description: 'Beskrivning av funktion' },
-                  category: { type: 'STRING', description: 'Kategori ("Android Native", "Code AST", "Voice Agent", "Custom Plugin", "API Integration")' },
-                  triggerKey: { type: 'STRING', description: 'Trigger nyckel' },
+                  name: { type: 'STRING', description: 'Name of the skill/plugin' },
+                  description: { type: 'STRING', description: 'Description of the function' },
+                  category: { type: 'STRING', description: 'Category ("Android Native", "Code AST", "Voice Agent", "Custom Plugin", "API Integration")' },
+                  triggerKey: { type: 'STRING', description: 'Trigger key' },
                   parametersSchema: { type: 'STRING', description: 'JSON schema' },
-                  pluginCode: { type: 'STRING', description: 'Exekverbar TS/JS kod' }
+                  pluginCode: { type: 'STRING', description: 'Executable TS/JS code' }
                 },
                 required: ['name', 'description']
               }
             },
             {
               name: 'save_api_credential',
-              description: 'Kommer ihåg och sparar ett lösenord, API-nyckel eller token säkert i JACOs lösenords- och API-valv.',
+              description: 'Remembers and securely saves a password, API key or token in JACO\'s password and API vault.',
               parameters: {
                 type: 'OBJECT',
                 properties: {
-                  serviceName: { type: 'STRING', description: 'Namn på tjänsten (t.ex. "Gemini Key", "SSH Password", "GitHub Token")' },
-                  category: { type: 'STRING', description: 'Kategori ("api_key", "password", "oauth_token", "ssh_key")' },
-                  keyOrPassword: { type: 'STRING', description: 'Lösenordet eller API-nyckeln' },
-                  notes: { type: 'STRING', description: 'Valfria anteckningar' }
+                  serviceName: { type: 'STRING', description: 'Name of the service (e.g. "Gemini Key", "SSH Password", "GitHub Token")' },
+                  category: { type: 'STRING', description: 'Category ("api_key", "password", "oauth_token", "ssh_key")' },
+                  keyOrPassword: { type: 'STRING', description: 'The password or API key' },
+                  notes: { type: 'STRING', description: 'Optional notes' }
                 },
                 required: ['serviceName', 'keyOrPassword']
               }
             },
             {
               name: 'retrieve_api_credential',
-              description: 'Hämtar en sparad API-nyckel eller lösenord från JACOs säkra valv.',
+              description: 'Retrieves a saved API key or password from JACO\'s secure vault.',
               parameters: {
                 type: 'OBJECT',
                 properties: {
-                  serviceName: { type: 'STRING', description: 'Sökord/namn på tjänsten' }
+                  serviceName: { type: 'STRING', description: 'Search term/name of the service' }
                 },
                 required: ['serviceName']
               }
             },
             {
               name: 'request_agentic_approval',
-              description: 'Skapar en formell godkännandebegäran för en känslig eller autonom agent-handling.',
+              description: 'Creates a formal approval request for a sensitive or autonomous agent action.',
               parameters: {
                 type: 'OBJECT',
                 properties: {
-                  actionType: { type: 'STRING', description: 'Typ ("SHELL_EXEC", "FILE_WRITE", "SKILL_SYNTHESIS", "PLUGIN_INSTALL", "VAULT_ACCESS")' },
-                  title: { type: 'STRING', description: 'Rubrik' },
-                  details: { type: 'STRING', description: 'Beskrivning av vad som ska utföras' },
-                  commandOrPath: { type: 'STRING', description: 'Kommando eller filsökväg' }
+                  actionType: { type: 'STRING', description: 'Type ("SHELL_EXEC", "FILE_WRITE", "SKILL_SYNTHESIS", "PLUGIN_INSTALL", "VAULT_ACCESS")' },
+                  title: { type: 'STRING', description: 'Title' },
+                  details: { type: 'STRING', description: 'Description of what will be done' },
+                  commandOrPath: { type: 'STRING', description: 'Command or file path' }
                 },
                 required: ['actionType', 'title', 'details']
               }
             },
             {
               name: 'git_sync_mission_repo',
-              description: 'Synkar och hämtar uppdrag (missions) från det anslutna Git-repot (.jaco/missions/*.json).',
+              description: 'Syncs and fetches missions from the connected Git repo (.jaco/missions/*.json).',
               parameters: {
                 type: 'OBJECT',
                 properties: {
-                  repoUrl: { type: 'STRING', description: 'Valfri Git repo URL' },
-                  branch: { type: 'STRING', description: 'Valfri Git gren' }
+                  repoUrl: { type: 'STRING', description: 'Optional Git repo URL' },
+                  branch: { type: 'STRING', description: 'Optional Git branch' }
                 }
               }
             },
             {
               name: 'git_push_execution_patch',
-              description: 'Committar och pushar källkodspatch, agent-resultat eller ny skill till Git-repot.',
+              description: 'Commits and pushes a source patch, agent result or new skill to the Git repo.',
               parameters: {
                 type: 'OBJECT',
                 properties: {
-                  commitMessage: { type: 'STRING', description: 'Commit-meddelande' },
-                  filePath: { type: 'STRING', description: 'Sökväg till filen som ska committas' },
-                  content: { type: 'STRING', description: 'Innehåll i filen' }
+                  commitMessage: { type: 'STRING', description: 'Commit message' },
+                  filePath: { type: 'STRING', description: 'Path to the file to commit' },
+                  content: { type: 'STRING', description: 'File content' }
                 },
                 required: ['commitMessage']
               }
             },
             {
               name: 'cloudflare_dispatch_worker',
-              description: 'Skickar agent-händelse eller uppdrag direkt till Cloudflare Worker / Tunnel endpoint över A2A-nätverket.',
+              description: 'Sends an agent event or mission directly to a Cloudflare Worker / Tunnel endpoint over the A2A network.',
               parameters: {
                 type: 'OBJECT',
                 properties: {
-                  workerUrl: { type: 'STRING', description: 'Valfri Cloudflare Worker URL' },
-                  payload: { type: 'STRING', description: 'JSON meddelande/payload att sända' }
+                  workerUrl: { type: 'STRING', description: 'Optional Cloudflare Worker URL' },
+                  payload: { type: 'STRING', description: 'JSON message/payload to send' }
                 },
                 required: ['payload']
               }
@@ -3169,8 +3172,8 @@ export class ${toolName.replace(/\.ts$/, '')} {
               
               subAgentDispatches.push({
                 subAgentName: "Terminal Agent",
-                task: `Exekverar kommando: ${cmd}`,
-                output: "Körs i bakgrunden..."
+                task: `Running command: ${cmd}`,
+                output: "Running in the background..."
               });
               
               try {
@@ -3208,12 +3211,12 @@ export class ${toolName.replace(/\.ts$/, '')} {
               const filePath = call.args?.path as string;
               subAgentDispatches.push({
                 subAgentName: "VS Code Agent",
-                task: `Läser fil: ${filePath}`,
-                output: "Hämtar innehåll från disken..."
+                task: `Reading file: ${filePath}`,
+                output: "Fetching content from disk..."
               });
               try {
                 const fileData = await fs.readFile(filePath, 'utf-8');
-                subAgentDispatches[subAgentDispatches.length - 1].output = `Läst ${fileData.length} tecken.`;
+                subAgentDispatches[subAgentDispatches.length - 1].output = `Read ${fileData.length} characters.`;
                 currentContents.push({ role: 'model', parts: [{ functionCall: call }] });
                 currentContents.push({
                   role: 'user',
@@ -3242,8 +3245,8 @@ export class ${toolName.replace(/\.ts$/, '')} {
               
               subAgentDispatches.push({
                 subAgentName: "VS Code Agent",
-                task: `Skriver till fil: ${path}`,
-                output: `Skrev ${content.length} tecken.`
+                task: `Writing to file: ${path}`,
+                output: `Wrote ${content.length} characters.`
               });
               
               try {
@@ -3251,8 +3254,8 @@ export class ${toolName.replace(/\.ts$/, '')} {
                 
                 codePatch = {
                   filename: path,
-                  description: 'Autonom agentisk refaktorering via write_file',
-                  diffSnippet: content.split('\n').slice(0, 10).join('\n') + '\n... (visar endast första 10 raderna)'
+                  description: 'Autonomous agentic refactoring via write_file',
+                  diffSnippet: content.split('\n').slice(0, 10).join('\n') + '\n... (showing only the first 10 lines)'
                 };
                 
                 currentContents.push({ role: 'model', parts: [{ functionCall: call }] });
@@ -3281,8 +3284,8 @@ export class ${toolName.replace(/\.ts$/, '')} {
               const tabName = call.args?.tab as string;
               subAgentDispatches.push({
                 subAgentName: "JACO UI Controller",
-                task: `Navigerar till flik: ${tabName}`,
-                output: `Navigerat till ${tabName}`
+                task: `Navigating to tab: ${tabName}`,
+                output: `Navigated to ${tabName}`
               });
               currentContents.push({ role: 'model', parts: [{ functionCall: call }] });
               currentContents.push({
@@ -3300,11 +3303,11 @@ export class ${toolName.replace(/\.ts$/, '')} {
               if (target) {
                 target.status = status;
                 target.activeTask = activeTask;
-                target.lastSyncAt = new Date().toLocaleTimeString('sv-SE');
+                target.lastSyncAt = new Date().toLocaleTimeString('en-US');
               }
               subAgentDispatches.push({
                 subAgentName: "Aura Orchestrator",
-                task: `Uppdaterar underagent ${agentId}`,
+                task: `Updating sub-agent ${agentId}`,
                 output: `${status.toUpperCase()}: ${activeTask}`
               });
               currentContents.push({ role: 'model', parts: [{ functionCall: call }] });
@@ -3322,8 +3325,8 @@ export class ${toolName.replace(/\.ts$/, '')} {
               this.addMemory(content, category || 'system', 'high', 'Agent Chat');
               subAgentDispatches.push({
                 subAgentName: "Memory Core",
-                task: "Lagrar minne i databas",
-                output: `Sparat: "${content.substring(0, 40)}..."`
+                task: "Storing memory in the database",
+                output: `Saved: "${content.substring(0, 40)}..."`
               });
               currentContents.push({ role: 'model', parts: [{ functionCall: call }] });
               currentContents.push({
@@ -3340,8 +3343,8 @@ export class ${toolName.replace(/\.ts$/, '')} {
               const created = this.createSkillPlugin(skillData);
               subAgentDispatches.push({
                 subAgentName: "Aura Skill Synthesizer",
-                task: `Skapar ny Agentic Skill: ${created.name}`,
-                output: `Skill ${created.id} registrerad med trigger ${created.triggerKey}`
+                task: `Creating new Agentic Skill: ${created.name}`,
+                output: `Skill ${created.id} registered with trigger ${created.triggerKey}`
               });
               currentContents.push({ role: 'model', parts: [{ functionCall: call }] });
               currentContents.push({
@@ -3358,8 +3361,8 @@ export class ${toolName.replace(/\.ts$/, '')} {
               const saved = this.saveVaultItem({ serviceName, category, keyOrPassword, notes });
               subAgentDispatches.push({
                 subAgentName: "Api Password Vault Core",
-                task: `Sparar lösenord/API-nyckel: ${serviceName}`,
-                output: `Lagrat i krypterat valv (${saved.id})`
+                task: `Saving password/API key: ${serviceName}`,
+                output: `Stored in encrypted vault (${saved.id})`
               });
               currentContents.push({ role: 'model', parts: [{ functionCall: call }] });
               currentContents.push({
@@ -3376,8 +3379,8 @@ export class ${toolName.replace(/\.ts$/, '')} {
               const match = this.vaultItems.find(v => v.serviceName.toLowerCase().includes(serviceName.toLowerCase()));
               subAgentDispatches.push({
                 subAgentName: "Api Password Vault Core",
-                task: `Hämtar lösenord/API-nyckel för: ${serviceName}`,
-                output: match ? `Hämtat nyckel för ${match.serviceName}` : `Ingen nyckel hittades för ${serviceName}`
+                task: `Retrieving password/API key for: ${serviceName}`,
+                output: match ? `Retrieved key for ${match.serviceName}` : `No key found for ${serviceName}`
               });
               currentContents.push({ role: 'model', parts: [{ functionCall: call }] });
               currentContents.push({
@@ -3397,14 +3400,14 @@ export class ${toolName.replace(/\.ts$/, '')} {
               const createdReq = this.createApprovalRequest({
                 agentName: 'Aura Orchestrator',
                 actionType: reqData.actionType || 'SHELL_EXEC',
-                title: reqData.title || 'Agentisk Handling kräver godkännande',
+                title: reqData.title || 'Agentic action requires approval',
                 details: reqData.details || '',
                 commandOrPath: reqData.commandOrPath
               });
               subAgentDispatches.push({
                 subAgentName: "Agentic Policy Gatekeeper",
-                task: `Skapar godkännandebegäran (${createdReq.id})`,
-                output: `Väntar på användarens godkännande i UI`
+                task: `Creating approval request (${createdReq.id})`,
+                output: `Waiting for the user's approval in the UI`
               });
               currentContents.push({ role: 'model', parts: [{ functionCall: call }] });
               currentContents.push({
@@ -3420,13 +3423,13 @@ export class ${toolName.replace(/\.ts$/, '')} {
               const { repoUrl, branch } = call.args as any;
               if (repoUrl) this.gitOpsConfig.repoUrl = repoUrl;
               if (branch) this.gitOpsConfig.branch = branch;
-              this.gitOpsConfig.lastSyncedAt = new Date().toLocaleTimeString("sv-SE");
+              this.gitOpsConfig.lastSyncedAt = new Date().toLocaleTimeString("en-US");
               this.gitOpsConfig.status = "CONNECTED";
 
               subAgentDispatches.push({
                 subAgentName: "GitOps Mission Sync Agent",
-                task: `Synkar uppdrag från Git-repo: ${this.gitOpsConfig.repoUrl}`,
-                output: `Hämtat ${this.gitMissions.length} uppdrag från .jaco/missions/`
+                task: `Syncing missions from Git repo: ${this.gitOpsConfig.repoUrl}`,
+                output: `Fetched ${this.gitMissions.length} missions from .jaco/missions/`
               });
               currentContents.push({ role: 'model', parts: [{ functionCall: call }] });
               currentContents.push({
@@ -3447,8 +3450,8 @@ export class ${toolName.replace(/\.ts$/, '')} {
               const hash = Math.random().toString(16).substring(2, 9);
               subAgentDispatches.push({
                 subAgentName: "GitOps Commit Engine",
-                task: `Pushar patch [${hash}]: "${commitMessage}"`,
-                output: `Commit ${hash} skickad till branch ${this.gitOpsConfig.branch}`
+                task: `Pushing patch [${hash}]: "${commitMessage}"`,
+                output: `Commit ${hash} sent to branch ${this.gitOpsConfig.branch}`
               });
               currentContents.push({ role: 'model', parts: [{ functionCall: call }] });
               currentContents.push({
@@ -3463,12 +3466,12 @@ export class ${toolName.replace(/\.ts$/, '')} {
             } else if (call.name === 'cloudflare_dispatch_worker') {
               const { payload, workerUrl } = call.args as any;
               this.cloudflareConfig.totalRequestsReceived++;
-              this.cloudflareConfig.lastWebhookTimestamp = new Date().toLocaleTimeString("sv-SE");
+              this.cloudflareConfig.lastWebhookTimestamp = new Date().toLocaleTimeString("en-US");
               const targetUrl = workerUrl || this.cloudflareConfig.workerUrl;
 
               subAgentDispatches.push({
                 subAgentName: "Cloudflare A2A Edge Gateway",
-                task: `Skickar A2A uppdrag till Cloudflare Worker: ${targetUrl}`,
+                task: `Sending A2A mission to Cloudflare Worker: ${targetUrl}`,
                 output: `Response status: 200 OK (Edge Dispatch Succeeded)`
               });
               currentContents.push({ role: 'model', parts: [{ functionCall: call }] });
@@ -3492,7 +3495,7 @@ export class ${toolName.replace(/\.ts$/, '')} {
           }
         }
       } catch (err: any) {
-        console.warn(`[AuraEngine] Gemini modell ${currentGeminiModel} returnerade fel:`, err?.message || err);
+        console.warn(`[AuraEngine] Gemini model ${currentGeminiModel} returned an error:`, err?.message || err);
         this.emergentCatchesCount++;
       }
     }
@@ -3506,8 +3509,8 @@ export class ${toolName.replace(/\.ts$/, '')} {
         responseText = dsReply;
         subAgentDispatches.push({
           subAgentName: "DeepSeek V3 / R1 Neural Engine",
-          task: "Automatisk DeepSeek failover från moln-API",
-          output: "Svar genererat dynamiskt från DeepSeek Commercial Reasoning Engine."
+          task: "Automatic DeepSeek failover from cloud API",
+          output: "Response generated dynamically by DeepSeek Commercial Reasoning Engine."
         });
       } else {
         const localReply = await this.tryOllamaInference(userMessage, systemPrompt, "qwen2.5:0.5b");
@@ -3515,8 +3518,8 @@ export class ${toolName.replace(/\.ts$/, '')} {
           responseText = localReply;
           subAgentDispatches.push({
             subAgentName: "GLM-4 / Ollama High-Speed Engine",
-            task: "Automatisk failover från Gemini API (GLM-4 / Ollama)",
-            output: "Svar genererat sömlöst från lokal LLM-brygga."
+            task: "Automatic failover from Gemini API (GLM-4 / Ollama)",
+            output: "Response generated seamlessly by the local LLM bridge."
           });
         }
       }
@@ -3533,26 +3536,28 @@ export class ${toolName.replace(/\.ts$/, '')} {
       subAgentDispatches.push({
         subAgentName: `${targetSubAgent.toUpperCase()} Agent`,
         task: userMessage,
-        output: `Exekverade uppdrag på target '${activeFilePath || 'src/server.ts'}' med verifierat resultat.`
+        output: `Ran mission on target '${activeFilePath || 'src/server.ts'}' with verified result.`
       });
     } else {
       subAgentDispatches.push({
         subAgentName: "VS Code Agent",
-        task: "Analysera källkod & typer",
-        output: `Verifierade källkodsstruktur för ${activeFilePath || 'src/server.ts'}.`
+        task: "Analyze source code & types",
+        output: `Verified source structure for ${activeFilePath || 'src/server.ts'}.`
       });
       subAgentDispatches.push({
         subAgentName: "Nova NPU Agent",
         task: "Tensor Matrix Acceleration",
-        output: "Tensor Core DMA buffertar synkroniserade utan latens."
+        output: "Tensor Core DMA buffers synchronized without latency."
       });
     }
 
-    if (userMessage.toLowerCase().includes('patch') || userMessage.toLowerCase().includes('kod') || userMessage.toLowerCase().includes('refaktorera') || userMessage.toLowerCase().includes('ändra')) {
+    // Swedish keywords ('kod', 'refaktorera', 'ändra') are kept for Swedish-speaking operators; English equivalents sit next to them.
+    if (userMessage.toLowerCase().includes('patch') || userMessage.toLowerCase().includes('kod') || userMessage.toLowerCase().includes('refaktorera') || userMessage.toLowerCase().includes('ändra')
+      || userMessage.toLowerCase().includes('code') || userMessage.toLowerCase().includes('refactor') || userMessage.toLowerCase().includes('change')) {
       codePatch = {
         filename: activeFilePath || 'src/server.ts',
-        description: 'Autonom agentisk refaktorering av källkodsfil',
-        diffSnippet: `+ // JACO Agent Patch (${new Date().toLocaleTimeString('sv-SE')})\n+ export function agentOptimizedPipeline() {\n+   return { status: "ACTIVE_NPU_ACCELERATED", model: "nemotron-4b" };\n+ }`
+        description: 'Autonomous agentic refactoring of a source file',
+        diffSnippet: `+ // JACO Agent Patch (${new Date().toLocaleTimeString('en-US')})\n+ export function agentOptimizedPipeline() {\n+   return { status: "ACTIVE_NPU_ACCELERATED", model: "nemotron-4b" };\n+ }`
       };
     }
 
@@ -3564,7 +3569,7 @@ export class ${toolName.replace(/\.ts$/, '')} {
       gateCheck: this.getGateTelemetry(),
       memoryAdded: false,
       subAgentDispatches,
-      emergentCatchLogs: this.emergentCatchesCount > 0 ? [`[Emergent Catch] Systemet körs i felfritt läge (${this.emergentCatchesCount} tidigare läkningar).`] : [],
+      emergentCatchLogs: this.emergentCatchesCount > 0 ? [`[Emergent Catch] The system is running in error-free mode (${this.emergentCatchesCount} earlier recoveries).`] : [],
       codePatch,
       auraState: this.getState()
     };
