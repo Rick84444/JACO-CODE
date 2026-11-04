@@ -4,7 +4,7 @@ const REPO = 'Rick84444/JACO-CODE';
 const LATEST_URL = 'https://api.github.com/repos/' + REPO + '/releases/latest';
 
 export function releaseVersion(value) {
-  const match = /^v?(\\d+)\\.(\\d+)\\.(\\d+)$/.exec(String(value || '').trim());
+  const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(String(value || '').trim());
   return match ? match.slice(1).map(Number) : null;
 }
 
@@ -38,7 +38,7 @@ export async function githubWindowsReleaseStatus({ currentVersion, platform = pr
     if (!response.ok) return { ...base, success: false, status: 'unreachable' };
     const release = await response.json();
     const tag = String(release?.tag_name || '');
-    if (release?.draft || release?.prerelease || !/^v\\d+\\.\\d+\\.\\d+$/.test(tag)) return { ...base, success: false, status: 'invalid_release' };
+    if (release?.draft || release?.prerelease || !/^v\d+\.\d+\.\d+$/.test(tag)) return { ...base, success: false, status: 'invalid_release' };
     const comparison = compareReleaseVersions(tag, currentVersion);
     if (comparison === null) return { ...base, success: false, status: 'invalid_version' };
     const asset = verifiedWindowsAsset(release, tag);
