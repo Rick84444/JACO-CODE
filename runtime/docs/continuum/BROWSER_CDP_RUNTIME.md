@@ -23,6 +23,13 @@ is passed through to the Nova actuator. Nova claims a durable action record
   independent readback and explicit reconciliation; no automatic retry.
 - Journal records contain a hash of the operation and a receipt ID, not raw
   browser input, page content or credentials.
+- The claim file **and its directory entry** must be flushed before dispatch.
+  The verified receipt file and final rename must also be flushed before
+  acknowledging success. Newly created directory ancestors are flushed too.
+  If directory fsync is not supported by the filesystem or platform, identified
+  browser writes fail closed rather than making a crash-durability promise.
+  Windows and Android physical-host semantics still require targeted acceptance
+  tests; network filesystems are not covered by this local-journal guarantee.
 - The MCP facade requires a verified postcondition for a successful mutating
   tool response. A transport-level acknowledgement is not proof of effect.
 
