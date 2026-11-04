@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createWorkplaceAgentSupervisor } from '../../gateway/src/workplace/workplace-agent-supervisor.mjs';
 import { joinWorkplace, buildAgentCard } from '../../agents/lib/workplace-session.mjs';
 
@@ -338,14 +341,19 @@ test('Nova cannot start when SEER health is up but real brain inference fails', 
   await supervisor.stop();
 });
 
-test('Aura-only startup skips all local model probes and waits for actual selected-model inference', async t => {
+for (const preference of ['aura', 'auto']) test(`selected-model startup (${preference}) skips local probes and waits for inference`, async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'workplace-selected-model-'));
+  const choice = join(dir, 'choice.json');
+  writeFileSync(choice, JSON.stringify({ provider: 'fixture-cloud', model: 'fixture-model', by: 'operator' }));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const spawns = [], calls = [];
   let releaseBrain;
   const brain = new Promise(resolve => { releaseBrain = resolve; });
   let supervisor;
   supervisor = createWorkplaceAgentSupervisor({
     env: { JACO_WORKPLACE_SUPERVISE_MODEL: '0', JACO_WORKPLACE_SUPERVISE_SEER: '1',
-      JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_SEER_PROVIDER_PREFERENCE: 'aura',
+      JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_SEER_PROVIDER_PREFERENCE: preference,
+      JACO_PLANNER_CHOICE_FILE: choice,
       JACO_GATEWAY_TOKEN: 'fixture-gateway-token' },
     fetchImpl: async url => {
       calls.push(String(url));
@@ -407,3 +415,4 @@ test('shutdown does not await a second exit from an already-exited child', async
   await supervisor.stop();
   assert.equal(supervisor.snapshot().state, 'STOPPED');
 });
+

@@ -1,5 +1,6 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import { resolve } from 'node:path';
+import { plannerChoiceFile, readPlannerChoice } from '../../../agents/lib/planner-choice.mjs';
 
 function normalizeToken(env = {}) {
   return env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || env.SEER_TOKEN || '';
@@ -216,7 +217,10 @@ export function createWorkplaceAgentSupervisor({
   }
 
   async function ensureModel(waitMs) {
-    if (env.JACO_SEER_PROVIDER_PREFERENCE === 'aura') {
+    const preference = String(env.JACO_SEER_PROVIDER_PREFERENCE || 'auto').trim().toLowerCase();
+    const selected = preference === 'auto' && !env.JACO_PRIMARY_PROVIDER
+      ? readPlannerChoice(plannerChoiceFile(env)) : null;
+    if (preference === 'aura' || (selected?.by === 'operator' && selected.provider && selected.model)) {
       // The existing SEER brain probe verifies Aura's saved choice below.
       // No local discovery, model spawn, or implied cloud permission here.
       modelState = 'WAITING_SELECTED_PROVIDER';
@@ -232,7 +236,6 @@ export function createWorkplaceAgentSupervisor({
       return existing;
     }
 
-    const preference = String(env.JACO_SEER_PROVIDER_PREFERENCE || 'auto').trim().toLowerCase();
     if (!superviseModel || preference === 'ollama') {
       modelState = 'WAITING_EXTERNAL';
       const provider = await waitForProvider(waitMs);
@@ -522,3 +525,4 @@ export function createWorkplaceAgentSupervisor({
 
   return { start, stop, snapshot };
 }
+
