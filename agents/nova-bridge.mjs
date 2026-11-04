@@ -8,11 +8,19 @@ import { writeFileSync, existsSync, readFileSync, mkdirSync, renameSync } from "
 import { join, dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { buildAgentCard, joinWorkplace } from "./lib/workplace-session.mjs";
+import { createBrowserActionJournal } from "./lib/browser-action-journal.mjs";
 
 const CDP_PORT = parseInt(process.env.CDP_PORT || "9222");
 const BRIDGE_PORT = parseInt(process.env.NOVA_BRIDGE_PORT || "4243");
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROUTES_FILE = join(__dirname, ".agent-state", "nova-routes.json");
+// Browser actions with an identity are journaled at the actuator, not merely the MCP facade.
+const browserActionJournal = createBrowserActionJournal(
+  process.env.JACO_CDP_ACTION_DIR || join(__dirname, ".agent-state", "cdp-actions")
+);
+const guardedBrowserWrite = (kind, payload, perform) =>
+  payload.actionId === undefined ? perform() :
+    browserActionJournal.execute({ kind, actionId: payload.actionId, payload, perform });
 
 // ── CDP helpers ──────────────────────────────────────────────────────────────
 
@@ -433,19 +441,19 @@ export const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/navigate") {
       const b = await readBody(req);
       if (!readable(b.url)) return json(res,{ok:false,error:'ORIGIN_DENIED'},403);
-      return json(res, await navigate(b.url, b.settleMs));
+      return json(res, await guardedBrowserWrite("navigate", b, () => navigate(b.url, b.settleMs)));
     }
     if (req.method === "POST" && url.pathname === "/click") {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'click');
       if (!b.expectedUrl || (!allowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
-      return json(res, await withTab(s=>actSession(s,b,"click"), { input: true,missionOrigin }));
+      return json(res, await guardedBrowserWrite("click", b, () => withTab(s=>actSession(s,b,"click"), { input: true,missionOrigin })));
     }
     if (req.method === "POST" && url.pathname === "/type") {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'type');
       if (!b.expectedUrl || (!allowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
-      return json(res, await withTab(s=>actSession(s,b,"type"), { input: true,missionOrigin }));
+      return json(res, await guardedBrowserWrite("type", b, () => withTab(s=>actSession(s,b,"type"), { input: true,missionOrigin })));
     }
     if (req.method === "POST" && url.pathname === "/survey") {
       const b = await readBody(req);

@@ -9,9 +9,9 @@ const definitions=[
   ['nova_observe','Observe the pinned allowed page','GET','/observe',{}],
   ['nova_screenshot','Capture the pinned allowed page','GET','/screenshot',{}],
   ['nova_html','Read the pinned allowed page as cleaned HTML: no scripts, comments, element values, hidden fields, token metadata, event handlers, data attributes, or URL query strings and fragments. Visible page text is returned as shown','GET','/html',{}],
-  ['nova_navigate','Navigate within configured origins','POST','/navigate',{url:{type:'string'}}],
-  ['nova_click','Click a unique selector and verify an explicit transition','POST','/click',{selector:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}}}],
-  ['nova_type','Set a field and read back the value','POST','/type',{selector:{type:'string'},expectedUrl:{type:'string'},text:{type:'string'}}],
+  ['nova_navigate','Navigate within configured origins','POST','/navigate',{url:{type:'string'},actionId:{type:'string'}}],
+  ['nova_click','Click a unique selector and verify an explicit transition','POST','/click',{selector:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
+  ['nova_type','Set a field and read back the value','POST','/type',{selector:{type:'string'},expectedUrl:{type:'string'},text:{type:'string'},actionId:{type:'string'}}],
 ];
 export function createCdpFacade({token=process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '',base=process.env.NOVA_BRIDGE_URL || 'http://127.0.0.1:4243',fetchImpl=fetch}={}) {
   const send=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(data));};
@@ -71,10 +71,11 @@ export function createCdpFacade({token=process.env.JACO_GATEWAY_TOKEN || process
       if(!args || typeof args!=='object' || Array.isArray(args)) return error(-32602,'Invalid arguments');
       for(const [key,schema] of Object.entries(def[4])) if(typeof args[key]!==schema.type || args[key]===null) return error(-32602,'Invalid '+key);
       if(Object.keys(args).some(k=>!(k in def[4]))) return error(-32602,'Unexpected argument');
+      if(def[2]==='POST' && !/^[A-Za-z0-9][A-Za-z0-9:_-]{7,127}$/.test(args.actionId)) return error(-32602,'Invalid actionId');
       try {
         const r=await fetchImpl(base+def[3],{method:def[2],headers:{'content-type':'application/json',Authorization:'Bearer '+token},...(def[2]==='POST'?{body:JSON.stringify(args)}:{}),signal:AbortSignal.timeout(20000)});
         const result=await r.json();
-        const failed=!r.ok || result.ok!==true;
+        const failed=!r.ok || result.ok!==true || (def[2]==='POST' && result.verified!==true);
         if(!failed && def[0]==='nova_screenshot') return reply({content:[{type:'image',mimeType:'image/png',data:result.data}],isError:false});
         return reply({content:[{type:'text',text:JSON.stringify(result)}],isError:failed});
       }catch(e){return reply({content:[{type:'text',text:JSON.stringify({ok:false,error:e.message,outcomeUnknown:def[2]==='POST'})}],isError:true});}

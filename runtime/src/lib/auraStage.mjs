@@ -40,7 +40,7 @@ export function auraStageCandidate(events = []) {
 // The heading must match the observed state: a mission that is merely registered is not work in progress.
 export function auraActivityState(mode, hasMission) {
   if (!hasMission) return 'idle';
-  return { working: 'working', stalled: 'stalled', blocked: 'blocked', reconnecting: 'unknown', connecting: 'unknown', offline: 'unknown' }[mode] || 'unknown';
+  return { working: 'working', queued: 'queued', stalled: 'stalled', blocked: 'blocked', reconnecting: 'unknown', connecting: 'unknown', offline: 'unknown' }[mode] || 'unknown';
 }
 
 // The operator's view of the work: the latest observed steps, newest first, for the current mission when

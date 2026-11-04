@@ -3,6 +3,7 @@ import { Activity, Bot, CheckCheck, CircleAlert, Clock3, Globe2, Layers3, PlugZa
 
 export type AuraPresenceView = {
   mode:string; title:string; detail:string; connected:boolean;
+  missionGoal?:string;missionId?:string|null;blocker?:string;nextAction?:string;
   connectionLabel:string;modelLabel:string;cdpLabel:string;
   connectedAgents:number;workingSessions:number;approvals:number;
   phaseLabel:string;step:string;stepAge:number|null;latestAt:string|null;
@@ -27,6 +28,12 @@ export function AuraPresence({data}:{data:AuraPresenceView}) {
       </div>
 
     </div>
+    {data.missionId && <dl className="grid gap-2 px-3 py-3 text-xs border-t border-slate-700" aria-label="Mission state and next action">
+      <div><dt className="text-slate-400">Aktuellt uppdrag</dt><dd className="mt-1 break-words">{data.missionGoal}<small className="block text-slate-400">{data.missionId}</small></dd></div>
+      <div><dt className="text-slate-400">Senaste verkliga framsteg</dt><dd className="mt-1">{data.step || 'Inget steg rapporterat'}{data.stepAge!==null?' · '+ageLabel(data.stepAge):''}</dd></div>
+      <div><dt className="text-slate-400">Vad stoppar arbetet?</dt><dd className="mt-1" role={data.mode==='stalled'||data.mode==='blocked'?'status':undefined}>{data.blocker}</dd></div>
+      <div><dt className="text-slate-400">Next action</dt><dd className="mt-1">{data.nextAction}</dd></div>
+    </dl>}
     <div className="aura-presence-bottom">
 
       <span className="aura-presence-step"><Activity size={13}/>{data.step || data.detail}</span>

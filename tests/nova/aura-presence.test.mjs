@@ -22,7 +22,7 @@ test('SSE and snapshot both fresh are required to report a connected runtime',()
   assert.equal(p.connectionLabel,'JACO connected');
   assert.match(p.modelLabel,/gemma4-e2b/);
   assert.equal(p.connectedAgents,1);
-  assert.equal(p.workingSessions,1);
+  assert.equal(p.workingSessions,0,'a READY connection is not a working session');
   assert.equal(p.cdpLabel,'CDP connected');
   assert.notEqual(p.mode,'working','live sockets and sessions are not mission proof');
 });
@@ -39,7 +39,7 @@ test('A responsive connection cannot conceal a stale or stuck mission',()=>{
   const p=auraPresence({...live,mission:active(185)});
   assert.equal(p.connected,true);
   assert.equal(p.mode,'stalled');
-  assert.match(p.title,/No new work results/);
+  assert.match(p.title,/has stalled/);
 });
 test('A short interruption reconnects quietly and never claims progress; silence or a stop is red',()=>{
   for(const state of [{lastObservedAt:at(25)},{snapshotObservedAt:at(28)},{connection:'reconnecting'}]){
@@ -71,6 +71,32 @@ test('Missing provider and idle mission are visible, never inferred',()=>{
   assert.equal(p.modelLabel,'Model not observed');
   assert.equal(p.cdpLabel,'CDP not observed');
   assert.equal(p.verified,null);
+});
+
+test('an unstarted mission exposes missing execution and unrelated MCP activity cannot refresh its progress',()=>{
+  const p=auraPresence({...live,mission:{id:'queued',goal:'Read Git status',status:'ACTIVE',phase:'READY',createdAt:at(600),step:0},latestEvent:{at:at(1),text:'MCP git status succeeded'}});
+  assert.equal(p.mode,'stalled');
+  assert.equal(p.missionId,'queued');
+  assert.match(p.blocker,/No tool step has started/);
+  assert.match(p.blocker,/has not reported why/);
+  assert.match(p.nextAction,/Do not start a copy/);
+  assert.equal(p.stepAge,null,'an unrelated tool call is not mission progress');
+  assert.equal(p.latestAt,null);
+});
+
+test('fresh queued work and actual BUSY sessions are distinct from connected agents',()=>{
+  const p=auraPresence({...live,mission:{id:'queued',status:'ACTIVE',phase:'READY',createdAt:at(5)},agents:[{status:'READY',liveSessions:2,sessions:[{status:'READY'},{status:'BUSY'},{status:'OFFLINE'}]}]});
+  assert.equal(p.mode,'queued');
+  assert.equal(p.workingSessions,1);
+  assert.equal(p.connectedAgents,1);
+  assert.match(p.blocker,/executor/);
+});
+
+test('a reported runtime blocker is visible without inventing a different cause or enabling permissions',()=>{
+  const p=auraPresence({...live,mission:active(),runtimeBlocker:'CLOUD_DISABLED_BY_POLICY'});
+  assert.equal(p.mode,'blocked');
+  assert.equal(p.blocker,'CLOUD_DISABLED_BY_POLICY');
+  assert.match(p.nextAction,/before resuming/);
 });
 test('The real IDE wires fresh runtime, SSE, mission and model information to the same stage',()=>{
   const root=new URL('../../runtime/src/components/',import.meta.url);

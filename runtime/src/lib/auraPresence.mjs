@@ -19,7 +19,7 @@ export function auraPresence({
   now=Date.now(),connection='connecting',lastObservedAt=null,
   snapshotObservedAt=null,runtimeRunning=null,mission=null,
   agents=[],provider=null,model=null,cdpState='UNOBSERVED',approvals=0,
-  latestEvent=null,
+  latestEvent=null,runtimeBlocker=null,
 }={}){
   const streamAge=ageInSeconds(lastObservedAt,now);
   const snapshotAge=ageInSeconds(snapshotObservedAt,now);
@@ -29,12 +29,12 @@ export function auraPresence({
   // One fresh source means JACO still answers, so a dropped stream or a slow status read is only a reconnect.
   // Red is kept for a stopped runtime or when nothing has been heard for a full minute.
   const heardRecently=streamLive||snapshotLive||(streamAge!==null&&streamAge<LOST_AFTER_SECONDS)||(snapshotAge!==null&&snapshotAge<LOST_AFTER_SECONDS);
-  const workingSessions=Array.isArray(agents)?agents.reduce((count,a)=>count+Math.max(0,Number(a?.liveSessions)||0),0):0;
+  const workingSessions=Array.isArray(agents)?agents.reduce((count,a)=>count+(Array.isArray(a?.sessions)?a.sessions.filter(s=>s?.status==='BUSY').length:0),0):0;
   const connectedAgents=Array.isArray(agents)?agents.filter(a=>a?.status==='READY'||Number(a?.liveSessions)>0).length:0;
   const state=String(mission?.status||'');
   const phase=String(mission?.phase||state);
   const active=state==='ACTIVE';
-  const blocking=state==='BLOCKED'||state==='AWAITING_VERIFICATION'||approvals>0;
+  const blocking=state==='BLOCKED'||state==='AWAITING_VERIFICATION'||approvals>0||Boolean(runtimeBlocker);
   const lastAction=mission?.lastAction||null;
   const actionAge=ageInSeconds(lastAction?.at,now);
   const missionAge=ageInSeconds(mission?.updatedAt||mission?.createdAt,now);
@@ -54,21 +54,33 @@ export function auraPresence({
     mode='offline';title='Connection lost';
     detail=connection==='reconnecting'||connection==='unavailable'
       ? 'The event stream is not responding. The results last shown may be old.'
-      : !snapshotLive ? "The workspace status report is too old or missing." : 'Waiting for a fresh event stream.';
-  }else if(blocking){mode='blocked';title=approvals>0?'Your approval is needed':friendlyPhase(phase);detail=bounded(mission?.goal)||'A registered mission is waiting for action.';}
-  else if(active && unconfirmedProgress){mode='stalled';title='No new work results';detail='The mission is marked active, but there is no fresh observed progress.';}
+      : !snapshotLive ? 'The workspace status report is too old or missing.' : 'Waiting for a fresh event stream.';
+  }else if(blocking){mode='blocked';title=approvals>0?'Your approval is needed':runtimeBlocker?'The run is blocked':friendlyPhase(phase);detail=bounded(mission?.goal)||'A registered mission is waiting for action.';}
+  else if(active && unconfirmedProgress){mode='stalled';title='The mission has stalled';detail='The mission is marked active, but there is no fresh observed progress.';}
+  else if(active && phase==='READY' && !lastAction){mode='queued';title='Registered, waiting to run';detail='No tool step has started yet.';}
   else if(active){mode='working';title=friendlyPhase(phase);detail=bounded(mission?.goal)||'A mission is active.';}
-  else if(workingSessions>0){mode='observed';title='Agent connection observed';detail='Work sessions exist, but no active mission is confirmed in the mission list.';}
+  else if(connectedAgents>0){mode='observed';title='Agent connection observed';detail='Agents are connected, but no active mission is confirmed in the mission list.';}
   else {mode='ready';title='Aura is connected';detail='No active mission reported. Ask Aura to show or create something.';}
   let step=lastAction?.text ? bounded(lastAction.text) : '';
   if(!step && active) step='No tool step reported yet';
   if(!step && latestEvent?.text) step=bounded(latestEvent.text);
-  const stepAt=lastAction?.at||latestEvent?.at||null;
+  // Unrelated chat/MCP events must never reset the apparent age of a stalled mission.
+  const stepAt=active?lastAction?.at||null:latestEvent?.at||null;
+  const blocker=runtimeBlocker?bounded(runtimeBlocker):approvals>0?'A decision is waiting for you.':
+    state==='AWAITING_VERIFICATION'?'The result is waiting for verification.':
+    state==='BLOCKED'?bounded(lastAction?.result?.text)||'The mission is blocked. The cause has not been reported.':
+    active&&unconfirmedProgress?(lastAction?'No new progress has been reported. The cause is not yet verified.':'No tool step has started. The runtime has not reported why.'):
+    active&&phase==='READY'&&!lastAction?'Waiting for the executor to take the mission.':'No blocker reported.';
+  const nextAction=!connected?'Restore the connection before judging the mission status.':
+    approvals>0?'Open the decisions panel and review the waiting decision.':
+    blocking?'Review the mission evidence and the reported cause before resuming.':
+    active&&unconfirmedProgress?'Check the executor and the model. Do not start a copy of the mission.':
+    active?'Follow the next reported step. You can stop or steer the mission in the chat.':'Give Aura a mission.';
   const verified=Number.isFinite(mission?.verifiedReceipts)?mission.verifiedReceipts:null;
   const stepCount=Number.isFinite(mission?.step)?mission.step:null;
   const maxSteps=Number.isFinite(mission?.maxSteps)&&mission.maxSteps>0?mission.maxSteps:null;
   return {
-    mode,title,detail,connected,streamLive,snapshotLive,
+    mode,title,detail,connected,streamLive,snapshotLive,blocker,nextAction,missionId:mission?.id||null,
     connectionLabel:runtimeRunning===false?'Runtime stopped':connected?'JACO connected':heardRecently?'Reconnecting…':'No answer from JACO',
     modelLabel:provider&&model?bounded(provider)+' / '+bounded(model):provider?bounded(provider):'Model not observed',
     cdpLabel:cdpState==='VERIFIED'?'CDP verified':cdpState==='OBSERVED'?'CDP connected':'CDP not observed',

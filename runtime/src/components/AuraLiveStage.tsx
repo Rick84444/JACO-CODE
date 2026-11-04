@@ -165,6 +165,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
         <span className="aura-activity-pulse" data-active={activityState === 'working'} data-state={activityState} aria-hidden="true"/>
         <strong>{{
           working: tr('Aura arbetar','Aura is working'),
+          queued: tr('Väntar på att starta','Waiting to start'),
           stalled: tr('Inget händer just nu','Nothing is happening right now'),
           blocked: tr('Aura behöver dig','Aura needs you'),
           unknown: tr('Hämtar läget','Checking status'),
