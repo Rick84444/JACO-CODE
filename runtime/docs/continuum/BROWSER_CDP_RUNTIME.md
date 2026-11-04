@@ -25,7 +25,7 @@ is passed through to the Nova actuator. Nova claims a durable action record
   browser input, page content or credentials.
 - The claim file **and its directory entry** must be flushed before dispatch.
   The verified receipt file and final rename must also be flushed before
-  acknowledging success. Newly created directory ancestors are flushed too.
+  acknowledging success. The entire ancestor chain is flushed on every attempt, including retries after an interrupted directory creation.
   If directory fsync is not supported by the filesystem or platform, identified
   browser writes fail closed rather than making a crash-durability promise.
   Windows and Android physical-host semantics still require targeted acceptance
