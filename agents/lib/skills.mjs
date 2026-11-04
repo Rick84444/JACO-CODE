@@ -104,6 +104,33 @@ export async function fetchSkillList({ env = process.env, fetchImpl = fetch, run
   listCache = { at: now, value };
   return value;
 }
+// Return only skills whose declared tasks are ALREADY authorized by this mission.
+// Catalog matches are suggestions for the model to load with skill-load, never
+// additional permissions, activated procedures, or independent workers.
+export function relevantAuthorizedSkills(catalog = [], allowedTasks = [], goal = '', limit = 8) {
+  const allowed = new Set(allowedTasks);
+  const common = new Set(['this', 'that', 'with', 'from', 'into', 'your', 'using', 'make', 'create', 'build', 'code', 'agent', 'skill', 'task', 'file', 'files', 'need', 'help', 'system', 'använd', 'skapa', 'bygga', 'eller', 'detta']);
+  const terms = value => new Set((String(value || '').toLowerCase().match(/[\\p{L}\\p{N}]{4,}/gu) || []).filter(word => !common.has(word)));
+  const goalTerms = terms(goal);
+  if (!goalTerms.size) return [];
+  return catalog
+    .filter(skill => skill && typeof skill.id === 'string' && Array.isArray(skill.tasks) &&
+      skill.tasks.length > 0 && skill.tasks.every(task => allowed.has(task)))
+    .map(skill => {
+      const idTerms = terms(skill.id.replaceAll('-', ' '));
+      const descriptionTerms = terms(skill.description);
+      const score = [...goalTerms].reduce((sum, term) => sum + (idTerms.has(term) ? 3 : 0) + (descriptionTerms.has(term) ? 1 : 0), 0);
+      return { skill, score };
+    })
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.skill.id.localeCompare(b.skill.id))
+    .slice(0, Math.max(0, Math.min(12, Number(limit) || 8)))
+    .map(({ skill, score }) => ({
+      id: skill.id, description: String(skill.description || '').slice(0, 160),
+      tasks: skill.tasks, relevanceScore: score,
+    }));
+}
+
 export function resetSkillList() { listCache = { at: 0, value: null }; }
 
 export async function fetchSkill(id, { env = process.env, fetchImpl = fetch, runtimeUrl } = {}) {
