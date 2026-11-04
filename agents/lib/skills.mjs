@@ -110,7 +110,7 @@ export async function fetchSkillList({ env = process.env, fetchImpl = fetch, run
 export function relevantAuthorizedSkills(catalog = [], allowedTasks = [], goal = '', limit = 8) {
   const allowed = new Set(allowedTasks);
   const common = new Set(['this', 'that', 'with', 'from', 'into', 'your', 'using', 'make', 'create', 'build', 'code', 'agent', 'skill', 'task', 'file', 'files', 'need', 'help', 'system', 'använd', 'skapa', 'bygga', 'eller', 'detta']);
-  const terms = value => new Set((String(value || '').toLowerCase().match(/[\\p{L}\\p{N}]{4,}/gu) || []).filter(word => !common.has(word)));
+  const terms = value => new Set((String(value || '').toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || []).filter(word => !common.has(word)));
   const goalTerms = terms(goal);
   if (!goalTerms.size) return [];
   return catalog
