@@ -440,9 +440,9 @@ test('native loop edits a real isolated repository and recovers from a failing t
   fs.mkdirSync(path.join(project, 'src'));
   fs.mkdirSync(path.join(project, 'tests'));
   const source = path.join(project, 'src', 'client.mjs');
-  fs.writeFileSync(source, 'export function retryCount() { return 0; }\\n');
+  fs.writeFileSync(source, 'export function retryCount() { return 0; }\n');
   fs.writeFileSync(path.join(project, 'tests', 'client.test.mjs'),
-    "import test from 'node:test';\\nimport assert from 'node:assert/strict';\\nimport { retryCount } from '../src/client.mjs';\\ntest('retryCount is two', () => assert.equal(retryCount(), 2));\\n");
+    "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { retryCount } from '../src/client.mjs';\ntest('retryCount is two', () => assert.equal(retryCount(), 2));\n");
 
   const s = setup(t, ['repo-read', 'repo-edit', 'repo-test']);
   const mission = s.control.create({
