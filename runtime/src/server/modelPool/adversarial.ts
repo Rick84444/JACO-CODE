@@ -1,12 +1,12 @@
 import { generate, GenerateResult } from './poolManager.js';
 
-// Implementerar MAI-mönstret (Explorer → Falsifier → Synthesizer) för
-// beslut som förtjänar djupare resonemang — dvs replanering, inte varje
-// enskilt "fortsätt till nästa steg". Explorer = DeepSeek (default,
-// kostnadseffektiv). Falsifier = lokal modell, men med en EXPLICIT
-// instruktion att leta fel, inte bekräfta. Det är skillnaden mot att
-// bara fråga två modeller samma sak — Falsifiern belönas inte för att
-// hålla med.
+// Implements the MAI pattern (Explorer → Falsifier → Synthesizer) for
+// decisions that deserve deeper reasoning — i.e. replanning, not every
+// single "continue to the next step". Explorer = DeepSeek (default,
+// cost-effective). Falsifier = local model, but with an EXPLICIT
+// instruction to look for faults, not to confirm. That is the difference from
+// just asking two models the same thing — the Falsifier is not rewarded for
+// agreeing.
 
 export interface AdversarialResult {
   proposal: string;
@@ -18,11 +18,11 @@ export interface AdversarialResult {
 }
 
 export const FALSIFIER_SYSTEM_PROMPT = `
-Du är en falsifierare, inte en assistent. Ditt enda jobb är att hitta fel,
-svagheter, dolda antaganden eller bättre alternativ i förslaget nedan.
-Håll INTE med om det inte finns goda skäl. Om förslaget är svagt,
-förklara exakt varför och föreslå en alternativ riktning.
-Svara ENDAST med JSON: { "verdict": "survives" | "rejected", "critique": "..." }
+You are a falsifier, not an assistant. Your only job is to find faults,
+weaknesses, hidden assumptions or better alternatives in the proposal below.
+Do NOT agree unless there are good reasons. If the proposal is weak,
+explain exactly why and suggest an alternative direction.
+Respond ONLY with JSON: { "verdict": "survives" | "rejected", "critique": "..." }
 `.trim();
 
 export function parseFalsifierResponse(raw: string): { verdict: 'survives' | 'rejected'; critique: string } {
@@ -30,25 +30,25 @@ export function parseFalsifierResponse(raw: string): { verdict: 'survives' | 're
   try {
     return JSON.parse(cleaned);
   } catch {
-    // Kan inte tolkas som strikt avslag — hellre tvinga en syntes-runda
-    // än att låta ett oparseerbart svar räknas som godkänt.
-    return { verdict: 'rejected', critique: `Falsifierarens svar gick inte att tolka: ${raw.slice(0, 200)}` };
+    // Cannot be parsed: treat as a strict rejection — better to force a synthesis round
+    // than to let an unparseable answer count as approved.
+    return { verdict: 'rejected', critique: `The falsifier's answer could not be parsed: ${raw.slice(0, 200)}` };
   }
 }
 
 /**
- * Kör ett fullt adversarial-varv. Används av decideNextStep vid
- * replanering (needsReplanning === true) — dyrare i tid/anrop, så det
- * ska inte köras för varje litet steg, bara när strategin faktiskt
- * behöver ifrågasättas.
+ * Runs a full adversarial round. Used by decideNextStep during
+ * replanning (needsReplanning === true) — more expensive in time/calls, so it
+ * should not run for every small step, only when the strategy actually
+ * needs to be challenged.
  */
 export async function reasonAdversarially(question: string, context: string): Promise<AdversarialResult> {
-  // Steg 1: Explorer — DeepSeek / primär modell föreslår, som default.
-  const explorerPrompt = `${context}\n\nFråga: ${question}\n\nGe ditt bästa förslag på lösning/strategi.`;
+  // Step 1: Explorer — DeepSeek / primary model proposes, by default.
+  const explorerPrompt = `${context}\n\nQuestion: ${question}\n\nGive your best proposed solution/strategy.`;
   const proposal: GenerateResult = await generate({ prompt: explorerPrompt });
 
-  // Steg 2: Falsifier — lokal modell / granskare, tvingad att leta fel.
-  const falsifierPrompt = `Förslag att granska:\n${proposal.text}\n\nKontext:\n${context}`;
+  // Step 2: Falsifier — local model / reviewer, forced to look for faults.
+  const falsifierPrompt = `Proposal to review:\n${proposal.text}\n\nContext:\n${context}`;
   const falsifierRaw: GenerateResult = await generate({
     prompt: falsifierPrompt,
     systemPrompt: FALSIFIER_SYSTEM_PROMPT,
@@ -66,18 +66,18 @@ export async function reasonAdversarially(question: string, context: string): Pr
     };
   }
 
-  // Steg 3: Synthesizer — tvinga Explorer att tänka om med kritiken som input.
-  // Detta är själva "nytt tankesätt"-momentet: DeepSeek får inte bara
-  // upprepa sitt första svar, den måste förhålla sig till varför det föll.
+  // Step 3: Synthesizer — force the Explorer to rethink with the critique as input.
+  // This is the actual "new way of thinking" step: DeepSeek may not just
+  // repeat its first answer, it must address why it failed.
   const synthesisPrompt = `
-Ditt tidigare förslag föll för granskning:
+Your previous proposal failed review:
 ${proposal.text}
 
-Kritik:
+Critique:
 ${falsified.critique}
 
-Ge ett reviderat förslag som konkret adresserar kritiken. Upprepa inte
-det ursprungliga förslaget oförändrat.
+Give a revised proposal that concretely addresses the critique. Do not repeat
+the original proposal unchanged.
 `.trim();
   const synthesis: GenerateResult = await generate({ prompt: synthesisPrompt });
 

@@ -2,21 +2,21 @@
 /**
  * JACO Continuum operations control (jaco-ctl).
  *
- * Ett enda kommando som äger start/stopp/status för Continuum-processerna,
- * så att ingen behöver köra råa node/curl-kommandon för hand. Håller reda
- * på PID:er i .jaco/run/*.pid och adopterar redan körande processer på
- * kända portar istället för att duplicera dem.
+ * One single command that owns start/stop/status for the Continuum processes,
+ * so nobody needs to run raw node/curl commands by hand. Keeps track
+ * of PIDs in .jaco/run/*.pid and adopts already running processes on
+ * known ports instead of duplicating them.
  *
- * Kommandon:
+ * Commands:
  *   node scripts/jaco-ctl.mjs up [--with-peer]
  *   node scripts/jaco-ctl.mjs down [--with-peer] [--all]
  *   node scripts/jaco-ctl.mjs status
  *   node scripts/jaco-ctl.mjs logs <service> [lines]
  *
- * "core"      = continuum (3020) + edge (PODAR-bryggan)
- * "with-peer" = lägger till peerB-continuum (3021) + två A2A-adaptrar
- *               (2998->3020, 2999->3021) för A2A-utveckling/test.
- *               Detta är en lokal stand-in-motpart, inte en extern peer.
+ * "core"      = continuum (3020) + edge (the PODAR bridge)
+ * "with-peer" = adds peerB-continuum (3021) + two A2A adapters
+ *               (2998->3020, 2999->3021) for A2A development/testing.
+ *               This is a local stand-in counterparty, not an external peer.
  */
 
 import { spawn, execSync } from 'node:child_process';
@@ -32,11 +32,11 @@ for (const d of [RUN_DIR, LOG_DIR]) if (!fs.existsSync(d)) fs.mkdirSync(d, { rec
 const isWin = process.platform === 'win32';
 
 /**
- * Minimal .env-läsare. Ingen av de körda apparna (server.ts,
- * standalone-server.mjs) anropar faktiskt dotenv.config() själva - paketet
- * ligger bara i package.json oanvänt. Så jaco-ctl läser filen här och
- * skickar med som env till varje spawnad process, istället för att kräva
- * en kodändring i varje entry point.
+ * Minimal .env reader. None of the apps run (server.ts,
+ * standalone-server.mjs) actually calls dotenv.config() itself - the package
+ * just sits unused in package.json. So jaco-ctl reads the file here and
+ * passes it as env to every spawned process, instead of requiring
+ * a code change in every entry point.
  */
 function loadDotEnv(file = path.join(ROOT, '.env')) {
   if (!fs.existsSync(file)) return {};
@@ -119,7 +119,7 @@ function isPidAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-/** Hitta PID som lyssnar på en port via netstat (Windows) / lsof-liknande på andra plattformar. */
+/** Find the PID listening on a port via netstat (Windows) / lsof-like on other platforms. */
 function findPidByPort(port) {
   try {
     if (isWin) {
@@ -137,7 +137,7 @@ function findPidByPort(port) {
   } catch { return null; }
 }
 
-/** Hitta PID via kommandoradsmatchning - fallback för tjänster utan port (t.ex. edge-daemonen). */
+/** Find a PID via command-line matching - fallback for services without a port (e.g. the edge daemon). */
 function findPidByCmd(matchCmd) {
   try {
     if (isWin) {
@@ -188,13 +188,13 @@ async function startService(svc) {
   if ((existingHealth && existingHealth.ok) || (existingPid && isPidAlive(existingPid))) {
     const pid = existingPid || readPidFile(svc)?.pid || null;
     writePidFile(svc, { pid, port: svc.port, adopted: true, startedAt: new Date().toISOString() });
-    log(`[SKIP] ${svc.name} kör redan${pid ? ` (PID ${pid})` : ''}${svc.port ? ` på :${svc.port}` : ''} - adopterad.`);
+    log(`[SKIP] ${svc.name} already running${pid ? ` (PID ${pid})` : ''}${svc.port ? ` on :${svc.port}` : ''} - adopted.`);
     return;
   }
 
   const stored = readPidFile(svc);
   if (stored?.pid && isPidAlive(stored.pid)) {
-    log(`[SKIP] ${svc.name} kör redan (PID ${stored.pid}, ingen port att verifiera mot).`);
+    log(`[SKIP] ${svc.name} already running (PID ${stored.pid}, no port to verify against).`);
     return;
   }
 
@@ -203,8 +203,8 @@ async function startService(svc) {
     cwd: svc.cwd,
     env: { ...DOTENV, ...process.env, ...svc.env },
     detached: true,
-    windowsHide: true, // annars flashar ett synligt konsolfönster på Windows för varje spawn
-    shell: svc.shell, // .cmd-shims (npx) kraschar med EINVAL under windowsHide utan shell:true på Windows
+    windowsHide: true, // otherwise a visible console window flashes on Windows for every spawn
+    shell: svc.shell, // .cmd shims (npx) crash with EINVAL under windowsHide without shell:true on Windows
     stdio: ['ignore', logFd, logFd],
   });
   child.unref();
@@ -216,12 +216,12 @@ async function stopService(svc) {
   const stored = readPidFile(svc);
   const pid = stored?.pid || findExistingPid(svc);
   if (!pid || !isPidAlive(pid)) {
-    log(`[SKIP] ${svc.name} kör inte.`);
+    log(`[SKIP] ${svc.name} is not running.`);
     removePidFile(svc);
     return;
   }
   const ok = killPid(pid);
-  log(ok ? `[STOP] ${svc.name} (PID ${pid}) stoppad.` : `[FAIL] kunde inte stoppa ${svc.name} (PID ${pid}).`);
+  log(ok ? `[STOP] ${svc.name} (PID ${pid}) stopped.` : `[FAIL] could not stop ${svc.name} (PID ${pid}).`);
   removePidFile(svc);
 }
 
@@ -255,8 +255,8 @@ async function statusAll(services) {
 
 function tailLog(name, lines = 40) {
   const svc = SERVICES.find(s => s.name === name);
-  if (!svc) { log(`Okänd tjänst: ${name}. Kända: ${SERVICES.map(s => s.name).join(', ')}`); return; }
-  if (!fs.existsSync(svc.logFile)) { log(`Ingen logg än: ${svc.logFile}`); return; }
+  if (!svc) { log(`Unknown service: ${name}. Known: ${SERVICES.map(s => s.name).join(', ')}`); return; }
+  if (!fs.existsSync(svc.logFile)) { log(`No log yet: ${svc.logFile}`); return; }
   const content = fs.readFileSync(svc.logFile, 'utf8').split('\n');
   console.log(content.slice(-lines).join('\n'));
 }
@@ -286,13 +286,13 @@ async function main() {
     const linesArg = rest.find(a => /^\d+$/.test(a));
     tailLog(name, linesArg ? Number(linesArg) : 40);
   } else {
-    console.log(`Användning:
+    console.log(`Usage:
   node scripts/jaco-ctl.mjs up [--with-peer|--with-trade]
   node scripts/jaco-ctl.mjs down [--with-peer|--with-trade|--all]
   node scripts/jaco-ctl.mjs status
   node scripts/jaco-ctl.mjs logs <service> [lines]
 
-Tjänster: ${SERVICES.map(s => `${s.name} (${s.group})`).join(', ')}`);
+Services: ${SERVICES.map(s => `${s.name} (${s.group})`).join(', ')}`);
     process.exit(1);
   }
 }

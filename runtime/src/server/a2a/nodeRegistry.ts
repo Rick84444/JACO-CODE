@@ -43,7 +43,7 @@ export function getLocalAgentCard(baseUrl: string): A2AAgentCard {
       id: 'code-review-audit',
       name: 'Automated Code Audit',
       version: '1.0.0',
-      description: 'Analyserar kodfiler för säkerhetsluckor, logiska fel och typ-defekter.',
+      description: 'Analyzes code files for security gaps, logic errors and type defects.',
       inputSchema: { code: 'string', language: 'string' },
       outputSchema: { issues: 'array', score: 'number' },
       pricePerCallCredits: 0,
@@ -53,7 +53,7 @@ export function getLocalAgentCard(baseUrl: string): A2AAgentCard {
       id: 'adversarial-falsifier',
       name: 'Adversarial Decision Falsifier',
       version: '1.0.0',
-      description: 'Stresstestar strategiska beslut genom motståndsresonemang (Explorer-Falsifier).',
+      description: 'Stress-tests strategic decisions through adversarial reasoning (Explorer-Falsifier).',
       inputSchema: { proposal: 'string', context: 'string' },
       outputSchema: { survives: 'boolean', criticism: 'string' },
       pricePerCallCredits: 0,
@@ -78,7 +78,7 @@ export function getLocalAgentCard(baseUrl: string): A2AAgentCard {
     protocolVersion: '1.0.0',
     nodeId: ident.nodeId,
     name: ident.name,
-    description: 'JACO OS Autonomous Agent Node med självförbättrande slingor och A2A-protokoll.',
+    description: 'JACO OS Autonomous Agent Node with self-improving loops and the A2A protocol.',
     endpointUrl: baseUrl,
     capabilities: [...builtInCapabilities, ...dynamicCapabilities],
     supportedProtocols: ['http-json-rpc'],
@@ -134,12 +134,12 @@ export async function pingAndSyncPeer(endpointUrl: string): Promise<{ success: b
     clearTimeout(timeout);
 
     if (!res.ok) {
-      return { success: false, error: `Noden svarade med HTTP ${res.status}` };
+      return { success: false, error: `Node responded with HTTP ${res.status}` };
     }
 
     const card: A2AAgentCard = await res.json();
     if (!card.nodeId || !card.capabilities) {
-      return { success: false, error: 'Ogiltigt AgentCard format.' };
+      return { success: false, error: 'Invalid AgentCard format.' };
     }
 
     registerPeerNode({
@@ -151,6 +151,6 @@ export async function pingAndSyncPeer(endpointUrl: string): Promise<{ success: b
 
     return { success: true, agentCard: card };
   } catch (err: any) {
-    return { success: false, error: err?.message || 'Kunde inte nå noden.' };
+    return { success: false, error: err?.message || 'Could not reach the node.' };
   }
 }

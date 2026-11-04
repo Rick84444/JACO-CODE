@@ -20,7 +20,7 @@ export function auraStageCandidate(events = []) {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (!event || !event.id || !event.evidence) continue;
-    const routine = /läser en fil|undersöker projektets filer|jaco_preflight|repo-read|read-file/i.test(event.text || '');
+    const routine = /reading a file|inspecting project files|läser en fil|undersöker projektets filer|jaco_preflight|repo-read|read-file/i.test(event.text || '');
     if (routine && event.evidence.outcome === 'verified' && !event.evidence.commit && !event.evidence.url) continue;
     const material = auraMaterialKind(event);
     if (material) return { event, material };
@@ -35,6 +35,26 @@ export function auraStageCandidate(events = []) {
     }
   }
   return null;
+}
+
+// The heading must match the observed state: a mission that is merely registered is not work in progress.
+export function auraActivityState(mode, hasMission) {
+  if (!hasMission) return 'idle';
+  return { working: 'working', stalled: 'stalled', blocked: 'blocked', reconnecting: 'unknown', connecting: 'unknown', offline: 'unknown' }[mode] || 'unknown';
+}
+
+// The operator's view of the work: the latest observed steps, newest first, for the current mission when
+// there is one. Repeats of one step are folded, and nothing here is inferred from a model's text.
+export function auraActivityFeed(events = [], missionId = null, limit = 8) {
+  if (!Array.isArray(events)) return [];
+  const scoped = events.filter(event => event?.id && event.text && (!missionId || event.missionId === missionId));
+  const steps = [];
+  for (let i = scoped.length - 1; i >= 0 && steps.length < limit; i--) {
+    const last = steps.at(-1);
+    if (last && last.event.text === scoped[i].text) { last.count++; continue; }
+    steps.push({ event: scoped[i], count: 1 });
+  }
+  return steps;
 }
 
 export function auraStageHistory(events = [], limit = 7) {

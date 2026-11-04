@@ -104,7 +104,7 @@ Lite includes the IDE, Aura chat, Nova, local Workplace coordination and the JAC
 ## Give Nova a goal
 
 Nova changes code in a project that is a git repository with at least one commit (`git init` and a first
-commit if it is not; the IDE tells you when it is missing). Write the goal in the chat, choose "Uppdrag" and press "Starta uppdrag". Use "Fråga" to discuss observed work while that mission continues. Nova then:
+commit if it is not; the IDE tells you when it is missing). Write the goal in the chat, choose "Mission" and press "Start mission". Use "Ask" to discuss observed work while that mission continues. Nova then:
 
 - works on its own branch, `jaco/mission-...`, in a separate worktree. Your branch and files are not touched,
   and it never pushes or merges;

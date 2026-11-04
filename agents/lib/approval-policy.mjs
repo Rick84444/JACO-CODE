@@ -89,7 +89,7 @@ export function updateApprovalPolicy({ level, extraBlocked, reason, actor }, { e
   return { ...next, previousLevel: current.level };
 }
 
-// Operator 2026-10-09: "utgift stopp räknar inte in våra llm api i det". JACO's own model usage (DeepSeek,
+// Operator 2026-10-09: "the spend stop does not count our LLM APIs". JACO's own model usage (DeepSeek,
 // Groq, Ollama Cloud and the like) is bounded by the economic budget, not by the spend stop, so a clause
 // about a model provider or API usage never makes a mission spend-related. Clauses are cut at punctuation and
 // at and/then/och/sedan, so "use DeepSeek, then pay the invoice" still stops at the payment.

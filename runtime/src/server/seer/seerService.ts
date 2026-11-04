@@ -77,7 +77,7 @@ class SeerService {
   }
 
   /**
-   * Genererar verklig realtidstelemetri utan simulerade slumptal.
+   * Produces real-time telemetry without simulated random numbers.
    */
   public generateRealStrategicState(): Record<string, any> {
     const ztp = getZTPRuntime();
@@ -95,7 +95,7 @@ class SeerService {
     const currentDrift = ztp.pointRead('manifold_drift_control') ?? 0;
     const velocityState = ztp.pointRead('agent_velocity') || { trend: 'UNAVAILABLE', score: 0, parallel_workers: 0 };
 
-    // Hämta verkliga hårdvarumått
+    // Read real hardware metrics
     const hw = telemetry.collectNodeHardwareMetrics();
     const cpuObserved = hw?.cpu?.utilizationPercent != null;
     const memoryObserved = Boolean(hw?.memory?.heapTotalMb);
@@ -143,7 +143,7 @@ class SeerService {
   }
 
   /**
-   * Kör en fullständig, icke-mockad strategisk regleringscykel med AI-modell och uppdaterar ZTP-CRDT.
+   * Runs a full, non-mocked strategic regulation cycle with an AI model and updates the ZTP-CRDT.
    */
   public async executeCycle(): Promise<{
     state: Record<string, any>;
@@ -161,10 +161,10 @@ class SeerService {
       workers: { active: Number(statePayload.velocity?.active_workers || 0), max: 16 },
     });
 
-    // 1. Skicka state till ZTP-journalen
+    // 1. Send state to the ZTP journal
     ztp.recordState('seer_strategic_state', statePayload);
 
-    // 2. Logga i meddelandeströmmen
+    // 2. Log in the message stream
     this.messageHistory.push({
       id: `state-${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -174,7 +174,7 @@ class SeerService {
       metadata: { cycleId }
     });
 
-    // 3. Ruttar anropet till optimal modell (Gemini Pro, Flash eller lokal Ollama)
+    // 3. Routes the call to the optimal model (Gemini Pro, Flash or local Ollama)
     seerLiveWorkstream.update({ phase: 'PLANNING', activeModule: 'SEER' });
     seerLiveWorkstream.record({ actor: 'SEER', type: 'seer.phase.changed', message: 'SEER entered PLANNING', verified: true });
     const routing = routeRequest('strategic_regulation');
@@ -224,12 +224,12 @@ RULES:
         rawOutput = res.text;
         usedModel = `Ollama (${model})`;
       } else {
-        // Fallback om ingen provider är online
+        // Fallback when no provider is online
         rawOutput = this.buildRuleBasedDirectiveJson(statePayload);
         usedModel = 'Local Rule-Based Deterministic Regulator';
       }
     } catch (err: any) {
-      // Tyst nedgradering - loggas inte som error då det är en förväntad fallback-mekanism när endpoints saknas
+      // Silent degradation - not logged as an error since it is an expected fallback when endpoints are missing
       rawOutput = this.buildRuleBasedDirectiveJson(statePayload);
       usedModel = 'Local Deterministic Fallback Engine';
     }
@@ -238,10 +238,10 @@ RULES:
     seerLiveWorkstream.update({ phase: 'VERIFYING', provider: routing.provider.type, model: usedModel });
     seerLiveWorkstream.record({ actor: 'SEER', type: 'verification.started', message: `Verifying strategic directive from ${usedModel}`, verified: true });
 
-    // 4. Tolka och validera JSON-direktivet
+    // 4. Parse and validate the JSON directive
     let parsedDirective: StrategicControlDirective;
     try {
-      // Rensa eventuell markdown-formatering
+      // Strip any markdown formatting
       const cleaned = rawOutput.replace(/```json/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleaned);
 
@@ -265,7 +265,7 @@ RULES:
         reasoning_summary: parsed.reasoning_summary || 'Autonomous regulatory cycle processed.'
       };
     } catch {
-      // Fallback om svaret inte var giltig JSON
+      // Fallback when the answer was not valid JSON
       parsedDirective = {
         protocol: 'JACO_STRATEGIC_CONTROL_V1',
         cycle_id: cycleId,
@@ -287,7 +287,7 @@ RULES:
       };
     }
 
-    // 5. Tillämpa direktivet i ZTP-CRDT och lokal runtime
+    // 5. Apply the directive to the ZTP-CRDT and local runtime
     this.currentMode = parsedDirective.operating_mode;
     this.lastDirective = parsedDirective;
 
@@ -301,11 +301,11 @@ RULES:
 
     logActionToMemory(
       'seer_strategic_cycle',
-      `SEER reglerade läge till ${this.currentMode} via ${usedModel} (${latencyMs}ms)`,
+      `SEER set mode to ${this.currentMode} via ${usedModel} (${latencyMs}ms)`,
       ['seer', 'coo', this.currentMode]
     );
 
-    // 6. Logga svaret i meddelandeströmmen
+    // 6. Log the answer in the message stream
     this.messageHistory.push({
       id: `ctrl-${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -315,7 +315,7 @@ RULES:
       metadata: { cycleId, usedModel, latencyMs }
     });
 
-    // Begränsa historik så minnet inte sväller oändligt
+    // Cap history so memory does not grow without bound
     if (this.messageHistory.length > 200) {
       this.messageHistory = this.messageHistory.slice(-150);
     }
@@ -378,9 +378,9 @@ RULES:
     seerLiveWorkstream.update({ phase: 'OBSERVING', activeModule: 'SEER', nextCycleAt: new Date(Date.now() + intervalMs).toISOString() });
     seerLiveWorkstream.record({ actor: 'SEER', type: 'seer.loop.started', message: `SEER loop started at ${intervalMs} ms cadence`, verified: true });
 
-    // Kör en cykel direkt vid start
+    // Run one cycle immediately on start
     this.executeCycle().catch(err => {
-      logErrorToMemory('seerService', `Fel vid initial SEER-cykel: ${err.message}`);
+      logErrorToMemory('seerService', `Error in initial SEER cycle: ${err.message}`);
     });
 
     // A local model can take longer than the cadence; skip a tick instead of stacking concurrent cycles.
@@ -389,7 +389,7 @@ RULES:
       if (cycleInFlight) return;
       cycleInFlight = true;
       this.executeCycle().catch(err => {
-        logErrorToMemory('seerService', `Fel vid periodisk SEER-cykel: ${err.message}`);
+        logErrorToMemory('seerService', `Error in periodic SEER cycle: ${err.message}`);
       }).finally(() => { cycleInFlight = false; });
     }, intervalMs);
   }

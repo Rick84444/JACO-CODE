@@ -39,7 +39,7 @@ export async function pingOllama(endpoint: string = 'http://127.0.0.1:11434'): P
       isHealthy: false,
       latencyMs: Date.now() - startTime,
       models: [],
-      error: err.name === 'AbortError' ? 'Timeout mot Ollama' : err.message || 'Lokal Ollama nås ej'
+      error: err.name === 'AbortError' ? 'Timeout talking to Ollama' : err.message || 'Local Ollama unreachable'
     };
   }
 }
@@ -64,7 +64,7 @@ export async function generateOllamaCompletion(
   });
 
   if (!response.ok) {
-    throw new Error(`Ollama anrop misslyckades med HTTP ${response.status}`);
+    throw new Error(`Ollama call failed with HTTP ${response.status}`);
   }
 
   const data = await response.json();

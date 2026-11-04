@@ -78,11 +78,11 @@ const INITIAL_INTELLIGENCE_ITEMS: CompetitiveIntelligenceMemoryItem[] = [
     timestamp: new Date(Date.now() - 3600000).toISOString(),
     competitorName: 'Cursor AI & Claude Code',
     featureDomain: 'SUBGOAL_DECOMPOSITION',
-    observedUpdate: 'Infört atomär subtask-partitionering med krav på tvingande syntax- och linter-gates (<30 sekunders subtasks) innan nästa delmål påbörjas.',
-    architecturalBreakdown: 'Monolitiska planer tenderar att fallera i 45% av fallen p.g.a. kontext-drift. Genom att begränsa varje delmål till en atomär verifierbar enhet uppnås 96% determinism.',
-    compressedDigest: '[COMPRESSED MEMORY] Subgoal Granularity Invariant: Bryt alltid ned användarens mål i 5-8 atomära delmål med live-kommandon och obligatoriska testkontrakt.',
-    tacticalCounterStrategy: 'JACO ska automatiskt generera 5-8 granulära delmål med AST- och linterverifiering i varje ny Blueprint.',
-    impactOnUpcomingPlans: 'Framtvingar minst 5 granulära delmål per planering med tilldelade sub-agenter och verifieringskommandon.',
+    observedUpdate: 'Introduced atomic subtask partitioning with mandatory syntax and linter gates (<30-second subtasks) before the next subgoal starts.',
+    architecturalBreakdown: 'Monolithic plans tend to fail in 45% of cases due to context drift. Limiting each subgoal to an atomic verifiable unit achieves 96% determinism.',
+    compressedDigest: '[COMPRESSED MEMORY] Subgoal Granularity Invariant: Always break the operator goal down into 5-8 atomic subgoals with live commands and mandatory test contracts.',
+    tacticalCounterStrategy: 'JACO should automatically generate 5-8 granular subgoals with AST and linter verification in every new Blueprint.',
+    impactOnUpcomingPlans: 'Enforces at least 5 granular subgoals per plan with assigned sub-agents and verification commands.',
     confidenceScore: 98,
     sourceUrls: ['https://docs.cursor.com/agent/subgoals', 'https://anthropic.com/claude-code'],
     proofHash: crypto.createHash('sha256').update('ci_mem_cursor_01').digest('hex').substring(0, 16),
@@ -94,11 +94,11 @@ const INITIAL_INTELLIGENCE_ITEMS: CompetitiveIntelligenceMemoryItem[] = [
     timestamp: new Date(Date.now() - 7200000).toISOString(),
     competitorName: 'Devin (Cognition AI)',
     featureDomain: 'COMPRESSED_MEMORY_RAG',
-    observedUpdate: 'Destillerat och hierarkiskt minneslager som komprimerar råa terminal- och fel-loggar till 2-meningars synteser för långvariga sessioner.',
-    architecturalBreakdown: 'Att lagra fullständiga loggar i agentens kontextfönster mättar minnet snabbt. Komprimerade minnesnoder med SHA-256 integritet minskar token-förbrukning med 82%.',
-    compressedDigest: '[COMPRESSED MEMORY] Distilled Memory Pattern: Ersätt fullständiga terminalutskrifter med komprimerade minnesnoder som injiceras direkt i resonemangsmotorn.',
-    tacticalCounterStrategy: 'Spara alla lyckade strategier i JACOs komprimerade minne och injicera dem dynamiskt i PlanDecide.',
-    impactOnUpcomingPlans: 'Kopplar samman varje genererat delmål med relevanta komprimerade minnes-ID:n för att förhindra upprepade misstag.',
+    observedUpdate: 'Distilled, hierarchical memory layer that compresses raw terminal and error logs into two-sentence syntheses for long-running sessions.',
+    architecturalBreakdown: 'Storing full logs in the agent context window saturates memory quickly. Compressed memory nodes with SHA-256 integrity reduce token consumption by 82%.',
+    compressedDigest: '[COMPRESSED MEMORY] Distilled Memory Pattern: Replace full terminal output with compressed memory nodes injected directly into the reasoning engine.',
+    tacticalCounterStrategy: 'Save all successful strategies in JACO compressed memory and inject them dynamically into PlanDecide.',
+    impactOnUpcomingPlans: 'Links every generated subgoal to relevant compressed memory IDs to prevent repeated mistakes.',
     confidenceScore: 96,
     sourceUrls: ['https://cognition.ai/blog/devin-architecture-memory'],
     proofHash: crypto.createHash('sha256').update('ci_mem_devin_02').digest('hex').substring(0, 16),
@@ -110,11 +110,11 @@ const INITIAL_INTELLIGENCE_ITEMS: CompetitiveIntelligenceMemoryItem[] = [
     timestamp: new Date(Date.now() - 14400000).toISOString(),
     competitorName: 'Windsurf Cascade (Codeium)',
     featureDomain: 'A2A_PROTOCOL',
-    observedUpdate: 'Dual-Agent Gatekeeper och Adversarial Falsifier som proaktivt simulerar felscenarier innan källkodsändringar verkställs.',
-    architecturalBreakdown: 'Genom att låta en separat granskarmodell falsifiera genererad kod minimeras runtime-krascher med 99.2%.',
-    compressedDigest: '[COMPRESSED MEMORY] Dual-Agent Verification: Slutför aldrig ett delmål utan att Falsifier-agenten och Linter har godkänt verifieringsbeviset.',
-    tacticalCounterStrategy: 'Kör adversarial röstning i modelPool och logga beslut i innerReasoningLogs.',
-    impactOnUpcomingPlans: 'Inkorporerar auditLogs och säkerhetsgranskning för alla utförarsteg i planen.',
+    observedUpdate: 'Dual-Agent Gatekeeper and Adversarial Falsifier that proactively simulate failure scenarios before source changes are applied.',
+    architecturalBreakdown: 'Letting a separate reviewer model falsify generated code reduces runtime crashes by 99.2%.',
+    compressedDigest: '[COMPRESSED MEMORY] Dual-Agent Verification: Never complete a subgoal until the Falsifier agent and the linter have approved the verification evidence.',
+    tacticalCounterStrategy: 'Run adversarial voting in modelPool and log decisions in innerReasoningLogs.',
+    impactOnUpcomingPlans: 'Incorporates auditLogs and security review for every executor step in the plan.',
     confidenceScore: 94,
     sourceUrls: ['https://codeium.com/windsurf/cascade'],
     proofHash: crypto.createHash('sha256').update('ci_mem_windsurf_03').digest('hex').substring(0, 16),
@@ -126,11 +126,11 @@ const INITIAL_INTELLIGENCE_ITEMS: CompetitiveIntelligenceMemoryItem[] = [
     timestamp: new Date(Date.now() - 21600000).toISOString(),
     competitorName: 'OpenAI Swarm & Operator',
     featureDomain: 'AUTONOMOUS_DAEMON',
-    observedUpdate: 'Lättvikts-handshakes och direkt överlämning mellan specialiserade agenter via standardiserade JSON-scheman.',
-    architecturalBreakdown: 'Tunga orkestreringsramverk skapar 300ms+ overhead per steg. Direkta sub-agent-övergångar sänker latens under 40ms.',
-    compressedDigest: '[COMPRESSED MEMORY] Autonomous Handshake: Utnyttja direkta A2A-anrop mellan under-agenter och logga statusövergångar synkront.',
-    tacticalCounterStrategy: 'Integrera sub-agenter som Code Refactor Agent, Security Auditor och Marketplace Broker i delmålsplaner.',
-    impactOnUpcomingPlans: 'Tilldelar specifika sub-agenter till varje delmålssteg i stället för en generell master-modell.',
+    observedUpdate: 'Lightweight handshakes and direct handoff between specialized agents via standardized JSON schemas.',
+    architecturalBreakdown: 'Heavy orchestration frameworks add 300ms+ overhead per step. Direct sub-agent transitions bring latency below 40ms.',
+    compressedDigest: '[COMPRESSED MEMORY] Autonomous Handshake: Use direct A2A calls between sub-agents and log status transitions synchronously.',
+    tacticalCounterStrategy: 'Integrate sub-agents such as Code Refactor Agent, Security Auditor and Marketplace Broker into subgoal plans.',
+    impactOnUpcomingPlans: 'Assigns specific sub-agents to each subgoal step instead of a general master model.',
     confidenceScore: 91,
     sourceUrls: ['https://github.com/openai/swarm'],
     proofHash: crypto.createHash('sha256').update('ci_mem_swarm_04').digest('hex').substring(0, 16),
@@ -141,7 +141,7 @@ const INITIAL_INTELLIGENCE_ITEMS: CompetitiveIntelligenceMemoryItem[] = [
 
 class MarketWatchService {
   private isRunning: boolean = true;
-  private pollingIntervalSeconds: number = 180; // 3 minuter default
+  private pollingIntervalSeconds: number = 180; // 3 minutes default
   private timer: NodeJS.Timeout | null = null;
   private lastScanTimestamp: string | null = new Date().toISOString();
   private nextScheduledScan: string | null = new Date(Date.now() + 180000).toISOString();
@@ -163,7 +163,7 @@ class MarketWatchService {
   }
 
   /**
-   * Returnerar nuvarande Market Watch-status
+   * Returns the current Market Watch state
    */
   public getState(): MarketWatchServiceState {
     return {
@@ -180,7 +180,7 @@ class MarketWatchService {
   }
 
   /**
-   * Startar den periodiska övervakningen
+   * Starts periodic monitoring
    */
   public startPeriodicScan(intervalSec?: number) {
     if (intervalSec && intervalSec > 0) {
@@ -206,7 +206,7 @@ class MarketWatchService {
   }
 
   /**
-   * Stoppar den periodiska övervakningen
+   * Stops periodic monitoring
    */
   public stopPeriodicScan() {
     this.isRunning = false;
@@ -218,10 +218,10 @@ class MarketWatchService {
   }
 
   /**
-   * Ändrar polling-intervall
+   * Changes the polling interval
    */
   public setIntervalSeconds(intervalSec: number) {
-    if (intervalSec < 30) intervalSec = 30; // Minst 30s
+    if (intervalSec < 30) intervalSec = 30; // At least 30s
     this.pollingIntervalSeconds = intervalSec;
     if (this.isRunning) {
       this.startPeriodicScan(intervalSec);
@@ -229,14 +229,14 @@ class MarketWatchService {
   }
 
   /**
-   * Växlar auto-injektion till resonemangsmotorn
+   * Toggles auto-injection into the reasoning engine
    */
   public setAutoInject(enabled: boolean) {
     this.autoInjectIntoReasoning = enabled;
   }
 
   /**
-   * Kör OpenClaw för att skrapa och syntetisera en konkurrentinsikt
+   * Runs OpenClaw to scrape and synthesize a competitor insight
    */
   public async executeOpenClawScrape(targetId?: string, customQuery?: string): Promise<{
     success: boolean;
@@ -248,7 +248,7 @@ class MarketWatchService {
     const nowIso = new Date().toISOString();
     const openClawTaskId = `task-oc-mw-${Date.now()}`;
 
-    // Markera target som scanning
+    // Mark target as scanning
     target.status = 'scanning';
     target.lastScannedAt = nowIso;
 
@@ -257,7 +257,7 @@ class MarketWatchService {
 
     let rawCrawlData = '';
     try {
-      // Försök hämta data via OpenClaw / HTTP
+      // Try to fetch data via OpenClaw / HTTP
       const fetchRes = await fetch(targetUrl, {
         headers: { 'User-Agent': 'Mozilla/5.0 (JACO-OpenClaw-Market-Watch-Bot/2.0)' },
         signal: AbortSignal.timeout(6000)
@@ -268,27 +268,27 @@ class MarketWatchService {
         rawCrawlData = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 2000);
       }
     } catch {
-      // Ignorera HTTP-fel och gå vidare till modell-syntes
+      // Ignore HTTP errors and continue to model synthesis
     }
 
-    // Bygg prompt för LLM för att komprimera konkurrentdata till strukturerat Competitive Intelligence memory item
+    // Build the LLM prompt that compresses competitor data into a structured Competitive Intelligence memory item
     const prompt = `
-Du är OpenClaw Market Watch & Competitive Intelligence Scraper Agent för JACO OS.
-Vi övervakar kontinuerligt konkurrentlandskapet: ${target.name} (${target.ecosystem}).
-Fokusområden: ${target.focusAreas.join(', ')}.
+You are the OpenClaw Market Watch & Competitive Intelligence Scraper Agent for JACO OS.
+We continuously monitor the competitive landscape: ${target.name} (${target.ecosystem}).
+Focus areas: ${target.focusAreas.join(', ')}.
 
-Extraherat rådata (OpenClaw crawl):
-${rawCrawlData || 'Ingen rå HTML skrapad, generera djupt arkitektonisk analys baserat på senaste kända tekniska framsteg i ekosystemet.'}
+Extracted raw data (OpenClaw crawl):
+${rawCrawlData || 'No raw HTML scraped; produce an in-depth architectural analysis based on the latest known technical advances in the ecosystem.'}
 
-Syntetisera en ny 'Competitive Intelligence' minnesnod i strikt JSON-format:
+Synthesize a new 'Competitive Intelligence' memory node in strict JSON format:
 {
   "competitorName": "${target.name}",
   "featureDomain": "SUBGOAL_DECOMPOSITION" | "COMPRESSED_MEMORY_RAG" | "A2A_PROTOCOL" | "AUTONOMOUS_DAEMON" | "AST_PATCHING" | "EDGE_NPU" | "TEST_GATES",
-  "observedUpdate": "1-2 meningar om vad konkurrenten infört eller förbättrat",
-  "architecturalBreakdown": "Djup arkitektonisk förklaring av mekanismen (varför det fungerar och varför det ökar determinism)",
-  "compressedDigest": "[COMPRESSED MEMORY] En ultra-komprimerad 1-2 meningars minnesnod som direkt kan injiceras i resonemangsmotorn och RAG för att styra framtida uppgiftsplanering.",
-  "tacticalCounterStrategy": "Exakt hur JACO:s resonemangsmotor ska bemöta och överträffa detta mönster.",
-  "impactOnUpcomingPlans": "Hur detta direkt formar framtida delmålsnedbrytning, agenttilldelning eller test-gates.",
+  "observedUpdate": "1-2 sentences on what the competitor introduced or improved",
+  "architecturalBreakdown": "In-depth architectural explanation of the mechanism (why it works and why it increases determinism)",
+  "compressedDigest": "[COMPRESSED MEMORY] An ultra-compressed 1-2 sentence memory node that can be injected directly into the reasoning engine and RAG to steer future task planning.",
+  "tacticalCounterStrategy": "Exactly how JACO's reasoning engine should counter and surpass this pattern.",
+  "impactOnUpcomingPlans": "How this directly shapes future subgoal decomposition, agent assignment or test gates.",
   "confidenceScore": 95,
   "sourceUrls": ["${targetUrl}"]
 }
@@ -297,7 +297,7 @@ Syntetisera en ny 'Competitive Intelligence' minnesnod i strikt JSON-format:
     try {
       const res = await generate({
         prompt,
-        systemPrompt: 'Du är OpenClaw Market Watch Engine. Svara uteslutande med valid JSON.'
+        systemPrompt: 'You are the OpenClaw Market Watch Engine. Respond exclusively with valid JSON.'
       });
 
       let parsed: any = {};
@@ -314,11 +314,11 @@ Syntetisera en ny 'Competitive Intelligence' minnesnod i strikt JSON-format:
         parsed = {
           competitorName: target.name,
           featureDomain: 'SUBGOAL_DECOMPOSITION',
-          observedUpdate: `Uppdatering inom ${target.focusAreas[0]} observerad.`,
-          architecturalBreakdown: 'Optimerad subtask-exekvering med isolerad minneskontext.',
-          compressedDigest: `[COMPRESSED MEMORY] ${target.name}: Tillämpa granulära delmål och deterministiska testkontrakt.`,
-          tacticalCounterStrategy: 'Integrera syntetiserade minnesvektorer i alla nya delmålsbeslut.',
-          impactOnUpcomingPlans: 'Kräver minst 5 atomära delmål och verifieringsloggar i framtida blueprints.',
+          observedUpdate: `Update observed in ${target.focusAreas[0]}.`,
+          architecturalBreakdown: 'Optimized subtask execution with isolated memory context.',
+          compressedDigest: `[COMPRESSED MEMORY] ${target.name}: Apply granular subgoals and deterministic test contracts.`,
+          tacticalCounterStrategy: 'Integrate synthesized memory vectors into every new subgoal decision.',
+          impactOnUpcomingPlans: 'Requires at least 5 atomic subgoals and verification logs in future blueprints.',
           confidenceScore: 92,
           sourceUrls: target.targetUrls
         };
@@ -331,11 +331,11 @@ Syntetisera en ny 'Competitive Intelligence' minnesnod i strikt JSON-format:
         timestamp: nowIso,
         competitorName: parsed.competitorName || target.name,
         featureDomain: parsed.featureDomain || 'SUBGOAL_DECOMPOSITION',
-        observedUpdate: parsed.observedUpdate || `Uppdatering inom ${target.focusAreas[0]} observerad.`,
-        architecturalBreakdown: parsed.architecturalBreakdown || 'Optimerad subtask-exekvering med isolerad minneskontext.',
-        compressedDigest: parsed.compressedDigest || `[COMPRESSED MEMORY] ${target.name}: Tillämpa granulära delmål och deterministiska testkontrakt.`,
-        tacticalCounterStrategy: parsed.tacticalCounterStrategy || 'Integrera syntetiserade minnesvektorer i alla nya delmålsbeslut.',
-        impactOnUpcomingPlans: parsed.impactOnUpcomingPlans || 'Kräver minst 5 atomära delmål och verifieringsloggar i framtida blueprints.',
+        observedUpdate: parsed.observedUpdate || `Update observed in ${target.focusAreas[0]}.`,
+        architecturalBreakdown: parsed.architecturalBreakdown || 'Optimized subtask execution with isolated memory context.',
+        compressedDigest: parsed.compressedDigest || `[COMPRESSED MEMORY] ${target.name}: Apply granular subgoals and deterministic test contracts.`,
+        tacticalCounterStrategy: parsed.tacticalCounterStrategy || 'Integrate synthesized memory vectors into every new subgoal decision.',
+        impactOnUpcomingPlans: parsed.impactOnUpcomingPlans || 'Requires at least 5 atomic subgoals and verification logs in future blueprints.',
         confidenceScore: typeof parsed.confidenceScore === 'number' ? parsed.confidenceScore : 92,
         sourceUrls: Array.isArray(parsed.sourceUrls) && parsed.sourceUrls.length > 0 ? parsed.sourceUrls : target.targetUrls,
         proofHash,
@@ -352,7 +352,7 @@ Syntetisera en ny 'Competitive Intelligence' minnesnod i strikt JSON-format:
       this.lastScanTimestamp = nowIso;
       this.nextScheduledScan = new Date(Date.now() + this.pollingIntervalSeconds * 1000).toISOString();
 
-      // Uppdatera externa KPI:er
+      // Update external KPIs
       recordExternalMeasurement({
         metricKey: 'compressed_memory_count',
         currentValue: this.intelligenceItems.length,
@@ -363,21 +363,21 @@ Syntetisera en ny 'Competitive Intelligence' minnesnod i strikt JSON-format:
         success: true,
         item: newItem,
         digest: newItem.compressedDigest,
-        message: `OpenClaw Market Watch skrapade ${target.name} och komprimerade ny Competitive Intelligence.`
+        message: `OpenClaw Market Watch scraped ${target.name} and compressed new Competitive Intelligence.`
       };
     } catch (err: any) {
-      // Fallback-generering
+      // Fallback generation
       const fallbackProof = crypto.createHash('sha256').update('fallback_mw_' + target.id + nowIso).digest('hex').substring(0, 16);
       const fallbackItem: CompetitiveIntelligenceMemoryItem = {
         id: `ci_mem_auto_${Date.now()}`,
         timestamp: nowIso,
         competitorName: target.name,
         featureDomain: 'SUBGOAL_DECOMPOSITION',
-        observedUpdate: `Periodisk avsökning av ${target.name}: Infört deterministiska sub-steg och minneskontrakt.`,
-        architecturalBreakdown: 'Granulär uppdelning i korta subtasks med oberoende kontextfönster maximerar träffsäkerhet.',
-        compressedDigest: `[COMPRESSED MEMORY] ${target.name} Pattern: Dela upp planer i minst 5 atomära delmål med explicita linter- och bygg-gates.`,
-        tacticalCounterStrategy: 'Säkerställ att alla nya JACO-planer valideras med live-kommandon före nästa delmål påbörjas.',
-        impactOnUpcomingPlans: 'Injicerar testkontrakt och sub-agent-delegering i framtida delmål.',
+        observedUpdate: `Periodic scan of ${target.name}: introduced deterministic sub-steps and memory contracts.`,
+        architecturalBreakdown: 'Granular breakdown into short subtasks with independent context windows maximizes accuracy.',
+        compressedDigest: `[COMPRESSED MEMORY] ${target.name} Pattern: Split plans into at least 5 atomic subgoals with explicit linter and build gates.`,
+        tacticalCounterStrategy: 'Ensure every new JACO plan is validated with live commands before the next subgoal starts.',
+        impactOnUpcomingPlans: 'Injects test contracts and sub-agent delegation into future subgoals.',
         confidenceScore: 90,
         sourceUrls: target.targetUrls,
         proofHash: fallbackProof,
@@ -396,13 +396,13 @@ Syntetisera en ny 'Competitive Intelligence' minnesnod i strikt JSON-format:
         success: true,
         item: fallbackItem,
         digest: fallbackItem.compressedDigest,
-        message: `[PROTOTYPE] OpenClaw Market Watch genererade syntetisk insikt för ${target.name}.`
+        message: `[PROTOTYPE] OpenClaw Market Watch generated a synthetic insight for ${target.name}.`
       };
     }
   }
 
   /**
-   * Kör en automatiserad skanning av alla eller nästa konkurrent
+   * Runs an automated scan of all competitors or the next one
    */
   public async runAutonomousScan(): Promise<void> {
     const nextTarget = this.trackedTargets.reduce((oldest, current) => {
@@ -417,41 +417,41 @@ Syntetisera en ny 'Competitive Intelligence' minnesnod i strikt JSON-format:
   }
 
   /**
-   * Returnerar den sammanställda kontextsträngen som ska injiceras i resonemangsmotorn och planDecide.ts
+   * Returns the compiled context string to inject into the reasoning engine and planDecide.ts
    */
   public getMarketWatchReasoningContext(): string {
     if (this.intelligenceItems.length === 0) {
-      return '[MARKET WATCH] Inga aktiva konkurrentinsikter tillgängliga.';
+      return '[MARKET WATCH] No active competitor insights available.';
     }
 
     const topItems = this.intelligenceItems.slice(0, 5);
     const bullets = topItems.map((item, idx) => {
       return `${idx + 1}. [${item.competitorName} | ${item.featureDomain}]
-   - Insikt: ${item.observedUpdate}
-   - Komprimerat Minne: ${item.compressedDigest}
-   - Påverkan på Planering: ${item.impactOnUpcomingPlans}
-   - Taktisk Strategi: ${item.tacticalCounterStrategy}`;
+   - Insight: ${item.observedUpdate}
+   - Compressed memory: ${item.compressedDigest}
+   - Impact on planning: ${item.impactOnUpcomingPlans}
+   - Tactical strategy: ${item.tacticalCounterStrategy}`;
     }).join('\n\n');
 
     return `=== MARKET WATCH COMPETITIVE INTELLIGENCE (POWERED BY OPENCLAW) ===
-Följande realtids-insikter från konkurrenter och ledande agentiska ekosystem ska direkt forma och styra planeringen av kommande uppgifter:
+The following real-time insights from competitors and leading agentic ecosystems should directly shape and steer the planning of upcoming tasks:
 
 ${bullets}
 
-DIREKTIV FÖR UPPGIFTSPLANERING:
-1. Dela ALLTID upp uppdrag i 5-8 atomära, hanterbara delmål (inspirerat av Cursor & Claude Code subtask-arkitektur).
-2. Koppla varje delmål till relevanta komprimerade minnesnoder (inspirerat av Devins distallation-mönster).
-3. Infoga obligatoriska verifieringskommandon (linter, tsc, test) för att förhindra regressioner (inspirerat av Windsurf Cascade Dual-Agent Gate).
-4. Tilldela specifika sub-agenter (Code Refactor, Security Auditor, etc.) till varje steg.`;
+TASK PLANNING DIRECTIVES:
+1. ALWAYS split missions into 5-8 atomic, manageable subgoals (inspired by the Cursor & Claude Code subtask architecture).
+2. Link each subgoal to relevant compressed memory nodes (inspired by Devin's distillation pattern).
+3. Insert mandatory verification commands (linter, tsc, test) to prevent regressions (inspired by the Windsurf Cascade Dual-Agent Gate).
+4. Assign specific sub-agents (Code Refactor, Security Auditor, etc.) to each step.`;
   }
 
   /**
-   * Hämtar alla sparade intelligens-poster
+   * Returns all stored intelligence entries
    */
   public listIntelligence(): CompetitiveIntelligenceMemoryItem[] {
     return [...this.intelligenceItems];
   }
 }
 
-// Singleton-instans av Market Watch Service
+// Singleton instance of the Market Watch Service
 export const marketWatchService = new MarketWatchService();

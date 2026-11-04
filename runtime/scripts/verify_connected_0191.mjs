@@ -82,7 +82,7 @@ await ok('SEER goal -> Forge -> Aura provider -> WordPress subagent -> evidence 
   const forge={compileIntuition:goal=>({id:'g1',goal,desiredOutcome:'verified',fixedConstraints:[],completionCriteria:['evidence'],autonomyTier:'LOCAL_AUTO'}),compileProject:c=>({projectId:'p1',structure:['mission-bus'],generatedFiles:0,assignedJourneys:[],goal:c.goal})};
   const rt=new ConnectedRuntime({workspaceRoot:workspace,forge,seerLive:seer,env});
   rt.providers.register({id:'fake',baseUrl:`http://127.0.0.1:${port}/v1`,defaultModel:'fake-model'});
-  const created=rt.createGoal({goal:'Förbättra WordPress hemsida med verifierad render',providerId:'fake',pageId:1,idempotencyKey:'e2e'});
+  const created=rt.createGoal({goal:'Improve the WordPress home page with a verified render',providerId:'fake',pageId:1,idempotencyKey:'e2e'});
   await rt.tick(); await rt.tick();
   assert.equal(rt.bus.getMission(created.mission.id).status,'DONE');
   const tickets=rt.bus.listTickets({missionId:created.mission.id}); assert.deepEqual(tickets.map(t=>t.status),['DONE','DONE','DONE']);
@@ -101,7 +101,7 @@ await ok('Nova Hands-Off ticket returns verified receipt and syncs evidence to S
     const receipt={verified:true,surface:payload.surface,actionType:payload.action?.type||'observe',beforeHash:'before',afterHash:'after'}; receipts.push(receipt); return {verified:true,receipt};
   }});
   rt.providers.register({id:'fake-nova',baseUrl:`http://127.0.0.1:${port}/v1`,defaultModel:'fake-model'});
-  const created=rt.createGoal({goal:'Verifiera Android Hands-Off via Nova och synka resultat till SEER',providerId:'fake-nova',surface:'ANDROID',action:{type:'observe'},mandateId:'mandate-test',idempotencyKey:'nova-e2e'});
+  const created=rt.createGoal({goal:'Verify Android Hands-Off via Nova and sync the result to SEER',providerId:'fake-nova',surface:'ANDROID',action:{type:'observe'},mandateId:'mandate-test',idempotencyKey:'nova-e2e'});
   await rt.tick(); await rt.tick();
   const mission=rt.bus.getMission(created.mission.id); const tickets=rt.bus.listTickets({missionId:created.mission.id});
   assert.equal(mission.status,'DONE');

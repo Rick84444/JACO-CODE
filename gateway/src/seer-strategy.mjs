@@ -39,7 +39,7 @@ export const SEER_STARTUP_GOALS = Object.freeze([
   Object.freeze({
     id: 'jaco-user-value-a2a-v1',
     parent_id: SEER_PURPOSE.id,
-    statement: 'Projektled och utveckla JACO-stacken till ett autonomt, verifierbart A2A-system som kontinuerligt identifierar verkliga användarbehov, omvandlar dem till användbara tjänster, distribuerar dem genom relevanta integrationer och A2A-kanaler och skapar hållbara intäkter som en konsekvens av verifierad och återkommande användarnytta.',
+    statement: 'Project-lead and develop the JACO stack into an autonomous, verifiable A2A system that continuously identifies real user needs, turns them into useful services, distributes them through relevant integrations and A2A channels, and creates sustainable revenue as a consequence of verified and recurring user value.',
     horizon: 'long',
     priority: 0.95,
     success_criteria: {

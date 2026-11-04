@@ -26,6 +26,7 @@ const EN_LABELS: Record<string, string> = {
   "Förhandsvisa": "Preview",
   "Belägg": "Evidence",
   "Spelplan": "Gameboard",
+  "Arbetsyta": "Workspace",
   "Projektfiler": "Project files",
   "Git & ändringar": "Git & changes",
   "Verktyg": "Tools",
@@ -92,7 +93,7 @@ export function CognitiveWorkspace(props:Props) {
       <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">Aura</span></div>
       <button type="button" className="cognitive-project" aria-label={`${tr('Öppna projekt', 'Open project')}: ${props.projectName}`} onClick={()=>openPanel('explorer')}><Folder size={14}/><span>{props.projectName}</span><ChevronRight size={12}/><span className="cognitive-branch">{props.branch || tr('Projekt', 'Project')}</span></button>
       <div className="cognitive-top-actions">
-        <CostChip onOpen={()=>props.onSidebar('providers')}/>
+        <CostChip onOpen={()=>props.onSidebar('revenue')}/>
         <select className="cognitive-language-select" aria-label={tr('Språk', 'Language')} title={tr('Språk', 'Language')} value={language} onChange={event => setLanguage(event.target.value === 'sv' ? 'sv' : 'en')} style={{color:'inherit',background:'#171d24',border:'1px solid #3b4652',borderRadius:6,padding:'4px 5px',fontSize:11}}><option value="en">EN</option><option value="sv">SV</option></select>
         {props.approvalCount>0 && <button type="button" className="cognitive-approval-button" aria-label={`${props.approvalCount} ${tr('beslut behöver dig', 'decisions need your attention')}`} onClick={props.onApprovals}><CircleAlert size={14}/><span>{props.approvalCount} {tr('beslut','decisions')}</span></button>}
         <button type="button" aria-label={tr('Sök verktyg och kommandon', 'Search tools and commands')} title={tr('Sök', 'Search')+' · Ctrl+Shift+P'} onClick={props.onCommands}><Search size={16}/></button>
@@ -139,7 +140,7 @@ export function CognitiveWorkspace(props:Props) {
       {props.sidePanelOpen&&<>
         <button type="button" className="cognitive-sidebar-scrim" aria-label={tr('Stäng projektpanelen','Close project panel')} onClick={props.onCloseSidebar}/>
         <aside className="cognitive-sidebar" aria-label={L(tools.find(t=>t[0]===props.sidebar)?.[2] || '')}>
-          <div className="cognitive-sidebar-header"><span>{tools.find(t=>t[0]===props.sidebar)?.[2]}</span><button type="button" onClick={props.onCloseSidebar} aria-label="Stäng projektpanelen"><X size={16}/></button></div>
+          <div className="cognitive-sidebar-header"><span>{L(tools.find(t=>t[0]===props.sidebar)?.[2] || '')}</span><button type="button" onClick={props.onCloseSidebar} aria-label={tr('Stäng projektpanelen','Close project panel')}><X size={16}/></button></div>
           <div className="cognitive-sidebar-content">{props.sidePanel}</div>
         </aside>
       </>}
@@ -156,7 +157,7 @@ export function CognitiveWorkspace(props:Props) {
         <p>{tr('Modeller, verktyg och projektinställningar','Models, tools and project settings')}</p>
         <div className="cognitive-mobile-menu-grid">
           {views.filter(([id])=>!['conversation','agents'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>navigate(id)}><Icon size={20}/>{L(label)}</button>)}
-          {tools.filter(([id])=>['source-control','devices','revenue'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>openPanel(id)}><Icon size={20}/>{label}</button>)}
+          {tools.filter(([id])=>['source-control','devices','revenue'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>openPanel(id)}><Icon size={20}/>{L(label)}</button>)}
           <button type="button" onClick={()=>{menu.current?.close();props.onApprovals();}}><ShieldCheck size={20}/>{L('Beslut')}{props.approvalCount>0 ? ` (${props.approvalCount})` : ''}</button>
           <button type="button" onClick={()=>{menu.current?.close();props.onCommands();}}><Search size={20}/>{L('Sök funktion')}</button>
           <button type="button" onClick={()=>{menu.current?.close();props.onSignOut();}}><LogOut size={20}/>{L('Logga ut')}</button>

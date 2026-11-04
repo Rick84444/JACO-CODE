@@ -1,6 +1,6 @@
 // Joins this computer or phone to a JACO hub (runtime src/server/connected/deviceAccess.mjs).
 //   node tools/join-hub.mjs <hub-url> <pairing-code>
-// The pairing code comes from the hub's IDE (Devices, "Lägg till enhet") or `node tools/device.mjs
+// The pairing code comes from the hub's IDE (Devices, "Add device") or `node tools/device.mjs
 // invite <name>` on the hub. It works once and for 10 minutes. This command exchanges it for the
 // device's own key and writes JACO_HUB_URL, JACO_DEVICE_KEY and JACO_NOVA_EXECUTOR into this checkout's
 // .env; the key is never printed. Then start Nova here with npm start.

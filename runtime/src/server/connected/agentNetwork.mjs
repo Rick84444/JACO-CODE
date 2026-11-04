@@ -8,9 +8,9 @@ export function projectAgentNetwork({ agents, missions, graphs, coordinator, wor
   const auraExecutor = agents.find(agent => ['nova', 'aura'].includes(agent.stableId)
     && ['execution', 'aura-executor'].includes(agent.role));
   const executorActive = Number(auraExecutor?.liveSessions || 0) > 0;
-  nodes.push({ id:root,kind:'coordinator',name:'Aura',role:'Huvudagent',parentId:null,
+  nodes.push({ id:root,kind:'coordinator',name:'Aura',role:'Main agent',parentId:null,
     status:health ? 'CONNECTED' : executorActive ? 'DEGRADED' : 'UNAVAILABLE',
-    purpose:'Operatorns enda agent: samtal, strategi, verktyg, utförande och verifiering.',
+    purpose:"The operator's only agent: conversation, strategy, tools, execution and verification.",
     model:text(coordinator?.health?.local_model?.model,200),source:'Aura runtime',missionIds:[],planIds:[],
     lastSeenAt:health || executorActive ? now : null });
   let truncated=missionTruncated || agents.length>200 || workers.length>100 || (Array.isArray(graphs)&&graphs.length>50);
@@ -31,7 +31,7 @@ export function projectAgentNetwork({ agents, missions, graphs, coordinator, wor
     }
     const id='agent:'+agent.agentId;
     agentIds.set(agent.agentId,id);
-    nodes.push({ id,kind:'agent',name:agent.name,role:agent.role || 'Ansluten agent',parentId:null,
+    nodes.push({ id,kind:'agent',name:agent.name,role:agent.role || 'Connected agent',parentId:null,
       status:agent.liveSessions > 0 ? agent.status : 'OFFLINE',purpose:agent.role,
       model:agent.model || null,source:'Workplace',missionIds:missions.filter(m=>m.agentId===agent.agentId).map(m=>m.id),planIds:[],lastSeenAt:agent.lastSeenAt });
     links.push({from:root,to:id,kind:'connection'});
@@ -39,7 +39,7 @@ export function projectAgentNetwork({ agents, missions, graphs, coordinator, wor
   for (const worker of workers.slice(0,100)) {
     const id='worker:'+text(worker.id,240);
     const fresh=Number.isFinite(Date.parse(worker.heartbeatAt)) && Date.parse(now)-Date.parse(worker.heartbeatAt) <= 180000;
-    nodes.push({ id,kind:'worker',name:text(worker.metadata?.name || worker.id,160),role:'Körprocess',parentId:null,
+    nodes.push({ id,kind:'worker',name:text(worker.metadata?.name || worker.id,160),role:'Worker process',parentId:null,
       status:fresh ? text(worker.status,80) : 'OFFLINE',purpose:null,model:null,source:'Durable bus',
       missionIds:[],planIds:[],lastSeenAt:text(worker.heartbeatAt,80) });
     links.push({from:root,to:id,kind:'connection'});
@@ -58,7 +58,7 @@ export function projectAgentNetwork({ agents, missions, graphs, coordinator, wor
       const mission=missions.find(m=>m.id===item.nova_mission_id);
       if (item.nova_mission_id) bound.add(item.nova_mission_id);
       ids.push(id);
-      nodes.push({ id,kind:'task-agent',name:text(item.title || item.key,300),role:'Uppdragskontext',parentId,
+      nodes.push({ id,kind:'task-agent',name:text(item.title || item.key,300),role:'Mission context',parentId,
         status:text(item.status,80),purpose:text(item.objective,12000),model:null,source:'Aura Strategy Runtime',
         missionIds:mission ? [mission.id] : [],planIds:[planId],lastSeenAt:mission?.lastActivityAt || null,
         graphId:text(String(graph.id),200),nodeKey:text(item.key,120),
@@ -77,7 +77,7 @@ export function projectAgentNetwork({ agents, missions, graphs, coordinator, wor
   }
   for (const mission of missions.filter(m=>!bound.has(m.id))) {
     const id='mission:'+mission.id;
-    nodes.push({id,kind:'task-agent',name:mission.goal,purpose:mission.goal,role:'Uppdragskontext',parentId:root,
+    nodes.push({id,kind:'task-agent',name:mission.goal,purpose:mission.goal,role:'Mission context',parentId:root,
       status:mission.status,model:null,source:'Durable Nova',missionIds:[mission.id],planIds:[],lastSeenAt:mission.lastActivityAt,
       executorId:mission.agentId ? agentIds.get(mission.agentId) || null : null,dependencies:[],receipts:mission.receipts,
       blocker:mission.blocker,nextSteps:mission.replanRequest?.subgoals || [],execution:mission.execution || null});

@@ -5,10 +5,10 @@ export function CopyMessageButton({ text }: { text: string }) {
   const [manual, setManual] = useState(false);
   return <div className="cognitive-copy-message">
     <button type="button" onClick={async () => {
-      try { await navigator.clipboard.writeText(text); setManual(false); setStatus('Hela svaret kopierades.'); }
-      catch { setManual(true); setStatus('Automatisk kopiering kunde inte bekräftas. Markera och kopiera texten nedan.'); }
-    }}>Kopiera hela svaret</button>
+      try { await navigator.clipboard.writeText(text); setManual(false); setStatus('The full response was copied.'); }
+      catch { setManual(true); setStatus('Automatic copying could not be confirmed. Select and copy the text below.'); }
+    }}>Copy full response</button>
     {status && <small role="status">{status}</small>}
-    {manual && <textarea aria-label="Hela svaret för manuell kopiering" readOnly value={text} onFocus={event => event.currentTarget.select()}/>}
+    {manual && <textarea aria-label="Full response for manual copying" readOnly value={text} onFocus={event => event.currentTarget.select()}/>}
   </div>;
 }

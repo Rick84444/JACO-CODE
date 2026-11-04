@@ -5,34 +5,34 @@
   "mainEntity": [
     {
       "@type": "Question",
-      "name": "Vad är JACO (Just Autonomous Agent Orchestrator)?",
+      "name": "What is JACO (Just Autonomous Agent Orchestrator)?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "JACO är ett användarstyrt autonomt agent-operativsystem för hantering av flera språkmodeller (Gemini, Ollama, OpenAI), persistent minne, verifierad källkodsgenerering och mobil integration via Termux på Android."
+        "text": "JACO is a user-controlled autonomous agent operating system for managing multiple language models (Gemini, Ollama, OpenAI), persistent memory, verified source code generation and mobile integration via Termux on Android."
       }
     },
     {
       "@type": "Question",
-      "name": "Hur skiljer sig JACO från OpenClaw, LangGraph och vanliga chattappar?",
+      "name": "How does JACO differ from OpenClaw, LangGraph and ordinary chat apps?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "JACO kombinerar en lokal runtime, Termux-hårdvaruöverbryggning, PODAR-självförbättringsslinga, godkännandegrindar via push-notiser och ett Agent-to-Agent (A2A) marknadsplatsprotokoll i ett komplett och transparent system."
+        "text": "JACO combines a local runtime, a Termux hardware bridge, the PODAR self-improvement loop, approval gates via push notifications and an Agent-to-Agent (A2A) marketplace protocol in one complete and transparent system."
       }
     },
     {
       "@type": "Question",
-      "name": "Kan JACO köras lokalt på Android via Termux?",
+      "name": "Can JACO run locally on Android via Termux?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Ja, JACO kan installeras i Termux med Node.js och köras lokalt tillsammans med Ollama för helt offlinebaserad agentexekvering."
+        "text": "Yes, JACO can be installed in Termux with Node.js and run locally together with Ollama for fully offline agent execution."
       }
     },
     {
       "@type": "Question",
-      "name": "Hur hanteras säkerhet och godkännanden i JACO?",
+      "name": "How are security and approvals handled in JACO?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Skadliga eller kritiska handlingar (kommandoexekvering och filskrivningar) kräver explicit godkännande via mobila push-notiser eller ett lokalt gränssnitt."
+        "text": "Harmful or critical actions (command execution and file writes) require explicit approval via mobile push notifications or a local interface."
       }
     }
   ]
