@@ -10,6 +10,7 @@ import { NovaMissionControl, mountNovaMissionRoutes } from '../../runtime/src/se
 import { MissionClient } from '../../agents/lib/mission-client.mjs';
 import { plannerTools } from '../../agents/lib/native-tools.mjs';
 import { runAgentMission, receiptForModel, contextPacketIntro } from '../../agents/lib/agent-loop.mjs';
+import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
 
 function setup(t, allowedTasks) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-loop-'));
@@ -431,4 +432,48 @@ test('native coding loop replans after a write and does not execute stale batche
   assert.deepEqual(executed, ['repo-write', 'repo-read']);
   assert.match(JSON.stringify(model.seen[1]), /SKIPPED: observe the previous mutation receipt/);
   assert.equal(s.control.get(mission.id).receipts.length, 2);
+});
+
+test('native loop edits a real isolated repository and recovers from a failing test', async t => {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'aura-real-code-'));
+  t.after(() => fs.rmSync(project, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(project, 'src'));
+  fs.mkdirSync(path.join(project, 'tests'));
+  const source = path.join(project, 'src', 'client.mjs');
+  fs.writeFileSync(source, 'export function retryCount() { return 0; }\\n');
+  fs.writeFileSync(path.join(project, 'tests', 'client.test.mjs'),
+    "import test from 'node:test';\\nimport assert from 'node:assert/strict';\\nimport { retryCount } from '../src/client.mjs';\\ntest('retryCount is two', () => assert.equal(retryCount(), 2));\\n");
+
+  const s = setup(t, ['repo-read', 'repo-edit', 'repo-test']);
+  const mission = s.control.create({
+    goal: 'Fix retryCount and prove tests pass', idempotencyKey: 'native-real-file-test',
+    allowedTasks: ['repo-read', 'repo-edit', 'repo-test'],
+    contract: {
+      scope: { allowed: ['src/**', 'tests/**'] },
+      acceptance: ['retryCount returns two', 'The test passes after the last change'],
+      verification: { tests_required: true, commands: ['node --test tests/client.test.mjs'], receipt_required: true },
+      execution: { allow_git_commit: false },
+      budget: { max_failures: 5 },
+    },
+  });
+  const model = scripted([
+    { tool_calls: [call('repo-read', { path: 'src/client.mjs' })] },
+    { tool_calls: [call('repo-test', { command: 'node --test tests/client.test.mjs' })] },
+    { tool_calls: [call('repo-edit', { path: 'src/client.mjs', old: 'return 0;', new: 'return 2;' })] },
+    { tool_calls: [call('repo-test', { command: 'node --test tests/client.test.mjs' })] },
+    { tool_calls: [call('complete', { reason: 'Corrected the actual file and reran tests successfully [#3][#4]' })] },
+  ]);
+  const worktree = createCodingWorkspace({ root: project });
+  const result = await run(s, model, task => worktree.execute(task, s.control.get(mission.id).contract, {
+    actor: 'aura-native-test', receipts: s.control.get(mission.id).receipts,
+  }));
+  assert.equal(result.completed, true);
+  assert.match(fs.readFileSync(source, 'utf8'), /return 2;/);
+  const stored = s.control.get(mission.id);
+  assert.deepEqual(stored.receipts.map(r => r.type), ['repo-read', 'repo-test', 'repo-edit', 'repo-test']);
+  assert.deepEqual(stored.receipts.map(r => r.ok), [true, false, true, true]);
+  assert.equal(stored.contractStatus.machineVerified, true);
+  assert.equal(stored.status, 'AWAITING_VERIFICATION');
+  assert.match(JSON.stringify(model.seen[2]), /repo-test/);
+  assert.match(JSON.stringify(model.seen[3]), /repo-edit/);
 });
