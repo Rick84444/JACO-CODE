@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-test('real SEER startup uses saved Aura choice, never local fallback or unauthorized cloud', async t => {
+for (const preference of ['aura', 'auto']) test(`real SEER startup (${preference}) uses saved Aura choice, never local fallback or unauthorized cloud`, async t => {
   const dir=mkdtempSync(join(tmpdir(),'seer-aura-startup-'));
   const choice=join(dir,'choice.json'), calls=[];
   let base;
@@ -34,7 +34,7 @@ test('real SEER startup uses saved Aura choice, never local fallback or unauthor
   const child=spawn(process.execPath,['gateway/src/seer-start.mjs'],{
     env:{PATH:process.env.PATH,SEER_PORT:'0',SEER_STATE_DIR:dir,JACO_RUNTIME_URL:base,
       JACO_GATEWAY_TOKEN:'fixture-startup-token-1234567890',JACO_PLANNER_CHOICE_FILE:choice,
-      JACO_SEER_PROVIDER_PREFERENCE:'aura',JACO_ALLOW_PAID_MODELS:'0',
+      JACO_SEER_PROVIDER_PREFERENCE:preference,JACO_ALLOW_PAID_MODELS:'0',
       JACO_LITERT_URL:base+'/v1',JACO_LLAMACPP_URL:base+'/v1',OLLAMA_BASE_URL:base,
       JACO_SEER_LOCAL_PROVIDER:'litert',JACO_SEER_LOCAL_MODEL:'stale-model',
       JACO_SEER_LOCAL_CHAT_URL:base+'/legacy',JACO_WORKPLACE_REQUIRED:'0',
@@ -63,8 +63,11 @@ test('real SEER startup uses saved Aura choice, never local fallback or unauthor
   save('fixture-cloud');
   response=await ask();assert.equal(response.status,503);
   assert.equal((await response.json()).error,'AURA_PROVIDER_INFERENCE_FAILED');
-  rmSync(choice);
-  response=await ask();assert.equal(response.status,503);
-  assert.equal((await response.json()).error,'AURA_PROVIDER_CHOICE_REQUIRED');
+  if (preference === 'aura') {
+    rmSync(choice);
+    response=await ask();assert.equal(response.status,503);
+    assert.equal((await response.json()).error,'AURA_PROVIDER_CHOICE_REQUIRED');
+  }
   assert.deepEqual(calls,['/api/connected/nova/planner-providers','/v1/chat/completions']);
 });
+
