@@ -19,7 +19,7 @@ function safeRelativePath(raw) {
   const parts = value.split('/');
   if (parts.some(part => part === '..' || (part.startsWith('.') && part !== '.') || BLOCKED.test(part) || SENSITIVE.test(part))) throw new Error('JACO_SOURCE_PATH_REFUSED');
   const rel = parts.filter(part => part !== '.' && part !== '').join('/') || '.';
-  if (rel !== '.' && !SOURCE_DIRS.includes(parts[0]) && !ROOT_FILES.includes(rel)) throw new Error('JACO_SOURCE_OUT_OF_SCOPE');
+  if (rel !== '.' && !SOURCE_DIRS.includes(rel.split('/')[0]) && !ROOT_FILES.includes(rel)) throw new Error('JACO_SOURCE_OUT_OF_SCOPE');
   return rel;
 }
 
