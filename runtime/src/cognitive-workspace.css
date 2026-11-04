@@ -676,3 +676,4 @@
 .cognitive-mission-row { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; margin:0 2px 4px; }
 .cognitive-mission-row:empty { display:none; }
 .cognitive-mission-row .cognitive-live-questions { margin:0; flex:1; min-width:0; }
+.aura-activity-pulse[data-state=stalled],.aura-activity-pulse[data-state=blocked]{background:#e4ad66}

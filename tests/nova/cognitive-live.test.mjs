@@ -196,3 +196,12 @@ test('the activity list shows the current mission, newest first, with repeats fo
   assert.equal(auraActivityFeed(events,null,2).length,2);
   assert.deepEqual(auraActivityFeed(undefined),[]);
 });
+
+test('the activity heading follows the observed state, not the mere existence of a mission',async()=>{
+  const {auraActivityState}=await import('../../runtime/src/lib/auraStage.mjs');
+  assert.equal(auraActivityState('working',true),'working');
+  assert.equal(auraActivityState('stalled',true),'stalled');
+  assert.equal(auraActivityState('blocked',true),'blocked');
+  assert.equal(auraActivityState('reconnecting',true),'unknown');
+  assert.equal(auraActivityState('ready',false),'idle');
+});

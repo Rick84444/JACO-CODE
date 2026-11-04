@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Camera, CheckCircle2, CircleAlert, Clock3, Code2, ExternalLink, Eye, FileCode2, GitCommit, Layers3, ScanEye, ShieldCheck } from 'lucide-react';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
-import { auraActivityFeed, auraStageHistory, cdpRefreshDelay } from '../lib/auraStage.mjs';
+import { auraActivityFeed, auraActivityState, auraStageHistory, cdpRefreshDelay } from '../lib/auraStage.mjs';
 import { cognitiveLink } from '../lib/cognitiveEvents.mjs';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { AuraPresence, type AuraPresenceView } from './AuraPresence';
@@ -155,14 +155,21 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
   const event = candidate?.event || null;
   const history = auraStageHistory(events);
   const activity = auraActivityFeed(events, activeMission?.id || null);
+  const activityState = auraActivityState(presence.mode, Boolean(activeMission));
   const material = candidate?.material;
   const url = event ? cognitiveLink(event.evidence.url) : null;
   return <div className="aura-live-stage" data-testid="aura-live-stage">
     <AuraPresence data={presence}/>
     <section className="aura-activity" aria-label={tr('Vad Aura gör','What Aura is doing')} data-testid="aura-activity">
       <header>
-        <span className="aura-activity-pulse" data-active={Boolean(activeMission)} aria-hidden="true"/>
-        <strong>{activeMission ? tr('Aura arbetar','Aura is working') : tr('Aura väntar på ett uppdrag','Aura is waiting for a mission')}</strong>
+        <span className="aura-activity-pulse" data-active={activityState === 'working'} data-state={activityState} aria-hidden="true"/>
+        <strong>{{
+          working: tr('Aura arbetar','Aura is working'),
+          stalled: tr('Inget händer just nu','Nothing is happening right now'),
+          blocked: tr('Aura behöver dig','Aura needs you'),
+          unknown: tr('Hämtar läget','Checking status'),
+          idle: tr('Aura väntar på ett uppdrag','Aura is waiting for a mission'),
+        }[activityState]}</strong>
         {activeMission && <span>{presence.phaseLabel}{presence.stepCount !== null ? ` · ${tr('steg','step')} ${presence.stepCount}${presence.maxSteps ? `/${presence.maxSteps}` : ''}` : ''}</span>}
       </header>
       {activeMission && <p className="aura-activity-goal">{activeMission.goal}</p>}
@@ -172,7 +179,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
           <button type="button" onClick={() => step.evidence.path ? onOpenFile(step.evidence.path) : onInspect(step)} title={step.evidence.path ? tr('Öppna filen','Open file') : tr('Granska belägg','Review evidence')}>{step.text}{count > 1 ? ` (${count}×)` : ''}</button>
           <time>{time(step.at, language)}</time>
         </li>)}
-      </ol> : <p className="aura-activity-empty">{activeMission ? tr('Inget steg har rapporterats ännu. Här syns varje steg när det sker.','No step has been reported yet. Each step appears here as it happens.') : tr('Starta ett uppdrag i chatten så syns arbetet här.','Start a mission in the chat and the work appears here.')}</p>}
+      </ol> : <p className="aura-activity-empty">{activityState === 'stalled' ? tr('Uppdraget är registrerat men inget steg har rapporterats. Du kan avsluta det med Stop mission.','The mission is registered but no step has been reported. You can end it with Stop mission.') : activeMission ? tr('Inget steg har rapporterats ännu. Här syns varje steg när det sker.','No step has been reported yet. Each step appears here as it happens.') : tr('Starta ett uppdrag i chatten så syns arbetet här.','Start a mission in the chat and the work appears here.')}</p>}
     </section>
     {capturedPage ? <CapturedPage page={capturedPage} onClose={()=>setCapturedPage(null)}/> : !event ? screenshot ? <div className="aura-live-standalone-cdp" aria-label={tr('Observerad webbläsarsida','Observed browser page')}>
       <div className="aura-live-cdp-frame-bar"><Camera size={13}/> {tr('Nova-bryggans fästa CDP-flik','Nova bridge attached CDP tab')} · {time(screenshot.at, language)}
