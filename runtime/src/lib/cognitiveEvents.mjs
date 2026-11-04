@@ -123,25 +123,25 @@ export function mergeCognitiveEvents(previous, incoming, limit = 400) {
 
 // The activation report owns readiness; a live event stream only proves connectivity.
 export function activationReadiness({ report, loading = false, error = '' } = {}) {
-  if (error) return { label:'Status unavailable', tone:'waiting', action:'retry', detail:'Check the connection and retry.' };
-  if (loading || !report) return { label:'Checking readiness', tone:'waiting', action:'wait', detail:'Checking model, tools and agent runtime.' };
-  if (!report.runtime?.up) return { label:'Start JACO', tone:'waiting', action:'retry', detail:'Start JACO on this computer and check the connection again.' };
-  if (!report.providers?.some(provider => provider.active)) return { label:'Connect a model to begin', tone:'waiting', action:'connect', detail:'Select a local model or connect a model provider.' };
-  if (report.planner?.reachable !== true) return { label:'Choose a working model', tone:'waiting', action:'connect', detail:'The selected planning model has not been verified.' };
-  if (!report.tools?.toolCount) return { label:'Tools need to be started', tone:'waiting', action:'activate', detail:'Start connected tools so JACO can work in the project.' };
-  if (!report.ok) return { label:'Agent runtime needs inspection', tone:'waiting', action:'details', detail:'The model responds, but not all execution requirements are met.' };
-  return { label:'Ready for your mission', tone:'idle', action:'goal', detail:'Describe what you want done. You can follow the work here.' };
+  if (error) return { label:'Status kunde inte hämtas', tone:'waiting', action:'retry', detail:'Check the connection and retry.' };
+  if (loading || !report) return { label:'Kontrollerar vad som är redo', tone:'waiting', action:'wait', detail:'Checking model, tools and agent runtime.' };
+  if (!report.runtime?.up) return { label:'JACO behöver startas', tone:'waiting', action:'retry', detail:'Start JACO on this computer and check the connection again.' };
+  if (!report.providers?.some(provider => provider.active)) return { label:'Anslut en modell för att börja', tone:'waiting', action:'connect', detail:'Select a local model or connect a model provider.' };
+  if (report.planner?.reachable !== true) return { label:'Välj en modell som svarar', tone:'waiting', action:'connect', detail:'The selected planning model has not been verified.' };
+  if (!report.tools?.toolCount) return { label:'Verktygen behöver startas', tone:'waiting', action:'activate', detail:'Start connected tools so JACO can work in the project.' };
+  if (!report.ok) return { label:'Agentkörningen behöver kontrolleras', tone:'waiting', action:'details', detail:'The model responds, but not all execution requirements are met.' };
+  return { label:'Redo för ditt uppdrag', tone:'idle', action:'goal', detail:'Describe what you want done. You can follow the work here.' };
 }
 
 export function liveWorkspaceStatus({ connection, busy, missions = [], runtimeRunning, error, activation, approvalCount = 0 }) {
-  if (error || connection === 'reconnecting' || connection === 'unavailable') return { label:'Connection needs recovery', tone:'waiting' };
-  if (connection === 'connecting' && runtimeRunning == null) return { label:'Connecting to workspace', tone:'waiting' };
-  if (approvalCount > 0) return { label:'Decision required', tone:'waiting' };
-  if (busy) return { label:busy === 'goal' ? 'Registering mission' : busy === 'tool' ? 'Calling tools' : 'Waiting for model', tone:'active' };
+  if (error || connection === 'reconnecting' || connection === 'unavailable') return { label:'Anslutningen behöver återställas', tone:'waiting' };
+  if (connection === 'connecting' && runtimeRunning == null) return { label:'Ansluter till arbetsytan', tone:'waiting' };
+  if (approvalCount > 0) return { label:'Ett beslut behöver dig', tone:'waiting' };
+  if (busy) return { label:busy === 'goal' ? 'Registrerar uppdrag' : busy === 'tool' ? 'Anropar verktyg' : 'Väntar på modellens svar', tone:'active' };
   const mission = missions.find(m => m.status === 'ACTIVE');
-  if (mission) return { label:({PLANNING:'Planning next step',EXECUTING:'Working',VERIFYING:'Verifying results',READY:'Waiting for next step'})[mission.phase] || 'Mission in progress', tone:'active' };
-  if (missions.some(m => m.status === 'BLOCKED')) return { label:'Mission blocked', tone:'waiting' };
-  if (missions.some(m => m.status === 'AWAITING_VERIFICATION')) return { label:'Result awaiting verification', tone:'waiting' };
-  if (runtimeRunning === false) return { label:'Runtime paused', tone:'waiting' };
+  if (mission) return { label:({PLANNING:'Planerar nästa steg',EXECUTING:'Arbetar',VERIFYING:'Kontrollerar resultat',READY:'Väntar på nästa steg'})[mission.phase] || 'Uppdrag pågår', tone:'active' };
+  if (missions.some(m => m.status === 'BLOCKED')) return { label:'Ett uppdrag har ett hinder', tone:'waiting' };
+  if (missions.some(m => m.status === 'AWAITING_VERIFICATION')) return { label:'Resultat väntar på kontroll', tone:'waiting' };
+  if (runtimeRunning === false) return { label:'Runtime är pausad', tone:'waiting' };
   return activationReadiness(activation);
 }

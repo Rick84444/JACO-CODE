@@ -259,13 +259,13 @@ try {
   await page.waitForFunction(()=>document.querySelector('.monaco-editor .view-lines')?.textContent.includes('userDraft'));
   code['example.ts']='export const serverVersion = true;\n';
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'write-code',type:'repo-write',ok:true,verified:true,result:{path:'example.ts'}}});
-  await page.getByText('Filen har ändrats i arbetsytan. Ditt utkast är bevarat.',{exact:false}).waitFor();
+  await page.getByText('The file changed in the workspace. Your draft is preserved.',{exact:false}).waitFor();
   assert.ok((await page.locator('.monaco-editor .view-lines').innerText()).includes('userDraft'));
   await page.getByRole('button',{name:'Save',exact:true}).click();
   await page.getByText('File changed on disk. Reload before saving.',{exact:true}).waitFor();
   assert.equal(code['example.ts'],'export const serverVersion = true;\n');
   page.once('dialog',dialog=>dialog.accept());
-  await page.getByRole('button',{name:'Läs senaste filen',exact:true}).click();
+  await page.getByRole('button',{name:'Load latest file',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('.monaco-editor .view-lines')?.textContent.includes('serverVersion'));
   passed('A live file update preserves a dirty draft, rejects a conflicting save and requires explicit reload');
   await canvas('Samtal').click();await input().fill('Ett bevarat utkast');

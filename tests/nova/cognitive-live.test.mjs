@@ -50,7 +50,7 @@ test('housekeeping and invalid observations never become cognitive progress',()=
   assert.equal(toCognitiveEvent({at,type:'observation',message:'without identity'}),null);
   assert.equal(toCognitiveEvent({id:'x',at,type:'governor.skipped',message:'noop'}),null);
   assert.equal(liveWorkspaceStatus({connection:'reconnecting',runtimeRunning:true,missions:[{status:'ACTIVE',phase:'EXECUTING'}]}).tone,'waiting');
-  assert.equal(liveWorkspaceStatus({connection:'live',runtimeRunning:true,missions:[{status:'ACTIVE',phase:'VERIFYING'}]}).label,'Verifying results');
+  assert.equal(liveWorkspaceStatus({connection:'live',runtimeRunning:true,missions:[{status:'ACTIVE',phase:'VERIFYING'}]}).label,'Kontrollerar resultat');
 });
 
 test('raw arguments, credentials and untrusted result URLs stay out of the live contract',()=>{
