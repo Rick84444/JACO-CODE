@@ -79,8 +79,10 @@ export async function runAgentMission({
   if (!current || current.status !== 'ACTIVE') return { executed: false, mission: current };
   if (typeof acceptMission === 'function' && !(await acceptMission(current))) return { executed: false, mission: current, skipped: 'executor_mismatch' };
   let mission = current;
-  const { tools, resolve } = await toolsFor(mission);
-  const messages = [{ role: 'system', content: typeof system === 'function' ? system(mission) : system }, { role: 'user', content: await intro(mission) }];
+  // Discover/start capabilities only AFTER the contract preflight succeeds.
+  // A blocked coding mission must not launch even an MCP server during catalog discovery.
+  let tools = [], resolve = () => null;
+  const messages = [];
   const receipts = [];
   let steps = 0, modelErrors = 0, idle = 0, turns = 0;
   let modelSteerVersion = mission.steering?.revision || 0;
@@ -149,6 +151,9 @@ export async function runAgentMission({
         return { executed: false, deferred: true, reason: `PREFLIGHT_FAILED:${errorText(error)}` };
       }
     }
+    ({ tools, resolve } = await toolsFor(mission));
+    messages.push({ role: 'system', content: typeof system === 'function' ? system(mission) : system },
+      { role: 'user', content: await intro(mission) });
     // Steps bound the work; turns bound the conversation (refusals and retries do not count as steps).
     while (steps < maxSteps && turns++ < maxSteps * 2) {
       // Check the durable operator input before every model turn. Never abort
