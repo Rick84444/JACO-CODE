@@ -40,6 +40,9 @@ export function verifiedOutcomeHints(outcomes = [], allowedTasks = [], { maxChar
   if (!items.length) return '';
   let result = JSON.stringify(items);
   while (result.length > budget && items.length > 1) { items.pop(); result = JSON.stringify(items); }
-  if (result.length > budget) return JSON.stringify([{ ...items[0], sequence: [], failures: [], worked: items[0].worked.slice(0, 4) }]).slice(0, budget);
+  if (result.length > budget) {
+    const compact = JSON.stringify([{ sourceMission: items[0].sourceMission, verification: items[0].verification, evidenceCount: items[0].evidenceCount, worked: items[0].worked.slice(0, 4) }]);
+    return compact.length <= budget ? compact : '';
+  }
   return result;
 }
