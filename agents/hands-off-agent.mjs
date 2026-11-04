@@ -61,6 +61,7 @@ import { digest } from './lib/claim-check.mjs';
 import { skillIdOfGoal, fetchSkill, fetchSkillList } from './lib/skills.mjs';
 import { STRATEGIC_AGENT_INSTRUCTIONS, readStrategicContext, workerStrategicPrompt } from './lib/strategic-context.mjs';
 import { readAuraServiceHealth } from './lib/aura-service-health.mjs';
+import { shouldCreateChatMission } from './lib/chat-mission-intent.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = process.env.NOVA_STATE_DIR || join(__dirname, '.agent-state');
@@ -2172,7 +2173,7 @@ export async function processChat(state, client = missionClient, replyFn = callL
   for (const msg of unread) {
     msg.id ||= randomUUID();
     atomicJson(CHAT_INBOX, inbox);
-    if (msg.kind === "mission" || msg.kind === "coding-mission" || /kör|utför|gör|öppna|navigera|klicka|skriv|starta|posta|sök|skapa|bygg|fixa|ändra|uppdatera|\b(run|execute|open|navigate|click|start|post|search|create|build|fix|change|update)\b/i.test(msg.text)) {
+    if (shouldCreateChatMission(msg)) {
       const mission = await client.create({ goal: msg.text, idempotencyKey: msg.id, source: "operator-chat", ...(msg.contract ? { contract: msg.contract } : {}) });
       msg.missionId = mission.id;
       state.lastMissionId = mission.id;
@@ -2188,7 +2189,7 @@ export async function processChat(state, client = missionClient, replyFn = callL
     );
 
     // Check if user asked for a task
-    if (/kör|utför|gör|öppna|navigera|klicka|skriv|starta|posta|sök|skapa|\b(run|execute|open|navigate|click|start|post|search|create)\b/i.test(msg.text)) {
+    if (msg.missionId) {
       // Also enqueue a brain run to act on it
       state.lastBrainTick = state.ticks - BRAIN_TICK_INTERVAL;
     }
