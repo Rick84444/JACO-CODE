@@ -6,10 +6,35 @@ import { UiLanguageProvider } from '../i18n/UiLanguage';
 import { ActivationCard } from '../components/ActivationCard';
 import { CognitiveWorkspace } from '../components/CognitiveWorkspace';
 import { AuraChatPanel } from '../components/AuraChatPanel';
+import { AuraOrganizationPanel } from '../components/AuraOrganizationPanel';
+import { CognitiveGameboard } from '../components/CognitiveGameboard';
 
 const renderToStaticMarkup = (node: React.ReactNode) => renderMarkup(<UiLanguageProvider initialLanguage="sv">{node}</UiLanguageProvider>);
 const noop = () => {};
 const activationProps = {onOpenProject:noop,onOpenProviders:noop,projectName:'My project'};
+
+test('strategy gameboard renders English by default and follows global Swedish selection', () => {
+  const english=renderMarkup(<UiLanguageProvider initialLanguage="en"><CognitiveGameboard /></UiLanguageProvider>);
+  const swedish=renderMarkup(<UiLanguageProvider initialLanguage="sv"><CognitiveGameboard /></UiLanguageProvider>);
+  assert.match(english,/aria-label="Shared gameboard"/);
+  assert.match(english,/Aura strategy/);
+  assert.match(english,/Simulate without execution/);
+  assert.doesNotMatch(english,/>SEER:/);
+  assert.match(swedish,/aria-label="Gemensam spelplan"/);
+  assert.match(swedish,/Auras strategi/);
+  assert.match(swedish,/Simulera utan exekvering/);
+});
+
+test('organization follows the global English/Swedish language selector', () => {
+  const english=renderMarkup(<UiLanguageProvider initialLanguage="en"><AuraOrganizationPanel /></UiLanguageProvider>);
+  const swedish=renderMarkup(<UiLanguageProvider initialLanguage="sv"><AuraOrganizationPanel /></UiLanguageProvider>);
+  assert.match(english,/Agent Organization/);
+  assert.match(english,/Operator approval credential/);
+  assert.doesNotMatch(english,/Operatörens godkännandenyckel/);
+  assert.match(swedish,/Agentorganisation/);
+  assert.match(swedish,/Operatörens godkännandenyckel/);
+  assert.doesNotMatch(swedish,/Operator approval credential/);
+});
 
 test('a failed initial status request offers retry without a permanent loading state', () => {
   const html=renderToStaticMarkup(<ActivationCard {...activationProps} activation={{report:null,loading:false,starting:false,error:'offline',read:async()=>{}}}/>);
@@ -51,32 +76,32 @@ test('chat exposes response cancellation separately from the running mission', (
 test('agent constellation exposes real relationships and missing planning without inventing agents', async () => {
   const { AgentConstellation } = await import('../components/AgentConstellation');
   const network:any={schema:'jaco.agent-network/v1',observedAt:new Date().toISOString(),coordinatorId:'root',nodes:[
-    {id:'root',kind:'coordinator',name:'JACO',role:'Samordnare',parentId:null,status:'CONNECTED',purpose:'Coordinate actual work',model:null,source:'SEER',missionIds:[],planIds:[]},
-    {id:'research',kind:'task-agent',name:'API specialist',role:'Uppdragsagent',parentId:'root',status:'READY',purpose:'Inspect actual interfaces',model:null,source:'SEER Mission Graph',missionIds:[],planIds:['plan'],dependencies:[]},
+    {id:'root',kind:'coordinator',name:'JACO',role:'Coordinator',parentId:null,status:'CONNECTED',purpose:'Coordinate actual work',model:null,source:'SEER',missionIds:[],planIds:[]},
+    {id:'research',kind:'task-agent',name:'API specialist',role:'Mission agent',parentId:'root',status:'READY',purpose:'Inspect actual interfaces',model:null,source:'SEER Mission Graph',missionIds:[],planIds:['plan'],dependencies:[]},
   ],links:[{from:'root',to:'research',kind:'delegation'}],plans:[{id:'plan',title:'Research the interface',objective:'Understand the actual code',status:'ACTIVE',agentIds:['research'],replans:[]}],planningAvailable:true,coordinatorAvailable:true,truncated:false};
   const html=renderToStaticMarkup(<AgentConstellation network={network} error={null} onSelectMission={noop}/>);
-  assert.match(html,/API specialist, Uppdragsagent, Redo/);
+  assert.match(html,/API specialist, Mission agent, Ready/);
   assert.match(html,/data-kind="delegation"/);
   assert.match(html,/Inspect actual interfaces|Research the interface/);
-  assert.doesNotMatch(html,/Samordnaren svarar inte/);
+  assert.doesNotMatch(html,/The coordinator is not responding/);
   const missing=renderToStaticMarkup(<AgentConstellation network={{...network,planningAvailable:false,coordinatorAvailable:false,nodes:[{...network.nodes[0],status:'UNAVAILABLE'}],links:[],plans:[]}} error={null} onSelectMission={noop}/>);
-  assert.match(missing,/Planerna kunde inte hämtas/);
+  assert.match(missing,/Plans could not be retrieved/);
   assert.doesNotMatch(missing,/API specialist/);
-  assert.match(missing,/JACO, Samordnare, Inte nåbar/);
+  assert.match(missing,/JACO, Coordinator, Unreachable/);
 });
 
 test('attachment controls distinguish uploaded copies and binary extraction limits',async()=>{
   const {AttachmentPicker}=await import('../components/AttachmentPicker');
   const html=renderToStaticMarkup(<AttachmentPicker items={[{id:'test',files:[{path:'notes/input.pdf',format:'binary'}]}]} onChange={noop} onBusy={noop} disabled={false}/>);
-  assert.match(html,/Bifoga filer/);assert.match(html,/Bifoga mapp/);
-  assert.match(html,/texttolkning saknas/);assert.match(html,/originalen ändras inte/);
+  assert.match(html,/Attach files/);assert.match(html,/Attach folder/);
+  assert.match(html,/text extraction unavailable/);assert.match(html,/the originals are not changed/);
 });
 
 test('connections workspace exposes live sources and the existing integration controls',async()=>{
   const {ConnectionsWorkspace}=await import('../components/ConnectionsWorkspace');
   const html=renderToStaticMarkup(<ConnectionsWorkspace onSelectTool={noop} onTabChange={noop}/>);
-  for(const label of ['Anslutningar','Lokala verktyg','Webbläsare / CDP','Skills','Väntar på modellernas svar'])assert.ok(html.includes(label),label);
-  assert.doesNotMatch(html,/Ingen tillgänglig modell observerad/,'no unobserved provider is claimed absent before the first response');
+  for(const label of ['Connections','Local tools','Browser / CDP','Skills','Waiting for model responses'])assert.ok(html.includes(label),label);
+  assert.doesNotMatch(html,/No available model observed/,'no unobserved provider is claimed absent before the first response');
 });
 
 test('CDP refuses ambiguous URL-only attachment instead of choosing another identical tab',async()=>{
@@ -91,12 +116,12 @@ test('CDP refuses ambiguous URL-only attachment instead of choosing another iden
 
 test('routine background observations are grouped while mission blockers stay in the conversation', () => {
   const session:any={messages:[],setMessages:noop,appendMessage:async()=>{},storageReady:true,storageError:null,retryStorage:noop,input:'',setInput:noop,busy:null,setBusy:noop,toolArguments:'{}',setToolArguments:noop};
-  const event:any={id:'background',at:'2026-10-22T10:00:00Z',type:'mission.dispatch.started',category:'observation',title:'Ny observation',text:'Dispatcher started',missionId:null,evidence:{outcome:'observed'}};
-  const html=renderToStaticMarkup(<AuraChatPanel session={session} onStartGoal={noop} liveEvents={[event,{...event,id:'blocked',category:'blocked',title:'Arbetet har ett hinder',text:'Anslutningen bröts',evidence:{outcome:'unknown'}}]}/>);
+  const event:any={id:'background',at:'2026-10-22T10:00:00Z',type:'mission.dispatch.started',category:'observation',title:'New observation',text:'Dispatcher started',missionId:null,evidence:{outcome:'observed'}};
+  const html=renderToStaticMarkup(<AuraChatPanel session={session} onStartGoal={noop} liveEvents={[event,{...event,id:'blocked',category:'blocked',title:'Work is blocked',text:'Connection lost',evidence:{outcome:'unknown'}}]}/>);
   const grouped=html.slice(html.indexOf('<details class="cognitive-background-events"'),html.indexOf('</details>')+10);
   assert.match(grouped,/Dispatcher started/);
-  assert.doesNotMatch(grouped,/Anslutningen bröts/);
-  assert.match(html,/Anslutningen bröts/);
+  assert.doesNotMatch(grouped,/Connection lost/);
+  assert.match(html,/Connection lost/);
 });
 
 test('explicit mission controls are still sendable while an unrelated chat answer is pending', () => {

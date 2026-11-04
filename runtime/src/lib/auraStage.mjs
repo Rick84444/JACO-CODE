@@ -20,7 +20,7 @@ export function auraStageCandidate(events = []) {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (!event || !event.id || !event.evidence) continue;
-    const routine = /läser en fil|undersöker projektets filer|jaco_preflight|repo-read|read-file/i.test(event.text || '');
+    const routine = /reading a file|inspecting project files|läser en fil|undersöker projektets filer|jaco_preflight|repo-read|read-file/i.test(event.text || '');
     if (routine && event.evidence.outcome === 'verified' && !event.evidence.commit && !event.evidence.url) continue;
     const material = auraMaterialKind(event);
     if (material) return { event, material };

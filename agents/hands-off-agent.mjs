@@ -2172,7 +2172,7 @@ export async function processChat(state, client = missionClient, replyFn = callL
   for (const msg of unread) {
     msg.id ||= randomUUID();
     atomicJson(CHAT_INBOX, inbox);
-    if (msg.kind === "mission" || msg.kind === "coding-mission" || /kör|utför|gör|öppna|navigera|klicka|skriv|starta|posta|sök|skapa|bygg|fixa|ändra|uppdatera/i.test(msg.text)) {
+    if (msg.kind === "mission" || msg.kind === "coding-mission" || /kör|utför|gör|öppna|navigera|klicka|skriv|starta|posta|sök|skapa|bygg|fixa|ändra|uppdatera|\b(run|execute|open|navigate|click|start|post|search|create|build|fix|change|update)\b/i.test(msg.text)) {
       const mission = await client.create({ goal: msg.text, idempotencyKey: msg.id, source: "operator-chat", ...(msg.contract ? { contract: msg.contract } : {}) });
       msg.missionId = mission.id;
       state.lastMissionId = mission.id;
@@ -2182,13 +2182,13 @@ export async function processChat(state, client = missionClient, replyFn = callL
 
     // Ask LLM to respond in context of agent state
     const ctx = `State: revenue=$${state.revenue.total}, ticks=${state.ticks}, surfaces=${JSON.stringify(state.surfaces)}, queue=${state.taskQueue.length} tasks pending, completed=${state.completedTasks}`;
-    const reply = msg.missionId ? "Uppdrag registrerat hos SEER: " + msg.missionId + ". Utfallet visas efter verifiering." : await replyFn(
-      `You are JACO, an autonomous AI agent. Answer the user's message concisely. ${ctx}`,
+    const reply = msg.missionId ? "Mission registered with SEER: " + msg.missionId + ". The outcome is shown after verification." : await replyFn(
+      `You are JACO, an autonomous AI agent. Answer the user's message concisely, in the language the user writes in. ${ctx}`,
       msg.text
     );
 
     // Check if user asked for a task
-    if (/kör|utför|gör|öppna|navigera|klicka|skriv|starta|posta|sök|skapa/i.test(msg.text)) {
+    if (/kör|utför|gör|öppna|navigera|klicka|skriv|starta|posta|sök|skapa|\b(run|execute|open|navigate|click|start|post|search|create)\b/i.test(msg.text)) {
       // Also enqueue a brain run to act on it
       state.lastBrainTick = state.ticks - BRAIN_TICK_INTERVAL;
     }
@@ -2229,7 +2229,7 @@ async function callLLM(system, user) {
       if (text) { recordModelCall(provider, "chat"); return text.trim(); }
     } catch {}
   }
-  return "Ingen språkmodell svarade. Inget arbete har bekräftats.";
+  return "No language model answered. No work has been confirmed.";
 }
 
 // ── Main Loop ────────────────────────────────────────────────────────────────

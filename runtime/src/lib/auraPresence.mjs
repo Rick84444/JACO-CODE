@@ -5,10 +5,10 @@ const ageInSeconds=(time,now)=>{
   return Number.isFinite(value) && now>=value ? Math.floor((now-value)/1000) : null;
 };
 const friendlyPhase=phase=>({
-  PLANNING:'Planerar nästa åtgärd',EXECUTING:'Utför uppdraget',
-  VERIFYING:'Verifierar resultat',READY:'Väntar på nästa steg',
-  BLOCKED:'Blockerad',QUEUED:'I kö',AWAITING_VERIFICATION:'Väntar på verifiering',
-})[String(phase||'').toUpperCase()]||'Uppdrag registrerat';
+  PLANNING:'Planning the next action',EXECUTING:'Executing the mission',
+  VERIFYING:'Verifying results',READY:'Waiting for the next step',
+  BLOCKED:'Blocked',QUEUED:'Queued',AWAITING_VERIFICATION:'Awaiting verification',
+})[String(phase||'').toUpperCase()]||'Mission registered';
 const bounded=s=>String(s||'').slice(0,220);
 export function auraPresence({
   now=Date.now(),connection='connecting',lastObservedAt=null,
@@ -34,20 +34,20 @@ export function auraPresence({
   // a provider's RUNNING flag, determine whether recent activity is evidenced.
   const unconfirmedProgress=active && (
     actionAge!==null ? actionAge>=90 : missionAge!==null && missionAge>=90);
-  let mode='connecting',title='Ansluter till JACO',detail='Kontrollerar runtime och de observerade händelserna.';
-  if(runtimeRunning===false){mode='offline';title='Runtime stoppad';detail='Serverns senaste tillstånd visar att exekveringen inte körs.';}
+  let mode='connecting',title='Connecting to JACO',detail='Checking the runtime and the observed events.';
+  if(runtimeRunning===false){mode='offline';title='Runtime stopped';detail="The server's latest state shows that execution is not running.";}
   else if(!connected){
-    mode='offline';title='Status kan inte verifieras';
+    mode='offline';title='Status cannot be verified';
     detail=connection==='reconnecting'||connection==='unavailable'
-      ? 'Händelseströmmen svarar inte. Senast visade resultat kan vara gamla.'
-      : !snapshotLive ? 'Arbetsytans statusrapport är för gammal eller saknas.' : 'Väntar på en färsk händelseström.';
-  }else if(blocking){mode='blocked';title=approvals>0?'Ditt godkännande behövs':friendlyPhase(phase);detail=bounded(mission?.goal)||'Ett registrerat uppdrag väntar på åtgärd.';}
-  else if(active && unconfirmedProgress){mode='stalled';title='Inga nya arbetsresultat';detail='Uppdraget är markerat aktivt, men det saknas färsk observerad framdrift.';}
-  else if(active){mode='working';title=friendlyPhase(phase);detail=bounded(mission?.goal)||'Ett uppdrag är aktivt.';}
-  else if(workingSessions>0){mode='observed';title='Agentanslutning observerad';detail='Arbetssessioner finns, men inget aktivt uppdrag är bekräftat i uppdragslistan.';}
-  else {mode='ready';title='Aura är ansluten';detail='Inget aktivt uppdrag rapporterat. Be Aura visa eller skapa något.';}
+      ? 'The event stream is not responding. The results last shown may be old.'
+      : !snapshotLive ? "The workspace status report is too old or missing." : 'Waiting for a fresh event stream.';
+  }else if(blocking){mode='blocked';title=approvals>0?'Your approval is needed':friendlyPhase(phase);detail=bounded(mission?.goal)||'A registered mission is waiting for action.';}
+  else if(active && unconfirmedProgress){mode='stalled';title='No new work results';detail='The mission is marked active, but there is no fresh observed progress.';}
+  else if(active){mode='working';title=friendlyPhase(phase);detail=bounded(mission?.goal)||'A mission is active.';}
+  else if(workingSessions>0){mode='observed';title='Agent connection observed';detail='Work sessions exist, but no active mission is confirmed in the mission list.';}
+  else {mode='ready';title='Aura is connected';detail='No active mission reported. Ask Aura to show or create something.';}
   let step=lastAction?.text ? bounded(lastAction.text) : '';
-  if(!step && active) step='Inget verktygssteg rapporterat ännu';
+  if(!step && active) step='No tool step reported yet';
   if(!step && latestEvent?.text) step=bounded(latestEvent.text);
   const stepAt=lastAction?.at||latestEvent?.at||null;
   const verified=Number.isFinite(mission?.verifiedReceipts)?mission.verifiedReceipts:null;
@@ -55,11 +55,11 @@ export function auraPresence({
   const maxSteps=Number.isFinite(mission?.maxSteps)&&mission.maxSteps>0?mission.maxSteps:null;
   return {
     mode,title,detail,connected,streamLive,snapshotLive,
-    connectionLabel:!snapshotLive?'Status föråldrad':!streamLive?'Ström saknas':runtimeRunning===false?'Runtime stoppad':'JACO ansluten',
-    modelLabel:provider&&model?bounded(provider)+' / '+bounded(model):provider?bounded(provider):'Modell ej observerad',
-    cdpLabel:cdpState==='VERIFIED'?'CDP verifierad':cdpState==='OBSERVED'?'CDP ansluten':'CDP ej observerad',
+    connectionLabel:!snapshotLive?'Status stale':!streamLive?'Stream missing':runtimeRunning===false?'Runtime stopped':'JACO connected',
+    modelLabel:provider&&model?bounded(provider)+' / '+bounded(model):provider?bounded(provider):'Model not observed',
+    cdpLabel:cdpState==='VERIFIED'?'CDP verified':cdpState==='OBSERVED'?'CDP connected':'CDP not observed',
     connectedAgents,workingSessions,approvals,missionGoal:bounded(mission?.goal),
-    phaseLabel:active?friendlyPhase(phase):state||'Inget uppdrag',step,stepAge:ageInSeconds(stepAt,now),
+    phaseLabel:active?friendlyPhase(phase):state||'No mission',step,stepAge:ageInSeconds(stepAt,now),
     streamAge,snapshotAge,verified,stepCount,maxSteps,
     latestAt:stepAt,
   };

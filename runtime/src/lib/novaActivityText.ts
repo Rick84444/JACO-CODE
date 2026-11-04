@@ -11,28 +11,28 @@ export function describeNovaTask(task: any): string {
   const type = String(task?.type || '');
   const data = task?.data || {};
   switch (type) {
-    case 'github-create-repo': return `skapa GitHub-repo ${clip(data.name, 60)}${data.private === false ? ' (publikt)' : ' (privat)'}`;
-    case 'repo-write': return `skriv filen ${clip(data.path)}`;
-    case 'repo-edit': return `ändra i filen ${clip(data.path)}`;
-    case 'repo-read': return `läs filen ${clip(data.path)}`;
-    case 'repo-list': return `lista katalogen ${clip(data.path || '.')}`;
-    case 'repo-test': return `kör ${data.kind === 'falsifier' ? 'falsifieringstest' : 'test'}: ${clip(data.command)}`;
-    case 'git-status': return 'läs git-status';
-    case 'git-diff': return 'läs git-diff';
+    case 'github-create-repo': return `create GitHub repo ${clip(data.name, 60)}${data.private === false ? ' (public)' : ' (private)'}`;
+    case 'repo-write': return `write file ${clip(data.path)}`;
+    case 'repo-edit': return `edit file ${clip(data.path)}`;
+    case 'repo-read': return `read file ${clip(data.path)}`;
+    case 'repo-list': return `list directory ${clip(data.path || '.')}`;
+    case 'repo-test': return `run ${data.kind === 'falsifier' ? 'falsifier test' : 'test'}: ${clip(data.command)}`;
+    case 'git-status': return 'read git status';
+    case 'git-diff': return 'read git diff';
     case 'git-commit': return `git commit "${clip(data.message, 60)}"`;
     case 'git-push': return 'git push';
     case 'git-merge': return `git merge ${clip(data.ref)}`;
-    case 'web-fetch': return `hämta ${clip(data.url)}`;
-    case 'browser-survey-site': return `öppna ${clip(data.url)}`;
-    case 'browser-click': return `klicka på "${clip(data.name, 60)}"`;
-    case 'browser-type': return `skriv i fältet "${clip(data.name, 60)}"`;
-    case 'shell': return `kör kommandot ${clip(data.command)}`;
-    case 'invoke-worker': return `anropa workern ${clip(data.worker, 40)}`;
-    case 'screenshot': return 'ta en skärmbild';
-    case 'desktop-observe': return 'läs skrivbordsfönster';
-    case 'health-check': return 'hälsokontroll';
-    case 'detect-surfaces': return 'kartlägg ytor';
-    default: return type || 'okänd åtgärd';
+    case 'web-fetch': return `fetch ${clip(data.url)}`;
+    case 'browser-survey-site': return `open ${clip(data.url)}`;
+    case 'browser-click': return `click "${clip(data.name, 60)}"`;
+    case 'browser-type': return `type in field "${clip(data.name, 60)}"`;
+    case 'shell': return `run command ${clip(data.command)}`;
+    case 'invoke-worker': return `invoke worker ${clip(data.worker, 40)}`;
+    case 'screenshot': return 'take a screenshot';
+    case 'desktop-observe': return 'read desktop windows';
+    case 'health-check': return 'health check';
+    case 'detect-surfaces': return 'map surfaces';
+    default: return type || 'unknown action';
   }
 }
 
@@ -42,13 +42,13 @@ export function describeNovaResult(receipt: any): { text: string; url: string | 
   const url = typeof result.url === 'string' && /^https?:\/\//.test(result.url) ? result.url : null;
   const unknown = receipt?.outcomeUnknown === true || result.outcomeUnknown === true;
   const failed = receipt?.ok === false || result.ok === false || Boolean(receipt?.error || result.error) || (Number.isFinite(result.exitCode) && result.exitCode !== 0);
-  if (unknown) return { text: 'utfallet är okänt, kontroll behövs', url: null, state: 'unverified' };
+  if (unknown) return { text: 'outcome unknown, check needed', url: null, state: 'unverified' };
   if (receipt?.ok === true && receipt?.verified === true && !failed) {
-    const detail = result.existed === true ? 'fanns redan' : url ? url : result.commit ? `commit ${clip(result.commit, 12)}` : result.path ? clip(result.path) : 'verifierat';
+    const detail = result.existed === true ? 'already existed' : url ? url : result.commit ? `commit ${clip(result.commit, 12)}` : result.path ? clip(result.path) : 'verified';
     return { text: detail, url, state: 'verified' };
   }
-  if (receipt?.ok === true && !failed) return { text: 'utfört men inte verifierat', url, state: 'unverified' };
-  return { text: `misslyckades: ${clip(receipt?.error || result?.error || 'okänt fel', 140)}`, url: null, state: 'failed' };
+  if (receipt?.ok === true && !failed) return { text: 'done but not verified', url, state: 'unverified' };
+  return { text: `failed: ${clip(receipt?.error || result?.error || 'unknown error', 140)}`, url: null, state: 'failed' };
 }
 
 export interface NovaMissionSummary {
@@ -59,7 +59,7 @@ export interface NovaMissionSummary {
   step: number;
   maxSteps: number | null;
   source: string | null;
-  // Minimal parent link for Aura's explicit "Avsluta mål" action; never expose
+  // Minimal parent link for Aura's explicit "End goal" action; never expose
   // private mission metadata or capabilities in the UI projection.
   metadata?: { parent: { graphId: string } };
   createdAt: string | null;
@@ -105,7 +105,7 @@ export function summarizeNovaMission(mission: any, lastStarted: any = null, comp
       ok: claimCheck.ok === true, claims: Number(claimCheck.claims) || 0, facts: Number(claimCheck.facts) || 0, judged: Number(claimCheck.judged) || 0, judge: claimCheck.judge || null,
       problems: [
         ...(claimCheck.contradicted || []).map((x: any) => ({ text: clip(x.text, 200), why: clip(x.why, 200) })),
-        ...(claimCheck.unsupportedFacts || []).map((x: any) => ({ text: clip(x.text, 200), why: `saknas i beläggen: ${clip(x.fact, 80)}` })),
+        ...(claimCheck.unsupportedFacts || []).map((x: any) => ({ text: clip(x.text, 200), why: `missing from the evidence: ${clip(x.fact, 80)}` })),
       ],
       partial: Array.isArray(claimCheck.partial) ? claimCheck.partial : [], error: claimCheck.error || null,
     } : null,

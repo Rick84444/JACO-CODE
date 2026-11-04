@@ -1,7 +1,7 @@
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import React, { useEffect, useState } from 'react';
 
-// Operator switch for Nova's planner model (GET/POST /api/nova/planner). Nova reads the choice on its
+// Aura's execution planner model switch (legacy transport: GET/POST /api/nova/planner). The existing runtime reads the choice on its
 // next planning turn; "Test" makes one small real call so the model is seen answering before a switch.
 interface PlannerOption { provider: string; label: string; paid: boolean; models: string[]; keyConfigured: boolean; usable: boolean }
 interface PlannerState { choice: { provider: string; model: string; by: string; at: string } | null; choices: PlannerOption[]; paidUsdPerDay: number }
@@ -24,7 +24,7 @@ export const NovaPlannerCard: React.FC = () => {
   useEffect(() => {
     const load = () => fetch('/api/nova/planner').then(readAuraResponse).then(apply).catch(e => setError(String(e?.message || e)));
     load();
-    // A provider's "Använd" button changed the choice from outside this card.
+    // A provider's "Use" button changed the choice from outside this card.
     window.addEventListener('jaco:aura:provider-chosen', load);
     return () => window.removeEventListener('jaco:aura:provider-chosen', load);
   }, []);
@@ -52,27 +52,27 @@ export const NovaPlannerCard: React.FC = () => {
   return (
     <div className="border border-cyan-900 bg-[#0b1620] rounded p-2 space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <strong className="text-xs">Planeringsmodell</strong>
+        <strong className="text-xs">Planning model</strong>
         <span className="text-[9px] text-slate-400 truncate">
-          {state ? (state.choice ? `${state.choice.provider} / ${state.choice.model}` : 'Väljs automatiskt') : 'Hämtar…'}
+          {state ? (state.choice ? `${state.choice.provider} / ${state.choice.model}` : 'Chosen automatically') : 'Loading…'}
         </span>
       </div>
       <select
-        aria-label="Nova planeringsmodell" disabled={!state || busy !== null}
+        aria-label="Aura planning model" disabled={!state || busy !== null}
         value={selected}
         onChange={e => { setSelected(e.target.value); setTest(null); }}
         className="w-full bg-[#111] border border-[#333] rounded px-2 py-1.5 text-xs outline-none"
       >
-        <option value={AUTO}>Automatiskt enligt serverns provider- och kostnadspolicy</option>
+        <option value={AUTO}>Automatic, per the server's provider and cost policy</option>
         {state?.choices.map(c => (
-          <optgroup key={c.provider} label={`${c.label}${c.paid ? ' - kostar per anrop' : ''}${c.usable ? '' : c.keyConfigured ? ' - molnanrop avstängda' : ' - nyckel saknas'}`}>
+          <optgroup key={c.provider} label={`${c.label}${c.paid ? ' - paid per call' : ''}${c.usable ? '' : c.keyConfigured ? ' - cloud calls disabled' : ' - key missing'}`}>
             {c.models.map(m => <option key={m} value={`${c.provider}|${m}`} disabled={!c.usable}>{m}</option>)}
           </optgroup>
         ))}
       </select>
       {selectedOption?.paid && (
         <div className="text-[9px] text-amber-300">
-          Kostar per anrop. Dagsgräns: {state?.paidUsdPerDay.toFixed(2)} USD. Modeller väljs enligt dina inställningar.
+          Paid per call. Daily spend cap: {state?.paidUsdPerDay.toFixed(2)} USD. Models are chosen according to your settings.
         </div>
       )}
       <div className="flex gap-2">
@@ -88,7 +88,7 @@ export const NovaPlannerCard: React.FC = () => {
           disabled={busy !== null || !state || selected === current}
           className="flex-1 text-[10px] border border-cyan-700 text-cyan-200 px-2 py-1 rounded hover:bg-cyan-950 disabled:opacity-40"
         >
-          {busy === 'save' ? 'Saving…' : 'Use for Nova'}
+          {busy === 'save' ? 'Saving…' : 'Use for Aura'}
         </button>
       </div>
       {test && (

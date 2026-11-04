@@ -24,7 +24,7 @@ const isTermux = (env = process.env) => Boolean(env.TERMUX_VERSION) || /com\.ter
 export function startPlan({ platform = process.platform, env = process.env, root = ROOT, exists = fs.existsSync } = {}) {
   if (isTermux(env)) {
     const jacoctl = ['bin/jacoctl', ...fs.readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => `${e.name}/bin/jacoctl`)].map(p => path.join(root, p)).find(exists);
-    if (jacoctl) return { label: 'Termux-supervisorn (jacoctl activate)', cmd: 'bash', args: [jacoctl, 'activate', '--profile', 'full'] };
+    if (jacoctl) return { label: 'Termux supervisor (jacoctl activate)', cmd: 'bash', args: [jacoctl, 'activate', '--profile', 'full'] };
   }
   const cloud = path.join(root, 'scripts/cloud-stack.sh');
   if (platform !== 'win32' && exists(cloud)) return { label: 'scripts/cloud-stack.sh up', cmd: 'bash', args: [cloud, 'up'] };
@@ -97,9 +97,9 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
 
   if (command === 'activate' && !(await runtimeUp({ baseUrl }))) {
     const plan = startPlan({ env });
-    say(`Startar stacken: ${plan.label}`);
+    say(`Starting the stack: ${plan.label}`);
     const started = spawnSync(plan.cmd, plan.args, { cwd: ROOT, stdio: json ? 'ignore' : ['ignore', process.stderr, process.stderr], env });
-    if (started.status !== 0) say(`Startkommandot avslutades med kod ${started.status ?? 'okänd'}; kontrollerar ändå om runtimen svarar.`);
+    if (started.status !== 0) say(`The start command exited with code ${started.status ?? 'unknown'}; checking whether the runtime answers anyway.`);
     // A canonical launcher BLOCKED checkpoint must not cause 90 seconds of
     // misleading additional polling; partial starts are reported below.
     const startup = process.platform === 'win32' ? readStartupEvidence(ROOT) : null;

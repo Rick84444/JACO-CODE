@@ -2,9 +2,9 @@ import { insertMemoryNode, linkNodes, searchMemoryNodes, MemoryNode } from './me
 import { searchByEmbedding } from './vectorSearch.js';
 import { randomUUID } from 'crypto';
 
-// En bro mellan AppFunctions och SQLite-minnet.
-// När vi exekverar kodrefaktorering, Git-ops eller audits, 
-// sparar vi resultatet här för att bygga kontext över tid.
+// A bridge between AppFunctions and the SQLite memory.
+// When we run code refactoring, Git ops or audits,
+// we store the result here to build context over time.
 
 export function logActionToMemory(actionType: string, content: string, tags: string[] = []) {
     const id = randomUUID();
@@ -13,7 +13,7 @@ export function logActionToMemory(actionType: string, content: string, tags: str
         type: 'action_result',
         content: `Action: ${actionType}\nResult: ${content}`,
         tags: ['appfunctions', actionType, ...tags],
-        // embedding: genereras asynkront via AICore senare
+        // embedding: generated asynchronously via AICore later
     };
     insertMemoryNode(node);
     return id;

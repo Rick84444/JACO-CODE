@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { useUiLanguage, type UiLanguage } from '../i18n/UiLanguage';
 import { wouldCompleteTrifecta } from '../lib/organizationRisk.mjs';
 import { AURA_SPECIALISTS, provisionAuraSpecialists } from '../lib/auraSpecialistBlueprints.mjs';
 import { Bot, BriefcaseBusiness, Check, ChevronRight, KeyRound, Plus, RefreshCw, ShieldAlert, ShieldCheck, Users, X } from 'lucide-react';
 
-type Locale = 'en' | 'sv';
+type Locale = UiLanguage;
 type Risk = 'low' | 'medium' | 'high' | 'locked';
 type Exposure = 'untrusted' | 'private' | 'external';
 type Permission = { label: string; risk: Risk; exposure: Exposure[] };
@@ -93,7 +94,8 @@ const buttonClass = 'rounded-md border border-[#284359] px-3 py-2 text-xs font-m
 const dateText = (value?: string) => value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleDateString() : '—';
 
 export function AuraOrganizationPanel() {
-  const [locale, setLocale] = useState<Locale>('en');
+  // One shared language selection across the IDE; no separate panel-local toggle.
+  const { language: locale, setLanguage: setLocale } = useUiLanguage();
   const t = translations[locale];
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [selectedId, setSelectedId] = useState('aura');

@@ -84,24 +84,26 @@ export const ActivationCard: React.FC<{
     catch { setRepairState('uncertain'); }
     finally { repairPending.current = false; }
   };
-  const labels: Record<string,string> = {
-    'Status kunde inte hämtas':'Status unavailable',
-    'Kontrollerar vad som är redo':'Checking readiness',
-    'JACO behöver startas':'Start JACO',
-    'Anslut en modell för att börja':'Connect a model to begin',
-    'Välj en modell som svarar':'Choose a working model',
-    'Verktygen behöver startas':'Tools need to be started',
-    'Agentkörningen behöver kontrolleras':'Agent runtime needs inspection',
-    'Redo för ditt uppdrag':'Ready for your mission',
-    'Kontrollera anslutningen och försök igen.':'Check the connection and retry.',
-    'Kontrollerar modell, verktyg och agentkörning.':'Checking model, tools and agent runtime.',
-    'Starta JACO på datorn och kontrollera anslutningen igen.':'Start JACO and check the connection again.',
-    'Välj en lokal modell eller anslut en modelltjänst.':'Select a local model or connect a model provider.',
-    'Den valda planeringsmodellen har inte kunnat verifieras.':'The selected planning model has not been verified.',
-    'Starta de anslutna verktygen så att JACO kan arbeta i projektet.':'Start connected tools so JACO can work in the project.',
-    'Modellen svarar, men alla förutsättningar för körning är inte uppfyllda.':'The model responds, but not all execution requirements are met.',
+  // Readiness text comes from activationReadiness() in English; this table is the Swedish UI translation.
+  const svLabels: Record<string,string> = {
+    'Status unavailable':'Status kunde inte hämtas',
+    'Checking readiness':'Kontrollerar vad som är redo',
+    'Start JACO':'JACO behöver startas',
+    'Connect a model to begin':'Anslut en modell för att börja',
+    'Choose a working model':'Välj en modell som svarar',
+    'Tools need to be started':'Verktygen behöver startas',
+    'Agent runtime needs inspection':'Agentkörningen behöver kontrolleras',
+    'Ready for your mission':'Redo för ditt uppdrag',
+    'Check the connection and retry.':'Kontrollera anslutningen och försök igen.',
+    'Checking model, tools and agent runtime.':'Kontrollerar modell, verktyg och agentkörning.',
+    'Start JACO on this computer and check the connection again.':'Starta JACO på datorn och kontrollera anslutningen igen.',
+    'Select a local model or connect a model provider.':'Välj en lokal modell eller anslut en modelltjänst.',
+    'The selected planning model has not been verified.':'Den valda planeringsmodellen har inte kunnat verifieras.',
+    'Start connected tools so JACO can work in the project.':'Starta de anslutna verktygen så att JACO kan arbeta i projektet.',
+    'The model responds, but not all execution requirements are met.':'Modellen svarar, men alla förutsättningar för körning är inte uppfyllda.',
+    'Describe what you want done. You can follow the work here.':'Beskriv vad du vill få gjort. Du följer arbetet här.',
   };
-  const localized = (value:string) => tr(value, labels[value] || value);
+  const localized = (value:string) => tr(svLabels[value] || value, value);
   const connect = state.action === 'connect';
   const start = state.action === 'activate';
   if (dismissed) return <div className="cognitive-setup-collapsed"><button type="button" onClick={() => setDismissed(false)}><AlertTriangle size={14}/>{tr('Visa driftstatus','Show runtime status')}</button></div>;

@@ -10,13 +10,13 @@ const RETRY_FROM_MS = 30_000, RETRY_MAX_MS = 10 * 60_000, START_CONCURRENCY = 3;
 // What the operator can do about a start failure, from the error text alone.
 export function remedyFor(error = '') {
   const e = String(error);
-  if (/ENOENT.*uvx|uvx.*ENOENT|spawn uvx/i.test(e)) return 'uvx saknas: installera uv (Termux: pkg install uv, Windows: winget install astral-sh.uv).';
-  if (/ENOENT.*npx|npx.*ENOENT|spawn npx/i.test(e)) return 'npx saknas: installera Node.js med npm.';
-  if (/ENOENT/i.test(e)) return 'Programmet som servern ska starta hittas inte. Kontrollera kommandot i verktygsinställningarna.';
-  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|fetch failed|network|offline/i.test(e)) return 'Ingen nätverksanslutning just nu. Försöker igen automatiskt.';
-  if (/MCP_TIMEOUT|timed out/i.test(e)) return 'Servern svarade inte i tid. Försöker igen automatiskt.';
-  if (/HTTPS_URL_REQUIRED|CONFIGURATION_INVALID|TOKEN_ENV/i.test(e)) return 'Inställningen för servern är ogiltig. Rätta den i verktygsinställningarna.';
-  return 'Försöker igen automatiskt; se serverns logg om felet kvarstår.';
+  if (/ENOENT.*uvx|uvx.*ENOENT|spawn uvx/i.test(e)) return 'uvx is missing: install uv (Termux: pkg install uv, Windows: winget install astral-sh.uv).';
+  if (/ENOENT.*npx|npx.*ENOENT|spawn npx/i.test(e)) return 'npx is missing: install Node.js with npm.';
+  if (/ENOENT/i.test(e)) return 'The program the server should start was not found. Check the command in the tool settings.';
+  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|fetch failed|network|offline/i.test(e)) return 'No network connection right now. Retrying automatically.';
+  if (/MCP_TIMEOUT|timed out/i.test(e)) return 'The server did not respond in time. Retrying automatically.';
+  if (/HTTPS_URL_REQUIRED|CONFIGURATION_INVALID|TOKEN_ENV/i.test(e)) return 'The server configuration is invalid. Fix it in the tool settings.';
+  return 'Retrying automatically; check the server log if the error persists.';
 }
 
 export function automaticConnections({ registry, mcpHost, env = process.env, now = Date.now, loadCredentials = null, onToolsStarted = (_event) => {} }) {
@@ -33,7 +33,7 @@ export function automaticConnections({ registry, mcpHost, env = process.env, now
     const out = [], todo = [];
     for (const s of rows) {
       if (s.status === 'READY') { retry.delete(s.id); out.push({ id: s.id, state: 'CONNECTED', tools: s.tools.map(t => t.name) }); continue; }
-      if (s.credentialEnv && s.credentialConfigured === false) { out.push({ id: s.id, state: 'NO_KEY', tools: [], remedy: `Lägg in ${s.credentialEnv} (JACO Connect kan ta emot den) så ansluts servern själv.` }); continue; }
+      if (s.credentialEnv && s.credentialConfigured === false) { out.push({ id: s.id, state: 'NO_KEY', tools: [], remedy: `Add ${s.credentialEnv} (JACO Connect can receive it) and the server connects by itself.` }); continue; }
       if (s.status === 'FAILED' && s.error && /CONFIGURATION_INVALID|HTTPS_URL_REQUIRED|TOKEN_ENV/.test(s.error)) { out.push({ id: s.id, state: 'INVALID', tools: [], error: s.error, remedy: remedyFor(s.error) }); continue; }
       const r = retry.get(s.id);
       if (r && now() < r.nextTry) { out.push({ id: s.id, state: 'RETRY_LATER', tools: [], error: r.error, attempts: r.attempts, nextTry: new Date(r.nextTry).toISOString(), remedy: remedyFor(r.error) }); continue; }

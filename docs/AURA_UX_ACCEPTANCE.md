@@ -1,59 +1,59 @@
-# Aura Live Workspace – produktkrav och UX-acceptans
+# Aura Live Workspace – product requirements and UX acceptance
 
-**Status:** Kvalitetsmål, inte ett uppmätt användarbetyg. Den här specifikationen gäller den enda kanoniska Aura-ytan på Windows och Android/Termux. Inget separat demo-GUI får användas som bevis för leverans.
+**Status:** A quality goal, not a measured user rating. This specification applies to the single canonical Aura surface on Windows and Android/Termux. No separate demo GUI may be used as evidence of delivery.
 
-## Kärnflödet som måste fungera
+## The core flow that must work
 
-1. Öppna JACO → befintligt projekt och **en** chatt visas. Om runtime eller modell saknas får användaren ett begripligt läge, inte ett påhittat READY.
-2. Skriv ett mål → uppdraget får ett beständigt ID. Aura får arbeta autonomt enligt vald policy. Ett mottaget mål räknas **inte** som ett utfört uppdrag.
-3. Följ senaste arbete → verkliga händelser och deras verifieringsstatus syns i Live Stage. Fel, osäkert utfall och frånkoppling går inte att förväxla med leverans.
-4. Öppna **Kod**, **Förhandsvisa** eller **Belägg** med ett klick på datorn, eller via mobilens tydliga Arbete-flik och meny. Den pågående chatten och osparade utkastet består vid varje byte.
-5. Granska ändrad fil → diff/ändringsstatus och testkvitton är kopplade till rätt uppdrag. Förhandsvisningen isolerar okänd HTML. Spara kräver att filversionen fortfarande matchar; ett konfliktfel får inte skriva över användarens eller agentens ändringar.
-6. Byt projekt, avbryt en operation, starta om eller tappa nätet → inget gammalt material visas som aktuellt i det nya projektet. Om ett externt utfall är okänt måste runtime först undersöka vad som verkligen hände.
-7. Kostnader: autonomi börjar på nivå 5, frivillig sänkning ska vara enkel. Anslutna betalda AI-API:er använder användarvalda kostnadstak; köp av abonnemang, påfyllning och utbetalningar behöver uttryckligt användargodkännande.
+1. Open JACO → the existing project and **one** chat are shown. If the runtime or model is missing, the user gets an understandable state, not an invented READY.
+2. Write a goal → the mission gets a persistent ID. Aura may work autonomously according to the chosen policy. A received goal does **not** count as a completed mission.
+3. Follow the latest work → real events and their verification status are visible in Live Stage. Errors, uncertain outcomes and disconnection cannot be confused with delivery.
+4. Open **Code**, **Preview** or **Evidence** with one click on the computer, or via the phone's clear Work tab and menu. The ongoing chat and unsaved draft persist across every switch.
+5. Review a changed file → diff/change status and test receipts are linked to the right mission. The preview isolates unknown HTML. Saving requires that the file version still matches; a conflict error must not overwrite the user's or the agent's changes.
+6. Switch project, cancel an operation, restart or lose the network → no old material is shown as current in the new project. If an external outcome is unknown, the runtime must first investigate what really happened.
+7. Costs: autonomy starts at level 5, a voluntary reduction must be easy. Connected paid AI APIs use user-chosen spend caps; buying subscriptions, top-ups and payouts need explicit user approval.
 
-## Mätbar kvalitet – operatörens 8/10-mål
+## Measurable quality – the operator's 8/10 goal
 
-**I nuvarande utvecklingsfas är ägaren den enda UX-testpersonen.** Automatisk CI-verifiering och det mänskliga användarbetyget är skilda mått. Kravet på fem externa testpersoner tas bort: det gäller varken för att fortsätta utveckla, godkänna GUI:t internt eller slå samman en tekniskt verifierad implementation.
+**In the current development phase the owner is the only UX tester.** Automated CI verification and the human user rating are separate measures. The requirement for five external testers is removed: it does not apply to continuing development, approving the GUI internally or merging a technically verified implementation.
 
-### Steg 1: tekniska tester utan operatörsbörda
-GitHub Actions verifierar byggen, navigation, kontinuitet, browser/HTML-isolering och tester. Misslyckad CI är ett tekniskt blockerande fel; ett godkänt CI-test är **inte** ett påhittat användarbetyg.
+### Step 1: technical tests without operator burden
+GitHub Actions verifies builds, navigation, continuity, browser/HTML isolation and tests. Failed CI is a technically blocking error; a passing CI test is **not** an invented user rating.
 
-### Steg 2: verklig operatoracceptans
-På **sin egen Windows-installation** använder operatören Aura för verkliga uppdrag, inklusive att starta, följa, granska resultat, rätta önskad ändring och återuppta efter avbrott. Operatören ger efteråt ett övergripande betyg **1–10** och beskriver vad som fungerar eller stör. **Mål: operatörens betyg ≥ 8/10**, utan P0-blockerare. Betyget ska aldrig anges som uppnått förrän operatören uttryckligen har lämnat det.
+### Step 2: real operator acceptance
+On **their own Windows installation** the operator uses Aura for real missions, including starting, following, reviewing results, correcting a desired change and resuming after an interruption. Afterwards the operator gives an overall rating **1–10** and describes what works or gets in the way. **Goal: the operator's rating ≥ 8/10**, with no P0 blockers. The rating must never be stated as achieved until the operator has explicitly given it.
 
-### Steg 3: Androidacceptans när en körbar version finns
-Samma person bedömer Android separat, på sin riktiga telefon, efter att installationen fungerar. Windowsbetyget är inte bevis för mobilbetyget. Ingen extern testpanel krävs för denna interna fas.
+### Step 3: Android acceptance when a runnable version exists
+The same person assesses Android separately, on their real phone, after the installation works. The Windows rating is not evidence for the mobile rating. No external test panel is required for this internal phase.
 
-### Steg 4: framtida extern validering
-Om JACO senare ska marknadsföras mot andra användare bör oberoende användare rekryteras. Ett sådant test får ett separat urval och resultat. Det är **inte** ett villkor för operatörens nuvarande acceptans.
+### Step 4: future external validation
+If JACO is later marketed to other users, independent users should be recruited. Such a test gets a separate sample and result. It is **not** a condition for the operator's current acceptance.
 
-### Operatörens enkla betygsmall
-Efter att ha genomfört ett verkligt uppdrag räcker följande: **Helhetsbetyg 1–10**; **vad kändes smidigt?**; **vad störde mest?**; **skulle du hellre använda Aura än din nuvarande arbetsyta?**. Inga påhittade medianvärden eller uppskattningar från utvecklaren.
+### The operator's simple rating template
+After completing a real mission the following is enough: **Overall rating 1–10**; **what felt smooth?**; **what got in the way most?**; **would you rather use Aura than your current workspace?**. No invented median values or estimates from the developer.
 
-| Dimension | Test | Stoppspärr |
+| Dimension | Test | Stop condition |
 |---|---|---|
-| Start / onboarding | Anslut lokal modell eller använd redan ansluten; starta ett uppdrag | Inga dolda shell-steg |
-| Uppdragsförståelse | Peka ut aktuellt steg, senaste verifierade åtgärd och nästa åtgärd | Ingen falsk färdigmarkering |
-| Navigation | Gå mellan chatt, kod, resultat och bevis på desktop och 393 px mobil | Inga döda knappar eller oåtkomliga vyer |
-| Kontinuitet | Byt vy, projekt, ladda om och avbryt SSE | Utkast bevarade, historik deduplicerad, inga andra projekts bevis visas som aktuella |
-| Kod / preview | Ändra HTML, se förhandsvisning, utlös versionskonflikt och återhämta | Inga tysta överskrivningar, ingen script-escape |
-| Återhämtning | Avbryt en extern åtgärd mellan utförande och kvitto | Ingen blind upprepning av icke-idempotent åtgärd |
-| Ekonomi / autonomi | Begränsa autonomi och prova köp respektive vanligt modell-anrop | Utgifter stoppas utan godkännande, egna molntak respekteras |
+| Start / onboarding | Connect a local model or use an already connected one; start a mission | No hidden shell steps |
+| Mission understanding | Point out the current step, the latest verified action and the next action | No false completion marking |
+| Navigation | Move between chat, code, results and evidence on desktop and 393 px mobile | No dead buttons or unreachable views |
+| Continuity | Switch view, project, reload and interrupt SSE | Drafts preserved, history deduplicated, no other project's evidence shown as current |
+| Code / preview | Change HTML, see the preview, trigger a version conflict and recover | No silent overwrites, no script escape |
+| Recovery | Interrupt an external action between execution and receipt | No blind repetition of a non-idempotent action |
+| Economy / autonomy | Limit autonomy and try a purchase and an ordinary model call respectively | Spend is stopped without approval, own cloud caps are respected |
 
-## Teknisk verifiering före merge
+## Technical verification before merge
 
-- TypeScript och produktionsbygget gröna, inklusive frontendens faktisk använda assets.
-- Node-regression: stage selection, falsifierbar beläggstatus, stage pin/unpin, projektbytesisolering, HTML-sanering, filer och CDP read-only.
-- Playwright genom **det verkliga React-gränssnittet** på 1440×900 och 393×852: navigering, uppdragsstatus från beständig fixture, arbetskopia, filkonflikt, SSE reconnect, mobiloverflow och nedkopplat läge. Mockservern får inte räknas som ett användartest.
-- På målmaskin: verkligt autonomt end-to-end uppdrag med commit, diff, tester, kvitton och restart. Dokumentera exakt JACO-release, SHA, modell/provider, OS och pass/fail per test.
-- Beslut att merge:a kräver gröna relevanta CI-kontroller. En lyckad mock eller bara en godkänd screenshot är inte en produktrelease.
+- TypeScript and the production build green, including the assets the frontend actually uses.
+- Node regression: stage selection, falsifiable evidence status, stage pin/unpin, project switch isolation, HTML sanitizing, files and CDP read-only.
+- Playwright through **the real React interface** at 1440×900 and 393×852: navigation, mission status from a persistent fixture, working copy, file conflict, SSE reconnect, mobile overflow and offline mode. The mock server must not be counted as a user test.
+- On the target machine: a real autonomous end-to-end mission with commit, diff, tests, receipts and restart. Document the exact JACO release, SHA, model/provider, OS and pass/fail per test.
+- A decision to merge requires green relevant CI checks. A successful mock or merely an approved screenshot is not a product release.
 
-## Kända begränsningar vid införandet
+## Known limitations at introduction
 
-Aura Live Stage är en separat utvecklingsgren tills den integreras med senaste `main`. CDP-stills är periodiska bilder, inte en videoström; browseraktionen sker via separat kontrollerad verktygsgräns. Nuvarande live-events saknar fullständig projektskopad historik: vid projektbyte döljs äldre stage-händelser tills nya observationer kommer. Sann per-projekt-historik behöver projekt-ID i strömmen. Android på telefon, verklig autonom exekvering och användarbetyg är ännu inte verifierade.
+Aura Live Stage is a separate development branch until it is integrated with the latest `main`. CDP stills are periodic images, not a video stream; the browser action happens through a separately controlled tool boundary. The current live events lack complete project-scoped history: on project switch, older stage events are hidden until new observations arrive. True per-project history needs a project ID in the stream. Android on a phone, real autonomous execution and user rating are not yet verified.
 
-**Definition av färdig för nuvarande GUI-acceptans:** Ett verkligt uppdrag fungerar och kan granskas från Aura på målmaskinen, relevant CI är grön, och operatören ger minst 8/10 utan P0-blockerare. Windows och Android bedöms separat när respektive version kan köras. Ingen extern testpanel krävs.
+**Definition of done for the current GUI acceptance:** A real mission works and can be reviewed from Aura on the target machine, relevant CI is green, and the operator gives at least 8/10 with no P0 blockers. Windows and Android are assessed separately when the respective version can run. No external test panel is required.
 
 ## PR 13 hardening — 2026-10-24
 

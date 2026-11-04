@@ -384,9 +384,9 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   workplace.stdout?.on('data', c => workplaceLog?.write(c));
   workplace.stderr?.on('data', c => workplaceLog?.write(c));
   workplace.once('exit', (code, signal) => { workplaceAlive = false; processStopped('workplace', workplace, code, signal); workplaceLog?.end(); });
-  workplace.once('error', e => { workplaceAlive = false; lifecycle({ component:'workplace', event:'SPAWN_ERROR', reason: e.code || 'UNKNOWN' }); err('Anslutningstjänsten kunde inte startas: ' + e.message); });
+  workplace.once('error', e => { workplaceAlive = false; lifecycle({ component:'workplace', event:'SPAWN_ERROR', reason: e.code || 'UNKNOWN' }); err('The connection service could not be started: ' + e.message); });
   if (!await waitForHealth(workplaceUrl, { alive: () => workplaceAlive, fetchImpl: deps.fetchImpl, timeoutMs: deps.healthTimeoutMs, expectedProduct: 'JACO Workplace' })) {
-    shutdownRequested = true; workplace.kill(); err('JACO Workplace kunde inte startas. Se .jaco/workplace.log.'); return 5;
+    shutdownRequested = true; workplace.kill(); err('JACO Workplace could not be started. See .jaco/workplace.log.'); return 5;
   }
   const connectedEnv = { ...env, JACO_WORKPLACE_URL: workplaceUrl, JACO_WORKPLACE_REQUIRED: '1',
     JACO_WORKPLACE_TOKEN: '', JACO_HUB_URL: '', JACO_DEVICE_KEY: '' };

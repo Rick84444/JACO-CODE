@@ -27,7 +27,7 @@ export interface JobRecord<TPayload = any, TResult = any> {
   id: string;
   type: JobType;
   status: JobStatus;
-  priority: number; // Högre nummer = högre prioritet (t.ex. 1-100)
+  priority: number; // Higher number = higher priority (e.g. 1-100)
   payload: TPayload;
   result?: TResult;
   error?: string;

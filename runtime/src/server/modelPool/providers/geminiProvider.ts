@@ -51,7 +51,7 @@ export async function pingGemini(): Promise<GeminiProviderHealth> {
       isHealthy: false,
       latencyMs: Date.now() - startTime,
       hasApiKey: false,
-      error: 'GEMINI_API_KEY saknas i process.env'
+      error: 'GEMINI_API_KEY missing from process.env'
     };
   }
 
@@ -61,7 +61,7 @@ export async function pingGemini(): Promise<GeminiProviderHealth> {
       latencyMs: Date.now() - startTime,
       hasApiKey: true,
       cooldownActive: true,
-      error: 'Alla Gemini-modeller är i temporär kvot-cooldown (429 rate-limit).'
+      error: 'All Gemini models are in a temporary quota cooldown (429 rate limit).'
     };
   }
 
@@ -72,7 +72,7 @@ export async function pingGemini(): Promise<GeminiProviderHealth> {
         isHealthy: false,
         latencyMs: Date.now() - startTime,
         hasApiKey: true,
-        error: 'Kunde inte initiera GoogleGenAI'
+        error: 'Could not initialize GoogleGenAI'
       };
     }
 
@@ -110,7 +110,7 @@ export async function pingGemini(): Promise<GeminiProviderHealth> {
       isHealthy: false,
       latencyMs: Date.now() - startTime,
       hasApiKey: true,
-      error: err?.message || 'Gemini ping misslyckades'
+      error: err?.message || 'Gemini ping failed'
     };
   }
 }
@@ -124,7 +124,7 @@ export async function generateGeminiCompletion(
   const client = getAiClient();
 
   if (!client) {
-    throw new Error('GEMINI_API_KEY saknas eller är ej initierad');
+    throw new Error('GEMINI_API_KEY is missing or not initialized');
   }
 
   // Model cascade: try requested model, then gemini-2.5-flash, gemini-3.7-flash, gemini-2.5-flash-lite, gemini-3.1-flash-lite, gemini-flash-latest
@@ -166,5 +166,5 @@ export async function generateGeminiCompletion(
     }
   }
 
-  throw lastError || new Error('Alla modeller i Gemini-kaskaden är i kvotbegränsning (429 RESOURCE_EXHAUSTED).');
+  throw lastError || new Error('All models in the Gemini cascade are quota limited (429 RESOURCE_EXHAUSTED).');
 }

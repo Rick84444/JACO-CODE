@@ -5,13 +5,13 @@ import { reasonAdversarially } from '../modelPool/adversarial.js';
 export interface CompetitorIntelItem {
   id: string;
   timestamp: string;
-  competitorOrEcosystem: string; // t.ex. "Cursor AI", "Devin / Cognition", "Claude Cowork / MCP", "Windsurf Cascade", "AutoGPT A2A", "OpenAI Swarm"
+  competitorOrEcosystem: string; // e.g. "Cursor AI", "Devin / Cognition", "Claude Cowork / MCP", "Windsurf Cascade", "AutoGPT A2A", "OpenAI Swarm"
   featureDomain: 'A2A_PROTOCOL' | 'SUBGOAL_DECOMPOSITION' | 'COMPRESSED_MEMORY_RAG' | 'AUTONOMOUS_DAEMON' | 'AST_PATCHING' | 'EDGE_NPU';
   observedFeature: string;
   architecturalInsight: string;
-  compressedMemoryDigest: string; // Högkomprimerad syntes för RAG & framtida delmål
-  counterStrategyProposal: string; // Hur JACO kan göra framtida delmål starkare
-  strengthImpactScore: number; // 1-100 (hur mycket detta stärker JACO:s delmål)
+  compressedMemoryDigest: string; // Highly compressed synthesis for RAG & future subgoals
+  counterStrategyProposal: string; // How JACO can make future subgoals stronger
+  strengthImpactScore: number; // 1-100 (how much this strengthens JACO's subgoals)
   sourceUrls: string[];
   proofHash: string;
 }
@@ -23,7 +23,7 @@ export interface ExternalMeasurementTarget {
   targetValue: number;
   currentValue: number;
   unit: string;
-  externalVerificationSource: string; // t.ex. "GitHub Actions CI", "DORA Audit", "Linter Zero Error Exit", "NPU Thermal Sensor", "A2A Marketplace Settlement"
+  externalVerificationSource: string; // e.g. "GitHub Actions CI", "DORA Audit", "Linter Zero Error Exit", "NPU Thermal Sensor", "A2A Marketplace Settlement"
   status: 'pending' | 'achieved' | 'measuring' | 'failed';
   lastMeasuredAt: string;
   linkedSubgoalId?: string;
@@ -43,10 +43,10 @@ const memoryIntelStore: CompetitorIntelItem[] = [
     timestamp: new Date(Date.now() - 3600000).toISOString(),
     competitorOrEcosystem: 'Cursor & Claude Code (Anthropic)',
     featureDomain: 'SUBGOAL_DECOMPOSITION',
-    observedFeature: 'Granulär uppdelning i atomära sub-tasks (< 30s per steg) med tvingande test-gates före nästa steg.',
-    architecturalInsight: 'Stora monolitiska delmål misslyckas i 45% av fallen på grund av kontextöverbelastning. Atomära delmål (max 3 minuter) ger 96% determinism.',
-    compressedMemoryDigest: '[COMPRESSED MEMORY] Subgoal granularity rule: Alltid dela upp i atomära micro-steg med deterministisk AST-validering och rollback-snapshots.',
-    counterStrategyProposal: 'Automatisera 6-8 atomära micro-subgoals i varje JACO Blueprint med verifieringshash.',
+    observedFeature: 'Granular breakdown into atomic sub-tasks (< 30s per step) with mandatory test gates before the next step.',
+    architecturalInsight: 'Large monolithic subgoals fail in 45% of cases due to context overload. Atomic subgoals (max 3 minutes) yield 96% determinism.',
+    compressedMemoryDigest: '[COMPRESSED MEMORY] Subgoal granularity rule: Always split into atomic micro-steps with deterministic AST validation and rollback snapshots.',
+    counterStrategyProposal: 'Automate 6-8 atomic micro-subgoals in every JACO Blueprint with a verification hash.',
     strengthImpactScore: 95,
     sourceUrls: [
       'https://docs.cursor.com/agent/subgoals',
@@ -59,10 +59,10 @@ const memoryIntelStore: CompetitorIntelItem[] = [
     timestamp: new Date(Date.now() - 7200000).toISOString(),
     competitorOrEcosystem: 'Devin (Cognition AI)',
     featureDomain: 'COMPRESSED_MEMORY_RAG',
-    observedFeature: 'Hierarkisk minneskomprimering och periodisk kunskapsdestillering för långvariga sessioner.',
-    architecturalInsight: 'Genom att sammanfatta och komprimera tidigare lyckade patchar och felanalyser kan agenten undvika upprepade misstag utan att blåsa kontextfönstret.',
-    compressedMemoryDigest: '[COMPRESSED MEMORY] Distilled Memory Pattern: Ersätt råa terminal-loggar med kryptografiskt signerade 2-meningars komprimerade minnesnoder.',
-    counterStrategyProposal: 'Integrera komprimerat minne direkt i IndexedDB & PlanDecide för att förberäkna delmålssteg.',
+    observedFeature: 'Hierarchical memory compression and periodic knowledge distillation for long-running sessions.',
+    architecturalInsight: 'By summarizing and compressing previously successful patches and failure analyses, the agent can avoid repeated mistakes without blowing the context window.',
+    compressedMemoryDigest: '[COMPRESSED MEMORY] Distilled Memory Pattern: Replace raw terminal logs with cryptographically signed two-sentence compressed memory nodes.',
+    counterStrategyProposal: 'Integrate compressed memory directly into IndexedDB & PlanDecide to precompute subgoal steps.',
     strengthImpactScore: 98,
     sourceUrls: [
       'https://cognition.ai/blog/devin-architecture-memory',
@@ -75,10 +75,10 @@ const memoryIntelStore: CompetitorIntelItem[] = [
     timestamp: new Date(Date.now() - 14400000).toISOString(),
     competitorOrEcosystem: 'Windsurf Cascade (Codeium)',
     featureDomain: 'A2A_PROTOCOL',
-    observedFeature: 'Real-time tool execution mesh och dynamisk röstning mellan utförar- och granskarmodeller.',
-    architecturalInsight: 'Dual-agent verification (Adversarial Falsifier) stoppar skadliga patchar med 99.2% precision innan de rör disken.',
-    compressedMemoryDigest: '[COMPRESSED MEMORY] Dual-Agent Gate: Slutför aldrig ett delmål utan att Falsifier-agenten har godkänt verifieringsbeviset.',
-    counterStrategyProposal: 'Tillämpa JACO Master Gatekeeper som slutligt filter och registrera resultatet i audit-kedjan.',
+    observedFeature: 'Real-time tool execution mesh and dynamic voting between executor and reviewer models.',
+    architecturalInsight: 'Dual-agent verification (Adversarial Falsifier) stops harmful patches with 99.2% precision before they touch the disk.',
+    compressedMemoryDigest: '[COMPRESSED MEMORY] Dual-Agent Gate: Never complete a subgoal until the Falsifier agent has approved the verification evidence.',
+    counterStrategyProposal: 'Apply JACO Master Gatekeeper as the final filter and record the result in the audit chain.',
     strengthImpactScore: 92,
     sourceUrls: [
       'https://codeium.com/windsurf/cascade',
@@ -91,7 +91,7 @@ const memoryIntelStore: CompetitorIntelItem[] = [
 const externalMeasurementTargets: ExternalMeasurementTarget[] = [
   {
     id: 'target_linter_zero_err',
-    title: 'Noll Syntax- & AST-Linter Fel',
+    title: 'Zero Syntax & AST Linter Errors',
     metricKey: 'linter_error_count',
     targetValue: 0,
     currentValue: 0,
@@ -102,7 +102,7 @@ const externalMeasurementTargets: ExternalMeasurementTarget[] = [
   },
   {
     id: 'target_subgoal_granularity',
-    title: 'Granularitetsfaktor för delmål (antal delmål per plan)',
+    title: 'Subgoal granularity factor (subgoals per plan)',
     metricKey: 'subgoals_per_plan',
     targetValue: 5,
     currentValue: 5,
@@ -113,7 +113,7 @@ const externalMeasurementTargets: ExternalMeasurementTarget[] = [
   },
   {
     id: 'target_compressed_memory_retrieval',
-    title: 'Komprimerade minnesnoder i RAG-indexet',
+    title: 'Compressed memory nodes in the RAG index',
     metricKey: 'compressed_memory_count',
     targetValue: 20,
     currentValue: 12,
@@ -124,7 +124,7 @@ const externalMeasurementTargets: ExternalMeasurementTarget[] = [
   },
   {
     id: 'target_a2a_latency',
-    title: 'A2A Agent-to-Agent RPC Handshake Latens',
+    title: 'A2A Agent-to-Agent RPC Handshake Latency',
     metricKey: 'a2a_handshake_latency_ms',
     targetValue: 100,
     currentValue: 24,
@@ -135,7 +135,7 @@ const externalMeasurementTargets: ExternalMeasurementTarget[] = [
   },
   {
     id: 'target_dora_compliance',
-    title: 'DORA EU AI Act Säkerhets- och Auditnivå',
+    title: 'DORA EU AI Act Security and Audit Level',
     metricKey: 'dora_compliance_score',
     targetValue: 100,
     currentValue: 100,
@@ -147,21 +147,21 @@ const externalMeasurementTargets: ExternalMeasurementTarget[] = [
 ];
 
 /**
- * Hämtar alla komprimerade konkurrent- och ekosysteminsikter
+ * Returns all compressed competitor and ecosystem insights
  */
 export function listCompetitorIntel(): CompetitorIntelItem[] {
   return [...memoryIntelStore];
 }
 
 /**
- * Hämtar alla externa mätbara mål
+ * Returns all external measurable targets
  */
 export function listExternalMeasurementTargets(): ExternalMeasurementTarget[] {
   return [...externalMeasurementTargets];
 }
 
 /**
- * Lägger till eller uppdaterar ett externt mätmål
+ * Adds or updates an external measurement target
  */
 export function recordExternalMeasurement(target: Partial<ExternalMeasurementTarget> & { metricKey: string; currentValue: number }): ExternalMeasurementTarget {
   const existingIndex = externalMeasurementTargets.findIndex(t => t.metricKey === target.metricKey);
@@ -182,7 +182,7 @@ export function recordExternalMeasurement(target: Partial<ExternalMeasurementTar
 
   const newTarget: ExternalMeasurementTarget = {
     id: `ext_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-    title: target.title || `Mätmål: ${target.metricKey}`,
+    title: target.title || `Measurement target: ${target.metricKey}`,
     metricKey: target.metricKey,
     targetValue: target.targetValue ?? 0,
     currentValue: target.currentValue,
@@ -197,8 +197,8 @@ export function recordExternalMeasurement(target: Partial<ExternalMeasurementTar
 }
 
 /**
- * Kör en automatiserad schemainhämtning av konkurrent- och ekosystemdata.
- * Syntetiserar ny kunskap till komprimerade minnesnoder och lagrar dem i minnesbanken.
+ * Runs an automated scheduled collection of competitor and ecosystem data.
+ * Synthesizes new knowledge into compressed memory nodes and stores them in the memory bank.
  */
 export async function runCompetitorIntelligenceScrape(queryTopic?: string): Promise<{
   success: boolean;
@@ -210,22 +210,22 @@ export async function runCompetitorIntelligenceScrape(queryTopic?: string): Prom
   const nowIso = new Date().toISOString();
 
   const prompt = `
-Du är JACO Competitor Intelligence & Ecosystem Scraper Agent.
-Analysera de senaste framstegen och arkitekturmönstren hos ledande AI-kodagenter och autonoma ramverk (t.ex. Cursor, Devin, Claude Code, Windsurf, OpenClaw, LangGraph).
+You are the JACO Competitor Intelligence & Ecosystem Scraper Agent.
+Analyze the latest advances and architecture patterns of leading AI coding agents and autonomous frameworks (e.g. Cursor, Devin, Claude Code, Windsurf, OpenClaw, LangGraph).
 
-Fokusera på:
-1. Hur de bryter ned komplexa uppdrag i små, atomära delmål.
-2. Hur minneskomprimering och RAG används för att göra framtida delmål starkare.
-3. Externa mätetal och verifiering (DORA, AST-validering, latens).
+Focus on:
+1. How they break complex missions down into small, atomic subgoals.
+2. How memory compression and RAG are used to make future subgoals stronger.
+3. External metrics and verification (DORA, AST validation, latency).
 
-Skapa en ny, skarp insiktsrapport i strikt JSON-format (inget annat):
+Produce a new, sharp insight report in strict JSON format (nothing else):
 {
-  "competitorOrEcosystem": "Namn på konkurrent/ekosystem (t.ex. Devin, Cursor, Claude Code, AutoGPT)",
+  "competitorOrEcosystem": "Name of competitor/ecosystem (e.g. Devin, Cursor, Claude Code, AutoGPT)",
   "featureDomain": "SUBGOAL_DECOMPOSITION" | "COMPRESSED_MEMORY_RAG" | "A2A_PROTOCOL" | "AUTONOMOUS_DAEMON" | "AST_PATCHING" | "EDGE_NPU",
-  "observedFeature": "Konkret funktion eller mönster som observerats",
-  "architecturalInsight": "Djup arkitektonisk analys av varför detta mönster fungerar",
-  "compressedMemoryDigest": "[COMPRESSED MEMORY] En ultra-komprimerad minnesnod på 1-2 meningar som sparar kärninsikten för JACOs framtida delmålsgenerering",
-  "counterStrategyProposal": "Hur JACO kan utnyttja denna insikt för att göra egna delmål ännu mer robusta och autonoma",
+  "observedFeature": "Concrete feature or pattern observed",
+  "architecturalInsight": "Deep architectural analysis of why this pattern works",
+  "compressedMemoryDigest": "[COMPRESSED MEMORY] An ultra-compressed memory node of 1-2 sentences that preserves the core insight for JACO's future subgoal generation",
+  "counterStrategyProposal": "How JACO can use this insight to make its own subgoals even more robust and autonomous",
   "strengthImpactScore": 95,
   "sourceUrls": ["https://...", "https://..."]
 }
@@ -234,7 +234,7 @@ Skapa en ny, skarp insiktsrapport i strikt JSON-format (inget annat):
   try {
     const res = await generate({
       prompt,
-      systemPrompt: 'Du är JACO Senior Intelligence Scraper. Svara uteslutande med valid JSON.'
+      systemPrompt: 'You are the JACO Senior Intelligence Scraper. Respond exclusively with valid JSON.'
     });
 
     let data: any = {};
@@ -251,10 +251,10 @@ Skapa en ny, skarp insiktsrapport i strikt JSON-format (inget annat):
       data = {
         competitorOrEcosystem: 'Cursor & Devin Ecosystem',
         featureDomain: 'SUBGOAL_DECOMPOSITION',
-        observedFeature: 'Atomär delmålsnedbrytning och testkontrakt',
-        architecturalInsight: 'Modulära små delsteg reducerar felkvoten med upp till 70%.',
-        compressedMemoryDigest: '[COMPRESSED MEMORY] Subgoal Decomposition: Dela upp komplexa missioner i atomära delmål.',
-        counterStrategyProposal: 'Inkorporera komprimerade minnesvektorer i alla nya delmålsbeslut.',
+        observedFeature: 'Atomic subgoal decomposition and test contracts',
+        architecturalInsight: 'Small modular sub-steps reduce the failure rate by up to 70%.',
+        compressedMemoryDigest: '[COMPRESSED MEMORY] Subgoal Decomposition: Split complex missions into atomic subgoals.',
+        counterStrategyProposal: 'Incorporate compressed memory vectors into every new subgoal decision.',
         strengthImpactScore: 92,
         sourceUrls: ['https://cursor.com/blog', 'https://cognition.ai/blog']
       };
@@ -267,10 +267,10 @@ Skapa en ny, skarp insiktsrapport i strikt JSON-format (inget annat):
       timestamp: nowIso,
       competitorOrEcosystem: data.competitorOrEcosystem || 'Ecosystem Benchmarks',
       featureDomain: data.featureDomain || 'SUBGOAL_DECOMPOSITION',
-      observedFeature: data.observedFeature || 'Atomär delmålsnedbrytning med testkontrakt',
-      architecturalInsight: data.architecturalInsight || 'Modulära små delsteg reducerar felkvoten med upp till 70%.',
-      compressedMemoryDigest: data.compressedMemoryDigest || `[COMPRESSED MEMORY] ${data.observedFeature}: Tillämpa isolerade verifieringskontrakt.`,
-      counterStrategyProposal: data.counterStrategyProposal || 'Inkorporera komprimerade minnesvektorer i alla nya delmålsbeslut.',
+      observedFeature: data.observedFeature || 'Atomic subgoal decomposition with test contracts',
+      architecturalInsight: data.architecturalInsight || 'Small modular sub-steps reduce the failure rate by up to 70%.',
+      compressedMemoryDigest: data.compressedMemoryDigest || `[COMPRESSED MEMORY] ${data.observedFeature}: Apply isolated verification contracts.`,
+      counterStrategyProposal: data.counterStrategyProposal || 'Incorporate compressed memory vectors into every new subgoal decision.',
       strengthImpactScore: typeof data.strengthImpactScore === 'number' ? data.strengthImpactScore : 90,
       sourceUrls: Array.isArray(data.sourceUrls) && data.sourceUrls.length > 0 ? data.sourceUrls : [
         'https://arxiv.org/abs/2402.multi-agent-planning',
@@ -282,7 +282,7 @@ Skapa en ny, skarp insiktsrapport i strikt JSON-format (inget annat):
     memoryIntelStore.unshift(newInsight);
     if (memoryIntelStore.length > 50) memoryIntelStore.pop();
 
-    // Uppdatera externt mätmål för minnesnoder
+    // Update the external measurement target for memory nodes
     recordExternalMeasurement({
       metricKey: 'compressed_memory_count',
       currentValue: memoryIntelStore.length,
@@ -296,17 +296,17 @@ Skapa en ny, skarp insiktsrapport i strikt JSON-format (inget annat):
       totalStoredCount: memoryIntelStore.length
     };
   } catch (err: any) {
-    // Fallback om LLM-anropet timeoutar
+    // Fallback if the LLM call times out
     const fallbackProof = crypto.createHash('sha256').update('fallback_intel_' + nowIso).digest('hex').substring(0, 16);
     const fallbackInsight: CompetitorIntelItem = {
       id: `intel_fallback_${Date.now()}`,
       timestamp: nowIso,
       competitorOrEcosystem: 'Global AI Agent Ecosystem (Fallback)',
       featureDomain: 'SUBGOAL_DECOMPOSITION',
-      observedFeature: 'Deterministisk mikro-schemaläggning och isolerade under-agenter för snabbare konvergens.',
-      architecturalInsight: 'Små delmål med kontinuerlig mätning eliminerar driftavvikelser och ger operatören full insyn.',
-      compressedMemoryDigest: '[COMPRESSED MEMORY] Granular Subgoal Invariant: Skapa alltid minst 4-6 små delmål med tydliga verifieringskommandon.',
-      counterStrategyProposal: 'Fortsätt schemalägga kontinuerliga schema-pings mot lokala noder.',
+      observedFeature: 'Deterministic micro-scheduling and isolated sub-agents for faster convergence.',
+      architecturalInsight: 'Small subgoals with continuous measurement eliminate drift and give the operator full visibility.',
+      compressedMemoryDigest: '[COMPRESSED MEMORY] Granular Subgoal Invariant: Always create at least 4-6 small subgoals with clear verification commands.',
+      counterStrategyProposal: 'Keep scheduling continuous pings to local nodes.',
       strengthImpactScore: 88,
       sourceUrls: ['https://github.com/Rick84444/jaco-code'],
       proofHash: fallbackProof
@@ -323,14 +323,14 @@ Skapa en ny, skarp insiktsrapport i strikt JSON-format (inget annat):
 }
 
 /**
- * Komprimerar och sammanställer alla relevanta insikter till en kontext-sträng
- * för att injicera i PlanDecide och blueprint-syntes.
+ * Compresses and compiles all relevant insights into a context string
+ * to inject into PlanDecide and blueprint synthesis.
  */
 export function getCompressedMemoryForPlanning(): string {
   const latestItems = memoryIntelStore.slice(0, 5);
-  if (latestItems.length === 0) return 'Inga komprimerade minnesnoder tillgängliga.';
+  if (latestItems.length === 0) return 'No compressed memory nodes available.';
 
   return latestItems.map((item, idx) => 
-    `${idx + 1}. [${item.competitorOrEcosystem} | ${item.featureDomain}] ${item.compressedMemoryDigest} (Strategi: ${item.counterStrategyProposal})`
+    `${idx + 1}. [${item.competitorOrEcosystem} | ${item.featureDomain}] ${item.compressedMemoryDigest} (Strategy: ${item.counterStrategyProposal})`
   ).join('\n');
 }
