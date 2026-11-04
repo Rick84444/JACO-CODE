@@ -2037,6 +2037,7 @@ async function runAgentLoop(state) {
         homeText: Object.entries(extras).filter(([key]) => key.startsWith('Your home')).map(([, value]) => value).join('\n'),
         skillText: activeProcedure || extras['Skill procedure to follow'] || extras['Skill procedure'] || '',
         skillCandidates: extras['Available skill candidates'] || '',
+        learnedOutcomes: mission.contract ? state.preflight?.knowledge?.outcomes || [] : [],
         inboxAddress: extras["JACO's own e-mail addresses (for sign-ups)"] || '',
       });
       return repoPreflight ? `${packet}\n${repoPreflight}` : packet;
