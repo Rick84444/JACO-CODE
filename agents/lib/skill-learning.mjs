@@ -138,7 +138,7 @@ export function learningStore(stateDir) {
     },
     recallOutcome(contract,revision,{limit=3}={}) {
       const scopeKey=createHash('sha256').update(JSON.stringify(contract?.scope?.allowed||[])).digest('hex');
-      return outcomes().filter(o=>o.scopeKey===scopeKey).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,limit).map(o=>({...o,verificationStatus:o.repositoryRevision&&o.repositoryRevision!==revision?'STALE':o.verificationStatus,reuseRule:'Historical evidence only; validate against current repository and contract before reuse'}));
+      return outcomes().filter(o=>o.scopeKey===scopeKey).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,limit).map(o=>({...o,originalVerificationStatus:o.verificationStatus,verificationStatus:o.verificationStatus==='VERIFIED'&&o.repositoryRevision&&o.repositoryRevision!==revision?'STALE':o.verificationStatus,reuseRule:'Historical evidence only; validate against current repository and contract before reuse'}));
     },
     isLearned: id => learned().has(id),
     markLearned(id) { const s = learned(); s.add(id); mkdirSync(stateDir, { recursive: true }); writeFileSync(learnedFile, JSON.stringify([...s].slice(-2000))); },
