@@ -20,4 +20,4 @@
 
 Source and isolated packaged runtime are verified to the extent above. The installed runtime checkout was not updated or restarted; these changes are not claimed loaded there. Native Android/ISO packaging, physical-device behavior, provider account authentication, paid inference and GitHub delivery are not verified by this work.
 
-Artifacts and screenshots: `C:/Users/dickj/Downloads/jaco-agent-board-evidence`. These artifacts are local verification evidence, not release installation files. Existing unrelated staged changes and live memory files were excluded from the feature commit.
+Artifacts and screenshots: a local evidence folder. These artifacts are local verification evidence, not release installation files. Existing unrelated staged changes and live memory files were excluded from the feature commit.

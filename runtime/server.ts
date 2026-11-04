@@ -65,7 +65,7 @@ import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
-import { auraAlwaysAnswers, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
+import { auraAlwaysAnswers, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
@@ -4581,13 +4581,18 @@ const notifyPhone = async (action) => {
         }
         return null;
       };
+      // A chat must end in an answer within minutes at most. A chosen provider that failed is followed by another
+      // connected provider first: the default route can be a local model that needs minutes on a busy computer.
+      const deadlines = auraChatDeadlines();
       const askOrConnected = async (choice: any) => {
-        try { return await ask(choice); }
+        if (choice) return await answerWithin(ask(choice), deadlines.chosenMs);
+        const connected = chatChoice ? chatFallbackChoice(connectedRuntime.providers, process.env, { exclude: chatChoice.providerId }) : null;
+        if (connected) { try { return await answerWithin(ask(connected), deadlines.fallbackMs); } catch { /* The default route still gets its turn. */ } }
+        try { return await answerWithin(ask(null), deadlines.defaultMs); }
         catch (error) {
-          if (choice) throw error;
-          const fallback = chatFallbackChoice(connectedRuntime.providers) || await activeLocalChoice().catch(() => null);
+          const fallback = connected ? null : chatFallbackChoice(connectedRuntime.providers) || await activeLocalChoice().catch(() => null);
           if (!fallback) throw error;
-          return await ask(fallback);
+          return await answerWithin(ask(fallback), deadlines.fallbackMs);
         }
       };
       // Lite never launches SEER: default chat must not depend on its /cortex/brain.

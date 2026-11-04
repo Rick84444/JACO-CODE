@@ -82,7 +82,7 @@ foreach ($p in $ordered) {
 
 # Anything still listening on a JACO port is killed by owner, whatever its command line says.
 $jacoPorts = @(2995, 2996, 2997, 2998, 3000, 4243, 4250, 9222)
-foreach ($conn in @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $jacoPorts -contains $_.LocalPort })) {
+foreach ($conn in @(Get-NetTCPConnection -ErrorAction SilentlyContinue | Where-Object { $_.RemotePort -eq 0 -and $jacoPorts -contains $_.LocalPort })) {
   $owner = Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
   if ($owner -and $owner.ProcessName -in @('node', 'cloudflared', 'powershell', 'pwsh', 'chrome')) {
     Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
@@ -131,7 +131,7 @@ foreach ($root in @($Runtime, (Join-Path $Runtime '.jaco-substrate'), (Join-Path
 # 4. Verify.
 Start-Sleep -Milliseconds 800
 $remaining = @(Get-JacoProcesses "$executorPattern|$servicePattern")
-$openPorts = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $jacoPorts -contains $_.LocalPort } | ForEach-Object { $_.LocalPort } | Sort-Object -Unique)
+$openPorts = @(Get-NetTCPConnection -ErrorAction SilentlyContinue | Where-Object { $_.RemotePort -eq 0 -and $jacoPorts -contains $_.LocalPort } | ForEach-Object { $_.LocalPort } | Sort-Object -Unique)
 $elapsed = [int]((Get-Date) - $started).TotalMilliseconds
 
 Write-Host ''

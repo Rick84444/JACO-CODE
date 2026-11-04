@@ -1268,7 +1268,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       );
     }
 
-    if (sidebar === 'revenue') return <React.Suspense fallback={<div className="p-3 text-xs">Opening budget…</div>}><RevenueView /></React.Suspense>;
+    if (sidebar === 'revenue') return <React.Suspense fallback={<div className="p-3 text-xs">Opening budget…</div>}><div className="flex-1 overflow-auto px-2 py-2 space-y-3"><EconomicBudgetPanel inline /><RevenueView /></div></React.Suspense>;
     if (sidebar === 'skills') return <React.Suspense fallback={<div className="p-3 text-xs">Opening skills…</div>}><SkillsView /></React.Suspense>;
     if (sidebar === 'devices') return <React.Suspense fallback={<div className="p-3 text-xs">Opening devices…</div>}><DevicesView browser={snapshot?.integrations?.cdp} onInspectBrowser={() => void selectMcpToolByName('cdp', 'nova_targets')} /></React.Suspense>;
 

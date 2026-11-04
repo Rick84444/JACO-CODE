@@ -182,7 +182,10 @@ export function pendingProcess(c, id) {
   const record = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (!Number.isInteger(record.pid) || record.pid < 1) throw new Error(`PROCESS_RECORD_INVALID:${id}`);
   try { process.kill(record.pid, 0); } catch (e) { if (e.code === 'ESRCH') return null; throw e; }
-  if (!record.birth || processBirth(record.pid) !== record.birth) throw new Error(`PROCESS_OWNER_NOT_VERIFIED:${id}`);
+  if (!record.birth) throw new Error(`PROCESS_OWNER_NOT_VERIFIED:${id}`);
+  // Windows reuses PIDs. A different creation time proves the recorded process has ended, so the record is stale.
+  // A foreign process holding the service port is still refused by the listener check.
+  if (processBirth(record.pid) !== record.birth) { fs.rmSync(file, { force: true }); return null; }
   return record.pid;
 }
 export function recoverableListener(ownedPid,listenerPid) {
@@ -192,13 +195,24 @@ function ownsListener(c,s) {
   const pid=pendingProcess(c,s.id);
   if(!pid||process.platform!=='win32')return false;
   const port=Number(new URL(s.url).port);
-  const listener=Number(execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess`],{encoding:'utf8',windowsHide:true,timeout:15000}).trim());
+  const listener=Number(execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`(Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Where-Object { $_.RemotePort -eq 0 } | Select-Object -First 1).OwningProcess`],{encoding:'utf8',windowsHide:true,timeout:15000}).trim());
   return recoverableListener(pid,listener);
+}
+// Another reader can hold the receipt open for a moment on Windows; that must not abort the startup it describes.
+export function renameWithRetry(from, to, { attempts = 20, waitMs = 100, rename = fs.renameSync } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try { return rename(from, to); }
+    catch (error) {
+      if (attempt >= attempts || !['EPERM', 'EBUSY', 'EACCES'].includes(error?.code)) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
+    }
+  }
 }
 function save(c, result) {
   const file = path.join(c.root, 'logs', 'startup', 'status.json');
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file + '.tmp', JSON.stringify(result, null, 2)); fs.renameSync(file + '.tmp', file);
+  fs.writeFileSync(file + '.tmp', JSON.stringify(result, null, 2));
+  renameWithRetry(file + '.tmp', file);
 }
 // The same semantic Nova checks are used for startup and later read-only inspection.
 function novaReadiness(c) {
