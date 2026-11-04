@@ -54,7 +54,7 @@ test('unverified postcondition is not promoted to success', async () => fixture(
 
 test('directory entry is synced before dispatch and again after verified replacement', async () => fixture(async (_journal, dir) => {
   const events=[];
-  const journal=createBrowserActionJournal(dir,{syncDir: path => { assert.equal(path,dir); events.push('sync'); }});
+  const journal=createBrowserActionJournal(dir,{syncDir: path => { events.push('sync'); }});
   const result=await journal.execute({ ...action('directory_sync_1234'), perform: async () => {
     assert.ok(events.includes('sync'),'browser dispatch requires a synced claim');
     events.push('dispatch');
@@ -72,4 +72,27 @@ test('unsupported directory durability blocks browser execution', async () => fi
   assert.equal(result.ok,false);
   assert.equal(result.error,'ACTION_JOURNAL_UNAVAILABLE');
   assert.equal(writes,0);
+}));
+
+test('retry after failed ancestor sync persists the whole ancestor chain before dispatch', async () => fixture(async (_journal, root) => {
+  const nested=join(root,'nested','journal');
+  let failOnce=true, writes=0;
+  const synced=[];
+  const journal=createBrowserActionJournal(nested,{syncDir: path => {
+    synced.push(path);
+    if (failOnce && path===root) { failOnce=false; throw Error('FIRST_PARENT_FSYNC_FAILED'); }
+  }});
+  const input=action('ancestor_retry_123456');
+  const first=await journal.execute({ ...input, perform:async()=>{writes++;return {ok:true,verified:true};} });
+  assert.equal(first.error,'ACTION_JOURNAL_UNAVAILABLE');
+  assert.equal(writes,0);
+  const marker=synced.length;
+  const second=await journal.execute({ ...input, perform:async()=>{
+    writes++;
+    assert.ok(synced.slice(marker).includes(root),'retry must sync the earlier failed parent');
+    assert.ok(synced.slice(marker).includes(nested),'retry must sync journal directory');
+    return {ok:true,verified:true};
+  }});
+  assert.equal(second.verified,true);
+  assert.equal(writes,1);
 }));
