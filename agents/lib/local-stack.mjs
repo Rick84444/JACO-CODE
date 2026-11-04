@@ -222,7 +222,7 @@ function novaReadiness(c) {
   const workplace = definitions(c).find(s => s.id === 'workplace');
   return [
     { ...workplace, id: 'nova-supervisor', accept: d => d.supervisedAgents?.nova?.supervised === true && d.supervisedAgents.nova.state === 'RUNNING' },
-    { id: 'nova-session', token: c.env.JACO_WORKPLACE_TOKEN || '', url: c.env.JACO_WORKPLACE_URL + '/v1/agents', accept: d => d.agents?.some(a => a.requestedName === (c.env.JACO_EXECUTOR === 'desktop-agentos' ? 'Desktop AgentOS' : 'Nova') && a.sessions?.some(s => ['READY', 'BUSY', 'AVAILABLE'].includes(s.status))) },
+    { id: 'nova-session', token: c.env.JACO_WORKPLACE_TOKEN || '', url: c.env.JACO_WORKPLACE_URL + '/v1/agents', accept: d => d.agents?.some(a => (c.env.JACO_EXECUTOR === 'desktop-agentos' ? a.requestedName === 'Desktop AgentOS' : ['Nova', 'Aura'].includes(a.requestedName)) && a.sessions?.some(s => ['READY', 'BUSY', 'AVAILABLE'].includes(s.status))) },
   ];
 }
 export async function inspectStatus(c, services = [...definitions(c), ...novaReadiness(c)]) {
