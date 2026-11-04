@@ -18,6 +18,11 @@ test('Remote Bridge required; Workplace is the sole SEER and Nova owner',()=>{
  assert.equal(services.some(s=>s.id==='nova'),false);
  assert.equal(c.env.JACO_WORKPLACE_SUPERVISE_NOVA,'1');
 });
+test('every service reads the same planner choice as the runtime that saves it',()=>{
+ const c=configuration(root,{});
+ assert.equal(c.env.JACO_PLANNER_CHOICE_FILE,path.join(c.runtime,'.jaco','state','provider-preference.json'));
+ assert.equal(configuration(root,{JACO_PLANNER_CHOICE_FILE:'chosen.json'}).env.JACO_PLANNER_CHOICE_FILE,'chosen.json');
+});
 test('the agent connects its own browser by default; the ChatGPT gateway and tunnel stay opt-in',()=>{
  const c=configuration(root,{});assert.equal(c.cdp,true);assert.equal(c.gateway,false);assert.equal(c.tunnel,false);
  for(const id of ['novaBridge','cdp'])assert.ok(definitions(c).some(s=>s.id===id),id);

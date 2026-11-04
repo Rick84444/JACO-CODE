@@ -65,6 +65,9 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_RUNTIME_DIR: runtime });
   env.JACO_RUNTIME_URL = `http://127.0.0.1:${ports.runtime}`;
   env.JACO_RELEASE_ROOT = runtime;
+  // One model choice for every service. Without this each service reads the file under its own working
+  // directory, and the planner can stay pinned to a model the operator replaced long ago.
+  env.JACO_PLANNER_CHOICE_FILE ||= path.join(runtime, '.jaco', 'state', 'provider-preference.json');
   env.JACO_WORKPLACE_URL = `http://127.0.0.1:${ports.workplace}`;
   env.SEER_URL = `http://127.0.0.1:${ports.seer}`;
   env.JACO_REMOTE_BRIDGE_URL = `http://127.0.0.1:${ports.remote}`;
