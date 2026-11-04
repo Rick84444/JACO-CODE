@@ -151,7 +151,10 @@ jobs:
 
   # Publishing waits for the Windows run: a broken Windows download must not go live before the check that finds it.
   publish:
-    if: inputs.publish
+    # Deploying the public site is restricted to a deliberate dispatch on main. `workflow_dispatch` lets the
+    # caller choose any ref, so without the ref check `publish=true` on a feature branch would put unreviewed
+    # code on jacocode.com. The build and verify jobs above still run on any ref; only publishing is pinned.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish
     needs: [verified-lite, windows-lite-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -59,6 +59,21 @@ test('every workflow can actually be triggered', () => {
   assert.deepEqual(dead, [], `push-only workflows that can never fire: ${dead.join(' | ')}`);
 });
 
+// Making the publish job reachable is only safe if it is also pinned: workflow_dispatch takes a ref, so a gate on
+// the input alone would let publish=true on any feature branch put unreviewed code on jacocode.com.
+test('publishing the public site is restricted to a deliberate dispatch on main', () => {
+  // The job, not the `publish:` input of the same name under workflow_dispatch: anchor on the job's indentation.
+  const job = /\n {2}publish:\n([\s\S]*?)(?=\n {2}\S|$)/.exec(read('lite-release.yml'));
+  assert.ok(job, 'no publish job found in lite-release.yml');
+  const gate = /^\s*if:\s*(.+)$/m.exec(job[1]);
+  assert.ok(gate, 'the publish job has no `if` gate at all');
+  const condition = gate[1];
+  for (const required of ["github.event_name == 'workflow_dispatch'", "github.ref == 'refs/heads/main'", 'inputs.publish']) {
+    assert.ok(condition.includes(required), `publish gate is missing ${required}: ${condition}`);
+  }
+  assert.doesNotMatch(condition, /\|\|/, 'an || in the publish gate widens it: every clause must hold');
+});
+
 test('nova delivery asks the repository for its base branch instead of assuming one', () => {
   const source = fs.readFileSync(path.join(root, 'agents/nova-deliver.mjs'), 'utf8');
   assert.doesNotMatch(source, /const base = ['"][a-z]/, 'the base branch must be resolved, not hardcoded');
