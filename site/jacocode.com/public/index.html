@@ -189,12 +189,12 @@
       </article>
       <article class="card">
         <h3>Your code stays yours</h3>
-        <p>The server listens on your computer only. Keys are kept encrypted outside your project. Spending has a limit that you set.</p>
+        <p>The server listens on your computer only, and keys are kept encrypted outside your project. Cloud models are on from the first start, inside a daily limit you can change in the budget panel; outgoing payments always stop and wait for you.</p>
       </article>
     </div>
     <div class="dl" id="lite-download">
       <h3 class="dl-h">One line, and it handles the rest</h3>
-      <p class="dl-note">The installer reads the signed file list, refuses any download whose SHA-256 does not match it, and installs Node.js itself if yours is older than 22.5. Nothing needs administrator rights, and nothing is placed outside the JACO folder and one command.</p>
+      <p class="dl-note">The installer reads the checksum manifest over HTTPS, refuses any download whose SHA-256 does not match it, and installs Node.js itself if yours is older than 22.5 &mdash; checking that against nodejs.org&rsquo;s own checksums. Nothing needs administrator rights, and nothing is placed outside the JACO folder and one command. There is no code-signing key yet, so the checksums protect against a corrupted or swapped file, not against this site itself.</p>
       <p class="cmd"><span class="cmd-os">macOS, Linux, Android (Termux)</span><code>curl -fsSL https://jacocode.com/install.sh | sh</code></p>
       <p class="cmd"><span class="cmd-os">Windows (PowerShell)</span><code>irm https://jacocode.com/install.ps1 | iex</code></p>
       <p class="dl-note">Then <code>jaco-lite</code> in any project folder starts it. <code>jaco-lite update</code> fetches the newest build, <code>rollback</code> returns to the previous one, <code>doctor</code> says what is installed and whether it can start, and <code>uninstall</code> removes it without touching your projects.</p>

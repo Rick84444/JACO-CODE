@@ -98,6 +98,12 @@ test('the download and install instructions match the real launchers and install
   assert.match(readFileSync(lite('install.ps1'), 'utf8'), /latest\.json/);
   // Android is built from the same code but has never been started on a phone: the page must not imply otherwise.
   assert.match(html, /has not been run on a phone/);
+
+  // `latest.json` is a SHA-256 manifest fetched over HTTPS. Nothing in the repository signs it, and no installer
+  // verifies a signature against a pinned key, so the page must not describe it as signed.
+  assert.doesNotMatch(html, /\bsigned\b/i, 'no signing key exists: the page may not claim one');
+  const installers = ['install.sh', 'install.ps1'].map(file => readFileSync(resolve(root, '../../lite', file), 'utf8')).join('\n');
+  assert.doesNotMatch(installers, /gpg|minisign|cosign|openssl\s+dgst\s+-verify/i, 'an installer verifies a signature: update the page wording');
 });
 
 test('the workspace the page describes is the one the runtime implements', () => {

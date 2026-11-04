@@ -196,10 +196,14 @@ jobs:
       - name: Verify the public site matches what was published
         run: |
           SITE=site/jacocode.com/public
+          # `index.html` is fetched as `/`: Cloudflare's default HTML handling redirects the explicit path to the
+          # clean one, and a comparison against a redirect body would fail the job after the site is already live.
+          # --location covers the same redirect on any other path.
           for file in download/jaco-lite.zip download/jaco-lite.zip.sha256 download/jaco-lite-windows.zip \
                       download/jaco-lite-android.zip download/latest.json install.sh install.ps1 \
                       index.html style.css brand/jaco-logo.png; do
+            case "$file" in index.html) url=''; ;; *) url="$file"; ;; esac
             out="$RUNNER_TEMP/public-$(echo "$file" | tr / -)"
-            curl --fail --retry 4 --retry-delay 5 "https://jacocode.com/$file" --output "$out"
+            curl --fail --location --retry 4 --retry-delay 5 "https://jacocode.com/$url" --output "$out"
             cmp "$out" "$SITE/$file"
           done
