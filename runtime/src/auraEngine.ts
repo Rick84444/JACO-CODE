@@ -240,7 +240,7 @@ export class AuraEngineManager {
 
   private gitOpsConfig: import("./types").GitOpsConfig = {
     repoUrl: String(process.env.JACO_GIT_REMOTE_URL || "").trim(),
-    branch: String(process.env.JACO_GIT_BRANCH || "master").trim(),
+    branch: String(process.env.JACO_GIT_BRANCH || "main").trim(),
     authToken: "",
     syncIntervalMinutes: 5,
     autoPushPatches: false,
