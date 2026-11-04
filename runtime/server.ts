@@ -448,7 +448,7 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
         },
       },
       nova_deliver: {
-        description: 'Deliver Nova\'s committed work on branch nova/work: push, open/update PR, merge to master only if every GitHub check is green. Returns a delivery receipt (MERGED, CHECKS_PENDING, CHECKS_FAILED, NOTHING_TO_DELIVER...). args: {}',
+        description: 'Deliver Nova\'s committed work on branch nova/work: push, open/update PR, merge into the repository\'s default branch only if every GitHub check is green. Returns a delivery receipt (MERGED, CHECKS_PENDING, CHECKS_FAILED, NOTHING_TO_DELIVER, BLOCKED...). args: {}',
         run: async () => {
           const script = path.join(WORKSPACE_ROOT, 'agents', 'nova-deliver.mjs');
           const { stdout } = await execFileAsync(process.execPath, [script], { cwd: WORKSPACE_ROOT, windowsHide: true, timeout: 180_000 });
