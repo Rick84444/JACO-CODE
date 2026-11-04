@@ -10,6 +10,7 @@ import { NovaMissionControl, mountNovaMissionRoutes } from '../../runtime/src/se
 import { MissionClient } from '../../agents/lib/mission-client.mjs';
 import { plannerTools } from '../../agents/lib/native-tools.mjs';
 import { runAgentMission, receiptForModel, contextPacketIntro } from '../../agents/lib/agent-loop.mjs';
+import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
 
 function setup(t, allowedTasks) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-loop-'));
@@ -325,4 +326,154 @@ test('native tool loop finishes the in-flight action but skips other stale calls
   assert.equal(result.completed,true);
   assert.deepEqual(calls,['https://first.test','https://replacement.test']);
   assert.equal(s.control.get(m.id).receipts.length,2);
+});
+
+
+test('native coding contract performs durable repository preflight before using model tools', async t => {
+  const s = setup(t, ['repo-list']);
+  const contract = {
+    scope: { allowed: ['src/**'] },
+    acceptance: ['The agent inspected the permitted repository tree'],
+    verification: { tests_required: false, receipt_required: true },
+    execution: { allow_git_commit: false, allow_git_push: false, allow_git_merge: false },
+  };
+  const mission = s.control.create({
+    goal: 'Inspect the source tree', source: 'operator', idempotencyKey: 'contract-native-ready',
+    contract, allowedTasks: ['repo-list'],
+  });
+  let checked = 0;
+  const model = scripted([
+    { tool_calls: [call('repo-list', { path: '.' })] },
+    { tool_calls: [call('complete', { reason: 'Tree inspected [#1]' })] },
+  ]);
+  const result = await run(s, model, async () => ({ ok: true, verified: true, entries: ['src/index.js'] }), {
+    preflight: async ({ mission: active, lease }) => {
+      checked++;
+      assert.equal(active.id, mission.id);
+      assert.equal(model.seen.length, 0, 'no LLM request may start before the coding preflight');
+      await s.client.preflight(active.id, { ...lease, report: {
+        schema: 'jaco.nova-preflight/v1', status: 'READY',
+        tools: ['repo-list'], repository: { revision: 'fixture-head', entries: 1 },
+      } });
+      return { ready: true };
+    },
+  });
+  assert.equal(checked, 1);
+  assert.equal(result.completed, true);
+  assert.equal(s.control.get(mission.id).preflight.status, 'READY');
+  assert.equal(s.control.get(mission.id).receipts.length, 1);
+  assert.equal(s.control.get(mission.id).status, 'AWAITING_VERIFICATION');
+});
+
+test('coding preflight blocker never invokes a model or a tool', async t => {
+  const s = setup(t, ['repo-list']);
+  const mission = s.control.create({
+    goal: 'Inspect sources', idempotencyKey: 'contract-native-blocked',
+    contract: { scope: { allowed: ['src/**'] }, acceptance: ['Inspect files'], verification: { tests_required: false } },
+    allowedTasks: ['repo-list'],
+  });
+  let calls = 0;
+  const result = await run(s, { chat: async () => { calls++; return {}; } },
+    async () => { calls++; return { ok: true, verified: true }; }, {
+      preflight: async () => ({ blocked: true, reason: 'BROWSER_BRIDGE_UNAVAILABLE' }),
+    });
+  assert.equal(result.blocked, true);
+  assert.equal(result.reason, 'BROWSER_BRIDGE_UNAVAILABLE');
+  assert.equal(calls, 0);
+  assert.equal(s.control.get(mission.id).status, 'BLOCKED');
+  assert.equal(s.control.get(mission.id).receipts.length, 0);
+});
+
+test('temporary coding preflight error defers cleanly and can retry', async t => {
+  const s = setup(t, ['repo-list']);
+  const mission = s.control.create({
+    goal: 'Inspect allowed source', idempotencyKey: 'contract-native-retry',
+    contract: { scope: { allowed: ['src/**'] }, acceptance: ['Inspect files'], verification: { tests_required: false } },
+    allowedTasks: ['repo-list'],
+  });
+  const deferred = await run(s, { chat: async () => { throw Error('model should not be called'); } },
+    async () => ({ ok: true, verified: true }), { preflight: async () => { throw Error('context endpoint timed out'); } });
+  assert.equal(deferred.deferred, true);
+  assert.match(deferred.reason, /PREFLIGHT_FAILED:context endpoint timed out/);
+  assert.equal(s.control.get(mission.id).status, 'ACTIVE');
+  const model = scripted([
+    { tool_calls: [call('repo-list', { path: '.' })] },
+    { tool_calls: [call('complete', { reason: 'Files inspected [#1]' })] },
+  ]);
+  const result = await run(s, model, async () => ({ ok: true, verified: true, entries: [] }),
+    { preflight: async () => ({ ready: true }) });
+  assert.equal(result.completed, true);
+  assert.equal(s.control.get(mission.id).receipts.length, 1);
+});
+
+test('native coding loop replans after a write and does not execute stale batched actions', async t => {
+  const s = setup(t, ['repo-write', 'repo-read']);
+  const mission = s.control.create({
+    goal: 'Fix the source and then inspect it', idempotencyKey: 'native-write-reobserve',
+    contract: {
+      scope: { allowed: ['src/**'] }, acceptance: ['Change and inspect the file'],
+      verification: { tests_required: false, receipt_required: true },
+      execution: { allow_git_commit: false },
+    },
+    allowedTasks: ['repo-write', 'repo-read'],
+  });
+  const model = scripted([
+    { tool_calls: [call('repo-write', { path: 'src/index.js', content: 'export const ok = true;' }),
+      call('repo-read', { path: 'src/index.js' })] },
+    { tool_calls: [call('repo-read', { path: 'src/index.js' })] },
+    { tool_calls: [call('complete', { reason: 'File written and read [#1][#2]' })] },
+  ]);
+  const executed = [];
+  const result = await run(s, model, async task => {
+    executed.push(task.type);
+    return { ok: true, verified: true, path: task.data.path };
+  });
+  assert.equal(result.completed, true);
+  assert.deepEqual(executed, ['repo-write', 'repo-read']);
+  assert.match(JSON.stringify(model.seen[1]), /SKIPPED: observe the previous mutation receipt/);
+  assert.equal(s.control.get(mission.id).receipts.length, 2);
+});
+
+test('native loop edits a real isolated repository and recovers from a failing test', async t => {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'aura-real-code-'));
+  t.after(() => fs.rmSync(project, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(project, 'src'));
+  fs.mkdirSync(path.join(project, 'tests'));
+  const source = path.join(project, 'src', 'client.mjs');
+  fs.writeFileSync(source, 'export function retryCount() { return 0; }\n');
+  fs.writeFileSync(path.join(project, 'tests', 'client.test.mjs'),
+    "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { retryCount } from '../src/client.mjs';\ntest('retryCount is two', () => assert.equal(retryCount(), 2));\n");
+
+  const s = setup(t, ['repo-read', 'repo-edit', 'repo-test']);
+  const mission = s.control.create({
+    goal: 'Fix retryCount and prove tests pass', idempotencyKey: 'native-real-file-test',
+    allowedTasks: ['repo-read', 'repo-edit', 'repo-test'],
+    contract: {
+      scope: { allowed: ['src/**', 'tests/**'] },
+      acceptance: ['retryCount returns two', 'The test passes after the last change'],
+      verification: { tests_required: true, commands: ['node --test tests/client.test.mjs'], receipt_required: true },
+      execution: { allow_git_commit: false },
+      budget: { max_failures: 5 },
+    },
+  });
+  const model = scripted([
+    { tool_calls: [call('repo-read', { path: 'src/client.mjs' })] },
+    { tool_calls: [call('repo-test', { command: 'node --test tests/client.test.mjs' })] },
+    { tool_calls: [call('repo-edit', { path: 'src/client.mjs', old: 'return 0;', new: 'return 2;' })] },
+    { tool_calls: [call('repo-test', { command: 'node --test tests/client.test.mjs' })] },
+    { tool_calls: [call('complete', { reason: 'Corrected the actual file and reran tests successfully [#3][#4]' })] },
+  ]);
+  const worktree = createCodingWorkspace({ root: project });
+  const result = await run(s, model, task => worktree.execute(task, s.control.get(mission.id).contract, {
+    actor: 'aura-native-test', receipts: s.control.get(mission.id).receipts,
+  }));
+  assert.equal(result.completed, true);
+  assert.match(fs.readFileSync(source, 'utf8'), /return 2;/);
+  const stored = s.control.get(mission.id);
+  assert.deepEqual(stored.receipts.map(r => r.type), ['repo-read', 'repo-test', 'repo-edit', 'repo-test']);
+  assert.deepEqual(stored.receipts.map(r => r.ok), [true, false, true, true]);
+  assert.equal(stored.contractStatus.machineVerified, true);
+  assert.equal(stored.status, 'AWAITING_VERIFICATION');
+  assert.match(JSON.stringify(model.seen[2]), /repo-test/);
+  assert.match(JSON.stringify(model.seen[3]), /repo-edit/);
 });
