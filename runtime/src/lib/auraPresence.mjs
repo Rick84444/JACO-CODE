@@ -43,7 +43,7 @@ export function auraPresence({
   else if(!connected&&heardRecently){
     mode='reconnecting';title='Refreshing status';detail='JACO is reconnecting. Nothing is wrong with your work.';
   }
-  else if(!connected&&connection==='connecting'&&streamAge===null&&snapshotAge===null){
+  else if(!connected&&connection!=='unavailable'&&streamAge===null&&snapshotAge===null){
     mode='connecting';
   }
   else if(!connected){

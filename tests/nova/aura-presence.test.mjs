@@ -50,6 +50,12 @@ test('A short interruption reconnects quietly and never claims progress; silence
   assert.equal(silent.mode,'offline');assert.equal(silent.title,'Connection lost');
   assert.equal(auraPresence({...live,runtimeRunning:false,mission:active()}).mode,'offline');
 });
+test('Before anything has been heard a new page is connecting, not lost',()=>{
+  const first={now:NOW,connection:'live',lastObservedAt:null,snapshotObservedAt:null,runtimeRunning:null};
+  assert.equal(auraPresence(first).mode,'connecting');
+  assert.equal(auraPresence({...first,connection:'reconnecting'}).mode,'connecting');
+  assert.equal(auraPresence({...first,connection:'unavailable'}).mode,'offline');
+});
 test('Approvals and blocked missions are not labeled working',()=>{
   assert.equal(auraPresence({...live,mission:active(),approvals:2}).mode,'blocked');
   assert.equal(auraPresence({...live,mission:{...active(),status:'BLOCKED',phase:'BLOCKED'}}).mode,'blocked');
