@@ -1732,7 +1732,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
     mission:currentMission,agents:snapshot?.workplace?.agents||[],
     provider:snapshot?.seer?.provider||null,model:snapshot?.seer?.model||null,
     cdpState:snapshot?.integrations?.cdp?.state||'UNOBSERVED',
-    approvals:snapshot?.approvals?.count||0,latestEvent:cognitiveEvents.at(-1)||null
+    approvals:snapshot?.approvals?.count||0,latestEvent:cognitiveEvents.at(-1)||null,
+    runtimeBlocker:snapshot?.seer?.blocker||null
   });
   const codeWorkspace = (
     <div className="cognitive-code-workspace">
@@ -1872,7 +1873,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     } : null}
     agentActivity={{
       connected:(snapshot?.workplace?.agents || []).filter(item=>item.status==='READY' || item.liveSessions>0).length,
-      working:(snapshot?.workplace?.agents || []).reduce((count,item)=>count+Math.max(0,item.liveSessions || 0),0)
+      working:presence.workingSessions
     }}
     presence={presence}/>
   </div>;
