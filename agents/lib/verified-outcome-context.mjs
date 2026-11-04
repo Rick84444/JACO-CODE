@@ -19,9 +19,10 @@ export function verifiedOutcomeHints(outcomes = [], allowedTasks = [], { maxChar
         .filter(p => typeof p?.tool === 'string' && allowed.has(p.tool))
         .slice(0, 12).map(p => ({
           tool: p.tool,
-          // Historical file paths are navigation hints only. Do not carry old
-          // executable commands, file contents or implicit permissions forward.
-          ...(typeof p.args?.path === 'string' ? { path: p.args.path.slice(0, 160) } : {}),
+          // The canonical outcome records argument names, not their values.
+          // Preserve which fields worked without replaying commands or secrets.
+          argumentNames: Array.isArray(p.args) ? p.args.filter(name =>
+            typeof name === 'string' && /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(name)).slice(0, 12) : [],
         })) : [];
     const failures = Array.isArray(record.failed) ? record.failed
       .filter(f => f && typeof f.tool === 'string' && allowed.has(f.tool))
