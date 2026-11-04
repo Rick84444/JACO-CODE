@@ -1,7 +1,7 @@
 // Durable at-most-once dispatch for identified browser writes. A lost response
 // is not permission to execute the same action again.
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, existsSync, openSync, writeSync, fsyncSync, closeSync, readFileSync, renameSync } from 'node:fs';
+import { mkdirSync, openSync, writeSync, fsyncSync, closeSync, readFileSync, renameSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 
 const ACTION_ID = /^[A-Za-z0-9][A-Za-z0-9:_-]{7,127}$/;
@@ -22,19 +22,19 @@ function syncDirectory(directory) {
 }
 
 function ensureDurableDirectory(directory, syncDir) {
-  // Persist every newly created directory entry from the oldest existing
-  // parent downwards, otherwise the journal directory itself may disappear.
-  const missing = [];
+  // Always resync the entire ancestor chain. An earlier initialization may
+  // have created directories but failed before their parent entries were
+  // durable; checking existsSync alone is insufficient on a later retry.
+  const chain = [];
   let cursor = resolve(directory);
-  while (!existsSync(cursor)) {
-    missing.push(cursor);
+  for (;;) {
+    chain.push(cursor);
     const parent = dirname(cursor);
-    if (parent === cursor) throw new Error('ACTION_JOURNAL_ROOT_MISSING');
+    if (parent === cursor) break;
     cursor = parent;
   }
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  for (const created of missing.reverse()) syncDir(dirname(created));
-  syncDir(directory);
+  for (const candidate of chain.reverse()) syncDir(candidate);
 }
 
 export function createBrowserActionJournal(directory, { syncDir = syncDirectory } = {}) {
