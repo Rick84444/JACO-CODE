@@ -51,3 +51,25 @@ test('unverified postcondition is not promoted to success', async () => fixture(
   assert.equal(first.verified, false);
   assert.equal((await journal.execute({ ...action(), perform: async () => assert.fail('called') })).error, 'ACTION_RECONCILIATION_REQUIRED');
 }));
+
+test('directory entry is synced before dispatch and again after verified replacement', async () => fixture(async (_journal, dir) => {
+  const events=[];
+  const journal=createBrowserActionJournal(dir,{syncDir: path => { assert.equal(path,dir); events.push('sync'); }});
+  const result=await journal.execute({ ...action('directory_sync_1234'), perform: async () => {
+    assert.ok(events.includes('sync'),'browser dispatch requires a synced claim');
+    events.push('dispatch');
+    return {ok:true,verified:true};
+  }});
+  assert.equal(result.verified,true);
+  const dispatch=events.indexOf('dispatch');
+  assert.ok(dispatch>=2,'directory sync precedes browser dispatch');
+  assert.equal(events.at(-1),'sync','receipt rename must be synced before success');
+}));
+test('unsupported directory durability blocks browser execution', async () => fixture(async (_journal, dir) => {
+  let writes=0;
+  const journal=createBrowserActionJournal(dir,{syncDir:()=>{throw Error('DIRECTORY_FSYNC_UNSUPPORTED');}});
+  const result=await journal.execute({ ...action('fsync_unavailable_123'), perform: async()=>{ writes++; return {ok:true,verified:true}; } });
+  assert.equal(result.ok,false);
+  assert.equal(result.error,'ACTION_JOURNAL_UNAVAILABLE');
+  assert.equal(writes,0);
+}));
