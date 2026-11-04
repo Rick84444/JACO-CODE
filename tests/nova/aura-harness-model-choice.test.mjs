@@ -76,7 +76,7 @@ test('UI and backend route share the selection rather than spawning another mode
   assert.match(parent,/\.\.\.\(harnessModel \? \{ harnessModel \} : \{\}\)/);
   assert.match(server,/await synchronizeAuraHarnessModel\(req\.body\.harnessModel/);
   assert.match(server,/testPlannerModel\(valid/);
-  assert.match(seer,/const auraOnly = process\.env\.JACO_SEER_PROVIDER_PREFERENCE === 'aura' \|\| pinned/);
+  assert.match(seer,/const auraOnly = process\.env\.JACO_SEER_PROVIDER_PREFERENCE === 'aura' \|\| \(pinned && !startup_probe\)/);
 });
 
 test('same chosen model falls back to structured planning protocol, not another provider',()=>{
