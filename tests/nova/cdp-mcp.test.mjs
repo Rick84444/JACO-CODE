@@ -34,6 +34,35 @@ test('MCP rejects browser-origin requests and invalid mutation arguments',async(
     const r=await (await rpc('tools/call',{name:'nova_click',arguments:{selector:'button'}})).json();assert.equal(r.error.code,-32602);
   },async()=>{throw Error('MUST_NOT_CALL');});
 });
+test('MCP browser mutations require an action ID and pass it unchanged to Nova',async()=>{
+  const upstreamCalls=[];
+  await fixture(async rpc=>{
+    const tools=(await (await rpc('tools/list')).json()).result.tools;
+    for(const name of ['nova_navigate','nova_click','nova_type']) {
+      const tool=tools.find(t=>t.name===name);
+      assert.ok(tool,'missing '+name);
+      assert.ok(tool.inputSchema.required.includes('actionId'));
+    }
+    const missing=await (await rpc('tools/call',{name:'nova_navigate',arguments:{url:'https://example.test/'}})).json();
+    assert.equal(missing.error.code,-32602);
+    const invalid=await (await rpc('tools/call',{name:'nova_navigate',arguments:{url:'https://example.test/',actionId:'x'}})).json();
+    assert.equal(invalid.error.code,-32602);
+    const actionId='draft-create_123456789';
+    const accepted=await (await rpc('tools/call',{name:'nova_navigate',arguments:{url:'https://example.test/',actionId}})).json();
+    assert.equal(accepted.result.isError,false);
+    assert.equal(upstreamCalls.length,1);
+    assert.equal(JSON.parse(upstreamCalls[0].body).actionId,actionId);
+  },async (url,opts)=>{
+    upstreamCalls.push({url,body:opts.body});
+    return {ok:true,json:async()=>({ok:true,verified:true,actionId:'draft-create_123456789'})};
+  });
+});
+test('MCP does not accept a transport OK as verified browser mutation',async()=>{
+  await fixture(async rpc=>{
+    const result=await (await rpc('tools/call',{name:'nova_navigate',arguments:{url:'https://example.test/',actionId:'draft-create_123456789'}})).json();
+    assert.equal(result.result.isError,true);
+  },async()=>({ok:true,json:async()=>({ok:true,verified:false,outcomeUnknown:true})}));
+});
 test('SEER client preserves mission context and reports an unavailable model',async()=>{
   const text=await seerCompletion({system:'rules',user:'goal plus previous receipt',image:'fixture'},async(url,opts)=>{
     assert.ok(url.endsWith('/cortex/brain'));assert.equal(JSON.parse(opts.body).user,'goal plus previous receipt');
