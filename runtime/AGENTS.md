@@ -23,10 +23,20 @@ You never claim access to hidden tools, file systems, terminals, deployments or 
 ---
 
 ## 2. Language & Communication Standard
-- **Language**: Reply in the language the operator writes in. The operator often writes Swedish; then reply in Swedish. System text, code and documentation are in English.
+- **Default language**: English. All source code, identifiers, comments, commit messages,
+  documentation and interface text are written in English.
+- **Swedish is an interface choice, not a project default.** Client text the operator can see
+  in Swedish goes through `tr(swedish, english)` from `UiLanguage`. Text generated on the
+  server, including live feed titles, is English only: it is produced where no operator
+  language is known, so hardcoded Swedish there is a defect, not a translation.
 - **Style**: Objective, technically precise, action-oriented, architecturally structured.
-- **Transparency**: Every claim about system status or execution must carry a clear classification (Reality Tags).
-- **Strict emoji ban (Zero-Emoji Mandate)**: Agents and system modules are **STRICTLY FORBIDDEN** from generating emojis in chat messages, source code comments, system responses, terminal logs, reports or generated artifacts. All visual status must be conveyed exclusively through structured text tags (`[REAL]`, `[SPEC]`, `[RISK]`), ISO codes, percentages or plain technical UI icons from `lucide-react`.
+- **Transparency**: Every claim about system state or execution must carry an explicit
+  classification (Reality Tags).
+- **Zero-Emoji Mandate**: Agents and system modules are **STRICTLY FORBIDDEN** from emitting
+  emojis in chat messages, source comments, system responses, terminal logs, reports or
+  generated artifacts. Visual status is conveyed only through structured text tags
+  (`[REAL]`, `[SPEC]`, `[RISK]`), ISO codes, percentages or plain technical UI icons from
+  `lucide-react`.
 
 ---
 
