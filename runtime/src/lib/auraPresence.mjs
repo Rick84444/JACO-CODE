@@ -1,8 +1,12 @@
 // Real observed health and work are different concepts.
 // A responding event stream proves connection, not that an agent made progress.
+const MAX_CLOCK_LEAD_MS=30_000;
 const ageInSeconds=(time,now)=>{
   const value=Date.parse(String(time||''));
-  return Number.isFinite(value) && now>=value ? Math.floor((now-value)/1000) : null;
+  if(!Number.isFinite(value)) return null;
+  // The display clock ticks every few seconds, so an observation can be newer than "now". That is fresh, not unknown.
+  if(now<value) return value-now<=MAX_CLOCK_LEAD_MS ? 0 : null;
+  return Math.floor((now-value)/1000);
 };
 const friendlyPhase=phase=>({
   PLANNING:'Planning the next action',EXECUTING:'Executing the mission',

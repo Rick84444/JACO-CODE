@@ -50,6 +50,11 @@ test('A short interruption reconnects quietly and never claims progress; silence
   assert.equal(silent.mode,'offline');assert.equal(silent.title,'Connection lost');
   assert.equal(auraPresence({...live,runtimeRunning:false,mission:active()}).mode,'offline');
 });
+test('An observation newer than the display clock is fresh, so the status does not flap',()=>{
+  const p=auraPresence({...live,lastObservedAt:at(-3),snapshotObservedAt:at(-1),mission:active()});
+  assert.equal(p.connected,true);assert.equal(p.mode,'working');assert.equal(p.streamAge,0);
+  assert.equal(auraPresence({...live,lastObservedAt:at(-120),snapshotObservedAt:at(-120)}).connected,false,'a far-future time is not trusted');
+});
 test('Before anything has been heard a new page is connecting, not lost',()=>{
   const first={now:NOW,connection:'live',lastObservedAt:null,snapshotObservedAt:null,runtimeRunning:null};
   assert.equal(auraPresence(first).mode,'connecting');
