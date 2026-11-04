@@ -5,14 +5,6 @@ on:
   push:
     branches: [master]
     paths: ['lite/**', 'tools/build-lite.mjs', 'tools/verify-lite.mjs', 'tools/serve-dir.mjs', 'site/**', 'agents/**', 'runtime/**', '.github/workflows/lite-release.yml']
-  # Publishing jacocode.com is a deliberate act, not a side effect of a merge: there is no `master` branch, so the
-  # push trigger above never fires and the publish job only runs when someone asks for it here with publish=true.
-  workflow_dispatch:
-    inputs:
-      publish:
-        description: 'Deploy the verified build to jacocode.com'
-        type: boolean
-        default: false
 permissions:
   contents: read
 concurrency:
@@ -150,7 +142,7 @@ jobs:
 
   # Publishing waits for the Windows run: a broken Windows download must not go live before the check that finds it.
   publish:
-    if: github.event_name == 'push' || inputs.publish
+    if: github.event_name == 'push' || inputs.publish  # the branch/trigger fix makes this reachable
     needs: [verified-lite, windows-lite-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 15
