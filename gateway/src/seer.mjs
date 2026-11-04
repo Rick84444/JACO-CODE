@@ -522,7 +522,9 @@ async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0
   // with an unrelated local model after the operator's chosen model fails.
   const pinned = !process.env.JACO_PRIMARY_PROVIDER &&
     readPlannerChoice(plannerChoiceFile(process.env))?.by === 'operator';
-  const auraOnly = process.env.JACO_SEER_PROVIDER_PREFERENCE === 'aura' || pinned;
+  // The startup probe only asks whether the service can think at all. A pinned paid model that is not yet
+  // allowed must fail the planning that needs it, not keep the execution service from starting.
+  const auraOnly = process.env.JACO_SEER_PROVIDER_PREFERENCE === 'aura' || (pinned && !startup_probe);
   const aura = startup_probe && !auraOnly ? null : await resolveAuraPlanner(runtime);
   const auraResult = aura ? await invokeAuraPlanner(aura, await seerPromptFor(aura, { system, user, image, temperature, memory_chars, startup_probe }, aura.local ? max_tokens : requestedTokens), {
     ...runtime, purpose, onFailure: failure => emit('provider.failed', failure),

@@ -3721,6 +3721,10 @@ const notifyPhone = async (action) => {
   }));
 
   app.use('/api/browser/hands-off', browserSurface.router);
+  // The IDE page reads the run status without a gateway token; starting or stopping runs still requires one.
+  app.get('/api/continuum/autonomous-cycles/status', requireLocalUiSameOrigin, (_req, res, next) => {
+    try { res.json({ success: true, ...continuumSurface.runtime.autonomousCycles.status() }); } catch (error) { next(error); }
+  });
   app.use('/api/continuum', continuumSurface.router);
   app.use('/api/relay', modelRelay.router);
   mountConnectedRoutes(app, requireAuth, connectedRuntime);
