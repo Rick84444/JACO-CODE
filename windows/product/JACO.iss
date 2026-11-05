@@ -45,6 +45,7 @@ VersionInfoVersion={#JacoVersion}.0
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: ".env,.git\*,logs\*,.jaco\*,*.log"
 Source: "{#SourcePath}Start-JACO.ps1"; DestDir: "{app}\windows\product"; Flags: ignoreversion
 Source: "{#SourcePath}JACO-launch.vbs"; DestDir: "{app}\windows\product"; Flags: ignoreversion
+Source: "{#SourcePath}version.json"; DestDir: "{app}\windows\product"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\JACO CODE"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\JACO.ico"; Comment: "Open JACO CODE and Aura"
