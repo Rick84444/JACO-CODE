@@ -30,6 +30,7 @@ $env:JACO_DATA_DIR = $DataRoot
 $env:JACO_START_MODE = 'production'
 $env:JACO_INSTALLED = '1'
 $env:JACO_NODE_EXECUTABLE = $Node
+$env:PATH = (Split-Path $Node -Parent) + [System.IO.Path]::PathSeparator + $env:PATH
 $entry = Join-Path $InstallRoot 'agents\lib\local-stack.mjs'
 $args = @($entry)
 if (-not $NoBrowser) { $args += '--open' }
