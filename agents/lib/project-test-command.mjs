@@ -53,7 +53,7 @@ function shellStages(source) {
 
 function npmScriptCanCertifyTests(script) {
   const stages = shellStages(script);
-  if (!stages.length || stages.length > 32) return false;
+  if (!stages.length || stages.length > 32 || stages.some(({ command }) => /^!\s*/.test(command))) return false;
   // State represents last exit code, whether a meaningful command succeeded,
   // and whether the script explicitly terminated.
   let states = [{ ok: true, verified: false, failedTest: false, ended: false }];
