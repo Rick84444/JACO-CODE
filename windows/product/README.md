@@ -13,7 +13,7 @@ assembles a production payload and compiles an Inno Setup \`JACO-Setup-X.Y.Z-win
   the development branch. A **new signed-off Windows installer artifact** is required.
 - The update announcement opens the official GitHub installer download. Installer execution
   requires the user's explicit action and Windows UAC; no model can silently elevate.
-- A tag \`vX.Y.Z\` must match \`runtime/package.json.version\` before publishing.
+- A tag \`vX.Y.Z\` must match \`windows/product/version.json.version\` before publishing. The Windows desktop distribution version is separate from the canonical Android/Termux runtime identity.
   A checked Windows artifact and accompanying SHA256 checksum are attached to that release.
 - CI cannot guarantee trust by itself: configure Authenticode signing and perform a clean
   Windows install/start/update/uninstall smoke test before calling public distribution GA.
