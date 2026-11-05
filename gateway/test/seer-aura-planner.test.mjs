@@ -153,3 +153,37 @@ test('a keyless connected HTTPS provider is reserved and called without a key; i
   // Locality is still decided by the endpoint: plain HTTP off loopback stays refused.
   assert.equal(seerModelEndpointAllowed('http://192.168.1.20:8080/v1/chat/completions', false), false);
 });
+
+test('unified Aura operator choice wins even when a stale environment primary exists', async()=>{
+  const { fetchFn }=network();
+  const provider=await resolveAuraPlanner({
+    env:{JACO_PRIMARY_PROVIDER:'ollama',JACO_AURA_UNIFIED_RUNTIME:'1'},
+    fetchFn,runtimeUrl:RUNTIME,cacheMs:0,readChoice:choice()
+  });
+  assert.equal(provider?.name,'gemini');
+  assert.equal(provider?.model,'models/gemini-2.5-flash');
+});
+
+test('Aura immediately refreshes the provider registry on a new selected model', async()=>{
+  let count=0, selected='fixture-a';
+  const fetchFn=async()=>{
+    count++;
+    return json({providers:[{
+      name:selected,url:'https://models.example/v1/chat/completions',
+      model:'test-model',local:false,envKey:'EXAMPLE_API_KEY'
+    }]});
+  };
+  const runtimeUrl='http://separate-provider-cache-fixture';
+  const a=await resolveAuraPlanner({
+    env:{JACO_AURA_UNIFIED_RUNTIME:'1'},fetchFn,runtimeUrl,cacheMs:60000,
+    readChoice:()=>({provider:'fixture-a',model:'test-model',by:'operator'})
+  });
+  assert.equal(a?.name,'fixture-a');
+  selected='fixture-b';
+  const b=await resolveAuraPlanner({
+    env:{JACO_AURA_UNIFIED_RUNTIME:'1'},fetchFn,runtimeUrl,cacheMs:60000,
+    readChoice:()=>({provider:'fixture-b',model:'test-model',by:'operator'})
+  });
+  assert.equal(b?.name,'fixture-b');
+  assert.equal(count,2,'saved operator choice must invalidate previous provider cache');
+});

@@ -40,7 +40,14 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
     {notice&&<p role="alert">{notice}</p>}
     {tab==='models'&&<section><h3>Available LLMs</h3><p>Responding means the model list could be read. It does not confirm the model's quality or tool capability.</p>
       {!providers.length&&<p>{errors.models?'The model list could not be checked.':'Waiting for model responses…'}</p>}{providers.map(p=><article key={p.id}><strong>{p.id}</strong><span>{errors.models?'Unknown status':({ACTIVE:'Responding',NO_KEY:'Key missing',KEY_REJECTED:'Key rejected',UNREACHABLE:'Unreachable'} as any)[p.state]||p.state}</span><p>{p.baseUrl}</p>
-        {(p.modelIds||[]).map((model:string)=><div key={model} className="connection-model"><code>{model}</code><button type="button" disabled={!!busy||!!errors.models||!p.active} onClick={()=>{localStorage.setItem('jaco:aura:chat-provider:v2',JSON.stringify({provider:p.id,model}));window.dispatchEvent(new Event('jaco:aura:provider-chosen'));setNotice('Selected for Aura: '+model);}}>Use in chat</button><button type="button" disabled={!!busy||!!errors.models||!p.active} onClick={()=>void act('planner',async()=>{await request('/api/nova/planner',{provider:p.id,model});window.dispatchEvent(new Event('jaco:aura:provider-chosen'));setNotice("Selected for the agent's next planning turn: "+model);return null;})}>Use for the agent</button></div>)}
+        {(p.modelIds||[]).map((model:string)=><div key={model} className="connection-model"><code>{model}</code><button type="button" disabled={!!busy||!!errors.models||!p.active} onClick={()=>void act('aura-model',async()=>{
+          const state=await request('/api/aura/model',{provider:p.id,model});
+          if(state.choice?.provider!==p.id||state.choice?.model!==model)throw Error('AURA_MODEL_NOT_CONFIRMED');
+          localStorage.setItem('jaco:aura:chat-provider:v2',JSON.stringify({provider:p.id,model}));
+          window.dispatchEvent(new Event('jaco:aura:provider-chosen'));
+          setNotice('Aura model selected and verified for chat, planning and missions: '+p.id+'/'+model);
+          return null;
+        })}>Use for Aura</button></div>)}
         {!p.modelIds?.length&&<p>No available model observed.</p>}
       </article>)}<ProviderConnect onConnected={async()=>{await refresh();window.dispatchEvent(new Event('jaco:aura:provider-chosen'));}}/>
     </section>}

@@ -63,6 +63,15 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   if (new Set(enabledPorts).size !== enabledPorts.length) throw new Error('DUPLICATE_LISTENER_PORT');
   for (const [key, name] of Object.entries({runtime:'PORT',workplace:'JACO_WORKPLACE_PORT',seer:'SEER_PORT',remote:'JACO_REMOTE_BRIDGE_PORT',a2a:'JACO_A2A_PORT',novaBridge:'NOVA_BRIDGE_PORT',cdp:'JACO_CDP_BRIDGE_PORT',gateway:'JACO_GATEWAY_PORT',chrome:'CDP_PORT'})) env[name] = String(ports[key]);
   Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_RUNTIME_DIR: runtime });
+  // Single Aura runtime: SEER (strategy) and Nova (execution) are internal capabilities.
+  // Do not spin up or pin Ollama simply because it happens to be installed.
+  // An explicit JACO_AURA_UNIFIED_RUNTIME=0 retains the legacy independent-model profile.
+  if (env.JACO_AURA_UNIFIED_RUNTIME !== '0') {
+    env.JACO_AURA_UNIFIED_RUNTIME = '1';
+    env.JACO_SEER_PROVIDER_PREFERENCE = 'aura';
+    env.JACO_WORKPLACE_SUPERVISE_MODEL = '0';
+    env.JACO_MODEL_PROVIDER = 'aura';
+  }
   env.JACO_RUNTIME_URL = `http://127.0.0.1:${ports.runtime}`;
   env.JACO_RELEASE_ROOT = runtime;
   // One model choice for every service. Without this each service reads the file under its own working
@@ -301,7 +310,7 @@ export async function activate(c, { open = false } = {}) {
       }
     }
     const ollamaUrl = (c.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/v1\/?$/, '').replace(/\/$/, '');
-    if (!c.env.JACO_MODEL_PROVIDER || c.env.JACO_MODEL_PROVIDER === 'ollama') {
+    if (c.env.JACO_AURA_UNIFIED_RUNTIME !== '1' && (!c.env.JACO_MODEL_PROVIDER || c.env.JACO_MODEL_PROVIDER === 'ollama')) {
       const ollama = { id: 'ollama', url: ollamaUrl + '/api/tags', accept: d => Array.isArray(d.models) };
       if ((await probe(ollama)).state !== 'READY') {
         const local = new URL(ollamaUrl);
