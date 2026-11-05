@@ -439,10 +439,7 @@ test('Aura unified startup launches the executor without Ollama or an inference 
   t.after(() => supervisor.stop());
   await supervisor.start('http://127.0.0.1:2995');
   for (let n=0;n<100 && !spawns.some(x=>x.args.includes('agents/hands-off-agent.mjs'));n++) await new Promise(resolve=>setTimeout(resolve,5));
-  assert.deepEqual(spawns.map(x=>x.args), [
-    ['--experimental-sqlite', 'gateway/src/seer-start.mjs'],
-    ['agents/hands-off-agent.mjs']
-  ]);
+  assert.deepEqual(spawns.map(x=>x.args), [['agents/hands-off-agent.mjs']], 'existing healthy SEER is adopted; only the Aura executor is launched');
   assert.equal(supervisor.snapshot().state, 'RUNNING');
   assert.equal(supervisor.snapshot().aura.identity, 'Aura');
   assert.equal(supervisor.snapshot().aura.strategyCapability.service, 'seer');
