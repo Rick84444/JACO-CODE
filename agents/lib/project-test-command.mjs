@@ -11,8 +11,12 @@ export function detectProjectTestCommand(projectRoot, fsImpl = fs) {
     try {
       const pkg = JSON.parse(fsImpl.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
       const script = pkg?.scripts?.test;
-      if (typeof script === 'string' && script.trim() &&
-          !/no test specified/i.test(script) && !/^echo\b/i.test(script.trim())) return 'npm test';
+      // Reject the common no-op npm scripts, but preserve real test commands
+      // preceded by banners: "echo Running tests && node --test" must be runnable.
+      if (typeof script === 'string' && script.trim() && !/no test specified/i.test(script)) {
+        const parts = script.trim().split(/\s*(?:&&|\|\||;)\s*/);
+        if (!parts.every(part => /^(?:echo|exit)\b/i.test(part.trim()))) return 'npm test';
+      }
     } catch { /* No verified test command inferred from unreadable project metadata. */ }
   }
   if (has('pytest.ini') || has('conftest.py')) return 'python -m pytest';
