@@ -66,5 +66,5 @@ test('real SEER startup uses saved Aura choice, never local fallback or unauthor
   rmSync(choice);
   response=await ask();assert.equal(response.status,503);
   assert.equal((await response.json()).error,'AURA_PROVIDER_CHOICE_REQUIRED');
-  assert.deepEqual(calls,['/api/connected/nova/planner-providers','/v1/chat/completions']);
+  assert.deepEqual(calls,['/api/connected/nova/planner-providers','/v1/chat/completions','/api/connected/nova/planner-providers'], 'a changed provider invalidates discovery but never invokes the refused cloud model');
 });
