@@ -9,22 +9,12 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { projectNodeContract } from '../../../../gateway/src/seer-project.mjs';
+import { detectProjectTestCommand } from '../../../../agents/lib/project-test-command.mjs';
 
 export const LITE_TASKS = ['repo-list', 'repo-read', 'repo-write', 'repo-edit', 'repo-test', 'repo-service', 'git-status', 'git-diff', 'git-commit', 'web-fetch'];
 
-// The command that runs the project's tests, or null. Only commands Nova may run without extra setup:
-// npm test (not npm's "no test specified" placeholder), node's own runner, Python's pytest.
-export function detectTestCommand(projectRoot, fsImpl = fs) {
-  const has = rel => fsImpl.existsSync(path.join(projectRoot, rel));
-  if (has('package.json')) {
-    try {
-      const script = String(JSON.parse(fsImpl.readFileSync(path.join(projectRoot, 'package.json'), 'utf8')).scripts?.test || '');
-      if (script.trim() && !/no test specified/i.test(script)) return 'npm test';
-    } catch { /* unreadable package.json: no command */ }
-  }
-  if (has('pytest.ini') || has('conftest.py') || (has('pyproject.toml') && /pytest/.test(fsImpl.readFileSync(path.join(projectRoot, 'pyproject.toml'), 'utf8')))) return 'python -m pytest';
-  return null;
-}
+// The complete IDE and Lite modes use the same evidence-based test discovery.
+export { detectProjectTestCommand as detectTestCommand } from '../../../../agents/lib/project-test-command.mjs';
 
 export function liteContract({ goal, testCommand }) {
   const base = projectNodeContract({ title: String(goal).slice(0, 120), objective: goal, mainGoal: goal });
@@ -66,7 +56,7 @@ export function createLiteGoal({ novaMissions, projectRoot, goal, initGit = fals
   if (text.length > 12000) return { ok: false, code: 'GOAL_TOO_LARGE', message: 'The goal is too long.' };
   const repo = ensureGitProject(projectRoot, { initGit, run });
   if (!repo.ok) return repo;
-  const testCommand = detectTestCommand(projectRoot, fsImpl);
+  const testCommand = detectProjectTestCommand(projectRoot, fsImpl);
   const mission = novaMissions.create({
     goal: text, source: 'lite-goal', idempotencyKey: `lite-${Date.now()}-${crypto.randomUUID()}`,
     allowedTasks: LITE_TASKS, contract: liteContract({ goal: text, testCommand }), projectRoot,
