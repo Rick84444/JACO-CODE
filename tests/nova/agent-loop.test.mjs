@@ -607,6 +607,22 @@ test('a circle that spans several runs is caught from the mission history, not o
   assert.match(JSON.stringify(model.seen[0]), /STUCK: .*already repeated itself across earlier runs/s);
 });
 
+test('changing historical results do not trigger a false STUCK warning on resume', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Wait for deployment progress', idempotencyKey: 'history-progress-1', allowedTasks: ['web-fetch'] });
+  for (const progress of [10, 40, 80]) {
+    const claim = await s.client.claim(m.id, 'nova');
+    const lease = { owner: 'nova', token: claim.token };
+    const action = await s.client.begin(m.id, { ...lease, task: { type: 'web-fetch', data: { url: 'https://deployment.test/progress' } } });
+    await s.client.finish(m.id, { ...lease, actionId: action.id, receipt: { ok: true, verified: true, result: { progress } } });
+  }
+  const model = scripted([{ tool_calls: [call('blocked', { reason: 'Need the next deployment update' })] }]);
+  const result = await run(s, model, async () => ({ ok: true, verified: true }));
+  assert.equal(result.blocked, true);
+  const firstTurn = model.seen[0].filter(message => message.role === 'user').map(message => message.content).join('\n');
+  assert.doesNotMatch(firstTurn, /^STUCK:/m, 'historical progress is not an identical-result loop');
+});
+
 test('a result that means "already done" says so to the model', () => {
   const commit = receiptForModel(3, { ok: false, verified: false, error: 'CODING_GIT_NOTHING_IN_SCOPE' });
   assert.match(commit, /Nothing to commit: your changes are already committed/);
