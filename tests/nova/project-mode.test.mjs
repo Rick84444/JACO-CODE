@@ -181,6 +181,11 @@ test('test discovery is shared, read-only instructions do not request test execu
   assert.equal(detectProjectTestCommand(dir), null, 'a pipeline must not hide a failed test command');
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test fail.test.mjs &' } }));
   assert.equal(detectProjectTestCommand(dir), null, 'backgrounded tests cannot provide a completion receipt');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: '! node --test fail.test.mjs' } }));
+  assert.equal(detectProjectTestCommand(dir), null, 'negated test result cannot be a passing receipt');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "starting" && ! node --test fail.test.mjs' } }));
+  assert.equal(detectProjectTestCommand(dir), null, 'negation in a later shell stage cannot certify tests');
+
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "Tests disabled" # skipped && node --test fail.test.mjs' } }));
   assert.equal(detectProjectTestCommand(dir), null, 'commented-out test runner is not an executable command');
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "# not a shell comment" && node --test suite.test.mjs' } }));
