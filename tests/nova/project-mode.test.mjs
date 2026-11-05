@@ -163,6 +163,13 @@ test('test discovery is shared, read-only instructions do not request test execu
   assert.equal(detectProjectTestCommand(dir), 'npm test', 'banner + test runner stays executable');
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "Done" && exit 0' } }));
   assert.equal(detectProjectTestCommand(dir), null, 'echo and exit without tests is not verification');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "lint && test"' } }));
+  assert.equal(detectProjectTestCommand(dir), null, 'quoted && inside echo is not a second command');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: "echo 'step; && || test' && exit 0" } }));
+  assert.equal(detectProjectTestCommand(dir), null, 'quoted separator data followed by exit is still a no-op');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "lint && test" && node --test' } }));
+  assert.equal(detectProjectTestCommand(dir), 'npm test', 'quote-aware parser preserves a later real runner');
+
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "no test specified" && exit 1' } }));
 
   fs.writeFileSync(path.join(dir, 'go.mod'), 'module example.com/test\n\ngo 1.22\n');
