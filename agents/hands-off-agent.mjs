@@ -1956,6 +1956,12 @@ export async function agentChat({ messages, tools }, fetchImpl = fetch, env = pr
     }
   }
   if (env.JACO_AURA_UNIFIED_RUNTIME === '1') {
+    // A selected model that rejects OpenAI tool schemas must fall through to the
+    // structured planner on this exact provider. The native loop hands control
+    // back only for this capability mismatch, not for transport/budget failures.
+    if (candidates.some(provider => agentToolsUnsupported.has(`${provider.name}/${provider.model}`))) {
+      throw new Error('NO_PLANNER_AVAILABLE:SELECTED_MODEL_NATIVE_TOOLS_UNSUPPORTED');
+    }
     throw new Error(`AURA_SELECTED_MODEL_UNAVAILABLE:${failures.join('|').slice(0, 150) || 'PROVIDER_NOT_READY'}`);
   }
   throw new Error(`NO_PLANNER_AVAILABLE ${failures.join(' | ')}`.trim());
