@@ -171,7 +171,8 @@ export async function runAgentMission({
     }
     // What earlier runs of this mission already did counts for stuck detection, so a circle that spans runs is caught.
     const history = (Array.isArray(mission.receipts) ? mission.receipts : []).slice(-24);
-    for (const r of history) stuck.record({ name: r.type, args: r.inputHash || r.input, ok: r.ok, result: r.ok ? 'ok' : undefined, error: r.error });
+    // Preserve the actual historical outcome: changing results must not be mistaken for an identical-result loop.
+    for (const r of history) stuck.record({ name: r.type, args: r.inputHash || r.input, ok: r.ok, result: r.result, error: r.error });
     const inheritedCircle = history.length ? stuck.check() : { stuck: false };
     ({ tools, resolve, deferred = [] } = await toolsFor(mission));
     messages.push({ role: 'system', content: typeof system === 'function' ? system(mission) : system },
