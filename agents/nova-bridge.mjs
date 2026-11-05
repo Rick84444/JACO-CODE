@@ -54,19 +54,22 @@ async function getTabs() {
 // so every survey navigated the IDE away (and several open IDE tabs made the choice ambiguous).
 // CDP_TARGET_ID still pins an explicit tab when the operator wants that.
 let novaTabId = null;
+export function activeBrowserTarget(tabs, pinnedId, activeOwnedId, owned = new Set()) {
+  const own = activeOwnedId && owned.has(activeOwnedId) &&
+    tabs.find(t=>t.id===activeOwnedId && t.type==='page' && t.webSocketDebuggerUrl);
+  if (own) return own;
+  return pinnedId ? tabs.find(t=>t.id===pinnedId && t.type==='page' &&
+    t.webSocketDebuggerUrl && readable(t.url)) || null : null;
+}
+
 async function getActiveTab() {
   const tabs = await getTabs();
   // The configured pin is the initial tab, not an override of an explicit
   // agent-owned tab switch. Otherwise /tab/switch reports success while
   // subsequent observations silently return to the old tab.
-  const own = novaTabId && ownedTabs.has(novaTabId) &&
-    tabs.find(t=>t.id===novaTabId && t.type==='page' && t.webSocketDebuggerUrl);
-  if (own) return own;
-  if (selectedTabId) {
-    const pinned=tabs.find(t=>t.id===selectedTabId && t.type==='page' && t.webSocketDebuggerUrl && readable(t.url));
-    if (!pinned) throw new Error('SELECTED_TAB_CLOSED_OR_ORIGIN_DENIED');
-    return pinned;
-  }
+  const selected = activeBrowserTarget(tabs, selectedTabId, novaTabId, ownedTabs);
+  if (selected) return selected;
+  if (selectedTabId) throw new Error('SELECTED_TAB_CLOSED_OR_ORIGIN_DENIED');
   const r = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?about:blank`, { method:'PUT', signal:AbortSignal.timeout(5000) });
   if (!r.ok) throw new Error('CDP_NEW_TAB_FAILED_' + r.status);
   const created = await r.json();
