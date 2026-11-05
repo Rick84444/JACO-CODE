@@ -156,6 +156,9 @@ test('browser scope: broad web by default in Aura, hard denials always, the old 
   // JACO's own GUI and the private network are not "the web": an agent must not be able to approve its own approvals.
   for (const url of ['http://127.0.0.1:3000/', 'http://localhost:3000/', 'http://[::1]:3000/', 'http://192.168.1.10/', 'http://10.0.0.5/', 'http://172.20.0.1/', 'http://printer.local/', 'http://169.254.169.254/'])
     assert.equal(inputAllowed(url, aura), false, url);
+  assert.equal(inputAllowed('http://[::ffff:127.0.0.1]:3000/', aura), false, 'mapped IPv4 loopback remains private');
+  assert.equal(inputAllowed('http://[::ffff:192.168.1.1]/', aura), false, 'mapped private LAN remains private');
+  assert.equal(isPrivateHost('[::ffff:808:808]'), false, 'mapped public IPv4 stays public');
   assert.equal(isPrivateHost('8.8.8.8'), false);
   assert.equal(isPrivateHost('172.32.0.1'), false);
   for (const url of ['https://accounts.google.com/signin', 'https://shop.example.org/checkout', 'https://example.org/wp-login.php', 'https://www.paypal.com/pay', 'file:///C:/secret.txt', 'javascript:alert(1)', 'not a url'])
