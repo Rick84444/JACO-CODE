@@ -3,6 +3,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeCodingContract, contractVerificationStatus } from '../../agents/lib/coding-contract.mjs';
 import { StuckDetector } from '../../agents/lib/stuck-detector.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
 
 const contract = () => normalizeCodingContract({
   objective: 'x', scope: { allowed: ['**'] }, acceptance: ['a'],
@@ -32,4 +36,20 @@ test('a circle seen at the start of a run keeps its history, so the next repeate
   const verdict = stuck.check();
   assert.equal(verdict.stuck, true, 'one more repeated step is enough');
   assert.ok(stuck.nudge() > 1, 'which is a second nudge: the loop blocks the mission');
+});
+
+test('an identical rewrite preserves POSIX executable mode and remains a no-op', async t => {
+  if (process.platform === 'win32') return t.skip('POSIX mode bits are not supported by Windows');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aura-preserve-mode-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'run.sh');
+  fs.writeFileSync(file, '#!/bin/sh\necho working\n');
+  fs.chmodSync(file, 0o755);
+  const ws = createCodingWorkspace({ root });
+  const result = await ws.execute({ type: 'repo-write', data: {
+    path: 'run.sh', content: '#!/bin/sh\necho working\n',
+  } }, contract(), { actor: 'mode-test' });
+  assert.equal(result.ok, true);
+  assert.equal(result.beforeSha256, result.afterSha256, 'content is unchanged');
+  assert.equal(fs.statSync(file).mode & 0o777, 0o755, 'executable mode is unchanged');
 });
