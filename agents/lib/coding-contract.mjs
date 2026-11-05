@@ -152,7 +152,11 @@ const receiptTurn = receipt => {
 export function contractVerificationStatus(contract, receipts = []) {
   if (!contract) return { machineVerified: true, missing: [], acceptanceRequiresOperator: false };
   const verified = receipts.filter(r => r?.ok === true && r?.verified === true);
-  const lastWriteTurn = verified.filter(r => r.type === 'repo-write' || r.type === 'repo-edit').reduce((max, r) => Math.max(max, receiptTurn(r)), -1);
+  // A write that left the file exactly as it was changed nothing: it cannot require a new test run or a new commit.
+  // (A model that rewrote identical content made "commit after the last write" impossible: the commit had nothing
+  // to commit, and a test mission ran 88 steps without ever being able to complete, 2026-11-05.)
+  const changedFile = r => !(r.result?.beforeSha256 && r.result.beforeSha256 === r.result.afterSha256);
+  const lastWriteTurn = verified.filter(r => (r.type === 'repo-write' || r.type === 'repo-edit') && changedFile(r)).reduce((max, r) => Math.max(max, receiptTurn(r)), -1);
   const afterLastWrite = r => receiptTurn(r) < 0 || receiptTurn(r) > lastWriteTurn;
   const hasTest = verified.some(r => r.type === 'repo-test' && r.result?.kind !== 'falsifier' && afterLastWrite(r));
   const hasFalsifier = verified.some(r => r.type === 'repo-test' && r.result?.kind === 'falsifier' && afterLastWrite(r));

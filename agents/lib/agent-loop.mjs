@@ -178,7 +178,10 @@ export async function runAgentMission({
     messages.push({ role: 'system', content: typeof system === 'function' ? system(mission) : system },
       { role: 'user', content: await intro(mission) });
     if (inheritedCircle.stuck) {
-      stuck.nudge();
+      // Count the nudge but keep the history. stuck.nudge() also wipes the window, so a run cut short by a rate
+      // limit started clean every time and the same circle ran for 88 steps. Now the next repeated step is a
+      // second sign of the same circle and blocks the mission with a question for the operator.
+      stuck.nudges++;
       log('warn', `earlier runs went in circles (${inheritedCircle.kind})`);
       messages.push({ role: 'user', content: `STUCK: ${inheritedCircle.hint} This mission has already repeated itself across earlier runs. If the goal is met, call complete now; if you cannot tell, call blocked with one question for the operator.` });
     }
