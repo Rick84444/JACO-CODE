@@ -91,3 +91,24 @@ test('the in-page cleaner strips URL queries and fragments, redacts opaque path 
     assert.ok(HTML_CLEANER.includes(part), part);
   assert.doesNotThrow(() => new Function('return ' + HTML_CLEANER.replace(/\(\)\s*$/, '')), 'the cleaner source parses as JavaScript');
 });
+
+test('MCP upload advertises the same bounded file-array contract its actuator accepts', async () => {
+  const token = 'test-token-12345678901234567890';
+  const server = createCdpFacade({ token, fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true }) }) });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/mcp`, {
+      method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 19, method: 'tools/list' }),
+    });
+    const tool = (await res.json()).result.tools.find(t => t.name === 'nova_upload');
+    assert.ok(tool);
+    assert.equal(tool.inputSchema.properties.files.type, 'array');
+    assert.equal(tool.inputSchema.properties.files.items.type, 'string');
+    assert.equal(tool.inputSchema.properties.files.minItems, 1);
+    assert.equal(tool.inputSchema.properties.files.maxItems, 10);
+  } finally {
+    server.closeAllConnections();
+    await new Promise(r => server.close(r));
+  }
+});
