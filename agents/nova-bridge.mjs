@@ -56,13 +56,17 @@ async function getTabs() {
 let novaTabId = null;
 async function getActiveTab() {
   const tabs = await getTabs();
+  // The configured pin is the initial tab, not an override of an explicit
+  // agent-owned tab switch. Otherwise /tab/switch reports success while
+  // subsequent observations silently return to the old tab.
+  const own = novaTabId && ownedTabs.has(novaTabId) &&
+    tabs.find(t=>t.id===novaTabId && t.type==='page' && t.webSocketDebuggerUrl);
+  if (own) return own;
   if (selectedTabId) {
     const pinned=tabs.find(t=>t.id===selectedTabId && t.type==='page' && t.webSocketDebuggerUrl && readable(t.url));
     if (!pinned) throw new Error('SELECTED_TAB_CLOSED_OR_ORIGIN_DENIED');
     return pinned;
   }
-  const own = novaTabId && tabs.find(t=>t.id===novaTabId && t.type==='page' && t.webSocketDebuggerUrl);
-  if (own) return own;
   const r = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?about:blank`, { method:'PUT', signal:AbortSignal.timeout(5000) });
   if (!r.ok) throw new Error('CDP_NEW_TAB_FAILED_' + r.status);
   const created = await r.json();
@@ -490,7 +494,7 @@ export const server = createServer(async (req, res) => {
       const b = await readBody(req);
       if (!readable(b.url) || b.url === 'about:blank') return json(res,{ok:false,error:'ORIGIN_DENIED'},403);
       return json(res, await guardedBrowserWrite("tab-open", b, async () => {
-        const r = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?${new URL(b.url).href}`, { method: "PUT", signal: AbortSignal.timeout(5000) });
+        const r = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?${encodeURIComponent(new URL(b.url).href)}`, { method: "PUT", signal: AbortSignal.timeout(5000) });
         if (!r.ok) throw new Error('CDP_NEW_TAB_FAILED_' + r.status);
         const created = await r.json();
         ownedTabs.add(created.id); novaTabId = created.id;
