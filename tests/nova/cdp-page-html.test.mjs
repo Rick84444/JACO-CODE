@@ -63,7 +63,7 @@ test('MCP advertises nova_html as a read-only tool', async () => {
 
 test('the runtime allows nova_html and keeps only its origin, size and digest in durable receipts', () => {
   const server = fs.readFileSync(new URL('../../runtime/server.ts', import.meta.url), 'utf8');
-  assert.match(server, /\['nova_targets','nova_observe','nova_screenshot','nova_html'\]/);
+  assert.match(server, /\['nova_targets','nova_observe','nova_screenshot','nova_html','nova_ax'\]/);
   assert.match(server, /toolName === 'nova_html'[\s\S]{0,400}htmlOmitted: true/);
   const stage = fs.readFileSync(new URL('../../runtime/src/components/CapturedPage.tsx', import.meta.url), 'utf8');
   assert.match(stage, /sandbox=""/); assert.match(stage, /sanitizeAuraStageHtml/);

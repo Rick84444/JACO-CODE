@@ -12,6 +12,11 @@ const definitions=[
   ['nova_navigate','Navigate within configured origins','POST','/navigate',{url:{type:'string'},actionId:{type:'string'}}],
   ['nova_click','Click a unique selector and verify an explicit transition','POST','/click',{selector:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
   ['nova_type','Set a field and read back the value','POST','/type',{selector:{type:'string'},expectedUrl:{type:'string'},text:{type:'string'},actionId:{type:'string'}}],
+  // Targets named the way the page names them (its accessibility tree), with real input events.
+  ['nova_ax','List what can be clicked or typed into on the pinned page, by accessible role and name','GET','/ax',{}],
+  ['nova_click_named','Click the one control with this accessible role and name and verify an explicit transition','POST','/click',{role:{type:'string'},name:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
+  ['nova_type_named','Type into the one field with this accessible role and name and read back the value','POST','/type',{role:{type:'string'},name:{type:'string'},expectedUrl:{type:'string'},text:{type:'string'},actionId:{type:'string'}}],
+  ['nova_press','Press one key (Enter, Tab, Escape, arrows, Home, End, PageUp, PageDown, Backspace, Delete, space) and verify an explicit transition','POST','/press',{key:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
 ];
 export function createCdpFacade({token=process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '',base=process.env.NOVA_BRIDGE_URL || 'http://127.0.0.1:4243',fetchImpl=fetch}={}) {
   const send=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(data));};

@@ -9,6 +9,8 @@ import { join, dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { buildAgentCard, joinWorkplace } from "./lib/workplace-session.mjs";
 import { createBrowserActionJournal } from "./lib/browser-action-journal.mjs";
+import { inputAllowed, mutationsEnabled } from "./lib/browser-scope.mjs";
+import { createInputActions } from "./lib/browser-input.mjs";
 
 const CDP_PORT = parseInt(process.env.CDP_PORT || "9222");
 const BRIDGE_PORT = parseInt(process.env.NOVA_BRIDGE_PORT || "4243");
@@ -67,9 +69,13 @@ export class CDPSession {
     this.ws = new WebSocket(wsUrl);
     this.msgId = 0;
     this.pending = new Map();
+    this.handlers = new Map();
     this.ws.addEventListener("message", (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg && typeof msg.method === "string" && this.handlers.has(msg.method)) {
+        for (const fn of this.handlers.get(msg.method)) { try { fn(msg.params || {}); } catch { /* a listener must never break the session */ } }
+      }
       if (msg?.id && this.pending.has(msg.id)) {
         const { resolve, reject } = this.pending.get(msg.id);
         this.pending.delete(msg.id);
@@ -121,6 +127,14 @@ export class CDPSession {
     });
   }
 
+  // Subscribe to a CDP event; the returned function unsubscribes.
+  on(method, fn) {
+    const list = this.handlers.get(method) || [];
+    list.push(fn);
+    this.handlers.set(method, list);
+    return () => this.handlers.set(method, (this.handlers.get(method) || []).filter(x => x !== fn));
+  }
+
   close() { try { this.ws.close(); } catch {} }
 }
 
@@ -138,7 +152,7 @@ async function withTab(fn, { input = false, missionOrigin = null } = {}) {
   await session.ready();
   try {
     const current=await evaluate(session,'location.href');
-    if (!(input ? allowed(current) || (missionOrigin && new URL(current).origin===missionOrigin) : readable(current))) throw new Error('ORIGIN_DENIED');
+    if (!(input ? inputAllowed(current) || (missionOrigin && new URL(current).origin===missionOrigin) : readable(current))) throw new Error('ORIGIN_DENIED');
     return await fn(session, tab);
   } finally {
     session.close();
@@ -362,23 +376,10 @@ export async function navigateSession(session, url, settleMs=1000) {
   const verified=observation.url===new URL(url).href;
   return {ok:verified, verified, observation, ...(verified?{}:{error:'NAVIGATION_NOT_VERIFIED'})};
 }
-export async function actSession(session, {selector,text,expectedUrl,expect}, kind) {
-  if (typeof selector!=='string' || !selector) throw new Error('SELECTOR_REQUIRED');
-  if (kind==='type' && typeof text!=='string') throw new Error('TEXT_REQUIRED');
-  const before=await observeSession(session);
-  if (expectedUrl && before.url!==expectedUrl) throw new Error('STALE_PAGE');
-  const target=await evaluate(session, `(() => { const es=document.querySelectorAll(${JSON.stringify(selector)}); if(es.length!==1)return false; const e=es[0],r=e.getBoundingClientRect(); return !e.disabled&&r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden'; })()`);
-  if (!target) throw new Error('TARGET_NOT_UNIQUE_OR_ACTIONABLE');
-  const predicate = expect?.url ? `location.href===${JSON.stringify(expect.url)}` : expect?.selector ? `(() => {const e=document.querySelector(${JSON.stringify(expect.selector)}); if(!e)return false; const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden';})()` : null;
-  const alreadySatisfied=predicate ? await evaluate(session,predicate) : false;
-  try {
-    await evaluate(session, `(() => { const es=document.querySelectorAll(${JSON.stringify(selector)});if(es.length!==1)throw new Error('TARGET_CHANGED');const e=es[0];e.focus();${kind==='click' ? 'e.click();' : `e.value=${JSON.stringify(text)};e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));`}return true; })()`);
-    let verified=kind==='type' ? await evaluate(session, `document.querySelector(${JSON.stringify(selector)})?.value===${JSON.stringify(text)}`) : false;
-    // Real asynchronous postcondition: a click may await an API response before rendering.
-    if(kind==='click' && predicate && !alreadySatisfied){const deadline=Date.now()+5000;do{verified=Boolean(await evaluate(session,predicate));if(verified)break;await new Promise(r=>setTimeout(r,100));}while(Date.now()<deadline);}
-    return {ok:true,verified:Boolean(verified),observation:await observeSession(session)};
-  } catch(error) { return {ok:false,verified:false,outcomeUnknown:true,error:error.message}; }
-}
+// Click, type and press with real input events, and targets named by the accessibility tree: agents/lib/browser-input.mjs.
+const inputActions = createInputActions({ evaluate, observe: observeSession });
+export const actSession = inputActions.actSession;
+export const axSession = inputActions.axSession;
 async function navigate(url,settleMs) { return withTab(s=>navigateSession(s,url,settleMs)); }
 async function observe() { return withTab(observeSession); }
 async function survey(label) {
@@ -418,7 +419,7 @@ export const server = createServer(async (req, res) => {
     if (!authorized(req)) return json(res,{ok:false,error:'UNAUTHORIZED'},401);
     if (!workplace.allowed && url.pathname !== '/health') return json(res,{ok:false,error:'WORKPLACE_UNSYNCED',state:workplace.state},503);
     if (req.headers.origin) return json(res,{ok:false,error:'BROWSER_ORIGIN_DENIED'},403);
-    if (req.method==='POST' && ['/navigate','click','type'].includes(url.pathname) && process.env.JACO_GATEWAY_ALLOW_MUTATIONS!=='1') return json(res,{ok:false,error:'MUTATIONS_DISABLED'},403);
+    if (req.method==='POST' && ['/navigate','/click','/type','/press'].includes(url.pathname) && !mutationsEnabled()) return json(res,{ok:false,error:'MUTATIONS_DISABLED'},403);
     if (req.method === "GET" && url.pathname === "/health") {
       const result = workplace.allowed ? browserHealth.status() :
         { ok: false, state: 'BLOCKED', browserVerified: false, error: 'WORKPLACE_UNSYNCED' };
@@ -446,14 +447,23 @@ export const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/click") {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'click');
-      if (!b.expectedUrl || (!allowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
+      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
       return json(res, await guardedBrowserWrite("click", b, () => withTab(s=>actSession(s,b,"click"), { input: true,missionOrigin })));
     }
     if (req.method === "POST" && url.pathname === "/type") {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'type');
-      if (!b.expectedUrl || (!allowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
+      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
       return json(res, await guardedBrowserWrite("type", b, () => withTab(s=>actSession(s,b,"type"), { input: true,missionOrigin })));
+    }
+    if (req.method === "POST" && url.pathname === "/press") {
+      const b = await readBody(req);
+      const missionOrigin=await missionBrowserGrant(b,'press');
+      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
+      return json(res, await guardedBrowserWrite("press", b, () => withTab(s=>actSession(s,b,"press"), { input: true,missionOrigin })));
+    }
+    if (req.method === 'GET' && url.pathname === '/ax') {
+      return json(res, await withTab(s=>axSession(s)));
     }
     if (req.method === "POST" && url.pathname === "/survey") {
       const b = await readBody(req);
@@ -479,11 +489,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         role: 'browser-actuator',
         description: 'Authenticated Chrome CDP bridge used by Nova for observe, navigate, click, type and survey.',
         capabilities: { browser_control: cdp, reasoning: false, terminal: false, filesystem_write: false, image_understanding: false },
-        tools: cdp ? ['targets', 'screenshot', 'observe', 'navigate', 'click', 'type', 'survey'] : [],
+        tools: cdp ? ['targets', 'screenshot', 'observe', 'ax', 'navigate', 'click', 'type', 'press', 'survey'] : [],
         constraints: [
           `CDP page reachable on :${CDP_PORT} at startup: ${cdp}`,
           `Allowed origins: ${[...ORIGINS].join(', ') || 'none'}`,
-          `Mutations enabled: ${process.env.JACO_GATEWAY_ALLOW_MUTATIONS === '1'}`,
+          `Mutations enabled: ${mutationsEnabled()}`,
         ],
         preferredTasks: ['browser observation', 'browser actions on allowed origins'],
       }),
