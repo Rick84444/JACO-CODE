@@ -55,6 +55,9 @@ function insideWorkingDirectory(target) {
   return true;
 }
 
+// JACO's own tools that change the operator's website, contact other agents, or touch credentials and accounts.
+const OUTWARD_TOOL = /^(?:jaco_)?(?:wordpress_(?:update|apply|improve)\w*|a2a_outbound|provider_register|store_secret|generate_secret|connect_provider|request_account)$/i;
+
 function recursiveDelete(command, sandbox) {
   for (const pattern of RECURSIVE_DELETE) {
     const match = command.match(pattern);
@@ -89,7 +92,8 @@ export function operatorApprovalCheck(task, { sandbox = false } = {}) {
     return rule ? { reason: rule[1] } : null;
   }
   if (task?.type === 'mcp-write') {
-    return MCP_WRITE.test(String(data.tool || '')) ? { reason: `external write ${data.server || 'connector'}.${data.tool}` } : null;
+    const tool = String(data.tool || '');
+    return MCP_WRITE.test(tool) || OUTWARD_TOOL.test(tool) ? { reason: `external write ${data.server || 'connector'}.${data.tool}` } : null;
   }
   if (CLICK_TASKS.has(task?.type)) {
     const rule = CLICK_RULES.find(([pattern]) => pattern.test(clickLabel(data)));

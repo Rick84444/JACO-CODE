@@ -42,7 +42,7 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
   };
   return {
     jaco: {
-      name: 'JACO', role: 'runtime, missions, Workplace, providers', icon: 'jaco', agentAccess: 'read',
+      name: 'JACO', role: 'runtime, missions, Workplace, providers', icon: 'jaco', agentAccess: 'write',
       command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-mcp-launch.mjs')],
       env: { JACO_MODEL_ID: 'jaco-ide', JACO_AGENT_STABLE_ID: 'jaco-ide', JACO_AGENT_NAME: 'JACO IDE', JACO_AGENT_PROVIDER: 'jaco' },
       cwd: path.dirname(runtimeRoot),

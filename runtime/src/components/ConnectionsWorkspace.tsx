@@ -3,6 +3,7 @@ import { ProviderConnect } from './ProviderConnect';
 import { ApiVaultPanel } from './ApiVaultPanel';
 import { McpServersPanel, type McpProvider, type McpTool } from './McpServersPanel';
 import { SkillsView } from './SkillsView';
+import { CapabilitiesPanel } from './CapabilitiesPanel';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 const request=async(url:string,body?:unknown)=>fetch(url,{...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),signal:AbortSignal.timeout(30000)}).then(readAuraResponse);
 const unwrap=(result:any)=>{const text=result?.content?.find((c:any)=>c.type==='text')?.text;try{return text?JSON.parse(text):result;}catch{return result;}};
@@ -34,7 +35,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
   return <div className="connections-workspace">
     <header><h2>Connections</h2><button type="button" onClick={()=>void refresh()}>Refresh</button></header>
     <p>Models, API & Vault, local tools and skills. Models and MCP refresh every 30 seconds.</p>
-    <nav aria-label="Connection type">{[['models','Models'],['local','Local tools'],['mcp','MCP'],['browser','Browser / CDP'],['skills','Skills'],['vault','API & Vault']].map(([id,label])=><button key={id} type="button" aria-pressed={tab===id} onClick={()=>{onTabChange(id);setResult(null);}}>{label}</button>)}</nav>
+    <nav aria-label="Connection type">{[['capabilities','What Aura can do'],['models','Models'],['local','Local tools'],['mcp','MCP'],['browser','Browser / CDP'],['skills','Skills'],['vault','API & Vault']].map(([id,label])=><button key={id} type="button" aria-pressed={tab===id} onClick={()=>{onTabChange(id);setResult(null);}}>{label}</button>)}</nav>
     {observed&&<p>Last checked {new Date(observed).toLocaleTimeString('en-US')}</p>}
     {Object.entries(errors).map(([source,message])=><p key={source} role="alert">{source}: {message}. Earlier values may be stale.</p>)}
     {notice&&<p role="alert">{notice}</p>}
@@ -58,6 +59,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
     {tab==='browser'&&<section><h3>Connect a browser tab</h3><p>Start Chrome/Chromium with remote debugging on the computer where JACO runs. Tabs are read from the given local CDP port.</p><label>CDP port<input type="number" min="1" max="65535" value={port} onChange={e=>{setPort(e.target.value);setTargets(null);setResult(null);}}/></label><button type="button" disabled={!!busy} onClick={()=>void act('targets',async()=>{setTargets(null);const value=await call('jaco','jaco_browser_targets',{port:Number(port)});setTargets(value.targets||[]);return value;})}>Fetch open tabs</button>
       {targets?.length===0&&<p>No controllable tabs were observed.</p>}{targets?.map(t=><article key={t.id||t.url}><strong>{t.title||'Browser tab'}</strong><p>{t.url}</p><button type="button" disabled={!!busy} onClick={()=>void act('attach',()=>call('jaco','jaco_browser_attach',{port:Number(port),urlIncludes:t.url.slice(0,300),targetId:t.id}))}>Connect this tab</button></article>)}
     </section>}
+    {tab==='capabilities'&&<CapabilitiesPanel mcp={(mcp?.providers||[]) as any} onMcpChanged={()=>void refresh()}/>}
     {tab==='vault'&&<ApiVaultPanel onChanged={refresh}/>}
     {tab==='skills'&&<SkillsView/>}
     {result&&tab!=='models'&&<section><h3>Latest tool result</h3><pre>{JSON.stringify(result,null,2)}</pre></section>}

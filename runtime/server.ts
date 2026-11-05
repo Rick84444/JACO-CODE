@@ -85,6 +85,8 @@ import { readAutonomousCycleBoard } from "./src/server/connected/autonomousCycle
 import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec, fetchSkillFromUrl } from "../agents/lib/skills.mjs";
 import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy, policyFilePath, CLAIM_RESUME_NOTE } from "../agents/lib/approval-policy.mjs";
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
+import { taskCatalog, ALWAYS_ASK } from './src/server/capabilities/capabilityPolicy.mjs';
+import { TASK_FIELDS } from "../agents/lib/task-fields.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
 import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
 import { synchronizeAuraHarnessModel } from "../agents/lib/aura-harness-model-choice.mjs";
@@ -2925,11 +2927,35 @@ const notifyPhone = async (action) => {
   };
   app.get('/api/aura/workbench/skills/:id', requireLocalUi, sendSkill);
   // Nova reads the skill catalog and the skill it is running (token auth).
+  // A skill the operator turned off is invisible to the agent; the operator still sees it (Skills view).
   app.get('/api/skills', requireAuth, (_req, res) => {
-    try { res.json({ success: true, skills: listSkills(skillRoots()) }); }
+    try { res.json({ success: true, skills: listSkills(skillRoots()).filter((skill: any) => connectedRuntime.capabilities.isSkillEnabled(skill.id)) }); }
     catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
   });
-  app.get('/api/skills/:id', requireAuth, sendSkill);
+  app.get('/api/skills/:id', requireAuth, (req, res, next) => {
+    if (!connectedRuntime.capabilities.isSkillEnabled(String(req.params.id || ''))) return res.status(403).json({ success: false, error: 'SKILL_TURNED_OFF_BY_OPERATOR' });
+    return sendSkill(req, res);
+  });
+
+  // What Aura may use. Everything is on until the operator turns it off here (capabilityPolicy.mjs).
+  app.get('/api/aura/capabilities', requireLocalUi, (_req, res) => {
+    try {
+      const policy = connectedRuntime.capabilities;
+      const groups = taskCatalog(Object.keys(TASK_FIELDS)).map((group: any) => ({ ...group, tasks: group.tasks.map((task: any) => ({ ...task, enabled: policy.isTaskEnabled(task.id) })) }));
+      const skills = listSkills(skillRoots()).map((skill: any) => ({ id: skill.id, name: skill.name, description: skill.description, enabled: policy.isSkillEnabled(skill.id) }));
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ success: true, schema: policy.snapshot().schema, updatedAt: policy.snapshot().updatedAt, groups, skills, alwaysAsk: ALWAYS_ASK });
+    } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
+  });
+  app.patch('/api/aura/capabilities', requireLocalUi, (req, res) => {
+    if (!localOperatorOnly(req, res)) return;
+    try {
+      const policy = connectedRuntime.capabilities;
+      const snapshot = req.body?.reset === true ? policy.reset('operator') : policy.update({ tasks: req.body?.tasks, skills: req.body?.skills }, 'operator');
+      seerLiveWorkstream.record({ actor: 'Aura Capabilities', type: 'capabilities.changed', message: `Turned off: ${snapshot.disabledTasks.length} task type(s), ${snapshot.disabledSkills.length} skill(s)`, verified: true, receipt: { disabledTasks: snapshot.disabledTasks, disabledSkills: snapshot.disabledSkills } });
+      res.json({ success: true, ...snapshot });
+    } catch (error: any) { res.status(/CAPABILITY_INVALID/.test(error?.message) ? 400 : 500).json({ success: false, error: error?.message || String(error) }); }
+  });
   // What JACO learned from its missions, waiting for the operator (agents/lib/skill-learning.mjs).
   app.get('/api/aura/workbench/skill-proposals', requireLocalUi, (_req, res) => {
     try { res.json({ success: true, proposals: skillLearning.list().slice(0, 50), toolNotes: skillLearning.notes() }); }

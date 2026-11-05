@@ -302,8 +302,10 @@ export function validateTask(task, allowed) {
 // SEER owns missions in the existing mission-bus database. Nova leases one turn
 // at a time. An interrupted execution is never automatically repeated.
 export class NovaMissionControl {
-  constructor(bus, { allowedTasks = DEFAULT_TASKS, now = () => Date.now(), knownExecutor = () => true } = {}) {
+  // capabilities: the operator's switches (capabilityPolicy.mjs). Without it missions keep the narrow legacy scope.
+  constructor(bus, { allowedTasks = DEFAULT_TASKS, now = () => Date.now(), knownExecutor = () => true, capabilities = null } = {}) {
     this.bus = bus;
+    this.capabilities = capabilities;
     this.knownExecutor = knownExecutor;
     this.db = bus.db;
     this.now = now;
@@ -360,7 +362,12 @@ export class NovaMissionControl {
       || parent.strategicBoard.missionId !== parent.graphId || JSON.stringify(parent.strategicBoard).length > 64000)) throw new Error('MISSION_STRATEGIC_BOARD_INVALID');
     const desktopKind = executorKind(normalizedExecutor) === 'desktop-agentos';
     const codingContract = contract == null ? null : normalizeCodingContract(contract, goal);
-    const requested = allowedTasks == null
+    // With the operator's switches every task they have not turned off is active from the start, in coding
+    // missions too. Only what costs money (repo-scan) and what needs the desktop executor stay explicit.
+    const requested = allowedTasks == null && this.capabilities
+      ? this.capabilities.enabledTasks(this.allowedTasks).filter(task =>
+          (desktopKind || task !== 'windows-wmi-read') && task !== 'repo-scan')
+      : allowedTasks == null
       ? this.allowedTasks.filter(task =>
           (desktopKind || task !== 'windows-wmi-read') &&
           // Raw shell is enabled as an available capability but never injected
@@ -554,6 +561,7 @@ export class NovaMissionControl {
       const startedAt = row.budget_started_at ?? Date.parse(mission.createdAt || mission.created_at || '');
       assertCodingBudget(mission.contract, { toolCallsUsed: used, stepsUsed: used, failures: row.failures, startedAt, now: this.now() });
     }
+    if (this.capabilities && !this.capabilities.isTaskEnabled(String(task?.type))) throw new Error(`TASK_TURNED_OFF_BY_OPERATOR:${String(task?.type).slice(0, 60)}`);
     let checked = validateTask(task, mission.allowedTasks);
     if (CODE_TASKS.has(checked.type)) checked = validateCodingTask(checked, mission.contract, mission.receipts);
     if (checked.type === 'github-create-repo') checked = validateGithubRepoTask(checked, mission.goal);
