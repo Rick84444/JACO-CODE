@@ -1210,8 +1210,10 @@ export function orderedBrainProviders(env = process.env) {
   // when no primary provider was configured for this process.
   const operator = (!env.JACO_PRIMARY_PROVIDER || env.JACO_AURA_UNIFIED_RUNTIME === '1') && saved?.by === 'operator' ? saved : null;
   const preferred = saved && !operator && FREE_PROVIDER_NAMES.includes(saved.provider) ? saved.provider : null;
-  const first = env.JACO_AURA_UNIFIED_RUNTIME === '1' ? [operator?.provider, env.JACO_PRIMARY_PROVIDER, preferred] : [env.JACO_PRIMARY_PROVIDER, operator?.provider, preferred]
-    .filter((name, index, all) => name && all.indexOf(name) === index && pool.some(p => p.name === name));
+  const priority = env.JACO_AURA_UNIFIED_RUNTIME === '1'
+    ? [operator?.provider, env.JACO_PRIMARY_PROVIDER, preferred]
+    : [env.JACO_PRIMARY_PROVIDER, operator?.provider, preferred];
+  const first = priority.filter((name, index, all) => name && all.indexOf(name) === index && pool.some(p => p.name === name));
   const entry = name => {
     const provider = pool.find(p => p.name === name);
     return name === operator?.provider ? { ...provider, model: operator.model || provider.model, chosen: true } : provider;
