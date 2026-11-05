@@ -101,9 +101,18 @@ export async function watchDialogs(session) {
 
 export async function trustedClick(session, point) {
   const base = { x: point.x, y: point.y, button: 'left', clickCount: 1 };
-  await session.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y });
-  await session.send('Input.dispatchMouseEvent', { ...base, type: 'mousePressed' });
-  await session.send('Input.dispatchMouseEvent', { ...base, type: 'mouseReleased' });
+  let pressAcknowledged = false;
+  try {
+    await session.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y });
+    await session.send('Input.dispatchMouseEvent', { ...base, type: 'mousePressed' });
+    pressAcknowledged = true;
+    await session.send('Input.dispatchMouseEvent', { ...base, type: 'mouseReleased' });
+  } catch (error) {
+    // Once pressing was acknowledged, a lost release acknowledgement is
+    // ambiguous: a synthetic retry could click twice.
+    if (pressAcknowledged && error && typeof error === 'object') error.inputDispatchStarted = true;
+    throw error;
+  }
 }
 
 export async function trustedKey(session, key, modifiers = 0) {
@@ -111,6 +120,12 @@ export async function trustedKey(session, key, modifiers = 0) {
   const common = { key, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk, modifiers };
   await session.send('Input.dispatchKeyEvent', { ...common, type: k.text ? 'keyDown' : 'rawKeyDown', ...(k.text ? { text: k.text } : {}) });
   await session.send('Input.dispatchKeyEvent', { ...common, type: 'keyUp' });
+}
+
+// Only explicit protocol "method unavailable" errors authorize a script
+// fallback. Timeouts, lost acknowledgements and transport errors never do.
+function inputMethodUnavailable(error) {
+  return error?.code === -32601 || /(?:method not found|unknown method|wasn't found|Input domain unavailable)/i.test(String(error?.message || ''));
 }
 
 // Files an agent may hand to a page: inside the roots it was given, never a credential, a bounded number and size.
@@ -213,8 +228,9 @@ export function createInputActions({ evaluate, observe, tabs = null, downloads =
             if (kind === 'click') await trustedClick(session, info);
             else { await callOn(session, target.objectId, FOCUS_FN); await session.send('Input.insertText', { text }); }
           } catch (error) {
-            // Input.* is unavailable (an embedded or older browser): a script does it, and the receipt says so.
-            if (target.via !== 'selector' || frame || String(selector).includes('>>>')) throw error;
+            // Fallback only for an explicitly unsupported CDP input method.
+            // Do not repeat a potentially dispatched click or insertion after a timeout.
+            if (!inputMethodUnavailable(error) || error?.inputDispatchStarted || target.via !== 'selector' || frame || String(selector).includes('>>>')) throw error;
             input = 'synthetic';
             const script = kind === 'click'
               ? 'e.click();'
