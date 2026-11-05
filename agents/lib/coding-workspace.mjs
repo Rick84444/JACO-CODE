@@ -38,10 +38,14 @@ export function createCodingWorkspace({ root = process.cwd(), protectedBranches:
   // Write to a temp file, fsync, re-check the path, then rename over the target.
   const atomicWrite = (relative, absolute, content) => {
     const temp = `${absolute}.${crypto.randomUUID()}.tmp`;
+    // Preserve executable mode: a content-identical write must not silently
+    // alter the Git tree and bypass post-write verification or the commit gate.
+    const existingMode = fs.existsSync(absolute) ? fs.statSync(absolute).mode & 0o7777 : null;
     let fd;
     try {
       fd = fs.openSync(temp, 'wx', 0o600);
       fs.writeFileSync(fd, content, 'utf8');
+      if (existingMode !== null && process.platform !== 'win32') fs.fchmodSync(fd, existingMode);
       fs.fsyncSync(fd);
       fs.closeSync(fd); fd = undefined;
       resolvePath(relative);
