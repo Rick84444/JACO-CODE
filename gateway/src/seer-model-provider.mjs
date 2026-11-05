@@ -237,21 +237,24 @@ export function seerModelEndpointAllowed(url, local) {
   } catch { return false; }
 }
 
-let connectedCache = { at: 0, runtimeUrl: '', providers: [] };
+let connectedCache = { at: 0, runtimeUrl: '', selected: '', providers: [] };
 export async function resolveAuraPlanner({
   env = process.env, fetchFn = globalThis.fetch, runtimeUrl, token = '', cacheMs = 60000, now = Date.now,
   readChoice = () => readPlannerChoice(plannerChoiceFile(env)),
 } = {}) {
   const saved = readChoice();
   if (!saved || saved.by !== 'operator' || (env.JACO_PRIMARY_PROVIDER && env.JACO_AURA_UNIFIED_RUNTIME !== '1')) return null;
-  // The providers connected in Aura, with their real URLs (the same list Nova plans from), read at most once a minute.
-  if (now() - connectedCache.at >= cacheMs || connectedCache.runtimeUrl !== runtimeUrl) {
+  // Refresh instantly when the OPERATOR changes models. A one-minute stale
+  // registry cache made newly selected connected Gemini models disappear and
+  // left the mission waiting on an unrelated Ollama provider.
+  const selected = `${saved.provider}/${saved.model}`;
+  if (now() - connectedCache.at >= cacheMs || connectedCache.runtimeUrl !== runtimeUrl || connectedCache.selected !== selected) {
     try {
       const response = await fetchFn(`${trimSlash(runtimeUrl)}/api/connected/nova/planner-providers`, {
         headers: { 'x-gateway-token': token }, signal: AbortSignal.timeout(20000),
       });
       const body = await response.json();
-      connectedCache = { at: now(), runtimeUrl, providers: Array.isArray(body?.providers) ? body.providers : [] };
+      connectedCache = { at: now(), runtimeUrl, selected, providers: Array.isArray(body?.providers) ? body.providers : [] };
     } catch { /* the fixed choices below still resolve a listed provider */ }
   }
   const connected = connectedCache.providers.find(p => p?.name === saved.provider) || null;
