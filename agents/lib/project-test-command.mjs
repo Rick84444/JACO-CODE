@@ -22,6 +22,9 @@ function shellStages(source) {
       continue;
     }
     if (char === "'" || char === '"') { quote = char; current += char; continue; }
+    // A plain pipeline reports the last process status unless pipefail is
+    // explicitly active. It can mask a failed test, so do not certify it.
+    if (char === '|' && script[i + 1] !== '|' && script[i - 1] !== '|') return [];
     const operator = char === ';' || char === '\n' ? ';' :
       char === '&' && script[i + 1] === '&' ? '&&' :
       char === '|' && script[i + 1] === '|' ? '||' : null;
