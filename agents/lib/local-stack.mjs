@@ -33,8 +33,11 @@ export function runtimeDirectory(root, configured) {
 }
 export function configuration(root = ROOT, inherited = process.env, overrides = {}) {
   root = path.resolve(root);
-  const file = path.join(root, '.env');
+  // Installed Program Files are immutable; per-user credentials, mission state and startup receipts live elsewhere.
+  const dataRoot = inherited.JACO_DATA_DIR ? path.resolve(inherited.JACO_DATA_DIR) : root;
+  const file = path.join(dataRoot, '.env');
   const env = { ...(fs.existsSync(file) ? parse(fs.readFileSync(file)) : {}), ...inherited, ...overrides };
+  env.JACO_DATA_DIR = dataRoot;
   delete env.NODE_TLS_REJECT_UNAUTHORIZED;
   const runtime = runtimeDirectory(root, env.JACO_RUNTIME_DIR);
   const manifest = JSON.parse(fs.readFileSync(path.join(runtime, 'package.json'), 'utf8'));
@@ -62,7 +65,7 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   const enabledPorts = Object.entries(ports).filter(([key]) => key === 'gateway' ? gateway : ['chrome','cdp','novaBridge'].includes(key) ? cdp : true).map(([, value]) => value);
   if (new Set(enabledPorts).size !== enabledPorts.length) throw new Error('DUPLICATE_LISTENER_PORT');
   for (const [key, name] of Object.entries({runtime:'PORT',workplace:'JACO_WORKPLACE_PORT',seer:'SEER_PORT',remote:'JACO_REMOTE_BRIDGE_PORT',a2a:'JACO_A2A_PORT',novaBridge:'NOVA_BRIDGE_PORT',cdp:'JACO_CDP_BRIDGE_PORT',gateway:'JACO_GATEWAY_PORT',chrome:'CDP_PORT'})) env[name] = String(ports[key]);
-  Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_RUNTIME_DIR: runtime });
+  Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_RUNTIME_DIR: runtime, JACO_WORKSPACE_ROOT: dataRoot });
   env.JACO_RUNTIME_URL = `http://127.0.0.1:${ports.runtime}`;
   env.JACO_RELEASE_ROOT = runtime;
   // One model choice for every service. Without this each service reads the file under its own working
@@ -81,7 +84,7 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   const built = fs.existsSync(path.join(runtime, 'dist/server.cjs')) && fs.existsSync(path.join(runtime, 'dist/index.html'));
   if (mode === 'production' && !built) throw new Error('PRODUCTION_BUILD_REQUIRED');
   const production = mode === 'production' || (mode === 'auto' && built);
-  return { root, runtime, version: manifest.version, releaseId, env, ports, production, cdp, gateway, tunnel: env.JACO_START_TUNNEL === '1' };
+  return { root, dataRoot, runtime, version: manifest.version, releaseId, env, ports, production, cdp, gateway, tunnel: env.JACO_START_TUNNEL === '1' };
 }
 export function serviceEnvironment(config, kind) {
   const env = { ...config.env };
@@ -93,10 +96,11 @@ export function serviceEnvironment(config, kind) {
     if (kind !== 'runtime' && /^(HUGGINGFACE_TOKEN|HF_TOKEN)$/.test(k)) env[k] = '';
   }
   if (kind === 'runtime') {
-    delete env.JACO_WORKSPACE_ROOT;
+    // Preserve legacy checkout behavior unless this is a packaged product with a separate writable data root.
+    if (config.dataRoot === config.root) delete env.JACO_WORKSPACE_ROOT;
     env.NODE_ENV = config.production ? 'production' : 'development';
     env.OLLAMA_BASE_URL = (env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/v1\/?$/, '').replace(/\/$/, '') + '/v1';
-  } else env.JACO_WORKSPACE_ROOT = config.root;
+  } else env.JACO_WORKSPACE_ROOT = config.dataRoot || config.root;
   return env;
 }
 export function definitions(c) {
@@ -158,7 +162,7 @@ async function waitReady(s, token, timeout = 180000) {
   throw new Error(`SERVICE_NOT_READY:${s.id}:see logs/startup/${s.id}.err.log`);
 }
 function launch(c, s) {
-  const logs = path.join(c.root, 'logs', 'startup'); fs.mkdirSync(logs, { recursive: true });
+  const logs = path.join(c.dataRoot || c.root, 'logs', 'startup'); fs.mkdirSync(logs, { recursive: true });
   const out = fs.openSync(path.join(logs, `${s.id}.out.log`), 'a');
   const err = fs.openSync(path.join(logs, `${s.id}.err.log`), 'a');
   const child = spawn(s.cmd, s.args, { cwd: s.cwd, env: serviceEnvironment(c, s.id), windowsHide: true, detached: true, stdio: ['ignore', out, err] });
@@ -180,7 +184,7 @@ export function processBirth(pid) {
   return value || null;
 }
 export function pendingProcess(c, id) {
-  const file = path.join(c.root, 'logs/startup', `${id}.process.json`);
+  const file = path.join(c.dataRoot || c.root, 'logs/startup', `${id}.process.json`);
   if (!fs.existsSync(file)) return null;
   const record = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (!Number.isInteger(record.pid) || record.pid < 1) throw new Error(`PROCESS_RECORD_INVALID:${id}`);
@@ -212,7 +216,7 @@ export function renameWithRetry(from, to, { attempts = 20, waitMs = 100, rename 
   }
 }
 function save(c, result) {
-  const file = path.join(c.root, 'logs', 'startup', 'status.json');
+  const file = path.join(c.dataRoot || c.root, 'logs', 'startup', 'status.json');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file + '.tmp', JSON.stringify(result, null, 2));
   renameWithRetry(file + '.tmp', file);
@@ -234,7 +238,7 @@ export async function inspectStatus(c, services = [...definitions(c), ...novaRea
   // An injected, standalone service probe has no canonical installation to
   // reconcile. Only the real startup configuration requires the durable receipt.
   const canonical = Boolean(c?.root && c?.runtime && c?.ports);
-  const startup = canonical ? readStartupEvidence(c.root) : null;
+  const startup = canonical ? readStartupEvidence(c.dataRoot || c.root) : null;
   const servicesReady = observed.length > 0 && observed.every(s => s.state === 'READY');
   const state = !servicesReady ? 'BLOCKED' : startup && !startup.ok ? 'DEGRADED' : 'READY';
   return { schema: 'jaco.local-startup/v1', state,
@@ -245,7 +249,7 @@ export async function inspectStatus(c, services = [...definitions(c), ...novaRea
     ...(startup ? { startup } : {}), services: observed };
 }
 export async function activate(c, { open = false } = {}) {
-  if (fs.existsSync(path.join(c.root, '.jaco-emergency-stop.json'))) throw new Error('EMERGENCY_STOP_ACTIVE');
+  if (fs.existsSync(path.join(c.dataRoot || c.root, '.jaco-emergency-stop.json'))) throw new Error('EMERGENCY_STOP_ACTIVE');
   if (c.env.GATEWAY_TOKEN.length < 24) throw new Error('GATEWAY_TOKEN_REQUIRED_MIN_24');
   if (!fs.existsSync(path.join(c.runtime, 'server.ts'))) throw new Error('RUNTIME_DIR_INVALID');
   if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('NODE_24_OR_NEWER_REQUIRED');
@@ -253,7 +257,7 @@ export async function activate(c, { open = false } = {}) {
     try { createRequire(path.join(c.runtime, 'package.json')).resolve('tsx'); }
     catch { throw new Error('RUNTIME_DEPENDENCIES_MISSING:install runtime dependencies'); }
   }
-  const dir = path.join(c.root, 'logs', 'startup'); fs.mkdirSync(dir, { recursive: true });
+  const dir = path.join(c.dataRoot || c.root, 'logs', 'startup'); fs.mkdirSync(dir, { recursive: true });
   const lock = path.join(dir, 'startup.lock');
   try { fs.writeFileSync(lock, String(process.pid), { flag: 'wx' }); }
   catch (e) {
@@ -283,7 +287,7 @@ export async function activate(c, { open = false } = {}) {
           if (await occupied(chrome.url)) throw new Error('PORT_CONFLICT:chrome');
           const exe = executable(c.env, c.env.JACO_CHROME_EXECUTABLE, 'chrome.exe', [c.env.ProgramFiles, c.env['ProgramFiles(x86)'], c.env.LOCALAPPDATA].filter(Boolean).map(p => path.join(p, 'Google/Chrome/Application/chrome.exe')));
           if (!exe) throw new Error('CHROME_NOT_INSTALLED');
-          const profile = c.env.JACO_CHROME_PROFILE_DIR || (c.env.LOCALAPPDATA && path.join(c.env.LOCALAPPDATA, 'JACO/Chrome-CDP'));
+          const profile = c.env.JACO_CHROME_PROFILE_DIR || path.join(c.dataRoot || c.root, 'Chrome-CDP');
           if (!profile) throw new Error('CHROME_PROFILE_DIR_REQUIRED');
           if (!pendingProcess(c, 'chrome')) await launch(c, { id: 'chrome', cwd: c.root, cmd: exe, args: [`--remote-debugging-port=${c.ports.chrome}`, '--remote-debugging-address=127.0.0.1', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', `--user-data-dir=${path.resolve(c.root, profile)}`, 'about:blank'] });
           await waitReady(chrome, '', 30000);
@@ -389,7 +393,7 @@ export async function main(args = process.argv.slice(2)) {
   const runtimeArg = args.indexOf('--runtime');
   if (runtimeArg >= 0 && (!args[runtimeArg + 1] || args[runtimeArg + 1].startsWith('--'))) throw new Error('RUNTIME_ARGUMENT_REQUIRED');
   const c = configuration(ROOT, process.env, runtimeArg >= 0 ? { JACO_RUNTIME_DIR: args[runtimeArg + 1] } : {});
-  if (args.includes('--preflight')) return { schema: 'jaco.startup-preflight/v1', emergencyStop: fs.existsSync(path.join(c.root, '.jaco-emergency-stop.json')), runtimePresent: fs.existsSync(path.join(c.runtime, 'server.ts')), runtime: c.runtime, scope: 'read only; no children launched' };
+  if (args.includes('--preflight')) return { schema: 'jaco.startup-preflight/v1', emergencyStop: fs.existsSync(path.join(c.dataRoot || c.root, '.jaco-emergency-stop.json')), runtimePresent: fs.existsSync(path.join(c.runtime, 'server.ts')), runtime: c.runtime, scope: 'read only; no children launched' };
   if (args.includes('--status')) return inspectStatus(c);
   return activate(c, { open: args.includes('--open') });
 }
@@ -400,7 +404,7 @@ if (process.env.JACO_LITE !== '1' && process.argv[1] && import.meta.url === path
   if (r.schema === 'jaco.local-startup/v1' && r.state !== 'READY') process.exitCode = 1;
 }).catch(e => {
   console.error(e.message);
-  const dir = path.join(ROOT, 'logs/startup');
+  const dir = path.join(process.env.JACO_DATA_DIR || ROOT, 'logs/startup');
   try { fs.mkdirSync(dir, { recursive: true }); fs.appendFileSync(path.join(dir, 'launcher.err.log'), `${new Date().toISOString()} BLOCKED ${e.message}\n`); }
   catch { console.error('STARTUP_ERROR_LOG_UNAVAILABLE'); }
   process.exitCode = 1;
