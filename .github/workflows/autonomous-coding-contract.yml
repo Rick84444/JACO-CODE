@@ -22,7 +22,10 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'install.sh'
+      - '.github/agents/aura.agent.md'
       - '.github/agents/nova.agent.md'
+      - 'agents/workflows/seer-operating-contract.md'
+      - 'docs/architecture/aura-single-agent-functions.md'
       - '.github/workflows/autonomous-coding-contract.yml'
   pull_request:
     paths:
@@ -44,7 +47,9 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'install.sh'
+      - '.github/agents/aura.agent.md'
       - '.github/agents/nova.agent.md'
+      - 'agents/workflows/seer-operating-contract.md'
       - '.github/workflows/autonomous-coding-contract.yml'
 
 permissions:
