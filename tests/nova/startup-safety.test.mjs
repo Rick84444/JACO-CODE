@@ -140,3 +140,26 @@ test('a briefly locked startup receipt is retried, and other rename errors still
  assert.throws(()=>renameWithRetry('a','b',{waitMs:1,rename:()=>{calls++;throw Object.assign(new Error('gone'),{code:'ENOENT'});}}),/gone/);
  assert.equal(calls,1);
 });
+
+test('Aura owns the default Windows stack and never auto-selects Ollama despite old environment flags',t=>{
+ const c=fixture(t,{
+   JACO_MODEL_PROVIDER:'ollama',
+   JACO_SEER_PROVIDER_PREFERENCE:'ollama',
+   JACO_WORKPLACE_SUPERVISE_MODEL:'1',
+ });
+ assert.equal(c.env.JACO_AURA_UNIFIED_RUNTIME,'1');
+ assert.equal(c.env.JACO_MODEL_PROVIDER,'aura');
+ assert.equal(c.env.JACO_SEER_PROVIDER_PREFERENCE,'aura');
+ assert.equal(c.env.JACO_WORKPLACE_SUPERVISE_MODEL,'0');
+ const workplace=serviceEnvironment(c,'workplace');
+ assert.equal(workplace.JACO_AURA_UNIFIED_RUNTIME,'1');
+ assert.equal(workplace.JACO_SEER_PROVIDER_PREFERENCE,'aura');
+ assert.equal(workplace.JACO_PLANNER_CHOICE_FILE,c.env.JACO_PLANNER_CHOICE_FILE);
+ const legacy=fixture(t,{
+   JACO_AURA_UNIFIED_RUNTIME:'0',
+   JACO_MODEL_PROVIDER:'ollama',
+   JACO_SEER_PROVIDER_PREFERENCE:'ollama',
+ });
+ assert.equal(legacy.env.JACO_MODEL_PROVIDER,'ollama');
+ assert.equal(legacy.env.JACO_SEER_PROVIDER_PREFERENCE,'ollama');
+});
