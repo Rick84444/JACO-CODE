@@ -327,7 +327,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [codeOpened,setCodeOpened]=useState(false);
   useEffect(()=>{if(workspaceView==='code')setCodeOpened(true);},[workspaceView]);
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
-  const [showTerminal, setShowTerminal] = useState(true);
+  const [showTerminal, setShowTerminal] = useState(false);
   const [selectedEvidence, setSelectedEvidence] = useState<CognitiveEvent|null>(null);
   const [projectName, setProjectName] = useState('Workspace');
   const [projectRoot,setProjectRoot] = useState('');
@@ -400,7 +400,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [connectionsTab,setConnectionsTab]=useState('models');
   const [sidebar, setSidebar] = useState<SidebarView>('explorer');
   const [terminalMode, setTerminalMode] = useState<TerminalMode>('human');
-  const [bottomPanel, setBottomPanel] = useState<BottomPanel>('terminal');
+  const [bottomPanel, setBottomPanel] = useState<BottomPanel>('missions');
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [selectedTool, setSelectedTool] = useState<AuraSelectedTool | null>(null);
   const [mcpGitUrl, setMcpGitUrl] = useState('');
@@ -782,7 +782,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       return;
     }
     if (tool.id === 'terminal.open') {
-      setSidePanelOpen(false); setWorkspaceView('stage'); setShowTerminal(true); setBottomPanel('terminal');
+      setSidePanelOpen(false); setWorkspaceView('code'); setShowTerminal(true); setBottomPanel('terminal');
       return;
     }
   };
@@ -792,7 +792,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     setGitActionNotice(null);
     try {
       const data = await fetch(`/api/aura/workbench/git/diff?path=${encodeURIComponent(path)}`, { cache: 'no-store', signal: AbortSignal.timeout(10000) }).then(json);
-      setWorkspaceView('stage'); setSidePanelOpen(false); setShowTerminal(true);
+      setWorkspaceView('code'); setSidePanelOpen(false); setShowTerminal(true);
       setGitDiff({ path: data.path, worktree: data.worktree || '', staged: data.staged || '' });
       setBottomPanel('output');
     } catch (error: any) {
@@ -1750,17 +1750,13 @@ export const JacoAuraComputeIDE: React.FC = () => {
         {editorFile && <div className="cognitive-editor-session" hidden={!fileView}><React.Suspense fallback={<div className="cognitive-empty-detail">Opening code editor…</div>}><AuraCodeEditor file={editorFile} draft={drafts[editorFile.path]} onDraftChange={updateDraft} onSaved={handleSaved}/></React.Suspense></div>}
         {!fileView && <div className="cognitive-empty-detail"><FileCode2 size={30}/><h2>{selectedFile ? 'Opening '+selectedFile+'…' : 'The code, when you need it.'}</h2><p>Open a file from the project or from an event in the conversation.</p><button type="button" className="cognitive-primary-outline" onClick={() => { setSidebar('explorer'); setSidePanelOpen(true); }}>Show project files</button></div>}
       </div>
-    </div>
-  );
-  const terminalDock = (
-    <div className="cognitive-work-terminal">
       <button type="button" className="cognitive-dock-toggle" aria-expanded={showTerminal} onClick={() => setShowTerminal(v => !v)}><Terminal size={13}/>{showTerminal ? 'Hide terminal & details' : 'Open terminal & details'}</button>
       {showTerminal && (            <div className="cognitive-terminal-dock min-h-0 min-w-0 flex flex-col">
               <div className="h-9 px-3 flex items-center justify-between border-b border-[#2b2b2b] shrink-0">
                 <div className="flex items-center gap-4 text-[11px] h-full">
                   {([
-                    ['terminal','TERMINAL'],
                     ['missions','MISSIONS'],
+                    ['terminal','TERMINAL'],
                     ['problems','PROBLEMS'],
                     ['output','OUTPUT'],
                     ['evidence','EVIDENCE'],
@@ -1881,7 +1877,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
       working:presence.workingSessions
     }}
     presence={presence}/>
-    {terminalDock}
   </div>;
   const canvasDetail = <>
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
