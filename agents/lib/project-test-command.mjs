@@ -24,7 +24,8 @@ function shellStages(source) {
     if (char === "'" || char === '"') { quote = char; current += char; continue; }
     // A plain pipeline reports the last process status unless pipefail is
     // explicitly active. It can mask a failed test, so do not certify it.
-    if (char === '|' && script[i + 1] !== '|' && script[i - 1] !== '|') return [];
+    if ((char === '|' && script[i + 1] !== '|' && script[i - 1] !== '|') ||
+        (char === '&' && script[i + 1] !== '&' && script[i - 1] !== '&')) return [];
     const operator = char === ';' || char === '\n' ? ';' :
       char === '&' && script[i + 1] === '&' ? '&&' :
       char === '|' && script[i + 1] === '|' ? '||' : null;
@@ -45,7 +46,7 @@ function npmScriptCanCertifyTests(script) {
   if (!stages.length || stages.length > 32) return false;
   // State represents last exit code, whether a meaningful command succeeded,
   // and whether the script explicitly terminated.
-  let states = [{ ok: true, verified: false, ended: false }];
+  let states = [{ ok: true, verified: false, failedTest: false, ended: false }];
   for (const { command, join } of stages) {
     const next = [];
     for (const state of states) {
@@ -61,13 +62,13 @@ function npmScriptCanCertifyTests(script) {
       // one by themselves. Any other script command may be a custom test runner.
       const preparatory = /^(?:npm\s+run\s+(?:lint|build|format|typecheck)\b|(?:eslint|tsc|prettier|pwd|date|git\s+status)\b)/i.test(command);
       next.push({ ...state, ok: true, verified: state.verified || !preparatory });
-      next.push({ ...state, ok: false });
+      next.push({ ...state, ok: false, failedTest: state.failedTest || !preparatory });
     }
     // Only four boolean combinations plus the termination flag are possible.
-    states = [...new Map(next.map(x => [String([x.ok, x.verified, x.ended]), x])).values()];
+    states = [...new Map(next.map(x => [String([x.ok, x.verified, x.failedTest, x.ended]), x])).values()];
   }
   const success = states.filter(state => state.ok);
-  return success.length > 0 && success.every(state => state.verified);
+  return success.length > 0 && success.every(state => state.verified && !state.failedTest);
 }
 
 export function detectProjectTestCommand(projectRoot, fsImpl = fs) {
