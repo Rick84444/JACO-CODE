@@ -86,3 +86,15 @@ test('Manual and Planning allow source reading but never add write authority', (
   assert.match(prompt.system, /explicit, authorized mission/);
   assert.match(prompt.system, /RUN_MODE: MANUAL/);
 });
+
+test('search reports incomplete results when cumulative byte budget skips an eligible file', t => {
+  const { base, root } = fixture();
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'runtime', 'a-large.ts'), 'a'.repeat(1_600_000));
+  fs.writeFileSync(path.join(root, 'runtime', 'b-large.ts'), 'b'.repeat(1_599_980) + '\nonly_in_skipped_file\n');
+  const inspect = createAuraSourceInspector({ candidateRoots: [root] });
+  const result = inspect({ action: 'search', path: 'runtime', query: 'only_in_skipped_file' });
+  assert.equal(result.truncated, true, 'unscanned eligible files cannot be reported as a complete search');
+  assert.equal(result.matches.length, 0, 'the skipped file must not be silently treated as searched');
+  assert.ok(result.scannedFiles >= 1);
+});
