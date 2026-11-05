@@ -1208,9 +1208,9 @@ export function orderedBrainProviders(env = process.env) {
   const saved = readPlannerChoice(plannerChoiceFile(env));
   // .env is the operator's authority. A saved GUI preference is advisory only
   // when no primary provider was configured for this process.
-  const operator = !env.JACO_PRIMARY_PROVIDER && saved?.by === 'operator' ? saved : null;
+  const operator = (!env.JACO_PRIMARY_PROVIDER || env.JACO_AURA_UNIFIED_RUNTIME === '1') && saved?.by === 'operator' ? saved : null;
   const preferred = saved && !operator && FREE_PROVIDER_NAMES.includes(saved.provider) ? saved.provider : null;
-  const first = [env.JACO_PRIMARY_PROVIDER, operator?.provider, preferred]
+  const first = env.JACO_AURA_UNIFIED_RUNTIME === '1' ? [operator?.provider, env.JACO_PRIMARY_PROVIDER, preferred] : [env.JACO_PRIMARY_PROVIDER, operator?.provider, preferred]
     .filter((name, index, all) => name && all.indexOf(name) === index && pool.some(p => p.name === name));
   const entry = name => {
     const provider = pool.find(p => p.name === name);
@@ -1389,7 +1389,7 @@ const MODEL_FALLBACKS = {
 };
 export function brainCandidates(env = process.env) {
   const ordered = orderedBrainProviders(env);
-  const saved = !env.JACO_PRIMARY_PROVIDER ? readPlannerChoice(plannerChoiceFile(env)) : null;
+  const saved = (!env.JACO_PRIMARY_PROVIDER || env.JACO_AURA_UNIFIED_RUNTIME === '1') ? readPlannerChoice(plannerChoiceFile(env)) : null;
   // Operator-picked Aura model is a pinned route, not a hint. Replacing it with
   // an unrelated local/free provider changes the model, tool compatibility and
   // privacy expectations without consent. The existing automatic chain remains
@@ -1398,6 +1398,9 @@ export function brainCandidates(env = process.env) {
     const exact = ordered.find(p => p.name === saved.provider && p.model === saved.model);
     return exact ? [{ ...exact, chosen: true }] : [];
   }
+  // In the single-Aura profile an unset model is an explicit configuration blocker,
+  // not permission to run a random local Ollama/Gemma inference behind the operator's back.
+  if (env.JACO_AURA_UNIFIED_RUNTIME === '1') return [];
   return ordered.flatMap(p => {
     const fallback = MODEL_FALLBACKS[p.name]?.();
     return fallback && fallback !== p.model ? [p, { ...p, model: fallback }] : [p];
