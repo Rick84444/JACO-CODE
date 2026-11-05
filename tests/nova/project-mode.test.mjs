@@ -140,7 +140,7 @@ test('project node automatically authorizes tests and cannot claim completion be
     { command: 'npm test', kind: 'test' });
 
   const write = { actionId: 'm:turn:1', type: 'repo-edit', ok: true, verified: true };
-  const failed = { actionId: 'm:turn:2', type: 'repo-test', ok: false, verified: false, result: { kind: 'test' } };
+  const failed = { actionId: 'm:turn:2', type: 'repo-test', ok: false, verified: false, result: { kind: 'test', command: 'npm test' } };
   let result = contractVerificationStatus(contract, [write, failed]);
   assert.ok(result.missing.includes('tests'), 'failure must not certify the mission');
   const pass = { ...failed, actionId: 'm:turn:3', ok: true, verified: true };
@@ -262,4 +262,22 @@ test('dynamically discovered tests never widen an explicitly read-only contract'
   assert.throws(() => validateCodingTask({ type: 'repo-test', data: {
     command: 'node --test tests/generated.test.mjs',
   } }, contract), /CODING_TEST_COMMAND_NOT_CONTRACTED/);
+});
+
+test('a generated passing test cannot override a failing original project suite', () => {
+  const contract = normalizeCodingContract({
+    objective: 'Fix application regression',
+    scope: { allowed: ['**'] },
+    acceptance: ['Original suite passes'],
+    verification: { tests_required: true, allow_workspace_tests: true, commands: ['npm test'] },
+    execution: { allow_git_commit: false, require_git_commit: false },
+  });
+  const originalFail = { type: 'repo-test', actionId: 'mint:turn:1', ok: false, verified: false,
+    result: { command: 'npm test', kind: 'test' } };
+  const mintedPass = { type: 'repo-test', actionId: 'mint:turn:2', ok: true, verified: true,
+    result: { command: 'node --test tests/isolated.test.mjs', kind: 'test' } };
+  const status = contractVerificationStatus(contract, [originalFail, mintedPass]);
+  assert.ok(status.missing.includes('tests'), 'the declared project test suite still fails');
+  const originalGreen = { ...originalFail, actionId: 'mint:turn:3', ok: true, verified: true };
+  assert.equal(contractVerificationStatus(contract, [originalFail, mintedPass, originalGreen]).machineVerified, true);
 });
