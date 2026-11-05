@@ -27,6 +27,13 @@ test('packaged Windows product writes runtime state to user data, not Program Fi
     assert.equal(serviceEnvironment(config, 'runtime').JACO_WORKSPACE_ROOT, dataRoot);
     assert.equal(serviceEnvironment(config, 'workplace').JACO_WORKSPACE_ROOT, dataRoot);
     assert.equal(config.env.JACO_RELEASE_ROOT, runtime);
+    assert.equal(config.env.JACO_INSTALL_ROOT, installRoot);
+    assert.equal(serviceEnvironment(config, 'workplace').JACO_INSTALL_ROOT, installRoot);
+    assert.equal(config.env.JACO_PLANNER_CHOICE_FILE, path.join(dataRoot, '.jaco', 'state', 'provider-preference.json'));
+    // The installed user must be able to select a model without writing to Program Files.
+    fs.mkdirSync(path.dirname(config.env.JACO_PLANNER_CHOICE_FILE), { recursive: true });
+    fs.writeFileSync(config.env.JACO_PLANNER_CHOICE_FILE, '{}');
+    assert.equal(fs.readFileSync(config.env.JACO_PLANNER_CHOICE_FILE, 'utf8'), '{}');
     assert.ok(!fs.existsSync(path.join(installRoot, '.env')));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
@@ -42,5 +49,7 @@ test('unpackaged checkout preserves legacy root layout for existing Windows and 
     assert.equal(config.dataRoot, dir);
     assert.equal(serviceEnvironment(config, 'runtime').JACO_WORKSPACE_ROOT, undefined);
     assert.equal(serviceEnvironment(config, 'workplace').JACO_WORKSPACE_ROOT, dir);
+    assert.equal(config.env.JACO_PLANNER_CHOICE_FILE, path.join(runtime, '.jaco', 'state', 'provider-preference.json'));
+    assert.equal(config.env.JACO_INSTALL_ROOT, dir);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
