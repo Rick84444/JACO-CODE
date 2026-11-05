@@ -2,8 +2,12 @@
 // stays inside the browser scope. A scripted fake session stands in for Chrome.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { actSession, axSession } from '../../agents/nova-bridge.mjs';
-import { inputAllowed, browserScope, mutationsEnabled, hardDenied } from '../../agents/lib/browser-scope.mjs';
+import { createInputActions, deepResolver, checkUploadFiles, listDownloadFiles } from '../../agents/lib/browser-input.mjs';
+import { inputAllowed, browserScope, mutationsEnabled, hardDenied, isPrivateHost } from '../../agents/lib/browser-scope.mjs';
 
 const OBSERVATION = { url: 'https://example.test/', title: 't', text: '', targets: [] };
 
@@ -19,7 +23,7 @@ function page({ unique = true, covered = false, password = false, activePassword
       calls.push({ method, params });
       if (method === 'Runtime.evaluate') {
         const e = String(params.expression);
-        if (e.includes('es.length === 1 ? es[0] : null')) return unique ? { result: { objectId: 'node-1' } } : { result: {} };
+        if (e.includes("split('>>>')")) return unique ? { result: { objectId: 'node-1' } } : { result: {} };
         if (e.includes('activeElement')) return { result: { value: activePassword } };
         if (e.includes("querySelectorAll('a,button,input")) return { result: { value: OBSERVATION } };
         if (e.includes('location.href===') || e.includes('document.querySelector(')) return { result: { value: predicate.length ? predicate.shift() : false } };
@@ -148,7 +152,11 @@ test('browser scope: broad web by default in Aura, hard denials always, the old 
   assert.equal(browserScope({}), 'origins');
   assert.equal(browserScope({ ...aura, JACO_BROWSER_SCOPE: 'origins' }), 'origins');
   assert.equal(inputAllowed('https://news.example.org/story', aura), true);
-  assert.equal(inputAllowed('http://127.0.0.1:3000/', aura), true);
+  // JACO's own GUI and the private network are not "the web": an agent must not be able to approve its own approvals.
+  for (const url of ['http://127.0.0.1:3000/', 'http://localhost:3000/', 'http://[::1]:3000/', 'http://192.168.1.10/', 'http://10.0.0.5/', 'http://172.20.0.1/', 'http://printer.local/', 'http://169.254.169.254/'])
+    assert.equal(inputAllowed(url, aura), false, url);
+  assert.equal(isPrivateHost('8.8.8.8'), false);
+  assert.equal(isPrivateHost('172.32.0.1'), false);
   for (const url of ['https://accounts.google.com/signin', 'https://shop.example.org/checkout', 'https://example.org/wp-login.php', 'https://www.paypal.com/pay', 'file:///C:/secret.txt', 'javascript:alert(1)', 'not a url'])
     assert.equal(inputAllowed(url, aura), false, url);
   assert.equal(hardDenied('https://example.org/login'), 'AUTH_OR_PAYMENT_SURFACE');
@@ -161,4 +169,93 @@ test('browser mutations are on in Aura unless switched off, and off elsewhere un
   assert.equal(mutationsEnabled({ JACO_AURA_UNIFIED_RUNTIME: '1', JACO_GATEWAY_ALLOW_MUTATIONS: '0' }), false);
   assert.equal(mutationsEnabled({}), false);
   assert.equal(mutationsEnabled({ JACO_GATEWAY_ALLOW_MUTATIONS: '1' }), true);
+});
+
+test('a target can sit inside a shadow root or a same-origin frame, still one match at a time', () => {
+  const plain = deepResolver('button.save');
+  assert.match(plain, /split\('>>>'\)/);
+  assert.doesNotMatch(plain, /contentDocument/);
+  const deep = deepResolver('x-card >>> button.save', 'iframe#checkout');
+  assert.match(deep, /querySelectorAll\("iframe#checkout"\)/);
+  assert.match(deep, /contentDocument/);
+  assert.match(deep, /shadowRoot/);
+  assert.match(deep, /found\.length !== 1\) return null/, 'a plural match is refused at every step');
+});
+
+test('uploads: only files inside the given roots, never credentials, bounded in number and size', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'upload-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'outside-'));
+  try {
+    const ok = path.join(root, 'report.pdf'); fs.writeFileSync(ok, 'x');
+    const secret = path.join(root, '.env'); fs.writeFileSync(secret, 'K=v');
+    const key = path.join(root, 'deploy.pem'); fs.writeFileSync(key, 'k');
+    const elsewhere = path.join(outside, 'notes.txt'); fs.writeFileSync(elsewhere, 'n');
+    assert.deepEqual(checkUploadFiles([ok], [root]), [fs.realpathSync(ok)]);
+    assert.throws(() => checkUploadFiles([secret], [root]), /UPLOAD_PATH_REFUSED/);
+    assert.throws(() => checkUploadFiles([key], [root]), /UPLOAD_PATH_REFUSED/);
+    assert.throws(() => checkUploadFiles([elsewhere], [root]), /UPLOAD_PATH_OUTSIDE_ROOTS/);
+    assert.throws(() => checkUploadFiles(['relative.txt'], [root]), /UPLOAD_PATH_REFUSED/);
+    assert.throws(() => checkUploadFiles([path.join(root, 'missing.txt')], [root]), /UPLOAD_FILE_MISSING/);
+    assert.throws(() => checkUploadFiles([root], [root]), /UPLOAD_NOT_A_FILE/);
+    assert.throws(() => checkUploadFiles([], [root]), /UPLOAD_FILES_INVALID/);
+    assert.throws(() => checkUploadFiles(Array(11).fill(ok), [root]), /UPLOAD_FILES_INVALID/);
+    assert.throws(() => checkUploadFiles([ok], []), /UPLOAD_NOT_CONFIGURED/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
+});
+
+test('an upload attaches the checked files to one file input and reads the names back', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'upload-'));
+  try {
+    const file = path.join(root, 'report.pdf'); fs.writeFileSync(file, 'pdf');
+    const s = page();
+    const original = s.send.bind(s);
+    s.send = async (method, params = {}) => {
+      if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('scrollIntoView')) return { result: { value: { x: 1, y: 1, w: 0, h: 0, covered: false, password: false, disabled: false, tag: 'input', fileInput: true } } };
+      if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('this.files')) return { result: { value: ['report.pdf'] } };
+      return original(method, params);
+    };
+    const actions = createInputActions({ evaluate: async (session, expression) => (await session.send('Runtime.evaluate', { expression })).result.value, observe: async () => OBSERVATION, uploads: { roots: [root] } });
+    const r = await actions.actSession(s, { selector: 'input[type=file]', files: [file], expectedUrl: OBSERVATION.url }, 'upload');
+    assert.equal(r.ok, true);
+    assert.equal(r.verified, true);
+    assert.deepEqual(r.uploaded, ['report.pdf']);
+    assert.deepEqual(s.calls.find(c => c.method === 'DOM.setFileInputFiles').params.files, [fs.realpathSync(file)]);
+    // Anything but a file input is refused before the browser is touched.
+    const notFile = page();
+    const send = notFile.send.bind(notFile);
+    notFile.send = async (method, params = {}) => (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('scrollIntoView')
+      ? { result: { value: { x: 1, y: 1, w: 10, h: 10, covered: false, password: false, disabled: false, tag: 'button', fileInput: false } } } : send(method, params));
+    await assert.rejects(actions.actSession(notFile, { selector: 'button', files: [file], expectedUrl: OBSERVATION.url }, 'upload'), /NOT_A_FILE_INPUT/);
+    assert.ok(!notFile.calls.some(c => c.method === 'DOM.setFileInputFiles'));
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a click that opens a new tab reports it and adopts it; new downloads are reported by name and digest', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'downloads-'));
+  try {
+    const adopted = [];
+    let listed = [{ id: 'a', url: 'https://example.test/' }];
+    const s = page();
+    const original = s.send.bind(s);
+    s.send = async (method, params = {}) => {
+      if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased') {
+        listed = [...listed, { id: 'b', url: 'https://other.example/popup' }];
+        fs.writeFileSync(path.join(dir, 'invoice.pdf'), 'pdf-bytes');
+      }
+      return original(method, params);
+    };
+    const actions = createInputActions({
+      evaluate: async (session, expression) => (await session.send('Runtime.evaluate', { expression })).result.value, observe: async () => OBSERVATION,
+      tabs: { list: async () => listed, adopt: tab => adopted.push(tab.id) }, downloads: { dir }, settleMs: 5,
+    });
+    const r = await actions.actSession(s, { selector: 'a.download', expectedUrl: OBSERVATION.url }, 'click');
+    assert.deepEqual(r.newTabs, [{ id: 'b', url: 'https://other.example/popup' }]);
+    assert.deepEqual(adopted, ['b']);
+    assert.equal(r.downloads.length, 1);
+    assert.equal(r.downloads[0].name, 'invoice.pdf');
+    assert.match(r.downloads[0].sha256, /^[0-9a-f]{64}$/);
+    assert.ok(s.calls.some(c => c.method === 'Page.setDownloadBehavior' && c.params.downloadPath === dir));
+    assert.deepEqual(listDownloadFiles(dir).map(f => f.name), ['invoice.pdf']);
+    assert.equal(listDownloadFiles(path.join(dir, 'nope')).length, 0);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

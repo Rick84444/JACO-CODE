@@ -5,12 +5,13 @@
 import { timingSafeEqual, createHash } from 'node:crypto';
 import { createServer } from "http";
 import { writeFileSync, existsSync, readFileSync, mkdirSync, renameSync } from "fs";
+import { homedir } from "os";
 import { join, dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { buildAgentCard, joinWorkplace } from "./lib/workplace-session.mjs";
 import { createBrowserActionJournal } from "./lib/browser-action-journal.mjs";
 import { inputAllowed, mutationsEnabled } from "./lib/browser-scope.mjs";
-import { createInputActions } from "./lib/browser-input.mjs";
+import { createInputActions, listDownloadFiles, digestFile } from "./lib/browser-input.mjs";
 
 const CDP_PORT = parseInt(process.env.CDP_PORT || "9222");
 const BRIDGE_PORT = parseInt(process.env.NOVA_BRIDGE_PORT || "4243");
@@ -27,6 +28,11 @@ const guardedBrowserWrite = (kind, payload, perform) =>
 // ── CDP helpers ──────────────────────────────────────────────────────────────
 
 let selectedTabId = process.env.CDP_TARGET_ID || null;
+// Tabs Nova opened (or that a click of its own opened). Nova switches to and closes only these: the operator's own tabs,
+// JACO's GUI among them, are never driven.
+const ownedTabs = new Set();
+const DOWNLOAD_DIR = process.env.JACO_BROWSER_DOWNLOAD_DIR || join(homedir(), ".jaco", "downloads");
+const UPLOAD_ROOTS = [process.env.JACO_WORKSPACE_ROOT || process.cwd(), DOWNLOAD_DIR, join(homedir(), ".jaco", "uploads")];
 const TOKEN=process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '';
 const ORIGINS=new Set((process.env.JACO_BROWSER_ALLOWED_ORIGINS || '').split(',').map(s=>s.trim()).filter(Boolean));
 function allowed(url) { try {return ORIGINS.has(new URL(url).origin);} catch {return false;} }
@@ -61,6 +67,7 @@ async function getActiveTab() {
   if (!r.ok) throw new Error('CDP_NEW_TAB_FAILED_' + r.status);
   const created = await r.json();
   novaTabId = created.id;
+  ownedTabs.add(created.id);
   return created;
 }
 
@@ -377,7 +384,12 @@ export async function navigateSession(session, url, settleMs=1000) {
   return {ok:verified, verified, observation, ...(verified?{}:{error:'NAVIGATION_NOT_VERIFIED'})};
 }
 // Click, type and press with real input events, and targets named by the accessibility tree: agents/lib/browser-input.mjs.
-const inputActions = createInputActions({ evaluate, observe: observeSession });
+const inputActions = createInputActions({
+  evaluate, observe: observeSession,
+  tabs: { list: async () => (await getTabs()).filter(t => t.type === 'page'), adopt: tab => { if (!tab.url || tab.url === 'about:blank' || readable(tab.url)) ownedTabs.add(tab.id); } },
+  downloads: { dir: DOWNLOAD_DIR },
+  uploads: { roots: UPLOAD_ROOTS },
+});
 export const actSession = inputActions.actSession;
 export const axSession = inputActions.axSession;
 async function navigate(url,settleMs) { return withTab(s=>navigateSession(s,url,settleMs)); }
@@ -419,7 +431,7 @@ export const server = createServer(async (req, res) => {
     if (!authorized(req)) return json(res,{ok:false,error:'UNAUTHORIZED'},401);
     if (!workplace.allowed && url.pathname !== '/health') return json(res,{ok:false,error:'WORKPLACE_UNSYNCED',state:workplace.state},503);
     if (req.headers.origin) return json(res,{ok:false,error:'BROWSER_ORIGIN_DENIED'},403);
-    if (req.method==='POST' && ['/navigate','/click','/type','/press'].includes(url.pathname) && !mutationsEnabled()) return json(res,{ok:false,error:'MUTATIONS_DISABLED'},403);
+    if (req.method==='POST' && ['/navigate','/click','/type','/press','/upload','/tab/open','/tab/switch','/tab/close'].includes(url.pathname) && !mutationsEnabled()) return json(res,{ok:false,error:'MUTATIONS_DISABLED'},403);
     if (req.method === "GET" && url.pathname === "/health") {
       const result = workplace.allowed ? browserHealth.status() :
         { ok: false, state: 'BLOCKED', browserVerified: false, error: 'WORKPLACE_UNSYNCED' };
@@ -465,6 +477,49 @@ export const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/ax') {
       return json(res, await withTab(s=>axSession(s)));
     }
+    if (req.method === "POST" && url.pathname === "/upload") {
+      const b = await readBody(req);
+      if (!b.expectedUrl || !inputAllowed(b.expectedUrl)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
+      return json(res, await guardedBrowserWrite("upload", b, () => withTab(s=>actSession(s,b,"upload"), { input: true })));
+    }
+    if (req.method === "GET" && url.pathname === "/tabs") {
+      const tabs = (await getTabs()).filter(t => t.type === "page" && ownedTabs.has(t.id));
+      return json(res, { ok: true, tabs: tabs.map(t => ({ id: t.id, title: String(t.title || "").slice(0, 200), url: t.url, current: t.id === novaTabId })) });
+    }
+    if (req.method === "POST" && url.pathname === "/tab/open") {
+      const b = await readBody(req);
+      if (!readable(b.url) || b.url === 'about:blank') return json(res,{ok:false,error:'ORIGIN_DENIED'},403);
+      return json(res, await guardedBrowserWrite("tab-open", b, async () => {
+        const r = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?${new URL(b.url).href}`, { method: "PUT", signal: AbortSignal.timeout(5000) });
+        if (!r.ok) throw new Error('CDP_NEW_TAB_FAILED_' + r.status);
+        const created = await r.json();
+        ownedTabs.add(created.id); novaTabId = created.id;
+        return { ok: true, verified: true, tab: { id: created.id, url: created.url, current: true } };
+      }));
+    }
+    if (req.method === "POST" && url.pathname === "/tab/switch") {
+      const b = await readBody(req);
+      if (!ownedTabs.has(b.id)) return json(res,{ok:false,error:'TAB_NOT_OWNED_BY_NOVA'},403);
+      return json(res, await guardedBrowserWrite("tab-switch", b, async () => {
+        const tab = (await getTabs()).find(t => t.id === b.id && t.type === "page");
+        if (!tab) { ownedTabs.delete(b.id); throw new Error('TAB_CLOSED'); }
+        novaTabId = tab.id;
+        return { ok: true, verified: true, tab: { id: tab.id, url: tab.url, current: true } };
+      }));
+    }
+    if (req.method === "POST" && url.pathname === "/tab/close") {
+      const b = await readBody(req);
+      if (!ownedTabs.has(b.id)) return json(res,{ok:false,error:'TAB_NOT_OWNED_BY_NOVA'},403);
+      return json(res, await guardedBrowserWrite("tab-close", b, async () => {
+        await fetch(`http://127.0.0.1:${CDP_PORT}/json/close/${encodeURIComponent(b.id)}`, { signal: AbortSignal.timeout(5000) });
+        ownedTabs.delete(b.id); if (novaTabId === b.id) novaTabId = null;
+        return { ok: true, verified: !(await getTabs()).some(t => t.id === b.id) };
+      }));
+    }
+    if (req.method === "GET" && url.pathname === "/downloads") {
+      const files = listDownloadFiles(DOWNLOAD_DIR).filter(f => !f.partial).slice(-50);
+      return json(res, { ok: true, observed: true, directory: DOWNLOAD_DIR, files: files.map(f => ({ name: f.name, bytes: f.bytes, sha256: digestFile(join(DOWNLOAD_DIR, f.name)) })) });
+    }
     if (req.method === "POST" && url.pathname === "/survey") {
       const b = await readBody(req);
       return json(res, await survey(b.label));
@@ -489,7 +544,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         role: 'browser-actuator',
         description: 'Authenticated Chrome CDP bridge used by Nova for observe, navigate, click, type and survey.',
         capabilities: { browser_control: cdp, reasoning: false, terminal: false, filesystem_write: false, image_understanding: false },
-        tools: cdp ? ['targets', 'screenshot', 'observe', 'ax', 'navigate', 'click', 'type', 'press', 'survey'] : [],
+        tools: cdp ? ['targets', 'screenshot', 'observe', 'ax', 'navigate', 'click', 'type', 'press', 'upload', 'tabs', 'tab-open', 'tab-switch', 'tab-close', 'downloads', 'survey'] : [],
         constraints: [
           `CDP page reachable on :${CDP_PORT} at startup: ${cdp}`,
           `Allowed origins: ${[...ORIGINS].join(', ') || 'none'}`,

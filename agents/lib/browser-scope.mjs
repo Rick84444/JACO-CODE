@@ -20,6 +20,17 @@ export const SECRET_TEXT =
 /** Selectors that address a credential field, whatever the value being set. */
 export const PASSWORD_TARGET = /(type=["']?password|#user_pass|\[name=["']?pwd|autocomplete=["']?current-password)/i;
 
+// Loopback and private networks hold JACO itself (its GUI, its approvals) and the operator's other machines.
+// In the broad-web scope they are not "the web": a local page needs an explicit origin or a mission's own contract.
+export function isPrivateHost(hostname) {
+  const h = String(hostname || '').toLowerCase();
+  if (/^(localhost|.*\.localhost|.*\.local|.*\.internal|\[::1?\]|\[(fe80|f[cd][0-9a-f]{2}):.*\])$/.test(h)) return true;
+  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!m) return false;
+  const a = Number(m[1]), b = Number(m[2]);
+  return a === 0 || a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
+}
+
 export function browserScope(env = process.env) {
   const configured = String(env.JACO_BROWSER_SCOPE || '').toLowerCase();
   if (configured === 'broad_web' || configured === 'origins') return configured;
@@ -45,7 +56,7 @@ export function inputAllowed(url, env = process.env) {
     const u = new URL(url);
     if (!['http:', 'https:'].includes(u.protocol)) return false;
     if (hardDenied(url)) return false;
-    return browserScope(env) === 'broad_web' ? true : allowedOrigins(env).has(u.origin);
+    return browserScope(env) === 'broad_web' ? !isPrivateHost(u.hostname) : allowedOrigins(env).has(u.origin);
   } catch { return false; }
 }
 
