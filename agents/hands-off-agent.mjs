@@ -1722,7 +1722,8 @@ Plans already rejected this turn (do not repeat them): ${rejectedPlans.slice(-3)
       continue;
     }
     console.log(`[DEBUG] Trying provider: ${provider.name} model: ${provider.model}`);
-    const native = nativeToolsFor(provider) ? plannerTools(planningAllowedTasks, profile==='compact'?focusPlannerToolDescriptions(mcpCatalogTools(),mission):mcpCatalogTools(), learnedTaskNotes(), Boolean(mission?.metadata?.parent?.graphId)) : null;
+    // This structured planner cannot process tool_search; only the native agent loop supports deferred discovery.
+    const native = nativeToolsFor(provider) ? plannerTools(planningAllowedTasks, profile==='compact'?focusPlannerToolDescriptions(mcpCatalogTools(),mission):mcpCatalogTools(), learnedTaskNotes(), Boolean(mission?.metadata?.parent?.graphId), { deferAfterChars: Number.POSITIVE_INFINITY }) : null;
     state.plannerInputMetrics.nativeToolsCount=native?.tools.length||0;
     state.plannerInputMetrics.nativeToolsChars=native?JSON.stringify(native.tools).length:0;
     try {
