@@ -40,7 +40,7 @@ jobs:
       - name: Verify release tag/version and branch ancestry
         shell: pwsh
         run: |
-          $version = (Get-Content runtime/package.json -Raw | ConvertFrom-Json).version
+          $version = (Get-Content windows/product/version.json -Raw | ConvertFrom-Json).version
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'RELEASE_VERSION_INVALID' }
           if ($env:GITHUB_REF -like 'refs/tags/*') {
             if ($env:GITHUB_REF_NAME -ne "v$version") { throw "TAG_VERSION_MISMATCH expected=v$version actual=$env:GITHUB_REF_NAME" }
