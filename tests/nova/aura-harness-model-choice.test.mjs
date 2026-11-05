@@ -76,7 +76,7 @@ test('UI and backend route share the selection rather than spawning another mode
   assert.match(parent,/\.\.\.\(harnessModel \? \{ harnessModel \} : \{\}\)/);
   assert.match(server,/await synchronizeAuraHarnessModel\(req\.body\.harnessModel/);
   assert.match(server,/testPlannerModel\(valid/);
-  assert.match(seer,/const auraOnly = process\.env\.JACO_SEER_PROVIDER_PREFERENCE === 'aura' \|\| \(pinned && !startup_probe\)/);
+  assert.match(seer,/const auraOnly = process\.env\.JACO_SEER_PROVIDER_PREFERENCE === 'aura' \|\| process\.env\.JACO_AURA_UNIFIED_RUNTIME === '1' \|\| \(pinned && !startup_probe\)/);
 });
 
 test('same chosen model falls back to structured planning protocol, not another provider',()=>{
@@ -90,4 +90,12 @@ test('same chosen model falls back to structured planning protocol, not another 
   const runner=fs.readFileSync(path.join(repo,'agents/hands-off-agent.mjs'),'utf8');
   assert.match(runner,/selectedProtocol === 'native'/);
   assert.match(runner,/result\.deferred && unsupported/);
+});
+
+test('unified Aura model selection overrides stale env primary but not spend gates', async t => {
+  const file=setup(t);
+  const unified={...env,JACO_PRIMARY_PROVIDER:'ollama',JACO_AURA_UNIFIED_RUNTIME:'1'};
+  const result=await synchronizeAuraHarnessModel(local,{file,env:unified,probe:async()=>({ok:true})});
+  assert.equal(result.choice.model,'gemma3:4b');
+  assert.equal(readPlannerChoice(file).by,'operator');
 });
