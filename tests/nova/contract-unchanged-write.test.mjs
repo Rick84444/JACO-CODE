@@ -53,3 +53,18 @@ test('an identical rewrite preserves POSIX executable mode and remains a no-op',
   assert.equal(result.beforeSha256, result.afterSha256, 'content is unchanged');
   assert.equal(fs.statSync(file).mode & 0o777, 0o755, 'executable mode is unchanged');
 });
+
+test('text edits refuse undecodable bytes without damaging the original file', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aura-byte-preservation-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'binary.txt');
+  const original = Buffer.from([0x61, 0x0d, 0x0a, 0xff, 0x62]);
+  fs.writeFileSync(file, original);
+  const ws = createCodingWorkspace({ root });
+  await assert.rejects(
+    ws.execute({ type: 'repo-edit', data: { path: 'binary.txt', old: 'a', new: 'b' } },
+      contract(), { actor: 'byte-test' }),
+    /CODING_EDIT_BINARY_REFUSED/,
+  );
+  assert.deepEqual(fs.readFileSync(file), original, 'a failed text edit must not corrupt the file');
+});
