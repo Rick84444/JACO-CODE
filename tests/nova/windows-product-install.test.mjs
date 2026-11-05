@@ -53,3 +53,16 @@ test('unpackaged checkout preserves legacy root layout for existing Windows and 
     assert.equal(config.env.JACO_INSTALL_ROOT, dir);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+
+test('Windows setup publishing is tag-gated, not triggered merely by a main merge', () => {
+  const workflow = fs.readFileSync(new URL('../../.github/workflows/jaco-windows-release.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /publish-github-release:[\\s\\S]*?if: github\\.event_name == 'push' && startsWith\\(github\\.ref, 'refs\\/tags\\/v'\\)/);
+  assert.doesNotMatch(workflow, /needs\\.windows-setup\\.outputs\\.version_changed == 'true'/);
+});
+
+test('installed Workplace runs supervised executables from the immutable installation', () => {
+  const source = fs.readFileSync(new URL('../../gateway/src/workplace/workplace-server.mjs', import.meta.url), 'utf8');
+  assert.match(source, /const EXECUTION_ROOT = resolve\\(process\\.env\\.JACO_INSTALL_ROOT \\|\\| process\\.cwd\\(\\)\\)/);
+  assert.match(source, /createWorkplaceAgentSupervisor\\(\\{ root: EXECUTION_ROOT, env: process\\.env \\}\\)/);
+});
