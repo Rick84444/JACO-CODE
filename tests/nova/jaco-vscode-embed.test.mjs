@@ -87,3 +87,10 @@ test('runtime mounts embed only after remote IDE authentication and leaves root 
   assert.match(hardening, /"frame-ancestors 'none'"/);
   assert.match(hardening, /res.setHeader\('X-Frame-Options', 'DENY'\)/);
 });
+
+test('the GUI button opens the extension through its fixed URI, only for a local top-level page', () => {
+  const shell = fs.readFileSync(path.join(root, 'runtime/src/components/CognitiveWorkspace.tsx'), 'utf8');
+  assert.ok(shell.includes("VSCODE_OPEN_URL = 'vscode://jacocode.jaco-cognitive-ide/open'"));
+  assert.ok(shell.includes('canOpenInVsCode && <button'));
+  assert.ok(shell.includes('window.self === window.top'));
+});
