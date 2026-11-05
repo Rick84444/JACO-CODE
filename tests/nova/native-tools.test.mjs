@@ -1,7 +1,7 @@
 // Operator 2026-10-03: Nova's planner calls tools natively, with schemas, like Claude does.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-const { plannerTools, planFromToolCalls, compactSchema } = await import('../../agents/lib/native-tools.mjs');
+const { plannerTools, structuredPlannerTools, planFromToolCalls, compactSchema } = await import('../../agents/lib/native-tools.mjs');
 const { nativeToolsFor } = await import('../../agents/hands-off-agent.mjs');
 
 const mcp = [{ server: 'git', name: 'git_show', readOnly: true, description: 'Shows a commit', inputSchema: { type: 'object', title: 'X', properties: { repo_path: { type: 'string', description: 'long prose' }, revision: { type: 'string' } }, required: ['repo_path', 'revision'] } }];
@@ -20,7 +20,7 @@ test('tool list: one function per allowed task, MCP tools with their real schema
   assert.deepEqual(compactSchema({ description: 'd', properties: { a: { type: 'string', default: 'x' } } }), { properties: { a: { type: 'string' } } });
 });
 
-test('structured planner can list large connector catalogs without unsupported tool_search', () => {
+test('large catalogs use bounded generic MCP tasks in structured planner, not unsupported searches', () => {
   const hugeSchema = {
     type: 'object',
     properties: Object.fromEntries(Array.from({ length: 20 }, (_, i) =>
@@ -32,14 +32,36 @@ test('structured planner can list large connector catalogs without unsupported t
   }));
   const deferredNative = plannerTools(['mcp-call'], catalog, {}, false);
   assert.ok(deferredNative.tools.some(tool => tool.function.name === 'tool_search'),
-    'search-capable agent loop still saves context by deferring tools');
-  const structured = plannerTools(['mcp-call'], catalog, {}, false,
-    { deferAfterChars: Number.POSITIVE_INFINITY });
+    'native agent loop still supports deferred discovery');
+  const structured = structuredPlannerTools(['mcp-call'], catalog, {}, false);
   assert.equal(structured.deferred.length, 0, 'structured caller receives no deferred catalog');
-  assert.equal(structured.resolve('tool_search'), null);
-  assert.ok(structured.tools.some(tool => tool.function.name === 'mcp__catalog__read_0'),
-    'the ordinary connector function remains callable without a search exchange');
+  assert.equal(structured.resolve('tool_search'), null, 'unsupported search is not offered');
+  assert.ok(structured.tools.some(tool => tool.function.name === 'mcp-call'),
+    'existing generic MCP task provides a callable fallback');
+  assert.equal(structured.resolve('mcp-call').type, 'mcp-call');
+  assert.ok(!structured.tools.some(tool => tool.function.name === 'mcp__catalog__read_0'),
+    'large individual MCP schemas must not enter the structured prompt');
+  const promptChars = JSON.stringify(structured.tools).length;
+  assert.ok(promptChars < 6000, 'structured schemas stay bounded, got ' + promptChars + ' chars');
+  const call = { function: { name: 'mcp-call', arguments: JSON.stringify({
+    server: 'catalog', tool: 'read_0', arguments: { option_0: 'value-a' },
+  }) } };
+  const plan = planFromToolCalls({ tool_calls: [call] }, structured.resolve);
+  assert.deepEqual(plan, { task: { type: 'mcp-call', data: {
+    server: 'catalog', tool: 'read_0', arguments: { option_0: 'value-a' },
+  } } });
+  assert.equal(structured.resolve('mcp-write'), null, 'read-only task cannot gain write authority');
 });
+
+test('small structured catalogs preserve typed tools and untrusted write tools remain denied', () => {
+  const permitted = { server: 'repo', name: 'read', inputSchema: { type: 'object', properties: {} }, readOnly: true };
+  const denied = { server: 'repo', name: 'write', inputSchema: { type: 'object', properties: {} }, readOnly: false };
+  const scoped = structuredPlannerTools(['mcp-call'], [permitted, denied], {}, false);
+  assert.ok(scoped.tools.some(t => t.function.name === 'mcp__repo__read'));
+  assert.equal(scoped.resolve('mcp__repo__write'), null);
+  assert.ok(!scoped.tools.some(t => t.function.name === 'tool_search'));
+});
+
 
 test('tool calls become a plan: several calls a batch, finish only without steps, bad calls rejected', () => {
   const { resolve } = plannerTools(['web-fetch', 'mcp-call'], mcp);
