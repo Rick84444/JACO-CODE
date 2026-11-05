@@ -21,9 +21,9 @@ export function JacoWindowsUpdates() {
     try {
       const response = await fetch('/api/product/windows-update', { cache: 'no-store', credentials: 'same-origin' });
       const data = await response.json();
-      if (response.ok && data && typeof data.status === 'string') setUpdate(data);
-      else setUpdate(current => current ? { ...current, status: 'unreachable' } : null);
-    } catch { setUpdate(current => current ? { ...current, status: 'unreachable' } : null); }
+      if (data && typeof data.status === 'string') setUpdate(data);
+      else setUpdate(current => current ? { ...current, status: 'unreachable' } : { success: false, status: 'unreachable', currentVersion: '?' });
+    } catch { setUpdate(current => current ? { ...current, status: 'unreachable' } : { success: false, status: 'unreachable', currentVersion: '?' }); }
     finally { setChecking(false); }
   }, []);
   useEffect(() => {
