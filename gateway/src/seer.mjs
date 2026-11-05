@@ -1611,7 +1611,7 @@ If no new work is needed (system already has enough active work), respond with: 
         objective: n.description || n.title,
         dependencies: Array.isArray(n.depends_on) ? n.depends_on : [],
         strategy: { confidence: chosen.success_probability, ...(n.strategy || {}) },
-        ...(projectRoot ? { contract: projectNodeContract({ title: n.title, objective: n.description, mainGoal: chosen.goal }) } : {}),
+        ...(projectRoot ? { contract: projectNodeContract({ title: n.title, objective: n.description, mainGoal: chosen.goal, projectRoot }) } : {}),
       })),
     });
 
