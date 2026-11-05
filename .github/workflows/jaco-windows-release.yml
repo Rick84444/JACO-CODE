@@ -142,6 +142,7 @@ jobs:
           $env:JACO_RELEASE_ROOT = Join-Path $installDir 'runtime'
           $env:JACO_GATEWAY_TOKEN = 'ci_test_operator_token_exceeding_twenty_four_chars'
           $env:JACO_MODEL_PROVIDER = 'aura'
+          $env:NODE_ENV = 'production'
           $env:PORT = '3000'
           $nodeExe = Join-Path $installDir 'tools/node/node.exe'
           $runtimeDir = Join-Path $installDir 'runtime'
