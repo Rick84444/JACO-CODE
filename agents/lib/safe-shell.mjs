@@ -92,6 +92,25 @@ export const PROGRAMS = {
   rm: { mode: 'write', paths: a => positional(a), destructiveIf: a => (shortHas(a, 'rRf') || has(a, '--recursive', '--force') ? 'RM_RECURSIVE_OR_FORCE' : null) },
 };
 
+const SHELL_OPERATOR = /[|;&<>`$\n]/;
+// "git status --short" as one string becomes argv. Shell syntax is refused with what to do instead.
+export function normalizeCommand(command, args) {
+  if (typeof command !== 'string' || !/\s/.test(command.trim()) || (Array.isArray(args) && args.length)) return { command: typeof command === 'string' ? command.trim() : command, args };
+  const text = command.trim();
+  const words = [];
+  let word = '', quote = null, started = false;
+  for (const ch of text) {
+    if (quote) { if (ch === quote) quote = null; else word += ch; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; started = true; continue; }
+    if (SHELL_OPERATOR.test(ch)) return { refused: 'SHELL_SYNTAX_NOT_SUPPORTED: run one program at a time, without pipes, redirects, ;, && or $()' };
+    if (/\s/.test(ch)) { if (started) { words.push(word); word = ''; started = false; } continue; }
+    word += ch; started = true;
+  }
+  if (quote) return { refused: 'COMMAND_QUOTE_NOT_CLOSED' };
+  if (started) words.push(word);
+  return { command: words[0], args: words.slice(1) };
+}
+
 // Why this command may not run, or its mode. Pure: no process is started here.
 export function classify(command, args, { workspace, cwd = workspace, env = process.env, mode: requested = 'write' } = {}) {
   const refuse = reason => ({ ok: false, reason });
@@ -179,6 +198,9 @@ export class SafeShell {
   async run({ command, args = [], cwd = '.', timeoutSeconds, mode = 'write' } = {}) {
     const started = Date.now();
     const refused = reason => { this.#audit({ mode, command: String(command).slice(0, 40), args: (Array.isArray(args) ? args : []).slice(0, 16).map(redact), outcome: 'refused', reason }); return { ok: false, refused: true, reason }; };
+    const normalized = normalizeCommand(command, args);
+    if (normalized.refused) return refused(normalized.refused);
+    ({ command, args } = normalized);
     const where = resolveCwd(this.workspace, cwd);
     if (!where) return refused('CWD_OUTSIDE_WORKSPACE_OR_PROTECTED');
     const verdict = classify(command, args, { workspace: this.workspace, cwd: where, env: this.env, mode });

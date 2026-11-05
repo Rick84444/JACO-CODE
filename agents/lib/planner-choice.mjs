@@ -34,6 +34,14 @@ export function openAiChatCompletionsUrl(base, fallback = 'http://localhost:1143
   return `${root}/v1/chat/completions`;
 }
 
+// The Hugging Face token can publish, so launcher-started workers do not inherit it from .env.
+// The GUI must not offer a model the agent cannot then authenticate to.
+export const WORKER_WITHHELD_KEY = /^(HUGGINGFACE_TOKEN|HF_TOKEN)$/;
+export function agentCanUseKey(keyEnv, { env = process.env, store = null } = {}) {
+  if (!keyEnv || !WORKER_WITHHELD_KEY.test(keyEnv)) return true;
+  return Boolean(credential(keyEnv, { env: { ...env, [keyEnv]: '' }, store }));
+}
+
 function fixedPlannerChoices(env = process.env) {
   // Runtime service configuration exposes Ollama through its OpenAI-compatible
   // `/v1` base, while developer shells commonly provide the bare host. Accept
@@ -158,7 +166,7 @@ export async function testPlannerModel({ provider, model }, { env = process.env,
   try {
     if (loopback && cloudRelay) throw new Error('OLLAMA_CLOUD_RELAY_NOT_RESERVABLE');
     if (!loopback && endpoint.protocol !== 'https:') throw new Error('PLANNER_ENDPOINT_UNTRUSTED');
-    if (metered && env.JACO_ALLOW_PAID_MODELS !== '1') throw new Error('PAID_PROVIDER_DISABLED');
+    if (metered && env.JACO_ALLOW_PAID_MODELS === '0') throw new Error('PAID_PROVIDER_DISABLED');
     const requestBody = { model, messages: [{ role: 'user', content: 'Reply with the single word OK.' }], max_tokens: 200 };
     const cloudResult = metered
       ? await budgetedNovaOllamaCall({ provider: { name: provider, model, url: choice.url, key }, requestBody,

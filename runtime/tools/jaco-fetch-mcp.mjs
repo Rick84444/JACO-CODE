@@ -28,8 +28,12 @@ export function checkedUrl(input) {
     || /(?:^|\.)(localhost|local|internal|lan|home|test|invalid|arpa)$/.test(host)) throw Error('FETCH_PUBLIC_HTTPS_REQUIRED');
   return url;
 }
-export async function fetchPublicText(input, { lookupFn = lookup, requestFn = https.get } = {}) {
-  const url = checkedUrl(input);
+const MAX_REDIRECTS = 5;
+// Every hop passes the same public-address check as the first request, so a redirect cannot reach a private service.
+export async function fetchPublicText(input, options = {}, redirects = 0) {
+  const { lookupFn = lookup, requestFn = https.get } = options;
+  // A fragment is never sent to the server; it only names a place on the page.
+  const url = checkedUrl(typeof input === 'string' ? input.split('#')[0] : input);
   const addresses = await lookupFn(url.hostname, { all: true, family: 4 });
   if (!Array.isArray(addresses) || !addresses.length || addresses.some(a => !publicIPv4(a.address))) throw Error('FETCH_ADDRESS_NOT_PUBLIC');
   const ip = addresses[0].address;
@@ -37,25 +41,44 @@ export async function fetchPublicText(input, { lookupFn = lookup, requestFn = ht
     const req = requestFn(url, {
       timeout: MAX_TIMEOUT_MS,
       headers: { accept: 'text/plain, text/html, application/json, application/xml;q=0.8', 'accept-encoding': 'identity', 'user-agent': 'JACO-MCP-Fetch/1.0' },
-      lookup: (_hostname, _opts, cb) => cb(null, ip, 4),
+      // Node's automatic family selection asks for every address ({ all: true }) and expects an array.
+      lookup: (_hostname, opts, cb) => (opts?.all ? cb(null, [{ address: ip, family: 4 }]) : cb(null, ip, 4)),
     }, res => {
-      if (res.statusCode >= 300 && res.statusCode < 400) { res.resume(); return reject(Error('FETCH_REDIRECT_BLOCKED')); }
+      if (res.statusCode >= 300 && res.statusCode < 400) {
+        res.resume();
+        if (!res.headers.location) return reject(Error(`FETCH_HTTP_${res.statusCode}`));
+        if (redirects >= MAX_REDIRECTS) return reject(Error('FETCH_TOO_MANY_REDIRECTS'));
+        let next;
+        try { next = new URL(res.headers.location, url).toString(); } catch { return reject(Error('FETCH_URL_INVALID')); }
+        return resolve(fetchPublicText(next, options, redirects + 1));
+      }
       if (res.statusCode !== 200) { res.resume(); return reject(Error(`FETCH_HTTP_${res.statusCode}`)); }
       if (!allowedContent.test(String(res.headers['content-type'] || ''))) { res.resume(); return reject(Error('FETCH_UNSUPPORTED_CONTENT_TYPE')); }
       let size = 0; const chunks = [];
+      const finish = truncated => resolve({
+        url: url.toString(), bytes: size, truncated,
+        content: Buffer.concat(chunks).toString('utf8') + (truncated ? `\n[truncated at ${MAX_BYTES} bytes]` : ''),
+      });
       res.on('data', chunk => {
+        // Most pages are larger than the limit: give the start of the page and say so.
+        if (size + chunk.length > MAX_BYTES) {
+          chunks.push(chunk.subarray(0, MAX_BYTES - size));
+          size = MAX_BYTES;
+          finish(true);
+          req.destroy();
+          return;
+        }
         size += chunk.length;
-        if (size > MAX_BYTES) { req.destroy(Error('FETCH_RESPONSE_TOO_LARGE')); return; }
         chunks.push(chunk);
       });
-      res.on('end', () => resolve({ url: url.toString(), content: Buffer.concat(chunks).toString('utf8'), bytes: size }));
+      res.on('end', () => finish(false));
       res.on('error', reject);
     });
     req.on('timeout', () => req.destroy(Error('FETCH_TIMEOUT')));
     req.on('error', reject);
   });
 }
-const TOOL = { name: 'fetch', description: 'Read public HTTPS text, HTML, XML or JSON (max 128 KiB). Redirects and private/local addresses refused.', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] }, annotations: { readOnlyHint: true } };
+const TOOL = { name: 'fetch', description: 'Read public HTTPS text, HTML, XML or JSON (first 128 KiB). Redirects are followed; private/local addresses are refused.', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] }, annotations: { readOnlyHint: true } };
 export async function handleFetchMcp(msg, { fetchFn = fetchPublicText } = {}) {
   if (!msg || msg.id === undefined) return null;
   const reply = result => ({ jsonrpc: '2.0', id: msg.id, result });

@@ -177,7 +177,7 @@ test('keyless HTTPS providers remain budgeted; real loopback local models are fr
 
 // Operator 2026-10-13: a provider connected from a URL or a key, and a model the fixed list does not know,
 // can be chosen for Nova (they were invisible, so switching "did not work").
-import { plannerChoices as _pc, validatePlannerChoice as _validate } from '../../agents/lib/planner-choice.mjs';
+import { agentCanUseKey, plannerChoices as _pc, validatePlannerChoice as _validate } from '../../agents/lib/planner-choice.mjs';
 const EXTRA = {
   mistral: { label: 'mistral', paid: true, keyEnv: 'MISTRAL_API_KEY', url: 'https://api.mistral.ai/v1/chat/completions', models: ['mistral-large-latest'] },
   ollama: { label: 'ollama (lokal)', paid: false, keyEnv: null, url: 'http://127.0.0.1:11434/v1/chat/completions', models: ['qwen2.5-coder:1.5b'] },
@@ -327,4 +327,23 @@ test('Aura preserves structured fallback on the operator model when native funct
     await assert.rejects(agentChat({messages:[{role:'user',content:'Continue'}],tools:[]}, async()=>assert.fail('native unsupported model must use structured fallback'),selected),
       /NO_PLANNER_AVAILABLE:SELECTED_MODEL_NATIVE_TOOLS_UNSUPPORTED/);
   } finally { clearPlannerChoice(file); }
+});
+
+test('a connected cloud model can be probed unless paid models are explicitly off', async () => {
+  // The GUI listed these models as usable while the probe refused them whenever the flag was unset,
+  // so only local models could ever be selected for the agent.
+  const calls = [];
+  const fetchImpl = async url => { calls.push(new URL(url).pathname); return Response.json({ success: false, error: 'DAILY_BUDGET_LIMIT' }, { status: 403 }); };
+  const result = await testPlannerModel({ provider: 'deepseek', model: 'deepseek-flash' }, { env: { DEEPSEEK_API_KEY: 'x' }, fetchImpl });
+  assert.doesNotMatch(result.error, /PAID_PROVIDER_DISABLED/);
+  assert.match(result.error, /DAILY_BUDGET_LIMIT/);
+  assert.deepEqual(calls, ['/api/nova/ollama-cost/reserve'], 'the budget reservation is still the gate');
+});
+
+test('a key withheld from workers only counts for the agent when it is in the secret store', () => {
+  const store = key => ({ get: name => (name === key ? 'stored' : '') });
+  assert.equal(agentCanUseKey('HF_TOKEN', { env: { HF_TOKEN: 'from-env' }, store: store('other') }), false);
+  assert.equal(agentCanUseKey('HF_TOKEN', { env: {}, store: store('HF_TOKEN') }), true);
+  assert.equal(agentCanUseKey('GEMINI_API_KEY', { env: {}, store: store('other') }), true);
+  assert.equal(agentCanUseKey(null), true);
 });

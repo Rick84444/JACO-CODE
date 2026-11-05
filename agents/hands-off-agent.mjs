@@ -1911,6 +1911,9 @@ export function agentSystemFor(allowedTasks, platform = process.platform, graphM
   return lines.join("\n") + "\nYou act through the functions provided. Call them; each result comes back to you, including errors and refusals: read them and adapt instead of repeating the same call. Several reading calls may go in one answer. When the goal is achieved, call complete with the answer for the operator, citing steps as [#n].";
 }
 
+const TEMPORARY_COOLDOWN_MS = 15 * 60_000;
+const TEMPORARY_MODEL_LIMIT = /:(429|COOLDOWN|AUTONOMOUS_CLOUD_BURST_LIMIT)\b/;
+
 // One model turn with native tools: the first available provider in Nova's chain answers.
 export async function agentChat({ messages, tools }, fetchImpl = fetch, env = process.env) {
   // A chosen connected provider may not be in the fixed provider list. Native
@@ -1926,9 +1929,11 @@ export async function agentChat({ messages, tools }, fetchImpl = fetch, env = pr
     if (isPaidProvider(provider) && !paidModelsAllowed(env)) { failures.push(`${provider.name}:PAID_DISABLED`); continue; }
     if (!paidCallAllowed(provider)) { failures.push(`${provider.name}:PAID_CAP`); continue; }
     const key = provider.envKey ? credential(provider.envKey) : "ollama";
-    if (!key) continue;
+    if (!key) { failures.push(`${provider.name}:KEY_MISSING:${provider.envKey}`); continue; }
     const id = `${provider.name}/${provider.model}`;
-    if ((providerCooldownUntil.get(id) || 0) > Date.now() || agentToolsUnsupported.has(id)) continue;
+    if (agentToolsUnsupported.has(id)) continue;
+    const cooldownMs = (providerCooldownUntil.get(id) || 0) - Date.now();
+    if (cooldownMs > 0) { failures.push(`${provider.name}:${cooldownMs <= TEMPORARY_COOLDOWN_MS ? 'COOLDOWN' : 'PARKED'}`); continue; }
     const requestBody = {
       model: provider.model, messages, tools, tool_choice: "auto", temperature: 0.2,
       max_tokens: provider.name === "deepseek" ? Number(env.JACO_DEEPSEEK_MAX_TOKENS) || 32768 : 8192,
@@ -1946,7 +1951,13 @@ export async function agentChat({ messages, tools }, fetchImpl = fetch, env = pr
       if (res.status === 400 && /tool|function/i.test(raw)) { agentToolsUnsupported.add(id); failures.push(`${provider.name}:NO_TOOLS`); continue; }
       if (res.status === 429) { parkOn429(provider, res, raw); failures.push(`${provider.name}:429`); continue; }
       const message = data?.choices?.[0]?.message;
-      if (!res.ok || !message) { parkProvider(provider, providerParkMs({ status: res.status }), `HTTP ${res.status}`); failures.push(`${provider.name}:HTTP_${res.status}`); continue; }
+      if (!res.ok || !message) {
+        parkProvider(provider, providerParkMs({ status: res.status }), `HTTP ${res.status}`);
+        // The status alone left 1018 identical gemini:HTTP_400 lines with no cause (2026-10-31).
+        log("warn", "brain", `${id} HTTP ${res.status}: ${String(data?.error?.message || raw || '').replace(/\s+/g, ' ').slice(0, 300)}`);
+        failures.push(`${provider.name}:HTTP_${res.status}`);
+        continue;
+      }
       recordModelCall(provider, "plan");
       log("info", "brain", `${id} answered: ${message.tool_calls?.length || 0} tool call(s)`);
       return { content: message.content || '', tool_calls: message.tool_calls || [], provider: id };
@@ -1961,6 +1972,10 @@ export async function agentChat({ messages, tools }, fetchImpl = fetch, env = pr
     // back only for this capability mismatch, not for transport/budget failures.
     if (candidates.some(provider => agentToolsUnsupported.has(`${provider.name}/${provider.model}`))) {
       throw new Error('NO_PLANNER_AVAILABLE:SELECTED_MODEL_NATIVE_TOOLS_UNSUPPORTED');
+    }
+    // A rate window passes by itself: the mission waits instead of stopping for the operator.
+    if (failures.length && failures.every(failure => TEMPORARY_MODEL_LIMIT.test(failure))) {
+      throw new Error(`MODEL_TEMPORARILY_LIMITED:${failures.join('|').slice(0, 150)}`);
     }
     throw new Error(`AURA_SELECTED_MODEL_UNAVAILABLE:${failures.join('|').slice(0, 150) || 'PROVIDER_NOT_READY'}`);
   }

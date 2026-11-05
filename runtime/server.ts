@@ -86,7 +86,7 @@ import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec
 import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy, policyFilePath, CLAIM_RESUME_NOTE } from "../agents/lib/approval-policy.mjs";
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
-import { plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
+import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
 import { synchronizeAuraHarnessModel } from "../agents/lib/aura-harness-model-choice.mjs";
 import { INITIAL_MODELS, INITIAL_CODE_FILES, INITIAL_DEVICES, INITIAL_TERMINAL_LOGS } from "./src/mockData.js";
 import { OllamaModel, CodeFile } from "./src/types.js";
@@ -1735,17 +1735,20 @@ const notifyPhone = async (action) => {
       // Confirm needs a verified receipt (VERIFIED_RECEIPT_REQUIRED); without one, offering it
       // only produced an error when the operator clicked (2026-10-31).
       const confirmable = status === 'AWAITING_VERIFICATION' && receipts.some((r: any) => r?.ok === true && r?.verified === true);
+      const pendingAction = status === 'BLOCKED' ? connectedRuntime.novaMissions.pendingOperatorAction(mission.id) : null;
       items.push({
         id: `mission:${mission.id}`,
         kind: 'MISSION',
         source: 'durable-nova',
         title: mission.goal || mission.id,
         status: 'REVIEW',
-        risk: uncertain ? 'HIGH' : 'MEDIUM',
+        risk: uncertain || pendingAction ? 'HIGH' : 'MEDIUM',
         reason: confirmable
           ? 'JACO proposes that the mission is complete. Check the result and confirm or end the mission.'
           : status === 'AWAITING_VERIFICATION'
             ? 'JACO proposes that the mission is complete, but no step has a verified receipt. It cannot be confirmed. Let JACO try again or end the mission.'
+          : pendingAction
+            ? `JACO wants approval for one action: ${pendingAction.reason}. Continue approves exactly that action, once.`
           : uncertain
             ? 'It is uncertain whether the latest change was carried out. Check what happened before you choose to continue.'
             : 'The mission has stopped. Check the cause and choose whether JACO should continue or end it.',
@@ -3109,7 +3112,9 @@ const notifyPhone = async (action) => {
         : readPlannerChoice(plannerChoicePath),
       choices: Object.entries(choices).map(([provider, c]: [string, any]) => {
         const keyConfigured = !c.keyEnv || Boolean(credential(c.keyEnv));
-        return { provider, label: c.label, paid: c.paid, models: c.models, keyConfigured, usable: keyConfigured && (!c.paid || paidModelsAllowed()) };
+        const cloudAllowed = paidModelsAllowed() && continuumSurface.runtime.economic.headroom().cloudEnabled;
+        const unavailableReason = !keyConfigured ? 'KEY_MISSING' : !agentCanUseKey(c.keyEnv) ? 'KEY_NOT_AVAILABLE_TO_AGENT' : c.paid && !cloudAllowed ? 'CLOUD_DISABLED' : null;
+        return { provider, label: c.label, paid: c.paid, models: c.models, keyConfigured, usable: !unavailableReason, unavailableReason };
       }),
       paidUsdPerDay: Number(process.env.JACO_NOVA_PAID_USD_PER_DAY ?? 0.5),
     };
@@ -3155,6 +3160,7 @@ const notifyPhone = async (action) => {
       } else {
         const extra = await connectedPlannerChoices(true);
         const valid = validatePlannerChoice({ provider, model: req.body?.model }, process.env, extra);
+        if (!agentCanUseKey(plannerChoices(process.env, extra)[provider]?.keyEnv)) return res.status(422).json({ success: false, error: 'KEY_NOT_AVAILABLE_TO_AGENT' });
         // Only a model that has just answered a short text request becomes Nova's planner.
         const probe = await testPlannerModel(valid, { extra, timeoutMs: 30_000 });
         if (!probe.ok) return res.status(422).json({ success: false, error: 'PLANNER_MODEL_TEXT_PROBE_FAILED', probe });

@@ -22,7 +22,7 @@ interface Props {
 }
 
 export function McpLogo({ icon, size = 14 }: { icon?: string; size?: number }) {
-  if (icon === 'jaco') return <img src="/branding/jaco-icon-192.png" alt="JACO" width={size} height={size} className="rounded-sm shrink-0" />;
+  if (icon === 'jaco') return <img src="/branding/jaco-orb.webp" alt="JACO" width={size} height={size} className="rounded-sm shrink-0" />;
   const logo = MCP_LOGOS[icon || 'mcp'] || MCP_LOGOS.mcp;
   return <svg role="img" aria-label={logo.title} viewBox="0 0 24 24" width={size} height={size} className="shrink-0"><title>{logo.title}</title><path d={logo.path} fill={logo.color} /></svg>;
 }

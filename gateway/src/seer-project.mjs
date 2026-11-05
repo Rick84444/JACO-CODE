@@ -4,7 +4,9 @@ import path from 'node:path';
 // project. Nova runs each node in its own git worktree of the project (agents/lib/mission-worktree.mjs),
 // so the contract may cover the whole tree and commit there, but never push or merge.
 export const PROJECT_TASKS = ['repo-list', 'repo-read', 'repo-write', 'repo-edit', 'repo-test', 'repo-service', 'git-status', 'git-diff', 'git-commit', 'web-fetch', 'mcp-call'];
-const PROJECT_READ_TASKS = ['repo-list', 'repo-read', 'git-status', 'git-diff'];
+// Read-only means the project is not changed. Reading the web and read-only connectors still count as reading;
+// an operator who wants them off says "no network", handled below.
+const PROJECT_READ_TASKS = ['repo-list', 'repo-read', 'git-status', 'git-diff', 'web-fetch', 'mcp-call'];
 
 // Explicit operator restrictions are executable policy, not prompt advice. This
 // is deliberately narrow: only clear negative language removes capabilities;
@@ -12,7 +14,7 @@ const PROJECT_READ_TASKS = ['repo-list', 'repo-read', 'git-status', 'git-diff'];
 export function projectGoalCapabilities(statement) {
   const text = String(statement || '');
   const readOnly = /\b(?:read[ -]?only|no (?:edits?|changes?|writes?)|do not (?:edit|change|modify|write))\b|\b(?:ändra|modifiera|skriv) inte\b|\binga (?:ändringar|skrivningar)\b/i.test(text);
-  const noNetwork = /\b(?:no network|do not use (?:the )?network|do not use network tools)\b|\b(?:inget|ingen|utan) nätverk\b/i.test(text);
+  const noNetwork = /\bno (?:network|internet)\b|\b(?:do not|don't|without)\b[^.\n]*\b(?:network|internet)\b|\b(?:inget|ingen|utan) (?:nätverk|internet)\b/i.test(text);
   const tasks = readOnly ? [...PROJECT_READ_TASKS] : [...PROJECT_TASKS];
   // A browser observation remains an Aura mission even when an IDE project is
   // open. Project binding scopes repository access; it must not erase the CDP

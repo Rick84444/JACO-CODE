@@ -105,3 +105,11 @@ test('invalid project missions are refused', async () => {
   assert.throws(() => control.create({ goal: 'g', idempotencyKey: 'bad-1', contract, allowedTasks: ['repo-list'], projectRoot: 'relative/dir' }), /PROJECT_ROOT_INVALID/);
   assert.throws(() => control.create({ goal: 'g', idempotencyKey: 'bad-2', projectRoot: absolute }), /PROJECT_MISSION_REQUIRES_CONTRACT/);
 });
+
+test('read-only keeps web and connector reads unless the operator turns the network off', () => {
+  const { tasks } = projectGoalCapabilities('Read-only test, change nothing. Fetch https://example.com and report the title.');
+  assert.ok(tasks.includes('web-fetch'));
+  assert.ok(tasks.includes('mcp-call'));
+  assert.ok(!tasks.includes('repo-write'));
+  assert.ok(!projectGoalCapabilities('Read only, utan nätverk.').tasks.includes('web-fetch'));
+});
