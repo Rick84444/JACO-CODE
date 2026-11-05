@@ -87,6 +87,13 @@ jobs:
         run: |
           npm run build --prefix runtime
           if ($LASTEXITCODE -ne 0) { throw 'PRODUCTION_BUILD_FAILED' }
+      - name: Prune build-only packages before assembling Setup
+        shell: pwsh
+        run: |
+          npm prune --prefix runtime --omit=dev --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'RUNTIME_PRODUCTION_PRUNE_FAILED' }
+          npm prune --omit=dev --omit=optional --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'ROOT_PRODUCTION_PRUNE_FAILED' }
       - name: Prepare production payload
         shell: pwsh
         run: |
