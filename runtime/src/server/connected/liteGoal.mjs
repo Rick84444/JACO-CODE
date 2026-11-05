@@ -1,9 +1,7 @@
-// A goal in JACO Lite: no SEER, so the runtime creates the Nova mission itself. Differences from the
-// SEER path (gateway/src/seer-project.mjs), on purpose:
-//   - the contract REQUIRES the project's own tests after the last change when a test command can be
-//     found (the SEER path switches that off, which is how an earlier "VERIFIED" Lite package had two
-//     failing tests); a project without a test command is labelled as not verified by tests;
-//   - Nova works in a git copy of the project, so the project must be a git repository with commits.
+// JACO Lite creates its project mission directly, without the gateway planner.
+// Both full IDE and Lite now discover project test commands through one shared module,
+// so an agent can edit, test, retry and verify without a second approval for each run.
+// Lite additionally requires a Git repository with an initial commit for its worktree.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
