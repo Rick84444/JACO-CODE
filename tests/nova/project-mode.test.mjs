@@ -254,6 +254,24 @@ test('a single standing project contract permits newly authored tests without ma
   assert.ok(status.missing.includes('commit'), 'the existing commit requirement still applies');
 });
 
+test('skipped-only generated tests do not certify a coding mission', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aura-skipped-test-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(dir, 'tests'));
+  fs.writeFileSync(path.join(dir, 'tests', 'all-skipped.test.mjs'),
+    "import test from 'node:test'; test.skip('unrun assertion', () => { throw Error('would fail'); });\n");
+  const contract = normalizeCodingContract(projectNodeContract({
+    title: 'Test bug', objective: 'Fix a bug and create regression tests', projectRoot: dir,
+  }));
+  const work = createCodingWorkspace({ root: dir });
+  const result = await work.execute({ type: 'repo-test', data: {
+    command: 'node --test tests/all-skipped.test.mjs',
+  } }, contract);
+  assert.equal(result.ok, false, 'a skipped suite without any passing test is not evidence');
+  assert.equal(result.verified, false);
+  assert.match(result.error, /CODING_GENERATED_TEST_NO_PASSING_TESTS_OBSERVED/);
+});
+
 test('dynamically discovered tests never widen an explicitly read-only contract', () => {
   const contract = normalizeCodingContract(projectNodeContract({
     title: 'Read sources', objective: 'Read-only assessment; do not edit or test files',
