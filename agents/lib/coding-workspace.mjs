@@ -168,7 +168,12 @@ export function createCodingWorkspace({ root = process.cwd(), protectedBranches:
           const absolute = resolvePath(data.path);
           const stat = fs.statSync(absolute);
           if (!stat.isFile() || stat.size > 512_000) throw new Error('CODING_EDIT_FILE_INVALID');
-          const before = fs.readFileSync(absolute, 'utf8');
+          const originalBytes = fs.readFileSync(absolute);
+          // A lossy UTF-8 decode could make an edit appear byte-identical while
+          // silently corrupting the file. Require valid text before editing.
+          let before;
+          try { before = new TextDecoder('utf-8', { fatal: true }).decode(originalBytes); }
+          catch { throw new Error('CODING_EDIT_BINARY_REFUSED'); }
           // Models write \n; Windows files often have \r\n. The edit keeps the file's own line endings.
           const crlf = before.includes('\r\n');
           const old = crlf && !before.includes(data.old) ? data.old.replace(/\r?\n/g, '\r\n') : data.old;
@@ -179,7 +184,7 @@ export function createCodingWorkspace({ root = process.cwd(), protectedBranches:
           const content = data.replaceAll ? before.split(old).join(replacement) : before.replace(old, () => replacement);
           atomicWrite(data.path, absolute, content);
           const after = fs.readFileSync(absolute);
-          return { ok: true, verified: true, path: data.path, replacements: data.replaceAll ? count : 1, bytes: after.length, beforeSha256: sha(before), afterSha256: sha(after), implementationActor: actor };
+          return { ok: true, verified: true, path: data.path, replacements: data.replaceAll ? count : 1, bytes: after.length, beforeSha256: sha(originalBytes), afterSha256: sha(after), implementationActor: actor };
         }
         case 'repo-test': {
           try {
