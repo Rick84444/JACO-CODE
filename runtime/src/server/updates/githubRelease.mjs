@@ -26,7 +26,7 @@ export function verifiedWindowsAsset(release, tag) {
   } catch { return null; }
 }
 
-export async function githubWindowsReleaseStatus({ currentVersion, platform = process.platform, installed = false, fetchImpl = fetch } = {}) {
+export async function githubWindowsReleaseStatus({ currentVersion = '', platform = process.platform, installed = false, fetchImpl = fetch } = {}) {
   const base = { success: true, installed, platform, currentVersion: String(currentVersion || ''), source: LATEST_URL };
   if (platform !== 'win32') return { ...base, status: 'unsupported' };
   try {
