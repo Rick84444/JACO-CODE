@@ -169,6 +169,17 @@ test('test discovery is shared, read-only instructions do not request test execu
   assert.equal(detectProjectTestCommand(dir), null, 'quoted separator data followed by exit is still a no-op');
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "lint && test" && node --test' } }));
   assert.equal(detectProjectTestCommand(dir), 'npm test', 'quote-aware parser preserves a later real runner');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "Tests disabled" || node --test tests/client.test.mjs' } }));
+  assert.equal(detectProjectTestCommand(dir), null, 'unreachable test runner after successful echo cannot certify');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'exit 0 && node --test tests/client.test.mjs' } }));
+  assert.equal(detectProjectTestCommand(dir), null, 'exit before test runner cannot certify');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test tests/client.test.mjs || echo "Tests ignored"' } }));
+  assert.equal(detectProjectTestCommand(dir), null, 'test failure masked by echo must not look green');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "Starting" && node --test tests/client.test.mjs && echo "Done"' } }));
+  assert.equal(detectProjectTestCommand(dir), 'npm test', 'all success paths run and pass the test');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'npm run lint && node --test tests/client.test.mjs' } }));
+  assert.equal(detectProjectTestCommand(dir), 'npm test', 'a successful prerequisite followed by tests is supported');
+
 
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "no test specified" && exit 1' } }));
 
