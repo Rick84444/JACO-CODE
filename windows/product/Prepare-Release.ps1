@@ -26,6 +26,18 @@ foreach ($name in @('package.json', 'package-lock.json')) {
 $nodeDir = Join-Path $Destination 'tools\node'
 New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
 Copy-Item -LiteralPath $node -Destination (Join-Path $nodeDir 'node.exe') -Force
+# A one-click full IDE also needs npm for workspace dependency installs and test commands.
+$nodeHome = Split-Path $node -Parent
+foreach ($command in @('npm.cmd','npx.cmd')) {
+  $candidate = Join-Path $nodeHome $command
+  if (-not (Test-Path $candidate)) { throw "BUNDLED_NODE_COMMAND_MISSING:$command" }
+  Copy-Item -LiteralPath $candidate -Destination (Join-Path $nodeDir $command) -Force
+}
+$npm = Join-Path $nodeHome 'node_modules\npm'
+if (-not (Test-Path $npm)) { throw 'BUNDLED_NPM_PACKAGE_MISSING' }
+New-Item -ItemType Directory -Force -Path (Join-Path $nodeDir 'node_modules') | Out-Null
+Copy-Item -LiteralPath $npm -Destination (Join-Path $nodeDir 'node_modules\npm') -Recurse -Force
+
 # Guard against secrets or runtime state accidentally packaged by a future git change.
 foreach ($dir in @((Join-Path $Destination 'agents'), (Join-Path $Destination 'gateway'), (Join-Path $Destination 'runtime'))) {
   Get-ChildItem -LiteralPath $dir -Recurse -Force -Directory |
