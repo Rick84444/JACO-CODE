@@ -54,7 +54,7 @@ import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs'
 import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs';
 import { validateRepoScanTask, runRepoScanTask } from './lib/repo-scan.mjs';
 import { validateMcpCall, callMcpTool, mcpCatalog, mcpCatalogTools, learnedTaskNotes } from './lib/mcp-tools.mjs';
-import { plannerTools, planFromToolCalls, planSchema } from './lib/native-tools.mjs';
+import { plannerTools, structuredPlannerTools, planFromToolCalls, planSchema } from './lib/native-tools.mjs';
 import { runAgentMission, introMessage, contextPacketIntro } from './lib/agent-loop.mjs';
 import { agentHomeDir, loadHome, HOME_LIMITS } from './lib/agent-home.mjs';
 import { loadCognitiveCapsule, assertCognitiveCapsuleTask } from './lib/cognitive-capsule.mjs';
@@ -1722,8 +1722,8 @@ Plans already rejected this turn (do not repeat them): ${rejectedPlans.slice(-3)
       continue;
     }
     console.log(`[DEBUG] Trying provider: ${provider.name} model: ${provider.model}`);
-    // This structured planner cannot process tool_search; only the native agent loop supports deferred discovery.
-    const native = nativeToolsFor(provider) ? plannerTools(planningAllowedTasks, profile==='compact'?focusPlannerToolDescriptions(mcpCatalogTools(),mission):mcpCatalogTools(), learnedTaskNotes(), Boolean(mission?.metadata?.parent?.graphId), { deferAfterChars: Number.POSITIVE_INFINITY }) : null;
+    // The structured fallback cannot process tool_search; use bounded generic MCP tasks for large catalogs.
+    const native = nativeToolsFor(provider) ? structuredPlannerTools(planningAllowedTasks, profile==='compact'?focusPlannerToolDescriptions(mcpCatalogTools(),mission):mcpCatalogTools(), learnedTaskNotes(), Boolean(mission?.metadata?.parent?.graphId)) : null;
     state.plannerInputMetrics.nativeToolsCount=native?.tools.length||0;
     state.plannerInputMetrics.nativeToolsChars=native?JSON.stringify(native.tools).length:0;
     try {
