@@ -28,6 +28,7 @@ if (-not (Test-Path -LiteralPath $EnvPath)) {
 }
 $env:JACO_DATA_DIR = $DataRoot
 $env:JACO_START_MODE = 'production'
+$env:JACO_INSTALLED = '1'
 $env:JACO_NODE_EXECUTABLE = $Node
 $entry = Join-Path $InstallRoot 'agents\lib\local-stack.mjs'
 $args = @($entry)
