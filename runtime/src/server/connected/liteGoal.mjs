@@ -22,7 +22,7 @@ export function liteContract({ goal, testCommand }) {
       ...base.acceptance.slice(0, 1),
       testCommand ? `The project's tests (${testCommand}) pass after the last change` : 'No test command was found in this project: the result is NOT verified by tests',
     ],
-    verification: { tests_required: Boolean(testCommand), falsifier_required: false, independent_verification: false, receipt_required: true, commands: testCommand ? [testCommand] : [], required_stages: [] },
+    verification: { ...base.verification, tests_required: Boolean(testCommand) || base.verification.tests_required, falsifier_required: false, independent_verification: false, receipt_required: true, commands: testCommand ? [testCommand] : [], required_stages: [] },
     budget: { max_steps: 60, max_tool_calls: 120, max_failures: 5, max_duration_ms: 3_600_000 },
   };
 }
