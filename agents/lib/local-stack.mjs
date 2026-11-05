@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'dotenv';
 import { readStartupEvidence } from './startup-evidence.mjs';
+import { WORKER_WITHHELD_KEY } from './planner-choice.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -102,7 +103,7 @@ export function serviceEnvironment(config, kind) {
   for (const k of Object.keys(env)) {
     if (/^(STRIPE_|GITHUB_TOKEN$|GH_TOKEN$|CLOUDFLARE_|SKYFIRE_|CDP_API_KEY)/.test(k)) env[k] = '';
     if (kind !== 'workplace' && /^(JACO_CHATGPT_WORKPLACE_TOKEN|JACO_WORKPLACE_OPERATOR_TOKEN)$/.test(k)) env[k] = '';
-    if (kind !== 'runtime' && /^(HUGGINGFACE_TOKEN|HF_TOKEN)$/.test(k)) env[k] = '';
+    if (kind !== 'runtime' && WORKER_WITHHELD_KEY.test(k)) env[k] = '';
   }
   if (kind === 'runtime') {
     // Preserve legacy checkout behavior unless this is a packaged product with a separate writable data root.

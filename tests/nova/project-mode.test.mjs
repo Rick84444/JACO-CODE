@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { normalizeProjectRoot, projectNodeContract, projectGraphPolicy, projectGoalGraph, projectGoalDone, PROJECT_TASKS } from '../../gateway/src/seer-project.mjs';
+import { normalizeProjectRoot, projectGoalCapabilities, projectNodeContract, projectGraphPolicy, projectGoalGraph, projectGoalDone, PROJECT_TASKS } from '../../gateway/src/seer-project.mjs';
 
 test('a project goal with a verified graph is done and is not executed again', () => {
   const graphs = [
@@ -48,6 +48,32 @@ test('project graph policy routes to Nova with code tools only when a project is
   assert.ok(!PROJECT_TASKS.includes('git-push') && !PROJECT_TASKS.includes('git-merge'));
 });
 
+test('explicit read-only and network restrictions compile into mission authority', () => {
+  const statement = 'Read package.json. Do not edit files or use network tools.';
+  assert.deepEqual(projectGoalCapabilities(statement), {
+    readOnly: true,
+    restricted: true,
+    tasks: ['repo-list', 'repo-read', 'git-status', 'git-diff'],
+  });
+  const graph = projectGoalGraph({ id: 'goal-read', statement, project_root: absolute });
+  assert.deepEqual(graph.policy.allowedTasks, ['repo-list', 'repo-read', 'git-status', 'git-diff']);
+  const contract = normalizeCodingContract(graph.nodes[0].contract);
+  assert.equal(contract.execution.allow_git_commit, false);
+  assert.equal(contract.execution.require_git_commit, false);
+  assert.match(contract.acceptance.join(' '), /No repository mutation is permitted/);
+});
+
+test('an explicit CDP observation keeps browser capability while a project is open', () => {
+  const statement = 'Use CDP to inspect the browser at http://localhost:3000/. Read only; do not click, type, or modify anything.';
+  const capabilities = projectGoalCapabilities(statement);
+  assert.equal(capabilities.readOnly, true);
+  assert.ok(capabilities.tasks.includes('browser-survey-site'));
+  assert.ok(!capabilities.tasks.includes('repo-write'));
+  const graph = projectGoalGraph({ id: 'goal-cdp', statement, project_root: absolute });
+  assert.ok(graph.policy.allowedTasks.includes('browser-survey-site'));
+  assert.equal(normalizeCodingContract(graph.nodes[0].contract).execution.allow_git_commit, false);
+});
+
 test('an operator instruction on a project becomes one direct node, not a re-strategised plan', () => {
   const statement = 'Add mul(a, b) to src/math.js and a node:test for it, then commit.';
   const graph = projectGoalGraph({ id: 'goal-1', statement, project_root: absolute });
@@ -79,4 +105,20 @@ test('invalid project missions are refused', async () => {
   const contract = projectNodeContract({ title: 'x', objective: 'x', mainGoal: 'x' });
   assert.throws(() => control.create({ goal: 'g', idempotencyKey: 'bad-1', contract, allowedTasks: ['repo-list'], projectRoot: 'relative/dir' }), /PROJECT_ROOT_INVALID/);
   assert.throws(() => control.create({ goal: 'g', idempotencyKey: 'bad-2', projectRoot: absolute }), /PROJECT_MISSION_REQUIRES_CONTRACT/);
+});
+
+test('read-only keeps web and connector reads unless the operator turns the network off', () => {
+  const { tasks } = projectGoalCapabilities('Read-only test, change nothing. Fetch https://example.com and report the title.');
+  assert.ok(tasks.includes('web-fetch'));
+  assert.ok(tasks.includes('mcp-call'));
+  assert.ok(!tasks.includes('repo-write'));
+  assert.ok(!projectGoalCapabilities('Read only, utan nätverk.').tasks.includes('web-fetch'));
+});
+
+test('without a restriction in the operator words SEER picks no tools: the mission gets what Aura has switched on', () => {
+  const open = projectGraphPolicy(absolute, 'Add a mul function and run the tests.');
+  assert.equal(open.project_root, absolute);
+  assert.equal('allowedTasks' in open, false);
+  assert.deepEqual(projectGraphPolicy(absolute, 'Read only, change nothing.').allowedTasks, ['repo-list', 'repo-read', 'git-status', 'git-diff', 'web-fetch', 'mcp-call']);
+  assert.ok(projectGraphPolicy(absolute, 'Do not use the network.').allowedTasks.every(task => !['web-fetch', 'mcp-call'].includes(task)));
 });

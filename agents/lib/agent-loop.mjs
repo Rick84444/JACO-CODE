@@ -41,7 +41,7 @@ export function introMessage(mission, extra = {}) {
     ...(mission.receipts?.length ? [`Steps already done in earlier runs (newest last): ${clip(mission.receipts.slice(-8).map((r, i) => ({ n: i + 1, type: r.type, input: r.input, ok: r.ok, error: r.error || undefined })), 3000)}`] : []),
     // The agent's home (notes and memory) is allowed more room than the other extras.
     ...Object.entries(extra).filter(([, v]) => v != null).map(([k, v]) => `${k}: ${clip(v, /^Your home/.test(k) ? 16000 : 4000)}`),
-    'Work step by step with the tools. After each result decide the next step. If a step fails or is refused, read why and try a different approach. When the goal is achieved, call complete with the answer for the operator; call blocked only when no allowed tool can make progress.',
+    'Work step by step with the tools. After each result decide the next step. If a step fails or is refused, read why and try a different approach. When the goal is achieved, call complete with the answer for the operator; call blocked when no allowed tool can make progress, when the goal is ambiguous, or when you have tried two different approaches without getting closer. In blocked, write one concrete question the operator can answer.',
   ].join('\n');
 }
 
@@ -70,6 +70,9 @@ export function contextPacketIntro(mission, {
  * @param {(mission:any) => {tools:any[], resolve:(name:string)=>any}} o.toolsFor  function list for the mission
  * @param {(task:any, mission:any) => Promise<any>} o.execute
  */
+// Roughly what fits the default per-call budget at reference prices, with room for tool schemas.
+const COST_RETRY_CONTEXT_CHARS = 20_000;
+const SAYS_BLOCKED = /\b(?:i am|i'm|i was) (?:blocked|unable|not able)\b|\bi (?:cannot|can't|could not|couldn't) (?:complete|proceed|continue|do|fetch|perform|finish)\b|\bi do(?:n't| not) have (?:a|an|the|any) (?:\w+ )?(?:tool|access|permission)\b/i;
 export async function runAgentMission({
   client, owner, chat, toolsFor, execute, system,
   observe = async () => null, intro = introMessage, refreshIntro = false, acceptMission = null,
@@ -158,6 +161,7 @@ export async function runAgentMission({
     messages.push({ role: 'system', content: typeof system === 'function' ? system(mission) : system },
       { role: 'user', content: await intro(mission) });
     // Steps bound the work; turns bound the conversation (refusals and retries do not count as steps).
+    let costCondensed = false;
     while (steps < maxSteps && turns++ < maxSteps * 2) {
       // Check the durable operator input before every model turn. Never abort
       // an already-executing tool, and do not start tools from a stale response.
@@ -179,11 +183,24 @@ export async function runAgentMission({
       }
       let nudge = null;
       let reply;
-      try { reply = await chat({ messages, tools }); modelErrors = 0; }
+      try { reply = await chat({ messages, tools }); modelErrors = 0; costCondensed = false; }
       catch (error) {
         modelErrors++;
         log('warn', `model error ${modelErrors}/${maxModelErrors}: ${errorText(error)}`);
         const modelIssue = errorText(error);
+        // A rate window ends by itself: give the mission back and try on a later tick.
+        if (/^MODEL_TEMPORARILY_LIMITED/.test(modelIssue)) return end({ deferred: true, reason: modelIssue }, {});
+        // The request is over the operator's per-call budget: send less before asking for more budget.
+        if (/TASK_COST_LIMIT/.test(modelIssue) && !costCondensed) {
+          costCondensed = true;
+          const smaller = condenseMessages(messages, { maxChars: COST_RETRY_CONTEXT_CHARS, keepLast: 4 });
+          if (smaller.condensed) {
+            messages.splice(0, messages.length, ...smaller.messages);
+            log('info', `condensed ${smaller.dropped.length} messages to fit the per-call budget`);
+            modelErrors = 0;
+            continue;
+          }
+        }
         // Aura's only authorized model is missing or unavailable. A repeating
         // step-0 defer hid the problem indefinitely, falsely implying active work.
         // Release an explicit blocker with no tool side effects and no provider fallback.
@@ -200,10 +217,18 @@ export async function runAgentMission({
 
       if (!calls.length) {
         const text = String(reply?.content || '').trim();
+        // "I am blocked" in plain text is a question for the operator. Proposed as an answer it was
+        // auto-confirmed and the mission closed as DONE without the work (2026-11-05).
+        if (text && SAYS_BLOCKED.test(text)) {
+          const reason = text.slice(0, 500);
+          return end({ blocked: true, reason }, { error: `PLANNER_BLOCKED:${reason}` });
+        }
         // A plain answer after real work is the model's final answer: propose it for verification.
         if (text && receipts.some(r => r.ok)) {
           const refused = await proposeCompletion(text);
           if (!refused) return { executed: true, receipts, steps, completed: true, answer: text };
+          // Text-only retries bought nothing and were 45% of a 2 600-call run (2026-10-31).
+          if (++idle > maxIdleReplies) return end({ failed: true, reason: 'MODEL_DID_NOT_USE_TOOLS' }, { error: 'MODEL_DID_NOT_USE_TOOLS' });
           messages.push({ role: 'user', content: `COMPLETION REFUSED: ${refused}. Do what is missing with the tools, then call complete.` });
           continue;
         }

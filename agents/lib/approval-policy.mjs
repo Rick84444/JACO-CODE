@@ -17,6 +17,7 @@
 //   - anything that looks like outgoing spend (payments, purchases, payouts, subscriptions, top-ups)
 //   - uncertain outcomes (interrupted execution, outcomeUnknown): resuming could repeat a mutation
 //   - failures raised by a safety policy (payment/secret shell policy, origin denial, payment required)
+//   - actions that are hard to undo or visible to others (agents/lib/operator-action-guard.mjs)
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -35,7 +36,7 @@ export const OUTGOING_SPEND = /\b(pay|payment|payout|purchase|buy|subscri(be|pti
 const AMBIGUOUS_SPEND_TERM = /\b(transfer|wallet|withdraw|charge)\b|överför/i;
 const FINANCIAL_CONTEXT = /[$€£]|\bUSD\b|\bSEK\b|\bEUR\b|\bGBP\b|\bmoney\b|\bfunds?\b|\bbank\b|\baccount\b|\bcredit card\b|\bcard number\b|\binvoice\b|\bpengar\b|\bkonto\b|\bkort\b/i;
 const TRANSIENT = /fetch failed|NOVA_LEASE_BUSY|timeout|timed out|ECONNRESET|ECONNREFUSED|UNBALANCED_JSON|EMPTY_CONTENT|all_providers_failed|\b429\b|\b503\b/i;
-const POLICY_BLOCK = /PAYMENT|SECRET_POLICY|ORIGIN_DENIED|Payment Required|SPEND|MANDATE/i;
+const POLICY_BLOCK = /PAYMENT|SECRET_POLICY|ORIGIN_DENIED|Payment Required|SPEND|MANDATE|OPERATOR_APPROVAL_REQUIRED/i;
 // An exhausted coding budget only re-blocks on the next turn: an automated resume never extends it
 // (novaMissionControl.resolve), so resuming it would only spend a planner call.
 const BUDGET_EXHAUSTED = /CODING_CONTRACT_\w*(BUDGET|DURATION)_EXCEEDED/;

@@ -1922,7 +1922,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     <CognitiveWorkspace attention={attention} canvas={workspaceView} onCanvas={chooseWorkspace} conversation={renderChatContent()} detail={detail}
       stage={stage} stagePinned={workspacePinned} onTogglePin={()=>setWorkspacePinned(value=>!value)}
       sidebar={sidebar} sidePanelOpen={sidePanelOpen} sidePanel={renderSidebar()}
-      onSidebar={view => { if(['tools','providers','skills'].includes(view)){setConnectionsTab(view==='tools'?'mcp':view==='providers'?'models':'skills');setWorkspaceView('connections');setSidePanelOpen(false);}else{setSidebar(view);setSidePanelOpen(current => sidebar === view ? !current : true);} }}
+      onSidebar={view => { if(['tools','providers','skills'].includes(view)){setConnectionsTab(view==='tools'?'capabilities':view==='providers'?'models':'skills');setWorkspaceView('connections');setSidePanelOpen(false);}else{setSidebar(view);setSidePanelOpen(current => sidebar === view ? !current : true);} }}
       onCloseSidebar={() => setSidePanelOpen(false)} status={status} projectName={projectName}
       branch={snapshot?.git?.branch} changes={snapshot?.git?.changes?.length || 0}
       approvalCount={snapshot?.approvals?.count || 0} onApprovals={() => setShowApprovals(true)}

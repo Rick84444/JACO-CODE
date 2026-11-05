@@ -61,6 +61,15 @@ function ollamaRoot(value) {
   return String(value || 'http://127.0.0.1:11434').replace(/\/+$/, '').replace(/\/v1$/i, '');
 }
 
+// A Hub executes its own canonical local queue. Stale pairing credentials may
+// remain in .env, but nova@device is meaningful only on a joined device; passing
+// it to the Hub's local executor makes Aura poll the wrong mission queue.
+export function supervisedNovaExecutor(env = {}) {
+  if (env.JACO_EXECUTOR === 'desktop-agentos') return 'desktop-agentos';
+  if (env.JACO_NODE_ROLE === 'hub') return 'nova';
+  return env.JACO_NOVA_EXECUTOR || 'nova';
+}
+
 export function createWorkplaceAgentSupervisor({
   root = process.cwd(),
   env = process.env,
@@ -141,7 +150,7 @@ export function createWorkplaceAgentSupervisor({
         lastExit: lastSeerExit,
       },
       nova: {
-        executor: env.JACO_EXECUTOR === 'desktop-agentos' ? 'desktop-agentos' : 'nova',
+        executor: supervisedNovaExecutor(env),
         supervised: superviseNova,
         state: novaState,
         pid: novaChild?.pid ?? null,
@@ -162,6 +171,7 @@ export function createWorkplaceAgentSupervisor({
       JACO_WORKPLACE_SCOPE: 'local',
       JACO_WORKPLACE_URL: workplaceUrl,
       JACO_WORKPLACE_REQUIRED: '1',
+      JACO_NOVA_EXECUTOR: supervisedNovaExecutor(env),
       JACO_RUNTIME_URL: runtimeUrl,
       SEER_URL: seerUrl,
       JACO_LITERT_URL: litertV1,

@@ -497,3 +497,94 @@ test('native loop edits a real isolated repository and recovers from a failing t
   assert.match(JSON.stringify(model.seen[2]), /repo-test/);
   assert.match(JSON.stringify(model.seen[3]), /repo-edit/);
 });
+
+test('a rate window gives the mission back without blocking it, even after real work', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Läs en sida', idempotencyKey: 'rate-1', allowedTasks: ['web-fetch'] });
+  let turn = 0;
+  const result = await runAgentMission({
+    client: s.client, owner: 'nova', system: 'test',
+    toolsFor: x => plannerTools(x.allowedTasks, [], {}, false),
+    chat: async () => {
+      if (++turn === 1) return { tool_calls: [call('web-fetch', { url: 'https://a.test' })] };
+      throw new Error('MODEL_TEMPORARILY_LIMITED:gemini:AUTONOMOUS_CLOUD_BURST_LIMIT');
+    },
+    execute: async () => ({ ok: true, verified: true, content: 'a' }),
+  });
+  assert.equal(result.deferred, true);
+  assert.equal(turn, 2, 'no retry burst inside the window');
+  assert.equal(s.control.get(m.id).status, 'ACTIVE');
+});
+
+test('an over-budget request is condensed and retried once before the operator is asked', async t => {
+  const s = setup(t, ['web-fetch']);
+  s.control.create({ goal: 'Läs många sidor', idempotencyKey: 'cost-1', allowedTasks: ['web-fetch'] });
+  const big = 'x'.repeat(6000);
+  const sizes = [];
+  let turn = 0;
+  const result = await runAgentMission({
+    client: s.client, owner: 'nova', system: 'test',
+    toolsFor: x => plannerTools(x.allowedTasks, [], {}, false),
+    chat: async ({ messages }) => {
+      const size = JSON.stringify(messages).length;
+      sizes.push(size);
+      turn++;
+      if (turn <= 8) return { tool_calls: [call('web-fetch', { url: `https://a.test/${turn}` })] };
+      if (size > 30_000) throw new Error('AURA_SELECTED_MODEL_UNAVAILABLE:gemini:TASK_COST_LIMIT');
+      return { tool_calls: [call('complete', { reason: 'klart' })] };
+    },
+    execute: async () => ({ ok: true, verified: true, content: big }),
+  });
+  assert.equal(result.completed, true);
+  assert.ok(sizes.at(-1) < 30_000, `retried request was ${sizes.at(-1)} chars`);
+});
+
+test('a budget limit that condensing cannot fix stops for the operator with the cause', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Läs en sida', idempotencyKey: 'cost-2', allowedTasks: ['web-fetch'] });
+  const result = await runAgentMission({
+    client: s.client, owner: 'nova', system: 'test',
+    toolsFor: x => plannerTools(x.allowedTasks, [], {}, false),
+    chat: async () => { throw new Error('AURA_SELECTED_MODEL_UNAVAILABLE:gemini:TASK_COST_LIMIT'); },
+    execute: async () => ({ ok: true, verified: true }),
+  });
+  assert.equal(result.blocked, true);
+  assert.match(result.reason, /TASK_COST_LIMIT/);
+  assert.equal(s.control.get(m.id).status, 'BLOCKED');
+});
+
+test('repeated text-only answers after a refused completion stop instead of paying for more turns', async t => {
+  const s = setup(t, ['web-fetch']);
+  s.control.create({ goal: 'Läs en sida', idempotencyKey: 'idle-1', allowedTasks: ['web-fetch'] });
+  const release = s.client.release.bind(s.client);
+  s.client.release = async (id, input) => {
+    if (input.completionProposed) throw new Error('CONTRACT_VERIFICATION_INCOMPLETE:test');
+    return release(id, input);
+  };
+  let calls = 0;
+  const result = await runAgentMission({
+    client: s.client, owner: 'nova', system: 'test',
+    toolsFor: x => plannerTools(x.allowedTasks, [], {}, false),
+    chat: async () => {
+      calls++;
+      return calls === 1 ? { tool_calls: [call('web-fetch', { url: 'https://a.test' })] } : { content: 'Jag är klar.' };
+    },
+    execute: async () => ({ ok: true, verified: true, content: 'a' }),
+  });
+  assert.equal(result.failed, true);
+  assert.equal(result.reason, 'MODEL_DID_NOT_USE_TOOLS');
+  assert.ok(calls <= 5, `${calls} model calls`);
+});
+
+test('a plain-text "I am blocked" stops for the operator and is never proposed as the answer', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Läs och hämta', idempotencyKey: 'blocked-text', allowedTasks: ['web-fetch'] });
+  const model = scripted([
+    { tool_calls: [call('web-fetch', { url: 'https://a.test' })] },
+    { content: 'I am blocked because I do not have a tool to fetch URLs.' },
+  ]);
+  const result = await run(s, model, async () => ({ ok: true, verified: true, content: 'a' }));
+  assert.equal(result.blocked, true);
+  assert.equal(result.completed, undefined);
+  assert.equal(s.control.get(m.id).status, 'BLOCKED');
+});

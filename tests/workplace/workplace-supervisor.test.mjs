@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { createWorkplaceAgentSupervisor } from '../../gateway/src/workplace/workplace-agent-supervisor.mjs';
+import { createWorkplaceAgentSupervisor, supervisedNovaExecutor } from '../../gateway/src/workplace/workplace-agent-supervisor.mjs';
 import { joinWorkplace, buildAgentCard } from '../../agents/lib/workplace-session.mjs';
 
 function fakeChild(pid=4242) {
@@ -17,6 +17,13 @@ function fakeChild(pid=4242) {
 function jsonResponse(body, ok=true, status=200) {
   return { ok, status, json: async()=>body };
 }
+
+test('Hub supervision ignores a stale device executor while joined devices retain theirs', () => {
+  const stale = { JACO_HUB_URL: 'https://api.jacocode.com', JACO_DEVICE_KEY: 'jdev_stale', JACO_NOVA_EXECUTOR: 'nova@laptop' };
+  assert.equal(supervisedNovaExecutor({ ...stale, JACO_NODE_ROLE: 'hub' }), 'nova');
+  assert.equal(supervisedNovaExecutor(stale), 'nova@laptop');
+  assert.equal(supervisedNovaExecutor({ ...stale, JACO_EXECUTOR: 'desktop-agentos' }), 'desktop-agentos');
+});
 
 test('local Workplace scope retains remote mission routing without using the remote session', async () => {
   const calls = [];

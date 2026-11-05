@@ -17,7 +17,7 @@ import { SafeShell } from '../../agents/lib/safe-shell.mjs';
 const workspace = path.resolve(process.env.JACO_SHELL_WORKSPACE || process.env.JACO_WORKSPACE_ROOT || process.cwd());
 const shell = new SafeShell({ workspace });
 const text = value => JSON.stringify(value, null, 2);
-const argSchema = { command: { type: 'string', description: 'the program, e.g. "git" (no shell: pipes, ; && and $() are not interpreted)' }, args: { type: 'array', items: { type: 'string' }, description: 'its arguments, one string each' }, cwd: { type: 'string', description: 'folder inside the workspace (default: the workspace)' } };
+const argSchema = { command: { type: 'string', description: 'the program, e.g. "git", or the whole command as one string, e.g. "git status --short" (no shell: pipes, ; && and $() are refused)' }, args: { type: 'array', items: { type: 'string' }, description: 'its arguments, one string each' }, cwd: { type: 'string', description: 'folder inside the workspace (default: the workspace)' } };
 
 const TOOLS = [
   { name: 'shell_info', readOnly: true, description: 'What this shell may run: workspace, allowed programs, limits, and whether destructive commands or push are enabled. Read only.',
@@ -25,7 +25,7 @@ const TOOLS = [
   { name: 'shell_read', readOnly: true, description: 'Run a read-only command in the workspace: ls, cat, head, tail, wc, grep, find, stat, du, file, pwd, uname, df, git status/diff/log/show/blame/ls-files, npm ls, node --version. Anything that would change something is refused. Returns stdout, stderr, exit code, timing.',
     inputSchema: { type: 'object', properties: { ...argSchema, timeoutSeconds: { type: 'number' } }, required: ['command'] },
     run: args => shell.run({ ...args, mode: 'read' }) },
-  { name: 'shell_run', readOnly: false, description: 'Run a command that may change the workspace: git add/commit/switch/merge/fetch, npm test / run <script> / ci, node or python3 <script in the workspace>, mkdir, touch, cp, mv, rm (single files). Runs the project\'s own code, so it needs write access to this server. Recursive rm, git reset/clean/push and branch deletion are refused unless the operator enabled them. Returns stdout, stderr, exit code, timing.',
+  { name: 'shell_run', readOnly: false, description: 'Run a command that may change the workspace: git add/commit/switch/merge/fetch, npm test / run <script> / ci, node or python3 <script in the workspace>, and in the Aura runtime bash, PowerShell, python, py and node with inline code, mkdir, touch, cp, mv, rm (single files). Runs the project\'s own code, so it needs write access to this server. Recursive rm, git reset/clean/push and branch deletion are refused unless the operator enabled them. Returns stdout, stderr, exit code, timing.',
     inputSchema: { type: 'object', properties: { ...argSchema, timeoutSeconds: { type: 'number', description: 'default 30, at most 300' } }, required: ['command'] },
     run: args => shell.run({ ...args, mode: 'write' }) },
 ];
