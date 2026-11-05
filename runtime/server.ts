@@ -3101,7 +3101,7 @@ const notifyPhone = async (action) => {
     const choices = plannerChoices(process.env, extra);
     return {
       success: true,
-      choice: process.env.JACO_PRIMARY_PROVIDER
+      choice: process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1'
         ? { provider: process.env.JACO_PRIMARY_PROVIDER, model: choices[process.env.JACO_PRIMARY_PROVIDER]?.models[0] || null, by: 'environment' }
         : readPlannerChoice(plannerChoicePath),
       choices: Object.entries(choices).map(([provider, c]: [string, any]) => {
@@ -3139,7 +3139,7 @@ const notifyPhone = async (action) => {
   });
   app.post('/api/nova/planner', requireLocalUi, async (req, res) => {
     try {
-      if (process.env.JACO_PRIMARY_PROVIDER) return res.status(409).json({ success: false, error: 'PLANNER_ENV_PRIMARY_AUTHORITATIVE' });
+      if (process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1') return res.status(409).json({ success: false, error: 'PLANNER_ENV_PRIMARY_AUTHORITATIVE' });
       const provider = String(req.body?.provider || '');
       if (provider === 'auto') {
         clearPlannerChoice(plannerChoicePath);
