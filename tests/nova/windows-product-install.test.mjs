@@ -15,7 +15,7 @@ test('packaged Windows product writes runtime state to user data, not Program Fi
     fs.mkdirSync(dataRoot, { recursive: true });
     fs.writeFileSync(path.join(runtime, 'server.ts'), '// /api/runtime/identity');
     fs.writeFileSync(path.join(runtime, 'package.json'), JSON.stringify({ version: '0.22.0' }));
-    fs.writeFileSync(path.join(dataRoot, '.env'), 'JACO_GATEWAY_TOKEN=very_long_unique_token_for_test_000001\\nJACO_START_MODE=production\\n');
+    fs.writeFileSync(path.join(dataRoot, '.env'), 'JACO_GATEWAY_TOKEN=very_long_unique_token_for_test_000001\nJACO_START_MODE=production\n');
     fs.mkdirSync(path.join(runtime, 'dist'), { recursive: true });
     fs.writeFileSync(path.join(runtime, 'dist', 'index.html'), 'GUI');
     fs.writeFileSync(path.join(runtime, 'dist', 'server.cjs'), 'server');
