@@ -185,7 +185,12 @@ export function createCodingWorkspace({ root = process.cwd(), protectedBranches:
               const testFile = resolvePath(generated);
               if (!fs.existsSync(testFile) || !fs.statSync(testFile).isFile()) throw new Error('CODING_GENERATED_TEST_NOT_FOUND');
             }
-            const output = execSync(data.command, { cwd: workspaceRoot, encoding: 'utf8', timeout: Math.min(Number(data.timeout || 120_000), 300_000), windowsHide: true, env: safeEnv(), stdio: ['ignore','pipe','pipe'] });
+            const runOptions = { cwd: workspaceRoot, encoding: 'utf8', timeout: Math.min(Number(data.timeout || 120_000), 300_000), windowsHide: true, env: safeEnv(), stdio: ['ignore','pipe','pipe'] };
+            // Generated tests use an explicit TAP reporter for machine-verifiable
+            // counts. Node's default reporter varies by TTY/CI environment.
+            const output = generated
+              ? execFileSync(process.execPath, ['--test', '--test-reporter=tap', generated], runOptions)
+              : execSync(data.command, runOptions);
             if (generated) {
               const observed = [...output.matchAll(/(?:^|\n)# tests (\d+)(?:\r?\n|$)/g)];
               if (!observed.length || Number(observed.at(-1)[1]) < 1)
