@@ -306,3 +306,20 @@ test('unified Aura refuses automatic local fallback and keeps the exact operator
   assert.deepEqual(pinned.map(p=>[p.name,p.model]),[['deepseek','deepseek-v4-pro']]);
   clearPlannerChoice(file);
 });
+
+test('Aura preserves structured fallback on the operator model when native functions are rejected', async () => {
+  const { agentChat } = await import('../../agents/hands-off-agent.mjs');
+  const selected = { JACO_AURA_UNIFIED_RUNTIME:'1', JACO_PLANNER_CHOICE_FILE:file, OLLAMA_MODEL:'gemma3:4b', OLLAMA_BASE_URL:'http://127.0.0.1:11434' };
+  writePlannerChoice(file,{provider:'ollama',model:'gemma3:4b'},'operator');
+  let requests = 0;
+  try {
+    await assert.rejects(agentChat({ messages:[{role:'user',content:'Read a file'}], tools:[{type:'function',function:{name:'repo_read',parameters:{type:'object',properties:{}}}}] },
+      async (_url, _init) => {
+        requests++;
+        return new Response(JSON.stringify({error:{message:'native tool calling unsupported'}}),{status:400,headers:{'content-type':'application/json'}});
+      },selected),/NO_PLANNER_AVAILABLE:SELECTED_MODEL_NATIVE_TOOLS_UNSUPPORTED/);
+    assert.equal(requests,1,'only the selected provider was contacted');
+    await assert.rejects(agentChat({messages:[{role:'user',content:'Continue'}],tools:[]}, async()=>assert.fail('native unsupported model must use structured fallback'),selected),
+      /NO_PLANNER_AVAILABLE:SELECTED_MODEL_NATIVE_TOOLS_UNSUPPORTED/);
+  } finally { clearPlannerChoice(file); }
+});
