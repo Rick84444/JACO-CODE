@@ -65,7 +65,7 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   const enabledPorts = Object.entries(ports).filter(([key]) => key === 'gateway' ? gateway : ['chrome','cdp','novaBridge'].includes(key) ? cdp : true).map(([, value]) => value);
   if (new Set(enabledPorts).size !== enabledPorts.length) throw new Error('DUPLICATE_LISTENER_PORT');
   for (const [key, name] of Object.entries({runtime:'PORT',workplace:'JACO_WORKPLACE_PORT',seer:'SEER_PORT',remote:'JACO_REMOTE_BRIDGE_PORT',a2a:'JACO_A2A_PORT',novaBridge:'NOVA_BRIDGE_PORT',cdp:'JACO_CDP_BRIDGE_PORT',gateway:'JACO_GATEWAY_PORT',chrome:'CDP_PORT'})) env[name] = String(ports[key]);
-  Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_RUNTIME_DIR: runtime });
+  Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_INSTALL_ROOT: root, JACO_RUNTIME_DIR: runtime });
   // Single Aura runtime: SEER (strategy) and Nova (execution) are internal capabilities.
   // Do not spin up or pin Ollama simply because it happens to be installed.
   // An explicit JACO_AURA_UNIFIED_RUNTIME=0 retains the legacy independent-model profile.
@@ -79,7 +79,7 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   env.JACO_RELEASE_ROOT = runtime;
   // One model choice for every service. Without this each service reads the file under its own working
   // directory, and the planner can stay pinned to a model the operator replaced long ago.
-  env.JACO_PLANNER_CHOICE_FILE ||= path.join(runtime, '.jaco', 'state', 'provider-preference.json');
+  env.JACO_PLANNER_CHOICE_FILE ||= path.join(dataRoot === root ? runtime : dataRoot, '.jaco', 'state', 'provider-preference.json');
   env.JACO_WORKPLACE_URL = `http://127.0.0.1:${ports.workplace}`;
   env.SEER_URL = `http://127.0.0.1:${ports.seer}`;
   env.JACO_REMOTE_BRIDGE_URL = `http://127.0.0.1:${ports.remote}`;
@@ -107,6 +107,7 @@ export function serviceEnvironment(config, kind) {
   if (kind === 'runtime') {
     // Preserve legacy checkout behavior unless this is a packaged product with a separate writable data root.
     if (config.dataRoot === config.root) delete env.JACO_WORKSPACE_ROOT;
+    else env.JACO_WORKSPACE_ROOT = config.dataRoot;
     env.NODE_ENV = config.production ? 'production' : 'development';
     env.OLLAMA_BASE_URL = (env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/v1\/?$/, '').replace(/\/$/, '') + '/v1';
   } else env.JACO_WORKSPACE_ROOT = config.dataRoot || config.root;
