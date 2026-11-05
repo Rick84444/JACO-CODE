@@ -177,6 +177,11 @@ test('test discovery is shared, read-only instructions do not request test execu
   assert.equal(detectProjectTestCommand(dir), null, 'test failure masked by echo must not look green');
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "Starting" && node --test tests/client.test.mjs && echo "Done"' } }));
   assert.equal(detectProjectTestCommand(dir), 'npm test', 'all success paths run and pass the test');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test suite.test.mjs | cat' } }));
+  assert.equal(detectProjectTestCommand(dir), null, 'a pipeline must not hide a failed test command');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "a | b" && node --test suite.test.mjs' } }));
+  assert.equal(detectProjectTestCommand(dir), 'npm test', 'quoted pipe in a banner does not hide the runner');
+
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'npm run lint && node --test tests/client.test.mjs' } }));
   assert.equal(detectProjectTestCommand(dir), 'npm test', 'a successful prerequisite followed by tests is supported');
 
