@@ -159,6 +159,12 @@ test('test discovery is shared, read-only instructions do not request test execu
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "no test specified" && exit 1' } }));
   assert.equal(detectProjectTestCommand(dir), null, 'placeholder scripts do not count as tests');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "Running tests" && node --test' } }));
+  assert.equal(detectProjectTestCommand(dir), 'npm test', 'banner + test runner stays executable');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "Done" && exit 0' } }));
+  assert.equal(detectProjectTestCommand(dir), null, 'echo and exit without tests is not verification');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "no test specified" && exit 1' } }));
+
   fs.writeFileSync(path.join(dir, 'go.mod'), 'module example.com/test\n\ngo 1.22\n');
   assert.equal(detectProjectTestCommand(dir), 'go test ./...');
   const contract = normalizeCodingContract(projectNodeContract({ title: 'Change Go code', objective: 'Fix the bug', mainGoal: 'Go module', projectRoot: dir }));
