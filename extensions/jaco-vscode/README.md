@@ -25,6 +25,10 @@ The `/vscode-embed` exception is deliberately limited to **direct loopback GET/H
 
 The VS Code button in the JACO GUI's left rail opens `vscode://jacocode.jaco-cognitive-ide/open`, which runs **JACO: Open Full IDE** in VS Code. The browser or VS Code may ask you to confirm. The extension accepts only that fixed path and no parameters. The button is hidden for remote viewers and inside the VS Code tab itself. The extension also activates at VS Code startup so the status bar item is always available.
 
+## With JACO Lite
+
+JACO Lite turns the embed on itself (`JACO_VSCODE_EMBED=1`, limited to loopback and VS Code's own origins) and writes where it runs to `~/.jaco/lite-runtime.json`. If port 3000 was taken and Lite chose another one, the extension reads that file and connects there; `jaco.runtimeUrl` is still tried first. **JACO: Start Runtime** runs `jaco-lite` in a terminal when no JACO-CODE checkout is open.
+
 ## Extension commands
 
 - **JACO: Open Full IDE**: open the existing JACO GUI in a VS Code editor pane, preserving the original functions and layout.

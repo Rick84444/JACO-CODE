@@ -180,6 +180,23 @@ export function appendLiteLifecycle(project, event, fsImpl = fs) {
   } catch { return false; } // observability must never bring the runtime down
 }
 
+// Where this installation is running, for the VS Code extension: a free port other than 3000 is otherwise
+// invisible to it. One small file, removed when Lite stops; a stale one is recognised by its dead process id.
+export const runtimeRecordFile = (home = os.homedir()) => path.join(home, '.jaco', 'lite-runtime.json');
+export function writeRuntimeRecord({ home, url, port, project }, fsImpl = fs) {
+  try {
+    const file = runtimeRecordFile(home);
+    fsImpl.mkdirSync(path.dirname(file), { recursive: true });
+    fsImpl.writeFileSync(file, JSON.stringify({ schema: 'jaco.runtime-record/v1', product: 'JACO Autonomus IDE', url, port, project, launcherPid: process.pid, startedAt: new Date().toISOString() }, null, 2));
+  } catch { /* observability must never stop the start */ }
+}
+export function removeRuntimeRecord({ home }, fsImpl = fs) {
+  try {
+    const file = runtimeRecordFile(home);
+    if (JSON.parse(fsImpl.readFileSync(file, 'utf8')).launcherPid === process.pid) fsImpl.rmSync(file, { force: true });
+  } catch { /* already gone */ }
+}
+
 export function serverCommand(installDir, execPath = process.execPath) {
   return { cmd: execPath, args: ['--experimental-sqlite', path.join(installDir, 'dist', 'server.cjs')] };
 }
@@ -193,6 +210,9 @@ export function serverEnv({ env, installDir, project, port, token }) {
     JACO_WORKSPACE_ROOT: project,
     JACO_RELEASE_ROOT: installDir,
     JACO_LITE: '1',
+    // The VS Code extension shows this same GUI. The framing exception is limited to direct loopback requests
+    // and to VS Code's own origins (runtime/src/server/security/vscodeEmbed.mjs), so it is on by default here.
+    JACO_VSCODE_EMBED: env.JACO_VSCODE_EMBED ?? '1',
     GATEWAY_TOKEN: token,
     JACO_GATEWAY_TOKEN: token,
     // The operator's own provider keys, the operator's own money: cloud calls are allowed, inside the
@@ -430,6 +450,8 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     return 5;
   }
   lifecycle({ component: 'ide', event: 'READY', pid: child.pid ?? null, port, agentEnabled: args.agent, workplacePid: workplace.pid ?? null });
+  const home = deps.homedir ?? os.homedir();
+  writeRuntimeRecord({ home, url, port, project }, fsImpl);
   out('JACO Lite is running.');
   out(`  IDE:      ${url}`);
   out(`  Project:  ${project}`);
@@ -467,6 +489,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   out('  Anslutningar: ' + url + '/connect.html');
   if (args.open) (deps.open ?? openBrowser)(url);
   const code = await finished;
+  removeRuntimeRecord({ home }, fsImpl);
   const intentionalStop = shutdownRequested;
   shutdownRequested = true;
   try { agent?.kill(); } catch { /* already gone */ }
