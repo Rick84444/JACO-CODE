@@ -193,8 +193,10 @@ export function createCodingWorkspace({ root = process.cwd(), protectedBranches:
               : execSync(data.command, runOptions);
             if (generated) {
               const observed = [...output.matchAll(/(?:^|\n)# tests (\d+)(?:\r?\n|$)/g)];
-              if (!observed.length || Number(observed.at(-1)[1]) < 1)
-                throw new Error('CODING_GENERATED_TEST_NO_TESTS_OBSERVED');
+              const passed = [...output.matchAll(/(?:^|\n)# pass (\d+)(?:\r?\n|$)/g)];
+              if (!observed.length || Number(observed.at(-1)[1]) < 1 ||
+                  !passed.length || Number(passed.at(-1)[1]) < 1)
+                throw new Error('CODING_GENERATED_TEST_NO_PASSING_TESTS_OBSERVED');
             }
             return { ok: true, verified: true, command: data.command, kind: data.kind || 'test',
               ...(generated ? { generatedTest: generated } : {}), output: output.slice(-20_000), verificationActor: actor };
