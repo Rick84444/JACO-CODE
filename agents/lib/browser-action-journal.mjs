@@ -42,7 +42,7 @@ export function createBrowserActionJournal(directory, { syncDir = syncDirectory 
   return {
     async execute({ actionId, kind, payload, perform }) {
       if (typeof actionId !== 'string' || !ACTION_ID.test(actionId)) return blocked(actionId, 'ACTION_ID_INVALID');
-      if (!['navigate', 'click', 'type'].includes(kind) || typeof perform !== 'function') return blocked(actionId, 'ACTION_INVALID');
+      if (!['navigate', 'click', 'type', 'press', 'upload', 'tab-open', 'tab-switch', 'tab-close'].includes(kind) || typeof perform !== 'function') return blocked(actionId, 'ACTION_INVALID');
       const fingerprint = hash({ kind, payload });
       const file = join(directory, hash(actionId) + '.json');
       try { ensureDurableDirectory(directory, syncDir); }
