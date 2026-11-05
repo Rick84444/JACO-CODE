@@ -10,6 +10,7 @@
 // with a receipt. A step the runtime refuses is reported to the model and costs the mission nothing;
 // a step that runs and fails counts against the mission's failure budget as before.
 import { BATCHABLE, checkedReceipt } from './mission-client.mjs';
+import { searchDeferredTools } from './native-tools.mjs';
 import { redactDeep } from './secret-capture.mjs';
 import { StuckDetector } from './stuck-detector.mjs';
 import { condenseMessages } from './condenser.mjs';
@@ -25,11 +26,21 @@ const clip = (text, max = RESULT_CHARS) => {
 const errorText = error => String(error?.message || error || 'error').split('\n')[0].slice(0, 400);
 
 // What the model sees of a receipt: whether it worked, why not, and the readable part of the result.
+// What a result means for the next step, in words. A bare error code or an unchanged file looked like
+// "try again" to the model; it is "this is already done".
+export function hintFor(receipt) {
+  if (/CODING_GIT_NOTHING_IN_SCOPE/.test(String(receipt?.error || ''))) return 'Nothing to commit: your changes are already committed, or the files did not change. The work is saved. Go to the next step or call complete.';
+  const r = receipt?.result;
+  if (receipt?.ok && r && typeof r === 'object' && r.beforeSha256 && r.beforeSha256 === r.afterSha256) return 'The file already had exactly this content. Nothing changed. Do not repeat this step.';
+  return null;
+}
+
 export function receiptForModel(n, receipt) {
   const result = receipt?.result && typeof receipt.result === 'object' ? { ...receipt.result } : receipt?.result;
   if (result && typeof result === 'object') { delete result.receipt; delete result.evidenceRefs; }
   // Whatever a tool printed (a shell, a file, a page) may hold a key; the model sees a handle, not the value.
-  return clip(redactDeep({ step: n, ok: receipt.ok, verified: receipt.verified, ...(receipt.error ? { error: receipt.error } : {}), result }));
+  const hint = hintFor(receipt);
+  return clip(redactDeep({ step: n, ok: receipt.ok, verified: receipt.verified, ...(receipt.error ? { error: receipt.error } : {}), ...(hint ? { hint } : {}), result }));
 }
 
 export function introMessage(mission, extra = {}) {
@@ -87,7 +98,8 @@ export async function runAgentMission({
   let mission = current;
   // Discover/start capabilities only AFTER the contract preflight succeeds.
   // A blocked coding mission must not launch even an MCP server during catalog discovery.
-  let tools = [], resolve = () => null;
+  let tools = [], resolve = () => null, deferred = [];
+  const activated = new Set();
   const messages = [];
   const receipts = [];
   let steps = 0, modelErrors = 0, idle = 0, turns = 0;
@@ -157,9 +169,18 @@ export async function runAgentMission({
         return { executed: false, deferred: true, reason: `PREFLIGHT_FAILED:${errorText(error)}` };
       }
     }
-    ({ tools, resolve } = await toolsFor(mission));
+    // What earlier runs of this mission already did counts for stuck detection, so a circle that spans runs is caught.
+    const history = (Array.isArray(mission.receipts) ? mission.receipts : []).slice(-24);
+    for (const r of history) stuck.record({ name: r.type, args: r.inputHash || r.input, ok: r.ok, result: r.ok ? 'ok' : undefined, error: r.error });
+    const inheritedCircle = history.length ? stuck.check() : { stuck: false };
+    ({ tools, resolve, deferred = [] } = await toolsFor(mission));
     messages.push({ role: 'system', content: typeof system === 'function' ? system(mission) : system },
       { role: 'user', content: await intro(mission) });
+    if (inheritedCircle.stuck) {
+      stuck.nudge();
+      log('warn', `earlier runs went in circles (${inheritedCircle.kind})`);
+      messages.push({ role: 'user', content: `STUCK: ${inheritedCircle.hint} This mission has already repeated itself across earlier runs. If the goal is met, call complete now; if you cannot tell, call blocked with one question for the operator.` });
+    }
     // Steps bound the work; turns bound the conversation (refusals and retries do not count as steps).
     let costCondensed = false;
     while (steps < maxSteps && turns++ < maxSteps * 2) {
@@ -257,6 +278,15 @@ export async function runAgentMission({
           // Answer every remaining call so the transcript stays valid, then finish.
           for (const rest of calls.slice(i + 1)) messages.push({ role: 'tool', tool_call_id: rest.id, content: 'SKIPPED: mission completed' });
           return { executed: receipts.length > 0, receipts, steps, completed: true, answer };
+        }
+        // Connector tools that are not listed (cost): the model asks for them by words and they join its list.
+        if (target.kind === 'search') {
+          const found = searchDeferredTools(deferred, args.query, activated);
+          for (const d of found) { tools.push(d.def); activated.add(d.name); }
+          reply_(found.length
+            ? `Now callable: ${found.map(d => `${d.name} (${d.description.slice(0, 80)})`).join('; ')}. Call them directly.`
+            : `No unlisted tool matches "${String(args.query || '').slice(0, 60)}". Try other words, or use the listed tools.`);
+          continue;
         }
         if (target.kind === 'blocked' || target.kind === 'replan') {
           const reason = String(args.reason || 'no allowed tool can make progress').slice(0, 500);

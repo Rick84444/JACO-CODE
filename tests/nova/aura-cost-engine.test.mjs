@@ -1,4 +1,7 @@
 import test from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import {
   auraCostQuote, auraCostSettlement, modelPrice, novaProviderCostUsd,
@@ -107,4 +110,24 @@ test('manual Aura chat leaves unknown usage unverified, rather than inventing a 
   const result = await manualAuraProviderCompletion({ providerId: 'example', model: 'm', system: 'system', user: 'user' }, { env: {}, economic, providers });
   assert.equal(result.costStatus, 'OUTCOME_UNKNOWN');
   assert.deepEqual(records, ['unknown']);
+});
+
+test('an operator price file gives a model its real rate; env wins over the file; a broken file stops spending', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-prices-'));
+  try {
+    const file = path.join(dir, 'provider-prices.json');
+    const env = { JACO_PROVIDER_PRICES_FILE: file };
+    const quote = e => auraCostQuote({ providerId: 'gemini', model: 'models/gemini-2.5-flash', promptBytes: 60000, maxTokens: 8192, env: e });
+    assert.equal(quote(env).priceSource, 'reference', 'no file: the expensive reference rate');
+    fs.writeFileSync(file, JSON.stringify({ 'gemini/models/gemini-2.5-flash': { input: 0.3, output: 2.5 } }));
+    const real = quote(env);
+    assert.equal(real.priceSource, 'configured');
+    assert.ok(real.estimatedUsd < quote({ JACO_PROVIDER_PRICES_FILE: path.join(dir, 'none.json') }).estimatedUsd / 5, 'about a tenth of the reference estimate');
+    const overridden = quote({ ...env, JACO_AURA_PROVIDER_PRICES_JSON: JSON.stringify({ 'gemini/models/gemini-2.5-flash': { input: 1, output: 1 } }) });
+    assert.equal(overridden.inputUsdPerMillion, 1);
+    fs.writeFileSync(file, '{ not json');
+    assert.throws(() => quote(env), /AURA_PROVIDER_PRICES_INVALID/);
+    fs.writeFileSync(file, JSON.stringify({ 'gemini/models/gemini-2.5-flash': { input: 0, output: 1 } }));
+    assert.throws(() => quote(env), /AURA_PROVIDER_PRICE_INVALID/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

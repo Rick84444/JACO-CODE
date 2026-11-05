@@ -77,5 +77,36 @@ test('extension entry exposes a real activity bar command and uses VS Code forwa
   assert.match(ext, /makeWebviewHtml/);
   assert.match(ext, /JACO_VSCODE_EMBED: '1'/);
   assert.match(ext, /vscode\.workspace\.isTrusted/);
+  assert.ok(pkg.activationEvents.includes('onUri'));
+  assert.ok(pkg.activationEvents.includes('onStartupFinished'));
+  assert.ok(ext.includes("uri.path === '/open'"));
+  assert.ok(!/uri\.(query|fragment)/.test(ext), 'a link cannot pass parameters');
   assert.doesNotMatch(ext, /https?:\/\/jacocode\.com\/api\/aura/);
+});
+
+
+test('discovery falls back to the running Lite record only when the configured address is unreachable', async () => {
+  const { probeWithDiscovery, readRuntimeRecord } = require('../lib/bridge.cjs');
+  const calls = [];
+  const fetchImpl = async url => {
+    calls.push(url);
+    if (url.startsWith('http://127.0.0.1:3000')) throw new Error('fetch failed');
+    if (url.endsWith('/api/runtime/identity')) return { ok: true, json: async () => ({ success: true, product: 'JACO Autonomus IDE', version: '0.22.0' }) };
+    return { ok: true, headers: { get: h => (h === 'x-jaco-embed' ? 'vscode-v1' : 'text/html') }, body: null };
+  };
+  const found = await probeWithDiscovery('http://127.0.0.1:3000', { fetchImpl, record: () => 'http://127.0.0.1:3001' });
+  assert.equal(found.base, 'http://127.0.0.1:3001');
+  assert.ok(calls.some(url => url.startsWith('http://127.0.0.1:3001')));
+  await assert.rejects(probeWithDiscovery('http://127.0.0.1:3000', { fetchImpl, record: () => null }), /fetch failed/);
+  // A wrong product at the configured address is an error, never a reason to look elsewhere.
+  const wrong = async url => ({ ok: true, json: async () => ({ success: true, product: 'Something else' }), headers: { get: () => null } });
+  await assert.rejects(probeWithDiscovery('http://127.0.0.1:3000', { fetchImpl: wrong, record: () => 'http://127.0.0.1:3001' }), /IDENTITY_MISMATCH/);
+
+  const fsStub = body => ({ readFileSync: () => body });
+  const osStub = { homedir: () => '/home/u' };
+  const rec = { product: 'JACO Autonomus IDE', url: 'http://127.0.0.1:3001', launcherPid: 4242 };
+  assert.equal(readRuntimeRecord({ fs: fsStub(JSON.stringify(rec)), os: osStub, alive: () => true }), 'http://127.0.0.1:3001');
+  assert.equal(readRuntimeRecord({ fs: fsStub(JSON.stringify(rec)), os: osStub, alive: () => false }), null, 'a dead process id is a stale record');
+  assert.equal(readRuntimeRecord({ fs: fsStub(JSON.stringify({ ...rec, url: 'https://evil.example' })), os: osStub, alive: () => true }), null, 'only local addresses');
+  assert.equal(readRuntimeRecord({ fs: fsStub('not json'), os: osStub, alive: () => true }), null);
 });

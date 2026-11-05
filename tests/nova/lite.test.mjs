@@ -9,7 +9,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createZip, readZip, crc32 } from '../../tools/lib/zip.mjs';
 import { buildLite, liteDependencies, secretValues, findSecrets, collectFiles, LITE_DEPENDENCIES } from '../../tools/build-lite.mjs';
-import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, agentEnv, agentCommand, openBrowser, liteExitCode, appendLiteLifecycle, HELP } from '../../lite/start.mjs';
+import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, writeRuntimeRecord, removeRuntimeRecord, runtimeRecordFile, agentEnv, agentCommand, openBrowser, liteExitCode, appendLiteLifecycle, HELP } from '../../lite/start.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-lite-test-'));
 
@@ -303,4 +303,23 @@ test('start.mjs runs when started through a symlink, as the installer\'s "curren
   assert.equal(isEntryPoint('/somewhere/else.mjs', startUrl), false, 'imported by another script it does not start');
   assert.equal(isEntryPoint(null, startUrl), false);
   assert.equal(isEntryPoint(link, startUrl), true, 'through a symlink it does');
+});
+
+
+test('Lite turns the VS Code embed on and leaves a runtime record that is removed on stop', () => {
+  const env = serverEnv({ env: {}, installDir: '/i', project: '/p', port: 3001, token: 't' });
+  assert.equal(env.JACO_VSCODE_EMBED, '1');
+  assert.equal(serverEnv({ env: { JACO_VSCODE_EMBED: '0' }, installDir: '/i', project: '/p', port: 3001, token: 't' }).JACO_VSCODE_EMBED, '0', 'the operator can switch it off');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'lite-record-'));
+  try {
+    writeRuntimeRecord({ home, url: 'http://127.0.0.1:3001', port: 3001, project: '/p' });
+    const record = JSON.parse(fs.readFileSync(runtimeRecordFile(home), 'utf8'));
+    assert.deepEqual([record.product, record.url, record.launcherPid], ['JACO Autonomus IDE', 'http://127.0.0.1:3001', process.pid]);
+    removeRuntimeRecord({ home });
+    assert.equal(fs.existsSync(runtimeRecordFile(home)), false);
+    fs.mkdirSync(path.dirname(runtimeRecordFile(home)), { recursive: true });
+    fs.writeFileSync(runtimeRecordFile(home), JSON.stringify({ launcherPid: process.pid + 1 }));
+    removeRuntimeRecord({ home });
+    assert.equal(fs.existsSync(runtimeRecordFile(home)), true, 'another installation\'s record is left alone');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });

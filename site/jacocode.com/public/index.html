@@ -224,7 +224,7 @@
       </article>
       <article class="card">
         <h3>Framing stays locked down</h3>
-        <p>JACO refuses to be framed by default. The extension does not strip that; you opt in once for loopback requests, and it checks the runtime&rsquo;s identity before it draws anything.</p>
+        <p>JACO refuses to be framed by default. The extension does not strip that. JACO Lite turns on one narrow exception, for requests from your own computer and from VS Code&rsquo;s own windows only, and the extension checks the runtime&rsquo;s identity before it draws anything. From a Git checkout you switch it on with <code>JACO_VSCODE_EMBED=1</code>.</p>
       </article>
       <article class="card">
         <h3>Four commands</h3>
@@ -233,7 +233,7 @@
     </div>
     <div class="dl">
       <p class="cta"><a class="btn" href="https://marketplace.visualstudio.com/items?itemName=jacocode.jaco-cognitive-ide" rel="noopener">Get it on the VS Code Marketplace</a> <a class="ghost" href="https://github.com/Rick84444/JACO-CODE/tree/main/extensions/jaco-vscode" rel="noopener">Read the extension source</a></p>
-      <p class="dl-note">Or search <code>JACO Cognitive IDE</code> in the Extensions view. VS Code 1.96 or newer, desktop, with JACO Lite or a JACO checkout running locally. The extension itself needs no npm packages.</p>
+      <p class="dl-note">Or search <code>JACO Cognitive IDE</code> in the Extensions view. VS Code 1.96 or newer, desktop, with JACO Lite or a JACO checkout running locally. If JACO Lite had to pick another port than 3000, the extension finds it by itself; <b>Start Runtime</b> starts <code>jaco-lite</code> when no checkout is open. The extension itself needs no npm packages.</p>
       <p class="status">Scope of this first release: desktop VS Code with a local Core. VS Code Remote, SSH, Codespaces, browser-based VS Code and remote JACO hosts are not claimed to work.</p>
     </div>
   </section>
