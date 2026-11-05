@@ -572,7 +572,7 @@ export class NovaMissionControl {
       this.db.prepare('DELETE FROM nova_spend_approvals WHERE mission_id=?').run(id);
       this.bus.event('NOVA_SPEND_APPROVED_ACTION', { missionId: id, payload: { reason: spend.reason, note: approval.note } });
     }
-    const harmful = operatorApprovalCheck(checked);
+    const harmful = operatorApprovalCheck(checked, { sandbox: Boolean(mission.contract) });
     if (harmful) {
       const taskHash = `${checked.type}:${hashTaskInput(checked.data)}`;
       const gate = this.db.prepare('SELECT * FROM nova_action_gate WHERE mission_id=?').get(id);

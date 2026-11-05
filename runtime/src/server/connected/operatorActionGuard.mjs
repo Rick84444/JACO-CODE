@@ -43,12 +43,25 @@ const TYPE_TASKS = new Set(['browser-type', 'type-text']);
 // so creating a draft or updating a record stays autonomous.
 const MCP_WRITE = /(?:^|[_.-])(send|publish|post|reply|forward|delete|remove|trash|merge|deploy|share|invite|transfer)(?:[_.-]|$)/i;
 
-function recursiveDelete(command) {
+// A path that stays inside the working directory: relative, no parent segments, and neither the
+// directory itself nor its git metadata. Inside a contract the working directory is the mission's
+// own git worktree, so deleting there is part of the work, not a decision for the operator.
+function insideWorkingDirectory(target) {
+  const t = target.replace(/^['"]|['"]$/g, '').replace(/\\/g, '/');
+  if (!t || /^(?:[A-Za-z]:|\/|~|\$|%)/.test(t)) return false;
+  if (t.split('/').includes('..')) return false;
+  if (/^(?:\.\/?|\*|\.\/\*)$/.test(t)) return false;
+  if (/(?:^|\/)\.git(?:\/|$)/.test(t)) return false;
+  return true;
+}
+
+function recursiveDelete(command, sandbox) {
   for (const pattern of RECURSIVE_DELETE) {
     const match = command.match(pattern);
     if (!match) continue;
-    const targets = String(match[1]).trim().split(/\s+/).filter(t => t && !t.startsWith('-'));
-    const safe = targets.length && targets.every(t => REBUILDABLE.test(t.replace(/^['"]|['"]$/g, '').replace(/\\/g, '/')));
+    const targets = String(match[1]).trim().split(/\s+/).filter(t => t && !t.startsWith('-') && !/^\/[a-z]$/i.test(t));
+    const clean = t => t.replace(/^['"]|['"]$/g, '').replace(/\\/g, '/');
+    const safe = targets.length && targets.every(t => REBUILDABLE.test(clean(t)) || (sandbox && insideWorkingDirectory(t)));
     if (!safe) return true;
   }
   return false;
@@ -59,13 +72,20 @@ function clickLabel(data = {}) {
     .filter(Boolean).map(String).join(' ');
 }
 
+// What a contract's own worktree makes safe: it is a throwaway checkout on the mission's own branch,
+// so discarding or deleting there loses nothing that git does not still hold.
+const SANDBOX_LOCAL = new Set(['git reset --hard discards local work', 'git clean deletes untracked files']);
+
 // Returns null when the action is autonomous, or { reason } when it needs the operator.
-export function operatorApprovalCheck(task) {
+// sandbox: the mission runs under a contract in its own worktree. The contract is the standing
+// permission for everything inside it; only what leaves it (push to a shared branch, publish,
+// deploy, send, sign in, delete outside the worktree) still asks.
+export function operatorApprovalCheck(task, { sandbox = false } = {}) {
   const data = task?.data || {};
   if (task?.type === 'shell') {
     const command = [data.command, ...(Array.isArray(data.args) ? data.args : [])].filter(Boolean).join(' ');
-    if (recursiveDelete(command)) return { reason: 'recursive delete' };
-    const rule = SHELL_RULES.find(([pattern]) => pattern.test(command));
+    if (recursiveDelete(command, sandbox)) return { reason: 'recursive delete' };
+    const rule = SHELL_RULES.find(([pattern, reason]) => pattern.test(command) && !(sandbox && SANDBOX_LOCAL.has(reason)));
     return rule ? { reason: rule[1] } : null;
   }
   if (task?.type === 'mcp-write') {

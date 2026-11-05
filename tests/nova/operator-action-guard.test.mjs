@@ -86,3 +86,18 @@ test('ordinary shell work runs without asking', t => {
   const { id } = control.create({ goal: 'run tests', idempotencyKey: 'gate-2', allowedTasks: ['shell'] });
   assert.equal(control.begin(id, { ...leased(control, id), task: shell('npm test') }).type, 'shell');
 });
+
+test('inside a contract the worktree is the sandbox: local clean-up is free, leaving it still asks', () => {
+  const sandbox = { sandbox: true };
+  for (const command of ['rm -rf src', 'rm -rf tooltest', 'rm -rf build/out', 'git reset --hard', 'git clean -fd', 'Remove-Item tmpdir -Recurse -Force'])
+    assert.equal(operatorApprovalCheck(shell(command), sandbox), null, command);
+  for (const command of [
+    'rm -rf ..', 'rm -rf ../other', 'rm -rf /', 'rm -rf C:/Users', 'rm -rf ~', 'rm -rf *', 'rm -rf .', 'rm -rf .git', 'rmdir /s /q ../x',
+    'git push --force origin x', 'git push origin main', 'git branch -D other', 'gh pr merge 1', 'npm publish', 'npx wrangler deploy',
+  ]) assert.ok(operatorApprovalCheck(shell(command), sandbox), command);
+  // Outward actions are never part of a sandbox.
+  assert.ok(operatorApprovalCheck({ type: 'browser-click', data: { text: 'Publish' } }, sandbox));
+  assert.ok(operatorApprovalCheck({ type: 'mcp-write', data: { server: 'gmail', tool: 'send_message' } }, sandbox));
+  // Outside a contract the same local delete still asks.
+  assert.ok(operatorApprovalCheck(shell('rm -rf src')));
+});
