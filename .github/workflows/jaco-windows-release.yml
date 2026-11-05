@@ -94,7 +94,7 @@ jobs:
           if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'PREPARE_RELEASE_FAILED' }
           & windows/product/Generate-JacoIcon.ps1
           $payload = 'build/windows/payload'
-          foreach ($file in @('JACO.ico','tools/node/node.exe','runtime/dist/index.html','runtime/dist/server.cjs','agents/lib/local-stack.mjs','gateway/src/workplace/workplace-server.mjs','runtime/node_modules/express/package.json')) {
+          foreach ($file in @('JACO.ico','tools/node/node.exe','tools/node/npm.cmd','tools/node/node_modules/npm/package.json','runtime/dist/index.html','runtime/dist/server.cjs','agents/lib/local-stack.mjs','gateway/src/workplace/workplace-server.mjs','runtime/node_modules/express/package.json')) {
             if (-not (Test-Path (Join-Path $payload $file))) { throw "PAYLOAD_MISSING:$file" }
           }
           if (Test-Path "$payload/.env") { throw 'PAYLOAD_CONTAINS_PRIVATE_ENV' }
