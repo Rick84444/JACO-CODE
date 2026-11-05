@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { actSession, axSession } from '../../agents/nova-bridge.mjs';
 import { createInputActions, deepResolver, checkUploadFiles, listDownloadFiles } from '../../agents/lib/browser-input.mjs';
+import { createBrowserActionJournal } from '../../agents/lib/browser-action-journal.mjs';
 import { inputAllowed, browserScope, mutationsEnabled, hardDenied, isPrivateHost } from '../../agents/lib/browser-scope.mjs';
 
 const OBSERVATION = { url: 'https://example.test/', title: 't', text: '', targets: [] };
@@ -258,4 +259,49 @@ test('a click that opens a new tab reports it and adopts it; new downloads are r
     assert.deepEqual(listDownloadFiles(dir).map(f => f.name), ['invoice.pdf']);
     assert.equal(listDownloadFiles(path.join(dir, 'nope')).length, 0);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+
+test('an uncertain mouse-release response never triggers a synthetic duplicate click', async () => {
+  const session = page();
+  const send = session.send.bind(session);
+  session.send = async (method, params = {}) => {
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased') {
+      throw new Error('CDP_REQUEST_TIMEOUT: acknowledgement missing');
+    }
+    return send(method, params);
+  };
+  const result = await actSession(session, { selector: 'button.save' }, 'click');
+  assert.equal(result.ok, false);
+  assert.equal(result.outcomeUnknown, true);
+  assert.equal(session.calls.filter(c => c.method === 'Input.dispatchMouseEvent' && c.params.type === 'mousePressed').length, 1);
+  assert.ok(!session.calls.some(c => c.method === 'Runtime.evaluate' && /e\.click\(\)/.test(c.params.expression || '')));
+});
+
+test('a lost insertion acknowledgement cannot execute the synthetic typing fallback', async () => {
+  const session = page();
+  const send = session.send.bind(session);
+  session.send = async (method, params = {}) => {
+    if (method === 'Input.insertText') throw new Error('socket timeout after dispatch');
+    return send(method, params);
+  };
+  const result = await actSession(session, { selector: 'input[name=q]', text: 'write once' }, 'type');
+  assert.equal(result.ok, false);
+  assert.equal(result.outcomeUnknown, true);
+  assert.ok(!session.calls.some(c => c.method === 'Runtime.evaluate' && /dispatchEvent\(new Event/.test(c.params.expression || '')));
+});
+
+test('every new browser mutation kind has a durable journal identity and cannot run twice', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'aura-cdp-journal-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const journal = createBrowserActionJournal(directory);
+  for (const kind of ['press', 'upload', 'tab-open', 'tab-switch', 'tab-close']) {
+    let writes = 0;
+    const args = { actionId: 'browser_' + kind.replace(/-/g, '_') + '_01', kind, payload: { kind } };
+    const first = await journal.execute({ ...args, perform: async () => { writes++; return { ok: true, verified: true }; } });
+    assert.equal(first.ok, true, kind);
+    const replay = await journal.execute({ ...args, perform: async () => { writes++; return { ok: true, verified: true }; } });
+    assert.equal(replay.replayed, true, kind);
+    assert.equal(writes, 1, kind + ' executed more than once');
+  }
 });
