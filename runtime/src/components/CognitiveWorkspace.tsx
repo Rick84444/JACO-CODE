@@ -71,7 +71,7 @@ export function CognitiveWorkspace(props:Props) {
   const { language, setLanguage, tr } = useUiLanguage();
   const L = (text: string) => tr(text, EN_LABELS[text] || text);
   // Local browser only: a remote viewer's VS Code cannot reach this runtime, and the VS Code tab is already open.
-  const canOpenInVsCode = ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname) && window.self === window.top;
+  const canOpenInVsCode = typeof window !== 'undefined' && ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname) && window.self === window.top;
   const menu = useRef<HTMLDialogElement>(null);
   // Desktop shortcuts are intentionally inactive while composing chat, editing
   // code or using another control. No agent authority is changed by navigation.

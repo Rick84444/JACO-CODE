@@ -110,6 +110,37 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
   return { tools, deferred, resolve: name => targets.get(name) || null };
 }
 
+// The structured fallback planner is single-turn: it cannot execute tool_search and
+// activate deferred schemas. When a catalog is large, use the *existing* generic
+// MCP task instead of sending every schema (or advertising an unusable search).
+// The mission's allowed tasks and the runtime's MCP access checks remain authoritative.
+export function structuredPlannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, allowReplan = true) {
+  const catalog = plannerTools(allowedTasks, mcpTools, taskNotes, allowReplan);
+  if (!catalog.deferred.length) return catalog;
+
+  // Bounded, data-only identifiers; descriptions from an MCP server are not instructions.
+  const notes = { ...taskNotes };
+  for (const [type, write] of [['mcp-call', false], ['mcp-write', true]]) {
+    if (!allowedTasks.includes(type)) continue;
+    const items = catalog.deferred.filter(d => Boolean(catalog.resolve(d.name)?.write) === write);
+    let names = '';
+    let shown = 0;
+    for (const d of items) {
+      const safe = [d.server, d.tool].map(s => String(s || '').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 64)).join('.');
+      const next = (names ? ', ' : '') + safe;
+      if (names.length + next.length > 900) break;
+      names += next;
+      shown++;
+    }
+    const kind = write ? 'write' : 'read';
+    const summary = `Authorized connected MCP ${kind} tools (server.tool, names only): ${names || '(none)'}${items.length > shown ? ` (+${items.length - shown} more; tools are checked at runtime)` : ''}. Call using server, tool, arguments.`;
+    notes[type] = [String(taskNotes[type] || '').slice(0, 300), summary].filter(Boolean).join(' ').slice(0, 1450);
+  }
+  // Empty catalog yields native generic mcp-call/mcp-write schemas with mandatory
+  // server+tool and no tool_search. Does not grant access to any additional tool.
+  return plannerTools(allowedTasks, [], notes, allowReplan);
+}
+
 // The plan expressed by an answer's tool calls, or null when it made none. A call to an unknown
 // function or with unparsable arguments is a bad plan from this model (PLAN_ prefix: the next provider
 // is told why).

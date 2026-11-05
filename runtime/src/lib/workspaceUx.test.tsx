@@ -32,6 +32,7 @@ test('decisions are outside the canvas so switching to code does not hide them',
   assert.ok(html.indexOf('Operator decision') < html.indexOf('<main'));
   assert.match(html,/1 beslut behöver dig/);
   assert.match(html,/aria-label="Aura Live Workspace"/);
+  assert.doesNotMatch(html,/Öppna JACO i VS Code|Open JACO in VS Code/, 'server-rendered UI has no local browser navigation action');
   assert.match(html,/Visa senaste arbetet/);
   assert.doesNotMatch(html,/Fler arbetsvyer/);
 });
