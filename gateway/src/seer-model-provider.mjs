@@ -204,7 +204,7 @@ export async function callSeerGovernorProvider(args, {
   // finish_reason=length, and every governor turn failed as GOVERNOR_OUTPUT_TRUNCATED).
   const cap = Math.max(1024, Number(env.SEER_GOVERNOR_MAX_TOKENS) || 8192);
   const normalized = { ...args, max_tokens: Math.min(cap, Math.max(1, Number(args.max_tokens) || cap)), temperature: args.temperature ?? 0.2 };
-  if (env.JACO_CLOUD_PLANNER === '1' && env.JACO_ALLOW_PAID_MODELS === '1') {
+  if (env.JACO_CLOUD_PLANNER === '1' && env.JACO_ALLOW_PAID_MODELS === '1' && !(env.JACO_AURA_UNIFIED_RUNTIME === '1' && readPlannerChoice(plannerChoiceFile(env))?.by === 'operator')) {
     const provider = providers.find(p => p.name === env.JACO_PRIMARY_PROVIDER);
     if (provider && (!provider.envKey || env[provider.envKey])) {
       const result = await invokeAuraPlanner(provider, normalized, {
@@ -243,7 +243,7 @@ export async function resolveAuraPlanner({
   readChoice = () => readPlannerChoice(plannerChoiceFile(env)),
 } = {}) {
   const saved = readChoice();
-  if (!saved || saved.by !== 'operator' || env.JACO_PRIMARY_PROVIDER) return null;
+  if (!saved || saved.by !== 'operator' || (env.JACO_PRIMARY_PROVIDER && env.JACO_AURA_UNIFIED_RUNTIME !== '1')) return null;
   // The providers connected in Aura, with their real URLs (the same list Nova plans from), read at most once a minute.
   if (now() - connectedCache.at >= cacheMs || connectedCache.runtimeUrl !== runtimeUrl) {
     try {
