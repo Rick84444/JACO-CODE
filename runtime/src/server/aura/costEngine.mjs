@@ -2,6 +2,20 @@
 // Prices are USD per million tokens. Reference rates are estimates,
 // NOT guaranteed upper bounds or externally verified provider invoices.
 
+import fs from 'node:fs';
+import path from 'node:path';
+
+// Where the operator keeps real prices for the models they use: a plain file next to the other Aura state, so
+// the price table is data that survives updates and needs no environment variable. Entries are
+// { "<provider>/<model>": { "input": USD per million tokens, "output": USD per million tokens } }.
+export function providerPricesFile(env = process.env) {
+  if (env.JACO_PROVIDER_PRICES_FILE) return env.JACO_PROVIDER_PRICES_FILE;
+  const state = env.JACO_PLANNER_CHOICE_FILE
+    ? path.dirname(env.JACO_PLANNER_CHOICE_FILE)
+    : path.join(env.JACO_WORKSPACE_ROOT || env.JACO_RUNTIME_DIR || process.cwd(), '.jaco', 'state');
+  return path.join(state, 'provider-prices.json');
+}
+
 export function ollamaCloudPrices(env = process.env) {
   let configured = {};
   if (env.JACO_OLLAMA_CLOUD_PRICES_JSON) {
@@ -30,8 +44,13 @@ export function ollamaCloudCostUsd(model, inputTokens, outputTokens, env = proce
 }
 
 export function auraProviderPrices(env = process.env) {
-  const configured = JSON.parse(env.JACO_AURA_PROVIDER_PRICES_JSON || '{}');
-  if (!configured || typeof configured !== 'object' || Array.isArray(configured)) throw new Error('AURA_PROVIDER_PRICES_INVALID');
+  let fromFile = {};
+  try { fromFile = JSON.parse(fs.readFileSync(providerPricesFile(env), 'utf8')); }
+  catch (error) { if (error?.code !== 'ENOENT') throw new Error('AURA_PROVIDER_PRICES_INVALID'); }
+  // A broken file stops spending (fail closed) instead of silently falling back to the expensive reference rate.
+  const fromEnv = JSON.parse(env.JACO_AURA_PROVIDER_PRICES_JSON || '{}');
+  for (const table of [fromFile, fromEnv]) if (!table || typeof table !== 'object' || Array.isArray(table)) throw new Error('AURA_PROVIDER_PRICES_INVALID');
+  const configured = { ...fromFile, ...fromEnv };
   for (const [key, price] of Object.entries(configured)) {
     if (!key.includes('/') || !Number.isFinite(price?.input) || !Number.isFinite(price?.output) || price.input <= 0 || price.output <= 0) throw new Error('AURA_PROVIDER_PRICE_INVALID');
   }

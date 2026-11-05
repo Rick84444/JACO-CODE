@@ -237,7 +237,8 @@ test('interpreters are an Aura-product capability: off by default, on in the Aur
   // Cleaning inside the worktree and ordinary work stay free; a script file must be inside the workspace.
   assert.equal(on('bash', ['-c', 'rm -rf build && npm test']).ok, true);
   assert.match(on('bash', ['../outside.sh']).reason, /OUTSIDE/);
-  assert.match(on('powershell', ['-File', 'C:/Windows/evil.ps1']).reason, /OUTSIDE/);
+  // An absolute path outside the workspace on whichever platform runs the test (C:/ is a relative name on Linux).
+  assert.match(on('powershell', ['-File', path.join(path.parse(ws).root, 'outside', 'evil.ps1')]).reason, /OUTSIDE/);
   // Interpreters are write-mode: shell_read never reaches them.
   assert.equal(classify('bash', ['-c', 'ls'], { workspace: ws, env: aura, mode: 'read' }).reason, 'WRITE_COMMAND_IN_READ_MODE');
 });

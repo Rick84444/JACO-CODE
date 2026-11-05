@@ -8,7 +8,7 @@ import path from 'node:path';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl, mountNovaMissionRoutes } from '../../runtime/src/server/connected/novaMissionControl.mjs';
 import { MissionClient } from '../../agents/lib/mission-client.mjs';
-import { plannerTools } from '../../agents/lib/native-tools.mjs';
+import { plannerTools, searchDeferredTools } from '../../agents/lib/native-tools.mjs';
 import { runAgentMission, receiptForModel, contextPacketIntro } from '../../agents/lib/agent-loop.mjs';
 import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
 
@@ -587,4 +587,73 @@ test('a plain-text "I am blocked" stops for the operator and is never proposed a
   assert.equal(result.blocked, true);
   assert.equal(result.completed, undefined);
   assert.equal(s.control.get(m.id).status, 'BLOCKED');
+});
+
+test('a circle that spans several runs is caught from the mission history, not only inside one run', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Läs sidor', idempotencyKey: 'circle-1', allowedTasks: ['web-fetch'] });
+  // Earlier runs: the same two fetches, over and over (each run was cut short by a rate window).
+  for (let round = 0; round < 3; round++) {
+    for (const url of ['https://a.test', 'https://b.test']) {
+      const claimed = await s.client.claim(m.id, 'nova');
+      const lease = { owner: 'nova', token: claimed.token };
+      const action = await s.client.begin(m.id, { ...lease, task: { type: 'web-fetch', data: { url } } });
+      await s.client.finish(m.id, { ...lease, actionId: action.id, receipt: { ok: true, verified: true, result: { ok: true } } });
+    }
+  }
+  const model = scripted([{ tool_calls: [call('blocked', { reason: 'Which page should I stop at?' })] }]);
+  const result = await run(s, model, async () => ({ ok: true, verified: true }));
+  assert.equal(result.blocked, true);
+  assert.match(JSON.stringify(model.seen[0]), /STUCK: .*already repeated itself across earlier runs/s);
+});
+
+test('a result that means "already done" says so to the model', () => {
+  const commit = receiptForModel(3, { ok: false, verified: false, error: 'CODING_GIT_NOTHING_IN_SCOPE' });
+  assert.match(commit, /Nothing to commit: your changes are already committed/);
+  const same = receiptForModel(4, { ok: true, verified: true, result: { ok: true, beforeSha256: 'aa', afterSha256: 'aa' } });
+  assert.match(same, /already had exactly this content/);
+  const changed = receiptForModel(5, { ok: true, verified: true, result: { ok: true, beforeSha256: 'aa', afterSha256: 'bb' } });
+  assert.doesNotMatch(changed, /hint/);
+});
+
+test('connector tools past the size limit are searched for, then callable for the rest of the run', async t => {
+  const s = setup(t, ['mcp-call', 'web-fetch']);
+  const m = s.control.create({ goal: 'Visa git-loggen', idempotencyKey: 'defer-1', allowedTasks: ['mcp-call', 'web-fetch'] });
+  const big = { type: 'object', properties: Object.fromEntries(Array.from({ length: 20 }, (_, i) => ['field' + i, { type: 'string', enum: Array.from({ length: 6 }, (_, j) => 'value-number-' + j) }])) };
+  const catalog = [
+    { server: 'git', name: 'git_log', description: 'Show the commit log', inputSchema: big, readOnly: true },
+    ...Array.from({ length: 40 }, (_, i) => ({ server: 'filler', name: 'filler_tool_' + i, description: 'Unrelated filler ' + i, inputSchema: big, readOnly: true })),
+  ];
+  const seen = [];
+  let turn = 0;
+  const result = await runAgentMission({
+    client: s.client, owner: 'nova', system: 'test',
+    toolsFor: x => plannerTools(x.allowedTasks, catalog, {}, false),
+    chat: async ({ tools }) => {
+      seen.push(tools.map(tool => tool.function.name));
+      turn++;
+      if (turn === 1) return { tool_calls: [call('tool_search', { query: 'git log' })] };
+      if (turn === 2) return { tool_calls: [call('mcp__git__git_log', {})] };
+      return { tool_calls: [call('complete', { reason: 'loggen visades [#1]' })] };
+    },
+    execute: async task => ({ ok: true, verified: true, tool: task.data.tool }),
+  });
+  assert.equal(result.completed, true);
+  assert.ok(seen[0].includes('tool_search') && !seen[0].includes('mcp__git__git_log'), 'not listed at first');
+  assert.ok(seen[0].length < 10, `the first list is short (${seen[0].length} tools)`);
+  assert.ok(seen[1].includes('mcp__git__git_log'), 'listed after the search');
+  assert.ok(!seen[1].includes('mcp__filler__filler_tool_0'), 'only the matching tools are added');
+  assert.equal(s.control.get(m.id).receipts.at(0).type, 'mcp-call');
+});
+
+test('few connector tools stay listed, and a search with no match says so', () => {
+  const small = plannerTools(['mcp-call'], [{ server: 'git', name: 'git_log', description: 'Show the log', inputSchema: { type: 'object', properties: {} }, readOnly: true }], {}, false);
+  assert.ok(small.tools.some(tool => tool.function.name === 'mcp__git__git_log'));
+  assert.ok(!small.tools.some(tool => tool.function.name === 'tool_search'));
+  assert.deepEqual(small.deferred, []);
+  const deferred = [{ name: 'mcp__git__git_log', server: 'git', tool: 'git_log', description: 'Show the commit log', def: {} }, { name: 'mcp__shell__shell_run', server: 'shell', tool: 'shell_run', description: 'Run a command', def: {} }];
+  assert.deepEqual(searchDeferredTools(deferred, 'commit log').map(d => d.tool), ['git_log']);
+  assert.deepEqual(searchDeferredTools(deferred, 'select:shell_run').map(d => d.tool), ['shell_run']);
+  assert.deepEqual(searchDeferredTools(deferred, 'zebra'), []);
+  assert.deepEqual(searchDeferredTools(deferred, 'commit log', new Set(['mcp__git__git_log'])), []);
 });

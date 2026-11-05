@@ -25,9 +25,36 @@ export function compactSchema(schema, depth = 0) {
 
 const fn = (name, description, parameters) => ({ type: 'function', function: { name, ...(description ? { description } : {}), parameters } });
 
-export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, allowReplan = true) {
+// With everything switched on there are ~90 connector tools whose schemas are 35 000 characters, paid on every planning
+// call (it pushed one call over the per-task budget). Past this size the connector tools are searched for, not listed:
+// the model asks for the ones it needs with tool_search and they are added to its list for the rest of the run.
+export const DEFER_MCP_SCHEMA_CHARS = 14_000;
+
+// Tools whose name or description match the words of a query, best first. "select:a,b" names tools exactly.
+export function searchDeferredTools(deferred, query, active = new Set(), limit = 8) {
+  const text = String(query || '').trim().toLowerCase();
+  if (!text) return [];
+  const exact = text.startsWith('select:') ? new Set(text.slice(7).split(',').map(x => x.trim()).filter(Boolean)) : null;
+  const words = exact ? [] : text.split(/[^a-z0-9]+/).filter(w => w.length > 1);
+  return deferred
+    .filter(d => !active.has(d.name))
+    .map(d => {
+      const haystack = `${d.name} ${d.server} ${d.tool} ${d.description}`.toLowerCase();
+      const score = exact
+        ? (exact.has(d.name.toLowerCase()) || exact.has(d.tool.toLowerCase()) ? 100 : 0)
+        : words.reduce((n, w) => n + (d.tool.toLowerCase().includes(w) ? 3 : haystack.includes(w) ? 1 : 0), 0);
+      return { d, score };
+    })
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(x => x.d);
+}
+
+export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, allowReplan = true, { deferAfterChars = DEFER_MCP_SCHEMA_CHARS } = {}) {
   const targets = new Map();
   const tools = [];
+  const mcpDefinitions = [];
   const mcpAllowed = allowedTasks.includes('mcp-call') || allowedTasks.includes('mcp-write');
   for (const type of allowedTasks) {
     if (!Object.hasOwn(TASK_FIELDS, type) || (['mcp-call', 'mcp-write'].includes(type) && mcpAllowed && mcpTools.length)) continue;
@@ -53,11 +80,22 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
       const name = `mcp__${t.server}__${t.name}`.replace(NAME, '_').slice(0, 64);
       if (targets.has(name)) continue;
       const schema = compactSchema(t.inputSchema && typeof t.inputSchema === 'object' ? t.inputSchema : {});
-      tools.push(fn(name, `${t.server} MCP${t.readOnly !== true ? ' (changes something)' : ''}: ${String(t.description).replace(/\s+/g, ' ').slice(0, 150)}${t.note ? ` Learned: ${t.note}` : ''}`,
-        { ...schema, type: 'object', properties: { ...(schema.properties || {}), expectedOutcome: { type: 'string' } } }));
+      const description = String(t.description || '').replace(/\s+/g, ' ').slice(0, 150);
+      const def = fn(name, `${t.server} MCP${t.readOnly !== true ? ' (changes something)' : ''}: ${description}${t.note ? ` Learned: ${t.note}` : ''}`,
+        { ...schema, type: 'object', properties: { ...(schema.properties || {}), expectedOutcome: { type: 'string' } } });
+      mcpDefinitions.push({ name, server: t.server, tool: t.name, description, def });
       // A tool that changes something runs as an mcp-write step: never batched or repeated after an interruption.
       targets.set(name, { kind: 'mcp', server: t.server, tool: t.name, write: t.readOnly !== true });
     }
+  }
+  const deferMcp = mcpDefinitions.reduce((n, d) => n + JSON.stringify(d.def).length, 0) > deferAfterChars;
+  const deferred = deferMcp ? mcpDefinitions : [];
+  if (!deferMcp) for (const d of mcpDefinitions) tools.push(d.def);
+  else {
+    const servers = [...new Set(mcpDefinitions.map(d => d.server))].join(', ');
+    tools.push(fn('tool_search', `${mcpDefinitions.length} more tools from connected servers (${servers}) are not listed to save cost. Search by a few words (for example "git log", "list directory", "wordpress page") and the matching tools become callable. Use "select:name" for an exact tool.`,
+      { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] }));
+    targets.set('tool_search', { kind: 'search' });
   }
   tools.push(fn('complete', 'The goal is satisfied; reason is the answer to the operator with the evidence (cite steps as [#n]).',
     { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] }));
@@ -69,7 +107,7 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
     type: 'object', properties: { reason: { type: 'string' }, subgoals: { type: 'array', minItems: 2, maxItems: 8, items: { type: 'object', properties: { title: { type: 'string' }, objective: { type: 'string' } }, required: ['title','objective'], additionalProperties: false } } }, required: ['reason','subgoals'], additionalProperties: false,
   }));
   if (allowReplan) targets.set('request_replan', { kind: 'replan' });
-  return { tools, resolve: name => targets.get(name) || null };
+  return { tools, deferred, resolve: name => targets.get(name) || null };
 }
 
 // The plan expressed by an answer's tool calls, or null when it made none. A call to an unknown
