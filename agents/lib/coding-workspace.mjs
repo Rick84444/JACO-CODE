@@ -172,7 +172,7 @@ export function createCodingWorkspace({ root = process.cwd(), protectedBranches:
           // A lossy UTF-8 decode could make an edit appear byte-identical while
           // silently corrupting the file. Require valid text before editing.
           let before;
-          try { before = new TextDecoder('utf-8', { fatal: true }).decode(originalBytes); }
+          try { before = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(originalBytes); }
           catch { throw new Error('CODING_EDIT_BINARY_REFUSED'); }
           // Models write \n; Windows files often have \r\n. The edit keeps the file's own line endings.
           const crlf = before.includes('\r\n');
