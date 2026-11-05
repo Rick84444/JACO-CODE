@@ -35,6 +35,8 @@ RestartApplications=no
 UninstallDisplayName=JACO CODE
 UsePreviousAppDir=yes
 SetupLogging=yes
+SetupIconFile={#PayloadDir}\JACO.ico
+UninstallDisplayIcon={app}\JACO.ico
 VersionInfoVersion={#JacoVersion}.0
 ; The Setup.exe does not request elevated permissions on JACO's behalf after installation.
 ; All running components are unelevated and keep their data in %LOCALAPPDATA%\JACO.
@@ -45,8 +47,8 @@ Source: "{#SourcePath}Start-JACO.ps1"; DestDir: "{app}\windows\product"; Flags: 
 Source: "{#SourcePath}JACO-launch.vbs"; DestDir: "{app}\windows\product"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\JACO CODE"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; WorkingDir: "{app}"; Comment: "Open JACO CODE and Aura"
-Name: "{autodesktop}\JACO CODE"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\JACO CODE"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\JACO.ico"; Comment: "Open JACO CODE and Aura"
+Name: "{autodesktop}\JACO CODE"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\JACO.ico"; Tasks: desktopicon
 
 [Tasks]
 Name: desktopicon; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
