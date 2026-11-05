@@ -15,7 +15,8 @@ test('a project goal with a verified graph is done and is not executed again', (
   assert.equal(projectGoalDone(graphs, null), false);
   assert.equal(projectGoalDone(undefined, 'g2'), false);
 });
-import { normalizeCodingContract, CODE_TASKS } from '../../agents/lib/coding-contract.mjs';
+import { normalizeCodingContract, CODE_TASKS, validateCodingTask, contractVerificationStatus } from '../../agents/lib/coding-contract.mjs';
+import { detectProjectTestCommand } from '../../agents/lib/project-test-command.mjs';
 
 const absolute = path.resolve(os.tmpdir(), 'jaco-project-mode');
 
@@ -121,4 +122,53 @@ test('without a restriction in the operator words SEER picks no tools: the missi
   assert.equal('allowedTasks' in open, false);
   assert.deepEqual(projectGraphPolicy(absolute, 'Read only, change nothing.').allowedTasks, ['repo-list', 'repo-read', 'git-status', 'git-diff', 'web-fetch', 'mcp-call']);
   assert.ok(projectGraphPolicy(absolute, 'Do not use the network.').allowedTasks.every(task => !['web-fetch', 'mcp-call'].includes(task)));
+});
+
+
+test('project node automatically authorizes tests and cannot claim completion before a passing test after the last edit', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-agentic-verification-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+  const graph = projectGoalGraph({ id: 'autonomous-test', statement: 'Fix the code, run tests until green, and commit', project_root: dir });
+  const contract = normalizeCodingContract(graph.nodes[0].contract);
+  assert.equal(contract.execution.autonomous, true);
+  assert.equal(contract.verification.tests_required, true);
+  assert.deepEqual(contract.verification.commands, ['npm test']);
+  assert.deepEqual(validateCodingTask({ type: 'repo-test', data: { command: 'npm test' } }, contract).data,
+    { command: 'npm test', kind: 'test' });
+
+  const write = { actionId: 'm:turn:1', type: 'repo-edit', ok: true, verified: true };
+  const failed = { actionId: 'm:turn:2', type: 'repo-test', ok: false, verified: false, result: { kind: 'test' } };
+  let result = contractVerificationStatus(contract, [write, failed]);
+  assert.ok(result.missing.includes('tests'), 'failure must not certify the mission');
+  const pass = { ...failed, actionId: 'm:turn:3', ok: true, verified: true };
+  result = contractVerificationStatus(contract, [write, failed, pass]);
+  assert.ok(!result.missing.includes('tests'), 'Aura may repair and pass without another approval');
+  assert.ok(result.missing.includes('commit'), 'existing commit contract still applies');
+
+  const secondEdit = { ...write, actionId: 'm:turn:4' };
+  result = contractVerificationStatus(contract, [write, failed, pass, secondEdit]);
+  assert.ok(result.missing.includes('tests'), 'the previous green test is invalidated by a later edit');
+  const retest = { ...pass, actionId: 'm:turn:5' };
+  const commit = { actionId: 'm:turn:6', type: 'git-commit', ok: true, verified: true };
+  assert.equal(contractVerificationStatus(contract, [write, failed, pass, secondEdit, retest, commit]).machineVerified, true);
+});
+
+test('test discovery is shared, read-only instructions do not request test execution and absent runners are disclosed', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-agentic-discovery-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "no test specified" && exit 1' } }));
+  assert.equal(detectProjectTestCommand(dir), null, 'placeholder scripts do not count as tests');
+  fs.writeFileSync(path.join(dir, 'go.mod'), 'module example.com/test\n\ngo 1.22\n');
+  assert.equal(detectProjectTestCommand(dir), 'go test ./...');
+  const contract = normalizeCodingContract(projectNodeContract({ title: 'Change Go code', objective: 'Fix the bug', mainGoal: 'Go module', projectRoot: dir }));
+  assert.deepEqual(contract.verification.commands, ['go test ./...']);
+  const readOnly = normalizeCodingContract(projectNodeContract({ title: 'Read code', objective: 'Read-only report, no changes', projectRoot: dir }));
+  assert.equal(readOnly.verification.tests_required, false);
+  assert.deepEqual(readOnly.verification.commands, []);
+
+  fs.rmSync(path.join(dir, 'go.mod'));
+  const noTests = normalizeCodingContract(projectNodeContract({ title: 'Create utility', objective: 'Implement it', projectRoot: dir }));
+  assert.equal(noTests.verification.tests_required, false);
+  assert.match(noTests.acceptance.join(' '), /automated tests were not verified/);
 });
