@@ -155,7 +155,16 @@ export function contractVerificationStatus(contract, receipts = []) {
   const verified = receipts.filter(r => r?.ok === true && r?.verified === true);
   const lastWriteTurn = verified.filter(r => r.type === 'repo-write' || r.type === 'repo-edit').reduce((max, r) => Math.max(max, receiptTurn(r)), -1);
   const afterLastWrite = r => receiptTurn(r) < 0 || receiptTurn(r) > lastWriteTurn;
-  const hasTest = verified.some(r => r.type === 'repo-test' && r.result?.kind !== 'falsifier' && afterLastWrite(r));
+  const passedTest = r => r.type === 'repo-test' && r.result?.kind !== 'falsifier' && afterLastWrite(r);
+  // Minted workspace tests supplement the original suite; they never replace it.
+  // For this new contract mode every pre-contracted command still needs its own
+  // successful receipt after the latest code change.
+  const requiredCommands = contract.verification.allow_workspace_tests
+    ? (contract.verification.commands || []) : [];
+  const hasTest = requiredCommands.length
+    ? requiredCommands.every(command => verified.some(r => passedTest(r) &&
+        (r.result?.command || r.input?.command || r.task?.data?.command) === command))
+    : verified.some(passedTest);
   const hasFalsifier = verified.some(r => r.type === 'repo-test' && r.result?.kind === 'falsifier' && afterLastWrite(r));
   const hasIndependent = verified.some(r => r.result?.independentVerification === true && r.result?.verificationActor && r.result?.implementationActor && r.result.verificationActor !== r.result.implementationActor && afterLastWrite(r));
   const missing = [];
