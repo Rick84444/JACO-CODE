@@ -10,6 +10,8 @@ import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
 import path from "path";
+import { fileURLToPath } from 'node:url';
+import { runtimeReleaseRoot } from './src/server/runtimeReleaseRoot.mjs';
 import fs from "fs";
 import os from "os";
 import crypto from "crypto";
@@ -173,7 +175,7 @@ const projectRoot = createProjectRoot({ stateDir: path.join(WORKSPACE_ROOT, '.ja
 process.on('unhandledRejection', (reason: any) => {
   console.error('[runtime] unhandled rejection (kept running):', reason?.stack || reason);
 });
-const RELEASE_ROOT = path.resolve(process.env.JACO_RELEASE_ROOT || process.cwd());
+const RELEASE_ROOT = runtimeReleaseRoot({ override: process.env.JACO_RELEASE_ROOT, moduleFile: typeof __filename === 'string' ? __filename : fileURLToPath(import.meta.url) });
 const handsOff = new HandsOffClient(WORKSPACE_ROOT);
 const desktopHandsOff = new DesktopHandsOffClient(WORKSPACE_ROOT, RELEASE_ROOT);
 const handsOffPlans = createHandsOffPlanRunner(handsOff, WORKSPACE_ROOT);
@@ -6798,6 +6800,8 @@ const notifyPhone = async (action) => {
     // Loaded only here: the production server (and the Lite download) does not need vite at all.
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
+      root: RELEASE_ROOT,
+      configFile: path.join(RELEASE_ROOT, 'vite.config.ts'),
       // The remote IDE host is served too (behind the IDE session gate above).
       server: { middlewareMode: true, allowedHosts: [ideHost()] },
       appType: "spa",
