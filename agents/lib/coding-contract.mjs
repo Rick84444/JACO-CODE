@@ -192,7 +192,8 @@ export function codingExecutionSummary(contract, receipts = [], phase = 'READY')
 export function workspaceNodeTestPath(command) {
   if (typeof command !== 'string' || command.length > 240) return null;
   const match = /^node --test ((?:tests|src)\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.test\.(?:mjs|cjs|js))$/.exec(command);
-  return match ? match[1] : null;
+  if (!match || match[1].split('/').some(part => part === '.' || part === '..' || part.startsWith('.'))) return null;
+  return match[1];
 }
 
 export function validateCodingTask(task, contract, receipts = []) {
