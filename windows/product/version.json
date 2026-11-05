@@ -1,0 +1,5 @@
+{
+  "version": "0.22.1",
+  "channel": "stable",
+  "target": "win-x64"
+}

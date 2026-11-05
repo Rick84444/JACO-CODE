@@ -14,6 +14,8 @@ const TOKEN = process.env.JACO_WORKPLACE_TOKEN || '';
 // Agents share TOKEN to reach the API. Changing permissions needs a separate token that agents never receive.
 const OPERATOR_TOKEN = process.env.JACO_WORKPLACE_OPERATOR_TOKEN || '';
 const ROOT = resolve(process.env.JACO_WORKSPACE_ROOT || process.cwd());
+// Supervisor spawns installed SEER/Nova executables, never scripts from writable user data.
+const EXECUTION_ROOT = resolve(process.env.JACO_INSTALL_ROOT || process.cwd());
 
 const isLoopback = host => ['127.0.0.1', 'localhost', '::1'].includes(host);
 if (!TOKEN && !isLoopback(HOST)) {
@@ -22,7 +24,7 @@ if (!TOKEN && !isLoopback(HOST)) {
 }
 
 const store = new WorkplaceStore(ROOT);
-const supervisor = createWorkplaceAgentSupervisor({ root: ROOT, env: process.env });
+const supervisor = createWorkplaceAgentSupervisor({ root: EXECUTION_ROOT, env: process.env });
 const chatgptRelay = createChatGptGithubRelay({ store, root: ROOT, env: process.env });
 const streams = new Map();
 

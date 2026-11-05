@@ -1,0 +1,218 @@
+name: JACO Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags:
+      - 'v*.*.*'
+    paths:
+      - 'windows/product/**'
+      - '.github/workflows/jaco-windows-release.yml'
+  pull_request:
+    paths:
+      - 'windows/product/**'
+      - 'runtime/src/server/updates/**'
+      - 'runtime/src/components/JacoWindowsUpdates.tsx'
+      - 'runtime/src/components/CognitiveWorkspace.tsx'
+      - 'runtime/server.ts'
+      - 'agents/lib/local-stack.mjs'
+      - 'tests/nova/github-release-status.test.mjs'
+      - '.github/workflows/jaco-windows-release.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-setup:
+    name: Build and smoke-test full Windows Setup
+    runs-on: windows-latest
+    timeout-minutes: 75
+    outputs:
+      version: ${{ steps.product-version.outputs.version }}
+      version_changed: ${{ steps.product-version.outputs.version_changed }}
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            runtime/package-lock.json
+      - name: Verify release tag/version and branch ancestry
+        id: product-version
+        shell: pwsh
+        run: |
+          $version = (Get-Content windows/product/version.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'RELEASE_VERSION_INVALID' }
+          if ($env:GITHUB_REF -like 'refs/tags/*') {
+            if ($env:GITHUB_REF_NAME -ne "v$version") { throw "TAG_VERSION_MISMATCH expected=v$version actual=$env:GITHUB_REF_NAME" }
+            git fetch origin main --depth=100
+            git merge-base --is-ancestor HEAD origin/main
+            if ($LASTEXITCODE -ne 0) { throw 'RELEASE_TAG_NOT_ON_MAIN' }
+          }
+          $changed = 'false'
+          if ($env:GITHUB_REF -eq 'refs/heads/main') {
+            $previous = (& git show 'HEAD^:windows/product/version.json' 2>$null | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0) { $changed = 'true' }
+            else {
+              $oldVersion = ($previous | ConvertFrom-Json).version
+              if ($version -ne $oldVersion) { $changed = 'true' }
+            }
+          }
+          "JACO_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "version_changed=$changed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Install locked dependencies
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'ROOT_NPM_CI_FAILED' }
+          npm ci --prefix runtime --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'RUNTIME_NPM_CI_FAILED' }
+      - name: Run Windows release contract tests
+        shell: pwsh
+        run: |
+          node --test tests/nova/github-release-status.test.mjs tests/nova/windows-product-install.test.mjs tests/nova/startup-safety.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'WINDOWS_UPDATE_CONTRACT_FAILED' }
+          npm run lint --prefix runtime
+          if ($LASTEXITCODE -ne 0) { throw 'RUNTIME_TYPECHECK_FAILED' }
+      - name: Build canonical production GUI and server
+        shell: pwsh
+        run: |
+          npm run build --prefix runtime
+          if ($LASTEXITCODE -ne 0) { throw 'PRODUCTION_BUILD_FAILED' }
+      - name: Prepare production payload
+        shell: pwsh
+        run: |
+          & windows/product/Prepare-Release.ps1
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'PREPARE_RELEASE_FAILED' }
+          & windows/product/Generate-JacoIcon.ps1
+          $payload = 'build/windows/payload'
+          foreach ($file in @('JACO.ico','tools/node/node.exe','tools/node/npm.cmd','tools/node/node_modules/npm/package.json','runtime/dist/index.html','runtime/dist/server.cjs','agents/lib/local-stack.mjs','gateway/src/workplace/workplace-server.mjs','runtime/node_modules/express/package.json')) {
+            if (-not (Test-Path (Join-Path $payload $file))) { throw "PAYLOAD_MISSING:$file" }
+          }
+          if (Test-Path "$payload/.env") { throw 'PAYLOAD_CONTAINS_PRIVATE_ENV' }
+          & "$payload/tools/node/node.exe" --check "$payload/agents/lib/local-stack.mjs"
+          if ($LASTEXITCODE -ne 0) { throw 'PACKAGED_LAUNCHER_INVALID' }
+      - name: Install Inno Setup compiler
+        shell: pwsh
+        run: |
+          $candidate = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $candidate)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'INNO_SETUP_INSTALL_FAILED' }
+          }
+          if (-not (Test-Path $candidate)) { throw 'INNO_SETUP_COMPILER_MISSING' }
+          "ISCC=$candidate" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Compile real JACO CODE Setup EXE
+        shell: pwsh
+        run: |
+          $payload = (Resolve-Path 'build/windows/payload').Path
+          $output = Join-Path (Get-Location) 'build/windows/output'
+          New-Item -ItemType Directory -Force $output | Out-Null
+          & $env:ISCC "/DJacoVersion=$env:JACO_VERSION" "/DPayloadDir=$payload" "/DOutputDir=$output" 'windows/product/JACO.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'WINDOWS_SETUP_COMPILE_FAILED' }
+          $installer = Join-Path $output "JACO-Setup-$env:JACO_VERSION-win-x64.exe"
+          if (-not (Test-Path $installer)) { throw 'WINDOWS_SETUP_BINARY_MISSING' }
+      - name: Real silent install / re-install / uninstall smoke
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "build/windows/output/JACO-Setup-$env:JACO_VERSION-win-x64.exe").Path
+          $installDir = Join-Path $env:RUNNER_TEMP 'JACO-ProgramFiles-Test'
+          $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$installDir")
+          $first = Start-Process -FilePath $exe -ArgumentList $args -Wait -PassThru
+          if ($first.ExitCode -ne 0) { throw "INSTALL_FAILED:$($first.ExitCode)" }
+          foreach ($file in @('runtime/dist/index.html','runtime/dist/server.cjs','tools/node/node.exe','windows/product/Start-JACO.ps1')) {
+            if (-not (Test-Path (Join-Path $installDir $file))) { throw "INSTALLED_FILE_MISSING:$file" }
+          }
+          $env:JACO_DATA_DIR = Join-Path $env:RUNNER_TEMP 'JACO-PreservedUserData'
+          $env:JACO_START_MODE = 'production'
+          $result = & (Join-Path $installDir 'tools/node/node.exe') (Join-Path $installDir 'agents/lib/local-stack.mjs') --preflight | Out-String
+          if ($LASTEXITCODE -ne 0 -or $result -notmatch 'jaco.startup-preflight/v1') { throw "PACKAGED_PREFLIGHT_FAILED:$result" }
+          if (Test-Path (Join-Path $installDir '.env')) { throw 'PRIVATE_ENV_IN_PROGRAM_FILES' }
+
+          # Boot the ACTUAL installed Core and request the real GUI, with no cloud model configured.
+          $env:JACO_WORKSPACE_ROOT = $env:JACO_DATA_DIR
+          $env:JACO_RELEASE_ROOT = Join-Path $installDir 'runtime'
+          $env:JACO_GATEWAY_TOKEN = 'ci_test_operator_token_exceeding_twenty_four_chars'
+          $env:JACO_MODEL_PROVIDER = 'aura'
+          $env:NODE_ENV = 'production'
+          $env:PORT = '3000'
+          $nodeExe = Join-Path $installDir 'tools/node/node.exe'
+          $runtimeDir = Join-Path $installDir 'runtime'
+          $stdOut = Join-Path $env:RUNNER_TEMP 'jaco-core-boot.log'
+          $stdErr = Join-Path $env:RUNNER_TEMP 'jaco-core-boot.err.log'
+          $core = Start-Process -FilePath $nodeExe -ArgumentList 'dist/server.cjs' -WorkingDirectory $runtimeDir -RedirectStandardOutput $stdOut -RedirectStandardError $stdErr -WindowStyle Hidden -PassThru
+          try {
+            $healthy = $false
+            for ($attempt = 0; $attempt -lt 50; $attempt++) {
+              if ($core.HasExited) { break }
+              try {
+                $identity = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/runtime/identity' -TimeoutSec 2
+                if ($identity.success -eq $true -and $identity.version -eq '0.22.0') { $healthy = $true; break }
+              } catch {}
+              Start-Sleep -Seconds 1
+            }
+            if (-not $healthy) {
+              Write-Host (Get-Content $stdErr -Raw -ErrorAction SilentlyContinue)
+              throw 'INSTALLED_CORE_FAILED_HTTP_IDENTITY'
+            }
+            $gui = Invoke-WebRequest -Uri 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 10
+            if ($gui.StatusCode -ne 200 -or $gui.Content -notmatch '<html') { throw 'INSTALLED_GUI_NOT_SERVED' }
+            Write-Host 'JACO_INSTALLED_CORE_AND_GUI_VERIFIED'
+          } finally {
+            Stop-Process -Id $core.Id -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+          }
+
+          $again = Start-Process -FilePath $exe -ArgumentList $args -Wait -PassThru
+          if ($again.ExitCode -ne 0) { throw "REINSTALL_FAILED:$($again.ExitCode)" }
+          $uninstaller = Join-Path $installDir 'unins000.exe'
+          if (-not (Test-Path $uninstaller)) { throw 'UNINSTALLER_MISSING' }
+          $remove = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
+          if ($remove.ExitCode -ne 0) { throw "UNINSTALL_FAILED:$($remove.ExitCode)" }
+          Write-Host 'JACO_WINDOWS_INSTALL_REINSTALL_UNINSTALL_VERIFIED'
+      - name: SHA256 release manifest
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "build/windows/output/JACO-Setup-$env:JACO_VERSION-win-x64.exe").Path
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $output = Join-Path (Split-Path $exe -Parent) ((Split-Path $exe -Leaf) + '.sha256')
+          "$hash  $(Split-Path $exe -Leaf)" | Out-File $output -Encoding ascii
+          Write-Host "WINDOWS_INSTALLER_SHA256=$hash"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jaco-full-windows-setup
+          path: |
+            build/windows/output/JACO-Setup-*-win-x64.exe
+            build/windows/output/JACO-Setup-*-win-x64.exe.sha256
+          if-no-files-found: error
+
+  publish-github-release:
+    name: Attach verified Windows installer to stable release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: windows-setup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: jaco-full-windows-setup
+          path: release
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          tag_name: v${{ needs.windows-setup.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: |
+            release/JACO-Setup-*-win-x64.exe
+            release/JACO-Setup-*-win-x64.exe.sha256
