@@ -11,6 +11,7 @@ import { MissionClient } from '../../agents/lib/mission-client.mjs';
 import { plannerTools, searchDeferredTools } from '../../agents/lib/native-tools.mjs';
 import { runAgentMission, receiptForModel, contextPacketIntro } from '../../agents/lib/agent-loop.mjs';
 import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
+import { projectGoalGraph } from '../../gateway/src/seer-project.mjs';
 
 function setup(t, allowedTasks) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-loop-'));
@@ -496,6 +497,45 @@ test('native loop edits a real isolated repository and recovers from a failing t
   assert.equal(stored.status, 'AWAITING_VERIFICATION');
   assert.match(JSON.stringify(model.seen[2]), /repo-test/);
   assert.match(JSON.stringify(model.seen[3]), /repo-edit/);
+});
+
+test('a real project mission autonomously discovers npm test, fixes a red test and reports verified green', async t => {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'aura-project-autotest-'));
+  t.after(() => fs.rmSync(project, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(project, 'src'));
+  fs.mkdirSync(path.join(project, 'tests'));
+  fs.writeFileSync(path.join(project, 'package.json'),
+    JSON.stringify({ private: true, type: 'module', scripts: { test: 'node --test tests/client.test.mjs' } }));
+  const file = path.join(project, 'src', 'client.mjs');
+  fs.writeFileSync(file, 'export function answer() { return 0; }\n');
+  fs.writeFileSync(path.join(project, 'tests', 'client.test.mjs'),
+    "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { answer } from '../src/client.mjs';\ntest('answer', () => assert.equal(answer(), 42));\n");
+  const graph = projectGoalGraph({ id: 'agentic-real-project', statement: 'Fix answer and test until green', project_root: project });
+  const generated = graph.nodes[0].contract;
+  assert.deepEqual(generated.verification.commands, ['npm test']);
+  assert.equal(generated.verification.tests_required, true);
+  const contract = { ...generated, execution: { ...generated.execution, allow_git_commit: false, require_git_commit: false } };
+  const s = setup(t, ['repo-read', 'repo-edit', 'repo-test']);
+  const mission = s.control.create({
+    goal: graph.objective, idempotencyKey: 'agentic-real-project',
+    projectRoot: project, allowedTasks: ['repo-read', 'repo-edit', 'repo-test'], contract,
+  });
+  const model = scripted([
+    { tool_calls: [call('repo-test', { command: 'npm test' })] },
+    { tool_calls: [call('repo-edit', { path: 'src/client.mjs', old: 'return 0;', new: 'return 42;' })] },
+    { tool_calls: [call('repo-test', { command: 'npm test' })] },
+    { tool_calls: [call('complete', { reason: 'Fixed answer after red test, then ran green project suite [#1][#2][#3]' })] },
+  ]);
+  const workspace = createCodingWorkspace({ root: project });
+  const done = await run(s, model, task => workspace.execute(task, s.control.get(mission.id).contract, {
+    actor: 'aura-project-integration', receipts: s.control.get(mission.id).receipts,
+  }));
+  assert.equal(done.completed, true, 'a failed test leads to another autonomous work step');
+  assert.match(fs.readFileSync(file, 'utf8'), /return 42;/);
+  const stored = s.control.get(mission.id);
+  assert.deepEqual(stored.receipts.map(r => r.type), ['repo-test', 'repo-edit', 'repo-test']);
+  assert.deepEqual(stored.receipts.map(r => r.ok), [false, true, true]);
+  assert.equal(stored.contractStatus.machineVerified, true, 'test passed after the last edit');
 });
 
 test('a rate window gives the mission back without blocking it, even after real work', async t => {
