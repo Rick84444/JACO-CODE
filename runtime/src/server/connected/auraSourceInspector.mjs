@@ -84,7 +84,7 @@ export function createAuraSourceInspector({ candidateRoots = [] } = {}) {
       const needle = String(query).trim().toLowerCase();
       if (needle.length < 2 || needle.length > 80) throw new Error('JACO_SOURCE_QUERY_INVALID');
       const queue = rel === '.' ? [...SOURCE_DIRS, ...ROOT_FILES].map(name => path.join(root, name)) : [actual];
-      let scannedFiles = 0, scannedBytes = 0;
+      let scannedFiles = 0, scannedBytes = 0, skippedByByteBudget = false;
       const matches = [];
       while (queue.length && scannedFiles < 250 && scannedBytes < MAX_SEARCH_BYTES && matches.length < 20) {
         const next = queue.shift();
@@ -98,7 +98,11 @@ export function createAuraSourceInspector({ candidateRoots = [] } = {}) {
           for (const child of fs.readdirSync(next)) queue.push(path.join(next, child));
           continue;
         }
-        if (!info.isFile() || !EXTENSIONS.has(path.extname(name)) || info.size > MAX_FILE_BYTES || scannedBytes + info.size > MAX_SEARCH_BYTES) continue;
+        if (!info.isFile() || !EXTENSIONS.has(path.extname(name))) continue;
+        if (info.size > MAX_FILE_BYTES || scannedBytes + info.size > MAX_SEARCH_BYTES) {
+          skippedByByteBudget = true;
+          continue;
+        }
         scannedFiles++; scannedBytes += info.size;
         const contents = fs.readFileSync(next, 'utf8');
         if (contents.includes('\0')) continue;
@@ -110,7 +114,8 @@ export function createAuraSourceInspector({ candidateRoots = [] } = {}) {
           });
         }
       }
-      return { source: 'JACO_SOURCE', action: 'search', path: rel, query: needle, matches, scannedFiles, truncated: queue.length > 0 || matches.length >= 20 };
+      return { source: 'JACO_SOURCE', action: 'search', path: rel, query: needle, matches, scannedFiles,
+        truncated: skippedByByteBudget || queue.length > 0 || matches.length >= 20 };
     }
     if (!st.isFile() || !EXTENSIONS.has(path.extname(actual))) throw new Error('JACO_SOURCE_FILE_TYPE_REFUSED');
     if (st.size > MAX_FILE_BYTES) throw new Error('JACO_SOURCE_FILE_TOO_LARGE');
