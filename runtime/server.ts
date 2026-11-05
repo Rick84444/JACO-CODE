@@ -1112,7 +1112,7 @@ const notifyPhone = async (action) => {
   app.use(createA2ARouter({
     workspaceRoot: WORKSPACE_ROOT,
     host: HOST,
-    version: '0.22.1',
+    version: '0.22.0',
     requireMutationAuth: requireOperator,
     onEvent: event => seerLiveWorkstream.record(event),
   }));
@@ -1169,7 +1169,7 @@ const notifyPhone = async (action) => {
       success: true,
       product: 'JACO Autonomus IDE',
       version: JSON.parse(fs.readFileSync(path.join(process.env.JACO_RELEASE_ROOT || process.cwd(), 'package.json'), 'utf8')).version,
-      releaseId: 'jaco-code-0.22.1',
+      releaseId: 'jaco-code-0.22.0',
       canonicalGui: 'JACO Autonomous IDE',
       primaryPort: PORT,
       // Only surfaces this runtime can actually drive. The list used to be fixed, so a PC runtime with
@@ -6781,7 +6781,10 @@ const notifyPhone = async (action) => {
   // Released Windows installer discovery; read-only and local-UI-only.
   // Never treat the development branch as an update and never download/execute code from the browser.
   app.get('/api/product/windows-update', requireLocalUi, async (_req, res) => {
-    const currentVersion = JSON.parse(fs.readFileSync(path.join(RELEASE_ROOT, 'package.json'), 'utf8')).version;
+    const versionFile = path.join(RELEASE_ROOT, '..', 'windows', 'product', 'version.json');
+    const currentVersion = process.env.JACO_INSTALLED === '1' && fs.existsSync(versionFile)
+      ? JSON.parse(fs.readFileSync(versionFile, 'utf8')).version
+      : JSON.parse(fs.readFileSync(path.join(RELEASE_ROOT, 'package.json'), 'utf8')).version;
     const result = await githubWindowsReleaseStatus({
       currentVersion,
       installed: process.env.JACO_INSTALLED === '1'
