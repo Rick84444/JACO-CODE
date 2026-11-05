@@ -1906,9 +1906,11 @@ export const paidModelsAllowed = (env = process.env) => env.JACO_ALLOW_PAID_MODE
 // The planner instructions without the JSON answer format (the loop uses native function calls), and
 // with the shell rule for the host it actually runs on.
 const AGENT_DROP = /^(Output JSON:|Several independent reading steps|continuity is durable|For browser-click, data may include|Task fields:|When the goal appears satisfied, output)/;
+// One rule for web work: the browser protocol first, the operating system only when it cannot reach the page.
+export const WEB_RULE = "Web pages: read with web-fetch. To act on a page use the nova_* browser tools first (nova_observe or nova_ax to see, then nova_click_named, nova_type_named, nova_press, nova_upload; nova_tabs lists only the tabs you opened). They send real input events and verify the result. Use mouse-move, mouse-click, key-press, type-text and desktop-* only when the browser tools cannot reach the target (a native dialog, a window outside the browser), never to get around a refusal: a refused sign-in, payment or password surface stays the operator's to do.";
 export function agentSystemFor(allowedTasks, platform = process.platform, graphMission = false) {
   const lines = brainSystemFor(allowedTasks, graphMission, platform).split("\n").filter(line => !AGENT_DROP.test(line));
-  return lines.join("\n") + "\nYou act through the functions provided. Call them; each result comes back to you, including errors and refusals: read them and adapt instead of repeating the same call. Several reading calls may go in one answer. When the goal is achieved, call complete with the answer for the operator, citing steps as [#n].";
+  return lines.join("\n") + "\n" + WEB_RULE + "\nYou act through the functions provided. Call them; each result comes back to you, including errors and refusals: read them and adapt instead of repeating the same call. Several reading calls may go in one answer. When the goal is achieved, call complete with the answer for the operator, citing steps as [#n].";
 }
 
 const TEMPORARY_COOLDOWN_MS = 15 * 60_000;
