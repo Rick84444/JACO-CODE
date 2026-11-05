@@ -25,6 +25,13 @@ export const PASSWORD_TARGET = /(type=["']?password|#user_pass|\[name=["']?pwd|a
 export function isPrivateHost(hostname) {
   const h = String(hostname || '').toLowerCase();
   if (/^(localhost|.*\.localhost|.*\.local|.*\.internal|\[::1?\]|\[(fe80|f[cd][0-9a-f]{2}):.*\])$/.test(h)) return true;
+  // WHATWG URL canonically prints IPv4-mapped IPv6 as hex groups, for example
+  // [::ffff:7f00:1] rather than [::ffff:127.0.0.1].
+  const mapped = h.replace(/^\[|\]$/g, '').match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mapped) {
+    const first = parseInt(mapped[1], 16), second = parseInt(mapped[2], 16);
+    return isPrivateHost(`${first >> 8}.${first & 255}.${second >> 8}.${second & 255}`);
+  }
   const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
   if (!m) return false;
   const a = Number(m[1]), b = Number(m[2]);
