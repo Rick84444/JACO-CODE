@@ -7,7 +7,7 @@ import path from 'node:path';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl } from '../../runtime/src/server/connected/novaMissionControl.mjs';
 import { CapabilityPolicy, taskCatalog, ALWAYS_ASK } from '../../runtime/src/server/capabilities/capabilityPolicy.mjs';
-import { operatorApprovalCheck } from '../../runtime/src/server/connected/operatorActionGuard.mjs';
+import { operatorApprovalCheck } from '../../agents/lib/operator-action-guard.mjs';
 import { TASK_FIELDS } from '../../agents/lib/task-fields.mjs';
 
 const taskIds = Object.keys(TASK_FIELDS);

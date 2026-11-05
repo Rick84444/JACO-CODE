@@ -17,7 +17,7 @@
 //   - anything that looks like outgoing spend (payments, purchases, payouts, subscriptions, top-ups)
 //   - uncertain outcomes (interrupted execution, outcomeUnknown): resuming could repeat a mutation
 //   - failures raised by a safety policy (payment/secret shell policy, origin denial, payment required)
-//   - actions that are hard to undo or visible to others (runtime/src/server/connected/operatorActionGuard.mjs)
+//   - actions that are hard to undo or visible to others (agents/lib/operator-action-guard.mjs)
 import fs from 'node:fs';
 import path from 'node:path';
 

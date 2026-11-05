@@ -1,4 +1,4 @@
-// Operator-approval guard for durable Nova / Desktop AgentOS actions.
+// Operator-approval guard for durable Nova / Desktop AgentOS actions and for interpreter code in the bounded shell.
 //
 // Everything local and reversible stays autonomous. An action whose effect is hard to undo or is
 // visible to other people stops the mission and asks the operator: recursive deletes, history
@@ -17,8 +17,9 @@ const RECURSIVE_DELETE = [
 ];
 
 const SHELL_RULES = [
-  [/\bgit\s+push\b[^;&|]*\s(?:--force(?:-with-lease)?|-f)(?:\s|$)/, 'force-push rewrites shared history'],
-  [/\bgit\s+push\b[^;&|]*\s(?:main|master)(?:\s|$)/, 'push directly to a protected branch'],
+  // The end of a word may also be a quote or bracket: the same words appear inside bash -c "…" or node -e "…".
+  [/\bgit\s+push\b[^;&|]*\s(?:--force(?:-with-lease)?|-f)(?=[\s"')]|$)/, 'force-push rewrites shared history'],
+  [/\bgit\s+push\b[^;&|]*\s(?:main|master)(?=[\s"')]|$)/, 'push directly to a protected branch'],
   [/\bgit\s+reset\s+--hard\b/, 'git reset --hard discards local work'],
   [/\bgit\s+clean\s+-\S*f/, 'git clean deletes untracked files'],
   [/\bgit\s+branch\s+-D\b/, 'force-delete of a git branch'],

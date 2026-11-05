@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl } from '../../runtime/src/server/connected/novaMissionControl.mjs';
-import { operatorApprovalCheck } from '../../runtime/src/server/connected/operatorActionGuard.mjs';
+import { operatorApprovalCheck } from '../../agents/lib/operator-action-guard.mjs';
 import { autoResolution } from '../../agents/lib/approval-policy.mjs';
 
 const shell = command => ({ type: 'shell', data: { command } });

@@ -25,7 +25,7 @@ const TOOLS = [
   { name: 'shell_read', readOnly: true, description: 'Run a read-only command in the workspace: ls, cat, head, tail, wc, grep, find, stat, du, file, pwd, uname, df, git status/diff/log/show/blame/ls-files, npm ls, node --version. Anything that would change something is refused. Returns stdout, stderr, exit code, timing.',
     inputSchema: { type: 'object', properties: { ...argSchema, timeoutSeconds: { type: 'number' } }, required: ['command'] },
     run: args => shell.run({ ...args, mode: 'read' }) },
-  { name: 'shell_run', readOnly: false, description: 'Run a command that may change the workspace: git add/commit/switch/merge/fetch, npm test / run <script> / ci, node or python3 <script in the workspace>, mkdir, touch, cp, mv, rm (single files). Runs the project\'s own code, so it needs write access to this server. Recursive rm, git reset/clean/push and branch deletion are refused unless the operator enabled them. Returns stdout, stderr, exit code, timing.',
+  { name: 'shell_run', readOnly: false, description: 'Run a command that may change the workspace: git add/commit/switch/merge/fetch, npm test / run <script> / ci, node or python3 <script in the workspace>, and in the Aura runtime bash, PowerShell, python, py and node with inline code, mkdir, touch, cp, mv, rm (single files). Runs the project\'s own code, so it needs write access to this server. Recursive rm, git reset/clean/push and branch deletion are refused unless the operator enabled them. Returns stdout, stderr, exit code, timing.',
     inputSchema: { type: 'object', properties: { ...argSchema, timeoutSeconds: { type: 'number', description: 'default 30, at most 300' } }, required: ['command'] },
     run: args => shell.run({ ...args, mode: 'write' }) },
 ];

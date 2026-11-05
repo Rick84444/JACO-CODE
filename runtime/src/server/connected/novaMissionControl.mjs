@@ -7,7 +7,7 @@ import { novaTiming } from '../../../../agents/lib/nova-timing.mjs';
 import { checkCitations } from '../../../../agents/lib/evidence.mjs';
 import { stripEmoji } from '../../../../agents/lib/writing-policy.mjs';
 import { outgoingSpendCheck } from './spendGuard.mjs';
-import { operatorApprovalCheck } from './operatorActionGuard.mjs';
+import { operatorApprovalCheck } from '../../../../agents/lib/operator-action-guard.mjs';
 import { findDuplicate } from './missionDedupe.mjs';
 import { TASK_FIELDS } from '../../../../agents/lib/task-fields.mjs';
 import { validateGithubRepoTask } from '../../../../agents/lib/github-repo.mjs';
