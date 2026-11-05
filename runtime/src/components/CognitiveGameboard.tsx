@@ -60,7 +60,7 @@ export function CognitiveGameboard() {
     </div>
     {error&&<p className="border border-amber-800 rounded p-2 text-amber-300 text-xs" role="alert">Could not read a new position: {error}. The last observed data is shown, if any.</p>}
     <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
-      <span><Activity size={13} className="inline mr-1"/>SEER: {position?.graphSource||'Not observed'}</span>
+      <span><Activity size={13} className="inline mr-1"/>Aura planning: {position?.graphSource||'Not observed'}</span>
       <span><Wrench size={13} className="inline mr-1"/>{position?.tools.length??'–'} registered tools</span>
       <span>{position?.agents.length??'–'} workers</span>
       <span>{position?.observedAt?new Date(position.observedAt).toLocaleTimeString('en-US'):'No observation'}</span>
@@ -75,8 +75,8 @@ export function CognitiveGameboard() {
           {plan.simulation?.status==='SIMULATED'
             ?<div className="text-cyan-300">Simulated terminal probability: {probability(plan.simulation.forecast?.terminalProbability)}</div>
             :<div className="text-slate-500">No verifiable simulation for this plan</div>}
-          <div className="text-slate-400">Permitted moves: {plan.moves.filter(m=>m.executable).length}</div>
-        </div>):<p className="text-slate-500 text-xs">No SEER gameboard observed. {position?.missions.length?position.missions.length+' local missions are on the bus.':''}</p>}
+          <div className="text-slate-400">Eligible simulated moves: {plan.moves.filter(m=>m.executable).length}</div>
+        </div>):<p className="text-slate-500 text-xs">No planning graph observed for Aura. {position?.missions.length?position.missions.length+' local missions are on the bus.':''}</p>}
       </div>
       <div className="rounded-lg border border-slate-800 bg-[#111a24] p-3 space-y-2">
         <h3 className="text-xs font-semibold flex gap-2 items-center"><Wrench size={15}/>Tool identities</h3>
