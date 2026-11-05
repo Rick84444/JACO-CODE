@@ -269,6 +269,7 @@ export async function activate(c, { open = false } = {}) {
     fs.unlinkSync(lock); fs.writeFileSync(lock, String(process.pid), { flag: 'wx' });
   }
   const startedAt = new Date().toISOString();
+  let installedGuiOpened = false;
   const result = { schema: 'jaco.local-startup/v1', runId: `${process.pid}-${Date.now()}`, startedAt, observedAt: startedAt, sequence: 0, state: 'STARTING', phase: 'preflight', runtime: c.runtime, services: [], expected: { browserAttachment: c.cdp }, browserAttachment: c.cdp ? 'PENDING' : 'NOT_REQUIRED', warnings: [] };
   const checkpoint = phase => { result.phase = phase; result.sequence++; result.observedAt = new Date().toISOString(); save(c, result); };
   try {
@@ -276,6 +277,8 @@ export async function activate(c, { open = false } = {}) {
     // Reject foreign listeners before starting any optional helper.
     for (const service of [...definitions(c)].sort((a, b) => a.id === 'runtime' ? -1 : b.id === 'runtime' ? 1 : 0)) {
       const observed = await probe(service, c.env.GATEWAY_TOKEN);
+      // A different checkout of the same JACO release must not impersonate this installed product.
+      if (c.dataRoot !== c.root && observed.state === 'READY' && !ownsListener(c, service)) throw new Error(`OTHER_JACO_INSTANCE_RUNNING:${service.id}:stop old checkout before launching installed JACO`);
       if (observed.state !== 'READY' && await occupied(service.url) && !ownsListener(c,service)) throw new Error(`PORT_CONFLICT_OR_UNHEALTHY:${service.id}`);
     }
     let chromeAvailable = !c.cdp;
@@ -332,6 +335,12 @@ export async function activate(c, { open = false } = {}) {
         state = await waitReady(s, c.env.GATEWAY_TOKEN);
       }
       result.services.push({ id: s.id, state: state.state, url: s.url }); console.log(`READY ${s.id}`);
+      // Product GUI stays usable for first-run model onboarding even if later workers are DEGRADED.
+      if (open && c.dataRoot !== c.root && s.id === 'runtime' && !installedGuiOpened) {
+        const browser = spawn('explorer.exe', [c.env.JACO_RUNTIME_URL], { windowsHide: true, detached: true, stdio: 'ignore' });
+        browser.unref();
+        installedGuiOpened = true;
+      }
       checkpoint(`ready:${s.id}`);
     }
     checkpoint('nova');
@@ -384,7 +393,7 @@ export async function activate(c, { open = false } = {}) {
       result.tunnel = 'PROCESS_PRESENT_PUBLIC_REACHABILITY_UNVERIFIED';
     }
     result.state = result.warnings.length || (c.cdp && result.browserAttachment !== 'ATTACHED') ? 'DEGRADED' : 'READY'; result.completedAt = new Date().toISOString(); checkpoint('complete');
-    if (open) { const child = spawn('explorer.exe', [c.env.JACO_RUNTIME_URL], { windowsHide: true, detached: true, stdio: 'ignore' }); child.unref(); }
+    if (open && !installedGuiOpened) { const child = spawn('explorer.exe', [c.env.JACO_RUNTIME_URL], { windowsHide: true, detached: true, stdio: 'ignore' }); child.unref(); }
     return result;
   } catch (error) { result.state = 'BLOCKED'; result.error = error.message; result.completedAt = new Date().toISOString(); checkpoint(result.phase); throw error; }
   finally { fs.unlinkSync(lock); }
