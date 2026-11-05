@@ -1918,7 +1918,11 @@ export async function agentChat({ messages, tools }, fetchImpl = fetch, env = pr
   // deciding whether that exact operator model is available.
   await refreshConnectedProviders(fetchImpl, env);
   const failures = [];
-  for (const provider of brainCandidates(env)) {
+  const candidates = brainCandidates(env);
+  if (env.JACO_AURA_UNIFIED_RUNTIME === '1' && candidates.length === 0) {
+    throw new Error('AURA_MODEL_SELECTION_REQUIRED');
+  }
+  for (const provider of candidates) {
     if (isPaidProvider(provider) && !paidModelsAllowed(env)) { failures.push(`${provider.name}:PAID_DISABLED`); continue; }
     if (!paidCallAllowed(provider)) { failures.push(`${provider.name}:PAID_CAP`); continue; }
     const key = provider.envKey ? credential(provider.envKey) : "ollama";
@@ -1950,6 +1954,15 @@ export async function agentChat({ messages, tools }, fetchImpl = fetch, env = pr
       parkProvider(provider, providerParkMs({ error }), String(error?.message || error).slice(0, 80));
       failures.push(`${provider.name}:${String(error?.message || error).slice(0, 40)}`);
     }
+  }
+  if (env.JACO_AURA_UNIFIED_RUNTIME === '1') {
+    // A selected model that rejects OpenAI tool schemas must fall through to the
+    // structured planner on this exact provider. The native loop hands control
+    // back only for this capability mismatch, not for transport/budget failures.
+    if (candidates.some(provider => agentToolsUnsupported.has(`${provider.name}/${provider.model}`))) {
+      throw new Error('NO_PLANNER_AVAILABLE:SELECTED_MODEL_NATIVE_TOOLS_UNSUPPORTED');
+    }
+    throw new Error(`AURA_SELECTED_MODEL_UNAVAILABLE:${failures.join('|').slice(0, 150) || 'PROVIDER_NOT_READY'}`);
   }
   throw new Error(`NO_PLANNER_AVAILABLE ${failures.join(' | ')}`.trim());
 }

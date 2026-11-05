@@ -107,6 +107,26 @@ test('blocked ends the mission with the reason; no model at all defers without s
   assert.equal(s.control.get(m.id).status, 'BLOCKED');
 });
 
+test('Aura selected model failure is an explicit blocker rather than a permanent step-zero defer', async t => {
+  const s = setup(t, ['web-fetch']);
+  const mission = s.control.create({ goal: 'Read an authorized page', idempotencyKey: 'aura-model-block', allowedTasks: ['web-fetch'] });
+  let attempts = 0;
+  const result = await run(s, { chat: async () => { attempts++; throw Error('AURA_SELECTED_MODEL_UNAVAILABLE:gemini:PROVIDER_TIMEOUT'); } }, async () => assert.fail('no mutation when model is unavailable'));
+  assert.equal(result.blocked, true);
+  assert.equal(attempts, 1, 'a provider outage must not be retried without bounded operator control');
+  assert.match(result.reason, /AURA_SELECTED_MODEL_UNAVAILABLE/);
+  assert.equal(s.control.get(mission.id).status, 'BLOCKED');
+  assert.equal(s.control.get(mission.id).receipts.length, 0);
+});
+
+test('Aura absent model choice is a visible blocking configuration issue', async t => {
+  const s = setup(t, ['web-fetch']);
+  const mission = s.control.create({ goal: 'Read an authorized page', idempotencyKey: 'aura-no-model', allowedTasks: ['web-fetch'] });
+  const result = await run(s, { chat: async () => { throw Error('AURA_MODEL_SELECTION_REQUIRED'); } }, async () => assert.fail('no tools without a selected model'));
+  assert.equal(result.blocked, true);
+  assert.equal(s.control.get(mission.id).status, 'BLOCKED');
+});
+
 test('a model that never uses tools is stopped after a bounded number of nudges', async t => {
   const s = setup(t, ['web-fetch']);
   s.control.create({ goal: 'g', idempotencyKey: 'a5', allowedTasks: ['web-fetch'] });

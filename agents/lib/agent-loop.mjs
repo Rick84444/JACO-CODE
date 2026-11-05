@@ -183,6 +183,13 @@ export async function runAgentMission({
       catch (error) {
         modelErrors++;
         log('warn', `model error ${modelErrors}/${maxModelErrors}: ${errorText(error)}`);
+        const modelIssue = errorText(error);
+        // Aura's only authorized model is missing or unavailable. A repeating
+        // step-0 defer hid the problem indefinitely, falsely implying active work.
+        // Release an explicit blocker with no tool side effects and no provider fallback.
+        if (/^AURA_(MODEL_SELECTION_REQUIRED|SELECTED_MODEL_UNAVAILABLE)/.test(modelIssue)) {
+          return end({ blocked: true, reason: modelIssue }, { error: `PLANNER_BLOCKED:${modelIssue}` });
+        }
         // No model answered at all: give the mission back untouched; the next tick tries again.
         if (/NO_PLANNER_AVAILABLE|ALL_PROVIDERS_FAILED/.test(errorText(error)) && !receipts.length) return { executed: false, deferred: true, reason: errorText(error) };
         if (modelErrors >= maxModelErrors) return end({ failed: true, reason: errorText(error) }, { error: `MODEL_FAILED:${errorText(error)}` });
