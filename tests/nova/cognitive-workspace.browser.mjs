@@ -197,7 +197,7 @@ try {
 
   await canvas('Spelplan').click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
-  await page.getByText('SEER: UNAVAILABLE').waitFor();
+  await page.getByText('Aura planning: UNAVAILABLE').waitFor();
   await page.locator('section[aria-label="Shared gameboard"] input[list="gameboard-tools"]').first().fill('mcp:git:git_status');
   await page.getByRole('button',{name:'Simulate without execution'}).click();
   await page.getByText('Executed: no', {exact:false}).waitFor();
