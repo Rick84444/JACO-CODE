@@ -1,4 +1,5 @@
 import { readAuraServiceHealth } from '../agents/lib/aura-service-health.mjs';
+import { githubWindowsReleaseStatus } from './src/server/updates/githubRelease.mjs';
 import { sharedObservation } from './src/server/connected/sharedObservation.mjs';
 import { readMissionReview } from './src/server/connected/missionReview.mjs';
 import { createMissionWorktrees } from '../agents/lib/mission-worktree.mjs';
@@ -6775,6 +6776,18 @@ const notifyPhone = async (action) => {
 
     res.header("Content-Type", "application/xml; charset=utf-8");
     res.status(200).send(sitemap);
+  });
+
+  // Released Windows installer discovery; read-only and local-UI-only.
+  // Never treat the development branch as an update and never download/execute code from the browser.
+  app.get('/api/product/windows-update', requireLocalUi, async (_req, res) => {
+    const currentVersion = JSON.parse(fs.readFileSync(path.join(RELEASE_ROOT, 'package.json'), 'utf8')).version;
+    const result = await githubWindowsReleaseStatus({
+      currentVersion,
+      installed: process.env.JACO_INSTALLED === '1'
+    });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(result.success ? 200 : 503).json(result);
   });
 
   // An unknown API path is a 404, not the SPA's index.html with status 200.
