@@ -39,13 +39,14 @@ export function projectNodeContract({ title, objective, mainGoal, projectRoot = 
   if (!what) throw new Error('PROJECT_NODE_OBJECTIVE_REQUIRED');
   const { readOnly } = projectGoalCapabilities(`${what}\n${String(mainGoal || '')}`);
   const testCommand = readOnly ? null : detectProjectTestCommand(projectRoot);
+  const needsNewTests = !readOnly && /\b(?:test|tests|testing|fix|bug|debug|repair|regression|verify|verification|falsifier|testa|felsök)\b/i.test(what);
   return {
     schema: 'jaco.coding-contract/v1',
     objective: `${what}\n\nPart of the operator goal: ${String(mainGoal || '').slice(0, 2000)}`.slice(0, 12000),
     scope: { allowed: ['**'] },
     acceptance: readOnly
       ? [`${String(title || what).slice(0, 300)} is answered from verified read receipts`, 'No repository mutation is permitted']
-      : [`${String(title || what).slice(0, 300)} is implemented in the project and observable through a receipt`, testCommand ? `The project's tests (${testCommand}) pass after the last code change` : 'No project test command discovered; report that automated tests were not verified'],
+      : [`${String(title || what).slice(0, 300)} is implemented in the project and observable through a receipt`, testCommand ? `The project's tests (${testCommand}) pass after the last code change` : needsNewTests ? 'Create and pass a new workspace test after the final code change' : 'No project test command discovered; report that automated tests were not verified'],
     execution: {
       autonomous: true,
       require_human_before_destructive_action: true,
@@ -54,7 +55,7 @@ export function projectNodeContract({ title, objective, mainGoal, projectRoot = 
       allow_git_push: false,
       allow_git_merge: false,
     },
-    verification: { tests_required: Boolean(testCommand), falsifier_required: false, receipt_required: true, commands: testCommand ? [testCommand] : [] },
+    verification: { tests_required: Boolean(testCommand) || needsNewTests, allow_workspace_tests: !readOnly, falsifier_required: false, receipt_required: true, commands: testCommand ? [testCommand] : [] },
     budget: { max_steps: 40, max_tool_calls: 60, max_failures: 5, max_duration_ms: 3_600_000 },
   };
 }
