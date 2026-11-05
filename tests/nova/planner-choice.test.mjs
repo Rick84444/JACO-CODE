@@ -297,3 +297,12 @@ test('custom connected provider is the sole candidate when operator pinned it',(
     clearPlannerChoice(file);
   }
 });
+
+test('unified Aura refuses automatic local fallback and keeps the exact operator model over env Ollama', () => {
+  clearPlannerChoice(file);
+  assert.deepEqual(brainCandidates({...env, JACO_AURA_UNIFIED_RUNTIME:'1', JACO_PRIMARY_PROVIDER:undefined}), []);
+  writePlannerChoice(file,{provider:'deepseek',model:'deepseek-v4-pro'},'operator');
+  const pinned=brainCandidates({...env,JACO_AURA_UNIFIED_RUNTIME:'1',JACO_PRIMARY_PROVIDER:'ollama'});
+  assert.deepEqual(pinned.map(p=>[p.name,p.model]),[['deepseek','deepseek-v4-pro']]);
+  clearPlannerChoice(file);
+});

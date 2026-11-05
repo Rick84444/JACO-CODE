@@ -3102,7 +3102,7 @@ const notifyPhone = async (action) => {
     const choices = plannerChoices(process.env, extra);
     return {
       success: true,
-      choice: process.env.JACO_PRIMARY_PROVIDER
+      choice: process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1'
         ? { provider: process.env.JACO_PRIMARY_PROVIDER, model: choices[process.env.JACO_PRIMARY_PROVIDER]?.models[0] || null, by: 'environment' }
         : readPlannerChoice(plannerChoicePath),
       choices: Object.entries(choices).map(([provider, c]: [string, any]) => {
@@ -3128,6 +3128,12 @@ const notifyPhone = async (action) => {
     } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
   });
 
+  // Aura is the canonical operator-facing identity; /api/nova/planner is only
+  // a backward-compatible SDK endpoint for the same persisted model choice.
+  app.get('/api/aura/model', requireLocalUi, async (_req, res) => {
+    try { res.setHeader('Cache-Control', 'no-store'); res.json(await plannerState()); }
+    catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
+  });
   app.get('/api/nova/planner', async (_req, res) => { try { res.json(await plannerState()); } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); } });
 
   // Stripe revenue, read-only, for the IDE's Revenue view. Cached for a minute: the view polls.
@@ -3138,9 +3144,9 @@ const notifyPhone = async (action) => {
     }
     res.json({ success: !revenueCache.value.error, ...revenueCache.value });
   });
-  app.post('/api/nova/planner', requireLocalUi, async (req, res) => {
+  const chooseAuraModel = async (req: express.Request, res: express.Response) => {
     try {
-      if (process.env.JACO_PRIMARY_PROVIDER) return res.status(409).json({ success: false, error: 'PLANNER_ENV_PRIMARY_AUTHORITATIVE' });
+      if (process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1') return res.status(409).json({ success: false, error: 'PLANNER_ENV_PRIMARY_AUTHORITATIVE' });
       const provider = String(req.body?.provider || '');
       if (provider === 'auto') {
         clearPlannerChoice(plannerChoicePath);
@@ -3153,12 +3159,14 @@ const notifyPhone = async (action) => {
         writePlannerChoice(plannerChoicePath, valid, 'operator');
       }
       const state = await plannerState();
-      seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'nova.planner.chosen', message: `Nova planner: ${state.choice ? `${state.choice.provider}/${state.choice.model}` : 'automatic chain'}`, verified: true, receipt: { choice: state.choice } });
+      seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.model.chosen', message: `Aura model: ${state.choice ? `${state.choice.provider}/${state.choice.model}` : 'selection required'}`, verified: true, receipt: { choice: state.choice } });
       res.json(state);
     } catch (error: any) {
       res.status(400).json({ success: false, error: error?.message || String(error) });
     }
-  });
+  };
+  app.post('/api/aura/model', requireLocalUi, chooseAuraModel);
+  app.post('/api/nova/planner', requireLocalUi, chooseAuraModel);
   app.post('/api/nova/planner/test', requireLocalUi, async (req, res) => {
     try {
       res.json({ success: true, result: await testPlannerModel({ provider: String(req.body?.provider || ''), model: String(req.body?.model || '') }, { env: process.env, extra: await connectedPlannerChoices() }) });

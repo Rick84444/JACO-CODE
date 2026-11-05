@@ -97,6 +97,7 @@ export function createWorkplaceAgentSupervisor({
   const superviseModel = env.JACO_WORKPLACE_SUPERVISE_MODEL === '1';
   const superviseNova = env.JACO_WORKPLACE_SUPERVISE_NOVA === '1';
   const superviseSeer = env.JACO_WORKPLACE_SUPERVISE_SEER === '1';
+  const auraOwnsRuntime = env.JACO_AURA_UNIFIED_RUNTIME === '1';
   const enabled = superviseModel || superviseNova || superviseSeer;
   const novaEntry = env.JACO_EXECUTOR === 'desktop-agentos'
     ? 'agents/run-desktop-agentos.mjs' : 'agents/hands-off-agent.mjs';
@@ -114,6 +115,13 @@ export function createWorkplaceAgentSupervisor({
       workplaceUrl,
       runtimeUrl,
       seerUrl,
+      aura: {
+        identity: 'Aura',
+        architecture: 'single-agent',
+        strategyCapability: { service: 'seer', state: seerState },
+        executionCapability: { service: 'nova', state: novaState },
+        providerVerification: modelState === 'READY' ? 'VERIFIED' : 'UNVERIFIED',
+      },
       model: {
         supervised: superviseModel,
         state: modelState,
@@ -216,7 +224,7 @@ export function createWorkplaceAgentSupervisor({
   }
 
   async function ensureModel(waitMs) {
-    if (env.JACO_SEER_PROVIDER_PREFERENCE === 'aura') {
+    if (auraOwnsRuntime || env.JACO_SEER_PROVIDER_PREFERENCE === 'aura') {
       // The existing SEER brain probe verifies Aura's saved choice below.
       // No local discovery, model spawn, or implied cloud permission here.
       modelState = 'WAITING_SELECTED_PROVIDER';
@@ -462,6 +470,23 @@ export function createWorkplaceAgentSupervisor({
       await ensureSeer(waitMs);
       if (stopping) return;
 
+      if (auraOwnsRuntime) {
+        // Critical: executor lifecycle is NOT an inference request. A slow/missing
+        // operator model must never prevent Aura's mission executor from starting.
+        // Actual model errors surface on mission turns, with receipts and no unapproved fallback.
+        // No startup /cortex/brain call can hang this chain or trigger a stale Ollama model.
+        modelState = 'SELECTED_MODEL_UNVERIFIED';
+        modelProvider = null;
+        if (superviseNova) {
+          aggregateState = 'STARTING_AURA_EXECUTOR';
+          await launchNova();
+        } else {
+          aggregateState = 'RUNNING';
+        }
+        return;
+      }
+
+      // Legacy compatibility profile: retain historical inference-before-executor gate.
       aggregateState = 'VERIFYING_SEER_BRAIN';
       const brain = await waitForSeerBrain(waitMs);
       if (stopping) return;

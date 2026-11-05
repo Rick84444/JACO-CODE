@@ -520,11 +520,11 @@ async function callLLM({ system, user, image, max_tokens = 1024, temperature = 0
   // An explicit Aura selection is a pinned single-model route, independent of
   // whether the old environment preference flag was set. Never silently plan
   // with an unrelated local model after the operator's chosen model fails.
-  const pinned = !process.env.JACO_PRIMARY_PROVIDER &&
+  const pinned = (!process.env.JACO_PRIMARY_PROVIDER || process.env.JACO_AURA_UNIFIED_RUNTIME === '1') &&
     readPlannerChoice(plannerChoiceFile(process.env))?.by === 'operator';
   // The startup probe only asks whether the service can think at all. A pinned paid model that is not yet
   // allowed must fail the planning that needs it, not keep the execution service from starting.
-  const auraOnly = process.env.JACO_SEER_PROVIDER_PREFERENCE === 'aura' || (pinned && !startup_probe);
+  const auraOnly = process.env.JACO_SEER_PROVIDER_PREFERENCE === 'aura' || process.env.JACO_AURA_UNIFIED_RUNTIME === '1' || (pinned && !startup_probe);
   const aura = startup_probe && !auraOnly ? null : await resolveAuraPlanner(runtime);
   const auraResult = aura ? await invokeAuraPlanner(aura, await seerPromptFor(aura, { system, user, image, temperature, memory_chars, startup_probe }, aura.local ? max_tokens : requestedTokens), {
     ...runtime, purpose, onFailure: failure => emit('provider.failed', failure),

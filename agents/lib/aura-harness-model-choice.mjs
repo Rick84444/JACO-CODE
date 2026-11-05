@@ -25,7 +25,7 @@ export async function synchronizeAuraHarnessModel(selection, { file, env = proce
     throw new Error('AURA_HARNESS_MODEL_SELECTION_INVALID');
   }
   // Environment authority cannot silently be replaced by a GUI selection.
-  if (env.JACO_PRIMARY_PROVIDER) throw new Error('PLANNER_ENV_PRIMARY_AUTHORITATIVE');
+  if (env.JACO_PRIMARY_PROVIDER && env.JACO_AURA_UNIFIED_RUNTIME !== '1') throw new Error('PLANNER_ENV_PRIMARY_AUTHORITATIVE');
   const validated = validatePlannerChoice({ provider: providerId, model }, env, connectedChoices);
   if (validated.provider !== providerId || validated.model !== model) throw new Error('AURA_HARNESS_MODEL_CHANGED_DURING_VALIDATION');
   const before = readPlannerChoice(file);

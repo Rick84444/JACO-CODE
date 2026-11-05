@@ -163,6 +163,37 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     setModelOverride(true);
   };
   const modelStorageKey = 'jaco:aura:chat-model:v1';
+  const [modelSync, setModelSync] = useState<'idle'|'checking'|'active'|'blocked'>('idle');
+  const [modelSyncError, setModelSyncError] = useState<string | null>(null);
+  // Selecting a model in Aura must affect the ACTUAL mission planner, not just
+  // localStorage used by chat. A debounce avoids probing on every typed character.
+  // Failed probes leave the previous canonical choice intact and display the blocker.
+  useEffect(() => {
+    if (!storageReady || !modelOverride || selectedProvider === 'seer' || !chatModel.trim()) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setModelSync('checking'); setModelSyncError(null);
+      try {
+        const response = await fetch('/api/aura/model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: selectedProvider, model: chatModel }),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(35_000)]),
+        });
+        const result = await response.json();
+        if (!response.ok || result.success === false || result.choice?.provider !== selectedProvider || result.choice?.model !== chatModel) {
+          throw new Error(String(result?.probe?.error || result?.error || 'AURA_MODEL_NOT_CONFIRMED'));
+        }
+        if (!controller.signal.aborted) setModelSync('active');
+      } catch (error: any) {
+        if (!controller.signal.aborted) {
+          setModelSync('blocked');
+          setModelSyncError(String(error?.message || 'AURA_MODEL_ROUTING_UNAVAILABLE').slice(0, 250));
+        }
+      }
+    }, 650);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [selectedProvider, chatModel, modelOverride, storageReady]);
 
   useEffect(() => {
     let active = true;
@@ -665,6 +696,9 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               try { localStorage.removeItem(modelStorageKey); localStorage.removeItem(selectionKey); } catch {}
             }} title="Use the model configured in JACO">{tr('Standardmodell','Default model')}</button>}
           </div>
+          {selectedProvider !== 'seer' && modelSync === 'checking' && <p role="status" className="text-[11px] text-cyan-300">Checking Aura model for chat, planning and missions…</p>}
+          {selectedProvider !== 'seer' && modelSync === 'active' && <p role="status" className="text-[11px] text-emerald-300">Aura model verified for the next mission turn.</p>}
+          {selectedProvider !== 'seer' && modelSync === 'blocked' && <p role="alert" className="text-[11px] text-amber-300">Aura mission model not switched: {modelSyncError}. Chat selection does not grant paid inference or silently fall back to Ollama.</p>}
           {selectedProvider !== 'seer' && providers.find(p => p.id === selectedProvider) && !providers.find(p => p.id === selectedProvider)!.credentialReady && <p className="text-[11px] text-amber-300">{tr('Provider saknar konfigurerad credential.','Provider credentials are not configured.')}</p>}
         </div>
       )}
