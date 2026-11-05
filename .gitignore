@@ -47,3 +47,7 @@ ecosystem.config.cjs
 
 # Operator-provided product branding, not a generated screenshot.
 !runtime/public/branding/jaco-logo.png
+
+# Python bytecode is generated
+__pycache__/
+*.pyc
