@@ -49,7 +49,7 @@ import { createGithubNovaControlInbox } from './lib/github-control-inbox.mjs';
 import { enqueueVerifiedReceiptPromotion, flushLivingCorePromotions, ensureLivingCorePromotionState } from './lib/living-core-promotion.mjs';
 import { TASK_FIELDS, taskContract } from './lib/task-fields.mjs';
 import { CODE_TASKS, validateCodingTask } from './lib/coding-contract.mjs';
-import { nonTextModelKind, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
+import { nonTextModelKind, openAiChatCompletionsUrl, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
 import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs';
 import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs';
 import { validateRepoScanTask, runRepoScanTask } from './lib/repo-scan.mjs';
@@ -1089,13 +1089,13 @@ const BRAIN_PROVIDERS = [
   // Last resort: whatever Ollama serves (OLLAMA_MODEL), no key needed.
   {
     name: "ollama",
-    url: `${process.env.OLLAMA_BASE_URL || "http://localhost:11434"}/v1/chat/completions`,
+    url: openAiChatCompletionsUrl(process.env.OLLAMA_BASE_URL),
     envKey: null,
     model: process.env.OLLAMA_MODEL || "llama3",
   },
   {
     name: "ollama-local",
-    url: `${process.env.OLLAMA_BASE_URL || "http://localhost:11434"}/v1/chat/completions`,
+    url: openAiChatCompletionsUrl(process.env.OLLAMA_BASE_URL),
     envKey: null,
     model: process.env.JACO_OLLAMA_LOCAL_MODEL || "gemma3:4b",
     free: true,
@@ -2088,13 +2088,20 @@ async function runBrain(state) {
     nativeToolsAllowed: selected ? nativeToolsFor(selected) : true,
     nativeToolsRejected: Boolean(selected && agentToolsUnsupported.has(`${selected.name}/${selected.model}`)),
   });
+  log('info', 'brain', selected
+    ? `Planner turn: ${selected.name}/${selected.model} protocol=${selectedProtocol}`
+    : 'Planner turn: no eligible provider');
   if (process.env.NOVA_AGENT_LOOP !== '0' && selectedProtocol === 'native') {
     const result = await runAgentLoop(state);
     // An explicit chosen model that rejects native function calls can use the
     // existing structured planner on the SAME provider. No unrelated model
     // fallback, no duplicated mission or new execution authority.
     const unsupported = selected?.chosen && agentToolsUnsupported.has(`${selected.name}/${selected.model}`);
-    if (result && !(result.deferred && unsupported)) { state.lastBrainTick = state.ticks; return result; }
+    if (result && !(result.deferred && unsupported)) {
+      log('info', 'brain', `Native turn: executed=${Boolean(result.executed)} deferred=${Boolean(result.deferred)} stopped=${result.stopped || 'no'}`);
+      state.lastBrainTick = state.ticks;
+      return result;
+    }
   }
   const turn = await processMissionTurn({
     client: missionClient, owner: state.agentId,
@@ -2123,6 +2130,7 @@ async function runBrain(state) {
       }
     },
   });
+  log('info', 'brain', `Structured turn: executed=${Boolean(turn?.executed)} deferred=${Boolean(turn?.deferred)} blocked=${Boolean(turn?.blocked)} mission=${turn?.mission?.id || 'none'}`);
   state.lastBrainTick = state.ticks;
   return turn;
 }

@@ -8,10 +8,15 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nova-planner-choice-'));
 process.env.NOVA_STATE_DIR = dir;
 process.env.NOVA_BRAIN_MODE = 'direct';
 const { orderedBrainProviders, brainCandidates, setConnectedProvidersForTest } = await import('../../agents/hands-off-agent.mjs');
-const { plannerChoiceFile, validatePlannerChoice, writePlannerChoice, clearPlannerChoice, testPlannerModel } = await import('../../agents/lib/planner-choice.mjs');
+const { openAiChatCompletionsUrl, plannerChoiceFile, validatePlannerChoice, writePlannerChoice, clearPlannerChoice, testPlannerModel } = await import('../../agents/lib/planner-choice.mjs');
 
 const file = path.join(dir, 'provider-preference.json');
 const env = { JACO_PLANNER_CHOICE_FILE: file, JACO_PRIMARY_PROVIDER: 'groq' };
+
+test('OpenAI-compatible Ollama URL accepts both bare host and /v1 base', () => {
+  assert.equal(openAiChatCompletionsUrl('http://127.0.0.1:11434'), 'http://127.0.0.1:11434/v1/chat/completions');
+  assert.equal(openAiChatCompletionsUrl('http://127.0.0.1:11434/v1/'), 'http://127.0.0.1:11434/v1/chat/completions');
+});
 
 test('the environment primary leads the chain over a stale GUI choice', () => {
   writePlannerChoice(file, { provider: 'deepseek', model: 'deepseek-v4-pro' }, 'operator');
@@ -44,7 +49,7 @@ test('only listed models with a key can be chosen; paid models are on unless JAC
   assert.deepEqual(validatePlannerChoice({ provider: 'deepseek', model: 'deepseek-v4-pro' }, keyed), { provider: 'deepseek', model: 'deepseek-v4-pro', paid: true });
   assert.throws(() => validatePlannerChoice({ provider: 'deepseek', model: 'gpt-9' }, keyed), /PLANNER_MODEL_UNKNOWN/);
   assert.throws(() => validatePlannerChoice({ provider: 'nope' }, keyed), /PLANNER_PROVIDER_UNKNOWN/);
-  assert.throws(() => validatePlannerChoice({ provider: 'deepseek', model: 'deepseek-v4-pro' }, { JACO_ALLOW_PAID_MODELS: '1' }), /PLANNER_KEY_MISSING:DEEPSEEK_API_KEY/);
+  assert.throws(() => validatePlannerChoice({ provider: 'deepseek', model: 'deepseek-v4-pro' }, { JACO_ALLOW_PAID_MODELS: '1', JACO_STATE_DIR: dir }), /PLANNER_KEY_MISSING:DEEPSEEK_API_KEY/);
   assert.throws(() => validatePlannerChoice({ provider: 'deepseek', model: 'deepseek-v4-pro' }, { DEEPSEEK_API_KEY: 'x', JACO_ALLOW_PAID_MODELS: '0' }), /PLANNER_PAID_MODELS_DISABLED/);
   assert.equal(validatePlannerChoice({ provider: 'deepseek', model: 'deepseek-v4-pro' }, { DEEPSEEK_API_KEY: 'x' }).paid, true, 'a configured key is enough');
 });
@@ -158,7 +163,7 @@ test('keyless HTTPS providers remain budgeted; real loopback local models are fr
   assert.deepEqual(metered, ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/settle']);
   const localCalls = [];
   const local = await testPlannerModel({ provider: 'ollama', model: 'gemma3:4b' }, {
-    env: {},
+    env: { OLLAMA_BASE_URL: 'http://127.0.0.1:11434/v1' },
     fetchImpl: async url => { localCalls.push(new URL(url).pathname); return Response.json({ choices: [{ message: { content: 'OK' } }] }); },
   });
   assert.equal(local.ok, true);

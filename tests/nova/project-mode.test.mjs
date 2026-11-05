@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { normalizeProjectRoot, projectNodeContract, projectGraphPolicy, projectGoalGraph, projectGoalDone, PROJECT_TASKS } from '../../gateway/src/seer-project.mjs';
+import { normalizeProjectRoot, projectGoalCapabilities, projectNodeContract, projectGraphPolicy, projectGoalGraph, projectGoalDone, PROJECT_TASKS } from '../../gateway/src/seer-project.mjs';
 
 test('a project goal with a verified graph is done and is not executed again', () => {
   const graphs = [
@@ -46,6 +46,31 @@ test('project graph policy routes to Nova with code tools only when a project is
   assert.equal(policy.executor, 'nova');
   assert.ok(PROJECT_TASKS.filter(t => !['web-fetch','mcp-call'].includes(t)).every(t => CODE_TASKS.has(t)));
   assert.ok(!PROJECT_TASKS.includes('git-push') && !PROJECT_TASKS.includes('git-merge'));
+});
+
+test('explicit read-only and network restrictions compile into mission authority', () => {
+  const statement = 'Read package.json. Do not edit files or use network tools.';
+  assert.deepEqual(projectGoalCapabilities(statement), {
+    readOnly: true,
+    tasks: ['repo-list', 'repo-read', 'git-status', 'git-diff'],
+  });
+  const graph = projectGoalGraph({ id: 'goal-read', statement, project_root: absolute });
+  assert.deepEqual(graph.policy.allowedTasks, ['repo-list', 'repo-read', 'git-status', 'git-diff']);
+  const contract = normalizeCodingContract(graph.nodes[0].contract);
+  assert.equal(contract.execution.allow_git_commit, false);
+  assert.equal(contract.execution.require_git_commit, false);
+  assert.match(contract.acceptance.join(' '), /No repository mutation is permitted/);
+});
+
+test('an explicit CDP observation keeps browser capability while a project is open', () => {
+  const statement = 'Use CDP to inspect the browser at http://localhost:3000/. Read only; do not click, type, or modify anything.';
+  const capabilities = projectGoalCapabilities(statement);
+  assert.equal(capabilities.readOnly, true);
+  assert.ok(capabilities.tasks.includes('browser-survey-site'));
+  assert.ok(!capabilities.tasks.includes('repo-write'));
+  const graph = projectGoalGraph({ id: 'goal-cdp', statement, project_root: absolute });
+  assert.ok(graph.policy.allowedTasks.includes('browser-survey-site'));
+  assert.equal(normalizeCodingContract(graph.nodes[0].contract).execution.allow_git_commit, false);
 });
 
 test('an operator instruction on a project becomes one direct node, not a re-strategised plan', () => {

@@ -159,6 +159,7 @@
 .cognitive-operation-notice { display:flex; align-items:center; gap:12px; padding:10px 15px; font-size:11px; color:#d1af85; background:#251e15; overflow-wrap:anywhere; }
 .cognitive-operation-notice button { margin-left:auto; flex-shrink:0; }
 .cognitive-dock-toggle { padding:8px 15px; border-top:1px solid var(--cw-line); display:flex; align-items:center; gap:7px; font-size:10px; color:#7893a4; text-align:left; }
+.cognitive-work-terminal { flex-shrink:0; min-height:0; }
 .cognitive-terminal-dock { height:250px; border-top:1px solid #2b3a45; background:#0c131b; flex-shrink:0; }
 .cognitive-evidence-scroll { height:100%; overflow:auto; }
 .cognitive-evidence { padding:26px 24px; }
@@ -639,9 +640,13 @@
 .aura-activity-goal{margin:6px 0 0;color:#a9bdcc;font-size:12px;line-height:1.45}
 .aura-activity-empty{margin:8px 0 0;color:#8faaba;font-size:12px}
 .aura-activity ol{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:2px;max-height:190px;overflow:auto}
-.aura-activity li{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:8px;min-height:26px}
+.aura-activity li{display:grid;grid-template-columns:10px minmax(0,1fr) auto auto;align-items:center;gap:8px;min-height:26px}
 .aura-activity li button{text-align:left;color:#c5d4df;font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .aura-activity li button:hover{color:#fff;text-decoration:underline}
+.aura-activity-outcome{font-size:10px;line-height:1;padding:3px 6px;border:1px solid #355064;border-radius:999px;color:#9db4c4;white-space:nowrap}
+.aura-activity li[data-outcome=verified] .aura-activity-outcome{border-color:#2f8063;color:#7de1b8}
+.aura-activity li[data-outcome=failed] .aura-activity-outcome{border-color:#894b50;color:#ee999b}
+.aura-activity li[data-outcome=unknown] .aura-activity-outcome,.aura-activity li[data-outcome=unverified] .aura-activity-outcome{border-color:#83683d;color:#e7bd7b}
 .aura-activity li time{font-size:11px;color:#70899b}
 .aura-activity-dot{width:7px;height:7px;border-radius:50%;background:#78cde0}
 .aura-activity li[data-outcome=verified] .aura-activity-dot{background:#58e3a9}

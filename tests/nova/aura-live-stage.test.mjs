@@ -67,6 +67,18 @@ test('One stage is mounted by canonical IDE without permanent tool tabs or a sec
   assert.match(ide,/expectedHash:source\.hash/);
 });
 
+test('Work owns the canonical live terminal and opens it as the first panel',()=>{
+  const ide=fs.readFileSync(new URL('../../runtime/src/components/JacoAuraComputeIDE.tsx',import.meta.url),'utf8');
+  const css=fs.readFileSync(new URL('../../runtime/src/cognitive-workspace.css',import.meta.url),'utf8');
+  assert.match(ide,/const \[showTerminal, setShowTerminal\] = useState\(true\)/);
+  assert.match(ide,/const \[bottomPanel, setBottomPanel\] = useState<BottomPanel>\('terminal'\)/);
+  assert.match(ide,/tool\.id === 'terminal\.open'[\s\S]{0,180}setWorkspaceView\('stage'\)/);
+  assert.match(ide,/const terminalDock = \([\s\S]+?\['terminal','TERMINAL'\],[\s\S]+?\['missions','MISSIONS'\]/);
+  assert.match(ide,/const stage = <div className="aura-stage-column">[\s\S]+?<AuraLiveStage[\s\S]+?\{terminalDock\}/);
+  assert.doesNotMatch(ide,/className="cognitive-code-workspace"[\s\S]{0,2500}\{terminalDock\}/);
+  assert.match(css,/\.cognitive-work-terminal \{ flex-shrink:0; min-height:0; \}/);
+});
+
 test('CDP screenshots use only existing authorized read tool and remain bounded',()=>{
   const component=fs.readFileSync(new URL('../../runtime/src/components/AuraLiveStage.tsx',import.meta.url),'utf8');
   assert.match(component,/providerId:'cdp',toolName:'nova_screenshot'/);

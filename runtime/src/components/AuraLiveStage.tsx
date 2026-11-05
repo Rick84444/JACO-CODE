@@ -178,6 +178,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
         {activity.map(({ event: step, count }) => <li key={step.id} data-outcome={step.evidence.outcome}>
           <span className="aura-activity-dot" aria-hidden="true"/>
           <button type="button" onClick={() => step.evidence.path ? onOpenFile(step.evidence.path) : onInspect(step)} title={step.evidence.path ? tr('Öppna filen','Open file') : tr('Granska belägg','Review evidence')}>{step.text}{count > 1 ? ` (${count}×)` : ''}</button>
+          <span className="aura-activity-outcome">{outcome(step, language)}</span>
           <time>{time(step.at, language)}</time>
         </li>)}
       </ol> : <p className="aura-activity-empty">{activityState === 'stalled' ? tr('Uppdraget är registrerat men inget steg har rapporterats. Du kan avsluta det med Stop mission.','The mission is registered but no step has been reported. You can end it with Stop mission.') : activeMission ? tr('Inget steg har rapporterats ännu. Här syns varje steg när det sker.','No step has been reported yet. Each step appears here as it happens.') : tr('Starta ett uppdrag i chatten så syns arbetet här.','Start a mission in the chat and the work appears here.')}</p>}
