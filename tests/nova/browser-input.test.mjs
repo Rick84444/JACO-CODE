@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { actSession, axSession } from '../../agents/nova-bridge.mjs';
+import { actSession, axSession, activeBrowserTarget } from '../../agents/nova-bridge.mjs';
 import { createInputActions, deepResolver, checkUploadFiles, listDownloadFiles } from '../../agents/lib/browser-input.mjs';
 import { createBrowserActionJournal } from '../../agents/lib/browser-action-journal.mjs';
 import { inputAllowed, browserScope, mutationsEnabled, hardDenied, isPrivateHost } from '../../agents/lib/browser-scope.mjs';
@@ -307,4 +307,15 @@ test('every new browser mutation kind has a durable journal identity and cannot 
     assert.equal(replay.replayed, true, kind);
     assert.equal(writes, 1, kind + ' executed more than once');
   }
+});
+
+test('an agent-owned tab switch takes precedence over the configured initial CDP pin', () => {
+  const tabs = [
+    { id: 'pinned', type: 'page', url: 'https://example.test/a', webSocketDebuggerUrl: 'ws://a' },
+    { id: 'owned', type: 'page', url: 'https://example.test/b', webSocketDebuggerUrl: 'ws://b' },
+  ];
+  assert.equal(activeBrowserTarget(tabs, 'pinned', 'owned', new Set(['owned'])).id, 'owned');
+  assert.equal(activeBrowserTarget(tabs, 'pinned', 'owned', new Set()).id, 'pinned');
+  assert.equal(activeBrowserTarget(tabs, 'pinned', null, new Set()).id, 'pinned');
+  assert.equal(activeBrowserTarget(tabs, null, 'owned', new Set(['owned'])).id, 'owned');
 });
