@@ -20,6 +20,27 @@ test('tool list: one function per allowed task, MCP tools with their real schema
   assert.deepEqual(compactSchema({ description: 'd', properties: { a: { type: 'string', default: 'x' } } }), { properties: { a: { type: 'string' } } });
 });
 
+test('structured planner can list large connector catalogs without unsupported tool_search', () => {
+  const hugeSchema = {
+    type: 'object',
+    properties: Object.fromEntries(Array.from({ length: 20 }, (_, i) =>
+      ['option_' + i, { type: 'string', enum: ['value-a', 'value-b', 'value-c'] }])),
+  };
+  const catalog = Array.from({ length: 40 }, (_, i) => ({
+    server: 'catalog', name: 'read_' + i, description: 'Read resource ' + i,
+    inputSchema: hugeSchema, readOnly: true,
+  }));
+  const deferredNative = plannerTools(['mcp-call'], catalog, {}, false);
+  assert.ok(deferredNative.tools.some(tool => tool.function.name === 'tool_search'),
+    'search-capable agent loop still saves context by deferring tools');
+  const structured = plannerTools(['mcp-call'], catalog, {}, false,
+    { deferAfterChars: Number.POSITIVE_INFINITY });
+  assert.equal(structured.deferred.length, 0, 'structured caller receives no deferred catalog');
+  assert.equal(structured.resolve('tool_search'), null);
+  assert.ok(structured.tools.some(tool => tool.function.name === 'mcp__catalog__read_0'),
+    'the ordinary connector function remains callable without a search exchange');
+});
+
 test('tool calls become a plan: several calls a batch, finish only without steps, bad calls rejected', () => {
   const { resolve } = plannerTools(['web-fetch', 'mcp-call'], mcp);
   const call = (name, args) => ({ type: 'function', function: { name, arguments: JSON.stringify(args) } });
