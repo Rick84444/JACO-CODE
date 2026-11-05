@@ -82,7 +82,7 @@ test('Manual and Planning allow source reading but never add write authority', (
   assert.ok(!('start_goal' in toolbox.tools));
   const prompt = buildAuraSeerPrompts({message:'Kan du analysera din egen JACO-kod?', chatMode:'manual'});
   assert.match(prompt.system, /jaco_source status/);
-  assert.match(prompt.system, /modellens proprietära vikter/);
-  assert.match(prompt.system, /uttryckligt, auktoriserat uppdrag/);
+  assert.match(prompt.system, /model's proprietary weights/);
+  assert.match(prompt.system, /explicit, authorized mission/);
   assert.match(prompt.system, /RUN_MODE: MANUAL/);
 });
