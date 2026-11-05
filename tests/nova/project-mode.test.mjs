@@ -179,6 +179,13 @@ test('test discovery is shared, read-only instructions do not request test execu
   assert.equal(detectProjectTestCommand(dir), 'npm test', 'all success paths run and pass the test');
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test suite.test.mjs | cat' } }));
   assert.equal(detectProjectTestCommand(dir), null, 'a pipeline must not hide a failed test command');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test fail.test.mjs &' } }));
+  assert.equal(detectProjectTestCommand(dir), null, 'backgrounded tests cannot provide a completion receipt');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test passing.test.mjs || exit 1; node --test failing.test.mjs || true' } }));
+  assert.equal(detectProjectTestCommand(dir), null, 'a later failed test masked by true invalidates previous green suites');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test suiteA.test.mjs && node --test suiteB.test.mjs' } }));
+  assert.equal(detectProjectTestCommand(dir), 'npm test', 'two required passing test suites are certified');
+
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "a | b" && node --test suite.test.mjs' } }));
   assert.equal(detectProjectTestCommand(dir), 'npm test', 'quoted pipe in a banner does not hide the runner');
 
