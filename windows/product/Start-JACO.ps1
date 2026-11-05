@@ -37,5 +37,18 @@ if (-not $NoBrowser) { $args += '--open' }
 Push-Location $InstallRoot
 try {
   & $Node @args 2>&1 | Out-File -FilePath (Join-Path $DataRoot 'logs\startup\launcher.log') -Encoding utf8 -Append
-  if ($LASTEXITCODE -ne 0) { throw "JACO startup blocked (exit $LASTEXITCODE). See $DataRoot\logs\startup\launcher.log" }
+  if ($LASTEXITCODE -ne 0) {
+    # Optional model/CDP workers may be unavailable on first install. Accept DEGRADED
+    # onboarding only if Core is really owned by the installed product, never by another checkout.
+    $validCore = $false
+    try {
+      $receipt = Get-Content (Join-Path $DataRoot 'logs\startup\runtime.process.json') -Raw | ConvertFrom-Json
+      $process = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$receipt.pid)" -ErrorAction Stop
+      $identity = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/runtime/identity' -TimeoutSec 5
+      $expected = (Get-Content (Join-Path $InstallRoot 'runtime\CURRENT_RELEASE.json') -Raw | ConvertFrom-Json).releaseId
+      $validCore = ($process -and $process.CommandLine.Contains($InstallRoot) -and $identity.success -eq $true -and $identity.releaseId -eq $expected)
+    } catch {}
+    if (-not $validCore) { throw "JACO startup blocked (exit $LASTEXITCODE). See $DataRoot\logs\startup\launcher.log" }
+    Add-Content -Path (Join-Path $DataRoot 'logs\startup\launcher.log') -Value 'JACO Core is available for onboarding. Optional services are not fully READY.'
+  }
 } finally { Pop-Location }
