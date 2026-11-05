@@ -68,3 +68,18 @@ test('text edits refuse undecodable bytes without damaging the original file', a
   );
   assert.deepEqual(fs.readFileSync(file), original, 'a failed text edit must not corrupt the file');
 });
+
+test('a normalized CRLF edit preserves the UTF-8 BOM and does not require a new commit', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aura-bom-preservation-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'text.txt');
+  const original = Buffer.from([0xef, 0xbb, 0xbf, ...Buffer.from('hello\r\n')]);
+  fs.writeFileSync(file, original);
+  const ws = createCodingWorkspace({ root });
+  const result = await ws.execute({ type: 'repo-edit', data: {
+    path: 'text.txt', old: 'hello\n', new: 'hello\r\n',
+  } }, contract(), { actor: 'bom-test' });
+  assert.equal(result.ok, true);
+  assert.equal(result.beforeSha256, result.afterSha256);
+  assert.deepEqual(fs.readFileSync(file), original, 'byte-for-byte identical replacement');
+});
