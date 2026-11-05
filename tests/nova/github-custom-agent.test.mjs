@@ -42,3 +42,18 @@ test('legacy independent agent/persona definitions do not coexist with Aura', ()
   assert.match(current, /not a second JACO runtime agent/);
   assert.match(current, /historical Nova service is an Aura execution function/);
 });
+
+
+test('contract CI catches reinstated historical personas in both push and PR checks', () => {
+  const workflow = normalize(fs.readFileSync('.github/workflows/autonomous-coding-contract.yml', 'utf8'));
+  const push = workflow.split('  push:\n')[1]?.split('  pull_request:\n')[0] || '';
+  const pullRequest = workflow.split('  pull_request:\n')[1]?.split('\npermissions:')[0] || '';
+  for (const path of [
+    '.github/agents/aura.agent.md',
+    '.github/agents/nova.agent.md',
+    'agents/workflows/seer-operating-contract.md',
+  ]) {
+    assert.ok(push.includes("'" + path + "'"), 'push must cover ' + path);
+    assert.ok(pullRequest.includes("'" + path + "'"), 'PR must cover ' + path);
+  }
+});
