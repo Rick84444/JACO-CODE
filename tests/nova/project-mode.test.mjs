@@ -17,6 +17,8 @@ test('a project goal with a verified graph is done and is not executed again', (
 });
 import { normalizeCodingContract, CODE_TASKS, validateCodingTask, contractVerificationStatus } from '../../agents/lib/coding-contract.mjs';
 import { detectProjectTestCommand } from '../../agents/lib/project-test-command.mjs';
+import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
+import { workspaceNodeTestPath } from '../../agents/lib/coding-contract.mjs';
 
 const absolute = path.resolve(os.tmpdir(), 'jaco-project-mode');
 
@@ -207,4 +209,57 @@ test('test discovery is shared, read-only instructions do not request test execu
   const noTests = normalizeCodingContract(projectNodeContract({ title: 'Create utility', objective: 'Implement it', projectRoot: dir }));
   assert.equal(noTests.verification.tests_required, false);
   assert.match(noTests.acceptance.join(' '), /automated tests were not verified/);
+});
+
+test('a single standing project contract permits newly authored tests without manual approval', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aura-minted-test-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const graph = projectGoalGraph({ id: 'mint-1', statement: 'Fix the issue and write a new regression test', project_root: dir });
+  const contract = normalizeCodingContract(graph.nodes[0].contract);
+  assert.equal(contract.verification.tests_required, true);
+  assert.equal(contract.verification.allow_workspace_tests, true);
+  assert.deepEqual(contract.verification.commands, [], 'there were no tests when the mission started');
+  const runner = 'node --test tests/generated.test.mjs';
+  assert.equal(workspaceNodeTestPath(runner), 'tests/generated.test.mjs');
+  assert.doesNotThrow(() => validateCodingTask({ type: 'repo-test', data: { command: runner } }, contract));
+  for (const cmd of [
+    'node --test tests/generated.test.mjs; echo bypass',
+    'node --test ../generated.test.mjs',
+    'node --test tests/../outside.test.mjs',
+    'node --test tests/generated.test.mjs | cat',
+  ]) assert.throws(() => validateCodingTask({ type: 'repo-test', data: { command: cmd } }, contract), /CODING_TEST_COMMAND_NOT_CONTRACTED/);
+
+  const work = createCodingWorkspace({ root: dir });
+  const missing = await work.execute({ type: 'repo-test', data: { command: runner } }, contract);
+  assert.equal(missing.ok, false);
+  assert.match(missing.error, /CODING_GENERATED_TEST_NOT_FOUND/);
+  const code = [
+    "import test from 'node:test';",
+    "import assert from 'node:assert/strict';",
+    "test('the generated assertion runs', () => assert.equal(7 * 6, 42));",
+    '',
+  ].join('\n');
+  const written = await work.execute({ type: 'repo-write', data: { path: 'tests/generated.test.mjs', content: code } }, contract);
+  assert.equal(written.ok, true);
+  const checked = await work.execute({ type: 'repo-test', data: { command: runner } }, contract);
+  assert.equal(checked.ok, true, checked.error || 'test execution did not succeed');
+  assert.equal(checked.verified, true);
+  assert.equal(checked.generatedTest, 'tests/generated.test.mjs');
+  const receipts = [
+    { type: 'repo-write', actionId: 'mint:turn:1', ok: true, verified: true, result: written },
+    { type: 'repo-test', actionId: 'mint:turn:2', ok: true, verified: true, result: checked },
+  ];
+  const status = contractVerificationStatus(contract, receipts);
+  assert.ok(!status.missing.includes('tests'), 'generated test satisfies the original contract');
+  assert.ok(status.missing.includes('commit'), 'the existing commit requirement still applies');
+});
+
+test('dynamically discovered tests never widen an explicitly read-only contract', () => {
+  const contract = normalizeCodingContract(projectNodeContract({
+    title: 'Read sources', objective: 'Read-only assessment; do not edit or test files',
+  }));
+  assert.equal(contract.verification.allow_workspace_tests, false);
+  assert.throws(() => validateCodingTask({ type: 'repo-test', data: {
+    command: 'node --test tests/generated.test.mjs',
+  } }, contract), /CODING_TEST_COMMAND_NOT_CONTRACTED/);
 });
