@@ -22,7 +22,9 @@ export function projectGoalCapabilities(statement) {
   const browserObservation = /\b(?:cdp|browser|web page|webpage|webbläsar|webbsida)\b/i.test(text)
     && /\b(?:observe|inspect|survey|capture|screenshot|read|visa|granska|inspektera|skärmbild)\b/i.test(text);
   if (browserObservation) tasks.push('browser-survey-site');
-  return { readOnly, tasks: [...new Set(noNetwork ? tasks.filter(task => !['web-fetch', 'mcp-call'].includes(task)) : tasks)] };
+  // restricted: the operator narrowed the scope in words. Otherwise SEER does not pick tools at all:
+  // planning is one of Aura's abilities and the mission gets whatever Aura has switched on.
+  return { readOnly, restricted: readOnly || noNetwork, tasks: [...new Set(noNetwork ? tasks.filter(task => !['web-fetch', 'mcp-call'].includes(task)) : tasks)] };
 }
 
 export function normalizeProjectRoot(value) {
@@ -56,7 +58,9 @@ export function projectNodeContract({ title, objective, mainGoal }) {
 }
 
 export function projectGraphPolicy(projectRoot, statement = '') {
-  return projectRoot ? { project_root: projectRoot, executor: 'nova', allowedTasks: projectGoalCapabilities(statement).tasks } : {};
+  if (!projectRoot) return {};
+  const scope = projectGoalCapabilities(statement);
+  return { project_root: projectRoot, executor: 'nova', ...(scope.restricted ? { allowedTasks: scope.tasks } : {}) };
 }
 
 // A project instruction is done once one of its graphs is verified; it must not be executed again.

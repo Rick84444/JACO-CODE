@@ -63,6 +63,7 @@ export function CapabilitiesPanel({ mcp, onMcpChanged }: { mcp: McpServer[]; onM
     <h3>What Aura can do</h3>
     <p>Everything below is switched on from the start, so Aura can use your computer, the web and your tools to get a job done on its own.
       Untick what you do not want. A change counts from Aura's next step.</p>
+    <p>Planning (SEER) and doing (Nova) are parts of Aura. They use the same model and the same switches, and so does every agent Aura builds for you.</p>
     <p role="status"><strong>{all.length - off + mcpOn + skills.filter(s => s.enabled).length}</strong> abilities on
       {off + (mcpTools.length - mcpOn) + skills.filter(s => !s.enabled).length > 0 ? <> · <strong>{off + (mcpTools.length - mcpOn) + skills.filter(s => !s.enabled).length}</strong> turned off by you</> : null}</p>
     {error && <p role="alert">{error}</p>}

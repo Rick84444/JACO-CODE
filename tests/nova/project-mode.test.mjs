@@ -52,6 +52,7 @@ test('explicit read-only and network restrictions compile into mission authority
   const statement = 'Read package.json. Do not edit files or use network tools.';
   assert.deepEqual(projectGoalCapabilities(statement), {
     readOnly: true,
+    restricted: true,
     tasks: ['repo-list', 'repo-read', 'git-status', 'git-diff'],
   });
   const graph = projectGoalGraph({ id: 'goal-read', statement, project_root: absolute });
@@ -112,4 +113,12 @@ test('read-only keeps web and connector reads unless the operator turns the netw
   assert.ok(tasks.includes('mcp-call'));
   assert.ok(!tasks.includes('repo-write'));
   assert.ok(!projectGoalCapabilities('Read only, utan nätverk.').tasks.includes('web-fetch'));
+});
+
+test('without a restriction in the operator words SEER picks no tools: the mission gets what Aura has switched on', () => {
+  const open = projectGraphPolicy(absolute, 'Add a mul function and run the tests.');
+  assert.equal(open.project_root, absolute);
+  assert.equal('allowedTasks' in open, false);
+  assert.deepEqual(projectGraphPolicy(absolute, 'Read only, change nothing.').allowedTasks, ['repo-list', 'repo-read', 'git-status', 'git-diff', 'web-fetch', 'mcp-call']);
+  assert.ok(projectGraphPolicy(absolute, 'Do not use the network.').allowedTasks.every(task => !['web-fetch', 'mcp-call'].includes(task)));
 });
