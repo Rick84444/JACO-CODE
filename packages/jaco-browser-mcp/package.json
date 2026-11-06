@@ -1,0 +1,24 @@
+{
+  "name": "jaco-browser-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that lets an AI agent use a real Chrome browser safely: real clicks and typing, links found by name, verified results, and sign-in, payment and password fields kept out of reach.",
+  "type": "module",
+  "license": "MIT",
+  "mcpName": "io.github.Rick84444/jaco-browser-mcp",
+  "bin": { "jaco-browser-mcp": "src/server.mjs" },
+  "files": ["src", "lib", "README.md", "LICENSE"],
+  "engines": { "node": ">=22" },
+  "keywords": ["mcp", "model-context-protocol", "browser", "chrome", "cdp", "automation", "agent", "jaco"],
+  "repository": { "type": "git", "url": "git+https://github.com/Rick84444/JACO-CODE.git", "directory": "packages/jaco-browser-mcp" },
+  "homepage": "https://jacocode.com/",
+  "bugs": { "url": "https://github.com/Rick84444/JACO-CODE/issues" },
+  "scripts": {
+    "sync-lib": "node scripts/sync-lib.mjs",
+    "prepack": "node scripts/sync-lib.mjs",
+    "test": "node scripts/sync-lib.mjs && node --test test/"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  }
+}

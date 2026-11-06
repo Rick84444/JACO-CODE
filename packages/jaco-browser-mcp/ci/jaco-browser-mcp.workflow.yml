@@ -1,0 +1,62 @@
+name: jaco-browser-mcp
+
+on:
+  pull_request:
+    paths:
+      - 'packages/jaco-browser-mcp/**'
+      - 'agents/lib/browser-input.mjs'
+      - 'agents/lib/browser-scope.mjs'
+      - 'agents/lib/browser-target-match.mjs'
+      - '.github/workflows/jaco-browser-mcp.yml'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to npm and the MCP Registry'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/jaco-browser-mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci || npm install --no-audit --no-fund
+      - run: npm test
+      - run: npm pack --dry-run
+
+  publish:
+    # Publishing is a deliberate dispatch on main only.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/jaco-browser-mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci || npm install --no-audit --no-fund
+      - name: Publish to npm with provenance
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish to the MCP Registry
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
