@@ -86,3 +86,21 @@ test('Aura mission summary includes only safe graph ID so Avsluta mål is action
   const invalid=summarizeNovaMission({...mission,metadata:{parent:{graphId:'../unsafe?secret=1'}}});
   assert.equal(invalid.metadata,undefined);
 });
+
+test('a finished step says what it did in plain words, and the final answer is titled as the answer', async () => {
+  const { toCognitiveEvent } = await import('../../runtime/src/lib/cognitiveEvents.mjs');
+  const at = new Date().toISOString();
+  const event = (type, payload, id) => toCognitiveEvent({ type, payload, at, id, mission_id: 'm1' });
+  const clicked = event('NOVA_ACTION_RESULT', { ok: true, verified: true, type: 'browser-click', result: { ok: true, verified: true, observation: { url: 'https://www.iana.org/help/example-domains', title: 'Example Domains' } } }, 'a');
+  assert.equal(clicked.text, 'Clicked and landed on \u201cExample Domains\u201d (www.iana.org/help/example-domains).');
+  const opened = event('NOVA_ACTION_RESULT', { ok: true, verified: true, type: 'browser-survey-site', result: { ok: true, url: 'https://example.com/', title: 'Example Domain' } }, 'b');
+  assert.equal(opened.text, 'Opened \u201cExample Domain\u201d (example.com) and read it.');
+  const missed = event('NOVA_ACTION_RESULT', { ok: false, type: 'browser-click', error: 'NO_TARGET', result: { ok: false, error: 'NO_TARGET' } }, 'c');
+  assert.equal(missed.text, 'The click did not work: the page has no such link or button.');
+  const unverified = event('NOVA_ACTION_RESULT', { ok: true, verified: false, type: 'browser-type', result: { ok: true } }, 'd');
+  assert.equal(unverified.text, 'Typed into the field (not verified yet).');
+  const answer = event('NOVA_PLANNING_RESULT', { error: null, completionProposed: true, reason: 'The title is Example Domains [1].' }, 'e');
+  assert.equal(answer.title, 'Answer');
+  assert.equal(event('NOVA_PLANNING_RESULT', { error: null, completionProposed: false }, 'f'), null, 'an empty planning pause is not shown');
+  assert.equal(event('NOVA_PLANNING_RESULT', { error: 'PLANNER_BLOCKED:x', completionProposed: false }, 'g').title, 'Stopped');
+});
