@@ -2040,10 +2040,12 @@ async function agentIntroExtras(mission) {
   return extra;
 }
 
+let orphanLeasesReleasedFor = null;
 async function runAgentLoop(state) {
   // Once per process: planning leases held by an earlier instance of this agent can never be released by it.
-  if (!state.orphanLeasesReleased && String(state.agentId || '').startsWith('agent:nova:')) {
-    state.orphanLeasesReleased = true;
+  // Per process, not in the saved state: a flag saved to disk would stop the next process from ever doing this.
+  if (state.agentId && orphanLeasesReleasedFor !== state.agentId) {
+    orphanLeasesReleasedFor = state.agentId;
     try {
       const freed = await missionClient.releaseOrphanedPlanning(state.agentId);
       if (freed?.released?.length) log('info', 'agent', `Freed ${freed.released.length} planning lease(s) left by an earlier instance`);
