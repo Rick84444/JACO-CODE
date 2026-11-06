@@ -328,3 +328,26 @@ test('the native planner is told to use the browser tools first and the operatin
   assert.match(WEB_RULE, /only when the browser cannot reach the target/);
   assert.match(WEB_RULE, /never to get around a refusal/);
 });
+
+test('a click with no expectation is verified by what the browser saw it do: a new address counts, no change does not', async () => {
+  const evaluate = async (session, expression) => (await session.send('Runtime.evaluate', { expression })).result.value;
+  const run = async afterUrl => {
+    const s = page();
+    let clicked = false;
+    const original = s.send.bind(s);
+    s.send = async (method, params = {}) => {
+      if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased') clicked = true;
+      return original(method, params);
+    };
+    const actions = createInputActions({ evaluate, observe: async () => ({ ...OBSERVATION, url: clicked ? afterUrl : OBSERVATION.url }) });
+    return actions.actSession(s, { selector: 'a.more', expectedUrl: OBSERVATION.url }, 'click');
+  };
+  const moved = await run('https://www.iana.org/help/example-domains');
+  assert.equal(moved.ok, true);
+  assert.equal(moved.verified, true);
+  assert.equal(moved.effect, 'navigated');
+  const still = await run(OBSERVATION.url);
+  assert.equal(still.ok, true);
+  assert.equal(still.verified, false);
+  assert.equal(still.effect, undefined);
+});
