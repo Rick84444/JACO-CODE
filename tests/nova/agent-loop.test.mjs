@@ -732,3 +732,19 @@ test('the sentence the model writes before a tool call is shown to the operator 
   const plain = toCognitiveEvent({ type: 'NOVA_ACTION_STARTED', payload: { action: { type: 'web-fetch', data: {} } }, at: new Date().toISOString(), id: 'e2', mission_id: m.id });
   assert.ok(plain.text.length > 0 && !/colleague/.test(plain.text), 'without a sentence the generic label stays');
 });
+
+test('the sentence can be a parameter of the call, which is how models that return no text with a tool call still talk', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Titta på example.com', idempotencyKey: 'say2', allowedTasks: ['web-fetch'] });
+  const { tools } = plannerTools(['web-fetch'], [], {}, false);
+  assert.equal(tools[0].function.parameters.properties.say.type, 'string');
+  assert.ok(!(tools[0].function.parameters.required || []).includes('say'), 'the sentence is optional, never a reason to refuse a call');
+  const model = scripted([
+    { tool_calls: [call('web-fetch', { url: 'https://example.test', say: 'Jag hämtar sidan för att se vad den innehåller.' })] },
+    { tool_calls: [call('complete', { reason: 'Klart [#1]' })] },
+  ]);
+  const ran = [];
+  await run(s, model, async task => { ran.push(task); return { ok: true, verified: true, content: 'hej' }; });
+  assert.deepEqual(ran[0].data, { url: 'https://example.test' }, 'the sentence is not passed to the tool as an argument');
+  assert.equal(s.control.bus.lastMissionEvent(m.id, 'NOVA_ACTION_STARTED').payload.say, 'Jag hämtar sidan för att se vad den innehåller.');
+});

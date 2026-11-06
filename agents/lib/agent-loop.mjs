@@ -297,9 +297,9 @@ export async function runAgentMission({
           return end({ blocked: true, reason }, target.kind === 'replan' ? { replanRequest: { reason, subgoals: args.subgoals } } : { error: `PLANNER_BLOCKED:${reason}` });
         }
 
-        const { expectedOutcome, ...data } = args || {};
+        const { expectedOutcome, say: argSay, ...data } = args || {};
         // The sentence the model wrote before the call (what it is doing and why) is shown to the operator as it happens.
-        const say = String(reply?.content || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+        const say = String((typeof argSay === 'string' && argSay.trim()) || reply?.content || '').replace(/\s+/g, ' ').trim().slice(0, 300);
         const task = target.kind === 'mcp'
           ? { type: target.write ? 'mcp-write' : 'mcp-call', data: { server: target.server, tool: target.tool, arguments: data }, expectedOutcome, ...(say ? { say } : {}) }
           : { type: target.type, data, ...(expectedOutcome ? { expectedOutcome: String(expectedOutcome).slice(0, 300) } : {}), ...(say ? { say } : {}) };
