@@ -3,7 +3,7 @@ import { toCognitiveEvent } from '../../lib/cognitiveEvents.mjs';
 const cursorValue = value => /^\d{1,16}$/.test(String(value ?? '')) && Number.isSafeInteger(Number(value)) ? Number(value) : 0;
 
 // Replay comes from the existing mission bus. Workstream events are explicitly volatile.
-export function readCognitiveFeed({ bus, workstream, after = 0, limit = 300, secrets = [] }) {
+export function readCognitiveFeed({ bus, workstream, after = 0, limit = 300, secrets = [], language = 'en' }) {
   const all = bus.listEvents(limit + 1).slice().sort((a,b) => a.seq - b.seq);
   const rows = all.slice(-limit);
   const cursor = Math.max(after, ...rows.map(row => row.seq), 0);
@@ -12,18 +12,18 @@ export function readCognitiveFeed({ bus, workstream, after = 0, limit = 300, sec
     if (row.missionId && !goals.has(row.missionId)) {
       goals.set(row.missionId, bus.getMission(row.missionId)?.goal || null);
     }
-    return toCognitiveEvent(row, {durable:true, missionGoal:goals.get(row.missionId), secrets});
+    return toCognitiveEvent(row, {durable:true, missionGoal:goals.get(row.missionId), secrets, language});
   }).filter(Boolean);
   const live = workstream.snapshot();
   return {
     schema:'jaco.cognitive-live/v1', cursor,
     historyTruncated:all.length > limit && (after === 0 || rows[0].seq > after + 1),
-    events:[...events, ...(live.events || []).map(row => toCognitiveEvent(row,{secrets})).filter(Boolean)],
+    events:[...events, ...(live.events || []).map(row => toCognitiveEvent(row,{secrets, language})).filter(Boolean)],
     observedAt:new Date().toISOString(),
   };
 }
 
-export function createCognitiveStreamHandler({ bus, workstream, intervalMs = 1500, secrets = [], drainTimeoutMs = 20_000 }) {
+export function createCognitiveStreamHandler({ bus, workstream, intervalMs = 1500, secrets = [], drainTimeoutMs = 20_000, language = () => 'en' }) {
   return (req, res) => {
     let after = cursorValue(req.get('last-event-id') || req.query.after);
     let closed = false, blocked = false, timer, heartbeat, drainTimer;
@@ -54,7 +54,7 @@ export function createCognitiveStreamHandler({ bus, workstream, intervalMs = 150
     const publish = () => {
       if (closed || blocked) return;
       try {
-        const packet = readCognitiveFeed({bus, workstream, after, secrets});
+        const packet = readCognitiveFeed({bus, workstream, after, secrets, language: language()});
         packet.events = packet.events.filter(event => {
           if (event.durable) return true;
           if (seenVolatile.has(event.id)) return false;

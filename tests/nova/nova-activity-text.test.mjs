@@ -111,3 +111,19 @@ test('a failed command or test says what the program reported, not just that it 
     payload: { ok: false, type: 'repo-test', error: 'Command failed: npm test', result: { ok: false, stderr: 'npm warn\nError: Cannot find module \'dotenv\'\n    at foo' } } });
   assert.equal(e.text, 'The tests failed: Error: Cannot find module \'dotenv\'.');
 });
+
+test('with Swedish chosen, the live feed is wholly Swedish; with English, wholly English', async () => {
+  const { toCognitiveEvent } = await import('../../runtime/src/lib/cognitiveEvents.mjs');
+  const at = new Date().toISOString();
+  const ev = (type, payload, id, language) => toCognitiveEvent({ type, payload, at, id, mission_id: 'm1' }, { language });
+  const click = { ok: true, verified: true, type: 'browser-click', actionId: 'm1:turn:3', result: { ok: true, verified: true, observation: { url: 'https://www.iana.org/domains', title: 'Domains' } } };
+  assert.equal(ev('NOVA_ACTION_RESULT', click, 'a', 'sv').text, 'Steg 3: Klickade och kom till \u201cDomains\u201d (www.iana.org/domains).');
+  assert.equal(ev('NOVA_ACTION_RESULT', click, 'b', 'en').text, 'Step 3: Clicked and landed on \u201cDomains\u201d (www.iana.org/domains).');
+  const missed = { ok: false, type: 'browser-click', error: 'NO_TARGET', result: { ok: false, error: 'NO_TARGET' } };
+  assert.equal(ev('NOVA_ACTION_RESULT', missed, 'c', 'sv').text, 'Klicket fungerade inte: sidan har ingen sådan länk eller knapp.');
+  const answer = ev('NOVA_PLANNING_RESULT', { completionProposed: true, reason: 'Klart.' }, 'd', 'sv');
+  assert.equal(answer.title, 'Svar');
+  assert.equal(ev('NOVA_ACTION_STARTED', { action: { type: 'repo-read', data: {} } }, 'e', 'sv').text, 'Läser en fil.');
+  assert.equal(ev('NOVA_ACTION_STARTED', { action: { type: 'repo-read', data: {} } }, 'f', 'en').text, 'Reading a file.');
+  assert.equal(ev('MISSION_CREATED', {}, 'g', 'sv').title, 'Uppdrag mottaget');
+});
