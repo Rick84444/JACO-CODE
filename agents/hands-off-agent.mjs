@@ -2041,6 +2041,14 @@ async function agentIntroExtras(mission) {
 }
 
 async function runAgentLoop(state) {
+  // Once per process: planning leases held by an earlier instance of this agent can never be released by it.
+  if (!state.orphanLeasesReleased && String(state.agentId || '').startsWith('agent:nova:')) {
+    state.orphanLeasesReleased = true;
+    try {
+      const freed = await missionClient.releaseOrphanedPlanning('agent:nova:', state.agentId);
+      if (freed?.released?.length) log('info', 'agent', `Freed ${freed.released.length} planning lease(s) left by an earlier instance`);
+    } catch (error) { log('warn', 'agent', `Could not free old planning leases: ${error.message}`); }
+  }
   let introExtras;
   return runAgentMission({
     client: missionClient, owner: state.agentId, chat: req => agentChat(req),
@@ -2129,7 +2137,7 @@ async function runBrain(state) {
     // fallback, no duplicated mission or new execution authority.
     const unsupported = selected?.chosen && agentToolsUnsupported.has(`${selected.name}/${selected.model}`);
     if (result && !(result.deferred && unsupported)) {
-      log('info', 'brain', `Native turn: executed=${Boolean(result.executed)} deferred=${Boolean(result.deferred)} stopped=${result.stopped || 'no'}`);
+      log('info', 'brain', `Native turn: executed=${Boolean(result.executed)} deferred=${Boolean(result.deferred)} stopped=${result.stopped || 'no'}${result.reason ? ' reason=' + String(result.reason).slice(0, 200) : ''}`);
       state.lastBrainTick = state.ticks;
       return result;
     }
