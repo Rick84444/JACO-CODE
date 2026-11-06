@@ -104,3 +104,10 @@ test('a finished step says what it did in plain words, and the final answer is t
   assert.equal(event('NOVA_PLANNING_RESULT', { error: null, completionProposed: false }, 'f'), null, 'an empty planning pause is not shown');
   assert.equal(event('NOVA_PLANNING_RESULT', { error: 'PLANNER_BLOCKED:x', completionProposed: false }, 'g').title, 'Stopped');
 });
+
+test('a failed command or test says what the program reported, not just that it failed', async () => {
+  const { toCognitiveEvent } = await import('../../runtime/src/lib/cognitiveEvents.mjs');
+  const e = toCognitiveEvent({ type: 'NOVA_ACTION_RESULT', at: new Date().toISOString(), id: 'x1', mission_id: 'm1',
+    payload: { ok: false, type: 'repo-test', error: 'Command failed: npm test', result: { ok: false, stderr: 'npm warn\nError: Cannot find module \'dotenv\'\n    at foo' } } });
+  assert.equal(e.text, 'The tests failed: Error: Cannot find module \'dotenv\'.');
+});

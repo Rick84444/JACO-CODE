@@ -58,7 +58,10 @@ function humanResult(type, result, evidence, clean) {
   const place = where(obs.url || result.url);
   const quoted = title ? `${String.fromCharCode(8220)}${title}${String.fromCharCode(8221)}` : '';
   const raw = String(evidence.error || '');
-  const reason = Object.entries(PLAIN_ERRORS).find(([code]) => raw.includes(code))?.[1] || clean(raw.split(/[\n:]/)[0], 100);
+  // For a failed command or test the useful part is what the program said, not "Command failed".
+  const said = [result.stderr, result.stdout, result.output].map(v => String(v || '')).join('\n').split('\n').map(l => l.trim())
+    .filter(l => /error|cannot|not found|failed|ENOENT|EPERM|expected|assert/i.test(l))[0] || '';
+  const reason = Object.entries(PLAIN_ERRORS).find(([code]) => raw.includes(code))?.[1] || (said ? clean(said, 140) : clean(raw.split(/[\n:]/)[0], 100));
   const tail = (quoted || place) ? [quoted, place && `(${place})`].filter(Boolean).join(' ') : '';
   const out = { done: null, failed: null };
   if (type === 'browser-survey-site') out.done = tail ? `Opened ${tail} and read it.` : null;
