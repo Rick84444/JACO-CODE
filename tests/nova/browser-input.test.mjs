@@ -324,7 +324,7 @@ test('the native planner is told to use the browser tools first and the operatin
   const { agentSystemFor, WEB_RULE } = await import('../../agents/hands-off-agent.mjs');
   const system = agentSystemFor(['web-fetch', 'shell']);
   assert.ok(system.includes(WEB_RULE));
-  assert.match(WEB_RULE, /nova_\* browser tools first/);
-  assert.match(WEB_RULE, /only when the browser tools cannot reach the target/);
+  assert.match(WEB_RULE, /browser tasks first/);
+  assert.match(WEB_RULE, /only when the browser cannot reach the target/);
   assert.match(WEB_RULE, /never to get around a refusal/);
 });
