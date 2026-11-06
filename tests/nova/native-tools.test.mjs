@@ -9,7 +9,7 @@ const mcp = [{ server: 'git', name: 'git_show', readOnly: true, description: 'Sh
 test('tool list: one function per allowed task, MCP tools with their real schemas, complete and blocked', () => {
   const { tools, resolve } = plannerTools(['web-fetch', 'mcp-call', 'repo-write'], mcp);
   const names = tools.map(t => t.function.name);
-  assert.deepEqual(names, ['web-fetch', 'repo-write', 'mcp__git__git_show', 'complete', 'blocked', 'request_replan']);
+  assert.deepEqual(names, ['web-fetch', 'repo-write', 'mcp__git__git_show', 'complete', 'blocked', 'request_replan', 'delegate']);
   const show = tools.find(t => t.function.name === 'mcp__git__git_show').function.parameters;
   assert.deepEqual(show.required, ['repo_path', 'revision']);
   assert.equal(show.properties.repo_path.description, undefined, 'prose is dropped from schemas');

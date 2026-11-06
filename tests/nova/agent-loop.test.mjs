@@ -787,3 +787,27 @@ test('a refused connector write tells the model to use the workspace write tools
   assert.match(String(hintForCheck({ ok: false, error: 'MCP_TOOL_NOT_READ_ONLY:filesystem.write_file' })), /repo-write/);
   assert.equal(hintForCheck({ ok: false, error: 'MCP_TOOL_NOT_READ_ONLY:github.list_issues' }), null);
 });
+
+test('Aura can create helper agents: delegate turns two or more roles into helper missions of the graph, and the feed names them', async t => {
+  const { toCognitiveEvent } = await import('../../runtime/src/lib/cognitiveEvents.mjs');
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Bygg en demo', idempotencyKey: 'deleg1', allowedTasks: ['web-fetch'], source: 'seer-mission-graph', parent: { graphId: 'g', nodeKey: 'build', mainGoal: 'Bygg en demo' } });
+  const { tools } = plannerTools(['web-fetch'], [], {}, true);
+  assert.ok(tools.some(x => x.function.name === 'delegate'), 'offered on a graph mission');
+  assert.ok(!plannerTools(['web-fetch'], [], {}, false).tools.some(x => x.function.name === 'delegate'), 'not offered where helpers cannot run');
+  const model = scripted([
+    { tool_calls: [call('delegate', { reason: 'Research och bygge är skilda delar.', helpers: [{ role: 'Researcher', task: 'Jämför tre produktidéer med källor.' }] })] },
+    { tool_calls: [call('delegate', { reason: 'Research och bygge är skilda delar.', helpers: [{ role: 'Researcher', task: 'Jämför tre produktidéer med källor.' }, { role: 'Builder', task: 'Bygg demo/index.html.' }] })] },
+  ]);
+  const result = await run(s, model, async () => assert.fail('no tool runs'), { toolsFor: mm => plannerTools(mm.allowedTasks, [], {}, true) });
+  assert.match(model.seen[1].filter(x => x.role === 'tool').at(-1).content, /DELEGATE_NEEDS_TWO_HELPERS/, 'one helper is not a team');
+  assert.deepEqual(result.delegated, ['Researcher: Jämför tre produktidéer med källor.', 'Builder: Bygg demo/index.html.']);
+  const after = s.control.get(m.id);
+  assert.equal(after.status, 'BLOCKED');
+  assert.equal(after.replanRequest.subgoals.length, 2);
+  assert.match(after.replanRequest.subgoals[0].objective, /You are the Researcher helper agent/);
+  const ev = s.control.bus.lastMissionEvent(m.id, 'NOVA_REPLAN_REQUEST');
+  const live = toCognitiveEvent({ type: 'NOVA_REPLAN_REQUEST', payload: ev.payload, at: new Date().toISOString(), id: 'd1', mission_id: m.id }, { language: 'sv' });
+  assert.equal(live.title, 'Arbetet lämnat till hjälpagenter');
+  assert.match(live.text, /Hjälpagenter: Researcher: .*; Builder: /);
+});
