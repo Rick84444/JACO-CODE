@@ -713,3 +713,22 @@ test('few connector tools stay listed, and a search with no match says so', () =
   assert.deepEqual(searchDeferredTools(deferred, 'zebra'), []);
   assert.deepEqual(searchDeferredTools(deferred, 'commit log', new Set(['mcp__git__git_log'])), []);
 });
+
+test('the sentence the model writes before a tool call is shown to the operator as the live text of that step', async t => {
+  const { toCognitiveEvent } = await import('../../runtime/src/lib/cognitiveEvents.mjs');
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Titta på example.com', idempotencyKey: 'say1', allowedTasks: ['web-fetch'] });
+  const model = scripted([
+    { content: 'Jag börjar med att läsa sidan så jag ser vad som står där.', tool_calls: [call('web-fetch', { url: 'https://example.test' })] },
+    { tool_calls: [call('complete', { reason: 'Klart [#1]' })] },
+  ]);
+  const ran = [];
+  await run(s, model, async task => { ran.push(task); return { ok: true, verified: true, content: 'hej' }; });
+  assert.equal(ran[0].say, undefined, 'the narration is not part of the action the executor runs');
+  const started = s.control.bus.lastMissionEvent(m.id, 'NOVA_ACTION_STARTED');
+  assert.equal(started.payload.say, 'Jag börjar med att läsa sidan så jag ser vad som står där.');
+  const live = toCognitiveEvent({ type: 'NOVA_ACTION_STARTED', payload: started.payload, at: new Date().toISOString(), id: 'e1', mission_id: m.id });
+  assert.equal(live.text, 'Jag börjar med att läsa sidan så jag ser vad som står där.');
+  const plain = toCognitiveEvent({ type: 'NOVA_ACTION_STARTED', payload: { action: { type: 'web-fetch', data: {} } }, at: new Date().toISOString(), id: 'e2', mission_id: m.id });
+  assert.ok(plain.text.length > 0 && !/colleague/.test(plain.text), 'without a sentence the generic label stays');
+});
