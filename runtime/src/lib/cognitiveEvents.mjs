@@ -104,7 +104,7 @@ export function toCognitiveEvent(raw, { durable = false, missionGoal = null, sec
     error: clean(action.error || payload.error || result.error, 1000) || null,
   };
   let text = clean(raw.message);
-  if (type === 'NOVA_ACTION_STARTED') text = clean(payload.say, 300) || ((labels[action.type] || 'Running a tool step') + (evidence.path ? ': ' + evidence.path : '.'));
+  if (type === 'NOVA_ACTION_STARTED') text = (payload.say ? (payload.learned ? clean(payload.learned, 300) + ' ' : '') + clean(payload.say, 500) : '') || ((labels[action.type] || 'Running a tool step') + (evidence.path ? ': ' + evidence.path : '.'));
   if (type === 'NOVA_ACTION_RESULT') {
     const verb = labels[action.type || payload.type] || 'Tool step';
     // Say what happened in words a person can follow, not just that "the result is verified".

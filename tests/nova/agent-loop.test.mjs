@@ -749,17 +749,36 @@ test('the sentence can be a parameter of the call, which is how models that retu
   assert.equal(s.control.bus.lastMissionEvent(m.id, 'NOVA_ACTION_STARTED').payload.say, 'Jag hämtar sidan för att se vad den innehåller.');
 });
 
-test('a planning lease left by an earlier instance of the agent is freed, a live one and an executing step are not', t => {
+test('a planning lease its own agent left before a restart is freed at start; another agent lease is not', t => {
   const s = setup(t, ['web-fetch']);
   const m = s.control.create({ goal: 'Titta', idempotencyKey: 'orph1', allowedTasks: ['web-fetch'] });
-  const claimed = s.control.claim(m.id, 'agent:nova:oldinstance');
-  assert.ok(claimed.token);
-  // The new instance frees only leases that belong to the same kind of agent and a different instance.
-  assert.deepEqual(s.control.releaseOrphanedPlanning('agent:nova:', 'agent:nova:newinstance').released, [m.id]);
+  assert.ok(s.control.claim(m.id, 'agent:nova:abc').token);
+  assert.deepEqual(s.control.releaseOrphanedPlanning('agent:nova:other').released, []);
+  assert.deepEqual(s.control.releaseOrphanedPlanning('agent:nova:abc').released, [m.id]);
   assert.equal(s.control.get(m.id).status, 'ACTIVE');
-  assert.ok(s.control.claim(m.id, 'agent:nova:newinstance').token, 'the mission can be claimed again at once');
-  // Its own lease is never freed, and another kind of agent is left alone.
-  assert.deepEqual(s.control.releaseOrphanedPlanning('agent:nova:', 'agent:nova:newinstance').released, []);
-  assert.deepEqual(s.control.releaseOrphanedPlanning('agent:other:', 'agent:nova:x').released, []);
-  assert.deepEqual(s.control.releaseOrphanedPlanning('', 'x').released, []);
+  assert.ok(s.control.claim(m.id, 'agent:nova:abc').token, 'the mission can be claimed again at once');
+  assert.deepEqual(s.control.releaseOrphanedPlanning('').released, []);
+});
+
+test('the plan, what the last result taught, and the reason for the next step all reach the live text', async t => {
+  const { toCognitiveEvent } = await import('../../runtime/src/lib/cognitiveEvents.mjs');
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Titta', idempotencyKey: 'learn1', allowedTasks: ['web-fetch'] });
+  const { tools } = plannerTools(['web-fetch'], [], {}, false);
+  assert.equal(tools[0].function.parameters.properties.learned.type, 'string');
+  assert.ok(!(tools[0].function.parameters.required || []).includes('learned'));
+  const model = scripted([
+    { tool_calls: [call('web-fetch', { url: 'https://a.test', say: 'Plan: jag läser sidan, jämför två alternativ och väljer det bästa.' })] },
+    { tool_calls: [call('web-fetch', { url: 'https://b.test', learned: 'Första sidan hade bara ett alternativ.', say: 'Jag läser en andra sida för att få något att jämföra med.' })] },
+    { tool_calls: [call('complete', { reason: 'Klart [#2]' })] },
+  ]);
+  const ran = [];
+  await run(s, model, async task => { ran.push(task); return { ok: true, verified: true, content: 'x' }; });
+  assert.deepEqual(ran.map(r => r.data.url), ['https://a.test', 'https://b.test']);
+  assert.equal(ran[1].learned, undefined, 'the narration never reaches the tool');
+  const started = s.control.bus.listMissionEvents ? null : null;
+  const last = s.control.bus.lastMissionEvent(m.id, 'NOVA_ACTION_STARTED');
+  assert.equal(last.payload.learned, 'Första sidan hade bara ett alternativ.');
+  const live = toCognitiveEvent({ type: 'NOVA_ACTION_STARTED', payload: last.payload, at: new Date().toISOString(), id: 'l1', mission_id: m.id });
+  assert.equal(live.text, 'Step 2: Första sidan hade bara ett alternativ. Jag läser en andra sida för att få något att jämföra med.');
 });
