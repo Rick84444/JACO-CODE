@@ -594,6 +594,13 @@ export async function resolveGuardedTypeText(name, text) {
 
 // ── Robot Lawnmower: Survey → Route → Execute ────────────────────────────────
 
+// The surface flag is read once at start; a bridge that came up later (or was restarted) must still be used,
+// otherwise every browser task fell through to the runtime route and failed with RUNTIME_HTTP_403 (2026-11-06).
+async function novaBridgeUp() {
+  if (state?.surfaces?.nova) return true;
+  try { const h = await nova.health(); if (h?.ok) { state.surfaces.nova = true; state.surfaces.browser = true; return true; } } catch { /* not up */ }
+  return false;
+}
 const lawnmower = {
   routes: existsSync(ROUTES_FILE) ? JSON.parse(readFileSync(ROUTES_FILE, "utf8")) : {},
 
@@ -631,7 +638,7 @@ const lawnmower = {
 
   async navigateAndSurvey(url, label) {
     // Prefer nova bridge (direct CDP, no runtime needed)
-    if (state?.surfaces?.nova) {
+    if (await novaBridgeUp()) {
       const nav = await nova.navigate(url, 3500);
       if (!nav.ok) return nav;
       const surv = await nova.survey(label);
@@ -647,7 +654,7 @@ const lawnmower = {
   },
 
   async clickByName(name, expect, authority) {
-    if (state?.surfaces?.nova) {
+    if (await novaBridgeUp()) {
       const page = await nova.observe();
       if (!page.ok) return page;
       const matches = (page.targets || []).filter(t => t.visible && t.text?.trim().toLowerCase() === name.trim().toLowerCase());
@@ -669,7 +676,7 @@ const lawnmower = {
     const guarded = await resolveGuardedTypeText(name, text);
     if (guarded.error) return guarded;
     text = guarded.text;
-    if (state?.surfaces?.nova) {
+    if (await novaBridgeUp()) {
       const page = await nova.observe();
       if (!page.ok) return page;
       const matches=(page.targets||[]).filter(t=>t.visible && ['input','textarea','select'].includes(t.role) && t.text.toLowerCase()===name.trim().toLowerCase());
