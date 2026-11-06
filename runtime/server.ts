@@ -72,6 +72,7 @@ import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderComp
 import { auraCostQuote, auraCostSettlement } from "./src/server/aura/costEngine.mjs";
 import { createEconomicBudgetRouter } from './src/server/connected/economicBudget.mjs';
 import { AgentOrganization, createAgentOrganizationRouter } from './src/server/connected/agentOrganization.mjs';
+import { AgentReputation, createAgentBoardRouter } from './src/server/connected/agentReputation.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
