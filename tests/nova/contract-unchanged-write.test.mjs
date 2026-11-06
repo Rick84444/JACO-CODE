@@ -83,3 +83,12 @@ test('a normalized CRLF edit preserves the UTF-8 BOM and does not require a new 
   assert.equal(result.beforeSha256, result.afterSha256);
   assert.deepEqual(fs.readFileSync(file), original, 'byte-for-byte identical replacement');
 });
+
+test('a mission that changed no file and ran no test needs no test to complete (a web task)', () => {
+  const contract = normalizeCodingContract({ objective: 'Open a page and report its title', scope: { allowed: ['**'] }, acceptance: ['Title reported'], verification: { tests_required: true, receipt_required: true } });
+  const click = { type: 'browser-click', actionId: 'm:turn:2', ok: true, verified: true, result: { effect: 'navigated' } };
+  assert.equal(contractVerificationStatus(contract, [click]).machineVerified, true);
+  assert.deepEqual(contractVerificationStatus(contract, []).missing, ['verified_receipt']);
+  const write = { type: 'repo-write', actionId: 'm:turn:3', ok: true, verified: true, result: { beforeSha256: 'a', afterSha256: 'b' } };
+  assert.deepEqual(contractVerificationStatus(contract, [click, write]).missing, ['tests']);
+});
