@@ -27,6 +27,8 @@ export function UiLanguageProvider({ children, initialLanguage }: { children: Re
   useEffect(() => {
     document.documentElement.lang = language;
     try { window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, language); } catch { /* Storage can be unavailable. */ }
+    // Aura narrates and answers in the language chosen here, so the runtime has to know it too.
+    if (typeof fetch === 'function') void fetch('/api/aura/operator-language', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ language }) }).catch(() => {});
   }, [language]);
 
   return <UiLanguageContext.Provider value={{

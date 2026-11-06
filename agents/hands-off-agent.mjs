@@ -50,6 +50,7 @@ import { enqueueVerifiedReceiptPromotion, flushLivingCorePromotions, ensureLivin
 import { TASK_FIELDS, taskContract } from './lib/task-fields.mjs';
 import { CODE_TASKS, validateCodingTask } from './lib/coding-contract.mjs';
 import { pickTarget } from './lib/browser-target-match.mjs';
+import { readOperatorLanguage, languageInstruction } from './lib/operator-language.mjs';
 import { nonTextModelKind, openAiChatCompletionsUrl, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
 import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs';
 import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs';
@@ -1920,11 +1921,12 @@ export const paidModelsAllowed = (env = process.env) => env.JACO_ALLOW_PAID_MODE
 const AGENT_DROP = /^(Output JSON:|Several independent reading steps|continuity is durable|For browser-click, data may include|Task fields:|When the goal appears satisfied, output)/;
 // One rule for web work: the browser protocol first, the operating system only when it cannot reach the page.
 // Aura said very little while it worked. The sentence before a tool call is shown to the operator as it happens.
-export const NARRATION_RULE = "Talk to the operator like a colleague who works next to them and thinks aloud, in the language they wrote in, in plain words with no tool names or jargon. Use the say and learned fields of every tool call. On your FIRST call, say your plan: what you will do, in what order, and what the finished result will be. On every later call, learned is one sentence on what the previous result showed and how it changes the plan, and say is one sentence on what you do now and why. If something failed, say what failed and what you will try instead; if you repeat a step, say why. When you complete, answer in short parts: what you did, what you found or made and where it is, what you checked yourself, and what you could not verify.";
+export const NARRATION_RULE = "Talk to the operator like a colleague who works next to them and thinks aloud, in the operator's language, in plain words with no tool names or jargon. Use the say and learned fields of every tool call. On your FIRST call, say your plan: what you will do, in what order, and what the finished result will be. On every later call, learned is one sentence on what the previous result showed and how it changes the plan, and say is one sentence on what you do now and why. If something failed, say what failed and what you will try instead; if you repeat a step, say why. When you complete, answer in short parts: what you did, what you found or made and where it is, what you checked yourself, and what you could not verify.";
 export const WEB_RULE ="Web pages: read with web-fetch. To act on a page use the browser tasks first (browser-survey-site to open and read it, then browser-click and browser-type; give browser-click an expect {url} or {selector} when you know what should appear; a click that moves the page or opens a tab counts as done without one). They send real input events through the browser protocol and verify the result. If nova_* browser tools are listed (nova_ax, nova_click_named, nova_upload, nova_tabs), prefer them for the same reason. Use mouse-move, mouse-click, key-press, type-text and desktop-* only when the browser cannot reach the target (a native dialog, a window outside the browser), never to get around a refusal: a refused sign-in, payment or password surface stays the operator's to do.";
-export function agentSystemFor(allowedTasks, platform = process.platform, graphMission = false) {
+export function agentSystemFor(allowedTasks, platform = process.platform, graphMission = false, language = readOperatorLanguage()) {
   const lines = brainSystemFor(allowedTasks, graphMission, platform).split("\n").filter(line => !AGENT_DROP.test(line));
-  return lines.join("\n") + "\n" + WEB_RULE + "\n" + NARRATION_RULE + "\nYou act through the functions provided. Call them; each result comes back to you, including errors and refusals: read them and adapt instead of repeating the same call. Several reading calls may go in one answer. When the goal is achieved, call complete with the answer for the operator, citing steps as [#n].";
+  const speak = languageInstruction(language);
+  return lines.join("\n") + "\n" + WEB_RULE + "\n" + NARRATION_RULE + (speak ? "\n" + speak : "") + "\nYou act through the functions provided. Call them; each result comes back to you, including errors and refusals: read them and adapt instead of repeating the same call. Several reading calls may go in one answer. When the goal is achieved, call complete with the answer for the operator, citing steps as [#n].";
 }
 
 const TEMPORARY_COOLDOWN_MS = 15 * 60_000;

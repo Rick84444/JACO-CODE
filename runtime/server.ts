@@ -89,6 +89,7 @@ import { taskCatalog, ALWAYS_ASK } from './src/server/capabilities/capabilityPol
 import { TASK_FIELDS } from "../agents/lib/task-fields.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
 import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
+import { operatorLanguageFile, readOperatorLanguage, writeOperatorLanguage } from "../agents/lib/operator-language.mjs";
 import { synchronizeAuraHarnessModel } from "../agents/lib/aura-harness-model-choice.mjs";
 import { INITIAL_MODELS, INITIAL_CODE_FILES, INITIAL_DEVICES, INITIAL_TERMINAL_LOGS } from "./src/mockData.js";
 import { OllamaModel, CodeFile } from "./src/types.js";
@@ -2430,7 +2431,7 @@ const notifyPhone = async (action) => {
     } catch (error:any) { res.status(409).json({success:false,error:error.message}); }
   });
 
-  app.get('/api/aura/workbench/live', requireLocalUi, createCognitiveStreamHandler({ bus: connectedRuntime.bus, workstream: seerLiveWorkstream, secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key)).map(([,value]) => value).filter(Boolean) }));
+  app.get('/api/aura/workbench/live', requireLocalUi, createCognitiveStreamHandler({ bus: connectedRuntime.bus, workstream: seerLiveWorkstream, language: () => readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) || 'en', secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key)).map(([,value]) => value).filter(Boolean) }));
 
   app.get('/api/aura/workbench', requireLocalUi, async (_req, res) => {
     try { res.json(await buildAuraWorkbenchSnapshot()); }
@@ -4443,6 +4444,13 @@ const notifyPhone = async (action) => {
   continuumSurface.runtime.economic.seedFromLedger(path.join(process.cwd(), '.jaco', 'continuum', 'ledger', 'events.jsonl'))
     .then((r: any) => { if (r?.seeded) console.log('[cost] live tally seeded from ledger:', r.events, 'events'); })
     .catch((error: any) => console.warn('[cost] tally seed failed:', error?.message || error));
+  // The language chosen in the GUI (EN/SV). Aura narrates and answers in it; the executor reads the same file.
+  const operatorLanguagePath = () => operatorLanguageFile({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT });
+  app.get('/api/aura/operator-language', requireLocalUi, (_req, res) => res.json({ success: true, language: readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) }));
+  app.put('/api/aura/operator-language', requireLocalUi, (req, res) => {
+    try { res.json({ success: true, ...writeOperatorLanguage(operatorLanguagePath(), String(req.body?.language || '')) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
   app.use('/api/aura/budget', createEconomicBudgetRouter({ economic: continuumSurface.runtime.economic, requireOperatorUi: requireLocalUi, getBalances: costBalances }));
   const agentOrganization = new AgentOrganization(path.resolve(process.env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco')));
   app.use('/api/aura/organization', createAgentOrganizationRouter({
