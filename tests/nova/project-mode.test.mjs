@@ -324,3 +324,10 @@ test('a mission that builds something new does not need the whole project test s
     assert.equal(fix.verification.tests_required, true);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('a narrow prohibition inside a goal that builds does not make the whole goal read-only', () => {
+  for (const s of ['Bygg demon. Skriv inte över en färdig fil, ändra den med repo-edit.', 'Build it. Do not change the idea during the work.'])
+    assert.equal(projectGoalCapabilities(s).readOnly, false, s);
+  for (const s of ['Read only, change nothing.', 'Ändra inte något.', 'Läs koden, ändra inte filerna.', 'Inga ändringar i projektet.', 'Read package.json. Do not edit files or use network tools.'])
+    assert.equal(projectGoalCapabilities(s).readOnly, true, s);
+});
