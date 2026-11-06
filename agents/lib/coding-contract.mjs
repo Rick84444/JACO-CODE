@@ -172,9 +172,13 @@ export function contractVerificationStatus(contract, receipts = []) {
   const hasFalsifier = verified.some(r => r.type === 'repo-test' && r.result?.kind === 'falsifier' && afterLastWrite(r));
   const hasIndependent = verified.some(r => r.result?.independentVerification === true && r.result?.verificationActor && r.result?.implementationActor && r.result.verificationActor !== r.result.implementationActor && afterLastWrite(r));
   const missing = [];
-  if (contract.verification.tests_required && !hasTest) missing.push('tests');
-  if (contract.verification.falsifier_required && !hasFalsifier) missing.push('falsifier');
-  if (contract.verification.independent_verification && !hasIndependent) missing.push('independent_verification');
+  // Tests, a falsifier and an independent check are proof that a CHANGE works. A mission that changed no file (a web
+  // task, a question about the code) has no change to prove: a click-and-report mission could not complete and
+  // wandered into running the repository's tests (2026-11-06).
+  const changedSomething = lastWriteTurn >= 0 || receipts.some(r => r?.type === 'repo-test');
+  if (changedSomething && contract.verification.tests_required && !hasTest) missing.push('tests');
+  if (changedSomething && contract.verification.falsifier_required && !hasFalsifier) missing.push('falsifier');
+  if (changedSomething && contract.verification.independent_verification && !hasIndependent) missing.push('independent_verification');
   if (contract.verification.receipt_required && !verified.length) missing.push('verified_receipt');
   for (const stage of contract.verification.required_stages || []) {
     const found = verified.some(r => afterLastWrite(r) && (
