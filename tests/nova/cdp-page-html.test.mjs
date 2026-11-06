@@ -63,7 +63,7 @@ test('MCP advertises nova_html as a read-only tool', async () => {
 
 test('the runtime allows nova_html and keeps only its origin, size and digest in durable receipts', () => {
   const server = fs.readFileSync(new URL('../../runtime/server.ts', import.meta.url), 'utf8');
-  assert.match(server, /\['nova_targets','nova_observe','nova_screenshot','nova_html'\]/);
+  assert.match(server, /\['nova_targets','nova_observe','nova_screenshot','nova_html','nova_ax','nova_tabs','nova_downloads'\]/);
   assert.match(server, /toolName === 'nova_html'[\s\S]{0,400}htmlOmitted: true/);
   const stage = fs.readFileSync(new URL('../../runtime/src/components/CapturedPage.tsx', import.meta.url), 'utf8');
   assert.match(stage, /sandbox=""/); assert.match(stage, /sanitizeAuraStageHtml/);
@@ -90,4 +90,25 @@ test('the in-page cleaner strips URL queries and fragments, redacts opaque path 
   for (const part of ["u.origin + u.pathname", "opaque.test(s) ? 'redacted'", "'srcset'", "cssUrls(a.value)", "if (n === 'value') { e.removeAttribute('value')"])
     assert.ok(HTML_CLEANER.includes(part), part);
   assert.doesNotThrow(() => new Function('return ' + HTML_CLEANER.replace(/\(\)\s*$/, '')), 'the cleaner source parses as JavaScript');
+});
+
+test('MCP upload advertises the same bounded file-array contract its actuator accepts', async () => {
+  const token = 'test-token-12345678901234567890';
+  const server = createCdpFacade({ token, fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true }) }) });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/mcp`, {
+      method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 19, method: 'tools/list' }),
+    });
+    const tool = (await res.json()).result.tools.find(t => t.name === 'nova_upload');
+    assert.ok(tool);
+    assert.equal(tool.inputSchema.properties.files.type, 'array');
+    assert.equal(tool.inputSchema.properties.files.items.type, 'string');
+    assert.equal(tool.inputSchema.properties.files.minItems, 1);
+    assert.equal(tool.inputSchema.properties.files.maxItems, 10);
+  } finally {
+    server.closeAllConnections();
+    await new Promise(r => server.close(r));
+  }
 });

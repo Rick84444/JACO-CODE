@@ -3075,7 +3075,7 @@ const notifyPhone = async (action) => {
       // CDP is intentionally a specialist observation surface inside Aura.
       // Browser mutations must stay on BrowserHandsOff/ModelRelay rather than
       // becoming a second actuator path just because CDP can technically click.
-      if (providerId === 'cdp' && !['nova_targets','nova_observe','nova_screenshot','nova_html'].includes(toolName)) {
+      if (providerId === 'cdp' && !['nova_targets','nova_observe','nova_screenshot','nova_html','nova_ax','nova_tabs','nova_downloads'].includes(toolName)) {
         throw new Error('CDP_DIRECT_MUTATION_DISABLED_USE_REMOTE_OR_BROWSER_HANDS_OFF');
       }
 

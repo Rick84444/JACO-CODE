@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { SurveyLibrary, type ActionableElement } from '../handsOff/surveyLibrary.js';
+import { BLOCKED_ORIGIN_PATTERN, BLOCKED_PATH_PATTERN, SECRET_TEXT, PASSWORD_TARGET } from '../../../../agents/lib/browser-scope.mjs';
 
 /**
  * Browser hands-off client.
@@ -103,23 +104,8 @@ export interface BrowserReceipt {
   error?: string;
 }
 
-/**
- * Origins that can never be granted. Authentication and payment surfaces, plus
- * the WordPress login endpoint itself: the agent operates on an already
- * authenticated session and has no business on the page that establishes one.
- */
-export const BLOCKED_ORIGIN_PATTERN =
-  /(accounts\.google|login\.microsoftonline|appleid\.apple|okta\.com|auth0\.com|onelogin|duosecurity|bankid|swish|paypal\.com|checkout\.stripe)/i;
-
-export const BLOCKED_PATH_PATTERN = /(wp-login\.php|\/login|\/signin|\/oauth|\/authorize|\/checkout|\/payment)/i;
-
-/** Text that must be typed by a human, never driven into a field by an agent. */
-const SECRET_TEXT =
-  /(password|lösenord|passcode|one.?time|otp|verification code|api.?key|secret|private.?key|seed phrase)/i;
-
-/** Selectors that address a credential field, whatever the value being set. */
-const PASSWORD_TARGET = /(type=["']?password|#user_pass|\[name=["']?pwd|autocomplete=["']?current-password)/i;
-
+// One owner for what a browser actuator may touch (the Nova bridge uses the same file): agents/lib/browser-scope.mjs.
+export { BLOCKED_ORIGIN_PATTERN, BLOCKED_PATH_PATTERN };
 const MUTATING: BrowserActionType[] = ['navigate', 'click', 'set_value', 'select', 'check', 'scroll', 'wordpress_apply_css'];
 
 /** Snapshot hash ignoring volatile fields, so `verified` reflects real change. */

@@ -16,6 +16,9 @@ const blocked = (actionId, error, extra = {}) => ({ ok: false, verified: false, 
 function syncDirectory(directory) {
   // POSIX directory fsync makes file creation/rename durable; if unsupported,
   // block the write rather than promise at-most-once after a power failure.
+  // Windows cannot open a directory for fsync (EISDIR/EPERM); NTFS journals its own metadata, and the file itself
+  // is still fsynced before the action runs. Everywhere else an unsupported directory sync still blocks.
+  if (process.platform === 'win32') return;
   const fd = openSync(directory, 'r');
   try { fsyncSync(fd); }
   finally { closeSync(fd); }
@@ -42,7 +45,7 @@ export function createBrowserActionJournal(directory, { syncDir = syncDirectory 
   return {
     async execute({ actionId, kind, payload, perform }) {
       if (typeof actionId !== 'string' || !ACTION_ID.test(actionId)) return blocked(actionId, 'ACTION_ID_INVALID');
-      if (!['navigate', 'click', 'type'].includes(kind) || typeof perform !== 'function') return blocked(actionId, 'ACTION_INVALID');
+      if (!['navigate', 'click', 'type', 'press', 'upload', 'tab-open', 'tab-switch', 'tab-close'].includes(kind) || typeof perform !== 'function') return blocked(actionId, 'ACTION_INVALID');
       const fingerprint = hash({ kind, payload });
       const file = join(directory, hash(actionId) + '.json');
       try { ensureDurableDirectory(directory, syncDir); }
