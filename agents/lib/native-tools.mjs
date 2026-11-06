@@ -53,7 +53,9 @@ export function searchDeferredTools(deferred, query, active = new Set(), limit =
 
 // One plain sentence for the operator, written by the model with each call: what it is doing and why. Gemini returns tool
 // calls without any text, so the sentence has to be a parameter to be reliable.
-const SAY = { type: 'string', description: 'One short plain sentence for the operator, in their language: what you are doing now and why. No tool names or jargon.' };
+const SAY = { type: 'string', description: 'Plain words for the operator, in their language, no tool names or jargon. On your FIRST call: your plan in two or three short sentences (what you will do, in what order, and what the end result will be). On later calls: one sentence on what you are doing now and why.' };
+// What the last result showed. Together with SAY it makes the chat read like a colleague talking, not a command log.
+const LEARNED = { type: 'string', description: 'One short sentence: what the previous result showed and how it changes your plan. Leave empty on the first call or when nothing notable came back.' };
 
 export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, allowReplan = true, { deferAfterChars = DEFER_MCP_SCHEMA_CHARS } = {}) {
   const targets = new Map();
@@ -65,7 +67,7 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
     const fields = TASK_FIELDS[type];
     tools.push(fn(type, taskNotes[type] ? `Learned: ${taskNotes[type]}` : null, {
       ...taskContract(type),
-      properties: { ...taskContract(type).properties, expectedOutcome: { type: 'string' }, say: SAY },
+      properties: { ...taskContract(type).properties, expectedOutcome: { type: 'string' }, say: SAY, learned: LEARNED },
       required: fields, additionalProperties: true,
     }));
     targets.set(type, { kind: 'task', type });
@@ -86,7 +88,7 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
       const schema = compactSchema(t.inputSchema && typeof t.inputSchema === 'object' ? t.inputSchema : {});
       const description = String(t.description || '').replace(/\s+/g, ' ').slice(0, 150);
       const def = fn(name, `${t.server} MCP${t.readOnly !== true ? ' (changes something)' : ''}: ${description}${t.note ? ` Learned: ${t.note}` : ''}`,
-        { ...schema, type: 'object', properties: { ...(schema.properties || {}), expectedOutcome: { type: 'string' }, say: SAY } });
+        { ...schema, type: 'object', properties: { ...(schema.properties || {}), expectedOutcome: { type: 'string' }, say: SAY, learned: LEARNED } });
       mcpDefinitions.push({ name, server: t.server, tool: t.name, description, def });
       // A tool that changes something runs as an mcp-write step: never batched or repeated after an interruption.
       targets.set(name, { kind: 'mcp', server: t.server, tool: t.name, write: t.readOnly !== true });
