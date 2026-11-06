@@ -436,7 +436,7 @@ const runtime = {
 // ── Local Tools ──────────────────────────────────────────────────────────────
 
 export const localTools = {
-  shell(command, timeoutMs = 30000) {
+  shell(command, timeoutMs = 30000, cwd = undefined) {
     // Operator policy: agents must never reach the Stripe account. Planned shell
     // commands run without secrets in their environment and may not name Stripe or .env files.
     if (/stripe|\.env\b|rk_live_|sk_live_/i.test(String(command))) {
@@ -455,6 +455,7 @@ export const localTools = {
         stdio: ["pipe", "pipe", "pipe"],
         maxBuffer: 32 * 1024 * 1024,
         env,
+        ...(cwd ? { cwd } : {}),
       });
       const output = String(result || '').trim();
       return { ok: true, verified: true, exitCode: 0, output: clip(output), outputBytes: output.length, sha256: createHash("sha256").update(output).digest("hex") };
@@ -943,7 +944,9 @@ export async function executeTask(task, state, mission = null) {
     case "type-text":      return computerTools.typeText(task.data.text);
     case "screenshot":     return computerTools.screenshot(task.data || {});
     case "get-cursor":     return computerTools.getCursor();
-    case "shell": return localTools.shell(task.data.command, task.data.timeout);
+    // A project mission works in its own worktree: its shell must run there too. It ran in the main checkout, so `git add`
+    // could not see the files the mission had written, and `npm install` changed the operator's own checkout (2026-11-06).
+    case "shell": return localTools.shell(task.data.command, task.data.timeout, mission?.metadata?.projectRoot ? workspaceFor(mission).root : undefined);
     case "repo-list":
     case "repo-read":
     case "repo-write":
