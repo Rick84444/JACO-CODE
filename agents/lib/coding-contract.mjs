@@ -117,6 +117,8 @@ export function normalizeCodingContract(input = {}, fallbackObjective = '') {
       falsifier_required: input.verification?.falsifier_required === true,
       independent_verification: input.verification?.independent_verification === true,
       receipt_required: input.verification?.receipt_required !== false,
+      // A mission whose job is to make something must have changed a file before it may complete.
+      change_required: input.verification?.change_required === true,
       commands,
       allow_workspace_tests: input.verification?.allow_workspace_tests === true,
       required_stages: [...new Set(requiredStages)],
@@ -180,6 +182,8 @@ export function contractVerificationStatus(contract, receipts = []) {
   if (changedSomething && contract.verification.falsifier_required && !hasFalsifier) missing.push('falsifier');
   if (changedSomething && contract.verification.independent_verification && !hasIndependent) missing.push('independent_verification');
   if (contract.verification.receipt_required && !verified.length) missing.push('verified_receipt');
+  // Without this a build mission completed after five directory listings, claiming files it never wrote (2026-11-06).
+  if (contract.verification.change_required && lastWriteTurn < 0) missing.push('change');
   for (const stage of contract.verification.required_stages || []) {
     const found = verified.some(r => afterLastWrite(r) && (
       stage === 'service' ? r.type === 'repo-service' && ['start','status'].includes(r.input?.action) && r.result?.state === 'READY' :
