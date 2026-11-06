@@ -254,7 +254,11 @@ export function createInputActions({ evaluate, observe, tabs = null, downloads =
         const observation = await observe(session);
         // A click that named no expectation is still verified by what the browser itself saw it do: the page moved
         // to another address, a tab opened or a file arrived. A click that changed nothing stays unverified.
-        if (kind === 'click' && !predicate && !verified) {
+        // When the model named an expectation that did not come true but the page did move, the click happened and its
+        // effect was seen: it is reported as verified with expectationMet:false, so the model reads where it landed
+        // instead of repeating the whole task (a real run clicked the right link three times and never finished).
+        if (kind === 'click' && !verified) {
+          if (predicate) extra.expectationMet = false;
           if (observation?.url && before?.url && observation.url !== before.url) { verified = true; extra.effect = 'navigated'; }
           else if (extra.newTabs?.length) { verified = true; extra.effect = 'new-tab'; }
           else if (extra.downloads?.length) { verified = true; extra.effect = 'download'; }
