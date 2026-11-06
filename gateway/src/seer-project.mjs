@@ -38,7 +38,14 @@ export function projectNodeContract({ title, objective, mainGoal, projectRoot = 
   const what = String(objective || title || '').trim();
   if (!what) throw new Error('PROJECT_NODE_OBJECTIVE_REQUIRED');
   const { readOnly } = projectGoalCapabilities(`${what}\n${String(mainGoal || '')}`);
-  const testCommand = readOnly ? null : detectProjectTestCommand(projectRoot);
+  // A mission that creates something new (a demo page, a document, a prototype) in its own files has no existing code
+  // to regress: the project's whole test suite is not its proof. Requiring it made such a mission impossible to finish in a
+  // fresh worktree (no installed packages, and a suite that already fails), 2026-11-06.
+  const buildsSomethingNew = !readOnly
+    && /\b(?:build|create|make|write|generate|design|bygg|bygga|skapa|skriv|demo|prototyp|prototype)\b/i.test(what)
+    && /\b(?:demo|html|product|produkt|prototype|prototyp|page|sida|document|dokument|spec|report|rapport)\b/i.test(what)
+    && !/\b(?:fix|bug|debug|repair|regression|refactor|test|tests|testing|testa|felsök|rätta)\b/i.test(what);
+  const testCommand = readOnly || buildsSomethingNew ? null : detectProjectTestCommand(projectRoot);
   const needsNewTests = !readOnly && /\b(?:test|tests|testing|fix|bug|debug|repair|regression|verify|verification|falsifier|testa|felsök)\b/i.test(what);
   return {
     schema: 'jaco.coding-contract/v1',
