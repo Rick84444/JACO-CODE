@@ -25,4 +25,4 @@ Out of scope: a service you configured yourself with a weak key, attacks that ne
 
 ## Supported versions
 
-Only the current `master` and the latest JACO Lite download receive fixes.
+Only the current `main` and the latest JACO Lite download receive fixes.

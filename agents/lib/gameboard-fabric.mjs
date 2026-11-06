@@ -89,7 +89,8 @@ export function gameboardProjection({
   return {
     schema: GAMEBOARD_FABRIC_SCHEMA,
     observedAt,
-    authority: 'SEER Mission Graph + actual MCP host + durable mission bus',
+    authority: 'Aura mission graph + MCP host + durable mission bus',
+    strategy: { ownerId: 'aura', functionId: 'plan' },
     graphSource: graphs === null ? 'UNAVAILABLE' : 'OBSERVED',
     graphError: graphs === null ? clipped(graphError || 'SEER_NOT_CONNECTED', 200) : null,
     agents: uniqueIds(agents), tools: uniqueIds(tools), plans,

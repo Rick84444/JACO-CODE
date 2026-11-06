@@ -9,7 +9,14 @@ export {
 } from '../aura/costEngine.mjs';
 
 const MAX_OUTPUT_TOKENS = 700;
-const MAX_PROMPT_BYTES = 24000;
+const LOCAL_PROMPT_BYTES = 12000;
+const REMOTE_PROMPT_BYTES = 48000;
+
+export function auraPromptByteLimit({ local, cloudRelay = false } = {}) {
+  // Do not increase local context speculatively. Remote providers may accept more
+  // context, but their actual token window remains provider-specific.
+  return local && !cloudRelay ? LOCAL_PROMPT_BYTES : REMOTE_PROMPT_BYTES;
+}
 
 export function auraOllamaModelCatalog(env = process.env) {
   const prices = ollamaCloudPrices(env);
@@ -42,7 +49,7 @@ export async function manualAuraProviderCompletion({ providerId, model, system, 
   }
   if (typeof system !== 'string' || typeof user !== 'string') throw new Error('AURA_CHAT_PROMPT_INVALID');
   const bytes = Buffer.byteLength(system + user, 'utf8');
-  if (bytes > MAX_PROMPT_BYTES) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
+  if (bytes > auraPromptByteLimit({ local: entry.local, cloudRelay: /(?:-cloud|:cloud)$/.test(model) })) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
   const configured = auraProviderPrices(env)[`${providerId}/${model}`];
   // A cloud model can be served through a loopback relay; its suffix must not bypass cost accounting.
   const isCloudSuffix = /(?:-cloud|:cloud)$/.test(model);
@@ -89,7 +96,7 @@ export async function manualAuraOllamaCompletion({ model, system, user, temperat
   if (!auraOllamaModelCatalog(env).includes(model)) throw new Error('AURA_CLOUD_MODEL_NOT_CONFIGURED');
   if (typeof system !== 'string' || typeof user !== 'string') throw new Error('AURA_CHAT_PROMPT_INVALID');
   const promptBytes = Buffer.byteLength(system + user, 'utf8');
-  if (promptBytes > MAX_PROMPT_BYTES) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
+  if (promptBytes > auraPromptByteLimit({ local:false, cloudRelay:true })) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
 
   // Bytes bound the number of input tokens for these text prompts. Reserve the
   // worst case before sending; missing usage or a transport error stays unknown.
@@ -126,25 +133,25 @@ export async function manualAuraOllamaCompletion({ model, system, user, temperat
 // provider the operator has connected (key saved, not local), through the budgeted path, so a message
 // is answered instead of failing. Free models first, then the usual cheap ones, then any other.
 const FALLBACK_ORDER = ['groq', 'deepseek', 'openrouter', 'gemini', 'qwen', 'mistral', 'together', 'xai', 'openai', 'anthropic'];
-export function chatFallbackChoice(providers, env = process.env) {
-  const ready = auraChatProviderCatalog(providers, env).filter(p => !p.local && p.credentialReady && p.defaultModel);
+export function chatFallbackChoice(providers, env = process.env, { exclude = null } = {}) {
+  const ready = auraChatProviderCatalog(providers, env).filter(p => !p.local && p.credentialReady && p.defaultModel && p.id !== exclude);
   const rank = p => (p.id === 'openrouter' && /:free$/i.test(p.defaultModel) ? -1 : (i => (i < 0 ? FALLBACK_ORDER.length : i))(FALLBACK_ORDER.indexOf(p.id)));
   const best = ready.sort((a, b) => rank(a) - rank(b))[0];
   return best ? { providerId: best.id, model: best.defaultModel } : null;
 }
 
-// What the operator sees when a chat message cannot be answered: what is wrong in plain Swedish and the
+// What the operator sees when a chat message cannot be answered: what is wrong in plain language and the
 // one thing to do about it. `action` is a button in the chat: enable-cloud | open-budget | open-providers.
 export function chatFailureHint(error, { hasProvider = true } = {}) {
   const text = String(error?.message || error || '');
   const code = /AURA_CLOUD_DENIED:([A-Z_]+)/.exec(text)?.[1] || '';
-  if (code === 'CLOUD_DISABLED_BY_POLICY') return { code, message: 'Molnmodeller är avstängda, så jag kan inte svara via en molnmodell. Slå på dem så svarar jag inom din budget.', action: 'enable-cloud', actionLabel: 'Slå på moln' };
-  if (code === 'DAILY_BUDGET_LIMIT' || code === 'MONTHLY_BUDGET_LIMIT') return { code, message: `Budgeten räcker inte till just nu (${code === 'DAILY_BUDGET_LIMIT' ? 'dagens gräns' : 'månadens gräns'}). Höj gränsen eller frigör reserverat belopp under Providers.`, action: 'open-budget', actionLabel: 'Öppna budget' };
-  if (code === 'TASK_COST_LIMIT') return { code, message: 'Svaret skulle kosta mer än gränsen per uppgift. Höj den under Providers.', action: 'open-budget', actionLabel: 'Öppna budget' };
-  if (/AURA_PROVIDER_CREDENTIAL_MISSING|PROVIDER_KEY_MISSING/.test(text)) return { code: 'KEY_MISSING', message: 'Den valda leverantören saknar nyckel. Lägg in den under Providers.', action: 'open-providers', actionLabel: 'Öppna Providers' };
-  if (/PROVIDER_HTTP_401|PROVIDER_HTTP_403/.test(text)) return { code: 'KEY_REJECTED', message: 'Leverantören nekade nyckeln. Kontrollera att den är giltig under Providers.', action: 'open-providers', actionLabel: 'Öppna Providers' };
-  if (/PROVIDER_HTTP_429/.test(text)) return { code: 'RATE_LIMITED', message: 'Leverantören begränsar anropen just nu. Försök igen om en stund eller välj en annan modell.', action: 'open-providers', actionLabel: 'Välj modell' };
-  if (/timeout|TimeoutError|aborted/i.test(text)) return { code: 'TIMEOUT', message: 'Modellen svarade inte i tid. En lokal modell på svag hårdvara kan vara för långsam: anslut en molnmodell under Providers.', action: 'open-providers', actionLabel: 'Anslut modell' };
-  if (!hasProvider || /all_providers_failed|AURA_SEER_CHAT_UNAVAILABLE|NO_PLANNER/.test(text)) return { code: 'NO_MODEL', message: 'Ingen modell är ansluten som kan svara. Anslut en under Providers (klistra in en adress som deepseek.com).', action: 'open-providers', actionLabel: 'Anslut modell' };
-  return { code: 'FAILED', message: `Svaret misslyckades: ${text.slice(0, 160)}`, action: 'open-providers', actionLabel: 'Öppna Providers' };
+  if (code === 'CLOUD_DISABLED_BY_POLICY') return { code, message: 'Cloud models are turned off, so I cannot answer through a cloud model. Turn them on and I will answer within your budget.', action: 'enable-cloud', actionLabel: 'Turn on cloud' };
+  if (code === 'DAILY_BUDGET_LIMIT' || code === 'MONTHLY_BUDGET_LIMIT') return { code, message: `The budget is not enough right now (${code === 'DAILY_BUDGET_LIMIT' ? 'daily limit' : 'monthly limit'}). Raise the limit or release reserved spend under Providers.`, action: 'open-budget', actionLabel: 'Open budget' };
+  if (code === 'TASK_COST_LIMIT') return { code, message: 'The answer would cost more than the per-task limit. Raise it under Providers.', action: 'open-budget', actionLabel: 'Open budget' };
+  if (/AURA_PROVIDER_CREDENTIAL_MISSING|PROVIDER_KEY_MISSING/.test(text)) return { code: 'KEY_MISSING', message: 'The selected provider has no key. Add it under Providers.', action: 'open-providers', actionLabel: 'Open Providers' };
+  if (/PROVIDER_HTTP_401|PROVIDER_HTTP_403/.test(text)) return { code: 'KEY_REJECTED', message: 'The provider rejected the key. Check that it is valid under Providers.', action: 'open-providers', actionLabel: 'Open Providers' };
+  if (/PROVIDER_HTTP_429/.test(text)) return { code: 'RATE_LIMITED', message: 'The provider is rate limiting requests right now. Try again shortly or choose another model.', action: 'open-providers', actionLabel: 'Choose model' };
+  if (/timeout|TimeoutError|aborted/i.test(text)) return { code: 'TIMEOUT', message: 'The model did not answer in time. A local model on weak hardware can be too slow: connect a cloud model under Providers.', action: 'open-providers', actionLabel: 'Connect model' };
+  if (!hasProvider || /all_providers_failed|AURA_SEER_CHAT_UNAVAILABLE|NO_PLANNER/.test(text)) return { code: 'NO_MODEL', message: 'No connected model can answer. Connect one under Providers (paste an address such as deepseek.com).', action: 'open-providers', actionLabel: 'Connect model' };
+  return { code: 'FAILED', message: `The answer failed: ${text.slice(0, 160)}`, action: 'open-providers', actionLabel: 'Open Providers' };
 }

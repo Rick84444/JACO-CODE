@@ -25,12 +25,12 @@ export interface QualityAuditResult {
   findings: QualityFinding[];
 }
 
-// tsc --noEmit skriver rader i formatet: "file.ts(rad,kol): error TSxxxx: meddelande"
+// tsc --noEmit writes lines in the format: "file.ts(line,col): error TSxxxx: message"
 const TS_DIAGNOSTIC_RE = /^(.+?)\((\d+),(\d+)\):\s+(error|warning)\s+(TS\d+):\s+(.*)$/;
 
 /**
- * Riktig typkontroll: kör den faktiska tsc-binären (samma som `npm run lint`
- * redan använder i det här repot) mot hela projektet enligt tsconfig.json.
+ * Real type check: runs the actual tsc binary (the same one `npm run lint`
+ * already uses in this repo) against the whole project per tsconfig.json.
  */
 async function runTypeCheck(): Promise<QualityFinding[]> {
   const findings: QualityFinding[] = [];
@@ -40,7 +40,7 @@ async function runTypeCheck(): Promise<QualityFinding[]> {
       timeout: 120000,
       maxBuffer: 20 * 1024 * 1024
     });
-    // tsc returnerade 0 — inga diagnostikrader att parsa.
+    // tsc returned 0 — no diagnostic lines to parse.
   } catch (err: any) {
     const output: string = err?.stdout || err?.message || '';
     for (const rawLine of output.split('\n')) {
@@ -56,12 +56,12 @@ async function runTypeCheck(): Promise<QualityFinding[]> {
       }
     }
     if (findings.length === 0) {
-      // tsc misslyckades av annan anledning än typfel (saknad tsconfig,
-      // timeout, saknade node_modules etc) — rapportera det ärligt.
+      // tsc failed for a reason other than type errors (missing tsconfig,
+      // timeout, missing node_modules etc) — report that honestly.
       findings.push({
         file: 'tsc',
         severity: 'CRITICAL',
-        message: `Typkontroll kunde inte köras eller avslutades oväntat: ${output.slice(0, 500) || 'okänt fel'}`
+        message: `Type check could not run or exited unexpectedly: ${output.slice(0, 500) || 'unknown error'}`
       });
     }
   }
@@ -69,14 +69,14 @@ async function runTypeCheck(): Promise<QualityFinding[]> {
 }
 
 const SECURITY_PATTERNS: Array<{ re: RegExp; message: string }> = [
-  { re: /eval\s*\(/, message: 'Direkt evaluering av strängkod — potentiell kodinjektionsrisk.' },
-  { re: /new\s+Function\s*\(/, message: 'Dynamisk funktionskonstruktion från sträng — potentiell kodinjektionsrisk.' },
-  { re: /exec(?:Sync)?\s*\(\s*[`'"][^`'"]*\$\{/, message: 'Skalkommando byggt med strängmall/interpolering — risk för shell-injektion.' },
-  { re: /(api[_-]?key|secret|password|token)\s*[:=]\s*['"][A-Za-z0-9_\-]{12,}['"]/i, message: 'Möjlig hårdkodad hemlighet i källkod.' }
+  { re: /eval\s*\(/, message: 'Direct evaluation of string code — potential code injection risk.' },
+  { re: /new\s+Function\s*\(/, message: 'Dynamic function construction from a string — potential code injection risk.' },
+  { re: /exec(?:Sync)?\s*\(\s*[`'"][^`'"]*\$\{/, message: 'Shell command built with a template string/interpolation — risk of shell injection.' },
+  { re: /(api[_-]?key|secret|password|token)\s*[:=]\s*['"][A-Za-z0-9_\-]{12,}['"]/i, message: 'Possible hardcoded secret in source code.' }
 ];
 
-// OBS: mönstren ovan får inte skriva ut sina egna träffsträngar i klartext i
-// meddelandet — annars flaggar scannern sin egen källkod (självreferens).
+// NOTE: the patterns above must not spell out their own match strings in plain
+// text in the message — otherwise the scanner flags its own source (self-reference).
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', '.jaco', 'workspace']);
 
@@ -101,9 +101,9 @@ function walkSourceFiles(dir: string): string[] {
 }
 
 /**
- * Enkel, beroendefri säkerhetsscan (repot har ingen eslint-plugin för det
- * ändamålet installerad). Mönsterbaserad, inte en fullständig SAST-motor —
- * flaggar de vanligaste uppenbara riskerna för mänsklig granskning.
+ * Simple, dependency-free security scan (the repo has no eslint plugin installed
+ * for that purpose). Pattern-based, not a full SAST engine — flags the most
+ * common obvious risks for human review.
  */
 async function runSecurityScan(targetDir: string): Promise<QualityFinding[]> {
   const findings: QualityFinding[] = [];

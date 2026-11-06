@@ -11,7 +11,7 @@ export class StripePaymentAdapter implements PaymentProvider {
   async createCheckout(order: PaymentOrder): Promise<PaymentCheckoutResult> {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (!stripeKey) {
-      throw new Error('STRIPE_SECRET_KEY saknas i miljövariabler.');
+      throw new Error('STRIPE_SECRET_KEY is missing from environment variables.');
     }
     const Stripe = (await import('stripe')).default;
     const stripe = new Stripe(stripeKey);
@@ -52,7 +52,7 @@ export class StripePaymentAdapter implements PaymentProvider {
     const webhookSecret = secret || process.env.STRIPE_WEBHOOK_SECRET;
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (!webhookSecret || !stripeKey) {
-      throw new Error('STRIPE_WEBHOOK_SECRET eller STRIPE_SECRET_KEY är inte konfigurerat.');
+      throw new Error('STRIPE_WEBHOOK_SECRET or STRIPE_SECRET_KEY is not configured.');
     }
 
     const Stripe = (await import('stripe')).default;
@@ -89,7 +89,7 @@ export class StripePaymentAdapter implements PaymentProvider {
 
   async refund(paymentId: string, amount?: number): Promise<PaymentRefundResult> {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
-    if (!stripeKey) throw new Error('STRIPE_SECRET_KEY saknas.');
+    if (!stripeKey) throw new Error('STRIPE_SECRET_KEY is missing.');
     const Stripe = (await import('stripe')).default;
     const stripe = new Stripe(stripeKey);
 

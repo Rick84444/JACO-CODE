@@ -3,7 +3,8 @@
 // switch applies from the next turn without a restart. Only the providers and models listed here
 // can be chosen. A paid choice still needs JACO_ALLOW_PAID_MODELS=1 and stays under Nova's daily
 // dollar ceiling (JACO_NOVA_PAID_USD_PER_DAY).
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { budgetedNovaOllamaCall } from './nova-ollama-cost.mjs';
 import { credential } from './secret-store.mjs';
@@ -25,8 +26,27 @@ export function plannerChoices(env = process.env, extra = {}) {
 
 const keyOf = (choice, env) => (choice.keyEnv ? credential(choice.keyEnv, { env }) : 'ok');
 
+// Services do not agree on whether OLLAMA_BASE_URL names the bare Ollama host
+// or its OpenAI-compatible /v1 root. Keep endpoint construction in one owner so
+// a production environment ending in /v1 never becomes /v1/v1/chat/completions.
+export function openAiChatCompletionsUrl(base, fallback = 'http://localhost:11434') {
+  const root = String(base || fallback).replace(/\/+$/, '').replace(/\/v1$/i, '');
+  return `${root}/v1/chat/completions`;
+}
+
+// The Hugging Face token can publish, so launcher-started workers do not inherit it from .env.
+// The GUI must not offer a model the agent cannot then authenticate to.
+export const WORKER_WITHHELD_KEY = /^(HUGGINGFACE_TOKEN|HF_TOKEN)$/;
+export function agentCanUseKey(keyEnv, { env = process.env, store = null } = {}) {
+  if (!keyEnv || !WORKER_WITHHELD_KEY.test(keyEnv)) return true;
+  return Boolean(credential(keyEnv, { env: { ...env, [keyEnv]: '' }, store }));
+}
+
 function fixedPlannerChoices(env = process.env) {
-  const ollamaBase = env.OLLAMA_BASE_URL || 'http://localhost:11434';
+  // Runtime service configuration exposes Ollama through its OpenAI-compatible
+  // `/v1` base, while developer shells commonly provide the bare host. Accept
+  // both forms so the canonical planner probe never constructs
+  // `/v1/v1/chat/completions` after a production restart.
   return {
     // Ollama Cloud uses metered tokens. Nova reserves cost through Continuum.
     'ollama-cloud': {
@@ -52,17 +72,19 @@ function fixedPlannerChoices(env = process.env) {
       models: ['qwen/qwen3.8-27b:free', 'google/gemma-4-31b-it:free'],
     },
     ollama: {
-      label: 'Ollama (lokal)', paid: false, keyEnv: null, url: `${ollamaBase}/v1/chat/completions`,
+      label: 'Ollama (lokal)', paid: false, keyEnv: null, url: openAiChatCompletionsUrl(env.OLLAMA_BASE_URL),
       models: [...new Set([env.OLLAMA_MODEL, env.JACO_OLLAMA_LOCAL_MODEL || 'gemma3:4b'].filter(Boolean))],
     },
   };
 }
 
-// Shared by the runtime (its working directory is JACO_RUNTIME_DIR) and Nova (which runs from the
-// main checkout and finds the runtime through JACO_RUNTIME_DIR in .env).
+// Core writes the operator's model selection under WORKSPACE_ROOT/.jaco/state.
+// An explicit cross-process path always wins; otherwise WORKSPACE_ROOT takes
+// precedence over the directory used to launch a Node runtime. This keeps the
+// same file visible from Core, SEER and the local executor on Windows/Termux.
 export function plannerChoiceFile(env = process.env) {
   if (env.JACO_PLANNER_CHOICE_FILE) return env.JACO_PLANNER_CHOICE_FILE;
-  return join(env.JACO_RUNTIME_DIR || env.JACO_WORKSPACE_ROOT || process.cwd(), '.jaco', 'state', 'provider-preference.json');
+  return join(env.JACO_WORKSPACE_ROOT || env.JACO_RUNTIME_DIR || process.cwd(), '.jaco', 'state', 'provider-preference.json');
 }
 
 // Provider listings mix chat models with speech, embedding, image and video models. Those cannot
@@ -107,9 +129,17 @@ export function validatePlannerChoice({ provider, model } = {}, env = process.en
 }
 
 export function writePlannerChoice(file, { provider, model }, by = 'operator', now = new Date()) {
-  mkdirSync(dirname(file), { recursive: true });
+  // The planner is read by Core, SEER and the local executor. Atomic replace
+  // prevents an interrupted write from making the selected model disappear.
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const saved = { provider, model, by, at: now.toISOString() };
-  writeFileSync(file, JSON.stringify(saved, null, 2));
+  const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(saved, null, 2), { mode: 0o600, flag: 'wx' });
+    renameSync(tmp, file);
+  } finally {
+    try { rmSync(tmp, { force: true }); } catch {}
+  }
   return saved;
 }
 
@@ -136,7 +166,7 @@ export async function testPlannerModel({ provider, model }, { env = process.env,
   try {
     if (loopback && cloudRelay) throw new Error('OLLAMA_CLOUD_RELAY_NOT_RESERVABLE');
     if (!loopback && endpoint.protocol !== 'https:') throw new Error('PLANNER_ENDPOINT_UNTRUSTED');
-    if (metered && env.JACO_ALLOW_PAID_MODELS !== '1') throw new Error('PAID_PROVIDER_DISABLED');
+    if (metered && env.JACO_ALLOW_PAID_MODELS === '0') throw new Error('PAID_PROVIDER_DISABLED');
     const requestBody = { model, messages: [{ role: 'user', content: 'Reply with the single word OK.' }], max_tokens: 200 };
     const cloudResult = metered
       ? await budgetedNovaOllamaCall({ provider: { name: provider, model, url: choice.url, key }, requestBody,

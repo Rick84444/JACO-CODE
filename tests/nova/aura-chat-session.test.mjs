@@ -47,3 +47,31 @@ test('message attachments are resolved from stored uploads, encrypted and retain
  const encrypted=bus.db.prepare('SELECT content FROM aura_chat_messages').get().content;assert.ok(!encrypted.includes('Verified upload'));
  bus.close();bus=new DurableMissionBus(root);chat=createAuraChatSession(bus,{resolveAttachments});assert.deepEqual(chat.list()[0].attachments,saved.attachments);
 });
+
+test('Aura GUI chat request and completed reply recover by the same durable id after reconnect',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'aura-chat-reply-recovery-'));
+  let bus=new DurableMissionBus(dir);
+  t.after(()=>{bus.close();fs.rmSync(dir,{recursive:true,force:true});});
+  let chat=createAuraChatSession(bus);
+  const id='55555555-5555-4555-8555-555555555555';
+  chat.append({id,role:'user',content:'Inspect my workspace'});
+  chat.append({id:id+':reply',role:'assistant',content:'Observed verified files'});
+  bus.close();bus=new DurableMissionBus(dir);chat=createAuraChatSession(bus);
+  assert.equal(chat.get(id).content,'Inspect my workspace');
+  assert.equal(chat.get(id+':reply').content,'Observed verified files');
+  assert.equal(chat.list().length,2,'reconnected UI reads one user request and one answer');
+  chat.append({id,role:'user',content:'Inspect my workspace'});
+  chat.append({id:id+':reply',role:'assistant',content:'Observed verified files'});
+  assert.equal(chat.list().length,2,'a replayed completed response does not duplicate history');
+  assert.throws(()=>chat.append({id,role:'user',content:'Start another task'}),/AURA_CHAT_MESSAGE_CONFLICT/);
+});
+
+test('GUI uses existing connected session id for completed reply replay, not another chat store',()=>{
+  const root=path.resolve(import.meta.dirname,'../..');
+  const gui=fs.readFileSync(path.join(root,'runtime/src/components/AuraChatPanel.tsx'),'utf8');
+  const server=fs.readFileSync(path.join(root,'runtime/server.ts'),'utf8');
+  assert.match(gui,/connectedSession: \{ id: user\.id, source: 'Aura GUI' \}/);
+  assert.match(gui,/id: `\$\{user\.id\}:reply`/);
+  assert.match(server,/AURA_CHAT_REPLAY_INPUT_CONFLICT/);
+  assert.match(server,/previousReply\.content/);
+});

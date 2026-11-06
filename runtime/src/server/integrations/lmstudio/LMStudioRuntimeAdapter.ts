@@ -60,21 +60,21 @@ export class LMStudioRuntimeAdapter {
             object: m.object || 'model',
             owned_by: m.owned_by || 'lmstudio'
           }));
-          details.push(`LM Studio ansluten på ${cleanHost}. Hittade ${availableModels.length} inladdade/tillgängliga modeller.`);
+          details.push(`LM Studio connected at ${cleanHost}. Found ${availableModels.length} loaded/available models.`);
         } else {
-          details.push(`LM Studio Svarade OK på ${cleanHost}, men returnerade inga modeller ännu.`);
+          details.push(`LM Studio responded OK at ${cleanHost}, but returned no models yet.`);
         }
       } else {
-        details.push(`LM Studio returnerade HTTP ${response.status} på ${cleanHost}/models.`);
+        details.push(`LM Studio returned HTTP ${response.status} at ${cleanHost}/models.`);
       }
     } catch (err: any) {
-      details.push(`Kunde inte nå LM Studio på ${cleanHost}: ${err?.message || err}`);
+      details.push(`Could not reach LM Studio at ${cleanHost}: ${err?.message || err}`);
     }
 
     if (canonical.valid) {
-      details.push(`Kanonisk workspace-sökväg verifierad: ${canonical.canonicalWorkspace}`);
+      details.push(`Canonical workspace path verified: ${canonical.canonicalWorkspace}`);
     } else {
-      details.push(`Workspace-fel: ${canonical.error}`);
+      details.push(`Workspace error: ${canonical.error}`);
     }
 
     let status: LMStudioVerificationResult['status'] = 'unavailable';
@@ -116,7 +116,7 @@ export class LMStudioRuntimeAdapter {
         threadId,
         type: 'mission.started',
         status: 'REAL',
-        summary: `LM Studio Mission startad: "${contract.objective}"`,
+        summary: `LM Studio mission started: "${contract.objective}"`,
         evidence: contract,
         evidenceLevel: 'VERIFIED'
       },
@@ -135,7 +135,7 @@ export class LMStudioRuntimeAdapter {
           threadId,
           type: 'mission.failed',
           status: 'BLOCKED',
-          summary: `Safety Gate blockerad: ${errMsg}`,
+          summary: `Safety gate blocked: ${errMsg}`,
           evidence: validation.errors,
           evidenceLevel: 'BLOCKED'
         },
@@ -170,7 +170,7 @@ export class LMStudioRuntimeAdapter {
           threadId,
           type: 'analysis.progress',
           status: 'REAL',
-          summary: `Skickar förfrågan till lokal LM Studio-modell på ${cleanHost}...`,
+          summary: `Sending request to local LM Studio model at ${cleanHost}...`,
           evidence: { hostUrl: cleanHost, targetFiles: contract.targetFiles },
           evidenceLevel: 'VERIFIED'
         },
@@ -180,17 +180,17 @@ export class LMStudioRuntimeAdapter {
       );
 
       // System Prompt & User Prompt for LM Studio
-      const systemPrompt = `Du är JACO LM Studio Runtime Agent, en autonom lokal kodnings- och refaktoreringsagent.
-Din uppgift: Utför följande uppdrag på källkoden.
-Läge: ${contract.mode}
-Tillåtna kommandon: ${contract.allowedCommands.join(', ')}
+      const systemPrompt = `You are the JACO LM Studio Runtime Agent, an autonomous local coding and refactoring agent.
+Your task: carry out the following mission on the source code.
+Mode: ${contract.mode}
+Allowed commands: ${contract.allowedCommands.join(', ')}
 
-Du svarar med strukturerad analys, kodbeskrivning och eventuella patch-förslag i ett format med tydliga kodblock. Om du föreslår ändringar i en fil, inkludera en komplett kodrevidering eller en Unified Diff i ett kodblock markerat med \`\`\`diff eller \`\`\`typescript.`;
+Respond in the language the operator wrote the mission in. You answer with structured analysis, a code description and any patch proposals in a format with clear code blocks. If you propose changes to a file, include a complete code revision or a Unified Diff in a code block marked with \`\`\`diff or \`\`\`typescript.`;
 
-      const userPrompt = contract.prompt || `Uppdrag: ${contract.objective}
+      const userPrompt = contract.prompt || `Mission: ${contract.objective}
 
-Sammanhang/filer:
-${contextFilesText || 'Inga specifika filer valda. Analysera generellt.'}`;
+Context/files:
+${contextFilesText || 'No specific files selected. Analyze generally.'}`;
 
       const modelId = contract.modelId || manifest.selectedModel || 'local-model';
 
@@ -219,7 +219,7 @@ ${contextFilesText || 'Inga specifika filer valda. Analysera generellt.'}`;
       }
 
       const responseData: any = await response.json();
-      const modelChoice = responseData.choices?.[0]?.message?.content || 'Inget svar genererades av LM Studio.';
+      const modelChoice = responseData.choices?.[0]?.message?.content || 'LM Studio generated no answer.';
 
       LMStudioEventMapper.mapAndEmit(
         {
@@ -227,7 +227,7 @@ ${contextFilesText || 'Inga specifika filer valda. Analysera generellt.'}`;
           threadId,
           type: 'model.response',
           status: 'REAL',
-          summary: `Mottog svar från LM Studio (${modelId})`,
+          summary: `Received answer from LM Studio (${modelId})`,
           evidence: { rawLength: modelChoice.length, model: modelId },
           evidenceLevel: 'VERIFIED'
         },
@@ -254,7 +254,7 @@ ${contextFilesText || 'Inga specifika filer valda. Analysera generellt.'}`;
             threadId,
             type: 'patch.proposed',
             status: 'REAL',
-            summary: `LM Studio genererade ett patch-förslag.`,
+            summary: `LM Studio generated a patch proposal.`,
             evidence: { patch: patchProposed, targetFiles: contract.targetFiles },
             evidenceLevel: 'VERIFIED'
           },
@@ -280,11 +280,11 @@ ${contextFilesText || 'Inga specifika filer valda. Analysera generellt.'}`;
           actionId,
           missionId,
           actionType: 'patch.apply',
-          description: `Tillämpa LM Studio patch på ${contract.targetFiles?.join(', ') || 'workspace'}`,
+          description: `Apply LM Studio patch to ${contract.targetFiles?.join(', ') || 'workspace'}`,
           targetFiles: contract.targetFiles || [],
           riskClass: approvalRule.riskClass,
-          expectedConsequence: 'Uppdaterar källkodsfiler med den lokalt genererade patchen.',
-          rollbackPlan: 'Git checkout eller återställning via JACO backup.',
+          expectedConsequence: 'Updates source files with the locally generated patch.',
+          rollbackPlan: 'Git checkout or restore via JACO backup.',
           actionHash,
           status: 'pending',
           createdAt: new Date().toISOString(),
@@ -297,7 +297,7 @@ ${contextFilesText || 'Inga specifika filer valda. Analysera generellt.'}`;
             threadId,
             type: 'approval.required',
             status: 'REAL',
-            summary: `Operatörsgodkännande krävs (${approvalRule.riskClass}): ${approvalRule.reason}`,
+            summary: `Operator approval required (${approvalRule.riskClass}): ${approvalRule.reason}`,
             evidence: { actionId, actionHash, riskClass: approvalRule.riskClass },
             evidenceLevel: 'VERIFIED'
           },
@@ -313,7 +313,7 @@ ${contextFilesText || 'Inga specifika filer valda. Analysera generellt.'}`;
           threadId,
           type: 'mission.completed',
           status: 'REAL',
-          summary: `LM Studio uppdrag fullföljt framgångsrikt.`,
+          summary: `LM Studio mission completed successfully.`,
           evidence: { modelChoiceLength: modelChoice.length },
           evidenceLevel: 'VERIFIED'
         },
@@ -340,7 +340,7 @@ ${contextFilesText || 'Inga specifika filer valda. Analysera generellt.'}`;
       this.activeMissions.delete(missionId);
       return { success: true, output: modelChoice, patchProposed };
     } catch (err: any) {
-      const errorMsg = `LM Studio uppdragsfel: ${err?.message || err}`;
+      const errorMsg = `LM Studio mission error: ${err?.message || err}`;
       LMStudioEventMapper.mapAndEmit(
         {
           missionId,

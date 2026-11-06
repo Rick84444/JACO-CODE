@@ -22,7 +22,15 @@ test('observed projection does not invent capabilities, probabilities or disconn
   assert.equal(actual.missions.length,1);
 });
 
-test('shared graph projection preserves SEER simulation and separate receipts', () => {
+test('Aura owns planning with or without a graph, independently of workers', () => {
+  for (const graphs of [null, [], [{ id: 'existing', nodes: [] }]]) {
+    const board = gameboardProjection({ graphs, workers: [{ id: 'worker-1' }] });
+    assert.deepEqual(board.strategy, { ownerId: 'aura', functionId: 'plan' });
+    assert.deepEqual(board.agents.map(agent => agent.identity), ['worker-1']);
+  }
+});
+
+test('shared graph projection preserves strategy simulation and separate receipts', () => {
   const p = gameboardProjection({graphs:[{id:'mission-1',objective:'Ship Lite',status:'ACTIVE',
     nodes:[{key:'a',title:'Test Android',status:'READY',dependencies:[],evidence_refs:[]}],
     strategic_board:{forecast:{terminalProbability:0.42},recommendedMoves:[{stepId:'a',score:0.5,executable:true}]}

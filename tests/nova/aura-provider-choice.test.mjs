@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { auraChatViaSeer } from '../../agents/lib/aura-seer-chat.mjs';
-import { auraChatProviderCatalog, manualAuraProviderCompletion } from '../../runtime/src/server/connected/auraOllamaChat.mjs';
+import { auraChatProviderCatalog, manualAuraProviderCompletion, auraPromptByteLimit } from '../../runtime/src/server/connected/auraOllamaChat.mjs';
 
 function fixture({local=false,usage={prompt_tokens:2,completion_tokens:3},fail=null}={}) {
   const calls=[],costs=[];
@@ -60,4 +60,9 @@ test('missing usage and dispatched transport failure remain unknown',async()=>{
     const f=fixture(options);try{await manualAuraProviderCompletion(prompt,{...f,env});}catch{}
     assert.deepEqual(f.costs.map(x=>x[0]),['reserve','unknown']);assert.equal(f.calls.length,1);
   }
+});
+test('provider-aware context limits enlarge remote prompts without exceeding local inference budget', () => {
+  assert.equal(auraPromptByteLimit({local:true}),12000);
+  assert.equal(auraPromptByteLimit({local:false}),48000);
+  assert.equal(auraPromptByteLimit({local:true,cloudRelay:true}),48000);
 });

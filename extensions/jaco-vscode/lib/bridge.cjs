@@ -67,4 +67,24 @@ function makeWebviewHtml(mappedUrl) {
   ].join('\n');
 }
 
-module.exports = { runtimeOrigin, embedUrl, probeJacoRuntime, makeWebviewHtml };
+// JACO Lite writes where it runs to ~/.jaco/lite-runtime.json (a free port when 3000 is taken). The configured
+// address is tried first; the record is only a fallback, accepted when its process is alive and the address is local.
+function readRuntimeRecord({ fs = require('node:fs'), os = require('node:os'), path = require('node:path'), alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } } } = {}) {
+  try {
+    const record = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.jaco', 'lite-runtime.json'), 'utf8'));
+    if (record?.product !== 'JACO Autonomus IDE' || !Number.isInteger(record.launcherPid) || !alive(record.launcherPid)) return null;
+    return runtimeOrigin(record.url);
+  } catch { return null; }
+}
+
+async function probeWithDiscovery(configured, { fetchImpl = globalThis.fetch, record = readRuntimeRecord } = {}) {
+  try { return await probeJacoRuntime(configured, fetchImpl); }
+  catch (first) {
+    if (!/^JACO_VSCODE_RUNTIME_UNREACHABLE|fetch failed|timeout|aborted|ECONNREFUSED/i.test(String(first?.message || first))) throw first;
+    const found = record();
+    if (!found || found === runtimeOrigin(configured)) throw first;
+    return probeJacoRuntime(found, fetchImpl);
+  }
+}
+
+module.exports = { runtimeOrigin, embedUrl, probeJacoRuntime, probeWithDiscovery, readRuntimeRecord, makeWebviewHtml };

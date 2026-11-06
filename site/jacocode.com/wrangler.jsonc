@@ -1,0 +1,17 @@
+// jaco-site: jacocode.com. Check name, routes and compatibility date against the deployed worker before the first
+// deploy from this folder (the original configuration was not in any repository). Secrets GOOGLE_CLIENT_ID,
+// GOOGLE_CLIENT_SECRET and SESSION_SECRET already live on the deployed worker and are kept by a deploy.
+{
+  "name": "jaco-site",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "routes": [
+    { "pattern": "jacocode.com", "custom_domain": true },
+    { "pattern": "www.jacocode.com", "custom_domain": true }
+  ]
+}

@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'dotenv';
 import { readStartupEvidence } from './startup-evidence.mjs';
+import { WORKER_WITHHELD_KEY } from './planner-choice.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -33,8 +34,11 @@ export function runtimeDirectory(root, configured) {
 }
 export function configuration(root = ROOT, inherited = process.env, overrides = {}) {
   root = path.resolve(root);
-  const file = path.join(root, '.env');
+  // Installed Program Files are immutable; per-user credentials, mission state and startup receipts live elsewhere.
+  const dataRoot = inherited.JACO_DATA_DIR ? path.resolve(inherited.JACO_DATA_DIR) : root;
+  const file = path.join(dataRoot, '.env');
   const env = { ...(fs.existsSync(file) ? parse(fs.readFileSync(file)) : {}), ...inherited, ...overrides };
+  env.JACO_DATA_DIR = dataRoot;
   delete env.NODE_TLS_REJECT_UNAUTHORIZED;
   const runtime = runtimeDirectory(root, env.JACO_RUNTIME_DIR);
   const manifest = JSON.parse(fs.readFileSync(path.join(runtime, 'package.json'), 'utf8'));
@@ -62,9 +66,21 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   const enabledPorts = Object.entries(ports).filter(([key]) => key === 'gateway' ? gateway : ['chrome','cdp','novaBridge'].includes(key) ? cdp : true).map(([, value]) => value);
   if (new Set(enabledPorts).size !== enabledPorts.length) throw new Error('DUPLICATE_LISTENER_PORT');
   for (const [key, name] of Object.entries({runtime:'PORT',workplace:'JACO_WORKPLACE_PORT',seer:'SEER_PORT',remote:'JACO_REMOTE_BRIDGE_PORT',a2a:'JACO_A2A_PORT',novaBridge:'NOVA_BRIDGE_PORT',cdp:'JACO_CDP_BRIDGE_PORT',gateway:'JACO_GATEWAY_PORT',chrome:'CDP_PORT'})) env[name] = String(ports[key]);
-  Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_RUNTIME_DIR: runtime });
+  Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_INSTALL_ROOT: root, JACO_RUNTIME_DIR: runtime });
+  // Single Aura runtime: SEER (strategy) and Nova (execution) are internal capabilities.
+  // Do not spin up or pin Ollama simply because it happens to be installed.
+  // An explicit JACO_AURA_UNIFIED_RUNTIME=0 retains the legacy independent-model profile.
+  if (env.JACO_AURA_UNIFIED_RUNTIME !== '0') {
+    env.JACO_AURA_UNIFIED_RUNTIME = '1';
+    env.JACO_SEER_PROVIDER_PREFERENCE = 'aura';
+    env.JACO_WORKPLACE_SUPERVISE_MODEL = '0';
+    env.JACO_MODEL_PROVIDER = 'aura';
+  }
   env.JACO_RUNTIME_URL = `http://127.0.0.1:${ports.runtime}`;
   env.JACO_RELEASE_ROOT = runtime;
+  // One model choice for every service. Without this each service reads the file under its own working
+  // directory, and the planner can stay pinned to a model the operator replaced long ago.
+  env.JACO_PLANNER_CHOICE_FILE ||= path.join(dataRoot === root ? runtime : dataRoot, '.jaco', 'state', 'provider-preference.json');
   env.JACO_WORKPLACE_URL = `http://127.0.0.1:${ports.workplace}`;
   env.SEER_URL = `http://127.0.0.1:${ports.seer}`;
   env.JACO_REMOTE_BRIDGE_URL = `http://127.0.0.1:${ports.remote}`;
@@ -78,7 +94,7 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   const built = fs.existsSync(path.join(runtime, 'dist/server.cjs')) && fs.existsSync(path.join(runtime, 'dist/index.html'));
   if (mode === 'production' && !built) throw new Error('PRODUCTION_BUILD_REQUIRED');
   const production = mode === 'production' || (mode === 'auto' && built);
-  return { root, runtime, version: manifest.version, releaseId, env, ports, production, cdp, gateway, tunnel: env.JACO_START_TUNNEL === '1' };
+  return { root, dataRoot, runtime, version: manifest.version, releaseId, env, ports, production, cdp, gateway, tunnel: env.JACO_START_TUNNEL === '1' };
 }
 export function serviceEnvironment(config, kind) {
   const env = { ...config.env };
@@ -87,13 +103,15 @@ export function serviceEnvironment(config, kind) {
   for (const k of Object.keys(env)) {
     if (/^(STRIPE_|GITHUB_TOKEN$|GH_TOKEN$|CLOUDFLARE_|SKYFIRE_|CDP_API_KEY)/.test(k)) env[k] = '';
     if (kind !== 'workplace' && /^(JACO_CHATGPT_WORKPLACE_TOKEN|JACO_WORKPLACE_OPERATOR_TOKEN)$/.test(k)) env[k] = '';
-    if (kind !== 'runtime' && /^(HUGGINGFACE_TOKEN|HF_TOKEN)$/.test(k)) env[k] = '';
+    if (kind !== 'runtime' && WORKER_WITHHELD_KEY.test(k)) env[k] = '';
   }
   if (kind === 'runtime') {
-    delete env.JACO_WORKSPACE_ROOT;
+    // Preserve legacy checkout behavior unless this is a packaged product with a separate writable data root.
+    if (config.dataRoot === config.root) delete env.JACO_WORKSPACE_ROOT;
+    else env.JACO_WORKSPACE_ROOT = config.dataRoot;
     env.NODE_ENV = config.production ? 'production' : 'development';
     env.OLLAMA_BASE_URL = (env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/v1\/?$/, '').replace(/\/$/, '') + '/v1';
-  } else env.JACO_WORKSPACE_ROOT = config.root;
+  } else env.JACO_WORKSPACE_ROOT = config.dataRoot || config.root;
   return env;
 }
 export function definitions(c) {
@@ -155,7 +173,7 @@ async function waitReady(s, token, timeout = 180000) {
   throw new Error(`SERVICE_NOT_READY:${s.id}:see logs/startup/${s.id}.err.log`);
 }
 function launch(c, s) {
-  const logs = path.join(c.root, 'logs', 'startup'); fs.mkdirSync(logs, { recursive: true });
+  const logs = path.join(c.dataRoot || c.root, 'logs', 'startup'); fs.mkdirSync(logs, { recursive: true });
   const out = fs.openSync(path.join(logs, `${s.id}.out.log`), 'a');
   const err = fs.openSync(path.join(logs, `${s.id}.err.log`), 'a');
   const child = spawn(s.cmd, s.args, { cwd: s.cwd, env: serviceEnvironment(c, s.id), windowsHide: true, detached: true, stdio: ['ignore', out, err] });
@@ -177,12 +195,15 @@ export function processBirth(pid) {
   return value || null;
 }
 export function pendingProcess(c, id) {
-  const file = path.join(c.root, 'logs/startup', `${id}.process.json`);
+  const file = path.join(c.dataRoot || c.root, 'logs/startup', `${id}.process.json`);
   if (!fs.existsSync(file)) return null;
   const record = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (!Number.isInteger(record.pid) || record.pid < 1) throw new Error(`PROCESS_RECORD_INVALID:${id}`);
   try { process.kill(record.pid, 0); } catch (e) { if (e.code === 'ESRCH') return null; throw e; }
-  if (!record.birth || processBirth(record.pid) !== record.birth) throw new Error(`PROCESS_OWNER_NOT_VERIFIED:${id}`);
+  if (!record.birth) throw new Error(`PROCESS_OWNER_NOT_VERIFIED:${id}`);
+  // Windows reuses PIDs. A different creation time proves the recorded process has ended, so the record is stale.
+  // A foreign process holding the service port is still refused by the listener check.
+  if (processBirth(record.pid) !== record.birth) { fs.rmSync(file, { force: true }); return null; }
   return record.pid;
 }
 export function recoverableListener(ownedPid,listenerPid) {
@@ -192,20 +213,31 @@ function ownsListener(c,s) {
   const pid=pendingProcess(c,s.id);
   if(!pid||process.platform!=='win32')return false;
   const port=Number(new URL(s.url).port);
-  const listener=Number(execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess`],{encoding:'utf8',windowsHide:true,timeout:15000}).trim());
+  const listener=Number(execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`(Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Where-Object { $_.RemotePort -eq 0 } | Select-Object -First 1).OwningProcess`],{encoding:'utf8',windowsHide:true,timeout:15000}).trim());
   return recoverableListener(pid,listener);
 }
+// Another reader can hold the receipt open for a moment on Windows; that must not abort the startup it describes.
+export function renameWithRetry(from, to, { attempts = 20, waitMs = 100, rename = fs.renameSync } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try { return rename(from, to); }
+    catch (error) {
+      if (attempt >= attempts || !['EPERM', 'EBUSY', 'EACCES'].includes(error?.code)) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
+    }
+  }
+}
 function save(c, result) {
-  const file = path.join(c.root, 'logs', 'startup', 'status.json');
+  const file = path.join(c.dataRoot || c.root, 'logs', 'startup', 'status.json');
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file + '.tmp', JSON.stringify(result, null, 2)); fs.renameSync(file + '.tmp', file);
+  fs.writeFileSync(file + '.tmp', JSON.stringify(result, null, 2));
+  renameWithRetry(file + '.tmp', file);
 }
 // The same semantic Nova checks are used for startup and later read-only inspection.
 function novaReadiness(c) {
   const workplace = definitions(c).find(s => s.id === 'workplace');
   return [
     { ...workplace, id: 'nova-supervisor', accept: d => d.supervisedAgents?.nova?.supervised === true && d.supervisedAgents.nova.state === 'RUNNING' },
-    { id: 'nova-session', token: c.env.JACO_WORKPLACE_TOKEN || '', url: c.env.JACO_WORKPLACE_URL + '/v1/agents', accept: d => d.agents?.some(a => a.requestedName === (c.env.JACO_EXECUTOR === 'desktop-agentos' ? 'Desktop AgentOS' : 'Nova') && a.sessions?.some(s => ['READY', 'BUSY', 'AVAILABLE'].includes(s.status))) },
+    { id: 'nova-session', token: c.env.JACO_WORKPLACE_TOKEN || '', url: c.env.JACO_WORKPLACE_URL + '/v1/agents', accept: d => d.agents?.some(a => (c.env.JACO_EXECUTOR === 'desktop-agentos' ? a.requestedName === 'Desktop AgentOS' : ['Nova', 'Aura'].includes(a.requestedName)) && a.sessions?.some(s => ['READY', 'BUSY', 'AVAILABLE'].includes(s.status))) },
   ];
 }
 export async function inspectStatus(c, services = [...definitions(c), ...novaReadiness(c)]) {
@@ -217,7 +249,7 @@ export async function inspectStatus(c, services = [...definitions(c), ...novaRea
   // An injected, standalone service probe has no canonical installation to
   // reconcile. Only the real startup configuration requires the durable receipt.
   const canonical = Boolean(c?.root && c?.runtime && c?.ports);
-  const startup = canonical ? readStartupEvidence(c.root) : null;
+  const startup = canonical ? readStartupEvidence(c.dataRoot || c.root) : null;
   const servicesReady = observed.length > 0 && observed.every(s => s.state === 'READY');
   const state = !servicesReady ? 'BLOCKED' : startup && !startup.ok ? 'DEGRADED' : 'READY';
   return { schema: 'jaco.local-startup/v1', state,
@@ -228,7 +260,7 @@ export async function inspectStatus(c, services = [...definitions(c), ...novaRea
     ...(startup ? { startup } : {}), services: observed };
 }
 export async function activate(c, { open = false } = {}) {
-  if (fs.existsSync(path.join(c.root, '.jaco-emergency-stop.json'))) throw new Error('EMERGENCY_STOP_ACTIVE');
+  if (fs.existsSync(path.join(c.dataRoot || c.root, '.jaco-emergency-stop.json'))) throw new Error('EMERGENCY_STOP_ACTIVE');
   if (c.env.GATEWAY_TOKEN.length < 24) throw new Error('GATEWAY_TOKEN_REQUIRED_MIN_24');
   if (!fs.existsSync(path.join(c.runtime, 'server.ts'))) throw new Error('RUNTIME_DIR_INVALID');
   if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('NODE_24_OR_NEWER_REQUIRED');
@@ -236,7 +268,7 @@ export async function activate(c, { open = false } = {}) {
     try { createRequire(path.join(c.runtime, 'package.json')).resolve('tsx'); }
     catch { throw new Error('RUNTIME_DEPENDENCIES_MISSING:install runtime dependencies'); }
   }
-  const dir = path.join(c.root, 'logs', 'startup'); fs.mkdirSync(dir, { recursive: true });
+  const dir = path.join(c.dataRoot || c.root, 'logs', 'startup'); fs.mkdirSync(dir, { recursive: true });
   const lock = path.join(dir, 'startup.lock');
   try { fs.writeFileSync(lock, String(process.pid), { flag: 'wx' }); }
   catch (e) {
@@ -248,6 +280,7 @@ export async function activate(c, { open = false } = {}) {
     fs.unlinkSync(lock); fs.writeFileSync(lock, String(process.pid), { flag: 'wx' });
   }
   const startedAt = new Date().toISOString();
+  let installedGuiOpened = false;
   const result = { schema: 'jaco.local-startup/v1', runId: `${process.pid}-${Date.now()}`, startedAt, observedAt: startedAt, sequence: 0, state: 'STARTING', phase: 'preflight', runtime: c.runtime, services: [], expected: { browserAttachment: c.cdp }, browserAttachment: c.cdp ? 'PENDING' : 'NOT_REQUIRED', warnings: [] };
   const checkpoint = phase => { result.phase = phase; result.sequence++; result.observedAt = new Date().toISOString(); save(c, result); };
   try {
@@ -255,6 +288,8 @@ export async function activate(c, { open = false } = {}) {
     // Reject foreign listeners before starting any optional helper.
     for (const service of [...definitions(c)].sort((a, b) => a.id === 'runtime' ? -1 : b.id === 'runtime' ? 1 : 0)) {
       const observed = await probe(service, c.env.GATEWAY_TOKEN);
+      // A different checkout of the same JACO release must not impersonate this installed product.
+      if (c.dataRoot !== c.root && observed.state === 'READY' && !ownsListener(c, service)) throw new Error(`OTHER_JACO_INSTANCE_RUNNING:${service.id}:stop old checkout before launching installed JACO`);
       if (observed.state !== 'READY' && await occupied(service.url) && !ownsListener(c,service)) throw new Error(`PORT_CONFLICT_OR_UNHEALTHY:${service.id}`);
     }
     let chromeAvailable = !c.cdp;
@@ -266,7 +301,7 @@ export async function activate(c, { open = false } = {}) {
           if (await occupied(chrome.url)) throw new Error('PORT_CONFLICT:chrome');
           const exe = executable(c.env, c.env.JACO_CHROME_EXECUTABLE, 'chrome.exe', [c.env.ProgramFiles, c.env['ProgramFiles(x86)'], c.env.LOCALAPPDATA].filter(Boolean).map(p => path.join(p, 'Google/Chrome/Application/chrome.exe')));
           if (!exe) throw new Error('CHROME_NOT_INSTALLED');
-          const profile = c.env.JACO_CHROME_PROFILE_DIR || (c.env.LOCALAPPDATA && path.join(c.env.LOCALAPPDATA, 'JACO/Chrome-CDP'));
+          const profile = c.env.JACO_CHROME_PROFILE_DIR || path.join(c.dataRoot || c.root, 'Chrome-CDP');
           if (!profile) throw new Error('CHROME_PROFILE_DIR_REQUIRED');
           if (!pendingProcess(c, 'chrome')) await launch(c, { id: 'chrome', cwd: c.root, cmd: exe, args: [`--remote-debugging-port=${c.ports.chrome}`, '--remote-debugging-address=127.0.0.1', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', `--user-data-dir=${path.resolve(c.root, profile)}`, 'about:blank'] });
           await waitReady(chrome, '', 30000);
@@ -284,7 +319,7 @@ export async function activate(c, { open = false } = {}) {
       }
     }
     const ollamaUrl = (c.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/v1\/?$/, '').replace(/\/$/, '');
-    if (!c.env.JACO_MODEL_PROVIDER || c.env.JACO_MODEL_PROVIDER === 'ollama') {
+    if (c.env.JACO_AURA_UNIFIED_RUNTIME !== '1' && (!c.env.JACO_MODEL_PROVIDER || c.env.JACO_MODEL_PROVIDER === 'ollama')) {
       const ollama = { id: 'ollama', url: ollamaUrl + '/api/tags', accept: d => Array.isArray(d.models) };
       if ((await probe(ollama)).state !== 'READY') {
         const local = new URL(ollamaUrl);
@@ -311,6 +346,12 @@ export async function activate(c, { open = false } = {}) {
         state = await waitReady(s, c.env.GATEWAY_TOKEN);
       }
       result.services.push({ id: s.id, state: state.state, url: s.url }); console.log(`READY ${s.id}`);
+      // Product GUI stays usable for first-run model onboarding even if later workers are DEGRADED.
+      if (open && c.dataRoot !== c.root && s.id === 'runtime' && !installedGuiOpened) {
+        const browser = spawn('explorer.exe', [c.env.JACO_RUNTIME_URL], { windowsHide: true, detached: true, stdio: 'ignore' });
+        browser.unref();
+        installedGuiOpened = true;
+      }
       checkpoint(`ready:${s.id}`);
     }
     checkpoint('nova');
@@ -363,7 +404,7 @@ export async function activate(c, { open = false } = {}) {
       result.tunnel = 'PROCESS_PRESENT_PUBLIC_REACHABILITY_UNVERIFIED';
     }
     result.state = result.warnings.length || (c.cdp && result.browserAttachment !== 'ATTACHED') ? 'DEGRADED' : 'READY'; result.completedAt = new Date().toISOString(); checkpoint('complete');
-    if (open) { const child = spawn('explorer.exe', [c.env.JACO_RUNTIME_URL], { windowsHide: true, detached: true, stdio: 'ignore' }); child.unref(); }
+    if (open && !installedGuiOpened) { const child = spawn('explorer.exe', [c.env.JACO_RUNTIME_URL], { windowsHide: true, detached: true, stdio: 'ignore' }); child.unref(); }
     return result;
   } catch (error) { result.state = 'BLOCKED'; result.error = error.message; result.completedAt = new Date().toISOString(); checkpoint(result.phase); throw error; }
   finally { fs.unlinkSync(lock); }
@@ -372,7 +413,7 @@ export async function main(args = process.argv.slice(2)) {
   const runtimeArg = args.indexOf('--runtime');
   if (runtimeArg >= 0 && (!args[runtimeArg + 1] || args[runtimeArg + 1].startsWith('--'))) throw new Error('RUNTIME_ARGUMENT_REQUIRED');
   const c = configuration(ROOT, process.env, runtimeArg >= 0 ? { JACO_RUNTIME_DIR: args[runtimeArg + 1] } : {});
-  if (args.includes('--preflight')) return { schema: 'jaco.startup-preflight/v1', emergencyStop: fs.existsSync(path.join(c.root, '.jaco-emergency-stop.json')), runtimePresent: fs.existsSync(path.join(c.runtime, 'server.ts')), runtime: c.runtime, scope: 'read only; no children launched' };
+  if (args.includes('--preflight')) return { schema: 'jaco.startup-preflight/v1', emergencyStop: fs.existsSync(path.join(c.dataRoot || c.root, '.jaco-emergency-stop.json')), runtimePresent: fs.existsSync(path.join(c.runtime, 'server.ts')), runtime: c.runtime, scope: 'read only; no children launched' };
   if (args.includes('--status')) return inspectStatus(c);
   return activate(c, { open: args.includes('--open') });
 }
@@ -383,7 +424,7 @@ if (process.env.JACO_LITE !== '1' && process.argv[1] && import.meta.url === path
   if (r.schema === 'jaco.local-startup/v1' && r.state !== 'READY') process.exitCode = 1;
 }).catch(e => {
   console.error(e.message);
-  const dir = path.join(ROOT, 'logs/startup');
+  const dir = path.join(process.env.JACO_DATA_DIR || ROOT, 'logs/startup');
   try { fs.mkdirSync(dir, { recursive: true }); fs.appendFileSync(path.join(dir, 'launcher.err.log'), `${new Date().toISOString()} BLOCKED ${e.message}\n`); }
   catch { console.error('STARTUP_ERROR_LOG_UNAVAILABLE'); }
   process.exitCode = 1;

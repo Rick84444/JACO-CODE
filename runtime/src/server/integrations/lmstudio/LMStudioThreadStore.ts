@@ -35,7 +35,7 @@ export class LMStudioThreadStore extends EventEmitter {
       schemaVersion: '1.0',
       id: 'jaco.lmstudio-runtime',
       name: 'LM Studio Runtime Adapter',
-      description: 'Valbar LM Studio-motor för lokal LLM-inferens, kodanalys och snabb modellväxling.',
+      description: 'Selectable LM Studio engine for local LLM inference, code analysis and fast model switching.',
       enabled: false,
       runtime: 'server',
       mode: 'advisor',

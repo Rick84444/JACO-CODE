@@ -22,8 +22,8 @@ const api = async (path, params) => {
 };
 
 const OFFER = {
-  name: 'Repo-säkerhetsskanning (GitHub)',
-  description: 'Automatisk skanning av ett publikt GitHub-repo: läckta nycklar och lösenord i nuvarande filer (maskerade i rapporten) och beroenden med publicerade sårbarheter (OSV.dev). Rapporten visas på kvittosidan när skanningen är klar, oftast inom några minuter.',
+  name: 'Repository security scan (GitHub)',
+  description: 'Automated scan of a public GitHub repository: leaked keys and passwords in current files (masked in the report) and dependencies with published vulnerabilities (OSV.dev). The report appears on the receipt page when the scan is complete, usually within a few minutes.',
 };
 
 async function main() {
@@ -52,7 +52,7 @@ async function main() {
     'line_items[0][quantity]': '1',
     'custom_fields[0][key]': 'repo',
     'custom_fields[0][label][type]': 'custom',
-    'custom_fields[0][label][custom]': 'Publikt GitHub-repo (https://github.com/...)',
+    'custom_fields[0][label][custom]': 'Public GitHub repository (https://github.com/...)',
     'custom_fields[0][type]': 'text',
     'after_completion[type]': 'redirect',
     'after_completion[redirect][url]': plan.redirect,

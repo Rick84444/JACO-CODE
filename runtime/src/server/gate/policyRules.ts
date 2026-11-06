@@ -27,25 +27,25 @@ const HIGH_RISK_COMMANDS = [
 export function evaluateFilePath(filePath: string, operation: 'read' | 'write' | 'delete'): PolicyCheckResult {
   const normalized = filePath.replace(/\\/g, '/');
 
-  // Kontrollera om förbjuden fil
+  // Check whether the file is forbidden
   for (const pattern of FORBIDDEN_FILE_PATTERNS) {
     if (pattern.test(normalized)) {
       return {
         allowed: false,
         requiresApproval: false,
         riskLevel: 'CRITICAL',
-        reason: `Åtkomst nekad: '${filePath}' matchar säkerhetsskyddat mönster.`
+        reason: `Access denied: '${filePath}' matches a security-protected pattern.`
       };
     }
   }
 
-  // Om det är delete
+  // Delete operation
   if (operation === 'delete') {
     return {
       allowed: true,
       requiresApproval: true,
       riskLevel: 'HIGH',
-      reason: `Filborttagning av '${filePath}' kräver operatörsgodkännande.`
+      reason: `Deleting '${filePath}' requires operator approval.`
     };
   }
 
@@ -67,18 +67,18 @@ export function evaluateCommand(command: string): PolicyCheckResult {
         allowed: false,
         requiresApproval: false,
         riskLevel: 'CRITICAL',
-        reason: `Kommandot '${trimmed}' är blockerats av säkerhetspolicy (hög destruktionsrisk).`
+        reason: `Command '${trimmed}' is blocked by security policy (high destruction risk).`
       };
     }
   }
 
-  // Git push, release eller externa anrop kräver godkännande
+  // Git push, release or external calls require approval
   if (/^git\s+push/i.test(trimmed) || /^npm\s+publish/i.test(trimmed)) {
     return {
       allowed: true,
       requiresApproval: true,
       riskLevel: 'HIGH',
-      reason: `Externt distributionskommando kräver operatörsgodkännande.`
+      reason: `External distribution command requires operator approval.`
     };
   }
 

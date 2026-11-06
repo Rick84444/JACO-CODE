@@ -134,3 +134,12 @@ test('Continuum cost reservations use the same provider IDs as the Aura registry
   for (const id of ['UPPERCASE', 'space provider', '../escape', 'x'])
     assert.equal(validProviderId(id), false, id);
 });
+
+test('turning cloud on also opens the saved chat and Nova channels, and off still wins',t=>{
+  const g=governor(t);g.updatePolicy({cloudEnabled:true,manualAuraCloudEnabled:false,novaOllamaCloudEnabled:false,dailyCloudUsd:2,maxCloudUsdPerTask:2});
+  assert.equal(g.authorizeCloud({estimatedUsd:0.01,purpose:'manual-aura-chat'}).reason,'CLOUD_DISABLED_BY_POLICY');
+  g.updatePolicy({cloudEnabled:true});
+  assert.equal(g.authorizeCloud({estimatedUsd:0.01,purpose:'manual-aura-chat'}).allowed,true);
+  g.updatePolicy({cloudEnabled:false});
+  assert.equal(g.authorizeCloud({estimatedUsd:0.01,purpose:'manual-aura-chat'}).reason,'CLOUD_DISABLED_BY_POLICY');
+});

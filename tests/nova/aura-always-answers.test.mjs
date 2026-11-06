@@ -1,7 +1,7 @@
 // Operator 2026-10-09: "viktigast i hela ide att man alltid kan få svar och hjälp".
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { auraAlwaysAnswers, auraStatusReply, auraStatusHints } from '../../agents/lib/aura-always-answers.mjs';
+import { auraAlwaysAnswers, auraStatusReply, auraStatusHints, answerWithin, auraChatDeadlines } from '../../agents/lib/aura-always-answers.mjs';
 
 const reply = (text, provider = 'groq') => ({ success: true, reply: text, text, provider, model: 'm' });
 const status = failures => auraStatusReply(failures);
@@ -39,9 +39,9 @@ test('when no model can answer, Aura answers itself, says so, and tells the oper
   assert.equal(r.success, true);
   assert.equal(r.degraded, true);
   assert.deepEqual([r.provider, r.model], ['aura', 'status'], 'never presented as a model answer');
-  assert.match(r.reply, /^Ingen AI-modell kunde svara just nu/);
-  assert.match(r.reply, /DeepSeek-kontot är tomt/);
-  assert.match(r.reply, /SEER svarar inte/);
+  assert.match(r.reply, /^No AI model could answer right now/);
+  assert.match(r.reply, /The DeepSeek account is empty/);
+  assert.match(r.reply, /SEER is not answering/);
   assert.match(r.reply, /- deepseek\/deepseek-flash: PROVIDER_HTTP_402/);
   assert.equal(noModel[0].length, 2);
 });
@@ -56,8 +56,21 @@ test('without a chosen provider SEER is asked once; an empty SEER answer still e
 
 test('status hints: budget with headroom, used-up quota, local models, and a generic hint when nothing matches', () => {
   const hints = auraStatusHints(['groq: AURA_CLOUD_DENIED:DAILY_BUDGET_LIMIT', 'ollama-cloud: PROVIDER_HTTP_429 You reached the Free usage limit'], { headroomUsd: 0.16, localModels: ['gemma3:4b-cpu'] });
-  assert.ok(hints.some(h => /molnbudget för i dag är slut\. Kvar i dag: 0\.16 USD/.test(h)));
-  assert.ok(hints.some(h => /Gratiskvoten/.test(h)));
+  assert.ok(hints.some(h => /cloud budget for today is used up\. Headroom today: 0\.16 USD/.test(h)));
+  assert.ok(hints.some(h => /free quota/.test(h)));
   assert.ok(hints.some(h => /gemma3:4b-cpu/.test(h)));
-  assert.deepEqual(auraStatusHints(['x: odd']), ['Försök igen om en stund. Felorsakerna nedan visar vad som hände.']);
+  assert.deepEqual(auraStatusHints(['x: odd']), ['Try again in a moment. The failure causes below show what happened.']);
+});
+
+test('a model that never answers ends in a timeout the status answer can explain', async () => {
+  await assert.rejects(answerWithin(new Promise(() => {}), 20), /AURA_MODEL_TIMEOUT/);
+  assert.equal(await answerWithin(Promise.resolve('ok'), 1000), 'ok');
+  assert.ok(auraStatusHints(['SEER: AURA_MODEL_TIMEOUT after 90 s']).some(h => /Chat settings/.test(h)));
+  assert.ok(auraStatusHints(['deepseek/x: AURA_CLOUD_DENIED:CLOUD_DISABLED_BY_POLICY']).some(h => /Allow cloud models/.test(h)));
+});
+
+test('chat deadlines have defaults and ignore invalid overrides', () => {
+  assert.deepEqual(auraChatDeadlines({}), { chosenMs: 120000, defaultMs: 90000, fallbackMs: 45000 });
+  assert.equal(auraChatDeadlines({ JACO_AURA_CHAT_DEFAULT_MS: '5000' }).defaultMs, 5000);
+  assert.equal(auraChatDeadlines({ JACO_AURA_CHAT_DEFAULT_MS: 'soon' }).defaultMs, 90000);
 });

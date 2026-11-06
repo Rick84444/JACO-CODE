@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { createWorkplaceAgentSupervisor } from '../../gateway/src/workplace/workplace-agent-supervisor.mjs';
+import { createWorkplaceAgentSupervisor, supervisedNovaExecutor } from '../../gateway/src/workplace/workplace-agent-supervisor.mjs';
 import { joinWorkplace, buildAgentCard } from '../../agents/lib/workplace-session.mjs';
 
 function fakeChild(pid=4242) {
@@ -17,6 +17,13 @@ function fakeChild(pid=4242) {
 function jsonResponse(body, ok=true, status=200) {
   return { ok, status, json: async()=>body };
 }
+
+test('Hub supervision ignores a stale device executor while joined devices retain theirs', () => {
+  const stale = { JACO_HUB_URL: 'https://api.jacocode.com', JACO_DEVICE_KEY: 'jdev_stale', JACO_NOVA_EXECUTOR: 'nova@laptop' };
+  assert.equal(supervisedNovaExecutor({ ...stale, JACO_NODE_ROLE: 'hub' }), 'nova');
+  assert.equal(supervisedNovaExecutor(stale), 'nova@laptop');
+  assert.equal(supervisedNovaExecutor({ ...stale, JACO_EXECUTOR: 'desktop-agentos' }), 'desktop-agentos');
+});
 
 test('local Workplace scope retains remote mission routing without using the remote session', async () => {
   const calls = [];
@@ -406,4 +413,46 @@ test('shutdown does not await a second exit from an already-exited child', async
   child.kill = () => assert.fail('must not signal already-exited PID');
   await supervisor.stop();
   assert.equal(supervisor.snapshot().state, 'STOPPED');
+});
+
+test('Aura unified startup launches the executor without Ollama or an inference startup gate', async t => {
+  const spawns = [], calls = [], failures = [];
+  const supervisor = createWorkplaceAgentSupervisor({
+    env: {
+      JACO_AURA_UNIFIED_RUNTIME: '1',
+      JACO_SEER_PROVIDER_PREFERENCE: 'aura',
+      JACO_WORKPLACE_SUPERVISE_MODEL: '1', // obsolete legacy setting must not start local weights
+      JACO_WORKPLACE_SUPERVISE_SEER: '1',
+      JACO_WORKPLACE_SUPERVISE_NOVA: '1',
+      JACO_GATEWAY_TOKEN: 'fixture-gateway-token-1234567890',
+      JACO_MODEL_PROVIDER: 'ollama', // stale local config cannot override Aura
+    },
+    spawnImpl: (cmd, args) => {
+      const child = fakeChild(14700 + spawns.length);
+      spawns.push({ cmd, args, child });
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    },
+    fetchImpl: async url => {
+      calls.push(String(url));
+      if (String(url).endsWith('/api/runtime/identity')) return jsonResponse({ success: true });
+      if (String(url).endsWith('/health')) return jsonResponse({ ok: true });
+      if (String(url).endsWith('/cortex/brain')) throw Error('INFERENCE_MUST_NOT_BLOCK_STARTUP');
+      if (String(url).includes('/api/tags') || String(url).includes('/models')) throw Error('LOCAL_MODEL_MUST_NOT_BE_PROBED');
+      return jsonResponse({}, false, 503);
+    },
+    log: () => {}, error: value => failures.push(value),
+  });
+  t.after(() => supervisor.stop());
+  await supervisor.start('http://127.0.0.1:2995');
+  for (let n=0;n<100 && !spawns.some(x=>x.args.includes('agents/hands-off-agent.mjs'));n++) await new Promise(resolve=>setTimeout(resolve,5));
+  assert.deepEqual(spawns.map(x=>x.args), [['agents/hands-off-agent.mjs']], 'existing healthy SEER is adopted; only the Aura executor is launched');
+  assert.equal(supervisor.snapshot().state, 'RUNNING');
+  assert.equal(supervisor.snapshot().aura.identity, 'Aura');
+  assert.equal(supervisor.snapshot().aura.strategyCapability.service, 'seer');
+  assert.equal(supervisor.snapshot().aura.executionCapability.service, 'nova');
+  assert.equal(supervisor.snapshot().aura.providerVerification, 'UNVERIFIED');
+  assert.equal(supervisor.snapshot().model.state, 'SELECTED_MODEL_UNVERIFIED');
+  assert.equal(failures.length, 0);
+  assert.ok(!calls.some(url => url.endsWith('/cortex/brain') || url.endsWith('/api/tags') || url.endsWith('/models')));
 });

@@ -99,7 +99,9 @@ test('operational Shack closes actual failing code through SEER HTTP -> Nova -> 
   const route = `/cortex/mission-graphs/${graph.id}`;
   const joined = await request('/cortex/agents/ping', { id: 'shack-proof-client', name: 'Shack proof client', capabilities: ['reasoning'] });
   assert.equal(joined.strategic_context.path, '/cortex/strategic-board');
-  assert.match(joined.strategic_context.instructions, /SEER owns the shared Shack/);
+  assert.equal(joined.strategic_context.owner, 'aura');
+  assert.match(joined.strategic_context.instructions, /Aura owns the operator goal/);
+  assert.equal((await request('/cortex/strategic-board')).owner, 'aura');
   const shared = await request('/cortex/context/claude');
   assert.equal(shared.mission_graphs[0].strategic_board.missionId, graph.id);
   assert.match(shared.strategic_agent_instructions, /contract.*allowedTasks.*budget/);
@@ -152,7 +154,7 @@ test('operational Shack closes actual failing code through SEER HTTP -> Nova -> 
   assert.equal(done.status, 'VERIFIED');
   assert.equal(done.strategic_board.progress, 1);
   assert.equal(done.strategic_board.forecast.terminalProbability, 1);
-  assert.equal((await request('/cortex/strategic-board')).owner, 'seer');
+  assert.equal((await request('/cortex/strategic-board')).owner, 'aura');
   const content = fs.readFileSync(path.join(root, 'src/value.mjs'));
   t.diagnostic(`REAL_RESULT: initial test exit=${initialFailure}; repaired test exit=0; dispatch=${dispatchOrder.join(' -> ')}; graph=${done.status}; sha256=${createHash('sha256').update(content).digest('hex')}; model inference not exercised`);
 });

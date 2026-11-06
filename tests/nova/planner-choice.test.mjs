@@ -7,11 +7,16 @@ import path from 'node:path';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nova-planner-choice-'));
 process.env.NOVA_STATE_DIR = dir;
 process.env.NOVA_BRAIN_MODE = 'direct';
-const { orderedBrainProviders, brainCandidates } = await import('../../agents/hands-off-agent.mjs');
-const { plannerChoiceFile, validatePlannerChoice, writePlannerChoice, clearPlannerChoice, testPlannerModel } = await import('../../agents/lib/planner-choice.mjs');
+const { orderedBrainProviders, brainCandidates, setConnectedProvidersForTest } = await import('../../agents/hands-off-agent.mjs');
+const { openAiChatCompletionsUrl, plannerChoiceFile, validatePlannerChoice, writePlannerChoice, clearPlannerChoice, testPlannerModel } = await import('../../agents/lib/planner-choice.mjs');
 
 const file = path.join(dir, 'provider-preference.json');
 const env = { JACO_PLANNER_CHOICE_FILE: file, JACO_PRIMARY_PROVIDER: 'groq' };
+
+test('OpenAI-compatible Ollama URL accepts both bare host and /v1 base', () => {
+  assert.equal(openAiChatCompletionsUrl('http://127.0.0.1:11434'), 'http://127.0.0.1:11434/v1/chat/completions');
+  assert.equal(openAiChatCompletionsUrl('http://127.0.0.1:11434/v1/'), 'http://127.0.0.1:11434/v1/chat/completions');
+});
 
 test('the environment primary leads the chain over a stale GUI choice', () => {
   writePlannerChoice(file, { provider: 'deepseek', model: 'deepseek-v4-pro' }, 'operator');
@@ -44,7 +49,7 @@ test('only listed models with a key can be chosen; paid models are on unless JAC
   assert.deepEqual(validatePlannerChoice({ provider: 'deepseek', model: 'deepseek-v4-pro' }, keyed), { provider: 'deepseek', model: 'deepseek-v4-pro', paid: true });
   assert.throws(() => validatePlannerChoice({ provider: 'deepseek', model: 'gpt-9' }, keyed), /PLANNER_MODEL_UNKNOWN/);
   assert.throws(() => validatePlannerChoice({ provider: 'nope' }, keyed), /PLANNER_PROVIDER_UNKNOWN/);
-  assert.throws(() => validatePlannerChoice({ provider: 'deepseek', model: 'deepseek-v4-pro' }, { JACO_ALLOW_PAID_MODELS: '1' }), /PLANNER_KEY_MISSING:DEEPSEEK_API_KEY/);
+  assert.throws(() => validatePlannerChoice({ provider: 'deepseek', model: 'deepseek-v4-pro' }, { JACO_ALLOW_PAID_MODELS: '1', JACO_STATE_DIR: dir }), /PLANNER_KEY_MISSING:DEEPSEEK_API_KEY/);
   assert.throws(() => validatePlannerChoice({ provider: 'deepseek', model: 'deepseek-v4-pro' }, { DEEPSEEK_API_KEY: 'x', JACO_ALLOW_PAID_MODELS: '0' }), /PLANNER_PAID_MODELS_DISABLED/);
   assert.equal(validatePlannerChoice({ provider: 'deepseek', model: 'deepseek-v4-pro' }, { DEEPSEEK_API_KEY: 'x' }).paid, true, 'a configured key is enough');
 });
@@ -55,9 +60,35 @@ test('Ollama Cloud planner models come from environment', () => {
   assert.deepEqual(validatePlannerChoice({ provider: 'ollama-cloud', model: 'another-priced-model' }, env).model, 'another-priced-model');
 });
 
-test('runtime and Nova resolve the same choice file through JACO_RUNTIME_DIR', () => {
+test('Core, SEER and Nova resolve the same model preference from workspace with explicit override', () => {
   const runtimeDir = path.join(dir, 'runtime');
-  assert.equal(plannerChoiceFile({ JACO_RUNTIME_DIR: runtimeDir, JACO_WORKSPACE_ROOT: path.join(dir, 'checkout') }), path.join(runtimeDir, '.jaco', 'state', 'provider-preference.json'));
+  const workspace = path.join(dir, 'checkout');
+  assert.equal(plannerChoiceFile({ JACO_RUNTIME_DIR: runtimeDir, JACO_WORKSPACE_ROOT: workspace }),
+    path.join(workspace, '.jaco', 'state', 'provider-preference.json'));
+  assert.equal(plannerChoiceFile({ JACO_RUNTIME_DIR: runtimeDir }),
+    path.join(runtimeDir, '.jaco', 'state', 'provider-preference.json'));
+  assert.equal(plannerChoiceFile({ JACO_WORKSPACE_ROOT: workspace, JACO_PLANNER_CHOICE_FILE: file }),file);
+});
+
+test('explicit operator model cannot silently fall back to a different provider or model', () => {
+  const runtimeEnv={ JACO_PLANNER_CHOICE_FILE:file };
+  writePlannerChoice(file,{provider:'deepseek',model:'deepseek-v4-pro'},'operator');
+  assert.deepEqual(brainCandidates(runtimeEnv).map(p=>[p.name,p.model]),[['deepseek','deepseek-v4-pro']]);
+  assert.deepEqual(brainCandidates({...runtimeEnv,JACO_DISABLED_PROVIDERS:'deepseek'}),[],
+    'disabled operator provider must defer, not silently use local inferencing');
+  assert.ok(brainCandidates({...runtimeEnv,JACO_PRIMARY_PROVIDER:'groq'}).length>1,
+    'an authoritative environment primary retains legacy fallback policy');
+  clearPlannerChoice(file);
+  assert.ok(brainCandidates(runtimeEnv).length>1,'automatic mode retains existing fallback candidates');
+});
+
+test('shared operator choice is atomic and private on disk',()=>{
+  writePlannerChoice(file,{provider:'groq',model:'openai/gpt-oss-20b'},'operator');
+  const value=JSON.parse(fs.readFileSync(file,'utf8'));
+  assert.equal(value.model,'openai/gpt-oss-20b');
+  assert.deepEqual(fs.readdirSync(path.dirname(file)).filter(name=>name.endsWith('.tmp')),[]);
+  if(process.platform!=='win32')assert.equal(fs.statSync(file).mode&0o777,0o600);
+  clearPlannerChoice(file);
 });
 
 test('Aura model probe always uses shared Continuum reserve/settle for a metered model', async () => {
@@ -132,7 +163,7 @@ test('keyless HTTPS providers remain budgeted; real loopback local models are fr
   assert.deepEqual(metered, ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/settle']);
   const localCalls = [];
   const local = await testPlannerModel({ provider: 'ollama', model: 'gemma3:4b' }, {
-    env: {},
+    env: { OLLAMA_BASE_URL: 'http://127.0.0.1:11434/v1' },
     fetchImpl: async url => { localCalls.push(new URL(url).pathname); return Response.json({ choices: [{ message: { content: 'OK' } }] }); },
   });
   assert.equal(local.ok, true);
@@ -146,7 +177,7 @@ test('keyless HTTPS providers remain budgeted; real loopback local models are fr
 
 // Operator 2026-10-13: a provider connected from a URL or a key, and a model the fixed list does not know,
 // can be chosen for Nova (they were invisible, so switching "did not work").
-import { plannerChoices as _pc, validatePlannerChoice as _validate } from '../../agents/lib/planner-choice.mjs';
+import { agentCanUseKey, plannerChoices as _pc, validatePlannerChoice as _validate } from '../../agents/lib/planner-choice.mjs';
 const EXTRA = {
   mistral: { label: 'mistral', paid: true, keyEnv: 'MISTRAL_API_KEY', url: 'https://api.mistral.ai/v1/chat/completions', models: ['mistral-large-latest'] },
   ollama: { label: 'ollama (lokal)', paid: false, keyEnv: null, url: 'http://127.0.0.1:11434/v1/chat/completions', models: ['qwen2.5-coder:1.5b'] },
@@ -167,7 +198,6 @@ test('a connected provider and any model it serves can be chosen; a fixed one is
   assert.throws(() => _validate({ provider: 'nope', model: 'm' }, env, EXTRA), /PLANNER_PROVIDER_UNKNOWN/);
 });
 
-const { setConnectedProvidersForTest } = await import('../../agents/hands-off-agent.mjs');
 test('Nova plans with the operator\'s chosen connected provider, which is not in its fixed chain', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pc-'));
   const file = path.join(dir, 'provider-preference.json');
@@ -257,4 +287,63 @@ test('Aura and Continuum accept the same model IDs, including @, + and 160 chara
   });
   assert.equal(result.ok, true);
   assert.deepEqual(paths, ['/api/nova/ollama-cost/reserve', '/v1/chat/completions', '/api/nova/ollama-cost/settle']);
+});
+
+test('custom connected provider is the sole candidate when operator pinned it',()=>{
+  const dynamic={name:'custom-local',url:'http://127.0.0.1:9000/v1/chat/completions',model:'custom-code-8b',free:true};
+  writePlannerChoice(file,{provider:dynamic.name,model:dynamic.model},'operator');
+  setConnectedProvidersForTest([dynamic]);
+  try {
+    const candidates=brainCandidates({JACO_PLANNER_CHOICE_FILE:file});
+    assert.deepEqual(candidates.map(p=>[p.name,p.model]),[[dynamic.name,dynamic.model]]);
+    assert.equal(candidates[0].chosen,true);
+  } finally {
+    setConnectedProvidersForTest([]);
+    clearPlannerChoice(file);
+  }
+});
+
+test('unified Aura refuses automatic local fallback and keeps the exact operator model over env Ollama', () => {
+  clearPlannerChoice(file);
+  assert.deepEqual(brainCandidates({...env, JACO_AURA_UNIFIED_RUNTIME:'1', JACO_PRIMARY_PROVIDER:undefined}), []);
+  writePlannerChoice(file,{provider:'deepseek',model:'deepseek-v4-pro'},'operator');
+  const pinned=brainCandidates({...env,JACO_AURA_UNIFIED_RUNTIME:'1',JACO_PRIMARY_PROVIDER:'ollama'});
+  assert.deepEqual(pinned.map(p=>[p.name,p.model]),[['deepseek','deepseek-v4-pro']]);
+  clearPlannerChoice(file);
+});
+
+test('Aura preserves structured fallback on the operator model when native functions are rejected', async () => {
+  const { agentChat } = await import('../../agents/hands-off-agent.mjs');
+  const selected = { JACO_AURA_UNIFIED_RUNTIME:'1', JACO_PLANNER_CHOICE_FILE:file, OLLAMA_MODEL:'gemma3:4b', OLLAMA_BASE_URL:'http://127.0.0.1:11434' };
+  writePlannerChoice(file,{provider:'ollama',model:'gemma3:4b'},'operator');
+  let requests = 0;
+  try {
+    await assert.rejects(agentChat({ messages:[{role:'user',content:'Read a file'}], tools:[{type:'function',function:{name:'repo_read',parameters:{type:'object',properties:{}}}}] },
+      async (_url, _init) => {
+        requests++;
+        return new Response(JSON.stringify({error:{message:'native tool calling unsupported'}}),{status:400,headers:{'content-type':'application/json'}});
+      },selected),/NO_PLANNER_AVAILABLE:SELECTED_MODEL_NATIVE_TOOLS_UNSUPPORTED/);
+    assert.equal(requests,1,'only the selected provider was contacted');
+    await assert.rejects(agentChat({messages:[{role:'user',content:'Continue'}],tools:[]}, async()=>assert.fail('native unsupported model must use structured fallback'),selected),
+      /NO_PLANNER_AVAILABLE:SELECTED_MODEL_NATIVE_TOOLS_UNSUPPORTED/);
+  } finally { clearPlannerChoice(file); }
+});
+
+test('a connected cloud model can be probed unless paid models are explicitly off', async () => {
+  // The GUI listed these models as usable while the probe refused them whenever the flag was unset,
+  // so only local models could ever be selected for the agent.
+  const calls = [];
+  const fetchImpl = async url => { calls.push(new URL(url).pathname); return Response.json({ success: false, error: 'DAILY_BUDGET_LIMIT' }, { status: 403 }); };
+  const result = await testPlannerModel({ provider: 'deepseek', model: 'deepseek-flash' }, { env: { DEEPSEEK_API_KEY: 'x' }, fetchImpl });
+  assert.doesNotMatch(result.error, /PAID_PROVIDER_DISABLED/);
+  assert.match(result.error, /DAILY_BUDGET_LIMIT/);
+  assert.deepEqual(calls, ['/api/nova/ollama-cost/reserve'], 'the budget reservation is still the gate');
+});
+
+test('a key withheld from workers only counts for the agent when it is in the secret store', () => {
+  const store = key => ({ get: name => (name === key ? 'stored' : '') });
+  assert.equal(agentCanUseKey('HF_TOKEN', { env: { HF_TOKEN: 'from-env' }, store: store('other') }), false);
+  assert.equal(agentCanUseKey('HF_TOKEN', { env: {}, store: store('HF_TOKEN') }), true);
+  assert.equal(agentCanUseKey('GEMINI_API_KEY', { env: {}, store: store('other') }), true);
+  assert.equal(agentCanUseKey(null), true);
 });

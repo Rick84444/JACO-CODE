@@ -7,6 +7,7 @@ import { novaTiming } from '../../../../agents/lib/nova-timing.mjs';
 import { checkCitations } from '../../../../agents/lib/evidence.mjs';
 import { stripEmoji } from '../../../../agents/lib/writing-policy.mjs';
 import { outgoingSpendCheck } from './spendGuard.mjs';
+import { operatorApprovalCheck } from '../../../../agents/lib/operator-action-guard.mjs';
 import { findDuplicate } from './missionDedupe.mjs';
 import { TASK_FIELDS } from '../../../../agents/lib/task-fields.mjs';
 import { validateGithubRepoTask } from '../../../../agents/lib/github-repo.mjs';
@@ -301,8 +302,10 @@ export function validateTask(task, allowed) {
 // SEER owns missions in the existing mission-bus database. Nova leases one turn
 // at a time. An interrupted execution is never automatically repeated.
 export class NovaMissionControl {
-  constructor(bus, { allowedTasks = DEFAULT_TASKS, now = () => Date.now(), knownExecutor = () => true } = {}) {
+  // capabilities: the operator's switches (capabilityPolicy.mjs). Without it missions keep the narrow legacy scope.
+  constructor(bus, { allowedTasks = DEFAULT_TASKS, now = () => Date.now(), knownExecutor = () => true, capabilities = null } = {}) {
     this.bus = bus;
+    this.capabilities = capabilities;
     this.knownExecutor = knownExecutor;
     this.db = bus.db;
     this.now = now;
@@ -314,6 +317,10 @@ export class NovaMissionControl {
       turn INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0
     )`);
     // One-time operator approvals for an outgoing-spend action (see spendGuard.mjs).
+    this.db.exec(`CREATE TABLE IF NOT EXISTS nova_action_gate (
+      mission_id TEXT PRIMARY KEY, task_hash TEXT NOT NULL, reason TEXT NOT NULL,
+      requested_at TEXT NOT NULL, approved_at TEXT, note TEXT
+    )`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS nova_spend_approvals (
       mission_id TEXT PRIMARY KEY REFERENCES missions(id), approved_at TEXT NOT NULL, note TEXT NOT NULL
     )`);
@@ -355,7 +362,12 @@ export class NovaMissionControl {
       || parent.strategicBoard.missionId !== parent.graphId || JSON.stringify(parent.strategicBoard).length > 64000)) throw new Error('MISSION_STRATEGIC_BOARD_INVALID');
     const desktopKind = executorKind(normalizedExecutor) === 'desktop-agentos';
     const codingContract = contract == null ? null : normalizeCodingContract(contract, goal);
-    const requested = allowedTasks == null
+    // With the operator's switches every task they have not turned off is active from the start, in coding
+    // missions too. Only what costs money (repo-scan) and what needs the desktop executor stay explicit.
+    const requested = allowedTasks == null && this.capabilities
+      ? this.capabilities.enabledTasks(this.allowedTasks).filter(task =>
+          (desktopKind || task !== 'windows-wmi-read') && task !== 'repo-scan')
+      : allowedTasks == null
       ? this.allowedTasks.filter(task =>
           (desktopKind || task !== 'windows-wmi-read') &&
           // Raw shell is enabled as an available capability but never injected
@@ -549,6 +561,7 @@ export class NovaMissionControl {
       const startedAt = row.budget_started_at ?? Date.parse(mission.createdAt || mission.created_at || '');
       assertCodingBudget(mission.contract, { toolCallsUsed: used, stepsUsed: used, failures: row.failures, startedAt, now: this.now() });
     }
+    if (this.capabilities && !this.capabilities.isTaskEnabled(String(task?.type))) throw new Error(`TASK_TURNED_OFF_BY_OPERATOR:${String(task?.type).slice(0, 60)}`);
     let checked = validateTask(task, mission.allowedTasks);
     if (CODE_TASKS.has(checked.type)) checked = validateCodingTask(checked, mission.contract, mission.receipts);
     if (checked.type === 'github-create-repo') checked = validateGithubRepoTask(checked, mission.goal);
@@ -566,6 +579,21 @@ export class NovaMissionControl {
       // Approval is single-use: it covers this one action only.
       this.db.prepare('DELETE FROM nova_spend_approvals WHERE mission_id=?').run(id);
       this.bus.event('NOVA_SPEND_APPROVED_ACTION', { missionId: id, payload: { reason: spend.reason, note: approval.note } });
+    }
+    const harmful = operatorApprovalCheck(checked, { sandbox: Boolean(mission.contract) });
+    if (harmful) {
+      const taskHash = `${checked.type}:${hashTaskInput(checked.data)}`;
+      const gate = this.db.prepare('SELECT * FROM nova_action_gate WHERE mission_id=?').get(id);
+      if (!gate?.approved_at || gate.task_hash !== taskHash) {
+        this.db.prepare('INSERT OR REPLACE INTO nova_action_gate(mission_id,task_hash,reason,requested_at,approved_at,note) VALUES(?,?,?,?,NULL,NULL)').run(id, taskHash, harmful.reason, iso());
+        this.db.prepare("UPDATE nova_sessions SET phase='BLOCKED',owner=NULL,token=NULL,lease_until=NULL WHERE mission_id=?").run(id);
+        this.setStatus(id, 'BLOCKED');
+        this.bus.event('NOVA_OPERATOR_APPROVAL_REQUIRED', { missionId: id, payload: { error: `OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`, reason: harmful.reason, task: { type: checked.type, data: compactTaskInput(checked.data) } } });
+        return new CommittedFailure(new Error(`OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`));
+      }
+      // Approval covers exactly the action the operator was shown, once.
+      this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=?').run(id);
+      this.bus.event('NOVA_OPERATOR_APPROVED_ACTION', { missionId: id, payload: { reason: harmful.reason, note: gate.note } });
     }
     const action = { ...checked, id: `${id}:turn:${row.turn + 1}`, missionId: id };
     this.db.prepare("UPDATE nova_sessions SET phase='EXECUTING',active_task_json=?,turn=turn+1,lease_until=? WHERE mission_id=?")
@@ -685,7 +713,7 @@ export class NovaMissionControl {
     return { steering: this.latestSteering(id), replayed: false };
   }
 
-  requestCancel(id, note = 'Operatören avslutar uppdraget från Aura.') {
+  requestCancel(id, note = 'The operator ends the mission from Aura.') {
     const mission = this.get(id);
     if (TERMINAL.has(mission.status)) return mission;
     this.bus.event('NOVA_CANCEL_REQUEST', {missionId:id,payload:{note:String(note).slice(0,1000)}});
@@ -732,6 +760,11 @@ export class NovaMissionControl {
     if (decision === 'resume' && normalizedAuthority === 'operator' && SPEND_APPROVAL_TAG.test(note) && !/^auto-/i.test(note.trim())) {
       this.db.prepare('INSERT OR REPLACE INTO nova_spend_approvals(mission_id,approved_at,note) VALUES(?,?,?)').run(id, iso(), note.slice(0, 500));
     }
+    // Automated resolutions (auto- notes, SEER) never reach this approval.
+    if (decision === 'resume' && normalizedAuthority === 'operator' && !/^auto-/i.test(note.trim())) {
+      this.db.prepare('UPDATE nova_action_gate SET approved_at=?,note=? WHERE mission_id=?').run(iso(), note.slice(0, 500), id);
+    }
+    if (decision !== 'resume') this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=?').run(id);
     this.setStatus(id, decision === 'confirm' ? 'DONE' : decision === 'cancel' ? 'CANCELLED' : 'ACTIVE');
     this.db.prepare('UPDATE nova_sessions SET phase=?,failures=0 WHERE mission_id=?').run(decision === 'resume' ? 'READY' : 'CLOSED', id);
     // Automated resumes (auto-approval policy) never extend the budget; only the operator's own decision does.
@@ -743,6 +776,12 @@ export class NovaMissionControl {
       payload: { decision, note, authority: normalizedAuthority },
     });
     return this.get(id);
+  }
+
+  // The action a blocked mission is waiting for the operator to approve, if any.
+  pendingOperatorAction(id) {
+    const gate = this.db.prepare('SELECT reason,requested_at FROM nova_action_gate WHERE mission_id=? AND approved_at IS NULL').get(id);
+    return gate ? { reason: gate.reason, requestedAt: gate.requested_at } : null;
   }
 
   setStatus(id, status) { this.db.prepare('UPDATE missions SET status=?,updated_at=? WHERE id=?').run(status, iso(), id); }

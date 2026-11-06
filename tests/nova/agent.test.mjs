@@ -18,6 +18,18 @@ test('chat stores exact instruction and retries using the same idempotency key',
  await processChat(loadState(),{create:async input=>{assert.equal(input.goal,text);assert.equal(input.idempotencyKey,key);return {id:'mission-1'};}});
  const inbox=JSON.parse(fs.readFileSync(file));assert.equal(inbox[0].missionId,'mission-1');assert.equal(inbox[0].read,true);
 });
+test('informational English question gets a chat answer without opening a mission',async()=>{
+ const file=path.join(dir,'chat-inbox.json');
+ fs.writeFileSync(file,JSON.stringify([{role:'user',kind:'chat',text:'How do I create a new file?'}]));
+ let calls=0, replies=0;
+ await processChat(loadState(),{create:async()=>{calls++;throw Error('MUST_NOT_CREATE_MISSION');}},async(_system,_text)=>{replies++;return 'Use the file creation command.';});
+ const inbox=JSON.parse(fs.readFileSync(file,'utf8'));
+ assert.equal(calls,0);
+ assert.equal(replies,1);
+ assert.equal(inbox[0].missionId,undefined);
+ assert.equal(inbox[0].read,true);
+ assert.equal(inbox[1].text,'Use the file creation command.');
+});
 test('planner receives mission evidence plus durable continuity without making continuity authority',async()=>{
  const mission={id:'mission-1',goal:'Inspect the local page',receipts:[{error:'missing element'}],allowedTasks:['health-check']};
  const continuity={continuityId:'jaco:primary',revision:4,missionAuthority:'CONNECTED_DURABLE_NOVA',objective:mission.goal,workingState:{attention:'verify current state',openQuestions:['is runtime healthy?'],nextActions:['health-check'],workingRefs:['mission:mission-1']},unresolved:{questions:['is runtime healthy?'],hypotheses:[]},epistemic:{unknowns:['target_host_unobserved'],repository:{status:'SCANNED'},knowledge:{verified:3}}};

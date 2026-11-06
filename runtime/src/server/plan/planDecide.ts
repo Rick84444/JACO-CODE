@@ -934,12 +934,12 @@ export async function expandSubgoalIntoSteps(
     {
       id: `${subgoalId}:inspect`,
       subgoalId,
-      title: `Inspektera nuläge för: ${title}`,
-      description: `Inspektera nuläge för: ${title}`,
+      title: `Inspect current state for: ${title}`,
+      description: `Inspect current state for: ${title}`,
       status: "pending",
       tool: "Repository.inspect",
       toolName: "terminal.exec",
-      expectedOutcome: "Analys av arkitektur & AST genomförd",
+      expectedOutcome: "Architecture & AST analysis completed",
       expectedProgress: 0.12,
       expectedCost: 0.05,
       reversible: true,
@@ -948,12 +948,12 @@ export async function expandSubgoalIntoSteps(
     {
       id: `${subgoalId}:hypothesize`,
       subgoalId,
-      title: `Generera kandidatlösningar för: ${title}`,
-      description: `Generera kandidatlösningar för: ${title}`,
+      title: `Generate candidate solutions for: ${title}`,
+      description: `Generate candidate solutions for: ${title}`,
       status: "pending",
       tool: "HypothesisEngine.generate",
       toolName: "model.generate",
-      expectedOutcome: "Kandidatstrategier syntetiserade",
+      expectedOutcome: "Candidate strategies synthesized",
       expectedProgress: 0.18,
       expectedCost: 0.08,
       reversible: true,
@@ -962,12 +962,12 @@ export async function expandSubgoalIntoSteps(
     {
       id: `${subgoalId}:evaluate`,
       subgoalId,
-      title: `Utvärdera kandidatlösningar för: ${title}`,
-      description: `Utvärdera kandidatlösningar för: ${title}`,
+      title: `Evaluate candidate solutions for: ${title}`,
+      description: `Evaluate candidate solutions for: ${title}`,
       status: "pending",
       tool: "DecisionEngine.rank",
       toolName: "model.generate",
-      expectedOutcome: "Pareto-rankning och riskbedömning klar",
+      expectedOutcome: "Pareto ranking and risk assessment done",
       expectedProgress: 0.20,
       expectedCost: 0.06,
       reversible: true,
@@ -976,12 +976,12 @@ export async function expandSubgoalIntoSteps(
     {
       id: `${subgoalId}:execute`,
       subgoalId,
-      title: `Implementera vald lösning för: ${title}`,
-      description: `Implementera vald lösning för: ${title}`,
+      title: `Implement the chosen solution for: ${title}`,
+      description: `Implement the chosen solution for: ${title}`,
       status: "pending",
       tool: "ToolDispatcher.execute",
       toolName: "file.write",
-      expectedOutcome: "Kodpatch applicerad och verifierad",
+      expectedOutcome: "Code patch applied and verified",
       expectedProgress: 0.32,
       expectedCost: 0.30,
       reversible: true,
@@ -991,12 +991,12 @@ export async function expandSubgoalIntoSteps(
     {
       id: `${subgoalId}:verify`,
       subgoalId,
-      title: `Verifiera faktisk outcome för: ${title}`,
-      description: `Verifiera faktisk outcome för: ${title}`,
+      title: `Verify actual outcome for: ${title}`,
+      description: `Verify actual outcome for: ${title}`,
       status: "pending",
       tool: "VerificationEngine.verify",
       toolName: "terminal.exec",
-      expectedOutcome: "Kompilering och linter passerar med 0 fel",
+      expectedOutcome: "Compilation and linter pass with 0 errors",
       expectedProgress: 0.12,
       expectedCost: 0.10,
       reversible: true,
@@ -1005,12 +1005,12 @@ export async function expandSubgoalIntoSteps(
     {
       id: `${subgoalId}:learn`,
       subgoalId,
-      title: `Reflektera och lagra Knowledge Object för: ${title}`,
-      description: `Reflektera och lagra Knowledge Object för: ${title}`,
+      title: `Reflect and store Knowledge Object for: ${title}`,
+      description: `Reflect and store Knowledge Object for: ${title}`,
       status: "pending",
       tool: "MemoryEngine.learn",
       toolName: "git.savepoint",
-      expectedOutcome: "Checkpoint sparad i JACO Audit Trail",
+      expectedOutcome: "Checkpoint saved in JACO Audit Trail",
       expectedProgress: 0.06,
       expectedCost: 0.04,
       reversible: true,
@@ -1701,17 +1701,18 @@ export async function generateComprehensiveBlueprint(goalDescription: string): P
   const availableExternalTargets = listExternalMeasurementTargets();
 
   const prompt = `
-Du är en ledande AI-systemarkitekt och agent-orkestrerare i JACO OS.
-Operatören vill upprätta en komplett, hög-granular Blueprint och exekveringsplan för följande mål:
+You are a lead AI systems architect and agent orchestrator in JACO OS.
+The operator wants a complete, highly granular Blueprint and execution plan for the following goal:
 "${goalDescription}"
 
 ${marketWatchContext}
 
-KOMPRIMERAT MINNE & SYSTEMDIREKTIV:
+COMPRESSED MEMORY & SYSTEM DIRECTIVES:
 ${compressedMemoryContext}
 
-Generera en djupgående, professionell plan i strikt JSON-format (inget annat än JSON).
-KRAV: Bryt ner planen i MÅNGA SMÅ, ATOMÄRA DELMÅL (5-8 delmål) istället för få stora klumpar, för maximal determinism och spårbarhet.
+Generate an in-depth, professional plan in strict JSON format (nothing but JSON).
+Write the human-readable text fields in the language the operator wrote the goal in.
+REQUIREMENT: Break the plan down into MANY SMALL, ATOMIC SUBGOALS (5-8 subgoals) instead of a few large chunks, for maximum determinism and traceability.
 Format:
 {
   "finalObjective": "...",
@@ -1727,7 +1728,7 @@ Format:
   try {
     const result = await generate({
       prompt,
-      systemPrompt: 'Du är en senior AI-systemarkitekt för JACO Autonomous Agent Orchestrator. Svara uteslutande med valid JSON.'
+      systemPrompt: 'You are a senior AI systems architect for the JACO Autonomous Agent Orchestrator. Respond exclusively with valid JSON.'
     });
 
     const cleaned = result.text.replace(/```json|```/g, '').trim();
@@ -1738,7 +1739,7 @@ Format:
     const subgoals: Subgoal[] = (data.subgoals || []).map((sg: any, sgIdx: number) => {
       const subgoalId = `sg_${planId}_${sgIdx + 1}`;
       const sgDurationHours = sg.estimatedDurationHours || 1.5;
-      const plannedDate = new Date(now.getTime() + currentScheduleOffsetMinutes * 60000).toLocaleString('sv-SE', {
+      const plannedDate = new Date(now.getTime() + currentScheduleOffsetMinutes * 60000).toLocaleString('en-US', {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
@@ -1754,9 +1755,9 @@ Format:
         return {
           id: `step_${subgoalId}_${stIdx + 1}`,
           subgoalId,
-          description: st.description || `Steg ${stIdx + 1}`,
+          description: st.description || `Step ${stIdx + 1}`,
           toolName: st.toolName || 'terminal.exec',
-          expectedOutcome: st.expectedOutcome || 'Slutfört utan regressioner',
+          expectedOutcome: st.expectedOutcome || 'Completed without regressions',
           status: 'pending',
           jobId: null,
           attempts: 0,
@@ -1768,15 +1769,15 @@ Format:
           plannedEnd: stepEnd,
           progressPercent: 0,
           toolsRequired: Array.isArray(st.toolsRequired) ? st.toolsRequired : ['git', 'node'],
-          howToComplete: st.howToComplete || 'Exekveras i en isolerad sandbox och verifieras med enhetstester.',
-          userActionRequired: st.userActionRequired || 'Ingen manuell åtgärd krävs.',
+          howToComplete: st.howToComplete || 'Runs in an isolated sandbox and is verified with unit tests.',
+          userActionRequired: st.userActionRequired || 'No manual action required.',
           auditLogs: [
             {
               timestamp: new Date().toISOString(),
               actor: st.assignedAgent || 'Blueprint Synthesizer',
               action: 'Plan Step Initialized',
               result: 'info',
-              details: `Initialiserat plansteg med kommandot: ${st.liveCommand || 'npx tsx'}`
+              details: `Initialized plan step with command: ${st.liveCommand || 'npx tsx'}`
             }
           ]
         };
@@ -1785,18 +1786,18 @@ Format:
       return {
         id: subgoalId,
         goalId: planId,
-        description: sg.description || `Delmål ${sgIdx + 1}`,
+        description: sg.description || `Subgoal ${sgIdx + 1}`,
         status: 'pending',
         progressPercent: 0,
         assignedAgents: Array.isArray(sg.assignedAgents) ? sg.assignedAgents : ['Code Refactor Agent', 'Security Auditor'],
         plannedDate,
         estimatedDurationHours: sgDurationHours,
-        strategicValue: sg.strategicValue || 'Ökar systemets tillförlitlighet och autonomi.',
-        targetMilestone: sg.targetMilestone || 'Alla delsteg verifierade med 100% testtäckning.',
-        howItIsCompleted: sg.howItIsCompleted || 'Genomförs sekventiellt med kontinuerlig AST-analys.',
-        whatUserMustFix: sg.whatUserMustFix || 'Ingen manuell åtgärd krävs för tillfället.',
+        strategicValue: sg.strategicValue || 'Increases system reliability and autonomy.',
+        targetMilestone: sg.targetMilestone || 'All sub-steps verified with 100% test coverage.',
+        howItIsCompleted: sg.howItIsCompleted || 'Carried out sequentially with continuous AST analysis.',
+        whatUserMustFix: sg.whatUserMustFix || 'No manual action required at the moment.',
         linkedMemoryIds: [`mem_node_${sgIdx + 1}`, `intel_digest_${sgIdx + 1}`],
-        linkedCompressedMemory: sg.linkedCompressedMemory || 'Tillämpar atomär modulering och test-gate verifiering.',
+        linkedCompressedMemory: sg.linkedCompressedMemory || 'Applies atomic modularization and test-gate verification.',
         externalMeasurementTarget: sg.externalMeasurementTarget || {
           metricKey: `subgoal_metric_${sgIdx + 1}`,
           targetValue: 100,
@@ -1812,7 +1813,7 @@ Format:
     const parsedTargets = Array.isArray(data.externalMeasurementTargets) && data.externalMeasurementTargets.length > 0
       ? data.externalMeasurementTargets.map((t: any, idx: number) => ({
           id: `ext_target_${idx + 1}`,
-          title: t.title || `Mätmål ${idx + 1}`,
+          title: t.title || `Measurement target ${idx + 1}`,
           metricKey: t.metricKey || `metric_${idx + 1}`,
           targetValue: t.targetValue ?? 100,
           currentValue: t.currentValue ?? 0,
@@ -1838,13 +1839,13 @@ Format:
       subgoals,
       consecutiveFailures: 0,
       finalObjective: data.finalObjective || goalDescription,
-      valueProposition: data.valueProposition || 'Skapar mätbart värde genom automatiserad exekvering och full spårbarhet.',
-      riskAssessment: data.riskAssessment || 'Låg teknisk risk under förutsättning att linter och byggtester körs.',
+      valueProposition: data.valueProposition || 'Creates measurable value through automated execution and full traceability.',
+      riskAssessment: data.riskAssessment || 'Low technical risk provided the linter and build tests run.',
       estimatedTotalHours: data.estimatedTotalHours || 8,
       overallProgressPercent: 0,
       activeAgentsCount: 4,
       linkedMemoryIds: ['indexeddb_core_rag', 'competitor_intel_mesh'],
-      compressedMemoryDigest: data.compressedMemoryDigest || 'Optimering: Hög-granular dekomposition med test-gates och komprimerad minneslagring.',
+      compressedMemoryDigest: data.compressedMemoryDigest || 'Optimization: highly granular decomposition with test gates and compressed memory storage.',
       externalMeasurementTargets: parsedTargets
     };
 
@@ -1859,13 +1860,13 @@ Format:
       status: 'active',
       consecutiveFailures: 0,
       finalObjective: goalDescription,
-      valueProposition: 'Maximerar utvecklingseffektivitet med automatiserade sub-agenter och felkorrigering.',
-      riskAssessment: 'Standard kontroll av linter- och byggstatus.',
+      valueProposition: 'Maximizes development efficiency with automated sub-agents and error correction.',
+      riskAssessment: 'Standard check of linter and build status.',
       estimatedTotalHours: 6,
       overallProgressPercent: 0,
       activeAgentsCount: 3,
       linkedMemoryIds: ['indexeddb_core_rag'],
-      compressedMemoryDigest: 'Fallback optimering: Minneslagring med kontinuerlig telemetri.',
+      compressedMemoryDigest: 'Fallback optimization: memory storage with continuous telemetry.',
       externalMeasurementTargets: availableExternalTargets.slice(0, 3).map(t => ({
         id: t.id,
         title: t.title,

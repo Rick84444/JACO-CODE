@@ -14,10 +14,10 @@ Status: REAL Node runtime integration of the **deterministic** Cognitive Lab, **
 
 ## Operator walkthrough
 
-1. Start your usual JACO server and open the **Autonom utveckling** tab.
-2. Check Continuum status and click **Ge 5 min lease**.
-3. Click **Kör nästa 3 cykler**. The IDE polls for progress; the user's `main` branch is **not touched**.
-4. Optionally click **Stoppa**. A stopped run may show `RECONCILIATION_REQUIRED`; the system **does not** auto-resume it.
+1. Start your usual JACO server and open the **Autonomous development** tab.
+2. Check Continuum status and click **Grant 5 min lease**.
+3. Click **Run next 3 cycles**. The IDE polls for progress; the user's `main` branch is **not touched**.
+4. Optionally click **Stop**. A stopped run may show `RECONCILIATION_REQUIRED`; the system **does not** auto-resume it.
 
 POST requires the existing JACO operator authorization middleware; the Continuum router also uses its existing `requireAuth`. A local same-origin operator or valid gateway-authenticated IDE session is required by the existing server configuration.
 

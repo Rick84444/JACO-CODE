@@ -87,6 +87,9 @@ export class EconomicGovernor {
     }
     for(const key of ['warningAtPercent','hardStopAtPercent'])if(key in patch){if(typeof patch[key]!=='number'||!Number.isFinite(patch[key])||patch[key]<0)throw new Error(`ECONOMIC_POLICY_NUMBER_INVALID:${key}`);next[key]=patch[key];}
     if(next.warningAtPercent>next.hardStopAtPercent||next.hardStopAtPercent>100)throw new Error('ECONOMIC_POLICY_PERCENT_INVALID');
+    // Turning cloud on is the operator's one switch for chat and Nova; a saved legacy channel flag has no control
+    // in the GUI and would otherwise keep denying every chat while the switch reads as on.
+    if(patch.cloudEnabled===true){if(!('manualAuraCloudEnabled' in patch))next.manualAuraCloudEnabled=true;if(!('novaOllamaCloudEnabled' in patch))next.novaOllamaCloudEnabled=true;}
     atomicWriteJson(this.policyFile,next);this.policy=next;this.events.append({stream:'economic',type:'economic.policy_updated',actor,data:this.policy});return this.snapshot();
   }
   headroom(){

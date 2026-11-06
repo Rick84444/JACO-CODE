@@ -1,0 +1,9 @@
+# Written into public/ by the release workflow before it deploys, never committed.
+public/download/
+public/install.sh
+public/install.ps1
+
+# The root .gitignore excludes *.png repository-wide (screenshots and generated images). The logo and the favicon
+# are part of the site: a deploy replaces every asset, so if they are not committed here they vanish from the
+# live site.
+!public/brand/*.png

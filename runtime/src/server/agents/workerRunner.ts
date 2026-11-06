@@ -49,7 +49,7 @@ export async function processSingleJob(job: JobRecord): Promise<any> {
     markCompleted(job.id, result);
     return result;
   } catch (err: any) {
-    const errorMsg = err?.message || 'Oväntat körningsfel i worker';
+    const errorMsg = err?.message || 'Unexpected worker run error';
     markFailed(job.id, errorMsg);
     throw err;
   }

@@ -256,7 +256,7 @@ test('the single canonical conversation stays mounted while contextual views cha
 
 test('Termux Aura production assets are served from RELEASE_ROOT, never WORKSPACE_ROOT', () => {
   const server = read(path.join(runtimeRoot, 'server.ts'));
-  assert.match(server, /const RELEASE_ROOT = path\.resolve\(process\.env\.JACO_RELEASE_ROOT \|\| process\.cwd\(\)\)/);
+  assert.match(server, /const RELEASE_ROOT = runtimeReleaseRoot\(/);
   assert.match(server, /const distPath = path\.join\(RELEASE_ROOT, 'dist'\)/);
   assert.doesNotMatch(server, /const distPath = path\.join\(WORKSPACE_ROOT, 'dist'\)/);
   assert.match(server, /X-JACO-UI-ROOT/);

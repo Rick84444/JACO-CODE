@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { execFileSync, execSync, spawn } from 'node:child_process';
 import net from 'node:net';
 import { processBirth } from './local-stack.mjs';
-import { isPathAllowed, canListContractPath, validateCodingTask } from './coding-contract.mjs';
+import { isPathAllowed, canListContractPath, validateCodingTask, workspaceNodeTestPath } from './coding-contract.mjs';
 
 const sha = value => crypto.createHash('sha256').update(value).digest('hex');
 
@@ -38,10 +38,14 @@ export function createCodingWorkspace({ root = process.cwd(), protectedBranches:
   // Write to a temp file, fsync, re-check the path, then rename over the target.
   const atomicWrite = (relative, absolute, content) => {
     const temp = `${absolute}.${crypto.randomUUID()}.tmp`;
+    // Preserve executable mode: a content-identical write must not silently
+    // alter the Git tree and bypass post-write verification or the commit gate.
+    const existingMode = fs.existsSync(absolute) ? fs.statSync(absolute).mode & 0o7777 : null;
     let fd;
     try {
       fd = fs.openSync(temp, 'wx', 0o600);
       fs.writeFileSync(fd, content, 'utf8');
+      if (existingMode !== null && process.platform !== 'win32') fs.fchmodSync(fd, existingMode);
       fs.fsyncSync(fd);
       fs.closeSync(fd); fd = undefined;
       resolvePath(relative);
@@ -164,7 +168,12 @@ export function createCodingWorkspace({ root = process.cwd(), protectedBranches:
           const absolute = resolvePath(data.path);
           const stat = fs.statSync(absolute);
           if (!stat.isFile() || stat.size > 512_000) throw new Error('CODING_EDIT_FILE_INVALID');
-          const before = fs.readFileSync(absolute, 'utf8');
+          const originalBytes = fs.readFileSync(absolute);
+          // A lossy UTF-8 decode could make an edit appear byte-identical while
+          // silently corrupting the file. Require valid text before editing.
+          let before;
+          try { before = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(originalBytes); }
+          catch { throw new Error('CODING_EDIT_BINARY_REFUSED'); }
           // Models write \n; Windows files often have \r\n. The edit keeps the file's own line endings.
           const crlf = before.includes('\r\n');
           const old = crlf && !before.includes(data.old) ? data.old.replace(/\r?\n/g, '\r\n') : data.old;
@@ -175,12 +184,31 @@ export function createCodingWorkspace({ root = process.cwd(), protectedBranches:
           const content = data.replaceAll ? before.split(old).join(replacement) : before.replace(old, () => replacement);
           atomicWrite(data.path, absolute, content);
           const after = fs.readFileSync(absolute);
-          return { ok: true, verified: true, path: data.path, replacements: data.replaceAll ? count : 1, bytes: after.length, beforeSha256: sha(before), afterSha256: sha(after), implementationActor: actor };
+          return { ok: true, verified: true, path: data.path, replacements: data.replaceAll ? count : 1, bytes: after.length, beforeSha256: sha(originalBytes), afterSha256: sha(after), implementationActor: actor };
         }
         case 'repo-test': {
           try {
-            const output = execSync(data.command, { cwd: workspaceRoot, encoding: 'utf8', timeout: Math.min(Number(data.timeout || 120_000), 300_000), windowsHide: true, env: safeEnv(), stdio: ['ignore','pipe','pipe'] });
-            return { ok: true, verified: true, command: data.command, kind: data.kind || 'test', output: output.slice(-20_000), verificationActor: actor };
+            const generated = !contract.verification.commands.includes(data.command)
+              ? workspaceNodeTestPath(data.command) : null;
+            if (generated) {
+              const testFile = resolvePath(generated);
+              if (!fs.existsSync(testFile) || !fs.statSync(testFile).isFile()) throw new Error('CODING_GENERATED_TEST_NOT_FOUND');
+            }
+            const runOptions = { cwd: workspaceRoot, encoding: 'utf8', timeout: Math.min(Number(data.timeout || 120_000), 300_000), windowsHide: true, env: safeEnv(), stdio: ['ignore','pipe','pipe'] };
+            // Generated tests use an explicit TAP reporter for machine-verifiable
+            // counts. Node's default reporter varies by TTY/CI environment.
+            const output = generated
+              ? execFileSync(process.execPath, ['--test', '--test-reporter=tap', generated], runOptions)
+              : execSync(data.command, runOptions);
+            if (generated) {
+              const observed = [...output.matchAll(/(?:^|\n)# tests (\d+)(?:\r?\n|$)/g)];
+              const passed = [...output.matchAll(/(?:^|\n)# pass (\d+)(?:\r?\n|$)/g)];
+              if (!observed.length || Number(observed.at(-1)[1]) < 1 ||
+                  !passed.length || Number(passed.at(-1)[1]) < 1)
+                throw new Error('CODING_GENERATED_TEST_NO_PASSING_TESTS_OBSERVED');
+            }
+            return { ok: true, verified: true, command: data.command, kind: data.kind || 'test',
+              ...(generated ? { generatedTest: generated } : {}), output: output.slice(-20_000), verificationActor: actor };
           } catch (error) {
             return { ok: false, verified: false, command: data.command, kind: data.kind || 'test', error: error.message, stderr: String(error.stderr || '').slice(-20_000), verificationActor: actor };
           }

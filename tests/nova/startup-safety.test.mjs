@@ -5,7 +5,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { configuration, definitions, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess, ollamaExecutable } from '../../agents/lib/local-stack.mjs';
+import { configuration, definitions, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess,renameWithRetry, ollamaExecutable } from '../../agents/lib/local-stack.mjs';
 const IDENTITY="app.get('/api/runtime/identity',()=>{});";
 function fixture(t, env = {}) {
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-start-test-'));
@@ -79,8 +79,11 @@ test('pending service process requires a matching creation time, not just a PID'
  assert.equal(result.status,0,result.stderr);assert.ok(result.stdout.trim());
  const file=path.join(dir,'runtime.process.json');fs.writeFileSync(file,JSON.stringify({pid:process.pid,birth:result.stdout.trim()}));
  assert.equal(pendingProcess(c,'runtime'),process.pid);
- fs.writeFileSync(file,JSON.stringify({pid:process.pid,birth:'wrong-process-birth'}));
+ fs.writeFileSync(file,JSON.stringify({pid:process.pid}));
  assert.throws(()=>pendingProcess(c,'runtime'),/PROCESS_OWNER_NOT_VERIFIED/);
+ // A reused PID: the recorded process has ended, so the record is dropped instead of blocking every later start.
+ fs.writeFileSync(file,JSON.stringify({pid:process.pid,birth:'2020-01-01T00:00:00.0000000Z'}));
+ assert.equal(pendingProcess(c,'runtime'),null);assert.equal(fs.existsSync(file),false);
 });
 test('foreign listener blocks startup and stays running with failure evidence',async t=>{
  const server=http.createServer((q,r)=>{r.setHeader('content-type','application/json');r.end('{"success":true,"releaseId":"foreign"}');});
@@ -126,4 +129,37 @@ test('runtime identity rejects a stale release despite matching package version'
  assert.equal(runtime.accept(response),false);
  fs.writeFileSync(path.join(initial.runtime,'CURRENT_RELEASE.json'), JSON.stringify({ version: 'older', releaseId: current }));
  assert.throws(()=>configuration(initial.root,{JACO_RUNTIME_DIR:initial.root}),/RUNTIME_RELEASE_VERSION_MISMATCH/);
+});
+
+test('a briefly locked startup receipt is retried, and other rename errors still fail',()=>{
+ let calls=0;
+ renameWithRetry('a','b',{waitMs:1,rename:()=>{if(++calls<3)throw Object.assign(new Error('locked'),{code:'EPERM'});}});
+ assert.equal(calls,3);
+ assert.throws(()=>renameWithRetry('a','b',{attempts:2,waitMs:1,rename:()=>{throw Object.assign(new Error('locked'),{code:'EPERM'});}}),/locked/);
+ calls=0;
+ assert.throws(()=>renameWithRetry('a','b',{waitMs:1,rename:()=>{calls++;throw Object.assign(new Error('gone'),{code:'ENOENT'});}}),/gone/);
+ assert.equal(calls,1);
+});
+
+test('Aura owns the default Windows stack and never auto-selects Ollama despite old environment flags',t=>{
+ const c=fixture(t,{
+   JACO_MODEL_PROVIDER:'ollama',
+   JACO_SEER_PROVIDER_PREFERENCE:'ollama',
+   JACO_WORKPLACE_SUPERVISE_MODEL:'1',
+ });
+ assert.equal(c.env.JACO_AURA_UNIFIED_RUNTIME,'1');
+ assert.equal(c.env.JACO_MODEL_PROVIDER,'aura');
+ assert.equal(c.env.JACO_SEER_PROVIDER_PREFERENCE,'aura');
+ assert.equal(c.env.JACO_WORKPLACE_SUPERVISE_MODEL,'0');
+ const workplace=serviceEnvironment(c,'workplace');
+ assert.equal(workplace.JACO_AURA_UNIFIED_RUNTIME,'1');
+ assert.equal(workplace.JACO_SEER_PROVIDER_PREFERENCE,'aura');
+ assert.equal(workplace.JACO_PLANNER_CHOICE_FILE,c.env.JACO_PLANNER_CHOICE_FILE);
+ const legacy=fixture(t,{
+   JACO_AURA_UNIFIED_RUNTIME:'0',
+   JACO_MODEL_PROVIDER:'ollama',
+   JACO_SEER_PROVIDER_PREFERENCE:'ollama',
+ });
+ assert.equal(legacy.env.JACO_MODEL_PROVIDER,'ollama');
+ assert.equal(legacy.env.JACO_SEER_PROVIDER_PREFERENCE,'ollama');
 });

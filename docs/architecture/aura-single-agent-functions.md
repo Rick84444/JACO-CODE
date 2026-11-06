@@ -31,6 +31,33 @@ to Aura, not to a roster of competing personalities.
 | `tools` | Existing MCP fabric | READY != tool invoked; apply authority gates |
 | `verify` | Mission/contract/evidence ledger | Step receipts != end-to-end goal acceptance |
 
+## Canonical engineering and strategy authority
+
+The current GitHub Copilot repository engineering profile is
+`.github/agents/aura.agent.md`. It is an **interface for Aura to perform
+repository work**, not another independent runtime agent. The previous
+`.github/agents/nova.agent.md` profile was removed, as was the legacy
+`agents/workflows/seer-operating-contract.md` document that separately
+declared SEER an active agent. Their engineering history is retained by Git.
+
+A single mission contract delegates the scope of an experiment. Inside that
+workspace, Aura may read, edit, create tests, run approved tools, compare
+hypotheses and repeat verification **without per-step user approval**. The
+historic gateway strategy process still owns its graph and strategy storage;
+the existing executor retains leases, tool receipts and durable action state.
+Neither process receives a separate operator-facing identity.
+
+The operational cycle is `Observe → Hypothesize → Implement → Test →
+Falsify → Revise → Verify → Commit`. Repeated failure should change the
+hypothesis, not spawn a duplicate control plane or ask the operator to confirm
+ordinary in-scope laboratory steps. Promising behavior is not a verified
+outcome until actual test and execution receipts exist.
+
+This is an **identity/contract consolidation**, not a claim that the separate
+SEER and Nova service processes were merged, retired, or renamed on disk.
+Those remain active migration dependencies until their startup, state and
+receipt invariants are proven equivalent under the Aura function adapters.
+
 ## Delivered in the first increment
 
 - One Aura function list in the existing agent-board API, preserving its legacy

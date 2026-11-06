@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const vscode = require('vscode');
-const { runtimeOrigin, probeJacoRuntime, makeWebviewHtml } = require('./lib/bridge.cjs');
+const { runtimeOrigin, probeWithDiscovery, readRuntimeRecord, makeWebviewHtml } = require('./lib/bridge.cjs');
 
 let panel = null;
 
@@ -38,6 +38,13 @@ function openTerminalCommand(command) {
       ? 'node agents/jaco-cli.mjs activate'
       : 'node agents/jaco-cli.mjs ide');
   } catch (error) {
+    // No JACO-CODE checkout open: a JACO Lite install is the other way people have it (the jaco-lite command).
+    if (/Open JACO-CODE/.test(String(error?.message || error)) && command === 'activate') {
+      const terminal = vscode.window.createTerminal({ name: 'JACO Lite', env: { JACO_VSCODE_EMBED: '1' } });
+      terminal.show();
+      terminal.sendText('jaco-lite');
+      return;
+    }
     void vscode.window.showErrorMessage('JACO: ' + String(error?.message || error));
   }
 }
@@ -45,8 +52,8 @@ function openTerminalCommand(command) {
 async function openFullGUI(context) {
   let base;
   try {
-    base = runtimeUrl();
-    const connected = await probeJacoRuntime(base);
+    const connected = await probeWithDiscovery(runtimeUrl());
+    base = connected.base;
     if (panel) { panel.reveal(vscode.ViewColumn.One); return; }
     const mapped = await vscode.env.asExternalUri(vscode.Uri.parse(connected.embed));
     const mappedUrl = new URL(mapped.toString());
@@ -76,7 +83,7 @@ async function openFullGUI(context) {
 }
 
 async function openBrowser() {
-  try { await vscode.env.openExternal(vscode.Uri.parse(runtimeUrl())); }
+  try { await vscode.env.openExternal(vscode.Uri.parse(readRuntimeRecord() || runtimeUrl())); }
   catch (error) { void vscode.window.showErrorMessage('JACO: ' + String(error?.message || error)); }
 }
 

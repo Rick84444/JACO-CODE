@@ -1,12 +1,12 @@
-# SEER Strategic Governor — Canonical Boundary
+# Aura Strategy Function — Historical SEER Service Boundary
 
-SEER is JACO's durable strategic authority. It does not replace Nova, Workplace, ModelRelay, Desktop AgentOS, or the existing mission bus.
+Aura is JACO's only operator-facing agent identity. The service historically named SEER owns the durable strategy and mission-graph implementation, not an independent agent persona. It does not replace the existing execution service, Workplace, ModelRelay, Desktop AgentOS, or the mission bus.
 
 Canonical execution path remains:
 
 `SEER -> Durable Nova Mission -> Desktop AgentOS / existing executor -> ModelRelay -> actuation surface -> verified receipt`
 
-SEER owns:
+The Aura strategy function (implemented by SEER) owns:
 
 - long-horizon purpose and invariants;
 - strategic goals and beliefs;
@@ -16,7 +16,7 @@ SEER owns:
 - economic outcome observations;
 - strategic context exposed to agents.
 
-SEER does **not** own:
+The strategy function does **not** own:
 
 - a second mission executor;
 - a second desktop/browser control plane;
@@ -24,7 +24,7 @@ SEER does **not** own:
 - implicit paid-model activation;
 - claims of completion without evidence.
 
-Financial candidates may be ranked by SEER, but execution remains gated by the existing ModelRelay signed autonomy mandate. SEER cannot self-authorize spend through its strategy API.
+Financial candidates may be ranked by SEER, but execution remains gated by the existing ModelRelay signed autonomy mandate. No strategy service can self-authorize spend through its API.
 
 The strategic kernel shares SEER's canonical SQLite database. Existing mission, memory, observation, experience, Nova routing and Workplace behavior remain available for compatibility while strategic state is added alongside them.
 

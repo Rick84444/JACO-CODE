@@ -19,6 +19,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { operatorApprovalCheck } from './operator-action-guard.mjs';
 
 export const LIMITS = { timeoutMs: 30_000, maxTimeoutMs: 300_000, outputBytes: 64 * 1024, concurrent: 4, argCount: 64, argLength: 4096 };
 export const PROTECTED_READ = /(^|[\\/])\.env(\.[^\\/]*)?([\\/]|$)|secret|credential/i;
@@ -61,6 +62,28 @@ function gitClass(args) {
 }
 
 const FIND_BLOCKED = new Set(['-exec', '-execdir', '-ok', '-okdir', '-delete', '-fprint', '-fprint0', '-fprintf', '-fls']);
+// Interpreters (bash, PowerShell, python, node with inline code) run anything the user account can do, so they
+// are an Aura-product capability: on in the Aura runtime, off elsewhere, JACO_SHELL_INTERPRETERS=0/1 decides.
+// Their environment holds no secrets (commandEnv), they start in the workspace, and what the operator must
+// decide (delete outside the worktree, push to a shared branch, publish, send, sign in) is refused here with
+// the way to ask: run it as the 'shell' mission task, which stops for the operator.
+export const interpretersAllowed = (env = process.env) =>
+  env.JACO_SHELL_INTERPRETERS === '1' || (env.JACO_SHELL_INTERPRETERS !== '0' && env.JACO_AURA_UNIFIED_RUNTIME === '1');
+const INTERPRETER_NAMES = new Set(['bash', 'powershell', 'pwsh', 'python', 'py']);
+const OBFUSCATED = /(?:^|\s)-(?:enc|ec|encodedcommand)\b|\b(?:iex|invoke-expression)\b|\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n]*\|\s*(?:bash|sh|zsh|python3?|node|iex|invoke-expression)\b/i;
+const interpreterCheck = args => {
+  if (OBFUSCATED.test(args.join(' '))) return 'INTERPRETER_CODE_NOT_ALLOWED:encoded code or download-and-run';
+  const ask = operatorApprovalCheck({ type: 'shell', data: { command: '', args } }, { sandbox: true });
+  return ask ? `NEEDS_OPERATOR_APPROVAL:${ask.reason} (run it as the shell task, which asks the operator)` : null;
+};
+// The script file an interpreter is asked to run, if any (inline code has none).
+const scriptOf = args => {
+  const flag = args.findIndex(x => /^-(?:c|e|p|command|f|file)$/i.test(x));
+  if (flag >= 0) return /^-(?:f|file)$/i.test(args[flag]) && args[flag + 1] ? [args[flag + 1]] : [];
+  const first = args.find(x => !x.startsWith('-'));
+  return first && /[\\/.]/.test(first) ? [first] : [];
+};
+
 export const PROGRAMS = {
   ls: { mode: 'read', paths: a => positional(a) },
   cat: { mode: 'read', paths: a => positional(a) },
@@ -85,6 +108,11 @@ export const PROGRAMS = {
     if (a[0] === 'install' || a[0] === 'i') return positional(a.slice(1)).length ? 'NPM_INSTALL_OF_PACKAGES_NOT_ALLOWED' : null;
     return 'NPM_SUBCOMMAND_NOT_ALLOWED';
   }, readSub: ['ls', 'list', 'outdated', 'view'], paths: () => [] },
+  bash: { mode: 'write', interpreter: true, paths: scriptOf, check: interpreterCheck },
+  powershell: { mode: 'write', interpreter: true, paths: scriptOf, check: interpreterCheck },
+  pwsh: { mode: 'write', interpreter: true, paths: scriptOf, check: interpreterCheck },
+  python: { mode: 'write', interpreter: true, paths: scriptOf, check: a => (a[0] === '--version' ? null : interpreterCheck(a)) },
+  py: { mode: 'write', interpreter: true, paths: scriptOf, check: a => (a[0] === '--version' ? null : interpreterCheck(a)) },
   mkdir: { mode: 'write', paths: a => positional(a) },
   touch: { mode: 'write', paths: a => positional(a) },
   cp: { mode: 'write', paths: a => positional(a) },
@@ -92,24 +120,45 @@ export const PROGRAMS = {
   rm: { mode: 'write', paths: a => positional(a), destructiveIf: a => (shortHas(a, 'rRf') || has(a, '--recursive', '--force') ? 'RM_RECURSIVE_OR_FORCE' : null) },
 };
 
+const SHELL_OPERATOR = /[|;&<>`$\n]/;
+// "git status --short" as one string becomes argv. Shell syntax is refused with what to do instead.
+export function normalizeCommand(command, args) {
+  if (typeof command !== 'string' || !/\s/.test(command.trim()) || (Array.isArray(args) && args.length)) return { command: typeof command === 'string' ? command.trim() : command, args };
+  const text = command.trim();
+  const words = [];
+  let word = '', quote = null, started = false;
+  for (const ch of text) {
+    if (quote) { if (ch === quote) quote = null; else word += ch; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; started = true; continue; }
+    if (SHELL_OPERATOR.test(ch)) return { refused: 'SHELL_SYNTAX_NOT_SUPPORTED: run one program at a time, without pipes, redirects, ;, && or $()' };
+    if (/\s/.test(ch)) { if (started) { words.push(word); word = ''; started = false; } continue; }
+    word += ch; started = true;
+  }
+  if (quote) return { refused: 'COMMAND_QUOTE_NOT_CLOSED' };
+  if (started) words.push(word);
+  return { command: words[0], args: words.slice(1) };
+}
+
 // Why this command may not run, or its mode. Pure: no process is started here.
 export function classify(command, args, { workspace, cwd = workspace, env = process.env, mode: requested = 'write' } = {}) {
   const refuse = reason => ({ ok: false, reason });
   if (typeof command !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,30}$/.test(command)) return refuse('COMMAND_NAME_INVALID');
   if (!Array.isArray(args) || args.length > LIMITS.argCount || args.some(a => typeof a !== 'string' || a.length > LIMITS.argLength || a.includes('\0'))) return refuse('ARGUMENTS_INVALID');
   const spec = PROGRAMS[command];
-  if (!spec) return refuse(`PROGRAM_NOT_ALLOWED:${command}`);
+  if (!spec || (INTERPRETER_NAMES.has(command) && !interpretersAllowed(env))) return refuse(`PROGRAM_NOT_ALLOWED:${command}`);
   let mode = spec.mode, destructive = null, push = false;
   if (spec.dynamic) { const c = spec.dynamic(args); if (c.refuse) return refuse(c.refuse); mode = c.mode; destructive = c.destructive || null; push = Boolean(c.push); }
   if (command === 'npm' && spec.readSub.includes(args[0])) mode = 'read';
-  if (command === 'node' || command === 'python3') { if (args[0] === '--version' || args[0] === '-v') mode = 'read'; }
-  const problem = spec.check?.(args); if (problem) return refuse(problem);
+  if (command === 'node' || command === 'python3' || command === 'python' || command === 'py') { if (args[0] === '--version' || args[0] === '-v') mode = 'read'; }
+  // With interpreters on, node and python run inline code too, under the same checks as the other interpreters.
+  const inline = interpretersAllowed(env) && (command === 'node' || command === 'python3');
+  const problem = inline && args[0] !== '--version' && args[0] !== '-v' ? interpreterCheck(args) : spec.check?.(args); if (problem) return refuse(problem);
   destructive = destructive || spec.destructiveIf?.(args) || null;
   if (requested === 'read' && mode !== 'read') return refuse('WRITE_COMMAND_IN_READ_MODE');
   if (push && env.JACO_SHELL_ALLOW_PUSH !== '1') return refuse('GIT_PUSH_NOT_ENABLED (the operator enables it with JACO_SHELL_ALLOW_PUSH=1)');
   if (destructive && !push && env.JACO_SHELL_ALLOW_DESTRUCTIVE !== '1') return refuse(`DESTRUCTIVE_NOT_ENABLED:${destructive} (the operator enables it with JACO_SHELL_ALLOW_DESTRUCTIVE=1)`);
   // A script argument for node/python must exist inside the workspace.
-  const pathArgs = [...(spec.paths ? spec.paths(args) : []), ...(spec.script && mode === 'write' ? positional(args).slice(0, 1) : [])];
+  const pathArgs = [...(spec.paths ? spec.paths(args) : []), ...(spec.script && mode === 'write' ? (inline ? scriptOf(args) : positional(args).slice(0, 1)) : [])];
   const confinement = confine(pathArgs, { workspace, cwd, write: mode === 'write' || Boolean(destructive) });
   if (confinement) return refuse(confinement);
   if (command === 'rm' && positional(args).some(p => path.resolve(cwd, p) === path.resolve(workspace))) return refuse('RM_OF_WORKSPACE_ROOT_NOT_ALLOWED');
@@ -157,6 +206,8 @@ export function resolveProgram(command, platform = process.platform, execPath = 
   }
   if (command === 'node') return { cmd: execPath, prefix: [] };
   if (command === 'python3' && platform === 'win32') return { cmd: 'python', prefix: [] };
+  if (command === 'python' && platform !== 'win32') return { cmd: 'python3', prefix: [] };
+  if (command === 'powershell' && platform !== 'win32') return { cmd: 'pwsh', prefix: [] };
   return { cmd: command, prefix: [] };
 }
 
@@ -179,6 +230,9 @@ export class SafeShell {
   async run({ command, args = [], cwd = '.', timeoutSeconds, mode = 'write' } = {}) {
     const started = Date.now();
     const refused = reason => { this.#audit({ mode, command: String(command).slice(0, 40), args: (Array.isArray(args) ? args : []).slice(0, 16).map(redact), outcome: 'refused', reason }); return { ok: false, refused: true, reason }; };
+    const normalized = normalizeCommand(command, args);
+    if (normalized.refused) return refused(normalized.refused);
+    ({ command, args } = normalized);
     const where = resolveCwd(this.workspace, cwd);
     if (!where) return refused('CWD_OUTSIDE_WORKSPACE_OR_PROTECTED');
     const verdict = classify(command, args, { workspace: this.workspace, cwd: where, env: this.env, mode });

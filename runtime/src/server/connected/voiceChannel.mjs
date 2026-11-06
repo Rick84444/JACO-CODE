@@ -28,9 +28,9 @@ export const maskNumber = digits => (digits ? `+${String(digits).slice(0, 2)}${'
 // Secrets must never be read out or sent: long token-like strings and common key shapes.
 export function redact(text) {
   return String(text ?? '')
-    .replace(/Bearer\s+\S+/gi, 'Bearer [hemlig]')
-    .replace(/\b(sk|pk|rk|hf|gh[pousr]|xox[abp]|jdev|jide)[-_][A-Za-z0-9_-]{12,}/g, '[hemlig]')
-    .replace(/\b[A-Za-z0-9+/_-]{32,}={0,2}/g, '[hemlig]');
+    .replace(/Bearer\s+\S+/gi, 'Bearer [secret]')
+    .replace(/\b(sk|pk|rk|hf|gh[pousr]|xox[abp]|jdev|jide)[-_][A-Za-z0-9_-]{12,}/g, '[secret]')
+    .replace(/\b[A-Za-z0-9+/_-]{32,}={0,2}/g, '[secret]');
 }
 
 // What is spoken: no links, no code, no markdown marks, clipped.
@@ -56,6 +56,29 @@ const WINDOWS_SPEECH = [
 ].join('; ');
 
 const EDGE_VOICES = { sv: 'sv-SE-SofieNeural', en: 'en-US-AriaNeural', nb: 'nb-NO-PernilleNeural', da: 'da-DK-ChristelNeural', de: 'de-DE-KatjaNeural' };
+// Spoken messages are synthesized in JACO_VOICE_LANG, so their wording has to follow it: a Swedish voice reading
+// English text is unintelligible. Unknown languages fall back to English, like EDGE_VOICES.
+const VOICE_WORDS = {
+  sv: {
+    cannotListen: 'Jag kan inte lyssna på röstmeddelanden än. Skriv till mig så svarar jag med text och röst.',
+    cannotTakeCalls: 'Jag kan inte ta samtal än. Skriv till mig, så svarar jag med text och röst.',
+    cannotAnswer: reason => `Jag kunde inte svara just nu (${reason}).`,
+    done: goal => `Aura här. Klart: ${goal}.`,
+    waiting: goal => `Aura här. Väntar på dig: ${goal}. Öppna JACO och godkänn eller avvisa.`,
+    blocked: goal => `Aura här. Fastnade: ${goal}. Öppna JACO för att se varför.`,
+    aMission: 'ett uppdrag',
+  },
+  en: {
+    cannotListen: 'I cannot listen to voice messages yet. Write to me and I will answer with text and voice.',
+    cannotTakeCalls: 'I cannot take calls yet. Write to me and I will answer with text and voice.',
+    cannotAnswer: reason => `I could not answer right now (${reason}).`,
+    done: goal => `Aura here. Done: ${goal}.`,
+    waiting: goal => `Aura here. Waiting for you: ${goal}. Open JACO and approve or reject.`,
+    blocked: goal => `Aura here. Blocked: ${goal}. Open JACO to see why.`,
+    aMission: 'a mission',
+  },
+};
+export const voiceWords = (env = process.env) => VOICE_WORDS[String(env.JACO_VOICE_LANG || 'sv-SE').split('-')[0].toLowerCase()] || VOICE_WORDS.en;
 export const edgeVoiceName = (lang = 'sv-SE', env = process.env) => env.JACO_VOICE_NAME || EDGE_VOICES[String(lang).split('-')[0].toLowerCase()] || EDGE_VOICES.en;
 
 // Returns { raw, engine } or null when edge-tts is not usable (the caller then uses the local engine).
@@ -289,12 +312,12 @@ export function createVoiceChannel({ dir, env = process.env, importBaileys = () 
       seen.add(item.id); if (seen.size > 500) seen.delete(seen.values().next().value);
       lastInboundAt = new Date(now()).toISOString();
       try { await socket?.sendPresenceUpdate?.('composing', `${owner}@s.whatsapp.net`); } catch {}
-      if (item.kind === 'audio') { await reply({ text: 'Jag kan inte lyssna på röstmeddelanden än. Skriv till mig så svarar jag med text och röst.', speak: false }); continue; }
+      if (item.kind === 'audio') { await reply({ text: voiceWords(env).cannotListen, speak: false }); continue; }
       if (!onMessage) continue;
       let answer;
       try {
         answer = await Promise.race([Promise.resolve(onMessage({ text: item.text, id: item.id })), new Promise((_, reject) => setTimeout(() => reject(new Error('VOICE_ANSWER_TIMEOUT')), 120_000).unref?.())]);
-      } catch (error) { answer = `Jag kunde inte svara just nu (${String(error?.message || error).slice(0, 80)}).`; }
+      } catch (error) { answer = voiceWords(env).cannotAnswer(String(error?.message || error).slice(0, 80)); }
       if (answer) await reply({ text: String(answer) });
     }
   }
@@ -306,7 +329,7 @@ export function createVoiceChannel({ dir, env = process.env, importBaileys = () 
       if (call?.status !== 'offer' || !call.id || seen.has(`call:${call.id}`) || digitsOf(call.from) !== owner) continue;
       seen.add(`call:${call.id}`);
       try { await socket?.rejectCall?.(call.id, call.from); } catch {}
-      await reply({ text: 'Jag kan inte ta samtal än. Skriv till mig, så svarar jag med text och röst.', speak: false });
+      await reply({ text: voiceWords(env).cannotTakeCalls, speak: false });
     }
   }
 
@@ -344,16 +367,16 @@ export function createVoiceChannel({ dir, env = process.env, importBaileys = () 
 // restart never repeats old news; a status must hold for settleMs before it is sent, which gives the automatic
 // approval policy time to resolve it first (and a mission that moves on is never reported for the status it left).
 /** @param {any} [options] */
-export function createMissionNotifier({ channel, listMissions, file, now = Date.now, settleMs = 60_000 } = {}) {
+export function createMissionNotifier({ channel, listMissions, file, now = Date.now, settleMs = 60_000, env = process.env } = {}) {
   const notified = new Set(readJson(file, []));
   const firstSeen = new Map();
   let baseline = notified.size === 0 && !fs.existsSync(file || '');
   const WORDS = {
-    DONE: m => `Aura här. Klart: ${shortGoal(m)}.`,
-    AWAITING_VERIFICATION: m => `Aura här. Väntar på dig: ${shortGoal(m)}. Öppna JACO och godkänn eller avvisa.`,
-    BLOCKED: m => `Aura här. Fastnade: ${shortGoal(m)}. Öppna JACO för att se varför.`,
+    DONE: m => voiceWords(env).done(shortGoal(m)),
+    AWAITING_VERIFICATION: m => voiceWords(env).waiting(shortGoal(m)),
+    BLOCKED: m => voiceWords(env).blocked(shortGoal(m)),
   };
-  const shortGoal = m => { const g = String(m.goal || '').replace(/\s+/g, ' ').trim(); return g.length > 90 ? `${g.slice(0, 89)}...` : g || 'ett uppdrag'; };
+  const shortGoal = m => { const g = String(m.goal || '').replace(/\s+/g, ' ').trim(); return g.length > 90 ? `${g.slice(0, 89)}...` : g || voiceWords(env).aMission; };
   const save = () => { if (!file) return; fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify([...notified].slice(-500))); };
 
   return {
