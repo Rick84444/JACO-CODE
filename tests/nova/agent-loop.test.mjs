@@ -9,7 +9,7 @@ import { DurableMissionBus } from '../../runtime/src/server/connected/durableMis
 import { NovaMissionControl, mountNovaMissionRoutes } from '../../runtime/src/server/connected/novaMissionControl.mjs';
 import { MissionClient } from '../../agents/lib/mission-client.mjs';
 import { plannerTools, searchDeferredTools } from '../../agents/lib/native-tools.mjs';
-import { runAgentMission, receiptForModel, contextPacketIntro } from '../../agents/lib/agent-loop.mjs';
+import { runAgentMission, receiptForModel, contextPacketIntro, hintFor as hintForCheck } from '../../agents/lib/agent-loop.mjs';
 import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
 import { projectGoalGraph } from '../../gateway/src/seer-project.mjs';
 
@@ -781,4 +781,9 @@ test('the plan, what the last result taught, and the reason for the next step al
   assert.equal(last.payload.learned, 'Första sidan hade bara ett alternativ.');
   const live = toCognitiveEvent({ type: 'NOVA_ACTION_STARTED', payload: last.payload, at: new Date().toISOString(), id: 'l1', mission_id: m.id });
   assert.equal(live.text, 'Step 2: Första sidan hade bara ett alternativ. Jag läser en andra sida för att få något att jämföra med.');
+});
+
+test('a refused connector write tells the model to use the workspace write tools', () => {
+  assert.match(String(hintForCheck({ ok: false, error: 'MCP_TOOL_NOT_READ_ONLY:filesystem.write_file' })), /repo-write/);
+  assert.equal(hintForCheck({ ok: false, error: 'MCP_TOOL_NOT_READ_ONLY:github.list_issues' }), null);
 });

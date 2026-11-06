@@ -29,6 +29,8 @@ const errorText = error => String(error?.message || error || 'error').split('\n'
 // What a result means for the next step, in words. A bare error code or an unchanged file looked like
 // "try again" to the model; it is "this is already done".
 export function hintFor(receipt) {
+  // A model that writes a file through an MCP connector is refused and tried again and again (2026-11-06).
+  if (/MCP_TOOL_NOT_READ_ONLY:[^:\s]*(?:write|edit|create|move|delete)/i.test(String(receipt?.error || ''))) return 'Files in your workspace are written with repo-write (a new file) or repo-edit (a change), not through a connector. Use those; if they are not in your list, this mission may not change files: say so and call blocked.';
   if (/CODING_GIT_NOTHING_IN_SCOPE/.test(String(receipt?.error || ''))) return 'Nothing to commit: your changes are already committed, or the files did not change. The work is saved. Go to the next step or call complete.';
   const r = receipt?.result;
   if (receipt?.ok && r && typeof r === 'object' && r.beforeSha256 && r.beforeSha256 === r.afterSha256) return 'The file already had exactly this content. Nothing changed. Do not repeat this step.';
