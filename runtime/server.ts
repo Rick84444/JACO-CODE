@@ -661,6 +661,18 @@ function requireLocalUiSameOrigin(req: express.Request, res: express.Response, n
   return requireLocalUi(req, res, next);
 }
 
+// Organization mutation credential is separate from the generic gateway token shared with tools.
+// No configured token means read-only organization UI, never a privileged localhost bypass.
+function requireOrganizationMutationAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const expected = String(process.env.JACO_ORG_OPERATOR_TOKEN || '');
+  const provided = String(req.headers['x-jaco-operator-token'] || '');
+  if (!expected || provided.length !== expected.length ||
+      !crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) {
+    return res.status(401).json({ success: false, error: 'ORGANIZATION_OPERATOR_AUTH_REQUIRED' });
+  }
+  next();
+}
+
 function requireLocalUi(req: express.Request, res: express.Response, next: express.NextFunction) {
   if ((req as any).ideSession) return next();
   const forwardedFor = String(req.headers['x-forwarded-for'] || '');
@@ -4333,9 +4345,9 @@ const notifyPhone = async (action) => {
     .catch((error: any) => console.warn('[cost] tally seed failed:', error?.message || error));
   app.use('/api/aura/budget', createEconomicBudgetRouter({ economic: continuumSurface.runtime.economic, requireOperatorUi: requireLocalUi, getBalances: costBalances }));
   const agentOrganization = new AgentOrganization(path.resolve(process.env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco')));
-  app.use('/api/aura/organization', createAgentOrganizationRouter({ organization: agentOrganization, requireOperatorUi: requireLocalUi }));
-  const agentReputation = new AgentReputation(path.resolve(process.env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco')), agentOrganization);
-  app.use('/api/aura/board', createAgentBoardRouter({ reputation: agentReputation, requireOperatorUi: requireLocalUi }));
+  app.use('/api/aura/organization', createAgentOrganizationRouter({
+    organization: agentOrganization, requireOperatorUi: requireLocalUi, requireMutationAuth: requireOrganizationMutationAuth,
+  }));
 
   app.post('/api/nova/ollama-cost/reserve', requireAuth, (req, res) => {
     const providerId = String(req.body?.providerId || 'ollama-cloud');

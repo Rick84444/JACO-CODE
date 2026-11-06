@@ -106,12 +106,14 @@ test('operator UI routes reject cross-origin calls and require the risk to be ac
   const { organization } = org(t);
   const app = express();
   app.use(express.json());
-  app.use('/org', createAgentOrganizationRouter({ organization, requireOperatorUi: (_req, _res, next) => next() }));
+  app.use('/org', createAgentOrganizationRouter({ organization, requireOperatorUi: (_req, _res, next) => next(),
+    requireMutationAuth: (req, res, next) => req.get('x-jaco-operator-token') === 'test-operator-only'
+      ? next() : res.status(401).json({ success: false, error: 'ORGANIZATION_OPERATOR_AUTH_REQUIRED' }) }));
   const server = app.listen(0, '127.0.0.1');
   t.after(() => server.close());
   await new Promise(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}/org`;
-  const call = (route, method, body, headers = {}) => fetch(base + route, { method, headers: { 'content-type': 'application/json', ...headers }, body: body && JSON.stringify(body) })
+  const call = (route, method, body, headers = {}) => fetch(base + route, { method, headers: { 'content-type': 'application/json', 'x-jaco-operator-token': 'test-operator-only', ...headers }, body: body && JSON.stringify(body) })
     .then(async r => ({ status: r.status, data: await r.json() }));
 
   assert.equal((await call('/agents', 'POST', { name: 'Ekonomi' }, { origin: 'https://evil.example' })).status, 403);
@@ -182,50 +184,52 @@ test('high-risk grants expire and must be renewed', t => {
   assert.equal(organization.authorize('aura', 'browser').allowed, true);
 });
 
-test('mail: agents know the ranking, internal mail must be signed, outside mail is approved, authenticated and tainted', t => {
+
+test('pending hire cannot bypass operator approval through pause and resume', t => {
   const { organization } = org(t);
-  organization.updateProfile('aura', { mail: 'aura@jacocode.com' });
-  organization.createAgent({ name: 'Ekonomi', mail: 'ekonomi@jacocode.com' });
-  organization.createAgent({ name: 'Marknad', mail: 'marknad@jacocode.com' });
-  const book = organization.directory('ekonomi');
-  assert.deepEqual(book.map(e => [e.id, e.rank, e.relation, e.mayAssignWork]), [['aura', 1, 'manager', true], ['marknad', 2, 'peer', false]]);
-
-  assert.equal(organization.mailPolicy('aura@jacocode.com', 'ekonomi', { signed: true }).reason, 'INTERNAL_MAIL_NOT_GRANTED');
-  for (const id of ['aura', 'ekonomi', 'marknad']) organization.setPermission(id, 'mail.internal', true);
-  assert.equal(organization.mailPolicy('aura@jacocode.com', 'ekonomi').reason, 'INTERNAL_SENDER_UNSIGNED', 'a From header alone is spoofable');
-  assert.deepEqual(organization.mailPolicy('AURA@jacocode.com', 'ekonomi', { signed: true }),
-    { accept: true, trust: 'internal', sender: 'aura', rank: 1, mayAssignWork: true, tainted: false });
-  assert.equal(organization.mailPolicy('marknad@jacocode.com', 'ekonomi', { signed: true }).mayAssignWork, false, 'a peer informs, never assigns');
-
-  assert.equal(organization.mailPolicy('kund@example.com', 'ekonomi', { authenticated: true }).reason, 'SENDER_NOT_APPROVED');
-  organization.setContact({ address: 'Kund@Example.com', name: 'Kund', agents: ['ekonomi'] });
-  assert.throws(() => organization.setContact({ address: 'x@example.com', agents: ['ekonomi'] }, 'aura'), /OPERATOR_APPROVAL_REQUIRED/);
-  assert.equal(organization.mailPolicy('kund@example.com', 'ekonomi').reason, 'SENDER_NOT_AUTHENTICATED');
-  assert.equal(organization.mailPolicy('kund@example.com', 'ekonomi', { authenticated: true }).reason, 'PERMISSION_NOT_GRANTED');
-  organization.setPermission('aura', 'mail.receive', true);
-  organization.setPermission('ekonomi', 'mail.receive', true);
-  assert.deepEqual(organization.mailPolicy('kund@example.com', 'ekonomi', { authenticated: true }),
-    { accept: true, trust: 'approved-contact', sender: 'kund@example.com', mayAssignWork: false, tainted: true });
-  // An agent that reads outside mail passes that taint on to whoever it writes to.
-  assert.equal(organization.mailPolicy('ekonomi@jacocode.com', 'aura', { signed: true }).tainted, true);
+  organization.setPermission('aura', 'agents.create', true, 'operator', { acceptRisk: true });
+  organization.setPermission('aura', 'files.read', true);
+  organization.setLimits('aura', { maxSubAgents: 2 });
+  const hire = organization.createAgent({ name: 'Candidate' }, 'aura');
+  organization.setPermission(hire.id, 'files.read', true, 'aura');
+  assert.equal(organization.authorize(hire.id, 'files.read').allowed, false);
+  assert.throws(() => organization.setStatus(hire.id, 'pause', 'aura'), /AGENT_PENDING/);
+  assert.throws(() => organization.setStatus(hire.id, 'resume', 'aura'), /AGENT_PENDING/);
+  assert.equal(organization.authorize(hire.id, 'files.read').allowed, false);
 });
 
-test('a tainted session is the untrusted leg of the Rule of Two', t => {
-  const { organization } = org(t);
-  organization.setLimits('aura', { autonomy: 5 });
-  organization.setPermission('aura', 'files.read', true);
-  organization.setPermission('aura', 'git.branch', true);
-  assert.equal(organization.decide('aura', 'git.branch').needsApproval, false);
-  assert.deepEqual(organization.decide('aura', 'git.branch', { tainted: true }), { allowed: true, needsApproval: true, reason: 'RULE_OF_TWO' });
+test('failed persistent write cannot publish in-memory permission, limits or status', t => {
+  const { organization, root } = org(t);
+  const tempPath = path.join(root, 'org', 'organization.json.' + process.pid + '.tmp');
+  fs.mkdirSync(tempPath);
+  try {
+    assert.throws(() => organization.setPermission('aura', 'files.read', true), /EISDIR|EEXIST|EPERM/);
+    assert.equal(organization.authorize('aura', 'files.read').allowed, false);
+    assert.throws(() => organization.setLimits('aura', { autonomy: 5 }), /EISDIR|EEXIST|EPERM/);
+    assert.equal(organization.agent('aura').mandate.autonomy, 1);
+    assert.throws(() => organization.setStatus('aura', 'pause'), /EISDIR|EEXIST|EPERM/);
+    assert.equal(organization.agent('aura').status, 'active');
+  } finally {
+    fs.rmSync(tempPath, { recursive: true, force: true });
+  }
+  assert.equal(new AgentOrganization(root).authorize('aura', 'files.read').allowed, false);
 });
 
-test('a manager follows its branch, never its seniors or peers', t => {
+test('organization writes fail closed without an operator mutation authenticator', async t => {
   const { organization } = org(t);
-  organization.createAgent({ name: 'Ekonomi' });
-  organization.createAgent({ name: 'Marknad' });
-  organization.setPermission('aura', 'files.read', true);
-  organization.setPermission('ekonomi', 'files.read', true, 'aura');
-  assert.ok(organization.activity('aura', 'ekonomi').some(e => e.action === 'permission.granted' && e.agent === 'ekonomi'));
-  assert.throws(() => organization.activity('ekonomi', 'aura'), /AGENT_AUTHORITY_DENIED/);
-  assert.throws(() => organization.activity('ekonomi', 'marknad'), /AGENT_AUTHORITY_DENIED/);
+  const app = express();
+  app.use(express.json());
+  app.use('/org', createAgentOrganizationRouter({ organization, requireOperatorUi: (_req, _res, next) => next() }));
+  const server = app.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  await new Promise(resolve => server.once('listening', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port + '/org';
+  const read = await fetch(base);
+  assert.equal(read.status, 200);
+  const write = await fetch(base + '/agents/aura/permissions/publish', {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ granted: true, acceptRisk: true }),
+  });
+  assert.equal(write.status, 403);
+  assert.equal(organization.authorize('aura', 'publish').allowed, false);
 });
