@@ -309,3 +309,16 @@ test('a generated passing test cannot override a failing original project suite'
   const originalGreen = { ...originalFail, actionId: 'mint:turn:3', ok: true, verified: true };
   assert.equal(contractVerificationStatus(contract, [originalFail, mintedPass, originalGreen]).machineVerified, true);
 });
+
+test('a mission that builds something new does not need the whole project test suite; a fix still does', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'proj-'));
+  try {
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    const made = normalizeCodingContract(projectNodeContract({ title: 'Demo', objective: 'Build a sellable HTML demo page in demo/index.html', mainGoal: 'Create a product demo', projectRoot: root }));
+    assert.equal(made.verification.tests_required, false);
+    assert.deepEqual(made.verification.commands, []);
+    assert.equal(contractVerificationStatus(made, [{ type: 'repo-write', ok: true, verified: true, actionId: 'm:turn:1', result: { beforeSha256: null, afterSha256: 'x' } }, { type: 'git-commit', ok: true, verified: true, actionId: 'm:turn:2' }]).machineVerified, true);
+    const fix = normalizeCodingContract(projectNodeContract({ title: 'Fix', objective: 'Fix the bug in the demo page', mainGoal: 'Fix it', projectRoot: root }));
+    assert.equal(fix.verification.tests_required, true);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
