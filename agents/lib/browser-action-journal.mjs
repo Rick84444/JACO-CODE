@@ -16,6 +16,9 @@ const blocked = (actionId, error, extra = {}) => ({ ok: false, verified: false, 
 function syncDirectory(directory) {
   // POSIX directory fsync makes file creation/rename durable; if unsupported,
   // block the write rather than promise at-most-once after a power failure.
+  // Windows cannot open a directory for fsync (EISDIR/EPERM); NTFS journals its own metadata, and the file itself
+  // is still fsynced before the action runs. Everywhere else an unsupported directory sync still blocks.
+  if (process.platform === 'win32') return;
   const fd = openSync(directory, 'r');
   try { fsyncSync(fd); }
   finally { closeSync(fd); }

@@ -318,6 +318,8 @@ test('an agent-owned tab switch takes precedence over the configured initial CDP
   assert.equal(activeBrowserTarget(tabs, 'pinned', 'owned', new Set()).id, 'pinned');
   assert.equal(activeBrowserTarget(tabs, 'pinned', null, new Set()).id, 'pinned');
   assert.equal(activeBrowserTarget(tabs, null, 'owned', new Set(['owned'])).id, 'owned');
+});
+
 test('the native planner is told to use the browser tools first and the operating system only as a fallback', async () => {
   const { agentSystemFor, WEB_RULE } = await import('../../agents/hands-off-agent.mjs');
   const system = agentSystemFor(['web-fetch', 'shell']);
