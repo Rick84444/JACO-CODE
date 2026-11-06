@@ -251,7 +251,19 @@ export function createInputActions({ evaluate, observe, tabs = null, downloads =
           if (created.length) { for (const tab of created) tabs.adopt(tab); extra.newTabs = created.map(t => ({ id: t.id, url: String(t.url || '').slice(0, 300) })); }
         }
         if (filesBefore) { const got = await awaitDownloads(filesBefore); if (got.length) extra.downloads = got; }
-        return { ok: true, verified: Boolean(verified), input, via: target?.via || 'keyboard', ...(uploaded ? { uploaded } : {}), ...extra, ...seen(), observation: await observe(session) };
+        const observation = await observe(session);
+        // A click that named no expectation is still verified by what the browser itself saw it do: the page moved
+        // to another address, a tab opened or a file arrived. A click that changed nothing stays unverified.
+        // When the model named an expectation that did not come true but the page did move, the click happened and its
+        // effect was seen: it is reported as verified with expectationMet:false, so the model reads where it landed
+        // instead of repeating the whole task (a real run clicked the right link three times and never finished).
+        if (kind === 'click' && !verified) {
+          if (predicate) extra.expectationMet = false;
+          if (observation?.url && before?.url && observation.url !== before.url) { verified = true; extra.effect = 'navigated'; }
+          else if (extra.newTabs?.length) { verified = true; extra.effect = 'new-tab'; }
+          else if (extra.downloads?.length) { verified = true; extra.effect = 'download'; }
+        }
+        return { ok: true, verified: Boolean(verified), input, via: target?.via || 'keyboard', ...(uploaded ? { uploaded } : {}), ...extra, ...seen(), observation };
       } catch (error) {
         return { ok: false, verified: false, outcomeUnknown: true, error: error.message, ...seen() };
       }

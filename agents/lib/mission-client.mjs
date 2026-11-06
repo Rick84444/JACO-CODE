@@ -30,6 +30,7 @@ export class MissionClient {
   async begin(id, input) { return (await this.request('POST', `/missions/${encodeURIComponent(id)}/begin`, input)).task; }
   async finish(id, input) { return (await this.request('POST', `/missions/${encodeURIComponent(id)}/finish`, input)).mission; }
   release(id, input) { return this.request('POST', `/missions/${encodeURIComponent(id)}/release`, input); }
+  releaseOrphanedPlanning(owner) { return this.request('POST', '/release-orphaned-planning', { owner }); }
   async resolve(id, input) { return (await this.request('POST', `/missions/${encodeURIComponent(id)}/resolve`, input)).mission; }
 }
 

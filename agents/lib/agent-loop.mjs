@@ -29,6 +29,8 @@ const errorText = error => String(error?.message || error || 'error').split('\n'
 // What a result means for the next step, in words. A bare error code or an unchanged file looked like
 // "try again" to the model; it is "this is already done".
 export function hintFor(receipt) {
+  // A model that writes a file through an MCP connector is refused and tried again and again (2026-11-06).
+  if (/MCP_TOOL_NOT_READ_ONLY:[^:\s]*(?:write|edit|create|move|delete)/i.test(String(receipt?.error || ''))) return 'Files in your workspace are written with repo-write (a new file) or repo-edit (a change), not through a connector. Use those; if they are not in your list, this mission may not change files: say so and call blocked.';
   if (/CODING_GIT_NOTHING_IN_SCOPE/.test(String(receipt?.error || ''))) return 'Nothing to commit: your changes are already committed, or the files did not change. The work is saved. Go to the next step or call complete.';
   const r = receipt?.result;
   if (receipt?.ok && r && typeof r === 'object' && r.beforeSha256 && r.beforeSha256 === r.afterSha256) return 'The file already had exactly this content. Nothing changed. Do not repeat this step.';
@@ -297,10 +299,14 @@ export async function runAgentMission({
           return end({ blocked: true, reason }, target.kind === 'replan' ? { replanRequest: { reason, subgoals: args.subgoals } } : { error: `PLANNER_BLOCKED:${reason}` });
         }
 
-        const { expectedOutcome, ...data } = args || {};
+        const { expectedOutcome, say: argSay, learned: argLearned, ...data } = args || {};
+        // What the model says before the call (its plan on the first one, then what it is doing and why) and what the
+        // previous result taught it are shown to the operator as it happens.
+        const say = String((typeof argSay === 'string' && argSay.trim()) || reply?.content || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+        const learned = typeof argLearned === 'string' ? argLearned.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
         const task = target.kind === 'mcp'
-          ? { type: target.write ? 'mcp-write' : 'mcp-call', data: { server: target.server, tool: target.tool, arguments: data }, expectedOutcome }
-          : { type: target.type, data, ...(expectedOutcome ? { expectedOutcome: String(expectedOutcome).slice(0, 300) } : {}) };
+          ? { type: target.write ? 'mcp-write' : 'mcp-call', data: { server: target.server, tool: target.tool, arguments: data }, expectedOutcome, ...(say ? { say } : {}), ...(learned ? { learned } : {}) }
+          : { type: target.type, data, ...(expectedOutcome ? { expectedOutcome: String(expectedOutcome).slice(0, 300) } : {}), ...(say ? { say } : {}), ...(learned ? { learned } : {}) };
 
         let lease, begun;
         try {

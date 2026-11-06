@@ -473,9 +473,25 @@ export class NovaMissionControl {
     return row ? this.get(row.mission_id) : null;
   }
 
+  // A planning lease belongs to one running agent. The agent keeps its registered id across restarts, so after a restart the
+  // old lease carries the same owner as the new process and nothing can release it; waiting for it to expire left a mission
+  // idle for 20 minutes (2026-11-06). Called once at process start, before this process has claimed anything. Only PLANNING
+  // leases are freed: an EXECUTING step stays with recoverExpired, which is careful about repeating it.
+  releaseOrphanedPlanning(owner) {
+    const who = String(owner || '');
+    if (!who) return { released: [] };
+    const rows = this.db.prepare("SELECT mission_id, owner FROM nova_sessions WHERE token IS NOT NULL AND phase='PLANNING' AND owner=?").all(who);
+    for (const row of rows) {
+      this.db.prepare("UPDATE nova_sessions SET phase='READY',owner=NULL,token=NULL,lease_until=NULL WHERE mission_id=? AND token IS NOT NULL AND phase='PLANNING'").run(row.mission_id);
+      this.bus.event('NOVA_LEASE_RELEASED_ORPHAN', { missionId: row.mission_id, payload: { previousOwner: row.owner, reason: 'The agent that held the planning lease was restarted.' } });
+    }
+    return { released: rows.map(r => r.mission_id) };
+  }
+
   // A lease that expires while a step runs leaves its outcome unknown, which needs the operator - unless
   // the step changes nothing and can simply run again (reads, observations, tests). Those return to READY
   // and the step is planned again (2026-10-08: a restart during a repo-test held a whole graph for hours).
+
   recoverExpired() {
     const rows = this.db.prepare('SELECT * FROM nova_sessions WHERE token IS NOT NULL AND lease_until<=?').all(this.now());
     for (const row of rows) {
@@ -598,7 +614,9 @@ export class NovaMissionControl {
     const action = { ...checked, id: `${id}:turn:${row.turn + 1}`, missionId: id };
     this.db.prepare("UPDATE nova_sessions SET phase='EXECUTING',active_task_json=?,turn=turn+1,lease_until=? WHERE mission_id=?")
       .run(JSON.stringify(action), this.now() + actionLeaseMs(checked.type), id);
-    this.bus.event('NOVA_ACTION_STARTED', { missionId: id, payload: { action } });
+    const say = typeof task?.say === 'string' ? task.say.replace(/\s+/g, ' ').trim().slice(0, 500) : '';
+    const learned = typeof task?.learned === 'string' ? task.learned.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+    this.bus.event('NOVA_ACTION_STARTED', { missionId: id, payload: { action, ...(say ? { say } : {}), ...(learned ? { learned } : {}) } });
     return action;
   }
 
@@ -796,6 +814,7 @@ export function mountNovaMissionRoutes(app, requireAuth, control, onUpdate = () 
   app.get(`${root}/current`, requireAuth, route(req => ({ mission: control.current(req.query?.executor ? String(req.query.executor) : null) })));
   app.post(`${root}/missions`, requireAuth, route(req => ({ mission: control.create(req.body || {}) })));
   app.get(`${root}/missions/:id`, requireAuth, route(req => ({ mission: control.get(req.params.id) })));
+  app.post(`${root}/release-orphaned-planning`, requireAuth, route(req => control.releaseOrphanedPlanning(req.body?.owner)));
   app.post(`${root}/missions/:id/cancel`, requireAuth, route(req => ({ mission: control.requestCancel(req.params.id, req.body?.note || 'Parent mission cancellation propagated by SEER.') })));
   app.post(`${root}/missions/:id/claim`, requireAuth, route(req => control.claim(req.params.id, req.body?.owner, req.body?.executor ?? null)));
   app.post(`${root}/missions/:id/preflight`, requireAuth, route(req => control.preflight(req.params.id, req.body || {})));

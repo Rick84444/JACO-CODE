@@ -9,7 +9,7 @@ import { DurableMissionBus } from '../../runtime/src/server/connected/durableMis
 import { NovaMissionControl, mountNovaMissionRoutes } from '../../runtime/src/server/connected/novaMissionControl.mjs';
 import { MissionClient } from '../../agents/lib/mission-client.mjs';
 import { plannerTools, searchDeferredTools } from '../../agents/lib/native-tools.mjs';
-import { runAgentMission, receiptForModel, contextPacketIntro } from '../../agents/lib/agent-loop.mjs';
+import { runAgentMission, receiptForModel, contextPacketIntro, hintFor as hintForCheck } from '../../agents/lib/agent-loop.mjs';
 import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
 import { projectGoalGraph } from '../../gateway/src/seer-project.mjs';
 
@@ -712,4 +712,78 @@ test('few connector tools stay listed, and a search with no match says so', () =
   assert.deepEqual(searchDeferredTools(deferred, 'select:shell_run').map(d => d.tool), ['shell_run']);
   assert.deepEqual(searchDeferredTools(deferred, 'zebra'), []);
   assert.deepEqual(searchDeferredTools(deferred, 'commit log', new Set(['mcp__git__git_log'])), []);
+});
+
+test('the sentence the model writes before a tool call is shown to the operator as the live text of that step', async t => {
+  const { toCognitiveEvent } = await import('../../runtime/src/lib/cognitiveEvents.mjs');
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Titta på example.com', idempotencyKey: 'say1', allowedTasks: ['web-fetch'] });
+  const model = scripted([
+    { content: 'Jag börjar med att läsa sidan så jag ser vad som står där.', tool_calls: [call('web-fetch', { url: 'https://example.test' })] },
+    { tool_calls: [call('complete', { reason: 'Klart [#1]' })] },
+  ]);
+  const ran = [];
+  await run(s, model, async task => { ran.push(task); return { ok: true, verified: true, content: 'hej' }; });
+  assert.equal(ran[0].say, undefined, 'the narration is not part of the action the executor runs');
+  const started = s.control.bus.lastMissionEvent(m.id, 'NOVA_ACTION_STARTED');
+  assert.equal(started.payload.say, 'Jag börjar med att läsa sidan så jag ser vad som står där.');
+  const live = toCognitiveEvent({ type: 'NOVA_ACTION_STARTED', payload: started.payload, at: new Date().toISOString(), id: 'e1', mission_id: m.id });
+  assert.equal(live.text, 'Step 1: Jag börjar med att läsa sidan så jag ser vad som står där.');
+  const plain = toCognitiveEvent({ type: 'NOVA_ACTION_STARTED', payload: { action: { type: 'web-fetch', data: {} } }, at: new Date().toISOString(), id: 'e2', mission_id: m.id });
+  assert.ok(plain.text.length > 0 && !/colleague/.test(plain.text), 'without a sentence the generic label stays');
+});
+
+test('the sentence can be a parameter of the call, which is how models that return no text with a tool call still talk', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Titta på example.com', idempotencyKey: 'say2', allowedTasks: ['web-fetch'] });
+  const { tools } = plannerTools(['web-fetch'], [], {}, false);
+  assert.equal(tools[0].function.parameters.properties.say.type, 'string');
+  assert.ok(!(tools[0].function.parameters.required || []).includes('say'), 'the sentence is optional, never a reason to refuse a call');
+  const model = scripted([
+    { tool_calls: [call('web-fetch', { url: 'https://example.test', say: 'Jag hämtar sidan för att se vad den innehåller.' })] },
+    { tool_calls: [call('complete', { reason: 'Klart [#1]' })] },
+  ]);
+  const ran = [];
+  await run(s, model, async task => { ran.push(task); return { ok: true, verified: true, content: 'hej' }; });
+  assert.deepEqual(ran[0].data, { url: 'https://example.test' }, 'the sentence is not passed to the tool as an argument');
+  assert.equal(s.control.bus.lastMissionEvent(m.id, 'NOVA_ACTION_STARTED').payload.say, 'Jag hämtar sidan för att se vad den innehåller.');
+});
+
+test('a planning lease its own agent left before a restart is freed at start; another agent lease is not', t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Titta', idempotencyKey: 'orph1', allowedTasks: ['web-fetch'] });
+  assert.ok(s.control.claim(m.id, 'agent:nova:abc').token);
+  assert.deepEqual(s.control.releaseOrphanedPlanning('agent:nova:other').released, []);
+  assert.deepEqual(s.control.releaseOrphanedPlanning('agent:nova:abc').released, [m.id]);
+  assert.equal(s.control.get(m.id).status, 'ACTIVE');
+  assert.ok(s.control.claim(m.id, 'agent:nova:abc').token, 'the mission can be claimed again at once');
+  assert.deepEqual(s.control.releaseOrphanedPlanning('').released, []);
+});
+
+test('the plan, what the last result taught, and the reason for the next step all reach the live text', async t => {
+  const { toCognitiveEvent } = await import('../../runtime/src/lib/cognitiveEvents.mjs');
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Titta', idempotencyKey: 'learn1', allowedTasks: ['web-fetch'] });
+  const { tools } = plannerTools(['web-fetch'], [], {}, false);
+  assert.equal(tools[0].function.parameters.properties.learned.type, 'string');
+  assert.ok(!(tools[0].function.parameters.required || []).includes('learned'));
+  const model = scripted([
+    { tool_calls: [call('web-fetch', { url: 'https://a.test', say: 'Plan: jag läser sidan, jämför två alternativ och väljer det bästa.' })] },
+    { tool_calls: [call('web-fetch', { url: 'https://b.test', learned: 'Första sidan hade bara ett alternativ.', say: 'Jag läser en andra sida för att få något att jämföra med.' })] },
+    { tool_calls: [call('complete', { reason: 'Klart [#2]' })] },
+  ]);
+  const ran = [];
+  await run(s, model, async task => { ran.push(task); return { ok: true, verified: true, content: 'x' }; });
+  assert.deepEqual(ran.map(r => r.data.url), ['https://a.test', 'https://b.test']);
+  assert.equal(ran[1].learned, undefined, 'the narration never reaches the tool');
+  const started = s.control.bus.listMissionEvents ? null : null;
+  const last = s.control.bus.lastMissionEvent(m.id, 'NOVA_ACTION_STARTED');
+  assert.equal(last.payload.learned, 'Första sidan hade bara ett alternativ.');
+  const live = toCognitiveEvent({ type: 'NOVA_ACTION_STARTED', payload: last.payload, at: new Date().toISOString(), id: 'l1', mission_id: m.id });
+  assert.equal(live.text, 'Step 2: Första sidan hade bara ett alternativ. Jag läser en andra sida för att få något att jämföra med.');
+});
+
+test('a refused connector write tells the model to use the workspace write tools', () => {
+  assert.match(String(hintForCheck({ ok: false, error: 'MCP_TOOL_NOT_READ_ONLY:filesystem.write_file' })), /repo-write/);
+  assert.equal(hintForCheck({ ok: false, error: 'MCP_TOOL_NOT_READ_ONLY:github.list_issues' }), null);
 });

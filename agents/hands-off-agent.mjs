@@ -49,6 +49,8 @@ import { createGithubNovaControlInbox } from './lib/github-control-inbox.mjs';
 import { enqueueVerifiedReceiptPromotion, flushLivingCorePromotions, ensureLivingCorePromotionState } from './lib/living-core-promotion.mjs';
 import { TASK_FIELDS, taskContract } from './lib/task-fields.mjs';
 import { CODE_TASKS, validateCodingTask } from './lib/coding-contract.mjs';
+import { pickTarget } from './lib/browser-target-match.mjs';
+import { readOperatorLanguage, languageInstruction } from './lib/operator-language.mjs';
 import { nonTextModelKind, openAiChatCompletionsUrl, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
 import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs';
 import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs';
@@ -435,7 +437,7 @@ const runtime = {
 // ── Local Tools ──────────────────────────────────────────────────────────────
 
 export const localTools = {
-  shell(command, timeoutMs = 30000) {
+  shell(command, timeoutMs = 30000, cwd = undefined) {
     // Operator policy: agents must never reach the Stripe account. Planned shell
     // commands run without secrets in their environment and may not name Stripe or .env files.
     if (/stripe|\.env\b|rk_live_|sk_live_/i.test(String(command))) {
@@ -454,6 +456,7 @@ export const localTools = {
         stdio: ["pipe", "pipe", "pipe"],
         maxBuffer: 32 * 1024 * 1024,
         env,
+        ...(cwd ? { cwd } : {}),
       });
       const output = String(result || '').trim();
       return { ok: true, verified: true, exitCode: 0, output: clip(output), outputBytes: output.length, sha256: createHash("sha256").update(output).digest("hex") };
@@ -594,6 +597,13 @@ export async function resolveGuardedTypeText(name, text) {
 
 // ── Robot Lawnmower: Survey → Route → Execute ────────────────────────────────
 
+// The surface flag is read once at start; a bridge that came up later (or was restarted) must still be used,
+// otherwise every browser task fell through to the runtime route and failed with RUNTIME_HTTP_403 (2026-11-06).
+async function novaBridgeUp() {
+  if (state?.surfaces?.nova) return true;
+  try { const h = await nova.health(); if (h?.ok) { state.surfaces.nova = true; state.surfaces.browser = true; return true; } } catch { /* not up */ }
+  return false;
+}
 const lawnmower = {
   routes: existsSync(ROUTES_FILE) ? JSON.parse(readFileSync(ROUTES_FILE, "utf8")) : {},
 
@@ -631,7 +641,7 @@ const lawnmower = {
 
   async navigateAndSurvey(url, label) {
     // Prefer nova bridge (direct CDP, no runtime needed)
-    if (state?.surfaces?.nova) {
+    if (await novaBridgeUp()) {
       const nav = await nova.navigate(url, 3500);
       if (!nav.ok) return nav;
       const surv = await nova.survey(label);
@@ -647,12 +657,12 @@ const lawnmower = {
   },
 
   async clickByName(name, expect, authority) {
-    if (state?.surfaces?.nova) {
+    if (await novaBridgeUp()) {
       const page = await nova.observe();
       if (!page.ok) return page;
-      const matches = (page.targets || []).filter(t => t.visible && t.text?.trim().toLowerCase() === name.trim().toLowerCase());
-      if (matches.length !== 1) return { ok: false, error: matches.length ? 'AMBIGUOUS_TARGET' : 'NO_TARGET' };
-      return nova.click(matches[0].selector, page.url, expect,authority);
+      const picked = pickTarget(page.targets, name);
+      if (!picked.target) return { ok: false, error: picked.error, available: picked.available };
+      return nova.click(picked.target.selector, page.url, expect, authority);
     }
     const routes = await this.findRoute(name);
     if (routes.length === 0) {
@@ -669,12 +679,12 @@ const lawnmower = {
     const guarded = await resolveGuardedTypeText(name, text);
     if (guarded.error) return guarded;
     text = guarded.text;
-    if (state?.surfaces?.nova) {
+    if (await novaBridgeUp()) {
       const page = await nova.observe();
       if (!page.ok) return page;
-      const matches=(page.targets||[]).filter(t=>t.visible && ['input','textarea','select'].includes(t.role) && t.text.toLowerCase()===name.trim().toLowerCase());
-      if(matches.length!==1)return {ok:false,error:'TARGET_NOT_UNIQUE'};
-      return novaApi('POST','/type',{selector:matches[0].selector,text,expectedUrl:page.url,...authority});
+      const picked = pickTarget((page.targets || []).filter(t => ['input', 'textarea', 'select'].includes(t.role)), name);
+      if (!picked.target) return { ok: false, error: picked.error === 'NO_TARGET' ? 'TARGET_NOT_FOUND' : 'TARGET_NOT_UNIQUE', available: picked.available };
+      return novaApi('POST','/type',{selector:picked.target.selector,text,expectedUrl:page.url,...authority});
     }
     const routes = await this.findRoute(name);
     if (routes.length === 0) return { error: "no_route" };
@@ -935,7 +945,9 @@ export async function executeTask(task, state, mission = null) {
     case "type-text":      return computerTools.typeText(task.data.text);
     case "screenshot":     return computerTools.screenshot(task.data || {});
     case "get-cursor":     return computerTools.getCursor();
-    case "shell": return localTools.shell(task.data.command, task.data.timeout);
+    // A project mission works in its own worktree: its shell must run there too. It ran in the main checkout, so `git add`
+    // could not see the files the mission had written, and `npm install` changed the operator's own checkout (2026-11-06).
+    case "shell": return localTools.shell(task.data.command, task.data.timeout, mission?.metadata?.projectRoot ? workspaceFor(mission).root : undefined);
     case "repo-list":
     case "repo-read":
     case "repo-write":
@@ -1908,10 +1920,13 @@ export const paidModelsAllowed = (env = process.env) => env.JACO_ALLOW_PAID_MODE
 // with the shell rule for the host it actually runs on.
 const AGENT_DROP = /^(Output JSON:|Several independent reading steps|continuity is durable|For browser-click, data may include|Task fields:|When the goal appears satisfied, output)/;
 // One rule for web work: the browser protocol first, the operating system only when it cannot reach the page.
-export const WEB_RULE = "Web pages: read with web-fetch. To act on a page use the nova_* browser tools first (nova_observe or nova_ax to see, then nova_click_named, nova_type_named, nova_press, nova_upload; nova_tabs lists only the tabs you opened). They send real input events and verify the result. Use mouse-move, mouse-click, key-press, type-text and desktop-* only when the browser tools cannot reach the target (a native dialog, a window outside the browser), never to get around a refusal: a refused sign-in, payment or password surface stays the operator's to do.";
-export function agentSystemFor(allowedTasks, platform = process.platform, graphMission = false) {
+// Aura said very little while it worked. The sentence before a tool call is shown to the operator as it happens.
+export const NARRATION_RULE = "Talk to the operator like a colleague who works next to them and thinks aloud, in the operator's language, in plain words with no tool names or jargon. Use the say and learned fields of every tool call. On your FIRST call, say your plan: what you will do, in what order, and what the finished result will be. On every later call, learned is one sentence on what the previous result showed and how it changes the plan, and say is one sentence on what you do now and why. If something failed, say what failed and what you will try instead; if you repeat a step, say why. When you complete, answer in short parts: what you did, what you found or made and where it is, what you checked yourself, and what you could not verify.";
+export const WEB_RULE ="Web pages: read with web-fetch. To act on a page use the browser tasks first (browser-survey-site to open and read it, then browser-click and browser-type; give browser-click an expect {url} or {selector} when you know what should appear; a click that moves the page or opens a tab counts as done without one). They send real input events through the browser protocol and verify the result. If nova_* browser tools are listed (nova_ax, nova_click_named, nova_upload, nova_tabs), prefer them for the same reason. Use mouse-move, mouse-click, key-press, type-text and desktop-* only when the browser cannot reach the target (a native dialog, a window outside the browser), never to get around a refusal: a refused sign-in, payment or password surface stays the operator's to do.";
+export function agentSystemFor(allowedTasks, platform = process.platform, graphMission = false, language = readOperatorLanguage()) {
   const lines = brainSystemFor(allowedTasks, graphMission, platform).split("\n").filter(line => !AGENT_DROP.test(line));
-  return lines.join("\n") + "\n" + WEB_RULE + "\nYou act through the functions provided. Call them; each result comes back to you, including errors and refusals: read them and adapt instead of repeating the same call. Several reading calls may go in one answer. When the goal is achieved, call complete with the answer for the operator, citing steps as [#n].";
+  const speak = languageInstruction(language);
+  return lines.join("\n") + "\n" + WEB_RULE + "\n" + NARRATION_RULE + (speak ? "\n" + speak : "") + "\nYou act through the functions provided. Call them; each result comes back to you, including errors and refusals: read them and adapt instead of repeating the same call. Several reading calls may go in one answer. When the goal is achieved, call complete with the answer for the operator, citing steps as [#n].";
 }
 
 const TEMPORARY_COOLDOWN_MS = 15 * 60_000;
@@ -2027,7 +2042,17 @@ async function agentIntroExtras(mission) {
   return extra;
 }
 
+let orphanLeasesReleasedFor = null;
 async function runAgentLoop(state) {
+  // Once per process: planning leases held by an earlier instance of this agent can never be released by it.
+  // Per process, not in the saved state: a flag saved to disk would stop the next process from ever doing this.
+  if (state.agentId && orphanLeasesReleasedFor !== state.agentId) {
+    orphanLeasesReleasedFor = state.agentId;
+    try {
+      const freed = await missionClient.releaseOrphanedPlanning(state.agentId);
+      if (freed?.released?.length) log('info', 'agent', `Freed ${freed.released.length} planning lease(s) left by an earlier instance`);
+    } catch (error) { log('warn', 'agent', `Could not free old planning leases: ${error.message}`); }
+  }
   let introExtras;
   return runAgentMission({
     client: missionClient, owner: state.agentId, chat: req => agentChat(req),
@@ -2116,7 +2141,7 @@ async function runBrain(state) {
     // fallback, no duplicated mission or new execution authority.
     const unsupported = selected?.chosen && agentToolsUnsupported.has(`${selected.name}/${selected.model}`);
     if (result && !(result.deferred && unsupported)) {
-      log('info', 'brain', `Native turn: executed=${Boolean(result.executed)} deferred=${Boolean(result.deferred)} stopped=${result.stopped || 'no'}`);
+      log('info', 'brain', `Native turn: executed=${Boolean(result.executed)} deferred=${Boolean(result.deferred)} stopped=${result.stopped || 'no'}${result.reason ? ' reason=' + String(result.reason).slice(0, 200) : ''}`);
       state.lastBrainTick = state.ticks;
       return result;
     }

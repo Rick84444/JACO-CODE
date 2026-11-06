@@ -41,6 +41,9 @@ export function createEconomicBudgetRouter({ economic, requireOperatorUi, getBal
       // cloudEnabled is the one switch for cloud models (Aura chat and Nova alike). Each cap is a number, or null for no cap.
       const keys = ['dailyCloudUsd', 'monthlyCloudUsd', 'maxCloudUsdPerTask', 'maxAutonomousCloudCallsPer15m', 'cloudEnabled'];
       if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length || Object.keys(body).some(k => !keys.includes(k))) throw new Error('BUDGET_FIELDS_INVALID');
+      // Who changed it, in the runtime log: the ledger only says "operator-ui" for every caller, and the cloud switch
+      // was seen turning itself off around restarts (2026-11-06).
+      if ('cloudEnabled' in body) console.warn(`[budget] cloudEnabled=${body.cloudEnabled} requested by ${String(req.get?.('user-agent') || 'unknown').slice(0, 80)} referer=${String(req.get?.('referer') || '-').slice(0, 100)} fetch-site=${String(req.get?.('sec-fetch-site') || '-')}`);
       const economicState = economic.updatePolicy(body, 'operator-ui');
       res.json({ success: true, economic: economicState });
     } catch (error) { res.status(400).json({ success: false, error: error.message }); }

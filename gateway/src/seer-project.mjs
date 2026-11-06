@@ -14,7 +14,13 @@ const PROJECT_READ_TASKS = ['repo-list', 'repo-read', 'git-status', 'git-diff', 
 // ambiguous goals retain the normal project contract and are bounded elsewhere.
 export function projectGoalCapabilities(statement) {
   const text = String(statement || '');
-  const readOnly = /\b(?:read[ -]?only|no (?:edits?|changes?|writes?)|do not (?:edit|change|modify|write))\b|\b(?:ändra|modifiera|skriv) inte\b|\binga (?:ändringar|skrivningar)\b/i.test(text);
+  // A prohibition makes the goal read-only only when it covers the project as a whole ("do not edit files", "ändra inte
+  // något"). A narrower one ("skriv inte över en färdig fil", "do not change the idea") is advice inside a goal that writes:
+  // treating it as read-only took away every write tool from a build mission, which then completed without writing (2026-11-06).
+  const OBJECT_EN = '(?: (?:anything|files|the files|any files?|the project|the code|the repository))?';
+  const OBJECT_SV = '(?: (?:något|några filer|filer|filerna|projektet|koden|i projektet))?';
+  const END = '(?=\\s*(?:[.,;!]|$| or | eller ))';
+  const readOnly = new RegExp(`\\b(?:read[ -]?only|change nothing|no (?:edits?|changes?|writes?))\\b|\\bdo not (?:edit|change|modify|write)${OBJECT_EN}${END}|(?:^|[^\\p{L}])(?:ändra|modifiera|skriv) inte${OBJECT_SV}${END}|(?:^|[^\\p{L}])(?:inga (?:ändringar|skrivningar)|ändra ingenting)(?![\\p{L}])`, 'iu').test(text);
   const noNetwork = /\bno (?:network|internet)\b|\b(?:do not|don't|without)\b[^.\n]*\b(?:network|internet)\b|\b(?:inget|ingen|utan) (?:nätverk|internet)\b/i.test(text);
   const tasks = readOnly ? [...PROJECT_READ_TASKS] : [...PROJECT_TASKS];
   // A browser observation remains an Aura mission even when an IDE project is
@@ -38,7 +44,14 @@ export function projectNodeContract({ title, objective, mainGoal, projectRoot = 
   const what = String(objective || title || '').trim();
   if (!what) throw new Error('PROJECT_NODE_OBJECTIVE_REQUIRED');
   const { readOnly } = projectGoalCapabilities(`${what}\n${String(mainGoal || '')}`);
-  const testCommand = readOnly ? null : detectProjectTestCommand(projectRoot);
+  // A mission that creates something new (a demo page, a document, a prototype) in its own files has no existing code
+  // to regress: the project's whole test suite is not its proof. Requiring it made such a mission impossible to finish in a
+  // fresh worktree (no installed packages, and a suite that already fails), 2026-11-06.
+  const buildsSomethingNew = !readOnly
+    && /\b(?:build|create|make|write|generate|design|bygg|bygga|skapa|skriv|demo|prototyp|prototype)\b/i.test(what)
+    && /\b(?:demo|html|product|produkt|prototype|prototyp|page|sida|document|dokument|spec|report|rapport)\b/i.test(what)
+    && !/\b(?:fix|bug|debug|repair|regression|refactor|test|tests|testing|testa|felsök|rätta)\b/i.test(what);
+  const testCommand = readOnly || buildsSomethingNew ? null : detectProjectTestCommand(projectRoot);
   const needsNewTests = !readOnly && /\b(?:test|tests|testing|fix|bug|debug|repair|regression|verify|verification|falsifier|testa|felsök)\b/i.test(what);
   return {
     schema: 'jaco.coding-contract/v1',
@@ -55,7 +68,7 @@ export function projectNodeContract({ title, objective, mainGoal, projectRoot = 
       allow_git_push: false,
       allow_git_merge: false,
     },
-    verification: { tests_required: Boolean(testCommand) || needsNewTests, allow_workspace_tests: !readOnly, falsifier_required: false, receipt_required: true, commands: testCommand ? [testCommand] : [] },
+    verification: { change_required: buildsSomethingNew, tests_required: Boolean(testCommand) || needsNewTests, allow_workspace_tests: !readOnly, falsifier_required: false, receipt_required: true, commands: testCommand ? [testCommand] : [] },
     budget: { max_steps: 40, max_tool_calls: 60, max_failures: 5, max_duration_ms: 3_600_000 },
   };
 }
