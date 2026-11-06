@@ -598,7 +598,8 @@ export class NovaMissionControl {
     const action = { ...checked, id: `${id}:turn:${row.turn + 1}`, missionId: id };
     this.db.prepare("UPDATE nova_sessions SET phase='EXECUTING',active_task_json=?,turn=turn+1,lease_until=? WHERE mission_id=?")
       .run(JSON.stringify(action), this.now() + actionLeaseMs(checked.type), id);
-    this.bus.event('NOVA_ACTION_STARTED', { missionId: id, payload: { action } });
+    const say = typeof task?.say === 'string' ? task.say.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+    this.bus.event('NOVA_ACTION_STARTED', { missionId: id, payload: { action, ...(say ? { say } : {}) } });
     return action;
   }
 

@@ -74,7 +74,7 @@ export function toCognitiveEvent(raw, { durable = false, missionGoal = null, sec
     error: clean(action.error || payload.error || result.error, 1000) || null,
   };
   let text = clean(raw.message);
-  if (type === 'NOVA_ACTION_STARTED') text = (labels[action.type] || 'Running a tool step') + (evidence.path ? ': ' + evidence.path : '.');
+  if (type === 'NOVA_ACTION_STARTED') text = clean(payload.say, 300) || ((labels[action.type] || 'Running a tool step') + (evidence.path ? ': ' + evidence.path : '.'));
   if (type === 'NOVA_ACTION_RESULT') {
     const verb = labels[action.type || payload.type] || 'Tool step';
     text = outcome === 'verified' ? verb + ': the result is verified.'

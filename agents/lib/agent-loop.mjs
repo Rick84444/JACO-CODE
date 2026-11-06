@@ -298,9 +298,11 @@ export async function runAgentMission({
         }
 
         const { expectedOutcome, ...data } = args || {};
+        // The sentence the model wrote before the call (what it is doing and why) is shown to the operator as it happens.
+        const say = String(reply?.content || '').replace(/\s+/g, ' ').trim().slice(0, 300);
         const task = target.kind === 'mcp'
-          ? { type: target.write ? 'mcp-write' : 'mcp-call', data: { server: target.server, tool: target.tool, arguments: data }, expectedOutcome }
-          : { type: target.type, data, ...(expectedOutcome ? { expectedOutcome: String(expectedOutcome).slice(0, 300) } : {}) };
+          ? { type: target.write ? 'mcp-write' : 'mcp-call', data: { server: target.server, tool: target.tool, arguments: data }, expectedOutcome, ...(say ? { say } : {}) }
+          : { type: target.type, data, ...(expectedOutcome ? { expectedOutcome: String(expectedOutcome).slice(0, 300) } : {}), ...(say ? { say } : {}) };
 
         let lease, begun;
         try {
