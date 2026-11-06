@@ -748,3 +748,18 @@ test('the sentence can be a parameter of the call, which is how models that retu
   assert.deepEqual(ran[0].data, { url: 'https://example.test' }, 'the sentence is not passed to the tool as an argument');
   assert.equal(s.control.bus.lastMissionEvent(m.id, 'NOVA_ACTION_STARTED').payload.say, 'Jag hämtar sidan för att se vad den innehåller.');
 });
+
+test('a planning lease left by an earlier instance of the agent is freed, a live one and an executing step are not', t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Titta', idempotencyKey: 'orph1', allowedTasks: ['web-fetch'] });
+  const claimed = s.control.claim(m.id, 'agent:nova:oldinstance');
+  assert.ok(claimed.token);
+  // The new instance frees only leases that belong to the same kind of agent and a different instance.
+  assert.deepEqual(s.control.releaseOrphanedPlanning('agent:nova:', 'agent:nova:newinstance').released, [m.id]);
+  assert.equal(s.control.get(m.id).status, 'ACTIVE');
+  assert.ok(s.control.claim(m.id, 'agent:nova:newinstance').token, 'the mission can be claimed again at once');
+  // Its own lease is never freed, and another kind of agent is left alone.
+  assert.deepEqual(s.control.releaseOrphanedPlanning('agent:nova:', 'agent:nova:newinstance').released, []);
+  assert.deepEqual(s.control.releaseOrphanedPlanning('agent:other:', 'agent:nova:x').released, []);
+  assert.deepEqual(s.control.releaseOrphanedPlanning('', 'x').released, []);
+});
