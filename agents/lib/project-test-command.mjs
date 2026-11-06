@@ -22,6 +22,16 @@ function shellStages(source) {
       continue;
     }
     if (char === "'" || char === '"') { quote = char; current += char; continue; }
+    if (char === '#' && (i === 0 || /\s/.test(script[i - 1]))) {
+      // In a POSIX shell an unquoted comment discards the rest of this line.
+      // Ignore apparent test commands inside it.
+      while (i < script.length && script[i] !== '\n') i++;
+      if (i < script.length) {
+        if (current.trim()) stages.push({ command: current.trim(), join });
+        current = ''; join = ';';
+      }
+      continue;
+    }
     // A plain pipeline reports the last process status unless pipefail is
     // explicitly active. It can mask a failed test, so do not certify it.
     if ((char === '|' && script[i + 1] !== '|' && script[i - 1] !== '|') ||
@@ -43,7 +53,7 @@ function shellStages(source) {
 
 function npmScriptCanCertifyTests(script) {
   const stages = shellStages(script);
-  if (!stages.length || stages.length > 32) return false;
+  if (!stages.length || stages.length > 32 || stages.some(({ command }) => /^!\s*/.test(command))) return false;
   // State represents last exit code, whether a meaningful command succeeded,
   // and whether the script explicitly terminated.
   let states = [{ ok: true, verified: false, failedTest: false, ended: false }];
