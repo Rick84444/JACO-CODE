@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { execFileSync, execSync, spawn } from 'node:child_process';
 import net from 'node:net';
 import { processBirth } from './local-stack.mjs';
-import { isPathAllowed, canListContractPath, validateCodingTask } from './coding-contract.mjs';
+import { isPathAllowed, canListContractPath, validateCodingTask, workspaceNodeTestPath } from './coding-contract.mjs';
 
 const sha = value => crypto.createHash('sha256').update(value).digest('hex');
 
@@ -188,8 +188,27 @@ export function createCodingWorkspace({ root = process.cwd(), protectedBranches:
         }
         case 'repo-test': {
           try {
-            const output = execSync(data.command, { cwd: workspaceRoot, encoding: 'utf8', timeout: Math.min(Number(data.timeout || 120_000), 300_000), windowsHide: true, env: safeEnv(), stdio: ['ignore','pipe','pipe'] });
-            return { ok: true, verified: true, command: data.command, kind: data.kind || 'test', output: output.slice(-20_000), verificationActor: actor };
+            const generated = !contract.verification.commands.includes(data.command)
+              ? workspaceNodeTestPath(data.command) : null;
+            if (generated) {
+              const testFile = resolvePath(generated);
+              if (!fs.existsSync(testFile) || !fs.statSync(testFile).isFile()) throw new Error('CODING_GENERATED_TEST_NOT_FOUND');
+            }
+            const runOptions = { cwd: workspaceRoot, encoding: 'utf8', timeout: Math.min(Number(data.timeout || 120_000), 300_000), windowsHide: true, env: safeEnv(), stdio: ['ignore','pipe','pipe'] };
+            // Generated tests use an explicit TAP reporter for machine-verifiable
+            // counts. Node's default reporter varies by TTY/CI environment.
+            const output = generated
+              ? execFileSync(process.execPath, ['--test', '--test-reporter=tap', generated], runOptions)
+              : execSync(data.command, runOptions);
+            if (generated) {
+              const observed = [...output.matchAll(/(?:^|\n)# tests (\d+)(?:\r?\n|$)/g)];
+              const passed = [...output.matchAll(/(?:^|\n)# pass (\d+)(?:\r?\n|$)/g)];
+              if (!observed.length || Number(observed.at(-1)[1]) < 1 ||
+                  !passed.length || Number(passed.at(-1)[1]) < 1)
+                throw new Error('CODING_GENERATED_TEST_NO_PASSING_TESTS_OBSERVED');
+            }
+            return { ok: true, verified: true, command: data.command, kind: data.kind || 'test',
+              ...(generated ? { generatedTest: generated } : {}), output: output.slice(-20_000), verificationActor: actor };
           } catch (error) {
             return { ok: false, verified: false, command: data.command, kind: data.kind || 'test', error: error.message, stderr: String(error.stderr || '').slice(-20_000), verificationActor: actor };
           }

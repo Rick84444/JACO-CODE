@@ -1,30 +1,18 @@
-// A goal in JACO Lite: no SEER, so the runtime creates the Nova mission itself. Differences from the
-// SEER path (gateway/src/seer-project.mjs), on purpose:
-//   - the contract REQUIRES the project's own tests after the last change when a test command can be
-//     found (the SEER path switches that off, which is how an earlier "VERIFIED" Lite package had two
-//     failing tests); a project without a test command is labelled as not verified by tests;
-//   - Nova works in a git copy of the project, so the project must be a git repository with commits.
+// JACO Lite creates its project mission directly, without the gateway planner.
+// Both full IDE and Lite now discover project test commands through one shared module,
+// so an agent can edit, test, retry and verify without a second approval for each run.
+// Lite additionally requires a Git repository with an initial commit for its worktree.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { projectNodeContract } from '../../../../gateway/src/seer-project.mjs';
+import { detectProjectTestCommand } from '../../../../agents/lib/project-test-command.mjs';
 
 export const LITE_TASKS = ['repo-list', 'repo-read', 'repo-write', 'repo-edit', 'repo-test', 'repo-service', 'git-status', 'git-diff', 'git-commit', 'web-fetch'];
 
-// The command that runs the project's tests, or null. Only commands Nova may run without extra setup:
-// npm test (not npm's "no test specified" placeholder), node's own runner, Python's pytest.
-export function detectTestCommand(projectRoot, fsImpl = fs) {
-  const has = rel => fsImpl.existsSync(path.join(projectRoot, rel));
-  if (has('package.json')) {
-    try {
-      const script = String(JSON.parse(fsImpl.readFileSync(path.join(projectRoot, 'package.json'), 'utf8')).scripts?.test || '');
-      if (script.trim() && !/no test specified/i.test(script)) return 'npm test';
-    } catch { /* unreadable package.json: no command */ }
-  }
-  if (has('pytest.ini') || has('conftest.py') || (has('pyproject.toml') && /pytest/.test(fsImpl.readFileSync(path.join(projectRoot, 'pyproject.toml'), 'utf8')))) return 'python -m pytest';
-  return null;
-}
+// The complete IDE and Lite modes use the same evidence-based test discovery.
+export { detectProjectTestCommand as detectTestCommand } from '../../../../agents/lib/project-test-command.mjs';
 
 export function liteContract({ goal, testCommand }) {
   const base = projectNodeContract({ title: String(goal).slice(0, 120), objective: goal, mainGoal: goal });
@@ -34,7 +22,7 @@ export function liteContract({ goal, testCommand }) {
       ...base.acceptance.slice(0, 1),
       testCommand ? `The project's tests (${testCommand}) pass after the last change` : 'No test command was found in this project: the result is NOT verified by tests',
     ],
-    verification: { tests_required: Boolean(testCommand), falsifier_required: false, independent_verification: false, receipt_required: true, commands: testCommand ? [testCommand] : [], required_stages: [] },
+    verification: { ...base.verification, tests_required: Boolean(testCommand) || base.verification.tests_required, falsifier_required: false, independent_verification: false, receipt_required: true, commands: testCommand ? [testCommand] : [], required_stages: [] },
     budget: { max_steps: 60, max_tool_calls: 120, max_failures: 5, max_duration_ms: 3_600_000 },
   };
 }
@@ -66,7 +54,7 @@ export function createLiteGoal({ novaMissions, projectRoot, goal, initGit = fals
   if (text.length > 12000) return { ok: false, code: 'GOAL_TOO_LARGE', message: 'The goal is too long.' };
   const repo = ensureGitProject(projectRoot, { initGit, run });
   if (!repo.ok) return repo;
-  const testCommand = detectTestCommand(projectRoot, fsImpl);
+  const testCommand = detectProjectTestCommand(projectRoot, fsImpl);
   const mission = novaMissions.create({
     goal: text, source: 'lite-goal', idempotencyKey: `lite-${Date.now()}-${crypto.randomUUID()}`,
     allowedTasks: LITE_TASKS, contract: liteContract({ goal: text, testCommand }), projectRoot,

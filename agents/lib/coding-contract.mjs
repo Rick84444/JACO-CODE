@@ -118,6 +118,7 @@ export function normalizeCodingContract(input = {}, fallbackObjective = '') {
       independent_verification: input.verification?.independent_verification === true,
       receipt_required: input.verification?.receipt_required !== false,
       commands,
+      allow_workspace_tests: input.verification?.allow_workspace_tests === true,
       required_stages: [...new Set(requiredStages)],
     },
     // Defaults raised 2026-10-02 (operator: longer development runs before asking). Within the budget
@@ -158,7 +159,16 @@ export function contractVerificationStatus(contract, receipts = []) {
   const changedFile = r => !(r.result?.beforeSha256 && r.result.beforeSha256 === r.result.afterSha256);
   const lastWriteTurn = verified.filter(r => (r.type === 'repo-write' || r.type === 'repo-edit') && changedFile(r)).reduce((max, r) => Math.max(max, receiptTurn(r)), -1);
   const afterLastWrite = r => receiptTurn(r) < 0 || receiptTurn(r) > lastWriteTurn;
-  const hasTest = verified.some(r => r.type === 'repo-test' && r.result?.kind !== 'falsifier' && afterLastWrite(r));
+  const passedTest = r => r.type === 'repo-test' && r.result?.kind !== 'falsifier' && afterLastWrite(r);
+  // Minted workspace tests supplement the original suite; they never replace it.
+  // For this new contract mode every pre-contracted command still needs its own
+  // successful receipt after the latest code change.
+  const requiredCommands = contract.verification.allow_workspace_tests
+    ? (contract.verification.commands || []) : [];
+  const hasTest = requiredCommands.length
+    ? requiredCommands.every(command => verified.some(r => passedTest(r) &&
+        (r.result?.command || r.input?.command || r.task?.data?.command) === command))
+    : verified.some(passedTest);
   const hasFalsifier = verified.some(r => r.type === 'repo-test' && r.result?.kind === 'falsifier' && afterLastWrite(r));
   const hasIndependent = verified.some(r => r.result?.independentVerification === true && r.result?.verificationActor && r.result?.implementationActor && r.result.verificationActor !== r.result.implementationActor && afterLastWrite(r));
   const missing = [];
@@ -189,6 +199,16 @@ export function codingExecutionSummary(contract, receipts = [], phase = 'READY')
   return {goal:contract?.objective||null,phase,verifiedActions:receipts.filter(r=>r.ok&&r.verified).length,failedActions:receipts.filter(r=>r.ok===false).length,lastVerifiedAction:receipts.findLast(r=>r.ok&&r.verified)?.actionId||null,remaining:status.missing,recovery};
 }
 
+// The operator's writable workspace contract can grant bounded, newly authored
+// Node test files without pre-registering each filename. This is a command
+// grammar, not a shell escape or a second policy engine.
+export function workspaceNodeTestPath(command) {
+  if (typeof command !== 'string' || command.length > 240) return null;
+  const match = /^node --test ((?:tests|src)\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.test\.(?:mjs|cjs|js))$/.exec(command);
+  if (!match || match[1].split('/').some(part => part === '.' || part === '..' || part.startsWith('.'))) return null;
+  return match[1];
+}
+
 export function validateCodingTask(task, contract, receipts = []) {
   if (!CODE_TASKS.has(task?.type)) return task;
   if (!contract) throw new Error('CODING_CONTRACT_REQUIRED');
@@ -212,7 +232,10 @@ export function validateCodingTask(task, contract, receipts = []) {
     data.replaceAll = data.replaceAll === true;
   }
   if (task.type === 'repo-test') {
-    if (typeof data.command !== 'string' || !contract.verification.commands.includes(data.command)) throw new Error('CODING_TEST_COMMAND_NOT_CONTRACTED');
+    const dynamicTest = contract.verification.allow_workspace_tests && workspaceNodeTestPath(data.command);
+    if (typeof data.command !== 'string' ||
+        (!contract.verification.commands.includes(data.command) &&
+         !(dynamicTest && isPathAllowed(contract, dynamicTest)))) throw new Error('CODING_TEST_COMMAND_NOT_CONTRACTED');
     if (!['test','falsifier','verify'].includes(data.kind || 'test')) throw new Error('CODING_TEST_KIND_INVALID');
     data.kind ||= 'test';
   }
