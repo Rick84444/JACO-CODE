@@ -57,7 +57,15 @@ export function atomicWriteJson(file, value) {
   ensureDir(path.dirname(file));
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-  fs.renameSync(tmp, file);
+  // On Windows a rename over a file another process has open (a virus scanner, an indexer, a reader) fails with
+  // EPERM/EBUSY for a moment. It used to surface as a 500 that stopped a mission's model call (2026-11-06).
+  for (let attempt = 0; ; attempt++) {
+    try { fs.renameSync(tmp, file); return; }
+    catch (error) {
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes(error?.code) || attempt >= 12) { try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ } throw error; }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15 * (attempt + 1));
+    }
+  }
 }
 
 export function readJson(file, fallback = null) {
