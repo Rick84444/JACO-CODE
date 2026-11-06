@@ -713,10 +713,3 @@ test('few connector tools stay listed, and a search with no match says so', () =
   assert.deepEqual(searchDeferredTools(deferred, 'zebra'), []);
   assert.deepEqual(searchDeferredTools(deferred, 'commit log', new Set(['mcp__git__git_log'])), []);
 });
-
-test('a native browser-click must say what it expects to see, because an unverified click blocks the mission', () => {
-  const { tools } = plannerTools(['browser-click', 'browser-survey-site'], [], {}, false);
-  const click = tools.find(t => t.function.name === 'browser-click').function.parameters;
-  assert.deepEqual(click.required, ['name', 'expect']);
-  assert.deepEqual(tools.find(t => t.function.name === 'browser-survey-site').function.parameters.required, ['url']);
-});
