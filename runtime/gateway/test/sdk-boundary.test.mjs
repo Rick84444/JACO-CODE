@@ -4,9 +4,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root=join(dirname(fileURLToPath(import.meta.url)),'..');
 const pkg=JSON.parse(await readFile(join(root,'package.json'),'utf8'));
-assert.equal(pkg.dependencies['@modelcontextprotocol/server'],'2.0.0');
-assert.equal(pkg.dependencies['@modelcontextprotocol/node'],'2.0.0');
-assert.equal(pkg.devDependencies['@modelcontextprotocol/client'],'2.0.0');
+// The SDK is pinned to an exact 2.x release (no range), so a dependency bump is a deliberate, reviewed change.
+// The test no longer names one version: a routine bump of the pin must not break the gateway suite.
+for(const [name,version] of [['@modelcontextprotocol/server',pkg.dependencies['@modelcontextprotocol/server']],['@modelcontextprotocol/node',pkg.dependencies['@modelcontextprotocol/node']],['@modelcontextprotocol/client',pkg.devDependencies['@modelcontextprotocol/client']]])
+  assert.match(version,/^2\.\d+\.\d+$/,name+' must be an exact 2.x version');
 const stdio=await readFile(join(root,'src','mcp-stdio.mjs'),'utf8');
 const sentinel=await readFile(join(root,'src','sentinel.mjs'),'utf8');
 const factory=await readFile(join(root,'src','mcp-factory.mjs'),'utf8');
