@@ -1,5 +1,6 @@
 import * as React from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
+import { isStaleBuildError, reloadForNewBuild } from '../lib/staleBuild.ts';
 
 // Without a boundary, one exception while rendering unmounts the whole app and leaves an empty page.
 // This shows what failed, keeps the text copyable, and offers a reload.
@@ -17,6 +18,7 @@ export class CrashGuard extends React.Component<{ children: ReactNode }, State> 
   componentDidCatch(error: Error, info: ErrorInfo) {
     this.setState({ where: String(info.componentStack || '').split('\n').filter(Boolean).slice(0, 6).join('\n') });
     console.error('JACO screen crashed', error, info.componentStack);
+    if (isStaleBuildError(error)) reloadForNewBuild();
   }
 
   render() {
