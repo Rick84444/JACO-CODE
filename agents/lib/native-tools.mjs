@@ -113,6 +113,15 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
     type: 'object', properties: { reason: { type: 'string' }, subgoals: { type: 'array', minItems: 2, maxItems: 8, items: { type: 'object', properties: { title: { type: 'string' }, objective: { type: 'string' } }, required: ['title','objective'], additionalProperties: false } } }, required: ['reason','subgoals'], additionalProperties: false,
   }));
   if (allowReplan) targets.set('request_replan', { kind: 'replan' });
+  if (allowReplan) {
+    tools.push(fn('delegate', 'Create helper agents: hand two to eight parts of this goal to helpers, each with a role (for example Researcher, Writer, Builder, Tester) and one clear task. Each helper runs as its own mission with its own context and budget, one after another, and its results and files come back to this mission graph. Use it when the goal has separate parts; do a small task yourself.', {
+      type: 'object', properties: {
+        reason: { type: 'string', description: 'Why you split the work this way, in plain words for the operator' },
+        helpers: { type: 'array', minItems: 2, maxItems: 8, items: { type: 'object', properties: { role: { type: 'string' }, task: { type: 'string' } }, required: ['role', 'task'], additionalProperties: false } },
+      }, required: ['reason', 'helpers'], additionalProperties: false,
+    }));
+    targets.set('delegate', { kind: 'delegate' });
+  }
   return { tools, deferred, resolve: name => targets.get(name) || null };
 }
 

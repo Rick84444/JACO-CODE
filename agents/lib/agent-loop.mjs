@@ -294,6 +294,19 @@ export async function runAgentMission({
             : `No unlisted tool matches "${String(args.query || '').slice(0, 60)}". Try other words, or use the listed tools.`);
           continue;
         }
+        // Helper agents: each part becomes its own mission in the graph, with its own context and budget, run one after
+        // another by SEER; their receipts come back to the graph. Aura could not do this before and said so (2026-11-06).
+        if (target.kind === 'delegate') {
+          const helpers = (Array.isArray(args.helpers) ? args.helpers : []).filter(h => h && typeof h.task === 'string' && h.task.trim()).slice(0, 8);
+          if (helpers.length < 2) { reply_('DELEGATE_NEEDS_TWO_HELPERS: give at least two helpers, each with a role and a task. For one small part, do it yourself.'); continue; }
+          const reason = String(args.reason || 'Splitting the work between helper agents.').slice(0, 1000);
+          const subgoals = helpers.map(h => {
+            const role = String(h.role || 'Helper').replace(/\s+/g, ' ').trim().slice(0, 60);
+            const task = String(h.task).replace(/\s+/g, ' ').trim();
+            return { title: `${role}: ${task}`.slice(0, 300), objective: `You are the ${role} helper agent in Aura's team. Do only this part and finish with what you produced and where it is: ${task}`.slice(0, 2000) };
+          });
+          return end({ blocked: true, reason, delegated: subgoals.map(s => s.title) }, { replanRequest: { reason, subgoals } });
+        }
         if (target.kind === 'blocked' || target.kind === 'replan') {
           const reason = String(args.reason || 'no allowed tool can make progress').slice(0, 500);
           return end({ blocked: true, reason }, target.kind === 'replan' ? { replanRequest: { reason, subgoals: args.subgoals } } : { error: `PLANNER_BLOCKED:${reason}` });

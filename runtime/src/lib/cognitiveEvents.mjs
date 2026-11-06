@@ -45,7 +45,7 @@ const SV = {
   'Cancellation requested': 'Avbrott begärt', 'New instruction queued': 'Ny instruktion i kö', 'Payment awaiting your approval': 'Betalning väntar på ditt godkännande',
   'Claim check': 'Kontroll av påståenden', 'The plan has changed': 'Planen har ändrats', 'Work is blocked': 'Arbetet är blockerat', 'Connection restored': 'Anslutningen är tillbaka',
   'Sub-goal check': 'Kontroll av delmål', 'Mission state is unknown': 'Uppdragets läge är okänt', 'A new mission has been registered': 'Ett nytt uppdrag har registrerats',
-  'Verification': 'Verifiering', 'Planning': 'Planering', 'New observation': 'Ny observation', 'Answer': 'Svar', 'Stopped': 'Stoppat',
+  'Verification': 'Verifiering', 'Work handed to helper agents': 'Arbetet lämnat till hjälpagenter', 'Planning': 'Planering', 'New observation': 'Ny observation', 'Answer': 'Svar', 'Stopped': 'Stoppat',
   'the page has no such link or button': 'sidan har ingen sådan länk eller knapp', 'more than one element matched': 'fler än ett element passade',
   'the field was not found': 'fältet hittades inte', 'more than one field matched': 'fler än ett fält passade', 'the page changed before the step ran': 'sidan ändrades innan steget kördes',
   'that page is not allowed': 'den sidan är inte tillåten', 'the browser connection refused the step': 'webbläsaranslutningen nekade steget',
@@ -155,7 +155,11 @@ export function toCognitiveEvent(raw, { durable = false, missionGoal = null, sec
     else if (payload.error) title = t('Stopped');
     text = clean(payload.error || payload.reason) || (payload.completionProposed ? t('A final result has been proposed. It must be checked against the evidence.') : '');
   }
-  if (type === 'NOVA_REPLAN_REQUEST') text = clean(payload.reason) || t('The runtime has requested a new plan for the mission.');
+  if (type === 'NOVA_REPLAN_REQUEST') {
+    const helpers = (Array.isArray(payload.subgoals) ? payload.subgoals : []).map(s => clean(s?.title, 120)).filter(Boolean);
+    text = clean(payload.reason) || t('The runtime has requested a new plan for the mission.');
+    if (helpers.length) { title = t('Work handed to helper agents'); text += ` ${sv ? 'Hjälpagenter' : 'Helper agents'}: ${helpers.join('; ')}.`; }
+  }
   if (type === 'NOVA_CANCEL_REQUEST') text = t('The runtime has received the request. A running tool step may need to finish before the mission stops.');
   if (!text) text = clean(payload.reason || payload.summary);
   // The step number gives the operator a sense of progress: what is being done now, and how far in the mission is.
