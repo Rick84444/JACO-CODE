@@ -49,6 +49,7 @@ import { createGithubNovaControlInbox } from './lib/github-control-inbox.mjs';
 import { enqueueVerifiedReceiptPromotion, flushLivingCorePromotions, ensureLivingCorePromotionState } from './lib/living-core-promotion.mjs';
 import { TASK_FIELDS, taskContract } from './lib/task-fields.mjs';
 import { CODE_TASKS, validateCodingTask } from './lib/coding-contract.mjs';
+import { pickTarget } from './lib/browser-target-match.mjs';
 import { nonTextModelKind, openAiChatCompletionsUrl, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
 import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs';
 import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs';
@@ -657,9 +658,9 @@ const lawnmower = {
     if (await novaBridgeUp()) {
       const page = await nova.observe();
       if (!page.ok) return page;
-      const matches = (page.targets || []).filter(t => t.visible && t.text?.trim().toLowerCase() === name.trim().toLowerCase());
-      if (matches.length !== 1) return { ok: false, error: matches.length ? 'AMBIGUOUS_TARGET' : 'NO_TARGET' };
-      return nova.click(matches[0].selector, page.url, expect,authority);
+      const picked = pickTarget(page.targets, name);
+      if (!picked.target) return { ok: false, error: picked.error, available: picked.available };
+      return nova.click(picked.target.selector, page.url, expect, authority);
     }
     const routes = await this.findRoute(name);
     if (routes.length === 0) {
@@ -679,9 +680,9 @@ const lawnmower = {
     if (await novaBridgeUp()) {
       const page = await nova.observe();
       if (!page.ok) return page;
-      const matches=(page.targets||[]).filter(t=>t.visible && ['input','textarea','select'].includes(t.role) && t.text.toLowerCase()===name.trim().toLowerCase());
-      if(matches.length!==1)return {ok:false,error:'TARGET_NOT_UNIQUE'};
-      return novaApi('POST','/type',{selector:matches[0].selector,text,expectedUrl:page.url,...authority});
+      const picked = pickTarget((page.targets || []).filter(t => ['input', 'textarea', 'select'].includes(t.role)), name);
+      if (!picked.target) return { ok: false, error: picked.error === 'NO_TARGET' ? 'TARGET_NOT_FOUND' : 'TARGET_NOT_UNIQUE', available: picked.available };
+      return novaApi('POST','/type',{selector:picked.target.selector,text,expectedUrl:page.url,...authority});
     }
     const routes = await this.findRoute(name);
     if (routes.length === 0) return { error: "no_route" };
