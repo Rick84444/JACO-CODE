@@ -156,6 +156,9 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
   const history = auraStageHistory(events);
   const activity = auraActivityFeed(events, activeMission?.id || null);
   const activityState = auraActivityState(presence.mode, Boolean(activeMission));
+  // After an answer the header said "waiting for a mission", which read as if nothing had happened.
+  const newest = events.reduce((best: any, e: any) => (!best || (Date.parse(e.at) || 0) > (Date.parse(best.at) || 0) ? e : best), null);
+  const answered = activityState === 'idle' && newest?.title === 'Answer';
   const material = candidate?.material;
   const url = event ? cognitiveLink(event.evidence.url) : null;
   return <div className="aura-live-stage" data-testid="aura-live-stage">
@@ -169,7 +172,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
           stalled: tr('Inget händer just nu','Nothing is happening right now'),
           blocked: tr('Aura behöver dig','Aura needs you'),
           unknown: tr('Hämtar läget','Checking status'),
-          idle: tr('Aura väntar på ett uppdrag','Aura is waiting for a mission'),
+          idle: answered ? tr('Klart: Aura har svarat','Done: Aura has answered') : tr('Aura väntar på ett uppdrag','Aura is waiting for a mission'),
         }[activityState]}</strong>
         {activeMission && <span>{presence.phaseLabel}{presence.stepCount !== null ? ` · ${tr('steg','step')} ${presence.stepCount}${presence.maxSteps ? `/${presence.maxSteps}` : ''}` : ''}</span>}
       </header>
