@@ -351,3 +351,25 @@ test('a click with no expectation is verified by what the browser saw it do: a n
   assert.equal(still.verified, false);
   assert.equal(still.effect, undefined);
 });
+
+test('a click whose stated expectation did not come true, but moved the page, is verified with expectationMet false', async () => {
+  const evaluate = async (session, expression) => (await session.send('Runtime.evaluate', { expression })).result.value;
+  const run = async afterUrl => {
+    const s = page({ predicate: [false, ...Array(80).fill(false)] });
+    let clicked = false;
+    const original = s.send.bind(s);
+    s.send = async (method, params = {}) => {
+      if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased') clicked = true;
+      return original(method, params);
+    };
+    const actions = createInputActions({ evaluate, observe: async () => ({ ...OBSERVATION, url: clicked ? afterUrl : OBSERVATION.url }) });
+    return actions.actSession(s, { selector: 'a.more', expect: { url: 'https://wrong.example/guess' }, expectedUrl: OBSERVATION.url }, 'click');
+  };
+  const moved = await run('https://www.iana.org/help/example-domains');
+  assert.equal(moved.verified, true);
+  assert.equal(moved.effect, 'navigated');
+  assert.equal(moved.expectationMet, false);
+  const still = await run(OBSERVATION.url);
+  assert.equal(still.verified, false);
+  assert.equal(still.expectationMet, false);
+});
