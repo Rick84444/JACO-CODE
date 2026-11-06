@@ -62,7 +62,9 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
     tools.push(fn(type, taskNotes[type] ? `Learned: ${taskNotes[type]}` : null, {
       ...taskContract(type),
       properties: { ...taskContract(type).properties, expectedOutcome: { type: 'string' } },
-      required: fields, additionalProperties: true,
+      // A click without an observable expectation comes back unverified, and an unverified mutation blocks the
+      // mission (a real run did exactly that, 2026-11-06). The model must say what it expects to see.
+      required: type === 'browser-click' ? [...fields, 'expect'] : fields, additionalProperties: true,
     }));
     targets.set(type, { kind: 'task', type });
   }
