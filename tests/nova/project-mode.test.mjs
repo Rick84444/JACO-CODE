@@ -316,6 +316,8 @@ test('a mission that builds something new does not need the whole project test s
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
     const made = normalizeCodingContract(projectNodeContract({ title: 'Demo', objective: 'Build a sellable HTML demo page in demo/index.html', mainGoal: 'Create a product demo', projectRoot: root }));
     assert.equal(made.verification.tests_required, false);
+    assert.equal(made.verification.change_required, true);
+    assert.deepEqual(contractVerificationStatus(made, [{ type: 'repo-list', ok: true, verified: true, actionId: 'm:turn:1' }]).missing, ['change'], 'reading is not making');
     assert.deepEqual(made.verification.commands, []);
     assert.equal(contractVerificationStatus(made, [{ type: 'repo-write', ok: true, verified: true, actionId: 'm:turn:1', result: { beforeSha256: null, afterSha256: 'x' } }, { type: 'git-commit', ok: true, verified: true, actionId: 'm:turn:2' }]).machineVerified, true);
     const fix = normalizeCodingContract(projectNodeContract({ title: 'Fix', objective: 'Fix the bug in the demo page', mainGoal: 'Fix it', projectRoot: root }));

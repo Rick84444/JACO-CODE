@@ -62,7 +62,7 @@ export function projectNodeContract({ title, objective, mainGoal, projectRoot = 
       allow_git_push: false,
       allow_git_merge: false,
     },
-    verification: { tests_required: Boolean(testCommand) || needsNewTests, allow_workspace_tests: !readOnly, falsifier_required: false, receipt_required: true, commands: testCommand ? [testCommand] : [] },
+    verification: { change_required: buildsSomethingNew, tests_required: Boolean(testCommand) || needsNewTests, allow_workspace_tests: !readOnly, falsifier_required: false, receipt_required: true, commands: testCommand ? [testCommand] : [] },
     budget: { max_steps: 40, max_tool_calls: 60, max_failures: 5, max_duration_ms: 3_600_000 },
   };
 }
