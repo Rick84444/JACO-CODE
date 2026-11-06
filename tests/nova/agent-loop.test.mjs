@@ -728,7 +728,7 @@ test('the sentence the model writes before a tool call is shown to the operator 
   const started = s.control.bus.lastMissionEvent(m.id, 'NOVA_ACTION_STARTED');
   assert.equal(started.payload.say, 'Jag börjar med att läsa sidan så jag ser vad som står där.');
   const live = toCognitiveEvent({ type: 'NOVA_ACTION_STARTED', payload: started.payload, at: new Date().toISOString(), id: 'e1', mission_id: m.id });
-  assert.equal(live.text, 'Jag börjar med att läsa sidan så jag ser vad som står där.');
+  assert.equal(live.text, 'Step 1: Jag börjar med att läsa sidan så jag ser vad som står där.');
   const plain = toCognitiveEvent({ type: 'NOVA_ACTION_STARTED', payload: { action: { type: 'web-fetch', data: {} } }, at: new Date().toISOString(), id: 'e2', mission_id: m.id });
   assert.ok(plain.text.length > 0 && !/colleague/.test(plain.text), 'without a sentence the generic label stays');
 });
