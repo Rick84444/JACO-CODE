@@ -10,7 +10,7 @@ import { join, dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { buildAgentCard, joinWorkplace } from "./lib/workplace-session.mjs";
 import { createBrowserActionJournal } from "./lib/browser-action-journal.mjs";
-import { inputAllowed, mutationsEnabled } from "./lib/browser-scope.mjs";
+import { inputAllowed, mutationsEnabled, hardDenied } from "./lib/browser-scope.mjs";
 import { createInputActions, listDownloadFiles, digestFile } from "./lib/browser-input.mjs";
 
 const CDP_PORT = parseInt(process.env.CDP_PORT || "9222");
@@ -40,7 +40,7 @@ function allowed(url) { try {return ORIGINS.has(new URL(url).origin);} catch {re
 // (click/type) stays limited to JACO_BROWSER_ALLOWED_ORIGINS and the server-side spend guard.
 const READ_ANY_ORIGIN = process.env.JACO_BROWSER_READ_ANY_ORIGIN !== '0';
 function readable(url) {
-  try { const u=new URL(url); return u.href==='about:blank' || (READ_ANY_ORIGIN ? ['http:','https:'].includes(u.protocol) : ORIGINS.has(u.origin)); }
+  try { const u=new URL(url); if (hardDenied(url)) return false; return u.href==='about:blank' || (READ_ANY_ORIGIN ? ['http:','https:'].includes(u.protocol) : ORIGINS.has(u.origin)); }
   catch { return false; }
 }
 function authorized(req) { const a=Buffer.from(req.headers.authorization || ''),b=Buffer.from('Bearer '+TOKEN);return TOKEN.length>=24 && a.length===b.length && timingSafeEqual(a,b); }
