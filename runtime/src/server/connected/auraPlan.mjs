@@ -72,11 +72,19 @@ export function gapSummary(nodes, language = 'en') {
   return { missing: list, text: (language === 'sv' ? 'Jag har gått igenom målet och mina förmågor. Det här saknar jag än: ' : 'I have studied the goal and my abilities. This is what I still lack: ') + list.join('; ') + '.' };
 }
 
+// Aura is the agent the operator sees; planning and execution are her capabilities. Plan text written while the
+// internal services still had their own names says Aura instead, so the Gameboard never shows SEER or Nova.
+export function productNames(text) {
+  if (typeof text !== 'string') return text;
+  return text.replace(/\b(?:SEER|Nova|ModelRelay)(?:'s)?\b(?:, (?:SEER|Nova|ModelRelay)\b)*/g, m => m.endsWith("'s") ? "Aura's" : 'Aura')
+    .replace(/\bAura(, Aura)+\b/g, 'Aura').replace(/\bAura's (?:representation|presence) in Aura\b/g, "Aura's own state");
+}
+
 export function planView(graph, { comments = [], skills = [], language = 'en', available = null } = {}) {
   const words = STATUS[language] || STATUS.en;
   const nodes = (graph.nodes || []).map(n => ({
-    key: n.key, title: n.title, objective: n.objective, status: n.status, statusText: words[n.status] || n.status,
-    dependencies: n.dependencies || [], missionId: n.nova_mission_id || null, failure: n.failure_reason || null,
+    key: n.key, title: productNames(n.title), objective: productNames(n.objective), status: n.status, statusText: words[n.status] || n.status,
+    dependencies: n.dependencies || [], missionId: n.nova_mission_id || null, failure: productNames(n.failure_reason || null),
     needs: needsFor(`${n.title}\n${n.objective}`, { skills, language }).map(need => ({ ...need, state: available ? needStatus(need, available) : null })),
     comments: comments.filter(c => c.nodeKey === n.key),
   }));
@@ -84,7 +92,7 @@ export function planView(graph, { comments = [], skills = [], language = 'en', a
   const done = nodes.filter(n => n.status === 'VERIFIED').length;
   const active = nodes.filter(n => !['SUPERSEDED', 'CANCELLED'].includes(n.status));
   return {
-    id: graph.id, title: graph.title, objective: graph.objective, status: graph.status,
+    id: graph.id, title: productNames(graph.title), objective: productNames(graph.objective), status: graph.status,
     progress: { done, total: active.length },
     needsApproval: [...new Map(nodes.flatMap(n => n.needs.filter(x => x.approval)).map(x => [x.kind, x])).values()],
     nodes,

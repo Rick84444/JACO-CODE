@@ -14,7 +14,7 @@ import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
 
 // Aura's face in the chat: the blue queen. It glows faint blue while she is thinking or working on a mission.
-const AuraAvatar=({thinking=false}:{thinking?:boolean})=><img src="/branding/aura-avatar.png" alt="Aura" width={20} height={20} className="aura-avatar" data-thinking={thinking||undefined} aria-hidden="true"/>;
+const AuraAvatar=({thinking=false,size=40}:{thinking?:boolean;size?:number})=><img src="/branding/aura-avatar.png" alt="Aura" width={size} height={size} style={{width:size,height:size}} className="aura-avatar" data-thinking={thinking||undefined} aria-hidden="true"/>;
 
 // A long pasted message must not push the answers out of reach; the whole text is one click away.
 const LongMessage: React.FC<{ text: string }> = ({ text }) => {
@@ -651,7 +651,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   return (
     <div className="cognitive-chat h-full min-h-0 flex flex-col">
       <div className="cognitive-chat-heading">
-        <span><AuraAvatar thinking={Boolean(busy)||currentMission?.status==='ACTIVE'}/>JACO <span className="cognitive-chat-subtitle">{tr('Samtal & skapande','Conversation & creation')}</span></span>
+        <span><AuraAvatar thinking={Boolean(busy)||currentMission?.status==='ACTIVE'} size={44}/>Aura <span className="cognitive-chat-subtitle">{tr('Samtal & skapande','Conversation & creation')}</span></span>
         <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label={tr('Chattinställningar','Chat settings')} title={tr('Modell och budget','Model and budget')}><Settings2 size={15}/><span>{modelLabel}</span></button>
       </div>
 
@@ -723,7 +723,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               <button type="button" onClick={()=>prompt(tr('Hjälp mig förbättra en funktion i projektet. Börja med att kartlägga den relevanta koden.','Help improve one feature in this project. Start by mapping the relevant code.'),'goal')}><FileCode2 size={17}/><span>{tr('Utveckla vidare','Develop further')}<small>{tr('Bygg på det som redan finns','Build on what already exists')}</small></span><ArrowUpRight size={14}/></button>
             </div>
           </div>}
-          {busy&&<div className="cognitive-response-wait"><span role="status"><AuraAvatar thinking/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
+          {busy&&<div className="cognitive-response-wait"><span role="status"><AuraAvatar thinking size={32}/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
           {[...visibleFeed].reverse().map(item=>{
             if(item.kind==='event')return <CognitiveEventCard key={item.id} event={item.event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>;
             const message=item.message;
@@ -818,7 +818,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               }}
               rows={2}
               aria-label={tr('Meddelande till JACO','Message to JACO')}
-              placeholder={tr('Skriv till JACO. Du kan fråga medan arbetet pågår…','Message JACO. You can ask questions while work continues…')}
+              placeholder={tr('Skriv till Aura. Du kan fråga medan arbetet pågår…','Message Aura. You can ask questions while work continues…')}
               className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-[14px] leading-6 text-slate-100 outline-none placeholder:text-slate-600"
             />
             {selectedTool && ['mcp','skill'].includes(selectedTool.kind) && (
