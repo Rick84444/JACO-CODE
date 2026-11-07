@@ -163,7 +163,7 @@ export function digestFile(file, fsImpl = fs) {
 // evaluate(session, expression) and observe(session) belong to the bridge; they are passed in so this file has no
 // import cycle and can be tested with a fake session. tabs: { list(), adopt(tab) }; downloads: { dir };
 // uploads: { roots }. Each is optional.
-export function createInputActions({ evaluate, observe, tabs = null, downloads = null, uploads = null, fsImpl = fs, settleMs = 300 }) {
+export function createInputActions({ evaluate, observe, tabs = null, downloads = null, uploads = null, fsImpl = fs, settleMs = 300, navigationSettleMs = 4000 }) {
   const pageTabs = async () => { try { return tabs ? await tabs.list() : []; } catch { return []; } };
 
   async function awaitDownloads(before) {
@@ -251,7 +251,17 @@ export function createInputActions({ evaluate, observe, tabs = null, downloads =
           if (created.length) { for (const tab of created) tabs.adopt(tab); extra.newTabs = created.map(t => ({ id: t.id, url: String(t.url || '').slice(0, 300) })); }
         }
         if (filesBefore) { const got = await awaitDownloads(filesBefore); if (got.length) extra.downloads = got; }
-        const observation = await observe(session);
+        let observation = await observe(session);
+        // A link to a slow site has not left the page yet when the click returns. Without this wait the click was
+        // reported as having changed nothing, and the mission stopped as if the outcome were unknown (2026-11-07).
+        if (kind === 'click' && !verified && before?.url && observation?.url === before.url) {
+          const settle = Date.now() + navigationSettleMs;
+          while (Date.now() < settle) {
+            await new Promise(r => setTimeout(r, 250));
+            const href = await evaluate(session, 'location.href').catch(() => null);
+            if (href && href !== before.url) { observation = await observe(session).catch(() => observation); break; }
+          }
+        }
         // A click that named no expectation is still verified by what the browser itself saw it do: the page moved
         // to another address, a tab opened or a file arrived. A click that changed nothing stays unverified.
         // When the model named an expectation that did not come true but the page did move, the click happened and its
