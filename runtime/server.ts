@@ -93,6 +93,7 @@ import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, v
 import { operatorLanguageFile, readOperatorLanguage, writeOperatorLanguage } from "../agents/lib/operator-language.mjs";
 import { createRoutineStore } from "./src/server/connected/auraRoutines.mjs";
 import { createPlanComments, planView } from "./src/server/connected/auraPlan.mjs";
+import { localMemoryActivity } from './src/server/connected/localMemoryActivity.mjs';
 import { synchronizeAuraHarnessModel } from "../agents/lib/aura-harness-model-choice.mjs";
 import { INITIAL_MODELS, INITIAL_CODE_FILES, INITIAL_DEVICES, INITIAL_TERMINAL_LOGS } from "./src/mockData.js";
 import { OllamaModel, CodeFile } from "./src/types.js";
@@ -2288,6 +2289,13 @@ const notifyPhone = async (action) => {
   const gameboardExchange = createGameboardExchange(connectedRuntime.bus.db);
   // The same observed Gameboard projection is consumed by Codex GUI, JACO Editor MCP and Lite.
   // SEER remains the only graph authority. Missing SEER is explicit (not a fabricated READY board).
+  // The existing local Continuum knowledge store and its persisted write receipts.
+  // Read-only operator surface: never use an independent chat-memory mock here.
+  app.get('/api/aura/workbench/local-memory', requireLocalUi, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try { res.json({ success: true, ...localMemoryActivity(continuumSurface.runtime) }); }
+    catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }
+  });
   // The plan as the operator sees it (SEER's mission graphs, read only) and the operator's comments on it.
   const planComments = createPlanComments({ file: path.join(WORKSPACE_ROOT, '.jaco', 'state', 'plan-comments.json') });
   app.get('/api/aura/plan', requireLocalUi, async (_req, res) => {
