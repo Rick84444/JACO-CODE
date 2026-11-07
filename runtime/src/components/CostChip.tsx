@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CircleDollarSign } from 'lucide-react';
 import { useUiLanguage } from '../i18n/UiLanguage';
+import type { BudgetIntent } from '../lib/budgetIntent';
 
 interface Totals { usd:number;calls:number;estimatedUsd:number;expiredUsd:number;expiredCalls:number;byProvider:Record<string,{usd:number;calls:number}> }
-interface Live {
+export interface Live {
   observedAt:string;seededAt:string|null;today:Totals;month:Totals;lastHourUsd:number;
   pending:{count:number;usd:number};unknown:{count:number;usd:number};
   governor:{dailySpentUsd:number;monthlySpentUsd:number;reservedUsd:number};
@@ -18,11 +19,26 @@ const runway=(m:number|null)=>m==null?'–':m<90?`${m} min`:`${(m/60).toFixed(1)
 
 // The spending limit, changed right where the cost is shown: click the dollar sign, raise the day or month limit,
 // save. The same operator-only PATCH as the budget panel; only the fields changed here are sent.
-function LimitEditor({ live, onSaved }: { live: Live; onSaved: () => void }) {
+// Which limit a request in the chat means: the one named, else the one that is stopping Aura now, else the month.
+export function suggestedLimits(live: Live, suggest?: BudgetIntent | null): { day: number | null; month: number | null; field: 'daily' | 'monthly' } {
+  const monthFull = live.policy.monthlyCloudUsd != null && live.governor.monthlySpentUsd >= live.policy.monthlyCloudUsd;
+  const dayFull = live.policy.dailyCloudUsd != null && live.governor.dailySpentUsd >= live.policy.dailyCloudUsd;
+  const field = suggest?.field || (monthFull ? 'monthly' : dayFull ? 'daily' : 'monthly');
+  let day = live.policy.dailyCloudUsd, month = live.policy.monthlyCloudUsd;
+  if (suggest?.amount != null) {
+    const base = field === 'daily' ? day : month;
+    const value = suggest.relative ? Math.round(((base ?? 0) + suggest.amount) * 100) / 100 : suggest.amount;
+    if (field === 'daily') day = value; else month = value;
+  }
+  return { day, month, field };
+}
+
+export function LimitEditor({ live, onSaved, suggest = null, confirmLabel }: { live: Live; onSaved: () => void; suggest?: BudgetIntent | null; confirmLabel?: string }) {
   const { tr } = useUiLanguage();
   const asText = (n: number | null) => n == null ? '' : String(n);
-  const [day, setDay] = useState(asText(live.policy.dailyCloudUsd));
-  const [month, setMonth] = useState(asText(live.policy.monthlyCloudUsd));
+  const start = suggestedLimits(live, suggest);
+  const [day, setDay] = useState(asText(start.day));
+  const [month, setMonth] = useState(asText(start.month));
   const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [error, setError] = useState<string | null>(null);
   const spentMonth = live.governor.monthlySpentUsd;
@@ -58,11 +74,40 @@ function LimitEditor({ live, onSaved }: { live: Live; onSaved: () => void }) {
       <input type="number" min="0" step="any" value={month} placeholder={tr('Ingen gräns', 'No limit')} onChange={e => { setMonth(e.target.value); setState('idle'); }} className={field} aria-label={tr('Gräns per månad i USD', 'Limit per month in USD')} /></label>
     <div className="flex items-center gap-1.5">
       {[5, 10, 20].map(n => <button key={n} type="button" onClick={() => add(n)} className="rounded border border-slate-700 px-2 py-0.5 text-slate-300 hover:border-cyan-600">+{n} USD</button>)}
-      <button type="button" disabled={state === 'saving'} onClick={() => void save()} className="ml-auto rounded bg-[#0e639c] px-3 py-1 font-semibold text-white hover:bg-[#1177bb] disabled:opacity-50">{state === 'saving' ? tr('Sparar…', 'Saving…') : tr('Spara', 'Save')}</button>
+      <button type="button" disabled={state === 'saving'} onClick={() => void save()} className="ml-auto rounded bg-[#0e639c] px-3 py-1 font-semibold text-white hover:bg-[#1177bb] disabled:opacity-50">{state === 'saving' ? tr('Sparar…', 'Saving…') : confirmLabel || tr('Spara', 'Save')}</button>
     </div>
     {state === 'saved' && <p role="status" className="text-emerald-400">{tr('Sparat. Gränsen gäller direkt.', 'Saved. The limit applies right away.')}</p>}
     {error && <p role="alert" className="text-amber-300">{error}</p>}
   </section>;
+}
+
+// The same editor as a card in the chat, when the operator asks Aura to change the limit. It reads the current
+// limits itself; nothing changes until the operator presses Save.
+export function BudgetCard({ suggest }: { suggest: BudgetIntent }) {
+  const { tr } = useUiLanguage();
+  const [live, setLive] = useState<Live | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch('/api/aura/budget/live', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+      const body = await response.json();
+      if (!response.ok || !body.success) throw Error(body.error || 'COST_UNAVAILABLE');
+      setLive(body.live); setError(null);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  if (error) return <p role="alert" className="text-xs text-amber-300">{tr('Kunde inte läsa budgeten', 'Could not read the budget')}: {error}</p>;
+  if (!live) return <p className="text-xs text-slate-400">{tr('Läser budgeten…', 'Reading the budget…')}</p>;
+  // Money is a risk, so Aura says exactly what she will do and asks once, so they agree before it happens.
+  const start = suggestedLimits(live, suggest);
+  const now = start.field === 'daily' ? live.policy.dailyCloudUsd : live.policy.monthlyCloudUsd;
+  const next = start.field === 'daily' ? start.day : start.month;
+  const what = start.field === 'daily' ? tr('dagsgränsen', 'the daily limit') : tr('månadsgränsen', 'the monthly limit');
+  const money = (n: number | null) => n == null ? tr('ingen gräns', 'no limit') : `${n} USD`;
+  const question = suggest.amount == null
+    ? tr(`Vilken gräns menar du? I dag är dagsgränsen ${money(live.policy.dailyCloudUsd)} och månadsgränsen ${money(live.policy.monthlyCloudUsd)}. Fyll i det du vill ha, så gör jag det.`, `Which limit do you mean? Today the daily limit is ${money(live.policy.dailyCloudUsd)} and the monthly limit ${money(live.policy.monthlyCloudUsd)}. Fill in what you want, and I will do it.`)
+    : tr(`Menar du att jag ska ändra ${what} från ${money(now)} till ${money(next)}? Det betyder att jag får använda upp till det beloppet på molnmodeller. Bara så vi är överens.`, `Do you mean that I should change ${what} from ${money(now)} to ${money(next)}? That means I may spend up to that amount on cloud models. Just so we agree.`);
+  return <div className="max-w-sm space-y-2 text-xs"><p className="text-sm text-slate-200">{question}</p><LimitEditor live={live} suggest={suggest} confirmLabel={tr('Ja, gör det', 'Yes, do it')} onSaved={() => void load()} /></div>;
 }
 
 // Live cost, polled from runtime: token usage priced by JACO's configured/reference rates (not provider invoice),

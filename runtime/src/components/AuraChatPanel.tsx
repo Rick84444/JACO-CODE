@@ -11,6 +11,8 @@ import { parseAuraMissionCommand } from '../lib/auraChatCommands.mjs';
 import { CognitiveEventCard } from './CognitiveEventCard';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
+import { budgetIntent, type BudgetIntent } from '../lib/budgetIntent';
+import { BudgetCard } from './CostChip';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
 
 // Aura's face in the chat: the blue queen. It glows faint blue while she is thinking or working on a mission.
@@ -39,6 +41,8 @@ interface ChatMessage {
   at?: string;
   // A failed message explains itself and offers the one thing to do about it (server: chatFailureHint).
   action?: { code: string; label: string; retryText?: string };
+  // The operator asked Aura to change the spending limit: the change, filled in, for the operator to save.
+  budget?: BudgetIntent;
 }
 
 export interface AuraSelectedTool {
@@ -401,6 +405,21 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     const controlCommand=parseAuraMissionCommand(text);
     if (controlCommand) { await executeChatMissionCommand(text,controlCommand,retry); return; }
     if (busy) return;
+    // "Höj budgeten till 15 dollar": Aura cannot change the limit herself, and pointing the operator to some
+    // administrative portal is wrong (2026-11-07). The answer is the change filled in, saved by the operator's own
+    // click. No model is called, so this works even while the limit blocks every model.
+    const budget = budgetIntent(text);
+    if (budget) {
+      if (retry === undefined) setInput('');
+      await appendMessage({ id: crypto.randomUUID(), role: 'user', content: text });
+      const amount = budget.amount != null ? `${budget.relative ? '+' : ''}${budget.amount} USD` : '';
+      const reply = crypto.randomUUID();
+      await appendMessage({ id: reply, role: 'assistant', content: tr(
+        `Det gör jag${amount ? ` (${amount})` : ''}. Det gäller pengar, så jag frågar en gång först. Säger du ja gäller det direkt och jag kan fortsätta.`,
+        `I will do that${amount ? ` (${amount})` : ''}. It is about money, so I ask once first. If you say yes, it applies right away and I can continue.`) });
+      setMessages(current => [...current, { id: reply + ':budget', role: 'system', content: '', budget }]);
+      return;
+    }
     if (selectedProvider !== 'seer' && (!providers.some(p => p.id === selectedProvider) || !chatModel.trim())) {
       setCatalogError(tr('Välj en registrerad provider och ange modell före anrop.', 'Choose a registered provider and enter a model before calling.'));
       return;
@@ -732,6 +751,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             const message=item.message;
             return message.role==='user'?<div key={item.id} className="cognitive-user-message"><LongMessage text={message.content}/>{message.attachments?.map(item=><small key={item.id} className="block mt-2">{tr('Bifogat','Attached')}: {item.name} · {item.fileCount} {tr('filer','files')}</small>)}</div>
               :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><AuraFace label={tr('Öppna Gameboard','Open the Gameboard')}/>Aura</div><ChatMarkdown text={message.content}/><CopyMessageButton text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>{tr('Svar & källor','Answer & sources')}</summary><p>{message.meta}</p></details>}</article>
+              :message.budget?<div key={item.id} className="cognitive-system-message"><BudgetCard suggest={message.budget}/></div>
               :<div key={item.id} className="cognitive-system-message">{message.content}{message.action&&<button type="button" disabled={busy!==null} onClick={()=>void runAction(message.action!)}>{message.action.label}</button>}</div>;
           })}
           {olderCount>0&&<button type="button" className="cognitive-feed-older" onClick={()=>setFeedLimit(limit=>limit+CHAT_FEED_PAGE)}>{tr(`Visa äldre (${olderCount})`,`Show older (${olderCount})`)}</button>}
