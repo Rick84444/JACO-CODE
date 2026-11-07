@@ -55,3 +55,26 @@ test('a step of a plan is told to keep the final goal in view and replan when it
   assert.match(PLAN_RULE, /request_replan/);
   assert.match(PLAN_RULE, /operator's comments on the plan/);
 });
+
+test('each need shows whether Aura has it, lacks it or needs approval, and Aura says in her own words what she lacks', async () => {
+  const { needStatus, gapSummary } = await import('../../runtime/src/server/connected/auraPlan.mjs');
+  const available = { tasks: new Set(['web-fetch', 'repo-write']), skills: new Set(['web-research']), payments: false };
+  assert.equal(needStatus({ kind: 'research' }, available), 'have');
+  assert.equal(needStatus({ kind: 'browser' }, available), 'missing');
+  assert.equal(needStatus({ kind: 'account' }, available), 'approval');
+  assert.equal(needStatus({ kind: 'skill', id: 'build-web-page' }, available), 'missing');
+  assert.equal(needStatus({ kind: 'skill', id: 'web-research' }, available), 'have');
+  assert.equal(needStatus({ kind: 'payment' }, available), 'missing');
+  const graph = { id: 'g', title: 'T', objective: 'Sälj digitala mallar', status: 'ACTIVE', nodes: [
+    { key: 'a', title: 'Bygg en webbsida för mallarna', objective: 'Bygg sidan', status: 'READY', dependencies: [] },
+    { key: 'b', title: 'Ta betalt', objective: 'Sätt ett pris och ta betalt', status: 'BLOCKED', dependencies: ['a'] },
+  ] };
+  const v = planView(graph, { language: 'sv', available });
+  assert.match(v.abilities.text, /^Jag har gått igenom målet och mina förmågor\. Det här saknar jag än:/);
+  assert.match(v.abilities.text, /build-web-page/);
+  assert.match(v.abilities.text, /betalkoppling/);
+  const ok = gapSummary([{ needs: [{ kind: 'research', state: 'have' }] }], 'sv');
+  assert.deepEqual(ok.missing, []);
+  assert.match(ok.text, /^Jag har det som planen behöver/);
+  assert.equal(planView(graph, { language: 'sv' }).abilities, null, 'without knowing what is available, nothing is claimed');
+});

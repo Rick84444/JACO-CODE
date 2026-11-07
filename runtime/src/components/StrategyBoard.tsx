@@ -5,11 +5,12 @@ import { useUiLanguage } from '../i18n/UiLanguage';
 
 // The plan as a person reads it: the final goal, the steps toward it with what each needs, what changed when a step did
 // not lead toward the goal, and room to say what you think. Your comments reach every step as direction.
-type Need = { kind: string; label: string; approval: boolean };
+type Need = { kind: string; label: string; approval: boolean; state?: 'have' | 'missing' | 'approval' | null };
 type Comment = { id: string; nodeKey: string | null; text: string; at: string };
 type Node = { key: string; title: string; objective: string; status: string; statusText: string; failure: string | null; needs: Need[]; comments: Comment[] };
-type Plan = { id: string; title: string; objective: string; status: string; progress: { done: number; total: number }; needsApproval: Need[]; nodes: Node[]; changes: Array<{ at: string | null; reason: string | null; replaced: string | null }>; comments: Comment[] };
+type Plan = { id: string; title: string; objective: string; status: string; progress: { done: number; total: number }; needsApproval: Need[]; nodes: Node[]; changes: Array<{ at: string | null; reason: string | null; replaced: string | null }>; comments: Comment[]; abilities?: { missing: string[]; text: string } | null };
 
+const mark = (state?: string | null) => state === 'have' ? '✅ ' : state === 'missing' ? '⚠️ ' : state === 'approval' ? '✋ ' : '';
 const tone: Record<string, string> = { VERIFIED: 'text-emerald-300', FAILED: 'text-rose-300', RUNNING: 'text-sky-300', DISPATCHED: 'text-sky-300', READY: 'text-slate-200', BLOCKED: 'text-slate-400', SUPERSEDED: 'text-slate-500 line-through', CANCELLED: 'text-slate-500' };
 
 function CommentBox({ graphId, nodeKey, onSaved }: { graphId: string; nodeKey: string | null; onSaved: () => void }) {
@@ -56,12 +57,13 @@ export function StrategyBoard() {
         <div><div className="text-xs uppercase tracking-wide text-slate-400">{tr('Slutmål', 'Final goal')}</div>
           <div className="font-medium">{plan.objective}</div>
           <div className="text-xs text-slate-400">{tr('Klart', 'Done')}: {plan.progress.done}/{plan.progress.total}</div></div></div>
+      {plan.abilities && <p className={`mt-2 text-sm ${plan.abilities.missing.length ? 'text-amber-200' : 'text-emerald-300'}`} data-testid="aura-abilities">{plan.abilities.text}</p>}
       {plan.needsApproval.length > 0 && <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-300"><ShieldAlert size={13} />{tr('Behöver ditt godkännande när det blir aktuellt', 'Needs your approval when the time comes')}: {plan.needsApproval.map(n => n.label).join(', ')}</p>}
       <ol className="mt-3 space-y-2">
         {plan.nodes.map((n, i) => <li key={n.key} className="rounded border border-slate-800 p-2">
           <div className="flex items-baseline justify-between gap-2"><span className={tone[n.status] || ''}>{i + 1}. {n.title}</span><span className="text-xs text-slate-400">{n.statusText}</span></div>
           <div className="text-xs text-slate-400">{n.objective}</div>
-          {n.needs.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{n.needs.map(x => <span key={x.kind + (x.label)} className={`rounded px-1.5 py-0.5 text-[11px] ${x.approval ? 'bg-amber-950 text-amber-200' : 'bg-slate-800 text-slate-300'}`}>{x.label}{x.approval ? ' ✋' : ''}</span>)}</div>}
+          {n.needs.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{n.needs.map(x => <span key={x.kind + (x.label)} className={`rounded px-1.5 py-0.5 text-[11px] ${x.approval ? 'bg-amber-950 text-amber-200' : 'bg-slate-800 text-slate-300'}`}>{mark(x.state)}{x.label}{!x.state && x.approval ? ' ✋' : ''}</span>)}</div>}
           {n.failure && <div className="mt-1 text-xs text-rose-300">{n.failure.slice(0, 240)}</div>}
           {n.comments.map(c => <div key={c.id} className="mt-1 flex gap-1 text-xs text-slate-300"><MessageSquare size={12} />{c.text}</div>)}
           <CommentBox graphId={plan.id} nodeKey={n.key} onSaved={load} />

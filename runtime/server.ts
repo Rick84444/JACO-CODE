@@ -2302,7 +2302,14 @@ const notifyPhone = async (action) => {
       let skills: any[] = [];
       try { skills = listSkills(skillRoots()); } catch { /* the plan still shows */ }
       const language = readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) || 'en';
-      const plans = graphs.slice(0, 10).map((g: any) => planView(g, { comments: planComments.list(g.id), skills, language }));
+      // What this installation can do right now, so each need shows as had, missing or waiting for approval.
+      const capabilityTasks = ['web-fetch', 'browser-click', 'browser-survey-site', 'repo-write', 'repo-edit'];
+      const available = {
+        tasks: new Set(capabilityTasks.filter(t => connectedRuntime.capabilities?.isTaskEnabled ? connectedRuntime.capabilities.isTaskEnabled(t) : true)),
+        skills: new Set(skills.filter((k: any) => !k.error).map((k: any) => k.id)),
+        payments: Boolean(process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY),
+      };
+      const plans = graphs.slice(0, 10).map((g: any) => planView(g, { comments: planComments.list(g.id), skills, language, available }));
       res.json({ success: true, plans });
     } catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }
   });
