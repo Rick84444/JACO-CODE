@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { SurveyLibrary, type ActionableElement } from '../handsOff/surveyLibrary.js';
 import { BLOCKED_ORIGIN_PATTERN, BLOCKED_PATH_PATTERN, SECRET_TEXT, PASSWORD_TARGET } from '../../../../agents/lib/browser-scope.mjs';
+import { accountPageDecision, validateAccountSetupGrant } from '../../../../agents/lib/account-onboarding.mjs';
 
 /**
  * Browser hands-off client.
@@ -62,6 +63,8 @@ export interface BrowserAction {
   checked?: boolean;
   deltaY?: number;
   wait_after_ms?: number;
+  /** Bound to the active autonomous mission for account creation on registration pages. */
+  mission_id?: string;
   /** Optional semantic proof. Raw page scripts are intentionally not accepted. */
   postcondition?: BrowserPostcondition;
 }
@@ -79,6 +82,8 @@ export interface BrowserGrant {
   allow_select: boolean;
   allow_scroll: boolean;
   expires_at: string;
+  /** Optional, explicit account-creation scope; never grants credential/Google consent entry. */
+  account_setup?: { enabled: boolean; execution_mode: 'autonomous'; operator_confirmed: true; mission_id: string; origins: string[] };
 }
 
 export interface BrowserReceipt {
@@ -381,7 +386,9 @@ export class BrowserHandsOffClient {
       allow_select: input.allow_select !== false,
       allow_scroll: input.allow_scroll !== false,
       expires_at: new Date(expiry).toISOString(),
+      ...(input.account_setup?.enabled ? { account_setup: validateAccountSetupGrant(input.account_setup, scopeMode === 'origins' ? normalised : [])! } : {}),
     };
+    if (grant.account_setup && grant.contract_id !== grant.account_setup.mission_id) throw new Error('ACCOUNT_SETUP_CONTRACT_MISMATCH');
     this.writeGrant(grant);
     return grant;
   }
@@ -457,15 +464,17 @@ export class BrowserHandsOffClient {
   }
 
   // ── Verified execution ─────────────────────────────────────────────────────
-  private targetAllowed(rawUrl: string, grant: BrowserGrant): { allowed: boolean; reason?: string } {
+  private targetAllowed(rawUrl: string, grant: BrowserGrant, missionId?: string): { allowed: boolean; reason?: string } {
     let target: URL;
     try { target = new URL(rawUrl); } catch { return { allowed: false, reason: 'invalid URL' }; }
     if (!['http:', 'https:'].includes(target.protocol)) return { allowed: false, reason: `protocol '${target.protocol}' is not permitted` };
     const loopback = ['127.0.0.1', 'localhost', '::1'].includes(target.hostname);
     if (target.protocol === 'http:' && !loopback) return { allowed: false, reason: 'plain HTTP is permitted only on loopback' };
     if (BLOCKED_ORIGIN_PATTERN.test(target.host) || BLOCKED_PATH_PATTERN.test(target.pathname)) {
-      return { allowed: false, reason: 'authentication/payment surface requires direct human operation' };
+      return { allowed: false, reason: 'OPERATOR_AUTH_HANDOFF_REQUIRED: authentication, Google consent and payment remain with the operator' };
     }
+    const accountGate = accountPageDecision(rawUrl, grant.account_setup, missionId);
+    if (!accountGate.allowed) return { allowed: false, reason: accountGate.reason };
     if (grant.scope_mode === 'broad_web') return { allowed: true };
     return grant.allowed_origins.includes(target.origin)
       ? { allowed: true }
@@ -539,13 +548,13 @@ export class BrowserHandsOffClient {
       // Origin is re-checked per action, not just at grant time: a page can
       // navigate itself between two actions.
       const current = await this.bridge.evaluate<string>('location.href');
-      const currentGate = this.targetAllowed(current, grant);
+      const currentGate = this.targetAllowed(current, grant, action.mission_id);
       if (!currentGate.allowed) return fail(currentGate.reason || 'current page is outside grant', true);
 
       if (action.type === 'navigate') {
         const target = String(action.url || '');
         if (!target) return fail('navigate requires a valid url');
-        const targetGate = this.targetAllowed(target, grant);
+        const targetGate = this.targetAllowed(target, grant, action.mission_id);
         if (!targetGate.allowed) return fail(targetGate.reason || 'navigation target is outside grant', true);
       }
 
@@ -557,6 +566,18 @@ export class BrowserHandsOffClient {
         if (PASSWORD_TARGET.test(target) || SECRET_TEXT.test(target) || SECRET_TEXT.test(text.slice(0, 200))) {
           return fail('secrets and authentication codes require direct human entry', true);
         }
+        // Reject a credential field based on the live DOM too: a bland CSS selector
+        // can still resolve to <input type=password> or an OTP field.
+        const css = String(action.selector?.css || '');
+        if (!css) return fail('set_value requires a selector for credential preflight', true);
+        const isCredentialField = await this.bridge.evaluate<boolean>(`(() => {
+          const elements = document.querySelectorAll(${JSON.stringify(css)});
+          const el = elements[${Number.isInteger(action.selector?.index) ? action.selector!.index : 0}] || null;
+          if (!el) return false;
+          return /password|one.?time|otp|passcode|secret|verification/i.test(
+            [el.getAttribute('type'),el.getAttribute('name'),el.getAttribute('id'),el.getAttribute('autocomplete'),el.getAttribute('aria-label')].join(' '));
+        })()`);
+        if (isCredentialField) return fail('credential or verification fields require operator entry', true);
       }
 
       if (action.type === 'wordpress_apply_css') {
