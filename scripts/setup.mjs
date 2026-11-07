@@ -42,12 +42,24 @@ export function setup(root, env = process.env, { spawn = spawnSync, logger = con
     runNpm(cwd, [command, '--ignore-scripts', '--no-audit', '--no-fund'], `Dependency installation failed: ${dir || 'root'}`);
   }
 
-  // The canonical startup auto-selects dist/ if it exists. Build both artifacts
-  // so clean installations start the same verified product in production mode.
   const runtime = path.join(root, 'runtime');
-  logger.log('Building production client and server: runtime');
-  runNpm(runtime, ['run', 'build:client'], 'Production client build failed');
-  runNpm(runtime, ['run', 'build:server'], 'Production server build failed');
+  const isTermux = process.platform === 'android' || String(env.PREFIX || '').includes('com.termux');
+  if (isTermux) {
+    // Android uses the canonical Termux source runtime through tsx, not the
+    // optional desktop server bundle. Prepare Rollup before the Aura UI build.
+    logger.log('Preparing Android Rollup runtime: runtime');
+    const rollup = spawn(process.execPath, ['scripts/ensure_rollup_native.mjs'], { cwd: runtime, env, stdio: 'inherit' });
+    if (rollup.error) throw new Error('Android Rollup preparation failed: ' + rollup.error.message, { cause: rollup.error });
+    if (rollup.status !== 0) throw new Error(`Android Rollup preparation failed (exit ${rollup.status ?? 'unknown'})`);
+    logger.log('Building Aura frontend for Termux: runtime');
+    runNpm(runtime, ['run', 'build:termux'], 'Termux Aura build failed');
+  } else {
+    // Desktop startup auto-selects dist/ when both files exist; build both
+    // artifacts rather than silently starting a source-only fallback.
+    logger.log('Building production client and server: runtime');
+    runNpm(runtime, ['run', 'build:client'], 'Production client build failed');
+    runNpm(runtime, ['run', 'build:server'], 'Production server build failed');
+  }
 
   ensureGatewayToken(root, env);
   logger.log('Setup complete. Configure a model provider, then run npm run jaco:start.');
