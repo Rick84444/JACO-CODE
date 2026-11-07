@@ -2289,8 +2289,7 @@ const notifyPhone = async (action) => {
   const gameboardExchange = createGameboardExchange(connectedRuntime.bus.db);
   // The same observed Gameboard projection is consumed by Codex GUI, JACO Editor MCP and Lite.
   // SEER remains the only graph authority. Missing SEER is explicit (not a fabricated READY board).
-  // The existing local Continuum knowledge store and its persisted write receipts.
-  // Read-only operator surface: never use an independent chat-memory mock here.
+  // Local Continuum knowledge, read-only and backed by the existing durable knowledge ledger.
   app.get('/api/aura/workbench/local-memory', requireLocalUi, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     try { res.json({ success: true, ...localMemoryActivity(continuumSurface.runtime) }); }

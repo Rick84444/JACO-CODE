@@ -189,6 +189,9 @@ try {
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   passed('Desktop and mobile view changes retain the same draft and conversation session');
   await canvas('Spelplan').click();
+  await page.getByTestId('strategy-board').waitFor();
+  // The operator-facing blueprint is primary; the technical simulator opens on demand.
+  await page.getByText('Technical view', { exact: true }).click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Gameboard must not overflow Android-size viewport');
   await canvas('Samtal').click();
@@ -196,6 +199,9 @@ try {
   passed('Gameboard tab fits mobile viewport and preserves one conversation');
 
   await canvas('Spelplan').click();
+  await page.getByTestId('strategy-board').waitFor();
+  // The operator-facing blueprint is primary; the technical simulator opens on demand.
+  await page.getByText('Technical view', { exact: true }).click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
   await page.getByText('Aura planning: UNAVAILABLE').waitFor();
   await page.locator('section[aria-label="Shared gameboard"] input[list="gameboard-tools"]').first().fill('mcp:git:git_status');
