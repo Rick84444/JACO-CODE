@@ -386,7 +386,7 @@ export class BrowserHandsOffClient {
       allow_select: input.allow_select !== false,
       allow_scroll: input.allow_scroll !== false,
       expires_at: new Date(expiry).toISOString(),
-      ...(input.account_setup?.enabled ? { account_setup: validateAccountSetupGrant(input.account_setup, scopeMode === 'origins' ? normalised : [])! } : {}),
+      ...(input.account_setup?.enabled ? { account_setup: validateAccountSetupGrant(input.account_setup, scopeMode === 'origins' ? normalised : []) as BrowserGrant['account_setup'] } : {}),
     };
     if (grant.account_setup && grant.contract_id !== grant.account_setup.mission_id) throw new Error('ACCOUNT_SETUP_CONTRACT_MISMATCH');
     this.writeGrant(grant);
