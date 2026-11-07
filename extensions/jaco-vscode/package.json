@@ -1,17 +1,39 @@
 {
   "name": "jaco-cognitive-ide",
-  "displayName": "JACO Cognitive IDE",
-  "description": "The full local JACO IDE inside VS Code, using the existing JACO runtime and MCP connections.",
-  "version": "0.1.5",
+  "displayName": "JACO Code IDE",
+  "description": "Your own AI agent inside VS Code: Aura plans, writes code in a safe copy of your project, uses a real browser and shows every step. Runs locally with your own model.",
+  "version": "0.1.6",
   "publisher": "jacocode",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0b1220",
+    "theme": "dark"
+  },
   "private": true,
   "license": "MIT",
+  "homepage": "https://jacocode.com/",
+  "bugs": {
+    "url": "https://github.com/Rick84444/JACO-CODE/issues"
+  },
   "engines": {
     "vscode": "^1.96.0"
   },
   "categories": [
-    "Other",
-    "Visualization"
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "agent",
+    "autonomous",
+    "coding agent",
+    "mcp",
+    "browser automation",
+    "local",
+    "gemini",
+    "ollama",
+    "jaco"
   ],
   "main": "./extension.cjs",
   "activationEvents": [
