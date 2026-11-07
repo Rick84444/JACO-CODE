@@ -27,3 +27,13 @@ test('two partial matches are ambiguous, never a guess', () => {
   assert.equal(pickTarget([t('Save'), t('Save')], 'save').error, 'AMBIGUOUS_TARGET');
   assert.equal(pickTarget([t('A')], '').error, 'NO_TARGET');
 });
+
+test('a description like "click the link" finds the page\'s only link, never one of several', () => {
+  const link = (text) => ({ text, visible: true, selector: text, role: 'a' });
+  const button = (text) => ({ text, visible: true, selector: text, role: 'button' });
+  assert.equal(pickTarget([link('Learn more')], 'click the link').matched, 'only-one-of-kind');
+  assert.equal(pickTarget([link('Learn more'), button('Go')], 'klicka på länken').target.text, 'Learn more');
+  assert.equal(pickTarget([link('Go'), button('Save')], 'the button').target.text, 'Save');
+  assert.equal(pickTarget([link('A'), link('B')], 'click the link').error, 'NO_TARGET');
+  assert.equal(pickTarget([link('Learn more')], 'Sign in').error, 'NO_TARGET', 'an unrelated name is not guessed');
+});
