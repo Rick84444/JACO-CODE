@@ -112,7 +112,7 @@ function humanResult(type, result, evidence, clean, t = text => text, sv = false
   return out;
 }
 
-export function toCognitiveEvent(raw, { durable = false, missionGoal = null, secrets = [], language = 'en' } = {}) {
+export function toCognitiveEvent(raw, { durable = false, missionGoal = null, secrets = [], language = 'en', planId = null } = {}) {
   if (!raw || typeof raw !== 'object') return null;
   const t = inLanguage(language), sv = language === 'sv';
   const clean=(value,max=600)=>safeCognitiveText(value,max,secrets);
@@ -175,6 +175,8 @@ export function toCognitiveEvent(raw, { durable = false, missionGoal = null, sec
     seq: durable ? seq : null,
     missionId: clean(raw.missionId || payload.missionId, 200) || null,
     missionGoal: clean(missionGoal || raw.missionGoal, 300) || null,
+    // The plan (blueprint) this event belongs to, so the chat can open it.
+    planId: typeof planId === 'string' && /^[\w.:-]{1,120}$/.test(planId) ? planId : null,
     actionId: clean(action.id || action.actionId || payload.actionId, 200) || null,
     evidence,
   };

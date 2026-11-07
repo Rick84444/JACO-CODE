@@ -91,6 +91,8 @@ import { TASK_FIELDS } from "../agents/lib/task-fields.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
 import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
 import { operatorLanguageFile, readOperatorLanguage, writeOperatorLanguage } from "../agents/lib/operator-language.mjs";
+import { createRoutineStore } from "./src/server/connected/auraRoutines.mjs";
+import { createPlanComments, planView } from "./src/server/connected/auraPlan.mjs";
 import { synchronizeAuraHarnessModel } from "../agents/lib/aura-harness-model-choice.mjs";
 import { INITIAL_MODELS, INITIAL_CODE_FILES, INITIAL_DEVICES, INITIAL_TERMINAL_LOGS } from "./src/mockData.js";
 import { OllamaModel, CodeFile } from "./src/types.js";
@@ -2286,6 +2288,45 @@ const notifyPhone = async (action) => {
   const gameboardExchange = createGameboardExchange(connectedRuntime.bus.db);
   // The same observed Gameboard projection is consumed by Codex GUI, JACO Editor MCP and Lite.
   // SEER remains the only graph authority. Missing SEER is explicit (not a fabricated READY board).
+  // The plan as the operator sees it (SEER's mission graphs, read only) and the operator's comments on it.
+  const planComments = createPlanComments({ file: path.join(WORKSPACE_ROOT, '.jaco', 'state', 'plan-comments.json') });
+  app.get('/api/aura/plan', requireLocalUi, async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const base = new URL(String(process.env.SEER_URL || 'http://127.0.0.1:2997')).origin;
+      const token = process.env.SEER_TOKEN || process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || GATEWAY_TOKEN;
+      const response = await fetch(base + '/cortex/mission-graphs', { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(4000) });
+      if (!response.ok) throw new Error(`SEER_HTTP_${response.status}`);
+      const graphs: any = await response.json();
+      if (!Array.isArray(graphs)) throw new Error('SEER_GRAPH_SCHEMA_INVALID');
+      let skills: any[] = [];
+      try { skills = listSkills(skillRoots()); } catch { /* the plan still shows */ }
+      const language = readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) || 'en';
+      // What this installation can do right now, so each need shows as had, missing or waiting for approval.
+      const capabilityTasks = ['web-fetch', 'browser-click', 'browser-survey-site', 'repo-write', 'repo-edit'];
+      const available = {
+        tasks: new Set(capabilityTasks.filter(t => connectedRuntime.capabilities?.isTaskEnabled ? connectedRuntime.capabilities.isTaskEnabled(t) : true)),
+        skills: new Set(skills.filter((k: any) => !k.error).map((k: any) => k.id)),
+        payments: Boolean(process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY),
+      };
+      const plans = graphs.slice(0, 10).map((g: any) => planView(g, { comments: planComments.list(g.id), skills, language, available }));
+      res.json({ success: true, plans });
+    } catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }
+  });
+  // Aura's own notes on a step (what it found, why it stopped, which helpers it created). Token-protected: only the
+  // local executor writes them, and they are marked as Aura's so they are never mistaken for the operator's direction.
+  app.post('/api/aura/plan/notes', requireAuth, (req, res) => {
+    try { res.status(201).json({ success: true, note: planComments.add({ graphId: String(req.body?.graphId || ''), nodeKey: req.body?.nodeKey ?? null, text: req.body?.text, author: 'aura' }) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
+  app.get('/api/aura/plan/comments', requireLocalUi, (req, res) => res.json({ success: true, comments: planComments.list(String(req.query.graphId || '') || undefined) }));
+  app.post('/api/aura/plan/comments', requireLocalUi, (req, res) => {
+    const origin = req.get('origin');
+    if (!origin || new URL(origin).host !== req.get('host')) return res.status(403).json({ success: false, error: 'PLAN_COMMENT_REQUIRES_INTERFACE' });
+    try { res.status(201).json({ success: true, comment: planComments.add(req.body || {}) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
+
   app.get('/api/aura/workbench/gameboard', requireLocalUi, async (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     let graphs: any[] | null = null;
@@ -2657,6 +2698,43 @@ const notifyPhone = async (action) => {
       res.status(code === 'PLANNER_ENV_PRIMARY_AUTHORITATIVE' ? 409 : badChoice || code === 'AURA_MISSION_MODE_INVALID' ? 400 : 503).json({ success: false, error: code });
     }
   });
+
+  // Routines: goals the operator approved to run on a schedule. Each run is an ordinary start-goal call over loopback,
+  // so budget, approvals and the sandbox apply exactly as for a goal typed in the chat. Only the interface can change them.
+  const routines = createRoutineStore({ file: path.join(WORKSPACE_ROOT, '.jaco', 'state', 'routines.json') });
+  const routinesFromInterface = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const origin = req.get('origin');
+    if (req.method !== 'GET' && (!origin || new URL(origin).host !== req.get('host'))) return res.status(403).json({ success: false, error: 'ROUTINE_CHANGE_REQUIRES_INTERFACE' });
+    next();
+  };
+  app.get('/api/aura/routines', requireLocalUi, (_req, res) => res.json({ success: true, routines: routines.list() }));
+  app.post('/api/aura/routines', requireLocalUi, routinesFromInterface, (req, res) => {
+    try { res.status(201).json({ success: true, routine: routines.add(req.body || {}) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
+  app.patch('/api/aura/routines/:id', requireLocalUi, routinesFromInterface, (req, res) => {
+    try { res.json({ success: true, routine: routines.update(String(req.params.id), req.body || {}) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
+  app.delete('/api/aura/routines/:id', requireLocalUi, routinesFromInterface, (req, res) => {
+    try { res.json({ success: true, ...routines.remove(String(req.params.id)) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
+  const routineTimer = setInterval(() => {
+    void routines.tick({
+      startGoal: async (goal: string) => {
+        const r = await fetch(`http://127.0.0.1:${PORT}/api/aura/workbench/start-goal`, {
+          method: 'POST', headers: { 'content-type': 'application/json', origin: `http://127.0.0.1:${PORT}` },
+          body: JSON.stringify({ executionMode: 'autonomous', goal }), signal: AbortSignal.timeout(60_000),
+        });
+        const body: any = await r.json().catch(() => ({}));
+        if (!r.ok || body.success === false) throw new Error(body.error || `START_GOAL_HTTP_${r.status}`);
+        seerLiveWorkstream.record({ actor: 'Aura routines', type: 'routine.started', message: `Routine started: ${goal.slice(0, 120)}`, verified: true, receipt: { goal: goal.slice(0, 300) } });
+        return { id: body.goal?.id || body.mission?.id || null };
+      },
+    }).catch(() => {});
+  }, 60_000);
+  routineTimer.unref?.();
 
   // Compatibility route for older clients. New Aura uses /start-goal so the
   // operator objective is owned by canonical SEER rather than created as a
