@@ -78,7 +78,8 @@ test('operator budget HTTP route validates permission, origin and fields and per
   t.after(()=>new Promise(resolve=>server.close(resolve)));
   const url='http://127.0.0.1:'+server.address().port+'/budget';
   assert.equal((await fetch(url)).status,403);
-  const headers={'x-test-operator':'yes','content-type':'application/json'};
+  const headers={'x-test-operator':'yes','content-type':'application/json',origin:new URL(url).origin};
+  assert.equal((await fetch(url,{method:'PATCH',headers:{'x-test-operator':'yes','content-type':'application/json'},body:'{"cloudEnabled":false}'})).status,403,'a change without the interface origin is refused');
   assert.equal((await fetch(url,{method:'PATCH',headers:{...headers,origin:'https://foreign.example'},body:'{"dailyCloudUsd":2}'})).status,403);
   for(const body of [{dailyCloudUsd:'2'},{dailyCloudUsd:-1},{cloudEnabled:'true'},{autoApprove:true},{}])assert.equal((await fetch(url,{method:'PATCH',headers,body:JSON.stringify(body)})).status,400);
   const changed=await fetch(url,{method:'PATCH',headers,body:'{"dailyCloudUsd":2,"monthlyCloudUsd":20,"maxCloudUsdPerTask":0.05}'}).then(r=>r.json());

@@ -6,6 +6,9 @@ export function createEconomicBudgetRouter({ economic, requireOperatorUi, getBal
   router.use(requireOperatorUi);
   router.use((req, res, next) => {
     const origin = req.get('origin');
+    // A change to the budget comes from the interface, which a browser marks with its origin. Another local program sent
+    // cloudEnabled=false with no origin, repeatedly, switching the operator's cloud models off mid-mission (2026-11-06/07).
+    if (req.method !== 'GET' && !origin) return res.status(403).json({ success: false, error: 'BUDGET_CHANGE_REQUIRES_INTERFACE' });
     if (origin) {
       try { if (new URL(origin).host !== req.get('host')) return res.status(403).json({ success: false, error: 'BUDGET_CROSS_ORIGIN_DENIED' }); }
       catch { return res.status(403).json({ success: false, error: 'BUDGET_ORIGIN_INVALID' }); }
