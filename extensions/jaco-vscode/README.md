@@ -1,3 +1,27 @@
+# JACO Code IDE
+
+![JACO](media/icon.png)
+
+**Your own AI agent inside VS Code.** Give Aura a goal; it plans, writes code in a safe copy of your project, uses a real browser, and shows you every step in plain words, in English or Swedish. It runs on your computer with your own model (a free Google AI Studio key works, or a local model through Ollama).
+
+## Get started in three steps
+
+1. Install **JACO Lite** from [jacocode.com](https://jacocode.com/#lite-download) (Node.js 22.5+), unzip it and run START.
+2. Install this extension and click **JACO** in the activity bar.
+3. Choose your model in JACO and give Aura a goal.
+
+## What you get
+
+- **A sandbox for every mission**: Aura works in its own Git worktree; payments, sign-ins and anything that leaves the sandbox ask you first.
+- **Real browser control** with sign-in, payment and password fields kept out of its reach.
+- **Progress you can follow**: the plan first, then what each step showed and why the next one, and an honest final report of what it checked and what it could not.
+- **A budget you set** per day, month and task.
+
+More: [jacocode.com](https://jacocode.com) · [Source](https://github.com/Rick84444/JACO-CODE)
+
+---
+
+## Technical details
 # JACO Cognitive IDE — VS Code extension
 
 This VS Code extension opens **the complete existing JACO GUI** inside a full-size editor tab. It does not copy the app into VS Code, create a second runtime, invent agent state or bypass JACO's auth policy. JACO chat, missions, projects, Git and MCP remain owned by the same running local JACO Core.
