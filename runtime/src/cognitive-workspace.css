@@ -39,7 +39,7 @@
 .cognitive-status[data-tone=waiting]>span { background:#d0a56f; }
 .cognitive-main { flex:1; min-height:0; min-width:0; display:flex; }
 .cognitive-conversation { min-width:0; min-height:0; flex:1; display:flex; flex-direction:column; }
-.cognitive-main[data-canvas=true]>.cognitive-conversation { width:40%; flex:0 0 40%; max-width:580px; }
+.cognitive-main[data-canvas=true]>.cognitive-conversation { width:58%; flex:0 0 58%; max-width:none; }
 .cognitive-main[data-canvas=true] .cognitive-chat-scroll { padding:20px 24px; }
 .cognitive-main[data-canvas=true] .cognitive-feed { max-width:none; }
 .cognitive-main[data-canvas=true] .cognitive-composer { padding-right:20px; padding-left:20px; }
@@ -193,7 +193,7 @@
   .cognitive-product,.cognitive-brand-divider { display:none; }
   .cognitive-contextbar { padding:8px 18px; }
   .cognitive-chat-subtitle { display:none; }
-  .cognitive-main[data-canvas=true]>.cognitive-conversation { flex:0 0 43%; width:43%; }
+  .cognitive-main[data-canvas=true]>.cognitive-conversation { flex:0 0 52%; width:52%; }
   .cognitive-enter-hint { display:none; }
   .cognitive-main[data-canvas=true] .cognitive-start-prompts { flex-direction:column; }
 }
