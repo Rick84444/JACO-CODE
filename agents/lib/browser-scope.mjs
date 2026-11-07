@@ -1,3 +1,4 @@
+import { accountPageKind } from './account-onboarding.mjs';
 // What the browser actuators may touch. One owner for the Nova bridge and the runtime's BrowserHandsOff, so the
 // two cannot drift apart.
 //
@@ -62,7 +63,9 @@ export function inputAllowed(url, env = process.env) {
   try {
     const u = new URL(url);
     if (!['http:', 'https:'].includes(u.protocol)) return false;
-    if (hardDenied(url)) return false;
+    if (hardDenied(url) || accountPageKind(url) === 'registration') return false;
+    // Registration is performed only by the mission-scoped BrowserHandsOff
+    // account setup grant, not this legacy environment-only Nova bridge.
     return browserScope(env) === 'broad_web' ? !isPrivateHost(u.hostname) : allowedOrigins(env).has(u.origin);
   } catch { return false; }
 }
