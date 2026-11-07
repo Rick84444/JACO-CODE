@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { localMemoryActivity } from '../../runtime/src/server/connected/localMemoryActivity.mjs';
+import os from 'node:os';
+import { localMemoryActivity, legacyAuraMemory } from '../../runtime/src/server/connected/localMemoryActivity.mjs';
 
 function makeRuntime() {
   const stored = new Map([
@@ -68,4 +69,24 @@ test('gameboard icon is tracked and the official memory view is not an external 
   const bytes=fs.readFileSync(file);
   assert.equal(bytes.subarray(0,8).toString('hex'),'89504e470d0a1a0a');
   assert.ok(bytes.length>1000);
+});
+
+test('legacy AuraEngine memory is read from the existing local JSON without claiming verified reasoning',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-legacy-memory-'));
+  try {
+    const file=path.join(dir,'memory-store.json');
+    fs.writeFileSync(file,JSON.stringify([
+      {id:'mem-1794080000000-abcde',content:'A saved operator decision',category:'user_preference'},
+      {id:'mem-1794080000001-abcde',content:'sk-secret-secret-secret',category:'system'},
+    ]));
+    const legacy=legacyAuraMemory(file);
+    assert.equal(legacy.length,2);
+    assert.equal(legacy[0].status,'UNVERIFIED');
+    assert.deepEqual(legacy[0].evidenceRefs,[]);
+    assert.equal(legacy[0].source,'jaco.aura.legacy-local-memory');
+    assert.doesNotMatch(legacy[1].title,/sk-secret-secret-secret/);
+    const packet=localMemoryActivity(makeRuntime(),{legacyFile:file});
+    assert.equal(packet.latestLegacyId,'mem-1794080000000-abcde');
+    assert.ok(packet.entries.some(e=>e.title.includes('saved operator')));
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
 });
