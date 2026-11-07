@@ -373,3 +373,20 @@ test('a click whose stated expectation did not come true, but moved the page, is
   assert.equal(still.verified, false);
   assert.equal(still.expectationMet, false);
 });
+
+test('a click on a link to a slow site waits for the page to leave before judging it', async () => {
+  const evaluate = async (session, expression) => (await session.send('Runtime.evaluate', { expression })).result.value;
+  const s = page();
+  let clickedAt = 0;
+  const original = s.send.bind(s);
+  s.send = async (method, params = {}) => {
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased') clickedAt = Date.now();
+    if (method === 'Runtime.evaluate' && params.expression === 'location.href') return { result: { value: clickedAt && Date.now() - clickedAt > 600 ? 'https://slow.example/next' : OBSERVATION.url } };
+    return original(method, params);
+  };
+  const actions = createInputActions({ evaluate, navigationSettleMs: 3000, observe: async () => ({ ...OBSERVATION, url: clickedAt && Date.now() - clickedAt > 600 ? 'https://slow.example/next' : OBSERVATION.url }) });
+  const r = await actions.actSession(s, { selector: 'a.more', expectedUrl: OBSERVATION.url }, 'click');
+  assert.equal(r.verified, true);
+  assert.equal(r.effect, 'navigated');
+  assert.equal(r.observation.url, 'https://slow.example/next');
+});
