@@ -1,0 +1,13 @@
+{
+  "schema": "jaco.skill.v1",
+  "id": "marketing.proof-quest",
+  "version": "0.1.0",
+  "name": "JACO Proof Quest",
+  "description": "Generate interactive, evidence-gated engineering challenges for JACO marketing without publishing anything.",
+  "status": "CANDIDATE",
+  "intents": ["market_jaco", "generate_technical_campaign", "demonstrate_verified_capability"],
+  "tags": ["marketing", "interactive", "evidence", "developer"],
+  "substrates": ["runtime", "web"],
+  "dependencies": [],
+  "entrypoints": { "main": "procedures/main.json" }
+}
