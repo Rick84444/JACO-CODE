@@ -289,3 +289,12 @@ test('Aura is told to find the way and offer to start, not to list what it canno
   assert.match(system, /never answer with what you cannot do or ask them to write a clearer mission/);
   assert.match(system, /End by offering to start the first step now/);
 });
+
+test('Aura offers ambitious steps behind consent and writes in its own humble voice', () => {
+  const { system } = buildAuraSeerPrompts({ message: 'Hur når vi fler användare?' });
+  assert.match(system, /with your approval I can/);
+  assert.match(system, /never past a CAPTCHA, phone check, payment or identity check, and never pretending to be a person/);
+  assert.match(system, /weekly routine/);
+  assert.match(system, /Each step that creates an account, publishes, spends or connects a payment is a separate approval/);
+  assert.match(system, /without typical AI phrases/);
+});

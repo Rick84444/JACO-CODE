@@ -91,6 +91,7 @@ import { TASK_FIELDS } from "../agents/lib/task-fields.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
 import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
 import { operatorLanguageFile, readOperatorLanguage, writeOperatorLanguage } from "../agents/lib/operator-language.mjs";
+import { createRoutineStore } from "./src/server/connected/auraRoutines.mjs";
 import { synchronizeAuraHarnessModel } from "../agents/lib/aura-harness-model-choice.mjs";
 import { INITIAL_MODELS, INITIAL_CODE_FILES, INITIAL_DEVICES, INITIAL_TERMINAL_LOGS } from "./src/mockData.js";
 import { OllamaModel, CodeFile } from "./src/types.js";
@@ -2657,6 +2658,43 @@ const notifyPhone = async (action) => {
       res.status(code === 'PLANNER_ENV_PRIMARY_AUTHORITATIVE' ? 409 : badChoice || code === 'AURA_MISSION_MODE_INVALID' ? 400 : 503).json({ success: false, error: code });
     }
   });
+
+  // Routines: goals the operator approved to run on a schedule. Each run is an ordinary start-goal call over loopback,
+  // so budget, approvals and the sandbox apply exactly as for a goal typed in the chat. Only the interface can change them.
+  const routines = createRoutineStore({ file: path.join(WORKSPACE_ROOT, '.jaco', 'state', 'routines.json') });
+  const routinesFromInterface = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const origin = req.get('origin');
+    if (req.method !== 'GET' && (!origin || new URL(origin).host !== req.get('host'))) return res.status(403).json({ success: false, error: 'ROUTINE_CHANGE_REQUIRES_INTERFACE' });
+    next();
+  };
+  app.get('/api/aura/routines', requireLocalUi, (_req, res) => res.json({ success: true, routines: routines.list() }));
+  app.post('/api/aura/routines', requireLocalUi, routinesFromInterface, (req, res) => {
+    try { res.status(201).json({ success: true, routine: routines.add(req.body || {}) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
+  app.patch('/api/aura/routines/:id', requireLocalUi, routinesFromInterface, (req, res) => {
+    try { res.json({ success: true, routine: routines.update(String(req.params.id), req.body || {}) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
+  app.delete('/api/aura/routines/:id', requireLocalUi, routinesFromInterface, (req, res) => {
+    try { res.json({ success: true, ...routines.remove(String(req.params.id)) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
+  const routineTimer = setInterval(() => {
+    void routines.tick({
+      startGoal: async (goal: string) => {
+        const r = await fetch(`http://127.0.0.1:${PORT}/api/aura/workbench/start-goal`, {
+          method: 'POST', headers: { 'content-type': 'application/json', origin: `http://127.0.0.1:${PORT}` },
+          body: JSON.stringify({ executionMode: 'autonomous', goal }), signal: AbortSignal.timeout(60_000),
+        });
+        const body: any = await r.json().catch(() => ({}));
+        if (!r.ok || body.success === false) throw new Error(body.error || `START_GOAL_HTTP_${r.status}`);
+        seerLiveWorkstream.record({ actor: 'Aura routines', type: 'routine.started', message: `Routine started: ${goal.slice(0, 120)}`, verified: true, receipt: { goal: goal.slice(0, 300) } });
+        return { id: body.goal?.id || body.mission?.id || null };
+      },
+    }).catch(() => {});
+  }, 60_000);
+  routineTimer.unref?.();
 
   // Compatibility route for older clients. New Aura uses /start-goal so the
   // operator objective is owned by canonical SEER rather than created as a

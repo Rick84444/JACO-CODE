@@ -3,6 +3,7 @@ import { ProviderConnect } from './ProviderConnect';
 import { ApiVaultPanel } from './ApiVaultPanel';
 import { McpServersPanel, type McpProvider, type McpTool } from './McpServersPanel';
 import { SkillsView } from './SkillsView';
+import { RoutinesPanel } from './RoutinesPanel';
 import { CapabilitiesPanel } from './CapabilitiesPanel';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 const request=async(url:string,body?:unknown)=>fetch(url,{...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),signal:AbortSignal.timeout(30000)}).then(readAuraResponse);
@@ -35,7 +36,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
   return <div className="connections-workspace">
     <header><h2>Connections</h2><button type="button" onClick={()=>void refresh()}>Refresh</button></header>
     <p>Models, API & Vault, local tools and skills. Models and MCP refresh every 30 seconds.</p>
-    <nav aria-label="Connection type">{[['capabilities','What Aura can do'],['models','Models'],['local','Local tools'],['mcp','MCP'],['browser','Browser / CDP'],['skills','Skills'],['vault','API & Vault']].map(([id,label])=><button key={id} type="button" aria-pressed={tab===id} onClick={()=>{onTabChange(id);setResult(null);}}>{label}</button>)}</nav>
+    <nav aria-label="Connection type">{[['capabilities','What Aura can do'],['models','Models'],['local','Local tools'],['mcp','MCP'],['browser','Browser / CDP'],['skills','Skills'],['routines','Routines'],['vault','API & Vault']].map(([id,label])=><button key={id} type="button" aria-pressed={tab===id} onClick={()=>{onTabChange(id);setResult(null);}}>{label}</button>)}</nav>
     {observed&&<p>Last checked {new Date(observed).toLocaleTimeString('en-US')}</p>}
     {Object.entries(errors).map(([source,message])=><p key={source} role="alert">{source}: {message}. Earlier values may be stale.</p>)}
     {notice&&<p role="alert">{notice}</p>}
@@ -62,6 +63,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
     {tab==='capabilities'&&<CapabilitiesPanel mcp={(mcp?.providers||[]) as any} onMcpChanged={()=>void refresh()}/>}
     {tab==='vault'&&<ApiVaultPanel onChanged={refresh}/>}
     {tab==='skills'&&<SkillsView/>}
+    {tab==='routines'&&<RoutinesPanel/>}
     {result&&tab!=='models'&&<section><h3>Latest tool result</h3><pre>{JSON.stringify(result,null,2)}</pre></section>}
   </div>;
 }
