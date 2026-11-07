@@ -2,13 +2,37 @@
 // Do not create a parallel memory database or invent raw model chain-of-thought.
 // Only persisted knowledge.created/knowledge.updated events may trigger a "saved" indicator.
 import { safeCognitiveText } from '../../lib/cognitiveEvents.mjs';
+import fs from 'node:fs';
 
 const ID = /^[a-zA-Z0-9_.-]{1,180}$/;
 const WRITE_TYPES = new Set(['knowledge.created', 'knowledge.updated']);
 const bounded = (s, max) => safeCognitiveText(String(s || ''), max);
 const listOf = (items, max) => (Array.isArray(items) ? items : []).slice(0, max).map(v => bounded(v, 240));
 
-export function localMemoryActivity(runtime, { limit = 20 } = {}) {
+// The older AuraEngine writes an independent JSON file. Read it without importing it
+// into Continuum or pretending a legacy entry has a verified evidence receipt.
+export function legacyAuraMemory(file, limit = 20) {
+  if (!file) return [];
+  let rows;
+  try { rows = JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch { return []; }
+  if (!Array.isArray(rows)) return [];
+  return rows.filter(x => x && typeof x.id === 'string' && ID.test(x.id))
+    .slice(0, Math.max(1, Math.min(50, limit)))
+    .map(x => {
+      const matched = /^mem-(\d{12,15})-/.exec(x.id);
+      const date = matched ? new Date(Number(matched[1])) : null;
+      const updatedAt = date && Number.isFinite(date.getTime()) ? date.toISOString() : null;
+      return {
+        id: x.id, kind: bounded(x.category, 80), title: bounded(x.content, 240),
+        status: 'UNVERIFIED', confidence: null, updatedAt,
+        decisionSummary: '', evidenceRefs: [], dependencies: [], failureModes: [],
+        missionIds: [], source: 'jaco.aura.legacy-local-memory',
+      };
+    });
+}
+
+export function localMemoryActivity(runtime, { limit = 20, legacyFile = null } = {}) {
   if (!runtime?.knowledge?.get || !runtime?.events?.list) throw new Error('LOCAL_CONTINUUM_MEMORY_UNAVAILABLE');
   const cap = Math.max(1, Math.min(Number(limit) || 20, 50));
   const events = runtime.events.list({ stream: 'knowledge', limit: 500 })
@@ -44,9 +68,13 @@ export function localMemoryActivity(runtime, { limit = 20 } = {}) {
     eventId: e.id, sequence: e.sequence, id: e.entityId, type: e.type,
     at: e.timestamp, title: byId.get(e.entityId).title,
   }));
+  const legacy = legacyAuraMemory(legacyFile, cap);
+  const entries = [...memories, ...legacy]
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))).slice(0, cap);
   return {
     schema: 'jaco.local-memory-activity/v1', source: 'local-continuum',
-    entries: memories, changes, latestWriteSequence: changes[0]?.sequence || 0,
+    entries, changes, latestWriteSequence: changes[0]?.sequence || 0,
+    latestLegacyId: legacy[0]?.id || null,
     observedAt: new Date().toISOString(),
     explanation: 'Decision summaries and evidence from local persisted knowledge; not hidden model chain-of-thought.',
   };
