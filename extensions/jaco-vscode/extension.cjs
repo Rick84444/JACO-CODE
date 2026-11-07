@@ -62,7 +62,7 @@ async function openFullGUI(context) {
     }
     const port = Number(new URL(base).port || 80);
     panel = vscode.window.createWebviewPanel(
-      'jaco.fullIDE', 'JACO Cognitive IDE', vscode.ViewColumn.One,
+      'jaco.fullIDE', 'JACO Code IDE', vscode.ViewColumn.One,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [],
         portMapping: [{ webviewPort: port, extensionHostPort: port }] },
     );
