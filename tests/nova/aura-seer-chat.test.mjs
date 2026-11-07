@@ -283,11 +283,13 @@ test('Aura context grows only for explicitly larger provider budgets and preserv
   assert.throws(()=>buildAuraSeerPrompts({message:'x'.repeat(10000),contextChars:7500}),/AURA_CHAT_MESSAGE_TOO_LARGE_FOR_CONTEXT/);
 });
 
-test('Aura is told to find the way and offer to start, not to list what it cannot do', () => {
+test('Aura must attempt already ordered autonomous work and report a truthful blocker when it cannot complete', () => {
   const { system } = buildAuraSeerPrompts({ message: 'Hur når vi fler användare?' });
   assert.match(system, /Be solution-first/);
   assert.match(system, /never answer with what you cannot do or ask them to write a clearer mission/);
-  assert.match(system, /End by offering to start the first step now/);
+  assert.match(system, /If the operator has already explicitly ordered execution, attempt it in Full Autonomous/);
+  assert.match(system, /If a requested task cannot be completed/);
+  assert.match(system, /Google OAuth consent/);
 });
 
 test('Aura offers ambitious steps behind consent and writes in its own humble voice', () => {
