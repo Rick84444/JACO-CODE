@@ -735,6 +735,31 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
     });
     seerLiveWorkstream.record({ actor: event.actor, type: event.type, message: event.message, verified: event.verified, receipt: event.receipt });
   });
+  // A browser-originated operator gesture is the only way to grant account setup.
+  // The model's ordinary CDP tools cannot mint this consent through a tool call.
+  app.post('/api/aura/browser/account-setup-grant', requireLocalUiSameOrigin, (req, res) => {
+    try {
+      const host = String(req.headers.host || '');
+      const origin = String(req.headers.origin || '');
+      if (!host || !origin || new URL(origin).host !== host || String(req.headers['sec-fetch-site'] || '') !== 'same-origin') {
+        return res.status(403).json({ success: false, error: 'ACCOUNT_SETUP_LOCAL_OPERATOR_GESTURE_REQUIRED' });
+      }
+      const client = browserSurface.sessions.getClient();
+      if (!client) return res.status(409).json({ success: false, error: 'BROWSER_TAB_NOT_ATTACHED' });
+      if (req.body?.enabled === false) return res.json({ success: true, grant: client.configureGrant({ enabled: false }) });
+      if (req.body?.confirmed !== true) return res.status(400).json({ success: false, error: 'ACCOUNT_SETUP_CHECKBOX_REQUIRED' });
+      const missionId = String(req.body?.missionId || '').trim();
+      const originUrl = new URL(String(req.body?.origin || ''));
+      const grant = client.configureGrant({
+        enabled: true, scope_mode: 'origins', allowed_origins: [originUrl.origin], contract_id: missionId,
+        allow_click: true, allow_value_set: true, allow_navigate: true, allow_select: true, allow_scroll: true,
+        expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+        account_setup: { enabled: true, execution_mode: 'autonomous', operator_confirmed: true, mission_id: missionId, origins: [originUrl.origin] },
+      });
+      res.json({ success: true, grant });
+    } catch (error: any) {res.status(400).json({success:false,error:error.message||String(error)});}
+  });
+
   const continuumSurface = createContinuumRouter({ workspaceRoot: WORKSPACE_ROOT, browserSessions: browserSurface.sessions, requireAuth });
 
   const modelRelay = createModelRelayRouter({
