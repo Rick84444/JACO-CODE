@@ -16,6 +16,7 @@ export const CognitiveEventCard:React.FC<{event:CognitiveEvent;onInspect?:(event
       <div className="cognitive-event-actions">
         {file && onOpenFile && <button type="button" onClick={()=>onOpenFile(file)}><FileCode2 size={12}/>{file.split('/').at(-1)}</button>}
         {evidence.url && <a href={evidence.url} target="_blank" rel="noreferrer"><ArrowUpRight size={12}/>Open result</a>}
+        {event.planId && ['goal','decision','plan'].includes(event.category) && <button type="button" onClick={()=>window.dispatchEvent(new CustomEvent('jaco:open-plan',{detail:event.planId}))}><GitBranch size={12}/>Open the plan</button>}
         {onInspect && <button type="button" onClick={()=>onInspect(event)}>Show evidence<ChevronRight size={12}/></button>}
         <time dateTime={event.at}>{new Date(event.at).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</time>
       </div>

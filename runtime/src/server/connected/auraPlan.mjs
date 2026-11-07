@@ -11,12 +11,12 @@ export function createPlanComments({ file, now = () => new Date() }) {
   const write = state => { fs.mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.${process.pid}.tmp`; fs.writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n'); fs.renameSync(tmp, file); };
   return {
     list(graphId) { return read().comments.filter(c => !graphId || c.graphId === graphId); },
-    add({ graphId, nodeKey = null, text }) {
+    add({ graphId, nodeKey = null, text, author = 'operator' }) {
       const t = String(text || '').trim();
       if (!graphId || typeof graphId !== 'string') throw new Error('PLAN_COMMENT_GRAPH_REQUIRED');
       if (t.length < 2 || t.length > 2000) throw new Error('PLAN_COMMENT_TEXT_INVALID');
       const state = read();
-      const comment = { id: `c-${crypto.randomBytes(4).toString('hex')}`, graphId, nodeKey: nodeKey ? String(nodeKey).slice(0, 120) : null, text: t, at: now().toISOString() };
+      const comment = { id: `c-${crypto.randomBytes(4).toString('hex')}`, graphId, nodeKey: nodeKey ? String(nodeKey).slice(0, 120) : null, text: t, author: author === 'aura' ? 'aura' : 'operator', at: now().toISOString() };
       state.comments.push(comment);
       state.comments = state.comments.slice(-500);
       write(state); return comment;

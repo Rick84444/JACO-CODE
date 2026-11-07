@@ -2313,6 +2313,12 @@ const notifyPhone = async (action) => {
       res.json({ success: true, plans });
     } catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }
   });
+  // Aura's own notes on a step (what it found, why it stopped, which helpers it created). Token-protected: only the
+  // local executor writes them, and they are marked as Aura's so they are never mistaken for the operator's direction.
+  app.post('/api/aura/plan/notes', requireAuth, (req, res) => {
+    try { res.status(201).json({ success: true, note: planComments.add({ graphId: String(req.body?.graphId || ''), nodeKey: req.body?.nodeKey ?? null, text: req.body?.text, author: 'aura' }) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
   app.get('/api/aura/plan/comments', requireLocalUi, (req, res) => res.json({ success: true, comments: planComments.list(String(req.query.graphId || '') || undefined) }));
   app.post('/api/aura/plan/comments', requireLocalUi, (req, res) => {
     const origin = req.get('origin');

@@ -87,3 +87,19 @@ test('Aura uses no emoji: not in her chat, not on the plan board, not in the beg
   const { buildAuraSeerPrompts } = await import('../../agents/lib/aura-seer-chat.mjs');
   assert.match(buildAuraSeerPrompts({ message: 'hej' }).system, /Never use emoji/);
 });
+
+test('a chat event of a plan step carries the plan id so the chat can open the blueprint; a bad id is dropped', async () => {
+  const { toCognitiveEvent } = await import('../../runtime/src/lib/cognitiveEvents.mjs');
+  const at = new Date().toISOString();
+  assert.equal(toCognitiveEvent({ type: 'MISSION_CREATED', payload: { goal: 'Bygg' }, at, id: 'e1' }, { planId: 'mw6es86z-xvlm8' }).planId, 'mw6es86z-xvlm8');
+  assert.equal(toCognitiveEvent({ type: 'MISSION_CREATED', payload: { goal: 'Bygg' }, at, id: 'e2' }, { planId: '"><script>' }).planId, null);
+});
+
+test('Aura notes are kept apart from the operator comments', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-'));
+  try {
+    const c = createPlanComments({ file: path.join(d, 'c.json') });
+    assert.equal(c.add({ graphId: 'g', nodeKey: 'a', text: 'Hittade tre forum', author: 'aura' }).author, 'aura');
+    assert.equal(c.add({ graphId: 'g', text: 'Bra', author: 'something-else' }).author, 'operator');
+  } finally { fs.rmSync(d, { recursive: true, force: true }); }
+});

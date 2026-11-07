@@ -3,7 +3,7 @@ import { mergeCognitiveEvents } from '../lib/cognitiveEvents.mjs';
 
 export interface CognitiveEvent {
   id:string; at:string; type:string; category:string; title:string; text:string;
-  durable:boolean; seq:number|null; missionId:string|null; missionGoal:string|null; actionId:string|null;
+  durable:boolean; seq:number|null; missionId:string|null; missionGoal:string|null; actionId:string|null; planId?:string|null;
   evidence:{outcome:string;path:string|null;url:string|null;commit:string|null;exitCode:number|null;error:string|null};
 }
 

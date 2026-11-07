@@ -316,6 +316,14 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const activation = useActivationReport();
   // A beginner with no AI model connected gets the guide first; it can be closed and does not come back this session.
   const [guideClosed, setGuideClosed] = useState(false);
+  // The chat and a shared link (?plan=<id>) open the blueprint of a plan directly.
+  const [focusPlanId, setFocusPlanId] = useState<string | null>(() => { try { return new URLSearchParams(window.location.search).get('plan'); } catch { return null; } });
+  useEffect(() => {
+    if (focusPlanId) setWorkspaceView('gameboard');
+    const open = (e: Event) => { const id = (e as CustomEvent).detail; if (typeof id === 'string') { setFocusPlanId(id); setWorkspaceView('gameboard'); } };
+    window.addEventListener('jaco:open-plan', open);
+    return () => window.removeEventListener('jaco:open-plan', open);
+  }, []);
   const needsModel = Boolean(activation.report && !activation.report.providers?.some(p => p.active));
   const cognitiveLive = useCognitiveLive();
   const [workspaceView, setWorkspaceView] = useState<CognitiveCanvas>('conversation');
@@ -1888,7 +1896,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
     {workspaceView==='agents'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening agent map…</div>}><AuraAgentWorkspace goal={goal} onGoalChange={setGoal} onStartGoal={()=>{void startGoal().catch(()=>{});}} submitting={missionSubmitting} notice={missionNotice} onReview={()=>setWorkspaceView('evidence')} onCancelMission={cancelMission}/></React.Suspense>}
-    {workspaceView==='gameboard'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening mission plans…</div>}><StrategyBoard/><details className="m-3 text-xs text-slate-400"><summary>Technical view</summary><CognitiveGameboard/></details></React.Suspense>}
+    {workspaceView==='gameboard'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening mission plans…</div>}><StrategyBoard focusPlanId={focusPlanId}/><details className="m-3 text-xs text-slate-400"><summary>Technical view</summary><CognitiveGameboard/></details></React.Suspense>}
     {workspaceView==='voice'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening voice channel…</div>}><VoiceChannel/></React.Suspense>}
     {workspaceView==='preview'&&<CognitivePreview path={selectedFile} content={fileView ? (drafts[fileView.path] ?? fileView.content) : null} files={files} events={cognitiveEvents} onOpenFile={path => { openFile(path); setWorkspaceView('preview'); }}/>}
     {workspaceView==='evidence'&&<div className="cognitive-evidence-scroll"><MissionReview missions={missions} preferredMissionId={reviewMissionId} onDecisions={()=>setShowApprovals(true)}/><CognitiveEvidence events={cognitiveEvents} selected={selectedEvidence} onSelect={setSelectedEvidence} onOpenFile={openFile}/>
