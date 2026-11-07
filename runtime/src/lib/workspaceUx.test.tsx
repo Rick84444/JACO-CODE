@@ -90,14 +90,17 @@ test('CDP refuses ambiguous URL-only attachment instead of choosing another iden
  }finally{globalThis.fetch=original;}
 });
 
-test('routine background observations are grouped while mission blockers stay in the conversation', () => {
+test('technical events stay inspectable while a blocked mission gets one human-readable summary', () => {
   const session:any={messages:[],setMessages:noop,appendMessage:async()=>{},storageReady:true,storageError:null,retryStorage:noop,input:'',setInput:noop,busy:null,setBusy:noop,toolArguments:'{}',setToolArguments:noop};
   const event:any={id:'background',at:'2026-10-22T10:00:00Z',type:'mission.dispatch.started',category:'observation',title:'New observation',text:'Dispatcher started',missionId:null,evidence:{outcome:'observed'}};
-  const html=renderToStaticMarkup(<AuraChatPanel session={session} onStartGoal={noop} liveEvents={[event,{...event,id:'blocked',category:'blocked',title:'Work is blocked',text:'Connection lost',evidence:{outcome:'unknown'}}]}/>);
+  const blocker:any={...event,id:'blocked',missionId:'mission-1',category:'blocked',title:'Work is blocked',text:'Connection lost',evidence:{outcome:'unknown',error:'CONNECTION_LOST'}};
+  const html=renderToStaticMarkup(<AuraChatPanel session={session} onStartGoal={noop} liveEvents={[event,blocker,blocker]} missions={[{id:'mission-1',goal:'Fix project',status:'BLOCKED'}]}/>);
   const grouped=html.slice(html.indexOf('<details class="cognitive-background-events"'),html.indexOf('</details>')+10);
   assert.match(grouped,/Dispatcher started/);
-  assert.doesNotMatch(grouped,/Connection lost/);
-  assert.match(html,/Connection lost/);
+  assert.match(grouped,/Connection lost/,'original evidence remains available behind the technical disclosure');
+  assert.match(html,/data-testid="aura-blocker-summary"/,'one human blocker summary is rendered');
+  assert.match(html,/Uppdraget behöver din hjälp|The mission needs your attention/);
+  assert.equal((html.match(/data-event-id="blocked"/g)||[]).length,2,'raw events never appear a second time in the main feed');
 });
 
 test('explicit mission controls are still sendable while an unrelated chat answer is pending', () => {
