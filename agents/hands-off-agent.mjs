@@ -1888,12 +1888,15 @@ async function runCodingPreflight(state, { mission, lease }) {
       tools:context.mission.allowedTasks,toolContracts:Object.fromEntries(context.mission.allowedTasks.map(t=>[t,taskContract(t)])),
       knowledge:knowledge?.context||null,knowledgeRecords:knowledge?.context?.outcomes?.length||0};
     await missionClient.preflight(context.mission.id,{...context.lease,report:state.preflight});
+    // The runtime not answering yet (right after a restart) passes by itself: wait, do not stop the mission for the operator.
+    if(blockers.length===1&&blockers[0]==='RUNTIME_PREFLIGHT_UNAVAILABLE')return {deferred:true,reason:'RUNTIME_PREFLIGHT_UNAVAILABLE'};
     if(blockers.length)return {blocked:true,reason:blockers.join(', ')};
   return { ready: true };
 }
 
 async function planWithContinuity(state, context) {
   const preflight = await runCodingPreflight(state, context);
+  if (preflight?.deferred) return { blocked: true, reason: preflight.reason };
   if (preflight?.blocked) return preflight;
   let continuity = null;
   if (state?.surfaces?.runtime) {

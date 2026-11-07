@@ -811,3 +811,12 @@ test('Aura can create helper agents: delegate turns two or more roles into helpe
   assert.equal(live.title, 'Arbetet lämnat till hjälpagenter');
   assert.match(live.text, /Hjälpagenter: Researcher: .*; Builder: /);
 });
+
+test('a preflight that cannot reach the runtime yet defers the mission instead of blocking it', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal: 'Titta', idempotencyKey: 'defer1', allowedTasks: ['web-fetch'], contract: { objective: 'Titta', scope: { allowed: ['**'] }, acceptance: ['svar'], verification: { tests_required: false } } });
+  const model = scripted([]);
+  const result = await run(s, model, async () => assert.fail('no tool runs'), { preflight: async () => ({ deferred: true, reason: 'RUNTIME_PREFLIGHT_UNAVAILABLE' }) });
+  assert.equal(result.deferred, true);
+  assert.equal(s.control.get(m.id).status, 'ACTIVE', 'the mission waits, it is not blocked for the operator');
+});
