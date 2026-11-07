@@ -320,7 +320,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [focusPlanId, setFocusPlanId] = useState<string | null>(() => { try { return new URLSearchParams(window.location.search).get('plan'); } catch { return null; } });
   useEffect(() => {
     if (focusPlanId) setWorkspaceView('gameboard');
-    const open = (e: Event) => { const id = (e as CustomEvent).detail; if (typeof id === 'string') { setFocusPlanId(id); setWorkspaceView('gameboard'); } };
+    const open = (e: Event) => { const id = (e as CustomEvent).detail; if (typeof id === 'string') { if (id) setFocusPlanId(id); setWorkspaceView('gameboard'); } };
     window.addEventListener('jaco:open-plan', open);
     return () => window.removeEventListener('jaco:open-plan', open);
   }, []);

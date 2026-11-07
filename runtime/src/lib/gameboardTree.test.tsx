@@ -19,3 +19,21 @@ test('replaced steps leave the tree and a cycle never loops forever', () => {
   assert.equal(cyclic.length, 1);
   assert.ok(JSON.stringify(shape(cyclic)).includes('"='));
 });
+
+test('the Gameboard opens on the plan asked for, else the one Aura is working on', async () => {
+  const { pickPlan } = await import('../components/StrategyBoard');
+  const plan = (id: string, status = 'READY') => ({ id, status, nodes: [node(id + '1', [], status === 'RUNNING' ? 'RUNNING' : 'VERIFIED')] }) as any;
+  const plans = [plan('old'), plan('now', 'RUNNING')];
+  assert.equal(pickPlan(plans, 'old')?.id, 'old');
+  assert.equal(pickPlan(plans, null)?.id, 'now');
+  assert.equal(pickPlan([], null), null);
+});
+
+test('the line from the active subgoal to the goal glows all the way to the middle', async () => {
+  const { litLine } = await import('../components/StrategyBoard');
+  const item = (status: string) => ({ node: node('n', [], status), children: [], repeat: false });
+  // Five boxes, work in the first: its drop and the bar to the middle box glow.
+  assert.deepEqual(litLine(['RUNNING', 'VERIFIED', 'VERIFIED', 'VERIFIED', 'VERIFIED'].map(item)), ['jp-v jp-r', 'jp-l jp-r', 'jp-l', '', '']);
+  assert.deepEqual(litLine(['VERIFIED', 'RUNNING'].map(item)), ['', 'jp-v jp-l']);
+  assert.deepEqual(litLine(['VERIFIED', 'VERIFIED'].map(item)), ['', '']);
+});

@@ -690,3 +690,6 @@
 @keyframes aura-thinking { 0%,100% { box-shadow:0 0 2px 1px rgba(56,189,248,.25); } 50% { box-shadow:0 0 10px 3px rgba(56,189,248,.7); } }
 .aura-avatar[data-thinking] { animation:aura-thinking 2.2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .aura-avatar[data-thinking] { animation:none; box-shadow:0 0 8px 2px rgba(56,189,248,.55); } }
+
+.aura-avatar-button { display:inline-flex; align-items:center; padding:0; border:0; background:none; cursor:pointer; border-radius:50%; }
+.aura-avatar-button:hover .aura-avatar, .aura-avatar-button:focus-visible .aura-avatar { box-shadow:0 0 12px 3px rgba(56,189,248,.6); }

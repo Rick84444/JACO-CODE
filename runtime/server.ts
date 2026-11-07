@@ -2301,7 +2301,9 @@ const notifyPhone = async (action) => {
       if (!Array.isArray(graphs)) throw new Error('SEER_GRAPH_SCHEMA_INVALID');
       let skills: any[] = [];
       try { skills = listSkills(skillRoots()); } catch { /* the plan still shows */ }
-      const language = readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) || 'en';
+      // The Gameboard asks in the language the GUI shows, so its words never mix with another language.
+      const asked = String((_req as any).query?.language || '');
+      const language = ['sv', 'en'].includes(asked) ? asked : readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) || 'en';
       // What this installation can do right now, so each need shows as had, missing or waiting for approval.
       const capabilityTasks = ['web-fetch', 'browser-click', 'browser-survey-site', 'repo-write', 'repo-edit'];
       const available = {
