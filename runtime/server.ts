@@ -92,6 +92,7 @@ import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../age
 import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
 import { operatorLanguageFile, readOperatorLanguage, writeOperatorLanguage } from "../agents/lib/operator-language.mjs";
 import { createRoutineStore } from "./src/server/connected/auraRoutines.mjs";
+import { createPlanComments, planView } from "./src/server/connected/auraPlan.mjs";
 import { synchronizeAuraHarnessModel } from "../agents/lib/aura-harness-model-choice.mjs";
 import { INITIAL_MODELS, INITIAL_CODE_FILES, INITIAL_DEVICES, INITIAL_TERMINAL_LOGS } from "./src/mockData.js";
 import { OllamaModel, CodeFile } from "./src/types.js";
@@ -2287,6 +2288,32 @@ const notifyPhone = async (action) => {
   const gameboardExchange = createGameboardExchange(connectedRuntime.bus.db);
   // The same observed Gameboard projection is consumed by Codex GUI, JACO Editor MCP and Lite.
   // SEER remains the only graph authority. Missing SEER is explicit (not a fabricated READY board).
+  // The plan as the operator sees it (SEER's mission graphs, read only) and the operator's comments on it.
+  const planComments = createPlanComments({ file: path.join(WORKSPACE_ROOT, '.jaco', 'state', 'plan-comments.json') });
+  app.get('/api/aura/plan', requireLocalUi, async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const base = new URL(String(process.env.SEER_URL || 'http://127.0.0.1:2997')).origin;
+      const token = process.env.SEER_TOKEN || process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || GATEWAY_TOKEN;
+      const response = await fetch(base + '/cortex/mission-graphs', { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(4000) });
+      if (!response.ok) throw new Error(`SEER_HTTP_${response.status}`);
+      const graphs: any = await response.json();
+      if (!Array.isArray(graphs)) throw new Error('SEER_GRAPH_SCHEMA_INVALID');
+      let skills: any[] = [];
+      try { skills = listSkills(skillRoots()); } catch { /* the plan still shows */ }
+      const language = readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) || 'en';
+      const plans = graphs.slice(0, 10).map((g: any) => planView(g, { comments: planComments.list(g.id), skills, language }));
+      res.json({ success: true, plans });
+    } catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }
+  });
+  app.get('/api/aura/plan/comments', requireLocalUi, (req, res) => res.json({ success: true, comments: planComments.list(String(req.query.graphId || '') || undefined) }));
+  app.post('/api/aura/plan/comments', requireLocalUi, (req, res) => {
+    const origin = req.get('origin');
+    if (!origin || new URL(origin).host !== req.get('host')) return res.status(403).json({ success: false, error: 'PLAN_COMMENT_REQUIRES_INTERFACE' });
+    try { res.status(201).json({ success: true, comment: planComments.add(req.body || {}) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
+
   app.get('/api/aura/workbench/gameboard', requireLocalUi, async (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     let graphs: any[] | null = null;
