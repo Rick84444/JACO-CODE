@@ -168,7 +168,15 @@ export function createModelRelayRouter(input: {
       if (surface === 'BROWSER') {
         const client = input.browserSessions.getClient();
         if (!client) return fail(res, 409, 'Browser Hands-Off is not attached');
-        client.configureGrant({
+        // A signed autonomy mandate AND an explicit website-specific operator
+        // confirmation are required for account creation. Do not overwrite the
+        // short-lived operator grant on every relay call.
+        const operatorGrant = client.getGrant();
+        const accountPermit = operatorGrant?.enabled && operatorGrant.account_setup?.enabled &&
+          operatorGrant.account_setup.mission_id === missionId &&
+          operatorGrant.account_setup.origins.every(origin =>
+            mandate.browserScope === 'BROAD_WEB' || mandate.allowedOrigins.includes(origin));
+        if (!accountPermit) client.configureGrant({
           enabled: true,
           scope_mode: mandate.browserScope === 'BROAD_WEB' ? 'broad_web' : 'origins',
           allowed_origins: mandate.allowedOrigins,
@@ -224,7 +232,7 @@ export function createModelRelayRouter(input: {
       if (surface === 'BROWSER') {
         const client = input.browserSessions.getClient();
         if (!client) return fail(res, 409, 'Browser Hands-Off is not attached');
-        receipt = await client.executeVerified(action as BrowserAction);
+        receipt = await client.executeVerified({ ...(action as BrowserAction), mission_id: missionId || undefined });
       } else if (surface === 'DESKTOP') {
         receipt = await input.desktop.executeVerified(action as DesktopAction);
       } else {
