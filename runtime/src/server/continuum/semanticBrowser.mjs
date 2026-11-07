@@ -1,6 +1,6 @@
 import { nowIso, sha256, canonicalJson, deepClone } from './util.mjs';
 
-const HIGH_CONSEQUENCE = new Set(['FINANCIAL_COMMITMENT','DELETE','PUBLISH','PERMISSION_ESCALATION','CREDENTIAL_CHANGE']);
+const HIGH_CONSEQUENCE = new Set(['FINANCIAL_COMMITMENT','DELETE','PUBLISH','PERMISSION_ESCALATION','CREDENTIAL_CHANGE','ACCOUNT_CREATION']);
 
 function elementKey(el,index){return String(el.stableKey||el.automationId||el.route||`${el.controlType||'node'}:${index}`);}
 function compactElement(el,index){return {id:`e_${sha256(elementKey(el,index)).slice(0,10)}`,key:elementKey(el,index),role:String(el.controlType||'').slice(0,80),name:String(el.name||'').slice(0,120),selector:String(el.route||'').slice(0,500),patterns:Array.isArray(el.patterns)?el.patterns.slice(0,12):[],automationId:String(el.automationId||'').slice(0,160)};}
