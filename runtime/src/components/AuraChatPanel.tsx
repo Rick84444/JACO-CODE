@@ -8,6 +8,7 @@ import { useUiLanguage } from '../i18n/UiLanguage';
 import { JacoWordmark } from './JacoWordmark';
 import { initialAuraRunMode } from '../lib/auraRunModes.mjs';
 import { parseAuraMissionCommand } from '../lib/auraChatCommands.mjs';
+import { isExplicitAutonomousMissionRequest } from '../lib/auraMissionIntent.mjs';
 import { CognitiveEventCard } from './CognitiveEventCard';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
@@ -661,7 +662,11 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       setShowBuildAgent(true);setShowModePicker(false);setInput('');
       return;
     }
-    return ask(); // Every mode retains normal conversation; mission start is explicit.
+    // In Full Autonomous an explicit "build / create / promote" instruction is
+    // already the operator's order. Do not make them ask start_goal twice.
+    // Ordinary questions still go to the persistent chat in every mode.
+    if (runMode === 'autonomous' && isExplicitAutonomousMissionRequest(input)) return void goal();
+    return ask();
   };
   const prompt=(text:string,mode:'chat'|'goal'='chat')=>{
     setInput(text);
@@ -899,7 +904,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               {tr(' Föreslagna skills',' Skill candidates')}: {cognitiveSuggestions.skills}
               <span title={tr('Ett skillförslag ger inte verktygsbehörighet. Varje steg kontrolleras av runtimen.','Skill discovery grants no tool permissions. Each step must pass runtime checks.')}> · <span className="text-cyan-700">◇</span></span>
             </p>}
-          <p className="cognitive-composer-help">{runMode==='autonomous' ? tr('Chatten fortsätter som vanligt. Starta uppdrag separat; stoppa eller ändra pågående uppdrag med kontrollerna ovan.','Conversation remains available. Start a mission separately; use the controls above to stop or steer running work.')
+          <p className="cognitive-composer-help">{runMode==='autonomous' ? tr('Tydliga arbetsinstruktioner startar uppdrag; vanliga frågor stannar i chatten. Stoppa eller ändra uppdraget ovan.','Conversation remains available. Start a mission separately; use the controls above to stop or steer running work.')
             : runMode==='planning' ? tr('Planning läser och föreslår. Inga verktygsändringar eller uppdrag startas.','Planning observes and proposes; no tool mutations or missions start.')
             : tr('Manual svarar med läsverktyg utan att starta ett uppdrag.','Manual answers using read tools without starting a mission.')}</p>
         </div>
