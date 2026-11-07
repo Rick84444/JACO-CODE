@@ -100,7 +100,8 @@ test('The current GUI has a single compact label, inline build flow and no popup
   assert.match(gui,/x-jaco-operator-token/);
   assert.match(gui,/reportsTo:'aura'/);
   assert.match(gui,/Build Agent is a local UI action in every mode/);
-  assert.ok(gui.includes('return ask(); // Every mode retains normal conversation; mission start is explicit.'));
+  assert.match(gui,/runMode === 'autonomous' && isExplicitAutonomousMissionRequest\(input\)/);
+  assert.match(gui,/return ask\(\);/,'questions remain chat in every mode');
   assert.match(gui,/data-testid="jaco-chat-send"/);
   assert.match(gui,/data-testid="jaco-start-mission"/);
   assert.ok(gui.includes('onClick={()=>void goal()}'));
