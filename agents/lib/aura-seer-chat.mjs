@@ -219,7 +219,7 @@ async function runToolLoop(input, fetchImpl){
     const completion=await (input.complete || ((args) => seerCompletionResult(args, fetchImpl)))({
       system,
       user,
-      max_tokens: Number(input.max_tokens || 700),
+      max_tokens: Number(input.max_tokens || AURA_CHAT_MAX_TOKENS),
       temperature: Number.isFinite(Number(input.temperature)) ? Number(input.temperature) : 0.35,
       memory_chars: auraMemoryChars(),
     }, fetchImpl);
@@ -255,6 +255,22 @@ async function runToolLoop(input, fetchImpl){
   return { completion: { text: 'The tool limit was reached without a finished answer.', provider: 'aura', model: 'tool-limit', local: true }, receipts, modelCosts };
 }
 
+// Room for a full answer: thinking models (Gemini 2.5) spend hidden reasoning from the same budget.
+const AURA_CHAT_MAX_TOKENS = 2048;
+
+// A reply the provider stopped at its token limit is never shown as if it were finished
+// (2026-11-07: the operator got "...och om jag" as Aura's whole answer).
+export function markTruncatedReply(text, finishReason, language = 'en') {
+  const reason = String(finishReason || '').toLowerCase();
+  if (!['length', 'max_tokens', 'max_output_tokens'].includes(reason)) return text;
+  const note = language === 'sv'
+    ? 'Svaret blev avbrutet innan det var klart. Skriv "fortsätt" så skriver jag resten.'
+    : 'The answer was cut off before it was finished. Write "continue" and I will write the rest.';
+  return `${String(text || '').trimEnd()} ...
+
+${note}`;
+}
+
 export async function auraChatViaSeer(input={}, fetchImpl=fetch){
   let completion, toolReceipts=[], modelCosts=[];
   if (input.toolbox) {
@@ -267,13 +283,14 @@ export async function auraChatViaSeer(input={}, fetchImpl=fetch){
     completion=await (input.complete || ((args) => seerCompletionResult(args, fetchImpl)))({
       system,
       user,
-      max_tokens: Number(input.max_tokens || 700),
+      max_tokens: Number(input.max_tokens || AURA_CHAT_MAX_TOKENS),
       temperature: Number.isFinite(Number(input.temperature)) ? Number(input.temperature) : 0.35,
       memory_chars: auraMemoryChars(),
     }, fetchImpl);
     if (completion.costStatus) modelCosts.push({ status: completion.costStatus, usd: completion.costUsd ?? null });
   }
 
+  completion = { ...completion, text: markTruncatedReply(completion.text, completion.finishReason, input.language) };
   return {
     success: true,
     reply: completion.text,

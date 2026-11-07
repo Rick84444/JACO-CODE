@@ -4737,6 +4737,7 @@ const notifyPhone = async (action) => {
         ragContext,
         chatMode: planningMode ? 'planning' : questionMode ? 'manual' : 'action',
         persona: auraState?.currentPersona || "default",
+        language: readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) || 'en',
         toolbox: questionTools,
         // Keep small local inference below its configured context; allow larger remote
         // models more retrieved knowledge without silently increasing local memory use.

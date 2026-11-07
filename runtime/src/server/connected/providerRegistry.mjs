@@ -201,7 +201,7 @@ export class ProviderRegistry {
    *   responseFormat?: any
    * }} [input]
    */
-  async chat({ providerId, model, messages, temperature = 0.2, responseFormat = null, maxTokens = null } = {}) {
+  async chat({ providerId, model, messages, temperature = 0.2, responseFormat = null, maxTokens = null, reasoningEffort = null } = {}) {
     const p = this.providers.get(String(providerId)); if (!p) throw new Error('PROVIDER_NOT_FOUND');
     const selectedModel = String(model || p.defaultModel || '').trim();
     if (!selectedModel) throw new Error('PROVIDER_MODEL_REQUIRED');
@@ -210,7 +210,7 @@ export class ProviderRegistry {
     // families. Omitting temperature lets the provider use its valid default while keeping the generic
     // OpenAI-compatible path for every other provider.
     const includeTemperature = p.id !== 'anthropic' && temperature != null;
-    const body = { model: selectedModel, messages, ...(includeTemperature ? { temperature } : {}), ...(responseFormat ? { response_format: responseFormat } : {}), ...(maxTokens == null ? {} : { max_tokens: maxTokens }) };
+    const body = { model: selectedModel, messages, ...(includeTemperature ? { temperature } : {}), ...(responseFormat ? { response_format: responseFormat } : {}), ...(maxTokens == null ? {} : { max_tokens: maxTokens }), ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}) };
     const started = Date.now();
     const res = await fetch(`${trimSlash(p.baseUrl)}/chat/completions`, { method: 'POST', headers: this.headers(p), body: JSON.stringify(body), signal: AbortSignal.timeout(60_000) });
     const text = await res.text();
@@ -218,6 +218,6 @@ export class ProviderRegistry {
     const parsed = JSON.parse(text);
     const content = parsed?.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) throw new Error('PROVIDER_EMPTY_COMPLETION');
-    return { providerId: p.id, model: parsed?.model || selectedModel, content, latencyMs: Date.now() - started, requestHash: sha(body), responseHash: sha(text), usage: parsed?.usage || null };
+    return { providerId: p.id, model: parsed?.model || selectedModel, content, finishReason: parsed?.choices?.[0]?.finish_reason == null ? null : String(parsed.choices[0].finish_reason), latencyMs: Date.now() - started, requestHash: sha(body), responseHash: sha(text), usage: parsed?.usage || null };
   }
 }
