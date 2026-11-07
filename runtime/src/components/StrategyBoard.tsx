@@ -236,7 +236,7 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
     <p className="text-xs text-neutral-400">{tr('Målet står alltid först. Under det ser du vad som behövs för att nå det, och under varje delmål vad det i sin tur behöver. Det aktiva delmålet lyser svagt blått. Klicka på en ruta för hela beskrivningen.', 'The goal always comes first. Below it you see what is needed to reach it, and below each subgoal what that needs in turn. The active subgoal glows faint blue. Click a box for the full description.')}</p>
     {error && <p role="alert" className="text-sm text-amber-300">{tr('Planen kunde inte läsas just nu.', 'The plan could not be read right now.')} ({error})</p>}
     {plans && plans.length === 0 && <p className="text-sm text-neutral-300">{tr('Ingen plan än. Ge Aura ett större mål i chatten, så ritas planen här.', 'No plan yet. Give Aura a larger goal in the chat, and the plan is drawn here.')}</p>}
-    {plan && <div className="jaco-tree overflow-x-auto pb-4 pt-2" data-testid="plan-tree">
+    {plan && <div className="hidden md:block jaco-tree overflow-x-auto pb-4 pt-2" data-testid="plan-tree">
       <ul><li>
         <button type="button" onClick={() => setOpen('goal')} className="jaco-goal w-80 max-w-full rounded-lg border border-yellow-300 bg-black px-4 py-3 text-center transition-colors hover:bg-white/[.06]">
           <div className="flex flex-col items-center justify-center gap-1.5 text-[10px] font-medium uppercase tracking-[.2em] text-yellow-300"><GoalMark size={56} />{tr('Målet', 'The goal')}</div>
@@ -245,6 +245,22 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
         </button>
         {tree.length > 0 && <ul className={tree.some(onPath) ? 'jaco-path-ul' : undefined}>{tree.map((item, i) => <React.Fragment key={item.node.key}><Branch item={item} order={order} onPick={setOpen} lit={treeLines[i]} /></React.Fragment>)}</ul>}
       </li></ul>
+    </div>}
+    {plan && <div className="space-y-3 md:hidden" data-testid="plan-mobile-list">
+      <button type="button" onClick={() => setOpen('goal')} className="jaco-goal w-full rounded-lg border border-yellow-300 bg-black p-4 text-left">
+        <div className="flex items-center gap-3"><GoalMark size={42} /><div><div className="text-xs uppercase tracking-wider text-yellow-300">{tr('Målet','The goal')}</div><h3 className="mt-1 text-base font-semibold text-yellow-50 break-words">{plan.objective}</h3></div></div>
+        <p className="mt-2 text-sm text-neutral-300">{tr('Klart','Done')} {plan.progress.done}/{plan.progress.total}</p>
+      </button>
+      <ol className="space-y-2">
+        {plan.nodes.filter(LIVE).map(n => <li key={n.key}>
+          <button type="button" onClick={() => setOpen(n.key)} className={`block w-full rounded-lg border bg-neutral-950 p-3 text-left ${working(n.status)?'border-sky-400':'border-white/30'}`}>
+            <span className="text-xs text-neutral-300">{tr('Steg','Step')} {order.get(n.key)} · {n.statusText}</span>
+            <strong className="mt-1 block text-sm leading-relaxed break-words text-white">{n.title}</strong>
+            {n.dependencies.length>0&&<span className="mt-2 block text-xs leading-relaxed text-neutral-300">{tr('Bygger på steg','Depends on steps')}: {n.dependencies.filter(key=>order.has(key)).map(key=>order.get(key)).join(', ')}</span>}
+            {n.needs.some(need=>need.approval)&&<span className="mt-2 block text-xs text-amber-300">{tr('Behöver ditt beslut','Needs your decision')}</span>}
+          </button>
+        </li>)}
+      </ol>
     </div>}
     {plan && open === 'goal' && <GoalCard plan={plan} onClose={close} onSaved={load} />}
     {plan && node && <StepCard plan={plan} node={node} onPick={key => setOpen(key ?? 'goal')} onClose={close} onSaved={load} />}
