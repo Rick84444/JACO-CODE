@@ -198,7 +198,7 @@ function Branch({ item, order, onPick, lit = '' }: { item: TreeItem; order: Map<
 
 const short = (text: string, max = 70) => text.length > max ? text.slice(0, max - 1) + '…' : text;
 
-export function StrategyBoard({ focusPlanId = null }: { focusPlanId?: string | null }) {
+export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: string | null; onClose?: () => void }) {
   const { tr, language } = useUiLanguage();
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [error, setError] = useState('');
@@ -230,6 +230,7 @@ export function StrategyBoard({ focusPlanId = null }: { focusPlanId?: string | n
           {plans.map(p => <option key={p.id} value={p.id}>{short(p.objective)}</option>)}
         </select>}
         <button type="button" onClick={() => void load()} aria-label={tr('Uppdatera', 'Refresh')}><RefreshCw size={14} /></button>
+        {onClose && <button type="button" onClick={onClose} title={tr('Tillbaka till Aura', 'Back to Aura')} aria-label={tr('Tillbaka till Aura', 'Back to Aura')} className="flex items-center gap-2 rounded-full border border-white/30 py-0.5 pl-0.5 pr-3 text-xs text-white/80 hover:border-sky-400"><img src="/branding/aura-avatar.png" alt="" width={30} height={30} style={{ width: 30, height: 30 }} className="rounded-full" />{tr('Tillbaka till Aura', 'Back to Aura')}</button>}
       </div>
     </header>
     <p className="text-xs text-neutral-400">{tr('Målet står alltid först. Under det ser du vad som behövs för att nå det, och under varje delmål vad det i sin tur behöver. Det aktiva delmålet lyser svagt blått. Klicka på en ruta för hela beskrivningen.', 'The goal always comes first. Below it you see what is needed to reach it, and below each subgoal what that needs in turn. The active subgoal glows faint blue. Click a box for the full description.')}</p>

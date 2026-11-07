@@ -70,6 +70,7 @@ const DevicesView = React.lazy(() => import('./DevicesView').then(module => ({ d
 import { McpServersPanel, type McpCallRecord } from './McpServersPanel';
 import { describeNovaResult, describeNovaTask, type NovaMissionSummary } from '../lib/novaActivityText';
 import { AURA_PRODUCT_TOOLS, type AuraProductTool } from '../lib/auraToolRegistry';
+import { useUiLanguage } from '../i18n/UiLanguage';
 
 
 interface WorkbenchAgent {
@@ -313,6 +314,7 @@ const languageLabel = (path: string) => {
 
 export const JacoAuraComputeIDE: React.FC = () => {
   const chatSession = useAuraChatSession();
+  const { tr } = useUiLanguage();
   const activation = useActivationReport();
   // A beginner with no AI model connected gets the guide first; it can be closed and does not come back this session.
   const [guideClosed, setGuideClosed] = useState(false);
@@ -320,7 +322,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [focusPlanId, setFocusPlanId] = useState<string | null>(() => { try { return new URLSearchParams(window.location.search).get('plan'); } catch { return null; } });
   useEffect(() => {
     if (focusPlanId) setWorkspaceView('gameboard');
-    const open = (e: Event) => { const id = (e as CustomEvent).detail; if (typeof id === 'string') { if (id) setFocusPlanId(id); setWorkspaceView('gameboard'); } };
+    const open = (e: Event) => { const id = (e as CustomEvent).detail; if (typeof id === 'string') { if (id) setFocusPlanId(id); setWorkspaceView(view => view === 'gameboard' && !id ? 'conversation' : 'gameboard'); } };
     window.addEventListener('jaco:open-plan', open);
     return () => window.removeEventListener('jaco:open-plan', open);
   }, []);
@@ -1896,7 +1898,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
     {workspaceView==='agents'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening agent map…</div>}><AuraAgentWorkspace goal={goal} onGoalChange={setGoal} onStartGoal={()=>{void startGoal().catch(()=>{});}} submitting={missionSubmitting} notice={missionNotice} onReview={()=>setWorkspaceView('evidence')} onCancelMission={cancelMission}/></React.Suspense>}
-    {workspaceView==='gameboard'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening mission plans…</div>}><StrategyBoard focusPlanId={focusPlanId}/><details className="m-3 text-xs text-slate-400"><summary>Technical view</summary><CognitiveGameboard/></details></React.Suspense>}
     {workspaceView==='voice'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening voice channel…</div>}><VoiceChannel/></React.Suspense>}
     {workspaceView==='preview'&&<CognitivePreview path={selectedFile} content={fileView ? (drafts[fileView.path] ?? fileView.content) : null} files={files} events={cognitiveEvents} onOpenFile={path => { openFile(path); setWorkspaceView('preview'); }}/>}
     {workspaceView==='evidence'&&<div className="cognitive-evidence-scroll"><MissionReview missions={missions} preferredMissionId={reviewMissionId} onDecisions={()=>setShowApprovals(true)}/><CognitiveEvidence events={cognitiveEvents} selected={selectedEvidence} onSelect={setSelectedEvidence} onOpenFile={openFile}/>
@@ -1936,12 +1937,14 @@ export const JacoAuraComputeIDE: React.FC = () => {
     <CognitiveWorkspace attention={attention} canvas={workspaceView} onCanvas={chooseWorkspace} conversation={renderChatContent()} detail={detail}
       stage={stage} stagePinned={workspacePinned} onTogglePin={()=>setWorkspacePinned(value=>!value)}
       sidebar={sidebar} sidePanelOpen={sidePanelOpen} sidePanel={renderSidebar()}
-      onSidebar={view => { if(['tools','providers','skills'].includes(view)){setConnectionsTab(view==='tools'?'capabilities':view==='providers'?'models':'skills');setWorkspaceView('connections');setSidePanelOpen(false);}else{setSidebar(view);setSidePanelOpen(current => sidebar === view ? !current : true);} }}
+      onSidebar={view => { if(workspaceView==='gameboard')setWorkspaceView('conversation'); if(['tools','providers','skills'].includes(view)){setConnectionsTab(view==='tools'?'capabilities':view==='providers'?'models':'skills');setWorkspaceView('connections');setSidePanelOpen(false);}else{setSidebar(view);setSidePanelOpen(current => sidebar === view ? !current : true);} }}
       onCloseSidebar={() => setSidePanelOpen(false)} status={status} projectName={projectName}
       branch={snapshot?.git?.branch} changes={snapshot?.git?.changes?.length || 0}
       approvalCount={snapshot?.approvals?.count || 0} onApprovals={() => setShowApprovals(true)}
       onCommands={() => setCommandPaletteOpen(true)} onSignOut={() => void signOut()}
       lastObservedAt={cognitiveLive.lastObservedAt || snapshot?.observedAt || null} error={connectionError}/>
+    {/* The Gameboard fills the whole work area so it can be read; Aura's face, the chat or any tool in the rail closes it. */}
+    {workspaceView==='gameboard'&&<div className="jaco-gameboard-full" role="region" aria-label="Gameboard"><React.Suspense fallback={<div className="cognitive-empty-detail">{tr('Öppnar Gameboard…','Opening the Gameboard…')}</div>}><StrategyBoard focusPlanId={focusPlanId} onClose={()=>setWorkspaceView('conversation')}/><details className="bg-black px-4 pb-4 text-xs text-slate-500"><summary>{tr('Teknisk vy','Technical view')}</summary><CognitiveGameboard/></details></React.Suspense></div>}
     <AuraCommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenTool={openTool}/>
     {renderApprovals()}
   </>;
