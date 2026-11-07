@@ -8,7 +8,7 @@ type MemoryEntry = {
   decisionSummary:string; evidenceRefs:string[]; dependencies:string[]; failureModes:string[];
   missionIds:string[]; source:string;
 };
-type Activity = { latestWriteSequence:number; entries:MemoryEntry[]; changes:Array<{id:string;at:string;sequence:number;title:string}>; source:string };
+type Activity = { latestWriteSequence:number; latestLegacyId?:string|null; entries:MemoryEntry[]; changes:Array<{id:string;at:string;sequence:number;title:string}>; source:string };
 
 // This is the local persisted Continuum knowledge store, not chat-history text or fabricated thoughts.
 // Reads only; updates come from real knowledge.created/updated receipts.
@@ -19,7 +19,7 @@ export function LocalMemoryPanel({ compact = false, missionIds = [] }: {compact?
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string|null>(null);
   const [saving, setSaving] = useState(false);
-  const sequence = useRef<number|null>(null);
+  const sequence = useRef<{ledger:number;legacyId:string}|null>(null);
   useEffect(() => {
     let active = true;
     let clearPulse:ReturnType<typeof setTimeout>|null = null;
@@ -29,12 +29,13 @@ export function LocalMemoryPanel({ compact = false, missionIds = [] }: {compact?
         if (payload.success === false || payload.schema !== 'jaco.local-memory-activity/v1') throw Error(payload.error || 'MEMORY_SOURCE_INVALID');
         if (!active) return;
         const observed = Number(payload.latestWriteSequence || 0);
-        if (sequence.current !== null && observed > sequence.current) {
+        const legacyId = String(payload.latestLegacyId || '');
+        if (sequence.current !== null && (observed > sequence.current.ledger || (legacyId && legacyId !== sequence.current.legacyId))) {
           setSaving(true);
           if (clearPulse) clearTimeout(clearPulse);
           clearPulse = setTimeout(() => { if(active) setSaving(false); }, 2800);
         }
-        sequence.current = Math.max(sequence.current || 0, observed);
+        sequence.current = { ledger: Math.max(sequence.current?.ledger || 0, observed), legacyId };
         setActivity(payload); setError('');
       } catch (err) {
         if (active) setError(String((err as Error)?.message || err));
@@ -61,7 +62,7 @@ export function LocalMemoryPanel({ compact = false, missionIds = [] }: {compact?
       <span className={compact?'text-emerald-300':'flex-1'}>
         <strong className={compact?'text-xs':'text-sm'}>{title}</strong>
         {!compact && <span className="block text-xs text-emerald-200/70">
-          {activity?.changes[0] ? activity.changes[0].title : tr('Kunskap sparad på din dator', 'Knowledge stored on your computer')}
+          {activity?.entries[0] ? activity.entries[0].title : tr('Kunskap sparad på din dator', 'Knowledge stored on your computer')}
         </span>}
       </span>
       {!compact && <ChevronDown size={15}/>}
