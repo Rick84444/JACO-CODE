@@ -190,6 +190,10 @@ try {
   passed('Desktop and mobile view changes retain the same draft and conversation session');
   await canvas('Spelplan').click();
   await page.getByTestId('strategy-board').waitFor();
+  // Operator can open the actual local memory view from the Gameboard on a mobile viewport.
+  await page.getByTestId('memory-gameboard').locator('button').first().click();
+  await page.getByRole('region',{name:'Minnets innehåll och beslut'}).waitFor();
+  await page.getByTestId('memory-gameboard').getByRole('button',{name:'Stäng minnet'}).click();
   // The operator-facing blueprint is primary; the technical simulator opens on demand.
   await page.getByText('Technical view', { exact: true }).click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
