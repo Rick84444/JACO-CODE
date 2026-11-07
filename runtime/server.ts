@@ -2292,7 +2292,7 @@ const notifyPhone = async (action) => {
   // Local Continuum knowledge, read-only and backed by the existing durable knowledge ledger.
   app.get('/api/aura/workbench/local-memory', requireLocalUi, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    try { res.json({ success: true, ...localMemoryActivity(continuumSurface.runtime) }); }
+    try { res.json({ success: true, ...localMemoryActivity(continuumSurface.runtime, { legacyFile: path.join(process.cwd(), '.jaco', 'memory', 'memory-store.json') }) }); }
     catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }
   });
   // The plan as the operator sees it (SEER's mission graphs, read only) and the operator's comments on it.
