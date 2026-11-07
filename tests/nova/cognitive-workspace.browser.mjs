@@ -189,13 +189,17 @@ try {
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   passed('Desktop and mobile view changes retain the same draft and conversation session');
   await canvas('Spelplan').click();
-  await page.locator('section[aria-label="Shared gameboard"]').waitFor();
+  await page.getByTestId('strategy-board').waitFor();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Gameboard must not overflow Android-size viewport');
   await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast','Gameboard cannot discard the mobile conversation draft');
   passed('Gameboard tab fits mobile viewport and preserves one conversation');
 
   await canvas('Spelplan').click();
+  await page.getByTestId('strategy-board').waitFor();
+  // The modern StrategyBoard is the primary product. The legacy shared board
+  // remains available as an explicitly opened technical projection.
+  await page.locator('.jaco-gameboard-full details > summary').click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
   await page.getByText('Aura planning: UNAVAILABLE').waitFor();
   await page.locator('section[aria-label="Shared gameboard"] input[list="gameboard-tools"]').first().fill('mcp:git:git_status');
