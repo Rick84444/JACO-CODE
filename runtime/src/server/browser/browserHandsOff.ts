@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { SurveyLibrary, type ActionableElement } from '../handsOff/surveyLibrary.js';
 import { BLOCKED_ORIGIN_PATTERN, BLOCKED_PATH_PATTERN, SECRET_TEXT, PASSWORD_TARGET } from '../../../../agents/lib/browser-scope.mjs';
-import { accountPageDecision, validateAccountSetupGrant } from '../../../../agents/lib/account-onboarding.mjs';
+import { accountPageKind, accountPageDecision, validateAccountSetupGrant } from '../../../../agents/lib/account-onboarding.mjs';
 
 /**
  * Browser hands-off client.
@@ -402,6 +402,12 @@ export class BrowserHandsOffClient {
   // ── Observation ────────────────────────────────────────────────────────────
   public async observe(): Promise<Record<string, unknown> | null> {
     try {
+      // Operator-only identity and payment screens are never inspected by Aura,
+      // including through passive observation after an OAuth redirect.
+      const current = await this.bridge.evaluate<string>('location.href');
+      if (accountPageKind(current) === 'operator-auth' ||
+          BLOCKED_ORIGIN_PATTERN.test(new URL(current).host) ||
+          BLOCKED_PATH_PATTERN.test(new URL(current).pathname)) return null;
       return await this.bridge.evaluate<Record<string, unknown>>(OBSERVE_SCRIPT);
     } catch {
       return null;
@@ -415,6 +421,10 @@ export class BrowserHandsOffClient {
    * it from scratch.
    */
   public async survey(label?: string): Promise<Record<string, unknown> | null> {
+    const current = await this.bridge.evaluate<string>('location.href');
+    if (accountPageKind(current) === 'operator-auth' ||
+        BLOCKED_ORIGIN_PATTERN.test(new URL(current).host) ||
+        BLOCKED_PATH_PATTERN.test(new URL(current).pathname)) throw new Error('OPERATOR_AUTH_HANDOFF_REQUIRED');
     const data = await this.bridge.evaluate<{
       fingerprint: string;
       semanticSignature: string;
@@ -558,6 +568,10 @@ export class BrowserHandsOffClient {
         if (!targetGate.allowed) return fail(targetGate.reason || 'navigation target is outside grant', true);
       }
 
+      if (action.type === 'click' && accountPageKind(current) === 'registration' && !action.postcondition) {
+        return fail('ACCOUNT_CREATION_SEMANTIC_POSTCONDITION_REQUIRED', true);
+      }
+
       if (action.type === 'set_value') {
         const text = String(action.text ?? '');
         if (!text) return fail('set_value requires text');
@@ -571,7 +585,8 @@ export class BrowserHandsOffClient {
         const css = String(action.selector?.css || '');
         if (!css) return fail('set_value requires a selector for credential preflight', true);
         const isCredentialField = await this.bridge.evaluate<boolean>(`(() => {
-          const elements = document.querySelectorAll(${JSON.stringify(css)});
+          let elements;
+          try { elements = document.querySelectorAll(${JSON.stringify(css)}); } catch { return true; }
           const el = elements[${Number.isInteger(action.selector?.index) ? action.selector!.index : 0}] || null;
           if (!el) return false;
           return /password|one.?time|otp|passcode|secret|verification/i.test(
