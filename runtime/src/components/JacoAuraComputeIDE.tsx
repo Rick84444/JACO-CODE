@@ -312,6 +312,9 @@ const languageLabel = (path: string) => {
 };
 
 export const JacoAuraComputeIDE: React.FC = () => {
+  // Presentation only: both desktop and remote use the same chat, missions,
+  // approvals and runtime. A URL parameter never grants additional authority.
+  const remoteMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('remote') === '1';
   const chatSession = useAuraChatSession();
   const activation = useActivationReport();
   // A beginner with no AI model connected gets the guide first; it can be closed and does not come back this session.
@@ -1933,7 +1936,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     </div>
   </section> : null;
   return <>
-    <CognitiveWorkspace attention={attention} canvas={workspaceView} onCanvas={chooseWorkspace} conversation={renderChatContent()} detail={detail}
+    <CognitiveWorkspace remoteMode={remoteMode} attention={attention} canvas={workspaceView} onCanvas={chooseWorkspace} conversation={renderChatContent()} detail={detail}
       stage={stage} stagePinned={workspacePinned} onTogglePin={()=>setWorkspacePinned(value=>!value)}
       sidebar={sidebar} sidePanelOpen={sidePanelOpen} sidePanel={renderSidebar()}
       onSidebar={view => { if(['tools','providers','skills'].includes(view)){setConnectionsTab(view==='tools'?'capabilities':view==='providers'?'models':'skills');setWorkspaceView('connections');setSidePanelOpen(false);}else{setSidebar(view);setSidePanelOpen(current => sidebar === view ? !current : true);} }}
