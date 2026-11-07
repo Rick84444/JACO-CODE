@@ -47,6 +47,8 @@ ecosystem.config.cjs
 
 # Operator-provided product branding, not a generated screenshot.
 !runtime/public/branding/jaco-logo.png
+# Marketplace requires the tracked PNG inside the VSIX.
+!extensions/jaco-vscode/media/icon.png
 
 # Python bytecode is generated
 __pycache__/

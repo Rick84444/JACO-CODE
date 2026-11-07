@@ -12,7 +12,7 @@ type Node = { key: string; title: string; objective: string; status: string; sta
 type Plan = { id: string; title: string; objective: string; status: string; progress: { done: number; total: number }; needsApproval: Need[]; nodes: Node[]; changes: Array<{ at: string | null; reason: string | null; replaced: string | null }>; comments: Comment[]; abilities?: { missing: string[]; text: string } | null };
 
 // Aura's text never uses emoji: the state of a need is a word and a colour.
-const STATE_WORD: Record<string, [string, string]> = { have: ['har', 'have'], missing: ['saknas', 'missing'], approval: ['ditt ja', 'your yes'] };
+const STATE_WORD: Record<string, [string, string]> = { have: ['påslagen', 'enabled'], missing: ['saknas', 'missing'], approval: ['ditt ja', 'your yes'] };
 const chip = (state?: string | null, approval?: boolean) => state === 'have' ? 'bg-emerald-950 text-emerald-200' : state === 'missing' ? 'bg-rose-950 text-rose-200' : state === 'approval' || approval ? 'bg-amber-950 text-amber-200' : 'bg-slate-800 text-slate-300';
 const border: Record<string, string> = { VERIFIED: 'border-emerald-700', FAILED: 'border-rose-700', RUNNING: 'border-sky-400', DISPATCHED: 'border-sky-400', READY: 'border-slate-500', BLOCKED: 'border-slate-700', SUPERSEDED: 'border-slate-800 opacity-50', CANCELLED: 'border-slate-800 opacity-50' };
 const working = (status: string) => status === 'RUNNING' || status === 'DISPATCHED';
