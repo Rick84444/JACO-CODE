@@ -123,14 +123,16 @@ const server = createServer((req, res) => {
 
 let githubBootstrapTimer = null;
 
+// fetch reports only 'fetch failed'; the reason (no network yet, DNS, reset, timeout) is in error.cause.
+const pollError = error => [error?.message || String(error), error?.cause?.code || error?.cause?.message].filter(Boolean).join(': ');
 server.listen(config.gatewayPort, config.gatewayHost, () => {
   console.error(`[JACO Sentinel] http://${config.gatewayHost}:${config.gatewayPort}`);
   console.error(`[JACO Sentinel] MCP endpoint http://${config.gatewayHost}:${config.gatewayPort}/mcp`);
   if (githubBootstrap.enabled) {
     console.error(`[JACO Sentinel] GitHub bootstrap enabled for ${githubBootstrap.repo}; actor=${githubBootstrap.actor}; poll=${githubBootstrap.pollMs}ms`);
-    void githubBootstrap.pollOnce().catch(error => console.error('[JACO Sentinel] GitHub bootstrap poll failed:', error?.message || error));
+    void githubBootstrap.pollOnce().catch(error => console.error('[JACO Sentinel] GitHub bootstrap poll failed:', pollError(error)));
     githubBootstrapTimer = setInterval(() => {
-      void githubBootstrap.pollOnce().catch(error => console.error('[JACO Sentinel] GitHub bootstrap poll failed:', error?.message || error));
+      void githubBootstrap.pollOnce().catch(error => console.error('[JACO Sentinel] GitHub bootstrap poll failed:', pollError(error)));
     }, githubBootstrap.pollMs);
     githubBootstrapTimer.unref?.();
   } else {
