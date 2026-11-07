@@ -78,3 +78,12 @@ test('each need shows whether Aura has it, lacks it or needs approval, and Aura 
   assert.match(ok.text, /^Jag har det som planen behöver/);
   assert.equal(planView(graph, { language: 'sv' }).abilities, null, 'without knowing what is available, nothing is claimed');
 });
+
+test('Aura uses no emoji: not in her chat, not on the plan board, not in the beginner guide or the skills she follows', async () => {
+  const fs = await import('node:fs');
+  const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2705}]/u;
+  for (const f of ['runtime/src/components/StrategyBoard.tsx', 'runtime/src/components/FirstRunGuide.tsx', 'runtime/src/components/RoutinesPanel.tsx', 'runtime/src/server/connected/auraPlan.mjs', 'agents/lib/capability-needs.mjs', 'skills/build-web-page/SKILL.md', 'skills/fix-a-bug/SKILL.md'])
+    assert.doesNotMatch(fs.readFileSync(new URL(`../../${f}`, import.meta.url), 'utf8'), EMOJI, f);
+  const { buildAuraSeerPrompts } = await import('../../agents/lib/aura-seer-chat.mjs');
+  assert.match(buildAuraSeerPrompts({ message: 'hej' }).system, /Never use emoji/);
+});

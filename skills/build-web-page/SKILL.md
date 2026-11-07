@@ -25,8 +25,8 @@ with opening hours and a menu"). Give them a finished page they can open, show a
 - Structure: a clear headline that says what it is, a short introduction, the sections the request needs
   (for example services, menu, opening hours, prices, about, contact), and one obvious call to action.
 - Design: a calm colour scheme with enough contrast, generous spacing, readable type (system fonts), and a
-  layout that works on a phone (one column under about 640 px). Use simple CSS shapes or emoji instead of image
-  files; never link images from other sites.
+  layout that works on a phone (one column under about 640 px). Use simple CSS shapes instead of image
+  files, never emoji; never link images from other sites.
 - Accessible: real headings in order, `lang` on `<html>`, alt text for any image, links that say where they go.
 - Contact details as working links (`tel:`, `mailto:`) when they are given.
 

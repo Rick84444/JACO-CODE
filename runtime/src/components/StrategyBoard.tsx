@@ -10,7 +10,9 @@ type Comment = { id: string; nodeKey: string | null; text: string; at: string };
 type Node = { key: string; title: string; objective: string; status: string; statusText: string; failure: string | null; needs: Need[]; comments: Comment[] };
 type Plan = { id: string; title: string; objective: string; status: string; progress: { done: number; total: number }; needsApproval: Need[]; nodes: Node[]; changes: Array<{ at: string | null; reason: string | null; replaced: string | null }>; comments: Comment[]; abilities?: { missing: string[]; text: string } | null };
 
-const mark = (state?: string | null) => state === 'have' ? '✅ ' : state === 'missing' ? '⚠️ ' : state === 'approval' ? '✋ ' : '';
+// Aura's text never uses emoji: the state of a need is a word and a colour.
+const STATE_WORD: Record<string, [string, string]> = { have: ['har', 'have'], missing: ['saknas', 'missing'], approval: ['ditt ja', 'your yes'] };
+const chip = (state?: string | null, approval?: boolean) => state === 'have' ? 'bg-emerald-950 text-emerald-200' : state === 'missing' ? 'bg-rose-950 text-rose-200' : state === 'approval' || approval ? 'bg-amber-950 text-amber-200' : 'bg-slate-800 text-slate-300';
 const tone: Record<string, string> = { VERIFIED: 'text-emerald-300', FAILED: 'text-rose-300', RUNNING: 'text-sky-300', DISPATCHED: 'text-sky-300', READY: 'text-slate-200', BLOCKED: 'text-slate-400', SUPERSEDED: 'text-slate-500 line-through', CANCELLED: 'text-slate-500' };
 
 function CommentBox({ graphId, nodeKey, onSaved }: { graphId: string; nodeKey: string | null; onSaved: () => void }) {
@@ -63,7 +65,7 @@ export function StrategyBoard() {
         {plan.nodes.map((n, i) => <li key={n.key} className="rounded border border-slate-800 p-2">
           <div className="flex items-baseline justify-between gap-2"><span className={tone[n.status] || ''}>{i + 1}. {n.title}</span><span className="text-xs text-slate-400">{n.statusText}</span></div>
           <div className="text-xs text-slate-400">{n.objective}</div>
-          {n.needs.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{n.needs.map(x => <span key={x.kind + (x.label)} className={`rounded px-1.5 py-0.5 text-[11px] ${x.approval ? 'bg-amber-950 text-amber-200' : 'bg-slate-800 text-slate-300'}`}>{mark(x.state)}{x.label}{!x.state && x.approval ? ' ✋' : ''}</span>)}</div>}
+          {n.needs.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{n.needs.map(x => <span key={x.kind + (x.label)} className={`rounded px-1.5 py-0.5 text-[11px] ${chip(x.state, x.approval)}`}>{x.label}{x.state ? ` (${tr(...STATE_WORD[x.state])})` : x.approval ? ` (${tr('ditt ja', 'your yes')})` : ''}</span>)}</div>}
           {n.failure && <div className="mt-1 text-xs text-rose-300">{n.failure.slice(0, 240)}</div>}
           {n.comments.map(c => <div key={c.id} className="mt-1 flex gap-1 text-xs text-slate-300"><MessageSquare size={12} />{c.text}</div>)}
           <CommentBox graphId={plan.id} nodeKey={n.key} onSaved={load} />
