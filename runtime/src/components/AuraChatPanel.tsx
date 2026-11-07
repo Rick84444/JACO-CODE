@@ -14,6 +14,7 @@ import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
 import { budgetIntent, type BudgetIntent } from '../lib/budgetIntent';
 import { BudgetCard } from './CostChip';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
+import { summarizeMissionBlocker } from '../lib/auraEventSummary.mjs';
 
 // Aura's face in the chat: the blue queen. It glows faint blue while she is thinking or working on a mission.
 const AuraAvatar=({thinking=false,size=40}:{thinking?:boolean;size?:number})=><img src="/branding/aura-avatar.png" alt="Aura" width={size} height={size} style={{width:size,height:size}} className="aura-avatar" data-thinking={thinking||undefined} aria-hidden="true"/>;
@@ -327,12 +328,14 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   }, [busy]);
   useEffect(() => () => requestRef.current?.abort(), []);
   const [following,setFollowing]=useState(true);
-  const backgroundEvents=useMemo(()=>liveEvents.filter(event=>!event.missionId&&event.category==='observation'&&event.evidence.outcome==='observed'),[liveEvents]);
-  const feed=useMemo(()=>[
-    ...messages.filter(m=>m.id!=='welcome').map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message})),
-    ...liveEvents.filter(event=>!backgroundEvents.includes(event)).map(event=>({kind:'event' as const,id:event.id,at:event.at,event})),
-  ].sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages,liveEvents,backgroundEvents]);
+  // Chat is a human conversation, not a second runtime event log. Evidence remains inspectable.
+  const backgroundEvents=liveEvents;
+  const feed=useMemo(()=>messages.filter(m=>m.id!=='welcome')
+    .map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message}))
+    .sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages]);
   const currentMission=missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
+  const blockerSummary=useMemo(()=>currentMission?.status==='BLOCKED'
+    ? summarizeMissionBlocker(liveEvents,currentMission.id) : null,[liveEvents,currentMission?.id,currentMission?.status]);
   const followLatest=()=>{followRef.current=true;setFollowing(true);if(scrollRef.current)scrollRef.current.scrollTop=0;};
   useEffect(()=>{if(followRef.current && scrollRef.current)scrollRef.current.scrollTop=0;},[feed,busy]);
   const [showSettings,setShowSettings]=useState(false);
@@ -733,7 +736,15 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       <div ref={scrollRef} onScroll={()=>{const el=scrollRef.current;if(el){const near=el.scrollTop<80;followRef.current=near;setFollowing(near);}}} role="log" aria-live="polite" aria-relevant="additions" aria-label={tr('JACO-konversation','JACO conversation')} className="cognitive-chat-scroll">
         <div className="cognitive-feed">
           {!storageReady && !storageError && <p className="cognitive-muted">{tr('Läser din sparade konversation…','Loading your saved conversation…')}</p>}
-          {backgroundEvents.length>0&&<details className="cognitive-background-events"><summary>{tr('Aktivitet i bakgrunden','Background activity')} ({backgroundEvents.length})</summary>{backgroundEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</details>}
+          {backgroundEvents.length>0&&<details className="cognitive-background-events"><summary>{tr('Teknisk aktivitet och evidens','Technical activity and evidence')} ({backgroundEvents.length})</summary>{backgroundEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</details>}
+          {blockerSummary&&<section role="status" data-testid="aura-blocker-summary" className="rounded-lg border border-amber-800/70 bg-amber-950/20 px-4 py-3 text-sm leading-relaxed text-slate-200">
+            <strong className="block text-base text-amber-100">{tr('Uppdraget behöver din hjälp','The mission needs your attention')}</strong>
+            <p className="mt-2">{blockerSummary.isBudgetLimit
+              ? tr('Den valda modellens månadsbudget är uppnådd. Välj en tillgänglig modell eller justera budgeten innan Aura fortsätter.','The selected model has reached its monthly budget. Choose an available model or adjust the budget before Aura continues.')
+              : tr('Aura har stött på ett hinder och pausat uppdraget. Kontrollera vad som hände innan du bestämmer nästa steg.','Aura encountered an obstacle and paused the mission. Review what happened before choosing the next step.')}</p>
+            {blockerSummary.count>1&&<p className="mt-2 text-xs text-slate-400">{tr('Samma hinder rapporterades','The same blocker was reported')} {blockerSummary.count} {tr('gånger.','times.')}</p>}
+            {onOpenEvidence&&<button type="button" className="mt-2 underline text-sky-300" onClick={()=>onOpenEvidence(blockerSummary.event)}>{tr('Visa underlag','Review evidence')}</button>}
+          </section>}
           {historyTruncated&&<p className="cognitive-history-note">{tr('Det senaste arbetet visas. Äldre händelser finns kvar i uppdragshistoriken.','The latest work is shown. Older events remain in mission history.')}</p>}
           {storageReady&&feed.length===0&&<div className="cognitive-welcome">
             <JacoWordmark size="lg"/>
@@ -747,7 +758,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           </div>}
           {busy&&<div className="cognitive-response-wait"><span role="status"><AuraAvatar thinking size={32}/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
           {[...visibleFeed].reverse().map(item=>{
-            if(item.kind==='event')return <CognitiveEventCard key={item.id} event={item.event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>;
             const message=item.message;
             return message.role==='user'?<div key={item.id} className="cognitive-user-message"><LongMessage text={message.content}/>{message.attachments?.map(item=><small key={item.id} className="block mt-2">{tr('Bifogat','Attached')}: {item.name} · {item.fileCount} {tr('filer','files')}</small>)}</div>
               :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><AuraFace label={tr('Öppna Gameboard','Open the Gameboard')}/>Aura</div><ChatMarkdown text={message.content}/><CopyMessageButton text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>{tr('Svar & källor','Answer & sources')}</summary><p>{message.meta}</p></details>}</article>
