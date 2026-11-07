@@ -17,6 +17,7 @@ interface Props {
   approvalCount:number;onApprovals:()=>void;onCommands:()=>void;onSignOut:()=>void;
   lastObservedAt:string|null;error:string|null;
   attention?:React.ReactNode;
+  remoteMode?:boolean;
 }
 const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['connections',PlugZap,'Anslutningar'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
 const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter'],['revenue',CircleDollarSign,'Budget & ekonomi']] as const;
@@ -69,6 +70,7 @@ const EN_LABELS: Record<string, string> = {
 
 export function CognitiveWorkspace(props:Props) {
   const { language, setLanguage, tr } = useUiLanguage();
+  const remoteMode = props.remoteMode === true;
   const L = (text: string) => tr(text, EN_LABELS[text] || text);
   // Local browser only: a remote viewer's VS Code cannot reach this runtime, and the VS Code tab is already open.
   const canOpenInVsCode = typeof window !== 'undefined' && ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname) && window.self === window.top;
@@ -93,18 +95,40 @@ export function CognitiveWorkspace(props:Props) {
   const openPanel = (view:Sidebar) => { props.onSidebar(view); menu.current?.close(); };
   const hasDetail=props.canvas!=='conversation' && props.canvas!=='stage';
   const showStage=props.canvas!=='conversation';
-  return <div className="cognitive-workspace" data-cognitive-workspace="true">
+  return <div className="cognitive-workspace" data-cognitive-workspace="true" data-remote-mode={remoteMode ? "true" : undefined}>
     <header className="cognitive-topbar">
-      <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">Aura</span></div>
+      <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">{remoteMode ? "Aura Remote" : "Aura"}</span></div>
       <button type="button" className="cognitive-project" aria-label={`${tr('Öppna projekt', 'Open project')}: ${props.projectName}`} onClick={()=>openPanel('explorer')}><Folder size={14}/><span>{props.projectName}</span><ChevronRight size={12}/><span className="cognitive-branch">{props.branch || tr('Projekt', 'Project')}</span></button>
       <div className="cognitive-top-actions">
-        <CostChip onOpen={()=>props.onSidebar('revenue')}/>
-        <JacoWindowsUpdates/>
+{!remoteMode && <><CostChip onOpen={()=>props.onSidebar('revenue')}/><JacoWindowsUpdates/></>}
         <select className="cognitive-language-select" aria-label={tr('Språk', 'Language')} title={tr('Språk', 'Language')} value={language} onChange={event => setLanguage(event.target.value === 'sv' ? 'sv' : 'en')} style={{color:'inherit',background:'#171d24',border:'1px solid #3b4652',borderRadius:6,padding:'4px 5px',fontSize:11}}><option value="en">EN</option><option value="sv">SV</option></select>
         {props.approvalCount>0 && <button type="button" className="cognitive-approval-button" aria-label={`${props.approvalCount} ${tr('beslut behöver dig', 'decisions need your attention')}`} onClick={props.onApprovals}><CircleAlert size={14}/><span>{props.approvalCount} {tr('beslut','decisions')}</span></button>}
-        <button type="button" aria-label={tr('Sök verktyg och kommandon', 'Search tools and commands')} title={tr('Sök', 'Search')+' · Ctrl+Shift+P'} onClick={props.onCommands}><Search size={16}/></button>
+{!remoteMode && <button type="button" aria-label={tr('Sök verktyg och kommandon', 'Search tools and commands')} title={tr('Sök', 'Search')+' · Ctrl+Shift+P'} onClick={props.onCommands}><Search size={16}/></button>}
       </div>
     </header>
+    {remoteMode && <nav className="cognitive-remote-navigation" aria-label={tr('Fjärrstyrning', 'Remote control')}>
+      <div className="cognitive-remote-status" role="status">
+        <span className="cognitive-remote-dot" data-tone={props.status.tone}/>
+        <strong>{tr('Aura på din dator', 'Aura on your computer')}</strong>
+        <span>{L(props.status.label)}</span>
+      </div>
+      <div className="cognitive-remote-tabs">
+        {([
+          ['conversation', MessageSquare, tr('Chatt', 'Chat')],
+          ['stage', Eye, tr('Uppdrag', 'Mission')],
+          ['gameboard', Network, tr('Spelplan', 'Plan')],
+          ['evidence', ShieldCheck, tr('Resultat', 'Results')],
+        ] as const).map(([view, Icon, label]) =>
+          <button key={view} type="button" aria-pressed={props.canvas===view} onClick={()=>props.onCanvas(view)}>
+            <Icon size={16}/><span>{label}</span>
+          </button>
+        )}
+        <button type="button" onClick={props.onApprovals} aria-label={tr('Öppna beslut', 'Open decisions')}>
+          <CircleAlert size={16}/><span>{tr('Beslut', 'Decisions')}{props.approvalCount>0 ? ` (${props.approvalCount})` : ''}</span>
+        </button>
+        <a href="/" className="cognitive-remote-full" title={tr('Öppna hela IDE:t', 'Open full IDE')}>{tr('Hela IDE:t', 'Full IDE')}</a>
+      </div>
+    </nav>}
     <div className="cognitive-body">
       <nav className="cognitive-rail" aria-label={tr('Projektverktyg', 'Project tools')}>
         <button type="button" onClick={()=>{props.onCanvas('conversation');props.onCloseSidebar();}} aria-label={tr('Visa samtalet', 'Show conversation')} title={L('Samtal')} className={!showStage&&!props.sidePanelOpen?'active':''}><MessageSquare size={19}/></button>
