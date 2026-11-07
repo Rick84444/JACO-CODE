@@ -137,6 +137,7 @@ export function createBrowserRouter(
     const receipt = await client.executeVerified({
       type, selector: body.selector, text: body.text, url: body.url, checked: body.checked,
       deltaY: body.deltaY, wait_after_ms: body.wait_after_ms, postcondition: body.postcondition,
+      mission_id: body.missionId ? String(body.missionId) : undefined,
     });
     onEvent?.({ actor: 'BrowserHandsOff', type: receipt.verified ? 'browser.action.verified' : 'browser.action.unverified', message: `${type}: ${receipt.verification.level}`, verified: receipt.verified, receipt });
     const status = receipt.refusal ? 403 : receipt.verified ? 200 : 409;
