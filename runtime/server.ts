@@ -73,6 +73,7 @@ import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
+import { mountGoogleOperatorOAuth } from './src/server/connected/googleOperatorOAuth.mjs';
 import { createAuraChatSession } from './src/server/connected/auraChatSession.mjs';
 import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderCompletion, chatFallbackChoice, chatFailureHint } from "./src/server/connected/auraOllamaChat.mjs";
 import { auraCostQuote, auraCostSettlement } from "./src/server/aura/costEngine.mjs";
@@ -720,6 +721,10 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   const PORT = Number(process.env.PORT) || 3000;
   const HOST = process.env.HOST || "127.0.0.1";
 
+
+  // Operator-owned Google sign-in. OAuth tokens stay server-side and are never
+  // available as Aura tool results or model context.
+  mountGoogleOperatorOAuth(app, requireLocalUi);
 
   const browserSurface = createBrowserRouter(WORKSPACE_ROOT, requireAuth, event => {
     seerLiveWorkstream.update({
