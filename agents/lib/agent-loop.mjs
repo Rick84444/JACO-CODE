@@ -159,6 +159,7 @@ export async function runAgentMission({
         const review = await preflight({ mission, lease });
         await client.release(mission.id, lease);
         lease = null;
+        if (review?.deferred) return { executed: false, deferred: true, reason: String(review.reason || 'PREFLIGHT_DEFERRED').slice(0, 200) };
         if (review?.blocked) {
           const reason = String(review.reason || 'Coding preflight rejected').slice(0, 500);
           return end({ blocked: true, reason }, { error: `PLANNER_BLOCKED:${reason}` });
