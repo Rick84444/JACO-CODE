@@ -170,6 +170,7 @@ try {
     assert.equal(await remote.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'remote must not overflow phone viewport');
     assert.equal(requests.some(item=>item.kind==='goal'),false,'remote navigation cannot create missions');
     if(process.env.JACO_UI_SCREENSHOTS){
+      fs.mkdirSync(process.env.JACO_UI_SCREENSHOTS,{recursive:true});
       await remote.screenshot({path:path.join(process.env.JACO_UI_SCREENSHOTS,'jaco-remote-mobile.png')});
     }
     passed('Remote PWA uses one Aura chat, phone navigation and preserves the draft without creating a mission');
