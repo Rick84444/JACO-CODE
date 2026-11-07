@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Rick84444/jaco-browser-mcp",
+  "title": "JACO Browser",
+  "description": "Use a real Chrome browser safely: real clicks and typing, links found by name, sign-in and payment kept out of reach.",
+  "repository": { "url": "https://github.com/Rick84444/JACO-CODE", "source": "github", "subfolder": "packages/jaco-browser-mcp" },
+  "websiteUrl": "https://jacocode.com/",
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "jaco-browser-mcp",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        { "name": "JACO_CDP_PORT", "description": "The browser's remote debugging port (default 9222)", "isRequired": false },
+        { "name": "JACO_BROWSER_LAUNCH", "description": "Set to 0 to never start a browser", "isRequired": false }
+      ]
+    }
+  ]
+}
