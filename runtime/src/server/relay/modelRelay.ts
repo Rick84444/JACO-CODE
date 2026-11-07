@@ -1,3 +1,4 @@
+import { accountOutcomeReport, accountPageKind } from '../../../../agents/lib/account-onboarding.mjs';
 import express from 'express';
 import type { BrowserSessionManager } from '../browser/router.js';
 import type { BrowserAction } from '../browser/browserHandsOff.js';
@@ -248,7 +249,13 @@ export function createModelRelayRouter(input: {
       if (receipt?.verified) input.nova.observe({ expectedTransitionObserved: true, app: surface.toLowerCase() });
       else input.nova.markActionFailure(receipt?.refusal || receipt?.error || 'unverified state transition');
       input.onEvent?.({ actor: 'ModelRelay', type: receipt?.verified ? 'relay.action.verified' : 'relay.action.unverified', message: `${modelId} → ${surface} ${String(action.type)}: ${receipt?.verified ? 'VERIFIED' : 'UNVERIFIED'}`, verified: Boolean(receipt?.verified), receipt });
-      return res.status(receipt?.refusal ? 403 : receipt?.verified ? 200 : 409).json({ success: Boolean(receipt?.verified), receipt, consequence, policy, traction: input.nova.getState(), lease: actuatorLeases.get(surface) });
+      const location = String(receipt?.page?.url || (action as BrowserAction)?.url || '');
+      const isAccountFlow = surface === 'BROWSER' &&
+        (accountPageKind(location) === 'registration' || consequence === 'AUTH' ||
+         /ACCOUNT_SETUP|OPERATOR_AUTH_HANDOFF/.test(String(receipt?.refusal || '')));
+      const operatorReport = isAccountFlow && !receipt?.verified
+        ? accountOutcomeReport({attempted:true,verified:false,blocker:receipt?.refusal || receipt?.error || 'RESULT_UNVERIFIED',target:location}) : null;
+      return res.status(receipt?.refusal ? 403 : receipt?.verified ? 200 : 409).json({ success: Boolean(receipt?.verified), receipt, ...(operatorReport ? { operatorReport } : {}), consequence, policy, traction: input.nova.getState(), lease: actuatorLeases.get(surface) });
     } catch (error) {
       input.nova.markActionFailure(error instanceof Error ? error.message : String(error));
       return fail(res, 500, error);
