@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { createZip, readZip } from './lib/zip.mjs';
+import { windowsNode as fetchWindowsNode } from './lib/node-runtime.mjs';
 
 // What dist/server.cjs requires at run time (checked against the bundle: express, ws, zod,
 // @google/genai and typescript are required; dotenv and undici by the Nova agent bundle). vite is loaded only in dev.
@@ -132,7 +133,7 @@ async function defaultBundleNova(outfile, { repoRoot, runtimeDir }) {
   await esbuild.build({ entryPoints: [path.join(repoRoot, 'agents', 'hands-off-agent.mjs')], bundle: true, platform: 'node', format: 'esm', packages: 'external', outfile, logLevel: 'error' });
 }
 
-export async function buildLite({ repoRoot, runtimeDir, outDir, install = defaultInstall, bundleNova = defaultBundleNova, bundleSetup = bundleConnections, envFile = null, sourceCommit = null, date = new Date(), log = () => {} } = {}) {
+export async function buildLite({ repoRoot, runtimeDir, outDir, install = defaultInstall, bundleNova = defaultBundleNova, bundleSetup = bundleConnections, windowsNode = null, envFile = null, sourceCommit = null, date = new Date(), log = () => {} } = {}) {
   const pkg = JSON.parse(fs.readFileSync(path.join(runtimeDir, 'package.json'), 'utf8'));
   const name = `jaco-lite-${pkg.version}`;
   const dist = path.join(runtimeDir, 'dist');
@@ -203,6 +204,12 @@ export async function buildLite({ repoRoot, runtimeDir, outDir, install = defaul
       data: f.rel === 'release.json' ? Buffer.from(JSON.stringify({ ...JSON.parse(fs.readFileSync(f.abs, 'utf8')), platform }, null, 2) + '\n') : fs.readFileSync(f.abs),
       mode: EXECUTABLE_LAUNCHERS.includes(f.rel) ? 0o755 : 0o644,
     }));
+    // The Windows download carries its own Node.js, so double-clicking START.cmd works on a computer with nothing installed.
+    if (platform === 'windows' && windowsNode) {
+      platformEntries.push({ name: `${dirName}/node/node.exe`, data: windowsNode.exe, mode: 0o755 });
+      if (windowsNode.licence) platformEntries.push({ name: `${dirName}/node/LICENSE`, data: windowsNode.licence, mode: 0o644 });
+      log(`windows: bundles Node.js ${windowsNode.version}`);
+    }
     const platformZip = createZip(platformEntries, { date });
     if (readZip(platformZip).length !== platformEntries.length) throw new Error(`LITE_ZIP_SELFCHECK_FAILED:${platform}`);
     const platformPath = path.join(outDir, 'platforms', `${dirName}.zip`);
@@ -231,7 +238,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const built = spawnSync(npm.cmd, [...npm.prefix, 'run', 'build'], { cwd: runtimeDir, stdio: 'inherit' });
     if (built.status !== 0) { console.error('the runtime build failed'); process.exit(1); }
   }
-  buildLite({ repoRoot, runtimeDir, outDir, sourceCommit: process.env.JACO_BUILD_SOURCE_COMMIT || null, envFile: path.join(repoRoot, '.env'), log: line => console.log(`lite: ${line}`) }).then(
+  const nodeForWindows = process.env.JACO_LITE_BUNDLE_NODE === '0' ? null
+    : await fetchWindowsNode({ cacheDir: path.join(repoRoot, 'build', 'node-cache'), log: line => console.log(`lite: ${line}`) });
+  buildLite({ repoRoot, runtimeDir, outDir, windowsNode: nodeForWindows, sourceCommit: process.env.JACO_BUILD_SOURCE_COMMIT || null, envFile: path.join(repoRoot, '.env'), log: line => console.log(`lite: ${line}`) }).then(
     r => {
       console.log(`lite: wrote ${r.zipPath}`);
       console.log(`lite: ${(r.bytes / 1048576).toFixed(1)} MB, ${r.files} files, sha256 ${r.sha256}`);

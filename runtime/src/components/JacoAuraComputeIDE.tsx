@@ -57,6 +57,7 @@ import { readWorkspaceDrafts, writeWorkspaceDrafts } from '../lib/auraRecovery.m
 import { AuraIntegrationsPanel } from './AuraIntegrationsPanel';
 import { NovaPlannerCard } from './NovaPlannerCard';
 import { ActivationCard, useActivationReport } from './ActivationCard';
+import { FirstRunGuide } from './FirstRunGuide';
 // Loaded only when the operator opens this workspace; idle Aura stays small.
 const RevenueView = React.lazy(() => import('./RevenueView').then(module => ({ default: module.RevenueView })));
 // Loaded only when the operator opens this workspace; idle Aura stays small.
@@ -312,6 +313,9 @@ const languageLabel = (path: string) => {
 export const JacoAuraComputeIDE: React.FC = () => {
   const chatSession = useAuraChatSession();
   const activation = useActivationReport();
+  // A beginner with no AI model connected gets the guide first; it can be closed and does not come back this session.
+  const [guideClosed, setGuideClosed] = useState(false);
+  const needsModel = Boolean(activation.report && !activation.report.providers?.some(p => p.active));
   const cognitiveLive = useCognitiveLive();
   const [workspaceView, setWorkspaceView] = useState<CognitiveCanvas>('conversation');
   const [workspacePinned, setWorkspacePinned] = useState(false);
@@ -1524,6 +1528,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
 
   const renderChatContent = () => (
     <>
+      {needsModel && !guideClosed && <FirstRunGuide onConnected={() => activation.read()} onClose={() => setGuideClosed(true)} />}
       <div className="flex-1 min-h-0">
         <AuraChatPanel
           session={chatSession}
