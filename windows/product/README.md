@@ -26,3 +26,18 @@ Publishing: push a matching stable version tag on reviewed main. Code-signing re
 Installations do not delete \`%LOCALAPPDATA%\JACO\`. The installer overwrites product binaries,
 so database schema migrations and rollback still require validation on a disposable test user.
 Do not point the installed \`JACO_DATA_DIR\` into Program Files.
+
+## Optional phone Remote, without Cloudflare
+
+The full Windows installer now includes **JACO Private Remote Setup** in the
+Start menu. It is opt-in and never runs during installation. To use the same Aura
+from Android without opening router ports or managing a Cloudflare Tunnel, sign
+in to Tailscale on Windows and Android, start JACO locally, then launch this
+setup command. The private HTTPS address appears in **Devices → Add device →
+Browser** after restarting JACO. Pair with the one-time code and install the
+Remote PWA on Android.
+
+This requires Tailscale on both devices. It is a deliberately simple **private
+first transport**, not a JacoCloud installer or a finished zero-install public
+relay. Read [JACO Private Remote](../../docs/jaco-private-remote.md) for
+verification, security, limitations and rollback.
