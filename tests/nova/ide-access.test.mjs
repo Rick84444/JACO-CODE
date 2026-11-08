@@ -158,3 +158,49 @@ test('logout does not clear cookies or claim success if device revocation fails'
   assert.equal(out.body.error, 'REMOTE_SESSION_REVOCATION_FAILED');
   assert.equal(out.headers['set-cookie'], undefined);
 });
+
+test('private HTTPS reverse proxy uses the existing pairing gate without Cloudflare headers', t => {
+  const dns = 'workstation.operator-tailnet.ts.net';
+  const registryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-tailscale-'));
+  t.after(() => fs.rmSync(registryDir, {recursive:true,force:true}));
+  const registry = new DeviceRegistry(path.join(registryDir,'devices.json'));
+  const gate = createIdeRemoteGate(registry,{env:{JACO_IDE_PUBLIC_HOST:dns}});
+  const send = (path, headers, method = 'GET', body = null, socketAddress = '127.0.0.1') => {
+    const output = {status:200,body:null,headers:{},passed:false};
+    const req = {method,path,headers:{host:dns,...headers},body,socket:{remoteAddress:socketAddress},query:{}};
+    const res = {status(code){output.status=code;return this;},
+      json(body){output.body=body;return this;},
+      setHeader(key,val){output.headers[key.toLowerCase()]=val;return this;},
+      end(body){output.body=body;return this;},
+      redirect(code,url){output.status=code;output.body=url;return this;}};
+    gate(req,res,()=>{output.passed=true;});
+    return output;
+  };
+  const forwarded={'x-forwarded-for':'100.100.21.3','x-forwarded-host':dns};
+  assert.equal(send('/api/aura/chat',forwarded).status,401);
+  const {code}=registry.invite('private-phone','ide');
+  const paired=send('/ide-auth/pair',{...forwarded,origin:'https://'+dns},'POST',{code});
+  assert.equal(paired.status,200);
+  const cookie=paired.headers['set-cookie'].split(';')[0];
+  assert.equal(send('/api/aura/chat',{...forwarded,cookie,origin:'https://'+dns},'POST',{}).passed,true);
+  assert.equal(send('/api/terminal/exec',{...forwarded,cookie,origin:'https://'+dns},'POST',{}).status,403);
+  assert.equal(upgradeAllowed({headers:{host:dns,...forwarded,cookie,origin:'https://'+dns}},registry,{JACO_IDE_PUBLIC_HOST:dns}),true);
+  registry.revoke('private-phone','ide');
+  assert.equal(send('/api/aura/chat',{...forwarded,cookie}).status,401);
+});
+
+test('direct LAN requests without proxy headers never bypass JACO remote authentication', t => {
+  const s=setup(t);
+  const fromLan=s.run({headers:{host:HOST,'cf-connecting-ip':undefined}});
+  // A test without a socket simulates the original configured remote host.
+  assert.equal(fromLan.status,302);
+  const direct=s.run({headers:{host:'127.0.0.1:3000','cf-connecting-ip':undefined}});
+  assert.equal(direct.passed,true);
+  const gate=createIdeRemoteGate(s.registry,{env});
+  const req={method:'GET',path:'/api/aura/chat',headers:{host:'127.0.0.1:3000'},socket:{remoteAddress:'192.168.1.42'}};
+  const res={status(code){this.code=code;return this;},json(body){this.body=body;return this;}};
+  let passed=false;gate(req,res,()=>{passed=true;});
+  assert.equal(res.code,403);
+  assert.equal(passed,false);
+  assert.equal(upgradeAllowed({headers:{host:'127.0.0.1:3000'},socket:{remoteAddress:'192.168.1.42'}},s.registry,env),false);
+});
