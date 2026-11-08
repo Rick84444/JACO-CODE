@@ -107,3 +107,27 @@ test('remote device status and revocation are authoritative for API and WebSocke
   assert.equal(upgradeAllowed(socket,registry,{JACO_IDE_PUBLIC_HOST:host}),false);
   assert.equal(readCookie('jaco_ide=%broken','jaco_ide'),null);
 });
+
+test('Android installation can fetch all manifest icons before pairing but cannot fetch Aura', () => {
+  const manifest = JSON.parse(read('runtime/public/remote.webmanifest'));
+  const gate = createIdeRemoteGate({
+    verify: () => null,
+    redeem: () => {throw Error('not used');},
+  }, {env: {JACO_IDE_PUBLIC_HOST: 'ide.example.com'}});
+  const request = path => {
+    const out = {passed: false, status: 200};
+    const req = {method: 'GET', path, query: {},
+      headers: {host: 'ide.example.com', 'cf-connecting-ip': '198.51.100.7'}};
+    const res = {setHeader(){}, status(code){out.status=code;return this;},
+      json(){return this;}, redirect(code){out.status=code;return this;}};
+    gate(req,res,()=>{out.passed=true;});
+    return out;
+  };
+  for (const icon of manifest.icons) {
+    const pathname = new URL(icon.src, 'https://ide.example.com').pathname;
+    assert.equal(PUBLIC_APP_FILES.has(pathname), true, pathname);
+    assert.equal(request(pathname).passed, true, pathname);
+  }
+  assert.equal(request('/api/aura/chat').status, 401);
+  assert.equal(request('/branding/aura-avatar.png').passed, false);
+});

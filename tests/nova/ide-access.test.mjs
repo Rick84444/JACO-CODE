@@ -56,7 +56,11 @@ test('without a session the tunnel shows only the login page', t => {
   assert.equal(s.run({method: 'POST', path: '/api/connected/goals', headers: {origin: `https://${HOST}`}}).status, 401);
   // Only the app manifest and its icons are public, so the phone can install the IDE as an app.
   assert.equal(s.run({path: '/manifest.webmanifest'}).passed, true);
+  assert.equal(s.run({path: '/remote.webmanifest'}).passed, true);
   assert.equal(s.run({path: '/branding/jaco-icon-512.png'}).passed, true);
+  assert.equal(s.run({path: '/branding/jaco-remote-icon-192.png'}).passed, true);
+  assert.equal(s.run({path: '/branding/jaco-remote-icon.svg'}).passed, true);
+  assert.equal(s.run({method: 'POST', path: '/branding/jaco-remote-icon.svg'}).passed, false);
   assert.equal(s.run({path: '/branding/jaco-logo.png'}).passed, false);
   assert.equal(s.run({method: 'POST', path: '/manifest.webmanifest'}).passed, false);
   // The production CSP is script-src 'self': the login page may not carry inline script.
@@ -115,4 +119,42 @@ test('WebSocket upgrades through the tunnel need the session and the IDE origin'
   assert.equal(upgradeAllowed({headers: base}, s.registry, env), false);
   assert.equal(upgradeAllowed({headers: {...base, cookie, origin: 'https://evil.example'}}, s.registry, env), false);
   assert.equal(upgradeAllowed({headers: {...base, cookie, origin: `https://${HOST}`}}, s.registry, env), true);
+});
+
+test('signing out the Android Remote revokes the actual Windows device key', t => {
+  const s = setup(t);
+  const {cookie} = s.signIn();
+  assert.equal(s.run({path: '/api/aura/workbench', headers: {cookie}}).passed, true);
+  const response = s.run({
+    method: 'POST', path: '/ide-auth/logout',
+    headers: {cookie, origin: `https://${HOST}`},
+  });
+  assert.deepEqual(response.body, {success: true, revoked: true});
+  assert.match(String(response.headers['set-cookie']), /Max-Age=0/);
+  assert.equal(s.run({path: '/api/aura/workbench', headers: {cookie}}).status, 401);
+  assert.ok(s.registry.list().find(d => d.name === 'telefon' && d.kind === 'ide')?.revokedAt);
+});
+
+test('logout does not clear cookies or claim success if device revocation fails', () => {
+  const registry = {
+    verify: () => ({name: 'phone'}),
+    redeem: () => {throw Error('not used');},
+    revoke: () => {throw Error('disk unavailable');},
+  };
+  const gate = createIdeRemoteGate(registry, {env});
+  const req = {
+    method: 'POST', path: '/ide-auth/logout',
+    headers: {host: HOST, 'cf-connecting-ip': '203.0.113.7',
+      origin: `https://${HOST}`, cookie: 'jaco_ide=jide_fake_session'},
+  };
+  const out = {status: 200, headers: {}, body: null};
+  const res = {
+    setHeader(name, value) {out.headers[name.toLowerCase()] = value;},
+    status(status) {out.status = status;return this;},
+    json(body) {out.body = body;return this;},
+  };
+  gate(req, res, () => {throw Error('should not pass');});
+  assert.equal(out.status, 503);
+  assert.equal(out.body.error, 'REMOTE_SESSION_REVOCATION_FAILED');
+  assert.equal(out.headers['set-cookie'], undefined);
 });
