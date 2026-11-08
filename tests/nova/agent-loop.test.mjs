@@ -820,3 +820,29 @@ test('a preflight that cannot reach the runtime yet defers the mission instead o
   assert.equal(result.deferred, true);
   assert.equal(s.control.get(m.id).status, 'ACTIVE', 'the mission waits, it is not blocked for the operator');
 });
+
+
+test('Aura receives scoped adaptive-repair guidance from an actual failed mission receipt', async t => {
+  const s = setup(t, ['web-fetch', 'health-check']);
+  const mission = s.control.create({
+    goal: 'Check a remote dependency and recover from transient failure',
+    idempotencyKey: 'adaptive-repair-e2e',
+    allowedTasks: ['web-fetch', 'health-check'],
+  });
+  const model = scripted([
+    { tool_calls: [call('web-fetch', { url: 'https://temporary.example' })] },
+    { tool_calls: [call('health-check', {})] },
+    { tool_calls: [call('complete', { reason: 'Service recovered after verified health check' })] },
+  ]);
+  const result = await run(s, model, async task => task.type === 'web-fetch'
+    ? { ok: false, error: 'HTTP 503: temporary failure' }
+    : { ok: true, verified: true, status: 'healthy' });
+  assert.equal(result.completed, true);
+  assert.equal(s.control.get(mission.id).receipts.length, 2);
+  const secondTurn = model.seen[1].filter(message => message.role === 'tool').map(message => message.content).join('\n');
+  assert.match(secondTurn, /AURA_ADAPTIVE_REPAIR/);
+  assert.match(secondTurn, /TRANSIENT/);
+  assert.match(secondTurn, /health-check/);
+  assert.doesNotMatch(secondTurn, /"tool":"repo-edit"/);
+  assert.equal(s.control.get(mission.id).status, 'AWAITING_VERIFICATION');
+});
