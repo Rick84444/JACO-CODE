@@ -7,6 +7,7 @@ import { RoutinesPanel } from './RoutinesPanel';
 import { CapabilitiesPanel } from './CapabilitiesPanel';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { SiteLoginsPanel } from './SiteLoginsPanel';
+import { JacoCloudPanel } from './JacoCloudPanel';
 import { useOptionalUiLanguage } from '../i18n/UiLanguage';
 const request=async(url:string,body?:unknown)=>fetch(url,{...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),signal:AbortSignal.timeout(30000)}).then(readAuraResponse);
 const unwrap=(result:any)=>{const text=result?.content?.find((c:any)=>c.type==='text')?.text;try{return text?JSON.parse(text):result;}catch{return result;}};
@@ -39,7 +40,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
   return <div className="connections-workspace">
     <header><h2>{tr('Anslutningar','Connections')}</h2><button type="button" onClick={()=>void refresh()}>{tr('Uppdatera','Refresh')}</button></header>
     <p>{tr('Modeller, API och kassaskåp, lokala verktyg och färdigheter. Modeller och MCP uppdateras var 30:e sekund.','Models, API & Vault, local tools and skills. Models and MCP refresh every 30 seconds.')}</p>
-    <nav aria-label={tr('Typ av anslutning','Connection type')}>{[['capabilities',tr('Vad Aura kan','What Aura can do')],['models',tr('Modeller','Models')],['local',tr('Lokala verktyg','Local tools')],['mcp','MCP'],['browser',tr('Webbläsare / CDP','Browser / CDP')],['skills',tr('Färdigheter','Skills')],['routines',tr('Rutiner','Routines')],['logins',tr('Inloggningar','Sign-ins')],['vault',tr('API och kassaskåp','API & Vault')]].map(([id,label])=><button key={id} type="button" aria-pressed={tab===id} onClick={()=>{onTabChange(id);setResult(null);}}>{label}</button>)}</nav>
+    <nav aria-label={tr('Typ av anslutning','Connection type')}>{[['capabilities',tr('Vad Aura kan','What Aura can do')],['models',tr('Modeller','Models')],['phone',tr('Telefon','Phone')],['local',tr('Lokala verktyg','Local tools')],['mcp','MCP'],['browser',tr('Webbläsare / CDP','Browser / CDP')],['skills',tr('Färdigheter','Skills')],['routines',tr('Rutiner','Routines')],['logins',tr('Inloggningar','Sign-ins')],['vault',tr('API och kassaskåp','API & Vault')]].map(([id,label])=><button key={id} type="button" aria-pressed={tab===id} onClick={()=>{onTabChange(id);setResult(null);}}>{label}</button>)}</nav>
     {observed&&<p>{tr('Senast kontrollerad','Last checked')} {new Date(observed).toLocaleTimeString(language==='sv'?'sv-SE':'en-US')}</p>}
     {Object.entries(errors).map(([source,message])=><p key={source} role="alert">{source}: {message}. {tr('Tidigare värden kan vara inaktuella.','Earlier values may be stale.')}</p>)}
     {notice&&<p role="alert">{notice}</p>}
@@ -57,6 +58,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
       </article>)}<ProviderConnect onConnected={async()=>{await refresh();window.dispatchEvent(new Event('jaco:aura:provider-chosen'));}}/>
     </section>}
     {tab==='logins'&&<SiteLoginsPanel/>}
+    {tab==='phone'&&<JacoCloudPanel/>}
     {tab==='mcp'&&<McpServersPanel providers={(mcp?.providers||[]).map((p:any)=>errors.mcp?{...p,status:'UNOBSERVED'}:p)} recentCalls={mcp?.recentCalls||[]} busy={busy} selectedToolId={null} onStart={id=>void act(id,async()=>{const value=await request('/api/aura/workbench/mcp/start',{providerId:id});await refresh();return value;})} onSelectTool={onSelectTool} onChanged={message=>{setNotice(message);void refresh();}}/>}
     {tab==='local'&&<section><h3>{tr('Kör ett lokalt verktyg','Run a local tool')}</h3><p>{tr('Kommandot körs av JACO:s lokala MCP-server. Resultat och fel kommer från den verkliga processen.','The command is run by JACO\'s local MCP server. Results and errors come from the real process.')}</p><label>{tr('Körläge','Run mode')}<select value={localMode} onChange={e=>setLocalMode(e.target.value)}><option value="read">{tr('Bara läsa','Read only')}</option><option value="write">{tr('Projektkommando, kan ändra filer','Project command, may change files')}</option></select></label><label>{tr('Program','Program')}<input value={command} onChange={e=>setCommand(e.target.value)}/></label><label>{tr('Argument som JSON-lista','Arguments as a JSON array')}<input value={args} onChange={e=>setArgs(e.target.value)}/></label>
       <button type="button" disabled={!!busy} onClick={()=>void act('local',async()=>{const parsed=JSON.parse(args);if(!Array.isArray(parsed)||parsed.some(x=>typeof x!=='string'))throw Error(tr('Argumenten måste vara en lista med textsträngar.','Arguments must be an array of strings.'));return call('shell',localMode==='read'?'shell_read':'shell_run',{command,args:parsed});})}>{busy==='local'?tr('Kör lokalt…','Running locally…'):localMode==='read'?tr('Kör läsning lokalt','Run read locally'):tr('Kör projektkommando','Run project command')}</button>

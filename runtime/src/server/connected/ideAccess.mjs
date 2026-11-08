@@ -12,6 +12,9 @@ const PAIR_ATTEMPTS_PER_HOUR = 10;
 
 export const isProxied = req => Boolean(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.headers['x-forwarded-host']);
 export const ideHost = (env = process.env) => String(env.JACO_IDE_PUBLIC_HOST || '').trim().toLowerCase();
+// The temporary addresses of a running JacoCloud quick tunnel (jacocloud.mjs). A host is here only while its
+// tunnel runs, and it gets the same gate as the permanent IDE host: the sign-in page, then a paired device.
+export const tunnelHosts = new Set();
 
 export function readCookie(header, name) {
   for (const part of String(header || '').split(';')) {
@@ -45,6 +48,9 @@ button{width:100%;margin-top:14px;padding:14px;border:0;border-radius:10px;backg
 // A file of its own: the production CSP is script-src 'self', which blocks inline scripts. Inline, the
 // form fell back to a plain reload and nobody could sign in (2026-10-08, dist/server.cjs).
 export const LOGIN_SCRIPT = `const f=document.getElementById('f'),b=document.getElementById('b'),m=document.getElementById('msg');
+// A QR code opens /ide-login#code=XXXXX-XXXXX: the code is read from the fragment, which is never sent to a server,
+// removed from the address bar, and used once.
+const hashCode=/^#code=([A-Za-z0-9-]{5,16})$/.exec(location.hash);if(hashCode){document.getElementById('c').value=hashCode[1].toUpperCase();history.replaceState(null,'',location.pathname);setTimeout(()=>f.requestSubmit(),0)}
 f.addEventListener('submit',async e=>{e.preventDefault();b.disabled=true;m.textContent='';
 try{const r=await fetch('/ide-auth/pair',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:document.getElementById('c').value})});
 const d=await r.json().catch(()=>({}));if(r.ok&&d.success){location.replace('/');return}
@@ -70,7 +76,7 @@ export function createIdeRemoteGate(registry, { env = process.env, onEvent = () 
   return function ideRemoteGate(req, res, next) {
     if (!isProxied(req)) return next();
     const host = String(req.headers.host || req.headers['x-forwarded-host'] || '').toLowerCase().replace(/:\d+$/, '');
-    if (!ideHost(env) || host !== ideHost(env)) return res.status(403).json({ success: false, error: 'HOST_NOT_SERVED' });
+    if (!(ideHost(env) && host === ideHost(env)) && !tunnelHosts.has(host)) return res.status(403).json({ success: false, error: 'HOST_NOT_SERVED' });
     const path = req.path || '/';
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
@@ -108,7 +114,7 @@ export function createIdeRemoteGate(registry, { env = process.env, onEvent = () 
     // must be the IDE host.
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       const origin = String(req.headers.origin || '');
-      if (origin !== `https://${ideHost(env)}`) return res.status(403).json({ success: false, error: 'CROSS_ORIGIN_DENIED' });
+      if (origin !== `https://${host}`) return res.status(403).json({ success: false, error: 'CROSS_ORIGIN_DENIED' });
     }
     if (req.method === 'POST' && path === '/ide-auth/logout') {
       res.setHeader('Set-Cookie', `${IDE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
