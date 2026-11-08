@@ -66,3 +66,17 @@ test('installed Workplace runs supervised executables from the immutable install
   assert.match(source, /const EXECUTION_ROOT = resolve\(process\.env\.JACO_INSTALL_ROOT \|\| process\.cwd\(\)\)/);
   assert.match(source, /createWorkplaceAgentSupervisor\(\{ root: EXECUTION_ROOT, env: process\.env \}\)/);
 });
+
+test('full Windows installer includes an opt-in private remote setup instead of requiring Cloudflare', () => {
+  const inno = fs.readFileSync(new URL('../../windows/product/JACO.iss', import.meta.url), 'utf8');
+  const setup = fs.readFileSync(new URL('../../windows/product/Enable-JacoPrivateRemote.ps1', import.meta.url), 'utf8');
+  assert.match(inno, /Source: .*Enable-JacoPrivateRemote[.]ps1/);
+  assert.match(inno, /JACO Private Remote Setup/);
+  assert.match(setup, /tailscale[.]exe/);
+  assert.match(setup, /serve --bg/);
+  assert.match(setup, /JACO_IDE_PUBLIC_HOST/);
+  assert.match(setup, /private-remote-/);
+  assert.match(setup, /Invoke-RestMethod.*127[.]0[.]0[.]1/);
+  assert.doesNotMatch(setup, /& \$cli funnel\b|cloudflared|JACO_GATEWAY_TOKEN/);
+  assert.doesNotMatch(inno, /\[Run\][\s\S]*Enable-JacoPrivateRemote[.]ps1/);
+});
