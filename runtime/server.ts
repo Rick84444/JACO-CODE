@@ -1133,7 +1133,7 @@ const notifyPhone = async (action) => {
   app.use(createA2ARouter({
     workspaceRoot: WORKSPACE_ROOT,
     host: HOST,
-    version: '0.23.0',
+    version: '0.23.1',
     requireMutationAuth: requireOperator,
     onEvent: event => seerLiveWorkstream.record(event),
   }));
@@ -1190,7 +1190,7 @@ const notifyPhone = async (action) => {
       success: true,
       product: 'JACO Autonomus IDE',
       version: JSON.parse(fs.readFileSync(path.join(process.env.JACO_RELEASE_ROOT || process.cwd(), 'package.json'), 'utf8')).version,
-      releaseId: 'jaco-code-0.23.0',
+      releaseId: 'jaco-code-0.23.1',
       canonicalGui: 'JACO Autonomous IDE',
       primaryPort: PORT,
       // Only surfaces this runtime can actually drive. The list used to be fixed, so a PC runtime with

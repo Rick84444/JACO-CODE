@@ -1,7 +1,7 @@
 {
   "product": "JACO Cognitive Runtime",
-  "version": "0.23.0",
-  "releaseId": "jaco-code-0.23.0",
+  "version": "0.23.1",
+  "releaseId": "jaco-code-0.23.1",
   "canonical": false,
   "status": "RELEASE_CANDIDATE",
   "canonicalGui": "JACO Autonomous IDE",
