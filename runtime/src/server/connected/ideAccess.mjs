@@ -6,7 +6,13 @@
 // (loopback, not proxied) are unchanged. The terminal stays local only (requireLocalUiSameOrigin).
 
 export const IDE_COOKIE = 'jaco_ide';
-export const PUBLIC_APP_FILES = new Set(['/manifest.webmanifest', '/remote.webmanifest', '/branding/jaco-icon-192.png', '/branding/jaco-icon-512.png']);
+// Android Chrome fetches icons when installing before a pairing cookie exists.
+// Only the two actual Remote manifest icons are public, never the app shell or API.
+export const PUBLIC_APP_FILES = new Set([
+  '/manifest.webmanifest', '/remote.webmanifest',
+  '/branding/jaco-icon-192.png', '/branding/jaco-icon-512.png',
+  '/branding/jaco-remote-icon-192.png', '/branding/jaco-remote-icon.svg',
+]);
 const SESSION_DAYS = 30;
 const PAIR_ATTEMPTS_PER_HOUR = 10;
 
@@ -115,8 +121,17 @@ export function createIdeRemoteGate(registry, { env = process.env, onEvent = () 
       return res.json({ success: true, authenticated: true, device: session.name });
     }
     if (req.method === 'POST' && path === '/ide-auth/logout') {
+      // Deleting only the cookie leaves the reusable device key valid. Revoke the
+      // device on the Windows source of truth, then expire the browser cookie.
+      // A failed revocation must never be reported as a successful logout.
+      try {
+        registry.revoke(session.name, 'ide');
+      } catch {
+        return res.status(503).json({ success: false, error: 'REMOTE_SESSION_REVOCATION_FAILED' });
+      }
       res.setHeader('Set-Cookie', `${IDE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
-      return res.json({ success: true });
+      onEvent({ type: 'ide.session.revoked', device: session.name });
+      return res.json({ success: true, revoked: true });
     }
     // Command execution stays on this computer: these routes run commands from the request body, and
     // some accept a loopback caller without a token (the tunnel connects from loopback).
