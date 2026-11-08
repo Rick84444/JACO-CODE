@@ -69,7 +69,6 @@ import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
-import { QuickTunnel, phoneName, pairingLink } from './src/server/connected/jacocloud.mjs';
 import { auraAlwaysAnswers, answerInOrder, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier } from "./src/server/connected/voiceChannel.mjs";
@@ -2347,38 +2346,6 @@ const notifyPhone = async (action) => {
     try { if (origin && new URL(origin).host === req.get('host') && (!site || site === 'same-origin')) return requireLocalUi(req, res, next); } catch { /* invalid origin */ }
     return res.status(403).json({ success: false, error: 'LOGIN_CHANGE_REQUIRES_INTERFACE' });
   };
-  // JacoCloud (src/server/connected/jacocloud.mjs): your own JACO from your phone through a temporary tunnel.
-  // Only the interface on this computer may start it, stop it or create a pairing code: not a paired phone
-  // (a stolen phone must not be able to pair more devices) and not the agent's shell.
-  const jacocloud = new QuickTunnel();
-  process.once('exit', () => jacocloud.stop());
-  const requireJacoCloudLocal = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if ((req as any).ideSession) return res.status(403).json({ success: false, error: 'JACOCLOUD_LOCAL_ONLY' });
-    return requireInterfaceWrite(req, res, next);
-  };
-  const jacocloudView = () => ({ ...jacocloud.status(), devices: connectedRuntime.devices.list().filter((d: any) => d.kind === 'ide' && !d.revokedAt) });
-  app.get('/api/aura/jacocloud', (req, res, next) => ((req as any).ideSession ? res.status(403).json({ success: false, error: 'JACOCLOUD_LOCAL_ONLY' }) : requireLocalUi(req, res, next)), (_req, res) => {
-    res.setHeader('Cache-Control', 'no-store'); res.json({ success: true, ...jacocloudView() });
-  });
-  app.post('/api/aura/jacocloud/start', requireJacoCloudLocal, async (_req, res) => {
-    try { await jacocloud.start(`http://127.0.0.1:${PORT}`); res.json({ success: true, ...jacocloudView() }); }
-    catch (error: any) { res.status(error?.message === 'TUNNEL_ALREADY_RUNNING' ? 409 : 502).json({ success: false, error: String(error?.message || error), ...jacocloudView() }); }
-  });
-  app.post('/api/aura/jacocloud/invite', requireJacoCloudLocal, async (_req, res) => {
-    const { state, url } = jacocloud.status();
-    if (state !== 'on' || !url) return res.status(409).json({ success: false, error: 'TUNNEL_NOT_RUNNING' });
-    try {
-      const invite = connectedRuntime.devices.invite(phoneName(), 'ide');
-      const link = pairingLink(url, invite.code);
-      res.setHeader('Cache-Control', 'no-store');
-      res.json({ success: true, name: invite.name, code: invite.code, expiresAt: invite.expiresAt, link, qr: await qrSvg(link) });
-    } catch (error: any) { res.status(409).json({ success: false, error: String(error?.message || error) }); }
-  });
-  app.post('/api/aura/jacocloud/stop', requireJacoCloudLocal, (_req, res) => { jacocloud.stop(); res.json({ success: true, ...jacocloudView() }); });
-  app.delete('/api/aura/jacocloud/devices/:name', requireJacoCloudLocal, (req, res) => {
-    try { connectedRuntime.devices.revoke(String(req.params.name), 'ide'); res.json({ success: true, ...jacocloudView() }); }
-    catch (error: any) { res.status(409).json({ success: false, error: String(error?.message || error) }); }
-  });
   app.get('/api/aura/logins', requireLocalUi, (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ success: true, logins: listSiteLogins() }); });
   app.post('/api/aura/logins', requireInterfaceWrite, (req, res) => {
     try { res.status(201).json({ success: true, login: saveSiteLogin({ site: req.body?.site, username: req.body?.username, password: req.body?.password }) }); }
@@ -7045,7 +7012,6 @@ const notifyPhone = async (action) => {
     void (async () => {
       stopJobReaper();
       try { connectedRuntime.stop(); } catch {}
-      try { jacocloud.stop(); } catch {}
       await Promise.allSettled([closeWebSockets(), closeHttpServer()]);
       try { continuumSurface.runtime.close(); } catch (error: any) {
         console.error('[JACO] Continuum shutdown failed:', error?.message || error);

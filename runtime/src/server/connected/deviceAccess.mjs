@@ -124,7 +124,12 @@ export function mountDeviceRoutes(app, requireAuth, control, registry, onUpdate 
     catch (e) { res.status(409).json({ success: false, error: e.message }); }
   };
   app.get('/api/connected/devices', requireAuth, (_req, res) => send(res, () => ({ devices: registry.list() })));
-  app.post('/api/connected/devices/invite', requireAuth, (req, res) => send(res, () => ({ invite: registry.invite(String(req.body?.name || ''), String(req.body?.kind || 'nova')) })));
+  // Pairing a device is decided on this computer. A phone that is already paired (a signed-in remote IDE session)
+  // may not create codes for more devices: a lost phone would otherwise be able to pair others.
+  app.post('/api/connected/devices/invite', requireAuth, (req, res) => {
+    if (req.ideSession) return res.status(403).json({ success: false, error: 'DEVICE_INVITE_LOCAL_ONLY' });
+    return send(res, () => ({ invite: registry.invite(String(req.body?.name || ''), String(req.body?.kind || 'nova')) }));
+  });
   app.delete('/api/connected/devices/:name', requireAuth, (req, res) => send(res, () => ({ device: registry.revoke(req.params.name, String(req.query?.kind || 'nova')) })));
 
   const deviceAuth = (req, res, next) => {
