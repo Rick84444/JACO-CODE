@@ -71,7 +71,7 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
 
   const createInvite = async () => {
     if (busy) return;
-    if (!(kind === 'ide' ? ideUrl : hubUrl)) { setActionError(tr('Konfigurera anslutningsadressen innan parkoppling.', 'Configure the connection address before pairing.')); return; }
+    if (!(kind === 'ide' ? ideUrl : hubUrl)) { setActionError(tr('Öppna JACO Private Remote Setup i Windows Start-meny, slutför anslutningen och starta om JACO innan du parkopplar.', 'Open JACO Private Remote Setup from the Windows Start menu, finish setup and restart JACO before pairing.')); return; }
     const wanted = name.trim().toLowerCase();
     if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(wanted)) { setActionError(tr('Namnet får bara innehålla a-z, 0-9 och bindestreck (2-40 tecken).', 'The name may only contain a-z, 0-9 and hyphens (2-40 characters).')); return; }
     setBusy(true); setActionError('');
