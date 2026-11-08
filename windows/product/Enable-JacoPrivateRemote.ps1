@@ -53,9 +53,10 @@ if ($LASTEXITCODE -ne 0 -or -not $serve.Contains("https://$dns") -or -not $serve
 
 # Preserve credentials and settings in user data, never Program Files.
 $before = [System.IO.File]::ReadAllText($EnvFile)
-$clean = [regex]::Replace($before, '(?m)^JACO_IDE_PUBLIC_HOST=[^\r\n]*(\r?\n|$)', '')
+$clean = [regex]::Replace($before, '(?m)^(?:JACO_IDE_PUBLIC_HOST|JACO_START_TUNNEL)=[^\r\n]*(\r?\n|$)', '')
 $clean = $clean.TrimEnd([char[]]@([char]13,[char]10)) + [Environment]::NewLine
-$after = $clean + "JACO_IDE_PUBLIC_HOST=$dns" + [Environment]::NewLine
+$after = $clean + "JACO_IDE_PUBLIC_HOST=$dns" + [Environment]::NewLine +
+  "JACO_START_TUNNEL=0" + [Environment]::NewLine
 if ($after -ne $before) {
   $backup = "$EnvFile.private-remote-$(Get-Date -Format yyyyMMddHHmmss).bak"
   Copy-Item -LiteralPath $EnvFile -Destination $backup -ErrorAction Stop
