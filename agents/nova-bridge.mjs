@@ -11,7 +11,8 @@ import { fileURLToPath, pathToFileURL } from "url";
 import { buildAgentCard, joinWorkplace } from "./lib/workplace-session.mjs";
 import { createBrowserActionJournal } from "./lib/browser-action-journal.mjs";
 import { inputAllowed, mutationsEnabled } from "./lib/browser-scope.mjs";
-import { createInputActions, listDownloadFiles, digestFile } from "./lib/browser-input.mjs";
+import { createInputActions, listDownloadFiles, digestFile, signInSession } from "./lib/browser-input.mjs";
+import { approvedLoginOrigins, siteLoginFor } from "./lib/site-logins.mjs";
 
 const CDP_PORT = parseInt(process.env.CDP_PORT || "9222");
 const BRIDGE_PORT = parseInt(process.env.NOVA_BRIDGE_PORT || "4243");
@@ -166,7 +167,7 @@ async function withTab(fn, { input = false, missionOrigin = null } = {}) {
   await session.ready();
   try {
     const current=await evaluate(session,'location.href');
-    if (!(input ? inputAllowed(current) || (missionOrigin && new URL(current).origin===missionOrigin) : readable(current))) throw new Error('ORIGIN_DENIED');
+    if (!(input ? inputAllowed(current, process.env, approvedLoginOrigins()) || (missionOrigin && new URL(current).origin===missionOrigin) : readable(current))) throw new Error('ORIGIN_DENIED');
     return await fn(session, tab);
   } finally {
     session.close();
@@ -438,7 +439,7 @@ export const server = createServer(async (req, res) => {
     if (!authorized(req)) return json(res,{ok:false,error:'UNAUTHORIZED'},401);
     if (!workplace.allowed && url.pathname !== '/health') return json(res,{ok:false,error:'WORKPLACE_UNSYNCED',state:workplace.state},503);
     if (req.headers.origin) return json(res,{ok:false,error:'BROWSER_ORIGIN_DENIED'},403);
-    if (req.method==='POST' && ['/navigate','/click','/type','/press','/upload','/tab/open','/tab/switch','/tab/close'].includes(url.pathname) && !mutationsEnabled()) return json(res,{ok:false,error:'MUTATIONS_DISABLED'},403);
+    if (req.method==='POST' && ['/navigate','/click','/type','/press','/upload','/sign-in','/tab/open','/tab/switch','/tab/close'].includes(url.pathname) && !mutationsEnabled()) return json(res,{ok:false,error:'MUTATIONS_DISABLED'},403);
     if (req.method === "GET" && url.pathname === "/health") {
       const result = workplace.allowed ? browserHealth.status() :
         { ok: false, state: 'BLOCKED', browserVerified: false, error: 'WORKPLACE_UNSYNCED' };
@@ -466,20 +467,32 @@ export const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/click") {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'click');
-      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
+      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl, process.env, approvedLoginOrigins())&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
       return json(res, await guardedBrowserWrite("click", b, () => withTab(s=>actSession(s,b,"click"), { input: true,missionOrigin })));
     }
     if (req.method === "POST" && url.pathname === "/type") {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'type');
-      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
+      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl, process.env, approvedLoginOrigins())&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
       return json(res, await guardedBrowserWrite("type", b, () => withTab(s=>actSession(s,b,"type"), { input: true,missionOrigin })));
     }
     if (req.method === "POST" && url.pathname === "/press") {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'press');
-      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
+      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl, process.env, approvedLoginOrigins())&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
       return json(res, await guardedBrowserWrite("press", b, () => withTab(s=>actSession(s,b,"press"), { input: true,missionOrigin })));
+    }
+    // Sign in on the current page with the login the operator saved for this site. The request carries no
+    // credentials; the bridge reads them from the encrypted store and the answer says only whether it worked.
+    if (req.method === "POST" && url.pathname === "/sign-in") {
+      const b = await readBody(req);
+      const payload = { missionId: b.missionId, actionId: b.actionId, expectedUrl: b.expectedUrl };
+      return json(res, await guardedBrowserWrite("sign-in", payload, () => withTab(async s => {
+        const origin = new URL(await evaluate(s, 'location.href')).origin;
+        const login = siteLoginFor(origin);
+        if (!login) return { ok: false, signedIn: false, error: 'NO_APPROVED_LOGIN_FOR_SITE', origin };
+        return { ...(await signInSession(s, login, { evaluate, observe: observeSession })), origin };
+      }, { input: true })));
     }
     if (req.method === 'GET' && url.pathname === '/ax') {
       return json(res, await withTab(s=>axSession(s)));

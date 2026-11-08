@@ -12,6 +12,10 @@ export const BLOCKED_ORIGIN_PATTERN =
   /(accounts\.google|login\.microsoftonline|appleid\.apple|okta\.com|auth0\.com|onelogin|duosecurity|bankid|swish|paypal\.com|checkout\.stripe)/i;
 
 export const BLOCKED_PATH_PATTERN = /(wp-login\.php|\/login|\/signin|\/oauth|\/authorize|\/checkout|\/payment)/i;
+// A site's own sign-in page. It opens only for a site the operator saved a login for (site-logins.mjs); OAuth,
+// checkout and payment paths and the identity providers above stay closed whatever is saved.
+export const SIGN_IN_PATH_PATTERN = /(wp-login\.php|\/login|\/signin|\/sign-in|\/log-in)/i;
+const NEVER_PATH_PATTERN = /(\/oauth|\/authorize|\/checkout|\/payment)/i;
 
 /** Text that must be typed by a human, never driven into a field by an agent. */
 export const SECRET_TEXT =
@@ -48,21 +52,23 @@ export function allowedOrigins(env = process.env) {
   return new Set(String(env.JACO_BROWSER_ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean));
 }
 
-/** Why a page is off limits whatever the scope, or null. */
-export function hardDenied(url) {
+/** Why a page is off limits whatever the scope, or null. `approvedLogins`: origins with an operator-approved login. */
+export function hardDenied(url, approvedLogins = null) {
   try {
     const u = new URL(url);
-    if (BLOCKED_ORIGIN_PATTERN.test(u.hostname) || BLOCKED_PATH_PATTERN.test(u.pathname)) return 'AUTH_OR_PAYMENT_SURFACE';
+    if (BLOCKED_ORIGIN_PATTERN.test(u.hostname) || NEVER_PATH_PATTERN.test(u.pathname)) return 'AUTH_OR_PAYMENT_SURFACE';
+    const ownSignIn = Boolean(approvedLogins?.has?.(u.origin)) && SIGN_IN_PATH_PATTERN.test(u.pathname);
+    if (BLOCKED_PATH_PATTERN.test(u.pathname) && !ownSignIn) return 'AUTH_OR_PAYMENT_SURFACE';
     return null;
   } catch { return 'URL_INVALID'; }
 }
 
 /** May the agent click, type or press keys on this page? */
-export function inputAllowed(url, env = process.env) {
+export function inputAllowed(url, env = process.env, approvedLogins = null) {
   try {
     const u = new URL(url);
     if (!['http:', 'https:'].includes(u.protocol)) return false;
-    if (hardDenied(url)) return false;
+    if (hardDenied(url, approvedLogins)) return false;
     return browserScope(env) === 'broad_web' ? !isPrivateHost(u.hostname) : allowedOrigins(env).has(u.origin);
   } catch { return false; }
 }

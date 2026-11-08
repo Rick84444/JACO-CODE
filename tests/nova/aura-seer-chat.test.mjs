@@ -97,7 +97,10 @@ test('Aura setup guidance requires consent, keeps secrets out of generic tools a
   assert.match(system,/\/connect\.html/);
   assert.match(system,/Never read \.env with repo_read, shell/);
   assert.match(system,/outside the model context, chat history/);
-  assert.match(system,/Sign-in, passwords, MFA and CAPTCHA are done by the operator/);
+  // Operator 2026-11-08: Aura signs in with logins the operator saved; she never sees or asks for a password.
+  assert.match(system,/saved under Connections > Sign-ins you can sign in yourself; JACO fills the form and you never see the password/);
+  assert.match(system,/Never ask for a password or a key in the chat/);
+  assert.match(system,/CAPTCHA and one-time codes are for the operator/);
   assert.match(system,/A question or an offer is not a completed mission/);
   assert.match(system,/start_goal only when the operator has ordered the work/);
   assert.match(system,/Manual\/Planning are always read-only/);

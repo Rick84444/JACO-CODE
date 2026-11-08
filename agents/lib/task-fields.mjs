@@ -6,6 +6,9 @@ export const TASK_FIELDS = {
   // Read-only HTTP GET for research; no method/body/headers, so it cannot post or pay.
   'web-fetch': ['url'],
   'browser-type': ['name', 'text'], 'desktop-windows': [],
+  // Sign in on the open page with the login the operator saved for that site (site-logins.mjs). No fields: the
+  // credentials never pass through the plan.
+  'browser-sign-in': [],
   'desktop-observe': [], 'desktop-action': ['action'],
   'android-status': [], 'android-observe': [], 'android-begin': ['intent'],
   'android-target': ['semanticPurpose'], 'android-open-app': ['packageName'],

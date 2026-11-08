@@ -27,7 +27,7 @@ const labels = {
   'verify-api': 'Checking API responses', shell: 'Running a command in the workspace',
   'http-get': 'Reading a web response', 'web-search': 'Searching for information',
   'browser-open': 'Opening a page', 'browser-survey-site': 'Inspecting a page',
-  'browser-click': 'Using the interface', 'browser-type': 'Filling in a field',
+  'browser-click': 'Using the interface', 'browser-type': 'Filling in a field', 'browser-sign-in': 'Signing in with your saved login',
   'invoke-worker': 'Delegating a subtask', 'health-check': 'Checking the connection',
   screenshot: 'Reading a screenshot', 'desktop-observe': 'Inspecting the desktop',
 };
@@ -41,7 +41,7 @@ const SV = {
   'Searching for information': 'Söker information', 'Opening a page': 'Öppnar en sida', 'Inspecting a page': 'Granskar en sida', 'Using the interface': 'Använder gränssnittet',
   'Filling in a field': 'Fyller i ett fält', 'Delegating a subtask': 'Lämnar över en deluppgift', 'Checking the connection': 'Kontrollerar anslutningen',
   'Reading a screenshot': 'Läser en skärmbild', 'Inspecting the desktop': 'Granskar skrivbordet', 'Running a tool step': 'Kör ett verktygssteg', 'Tool step': 'Verktygssteg',
-  'Mission received': 'Uppdrag mottaget', 'Saved to memory': 'Sparat i minnet', 'Work in progress': 'Arbete pågår', 'Result': 'Resultat', 'Next step': 'Nästa steg', 'The plan needs to change': 'Planen behöver ändras',
+  'Mission received': 'Uppdrag mottaget', 'Signing in with your saved login': 'Loggar in med din sparade inloggning', 'Could not sign in': 'Kunde inte logga in', 'Saved to memory': 'Sparat i minnet', 'Work in progress': 'Arbete pågår', 'Result': 'Resultat', 'Next step': 'Nästa steg', 'The plan needs to change': 'Planen behöver ändras',
   'Cancellation requested': 'Avbrott begärt', 'New instruction queued': 'Ny instruktion i kö', 'Payment awaiting your approval': 'Betalning väntar på ditt godkännande',
   'Claim check': 'Kontroll av påståenden', 'The plan has changed': 'Planen har ändrats', 'Work is blocked': 'Arbetet är blockerat', 'Connection restored': 'Anslutningen är tillbaka',
   'Sub-goal check': 'Kontroll av delmål', 'Mission state is unknown': 'Uppdragets läge är okänt', 'A new mission has been registered': 'Ett nytt uppdrag har registrerats',
@@ -110,7 +110,7 @@ function humanResult(type, result, evidence, clean, t = text => text, sv = false
   else if (type === 'repo-write' || type === 'repo-edit') out.done = evidence.path ? `${sv ? 'Sparade' : 'Saved'} ${evidence.path}.` : null;
   else if (type === 'repo-test') out.done = t('The tests passed.');
   else if (type === 'git-commit') out.done = t('Committed the change.');
-  const label = { 'browser-survey-site': 'Could not open the page', 'browser-click': 'The click did not work', 'browser-type': 'Could not type into the field', 'web-fetch': 'Could not fetch the page', shell: 'The command failed', 'repo-test': 'The tests failed', 'repo-read': 'Could not read the file', 'repo-write': 'Could not save the file', 'repo-edit': 'Could not change the file' }[type];
+  const label = { 'browser-survey-site': 'Could not open the page', 'browser-click': 'The click did not work', 'browser-type': 'Could not type into the field', 'browser-sign-in': 'Could not sign in', 'web-fetch': 'Could not fetch the page', shell: 'The command failed', 'repo-test': 'The tests failed', 'repo-read': 'Could not read the file', 'repo-write': 'Could not save the file', 'repo-edit': 'Could not change the file' }[type];
   if (label) out.failed = reason ? `${t(label)}: ${reason}.` : `${t(label)}.`;
   return out;
 }

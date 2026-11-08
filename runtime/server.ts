@@ -92,6 +92,7 @@ import { TASK_FIELDS } from "../agents/lib/task-fields.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
 import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
 import { operatorLanguageFile, readOperatorLanguage, writeOperatorLanguage } from "../agents/lib/operator-language.mjs";
+import { listSiteLogins, saveSiteLogin, removeSiteLogin } from "../agents/lib/site-logins.mjs";
 import { createRoutineStore } from "./src/server/connected/auraRoutines.mjs";
 import { createPlanComments, planView } from "./src/server/connected/auraPlan.mjs";
 import { synchronizeAuraHarnessModel } from "../agents/lib/aura-harness-model-choice.mjs";
@@ -1132,7 +1133,7 @@ const notifyPhone = async (action) => {
   app.use(createA2ARouter({
     workspaceRoot: WORKSPACE_ROOT,
     host: HOST,
-    version: '0.22.0',
+    version: '0.23.0',
     requireMutationAuth: requireOperator,
     onEvent: event => seerLiveWorkstream.record(event),
   }));
@@ -1189,7 +1190,7 @@ const notifyPhone = async (action) => {
       success: true,
       product: 'JACO Autonomus IDE',
       version: JSON.parse(fs.readFileSync(path.join(process.env.JACO_RELEASE_ROOT || process.cwd(), 'package.json'), 'utf8')).version,
-      releaseId: 'jaco-code-0.22.0',
+      releaseId: 'jaco-code-0.23.0',
       canonicalGui: 'JACO Autonomous IDE',
       primaryPort: PORT,
       // Only surfaces this runtime can actually drive. The list used to be fixed, so a PC runtime with
@@ -2326,6 +2327,26 @@ const notifyPhone = async (action) => {
       res.status(201).json({ success: true, note });
     }
     catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
+  // Logins the operator approves for Aura. Saved and removed only from JACO's own interface; the list never carries a
+  // password, and no route returns one.
+  // Saving or removing a login is the operator's own act in the interface: a browser request from JACO's page, never
+  // another local program (the agent's shell included; operator-action-guard stops such commands as well).
+  const requireInterfaceWrite = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if ((req as any).ideSession) return next();
+    const origin = String(req.get('origin') || '');
+    const site = String(req.get('sec-fetch-site') || '');
+    try { if (origin && new URL(origin).host === req.get('host') && (!site || site === 'same-origin')) return requireLocalUi(req, res, next); } catch { /* invalid origin */ }
+    return res.status(403).json({ success: false, error: 'LOGIN_CHANGE_REQUIRES_INTERFACE' });
+  };
+  app.get('/api/aura/logins', requireLocalUi, (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ success: true, logins: listSiteLogins() }); });
+  app.post('/api/aura/logins', requireInterfaceWrite, (req, res) => {
+    try { res.status(201).json({ success: true, login: saveSiteLogin({ site: req.body?.site, username: req.body?.username, password: req.body?.password }) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 80) }); }
+  });
+  app.delete('/api/aura/logins', requireInterfaceWrite, (req, res) => {
+    try { res.json({ success: true, removed: removeSiteLogin(String(req.query.site || '')) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 80) }); }
   });
   app.get('/api/aura/plan/comments', requireLocalUi, (req, res) => res.json({ success: true, comments: planComments.list(String(req.query.graphId || '') || undefined) }));
   app.post('/api/aura/plan/comments', requireLocalUi, (req, res) => {

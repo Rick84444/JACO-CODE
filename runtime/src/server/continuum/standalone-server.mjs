@@ -25,8 +25,8 @@ const id=(url,prefix)=>decodeURIComponent(url.pathname.slice(prefix.length));
 
 async function handle(req,res){
  const url=new URL(req.url||'/',`http://${req.headers.host||`${HOST}:${PORT}`}`);
- if(req.method==='GET'&&url.pathname==='/health')return send(res,200,{success:true,product:'JACO Cognitive Runtime Continuum',version:'0.22.0',releaseId:'jaco-code-0.22.0',status:'READY',bind:`${HOST}:${PORT}`,executionSubstrate:substrate,truth:'Continuum control plane ready; substrate capabilities require separate evidence'});
- if(req.method==='GET'&&url.pathname==='/api/runtime/identity')return send(res,200,{success:true,product:'JACO Cognitive Runtime',version:'0.22.0',releaseId:'jaco-code-0.22.0',canonicalGui:'JACO Autonomous IDE (substrate)',primaryPort:PORT,controlPlane:'CONTINUUM_SIDECAR',executionSubstrate:substrate,evidence:'RUNTIME_SELF_REPORT'});
+ if(req.method==='GET'&&url.pathname==='/health')return send(res,200,{success:true,product:'JACO Cognitive Runtime Continuum',version:'0.23.0',releaseId:'jaco-code-0.23.0',status:'READY',bind:`${HOST}:${PORT}`,executionSubstrate:substrate,truth:'Continuum control plane ready; substrate capabilities require separate evidence'});
+ if(req.method==='GET'&&url.pathname==='/api/runtime/identity')return send(res,200,{success:true,product:'JACO Cognitive Runtime',version:'0.23.0',releaseId:'jaco-code-0.23.0',canonicalGui:'JACO Autonomous IDE (substrate)',primaryPort:PORT,controlPlane:'CONTINUUM_SIDECAR',executionSubstrate:substrate,evidence:'RUNTIME_SELF_REPORT'});
  if(!auth(req))return send(res,401,{success:false,error:{code:'CONTINUUM_AUTH_REQUIRED',message:'Bearer or x-jaco-continuum-token required'}},{'www-authenticate':'Bearer'});
  let b={};if(!['GET','HEAD'].includes(req.method||'')){try{b=await body(req)}catch(e){return fail(res,e,400)}}
  try{

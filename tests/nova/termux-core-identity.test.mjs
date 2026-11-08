@@ -8,7 +8,7 @@ import { resolve, dirname } from 'node:path';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const filename = resolve(root, 'runtime/bin/jacoctl');
 const script = readFileSync(filename, 'utf8');
-const expected = 'jaco-code-0.22.0';
+const expected = 'jaco-code-0.23.0';
 
 test('Termux supervisor script is valid bash', () => {
   const proc = spawnSync('bash', ['-n', filename], { encoding: 'utf8' });

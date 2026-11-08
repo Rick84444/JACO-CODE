@@ -6,6 +6,7 @@ import { SkillsView } from './SkillsView';
 import { RoutinesPanel } from './RoutinesPanel';
 import { CapabilitiesPanel } from './CapabilitiesPanel';
 import { readAuraResponse } from '../lib/auraApi.mjs';
+import { SiteLoginsPanel } from './SiteLoginsPanel';
 const request=async(url:string,body?:unknown)=>fetch(url,{...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),signal:AbortSignal.timeout(30000)}).then(readAuraResponse);
 const unwrap=(result:any)=>{const text=result?.content?.find((c:any)=>c.type==='text')?.text;try{return text?JSON.parse(text):result;}catch{return result;}};
 export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChange}:{initialTab?:string;onTabChange:(tab:string)=>void;onSelectTool:(provider:McpProvider,tool:McpTool)=>void}) {
@@ -36,7 +37,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
   return <div className="connections-workspace">
     <header><h2>Connections</h2><button type="button" onClick={()=>void refresh()}>Refresh</button></header>
     <p>Models, API & Vault, local tools and skills. Models and MCP refresh every 30 seconds.</p>
-    <nav aria-label="Connection type">{[['capabilities','What Aura can do'],['models','Models'],['local','Local tools'],['mcp','MCP'],['browser','Browser / CDP'],['skills','Skills'],['routines','Routines'],['vault','API & Vault']].map(([id,label])=><button key={id} type="button" aria-pressed={tab===id} onClick={()=>{onTabChange(id);setResult(null);}}>{label}</button>)}</nav>
+    <nav aria-label="Connection type">{[['capabilities','What Aura can do'],['models','Models'],['local','Local tools'],['mcp','MCP'],['browser','Browser / CDP'],['skills','Skills'],['routines','Routines'],['logins','Sign-ins'],['vault','API & Vault']].map(([id,label])=><button key={id} type="button" aria-pressed={tab===id} onClick={()=>{onTabChange(id);setResult(null);}}>{label}</button>)}</nav>
     {observed&&<p>Last checked {new Date(observed).toLocaleTimeString('en-US')}</p>}
     {Object.entries(errors).map(([source,message])=><p key={source} role="alert">{source}: {message}. Earlier values may be stale.</p>)}
     {notice&&<p role="alert">{notice}</p>}
@@ -53,6 +54,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
         {!p.modelIds?.length&&<p>No available model observed.</p>}
       </article>)}<ProviderConnect onConnected={async()=>{await refresh();window.dispatchEvent(new Event('jaco:aura:provider-chosen'));}}/>
     </section>}
+    {tab==='logins'&&<SiteLoginsPanel/>}
     {tab==='mcp'&&<McpServersPanel providers={(mcp?.providers||[]).map((p:any)=>errors.mcp?{...p,status:'UNOBSERVED'}:p)} recentCalls={mcp?.recentCalls||[]} busy={busy} selectedToolId={null} onStart={id=>void act(id,async()=>{const value=await request('/api/aura/workbench/mcp/start',{providerId:id});await refresh();return value;})} onSelectTool={onSelectTool} onChanged={message=>{setNotice(message);void refresh();}}/>}
     {tab==='local'&&<section><h3>Run a local tool</h3><p>The command is run by JACO's local MCP server. Results and errors come from the real process.</p><label>Run mode<select value={localMode} onChange={e=>setLocalMode(e.target.value)}><option value="read">Read only</option><option value="write">Project command, may change files</option></select></label><label>Program<input value={command} onChange={e=>setCommand(e.target.value)}/></label><label>Arguments as a JSON array<input value={args} onChange={e=>setArgs(e.target.value)}/></label>
       <button type="button" disabled={!!busy} onClick={()=>void act('local',async()=>{const parsed=JSON.parse(args);if(!Array.isArray(parsed)||parsed.some(x=>typeof x!=='string'))throw Error('Arguments must be an array of strings.');return call('shell',localMode==='read'?'shell_read':'shell_run',{command,args:parsed});})}>{busy==='local'?'Running locally…':localMode==='read'?'Run read locally':'Run project command'}</button>

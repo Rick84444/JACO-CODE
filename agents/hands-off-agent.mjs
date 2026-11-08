@@ -675,6 +675,13 @@ const lawnmower = {
     return runtime.browserAction({ type: "click", selector: { css: selector }, wait_after_ms: 1000 });
   },
 
+  // The bridge fills the form from the encrypted store; this side never holds the password.
+  async signIn(authority={}) {
+    if (!(await novaBridgeUp())) return { ok: false, error: 'BROWSER_NOT_CONNECTED' };
+    const page = await nova.observe();
+    if (!page.ok) return page;
+    return novaApi('POST','/sign-in',{expectedUrl:page.url,...authority});
+  },
   async typeInto(name, text, authority={}) {
     const guarded = await resolveGuardedTypeText(name, text);
     if (guarded.error) return guarded;
@@ -924,6 +931,7 @@ export async function executeTask(task, state, mission = null) {
     case "web-fetch": return webFetchGet(task.data.url, fetch, task.data.expect);
     case "browser-click": return lawnmower.clickByName(task.data.name, task.data.expect,{missionId:mission?.id,actionId:task.id});
     case "browser-type": return lawnmower.typeInto(task.data.name, task.data.text,{missionId:mission?.id,actionId:task.id});
+    case "browser-sign-in": return lawnmower.signIn({missionId:mission?.id,actionId:task.id});
     case "desktop-observe": return desktopMower.observe(task.data.hwnd);
     case "desktop-invoke": return desktopMower.invoke(task.data.hwnd, task.data.selector);
     case "desktop-windows": return desktopMower.listWindows();
@@ -1851,7 +1859,7 @@ const githubControl = createGithubNovaControlInbox({
   ...(process.env.JACO_LITE === '1' && !process.env.JACO_GITHUB_CONTROL_REPO ? { repo: '' } : {}),
   ...(process.env.JACO_AURA_ONLY_OPERATOR === '1' ? { repo: '' } : {}),
 });
-const BROWSER_TASKS = new Set(['browser-survey-site', 'browser-click', 'browser-type']);
+const BROWSER_TASKS = new Set(['browser-survey-site', 'browser-click', 'browser-type', 'browser-sign-in']);
 // Only browser missions need the page; for coding/desktop/web-fetch missions it was noise in the
 // prompt and an extra CDP round trip before and after every action.
 async function observeForPlanning(mission) {
@@ -1928,7 +1936,7 @@ const AGENT_DROP = /^(Output JSON:|Several independent reading steps|continuity 
 // does not lead there instead of finishing it anyway (operator 2026-11-07: the game plan).
 export const PLAN_RULE = "When this mission is a step of a larger plan, keep the final goal of the whole plan in view and follow the operator's comments on the plan. If what you find shows that this step will not move the final goal forward, do not finish it for its own sake: ask for a new plan with request_replan, saying what you learned and proposing steps that do lead there. Split clearly separate parts between helper agents with delegate.";
 export const NARRATION_RULE ="Talk to the operator like a colleague who works next to them and thinks aloud, in the operator's language, in plain words with no tool names or jargon. Use the say and learned fields of every tool call. On your FIRST call, say your plan: what you will do, in what order, and what the finished result will be. On every later call, learned is one sentence on what the previous result showed and how it changes the plan, and say is one sentence on what you do now and why. If something failed, say what failed and what you will try instead; if you repeat a step, say why. If the goal asks for helper agents, or has clearly separate parts (for example research, writing and building), create helper agents with delegate and say why you split the work that way. When you complete, answer in short parts: what you did, what you found or made and where it is, what you checked yourself, and what you could not verify.";
-export const WEB_RULE ="Web pages: read with web-fetch. To act on a page use the browser tasks first (browser-survey-site to open and read it, then browser-click and browser-type; give browser-click an expect {url} or {selector} when you know what should appear; a click that moves the page or opens a tab counts as done without one). They send real input events through the browser protocol and verify the result. If nova_* browser tools are listed (nova_ax, nova_click_named, nova_upload, nova_tabs), prefer them for the same reason. Use mouse-move, mouse-click, key-press, type-text and desktop-* only when the browser cannot reach the target (a native dialog, a window outside the browser), never to get around a refusal: a refused sign-in, payment or password surface stays the operator's to do.";
+export const WEB_RULE ="Web pages: read with web-fetch. To act on a page use the browser tasks first (browser-survey-site to open and read it, then browser-click and browser-type; give browser-click an expect {url} or {selector} when you know what should appear; a click that moves the page or opens a tab counts as done without one). They send real input events through the browser protocol and verify the result. If nova_* browser tools are listed (nova_ax, nova_click_named, nova_upload, nova_tabs), prefer them for the same reason. Use mouse-move, mouse-click, key-press, type-text and desktop-* only when the browser cannot reach the target (a native dialog, a window outside the browser), never to get around a refusal: a refused sign-in, payment or password surface stays the operator's to do. To sign in on a site the operator has saved a login for, open its sign-in page and call browser-sign-in: JACO fills the form itself and you only learn whether it worked; never type a password with browser-type. If it says operatorNeeded (a CAPTCHA or a one-time code) or that there is no saved login for the site, ask the operator in one sentence. Signed in, the same limits hold: nothing that buys, subscribes, upgrades or pays.";
 export function agentSystemFor(allowedTasks, platform = process.platform, graphMission = false, language = readOperatorLanguage()) {
   const lines = brainSystemFor(allowedTasks, graphMission, platform).split("\n").filter(line => !AGENT_DROP.test(line));
   const speak = languageInstruction(language);
@@ -2584,7 +2592,7 @@ export function novaAgentCard(surfaces = {}) {
   const desktop = Boolean(surfaces.runtime && surfaces.desktop);
   const android = Boolean(surfaces.runtime && surfaces.android);
   const tools = ["health-check", "web-fetch", "check-revenue", "promote-hf", "detect-surfaces", "invoke-worker", "shell", "repo-list", "repo-read", "repo-write", "repo-edit", "repo-test", "repo-service", "git-status", "git-diff", "git-commit", "git-push", "git-merge", "github-create-repo", "repo-scan", "mcp-call", "skill-load"];
-  if (browser) tools.push("browser-survey-site", "browser-click", "browser-type");
+  if (browser) tools.push("browser-survey-site", "browser-click", "browser-type", "browser-sign-in");
   if (desktop) tools.push("desktop-windows", "desktop-observe", "desktop-invoke");
   if (android) tools.push("android-status", "android-observe", "android-begin", "android-target", "android-open-app", "android-tap", "android-type", "android-scroll", "android-back", "android-home");
   // The input bridge is a Windows PowerShell script; other platforms cannot run these tasks.
