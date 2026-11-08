@@ -199,7 +199,7 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
                 <div className="text-[10px] text-slate-300 space-y-1">
                   <div>{tr('Öppna i mobilens webbläsare och skriv koden:', 'Open in the phone browser and enter the code:')}</div>
                   <div className="font-mono text-[12px] text-cyan-200 break-all select-all">
-                    {remoteUrl ? <a href={remoteUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">{remoteUrl}</a> : tr('IDE-adress saknas. Konfigurera JACO_IDE_PUBLIC_HOST på servern.', 'IDE address missing. Configure JACO_IDE_PUBLIC_HOST on the server.')}
+                    {remoteUrl ? <a href={remoteUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">{remoteUrl}</a> : tr('Privat Remote är inte ansluten. Öppna JACO Private Remote Setup i Windows Start-meny.', 'Private Remote is not connected. Open JACO Private Remote Setup from the Windows Start menu.')}
                   </div>
                   <div className="text-[9px] text-slate-500">{tr('Öppna länken i mobilen, parkoppla med koden och välj Installera app. JACO Remote använder samma Aura och uppdrag som PC:n.', 'Open the link on your phone, pair with the code, and choose Install app. JACO Remote uses the same Aura and missions as your PC.')}</div>
                 </div>
