@@ -1,6 +1,7 @@
-// Remote IDE (operator 2026-10-04: "like vscode.dev, in our Android"). The IDE is reached from the phone
-// through the tunnel at JACO_IDE_PUBLIC_HOST (explicitly configured). Every request that arrives through
-// a proxy must carry a signed-in IDE session; nothing else from the outside reaches the runtime. A session
+// Remote IDE for any explicitly configured HTTPS reverse proxy (e.g. private Tailscale Serve).
+// JACO_IDE_PUBLIC_HOST is operator-configured; no Cloudflare account or tunnel is required.
+// Remote requests always require the paired IDE session; direct non-loopback access is gated too.
+// A session
 // is an 'ide' key from the device registry (deviceAccess.mjs), obtained once with a pairing code from the
 // IDE's Devices view, kept in an HttpOnly cookie and revocable there. Requests from this computer itself
 // (loopback, not proxied) are unchanged. The terminal stays local only (requireLocalUiSameOrigin).
@@ -16,7 +17,18 @@ export const PUBLIC_APP_FILES = new Set([
 const SESSION_DAYS = 30;
 const PAIR_ATTEMPTS_PER_HOUR = 10;
 
-export const isProxied = req => Boolean(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.headers['x-forwarded-host']);
+// Never infer local authority from the absence of forwarded headers. A direct LAN
+// request, even without proxy headers, must pass through the same remote gate.
+// Loopback requests to localhost remain native Windows IDE traffic.
+export const isProxied = req => {
+  const headers = req?.headers || {};
+  const addr = String(req?.socket?.remoteAddress || req?.connection?.remoteAddress || '').replace(/^::ffff:/, '');
+  const host = String(headers.host || '').toLowerCase().replace(/:\\d+$/, '');
+  const localHost = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+  const localSocket = !addr || addr === '::1' || /^127\\.\\d+\\.\\d+\\.\\d+$/.test(addr);
+  return Boolean(headers['cf-connecting-ip'] || headers['x-forwarded-for'] ||
+    headers['x-forwarded-host'] || !localSocket || (host && !localHost));
+};
 export const ideHost = (env = process.env) => String(env.JACO_IDE_PUBLIC_HOST || '').trim().toLowerCase();
 
 export function readCookie(header, name) {
@@ -134,7 +146,7 @@ export function createIdeRemoteGate(registry, { env = process.env, onEvent = () 
       return res.json({ success: true, revoked: true });
     }
     // Command execution stays on this computer: these routes run commands from the request body, and
-    // some accept a loopback caller without a token (the tunnel connects from loopback).
+    // some accept loopback callers without a token (reverse proxies connect from loopback).
     if (COMMAND_ROUTES.test(path)) return res.status(403).json({ success: false, error: 'TERMINAL_LOCAL_ONLY' });
     req.ideSession = session;
     return next();
