@@ -4,6 +4,7 @@ import { CopyMessageButton } from './CopyMessageButton';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, ArrowUpRight, MessageSquare, ChevronRight } from 'lucide-react';
 import { ChatMarkdown } from './ChatMarkdown';
+import { LocalMemoryPanel } from './LocalMemoryPanel';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { JacoWordmark } from './JacoWordmark';
 import { initialAuraRunMode } from '../lib/auraRunModes.mjs';
@@ -652,6 +653,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     <div className="cognitive-chat h-full min-h-0 flex flex-col">
       <div className="cognitive-chat-heading">
         <span><AuraAvatar thinking={Boolean(busy)||currentMission?.status==='ACTIVE'}/>JACO <span className="cognitive-chat-subtitle">{tr('Samtal & skapande','Conversation & creation')}</span></span>
+        <LocalMemoryPanel compact />
         <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label={tr('Chattinställningar','Chat settings')} title={tr('Modell och budget','Model and budget')}><Settings2 size={15}/><span>{modelLabel}</span></button>
       </div>
 

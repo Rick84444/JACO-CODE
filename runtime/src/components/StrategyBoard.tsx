@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, Target, ShieldAlert, MessageSquare, GitBranch, X } from 'lucide-react';
 import { readAuraResponse } from '../lib/auraApi.mjs';
+import { LocalMemoryPanel } from './LocalMemoryPanel';
 import { useUiLanguage } from '../i18n/UiLanguage';
 
 // The plan as a blueprint: the final goal on top, one box per step, the box being worked on glowing faint blue. Click a
@@ -8,7 +9,7 @@ import { useUiLanguage } from '../i18n/UiLanguage';
 // there. Write what you think on a box or on the whole plan; Aura takes it into the next steps.
 type Need = { kind: string; label: string; approval: boolean; state?: 'have' | 'missing' | 'approval' | null };
 type Comment = { id: string; nodeKey: string | null; text: string; at: string; author?: 'aura' | 'operator' };
-type Node = { key: string; title: string; objective: string; status: string; statusText: string; failure: string | null; dependencies: string[]; needs: Need[]; comments: Comment[] };
+type Node = { key: string; title: string; objective: string; status: string; statusText: string; failure: string | null; missionId?: string | null; dependencies: string[]; needs: Need[]; comments: Comment[] };
 type Plan = { id: string; title: string; objective: string; status: string; progress: { done: number; total: number }; needsApproval: Need[]; nodes: Node[]; changes: Array<{ at: string | null; reason: string | null; replaced: string | null }>; comments: Comment[]; abilities?: { missing: string[]; text: string } | null };
 
 // Aura's text never uses emoji: the state of a need is a word and a colour.
@@ -90,6 +91,7 @@ export function StrategyBoard({ focusPlanId = null }: { focusPlanId?: string | n
       <h2 className="text-base font-semibold tracking-wide">{tr('Spelplanen', 'The game plan')}</h2>
       <button type="button" onClick={() => void load()} aria-label={tr('Uppdatera', 'Refresh')}><RefreshCw size={14} /></button>
     </header>
+    <LocalMemoryPanel missionIds={(plans || []).flatMap(p=>p.nodes.map(n=>n.missionId).filter((id):id is string=>Boolean(id)))} />
     <p className="text-xs text-sky-200/80">{tr('Klicka på en ruta för att se vad steget är till för, varför det finns och vad det behöver. Rutan som det arbetas med lyser svagt blått. Skriv dina synpunkter, så tar Aura med dem i nästa steg.', 'Click a box to see what the step is for, why it is there and what it needs. The box being worked on glows faint blue. Write what you think, and Aura takes it into the next steps.')}</p>
     {error && <p role="alert" className="text-amber-300 text-sm">{tr('Planen kunde inte läsas just nu.', 'The plan could not be read right now.')} ({error})</p>}
     {plans && plans.length === 0 && <p className="text-sm text-slate-300">{tr('Ingen plan än. Ge Aura ett större mål i chatten, så ritas planen här.', 'No plan yet. Give Aura a larger goal in the chat, and the plan is drawn here.')}</p>}
