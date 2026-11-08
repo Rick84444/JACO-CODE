@@ -1,7 +1,7 @@
 // Operator 2026-10-09: "viktigast i hela ide att man alltid kan få svar och hjälp".
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { auraAlwaysAnswers, auraStatusReply, auraStatusHints, answerWithin, auraChatDeadlines } from '../../agents/lib/aura-always-answers.mjs';
+import { auraAlwaysAnswers, answerInOrder, auraStatusReply, auraStatusHints, answerWithin, auraChatDeadlines } from '../../agents/lib/aura-always-answers.mjs';
 
 const reply = (text, provider = 'groq') => ({ success: true, reply: text, text, provider, model: 'm' });
 const status = failures => auraStatusReply(failures);
@@ -70,7 +70,32 @@ test('a model that never answers ends in a timeout the status answer can explain
 });
 
 test('chat deadlines have defaults and ignore invalid overrides', () => {
-  assert.deepEqual(auraChatDeadlines({}), { chosenMs: 120000, defaultMs: 90000, fallbackMs: 45000 });
+  assert.deepEqual(auraChatDeadlines({}), { chosenMs: 120000, defaultMs: 90000, fallbackMs: 45000, localMs: 150000 });
   assert.equal(auraChatDeadlines({ JACO_AURA_CHAT_DEFAULT_MS: '5000' }).defaultMs, 5000);
   assert.equal(auraChatDeadlines({ JACO_AURA_CHAT_DEFAULT_MS: 'soon' }).defaultMs, 90000);
+});
+
+test('a cloud provider that is out of balance does not hide the local model: every fallback is tried in order', async () => {
+  const asked = [];
+  const r = await answerInOrder(
+    [{ choice: { providerId: 'deepseek', model: 'flash' }, ms: 1000 }, { choice: { providerId: 'ollama', model: 'gemma3:4b' }, ms: 1000 }],
+    async c => { asked.push(c.providerId); if (c.providerId === 'deepseek') throw new Error('PROVIDER_HTTP_402: Insufficient Balance'); return reply('lokalt svar', 'ollama'); },
+    new Error('SEER_BRAIN_HTTP_503'),
+  );
+  assert.equal(r.reply, 'lokalt svar');
+  assert.deepEqual(asked, ['deepseek', 'ollama']);
+});
+
+test('when every fallback fails, the error keeps all failures so the status answer can explain each one', async () => {
+  await assert.rejects(
+    answerInOrder([{ choice: { providerId: 'deepseek', model: 'flash' }, ms: 1000 }, { choice: { providerId: 'ollama', model: 'gemma3:4b' }, ms: 1000 }],
+      async c => { throw new Error(c.providerId === 'deepseek' ? 'PROVIDER_HTTP_402' : 'fetch failed'); }, new Error('SEER_BRAIN_HTTP_503')),
+    /SEER_BRAIN_HTTP_503 \| deepseek\/flash: PROVIDER_HTTP_402 \| ollama\/gemma3:4b: fetch failed/);
+});
+
+test('a fallback that hangs is dropped at its deadline so the next one still answers', async () => {
+  const r = await answerInOrder(
+    [{ choice: { providerId: 'slow', model: 'm' }, ms: 1000 }, { choice: { providerId: 'ollama', model: 'g' }, ms: 1000 }],
+    c => c.providerId === 'slow' ? new Promise(() => {}) : Promise.resolve(reply('klart', 'ollama')));
+  assert.equal(r.reply, 'klart');
 });

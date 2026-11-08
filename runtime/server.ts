@@ -69,7 +69,7 @@ import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
-import { auraAlwaysAnswers, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
+import { auraAlwaysAnswers, answerInOrder, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
@@ -4813,9 +4813,14 @@ const notifyPhone = async (action) => {
         if (connected) { try { return await answerWithin(ask(connected), deadlines.fallbackMs); } catch { /* The default route still gets its turn. */ } }
         try { return await answerWithin(ask(null), deadlines.defaultMs); }
         catch (error) {
-          const fallback = connected ? null : chatFallbackChoice(connectedRuntime.providers) || await activeLocalChoice().catch(() => null);
-          if (!fallback) throw error;
-          return await answerWithin(ask(fallback), deadlines.fallbackMs);
+          // Every other way to answer, in order: a connected cloud provider, then a model on this computer.
+          const attempts: any[] = [];
+          const cloud = connected ? null : chatFallbackChoice(connectedRuntime.providers);
+          if (cloud) attempts.push({ choice: cloud, ms: deadlines.fallbackMs });
+          const local = await activeLocalChoice().catch(() => null);
+          if (local && !(chatChoice && local.providerId === chatChoice.providerId && local.model === chatChoice.model)) attempts.push({ choice: local, ms: deadlines.localMs });
+          if (!attempts.length) throw error;
+          return await answerInOrder(attempts, ask, error);
         }
       };
       // Lite never launches SEER: default chat must not depend on its /cortex/brain.

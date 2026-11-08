@@ -12,6 +12,15 @@ const sha = value => crypto.createHash('sha256').update(typeof value === 'string
 const trimSlash = value => String(value || '').replace(/\/+$/, '');
 const asV1 = value => /\/v1$/i.test(trimSlash(value)) ? trimSlash(value) : `${trimSlash(value)}/v1`;
 
+// A model on this computer needs far longer than a cloud model, most of all on a computer with no graphics
+// card (2026-11-08: Gemma 3 4B needed about 20 s for one word on the operator's processor-only machine).
+function providerCallTimeoutMs(p) {
+  let local = false;
+  try { local = /^(localhost|127\.|\[?::1)/.test(new URL(p.baseUrl).hostname); } catch { /* an invalid address is not local */ }
+  const ms = Number(process.env.JACO_LOCAL_INFERENCE_TIMEOUT_MS);
+  return local ? (Number.isFinite(ms) && ms >= 5000 ? ms : 150_000) : 60_000;
+}
+
 export class ProviderRegistry {
   constructor(workspaceRoot, env = process.env) {
     this.workspaceRoot = workspaceRoot;
@@ -212,7 +221,7 @@ export class ProviderRegistry {
     const includeTemperature = p.id !== 'anthropic' && temperature != null;
     const body = { model: selectedModel, messages, ...(includeTemperature ? { temperature } : {}), ...(responseFormat ? { response_format: responseFormat } : {}), ...(maxTokens == null ? {} : { max_tokens: maxTokens }), ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}) };
     const started = Date.now();
-    const res = await fetch(`${trimSlash(p.baseUrl)}/chat/completions`, { method: 'POST', headers: this.headers(p), body: JSON.stringify(body), signal: AbortSignal.timeout(60_000) });
+    const res = await fetch(`${trimSlash(p.baseUrl)}/chat/completions`, { method: 'POST', headers: this.headers(p), body: JSON.stringify(body), signal: AbortSignal.timeout(providerCallTimeoutMs(p)) });
     const text = await res.text();
     if (!res.ok) throw new Error(`PROVIDER_HTTP_${res.status}: ${text.slice(0, 400)}`);
     const parsed = JSON.parse(text);

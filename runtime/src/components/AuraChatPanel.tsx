@@ -493,7 +493,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           ragContext,
         }),
         // Longer than SEER's own provider chain; a hung request still ends in a message.
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(360_000)]),
       }).then(chatJson);
       const answer=String(data.reply || data.text || '').trim();
       if(!answer) throw new Error(tr('Modellen returnerade ett tomt svar.', 'The model returned an empty response.'));
@@ -761,7 +761,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               <button type="button" onClick={()=>prompt(tr('Hjälp mig förbättra en funktion i projektet. Börja med att kartlägga den relevanta koden.','Help improve one feature in this project. Start by mapping the relevant code.'),'goal')}><FileCode2 size={17}/><span>{tr('Utveckla vidare','Develop further')}<small>{tr('Bygg på det som redan finns','Build on what already exists')}</small></span><ArrowUpRight size={14}/></button>
             </div>
           </div>}
-          {busy&&<div className="cognitive-response-wait"><span role="status"><AuraAvatar thinking size={32}/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
+          {busy&&<div className="cognitive-response-wait"><span role="status"><AuraAvatar thinking size={32}/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}{busy==='chat'&&waitingSeconds>=25&&<small>{' '}{tr('Det tar en stund. Svarar inte modellen provar Aura nästa automatiskt.','This is taking a while. If the model does not answer, Aura tries the next one automatically.')}</small>}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
           {[...visibleFeed].reverse().map(item=>{
             if(item.kind==='event')return <CognitiveEventCard key={item.id} event={item.event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>;
             const message=item.message;

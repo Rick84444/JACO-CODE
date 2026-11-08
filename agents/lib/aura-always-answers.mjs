@@ -10,7 +10,7 @@ const answered = r => r && typeof r.reply === 'string' && r.reply.trim();
 // status(failures): Aura's status answer. onFallback/onNoModel: workstream records.
 export function auraChatDeadlines(env = process.env) {
   const ms = (key, fallback) => { const v = Number(env[key]); return Number.isFinite(v) && v >= 1000 ? v : fallback; };
-  return { chosenMs: ms('JACO_AURA_CHAT_CHOSEN_MS', 120_000), defaultMs: ms('JACO_AURA_CHAT_DEFAULT_MS', 90_000), fallbackMs: ms('JACO_AURA_CHAT_FALLBACK_MS', 45_000) };
+  return { chosenMs: ms('JACO_AURA_CHAT_CHOSEN_MS', 120_000), defaultMs: ms('JACO_AURA_CHAT_DEFAULT_MS', 90_000), fallbackMs: ms('JACO_AURA_CHAT_FALLBACK_MS', 45_000), localMs: ms('JACO_AURA_CHAT_LOCAL_MS', 150_000) };
 }
 
 // A model that does not answer in time must not leave the operator without a reply. The late result is dropped:
@@ -19,6 +19,23 @@ export function answerWithin(work, ms) {
   let timer;
   const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`AURA_MODEL_TIMEOUT after ${Math.round(ms / 1000)} s`)), ms); });
   return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
+
+// When the default route cannot answer, every other way to answer is tried in order (a connected cloud provider
+// first, the local model on this computer last) and the failures are kept together, so one dead provider
+// (an empty balance, a used-up free quota) never hides a local model that would have answered.
+export async function answerInOrder(attempts, ask, firstError = null) {
+  const failures = firstError ? [clean(firstError)] : [];
+  for (const { choice, ms } of attempts) {
+    try {
+      const r = await answerWithin(ask(choice), ms);
+      if (answered(r)) return r;
+      failures.push(`${choice.providerId}/${choice.model || 'default'}: AURA_EMPTY_REPLY`);
+    } catch (error) {
+      failures.push(`${choice.providerId}/${choice.model || 'default'}: ${clean(error)}`);
+    }
+  }
+  throw new Error(failures.join(' | '));
 }
 
 /**
