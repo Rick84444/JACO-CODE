@@ -37,7 +37,7 @@ function failureCount(task, classification, history) {
 }
 
 export function buildAdaptiveRepairPacket({ mission, task, receipt, history = [] } = {}) {
-  if (!task?.type || !mission || receipt?.ok !== false) return null;
+  if (!task?.type || !mission || !receipt || (receipt.ok !== false && receipt.outcomeUnknown !== true)) return null;
   const allowed = new Set(Array.isArray(mission.allowedTasks) ? mission.allowedTasks.map(String) : []);
   const classification = classifyRepairFailure(task, receipt);
   const count = failureCount(task, classification, history);
