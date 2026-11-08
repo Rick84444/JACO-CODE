@@ -40,6 +40,10 @@ implemented or asserted by this PR.
    displayed in Devices, enter the code, then choose *Add to Home screen*.
    Android sees the same Aura missions and chat; it does not run tools locally.
 
+Selecting Private Remote also writes `JACO_START_TUNNEL=0` to the preserved
+JACO settings, disabling JACO-managed Cloudflare startup on the next launch.
+It does not terminate an unrelated or already-running Cloudflare service.
+
 The Windows setup script does not install Tailscale silently, log in on behalf
 of the operator, change a public DNS record, or create an Internet-facing
 endpoint. No Cloudflare account, tunnel ID, service token, or JacoCloud installer
