@@ -21,7 +21,9 @@ const TARGET_FN = `function () {
   const h = e.ownerDocument.elementFromPoint(x, y);
   const hosts = [];
   for (let n = e; n;) { const root = n.getRootNode(); if (root && root.host) { hosts.push(root.host); n = root.host; } else break; }
-  const covered = !(h && (h === e || e.contains(h) || h.contains(e) || hosts.includes(h)));
+  // Aura's own window overlay (aura-overlay.mjs) moves aside for her click; it never counts as covering the target.
+  const overlay = h && h.tagName === 'JACO-AURA-OVERLAY';
+  const covered = !overlay && !(h && (h === e || e.contains(h) || h.contains(e) || hosts.includes(h)));
   let w = e.ownerDocument.defaultView;
   while (w && w.frameElement) { const f = w.frameElement.getBoundingClientRect(); x += f.x; y += f.y; w = w.parent; }
   return { x, y, w: r.width, h: r.height, covered, password: e.tagName === 'INPUT' && e.type === 'password',
@@ -163,7 +165,7 @@ export function digestFile(file, fsImpl = fs) {
 // evaluate(session, expression) and observe(session) belong to the bridge; they are passed in so this file has no
 // import cycle and can be tested with a fake session. tabs: { list(), adopt(tab) }; downloads: { dir };
 // uploads: { roots }. Each is optional.
-export function createInputActions({ evaluate, observe, tabs = null, downloads = null, uploads = null, fsImpl = fs, settleMs = 300, navigationSettleMs = 4000 }) {
+export function createInputActions({ evaluate, observe, tabs = null, downloads = null, uploads = null, fsImpl = fs, settleMs = 300, navigationSettleMs = 4000, pointer = null }) {
   const pageTabs = async () => { try { return tabs ? await tabs.list() : []; } catch { return []; } };
 
   async function awaitDownloads(before) {
@@ -225,6 +227,8 @@ export function createInputActions({ evaluate, observe, tabs = null, downloads =
           verified = uploaded.length === uploadPaths.length && uploadPaths.every((p, i) => uploaded[i] === path.basename(p));
         } else {
           try {
+            // Show the operator where Aura is about to act (the blue arrow in her window); never blocks the action.
+            try { await pointer?.(info, kind); } catch { /* the overlay is decoration */ }
             if (kind === 'click') await trustedClick(session, info);
             else { await callOn(session, target.objectId, FOCUS_FN); await session.send('Input.insertText', { text }); }
           } catch (error) {

@@ -13,6 +13,8 @@ import { createBrowserActionJournal } from "./lib/browser-action-journal.mjs";
 import { inputAllowed, mutationsEnabled } from "./lib/browser-scope.mjs";
 import { createInputActions, listDownloadFiles, digestFile, signInSession } from "./lib/browser-input.mjs";
 import { approvedLoginOrigins, siteLoginFor } from "./lib/site-logins.mjs";
+import { createAuraOverlay } from "./lib/aura-overlay.mjs";
+import { readOperatorLanguage } from "./lib/operator-language.mjs";
 
 const CDP_PORT = parseInt(process.env.CDP_PORT || "9222");
 const BRIDGE_PORT = parseInt(process.env.NOVA_BRIDGE_PORT || "4243");
@@ -163,6 +165,9 @@ export async function captureSession(session) {
 
 async function withTab(fn, { input = false, missionOrigin = null } = {}) {
   const tab = await getActiveTab();
+  // Draw Aura's window overlay in the tab she works in (kept on its own connection; decoration, never blocking).
+  await overlay.attach(tab).catch(() => {});
+  if (input) overlay.working().catch(() => {});
   const session = new CDPSession(tab.webSocketDebuggerUrl);
   await session.ready();
   try {
@@ -392,8 +397,20 @@ export async function navigateSession(session, url, settleMs=1000) {
   return {ok:verified, verified, observation, ...(verified?{}:{error:'NAVIGATION_NOT_VERIFIED'})};
 }
 // Click, type and press with real input events, and targets named by the accessibility tree: agents/lib/browser-input.mjs.
+// Aura's window: the blue edge, the arrow and the small chat panel the operator sees in the tab Aura works in.
+let overlayMission = null;
+// Tabs the operator opened and Aura switched to: hers to work in, never hers to close.
+const operatorTabs = new Set();
+const overlay = createAuraOverlay({
+  CDPSession, runtimeUrl: process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000',
+  language: () => { try { return readOperatorLanguage(process.env) || 'en'; } catch { return 'en'; } },
+  missionId: () => overlayMission,
+  log: (where, text) => console.warn(`[${where}] ${String(text).slice(0, 160)}`),
+});
 const inputActions = createInputActions({
   evaluate, observe: observeSession,
+  // The arrow glides to the target first, so the operator sees where Aura is about to click or type.
+  pointer: async (info, kind) => { await overlay.point(info.x, info.y, kind === 'click'); await new Promise(r => setTimeout(r, 380)); },
   tabs: { list: async () => (await getTabs()).filter(t => t.type === 'page'), adopt: tab => { if (!tab.url || tab.url === 'about:blank' || readable(tab.url)) ownedTabs.add(tab.id); } },
   downloads: { dir: DOWNLOAD_DIR },
   uploads: { roots: UPLOAD_ROOTS },
@@ -427,7 +444,10 @@ function json(res, data, status = 200) {
 async function readBody(req) {
   let size=0;const chunks=[];
   for await (const chunk of req) {size+=chunk.length;if(size>65536)throw new Error('BODY_TOO_LARGE');chunks.push(chunk);}
-  return JSON.parse(Buffer.concat(chunks).toString() || '{}');
+  const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+  // The mission Aura acts for: the overlay's Stop and chat go to it.
+  if (typeof body?.missionId === 'string' && /^mission-[A-Za-z0-9-]+$/.test(body.missionId)) overlayMission = body.missionId;
+  return body;
 }
 
 // Only the standalone process joins Workplace; importing the server (tests) leaves it ungated.
@@ -503,8 +523,10 @@ export const server = createServer(async (req, res) => {
       return json(res, await guardedBrowserWrite("upload", b, () => withTab(s=>actSession(s,b,"upload"), { input: true })));
     }
     if (req.method === "GET" && url.pathname === "/tabs") {
-      const tabs = (await getTabs()).filter(t => t.type === "page" && ownedTabs.has(t.id));
-      return json(res, { ok: true, tabs: tabs.map(t => ({ id: t.id, title: String(t.title || "").slice(0, 200), url: t.url, current: t.id === novaTabId })) });
+      // Aura's own tabs and the ones the operator opened in her window (operator 2026-11-08: "she should also be able to
+      // use windows I open"). This browser is JACO's own profile, so every page in it is Aura's or the operator's.
+      const tabs = (await getTabs()).filter(t => t.type === "page" && (ownedTabs.has(t.id) || readable(t.url)));
+      return json(res, { ok: true, tabs: tabs.map(t => ({ id: t.id, title: String(t.title || "").slice(0, 200), url: t.url, current: t.id === novaTabId, openedBy: ownedTabs.has(t.id) ? 'aura' : 'operator' })) });
     }
     if (req.method === "POST" && url.pathname === "/tab/open") {
       const b = await readBody(req);
@@ -519,16 +541,18 @@ export const server = createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/tab/switch") {
       const b = await readBody(req);
-      if (!ownedTabs.has(b.id)) return json(res,{ok:false,error:'TAB_NOT_OWNED_BY_NOVA'},403);
       return json(res, await guardedBrowserWrite("tab-switch", b, async () => {
         const tab = (await getTabs()).find(t => t.id === b.id && t.type === "page");
         if (!tab) { ownedTabs.delete(b.id); throw new Error('TAB_CLOSED'); }
+        // A tab the operator opened becomes Aura's to work in when she switches to it (closing stays her own tabs only).
+        if (!ownedTabs.has(tab.id)) { if (!readable(tab.url)) throw new Error('TAB_ORIGIN_DENIED'); ownedTabs.add(tab.id); operatorTabs.add(tab.id); }
         novaTabId = tab.id;
         return { ok: true, verified: true, tab: { id: tab.id, url: tab.url, current: true } };
       }));
     }
     if (req.method === "POST" && url.pathname === "/tab/close") {
       const b = await readBody(req);
+      if (operatorTabs.has(b.id)) return json(res,{ok:false,error:'TAB_OPENED_BY_OPERATOR'},403);
       if (!ownedTabs.has(b.id)) return json(res,{ok:false,error:'TAB_NOT_OWNED_BY_NOVA'},403);
       return json(res, await guardedBrowserWrite("tab-close", b, async () => {
         await fetch(`http://127.0.0.1:${CDP_PORT}/json/close/${encodeURIComponent(b.id)}`, { signal: AbortSignal.timeout(5000) });
