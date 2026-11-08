@@ -261,3 +261,4 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 /* The short film under the headline. */
 .intro { width: min(1100px, calc(100% - 32px)); margin: 8px auto 40px; }
 .intro-video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #02060b; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 24px 80px rgba(15, 163, 209, .12); }
+.intro-caption { margin: 14px auto 0; max-width: 640px; text-align: center; color: var(--muted); font-size: 15px; }
