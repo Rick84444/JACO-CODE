@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="JACO Remote">
+<defs>
+  <linearGradient id="metal" x1="0" y1="0" x2="0.2" y2="1">
+    <stop offset="0" stop-color="#effaff"/><stop offset=".22" stop-color="#77caff"/><stop offset=".46" stop-color="#102e69"/><stop offset=".65" stop-color="#d8f4ff"/><stop offset="1" stop-color="#4169a5"/>
+  </linearGradient>
+  <radialGradient id="bg"><stop offset="0" stop-color="#102439"/><stop offset="1" stop-color="#02080d"/></radialGradient>
+  <filter id="glow"><feGaussianBlur stdDeviation="15"/></filter>
+</defs>
+<rect width="512" height="512" rx="110" fill="url(#bg)"/>
+<circle cx="256" cy="256" r="181" fill="none" stroke="#097fd2" stroke-width="14" opacity=".52" filter="url(#glow)"/>
+<circle cx="256" cy="256" r="181" fill="none" stroke="#219cf1" stroke-width="4" opacity=".8"/>
+<text x="256" y="297" text-anchor="middle" fill="#183f79" stroke="#06254a" stroke-width="9" stroke-linejoin="round" font-family="Arial, sans-serif" font-size="126" font-weight="900" font-style="italic">JACO</text>
+<text x="256" y="294" text-anchor="middle" fill="url(#metal)" font-family="Arial, sans-serif" font-size="126" font-weight="900" font-style="italic" letter-spacing="-6">JACO</text>
+</svg>

@@ -1,0 +1,27 @@
+{
+  "id": "/jaco-remote",
+  "name": "JACO Remote — Aura",
+  "short_name": "JACO Remote",
+  "description": "Chat-first secure remote control of your own JACO Aura runtime on Windows.",
+  "start_url": "/?remote=1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#02070c",
+  "theme_color": "#050b11",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/branding/jaco-remote-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/branding/jaco-remote-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
