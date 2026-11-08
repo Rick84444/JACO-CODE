@@ -69,15 +69,16 @@ test('agent constellation exposes real relationships and missing planning withou
 test('attachment controls distinguish uploaded copies and binary extraction limits',async()=>{
   const {AttachmentPicker}=await import('../components/AttachmentPicker');
   const html=renderToStaticMarkup(<AttachmentPicker items={[{id:'test',files:[{path:'notes/input.pdf',format:'binary'}]}]} onChange={noop} onBusy={noop} disabled={false}/>);
-  assert.match(html,/Attach files/);assert.match(html,/Attach folder/);
-  assert.match(html,/text extraction unavailable/);assert.match(html,/the originals are not changed/);
+  assert.match(html,/Bifoga filer/);assert.match(html,/Bifoga mapp/);assert.doesNotMatch(html,/Attach (files|folder)/);
+  assert.match(html,/text kan inte läsas ut/);assert.match(html,/originalen ändras inte/);
 });
 
 test('connections workspace exposes live sources and the existing integration controls',async()=>{
   const {ConnectionsWorkspace}=await import('../components/ConnectionsWorkspace');
   const html=renderToStaticMarkup(<ConnectionsWorkspace onSelectTool={noop} onTabChange={noop}/>);
-  for(const label of ['Connections','Local tools','Browser / CDP','Skills','Waiting for model responses'])assert.ok(html.includes(label),label);
-  assert.doesNotMatch(html,/No available model observed/,'no unobserved provider is claimed absent before the first response');
+  for(const label of ['Anslutningar','Lokala verktyg','Webbläsare / CDP','Färdigheter','Väntar på svar från modellerna'])assert.ok(html.includes(label),label);
+  assert.doesNotMatch(html,/Connections|Local tools|Skills|Waiting for model responses/,'no English left in the Swedish interface');
+  assert.doesNotMatch(html,/No available model observed|Ingen tillgänglig modell/,'no unobserved provider is claimed absent before the first response');
 });
 
 test('CDP refuses ambiguous URL-only attachment instead of choosing another identical tab',async()=>{

@@ -4645,7 +4645,7 @@ const notifyPhone = async (action) => {
       const r = await fetch(`${String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/$/, '')}/api/tags`, { signal: AbortSignal.timeout(1500) });
       localModels = ((await r.json() as any)?.models || []).map((m: any) => String(m.name)).filter((n: string) => !/cloud/i.test(n));
     } catch {}
-    return auraStatusReply(failures, { headroomUsd, localModels, lite: process.env.JACO_LITE === '1' });
+    return auraStatusReply(failures, { headroomUsd, localModels, lite: process.env.JACO_LITE === '1', language: readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) === 'sv' ? 'sv' : 'en' });
   };
 
   app.get('/api/aura/chat/cognitive-activation', requireLocalUi, (req, res) => {

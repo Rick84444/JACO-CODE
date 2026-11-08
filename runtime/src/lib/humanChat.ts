@@ -28,6 +28,7 @@ const CODE = /\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+\b|\bE(?:TIMEDOUT|NOENT|PERM|ACCES|
 const INTERNAL = [
   /^mission:[\w-]+\s*->/i, /\bauto-resumed\b/i, /dispatcher started/i, /^JACO model:/i, /^Durable Mission Bus/i,
   /^(lease|heartbeat|worker|ticket)\b/i, /\bseq(uence)?\s*\d+/i,
+  /^Tool servers started/i, /^No model answered/i, /^Aura GUI completed through/i, /^Lite provider failover/i,
 ];
 
 export function humanCodeText(text: string, language: string): string | null {

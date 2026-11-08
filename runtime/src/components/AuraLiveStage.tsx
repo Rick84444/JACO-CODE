@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Camera, CheckCircle2, CircleAlert, Clock3, Code2, ExternalLink, Eye, FileCode2, GitCommit, Layers3, ScanEye, ShieldCheck } from 'lucide-react';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
+import { humanChatEvents } from '../lib/humanChat';
 import { auraActivityFeed, auraActivityState, auraStageHistory, cdpRefreshDelay } from '../lib/auraStage.mjs';
 import { cognitiveLink } from '../lib/cognitiveEvents.mjs';
 import { readAuraResponse } from '../lib/auraApi.mjs';
@@ -154,7 +155,8 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
   const dirty = Boolean(htmlSource !== null && htmlDraft !== null && htmlSource !== htmlDraft);
   const event = candidate?.event || null;
   const history = auraStageHistory(events);
-  const activity = auraActivityFeed(events, activeMission?.id || null);
+  // The same plain-language filter as the chat: runtime bookkeeping is dropped and codes become sentences.
+  const activity = auraActivityFeed(humanChatEvents(events, language).conversation, activeMission?.id || null);
   const activityState = auraActivityState(presence.mode, Boolean(activeMission));
   // After an answer the header said "waiting for a mission", which read as if nothing had happened.
   const newest = events.reduce((best: any, e: any) => (!best || (Date.parse(e.at) || 0) > (Date.parse(best.at) || 0) ? e : best), null);
@@ -162,7 +164,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, preview, pre
   const material = candidate?.material;
   const url = event ? cognitiveLink(event.evidence.url) : null;
   return <div className="aura-live-stage" data-testid="aura-live-stage">
-    <AuraPresence data={presence}/>
+    <AuraPresence data={presence} language={language}/>
     <section className="aura-activity" aria-label={tr('Vad Aura gör','What Aura is doing')} data-testid="aura-activity">
       <header>
         <span className="aura-activity-pulse" data-active={activityState === 'working'} data-state={activityState} aria-hidden="true"/>

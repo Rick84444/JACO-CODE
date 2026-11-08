@@ -109,7 +109,7 @@ test('The real IDE wires fresh runtime, SSE, mission and model information to th
   assert.match(ide,/lastObservedAt:cognitiveLive\.lastObservedAt/);
   assert.match(ide,/mission:currentMission/);
   assert.match(ide,/presence=\{presence\}/);
-  assert.match(ui,/<AuraPresence data=\{presence\}\/>/);
+  assert.match(ui,/<AuraPresence data=\{presence\} language=\{language\}\/>/);
   assert.match(status,/data-mode=\{data\.mode\}/);
   assert.doesNotMatch(ui,/cognitive-view-tabs/);
 });

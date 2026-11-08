@@ -796,9 +796,9 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               <div className="text-xs font-semibold text-neutral-200">{tr('Välj hur JACO arbetar','Choose how JACO works')}</div>
               <div role="group" aria-label={tr('Körläge','Execution mode')} className="grid gap-2">
                 {([
-                  ['manual', 'Manual', tr('Samtal och läsverktyg. Inga nya uppdrag eller ändringar.','Conversation and read tools only. No new missions or changes.')],
-                  ['planning', 'Planning', tr('Analysera, jämför och skapa en plan. Endast läsverktyg, inga policyändringar.','Research, compare and propose a plan. Read tools only; no policy changes.')],
-                  ['autonomous', 'Full Autonomous', tr('Starta ett varaktigt Aura-uppdrag. Befintliga mandat, budget och godkännanden gäller.','Start a durable Aura mission. Existing permissions, budgets and approvals still apply.')],
+                  ['manual', tr('Manuell','Manual'), tr('Samtal och läsverktyg. Inga nya uppdrag eller ändringar.','Conversation and read tools only. No new missions or changes.')],
+                  ['planning', tr('Planering','Planning'), tr('Analysera, jämför och skapa en plan. Endast läsverktyg, inga policyändringar.','Research, compare and propose a plan. Read tools only; no policy changes.')],
+                  ['autonomous', tr('Helt självständig','Full Autonomous'), tr('Starta ett varaktigt Aura-uppdrag. Befintliga mandat, budget och godkännanden gäller.','Start a durable Aura mission. Existing permissions, budgets and approvals still apply.')],
                 ] as const).map(([value,label,help])=>(
                   <button type="button" key={value} aria-pressed={runMode===value}
                     onClick={()=>selectRunMode(value)} disabled={Boolean(busy)}
@@ -813,10 +813,10 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             </section>
           )}
           {showBuildAgent && (
-            <section data-testid="jaco-build-agent-panel" aria-label="Build Agent"
+            <section data-testid="jaco-build-agent-panel" aria-label={tr('Bygg agent','Build Agent')}
               className="mb-2 rounded-lg border border-neutral-600 bg-[#292a2c] p-3 space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-neutral-200">Build Agent</span>
+                <span className="font-semibold text-neutral-200">{tr('Bygg agent','Build Agent')}</span>
                 <button type="button" onClick={()=>setShowBuildAgent(false)} aria-label={tr('Stäng agentbyggaren','Close agent builder')} className="text-neutral-300">×</button>
               </div>
               <p className="text-neutral-300">{tr(
@@ -824,17 +824,17 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                 'Registers an agent under Aura with zero tool permissions and budget. No worker starts.'
               )}</p>
               <div className="grid grid-cols-2 gap-2">
-                <input aria-label="Agent name" placeholder="Agent name" maxLength={60} value={agentDraft.name}
+                <input aria-label={tr('Agentnamn','Agent name')} placeholder={tr('Agentnamn','Agent name')} maxLength={60} value={agentDraft.name}
                   onChange={e=>setAgentDraft(x=>({...x,name:e.target.value}))} className="rounded bg-[#222325] border border-neutral-600 p-2"/>
-                <input aria-label="Agent role" placeholder="Role" maxLength={60} value={agentDraft.title}
+                <input aria-label={tr('Agentens roll','Agent role')} placeholder={tr('Roll','Role')} maxLength={60} value={agentDraft.title}
                   onChange={e=>setAgentDraft(x=>({...x,title:e.target.value}))} className="rounded bg-[#222325] border border-neutral-600 p-2"/>
               </div>
-              <input aria-label="Agent task" placeholder="Task / area of responsibility" maxLength={2000} value={agentDraft.task}
+              <input aria-label={tr('Agentens uppgift','Agent task')} placeholder={tr('Uppgift / ansvarsområde','Task / area of responsibility')} maxLength={2000} value={agentDraft.task}
                 onChange={e=>setAgentDraft(x=>({...x,task:e.target.value}))} className="w-full rounded bg-[#222325] border border-neutral-600 p-2"/>
-              <input aria-label="Agent goal" placeholder="Success criteria" maxLength={2000} value={agentDraft.goal}
+              <input aria-label={tr('Agentens mål','Agent goal')} placeholder={tr('Kriterier för lyckat resultat','Success criteria')} maxLength={2000} value={agentDraft.goal}
                 onChange={e=>setAgentDraft(x=>({...x,goal:e.target.value}))} className="w-full rounded bg-[#222325] border border-neutral-600 p-2"/>
-              <input aria-label="Organization operator credential" type="password" autoComplete="off"
-                placeholder="JACO_ORG_OPERATOR_TOKEN (session only)" value={agentKey}
+              <input aria-label={tr('Organisationens operatörsnyckel','Organization operator credential')} type="password" autoComplete="off"
+                placeholder={tr('JACO_ORG_OPERATOR_TOKEN (bara denna session)','JACO_ORG_OPERATOR_TOKEN (session only)')} value={agentKey}
                 onChange={e=>setAgentKey(e.target.value)} className="w-full rounded bg-[#222325] border border-neutral-600 p-2"/>
               {agentMessage && <p role="status" className="text-neutral-200">{agentMessage}</p>}
               <button data-testid="jaco-build-agent-submit" type="button" onClick={()=>void buildAgent()}
@@ -881,7 +881,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                   className={runMode==='autonomous'?'jaco-autonomous-active':''}
                   onClick={()=>{setShowBuildAgent(false);setShowModePicker(value=>!value);}} disabled={Boolean(busy)}>
                   <Target size={12}/>
-                  {runMode==='manual' ? 'Manual' : runMode==='planning' ? 'Planning' : 'Full Autonomous'}
+                  {runMode==='manual' ? tr('Manuell','Manual') : runMode==='planning' ? tr('Planering','Planning') : tr('Helt självständig','Full Autonomous')}
                   <ChevronRight size={12}/>
                 </button>
               </div>
@@ -896,7 +896,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               <button data-testid="jaco-build-agent-toggle" type="button"
                 className="text-[11px] text-neutral-300 hover:text-neutral-200"
                 aria-expanded={showBuildAgent} onClick={()=>{setShowModePicker(false);setShowBuildAgent(v=>!v);}}>
-                <Bot size={12} className="inline mr-1"/>Build Agent
+                <Bot size={12} className="inline mr-1"/>{tr('Bygg agent','Build Agent')}
               </button>
               <span className="cognitive-enter-hint">{tr('Shift + Enter för ny rad','Shift + Enter for new line')}</span>
               {runMode==='autonomous' && <button data-testid="jaco-start-mission" type="button" onClick={()=>void goal()}

@@ -99,3 +99,14 @@ test('a fallback that hangs is dropped at its deadline so the next one still ans
     c => c.providerId === 'slow' ? new Promise(() => {}) : Promise.resolve(reply('klart', 'ollama')));
   assert.equal(r.reply, 'klart');
 });
+
+test('the status answer speaks the operator\'s language, and the failure lines stay exactly as reported', () => {
+  const failures = ['deepseek/flash: PROVIDER_HTTP_402: Insufficient Balance'];
+  const sv = auraStatusReply(failures, { language: 'sv', localModels: ['gemma3:4b'] }).reply;
+  assert.match(sv, /^Ingen AI-modell kunde svara just nu/);
+  assert.match(sv, /DeepSeek-kontot är tomt/);
+  assert.match(sv, /\*\*Vad du kan göra\*\*/);
+  assert.match(sv, /- deepseek\/flash: PROVIDER_HTTP_402/);
+  assert.doesNotMatch(sv, /No AI model|What you can do|Top up/);
+  assert.match(auraStatusReply(failures, { language: 'en' }).reply, /^No AI model could answer right now/);
+});

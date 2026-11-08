@@ -37,6 +37,11 @@ export function UiLanguageProvider({ children, initialLanguage }: { children: Re
   }}>{children}</UiLanguageContext.Provider>;
 }
 
+// For widgets that can be rendered outside the provider: English, the public default.
+export function useOptionalUiLanguage(): UiLanguageContextValue {
+  return useContext(UiLanguageContext) ?? { language: 'en', setLanguage: () => {}, tr: (_swedish, english) => english };
+}
+
 export function useUiLanguage(): UiLanguageContextValue {
   const context = useContext(UiLanguageContext);
   if (!context) throw new Error('UiLanguageProvider is missing');
