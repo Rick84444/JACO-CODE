@@ -37,3 +37,7 @@ The Remote presentation is `/?remote=1`: conversation first; **Mission**, **Plan
 Remove or disable the published Cloudflare hostname and Access application, stop the connector, set `JACO_START_TUNNEL=0` if JACO was managing it, and revoke the phone's device key in the Windows Devices panel. The original local `/` IDE, Aura and persisted missions remain unchanged.
 
 Cloudflare's current guides: [Tunnel](https://developers.cloudflare.com/tunnel/get-started/), [private web app + Access](https://developers.cloudflare.com/cloudflare-one/setup/secure-private-apps/private-web-app/).
+
+## Session recovery and PWA icon assets
+
+The mobile header has a Sign out action even when the full IDE rail is hidden. Remote checks its existing device session on startup, after network reconnection, when the page becomes visible and at a 30-second cadence while visible. HTTP 401 means the device was revoked and returns the phone to pairing; an offline error does not stop a mission. The separate PWA manifest includes a real JACO 192×192 PNG plus a scalable 512px vector logo. These improvements do not assert that Cloudflare Access is configured or that a physical Android phone has connected.
