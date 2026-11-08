@@ -42,6 +42,8 @@ function allowed(url) { try {return ORIGINS.has(new URL(url).origin);} catch {re
 // Level-5 profile: Nova may READ the public web (navigate, observe, survey, screenshot). Input
 // (click/type) stays limited to JACO_BROWSER_ALLOWED_ORIGINS and the server-side spend guard.
 const READ_ANY_ORIGIN = process.env.JACO_BROWSER_READ_ANY_ORIGIN !== '0';
+// Aura's own tab opens on a search page, not a blank white page.
+const START_PAGE = process.env.JACO_BROWSER_START_URL || 'https://www.google.com/';
 function readable(url) {
   try { const u=new URL(url); return u.href==='about:blank' || (READ_ANY_ORIGIN ? ['http:','https:'].includes(u.protocol) : ORIGINS.has(u.origin)); }
   catch { return false; }
@@ -73,7 +75,7 @@ async function getActiveTab() {
   const selected = activeBrowserTarget(tabs, selectedTabId, novaTabId, ownedTabs);
   if (selected) return selected;
   if (selectedTabId) throw new Error('SELECTED_TAB_CLOSED_OR_ORIGIN_DENIED');
-  const r = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?about:blank`, { method:'PUT', signal:AbortSignal.timeout(5000) });
+  const r = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?${readable(START_PAGE) ? START_PAGE : 'about:blank'}`, { method:'PUT', signal:AbortSignal.timeout(5000) });
   if (!r.ok) throw new Error('CDP_NEW_TAB_FAILED_' + r.status);
   const created = await r.json();
   novaTabId = created.id;
