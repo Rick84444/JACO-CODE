@@ -23,9 +23,9 @@ const PAIR_ATTEMPTS_PER_HOUR = 10;
 export const isProxied = req => {
   const headers = req?.headers || {};
   const addr = String(req?.socket?.remoteAddress || req?.connection?.remoteAddress || '').replace(/^::ffff:/, '');
-  const host = String(headers.host || '').toLowerCase().replace(/:\\d+$/, '');
+  const host = String(headers.host || '').toLowerCase().replace(/:\d+$/, '');
   const localHost = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
-  const localSocket = !addr || addr === '::1' || /^127\\.\\d+\\.\\d+\\.\\d+$/.test(addr);
+  const localSocket = !addr || addr === '::1' || /^127\.\d+\.\d+\.\d+$/.test(addr);
   return Boolean(headers['cf-connecting-ip'] || headers['x-forwarded-for'] ||
     headers['x-forwarded-host'] || !localSocket || (host && !localHost));
 };
