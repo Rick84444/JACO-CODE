@@ -1009,12 +1009,23 @@ export const JacoAuraComputeIDE: React.FC = () => {
     }
   };
 
+  const reasonText = (reason: string): string => {
+    const known: Record<string, string> = {
+      'The mission has stopped. Check the cause and choose whether JACO should continue or end it.': 'Uppdraget har stannat. Kontrollera orsaken och välj om Aura ska fortsätta eller avsluta det.',
+      'JACO proposes that the mission is complete. Check the result and confirm or end the mission.': 'Aura föreslår att uppdraget är klart. Kontrollera resultatet och bekräfta eller avsluta uppdraget.',
+      'JACO proposes that the mission is complete, but no step has a verified receipt. It cannot be confirmed. Let JACO try again or end the mission.': 'Aura föreslår att uppdraget är klart, men inget steg har ett kontrollerat kvitto. Det går inte att bekräfta. Låt Aura försöka igen eller avsluta uppdraget.',
+      'It is uncertain whether the latest change was carried out. Check what happened before you choose to continue.': 'Det är oklart om den senaste ändringen genomfördes. Kontrollera vad som hände innan du väljer att fortsätta.',
+    };
+    const action = /^JACO wants approval for one action: ([\s\S]*)\. Continue approves exactly that action, once\.$/.exec(reason);
+    return tr(known[reason] || (action ? `Aura vill ha ditt godkännande för en åtgärd: ${action[1]}. Återuppta godkänner exakt den åtgärden, en gång.` : reason), reason);
+  };
+
   const approvalLabel = (action: string) => ({
-    approve: 'Approve',
-    reject: 'Reject',
-    confirm: 'Confirm result',
-    resume: 'Resume',
-    cancel: 'Cancel mission',
+    approve: tr('Godkänn', 'Approve'),
+    reject: tr('Avvisa', 'Reject'),
+    confirm: tr('Bekräfta resultatet', 'Confirm result'),
+    resume: tr('Återuppta', 'Resume'),
+    cancel: tr('Avbryt uppdraget', 'Cancel mission'),
   } as Record<string, string>)[action] || action;
 
   const probeProvider = async (id: string) => {
@@ -1659,29 +1670,29 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const renderApprovals = () => showApprovals && (
 
       <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex justify-end" onClick={() => setShowApprovals(false)}>
-        <div role="dialog" aria-modal="true" aria-label="Decisions that need you" className="h-[100dvh] max-h-[100dvh] w-full max-w-xl bg-[#27282a] border-l border-[#535456] shadow-2xl flex flex-col" onClick={event => event.stopPropagation()}>
+        <div role="dialog" aria-modal="true" aria-label={tr('Beslut som behöver dig', 'Decisions that need you')} className="h-[100dvh] max-h-[100dvh] w-full max-w-xl bg-[#27282a] border-l border-[#535456] shadow-2xl flex flex-col" onClick={event => event.stopPropagation()}>
           <div className="h-12 px-4 border-b border-[#535456] flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-white">
                 <ShieldAlert className="w-4 h-4 text-amber-400" />
-                Decisions that need you
+                {tr('Beslut som behöver dig', 'Decisions that need you')}
                 <span className={`text-[10px] rounded border px-1.5 py-0.5 ${snapshot?.approvals?.count ? 'border-amber-700 text-amber-300' : 'border-emerald-800 text-emerald-300'}`}>
-                  {snapshot?.approvals?.count ?? 0} pending decisions
+                  {snapshot?.approvals?.count ?? 0} {tr('beslut väntar', 'pending decisions')}
                 </span>
               </div>
-              <div className="text-[10px] text-neutral-400 mt-0.5">Work already permitted within the mission continues automatically. Decisions that require you are shown here.</div>
+              <div className="text-[10px] text-neutral-400 mt-0.5">{tr('Arbete som redan är tillåtet i uppdraget fortsätter av sig självt. Det som kräver dig visas här.', 'Work already permitted within the mission continues automatically. Decisions that require you are shown here.')}</div>
             </div>
-            <button onClick={() => setShowApprovals(false)} aria-label="Close decisions panel" className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded border border-[#5a5b5d] text-xs text-neutral-200 hover:text-white hover:bg-[#434446]">
-              <X className="w-4 h-4" /> Close
+            <button onClick={() => setShowApprovals(false)} aria-label={tr('Stäng beslutspanelen', 'Close decisions panel')} className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded border border-[#5a5b5d] text-xs text-neutral-200 hover:text-white hover:bg-[#434446]">
+              <X className="w-4 h-4" /> {tr('Stäng', 'Close')}
             </button>
           </div>
 
           <div className="px-4 py-3 border-b border-[#434446] bg-[#1f2022]">
-            <div className="text-[10px] uppercase tracking-wider text-neutral-400">Active mandates</div>
+            <div className="text-[10px] uppercase tracking-wider text-neutral-400">{tr('Aktiva fullmakter', 'Active mandates')}</div>
             <div className="mt-1 text-xs text-neutral-200">
               {snapshot?.approvals?.activeMandates?.length
-                ? snapshot.approvals.activeMandates.map(m => `${m.name} · valid until ${formatTime(m.expiresAt)}`).join(' · ')
-                : 'No active signed mandates observed.'}
+                ? snapshot.approvals.activeMandates.map(m => `${m.name} · ${tr('gäller till', 'valid until')} ${formatTime(m.expiresAt)}`).join(' · ')
+                : tr('Inga aktiva fullmakter hittades.', 'No active signed mandates observed.')}
             </div>
           </div>
 
@@ -1696,13 +1707,13 @@ export const JacoAuraComputeIDE: React.FC = () => {
                       <span className={`text-[9px] px-1.5 py-0.5 rounded border ${approval.risk === 'HIGH' || approval.risk === 'CRITICAL' ? 'border-red-900 text-red-300' : 'border-amber-900 text-amber-300'}`}>{approval.risk}</span>
                     </div>
                     <div className="text-xs font-semibold text-white mt-2 break-words">{approval.title}</div>
-                    <div className="text-[10px] text-neutral-300 mt-1 leading-4">{approval.reason}</div>
+                    <div className="text-[10px] text-neutral-300 mt-1 leading-4">{reasonText(approval.reason)}</div>
                   </div>
                   <span className="text-[9px] text-neutral-500 shrink-0">{approval.source}</span>
                 </div>
 
                 <div className="mt-3 border border-[#4c4d4f] rounded bg-[#1f2022] p-2">
-                  <div className="text-[9px] uppercase text-neutral-500 mb-1">What the decision covers and available evidence</div>
+                  <div className="text-[9px] uppercase text-neutral-500 mb-1">{tr('Vad beslutet gäller och vilka belägg som finns', 'What the decision covers and available evidence')}</div>
                   <pre className="text-[10px] leading-4 text-neutral-300 whitespace-pre-wrap break-words overflow-hidden">{JSON.stringify(approval.details || {}, null, 2)}</pre>
                 </div>
 
@@ -1711,7 +1722,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                     <input type="checkbox" checked={approvalAcknowledged[approval.id] === true}
                       onChange={event => setApprovalAcknowledged(current => ({ ...current, [approval.id]: event.target.checked }))}
                       className="mt-0.5 h-4 w-4 accent-amber-300" />
-                    <span>I understand the displayed action and risk. I explicitly approve Aura to carry out the selected positive action within this scope.</span>
+                    <span>{tr('Jag förstår åtgärden och risken som visas. Jag godkänner uttryckligen att Aura utför den valda åtgärden inom det här området.', 'I understand the displayed action and risk. I explicitly approve Aura to carry out the selected positive action within this scope.')}</span>
                   </label>
                 )}
 
@@ -1726,12 +1737,12 @@ export const JacoAuraComputeIDE: React.FC = () => {
                         disabled={Boolean(approvalBusy) || (positive && approvalAcknowledged[approval.id] !== true)}
                         className={`text-[10px] rounded px-3 py-1.5 border disabled:opacity-40 ${positive ? 'bg-[#0e639c] border-[#1177bb] text-white' : 'border-[#797a7c] text-neutral-200 hover:bg-[#414244]'}`}
                       >
-                        {busy ? 'Saving decision…' : approvalLabel(action)}
+                        {busy ? tr('Sparar beslutet…', 'Saving decision…') : approvalLabel(action)}
                       </button>
                     );
                   })}
                   {!approval.actions.length && (
-                    <span className="text-[10px] text-amber-300">A setting needs to change. See the reason above and fix it before continuing.</span>
+                    <span className="text-[10px] text-amber-300">{tr('En inställning behöver ändras. Läs orsaken ovan och rätta den innan du går vidare.', 'A setting needs to change. See the reason above and fix it before continuing.')}</span>
                   )}
                 </div>
               </div>
@@ -1948,25 +1959,25 @@ export const JacoAuraComputeIDE: React.FC = () => {
     <div className="cognitive-detail-body">{canvasDetail}</div>
   </div>;
   const pendingDecision = snapshot?.approvals?.items?.[0];
-  const attention = pendingDecision ? <section className="cognitive-decision" aria-label="Decisions that need you">
-    <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>JACO needs your decision</strong><span>{snapshot.approvals.count} pending</span></div>
+  const attention = pendingDecision ? <section className="cognitive-decision" aria-label={tr('Beslut som behöver dig', 'Decisions that need you')}>
+    <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>{tr('Aura behöver ditt beslut', 'JACO needs your decision')}</strong><span>{snapshot.approvals.count} {tr('väntar', 'pending')}</span></div>
     <h2>{pendingDecision.title}</h2>
-    <p>{pendingDecision.reason}</p>
+    <p>{reasonText(pendingDecision.reason)}</p>
     {['command', 'targetFilePath', 'repoUrl'].map(key => typeof pendingDecision.details?.[key] === 'string' && pendingDecision.details[key] &&
-      <p key={key} className="cognitive-decision-context"><span>{({command:'Command',targetFilePath:'File',repoUrl:'Source'})[key]}: </span><code>{pendingDecision.details[key]}</code></p>)}
+      <p key={key} className="cognitive-decision-context"><span>{({command:tr('Kommando','Command'),targetFilePath:tr('Fil','File'),repoUrl:tr('Källa','Source')})[key]}: </span><code>{pendingDecision.details[key]}</code></p>)}
     {pendingDecision.actions.some(requiresOperatorConfirmation) && <label className="cognitive-decision-context flex items-start gap-2">
       <input type="checkbox" checked={approvalAcknowledged[pendingDecision.id] === true}
         onChange={event => setApprovalAcknowledged(current => ({ ...current, [pendingDecision.id]: event.target.checked }))}
         className="mt-1 h-4 w-4 accent-amber-300" />
-      <span>I understand the displayed action and risk and explicitly approve Aura to carry it out within this scope.</span>
+      <span>{tr('Jag förstår åtgärden och risken som visas och godkänner uttryckligen att Aura utför den inom det här området.', 'I understand the displayed action and risk and explicitly approve Aura to carry it out within this scope.')}</span>
     </label>}
     <div className="cognitive-decision-actions">
       {pendingDecision.actions.map(action => <button key={action} type="button" disabled={Boolean(approvalBusy) || (requiresOperatorConfirmation(action) && approvalAcknowledged[pendingDecision.id] !== true)}
-        onClick={() => void resolveApproval(pendingDecision, action)}>{approvalBusy === `${pendingDecision.id}:${action}` ? 'Saving decision…' : approvalLabel(action)}</button>)}
-      <button type="button" onClick={() => setShowApprovals(true)}>Show details{snapshot.approvals.count > 1 ? ' and all decisions' : ''}</button>
+        onClick={() => void resolveApproval(pendingDecision, action)}>{approvalBusy === `${pendingDecision.id}:${action}` ? tr('Sparar beslutet…', 'Saving decision…') : approvalLabel(action)}</button>)}
+      <button type="button" onClick={() => setShowApprovals(true)}>{snapshot.approvals.count > 1 ? tr('Visa detaljer och alla beslut', 'Show details and all decisions') : tr('Visa detaljer', 'Show details')}</button>
     </div>
-    {!pendingDecision.actions.length && <p>A setting needs fixing. Open details to see what is missing.</p>}
-    {approvalError && <p role="alert">The decision could not be saved: {approvalError}</p>}
+    {!pendingDecision.actions.length && <p>{tr('En inställning behöver rättas. Öppna detaljerna för att se vad som saknas.', 'A setting needs fixing. Open details to see what is missing.')}</p>}
+    {approvalError && <p role="alert">{tr('Beslutet kunde inte sparas', 'The decision could not be saved')}: {approvalError}</p>}
   </section> : (snapshot?.seer?.blocker || runtimeError) ? <section className="cognitive-decision" aria-label="This needs attention">
     <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>The work needs help</strong></div>
     <p>{snapshot?.seer?.blocker || runtimeError}</p>

@@ -63,10 +63,12 @@ const EN_LABELS: Record<string, string> = {
   "JACO behöver startas": "Start JACO",
   "Anslut en modell för att börja": "Connect a model to begin",
   "Välj en modell som svarar": "Choose a responsive model",
+  "Välj en fungerande modell": "Choose a working model",
   "Verktygen behöver startas": "Tools need to be started",
   "Agentkörningen behöver kontrolleras": "Agent runtime needs inspection",
   "Status kunde inte hämtas": "Status unavailable"
 };
+const SV_FROM_EN: Record<string, string> = Object.fromEntries(Object.entries(EN_LABELS).map(([sv, en]) => [en, sv]));
 
 export function CognitiveWorkspace(props:Props) {
   const { language, setLanguage, tr } = useUiLanguage();
@@ -93,7 +95,8 @@ export function CognitiveWorkspace(props:Props) {
       window.removeEventListener('online', onOnline);
     };
   }, [remoteMode]);
-  const L = (text: string) => tr(text, EN_LABELS[text] || text);
+  // Labels arrive as Swedish keys or, from the status library, as the English text of the same entry.
+  const L = (text: string) => tr(SV_FROM_EN[text] || text, EN_LABELS[text] || text);
   // Local browser only: a remote viewer's VS Code cannot reach this runtime, and the VS Code tab is already open.
   const canOpenInVsCode = typeof window !== 'undefined' && ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname) && window.self === window.top;
   const menu = useRef<HTMLDialogElement>(null);
