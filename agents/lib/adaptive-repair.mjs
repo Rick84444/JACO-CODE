@@ -43,7 +43,7 @@ export function buildAdaptiveRepairPacket({ mission, task, receipt, history = []
   const count = failureCount(task, classification, history);
   const candidates = [];
   const add = (tool, hypothesis, probe) => {
-    if (!allowed.has(tool) || candidates.some(x => x.tool === tool)) return;
+    if (!allowed.has(tool) || (classification === 'UNKNOWN_OUTCOME' && !READ_ONLY.has(tool)) || candidates.some(x => x.tool === tool)) return;
     candidates.push({ tool, hypothesis, probe });
   };
 
