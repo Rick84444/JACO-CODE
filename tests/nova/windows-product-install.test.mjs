@@ -66,3 +66,13 @@ test('installed Workplace runs supervised executables from the immutable install
   assert.match(source, /const EXECUTION_ROOT = resolve\(process\.env\.JACO_INSTALL_ROOT \|\| process\.cwd\(\)\)/);
   assert.match(source, /createWorkplaceAgentSupervisor\(\{ root: EXECUTION_ROOT, env: process\.env \}\)/);
 });
+
+test('Windows installation smoke validates the packaged runtime identity, not a fixed historical version', () => {
+  const workflow = fs.readFileSync(new URL('../../.github/workflows/jaco-windows-release.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /expectedRuntimeVersion = \(Get-Content \(Join-Path \$installDir 'runtime\\/package\\.json'\) -Raw \| ConvertFrom-Json\)\\.version/);
+  assert.match(workflow, /\$identity\\.version -eq \$expectedRuntimeVersion/);
+  assert.doesNotMatch(workflow, /\$identity\\.version -eq ['"]\\d+\\.\\d+\\.\\d+['"]/);
+  assert.match(workflow, /INSTALLED_RUNTIME_VERSION_INVALID/);
+  // A Windows product release is a separate version from the runtime hosted inside it.
+  assert.match(workflow, /Get-Content windows\\/product\\/version\\.json/);
+});
