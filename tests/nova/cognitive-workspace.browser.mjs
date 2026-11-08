@@ -156,6 +156,7 @@ try {
     await remote.goto(base+'/?remote=1',{waitUntil:'domcontentloaded'});
     const remoteNav = remote.getByRole('navigation',{name:'Remote control'});
     await remoteNav.getByRole('button',{name:'Chat',exact:true}).waitFor();
+    await remote.getByRole('button',{name:'Sign out of Remote'}).waitFor();
     assert.equal(await remote.locator('link[rel="manifest"]').getAttribute('href'),'/remote.webmanifest');
     assert.equal(await remote.locator('.cognitive-workspace').getAttribute('data-remote-mode'),'true');
     assert.equal(await remote.locator('.cognitive-rail').evaluate(el=>getComputedStyle(el).display),'none');
