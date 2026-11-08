@@ -44,11 +44,13 @@ VersionInfoVersion={#JacoVersion}.0
 [Files]
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: ".env,.git\*,logs\*,.jaco\*,*.log"
 Source: "{#SourcePath}Start-JACO.ps1"; DestDir: "{app}\windows\product"; Flags: ignoreversion
+Source: "{#SourcePath}Enable-JacoPrivateRemote.ps1"; DestDir: "{app}\windows\product"; Flags: ignoreversion
 Source: "{#SourcePath}JACO-launch.vbs"; DestDir: "{app}\windows\product"; Flags: ignoreversion
 Source: "{#SourcePath}version.json"; DestDir: "{app}\windows\product"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\JACO CODE"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\JACO.ico"; Comment: "Open JACO CODE and Aura"
+Name: "{autoprograms}\JACO Private Remote Setup"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NoExit -ExecutionPolicy Bypass -File ""{app}\windows\product\Enable-JacoPrivateRemote.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\JACO.ico"; Comment: "Configure private phone access without Cloudflare"
 Name: "{autodesktop}\JACO CODE"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\JACO.ico"; Tasks: desktopicon
 
 [Tasks]
