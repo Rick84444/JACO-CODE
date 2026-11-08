@@ -257,3 +257,7 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .card h3 .mark { width: 40px; height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px; }
 #gameboard .cards { grid-template-columns: repeat(3, 1fr); }
 @media (max-width: 900px) { #gameboard .cards { grid-template-columns: 1fr; } }
+
+/* The short film under the headline. */
+.intro { width: min(1100px, calc(100% - 32px)); margin: 8px auto 40px; }
+.intro-video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #02060b; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 24px 80px rgba(15, 163, 209, .12); }
