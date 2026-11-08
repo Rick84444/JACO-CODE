@@ -138,6 +138,86 @@ jobs:
           if (Test-Path (Join-Path $installDir '.env')) { throw 'PRIVATE_ENV_IN_PROGRAM_FILES' }
 
           # Boot the ACTUAL installed Core and request the real GUI, with no cloud model configured.
+          # Assert the identity served by the *installed* payload, never a stale CI constant.
+          $expectedRuntimeVersion = (Get-Content (Join-Path $installDir 'runtime/package.json') -Raw | ConvertFrom-Json).version
+          if ($expectedRuntimeVersion -notmatch '^\\d+\\.\\d+\\.\\d+
+          $env:JACO_GATEWAY_TOKEN = 'ci_test_operator_token_exceeding_twenty_four_chars'
+          $env:JACO_MODEL_PROVIDER = 'aura'
+          $env:NODE_ENV = 'production'
+          $env:PORT = '3000'
+          $nodeExe = Join-Path $installDir 'tools/node/node.exe'
+          $runtimeDir = Join-Path $installDir 'runtime'
+          $stdOut = Join-Path $env:RUNNER_TEMP 'jaco-core-boot.log'
+          $stdErr = Join-Path $env:RUNNER_TEMP 'jaco-core-boot.err.log'
+          $core = Start-Process -FilePath $nodeExe -ArgumentList 'dist/server.cjs' -WorkingDirectory $runtimeDir -RedirectStandardOutput $stdOut -RedirectStandardError $stdErr -WindowStyle Hidden -PassThru
+          try {
+            $healthy = $false
+            for ($attempt = 0; $attempt -lt 50; $attempt++) {
+              if ($core.HasExited) { break }
+              try {
+                $identity = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/runtime/identity' -TimeoutSec 2
+                if ($identity.success -eq $true -and $identity.version -eq $expectedRuntimeVersion) { $healthy = $true; break }
+              } catch {}
+              Start-Sleep -Seconds 1
+            }
+            if (-not $healthy) {
+              Write-Host (Get-Content $stdErr -Raw -ErrorAction SilentlyContinue)
+              throw "INSTALLED_CORE_FAILED_HTTP_IDENTITY:expected=$expectedRuntimeVersion"
+            }
+            $gui = Invoke-WebRequest -Uri 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 10
+            if ($gui.StatusCode -ne 200 -or $gui.Content -notmatch '<html') { throw 'INSTALLED_GUI_NOT_SERVED' }
+            Write-Host 'JACO_INSTALLED_CORE_AND_GUI_VERIFIED'
+          } finally {
+            Stop-Process -Id $core.Id -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+          }
+
+          $again = Start-Process -FilePath $exe -ArgumentList $args -Wait -PassThru
+          if ($again.ExitCode -ne 0) { throw "REINSTALL_FAILED:$($again.ExitCode)" }
+          $uninstaller = Join-Path $installDir 'unins000.exe'
+          if (-not (Test-Path $uninstaller)) { throw 'UNINSTALLER_MISSING' }
+          $remove = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
+          if ($remove.ExitCode -ne 0) { throw "UNINSTALL_FAILED:$($remove.ExitCode)" }
+          Write-Host 'JACO_WINDOWS_INSTALL_REINSTALL_UNINSTALL_VERIFIED'
+      - name: SHA256 release manifest
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "build/windows/output/JACO-Setup-$env:JACO_VERSION-win-x64.exe").Path
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $output = Join-Path (Split-Path $exe -Parent) ((Split-Path $exe -Leaf) + '.sha256')
+          "$hash  $(Split-Path $exe -Leaf)" | Out-File $output -Encoding ascii
+          Write-Host "WINDOWS_INSTALLER_SHA256=$hash"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jaco-full-windows-setup
+          path: |
+            build/windows/output/JACO-Setup-*-win-x64.exe
+            build/windows/output/JACO-Setup-*-win-x64.exe.sha256
+          if-no-files-found: error
+
+  publish-github-release:
+    name: Attach verified Windows installer to stable release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: windows-setup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: jaco-full-windows-setup
+          path: release
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          tag_name: v${{ needs.windows-setup.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: |
+            release/JACO-Setup-*-win-x64.exe
+            release/JACO-Setup-*-win-x64.exe.sha256
+) { throw 'INSTALLED_RUNTIME_VERSION_INVALID' }
           $env:JACO_WORKSPACE_ROOT = $env:JACO_DATA_DIR
           $env:JACO_RELEASE_ROOT = Join-Path $installDir 'runtime'
           $env:JACO_GATEWAY_TOKEN = 'ci_test_operator_token_exceeding_twenty_four_chars'
