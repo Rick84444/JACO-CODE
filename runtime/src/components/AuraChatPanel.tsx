@@ -12,6 +12,7 @@ import { CognitiveEventCard } from './CognitiveEventCard';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
 import { budgetIntent, type BudgetIntent } from '../lib/budgetIntent';
+import { humanChatEvents } from '../lib/humanChat';
 import { BudgetCard } from './CostChip';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
 
@@ -161,7 +162,7 @@ async function chatJson(response: Response) {
 
 export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onCancelMission, onSteerMission, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
   const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments } = session;
-  const { tr } = useUiLanguage();
+  const { tr, language } = useUiLanguage();
   const [attachments, setAttachments] = useState<Array<{id:string;files:Array<{path:string;format:string}>}>>(()=>{
     try {const saved=JSON.parse(localStorage.getItem('jaco:aura:attachments:v1')||'[]');return Array.isArray(saved)?saved.filter(item=>typeof item?.id==='string'&&/^[a-f0-9-]{36}$/.test(item.id)&&Array.isArray(item.files)&&item.files.length<=200&&item.files.every((file:any)=>typeof file?.path==='string'&&['text','binary'].includes(file.format))).slice(0,16):[];}catch{return [];}
   });
@@ -339,8 +340,10 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   }, [busy]);
   useEffect(() => () => requestRef.current?.abort(), []);
   const [following,setFollowing]=useState(true);
-  const backgroundEvents=useMemo(()=>liveEvents.filter(event=>!event.missionId&&event.category==='observation'&&event.evidence.outcome==='observed'),[liveEvents]);
-  const conversationEvents=useMemo(()=>dedupeConversationEvents(liveEvents.filter(event=>!backgroundEvents.includes(event))),[liveEvents,backgroundEvents]);
+  // Only plain human language in the conversation: codes become sentences, runtime bookkeeping goes to Background activity.
+  const humanEvents=useMemo(()=>humanChatEvents(liveEvents,language),[liveEvents,language]);
+  const backgroundEvents=humanEvents.background;
+  const conversationEvents=useMemo(()=>dedupeConversationEvents(humanEvents.conversation),[humanEvents]);
   const feed=useMemo(()=>[
     ...messages.filter(m=>m.id!=='welcome').map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message})),
     ...conversationEvents.map(event=>({kind:'event' as const,id:event.id,at:event.at,event})),
