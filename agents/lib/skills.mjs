@@ -43,6 +43,10 @@ export function skillTasks(meta, { allowCode = false } = {}) {
 }
 
 function readSkill(root, id) {
+  // A skill.json package belongs to the canonical SkillRuntime, not the legacy
+  // instruction-to-mission catalog. In particular, CANDIDATE packages must
+  // not bypass their activation gate via the legacy skill-load route.
+  if (existsSync(join(root, id, 'skill.json'))) return null;
   const file = join(root, id, 'SKILL.md');
   if (!existsSync(file)) return null;
   if (statSync(file).size > MAX_BODY * 2) throw new Error('SKILL_TOO_LARGE');
