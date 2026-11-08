@@ -12,9 +12,15 @@
   "lang": "en",
   "icons": [
     {
-      "src": "/branding/jaco-orb.webp",
+      "src": "/branding/jaco-remote-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/branding/jaco-remote-icon.svg",
       "sizes": "any",
-      "type": "image/webp",
+      "type": "image/svg+xml",
       "purpose": "any"
     }
   ]
