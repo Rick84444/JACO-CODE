@@ -28,11 +28,11 @@ export function AuraPresence({data}:{data:AuraPresenceView}) {
       </div>
 
     </div>
-    {data.missionId && <dl className="grid gap-2 px-3 py-3 text-xs border-t border-neutral-700" aria-label="Mission state and next action">
-      <div><dt className="text-neutral-400">Aktuellt uppdrag</dt><dd className="mt-1 break-words">{data.missionGoal}<small className="block text-neutral-400">{data.missionId}</small></dd></div>
-      <div><dt className="text-neutral-400">Senaste verkliga framsteg</dt><dd className="mt-1">{data.step || 'Inget steg rapporterat'}{data.stepAge!==null?' · '+ageLabel(data.stepAge):''}</dd></div>
-      <div><dt className="text-neutral-400">Vad stoppar arbetet?</dt><dd className="mt-1" role={data.mode==='stalled'||data.mode==='blocked'?'status':undefined}>{data.blocker}</dd></div>
-      <div><dt className="text-neutral-400">Next action</dt><dd className="mt-1">{data.nextAction}</dd></div>
+    {data.missionId && <dl className="grid gap-2 px-3 py-3 text-xs border-t border-neutral-600" aria-label="Mission state and next action">
+      <div><dt className="text-neutral-300">Aktuellt uppdrag</dt><dd className="mt-1 break-words">{data.missionGoal}<small className="block text-neutral-300">{data.missionId}</small></dd></div>
+      <div><dt className="text-neutral-300">Senaste verkliga framsteg</dt><dd className="mt-1">{data.step || 'Inget steg rapporterat'}{data.stepAge!==null?' · '+ageLabel(data.stepAge):''}</dd></div>
+      <div><dt className="text-neutral-300">Vad stoppar arbetet?</dt><dd className="mt-1" role={data.mode==='stalled'||data.mode==='blocked'?'status':undefined}>{data.blocker}</dd></div>
+      <div><dt className="text-neutral-300">Next action</dt><dd className="mt-1">{data.nextAction}</dd></div>
     </dl>}
     <div className="aura-presence-bottom">
 

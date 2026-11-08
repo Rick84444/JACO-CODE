@@ -56,10 +56,10 @@ export function FirstRunGuide({ onConnected, onClose }: { onConnected: () => voi
 
   return (
     <section role="dialog" aria-label={tr('Kom igång med JACO', 'Get started with JACO')} data-testid="first-run-guide"
-      className="m-4 rounded-xl border border-sky-800 bg-[#151618] p-5 text-neutral-200 shadow-lg max-w-2xl">
+      className="m-4 rounded-xl border border-sky-800 bg-[#262729] p-5 text-neutral-200 shadow-lg max-w-2xl">
       <div className="flex items-start justify-between gap-3">
         <h2 className="text-lg font-semibold">{step === 'done' ? tr('Klart! Aura kan börja arbeta.', 'Done! Aura can start working.') : tr('Välkommen! Aura behöver en AI-hjärna först.', 'Welcome! Aura needs an AI brain first.')}</h2>
-        <button type="button" onClick={onClose} aria-label={tr('Stäng', 'Close')} className="text-neutral-400 hover:text-neutral-200"><X size={16} /></button>
+        <button type="button" onClick={onClose} aria-label={tr('Stäng', 'Close')} className="text-neutral-300 hover:text-neutral-200"><X size={16} /></button>
       </div>
 
       {step === 'intro' && <div className="mt-3 space-y-3 text-sm leading-relaxed">
@@ -73,9 +73,9 @@ export function FirstRunGuide({ onConnected, onClose }: { onConnected: () => voi
           <a href={AI_STUDIO_KEY_URL} target="_blank" rel="noreferrer" onClick={() => setStep('paste')}
             className="inline-flex items-center gap-1.5 rounded bg-sky-600 px-3 py-2 font-medium text-white hover:bg-sky-500">
             <ExternalLink size={14} />{tr('Öppna Google AI Studio', 'Open Google AI Studio')}</a>
-          <button type="button" onClick={() => setStep('paste')} className="rounded border border-neutral-600 px-3 py-2 hover:bg-neutral-800">{tr('Jag har redan en nyckel', 'I already have a key')}</button>
+          <button type="button" onClick={() => setStep('paste')} className="rounded border border-neutral-600 px-3 py-2 hover:bg-neutral-700">{tr('Jag har redan en nyckel', 'I already have a key')}</button>
         </div>
-        <p className="flex items-center gap-1.5 text-xs text-neutral-400"><ShieldCheck size={13} />{tr('Gratis, inget betalkort, och nyckeln stannar krypterad på din dator.', 'Free, no payment card, and the key stays encrypted on your computer.')}</p>
+        <p className="flex items-center gap-1.5 text-xs text-neutral-300"><ShieldCheck size={13} />{tr('Gratis, inget betalkort, och nyckeln stannar krypterad på din dator.', 'Free, no payment card, and the key stays encrypted on your computer.')}</p>
       </div>}
 
       {step === 'paste' && <div className="mt-3 space-y-3 text-sm">
@@ -83,12 +83,12 @@ export function FirstRunGuide({ onConnected, onClose }: { onConnected: () => voi
         <div className="flex gap-2">
           <input type="password" value={key} onChange={e => setKey(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void connect(); }}
             aria-label={tr('Din nyckel från Google AI Studio', 'Your Google AI Studio key')} placeholder="AIza…" autoComplete="off"
-            className="flex-1 rounded border border-neutral-600 bg-[#0f1012] px-3 py-2 font-mono" />
+            className="flex-1 rounded border border-neutral-600 bg-[#1d1e20] px-3 py-2 font-mono" />
           <button type="button" onClick={() => void connect()} disabled={busy || !key.trim()}
             className="inline-flex items-center gap-1.5 rounded bg-sky-600 px-3 py-2 font-medium text-white disabled:opacity-50">
             {busy ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}{busy ? tr('Kontrollerar…', 'Checking…') : tr('Koppla in', 'Connect')}</button>
         </div>
-        {busy && <p className="text-xs text-neutral-400">{tr('JACO frågar Google om nyckeln fungerar. Det tar några sekunder.', 'JACO is asking Google whether the key works. It takes a few seconds.')}</p>}
+        {busy && <p className="text-xs text-neutral-300">{tr('JACO frågar Google om nyckeln fungerar. Det tar några sekunder.', 'JACO is asking Google whether the key works. It takes a few seconds.')}</p>}
         {problem && <p role="alert" className="text-amber-300">{problem}</p>}
         <a href={AI_STUDIO_KEY_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-sky-300 underline"><ExternalLink size={12} />{tr('Öppna Google AI Studio igen', 'Open Google AI Studio again')}</a>
       </div>}
@@ -99,11 +99,11 @@ export function FirstRunGuide({ onConnected, onClose }: { onConnected: () => voi
         <button type="button" onClick={onClose} className="rounded bg-sky-600 px-3 py-2 font-medium text-white">{tr('Börja', 'Start')}</button>
       </div>}
 
-      {step !== 'done' && <div className="mt-4 border-t border-neutral-700 pt-3">
-        <p className="mb-1 flex items-center gap-1.5 text-xs text-neutral-400"><HelpCircle size={13} />{tr('Vanliga frågor', 'Common questions')}</p>
+      {step !== 'done' && <div className="mt-4 border-t border-neutral-600 pt-3">
+        <p className="mb-1 flex items-center gap-1.5 text-xs text-neutral-300"><HelpCircle size={13} />{tr('Vanliga frågor', 'Common questions')}</p>
         {questions.map(([id, q, a]) => <div key={id} className="text-sm">
           <button type="button" onClick={() => setFaq(faq === id ? null : id)} aria-expanded={faq === id} className="w-full py-1 text-left text-sky-200 hover:underline">{q}</button>
-          {faq === id && <p className="pb-2 text-neutral-300">{a}</p>}
+          {faq === id && <p className="pb-2 text-neutral-200">{a}</p>}
         </div>)}
       </div>}
     </section>

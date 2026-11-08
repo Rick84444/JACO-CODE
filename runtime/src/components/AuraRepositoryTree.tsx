@@ -177,15 +177,15 @@ export const AuraRepositoryTree: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => void toggleDirectory(entry.path)}
-            className="w-full h-6 flex items-center text-left text-[11px] text-neutral-300 hover:bg-[#2b2c2e]"
+            className="w-full h-6 flex items-center text-left text-[11px] text-neutral-200 hover:bg-[#464749]"
             style={{ paddingLeft: `${6 + depth * 12}px` }}
             title={entry.path}
           >
             {isLoading
-              ? <Loader2 className="w-3 h-3 text-neutral-500 shrink-0 animate-spin" />
+              ? <Loader2 className="w-3 h-3 text-neutral-400 shrink-0 animate-spin" />
               : open
-                ? <ChevronDown className="w-3 h-3 text-neutral-500 shrink-0" />
-                : <ChevronRight className="w-3 h-3 text-neutral-500 shrink-0" />}
+                ? <ChevronDown className="w-3 h-3 text-neutral-400 shrink-0" />
+                : <ChevronRight className="w-3 h-3 text-neutral-400 shrink-0" />}
             {open ? <FolderOpen className="w-3.5 h-3.5 ml-0.5 mr-1.5 text-sky-400/80 shrink-0" /> : <Folder className="w-3.5 h-3.5 ml-0.5 mr-1.5 text-sky-400/70 shrink-0" />}
             <span className="truncate">{entry.name}</span>
           </button>
@@ -205,7 +205,7 @@ export const AuraRepositoryTree: React.FC<Props> = ({
         key={entry.path}
         type="button"
         onClick={() => onOpen(entry.path)}
-        className={`w-full h-6 flex items-center text-left text-[11px] hover:bg-[#2b2c2e] ${selectedPath === entry.path ? 'bg-[#363739] text-white' : 'text-neutral-300'}`}
+        className={`w-full h-6 flex items-center text-left text-[11px] hover:bg-[#464749] ${selectedPath === entry.path ? 'bg-[#565759] text-white' : 'text-neutral-200'}`}
         style={{ paddingLeft: `${21 + depth * 12}px` }}
         title={`${entry.path}${entry.size != null ? ` · ${entry.size} bytes` : ''}`}
       >
@@ -221,10 +221,10 @@ export const AuraRepositoryTree: React.FC<Props> = ({
       return (
         <div key={node.path || node.name}>
           <div
-            className="w-full h-6 flex items-center text-left text-[11px] text-neutral-400"
+            className="w-full h-6 flex items-center text-left text-[11px] text-neutral-300"
             style={{ paddingLeft: `${6 + depth * 12}px` }}
           >
-            <ChevronDown className="w-3 h-3 text-neutral-600 shrink-0" />
+            <ChevronDown className="w-3 h-3 text-neutral-500 shrink-0" />
             <FolderOpen className="w-3.5 h-3.5 ml-0.5 mr-1.5 text-sky-400/60 shrink-0" />
             <span className="truncate">{node.name}</span>
           </div>
@@ -238,7 +238,7 @@ export const AuraRepositoryTree: React.FC<Props> = ({
         key={node.path}
         type="button"
         onClick={() => onOpen(node.path)}
-        className={`w-full h-6 flex items-center text-left text-[11px] hover:bg-[#2b2c2e] ${selectedPath === node.path ? 'bg-[#363739] text-white' : 'text-neutral-300'}`}
+        className={`w-full h-6 flex items-center text-left text-[11px] hover:bg-[#464749] ${selectedPath === node.path ? 'bg-[#565759] text-white' : 'text-neutral-200'}`}
         style={{ paddingLeft: `${21 + depth * 12}px` }}
         title={node.path}
       >
@@ -254,7 +254,7 @@ export const AuraRepositoryTree: React.FC<Props> = ({
     return (
       <div className="flex-1 min-h-0 overflow-auto" aria-label="Repository tree search results">
         {nodes.map(node => renderSearchNode(node, 0))}
-        {!nodes.length && <div className="p-3 text-[10px] text-neutral-600">No files match the current filter.</div>}
+        {!nodes.length && <div className="p-3 text-[10px] text-neutral-500">No files match the current filter.</div>}
       </div>
     );
   }
@@ -263,9 +263,9 @@ export const AuraRepositoryTree: React.FC<Props> = ({
   return (
     <div className="flex-1 min-h-0 overflow-auto" aria-label="Repository tree">
       {rootEntries.map(entry => renderLazyEntry(entry, 0))}
-      {loading.has('') && !rootEntries.length && <div className="p-3 text-[10px] text-neutral-500">Loading workspace…</div>}
+      {loading.has('') && !rootEntries.length && <div className="p-3 text-[10px] text-neutral-400">Loading workspace…</div>}
       {loadErrors[''] && <div className="p-3 text-[10px] text-amber-400">{loadErrors['']}</div>}
-      {!loading.has('') && !loadErrors[''] && !rootEntries.length && <div className="p-3 text-[10px] text-neutral-600">No supported workspace entries observed.</div>}
+      {!loading.has('') && !loadErrors[''] && !rootEntries.length && <div className="p-3 text-[10px] text-neutral-500">No supported workspace entries observed.</div>}
     </div>
   );
 };

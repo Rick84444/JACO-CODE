@@ -73,44 +73,44 @@ export function VoiceChannel() {
   return <section className="p-4 space-y-4 overflow-auto h-full" aria-label="WhatsApp channel">
     <div className="flex flex-wrap items-center gap-3">
       <h2 className="text-sm font-semibold flex gap-2 items-center"><Smartphone size={17}/>WhatsApp</h2>
-      <span className="text-xs rounded border border-neutral-700 px-2 py-0.5" role="status" data-state={open?'open':'closed'}>{open&&<CheckCircle2 size={12} className="inline mr-1 text-emerald-400"/>}{label}</span>
-      <button type="button" onClick={()=>void refresh()} className="ml-auto rounded border border-neutral-700 px-2 py-1 text-xs flex gap-1 items-center" aria-label="Refresh status"><RefreshCw size={13}/>Refresh</button>
+      <span className="text-xs rounded border border-neutral-600 px-2 py-0.5" role="status" data-state={open?'open':'closed'}>{open&&<CheckCircle2 size={12} className="inline mr-1 text-emerald-400"/>}{label}</span>
+      <button type="button" onClick={()=>void refresh()} className="ml-auto rounded border border-neutral-600 px-2 py-1 text-xs flex gap-1 items-center" aria-label="Refresh status"><RefreshCw size={13}/>Refresh</button>
     </div>
-    <p className="text-xs text-neutral-400">Agents reach you on your own number with a short message and a voice message when a mission is done or needs you. The channel can only write to the number you enter. It uses WhatsApp's unofficial web protocol, so use a separate number for the agent, not your regular account.</p>
+    <p className="text-xs text-neutral-300">Agents reach you on your own number with a short message and a voice message when a mission is done or needs you. The channel can only write to the number you enter. It uses WhatsApp's unofficial web protocol, so use a separate number for the agent, not your regular account.</p>
     {error&&<p className="border border-amber-800 rounded p-2 text-amber-300 text-xs" role="alert">{error}</p>}
     {status?.lastError&&<p className="text-xs text-amber-300">Last error: {status.lastError}</p>}
     {notice&&<p className="text-xs text-emerald-300" role="status">{notice}</p>}
 
     <div className="grid gap-3 lg:grid-cols-2">
-      <div className="rounded-lg border border-neutral-800 bg-[#18191b] p-3 space-y-3">
+      <div className="rounded-lg border border-neutral-700 bg-[#2a2b2d] p-3 space-y-3">
         <h3 className="text-xs font-semibold">1. Your number</h3>
-        <p className="text-xs text-neutral-400">Current: {status?.owner||'none set'}</p>
+        <p className="text-xs text-neutral-300">Current: {status?.owner||'none set'}</p>
         <label className="text-xs space-y-1 block"><span>Number in international format</span>
-          <input value={number} onChange={e=>setNumber(e.target.value)} placeholder="+46701234567" inputMode="tel" maxLength={20} className="w-full rounded border border-neutral-700 bg-[#101113] px-2 py-1.5 text-xs"/></label>
-        <button type="button" disabled={busy||!number.trim()} onClick={()=>void saveNumber()} className="rounded bg-neutral-800 px-4 py-2 text-xs font-medium disabled:opacity-50">Save number</button>
+          <input value={number} onChange={e=>setNumber(e.target.value)} placeholder="+46701234567" inputMode="tel" maxLength={20} className="w-full rounded border border-neutral-600 bg-[#1f2022] px-2 py-1.5 text-xs"/></label>
+        <button type="button" disabled={busy||!number.trim()} onClick={()=>void saveNumber()} className="rounded bg-neutral-700 px-4 py-2 text-xs font-medium disabled:opacity-50">Save number</button>
       </div>
 
-      <div className="rounded-lg border border-neutral-800 bg-[#18191b] p-3 space-y-3">
+      <div className="rounded-lg border border-neutral-700 bg-[#2a2b2d] p-3 space-y-3">
         <h3 className="text-xs font-semibold flex gap-2 items-center"><QrCode size={15}/>2. Link</h3>
         {open
           ?<p className="text-xs text-emerald-300">WhatsApp is linked. Sent today: {status?.sentToday??0} of {status?.dailyLimit??'–'}.</p>
           :<>
-            <p className="text-xs text-neutral-400">Press Link, then open WhatsApp on the agent's phone: Settings &gt; Linked devices &gt; Link a device, and scan the code.</p>
-            <button type="button" disabled={busy||!status?.configured} onClick={()=>void link()} className="rounded bg-neutral-800 px-4 py-2 text-xs font-medium disabled:opacity-50">{busy?'Starting…':'Link'}</button>
-            {!status?.configured&&<p className="text-xs text-neutral-500">Save your number first.</p>}
+            <p className="text-xs text-neutral-300">Press Link, then open WhatsApp on the agent's phone: Settings &gt; Linked devices &gt; Link a device, and scan the code.</p>
+            <button type="button" disabled={busy||!status?.configured} onClick={()=>void link()} className="rounded bg-neutral-700 px-4 py-2 text-xs font-medium disabled:opacity-50">{busy?'Starting…':'Link'}</button>
+            {!status?.configured&&<p className="text-xs text-neutral-400">Save your number first.</p>}
             {status?.qr&&<img key={qrVersion} src={`/api/aura/workbench/voice/qr.svg?v=${qrVersion}`} alt="QR code to scan in WhatsApp" className="w-56 h-56 rounded bg-white p-1"/>}
           </>}
       </div>
     </div>
 
-    <div className="rounded-lg border border-neutral-800 bg-[#18191b] p-3 space-y-3">
+    <div className="rounded-lg border border-neutral-700 bg-[#2a2b2d] p-3 space-y-3">
       <h3 className="text-xs font-semibold">3. Test and manage</h3>
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={busy||!open} onClick={()=>void test()} className="rounded bg-neutral-800 px-4 py-2 text-xs font-medium disabled:opacity-50 flex gap-2 items-center"><Send size={13}/>Send test message</button>
+        <button type="button" disabled={busy||!open} onClick={()=>void test()} className="rounded bg-neutral-700 px-4 py-2 text-xs font-medium disabled:opacity-50 flex gap-2 items-center"><Send size={13}/>Send test message</button>
         <button type="button" disabled={busy||!(status?.hasSession||open)} onClick={()=>void unlink()} className="rounded border border-red-900 px-4 py-2 text-xs text-red-300 disabled:opacity-50 flex gap-2 items-center"><Unlink size={13}/>Unlink</button>
       </div>
-      {open&&status?.twoWay&&<p className="text-xs text-neutral-300">Two-way: write to the linked number from your own ({status.owner}) and Aura replies with text and voice. {status.lastInboundAt?`Last received ${new Date(status.lastInboundAt).toLocaleString('en-US')}.`:'Nothing received yet.'} She cannot receive voice messages or calls yet.</p>}
-      <p className="text-xs text-neutral-500">The test is real and goes out to your number. The status above comes from the runtime, not from this page.</p>
+      {open&&status?.twoWay&&<p className="text-xs text-neutral-200">Two-way: write to the linked number from your own ({status.owner}) and Aura replies with text and voice. {status.lastInboundAt?`Last received ${new Date(status.lastInboundAt).toLocaleString('en-US')}.`:'Nothing received yet.'} She cannot receive voice messages or calls yet.</p>}
+      <p className="text-xs text-neutral-400">The test is real and goes out to your number. The status above comes from the runtime, not from this page.</p>
     </div>
   </section>;
 }

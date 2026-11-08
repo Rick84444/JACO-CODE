@@ -33,12 +33,12 @@ function DiffLines({ step }: { step: Step }) {
   } else if (step.text && /^(diff --git|@@|\+\+\+|---)/m.test(step.text)) {
     step.text.split('\n').forEach(l => lines.push([l[0] === '+' && !l.startsWith('+++') ? '+' : l[0] === '-' && !l.startsWith('---') ? '-' : ' ', l]));
   } else if (step.text) {
-    return <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-black/40 p-2 text-[11px] text-neutral-300">{step.text}</pre>;
+    return <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-black/40 p-2 text-[11px] text-neutral-200">{step.text}</pre>;
   } else return null;
   return (
     <pre className="mt-2 max-h-72 overflow-auto rounded bg-black/40 p-2 text-[11px] leading-snug">
       {lines.map(([sign, text], i) => (
-        <div key={i} className={sign === '+' ? 'bg-emerald-950/60 text-emerald-300' : sign === '-' ? 'bg-red-950/60 text-red-300' : 'text-neutral-400'}>
+        <div key={i} className={sign === '+' ? 'bg-emerald-950/60 text-emerald-300' : sign === '-' ? 'bg-red-950/60 text-red-300' : 'text-neutral-300'}>
           {step.type === 'repo-edit' ? `${sign} ${text}` : text}
         </div>
       ))}
@@ -51,16 +51,16 @@ const StepCard: React.FC<{ step: Step; autoOpen: boolean }> = ({ step, autoOpen 
   const Icon = iconFor(step.type);
   const state = step.ok && step.verified ? 'ok' : step.ok ? 'unverified' : 'failed';
   return (
-    <button type="button" onClick={() => setOpen(o => !o)} className="w-full text-left rounded-lg border border-[#163049] bg-[#131416] px-3 py-2">
+    <button type="button" onClick={() => setOpen(o => !o)} className="w-full text-left rounded-lg border border-[#163049] bg-[#232426] px-3 py-2">
       <div className="flex items-start gap-2">
-        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-neutral-300" />
+        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-neutral-200" />
         <span className="flex-1 text-[13px] text-neutral-200 break-words">{describeNovaTask({ type: step.type, data: step.input })}</span>
         {state === 'ok' && <Check className="h-4 w-4 shrink-0 text-emerald-400" aria-label="verified" />}
         {state === 'unverified' && <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" aria-label="not verified" />}
         {state === 'failed' && <X className="h-4 w-4 shrink-0 text-red-400" aria-label="failed" />}
       </div>
       {step.error && <div className="mt-1 text-[12px] text-red-300 break-words">{step.error}</div>}
-      {step.url && <a href={step.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mt-1 block text-[12px] text-neutral-300 underline break-all">{step.url}</a>}
+      {step.url && <a href={step.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mt-1 block text-[12px] text-neutral-200 underline break-all">{step.url}</a>}
       {open && <DiffLines step={step} />}
     </button>
   );
@@ -90,19 +90,19 @@ const MissionThread: React.FC<{ id: string; onGone: (id: string) => void }> = ({
     finally { setBusy(''); }
   };
 
-  if (!m) return <div className="text-[12px] text-neutral-500 px-1">Loading mission…</div>;
+  if (!m) return <div className="text-[12px] text-neutral-400 px-1">Loading mission…</div>;
   const working = m.status === 'ACTIVE';
   return (
     <div className="space-y-2">
-      <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-neutral-700/40 px-3 py-2 text-[14px] text-white break-words">{m.goal}</div>
+      <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-neutral-600/40 px-3 py-2 text-[14px] text-white break-words">{m.goal}</div>
       {m.steps.map((s, i) => <StepCard key={s.n} step={s} autoOpen={i === m.steps.length - 1 && (s.type === 'repo-edit' || s.type === 'git-diff')} />)}
       {working && (
-        <div className="flex items-center gap-2 px-1 text-[13px] text-neutral-300">
+        <div className="flex items-center gap-2 px-1 text-[13px] text-neutral-200">
           <Loader2 className="h-4 w-4 animate-spin" />
           {m.activeTask ? `Nova: ${describeNovaTask(m.activeTask)}` : 'Nova is planning the next step…'}
         </div>
       )}
-      {m.answer && <div className="max-w-[90%] rounded-2xl rounded-bl-sm bg-[#1e1f21] px-3 py-2 text-[14px] text-neutral-100 whitespace-pre-wrap break-words">{m.answer}</div>}
+      {m.answer && <div className="max-w-[90%] rounded-2xl rounded-bl-sm bg-[#333436] px-3 py-2 text-[14px] text-neutral-100 whitespace-pre-wrap break-words">{m.answer}</div>}
       {m.status === 'AWAITING_VERIFICATION' && (
         <div className="flex flex-wrap gap-2">
           <span className="w-full text-[12px] text-amber-300">Nova considers this done. Is that right?</span>
@@ -119,7 +119,7 @@ const MissionThread: React.FC<{ id: string; onGone: (id: string) => void }> = ({
         </div>
       )}
       {m.status === 'DONE' && <div className="text-[12px] text-emerald-400 px-1">Done</div>}
-      {m.status === 'CANCELLED' && <div className="text-[12px] text-neutral-500 px-1">Cancelled</div>}
+      {m.status === 'CANCELLED' && <div className="text-[12px] text-neutral-400 px-1">Cancelled</div>}
       {lost && <div className="text-[12px] text-amber-300 px-1">{lost}</div>}
     </div>
   );
@@ -150,10 +150,10 @@ export const BuildView: React.FC = () => {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#090a0c]">
+    <div className="flex h-full min-h-0 flex-col bg-[#151618]">
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-6">
         {ids.length === 0 && (
-          <div className="mt-10 px-4 text-center text-neutral-400">
+          <div className="mt-10 px-4 text-center text-neutral-300">
             <div className="text-[18px] text-neutral-200">What do you want to build?</div>
             <div className="mt-2 text-[13px]">Write what you want done. You see every step Nova takes, live, and every file that changes.</div>
           </div>
@@ -167,7 +167,7 @@ export const BuildView: React.FC = () => {
           value={text} onChange={e => setText(e.target.value)} rows={1}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
           placeholder="What do you want to build?"
-          className="flex-1 resize-none rounded-2xl bg-[#131416] px-4 py-3 text-[16px] text-neutral-100 placeholder:text-neutral-500 outline-none focus:ring-1 focus:ring-neutral-600 max-h-40"
+          className="flex-1 resize-none rounded-2xl bg-[#232426] px-4 py-3 text-[16px] text-neutral-100 placeholder:text-neutral-400 outline-none focus:ring-1 focus:ring-neutral-600 max-h-40"
         />
         <button type="submit" disabled={busy || !text.trim()} aria-label="Send" className="h-12 w-12 shrink-0 rounded-full bg-neutral-600 disabled:bg-[#1d3347] flex items-center justify-center">
           {busy ? <Loader2 className="h-5 w-5 animate-spin text-white" /> : <Send className="h-5 w-5 text-white" />}

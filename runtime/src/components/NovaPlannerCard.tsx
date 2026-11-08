@@ -50,10 +50,10 @@ export const NovaPlannerCard: React.FC = () => {
   const current = state?.choice ? `${state.choice.provider}|${state.choice.model}` : AUTO;
   const selectedOption = state?.choices.find(c => c.provider === provider);
   return (
-    <div className="border border-neutral-900 bg-[#131416] rounded p-2 space-y-2">
+    <div className="border border-neutral-800 bg-[#232426] rounded p-2 space-y-2">
       <div className="flex items-center justify-between gap-2">
         <strong className="text-xs">Planning model</strong>
-        <span className="text-[9px] text-neutral-400 truncate">
+        <span className="text-[9px] text-neutral-300 truncate">
           {state ? (state.choice ? `${state.choice.provider} / ${state.choice.model}` : 'Chosen automatically') : 'Loading…'}
         </span>
       </div>
@@ -61,7 +61,7 @@ export const NovaPlannerCard: React.FC = () => {
         aria-label="Nova planning model" disabled={!state || busy !== null}
         value={selected}
         onChange={e => { setSelected(e.target.value); setTest(null); }}
-        className="w-full bg-[#101113] border border-[#323335] rounded px-2 py-1.5 text-xs outline-none"
+        className="w-full bg-[#1f2022] border border-[#505153] rounded px-2 py-1.5 text-xs outline-none"
       >
         <option value={AUTO}>Automatic, per the server's provider and cost policy</option>
         {state?.choices.map(c => (
@@ -79,14 +79,14 @@ export const NovaPlannerCard: React.FC = () => {
         <button
           onClick={() => void runTest()}
           disabled={busy !== null || !state || provider === AUTO || !selectedOption?.usable}
-          className="flex-1 text-[10px] border border-[#434446] px-2 py-1 rounded hover:bg-[#2a2b2d] disabled:opacity-40"
+          className="flex-1 text-[10px] border border-[#696a6c] px-2 py-1 rounded hover:bg-[#444547] disabled:opacity-40"
         >
           {busy === 'test' ? 'Testing…' : 'Test'}
         </button>
         <button
           onClick={() => void save()}
           disabled={busy !== null || !state || selected === current}
-          className="flex-1 text-[10px] border border-neutral-700 text-neutral-200 px-2 py-1 rounded hover:bg-neutral-950 disabled:opacity-40"
+          className="flex-1 text-[10px] border border-neutral-600 text-neutral-200 px-2 py-1 rounded hover:bg-neutral-900 disabled:opacity-40"
         >
           {busy === 'save' ? 'Saving…' : 'Use for Nova'}
         </button>
