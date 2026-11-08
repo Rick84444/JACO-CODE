@@ -71,6 +71,28 @@ const EN_LABELS: Record<string, string> = {
 export function CognitiveWorkspace(props:Props) {
   const { language, setLanguage, tr } = useUiLanguage();
   const remoteMode = props.remoteMode === true;
+  // A temporary connection failure is not a reason to interrupt a durable Aura mission.
+  useEffect(() => {
+    if (!remoteMode) return;
+    let active = true;
+    const checkSession = async () => {
+      try {
+        const response = await fetch('/ide-auth/status', {credentials: 'same-origin', cache: 'no-store'});
+        if (active && response.status === 401) window.location.replace('/ide-login?next=remote');
+      } catch { /* Retry after coming back online. */ }
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') void checkSession(); };
+    const onOnline = () => { void checkSession(); };
+    void checkSession();
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void checkSession(); }, 30_000);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onOnline);
+    return () => {
+      active = false; window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [remoteMode]);
   const L = (text: string) => tr(text, EN_LABELS[text] || text);
   // Local browser only: a remote viewer's VS Code cannot reach this runtime, and the VS Code tab is already open.
   const canOpenInVsCode = typeof window !== 'undefined' && ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname) && window.self === window.top;
@@ -102,6 +124,7 @@ export function CognitiveWorkspace(props:Props) {
       <div className="cognitive-top-actions">
 {!remoteMode && <><CostChip onOpen={()=>props.onSidebar('revenue')}/><JacoWindowsUpdates/></>}
         <select className="cognitive-language-select" aria-label={tr('Språk', 'Language')} title={tr('Språk', 'Language')} value={language} onChange={event => setLanguage(event.target.value === 'sv' ? 'sv' : 'en')} style={{color:'inherit',background:'#171d24',border:'1px solid #3b4652',borderRadius:6,padding:'4px 5px',fontSize:11}}><option value="en">EN</option><option value="sv">SV</option></select>
+        {remoteMode && <button type="button" className="cognitive-remote-signout" onClick={props.onSignOut} aria-label={tr('Logga ut från mobilen', 'Sign out of Remote')} title={tr('Logga ut', 'Sign out')}><LogOut size={17}/></button>}
         {props.approvalCount>0 && <button type="button" className="cognitive-approval-button" aria-label={`${props.approvalCount} ${tr('beslut behöver dig', 'decisions need your attention')}`} onClick={props.onApprovals}><CircleAlert size={14}/><span>{props.approvalCount} {tr('beslut','decisions')}</span></button>}
 {!remoteMode && <button type="button" aria-label={tr('Sök verktyg och kommandon', 'Search tools and commands')} title={tr('Sök', 'Search')+' · Ctrl+Shift+P'} onClick={props.onCommands}><Search size={16}/></button>}
       </div>
