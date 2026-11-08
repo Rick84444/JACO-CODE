@@ -298,3 +298,12 @@ test('Aura offers ambitious steps behind consent and writes in its own humble vo
   assert.match(system, /Each step that creates an account, publishes, spends or connects a payment is a separate approval/);
   assert.match(system, /without typical AI phrases/);
 });
+
+test('Aura acts on clear requests and turns risky or misleading work into one scoped confirmation', () => {
+  const { system } = buildAuraSeerPrompts({ message: 'Gör detta åt mig.' });
+  assert.match(system, /dangerous, harmful, misleading, ambiguous/);
+  assert.match(system, /recommend a safer route/);
+  assert.match(system, /When the operator confirms, carry it out without asking again/);
+  assert.match(system, /intelligent amateur understands on the first reading/);
+  assert.match(system, /Never dump raw internal error codes into the main answer/);
+});

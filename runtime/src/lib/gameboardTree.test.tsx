@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planTree } from '../components/StrategyBoard';
+import { decisionGuidance, planTree } from '../components/StrategyBoard';
 
 const node = (key: string, dependencies: string[] = [], status = 'READY') =>
   ({ key, title: key, objective: key, status, statusText: status, failure: null, dependencies, needs: [], comments: [] });
@@ -36,4 +36,12 @@ test('the line from the active subgoal to the goal glows all the way to the midd
   assert.deepEqual(litLine(['RUNNING', 'VERIFIED', 'VERIFIED', 'VERIFIED', 'VERIFIED'].map(item)), ['jp-v jp-r', 'jp-l jp-r', 'jp-l', '', '']);
   assert.deepEqual(litLine(['VERIFIED', 'RUNNING'].map(item)), ['', 'jp-v jp-l']);
   assert.deepEqual(litLine(['VERIFIED', 'VERIFIED'].map(item)), ['', '']);
+});
+
+test('a Gameboard approval explains the action, the reason and a safer path in plain language', () => {
+  const guidance = decisionGuidance({ id:'mission:m1', kind:'MISSION', title:'Publicera sidan', risk:'HIGH', reason:'Publicering gör resultatet synligt för andra.', actions:['resume','cancel'] }, 'sv');
+  assert.match(guidance.what, /fortsätter uppdraget en gång/);
+  assert.match(guidance.why, /Publicering/);
+  assert.match(guidance.safer, /evidensen|avsluta/);
+  assert.match(guidance.acknowledgement, /Jag förstår.*godkänner/);
 });

@@ -100,6 +100,14 @@ test('routine background observations are grouped while mission blockers stay in
   assert.match(html,/Connection lost/);
 });
 
+test('identical blocker events are shown once in the conversation while evidence keeps the full history', () => {
+  const session:any={messages:[],setMessages:noop,appendMessage:async()=>{},storageReady:true,storageError:null,retryStorage:noop,input:'',setInput:noop,busy:null,setBusy:noop,toolArguments:'{}',setToolArguments:noop};
+  const event:any={id:'blocked-1',at:'2026-10-22T10:00:00Z',type:'NOVA_PLANNING_RESULT',category:'blocked',title:'Action needed',text:'Choose another model or change the budget.',missionId:'m1',evidence:{outcome:'failed'}};
+  const html=renderToStaticMarkup(<AuraChatPanel session={session} onStartGoal={noop} liveEvents={[event,{...event,id:'blocked-2',at:'2026-10-22T10:01:00Z'}]}/>);
+  assert.equal((html.match(/Choose another model or change the budget\./g)||[]).length,1);
+  assert.match(html,/data-event-id="blocked-2"/);
+});
+
 test('explicit mission controls are still sendable while an unrelated chat answer is pending', () => {
   const session:any={messages:[],setMessages:noop,appendMessage:async()=>{},storageReady:true,storageError:null,
     retryStorage:noop,input:'Stoppa uppdraget',setInput:noop,busy:'chat',setBusy:noop,toolArguments:'{}',setToolArguments:noop};

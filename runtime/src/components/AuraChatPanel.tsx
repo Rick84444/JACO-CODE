@@ -15,6 +15,18 @@ import { budgetIntent, type BudgetIntent } from '../lib/budgetIntent';
 import { BudgetCard } from './CostChip';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
 
+// The conversation is not a telemetry console. Keep the newest instance of an identical
+// human-facing update; the complete durable sequence remains available under Evidence.
+export function dedupeConversationEvents(events: CognitiveEvent[]): CognitiveEvent[] {
+  const latest = new Map<string, CognitiveEvent>();
+  for (const event of events) {
+    const key = [event.missionId || '', event.category, event.title, event.text, event.evidence?.outcome || ''].join('::');
+    if (latest.has(key)) latest.delete(key);
+    latest.set(key, event);
+  }
+  return [...latest.values()];
+}
+
 // Aura's face in the chat: the blue queen. It glows faint blue while she is thinking or working on a mission.
 const AuraAvatar=({thinking=false,size=40}:{thinking?:boolean;size?:number})=><img src="/branding/aura-avatar.png" alt="Aura" width={size} height={size} style={{width:size,height:size}} className="aura-avatar" data-thinking={thinking||undefined} aria-hidden="true"/>;
 // Clicking Aura's face opens the Gameboard: the way from the chat to her plan.
@@ -328,10 +340,11 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   useEffect(() => () => requestRef.current?.abort(), []);
   const [following,setFollowing]=useState(true);
   const backgroundEvents=useMemo(()=>liveEvents.filter(event=>!event.missionId&&event.category==='observation'&&event.evidence.outcome==='observed'),[liveEvents]);
+  const conversationEvents=useMemo(()=>dedupeConversationEvents(liveEvents.filter(event=>!backgroundEvents.includes(event))),[liveEvents,backgroundEvents]);
   const feed=useMemo(()=>[
     ...messages.filter(m=>m.id!=='welcome').map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message})),
-    ...liveEvents.filter(event=>!backgroundEvents.includes(event)).map(event=>({kind:'event' as const,id:event.id,at:event.at,event})),
-  ].sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages,liveEvents,backgroundEvents]);
+    ...conversationEvents.map(event=>({kind:'event' as const,id:event.id,at:event.at,event})),
+  ].sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages,conversationEvents]);
   const currentMission=missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
   const followLatest=()=>{followRef.current=true;setFollowing(true);if(scrollRef.current)scrollRef.current.scrollTop=0;};
   useEffect(()=>{if(followRef.current && scrollRef.current)scrollRef.current.scrollTop=0;},[feed,busy]);

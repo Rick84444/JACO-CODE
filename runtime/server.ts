@@ -40,6 +40,7 @@ import { validProviderId } from './src/server/connected/providerRegistry.mjs';
 import { createIdeRemoteGate, upgradeAllowed, ideHost } from './src/server/connected/ideAccess.mjs';
 import { mountVscodeEmbedHeaders } from './src/server/security/vscodeEmbed.mjs';
 import { normalizeAuraChatMode, normalizeAuraMissionMode } from './src/lib/auraRunModes.mjs';
+import { validateOperatorConfirmation } from './src/lib/operatorApproval.mjs';
 import { cognitiveActivationPreview } from './src/lib/auraCognitiveActivation.mjs';
 import { liveMissionView } from './src/server/connected/liveMission.mjs';
 import { discoverProvider, identifyKey } from './src/server/connected/providerDiscovery.mjs';
@@ -2318,7 +2319,12 @@ const notifyPhone = async (action) => {
   // Aura's own notes on a step (what it found, why it stopped, which helpers it created). Token-protected: only the
   // local executor writes them, and they are marked as Aura's so they are never mistaken for the operator's direction.
   app.post('/api/aura/plan/notes', requireAuth, (req, res) => {
-    try { res.status(201).json({ success: true, note: planComments.add({ graphId: String(req.body?.graphId || ''), nodeKey: req.body?.nodeKey ?? null, text: req.body?.text, author: 'aura' }) }); }
+    try {
+      const note = planComments.add({ graphId: String(req.body?.graphId || ''), nodeKey: req.body?.nodeKey ?? null, text: req.body?.text, author: 'aura' });
+      // What Aura saves shows in the chat too, with the memory mark, and links to its place on the Gameboard.
+      connectedRuntime.bus.event('AURA_MEMORY_SAVED', { missionId: typeof req.body?.missionId === 'string' ? req.body.missionId : null, payload: { graphId: note.graphId, nodeKey: note.nodeKey, text: note.text } });
+      res.status(201).json({ success: true, note });
+    }
     catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
   });
   app.get('/api/aura/plan/comments', requireLocalUi, (req, res) => res.json({ success: true, comments: planComments.list(String(req.query.graphId || '') || undefined) }));
@@ -2765,7 +2771,14 @@ const notifyPhone = async (action) => {
       const kind = rawId.slice(0, split);
       const id = rawId.slice(split + 1);
       const decision = String(req.body?.decision || '').toLowerCase();
-      const note = String(req.body?.note || `Aura Approval Center: ${decision}`).trim();
+      const pendingApproval = buildAuraApprovalCenter().items.find((item: any) => item.id === rawId);
+      if (!pendingApproval) throw new Error('APPROVAL_NOT_PENDING');
+      if (!pendingApproval.actions.includes(decision)) throw new Error('INVALID_APPROVAL_DECISION');
+      const confirmation = validateOperatorConfirmation(req.body?.confirmation, rawId, decision);
+      const requestedNote = String(req.body?.note || `Aura Approval Center: ${decision}`).trim();
+      const note = confirmation
+        ? `Operator explicitly confirmed ${decision} for ${rawId}: ${confirmation.statement}`
+        : requestedNote;
 
       if (kind === 'action') {
         const action = pendingActions.find(item => item.id === id);
@@ -2815,9 +2828,9 @@ const notifyPhone = async (action) => {
         type: 'operator.approval.resolved',
         message: `${rawId} → ${decision}`,
         verified: true,
-        receipt: { approvalId: rawId, decision },
+        receipt: { approvalId: rawId, decision, confirmation },
       });
-      res.json({ success: true, approvalId: rawId, decision, approvals: buildAuraApprovalCenter() });
+      res.json({ success: true, approvalId: rawId, decision, confirmation, approvals: buildAuraApprovalCenter() });
     } catch (error: any) {
       res.status(409).json({ success: false, error: error?.message || String(error) });
     }
@@ -4746,6 +4759,8 @@ const notifyPhone = async (action) => {
         contextChars: choice && !auraChatProviderCatalog(connectedRuntime.providers)
           .find(p => p.id === choice.providerId)?.local ? Number(process.env.JACO_AURA_REMOTE_CONTEXT_CHARS || 24000)
           : Number(process.env.JACO_AURA_LOCAL_CONTEXT_CHARS || 5200),
+        // A model on this computer gets Aura's rules in short form, so they fit its small window with tools and history.
+        compactRules: Boolean(choice && auraChatProviderCatalog(connectedRuntime.providers).find(p => p.id === choice.providerId)?.local),
         ...(choice ? { complete: (args: any) => manualAuraProviderCompletion({ ...args, ...choice }, {
           providers: connectedRuntime.providers, economic: continuumSurface.runtime.economic,
         }) } : {}),

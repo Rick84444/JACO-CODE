@@ -2159,7 +2159,7 @@ async function postPlanNote(mission, result) {
   if (!text) return;
   try {
     await fetch(`${CONFIG.runtimeUrl.replace(/\/$/, '')}/api/aura/plan/notes`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-gateway-token': process.env.GATEWAY_TOKEN || process.env.JACO_GATEWAY_TOKEN || '' },
-      body: JSON.stringify({ graphId: parent.graphId, nodeKey: parent.nodeKey, text: String(text).slice(0, 1500) }), signal: AbortSignal.timeout(5000) });
+      body: JSON.stringify({ graphId: parent.graphId, nodeKey: parent.nodeKey, missionId: mission.id, text: String(text).slice(0, 1500) }), signal: AbortSignal.timeout(5000) });
   } catch (error) { log('warn', 'plan', `Plan note not saved: ${String(error?.message || error).slice(0, 120)}`); }
 }
 

@@ -41,7 +41,7 @@ const SV = {
   'Searching for information': 'Söker information', 'Opening a page': 'Öppnar en sida', 'Inspecting a page': 'Granskar en sida', 'Using the interface': 'Använder gränssnittet',
   'Filling in a field': 'Fyller i ett fält', 'Delegating a subtask': 'Lämnar över en deluppgift', 'Checking the connection': 'Kontrollerar anslutningen',
   'Reading a screenshot': 'Läser en skärmbild', 'Inspecting the desktop': 'Granskar skrivbordet', 'Running a tool step': 'Kör ett verktygssteg', 'Tool step': 'Verktygssteg',
-  'Mission received': 'Uppdrag mottaget', 'Work in progress': 'Arbete pågår', 'Result': 'Resultat', 'Next step': 'Nästa steg', 'The plan needs to change': 'Planen behöver ändras',
+  'Mission received': 'Uppdrag mottaget', 'Saved to memory': 'Sparat i minnet', 'Work in progress': 'Arbete pågår', 'Result': 'Resultat', 'Next step': 'Nästa steg', 'The plan needs to change': 'Planen behöver ändras',
   'Cancellation requested': 'Avbrott begärt', 'New instruction queued': 'Ny instruktion i kö', 'Payment awaiting your approval': 'Betalning väntar på ditt godkännande',
   'Claim check': 'Kontroll av påståenden', 'The plan has changed': 'Planen har ändrats', 'Work is blocked': 'Arbetet är blockerat', 'Connection restored': 'Anslutningen är tillbaka',
   'Sub-goal check': 'Kontroll av delmål', 'Mission state is unknown': 'Uppdragets läge är okänt', 'A new mission has been registered': 'Ett nytt uppdrag har registrerats',
@@ -58,6 +58,8 @@ const SV = {
   'the result is verified.': 'resultatet är verifierat.', '(not verified yet).': '(inte verifierat än).',
   'The mission is registered and waiting for planning.': 'Uppdraget är registrerat och väntar på planering.',
   'A final result has been proposed. It must be checked against the evidence.': 'Ett slutresultat är föreslaget. Det ska kontrolleras mot beläggen.',
+  'Aura paused the work because the selected model cannot be used within the current monthly budget. Choose another available model or change the budget, then continue the mission.': 'Aura pausade arbetet eftersom den valda modellen inte kan användas inom den nuvarande månadsbudgeten. Välj en annan tillgänglig modell eller ändra budgeten och fortsätt sedan uppdraget.',
+  'Action needed': 'Du behöver välja',
   'The runtime has requested a new plan for the mission.': 'Runtime har begärt en ny plan för uppdraget.',
   'The runtime has received the request. A running tool step may need to finish before the mission stops.': 'Runtime har tagit emot begäran. Ett pågående verktygssteg kan behöva bli klart innan uppdraget stoppas.',
 };
@@ -65,6 +67,7 @@ const inLanguage = language => text => (language === 'sv' && Object.hasOwn(SV, t
 
 const categories = {
   MISSION_CREATED: ['goal', 'Mission received'],
+  AURA_MEMORY_SAVED: ['memory', 'Saved to memory'],
   NOVA_ACTION_STARTED: ['action', 'Work in progress'],
   NOVA_ACTION_RESULT: ['result', 'Result'],
   NOVA_PLANNING_RESULT: ['plan', 'Next step'],
@@ -124,7 +127,7 @@ export function toCognitiveEvent(raw, { durable = false, missionGoal = null, sec
   const at = raw.at || raw.ts;
   if (typeof at !== 'string' || !Number.isFinite(Date.parse(at))) return null;
   const defined = categories[type];
-  const category = defined?.[0] || (/failed|blocked|error/i.test(type) ? 'blocked' : /verified|verification/i.test(type) ? 'verification' : /result|executed/i.test(type) ? 'result' : /plan/i.test(type) ? 'plan' : 'observation');
+  let category = defined?.[0] || (/failed|blocked|error/i.test(type) ? 'blocked' : /verified|verification/i.test(type) ? 'verification' : /result|executed/i.test(type) ? 'result' : /plan/i.test(type) ? 'plan' : 'observation');
   let title = t(defined?.[1] || ({blocked:'Work is blocked',verification:'Verification',result:'Result',plan:'Planning',observation:'New observation'})[category]);
   const isResult = category === 'result' || category === 'verification';
   const unknown = action.outcomeUnknown === true || payload.outcomeUnknown === true || result.outcomeUnknown === true;
@@ -138,6 +141,7 @@ export function toCognitiveEvent(raw, { durable = false, missionGoal = null, sec
     error: clean(action.error || payload.error || result.error, 1000) || null,
   };
   let text = clean(raw.message);
+  if (type === 'AURA_MEMORY_SAVED') text = clean(payload.text, 600);
   if (type === 'NOVA_ACTION_STARTED') text = (payload.say ? (payload.learned ? clean(payload.learned, 300) + ' ' : '') + clean(payload.say, 500) : '') || (t(labels[action.type] || 'Running a tool step') + (evidence.path ? ': ' + evidence.path : '.'));
   if (type === 'NOVA_ACTION_RESULT') {
     const verb = t(labels[action.type || payload.type] || 'Tool step');
@@ -154,6 +158,11 @@ export function toCognitiveEvent(raw, { durable = false, missionGoal = null, sec
     if (payload.completionProposed || payload.reason) title = t('Answer');
     else if (payload.error) title = t('Stopped');
     text = clean(payload.error || payload.reason) || (payload.completionProposed ? t('A final result has been proposed. It must be checked against the evidence.') : '');
+    if (/AURA_SELECTED_MODEL_UNAVAILABLE.*MONTHLY_BUDGET_LIMIT/i.test(String(payload.error || payload.reason || ''))) {
+      category = 'blocked';
+      title = t('Action needed');
+      text = t('Aura paused the work because the selected model cannot be used within the current monthly budget. Choose another available model or change the budget, then continue the mission.');
+    }
   }
   if (type === 'NOVA_REPLAN_REQUEST') {
     const helpers = (Array.isArray(payload.subgoals) ? payload.subgoals : []).map(s => clean(s?.title, 120)).filter(Boolean);
@@ -176,7 +185,7 @@ export function toCognitiveEvent(raw, { durable = false, missionGoal = null, sec
     missionId: clean(raw.missionId || payload.missionId, 200) || null,
     missionGoal: clean(missionGoal || raw.missionGoal, 300) || null,
     // The plan (blueprint) this event belongs to, so the chat can open it.
-    planId: typeof planId === 'string' && /^[\w.:-]{1,120}$/.test(planId) ? planId : null,
+    planId: [planId, type === 'AURA_MEMORY_SAVED' ? payload.graphId : null].find(id => typeof id === 'string' && /^[\w.:-]{1,120}$/.test(id)) || null,
     actionId: clean(action.id || action.actionId || payload.actionId, 200) || null,
     evidence,
   };

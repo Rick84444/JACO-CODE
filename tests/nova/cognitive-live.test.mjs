@@ -53,6 +53,14 @@ test('housekeeping and invalid observations never become cognitive progress',()=
   assert.equal(liveWorkspaceStatus({connection:'live',runtimeRunning:true,missions:[{status:'ACTIVE',phase:'VERIFYING'}]}).label,'Verifying results');
 });
 
+test('a monthly budget blocker is explained to a person instead of dumped as an internal code',()=>{
+  const event=toCognitiveEvent({id:'budget',at,type:'NOVA_PLANNING_RESULT',payload:{error:'PLANNER_BLOCKED:AURA_SELECTED_MODEL_UNAVAILABLE:gemini:MONTHLY_BUDGET_LIMIT'}},{language:'sv'});
+  assert.equal(event.category,'blocked');
+  assert.equal(event.title,'Du behöver välja');
+  assert.match(event.text,/JACO pausade arbetet.*månadsbudgeten/);
+  assert.doesNotMatch(event.text,/PLANNER_BLOCKED|AURA_SELECTED_MODEL_UNAVAILABLE/);
+});
+
 test('raw arguments, credentials and untrusted result URLs stay out of the live contract',()=>{
   const secret='private-random-value';
   const event=toCognitiveEvent(action({ok:false,error:'password=hunter2 Bearer confidential ghp_123456 '+secret,data:{apiKey:'do-not-copy'},result:{url:'javascript:alert(1)',output:'raw-private-output'}}),{secrets:[secret]});

@@ -77,7 +77,9 @@
 .cognitive-start-prompts small { display:block; color:#667c8c; font-size:10px; margin-top:3px; }
 .cognitive-user-message { display:flex; justify-content:flex-end; padding-top:10px; }
 .cognitive-user-message>div { border:1px solid #36516742; background:#172631; padding:11px 16px; max-width:87%; border-radius:15px 15px 4px 15px; font-size:14px; line-height:1.75; white-space:pre-wrap; overflow-wrap:anywhere; }
-.cognitive-assistant-message { font-size:14px; line-height:1.85; padding:0 0 6px; overflow-wrap:anywhere; }
+.cognitive-assistant-message { font-size:16px; line-height:1.8; padding:0 0 8px; overflow-wrap:anywhere; }
+.cognitive-assistant-message p { margin:0 0 1em; }
+.cognitive-assistant-message p:last-child { margin-bottom:0; }
 .cognitive-message-author { display:flex; gap:8px; align-items:center; font-size:10px; font-weight:600; letter-spacing:.03em; color:#91b6c8; margin-bottom:12px; }
 .cognitive-message-meta { margin-top:12px; font-size:10px; color:#667987; }
 .cognitive-message-meta summary { cursor:pointer; }
@@ -89,11 +91,11 @@
 .cognitive-event[data-outcome=verified] .cognitive-event-icon { color:#78baa0; background:#14241e; }
 .cognitive-event[data-outcome=failed] .cognitive-event-icon,.cognitive-event[data-outcome=unknown] .cognitive-event-icon { color:#c9aa82; background:#282018; }
 .cognitive-event-body { min-width:0; flex:1; }
-.cognitive-event-heading { display:flex; align-items:center; flex-wrap:wrap; gap:8px; color:#aabcc8; font-size:11px; margin:2px 0 6px; }
+.cognitive-event-heading { display:flex; align-items:center; flex-wrap:wrap; gap:8px; color:#b8c8d2; font-size:12px; margin:2px 0 7px; }
 .cognitive-proof { color:#8291a0; font-size:9px; border-radius:4px; background:#ffffff05; padding:2px 6px; }
 .cognitive-proof[data-outcome=verified] { color:#8fc5ad; background:#3e916315; }
 .cognitive-proof[data-outcome=failed],.cognitive-proof[data-outcome=unknown] { color:#c9ac89; background:#84663619; }
-.cognitive-event p { color:#8d9dab; font-size:13px; line-height:1.8; white-space:pre-wrap; overflow-wrap:anywhere; margin:0; }
+.cognitive-event p { color:#a7b6c1; font-size:14px; line-height:1.75; white-space:pre-wrap; overflow-wrap:anywhere; margin:0; }
 .cognitive-event-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; font-size:10px; margin-top:10px; }
 .cognitive-event-actions button,.cognitive-event-actions a { display:flex; align-items:center; gap:5px; color:#719aad; }
 .cognitive-event-actions button:hover,.cognitive-event-actions a:hover { color:#b6e2eb; }
@@ -228,9 +230,9 @@
   .cognitive-start-prompts { flex-direction:column; gap:8px; margin-top:23px; }
   .cognitive-start-prompts>button { padding:12px 14px; font-size:12px; }
   .cognitive-user-message>div { max-width:95%; font-size:13px; }
-  .cognitive-assistant-message { font-size:13px; }
+  .cognitive-assistant-message { font-size:16px; }
   .cognitive-event { gap:9px; }
-  .cognitive-event p { font-size:12px; }
+  .cognitive-event p { font-size:14px; }
   .cognitive-event-actions { gap:9px; }
   .cognitive-event-heading { font-size:10px; }
   .cognitive-footbar { padding:4px 12px; font-size:8px; min-height:25px; }
@@ -697,3 +699,5 @@
 /* The Gameboard over the whole work area: below the top bar, right of the rail, so both stay clickable. */
 .jaco-gameboard-full { position:fixed; top:62px; left:60px; right:0; bottom:0; z-index:40; overflow:auto; background:#000; }
 @media (max-width:767px) { .jaco-gameboard-full { left:0; bottom:64px; } }
+
+.aura-memory-mark { width:22px; height:22px; border-radius:50%; object-fit:cover; box-shadow:0 0 6px rgba(74,222,128,.45); }

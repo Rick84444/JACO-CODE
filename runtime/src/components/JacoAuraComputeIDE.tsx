@@ -1,6 +1,7 @@
 import { MissionReview } from './MissionReview';
 import { ConnectionsWorkspace } from './ConnectionsWorkspace';
 import { readAuraResponse as json, acknowledgeSavedDraft } from '../lib/auraApi.mjs';
+import { buildOperatorConfirmation, requiresOperatorConfirmation } from '../lib/operatorApproval.mjs';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
@@ -473,6 +474,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
 
   const [approvalBusy, setApprovalBusy] = useState<string | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [approvalAcknowledged, setApprovalAcknowledged] = useState<Record<string, boolean>>({});
   const [probeReceipts, setProbeReceipts] = useState<Record<string, any>>({});
   const [useResult, setUseResult] = useState<Record<string, { ok: boolean; text: string }>>({});
   const [providerBusy, setProviderBusy] = useState<string | null>(null);
@@ -972,6 +974,11 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const resolveApproval = async (approval: OperatorApproval, decision: string) => {
     const busyKey = `${approval.id}:${decision}`;
     if (approvalBusy) return;
+    const acknowledged = approvalAcknowledged[approval.id] === true;
+    if (requiresOperatorConfirmation(decision) && !acknowledged) {
+      setApprovalError('Check the confirmation box so Aura receives an explicit, scoped approval.');
+      return;
+    }
     setApprovalBusy(busyKey);
     setApprovalError(null);
     setRuntimeError(null);
@@ -982,8 +989,15 @@ export const JacoAuraComputeIDE: React.FC = () => {
         body: JSON.stringify({
           decision,
           note: `Operator decision from Aura Approval Center: ${decision}`,
+          confirmation: buildOperatorConfirmation(
+            approval.id,
+            decision,
+            acknowledged,
+            `I understand the displayed scope and risk and approve ${decision} for: ${approval.title}`,
+          ),
         }),
       }).then(json);
+      setApprovalAcknowledged(current => { const next = { ...current }; delete next[approval.id]; return next; });
       await refresh();
     } catch (error: any) {
       setApprovalError(error?.message || String(error));
@@ -1689,6 +1703,15 @@ export const JacoAuraComputeIDE: React.FC = () => {
                   <pre className="text-[10px] leading-4 text-slate-400 whitespace-pre-wrap break-words overflow-hidden">{JSON.stringify(approval.details || {}, null, 2)}</pre>
                 </div>
 
+                {approval.actions.some(requiresOperatorConfirmation) && (
+                  <label className="mt-3 flex cursor-pointer items-start gap-2 rounded border border-amber-900/60 bg-amber-950/10 p-2.5 text-xs leading-5 text-amber-100">
+                    <input type="checkbox" checked={approvalAcknowledged[approval.id] === true}
+                      onChange={event => setApprovalAcknowledged(current => ({ ...current, [approval.id]: event.target.checked }))}
+                      className="mt-0.5 h-4 w-4 accent-amber-300" />
+                    <span>I understand the displayed action and risk. I explicitly approve Aura to carry out the selected positive action within this scope.</span>
+                  </label>
+                )}
+
                 <div className="mt-3 flex flex-wrap gap-2">
                   {approval.actions.map(action => {
                     const busy = approvalBusy === `${approval.id}:${action}`;
@@ -1697,7 +1720,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                       <button
                         key={action}
                         onClick={() => void resolveApproval(approval, action)}
-                        disabled={Boolean(approvalBusy)}
+                        disabled={Boolean(approvalBusy) || (positive && approvalAcknowledged[approval.id] !== true)}
                         className={`text-[10px] rounded px-3 py-1.5 border disabled:opacity-40 ${positive ? 'bg-[#0e639c] border-[#1177bb] text-white' : 'border-[#4a4f57] text-slate-300 hover:bg-[#252a31]'}`}
                       >
                         {busy ? 'Saving decision…' : approvalLabel(action)}
@@ -1917,8 +1940,14 @@ export const JacoAuraComputeIDE: React.FC = () => {
     <p>{pendingDecision.reason}</p>
     {['command', 'targetFilePath', 'repoUrl'].map(key => typeof pendingDecision.details?.[key] === 'string' && pendingDecision.details[key] &&
       <p key={key} className="cognitive-decision-context"><span>{({command:'Command',targetFilePath:'File',repoUrl:'Source'})[key]}: </span><code>{pendingDecision.details[key]}</code></p>)}
+    {pendingDecision.actions.some(requiresOperatorConfirmation) && <label className="cognitive-decision-context flex items-start gap-2">
+      <input type="checkbox" checked={approvalAcknowledged[pendingDecision.id] === true}
+        onChange={event => setApprovalAcknowledged(current => ({ ...current, [pendingDecision.id]: event.target.checked }))}
+        className="mt-1 h-4 w-4 accent-amber-300" />
+      <span>I understand the displayed action and risk and explicitly approve Aura to carry it out within this scope.</span>
+    </label>}
     <div className="cognitive-decision-actions">
-      {pendingDecision.actions.map(action => <button key={action} type="button" disabled={Boolean(approvalBusy)}
+      {pendingDecision.actions.map(action => <button key={action} type="button" disabled={Boolean(approvalBusy) || (requiresOperatorConfirmation(action) && approvalAcknowledged[pendingDecision.id] !== true)}
         onClick={() => void resolveApproval(pendingDecision, action)}>{approvalBusy === `${pendingDecision.id}:${action}` ? 'Saving decision…' : approvalLabel(action)}</button>)}
       <button type="button" onClick={() => setShowApprovals(true)}>Show details{snapshot.approvals.count > 1 ? ' and all decisions' : ''}</button>
     </div>

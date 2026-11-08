@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, ShieldAlert, MessageSquare, GitBranch, X } from 'lucide-react';
 import { readAuraResponse } from '../lib/auraApi.mjs';
+import { buildOperatorConfirmation, requiresOperatorConfirmation } from '../lib/operatorApproval.mjs';
 import { useUiLanguage } from '../i18n/UiLanguage';
 
 // The Gameboard: one plan at a time, drawn like a family tree read backwards. The goal (what the operator wants) is
@@ -11,7 +12,10 @@ import { useUiLanguage } from '../i18n/UiLanguage';
 // there, and Aura takes it into the next steps.
 type Need = { kind: string; label: string; approval: boolean; state?: 'have' | 'missing' | 'approval' | null };
 type Comment = { id: string; nodeKey: string | null; text: string; at: string; author?: 'aura' | 'operator' };
-type Node = { key: string; title: string; objective: string; status: string; statusText: string; failure: string | null; dependencies: string[]; needs: Need[]; comments: Comment[] };
+type Node = { key: string; title: string; objective: string; status: string; statusText: string; failure: string | null; dependencies: string[]; needs: Need[]; comments: Comment[]; missionId?: string | null };
+// A decision waiting for the operator (the runtime's approval center), tied to a step through its mission.
+export type Decision = { id: string; kind: string; title: string; risk: string; reason: string; actions: string[]; details?: Record<string, any> };
+const decisionMission = (d: Decision): string | null => d.details?.missionId || d.details?.mission_id || (d.id.startsWith('mission:') ? d.id.slice(8) : null);
 type Plan = { id: string; title: string; objective: string; status: string; progress: { done: number; total: number }; needsApproval: Need[]; nodes: Node[]; changes: Array<{ at: string | null; reason: string | null; replaced: string | null }>; comments: Comment[]; abilities?: { missing: string[]; text: string } | null };
 
 // Aura's text never uses emoji: the state of a need is a word and a colour.
@@ -121,9 +125,108 @@ function Notes({ comments }: { comments: Comment[] }) {
   const { tr } = useUiLanguage();
   if (!comments.length) return null;
   return <div className="mt-3 space-y-1.5">{comments.map(c => <div key={c.id} className="flex gap-1.5 text-sm">
-    <MessageSquare size={14} className={c.author === 'aura' ? 'mt-0.5 text-sky-300' : 'mt-0.5 text-neutral-300'} />
+    {c.author === 'aura' ? <img src="/branding/aura-memory.png" alt="" aria-hidden="true" width={20} height={20} className="mt-0.5 h-5 w-5 shrink-0 rounded-full" title={tr('Sparat i minnet', 'Saved to memory')} /> : <MessageSquare size={14} className="mt-0.5 text-neutral-300" />}
     <span><strong className="font-medium">{c.author === 'aura' ? 'Aura' : tr('Du', 'You')}:</strong> {c.text}</span>
   </div>)}</div>;
+}
+
+const ACTION_WORD: Record<string, [string, string]> = {
+  approve: ['Godkänn', 'Approve'], reject: ['Avslå', 'Reject'], confirm: ['Bekräfta resultatet', 'Confirm the result'],
+  resume: ['Fortsätt', 'Continue'], cancel: ['Avsluta uppdraget', 'End the mission'],
+};
+
+export function decisionGuidance(decision: Decision, language: 'sv' | 'en' = 'en') {
+  const positive = decision.actions.find(requiresOperatorConfirmation) || 'approve';
+  const sv = language === 'sv';
+  const effect = decision.kind === 'MISSION'
+    ? positive === 'confirm'
+      ? (sv ? 'markerar uppdragets verifierade resultat som godkänt' : 'mark the mission’s verified result as approved')
+      : (sv ? 'fortsätter uppdraget en gång från det senast sparade läget' : 'continue the mission once from its latest saved state')
+    : decision.kind === 'MCP_SOURCE'
+      ? (sv ? 'aktiverar den här avgränsade verktygskällan' : 'activate this bounded tool source')
+      : decision.kind === 'MANDATE'
+        ? (sv ? 'aktiverar detta mandat inom den omfattning som visas' : 'activate this mandate within the scope shown')
+        : decision.kind === 'JOB'
+          ? (sv ? 'startar detta avgränsade arbete' : 'start this bounded work')
+          : (sv ? 'utför den här avgränsade åtgärden en gång' : 'perform this bounded action once');
+  const safer = decision.kind === 'MISSION'
+    ? (sv ? 'Öppna evidensen först eller avsluta uppdraget utan att fortsätta.' : 'Review the evidence first, or end the mission without continuing it.')
+    : decision.kind === 'MCP_SOURCE'
+      ? (sv ? 'Låt verktyget vara avstängt och granska källan innan den aktiveras.' : 'Keep the tool disabled and inspect its source before activating it.')
+      : decision.kind === 'MANDATE'
+        ? (sv ? 'Begränsa mandatets tid eller omfattning innan det aktiveras.' : 'Narrow the mandate’s duration or scope before activating it.')
+        : (sv ? 'Be Aura begränsa åtgärden eller börja med en skrivskyddad kontroll.' : 'Ask Aura to narrow the action or begin with a read-only check.');
+  return {
+    what: sv ? `Aura vill ${effect}: ${decision.title}.` : `Aura wants to ${effect}: ${decision.title}.`,
+    why: decision.reason,
+    safer,
+    acknowledgement: sv ? `Jag förstår detta och godkänner att Aura ${effect}.` : `I understand this and approve Aura to ${effect}.`,
+  };
+}
+
+// One decision with its buttons. The operator's click goes to the same approval center as the rest of JACO.
+function DecisionRow({ decision, onDone, compact = false }: { decision: Decision; onDone: () => void; compact?: boolean }) {
+  const { tr, language } = useUiLanguage();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [acknowledged, setAcknowledged] = useState(false);
+  const guidance = decisionGuidance(decision, language);
+  const decide = async (action: string) => {
+    if (requiresOperatorConfirmation(action) && !acknowledged) {
+      setError(tr('Bocka i bekräftelsen först.', 'Check the confirmation box first.'));
+      return;
+    }
+    setBusy(action); setError('');
+    try {
+      const r = await fetch(`/api/aura/workbench/approvals/${encodeURIComponent(decision.id)}/decision`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        decision: action,
+        note: `Operator decision from the Gameboard: ${action}`,
+        confirmation: buildOperatorConfirmation(decision.id, action, acknowledged, guidance.acknowledgement),
+      }) }).then(readAuraResponse);
+      if (r.success === false) throw new Error(r.error);
+      onDone();
+    } catch (e: any) { setError(String(e?.message || e)); }
+    finally { setBusy(null); }
+  };
+  const hasPositive = decision.actions.some(requiresOperatorConfirmation);
+  return <div className="rounded-lg border border-amber-300/70 bg-amber-950/20 p-3 text-sm">
+    {!compact && <div className="font-medium text-amber-100">{decision.title.split('\n')[0].slice(0, 160)}</div>}
+    <div className="mt-2 space-y-2 text-[15px] leading-relaxed text-amber-50/90">
+      <p><strong>{tr('Vad Aura vill göra:', 'What Aura wants to do:')}</strong> {guidance.what}</p>
+      <p><strong>{tr('Varför Aura frågar:', 'Why Aura is asking:')}</strong> {guidance.why}</p>
+      <p><strong>{tr('Säkrare väg:', 'Safer option:')}</strong> {guidance.safer}</p>
+    </div>
+    {hasPositive && <label className="mt-3 flex cursor-pointer items-start gap-2 rounded border border-amber-200/30 bg-black/30 p-2.5 text-sm leading-relaxed text-amber-50">
+      <input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} className="mt-1 h-4 w-4 accent-amber-300" />
+      <span>{guidance.acknowledgement}</span>
+    </label>}
+    <div className="mt-2 flex flex-wrap gap-1.5">{decision.actions.map(a => <button key={a} type="button" disabled={busy !== null || (requiresOperatorConfirmation(a) && !acknowledged)} onClick={() => void decide(a)}
+      aria-disabled={requiresOperatorConfirmation(a) && !acknowledged || undefined}
+      className={`rounded px-3 py-1.5 text-sm font-semibold disabled:opacity-50 ${requiresOperatorConfirmation(a) && !acknowledged ? 'cursor-not-allowed opacity-40' : ''} ${a === 'cancel' || a === 'reject' ? 'border border-white/40 text-white' : 'bg-amber-300 text-black hover:bg-amber-200'}`}>{busy === a ? '…' : tr(...(ACTION_WORD[a] || [a, a]))}</button>)}</div>
+    {error && <p role="alert" className="mt-1 text-xs text-rose-300">{error}</p>}
+  </div>;
+}
+
+// A need that only the operator can allow: one click records the yes on the step, where Aura and her helpers read
+// it as the operator's direction. Money is never allowed in advance: the payment itself still asks.
+function AllowNeed({ graphId, node, need, onSaved }: { graphId: string; node: Node; need: Need; onSaved: () => void }) {
+  const { tr } = useUiLanguage();
+  const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const allowed = node.comments.some(c => c.author !== 'aura' && c.text.includes(need.label) && /^(Ja|Yes):/.test(c.text));
+  if (allowed || state === 'saved') return <span className="rounded bg-emerald-950 px-2 py-0.5 text-xs text-emerald-200">{need.label}: {tr('ditt ja finns', 'you said yes')}</span>;
+  const text = need.kind === 'payment'
+    ? tr(`Ja: ${need.label} får förberedas i det här steget. Fråga mig vid själva betalningen.`, `Yes: ${need.label} may be prepared in this step. Ask me at the payment itself.`)
+    : tr(`Ja: ${need.label} i det här steget. Säg till vad du gjorde.`, `Yes: ${need.label} in this step. Tell me what you did.`);
+  const save = async () => {
+    setState('saving');
+    try {
+      const r = await fetch('/api/aura/plan/comments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ graphId, nodeKey: node.key, text }) }).then(readAuraResponse);
+      if (r.success === false) throw new Error(r.error);
+      setState('saved'); onSaved();
+    } catch { setState('idle'); }
+  };
+  return <button type="button" disabled={state === 'saving'} onClick={() => void save()} title={text}
+    className="rounded bg-amber-300 px-2 py-0.5 text-xs font-semibold text-black hover:bg-amber-200 disabled:opacity-50">{tr('Ja, det får du', 'Yes, you may')}: {need.label}</button>;
 }
 
 // The large card a click opens, over the tree. Escape or the cross closes it.
@@ -139,14 +242,20 @@ function Card({ label, onClose, children }: { label: string; onClose: () => void
   </div>;
 }
 
-function StepCard({ plan, node, onPick, onClose, onSaved }: { plan: Plan; node: Node; onPick: (key: string | null) => void; onClose: () => void; onSaved: () => void }) {
+function StepCard({ plan, node, decisions, onPick, onClose, onSaved }: { plan: Plan; node: Node; decisions: Decision[]; onPick: (key: string | null) => void; onClose: () => void; onSaved: () => void }) {
   const { tr } = useUiLanguage();
+  const waiting = decisions.filter(d => node.missionId && decisionMission(d) === node.missionId);
+  const askYes = node.needs.filter(x => x.approval || x.state === 'approval');
   const after = plan.nodes.filter(n => LIVE(n) && n.dependencies.includes(node.key));
   const before = plan.nodes.filter(n => LIVE(n) && node.dependencies.includes(n.key));
   const link = (n: Node) => <button key={n.key} type="button" onClick={() => onPick(n.key)} className="rounded border border-neutral-700 px-2 py-0.5 text-xs hover:border-sky-400">{n.title}</button>;
   return <Card label={node.title} onClose={onClose}>
     <div className="text-xs uppercase tracking-widest text-neutral-400">{working(node.status) ? tr('Aktivt delmål', 'Active subgoal') : tr('Delmål', 'Subgoal')} · {node.statusText}</div>
     <h3 className="mt-1 pr-6 text-xl font-semibold leading-snug">{node.title}</h3>
+    {waiting.length > 0 && <div className="mt-3 space-y-2"><div className="text-xs uppercase tracking-widest text-amber-300">{tr('Väntar på ditt beslut', 'Waiting for your decision')}</div>
+      {waiting.map(d => <React.Fragment key={d.id}><DecisionRow decision={d} compact onDone={onSaved} /></React.Fragment>)}</div>}
+    {askYes.length > 0 && <div className="mt-3"><div className="text-xs uppercase tracking-widest text-amber-300">{tr('Behöver ditt ja', 'Needs your yes')}</div>
+      <div className="mt-1 flex flex-wrap gap-1.5">{askYes.map(x => <React.Fragment key={x.kind + x.label}><AllowNeed graphId={plan.id} node={node} need={x} onSaved={onSaved} /></React.Fragment>)}</div></div>}
     <p className="mt-3 whitespace-pre-wrap text-base leading-relaxed text-neutral-200">{node.objective}</p>
     <div className="mt-4 rounded-lg border border-neutral-800 p-3 text-sm">
       <div className="text-xs uppercase tracking-widest text-neutral-400">{tr('Varför', 'Why')}</div>
@@ -179,9 +288,10 @@ function GoalCard({ plan, onClose, onSaved }: { plan: Plan; onClose: () => void;
   </Card>;
 }
 
-function Branch({ item, order, onPick, lit = '' }: { item: TreeItem; order: Map<string, number>; onPick: (key: string) => void; lit?: string }) {
+function Branch({ item, order, onPick, lit = '', waitingOn }: { item: TreeItem; order: Map<string, number>; onPick: (key: string) => void; lit?: string; waitingOn: Set<string> }) {
   const { tr } = useUiLanguage();
   const n = item.node;
+  const waits = Boolean(n.missionId && waitingOn.has(n.missionId));
   const active = working(n.status);
   const box = item.repeat
     ? <button type="button" onClick={() => onPick(n.key)} className="w-44 rounded-lg border border-dashed border-white/30 bg-black px-3 py-2 text-center text-xs text-white/60 hover:border-white/70">
@@ -190,10 +300,11 @@ function Branch({ item, order, onPick, lit = '' }: { item: TreeItem; order: Map<
         className={`w-52 rounded-lg border bg-black px-3 py-2.5 text-left transition-colors hover:bg-white/[.06] ${active ? 'jaco-working border-sky-400' : 'border-white/75'}`}>
         <div className={`text-[10px] font-medium uppercase tracking-[.18em] ${active ? 'text-sky-300' : STATUS_TEXT[n.status] || 'text-white/60'}`}>{active ? tr('Aktivt delmål', 'Active subgoal') : `${tr('Steg', 'Step')} ${order.get(n.key)}`} · {n.statusText}</div>
         <div className="mt-1 text-[13px] font-medium leading-snug text-white">{n.title}</div>
+        {waits && <div className="mt-1.5 inline-block rounded bg-amber-300 px-1.5 py-0.5 text-[10px] font-semibold text-black">{tr('Väntar på ditt ja', 'Waiting for your yes')}</div>}
         {(n.needs.length > 0 || n.comments.length > 0) && <div className="mt-1.5 text-[10px] text-white/50">{n.needs.slice(0, 3).map(x => x.label).join(' · ')}{n.comments.length ? `${n.needs.length ? ' · ' : ''}${n.comments.length} ${tr('anteckningar', 'notes')}` : ''}</div>}
       </button>;
   const lines = litLine(item.children);
-  return <li className={lit || undefined}>{box}{item.children.length > 0 && <ul className={item.children.some(onPath) ? 'jaco-path-ul' : undefined}>{item.children.map((c, i) => <React.Fragment key={c.node.key}><Branch item={c} order={order} onPick={onPick} lit={lines[i]} /></React.Fragment>)}</ul>}</li>;
+  return <li className={lit || undefined}>{box}{item.children.length > 0 && <ul className={item.children.some(onPath) ? 'jaco-path-ul' : undefined}>{item.children.map((c, i) => <React.Fragment key={c.node.key}><Branch item={c} order={order} onPick={onPick} lit={lines[i]} waitingOn={waitingOn} /></React.Fragment>)}</ul>}</li>;
 }
 
 const short = (text: string, max = 70) => text.length > max ? text.slice(0, max - 1) + '…' : text;
@@ -202,12 +313,15 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
   const { tr, language } = useUiLanguage();
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [error, setError] = useState('');
+  const [decisions, setDecisions] = useState<Decision[]>([]);
   const [chosen, setChosen] = useState<string | null>(focusPlanId);
   // The open card: a step's key, 'goal' for the goal, or nothing.
   const [open, setOpen] = useState<string | null>(null);
   useEffect(() => { if (focusPlanId) { setChosen(focusPlanId); setOpen(null); } }, [focusPlanId]);
   const load = useCallback(async () => {
-    try { const r = await fetch(`/api/aura/plan?language=${encodeURIComponent(language)}`, { cache: 'no-store' }).then(readAuraResponse); if (r.success === false) throw new Error(r.error); setPlans(r.plans || []); setError(''); }
+    try { const r = await fetch(`/api/aura/plan?language=${encodeURIComponent(language)}`, { cache: 'no-store' }).then(readAuraResponse); if (r.success === false) throw new Error(r.error); setPlans(r.plans || []); setError('');
+      const a = await fetch('/api/aura/workbench/approvals', { cache: 'no-store' }).then(readAuraResponse).catch(() => null);
+      setDecisions(Array.isArray(a?.items) ? a.items : []); }
     catch (e: any) { setError(String(e?.message || e)); }
   }, [language]);
   useEffect(() => { void load(); const t = window.setInterval(load, 10000); return () => window.clearInterval(t); }, [load]);
@@ -216,6 +330,9 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
   useEffect(() => { if (!chosen && plan) setChosen(plan.id); }, [chosen, plan?.id]);
   const order = new Map((plan?.nodes || []).map((n, i) => [n.key, i + 1]));
   const tree = plan ? planTree(plan.nodes) : [];
+  const planMissions = new Set((plan?.nodes || []).map(n => n.missionId).filter((m): m is string => Boolean(m)));
+  const planDecisions = decisions.filter(d => planMissions.has(decisionMission(d) || ''));
+  const waitingOn = new Set<string>(planDecisions.map(d => String(decisionMission(d) || '')));
   const treeLines = litLine(tree);
   const node = plan && open && open !== 'goal' ? plan.nodes.find(n => n.key === open) || null : null;
   const close = useCallback(() => setOpen(null), []);
@@ -234,6 +351,10 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
       </div>
     </header>
     <p className="text-xs text-neutral-400">{tr('Målet står alltid först. Under det ser du vad som behövs för att nå det, och under varje delmål vad det i sin tur behöver. Det aktiva delmålet lyser svagt blått. Klicka på en ruta för hela beskrivningen.', 'The goal always comes first. Below it you see what is needed to reach it, and below each subgoal what that needs in turn. The active subgoal glows faint blue. Click a box for the full description.')}</p>
+    {planDecisions.length > 0 && <section aria-label={tr('Väntar på dig', 'Waiting for you')} className="space-y-2">
+      <div className="text-xs font-semibold uppercase tracking-widest text-amber-300">{tr('Väntar på dig', 'Waiting for you')} ({planDecisions.length})</div>
+      {planDecisions.map(d => <React.Fragment key={d.id}><DecisionRow decision={d} onDone={() => void load()} /></React.Fragment>)}
+    </section>}
     {error && <p role="alert" className="text-sm text-amber-300">{tr('Planen kunde inte läsas just nu.', 'The plan could not be read right now.')} ({error})</p>}
     {plans && plans.length === 0 && <p className="text-sm text-neutral-300">{tr('Ingen plan än. Ge Aura ett större mål i chatten, så ritas planen här.', 'No plan yet. Give Aura a larger goal in the chat, and the plan is drawn here.')}</p>}
     {plan && <div className="jaco-tree overflow-x-auto pb-4 pt-2" data-testid="plan-tree">
@@ -243,10 +364,10 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
           <div className="mt-1 text-sm font-semibold leading-snug text-yellow-50">{plan.objective}</div>
           <div className="mt-1 text-[11px] text-white/50">{tr('Klart', 'Done')} {plan.progress.done}/{plan.progress.total}{plan.abilities?.missing.length ? ` · ${tr('Aura saknar något', 'Aura lacks something')}` : ''}</div>
         </button>
-        {tree.length > 0 && <ul className={tree.some(onPath) ? 'jaco-path-ul' : undefined}>{tree.map((item, i) => <React.Fragment key={item.node.key}><Branch item={item} order={order} onPick={setOpen} lit={treeLines[i]} /></React.Fragment>)}</ul>}
+        {tree.length > 0 && <ul className={tree.some(onPath) ? 'jaco-path-ul' : undefined}>{tree.map((item, i) => <React.Fragment key={item.node.key}><Branch item={item} order={order} onPick={setOpen} lit={treeLines[i]} waitingOn={waitingOn} /></React.Fragment>)}</ul>}
       </li></ul>
     </div>}
     {plan && open === 'goal' && <GoalCard plan={plan} onClose={close} onSaved={load} />}
-    {plan && node && <StepCard plan={plan} node={node} onPick={key => setOpen(key ?? 'goal')} onClose={close} onSaved={load} />}
+    {plan && node && <StepCard plan={plan} node={node} decisions={decisions} onPick={key => setOpen(key ?? 'goal')} onClose={close} onSaved={load} />}
   </section>;
 }

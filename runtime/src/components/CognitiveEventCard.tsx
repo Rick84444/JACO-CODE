@@ -7,16 +7,18 @@ const icons:Record<string,React.ElementType>={goal:Target,action:Play,observatio
 export const CognitiveEventCard:React.FC<{event:CognitiveEvent;onInspect?:(event:CognitiveEvent)=>void;onOpenFile?:(path:string)=>void}> = ({event,onInspect,onOpenFile}) => {
   const evidence=event.evidence;
   const Icon=evidence.outcome==='failed'?X:evidence.outcome==='unknown'?CircleHelp:icons[event.category] || Search;
+  // The tree in the green circle is Aura's memory: shown where she saves something.
+  const memory=event.category==='memory';
   const file=evidence.path && !/^(\/|[a-z]:)|(^|\/)\.\.(\/|$)/i.test(evidence.path) ? evidence.path : null;
   return <article className="cognitive-event" data-outcome={evidence.outcome} data-event-id={event.id}>
-    <div className="cognitive-event-icon"><Icon size={15} strokeWidth={1.6}/></div>
+    <div className="cognitive-event-icon">{memory?<img src="/branding/aura-memory.png" alt="" aria-hidden="true" width={22} height={22} className="aura-memory-mark"/>:<Icon size={15} strokeWidth={1.6}/>}</div>
     <div className="cognitive-event-body">
       <div className="cognitive-event-heading"><span>{event.title}</span>{['result','verification'].includes(event.category) && <span className="cognitive-proof" data-outcome={evidence.outcome}>{labels[evidence.outcome]}</span>}</div>
       <p>{event.text}</p>
       <div className="cognitive-event-actions">
         {file && onOpenFile && <button type="button" onClick={()=>onOpenFile(file)}><FileCode2 size={12}/>{file.split('/').at(-1)}</button>}
         {evidence.url && <a href={evidence.url} target="_blank" rel="noreferrer"><ArrowUpRight size={12}/>Open result</a>}
-        {event.planId && ['goal','decision','plan'].includes(event.category) && <button type="button" onClick={()=>window.dispatchEvent(new CustomEvent('jaco:open-plan',{detail:event.planId}))}><GitBranch size={12}/>Gameboard</button>}
+        {event.planId && ['goal','decision','plan','memory'].includes(event.category) && <button type="button" onClick={()=>window.dispatchEvent(new CustomEvent('jaco:open-plan',{detail:event.planId}))}><GitBranch size={12}/>Gameboard</button>}
         {onInspect && <button type="button" onClick={()=>onInspect(event)}>Show evidence<ChevronRight size={12}/></button>}
         <time dateTime={event.at}>{new Date(event.at).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</time>
       </div>
