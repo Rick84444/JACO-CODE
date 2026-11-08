@@ -36,6 +36,13 @@ if ($status.BackendState -ne 'Running' -or $dns -notmatch '^([a-z0-9-]+\.)+[a-z0
   throw 'TAILSCALE_PRIVATE_DNS_UNAVAILABLE: Enable MagicDNS and HTTPS in your tailnet.'
 }
 
+# Do not overwrite an unrelated existing HTTPS Serve route.
+$existingServe = (& $cli serve status 2>&1 | Out-String)
+if ($LASTEXITCODE -eq 0 -and $existingServe.Contains("https://$dns") -and
+    -not $existingServe.Contains("127.0.0.1:$Port")) {
+  throw 'TAILSCALE_SERVE_CONFLICT: HTTPS Serve is already configured for another local service.'
+}
+
 # Serve is private to your tailnet. Do NOT use Tailscale Funnel.
 & $cli serve --bg "http://127.0.0.1:$Port"
 if ($LASTEXITCODE -ne 0) { throw 'TAILSCALE_SERVE_FAILED: Complete the Tailscale HTTPS consent flow and retry.' }
