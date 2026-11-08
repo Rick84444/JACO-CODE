@@ -17,6 +17,7 @@ import { condenseMessages } from './condenser.mjs';
 import { buildContextPacket, formatContextPacket } from './context-packet.mjs';
 import { executionExceptionResult } from './replay-semantics.mjs';
 import { verifiedOutcomeHints } from './verified-outcome-context.mjs';
+import { buildAdaptiveRepairPacket, formatAdaptiveRepairPacket } from './adaptive-repair.mjs';
 
 const RESULT_CHARS = 6000;
 const clip = (text, max = RESULT_CHARS) => {
@@ -352,7 +353,17 @@ export async function runAgentMission({
         const updated = await client.finish(mission.id, { ...lease, actionId: begun.id, receipt });
         receipts.push(receipt);
         await onReceipt(receipt, begun, updated);
-        reply_(receiptForModel(steps, receipt));
+        // A failed executed step becomes bounded, evidence-linked recovery guidance.
+        // The advice never executes a tool or widens the mission's authority.
+        const repair = buildAdaptiveRepairPacket({
+          mission: updated || mission,
+          task,
+          receipt,
+          history: updated?.receipts || mission.receipts || [],
+        });
+        reply_(repair
+          ? receiptForModel(steps, receipt) + '\n' + formatAdaptiveRepairPacket(repair)
+          : receiptForModel(steps, receipt));
         stuck.record({ name: target.kind === 'mcp' ? `${target.server}.${target.tool}` : target.type, args: task.data, ok: receipt.ok, result: receipt.result, error: receipt.error });
         if (!nudge) { const verdict = stuck.check(); if (verdict.stuck) nudge = verdict; }
         if (updated) mission = updated;
