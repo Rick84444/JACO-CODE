@@ -53,6 +53,10 @@ on:
       - 'gateway/src/seer-mission-graph.mjs'
       - 'runtime/src/server/connected/novaMissionControl.mjs'
       - 'runtime/src/server/connected/cognitiveQuestionToolbox.mjs'
+      - 'agents/lib/adaptive-repair.mjs'
+      - 'agents/lib/agent-loop.mjs'
+      - 'tests/nova/adaptive-repair.test.mjs'
+      - 'tests/nova/agent-loop.test.mjs'
       - 'agents/hands-off-agent.mjs'
       - 'runtime/src/components/AgentConstellation.tsx'
       - 'runtime/src/server/connected/agentNetwork.mjs'
@@ -161,6 +165,10 @@ on:
       - 'gateway/src/seer-mission-graph.mjs'
       - 'runtime/src/server/connected/novaMissionControl.mjs'
       - 'runtime/src/server/connected/cognitiveQuestionToolbox.mjs'
+      - 'agents/lib/adaptive-repair.mjs'
+      - 'agents/lib/agent-loop.mjs'
+      - 'tests/nova/adaptive-repair.test.mjs'
+      - 'tests/nova/agent-loop.test.mjs'
       - 'agents/hands-off-agent.mjs'
       - 'runtime/src/components/AgentConstellation.tsx'
       - 'runtime/src/server/connected/agentNetwork.mjs'
@@ -258,6 +266,8 @@ jobs:
           node --check agents/lib/activate.mjs
           node --test tests/nova/jaco-terminal-ide.test.mjs tests/nova/activate.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/planner-choice.test.mjs
           bash -n runtime/bin/jaco
+      - name: Evidence-bound adaptive repair and canonical mission loop
+        run: node --experimental-sqlite --test tests/nova/adaptive-repair.test.mjs tests/nova/agent-loop.test.mjs
       - name: Gameboard projection and deterministic simulator
         run: node --experimental-sqlite --test tests/nova/gameboard-fabric.test.mjs tests/nova/gameboard-exchange.test.mjs
       - name: Android Lite launcher syntax
