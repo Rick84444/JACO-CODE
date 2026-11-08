@@ -117,9 +117,9 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
 
   return (
     <section className="device-workspace flex flex-col min-h-0 flex-1">
-      <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400 flex items-center justify-between">
+      <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-neutral-400 flex items-center justify-between">
         <span>{tr('Enheter', 'Devices')}</span>
-        <button onClick={() => void load()} className="text-[9px] text-cyan-400 hover:text-cyan-300">{tr('Uppdatera', 'Refresh')}</button>
+        <button onClick={() => void load()} className="text-[9px] text-neutral-300 hover:text-neutral-300">{tr('Uppdatera', 'Refresh')}</button>
       </div>
       <div className="flex-1 overflow-auto px-2 space-y-2 text-[11px] min-w-0">
         {actionError && <div role="alert" className="border border-red-900 text-red-300 rounded p-2 break-words">{actionError}</div>}
@@ -134,35 +134,35 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
           <button type="button" onClick={onInspectBrowser} disabled={!onInspectBrowser}>{tr('Inspektera webbläsare', 'Inspect browser')}</button>
         </div>
         {viewer.remote && (
-          <div className="border border-cyan-900 bg-[#10202a] rounded p-2 text-[10px] text-cyan-200">
+          <div className="border border-neutral-900 bg-[#1c1d1f] rounded p-2 text-[10px] text-neutral-200">
             {tr('Du är inloggad på distans som', 'You are signed in remotely as')} <span className="text-white">{viewer.name}</span>. {tr('Terminalen finns bara på datorn.', 'The terminal is only available on the host.')}
           </div>
         )}
 
-        <div className="border border-[#333] bg-[#1d1d1d] rounded p-2 space-y-1.5 min-w-0">
+        <div className="border border-[#323335] bg-[#1c1d1f] rounded p-2 space-y-1.5 min-w-0">
           <div className="flex items-center justify-between">
-            <span className="text-slate-100">{tr('Den här datorn', 'This host')}</span>
+            <span className="text-neutral-100">{tr('Den här datorn', 'This host')}</span>
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-900 text-emerald-200">{tr('hubb', 'Host')}</span>
           </div>
-          <div className="text-[9px] text-slate-500">{tr('Standardvärd för uppdrag', 'Default mission host')}</div>
+          <div className="text-[9px] text-neutral-500">{tr('Standardvärd för uppdrag', 'Default mission host')}</div>
         </div>
 
-        {!devices && !error && <div className="text-slate-500 px-1">{tr('Läser enheter…', 'Loading devices…')}</div>}
+        {!devices && !error && <div className="text-neutral-500 px-1">{tr('Läser enheter…', 'Loading devices…')}</div>}
         {active.map(d => (
-          <div key={keyOf(d)} className="border border-[#333] bg-[#1d1d1d] rounded p-2 space-y-1 min-w-0">
+          <div key={keyOf(d)} className="border border-[#323335] bg-[#1c1d1f] rounded p-2 space-y-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-slate-100 truncate">{d.name} <span className="text-[9px] text-slate-500">{KIND_LABEL[d.kind]}</span></span>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 ${d.online ? 'bg-emerald-900 text-emerald-200' : d.lastSeenAt ? 'bg-[#333] text-slate-300' : 'bg-amber-900 text-amber-200'}`}>
+              <span className="text-neutral-100 truncate">{d.name} <span className="text-[9px] text-neutral-500">{KIND_LABEL[d.kind]}</span></span>
+              <span className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 ${d.online ? 'bg-emerald-900 text-emerald-200' : d.lastSeenAt ? 'bg-[#323335] text-neutral-300' : 'bg-amber-900 text-amber-200'}`}>
                 {d.online ? (d.kind === 'ide' ? tr('aktiv', 'active') : tr('ansluten', 'connected')) : d.lastSeenAt ? (d.kind === 'ide' ? tr('inloggad', 'signed in') : tr('ej ansluten', 'not connected')) : tr('väntar på första kontakt', 'waiting for first contact')}
               </span>
             </div>
-            <div className="text-[9px] text-slate-500 break-all">{d.executor ? `${d.executor} · ` : ''}{tr('senaste kontakt', 'last contact')} {ago(d.lastSeenAt)} · {tr('parkopplad', 'paired')} {new Date(d.createdAt).toLocaleDateString('en-US')}</div>
-            {d.kind === 'nova' && <div className="py-1"><p className="text-slate-400">{tr('Delat minne', 'Shared memory')}: {d.memoryAccess ? tr('Tillåtet', 'Allowed') : tr('Ej tillåtet', 'Not allowed')}</p>{!viewer.remote && <button disabled={busy} onClick={() => void memoryAccess(d)} className="text-cyan-300 py-1">{d.memoryAccess ? tr('Stäng minnesåtkomst', 'Revoke memory access') : tr('Tillåt delat minne på denna enhet', 'Allow shared memory on this device')}</button>}</div>}
+            <div className="text-[9px] text-neutral-500 break-all">{d.executor ? `${d.executor} · ` : ''}{tr('senaste kontakt', 'last contact')} {ago(d.lastSeenAt)} · {tr('parkopplad', 'paired')} {new Date(d.createdAt).toLocaleDateString('en-US')}</div>
+            {d.kind === 'nova' && <div className="py-1"><p className="text-neutral-400">{tr('Delat minne', 'Shared memory')}: {d.memoryAccess ? tr('Tillåtet', 'Allowed') : tr('Ej tillåtet', 'Not allowed')}</p>{!viewer.remote && <button disabled={busy} onClick={() => void memoryAccess(d)} className="text-neutral-300 py-1">{d.memoryAccess ? tr('Stäng minnesåtkomst', 'Revoke memory access') : tr('Tillåt delat minne på denna enhet', 'Allow shared memory on this device')}</button>}</div>}
             {confirmRevoke === keyOf(d) ? (
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-[9px] text-amber-300">{d.kind === 'ide' ? tr('Logga ut webbläsaren?', 'Sign out this browser?') : tr('Spärra nyckeln? Enheten måste parkopplas igen.', 'Revoke the key? The device must be paired again.')}</span>
                 <button disabled={busy} onClick={() => void revoke(d)} className="px-1.5 py-0.5 rounded bg-red-900 hover:bg-red-800 text-white text-[9px]">{tr('Spärra', 'Revoke')}</button>
-                <button onClick={() => setConfirmRevoke(null)} className="px-1.5 py-0.5 rounded bg-[#333] text-slate-200 text-[9px]">{tr('Avbryt', 'Cancel')}</button>
+                <button onClick={() => setConfirmRevoke(null)} className="px-1.5 py-0.5 rounded bg-[#323335] text-neutral-200 text-[9px]">{tr('Avbryt', 'Cancel')}</button>
               </div>
             ) : (
               <button onClick={() => setConfirmRevoke(keyOf(d))} className="text-[9px] text-red-300 hover:text-red-200">{tr('Spärra nyckel', 'Revoke access')}</button>
@@ -170,54 +170,54 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
           </div>
         ))}
 
-        <div className="border border-cyan-900 bg-[#10202a] rounded p-2 space-y-1.5 min-w-0">
-          <div className="text-slate-100">{tr('Lägg till enhet', 'Add device')}</div>
+        <div className="border border-neutral-900 bg-[#1c1d1f] rounded p-2 space-y-1.5 min-w-0">
+          <div className="text-neutral-100">{tr('Lägg till enhet', 'Add device')}</div>
           {!(kind === 'ide' ? ideUrl : hubUrl) && <p role="status" className="text-amber-300">{kind === 'ide' ? tr('En delbar IDE-adress behövs för parkoppling.', 'Pairing requires a shareable IDE address.') : tr('En delbar hubbadress behövs för parkoppling.', 'Pairing requires a shareable hub address.')}</p>}
           {!invite ? (
             <>
               <div className="grid grid-cols-2 gap-1">
                 {(['ide', 'nova'] as Kind[]).map(k => (
                   <button key={k} onClick={() => setKind(k)}
-                    className={`px-1.5 py-1 rounded text-[10px] border ${kind === k ? 'border-cyan-600 bg-cyan-950 text-white' : 'border-[#333] text-slate-400'}`}>{KIND_LABEL[k]}</button>
+                    className={`px-1.5 py-1 rounded text-[10px] border ${kind === k ? 'border-neutral-600 bg-neutral-950 text-white' : 'border-[#323335] text-neutral-400'}`}>{KIND_LABEL[k]}</button>
                 ))}
               </div>
-              <div className="text-[9px] text-slate-500">{kind === 'ide'
+              <div className="text-[9px] text-neutral-500">{kind === 'ide'
                 ? tr('Öppna IDE:t i mobilens webbläsare, som vscode.dev. Inloggningen gäller 30 dagar på den enheten.', 'Open the IDE in the phone browser, like vscode.dev. The sign-in lasts 30 days on that device.')
                 : tr('Enheten kör en egen Nova och tar bara uppdrag som riktas till den.', 'The device runs its own Nova and only takes missions routed to it.')}</div>
               <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void createInvite(); }}
-                aria-label={tr('Enhetsnamn', 'Device name')} placeholder={tr('telefon eller laptop', 'phone or laptop')} className="w-full bg-[#0b0b0b] border border-[#333] rounded p-1 text-[11px] text-slate-200" />
+                aria-label={tr('Enhetsnamn', 'Device name')} placeholder={tr('telefon eller laptop', 'phone or laptop')} className="w-full bg-[#0a0b0d] border border-[#323335] rounded p-1 text-[11px] text-neutral-200" />
               <button onClick={() => void createInvite()} disabled={busy || !name.trim() || !(kind === 'ide' ? ideUrl : hubUrl)}
-                className="px-2 py-1 rounded bg-cyan-800 hover:bg-cyan-700 text-white text-[10px] disabled:opacity-40">{tr('Skapa parkopplingskod', 'Create pairing code')}</button>
+                className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-white text-[10px] disabled:opacity-40">{tr('Skapa parkopplingskod', 'Create pairing code')}</button>
             </>
           ) : secondsLeft > 0 ? (
             <>
-              <div className="text-[10px] text-slate-400">{tr('Kod för', 'Code for')} <span className="text-cyan-300">{invite.name}</span> ({KIND_LABEL[invite.kind]}), {tr('gäller en gång i', 'single use, valid for')} {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}</div>
+              <div className="text-[10px] text-neutral-400">{tr('Kod för', 'Code for')} <span className="text-neutral-300">{invite.name}</span> ({KIND_LABEL[invite.kind]}), {tr('gäller en gång i', 'single use, valid for')} {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}</div>
               <div className="font-mono text-[18px] tracking-[0.2em] text-white text-center py-1 select-all">{invite.code}</div>
               {invite.kind === 'ide' ? (
-                <div className="text-[10px] text-slate-300 space-y-1">
+                <div className="text-[10px] text-neutral-300 space-y-1">
                   <div>{tr('Öppna i mobilens webbläsare och skriv koden:', 'Open in the phone browser and enter the code:')}</div>
-                  <div className="font-mono text-[12px] text-cyan-200 break-all select-all">{ideUrl || tr('IDE-adress saknas. Konfigurera JACO_IDE_PUBLIC_HOST på servern.', 'IDE address missing. Configure JACO_IDE_PUBLIC_HOST on the server.')}</div>
-                  <div className="text-[9px] text-slate-500">{tr('I Chrome: meny, Lägg till på startskärmen, så öppnas IDE:t som en app.', 'In Chrome: menu, Add to Home screen, and the IDE opens as an app.')}</div>
+                  <div className="font-mono text-[12px] text-neutral-200 break-all select-all">{ideUrl || tr('IDE-adress saknas. Konfigurera JACO_IDE_PUBLIC_HOST på servern.', 'IDE address missing. Configure JACO_IDE_PUBLIC_HOST on the server.')}</div>
+                  <div className="text-[9px] text-neutral-500">{tr('I Chrome: meny, Lägg till på startskärmen, så öppnas IDE:t som en app.', 'In Chrome: menu, Add to Home screen, and the IDE opens as an app.')}</div>
                 </div>
               ) : commands.map(c => (
                 <div key={c.id} className="space-y-1">
-                  <div className="text-[10px] text-slate-400">{c.label}:</div>
-                  <pre className="whitespace-pre-wrap break-all font-mono text-[10px] text-slate-200 bg-[#0b0b0b] border border-[#333] rounded p-1.5 select-all">{c.text}</pre>
-                  <button onClick={() => void copy(c.id, c.text)} className="px-2 py-1 rounded bg-cyan-800 hover:bg-cyan-700 text-white text-[10px]">{copied === c.id ? tr('Kopierat', 'Copied') : tr('Kopiera', 'Copy')}</button>
+                  <div className="text-[10px] text-neutral-400">{c.label}:</div>
+                  <pre className="whitespace-pre-wrap break-all font-mono text-[10px] text-neutral-200 bg-[#0a0b0d] border border-[#323335] rounded p-1.5 select-all">{c.text}</pre>
+                  <button onClick={() => void copy(c.id, c.text)} className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-white text-[10px]">{copied === c.id ? tr('Kopierat', 'Copied') : tr('Kopiera', 'Copy')}</button>
                 </div>
               ))}
-              <button onClick={() => setInvite(null)} className="px-2 py-1 rounded bg-[#333] text-slate-200 text-[10px]">{tr('Klar', 'Done')}</button>
+              <button onClick={() => setInvite(null)} className="px-2 py-1 rounded bg-[#323335] text-neutral-200 text-[10px]">{tr('Klar', 'Done')}</button>
             </>
           ) : (
             <>
               <div className="text-[10px] text-amber-300">{tr('Koden för', 'The code for')} {invite.name} {tr('har gått ut.', 'has expired.')}</div>
-              <button onClick={() => { setName(invite.name); setKind(invite.kind); setInvite(null); }} className="px-2 py-1 rounded bg-[#333] text-slate-200 text-[10px]">{tr('Skapa ny kod', 'Create new code')}</button>
+              <button onClick={() => { setName(invite.name); setKind(invite.kind); setInvite(null); }} className="px-2 py-1 rounded bg-[#323335] text-neutral-200 text-[10px]">{tr('Skapa ny kod', 'Create new code')}</button>
             </>
           )}
         </div>
 
         {revoked.length > 0 && (
-          <div className="text-[9px] text-slate-600 px-1 break-words">{tr('Spärrade', 'Revoked')}: {revoked.map(d => `${d.name} (${d.kind})`).join(', ')}</div>
+          <div className="text-[9px] text-neutral-600 px-1 break-words">{tr('Spärrade', 'Revoked')}: {revoked.map(d => `${d.name} (${d.kind})`).join(', ')}</div>
         )}
       </div>
     </section>

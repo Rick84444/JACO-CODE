@@ -100,7 +100,7 @@ export function CognitiveWorkspace(props:Props) {
       <div className="cognitive-top-actions">
         <CostChip onOpen={()=>props.onSidebar('revenue')}/>
         <JacoWindowsUpdates/>
-        <select className="cognitive-language-select" aria-label={tr('Språk', 'Language')} title={tr('Språk', 'Language')} value={language} onChange={event => setLanguage(event.target.value === 'sv' ? 'sv' : 'en')} style={{color:'inherit',background:'#171d24',border:'1px solid #3b4652',borderRadius:6,padding:'4px 5px',fontSize:11}}><option value="en">EN</option><option value="sv">SV</option></select>
+        <select className="cognitive-language-select" aria-label={tr('Språk', 'Language')} title={tr('Språk', 'Language')} value={language} onChange={event => setLanguage(event.target.value === 'sv' ? 'sv' : 'en')} style={{color:'inherit',background:'#1b1c1e',border:'1px solid #3b4652',borderRadius:6,padding:'4px 5px',fontSize:11}}><option value="en">EN</option><option value="sv">SV</option></select>
         {props.approvalCount>0 && <button type="button" className="cognitive-approval-button" aria-label={`${props.approvalCount} ${tr('beslut behöver dig', 'decisions need your attention')}`} onClick={props.onApprovals}><CircleAlert size={14}/><span>{props.approvalCount} {tr('beslut','decisions')}</span></button>}
         <button type="button" aria-label={tr('Sök verktyg och kommandon', 'Search tools and commands')} title={tr('Sök', 'Search')+' · Ctrl+Shift+P'} onClick={props.onCommands}><Search size={16}/></button>
       </div>

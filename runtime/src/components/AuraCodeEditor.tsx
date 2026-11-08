@@ -76,22 +76,22 @@ export const AuraCodeEditor: React.FC<Props> = ({ file, draft, onDraftChange, on
       inherit: true,
       rules: [],
       colors: {
-        'editor.background': '#1e1e1e',
-        'editorGutter.background': '#1e1e1e',
-        'editorLineNumber.foreground': '#858585',
-        'editorLineNumber.activeForeground': '#c6c6c6',
+        'editor.background': '#1d1e20',
+        'editorGutter.background': '#1d1e20',
+        'editorLineNumber.foreground': '#848587',
+        'editorLineNumber.activeForeground': '#c5c6c8',
         'editor.selectionBackground': '#264f78',
       },
     });
   };
 
   if (!file) {
-    return <div className="h-full flex items-center justify-center text-xs text-slate-500">Open a file from Explorer.</div>;
+    return <div className="h-full flex items-center justify-center text-xs text-neutral-500">Open a file from Explorer.</div>;
   }
 
   return (
-    <div className="h-full min-h-0 flex flex-col bg-[#1e1e1e]">
-      <div className="h-8 px-3 border-b border-[#2b2b2b] flex items-center justify-between text-[10px] text-slate-500 shrink-0">
+    <div className="h-full min-h-0 flex flex-col bg-[#1d1e20]">
+      <div className="h-8 px-3 border-b border-[#2a2b2d] flex items-center justify-between text-[10px] text-neutral-500 shrink-0">
         <div className="truncate">{file.path}</div>
         <div className="flex items-center gap-2">
           {saveState === 'saved' && <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />saved</span>}
@@ -100,7 +100,7 @@ export const AuraCodeEditor: React.FC<Props> = ({ file, draft, onDraftChange, on
           <button
             onClick={() => void save()}
             disabled={!dirty || saving}
-            className="px-2 py-1 border border-[#3b3b3b] rounded text-slate-300 hover:bg-[#2a2d2e] disabled:opacity-30 flex items-center gap-1"
+            className="px-2 py-1 border border-[#3a3b3d] rounded text-neutral-300 hover:bg-[#2b2c2e] disabled:opacity-30 flex items-center gap-1"
             title="Save (Ctrl/Cmd+S)"
           >
             {saving ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
@@ -108,7 +108,7 @@ export const AuraCodeEditor: React.FC<Props> = ({ file, draft, onDraftChange, on
           </button>
         </div>
       </div>
-      {message && <div className={`px-3 py-1 text-[10px] border-b border-[#2b2b2b] ${saveState === 'error' || saveState === 'conflict' ? 'text-amber-300 bg-amber-950/20' : 'text-slate-400'}`}>{message}</div>}
+      {message && <div className={`px-3 py-1 text-[10px] border-b border-[#2a2b2d] ${saveState === 'error' || saveState === 'conflict' ? 'text-amber-300 bg-amber-950/20' : 'text-neutral-400'}`}>{message}</div>}
       <div className="flex-1 min-h-0">
         <Editor
           path={file.path}

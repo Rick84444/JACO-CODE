@@ -36,7 +36,7 @@ export function JacoWindowsUpdates() {
   if (!update || update.status === 'unsupported') return null;
   if (update.status === 'available' && update.installer) {
     return <a aria-label={`Download JACO CODE update ${update.latestVersion}`} title="Official GitHub release installer · Windows administrator approval is required" href={update.installer.url} target="_blank" rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 rounded border border-cyan-600/60 px-2 py-1 text-[11px] text-cyan-200 hover:bg-cyan-900/30">
+      className="inline-flex items-center gap-1 rounded border border-neutral-600/60 px-2 py-1 text-[11px] text-neutral-200 hover:bg-neutral-900/30">
       <Download size={14}/>Update v{update.latestVersion}
     </a>;
   }
@@ -45,7 +45,7 @@ export function JacoWindowsUpdates() {
   }
   return <button type="button" onClick={() => void refresh()} disabled={checking} aria-label="Check for JACO CODE updates"
     title={`Windows release status: ${update.status}. Installed runtime v${update.currentVersion}.`}
-    className="inline-flex items-center gap-1 px-1 py-1 text-[10px] text-slate-500 hover:text-slate-200">
+    className="inline-flex items-center gap-1 px-1 py-1 text-[10px] text-neutral-500 hover:text-neutral-200">
     <RefreshCw size={13} className={checking ? 'animate-spin' : ''}/>Updates
   </button>;
 }

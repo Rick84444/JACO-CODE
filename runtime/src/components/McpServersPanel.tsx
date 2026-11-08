@@ -90,69 +90,69 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   const managed = (p: McpProvider) => ['stdio', 'http'].includes(p.transport || '');
   return <section aria-label="MCP servers" className="pb-2">
     <div className="px-3 py-1.5 mt-2 flex items-center">
-      <span className="text-[9px] uppercase tracking-wider text-slate-600">Connected MCP and tools</span>
-      <button onClick={() => setAdding(v => !v)} className="ml-auto text-[9px] text-cyan-300 border border-cyan-900 rounded px-1.5 py-0.5 hover:bg-cyan-950/30">{adding ? 'Close' : '+ Add'}</button>
+      <span className="text-[9px] uppercase tracking-wider text-neutral-600">Connected MCP and tools</span>
+      <button onClick={() => setAdding(v => !v)} className="ml-auto text-[9px] text-neutral-300 border border-neutral-900 rounded px-1.5 py-0.5 hover:bg-neutral-950/30">{adding ? 'Close' : '+ Add'}</button>
     </div>
 
-    {adding && <div className="mx-3 mb-2 p-2 rounded border border-[#343b45] bg-[#111820] space-y-1.5" aria-label="Add MCP server">
+    {adding && <div className="mx-3 mb-2 p-2 rounded border border-[#393a3c] bg-[#161719] space-y-1.5" aria-label="Add MCP server">
       <div className="flex gap-1.5">
-        <input aria-label="Server id" value={draft.id} onChange={e => setDraft({ ...draft, id: e.target.value.toLowerCase() })} placeholder="id, e.g. github" className="min-w-0 flex-1 bg-[#07111b] border border-[#333] rounded px-2 py-1 text-[10px] outline-none" />
-        <input aria-label="Name" value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Name" className="min-w-0 flex-1 bg-[#07111b] border border-[#333] rounded px-2 py-1 text-[10px] outline-none" />
+        <input aria-label="Server id" value={draft.id} onChange={e => setDraft({ ...draft, id: e.target.value.toLowerCase() })} placeholder="id, e.g. github" className="min-w-0 flex-1 bg-[#0f1012] border border-[#323335] rounded px-2 py-1 text-[10px] outline-none" />
+        <input aria-label="Name" value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Name" className="min-w-0 flex-1 bg-[#0f1012] border border-[#323335] rounded px-2 py-1 text-[10px] outline-none" />
       </div>
-      <input aria-label="Command or address" value={draft.target} onChange={e => setDraft({ ...draft, target: e.target.value })} placeholder="npx -y @modelcontextprotocol/server-memory  or  https://…/mcp" className="w-full bg-[#07111b] border border-[#333] rounded px-2 py-1 text-[10px] font-mono outline-none" />
+      <input aria-label="Command or address" value={draft.target} onChange={e => setDraft({ ...draft, target: e.target.value })} placeholder="npx -y @modelcontextprotocol/server-memory  or  https://…/mcp" className="w-full bg-[#0f1012] border border-[#323335] rounded px-2 py-1 text-[10px] font-mono outline-none" />
       <div className="flex gap-1.5 items-center">
-        <select aria-label="Logo" value={draft.icon} onChange={e => setDraft({ ...draft, icon: e.target.value })} className="bg-[#07111b] border border-[#333] rounded px-1 py-1 text-[10px]">
+        <select aria-label="Logo" value={draft.icon} onChange={e => setDraft({ ...draft, icon: e.target.value })} className="bg-[#0f1012] border border-[#323335] rounded px-1 py-1 text-[10px]">
           {ICON_CHOICES.map(i => <option key={i} value={i}>{i === 'jaco' ? 'JACO' : MCP_LOGOS[i].title}</option>)}
         </select>
         <McpLogo icon={draft.icon} />
-        <select aria-label="Agent access" value={draft.agentAccess} onChange={e => setDraft({ ...draft, agentAccess: e.target.value })} className="ml-auto bg-[#07111b] border border-[#333] rounded px-1 py-1 text-[10px]">
+        <select aria-label="Agent access" value={draft.agentAccess} onChange={e => setDraft({ ...draft, agentAccess: e.target.value })} className="ml-auto bg-[#0f1012] border border-[#323335] rounded px-1 py-1 text-[10px]">
           {Object.entries(ACCESS_LABEL).map(([v, l]) => <option key={v} value={v}>Agents: {l}</option>)}
         </select>
       </div>
-      <p className="text-[9px] text-slate-500">Keys are given as ${'{'}NAME{'}'} and read from .env; they are never stored in the configuration. Remote servers (https) are always read-only for agents.</p>
+      <p className="text-[9px] text-neutral-500">Keys are given as ${'{'}NAME{'}'} and read from .env; they are never stored in the configuration. Remote servers (https) are always read-only for agents.</p>
       {formError && <p role="status" className="text-[10px] text-amber-300 break-words">{formError}</p>}
-      <button onClick={() => void add()} disabled={working !== null} className="w-full rounded border border-cyan-800 py-1 text-[10px] text-cyan-300 disabled:opacity-40">{working === '__add' ? 'Connecting…' : 'Save and connect'}</button>
+      <button onClick={() => void add()} disabled={working !== null} className="w-full rounded border border-neutral-800 py-1 text-[10px] text-neutral-300 disabled:opacity-40">{working === '__add' ? 'Connecting…' : 'Save and connect'}</button>
     </div>}
 
     {providers.map(p => {
       const s = p.stats;
       const last = s?.lastCall;
-      return <div key={p.id} className="border-b border-[#292929]">
+      return <div key={p.id} className="border-b border-[#28292b]">
         <div className="px-3 py-1.5 flex items-start gap-2">
           <span className={`mt-0.5 ${p.status === 'READY' ? '' : 'opacity-50'}`}><McpLogo icon={p.icon} /></span>
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] text-slate-300">{p.name}</div>
-            <div className="text-[8px] text-slate-600 truncate" title={p.endpoint}>{p.role}</div>
+            <div className="text-[10px] text-neutral-300">{p.name}</div>
+            <div className="text-[8px] text-neutral-600 truncate" title={p.endpoint}>{p.role}</div>
           </div>
-          <span className={`text-[8px] ${p.status === 'READY' ? 'text-emerald-400' : p.status === 'FAILED' ? 'text-amber-400' : 'text-slate-600'}`}>{p.status}</span>
+          <span className={`text-[8px] ${p.status === 'READY' ? 'text-emerald-400' : p.status === 'FAILED' ? 'text-amber-400' : 'text-neutral-600'}`}>{p.status}</span>
           {managed(p) && p.status !== 'READY' && <button onClick={() => onStart(p.id)} disabled={busy !== null} className="text-[8px] border border-violet-800 text-violet-300 rounded px-1.5 py-0.5 hover:bg-violet-950/30 disabled:opacity-40">{busy === p.id ? 'Starting…' : 'Start'}</button>}
         </div>
         {managed(p) && <div className="px-3 pb-1.5 flex items-center gap-2 text-[9px]">
-          <label className="text-slate-500 flex items-center gap-1">Agents
-            <select aria-label={`Agent access ${p.name}`} value={p.agentAccess || 'read'} disabled={working !== null || p.transport === 'http'} onChange={e => void setAccess(p.id, e.target.value)} className="bg-[#07111b] border border-[#333] rounded px-1 py-0.5 text-[9px] text-slate-200 disabled:opacity-60">
+          <label className="text-neutral-500 flex items-center gap-1">Agents
+            <select aria-label={`Agent access ${p.name}`} value={p.agentAccess || 'read'} disabled={working !== null || p.transport === 'http'} onChange={e => void setAccess(p.id, e.target.value)} className="bg-[#0f1012] border border-[#323335] rounded px-1 py-0.5 text-[9px] text-neutral-200 disabled:opacity-60">
               {Object.entries(ACCESS_LABEL).filter(([v]) => p.transport !== 'http' || v !== 'write').map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </label>
-          {!!p.deny?.length && <span className="text-slate-600 truncate" title={`Never for agents: ${p.deny.join(', ')}`}>blocked: {p.deny.join(', ')}</span>}
-          <button onClick={() => void remove(p)} disabled={working !== null} className="ml-auto text-slate-500 hover:text-red-300 disabled:opacity-40">{p.builtIn ? 'Turn off' : 'Remove'}</button>
+          {!!p.deny?.length && <span className="text-neutral-600 truncate" title={`Never for agents: ${p.deny.join(', ')}`}>blocked: {p.deny.join(', ')}</span>}
+          <button onClick={() => void remove(p)} disabled={working !== null} className="ml-auto text-neutral-500 hover:text-red-300 disabled:opacity-40">{p.builtIn ? 'Turn off' : 'Remove'}</button>
         </div>}
-        {s && (s.calls > 0 || s.refused > 0) && <div className="px-3 pb-1 text-[9px] text-slate-500">
+        {s && (s.calls > 0 || s.refused > 0) && <div className="px-3 pb-1 text-[9px] text-neutral-500">
           {s.calls} calls · {s.failures} errors · {s.refused} refused
           {last && <span className="block truncate" title={last.error || ''}>Last {when(last.at)}: {last.tool} by {last.actor === 'agent' ? 'agent' : 'operator'} → <span className={outcomeClass(last.outcome)}>{OUTCOME_LABEL[last.outcome] || last.outcome}</span> ({last.ms} ms){last.error ? ` · ${last.error}` : ''}</span>}
         </div>}
         {p.error && p.status !== 'READY' && <div className="px-5 pb-1 text-[8px] text-amber-500/80 break-words">{p.error}</div>}
         {p.tools.map(t => <button key={t.name} onClick={() => onSelectTool(p, t)} disabled={p.status !== 'READY'} title={t.description}
-          className={`w-full text-left px-5 py-1.5 hover:bg-[#2a2d2e] disabled:opacity-30 flex items-center gap-2 ${selectedToolId === `mcp:${p.id}:${t.name}` ? 'bg-[#2b2240]' : ''}`}>
+          className={`w-full text-left px-5 py-1.5 hover:bg-[#2b2c2e] disabled:opacity-30 flex items-center gap-2 ${selectedToolId === `mcp:${p.id}:${t.name}` ? 'bg-[#252628]' : ''}`}>
           <span className={`w-2 h-2 rounded-full ${t.readOnly ? 'bg-emerald-500/70' : 'bg-amber-500/70'}`} />
-          <span className="text-[10px] text-slate-300 truncate">{t.name}</span>
-          <span className="ml-auto text-[8px] text-slate-600">{t.readOnly ? 'reads' : 'writes'}{t.agentAllowed === false ? ' · not for agents' : ''}</span>
+          <span className="text-[10px] text-neutral-300 truncate">{t.name}</span>
+          <span className="ml-auto text-[8px] text-neutral-600">{t.readOnly ? 'reads' : 'writes'}{t.agentAllowed === false ? ' · not for agents' : ''}</span>
         </button>)}
       </div>;
     })}
 
     {recentCalls.length > 0 && <div className="px-3 pt-2" aria-label="Latest MCP calls">
-      <div className="text-[9px] uppercase tracking-wider text-slate-600 mb-1">Latest calls</div>
-      {recentCalls.slice(0, 10).map((c, i) => <div key={`${c.at}-${i}`} className="text-[9px] text-slate-500 truncate" title={c.error || ''}>
+      <div className="text-[9px] uppercase tracking-wider text-neutral-600 mb-1">Latest calls</div>
+      {recentCalls.slice(0, 10).map((c, i) => <div key={`${c.at}-${i}`} className="text-[9px] text-neutral-500 truncate" title={c.error || ''}>
         {when(c.at)} {c.server}.{c.tool} · {c.actor === 'agent' ? 'agent' : 'operator'} → <span className={outcomeClass(c.outcome)}>{OUTCOME_LABEL[c.outcome] || c.outcome}</span> {c.ms} ms
       </div>)}
     </div>}

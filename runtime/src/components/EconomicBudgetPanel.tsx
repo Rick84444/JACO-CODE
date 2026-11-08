@@ -89,45 +89,45 @@ export function EconomicBudgetPanel({ inline = false }: { inline?: boolean } = {
     : snapshot.headroom.monthlyUsd != null && snapshot.headroom.monthlyUsd <= 0 ? 'This month\'s budget is spent. Raise the cap.'
     : snapshot.policy.maxCloudUsdPerTask != null && snapshot.policy.maxCloudUsdPerTask <= 0 ? 'The per-task cap is zero: no paid calls go through.'
     : null;
-  return <div className={`${inline ? 'text-xs border border-[#333] bg-[#181818] p-3 space-y-2' : 'text-[10px] border border-[#343b45] p-2 space-y-1'} rounded`}>
-    <div className="flex justify-between gap-2"><strong className="text-slate-300">Shared cloud budget</strong><button type="button" disabled={saving} onClick={() => { setSaved(false); void refresh(); }} className="text-cyan-400">Refresh budget</button></div>
+  return <div className={`${inline ? 'text-xs border border-[#323335] bg-[#17181a] p-3 space-y-2' : 'text-[10px] border border-[#393a3c] p-2 space-y-1'} rounded`}>
+    <div className="flex justify-between gap-2"><strong className="text-neutral-300">Shared cloud budget</strong><button type="button" disabled={saving} onClick={() => { setSaved(false); void refresh(); }} className="text-neutral-300">Refresh budget</button></div>
     {inline && snapshot && <>
-      <label className="flex items-start gap-2 text-slate-200 cursor-pointer">
+      <label className="flex items-start gap-2 text-neutral-200 cursor-pointer">
         <input type="checkbox" checked={cloudOn} disabled={saving} onChange={e => void setCloud(e.target.checked)} className="mt-0.5 h-4 w-4" aria-label="Allow cloud models" />
-        <span><strong>Allow cloud models</strong><br /><span className="text-slate-400">Chat and Nova may use DeepSeek, Groq and others, within the caps you set below. Off = local models only.</span></span>
+        <span><strong>Allow cloud models</strong><br /><span className="text-neutral-400">Chat and Nova may use DeepSeek, Groq and others, within the caps you set below. Off = local models only.</span></span>
       </label>
       <p role="status" className={blocking ? 'text-amber-300' : 'text-emerald-400'}>{blocking || 'Nothing is blocking cloud calls right now.'}</p>
-      {held.length > 0 && <p className="text-slate-400">{held.length} calls with unknown outcome hold {money(heldUsd)} USD reserved (released automatically after a while). <button type="button" disabled={saving} onClick={() => void releaseHeld()} className="text-cyan-400 underline">Release now</button></p>}
+      {held.length > 0 && <p className="text-neutral-400">{held.length} calls with unknown outcome hold {money(heldUsd)} USD reserved (released automatically after a while). <button type="button" disabled={saving} onClick={() => void releaseHeld()} className="text-neutral-300 underline">Release now</button></p>}
     </>}
     {snapshot ? <>
-      <p className="text-slate-300">{cap(snapshot.policy.dailyCloudUsd, '/day')} · {cap(snapshot.policy.monthlyCloudUsd, '/month')} · {cap(snapshot.policy.maxCloudUsdPerTask, '/task')}</p>
-      <p className="text-slate-300">Autonomous rate limit: {snapshot.policy.maxAutonomousCloudCallsPer15m == null ? 'off' : `${snapshot.policy.maxAutonomousCloudCallsPer15m} paid calls per 15 minutes`}. Governs Nova and SEER, not your manual Aura chat.</p>
-      <p className="text-slate-400">Token-based spend estimate today: {money(snapshot.state.dailySpentUsd)} USD · Reserved: {money(snapshot.state.reservedUsd)} USD · Headroom today: {snapshot.headroom.dailyUsd == null ? 'no cap' : `${money(snapshot.headroom.dailyUsd)} USD`}</p>
-      <p className="text-slate-500">USD amounts are calculated from JACO's configured prices or reference prices and are not reconciled against the provider's invoice.</p>
-      {snapshot.geminiQuota && <details className="border border-[#343b45] rounded p-2 space-y-2">
-        <summary className="text-cyan-300 cursor-pointer">Gemini · actual model limits from AI Studio ({Object.keys(snapshot.geminiQuota.models).length} models)</summary>
+      <p className="text-neutral-300">{cap(snapshot.policy.dailyCloudUsd, '/day')} · {cap(snapshot.policy.monthlyCloudUsd, '/month')} · {cap(snapshot.policy.maxCloudUsdPerTask, '/task')}</p>
+      <p className="text-neutral-300">Autonomous rate limit: {snapshot.policy.maxAutonomousCloudCallsPer15m == null ? 'off' : `${snapshot.policy.maxAutonomousCloudCallsPer15m} paid calls per 15 minutes`}. Governs Nova and SEER, not your manual Aura chat.</p>
+      <p className="text-neutral-400">Token-based spend estimate today: {money(snapshot.state.dailySpentUsd)} USD · Reserved: {money(snapshot.state.reservedUsd)} USD · Headroom today: {snapshot.headroom.dailyUsd == null ? 'no cap' : `${money(snapshot.headroom.dailyUsd)} USD`}</p>
+      <p className="text-neutral-500">USD amounts are calculated from JACO's configured prices or reference prices and are not reconciled against the provider's invoice.</p>
+      {snapshot.geminiQuota && <details className="border border-[#393a3c] rounded p-2 space-y-2">
+        <summary className="text-neutral-300 cursor-pointer">Gemini · actual model limits from AI Studio ({Object.keys(snapshot.geminiQuota.models).length} models)</summary>
         <p className="text-amber-200">Imported {snapshot.geminiQuota.observedAt}. This is an operator-reported AI Studio snapshot, NOT a live Google quota balance. Limits apply per Google project; only calls from this JACO runtime are counted here. Rate limits are not pricing or proof of a free tier.</p>
         <div className="max-h-60 overflow-auto space-y-2" role="table" aria-label="Gemini quotas per model">
           {(Object.entries(snapshot.geminiQuota.models) as [string, GeminiQuotaModel][])
             .filter(([key, q]) => key === 'gemini-2.5-flash' || key === 'gemini-2.5-flash-lite' || key === 'gemini-2.5-pro' || q.usedRpm > 0 || q.usedRpd > 0)
-            .slice(0, 15).map(([model, q]) => <div key={model} role="row" className="rounded border border-[#343b45] px-2 py-1">
-              <strong className="text-slate-200" role="cell">{q.label || model}</strong>
-              <p className="text-slate-400" role="cell">RPM {q.usedRpm.toLocaleString('en-US')} / {q.rpm?.toLocaleString('en-US') ?? 'unlimited'} · TPM {q.usedTpm.toLocaleString('en-US')} / {q.tpm?.toLocaleString('en-US') ?? 'unlimited'} · RPD {q.usedRpd.toLocaleString('en-US')} / {q.rpd?.toLocaleString('en-US') ?? 'unlimited'}</p>
+            .slice(0, 15).map(([model, q]) => <div key={model} role="row" className="rounded border border-[#393a3c] px-2 py-1">
+              <strong className="text-neutral-200" role="cell">{q.label || model}</strong>
+              <p className="text-neutral-400" role="cell">RPM {q.usedRpm.toLocaleString('en-US')} / {q.rpm?.toLocaleString('en-US') ?? 'unlimited'} · TPM {q.usedTpm.toLocaleString('en-US')} / {q.tpm?.toLocaleString('en-US') ?? 'unlimited'} · RPD {q.usedRpd.toLocaleString('en-US')} / {q.rpd?.toLocaleString('en-US') ?? 'unlimited'}</p>
               {q.cooldownUntil && q.cooldownUntil > Date.now() && <p className="text-amber-300">Google 429: rate limited until {new Date(q.cooldownUntil).toLocaleTimeString('en-US')}</p>}
             </div>)}
         </div>
-        <p className="text-slate-500">RPD resets at midnight Pacific time. JACO keeps a 10% safety margin and keeps the autonomous call limit separate. Other models are available via /api/aura/budget/gemini-quotas.</p>
+        <p className="text-neutral-500">RPD resets at midnight Pacific time. JACO keeps a 10% safety margin and keeps the autonomous call limit separate. Other models are available via /api/aura/budget/gemini-quotas.</p>
       </details>}
-      <p hidden={inline} className="text-slate-500">Aura cloud: {snapshot.policy.cloudEnabled && snapshot.policy.manualAuraCloudEnabled ? 'allowed within budget' : 'off'} · Nova cloud providers: {snapshot.policy.cloudEnabled && snapshot.policy.novaOllamaCloudEnabled ? 'allowed within budget' : 'off'}</p>
-      <p hidden={inline} className="text-slate-400">You control the shared spend caps here. Separately, the autonomous rate limit stops excessive call bursts, even when the USD caps are off.</p>
+      <p hidden={inline} className="text-neutral-500">Aura cloud: {snapshot.policy.cloudEnabled && snapshot.policy.manualAuraCloudEnabled ? 'allowed within budget' : 'off'} · Nova cloud providers: {snapshot.policy.cloudEnabled && snapshot.policy.novaOllamaCloudEnabled ? 'allowed within budget' : 'off'}</p>
+      <p hidden={inline} className="text-neutral-400">You control the shared spend caps here. Separately, the autonomous rate limit stops excessive call bursts, even when the USD caps are off.</p>
       {((snapshot.headroom.dailyUsd != null && snapshot.headroom.dailyUsd <= 0) || (snapshot.headroom.monthlyUsd != null && snapshot.headroom.monthlyUsd <= 0) || (snapshot.policy.maxCloudUsdPerTask != null && snapshot.policy.maxCloudUsdPerTask <= 0)) && <p role="status" className="text-amber-300">The budget is blocking new paid calls. Reserved amounts count until the outcome is settled.</p>}
-      {!inline && !editing && <button type="button" onClick={() => { setDraft(draftForPolicy(snapshot.policy)); setEditing(true); setSaved(false); }} className="text-cyan-400">Change budget</button>}
-    </> : <p className="text-slate-500">Budget not observed.</p>}
+      {!inline && !editing && <button type="button" onClick={() => { setDraft(draftForPolicy(snapshot.policy)); setEditing(true); setSaved(false); }} className="text-neutral-300">Change budget</button>}
+    </> : <p className="text-neutral-500">Budget not observed.</p>}
     {shown && (inline ? snapshot : true) && <form onSubmit={save} className="space-y-2">
-      {fields.map(([key, label]) => <label key={key} className="flex items-center justify-between gap-2 text-slate-300">{label}<input aria-label={label} type="number" min="0" step="any" placeholder="No cap" value={draft[key] || ''} disabled={saving} onChange={e => { setDirty(true); setSaved(false); setDraft(d => ({ ...d, [key]: e.target.value })); }} className={`${inline ? 'w-28 px-2 py-1 text-sm' : 'w-24 px-1 py-0.5'} bg-[#111820] border border-[#343b45] rounded`} /></label>)}
-      <label className="flex items-center justify-between gap-2 text-slate-300">Autonomous cloud calls / 15 min<input aria-label="Autonomous cloud calls per 15 minutes" type="number" min="1" max="10000" step="1" placeholder="Off" value={draft.maxAutonomousCloudCallsPer15m || ''} disabled={saving} onChange={e => { setDirty(true); setSaved(false); setDraft(d => ({ ...d, maxAutonomousCloudCallsPer15m: e.target.value })); }} className={`${inline ? 'w-28 px-2 py-1 text-sm' : 'w-24 px-1 py-0.5'} bg-[#111820] border border-[#343b45] rounded`} /></label>
-      <p className="text-slate-500">The USD caps apply to Aura, Nova and SEER together. Empty USD field = no spend cap. The autonomous rate limit applies to SEER/Nova only, even without a USD cap; an empty field turns it off. Changes survive restart.</p>
-      <div className="flex gap-3"><button type="submit" disabled={saving || (inline && !dirty)} className={inline ? 'bg-[#0e639c] hover:bg-[#1177bb] disabled:opacity-40 rounded px-3 py-1.5 text-xs font-semibold text-white' : 'text-cyan-400'}>{saving ? 'Saving…' : 'Save budget'}</button>{!inline && <button type="button" disabled={saving} onClick={() => setEditing(false)} className="text-slate-400">Cancel</button>}</div>
+      {fields.map(([key, label]) => <label key={key} className="flex items-center justify-between gap-2 text-neutral-300">{label}<input aria-label={label} type="number" min="0" step="any" placeholder="No cap" value={draft[key] || ''} disabled={saving} onChange={e => { setDirty(true); setSaved(false); setDraft(d => ({ ...d, [key]: e.target.value })); }} className={`${inline ? 'w-28 px-2 py-1 text-sm' : 'w-24 px-1 py-0.5'} bg-[#161719] border border-[#393a3c] rounded`} /></label>)}
+      <label className="flex items-center justify-between gap-2 text-neutral-300">Autonomous cloud calls / 15 min<input aria-label="Autonomous cloud calls per 15 minutes" type="number" min="1" max="10000" step="1" placeholder="Off" value={draft.maxAutonomousCloudCallsPer15m || ''} disabled={saving} onChange={e => { setDirty(true); setSaved(false); setDraft(d => ({ ...d, maxAutonomousCloudCallsPer15m: e.target.value })); }} className={`${inline ? 'w-28 px-2 py-1 text-sm' : 'w-24 px-1 py-0.5'} bg-[#161719] border border-[#393a3c] rounded`} /></label>
+      <p className="text-neutral-500">The USD caps apply to Aura, Nova and SEER together. Empty USD field = no spend cap. The autonomous rate limit applies to SEER/Nova only, even without a USD cap; an empty field turns it off. Changes survive restart.</p>
+      <div className="flex gap-3"><button type="submit" disabled={saving || (inline && !dirty)} className={inline ? 'bg-[#0e639c] hover:bg-[#1177bb] disabled:opacity-40 rounded px-3 py-1.5 text-xs font-semibold text-white' : 'text-neutral-300'}>{saving ? 'Saving…' : 'Save budget'}</button>{!inline && <button type="button" disabled={saving} onClick={() => setEditing(false)} className="text-neutral-400">Cancel</button>}</div>
     </form>}
     {saved && <p role="status" className="text-emerald-400">Budget saved and read back from runtime.</p>}
     {error && <p role="alert" className="text-amber-300">{error}</p>}

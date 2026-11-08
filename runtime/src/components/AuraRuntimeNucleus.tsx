@@ -22,10 +22,10 @@ export interface AuraRuntimeNucleusProps {
 type RailState = 'OBSERVED' | 'VERIFIED' | 'AWAITING_REVIEW' | 'UNOBSERVED';
 
 const colorFor = (state: RailState) => ({
-  OBSERVED: 'text-cyan-300 border-cyan-900/80 bg-cyan-950/20',
+  OBSERVED: 'text-neutral-300 border-neutral-900/80 bg-neutral-950/20',
   VERIFIED: 'text-emerald-300 border-emerald-900/80 bg-emerald-950/20',
   AWAITING_REVIEW: 'text-amber-300 border-amber-900/80 bg-amber-950/20',
-  UNOBSERVED: 'text-slate-500 border-slate-800 bg-slate-900/40',
+  UNOBSERVED: 'text-neutral-500 border-neutral-800 bg-neutral-900/40',
 }[state]);
 
 const normalizedState = (value?: string | null): RailState => {
@@ -83,7 +83,7 @@ export const AuraRuntimeNucleus: React.FC<AuraRuntimeNucleusProps> = ({
 
   return (
     <section
-      className="h-full min-h-[300px] relative overflow-hidden bg-[#03080d] border-l border-[#183448]"
+      className="h-full min-h-[300px] relative overflow-hidden bg-[#060709] border-l border-[#183448]"
       aria-label="JACO runtime visualization"
     >
       <div
@@ -104,17 +104,17 @@ export const AuraRuntimeNucleus: React.FC<AuraRuntimeNucleusProps> = ({
       />
 
       <div className="relative z-10 h-full min-h-0 flex flex-col">
-        <header className="h-12 px-4 shrink-0 border-b border-[#183448] flex items-center justify-between bg-[#02070c]/85 backdrop-blur">
+        <header className="h-12 px-4 shrink-0 border-b border-[#183448] flex items-center justify-between bg-[#050608]/85 backdrop-blur">
           <div className="flex items-center gap-2.5 min-w-0">
             <JacoWordmark size="sm" />
             <div className="hidden 2xl:block min-w-0">
-              <div className="text-[8px] tracking-[0.24em] text-cyan-200/80">COGNITIVE RUNTIME</div>
-              <div className="text-[7px] tracking-[0.15em] text-slate-600 mt-0.5">RUNTIME · OBSERVED STATE</div>
+              <div className="text-[8px] tracking-[0.24em] text-neutral-200/80">COGNITIVE RUNTIME</div>
+              <div className="text-[7px] tracking-[0.15em] text-neutral-600 mt-0.5">RUNTIME · OBSERVED STATE</div>
             </div>
           </div>
           <div className="text-right">
-            <div className="text-[9px] text-cyan-300">{currentActor}</div>
-            <div className="text-[8px] text-slate-500">{currentPhase}</div>
+            <div className="text-[9px] text-neutral-300">{currentActor}</div>
+            <div className="text-[8px] text-neutral-500">{currentPhase}</div>
           </div>
         </header>
 
@@ -122,14 +122,14 @@ export const AuraRuntimeNucleus: React.FC<AuraRuntimeNucleusProps> = ({
           <div className="relative min-h-0 flex items-center justify-center overflow-hidden">
             <div className="absolute left-1/2 top-1/2 w-[86%] max-w-[455px] aspect-square -translate-x-1/2 -translate-y-1/2">
               {/* Operator decision: the logo is the centre piece; the sphere artwork was removed. */}
-              <div className="absolute inset-[4%] rounded-full border border-cyan-800/20" />
+              <div className="absolute inset-[4%] rounded-full border border-neutral-800/20" />
               <div className={`absolute left-[38%] top-[34%] w-[62%] -translate-x-1/2 -translate-y-1/2 flex justify-center ${activePaths ? 'opacity-100' : 'opacity-60 grayscale'}`}>
                 <img src="/branding/jaco-logo.png" alt="JACO IDE" className="w-full h-auto object-contain select-none pointer-events-none" draggable={false} />
               </div>
 
-              <div className="absolute left-1/2 bottom-[6%] -translate-x-1/2 z-20 rounded border border-cyan-800/50 bg-[#02070c]/80 backdrop-blur px-2.5 py-1 text-center shadow-[0_0_18px_rgba(14,165,233,.16)]">
-                <div className="text-[7px] tracking-[0.28em] text-cyan-100/80">JACO COGNITIVE RUNTIME</div>
-                <div className="text-[6px] tracking-[0.14em] text-slate-500 mt-0.5">{activePaths} LIVE PATH{activePaths === 1 ? '' : 'S'}</div>
+              <div className="absolute left-1/2 bottom-[6%] -translate-x-1/2 z-20 rounded border border-neutral-800/50 bg-[#050608]/80 backdrop-blur px-2.5 py-1 text-center shadow-[0_0_18px_rgba(14,165,233,.16)]">
+                <div className="text-[7px] tracking-[0.28em] text-neutral-100/80">JACO COGNITIVE RUNTIME</div>
+                <div className="text-[6px] tracking-[0.14em] text-neutral-500 mt-0.5">{activePaths} LIVE PATH{activePaths === 1 ? '' : 'S'}</div>
               </div>
 
               {view.nodes.map((node, index) => {
@@ -141,7 +141,7 @@ export const AuraRuntimeNucleus: React.FC<AuraRuntimeNucleusProps> = ({
                   <span
                     key={node.id}
                     title={`${node.label}: ${node.detail}`}
-                    className={`absolute w-2.5 h-2.5 rounded-full border z-20 ${lit ? 'bg-cyan-200 border-white/70 shadow-[0_0_12px_rgba(34,211,238,.95)]' : 'bg-slate-900 border-slate-600'}`}
+                    className={`absolute w-2.5 h-2.5 rounded-full border z-20 ${lit ? 'bg-neutral-200 border-white/70 shadow-[0_0_12px_rgba(34,211,238,.95)]' : 'bg-neutral-900 border-neutral-600'}`}
                     style={{ left: `${x}%`, top: `${y}%`, transform: 'translate(-50%, -50%)' }}
                   />
                 );
@@ -151,7 +151,7 @@ export const AuraRuntimeNucleus: React.FC<AuraRuntimeNucleusProps> = ({
             <div className="absolute left-3 top-3 space-y-1 max-w-[42%]">
               {view.nodes.slice(0, 3).map(node => (
                 <div key={node.id} className="grid grid-cols-[62px_minmax(0,1fr)] gap-1.5 items-center text-[8px]">
-                  <span className="text-slate-600">{node.label}</span>
+                  <span className="text-neutral-600">{node.label}</span>
                   <span className={`border rounded px-1 py-0.5 truncate ${colorFor(node.state)}`} title={node.detail}>{node.state}</span>
                 </div>
               ))}
@@ -159,29 +159,29 @@ export const AuraRuntimeNucleus: React.FC<AuraRuntimeNucleusProps> = ({
 
             <div className="absolute right-3 bottom-3 space-y-1.5 w-[118px] xl:w-[145px]">
               {view.integrations.map(node => (
-                <div key={node.id} className="border border-[#19384b] bg-[#06111a]/90 rounded px-2 py-1">
+                <div key={node.id} className="border border-[#19384b] bg-[#0e0f11]/90 rounded px-2 py-1">
                   <div className="flex items-center justify-between gap-1">
-                    <span className="text-[8px] text-slate-400">{node.label}</span>
-                    <span className={`w-1.5 h-1.5 rounded-full ${node.state === 'VERIFIED' ? 'bg-emerald-300 shadow-[0_0_7px_rgba(110,231,183,.9)]' : node.state === 'OBSERVED' ? 'bg-cyan-300 shadow-[0_0_7px_rgba(103,232,249,.8)]' : 'bg-slate-700'}`} />
+                    <span className="text-[8px] text-neutral-400">{node.label}</span>
+                    <span className={`w-1.5 h-1.5 rounded-full ${node.state === 'VERIFIED' ? 'bg-emerald-300 shadow-[0_0_7px_rgba(110,231,183,.9)]' : node.state === 'OBSERVED' ? 'bg-neutral-300 shadow-[0_0_7px_rgba(103,232,249,.8)]' : 'bg-neutral-700'}`} />
                   </div>
-                  <div className="text-[7px] text-slate-600 truncate mt-0.5" title={node.detail}>{node.detail}</div>
+                  <div className="text-[7px] text-neutral-600 truncate mt-0.5" title={node.detail}>{node.detail}</div>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="border-t border-[#183448] bg-[#050d14]/90 px-3 py-2 grid grid-cols-3 gap-2 text-[8px]">
-            <div><span className="text-slate-600 block">EXECUTION PATHS</span><span className="text-cyan-300">{activePaths} observed</span></div>
-            <div><span className="text-slate-600 block">EVIDENCE</span><span className={view.verifiedReceipts ? 'text-emerald-300' : 'text-slate-500'}>{view.verifiedReceipts} verified</span></div>
-            <div><span className="text-slate-600 block">OPERATOR</span><span className={view.pending ? 'text-amber-300' : 'text-emerald-300'}>{view.pending ? `${view.pending} approval(s)` : 'no decision pending'}</span></div>
+          <div className="border-t border-[#183448] bg-[#0b0c0e]/90 px-3 py-2 grid grid-cols-3 gap-2 text-[8px]">
+            <div><span className="text-neutral-600 block">EXECUTION PATHS</span><span className="text-neutral-300">{activePaths} observed</span></div>
+            <div><span className="text-neutral-600 block">EVIDENCE</span><span className={view.verifiedReceipts ? 'text-emerald-300' : 'text-neutral-500'}>{view.verifiedReceipts} verified</span></div>
+            <div><span className="text-neutral-600 block">OPERATOR</span><span className={view.pending ? 'text-amber-300' : 'text-emerald-300'}>{view.pending ? `${view.pending} approval(s)` : 'no decision pending'}</span></div>
           </div>
         </div>
 
         <div className="h-8 px-3 border-t border-[#183448] shrink-0 flex items-center gap-3 text-[8px]">
           <span className="flex items-center gap-1 text-emerald-300"><CheckCircle2 className="w-3 h-3" />{view.verifiedReceipts} verified</span>
           <span className="flex items-center gap-1 text-amber-300"><ShieldAlert className="w-3 h-3" />{view.pending} approval{view.pending === 1 ? '' : 's'}</span>
-          <span className="flex items-center gap-1 text-slate-500"><CircleDashed className="w-3 h-3" />{view.activityCount} event(s)</span>
-          <span className="ml-auto text-[7px] tracking-wider text-slate-700">TRUTH BEFORE APPEARANCE</span>
+          <span className="flex items-center gap-1 text-neutral-500"><CircleDashed className="w-3 h-3" />{view.activityCount} event(s)</span>
+          <span className="ml-auto text-[7px] tracking-wider text-neutral-700">TRUTH BEFORE APPEARANCE</span>
         </div>
       </div>
     </section>

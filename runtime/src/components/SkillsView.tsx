@@ -81,9 +81,9 @@ export const SkillsView: React.FC = () => {
 
   return (
     <>
-      <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400 flex items-center justify-between">
+      <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-neutral-400 flex items-center justify-between">
         <span>Skills</span>
-        <button onClick={() => void load()} className="text-[9px] text-cyan-400 hover:text-cyan-300">Refresh</button>
+        <button onClick={() => void load()} className="text-[9px] text-neutral-300 hover:text-neutral-300">Refresh</button>
       </div>
       <div className="flex-1 overflow-auto px-2 space-y-2 text-[11px] min-w-0">
         <details><summary>Add a skill</summary>
@@ -102,56 +102,56 @@ export const SkillsView: React.FC = () => {
             <div className="text-[10px] text-amber-300">JACO has learned {pending.length} thing(s) from its missions. Nothing is used until you approve it.</div>
             {pending.map(p => (
               <div key={p.key} className="border border-[#3a3220] rounded p-1.5 min-w-0">
-                <div className="text-[10px] text-slate-200 break-words">
-                  {p.kind === 'tool-note' ? <>Tool note for <span className="text-cyan-300">{p.tool}</span>: {p.note}</> : <>New skill: <span className="text-cyan-300">{p.id}</span></>}
+                <div className="text-[10px] text-neutral-200 break-words">
+                  {p.kind === 'tool-note' ? <>Tool note for <span className="text-neutral-300">{p.tool}</span>: {p.note}</> : <>New skill: <span className="text-neutral-300">{p.id}</span></>}
                 </div>
-                <div className="text-[9px] text-slate-500 break-all">from {p.missionId}{p.namedBy ? ` · named by ${p.namedBy}` : ''}</div>
+                <div className="text-[9px] text-neutral-500 break-all">from {p.missionId}{p.namedBy ? ` · named by ${p.namedBy}` : ''}</div>
                 {p.kind === 'skill' && (
-                  <button onClick={() => setOpenProposal(openProposal === p.key ? null : p.key)} className="text-[9px] text-cyan-400 hover:text-cyan-300">
+                  <button onClick={() => setOpenProposal(openProposal === p.key ? null : p.key)} className="text-[9px] text-neutral-300 hover:text-neutral-300">
                     {openProposal === p.key ? 'Hide' : 'Show SKILL.md'}
                   </button>
                 )}
-                {openProposal === p.key && <pre className="whitespace-pre-wrap break-words text-[9px] text-slate-300 max-h-48 overflow-auto">{p.skillMd}</pre>}
+                {openProposal === p.key && <pre className="whitespace-pre-wrap break-words text-[9px] text-neutral-300 max-h-48 overflow-auto">{p.skillMd}</pre>}
                 <div className="flex gap-1.5 mt-1">
                   <button onClick={() => void decide(p.key, 'approve')} className="px-1.5 py-0.5 rounded bg-emerald-800 hover:bg-emerald-700 text-white text-[9px]">Approve</button>
-                  <button onClick={() => void decide(p.key, 'reject')} className="px-1.5 py-0.5 rounded bg-[#3a2a2a] hover:bg-[#4a3030] text-slate-200 text-[9px]">Reject</button>
+                  <button onClick={() => void decide(p.key, 'reject')} className="px-1.5 py-0.5 rounded bg-[#3a2a2a] hover:bg-[#4a3030] text-neutral-200 text-[9px]">Reject</button>
                 </div>
               </div>
             ))}
           </div>
         )}
-        {!skills && !error && <div className="text-slate-500 px-1">Reading skills…</div>}
-        {skills?.length === 0 && <div className="text-slate-500 px-1">No skills. Add skills/&lt;id&gt;/SKILL.md to the repository.</div>}
+        {!skills && !error && <div className="text-neutral-500 px-1">Reading skills…</div>}
+        {skills?.length === 0 && <div className="text-neutral-500 px-1">No skills. Add skills/&lt;id&gt;/SKILL.md to the repository.</div>}
         {skills?.map(s => (
           <button key={s.id} disabled={busy} onClick={() => void select(s.id)}
-            className={`w-full text-left border rounded p-2 min-w-0 ${open?.id === s.id ? 'border-cyan-700 bg-[#10202a]' : 'border-[#333] bg-[#1d1d1d] hover:border-[#555]'}`}>
-            <div className="text-slate-100 truncate">{s.name}</div>
+            className={`w-full text-left border rounded p-2 min-w-0 ${open?.id === s.id ? 'border-neutral-700 bg-[#1c1d1f]' : 'border-[#323335] bg-[#1c1d1f] hover:border-[#545557]'}`}>
+            <div className="text-neutral-100 truncate">{s.name}</div>
             {s.error
               ? <div className="text-red-300 text-[10px] break-words">{s.error}</div>
-              : <div className="text-slate-400 text-[10px]">{s.description}</div>}
-            <div className="text-[9px] text-slate-600 truncate">tasks: {s.tasks.join(', ') || '-'}</div>
+              : <div className="text-neutral-400 text-[10px]">{s.description}</div>}
+            <div className="text-[9px] text-neutral-600 truncate">tasks: {s.tasks.join(', ') || '-'}</div>
           </button>
         ))}
         {open && (
-          <div className="border border-[#333] bg-[#141414] rounded p-2 space-y-2 min-w-0">
-            <div className="text-[9px] text-slate-500 break-all">{open.source}</div>
+          <div className="border border-[#323335] bg-[#131416] rounded p-2 space-y-2 min-w-0">
+            <div className="text-[9px] text-neutral-500 break-all">{open.source}</div>
             {open.tasks.some(task=>task.startsWith('repo-')||task.startsWith('git-'))&&<p>Code skills run as missions in the open Git project, with their own project contract.</p>}
-            <pre className="whitespace-pre-wrap break-words text-[10px] text-slate-300 max-h-64 overflow-auto">{open.body}{open.truncated ? '\n[truncated]' : ''}</pre>
+            <pre className="whitespace-pre-wrap break-words text-[10px] text-neutral-300 max-h-64 overflow-auto">{open.body}{open.truncated ? '\n[truncated]' : ''}</pre>
             {open.tasks.includes('repo-test')&&<label>Test commands, one per line<textarea value={testCommands} onChange={e=>setTestCommands(e.target.value)} placeholder="npm test"/></label>}
             <textarea disabled={busy} value={input} onChange={e => setInput(e.target.value)} rows={3} placeholder="Input for this run (e.g. what to look at)"
-              className="w-full bg-[#0b0b0b] border border-[#333] rounded p-1 text-[11px] text-slate-200" />
+              className="w-full bg-[#0a0b0d] border border-[#323335] rounded p-1 text-[11px] text-neutral-200" />
             {executors.length > 1 && (
-              <label className="flex items-center gap-1.5 text-[10px] text-slate-400">Run on
-                <select value={executor} onChange={e => setExecutor(e.target.value)} className="flex-1 min-w-0 bg-[#0b0b0b] border border-[#333] rounded p-0.5 text-[10px] text-slate-200">
+              <label className="flex items-center gap-1.5 text-[10px] text-neutral-400">Run on
+                <select value={executor} onChange={e => setExecutor(e.target.value)} className="flex-1 min-w-0 bg-[#0a0b0d] border border-[#323335] rounded p-0.5 text-[10px] text-neutral-200">
                   {executors.map(x => <option key={x.executor} value={x.executor}>{x.label}</option>)}
                 </select>
               </label>
             )}
             <button onClick={() => void run()} disabled={busy || !input.trim()}
-              className="px-2 py-1 rounded bg-cyan-800 hover:bg-cyan-700 text-white text-[10px] disabled:opacity-40">
+              className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-white text-[10px] disabled:opacity-40">
               {busy ? 'Starting…' : 'Run as mission'}
             </button>
-            {result && <div className="text-[10px] text-slate-300 break-words">{result}</div>}
+            {result && <div className="text-[10px] text-neutral-300 break-words">{result}</div>}
           </div>
         )}
       </div>

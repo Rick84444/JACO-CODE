@@ -70,13 +70,13 @@ export const AuraProjectPicker: React.FC<{ disabled?: boolean; onOpened: (root: 
         <>
           <div className="flex items-center gap-1">
             <input
-              className="min-w-0 flex-1 border border-[#3a3a3a] bg-[#1f1f1f] px-1 py-0.5 text-[11px]"
+              className="min-w-0 flex-1 border border-[#393a3c] bg-[#1e1f21] px-1 py-0.5 text-[11px]"
               placeholder="Absolute folder path"
               value={input}
               onChange={(event) => setInput(event.target.value)}
             />
             <button
-              className="border border-[#3a3a3a] bg-[#1f1f1f] px-2 py-0.5 text-[11px] disabled:opacity-40"
+              className="border border-[#393a3c] bg-[#1e1f21] px-2 py-0.5 text-[11px] disabled:opacity-40"
               disabled={!canOpen}
               onClick={() => openProject(input.trim())}
             >
@@ -85,7 +85,7 @@ export const AuraProjectPicker: React.FC<{ disabled?: boolean; onOpened: (root: 
           </div>
           {history.length > 1 ? (
             <select
-              className="border border-[#3a3a3a] bg-[#1f1f1f] px-1 py-0.5 text-[11px]"
+              className="border border-[#393a3c] bg-[#1e1f21] px-1 py-0.5 text-[11px]"
               value={project.root || ''}
               onChange={(event) => {
                 if (event.target.value) openProject(event.target.value);
