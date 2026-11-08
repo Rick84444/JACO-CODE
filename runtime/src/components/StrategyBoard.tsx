@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, ShieldAlert, MessageSquare, GitBranch, X } from 'lucide-react';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { buildOperatorConfirmation, requiresOperatorConfirmation } from '../lib/operatorApproval.mjs';
+import { LocalMemoryPanel } from './LocalMemoryPanel';
 import { useUiLanguage } from '../i18n/UiLanguage';
 
 // The Gameboard: one plan at a time, drawn like a family tree read backwards. The goal (what the operator wants) is
@@ -19,7 +20,7 @@ const decisionMission = (d: Decision): string | null => d.details?.missionId || 
 type Plan = { id: string; title: string; objective: string; status: string; progress: { done: number; total: number }; needsApproval: Need[]; nodes: Node[]; changes: Array<{ at: string | null; reason: string | null; replaced: string | null }>; comments: Comment[]; abilities?: { missing: string[]; text: string } | null };
 
 // Aura's text never uses emoji: the state of a need is a word and a colour.
-const STATE_WORD: Record<string, [string, string]> = { have: ['har', 'have'], missing: ['saknas', 'missing'], approval: ['ditt ja', 'your yes'] };
+const STATE_WORD: Record<string, [string, string]> = { have: ['påslagen', 'enabled'], missing: ['saknas', 'missing'], approval: ['ditt ja', 'your yes'] };
 const chip = (state?: string | null, approval?: boolean) => state === 'have' ? 'bg-emerald-950 text-emerald-200' : state === 'missing' ? 'bg-rose-950 text-rose-200' : state === 'approval' || approval ? 'bg-amber-950 text-amber-200' : 'bg-neutral-800 text-neutral-300';
 // Every box is white; the one being worked on is blue and blinks. Whether a step is done or failed is a word.
 const STATUS_TEXT: Record<string, string> = { FAILED: 'text-rose-300', VERIFIED: 'text-white/60' };
@@ -350,6 +351,7 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
         {onClose && <button type="button" onClick={onClose} title={tr('Tillbaka till Aura', 'Back to Aura')} aria-label={tr('Tillbaka till Aura', 'Back to Aura')} className="flex items-center gap-2 rounded-full border border-white/30 py-0.5 pl-0.5 pr-3 text-xs text-white/80 hover:border-sky-400"><img src="/branding/aura-avatar.png" alt="" width={30} height={30} style={{ width: 30, height: 30 }} className="rounded-full" />{tr('Tillbaka till Aura', 'Back to Aura')}</button>}
       </div>
     </header>
+    <LocalMemoryPanel missionIds={(plans || []).flatMap(p=>p.nodes.map(n=>n.missionId).filter((id):id is string=>Boolean(id)))} />
     <p className="text-xs text-neutral-400">{tr('Målet står alltid först. Under det ser du vad som behövs för att nå det, och under varje delmål vad det i sin tur behöver. Det aktiva delmålet lyser svagt blått. Klicka på en ruta för hela beskrivningen.', 'The goal always comes first. Below it you see what is needed to reach it, and below each subgoal what that needs in turn. The active subgoal glows faint blue. Click a box for the full description.')}</p>
     {planDecisions.length > 0 && <section aria-label={tr('Väntar på dig', 'Waiting for you')} className="space-y-2">
       <div className="text-xs font-semibold uppercase tracking-widest text-amber-300">{tr('Väntar på dig', 'Waiting for you')} ({planDecisions.length})</div>

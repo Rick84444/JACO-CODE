@@ -6,7 +6,13 @@
 // (loopback, not proxied) are unchanged. The terminal stays local only (requireLocalUiSameOrigin).
 
 export const IDE_COOKIE = 'jaco_ide';
-export const PUBLIC_APP_FILES = new Set(['/manifest.webmanifest', '/branding/jaco-icon-192.png', '/branding/jaco-icon-512.png']);
+// Android Chrome fetches icons when installing before a pairing cookie exists.
+// Only the two actual Remote manifest icons are public, never the app shell or API.
+export const PUBLIC_APP_FILES = new Set([
+  '/manifest.webmanifest', '/remote.webmanifest',
+  '/branding/jaco-icon-192.png', '/branding/jaco-icon-512.png',
+  '/branding/jaco-remote-icon-192.png', '/branding/jaco-remote-icon.svg',
+]);
 const SESSION_DAYS = 30;
 const PAIR_ATTEMPTS_PER_HOUR = 10;
 
@@ -19,7 +25,7 @@ export const tunnelHosts = new Set();
 export function readCookie(header, name) {
   for (const part of String(header || '').split(';')) {
     const at = part.indexOf('=');
-    if (at > 0 && part.slice(0, at).trim() === name) return decodeURIComponent(part.slice(at + 1).trim());
+    if (at > 0 && part.slice(0, at).trim() === name) try { return decodeURIComponent(part.slice(at + 1).trim()); } catch { return null; }
   }
   return null;
 }
@@ -53,7 +59,7 @@ export const LOGIN_SCRIPT = `const f=document.getElementById('f'),b=document.get
 const hashCode=/^#code=([A-Za-z0-9-]{5,16})$/.exec(location.hash);if(hashCode){document.getElementById('c').value=hashCode[1].toUpperCase();history.replaceState(null,'',location.pathname);setTimeout(()=>f.requestSubmit(),0)}
 f.addEventListener('submit',async e=>{e.preventDefault();b.disabled=true;m.textContent='';
 try{const r=await fetch('/ide-auth/pair',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:document.getElementById('c').value})});
-const d=await r.json().catch(()=>({}));if(r.ok&&d.success){location.replace('/');return}
+const d=await r.json().catch(()=>({}));if(r.ok&&d.success){const next=new URLSearchParams(location.search).get('next');location.replace(next==='remote'?'/?remote=1':'/');return}
 m.textContent=d.error==='PAIRING_CODE_INVALID_OR_EXPIRED'?'Wrong or expired code. Create a new one on the computer.':d.error==='TOO_MANY_ATTEMPTS'||d.error==='PAIRING_LOCKED_TRY_LATER'?'Too many attempts. Wait and try again.':'Sign-in failed ('+(d.error||r.status)+').'}
 catch{m.textContent='The hub is not responding.'}b.disabled=false});
 `;
@@ -107,8 +113,8 @@ export function createIdeRemoteGate(registry, { env = process.env, onEvent = () 
 
     const session = ideSessionOf(req, registry);
     if (!session) {
-      if (path.startsWith('/api/') || req.method !== 'GET') return res.status(401).json({ success: false, error: 'IDE_LOGIN_REQUIRED' });
-      return res.redirect(302, '/ide-login');
+      if (path.startsWith('/api/') || path === '/ide-auth/status' || req.method !== 'GET') return res.status(401).json({ success: false, error: 'IDE_LOGIN_REQUIRED' });
+      return res.redirect(302, path === '/' && req.query?.remote === '1' ? '/ide-login?next=remote' : '/ide-login');
     }
     // Changes only from the IDE page itself: the cookie is SameSite=Strict, and the browser's Origin
     // must be the IDE host.
@@ -116,9 +122,22 @@ export function createIdeRemoteGate(registry, { env = process.env, onEvent = () 
       const origin = String(req.headers.origin || '');
       if (origin !== `https://${host}`) return res.status(403).json({ success: false, error: 'CROSS_ORIGIN_DENIED' });
     }
+    // The remote client must observe a revoked device before accepting new controls.
+    if (req.method === 'GET' && path === '/ide-auth/status') {
+      return res.json({ success: true, authenticated: true, device: session.name });
+    }
     if (req.method === 'POST' && path === '/ide-auth/logout') {
+      // Deleting only the cookie leaves the reusable device key valid. Revoke the
+      // device on the Windows source of truth, then expire the browser cookie.
+      // A failed revocation must never be reported as a successful logout.
+      try {
+        registry.revoke(session.name, 'ide');
+      } catch {
+        return res.status(503).json({ success: false, error: 'REMOTE_SESSION_REVOCATION_FAILED' });
+      }
       res.setHeader('Set-Cookie', `${IDE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
-      return res.json({ success: true });
+      onEvent({ type: 'ide.session.revoked', device: session.name });
+      return res.json({ success: true, revoked: true });
     }
     // Command execution stays on this computer: these routes run commands from the request body, and
     // some accept a loopback caller without a token (the tunnel connects from loopback).

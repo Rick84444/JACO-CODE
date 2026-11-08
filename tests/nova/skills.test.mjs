@@ -70,6 +70,17 @@ test('the repository skills all parse and declare only allowed, non-code tasks',
   for (const s of list) assert.equal(s.error, undefined, `${s.id}: ${s.error}`);
 });
 
+test('canonical SkillRuntime packages are not exposed as legacy mission skills', () => {
+  const root = path.join(dir, 'canonical-only');
+  write(root, 'proof-quest', '---\nname: Proof Quest\ntasks: [web-fetch]\n---\n# Canonical package');
+  fs.writeFileSync(path.join(root, 'proof-quest', 'skill.json'), JSON.stringify({
+    schema: 'jaco.skill.v1', id: 'marketing.proof-quest', status: 'CANDIDATE',
+  }));
+  assert.deepEqual(listSkills([root]), [], 'versioned packages are owned by SkillRuntime');
+  assert.throws(() => loadSkill([root], 'proof-quest'), /SKILL_NOT_FOUND/,
+    'legacy skill-load cannot bypass the candidate gate');
+});
+
 test('Nova can pick a skill itself: skill-load is a validated read-only task and the catalog comes from the runtime', async () => {
   const { validateTask } = await import('../../runtime/src/server/connected/novaMissionControl.mjs');
   assert.equal(validateTask({ type: 'skill-load', data: { id: 'repo-insight' } }, ['skill-load']).data.id, 'repo-insight');

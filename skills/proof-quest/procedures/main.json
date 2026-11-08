@@ -1,0 +1,17 @@
+{
+  "schema": "jaco.skill.procedure.v1",
+  "id": "main",
+  "steps": [
+    {
+      "id": "build",
+      "kind": "script",
+      "script": "marketing.proofQuest",
+      "args": "$input"
+    },
+    {
+      "id": "result",
+      "kind": "return",
+      "value": "$steps.build"
+    }
+  ]
+}

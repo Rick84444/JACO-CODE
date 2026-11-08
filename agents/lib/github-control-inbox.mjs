@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createGitControlReceiptPublisher } from './git-control-receipts.mjs';
 const execFileAsync = promisify(execFile);
 const DEFAULT_REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -17,6 +18,7 @@ export function createGithubNovaControlInbox({
   fetchImpl = globalThis.fetch,
   repo = process.env.JACO_GITHUB_CONTROL_REPO || 'Rick84444/jaco-code',
   token = process.env.JACO_GITHUB_CONTROL_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '',
+  transportMode = process.env.JACO_GITHUB_CONTROL_TRANSPORT || 'auto',
   actor = process.env.JACO_GITHUB_CONTROL_ACTOR || String(repo).split('/')[0],
   pollMs = Number(process.env.JACO_GITHUB_CONTROL_POLL_MS || 15000),
   log = () => {},
@@ -30,10 +32,15 @@ export function createGithubNovaControlInbox({
   if (!missionClient) throw new Error('GITHUB_CONTROL_MISSION_CLIENT_REQUIRED');
   const [owner, name] = String(repo).split('/');
   const configured = Boolean(owner && name && actor);
-  const transport = token ? 'github-api' : 'git-ref';
-  const effectivePollMs = token
+  const transport = transportMode === 'git-ref' ? 'git-ref' : token ? 'github-api' : 'git-ref';
+  const effectivePollMs = transport === 'github-api'
     ? Math.max(5000, Number.isFinite(pollMs) ? pollMs : 15000)
     : Math.max(30000, Number.isFinite(pollMs) ? pollMs : 30000);
+  // One canonical mission inbox. Git without an API token uses a separate
+  // status ref for acknowledgements instead of introducing a second server.
+  const gitReceiptPublisher = transport === 'github-api' ? null : createGitControlReceiptPublisher({
+    repo, repoRoot, gitBin, gitExecImpl, log,
+  });
 
   async function api(path, options = {}) {
     const response = await fetchImpl(API + path, {
@@ -88,7 +95,7 @@ export function createGithubNovaControlInbox({
   }
 
   async function listCommands() {
-    if (!token) {
+    if (transport === 'git-ref') {
       const raw = await readGitControl();
       if (!raw) return [];
       return [{
@@ -117,7 +124,7 @@ export function createGithubNovaControlInbox({
   }
 
   async function postComment(issueNumber, body) {
-    if (!token) return null;
+    if (transport === 'git-ref') return null;
     return await api(`/repos/${owner}/${name}/issues/${issueNumber}/comments`, {
       method: 'POST',
       body: { body },
@@ -125,7 +132,7 @@ export function createGithubNovaControlInbox({
   }
 
   async function updateComment(commentId, body) {
-    if (!token) return null;
+    if (transport === 'git-ref') return null;
     return await api(`/repos/${owner}/${name}/issues/comments/${commentId}`, {
       method: 'PATCH',
       body: { body },
@@ -133,7 +140,7 @@ export function createGithubNovaControlInbox({
   }
 
   async function closeIssue(issueNumber) {
-    if (!token) return null;
+    if (transport === 'git-ref') return null;
     return await api(`/repos/${owner}/${name}/issues/${issueNumber}`, {
       method: 'PATCH',
       body: { state: 'closed', state_reason: 'completed' },
@@ -238,11 +245,13 @@ export function createGithubNovaControlInbox({
         '### JACO Nova local — REJECTED',
         `- error: \`${String(error.message || error).slice(0, 300)}\``,
       ].join('\n')).catch(() => null);
-      control.issues[String(issue.number)] = {
-        commandId: null,
+      control.issues[issue.number == null ? 'git:invalid' : String(issue.number)] = {
+        commandId: issue.number == null ? 'invalid-control-ref' : null,
         op: 'invalid',
         missionId: null,
         commentId: comment?.id || null,
+        transport: issue.number == null ? 'git-ref' : 'github-api',
+        error: String(error?.message || 'GITHUB_CONTROL_INVALID').slice(0,100),
         status: 'REJECTED',
         closed: true,
       };
@@ -346,7 +355,7 @@ export function createGithubNovaControlInbox({
     actor,
     pollMs: effectivePollMs,
     transport,
-    writeback: token ? 'github' : 'local-only',
+    writeback: transport === 'github-api' ? 'github' : 'git-ref-when-authorized',
 
     async poll(state, { force = false } = {}) {
       const control = ensureState(state);
@@ -366,15 +375,19 @@ export function createGithubNovaControlInbox({
           if (issue.number == null) {
             try { commandId = parse(issue).commandId; } catch {}
           }
-          const key = issue.number == null && commandId ? `git:${commandId}` : String(issue.number);
+          const key = issue.number == null ? (commandId ? `git:${commandId}` : 'git:invalid') : String(issue.number);
           const record = control.issues[key];
           if (record && (record.closed || record.commandId)) continue;
           const result = await acceptIssue(issue, control);
           if (result.accepted) accepted.push(result);
         }
+        // Best-effort telemetry: inability to push Git status must never block
+        // canonical Nova execution, nor cause duplicate mission creation.
+        const statusReceipt = gitReceiptPublisher ? await gitReceiptPublisher.publish(control) : null;
         control.lastError = null;
-        if (accepted.length || updates.length) log('info', `GitHub control: ${accepted.length} command(s), ${updates.length} status update(s)`);
-        return { enabled: true, accepted, updates };
+        if (accepted.length || updates.length || statusReceipt?.sent)
+          log('info', `GitHub control: ${accepted.length} command(s), ${updates.length} status update(s), receipt=${statusReceipt?.sent ? 'published' : statusReceipt?.reason || 'local'}`);
+        return { enabled: true, accepted, updates, statusReceipt };
       } catch (error) {
         control.lastError = String(error.message || error).slice(0, 500);
         log('warn', `GitHub control poll failed: ${control.lastError}`);

@@ -82,3 +82,32 @@ test('setup reports missing package manifests before executing any commands', t 
   }), /SETUP_MANIFEST_MISSING:runtime\/gateway/);
   assert.equal(calls.length, 2);
 });
+
+test('Termux setup prepares native Rollup and builds Aura without desktop server bundling', t => {
+  const root = fixture(t);
+  const calls = [];
+  setup(root, { PREFIX: '/data/data/com.termux/files/usr' }, {
+    spawn(binary, args, options) {
+      calls.push({ binary, args, cwd: options.cwd });
+      return { status: 0 };
+    },
+    logger: noLog,
+  });
+  assert.equal(calls.length, 5);
+  assert.equal(calls[3].binary, process.execPath);
+  assert.deepEqual(calls[3].args, ['scripts/ensure_rollup_native.mjs']);
+  assert.equal(calls[3].cwd, path.join(root, 'runtime'));
+  assert.deepEqual(calls[4].args, ['run', 'build:termux']);
+  assert.equal(calls.some(c => c.args.join(' ').includes('build:server')), false);
+});
+
+test('Termux setup fails closed when native Rollup preparation fails', t => {
+  const root = fixture(t);
+  assert.throws(() => setup(root, { PREFIX: '/data/data/com.termux/files/usr' }, {
+    spawn(_binary, args) {
+      return { status: args[0] === 'scripts/ensure_rollup_native.mjs' ? 5 : 0 };
+    },
+    logger: noLog,
+  }), /Android Rollup preparation failed \(exit 5\)/);
+  assert.equal(fs.existsSync(path.join(root, '.env')), false);
+});

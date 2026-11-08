@@ -149,6 +149,33 @@ try {
     assert.equal(await english.evaluate(() => document.documentElement.lang),'sv','Operator language preference must persist');
     passed('New IDE sessions default to English; Swedish toggle persists across reload');
   } finally { await english.close(); }
+  // Remote is a view of this SAME production UI and fixture runtime, never
+  // a parallel mission service. Exercise the actual 393px phone viewport.
+  const remote = await browser.newPage({viewport:{width:393,height:852},deviceScaleFactor:1});
+  try {
+    await remote.goto(base+'/?remote=1',{waitUntil:'domcontentloaded'});
+    const remoteNav = remote.getByRole('navigation',{name:'Remote control'});
+    await remoteNav.getByRole('button',{name:'Chat',exact:true}).waitFor();
+    await remote.getByRole('button',{name:'Sign out of Remote'}).waitFor();
+    assert.equal(await remote.locator('link[rel="manifest"]').getAttribute('href'),'/remote.webmanifest');
+    assert.equal(await remote.locator('.cognitive-workspace').getAttribute('data-remote-mode'),'true');
+    assert.equal(await remote.locator('.cognitive-rail').evaluate(el=>getComputedStyle(el).display),'none');
+    await remote.getByRole('textbox',{name:'Message to JACO'}).fill('Retain remote draft');
+    await remoteNav.getByRole('button',{name:'Mission',exact:true}).click();
+    await remote.getByTestId('aura-live-stage').waitFor();
+    await remoteNav.getByRole('button',{name:'Plan',exact:true}).click();
+    await remote.getByTestId('strategy-board').waitFor();
+    await remoteNav.getByRole('button',{name:'Results',exact:true}).click();
+    await remoteNav.getByRole('button',{name:'Chat',exact:true}).click();
+    assert.equal(await remote.getByRole('textbox',{name:'Message to JACO'}).inputValue(),'Retain remote draft');
+    assert.equal(await remote.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'remote must not overflow phone viewport');
+    assert.equal(requests.some(item=>item.kind==='goal'),false,'remote navigation cannot create missions');
+    if(process.env.JACO_UI_SCREENSHOTS){
+      fs.mkdirSync(process.env.JACO_UI_SCREENSHOTS,{recursive:true});
+      await remote.screenshot({path:path.join(process.env.JACO_UI_SCREENSHOTS,'jaco-remote-mobile.png')});
+    }
+    passed('Remote PWA uses one Aura chat, phone navigation and preserves the draft without creating a mission');
+  } finally { await remote.close(); }
   blockSession=true;
   await page.goto(base,{waitUntil:'networkidle'});
   await page.getByRole('button',{name:'Försök läsa igen'}).waitFor();
@@ -189,6 +216,13 @@ try {
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   passed('Desktop and mobile view changes retain the same draft and conversation session');
   await canvas('Spelplan').click();
+  await page.getByTestId('strategy-board').waitFor();
+  // Operator can open the actual local memory view from the Gameboard on a mobile viewport.
+  await page.getByTestId('memory-gameboard').locator('button').first().click();
+  await page.getByRole('region',{name:'Minnets innehåll och beslut'}).waitFor();
+  await page.getByTestId('memory-gameboard').getByRole('button',{name:'Stäng minnet'}).click();
+  // The operator-facing blueprint is primary; the technical simulator opens on demand.
+  await page.getByText('Technical view', { exact: true }).click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Gameboard must not overflow Android-size viewport');
   await canvas('Samtal').click();
@@ -196,6 +230,9 @@ try {
   passed('Gameboard tab fits mobile viewport and preserves one conversation');
 
   await canvas('Spelplan').click();
+  await page.getByTestId('strategy-board').waitFor();
+  // The operator-facing blueprint is primary; the technical simulator opens on demand.
+  await page.getByText('Technical view', { exact: true }).click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
   await page.getByText('Aura planning: UNAVAILABLE').waitFor();
   await page.locator('section[aria-label="Shared gameboard"] input[list="gameboard-tools"]').first().fill('mcp:git:git_status');

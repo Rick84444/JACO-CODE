@@ -62,6 +62,8 @@ test('each need shows whether Aura has it, lacks it or needs approval, and Aura 
   assert.equal(needStatus({ kind: 'research' }, available), 'have');
   assert.equal(needStatus({ kind: 'browser' }, available), 'missing');
   assert.equal(needStatus({ kind: 'account' }, available), 'approval');
+  assert.equal(needStatus({ kind: 'helpers' }, available), 'missing', 'an enabled worker is not proof of a helper run');
+  assert.equal(needStatus({ kind: 'helpers' }, { ...available, helpersVerified: true }), 'have');
   assert.equal(needStatus({ kind: 'skill', id: 'build-web-page' }, available), 'missing');
   assert.equal(needStatus({ kind: 'skill', id: 'web-research' }, available), 'have');
   assert.equal(needStatus({ kind: 'payment' }, available), 'missing');
@@ -75,7 +77,7 @@ test('each need shows whether Aura has it, lacks it or needs approval, and Aura 
   assert.match(v.abilities.text, /betalkoppling/);
   const ok = gapSummary([{ needs: [{ kind: 'research', state: 'have' }] }], 'sv');
   assert.deepEqual(ok.missing, []);
-  assert.match(ok.text, /^Jag har det som planen behöver/);
+  assert.match(ok.text, /^Planens funktioner är aktiverade/);
   assert.equal(planView(graph, { language: 'sv' }).abilities, null, 'without knowing what is available, nothing is claimed');
 });
 

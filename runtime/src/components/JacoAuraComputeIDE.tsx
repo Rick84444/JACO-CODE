@@ -314,6 +314,9 @@ const languageLabel = (path: string) => {
 };
 
 export const JacoAuraComputeIDE: React.FC = () => {
+  // Presentation only: both desktop and remote use the same chat, missions,
+  // approvals and runtime. A URL parameter never grants additional authority.
+  const remoteMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('remote') === '1';
   const chatSession = useAuraChatSession();
   const { tr } = useUiLanguage();
   const activation = useActivationReport();
@@ -1756,7 +1759,18 @@ export const JacoAuraComputeIDE: React.FC = () => {
   ];
   const remoteViewer = typeof window !== 'undefined' && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
   const signOut = async () => {
-    try { await fetch('/ide-auth/logout', { method: 'POST' }); } finally { window.location.replace('/ide-login'); }
+    try {
+      const response = await fetch('/ide-auth/logout', {method: 'POST', credentials: 'same-origin'});
+      if (!response.ok) throw new Error('Remote device revocation was not confirmed');
+      const result = await response.json();
+      if (result?.revoked !== true) throw new Error('Remote device revocation was not confirmed');
+      window.location.replace('/ide-login?next=remote');
+    } catch {
+      // If the PC is offline, a logout cannot revoke its key. Do not suggest
+      // that this phone has been disconnected: let the operator retry or revoke
+      // it from Devices on the Windows host.
+      setConnectionError('Could not revoke Android Remote access. Retry sign out or revoke the device from JACO Devices on Windows.');
+    }
   };
   const status = liveWorkspaceStatus({ connection: cognitiveLive.connection, busy: chatSession.busy, missions, runtimeRunning: snapshot?.runtime?.running, error: connectionError, activation, approvalCount: snapshot?.approvals?.count || 0 });
   const [presenceClock,setPresenceClock]=useState(()=>Date.now());
@@ -1963,7 +1977,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     </div>
   </section> : null;
   return <>
-    <CognitiveWorkspace attention={attention} canvas={workspaceView} onCanvas={chooseWorkspace} conversation={renderChatContent()} detail={detail}
+    <CognitiveWorkspace remoteMode={remoteMode} attention={attention} canvas={workspaceView} onCanvas={chooseWorkspace} conversation={renderChatContent()} detail={detail}
       stage={stage} stagePinned={workspacePinned} onTogglePin={()=>setWorkspacePinned(value=>!value)}
       sidebar={sidebar} sidePanelOpen={sidePanelOpen} sidePanel={renderSidebar()}
       onSidebar={view => { if(workspaceView==='gameboard')setWorkspaceView('conversation'); if(['tools','providers','skills'].includes(view)){setConnectionsTab(view==='tools'?'capabilities':view==='providers'?'models':'skills');setWorkspaceView('connections');setSidePanelOpen(false);}else{setSidebar(view);setSidePanelOpen(current => sidebar === view ? !current : true);} }}

@@ -64,6 +64,7 @@ import { digest } from './lib/claim-check.mjs';
 import { skillIdOfGoal, fetchSkill, fetchSkillList, relevantAuthorizedSkills } from './lib/skills.mjs';
 import { STRATEGIC_AGENT_INSTRUCTIONS, readStrategicContext, workerStrategicPrompt } from './lib/strategic-context.mjs';
 import { readAuraServiceHealth } from './lib/aura-service-health.mjs';
+import { readLivePlanContext } from './lib/live-plan-context.mjs';
 import { shouldCreateChatMission } from './lib/chat-mission-intent.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -2106,6 +2107,17 @@ async function runAgentLoop(state) {
       planMission = mission;
       // Home/skill data is loaded once; preflight runs before the first model turn.
       const extras = introExtras ??= await agentIntroExtras(mission);
+      // refreshIntro runs for each planning turn. The operator's latest Gameboard direction
+      // must not be frozen with the once-per-mission skill/home snapshot.
+      const livePlanDirection = await readLivePlanContext(mission, {
+        runtimeUrl: CONFIG.runtimeUrl,
+        token: process.env.GATEWAY_TOKEN || process.env.JACO_GATEWAY_TOKEN || '',
+      }).catch(error => {
+        log('warn', 'plan', `Current operator plan notes unavailable: ${String(error?.message || error).slice(0, 140)}`);
+        return mission?.metadata?.parent?.graphId
+          ? 'CURRENT OPERATOR PLAN COMMENTS UNAVAILABLE; do not claim recent plan edits were read. Mission authority is unchanged.'
+          : '';
+      });
       // The loaded procedure is durable mission evidence. Keep it available
       // across context condensation and process turns, not only in the first
       // transient tool message.
@@ -2118,8 +2130,11 @@ async function runAgentLoop(state) {
       const repoPreflight = mission.contract && state.repositoryContext
         ? `Coding worktree preflight: revision=${String(state.repositoryContext.revision || '').slice(0, 160)}, indexedEntries=${state.repositoryContext.entries?.length || 0}. Inspect files with the authorized repository tools before editing.`
         : '';
-      if (process.env.JACO_CONTEXT_PACKET_OFF === '1') return introMessage(mission,
-        repoPreflight ? { ...turnExtras, 'Repository preflight': repoPreflight } : turnExtras);
+      if (process.env.JACO_CONTEXT_PACKET_OFF === '1') {
+        const legacyIntro = introMessage(mission,
+          repoPreflight ? { ...turnExtras, 'Repository preflight': repoPreflight } : turnExtras);
+        return livePlanDirection ? `${legacyIntro}\n\n${livePlanDirection}` : legacyIntro;
+      }
       const strategicContext = await readStrategicContext(mission, {
         seerUrl: process.env.SEER_URL || 'http://127.0.0.1:2997',
         token: process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || process.env.SEER_TOKEN,
@@ -2132,7 +2147,10 @@ async function runAgentLoop(state) {
         learnedOutcomes: mission.contract ? state.preflight?.knowledge?.outcomes || [] : [],
         inboxAddress: extras["JACO's own e-mail addresses (for sign-ups)"] || '',
       });
-      return repoPreflight ? `${packet}\n${repoPreflight}` : packet;
+      const intro = repoPreflight ? `${packet}\n${repoPreflight}` : packet;
+      // Put current operator notes after compressed context so a new instruction remains visible.
+      // This text gives direction only; it does not authorize new actions.
+      return livePlanDirection ? `${intro}\n\n${livePlanDirection}` : intro;
     },
     acceptMission: mission => acceptNovaMission(mission, missionClient.executor),
     observe: observeForPlanning,

@@ -1,4 +1,5 @@
 import { readAuraResponse } from '../lib/auraApi.mjs';
+import { remoteLoginUrl } from '../lib/remoteLink.mjs';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -26,6 +27,7 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [hubUrl, setHubUrl] = useState<string | null>(null);
   const [ideUrl, setIdeUrl] = useState<string | null>(null);
+  const remoteUrl = remoteLoginUrl(ideUrl);
   const [viewer, setViewer] = useState<{ remote: boolean; name?: string }>({ remote: false });
   const [error, setError] = useState('');
   const [actionError, setActionError] = useState('');
@@ -196,8 +198,10 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
               {invite.kind === 'ide' ? (
                 <div className="text-[10px] text-neutral-200 space-y-1">
                   <div>{tr('Öppna i mobilens webbläsare och skriv koden:', 'Open in the phone browser and enter the code:')}</div>
-                  <div className="font-mono text-[12px] text-neutral-200 break-all select-all">{ideUrl || tr('IDE-adress saknas. Konfigurera JACO_IDE_PUBLIC_HOST på servern.', 'IDE address missing. Configure JACO_IDE_PUBLIC_HOST on the server.')}</div>
-                  <div className="text-[9px] text-neutral-400">{tr('I Chrome: meny, Lägg till på startskärmen, så öppnas IDE:t som en app.', 'In Chrome: menu, Add to Home screen, and the IDE opens as an app.')}</div>
+                  <div className="font-mono text-[12px] text-neutral-200 break-all select-all">
+                    {remoteUrl ? <a href={remoteUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">{remoteUrl}</a> : tr('IDE-adress saknas. Konfigurera JACO_IDE_PUBLIC_HOST på servern.', 'IDE address missing. Configure JACO_IDE_PUBLIC_HOST on the server.')}
+                  </div>
+                  <div className="text-[9px] text-neutral-500">{tr('Öppna länken i mobilen, parkoppla med koden och välj Installera app. JACO Remote använder samma Aura och uppdrag som PC:n.', 'Open the link on your phone, pair with the code, and choose Install app. JACO Remote uses the same Aura and missions as your PC.')}</div>
                 </div>
               ) : commands.map(c => (
                 <div key={c.id} className="space-y-1">

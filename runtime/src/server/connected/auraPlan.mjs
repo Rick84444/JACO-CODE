@@ -38,7 +38,8 @@ export function needStatus(need, available = {}) {
     case 'research': return on('web-fetch') ? 'have' : 'missing';
     case 'browser': return on('browser-click') || on('browser-survey-site') ? 'have' : 'missing';
     case 'code': return on('repo-write') || on('repo-edit') ? 'have' : 'missing';
-    case 'helpers': return 'have';
+    // A registered helper or an enabled task switch is not a verified helper execution.
+    case 'helpers': return available.helpersVerified === true ? 'have' : 'missing';
     case 'skill': return (available.skills || new Set()).has(need.id) ? 'have' : 'missing';
     case 'payment': return available.payments ? 'approval' : 'missing';
     case 'api': return 'missing';
@@ -52,11 +53,13 @@ const GAP_TEXT = {
     research: 'att söka på webben (slå på webbsökning under Anslutningar)', browser: 'att styra webbläsaren (starta Chrome med JACO)',
     code: 'att skriva filer i projektet (slå på filskrivning)', skill: id => `en färdig metod (skill) för "${id}": med ditt godkännande kan jag skriva den utifrån det jag hittar på webben`,
     payment: 'en betalkoppling (till exempel Stripe), som bara du kan koppla in', api: 'en koppling till tjänsten steget nämner: säg vilken, så föreslår jag hur den kopplas in',
+    helpers: 'en verifierad körväg för hjälpagenten (en registrering eller påslagen funktion räcker inte)',
   },
   en: {
     research: 'to search the web (turn on web search under Connections)', browser: 'to drive the browser (start Chrome with JACO)',
     code: 'to write files in the project (turn on file writing)', skill: id => `a ready method (skill) for "${id}": with your approval I can write it from what I find on the web`,
     payment: 'a payment connection (for example Stripe), which only you can connect', api: 'a connection to the service the step names: tell me which, and I suggest how to connect it',
+    helpers: 'a verified helper execution path (registration or an enabled switch is not enough)',
   },
 };
 
@@ -67,7 +70,7 @@ export function gapSummary(nodes, language = 'en') {
     const key = need.kind === 'skill' ? `skill:${need.id}` : need.kind;
     if (!missing.has(key)) missing.set(key, typeof t[need.kind] === 'function' ? t[need.kind](need.id) : t[need.kind] || need.label);
   }
-  if (!missing.size) return { missing: [], text: language === 'sv' ? 'Jag har det som planen behöver. Det som kräver ditt godkännande frågar jag om när det blir aktuellt.' : 'I have what the plan needs. What needs your approval I will ask about when the time comes.' };
+  if (!missing.size) return { missing: [], text: language === 'sv' ? 'Planens funktioner är aktiverade enligt inställningarna, men deras tillgänglighet verifieras vid körning. Jag frågar om ditt godkännande när det behövs.' : 'The plan features are enabled in settings, but availability is verified during execution. I ask for your approval when needed.' };
   const list = [...missing.values()];
   return { missing: list, text: (language === 'sv' ? 'Jag har gått igenom målet och mina förmågor. Det här saknar jag än: ' : 'I have studied the goal and my abilities. This is what I still lack: ') + list.join('; ') + '.' };
 }

@@ -58,7 +58,7 @@ function makeWebviewHtml(mappedUrl) {
     '<!doctype html><html lang="en"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width,initial-scale=1">',
     '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; frame-src ' + allowedFrameOrigin + '; object-src &#39;none&#39;; base-uri &#39;none&#39;; style-src &#39;unsafe-inline&#39;">',
-    '<title>JACO Cognitive IDE</title>',
+    '<title>JACO Code IDE</title>',
     '<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050b11;color:#dbeafe}',
     'iframe{border:0;width:100%;height:100%;display:block}</style></head>',
     '<body><iframe title="JACO — complete live IDE" src="' + src + '"',
