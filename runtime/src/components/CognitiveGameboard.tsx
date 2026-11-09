@@ -100,7 +100,7 @@ export function CognitiveGameboard() {
         <div key={event.id} className="text-xs border-t border-neutral-700 pt-2">
           <div className="flex flex-wrap justify-between gap-2"><strong>{event.taskType||event.type}</strong>
             <span className={event.outcome==='VERIFIED'?'text-emerald-300':event.outcome==='FAILED'||event.outcome==='BLOCKED'?'text-rose-300':'text-neutral-400'}>{event.outcome}</span></div>
-          <div className="text-neutral-400">{event.at?new Date(event.at).toLocaleString():'Time unknown'} · {event.evidenceRef}{event.missionId?' · '+event.missionId:''}</div>
+          <div className="text-neutral-400">{event.at?new Date(event.at).toLocaleString():'Time unknown'} · {event.type} · {event.evidenceRef}{event.missionId?' · '+event.missionId:''}</div>
           {event.error&&<p className="text-rose-300 break-words">{event.error}</p>}
         </div>)}</div>:<p className="text-xs text-neutral-400">No durable mission events observed.</p>}
     </section>
