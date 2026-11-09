@@ -36,6 +36,18 @@ const isLocal = input => {
   catch {return false;}
 };
 
+/**
+ * @param {{
+ *   file?: string,
+ *   localBaseUrl?: string,
+ *   origin?: string,
+ *   fetchImpl?: typeof fetch,
+ *   websocketFactory?: (url:string, options:any)=>any,
+ *   onStatus?: (value:any)=>void,
+ *   schedule?: typeof setTimeout,
+ *   cancel?: typeof clearTimeout
+ * }} [options]
+ */
 export function createJacoLinkHost({
   file, localBaseUrl='http://127.0.0.1:3000', origin=DEFAULT_ORIGIN,
   fetchImpl=fetch, websocketFactory=(url,options)=>new WebSocket(url,options),
