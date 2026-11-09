@@ -122,8 +122,8 @@ export function CognitiveWorkspace(props:Props) {
         <button type="button" aria-label={tr('Sök verktyg och kommandon', 'Search tools and commands')} title={tr('Sök', 'Search')+' · Ctrl+Shift+P'} onClick={props.onCommands}><Search size={16}/></button>
       </div>
     </header>
-    {props.remoteMode && <nav className="cognitive-remote-navigation" aria-label="Remote Aura navigation">
-      {([['conversation','Conversation'],['gameboard','Gameboard'],['evidence','Evidence']] as const).map(([view,label]) =>
+    {props.remoteMode && <nav className="cognitive-remote-navigation" aria-label="Remote control">
+      {([['conversation','Chat'],['stage','Mission'],['gameboard','Plan'],['evidence','Results']] as const).map(([view,label]) =>
         <button key={view} type="button" aria-pressed={props.canvas===view} onClick={()=>props.onCanvas(view)}>{label}</button>)}
       <button type="button" onClick={props.onApprovals}>Approvals{props.approvalCount ? ' ('+props.approvalCount+')' : ''}</button>
       <a href="/" className="cognitive-remote-full">Open full JACO</a>
