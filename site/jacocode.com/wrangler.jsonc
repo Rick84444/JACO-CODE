@@ -14,6 +14,7 @@
   "migrations": [
     { "tag": "jaco-link-v1", "new_sqlite_classes": ["JacoLinkPairing", "JacoLinkRoom"] }
   ],
+  "vars": { "LINK_ENABLED": "0" },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
