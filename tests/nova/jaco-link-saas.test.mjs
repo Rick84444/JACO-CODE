@@ -126,7 +126,7 @@ test('Windows host is outbound-only, stores no account passwords, and never forw
   const pending=await host.startPairing();
   assert.equal(pending.state,'AWAITING_ACCOUNT_APPROVAL');
   assert.equal(pending.pairing.code,did);
-  assert.equal('pollToken' in JSON.stringify(pending),false);
+  assert.equal(JSON.stringify(pending).includes('pollToken'),false);
   assert.ok(scheduled);
   scheduled();
   await new Promise(resolve=>setTimeout(resolve,20));
