@@ -16,6 +16,7 @@ const READS = new Set([
 ]);
 const WRITES = new Set([
   '/api/aura/chat',
+  '/api/aura/workbench/start-goal',
   '/api/aura/plan/comments',
 ]);
 const MISSION = /^\/api\/aura\/workbench\/missions\/([A-Za-z0-9_.:-]{1,120})\/(cancel|steer)$/;
