@@ -191,7 +191,8 @@ export class JacoLinkPairing {
 export class JacoLinkRoom {
   constructor(ctx) {
     this.ctx=ctx;
-    this.pending=new Map();
+    // Pending RPC ownership is stored in each phone WebSocket attachment, which
+    // Cloudflare serializes across Durable Object hibernation and re-instantiation.
     this.counters=new WeakMap();
   }
   sockets(role) {
@@ -233,7 +234,8 @@ export class JacoLinkRoom {
     } else if(this.sockets('phone').length>=MAX_BROWSERS) return json({error:'TOO_MANY_PHONES'},429);
     const [client,server]=Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({role,deviceId:role==='host'?deviceId:null});
+    server.serializeAttachment({role,deviceId:role==='host'?deviceId:null,
+      sessionId:random(16),pending:[]});
     return new Response(null,{status:101,webSocket:client});
   }
   send(ws,value){try{ws.send(JSON.stringify(value));}catch{/* client disconnected */}}
@@ -250,34 +252,55 @@ export class JacoLinkRoom {
       this.counters.set(ws,count);
       const valid=validateRemoteCall(value);
       if(!valid.ok)return this.send(ws,{type:'rpc_result',id:String(value?.id||''),status:403,body:{error:valid.error}});
-      for(const [oldId,pending] of this.pending){
-        if(Date.now()-pending.at>120000){
-          this.pending.delete(oldId);
-          this.send(pending.phone,{type:'rpc_result',id:oldId,status:504,body:{error:'OUTCOME_UNKNOWN_TIMEOUT'}});
+      const now=Date.now();
+      const phones=this.sockets('phone');
+      // These attachments survive Durable Object hibernation, unlike a Map on
+      // the instance. Old/unknown outcomes are never silently retried.
+      for(const phone of phones){
+        const a=phone.deserializeAttachment();
+        const list=Array.isArray(a?.pending)?a.pending:[];
+        const expired=list.filter(item=>now-item.at>120000);
+        if(expired.length){
+          phone.serializeAttachment({...a,pending:list.filter(item=>now-item.at<=120000)});
+          for(const item of expired)this.send(phone,{type:'rpc_result',id:item.id,status:504,
+            body:{error:'OUTCOME_UNKNOWN_TIMEOUT'}});
         }
       }
-      if(this.pending.size>=40)return this.send(ws,{type:'rpc_result',id:valid.id,status:429,body:{error:'TOO_MANY_PENDING_REQUESTS'}});
-      if(this.pending.has(valid.id))return this.send(ws,{type:'rpc_result',id:valid.id,status:409,body:{error:'DUPLICATE_REQUEST_ID'}});
+      const total=phones.reduce((sum,phone)=>sum+(phone.deserializeAttachment()?.pending?.length||0),0);
+      if(total>=40)return this.send(ws,{type:'rpc_result',id:valid.id,status:429,
+        body:{error:'TOO_MANY_PENDING_REQUESTS'}});
+      if(phones.some(phone=>phone.deserializeAttachment()?.pending?.some(p=>p.id===valid.id)))
+        return this.send(ws,{type:'rpc_result',id:valid.id,status:409,body:{error:'DUPLICATE_REQUEST_ID'}});
       const hosts=this.sockets('host').filter(s=>!valid.target||s.deserializeAttachment().deviceId===valid.target);
-      if(hosts.length!==1)return this.send(ws,{type:'rpc_result',id:valid.id,status:503,body:{error:hosts.length?'SELECT_A_PC':'PC_OFFLINE'}});
-      this.pending.set(valid.id,{phone:ws,host:hosts[0],at:Date.now()});
+      if(hosts.length!==1)return this.send(ws,{type:'rpc_result',id:valid.id,status:503,
+        body:{error:hosts.length?'SELECT_A_PC':'PC_OFFLINE'}});
+      const current=ws.deserializeAttachment();
+      ws.serializeAttachment({...current,pending:[...(current.pending||[]),
+        {id:valid.id,hostSessionId:hosts[0].deserializeAttachment().sessionId,at:now}]});
       this.send(hosts[0],{type:'rpc',id:valid.id,method:valid.method,path:valid.path,...(valid.method==='POST'?{body:valid.body}:{})});
       return;
     }
     if(info?.role==='host'&&validateHostResponse(value)){
-      const held=this.pending.get(value.id);
-      if(!held||held.host!==ws)return;
-      this.pending.delete(value.id);
-      this.send(held.phone,value);
+      for(const phone of this.sockets('phone')){
+        const a=phone.deserializeAttachment();
+        const held=(a?.pending||[]).find(p=>p.id===value.id&&p.hostSessionId===info.sessionId);
+        if(!held)continue;
+        phone.serializeAttachment({...a,pending:a.pending.filter(p=>p!==held)});
+        this.send(phone,value);
+        return;
+      }
     }
   }
   webSocketClose(ws) {
-    for(const [id,p] of this.pending){
-      if(p.phone===ws)this.pending.delete(id);
-      else if(p.host===ws){
-        this.pending.delete(id);
-        this.send(p.phone,{type:'rpc_result',id,status:503,body:{error:'PC_DISCONNECTED_OUTCOME_UNKNOWN'}});
-      }
+    const info=ws.deserializeAttachment();
+    if(info?.role!=='host')return;
+    for(const phone of this.sockets('phone')){
+      const a=phone.deserializeAttachment();
+      const lost=(a?.pending||[]).filter(p=>p.hostSessionId===info.sessionId);
+      if(!lost.length)continue;
+      phone.serializeAttachment({...a,pending:a.pending.filter(p=>p.hostSessionId!==info.sessionId)});
+      for(const item of lost)this.send(phone,{type:'rpc_result',id:item.id,status:503,
+        body:{error:'PC_DISCONNECTED_OUTCOME_UNKNOWN'}});
     }
   }
   webSocketError(ws){this.webSocketClose(ws);}
