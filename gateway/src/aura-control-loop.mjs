@@ -47,10 +47,13 @@ export function createAuraControlLoop({
         }
         phase = 'plan';
         const outcome = await plan();
-        const report = { ok: true, sequence: seq, startedAt, phases: ['reconcile', 'plan'],
+        const errors = Array.isArray(outcome?.errors) ? outcome.errors.length : 0;
+        const report = { ok: errors === 0 && !outcome?.skipped, sequence: seq, startedAt, phases: ['reconcile', 'plan'],
           dispatched: Array.isArray(outcome?.dispatched) ? outcome.dispatched.length : 0,
           replanned: Array.isArray(outcome?.replanned) ? outcome.replanned.length : 0,
-          errors: Array.isArray(outcome?.errors) ? outcome.errors.length : 0 };
+          errors,
+          ...(errors ? { error: 'AURA_PLANNER_REPORTED_ERRORS' } : {}),
+          ...(outcome?.skipped ? { skipped: String(outcome.skipped) } : {}) };
         last = report;
         emit('aura.control.turn_completed', report);
         return report;
