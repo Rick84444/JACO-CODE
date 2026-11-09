@@ -94,6 +94,7 @@ import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, v
 import { operatorLanguageFile, readOperatorLanguage, writeOperatorLanguage } from "../agents/lib/operator-language.mjs";
 import { createRoutineStore } from "./src/server/connected/auraRoutines.mjs";
 import { createPlanComments, planView } from "./src/server/connected/auraPlan.mjs";
+import { createAuraCoreController } from './src/server/connected/auraCoreController.mjs';
 import { localMemoryActivity } from './src/server/connected/localMemoryActivity.mjs';
 import { synchronizeAuraHarnessModel } from "../agents/lib/aura-harness-model-choice.mjs";
 import { INITIAL_MODELS, INITIAL_CODE_FILES, INITIAL_DEVICES, INITIAL_TERMINAL_LOGS } from "./src/mockData.js";
@@ -1853,6 +1854,19 @@ const notifyPhone = async (action) => {
     if (!response.ok || data?.error) throw new Error(data?.error || `SEER_HTTP_${response.status}`);
     return data;
   };
+
+  // Aura Core is the preferred orchestration owner. The strategy service
+  // remains a compatibility adapter until Graph SQLite state can be migrated.
+  // Its short lease suppresses the independent fallback timer while Core runs.
+  const auraCoreControl = createAuraCoreController({
+    request: (action: string, input: any) => callCanonicalSeer('/cortex/aura/control/' + action, input),
+    intervalMs: Number(process.env.JACO_AURA_CONTROL_TICK_MS || 2500),
+  });
+
+  app.get('/api/aura/runtime/control', requireLocalUi, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, schema: 'jaco.aura-control/v1', ...auraCoreControl.state() });
+  });
 
   const asArray = (value: any): any[] => {
     if (Array.isArray(value)) return value;
@@ -7066,6 +7080,9 @@ const notifyPhone = async (action) => {
     runtimeShuttingDown = true;
     void (async () => {
       stopJobReaper();
+      // A shutdown never invents a release receipt: the lease expires when
+      // unreachable and the legacy scheduler can safely resume if needed.
+      void auraCoreControl.stop();
       try { connectedRuntime.stop(); } catch {}
       if (activeCloudflareProcess) {
         try { activeCloudflareProcess.kill('SIGTERM'); } catch {}
@@ -7086,6 +7103,9 @@ const notifyPhone = async (action) => {
     const auraLean = process.env.JACO_AURA_LEAN === '1';
     // Idle phone: 5s durable lease/queue maintenance vs 1.2s in full mode.
     connectedRuntime.start(Number(process.env.JACO_MISSION_BUS_TICK_MS || (auraLean ? 5000 : 1200)));
+    // Core wins the single control-plane lease unless the operator explicitly
+    // chooses the legacy scheduler. No second planner or agent is spawned.
+    if (process.env.JACO_AURA_CONTROL_OWNER !== 'legacy') auraCoreControl.start();
     // First scan still occurs at boot. Explicit refresh remains available.
     // In Aura Lean poll passive provider catalogs less frequently to reduce
     // concurrent /v1/models requests during local Gemma inference.
