@@ -36,6 +36,14 @@ export function createAuraCoreController({
         if (typeof grant?.token !== 'string' || !grant.token) throw new Error('AURA_CORE_LEASE_MISSING');
         leaseToken = grant.token;
       }
+      // An operator shutdown can happen while a slow strategy service is
+      // granting a lease. A late grant must never start a fresh planning turn.
+      if (!active) {
+        const abandoned = leaseToken;
+        leaseToken = null;
+        try { await request('release', { token: abandoned }); } catch {}
+        return { ok: false, skipped: 'stopped_after_claim' };
+      }
       const result = await request('tick', { token: leaseToken });
       ticks++;
       if (result?.ok === false && result?.error) {
