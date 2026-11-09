@@ -312,6 +312,7 @@ const short = (text: string, max = 70) => text.length > max ? text.slice(0, max 
 export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: string | null; onClose?: () => void }) {
   const { tr, language } = useUiLanguage();
   const [plans, setPlans] = useState<Plan[] | null>(null);
+  const [observed, setObserved] = useState<{operatorGoal?:{statement:string}|null;missions?:Array<{identity:string;goal:string;status:string;verifiedActions:number}>;next?:{text:string}}|null>(null);
   const [error, setError] = useState('');
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [chosen, setChosen] = useState<string | null>(focusPlanId);
@@ -319,10 +320,18 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
   const [open, setOpen] = useState<string | null>(null);
   useEffect(() => { if (focusPlanId) { setChosen(focusPlanId); setOpen(null); } }, [focusPlanId]);
   const load = useCallback(async () => {
-    try { const r = await fetch(`/api/aura/plan?language=${encodeURIComponent(language)}`, { cache: 'no-store' }).then(readAuraResponse); if (r.success === false) throw new Error(r.error); setPlans(r.plans || []); setError('');
-      const a = await fetch('/api/aura/workbench/approvals', { cache: 'no-store' }).then(readAuraResponse).catch(() => null);
-      setDecisions(Array.isArray(a?.items) ? a.items : []); }
-    catch (e: any) { setError(String(e?.message || e)); }
+    // Planning may be late or unavailable while the operator's goal and durable
+    // missions are already recorded. Read both sources independently.
+    const [planned, position, approvals] = await Promise.allSettled([
+      fetch(`/api/aura/plan?language=${encodeURIComponent(language)}`, {cache:'no-store'}).then(readAuraResponse),
+      fetch('/api/aura/workbench/gameboard', {cache:'no-store'}).then(readAuraResponse),
+      fetch('/api/aura/workbench/approvals', {cache:'no-store'}).then(readAuraResponse),
+    ]);
+    if (planned.status === 'fulfilled' && planned.value?.success !== false) { setPlans(planned.value.plans || []); setError(''); }
+    else { setPlans([]); setError(planned.status === 'rejected' ? String(planned.reason?.message || planned.reason) : String(planned.value?.error || 'PLAN_UNAVAILABLE')); }
+    if (position.status === 'fulfilled' && position.value?.schema === 'jaco.gameboard-fabric/v1') setObserved(position.value);
+    else setObserved(null);
+    setDecisions(approvals.status === 'fulfilled' && Array.isArray(approvals.value?.items) ? approvals.value.items : []);
   }, [language]);
   useEffect(() => { void load(); const t = window.setInterval(load, 10000); return () => window.clearInterval(t); }, [load]);
   const plan = pickPlan(plans || [], chosen);
@@ -356,7 +365,17 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
       {planDecisions.map(d => <React.Fragment key={d.id}><DecisionRow decision={d} onDone={() => void load()} /></React.Fragment>)}
     </section>}
     {error && <p role="alert" className="text-sm text-amber-300">{tr('Planen kunde inte läsas just nu.', 'The plan could not be read right now.')} ({error})</p>}
-    {plans && plans.length === 0 && <p className="text-sm text-neutral-300">{tr('Ingen plan än. Ge Aura ett större mål i chatten, så ritas planen här.', 'No plan yet. Give Aura a larger goal in the chat, and the plan is drawn here.')}</p>}
+    {plans && plans.length === 0 && (observed?.operatorGoal || observed?.missions?.length ? <article data-testid="strategy-goal-pending" className="space-y-3 rounded-lg border border-yellow-700 bg-[#181715] p-4">
+      <div className="flex items-center gap-3"><GoalMark size={46}/><div>
+        <div className="text-xs uppercase tracking-widest text-yellow-300">{tr('Registrerat mål', 'Recorded goal')}</div>
+        <div className="text-sm font-semibold text-white">{observed?.operatorGoal?.statement || observed?.missions?.[0]?.goal}</div>
+      </div></div>
+      <p className="text-xs text-amber-200">{tr('Målet finns, men Aura har ännu inte rapporterat en SEER-plan med verifierbara delsteg. Inga steg hittas på.', 'The goal exists, but Aura has not yet reported a SEER plan with verifiable steps. No steps are fabricated.')}</p>
+      {observed?.missions?.slice(0,4).map(m=><div key={m.identity} className="rounded border border-neutral-700 p-2 text-xs">
+        <div className="text-neutral-100">{m.goal}</div><div className="text-neutral-400">{m.status} · {m.verifiedActions} {tr('verifierade verktygssteg', 'verified tool actions')}</div>
+      </div>)}
+      {observed?.next?.text&&<p className="text-xs text-neutral-300">{observed.next.text}</p>}
+    </article>:<p className="text-sm text-neutral-300">{tr('Inget aktivt mål eller plan observerat. Ge Aura ett mål i chatten.', 'No active goal or plan observed. Give Aura a goal in the chat.')}</p>)}
     {plan && <div className="jaco-tree overflow-x-auto pb-4 pt-2" data-testid="plan-tree">
       <ul><li>
         <button type="button" onClick={() => setOpen('goal')} className="jaco-goal w-80 max-w-full rounded-lg border border-yellow-300 bg-black px-4 py-3 text-center transition-colors hover:bg-white/[.06]">
