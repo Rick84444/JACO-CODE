@@ -3,6 +3,7 @@ import { RefreshCw, ShieldAlert, MessageSquare, GitBranch, X } from 'lucide-reac
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { buildOperatorConfirmation, requiresOperatorConfirmation } from '../lib/operatorApproval.mjs';
 import { useUiLanguage } from '../i18n/UiLanguage';
+import { LocalMemoryPanel } from './LocalMemoryPanel';
 
 // The Gameboard: one plan at a time, drawn like a family tree read backwards. The goal (what the operator wants) is
 // always first, at the top. Below it hang the subgoals that lead to it, and below each subgoal what it needs first;
@@ -360,6 +361,7 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
       </div>
     </header>
     <p className="text-xs text-neutral-400">{tr('Målet står alltid först. Under det ser du vad som behövs för att nå det, och under varje delmål vad det i sin tur behöver. Det aktiva delmålet lyser svagt blått. Klicka på en ruta för hela beskrivningen.', 'The goal always comes first. Below it you see what is needed to reach it, and below each subgoal what that needs in turn. The active subgoal glows faint blue. Click a box for the full description.')}</p>
+    <LocalMemoryPanel missionIds={Array.from(planMissions)} />
     {planDecisions.length > 0 && <section aria-label={tr('Väntar på dig', 'Waiting for you')} className="space-y-2">
       <div className="text-xs font-semibold uppercase tracking-widest text-amber-300">{tr('Väntar på dig', 'Waiting for you')} ({planDecisions.length})</div>
       {planDecisions.map(d => <React.Fragment key={d.id}><DecisionRow decision={d} onDone={() => void load()} /></React.Fragment>)}
