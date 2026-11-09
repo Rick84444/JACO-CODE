@@ -61,6 +61,15 @@ test('Windows setup publishing is tag-gated, not triggered merely by a main merg
   assert.doesNotMatch(workflow, /needs\.windows-setup\.outputs\.version_changed == 'true'/);
 });
 
+test('Windows packaged boot validates its own runtime version and runs Aura capability acceptance', () => {
+  const workflow = fs.readFileSync(new URL('../../.github/workflows/jaco-windows-release.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /\$runtimeVersion = \(Get-Content \(Join-Path \$runtimeDir 'package\.json'\)/);
+  assert.match(workflow, /\$identity\.version -eq \$runtimeVersion/);
+  assert.doesNotMatch(workflow, /\$identity\.version -eq '0\.22\.0'/);
+  assert.match(workflow, /tests\/nova\/capability-recovery\.test\.mjs/);
+  assert.match(workflow, /tests\/nova\/agent-loop\.test\.mjs/);
+});
+
 test('installed Workplace runs supervised executables from the immutable installation', () => {
   const source = fs.readFileSync(new URL('../../gateway/src/workplace/workplace-server.mjs', import.meta.url), 'utf8');
   assert.match(source, /const EXECUTION_ROOT = resolve\(process\.env\.JACO_INSTALL_ROOT \|\| process\.cwd\(\)\)/);

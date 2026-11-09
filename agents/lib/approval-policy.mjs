@@ -142,7 +142,9 @@ export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastE
 
   if (status === 'BLOCKED') {
     const error = String(lastError || [...receipts].reverse().find(r => r?.error)?.error || '');
-    if (!error || POLICY_BLOCK.test(error) || BUDGET_EXHAUSTED.test(error)) return null;
+    // A missing capability or a planner refusal is not transient. Replaying the unchanged
+    // mission cannot grant a tool; level 5 must not turn it into an infinite resume loop.
+    if (!error || POLICY_BLOCK.test(error) || BUDGET_EXHAUSTED.test(error) || CAPABILITY_GAP.test(error)) return null;
     // Operator 2026-10-02: an autonomous coding contract is the authority to keep working. Within it,
     // failures are retried without approvals; the contract budget (steps, tool calls, time) bounds the
     // retries, and when it is used up the mission stops for the operator (BUDGET_EXHAUSTED above).
@@ -152,7 +154,7 @@ export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastE
     // autoResumes counts only since the operator's last own decision.
     const budget = mission.contract?.budget || {};
     const contractResumes = Math.ceil((Number(budget.max_steps) || 40) / Math.max(1, Number(budget.max_failures) || 3));
-    if (level >= 2 && mission.contract && mission.contract.execution?.autonomous !== false && !CAPABILITY_GAP.test(error) && autoResumes < contractResumes) {
+    if (level >= 2 && mission.contract && mission.contract.execution?.autonomous !== false && autoResumes < contractResumes) {
       return { decision: 'resume', note: `auto-resumed (level ${level}): within the autonomous coding contract after "${error.slice(0, 120)}"` };
     }
     if (autoResumes >= MAX_AUTO_RESUMES) return null;

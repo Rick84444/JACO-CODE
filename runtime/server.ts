@@ -81,6 +81,7 @@ import { AgentOrganization, createAgentOrganizationRouter } from './src/server/c
 import { AgentReputation, createAgentBoardRouter } from './src/server/connected/agentReputation.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
+import { createJacoLinkHost } from './src/server/connected/jacoLinkHost.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
 import { readAutonomousCycleBoard } from "./src/server/connected/autonomousCycleBoard.mjs";
 import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec, fetchSkillFromUrl } from "../agents/lib/skills.mjs";
@@ -93,6 +94,7 @@ import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, v
 import { operatorLanguageFile, readOperatorLanguage, writeOperatorLanguage } from "../agents/lib/operator-language.mjs";
 import { createRoutineStore } from "./src/server/connected/auraRoutines.mjs";
 import { createPlanComments, planView } from "./src/server/connected/auraPlan.mjs";
+import { createAuraCoreController } from './src/server/connected/auraCoreController.mjs';
 import { localMemoryActivity } from './src/server/connected/localMemoryActivity.mjs';
 import { synchronizeAuraHarnessModel } from "../agents/lib/aura-harness-model-choice.mjs";
 import { INITIAL_MODELS, INITIAL_CODE_FILES, INITIAL_DEVICES, INITIAL_TERMINAL_LOGS } from "./src/mockData.js";
@@ -720,6 +722,18 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   // the default so nothing that relied on it changes.
   const PORT = Number(process.env.PORT) || 3000;
   const HOST = process.env.HOST || "127.0.0.1";
+  // One Aura runtime remains the owner of local state and execution. JACO Link is
+  // only an optional outbound customer transport; no local port or tunnel exposed.
+  let jacoLink: ReturnType<typeof createJacoLinkHost> | null = null;
+  try {
+    jacoLink = createJacoLinkHost({
+      file: path.join(WORKSPACE_ROOT, '.jaco', 'link', 'host.json'),
+      localBaseUrl: 'http://127.0.0.1:' + PORT,
+    });
+    if (process.env.JACO_LINK_ENABLED !== '0') jacoLink.resume();
+  } catch (error) {
+    console.warn('[JACO Link] Initialization failed:', String((error as Error)?.message || error));
+  }
 
 
   const browserSurface = createBrowserRouter(WORKSPACE_ROOT, requireAuth, event => {
@@ -1841,6 +1855,19 @@ const notifyPhone = async (action) => {
     return data;
   };
 
+  // Aura Core is the preferred orchestration owner. The strategy service
+  // remains a compatibility adapter until Graph SQLite state can be migrated.
+  // Its short lease suppresses the independent fallback timer while Core runs.
+  const auraCoreControl = createAuraCoreController({
+    request: (action: string, input: any) => callCanonicalSeer('/cortex/aura/control/' + action, input),
+    intervalMs: Number(process.env.JACO_AURA_CONTROL_TICK_MS || 2500),
+  });
+
+  app.get('/api/aura/runtime/control', requireLocalUi, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, schema: 'jaco.aura-control/v1', ...auraCoreControl.state() });
+  });
+
   const asArray = (value: any): any[] => {
     if (Array.isArray(value)) return value;
     if (Array.isArray(value?.windows)) return value.windows;
@@ -2290,6 +2317,23 @@ const notifyPhone = async (action) => {
   // The same observed Gameboard projection is consumed by Codex GUI, JACO Editor MCP and Lite.
   // SEER remains the only graph authority. Missing SEER is explicit (not a fabricated READY board).
   // Local Continuum knowledge, read-only and backed by the existing durable knowledge ledger.
+  // Customer onboarding is local-only; no cloud account can create a new PC
+  // pairing or read the temporary poll credential through the Remote UI.
+  app.get('/api/aura/workbench/link/status', requireLocalUiSameOrigin, (_req, res) => {
+    if (!jacoLink) return res.status(503).json({success:false,error:'LINK_HOST_UNAVAILABLE'});
+    return res.json({success:true,...jacoLink.status()});
+  });
+  app.post('/api/aura/workbench/link/start', requireLocalUiSameOrigin, async (_req, res) => {
+    if (process.env.JACO_LINK_ENABLED === '0') return res.status(403).json({success:false,error:'LINK_DISABLED'});
+    if (!jacoLink) return res.status(503).json({success:false,error:'LINK_HOST_UNAVAILABLE'});
+    try { return res.json({success:true,...await jacoLink.startPairing()}); }
+    catch (error: any) {return res.status(503).json({success:false,error:String(error?.message||error).slice(0,160)});}
+  });
+  app.post('/api/aura/workbench/link/stop', requireLocalUiSameOrigin, (_req, res) => {
+    if (!jacoLink) return res.status(503).json({success:false,error:'LINK_HOST_UNAVAILABLE'});
+    jacoLink.stop();return res.json({success:true,...jacoLink.status()});
+  });
+
   app.get('/api/aura/workbench/local-memory', requireLocalUi, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     try { res.json({ success: true, ...localMemoryActivity(continuumSurface.runtime, { legacyFile: path.join(process.cwd(), '.jaco', 'memory', 'memory-store.json') }) }); }
@@ -7036,6 +7080,9 @@ const notifyPhone = async (action) => {
     runtimeShuttingDown = true;
     void (async () => {
       stopJobReaper();
+      // A shutdown never invents a release receipt: the lease expires when
+      // unreachable and the legacy scheduler can safely resume if needed.
+      void auraCoreControl.stop();
       try { connectedRuntime.stop(); } catch {}
       if (activeCloudflareProcess) {
         try { activeCloudflareProcess.kill('SIGTERM'); } catch {}
@@ -7056,6 +7103,9 @@ const notifyPhone = async (action) => {
     const auraLean = process.env.JACO_AURA_LEAN === '1';
     // Idle phone: 5s durable lease/queue maintenance vs 1.2s in full mode.
     connectedRuntime.start(Number(process.env.JACO_MISSION_BUS_TICK_MS || (auraLean ? 5000 : 1200)));
+    // Core wins the single control-plane lease unless the operator explicitly
+    // chooses the legacy scheduler. No second planner or agent is spawned.
+    if (process.env.JACO_AURA_CONTROL_OWNER !== 'legacy') auraCoreControl.start();
     // First scan still occurs at boot. Explicit refresh remains available.
     // In Aura Lean poll passive provider catalogs less frequently to reduce
     // concurrent /v1/models requests during local Gemma inference.

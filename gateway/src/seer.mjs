@@ -18,11 +18,14 @@ import { createMissionDispatcher } from './seer-mission-dispatch.mjs';
 import { STRATEGIC_AGENT_INSTRUCTIONS } from '../../agents/lib/strategic-context.mjs';
 import { buildSelfDevelopmentGraph } from './seer-self-development.mjs';
 import { createAutonomyLoop, shouldAutoConfirmNova } from './seer-autonomy-loop.mjs';
+import { createAuraControlLoop } from './aura-control-loop.mjs';
+import { createAuraControlLease } from './aura-control-lease.mjs';
 import { createDevelopmentCycle, chooseGovernorFocus, governorBaseline } from './seer-development-cycle.mjs';
 import { createExperienceStore } from './seer-experience-store.mjs';
 import { discoverSeerLocalProvider, invokeSeerProvider, callSeerGovernorProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt, compactGovernorGoals, clipGoalStatement, resolveAuraPlanner, invokeAuraPlanner } from './seer-model-provider.mjs';
 import { createA2AColonyRevenueSync } from './a2acolony-revenue-sync.mjs';
 import { normalizeProjectRoot, projectNodeContract, projectGraphPolicy, projectGoalGraph, projectGoalDone } from './seer-project.mjs';
+import { auraArtifactContract } from './aura-artifact-contract.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -722,8 +725,7 @@ const AUTONOMY_INTERVAL_MS = Math.max(0, Math.min(60_000, Number(process.env.SEE
 const AUTONOMY_MAX_REPLANS = Math.max(0, Math.min(20, Number(process.env.SEER_AUTONOMY_MAX_REPLANS ?? 3)));
 const AUTONOMY_MAX_DISPATCH = Math.max(1, Math.min(20, Number(process.env.SEER_AUTONOMY_MAX_DISPATCH ?? 2)));
 let novaReconcileInFlight = false;
-let novaReconcileTimer = null;
-let autonomyTimer = null;
+let auraControlTimer = null;
 const novaReconcileErrors = new Map();
 const missingNovaBindings = new Map();
 const autonomyLoop = createAutonomyLoop({
@@ -734,6 +736,17 @@ const autonomyLoop = createAutonomyLoop({
   maxReplans: AUTONOMY_MAX_REPLANS,
   maxDispatchPerTurn: AUTONOMY_MAX_DISPATCH,
 });
+// Aura owns a single ordered control turn. The historical strategy graph and
+// execution lease APIs remain adapters; they must not run competing timers.
+const auraControlLoop = createAuraControlLoop({
+  reconcile: () => reconcileNovaMissionGraphs(),
+  plan: () => autonomyLoop.turn(),
+  emit,
+});
+const auraControlLease = createAuraControlLease();
+const AURA_CONTROL_CADENCE_MS = AUTONOMY_INTERVAL_MS > 0
+  ? Math.min(NOVA_RECONCILE_INTERVAL_MS, AUTONOMY_INTERVAL_MS)
+  : NOVA_RECONCILE_INTERVAL_MS;
 
 async function fetchNovaMission(novaMissionId) {
   const response = await fetch(`${process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000'}/api/connected/nova/missions/${encodeURIComponent(novaMissionId)}`, {
@@ -883,6 +896,7 @@ const server = createServer(async (req, res) => {
       agent_identity: 'aura',
       capability: 'strategy',
       independent_governor_enabled: GOVERNOR_INTERVAL_MS > 0,
+      aura_control: { ...auraControlLoop.state(), ...auraControlLease.state(), interval_ms: AURA_CONTROL_CADENCE_MS },
       purpose_id: state.purpose?.id || null,
       open_predictions: state.open_predictions.length,
       autonomy: {
@@ -907,6 +921,23 @@ const server = createServer(async (req, res) => {
   if (!auth(req)) return json(res, { error: 'unauthorized' }, 401);
 
   try {
+    // The operator-facing Aura Core is the preferred scheduler owner. The
+    // SEER process is only the compatible strategy state adapter. The lease
+    // fences Core ticks from this process's fallback scheduler.
+    if (POST && path === '/cortex/aura/control/claim') {
+      const input = await body(req);
+      if (input.owner !== 'aura-core') return json(res, { error: 'AURA_CONTROL_OWNER_INVALID' }, 400);
+      return json(res, auraControlLease.claim(), 201);
+    }
+    if (POST && path === '/cortex/aura/control/tick') {
+      const input = await body(req);
+      auraControlLease.renew(input.token);
+      return json(res, await auraControlLoop.tick({ planningEnabled: AUTONOMY_INTERVAL_MS > 0, trigger: 'aura-core' }));
+    }
+    if (POST && path === '/cortex/aura/control/release') {
+      const input = await body(req);
+      return json(res, auraControlLease.release(input.token));
+    }
     if (GET && path === '/cortex/context/claude') {
       const context = buildClaudeContext();
       try {
@@ -1273,19 +1304,21 @@ server.listen(PORT, '127.0.0.1', () => {
     financial_authority: 'signed-modelrelay-mandate-only',
   });
 
-  novaReconcileTimer = setInterval(() => {
-    reconcileNovaMissionGraphs().catch(error => emit('mission_graph.reconcile_loop_error', { error: error.message }));
-  }, NOVA_RECONCILE_INTERVAL_MS);
-  novaReconcileTimer.unref?.();
-  reconcileNovaMissionGraphs().catch(error => emit('mission_graph.reconcile_loop_error', { error: error.message }));
-
+  // Only one scheduling owner. Aura reconciles persisted outcomes before any
+  // new planning, so overlapping timers cannot act on stale graph state.
+  auraControlLoop.tick({ planningEnabled: false, trigger: 'startup-reconcile' })
+    .catch(error => emit('aura.control.startup_error', { error: error.message }));
+  auraControlTimer = setInterval(() => {
+    if (auraControlLease.externallyOwned()) return;
+    auraControlLoop.tick({ planningEnabled: AUTONOMY_INTERVAL_MS > 0 })
+      .catch(error => emit('aura.control.timer_error', { error: error.message }));
+  }, AURA_CONTROL_CADENCE_MS);
+  auraControlTimer.unref?.();
   if (AUTONOMY_INTERVAL_MS > 0) {
-    autonomyTimer = setInterval(() => {
-      autonomyLoop.turn().catch(error => emit('autonomy.loop_error', { error: error.message }));
-    }, AUTONOMY_INTERVAL_MS);
-    autonomyTimer.unref?.();
     setTimeout(() => {
-      autonomyLoop.turn().catch(error => emit('autonomy.startup_error', { error: error.message }));
+      if (auraControlLease.externallyOwned()) return;
+      auraControlLoop.tick({ planningEnabled: true, trigger: 'startup-plan' })
+        .catch(error => emit('aura.control.startup_error', { error: error.message }));
     }, Math.min(1_500, AUTONOMY_INTERVAL_MS)).unref?.();
   }
 });
@@ -1594,6 +1627,10 @@ If no new work is needed (system already has enough active work), respond with: 
       policy: {
         ...projectGraphPolicy(projectRoot),
         source: onPrimary ? 'operator-start-prompt' : 'governor',
+        // Legacy SEER process is an internal strategy capability; Aura owns the mission.
+        primary_agent: 'aura',
+        strategy_capability: 'aura.strategy',
+        execution_capability: 'aura.execution',
         autonomy: 'closed-loop',
         strategic_goal_id: focusGoal?.id || null,
         tool_hint: onPrimary ? operatorPrimaryGoal?.tool_hint || null : null,
@@ -1611,7 +1648,13 @@ If no new work is needed (system already has enough active work), respond with: 
         objective: n.description || n.title,
         dependencies: Array.isArray(n.depends_on) ? n.depends_on : [],
         strategy: { confidence: chosen.success_probability, ...(n.strategy || {}) },
-        ...(projectRoot ? { contract: projectNodeContract({ title: n.title, objective: n.description, mainGoal: chosen.goal, projectRoot }) } : {}),
+        ...(projectRoot
+          ? { contract: projectNodeContract({ title: n.title, objective: n.description, mainGoal: chosen.goal, projectRoot }) }
+          : onPrimary && !operatorPrimaryGoal?.invariants?.includes('observation_only') && !focusGoal?.invariants?.includes('observation_only')
+            ? (() => { const contract = auraArtifactContract({ goal: operatorPrimaryGoal?.statement || chosen.goal,
+                objective: n.description || n.title, nodeTitle: n.title });
+                return contract ? { contract } : {}; })()
+            : {}),
       })),
     });
 
@@ -1637,6 +1680,12 @@ const developmentCycle = createDevelopmentCycle({
   memory,
   emit,
   runTurn: async ({ reason, eventKey }) => {
+    // An explicitly enabled historical governor must not become a competing
+    // scheduler while Aura Core owns the control lease. Operator-goal planning
+    // remains an on-demand Aura function, not a separate agent heartbeat.
+    if (auraControlLease.externallyOwned() && reason !== 'operator-goal') {
+      return { ok: true, skipped: true, reason: 'AURA_CORE_OWNS_STRATEGY' };
+    }
     // Operator mission/graph callbacks remain active, but they must not create
     // an independent LLM reasoning turn merely because strategy state changed.
     // A legacy governor requires an explicit opt-in, not an implicit timer.

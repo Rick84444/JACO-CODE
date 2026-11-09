@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { auraArtifactContract } from '../src/aura-artifact-contract.mjs';
+import { normalizeCodingContract, isPathAllowed } from '../../agents/lib/coding-contract.mjs';
+import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
 import { createMissionGraph } from '../src/seer-mission-graph.mjs';
 
 function fixture() {
@@ -337,4 +343,24 @@ test('missing binding is quarantined without retry or fabricated success and fre
  const r=graph.reconcileNova(g.id,'a',{id:'missing-id',status:'MISSING',observedMissing:true,observedAt:'2026-10-06'});
  assert.equal(r.outcome,'quarantined');assert.equal(r.graph.status,'EXHAUSTED');assert.equal(r.graph.nodes[0].status,'FAILED');assert.equal(graph.ready(g.id).length,0);assert.equal(r.graph.replans.length,0);
  }finally{db.close();}
+});
+
+test('operator Aura planning exposes a bounded artifact contract and can really write nested Markdown files',async t=>{
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'aura-artifact-gate-'));
+  t.after(()=>fs.rmSync(temp,{recursive:true,force:true}));
+  const contract=normalizeCodingContract(auraArtifactContract({goal:'Create Markdown research files',objective:'Write a market report'}));
+  const {db,graph}=fixture();
+  t.after(()=>db.close());
+  const created=graph.create({title:'Aura research',objective:'Write Markdown evidence',policy:{primary_agent:'aura'},
+    nodes:[{key:'write',objective:'Write a Markdown report',contract}]});
+  const spec=graph.dispatchSpec(created.id,'write');
+  assert.equal(spec.parent.agent,undefined);
+  assert.equal(spec.contract.scope.allowed[0],'artifacts/aura/**');
+  assert.equal(isPathAllowed(contract,'runtime/server.ts'),false);
+  const workspace=createCodingWorkspace({root:temp});
+  const receipt=await workspace.execute({type:'repo-write',data:{path:'artifacts/aura/research/report.md',content:'# Verified output\n'}},contract);
+  assert.equal(receipt.verified,true);
+  assert.equal(fs.readFileSync(path.join(temp,'artifacts/aura/research/report.md'),'utf8'),'# Verified output\n');
+  await assert.rejects(workspace.execute({type:'repo-write',data:{path:'runtime/server.ts',content:'denied'}},contract),/SCOPE_DENIED/);
+  assert.equal(auraArtifactContract({goal:'Read files only; do not edit files'}),null);
 });

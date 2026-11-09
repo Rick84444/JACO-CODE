@@ -299,7 +299,7 @@ export function validateTask(task, allowed) {
   return { type: task.type, data, expectedOutcome: String(task.expectedOutcome || '').slice(0, 2000) };
 }
 
-// SEER owns missions in the existing mission-bus database. Nova leases one turn
+// Aura owns operator missions in the existing mission-bus database. Its legacy Nova executor leases one turn
 // at a time. An interrupted execution is never automatically repeated.
 export class NovaMissionControl {
   // capabilities: the operator's switches (capabilityPolicy.mjs). Without it missions keep the narrow legacy scope.
@@ -398,7 +398,7 @@ export class NovaMissionControl {
       goal,
       source,
       idempotencyKey: `nova:${idempotencyKey}`,
-      metadata: { executor: normalizedExecutor, authority: 'SEER', allowedTasks: requestedTasks, mandateId: mandateId?.trim() || null, codingContract,
+      metadata: { executor: normalizedExecutor, authority: 'AURA', primaryAgent: 'aura', allowedTasks: requestedTasks, mandateId: mandateId?.trim() || null, codingContract,
         ...(projectRoot ? { projectRoot: path.resolve(projectRoot) } : {}),
         ...(parent ? {parent:{graphId:String(parent.graphId).slice(0,200),nodeKey:String(parent.nodeKey).slice(0,120),mainGoal:parent.mainGoal,dependencies:Array.isArray(parent.dependencies)?parent.dependencies.map(String).slice(0,100):[],
           ...(parent.agent ? {agent:{id:'task:'+JSON.stringify([String(parent.graphId).slice(0,200),String(parent.nodeKey).slice(0,120)]),name:String(parent.agent.name || goal).slice(0,300),parentKey:typeof parent.agent.parentKey === 'string' ? parent.agent.parentKey.slice(0,120) : null,kind:'task-agent'}} : {}),
@@ -415,7 +415,7 @@ export class NovaMissionControl {
     const receipts = decode(row.receipts_json);
     const contract = base.metadata?.codingContract || null;
     return { ...base, phase: row.phase, turn: row.turn,
-      allowedTasks: base.metadata.allowedTasks.filter(t => this.allowedTasks.includes(t)),
+      allowedTasks: base.metadata.allowedTasks.filter(t => this.allowedTasks.includes(t) && (!this.capabilities || this.capabilities.isTaskEnabled(t))),
       observation: decode(row.observation_json), receipts,
       activeTask: decode(row.active_task_json), failures: row.failures,
       contract, contractStatus: contract ? contractVerificationStatus(contract, receipts) : null,
