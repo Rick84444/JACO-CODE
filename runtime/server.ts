@@ -2462,8 +2462,8 @@ const notifyPhone = async (action) => {
       const missions = missionRows.map((base: any) => {
         try {
           const current = connectedRuntime.novaMissions.get(base.id);
-          return { ...base, phase: current.phase, receipts: current.receipts };
-        } catch { return base; }
+          return { ...base, phase: current.phase, receipts: current.receipts, reviewAvailable: true };
+        } catch { return { ...base, reviewAvailable: false }; }
       });
       const projection = gameboardProjection({
         graphs, graphError, providers: mcpHost.status(),
