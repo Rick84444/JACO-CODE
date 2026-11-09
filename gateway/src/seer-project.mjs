@@ -49,7 +49,7 @@ export function projectNodeContract({ title, objective, mainGoal, projectRoot = 
   // fresh worktree (no installed packages, and a suite that already fails), 2026-11-06.
   const buildsSomethingNew = !readOnly
     && /\b(?:build|create|make|write|generate|design|bygg|bygga|skapa|skriv|demo|prototyp|prototype)\b/i.test(what)
-    && /\b(?:demo|html|product|produkt|prototype|prototyp|page|sida|document|dokument|spec|report|rapport)\b/i.test(what)
+    && /\b(?:demo|html|product|produkt|prototype|prototyp|page|sida|document|dokument|markdown|\\.md\\b|spec|report|rapport)\b/i.test(what)
     && !/\b(?:fix|bug|debug|repair|regression|refactor|test|tests|testing|testa|felsök|rätta)\b/i.test(what);
   const testCommand = readOnly || buildsSomethingNew ? null : detectProjectTestCommand(projectRoot);
   const needsNewTests = !readOnly && /\b(?:test|tests|testing|fix|bug|debug|repair|regression|verify|verification|falsifier|testa|felsök)\b/i.test(what);
