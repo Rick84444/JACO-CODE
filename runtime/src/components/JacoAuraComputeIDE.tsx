@@ -440,6 +440,19 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [terminalCommand, setTerminalCommand] = useState('');
   const [terminalNotice, setTerminalNotice] = useState<string | null>(null);
   const [reviewMissionId,setReviewMissionId] = useState<string|null>(null);
+  // The Gameboard navigates to the existing mission review; it never creates
+  // another executor, approval path or a separate set of receipts.
+  useEffect(() => {
+    const showMissionEvidence = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail;
+      if (typeof id !== 'string' || !/^mission-[a-zA-Z0-9-]+$/.test(id)) return;
+      setReviewMissionId(id);
+      setWorkspaceView('evidence');
+      setSidePanelOpen(false);
+    };
+    window.addEventListener('jaco:open-mission-evidence', showMissionEvidence);
+    return () => window.removeEventListener('jaco:open-mission-evidence', showMissionEvidence);
+  }, []);
   const [gitDiff, setGitDiff] = useState<{ path: string; worktree: string; staged: string } | null>(null);
   const [gitActionNotice, setGitActionNotice] = useState<string | null>(null);
   const [gitCommitMessage, setGitCommitMessage] = useState('');
