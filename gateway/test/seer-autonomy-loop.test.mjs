@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAutonomyLoop, parseModelJson, shouldAutoConfirmNova } from '../src/seer-autonomy-loop.mjs';
 import { createAuraControlLoop } from '../src/aura-control-loop.mjs';
+import { createAuraControlLease } from '../src/aura-control-lease.mjs';
+import { createAuraCoreController } from '../../runtime/src/server/connected/auraCoreController.mjs';
 
 function graphFixture(initial) {
   let graph = structuredClone(initial);
@@ -333,4 +335,69 @@ test('disabled planning still reconciles the durable execution ledger', async ()
   assert.deepEqual(report.phases,['reconcile']);
   assert.equal(reconciled,1);
   assert.equal(planned,0);
+});
+
+test('Aura Core obtains exclusive ownership and stale lease tokens cannot run work',()=>{
+  let clock=1000;
+  const lease=createAuraControlLease({now:()=>clock,ttlMs:500});
+  const a=lease.claim();
+  assert.equal(lease.state().owner,'aura-core');
+  assert.equal(lease.state().externalActive,true);
+  assert.equal(JSON.stringify(lease.state()).includes(a.token),false,'no secret in public status');
+  assert.throws(()=>lease.claim(),/AURA_CONTROL_LEASE_HELD/);
+  assert.throws(()=>lease.renew('invalid'),/AURA_CONTROL_LEASE_INVALID/);
+  clock+=400;
+  lease.renew(a.token);
+  clock+=400;
+  assert.equal(lease.state().externalActive,true,'renewed Core retains ownership');
+  clock+=200;
+  assert.equal(lease.state().owner,'aura-fallback');
+  assert.throws(()=>lease.renew(a.token),/AURA_CONTROL_LEASE_INVALID/);
+  const replacement=lease.claim();
+  assert.notEqual(replacement.token,a.token);
+  assert.throws(()=>lease.release(a.token),/AURA_CONTROL_LEASE_INVALID/);
+  lease.release(replacement.token);
+  assert.equal(lease.state().owner,'aura-fallback');
+});
+
+test('Aura Core delegates a single ordered tick and never allows another active owner',async()=>{
+  let reconciled=0, planned=0;
+  const control=createAuraControlLoop({
+    reconcile:async()=>{reconciled++;},
+    plan:async()=>{planned++;return {dispatched:[{}]};},
+  });
+  const lease=createAuraControlLease({ttlMs:10000});
+  const request=async(action,body)=>{
+    if(action==='claim') return lease.claim();
+    if(action==='release') return lease.release(body.token);
+    if(action==='tick'){
+      lease.renew(body.token);
+      return control.tick();
+    }
+    throw Error('unexpected adapter action');
+  };
+  const core=createAuraCoreController({request});
+  // Simulate start without scheduler timers to drive a deterministic controller.
+  assert.equal((await core.tick()).skipped,'stopped');
+  core.start();
+  const result=await core.tick();
+  assert.ok(result.ok===true||result.skipped==='in_flight');
+  assert.equal(lease.state().owner,'aura-core');
+  assert.ok(reconciled>=1);
+  assert.equal(reconciled,planned);
+  assert.equal(core.state().executionHost,'core');
+  assert.equal(core.state().runtimeConsolidated,false);
+  await core.stop();
+  assert.equal(lease.state().owner,'aura-fallback');
+  assert.equal((await core.tick()).skipped,'stopped');
+});
+
+test('Aura Core surfaces unavailable adapters without creating phantom receipts or claiming success',async()=>{
+  const core=createAuraCoreController({request:async()=>{throw Error('STRATEGY_UNAVAILABLE');}});
+  core.start();
+  await core.tick();
+  assert.equal(core.state().leased,false);
+  assert.match(core.state().lastError||'',/STRATEGY_UNAVAILABLE/);
+  assert.equal(core.state().ticks,0);
+  await core.stop();
 });
