@@ -27,6 +27,7 @@ test('Aura can create nested Markdown files without a selected IDE project or a 
     policy:{primary_agent:'aura',strategy_capability:'aura.strategy',execution_capability:'aura.execution'},
     nodes:[{key:'report',title:'Market research report',objective:'Create a Markdown research report',contract}]});
   const spec=graph.dispatchSpec(created.id,'report');
+  assert.equal(spec.parent.agent,undefined,'ordinary Aura steps must not fabricate subagents');
   const control=new NovaMissionControl(bus,{allowedTasks:['repo-list','repo-read','repo-write','repo-edit','web-fetch','mcp-call']});
   const mission=control.create(spec);
   assert.ok(mission.allowedTasks.includes('repo-write'), 'file writes are visible to Aura before planning');
