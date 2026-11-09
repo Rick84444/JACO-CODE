@@ -196,13 +196,17 @@ export class JacoLinkRoom {
   async fetch(request) {
     const url=new URL(request.url);
     if(url.pathname==='/hosts'){
-      const hosts=this.sockets('host').map(ws=>ws.deserializeAttachment().deviceId);
-      return json({hosts:[...new Set(hosts)],online:hosts.length>0});
+      const online=new Set(this.sockets('host').map(ws=>ws.deserializeAttachment().deviceId));
+      const devices=await this.ctx.storage.list({prefix:'device:'});
+      const hosts=[...devices].map(([key,value])=>({deviceId:key.slice(7),online:online.has(key.slice(7)),label:value?.label||'Windows PC',createdAt:value?.createdAt}));
+      return json({hosts,online:online.size>0});
     }
     if(url.pathname==='/revoke'&&request.method==='POST'){
       const {deviceId}=await request.json();
-      const revoked=(await this.ctx.storage.get('revoked'))||[];
-      if(!revoked.includes(deviceId))await this.ctx.storage.put('revoked',[...revoked.slice(-499),deviceId]);
+      // Revocation is permanent for this device token. Never age out previous
+      // revocations just because newer devices were registered.
+      await this.ctx.storage.put('revoked:'+deviceId,true);
+      await this.ctx.storage.delete('device:'+deviceId);
       for(const ws of this.sockets('host')){
         if(ws.deserializeAttachment().deviceId===deviceId)ws.close(4003,'Device revoked');
       }
@@ -215,8 +219,10 @@ export class JacoLinkRoom {
     if(!['host','phone'].includes(role))return json({error:'ROLE_INVALID'},403);
     if(role==='host'){
       if(!validCode(deviceId))return json({error:'DEVICE_INVALID'},403);
-      const revoked=(await this.ctx.storage.get('revoked'))||[];
-      if(revoked.includes(deviceId))return json({error:'DEVICE_REVOKED'},403);
+      if(await this.ctx.storage.get('revoked:'+deviceId))return json({error:'DEVICE_REVOKED'},403);
+      if(!(await this.ctx.storage.get('device:'+deviceId)))await this.ctx.storage.put('device:'+deviceId,{
+        label:'Windows PC',createdAt:new Date().toISOString(),
+      });
       for(const ws of this.sockets('host')){
         if(ws.deserializeAttachment().deviceId===deviceId)ws.close(4001,'Host replaced');
       }
