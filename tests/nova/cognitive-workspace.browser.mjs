@@ -301,9 +301,11 @@ try {
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'pass-test',type:'repo-test',ok:true,verified:true,result:{path:'example.ts',exitCode:0}}});
   await page.locator('[data-event-id="mission:5"][data-outcome="verified"]').waitFor();
   await screenshot('cognitive-workspace-live');
-  await page.locator('[data-event-id="mission:5"]').getByRole('button',{name:'Show evidence'}).click();
-  await page.getByRole('region',{name:'Selected evidence'}).waitFor();
-  assert.ok((await page.getByRole('region',{name:'Selected evidence'}).innerText()).includes('Durable mission history'));
+  await page.locator('[data-event-id="mission:5"]').getByRole('button',{name:/^(Visa bevis|Show evidence)$/}).click();
+  const selectedEvidence=page.getByRole('region',{name:/^(Valt bevis|Selected evidence)$/});
+  await selectedEvidence.waitFor();
+  assert.match(await selectedEvidence.innerText(),/Sparad uppdragshistorik|Saved mission history/,
+    'only the persisted mission receipt may be reported as durable evidence');
   await screenshot('cognitive-workspace-evidence');
   passed('Evidence opens beside the conversation and identifies its durable source');
   await canvas('Samtal').click();
