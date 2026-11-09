@@ -136,7 +136,7 @@ export async function handleLinkHostSocket(request,env,url) {
   const claims=auth.startsWith('Bearer ') ? await checkTicket(auth.slice(7),env.LINK_SIGNING_KEY):null;
   if(!claims)return json({error:'DEVICE_TOKEN_INVALID'},401);
   return room(env,claims.sub).fetch(new Request('https://internal/ws',{
-    headers:{upgrade:'websocket','x-jaco-link-role':'host','x-jaco-link-device':claims.did},
+    headers:{upgrade:'websocket','x-jaco-link-role':'host','x-jaco-link-device':claims.did,'x-jaco-link-token-exp':String(claims.exp)},
   }));
 }
 
@@ -221,9 +221,11 @@ export class JacoLinkRoom {
       return json({error:'NOT_FOUND'},404);
     const role=request.headers.get('x-jaco-link-role');
     const deviceId=request.headers.get('x-jaco-link-device');
+    const expiresAt=Number(request.headers.get('x-jaco-link-token-exp')||0)*1000;
     if(!['host','phone'].includes(role))return json({error:'ROLE_INVALID'},403);
     if(role==='host'){
       if(!validCode(deviceId))return json({error:'DEVICE_INVALID'},403);
+      if(!Number.isSafeInteger(expiresAt)||expiresAt<=Date.now())return json({error:'HOST_TOKEN_EXPIRED'},403);
       if(await this.ctx.storage.get('revoked:'+deviceId))return json({error:'DEVICE_REVOKED'},403);
       if(!(await this.ctx.storage.get('device:'+deviceId)))await this.ctx.storage.put('device:'+deviceId,{
         label:'Windows PC',createdAt:new Date().toISOString(),
@@ -235,7 +237,7 @@ export class JacoLinkRoom {
     const [client,server]=Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({role,deviceId:role==='host'?deviceId:null,
-      sessionId:random(16),pending:[]});
+      sessionId:random(16),expiresAt:role==='host'?expiresAt:null,pending:[]});
     return new Response(null,{status:101,webSocket:client});
   }
   send(ws,value){try{ws.send(JSON.stringify(value));}catch{/* client disconnected */}}
@@ -271,7 +273,11 @@ export class JacoLinkRoom {
         body:{error:'TOO_MANY_PENDING_REQUESTS'}});
       if(phones.some(phone=>phone.deserializeAttachment()?.pending?.some(p=>p.id===valid.id)))
         return this.send(ws,{type:'rpc_result',id:valid.id,status:409,body:{error:'DUPLICATE_REQUEST_ID'}});
-      const hosts=this.sockets('host').filter(s=>!valid.target||s.deserializeAttachment().deviceId===valid.target);
+      const hosts=this.sockets('host').filter(s=>{
+        const h=s.deserializeAttachment();
+        if(h.expiresAt&&h.expiresAt<=Date.now()){s.close(4003,'Credential expired');return false;}
+        return !valid.target||h.deviceId===valid.target;
+      });
       if(hosts.length!==1)return this.send(ws,{type:'rpc_result',id:valid.id,status:503,
         body:{error:hosts.length?'SELECT_A_PC':'PC_OFFLINE'}});
       const current=ws.deserializeAttachment();
@@ -279,6 +285,9 @@ export class JacoLinkRoom {
         {id:valid.id,hostSessionId:hosts[0].deserializeAttachment().sessionId,at:now}]});
       this.send(hosts[0],{type:'rpc',id:valid.id,method:valid.method,path:valid.path,...(valid.method==='POST'?{body:valid.body}:{})});
       return;
+    }
+    if(info?.role==='host'&&info.expiresAt&&info.expiresAt<=Date.now()){
+      ws.close(4003,'Credential expired');this.webSocketClose(ws);return;
     }
     if(info?.role==='host'&&validateHostResponse(value)){
       for(const phone of this.sockets('phone')){
