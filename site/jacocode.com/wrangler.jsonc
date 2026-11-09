@@ -5,6 +5,15 @@
   "name": "jaco-site",
   "main": "worker.mjs",
   "compatibility_date": "2026-10-01",
+  "durable_objects": {
+    "bindings": [
+      { "name": "LINK_PAIRINGS", "class_name": "JacoLinkPairing" },
+      { "name": "LINK_ROOMS", "class_name": "JacoLinkRoom" }
+    ]
+  },
+  "migrations": [
+    { "tag": "jaco-link-v1", "new_sqlite_classes": ["JacoLinkPairing", "JacoLinkRoom"] }
+  ],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
