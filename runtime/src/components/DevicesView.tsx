@@ -10,6 +10,17 @@ type Kind = 'nova' | 'ide';
 interface Device { name: string; kind: Kind; executor: string | null; createdAt: string; revokedAt: string | null; lastSeenAt: string | null; online: boolean; memoryAccess?: boolean }
 interface Invite { name: string; kind: Kind; executor: string | null; code: string; expiresAt: string }
 
+// Only the configured IDE origin may be used for pairing. The one-time code
+// remains separate from the URL; it must be entered by the owner on the phone.
+const remoteLoginUrl = (ideUrl: string | null) => {
+  if (!ideUrl) return null;
+  try {
+    const origin = new URL(ideUrl);
+    if (origin.protocol !== 'https:' && !(origin.protocol === 'http:' && ['localhost','127.0.0.1','[::1]'].includes(origin.hostname))) return null;
+    return new URL('/ide-login?next=remote', origin.origin).toString();
+  } catch { return null; }
+};
+
 const ago = (iso: string | null) => {
   if (!iso) return 'never';
   const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
@@ -170,6 +181,14 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
           </div>
         ))}
 
+        <section className="jaco-link-onboarding border border-neutral-800 bg-[#303133] rounded p-2 space-y-1.5 min-w-0" aria-label={tr('JACO mobilanslutning', 'JACO mobile connection')}>
+          <div className="text-neutral-100 font-semibold">{tr('JACO på mobilen', 'JACO on your phone')}</div>
+          <p className="text-neutral-300">{tr('Mobilen är en fjärrklient till samma Aura och samma uppdrag. Ingen egen agent eller Termux behöver installeras.', 'Your phone is a remote client to the same Aura and missions. No separate agent or Termux installation is needed.')}</p>
+          {remoteLoginUrl(ideUrl)
+            ? <a href={remoteLoginUrl(ideUrl)!} target="_blank" rel="noopener noreferrer" className="text-blue-300 underline break-all">{tr('Öppna säker mobilinloggning', 'Open secure mobile sign-in')}</a>
+            : <p className="text-amber-200">{tr('Ange en säker publik IDE-adress för att aktivera mobilen.', 'Configure a secure public IDE address to enable mobile sign-in.')}</p>}
+          <p className="text-neutral-400">{tr('Skapa en parkopplingskod nedan. Koden gäller en gång och anges först på inloggningssidan.', 'Create a one-time pairing code below and enter it on the sign-in page.')}</p>
+        </section>
         <div className="border border-neutral-800 bg-[#303133] rounded p-2 space-y-1.5 min-w-0">
           <div className="text-neutral-100">{tr('Lägg till enhet', 'Add device')}</div>
           {!(kind === 'ide' ? ideUrl : hubUrl) && <p role="status" className="text-amber-300">{kind === 'ide' ? tr('En delbar IDE-adress behövs för parkoppling.', 'Pairing requires a shareable IDE address.') : tr('En delbar hubbadress behövs för parkoppling.', 'Pairing requires a shareable hub address.')}</p>}
@@ -196,7 +215,7 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
               {invite.kind === 'ide' ? (
                 <div className="text-[10px] text-neutral-200 space-y-1">
                   <div>{tr('Öppna i mobilens webbläsare och skriv koden:', 'Open in the phone browser and enter the code:')}</div>
-                  <div className="font-mono text-[12px] text-neutral-200 break-all select-all">{ideUrl || tr('IDE-adress saknas. Konfigurera JACO_IDE_PUBLIC_HOST på servern.', 'IDE address missing. Configure JACO_IDE_PUBLIC_HOST on the server.')}</div>
+                  <div className="font-mono text-[12px] text-neutral-200 break-all select-all">{remoteLoginUrl(ideUrl) || tr('IDE-adress saknas. Konfigurera JACO_IDE_PUBLIC_HOST på servern.', 'IDE address missing. Configure JACO_IDE_PUBLIC_HOST on the server.')}</div>
                   <div className="text-[9px] text-neutral-400">{tr('I Chrome: meny, Lägg till på startskärmen, så öppnas IDE:t som en app.', 'In Chrome: menu, Add to Home screen, and the IDE opens as an app.')}</div>
                 </div>
               ) : commands.map(c => (

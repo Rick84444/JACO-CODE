@@ -10,6 +10,7 @@ const VSCODE_OPEN_URL = 'vscode://jacocode.jaco-cognitive-ide/open';
 export type CognitiveCanvas='conversation'|'stage'|'agents'|'code'|'preview'|'evidence'|'gameboard'|'voice'|'connections';
 type Sidebar='explorer'|'source-control'|'tools'|'skills'|'devices'|'providers'|'revenue';
 interface Props {
+  remoteMode?:boolean;
   canvas:CognitiveCanvas;onCanvas:(view:CognitiveCanvas)=>void;conversation:React.ReactNode;detail:React.ReactNode;
   stage:React.ReactNode;stagePinned:boolean;onTogglePin:()=>void;
   sidePanel:React.ReactNode;sidebar:Sidebar;sidePanelOpen:boolean;onSidebar:(view:Sidebar)=>void;onCloseSidebar:()=>void;
@@ -89,11 +90,27 @@ export function CognitiveWorkspace(props:Props) {
     window.addEventListener('keydown', onShortcut);
     return () => window.removeEventListener('keydown', onShortcut);
   }, [props.onCanvas]);
+  // Remote is another view of this very same Aura; it never creates a second
+  // executor. Re-check the existing IDE session so a revoked login cannot keep
+  // an old remote view usable.
+  useEffect(() => {
+    if (!props.remoteMode) return;
+    let active = true;
+    const checkSession = async () => {
+      try {
+        const response = await fetch('/ide-auth/status', { credentials: 'same-origin', cache: 'no-store' });
+        if (active && response.status === 401) window.location.replace('/ide-login?next=remote');
+      } catch { /* The normal runtime connection warning handles transient outages. */ }
+    };
+    void checkSession();
+    const timer = window.setInterval(() => void checkSession(), 30000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [props.remoteMode]);
   const navigate = (view:CognitiveCanvas) => { props.onCloseSidebar(); props.onCanvas(view); menu.current?.close(); };
   const openPanel = (view:Sidebar) => { props.onSidebar(view); menu.current?.close(); };
   const hasDetail=props.canvas!=='conversation' && props.canvas!=='stage';
   const showStage=props.canvas!=='conversation';
-  return <div className="cognitive-workspace" data-cognitive-workspace="true">
+  return <div className="cognitive-workspace" data-cognitive-workspace="true" data-remote-mode={props.remoteMode ? "true" : "false"}>
     <header className="cognitive-topbar">
       <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">Aura</span></div>
       <button type="button" className="cognitive-project" aria-label={`${tr('Öppna projekt', 'Open project')}: ${props.projectName}`} onClick={()=>openPanel('explorer')}><Folder size={14}/><span>{props.projectName}</span><ChevronRight size={12}/><span className="cognitive-branch">{props.branch || tr('Projekt', 'Project')}</span></button>
@@ -105,6 +122,13 @@ export function CognitiveWorkspace(props:Props) {
         <button type="button" aria-label={tr('Sök verktyg och kommandon', 'Search tools and commands')} title={tr('Sök', 'Search')+' · Ctrl+Shift+P'} onClick={props.onCommands}><Search size={16}/></button>
       </div>
     </header>
+    {props.remoteMode && <nav className="cognitive-remote-navigation" aria-label="Remote control">
+      {([['conversation','Chat'],['stage','Mission'],['gameboard','Plan'],['evidence','Results']] as const).map(([view,label]) =>
+        <button key={view} type="button" aria-pressed={props.canvas===view} onClick={()=>props.onCanvas(view)}>{label}</button>)}
+      <button type="button" onClick={props.onApprovals}>Approvals{props.approvalCount ? ' ('+props.approvalCount+')' : ''}</button>
+      <a href="/" className="cognitive-remote-full">Open full JACO</a>
+      <button type="button" onClick={props.onSignOut}>Sign out of Remote</button>
+    </nav>}
     <div className="cognitive-body">
       <nav className="cognitive-rail" aria-label={tr('Projektverktyg', 'Project tools')}>
         <button type="button" onClick={()=>{props.onCanvas('conversation');props.onCloseSidebar();}} aria-label={tr('Visa samtalet', 'Show conversation')} title={L('Samtal')} className={!showStage&&!props.sidePanelOpen?'active':''}><MessageSquare size={19}/></button>
@@ -119,8 +143,8 @@ export function CognitiveWorkspace(props:Props) {
         <div className="cognitive-contextbar">
           {props.status.tone !== 'idle' && <div className="cognitive-status" data-tone={props.status.tone} role="status"><span/>{L(props.status.label)}</div>}
           <nav className="cognitive-stage-switcher" aria-label={tr('Arbetsyta','Workspace')}>
-            {([['stage', Eye, 'Arbete'], ['code', Code2, 'Kod'], ['preview', Eye, 'Förhandsvisa'], ['evidence', ShieldCheck, 'Belägg']] as const).map(([view, Icon, label]) =>
-              <button key={view} type="button" title={L(label)+' · Ctrl/Cmd+Shift+'+({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view]} aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{L(label)}</span></button>)}
+            {([['stage', Eye, 'Arbete'], ['code', Code2, 'Kod'], ['preview', Eye, 'Förhandsvisa'], ['evidence', ShieldCheck, 'Belägg'], ['gameboard', Network, 'Spelplan']] as const).map(([view, Icon, label]) =>
+              <button key={view} type="button" title={L(label)+(view==='gameboard'?'':' · Ctrl/Cmd+Shift+'+({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view])} aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{L(label)}</span></button>)}
           </nav>
           <button type="button" className="cognitive-mobile-focus" onClick={()=>props.onCanvas(showStage?'conversation':'stage')}>
             {showStage ? <MessageSquare size={15}/> : <Eye size={15}/>}

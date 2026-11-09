@@ -42,7 +42,7 @@ app.get('/api/aura/workbench/live',(req,res)=>{
 });
 app.get('/api/aura/workbench',(_req,res)=>res.json(snapshot()));
 app.get('/api/aura/workbench/gameboard',(_req,res)=>res.json({success:true,
-  ...gameboardProjection({graphs:null,graphError:'SEER_NOT_RUNNING_IN_TEST',workers:bus.listWorkers(),missions:bus.listMissions(30)}),
+  ...gameboardProjection({graphs:null,graphError:'SEER_NOT_RUNNING_IN_TEST',workers:bus.listWorkers(),missions:bus.listMissions(30).map(m=>({...m,reviewAvailable:true})),events:bus.listEvents(100),primaryGoal:bus.listMissions(1)[0]?.goal || null}),
   exchange:createGameboardExchange(bus.db).position('global'),
 }));
 app.get('/api/aura/workbench/gameboard/events',(req,res)=>res.json({success:true,...createGameboardExchange(bus.db).position(String(req.query.scope||'global'))}));
@@ -176,6 +176,23 @@ try {
     }
     passed('Remote PWA uses one Aura chat, phone navigation and preserves the draft without creating a mission');
   } finally { await remote.close(); }
+  // Same binary, same owner, same full UI on a laptop. The ?remote=1
+  // parameter authenticates a remote session but must not force phone UX.
+  const laptop = await browser.newPage({viewport:{width:1366,height:768}});
+  try {
+    await laptop.goto(base+'/?remote=1',{waitUntil:'domcontentloaded'});
+    await laptop.locator('.cognitive-workspace').waitFor();
+    assert.equal(await laptop.locator('.cognitive-workspace').getAttribute('data-remote-mode'),'true',
+      'laptop remote session still checks pairing and revocation');
+    assert.equal(await laptop.locator('.cognitive-remote-navigation').evaluate(el=>getComputedStyle(el).display),'none',
+      'laptop must not use a separate phone-only navigation');
+    assert.notEqual(await laptop.locator('.cognitive-rail').evaluate(el=>getComputedStyle(el).display),'none',
+      'laptop should show the exact canonical desktop IDE rail');
+    await laptop.getByRole('navigation',{name:/^(Workspace|Arbetsyta)$/}).waitFor();
+    assert.equal(await laptop.locator('.cognitive-workspace').count(),1);
+    assert.equal(await laptop.locator('.cognitive-rail').count(),1);
+    passed('Paired laptop renders the canonical desktop JACO GUI rather than the phone shell');
+  } finally { await laptop.close(); }
   blockSession=true;
   await page.goto(base,{waitUntil:'networkidle'});
   await page.getByRole('button',{name:'Försök läsa igen'}).waitFor();
@@ -222,7 +239,7 @@ try {
   await page.getByRole('region',{name:'Minnets innehåll och beslut'}).waitFor();
   await page.getByTestId('memory-gameboard').getByRole('button',{name:'Stäng minnet'}).click();
   // The operator-facing blueprint is primary; the technical simulator opens on demand.
-  await page.getByText('Technical view', { exact: true }).click();
+  await page.getByText(/^(Teknisk vy|Technical view)$/).click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Gameboard must not overflow Android-size viewport');
   await canvas('Samtal').click();
@@ -232,9 +249,12 @@ try {
   await canvas('Spelplan').click();
   await page.getByTestId('strategy-board').waitFor();
   // The operator-facing blueprint is primary; the technical simulator opens on demand.
-  await page.getByText('Technical view', { exact: true }).click();
+  await page.getByText(/^(Teknisk vy|Technical view)$/).click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
-  await page.getByText('Aura planning: UNAVAILABLE').waitFor();
+  await page.getByText('Aura planning: Planner unavailable').waitFor();
+  await page.getByTestId('gameboard-operational-position').waitFor();
+  await page.getByTestId('gameboard-durable-evidence').waitFor();
+  await page.getByText('Optional scenario laboratory · simulation only').click();
   await page.locator('section[aria-label="Shared gameboard"] input[list="gameboard-tools"]').first().fill('mcp:git:git_status');
   await page.getByRole('button',{name:'Simulate without execution'}).click();
   await page.getByText('Executed: no', {exact:false}).waitFor();
@@ -252,10 +272,22 @@ try {
   await page.locator('[data-mission-id]').waitFor({state:'attached',timeout:10000});
   passed('A real SSE event is inserted exactly once in the conversation with its mission');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'read-example',type:'repo-read',ok:true,verified:false,result:{path:'example.ts'}}});
-  await page.getByText('Not verified',{exact:true}).waitFor();
+  // Evidence outcome is the contract; its translated label depends on the
+  // current UI language and must never be mistaken for verified success.
+  await page.locator('[data-event-id="mission:3"][data-outcome="unverified"]').waitFor();
+  await page.locator('[data-event-id="mission:3"] .cognitive-proof[data-outcome="unverified"]').waitFor();
+  await canvas('Spelplan').click();
+  await page.getByText(/^(Teknisk vy|Technical view)$/).click();
+  await page.getByTestId('gameboard-mission-list').waitFor();
+  await page.getByTestId('gameboard-operational-position').getByText('Testuppdrag: verifiera HTTP-klienten').first().waitFor();
+  await page.getByTestId('gameboard-durable-evidence').getByText('NOVA_ACTION_RESULT').first().waitFor();
+  await page.getByRole('button',{name:'Review execution & evidence'}).first().click();
+  await page.locator('.cognitive-evidence-scroll').waitFor();
+  passed('Gameboard renders durable mission evidence and opens the existing review without another agent');
+  await canvas('Samtal').click();
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'failed-test',type:'repo-test',ok:false,verified:true,error:'TEST_NEGATIVE_CONTROL',result:{exitCode:1}}});
   await page.locator('[data-event-id="mission:4"][data-outcome="failed"]').waitFor();
-  assert.equal(await page.locator('[data-event-id="mission:4"]').getByText('Verified result',{exact:true}).count(),0);
+  assert.equal(await page.locator('[data-event-id="mission:4"] .cognitive-proof[data-outcome="verified"]').count(),0);
   passed('A successful unverified step and a failing step cannot masquerade as verified');
   await page.getByRole('button',{name:'Vad har du upptäckt?',exact:true}).click();
   await page.getByRole('button',{name:'Skicka meddelande',exact:true}).click();
@@ -269,9 +301,11 @@ try {
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'pass-test',type:'repo-test',ok:true,verified:true,result:{path:'example.ts',exitCode:0}}});
   await page.locator('[data-event-id="mission:5"][data-outcome="verified"]').waitFor();
   await screenshot('cognitive-workspace-live');
-  await page.locator('[data-event-id="mission:5"]').getByRole('button',{name:'Show evidence'}).click();
-  await page.getByRole('region',{name:'Selected evidence'}).waitFor();
-  assert.ok((await page.getByRole('region',{name:'Selected evidence'}).innerText()).includes('Durable mission history'));
+  await page.locator('[data-event-id="mission:5"]').getByRole('button',{name:/^(Visa bevis|Show evidence)$/}).click();
+  const selectedEvidence=page.getByRole('region',{name:/^(Valt bevis|Selected evidence)$/});
+  await selectedEvidence.waitFor();
+  assert.match(await selectedEvidence.innerText(),/Sparad uppdragshistorik|Saved mission history/,
+    'only the persisted mission receipt may be reported as durable evidence');
   await screenshot('cognitive-workspace-evidence');
   passed('Evidence opens beside the conversation and identifies its durable source');
   await canvas('Samtal').click();
@@ -323,17 +357,17 @@ try {
   liteAck=true;
   await input().fill('Testa ett Lite-uppdrag');
   await page.getByTestId('jaco-run-mode-toggle').click();
-  await page.getByRole('button',{name:/Full Autonomous/}).last().click();
+  await page.getByRole('button',{name:/Helt självständig|Full Autonomous/}).last().click();
   await page.getByRole('button',{name:'Starta uppdrag',exact:true}).click();
   await page.getByText('Uppdraget är registrerat. Planering och resultat visas här när runtime rapporterar dem.',{exact:true}).waitFor();
-  await page.waitForFunction(()=>document.querySelector('[data-testid="jaco-run-mode-toggle"]')?.textContent.includes('Full Autonomous'));
+  await page.waitForFunction(()=>/Helt självständig|Full Autonomous/.test(document.querySelector('[data-testid="jaco-run-mode-toggle"]')?.textContent||''));
   await input().fill('Förklara uppdragets status');
   assert.equal(await page.getByTestId('jaco-chat-send').isEnabled(),true,'chat is still available in Full Autonomous while the mission runs');
   assert.equal(requests.filter(r=>r.kind==='goal').length,1);
   passed('Lite mission acknowledgements are accepted without claiming completed work');
   rejectGoal=true;await input().fill('Detta ska inte registreras');
   await page.getByTestId('jaco-run-mode-toggle').click();
-  await page.getByRole('button',{name:/Full Autonomous/}).last().click();
+  await page.getByRole('button',{name:/Helt självständig|Full Autonomous/}).last().click();
   await page.getByRole('button',{name:'Starta uppdrag',exact:true}).click();
   await page.getByText('Uppdragets registrering kunde inte bekräftas: TEST_GOAL_REJECTED',{exact:true}).waitFor();
   assert.equal(bus.listMissions(10).length,2);assert.equal(await input().inputValue(),'Detta ska inte registreras');

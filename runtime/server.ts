@@ -2454,10 +2454,22 @@ const notifyPhone = async (action) => {
       graphs = payload;
     } catch (error: any) { graphError = String(error?.message || error); }
     try {
+      // A goal can be accepted before SEER creates a graph. Join the existing
+      // operator goal, real mission controller and durable events by observation,
+      // without fabricating a plan or converting registration into execution.
+      const live = seerLiveWorkstream.snapshot();
+      const missionRows = connectedRuntime.bus.listMissions(30);
+      const missions = missionRows.map((base: any) => {
+        try {
+          const current = connectedRuntime.novaMissions.get(base.id);
+          return { ...base, phase: current.phase, receipts: current.receipts, reviewAvailable: true };
+        } catch { return { ...base, reviewAvailable: false }; }
+      });
       const projection = gameboardProjection({
         graphs, graphError, providers: mcpHost.status(),
-        workers: connectedRuntime.bus.listWorkers(),
-        missions: connectedRuntime.bus.listMissions(30),
+        workers: connectedRuntime.bus.listWorkers(), missions,
+        events: connectedRuntime.bus.listEvents(100),
+        primaryGoal: (await seerOperatorGoal()) || live.primaryGoal || connectedRuntime.novaMissions.current()?.goal || null,
       });
       res.json({ success: true, ...projection, exchange: gameboardExchange.position('global') });
     } catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }

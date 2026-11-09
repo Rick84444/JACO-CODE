@@ -25,8 +25,8 @@ function uniqueIds(items) {
 }
 
 export function gameboardProjection({
-  graphs = null, providers = [], workers = [], missions = [], observedAt = new Date().toISOString(),
-  graphError = null,
+  graphs = null, providers = [], workers = [], missions = [], events = [], primaryGoal = null,
+  observedAt = new Date().toISOString(), graphError = null,
 } = {}) {
   const tools = [];
   for (const provider of list(providers)) {
@@ -43,6 +43,7 @@ export function gameboardProjection({
         readOnly: tool.readOnly === true,
         agentAllowed: tool.agentAllowed === true,
         observed: true,
+        availability: 'ADVERTISED_NOT_EXECUTION_VERIFIED',
         metrics: {
           calls: Number.isSafeInteger(statistics.calls) ? statistics.calls : null,
           failures: Number.isSafeInteger(statistics.failures) ? statistics.failures : null,
@@ -86,18 +87,65 @@ export function gameboardProjection({
       })),
     };
   }).filter(graph => graph.identity);
+  // The SEER graph, the durable Mission Bus and the operator goal are different
+  // sources. A registered goal must remain visible even before SEER produces a graph.
+  // Never fabricate graph nodes, verification receipts or model performance.
+  const goalText = clipped(typeof primaryGoal === 'string' ? primaryGoal : primaryGoal?.statement || '', 600).trim();
+  const recentMissions = list(missions).slice(0, 30).filter(m => clipped(m?.id)).map(m => {
+    const receipts = list(m.receipts);
+    const verifiedActions = receipts.filter(r => r?.ok === true && r?.verified === true).length;
+    const lastFailure = [...receipts].reverse().find(r => r?.ok === false && r?.error);
+    return {
+      identity: clipped(m.id, 160), numericId: gameboardNumericId('mission', clipped(m.id, 160)),
+      status: clipped(m.status, 32), goal: clipped(m.goal || m.title, 260),
+      source: clipped(m.source, 80), phase: clipped(m.phase, 40) || null,
+      updatedAt: clipped(m.updatedAt, 60) || null,
+      actionCount: receipts.length, verifiedActions,
+      reviewAvailable: m.reviewAvailable === true,
+      lastError: lastFailure ? clipped(lastFailure.error, 260) : null,
+      evidenceStatus: verifiedActions ? 'VERIFIED_ACTION_RECEIPTS' : 'NO_VERIFIED_ACTION_RECEIPTS',
+    };
+  });
+  // Derive observations from the append-only Mission Bus, not from the separate
+  // hypothesis exchange. Display only allowlisted scalars, never raw payloads.
+  const observedEvents = list(events).filter(e =>
+    Number.isSafeInteger(e?.seq) && /^(MISSION_|NOVA_|TICKET_)/.test(String(e.type || '')))
+    .slice(0, 40).map(e => {
+      const type = clipped(e.type, 80);
+      const result = e.payload && typeof e.payload === 'object' ? e.payload : {};
+      const verified = type === 'NOVA_ACTION_RESULT' && result.ok === true && result.verified === true;
+      const failed = type === 'NOVA_ACTION_RESULT' && result.ok === false;
+      const refused = type === 'NOVA_PLANNING_RESULT' && Boolean(result.error);
+      return {
+        id: 'bus:' + e.seq, numericId: gameboardNumericId('event', 'bus:' + e.seq),
+        type, at: clipped(e.ts, 60) || null, missionId: clipped(e.missionId, 160) || null,
+        taskType: clipped(result.type, 80) || null,
+        outcome: verified ? 'VERIFIED' : failed ? 'FAILED' : refused ? 'BLOCKED' : 'OBSERVED',
+        error: (failed || refused) ? clipped(result.error, 220) || null : null,
+        evidenceRef: 'bus:' + e.seq,
+      };
+    });
+  const blockedMission = recentMissions.find(m => m.status === 'BLOCKED' || m.status === 'FAILED');
+  const activeMission = recentMissions.find(m => m.status === 'ACTIVE');
+  const next = blockedMission
+    ? { code: 'MISSION_NEEDS_RECOVERY', missionId: blockedMission.identity, text: 'Inspect the blocked mission and its receipts before resuming.' }
+    : activeMission
+      ? { code: 'MISSION_RUNNING_OR_QUEUED', missionId: activeMission.identity, text: 'Inspect the active mission phase and next verified result.' }
+      : goalText && !plans.length
+        ? { code: 'GOAL_AWAITING_GRAPH', missionId: null, text: 'Goal recorded; no SEER planning graph or executable steps observed yet.' }
+        : plans.length
+          ? { code: 'PLAN_AWAITING_EXECUTION', missionId: null, text: 'A graph exists; no active mission is observed on this runtime.' }
+          : { code: 'NO_ACTIVE_WORK_OBSERVED', missionId: null, text: 'No goal or active mission is observed.' };
   return {
     schema: GAMEBOARD_FABRIC_SCHEMA,
     observedAt,
     authority: 'Aura mission graph + MCP host + durable mission bus',
     strategy: { ownerId: 'aura', functionId: 'plan' },
-    graphSource: graphs === null ? 'UNAVAILABLE' : 'OBSERVED',
+    graphSource: graphs === null ? 'UNAVAILABLE' : !list(graphs).length ? 'OBSERVED_EMPTY' : 'OBSERVED',
     graphError: graphs === null ? clipped(graphError || 'SEER_NOT_CONNECTED', 200) : null,
     agents: uniqueIds(agents), tools: uniqueIds(tools), plans,
-    missions: list(missions).slice(0, 30).map(m => ({
-      identity: clipped(m.id), numericId: gameboardNumericId('mission', clipped(m.id)),
-      status: clipped(m.status, 32), goal: clipped(m.goal || m.title, 260),
-    })).filter(m => m.identity),
+    operatorGoal: goalText ? { statement: goalText, status: 'RECORDED_NOT_EXECUTION_VERIFIED', source: 'AURA_OPERATOR_GOAL' } : null,
+    missions: recentMissions, activity: observedEvents, next,
     numericIdSemantics: 'stable identifiers only; not permissions, measured performance or scores',
   };
 }
