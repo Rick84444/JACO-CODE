@@ -1886,7 +1886,10 @@ async function runCodingPreflight(state, { mission, lease }) {
     }
     state.preflight={schema:'jaco.nova-preflight/v1',status:blockers.length?'BLOCKED':'READY',blockers,
       repository:{revision:state.repositoryContext.revision,entries:state.repositoryContext.entries.length},runtime:identity,
-      tools:context.mission.allowedTasks,toolContracts:Object.fromEntries(context.mission.allowedTasks.map(t=>[t,taskContract(t)])),
+      // Reflect the capability attenuation that the active Aura capsule actually applies.
+      // Mission metadata alone is not proof a tool is exposed to this executor.
+      tools:capsuleAllowedTasks(context.mission),
+      toolContracts:Object.fromEntries(capsuleAllowedTasks(context.mission).map(t=>[t,taskContract(t)])),
       knowledge:knowledge?.context||null,knowledgeRecords:knowledge?.context?.outcomes?.length||0};
     await missionClient.preflight(context.mission.id,{...context.lease,report:state.preflight});
     // The runtime not answering yet (right after a restart) passes by itself: wait, do not stop the mission for the operator.
