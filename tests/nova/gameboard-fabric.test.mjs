@@ -53,3 +53,54 @@ test('scenario rollout is deterministic and cannot create an execution receipt',
   assert.equal(a.result.terminalProbability,0.6);
   assert.throws(()=>simulateGameboardScenario({...data,steps:[{...data.steps[0],confidence:undefined}]}),/METRIC_REQUIRED/);
 });
+
+
+test('Gameboard keeps recorded Aura goals visible before a SEER graph exists', () => {
+  const board = gameboardProjection({
+    graphs: [],
+    primaryGoal: 'Understand the local JACO source and learn its architecture',
+    missions: [],
+    events: [{seq:7,ts:'2026-11-09T16:23:00Z',type:'MISSION_CREATED',missionId:'mission-a',
+      payload:{goal:'confidential operator instruction',secret:'private-do-not-leak'}}],
+  });
+  assert.equal(board.graphSource, 'OBSERVED_EMPTY', 'empty graph list is not an observed plan');
+  assert.equal(board.operatorGoal.statement, 'Understand the local JACO source and learn its architecture');
+  assert.equal(board.operatorGoal.status, 'RECORDED_NOT_EXECUTION_VERIFIED');
+  assert.equal(board.next.code, 'GOAL_AWAITING_GRAPH');
+  assert.equal(board.plans.length,0,'no invented strategy nodes');
+  assert.equal(board.activity[0].id,'bus:7');
+  assert.equal(board.activity[0].outcome,'OBSERVED','mission creation is not task success');
+  assert.doesNotMatch(JSON.stringify(board.activity), /private-do-not-leak|confidential operator instruction/, 'raw event payload is not broadcast');
+});
+
+test('durable mission receipts and action events distinguish verified execution from registration', () => {
+  const board = gameboardProjection({
+    graphs:null, graphError:'SEER_OFFLINE',primaryGoal:'Build product',
+    missions:[{id:'m1',goal:'Build product',status:'BLOCKED',phase:'PLANNING',
+      receipts:[
+        {type:'repo-write',ok:true,verified:true},
+        {type:'repo-test',ok:false,verified:false,error:'Command failed'},
+      ]}],
+    events:[
+      {seq:13,ts:'2026-11-09T16:23:05Z',type:'NOVA_ACTION_RESULT',missionId:'m1',payload:{type:'repo-write',ok:true,verified:true}},
+      {seq:12,ts:'2026-11-09T16:23:04Z',type:'NOVA_PLANNING_RESULT',missionId:'m1',payload:{error:'PLANNER_BLOCKED:capability missing'}},
+      {seq:11,ts:'2026-11-09T16:23:03Z',type:'NOVA_ACTION_RESULT',missionId:'m1',payload:{type:'repo-read',ok:true,verified:false}},
+    ],
+  });
+  assert.equal(board.graphSource,'UNAVAILABLE');
+  assert.equal(board.missions[0].verifiedActions,1);
+  assert.equal(board.missions[0].actionCount,2);
+  assert.equal(board.missions[0].lastError,'Command failed');
+  assert.equal(board.next.code,'MISSION_NEEDS_RECOVERY');
+  assert.deepEqual(board.activity.map(e=>e.outcome),['VERIFIED','BLOCKED','OBSERVED']);
+  assert.ok(board.activity.every(e=>e.evidenceRef.startsWith('bus:')));
+});
+
+test('tool registration and simulated forecasts never become verified execution evidence', () => {
+  const board = gameboardProjection({graphs:[],providers:[{id:'git',status:'READY',tools:[{name:'git_push'}]}]});
+  assert.equal(board.tools[0].status,'READY');
+  assert.equal(board.tools[0].availability,'ADVERTISED_NOT_EXECUTION_VERIFIED');
+  assert.equal(board.missions.length,0);
+  assert.equal(board.activity.length,0);
+  assert.equal(board.next.code,'NO_ACTIVE_WORK_OBSERVED');
+});
