@@ -5,13 +5,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl, mountNovaMissionRoutes } from '../../runtime/src/server/connected/novaMissionControl.mjs';
 import { MissionClient } from '../../agents/lib/mission-client.mjs';
 import { plannerTools, searchDeferredTools } from '../../agents/lib/native-tools.mjs';
 import { runAgentMission, receiptForModel, contextPacketIntro, hintFor as hintForCheck } from '../../agents/lib/agent-loop.mjs';
 import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
-import { projectGoalGraph } from '../../gateway/src/seer-project.mjs';
+import { projectGoalGraph, projectNodeContract } from '../../gateway/src/seer-project.mjs';
 
 function setup(t, allowedTasks) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-loop-'));
@@ -819,4 +820,103 @@ test('a preflight that cannot reach the runtime yet defers the mission instead o
   const result = await run(s, model, async () => assert.fail('no tool runs'), { preflight: async () => ({ deferred: true, reason: 'RUNTIME_PREFLIGHT_UNAVAILABLE' }) });
   assert.equal(result.deferred, true);
   assert.equal(s.control.get(m.id).status, 'ACTIVE', 'the mission waits, it is not blocked for the operator');
+});
+
+
+test('Aura recovers from a false repo-write denial and commits a documented artifact', async t => {
+  const s = setup(t, ['repo-write','git-commit','repo-read']);
+  const contract = projectNodeContract({ title:'Create documentation', objective:'Create a new Markdown document docs/growth/a.md', mainGoal:'Document growth', projectRoot:null });
+  const m = s.control.create({ goal:'Create docs/growth/a.md and commit', idempotencyKey:'capability-denial-repair-1',
+    contract, allowedTasks:['repo-write','git-commit','repo-read'] });
+  const model = scripted([
+    { tool_calls:[call('blocked',{reason:'I cannot create files because repo-write is missing'})] },
+    { tool_calls:[call('repo-write',{path:'docs/growth/a.md',content:'# Evidence-based draft'})] },
+    { tool_calls:[call('git-commit',{message:'docs: add growth draft'})] },
+    { tool_calls:[call('complete',{reason:'Saved and committed docs/growth/a.md [#1] [#2]'})] },
+  ]);
+  const executed = [];
+  const result = await run(s, model, async task => {
+    executed.push(task.type);
+    return task.type === 'repo-write'
+      ? {ok:true,verified:true,path:'docs/growth/a.md',beforeSha256:'before',afterSha256:'after'}
+      : {ok:true,verified:true,commit:'test-commit'};
+  });
+  assert.equal(result.completed, true);
+  assert.deepEqual(executed, ['repo-write','git-commit']);
+  assert.equal(s.control.get(m.id).status, 'AWAITING_VERIFICATION');
+  assert.match(JSON.stringify(model.seen[1]), /CAPABILITY_CORRECTION: repo-write/);
+  assert.match(JSON.stringify(model.seen[0]), /executionVerified/);
+});
+
+test('three identical false capability refusals stop deterministically without spinning', async t => {
+  const s = setup(t, ['repo-write']);
+  const contract = projectNodeContract({title:'Create documentation', objective:'Create new Markdown document docs/new.md', projectRoot:null});
+  const m = s.control.create({goal:'Create docs/new.md',idempotencyKey:'false-capability-loop',contract,allowedTasks:['repo-write']});
+  const model = scripted(Array.from({length:3},()=>({tool_calls:[call('blocked',{reason:'I cannot create files because repo-write is missing'})]})));
+  const result = await run(s,model, async()=>assert.fail('false denial must not execute'));
+  assert.equal(result.blocked,true);
+  assert.match(result.reason,/CAPABILITY_CONTRADICTION_REPEATED/);
+  assert.equal(model.seen.length,3);
+  assert.equal(s.control.get(m.id).status,'BLOCKED');
+  assert.equal(s.control.get(m.id).receipts.length,0);
+});
+
+test('a genuinely unavailable write tool stays blocked and is never synthesized', async t => {
+  const s=setup(t,['web-fetch']);
+  const m=s.control.create({goal:'Create a Markdown file',idempotencyKey:'actual-missing-tool',allowedTasks:['web-fetch']});
+  const model=scripted([{tool_calls:[call('blocked',{reason:'I cannot create files: no repo-write capability'})]}]);
+  const result=await run(s,model,async()=>assert.fail('no action may be invented'));
+  assert.equal(result.blocked,true);
+  assert.equal(model.seen.length,1);
+  assert.equal(s.control.get(m.id).status,'BLOCKED');
+});
+
+test('Swedish plain-text capability denial is corrected using native tool catalog', async t => {
+  const s=setup(t,['repo-write']);
+  const contract=projectNodeContract({title:'Create report',objective:'Create a new Markdown document docs/report.md'});
+  const m=s.control.create({goal:'Skapa docs/report.md',idempotencyKey:'swedish-denial',contract,allowedTasks:['repo-write']});
+  const model=scripted([
+    {content:'Jag kan inte skapa filer, jag saknar verktyg för att skriva.'},
+    {tool_calls:[call('repo-write',{path:'docs/report.md',content:'# Report'})]},
+    {tool_calls:[call('blocked',{reason:'Actual verification still required'})]},
+  ]);
+  const executed=[];
+  const result=await run(s,model,async task=>{executed.push(task.type);return {ok:true,verified:true,path:task.data.path,beforeSha256:'old',afterSha256:'new'};});
+  assert.equal(result.blocked,true);
+  assert.deepEqual(executed,['repo-write']);
+  assert.match(JSON.stringify(model.seen[1]),/CAPABILITY_CORRECTION: repo-write/);
+  assert.equal(s.control.get(m.id).receipts.length,1);
+});
+
+
+test('acceptance: false tool denial recovers into a real file write and an actual Git commit', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-real-artifact-'));
+  t.after(() => fs.rmSync(root, { recursive:true, force:true, maxRetries:5, retryDelay:50 }));
+  const git = (...args) => execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim();
+  git('init','-b','feature');
+  git('config','user.email','jaco-ci@example.invalid');
+  git('config','user.name','JACO CI');
+  const s = setup(t,['repo-write','git-commit','repo-read']);
+  const contract = projectNodeContract({
+    title:'Create research document',
+    objective:'Create a new Markdown document docs/research.md',
+    mainGoal:'Save a reproducible artifact',
+    projectRoot:root,
+  });
+  assert.equal(contract.verification.tests_required,false,'docs-only tasks do not inherit unrelated npm suites');
+  const m = s.control.create({ goal:'Create docs/research.md and commit',idempotencyKey:'acceptance-real-artifact',
+    allowedTasks:['repo-write','git-commit','repo-read'],contract,projectRoot:root });
+  const workspace = createCodingWorkspace({root});
+  const model = scripted([
+    {tool_calls:[call('blocked',{reason:'I cannot create the Markdown file: repo-write is unavailable'})]},
+    {tool_calls:[call('repo-write',{path:'docs/research.md',content:'# Proven artifact\n\nWritten by Aura.'})]},
+    {tool_calls:[call('git-commit',{message:'docs: add proof artifact'})]},
+    {tool_calls:[call('complete',{reason:'Artifact created and committed [#1] [#2]'})]},
+  ]);
+  const result = await run(s,model,task=>workspace.execute(task,contract,{receipts:s.control.get(m.id).receipts}));
+  assert.equal(result.completed,true);
+  assert.equal(fs.readFileSync(path.join(root,'docs/research.md'),'utf8'),'# Proven artifact\n\nWritten by Aura.');
+  assert.equal(git('show','HEAD:docs/research.md'),'# Proven artifact\n\nWritten by Aura.');
+  assert.equal(git('status','--porcelain'),'');
+  assert.equal(s.control.get(m.id).contractStatus.machineVerified,true);
 });

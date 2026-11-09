@@ -415,7 +415,7 @@ export class NovaMissionControl {
     const receipts = decode(row.receipts_json);
     const contract = base.metadata?.codingContract || null;
     return { ...base, phase: row.phase, turn: row.turn,
-      allowedTasks: base.metadata.allowedTasks.filter(t => this.allowedTasks.includes(t)),
+      allowedTasks: base.metadata.allowedTasks.filter(t => this.allowedTasks.includes(t) && (!this.capabilities || this.capabilities.isTaskEnabled(t))),
       observation: decode(row.observation_json), receipts,
       activeTask: decode(row.active_task_json), failures: row.failures,
       contract, contractStatus: contract ? contractVerificationStatus(contract, receipts) : null,
