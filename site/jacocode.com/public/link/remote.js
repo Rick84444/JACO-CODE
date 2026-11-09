@@ -106,7 +106,7 @@ async function sendChat(){
       connectedSession:{id:crypto.randomUUID(),source:'JACO Link Android'},
       messagesHistory:[],
       ragContext:[],
-    },{timeout:120000});
+    },{timeout:275000});
     insertMessage('aura',response.reply||response.text||'Aura lämnade inget svar.');
   }catch(e){error('Meddelandet kunde inte bekräftas: '+e.message);}
   finally{busy=false;$('send').disabled=false;}
