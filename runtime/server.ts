@@ -81,6 +81,7 @@ import { AgentOrganization, createAgentOrganizationRouter } from './src/server/c
 import { AgentReputation, createAgentBoardRouter } from './src/server/connected/agentReputation.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
+import { createJacoLinkHost } from './src/server/connected/jacoLinkHost.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
 import { readAutonomousCycleBoard } from "./src/server/connected/autonomousCycleBoard.mjs";
 import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec, fetchSkillFromUrl } from "../agents/lib/skills.mjs";
@@ -720,6 +721,18 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   // the default so nothing that relied on it changes.
   const PORT = Number(process.env.PORT) || 3000;
   const HOST = process.env.HOST || "127.0.0.1";
+  // One Aura runtime remains the owner of local state and execution. JACO Link is
+  // only an optional outbound customer transport; no local port or tunnel exposed.
+  let jacoLink: ReturnType<typeof createJacoLinkHost> | null = null;
+  try {
+    jacoLink = createJacoLinkHost({
+      file: path.join(WORKSPACE_ROOT, '.jaco', 'link', 'host.json'),
+      localBaseUrl: 'http://127.0.0.1:' + PORT,
+    });
+    if (process.env.JACO_LINK_ENABLED !== '0') jacoLink.resume();
+  } catch (error) {
+    console.warn('[JACO Link] Initialization failed:', String((error as Error)?.message || error));
+  }
 
 
   const browserSurface = createBrowserRouter(WORKSPACE_ROOT, requireAuth, event => {
@@ -2290,6 +2303,23 @@ const notifyPhone = async (action) => {
   // The same observed Gameboard projection is consumed by Codex GUI, JACO Editor MCP and Lite.
   // SEER remains the only graph authority. Missing SEER is explicit (not a fabricated READY board).
   // Local Continuum knowledge, read-only and backed by the existing durable knowledge ledger.
+  // Customer onboarding is local-only; no cloud account can create a new PC
+  // pairing or read the temporary poll credential through the Remote UI.
+  app.get('/api/aura/workbench/link/status', requireLocalUiSameOrigin, (_req, res) => {
+    if (!jacoLink) return res.status(503).json({success:false,error:'LINK_HOST_UNAVAILABLE'});
+    return res.json({success:true,...jacoLink.status()});
+  });
+  app.post('/api/aura/workbench/link/start', requireLocalUiSameOrigin, async (_req, res) => {
+    if (process.env.JACO_LINK_ENABLED === '0') return res.status(403).json({success:false,error:'LINK_DISABLED'});
+    if (!jacoLink) return res.status(503).json({success:false,error:'LINK_HOST_UNAVAILABLE'});
+    try { return res.json({success:true,...await jacoLink.startPairing()}); }
+    catch (error: any) {return res.status(503).json({success:false,error:String(error?.message||error).slice(0,160)});}
+  });
+  app.post('/api/aura/workbench/link/stop', requireLocalUiSameOrigin, (_req, res) => {
+    if (!jacoLink) return res.status(503).json({success:false,error:'LINK_HOST_UNAVAILABLE'});
+    jacoLink.stop();return res.json({success:true,...jacoLink.status()});
+  });
+
   app.get('/api/aura/workbench/local-memory', requireLocalUi, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     try { res.json({ success: true, ...localMemoryActivity(continuumSurface.runtime, { legacyFile: path.join(process.cwd(), '.jaco', 'memory', 'memory-store.json') }) }); }
