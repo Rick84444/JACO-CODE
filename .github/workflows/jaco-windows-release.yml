@@ -138,6 +138,9 @@ jobs:
           if (Test-Path (Join-Path $installDir '.env')) { throw 'PRIVATE_ENV_IN_PROGRAM_FILES' }
 
           # Boot the ACTUAL installed Core and request the real GUI, with no cloud model configured.
+          # Assert the identity served by the installed payload, never a stale CI constant.
+          $expectedRuntimeVersion = (Get-Content (Join-Path $installDir 'runtime/package.json') -Raw | ConvertFrom-Json).version
+          if ($expectedRuntimeVersion -notmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'INSTALLED_RUNTIME_VERSION_INVALID' }
           $env:JACO_WORKSPACE_ROOT = $env:JACO_DATA_DIR
           $env:JACO_RELEASE_ROOT = Join-Path $installDir 'runtime'
           $env:JACO_GATEWAY_TOKEN = 'ci_test_operator_token_exceeding_twenty_four_chars'
@@ -158,13 +161,13 @@ jobs:
               if ($core.HasExited) { break }
               try {
                 $identity = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/runtime/identity' -TimeoutSec 2
-                if ($identity.success -eq $true -and $identity.version -eq $runtimeVersion) { $healthy = $true; break }
+                if ($identity.success -eq $true -and $identity.version -eq $expectedRuntimeVersion) { $healthy = $true; break }
               } catch {}
               Start-Sleep -Seconds 1
             }
             if (-not $healthy) {
               Write-Host (Get-Content $stdErr -Raw -ErrorAction SilentlyContinue)
-              throw 'INSTALLED_CORE_FAILED_HTTP_IDENTITY'
+              throw "INSTALLED_CORE_FAILED_HTTP_IDENTITY:expected=$expectedRuntimeVersion"
             }
             $gui = Invoke-WebRequest -Uri 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 10
             if ($gui.StatusCode -ne 200 -or $gui.Content -notmatch '<html') { throw 'INSTALLED_GUI_NOT_SERVED' }
