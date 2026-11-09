@@ -143,6 +143,10 @@ export async function handleLinkHostSocket(request,env,url) {
 // Durable pending slot, one per unguessable code. Token is never stored in clear text.
 export class JacoLinkPairing {
   constructor(ctx){this.ctx=ctx;}
+  async alarm(){
+    const state=await this.ctx.storage.get('pair');
+    if(state && state.until<=Date.now())await this.ctx.storage.deleteAll();
+  }
   async fetch(request) {
     const url=new URL(request.url);
     if(url.pathname==='/quota'){
@@ -160,6 +164,9 @@ export class JacoLinkPairing {
         return json({error:'BAD_PAIR'},400);
       if(await this.ctx.storage.get('pair'))return json({error:'DUPLICATE_PAIR'},409);
       await this.ctx.storage.put('pair',{hash:data.hash,until:data.until,token:null,delivered:false});
+      // Pairing attempts are short-lived. Remove stale DO state so unclaimed
+      // customer codes do not create permanent storage cost.
+      await this.ctx.storage.setAlarm(data.until+60_000);
       return json({ok:true});
     }
     const value=await this.ctx.storage.get('pair');
