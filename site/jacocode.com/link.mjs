@@ -250,7 +250,7 @@ export class JacoLinkRoom {
       const hosts=this.sockets('host').filter(s=>!valid.target||s.deserializeAttachment().deviceId===valid.target);
       if(hosts.length!==1)return this.send(ws,{type:'rpc_result',id:valid.id,status:503,body:{error:hosts.length?'SELECT_A_PC':'PC_OFFLINE'}});
       this.pending.set(valid.id,{phone:ws,host:hosts[0],at:Date.now()});
-      this.send(hosts[0],{type:'rpc',id:valid.id,method:valid.method,path:valid.path,body:valid.body});
+      this.send(hosts[0],{type:'rpc',id:valid.id,method:valid.method,path:valid.path,...(valid.method==='POST'?{body:valid.body}:{})});
       return;
     }
     if(info?.role==='host'&&validateHostResponse(value)){
