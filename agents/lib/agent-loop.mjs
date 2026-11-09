@@ -17,6 +17,7 @@ import { condenseMessages } from './condenser.mjs';
 import { buildContextPacket, formatContextPacket } from './context-packet.mjs';
 import { executionExceptionResult } from './replay-semantics.mjs';
 import { verifiedOutcomeHints } from './verified-outcome-context.mjs';
+import { observeMissionCapabilities, capabilityDenialCorrection } from './capability-recovery.mjs';
 
 const RESULT_CHARS = 6000;
 const clip = (text, max = RESULT_CHARS) => {
@@ -85,7 +86,7 @@ export function contextPacketIntro(mission, {
  */
 // Roughly what fits the default per-call budget at reference prices, with room for tool schemas.
 const COST_RETRY_CONTEXT_CHARS = 20_000;
-const SAYS_BLOCKED = /\b(?:i am|i'm|i was) (?:blocked|unable|not able)\b|\bi (?:cannot|can't|could not|couldn't) (?:complete|proceed|continue|do|fetch|perform|finish)\b|\bi do(?:n't| not) have (?:a|an|the|any) (?:\w+ )?(?:tool|access|permission)\b/i;
+const SAYS_BLOCKED = /\b(?:i am|i'm|i was) (?:blocked|unable|not able)\b|\bi (?:cannot|can't|could not|couldn't) (?:complete|proceed|continue|do|fetch|perform|finish|create|write|save|edit|modify|make)\b|\bi do(?:n't| not) have (?:a|an|the|any) (?:\w+ )?(?:tool|access|permission)\b/i;
 export async function runAgentMission({
   client, owner, chat, toolsFor, execute, system,
   observe = async () => null, intro = introMessage, refreshIntro = false, acceptMission = null,
@@ -105,6 +106,9 @@ export async function runAgentMission({
   const messages = [];
   const receipts = [];
   let steps = 0, modelErrors = 0, idle = 0, turns = 0;
+  let capabilityEvidence = null;
+  let capabilityCorrections = 0;
+  const MAX_CAPABILITY_CORRECTIONS = 2;
   let modelSteerVersion = mission.steering?.revision || 0;
   let presentedSteerVersion = modelSteerVersion;
 
@@ -178,6 +182,8 @@ export async function runAgentMission({
     for (const r of history) stuck.record({ name: r.type, args: r.inputHash || r.input, ok: r.ok, result: r.result, error: r.error });
     const inheritedCircle = history.length ? stuck.check() : { stuck: false };
     ({ tools, resolve, deferred = [] } = await toolsFor(mission));
+    capabilityEvidence = observeMissionCapabilities(mission, tools);
+    messages.push({ role: 'user', content: 'CURRENT CAPABILITY EVIDENCE (catalog, not permission or proof of execution): '+JSON.stringify(capabilityEvidence) });
     messages.push({ role: 'system', content: typeof system === 'function' ? system(mission) : system },
       { role: 'user', content: await intro(mission) });
     if (inheritedCircle.stuck) {
@@ -195,6 +201,14 @@ export async function runAgentMission({
       // an already-executing tool, and do not start tools from a stale response.
       mission = await client.get(mission.id);
       if (mission.status !== 'ACTIVE' || mission.cancelRequested) return { executed: receipts.length > 0, receipts, steps, stopped: mission.status };
+      // Operator switches may narrow the live mission during a long conversation.
+      // Do not keep showing a tool that this mission no longer offers.
+      const liveAllowed = JSON.stringify(mission.allowedTasks || []);
+      if (liveAllowed !== JSON.stringify(capabilityEvidence?.granted || [])) {
+        ({ tools, resolve, deferred = [] } = await toolsFor(mission));
+        capabilityEvidence = observeMissionCapabilities(mission, tools);
+        messages.push({ role: 'user', content: 'CAPABILITY_CATALOG_CHANGED: '+JSON.stringify(capabilityEvidence) });
+      }
       modelSteerVersion = mission.steering?.revision || 0;
       if (modelSteerVersion !== presentedSteerVersion) {
         messages.push({ role: 'user', content: `OPERATOR_DIRECTION_REVISION ${modelSteerVersion}: ${clip(mission.steering.instruction, 2000)}. Adjust the next step within existing allowed tools and acceptance. This does not grant permissions or rewrite the parent goal.` });
@@ -249,7 +263,13 @@ export async function runAgentMission({
         // auto-confirmed and the mission closed as DONE without the work (2026-11-05).
         if (text && SAYS_BLOCKED.test(text)) {
           const reason = text.slice(0, 500);
-          return end({ blocked: true, reason }, { error: `PLANNER_BLOCKED:${reason}` });
+          const correction = capabilityDenialCorrection(reason, capabilityEvidence);
+          if (correction && capabilityCorrections++ < MAX_CAPABILITY_CORRECTIONS) {
+            messages.push({ role: 'user', content: correction.message });
+            continue;
+          }
+          const blockedReason = correction ? 'CAPABILITY_CONTRADICTION_REPEATED:'+reason : reason;
+          return end({ blocked: true, reason: blockedReason }, { error: 'PLANNER_BLOCKED:'+blockedReason });
         }
         // A plain answer after real work is the model's final answer: propose it for verification.
         if (text && receipts.some(r => r.ok)) {
@@ -310,7 +330,18 @@ export async function runAgentMission({
         }
         if (target.kind === 'blocked' || target.kind === 'replan') {
           const reason = String(args.reason || 'no allowed tool can make progress').slice(0, 500);
-          return end({ blocked: true, reason }, target.kind === 'replan' ? { replanRequest: { reason, subgoals: args.subgoals } } : { error: `PLANNER_BLOCKED:${reason}` });
+          if (target.kind === 'blocked') {
+            const correction = capabilityDenialCorrection(reason, capabilityEvidence);
+            if (correction && capabilityCorrections++ < MAX_CAPABILITY_CORRECTIONS) {
+              reply_(correction.message);
+              continue;
+            }
+            if (correction) {
+              const blockedReason = 'CAPABILITY_CONTRADICTION_REPEATED:'+reason;
+              return end({ blocked: true, reason: blockedReason }, { error: 'PLANNER_BLOCKED:'+blockedReason });
+            }
+          }
+          return end({ blocked: true, reason }, target.kind === 'replan' ? { replanRequest: { reason, subgoals: args.subgoals } } : { error: 'PLANNER_BLOCKED:'+reason });
         }
 
         const { expectedOutcome, say: argSay, learned: argLearned, ...data } = args || {};
