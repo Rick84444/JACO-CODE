@@ -167,16 +167,27 @@ async function refreshMemory(){
 async function refreshDecisions(){
   const data=await wsSend('GET','/api/aura/workbench/approvals',undefined,{timeout:20000});
   const area=$('approvals');area.replaceChildren();
-  const approvals=Array.isArray(data.approvals)?data.approvals:(Array.isArray(data.pending)?data.pending:[]);
+  const approvals=Array.isArray(data.items)?data.items:[];
   if(!approvals.length){area.append(card('Inga väntande beslut','Aura har inte begärt något godkännande.'));return;}
+  const names={approve:'Godkänn',reject:'Avvisa',resume:'Återuppta',cancel:'Avbryt',confirm:'Bekräfta'};
   for(const a of approvals.slice(0,25)){
-    const pane=card(a.title||a.summary||a.id,a.description||a.reason||'',a.kind||'Operatörsbeslut');
-    controls(pane,[{label:'Godkänn',run:async()=>decision(a,'approve')},{label:'Avvisa',danger:true,run:async()=>decision(a,'reject')}]);
+    const latest=a.details?.latestReceipt;
+    const receipt=latest ? ' · Verifierat: '+(latest.verified===true?'ja':'nej')+
+      (latest.outcomeUnknown?' · Resultat osäkert':'') : '';
+    const pane=card(a.title||a.id,a.reason||'Kontrollera detta beslut i Windows.',
+      (a.risk||'UNKNOWN')+' · '+(a.kind||'Operatörsbeslut')+receipt);
+    const choices=(Array.isArray(a.actions)?a.actions:[]).filter(action=>names[action]);
+    if(choices.length)controls(pane,choices.map(action=>({
+      label:names[action],danger:['reject','cancel'].includes(action),
+      run:async()=>decision(a,action),
+    })));
     area.append(pane);
   }
 }
 async function decision(a,choice){
-  if(!a?.id || !confirm((choice==='approve'?'Godkänn':'Avvisa')+' beslut '+a.id+'?'))return;
+  if(!a?.id || !Array.isArray(a.actions) || !a.actions.includes(choice))return;
+  if(!confirm('Beslut: '+choice+' · '+(a.title||a.id)+' · Risk: '+(a.risk||'UNKNOWN')+'\n'+
+    String(a.reason||'').slice(0,700)+'\n\nGenomför detta beslut på Windows-datorn?'))return;
   try{
     await wsSend('POST','/api/aura/workbench/approvals/'+encodeURIComponent(a.id)+'/decision',{
       decision:choice,note:'Beslut fattat av operatören i JACO Link Android',
