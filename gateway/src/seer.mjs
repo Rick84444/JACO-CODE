@@ -19,6 +19,7 @@ import { STRATEGIC_AGENT_INSTRUCTIONS } from '../../agents/lib/strategic-context
 import { buildSelfDevelopmentGraph } from './seer-self-development.mjs';
 import { createAutonomyLoop, shouldAutoConfirmNova } from './seer-autonomy-loop.mjs';
 import { createAuraControlLoop } from './aura-control-loop.mjs';
+import { createAuraControlLease } from './aura-control-lease.mjs';
 import { createDevelopmentCycle, chooseGovernorFocus, governorBaseline } from './seer-development-cycle.mjs';
 import { createExperienceStore } from './seer-experience-store.mjs';
 import { discoverSeerLocalProvider, invokeSeerProvider, callSeerGovernorProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt, compactGovernorGoals, clipGoalStatement, resolveAuraPlanner, invokeAuraPlanner } from './seer-model-provider.mjs';
@@ -742,6 +743,7 @@ const auraControlLoop = createAuraControlLoop({
   plan: () => autonomyLoop.turn(),
   emit,
 });
+const auraControlLease = createAuraControlLease();
 const AURA_CONTROL_CADENCE_MS = AUTONOMY_INTERVAL_MS > 0
   ? Math.min(NOVA_RECONCILE_INTERVAL_MS, AUTONOMY_INTERVAL_MS)
   : NOVA_RECONCILE_INTERVAL_MS;
@@ -894,7 +896,7 @@ const server = createServer(async (req, res) => {
       agent_identity: 'aura',
       capability: 'strategy',
       independent_governor_enabled: GOVERNOR_INTERVAL_MS > 0,
-      aura_control: { ...auraControlLoop.state(), interval_ms: AURA_CONTROL_CADENCE_MS },
+      aura_control: { ...auraControlLoop.state(), ...auraControlLease.state(), interval_ms: AURA_CONTROL_CADENCE_MS },
       purpose_id: state.purpose?.id || null,
       open_predictions: state.open_predictions.length,
       autonomy: {
@@ -919,6 +921,23 @@ const server = createServer(async (req, res) => {
   if (!auth(req)) return json(res, { error: 'unauthorized' }, 401);
 
   try {
+    // The operator-facing Aura Core is the preferred scheduler owner. The
+    // SEER process is only the compatible strategy state adapter. The lease
+    // fences Core ticks from this process's fallback scheduler.
+    if (POST && path === '/cortex/aura/control/claim') {
+      const input = await body(req);
+      if (input.owner !== 'aura-core') return json(res, { error: 'AURA_CONTROL_OWNER_INVALID' }, 400);
+      return json(res, auraControlLease.claim(), 201);
+    }
+    if (POST && path === '/cortex/aura/control/tick') {
+      const input = await body(req);
+      auraControlLease.renew(input.token);
+      return json(res, await auraControlLoop.tick({ planningEnabled: AUTONOMY_INTERVAL_MS > 0, trigger: 'aura-core' }));
+    }
+    if (POST && path === '/cortex/aura/control/release') {
+      const input = await body(req);
+      return json(res, auraControlLease.release(input.token));
+    }
     if (GET && path === '/cortex/context/claude') {
       const context = buildClaudeContext();
       try {
@@ -1290,12 +1309,14 @@ server.listen(PORT, '127.0.0.1', () => {
   auraControlLoop.tick({ planningEnabled: false, trigger: 'startup-reconcile' })
     .catch(error => emit('aura.control.startup_error', { error: error.message }));
   auraControlTimer = setInterval(() => {
+    if (auraControlLease.externallyOwned()) return;
     auraControlLoop.tick({ planningEnabled: AUTONOMY_INTERVAL_MS > 0 })
       .catch(error => emit('aura.control.timer_error', { error: error.message }));
   }, AURA_CONTROL_CADENCE_MS);
   auraControlTimer.unref?.();
   if (AUTONOMY_INTERVAL_MS > 0) {
     setTimeout(() => {
+      if (auraControlLease.externallyOwned()) return;
       auraControlLoop.tick({ planningEnabled: true, trigger: 'startup-plan' })
         .catch(error => emit('aura.control.startup_error', { error: error.message }));
     }, Math.min(1_500, AUTONOMY_INTERVAL_MS)).unref?.();
