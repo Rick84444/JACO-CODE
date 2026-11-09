@@ -1618,7 +1618,7 @@ If no new work is needed (system already has enough active work), respond with: 
         strategy: { confidence: chosen.success_probability, ...(n.strategy || {}) },
         ...(projectRoot
           ? { contract: projectNodeContract({ title: n.title, objective: n.description, mainGoal: chosen.goal, projectRoot }) }
-          : onPrimary && !focusGoal?.invariants?.includes('observation_only')
+          : onPrimary && !operatorPrimaryGoal?.invariants?.includes('observation_only') && !focusGoal?.invariants?.includes('observation_only')
             ? (() => { const contract = auraArtifactContract({ goal: operatorPrimaryGoal?.statement || chosen.goal,
                 objective: n.description || n.title, nodeTitle: n.title });
                 return contract ? { contract } : {}; })()
