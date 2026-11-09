@@ -1680,6 +1680,12 @@ const developmentCycle = createDevelopmentCycle({
   memory,
   emit,
   runTurn: async ({ reason, eventKey }) => {
+    // An explicitly enabled historical governor must not become a competing
+    // scheduler while Aura Core owns the control lease. Operator-goal planning
+    // remains an on-demand Aura function, not a separate agent heartbeat.
+    if (auraControlLease.externallyOwned() && reason !== 'operator-goal') {
+      return { ok: true, skipped: true, reason: 'AURA_CORE_OWNS_STRATEGY' };
+    }
     // Operator mission/graph callbacks remain active, but they must not create
     // an independent LLM reasoning turn merely because strategy state changed.
     // A legacy governor requires an explicit opt-in, not an implicit timer.
