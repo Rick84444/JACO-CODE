@@ -272,7 +272,10 @@ try {
   await page.locator('[data-mission-id]').waitFor({state:'attached',timeout:10000});
   passed('A real SSE event is inserted exactly once in the conversation with its mission');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'read-example',type:'repo-read',ok:true,verified:false,result:{path:'example.ts'}}});
-  await page.getByText('Not verified',{exact:true}).waitFor();
+  // Evidence outcome is the contract; its translated label depends on the
+  // current UI language and must never be mistaken for verified success.
+  await page.locator('[data-event-id="mission:3"][data-outcome="unverified"]').waitFor();
+  await page.locator('[data-event-id="mission:3"] .cognitive-proof[data-outcome="unverified"]').waitFor();
   await canvas('Spelplan').click();
   await page.getByText(/^(Teknisk vy|Technical view)$/).click();
   await page.getByTestId('gameboard-mission-list').waitFor();
@@ -284,7 +287,7 @@ try {
   await canvas('Samtal').click();
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'failed-test',type:'repo-test',ok:false,verified:true,error:'TEST_NEGATIVE_CONTROL',result:{exitCode:1}}});
   await page.locator('[data-event-id="mission:4"][data-outcome="failed"]').waitFor();
-  assert.equal(await page.locator('[data-event-id="mission:4"]').getByText('Verified result',{exact:true}).count(),0);
+  assert.equal(await page.locator('[data-event-id="mission:4"] .cognitive-proof[data-outcome="verified"]').count(),0);
   passed('A successful unverified step and a failing step cannot masquerade as verified');
   await page.getByRole('button',{name:'Vad har du upptäckt?',exact:true}).click();
   await page.getByRole('button',{name:'Skicka meddelande',exact:true}).click();
