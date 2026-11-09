@@ -11,7 +11,10 @@ import { fileURLToPath, pathToFileURL } from "url";
 import { buildAgentCard, joinWorkplace } from "./lib/workplace-session.mjs";
 import { createBrowserActionJournal } from "./lib/browser-action-journal.mjs";
 import { inputAllowed, mutationsEnabled } from "./lib/browser-scope.mjs";
-import { createInputActions, listDownloadFiles, digestFile } from "./lib/browser-input.mjs";
+import { createInputActions, listDownloadFiles, digestFile, signInSession } from "./lib/browser-input.mjs";
+import { approvedLoginOrigins, siteLoginFor } from "./lib/site-logins.mjs";
+import { createAuraOverlay } from "./lib/aura-overlay.mjs";
+import { readOperatorLanguage } from "./lib/operator-language.mjs";
 
 const CDP_PORT = parseInt(process.env.CDP_PORT || "9222");
 const BRIDGE_PORT = parseInt(process.env.NOVA_BRIDGE_PORT || "4243");
@@ -39,6 +42,8 @@ function allowed(url) { try {return ORIGINS.has(new URL(url).origin);} catch {re
 // Level-5 profile: Nova may READ the public web (navigate, observe, survey, screenshot). Input
 // (click/type) stays limited to JACO_BROWSER_ALLOWED_ORIGINS and the server-side spend guard.
 const READ_ANY_ORIGIN = process.env.JACO_BROWSER_READ_ANY_ORIGIN !== '0';
+// Aura's own tab opens on a search page, not a blank white page.
+const START_PAGE = process.env.JACO_BROWSER_START_URL || 'https://www.google.com/';
 function readable(url) {
   try { const u=new URL(url); return u.href==='about:blank' || (READ_ANY_ORIGIN ? ['http:','https:'].includes(u.protocol) : ORIGINS.has(u.origin)); }
   catch { return false; }
@@ -70,7 +75,7 @@ async function getActiveTab() {
   const selected = activeBrowserTarget(tabs, selectedTabId, novaTabId, ownedTabs);
   if (selected) return selected;
   if (selectedTabId) throw new Error('SELECTED_TAB_CLOSED_OR_ORIGIN_DENIED');
-  const r = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?about:blank`, { method:'PUT', signal:AbortSignal.timeout(5000) });
+  const r = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?${readable(START_PAGE) ? START_PAGE : 'about:blank'}`, { method:'PUT', signal:AbortSignal.timeout(5000) });
   if (!r.ok) throw new Error('CDP_NEW_TAB_FAILED_' + r.status);
   const created = await r.json();
   novaTabId = created.id;
@@ -162,11 +167,14 @@ export async function captureSession(session) {
 
 async function withTab(fn, { input = false, missionOrigin = null } = {}) {
   const tab = await getActiveTab();
+  // Draw Aura's window overlay in the tab she works in (kept on its own connection; decoration, never blocking).
+  await overlay.attach(tab).catch(() => {});
+  if (input) overlay.working().catch(() => {});
   const session = new CDPSession(tab.webSocketDebuggerUrl);
   await session.ready();
   try {
     const current=await evaluate(session,'location.href');
-    if (!(input ? inputAllowed(current) || (missionOrigin && new URL(current).origin===missionOrigin) : readable(current))) throw new Error('ORIGIN_DENIED');
+    if (!(input ? inputAllowed(current, process.env, approvedLoginOrigins()) || (missionOrigin && new URL(current).origin===missionOrigin) : readable(current))) throw new Error('ORIGIN_DENIED');
     return await fn(session, tab);
   } finally {
     session.close();
@@ -391,8 +399,20 @@ export async function navigateSession(session, url, settleMs=1000) {
   return {ok:verified, verified, observation, ...(verified?{}:{error:'NAVIGATION_NOT_VERIFIED'})};
 }
 // Click, type and press with real input events, and targets named by the accessibility tree: agents/lib/browser-input.mjs.
+// Aura's window: the blue edge, the arrow and the small chat panel the operator sees in the tab Aura works in.
+let overlayMission = null;
+// Tabs the operator opened and Aura switched to: hers to work in, never hers to close.
+const operatorTabs = new Set();
+const overlay = createAuraOverlay({
+  CDPSession, runtimeUrl: process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000',
+  language: () => { try { return readOperatorLanguage(process.env) || 'en'; } catch { return 'en'; } },
+  missionId: () => overlayMission,
+  log: (where, text) => console.warn(`[${where}] ${String(text).slice(0, 160)}`),
+});
 const inputActions = createInputActions({
   evaluate, observe: observeSession,
+  // The arrow glides to the target first, so the operator sees where Aura is about to click or type.
+  pointer: async (info, kind) => { await overlay.point(info.x, info.y, kind === 'click'); await new Promise(r => setTimeout(r, 380)); },
   tabs: { list: async () => (await getTabs()).filter(t => t.type === 'page'), adopt: tab => { if (!tab.url || tab.url === 'about:blank' || readable(tab.url)) ownedTabs.add(tab.id); } },
   downloads: { dir: DOWNLOAD_DIR },
   uploads: { roots: UPLOAD_ROOTS },
@@ -426,7 +446,10 @@ function json(res, data, status = 200) {
 async function readBody(req) {
   let size=0;const chunks=[];
   for await (const chunk of req) {size+=chunk.length;if(size>65536)throw new Error('BODY_TOO_LARGE');chunks.push(chunk);}
-  return JSON.parse(Buffer.concat(chunks).toString() || '{}');
+  const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+  // The mission Aura acts for: the overlay's Stop and chat go to it.
+  if (typeof body?.missionId === 'string' && /^mission-[A-Za-z0-9-]+$/.test(body.missionId)) overlayMission = body.missionId;
+  return body;
 }
 
 // Only the standalone process joins Workplace; importing the server (tests) leaves it ungated.
@@ -438,7 +461,7 @@ export const server = createServer(async (req, res) => {
     if (!authorized(req)) return json(res,{ok:false,error:'UNAUTHORIZED'},401);
     if (!workplace.allowed && url.pathname !== '/health') return json(res,{ok:false,error:'WORKPLACE_UNSYNCED',state:workplace.state},503);
     if (req.headers.origin) return json(res,{ok:false,error:'BROWSER_ORIGIN_DENIED'},403);
-    if (req.method==='POST' && ['/navigate','/click','/type','/press','/upload','/tab/open','/tab/switch','/tab/close'].includes(url.pathname) && !mutationsEnabled()) return json(res,{ok:false,error:'MUTATIONS_DISABLED'},403);
+    if (req.method==='POST' && ['/navigate','/click','/type','/press','/upload','/sign-in','/tab/open','/tab/switch','/tab/close'].includes(url.pathname) && !mutationsEnabled()) return json(res,{ok:false,error:'MUTATIONS_DISABLED'},403);
     if (req.method === "GET" && url.pathname === "/health") {
       const result = workplace.allowed ? browserHealth.status() :
         { ok: false, state: 'BLOCKED', browserVerified: false, error: 'WORKPLACE_UNSYNCED' };
@@ -466,20 +489,32 @@ export const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/click") {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'click');
-      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
+      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl, process.env, approvedLoginOrigins())&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
       return json(res, await guardedBrowserWrite("click", b, () => withTab(s=>actSession(s,b,"click"), { input: true,missionOrigin })));
     }
     if (req.method === "POST" && url.pathname === "/type") {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'type');
-      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
+      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl, process.env, approvedLoginOrigins())&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
       return json(res, await guardedBrowserWrite("type", b, () => withTab(s=>actSession(s,b,"type"), { input: true,missionOrigin })));
     }
     if (req.method === "POST" && url.pathname === "/press") {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'press');
-      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl)&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
+      if (!b.expectedUrl || (!inputAllowed(b.expectedUrl, process.env, approvedLoginOrigins())&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
       return json(res, await guardedBrowserWrite("press", b, () => withTab(s=>actSession(s,b,"press"), { input: true,missionOrigin })));
+    }
+    // Sign in on the current page with the login the operator saved for this site. The request carries no
+    // credentials; the bridge reads them from the encrypted store and the answer says only whether it worked.
+    if (req.method === "POST" && url.pathname === "/sign-in") {
+      const b = await readBody(req);
+      const payload = { missionId: b.missionId, actionId: b.actionId, expectedUrl: b.expectedUrl };
+      return json(res, await guardedBrowserWrite("sign-in", payload, () => withTab(async s => {
+        const origin = new URL(await evaluate(s, 'location.href')).origin;
+        const login = siteLoginFor(origin);
+        if (!login) return { ok: false, signedIn: false, error: 'NO_APPROVED_LOGIN_FOR_SITE', origin };
+        return { ...(await signInSession(s, login, { evaluate, observe: observeSession })), origin };
+      }, { input: true })));
     }
     if (req.method === 'GET' && url.pathname === '/ax') {
       return json(res, await withTab(s=>axSession(s)));
@@ -490,8 +525,10 @@ export const server = createServer(async (req, res) => {
       return json(res, await guardedBrowserWrite("upload", b, () => withTab(s=>actSession(s,b,"upload"), { input: true })));
     }
     if (req.method === "GET" && url.pathname === "/tabs") {
-      const tabs = (await getTabs()).filter(t => t.type === "page" && ownedTabs.has(t.id));
-      return json(res, { ok: true, tabs: tabs.map(t => ({ id: t.id, title: String(t.title || "").slice(0, 200), url: t.url, current: t.id === novaTabId })) });
+      // Aura's own tabs and the ones the operator opened in her window (operator 2026-11-08: "she should also be able to
+      // use windows I open"). This browser is JACO's own profile, so every page in it is Aura's or the operator's.
+      const tabs = (await getTabs()).filter(t => t.type === "page" && (ownedTabs.has(t.id) || readable(t.url)));
+      return json(res, { ok: true, tabs: tabs.map(t => ({ id: t.id, title: String(t.title || "").slice(0, 200), url: t.url, current: t.id === novaTabId, openedBy: ownedTabs.has(t.id) ? 'aura' : 'operator' })) });
     }
     if (req.method === "POST" && url.pathname === "/tab/open") {
       const b = await readBody(req);
@@ -506,16 +543,18 @@ export const server = createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/tab/switch") {
       const b = await readBody(req);
-      if (!ownedTabs.has(b.id)) return json(res,{ok:false,error:'TAB_NOT_OWNED_BY_NOVA'},403);
       return json(res, await guardedBrowserWrite("tab-switch", b, async () => {
         const tab = (await getTabs()).find(t => t.id === b.id && t.type === "page");
         if (!tab) { ownedTabs.delete(b.id); throw new Error('TAB_CLOSED'); }
+        // A tab the operator opened becomes Aura's to work in when she switches to it (closing stays her own tabs only).
+        if (!ownedTabs.has(tab.id)) { if (!readable(tab.url)) throw new Error('TAB_ORIGIN_DENIED'); ownedTabs.add(tab.id); operatorTabs.add(tab.id); }
         novaTabId = tab.id;
         return { ok: true, verified: true, tab: { id: tab.id, url: tab.url, current: true } };
       }));
     }
     if (req.method === "POST" && url.pathname === "/tab/close") {
       const b = await readBody(req);
+      if (operatorTabs.has(b.id)) return json(res,{ok:false,error:'TAB_OPENED_BY_OPERATOR'},403);
       if (!ownedTabs.has(b.id)) return json(res,{ok:false,error:'TAB_NOT_OWNED_BY_NOVA'},403);
       return json(res, await guardedBrowserWrite("tab-close", b, async () => {
         await fetch(`http://127.0.0.1:${CDP_PORT}/json/close/${encodeURIComponent(b.id)}`, { signal: AbortSignal.timeout(5000) });

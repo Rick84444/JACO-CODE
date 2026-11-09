@@ -21,7 +21,9 @@ const TARGET_FN = `function () {
   const h = e.ownerDocument.elementFromPoint(x, y);
   const hosts = [];
   for (let n = e; n;) { const root = n.getRootNode(); if (root && root.host) { hosts.push(root.host); n = root.host; } else break; }
-  const covered = !(h && (h === e || e.contains(h) || h.contains(e) || hosts.includes(h)));
+  // Aura's own window overlay (aura-overlay.mjs) moves aside for her click; it never counts as covering the target.
+  const overlay = h && h.tagName === 'JACO-AURA-OVERLAY';
+  const covered = !overlay && !(h && (h === e || e.contains(h) || h.contains(e) || hosts.includes(h)));
   let w = e.ownerDocument.defaultView;
   while (w && w.frameElement) { const f = w.frameElement.getBoundingClientRect(); x += f.x; y += f.y; w = w.parent; }
   return { x, y, w: r.width, h: r.height, covered, password: e.tagName === 'INPUT' && e.type === 'password',
@@ -163,7 +165,7 @@ export function digestFile(file, fsImpl = fs) {
 // evaluate(session, expression) and observe(session) belong to the bridge; they are passed in so this file has no
 // import cycle and can be tested with a fake session. tabs: { list(), adopt(tab) }; downloads: { dir };
 // uploads: { roots }. Each is optional.
-export function createInputActions({ evaluate, observe, tabs = null, downloads = null, uploads = null, fsImpl = fs, settleMs = 300, navigationSettleMs = 4000 }) {
+export function createInputActions({ evaluate, observe, tabs = null, downloads = null, uploads = null, fsImpl = fs, settleMs = 300, navigationSettleMs = 4000, pointer = null }) {
   const pageTabs = async () => { try { return tabs ? await tabs.list() : []; } catch { return []; } };
 
   async function awaitDownloads(before) {
@@ -225,6 +227,8 @@ export function createInputActions({ evaluate, observe, tabs = null, downloads =
           verified = uploaded.length === uploadPaths.length && uploadPaths.every((p, i) => uploaded[i] === path.basename(p));
         } else {
           try {
+            // Show the operator where Aura is about to act (the blue arrow in her window); never blocks the action.
+            try { await pointer?.(info, kind); } catch { /* the overlay is decoration */ }
             if (kind === 'click') await trustedClick(session, info);
             else { await callOn(session, target.objectId, FOCUS_FN); await session.send('Input.insertText', { text }); }
           } catch (error) {
@@ -292,4 +296,63 @@ export function createInputActions({ evaluate, observe, tabs = null, downloads =
   }
 
   return { actSession, axSession };
+}
+
+// ── Signing in with a login the operator approved (site-logins.mjs) ─────────────────────────────────────────────
+// The bridge passes the username and password straight from the encrypted store. They are typed with trusted input
+// events into the site's own fields and appear in no return value, error, log or receipt: the caller learns only
+// whether the sign-in worked. A CAPTCHA or a one-time code stops it, because those are the operator's to answer.
+const SIGN_IN_SCAN = `(() => {
+  const visible = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden' && !e.disabled && !e.readOnly; };
+  document.querySelectorAll('[data-jaco-signin]').forEach(e => e.removeAttribute('data-jaco-signin'));
+  if (document.querySelector('iframe[src*="recaptcha"],iframe[src*="hcaptcha"],iframe[src*="challenges.cloudflare"],.g-recaptcha,.h-captcha,.cf-turnstile')) return { state: 'captcha' };
+  if ([...document.querySelectorAll('input[autocomplete="one-time-code"]')].some(visible)) return { state: 'otp' };
+  const inputs = [...document.querySelectorAll('input')].filter(visible);
+  const password = inputs.find(e => e.type === 'password');
+  const label = e => [e.name, e.id, e.placeholder, e.getAttribute('aria-label'), e.autocomplete].join(' ');
+  const user = inputs.find(e => /username|email/.test(e.autocomplete || ''))
+    || inputs.find(e => e.type === 'email')
+    || inputs.find(e => ['text', 'tel', ''].includes(e.type) && /user|e-?mail|e-?post|login|konto|användar|account/i.test(label(e)));
+  if (user) user.setAttribute('data-jaco-signin', 'user');
+  if (password) password.setAttribute('data-jaco-signin', 'pass');
+  return { state: password ? 'form' : user ? 'user-only' : 'none', user: Boolean(user), pass: Boolean(password) };
+})()`;
+const SIGN_IN_FOCUS = which => `(() => { const e = document.querySelector('[data-jaco-signin="${which}"]'); if (!e) return false; e.focus(); if (e.select) e.select(); return document.activeElement === e; })()`;
+const SIGN_IN_CLEAN = `(() => { document.querySelectorAll('[data-jaco-signin]').forEach(e => e.removeAttribute('data-jaco-signin')); return true; })()`;
+
+export async function signInSession(session, login, { evaluate, observe, settleMs = 3500 }) {
+  if (!login?.username || !login?.password) throw new Error('NO_APPROVED_LOGIN_FOR_SITE');
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const operator = state => ({ ok: false, signedIn: false, operatorNeeded: state === 'captcha' ? 'captcha' : 'one-time-code' });
+  const fill = async (which, text) => {
+    if (!(await evaluate(session, SIGN_IN_FOCUS(which)))) throw new Error('SIGN_IN_FIELD_NOT_FOUND');
+    await session.send('Input.insertText', { text });
+  };
+  const before = await observe(session);
+  let scan = await evaluate(session, SIGN_IN_SCAN);
+  if (scan.state === 'captcha' || scan.state === 'otp') return { ...operator(scan.state), url: before.url };
+  if (scan.state === 'none') return { ok: false, signedIn: false, error: 'NO_SIGN_IN_FORM_ON_PAGE', url: before.url };
+  try {
+    // A two-step sign-in asks for the username first and shows the password field after.
+    if (scan.state === 'user-only') {
+      await fill('user', login.username);
+      await trustedKey(session, 'Enter');
+      await wait(settleMs);
+      scan = await evaluate(session, SIGN_IN_SCAN);
+      if (scan.state === 'captcha' || scan.state === 'otp') return { ...operator(scan.state), url: (await observe(session)).url };
+      if (scan.state !== 'form') return { ok: false, signedIn: false, error: 'PASSWORD_STEP_NOT_FOUND', url: (await observe(session)).url };
+    } else if (scan.user) await fill('user', login.username);
+    await fill('pass', login.password);
+    await trustedKey(session, 'Enter');
+    await wait(settleMs);
+  } finally {
+    try { await evaluate(session, SIGN_IN_CLEAN); } catch { /* the page may have navigated */ }
+  }
+  const after = await observe(session);
+  const again = await evaluate(session, SIGN_IN_SCAN);
+  await evaluate(session, SIGN_IN_CLEAN).catch?.(() => {});
+  if (again.state === 'captcha' || again.state === 'otp') return { ...operator(again.state), url: after.url };
+  // Signed in when the password field is gone. Still there means the site said no (wrong password, a new check).
+  const signedIn = !again.pass;
+  return { ok: signedIn, signedIn, url: after.url, title: String(after.title || '').slice(0, 200), ...(signedIn ? {} : { error: 'SIGN_IN_NOT_CONFIRMED' }) };
 }

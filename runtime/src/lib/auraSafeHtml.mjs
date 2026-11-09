@@ -23,31 +23,54 @@ const SAFE_CSS=new Set([
   'text-align','text-decoration','text-transform','white-space','word-break','opacity',
   'vertical-align','object-fit','aspect-ratio'
 ]);
-const unsafeCssValue=value=>value.length>300 || /[\\<>@]/.test(value) ||
-  /(?:url\s*\(|image-set\s*\(|var\s*\(|attr\s*\(|expression\s*\(|import|binding|behavior)/i.test(value);
+// Shorthands and visual-only properties; values still pass unsafeCssValue (no url, no imports).
+const SAFE_SHORTHAND=new Set(['background','background-image','background-position','background-size','background-repeat',
+  'font','inset','text-shadow','list-style','list-style-type','outline','transform','cursor','color-scheme','box-sizing',
+  'text-overflow','grid-template-areas','grid-area','place-items','place-content','backdrop-filter','filter']);
+const CUSTOM_PROPERTY=/^--[\w-]{1,60}$/;
+// var() only reads custom properties declared in the same sanitized sheet; it cannot reach the network.
+const unsafeCssValue=value=>value.length>600 || /[\\<>@]/.test(value) ||
+  /(?:url\s*\(|image-set\s*\(|attr\s*\(|expression\s*\(|import|binding|behavior)/i.test(value);
 function safeDecl(style) {
+  // cssText keeps shorthands that use var(), which the longhand items would report as empty.
   const result=[];
-  for(let i=0;i<Math.min(style.length,100);i++){
-    const prop=style.item(i).toLowerCase();
-    const value=style.getPropertyValue(prop).trim();
-    if(SAFE_CSS.has(prop) && !unsafeCssValue(value))
+  for(const part of String(style.cssText||'').split(';').slice(0,160)){
+    const at=part.indexOf(':');
+    if(at<1)continue;
+    const prop=part.slice(0,at).trim().toLowerCase();
+    const value=part.slice(at+1).trim();
+    if(!value)continue;
+    if((SAFE_CSS.has(prop)||SAFE_SHORTHAND.has(prop)||CUSTOM_PROPERTY.test(prop)) && !unsafeCssValue(value))
       result.push(prop+':'+value);
   }
   return result.join(';');
 }
+const SAFE_SELECTOR=/^[\w\s.#:>+~*\-\[\]="'(),]+$/;
+const SAFE_MEDIA=/^[\w\s:().,\-]+$/;
+function safeRules(list, depth, out) {
+  for(const rule of Array.from(list).slice(0,1500)){
+    if(out.length>=1500)return;
+    if(rule.type===CSSRule.STYLE_RULE){
+      const selector=rule.selectorText || '';
+      if(selector.length>240 || !SAFE_SELECTOR.test(selector))continue;
+      const css=safeDecl(rule.style);
+      if(css)out.push(selector+'{'+css+'}');
+    } else if(rule.type===CSSRule.MEDIA_RULE && depth===0){
+      // Layout breakpoints only; no @import, @font-face or @supports.
+      const media=rule.media?.mediaText || '';
+      if(media.length>120 || !SAFE_MEDIA.test(media))continue;
+      const inner=[];
+      safeRules(rule.cssRules, 1, inner);
+      if(inner.length)out.push('@media '+media+'{'+inner.join('\n')+'}');
+    }
+  }
+}
 function safeStylesheet(raw) {
-  if(typeof CSSStyleSheet!=='function'||raw.length>30_000)return '';
+  if(typeof CSSStyleSheet!=='function'||raw.length>300_000)return '';
   const sheet=new CSSStyleSheet();
   try{sheet.replaceSync(raw);}catch{return '';}
   const rules=[];
-  for(const rule of Array.from(sheet.cssRules).slice(0,180)){
-    // Only top-level style rules. No @import, @font-face, @supports, @media etc.
-    if(rule.type!==CSSRule.STYLE_RULE)continue;
-    const selector=rule.selectorText || '';
-    if(selector.length>180 || !/^[\w\s.#:>+*\-\[\]="'(),]+$/.test(selector))continue;
-    const css=safeDecl(rule.style);
-    if(css)rules.push(selector+'{'+css+'}');
-  }
+  safeRules(sheet.cssRules, 0, rules);
   return rules.join('\n');
 }
 function safeDataImage(src){

@@ -1,7 +1,7 @@
 {
   "name": "jaco-autonomus-ide",
   "private": true,
-  "version": "0.22.0",
+  "version": "0.23.1",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

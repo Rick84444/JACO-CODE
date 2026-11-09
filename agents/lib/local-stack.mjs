@@ -303,7 +303,7 @@ export async function activate(c, { open = false } = {}) {
           if (!exe) throw new Error('CHROME_NOT_INSTALLED');
           const profile = c.env.JACO_CHROME_PROFILE_DIR || path.join(c.dataRoot || c.root, 'Chrome-CDP');
           if (!profile) throw new Error('CHROME_PROFILE_DIR_REQUIRED');
-          if (!pendingProcess(c, 'chrome')) await launch(c, { id: 'chrome', cwd: c.root, cmd: exe, args: [`--remote-debugging-port=${c.ports.chrome}`, '--remote-debugging-address=127.0.0.1', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', `--user-data-dir=${path.resolve(c.root, profile)}`, 'about:blank'] });
+          if (!pendingProcess(c, 'chrome')) await launch(c, { id: 'chrome', cwd: c.root, cmd: exe, args: [`--remote-debugging-port=${c.ports.chrome}`, '--remote-debugging-address=127.0.0.1', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', `--user-data-dir=${path.resolve(c.root, profile)}`, c.env.JACO_BROWSER_START_URL || 'https://www.google.com/'] });
           await waitReady(chrome, '', 30000);
         }
         chromeAvailable = true;

@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useOptionalUiLanguage } from '../i18n/UiLanguage';
+import { groupText, taskText, askText } from '../lib/capabilityText';
 
 // "What Aura can do": everything is on from the start, the operator unticks what they do not want.
 // Plain words on purpose. Tasks and skills are switched by /api/aura/capabilities; connected tools (MCP)
@@ -24,6 +26,8 @@ function Check({ checked, mixed, onChange, label }: { checked: boolean; mixed?: 
 }
 
 export function CapabilitiesPanel({ mcp, onMcpChanged }: { mcp: McpServer[]; onMcpChanged: () => void }) {
+  const { tr, language } = useOptionalUiLanguage();
+  const sv = language === 'sv';
   const [groups, setGroups] = useState<Group[]>([]), [skills, setSkills] = useState<Skill[]>([]), [fixed, setFixed] = useState<Fixed[]>([]);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
@@ -59,33 +63,33 @@ export function CapabilitiesPanel({ mcp, onMcpChanged }: { mcp: McpServer[]; onM
     return change(() => send({ deny: [...deny] }, `/api/aura/workbench/mcp/servers/${encodeURIComponent(s.id)}/access`));
   };
 
-  return <section className="capabilities" aria-label="What Aura can do">
-    <h3>What Aura can do</h3>
-    <p>Everything below is switched on from the start, so Aura can use your computer, the web and your tools to get a job done on its own.
-      Untick what you do not want. A change counts from Aura's next step.</p>
-    <p>Planning (SEER) and doing (Nova) are parts of Aura. They use the same model and the same switches, and so does every agent Aura builds for you.</p>
-    <p role="status"><strong>{all.length - off + mcpOn + skills.filter(s => s.enabled).length}</strong> abilities on
-      {off + (mcpTools.length - mcpOn) + skills.filter(s => !s.enabled).length > 0 ? <> · <strong>{off + (mcpTools.length - mcpOn) + skills.filter(s => !s.enabled).length}</strong> turned off by you</> : null}</p>
+  return <section className="capabilities" aria-label={tr('Vad Aura kan', 'What Aura can do')}>
+    <h3>{tr('Vad Aura kan', 'What Aura can do')}</h3>
+    <p>{tr('Allt nedan är påslaget från början, så att Aura kan använda din dator, webben och dina verktyg för att klara ett jobb på egen hand. Bocka ur det du inte vill ha. En ändring gäller från Auras nästa steg.', 'Everything below is switched on from the start, so Aura can use your computer, the web and your tools to get a job done on its own. Untick what you do not want. A change counts from Aura\'s next step.')}</p>
+    <p>{tr('Planering och utförande är delar av Aura. De använder samma modell och samma reglage, och det gör även varje agent som Aura bygger åt dig.', 'Planning and doing are parts of Aura. They use the same model and the same switches, and so does every agent Aura builds for you.')}</p>
+    <p role="status"><strong>{all.length - off + mcpOn + skills.filter(s => s.enabled).length}</strong> {tr('förmågor påslagna', 'abilities on')}
+      {off + (mcpTools.length - mcpOn) + skills.filter(s => !s.enabled).length > 0 ? <> · <strong>{off + (mcpTools.length - mcpOn) + skills.filter(s => !s.enabled).length}</strong> {tr('avstängda av dig', 'turned off by you')}</> : null}</p>
     {error && <p role="alert">{error}</p>}
-    <div className="capabilities-presets" role="group" aria-label="Quick choices">
-      <button type="button" disabled={busy} onClick={() => void preset('everything')}>Everything on</button>
-      <button type="button" disabled={busy} onClick={() => void preset('no-computer')}>Without controlling my computer or phone</button>
-      <button type="button" disabled={busy} onClick={() => void preset('look-only')}>Look and read only</button>
+    <div className="capabilities-presets" role="group" aria-label={tr('Snabbval', 'Quick choices')}>
+      <button type="button" disabled={busy} onClick={() => void preset('everything')}>{tr('Allt påslaget', 'Everything on')}</button>
+      <button type="button" disabled={busy} onClick={() => void preset('no-computer')}>{tr('Utan att styra min dator eller telefon', 'Without controlling my computer or phone')}</button>
+      <button type="button" disabled={busy} onClick={() => void preset('look-only')}>{tr('Bara titta och läsa', 'Look and read only')}</button>
     </div>
-    {fixed.length > 0 && <article className="capabilities-fixed"><strong>Aura always asks you first about</strong>
-      <ul>{fixed.map(f => <li key={f.id}><strong>{f.label}.</strong> {f.why}</li>)}</ul></article>}
+    {fixed.length > 0 && <article className="capabilities-fixed"><strong>{tr('Aura frågar dig alltid först om', 'Aura always asks you first about')}</strong>
+      <ul>{fixed.map(raw => { const f = askText(raw, sv); return <li key={f.id}><strong>{f.label}.</strong> {f.why}</li>; })}</ul></article>}
 
-    {groups.map(group => {
-      const on = group.tasks.filter(t => t.enabled).length;
+    {groups.map(rawGroup => {
+      const group = groupText(rawGroup, sv);
+      const on = rawGroup.tasks.filter(t => t.enabled).length;
       return <details key={group.id} className="capabilities-group">
-        <summary><Check label={group.name} checked={on === group.tasks.length} mixed={on > 0} onChange={v => void setTasks(group.tasks.map(t => t.id), v)} />
-          <span><strong>{group.name}</strong><small>{group.description}</small></span><em>{on}/{group.tasks.length}</em></summary>
-        <ul>{group.tasks.map(task => <li key={task.id}><label><Check label={task.label} checked={task.enabled} onChange={v => void setTasks([task.id], v)} /> {task.label}</label></li>)}</ul>
+        <summary><Check label={group.name} checked={on === rawGroup.tasks.length} mixed={on > 0} onChange={v => void setTasks(rawGroup.tasks.map(t => t.id), v)} />
+          <span><strong>{group.name}</strong><small>{group.description}</small></span><em>{on}/{rawGroup.tasks.length}</em></summary>
+        <ul>{rawGroup.tasks.map(task => <li key={task.id}><label><Check label={taskText(task, sv)} checked={task.enabled} onChange={v => void setTasks([task.id], v)} /> {taskText(task, sv)}</label></li>)}</ul>
       </details>;
     })}
 
     {mcp.length > 0 && <details className="capabilities-group">
-      <summary><span><strong>Connected tools (MCP)</strong><small>Programs Aura can call: files, git, web fetch, JACO itself and more.</small></span><em>{mcpOn}/{mcpTools.length}</em></summary>
+      <summary><span><strong>{tr('Anslutna verktyg (MCP)', 'Connected tools (MCP)')}</strong><small>{tr('Program som Aura kan anropa: filer, git, webbhämtning, JACO självt och mer.', 'Programs Aura can call: files, git, web fetch, JACO itself and more.')}</small></span><em>{mcpOn}/{mcpTools.length}</em></summary>
       {mcp.map(s => <div key={s.id} className="capabilities-server">
         <label><Check label={s.name} checked={s.agentAccess !== 'off'} onChange={v => void setServer(s, v)} /> <strong>{s.name}</strong> <small>{s.role}</small></label>
         {s.agentAccess !== 'off' && <ul>{(s.tools || []).map(t => <li key={t.name}><label><Check label={t.name} checked={!(s.deny || []).includes(t.name)} onChange={v => void setTool(s, t.name, v)} /> {t.name}</label></li>)}</ul>}
@@ -93,7 +97,7 @@ export function CapabilitiesPanel({ mcp, onMcpChanged }: { mcp: McpServer[]; onM
     </details>}
 
     {skills.length > 0 && <details className="capabilities-group">
-      <summary><span><strong>Skills</strong><small>Ready-made ways of doing things that Aura can follow.</small></span><em>{skills.filter(s => s.enabled).length}/{skills.length}</em></summary>
+      <summary><span><strong>{tr('Färdigheter', 'Skills')}</strong><small>{tr('Färdiga sätt att göra saker som Aura kan följa.', 'Ready-made ways of doing things that Aura can follow.')}</small></span><em>{skills.filter(s => s.enabled).length}/{skills.length}</em></summary>
       <ul>{skills.map(s => <li key={s.id}><label><Check label={s.name} checked={s.enabled} onChange={v => void change(() => send({ skills: { [s.id]: v } }))} /> <strong>{s.name}</strong> <small>{s.description}</small></label></li>)}</ul>
     </details>}
   </section>;

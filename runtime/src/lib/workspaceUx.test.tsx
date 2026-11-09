@@ -69,15 +69,16 @@ test('agent constellation exposes real relationships and missing planning withou
 test('attachment controls distinguish uploaded copies and binary extraction limits',async()=>{
   const {AttachmentPicker}=await import('../components/AttachmentPicker');
   const html=renderToStaticMarkup(<AttachmentPicker items={[{id:'test',files:[{path:'notes/input.pdf',format:'binary'}]}]} onChange={noop} onBusy={noop} disabled={false}/>);
-  assert.match(html,/Attach files/);assert.match(html,/Attach folder/);
-  assert.match(html,/text extraction unavailable/);assert.match(html,/the originals are not changed/);
+  assert.match(html,/Bifoga filer/);assert.match(html,/Bifoga mapp/);assert.doesNotMatch(html,/Attach (files|folder)/);
+  assert.match(html,/text kan inte läsas ut/);assert.match(html,/originalen ändras inte/);
 });
 
 test('connections workspace exposes live sources and the existing integration controls',async()=>{
   const {ConnectionsWorkspace}=await import('../components/ConnectionsWorkspace');
   const html=renderToStaticMarkup(<ConnectionsWorkspace onSelectTool={noop} onTabChange={noop}/>);
-  for(const label of ['Connections','Local tools','Browser / CDP','Skills','Waiting for model responses'])assert.ok(html.includes(label),label);
-  assert.doesNotMatch(html,/No available model observed/,'no unobserved provider is claimed absent before the first response');
+  for(const label of ['Anslutningar','Lokala verktyg','Webbläsare / CDP','Färdigheter','Väntar på svar från modellerna'])assert.ok(html.includes(label),label);
+  assert.doesNotMatch(html,/Connections|Local tools|Skills|Waiting for model responses/,'no English left in the Swedish interface');
+  assert.doesNotMatch(html,/No available model observed|Ingen tillgänglig modell/,'no unobserved provider is claimed absent before the first response');
 });
 
 test('CDP refuses ambiguous URL-only attachment instead of choosing another identical tab',async()=>{
@@ -98,6 +99,14 @@ test('routine background observations are grouped while mission blockers stay in
   assert.match(grouped,/Dispatcher started/);
   assert.doesNotMatch(grouped,/Connection lost/);
   assert.match(html,/Connection lost/);
+});
+
+test('identical blocker events are shown once in the conversation while evidence keeps the full history', () => {
+  const session:any={messages:[],setMessages:noop,appendMessage:async()=>{},storageReady:true,storageError:null,retryStorage:noop,input:'',setInput:noop,busy:null,setBusy:noop,toolArguments:'{}',setToolArguments:noop};
+  const event:any={id:'blocked-1',at:'2026-10-22T10:00:00Z',type:'NOVA_PLANNING_RESULT',category:'blocked',title:'Action needed',text:'Choose another model or change the budget.',missionId:'m1',evidence:{outcome:'failed'}};
+  const html=renderToStaticMarkup(<AuraChatPanel session={session} onStartGoal={noop} liveEvents={[event,{...event,id:'blocked-2',at:'2026-10-22T10:01:00Z'}]}/>);
+  assert.equal((html.match(/Choose another model or change the budget\./g)||[]).length,1);
+  assert.match(html,/data-event-id="blocked-2"/);
 });
 
 test('explicit mission controls are still sendable while an unrelated chat answer is pending', () => {

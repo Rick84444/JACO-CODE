@@ -41,7 +41,7 @@ test('manual Aura Ollama Cloud call reserves cost, bounds output, and settles re
   assert.equal(result.local, false);
   assert.deepEqual(h.events.map(e => e[0]), ['reserve', 'chat', 'settle']);
   assert.equal(h.events[0][1], 'manual-aura-chat');
-  assert.equal(h.events[1][3], 700);
+  assert.equal(h.events[1][3], 2048); // room for thinking models: see aura-chat-truncation.test.mjs
 });
 
 test('manual Aura Cloud rejects unpriced models and a full daily cap before dispatch', async () => {

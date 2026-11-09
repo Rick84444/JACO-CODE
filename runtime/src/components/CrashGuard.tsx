@@ -26,13 +26,13 @@ export class CrashGuard extends React.Component<{ children: ReactNode }, State> 
     if (!error) return this.props.children;
     const report = `${error.name}: ${error.message}\n${where}`;
     return (
-      <div role="alert" style={{ minHeight: '100vh', background: '#030712', color: '#e5e7eb', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
+      <div role="alert" style={{ minHeight: '100vh', background: '#101113', color: '#eaebed', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
         <h1 style={{ fontSize: 20, marginBottom: 8 }}>The screen stopped working</h1>
-        <p style={{ marginBottom: 12, color: '#9ca3af' }}>Your missions and settings are safe: they live in the runtime, not in this page. Reload to continue, and send the text below if it keeps happening.</p>
-        <pre style={{ whiteSpace: 'pre-wrap', background: '#111827', border: '1px solid #374151', borderRadius: 8, padding: 12, maxHeight: 280, overflow: 'auto', userSelect: 'all' }}>{report}</pre>
+        <p style={{ marginBottom: 12, color: '#bdbec0' }}>Your missions and settings are safe: they live in the runtime, not in this page. Reload to continue, and send the text below if it keeps happening.</p>
+        <pre style={{ whiteSpace: 'pre-wrap', background: '#292a2c', border: '1px solid #374151', borderRadius: 8, padding: 12, maxHeight: 280, overflow: 'auto', userSelect: 'all' }}>{report}</pre>
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           <button type="button" onClick={() => window.location.reload()} style={{ padding: '8px 14px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 0 }}>Reload</button>
-          <button type="button" onClick={() => { try { void navigator.clipboard.writeText(report); } catch { /* the text is selectable */ } }} style={{ padding: '8px 14px', borderRadius: 6, background: '#1f2937', color: '#e5e7eb', border: '1px solid #374151' }}>Copy error</button>
+          <button type="button" onClick={() => { try { void navigator.clipboard.writeText(report); } catch { /* the text is selectable */ } }} style={{ padding: '8px 14px', borderRadius: 6, background: '#404143', color: '#eaebed', border: '1px solid #374151' }}>Copy error</button>
         </div>
       </div>
     );

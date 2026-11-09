@@ -8,7 +8,7 @@ import { UiLanguageProvider } from './i18n/UiLanguage';
 // with observed data.
 export default function App() {
   return (
-    <div className="h-[100dvh] overflow-hidden bg-transparent text-slate-100 font-sans flex flex-col selection:bg-cyan-500 selection:text-slate-950">
+    <div className="h-[100dvh] overflow-hidden bg-transparent text-neutral-100 font-sans flex flex-col selection:bg-neutral-500 selection:text-neutral-950">
       <main className="flex-1 min-h-0">
         <UiLanguageProvider><JacoAuraComputeIDE /></UiLanguageProvider>
       </main>

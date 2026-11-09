@@ -28,10 +28,10 @@ export function RoutinesPanel() {
   return <section data-testid="routines-panel">
     <h3>{tr('Rutiner', 'Routines')}</h3>
     <p>{tr('Ett mål du godkänner att Aura gör om på bestämda tider, till exempel varje måndag: "Sök efter trender inom lokala AI-verktyg och skriv en kort sammanfattning." Varje körning är ett vanligt uppdrag med din budget och dina regler.', 'A goal you approve for Aura to do again at set times, for example every Monday: "Look for trends in local AI tools and write a short summary." Each run is an ordinary mission with your budget and your rules.')}</p>
-    {list.map(r => <article key={r.id} className="border border-[#333] rounded p-2 my-2 text-sm">
+    {list.map(r => <article key={r.id} className="border border-[#505153] rounded p-2 my-2 text-sm">
       <strong>{r.title}</strong> · {r.days.map(d => (DAYS.find(x => x[0] === d) || [d, d, d])[language === 'sv' ? 1 : 2]).join(', ')} {r.time}
-      <div className="text-slate-400">{r.goal}</div>
-      <div className="text-xs text-slate-400">{tr('Nästa', 'Next')}: {r.enabled ? when(r.nextRunAt) : tr('pausad', 'paused')} · {tr('Senast', 'Last')}: {when(r.lastRunAt)}{r.lastError ? ` · ${tr('fel', 'error')}: ${r.lastError}` : ''}</div>
+      <div className="text-neutral-300">{r.goal}</div>
+      <div className="text-xs text-neutral-300">{tr('Nästa', 'Next')}: {r.enabled ? when(r.nextRunAt) : tr('pausad', 'paused')} · {tr('Senast', 'Last')}: {when(r.lastRunAt)}{r.lastError ? ` · ${tr('fel', 'error')}: ${r.lastError}` : ''}</div>
       <button type="button" onClick={() => void send(`/api/aura/routines/${r.id}`, 'PATCH', { enabled: !r.enabled })}>{r.enabled ? tr('Pausa', 'Pause') : tr('Starta', 'Resume')}</button>{' '}
       <button type="button" onClick={() => void send(`/api/aura/routines/${r.id}`, 'DELETE')}>{tr('Ta bort', 'Remove')}</button>
     </article>)}

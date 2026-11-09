@@ -8,7 +8,11 @@ export {
   auraCostQuote, auraCostSettlement, NOT_BILLED_FAILURE, REFERENCE_PRICE,
 } from '../aura/costEngine.mjs';
 
-const MAX_OUTPUT_TOKENS = 700;
+// Gemini 2.5 and other thinking models spend hidden reasoning tokens from the same output budget. At 700
+// tokens Gemini 2.5 Flash thought for ~680 and the operator got half a sentence (2026-11-07), so the budget
+// leaves room for a full answer and thinking is held low where the provider supports it.
+const MAX_OUTPUT_TOKENS = Math.max(256, Math.min(8192, Number(process.env.JACO_AURA_CHAT_MAX_TOKENS) || 2048));
+const THINKS_BY_DEFAULT = new RegExp('(^|[/])gemini-(2[.]5|3)', 'i');
 const LOCAL_PROMPT_BYTES = 12000;
 const REMOTE_PROMPT_BYTES = 48000;
 
@@ -66,16 +70,18 @@ export async function manualAuraProviderCompletion({ providerId, model, system, 
   }
   try {
     const result = await providers.chat({ providerId, model, maxTokens: MAX_OUTPUT_TOKENS, temperature,
+      ...(THINKS_BY_DEFAULT.test(model) ? { reasoningEffort: 'low' } : {}),
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }] });
-    if (local) return { text: result.content, provider: providerId, model: result.model || model, local: !price?.free, costStatus: price?.free ? 'FREE' : 'LOCAL' };
+    const finishReason = result.finishReason ?? null;
+    if (local) return { text: result.content, finishReason, provider: providerId, model: result.model || model, local: !price?.free, costStatus: price?.free ? 'FREE' : 'LOCAL' };
     let settlement;
     try { settlement = auraCostSettlement(quote, result.usage); }
     catch {
       economic.markCloudOutcomeUnknown(reservation, 'provider usage missing or outside reserved bounds');
-      return { text: result.content, provider: providerId, model: result.model || model, local: false, costStatus: 'OUTCOME_UNKNOWN' };
+      return { text: result.content, finishReason, provider: providerId, model: result.model || model, local: false, costStatus: 'OUTCOME_UNKNOWN' };
     }
     economic.settleCloud(reservation, settlement.costUsd, result.usage);
-    return { text: result.content, provider: providerId, model: result.model || model, local: false, costStatus: 'SETTLED', costUsd: settlement.costUsd,
+    return { text: result.content, finishReason, provider: providerId, model: result.model || model, local: false, costStatus: 'SETTLED', costUsd: settlement.costUsd,
       priceSource: settlement.priceSource, providerInvoiceVerified: false };
   } catch (error) {
     if (reservation) {

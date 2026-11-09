@@ -1,6 +1,7 @@
 import { MissionReview } from './MissionReview';
 import { ConnectionsWorkspace } from './ConnectionsWorkspace';
 import { readAuraResponse as json, acknowledgeSavedDraft } from '../lib/auraApi.mjs';
+import { buildOperatorConfirmation, requiresOperatorConfirmation } from '../lib/operatorApproval.mjs';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
@@ -70,6 +71,7 @@ const DevicesView = React.lazy(() => import('./DevicesView').then(module => ({ d
 import { McpServersPanel, type McpCallRecord } from './McpServersPanel';
 import { describeNovaResult, describeNovaTask, type NovaMissionSummary } from '../lib/novaActivityText';
 import { AURA_PRODUCT_TOOLS, type AuraProductTool } from '../lib/auraToolRegistry';
+import { useUiLanguage } from '../i18n/UiLanguage';
 
 
 interface WorkbenchAgent {
@@ -291,7 +293,7 @@ const statusClass = (status: string | null | undefined) => {
   if (['BLOCKED', 'DEGRADED', 'FAILED', 'ERROR', 'UNAVAILABLE', 'OFFLINE'].includes(value)) {
     return 'text-amber-300 border-amber-900/70 bg-amber-950/30';
   }
-  return 'text-slate-300 border-slate-700 bg-slate-900/60';
+  return 'text-neutral-200 border-neutral-600 bg-neutral-800/60';
 };
 
 const languageLabel = (path: string) => {
@@ -316,6 +318,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   // approvals and runtime. A URL parameter never grants additional authority.
   const remoteMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('remote') === '1';
   const chatSession = useAuraChatSession();
+  const { tr } = useUiLanguage();
   const activation = useActivationReport();
   // A beginner with no AI model connected gets the guide first; it can be closed and does not come back this session.
   const [guideClosed, setGuideClosed] = useState(false);
@@ -323,7 +326,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [focusPlanId, setFocusPlanId] = useState<string | null>(() => { try { return new URLSearchParams(window.location.search).get('plan'); } catch { return null; } });
   useEffect(() => {
     if (focusPlanId) setWorkspaceView('gameboard');
-    const open = (e: Event) => { const id = (e as CustomEvent).detail; if (typeof id === 'string') { setFocusPlanId(id); setWorkspaceView('gameboard'); } };
+    const open = (e: Event) => { const id = (e as CustomEvent).detail; if (typeof id === 'string') { if (id) setFocusPlanId(id); setWorkspaceView(view => view === 'gameboard' && !id ? 'conversation' : 'gameboard'); } };
     window.addEventListener('jaco:open-plan', open);
     return () => window.removeEventListener('jaco:open-plan', open);
   }, []);
@@ -474,6 +477,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
 
   const [approvalBusy, setApprovalBusy] = useState<string | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [approvalAcknowledged, setApprovalAcknowledged] = useState<Record<string, boolean>>({});
   const [probeReceipts, setProbeReceipts] = useState<Record<string, any>>({});
   const [useResult, setUseResult] = useState<Record<string, { ok: boolean; text: string }>>({});
   const [providerBusy, setProviderBusy] = useState<string | null>(null);
@@ -973,6 +977,11 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const resolveApproval = async (approval: OperatorApproval, decision: string) => {
     const busyKey = `${approval.id}:${decision}`;
     if (approvalBusy) return;
+    const acknowledged = approvalAcknowledged[approval.id] === true;
+    if (requiresOperatorConfirmation(decision) && !acknowledged) {
+      setApprovalError('Check the confirmation box so Aura receives an explicit, scoped approval.');
+      return;
+    }
     setApprovalBusy(busyKey);
     setApprovalError(null);
     setRuntimeError(null);
@@ -983,8 +992,15 @@ export const JacoAuraComputeIDE: React.FC = () => {
         body: JSON.stringify({
           decision,
           note: `Operator decision from Aura Approval Center: ${decision}`,
+          confirmation: buildOperatorConfirmation(
+            approval.id,
+            decision,
+            acknowledged,
+            `I understand the displayed scope and risk and approve ${decision} for: ${approval.title}`,
+          ),
         }),
       }).then(json);
+      setApprovalAcknowledged(current => { const next = { ...current }; delete next[approval.id]; return next; });
       await refresh();
     } catch (error: any) {
       setApprovalError(error?.message || String(error));
@@ -1077,24 +1093,24 @@ export const JacoAuraComputeIDE: React.FC = () => {
               }}
             />
           </div>
-          <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400 flex items-center justify-between">
+          <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-neutral-300 flex items-center justify-between">
             <span>Explorer</span><span>{files.length}</span>
           </div>
           <div className="px-2 pb-2 space-y-1.5">
-            <div className="flex items-center gap-2 bg-[#1f1f1f] border border-[#3a3a3a] rounded px-2 py-1.5">
-              <Search className="w-3.5 h-3.5 text-slate-500" />
+            <div className="flex items-center gap-2 bg-[#333436] border border-[#5a5b5d] rounded px-2 py-1.5">
+              <Search className="w-3.5 h-3.5 text-neutral-400" />
               <input
                 value={query}
                 onChange={event => setQuery(event.target.value)}
                 placeholder="Filter files"
-                className="w-full bg-transparent outline-none text-xs text-slate-200"
+                className="w-full bg-transparent outline-none text-xs text-neutral-200"
               />
             </div>
             <div className="grid grid-cols-3 gap-1">
               <button
                 type="button"
                 onClick={() => setFileMutation({ mode: 'create', value: '' })}
-                className="border border-[#3a3a3a] rounded px-1 py-1 text-[8px] text-slate-400 hover:text-white hover:bg-[#2a2d2e]"
+                className="border border-[#5a5b5d] rounded px-1 py-1 text-[8px] text-neutral-300 hover:text-white hover:bg-[#464749]"
               >
                 New file
               </button>
@@ -1102,7 +1118,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                 type="button"
                 disabled={!selectedFile || !fileView}
                 onClick={() => selectedFile && setFileMutation({ mode: 'rename', value: selectedFile })}
-                className="border border-[#3a3a3a] rounded px-1 py-1 text-[8px] text-slate-400 hover:text-white hover:bg-[#2a2d2e] disabled:opacity-30"
+                className="border border-[#5a5b5d] rounded px-1 py-1 text-[8px] text-neutral-300 hover:text-white hover:bg-[#464749] disabled:opacity-30"
               >
                 Rename
               </button>
@@ -1116,8 +1132,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
               </button>
             </div>
             {fileMutation && (
-              <div className="border border-[#344552] rounded bg-[#111820] p-2 space-y-1.5">
-                <div className="text-[8px] uppercase tracking-wider text-slate-500">{fileMutation.mode} file</div>
+              <div className="border border-[#666769] rounded bg-[#27282a] p-2 space-y-1.5">
+                <div className="text-[8px] uppercase tracking-wider text-neutral-400">{fileMutation.mode} file</div>
                 {fileMutation.mode !== 'delete' ? (
                   <input
                     autoFocus
@@ -1125,7 +1141,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                     onChange={event => setFileMutation(current => current ? { ...current, value: event.target.value } : current)}
                     onKeyDown={event => { if (event.key === 'Enter') void runFileMutation(); if (event.key === 'Escape') setFileMutation(null); }}
                     placeholder="relative/path/to/file.ts"
-                    className="w-full bg-[#0d1117] border border-[#3a3a3a] rounded px-2 py-1.5 text-[9px] outline-none focus:border-cyan-800"
+                    className="w-full bg-[#1f2022] border border-[#5a5b5d] rounded px-2 py-1.5 text-[9px] outline-none focus:border-neutral-700"
                   />
                 ) : (
                   <div className="text-[9px] text-red-300 break-all">
@@ -1133,19 +1149,19 @@ export const JacoAuraComputeIDE: React.FC = () => {
                   </div>
                 )}
                 <div className="flex gap-1 justify-end">
-                  <button type="button" onClick={() => setFileMutation(null)} className="px-2 py-1 text-[8px] text-slate-500">Cancel</button>
+                  <button type="button" onClick={() => setFileMutation(null)} className="px-2 py-1 text-[8px] text-neutral-400">Cancel</button>
                   <button
                     type="button"
                     disabled={fileMutationBusy || (fileMutation.mode !== 'delete' && !fileMutation.value.trim())}
                     onClick={() => void runFileMutation()}
-                    className={`px-2 py-1 rounded border text-[8px] disabled:opacity-30 ${fileMutation.mode === 'delete' ? 'border-red-900 text-red-300' : 'border-cyan-900 text-cyan-300'}`}
+                    className={`px-2 py-1 rounded border text-[8px] disabled:opacity-30 ${fileMutation.mode === 'delete' ? 'border-red-900 text-red-300' : 'border-neutral-800 text-neutral-200'}`}
                   >
                     {fileMutationBusy ? 'Working…' : fileMutation.mode === 'delete' ? 'Confirm delete' : 'Apply'}
                   </button>
                 </div>
               </div>
             )}
-            {fileMutationNotice && <div className="text-[8px] text-cyan-300 break-words">{fileMutationNotice}</div>}
+            {fileMutationNotice && <div className="text-[8px] text-neutral-200 break-words">{fileMutationNotice}</div>}
           </div>
           <AuraRepositoryTree
             key={projectKey}
@@ -1163,51 +1179,51 @@ export const JacoAuraComputeIDE: React.FC = () => {
       const changes = snapshot?.git?.changes || [];
       return (
         <>
-          <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400 flex items-center justify-between">
+          <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-neutral-300 flex items-center justify-between">
             <span>Source Control</span>
-            <span className="text-[9px] text-slate-600">{snapshot?.git?.branch || 'no branch observed'}{snapshot?.git?.tracking ? ` → ${snapshot.git.tracking}` : ''}</span>
+            <span className="text-[9px] text-neutral-500">{snapshot?.git?.branch || 'no branch observed'}{snapshot?.git?.tracking ? ` → ${snapshot.git.tracking}` : ''}</span>
           </div>
-          <div className="px-3 py-2 border-b border-[#292929] text-[10px] space-y-2">
+          <div className="px-3 py-2 border-b border-[#414244] text-[10px] space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-slate-500">GitHub</span>
-              <span className="text-slate-300">{githubAuth?.credentialStored ? githubAuth.accounts.join(', ') : githubAuth?.loginInProgress ? 'Signing in…' : githubAuth?.available ? 'No account stored' : 'Check account status'}</span>
-              <button type="button" onClick={() => void refreshGithubAuth()} className="text-cyan-400">Refresh</button>
-              <button type="button" onClick={() => void loginGithub()} disabled={githubAuth?.loginInProgress} className="text-cyan-400 disabled:opacity-30">Sign in</button>
+              <span className="text-neutral-400">GitHub</span>
+              <span className="text-neutral-200">{githubAuth?.credentialStored ? githubAuth.accounts.join(', ') : githubAuth?.loginInProgress ? 'Signing in…' : githubAuth?.available ? 'No account stored' : 'Check account status'}</span>
+              <button type="button" onClick={() => void refreshGithubAuth()} className="text-neutral-200">Refresh</button>
+              <button type="button" onClick={() => void loginGithub()} disabled={githubAuth?.loginInProgress} className="text-neutral-200 disabled:opacity-30">Sign in</button>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">Repository</span>
+              <span className="text-neutral-400">Repository</span>
               <span className={snapshot?.git?.available ? 'text-emerald-400' : 'text-amber-400'}>
                 {snapshot?.git?.available ? (snapshot.git.dirty ? `${changes.length} change(s)` : 'clean') : 'unavailable'}
               </span>
             </div>
             {snapshot?.git?.available && (
-              <div className="flex items-center justify-between text-[8px] text-slate-600">
+              <div className="flex items-center justify-between text-[8px] text-neutral-500">
                 <span>{snapshot.git.tracking || 'no upstream observed'}</span>
                 <span>↑{snapshot.git.ahead || 0} ↓{snapshot.git.behind || 0}</span>
             </div>
             )}
-            {gitActionNotice && <div className="text-[9px] text-cyan-300 break-words">{gitActionNotice}</div>}
+            {gitActionNotice && <div className="text-[9px] text-neutral-200 break-words">{gitActionNotice}</div>}
           </div>
 
           <div className="flex-1 overflow-auto">
             {changes.map(change => {
               const staged = change.index && change.index !== ' ' && change.index !== '?';
               return (
-                <div key={`${change.status}:${change.path}`} className="border-b border-[#292929] group">
+                <div key={`${change.status}:${change.path}`} className="border-b border-[#414244] group">
                   <button
                     type="button"
                     onClick={() => openFile(change.path)}
-                    className="w-full px-3 py-1.5 text-left text-[11px] hover:bg-[#2a2d2e] flex items-center gap-2"
+                    className="w-full px-3 py-1.5 text-left text-[11px] hover:bg-[#464749] flex items-center gap-2"
                   >
                     <span className="w-5 font-mono text-amber-300 shrink-0">{change.status.trim() || 'M'}</span>
-                    <span className="truncate text-slate-300">{change.path}</span>
+                    <span className="truncate text-neutral-200">{change.path}</span>
                   </button>
                   <div className="px-3 pb-1.5 flex items-center justify-end gap-1">
                     <button
                       type="button"
                       onClick={() => void loadGitDiff(change.path)}
                       disabled={Boolean(gitBusy)}
-                      className="text-[8px] px-1.5 py-0.5 border border-[#3b4650] rounded text-slate-400 hover:text-white disabled:opacity-30"
+                      className="text-[8px] px-1.5 py-0.5 border border-[#696a6c] rounded text-neutral-300 hover:text-white disabled:opacity-30"
                     >
                       Diff
                     </button>
@@ -1215,7 +1231,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                       type="button"
                       onClick={() => void queueGitAction(staged ? 'unstage' : 'stage', { path: change.path })}
                       disabled={Boolean(gitBusy)}
-                      className="text-[8px] px-1.5 py-0.5 border border-[#3b4650] rounded text-slate-400 hover:text-white disabled:opacity-30"
+                      className="text-[8px] px-1.5 py-0.5 border border-[#696a6c] rounded text-neutral-300 hover:text-white disabled:opacity-30"
                     >
                       {staged ? 'Unstage' : 'Stage'}
                     </button>
@@ -1223,24 +1239,24 @@ export const JacoAuraComputeIDE: React.FC = () => {
                 </div>
               );
             })}
-            {snapshot?.git?.available && !changes.length && <div className="p-3 text-xs text-slate-500">Working tree clean.</div>}
+            {snapshot?.git?.available && !changes.length && <div className="p-3 text-xs text-neutral-400">Working tree clean.</div>}
             {!snapshot?.git?.available && <div className="p-3 text-xs text-amber-400">{snapshot?.git?.error || 'Git status unavailable.'}</div>}
           </div>
 
-          <div className="border-t border-[#292929] p-2 space-y-1.5">
+          <div className="border-t border-[#414244] p-2 space-y-1.5">
             <textarea
               value={gitCommitMessage}
               onChange={event => setGitCommitMessage(event.target.value)}
               rows={2}
               placeholder="Commit message"
-              className="w-full resize-none bg-[#111] border border-[#333] rounded px-2 py-1.5 text-[10px] outline-none focus:border-cyan-800"
+              className="w-full resize-none bg-[#1f2022] border border-[#505153] rounded px-2 py-1.5 text-[10px] outline-none focus:border-neutral-700"
             />
             <div className="grid grid-cols-5 gap-1">
               <button
                 type="button"
                 onClick={() => void queueGitAction('fetch')}
                 disabled={!snapshot?.git?.available || Boolean(gitBusy)}
-                className="px-1 py-1.5 rounded border border-[#444] text-[8px] hover:bg-[#2a2d2e] disabled:opacity-30"
+                className="px-1 py-1.5 rounded border border-[#696a6c] text-[8px] hover:bg-[#464749] disabled:opacity-30"
               >
                 Fetch
               </button>
@@ -1248,7 +1264,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                 type="button"
                 onClick={() => void queueGitAction('pull')}
                 disabled={!snapshot?.git?.available || !snapshot?.git?.tracking || Boolean(gitBusy)}
-                className="px-1 py-1.5 rounded border border-[#444] text-[8px] hover:bg-[#2a2d2e] disabled:opacity-30"
+                className="px-1 py-1.5 rounded border border-[#696a6c] text-[8px] hover:bg-[#464749] disabled:opacity-30"
               >
                 Pull
               </button>
@@ -1256,7 +1272,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                 type="button"
                 onClick={() => void queueGitAction('stage-all')}
                 disabled={!snapshot?.git?.available || !snapshot?.git?.dirty || Boolean(gitBusy)}
-                className="px-1 py-1.5 rounded border border-[#444] text-[8px] hover:bg-[#2a2d2e] disabled:opacity-30"
+                className="px-1 py-1.5 rounded border border-[#696a6c] text-[8px] hover:bg-[#464749] disabled:opacity-30"
               >
                 Stage
               </button>
@@ -1264,7 +1280,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                 type="button"
                 onClick={() => void queueGitAction('commit', { message: gitCommitMessage })}
                 disabled={!gitCommitMessage.trim() || Boolean(gitBusy)}
-                className="px-1 py-1.5 rounded border border-cyan-900 text-cyan-300 text-[8px] hover:bg-cyan-950/30 disabled:opacity-30"
+                className="px-1 py-1.5 rounded border border-neutral-800 text-neutral-200 text-[8px] hover:bg-neutral-900/30 disabled:opacity-30"
               >
                 Commit
               </button>
@@ -1277,7 +1293,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                 Push
               </button>
             </div>
-            <div className="text-[8px] text-slate-600">
+            <div className="text-[8px] text-neutral-500">
               Git read/write, stage, commit, pull, push and merge are Level-5 mission capabilities. Outgoing payments remain the operator gate.
             </div>
           </div>
@@ -1292,13 +1308,13 @@ export const JacoAuraComputeIDE: React.FC = () => {
     if (sidebar === 'tools') {
       return (
         <>
-          <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400 flex items-center justify-between">
+          <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-neutral-300 flex items-center justify-between">
             <span>Tool Fabric</span>
-            <button onClick={() => setCommandPaletteOpen(true)} className="text-[9px] text-cyan-400 hover:text-cyan-300">Ctrl⇧P</button>
+            <button onClick={() => setCommandPaletteOpen(true)} className="text-[9px] text-neutral-200 hover:text-neutral-200">Ctrl⇧P</button>
           </div>
 
           <div className="flex-1 overflow-auto">
-            <div className="px-3 py-1.5 text-[9px] uppercase tracking-wider text-slate-600">INTEGRATION FABRIC</div>
+            <div className="px-3 py-1.5 text-[9px] uppercase tracking-wider text-neutral-500">INTEGRATION FABRIC</div>
             <div className="px-2 pb-2 grid grid-cols-2 gap-1.5">
               {([
                 ['Git', snapshot?.integrations?.git?.state || 'UNOBSERVED', () => setSidebar('source-control'), `${snapshot?.integrations?.git?.changeCount ?? 0} change(s)`],
@@ -1311,24 +1327,24 @@ export const JacoAuraComputeIDE: React.FC = () => {
                   key={label}
                   type="button"
                   onClick={action}
-                  className="text-left border border-[#30363d] bg-[#111820] rounded p-2 hover:border-[#4b5a67] min-w-0"
+                  className="text-left border border-[#535456] bg-[#27282a] rounded p-2 hover:border-[#8d8e90] min-w-0"
                   title={detail}
                 >
                   <div className="flex items-center justify-between gap-1">
-                    <span className="text-[9px] text-slate-300 truncate">{label}</span>
+                    <span className="text-[9px] text-neutral-200 truncate">{label}</span>
                     <span className={`text-[7px] border rounded px-1 ${statusClass(state)}`}>{state}</span>
                   </div>
-                  <div className="mt-1 text-[7px] text-slate-600 truncate">{detail}</div>
+                  <div className="mt-1 text-[7px] text-neutral-500 truncate">{detail}</div>
                 </button>
               ))}
             </div>
 
-            <div className="px-3 py-1.5 text-[9px] uppercase tracking-wider text-slate-600">Live agent tools</div>
+            <div className="px-3 py-1.5 text-[9px] uppercase tracking-wider text-neutral-500">Live agent tools</div>
             {(snapshot?.workplace?.agents || []).filter(agent => agent.liveSessions > 0).map(agent => (
-              <div key={agent.agentId} className="border-b border-[#292929]">
-                <div className="px-3 py-1.5 flex items-center gap-2 bg-[#1b1b1b]">
-                  <Bot className="w-3 h-3 text-cyan-400" />
-                  <span className="text-[10px] font-semibold text-slate-300 truncate">{agent.name}</span>
+              <div key={agent.agentId} className="border-b border-[#414244]">
+                <div className="px-3 py-1.5 flex items-center gap-2 bg-[#2d2e30]">
+                  <Bot className="w-3 h-3 text-neutral-200" />
+                  <span className="text-[10px] font-semibold text-neutral-200 truncate">{agent.name}</span>
                   <span className={`ml-auto text-[8px] border rounded px-1 ${statusClass(agent.status)}`}>{agent.status}</span>
                 </div>
                 <div className="px-3 pb-1 flex flex-wrap gap-1">
@@ -1336,7 +1352,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                     <span key={permission} className="text-[7px] border border-emerald-950 text-emerald-500/80 rounded px-1">{permission}</span>
                   ))}
                   {Object.entries(agent.permissions || {}).filter(([,allowed]) => !allowed).slice(0,4).map(([permission]) => (
-                    <span key={permission} className="text-[7px] border border-slate-800 text-slate-600 rounded px-1 line-through">{permission}</span>
+                    <span key={permission} className="text-[7px] border border-neutral-700 text-neutral-500 rounded px-1 line-through">{permission}</span>
                   ))}
                 </div>
                 <div className="py-1">
@@ -1344,18 +1360,18 @@ export const JacoAuraComputeIDE: React.FC = () => {
                     <button
                       key={toolName}
                       onClick={() => selectAgentTool(agent, toolName)}
-                      className={`w-full text-left px-5 py-1.5 hover:bg-[#2a2d2e] flex items-center gap-2 ${selectedTool?.id === `agent:${agent.agentId}:${toolName}` ? 'bg-[#17324a]' : ''}`}
+                      className={`w-full text-left px-5 py-1.5 hover:bg-[#464749] flex items-center gap-2 ${selectedTool?.id === `agent:${agent.agentId}:${toolName}` ? 'bg-[#17324a]' : ''}`}
                     >
                       <Wrench className="w-3 h-3 text-sky-400 shrink-0" />
-                      <span className="text-[10px] text-slate-300 truncate">{toolName}</span>
+                      <span className="text-[10px] text-neutral-200 truncate">{toolName}</span>
                     </button>
                   ))}
-                  {!agent.tools?.length && <div className="px-5 py-1 text-[9px] text-slate-600">No advertised tools.</div>}
+                  {!agent.tools?.length && <div className="px-5 py-1 text-[9px] text-neutral-500">No advertised tools.</div>}
                 </div>
               </div>
             ))}
             {!snapshot?.workplace?.agents?.some(agent => agent.liveSessions > 0) && (
-              <div className="px-3 py-2 text-[10px] text-slate-600">No READY Workplace agents observed.</div>
+              <div className="px-3 py-2 text-[10px] text-neutral-500">No READY Workplace agents observed.</div>
             )}
 
             <AuraIntegrationsPanel workplace={snapshot?.workplace} observedAt={snapshot?.observedAt} providers={snapshot?.mcp?.providers || []} busy={mcpStarting} onConnect={id => void startMcpServer(id)} onHuggingFace={(enabled, tokenEnv) => void configureHuggingFace(enabled, tokenEnv)} notice={integrationNotice} />
@@ -1369,20 +1385,20 @@ export const JacoAuraComputeIDE: React.FC = () => {
               onChanged={notice => { setIntegrationNotice(notice); void refresh({ includeFiles: false }); }}
             />
 
-            <div className="px-3 py-1.5 mt-2 text-[9px] uppercase tracking-wider text-slate-600">Git MCP sources</div>
+            <div className="px-3 py-1.5 mt-2 text-[9px] uppercase tracking-wider text-neutral-500">Git MCP sources</div>
             <div className="px-3 pb-2 space-y-1.5">
               <input
                 value={mcpGitUrl}
                 onChange={event => setMcpGitUrl(event.target.value)}
                 placeholder="https://github.com/owner/mcp-server"
-                className="w-full bg-[#111] border border-[#333] rounded px-2 py-1.5 text-[10px] outline-none focus:border-violet-800"
+                className="w-full bg-[#1f2022] border border-[#505153] rounded px-2 py-1.5 text-[10px] outline-none focus:border-violet-800"
               />
               <div className="flex gap-1.5">
                 <input
                   value={mcpGitRef}
                   onChange={event => setMcpGitRef(event.target.value)}
                   placeholder="ref/tag (optional)"
-                  className="min-w-0 flex-1 bg-[#111] border border-[#333] rounded px-2 py-1.5 text-[10px] outline-none focus:border-violet-800"
+                  className="min-w-0 flex-1 bg-[#1f2022] border border-[#505153] rounded px-2 py-1.5 text-[10px] outline-none focus:border-violet-800"
                 />
                 <button
                   onClick={() => void importMcpFromGit()}
@@ -1392,59 +1408,59 @@ export const JacoAuraComputeIDE: React.FC = () => {
                   {mcpImportBusy ? 'Importing…' : 'Stage'}
                 </button>
               </div>
-              <div className="text-[8px] text-slate-600">Source is pinned to commit and cannot execute until Approval Center promotion.</div>
+              <div className="text-[8px] text-neutral-500">Source is pinned to commit and cannot execute until Approval Center promotion.</div>
             </div>
             {(snapshot?.mcp?.sources || []).map(source => (
-              <div key={source.id} className="px-3 py-2 border-b border-[#292929]">
+              <div key={source.id} className="px-3 py-2 border-b border-[#414244]">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-300 truncate">{source.manifest.packageName || source.id}</span>
+                  <span className="text-[10px] text-neutral-200 truncate">{source.manifest.packageName || source.id}</span>
                   <span className={`ml-auto text-[8px] ${source.status === 'OPERATOR_APPROVED' ? 'text-emerald-400' : source.status === 'QUARANTINED' ? 'text-red-400' : 'text-amber-400'}`}>{source.status}</span>
                 </div>
-                <div className="text-[8px] text-slate-600 mt-1 truncate">{source.repoUrl} · {source.resolvedSha.slice(0,12)}</div>
-                <div className="text-[8px] text-slate-700 mt-0.5">{source.manifest.dependencies} deps · not auto-executed</div>
+                <div className="text-[8px] text-neutral-500 mt-1 truncate">{source.repoUrl} · {source.resolvedSha.slice(0,12)}</div>
+                <div className="text-[8px] text-neutral-600 mt-0.5">{source.manifest.dependencies} deps · not auto-executed</div>
               </div>
             ))}
 
-            <div className="px-3 py-1.5 mt-2 text-[9px] uppercase tracking-wider text-slate-600">Installed skills</div>
+            <div className="px-3 py-1.5 mt-2 text-[9px] uppercase tracking-wider text-neutral-500">Installed skills</div>
             {(snapshot?.skills || []).map(skill => (
               <button
                 key={skill.id}
                 onClick={() => selectSkillTool(skill)}
                 disabled={!skill.enabled}
-                className={`w-full text-left px-3 py-2 border-b border-[#292929] hover:bg-[#2a2d2e] disabled:opacity-35 ${selectedTool?.id === `skill:${skill.id}` ? 'bg-[#193126]' : ''}`}
+                className={`w-full text-left px-3 py-2 border-b border-[#414244] hover:bg-[#464749] disabled:opacity-35 ${selectedTool?.id === `skill:${skill.id}` ? 'bg-[#193126]' : ''}`}
                 title={skill.description}
               >
                 <div className="flex items-center gap-2">
-                  <Braces className={`w-3 h-3 ${skill.enabled ? 'text-emerald-400' : 'text-slate-600'}`} />
-                  <span className="text-xs text-slate-200 truncate">{skill.name || skill.id}</span>
+                  <Braces className={`w-3 h-3 ${skill.enabled ? 'text-emerald-400' : 'text-neutral-500'}`} />
+                  <span className="text-xs text-neutral-200 truncate">{skill.name || skill.id}</span>
                   <span className={`ml-auto text-[8px] ${skill.enabled ? 'text-emerald-400' : 'text-amber-500'}`}>{skill.status}</span>
                 </div>
-                <div className="text-[9px] text-slate-500 mt-1 truncate">
+                <div className="text-[9px] text-neutral-400 mt-1 truncate">
                   v{skill.version || '?'} · {skill.source === 'continuum-runtime' ? 'Continuum Skill Runtime' : (skill.authorNodeId || 'A2A')}
                 </div>
-                {skill.substrates?.length ? <div className="text-[8px] text-slate-600 mt-0.5 truncate">{skill.substrates.join(' · ')}</div> : null}
+                {skill.substrates?.length ? <div className="text-[8px] text-neutral-500 mt-0.5 truncate">{skill.substrates.join(' · ')}</div> : null}
               </button>
             ))}
             {!snapshot?.skills?.length && (
-              <div className="px-3 py-2 text-[10px] text-slate-600">
+              <div className="px-3 py-2 text-[10px] text-neutral-500">
                 No skill manifests observed. Canonical Skill Runtime: {snapshot?.skillRuntime?.schema || 'UNOBSERVED'} · catalog {snapshot?.skillRuntime?.catalog?.count ?? 0}.
               </div>
             )}
             {snapshot?.skillRuntime && (
-              <div className="px-3 py-2 border-b border-[#292929] text-[9px] text-slate-500">
+              <div className="px-3 py-2 border-b border-[#414244] text-[9px] text-neutral-400">
                 Skill Runtime · {snapshot.skillRuntime.catalog?.active ?? 0} active · {snapshot.skillRuntime.catalog?.candidate ?? 0} candidate · {snapshot.skillRuntime.recentEvents?.length ?? 0} recent event(s)
               </div>
             )}
 
-            <div className="px-3 py-1.5 mt-2 text-[9px] uppercase tracking-wider text-slate-600">Workflows</div>
+            <div className="px-3 py-1.5 mt-2 text-[9px] uppercase tracking-wider text-neutral-500">Workflows</div>
             {AURA_PRODUCT_TOOLS.map(tool => (
-              <button key={tool.id} onClick={() => openTool(tool)} className="w-full text-left px-3 py-2 border-b border-[#292929] hover:bg-[#2a2d2e]">
+              <button key={tool.id} onClick={() => openTool(tool)} className="w-full text-left px-3 py-2 border-b border-[#414244] hover:bg-[#464749]">
                 <div className="flex items-center gap-2">
-                  <Wrench className="w-3 h-3 text-cyan-400" />
-                  <span className="text-xs text-slate-200">{tool.title}</span>
+                  <Wrench className="w-3 h-3 text-neutral-200" />
+                  <span className="text-xs text-neutral-200">{tool.title}</span>
                   {tool.authority !== 'ALLOW' && <span className="ml-auto text-[8px] border border-amber-900 text-amber-300 rounded px-1">{tool.authority}</span>}
                 </div>
-                <div className="text-[9px] text-slate-500 mt-1">{tool.category} · {tool.command}</div>
+                <div className="text-[9px] text-neutral-400 mt-1">{tool.category} · {tool.command}</div>
               </button>
             ))}
           </div>
@@ -1454,14 +1470,14 @@ export const JacoAuraComputeIDE: React.FC = () => {
 
     return (
       <>
-        <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400">Providers</div>
+        <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-neutral-300">Providers</div>
         <div className="flex-1 overflow-auto px-2 space-y-2">
           <EconomicBudgetPanel inline />
           <NovaPlannerCard />
           {(snapshot?.providers || []).map(provider => {
             const receipt = probeReceipts[provider.id];
             return (
-              <div key={provider.id} className="border border-[#333] bg-[#1d1d1d] rounded p-2">
+              <div key={provider.id} className="border border-[#505153] bg-[#303133] rounded p-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <strong className="text-xs">{provider.id}</strong>
@@ -1471,14 +1487,14 @@ export const JacoAuraComputeIDE: React.FC = () => {
                     <button
                       onClick={() => void useProviderEverywhere(provider)}
                       disabled={providerBusy === provider.id || provider.disabled}
-                      className="text-[11px] border border-cyan-700 text-cyan-200 px-2.5 py-1.5 rounded hover:bg-cyan-950 disabled:opacity-40"
+                      className="text-[11px] border border-neutral-600 text-neutral-200 px-2.5 py-1.5 rounded hover:bg-neutral-900 disabled:opacity-40"
                     >
                       Use
                     </button>
                     <button
                       onClick={() => void probeProvider(provider.id)}
                       disabled={providerBusy === provider.id}
-                      className="text-[11px] border border-[#444] px-2.5 py-1.5 rounded hover:bg-[#2b2b2b] disabled:opacity-40"
+                      className="text-[11px] border border-[#696a6c] px-2.5 py-1.5 rounded hover:bg-[#444547] disabled:opacity-40"
                     >
                       {providerBusy === provider.id ? 'Testing…' : 'Test'}
                     </button>
@@ -1486,15 +1502,15 @@ export const JacoAuraComputeIDE: React.FC = () => {
                 </div>
                 <div className="text-[10px] mt-1">
                   {provider.disabled
-                    ? <span className="text-slate-500">disabled (JACO_DISABLED_PROVIDERS)</span>
+                    ? <span className="text-neutral-400">disabled (JACO_DISABLED_PROVIDERS)</span>
                     : provider.roles?.length
                       ? <span className="text-emerald-300">used for: {provider.roles.join(' · ')}</span>
-                      : <span className="text-slate-500">not in use</span>}
+                      : <span className="text-neutral-400">not in use</span>}
                 </div>
-                <div className="text-[10px] text-slate-500 mt-1 truncate">{provider.baseUrl}</div>
+                <div className="text-[10px] text-neutral-400 mt-1 truncate">{provider.baseUrl}</div>
                 <div className="grid grid-cols-2 gap-1 mt-2 text-[10px]">
-                  <span>model</span><span className="text-slate-300 truncate">{provider.defaultModel || 'not set'}</span>
-                  <span>API key</span><span className={provider.credentialConfigured ? 'text-emerald-300' : 'text-slate-400'}>{provider.credentialConfigured ? 'Configured' : provider.apiKeyEnv ? 'Not configured' : 'No reference set'}</span>
+                  <span>model</span><span className="text-neutral-200 truncate">{provider.defaultModel || 'not set'}</span>
+                  <span>API key</span><span className={provider.credentialConfigured ? 'text-emerald-300' : 'text-neutral-300'}>{provider.credentialConfigured ? 'Configured' : provider.apiKeyEnv ? 'Not configured' : 'No reference set'}</span>
                 </div>
                 {useResult[provider.id] && (
                   <div className={`mt-2 text-[11px] border rounded p-1.5 ${statusClass(useResult[provider.id].ok ? 'VERIFIED' : 'FAILED')}`}>{useResult[provider.id].text}</div>
@@ -1581,24 +1597,24 @@ export const JacoAuraComputeIDE: React.FC = () => {
 
   const renderMissionList = () => (
     <>
-            {missions.length === 0 && <div className="text-slate-500 p-1">No missions observed.</div>}
+            {missions.length === 0 && <div className="text-neutral-400 p-1">No missions observed.</div>}
             {missions.map(m => {
               const result = m.lastAction?.result;
               return (
-                <div key={m.id} className={`min-w-0 overflow-hidden border rounded px-2 py-1.5 ${m.status === 'ACTIVE' ? 'border-cyan-800 bg-[#0b1620]' : 'border-[#2b2b2b] bg-[#141414]'}`}>
+                <div key={m.id} className={`min-w-0 overflow-hidden border rounded px-2 py-1.5 ${m.status === 'ACTIVE' ? 'border-neutral-700 bg-[#232426]' : 'border-[#444547] bg-[#232426]'}`}>
                   <div className="flex items-center gap-2 min-w-0">
                     <span className={`text-[9px] border rounded px-1 shrink-0 ${statusClass(m.status)}`}>{m.status}</span><button type="button" onClick={()=>{setReviewMissionId(m.id);setWorkspaceView('evidence');}}>Review changes</button>
-                    <span className="min-w-0 flex-1 text-slate-200 truncate" title={m.goal}>{m.goal}</span>
-                    <span className="ml-auto text-[9px] text-slate-500 shrink-0">
+                    <span className="min-w-0 flex-1 text-neutral-200 truncate" title={m.goal}>{m.goal}</span>
+                    <span className="ml-auto text-[9px] text-neutral-400 shrink-0">
                       step {m.step}{m.maxSteps ? `/${m.maxSteps}` : ''} · {formatTime(m.updatedAt)}
                     </span>
                   </div>
                   {m.lastAction && (
                     <div className="mt-0.5 text-[10px] flex gap-1.5 min-w-0">
-                      <span className="text-slate-500 shrink-0">{m.lastAction.running ? 'Running now:' : 'Latest:'}</span>
-                      <span className="min-w-0 text-slate-300 truncate">{m.lastAction.text}</span>
+                      <span className="text-neutral-400 shrink-0">{m.lastAction.running ? 'Running now:' : 'Latest:'}</span>
+                      <span className="min-w-0 text-neutral-200 truncate">{m.lastAction.text}</span>
                       {result && (
-                        <span className={`truncate ${result.state === 'verified' ? 'text-emerald-400' : result.state === 'failed' ? 'text-amber-400' : 'text-slate-400'}`}>
+                        <span className={`truncate ${result.state === 'verified' ? 'text-emerald-400' : result.state === 'failed' ? 'text-amber-400' : 'text-neutral-300'}`}>
                           {'→ '}{result.url ? <a href={result.url} target="_blank" rel="noreferrer" className="underline">{result.text}</a> : result.text}
                         </span>
                       )}
@@ -1606,9 +1622,9 @@ export const JacoAuraComputeIDE: React.FC = () => {
                   )}
                   {m.answer && (
                     <details className="mt-1 text-[10px] min-w-0">
-                      <summary className="cursor-pointer text-cyan-300 truncate">Answer: {m.answer.split('\n')[0]}</summary>
-                      <div className="mt-1 whitespace-pre-wrap break-words text-slate-300 max-h-60 overflow-auto">{m.answer}</div>
-                      <div className={`mt-1 text-[9px] ${!m.evidence?.cited.length ? 'text-slate-500' : m.evidence.ok ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      <summary className="cursor-pointer text-neutral-200 truncate">Answer: {m.answer.split('\n')[0]}</summary>
+                      <div className="mt-1 whitespace-pre-wrap break-words text-neutral-200 max-h-60 overflow-auto">{m.answer}</div>
+                      <div className={`mt-1 text-[9px] ${!m.evidence?.cited.length ? 'text-neutral-400' : m.evidence.ok ? 'text-emerald-400' : 'text-amber-400'}`}>
                         {!m.evidence?.cited.length
                           ? 'Evidence: the answer cites no steps'
                           : m.evidence.ok
@@ -1616,7 +1632,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                             : `Evidence missing: ${[...m.evidence.missing, ...m.evidence.unverified].map(n => `#${n}`).join(', ')} not found as a verified receipt, so the answer is not approved automatically`}
                       </div>
                       {!m.claimCheck && m.status === 'AWAITING_VERIFICATION' && (
-                        <div className="mt-0.5 text-[9px] text-slate-400">Claims are being checked against the evidence…</div>
+                        <div className="mt-0.5 text-[9px] text-neutral-300">Claims are being checked against the evidence…</div>
                       )}
                       {m.claimCheck && (
                         <div className={`mt-0.5 text-[9px] ${m.claimCheck.ok ? 'text-emerald-400' : 'text-amber-400'}`}>
@@ -1627,7 +1643,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                               : `${m.claimCheck.problems.length} claim(s) do not hold against the evidence:`}
                           {m.claimCheck.partial.length > 0 && ` (truncated evidence: ${m.claimCheck.partial.map(n => `#${n}`).join(', ')})`}
                           {!m.claimCheck.ok && m.claimCheck.problems.map((p, i) => (
-                            <div key={i} className="ml-2 text-amber-300">- {p.text} <span className="text-slate-400">({p.why})</span></div>
+                            <div key={i} className="ml-2 text-amber-300">- {p.text} <span className="text-neutral-300">({p.why})</span></div>
                           ))}
                         </div>
                       )}
@@ -1643,8 +1659,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const renderApprovals = () => showApprovals && (
 
       <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex justify-end" onClick={() => setShowApprovals(false)}>
-        <div role="dialog" aria-modal="true" aria-label="Decisions that need you" className="h-[100dvh] max-h-[100dvh] w-full max-w-xl bg-[#111820] border-l border-[#30363d] shadow-2xl flex flex-col" onClick={event => event.stopPropagation()}>
-          <div className="h-12 px-4 border-b border-[#30363d] flex items-center justify-between">
+        <div role="dialog" aria-modal="true" aria-label="Decisions that need you" className="h-[100dvh] max-h-[100dvh] w-full max-w-xl bg-[#27282a] border-l border-[#535456] shadow-2xl flex flex-col" onClick={event => event.stopPropagation()}>
+          <div className="h-12 px-4 border-b border-[#535456] flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-white">
                 <ShieldAlert className="w-4 h-4 text-amber-400" />
@@ -1653,16 +1669,16 @@ export const JacoAuraComputeIDE: React.FC = () => {
                   {snapshot?.approvals?.count ?? 0} pending decisions
                 </span>
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Work already permitted within the mission continues automatically. Decisions that require you are shown here.</div>
+              <div className="text-[10px] text-neutral-400 mt-0.5">Work already permitted within the mission continues automatically. Decisions that require you are shown here.</div>
             </div>
-            <button onClick={() => setShowApprovals(false)} aria-label="Close decisions panel" className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded border border-[#343b45] text-xs text-slate-200 hover:text-white hover:bg-[#252b33]">
+            <button onClick={() => setShowApprovals(false)} aria-label="Close decisions panel" className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded border border-[#5a5b5d] text-xs text-neutral-200 hover:text-white hover:bg-[#434446]">
               <X className="w-4 h-4" /> Close
             </button>
           </div>
 
-          <div className="px-4 py-3 border-b border-[#252b33] bg-[#0d1117]">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Active mandates</div>
-            <div className="mt-1 text-xs text-slate-300">
+          <div className="px-4 py-3 border-b border-[#434446] bg-[#1f2022]">
+            <div className="text-[10px] uppercase tracking-wider text-neutral-400">Active mandates</div>
+            <div className="mt-1 text-xs text-neutral-200">
               {snapshot?.approvals?.activeMandates?.length
                 ? snapshot.approvals.activeMandates.map(m => `${m.name} · valid until ${formatTime(m.expiresAt)}`).join(' · ')
                 : 'No active signed mandates observed.'}
@@ -1672,23 +1688,32 @@ export const JacoAuraComputeIDE: React.FC = () => {
           <div className="flex-1 overflow-auto p-4 space-y-3">
             {approvalError && <p role="alert" className="text-sm text-amber-300">{approvalError}</p>}
             {(snapshot?.approvals?.items || []).map(approval => (
-              <div key={approval.id} className="border border-[#343b45] bg-[#161b22] rounded-lg p-3">
+              <div key={approval.id} className="border border-[#5a5b5d] bg-[#2c2d2f] rounded-lg p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-[9px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-400">{approval.kind}</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded border border-neutral-600 text-neutral-300">{approval.kind}</span>
                       <span className={`text-[9px] px-1.5 py-0.5 rounded border ${approval.risk === 'HIGH' || approval.risk === 'CRITICAL' ? 'border-red-900 text-red-300' : 'border-amber-900 text-amber-300'}`}>{approval.risk}</span>
                     </div>
                     <div className="text-xs font-semibold text-white mt-2 break-words">{approval.title}</div>
-                    <div className="text-[10px] text-slate-400 mt-1 leading-4">{approval.reason}</div>
+                    <div className="text-[10px] text-neutral-300 mt-1 leading-4">{approval.reason}</div>
                   </div>
-                  <span className="text-[9px] text-slate-600 shrink-0">{approval.source}</span>
+                  <span className="text-[9px] text-neutral-500 shrink-0">{approval.source}</span>
                 </div>
 
-                <div className="mt-3 border border-[#2b3139] rounded bg-[#0d1117] p-2">
-                  <div className="text-[9px] uppercase text-slate-600 mb-1">What the decision covers and available evidence</div>
-                  <pre className="text-[10px] leading-4 text-slate-400 whitespace-pre-wrap break-words overflow-hidden">{JSON.stringify(approval.details || {}, null, 2)}</pre>
+                <div className="mt-3 border border-[#4c4d4f] rounded bg-[#1f2022] p-2">
+                  <div className="text-[9px] uppercase text-neutral-500 mb-1">What the decision covers and available evidence</div>
+                  <pre className="text-[10px] leading-4 text-neutral-300 whitespace-pre-wrap break-words overflow-hidden">{JSON.stringify(approval.details || {}, null, 2)}</pre>
                 </div>
+
+                {approval.actions.some(requiresOperatorConfirmation) && (
+                  <label className="mt-3 flex cursor-pointer items-start gap-2 rounded border border-amber-900/60 bg-amber-950/10 p-2.5 text-xs leading-5 text-amber-100">
+                    <input type="checkbox" checked={approvalAcknowledged[approval.id] === true}
+                      onChange={event => setApprovalAcknowledged(current => ({ ...current, [approval.id]: event.target.checked }))}
+                      className="mt-0.5 h-4 w-4 accent-amber-300" />
+                    <span>I understand the displayed action and risk. I explicitly approve Aura to carry out the selected positive action within this scope.</span>
+                  </label>
+                )}
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   {approval.actions.map(action => {
@@ -1698,8 +1723,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
                       <button
                         key={action}
                         onClick={() => void resolveApproval(approval, action)}
-                        disabled={Boolean(approvalBusy)}
-                        className={`text-[10px] rounded px-3 py-1.5 border disabled:opacity-40 ${positive ? 'bg-[#0e639c] border-[#1177bb] text-white' : 'border-[#4a4f57] text-slate-300 hover:bg-[#252a31]'}`}
+                        disabled={Boolean(approvalBusy) || (positive && approvalAcknowledged[approval.id] !== true)}
+                        className={`text-[10px] rounded px-3 py-1.5 border disabled:opacity-40 ${positive ? 'bg-[#0e639c] border-[#1177bb] text-white' : 'border-[#797a7c] text-neutral-200 hover:bg-[#414244]'}`}
                       >
                         {busy ? 'Saving decision…' : approvalLabel(action)}
                       </button>
@@ -1713,9 +1738,9 @@ export const JacoAuraComputeIDE: React.FC = () => {
             ))}
 
             {!snapshot?.approvals?.items?.length && (
-              <div className="h-full min-h-[240px] flex flex-col items-center justify-center text-center text-slate-500">
+              <div className="h-full min-h-[240px] flex flex-col items-center justify-center text-center text-neutral-400">
                 <CheckCircle2 className="w-8 h-8 text-emerald-500 mb-3" />
-                <div className="text-sm text-slate-300">No decisions are waiting for you</div>
+                <div className="text-sm text-neutral-200">No decisions are waiting for you</div>
                 <div className="text-[10px] mt-1">JACO is not waiting for any approval in the checked services.</div>
               </div>
             )}
@@ -1780,7 +1805,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       </div>
       <button type="button" className="cognitive-dock-toggle" aria-expanded={showTerminal} onClick={() => setShowTerminal(v => !v)}><Terminal size={13}/>{showTerminal ? 'Hide terminal & details' : 'Open terminal & details'}</button>
       {showTerminal && (            <div className="cognitive-terminal-dock min-h-0 min-w-0 flex flex-col">
-              <div className="h-9 px-3 flex items-center justify-between border-b border-[#2b2b2b] shrink-0">
+              <div className="h-9 px-3 flex items-center justify-between border-b border-[#444547] shrink-0">
                 <div className="flex items-center gap-4 text-[11px] h-full">
                   {([
                     ['missions','MISSIONS'],
@@ -1792,14 +1817,14 @@ export const JacoAuraComputeIDE: React.FC = () => {
                     <button
                       key={id}
                       onClick={() => setBottomPanel(id)}
-                      className={`h-full flex items-center gap-1.5 ${bottomPanel === id ? 'text-white border-b border-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
+                      className={`h-full flex items-center gap-1.5 ${bottomPanel === id ? 'text-white border-b border-neutral-400' : 'text-neutral-400 hover:text-neutral-200'}`}
                     >
                       {id === 'terminal' && <Terminal className="w-3.5 h-3.5" />}
                       {label}
                     </button>
                   ))}
                 </div>
-                <div className="text-[10px] text-slate-500">{snapshot?.observedAt ? `observed ${formatTime(snapshot.observedAt)}` : 'not observed'}</div>
+                <div className="text-[10px] text-neutral-400">{snapshot?.observedAt ? `observed ${formatTime(snapshot.observedAt)}` : 'not observed'}</div>
               </div>
 
               {bottomPanel === 'missions' && (
@@ -1811,26 +1836,26 @@ export const JacoAuraComputeIDE: React.FC = () => {
               {bottomPanel === 'terminal' && (
                 <>
                   <div className="flex-1 overflow-auto p-3 font-mono text-[11px] leading-5">
-                    {terminalNotice && <div className="text-cyan-300 mb-2">{terminalNotice}</div>}
+                    {terminalNotice && <div className="text-neutral-200 mb-2">{terminalNotice}</div>}
                     {/* Newest first, each line naming its mission, so the latest work is visible without scrolling. */}
                     {activity.slice(-40).reverse().map(event => (
                       <div key={event.id} className="flex gap-2">
-                        <span className="text-slate-600 shrink-0">{formatTime(event.at)}</span>
-                        <span className={event.verified === true ? 'text-emerald-400' : event.verified === false ? 'text-amber-400' : 'text-slate-500'}>{event.verified === true ? '✓' : event.verified === false ? '!' : '·'}</span>
-                        <span className="text-slate-300 break-words">
+                        <span className="text-neutral-500 shrink-0">{formatTime(event.at)}</span>
+                        <span className={event.verified === true ? 'text-emerald-400' : event.verified === false ? 'text-amber-400' : 'text-neutral-400'}>{event.verified === true ? '✓' : event.verified === false ? '!' : '·'}</span>
+                        <span className="text-neutral-200 break-words">
                           {(event.missionGoal || (event.missionId && missionGoals.get(event.missionId))) && (
-                            <span className="text-cyan-700" title={String(event.missionGoal || missionGoals.get(String(event.missionId)))}>[{String(event.missionGoal || missionGoals.get(String(event.missionId))).slice(0, 36)}] </span>
+                            <span className="text-neutral-600" title={String(event.missionGoal || missionGoals.get(String(event.missionId)))}>[{String(event.missionGoal || missionGoals.get(String(event.missionId))).slice(0, 36)}] </span>
                           )}
                           {terminalMode === 'human' ? humanizeActivity(event) : JSON.stringify({ source: event.source, type: event.type, verified: event.verified, payload: event.payload })}
                         </span>
                       </div>
                     ))}
                   </div>
-                  <form onSubmit={event => { event.preventDefault(); void runTerminalCommand(); }} className="h-9 border-t border-[#2b2b2b] px-3 flex items-center gap-2 shrink-0">
+                  <form onSubmit={event => { event.preventDefault(); void runTerminalCommand(); }} className="h-9 border-t border-[#444547] px-3 flex items-center gap-2 shrink-0">
                     <span className="text-emerald-400 font-mono text-xs">$</span>
-                    <input value={terminalCommand} onChange={event => setTerminalCommand(event.target.value)} placeholder="Run local shell / npm / node / git command" className="flex-1 bg-transparent outline-none text-[11px] font-mono text-slate-200 placeholder:text-slate-600" />
-                    <button className="text-[10px] px-2 py-1 border border-[#444] rounded hover:bg-[#2a2d2e]">Run</button>
-                    <button type="button" onClick={() => setTerminalMode(terminalMode === 'human' ? 'raw' : 'human')} className="text-[9px] text-slate-500 hover:text-slate-300">{terminalMode === 'human' ? 'human' : 'raw'}</button>
+                    <input value={terminalCommand} onChange={event => setTerminalCommand(event.target.value)} placeholder="Run local shell / npm / node / git command" className="flex-1 bg-transparent outline-none text-[11px] font-mono text-neutral-200 placeholder:text-neutral-500" />
+                    <button className="text-[10px] px-2 py-1 border border-[#696a6c] rounded hover:bg-[#464749]">Run</button>
+                    <button type="button" onClick={() => setTerminalMode(terminalMode === 'human' ? 'raw' : 'human')} className="text-[9px] text-neutral-400 hover:text-neutral-200">{terminalMode === 'human' ? 'human' : 'raw'}</button>
                   </form>
                 </>
               )}
@@ -1842,31 +1867,31 @@ export const JacoAuraComputeIDE: React.FC = () => {
                       {runtimeError && <div className="border border-red-900 bg-red-950/20 rounded p-2 text-red-300">{runtimeError}</div>}
                       {snapshot?.seer?.blocker && <div className="border border-amber-900 bg-amber-950/20 rounded p-2 text-amber-300">{snapshot.seer.blocker}</div>}
                     </div>
-                  ) : <div className="text-slate-500">No observed runtime problems.</div>}
+                  ) : <div className="text-neutral-400">No observed runtime problems.</div>}
                 </div>
               )}
 
               {bottomPanel === 'output' && (
                 <div className="flex-1 overflow-auto p-3 font-mono text-[11px] leading-5">
                   {gitDiff && (
-                    <div className="mb-4 border border-[#2f3b46] rounded overflow-hidden">
-                      <div className="px-2 py-1.5 bg-[#111820] border-b border-[#2f3b46] text-cyan-300">
+                    <div className="mb-4 border border-[#595a5c] rounded overflow-hidden">
+                      <div className="px-2 py-1.5 bg-[#27282a] border-b border-[#595a5c] text-neutral-200">
                         Git diff · {gitDiff.path}
                       </div>
                       <div className="p-2">
-                        <div className="text-[9px] uppercase tracking-wider text-slate-600 mb-1">STAGED</div>
-                        <pre className="whitespace-pre-wrap break-words text-[10px] text-slate-300">{gitDiff.staged || 'No staged diff observed.'}</pre>
-                        <div className="text-[9px] uppercase tracking-wider text-slate-600 mt-3 mb-1">WORKTREE</div>
-                        <pre className="whitespace-pre-wrap break-words text-[10px] text-slate-300">{gitDiff.worktree || 'No unstaged diff observed.'}</pre>
+                        <div className="text-[9px] uppercase tracking-wider text-neutral-500 mb-1">STAGED</div>
+                        <pre className="whitespace-pre-wrap break-words text-[10px] text-neutral-200">{gitDiff.staged || 'No staged diff observed.'}</pre>
+                        <div className="text-[9px] uppercase tracking-wider text-neutral-500 mt-3 mb-1">WORKTREE</div>
+                        <pre className="whitespace-pre-wrap break-words text-[10px] text-neutral-200">{gitDiff.worktree || 'No unstaged diff observed.'}</pre>
                       </div>
                     </div>
                   )}
-                  {activity.slice(-100).map(event => <div key={event.id} className="text-slate-400"><span className="text-slate-600">{formatTime(event.at)}</span> {humanizeActivity(event)}</div>)}
+                  {activity.slice(-100).map(event => <div key={event.id} className="text-neutral-300"><span className="text-neutral-500">{formatTime(event.at)}</span> {humanizeActivity(event)}</div>)}
                 </div>
               )}
 
               {bottomPanel === 'evidence' && (
-                <div className="flex-1 overflow-auto p-3 font-mono text-[10px] leading-4 text-slate-400">
+                <div className="flex-1 overflow-auto p-3 font-mono text-[10px] leading-4 text-neutral-300">
                   <pre className="whitespace-pre-wrap">{JSON.stringify({
                     mission: mission ? { id: mission.id, status: mission.status, phase: mission.phase, receipts: mission.receipts || [] } : null,
                     latestVerifiedProgress: snapshot?.seer?.latestVerifiedProgress || null,
@@ -1910,7 +1935,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
     {workspaceView==='agents'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening agent map…</div>}><AuraAgentWorkspace goal={goal} onGoalChange={setGoal} onStartGoal={()=>{void startGoal().catch(()=>{});}} submitting={missionSubmitting} notice={missionNotice} onReview={()=>setWorkspaceView('evidence')} onCancelMission={cancelMission}/></React.Suspense>}
-    {workspaceView==='gameboard'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening mission plans…</div>}><StrategyBoard focusPlanId={focusPlanId}/><details className="m-3 text-xs text-slate-400"><summary>Technical view</summary><CognitiveGameboard/></details></React.Suspense>}
     {workspaceView==='voice'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening voice channel…</div>}><VoiceChannel/></React.Suspense>}
     {workspaceView==='preview'&&<CognitivePreview path={selectedFile} content={fileView ? (drafts[fileView.path] ?? fileView.content) : null} files={files} events={cognitiveEvents} onOpenFile={path => { openFile(path); setWorkspaceView('preview'); }}/>}
     {workspaceView==='evidence'&&<div className="cognitive-evidence-scroll"><MissionReview missions={missions} preferredMissionId={reviewMissionId} onDecisions={()=>setShowApprovals(true)}/><CognitiveEvidence events={cognitiveEvents} selected={selectedEvidence} onSelect={setSelectedEvidence} onOpenFile={openFile}/>
@@ -1930,8 +1954,14 @@ export const JacoAuraComputeIDE: React.FC = () => {
     <p>{pendingDecision.reason}</p>
     {['command', 'targetFilePath', 'repoUrl'].map(key => typeof pendingDecision.details?.[key] === 'string' && pendingDecision.details[key] &&
       <p key={key} className="cognitive-decision-context"><span>{({command:'Command',targetFilePath:'File',repoUrl:'Source'})[key]}: </span><code>{pendingDecision.details[key]}</code></p>)}
+    {pendingDecision.actions.some(requiresOperatorConfirmation) && <label className="cognitive-decision-context flex items-start gap-2">
+      <input type="checkbox" checked={approvalAcknowledged[pendingDecision.id] === true}
+        onChange={event => setApprovalAcknowledged(current => ({ ...current, [pendingDecision.id]: event.target.checked }))}
+        className="mt-1 h-4 w-4 accent-amber-300" />
+      <span>I understand the displayed action and risk and explicitly approve Aura to carry it out within this scope.</span>
+    </label>}
     <div className="cognitive-decision-actions">
-      {pendingDecision.actions.map(action => <button key={action} type="button" disabled={Boolean(approvalBusy)}
+      {pendingDecision.actions.map(action => <button key={action} type="button" disabled={Boolean(approvalBusy) || (requiresOperatorConfirmation(action) && approvalAcknowledged[pendingDecision.id] !== true)}
         onClick={() => void resolveApproval(pendingDecision, action)}>{approvalBusy === `${pendingDecision.id}:${action}` ? 'Saving decision…' : approvalLabel(action)}</button>)}
       <button type="button" onClick={() => setShowApprovals(true)}>Show details{snapshot.approvals.count > 1 ? ' and all decisions' : ''}</button>
     </div>
@@ -1950,12 +1980,14 @@ export const JacoAuraComputeIDE: React.FC = () => {
     <CognitiveWorkspace remoteMode={remoteMode} attention={attention} canvas={workspaceView} onCanvas={chooseWorkspace} conversation={renderChatContent()} detail={detail}
       stage={stage} stagePinned={workspacePinned} onTogglePin={()=>setWorkspacePinned(value=>!value)}
       sidebar={sidebar} sidePanelOpen={sidePanelOpen} sidePanel={renderSidebar()}
-      onSidebar={view => { if(['tools','providers','skills'].includes(view)){setConnectionsTab(view==='tools'?'capabilities':view==='providers'?'models':'skills');setWorkspaceView('connections');setSidePanelOpen(false);}else{setSidebar(view);setSidePanelOpen(current => sidebar === view ? !current : true);} }}
+      onSidebar={view => { if(workspaceView==='gameboard')setWorkspaceView('conversation'); if(['tools','providers','skills'].includes(view)){setConnectionsTab(view==='tools'?'capabilities':view==='providers'?'models':'skills');setWorkspaceView('connections');setSidePanelOpen(false);}else{setSidebar(view);setSidePanelOpen(current => sidebar === view ? !current : true);} }}
       onCloseSidebar={() => setSidePanelOpen(false)} status={status} projectName={projectName}
       branch={snapshot?.git?.branch} changes={snapshot?.git?.changes?.length || 0}
       approvalCount={snapshot?.approvals?.count || 0} onApprovals={() => setShowApprovals(true)}
       onCommands={() => setCommandPaletteOpen(true)} onSignOut={() => void signOut()}
       lastObservedAt={cognitiveLive.lastObservedAt || snapshot?.observedAt || null} error={connectionError}/>
+    {/* The Gameboard fills the whole work area so it can be read; Aura's face, the chat or any tool in the rail closes it. */}
+    {workspaceView==='gameboard'&&<div className="jaco-gameboard-full" role="region" aria-label="Gameboard"><React.Suspense fallback={<div className="cognitive-empty-detail">{tr('Öppnar Gameboard…','Opening the Gameboard…')}</div>}><StrategyBoard focusPlanId={focusPlanId} onClose={()=>setWorkspaceView('conversation')}/><details className="bg-black px-4 pb-4 text-xs text-neutral-400"><summary>{tr('Teknisk vy','Technical view')}</summary><CognitiveGameboard/></details></React.Suspense></div>}
     <AuraCommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenTool={openTool}/>
     {renderApprovals()}
   </>;

@@ -4,7 +4,6 @@ import { CopyMessageButton } from './CopyMessageButton';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, ArrowUpRight, MessageSquare, ChevronRight } from 'lucide-react';
 import { ChatMarkdown } from './ChatMarkdown';
-import { LocalMemoryPanel } from './LocalMemoryPanel';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { JacoWordmark } from './JacoWordmark';
 import { initialAuraRunMode } from '../lib/auraRunModes.mjs';
@@ -12,10 +11,28 @@ import { parseAuraMissionCommand } from '../lib/auraChatCommands.mjs';
 import { CognitiveEventCard } from './CognitiveEventCard';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
 import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
+import { budgetIntent, type BudgetIntent } from '../lib/budgetIntent';
+import { humanChatEvents } from '../lib/humanChat';
+import { BudgetCard } from './CostChip';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
 
+// The conversation is not a telemetry console. Keep the newest instance of an identical
+// human-facing update; the complete durable sequence remains available under Evidence.
+export function dedupeConversationEvents(events: CognitiveEvent[]): CognitiveEvent[] {
+  const latest = new Map<string, CognitiveEvent>();
+  for (const event of events) {
+    const key = [event.missionId || '', event.category, event.title, event.text, event.evidence?.outcome || ''].join('::');
+    if (latest.has(key)) latest.delete(key);
+    latest.set(key, event);
+  }
+  return [...latest.values()];
+}
+
 // Aura's face in the chat: the blue queen. It glows faint blue while she is thinking or working on a mission.
-const AuraAvatar=({thinking=false}:{thinking?:boolean})=><img src="/branding/aura-avatar.png" alt="Aura" width={20} height={20} className="aura-avatar" data-thinking={thinking||undefined} aria-hidden="true"/>;
+const AuraAvatar=({thinking=false,size=40}:{thinking?:boolean;size?:number})=><img src="/branding/aura-avatar.png" alt="Aura" width={size} height={size} style={{width:size,height:size}} className="aura-avatar" data-thinking={thinking||undefined} aria-hidden="true"/>;
+// Clicking Aura's face opens the Gameboard: the way from the chat to her plan.
+const openGameboard=()=>window.dispatchEvent(new CustomEvent('jaco:open-plan',{detail:''}));
+const AuraFace=({thinking=false,size=40,label}:{thinking?:boolean;size?:number;label:string})=><button type="button" className="aura-avatar-button" onClick={openGameboard} title={label} aria-label={label}><AuraAvatar thinking={thinking} size={size}/></button>;
 
 // A long pasted message must not push the answers out of reach; the whole text is one click away.
 const LongMessage: React.FC<{ text: string }> = ({ text }) => {
@@ -37,6 +54,8 @@ interface ChatMessage {
   at?: string;
   // A failed message explains itself and offers the one thing to do about it (server: chatFailureHint).
   action?: { code: string; label: string; retryText?: string };
+  // The operator asked Aura to change the spending limit: the change, filled in, for the operator to save.
+  budget?: BudgetIntent;
 }
 
 export interface AuraSelectedTool {
@@ -143,7 +162,7 @@ async function chatJson(response: Response) {
 
 export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onCancelMission, onSteerMission, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
   const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments } = session;
-  const { tr } = useUiLanguage();
+  const { tr, language } = useUiLanguage();
   const [attachments, setAttachments] = useState<Array<{id:string;files:Array<{path:string;format:string}>}>>(()=>{
     try {const saved=JSON.parse(localStorage.getItem('jaco:aura:attachments:v1')||'[]');return Array.isArray(saved)?saved.filter(item=>typeof item?.id==='string'&&/^[a-f0-9-]{36}$/.test(item.id)&&Array.isArray(item.files)&&item.files.length<=200&&item.files.every((file:any)=>typeof file?.path==='string'&&['text','binary'].includes(file.format))).slice(0,16):[];}catch{return [];}
   });
@@ -321,11 +340,14 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   }, [busy]);
   useEffect(() => () => requestRef.current?.abort(), []);
   const [following,setFollowing]=useState(true);
-  const backgroundEvents=useMemo(()=>liveEvents.filter(event=>!event.missionId&&event.category==='observation'&&event.evidence.outcome==='observed'),[liveEvents]);
+  // Only plain human language in the conversation: codes become sentences, runtime bookkeeping goes to Background activity.
+  const humanEvents=useMemo(()=>humanChatEvents(liveEvents,language),[liveEvents,language]);
+  const backgroundEvents=humanEvents.background;
+  const conversationEvents=useMemo(()=>dedupeConversationEvents(humanEvents.conversation),[humanEvents]);
   const feed=useMemo(()=>[
     ...messages.filter(m=>m.id!=='welcome').map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message})),
-    ...liveEvents.filter(event=>!backgroundEvents.includes(event)).map(event=>({kind:'event' as const,id:event.id,at:event.at,event})),
-  ].sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages,liveEvents,backgroundEvents]);
+    ...conversationEvents.map(event=>({kind:'event' as const,id:event.id,at:event.at,event})),
+  ].sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages,conversationEvents]);
   const currentMission=missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
   const followLatest=()=>{followRef.current=true;setFollowing(true);if(scrollRef.current)scrollRef.current.scrollTop=0;};
   useEffect(()=>{if(followRef.current && scrollRef.current)scrollRef.current.scrollTop=0;},[feed,busy]);
@@ -399,6 +421,21 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     const controlCommand=parseAuraMissionCommand(text);
     if (controlCommand) { await executeChatMissionCommand(text,controlCommand,retry); return; }
     if (busy) return;
+    // "Höj budgeten till 15 dollar": Aura cannot change the limit herself, and pointing the operator to some
+    // administrative portal is wrong (2026-11-07). The answer is the change filled in, saved by the operator's own
+    // click. No model is called, so this works even while the limit blocks every model.
+    const budget = budgetIntent(text);
+    if (budget) {
+      if (retry === undefined) setInput('');
+      await appendMessage({ id: crypto.randomUUID(), role: 'user', content: text });
+      const amount = budget.amount != null ? `${budget.relative ? '+' : ''}${budget.amount} USD` : '';
+      const reply = crypto.randomUUID();
+      await appendMessage({ id: reply, role: 'assistant', content: tr(
+        `Det gör jag${amount ? ` (${amount})` : ''}. Det gäller pengar, så jag frågar en gång först. Säger du ja gäller det direkt och jag kan fortsätta.`,
+        `I will do that${amount ? ` (${amount})` : ''}. It is about money, so I ask once first. If you say yes, it applies right away and I can continue.`) });
+      setMessages(current => [...current, { id: reply + ':budget', role: 'system', content: '', budget }]);
+      return;
+    }
     if (selectedProvider !== 'seer' && (!providers.some(p => p.id === selectedProvider) || !chatModel.trim())) {
       setCatalogError(tr('Välj en registrerad provider och ange modell före anrop.', 'Choose a registered provider and enter a model before calling.'));
       return;
@@ -456,7 +493,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           ragContext,
         }),
         // Longer than SEER's own provider chain; a hung request still ends in a message.
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(360_000)]),
       }).then(chatJson);
       const answer=String(data.reply || data.text || '').trim();
       if(!answer) throw new Error(tr('Modellen returnerade ett tomt svar.', 'The model returned an empty response.'));
@@ -652,22 +689,21 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   return (
     <div className="cognitive-chat h-full min-h-0 flex flex-col">
       <div className="cognitive-chat-heading">
-        <span><AuraAvatar thinking={Boolean(busy)||currentMission?.status==='ACTIVE'}/>JACO <span className="cognitive-chat-subtitle">{tr('Samtal & skapande','Conversation & creation')}</span></span>
-        <LocalMemoryPanel compact />
+        <span><AuraFace thinking={Boolean(busy)||currentMission?.status==='ACTIVE'} size={44} label={tr('Öppna Gameboard','Open the Gameboard')}/>Aura <span className="cognitive-chat-subtitle">{tr('Samtal & skapande','Conversation & creation')}</span></span>
         <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label={tr('Chattinställningar','Chat settings')} title={tr('Modell och budget','Model and budget')}><Settings2 size={15}/><span>{modelLabel}</span></button>
       </div>
 
       {runControls && <div className="cognitive-run-controls">{runControls}</div>}
 
       {showSettings && (
-        <div className="px-4 py-3 border-b border-[#1c2a36] bg-[#0e1720] space-y-2 text-xs max-h-[50%] overflow-auto">
-          <label className="flex items-center gap-2 text-slate-400">{tr('Modell','Model')}
+        <div className="px-4 py-3 border-b border-[#404143] bg-[#262729] space-y-2 text-xs max-h-[50%] overflow-auto">
+          <label className="flex items-center gap-2 text-neutral-300">{tr('Modell','Model')}
             <select aria-label="Aura provider" value={selectedProvider} onChange={event => {
               const next = event.target.value;
               const model = providers.find(p => p.id === next)?.defaultModel || '';
               setSelectedProvider(next); setChatModel(model); saveSelection(next, model);
             }} disabled={busy !== null || !storageReady}
-              className="flex-1 min-w-0 bg-[#111820] border border-[#343b45] rounded px-2 py-1 text-xs text-slate-200">
+              className="flex-1 min-w-0 bg-[#27282a] border border-[#5a5b5d] rounded px-2 py-1 text-xs text-neutral-200">
               <option value="seer">{tr('JACO standard','JACO default')}</option>
               {selectedProvider !== 'seer' && !providers.some(p => p.id === selectedProvider) && <option value={selectedProvider}>{selectedProvider} · {tr('ej registrerad','not registered')}</option>}
               {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.id}{provider.availability==='ACTIVE'?' · responding':provider.availability==='NO_KEY'?' · no key':' · unavailable'}</option>)}
@@ -680,18 +716,18 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             const pick = (model: string) => { setChatModel(model); saveSelection(selectedProvider, model); };
             return typed
               ? <div className="flex gap-2">
-                  <input aria-label={tr('Aura modell','Aura model')} value={chatModel} maxLength={128} disabled={busy !== null || !storageReady} onChange={e => pick(e.target.value)} placeholder={tr('Modellnamn','Model name')} className="flex-1 min-w-0 text-sm px-2 py-1.5 bg-[#111820] border border-[#343b45] rounded" />
-                  {listed.length > 0 && <button type="button" className="text-[11px] text-cyan-400" onClick={() => { setCustomModel(false); if (!listed.includes(chatModel)) pick(listed[0]); }}>{tr('Välj ur lista','Choose from list')}</button>}
+                  <input aria-label={tr('Aura modell','Aura model')} value={chatModel} maxLength={128} disabled={busy !== null || !storageReady} onChange={e => pick(e.target.value)} placeholder={tr('Modellnamn','Model name')} className="flex-1 min-w-0 text-sm px-2 py-1.5 bg-[#27282a] border border-[#5a5b5d] rounded" />
+                  {listed.length > 0 && <button type="button" className="text-[11px] text-neutral-200" onClick={() => { setCustomModel(false); if (!listed.includes(chatModel)) pick(listed[0]); }}>{tr('Välj ur lista','Choose from list')}</button>}
                 </div>
               : <select aria-label={tr('Aura modell','Aura model')} value={listed.includes(chatModel) ? chatModel : ''} disabled={busy !== null || !storageReady}
                   onChange={e => e.target.value === '__other' ? setCustomModel(true) : pick(e.target.value)}
-                  className="w-full text-sm px-2 py-1.5 bg-[#111820] border border-[#343b45] rounded text-slate-200">
+                  className="w-full text-sm px-2 py-1.5 bg-[#27282a] border border-[#5a5b5d] rounded text-neutral-200">
                   {!listed.includes(chatModel) && <option value="">{chatModel || tr('Välj modell','Choose model')}</option>}
                   {listed.map(model => <option key={model} value={model}>{model}</option>)}
                   <option value="__other">{tr('Annan modell…','Other model…')}</option>
                 </select>;
           })()}
-          <div className="flex flex-wrap gap-3 text-[11px] text-cyan-400">
+          <div className="flex flex-wrap gap-3 text-[11px] text-neutral-200">
             <button disabled={busy !== null || !storageReady} onClick={() => setCatalogRevision(v => v + 1)}>{tr('Uppdatera providerlista','Refresh provider list')}</button>
             {onOpenProviders && <button onClick={onOpenProviders}>{tr('Hantera providers','Manage providers')}</button>}
             {modelOverride && <button type="button" disabled={busy !== null || !storageReady} onClick={() => {
@@ -701,13 +737,13 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               try { localStorage.removeItem(modelStorageKey); localStorage.removeItem(selectionKey); } catch {}
             }} title="Use the model configured in JACO">{tr('Standardmodell','Default model')}</button>}
           </div>
-          {selectedProvider !== 'seer' && modelSync === 'checking' && <p role="status" className="text-[11px] text-cyan-300">Checking Aura model for chat, planning and missions…</p>}
+          {selectedProvider !== 'seer' && modelSync === 'checking' && <p role="status" className="text-[11px] text-neutral-200">Checking Aura model for chat, planning and missions…</p>}
           {selectedProvider !== 'seer' && modelSync === 'active' && <p role="status" className="text-[11px] text-emerald-300">Aura model verified for the next mission turn.</p>}
           {selectedProvider !== 'seer' && modelSync === 'blocked' && <p role="alert" className="text-[11px] text-amber-300">Aura mission model not switched: {modelSyncError}. Chat selection does not grant paid inference or silently fall back to Ollama.</p>}
           {selectedProvider !== 'seer' && providers.find(p => p.id === selectedProvider) && !providers.find(p => p.id === selectedProvider)!.credentialReady && <p className="text-[11px] text-amber-300">{tr('Provider saknar konfigurerad credential.','Provider credentials are not configured.')}</p>}
         </div>
       )}
-      {catalogError && <p role="alert" className="px-4 py-2 text-xs text-amber-300 border-b border-[#1c2a36]">{catalogError}</p>}
+      {catalogError && <p role="alert" className="px-4 py-2 text-xs text-amber-300 border-b border-[#404143]">{catalogError}</p>}
       {storageError && <div role="alert" className="px-4 py-2 text-xs text-amber-300">{storageError}{!storageReady&&<button type="button" className="ml-3 underline" onClick={retryStorage}>{tr('Försök läsa igen','Retry reading')}</button>}</div>}
 
       <div ref={scrollRef} onScroll={()=>{const el=scrollRef.current;if(el){const near=el.scrollTop<80;followRef.current=near;setFollowing(near);}}} role="log" aria-live="polite" aria-relevant="additions" aria-label={tr('JACO-konversation','JACO conversation')} className="cognitive-chat-scroll">
@@ -725,12 +761,13 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               <button type="button" onClick={()=>prompt(tr('Hjälp mig förbättra en funktion i projektet. Börja med att kartlägga den relevanta koden.','Help improve one feature in this project. Start by mapping the relevant code.'),'goal')}><FileCode2 size={17}/><span>{tr('Utveckla vidare','Develop further')}<small>{tr('Bygg på det som redan finns','Build on what already exists')}</small></span><ArrowUpRight size={14}/></button>
             </div>
           </div>}
-          {busy&&<div className="cognitive-response-wait"><span role="status"><AuraAvatar thinking/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
+          {busy&&<div className="cognitive-response-wait"><span role="status"><AuraAvatar thinking size={32}/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}{busy==='chat'&&waitingSeconds>=25&&<small>{' '}{tr('Det tar en stund. Svarar inte modellen provar Aura nästa automatiskt.','This is taking a while. If the model does not answer, Aura tries the next one automatically.')}</small>}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
           {[...visibleFeed].reverse().map(item=>{
             if(item.kind==='event')return <CognitiveEventCard key={item.id} event={item.event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>;
             const message=item.message;
             return message.role==='user'?<div key={item.id} className="cognitive-user-message"><LongMessage text={message.content}/>{message.attachments?.map(item=><small key={item.id} className="block mt-2">{tr('Bifogat','Attached')}: {item.name} · {item.fileCount} {tr('filer','files')}</small>)}</div>
-              :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><AuraAvatar/>Aura</div><ChatMarkdown text={message.content}/><CopyMessageButton text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>{tr('Svar & källor','Answer & sources')}</summary><p>{message.meta}</p></details>}</article>
+              :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><AuraFace label={tr('Öppna Gameboard','Open the Gameboard')}/>Aura</div><ChatMarkdown text={message.content}/><CopyMessageButton text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>{tr('Svar & källor','Answer & sources')}</summary><p>{message.meta}</p></details>}</article>
+              :message.budget?<div key={item.id} className="cognitive-system-message"><BudgetCard suggest={message.budget}/></div>
               :<div key={item.id} className="cognitive-system-message">{message.content}{message.action&&<button type="button" disabled={busy!==null} onClick={()=>void runAction(message.action!)}>{message.action.label}</button>}</div>;
           })}
           {olderCount>0&&<button type="button" className="cognitive-feed-older" onClick={()=>setFeedLimit(limit=>limit+CHAT_FEED_PAGE)}>{tr(`Visa äldre (${olderCount})`,`Show older (${olderCount})`)}</button>}
@@ -743,66 +780,66 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           {currentMission&&<div className="cognitive-live-questions"><button type="button" onClick={()=>prompt(tr('Vad har du upptäckt hittills i det aktuella uppdraget?','What have you discovered so far in the current mission?'))} disabled={Boolean(busy)}>{tr('Vad har du upptäckt?','What have you found?')}</button><button type="button" onClick={()=>prompt(tr('Visa vad som faktiskt fungerar och vilka belägg som stöder det.','Show what actually works and the evidence supporting it.'))} disabled={Boolean(busy)}>{tr('Vad fungerar?','What works?')}</button></div>}
           {currentMission && onCancelMission && !currentMission.cancelRequested && <button type="button" disabled={Boolean(missionStopBusy)} onClick={()=>void stopCurrentMission(currentMission.id)} className="rounded border border-rose-900 px-3 py-1.5 text-xs text-rose-200 disabled:opacity-50" aria-label={tr('Stoppa pågående uppdrag','Stop current mission')}>{missionStopBusy ? tr('Begär stopp…','Requesting stop…') : tr('Stoppa uppdrag','Stop mission')}</button>}
           </div>
-          {missionStopNotice&&<p role="status" className="mx-3 mb-2 text-xs text-slate-300">{missionStopNotice}</p>}
-          {missionSteerNotice&&<p role="status" className="mx-3 mb-2 text-xs text-slate-300">{missionSteerNotice}</p>}
+          {missionStopNotice&&<p role="status" className="mx-3 mb-2 text-xs text-neutral-200">{missionStopNotice}</p>}
+          {missionSteerNotice&&<p role="status" className="mx-3 mb-2 text-xs text-neutral-200">{missionSteerNotice}</p>}
 
           {selectedTool && (
-            <div className="mb-2 px-3 py-1.5 rounded-lg bg-[#111820] border border-[#263544] text-xs flex items-center gap-2">
-              <span className="text-slate-500">{selectedTool.kind === 'agent' ? 'Agent' : selectedTool.kind === 'skill' ? 'Skill' : tr('MCP-verktyg','MCP tool')}</span>
-              <span className="text-cyan-300 truncate">{selectedTool.label}</span>
-              <button type="button" onClick={onClearSelectedTool} aria-label={tr('Ta bort valt verktyg','Remove selected tool')} className="ml-auto text-slate-500 hover:text-slate-200">×</button>
+            <div className="mb-2 px-3 py-1.5 rounded-lg bg-[#27282a] border border-[#505153] text-xs flex items-center gap-2">
+              <span className="text-neutral-400">{selectedTool.kind === 'agent' ? 'Agent' : selectedTool.kind === 'skill' ? 'Skill' : tr('MCP-verktyg','MCP tool')}</span>
+              <span className="text-neutral-200 truncate">{selectedTool.label}</span>
+              <button type="button" onClick={onClearSelectedTool} aria-label={tr('Ta bort valt verktyg','Remove selected tool')} className="ml-auto text-neutral-400 hover:text-neutral-200">×</button>
             </div>
           )}
           {showModePicker && (
             <section role="dialog" aria-label={tr('Välj agentläge','Choose agent mode')}
-              className="mb-2 rounded-lg border border-cyan-900/60 bg-[#101923] p-3 space-y-2" data-testid="jaco-run-mode-panel">
-              <div className="text-xs font-semibold text-cyan-200">{tr('Välj hur JACO arbetar','Choose how JACO works')}</div>
+              className="mb-2 rounded-lg border border-neutral-800/60 bg-[#292a2c] p-3 space-y-2" data-testid="jaco-run-mode-panel">
+              <div className="text-xs font-semibold text-neutral-200">{tr('Välj hur JACO arbetar','Choose how JACO works')}</div>
               <div role="group" aria-label={tr('Körläge','Execution mode')} className="grid gap-2">
                 {([
-                  ['manual', 'Manual', tr('Samtal och läsverktyg. Inga nya uppdrag eller ändringar.','Conversation and read tools only. No new missions or changes.')],
-                  ['planning', 'Planning', tr('Analysera, jämför och skapa en plan. Endast läsverktyg, inga policyändringar.','Research, compare and propose a plan. Read tools only; no policy changes.')],
-                  ['autonomous', 'Full Autonomous', tr('Starta ett varaktigt Aura-uppdrag. Befintliga mandat, budget och godkännanden gäller.','Start a durable Aura mission. Existing permissions, budgets and approvals still apply.')],
+                  ['manual', tr('Manuell','Manual'), tr('Samtal och läsverktyg. Inga nya uppdrag eller ändringar.','Conversation and read tools only. No new missions or changes.')],
+                  ['planning', tr('Planering','Planning'), tr('Analysera, jämför och skapa en plan. Endast läsverktyg, inga policyändringar.','Research, compare and propose a plan. Read tools only; no policy changes.')],
+                  ['autonomous', tr('Helt självständig','Full Autonomous'), tr('Starta ett varaktigt Aura-uppdrag. Befintliga mandat, budget och godkännanden gäller.','Start a durable Aura mission. Existing permissions, budgets and approvals still apply.')],
                 ] as const).map(([value,label,help])=>(
                   <button type="button" key={value} aria-pressed={runMode===value}
                     onClick={()=>selectRunMode(value)} disabled={Boolean(busy)}
-                    className={`flex flex-col items-start rounded border px-3 py-2 text-left text-xs ${runMode===value?'border-cyan-500 bg-cyan-950/30 text-cyan-100':'border-slate-700 text-slate-200 hover:border-slate-500'}`}>
+                    className={`flex flex-col items-start rounded border px-3 py-2 text-left text-xs ${runMode===value?'border-neutral-500 bg-neutral-900/30 text-neutral-100':'border-neutral-600 text-neutral-200 hover:border-neutral-500'}`}>
                     <span className="font-semibold">{label}</span>
-                    <span className="mt-1 text-slate-400">{help}</span>
+                    <span className="mt-1 text-neutral-300">{help}</span>
                   </button>
                 ))}
               </div>
-              <p className="text-[11px] text-slate-500">{tr('Detta är ett arbetsläge, inte en behörighetsökning.','This selects a workflow, not additional privileges.')}</p>
-              <button type="button" onClick={()=>setShowModePicker(false)} className="text-xs text-slate-400 hover:text-white">{tr('Stäng','Close')}</button>
+              <p className="text-[11px] text-neutral-400">{tr('Detta är ett arbetsläge, inte en behörighetsökning.','This selects a workflow, not additional privileges.')}</p>
+              <button type="button" onClick={()=>setShowModePicker(false)} className="text-xs text-neutral-300 hover:text-white">{tr('Stäng','Close')}</button>
             </section>
           )}
           {showBuildAgent && (
-            <section data-testid="jaco-build-agent-panel" aria-label="Build Agent"
-              className="mb-2 rounded-lg border border-slate-700 bg-[#101923] p-3 space-y-2 text-xs">
+            <section data-testid="jaco-build-agent-panel" aria-label={tr('Bygg agent','Build Agent')}
+              className="mb-2 rounded-lg border border-neutral-600 bg-[#292a2c] p-3 space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-cyan-200">Build Agent</span>
-                <button type="button" onClick={()=>setShowBuildAgent(false)} aria-label={tr('Stäng agentbyggaren','Close agent builder')} className="text-slate-400">×</button>
+                <span className="font-semibold text-neutral-200">{tr('Bygg agent','Build Agent')}</span>
+                <button type="button" onClick={()=>setShowBuildAgent(false)} aria-label={tr('Stäng agentbyggaren','Close agent builder')} className="text-neutral-300">×</button>
               </div>
-              <p className="text-slate-400">{tr(
+              <p className="text-neutral-300">{tr(
                 'Skapar en agent under Aura utan verktygsbehörigheter eller budget. Ingen agentprocess startas.',
                 'Registers an agent under Aura with zero tool permissions and budget. No worker starts.'
               )}</p>
               <div className="grid grid-cols-2 gap-2">
-                <input aria-label="Agent name" placeholder="Agent name" maxLength={60} value={agentDraft.name}
-                  onChange={e=>setAgentDraft(x=>({...x,name:e.target.value}))} className="rounded bg-[#0c141d] border border-slate-700 p-2"/>
-                <input aria-label="Agent role" placeholder="Role" maxLength={60} value={agentDraft.title}
-                  onChange={e=>setAgentDraft(x=>({...x,title:e.target.value}))} className="rounded bg-[#0c141d] border border-slate-700 p-2"/>
+                <input aria-label={tr('Agentnamn','Agent name')} placeholder={tr('Agentnamn','Agent name')} maxLength={60} value={agentDraft.name}
+                  onChange={e=>setAgentDraft(x=>({...x,name:e.target.value}))} className="rounded bg-[#222325] border border-neutral-600 p-2"/>
+                <input aria-label={tr('Agentens roll','Agent role')} placeholder={tr('Roll','Role')} maxLength={60} value={agentDraft.title}
+                  onChange={e=>setAgentDraft(x=>({...x,title:e.target.value}))} className="rounded bg-[#222325] border border-neutral-600 p-2"/>
               </div>
-              <input aria-label="Agent task" placeholder="Task / area of responsibility" maxLength={2000} value={agentDraft.task}
-                onChange={e=>setAgentDraft(x=>({...x,task:e.target.value}))} className="w-full rounded bg-[#0c141d] border border-slate-700 p-2"/>
-              <input aria-label="Agent goal" placeholder="Success criteria" maxLength={2000} value={agentDraft.goal}
-                onChange={e=>setAgentDraft(x=>({...x,goal:e.target.value}))} className="w-full rounded bg-[#0c141d] border border-slate-700 p-2"/>
-              <input aria-label="Organization operator credential" type="password" autoComplete="off"
-                placeholder="JACO_ORG_OPERATOR_TOKEN (session only)" value={agentKey}
-                onChange={e=>setAgentKey(e.target.value)} className="w-full rounded bg-[#0c141d] border border-slate-700 p-2"/>
-              {agentMessage && <p role="status" className="text-slate-300">{agentMessage}</p>}
+              <input aria-label={tr('Agentens uppgift','Agent task')} placeholder={tr('Uppgift / ansvarsområde','Task / area of responsibility')} maxLength={2000} value={agentDraft.task}
+                onChange={e=>setAgentDraft(x=>({...x,task:e.target.value}))} className="w-full rounded bg-[#222325] border border-neutral-600 p-2"/>
+              <input aria-label={tr('Agentens mål','Agent goal')} placeholder={tr('Kriterier för lyckat resultat','Success criteria')} maxLength={2000} value={agentDraft.goal}
+                onChange={e=>setAgentDraft(x=>({...x,goal:e.target.value}))} className="w-full rounded bg-[#222325] border border-neutral-600 p-2"/>
+              <input aria-label={tr('Organisationens operatörsnyckel','Organization operator credential')} type="password" autoComplete="off"
+                placeholder={tr('JACO_ORG_OPERATOR_TOKEN (bara denna session)','JACO_ORG_OPERATOR_TOKEN (session only)')} value={agentKey}
+                onChange={e=>setAgentKey(e.target.value)} className="w-full rounded bg-[#222325] border border-neutral-600 p-2"/>
+              {agentMessage && <p role="status" className="text-neutral-200">{agentMessage}</p>}
               <button data-testid="jaco-build-agent-submit" type="button" onClick={()=>void buildAgent()}
                 disabled={agentCreating||!agentDraft.name.trim()||!agentKey.trim()}
-                className="border border-cyan-800 rounded px-3 py-1.5 text-cyan-200 disabled:opacity-40">
+                className="border border-neutral-700 rounded px-3 py-1.5 text-neutral-200 disabled:opacity-40">
                 {agentCreating?tr('Skapar…','Creating…'):tr('Registrera agent','Register agent')}
               </button>
             </section>
@@ -820,8 +857,8 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               }}
               rows={2}
               aria-label={tr('Meddelande till JACO','Message to JACO')}
-              placeholder={tr('Skriv till JACO. Du kan fråga medan arbetet pågår…','Message JACO. You can ask questions while work continues…')}
-              className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-[14px] leading-6 text-slate-100 outline-none placeholder:text-slate-600"
+              placeholder={tr('Skriv till Aura. Du kan fråga medan arbetet pågår…','Message Aura. You can ask questions while work continues…')}
+              className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-[14px] leading-6 text-neutral-100 outline-none placeholder:text-neutral-500"
             />
             {selectedTool && ['mcp','skill'].includes(selectedTool.kind) && (
               <div className="px-3 pb-2 flex items-center gap-2">
@@ -829,7 +866,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                   value={toolArguments}
                   onChange={event => setToolArguments(event.target.value)}
                   placeholder={selectedTool.kind === 'skill' ? tr('Skill-argument som JSON, t.ex. {"input":"value"}','Skill arguments as JSON, e.g. {"input":"value"}') : tr('MCP-argument som JSON, t.ex. {"surface":"DESKTOP"}','MCP arguments as JSON, e.g. {"surface":"DESKTOP"}')}
-                  className="flex-1 bg-[#111820] border border-[#30363d] rounded px-2 py-1.5 text-xs font-mono text-slate-300 outline-none focus:border-cyan-800"
+                  className="flex-1 bg-[#27282a] border border-[#535456] rounded px-2 py-1.5 text-xs font-mono text-neutral-200 outline-none focus:border-neutral-700"
                 />
                 <button type="button" onClick={() => void runSelectedTool()} disabled={Boolean(busy)}
                   className="px-3 py-1.5 text-xs border border-violet-800 text-violet-300 rounded hover:bg-violet-950/30 disabled:opacity-40">
@@ -844,7 +881,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                   className={runMode==='autonomous'?'jaco-autonomous-active':''}
                   onClick={()=>{setShowBuildAgent(false);setShowModePicker(value=>!value);}} disabled={Boolean(busy)}>
                   <Target size={12}/>
-                  {runMode==='manual' ? 'Manual' : runMode==='planning' ? 'Planning' : 'Full Autonomous'}
+                  {runMode==='manual' ? tr('Manuell','Manual') : runMode==='planning' ? tr('Planering','Planning') : tr('Helt självständig','Full Autonomous')}
                   <ChevronRight size={12}/>
                 </button>
               </div>
@@ -852,20 +889,20 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
                 <button data-testid="jaco-steer-mission" type="button" onClick={()=>void steerCurrentMission(currentMission.id)}
                   disabled={!input.trim() || Boolean(missionSteerBusy) || !storageReady || uploading || attachments.length > 0}
                   title={tr('Ändra nästa arbetssteg inom uppdragets befintliga behörigheter och kontrakt','Change the next work step within existing mission permissions and contract')}
-                  className="text-[11px] text-cyan-300 hover:text-cyan-100 disabled:opacity-40">
+                  className="text-[11px] text-neutral-200 hover:text-neutral-100 disabled:opacity-40">
                   {missionSteerBusy ? tr('Sparar ändring…','Saving direction…') : tr('Ändra uppdrag','Steer mission')}
                 </button>
               )}
               <button data-testid="jaco-build-agent-toggle" type="button"
-                className="text-[11px] text-slate-400 hover:text-cyan-300"
+                className="text-[11px] text-neutral-300 hover:text-neutral-200"
                 aria-expanded={showBuildAgent} onClick={()=>{setShowModePicker(false);setShowBuildAgent(v=>!v);}}>
-                <Bot size={12} className="inline mr-1"/>Build Agent
+                <Bot size={12} className="inline mr-1"/>{tr('Bygg agent','Build Agent')}
               </button>
               <span className="cognitive-enter-hint">{tr('Shift + Enter för ny rad','Shift + Enter for new line')}</span>
               {runMode==='autonomous' && <button data-testid="jaco-start-mission" type="button" onClick={()=>void goal()}
                 disabled={!input.trim()||Boolean(busy)||uploading||!storageReady}
                 title={tr('Starta ett nytt uppdrag med befintliga behörigheter','Start a new mission within existing permissions')}
-                className="rounded border border-cyan-700 px-2 py-1.5 text-xs text-cyan-200 disabled:opacity-40">
+                className="rounded border border-neutral-600 px-2 py-1.5 text-xs text-neutral-200 disabled:opacity-40">
                 {tr('Starta uppdrag','Start mission')}
               </button>}
               <button data-testid="jaco-chat-send" type="submit" aria-label={tr('Skicka meddelande','Send message')} title={tr('Skicka','Send')} disabled={!input.trim()||(Boolean(busy)&&!parseAuraMissionCommand(input))||chatControlBusy||uploading||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
@@ -873,10 +910,10 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           </div>
           <AttachmentPicker items={attachments} onChange={setAttachments} onBusy={setUploading} disabled={Boolean(busy)}/>
           {cognitiveSuggestions && (cognitiveSuggestions.knowledge>0||cognitiveSuggestions.skills>0) &&
-            <p data-testid="jaco-cognitive-suggestions" className="text-[10px] text-slate-500 px-1">
+            <p data-testid="jaco-cognitive-suggestions" className="text-[10px] text-neutral-400 px-1">
               {tr('Verifierad kunskap','Verified knowledge')}: {cognitiveSuggestions.knowledge} ·
               {tr(' Föreslagna skills',' Skill candidates')}: {cognitiveSuggestions.skills}
-              <span title={tr('Ett skillförslag ger inte verktygsbehörighet. Varje steg kontrolleras av runtimen.','Skill discovery grants no tool permissions. Each step must pass runtime checks.')}> · <span className="text-cyan-700">◇</span></span>
+              <span title={tr('Ett skillförslag ger inte verktygsbehörighet. Varje steg kontrolleras av runtimen.','Skill discovery grants no tool permissions. Each step must pass runtime checks.')}> · <span className="text-neutral-600">◇</span></span>
             </p>}
           <p className="cognitive-composer-help">{runMode==='autonomous' ? tr('Chatten fortsätter som vanligt. Starta uppdrag separat; stoppa eller ändra pågående uppdrag med kontrollerna ovan.','Conversation remains available. Start a mission separately; use the controls above to stop or steer running work.')
             : runMode==='planning' ? tr('Planning läser och föreslår. Inga verktygsändringar eller uppdrag startas.','Planning observes and proposes; no tool mutations or missions start.')

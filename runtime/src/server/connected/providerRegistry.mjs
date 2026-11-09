@@ -12,6 +12,15 @@ const sha = value => crypto.createHash('sha256').update(typeof value === 'string
 const trimSlash = value => String(value || '').replace(/\/+$/, '');
 const asV1 = value => /\/v1$/i.test(trimSlash(value)) ? trimSlash(value) : `${trimSlash(value)}/v1`;
 
+// A model on this computer needs far longer than a cloud model, most of all on a computer with no graphics
+// card (2026-11-08: Gemma 3 4B needed about 20 s for one word on the operator's processor-only machine).
+function providerCallTimeoutMs(p) {
+  let local = false;
+  try { local = /^(localhost|127\.|\[?::1)/.test(new URL(p.baseUrl).hostname); } catch { /* an invalid address is not local */ }
+  const ms = Number(process.env.JACO_LOCAL_INFERENCE_TIMEOUT_MS);
+  return local ? (Number.isFinite(ms) && ms >= 5000 ? ms : 150_000) : 60_000;
+}
+
 export class ProviderRegistry {
   constructor(workspaceRoot, env = process.env) {
     this.workspaceRoot = workspaceRoot;
@@ -201,7 +210,7 @@ export class ProviderRegistry {
    *   responseFormat?: any
    * }} [input]
    */
-  async chat({ providerId, model, messages, temperature = 0.2, responseFormat = null, maxTokens = null } = {}) {
+  async chat({ providerId, model, messages, temperature = 0.2, responseFormat = null, maxTokens = null, reasoningEffort = null } = {}) {
     const p = this.providers.get(String(providerId)); if (!p) throw new Error('PROVIDER_NOT_FOUND');
     const selectedModel = String(model || p.defaultModel || '').trim();
     if (!selectedModel) throw new Error('PROVIDER_MODEL_REQUIRED');
@@ -210,14 +219,14 @@ export class ProviderRegistry {
     // families. Omitting temperature lets the provider use its valid default while keeping the generic
     // OpenAI-compatible path for every other provider.
     const includeTemperature = p.id !== 'anthropic' && temperature != null;
-    const body = { model: selectedModel, messages, ...(includeTemperature ? { temperature } : {}), ...(responseFormat ? { response_format: responseFormat } : {}), ...(maxTokens == null ? {} : { max_tokens: maxTokens }) };
+    const body = { model: selectedModel, messages, ...(includeTemperature ? { temperature } : {}), ...(responseFormat ? { response_format: responseFormat } : {}), ...(maxTokens == null ? {} : { max_tokens: maxTokens }), ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}) };
     const started = Date.now();
-    const res = await fetch(`${trimSlash(p.baseUrl)}/chat/completions`, { method: 'POST', headers: this.headers(p), body: JSON.stringify(body), signal: AbortSignal.timeout(60_000) });
+    const res = await fetch(`${trimSlash(p.baseUrl)}/chat/completions`, { method: 'POST', headers: this.headers(p), body: JSON.stringify(body), signal: AbortSignal.timeout(providerCallTimeoutMs(p)) });
     const text = await res.text();
     if (!res.ok) throw new Error(`PROVIDER_HTTP_${res.status}: ${text.slice(0, 400)}`);
     const parsed = JSON.parse(text);
     const content = parsed?.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) throw new Error('PROVIDER_EMPTY_COMPLETION');
-    return { providerId: p.id, model: parsed?.model || selectedModel, content, latencyMs: Date.now() - started, requestHash: sha(body), responseHash: sha(text), usage: parsed?.usage || null };
+    return { providerId: p.id, model: parsed?.model || selectedModel, content, finishReason: parsed?.choices?.[0]?.finish_reason == null ? null : String(parsed.choices[0].finish_reason), latencyMs: Date.now() - started, requestHash: sha(body), responseHash: sha(text), usage: parsed?.usage || null };
   }
 }

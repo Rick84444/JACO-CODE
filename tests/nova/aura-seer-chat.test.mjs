@@ -97,7 +97,10 @@ test('Aura setup guidance requires consent, keeps secrets out of generic tools a
   assert.match(system,/\/connect\.html/);
   assert.match(system,/Never read \.env with repo_read, shell/);
   assert.match(system,/outside the model context, chat history/);
-  assert.match(system,/Sign-in, passwords, MFA and CAPTCHA are done by the operator/);
+  // Operator 2026-11-08: Aura signs in with logins the operator saved; she never sees or asks for a password.
+  assert.match(system,/saved under Connections > Sign-ins you can sign in yourself; JACO fills the form and you never see the password/);
+  assert.match(system,/Never ask for a password or a key in the chat/);
+  assert.match(system,/CAPTCHA and one-time codes are for the operator/);
   assert.match(system,/A question or an offer is not a completed mission/);
   assert.match(system,/start_goal only when the operator has ordered the work/);
   assert.match(system,/Manual\/Planning are always read-only/);
@@ -297,4 +300,13 @@ test('Aura offers ambitious steps behind consent and writes in its own humble vo
   assert.match(system, /weekly routine/);
   assert.match(system, /Each step that creates an account, publishes, spends or connects a payment is a separate approval/);
   assert.match(system, /without typical AI phrases/);
+});
+
+test('Aura acts on clear requests and turns risky or misleading work into one scoped confirmation', () => {
+  const { system } = buildAuraSeerPrompts({ message: 'Gör detta åt mig.' });
+  assert.match(system, /dangerous, harmful, misleading, ambiguous/);
+  assert.match(system, /recommend a safer route/);
+  assert.match(system, /When the operator confirms, carry it out without asking again/);
+  assert.match(system, /intelligent amateur understands on the first reading/);
+  assert.match(system, /Never dump raw internal error codes into the main answer/);
 });

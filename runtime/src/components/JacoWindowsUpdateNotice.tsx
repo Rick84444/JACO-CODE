@@ -29,13 +29,13 @@ export function JacoWindowsUpdateNotice() {
   }, []);
   if (!release || release.status !== 'available' || !release.installer) return null;
   return (
-    <section role="status" aria-label="JACO Windows update available" className="shrink-0 flex flex-wrap items-center gap-3 border-b border-cyan-900 bg-[#10212c] px-4 py-2 text-xs text-slate-100">
+    <section role="status" aria-label="JACO Windows update available" className="shrink-0 flex flex-wrap items-center gap-3 border-b border-neutral-800 bg-[#323335] px-4 py-2 text-xs text-neutral-100">
       <strong>JACO update available: v{release.latestVersion}</strong>
-      <span className="text-slate-400">Installed v{release.currentVersion}. Your data is preserved between releases.</span>
-      <a href={release.installer.url} target="_blank" rel="noopener noreferrer" className="rounded border border-cyan-500 px-3 py-1 text-cyan-200 hover:bg-cyan-950">
+      <span className="text-neutral-300">Installed v{release.currentVersion}. Your data is preserved between releases.</span>
+      <a href={release.installer.url} target="_blank" rel="noopener noreferrer" className="rounded border border-neutral-500 px-3 py-1 text-neutral-200 hover:bg-neutral-900">
         Download Windows installer
       </a>
-      <span className="text-slate-500">Run Setup and approve the Windows administrator prompt. JACO will not install silently.</span>
+      <span className="text-neutral-400">Run Setup and approve the Windows administrator prompt. JACO will not install silently.</span>
     </section>
   );
 }

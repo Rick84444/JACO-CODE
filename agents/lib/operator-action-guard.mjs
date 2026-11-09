@@ -25,6 +25,8 @@ const SHELL_RULES = [
   [/\bgit\s+branch\s+-D\b/, 'force-delete of a git branch'],
   [/\bgh\s+(?:pr\s+merge|release\s+create|repo\s+delete)\b/, 'GitHub merge, release or repository delete'],
   [/\bgh\s+auth\b|\bnpm\s+login\b|\bwrangler\s+login\b/, 'sign-in or credential change'],
+  // The operator's own settings in JACO: saved logins and the spending limit are changed in the interface, never by the agent.
+  [/\/api\/aura\/(?:logins|budget)\b|site-logins\.json|secrets\.json|secret\.key/i, 'change to an operator-only setting (logins, budget or secrets)'],
   [/\b(?:npm|pnpm|yarn)\s+publish\b|\bdocker\s+push\b|\bwrangler\s+(?:deploy|publish)\b|\bvercel\b[^;&|]*--prod\b|\bfirebase\s+deploy\b|\bkubectl\s+(?:apply|delete)\b|\bterraform\s+(?:apply|destroy)\b/, 'publish or deploy'],
   [/\bcurl\b[^;&|]*(?:-X\s*|--request\s+)DELETE\b|\bInvoke-(?:RestMethod|WebRequest)\b[^;&|]*-Method\s+Delete\b/i, 'remote delete request'],
   [/(?:^|[\s;&|(])(?:mkfs\S*|format\s+[a-z]:|dd\s+if=|diskpart|shutdown|reg\s+delete|schtasks\s+\/delete|Stop-Computer|Restart-Computer)/i, 'system-level change'],

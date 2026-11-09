@@ -40,6 +40,7 @@ import { validProviderId } from './src/server/connected/providerRegistry.mjs';
 import { createIdeRemoteGate, upgradeAllowed, ideHost } from './src/server/connected/ideAccess.mjs';
 import { mountVscodeEmbedHeaders } from './src/server/security/vscodeEmbed.mjs';
 import { normalizeAuraChatMode, normalizeAuraMissionMode } from './src/lib/auraRunModes.mjs';
+import { validateOperatorConfirmation } from './src/lib/operatorApproval.mjs';
 import { cognitiveActivationPreview } from './src/lib/auraCognitiveActivation.mjs';
 import { liveMissionView } from './src/server/connected/liveMission.mjs';
 import { discoverProvider, identifyKey } from './src/server/connected/providerDiscovery.mjs';
@@ -68,7 +69,7 @@ import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
-import { auraAlwaysAnswers, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
+import { auraAlwaysAnswers, answerInOrder, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
@@ -92,6 +93,7 @@ import { TASK_FIELDS } from "../agents/lib/task-fields.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
 import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
 import { operatorLanguageFile, readOperatorLanguage, writeOperatorLanguage } from "../agents/lib/operator-language.mjs";
+import { listSiteLogins, saveSiteLogin, removeSiteLogin } from "../agents/lib/site-logins.mjs";
 import { createRoutineStore } from "./src/server/connected/auraRoutines.mjs";
 import { createPlanComments, planView } from "./src/server/connected/auraPlan.mjs";
 import { createAuraCoreController } from './src/server/connected/auraCoreController.mjs';
@@ -1146,7 +1148,7 @@ const notifyPhone = async (action) => {
   app.use(createA2ARouter({
     workspaceRoot: WORKSPACE_ROOT,
     host: HOST,
-    version: '0.22.0',
+    version: '0.23.1',
     requireMutationAuth: requireOperator,
     onEvent: event => seerLiveWorkstream.record(event),
   }));
@@ -1203,7 +1205,7 @@ const notifyPhone = async (action) => {
       success: true,
       product: 'JACO Autonomus IDE',
       version: JSON.parse(fs.readFileSync(path.join(process.env.JACO_RELEASE_ROOT || process.cwd(), 'package.json'), 'utf8')).version,
-      releaseId: 'jaco-code-0.22.0',
+      releaseId: 'jaco-code-0.23.1',
       canonicalGui: 'JACO Autonomous IDE',
       primaryPort: PORT,
       // Only surfaces this runtime can actually drive. The list used to be fixed, so a PC runtime with
@@ -2352,7 +2354,9 @@ const notifyPhone = async (action) => {
       if (!Array.isArray(graphs)) throw new Error('SEER_GRAPH_SCHEMA_INVALID');
       let skills: any[] = [];
       try { skills = listSkills(skillRoots()); } catch { /* the plan still shows */ }
-      const language = readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) || 'en';
+      // The Gameboard asks in the language the GUI shows, so its words never mix with another language.
+      const asked = String((_req as any).query?.language || '');
+      const language = ['sv', 'en'].includes(asked) ? asked : readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) || 'en';
       // What this installation can do right now, so each need shows as had, missing or waiting for approval.
       const capabilityTasks = ['web-fetch', 'browser-click', 'browser-survey-site', 'repo-write', 'repo-edit'];
       const available = {
@@ -2367,8 +2371,33 @@ const notifyPhone = async (action) => {
   // Aura's own notes on a step (what it found, why it stopped, which helpers it created). Token-protected: only the
   // local executor writes them, and they are marked as Aura's so they are never mistaken for the operator's direction.
   app.post('/api/aura/plan/notes', requireAuth, (req, res) => {
-    try { res.status(201).json({ success: true, note: planComments.add({ graphId: String(req.body?.graphId || ''), nodeKey: req.body?.nodeKey ?? null, text: req.body?.text, author: 'aura' }) }); }
+    try {
+      const note = planComments.add({ graphId: String(req.body?.graphId || ''), nodeKey: req.body?.nodeKey ?? null, text: req.body?.text, author: 'aura' });
+      // What Aura saves shows in the chat too, with the memory mark, and links to its place on the Gameboard.
+      connectedRuntime.bus.event('AURA_MEMORY_SAVED', { missionId: typeof req.body?.missionId === 'string' ? req.body.missionId : null, payload: { graphId: note.graphId, nodeKey: note.nodeKey, text: note.text } });
+      res.status(201).json({ success: true, note });
+    }
     catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
+  });
+  // Logins the operator approves for Aura. Saved and removed only from JACO's own interface; the list never carries a
+  // password, and no route returns one.
+  // Saving or removing a login is the operator's own act in the interface: a browser request from JACO's page, never
+  // another local program (the agent's shell included; operator-action-guard stops such commands as well).
+  const requireInterfaceWrite = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if ((req as any).ideSession) return next();
+    const origin = String(req.get('origin') || '');
+    const site = String(req.get('sec-fetch-site') || '');
+    try { if (origin && new URL(origin).host === req.get('host') && (!site || site === 'same-origin')) return requireLocalUi(req, res, next); } catch { /* invalid origin */ }
+    return res.status(403).json({ success: false, error: 'LOGIN_CHANGE_REQUIRES_INTERFACE' });
+  };
+  app.get('/api/aura/logins', requireLocalUi, (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ success: true, logins: listSiteLogins() }); });
+  app.post('/api/aura/logins', requireInterfaceWrite, (req, res) => {
+    try { res.status(201).json({ success: true, login: saveSiteLogin({ site: req.body?.site, username: req.body?.username, password: req.body?.password }) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 80) }); }
+  });
+  app.delete('/api/aura/logins', requireInterfaceWrite, (req, res) => {
+    try { res.json({ success: true, removed: removeSiteLogin(String(req.query.site || '')) }); }
+    catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 80) }); }
   });
   app.get('/api/aura/plan/comments', requireLocalUi, (req, res) => res.json({ success: true, comments: planComments.list(String(req.query.graphId || '') || undefined) }));
   app.post('/api/aura/plan/comments', requireLocalUi, (req, res) => {
@@ -2814,7 +2843,14 @@ const notifyPhone = async (action) => {
       const kind = rawId.slice(0, split);
       const id = rawId.slice(split + 1);
       const decision = String(req.body?.decision || '').toLowerCase();
-      const note = String(req.body?.note || `Aura Approval Center: ${decision}`).trim();
+      const pendingApproval = buildAuraApprovalCenter().items.find((item: any) => item.id === rawId);
+      if (!pendingApproval) throw new Error('APPROVAL_NOT_PENDING');
+      if (!pendingApproval.actions.includes(decision)) throw new Error('INVALID_APPROVAL_DECISION');
+      const confirmation = validateOperatorConfirmation(req.body?.confirmation, rawId, decision);
+      const requestedNote = String(req.body?.note || `Aura Approval Center: ${decision}`).trim();
+      const note = confirmation
+        ? `Operator explicitly confirmed ${decision} for ${rawId}: ${confirmation.statement}`
+        : requestedNote;
 
       if (kind === 'action') {
         const action = pendingActions.find(item => item.id === id);
@@ -2864,9 +2900,9 @@ const notifyPhone = async (action) => {
         type: 'operator.approval.resolved',
         message: `${rawId} → ${decision}`,
         verified: true,
-        receipt: { approvalId: rawId, decision },
+        receipt: { approvalId: rawId, decision, confirmation },
       });
-      res.json({ success: true, approvalId: rawId, decision, approvals: buildAuraApprovalCenter() });
+      res.json({ success: true, approvalId: rawId, decision, confirmation, approvals: buildAuraApprovalCenter() });
     } catch (error: any) {
       res.status(409).json({ success: false, error: error?.message || String(error) });
     }
@@ -4660,7 +4696,7 @@ const notifyPhone = async (action) => {
       const r = await fetch(`${String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/$/, '')}/api/tags`, { signal: AbortSignal.timeout(1500) });
       localModels = ((await r.json() as any)?.models || []).map((m: any) => String(m.name)).filter((n: string) => !/cloud/i.test(n));
     } catch {}
-    return auraStatusReply(failures, { headroomUsd, localModels, lite: process.env.JACO_LITE === '1' });
+    return auraStatusReply(failures, { headroomUsd, localModels, lite: process.env.JACO_LITE === '1', language: readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) === 'sv' ? 'sv' : 'en' });
   };
 
   app.get('/api/aura/chat/cognitive-activation', requireLocalUi, (req, res) => {
@@ -4788,12 +4824,15 @@ const notifyPhone = async (action) => {
         ragContext,
         chatMode: planningMode ? 'planning' : questionMode ? 'manual' : 'action',
         persona: auraState?.currentPersona || "default",
+        language: readOperatorLanguage({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT }) || 'en',
         toolbox: questionTools,
         // Keep small local inference below its configured context; allow larger remote
         // models more retrieved knowledge without silently increasing local memory use.
         contextChars: choice && !auraChatProviderCatalog(connectedRuntime.providers)
           .find(p => p.id === choice.providerId)?.local ? Number(process.env.JACO_AURA_REMOTE_CONTEXT_CHARS || 24000)
           : Number(process.env.JACO_AURA_LOCAL_CONTEXT_CHARS || 5200),
+        // A model on this computer gets Aura's rules in short form, so they fit its small window with tools and history.
+        compactRules: Boolean(choice && auraChatProviderCatalog(connectedRuntime.providers).find(p => p.id === choice.providerId)?.local),
         ...(choice ? { complete: (args: any) => manualAuraProviderCompletion({ ...args, ...choice }, {
           providers: connectedRuntime.providers, economic: continuumSurface.runtime.economic,
         }) } : {}),
@@ -4825,9 +4864,14 @@ const notifyPhone = async (action) => {
         if (connected) { try { return await answerWithin(ask(connected), deadlines.fallbackMs); } catch { /* The default route still gets its turn. */ } }
         try { return await answerWithin(ask(null), deadlines.defaultMs); }
         catch (error) {
-          const fallback = connected ? null : chatFallbackChoice(connectedRuntime.providers) || await activeLocalChoice().catch(() => null);
-          if (!fallback) throw error;
-          return await answerWithin(ask(fallback), deadlines.fallbackMs);
+          // Every other way to answer, in order: a connected cloud provider, then a model on this computer.
+          const attempts: any[] = [];
+          const cloud = connected ? null : chatFallbackChoice(connectedRuntime.providers);
+          if (cloud) attempts.push({ choice: cloud, ms: deadlines.fallbackMs });
+          const local = await activeLocalChoice().catch(() => null);
+          if (local && !(chatChoice && local.providerId === chatChoice.providerId && local.model === chatChoice.model)) attempts.push({ choice: local, ms: deadlines.localMs });
+          if (!attempts.length) throw error;
+          return await answerInOrder(attempts, ask, error);
         }
       };
       // Lite never launches SEER: default chat must not depend on its /cortex/brain.

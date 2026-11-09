@@ -252,3 +252,8 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .card h3 .icon { width: 18px; height: 18px; vertical-align: -3px; margin-right: 10px; color: var(--cyan); }
 .link-card .ghost { font-size: 13px; padding: 9px 14px; }
 .cta .ghost[href^="https://github.com"] { border-color: rgba(155, 211, 231, .22); }
+
+/* The marks of Aura, the goal and memory next to a card title. */
+.card h3 .mark { width: 40px; height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px; }
+#gameboard .cards { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 900px) { #gameboard .cards { grid-template-columns: 1fr; } }
