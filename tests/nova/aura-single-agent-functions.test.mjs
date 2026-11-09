@@ -5,6 +5,13 @@ import path from 'node:path';
 import { AURA_FUNCTION_DEFINITIONS, projectAuraFunctions } from '../../runtime/src/server/connected/auraFunctions.mjs';
 import { cognitiveQuestionToolbox } from '../../runtime/src/server/connected/cognitiveQuestionToolbox.mjs';
 
+test('manual conversation can inspect the live MCP catalog without gaining mutation tools',async()=>{
+  const observed={servers:[{id:'git',status:'READY',tools:[{name:'git_status',readOnly:true}]}]};
+  const toolbox=cognitiveQuestionToolbox({tools:{mcp_catalog:{run:async()=>observed},start_goal:{run:()=>assert.fail('mutation')}}},()=>({}));
+  assert.deepEqual(await toolbox.tools.mcp_catalog.run(),observed);
+  assert.equal(toolbox.tools.start_goal,undefined);
+});
+
 const now = '2026-10-30T12:00:00.000Z';
 const read = rel => fs.readFileSync(path.join(process.cwd(),rel),'utf8');
 
@@ -74,8 +81,8 @@ test('Aura board is the default, while technical agents remain inspectable and o
   assert.match(backend,/missionStatusCounts/);
   const chat=read('agents/lib/aura-seer-chat.mjs');
   assert.match(chat,/only operator agent/);
-  assert.match(chat,/SEER is her internal planning function/);
-  assert.match(chat,/Nova\/ModelRelay is her internal execution function/);
+  assert.match(chat,/Planning and execution are internal JACO runtime functions/);
+  assert.match(chat,/not separate agents or product identities/);
 });
 
 test('Aura question mode can inspect the live control plane without mutation authority',async()=>{

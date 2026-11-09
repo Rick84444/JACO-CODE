@@ -281,6 +281,36 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
     },
     tools: {
       health: { description: 'Read-only HTTP service probes. READY/REACHABLE are not proof of model or tool execution; AUTH_REQUIRED is not healthy. In Termux the ChatGPT gateway is not managed by runit. args: {}', run: async () => auraServiceHealth() },
+      mcp_catalog: {
+        description: 'Read the live catalog of connected MCP tool servers and the tools they currently advertise. Use this before answering what tools Aura has. This only observes metadata and never starts or calls a tool. args: {}',
+        run: async () => ({
+          observedAt: new Date().toISOString(),
+          servers: mcpHost.status().map((server: any) => ({
+            id: server.id,
+            name: server.name,
+            role: server.role,
+            status: server.status,
+            agentAccess: server.agentAccess,
+            readTools: (server.tools || []).filter((tool: any) => tool.readOnly === true && tool.agentAllowed === true).slice(0, 100).map((tool: any) => tool.name),
+            writeTools: (server.tools || []).filter((tool: any) => tool.readOnly !== true && tool.agentAllowed === true).slice(0, 100).map((tool: any) => tool.name),
+            blockedTools: (server.tools || []).filter((tool: any) => tool.agentAllowed !== true).slice(0, 100).map((tool: any) => tool.name),
+          })),
+        }),
+      },
+      mcp_tool: {
+        description: 'Call one currently advertised MCP tool for the active goal. args: {server,tool,arguments?,mode:"read"|"write"}. Read calls require an advertised read-only tool. Write calls require that server to have agentAccess=write and remain subject to its workspace, secret, destructive-action and external-effect guards.',
+        run: async (args: any) => {
+          const server = String(args?.server || '');
+          const tool = String(args?.tool || '');
+          const mode = args?.mode === 'write' ? 'write' : 'read';
+          if (!/^[A-Za-z0-9_.-]{1,80}$/.test(server) || !/^[A-Za-z0-9_.-]{1,120}$/.test(tool)) throw new Error('MCP_PROVIDER_AND_TOOL_REQUIRED');
+          const status: any = mcpHost.status().find((entry: any) => entry.id === server);
+          const advertised: any = status?.tools?.find((entry: any) => entry.name === tool);
+          if (!status || status.status !== 'READY' || !advertised) throw new Error(`MCP_TOOL_UNAVAILABLE:${server}.${tool}`);
+          if (mode === 'read' && advertised.readOnly !== true) throw new Error(`MCP_TOOL_WRITE_MODE_REQUIRED:${server}.${tool}`);
+          return await mcpHost.call(server, tool, args?.arguments || {}, { actor: 'agent', readOnly: mode !== 'write' });
+        },
+      },
       termux_services: {
         description: 'Read-only actual runit process status for canonical Termux services. Never starts/restarts a second stack. args: {}',
         run: async () => {
@@ -482,7 +512,7 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
         },
       },
       start_goal: {
-        description: 'Activate the canonical Aura operator goal through SEER strategy. Internal execution remains in the durable Mission Bus. args: {"goal":"..."}',
+        description: 'Activate the canonical Aura operator goal through JACO planning. Internal execution remains in the durable Mission Bus. args: {"goal":"..."}',
         run: async (args: any) => {
           const goal = String(args?.goal || '').trim();
           if (!goal || goal.length > 12000) throw new Error('GOAL_REQUIRED_OR_TOO_LONG');
@@ -3603,7 +3633,7 @@ const notifyPhone = async (action) => {
       aura: {
         objective: AURA_CANONICAL_OBJECTIVE,
         role: 'operator-ide-surface',
-        strategicAuthority: 'SEER',
+        strategicAuthority: 'JACO',
         executionAuthority: 'Durable Nova / AgentOS / ModelRelay',
         completionRule: 'verified evidence or receipt required'
       },
@@ -4898,11 +4928,11 @@ const notifyPhone = async (action) => {
           choice: chatChoice,
           ask: askOrConnected,
           status: failures => auraStatusAnswer(userMsg, failures),
-          onFallback: (fallback, r) => void seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.provider.fallback', message: `${fallback.from} could not answer (${fallback.reason.slice(0, 80)}); answered via SEER ${r.provider}/${r.model}`, verified: true, receipt: { from: fallback.from, to: `${r.provider}/${r.model}`, reason: fallback.reason } }),
+          onFallback: (fallback, r) => void seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.provider.fallback', message: `${fallback.from} could not answer (${fallback.reason.slice(0, 80)}); answered via JACO ${r.provider}/${r.model}`, verified: true, receipt: { from: fallback.from, to: `${r.provider}/${r.model}`, reason: fallback.reason } }),
           onNoModel: failures => void seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.no_model_answer', message: `No model could answer; Aura answered with observed status (${failures.length} failures)`, verified: true, receipt: { failures } }),
         });
 
-      const routeLabel = process.env.JACO_LITE === '1' ? 'Lite direct provider' : chatChoice ? 'Aura direct model' : 'SEER';
+      const routeLabel = process.env.JACO_LITE === '1' ? 'Lite direct provider' : chatChoice ? 'Aura direct model' : 'JACO';
       seerLiveWorkstream.update({
         activeModule: 'Aura',
         provider: result.provider,

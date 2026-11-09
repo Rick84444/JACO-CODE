@@ -8,6 +8,18 @@ import { seerCompletion, seerCompletionResult } from '../../agents/lib/seer-clie
 const root=process.cwd();
 const TOKEN='test-token-12345678901234567890';
 
+test('Aura is told to inspect the live MCP catalog before describing its tools',()=>{
+  const {system}=buildAuraSeerPrompts({message:'Vilka verktyg har du?',chatMode:'manual',compactRules:true,toolCatalog:'- mcp_catalog: live tools'});
+  assert.match(system,/call mcp_catalog/i);
+  assert.match(system,/connected MCP tools/i);
+});
+
+test('Aura action mode is told to use the guarded MCP bridge for an active goal',()=>{
+  const {system}=buildAuraSeerPrompts({message:'Genomför målet',chatMode:'action',toolCatalog:'- mcp_tool: guarded live MCP call'});
+  assert.match(system,/In ACTION mode, use mcp_tool/);
+  assert.match(system,/server access policy/);
+});
+
 function withEnv(values, fn){
   const before={};
   for(const [key,value] of Object.entries(values)){
@@ -25,7 +37,7 @@ function withEnv(values, fn){
     });
 }
 
-test('Aura chat bridge sends bounded conversation context through canonical SEER brain', async()=>{
+test('Aura chat bridge sends bounded conversation context through the JACO planning runtime', async()=>{
   await withEnv({JACO_GATEWAY_TOKEN:TOKEN,SEER_URL:'http://127.0.0.1:2997'}, async()=>{
     let seenUrl='', seenHeaders, seenBody;
     const out=await auraChatViaSeer({
@@ -74,7 +86,7 @@ test('SEER client keeps text-only compatibility while exposing truthful metadata
   });
 });
 
-test('Aura exposes one active chat surface and routes it through canonical SEER',()=>{
+test('Aura exposes one active chat surface and routes it through JACO',()=>{
   const server=fs.readFileSync(path.join(root,'runtime/server.ts'),'utf8');
   const app=fs.readFileSync(path.join(root,'runtime/src/App.tsx'),'utf8');
   const panel=fs.readFileSync(path.join(root,'runtime/src/components/AuraChatPanel.tsx'),'utf8');

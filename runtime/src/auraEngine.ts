@@ -17,7 +17,7 @@ function buildCanonicalAuraGoal(): import("./types").AuraStrategicGoal {
   return {
     id: AURA_CANONICAL_GOAL_ID,
     title: "Verifiable autonomous IDE surface from goal to receipt",
-    description: "Aura must be JACO's truth-bound operator and IDE surface where a user goal can be formulated, sent through canonical SEER and Durable Nova, followed through real tool actions, and considered complete only when verified evidence or a receipt exists. Aura must make the autonomy understandable and visible without attributing to itself any execution that has not been observed.",
+    description: "Aura must be JACO's truth-bound operator and IDE surface where a user goal can be formulated, planned and executed through JACO's internal runtimes, followed through real tool actions, and considered complete only when verified evidence or a receipt exists. Aura must make the autonomy understandable and visible without attributing to itself any execution that has not been observed.",
     category: "AUTONOMOUS_ORCHESTRATION",
     priorityScore: 10,
     progressPercent: 75,
@@ -27,7 +27,7 @@ function buildCanonicalAuraGoal(): import("./types").AuraStrategicGoal {
     milestones: [
       {
         id: "aura-objective-1",
-        title: "Conversation is routed through canonical SEER and reports the real provider/model",
+        title: "Conversation is routed through JACO and reports the real provider/model",
         assignedAgent: "SEER",
         status: "completed",
         proofOfExecution: "PR #25 CI: tests/nova/aura-seer-chat.test.mjs",
