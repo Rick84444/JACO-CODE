@@ -183,9 +183,11 @@ export async function runAgentMission({
     const inheritedCircle = history.length ? stuck.check() : { stuck: false };
     ({ tools, resolve, deferred = [] } = await toolsFor(mission));
     capabilityEvidence = observeMissionCapabilities(mission, tools);
-    messages.push({ role: 'user', content: 'CURRENT CAPABILITY EVIDENCE (catalog, not permission or proof of execution): '+JSON.stringify(capabilityEvidence) });
+    // Keep the canonical mission packet at index 1 so refreshed introductions
+    // replace the correct message and never overwrite the capability observation.
     messages.push({ role: 'system', content: typeof system === 'function' ? system(mission) : system },
       { role: 'user', content: await intro(mission) });
+    messages.push({ role: 'user', content: 'CURRENT CAPABILITY EVIDENCE (catalog, not permission or proof of execution): '+JSON.stringify(capabilityEvidence) });
     if (inheritedCircle.stuck) {
       // Count the nudge but keep the history. stuck.nudge() also wipes the window, so a run cut short by a rate
       // limit started clean every time and the same circle ran for 88 steps. Now the next repeated step is a
