@@ -42,7 +42,7 @@ app.get('/api/aura/workbench/live',(req,res)=>{
 });
 app.get('/api/aura/workbench',(_req,res)=>res.json(snapshot()));
 app.get('/api/aura/workbench/gameboard',(_req,res)=>res.json({success:true,
-  ...gameboardProjection({graphs:null,graphError:'SEER_NOT_RUNNING_IN_TEST',workers:bus.listWorkers(),missions:bus.listMissions(30),events:bus.listEvents(100),primaryGoal:bus.listMissions(1)[0]?.goal || null}),
+  ...gameboardProjection({graphs:null,graphError:'SEER_NOT_RUNNING_IN_TEST',workers:bus.listWorkers(),missions:bus.listMissions(30).map(m=>({...m,reviewAvailable:true})),events:bus.listEvents(100),primaryGoal:bus.listMissions(1)[0]?.goal || null}),
   exchange:createGameboardExchange(bus.db).position('global'),
 }));
 app.get('/api/aura/workbench/gameboard/events',(req,res)=>res.json({success:true,...createGameboardExchange(bus.db).position(String(req.query.scope||'global'))}));
