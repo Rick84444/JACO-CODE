@@ -261,9 +261,9 @@ export class JacoLinkRoom {
       for(const phone of phones){
         const a=phone.deserializeAttachment();
         const list=Array.isArray(a?.pending)?a.pending:[];
-        const expired=list.filter(item=>now-item.at>120000);
+        const expired=list.filter(item=>now-item.at>300000);
         if(expired.length){
-          phone.serializeAttachment({...a,pending:list.filter(item=>now-item.at<=120000)});
+          phone.serializeAttachment({...a,pending:list.filter(item=>now-item.at<=300000)});
           for(const item of expired)this.send(phone,{type:'rpc_result',id:item.id,status:504,
             body:{error:'OUTCOME_UNKNOWN_TIMEOUT'}});
         }
