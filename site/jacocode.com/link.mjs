@@ -55,6 +55,9 @@ function socketError(code) {return new Response(code,{status:403});}
 
 export async function handleLink(request,env,url) {
   if (!url.pathname.startsWith('/link/v1/') && url.pathname!=='/link/ws') return null;
+  // Explicit release switch: publishing ordinary JACO site assets must never
+  // silently activate a customer control plane or incur unexpected DO usage.
+  if (env?.LINK_ENABLED !== '1') return json({error:'LINK_NOT_ENABLED'},503);
   if (!env?.LINK_PAIRINGS || !env?.LINK_ROOMS || !env.LINK_SIGNING_KEY ||
       !env.SESSION_SECRET) return json({error:'LINK_NOT_CONFIGURED'},503);
   const route=url.pathname;
@@ -126,6 +129,7 @@ export async function handleLink(request,env,url) {
 // Separate because the PC has no Google session until pairing is completed.
 export async function handleLinkHostSocket(request,env,url) {
   if(url.pathname!=='/link/ws' || url.searchParams.get('role')!=='host')return null;
+  if(env?.LINK_ENABLED !== '1')return json({error:'LINK_NOT_ENABLED'},503);
   if (!env?.LINK_SIGNING_KEY || !env?.LINK_ROOMS)return json({error:'LINK_NOT_CONFIGURED'},503);
   if(request.headers.get('upgrade')?.toLowerCase()!=='websocket')return json({error:'UPGRADE_REQUIRED'},426);
   const auth=request.headers.get('authorization')||'';
@@ -246,6 +250,13 @@ export class JacoLinkRoom {
       this.counters.set(ws,count);
       const valid=validateRemoteCall(value);
       if(!valid.ok)return this.send(ws,{type:'rpc_result',id:String(value?.id||''),status:403,body:{error:valid.error}});
+      for(const [oldId,pending] of this.pending){
+        if(Date.now()-pending.at>120000){
+          this.pending.delete(oldId);
+          this.send(pending.phone,{type:'rpc_result',id:oldId,status:504,body:{error:'OUTCOME_UNKNOWN_TIMEOUT'}});
+        }
+      }
+      if(this.pending.size>=40)return this.send(ws,{type:'rpc_result',id:valid.id,status:429,body:{error:'TOO_MANY_PENDING_REQUESTS'}});
       if(this.pending.has(valid.id))return this.send(ws,{type:'rpc_result',id:valid.id,status:409,body:{error:'DUPLICATE_REQUEST_ID'}});
       const hosts=this.sockets('host').filter(s=>!valid.target||s.deserializeAttachment().deviceId===valid.target);
       if(hosts.length!==1)return this.send(ws,{type:'rpc_result',id:valid.id,status:503,body:{error:hosts.length?'SELECT_A_PC':'PC_OFFLINE'}});
