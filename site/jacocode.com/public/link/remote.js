@@ -42,6 +42,7 @@ async function getHosts(){
     const picker=$('host');picker.replaceChildren();
     for(const h of hosts){const option=el('option','',(h.label||'Windows PC')+' · '+h.deviceId.slice(0,8)+(h.online?' · aktiv':' · offline'));option.value=h.deviceId;option.disabled=!h.online;picker.append(option);}
     picker.hidden=hosts.length<2;
+    $('revoke').hidden=!selected;
     if(selected)picker.value=selected;
     show('pair',!selected);show('workspace',Boolean(selected));
     state(socket?.readyState===WebSocket.OPEN && selected?'Ansluten':selected?'Ansluter…':'Ingen dator',
@@ -206,6 +207,14 @@ async function initialize(){
   }
 }
 document.querySelectorAll('[data-view]').forEach(btn=>btn.addEventListener('click',()=>selectView(btn.dataset.view)));
+$('revoke').addEventListener('click',async()=>{
+  if(!selected)return;
+  if(!confirm('Återkalla Windows-datorns tillgång till JACO Link? Den måste parkopplas igen.'))return;
+  try{
+    await api('/revoke',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({deviceId:selected})});
+    selected=null;error('');await getHosts();
+  }catch(e){error('Återkallandet kunde inte bekräftas: '+e.message);}
+});
 $('retry').addEventListener('click',()=>{if(socket?.readyState!==1)connect();void getHosts();});
 $('host').addEventListener('change',event=>{selected=event.target.value;void refresh('chat');});
 $('send').addEventListener('click',()=>void sendChat());
