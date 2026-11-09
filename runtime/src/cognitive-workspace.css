@@ -703,3 +703,22 @@
 @media (max-width:767px) { .jaco-gameboard-full { left:0; bottom:64px; } }
 
 .aura-memory-mark { width:22px; height:22px; border-radius:50%; object-fit:cover; box-shadow:0 0 6px rgba(74,222,128,.45); }
+
+
+/* Remote PWA uses the SAME Aura runtime. The navigation changes presentation only. */
+.cognitive-workspace .cognitive-remote-navigation{display:none}
+.cognitive-workspace[data-remote-mode="true"] .cognitive-remote-navigation{
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  padding:8px 12px;background:#202124;border-bottom:1px solid #45474c;
+}
+.cognitive-remote-navigation button,.cognitive-remote-navigation a{
+  border:1px solid #585b61;border-radius:6px;padding:6px 10px;
+  color:#e5e7eb;font-size:12px;text-decoration:none;background:transparent;
+}
+.cognitive-remote-navigation button[aria-pressed="true"]{background:#3b4149;border-color:#8fb9dc}
+.cognitive-remote-navigation .cognitive-remote-full{margin-left:auto}
+@media(max-width:640px){
+  .cognitive-workspace[data-remote-mode="true"] .cognitive-remote-navigation{gap:4px;padding:7px}
+  .cognitive-remote-navigation button,.cognitive-remote-navigation a{font-size:11px;padding:6px 7px}
+  .cognitive-remote-navigation .cognitive-remote-full{margin-left:0}
+}
