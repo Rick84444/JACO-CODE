@@ -29,6 +29,30 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
   const [ideUrl, setIdeUrl] = useState<string | null>(null);
   const remoteUrl = remoteLoginUrl(ideUrl);
   const [viewer, setViewer] = useState<{ remote: boolean; name?: string }>({ remote: false });
+  const [link, setLink] = useState<{state:string;configured:boolean;deviceId?:string|null;error?:string|null;remoteUrl?:string;pairing?:{code:string;approvalUrl:string;expiresAt:string}|null}|null>(null);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkError, setLinkError] = useState('');
+  const refreshLink = async () => {
+    try {
+      const r = await fetch('/api/aura/workbench/link/status',{cache:'no-store'}).then(readAuraResponse);
+      if (!r.success) throw Error(r.error||'JACO_LINK_OFFLINE');
+      setLink(r);setLinkError('');
+    }catch(error:any){setLinkError(String(error?.message||error).slice(0,150));}
+  };
+  useEffect(()=>{
+    void refreshLink();
+    const timer=setInterval(()=>{if(document.visibilityState!=='hidden')void refreshLink();},7000);
+    return ()=>clearInterval(timer);
+  },[]);
+  const connectLink = async () => {
+    if(linkBusy)return;setLinkBusy(true);setLinkError('');
+    try {
+      const result=await fetch('/api/aura/workbench/link/start',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}).then(readAuraResponse);
+      if (!result.success)throw Error(result.error);
+      setLink(result);
+    }catch(error:any){setLinkError(String(error?.message||error).slice(0,180));}
+    finally{setLinkBusy(false);}
+  };
   const [error, setError] = useState('');
   const [actionError, setActionError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -129,6 +153,22 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
         <div className="device-summary" aria-live="polite">
           <span>{active.filter(d => d.online).length} {tr('anslutna enheter', 'connected devices')}</span>
           <span>{error ? tr('Status inaktuell', 'Status outdated') : tr('Registrerade', 'Registered')}: {active.length}</span>
+        </div>
+        <div className="rounded-xl border border-cyan-800/80 bg-[#091b25] p-3 space-y-2" data-testid="jaco-link-onboarding">
+          <div className="flex items-center justify-between gap-2"><strong className="text-sm text-cyan-100">JACO Link</strong>
+            <span className="text-xs text-cyan-300">{link?.state==='CONNECTED'?tr('Ansluten','Connected'):link?.state||tr('Inte parkopplad','Not paired')}</span></div>
+          <p className="text-xs text-slate-300">{tr('Anslut mobilen utan tunnlar, nätverksinställningar eller ett eget Cloudflare-konto. Aura och minnet stannar på denna dator.', 'Connect your phone without tunnels, network setup or a Cloudflare account. Aura and memory remain on this PC.')}</p>
+          {link?.state==='CONNECTED'&&<a className="block text-cyan-300 underline break-all" href={link.remoteUrl||'https://jacocode.com/link/remote.html'} target="_blank" rel="noreferrer">{tr('Öppna JACO Remote på mobilen','Open JACO Remote on your phone')}</a>}
+          {link?.pairing&&<div className="rounded-lg border border-slate-600 p-2 space-y-2" role="status">
+            <div className="text-slate-300">{tr('Öppna länken på datorn och logga in med ditt JACO-konto för att godkänna anslutningen.', 'Open the link on this PC and sign in with your JACO account to approve the connection.')}</div>
+            <a className="block text-cyan-300 underline break-all" target="_blank" rel="noreferrer" href={link.pairing.approvalUrl}>{tr('Godkänn den här datorn','Authorize this computer')}</a>
+            <code className="block break-all text-cyan-100">{link.pairing.code}</code>
+            <div className="text-slate-400">{tr('Koden upphör automatiskt efter tio minuter.','Code expires automatically after ten minutes.')}</div>
+          </div>}
+          {!link?.configured&&!link?.pairing&&<button type="button" onClick={()=>void connectLink()} disabled={linkBusy}
+            className="min-h-11 rounded-lg bg-cyan-800 px-4 text-white disabled:opacity-50">{linkBusy?tr('Ansluter…','Connecting…'):tr('Anslut mobilen','Connect phone')}</button>}
+          {(linkError||link?.error)&&<p role="alert" className="break-words text-xs text-amber-300">{linkError||link?.error}</p>}
+          <button type="button" onClick={()=>void refreshLink()} className="text-xs text-slate-400 underline">{tr('Kontrollera anslutningen','Check connection')}</button>
         </div>
         <div className="device-browser">
           <strong>{tr('Webbläsarkontroll', 'Browser control')}</strong>
