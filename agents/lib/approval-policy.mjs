@@ -142,7 +142,9 @@ export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastE
 
   if (status === 'BLOCKED') {
     const error = String(lastError || [...receipts].reverse().find(r => r?.error)?.error || '');
-    // A missing capability or a planner refusal is not transient. Replaying the unchanged\n    // mission cannot grant a tool; level 5 must not turn it into an infinite resume loop.\n    if (!error || POLICY_BLOCK.test(error) || BUDGET_EXHAUSTED.test(error) || CAPABILITY_GAP.test(error)) return null;
+    // A missing capability or a planner refusal is not transient. Replaying the unchanged
+    // mission cannot grant a tool; level 5 must not turn it into an infinite resume loop.
+    if (!error || POLICY_BLOCK.test(error) || BUDGET_EXHAUSTED.test(error) || CAPABILITY_GAP.test(error)) return null;
     // Operator 2026-10-02: an autonomous coding contract is the authority to keep working. Within it,
     // failures are retried without approvals; the contract budget (steps, tool calls, time) bounds the
     // retries, and when it is used up the mission stops for the operator (BUDGET_EXHAUSTED above).
