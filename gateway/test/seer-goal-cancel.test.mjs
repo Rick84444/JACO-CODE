@@ -134,3 +134,21 @@ test('a real strategy adapter fences Aura Core control without exposing the leas
   assert.equal(released.data.owner,'aura-fallback');
   assert.equal((await call('/health')).data.aura_control.owner,'aura-fallback');
 });
+
+test('Core lease suppresses an explicitly opted-in legacy SEER governor watchdog', {timeout:20000}, async t=>{
+  const call=await startSeer(t,{
+    JACO_AURA_LEGACY_GOVERNOR:'1',
+    SEER_GOVERNOR_INTERVAL_MS:'1000',
+    SEER_AUTONOMY_LOOP_MS:'0',
+  });
+  const grant=await call('/cortex/aura/control/claim',{owner:'aura-core'});
+  assert.equal(grant.status,201);
+  const health=(await call('/health')).data;
+  assert.equal(health.independent_governor_enabled,true,'test intentionally enables the old governor');
+  assert.equal(health.aura_control.owner,'aura-core');
+  await new Promise(resolve=>setTimeout(resolve,1700));
+  const events=(await call('/cortex/events')).data;
+  assert.equal(events.filter(e=>e.type==='development_cycle.governor_turn').length,0,
+    'an old governor timer cannot invoke model reasoning while Core holds ownership');
+  await call('/cortex/aura/control/release',{token:grant.data.token});
+});
