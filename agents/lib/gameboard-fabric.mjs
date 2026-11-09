@@ -101,6 +101,7 @@ export function gameboardProjection({
       source: clipped(m.source, 80), phase: clipped(m.phase, 40) || null,
       updatedAt: clipped(m.updatedAt, 60) || null,
       actionCount: receipts.length, verifiedActions,
+      reviewAvailable: m.reviewAvailable === true,
       lastError: lastFailure ? clipped(lastFailure.error, 260) : null,
       evidenceStatus: verifiedActions ? 'VERIFIED_ACTION_RECEIPTS' : 'NO_VERIFIED_ACTION_RECEIPTS',
     };
