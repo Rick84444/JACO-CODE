@@ -176,6 +176,23 @@ try {
     }
     passed('Remote PWA uses one Aura chat, phone navigation and preserves the draft without creating a mission');
   } finally { await remote.close(); }
+  // Same binary, same owner, same full UI on a laptop. The ?remote=1
+  // parameter authenticates a remote session but must not force phone UX.
+  const laptop = await browser.newPage({viewport:{width:1366,height:768}});
+  try {
+    await laptop.goto(base+'/?remote=1',{waitUntil:'domcontentloaded'});
+    await laptop.locator('.cognitive-workspace').waitFor();
+    assert.equal(await laptop.locator('.cognitive-workspace').getAttribute('data-remote-mode'),'true',
+      'laptop remote session still checks pairing and revocation');
+    assert.equal(await laptop.locator('.cognitive-remote-navigation').evaluate(el=>getComputedStyle(el).display),'none',
+      'laptop must not use a separate phone-only navigation');
+    assert.notEqual(await laptop.locator('.cognitive-rail').evaluate(el=>getComputedStyle(el).display),'none',
+      'laptop should show the exact canonical desktop IDE rail');
+    await laptop.getByRole('navigation',{name:/^(Workspace|Arbetsyta)$/}).waitFor();
+    assert.equal(await laptop.locator('.cognitive-workspace').count(),1);
+    assert.equal(await laptop.locator('.cognitive-rail').count(),1);
+    passed('Paired laptop renders the canonical desktop JACO GUI rather than the phone shell');
+  } finally { await laptop.close(); }
   blockSession=true;
   await page.goto(base,{waitUntil:'networkidle'});
   await page.getByRole('button',{name:'Försök läsa igen'}).waitFor();
@@ -222,7 +239,7 @@ try {
   await page.getByRole('region',{name:'Minnets innehåll och beslut'}).waitFor();
   await page.getByTestId('memory-gameboard').getByRole('button',{name:'Stäng minnet'}).click();
   // The operator-facing blueprint is primary; the technical simulator opens on demand.
-  await page.getByText('Technical view', { exact: true }).click();
+  await page.getByText(/^(Teknisk vy|Technical view)$/).click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Gameboard must not overflow Android-size viewport');
   await canvas('Samtal').click();
@@ -232,7 +249,7 @@ try {
   await canvas('Spelplan').click();
   await page.getByTestId('strategy-board').waitFor();
   // The operator-facing blueprint is primary; the technical simulator opens on demand.
-  await page.getByText('Technical view', { exact: true }).click();
+  await page.getByText(/^(Teknisk vy|Technical view)$/).click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
   await page.getByText('Aura planning: Planner unavailable').waitFor();
   await page.getByTestId('gameboard-operational-position').waitFor();
@@ -257,7 +274,7 @@ try {
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'read-example',type:'repo-read',ok:true,verified:false,result:{path:'example.ts'}}});
   await page.getByText('Not verified',{exact:true}).waitFor();
   await canvas('Spelplan').click();
-  await page.getByText('Technical view', {exact:true}).click();
+  await page.getByText(/^(Teknisk vy|Technical view)$/).click();
   await page.getByTestId('gameboard-mission-list').waitFor();
   await page.getByTestId('gameboard-operational-position').getByText('Testuppdrag: verifiera HTTP-klienten').first().waitFor();
   await page.getByTestId('gameboard-durable-evidence').getByText('NOVA_ACTION_RESULT').first().waitFor();
