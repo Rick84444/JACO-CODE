@@ -42,6 +42,27 @@ test('project node contract is a valid coding contract that commits but never pu
   assert.throws(() => projectNodeContract({ title: '', objective: '' }), /PROJECT_NODE_OBJECTIVE_REQUIRED/);
 });
 
+test('new Markdown drafts do not inherit unrelated project-wide npm tests', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-markdown-contract-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+  const draft = projectNodeContract({
+    title: 'Create Markdown drafts',
+    objective: 'Create two new Markdown files in docs/growth/drafts and commit them.',
+    mainGoal: 'Prepare fact-based marketing drafts',
+    projectRoot: dir,
+  });
+  assert.deepEqual(draft.verification.commands, []);
+  assert.equal(draft.verification.tests_required, false);
+  assert.equal(draft.execution.require_git_commit, true);
+  const repair = projectNodeContract({
+    title: 'Repair source',
+    objective: 'Fix the broken runtime code and run tests.',
+    projectRoot: dir,
+  });
+  assert.deepEqual(repair.verification.commands, ['npm test']);
+});
+
 test('project graph policy routes to Nova with code tools only when a project is set', () => {
   assert.deepEqual(projectGraphPolicy(null), {});
   const policy = projectGraphPolicy(absolute);
