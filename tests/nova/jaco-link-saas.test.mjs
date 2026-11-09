@@ -12,10 +12,12 @@ import { createJacoLinkHost } from '../../runtime/src/server/connected/jacoLinkH
 const did='abcdefghijklmnopqr';
 const id='123e4567-e89b-42d3-a456-426614174000';
 class Store {
-  constructor(){this.data=new Map();}
+  constructor(){this.data=new Map();this.alarmAt=null;}
   get(key){return Promise.resolve(this.data.get(key));}
   put(key,value){this.data.set(key,value);return Promise.resolve();}
   delete(key){this.data.delete(key);return Promise.resolve();}
+  deleteAll(){this.data.clear();return Promise.resolve();}
+  setAlarm(at){this.alarmAt=at;return Promise.resolve();}
   list({prefix}={}){return Promise.resolve(new Map([...this.data].filter(([key])=>key.startsWith(prefix||''))));}
 }
 class Socket {
@@ -69,6 +71,7 @@ test('pending pairing is one-time and polling needs a separate 256-bit secret',a
   }));
   assert.equal((await send('/start',{hash:'correct-poll-token-hash',until:Date.now()+600000})).status,200);
   assert.equal((await send('/start',{hash:'other',until:Date.now()+600000})).status,409);
+  assert.ok(store.alarmAt>Date.now(),'pair storage gets a cleanup alarm');
   assert.equal((await send('/poll?hash=bad',null,'GET')).status,401);
   assert.equal((await(await send('/poll?hash=correct-poll-token-hash',null,'GET')).json()).state,'PENDING');
   assert.equal((await send('/claim',{token:'signed-host-ticket'})).status,200);
@@ -199,4 +202,14 @@ test('operator approval viewer consumes the canonical approval-center items and 
   assert.match(ui,/resume:'Återuppta'/);
   assert.match(ui,/confirm:'Bekräfta'/);
   assert.match(ui,/a\.actions\.includes\(choice\)/);
+});
+
+test('expired pairing Durable Object erases pending credentials after its alarm',async()=>{
+  const storage=new Store();
+  const pending=new JacoLinkPairing({storage});
+  await storage.put('pair',{hash:'redacted',until:Date.now()-1,token:'expired',delivered:false});
+  await pending.alarm();
+  assert.equal(await storage.get('pair'),undefined);
+  const other=new JacoLinkPairing({storage:new Store()});
+  await other.alarm();
 });
