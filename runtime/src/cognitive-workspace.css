@@ -722,3 +722,7 @@
   .cognitive-remote-navigation button,.cognitive-remote-navigation a{font-size:11px;padding:6px 7px}
   .cognitive-remote-navigation .cognitive-remote-full{margin-left:0}
 }
+
+/* On a phone, Aura Remote is a navigation shell over the same conversation
+   and mission state; the desktop project rail is not duplicated. */
+.cognitive-workspace[data-remote-mode="true"] .cognitive-rail{display:none}
