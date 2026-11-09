@@ -42,7 +42,7 @@ app.get('/api/aura/workbench/live',(req,res)=>{
 });
 app.get('/api/aura/workbench',(_req,res)=>res.json(snapshot()));
 app.get('/api/aura/workbench/gameboard',(_req,res)=>res.json({success:true,
-  ...gameboardProjection({graphs:null,graphError:'SEER_NOT_RUNNING_IN_TEST',workers:bus.listWorkers(),missions:bus.listMissions(30)}),
+  ...gameboardProjection({graphs:null,graphError:'SEER_NOT_RUNNING_IN_TEST',workers:bus.listWorkers(),missions:bus.listMissions(30),events:bus.listEvents(100),primaryGoal:bus.listMissions(1)[0]?.goal || null}),
   exchange:createGameboardExchange(bus.db).position('global'),
 }));
 app.get('/api/aura/workbench/gameboard/events',(req,res)=>res.json({success:true,...createGameboardExchange(bus.db).position(String(req.query.scope||'global'))}));
@@ -234,7 +234,10 @@ try {
   // The operator-facing blueprint is primary; the technical simulator opens on demand.
   await page.getByText('Technical view', { exact: true }).click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
-  await page.getByText('Aura planning: UNAVAILABLE').waitFor();
+  await page.getByText('Aura planning: Planner unavailable').waitFor();
+  await page.getByTestId('gameboard-operational-position').waitFor();
+  await page.getByTestId('gameboard-durable-evidence').waitFor();
+  await page.getByText('Optional scenario laboratory · simulation only').click();
   await page.locator('section[aria-label="Shared gameboard"] input[list="gameboard-tools"]').first().fill('mcp:git:git_status');
   await page.getByRole('button',{name:'Simulate without execution'}).click();
   await page.getByText('Executed: no', {exact:false}).waitFor();
@@ -253,6 +256,15 @@ try {
   passed('A real SSE event is inserted exactly once in the conversation with its mission');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'read-example',type:'repo-read',ok:true,verified:false,result:{path:'example.ts'}}});
   await page.getByText('Not verified',{exact:true}).waitFor();
+  await canvas('Spelplan').click();
+  await page.getByText('Technical view', {exact:true}).click();
+  await page.getByTestId('gameboard-mission-list').waitFor();
+  await page.getByTestId('gameboard-operational-position').getByText('Testuppdrag: verifiera HTTP-klienten').first().waitFor();
+  await page.getByTestId('gameboard-durable-evidence').getByText('NOVA_ACTION_RESULT').first().waitFor();
+  await page.getByRole('button',{name:'Review execution & evidence'}).first().click();
+  await page.locator('.cognitive-evidence-scroll').waitFor();
+  passed('Gameboard renders durable mission evidence and opens the existing review without another agent');
+  await canvas('Samtal').click();
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'failed-test',type:'repo-test',ok:false,verified:true,error:'TEST_NEGATIVE_CONTROL',result:{exitCode:1}}});
   await page.locator('[data-event-id="mission:4"][data-outcome="failed"]').waitFor();
   assert.equal(await page.locator('[data-event-id="mission:4"]').getByText('Verified result',{exact:true}).count(),0);
