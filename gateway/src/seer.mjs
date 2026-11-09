@@ -23,6 +23,7 @@ import { createExperienceStore } from './seer-experience-store.mjs';
 import { discoverSeerLocalProvider, invokeSeerProvider, callSeerGovernorProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt, compactGovernorGoals, clipGoalStatement, resolveAuraPlanner, invokeAuraPlanner } from './seer-model-provider.mjs';
 import { createA2AColonyRevenueSync } from './a2acolony-revenue-sync.mjs';
 import { normalizeProjectRoot, projectNodeContract, projectGraphPolicy, projectGoalGraph, projectGoalDone } from './seer-project.mjs';
+import { auraArtifactContract } from './aura-artifact-contract.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -1594,6 +1595,10 @@ If no new work is needed (system already has enough active work), respond with: 
       policy: {
         ...projectGraphPolicy(projectRoot),
         source: onPrimary ? 'operator-start-prompt' : 'governor',
+        // Legacy SEER process is an internal strategy capability; Aura owns the mission.
+        primary_agent: 'aura',
+        strategy_capability: 'aura.strategy',
+        execution_capability: 'aura.execution',
         autonomy: 'closed-loop',
         strategic_goal_id: focusGoal?.id || null,
         tool_hint: onPrimary ? operatorPrimaryGoal?.tool_hint || null : null,
@@ -1611,7 +1616,13 @@ If no new work is needed (system already has enough active work), respond with: 
         objective: n.description || n.title,
         dependencies: Array.isArray(n.depends_on) ? n.depends_on : [],
         strategy: { confidence: chosen.success_probability, ...(n.strategy || {}) },
-        ...(projectRoot ? { contract: projectNodeContract({ title: n.title, objective: n.description, mainGoal: chosen.goal, projectRoot }) } : {}),
+        ...(projectRoot
+          ? { contract: projectNodeContract({ title: n.title, objective: n.description, mainGoal: chosen.goal, projectRoot }) }
+          : onPrimary && !operatorPrimaryGoal?.invariants?.includes('observation_only') && !focusGoal?.invariants?.includes('observation_only')
+            ? (() => { const contract = auraArtifactContract({ goal: operatorPrimaryGoal?.statement || chosen.goal,
+                objective: n.description || n.title, nodeTitle: n.title });
+                return contract ? { contract } : {}; })()
+            : {}),
       })),
     });
 

@@ -298,7 +298,9 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
       idempotencyKey: `seer-graph:${graphId}:${item.key}:attempt:${item.attempt + 1}`,
       source: 'seer-mission-graph',
       parent:{graphId,nodeKey:key,mainGoal:graph.objective,dependencies:item.dependencies,
-        agent:{id:'task:'+JSON.stringify([graphId,key]),name:item.title,parentKey:item.strategy?.delegatedFrom || null,kind:'task-agent'},
+        // Ordinary graph nodes are steps performed by Aura, not automatically spawned agents.
+        // A nested decomposition carries task-agent context only after the planner explicitly delegates it.
+        ...(item.strategy?.delegatedFrom ? {agent:{id:'task:'+JSON.stringify([graphId,key]),name:item.title,parentKey:item.strategy.delegatedFrom,kind:'task-agent'}} : {}),
         strategicBoard: compactStrategicBoard(graph.strategic_board), selectedMove: graph.strategic_board.moves.find(move => move.stepId === key)},
       ...(graph.policy?.executor ? {executor:graph.policy.executor} : {}),
       ...(Array.isArray(graph.policy?.allowedTasks) ? {allowedTasks:graph.policy.allowedTasks} : {}),
