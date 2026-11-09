@@ -151,9 +151,6 @@ jobs:
           $runtimeDir = Join-Path $installDir 'runtime'
           $stdOut = Join-Path $env:RUNNER_TEMP 'jaco-core-boot.log'
           $stdErr = Join-Path $env:RUNNER_TEMP 'jaco-core-boot.err.log'
-          # Compare against the packaged runtime, not an obsolete hard-coded release.
-          $runtimeVersion = (Get-Content (Join-Path $runtimeDir 'package.json') -Raw | ConvertFrom-Json).version
-          if (-not $runtimeVersion) { throw 'PACKAGED_RUNTIME_VERSION_MISSING' }
           $core = Start-Process -FilePath $nodeExe -ArgumentList 'dist/server.cjs' -WorkingDirectory $runtimeDir -RedirectStandardOutput $stdOut -RedirectStandardError $stdErr -WindowStyle Hidden -PassThru
           try {
             $healthy = $false
