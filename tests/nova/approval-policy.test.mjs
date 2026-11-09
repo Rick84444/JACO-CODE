@@ -74,7 +74,7 @@ test('an autonomous coding contract keeps resuming within its budget, then stops
   assert.equal(autoResolution(m, { level: 2, lastError: 'Command failed', autoResumes: 14 }), null, 'ceil(40/3) retries cover the step budget');
   assert.equal(autoResolution(m, { level: 1, lastError: 'Command failed', autoResumes: 1 }), null, 'level 1 keeps one retry');
   assert.equal(autoResolution(m, { level: 5, lastError: 'CODING_CONTRACT_STEP_BUDGET_EXCEEDED' }), null, 'budget used up: operator');
-  assert.equal(autoResolution(m, { level: 5, lastError: 'PLANNER_BLOCKED:no capability', autoResumes: 1 }), null, 'capability gap: one retry only');
+  assert.equal(autoResolution(m, { level: 5, lastError: 'PLANNER_BLOCKED:no capability', autoResumes: 0 }), null, 'capability gap is not recoverable by replay');\n  assert.equal(autoResolution({ ...m, contract: null }, { level: 5, lastError: 'PLANNER_BLOCKED:repo-write unavailable', autoResumes: 0 }), null, 'no contract: same capability blocker must not resume');\n  assert.equal(autoResolution(m, { level: 5, lastError: 'UNKNOWN_TASK_TYPE:repo-write', autoResumes: 0 }), null, 'unknown tool requires new capability observation');
   assert.equal(autoResolution(m, { level: 5, lastError: 'SHELL_BLOCKED_PAYMENT_SECRET_POLICY' }), null);
   assert.equal(autoResolution({ ...m, goal: 'buy a domain' }, { level: 5, lastError: 'Command failed' }), null, 'spend never');
   assert.equal(autoResolution({ ...m, receipts: [{ ok: true, verified: false, type: 'repo-write' }] }, { level: 5, lastError: 'x' }), null, 'uncertain outcome never');
