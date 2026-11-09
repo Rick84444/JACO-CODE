@@ -121,7 +121,8 @@ export function createJacoLinkHost({
       const url=localBaseUrl.replace(/\/$/,'')+request.path;
       const options={method,redirect:'error',headers:{'accept':'application/json'}};
       if(method==='POST'){options.headers['content-type']='application/json';options.body=json(request.body||{});}
-      const r=await fetchImpl(url,{...options,signal:AbortSignal.timeout(method==='GET'?15000:90000)});
+      const r=await fetchImpl(url,{...options,signal:AbortSignal.timeout(method==='GET'?15000:
+        request.path==='/api/aura/chat'?265000:90000)});
       const text=await r.text();
       let body;
       if(text.length>MAX_RESPONSE_BYTES)body={error:'LOCAL_RESPONSE_TOO_LARGE'};
