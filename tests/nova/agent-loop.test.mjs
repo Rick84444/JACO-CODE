@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl, mountNovaMissionRoutes } from '../../runtime/src/server/connected/novaMissionControl.mjs';
 import { MissionClient } from '../../agents/lib/mission-client.mjs';
@@ -885,4 +886,37 @@ test('Swedish plain-text capability denial is corrected using native tool catalo
   assert.deepEqual(executed,['repo-write']);
   assert.match(JSON.stringify(model.seen[1]),/CAPABILITY_CORRECTION: repo-write/);
   assert.equal(s.control.get(m.id).receipts.length,1);
+});
+
+
+test('acceptance: false tool denial recovers into a real file write and an actual Git commit', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-real-artifact-'));
+  t.after(() => fs.rmSync(root, { recursive:true, force:true, maxRetries:5, retryDelay:50 }));
+  const git = (...args) => execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim();
+  git('init','-b','feature');
+  git('config','user.email','jaco-ci@example.invalid');
+  git('config','user.name','JACO CI');
+  const s = setup(t,['repo-write','git-commit','repo-read']);
+  const contract = projectNodeContract({
+    title:'Create research document',
+    objective:'Create a new Markdown document docs/research.md',
+    mainGoal:'Save a reproducible artifact',
+    projectRoot:root,
+  });
+  assert.equal(contract.verification.tests_required,false,'docs-only tasks do not inherit unrelated npm suites');
+  const m = s.control.create({ goal:'Create docs/research.md and commit',idempotencyKey:'acceptance-real-artifact',
+    allowedTasks:['repo-write','git-commit','repo-read'],contract,projectRoot:root });
+  const workspace = createCodingWorkspace({root});
+  const model = scripted([
+    {tool_calls:[call('blocked',{reason:'I cannot create the Markdown file: repo-write is unavailable'})]},
+    {tool_calls:[call('repo-write',{path:'docs/research.md',content:'# Proven artifact\n\nWritten by Aura.'})]},
+    {tool_calls:[call('git-commit',{message:'docs: add proof artifact'})]},
+    {tool_calls:[call('complete',{reason:'Artifact created and committed [#1] [#2]'})]},
+  ]);
+  const result = await run(s,model,task=>workspace.execute(task,contract,{receipts:s.control.get(m.id).receipts}));
+  assert.equal(result.completed,true);
+  assert.equal(fs.readFileSync(path.join(root,'docs/research.md'),'utf8'),'# Proven artifact\n\nWritten by Aura.');
+  assert.equal(git('show','HEAD:docs/research.md'),'# Proven artifact\n\nWritten by Aura.');
+  assert.equal(git('status','--porcelain'),'');
+  assert.equal(s.control.get(m.id).contractStatus.machineVerified,true);
 });
