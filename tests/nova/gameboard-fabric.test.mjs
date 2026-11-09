@@ -89,6 +89,7 @@ test('durable mission receipts and action events distinguish verified execution 
   });
   assert.equal(board.graphSource,'UNAVAILABLE');
   assert.equal(board.missions[0].verifiedActions,1);
+  assert.equal(board.missions[0].reviewAvailable,false,'bus registration cannot imply a Nova worktree review');
   assert.equal(board.missions[0].actionCount,2);
   assert.equal(board.missions[0].lastError,'Command failed');
   assert.equal(board.next.code,'MISSION_NEEDS_RECOVERY');
