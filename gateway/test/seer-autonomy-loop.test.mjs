@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAutonomyLoop, parseModelJson, shouldAutoConfirmNova } from '../src/seer-autonomy-loop.mjs';
+import { createAuraControlLoop } from '../src/aura-control-loop.mjs';
 
 function graphFixture(initial) {
   let graph = structuredClone(initial);
@@ -252,4 +253,84 @@ test('Nova structured subgoals refine the existing graph without calling another
  const graph={id:'g',status:'NEEDS_REPLAN',nodes:[failed],replans:[]};
  const loop=createAutonomyLoop({missionGraph:{list:()=>[graph],ready:()=>[],replan:(id,input)=>{applied=input;graph.status='ACTIVE';return graph;}},callLLM:()=>assert.fail('Existing Nova plan must be reused'),dispatch:()=>assert.fail('No ready fixture nodes')});
  const r=await loop.turn();assert.equal(r.replanned.length,1);assert.equal(applied.failed_key,'large');assert.equal(applied.replacements.length,2);assert.deepEqual(applied.replacements[1].dependencies,[applied.replacements[0].key]);assert.equal(graph.id,'g');
+});
+
+test('Aura owns one serialized control turn: reconcile receipts before dispatching any plan', async () => {
+  const phases = [];
+  const loop = createAuraControlLoop({
+    reconcile: async () => { phases.push('reconcile'); },
+    plan: async () => { phases.push('plan'); return { dispatched: [{id:'mission-1'}], replanned: [], errors: [] }; },
+  });
+  const result = await loop.tick();
+  assert.deepEqual(phases, ['reconcile', 'plan']);
+  assert.equal(result.ok, true);
+  assert.equal(result.dispatched, 1);
+  assert.equal(loop.state().owner, 'aura');
+  assert.equal(loop.state().inFlight, false);
+  assert.equal(loop.state().runtimeConsolidated, false, 'OS processes have not been merged');
+});
+
+test('Aura never overlaps two scheduler ticks or duplicates a pending dispatch', async () => {
+  let release;
+  let reconciled = 0;
+  let planned = 0;
+  const gate = new Promise(resolve => { release = resolve; });
+  const loop = createAuraControlLoop({
+    reconcile: async () => { reconciled++; await gate; },
+    plan: async () => { planned++; return {}; },
+  });
+  const first = loop.tick();
+  const second = await loop.tick();
+  assert.equal(second.skipped, 'in_flight');
+  release();
+  assert.equal((await first).ok, true);
+  assert.equal(reconciled, 1);
+  assert.equal(planned, 1);
+});
+
+test('failed execution reconciliation prevents planning on unverified state, but remains retryable', async () => {
+  let fails = true, planned = 0;
+  const events = [];
+  const loop = createAuraControlLoop({
+    reconcile: async () => { if (fails) throw Error('EXECUTOR_UNAVAILABLE'); },
+    plan: async () => { planned++; return {}; },
+    emit: (type, payload) => events.push({type,payload}),
+  });
+  const first = await loop.tick();
+  assert.equal(first.ok, false);
+  assert.equal(first.phase, 'reconcile');
+  assert.equal(planned, 0);
+  assert.equal(events[0].type, 'aura.control.turn_failed');
+  fails = false;
+  assert.equal((await loop.tick()).ok, true);
+  assert.equal(planned, 1);
+});
+
+test('Aura stops before planning when the operator revokes execution during reconciliation', async () => {
+  let release, planned = 0;
+  const barrier = new Promise(resolve => { release = resolve; });
+  const loop = createAuraControlLoop({
+    reconcile: () => barrier,
+    plan: async () => {planned++;},
+  });
+  const active = loop.tick();
+  loop.stop();
+  release();
+  const done = await active;
+  assert.equal(done.skipped, 'stopped_after_reconcile');
+  assert.equal(planned, 0);
+  assert.equal((await loop.tick()).skipped, 'stopped');
+});
+
+test('disabled planning still reconciles the durable execution ledger', async () => {
+  let reconciled=0, planned=0;
+  const loop = createAuraControlLoop({
+    reconcile: async () => { reconciled++; },
+    plan: async () => {planned++;},
+  });
+  const report = await loop.tick({planningEnabled:false});
+  assert.equal(report.ok,true);
+  assert.deepEqual(report.phases,['reconcile']);
+  assert.equal(reconciled,1);
+  assert.equal(planned,0);
 });
