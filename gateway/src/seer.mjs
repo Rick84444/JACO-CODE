@@ -18,6 +18,7 @@ import { createMissionDispatcher } from './seer-mission-dispatch.mjs';
 import { STRATEGIC_AGENT_INSTRUCTIONS } from '../../agents/lib/strategic-context.mjs';
 import { buildSelfDevelopmentGraph } from './seer-self-development.mjs';
 import { createAutonomyLoop, shouldAutoConfirmNova } from './seer-autonomy-loop.mjs';
+import { createAuraControlLoop } from './aura-control-loop.mjs';
 import { createDevelopmentCycle, chooseGovernorFocus, governorBaseline } from './seer-development-cycle.mjs';
 import { createExperienceStore } from './seer-experience-store.mjs';
 import { discoverSeerLocalProvider, invokeSeerProvider, callSeerGovernorProvider, extractGovernorJson, providerOutputTruncated, budgetSeerLocalPrompt, compactGovernorGoals, clipGoalStatement, resolveAuraPlanner, invokeAuraPlanner } from './seer-model-provider.mjs';
@@ -723,8 +724,7 @@ const AUTONOMY_INTERVAL_MS = Math.max(0, Math.min(60_000, Number(process.env.SEE
 const AUTONOMY_MAX_REPLANS = Math.max(0, Math.min(20, Number(process.env.SEER_AUTONOMY_MAX_REPLANS ?? 3)));
 const AUTONOMY_MAX_DISPATCH = Math.max(1, Math.min(20, Number(process.env.SEER_AUTONOMY_MAX_DISPATCH ?? 2)));
 let novaReconcileInFlight = false;
-let novaReconcileTimer = null;
-let autonomyTimer = null;
+let auraControlTimer = null;
 const novaReconcileErrors = new Map();
 const missingNovaBindings = new Map();
 const autonomyLoop = createAutonomyLoop({
@@ -735,6 +735,16 @@ const autonomyLoop = createAutonomyLoop({
   maxReplans: AUTONOMY_MAX_REPLANS,
   maxDispatchPerTurn: AUTONOMY_MAX_DISPATCH,
 });
+// Aura owns a single ordered control turn. The historical strategy graph and
+// execution lease APIs remain adapters; they must not run competing timers.
+const auraControlLoop = createAuraControlLoop({
+  reconcile: () => reconcileNovaMissionGraphs(),
+  plan: () => autonomyLoop.turn(),
+  emit,
+});
+const AURA_CONTROL_CADENCE_MS = AUTONOMY_INTERVAL_MS > 0
+  ? Math.min(NOVA_RECONCILE_INTERVAL_MS, AUTONOMY_INTERVAL_MS)
+  : NOVA_RECONCILE_INTERVAL_MS;
 
 async function fetchNovaMission(novaMissionId) {
   const response = await fetch(`${process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000'}/api/connected/nova/missions/${encodeURIComponent(novaMissionId)}`, {
@@ -884,6 +894,7 @@ const server = createServer(async (req, res) => {
       agent_identity: 'aura',
       capability: 'strategy',
       independent_governor_enabled: GOVERNOR_INTERVAL_MS > 0,
+      aura_control: { ...auraControlLoop.state(), interval_ms: AURA_CONTROL_CADENCE_MS },
       purpose_id: state.purpose?.id || null,
       open_predictions: state.open_predictions.length,
       autonomy: {
@@ -1274,19 +1285,19 @@ server.listen(PORT, '127.0.0.1', () => {
     financial_authority: 'signed-modelrelay-mandate-only',
   });
 
-  novaReconcileTimer = setInterval(() => {
-    reconcileNovaMissionGraphs().catch(error => emit('mission_graph.reconcile_loop_error', { error: error.message }));
-  }, NOVA_RECONCILE_INTERVAL_MS);
-  novaReconcileTimer.unref?.();
-  reconcileNovaMissionGraphs().catch(error => emit('mission_graph.reconcile_loop_error', { error: error.message }));
-
+  // Only one scheduling owner. Aura reconciles persisted outcomes before any
+  // new planning, so overlapping timers cannot act on stale graph state.
+  auraControlLoop.tick({ planningEnabled: false, trigger: 'startup-reconcile' })
+    .catch(error => emit('aura.control.startup_error', { error: error.message }));
+  auraControlTimer = setInterval(() => {
+    auraControlLoop.tick({ planningEnabled: AUTONOMY_INTERVAL_MS > 0 })
+      .catch(error => emit('aura.control.timer_error', { error: error.message }));
+  }, AURA_CONTROL_CADENCE_MS);
+  auraControlTimer.unref?.();
   if (AUTONOMY_INTERVAL_MS > 0) {
-    autonomyTimer = setInterval(() => {
-      autonomyLoop.turn().catch(error => emit('autonomy.loop_error', { error: error.message }));
-    }, AUTONOMY_INTERVAL_MS);
-    autonomyTimer.unref?.();
     setTimeout(() => {
-      autonomyLoop.turn().catch(error => emit('autonomy.startup_error', { error: error.message }));
+      auraControlLoop.tick({ planningEnabled: true, trigger: 'startup-plan' })
+        .catch(error => emit('aura.control.startup_error', { error: error.message }));
     }, Math.min(1_500, AUTONOMY_INTERVAL_MS)).unref?.();
   }
 });
