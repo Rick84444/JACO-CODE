@@ -706,10 +706,15 @@
 
 
 /* Remote PWA uses the SAME Aura runtime. The navigation changes presentation only. */
+/* Laptop and desktop must render the canonical JacoAuraComputeIDE,
+   even when opened through a paired Remote URL (?remote=1). The compact
+   controls below are reserved for phone-size viewports only. */
 .cognitive-workspace .cognitive-remote-navigation{display:none}
-.cognitive-workspace[data-remote-mode="true"] .cognitive-remote-navigation{
-  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
-  padding:8px 12px;background:#202124;border-bottom:1px solid #45474c;
+@media (max-width:767px) {
+  .cognitive-workspace[data-remote-mode="true"] .cognitive-remote-navigation{
+    display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+    padding:8px 12px;background:#202124;border-bottom:1px solid #45474c;
+  }
 }
 .cognitive-remote-navigation button,.cognitive-remote-navigation a{
   border:1px solid #585b61;border-radius:6px;padding:6px 10px;
@@ -725,7 +730,9 @@
 
 /* On a phone, Aura Remote is a navigation shell over the same conversation
    and mission state; the desktop project rail is not duplicated. */
-.cognitive-workspace[data-remote-mode="true"] .cognitive-rail{display:none}
+@media (max-width:767px) {
+  .cognitive-workspace[data-remote-mode="true"] .cognitive-rail{display:none}
+}
 
 
 /* The full-screen Gameboard must never sit on top of the remote owner controls. */
