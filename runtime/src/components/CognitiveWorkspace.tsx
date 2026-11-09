@@ -143,8 +143,8 @@ export function CognitiveWorkspace(props:Props) {
         <div className="cognitive-contextbar">
           {props.status.tone !== 'idle' && <div className="cognitive-status" data-tone={props.status.tone} role="status"><span/>{L(props.status.label)}</div>}
           <nav className="cognitive-stage-switcher" aria-label={tr('Arbetsyta','Workspace')}>
-            {([['stage', Eye, 'Arbete'], ['code', Code2, 'Kod'], ['preview', Eye, 'Förhandsvisa'], ['evidence', ShieldCheck, 'Belägg']] as const).map(([view, Icon, label]) =>
-              <button key={view} type="button" title={L(label)+' · Ctrl/Cmd+Shift+'+({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view]} aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{L(label)}</span></button>)}
+            {([['stage', Eye, 'Arbete'], ['code', Code2, 'Kod'], ['preview', Eye, 'Förhandsvisa'], ['evidence', ShieldCheck, 'Belägg'], ['gameboard', Network, 'Spelplan']] as const).map(([view, Icon, label]) =>
+              <button key={view} type="button" title={L(label)+(view==='gameboard'?'':' · Ctrl/Cmd+Shift+'+({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view])} aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{L(label)}</span></button>)}
           </nav>
           <button type="button" className="cognitive-mobile-focus" onClick={()=>props.onCanvas(showStage?'conversation':'stage')}>
             {showStage ? <MessageSquare size={15}/> : <Eye size={15}/>}
