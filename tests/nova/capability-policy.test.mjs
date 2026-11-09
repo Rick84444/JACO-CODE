@@ -63,6 +63,7 @@ test('a task the operator turned off is missing from new missions and refused fo
   const mission = missions.create({ goal: 'Look at the page', idempotencyKey: 'cap-3' });
   assert.ok(mission.allowedTasks.includes('browser-click'));
   policy.update({ tasks: { 'browser-click': false } });
+  assert.ok(!missions.get(mission.id).allowedTasks.includes('browser-click'), 'existing mission must see the live operator restriction');
   assert.ok(!missions.create({ goal: 'Look at another page', idempotencyKey: 'cap-4' }).allowedTasks.includes('browser-click'));
   const { token } = missions.claim(mission.id, 'agent');
   assert.throws(() => missions.begin(mission.id, { owner: 'agent', token, task: { type: 'browser-click', data: { selector: 'a' } } }), /TASK_TURNED_OFF_BY_OPERATOR:browser-click/);
