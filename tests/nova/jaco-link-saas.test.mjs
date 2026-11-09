@@ -192,3 +192,11 @@ test('pending mutation outcome survives DO restart without retrying it',()=>{
   assert.equal(phone.sent[0].body.accepted,true);
   assert.equal(host.sent.length,1,'no duplicate mutation sent during resume');
 });
+
+test('operator approval viewer consumes the canonical approval-center items and legal actions',()=>{
+  const ui=fs.readFileSync('site/jacocode.com/public/link/remote.js','utf8');
+  assert.match(ui,/Array\.isArray\(data\.items\)/);
+  assert.match(ui,/resume:'Återuppta'/);
+  assert.match(ui,/confirm:'Bekräfta'/);
+  assert.match(ui,/a\.actions\.includes\(choice\)/);
+});
