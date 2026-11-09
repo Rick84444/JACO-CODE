@@ -1,6 +1,7 @@
 // The operator-facing Aura Core owns scheduling. The legacy strategy database
 // and durable execution ledger are reached through their existing authenticated
 // adapters; the short lease prevents parallel legacy scheduling during migration.
+/** @param {{request: (action:string, input:any) => Promise<any>, intervalMs?:number, onStatus?:(state:any)=>void}} options */
 export function createAuraCoreController({
   request, intervalMs = 2500, onStatus = () => {},
 } = {}) {
