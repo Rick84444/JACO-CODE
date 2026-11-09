@@ -86,7 +86,7 @@ export function contextPacketIntro(mission, {
  */
 // Roughly what fits the default per-call budget at reference prices, with room for tool schemas.
 const COST_RETRY_CONTEXT_CHARS = 20_000;
-const SAYS_BLOCKED = /\b(?:i am|i'm|i was) (?:blocked|unable|not able)\b|\bi (?:cannot|can't|could not|couldn't) (?:complete|proceed|continue|do|fetch|perform|finish|create|write|save|edit|modify|make)\b|\bi do(?:n't| not) have (?:a|an|the|any) (?:\w+ )?(?:tool|access|permission)\b/i;
+const SAYS_BLOCKED = /\b(?:i am|i'm|i was) (?:blocked|unable|not able)\b|\bi (?:cannot|can't|could not|couldn't) (?:complete|proceed|continue|do|fetch|perform|finish|create|write|save|edit|modify|make)\b|\bi do(?:n't| not) have (?:a|an|the|any) (?:\w+ )?(?:tool|access|permission)\b|(?:jag kan inte|jag saknar|jag har inte)/i;
 export async function runAgentMission({
   client, owner, chat, toolsFor, execute, system,
   observe = async () => null, intro = introMessage, refreshIntro = false, acceptMission = null,
