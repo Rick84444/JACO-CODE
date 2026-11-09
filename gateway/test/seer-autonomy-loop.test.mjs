@@ -420,3 +420,15 @@ test('Core shutdown during an async lease claim releases it and never starts a p
   assert.equal(released,1);
   assert.equal(ticks,0);
 });
+
+test('Aura never labels a failed tool dispatch as a completed control turn',async()=>{
+  const loop=createAuraControlLoop({
+    reconcile:async()=>{},
+    plan:async()=>({dispatched:[],errors:[{phase:'dispatch',error:'TOOL_NOT_AVAILABLE'}]}),
+  });
+  const report=await loop.tick();
+  assert.equal(report.ok,false);
+  assert.equal(report.error,'AURA_PLANNER_REPORTED_ERRORS');
+  assert.equal(report.errors,1);
+  assert.equal(loop.state().last.ok,false);
+});
