@@ -63,8 +63,8 @@ test('Windows setup publishing is tag-gated, not triggered merely by a main merg
 
 test('Windows packaged boot validates its own runtime version and runs Aura capability acceptance', () => {
   const workflow = fs.readFileSync(new URL('../../.github/workflows/jaco-windows-release.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /\$runtimeVersion = \(Get-Content \(Join-Path \$runtimeDir 'package\.json'\)/);
-  assert.match(workflow, /\$identity\.version -eq \$runtimeVersion/);
+  assert.match(workflow, /\$expectedRuntimeVersion = \(Get-Content \(Join-Path \$installDir 'runtime\/package\.json'\)/);
+  assert.match(workflow, /\$identity\.version -eq \$expectedRuntimeVersion/);
   assert.doesNotMatch(workflow, /\$identity\.version -eq '0\.22\.0'/);
   assert.match(workflow, /tests\/nova\/capability-recovery\.test\.mjs/);
   assert.match(workflow, /tests\/nova\/agent-loop\.test\.mjs/);
