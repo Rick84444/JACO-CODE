@@ -109,7 +109,7 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
     { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] }));
   targets.set('complete', { kind: 'complete' });
   targets.set('blocked', { kind: 'blocked' });
-  if (allowReplan) tools.push(fn('request_replan', 'Ask SEER to refine this graph node into smaller sequential subgoals. Preserve the original goal, authority and verification. This pauses execution; it does not complete the mission.', {
+  if (allowReplan) tools.push(fn('request_replan', 'Ask Aura's internal strategy planner to refine this graph node into smaller sequential subgoals. Preserve the original goal, authority and verification. This pauses execution; it does not complete the mission.', {
     type: 'object', properties: { reason: { type: 'string' }, subgoals: { type: 'array', minItems: 2, maxItems: 8, items: { type: 'object', properties: { title: { type: 'string' }, objective: { type: 'string' } }, required: ['title','objective'], additionalProperties: false } } }, required: ['reason','subgoals'], additionalProperties: false,
   }));
   if (allowReplan) targets.set('request_replan', { kind: 'replan' });
