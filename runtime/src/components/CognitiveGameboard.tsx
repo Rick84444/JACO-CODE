@@ -88,7 +88,9 @@ export function CognitiveGameboard() {
           {m.lastError&&<p className="text-rose-300 break-words">Last failed action: {m.lastError}</p>}
           <div className="flex justify-between items-center gap-2 text-[10px] text-neutral-500">
             <span>Mission {m.identity}</span>
-            <button type="button" className="rounded border border-neutral-600 px-2 py-1 text-neutral-200 hover:bg-neutral-700" onClick={()=>window.dispatchEvent(new CustomEvent('jaco:open-mission-evidence',{detail:m.identity}))}>Review execution &amp; evidence</button>
+            {m.reviewAvailable
+              ? <button type="button" className="rounded border border-neutral-600 px-2 py-1 text-neutral-200 hover:bg-neutral-700" onClick={()=>window.dispatchEvent(new CustomEvent('jaco:open-mission-evidence',{detail:m.identity}))}>Review execution &amp; evidence</button>
+              : <span className="text-neutral-500">No mission worktree review available</span>}
           </div>
         </article>)}
       </div>:<p data-testid="gameboard-no-mission" className="text-xs text-amber-300">No durable mission observed. Goal registration alone does not prove execution.</p>}
