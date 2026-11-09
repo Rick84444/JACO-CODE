@@ -57,7 +57,7 @@ test('Aura may not turn an explicitly observation-only or no-write goal into a w
   assert.equal(isPathAllowed(contract,'artifacts/aura/report.md'),true);
   assert.equal(isPathAllowed(contract,'.env'),false);
   assert.equal(isPathAllowed(contract,'artifacts/aura/.env'),false);
-  assert.equal(isPathAllowed(contract,'../secrets.txt'),false);
+  assert.throws(()=>isPathAllowed(contract,'../secrets.txt'),/CONTRACT_PATH_TRAVERSAL/);
 });
 
 test('existing no-contract Nova missions remain read-only and do not acquire write authority',t=>{
