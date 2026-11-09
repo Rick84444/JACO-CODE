@@ -19,8 +19,9 @@ class Store {
   list({prefix}={}){return Promise.resolve(new Map([...this.data].filter(([key])=>key.startsWith(prefix||''))));}
 }
 class Socket {
-  constructor(role,deviceId=null){this.attachment={role,deviceId};this.sent=[];this.closed=null;}
+  constructor(role,deviceId=null){this.attachment={role,deviceId,sessionId:role==='host'?'host-session-1':'phone-session-1',pending:[]};this.sent=[];this.closed=null;}
   deserializeAttachment(){return this.attachment;}
+  serializeAttachment(value){this.attachment=structuredClone(value);}
   send(value){this.sent.push(JSON.parse(value));}
   close(code,reason){this.closed={code,reason};}
 }
@@ -85,7 +86,10 @@ test('distinct customer rooms cannot read, route or revoke each other’s Window
   a.instance.webSocketMessage(phoneA,JSON.stringify(rpc('GET','/api/aura/plan')));
   assert.equal(host.sent.length,1);
   assert.equal('body' in host.sent[0],false,'GET must not invent body:null');
-  a.instance.webSocketMessage(host,JSON.stringify({type:'rpc_result',id,status:200,body:{plans:[{name:'secret A'}]}}));
+  // Simulate the cloud evicting the Durable Object JavaScript instance while
+  // both WebSockets remain alive. Pending ownership must be on the socket.
+  const resumed = new JacoLinkRoom(a.ctx);
+  resumed.webSocketMessage(host,JSON.stringify({type:'rpc_result',id,status:200,body:{plans:[{name:'secret A'}]}}));
   assert.equal(phoneA.sent[0].body.plans[0].name,'secret A');
   assert.equal(phoneB.sent.length,0);
   b.instance.webSocketMessage(phoneB,JSON.stringify(rpc('GET','/api/aura/plan')));
@@ -159,4 +163,32 @@ test('mobile app has real installable assets and actual branded memory icon',()=
   assert.match(read(base+'remote.js'),/\/api\/aura\/workbench\/local-memory/);
   assert.match(read(base+'remote.js'),/\/api\/aura\/workbench\/missions\//);
   assert.match(read('runtime/src/components/DevicesView.tsx'),/jaco-link-onboarding/);
+});
+
+test('an old host socket cannot claim a response belonging to its replacement',()=>{
+  const a=room();
+  const first=new Socket('host',did),phone=new Socket('phone');
+  a.sockets.push(first,phone);
+  a.instance.webSocketMessage(phone,JSON.stringify(rpc('GET','/api/aura/plan')));
+  assert.equal(phone.deserializeAttachment().pending.length,1);
+  const replacement=new Socket('host',did);
+  replacement.serializeAttachment({role:'host',deviceId:did,sessionId:'host-session-2',pending:[]});
+  a.sockets.push(replacement);
+  const resumed=new JacoLinkRoom(a.ctx);
+  resumed.webSocketMessage(replacement,JSON.stringify({type:'rpc_result',id,status:200,body:{plans:['malicious']}}));
+  assert.equal(phone.sent.length,0,'wrong host response is ignored');
+  resumed.webSocketClose(first);
+  assert.equal(phone.sent[0].body.error,'PC_DISCONNECTED_OUTCOME_UNKNOWN');
+  assert.equal(phone.deserializeAttachment().pending.length,0);
+});
+
+test('pending mutation outcome survives DO restart without retrying it',()=>{
+  const a=room(),host=new Socket('host',did),phone=new Socket('phone');
+  a.sockets.push(host,phone);
+  a.instance.webSocketMessage(phone,JSON.stringify(rpc('POST','/api/aura/chat',{message:'build it'})));
+  assert.equal(host.sent.length,1);
+  const resumed=new JacoLinkRoom(a.ctx);
+  resumed.webSocketMessage(host,JSON.stringify({type:'rpc_result',id,status:202,body:{accepted:true}}));
+  assert.equal(phone.sent[0].body.accepted,true);
+  assert.equal(host.sent.length,1,'no duplicate mutation sent during resume');
 });
