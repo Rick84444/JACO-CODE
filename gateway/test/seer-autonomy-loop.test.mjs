@@ -382,6 +382,7 @@ test('Aura Core delegates a single ordered tick and never allows another active 
   core.start();
   const result=await core.tick();
   assert.ok(result.ok===true||result.skipped==='in_flight');
+  for(let i=0;i<30 && !core.state().ticks;i++) await new Promise(resolve=>setTimeout(resolve,1));
   assert.equal(lease.state().owner,'aura-core');
   assert.ok(reconciled>=1);
   assert.equal(reconciled,planned);
@@ -396,8 +397,26 @@ test('Aura Core surfaces unavailable adapters without creating phantom receipts 
   const core=createAuraCoreController({request:async()=>{throw Error('STRATEGY_UNAVAILABLE');}});
   core.start();
   await core.tick();
+  for(let i=0;i<30 && !core.state().lastError;i++) await new Promise(resolve=>setTimeout(resolve,1));
   assert.equal(core.state().leased,false);
   assert.match(core.state().lastError||'',/STRATEGY_UNAVAILABLE/);
   assert.equal(core.state().ticks,0);
   await core.stop();
+});
+
+test('Core shutdown during an async lease claim releases it and never starts a planning turn',async()=>{
+  let finishClaim;
+  let ticks=0, released=0;
+  const waiting=new Promise(resolve=>{finishClaim=resolve;});
+  const core=createAuraCoreController({request:async(action)=>{
+    if(action==='claim') return waiting;
+    if(action==='tick'){ticks++;return {ok:true};}
+    if(action==='release'){released++;return {ok:true};}
+  }});
+  core.start();
+  await core.stop();
+  finishClaim({token:'late-lease'});
+  for(let i=0;i<30 && !released;i++) await new Promise(resolve=>setTimeout(resolve,1));
+  assert.equal(released,1);
+  assert.equal(ticks,0);
 });
