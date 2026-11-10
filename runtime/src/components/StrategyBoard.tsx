@@ -271,7 +271,7 @@ function StepCard({ plan, node, decisions, onPick, onClose, onSaved }: { plan: P
     {after.length > 0 && <div className="mt-3 text-sm"><div className="text-xs uppercase tracking-widest text-neutral-400">{tr('Leder vidare till', 'Leads on to')}</div><div className="mt-1 flex flex-wrap gap-1">{after.map(link)}</div></div>}
     {node.needs.length > 0 && <div className="mt-3"><div className="text-xs uppercase tracking-widest text-neutral-400">{tr('Vad steget behöver', 'What the step needs')}</div>
       <div className="mt-1 flex flex-wrap gap-1">{node.needs.map(x => <span key={x.kind + x.label} className={`rounded px-2 py-0.5 text-xs ${chip(x.state, x.approval)}`}>{x.label}{x.state ? ` (${tr(...STATE_WORD[x.state])})` : ''}</span>)}</div></div>}
-    {reportedWithoutReceipt && <p role="status" className="mt-3 rounded border border-amber-900 bg-amber-950/20 p-2 text-sm text-amber-200">{tr('SEER har rapporterat att steget är klart, men ingen verifieringsreferens finns. Det visas därför inte som verifierat i trädet.', 'SEER reports completion but no verification reference exists. It is therefore not shown as verified in the tree.')}</p>}
+    {reportedWithoutReceipt && <p role="status" className="mt-3 rounded border border-amber-900 bg-amber-950/20 p-2 text-sm text-amber-200">{tr('Aura har rapporterat att steget är klart, men ingen verifieringsreferens finns. Det visas därför inte som verifierat i trädet.', 'Aura reports completion but no verification reference exists. It is therefore not shown as verified in the tree.')}</p>}
     {receipts.length>0 && <section className="mt-3 rounded border border-blue-900/60 bg-[#0b192b] p-3" data-testid="gameboard-step-receipts">
       <div className="text-xs font-semibold text-blue-200">{tr('Verifieringsreferenser från runtime','Runtime verification references')} ({receipts.length})</div>
       <div className="mt-2 flex flex-wrap gap-1.5">{receipts.map((ref,i)=><code key={i} className="break-all rounded border border-blue-900 px-2 py-1 text-[11px] text-blue-100">{ref}</code>)}</div>
@@ -368,7 +368,7 @@ export function StrategyBoard({ focusPlanId = null, onClose, eventRevision = nul
   // operator selection pins a historical graph. Never silently replace a
   // manually selected intuition while the person is reading it.
   const plan = pickPlan(plans || [], pinned ? chosen : null);
-  // Stable node identities come from the real SEER graph.
+  // Stable node identities come from Aura's durable mission graph.
   // Tree layout is derived by ReverseGoalCanvas from the canonical DAG.
   const planMissions = new Set((plan?.nodes || []).map(n => n.missionId).filter((m): m is string => Boolean(m)));
   const planDecisions = decisions.filter(d => planMissions.has(decisionMission(d) || ''));
@@ -406,7 +406,7 @@ export function StrategyBoard({ focusPlanId = null, onClose, eventRevision = nul
         <div className="text-xs uppercase tracking-widest text-sky-300">INTUITION · {tr('registrerat mål','recorded goal')}</div>
         <div className="text-sm font-semibold text-white">{observed?.operatorGoal?.statement || observed?.missions?.[0]?.goal}</div>
       </div></div>
-      <p className="text-xs text-amber-200">{tr('Målet finns, men Aura har ännu inte rapporterat en SEER-plan med verifierbara delsteg. Inga steg hittas på.', 'The goal exists, but Aura has not yet reported a SEER plan with verifiable steps. No steps are fabricated.')}</p>
+      <p className="text-xs text-amber-200">{tr('Målet finns, men Aura har ännu inte rapporterat en plan med verifierbara delsteg. Inga steg hittas på.', 'The goal exists, but Aura has not yet reported a plan with verifiable steps. No steps are fabricated.')}</p>
       {observed?.missions?.slice(0,4).map(m=><div key={m.identity} className="rounded border border-neutral-700 p-2 text-xs">
         <div className="text-neutral-100">{m.goal}</div><div className="text-neutral-400">{m.status} · {m.verifiedActions} {tr('verifierade verktygssteg', 'verified tool actions')}</div>
       </div>)}
