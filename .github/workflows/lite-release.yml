@@ -88,7 +88,7 @@ jobs:
       - name: Install canonical runtime dependencies on Windows
         run: npm ci --prefix runtime
       - name: Run portable Lite regression tests on Windows
-        run: node --test tests/nova/lite-chat-routing.test.mjs tests/nova/lite.test.mjs tests/nova/gameboard-mcp-access.test.mjs tests/nova/gameboard-fabric.test.mjs tests/nova/gameboard-exchange.test.mjs tests/nova/jaco-editor-mcp.test.mjs
+        run: node --test tests/nova/lite-chat-routing.test.mjs tests/nova/lite.test.mjs tests/nova/gameboard-mcp-access.test.mjs tests/nova/gameboard-fabric.test.mjs tests/nova/gameboard-exchange.test.mjs tests/nova/jaco-editor-mcp.test.mjs tests/nova/jaco-link-saas.test.mjs
       - name: Build exact Windows-compatible downloadable Lite
         env:
           JACO_BUILD_SOURCE_COMMIT: ${{ github.sha }}
