@@ -29,6 +29,7 @@ import { IntuitionContractStore } from './src/server/autonomy/intuitionContractS
 import { createDesktopRouter } from './src/server/desktop/router.js';
 import { DesktopHandsOffClient, type DesktopAction } from './src/server/desktop/desktopHandsOff.js';
 import { createCognitiveStreamHandler, readCognitiveFeed } from './src/server/connected/cognitiveLiveStream.mjs';
+import { projectAuraLiveWorkspace } from './src/lib/liveWorkspaceProjection.mjs';
 import { cognitiveQuestionToolbox } from './src/server/connected/cognitiveQuestionToolbox.mjs';
 import { seerLiveWorkstream } from './src/server/seer/liveWorkstream.js';
 import { createBrowserRouter } from './src/server/browser/router.js';
@@ -391,6 +392,34 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
         description: 'List recent durable Nova missions (id, status, turn, failures). args: {"limit":20}',
         run: async (args: any) => (connectedRuntime.bus.listMissions(Math.min(100, Number(args?.limit) || 20)) || [])
           .map((m: any) => ({ id: m.id, status: m.status, turn: m.turn, failures: m.failures, goal: String(m.goal || '').slice(0, 120) })),
+      },
+      causal_workspace: {
+        description: 'Read-only causal map of Aura tool actions: correlate a real mission and tool with Gameboard graph/node and evidence. This never runs tools, marks success, updates memory or changes authority. args: {"missionId":"optional existing mission ID","limit":60}',
+        run: async (args: any) => {
+          const current = connectedRuntime.novaMissions.current();
+          const requested = typeof args?.missionId === 'string' && /^mission-[a-zA-Z0-9-]{1,120}$/.test(args.missionId)
+            ? args.missionId : current?.id || null;
+          const feed = readCognitiveFeed({
+            bus: connectedRuntime.bus, workstream: seerLiveWorkstream,
+            limit: Math.max(1, Math.min(100, Number(args?.limit) || 60)),
+            secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key))
+              .map(([,value]) => value).filter(Boolean),
+          });
+          const projection = projectAuraLiveWorkspace(feed.events, {missionId: requested, maxSurfaces: 6});
+          return {
+            schema: 'jaco.aura-causal-context/v1', source: 'existing-mission-bus',
+            observedAt: feed.observedAt, historyTruncated: feed.historyTruncated,
+            missionId: requested, observedActions: projection.actionCount,
+            links: projection.surfaces.flatMap(surface => surface.entries).slice(0, 12).map(item => ({
+              missionId: item.missionId, graphId: item.planId, nodeKey: item.nodeKey,
+              actionId: item.actionId, toolType: item.toolType, surface: item.surface,
+              observationState: item.state, evidenceOutcome: item.evidence?.outcome || 'observed',
+              receiptEventId: item.durable ? item.eventId : null,
+              resourcePath: item.evidence?.path || null, observedAt: item.at,
+            })),
+            note: 'Tool starts and results are observations. A verified action does not verify the mission or graph node.'
+          };
+        }
       },
       runtime_events: {
         description: 'Recent runtime/mission events from the connected runtime bus. args: {"limit":30}',
