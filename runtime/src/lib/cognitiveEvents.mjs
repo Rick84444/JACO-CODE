@@ -187,6 +187,11 @@ export function toCognitiveEvent(raw, { durable = false, missionGoal = null, sec
     // The plan (blueprint) this event belongs to, so the chat can open it.
     planId: [planId, type === 'AURA_MEMORY_SAVED' ? payload.graphId : null].find(id => typeof id === 'string' && /^[\w.:-]{1,120}$/.test(id)) || null,
     actionId: clean(action.id || action.actionId || payload.actionId, 200) || null,
+    // Metadata only: a bounded tool identity, never arguments or an execution claim.
+    toolType: (type === 'NOVA_ACTION_STARTED' || type === 'NOVA_ACTION_RESULT') &&
+      typeof (action.type || payload.type) === 'string' &&
+      /^[a-z0-9][a-z0-9_.:-]{0,95}$/i.test(action.type || payload.type)
+      ? clean(action.type || payload.type, 96) : null,
     evidence,
   };
   // Configuration secrets may not follow a token prefix. Apply them to every displayed field.
