@@ -97,3 +97,18 @@ test('operator approval is visualized, not executed or granted by drawing the bo
   assert.equal(r.readOnly,true);
   assert.equal(r.executed,false);
 });
+
+
+test('senior audit: an offline runtime must stop blue motion, while retaining the last observed source graph',()=>{
+  const plan=graph([node('ship',['run']),node('run',[],'RUNNING')]);
+  const live=reverseGoalLayout(plan,{executionFresh:true});
+  const stale=reverseGoalLayout(plan,{executionFresh:false});
+  assert.equal(live.activeCount,1);
+  assert.equal(live.edges.filter(e=>e.status==='active').length,2);
+  assert.equal(stale.executionFresh,false);
+  assert.equal(stale.reportedActiveCount,1);
+  assert.equal(stale.activeCount,0);
+  assert.equal(stale.edges.filter(e=>e.status==='active').length,0);
+  assert.equal(stale.nodes.find(n=>n.id==='run').status,'stale');
+  assert.deepEqual(stale.nodes.map(({id,x,y})=>[id,x,y]),live.nodes.map(({id,x,y})=>[id,x,y]));
+});
