@@ -3,6 +3,12 @@ name: Cognitive Live Workspace
 on:
   pull_request:
     paths:
+      - 'runtime/src/components/AuraLiveStage.tsx'
+      - 'runtime/src/components/AuraLiveToolSurfaces.tsx'
+      - 'runtime/src/components/StrategyBoard.tsx'
+      - 'runtime/src/lib/liveWorkspaceProjection.mjs'
+      - 'runtime/src/lib/gameboardTree.test.tsx'
+      - 'tests/nova/live-workspace-projection.test.mjs'
       - 'runtime/src/components/Cognitive*.tsx'
       - 'runtime/src/components/AuraChatPanel.tsx'
       - 'runtime/src/components/JacoAuraComputeIDE.tsx'
@@ -22,6 +28,12 @@ on:
   push:
     branches: [main]
     paths:
+      - 'runtime/src/components/AuraLiveStage.tsx'
+      - 'runtime/src/components/AuraLiveToolSurfaces.tsx'
+      - 'runtime/src/components/StrategyBoard.tsx'
+      - 'runtime/src/lib/liveWorkspaceProjection.mjs'
+      - 'runtime/src/lib/gameboardTree.test.tsx'
+      - 'tests/nova/live-workspace-projection.test.mjs'
       - 'runtime/src/components/Cognitive*.tsx'
       - 'runtime/src/components/AuraChatPanel.tsx'
       - 'runtime/src/components/JacoAuraComputeIDE.tsx'
@@ -58,7 +70,10 @@ jobs:
           npm run build:client
           npm run build:server
       - name: Evidence, durable replay, chat storage and GUI contracts
-        run: node --test tests/nova/cognitive-live.test.mjs tests/nova/aura-chat-session.test.mjs tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-gui-audit.test.mjs tests/nova/nova-activity-text.test.mjs tests/nova/aura-seer-chat.test.mjs
+        run: node --test tests/nova/live-workspace-projection.test.mjs tests/nova/aura-live-stage.test.mjs tests/nova/gameboard-fabric.test.mjs tests/nova/cognitive-live.test.mjs tests/nova/aura-chat-session.test.mjs tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-gui-audit.test.mjs tests/nova/nova-activity-text.test.mjs tests/nova/aura-seer-chat.test.mjs
+      - name: Parallel Gameboard path regression
+        working-directory: runtime
+        run: node --import tsx --test src/lib/gameboardTree.test.tsx
       - name: Install isolated browser test tools
         run: |
           npm install --prefix "$RUNNER_TEMP/jaco-browser" --no-package-lock --no-audit --no-fund playwright@1.62.1
