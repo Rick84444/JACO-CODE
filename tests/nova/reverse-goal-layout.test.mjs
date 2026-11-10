@@ -13,7 +13,7 @@ const graph = nodes => ({id:'g',objective:'Deliver a verified enterprise product
 test('the immutable intuition is centered and terminal goals are below, dependencies below their consumers', () => {
   const r=reverseGoalLayout(graph([node('finish',['build']),node('build',['read']),node('read')]));
   assert.equal(r.schema,REVERSE_GOAL_GRAPH_SCHEMA);
-  assert.equal(r.source,'SEER_MISSION_GRAPH');
+  assert.equal(r.source,'AURA_MISSION_GRAPH');
   assert.equal(r.readOnly,true);
   assert.equal(r.executed,false);
   assert.equal(r.nodes[0].id,REVERSE_GOAL_ROOT);
@@ -43,7 +43,7 @@ test('active execution sends a BLUE pulse along the whole real ancestry, while i
   assert.equal(r.edges.find(e=>e.from==='ship'&&e.to==='docs').status,'pending');
   assert.equal(r.nodes.find(n=>n.id==='source').status,'active');
 });
-test('verification requires a persisted SEER evidence reference, never model prose or registration',()=>{
+test('verification requires a persisted Aura execution-evidence reference, never model prose or registration',()=>{
   assert.equal(hasVerifiedReceipt(node('a',[],'VERIFIED',[])),false);
   assert.equal(nodeVisualState(node('a',[],'VERIFIED',[])),'reported');
   assert.equal(nodeVisualState(node('a',[],'VERIFIED',['receipt:123'])),'verified');
