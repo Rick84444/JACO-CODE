@@ -21,10 +21,16 @@ export class StuckDetector {
   }
 
   // name: the tool; args/result: JSON-like; ok: whether the step worked; error: the failure text, if any.
-  record({ name, args, ok, result, error }) {
+  record({ name, args, inputHash = null, ok, result, error }) {
+    // Durable receipts already hash the complete original argument object. Rehashing
+    // that digest makes resumed actions look different from the same live call.
+    // Use canonical SHA-256 when provided; retain the legacy fallback for callers
+    // without a durable action fingerprint.
+    const actionFingerprint = typeof inputHash === 'string' && /^[a-f0-9]{64}$/i.test(inputHash)
+      ? inputHash.toLowerCase() : digest(args);
     this.steps.push({
       name: String(name),
-      call: `${name}:${digest(args)}`,
+      call: `${name}:${actionFingerprint}`,
       outcome: digest(ok === false ? String(error || result?.error || 'failed') : result),
       ok: ok !== false,
       error: ok === false ? String(error || result?.error || 'failed').slice(0, 200) : '',

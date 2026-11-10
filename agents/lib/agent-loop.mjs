@@ -9,7 +9,7 @@
 // validates the task against the mission's allowed tasks, contract and approvals), execute, finish
 // with a receipt. A step the runtime refuses is reported to the model and costs the mission nothing;
 // a step that runs and fails counts against the mission's failure budget as before.
-import { BATCHABLE, checkedReceipt } from './mission-client.mjs';
+import { BATCHABLE, checkedReceipt, hashTaskInput } from './mission-client.mjs';
 import { searchDeferredTools } from './native-tools.mjs';
 import { redactDeep } from './secret-capture.mjs';
 import { StuckDetector } from './stuck-detector.mjs';
@@ -25,6 +25,17 @@ const clip = (text, max = RESULT_CHARS) => {
   return s.length > max ? `${s.slice(0, max)}\n…[${s.length - max} more chars]` : s;
 };
 const errorText = error => String(error?.message || error || 'error').split('\n')[0].slice(0, 400);
+
+// The durable mission records MCP calls by transport task type, while the
+// live agent uses server.tool as the action name. Normalize both to the same
+// logical action without changing the mission's execution contract.
+export function stuckActionName(type, data) {
+  if ((type === 'mcp-call' || type === 'mcp-write') &&
+      typeof data?.server === 'string' && typeof data?.tool === 'string') {
+    return `${data.server}.${data.tool}`;
+  }
+  return String(type || '');
+}
 
 // What the model sees of a receipt: whether it worked, why not, and the readable part of the result.
 // What a result means for the next step, in words. A bare error code or an unchanged file looked like
@@ -179,7 +190,7 @@ export async function runAgentMission({
     // What earlier runs of this mission already did counts for stuck detection, so a circle that spans runs is caught.
     const history = (Array.isArray(mission.receipts) ? mission.receipts : []).slice(-24);
     // Preserve the actual historical outcome: changing results must not be mistaken for an identical-result loop.
-    for (const r of history) stuck.record({ name: r.type, args: r.inputHash || r.input, ok: r.ok, result: r.result, error: r.error });
+    for (const r of history) stuck.record({ name: stuckActionName(r.type, r.input), args: r.input, inputHash: r.inputHash, ok: r.ok, result: r.result, error: r.error });
     const inheritedCircle = history.length ? stuck.check() : { stuck: false };
     ({ tools, resolve, deferred = [] } = await toolsFor(mission));
     capabilityEvidence = observeMissionCapabilities(mission, tools);
@@ -386,7 +397,7 @@ export async function runAgentMission({
         receipts.push(receipt);
         await onReceipt(receipt, begun, updated);
         reply_(receiptForModel(steps, receipt));
-        stuck.record({ name: target.kind === 'mcp' ? `${target.server}.${target.tool}` : target.type, args: task.data, ok: receipt.ok, result: receipt.result, error: receipt.error });
+        stuck.record({ name: stuckActionName(begun.type, begun.data), args: begun.data, inputHash: hashTaskInput(begun.data), ok: receipt.ok, result: receipt.result, error: receipt.error });
         if (!nudge) { const verdict = stuck.check(); if (verdict.stuck) nudge = verdict; }
         if (updated) mission = updated;
         if (mission.status !== 'ACTIVE') {

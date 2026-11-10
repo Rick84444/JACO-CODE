@@ -4,7 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { StuckDetector } from '../../agents/lib/stuck-detector.mjs';
 import { condenseMessages, conversationChars, SUMMARY_MARK } from '../../agents/lib/condenser.mjs';
-import { receiptForModel } from '../../agents/lib/agent-loop.mjs';
+import { receiptForModel, stuckActionName } from '../../agents/lib/agent-loop.mjs';
+import { hashTaskInput } from '../../agents/lib/mission-client.mjs';
 
 const step = (name, args, ok, result, error) => ({ name, args, ok, result, error });
 
@@ -107,3 +108,39 @@ test('what the model is shown has secrets replaced by handles', () => {
   assert.match(shown, /all good/);
   assert.match(shown, /secret:/);
 });
+
+test('durable receipt and resumed tool call have one canonical action fingerprint', () => {
+  const oldArgs = { command: 'npm test', args: ['--', 'unit'] };
+  const newArgs = { args: ['--', 'unit'], command: 'npm test' };
+  const inputHash = hashTaskInput(oldArgs);
+  const d = new StuckDetector();
+  for (let i = 0; i < 2; i++) {
+    d.record({ name: 'shell', args: { command: '[truncated]' }, inputHash, ok: true, result: { state: 'unchanged' } });
+  }
+  assert.equal(d.check().stuck, false);
+  d.record({ name: 'shell', args: newArgs, inputHash: hashTaskInput(newArgs), ok: true, result: { state: 'unchanged' } });
+  assert.equal(d.check().kind, 'repeat', 'a resumed identical step must not escape detection');
+});
+
+test('durable MCP action name maps to the exact same server.tool as the live call', () => {
+  const arguments_ = { server: 'browser', tool: 'navigate', arguments: { url: 'https://example.test' } };
+  const d = new StuckDetector();
+  d.record({ name: stuckActionName('mcp-call', arguments_), inputHash: hashTaskInput(arguments_), ok: true, result: { page: 'same' } });
+  d.record({ name: stuckActionName('mcp-call', arguments_), inputHash: hashTaskInput(arguments_), ok: true, result: { page: 'same' } });
+  d.record({ name: stuckActionName('mcp-call', arguments_), args: arguments_, inputHash: hashTaskInput(arguments_), ok: true, result: { page: 'same' } });
+  assert.equal(stuckActionName('mcp-call', arguments_), 'browser.navigate');
+  assert.equal(d.check().kind, 'repeat');
+  assert.equal(stuckActionName('repo-read', {path:'a'}), 'repo-read');
+});
+
+test('changing the argument or observation is genuine new evidence, not an identical-action loop', () => {
+  for (const change of ['args', 'result']) {
+    const d = new StuckDetector();
+    const a = {path:'src/a.ts'};
+    const b = change === 'args' ? {path:'src/b.ts'} : a;
+    for (let i = 0; i < 2; i++) d.record({name:'repo-read',inputHash:hashTaskInput(a),ok:true,result:{content:'old'}});
+    d.record({name:'repo-read',inputHash:hashTaskInput(b),ok:true,result:{content:change==='result'?'new':'old'}});
+    assert.equal(d.check().stuck,false, change);
+  }
+});
+
