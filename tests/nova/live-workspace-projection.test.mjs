@@ -112,3 +112,17 @@ test('Aura can inspect causal links through its existing read-only toolbox witho
   assert.equal(toolbox.tools.mcp_tool,undefined);
   assert.equal(writes,0);
 });
+
+test('a newer verified result replaces an old failed primary while preserving failure history',()=>{
+  const events=[
+    create({actionId:'old-failed',type:'repo-test',phase:'NOVA_ACTION_RESULT',outcome:'failed',seq:2}),
+    create({actionId:'fixed',type:'repo-test',phase:'NOVA_ACTION_RESULT',outcome:'verified',at:later(1),seq:3})
+  ];
+  const p=projectAuraLiveWorkspace(events,{now:Date.parse(AT)+3000});
+  const surface=p.surfaces.find(s=>s.id==='tests');
+  assert.equal(surface.primary.actionId,'fixed');
+  assert.equal(surface.primary.state,'VERIFIED');
+  assert.equal(surface.count,2);
+  assert.equal(surface.entries[1].state,'FAILED');
+});
+
