@@ -412,7 +412,7 @@ export function StrategyBoard({ focusPlanId = null, onClose, eventRevision = nul
       </div>)}
       {observed?.next?.text&&<p className="text-xs text-neutral-300">{observed.next.text}</p>}
     </article>:<p className="text-sm text-neutral-300">{tr('Inget aktivt mål eller plan observerat. Ge Aura ett mål i chatten.', 'No active goal or plan observed. Give Aura a goal in the chat.')}</p>)}
-    {plan && <div data-testid="plan-tree"><ReverseGoalCanvas plan={plan} executionFresh={!error} waitingOn={waitingOn} onGoal={()=>setOpen('goal')} onSelect={setOpen}/></div>}
+    {plan && <div data-testid="plan-tree"><ReverseGoalCanvas plan={plan} executionFresh={!error && liveConnection==='live'} waitingOn={waitingOn} onGoal={()=>setOpen('goal')} onSelect={setOpen}/></div>}
     {plan?.changes?.length>0 && <details className="rounded border border-neutral-800 p-3 text-xs text-neutral-300" data-testid="gameboard-plan-history">
       <summary className="cursor-pointer">{tr('Planens versionshistorik','Plan revision history')} · {plan.changes.length}</summary>
       <div className="mt-2 space-y-2">{plan.changes.map((change,i)=><p key={i}>{change.at?new Date(change.at).toLocaleString():tr('Tid okänd','Time unknown')} · {change.reason || tr('Ändring utan orsak','Change without reason')}</p>)}</div>
