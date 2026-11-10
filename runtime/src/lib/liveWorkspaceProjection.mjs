@@ -51,8 +51,8 @@ export function projectAuraLiveWorkspace(events = [], {
     const key = JSON.stringify([event.missionId, event.actionId]);
     const current = actions.get(key) || { started: null, finished: null };
     if (isResult(event)) {
-      if (!current.finished || (!current.finished.durable && event.durable) ||
-        stamp(event) >= stamp(current.finished)) current.finished = event;
+      if (!current.finished || (event.durable && !current.finished.durable) ||
+        (event.durable === current.finished.durable && stamp(event) >= stamp(current.finished))) current.finished = event;
     } else if (!current.started || stamp(event) >= stamp(current.started)) {
       current.started = event;
     }
