@@ -2000,7 +2000,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       onCommands={() => setCommandPaletteOpen(true)} onSignOut={() => void signOut()}
       lastObservedAt={cognitiveLive.lastObservedAt || snapshot?.observedAt || null} error={connectionError}/>
     {/* The Gameboard fills the whole work area so it can be read; Aura's face, the chat or any tool in the rail closes it. */}
-    {workspaceView==='gameboard'&&<div className="jaco-gameboard-full" role="region" aria-label="Gameboard"><React.Suspense fallback={<div className="cognitive-empty-detail">{tr('Öppnar Gameboard…','Opening the Gameboard…')}</div>}><StrategyBoard focusPlanId={focusPlanId} onClose={()=>setWorkspaceView('conversation')}/><details className="bg-black px-4 pb-4 text-xs text-neutral-400"><summary>{tr('Teknisk vy','Technical view')}</summary><CognitiveGameboard/></details></React.Suspense></div>}
+    {workspaceView==='gameboard'&&<div className="jaco-gameboard-full" role="region" aria-label="Gameboard"><React.Suspense fallback={<div className="cognitive-empty-detail">{tr('Öppnar Gameboard…','Opening the Gameboard…')}</div>}><StrategyBoard focusPlanId={focusPlanId} eventRevision={cognitiveEvents.at(-1)?.id || null} onClose={()=>setWorkspaceView('conversation')}/><details className="bg-black px-4 pb-4 text-xs text-neutral-400"><summary>{tr('Teknisk vy','Technical view')}</summary><CognitiveGameboard/></details></React.Suspense></div>}
     <AuraCommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenTool={openTool}/>
     {renderApprovals()}
   </>;
