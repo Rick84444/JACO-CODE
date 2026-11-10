@@ -46,9 +46,12 @@ export class BrowserSessionManager {
       try { await replacement.close(); } catch {}
       throw new Error('CDP_ATTACH_SUPERSEDED');
     }
+    let nextClient: BrowserHandsOffClient;
+    try { nextClient = new BrowserHandsOffClient(this.workspaceRoot, replacement); }
+    catch (error) { try { await replacement.close(); } catch {} throw error; }
     const previous = this.bridge;
     this.bridge = replacement;
-    this.client = new BrowserHandsOffClient(this.workspaceRoot, replacement);
+    this.client = nextClient;
     this.cdpPort = port;
     this.urlIncludes = urlIncludes;
     this.attachedAt = new Date().toISOString();
@@ -58,11 +61,14 @@ export class BrowserSessionManager {
 
   async detach(): Promise<void> {
     ++this.attachEpoch;
-    try { await this.bridge?.close(); } catch {}
+    const previous = this.bridge;
+    // Clear synchronously: a later attachment must not be erased when an old
+    // socket finishes closing asynchronously.
     this.bridge = null;
     this.client = null;
     this.urlIncludes = null;
     this.attachedAt = null;
+    try { await previous?.close(); } catch {}
   }
 }
 
