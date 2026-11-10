@@ -103,6 +103,24 @@ test('real SQLite mission history replays after a process-store restart without 
   } finally {bus?.close();fs.rmSync(dir,{recursive:true,force:true});}
 });
 
+test('live tool evidence retains its exact parent Gameboard graph and node',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-live-node-'));
+  const bus=new DurableMissionBus(dir);
+  try {
+    const mission=bus.createMission({goal:'Inspect provider routing',
+      metadata:{parent:{graphId:'graph:provider',nodeKey:'provider-routing'}}});
+    bus.event('NOVA_ACTION_STARTED',{missionId:mission.id,payload:{
+      action:{id:'action-routing',type:'repo-read',data:{path:'runtime.ts'}}
+    }});
+    const feed=readCognitiveFeed({bus,workstream});
+    const event=feed.events.find(item=>item.type==='NOVA_ACTION_STARTED');
+    assert.equal(event.planId,'graph:provider');
+    assert.equal(event.nodeKey,'provider-routing');
+    assert.equal(event.toolType,'repo-read');
+    assert.equal(event.actionId,'action-routing');
+  }finally{bus.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
+
 test('bounded replay explicitly identifies missing older history',()=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-cognitive-'));
   const bus=new DurableMissionBus(dir);
