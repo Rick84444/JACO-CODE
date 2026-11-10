@@ -24,6 +24,27 @@ const definitions=[
   ['nova_downloads','List files the browser has downloaded (names, sizes, digests; never content)','GET','/downloads',{}],
   ['nova_press','Press one key (Enter, Tab, Escape, arrows, Home, End, PageUp, PageDown, Backspace, Delete, space) and verify an explicit transition','POST','/press',{key:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
 ];
+// Explicitly optional transition constraints. An actionId and the tool's actual
+// target/operation fields remain mandatory; a caller can omit postconditions.
+const OPTIONAL_ARGUMENTS = new Set(['expectedUrl', 'expect']);
+export function validCdpArgument(value, schema) {
+  if (!schema || value === null || value === undefined) return false;
+  if (schema.type === 'array') {
+    return Array.isArray(value) &&
+      (schema.minItems === undefined || value.length >= schema.minItems) &&
+      (schema.maxItems === undefined || value.length <= schema.maxItems) &&
+      (!schema.items || value.every(item => validCdpArgument(item, schema.items)));
+  }
+  if (schema.type === 'object') {
+    if (typeof value !== 'object' || Array.isArray(value)) return false;
+    if (schema.properties) {
+      return Object.entries(value).every(([key, item]) =>
+        Object.hasOwn(schema.properties, key) && validCdpArgument(item, schema.properties[key]));
+    }
+    return true;
+  }
+  return typeof value === schema.type;
+}
 export function createCdpFacade({token=process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '',base=process.env.NOVA_BRIDGE_URL || 'http://127.0.0.1:4243',fetchImpl=fetch}={}) {
   const send=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(data));};
   return createServer(async(req,res)=>{
@@ -74,14 +95,17 @@ export function createCdpFacade({token=process.env.JACO_GATEWAY_TOKEN || process
       if(msg.id===undefined) {res.writeHead(202);res.end();return;}
       if(msg.method==='initialize') return reply({protocolVersion:['2024-11-05','2025-03-26','2025-06-18'].includes(msg.params?.protocolVersion)?msg.params.protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'jaco-nova',version:'1.1.0'}});
       if(msg.method==='ping') return reply({});
-      if(msg.method==='tools/list') return reply({tools:definitions.map(([name,description,method,path,properties])=>({name,description,inputSchema:{type:'object',properties,required:Object.keys(properties),additionalProperties:false},annotations:{readOnlyHint:method==='GET',openWorldHint:true}}))});
+      if(msg.method==='tools/list') return reply({tools:definitions.map(([name,description,method,path,properties])=>({name,description,inputSchema:{type:'object',properties,required:Object.keys(properties).filter(key=>!OPTIONAL_ARGUMENTS.has(key)),additionalProperties:false},annotations:{readOnlyHint:method==='GET',openWorldHint:true}}))});
       if(msg.method!=='tools/call') return error(-32601,'Method not found');
       const def=definitions.find(d=>d[0]===msg.params?.name);
       if(!def) return error(-32602,'Unknown tool');
       const args=msg.params.arguments || {};
       if(!args || typeof args!=='object' || Array.isArray(args)) return error(-32602,'Invalid arguments');
-      for(const [key,schema] of Object.entries(def[4])) if(typeof args[key]!==schema.type || args[key]===null) return error(-32602,'Invalid '+key);
-      if(Object.keys(args).some(k=>!(k in def[4]))) return error(-32602,'Unexpected argument');
+      if(Object.keys(args).some(k=>!Object.hasOwn(def[4],k))) return error(-32602,'Unexpected argument');
+      for(const [key,schema] of Object.entries(def[4])) {
+        if(!Object.hasOwn(args,key) && OPTIONAL_ARGUMENTS.has(key)) continue;
+        if(!validCdpArgument(args[key],schema)) return error(-32602,'Invalid '+key);
+      }
       if(def[2]==='POST' && !/^[A-Za-z0-9][A-Za-z0-9:_-]{7,127}$/.test(args.actionId)) return error(-32602,'Invalid actionId');
       try {
         const r=await fetchImpl(base+def[3],{method:def[2],headers:{'content-type':'application/json',Authorization:'Bearer '+token},...(def[2]==='POST'?{body:JSON.stringify(args)}:{}),signal:AbortSignal.timeout(20000)});
