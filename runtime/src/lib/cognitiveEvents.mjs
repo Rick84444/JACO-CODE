@@ -115,7 +115,7 @@ function humanResult(type, result, evidence, clean, t = text => text, sv = false
   return out;
 }
 
-export function toCognitiveEvent(raw, { durable = false, missionGoal = null, secrets = [], language = 'en', planId = null } = {}) {
+export function toCognitiveEvent(raw, { durable = false, missionGoal = null, secrets = [], language = 'en', planId = null, nodeKey = null } = {}) {
   if (!raw || typeof raw !== 'object') return null;
   const t = inLanguage(language), sv = language === 'sv';
   const clean=(value,max=600)=>safeCognitiveText(value,max,secrets);
@@ -186,6 +186,7 @@ export function toCognitiveEvent(raw, { durable = false, missionGoal = null, sec
     missionGoal: clean(missionGoal || raw.missionGoal, 300) || null,
     // The plan (blueprint) this event belongs to, so the chat can open it.
     planId: [planId, type === 'AURA_MEMORY_SAVED' ? payload.graphId : null].find(id => typeof id === 'string' && /^[\w.:-]{1,120}$/.test(id)) || null,
+    nodeKey: typeof nodeKey === 'string' && /^[\w.:-]{1,120}$/.test(nodeKey) ? nodeKey : null,
     actionId: clean(action.id || action.actionId || payload.actionId, 200) || null,
     // Metadata only: a bounded tool identity, never arguments or an execution claim.
     toolType: (type === 'NOVA_ACTION_STARTED' || type === 'NOVA_ACTION_RESULT') &&
