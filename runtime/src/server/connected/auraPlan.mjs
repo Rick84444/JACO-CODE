@@ -1,5 +1,5 @@
 // The plan as the operator sees it: the final goal, each step with what it needs and how it is going, what was
-// changed when a step did not lead toward the goal, and the operator's own comments. SEER's mission graph stays the
+// changed when a step did not lead toward the goal, and the operator's own comments. Aura's mission graph stays the
 // owner of the plan; this only reads it and keeps the comments, which reach each step as direction.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -91,7 +91,7 @@ export function planView(graph, { comments = [], skills = [], language = 'en', a
   const nodes = (graph.nodes || []).map(n => ({
     key: n.key, title: productNames(n.title), objective: productNames(n.objective), status: n.status, statusText: words[n.status] || n.status,
     dependencies: n.dependencies || [], missionId: n.nova_mission_id || null, failure: productNames(n.failure_reason || null),
-    // Evidence comes from SEER's persisted node record. It is never inferred
+    // Evidence comes from Aura's persisted mission graph node record. It is never inferred
     // from text, capability registration, simulation, or an asserted status.
     evidenceRefs: Array.isArray(n.evidence_refs) ? n.evidence_refs.filter(x => typeof x === 'string').slice(0, 40) : [],
     updatedAt: n.updated_at ?? null,
