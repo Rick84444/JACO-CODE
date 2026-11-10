@@ -3,6 +3,9 @@ name: Cognitive Live Workspace
 on:
   pull_request:
     paths:
+      - 'runtime/src/server/mcp/auraAgentMcpCall.mjs'
+      - 'runtime/src/server/connected/cognitiveQuestionToolbox.mjs'
+      - 'tests/nova/aura-mcp-lazy-start.test.mjs'
       - 'agents/cdp-bridge.mjs'
       - 'runtime/src/server/browser/router.ts'
       - 'runtime/src/server/browser/browserHandsOff.ts'
@@ -33,6 +36,9 @@ on:
   push:
     branches: [main]
     paths:
+      - 'runtime/src/server/mcp/auraAgentMcpCall.mjs'
+      - 'runtime/src/server/connected/cognitiveQuestionToolbox.mjs'
+      - 'tests/nova/aura-mcp-lazy-start.test.mjs'
       - 'agents/cdp-bridge.mjs'
       - 'runtime/src/server/browser/router.ts'
       - 'runtime/src/server/browser/browserHandsOff.ts'
@@ -84,7 +90,7 @@ jobs:
       - name: Real MCP facade requests and non-destructive CDP attach
         working-directory: runtime
         run: |
-          node --test ../tests/nova/cdp-mcp-contract.test.mjs ../tests/nova/cdp-page-html.test.mjs
+          node --test ../tests/nova/cdp-mcp-contract.test.mjs ../tests/nova/cdp-page-html.test.mjs ../tests/nova/aura-mcp-lazy-start.test.mjs
           node --import tsx --test ../tests/nova/browser-session-attach.test.mjs
       - name: Parallel Gameboard path regression
         working-directory: runtime
