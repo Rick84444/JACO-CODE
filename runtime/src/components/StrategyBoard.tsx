@@ -313,7 +313,7 @@ function Branch({ item, order, onPick, lit = '', waitingOn }: { item: TreeItem; 
 
 const short = (text: string, max = 70) => text.length > max ? text.slice(0, max - 1) + '…' : text;
 
-export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: string | null; onClose?: () => void }) {
+export function StrategyBoard({ focusPlanId = null, focusNodeKey = null, onClose }: { focusPlanId?: string | null; focusNodeKey?: string | null; onClose?: () => void }) {
   const { tr, language } = useUiLanguage();
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [observed, setObserved] = useState<{operatorGoal?:{statement:string}|null;missions?:Array<{identity:string;goal:string;status:string;verifiedActions:number}>;next?:{text:string}}|null>(null);
@@ -322,7 +322,7 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
   const [chosen, setChosen] = useState<string | null>(focusPlanId);
   // The open card: a step's key, 'goal' for the goal, or nothing.
   const [open, setOpen] = useState<string | null>(null);
-  useEffect(() => { if (focusPlanId) { setChosen(focusPlanId); setOpen(null); } }, [focusPlanId]);
+  useEffect(() => { if (focusPlanId) setChosen(focusPlanId); setOpen(focusNodeKey); }, [focusPlanId, focusNodeKey]);
   const load = useCallback(async () => {
     // Planning may be late or unavailable while the operator's goal and durable
     // missions are already recorded. Read both sources independently.
