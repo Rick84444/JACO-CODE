@@ -19,6 +19,9 @@ export class BrowserSessionManager {
   private cdpPort = Number(process.env.NOVA_CDP_PORT || 9222);
   private urlIncludes: string | null = null;
   private attachedAt: string | null = null;
+  // A new attachment must not destroy a verified working tab if its probe fails.
+  // Also rejects an attachment that completes after a newer attach/detach.
+  private attachEpoch = 0;
 
   constructor(private readonly workspaceRoot: string) {}
 
@@ -31,27 +34,41 @@ export class BrowserSessionManager {
   async targets(port = this.cdpPort) { return CdpBridge.listTargets(port); }
 
   async attach(input: { port?: number; urlIncludes: string; targetId?: string }): Promise<BrowserSessionSnapshot> {
-    await this.detach();
-    const port = Number(input.port || process.env.NOVA_CDP_PORT || 9222);
+    const port = Number(input.port ?? process.env.NOVA_CDP_PORT ?? 9222);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('invalid CDP port');
     const urlIncludes = String(input.urlIncludes || '').trim();
     if (!urlIncludes || urlIncludes.length > 300) throw new Error('urlIncludes must be 1-300 characters');
     const targetId = input.targetId;
     if(targetId!==undefined && (typeof targetId!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(targetId)))throw new Error('CDP_TARGET_ID_INVALID');
-    this.bridge = await CdpBridge.attach(port, urlIncludes, targetId);
-    this.client = new BrowserHandsOffClient(this.workspaceRoot, this.bridge);
+    const epoch = ++this.attachEpoch;
+    const replacement = await CdpBridge.attach(port, urlIncludes, targetId);
+    if (epoch !== this.attachEpoch) {
+      try { await replacement.close(); } catch {}
+      throw new Error('CDP_ATTACH_SUPERSEDED');
+    }
+    let nextClient: BrowserHandsOffClient;
+    try { nextClient = new BrowserHandsOffClient(this.workspaceRoot, replacement); }
+    catch (error) { try { await replacement.close(); } catch {} throw error; }
+    const previous = this.bridge;
+    this.bridge = replacement;
+    this.client = nextClient;
     this.cdpPort = port;
     this.urlIncludes = urlIncludes;
     this.attachedAt = new Date().toISOString();
+    try { await previous?.close(); } catch {}
     return this.snapshot();
   }
 
   async detach(): Promise<void> {
-    try { await this.bridge?.close(); } catch {}
+    ++this.attachEpoch;
+    const previous = this.bridge;
+    // Clear synchronously: a later attachment must not be erased when an old
+    // socket finishes closing asynchronously.
     this.bridge = null;
     this.client = null;
     this.urlIncludes = null;
     this.attachedAt = null;
+    try { await previous?.close(); } catch {}
   }
 }
 

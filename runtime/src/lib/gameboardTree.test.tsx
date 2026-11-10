@@ -38,6 +38,16 @@ test('the line from the active subgoal to the goal glows all the way to the midd
   assert.deepEqual(litLine(['VERIFIED', 'VERIFIED'].map(item)), ['', '']);
 });
 
+test('parallel active Gameboard branches illuminate every real active route', async () => {
+  const { litLine } = await import('../components/StrategyBoard');
+  const item = (status: string) => ({ node: node('n', [], status), children: [], repeat: false });
+  const paths = litLine(['RUNNING', 'READY', 'READY', 'READY', 'RUNNING'].map(item));
+  assert.ok(paths[0].includes('jp-v'));
+  assert.ok(paths[4].includes('jp-v'));
+  assert.ok(paths[1].includes('jp-r'));
+  assert.ok(paths[3].includes('jp-l'));
+});
+
 test('a Gameboard approval explains the action, the reason and a safer path in plain language', () => {
   const guidance = decisionGuidance({ id:'mission:m1', kind:'MISSION', title:'Publicera sidan', risk:'HIGH', reason:'Publicering gör resultatet synligt för andra.', actions:['resume','cancel'] }, 'sv');
   assert.match(guidance.what, /fortsätter uppdraget en gång/);

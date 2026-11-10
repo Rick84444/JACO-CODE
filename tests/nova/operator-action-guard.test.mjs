@@ -35,6 +35,9 @@ test('guard stops outward clicks and connector writes, in English and Swedish', 
   for (const text of ['Delete account', 'Publish', 'Send', 'Skicka', 'Ta bort', 'Logga in', 'Sign in'])
     assert.ok(operatorApprovalCheck({ type: 'browser-click', data: { text } }), text);
   assert.ok(operatorApprovalCheck({ type: 'mcp-write', data: { server: 'gmail', tool: 'send_message' } }));
+  for (const tool of ['stripe_charge', 'payments_checkout', 'stripe_refund', 'wallet_withdraw', 'stripe_create_payment_intent', 'stripe_payout_create']) {
+    assert.ok(operatorApprovalCheck({type:'mcp-write', data:{server:'payments',tool}}), tool);
+  }
   assert.ok(operatorApprovalCheck({ type: 'browser-type', data: { text: 'vault:NOVA_PASSWORD' } }));
 });
 

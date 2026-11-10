@@ -300,6 +300,16 @@ try {
   passed('A question receives observed run context and does not restart or replace the mission');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'pass-test',type:'repo-test',ok:true,verified:true,result:{path:'example.ts',exitCode:0}}});
   await page.locator('[data-event-id="mission:5"][data-outcome="verified"]').waitFor();
+  // Controlled real React + SSE transport with synthetic mission fixtures: verify
+  // that the canonical Aura Live stage renders several actual bus action types.
+  await canvas('Arbete').click();
+  await page.getByTestId('aura-live-tool-surfaces').waitFor();
+  await page.locator('[data-surface="code"] .aura-live-tool-kind').getByText('repo-read').waitFor();
+  await page.locator('[data-surface="tests"] .aura-live-tool-kind').getByText('repo-test').waitFor();
+  await page.locator('[data-surface="tests"] .aura-live-tool-status[data-outcome="VERIFIED"]').waitFor();
+  await page.locator('[data-surface="tests"] .aura-live-tool-details').waitFor();
+  passed('Canonical Aura Live projects concurrent code and test tool receipts without new agent execution');
+  await canvas('Samtal').click();
   await screenshot('cognitive-workspace-live');
   await page.locator('[data-event-id="mission:5"]').getByRole('button',{name:/^(Visa bevis|Show evidence)$/}).click();
   const selectedEvidence=page.getByRole('region',{name:/^(Valt bevis|Selected evidence)$/});

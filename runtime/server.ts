@@ -29,6 +29,7 @@ import { IntuitionContractStore } from './src/server/autonomy/intuitionContractS
 import { createDesktopRouter } from './src/server/desktop/router.js';
 import { DesktopHandsOffClient, type DesktopAction } from './src/server/desktop/desktopHandsOff.js';
 import { createCognitiveStreamHandler, readCognitiveFeed } from './src/server/connected/cognitiveLiveStream.mjs';
+import { projectAuraLiveWorkspace } from './src/lib/liveWorkspaceProjection.mjs';
 import { cognitiveQuestionToolbox } from './src/server/connected/cognitiveQuestionToolbox.mjs';
 import { seerLiveWorkstream } from './src/server/seer/liveWorkstream.js';
 import { createBrowserRouter } from './src/server/browser/router.js';
@@ -66,6 +67,7 @@ import { stripeRevenueSnapshot } from "./src/server/revenue/stripeRevenue.mjs";
 import { automaticConnections } from "./src/server/connected/automaticConnections.mjs";
 import { liteChatAnswer } from "./src/server/connected/liteChatRouter.mjs";
 import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/mcp/stdioMcpHost.mjs";
+import { discoverAuraMcpTools, callAuraMcpTool } from './src/server/mcp/auraAgentMcpCall.mjs';
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
@@ -297,19 +299,16 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
           })),
         }),
       },
+      mcp_discover: {
+        description: 'Discover currently advertised tools from one already configured MCP server, starting it on demand. Only reads the catalog and never calls a tool or broadens policy. args: {server}',
+        run: async (args: any) => discoverAuraMcpTools(mcpHost, String(args?.server || '')),
+      },
       mcp_tool: {
-        description: 'Call one currently advertised MCP tool for the active goal. args: {server,tool,arguments?,mode:"read"|"write"}. Read calls require an advertised read-only tool. Write calls require that server to have agentAccess=write and remain subject to its workspace, secret, destructive-action and external-effect guards.',
-        run: async (args: any) => {
-          const server = String(args?.server || '');
-          const tool = String(args?.tool || '');
-          const mode = args?.mode === 'write' ? 'write' : 'read';
-          if (!/^[A-Za-z0-9_.-]{1,80}$/.test(server) || !/^[A-Za-z0-9_.-]{1,120}$/.test(tool)) throw new Error('MCP_PROVIDER_AND_TOOL_REQUIRED');
-          const status: any = mcpHost.status().find((entry: any) => entry.id === server);
-          const advertised: any = status?.tools?.find((entry: any) => entry.name === tool);
-          if (!status || status.status !== 'READY' || !advertised) throw new Error(`MCP_TOOL_UNAVAILABLE:${server}.${tool}`);
-          if (mode === 'read' && advertised.readOnly !== true) throw new Error(`MCP_TOOL_WRITE_MODE_REQUIRED:${server}.${tool}`);
-          return await mcpHost.call(server, tool, args?.arguments || {}, { actor: 'agent', readOnly: mode !== 'write' });
-        },
+        description: 'Call a configured MCP tool for this Aura goal. Automatically connects when permitted. args: {server,tool,arguments?,mode:"read"|"write"}. Existing access, deny rules, argument checks and mission approval requirements still apply.',
+        run: async (args: any) => callAuraMcpTool(mcpHost, {
+          server: String(args?.server || ''), tool: String(args?.tool || ''),
+          args: args?.arguments ?? {}, mode: args?.mode || 'read',
+        }),
       },
       termux_services: {
         description: 'Read-only actual runit process status for canonical Termux services. Never starts/restarts a second stack. args: {}',
@@ -391,6 +390,41 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
         description: 'List recent durable Nova missions (id, status, turn, failures). args: {"limit":20}',
         run: async (args: any) => (connectedRuntime.bus.listMissions(Math.min(100, Number(args?.limit) || 20)) || [])
           .map((m: any) => ({ id: m.id, status: m.status, turn: m.turn, failures: m.failures, goal: String(m.goal || '').slice(0, 120) })),
+      },
+      causal_workspace: {
+        description: 'Read-only causal map of Aura tool actions: correlate a real mission and tool with Gameboard graph/node and evidence. This never runs tools, marks success, updates memory or changes authority. args: {"missionId":"optional existing mission ID","limit":60}',
+        run: async (args: any) => {
+          const current = connectedRuntime.novaMissions.current();
+          const requested = typeof args?.missionId === 'string' && /^mission-[a-zA-Z0-9-]{1,120}$/.test(args.missionId)
+            ? args.missionId : current?.id || null;
+          const feed = readCognitiveFeed({
+            bus: connectedRuntime.bus, workstream: seerLiveWorkstream,
+            limit: Math.max(1, Math.min(100, Number(args?.limit) || 60)),
+            secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key))
+              .map(([,value]) => value).filter(Boolean),
+          });
+          const projection = projectAuraLiveWorkspace(feed.events, {missionId: requested, maxSurfaces: 6});
+          const recent = projection.surfaces.flatMap(surface => surface.entries)
+            .sort((a,b) => Date.parse(b.at) - Date.parse(a.at) || (b.seq || 0) - (a.seq || 0));
+          // Reuse the operator's canonical capability grouping; it is metadata,
+          // not proof that a tool was authorized or successfully executed.
+          const toolGroups = new Map<string,string>(taskCatalog([...new Set(recent.map(item => item.toolType))])
+            .flatMap(group => group.tasks.map(task => [task.id, group.id] as [string,string])));
+          return {
+            schema: 'jaco.aura-causal-context/v1', source: 'existing-mission-bus',
+            observedAt: feed.observedAt, historyTruncated: feed.historyTruncated,
+            missionId: requested, observedActions: projection.actionCount,
+            links: recent.slice(0, 12).map(item => ({
+              missionId: item.missionId, graphId: item.planId, nodeKey: item.nodeKey,
+              actionId: item.actionId, toolType: item.toolType, capabilityGroup: toolGroups.get(item.toolType) || 'other',
+              surface: item.surface,
+              observationState: item.state, evidenceOutcome: item.evidence?.outcome || 'observed',
+              receiptEventId: item.durable ? item.eventId : null,
+              resourcePath: item.evidence?.path || null, observedAt: item.at,
+            })),
+            note: 'Tool starts and results are observations. A verified action does not verify the mission or graph node.'
+          };
+        }
       },
       runtime_events: {
         description: 'Recent runtime/mission events from the connected runtime bus. args: {"limit":30}',

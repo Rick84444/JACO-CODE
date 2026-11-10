@@ -7,14 +7,15 @@ export function readCognitiveFeed({ bus, workstream, after = 0, limit = 300, sec
   const all = bus.listEvents(limit + 1).slice().sort((a,b) => a.seq - b.seq);
   const rows = all.slice(-limit);
   const cursor = Math.max(after, ...rows.map(row => row.seq), 0);
-  const goals = new Map(), plans = new Map();
+  const goals = new Map(), plans = new Map(), nodes = new Map();
   const events = rows.filter(row => row.seq > after).map(row => {
     if (row.missionId && !goals.has(row.missionId)) {
       const m = bus.getMission(row.missionId);
       goals.set(row.missionId, m?.goal || null);
       plans.set(row.missionId, m?.metadata?.parent?.graphId || null);
+      nodes.set(row.missionId, m?.metadata?.parent?.nodeKey || null);
     }
-    return toCognitiveEvent(row, {durable:true, missionGoal:goals.get(row.missionId), planId:plans.get(row.missionId), secrets, language});
+    return toCognitiveEvent(row, {durable:true, missionGoal:goals.get(row.missionId), planId:plans.get(row.missionId), nodeKey:nodes.get(row.missionId), secrets, language});
   }).filter(Boolean);
   const live = workstream.snapshot();
   return {
