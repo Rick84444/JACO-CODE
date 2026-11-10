@@ -67,6 +67,7 @@ export function projectAuraLiveWorkspace(events = [], {
     const item = {
       id: JSON.stringify([event.missionId, event.actionId]),
       missionId: event.missionId, actionId: event.actionId,
+      planId: event.planId || null, nodeKey: event.nodeKey || null,
       toolType: event.toolType, surface, state, at: event.at,
       evidence: event.evidence, text: event.text,
       eventId: event.id, durable: event.durable === true,
