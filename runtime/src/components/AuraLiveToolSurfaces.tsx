@@ -23,7 +23,7 @@ const headings: Record<string, [string, string]> = {
   git: ['Git', 'Git'], tools: ['Verktyg', 'Tools']
 };
 const statuses: Record<string, [string, string]> = {
-  RUNNING: ['Körs', 'Running'],
+  RUNNING: ['Startat, väntar på resultat', 'Started, awaiting result'],
   VERIFIED: ['Verifierat resultat', 'Verified result'],
   FAILED: ['Misslyckades', 'Failed'],
   UNKNOWN: ['Okänt resultat', 'Unknown outcome'],
