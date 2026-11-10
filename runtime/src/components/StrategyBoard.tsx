@@ -26,7 +26,7 @@ const chip = (state?: string | null, approval?: boolean) => state === 'have' ? '
 const STATUS_TEXT: Record<string, string> = { FAILED: 'text-rose-300', VERIFIED: 'text-white/60' };
 const working = (status: string) => status === 'RUNNING' || status === 'DISPATCHED';
 
-// Lines are quiet white. The line from the active box up to the goal glows faint white: the way the work is heading.
+// Inactive lines stay quiet white; every active dependency route pulses faint blue toward the goal.
 const LINE = 'rgba(255,255,255,.28)';
 const PATH = 'rgba(88,180,240,.88)';
 const PATH_GLOW = 'drop-shadow(0 0 3px rgba(65,172,240,.6))';
