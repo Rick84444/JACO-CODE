@@ -18,7 +18,7 @@ type Node = { key: string; title: string; objective: string; status: string; sta
 // A decision waiting for the operator (the runtime's approval center), tied to a step through its mission.
 export type Decision = { id: string; kind: string; title: string; risk: string; reason: string; actions: string[]; details?: Record<string, any> };
 const decisionMission = (d: Decision): string | null => d.details?.missionId || d.details?.mission_id || (d.id.startsWith('mission:') ? d.id.slice(8) : null);
-type Plan = { id: string; title: string; objective: string; status: string; progress: { done: number; total: number }; needsApproval: Need[]; nodes: Node[]; changes: Array<{ at: string | null; reason: string | null; replaced: string | null }>; comments: Comment[]; abilities?: { missing: string[]; text: string } | null };
+type Plan = { id: string; title: string; objective: string; intuition?:string;intuitionId?:string|null; status: string; progress: { done: number; total: number }; needsApproval: Need[]; nodes: Node[]; changes: Array<{ at: string | null; reason: string | null; replaced: string | null }>; comments: Comment[]; abilities?: { missing: string[]; text: string } | null };
 
 // Aura's text never uses emoji: the state of a need is a word and a colour.
 const STATE_WORD: Record<string, [string, string]> = { have: ['har', 'have'], missing: ['saknas', 'missing'], approval: ['ditt ja', 'your yes'] };
@@ -318,10 +318,11 @@ export function StrategyBoard({ focusPlanId = null, onClose, eventRevision = nul
   const [error, setError] = useState('');
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [chosen, setChosen] = useState<string | null>(focusPlanId);
+  const [pinned, setPinned] = useState(Boolean(focusPlanId));
   const readGeneration = useRef(0);
   // The open card: a step's key, 'goal' for the goal, or nothing.
   const [open, setOpen] = useState<string | null>(null);
-  useEffect(() => { if (focusPlanId) { setChosen(focusPlanId); setOpen(null); } }, [focusPlanId]);
+  useEffect(() => { if (focusPlanId) { setChosen(focusPlanId); setPinned(true); setOpen(null); } }, [focusPlanId]);
   const load = useCallback(async () => {
     const generation = ++readGeneration.current;
     // Planning may be late or unavailable while the operator's goal and durable
@@ -333,7 +334,7 @@ export function StrategyBoard({ focusPlanId = null, onClose, eventRevision = nul
     ]);
     if (generation !== readGeneration.current) return;
     if (planned.status === 'fulfilled' && planned.value?.success !== false) { setPlans(planned.value.plans || []); setError(''); }
-    else { setPlans([]); setError(planned.status === 'rejected' ? String(planned.reason?.message || planned.reason) : String(planned.value?.error || 'PLAN_UNAVAILABLE')); }
+    else { setError(planned.status === 'rejected' ? String(planned.reason?.message || planned.reason) : String(planned.value?.error || 'PLAN_UNAVAILABLE')); }
     if (position.status === 'fulfilled' && position.value?.schema === 'jaco.gameboard-fabric/v1') setObserved(position.value);
     else setObserved(null);
     setDecisions(approvals.status === 'fulfilled' && Array.isArray(approvals.value?.items) ? approvals.value.items : []);
@@ -352,15 +353,16 @@ export function StrategyBoard({ focusPlanId = null, onClose, eventRevision = nul
     const id=window.setTimeout(()=>void load(),450);
     return ()=>window.clearTimeout(id);
   },[eventRevision,load]);
-  const plan = pickPlan(plans || [], chosen);
-  // The plan on screen stays on screen: the 10-second refresh must not swap it for another while the operator reads.
-  useEffect(() => { if (!chosen && plan) setChosen(plan.id); }, [chosen, plan?.id]);
-  const order = new Map((plan?.nodes || []).map((n, i) => [n.key, i + 1]));
-  const tree = plan ? planTree(plan.nodes) : [];
+  // Follow the live working graph as Aura evolves it; only an explicit
+  // operator selection pins a historical graph. Never silently replace a
+  // manually selected intuition while the person is reading it.
+  const plan = pickPlan(plans || [], pinned ? chosen : null);
+  // Stable node identities come from the real SEER graph.
+  // Tree layout is derived by ReverseGoalCanvas from the canonical DAG.
   const planMissions = new Set((plan?.nodes || []).map(n => n.missionId).filter((m): m is string => Boolean(m)));
   const planDecisions = decisions.filter(d => planMissions.has(decisionMission(d) || ''));
   const waitingOn = new Set<string>(planDecisions.map(d => String(decisionMission(d) || '')));
-  const treeLines = litLine(tree);
+  // Never infer an active line from a tool registration or simulation.
   const node = plan && open && open !== 'goal' ? plan.nodes.find(n => n.key === open) || null : null;
   const close = useCallback(() => setOpen(null), []);
 
@@ -373,10 +375,11 @@ export function StrategyBoard({ focusPlanId = null, onClose, eventRevision = nul
         <p className="text-[10px] uppercase tracking-[.18em] text-sky-200/70">{tr('Aura · levande målmodell','Aura · living goal model')}</p>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {plans && plans.length > 1 && <select aria-label={tr('Välj plan', 'Choose plan')} value={plan?.id || ''} onChange={e => { setChosen(e.target.value); setOpen(null); }}
+        {plans && plans.length > 1 && <select aria-label={tr('Välj plan', 'Choose plan')} value={plan?.id || ''} onChange={e => { setChosen(e.target.value); setPinned(true); setOpen(null); }}
           className="max-w-[22rem] rounded border border-neutral-700 bg-black px-2 py-1 text-xs">
-          {plans.map(p => <option key={p.id} value={p.id}>{short(p.objective)}</option>)}
+          {plans.map(p => <option key={p.id} value={p.id}>{short(p.intuition || p.objective)}</option>)}
         </select>}
+        {pinned && <button type="button" onClick={()=>{setPinned(false);setChosen(null);setOpen(null);}} className="rounded border border-sky-900 px-2 py-1 text-xs text-sky-200">{tr('Följ Auras aktuella mål','Follow Aura’s current goal')}</button>}
         <button type="button" onClick={() => void load()} aria-label={tr('Uppdatera', 'Refresh')}><RefreshCw size={14} /></button>
         {onClose && <button type="button" onClick={onClose} title={tr('Tillbaka till Aura', 'Back to Aura')} aria-label={tr('Tillbaka till Aura', 'Back to Aura')} className="flex items-center gap-2 rounded-full border border-white/30 py-0.5 pl-0.5 pr-3 text-xs text-white/80 hover:border-sky-400"><img src="/branding/aura-avatar.png" alt="" width={30} height={30} style={{ width: 30, height: 30 }} className="rounded-full" />{tr('Tillbaka till Aura', 'Back to Aura')}</button>}
       </div>
