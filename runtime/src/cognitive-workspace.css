@@ -776,3 +776,6 @@
 .aura-live-tool-footnote{margin-top:10px;line-height:1.5}
 @media(max-width:900px){.aura-live-tool-grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:767px){.aura-live-tool-surfaces{margin:10px 11px 13px;padding:11px}.aura-live-tool-surfaces>header{flex-wrap:wrap}}
+
+.aura-live-tool-plan{font-size:10px;color:#a9d9f0;border-top:1px solid #3c4044;margin-top:5px;padding:8px 2px 3px;text-align:left;width:100%}
+.aura-live-tool-plan:hover{color:#e4f6ff;text-decoration:underline}
