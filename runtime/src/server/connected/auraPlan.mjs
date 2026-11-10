@@ -85,6 +85,9 @@ export function productNames(text) {
 
 export function planView(graph, { comments = [], skills = [], language = 'en', available = null } = {}) {
   const words = STATUS[language] || STATUS.en;
+  const intuition = typeof graph?.policy?.intuition_statement === 'string' && graph.policy.intuition_statement.trim()
+    ? graph.policy.intuition_statement.slice(0, 1500)
+    : graph.objective;
   const nodes = (graph.nodes || []).map(n => ({
     key: n.key, title: productNames(n.title), objective: productNames(n.objective), status: n.status, statusText: words[n.status] || n.status,
     dependencies: n.dependencies || [], missionId: n.nova_mission_id || null, failure: productNames(n.failure_reason || null),
@@ -99,7 +102,9 @@ export function planView(graph, { comments = [], skills = [], language = 'en', a
   const done = nodes.filter(n => n.status === 'VERIFIED').length;
   const active = nodes.filter(n => !['SUPERSEDED', 'CANCELLED'].includes(n.status));
   return {
-    id: graph.id, title: productNames(graph.title), objective: productNames(graph.objective), status: graph.status,
+    id: graph.id, title: productNames(graph.title), objective: productNames(graph.objective),
+    intuition: productNames(intuition), intuitionId: graph?.policy?.intuition_id || null,
+    status: graph.status,
     progress: { done, total: active.length },
     needsApproval: [...new Map(nodes.flatMap(n => n.needs.filter(x => x.approval)).map(x => [x.kind, x])).values()],
     nodes,
