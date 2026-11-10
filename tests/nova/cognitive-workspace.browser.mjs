@@ -306,7 +306,7 @@ try {
   await page.getByTestId('aura-live-tool-surfaces').waitFor();
   await page.locator('[data-surface="code"] .aura-live-tool-kind').getByText('repo-read').waitFor();
   await page.locator('[data-surface="tests"] .aura-live-tool-kind').getByText('repo-test').waitFor();
-  await page.locator('[data-surface="tests"] .aura-live-tool-status[data-outcome="FAILED"]').waitFor();
+  await page.locator('[data-surface="tests"] .aura-live-tool-status[data-outcome="VERIFIED"]').waitFor();
   await page.locator('[data-surface="tests"] .aura-live-tool-details').waitFor();
   passed('Canonical Aura Live projects concurrent code and test tool receipts without new agent execution');
   await canvas('Samtal').click();
