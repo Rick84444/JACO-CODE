@@ -11,6 +11,7 @@ type Props = {
   connection: Connection;
   onInspect: (event: CognitiveEvent) => void;
   onOpenFile: (path: string) => void;
+  onOpenPlan: (graphId: string, nodeKey: string | null) => void;
 };
 const symbols = {
   code: Code2, browser: Globe, terminal: Terminal,
@@ -32,7 +33,7 @@ const statuses: Record<string, [string, string]> = {
 };
 
 // A visual observation of existing execution only. Never runs or retries a tool.
-export function AuraLiveToolSurfaces({ events, missionId, connection, onInspect, onOpenFile }: Props) {
+export function AuraLiveToolSurfaces({ events, missionId, connection, onInspect, onOpenFile, onOpenPlan }: Props) {
   const { tr } = useUiLanguage();
   const [pinned, setPinned] = useState<string | null>(null);
   const projection = projectAuraLiveWorkspace(events, {
@@ -68,6 +69,10 @@ export function AuraLiveToolSurfaces({ events, missionId, connection, onInspect,
                 <span data-outcome={current.state} className="aura-live-tool-status">{current.state === 'VERIFIED' && <ShieldCheck size={12}/>} {tr(...status)}</span>
                 <small>{current.actionId}</small>
               </button>
+              {current.planId && <button type="button" className="aura-live-tool-plan"
+                onClick={() => onOpenPlan(current.planId, current.nodeKey)}>
+                {tr('Visa delmålet i Gameboard', 'Show subgoal in Gameboard')}
+              </button>}
               {surface.entries.length > 1 && <details className="aura-live-tool-details">
                 <summary>{tr('Fler verktygssteg', 'More tool actions')} ({surface.entries.length - 1})</summary>
                 {surface.entries.slice(1).map(item => <button type="button" key={item.id}
