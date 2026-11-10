@@ -1923,7 +1923,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const sideObservation = sideMission ? stageEvents.filter(event=>event.missionId===sideMission.id).at(-1)?.text ?? null : null;
   const stage = <div className="aura-stage-column">
     {sideMission&&<details className="aura-stage-mission-details"><summary>Mission · {sideMission.goal}</summary><MissionCard mission={sideMission as any} observation={sideObservation} onCancel={cancelMission} onEndGoal={endMissionGoal} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/></details>}
-    <AuraLiveStage projectRevision={projectKey} candidate={selectedStage} events={stageEvents} preview={stagePreview}
+    <AuraLiveStage projectRevision={projectKey} candidate={selectedStage} events={stageEvents} liveConnection={cognitiveLive.connection} preview={stagePreview}
     previewError={fileReadError?.path===stagePath?fileReadError.message:null} onRetryPreview={()=>setFileReadRevision(value=>value+1)}
     previewReady={Boolean(stagePreview)} active={status.tone==='active'}
     onInspect={event=>{setSelectedEvidence(event);setWorkspacePinned(true);setWorkspaceView('evidence');}}
