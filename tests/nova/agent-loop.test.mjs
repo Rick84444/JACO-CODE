@@ -8,7 +8,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl, mountNovaMissionRoutes } from '../../runtime/src/server/connected/novaMissionControl.mjs';
-import { MissionClient } from '../../agents/lib/mission-client.mjs';
+import { MissionClient, checkedReceipt } from '../../agents/lib/mission-client.mjs';
 import { plannerTools, searchDeferredTools } from '../../agents/lib/native-tools.mjs';
 import { runAgentMission, receiptForModel, contextPacketIntro, hintFor as hintForCheck } from '../../agents/lib/agent-loop.mjs';
 import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
@@ -920,3 +920,34 @@ test('acceptance: false tool denial recovers into a real file write and an actua
   assert.equal(git('status','--porcelain'),'');
   assert.equal(s.control.get(m.id).contractStatus.machineVerified,true);
 });
+
+test('real durable mission resumes without repeating an unchanged read silently', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({goal:'Inspect and validate page changes',idempotencyKey:'causal-resume-1',allowedTasks:['web-fetch']});
+  const oldArgs = {url:'https://example.test/unchanged'};
+  for (let i = 0; i < 2; i++) {
+    const {token}=s.control.claim(m.id,'nova');
+    const action=s.control.begin(m.id,{owner:'nova',token,task:{type:'web-fetch',data:oldArgs}});
+    s.control.finish(m.id,{owner:'nova',token,actionId:action.id,
+      receipt:checkedReceipt(action,{ok:true,verified:true,content:'unchanged'})
+    });
+  }
+  assert.equal(s.control.get(m.id).receipts.length,2);
+  const model=scripted([
+    {tool_calls:[call('web-fetch',oldArgs)]},
+    {tool_calls:[call('web-fetch',{url:'https://example.test/alternative'})]},
+    {tool_calls:[call('complete',{reason:'Alternative endpoint verified [#4]'})]}
+  ]);
+  const runs=[];
+  const result=await run(s,model,async task=>{
+    runs.push(task.data.url);
+    return {ok:true,verified:true,content:task.data.url===oldArgs.url?'unchanged':'new'};
+  });
+  assert.equal(result.completed,true);
+  assert.deepEqual(runs,[oldArgs.url,'https://example.test/alternative']);
+  assert.ok(model.seen[1].some(msg=>msg.role==='user'&&String(msg.content).startsWith('STUCK:')), 
+    'the third unchanged action must trigger adaptive correction across persisted runs');
+  assert.equal(s.control.get(m.id).receipts.length,4);
+  assert.equal(s.control.get(m.id).status,'AWAITING_VERIFICATION');
+});
+
