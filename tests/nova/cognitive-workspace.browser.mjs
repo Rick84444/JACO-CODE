@@ -339,8 +339,9 @@ try {
   assert.equal(requests.some(r=>r.kind==='goal'),false,'the user journey must not silently start a new mission');
   passed('Simulated user validates live intuition, unique dependencies, blue activity, real receipts, zoom, collapse, replan and no phantom missions');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'failed-test',type:'repo-test',ok:false,verified:true,error:'TEST_NEGATIVE_CONTROL',result:{exitCode:1}}});
-  await page.locator('[data-event-id="mission:4"][data-outcome="failed"]').waitFor();
-  assert.equal(await page.locator('[data-event-id="mission:4"] .cognitive-proof[data-outcome="verified"]').count(),0);
+  const failedSeq=bus.listEvents(1)[0].seq;
+  await page.locator('[data-event-id="mission:'+failedSeq+'"][data-outcome="failed"]').waitFor();
+  assert.equal(await page.locator('[data-event-id="mission:'+failedSeq+'"] .cognitive-proof[data-outcome="verified"]').count(),0);
   passed('A successful unverified step and a failing step cannot masquerade as verified');
   await page.getByRole('button',{name:'Vad har du upptäckt?',exact:true}).click();
   await page.getByRole('button',{name:'Skicka meddelande',exact:true}).click();
@@ -352,9 +353,11 @@ try {
   assert.equal(bus.listMissions(10).length,1);
   passed('A question receives observed run context and does not restart or replace the mission');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'pass-test',type:'repo-test',ok:true,verified:true,result:{path:'example.ts',exitCode:0}}});
-  await page.locator('[data-event-id="mission:5"][data-outcome="verified"]').waitFor();
+  const passedSeq=bus.listEvents(1)[0].seq;
+  const verifiedSelector='[data-event-id="mission:'+passedSeq+'"]';
+  await page.locator(verifiedSelector+'[data-outcome="verified"]').waitFor();
   await screenshot('cognitive-workspace-live');
-  await page.locator('[data-event-id="mission:5"]').getByRole('button',{name:/^(Visa bevis|Show evidence)$/}).click();
+  await page.locator(verifiedSelector).getByRole('button',{name:/^(Visa bevis|Show evidence)$/}).click();
   const selectedEvidence=page.getByRole('region',{name:/^(Valt bevis|Selected evidence)$/});
   await selectedEvidence.waitFor();
   assert.match(await selectedEvidence.innerText(),/Sparad uppdragshistorik|Saved mission history/,
@@ -398,13 +401,13 @@ try {
   assert.equal(await input().inputValue(),'Ett bevarat utkast');
   blockLive=false;
   await page.getByRole('status').filter({hasText:'Working'}).waitFor({timeout:15000});
-  assert.equal(await page.locator('[data-event-id="mission:5"]').count(),1);
+  assert.equal(await page.locator(verifiedSelector).count(),1);
   passed('Live connection interruption preserves the draft, exposes uncertainty and reconnects without duplicates');
   for(const response of liveResponses)response.end();
   bus.close();bus=new DurableMissionBus(directory);chat=createAuraChatSession(bus);
   await page.reload({waitUntil:'networkidle'});
-  await page.locator('[data-event-id="mission:5"]').waitFor();
-  assert.equal(await page.locator('[data-event-id="mission:5"]').count(),1);
+  await page.locator(verifiedSelector).waitFor();
+  assert.equal(await page.locator(verifiedSelector).count(),1);
   await page.getByText('Testsvaret använder de observerade händelserna. Uppdraget fortsätter.',{exact:true}).waitFor();
   passed('A store restart replays both durable events and the saved encrypted conversation');
   liteAck=true;
