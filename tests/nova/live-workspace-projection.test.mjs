@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { projectAuraLiveWorkspace, surfaceForAuraTool } from '../../runtime/src/lib/liveWorkspaceProjection.mjs';
 import { toCognitiveEvent } from '../../runtime/src/lib/cognitiveEvents.mjs';
+import { cognitiveQuestionToolbox } from '../../runtime/src/server/connected/cognitiveQuestionToolbox.mjs';
 
 const AT = '2026-11-10T20:00:00.000Z';
 const later = seconds => new Date(Date.parse(AT) + seconds * 1000).toISOString();
@@ -96,4 +97,18 @@ test('tool identity is bounded, contains no arguments and uses existing events',
   assert.equal(surfaceForAuraTool('browser-click'),'browser');
   assert.equal(surfaceForAuraTool('terminal-exec'),'terminal');
   assert.equal(surfaceForAuraTool('unknown-task'),'tools');
+});
+
+test('Aura can inspect causal links through its existing read-only toolbox without gaining mutation tools',async()=>{
+  let writes=0;
+  const observed={schema:'jaco.aura-causal-context/v1',links:[{graphId:'g1',nodeKey:'n1',actionId:'a1'}]};
+  const toolbox=cognitiveQuestionToolbox({tools:{
+    causal_workspace:{description:'inspect',run:async()=>observed},
+    start_goal:{description:'mutate',run:async()=>{writes++;}},
+    mcp_tool:{description:'mutate',run:async()=>{writes++;}},
+  }},()=>({events:[]}));
+  assert.deepEqual(await toolbox.tools.causal_workspace.run({}),observed);
+  assert.equal(toolbox.tools.start_goal,undefined);
+  assert.equal(toolbox.tools.mcp_tool,undefined);
+  assert.equal(writes,0);
 });
