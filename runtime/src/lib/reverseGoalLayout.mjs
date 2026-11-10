@@ -1,4 +1,4 @@
-// A read-only projection of Aura's SEER mission DAG. It does not invent steps,
+// A read-only projection of Aura's persisted mission DAG. It does not invent steps,
 // call tools, mutate the operator's intuition, or claim that plans were executed.
 export const REVERSE_GOAL_GRAPH_SCHEMA = 'jaco.reverse-goal-layout/v1';
 export const REVERSE_GOAL_ROOT = '@intuition';
@@ -136,7 +136,7 @@ export function reverseGoalLayout(input, options = {}) {
   const edges=visibleEdges.map(e=>({...e,source:positions.get(e.from),target:positions.get(e.to)}));
   return {
     schema:REVERSE_GOAL_GRAPH_SCHEMA,
-    source:'SEER_MISSION_GRAPH', readOnly:true, executed:false,
+    source:'AURA_MISSION_GRAPH', readOnly:true, executed:false,
     width,height,nodes,edges,activeCount:activeKeys.length,reportedActiveCount,executionFresh,
     totalSteps:map.size, visibleSteps:Math.max(0,visible.size-1),
     revisionCount:array(input.changes).length, hiddenSuperseded:array(input.nodes).length-original.length,
