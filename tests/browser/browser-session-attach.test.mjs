@@ -77,3 +77,24 @@ test('detach invalidates an in-flight CDP connection rather than restoring an ol
     }finally{CdpBridge.attach=original;await manager.detach();}
   });
 });
+
+test('slow detach cannot erase a newer successfully attached browser target',async()=>{
+  await temp(async root=>{
+    const original=CdpBridge.attach,a=bridge('a'),b=bridge('b');
+    const manager=new BrowserSessionManager(root);
+    let finishOldClose;
+    try {
+      CdpBridge.attach=async(_port,pattern)=>pattern==='second'?b:a;
+      await manager.attach(input);
+      a.close=()=>new Promise(resolve=>{finishOldClose=resolve;});
+      const detaching=manager.detach();
+      assert.equal(manager.getClient(),null,'detach invalidates the old session immediately');
+      const next=await manager.attach({...input,urlIncludes:'second'});
+      finishOldClose();
+      await detaching;
+      assert.equal(next.targetId,'b');
+      assert.equal(manager.snapshot().targetId,'b');
+      assert.notEqual(manager.getClient(),null);
+    }finally{CdpBridge.attach=original;await manager.detach();}
+  });
+});
