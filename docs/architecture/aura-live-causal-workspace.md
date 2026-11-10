@@ -91,7 +91,7 @@ To become better at future work rather than accumulate screens:
 5. Persist meaningful, provenance-bound learning through the existing memory/skill lifecycle.
 6. On a similar task, retrieve candidates and counterexamples; benchmark new alternatives before promoting a preferred skill.
 
-Initial UI implementation proves only the observation surface and graph links, **not** that this autonomous improvement loop is completed. Tool contract enrichment, artifact provenance, read-only causal query integration and memory promotion are separate P1/P2 implementation gates.
+The initial integration exposes a bounded read-only causal query through Aura's existing tool toolbox, as well as visual graph links. This does **not** complete the autonomous improvement loop. Richer tool contracts, durable artifact provenance, verified learning/promotion and full Windows validation remain P1/P2 gates.
 
 ## Performance and reliability constraints
 
@@ -121,7 +121,7 @@ Initial UI implementation proves only the observation surface and graph links, *
 - Pinned or unsaved work is never replaced by automatic selection.
 
 ### Gate C — deeper runtime loop (not delivered in the initial slice)
-- Read-only structured causal query for Aura over existing mission, graph and artifact owners.
+- Expand the initial read-only causal query into durable artifact-revision and complete graph/mission lineage with explicit verification references.
 - Real per-action command, stdout/stderr and test resource detail with access control.
 - Durable project ID in replay/selection, not timestamp cutoffs.
 - Multi-file diff and concurrent browser/test panes with source/age labels.
@@ -149,6 +149,7 @@ Initial vertical slice:
 - runtime/src/lib/cognitiveEvents.mjs — bounded executed tool identity and plan-node fields
 - runtime/src/server/connected/cognitiveLiveStream.mjs — durable mission parent graph/node correlation
 - runtime/src/hooks/useCognitiveLive.ts — typed event context, existing SSE transport
+- runtime/server.ts and runtime/src/server/connected/cognitiveQuestionToolbox.mjs — read-only causal_workspace query in Aura's existing toolbox
 - runtime/src/components/AuraLiveToolSurfaces.tsx — live cards under human narration
 - runtime/src/components/AuraLiveStage.tsx — preserve existing stage and integrate cards
 - runtime/src/components/JacoAuraComputeIDE.tsx — bridge to existing Gameboard without a new control plane
