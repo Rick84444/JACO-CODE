@@ -7,7 +7,7 @@ type Step = { key:string;title:string;objective:string;status:string;statusText:
 type Plan = { id:string;objective:string;status:string;progress:{done:number;total:number};nodes:Step[];changes?:Array<{reason?:string|null}> };
 type LayoutNode = {id:string;kind:'intuition'|'step';title:string;status:string;rawStatus:string;missionId:string|null;evidenceCount:number;childCount:number;collapsed:boolean;x:number;y:number;width:number;height:number};
 type LayoutEdge = {id:string;from:string;to:string;status:'active'|'verified'|'pending';source:LayoutNode;target:LayoutNode};
-type Layout = {schema:string;width:number;height:number;nodes:LayoutNode[];edges:LayoutEdge[];activeCount:number;totalSteps:number;visibleSteps:number;revisionCount:number;hiddenSuperseded:number;activeOnly:boolean;activePathsObserved:boolean};
+type Layout = {schema:string;width:number;height:number;nodes:LayoutNode[];edges:LayoutEdge[];activeCount:number;reportedActiveCount:number;executionFresh:boolean;totalSteps:number;visibleSteps:number;revisionCount:number;hiddenSuperseded:number;activeOnly:boolean;activePathsObserved:boolean};
 
 const CANVAS_STYLE = String.raw`
 .jaco-intuition-canvas{position:relative;border:1px solid #30343a;border-radius:14px;background:radial-gradient(ellipse at 50% 4%,rgba(25,63,106,.16),transparent 65%),#05070c;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y;min-height:320px;max-height:min(70vh,920px);scrollbar-color:#4b5563 transparent}
@@ -16,7 +16,7 @@ const CANVAS_STYLE = String.raw`
 .jaco-intuition-node:hover,.jaco-intuition-node:focus-visible{outline:2px solid #9ebdff;outline-offset:2px}
 .jaco-intuition-node[data-state="active"]{border-color:#56a5ff;box-shadow:0 0 0 1px rgba(65,149,255,.3),0 0 19px rgba(60,134,240,.26);animation:jaco-intuition-nodepulse 3s ease-in-out infinite}
 .jaco-intuition-node[data-state="verified"]{border:2px solid #60a5fa;background:#0d1b30}
-.jaco-intuition-node[data-state="reported"]{border-style:dashed;border-color:#cbd5e1}
+.jaco-intuition-node[data-state="reported"],.jaco-intuition-node[data-state="stale"]{border-style:dashed;border-color:#cbd5e1}
 .jaco-intuition-node[data-state="failed"]{border-color:#fb7185}
 .jaco-intuition-node[data-state="approval"]{border-color:#fbbf24}
 .jaco-intuition-node[data-state="intuition"]{border:2px solid #94bfff;background:#102038;box-shadow:0 0 28px rgba(40,120,220,.24)}
@@ -33,9 +33,9 @@ const CANVAS_STYLE = String.raw`
 const clamp = (n:number) => Math.max(.4,Math.min(1.45,Math.round(n*100)/100));
 
 export function ReverseGoalCanvas({
-  plan,waitingOn,onSelect,onGoal,
+  plan,waitingOn,onSelect,onGoal,executionFresh=true,
 }:{
-  plan:Plan;waitingOn:Set<string>;onSelect:(key:string)=>void;onGoal:()=>void;
+  plan:Plan;waitingOn:Set<string>;onSelect:(key:string)=>void;onGoal:()=>void;executionFresh?:boolean;
 }) {
   const {tr} = useUiLanguage();
   const [zoom,setZoom]=useState(1);
@@ -46,12 +46,12 @@ export function ReverseGoalCanvas({
   const [problem,setProblem]=useState<string|null>(null);
   const layout=useMemo(()=>{
     try {
-      const value=reverseGoalLayout(plan,{collapsed,activeOnly,waitingMissionIds:[...waitingOn]}) as Layout;
+      const value=reverseGoalLayout(plan,{collapsed,activeOnly,waitingMissionIds:[...waitingOn],executionFresh}) as Layout;
       return value;
     } catch(error:any) {
       return {error:String(error?.message||error)} as {error:string};
     }
-  },[plan,collapsed,activeOnly,waitingOn]);
+  },[plan,collapsed,activeOnly,waitingOn,executionFresh]);
   const ready = 'nodes' in layout ? layout as Layout : null;
   const error = 'error' in layout ? layout.error : null;
   // The root must visually share the logo's exact center regardless of how
@@ -82,6 +82,7 @@ export function ReverseGoalCanvas({
   };
   const statusText=(n:LayoutNode)=>{
     if(n.status==='active')return tr('Arbete pågår','Work in progress');
+    if(n.status==='stale')return tr('Senast aktiv · läget är inte bekräftat','Previously active · status not confirmed');
     if(n.status==='verified')return tr('Verifierad · kvitto finns','Verified · receipt attached');
     if(n.status==='reported')return tr('Rapporterat klart · kvitto saknas','Reported done · receipt missing');
     if(n.status==='approval')return tr('Väntar på ditt godkännande','Awaiting your approval');
@@ -108,6 +109,7 @@ export function ReverseGoalCanvas({
     </div>
     {error && <p role="alert" className="rounded border border-rose-800 p-3 text-xs text-rose-300">{tr('Beroendegrafen kunde inte visas utan att förvanska data:','Dependency graph cannot be rendered without distorting data:')} {error}</p>}
     {problem && <p role="status" className="text-xs text-neutral-300">{problem}</p>}
+    {!executionFresh && <p role="status" data-testid="gameboard-stale-warning" className="rounded border border-amber-900 p-2 text-xs text-amber-200">{tr('Planen kommer från senaste kända observation. Runtime kan inte bekräfta aktuell exekvering; därför har aktiv pulsering stoppats.','Last known plan. Runtime cannot confirm current execution; active pulses have stopped.')}</p>}
     {ready && <>
       <div ref={viewport} className="jaco-intuition-canvas" data-testid="intuition-viewport"
         onPointerDown={event=>{
