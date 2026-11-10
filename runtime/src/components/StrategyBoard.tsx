@@ -322,7 +322,7 @@ function Branch({ item, order, onPick, lit = '', waitingOn }: { item: TreeItem; 
 
 const short = (text: string, max = 70) => text.length > max ? text.slice(0, max - 1) + '…' : text;
 
-export function StrategyBoard({ focusPlanId = null, onClose, eventRevision = null }: { focusPlanId?: string | null; onClose?: () => void; eventRevision?: string | null }) {
+export function StrategyBoard({ focusPlanId = null, onClose, eventRevision = null, liveConnection = 'unavailable' }: { focusPlanId?: string | null; onClose?: () => void; eventRevision?: string | null; liveConnection?: string }) {
   const { tr, language } = useUiLanguage();
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [observed, setObserved] = useState<{operatorGoal?:{statement:string}|null;missions?:Array<{identity:string;goal:string;status:string;verifiedActions:number}>;next?:{text:string}}|null>(null);
