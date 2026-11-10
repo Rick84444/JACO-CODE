@@ -9,7 +9,7 @@
 // validates the task against the mission's allowed tasks, contract and approvals), execute, finish
 // with a receipt. A step the runtime refuses is reported to the model and costs the mission nothing;
 // a step that runs and fails counts against the mission's failure budget as before.
-import { BATCHABLE, checkedReceipt } from './mission-client.mjs';
+import { BATCHABLE, checkedReceipt, hashTaskInput } from './mission-client.mjs';
 import { searchDeferredTools } from './native-tools.mjs';
 import { redactDeep } from './secret-capture.mjs';
 import { StuckDetector } from './stuck-detector.mjs';
@@ -179,7 +179,7 @@ export async function runAgentMission({
     // What earlier runs of this mission already did counts for stuck detection, so a circle that spans runs is caught.
     const history = (Array.isArray(mission.receipts) ? mission.receipts : []).slice(-24);
     // Preserve the actual historical outcome: changing results must not be mistaken for an identical-result loop.
-    for (const r of history) stuck.record({ name: r.type, args: r.inputHash || r.input, ok: r.ok, result: r.result, error: r.error });
+    for (const r of history) stuck.record({ name: r.type, args: r.input, inputHash: r.inputHash, ok: r.ok, result: r.result, error: r.error });
     const inheritedCircle = history.length ? stuck.check() : { stuck: false };
     ({ tools, resolve, deferred = [] } = await toolsFor(mission));
     capabilityEvidence = observeMissionCapabilities(mission, tools);
@@ -386,7 +386,7 @@ export async function runAgentMission({
         receipts.push(receipt);
         await onReceipt(receipt, begun, updated);
         reply_(receiptForModel(steps, receipt));
-        stuck.record({ name: target.kind === 'mcp' ? `${target.server}.${target.tool}` : target.type, args: task.data, ok: receipt.ok, result: receipt.result, error: receipt.error });
+        stuck.record({ name: target.kind === 'mcp' ? `${target.server}.${target.tool}` : target.type, args: task.data, inputHash: hashTaskInput(task.data), ok: receipt.ok, result: receipt.result, error: receipt.error });
         if (!nudge) { const verdict = stuck.check(); if (verdict.stuck) nudge = verdict; }
         if (updated) mission = updated;
         if (mission.status !== 'ACTIVE') {
