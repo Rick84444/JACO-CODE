@@ -248,6 +248,8 @@ function StepCard({ plan, node, decisions, onPick, onClose, onSaved }: { plan: P
   const { tr } = useUiLanguage();
   const waiting = decisions.filter(d => node.missionId && decisionMission(d) === node.missionId);
   const askYes = node.needs.filter(x => x.approval || x.state === 'approval');
+  const receipts = node.evidenceRefs || [];
+  const reportedWithoutReceipt = node.status === 'VERIFIED' && receipts.length === 0;
   const after = plan.nodes.filter(n => LIVE(n) && n.dependencies.includes(node.key));
   const before = plan.nodes.filter(n => LIVE(n) && node.dependencies.includes(n.key));
   const link = (n: Node) => <button key={n.key} type="button" onClick={() => onPick(n.key)} className="rounded border border-neutral-700 px-2 py-0.5 text-xs hover:border-sky-400">{n.title}</button>;
@@ -263,12 +265,20 @@ function StepCard({ plan, node, decisions, onPick, onClose, onSaved }: { plan: P
       <div className="text-xs uppercase tracking-widest text-neutral-400">{tr('Varför', 'Why')}</div>
       <p className="mt-1">{after.length
         ? tr('Det behövs för att nå', 'It is needed to reach') + ': ' + after.map(n => n.title).join(', ') + '. ' + tr('Det leder i sin tur mot målet', 'That in turn leads to the goal') + ': '
-        : tr('Det leder direkt till målet', 'It leads directly to the goal') + ': '}{plan.objective}</p>
+        : tr('Det leder direkt till målet', 'It leads directly to the goal') + ': '}{plan.intuition || plan.objective}</p>
     </div>
     {before.length > 0 && <div className="mt-3 text-sm"><div className="text-xs uppercase tracking-widest text-neutral-400">{tr('Behöver först', 'Needs first')}</div><div className="mt-1 flex flex-wrap gap-1">{before.map(link)}</div></div>}
     {after.length > 0 && <div className="mt-3 text-sm"><div className="text-xs uppercase tracking-widest text-neutral-400">{tr('Leder vidare till', 'Leads on to')}</div><div className="mt-1 flex flex-wrap gap-1">{after.map(link)}</div></div>}
     {node.needs.length > 0 && <div className="mt-3"><div className="text-xs uppercase tracking-widest text-neutral-400">{tr('Vad steget behöver', 'What the step needs')}</div>
       <div className="mt-1 flex flex-wrap gap-1">{node.needs.map(x => <span key={x.kind + x.label} className={`rounded px-2 py-0.5 text-xs ${chip(x.state, x.approval)}`}>{x.label}{x.state ? ` (${tr(...STATE_WORD[x.state])})` : ''}</span>)}</div></div>}
+    {reportedWithoutReceipt && <p role="status" className="mt-3 rounded border border-amber-900 bg-amber-950/20 p-2 text-sm text-amber-200">{tr('SEER har rapporterat att steget är klart, men ingen verifieringsreferens finns. Det visas därför inte som verifierat i trädet.', 'SEER reports completion but no verification reference exists. It is therefore not shown as verified in the tree.')}</p>}
+    {receipts.length>0 && <section className="mt-3 rounded border border-blue-900/60 bg-[#0b192b] p-3" data-testid="gameboard-step-receipts">
+      <div className="text-xs font-semibold text-blue-200">{tr('Verifieringsreferenser från runtime','Runtime verification references')} ({receipts.length})</div>
+      <div className="mt-2 flex flex-wrap gap-1.5">{receipts.map((ref,i)=><code key={i} className="break-all rounded border border-blue-900 px-2 py-1 text-[11px] text-blue-100">{ref}</code>)}</div>
+      {node.missionId && /^mission-[A-Za-z0-9-]+$/.test(node.missionId) &&
+        <button type="button" className="mt-2 text-xs text-blue-300 underline" onClick={()=>{window.dispatchEvent(new CustomEvent('jaco:open-mission-evidence',{detail:node.missionId}));onClose();}}>
+          {tr('Öppna fullständig uppdragsevidens','Open full mission evidence')}</button>}
+    </section>}
     {node.failure && <p className="mt-3 text-sm text-rose-300">{node.failure.slice(0, 900)}</p>}
     <Notes comments={node.comments} />
     <CommentBox graphId={plan.id} nodeKey={node.key} onSaved={onSaved} />
@@ -280,7 +290,8 @@ function GoalCard({ plan, onClose, onSaved }: { plan: Plan; onClose: () => void;
   const { tr } = useUiLanguage();
   return <Card label={plan.objective} onClose={onClose}>
     <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-yellow-300"><GoalMark size={40} />{tr('Målet', 'The goal')} · {tr('Klart', 'Done')} {plan.progress.done}/{plan.progress.total}</div>
-    <h3 className="mt-1 pr-6 text-xl font-semibold leading-snug">{plan.objective}</h3>
+    <h3 className="mt-1 pr-6 text-xl font-semibold leading-snug">{plan.intuition || plan.objective}</h3>
+    {plan.intuition && plan.intuition !== plan.objective && <p className="mt-3 rounded border border-neutral-700 p-2 text-xs text-neutral-300">{tr('Nuvarande strategiskt delmål','Current strategic subgoal')}: {plan.objective}</p>}
     {plan.abilities && <p className={`mt-3 text-sm ${plan.abilities.missing.length ? 'text-amber-200' : 'text-emerald-300'}`} data-testid="aura-abilities">{plan.abilities.text}</p>}
     {plan.needsApproval.length > 0 && <p className="mt-3 flex items-center gap-1.5 text-sm text-amber-300"><ShieldAlert size={14} />{tr('Behöver ditt godkännande när det blir aktuellt', 'Needs your approval when the time comes')}: {plan.needsApproval.map(n => n.label).join(', ')}</p>}
     {plan.changes.length > 0 && <div className="mt-4"><div className="flex items-center gap-1 text-xs uppercase tracking-widest text-neutral-400"><GitBranch size={12} />{tr('Ändringar i planen', 'Changes to the plan')}</div>
