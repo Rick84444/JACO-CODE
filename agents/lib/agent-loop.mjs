@@ -397,7 +397,7 @@ export async function runAgentMission({
         receipts.push(receipt);
         await onReceipt(receipt, begun, updated);
         reply_(receiptForModel(steps, receipt));
-        stuck.record({ name: stuckActionName(task.type, task.data), args: task.data, inputHash: hashTaskInput(task.data), ok: receipt.ok, result: receipt.result, error: receipt.error });
+        stuck.record({ name: stuckActionName(begun.type, begun.data), args: begun.data, inputHash: hashTaskInput(begun.data), ok: receipt.ok, result: receipt.result, error: receipt.error });
         if (!nudge) { const verdict = stuck.check(); if (verdict.stuck) nudge = verdict; }
         if (updated) mission = updated;
         if (mission.status !== 'ACTIVE') {
