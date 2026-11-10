@@ -67,6 +67,7 @@ import { stripeRevenueSnapshot } from "./src/server/revenue/stripeRevenue.mjs";
 import { automaticConnections } from "./src/server/connected/automaticConnections.mjs";
 import { liteChatAnswer } from "./src/server/connected/liteChatRouter.mjs";
 import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/mcp/stdioMcpHost.mjs";
+import { discoverAuraMcpTools, callAuraMcpTool } from './src/server/mcp/auraAgentMcpCall.mjs';
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
@@ -298,19 +299,16 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
           })),
         }),
       },
+      mcp_discover: {
+        description: 'Discover currently advertised tools from one already configured MCP server, starting it on demand. Only reads the catalog and never calls a tool or broadens policy. args: {server}',
+        run: async (args: any) => discoverAuraMcpTools(mcpHost, String(args?.server || '')),
+      },
       mcp_tool: {
-        description: 'Call one currently advertised MCP tool for the active goal. args: {server,tool,arguments?,mode:"read"|"write"}. Read calls require an advertised read-only tool. Write calls require that server to have agentAccess=write and remain subject to its workspace, secret, destructive-action and external-effect guards.',
-        run: async (args: any) => {
-          const server = String(args?.server || '');
-          const tool = String(args?.tool || '');
-          const mode = args?.mode === 'write' ? 'write' : 'read';
-          if (!/^[A-Za-z0-9_.-]{1,80}$/.test(server) || !/^[A-Za-z0-9_.-]{1,120}$/.test(tool)) throw new Error('MCP_PROVIDER_AND_TOOL_REQUIRED');
-          const status: any = mcpHost.status().find((entry: any) => entry.id === server);
-          const advertised: any = status?.tools?.find((entry: any) => entry.name === tool);
-          if (!status || status.status !== 'READY' || !advertised) throw new Error(`MCP_TOOL_UNAVAILABLE:${server}.${tool}`);
-          if (mode === 'read' && advertised.readOnly !== true) throw new Error(`MCP_TOOL_WRITE_MODE_REQUIRED:${server}.${tool}`);
-          return await mcpHost.call(server, tool, args?.arguments || {}, { actor: 'agent', readOnly: mode !== 'write' });
-        },
+        description: 'Call a configured MCP tool for this Aura goal. Automatically connects when permitted. args: {server,tool,arguments?,mode:"read"|"write"}. Existing access, deny rules, argument checks and mission approval requirements still apply.',
+        run: async (args: any) => callAuraMcpTool(mcpHost, {
+          server: String(args?.server || ''), tool: String(args?.tool || ''),
+          args: args?.arguments ?? {}, mode: args?.mode || 'read',
+        }),
       },
       termux_services: {
         description: 'Read-only actual runit process status for canonical Termux services. Never starts/restarts a second stack. args: {}',
