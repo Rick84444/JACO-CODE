@@ -54,6 +54,14 @@ export function ReverseGoalCanvas({
   },[plan,collapsed,activeOnly,waitingOn]);
   const ready = 'nodes' in layout ? layout as Layout : null;
   const error = 'error' in layout ? layout.error : null;
+  // The root must visually share the logo's exact center regardless of how
+  // wide the SEER graph happens to be. Zoom-to-fit applies only when the
+  // selected goal changes, never on receipt updates.
+  useEffect(()=>{
+    const v=viewport.current;if(!v||!ready)return;
+    setZoom(clamp(Math.min(1,(v.clientWidth-32)/ready.width,(v.clientHeight-24)/ready.height)));
+    v.scrollTo({left:0,top:0});
+  },[plan.id,Boolean(ready)]);
   const focus = (id:string) => {
     const current=viewport.current;
     const node=ready?.nodes.find(n=>n.id===id);
@@ -114,7 +122,8 @@ export function ReverseGoalCanvas({
         }}
         onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}
       >
-        <div style={{width:ready.width*zoom,height:ready.height*zoom,position:'relative'}}>
+        <div style={{width:'max-content',minWidth:'100%',display:'flex',justifyContent:'center'}}>
+          <div style={{width:ready.width*zoom,height:ready.height*zoom,position:'relative',flexShrink:0}}>
           <div className="jaco-intuition-stage" style={{width:ready.width,height:ready.height,transform:'scale('+zoom+')'}}>
             <svg aria-hidden="true" width={ready.width} height={ready.height} style={{position:'absolute',inset:0,pointerEvents:'none'}}>
               {ready.edges.map(e=>{
@@ -141,6 +150,7 @@ export function ReverseGoalCanvas({
                 {n.collapsed?<ChevronDown size={14}/>:<ChevronUp size={14}/>}
               </button>}
             </React.Fragment>)}
+          </div>
           </div>
         </div>
       </div>
