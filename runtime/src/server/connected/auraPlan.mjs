@@ -88,6 +88,10 @@ export function planView(graph, { comments = [], skills = [], language = 'en', a
   const nodes = (graph.nodes || []).map(n => ({
     key: n.key, title: productNames(n.title), objective: productNames(n.objective), status: n.status, statusText: words[n.status] || n.status,
     dependencies: n.dependencies || [], missionId: n.nova_mission_id || null, failure: productNames(n.failure_reason || null),
+    // Evidence comes from SEER's persisted node record. It is never inferred
+    // from text, capability registration, simulation, or an asserted status.
+    evidenceRefs: Array.isArray(n.evidence_refs) ? n.evidence_refs.filter(x => typeof x === 'string').slice(0, 40) : [],
+    updatedAt: n.updated_at ?? null,
     needs: needsFor(`${n.title}\n${n.objective}`, { skills, language }).map(need => ({ ...need, state: available ? needStatus(need, available) : null })),
     comments: comments.filter(c => c.nodeKey === n.key),
   }));
