@@ -25,7 +25,7 @@ export async function discoverAuraMcpTools(host, server) {
     }))
   };
 }
-export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'read' } = {}) {
+export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'read' }) {
   const def = configured(host, server);
   if (!TOOL.test(tool)) throw Error('MCP_TOOL_ID_INVALID');
   if (mode !== 'read' && mode !== 'write') throw Error('MCP_MODE_INVALID');
