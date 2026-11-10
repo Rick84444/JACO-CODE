@@ -410,8 +410,8 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
             .sort((a,b) => Date.parse(b.at) - Date.parse(a.at) || (b.seq || 0) - (a.seq || 0));
           // Reuse the operator's canonical capability grouping; it is metadata,
           // not proof that a tool was authorized or successfully executed.
-          const toolGroups = new Map(taskCatalog([...new Set(recent.map(item => item.toolType))])
-            .flatMap(group => group.tasks.map(task => [task.id, group.id])));
+          const toolGroups = new Map<string,string>(taskCatalog([...new Set(recent.map(item => item.toolType))])
+            .flatMap(group => group.tasks.map(task => [task.id, group.id] as [string,string])));
           return {
             schema: 'jaco.aura-causal-context/v1', source: 'existing-mission-bus',
             observedAt: feed.observedAt, historyTruncated: feed.historyTruncated,
