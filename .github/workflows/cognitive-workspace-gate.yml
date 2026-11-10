@@ -3,6 +3,11 @@ name: Cognitive Live Workspace
 on:
   pull_request:
     paths:
+      - 'agents/cdp-bridge.mjs'
+      - 'runtime/src/server/browser/router.ts'
+      - 'runtime/src/server/browser/browserHandsOff.ts'
+      - 'tests/nova/cdp-mcp-contract.test.mjs'
+      - 'tests/nova/browser-session-attach.test.mjs'
       - 'runtime/src/components/AuraLiveStage.tsx'
       - 'runtime/src/components/AuraLiveToolSurfaces.tsx'
       - 'runtime/src/components/StrategyBoard.tsx'
@@ -28,6 +33,11 @@ on:
   push:
     branches: [main]
     paths:
+      - 'agents/cdp-bridge.mjs'
+      - 'runtime/src/server/browser/router.ts'
+      - 'runtime/src/server/browser/browserHandsOff.ts'
+      - 'tests/nova/cdp-mcp-contract.test.mjs'
+      - 'tests/nova/browser-session-attach.test.mjs'
       - 'runtime/src/components/AuraLiveStage.tsx'
       - 'runtime/src/components/AuraLiveToolSurfaces.tsx'
       - 'runtime/src/components/StrategyBoard.tsx'
@@ -71,6 +81,11 @@ jobs:
           npm run build:server
       - name: Evidence, durable replay, chat storage and GUI contracts
         run: node --test tests/nova/live-workspace-projection.test.mjs tests/nova/aura-live-stage.test.mjs tests/nova/gameboard-fabric.test.mjs tests/nova/cognitive-live.test.mjs tests/nova/aura-chat-session.test.mjs tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-gui-audit.test.mjs tests/nova/nova-activity-text.test.mjs tests/nova/aura-seer-chat.test.mjs
+      - name: Real MCP facade requests and non-destructive CDP attach
+        working-directory: runtime
+        run: |
+          node --test ../tests/nova/cdp-mcp-contract.test.mjs ../tests/nova/cdp-page-html.test.mjs
+          node --import tsx --test ../tests/nova/browser-session-attach.test.mjs
       - name: Parallel Gameboard path regression
         working-directory: runtime
         run: node --import tsx --test src/lib/gameboardTree.test.tsx
