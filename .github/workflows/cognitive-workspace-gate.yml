@@ -10,7 +10,7 @@ on:
       - 'runtime/src/server/browser/router.ts'
       - 'runtime/src/server/browser/browserHandsOff.ts'
       - 'tests/nova/cdp-mcp-contract.test.mjs'
-      - 'tests/nova/browser-session-attach.test.mjs'
+      - 'tests/browser/browser-session-attach.test.mjs'
       - 'runtime/src/components/AuraLiveStage.tsx'
       - 'runtime/src/components/AuraLiveToolSurfaces.tsx'
       - 'runtime/src/components/StrategyBoard.tsx'
@@ -43,7 +43,7 @@ on:
       - 'runtime/src/server/browser/router.ts'
       - 'runtime/src/server/browser/browserHandsOff.ts'
       - 'tests/nova/cdp-mcp-contract.test.mjs'
-      - 'tests/nova/browser-session-attach.test.mjs'
+      - 'tests/browser/browser-session-attach.test.mjs'
       - 'runtime/src/components/AuraLiveStage.tsx'
       - 'runtime/src/components/AuraLiveToolSurfaces.tsx'
       - 'runtime/src/components/StrategyBoard.tsx'
@@ -91,7 +91,7 @@ jobs:
         working-directory: runtime
         run: |
           node --test ../tests/nova/cdp-mcp-contract.test.mjs ../tests/nova/cdp-page-html.test.mjs ../tests/nova/aura-mcp-lazy-start.test.mjs
-          node --import tsx --test ../tests/nova/browser-session-attach.test.mjs
+          node --import tsx --test ../tests/browser/browser-session-attach.test.mjs
       - name: Parallel Gameboard path regression
         working-directory: runtime
         run: node --import tsx --test src/lib/gameboardTree.test.tsx
