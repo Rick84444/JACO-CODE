@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, ShieldAlert, MessageSquare, GitBranch, X } from 'lucide-react';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { buildOperatorConfirmation, requiresOperatorConfirmation } from '../lib/operatorApproval.mjs';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { LocalMemoryPanel } from './LocalMemoryPanel';
+import { ReverseGoalCanvas } from './ReverseGoalCanvas';
 
 // The Gameboard: one plan at a time, drawn like a family tree read backwards. The goal (what the operator wants) is
 // always first, at the top. Below it hang the subgoals that lead to it, and below each subgoal what it needs first;
@@ -13,7 +14,7 @@ import { LocalMemoryPanel } from './LocalMemoryPanel';
 // there, and Aura takes it into the next steps.
 type Need = { kind: string; label: string; approval: boolean; state?: 'have' | 'missing' | 'approval' | null };
 type Comment = { id: string; nodeKey: string | null; text: string; at: string; author?: 'aura' | 'operator' };
-type Node = { key: string; title: string; objective: string; status: string; statusText: string; failure: string | null; dependencies: string[]; needs: Need[]; comments: Comment[]; missionId?: string | null };
+type Node = { key: string; title: string; objective: string; status: string; statusText: string; failure: string | null; dependencies: string[]; needs: Need[]; comments: Comment[]; missionId?: string | null; evidenceRefs?: string[]; updatedAt?: number | string | null };
 // A decision waiting for the operator (the runtime's approval center), tied to a step through its mission.
 export type Decision = { id: string; kind: string; title: string; risk: string; reason: string; actions: string[]; details?: Record<string, any> };
 const decisionMission = (d: Decision): string | null => d.details?.missionId || d.details?.mission_id || (d.id.startsWith('mission:') ? d.id.slice(8) : null);
@@ -310,17 +311,19 @@ function Branch({ item, order, onPick, lit = '', waitingOn }: { item: TreeItem; 
 
 const short = (text: string, max = 70) => text.length > max ? text.slice(0, max - 1) + '…' : text;
 
-export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: string | null; onClose?: () => void }) {
+export function StrategyBoard({ focusPlanId = null, onClose, eventRevision = null }: { focusPlanId?: string | null; onClose?: () => void; eventRevision?: string | null }) {
   const { tr, language } = useUiLanguage();
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [observed, setObserved] = useState<{operatorGoal?:{statement:string}|null;missions?:Array<{identity:string;goal:string;status:string;verifiedActions:number}>;next?:{text:string}}|null>(null);
   const [error, setError] = useState('');
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [chosen, setChosen] = useState<string | null>(focusPlanId);
+  const readGeneration = useRef(0);
   // The open card: a step's key, 'goal' for the goal, or nothing.
   const [open, setOpen] = useState<string | null>(null);
   useEffect(() => { if (focusPlanId) { setChosen(focusPlanId); setOpen(null); } }, [focusPlanId]);
   const load = useCallback(async () => {
+    const generation = ++readGeneration.current;
     // Planning may be late or unavailable while the operator's goal and durable
     // missions are already recorded. Read both sources independently.
     const [planned, position, approvals] = await Promise.allSettled([
@@ -328,13 +331,27 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
       fetch('/api/aura/workbench/gameboard', {cache:'no-store'}).then(readAuraResponse),
       fetch('/api/aura/workbench/approvals', {cache:'no-store'}).then(readAuraResponse),
     ]);
+    if (generation !== readGeneration.current) return;
     if (planned.status === 'fulfilled' && planned.value?.success !== false) { setPlans(planned.value.plans || []); setError(''); }
     else { setPlans([]); setError(planned.status === 'rejected' ? String(planned.reason?.message || planned.reason) : String(planned.value?.error || 'PLAN_UNAVAILABLE')); }
     if (position.status === 'fulfilled' && position.value?.schema === 'jaco.gameboard-fabric/v1') setObserved(position.value);
     else setObserved(null);
     setDecisions(approvals.status === 'fulfilled' && Array.isArray(approvals.value?.items) ? approvals.value.items : []);
   }, [language]);
-  useEffect(() => { void load(); const t = window.setInterval(load, 10000); return () => window.clearInterval(t); }, [load]);
+  useEffect(() => {
+    void load();
+    const t=window.setInterval(()=>{if(document.visibilityState==='visible')void load();},10000);
+    const visible=()=>{if(document.visibilityState==='visible')void load();};
+    document.addEventListener('visibilitychange',visible);
+    return ()=>{window.clearInterval(t);document.removeEventListener('visibilitychange',visible);readGeneration.current++;};
+  },[load]);
+  // Reuse the EXISTING Aura live stream; don't open another SSE connection.
+  // Debounce bursts so one logical mission update results in one graph refresh.
+  useEffect(()=>{
+    if(!eventRevision||document.visibilityState!=='visible')return;
+    const id=window.setTimeout(()=>void load(),450);
+    return ()=>window.clearTimeout(id);
+  },[eventRevision,load]);
   const plan = pickPlan(plans || [], chosen);
   // The plan on screen stays on screen: the 10-second refresh must not swap it for another while the operator reads.
   useEffect(() => { if (!chosen && plan) setChosen(plan.id); }, [chosen, plan?.id]);
@@ -349,9 +366,13 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
 
   return <section data-testid="strategy-board" className="min-h-full space-y-3 bg-black p-4 text-neutral-100">
     <style>{BOARD_CSS}</style>
-    <header className="flex flex-wrap items-center justify-between gap-2">
-      <h2 className="flex items-center gap-2 text-base font-semibold tracking-wide"><GoalMark size={30} />Gameboard</h2>
-      <div className="flex items-center gap-2">
+    <header className="space-y-3">
+      <div data-testid="gameboard-centered-logo" className="flex w-full flex-col items-center justify-center gap-1 text-center">
+        <GoalMark size={72} />
+        <h2 className="text-base font-semibold tracking-[.26em] text-white">GAMEBOARD</h2>
+        <p className="text-[10px] uppercase tracking-[.18em] text-sky-200/70">{tr('Aura · levande målmodell','Aura · living goal model')}</p>
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         {plans && plans.length > 1 && <select aria-label={tr('Välj plan', 'Choose plan')} value={plan?.id || ''} onChange={e => { setChosen(e.target.value); setOpen(null); }}
           className="max-w-[22rem] rounded border border-neutral-700 bg-black px-2 py-1 text-xs">
           {plans.map(p => <option key={p.id} value={p.id}>{short(p.objective)}</option>)}
@@ -360,16 +381,15 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
         {onClose && <button type="button" onClick={onClose} title={tr('Tillbaka till Aura', 'Back to Aura')} aria-label={tr('Tillbaka till Aura', 'Back to Aura')} className="flex items-center gap-2 rounded-full border border-white/30 py-0.5 pl-0.5 pr-3 text-xs text-white/80 hover:border-sky-400"><img src="/branding/aura-avatar.png" alt="" width={30} height={30} style={{ width: 30, height: 30 }} className="rounded-full" />{tr('Tillbaka till Aura', 'Back to Aura')}</button>}
       </div>
     </header>
-    <p className="text-xs text-neutral-400">{tr('Målet står alltid först. Under det ser du vad som behövs för att nå det, och under varje delmål vad det i sin tur behöver. Det aktiva delmålet lyser svagt blått. Klicka på en ruta för hela beskrivningen.', 'The goal always comes first. Below it you see what is needed to reach it, and below each subgoal what that needs in turn. The active subgoal glows faint blue. Click a box for the full description.')}</p>
-    <LocalMemoryPanel missionIds={Array.from(planMissions)} />
+    <p className="text-center text-xs text-neutral-400">{tr('Intuitionen är målet. Aura härleder förutsättningarna baklänges och utför dem i verklig beroendeordning. Klicka på ett steg för att granska varför det behövs.', 'Intuition is the goal. Aura derives prerequisites backwards and executes them in real dependency order. Select a step to inspect why it is needed.')}</p>
     {planDecisions.length > 0 && <section aria-label={tr('Väntar på dig', 'Waiting for you')} className="space-y-2">
       <div className="text-xs font-semibold uppercase tracking-widest text-amber-300">{tr('Väntar på dig', 'Waiting for you')} ({planDecisions.length})</div>
       {planDecisions.map(d => <React.Fragment key={d.id}><DecisionRow decision={d} onDone={() => void load()} /></React.Fragment>)}
     </section>}
     {error && <p role="alert" className="text-sm text-amber-300">{tr('Planen kunde inte läsas just nu.', 'The plan could not be read right now.')} ({error})</p>}
-    {plans && plans.length === 0 && (observed?.operatorGoal || observed?.missions?.length ? <article data-testid="strategy-goal-pending" className="space-y-3 rounded-lg border border-yellow-700 bg-[#181715] p-4">
-      <div className="flex items-center gap-3"><GoalMark size={46}/><div>
-        <div className="text-xs uppercase tracking-widest text-yellow-300">{tr('Registrerat mål', 'Recorded goal')}</div>
+    {plans && plans.length === 0 && (observed?.operatorGoal || observed?.missions?.length ? <article data-testid="strategy-goal-pending" className="space-y-3 rounded-lg border border-sky-800 bg-[#0b182c] p-4 text-center">
+      <div className="flex flex-col items-center gap-3"><div>
+        <div className="text-xs uppercase tracking-widest text-sky-300">INTUITION · {tr('registrerat mål','recorded goal')}</div>
         <div className="text-sm font-semibold text-white">{observed?.operatorGoal?.statement || observed?.missions?.[0]?.goal}</div>
       </div></div>
       <p className="text-xs text-amber-200">{tr('Målet finns, men Aura har ännu inte rapporterat en SEER-plan med verifierbara delsteg. Inga steg hittas på.', 'The goal exists, but Aura has not yet reported a SEER plan with verifiable steps. No steps are fabricated.')}</p>
@@ -378,16 +398,15 @@ export function StrategyBoard({ focusPlanId = null, onClose }: { focusPlanId?: s
       </div>)}
       {observed?.next?.text&&<p className="text-xs text-neutral-300">{observed.next.text}</p>}
     </article>:<p className="text-sm text-neutral-300">{tr('Inget aktivt mål eller plan observerat. Ge Aura ett mål i chatten.', 'No active goal or plan observed. Give Aura a goal in the chat.')}</p>)}
-    {plan && <div className="jaco-tree overflow-x-auto pb-4 pt-2" data-testid="plan-tree">
-      <ul><li>
-        <button type="button" onClick={() => setOpen('goal')} className="jaco-goal w-80 max-w-full rounded-lg border border-yellow-300 bg-black px-4 py-3 text-center transition-colors hover:bg-white/[.06]">
-          <div className="flex flex-col items-center justify-center gap-1.5 text-[10px] font-medium uppercase tracking-[.2em] text-yellow-300"><GoalMark size={56} />{tr('Målet', 'The goal')}</div>
-          <div className="mt-1 text-sm font-semibold leading-snug text-yellow-50">{plan.objective}</div>
-          <div className="mt-1 text-[11px] text-white/50">{tr('Klart', 'Done')} {plan.progress.done}/{plan.progress.total}{plan.abilities?.missing.length ? ` · ${tr('Aura saknar något', 'Aura lacks something')}` : ''}</div>
-        </button>
-        {tree.length > 0 && <ul className={tree.some(onPath) ? 'jaco-path-ul' : undefined}>{tree.map((item, i) => <React.Fragment key={item.node.key}><Branch item={item} order={order} onPick={setOpen} lit={treeLines[i]} waitingOn={waitingOn} /></React.Fragment>)}</ul>}
-      </li></ul>
-    </div>}
+    {plan && <div data-testid="plan-tree"><ReverseGoalCanvas plan={plan} waitingOn={waitingOn} onGoal={()=>setOpen('goal')} onSelect={setOpen}/></div>}
+    {plan?.changes?.length>0 && <details className="rounded border border-neutral-800 p-3 text-xs text-neutral-300" data-testid="gameboard-plan-history">
+      <summary className="cursor-pointer">{tr('Planens versionshistorik','Plan revision history')} · {plan.changes.length}</summary>
+      <div className="mt-2 space-y-2">{plan.changes.map((change,i)=><p key={i}>{change.at?new Date(change.at).toLocaleString():tr('Tid okänd','Time unknown')} · {change.reason || tr('Ändring utan orsak','Change without reason')}</p>)}</div>
+    </details>}
+    <details className="rounded border border-neutral-800 p-3 text-xs text-neutral-300" data-testid="gameboard-memory-section">
+      <summary className="cursor-pointer">{tr('Tidigare erfarenheter och minne','Prior experience and memory')}</summary>
+      <div className="mt-3"><LocalMemoryPanel missionIds={Array.from(planMissions)} /></div>
+    </details>
     {plan && open === 'goal' && <GoalCard plan={plan} onClose={close} onSaved={load} />}
     {plan && node && <StepCard plan={plan} node={node} decisions={decisions} onPick={key => setOpen(key ?? 'goal')} onClose={close} onSaved={load} />}
   </section>;
