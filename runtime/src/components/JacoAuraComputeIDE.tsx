@@ -324,9 +324,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [guideClosed, setGuideClosed] = useState(false);
   // The chat and a shared link (?plan=<id>) open the blueprint of a plan directly.
   const [focusPlanId, setFocusPlanId] = useState<string | null>(() => { try { return new URLSearchParams(window.location.search).get('plan'); } catch { return null; } });
+  const [focusNodeKey, setFocusNodeKey] = useState<string | null>(null);
   useEffect(() => {
     if (focusPlanId) setWorkspaceView('gameboard');
-    const open = (e: Event) => { const id = (e as CustomEvent).detail; if (typeof id === 'string') { if (id) setFocusPlanId(id); setWorkspaceView(view => view === 'gameboard' && !id ? 'conversation' : 'gameboard'); } };
+    const open = (e: Event) => { const id = (e as CustomEvent).detail; if (typeof id === 'string') { if (id) setFocusPlanId(id); setFocusNodeKey(null); setWorkspaceView(view => view === 'gameboard' && !id ? 'conversation' : 'gameboard'); } };
     window.addEventListener('jaco:open-plan', open);
     return () => window.removeEventListener('jaco:open-plan', open);
   }, []);
@@ -339,6 +340,11 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [fileReadRevision,setFileReadRevision]=useState(0);
   const [stageSaveBusy, setStageSaveBusy] = useState(false);
   const [stageSaveNotice, setStageSaveNotice] = useState<string|null>(null);
+  const openPlanStep = (graphId: string, nodeKey: string | null) => {
+    setFocusPlanId(graphId);
+    setFocusNodeKey(nodeKey);
+    setWorkspaceView('gameboard');
+  };
   const chooseWorkspace = (view:CognitiveCanvas) => {
     if(view !== 'stage' && view !== 'conversation') setWorkspacePinned(true);
     setWorkspaceView(view);
@@ -1927,7 +1933,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     previewError={fileReadError?.path===stagePath?fileReadError.message:null} onRetryPreview={()=>setFileReadRevision(value=>value+1)}
     previewReady={Boolean(stagePreview)} active={status.tone==='active'}
     onInspect={event=>{setSelectedEvidence(event);setWorkspacePinned(true);setWorkspaceView('evidence');}}
-    onOpenFile={openFile} htmlSource={stageFile?.content ?? null} htmlDraft={stageDraft}
+    onOpenFile={openFile} onOpenPlan={openPlanStep} htmlSource={stageFile?.content ?? null} htmlDraft={stageDraft}
     onDraftChange={value=>{if(stagePath)updateDraft(stagePath,value);}}
     onSaveDraft={()=>{if(stagePath)void saveStageDraft(stagePath);}} saveBusy={stageSaveBusy} saveNotice={stageSaveNotice}
     cdpReady={snapshot?.integrations?.cdp?.state==='VERIFIED' || snapshot?.integrations?.cdp?.state==='OBSERVED'}
@@ -2000,7 +2006,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       onCommands={() => setCommandPaletteOpen(true)} onSignOut={() => void signOut()}
       lastObservedAt={cognitiveLive.lastObservedAt || snapshot?.observedAt || null} error={connectionError}/>
     {/* The Gameboard fills the whole work area so it can be read; Aura's face, the chat or any tool in the rail closes it. */}
-    {workspaceView==='gameboard'&&<div className="jaco-gameboard-full" role="region" aria-label="Gameboard"><React.Suspense fallback={<div className="cognitive-empty-detail">{tr('Öppnar Gameboard…','Opening the Gameboard…')}</div>}><StrategyBoard focusPlanId={focusPlanId} onClose={()=>setWorkspaceView('conversation')}/><details className="bg-black px-4 pb-4 text-xs text-neutral-400"><summary>{tr('Teknisk vy','Technical view')}</summary><CognitiveGameboard/></details></React.Suspense></div>}
+    {workspaceView==='gameboard'&&<div className="jaco-gameboard-full" role="region" aria-label="Gameboard"><React.Suspense fallback={<div className="cognitive-empty-detail">{tr('Öppnar Gameboard…','Opening the Gameboard…')}</div>}><StrategyBoard focusPlanId={focusPlanId} focusNodeKey={focusNodeKey} onClose={()=>setWorkspaceView('conversation')}/><details className="bg-black px-4 pb-4 text-xs text-neutral-400"><summary>{tr('Teknisk vy','Technical view')}</summary><CognitiveGameboard/></details></React.Suspense></div>}
     <AuraCommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenTool={openTool}/>
     {renderApprovals()}
   </>;
