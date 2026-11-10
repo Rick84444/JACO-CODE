@@ -71,7 +71,9 @@ export function reverseGoalLayout(input, options = {}) {
     }
   }
   if (visited !== map.size + 1) throw Error('GAMEBOARD_CYCLE');
-  const activeKeys = [...map.keys()].filter(key => isActiveNode(map.get(key)));
+  const executionFresh = options.executionFresh !== false;
+  const reportedActiveCount = [...map.keys()].filter(key => isActiveNode(map.get(key))).length;
+  const activeKeys = executionFresh ? [...map.keys()].filter(key => isActiveNode(map.get(key))) : [];
   const activeEdges = new Set();
   const ancestorKeys = new Set([REVERSE_GOAL_ROOT]);
   const walkAncestors = key => {
@@ -123,7 +125,7 @@ export function reverseGoalLayout(input, options = {}) {
   const nodes=[...visible].map(key => ({
     id:key,kind:key===REVERSE_GOAL_ROOT?'intuition':'step',
     title:key===REVERSE_GOAL_ROOT?text(input.intuition || input.objective):text(map.get(key)?.title),
-    status:key===REVERSE_GOAL_ROOT?'intuition':nodeVisualState(map.get(key),array(options.waitingMissionIds).includes(map.get(key)?.missionId)),
+    status:key===REVERSE_GOAL_ROOT?'intuition':!executionFresh && isActiveNode(map.get(key)) ? 'stale' : nodeVisualState(map.get(key),array(options.waitingMissionIds).includes(map.get(key)?.missionId)),
     rawStatus:key===REVERSE_GOAL_ROOT?text(input.status):text(map.get(key)?.status),
     missionId:key===REVERSE_GOAL_ROOT?null:text(map.get(key)?.missionId)||null,
     evidenceCount:key===REVERSE_GOAL_ROOT?0:array(map.get(key)?.evidenceRefs).length,
@@ -135,7 +137,7 @@ export function reverseGoalLayout(input, options = {}) {
   return {
     schema:REVERSE_GOAL_GRAPH_SCHEMA,
     source:'SEER_MISSION_GRAPH', readOnly:true, executed:false,
-    width,height,nodes,edges,activeCount:activeKeys.length,
+    width,height,nodes,edges,activeCount:activeKeys.length,reportedActiveCount,executionFresh,
     totalSteps:map.size, visibleSteps:Math.max(0,visible.size-1),
     revisionCount:array(input.changes).length, hiddenSuperseded:array(input.nodes).length-original.length,
     activeOnly, activePathsObserved:activeEdges.size > 0,
