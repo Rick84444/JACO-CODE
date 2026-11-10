@@ -105,3 +105,32 @@ test('Aura notes are kept apart from the operator comments', () => {
     assert.equal(c.add({ graphId: 'g', text: 'Bra', author: 'something-else' }).author, 'operator');
   } finally { fs.rmSync(d, { recursive: true, force: true }); }
 });
+
+
+test('Intuition is anchored to the operator goal even when SEER chooses a narrower strategic subgoal', () => {
+  const graph = {id:'g2',title:'Build gateway',objective:'Prepare authentication adapter',status:'ACTIVE',
+    policy:{intuition_id:'operator-goal-10',intuition_statement:'Deliver a full autonomous enterprise agent'},
+    nodes:[{key:'build',title:'Build adapter',objective:'Code adapter',status:'VERIFIED',
+      evidence_refs:['bus:receipt-83','git:commit-34'],dependencies:[],updated_at:1794000000}],
+  };
+  const view=planView(graph,{language:'en'});
+  assert.equal(view.intuition,'Deliver a full autonomous enterprise agent');
+  assert.equal(view.intuitionId,'operator-goal-10');
+  assert.equal(view.objective,'Prepare authentication adapter');
+  assert.deepEqual(view.nodes[0].evidenceRefs,['bus:receipt-83','git:commit-34']);
+  assert.equal(view.nodes[0].updatedAt,1794000000);
+  // No bogus receipt, even for nodes which SEER reports as complete.
+  assert.deepEqual(planView({...graph,nodes:[{...graph.nodes[0],evidence_refs:[]}]}).nodes[0].evidenceRefs,[]);
+});
+
+test('Project-mode graph retains the operator-selected intuition through decomposition and replan', async () => {
+  const {projectGoalGraph}=await import('../../gateway/src/seer-project.mjs');
+  const projectRoot = process.platform === 'win32' ? 'C:\\JACO\\Project' : '/tmp/JACO-Project';
+  const goal={id:'operator-goal',statement:'Build a robust API gateway',project_root:projectRoot};
+  const g=projectGoalGraph(goal);
+  assert.equal(g.policy.intuition_id,goal.id);
+  assert.equal(g.policy.intuition_statement,goal.statement);
+  assert.equal(g.objective,goal.statement);
+  assert.equal(g.policy.strategic_goal_id,goal.id);
+  assert.equal(g.nodes.length,1,'existing project graph must not fabricate model-derived steps');
+});
