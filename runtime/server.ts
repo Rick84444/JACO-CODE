@@ -406,13 +406,20 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
               .map(([,value]) => value).filter(Boolean),
           });
           const projection = projectAuraLiveWorkspace(feed.events, {missionId: requested, maxSurfaces: 6});
+          const recent = projection.surfaces.flatMap(surface => surface.entries)
+            .sort((a,b) => Date.parse(b.at) - Date.parse(a.at) || (b.seq || 0) - (a.seq || 0));
+          // Reuse the operator's canonical capability grouping; it is metadata,
+          // not proof that a tool was authorized or successfully executed.
+          const toolGroups = new Map(taskCatalog([...new Set(recent.map(item => item.toolType))])
+            .flatMap(group => group.tasks.map(task => [task.id, group.id])));
           return {
             schema: 'jaco.aura-causal-context/v1', source: 'existing-mission-bus',
             observedAt: feed.observedAt, historyTruncated: feed.historyTruncated,
             missionId: requested, observedActions: projection.actionCount,
-            links: projection.surfaces.flatMap(surface => surface.entries).slice(0, 12).map(item => ({
+            links: recent.slice(0, 12).map(item => ({
               missionId: item.missionId, graphId: item.planId, nodeKey: item.nodeKey,
-              actionId: item.actionId, toolType: item.toolType, surface: item.surface,
+              actionId: item.actionId, toolType: item.toolType, capabilityGroup: toolGroups.get(item.toolType) || 'other',
+              surface: item.surface,
               observationState: item.state, evidenceOutcome: item.evidence?.outcome || 'observed',
               receiptEventId: item.durable ? item.eventId : null,
               resourcePath: item.evidence?.path || null, observedAt: item.at,
