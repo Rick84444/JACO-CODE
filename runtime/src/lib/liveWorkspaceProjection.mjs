@@ -70,7 +70,7 @@ export function projectAuraLiveWorkspace(events = [], {
       planId: event.planId || null, nodeKey: event.nodeKey || null,
       toolType: event.toolType, surface, state, at: event.at,
       evidence: event.evidence, text: event.text,
-      eventId: event.id, durable: event.durable === true,
+      eventId: event.id, seq: event.seq ?? null, durable: event.durable === true,
       // Keep a reference to the already-redacted event for evidence/file navigation.
       event
     };
@@ -78,8 +78,13 @@ export function projectAuraLiveWorkspace(events = [], {
     bySurface.get(surface).push(item);
   }
   const surfaces = [...bySurface.entries()].map(([id, entries]) => {
-    entries.sort((a,b) => (ranked[b.state] || 0) - (ranked[a.state] || 0) ||
-      stamp(b) - stamp(a));
+    // Running work first; otherwise the newest actual receipt wins.
+    // A historical failed step must not freeze the surface after a later fix.
+    entries.sort((a,b) =>
+      Number(b.state === 'RUNNING') - Number(a.state === 'RUNNING') ||
+      stamp(b) - stamp(a) ||
+      (b.seq ?? 0) - (a.seq ?? 0) ||
+      (ranked[b.state] || 0) - (ranked[a.state] || 0));
     return {
       id, primary: entries[0], entries: entries.slice(0, 8),
       running: entries.filter(item => item.state === 'RUNNING').length,
