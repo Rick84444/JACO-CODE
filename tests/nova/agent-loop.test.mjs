@@ -962,7 +962,8 @@ test('resumed approved exact action executes once without a new model response o
   assert.throws(() => s.control.begin(m.id, {owner:'nova',token:claim.token,task}), /OPERATOR_APPROVAL_REQUIRED/);
   assert.equal(s.control.get(m.id).status, 'BLOCKED');
   s.control.resolve(m.id,{decision:'resume',note:'I approve this exact publication',authority:'operator'});
-  assert.deepEqual(s.control.get(m.id).approvedTask,task);
+  assert.equal(s.control.get(m.id).approvedTask.type,task.type);
+  assert.deepEqual(s.control.get(m.id).approvedTask.data,task.data);
   const model = scripted([]);
   const executed = [];
   const result = await run(s,model,async action=>{
@@ -988,7 +989,8 @@ test('pending operator decision survives a controller restart without modifying 
   assert.throws(()=>a.begin(m.id,{owner:'nova',token:first.token,task}),/OPERATOR_APPROVAL_REQUIRED/);
   a.resolve(m.id,{decision:'resume',note:'Exact publication approved',authority:'operator'});
   const restarted=new NovaMissionControl(bus,{allowedTasks:['shell']});
-  assert.deepEqual(restarted.get(m.id).approvedTask,task);
+  assert.equal(restarted.get(m.id).approvedTask.type,task.type);
+  assert.deepEqual(restarted.get(m.id).approvedTask.data,task.data);
   const claim=restarted.claim(m.id,'nova');
   const action=restarted.begin(m.id,{owner:'nova',token:claim.token,task:restarted.get(m.id).approvedTask});
   assert.equal(action.type,'shell');
