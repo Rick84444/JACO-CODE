@@ -3,6 +3,12 @@ name: Cognitive Live Workspace
 on:
   pull_request:
     paths:
+      - 'runtime/src/server/agents/marketWatchService.ts'
+      - 'runtime/src/types.ts'
+      - 'tests/browser/market-watch-evidence.test.mjs'
+      - 'runtime/src/server/connected/novaMissionControl.mjs'
+      - 'tests/nova/agent-loop.test.mjs'
+      - 'tests/nova/autonomy-hardening.test.mjs'
       - 'runtime/src/server/mcp/auraAgentMcpCall.mjs'
       - 'runtime/src/server/connected/cognitiveQuestionToolbox.mjs'
       - 'tests/nova/aura-mcp-lazy-start.test.mjs'
@@ -36,6 +42,12 @@ on:
   push:
     branches: [main]
     paths:
+      - 'runtime/src/server/agents/marketWatchService.ts'
+      - 'runtime/src/types.ts'
+      - 'tests/browser/market-watch-evidence.test.mjs'
+      - 'runtime/src/server/connected/novaMissionControl.mjs'
+      - 'tests/nova/agent-loop.test.mjs'
+      - 'tests/nova/autonomy-hardening.test.mjs'
       - 'runtime/src/server/mcp/auraAgentMcpCall.mjs'
       - 'runtime/src/server/connected/cognitiveQuestionToolbox.mjs'
       - 'tests/nova/aura-mcp-lazy-start.test.mjs'
@@ -92,6 +104,9 @@ jobs:
         run: |
           node --test ../tests/nova/cdp-mcp-contract.test.mjs ../tests/nova/cdp-page-html.test.mjs ../tests/nova/aura-mcp-lazy-start.test.mjs
           node --import tsx --test ../tests/browser/browser-session-attach.test.mjs
+      - name: Market Watch evidence trust and source-failure regressions
+        working-directory: runtime
+        run: node --import tsx --test ../tests/browser/market-watch-evidence.test.mjs
       - name: Parallel Gameboard path regression
         working-directory: runtime
         run: node --import tsx --test src/lib/gameboardTree.test.tsx
