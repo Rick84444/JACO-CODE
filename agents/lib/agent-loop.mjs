@@ -187,6 +187,37 @@ export async function runAgentMission({
         return { executed: false, deferred: true, reason: `PREFLIGHT_FAILED:${errorText(error)}` };
       }
     }
+    // An explicit operator decision already chose the exact action. Execute that
+    // stored intent once through the normal begin/finish contract rather than
+    // asking the model to re-plan it with different arguments (approval loop).
+    // The runtime revalidates the task, allowed tools and current steering.
+    mission = await client.get(mission.id);
+    if (mission.approvedTask) {
+      let lease = null, begun;
+      try {
+        const claimed = await client.claim(mission.id, owner);
+        lease = { owner, token: claimed.token };
+        begun = await client.begin(mission.id, {
+          ...lease, ...(mission.steering?.revision ? { steerVersion: mission.steering.revision } : {}),
+          task: mission.approvedTask
+        });
+      } catch (error) {
+        if (lease) await client.release(mission.id, lease).catch(() => {});
+        throw error;
+      }
+      await onActivity({ phase: 'EXECUTING', missionId: mission.id });
+      const before = await observe(mission).catch(() => null);
+      let result;
+      try { result = await execute(begun, mission); }
+      catch (error) { result = executionExceptionResult(begun, error); }
+      const after = await observe(mission).catch(() => null);
+      const receipt = checkedReceipt(begun, result, before, after);
+      // If the tool result or its transport is uncertain, never retry it here.
+      const updated = await client.finish(mission.id, { ...lease, actionId: begun.id, receipt });
+      receipts.push(receipt);
+      await onReceipt(receipt, begun, updated);
+      return { executed: true, receipts, steps: 1, mission: updated, approvedAction: true };
+    }
     // What earlier runs of this mission already did counts for stuck detection, so a circle that spans runs is caught.
     const history = (Array.isArray(mission.receipts) ? mission.receipts : []).slice(-24);
     // Preserve the actual historical outcome: changing results must not be mistaken for an identical-result loop.
