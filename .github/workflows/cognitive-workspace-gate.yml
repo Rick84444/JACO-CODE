@@ -3,6 +3,10 @@ name: Cognitive Live Workspace
 on:
   pull_request:
     paths:
+      - 'runtime/src/server/gate/approvalGate.ts'
+      - 'tests/browser/approval-gate-dedup.test.mjs'
+      - 'runtime/src/server/agents/marketWatchService.ts'
+      - 'tests/browser/market-watch-integrity.test.mjs'
       - 'runtime/src/server/mcp/auraAgentMcpCall.mjs'
       - 'runtime/src/server/connected/cognitiveQuestionToolbox.mjs'
       - 'tests/nova/aura-mcp-lazy-start.test.mjs'
@@ -36,6 +40,10 @@ on:
   push:
     branches: [main]
     paths:
+      - 'runtime/src/server/gate/approvalGate.ts'
+      - 'tests/browser/approval-gate-dedup.test.mjs'
+      - 'runtime/src/server/agents/marketWatchService.ts'
+      - 'tests/browser/market-watch-integrity.test.mjs'
       - 'runtime/src/server/mcp/auraAgentMcpCall.mjs'
       - 'runtime/src/server/connected/cognitiveQuestionToolbox.mjs'
       - 'tests/nova/aura-mcp-lazy-start.test.mjs'
@@ -91,7 +99,7 @@ jobs:
         working-directory: runtime
         run: |
           node --test ../tests/nova/cdp-mcp-contract.test.mjs ../tests/nova/cdp-page-html.test.mjs ../tests/nova/aura-mcp-lazy-start.test.mjs
-          node --import tsx --test ../tests/browser/browser-session-attach.test.mjs
+          node --import tsx --test ../tests/browser/browser-session-attach.test.mjs ../tests/browser/market-watch-integrity.test.mjs ../tests/browser/approval-gate-dedup.test.mjs
       - name: Parallel Gameboard path regression
         working-directory: runtime
         run: node --import tsx --test src/lib/gameboardTree.test.tsx

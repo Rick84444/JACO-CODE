@@ -55,6 +55,7 @@ test('retrieved analysis retains provenance but cannot self-promote to verified 
   assert.equal(result.item.evidence.status, 'HYPOTHESIS');
   assert.match(result.item.evidence.sourceHash, /^[a-f0-9]{64}$/);
   assert.deepEqual(result.item.sourceUrls, ['https://docs.cursor.com/agent/subgoals']);
+  instance.setAutoInject(true);
   const context = instance.getMarketWatchReasoningContext();
   assert.match(context, /UNVERIFIED HYPOTHESES/);
   assert.match(context, /not independently verified/);

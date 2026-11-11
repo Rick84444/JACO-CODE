@@ -2,6 +2,8 @@
 
 ## Scope
 
+Extends merged PR #218; preserves its mission and typed-job deduplication.
+
 Market Watch has no independent verifier. It now starts with zero observations,
 creates no fallback insight on failed source retrieval, invalid JSON, or provider
 failure, and stores successful model analyses only as HYPOTHESIS. Source URL,
@@ -25,7 +27,7 @@ decision. This is not blanket mission authorization or permission widening.
 
 `node --test tests/nova/market-watch-integrity.test.mjs tests/nova/operator-action-guard.test.mjs tests/nova/approval-policy.test.mjs tests/nova/coding-contract.test.mjs tests/nova/agent-loop.test.mjs tests/nova/agent-stuck-condense.test.mjs`
 
-90 tests passed on Node 24.22.1. TypeScript no-emit check and server build passed.
+96 tests passed on Node 24.22.1. TypeScript no-emit check and server build passed.
 The broad npm test run was incomplete: an automatic security review blocked a
 network attempt to skills.example; concurrent dependency installation also
 caused one transient missing-express failure. No full-suite pass is claimed.

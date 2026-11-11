@@ -81,7 +81,7 @@ export class MarketWatchService {
   private totalScansCompleted: number = 0;
   private trackedTargets: TrackedCompetitorTarget[] = INITIAL_TRACKED_TARGETS.map(target => ({ ...target, targetUrls: [...target.targetUrls], focusAreas: [...target.focusAreas], lastScannedAt: null, discoveredSignalsCount: 0 }));
   private intelligenceItems: CompetitiveIntelligenceMemoryItem[] = [];
-  private autoInjectIntoReasoning: boolean = true;
+  private autoInjectIntoReasoning: boolean = false;
 
   private scanInFlight = false;
 
