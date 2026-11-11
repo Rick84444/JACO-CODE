@@ -951,3 +951,36 @@ test('real durable mission resumes without repeating an unchanged read silently'
   assert.equal(s.control.get(m.id).status,'AWAITING_VERIFICATION');
 });
 
+
+test('queue preemption during model inference yields without false capability denial or another approval',async t=>{
+  const s=setup(t,['web-fetch']);
+  const research=s.control.create({goal:'Read the research result',idempotencyKey:'queue-original',allowedTasks:['web-fetch']});
+  let priority,modelTurns=0,executions=0;
+  const result=await runAgentMission({client:s.client,owner:'nova',system:'test',toolsFor:m=>plannerTools(m.allowedTasks,[],{},false),
+    chat:async()=>{modelTurns++;priority=s.control.create({goal:'Read the priority result',idempotencyKey:'queue-priority',source:'skyfire-order',allowedTasks:['web-fetch']});
+      return {tool_calls:[call('web-fetch',{url:'https://fixture.test/research'})]};},
+    execute:async()=>{executions++;return{ok:true,verified:true};}
+  });
+  assert.equal(result.queueChanged,true);assert.equal(result.deferred,true);
+  assert.equal(result.blocked,undefined);assert.equal(executions,0);assert.equal(modelTurns,1);
+  assert.equal(s.control.get(research.id).status,'ACTIVE');
+  const events=s.control.db.prepare('SELECT type,payload_json FROM events WHERE mission_id=?').all(research.id);
+  assert.ok(events.every(e=>!['NOVA_OPERATOR_APPROVAL_REQUIRED','NOVA_SPEND_BLOCKED','NOVA_PLANNING_RESULT'].includes(e.type)));
+  const priorityModel=scripted([{tool_calls:[call('web-fetch',{url:'https://fixture.test/priority'})]}, {tool_calls:[call('complete',{reason:'Observed priority [#1]'})]}]);
+  const done=await run(s,priorityModel,async()=>({ok:true,verified:true,content:'priority result'}));
+  assert.equal(done.completed,true);assert.equal(s.control.get(priority.id).status,'AWAITING_VERIFICATION');
+  const resumed=await run(s,scripted([{tool_calls:[call('web-fetch',{url:'https://fixture.test/research'})]},{tool_calls:[call('complete',{reason:'Observed research [#1]'})]}]),async()=>({ok:true,verified:true,content:'research result'}));
+  assert.equal(resumed.completed,true);assert.equal(s.control.get(research.id).receipts.length,1);
+  assert.equal(s.control.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='NOVA_OPERATOR_RESOLUTION'").get().n,0);
+});
+
+test('queue changes at a planning boundary do not consume another model turn',async t=>{
+  const s=setup(t,['web-fetch']);
+  const original=s.control.create({goal:'Read two research pages',idempotencyKey:'boundary-original',allowedTasks:['web-fetch']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://fixture.test/first'})]}]);
+  const result=await run(s,model,async()=>({ok:true,verified:true,content:'first'}),{
+    onReceipt:async()=>{s.control.create({goal:'Read the new priority page',idempotencyKey:'boundary-priority',source:'stripe-order',allowedTasks:['web-fetch']});}
+  });
+  assert.equal(result.queueChanged,true);assert.equal(model.seen.length,1);
+  assert.equal(s.control.get(original.id).status,'ACTIVE');assert.equal(result.receipts.length,1);
+});
