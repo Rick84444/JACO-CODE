@@ -319,8 +319,11 @@ export class NovaMissionControl {
     // One-time operator approvals for an outgoing-spend action (see spendGuard.mjs).
     this.db.exec(`CREATE TABLE IF NOT EXISTS nova_action_gate (
       mission_id TEXT PRIMARY KEY, task_hash TEXT NOT NULL, reason TEXT NOT NULL,
-      requested_at TEXT NOT NULL, approved_at TEXT, note TEXT
+      requested_at TEXT NOT NULL, approved_at TEXT, note TEXT, task_json TEXT
     )`);
+    // Existing installations retain their pending approvals across upgrades.
+    const gateColumns = new Set(this.db.prepare('PRAGMA table_info(nova_action_gate)').all().map(c => c.name));
+    if (!gateColumns.has('task_json')) this.db.exec('ALTER TABLE nova_action_gate ADD COLUMN task_json TEXT');
     this.db.exec(`CREATE TABLE IF NOT EXISTS nova_spend_approvals (
       mission_id TEXT PRIMARY KEY REFERENCES missions(id), approved_at TEXT NOT NULL, note TEXT NOT NULL
     )`);
@@ -420,6 +423,11 @@ export class NovaMissionControl {
       activeTask: decode(row.active_task_json), failures: row.failures,
       contract, contractStatus: contract ? contractVerificationStatus(contract, receipts) : null,
       execution: contract ? codingExecutionSummary(contract, receipts, row.phase) : null,
+      // An operator's exact approved action is a durable execution intent, not
+      // a prompt for the model to construct another potentially different task.
+      approvedTask: base.status === 'ACTIVE' ? decode(this.db.prepare(
+        'SELECT task_json FROM nova_action_gate WHERE mission_id=? AND approved_at IS NOT NULL'
+      ).get(id)?.task_json) : null,
       preflight: this.bus.lastMissionEvent(id,'NOVA_PREFLIGHT')?.payload || null,
       replanRequest: this.bus.lastMissionEvent(id,'NOVA_REPLAN_REQUEST')?.payload || null,
       cancelRequested: !TERMINAL.has(base.status) && Boolean(this.bus.lastMissionEvent(id,'NOVA_CANCEL_REQUEST')),
@@ -583,6 +591,14 @@ export class NovaMissionControl {
     if (checked.type === 'github-create-repo') checked = validateGithubRepoTask(checked, mission.goal);
     if (checked.type === 'repo-scan') checked = validateRepoScanTask(checked, mission.goal);
     if (checked.type === 'mcp-call' || checked.type === 'mcp-write') checked = validateMcpCall(checked);
+    const pending = this.db.prepare('SELECT task_hash,approved_at FROM nova_action_gate WHERE mission_id=?').get(id);
+    // Once a human approved an exact task, the planner cannot silently
+    // substitute a differently hashed action before its authorized execution.
+    // Any change requires a new explicit decision, not a reused approval.
+    if (pending?.approved_at &&
+        pending.task_hash !== `${checked.type}:${hashTaskInput(checked.data)}`) {
+      throw new Error('APPROVED_ACTION_PENDING_EXACT_TASK');
+    }
     const spend = outgoingSpendCheck(checked, { observation: mission.observation });
     if (spend) {
       const approval = this.db.prepare('SELECT * FROM nova_spend_approvals WHERE mission_id=?').get(id);
@@ -601,10 +617,16 @@ export class NovaMissionControl {
       const taskHash = `${checked.type}:${hashTaskInput(checked.data)}`;
       const gate = this.db.prepare('SELECT * FROM nova_action_gate WHERE mission_id=?').get(id);
       if (!gate?.approved_at || gate.task_hash !== taskHash) {
-        this.db.prepare('INSERT OR REPLACE INTO nova_action_gate(mission_id,task_hash,reason,requested_at,approved_at,note) VALUES(?,?,?,?,NULL,NULL)').run(id, taskHash, harmful.reason, iso());
+        const samePending = gate && gate.task_hash === taskHash && !gate.approved_at;
+        if (!samePending) {
+          const approvedSnapshot = JSON.stringify(checked);
+          if (approvedSnapshot.length > 65536) throw new Error('APPROVAL_TASK_TOO_LARGE');
+          this.db.prepare('INSERT OR REPLACE INTO nova_action_gate(mission_id,task_hash,reason,requested_at,approved_at,note,task_json) VALUES(?,?,?,?,NULL,NULL,?)')
+            .run(id, taskHash, harmful.reason, iso(), approvedSnapshot);
+        }
         this.db.prepare("UPDATE nova_sessions SET phase='BLOCKED',owner=NULL,token=NULL,lease_until=NULL WHERE mission_id=?").run(id);
         this.setStatus(id, 'BLOCKED');
-        this.bus.event('NOVA_OPERATOR_APPROVAL_REQUIRED', { missionId: id, payload: { error: `OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`, reason: harmful.reason, task: { type: checked.type, data: compactTaskInput(checked.data) } } });
+        if (!samePending) this.bus.event('NOVA_OPERATOR_APPROVAL_REQUIRED', { missionId: id, payload: { error: `OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`, reason: harmful.reason, task: { type: checked.type, data: compactTaskInput(checked.data) } } });
         return new CommittedFailure(new Error(`OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`));
       }
       // Approval covers exactly the action the operator was shown, once.
@@ -727,6 +749,9 @@ export class NovaMissionControl {
     if (mission.status !== 'ACTIVE' || mission.cancelRequested) throw new Error('OPERATOR_STEER_MISSION_NOT_ACTIVE');
     // No plan, goal, tool, budget, permission, contract or running action is mutated.
     // Each instruction is a later-model-turn input, not an authority grant.
+    // A new operator direction supersedes a pending exact-action approval.
+    // Never execute an earlier action under changed instructions.
+    this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=?').run(id);
     this.bus.event('NOVA_OPERATOR_STEER', { missionId: id, payload: { requestId, instruction: instruction.trim() } });
     return { steering: this.latestSteering(id), replayed: false };
   }
