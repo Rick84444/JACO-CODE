@@ -766,6 +766,7 @@ export class NovaMissionControl {
     // A new operator direction supersedes a pending exact-action approval.
     // Never execute an earlier action under changed instructions.
     this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=?').run(id);
+    this.db.prepare('DELETE FROM nova_spend_approvals WHERE mission_id=?').run(id);
     this.bus.event('NOVA_OPERATOR_STEER', { missionId: id, payload: { requestId, instruction: instruction.trim() } });
     return { steering: this.latestSteering(id), replayed: false };
   }
@@ -786,7 +787,7 @@ export class NovaMissionControl {
     return true;
   }
 
-  resolve(id, { decision, note, authority = 'operator' }) {
+  resolve(id, { decision, note, authority = 'operator', approvedSpend = false }) {
     const mission = this.get(id);
     if (TERMINAL.has(mission.status)) throw new Error('MISSION_TERMINAL');
 
@@ -814,7 +815,9 @@ export class NovaMissionControl {
     if (row.token) throw new Error('MISSION_BUSY');
     // Only an explicit operator note can approve one outgoing-spend action; automated
     // resolutions (SEER, the auto-approval policy) never carry the tag.
-    if (decision === 'resume' && normalizedAuthority === 'operator' && SPEND_APPROVAL_TAG.test(note) && !/^auto-/i.test(note.trim())) {
+    const explicitSpendConsent = normalizedAuthority === 'operator' && !/^auto-/i.test(note.trim()) &&
+      (approvedSpend === true || SPEND_APPROVAL_TAG.test(note));
+    if (decision === 'resume' && explicitSpendConsent) {
       const gate = this.db.prepare('SELECT task_hash,reason FROM nova_action_gate WHERE mission_id=?').get(id);
       if (!gate?.reason?.startsWith('spend:')) throw new Error('SPEND_ACTION_NOT_PENDING');
       this.db.prepare('INSERT OR REPLACE INTO nova_spend_approvals(mission_id,approved_at,note,task_hash) VALUES(?,?,?,?)')
@@ -823,7 +826,7 @@ export class NovaMissionControl {
     // Automated resolutions (auto- notes, SEER) never reach this approval.
     if (decision === 'resume' && normalizedAuthority === 'operator' && !/^auto-/i.test(note.trim())) {
       this.db.prepare("UPDATE nova_action_gate SET approved_at=?,note=? WHERE mission_id=? AND (reason NOT LIKE 'spend:%' OR ?)")
-        .run(iso(), note.slice(0, 500), id, SPEND_APPROVAL_TAG.test(note) ? 1 : 0);
+        .run(iso(), note.slice(0, 500), id, explicitSpendConsent ? 1 : 0);
     }
     if (decision !== 'resume') this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=?').run(id);
     this.setStatus(id, decision === 'confirm' ? 'DONE' : decision === 'cancel' ? 'CANCELLED' : 'ACTIVE');
