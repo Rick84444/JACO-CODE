@@ -168,13 +168,13 @@ test('Nova honours the operator primary provider before the default order', asyn
   assert.equal(new Set(names).size, names.length);
 });
 
-test('one checked spend decision authorizes exactly one outbound action even if the ordinary action guard also matches', async t => {
+test('one checked spend decision authorizes exactly one outbound action even if the ordinary action guard also matches', async ctx => {
   const { DurableMissionBus } = await import('../../runtime/src/server/connected/durableMissionBus.mjs');
   const { NovaMissionControl } = await import('../../runtime/src/server/connected/novaMissionControl.mjs');
   const { operatorApprovalCheck } = await import('../../agents/lib/operator-action-guard.mjs');
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-spend-overlap-'));
   const bus=new DurableMissionBus(dir);
-  t.after(()=>{bus.close();fs.rmSync(dir,{recursive:true,force:true})});
+  ctx.after(()=>{bus.close();fs.rmSync(dir,{recursive:true,force:true})});
   const control=new NovaMissionControl(bus,{allowedTasks:['browser-click']});
   const mission=control.create({goal:'Send the approved payment',idempotencyKey:'spend-overlap',allowedTasks:['browser-click']});
   const task=t('browser-click',{name:'Send and Pay now'});
@@ -197,12 +197,12 @@ test('one checked spend decision authorizes exactly one outbound action even if 
     'another outward action requires a new operator approval even with the same arguments');
 });
 
-test('a spend consent cannot authorize a changed action, or be issued for an unrelated block', async t => {
+test('a spend consent cannot authorize a changed action, or be issued for an unrelated block', async ctx => {
   const { DurableMissionBus } = await import('../../runtime/src/server/connected/durableMissionBus.mjs');
   const { NovaMissionControl } = await import('../../runtime/src/server/connected/novaMissionControl.mjs');
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-spend-scope-'));
   const bus=new DurableMissionBus(dir);
-  t.after(()=>{bus.close();fs.rmSync(dir,{recursive:true,force:true})});
+  ctx.after(()=>{bus.close();fs.rmSync(dir,{recursive:true,force:true})});
   const control=new NovaMissionControl(bus,{allowedTasks:['browser-click']});
   const mission=control.create({goal:'Complete approved purchase',idempotencyKey:'spend-scope',allowedTasks:['browser-click']});
   const old=t('browser-click',{name:'Pay now'});
