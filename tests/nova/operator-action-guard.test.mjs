@@ -104,3 +104,32 @@ test('inside a contract the worktree is the sandbox: local clean-up is free, lea
   // Outside a contract the same local delete still asks.
   assert.ok(operatorApprovalCheck(shell('rm -rf src')));
 });
+
+
+test('a repeated blocked mission awaiting one operator approval retains its original mission identity', t => {
+  const control=setup(t);
+  const request={goal:'Publish the report only after approval',allowedTasks:['shell']};
+  const first=control.create({...request,idempotencyKey:'once-first'});
+  assert.throws(()=>control.begin(first.id,{...leased(control,first.id),task:shell('npm publish')}),/OPERATOR_APPROVAL_REQUIRED/);
+  const pending=control.pendingOperatorAction(first.id);
+  assert.ok(pending);
+  const same=control.create({...request,idempotencyKey:'once-second'});
+  assert.equal(same.id,first.id);
+  assert.equal(same.deduplicated,true);
+  assert.equal(same.awaitingOperator,true);
+  assert.deepEqual(control.pendingOperatorAction(first.id),pending);
+  control.resolve(first.id,{decision:'resume',note:'approve exactly one publish',authority:'operator'});
+  const lease=leased(control,first.id);
+  const action=control.begin(first.id,{...lease,task:shell('npm publish')});
+  control.finish(first.id,{...lease,actionId:action.id,receipt:{ok:true,verified:true}});
+  assert.throws(()=>control.begin(first.id,{...leased(control,first.id),task:shell('npm publish')}),/OPERATOR_APPROVAL_REQUIRED/);
+});
+
+test('a blocked mission without pending operator approval can still be resubmitted', t => {
+  const control=setup(t);
+  const data={goal:'Investigate a persistent coding failure',allowedTasks:['shell']};
+  const first=control.create({...data,idempotencyKey:'failure-first'});
+  control.setStatus(first.id,'BLOCKED');
+  const retry=control.create({...data,idempotencyKey:'failure-second'});
+  assert.notEqual(retry.id,first.id);
+});
