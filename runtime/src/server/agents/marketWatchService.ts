@@ -423,33 +423,11 @@ Synthesize a new 'Competitive Intelligence' memory node in strict JSON format:
    * Returns the compiled context string to inject into the reasoning engine and planDecide.ts
    */
   public getMarketWatchReasoningContext(): string {
-    // Existing Market Watch entries have no independently verified source
-    // receipts; sourceUrls, confidenceScore and proofHash are not evidence.
-    // Do not elevate model synthesis or legacy seed data into planner facts.
+    // Legacy items and generated syntheses lack independently verified source
+    // receipts. A URL, timestamp or SHA-256 over model JSON is not evidence.
+    // Until observations carry verifiable provenance, never inject claims as
+    // directives into Aura's planner. Explicit research remains available.
     return '[MARKET WATCH] No independently verified market observations available. Use live research and source-backed receipts; do not treat generated insights as verified facts.';
-    if (this.intelligenceItems.length === 0) {
-      return '[MARKET WATCH] No active competitor insights available.';
-    }
-
-    const topItems = this.intelligenceItems.slice(0, 5);
-    const bullets = topItems.map((item, idx) => {
-      return `${idx + 1}. [${item.competitorName} | ${item.featureDomain}]
-   - Insight: ${item.observedUpdate}
-   - Compressed memory: ${item.compressedDigest}
-   - Impact on planning: ${item.impactOnUpcomingPlans}
-   - Tactical strategy: ${item.tacticalCounterStrategy}`;
-    }).join('\n\n');
-
-    return `=== MARKET WATCH COMPETITIVE INTELLIGENCE (POWERED BY OPENCLAW) ===
-The following real-time insights from competitors and leading agentic ecosystems should directly shape and steer the planning of upcoming tasks:
-
-${bullets}
-
-TASK PLANNING DIRECTIVES:
-1. ALWAYS split missions into 5-8 atomic, manageable subgoals (inspired by the Cursor & Claude Code subtask architecture).
-2. Link each subgoal to relevant compressed memory nodes (inspired by Devin's distillation pattern).
-3. Insert mandatory verification commands (linter, tsc, test) to prevent regressions (inspired by the Windsurf Cascade Dual-Agent Gate).
-4. Assign specific sub-agents (Code Refactor, Security Auditor, etc.) to each step.`;
   }
 
   /**
