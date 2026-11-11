@@ -1,5 +1,5 @@
 import { evaluateFilePath, evaluateCommand, PolicyCheckResult } from './policyRules.js';
-import { enqueue } from '../queue/jobQueue.js';
+import { enqueue, listJobs } from '../queue/jobQueue.js';
 import { JobRecord, JobType } from '../queue/jobTypes.js';
 import { resolveWorkspaceFile } from '../security/workspaceBoundary.js';
 import { IntuitionContractStore } from '../autonomy/intuitionContractStore.js';
@@ -116,6 +116,29 @@ export function submitToGate(proposal: GateActionProposal): GateEvaluationRespon
 
   if (!policyResult.allowed) {
     return { allowed: false, requiresApproval: false, riskLevel: policyResult.riskLevel, reason: policyResult.reason };
+  }
+
+  // The canonical job queue is already durable. A repeated submission of an
+  // identical approval-gated operation must reference its existing pending,
+  // approved-but-queued, or running job rather than create a new approval card.
+  // Completed/rejected/failed jobs are not reused: a new external effect needs
+  // its own approval. Never reuse a job across distinct contracts or payloads.
+  if (policyResult.requiresApproval) {
+    const canonical = (value: any): string => JSON.stringify(value, (_key, item) => {
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        return Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)));
+      }
+      return item;
+    });
+    const signature = canonical(proposal.payload);
+    const existing = listJobs({ type: proposal.type }).find(job =>
+      job.policy?.requiresOperatorApproval === true &&
+      ['awaiting_approval', 'queued', 'running'].includes(job.status) &&
+      canonical(job.payload) === signature);
+    if (existing) {
+      return { allowed: true, requiresApproval: true, riskLevel: policyResult.riskLevel,
+        reason: policyResult.reason, job: existing };
+    }
   }
 
   const job = enqueue({
