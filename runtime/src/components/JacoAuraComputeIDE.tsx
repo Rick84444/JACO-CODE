@@ -1925,10 +1925,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const stagePreview = stagePath && stageFile && stageDraft!==null
     ? <CognitivePreview strict path={stagePath} content={stageDraft} files={files} events={cognitiveEvents} onOpenFile={openFile}/>
     : null;
-  const sideMission = missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
+  const sideMission = currentMission;
   const sideObservation = sideMission ? stageEvents.filter(event=>event.missionId===sideMission.id).at(-1)?.text ?? null : null;
   const stage = <div className="aura-stage-column">
-    {sideMission&&<details className="aura-stage-mission-details"><summary>Mission · {sideMission.goal}</summary><MissionCard mission={sideMission as any} observation={sideObservation} onCancel={cancelMission} onEndGoal={endMissionGoal} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/></details>}
+    {sideMission&&<details className="aura-stage-mission-details"><summary>Mission · {sideMission.goal}</summary><MissionCard mission={sideMission as any} presence={presence} observation={sideObservation} onCancel={cancelMission} onEndGoal={endMissionGoal} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/></details>}
     <AuraLiveStage projectRevision={projectKey} candidate={selectedStage} events={stageEvents} liveConnection={cognitiveLive.connection} preview={stagePreview}
     previewError={fileReadError?.path===stagePath?fileReadError.message:null} onRetryPreview={()=>setFileReadRevision(value=>value+1)}
     previewReady={Boolean(stagePreview)} active={status.tone==='active'}
@@ -1938,11 +1938,11 @@ export const JacoAuraComputeIDE: React.FC = () => {
     onSaveDraft={()=>{if(stagePath)void saveStageDraft(stagePath);}} saveBusy={stageSaveBusy} saveNotice={stageSaveNotice}
     cdpReady={snapshot?.integrations?.cdp?.state==='VERIFIED' || snapshot?.integrations?.cdp?.state==='OBSERVED'}
     pinned={workspacePinned} onHoldMaterial={()=>setWorkspacePinned(true)}
-    activeMission={missions.find(item=>item.status==='ACTIVE') ? {
-      id:missions.find(item=>item.status==='ACTIVE')!.id,
-      goal:String(missions.find(item=>item.status==='ACTIVE')!.goal || 'Running mission'),
-      phase:missions.find(item=>item.status==='ACTIVE')!.phase || null,
-      status:'ACTIVE'
+    activeMission={sideMission ? {
+      id:sideMission.id,
+      goal:String(sideMission.goal || 'Mission'),
+      phase:sideMission.phase || null,
+      status:sideMission.status
     } : null}
     agentActivity={{
       connected:(snapshot?.workplace?.agents || []).filter(item=>item.status==='READY' || item.liveSessions>0).length,
