@@ -167,3 +167,51 @@ test('Nova honours the operator primary provider before the default order', asyn
   const names = orderedBrainProviders({ JACO_PRIMARY_PROVIDER: 'qwen' }).map(p => p.name);
   assert.equal(new Set(names).size, names.length);
 });
+
+test('one checked spend decision authorizes exactly one outbound action even if the ordinary action guard also matches', async t => {
+  const { DurableMissionBus } = await import('../../runtime/src/server/connected/durableMissionBus.mjs');
+  const { NovaMissionControl } = await import('../../runtime/src/server/connected/novaMissionControl.mjs');
+  const { operatorApprovalCheck } = await import('../../agents/lib/operator-action-guard.mjs');
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-spend-overlap-'));
+  const bus=new DurableMissionBus(dir);
+  t.after(()=>{bus.close();fs.rmSync(dir,{recursive:true,force:true})});
+  const control=new NovaMissionControl(bus,{allowedTasks:['browser-click']});
+  const mission=control.create({goal:'Send the approved payment',idempotencyKey:'spend-overlap',allowedTasks:['browser-click']});
+  const task=t('browser-click',{name:'Send and Pay now'});
+  assert.ok(outgoingSpendCheck(task));
+  assert.ok(operatorApprovalCheck(task));
+  let lease=control.claim(mission.id,'nova');
+  assert.throws(()=>control.begin(mission.id,{owner:'nova',token:lease.token,task}),/OUTGOING_SPEND_REQUIRES_OPERATOR/);
+  assert.equal(control.pendingOperatorAction(mission.id).reason.startsWith('spend:'),true);
+  // Approval Center sends a checked server-side boolean instead of a magic note.
+  control.resolve(mission.id,{decision:'resume',note:'Checked UI confirmation of this exact spend',authority:'operator',approvedSpend:true});
+  assert.equal(control.get(mission.id).approvedTask.data.name,'Send and Pay now');
+  lease=control.claim(mission.id,'nova');
+  const action=control.begin(mission.id,{owner:'nova',token:lease.token,task:control.get(mission.id).approvedTask});
+  assert.equal(action.type,'browser-click','the action does not enter a second operator gate');
+  assert.equal(control.pendingOperatorAction(mission.id),null);
+  control.finish(mission.id,{owner:'nova',token:lease.token,actionId:action.id,receipt:{ok:true,verified:true}});
+  assert.equal(bus.listEvents(100).filter(event=>event.type==='NOVA_SPEND_BLOCKED').length,1);
+  lease=control.claim(mission.id,'nova');
+  assert.throws(()=>control.begin(mission.id,{owner:'nova',token:lease.token,task}),/OUTGOING_SPEND_REQUIRES_OPERATOR/,
+    'another outward action requires a new operator approval even with the same arguments');
+});
+
+test('a spend consent cannot authorize a changed action, or be issued for an unrelated block', async t => {
+  const { DurableMissionBus } = await import('../../runtime/src/server/connected/durableMissionBus.mjs');
+  const { NovaMissionControl } = await import('../../runtime/src/server/connected/novaMissionControl.mjs');
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-spend-scope-'));
+  const bus=new DurableMissionBus(dir);
+  t.after(()=>{bus.close();fs.rmSync(dir,{recursive:true,force:true})});
+  const control=new NovaMissionControl(bus,{allowedTasks:['browser-click']});
+  const mission=control.create({goal:'Complete approved purchase',idempotencyKey:'spend-scope',allowedTasks:['browser-click']});
+  const old=t('browser-click',{name:'Pay now'});
+  let lease=control.claim(mission.id,'nova');
+  assert.throws(()=>control.begin(mission.id,{owner:'nova',token:lease.token,task:old}),/OUTGOING_SPEND_REQUIRES_OPERATOR/);
+  control.resolve(mission.id,{decision:'resume',note:'I confirm this one payment',authority:'operator',approvedSpend:true});
+  lease=control.claim(mission.id,'nova');
+  assert.throws(()=>control.begin(mission.id,{owner:'nova',token:lease.token,task:t('browser-click',{name:'Pay now for extras'})}),/APPROVED_ACTION_PENDING_EXACT_TASK/);
+  control.release(mission.id,{owner:'nova',token:lease.token});
+  assert.equal(control.get(mission.id).approvedTask.data.name,'Pay now');
+});
+
