@@ -325,8 +325,11 @@ export class NovaMissionControl {
     const gateColumns = new Set(this.db.prepare('PRAGMA table_info(nova_action_gate)').all().map(c => c.name));
     if (!gateColumns.has('task_json')) this.db.exec('ALTER TABLE nova_action_gate ADD COLUMN task_json TEXT');
     this.db.exec(`CREATE TABLE IF NOT EXISTS nova_spend_approvals (
-      mission_id TEXT PRIMARY KEY REFERENCES missions(id), approved_at TEXT NOT NULL, note TEXT NOT NULL
+      mission_id TEXT PRIMARY KEY REFERENCES missions(id), approved_at TEXT NOT NULL, note TEXT NOT NULL,
+      task_hash TEXT
     )`);
+    const spendColumns = new Set(this.db.prepare('PRAGMA table_info(nova_spend_approvals)').all().map(c => c.name));
+    if (!spendColumns.has('task_hash')) this.db.exec('ALTER TABLE nova_spend_approvals ADD COLUMN task_hash TEXT');
     // Coding-budget window: a manual operator resume starts a fresh step/duration window, so resuming
     // a budget-exhausted mission does not re-block it on the next planning turn.
     const sessionColumns = new Set(this.db.prepare('PRAGMA table_info(nova_sessions)').all().map(c => c.name));
@@ -600,20 +603,30 @@ export class NovaMissionControl {
       throw new Error('APPROVED_ACTION_PENDING_EXACT_TASK');
     }
     const spend = outgoingSpendCheck(checked, { observation: mission.observation });
+    const taskHash = `${checked.type}:${hashTaskInput(checked.data)}`;
     if (spend) {
       const approval = this.db.prepare('SELECT * FROM nova_spend_approvals WHERE mission_id=?').get(id);
-      if (!approval) {
+      if (!approval || approval.task_hash !== taskHash) {
+        const gate = this.db.prepare('SELECT task_hash FROM nova_action_gate WHERE mission_id=?').get(id);
+        const samePending = gate?.task_hash === taskHash;
+        if (!samePending) {
+          const taskSnapshot = JSON.stringify(checked);
+          if (taskSnapshot.length > 65536) throw new Error('APPROVAL_TASK_TOO_LARGE');
+          this.db.prepare('INSERT OR REPLACE INTO nova_action_gate(mission_id,task_hash,reason,requested_at,approved_at,note,task_json) VALUES(?,?,?,?,NULL,NULL,?)')
+            .run(id, taskHash, `spend:${spend.reason}`, iso(), taskSnapshot);
+        }
         this.db.prepare("UPDATE nova_sessions SET phase='BLOCKED',owner=NULL,token=NULL,lease_until=NULL WHERE mission_id=?").run(id);
         this.setStatus(id, 'BLOCKED');
-        this.bus.event('NOVA_SPEND_BLOCKED', { missionId: id, payload: { error: 'OUTGOING_SPEND_REQUIRES_OPERATOR', reason: spend.reason, task: { type: checked.type, data: checked.data } } });
+        if (!samePending) this.bus.event('NOVA_SPEND_BLOCKED', { missionId: id, payload: { error: 'OUTGOING_SPEND_REQUIRES_OPERATOR', reason: spend.reason, task: { type: checked.type, data: compactTaskInput(checked.data) } } });
         return new CommittedFailure(new Error(`OUTGOING_SPEND_REQUIRES_OPERATOR: ${spend.reason}`));
       }
-      // Approval is single-use: it covers this one action only.
+      // The same explicit human spend decision also authorizes this exact
+      // outward action. It must not enter a second operator approval gate.
       this.db.prepare('DELETE FROM nova_spend_approvals WHERE mission_id=?').run(id);
       this.bus.event('NOVA_SPEND_APPROVED_ACTION', { missionId: id, payload: { reason: spend.reason, note: approval.note } });
     }
     const harmful = operatorApprovalCheck(checked, { sandbox: Boolean(mission.contract) });
-    if (harmful) {
+    if (harmful && !spend) {
       const taskHash = `${checked.type}:${hashTaskInput(checked.data)}`;
       const gate = this.db.prepare('SELECT * FROM nova_action_gate WHERE mission_id=?').get(id);
       if (!gate?.approved_at || gate.task_hash !== taskHash) {
@@ -633,6 +646,7 @@ export class NovaMissionControl {
       this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=?').run(id);
       this.bus.event('NOVA_OPERATOR_APPROVED_ACTION', { missionId: id, payload: { reason: harmful.reason, note: gate.note } });
     }
+    if (spend) this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=? AND task_hash=?').run(id, taskHash);
     const action = { ...checked, id: `${id}:turn:${row.turn + 1}`, missionId: id };
     this.db.prepare("UPDATE nova_sessions SET phase='EXECUTING',active_task_json=?,turn=turn+1,lease_until=? WHERE mission_id=?")
       .run(JSON.stringify(action), this.now() + actionLeaseMs(checked.type), id);
@@ -801,11 +815,15 @@ export class NovaMissionControl {
     // Only an explicit operator note can approve one outgoing-spend action; automated
     // resolutions (SEER, the auto-approval policy) never carry the tag.
     if (decision === 'resume' && normalizedAuthority === 'operator' && SPEND_APPROVAL_TAG.test(note) && !/^auto-/i.test(note.trim())) {
-      this.db.prepare('INSERT OR REPLACE INTO nova_spend_approvals(mission_id,approved_at,note) VALUES(?,?,?)').run(id, iso(), note.slice(0, 500));
+      const gate = this.db.prepare('SELECT task_hash,reason FROM nova_action_gate WHERE mission_id=?').get(id);
+      if (!gate?.reason?.startsWith('spend:')) throw new Error('SPEND_ACTION_NOT_PENDING');
+      this.db.prepare('INSERT OR REPLACE INTO nova_spend_approvals(mission_id,approved_at,note,task_hash) VALUES(?,?,?,?)')
+        .run(id, iso(), note.slice(0, 500), gate.task_hash);
     }
     // Automated resolutions (auto- notes, SEER) never reach this approval.
     if (decision === 'resume' && normalizedAuthority === 'operator' && !/^auto-/i.test(note.trim())) {
-      this.db.prepare('UPDATE nova_action_gate SET approved_at=?,note=? WHERE mission_id=?').run(iso(), note.slice(0, 500), id);
+      this.db.prepare("UPDATE nova_action_gate SET approved_at=?,note=? WHERE mission_id=? AND (reason NOT LIKE 'spend:%' OR ?)")
+        .run(iso(), note.slice(0, 500), id, SPEND_APPROVAL_TAG.test(note) ? 1 : 0);
     }
     if (decision !== 'resume') this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=?').run(id);
     this.setStatus(id, decision === 'confirm' ? 'DONE' : decision === 'cancel' ? 'CANCELLED' : 'ACTIVE');
