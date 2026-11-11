@@ -554,6 +554,7 @@ export interface CompetitiveIntelligenceMemoryItem {
   // Observation of a fetched source is not independent verification of its claims.
   verificationLevel?: 'SYNTHETIC' | 'OBSERVED' | 'VERIFIED';
   sourceDigest?: string;
+  evidenceRefs?: string[];
   rawOpenClawTaskId?: string;
   status: 'active' | 'archived' | 'injected';
 }
