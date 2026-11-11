@@ -951,3 +951,49 @@ test('real durable mission resumes without repeating an unchanged read silently'
   assert.equal(s.control.get(m.id).status,'AWAITING_VERIFICATION');
 });
 
+test('resumed approved exact action executes once without a new model response or second operator approval', async t => {
+  const s = setup(t, ['shell']);
+  const m = s.control.create({
+    goal: 'Publish the approved package', idempotencyKey: 'approval-exact-resume',
+    allowedTasks: ['shell']
+  });
+  const task = { type: 'shell', data: { command: 'npm publish' } };
+  let claim = s.control.claim(m.id, 'nova');
+  assert.throws(() => s.control.begin(m.id, {owner:'nova',token:claim.token,task}), /OPERATOR_APPROVAL_REQUIRED/);
+  assert.equal(s.control.get(m.id).status, 'BLOCKED');
+  s.control.resolve(m.id,{decision:'resume',note:'I approve this exact publication',authority:'operator'});
+  assert.deepEqual(s.control.get(m.id).approvedTask,task);
+  const model = scripted([]);
+  const executed = [];
+  const result = await run(s,model,async action=>{
+    executed.push(action.data.command);
+    return {ok:true,verified:true,receipt:{verified:true},stdout:'published'};
+  });
+  assert.equal(result.executed,true);
+  assert.equal(result.approvedAction,true);
+  assert.deepEqual(executed,['npm publish']);
+  assert.equal(model.seen.length,0,'an approved action is not sent back to LLM for replanning');
+  assert.equal(s.control.get(m.id).approvedTask,null,'single-use grant consumed atomically');
+  assert.equal(s.control.get(m.id).receipts.length,1);
+});
+
+test('pending operator decision survives a controller restart without modifying the contract', async t => {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-approval-restart-'));
+  const bus=new DurableMissionBus(dir);
+  const a=new NovaMissionControl(bus,{allowedTasks:['shell']});
+  t.after(()=>{bus.close();fs.rmSync(dir,{recursive:true,force:true})});
+  const m=a.create({goal:'Publish exact release',idempotencyKey:'restart-approve',allowedTasks:['shell']});
+  const task={type:'shell',data:{command:'npm publish'}};
+  const first=a.claim(m.id,'nova');
+  assert.throws(()=>a.begin(m.id,{owner:'nova',token:first.token,task}),/OPERATOR_APPROVAL_REQUIRED/);
+  a.resolve(m.id,{decision:'resume',note:'Exact publication approved',authority:'operator'});
+  const restarted=new NovaMissionControl(bus,{allowedTasks:['shell']});
+  assert.deepEqual(restarted.get(m.id).approvedTask,task);
+  const claim=restarted.claim(m.id,'nova');
+  const action=restarted.begin(m.id,{owner:'nova',token:claim.token,task:restarted.get(m.id).approvedTask});
+  assert.equal(action.type,'shell');
+  assert.equal(restarted.get(m.id).approvedTask,null);
+  restarted.finish(m.id,{owner:'nova',token:claim.token,actionId:action.id,receipt:{ok:true,verified:true}});
+  assert.equal(restarted.get(m.id).receipts.length,1);
+});
+
