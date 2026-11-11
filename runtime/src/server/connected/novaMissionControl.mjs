@@ -867,6 +867,13 @@ export function mountNovaMissionRoutes(app, requireAuth, control, onUpdate = () 
   app.post(`${root}/missions/:id/begin`, requireAuth, route(req => ({ task: control.begin(req.params.id, req.body || {}) })));
   app.post(`${root}/missions/:id/finish`, requireAuth, route(req => ({ mission: control.finish(req.params.id, req.body || {}) })));
   app.post(`${root}/missions/:id/release`, requireAuth, route(req => ({ mission: control.release(req.params.id, req.body || {}) })));
-  app.post(`${root}/missions/:id/resolve`, requireAuth, route(req => ({ mission: control.resolve(req.params.id, req.body || {}) })));
+  // Only the server-side Approval Center may supply approvedSpend after a
+  // checked operator confirmation. This agent-facing route must not accept
+  // a client-provided boolean that bypasses the explicit spend-tag protocol.
+  app.post(`${root}/missions/:id/resolve`, requireAuth, route(req => ({
+    mission: control.resolve(req.params.id, {
+      decision: req.body?.decision, note: req.body?.note, authority: req.body?.authority
+    })
+  })));
 }
 
