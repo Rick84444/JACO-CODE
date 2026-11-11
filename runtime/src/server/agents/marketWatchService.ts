@@ -72,83 +72,20 @@ const INITIAL_TRACKED_TARGETS: TrackedCompetitorTarget[] = [
   }
 ];
 
-const INITIAL_INTELLIGENCE_ITEMS: CompetitiveIntelligenceMemoryItem[] = [
-  {
-    id: 'ci_mem_cursor_01',
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-    competitorName: 'Cursor AI & Claude Code',
-    featureDomain: 'SUBGOAL_DECOMPOSITION',
-    observedUpdate: 'Introduced atomic subtask partitioning with mandatory syntax and linter gates (<30-second subtasks) before the next subgoal starts.',
-    architecturalBreakdown: 'Monolithic plans tend to fail in 45% of cases due to context drift. Limiting each subgoal to an atomic verifiable unit achieves 96% determinism.',
-    compressedDigest: '[COMPRESSED MEMORY] Subgoal Granularity Invariant: Always break the operator goal down into 5-8 atomic subgoals with live commands and mandatory test contracts.',
-    tacticalCounterStrategy: 'JACO should automatically generate 5-8 granular subgoals with AST and linter verification in every new Blueprint.',
-    impactOnUpcomingPlans: 'Enforces at least 5 granular subgoals per plan with assigned sub-agents and verification commands.',
-    confidenceScore: 98,
-    sourceUrls: ['https://docs.cursor.com/agent/subgoals', 'https://anthropic.com/claude-code'],
-    proofHash: crypto.createHash('sha256').update('ci_mem_cursor_01').digest('hex').substring(0, 16),
-    rawOpenClawTaskId: 'task-oc-seed-01',
-    status: 'active'
-  },
-  {
-    id: 'ci_mem_devin_02',
-    timestamp: new Date(Date.now() - 7200000).toISOString(),
-    competitorName: 'Devin (Cognition AI)',
-    featureDomain: 'COMPRESSED_MEMORY_RAG',
-    observedUpdate: 'Distilled, hierarchical memory layer that compresses raw terminal and error logs into two-sentence syntheses for long-running sessions.',
-    architecturalBreakdown: 'Storing full logs in the agent context window saturates memory quickly. Compressed memory nodes with SHA-256 integrity reduce token consumption by 82%.',
-    compressedDigest: '[COMPRESSED MEMORY] Distilled Memory Pattern: Replace full terminal output with compressed memory nodes injected directly into the reasoning engine.',
-    tacticalCounterStrategy: 'Save all successful strategies in JACO compressed memory and inject them dynamically into PlanDecide.',
-    impactOnUpcomingPlans: 'Links every generated subgoal to relevant compressed memory IDs to prevent repeated mistakes.',
-    confidenceScore: 96,
-    sourceUrls: ['https://cognition.ai/blog/devin-architecture-memory'],
-    proofHash: crypto.createHash('sha256').update('ci_mem_devin_02').digest('hex').substring(0, 16),
-    rawOpenClawTaskId: 'task-oc-seed-02',
-    status: 'active'
-  },
-  {
-    id: 'ci_mem_windsurf_03',
-    timestamp: new Date(Date.now() - 14400000).toISOString(),
-    competitorName: 'Windsurf Cascade (Codeium)',
-    featureDomain: 'A2A_PROTOCOL',
-    observedUpdate: 'Dual-Agent Gatekeeper and Adversarial Falsifier that proactively simulate failure scenarios before source changes are applied.',
-    architecturalBreakdown: 'Letting a separate reviewer model falsify generated code reduces runtime crashes by 99.2%.',
-    compressedDigest: '[COMPRESSED MEMORY] Dual-Agent Verification: Never complete a subgoal until the Falsifier agent and the linter have approved the verification evidence.',
-    tacticalCounterStrategy: 'Run adversarial voting in modelPool and log decisions in innerReasoningLogs.',
-    impactOnUpcomingPlans: 'Incorporates auditLogs and security review for every executor step in the plan.',
-    confidenceScore: 94,
-    sourceUrls: ['https://codeium.com/windsurf/cascade'],
-    proofHash: crypto.createHash('sha256').update('ci_mem_windsurf_03').digest('hex').substring(0, 16),
-    rawOpenClawTaskId: 'task-oc-seed-03',
-    status: 'active'
-  },
-  {
-    id: 'ci_mem_swarm_04',
-    timestamp: new Date(Date.now() - 21600000).toISOString(),
-    competitorName: 'OpenAI Swarm & Operator',
-    featureDomain: 'AUTONOMOUS_DAEMON',
-    observedUpdate: 'Lightweight handshakes and direct handoff between specialized agents via standardized JSON schemas.',
-    architecturalBreakdown: 'Heavy orchestration frameworks add 300ms+ overhead per step. Direct sub-agent transitions bring latency below 40ms.',
-    compressedDigest: '[COMPRESSED MEMORY] Autonomous Handshake: Use direct A2A calls between sub-agents and log status transitions synchronously.',
-    tacticalCounterStrategy: 'Integrate sub-agents such as Code Refactor Agent, Security Auditor and Marketplace Broker into subgoal plans.',
-    impactOnUpcomingPlans: 'Assigns specific sub-agents to each subgoal step instead of a general master model.',
-    confidenceScore: 91,
-    sourceUrls: ['https://github.com/openai/swarm'],
-    proofHash: crypto.createHash('sha256').update('ci_mem_swarm_04').digest('hex').substring(0, 16),
-    rawOpenClawTaskId: 'task-oc-seed-04',
-    status: 'active'
-  }
-];
+// Legacy seed claims had fabricated metrics and simulated timestamps.
+// They must not ship as observed research or steer Aura's decisions.
+const INITIAL_INTELLIGENCE_ITEMS: CompetitiveIntelligenceMemoryItem[] = [];
 
 class MarketWatchService {
   private isRunning: boolean = true;
   private pollingIntervalSeconds: number = 180; // 3 minutes default
   private timer: NodeJS.Timeout | null = null;
-  private lastScanTimestamp: string | null = new Date().toISOString();
+  private lastScanTimestamp: string | null = null;
   private nextScheduledScan: string | null = new Date(Date.now() + 180000).toISOString();
-  private totalScansCompleted: number = 6;
+  private totalScansCompleted: number = 0;
   private trackedTargets: TrackedCompetitorTarget[] = [...INITIAL_TRACKED_TARGETS];
   private intelligenceItems: CompetitiveIntelligenceMemoryItem[] = [...INITIAL_INTELLIGENCE_ITEMS];
-  private autoInjectIntoReasoning: boolean = true;
+  private autoInjectIntoReasoning: boolean = false;
 
   private scanInFlight = false;
 
@@ -271,6 +208,10 @@ class MarketWatchService {
       // Ignore HTTP errors and continue to model synthesis
     }
 
+    // No fetched source is no observed market signal. The model's prior
+    // knowledge cannot be attributed to a fabricated web observation.
+    if (!rawCrawlData.trim()) throw new Error('MARKET_WATCH_SOURCE_UNAVAILABLE');
+
     // Build the LLM prompt that compresses competitor data into a structured Competitive Intelligence memory item
     const prompt = `
 You are the OpenClaw Market Watch & Competitive Intelligence Scraper Agent for JACO OS.
@@ -278,7 +219,7 @@ We continuously monitor the competitive landscape: ${target.name} (${target.ecos
 Focus areas: ${target.focusAreas.join(', ')}.
 
 Extracted raw data (OpenClaw crawl):
-${rawCrawlData || 'No raw HTML scraped; produce an in-depth architectural analysis based on the latest known technical advances in the ecosystem.'}
+${rawCrawlData}
 
 Synthesize a new 'Competitive Intelligence' memory node in strict JSON format:
 {
