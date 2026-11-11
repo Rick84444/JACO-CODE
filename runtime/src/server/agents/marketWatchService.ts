@@ -76,7 +76,7 @@ const INITIAL_TRACKED_TARGETS: TrackedCompetitorTarget[] = [
 // They must not ship as observed research or steer Aura's decisions.
 const INITIAL_INTELLIGENCE_ITEMS: CompetitiveIntelligenceMemoryItem[] = [];
 
-class MarketWatchService {
+export class MarketWatchService {
   private isRunning: boolean = true;
   private pollingIntervalSeconds: number = 180; // 3 minutes default
   private timer: NodeJS.Timeout | null = null;
