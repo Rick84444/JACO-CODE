@@ -384,9 +384,22 @@ export class NovaMissionControl {
     const requestedTasks = codingContract ? requested : requested.filter(task => !CODE_TASKS.has(task));
     if (!requestedTasks.length || requestedTasks.some(task => !this.allowedTasks.includes(task))) throw new Error('INVALID_MISSION_ALLOWED_TASKS');
     if (requestedTasks.includes('windows-wmi-read') && !desktopKind) throw new Error('WINDOWS_WMI_REQUIRES_DESKTOP_AGENTOS');
-    // A re-phrased goal that is already open for the same executor joins that mission.
-    const open = this.bus.listMissions(500)
-      // BLOCKED missions are excluded: re-submitting a stuck goal is a legitimate retry.
+    // A still-pending operator approval is the same mission, not a new retry.
+    // Regular BLOCKED failures can still be resubmitted; only a pending decision
+    // is preserved. Project missions require an exact goal, root and contract,
+    // never fuzzy dedup across different worktrees or grants.
+    const listed = this.bus.listMissions(500);
+    const pendingApproval = listed.find(item =>
+      String(item.status || '').toUpperCase() === 'BLOCKED'
+      && (item.metadata?.executor || 'nova') === normalizedExecutor
+      && item.goal === goal.trim()
+      && (item.metadata?.projectRoot || null) === (projectRoot ? path.resolve(projectRoot) : null)
+      && JSON.stringify(item.metadata?.codingContract || null) === JSON.stringify(codingContract)
+      && this.pendingOperatorAction(item.id) !== null);
+    if (pendingApproval) {
+      return { ...this.get(pendingApproval.id), deduplicated: true, awaitingOperator: true };
+    }
+    const open = listed
       .filter(item => ['ACTIVE', 'AWAITING_VERIFICATION'].includes(String(item.status || '').toUpperCase()))
       .map(item => ({ id: item.id, goal: item.goal, executor: item.metadata?.executor || 'nova' }));
     const duplicate = codingContract ? null : findDuplicate(goal, normalizedExecutor, open);
@@ -601,10 +614,15 @@ export class NovaMissionControl {
       const taskHash = `${checked.type}:${hashTaskInput(checked.data)}`;
       const gate = this.db.prepare('SELECT * FROM nova_action_gate WHERE mission_id=?').get(id);
       if (!gate?.approved_at || gate.task_hash !== taskHash) {
-        this.db.prepare('INSERT OR REPLACE INTO nova_action_gate(mission_id,task_hash,reason,requested_at,approved_at,note) VALUES(?,?,?,?,NULL,NULL)').run(id, taskHash, harmful.reason, iso());
+        // Identical pending request: preserve the original approval identity
+        // and timestamp; do not enqueue another operator notification.
+        const samePending = gate && !gate.approved_at && gate.task_hash === taskHash;
+        if (!samePending) {
+          this.db.prepare('INSERT OR REPLACE INTO nova_action_gate(mission_id,task_hash,reason,requested_at,approved_at,note) VALUES(?,?,?,?,NULL,NULL)').run(id, taskHash, harmful.reason, iso());
+        }
         this.db.prepare("UPDATE nova_sessions SET phase='BLOCKED',owner=NULL,token=NULL,lease_until=NULL WHERE mission_id=?").run(id);
         this.setStatus(id, 'BLOCKED');
-        this.bus.event('NOVA_OPERATOR_APPROVAL_REQUIRED', { missionId: id, payload: { error: `OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`, reason: harmful.reason, task: { type: checked.type, data: compactTaskInput(checked.data) } } });
+        if (!samePending) this.bus.event('NOVA_OPERATOR_APPROVAL_REQUIRED', { missionId: id, payload: { error: `OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`, reason: harmful.reason, task: { type: checked.type, data: compactTaskInput(checked.data) } } });
         return new CommittedFailure(new Error(`OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`));
       }
       // Approval covers exactly the action the operator was shown, once.
