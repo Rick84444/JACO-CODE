@@ -812,6 +812,9 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
     seerLiveWorkstream.record({ actor: event.actor, type: event.type, message: event.message, verified: event.verified, receipt: event.receipt });
   });
   const continuumSurface = createContinuumRouter({ workspaceRoot: WORKSPACE_ROOT, browserSessions: browserSurface.sessions, requireAuth });
+  // Reuse the canonical signed evidence ledger; Market Watch must never
+  // promote model summaries using a separate or self-certified proof store.
+  marketWatchService.setEvidenceValidator(refs => continuumSurface.runtime.evidence.assertRefs(refs, { verified: true }));
 
   const modelRelay = createModelRelayRouter({
     requireAuth,
