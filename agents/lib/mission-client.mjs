@@ -95,7 +95,11 @@ async function runMissionTurn({ client, owner, plan, execute, observe = async ()
   let before = null;
   try {
     before = await observe(mission).catch(() => null);
-    const proposal = await plan({ mission, observation: before || mission.observation, lease });
+    // A previously approved action is already a durable operator decision.
+    // No second planning call may reshape it or create a fresh approval request.
+    const proposal = mission.approvedTask
+      ? { task: mission.approvedTask }
+      : await plan({ mission, observation: before || mission.observation, lease });
     if (proposal?.replan === true) {
       await client.release(mission.id, { ...lease, ...(steerVersion ? { steerVersion } : {}), replanRequest: { reason: proposal.reason, subgoals: proposal.subgoals } });
       return { executed: false, replanRequested: true };
@@ -121,7 +125,7 @@ async function runMissionTurn({ client, owner, plan, execute, observe = async ()
     }
     planned = planTasks(proposal);
     if (!planned.length) throw new Error('NO_NEXT_TASK');
-    if (repeatsVerifiedAction(mission, planned[0], before)) {
+    if (!mission.approvedTask && repeatsVerifiedAction(mission, planned[0], before)) {
       await client.release(mission.id, { ...lease, ...(steerVersion ? { steerVersion } : {}), completionProposed: true, completionReason: 'REPEAT_OF_VERIFIED_ACTION' });
       return { executed: false, awaitingVerification: true, reason: 'REPEAT_OF_VERIFIED_ACTION' };
     }
