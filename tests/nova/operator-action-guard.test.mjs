@@ -69,18 +69,26 @@ test('a harmful action blocks the mission until the operator approves exactly th
   control.resolve(id, { decision: 'resume', note: 'auto-resumed: test', authority: 'operator' });
   assert.throws(() => control.begin(id, { ...leased(control, id), task: harmful }), /OPERATOR_APPROVAL_REQUIRED/);
 
-  // Approval of one action does not cover another.
+  // An approved exact action must run first. A planner cannot silently
+  // replace it with another action while reusing the same human decision.
   control.resolve(id, { decision: 'resume', note: 'yes, go ahead', authority: 'operator' });
-  assert.throws(() => control.begin(id, { ...leased(control, id), task: shell('rm -rf docs') }), /OPERATOR_APPROVAL_REQUIRED/);
+  assert.equal(control.get(id).approvedTask.data.command,'rm -rf src');
+  let lease = leased(control, id);
+  assert.throws(() => control.begin(id, { ...lease, task: shell('rm -rf docs') }), /APPROVED_ACTION_PENDING_EXACT_TASK/);
+  control.release(id, lease);
+  lease = leased(control, id);
+  const first = control.begin(id, { ...lease, task: control.get(id).approvedTask });
+  control.finish(id, { ...lease, actionId: first.id, receipt: { ok: true, verified: true } });
 
+  assert.throws(() => control.begin(id, { ...leased(control, id), task: shell('rm -rf docs') }), /OPERATOR_APPROVAL_REQUIRED/);
   control.resolve(id, { decision: 'resume', note: 'yes, docs too', authority: 'operator' });
-  const lease = leased(control, id);
-  const action = control.begin(id, { ...lease, task: shell('rm -rf docs') });
+  lease = leased(control, id);
+  const action = control.begin(id, { ...lease, task: control.get(id).approvedTask });
   assert.equal(action.type, 'shell');
   assert.equal(control.pendingOperatorAction(id), null);
   control.finish(id, { ...lease, actionId: action.id, receipt: { ok: true, verified: true } });
 
-  // Single use: the same action asks again.
+  // Single use: the same mutation asks again if the agent proposes it again.
   assert.throws(() => control.begin(id, { ...leased(control, id), task: shell('rm -rf docs') }), /OPERATOR_APPROVAL_REQUIRED/);
 });
 
