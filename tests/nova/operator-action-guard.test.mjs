@@ -112,3 +112,18 @@ test('inside a contract the worktree is the sandbox: local clean-up is free, lea
   // Outside a contract the same local delete still asks.
   assert.ok(operatorApprovalCheck(shell('rm -rf src')));
 });
+
+test('re-submitting the same approval-blocked mission reuses its exact contract instead of generating another approval card', t => {
+  const control=setup(t);
+  const first=control.create({goal:'Publish approved release',source:'operator',idempotencyKey:'one',allowedTasks:['shell']});
+  const lease=leased(control,first.id);
+  assert.throws(()=>control.begin(first.id,{...lease,task:shell('npm publish')}),/OPERATOR_APPROVAL_REQUIRED/);
+  const duplicate=control.create({goal:'Publish approved release',source:'operator',idempotencyKey:'two',allowedTasks:['shell']});
+  assert.equal(duplicate.id,first.id);
+  assert.equal(duplicate.deduplicated,true);
+  const differentSource=control.create({goal:'Publish approved release',source:'automated',idempotencyKey:'three',allowedTasks:['shell']});
+  assert.notEqual(differentSource.id,first.id,'an unrelated producer must not inherit the operator consent');
+  const newGoal=control.create({goal:'Publish next release',source:'operator',idempotencyKey:'four',allowedTasks:['shell']});
+  assert.notEqual(newGoal.id,first.id);
+});
+
