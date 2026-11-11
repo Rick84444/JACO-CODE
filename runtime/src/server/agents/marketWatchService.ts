@@ -14,9 +14,9 @@ const INITIAL_TRACKED_TARGETS: TrackedCompetitorTarget[] = [
       'https://anthropic.com/claude-code/subtask-architecture'
     ],
     focusAreas: ['Atomic Subgoal Decomposition', 'AST Gate Validation', 'Terminal Execution Safeguards'],
-    lastScannedAt: new Date(Date.now() - 3600000).toISOString(),
+    lastScannedAt: null,
     status: 'active',
-    discoveredSignalsCount: 14
+    discoveredSignalsCount: 0
   },
   {
     id: 'target_devin',
@@ -27,9 +27,9 @@ const INITIAL_TRACKED_TARGETS: TrackedCompetitorTarget[] = [
       'https://github.com/aistudio-build/jaco-specs'
     ],
     focusAreas: ['Compressed Memory Distillation', 'Long-Horizon Checkpointing', 'Error Recovery Loops'],
-    lastScannedAt: new Date(Date.now() - 7200000).toISOString(),
+    lastScannedAt: null,
     status: 'active',
-    discoveredSignalsCount: 19
+    discoveredSignalsCount: 0
   },
   {
     id: 'target_windsurf',
@@ -40,9 +40,9 @@ const INITIAL_TRACKED_TARGETS: TrackedCompetitorTarget[] = [
       'https://arxiv.org/abs/2402.multi-agent-verification'
     ],
     focusAreas: ['Dual-Agent Verification Gates', 'Real-Time Tool Execution Mesh', 'Adversarial Falsifiers'],
-    lastScannedAt: new Date(Date.now() - 14400000).toISOString(),
+    lastScannedAt: null,
     status: 'active',
-    discoveredSignalsCount: 11
+    discoveredSignalsCount: 0
   },
   {
     id: 'target_openai_swarm',
@@ -53,9 +53,9 @@ const INITIAL_TRACKED_TARGETS: TrackedCompetitorTarget[] = [
       'https://platform.openai.com/docs/guides/function-calling'
     ],
     focusAreas: ['Lightweight A2A Handshake Protocols', 'Decentralized Agent Routing', 'Stateless Tool Calling'],
-    lastScannedAt: new Date(Date.now() - 21600000).toISOString(),
+    lastScannedAt: null,
     status: 'active',
-    discoveredSignalsCount: 8
+    discoveredSignalsCount: 0
   },
   {
     id: 'target_opengate_autogpt',
@@ -66,9 +66,9 @@ const INITIAL_TRACKED_TARGETS: TrackedCompetitorTarget[] = [
       'https://github.com/Rick84444/jaco-code'
     ],
     focusAreas: ['Autonomous Web Scraping', 'P2P Capability Discovery', 'Decentralized Skill Marketplaces'],
-    lastScannedAt: new Date(Date.now() - 28800000).toISOString(),
+    lastScannedAt: null,
     status: 'active',
-    discoveredSignalsCount: 16
+    discoveredSignalsCount: 0
   }
 ];
 
