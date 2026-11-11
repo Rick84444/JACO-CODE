@@ -673,6 +673,8 @@ export class NovaMissionControl {
     // reviewed the exact action, one approval is consumed at most once.
     this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=? AND approved_at IS NOT NULL AND task_hash=?')
       .run(id, taskHash);
+    this.db.prepare('DELETE FROM nova_spend_approvals WHERE mission_id=? AND task_hash=?')
+      .run(id, taskHash);
     const action = { ...checked, id: `${id}:turn:${row.turn + 1}`, missionId: id };
     this.db.prepare("UPDATE nova_sessions SET phase='EXECUTING',active_task_json=?,turn=turn+1,lease_until=? WHERE mission_id=?")
       .run(JSON.stringify(action), this.now() + actionLeaseMs(checked.type), id);
