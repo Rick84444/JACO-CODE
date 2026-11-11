@@ -141,7 +141,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, liveConnecti
   const refreshFailures=useRef(0);
   const showingCdp=Boolean(screenshot);
   useEffect(()=>{
-    if(!cdpReady || pinned || !activeMission || !showingCdp)return;
+    if(!cdpReady || pinned || activeMission?.status!=='ACTIVE' || presence.mode!=='working' || !showingCdp)return;
     let stopped=false, timer=0;
     const schedule=()=>{timer=window.setTimeout(tick,cdpRefreshDelay(refreshFailures.current));};
     const tick=async()=>{
@@ -154,7 +154,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, liveConnecti
     };
     schedule();
     return()=>{stopped=true;window.clearTimeout(timer);};
-  },[cdpReady,pinned,activeMission?.id,showingCdp]);
+  },[cdpReady,pinned,activeMission?.id,activeMission?.status,presence.mode,showingCdp]);
   const dirty = Boolean(htmlSource !== null && htmlDraft !== null && htmlSource !== htmlDraft);
   const event = candidate?.event || null;
   const history = auraStageHistory(events);
