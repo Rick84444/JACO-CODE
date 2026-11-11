@@ -273,8 +273,6 @@ class MarketWatchService {
 
     // Without an actual fetch, the model cannot truthfully report a new
     // observation. Never manufacture findings from pretrained knowledge.
-    if (!rawCrawlData.trim()) throw new Error('MARKET_WATCH_SOURCE_UNAVAILABLE');
-
     // Build the LLM prompt that compresses competitor data into a structured Competitive Intelligence memory item
     const prompt = `
 You are the OpenClaw Market Watch & Competitive Intelligence Scraper Agent for JACO OS.
@@ -299,6 +297,7 @@ Synthesize a new 'Competitive Intelligence' memory node in strict JSON format:
 `.trim();
 
     try {
+      if (!rawCrawlData.trim()) throw new Error('MARKET_WATCH_SOURCE_UNAVAILABLE');
       const res = await generate({
         prompt,
         systemPrompt: 'You are the OpenClaw Market Watch Engine. Respond exclusively with valid JSON.'
