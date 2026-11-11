@@ -390,6 +390,29 @@ export class NovaMissionControl {
     const requestedTasks = codingContract ? requested : requested.filter(task => !CODE_TASKS.has(task));
     if (!requestedTasks.length || requestedTasks.some(task => !this.allowedTasks.includes(task))) throw new Error('INVALID_MISSION_ALLOWED_TASKS');
     if (requestedTasks.includes('windows-wmi-read') && !desktopKind) throw new Error('WINDOWS_WMI_REQUIRES_DESKTOP_AGENTOS');
+    // Do not create a second approval card when the exact same operator goal
+    // and scope are submitted while the first mission is waiting for consent.
+    // Other BLOCKED missions remain retryable. Match the *full* authority
+    // envelope: a new contract, project, executor, source or parent is new work.
+    const approvalBlocked = this.bus.listMissions(500).find(item =>
+      String(item.status || '').toUpperCase() === 'BLOCKED' &&
+      String(item.goal || '').trim() === goal.trim() &&
+      (item.metadata?.executor || 'nova') === normalizedExecutor &&
+      item.source === source &&
+      (item.metadata?.mandateId || null) === (mandateId?.trim() || null) &&
+      (item.metadata?.projectRoot || null) === (projectRoot ? path.resolve(projectRoot) : null) &&
+      hashTaskInput(item.metadata?.codingContract || null) === hashTaskInput(codingContract) &&
+      hashTaskInput([...(item.metadata?.allowedTasks || [])].sort()) === hashTaskInput([...requestedTasks].sort()) &&
+      hashTaskInput(item.metadata?.parent ? [item.metadata.parent.graphId, item.metadata.parent.nodeKey] : null) ===
+        hashTaskInput(parent ? [parent.graphId, parent.nodeKey] : null) &&
+      Boolean(this.pendingOperatorAction(item.id))
+    );
+    if (approvalBlocked) {
+      this.bus.event('MISSION_DEDUPED', { missionId: approvalBlocked.id, payload: {
+        source, similarity: 1, reason: 'EXACT_PENDING_APPROVAL', goal: goal.slice(0, 300)
+      }});
+      return { ...this.get(approvalBlocked.id), deduplicated: true };
+    }
     // A re-phrased goal that is already open for the same executor joins that mission.
     const open = this.bus.listMissions(500)
       // BLOCKED missions are excluded: re-submitting a stuck goal is a legitimate retry.
