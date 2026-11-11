@@ -617,7 +617,7 @@ export class NovaMissionControl {
     if (checked.type === 'github-create-repo') checked = validateGithubRepoTask(checked, mission.goal);
     if (checked.type === 'repo-scan') checked = validateRepoScanTask(checked, mission.goal);
     if (checked.type === 'mcp-call' || checked.type === 'mcp-write') checked = validateMcpCall(checked);
-    const pending = this.db.prepare('SELECT task_hash,approved_at FROM nova_action_gate WHERE mission_id=?').get(id);
+    const pending = this.db.prepare('SELECT task_hash,approved_at,reason FROM nova_action_gate WHERE mission_id=?').get(id);
     // Once a human approved an exact task, the planner cannot silently
     // substitute a differently hashed action before its authorized execution.
     // Any change requires a new explicit decision, not a reused approval.
@@ -630,8 +630,8 @@ export class NovaMissionControl {
     if (spend) {
       const approval = this.db.prepare('SELECT * FROM nova_spend_approvals WHERE mission_id=?').get(id);
       if (!approval || approval.task_hash !== taskHash) {
-        const gate = this.db.prepare('SELECT task_hash FROM nova_action_gate WHERE mission_id=?').get(id);
-        const samePending = gate?.task_hash === taskHash;
+        const gate = this.db.prepare('SELECT task_hash,approved_at,reason FROM nova_action_gate WHERE mission_id=?').get(id);
+        const samePending = gate?.task_hash === taskHash && !gate.approved_at && gate.reason === `spend:${spend.reason}`;
         if (!samePending) {
           const taskSnapshot = JSON.stringify(checked);
           if (taskSnapshot.length > 65536) throw new Error('APPROVAL_TASK_TOO_LARGE');
@@ -669,7 +669,10 @@ export class NovaMissionControl {
       this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=?').run(id);
       this.bus.event('NOVA_OPERATOR_APPROVED_ACTION', { missionId: id, payload: { reason: harmful.reason, note: gate.note } });
     }
-    if (spend) this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=? AND task_hash=?').run(id, taskHash);
+    // Even if environmental risk classification changed while the operator
+    // reviewed the exact action, one approval is consumed at most once.
+    this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=? AND approved_at IS NOT NULL AND task_hash=?')
+      .run(id, taskHash);
     const action = { ...checked, id: `${id}:turn:${row.turn + 1}`, missionId: id };
     this.db.prepare("UPDATE nova_sessions SET phase='EXECUTING',active_task_json=?,turn=turn+1,lease_until=? WHERE mission_id=?")
       .run(JSON.stringify(action), this.now() + actionLeaseMs(checked.type), id);
