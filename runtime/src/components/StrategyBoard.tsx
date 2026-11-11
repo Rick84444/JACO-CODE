@@ -27,10 +27,10 @@ const chip = (state?: string | null, approval?: boolean) => state === 'have' ? '
 const STATUS_TEXT: Record<string, string> = { FAILED: 'text-rose-300', VERIFIED: 'text-white/60' };
 const working = (status: string) => status === 'RUNNING' || status === 'DISPATCHED';
 
-// Lines are quiet white. The line from the active box up to the goal glows faint white: the way the work is heading.
+// Inactive lines stay quiet white; every active dependency route pulses faint blue toward the goal.
 const LINE = 'rgba(255,255,255,.28)';
-const PATH = 'rgba(255,255,255,.95)';
-const PATH_GLOW = 'drop-shadow(0 0 3px rgba(255,255,255,.75))';
+const PATH = 'rgba(88,180,240,.88)';
+const PATH_GLOW = 'drop-shadow(0 0 3px rgba(65,172,240,.6))';
 const BOARD_CSS = `
 @keyframes jaco-working{0%,100%{border-color:rgba(56,189,248,.55);box-shadow:0 0 0 0 rgba(56,189,248,0)}50%{border-color:rgba(56,189,248,1);box-shadow:0 0 18px 2px rgba(56,189,248,.55)}}
 .jaco-working{animation:jaco-working 1.8s ease-in-out infinite}
@@ -51,6 +51,9 @@ const BOARD_CSS = `
 .jaco-tree li.jp-v::after{border-left-color:${PATH};filter:${PATH_GLOW}}
 .jaco-tree li.jp-v:last-child::before{border-right-color:${PATH};filter:${PATH_GLOW}}
 .jaco-tree ul.jaco-path-ul::before{border-color:${PATH};filter:${PATH_GLOW}}
+@keyframes jaco-live-path{0%,100%{opacity:.50}50%{opacity:.95}}
+.jaco-tree li.jp-l::before,.jaco-tree li.jp-r::after,.jaco-tree li.jp-v::after,.jaco-tree ul.jaco-path-ul::before{animation:jaco-live-path 2.5s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.jaco-tree li.jp-l::before,.jaco-tree li.jp-r::after,.jaco-tree li.jp-v::after,.jaco-tree ul.jaco-path-ul::before{animation:none;opacity:.85}}
 .jaco-tree > ul{padding-top:0;width:max-content;min-width:100%}`;
 
 // True when the work is somewhere in this branch: its line up to the goal glows.
@@ -58,14 +61,14 @@ const onPath = (item: TreeItem): boolean => !item.repeat && (working(item.node.s
 // Which line pieces above child i glow: its own drop (v), and the bar from it to the middle where the parent's line
 // comes down (l = left half, r = right half of each box's share of the bar).
 export function litLine(items: TreeItem[]): string[] {
-  const p = items.findIndex(onPath);
+  const active = items.flatMap((item, index) => onPath(item) ? [index] : []);
   const c = (items.length - 1) / 2;
-  // Box i owns the bar from i-0.5 to i+0.5; a half glows when it lies between the active box and the middle.
-  const lo = Math.min(p, c), hi = Math.max(p, c);
-  return items.map((_, i) => p < 0 ? '' : [
-    i === p ? 'jp-v' : '',
-    i - 0.5 >= lo && i <= hi ? 'jp-l' : '',
-    i >= lo && i + 0.5 <= hi ? 'jp-r' : '',
+  // The union of paths is required when Aura works on several independent subgoals.
+  // Each path connects its active branch to the middle of the parent bar.
+  return items.map((_, i) => !active.length ? '' : [
+    active.includes(i) ? 'jp-v' : '',
+    active.some(p => i - 0.5 >= Math.min(p, c) && i <= Math.max(p, c)) ? 'jp-l' : '',
+    active.some(p => i >= Math.min(p, c) && i + 0.5 <= Math.max(p, c)) ? 'jp-r' : '',
   ].filter(Boolean).join(' '));
 
 }
