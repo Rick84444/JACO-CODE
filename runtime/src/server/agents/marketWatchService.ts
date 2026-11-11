@@ -145,10 +145,10 @@ class MarketWatchService {
   private timer: NodeJS.Timeout | null = null;
   private lastScanTimestamp: string | null = new Date().toISOString();
   private nextScheduledScan: string | null = new Date(Date.now() + 180000).toISOString();
-  private totalScansCompleted: number = 6;
+  private totalScansCompleted: number = 0;
   private trackedTargets: TrackedCompetitorTarget[] = [...INITIAL_TRACKED_TARGETS];
-  private intelligenceItems: CompetitiveIntelligenceMemoryItem[] = [...INITIAL_INTELLIGENCE_ITEMS];
-  private autoInjectIntoReasoning: boolean = true;
+  private intelligenceItems: CompetitiveIntelligenceMemoryItem[] = [];
+  private autoInjectIntoReasoning: boolean = false;
 
   private scanInFlight = false;
 
@@ -271,6 +271,10 @@ class MarketWatchService {
       // Ignore HTTP errors and continue to model synthesis
     }
 
+    // Without an actual fetch, the model cannot truthfully report a new
+    // observation. Never manufacture findings from pretrained knowledge.
+    if (!rawCrawlData.trim()) throw new Error('MARKET_WATCH_SOURCE_UNAVAILABLE');
+
     // Build the LLM prompt that compresses competitor data into a structured Competitive Intelligence memory item
     const prompt = `
 You are the OpenClaw Market Watch & Competitive Intelligence Scraper Agent for JACO OS.
@@ -385,15 +389,14 @@ Synthesize a new 'Competitive Intelligence' memory node in strict JSON format:
         status: 'active'
       };
 
-      this.intelligenceItems.unshift(fallbackItem);
+      // A generated fallback is a diagnostic proposal, never an observed
+      // market signal or something that can enter the planner's memory.
       target.status = 'active';
-      target.discoveredSignalsCount++;
-      this.totalScansCompleted++;
       this.lastScanTimestamp = nowIso;
       this.nextScheduledScan = new Date(Date.now() + this.pollingIntervalSeconds * 1000).toISOString();
 
       return {
-        success: true,
+        success: false,
         item: fallbackItem,
         digest: fallbackItem.compressedDigest,
         message: `[PROTOTYPE] OpenClaw Market Watch generated a synthetic insight for ${target.name}.`
@@ -420,6 +423,10 @@ Synthesize a new 'Competitive Intelligence' memory node in strict JSON format:
    * Returns the compiled context string to inject into the reasoning engine and planDecide.ts
    */
   public getMarketWatchReasoningContext(): string {
+    // Existing Market Watch entries have no independently verified source
+    // receipts; sourceUrls, confidenceScore and proofHash are not evidence.
+    // Do not elevate model synthesis or legacy seed data into planner facts.
+    return '[MARKET WATCH] No independently verified market observations available. Use live research and source-backed receipts; do not treat generated insights as verified facts.';
     if (this.intelligenceItems.length === 0) {
       return '[MARKET WATCH] No active competitor insights available.';
     }
