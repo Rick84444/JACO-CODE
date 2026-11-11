@@ -210,7 +210,10 @@ class MarketWatchService {
 
     // No fetched source is no observed market signal. The model's prior
     // knowledge cannot be attributed to a fabricated web observation.
-    if (!rawCrawlData.trim()) throw new Error('MARKET_WATCH_SOURCE_UNAVAILABLE');
+    if (!rawCrawlData.trim()) {
+      target.status = 'active';
+      throw new Error('MARKET_WATCH_SOURCE_UNAVAILABLE');
+    }
 
     // Build the LLM prompt that compresses competitor data into a structured Competitive Intelligence memory item
     const prompt = `
@@ -252,17 +255,7 @@ Synthesize a new 'Competitive Intelligence' memory node in strict JSON format:
           parsed = JSON.parse(cleaned);
         }
       } catch {
-        parsed = {
-          competitorName: target.name,
-          featureDomain: 'SUBGOAL_DECOMPOSITION',
-          observedUpdate: `Update observed in ${target.focusAreas[0]}.`,
-          architecturalBreakdown: 'Optimized subtask execution with isolated memory context.',
-          compressedDigest: `[COMPRESSED MEMORY] ${target.name}: Apply granular subgoals and deterministic test contracts.`,
-          tacticalCounterStrategy: 'Integrate synthesized memory vectors into every new subgoal decision.',
-          impactOnUpcomingPlans: 'Requires at least 5 atomic subgoals and verification logs in future blueprints.',
-          confidenceScore: 92,
-          sourceUrls: target.targetUrls
-        };
+        throw new Error('MARKET_WATCH_MODEL_OUTPUT_INVALID');
       }
 
       const proofHash = crypto.createHash('sha256').update(JSON.stringify(parsed) + nowIso).digest('hex').substring(0, 16);
@@ -277,8 +270,12 @@ Synthesize a new 'Competitive Intelligence' memory node in strict JSON format:
         compressedDigest: parsed.compressedDigest || `[COMPRESSED MEMORY] ${target.name}: Apply granular subgoals and deterministic test contracts.`,
         tacticalCounterStrategy: parsed.tacticalCounterStrategy || 'Integrate synthesized memory vectors into every new subgoal decision.',
         impactOnUpcomingPlans: parsed.impactOnUpcomingPlans || 'Requires at least 5 atomic subgoals and verification logs in future blueprints.',
-        confidenceScore: typeof parsed.confidenceScore === 'number' ? parsed.confidenceScore : 92,
-        sourceUrls: Array.isArray(parsed.sourceUrls) && parsed.sourceUrls.length > 0 ? parsed.sourceUrls : target.targetUrls,
+        // A model-generated confidence is not a verified measurement.
+        confidenceScore: 0,
+        verificationLevel: 'OBSERVED',
+        sourceDigest: crypto.createHash('sha256').update(rawCrawlData).digest('hex'),
+        // Only cite the fetched URL. URLs invented by the model are not proof.
+        sourceUrls: [targetUrl],
         proofHash,
         rawOpenClawTaskId: openClawTaskId,
         status: 'active'
@@ -326,18 +323,15 @@ Synthesize a new 'Competitive Intelligence' memory node in strict JSON format:
         status: 'active'
       };
 
-      this.intelligenceItems.unshift(fallbackItem);
+      // Keep a diagnostic for callers, but do not insert a fabricated signal
+      // into memory, counters or the evidence used by Aura.
       target.status = 'active';
-      target.discoveredSignalsCount++;
-      this.totalScansCompleted++;
       this.lastScanTimestamp = nowIso;
-      this.nextScheduledScan = new Date(Date.now() + this.pollingIntervalSeconds * 1000).toISOString();
-
       return {
-        success: true,
-        item: fallbackItem,
-        digest: fallbackItem.compressedDigest,
-        message: `[PROTOTYPE] OpenClaw Market Watch generated a synthetic insight for ${target.name}.`
+        success: false,
+        item: { ...fallbackItem, confidenceScore: 0, verificationLevel: 'SYNTHETIC', sourceUrls: [] },
+        digest: '',
+        message: `[UNKNOWN] Market Watch could not verify a source or parse the model response: ${String(err?.message || err).slice(0, 150)}`
       };
     }
   }
@@ -361,29 +355,11 @@ Synthesize a new 'Competitive Intelligence' memory node in strict JSON format:
    * Returns the compiled context string to inject into the reasoning engine and planDecide.ts
    */
   public getMarketWatchReasoningContext(): string {
-    if (this.intelligenceItems.length === 0) {
-      return '[MARKET WATCH] No active competitor insights available.';
-    }
-
-    const topItems = this.intelligenceItems.slice(0, 5);
-    const bullets = topItems.map((item, idx) => {
-      return `${idx + 1}. [${item.competitorName} | ${item.featureDomain}]
-   - Insight: ${item.observedUpdate}
-   - Compressed memory: ${item.compressedDigest}
-   - Impact on planning: ${item.impactOnUpcomingPlans}
-   - Tactical strategy: ${item.tacticalCounterStrategy}`;
-    }).join('\n\n');
-
-    return `=== MARKET WATCH COMPETITIVE INTELLIGENCE (POWERED BY OPENCLAW) ===
-The following real-time insights from competitors and leading agentic ecosystems should directly shape and steer the planning of upcoming tasks:
-
-${bullets}
-
-TASK PLANNING DIRECTIVES:
-1. ALWAYS split missions into 5-8 atomic, manageable subgoals (inspired by the Cursor & Claude Code subtask architecture).
-2. Link each subgoal to relevant compressed memory nodes (inspired by Devin's distillation pattern).
-3. Insert mandatory verification commands (linter, tsc, test) to prevent regressions (inspired by the Windsurf Cascade Dual-Agent Gate).
-4. Assign specific sub-agents (Code Refactor, Security Auditor, etc.) to each step.`;
+    // The current Market Watch has fetched text and model summaries, but no
+    // independent source/claim verifier connected to the canonical EvidenceLedger.
+    // Until that verification exists, neither seeds nor summaries may become
+    // planning instructions, even when auto-injection is switched on.
+    return '[MARKET WATCH] No independently verified market claims available. Treat market research as an open hypothesis; use real research tools and verify primary sources before acting.';
   }
 
   /**
