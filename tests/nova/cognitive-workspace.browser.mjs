@@ -19,7 +19,7 @@ const require=createRequire(path.join(release,'package.json'));
 const express=require('express');
 const {chromium}=await import(process.env.JACO_PLAYWRIGHT_MODULE || require.resolve('playwright'));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-ui-test-'));
-let bus=new DurableMissionBus(directory),chat=createAuraChatSession(bus),blockLive=false,blockSession=false,liteAck=false,rejectGoal=false;
+let bus=new DurableMissionBus(directory),chat=createAuraChatSession(bus),blockLive=false,blockSession=false,liteAck=false,rejectGoal=false,livePlan=null;
 const workstream={snapshot:()=>({events:[]})},liveResponses=new Set(),requests=[];
 const code={ 'example.ts':'export const checked = true;\n',
   'preview.html':'<style>body{font-family:system-ui;padding:32px;color:#153345}h1{font-weight:500}</style><h1>Isolerad förhandsvisning</h1><p id="boundary"></p><script>try{window.parent.document.body.dataset.changed="unsafe";document.querySelector("#boundary").textContent="boundary failed";}catch{document.querySelector("#boundary").textContent="isolated";}</script>' };
@@ -45,6 +45,7 @@ app.get('/api/aura/workbench/gameboard',(_req,res)=>res.json({success:true,
   ...gameboardProjection({graphs:null,graphError:'SEER_NOT_RUNNING_IN_TEST',workers:bus.listWorkers(),missions:bus.listMissions(30).map(m=>({...m,reviewAvailable:true})),events:bus.listEvents(100),primaryGoal:bus.listMissions(1)[0]?.goal || null}),
   exchange:createGameboardExchange(bus.db).position('global'),
 }));
+app.get('/api/aura/plan',(_req,res)=>res.json({success:true,plans:livePlan?[livePlan]:[]}));
 app.get('/api/aura/workbench/gameboard/events',(req,res)=>res.json({success:true,...createGameboardExchange(bus.db).position(String(req.query.scope||'global'))}));
 app.post('/api/aura/workbench/gameboard/events',(req,res)=>{
   try {res.status(201).json({success:true,...createGameboardExchange(bus.db).publish(req.body)});}
@@ -235,6 +236,7 @@ try {
   await canvas('Spelplan').click();
   await page.getByTestId('strategy-board').waitFor();
   // Operator can open the actual local memory view from the Gameboard on a mobile viewport.
+  await page.getByTestId('gameboard-memory-section').locator('summary').click();
   await page.getByTestId('memory-gameboard').locator('button').first().click();
   await page.getByRole('region',{name:'Minnets innehåll och beslut'}).waitFor();
   await page.getByTestId('memory-gameboard').getByRole('button',{name:'Stäng minnet'}).click();
@@ -285,9 +287,61 @@ try {
   await page.locator('.cognitive-evidence-scroll').waitFor();
   passed('Gameboard renders durable mission evidence and opens the existing review without another agent');
   await canvas('Samtal').click();
+  // USER-AGENT SIMULATION: a person opens Gameboard after a real durable mission
+  // event, navigates a dynamically published SEER-style DAG, then SEER revises
+  // its observed status. The fixture models PLAN OBSERVATION only: no model has
+  // run here and no synthetic action is promoted to real execution.
+  livePlan={
+    id:'user-journey-graph',title:'Validated gateway',objective:'Deliver a validated gateway',
+    intuition:'Create a trustworthy and autonomous coding product',status:'ACTIVE',
+    progress:{done:0,total:4},needsApproval:[],changes:[],comments:[],
+    nodes:[
+      {key:'deliver',title:'Integrate product',objective:'Integrate',status:'BLOCKED',statusText:'Väntar',dependencies:['qa','docs'],needs:[],comments:[],evidenceRefs:[]},
+      {key:'qa',title:'Verification',objective:'Verify',status:'RUNNING',statusText:'Pågår',dependencies:['foundation'],needs:[],comments:[],missionId:mission.id,evidenceRefs:[]},
+      {key:'docs',title:'Documentation',objective:'Document',status:'READY',statusText:'Redo',dependencies:['foundation'],needs:[],comments:[],evidenceRefs:[]},
+      {key:'foundation',title:'Gateway foundation',objective:'Build',status:'READY',statusText:'Redo',dependencies:[],needs:[],comments:[],evidenceRefs:[]},
+    ],
+  };
+  await canvas('Spelplan').click();
+  const root=page.getByTestId('intuition-root');
+  await root.waitFor();
+  assert.match(await root.innerText(),/Create a trustworthy and autonomous coding product/);
+  assert.equal(await page.getByTestId('gameboard-centered-logo').count(),1);
+  assert.equal(await page.getByTestId('intuition-step').count(),4);
+  assert.equal(await page.locator('[data-node-id="foundation"]').count(),1,'shared dependency only once');
+  assert.equal(await page.locator('path.jaco-intuition-line[data-state="active"]').count(),2,'only real ancestry glows');
+  assert.ok(await page.locator('path.jaco-intuition-line[data-state="pending"]').count()>0,'pending lines stay white');
+  const logo=await page.getByTestId('gameboard-centered-logo').boundingBox();
+  const center=await root.boundingBox();
+  assert.ok(Math.abs((logo.x+logo.width/2)-(center.x+center.width/2))<12,'intuition aligned with logo');
+  await page.getByRole('button',{name:'Zooma in'}).click();
+  await page.getByRole('button',{name:'Anpassa hela trädet'}).click();
+  await page.locator('[data-node-id="qa"]').click();
+  await page.getByRole('dialog',{name:'Verification'}).waitFor();
+  await page.getByRole('button',{name:'Stäng',exact:true}).first().click();
+  await page.getByRole('button',{name:'Minimera beroenden för Verification'}).click();
+  assert.equal(await page.locator('[data-node-id="foundation"]').count(),1,'other parent still keeps shared dependency');
+  await page.getByRole('button',{name:'Expandera beroenden för Verification'}).click();
+  livePlan.nodes.find(n=>n.key==='qa').status='VERIFIED';
+  livePlan.nodes.find(n=>n.key==='qa').evidenceRefs=['bus:real-verified-action'];
+  livePlan.progress.done=1;
+  livePlan.changes.push({at:new Date().toISOString(),reason:'Verified test revised the active path'});
+  bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'graph-refresh',type:'repo-test',ok:true,verified:true,result:{exitCode:0}}});
+  await page.locator('[data-node-id="qa"][data-status="verified"][data-evidence-count="1"]').waitFor({timeout:15000});
+  assert.equal(await page.locator('path.jaco-intuition-line[data-state="active"]').count(),0);
+  assert.ok(await page.locator('path.jaco-intuition-line[data-state="verified"]').count()>0);
+  await page.getByTestId('gameboard-plan-history').locator('summary').click();
+  await page.getByText('Verified test revised the active path').waitFor();
+  await page.getByRole('button',{name:'Aktiv gren'}).click();
+  assert.equal(await page.getByTestId('intuition-step').count(),0,'inactive branch filter cannot invent work');
+  await page.getByRole('button',{name:'Aktiv gren'}).click();
+  await canvas('Samtal').click();
+  assert.equal(requests.some(r=>r.kind==='goal'),false,'the user journey must not silently start a new mission');
+  passed('Simulated user validates live intuition, unique dependencies, blue activity, real receipts, zoom, collapse, replan and no phantom missions');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'failed-test',type:'repo-test',ok:false,verified:true,error:'TEST_NEGATIVE_CONTROL',result:{exitCode:1}}});
-  await page.locator('[data-event-id="mission:4"][data-outcome="failed"]').waitFor();
-  assert.equal(await page.locator('[data-event-id="mission:4"] .cognitive-proof[data-outcome="verified"]').count(),0);
+  const failedSeq=bus.listEvents(1)[0].seq;
+  await page.locator('[data-event-id="mission:'+failedSeq+'"][data-outcome="failed"]').waitFor();
+  assert.equal(await page.locator('[data-event-id="mission:'+failedSeq+'"] .cognitive-proof[data-outcome="verified"]').count(),0);
   passed('A successful unverified step and a failing step cannot masquerade as verified');
   await page.getByRole('button',{name:'Vad har du upptäckt?',exact:true}).click();
   await page.getByRole('button',{name:'Skicka meddelande',exact:true}).click();
@@ -299,7 +353,9 @@ try {
   assert.equal(bus.listMissions(10).length,1);
   passed('A question receives observed run context and does not restart or replace the mission');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'pass-test',type:'repo-test',ok:true,verified:true,result:{path:'example.ts',exitCode:0}}});
-  await page.locator('[data-event-id="mission:5"][data-outcome="verified"]').waitFor();
+  const passedSeq=bus.listEvents(1)[0].seq;
+  const verifiedSelector='[data-event-id="mission:'+passedSeq+'"]';
+  await page.locator(verifiedSelector+'[data-outcome="verified"]').waitFor();
   // Controlled real React + SSE transport with synthetic mission fixtures: verify
   // that the canonical Aura Live stage renders several actual bus action types.
   await canvas('Arbete').click();
@@ -311,7 +367,7 @@ try {
   passed('Canonical Aura Live projects concurrent code and test tool receipts without new agent execution');
   await canvas('Samtal').click();
   await screenshot('cognitive-workspace-live');
-  await page.locator('[data-event-id="mission:5"]').getByRole('button',{name:/^(Visa bevis|Show evidence)$/}).click();
+  await page.locator(verifiedSelector).getByRole('button',{name:/^(Visa bevis|Show evidence)$/}).click();
   const selectedEvidence=page.getByRole('region',{name:/^(Valt bevis|Selected evidence)$/});
   await selectedEvidence.waitFor();
   assert.match(await selectedEvidence.innerText(),/Sparad uppdragshistorik|Saved mission history/,
@@ -355,13 +411,13 @@ try {
   assert.equal(await input().inputValue(),'Ett bevarat utkast');
   blockLive=false;
   await page.getByRole('status').filter({hasText:'Working'}).waitFor({timeout:15000});
-  assert.equal(await page.locator('[data-event-id="mission:5"]').count(),1);
+  assert.equal(await page.locator(verifiedSelector).count(),1);
   passed('Live connection interruption preserves the draft, exposes uncertainty and reconnects without duplicates');
   for(const response of liveResponses)response.end();
   bus.close();bus=new DurableMissionBus(directory);chat=createAuraChatSession(bus);
   await page.reload({waitUntil:'networkidle'});
-  await page.locator('[data-event-id="mission:5"]').waitFor();
-  assert.equal(await page.locator('[data-event-id="mission:5"]').count(),1);
+  await page.locator(verifiedSelector).waitFor();
+  assert.equal(await page.locator(verifiedSelector).count(),1);
   await page.getByText('Testsvaret använder de observerade händelserna. Uppdraget fortsätter.',{exact:true}).waitFor();
   passed('A store restart replays both durable events and the saved encrypted conversation');
   liteAck=true;

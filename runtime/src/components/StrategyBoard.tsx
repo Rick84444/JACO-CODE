@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, ShieldAlert, MessageSquare, GitBranch, X } from 'lucide-react';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { buildOperatorConfirmation, requiresOperatorConfirmation } from '../lib/operatorApproval.mjs';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { LocalMemoryPanel } from './LocalMemoryPanel';
+import { ReverseGoalCanvas } from './ReverseGoalCanvas';
 
 // The Gameboard: one plan at a time, drawn like a family tree read backwards. The goal (what the operator wants) is
 // always first, at the top. Below it hang the subgoals that lead to it, and below each subgoal what it needs first;
@@ -13,11 +14,11 @@ import { LocalMemoryPanel } from './LocalMemoryPanel';
 // there, and Aura takes it into the next steps.
 type Need = { kind: string; label: string; approval: boolean; state?: 'have' | 'missing' | 'approval' | null };
 type Comment = { id: string; nodeKey: string | null; text: string; at: string; author?: 'aura' | 'operator' };
-type Node = { key: string; title: string; objective: string; status: string; statusText: string; failure: string | null; dependencies: string[]; needs: Need[]; comments: Comment[]; missionId?: string | null };
+type Node = { key: string; title: string; objective: string; status: string; statusText: string; failure: string | null; dependencies: string[]; needs: Need[]; comments: Comment[]; missionId?: string | null; evidenceRefs?: string[]; updatedAt?: number | string | null };
 // A decision waiting for the operator (the runtime's approval center), tied to a step through its mission.
 export type Decision = { id: string; kind: string; title: string; risk: string; reason: string; actions: string[]; details?: Record<string, any> };
 const decisionMission = (d: Decision): string | null => d.details?.missionId || d.details?.mission_id || (d.id.startsWith('mission:') ? d.id.slice(8) : null);
-type Plan = { id: string; title: string; objective: string; status: string; progress: { done: number; total: number }; needsApproval: Need[]; nodes: Node[]; changes: Array<{ at: string | null; reason: string | null; replaced: string | null }>; comments: Comment[]; abilities?: { missing: string[]; text: string } | null };
+type Plan = { id: string; title: string; objective: string; intuition?:string;intuitionId?:string|null; status: string; progress: { done: number; total: number }; needsApproval: Need[]; nodes: Node[]; changes: Array<{ at: string | null; reason: string | null; replaced: string | null }>; comments: Comment[]; abilities?: { missing: string[]; text: string } | null };
 
 // Aura's text never uses emoji: the state of a need is a word and a colour.
 const STATE_WORD: Record<string, [string, string]> = { have: ['har', 'have'], missing: ['saknas', 'missing'], approval: ['ditt ja', 'your yes'] };
@@ -250,6 +251,8 @@ function StepCard({ plan, node, decisions, onPick, onClose, onSaved }: { plan: P
   const { tr } = useUiLanguage();
   const waiting = decisions.filter(d => node.missionId && decisionMission(d) === node.missionId);
   const askYes = node.needs.filter(x => x.approval || x.state === 'approval');
+  const receipts = node.evidenceRefs || [];
+  const reportedWithoutReceipt = node.status === 'VERIFIED' && receipts.length === 0;
   const after = plan.nodes.filter(n => LIVE(n) && n.dependencies.includes(node.key));
   const before = plan.nodes.filter(n => LIVE(n) && node.dependencies.includes(n.key));
   const link = (n: Node) => <button key={n.key} type="button" onClick={() => onPick(n.key)} className="rounded border border-neutral-700 px-2 py-0.5 text-xs hover:border-sky-400">{n.title}</button>;
@@ -265,12 +268,20 @@ function StepCard({ plan, node, decisions, onPick, onClose, onSaved }: { plan: P
       <div className="text-xs uppercase tracking-widest text-neutral-400">{tr('Varför', 'Why')}</div>
       <p className="mt-1">{after.length
         ? tr('Det behövs för att nå', 'It is needed to reach') + ': ' + after.map(n => n.title).join(', ') + '. ' + tr('Det leder i sin tur mot målet', 'That in turn leads to the goal') + ': '
-        : tr('Det leder direkt till målet', 'It leads directly to the goal') + ': '}{plan.objective}</p>
+        : tr('Det leder direkt till målet', 'It leads directly to the goal') + ': '}{plan.intuition || plan.objective}</p>
     </div>
     {before.length > 0 && <div className="mt-3 text-sm"><div className="text-xs uppercase tracking-widest text-neutral-400">{tr('Behöver först', 'Needs first')}</div><div className="mt-1 flex flex-wrap gap-1">{before.map(link)}</div></div>}
     {after.length > 0 && <div className="mt-3 text-sm"><div className="text-xs uppercase tracking-widest text-neutral-400">{tr('Leder vidare till', 'Leads on to')}</div><div className="mt-1 flex flex-wrap gap-1">{after.map(link)}</div></div>}
     {node.needs.length > 0 && <div className="mt-3"><div className="text-xs uppercase tracking-widest text-neutral-400">{tr('Vad steget behöver', 'What the step needs')}</div>
       <div className="mt-1 flex flex-wrap gap-1">{node.needs.map(x => <span key={x.kind + x.label} className={`rounded px-2 py-0.5 text-xs ${chip(x.state, x.approval)}`}>{x.label}{x.state ? ` (${tr(...STATE_WORD[x.state])})` : ''}</span>)}</div></div>}
+    {reportedWithoutReceipt && <p role="status" className="mt-3 rounded border border-amber-900 bg-amber-950/20 p-2 text-sm text-amber-200">{tr('Aura har rapporterat att steget är klart, men ingen verifieringsreferens finns. Det visas därför inte som verifierat i trädet.', 'Aura reports completion but no verification reference exists. It is therefore not shown as verified in the tree.')}</p>}
+    {receipts.length>0 && <section className="mt-3 rounded border border-blue-900/60 bg-[#0b192b] p-3" data-testid="gameboard-step-receipts">
+      <div className="text-xs font-semibold text-blue-200">{tr('Verifieringsreferenser från runtime','Runtime verification references')} ({receipts.length})</div>
+      <div className="mt-2 flex flex-wrap gap-1.5">{receipts.map((ref,i)=><code key={i} className="break-all rounded border border-blue-900 px-2 py-1 text-[11px] text-blue-100">{ref}</code>)}</div>
+      {node.missionId && /^mission-[A-Za-z0-9-]+$/.test(node.missionId) &&
+        <button type="button" className="mt-2 text-xs text-blue-300 underline" onClick={()=>{window.dispatchEvent(new CustomEvent('jaco:open-mission-evidence',{detail:node.missionId}));onClose();}}>
+          {tr('Öppna fullständig uppdragsevidens','Open full mission evidence')}</button>}
+    </section>}
     {node.failure && <p className="mt-3 text-sm text-rose-300">{node.failure.slice(0, 900)}</p>}
     <Notes comments={node.comments} />
     <CommentBox graphId={plan.id} nodeKey={node.key} onSaved={onSaved} />
@@ -282,7 +293,8 @@ function GoalCard({ plan, onClose, onSaved }: { plan: Plan; onClose: () => void;
   const { tr } = useUiLanguage();
   return <Card label={plan.objective} onClose={onClose}>
     <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-yellow-300"><GoalMark size={40} />{tr('Målet', 'The goal')} · {tr('Klart', 'Done')} {plan.progress.done}/{plan.progress.total}</div>
-    <h3 className="mt-1 pr-6 text-xl font-semibold leading-snug">{plan.objective}</h3>
+    <h3 className="mt-1 pr-6 text-xl font-semibold leading-snug">{plan.intuition || plan.objective}</h3>
+    {plan.intuition && plan.intuition !== plan.objective && <p className="mt-3 rounded border border-neutral-700 p-2 text-xs text-neutral-300">{tr('Nuvarande strategiskt delmål','Current strategic subgoal')}: {plan.objective}</p>}
     {plan.abilities && <p className={`mt-3 text-sm ${plan.abilities.missing.length ? 'text-amber-200' : 'text-emerald-300'}`} data-testid="aura-abilities">{plan.abilities.text}</p>}
     {plan.needsApproval.length > 0 && <p className="mt-3 flex items-center gap-1.5 text-sm text-amber-300"><ShieldAlert size={14} />{tr('Behöver ditt godkännande när det blir aktuellt', 'Needs your approval when the time comes')}: {plan.needsApproval.map(n => n.label).join(', ')}</p>}
     {plan.changes.length > 0 && <div className="mt-4"><div className="flex items-center gap-1 text-xs uppercase tracking-widest text-neutral-400"><GitBranch size={12} />{tr('Ändringar i planen', 'Changes to the plan')}</div>
@@ -313,17 +325,20 @@ function Branch({ item, order, onPick, lit = '', waitingOn }: { item: TreeItem; 
 
 const short = (text: string, max = 70) => text.length > max ? text.slice(0, max - 1) + '…' : text;
 
-export function StrategyBoard({ focusPlanId = null, focusNodeKey = null, onClose }: { focusPlanId?: string | null; focusNodeKey?: string | null; onClose?: () => void }) {
+export function StrategyBoard({ focusPlanId = null, focusNodeKey = null, onClose, eventRevision = null, liveConnection = 'unavailable' }: { focusPlanId?: string | null; focusNodeKey?: string | null; onClose?: () => void; eventRevision?: string | null; liveConnection?: string }) {
   const { tr, language } = useUiLanguage();
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [observed, setObserved] = useState<{operatorGoal?:{statement:string}|null;missions?:Array<{identity:string;goal:string;status:string;verifiedActions:number}>;next?:{text:string}}|null>(null);
   const [error, setError] = useState('');
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [chosen, setChosen] = useState<string | null>(focusPlanId);
+  const [pinned, setPinned] = useState(Boolean(focusPlanId));
+  const readGeneration = useRef(0);
   // The open card: a step's key, 'goal' for the goal, or nothing.
   const [open, setOpen] = useState<string | null>(null);
-  useEffect(() => { if (focusPlanId) setChosen(focusPlanId); setOpen(focusNodeKey); }, [focusPlanId, focusNodeKey]);
+  useEffect(() => { if (focusPlanId) { setChosen(focusPlanId); setPinned(true); } setOpen(focusNodeKey); }, [focusPlanId,focusNodeKey]);
   const load = useCallback(async () => {
+    const generation = ++readGeneration.current;
     // Planning may be late or unavailable while the operator's goal and durable
     // missions are already recorded. Read both sources independently.
     const [planned, position, approvals] = await Promise.allSettled([
@@ -331,66 +346,84 @@ export function StrategyBoard({ focusPlanId = null, focusNodeKey = null, onClose
       fetch('/api/aura/workbench/gameboard', {cache:'no-store'}).then(readAuraResponse),
       fetch('/api/aura/workbench/approvals', {cache:'no-store'}).then(readAuraResponse),
     ]);
+    if (generation !== readGeneration.current) return;
     if (planned.status === 'fulfilled' && planned.value?.success !== false) { setPlans(planned.value.plans || []); setError(''); }
-    else { setPlans([]); setError(planned.status === 'rejected' ? String(planned.reason?.message || planned.reason) : String(planned.value?.error || 'PLAN_UNAVAILABLE')); }
+    else { setPlans(current=>current??[]); setError(planned.status === 'rejected' ? String(planned.reason?.message || planned.reason) : String(planned.value?.error || 'PLAN_UNAVAILABLE')); }
     if (position.status === 'fulfilled' && position.value?.schema === 'jaco.gameboard-fabric/v1') setObserved(position.value);
     else setObserved(null);
     setDecisions(approvals.status === 'fulfilled' && Array.isArray(approvals.value?.items) ? approvals.value.items : []);
   }, [language]);
-  useEffect(() => { void load(); const t = window.setInterval(load, 10000); return () => window.clearInterval(t); }, [load]);
-  const plan = pickPlan(plans || [], chosen);
-  // The plan on screen stays on screen: the 10-second refresh must not swap it for another while the operator reads.
-  useEffect(() => { if (!chosen && plan) setChosen(plan.id); }, [chosen, plan?.id]);
-  const order = new Map((plan?.nodes || []).map((n, i) => [n.key, i + 1]));
-  const tree = plan ? planTree(plan.nodes) : [];
+  useEffect(() => {
+    void load();
+    const t=window.setInterval(()=>{if(document.visibilityState==='visible')void load();},10000);
+    const visible=()=>{if(document.visibilityState==='visible')void load();};
+    document.addEventListener('visibilitychange',visible);
+    return ()=>{window.clearInterval(t);document.removeEventListener('visibilitychange',visible);readGeneration.current++;};
+  },[load]);
+  // Reuse the EXISTING Aura live stream; don't open another SSE connection.
+  // Debounce bursts so one logical mission update results in one graph refresh.
+  useEffect(()=>{
+    if(!eventRevision||document.visibilityState!=='visible')return;
+    const id=window.setTimeout(()=>void load(),450);
+    return ()=>window.clearTimeout(id);
+  },[eventRevision,load]);
+  // Follow the live working graph as Aura evolves it; only an explicit
+  // operator selection pins a historical graph. Never silently replace a
+  // manually selected intuition while the person is reading it.
+  const plan = pickPlan(plans || [], pinned ? chosen : null);
+  // Stable node identities come from Aura's durable mission graph.
+  // Tree layout is derived by ReverseGoalCanvas from the canonical DAG.
   const planMissions = new Set((plan?.nodes || []).map(n => n.missionId).filter((m): m is string => Boolean(m)));
   const planDecisions = decisions.filter(d => planMissions.has(decisionMission(d) || ''));
   const waitingOn = new Set<string>(planDecisions.map(d => String(decisionMission(d) || '')));
-  const treeLines = litLine(tree);
+  // Never infer an active line from a tool registration or simulation.
   const node = plan && open && open !== 'goal' ? plan.nodes.find(n => n.key === open) || null : null;
   const close = useCallback(() => setOpen(null), []);
 
   return <section data-testid="strategy-board" className="min-h-full space-y-3 bg-black p-4 text-neutral-100">
     <style>{BOARD_CSS}</style>
-    <header className="flex flex-wrap items-center justify-between gap-2">
-      <h2 className="flex items-center gap-2 text-base font-semibold tracking-wide"><GoalMark size={30} />Gameboard</h2>
-      <div className="flex items-center gap-2">
-        {plans && plans.length > 1 && <select aria-label={tr('Välj plan', 'Choose plan')} value={plan?.id || ''} onChange={e => { setChosen(e.target.value); setOpen(null); }}
+    <header className="space-y-3">
+      <div data-testid="gameboard-centered-logo" className="flex w-full flex-col items-center justify-center gap-1 text-center">
+        <GoalMark size={72} />
+        <h2 className="text-base font-semibold tracking-[.26em] text-white">GAMEBOARD</h2>
+        <p className="text-[10px] uppercase tracking-[.18em] text-sky-200/70">{tr('Aura · levande målmodell','Aura · living goal model')}</p>
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {plans && plans.length > 1 && <select aria-label={tr('Välj plan', 'Choose plan')} value={plan?.id || ''} onChange={e => { setChosen(e.target.value); setPinned(true); setOpen(null); }}
           className="max-w-[22rem] rounded border border-neutral-700 bg-black px-2 py-1 text-xs">
-          {plans.map(p => <option key={p.id} value={p.id}>{short(p.objective)}</option>)}
+          {plans.map(p => <option key={p.id} value={p.id}>{short(p.intuition || p.objective)}</option>)}
         </select>}
+        {pinned && <button type="button" onClick={()=>{setPinned(false);setChosen(null);setOpen(null);}} className="rounded border border-sky-900 px-2 py-1 text-xs text-sky-200">{tr('Följ Auras aktuella mål','Follow Aura’s current goal')}</button>}
         <button type="button" onClick={() => void load()} aria-label={tr('Uppdatera', 'Refresh')}><RefreshCw size={14} /></button>
         {onClose && <button type="button" onClick={onClose} title={tr('Tillbaka till Aura', 'Back to Aura')} aria-label={tr('Tillbaka till Aura', 'Back to Aura')} className="flex items-center gap-2 rounded-full border border-white/30 py-0.5 pl-0.5 pr-3 text-xs text-white/80 hover:border-sky-400"><img src="/branding/aura-avatar.png" alt="" width={30} height={30} style={{ width: 30, height: 30 }} className="rounded-full" />{tr('Tillbaka till Aura', 'Back to Aura')}</button>}
       </div>
     </header>
-    <p className="text-xs text-neutral-400">{tr('Målet står alltid först. Under det ser du vad som behövs för att nå det, och under varje delmål vad det i sin tur behöver. Det aktiva delmålet lyser svagt blått. Klicka på en ruta för hela beskrivningen.', 'The goal always comes first. Below it you see what is needed to reach it, and below each subgoal what that needs in turn. The active subgoal glows faint blue. Click a box for the full description.')}</p>
-    <LocalMemoryPanel missionIds={Array.from(planMissions)} />
+    <p className="text-center text-xs text-neutral-400">{tr('Intuitionen är målet. Aura härleder förutsättningarna baklänges och utför dem i verklig beroendeordning. Klicka på ett steg för att granska varför det behövs.', 'Intuition is the goal. Aura derives prerequisites backwards and executes them in real dependency order. Select a step to inspect why it is needed.')}</p>
     {planDecisions.length > 0 && <section aria-label={tr('Väntar på dig', 'Waiting for you')} className="space-y-2">
       <div className="text-xs font-semibold uppercase tracking-widest text-amber-300">{tr('Väntar på dig', 'Waiting for you')} ({planDecisions.length})</div>
       {planDecisions.map(d => <React.Fragment key={d.id}><DecisionRow decision={d} onDone={() => void load()} /></React.Fragment>)}
     </section>}
     {error && <p role="alert" className="text-sm text-amber-300">{tr('Planen kunde inte läsas just nu.', 'The plan could not be read right now.')} ({error})</p>}
-    {plans && plans.length === 0 && (observed?.operatorGoal || observed?.missions?.length ? <article data-testid="strategy-goal-pending" className="space-y-3 rounded-lg border border-yellow-700 bg-[#181715] p-4">
-      <div className="flex items-center gap-3"><GoalMark size={46}/><div>
-        <div className="text-xs uppercase tracking-widest text-yellow-300">{tr('Registrerat mål', 'Recorded goal')}</div>
+    {plans && plans.length === 0 && (observed?.operatorGoal || observed?.missions?.length ? <article data-testid="strategy-goal-pending" className="space-y-3 rounded-lg border border-sky-800 bg-[#0b182c] p-4 text-center">
+      <div className="flex flex-col items-center gap-3"><div>
+        <div className="text-xs uppercase tracking-widest text-sky-300">INTUITION · {tr('registrerat mål','recorded goal')}</div>
         <div className="text-sm font-semibold text-white">{observed?.operatorGoal?.statement || observed?.missions?.[0]?.goal}</div>
       </div></div>
-      <p className="text-xs text-amber-200">{tr('Målet finns, men Aura har ännu inte rapporterat en SEER-plan med verifierbara delsteg. Inga steg hittas på.', 'The goal exists, but Aura has not yet reported a SEER plan with verifiable steps. No steps are fabricated.')}</p>
+      <p className="text-xs text-amber-200">{tr('Målet finns, men Aura har ännu inte rapporterat en plan med verifierbara delsteg. Inga steg hittas på.', 'The goal exists, but Aura has not yet reported a plan with verifiable steps. No steps are fabricated.')}</p>
       {observed?.missions?.slice(0,4).map(m=><div key={m.identity} className="rounded border border-neutral-700 p-2 text-xs">
         <div className="text-neutral-100">{m.goal}</div><div className="text-neutral-400">{m.status} · {m.verifiedActions} {tr('verifierade verktygssteg', 'verified tool actions')}</div>
       </div>)}
       {observed?.next?.text&&<p className="text-xs text-neutral-300">{observed.next.text}</p>}
     </article>:<p className="text-sm text-neutral-300">{tr('Inget aktivt mål eller plan observerat. Ge Aura ett mål i chatten.', 'No active goal or plan observed. Give Aura a goal in the chat.')}</p>)}
-    {plan && <div className="jaco-tree overflow-x-auto pb-4 pt-2" data-testid="plan-tree">
-      <ul><li>
-        <button type="button" onClick={() => setOpen('goal')} className="jaco-goal w-80 max-w-full rounded-lg border border-yellow-300 bg-black px-4 py-3 text-center transition-colors hover:bg-white/[.06]">
-          <div className="flex flex-col items-center justify-center gap-1.5 text-[10px] font-medium uppercase tracking-[.2em] text-yellow-300"><GoalMark size={56} />{tr('Målet', 'The goal')}</div>
-          <div className="mt-1 text-sm font-semibold leading-snug text-yellow-50">{plan.objective}</div>
-          <div className="mt-1 text-[11px] text-white/50">{tr('Klart', 'Done')} {plan.progress.done}/{plan.progress.total}{plan.abilities?.missing.length ? ` · ${tr('Aura saknar något', 'Aura lacks something')}` : ''}</div>
-        </button>
-        {tree.length > 0 && <ul className={tree.some(onPath) ? 'jaco-path-ul' : undefined}>{tree.map((item, i) => <React.Fragment key={item.node.key}><Branch item={item} order={order} onPick={setOpen} lit={treeLines[i]} waitingOn={waitingOn} /></React.Fragment>)}</ul>}
-      </li></ul>
-    </div>}
+    {plan && <div data-testid="plan-tree"><ReverseGoalCanvas plan={plan} executionFresh={!error && liveConnection==='live'} waitingOn={waitingOn} onGoal={()=>setOpen('goal')} onSelect={setOpen}/></div>}
+    {plan?.changes?.length>0 && <details className="rounded border border-neutral-800 p-3 text-xs text-neutral-300" data-testid="gameboard-plan-history">
+      <summary className="cursor-pointer">{tr('Planens versionshistorik','Plan revision history')} · {plan.changes.length}</summary>
+      <div className="mt-2 space-y-2">{plan.changes.map((change,i)=><p key={i}>{change.at?new Date(change.at).toLocaleString():tr('Tid okänd','Time unknown')} · {change.reason || tr('Ändring utan orsak','Change without reason')}</p>)}</div>
+    </details>}
+    <details className="rounded border border-neutral-800 p-3 text-xs text-neutral-300" data-testid="gameboard-memory-section">
+      <summary className="cursor-pointer">{tr('Tidigare erfarenheter och minne','Prior experience and memory')}</summary>
+      <div className="mt-3"><LocalMemoryPanel missionIds={Array.from(planMissions)} /></div>
+    </details>
     {plan && open === 'goal' && <GoalCard plan={plan} onClose={close} onSaved={load} />}
     {plan && node && <StepCard plan={plan} node={node} decisions={decisions} onPick={key => setOpen(key ?? 'goal')} onClose={close} onSaved={load} />}
   </section>;

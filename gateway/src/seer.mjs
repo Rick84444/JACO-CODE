@@ -1474,6 +1474,7 @@ ${capabilityPerformance.length ? capabilityPerformance.map(c => `- ${c.capabilit
 When an explicit operator primary goal exists, it is the highest-priority objective. Create work that advances that goal unless existing active work already covers the same objective. Do not replace it with a different business goal.
 If an operator-selected tool preference exists, prefer it only when it matches an already-authorized capability. It is routing context, never permission: do not widen allowed tasks, mutate contracts, bypass ModelRelay, or invent authority because of the hint.
 
+Start with the operator's INTUITION as the immutable success condition. Reason BACKWARDS: identify what must be true for that outcome, recursively identify prerequisites, then express the actual executable dependencies through each node's depends_on keys. The final integration/verification step must depend on its genuine prerequisites. No fictitious test results or accomplishments. Never turn an uncertain hypothesis into an executable verified node. Revise a plan by evidence and preserve the original operator objective.
 Given the purpose, explicit operator goal, active strategic goals and invariants, propose AT LEAST TWO competing candidate Mission Graphs for what JACO should do RIGHT NOW. Do not just propose one plan — propose real alternatives (e.g. two different channels, two different approaches to the same goal, or "extend a proven capability" vs "try something new") so they can be scored against each other instead of picked blind. Ground success_probability and expected_revenue/expected_cost in the historical capability performance above when the candidate reuses an existing capability; if a candidate is genuinely novel (no prior data), say so explicitly rather than inventing a number that looks precise.
 Respond with exactly this JSON shape:
 {
@@ -1632,7 +1633,11 @@ If no new work is needed (system already has enough active work), respond with: 
         strategy_capability: 'aura.strategy',
         execution_capability: 'aura.execution',
         autonomy: 'closed-loop',
-        strategic_goal_id: focusGoal?.id || null,
+        strategic_goal_id: focusGoal?.id || operatorPrimaryGoal?.id || null,
+        intuition_id: onPrimary ? operatorPrimaryGoal?.id || null : focusGoal?.id || null,
+        intuition_statement: onPrimary
+          ? clipGoalStatement(operatorPrimaryGoal?.statement || chosen.goal, 1500)
+          : clipGoalStatement(focusGoal?.statement || chosen.goal, 1500),
         tool_hint: onPrimary ? operatorPrimaryGoal?.tool_hint || null : null,
         rationale: chosen.rationale || null,
         reversible: chosen.reversible !== false,
