@@ -98,8 +98,8 @@ export function overlaySource(language = 'en') {
 // Keeps one connection to the tab Aura works in, draws the overlay there, and turns the operator's actions in it into
 // runtime calls: chat steers the running mission (it does not end it) and gets an answer, Stop cancels the mission.
 export function createAuraOverlay({ CDPSession, runtimeUrl = 'http://127.0.0.1:3000', fetchImpl = fetch, language = () => 'en', missionId = () => null, log = () => {} }) {
-  let tabId = null, session = null, contextId = null, mainFrame = null;
-  const reset = () => { try { session?.close(); } catch {} tabId = null; session = null; contextId = null; mainFrame = null; };
+  let tabId = null, session = null, contextId = null, mainFrame = null, activeUntil = 0;
+  const reset = () => { try { session?.close(); } catch {} tabId = null; session = null; contextId = null; mainFrame = null; activeUntil = 0; };
   const runtime = (path, body) => fetchImpl(runtimeUrl + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) }).then(r => r.json()).catch(error => ({ success: false, error: String(error?.message || error) }));
   async function evaluateUi(expression) {
     if (!session || !contextId) return;
@@ -133,13 +133,26 @@ export function createAuraOverlay({ CDPSession, runtimeUrl = 'http://127.0.0.1:3
     session = next; tabId = tab.id;
     next.ws.addEventListener?.('close', () => { if (session === next) reset(); });
     next.on('Runtime.executionContextCreated', ({ context }) => {
-      if (context?.name === OVERLAY_WORLD && (!mainFrame || context.auxData?.frameId === mainFrame)) contextId = context.id;
+      if (session !== next) return;
+      if (context?.name === OVERLAY_WORLD && (!mainFrame || context.auxData?.frameId === mainFrame)) {
+        contextId = context.id;
+        // Navigation creates a new isolated world: restore the active blue edge,
+        // never a guessed pointer position. Only real input coordinates move it.
+        if (Date.now() < activeUntil) evaluateUi('window.__jacoAuraUi && window.__jacoAuraUi.working()');
+      }
     });
+    next.on('Runtime.executionContextsCleared', () => { if (session === next) contextId = null; });
+    next.on('Page.frameNavigated', ({frame}) => { if (session === next && frame && !frame.parentId) mainFrame = frame.id; });
     next.on('Runtime.bindingCalled', ({ name, payload, executionContextId }) => {
-      if (name === OVERLAY_BINDING && executionContextId === contextId) onMessage(payload).catch(error => log('overlay', String(error?.message || error)));
+      if (session === next && name === OVERLAY_BINDING && executionContextId === contextId) onMessage(payload).catch(error => log('overlay', String(error?.message || error)));
     });
     try {
       mainFrame = (await next.send('Page.getFrameTree')).frameTree?.frame?.id || null;
+      next.on('Page.loadEventFired', () => {
+        if (session === next && Date.now() < activeUntil)
+          evaluateUi('window.__jacoAuraUi && window.__jacoAuraUi.working()');
+      });
+      await next.send('Page.enable');
       await next.send('Runtime.enable');
       await next.send('Runtime.addBinding', { name: OVERLAY_BINDING, executionContextName: OVERLAY_WORLD });
       await next.send('Page.addScriptToEvaluateOnNewDocument', { source: overlaySource(language()), worldName: OVERLAY_WORLD, runImmediately: true });
@@ -154,8 +167,15 @@ export function createAuraOverlay({ CDPSession, runtimeUrl = 'http://127.0.0.1:3
   }
   return {
     attach,
-    point: (x, y, click = false) => evaluateUi(`window.__jacoAuraUi && window.__jacoAuraUi.point(${Number(x) || 0}, ${Number(y) || 0}, ${click ? 'true' : 'false'})`),
-    working: words => evaluateUi(`window.__jacoAuraUi && window.__jacoAuraUi.working(${JSON.stringify(String(words || '').slice(0, 120))})`),
+    point: (x, y, click = false) => {
+      if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return;
+      activeUntil = Date.now() + 20000;
+      return evaluateUi(`window.__jacoAuraUi && window.__jacoAuraUi.point(${Number(x)}, ${Number(y)}, ${click ? 'true' : 'false'})`);
+    },
+    working: words => {
+      activeUntil = Date.now() + 20000;
+      return evaluateUi(`window.__jacoAuraUi && window.__jacoAuraUi.working(${JSON.stringify(String(words || '').slice(0, 120))})`);
+    },
     close: reset,
   };
 }

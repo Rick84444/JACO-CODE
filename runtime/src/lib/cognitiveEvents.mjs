@@ -2,9 +2,9 @@
 // Only whitelisted fields enter the conversation; raw tool payloads stay in runtime.
 export function safeCognitiveText(value, max = 600, secrets = []) {
   if (typeof value !== 'string') return '';
-  let safe = value;
+  let safe = value.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
   for (const secret of secrets) if (typeof secret === 'string' && secret.length >= 6) safe = safe.split(secret).join('[REDACTED]');
-  return safe.replace(/\b(?:wps_|ghp_|github_pat_|sk-)[A-Za-z0-9_-]+/g, '[REDACTED]')
+  return safe.replace(/\b(?:wps_|gh[pousr]_|github_pat_|sk-|hf_)[A-Za-z0-9_-]+|\bAIza[0-9A-Za-z_-]{35}/g, '[REDACTED]')
     .replace(/\bBearer\s+[^\s,;"']+/gi, 'Bearer [REDACTED]')
     .replace(/\b(password|secret|token|api[_-]?key|authorization)\s*[:=]\s*["']?[^\s,"'}]+/gi, '$1=[REDACTED]')
     .slice(0, max);
@@ -174,10 +174,26 @@ export function toCognitiveEvent(raw, { durable = false, missionGoal = null, sec
   // The step number gives the operator a sense of progress: what is being done now, and how far in the mission is.
   const stepNo = /:turn:(\d+)$/.exec(String(action.id || action.actionId || payload.actionId || ''))?.[1];
   if (text && stepNo && (type === 'NOVA_ACTION_STARTED' || type === 'NOVA_ACTION_RESULT')) text = `${sv ? 'Steg' : 'Step'} ${stepNo}: ${text}`;
+  if (!text && type.startsWith('terminal.')) text = type === 'terminal.output' ? 'Terminal output received' : 'Terminal command update';
   if (!text) return null;
   const seq = Number.isSafeInteger(raw.seq) && raw.seq > 0 ? raw.seq : null;
   const rawId = typeof raw.id === 'string' ? raw.id : null;
   if (!seq && !rawId) return null;
+  const terminalTool = action.type || payload.type;
+  const terminalEvent = ['shell','repo-test','run-tests'].includes(terminalTool) || type.startsWith('terminal.');
+  const input = action.data || action.input || payload.input || {};
+  const command = clean(payload.command || input.command, 2000);
+  const output = result.output ?? result.stdout;
+  const terminal = terminalEvent ? {
+    phase: type === 'NOVA_ACTION_STARTED' || type === 'terminal.command.started' ? 'started'
+      : type === 'terminal.output' ? 'output' : 'finished',
+    command: (command + (Array.isArray(input.args) ? ' ' + input.args.slice(0,32).map(v=>clean(String(v),300)).join(' ') : '')).slice(0,2000),
+    stdout: typeof output === 'string' ? clean(output, 8000) : '',
+    stderr: typeof result.stderr === 'string' ? clean(result.stderr, 4000) : '',
+    exitCode: Number.isInteger(result.exitCode) ? result.exitCode : null,
+    truncated: result.truncated === true || (typeof output === 'string' && output.length > 8000) ||
+      (typeof result.stderr === 'string' && result.stderr.length > 4000),
+  } : null;
   const event = {
     id: durable && seq ? 'mission:' + seq : 'live:' + rawId,
     at, type, category, title, text, durable,
@@ -194,6 +210,7 @@ export function toCognitiveEvent(raw, { durable = false, missionGoal = null, sec
       /^[a-z0-9][a-z0-9_.:-]{0,95}$/i.test(action.type || payload.type)
       ? clean(action.type || payload.type, 96) : null,
     evidence,
+    ...(terminal ? {terminal} : {}),
   };
   // Configuration secrets may not follow a token prefix. Apply them to every displayed field.
   for (const key of ['text','missionGoal','missionId','actionId']) if (event[key]) event[key] = clean(event[key], 1000);
@@ -211,7 +228,7 @@ export function mergeCognitiveEvents(previous, incoming, limit = 400) {
   for (const event of events.values()) {
       const key = event.actionId ? [event.missionId, event.type, event.actionId].join(':') : event.id;
       const existing = actions.get(key);
-      if (!existing || (!existing.durable && event.durable)) actions.set(key,event);
+      if (!existing || (!existing.durable && event.durable) || (event.type === 'terminal.output' && !existing.durable && Date.parse(event.at) >= Date.parse(existing.at))) actions.set(key,event);
   }
   return [...actions.values()].sort((a,b) => Date.parse(a.at) - Date.parse(b.at) || (a.seq && b.seq ? a.seq-b.seq : String(a.id).localeCompare(String(b.id)))).slice(-limit);
 }

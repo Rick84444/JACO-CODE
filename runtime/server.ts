@@ -1007,8 +1007,20 @@ const notifyPhone = async (action) => {
       const child = spawn(executable, args, { cwd: projectRoot.get(), shell: false, windowsHide: true, timeout: timeoutMs });
       
       let outputMessage = "";
-      child.stdout.on('data', (data) => outputMessage += data.toString());
-      child.stderr.on('data', (data) => outputMessage += data.toString());
+      seerLiveWorkstream.record({actor:'Aura Terminal',type:'terminal.command.started',
+        message:'Terminal command started',verified:false,receipt:{actionId:action.id,command:action.command || [executable,...args].join(' ')}});
+      let lastOutputAt = 0, outputTruncated = false;
+      const streamOutput = (data: Buffer) => {
+        const incoming = data.toString();
+        if (outputMessage.length + incoming.length > 12000) outputTruncated = true;
+        outputMessage = (outputMessage + incoming).slice(-12000);
+        if (Date.now() - lastOutputAt < 250) return;
+        lastOutputAt = Date.now();
+        seerLiveWorkstream.record({actor:'Aura Terminal',type:'terminal.output',message:'Terminal output received',verified:false,
+          receipt:{actionId:action.id,command:action.command || [executable,...args].join(' '),result:{output:outputMessage,truncated:outputTruncated}}});
+      };
+      child.stdout.on('data', streamOutput);
+      child.stderr.on('data', streamOutput);
       
       child.on('close', (code) => {
         const durationMs = Date.now() - startTime;
@@ -1024,11 +1036,11 @@ const notifyPhone = async (action) => {
         if (code !== 0) {
           pushLog("error", (outputMessage || `Exited with code ${code}`), "terminal-exec", evidence);
           action.status = "failed";
-          action.result = { success: false, output: outputMessage || `Exited with code ${code}` };
+          action.result = { success: false, exitCode: code, truncated: outputTruncated, output: outputMessage || `Exited with code ${code}` };
         } else {
           pushLog("info", outputMessage || `Command completed with exit code 0 (${durationMs}ms)`, "terminal-exec", evidence);
           action.status = "executed";
-          action.result = { success: true, output: outputMessage || "Command completed with no output." };
+          action.result = { success: true, exitCode: code, truncated: outputTruncated, output: outputMessage || "Command completed with no output." };
         }
         resolve();
       });

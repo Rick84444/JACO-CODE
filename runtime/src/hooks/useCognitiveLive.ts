@@ -5,6 +5,7 @@ export interface CognitiveEvent {
   id:string; at:string; type:string; category:string; title:string; text:string;
   durable:boolean; seq:number|null; missionId:string|null; missionGoal:string|null; actionId:string|null; planId?:string|null;
   toolType?:string|null; nodeKey?:string|null;
+  terminal?:{phase:string;command:string;stdout:string;stderr:string;exitCode:number|null;truncated:boolean};
   evidence:{outcome:string;path:string|null;url:string|null;commit:string|null;exitCode:number|null;error:string|null};
 }
 
