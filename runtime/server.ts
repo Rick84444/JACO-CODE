@@ -1846,7 +1846,9 @@ const notifyPhone = async (action) => {
           : status === 'AWAITING_VERIFICATION'
             ? 'JACO proposes that the mission is complete, but no step has a verified receipt. It cannot be confirmed. Let JACO try again or end the mission.'
           : pendingAction
-            ? `JACO wants approval for one action: ${pendingAction.reason}. Continue approves exactly that action, once.`
+            ? String(pendingAction.reason).startsWith('spend:')
+              ? `Aura requests explicit consent for ONE outgoing financial action: ${pendingAction.reason.slice(6)}. Resume approves only this exact pending action. No later payment is authorized.`
+              : `JACO wants approval for one action: ${pendingAction.reason}. Continue approves exactly that action, once.`
           : uncertain
             ? 'It is uncertain whether the latest change was carried out. Check what happened before you choose to continue.'
             : 'The mission has stopped. Check the cause and choose whether JACO should continue or end it.',
@@ -2946,7 +2948,13 @@ const notifyPhone = async (action) => {
         } else throw new Error('INVALID_JOB_DECISION');
       } else if (kind === 'mission') {
         if (!['resume','cancel','confirm'].includes(decision)) throw new Error('INVALID_MISSION_DECISION');
-        connectedRuntime.novaMissions.resolve(id, { decision, note, authority: 'operator' });
+        // A checked confirmation in the canonical Approval Center authorizes
+        // the exact pending spend action. The client cannot grant this by
+        // writing a magic string or a flag in the request body.
+        const waiting = connectedRuntime.novaMissions.pendingOperatorAction(id);
+        const approvedSpend = decision === 'resume' && Boolean(confirmation) &&
+          String(waiting?.reason || '').startsWith('spend:');
+        connectedRuntime.novaMissions.resolve(id, { decision, note, authority: 'operator', approvedSpend });
       } else if (kind === 'mcp-source') {
         if (decision === 'approve') {
           auraMcpSources.promote(id, 'Aura Approval Center');
