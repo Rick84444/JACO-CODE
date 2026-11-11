@@ -4,8 +4,8 @@
 //   - LiteRT-LM (typically Android/Termux) is preferred when a healthy local
 //     OpenAI-compatible server is available.
 //   - Ollama is the deterministic desktop/local fallback.
-//   - Paid providers are not enabled here; seer.mjs still requires the
-//     existing explicit JACO_ALLOW_PAID_MODELS=1 gate.
+//   - Unified Aura delegates paid inference admission to Core's canonical
+//     economic governor. Legacy standalone mode retains its explicit opt-in.
 //   - Aura owns the model choice: resolveAuraPlanner/invokeAuraPlanner below let SEER plan with
 //     the model the operator picked in Aura, a paid one under the runtime's Continuum ceiling.
 //
@@ -158,7 +158,8 @@ export async function invokeSeerProvider(provider, args, {
     return null;
   };
   // paidAuthorized: the call is already bounded by a Continuum reservation (invokeAuraPlanner).
-  if (remote && (env.JACO_ALLOW_PAID_MODELS === '0' || (!paidAuthorized && env.JACO_ALLOW_PAID_MODELS !== '1'))) return fail('PAID_PROVIDER_DISABLED');
+  const coreManaged = paidAuthorized && env.JACO_AURA_UNIFIED_RUNTIME === '1';
+  if (remote && !coreManaged && (env.JACO_ALLOW_PAID_MODELS === '0' || (!paidAuthorized && env.JACO_ALLOW_PAID_MODELS !== '1'))) return fail('PAID_PROVIDER_DISABLED');
   const key = provider.envKey ? env[provider.envKey] : null;
   if (provider.envKey && !key) return fail('PROVIDER_KEY_MISSING');
   const timeout = seerProviderTimeoutMs({ env, remote, purpose });
@@ -269,7 +270,7 @@ export async function resolveAuraPlanner({
 
 // A paid Aura choice is reserved in the runtime's Continuum economic governor before the call and settled
 // with the real usage after it: the same hard daily ceiling Nova's paid calls use. A refused reservation
-// (ceiling reached) or any failure returns null, and SEER continues with its local chain.
+// (ceiling reached) or any failure returns null; unified Aura never falls back to a local model.
 export async function invokeAuraPlanner(provider, args, {
   env = process.env, fetchFn = globalThis.fetch, runtimeUrl, token = '', onFailure = () => {},
   credentialFn = credential, budgetedCall = budgetedNovaOllamaCall, purpose = 'inference',
@@ -282,10 +283,12 @@ export async function invokeAuraPlanner(provider, args, {
   if (OLLAMA_CLOUD_RELAY.test(String(provider.model || ''))) return fail('OLLAMA_CLOUD_RELAY_NOT_RESERVABLE');
   if (!seerModelEndpointAllowed(provider.url, Boolean(provider.local))) return fail('PROVIDER_ENDPOINT_UNTRUSTED');
   if (provider.local) return invokeSeerProvider({ ...provider, envKey: null, local: true }, args, { env, fetchFn, purpose, onFailure });
-  // SEER never promotes a GUI choice into implicit spend authorization.
-  // The operator must explicitly enable paid inference; Continuum still
-  // enforces the pre-existing per-call, daily and monthly reservation caps.
-  if (env.JACO_ALLOW_PAID_MODELS !== '1') return fail('PAID_PROVIDER_DISABLED');
+  // Core owns paid-inference admission for the unified Aura runtime. A worker's
+  // stale startup environment must not veto the operator's current model choice.
+  // budgetedCall below still reserves with Core before sending anything upstream;
+  // denial, missing pricing, budget limits and unknown outcomes remain fail-closed.
+  // Standalone legacy planners keep their independent explicit opt-in.
+  if (env.JACO_AURA_UNIFIED_RUNTIME !== '1' && env.JACO_ALLOW_PAID_MODELS !== '1') return fail('PAID_PROVIDER_DISABLED');
   // Authentication is separate from locality: a connected HTTPS server registered without a credential
   // requirement is called without a key, under the same paid gate and Continuum reservation.
   const key = provider.envKey ? credentialFn(provider.envKey, { env }) : '';
