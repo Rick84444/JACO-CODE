@@ -601,10 +601,11 @@ export class NovaMissionControl {
       const taskHash = `${checked.type}:${hashTaskInput(checked.data)}`;
       const gate = this.db.prepare('SELECT * FROM nova_action_gate WHERE mission_id=?').get(id);
       if (!gate?.approved_at || gate.task_hash !== taskHash) {
-        this.db.prepare('INSERT OR REPLACE INTO nova_action_gate(mission_id,task_hash,reason,requested_at,approved_at,note) VALUES(?,?,?,?,NULL,NULL)').run(id, taskHash, harmful.reason, iso());
+        const duplicate = gate?.task_hash === taskHash && !gate.approved_at;
+        if (!duplicate) this.db.prepare('INSERT OR REPLACE INTO nova_action_gate(mission_id,task_hash,reason,requested_at,approved_at,note) VALUES(?,?,?,?,NULL,NULL)').run(id, taskHash, harmful.reason, iso());
         this.db.prepare("UPDATE nova_sessions SET phase='BLOCKED',owner=NULL,token=NULL,lease_until=NULL WHERE mission_id=?").run(id);
         this.setStatus(id, 'BLOCKED');
-        this.bus.event('NOVA_OPERATOR_APPROVAL_REQUIRED', { missionId: id, payload: { error: `OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`, reason: harmful.reason, task: { type: checked.type, data: compactTaskInput(checked.data) } } });
+        if (!duplicate) this.bus.event('NOVA_OPERATOR_APPROVAL_REQUIRED', { missionId: id, payload: { error: `OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`, reason: harmful.reason, task: { type: checked.type, data: compactTaskInput(checked.data) } } });
         return new CommittedFailure(new Error(`OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`));
       }
       // Approval covers exactly the action the operator was shown, once.
@@ -771,6 +772,9 @@ export class NovaMissionControl {
     if (decision === 'confirm' && !mission.receipts.some(r => r.ok && r.verified)) throw new Error('VERIFIED_RECEIPT_REQUIRED');
 
     this.recoverExpired();
+    // Delivery retries of the same resume must not renew a grant, reset budgets,
+    // or interrupt an already running mission. A later genuine block is a new decision.
+    if (decision === 'resume' && this.get(id).status === 'ACTIVE') return this.get(id);
     const row = this.db.prepare('SELECT token FROM nova_sessions WHERE mission_id=?').get(id);
     if (row.token) throw new Error('MISSION_BUSY');
     // Only an explicit operator note can approve one outgoing-spend action; automated
@@ -798,8 +802,8 @@ export class NovaMissionControl {
 
   // The action a blocked mission is waiting for the operator to approve, if any.
   pendingOperatorAction(id) {
-    const gate = this.db.prepare('SELECT reason,requested_at FROM nova_action_gate WHERE mission_id=? AND approved_at IS NULL').get(id);
-    return gate ? { reason: gate.reason, requestedAt: gate.requested_at } : null;
+    const gate = this.db.prepare('SELECT task_hash,reason,requested_at FROM nova_action_gate WHERE mission_id=? AND approved_at IS NULL').get(id);
+    return gate ? { id: `${id}:${gate.task_hash}:${gate.requested_at}`, reason: gate.reason, requestedAt: gate.requested_at } : null;
   }
 
   setStatus(id, status) { this.db.prepare('UPDATE missions SET status=?,updated_at=? WHERE id=?').run(status, iso(), id); }
