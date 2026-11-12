@@ -130,3 +130,12 @@ test('duplicate independent-model verdict IDs are not counted as two independent
   ]}),[0,1]);
   assert.equal(contradictory[0].verdict,'contradicted','a repeated contradiction must not be downgraded');
 });
+
+test('the local judge URL is built once whether or not OLLAMA_BASE_URL already ends in /v1', async () => {
+  const { judgeCandidates } = await import('../../agents/lib/claim-check.mjs');
+  const local = env => judgeCandidates(env).find(j => j.name === 'ollama').url;
+  // The local stack exports the /v1 root; that used to become /v1/v1/chat/completions (HTTP 404).
+  assert.equal(local({ OLLAMA_BASE_URL: 'http://127.0.0.1:11434/v1' }), 'http://127.0.0.1:11434/v1/chat/completions');
+  assert.equal(local({ OLLAMA_BASE_URL: 'http://127.0.0.1:11434' }), 'http://127.0.0.1:11434/v1/chat/completions');
+  assert.equal(local({}), 'http://127.0.0.1:11434/v1/chat/completions');
+});

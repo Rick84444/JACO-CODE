@@ -7,6 +7,7 @@
 // A fact found in no receipt, or a claim the judge finds contradicted, stops auto-approval; the
 // operator sees which claim and why. A claim resting on a cut receipt is reported as partial.
 import { citedSteps } from './evidence.mjs';
+import { openAiChatCompletionsUrl } from './planner-choice.mjs';
 
 const stepOf = receipt => Number(/:turn:(\d+)$/.exec(String(receipt?.actionId || ''))?.[1]) || null;
 // Models write typographic hyphens and markdown; receipts are plain.
@@ -165,7 +166,7 @@ export function judgeCandidates(env = process.env, { exclude = [] } = {}) {
   const list = [];
   if (env.GROQ_API_KEY) list.push({ name: 'groq', model: env.JACO_CLAIM_JUDGE_GROQ_MODEL || 'openai/gpt-oss-120b', url: 'https://api.groq.com/openai/v1/chat/completions', key: env.GROQ_API_KEY });
   if (env.OLLAMA_API_KEY) list.push({ name: 'ollama-cloud', model: env.JACO_CLAIM_JUDGE_OLLAMA_CLOUD_MODEL || 'gemma4:31b', url: `${env.OLLAMA_CLOUD_URL || 'https://ollama.com'}/v1/chat/completions`, key: env.OLLAMA_API_KEY });
-  list.push({ name: 'ollama', model: env.JACO_CLAIM_JUDGE_OLLAMA_MODEL || env.JACO_OLLAMA_LOCAL_MODEL || 'gemma3:4b', url: `${env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434'}/v1/chat/completions`, key: 'ollama' });
+  list.push({ name: 'ollama', model: env.JACO_CLAIM_JUDGE_OLLAMA_MODEL || env.JACO_OLLAMA_LOCAL_MODEL || 'gemma3:4b', url: openAiChatCompletionsUrl(env.OLLAMA_BASE_URL, 'http://127.0.0.1:11434'), key: 'ollama' });
   const excluded = new Set(exclude.map(e => modelIdentity(String(e).slice(String(e).indexOf('/') + 1))));
   return list.filter(j => !exclude.includes(`${j.name}/${j.model}`) && !excluded.has(modelIdentity(j.model)));
 }
