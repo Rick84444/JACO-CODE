@@ -165,11 +165,11 @@ export async function captureSession(session) {
   return {ok:true,observed:true,mimeType:'image/png',...result};
 }
 
-async function withTab(fn, { input = false, missionOrigin = null } = {}) {
+async function withTab(fn, { input = false, active = false, missionOrigin = null } = {}) {
   const tab = await getActiveTab();
   // Draw Aura's window overlay in the tab she works in (kept on its own connection; decoration, never blocking).
   await overlay.attach(tab).catch(() => {});
-  if (input) overlay.working().catch(() => {});
+  if (input || active) await overlay.working().catch(() => {});
   const session = new CDPSession(tab.webSocketDebuggerUrl);
   await session.ready();
   try {
@@ -419,7 +419,7 @@ const inputActions = createInputActions({
 });
 export const actSession = inputActions.actSession;
 export const axSession = inputActions.axSession;
-async function navigate(url,settleMs) { return withTab(s=>navigateSession(s,url,settleMs)); }
+async function navigate(url,settleMs) { return withTab(s=>navigateSession(s,url,settleMs), {active:true}); }
 async function observe() { return withTab(observeSession); }
 async function survey(label) {
   const data=await observe();
@@ -538,6 +538,8 @@ export const server = createServer(async (req, res) => {
         if (!r.ok) throw new Error('CDP_NEW_TAB_FAILED_' + r.status);
         const created = await r.json();
         ownedTabs.add(created.id); novaTabId = created.id;
+        // Install the existing overlay immediately, rather than waiting for a click.
+        await withTab(async session => { await session.send('Page.bringToFront'); }, {active:true}).catch(() => {});
         return { ok: true, verified: true, tab: { id: created.id, url: created.url, current: true } };
       }));
     }

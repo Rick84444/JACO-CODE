@@ -83,3 +83,20 @@ test('a call from the page itself (another context or another binding) is ignore
   await settle();
   assert.deepEqual(rt.calls, []);
 });
+
+test('navigation restores the active edge in the new isolated world, without guessing cursor coordinates',async()=>{
+  const cdp=fakeCdp(),rt=fakeRuntime();
+  const overlay=createAuraOverlay({CDPSession:cdp.Session,fetchImpl:rt.fetchImpl});
+  await overlay.attach({id:'t1',webSocketDebuggerUrl:'ws://x'});
+  await overlay.working();
+  const before=cdp.sent.length;
+  cdp.fire('Runtime.executionContextCreated',{context:{id:9,name:OVERLAY_WORLD,auxData:{frameId:'main'}}});
+  cdp.fire('Page.loadEventFired',{});
+  await settle();
+  const restored=cdp.sent.slice(before).filter(c=>c.method==='Runtime.evaluate');
+  assert.ok(restored.some(c=>c.params.contextId===9&&c.params.expression.includes('.working()')));
+  assert.ok(restored.every(c=>!c.params.expression.includes('.point(')));
+  await overlay.point(120,85,true);
+  assert.ok(cdp.sent.at(-1).params.expression.includes('.point(120, 85, true)'));
+  const n=cdp.sent.length;await overlay.point(NaN,Infinity);assert.equal(cdp.sent.length,n);
+});

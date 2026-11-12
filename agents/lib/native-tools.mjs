@@ -53,7 +53,7 @@ export function searchDeferredTools(deferred, query, active = new Set(), limit =
 
 // One plain sentence for the operator, written by the model with each call: what it is doing and why. Gemini returns tool
 // calls without any text, so the sentence has to be a parameter to be reliable.
-const SAY = { type: 'string', description: 'Plain words for the operator, in their language, no tool names or jargon. On your FIRST call: your plan in two or three short sentences (what you will do, in what order, and what the end result will be). On later calls: one sentence on what you are doing now and why.' };
+const SAY = { type: 'string', description: 'Plain words for the operator, in their language, no tool names or jargon. On your FIRST call: your plan in two or three short sentences (what you will do, in what order, and what the end result will be). On later calls: one sentence on what you are doing now and why. Describe a brief decision summary, not private chain of thought. Never claim a test passed or an action succeeded before its receipt.' };
 // What the last result showed. Together with SAY it makes the chat read like a colleague talking, not a command log.
 const LEARNED = { type: 'string', description: 'One short sentence: what the previous result showed and how it changes your plan. Leave empty on the first call or when nothing notable came back.' };
 

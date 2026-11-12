@@ -7,6 +7,7 @@ import { cognitiveLink } from '../lib/cognitiveEvents.mjs';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { AuraPresence, type AuraPresenceView } from './AuraPresence';
 import { CapturedPage, type CapturedPageData } from './CapturedPage';
+import { AuraTerminal } from './AuraTerminal';
 import { AuraLiveToolSurfaces } from './AuraLiveToolSurfaces';
 import { useUiLanguage } from '../i18n/UiLanguage';
 
@@ -167,7 +168,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, liveConnecti
   const material = candidate?.material;
   const url = event ? cognitiveLink(event.evidence.url) : null;
   return <div className="aura-live-stage" data-testid="aura-live-stage">
-    <AuraPresence data={presence} language={language}/>
+    <div className="aura-live-stage-main"><AuraPresence data={presence} language={language}/>
     <section className="aura-activity" aria-label={tr('Vad Aura gör','What Aura is doing')} data-testid="aura-activity">
       <header>
         <span className="aura-activity-pulse" data-active={activityState === 'working'} data-state={activityState} aria-hidden="true"/>
@@ -278,5 +279,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, liveConnecti
         </button>)}
       </div>
     </details>}
+    </div>
+    <AuraTerminal events={events} missionId={activeMission?.id || null} connection={liveConnection}/>
   </div>;
 }

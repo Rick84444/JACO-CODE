@@ -61,9 +61,9 @@ test('a monthly budget blocker is explained to a person instead of dumped as an 
   assert.doesNotMatch(event.text,/PLANNER_BLOCKED|AURA_SELECTED_MODEL_UNAVAILABLE/);
 });
 
-test('raw arguments, credentials and untrusted result URLs stay out of the live contract',()=>{
+test('nonterminal raw payloads, credentials and untrusted result URLs stay out of the live contract',()=>{
   const secret='private-random-value';
-  const event=toCognitiveEvent(action({ok:false,error:'password=hunter2 Bearer confidential ghp_123456 '+secret,data:{apiKey:'do-not-copy'},result:{url:'javascript:alert(1)',output:'raw-private-output'}}),{secrets:[secret]});
+  const event=toCognitiveEvent(action({type:'repo-read',ok:false,error:'password=hunter2 Bearer confidential ghp_123456 '+secret,data:{apiKey:'do-not-copy'},result:{url:'javascript:alert(1)',output:'raw-private-output'}}),{secrets:[secret]});
   const text=JSON.stringify(event);
   for(const privateValue of ['hunter2','confidential','ghp_123456',secret,'do-not-copy','raw-private-output'])assert.equal(text.includes(privateValue),false);
   assert.equal(event.evidence.url,null);

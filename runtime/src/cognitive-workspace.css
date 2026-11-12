@@ -779,3 +779,19 @@
 
 .aura-live-tool-plan{font-size:10px;color:#a9d9f0;border-top:1px solid #3c4044;margin-top:5px;padding:8px 2px 3px;text-align:left;width:100%}
 .aura-live-tool-plan:hover{color:#e4f6ff;text-decoration:underline}
+
+/* Keep the actual terminal visible while the browser/code material scrolls above it. */
+.aura-live-stage{overflow:hidden}
+.aura-live-stage-main{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}
+.aura-terminal{flex-shrink:0;border-top:1px solid #42515e;background:#111820;max-height:38%;color:#dce8f1}
+.aura-terminal>header{display:flex;gap:12px;align-items:center;padding:7px 12px;font-size:10px;border-bottom:1px solid #2d3944}
+.aura-terminal>header>span{flex:1;color:#a9b8c7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aura-terminal button{display:inline-flex;align-items:center;gap:6px;min-height:28px}
+.aura-terminal button[aria-pressed=true]{color:#8bd3f5}
+.aura-terminal-output{overflow:auto;max-height:180px;min-height:72px;padding:8px 12px;font:11px/1.55 ui-monospace,Consolas,monospace;overscroll-behavior:contain}
+.aura-terminal-output article{padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #28333c}
+.aura-terminal-output pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}
+.aura-terminal-command{color:#8bd3f5}.aura-terminal-stderr{color:#f0b6a7}
+.aura-terminal-output small{color:#96a6b5;font:10px/1.6 system-ui}.aura-terminal-output p{margin:3px 0;color:#96a6b5}
+@media(max-width:700px){.aura-terminal-output{max-height:130px}.aura-terminal>header>span{display:none}}
+.aura-terminal{display:flex;flex-direction:column;overflow:hidden}.aura-terminal>header{flex-shrink:0}.aura-terminal-output{flex:1;min-height:0}
