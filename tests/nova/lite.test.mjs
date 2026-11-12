@@ -102,7 +102,7 @@ test('builder: stages dist without maps, adds launcher and license, scans for se
   const deps = Object.fromEntries(LITE_DEPENDENCIES.map(n => [n, '^1.0.0']));
   fs.writeFileSync(path.join(runtime, 'package.json'), JSON.stringify({ version: '9.9.9', dependencies: deps }));
   fs.mkdirSync(path.join(repo, 'lite'));
-  for (const f of ['start.mjs', 'START.cmd', 'start.sh', 'START-ANDROID.sh', 'README.md', 'connect.html', 'connect.js', 'connect.css']) fs.writeFileSync(path.join(repo, 'lite', f), `// ${f}\n`);
+  for (const f of ['start.mjs', 'START.cmd', 'start.sh', 'START-ANDROID.sh', 'START-PIXEL-TERMINAL.sh', 'README.md', 'connect.html', 'connect.js', 'connect.css']) fs.writeFileSync(path.join(repo, 'lite', f), `// ${f}\n`);
   fs.writeFileSync(path.join(repo, 'LICENSE'), 'MIT');
   const install = stage => { fs.mkdirSync(path.join(stage, 'node_modules', '.bin'), { recursive: true }); fs.writeFileSync(path.join(stage, 'node_modules', 'express.js'), 'x'); fs.writeFileSync(path.join(stage, 'node_modules', '.bin', 'shim.cmd'), 'x'); fs.mkdirSync(path.join(stage, 'node_modules', '@img'), { recursive: true }); fs.writeFileSync(path.join(stage, 'node_modules', '@img', 'sharp.node'), 'x'); };
   const bundleNova = async outfile => fs.writeFileSync(outfile, '// nova');
@@ -111,11 +111,12 @@ test('builder: stages dist without maps, adds launcher and license, scans for se
   const entries = readZip(fs.readFileSync(r.zipPath));
   const names = entries.map(e => e.name);
   assert.equal(r.name, 'jaco-lite-9.9.9');
-  for (const n of ['start.mjs', 'START.cmd', 'start.sh', 'START-ANDROID.sh', 'README.md', 'LICENSE', 'package.json', 'dist/server.cjs', 'dist/index.html', 'dist/assets/a.js', 'dist/nova.mjs', 'dist/voice-link.mjs', 'node_modules/express.js']) assert.ok(names.includes(`jaco-lite-9.9.9/${n}`), n);
+  for (const n of ['start.mjs', 'START.cmd', 'start.sh', 'START-ANDROID.sh', 'START-PIXEL-TERMINAL.sh', 'README.md', 'LICENSE', 'package.json', 'dist/server.cjs', 'dist/index.html', 'dist/assets/a.js', 'dist/nova.mjs', 'dist/voice-link.mjs', 'node_modules/express.js']) assert.ok(names.includes(`jaco-lite-9.9.9/${n}`), n);
   assert.equal(names.some(n => n.endsWith('.map') || n.includes('.bin')), false);
   assert.equal(names.some(n => n.includes('node_modules/@img')), false, 'the 28 MB of image binaries stay out');
   assert.equal(entries.find(e => e.name.endsWith('/start.sh')).mode, 0o755);
   assert.equal(entries.find(e => e.name.endsWith('/START-ANDROID.sh')).mode, 0o755);
+  assert.equal(entries.find(e => e.name.endsWith('/START-PIXEL-TERMINAL.sh')).mode, 0o755);
   assert.deepEqual(JSON.parse(entries.find(e => e.name.endsWith('/package.json')).data).scripts, { start: 'node start.mjs' });
   assert.equal(fs.readFileSync(`${r.zipPath}.sha256`, 'utf8').split(' ')[0], r.sha256);
   const release = JSON.parse(entries.find(e => e.name.endsWith('/release.json')).data);
@@ -126,13 +127,14 @@ test('builder: stages dist without maps, adds launcher and license, scans for se
   const win = readZip(fs.readFileSync(r.platforms.windows.zipPath)), droid = readZip(fs.readFileSync(r.platforms.android.zipPath));
   const has = (entries, top, rel) => entries.some(e => e.name === `${top}/${rel}`);
   assert.ok(has(win, 'jaco-lite-windows-9.9.9', 'START.cmd') && has(win, 'jaco-lite-windows-9.9.9', 'start.mjs'));
-  assert.ok(!has(win, 'jaco-lite-windows-9.9.9', 'START-ANDROID.sh') && !has(win, 'jaco-lite-windows-9.9.9', 'start.sh'), 'no Android launchers in the Windows zip');
-  assert.ok(has(droid, 'jaco-lite-android-9.9.9', 'START-ANDROID.sh') && has(droid, 'jaco-lite-android-9.9.9', 'start.sh') && has(droid, 'jaco-lite-android-9.9.9', 'start.mjs'));
+  assert.ok(!has(win, 'jaco-lite-windows-9.9.9', 'START-PIXEL-TERMINAL.sh') && !has(win, 'jaco-lite-windows-9.9.9', 'START-ANDROID.sh') && !has(win, 'jaco-lite-windows-9.9.9', 'start.sh'), 'no Android launchers in the Windows zip');
+  assert.ok(has(droid, 'jaco-lite-android-9.9.9', 'START-PIXEL-TERMINAL.sh') && has(droid, 'jaco-lite-android-9.9.9', 'START-ANDROID.sh') && has(droid, 'jaco-lite-android-9.9.9', 'start.sh') && has(droid, 'jaco-lite-android-9.9.9', 'start.mjs'));
   assert.ok(!has(droid, 'jaco-lite-android-9.9.9', 'START.cmd'), 'no Windows launcher in the Android zip');
   for (const [entries, top] of [[win, 'jaco-lite-windows-9.9.9'], [droid, 'jaco-lite-android-9.9.9']]) {
     for (const rel of ['dist/server.cjs', 'dist/index.html', 'dist/nova.mjs', 'node_modules/express.js', 'LICENSE', 'package.json']) assert.ok(has(entries, top, rel), `${top}/${rel}`);
   }
   assert.equal(droid.find(e => e.name.endsWith('/START-ANDROID.sh')).mode, 0o755);
+  assert.equal(droid.find(e => e.name.endsWith('/START-PIXEL-TERMINAL.sh')).mode, 0o755);
   assert.equal(JSON.parse(win.find(e => e.name.endsWith('/release.json')).data).platform, 'windows');
   assert.equal(JSON.parse(droid.find(e => e.name.endsWith('/release.json')).data).platform, 'android');
   assert.equal(JSON.parse(win.find(e => e.name.endsWith('/release.json')).data).clientSha256, r.clientSha256, 'same build as the universal zip');
