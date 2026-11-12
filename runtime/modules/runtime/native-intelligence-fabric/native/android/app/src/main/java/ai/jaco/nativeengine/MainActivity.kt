@@ -43,7 +43,6 @@ class MainActivity : Activity() {
     private var pendingId = ""
     private var pendingHash = ""
     private var paired = false
-    private var autoPairPending = true
     private val backends = listOf("auto", "npu", "gpu", "cpu")
     private val polling = object : Runnable {
         override fun run() { if (!resumed) return; if (!busy) refresh(); handler.postDelayed(this, 15000) }
@@ -79,16 +78,28 @@ class MainActivity : Activity() {
         message.accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true; visibility = android.view.View.GONE; root.addView(this) }
         button("Uppdatera status") { refresh() }
+        button("Lokal AI · offlinechatt") {
+            startActivity(Intent(this, MobileChatActivity::class.java))
+        }
+        button("Aura på Windows · JACO Link") {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://jacocode.com/link/remote.html")))
+            } catch (_: Exception) {
+                message.text = "Webbläsare saknas. JACO Link kräver en ansluten Windows-Aura."
+            }
+        }
+        label("Lokal AI använder telefonens modell. Aura Remote använder samma uppdrag och minne som Windows via JACO Link när tjänsten är aktiverad.")
+
         label("Arbetsyta", 21f)
         port = field("Lokal JACO-port", preferences.getInt("runtimePort", 3000).toString()).apply { inputType = InputType.TYPE_CLASS_NUMBER }
-        button("Öppna Aura") {
+        button("Öppna lokal Aura (Termux)") {
             val selectedPort = runtimePort() ?: return@button
             preferences.edit().putInt("runtimePort", selectedPort).apply()
             try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://127.0.0.1:$selectedPort"))) }
             catch (_: Exception) { message.setText(R.string.browser_unavailable) }
         }
         button("Anslut till JACO igen") { pair() }
-        label("Samma Aura-historik, projekt, agentplaner, bilagor, MCP och skills som i den lokala arbetsytan. JACO behöver vara startat i Termux.")
+        label("Valfri äldre Termux-anslutning. För Windows-Aura används knappen JACO Link ovan; ingen Termux krävs för lokal AI.")
         label("Lokala modeller", 21f)
         modelList = Spinner(this).apply { contentDescription = "Installerad lokal modell"; root.addView(this) }
         backendList = Spinner(this).apply {
@@ -195,7 +206,6 @@ class MainActivity : Activity() {
                     modelList.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, if (ids.isEmpty()) listOf("Ingen modell installerad") else ids)
                     modelList.setSelection(ids.indexOf(savedModel).coerceAtLeast(0))
                 }
-                if (autoPairPending && resumed) { autoPairPending = false; pair() }
             } }
         }
     }
