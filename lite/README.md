@@ -10,7 +10,7 @@ One command installs JACO Lite, checks the download against its SHA-256, brings 
 # Windows (PowerShell)
 irm https://jacocode.com/install.ps1 | iex
 
-# Linux, and Android in Termux (experimental, not verified on a phone yet)
+# Linux, including the Pixel Debian VM (experimental, not physically verified)
 curl -fsSL https://jacocode.com/install.sh | sh
 ```
 
@@ -38,14 +38,46 @@ node start.mjs ~/my-project    # or a specific project folder
 
 On Windows you can double-click `START.cmd`; on macOS and Linux run `./start.sh`.
 
-### Android / Termux (portable Lite)
-Install Termux and extract the **same JACO Lite ZIP** into Termux-accessible storage. From the extracted folder run:
+### Pixel Terminal (Android Linux, Debian VM) — primary on-phone runtime
 
-```sh
-bash START-ANDROID.sh
-```
+Use the **built-in Pixel Linux Terminal**, based on Android Virtualization Framework (AVF).
+It is a separate Debian VM, **not Termux** and not the Android host shell.
 
-The launcher uses Node.js >=22.5, attempts to install `nodejs-lts` through Termux if needed, runs the identical bundled server and Codex Cognitive Live Workspace and keeps project state in `$HOME/.jaco`. Open the localhost URL printed by the launcher in your Android browser. **This is a Termux distribution, not an APK.** A packaged archive built on another OS is not guaranteed to work on Android until its dependencies and runtime are tested on a real device. Android device/Termux acceptance remains a release gate.
+1. Enable the Linux development environment in Android developer options and open Terminal.
+2. In Debian, install the base tools: `sudo apt update && sudo apt install -y git curl ca-certificates unzip`.
+3. Install Node.js **22.5+** for Linux arm64 and check `node --version` and
+   `node --experimental-sqlite -e 'require("node:sqlite")'`. Debian's packaged
+   Node version might be too old; the launcher intentionally refuses unsupported versions.
+4. Unpack a complete, checksum-verified **JACO Lite Android** release ZIP *inside
+   Debian*. From the extracted folder:
+   ```sh
+   bash START-PIXEL-TERMINAL.sh --check
+   bash START-PIXEL-TERMINAL.sh
+   ```
+5. Copy the **actual URL printed by JACO** into Pixel Chrome. The VM forwards
+   localhost ports to the host browser on supported builds, but this must be
+   observed on the physical Pixel. The JACO server remains bound to VM loopback.
+   The VM cannot access Android app-private storage or the Android-native
+   LiteRT service merely by using `127.0.0.1`.
+
+This creates a **separate JACO Lite instance** in the Debian VM, with its own
+project and local state in `~/jaco-pixel-project`. It does **not** inherit the
+Windows Aura mission IDs or memory. To control the existing Windows Aura, use
+JACO Link through `https://jacocode.com/link/remote.html`, with the existing
+Windows host paired and the service actually deployed. The native Android APK's
+on-device LiteRT model is another local inferencing option and does not require
+the VM. The LiteRT service is **not** automatically reachable from the Debian VM.
+
+**Status:** Source implementation and CI are not physical Pixel acceptance.
+Verify native Node dependencies on Linux arm64, port forwarding, login/model
+access, VM suspend/restart behavior and resource use before describing it as
+installed or operational on a particular device.
+
+### Legacy Android / Termux (not the intended Pixel path)
+
+The old `START-ANDROID.sh` launcher is retained for compatibility with
+existing Termux installations. The Pixel deployment uses
+`START-PIXEL-TERMINAL.sh` instead.
 
 ### Gameboard and simulation
 The `Spelplan` tab in Cognitive Live Workspace reads `/api/aura/workbench/gameboard` and shows stable numeric agent and MCP-tool IDs and, where SEER is connected, observed mission-graph forecasts. The simulation control accepts assumptions for a hypothetical tool chain; it neither invokes a tool nor claims a verified outcome. A Lite install without SEER reports `UNAVAILABLE` for the canonical strategic graph, rather than faking it; the hypothetical scenario simulator remains available. The durable revisioned exchange stores agent `OBSERVATION`, `HYPOTHESIS` and numeric `MOVE_PROPOSAL` entries with optimistic locking. Entries are self-reported, not verified and cannot invoke an executor. JACO Editor MCP exposes `gameboard_status`, `gameboard_events` and `gameboard_simulate` as read-only tools, plus the Workplace-synchronized `gameboard_publish` operation for clients that connect locally. Public ChatGPT access still requires the authenticated remote JacoEdit transport from PR #142 and its secure OAuth/Cloudflare deployment.
