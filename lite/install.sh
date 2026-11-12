@@ -163,7 +163,7 @@ if [ "${DONE_UP_TO_DATE:-0}" != 1 ]; then
   [ -f "$WORK/unpack/$TOP/start.mjs" ] || die "the archive does not look like JACO Lite (no start.mjs). Nothing was installed."
   rm -rf "$DEST.new" "$DEST"
   mv "$WORK/unpack/$TOP" "$DEST.new" && mv "$DEST.new" "$DEST"
-  chmod +x "$DEST/start.sh" "$DEST/START-ANDROID.sh" 2>/dev/null || true
+  chmod +x "$DEST/start.sh" "$DEST/START-ANDROID.sh" "$DEST/START-PIXEL-TERMINAL.sh" 2>/dev/null || true
   PREVIOUS=""
   [ -L "$HOME_DIR/current" ] && PREVIOUS="$(readlink "$HOME_DIR/current")"
   [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "versions/$STAMP" ] && ln -sfn "$PREVIOUS" "$HOME_DIR/previous"
