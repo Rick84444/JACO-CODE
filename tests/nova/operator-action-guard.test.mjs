@@ -133,3 +133,27 @@ test('a blocked mission without pending operator approval can still be resubmitt
   const retry=control.create({...data,idempotencyKey:'failure-second'});
   assert.notEqual(retry.id,first.id);
 });
+
+test('duplicate approval delivery preserves request identity and approved budget across restart', t => {
+  const control = setup(t);
+  const { id } = control.create({ goal: 'clean', idempotencyKey: 'gate-duplicate', allowedTasks: ['shell'] });
+  const task = shell('rm -rf src');
+  assert.throws(() => control.begin(id, { ...leased(control, id), task }), /OPERATOR_APPROVAL_REQUIRED/);
+  const pending = control.pendingOperatorAction(id);
+  control.resolve(id, { decision: 'resume', note: 'auto-resumed: no authority' });
+  assert.throws(() => control.begin(id, { ...leased(control, id), task }), /OPERATOR_APPROVAL_REQUIRED/);
+  assert.deepEqual(control.pendingOperatorAction(id), pending);
+  const events = () => control.db.prepare("SELECT COUNT(*) AS n FROM events WHERE mission_id=? AND type='NOVA_OPERATOR_APPROVAL_REQUIRED'").get(id).n;
+  assert.equal(events(), 1);
+  control.resolve(id, { decision: 'resume', note: 'approve this action' });
+  const before = control.db.prepare('SELECT budget_started_at FROM nova_sessions WHERE mission_id=?').get(id);
+  const restarted = new NovaMissionControl(control.bus, { allowedTasks: ['shell'] });
+  restarted.resolve(id, { decision: 'resume', note: 'approve this action' });
+  assert.deepEqual(control.db.prepare('SELECT budget_started_at FROM nova_sessions WHERE mission_id=?').get(id), before);
+  const lease = leased(restarted, id);
+  restarted.resolve(id, { decision: 'resume', note: 'duplicate while claimed' });
+  const action = restarted.begin(id, { ...lease, task });
+  assert.equal(action.type, 'shell');
+  restarted.finish(id, { ...lease, actionId: action.id, receipt: { ok: true, verified: true } });
+  assert.throws(() => restarted.begin(id, { ...leased(restarted, id), task }), /OPERATOR_APPROVAL_REQUIRED/);
+});

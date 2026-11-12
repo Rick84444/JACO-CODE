@@ -6076,9 +6076,9 @@ const notifyPhone = async (action) => {
       const { targetId, queryTopic } = req.body || {};
       pushLog('info', `[Market Watch] Starting OpenClaw competitor scan for ${targetId || 'all targets'}...`, 'market-watch');
       const result = await marketWatchService.executeOpenClawScrape(targetId, queryTopic);
-      pushLog('success', `[Market Watch] ${result.message}`, 'market-watch');
+      pushLog(result.success ? 'success' : 'warn', `[Market Watch] ${result.message}`, 'market-watch');
       return res.json({
-        success: true,
+        success: result.success,
         item: result.item,
         digest: result.digest,
         message: result.message,

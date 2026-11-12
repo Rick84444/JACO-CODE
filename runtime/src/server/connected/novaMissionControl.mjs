@@ -789,6 +789,8 @@ export class NovaMissionControl {
     if (decision === 'confirm' && !mission.receipts.some(r => r.ok && r.verified)) throw new Error('VERIFIED_RECEIPT_REQUIRED');
 
     this.recoverExpired();
+    // Duplicate delivery cannot renew a grant or reset an active mission's budget.
+    if (decision === 'resume' && this.get(id).status === 'ACTIVE') return this.get(id);
     const row = this.db.prepare('SELECT token FROM nova_sessions WHERE mission_id=?').get(id);
     if (row.token) throw new Error('MISSION_BUSY');
     // Only an explicit operator note can approve one outgoing-spend action; automated
@@ -816,8 +818,8 @@ export class NovaMissionControl {
 
   // The action a blocked mission is waiting for the operator to approve, if any.
   pendingOperatorAction(id) {
-    const gate = this.db.prepare('SELECT reason,requested_at FROM nova_action_gate WHERE mission_id=? AND approved_at IS NULL').get(id);
-    return gate ? { reason: gate.reason, requestedAt: gate.requested_at } : null;
+    const gate = this.db.prepare('SELECT task_hash,reason,requested_at FROM nova_action_gate WHERE mission_id=? AND approved_at IS NULL').get(id);
+    return gate ? { id: `${id}:${gate.task_hash}:${gate.requested_at}`, reason: gate.reason, requestedAt: gate.requested_at } : null;
   }
 
   setStatus(id, status) { this.db.prepare('UPDATE missions SET status=?,updated_at=? WHERE id=?').run(status, iso(), id); }
