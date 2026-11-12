@@ -93,6 +93,7 @@ import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
 import { taskCatalog, ALWAYS_ASK } from './src/server/capabilities/capabilityPolicy.mjs';
 import { TASK_FIELDS } from "../agents/lib/task-fields.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
+import { metaStore, decisionFindings, metaTrigger, buildReflection, askPremise, reflectionStage } from "../agents/lib/meta-reasoning.mjs";
 import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
 import { operatorLanguageFile, readOperatorLanguage, writeOperatorLanguage } from "../agents/lib/operator-language.mjs";
 import { listSiteLogins, saveSiteLogin, removeSiteLogin } from "../agents/lib/site-logins.mjs";
@@ -220,6 +221,7 @@ const skillRoots = () => [...new Set([
 ].map(p => path.resolve(p)))];
 // Learned proposals and approved tool notes; approved learned skills land in .jaco/skills above.
 const skillLearning = learningStore(path.join(WORKSPACE_ROOT, '.jaco'));
+const metaLessons = metaStore(path.join(WORKSPACE_ROOT, '.jaco'));
 
 function resolveWorkspacePath(relativePath) {
   if (!relativePath || typeof relativePath !== "string") {
@@ -3235,6 +3237,19 @@ const notifyPhone = async (action) => {
     } catch (error: any) { res.status(409).json({ success: false, error: error?.message || String(error) }); }
   });
   // Approved tool notes, shown with each tool to Nova's planner.
+  // What Aura learned about her own decisions: lessons with their measured effect, and the reflections behind them.
+  app.get('/api/aura/workbench/meta-lessons', requireLocalUi, (_req, res) => {
+    try { res.setHeader('Cache-Control', 'no-store'); res.json({ success: true, lessons: metaLessons.list(), reflections: metaLessons.reflections(20) }); }
+    catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
+  });
+  app.post('/api/aura/workbench/meta-lessons/:id/approve', requireLocalUi, (req, res) => {
+    try { res.json({ success: true, lesson: metaLessons.approve(String(req.params.id || '')) }); }
+    catch (error: any) { res.status(error?.message === 'META_LESSON_NOT_FOUND' ? 404 : 409).json({ success: false, error: error?.message || String(error) }); }
+  });
+  app.post('/api/aura/workbench/meta-lessons/:id/retire', requireLocalUi, (req, res) => {
+    try { res.json({ success: true, lesson: metaLessons.retire(String(req.params.id || ''), 'OPERATOR') }); }
+    catch (error: any) { res.status(error?.message === 'META_LESSON_NOT_FOUND' ? 404 : 400).json({ success: false, error: error?.message || String(error) }); }
+  });
   app.get('/api/tool-notes', requireAuth, (_req, res) => res.json({ success: true, notes: skillLearning.notes() }));
   // JACO Lite: Nova plans with whatever model the operator connected in the IDE (any OpenAI-compatible
   // provider, local or cloud), not with a fixed list. Only providers that answer right now, each with a
@@ -3263,7 +3278,9 @@ const notifyPhone = async (action) => {
       const revision=String(req.query.revision||'').slice(0,160);
       const outcomes=skillLearning.recallOutcome(mission.contract,revision);
       const economic=continuumSurface.runtime.economic.snapshot();
-      res.json({success:true,context:{budget:{policy:economic.policy,headroom:economic.headroom},outcomes,approvedToolNotes:skillLearning.notes()}});
+      // Decision-method lessons from earlier missions (agents/lib/meta-reasoning.mjs): advice, never authority.
+      const decisionLessons=metaLessons.recall({missionId:mission.id,allowedTasks:mission.allowedTasks});
+      res.json({success:true,context:{budget:{policy:economic.policy,headroom:economic.headroom},outcomes,approvedToolNotes:skillLearning.notes(),decisionLessons}});
     } catch(error:any) {res.status(400).json({success:false,error:error?.message||'MISSION_CONTEXT_FAILED'});}
   });
   // Run a skill as a Nova mission: the goal names the skill and carries the operator's input; the
@@ -4069,6 +4086,32 @@ const notifyPhone = async (action) => {
   };
   // Self-written skills (agents/lib/skill-learning.mjs): every finished mission is read once for what
   // it teaches; proposals wait for the operator in the IDE's Skills view.
+  // Meta-reasoning (agents/lib/meta-reasoning.mjs). Every blocked or finished mission is scanned once per stage
+  // in plain code; a reflection is written, and one model call made, only when an objective signal fired.
+  const missionEvents = (id: string) => connectedRuntime.bus.db.prepare('SELECT seq,ts,type,payload_json FROM events WHERE mission_id=? ORDER BY seq ASC LIMIT 500').all(id)
+    .map((r: any) => { let payload: any = {}; try { payload = JSON.parse(r.payload_json || '{}'); } catch {} return { seq: r.seq, ts: r.ts, type: r.type, payload }; });
+  const metaTick = async () => {
+    const due = connectedRuntime.bus.listMissions(50)
+      .filter((m: any) => ['DONE', 'CANCELLED', 'BLOCKED'].includes(String(m.status || '').toUpperCase()) && !metaLessons.isObserved(m.id, reflectionStage(m))).slice(0, 5);
+    for (const base of due) {
+      const stage = reflectionStage(base);
+      let mission: any;
+      try { mission = connectedRuntime.novaMissions.get(base.id); } catch { metaLessons.observe(base, [], stage); continue; }
+      const events = missionEvents(base.id);
+      const findings = decisionFindings(mission, events);
+      const trigger = metaTrigger(mission, events, findings);
+      metaLessons.observe(mission, findings, stage);
+      if (!trigger || metaLessons.isReflected(mission.id, stage)) continue;
+      const reflection = buildReflection(mission, events, { findings, trigger });
+      // "Why did I think this was right?" only has an answer when Aura chose something: a mission stopped
+      // before its first action has no decision of hers to examine.
+      const premise = mission.receipts?.length ? await askPremise(mission, events, reflection, { candidates: judgeCandidates(process.env) }) : null;
+      const stored = metaLessons.record(reflection, stage, { premise });
+      seerLiveWorkstream.record({ actor: 'Aura meta-reasoning', type: 'meta.reflection.recorded', verified: true,
+        message: `${base.id}: ${stored.gap} ${stored.lessons.length} lesson(s) from ${stored.findings.length} observed mistake(s)`.slice(0, 400),
+        receipt: { missionId: base.id, stage, trigger: stored.trigger, patterns: stored.findings.map((f: any) => f.pattern), lessons: stored.lessons, premise: stored.premise } });
+    }
+  };
   let learningBusy = false;
   const learnTick = async () => {
     if (learningBusy) return;
@@ -4095,6 +4138,7 @@ const notifyPhone = async (action) => {
         skillLearning.markLearned(base.id);
         if (made.length) seerLiveWorkstream.record({ actor: 'JACO learning', type: 'skill.proposed', message: `${base.id}: ${made.length} proposal(s) for operator review`, verified: true, receipt: { missionId: base.id, proposals: made } });
       }
+      await metaTick();
     } catch (error: any) { console.warn('[learning] tick failed:', error?.message || error); }
     finally { learningBusy = false; }
   };

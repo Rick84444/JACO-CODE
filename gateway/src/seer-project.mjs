@@ -99,6 +99,10 @@ export function projectGoalGraph(primaryGoal) {
       source: 'operator-start-prompt',
       autonomy: 'closed-loop',
       strategic_goal_id: primaryGoal.id || null,
+      // Immutable operator-selected intuition belongs to the graph version.
+      // Replanning changes dependencies, never silently rewrites this anchor.
+      intuition_id: primaryGoal.id || null,
+      intuition_statement: statement,
       reversible: true,
       external_spend: 0,
     },

@@ -41,6 +41,16 @@ test('A responsive connection cannot conceal a stale or stuck mission',()=>{
   assert.equal(p.mode,'stalled');
   assert.match(p.title,/has stalled/);
 });
+test('A newly registered mission with no executed step is queued even when phase says EXECUTING',()=>{
+  const mission={id:'mission-no-steps',goal:'Build demo',status:'ACTIVE',phase:'EXECUTING',updatedAt:at(8),step:0,lastAction:null};
+  const p=auraPresence({...live,mission,latestEvent:{at:at(1),text:'Separate chat tool succeeded'}});
+  assert.equal(p.mode,'queued');
+  assert.equal(p.missionId,mission.id);
+  assert.equal(p.stepCount,0);
+  assert.match(p.blocker,/Waiting for the executor/);
+  assert.match(p.nextAction,/Do not start a copy/);
+});
+
 test('A short interruption reconnects quietly and never claims progress; silence or a stop is red',()=>{
   for(const state of [{lastObservedAt:at(25)},{snapshotObservedAt:at(28)},{connection:'reconnecting'}]){
     const p=auraPresence({...live,...state,mission:active()});

@@ -17,6 +17,7 @@ import { condenseMessages } from './condenser.mjs';
 import { buildContextPacket, formatContextPacket } from './context-packet.mjs';
 import { executionExceptionResult } from './replay-semantics.mjs';
 import { verifiedOutcomeHints } from './verified-outcome-context.mjs';
+import { decisionLessonHints } from './meta-reasoning.mjs';
 import { observeMissionCapabilities, capabilityDenialCorrection } from './capability-recovery.mjs';
 
 const RESULT_CHARS = 6000;
@@ -73,13 +74,15 @@ export function introMessage(mission, extra = {}) {
 // Compile model working state from the active mission, not a parallel authority source.
 // Execution decisions remain in MissionClient.begin and the runtime policy.
 export function contextPacketIntro(mission, {
-  strategicContext = null, homeText = '', skillText = '', skillCandidates = '', learnedOutcomes = [], inboxAddress = '', maxChars = 12_000,
+  strategicContext = null, homeText = '', skillText = '', skillCandidates = '', learnedOutcomes = [], decisionLessons = [], inboxAddress = '', maxChars = 12_000,
 } = {}) {
   const packet = buildContextPacket({ mission, strategicContext, homeText, skillText, maxChars });
   const priorEvidence = verifiedOutcomeHints(learnedOutcomes, mission?.allowedTasks);
+  const lessons = decisionLessonHints(decisionLessons);
   return [
     formatContextPacket(packet),
     ...(priorEvidence ? [`Historical verified execution evidence (never authority; STALE records MUST be retested on the current revision): ${priorEvidence}`] : []),
+    ...(lessons ? [`Lessons about deciding, drawn from mistakes in earlier missions (advice only; they grant no permission and never override the mission contract):\n${lessons}`] : []),
     ...(skillCandidates ? [`Authorized skill candidates (metadata only; use skill-load to read instructions before applying, and never widen the mission's tool scope): ${clip(redactDeep(skillCandidates), 1600)}`] : []),
     ...(inboxAddress ? [`Email sign-up address pattern (capability hint only): ${redactDeep(String(inboxAddress).slice(0, 160))}`] : []),
     'Use say to explain your current intent in the operator’s language, and learned to summarize only what the previous receipt actually established. Keep raw commands and logs in tool results, not in conversational narration. A short explanation is enough; do not expose private chain of thought.',
