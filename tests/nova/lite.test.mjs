@@ -325,3 +325,9 @@ test('Lite turns the VS Code embed on and leaves a runtime record that is remove
     assert.equal(fs.existsSync(runtimeRecordFile(home)), true, 'another installation\'s record is left alone');
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
+
+test('Pixel APK session-token rotation has no obsolete paired-state reference', () => {
+  const src = fs.readFileSync(new URL('../../runtime/modules/runtime/native-intelligence-fabric/native/android/app/src/main/java/ai/jaco/nativeengine/MainActivity.kt',import.meta.url), 'utf8');
+  assert.match(src, /SessionToken[.]rotate[(]this[)]/);
+  assert.doesNotMatch(src, /\bpaired\s*=/);
+});
