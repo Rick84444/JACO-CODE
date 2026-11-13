@@ -38,7 +38,7 @@ import { createModelRelayRouter } from './src/server/relay/modelRelay.js';
 import { actuatorLeases } from './src/server/handsOff/actuatorLease.js';
 import { ConnectedRuntime, mountConnectedRoutes } from './src/server/connected/connectedRuntime.mjs';
 import { validProviderId } from './src/server/connected/providerRegistry.mjs';
-import { createIdeRemoteGate, upgradeAllowed, ideHost } from './src/server/connected/ideAccess.mjs';
+import { createIdeRemoteGate, ideDeviceRegistryAdapter, upgradeAllowed, ideHost } from './src/server/connected/ideAccess.mjs';
 import { mountVscodeEmbedHeaders } from './src/server/security/vscodeEmbed.mjs';
 import { normalizeAuraChatMode, normalizeAuraMissionMode } from './src/lib/auraRunModes.mjs';
 import { validateOperatorConfirmation } from './src/lib/operatorApproval.mjs';
@@ -669,10 +669,7 @@ async function startServer() {
   // Remote IDE (src/server/connected/ideAccess.mjs): anything arriving through the tunnel needs a
   // signed-in IDE session before any route, static file or the dev server sees it. The registry is the
   // connected runtime's, created further down; requests only arrive after listen.
-  const ideDevices = {
-    verify: (key: string, kind: string) => connectedRuntime.devices.verify(key, kind),
-    redeem: (code: string, kind: string) => connectedRuntime.devices.redeem(code, kind),
-  };
+  const ideDevices = ideDeviceRegistryAdapter(connectedRuntime.devices);
   app.use(createIdeRemoteGate(ideDevices, {
     onEvent: (event: any) => seerLiveWorkstream.record({ actor: 'Remote IDE', type: event.type, message: `Remote IDE signed in on ${event.device}`, verified: true, receipt: event }),
   }));
@@ -2435,7 +2432,7 @@ const notifyPhone = async (action) => {
 
   app.get('/api/aura/workbench/local-memory', requireLocalUi, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    try { res.json({ success: true, ...localMemoryActivity(continuumSurface.runtime, { legacyFile: path.join(process.cwd(), '.jaco', 'memory', 'memory-store.json') }) }); }
+    try { res.json({ success: true, ...localMemoryActivity(continuumSurface.runtime, { legacyFile: path.join(WORKSPACE_ROOT, '.jaco', 'memory', 'memory-store.json') }) }); }
     catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }
   });
   // The plan as the operator sees it (SEER's mission graphs, read only) and the operator's comments on it.
