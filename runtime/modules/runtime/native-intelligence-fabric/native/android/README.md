@@ -63,3 +63,30 @@ Its timeout handler stops it cleanly. The notification opens this launcher and
 reports the service, not an invented claim that a model is already loaded.
 
 See [the Cursor comparison and implementation boundaries](../../../../../../docs/architecture/android-cursor-comparison.md).
+
+## Pixel Edition: local chat + Windows Aura
+
+The Android launcher now provides **Lokal AI · offlinechatt**, backed by the
+existing private LiteRT-LM engine. Import a verified `.litertlm` model with the
+expected SHA-256 in the launcher, explicitly load it, and start local chat.
+The original code path verifies the model before use. Inference uses the
+existing authenticated loopback RPC; no Android LLM API key or Termux runtime
+is needed. The current RPC is single-turn, so the UI sends a bounded amount
+of recent chat text in each prompt. This is not durable conversation memory,
+token streaming or a second Aura agent.
+
+**Aura på Windows · JACO Link** opens the existing website in the external
+browser, preserving browser-based Google sign-in and pairing. It connects to
+the **existing Windows Aura** only if the JACO Link service has been deployed,
+enabled and paired with that host. This app change does not deploy JACO Link
+or demonstrate a working cloud session. The previous optional
+`127.0.0.1:<port>` Termux workspace remains available separately but no
+longer attempts automatic pairing at app launch.
+
+Local model conversations do not inherit Windows tools, memory, skills,
+mission control or approval authority. Use Aura Remote for those operations.
+Never auto-retry a local inference or model load after an unknown RPC outcome.
+
+CI: `./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug`.
+A physical Pixel test must still verify offline inference, app rotation,
+low-memory behavior, model import/loading and the deployed JACO Link path.

@@ -21,17 +21,17 @@ import { windowsNode as fetchWindowsNode } from './lib/node-runtime.mjs';
 export const LITE_DEPENDENCIES = ['express', 'ws', 'zod', '@google/genai', 'dotenv', 'undici', 'typescript', '@whiskeysockets/baileys', 'qrcode-terminal'];
 // Installed by Baileys but not needed for text and voice notes: sharp's native image binaries (28 MB) and type declarations.
 export const LITE_PRUNE = ['@img', '@types'];
-export const TEMPLATE_FILES = ['start.mjs', 'START.cmd', 'start.sh', 'START-ANDROID.sh', 'README.md'];
+export const TEMPLATE_FILES = ['start.mjs', 'START.cmd', 'start.sh', 'START-ANDROID.sh', 'START-PIXEL-TERMINAL.sh', 'README.md'];
 export const CONNECTION_FILES = ['connect.html', 'connect.js', 'connect.css'];
 // One download per platform next to the universal one (operator 2026-10-13): each carries only its own
 // launchers, and its release.json says which platform it is. The public names are what jacocode.com serves
 // and what latest.json points at. Android is built the same way but has not been run on a phone.
 export const PLATFORM_LAUNCHERS = {
   windows: ['START.cmd', 'start.mjs', 'README.md'],
-  android: ['START-ANDROID.sh', 'start.sh', 'start.mjs', 'README.md'],
+  android: ['START-PIXEL-TERMINAL.sh', 'START-ANDROID.sh', 'start.sh', 'start.mjs', 'README.md'],
 };
 export const PUBLIC_NAMES = { universal: 'jaco-lite.zip', windows: 'jaco-lite-windows.zip', android: 'jaco-lite-android.zip' };
-const EXECUTABLE_LAUNCHERS = ['start.sh', 'START-ANDROID.sh'];
+const EXECUTABLE_LAUNCHERS = ['start.sh', 'START-ANDROID.sh', 'START-PIXEL-TERMINAL.sh'];
 
 // Refuse a stale editor-only build before packaging it as the current Lite download.
 export function workspaceBuild(dist) {
