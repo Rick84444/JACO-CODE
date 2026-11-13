@@ -450,7 +450,7 @@ test('an evidence-backed stuck graph node requests an automatically contracted r
   const result = await loop.turn();
   assert.equal(result.replanned.length, 1);
   assert.equal(result.dispatched.length, 1);
-  assert.match(result.replanned[0].replacement_node_key, /^build\\.repair\\.1$/);
+  assert.match(result.replanned[0].replacement_node_key, /^build\.repair\.1$/);
   const after = fixture.snapshot();
   const replacement = after.nodes.find(node => node.key === result.replanned[0].replacement_node_key);
   assert.deepEqual(replacement.contract, original);
