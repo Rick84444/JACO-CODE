@@ -1055,3 +1055,13 @@ test('a health-deferred mission cools down even after useful work, while a turn 
   assert.equal(novaLoopDelay({executed:true,deferred:true,reason:'TURN_WINDOW_EXHAUSTED'},60000,3000),3000);
   assert.equal(novaLoopDelay({executed:false,deferred:true},60000,3000),60000);
 });
+
+test('a missing operator fact remains a real question even after a network outage', async x => {
+  const s=setup(x,['web-fetch']);
+  const mission=s.control.create({goal:'Read a user-selected article',idempotencyKey:'health-needs-input',allowedTasks:['web-fetch']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://offline.test'})]},
+    {tool_calls:[call('blocked',{reason:'Which page should I use for the article?'})]}]);
+  const result=await run(s,model,async()=>({ok:false,verified:false,error:'ECONNREFUSED'}));
+  assert.equal(result.blocked,true);
+  assert.equal(s.control.get(mission.id).status,'BLOCKED');
+});
