@@ -17,10 +17,10 @@
   },
   "dependencies": {
     "@a2a-js/sdk": "1.1.0",
-    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/node": "2.1.0",
     "@modelcontextprotocol/server": "2.4.0",
     "express": "^5.1.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.3.0"
