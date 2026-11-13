@@ -5,6 +5,19 @@
 // IDE's Devices view, kept in an HttpOnly cookie and revocable there. Requests from this computer itself
 // (loopback, not proxied) are unchanged. The terminal stays local only (requireLocalUiSameOrigin).
 
+// Keep all browser-session operations wired to the canonical Windows device registry.
+// The runtime must not expose a verify/redeem-only adapter: logout needs revoke.
+export function ideDeviceRegistryAdapter(devices) {
+  for (const method of ['verify', 'redeem', 'revoke']) {
+    if (typeof devices?.[method] !== 'function') throw new Error('IDE_REGISTRY_' + method.toUpperCase() + '_MISSING');
+  }
+  return {
+    verify: (key, kind) => devices.verify(key, kind),
+    redeem: (code, kind) => devices.redeem(code, kind),
+    revoke: (name, kind) => devices.revoke(name, kind),
+  };
+}
+
 export const IDE_COOKIE = 'jaco_ide';
 // Android Chrome fetches icons when installing before a pairing cookie exists.
 // Only the two actual Remote manifest icons are public, never the app shell or API.
@@ -60,7 +73,7 @@ catch{m.textContent='The hub is not responding.'}b.disabled=false});
 
 // Mounted first, before every route, static file and the Vite dev server.
 /**
- * @param {{ verify: (key: string, kind: string) => any, redeem: (code: string, kind: string) => any }} registry
+ * @param {{ verify: (key: string, kind: string) => any, redeem: (code: string, kind: string) => any, revoke: (name: string, kind: string) => any }} registry
  * @param {{ env?: Record<string, string | undefined>, onEvent?: (event: any) => void }} [options]
  */
 export function createIdeRemoteGate(registry, { env = process.env, onEvent = () => {} } = {}) {
