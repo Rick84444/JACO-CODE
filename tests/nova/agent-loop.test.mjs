@@ -1047,3 +1047,11 @@ test('operator authorization is never disguised as a health defer', async x => {
   assert.equal(result.blocked,true);
   assert.equal(s.control.get(mission.id).status,'BLOCKED');
 });
+
+test('a health-deferred mission cools down even after useful work, while a turn window keeps moving', async () => {
+  const { novaLoopDelay } = await import('../../agents/hands-off-agent.mjs');
+  assert.equal(novaLoopDelay({executed:true,deferred:true,recovery:'WAIT_PROVIDER'},60000,3000),60000);
+  assert.equal(novaLoopDelay({executed:true,deferred:true,recovery:'WAIT_TOOL'},60000,3000),60000);
+  assert.equal(novaLoopDelay({executed:true,deferred:true,reason:'TURN_WINDOW_EXHAUSTED'},60000,3000),3000);
+  assert.equal(novaLoopDelay({executed:false,deferred:true},60000,3000),60000);
+});
