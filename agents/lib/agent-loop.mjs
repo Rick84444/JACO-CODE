@@ -192,8 +192,26 @@ export async function runAgentMission({
       }
       if (queueRefusal(errorText(error))) return yieldQueue(errorText(error));
       log('warn', `release failed: ${errorText(error)}`);
+      // A failed durable release is NOT evidence that the mission was blocked,
+      // completed or handed to graph repair. Leave authority with the runtime.
+      return { executed: receipts.length > 0, receipts, steps, deferred: true,
+        recovery: 'WAIT_RUNTIME', reason: `RELEASE_FAILED:${errorText(error)}` };
     }
     return { executed: receipts.length > 0, receipts, steps, ...outcome };
+  };
+  // A protocol failure is not an operator blocker. Retry with the existing
+  // structured planner on the SAME selected provider, mission and contracts.
+  const structuredRecovery = reason => end({ deferred: true, recovery: 'STRUCTURED_PLANNER', reason }, {});
+  const recoverStalledStrategy = reason => {
+    // Graph missions have a bounded, durable SEER repair path, preserving the
+    // original contract, approval constraints, receipts and replan budget.
+    if (mission.source === 'seer-mission-graph' && mission.metadata?.parent?.graphId) {
+      return end({ replanRequested: true, recovery: 'REPLAN_GRAPH', reason },
+        { replanRequest: { reason, subgoals: [] } });
+    }
+    // Standalone missions cannot submit a graph repair. Change planner protocol
+    // rather than repeating the same native-tool conversation indefinitely.
+    return structuredRecovery(reason);
   };
 
   try {
@@ -337,11 +355,11 @@ export async function runAgentMission({
           const refused = await proposeCompletion(text);
           if (!refused) return { executed: true, receipts, steps, completed: true, answer: text };
           // Text-only retries bought nothing and were 45% of a 2 600-call run (2026-10-31).
-          if (++idle > maxIdleReplies) return end({ failed: true, reason: 'MODEL_DID_NOT_USE_TOOLS' }, { error: 'MODEL_DID_NOT_USE_TOOLS' });
+          if (++idle > maxIdleReplies) return structuredRecovery('NATIVE_TOOL_PROTOCOL_STALLED');
           messages.push({ role: 'user', content: `COMPLETION REFUSED: ${refused}. Do what is missing with the tools, then call complete.` });
           continue;
         }
-        if (++idle > maxIdleReplies) return end({ failed: true, reason: 'MODEL_DID_NOT_USE_TOOLS' }, { error: 'MODEL_DID_NOT_USE_TOOLS' });
+        if (++idle > maxIdleReplies) return structuredRecovery('NATIVE_TOOL_PROTOCOL_STALLED');
         messages.push({ role: 'user', content: 'Use one of the tools for the next step, or call complete / blocked.' });
         continue;
       }
@@ -485,7 +503,7 @@ export async function runAgentMission({
         // Once: tell the model what it is doing. A second time in a fresh window: stop and say so.
         if (stuck.nudge() > 1) {
           if (recentServiceOutage()) return deferHealth('STUCK_AFTER_TOOL_OUTAGE:'+nudge.kind);
-          return end({ blocked: true, reason: `STUCK:${nudge.kind}` }, { error: `PLANNER_BLOCKED:STUCK:${nudge.kind}` });
+          return recoverStalledStrategy(`STUCK:${nudge.kind}`);
         }
         log('warn', `agent looks stuck (${nudge.kind})`);
         messages.push({ role: 'user', content: `STUCK: ${nudge.hint}` });

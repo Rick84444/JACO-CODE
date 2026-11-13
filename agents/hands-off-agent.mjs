@@ -59,6 +59,7 @@ import { validateRepoScanTask, runRepoScanTask } from './lib/repo-scan.mjs';
 import { validateMcpCall, callMcpTool, mcpCatalog, mcpCatalogTools, learnedTaskNotes } from './lib/mcp-tools.mjs';
 import { plannerTools, structuredPlannerTools, planFromToolCalls, planSchema } from './lib/native-tools.mjs';
 import { runAgentMission, introMessage, contextPacketIntro } from './lib/agent-loop.mjs';
+import { isTransientPreflightBlockers } from './lib/mission-health-policy.mjs';
 import { agentHomeDir, loadHome, HOME_LIMITS } from './lib/agent-home.mjs';
 import { loadCognitiveCapsule, assertCognitiveCapsuleTask } from './lib/cognitive-capsule.mjs';
 import { digest } from './lib/claim-check.mjs';
@@ -1901,7 +1902,7 @@ async function runCodingPreflight(state, { mission, lease }) {
       if(!DEVICE_MODE&&knowledge?.success!==true)blockers.push('MISSION_CONTEXT_UNAVAILABLE');
     } catch { blockers.push('RUNTIME_PREFLIGHT_UNAVAILABLE'); }
     if(context.mission.contract.verification.required_stages?.includes('browser')) {
-      try { const r=await fetch(CONFIG.novaBridgeUrl+'/health',{headers:{authorization:'Bearer '+headers['x-gateway-token']},signal:AbortSignal.timeout(5000)});const health=await r.json();if(!r.ok||health.ok!==true)blockers.push('BROWSER_BRIDGE_UNAVAILABLE'); } catch { blockers.push('BROWSER_BRIDGE_UNAVAILABLE'); }
+      try { const r=await fetch(CONFIG.novaBridgeUrl+'/health',{headers:{authorization:'Bearer '+headers['x-gateway-token']},signal:AbortSignal.timeout(5000)});const health=await r.json().catch(()=>null);if(r.status===401||r.status===403)blockers.push('BROWSER_BRIDGE_AUTH_REQUIRED');else if(!r.ok||health?.ok!==true)blockers.push('BROWSER_BRIDGE_UNAVAILABLE'); } catch { blockers.push('BROWSER_BRIDGE_UNAVAILABLE'); }
     }
     state.preflight={schema:'jaco.nova-preflight/v1',status:blockers.length?'BLOCKED':'READY',blockers,
       repository:{revision:state.repositoryContext.revision,entries:state.repositoryContext.entries.length},runtime:identity,
@@ -1912,7 +1913,7 @@ async function runCodingPreflight(state, { mission, lease }) {
       knowledge:knowledge?.context||null,knowledgeRecords:knowledge?.context?.outcomes?.length||0};
     await missionClient.preflight(context.mission.id,{...context.lease,report:state.preflight});
     // The runtime not answering yet (right after a restart) passes by itself: wait, do not stop the mission for the operator.
-    if(blockers.length===1&&blockers[0]==='RUNTIME_PREFLIGHT_UNAVAILABLE')return {deferred:true,reason:'RUNTIME_PREFLIGHT_UNAVAILABLE'};
+    if(isTransientPreflightBlockers(blockers))return {deferred:true,reason:blockers.join(', ')};
     if(blockers.length)return {blocked:true,reason:blockers.join(', ')};
   return { ready: true };
 }
@@ -2197,7 +2198,7 @@ async function runAgentLoop(state) {
 async function postPlanNote(mission, result) {
   const parent = mission?.metadata?.parent;
   if (!parent?.graphId || !parent?.nodeKey || !result) return;
-  const text = result.completed ? result.answer : result.delegated ? `Delegated to helper agents: ${result.delegated.join('; ')}` : result.blocked ? `Stopped: ${result.reason}` : null;
+  const text = result.completed ? result.answer : result.delegated ? `Delegated to helper agents: ${result.delegated.join('; ')}` : result.replanRequested ? `Autonomous graph repair requested: ${result.reason}` : result.blocked ? `Stopped: ${result.reason}` : null;
   if (!text) return;
   try {
     await fetch(`${CONFIG.runtimeUrl.replace(/\/$/, '')}/api/aura/plan/notes`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-gateway-token': process.env.GATEWAY_TOKEN || process.env.JACO_GATEWAY_TOKEN || '' },
@@ -2220,7 +2221,9 @@ async function runBrain(state) {
     // existing structured planner on the SAME provider. No unrelated model
     // fallback, no duplicated mission or new execution authority.
     const unsupported = selected?.chosen && agentToolsUnsupported.has(`${selected.name}/${selected.model}`);
-    if (result && !(result.deferred && unsupported)) {
+    const protocolRecovery = result?.deferred === true && result?.recovery === 'STRUCTURED_PLANNER';
+    if (protocolRecovery) log('warn', 'brain', 'Native tool protocol stalled; trying existing structured planner with the same selected provider and mission');
+    if (result && !(result.deferred && unsupported) && !protocolRecovery) {
       log('info', 'brain', `Native turn: executed=${Boolean(result.executed)} deferred=${Boolean(result.deferred)} stopped=${result.stopped || 'no'}${result.reason ? ' reason=' + String(result.reason).slice(0, 200) : ''}`);
       state.lastBrainTick = state.ticks;
       return result;

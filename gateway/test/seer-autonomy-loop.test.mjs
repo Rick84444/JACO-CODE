@@ -432,3 +432,28 @@ test('Aura never labels a failed tool dispatch as a completed control turn',asyn
   assert.equal(report.errors,1);
   assert.equal(loop.state().last.ok,false);
 });
+
+test('an evidence-backed stuck graph node requests an automatically contracted repair, not operator resume', async () => {
+  const original = { scope: { allowed: ['src/**'] }, budget: { max_steps: 8, max_tool_calls: 20, max_duration_ms: 300000 } };
+  const fixture = graphFixture({
+    id: 'graph-stuck-rescue', title: 'Finish product', objective: 'Ship verified product',
+    policy: { autonomy: 'closed-loop' }, status: 'NEEDS_REPLAN',
+    nodes: [{
+      key: 'build', status: 'FAILED', title: 'Build product',
+      objective: 'Complete build and acceptance',
+      failure_reason: 'NOVA_REPLAN_REQUEST:{"reason":"STUCK:repeat","subgoals":[]}',
+      dependencies: [], contract: original, evidence_refs: ['nova:receipt:1'], attempt: 1,
+    }],
+    replans: [],
+  });
+  const loop = createAutonomyLoop({ missionGraph: fixture.api, dispatch: fixture.dispatch, maxReplans: 3 });
+  const result = await loop.turn();
+  assert.equal(result.replanned.length, 1);
+  assert.equal(result.dispatched.length, 1);
+  assert.match(result.replanned[0].replacement_node_key, /^build\\.repair\\.1$/);
+  const after = fixture.snapshot();
+  const replacement = after.nodes.find(node => node.key === result.replanned[0].replacement_node_key);
+  assert.deepEqual(replacement.contract, original);
+  assert.match(replacement.objective, /Diagnose the concrete root cause/);
+  assert.equal(after.status, 'ACTIVE');
+});

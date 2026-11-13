@@ -130,12 +130,13 @@ test('Aura absent model choice is a visible blocking configuration issue', async
   assert.equal(s.control.get(mission.id).status, 'BLOCKED');
 });
 
-test('a model that never uses tools is stopped after a bounded number of nudges', async t => {
+test('a model that never uses native tools switches to the existing structured planner without blocking', async t => {
   const s = setup(t, ['web-fetch']);
   s.control.create({ goal: 'g', idempotencyKey: 'a5', allowedTasks: ['web-fetch'] });
   const result = await run(s, scripted([{ content: 'hmm' }, { content: 'hmm' }, { content: 'hmm' }]), async () => ({ ok: true }));
-  assert.equal(result.failed, true);
-  assert.equal(result.reason, 'MODEL_DID_NOT_USE_TOOLS');
+  assert.equal(result.deferred, true);
+  assert.equal(result.recovery, 'STRUCTURED_PLANNER');
+  assert.equal(s.control.current()?.status, 'ACTIVE');
 });
 
 test('receipts shown to the model are bounded', () => {
@@ -175,16 +176,17 @@ test('a model that repeats the same call is told it is stuck, and recovers when 
   assert.ok(afterThird.some(c => /^STUCK: .*web-fetch/.test(c)), 'the model was told what it is doing');
 });
 
-test('stuck again after the nudge ends the run as blocked, naming why', async t => {
+test('repeated native-tool loop switches protocol without a false operator blocker', async t => {
   const s = setup(t, ['web-fetch']);
   const m = s.control.create({ goal: 'Läs sidan', idempotencyKey: 'stuck2', allowedTasks: ['web-fetch'] });
   const same = () => ({ tool_calls: [call('web-fetch', { url: 'https://same.test' })] });
   const model = scripted(Array.from({ length: 8 }, same));
   const result = await run(s, model, async () => ({ ok: true, verified: true, content: 'same' }));
-  assert.equal(result.blocked, true);
+  assert.equal(result.deferred, true);
+  assert.equal(result.recovery, 'STRUCTURED_PLANNER');
   assert.match(result.reason, /STUCK:repeat/);
-  assert.equal(result.receipts.length, 6, 'three steps, a nudge, three more steps, then it stops');
-  assert.notEqual(s.control.get(m.id).status, 'COMPLETED');
+  assert.equal(result.receipts.length, 6, 'bounded recovery after two repeated-action windows');
+  assert.equal(s.control.get(m.id).status, 'ACTIVE');
 });
 
 test('a long conversation is condensed before the next model turn and the model still sees what was done', async t => {
@@ -595,7 +597,7 @@ test('a budget limit that condensing cannot fix stops for the operator with the 
   assert.equal(s.control.get(m.id).status, 'BLOCKED');
 });
 
-test('repeated text-only answers after a refused completion stop instead of paying for more turns', async t => {
+test('repeated text-only answers switch planning protocol instead of burning the mission budget', async t => {
   const s = setup(t, ['web-fetch']);
   s.control.create({ goal: 'Läs en sida', idempotencyKey: 'idle-1', allowedTasks: ['web-fetch'] });
   const release = s.client.release.bind(s.client);
@@ -613,8 +615,8 @@ test('repeated text-only answers after a refused completion stop instead of payi
     },
     execute: async () => ({ ok: true, verified: true, content: 'a' }),
   });
-  assert.equal(result.failed, true);
-  assert.equal(result.reason, 'MODEL_DID_NOT_USE_TOOLS');
+  assert.equal(result.deferred, true);
+  assert.equal(result.recovery, 'STRUCTURED_PLANNER');
   assert.ok(calls <= 5, `${calls} model calls`);
 });
 
@@ -1064,4 +1066,69 @@ test('a missing operator fact remains a real question even after a network outag
   const result=await run(s,model,async()=>({ok:false,verified:false,error:'ECONNREFUSED'}));
   assert.equal(result.blocked,true);
   assert.equal(s.control.get(mission.id).status,'BLOCKED');
+});
+
+test('graph mission recovers from a repeated native loop by requesting bounded structural repair', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({
+    goal: 'Inspect the service and complete the original goal',
+    source: 'seer-mission-graph',
+    parent: { graphId: 'g-rescue', nodeKey: 'step-1', mainGoal: 'Complete the original goal' },
+    idempotencyKey: 'stuck-graph-repair',
+    allowedTasks: ['web-fetch'],
+  });
+  const same = () => ({ tool_calls: [call('web-fetch', { url: 'https://same.test' })] });
+  const result = await run(s, scripted(Array.from({ length: 8 }, same)),
+    async () => ({ ok: true, verified: true, content: 'unchanged' }));
+  assert.equal(result.replanRequested, true);
+  assert.equal(result.recovery, 'REPLAN_GRAPH');
+  assert.equal(result.blocked, undefined, 'the agent did not request an operator decision');
+  assert.equal(result.receipts.length, 6);
+  const persisted = s.control.get(m.id);
+  assert.equal(persisted.status, 'BLOCKED', 'graph reconciliation owns the next repair');
+  assert.deepEqual(persisted.replanRequest.subgoals, []);
+  assert.match(persisted.replanRequest.reason, /^STUCK:/);
+});
+
+test('automatic graph repair cannot be requested by a mission without a graph', async t => {
+  const s = setup(t, ['web-fetch']);
+  const mission = s.control.create({ goal: 'Read a page', idempotencyKey: 'no-replan-authority', allowedTasks: ['web-fetch'] });
+  const claimed = await s.client.claim(mission.id, 'nova');
+  await assert.rejects(s.client.release(mission.id, {
+    owner: 'nova', token: claimed.token, replanRequest: { reason: 'try another approach', subgoals: [] },
+  }), /REPLAN_REQUIRES_GRAPH_MISSION/);
+  await s.client.release(mission.id, { owner: 'nova', token: claimed.token });
+  assert.equal(s.control.get(mission.id).status, 'ACTIVE');
+});
+
+test('preflight retries transient runtime and browser outages without masking authorization failures', async () => {
+  const { isTransientPreflightBlockers } = await import('../../agents/lib/mission-health-policy.mjs');
+  assert.equal(isTransientPreflightBlockers(['RUNTIME_PREFLIGHT_UNAVAILABLE']), true);
+  assert.equal(isTransientPreflightBlockers(['BROWSER_BRIDGE_UNAVAILABLE']), true);
+  assert.equal(isTransientPreflightBlockers(['BROWSER_BRIDGE_UNAVAILABLE', 'RUNTIME_PREFLIGHT_UNAVAILABLE']), true);
+  for (const cases of [[], ['BROWSER_BRIDGE_AUTH_REQUIRED'], ['CODING_ROOT_MISSING'],
+    ['BROWSER_BRIDGE_UNAVAILABLE', 'MISSION_CONTEXT_UNAVAILABLE']]) {
+    assert.equal(isTransientPreflightBlockers(cases), false);
+  }
+});
+
+test('a durable release failure does not falsely report autonomous repair as accepted', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({
+    goal: 'Diagnose and repair', source: 'seer-mission-graph',
+    parent: { graphId: 'g-release', nodeKey: 'step-1', mainGoal: 'Diagnose and repair' },
+    idempotencyKey: 'release-repair-fails', allowedTasks: ['web-fetch'],
+  });
+  const release = s.client.release.bind(s.client);
+  s.client.release = async (id, input) => {
+    if (input.replanRequest) throw Error('SIMULATED_RELEASE_OUTAGE');
+    return release(id, input);
+  };
+  const same = () => ({ tool_calls: [call('web-fetch', { url: 'https://same.test' })] });
+  const result = await run(s, scripted(Array.from({ length: 8 }, same)),
+    async () => ({ ok: true, verified: true, content: 'unchanged' }));
+  assert.equal(result.deferred, true);
+  assert.equal(result.recovery, 'WAIT_RUNTIME');
+  assert.equal(result.replanRequested, undefined);
+  assert.equal(s.control.get(m.id).status, 'ACTIVE');
 });
