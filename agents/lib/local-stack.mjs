@@ -216,6 +216,25 @@ function ownsListener(c,s) {
   const listener=Number(execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`(Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Where-Object { $_.RemotePort -eq 0 } | Select-Object -First 1).OwningProcess`],{encoding:'utf8',windowsHide:true,timeout:15000}).trim());
   return recoverableListener(pid,listener);
 }
+// Only the canonical installed Core can be recycled for sustained unresponsiveness.
+// Verify its recorded PID, birth time and listener again immediately before termination.
+// The durable mission leases decide recovery on boot; never replay unknown writes here.
+export async function restartOwnedUnhealthyRuntime(c, { unhealthyForMs = 0 } = {}) {
+  if (process.platform !== 'win32' || c.dataRoot === c.root || unhealthyForMs < 300_000) return { restarted: false, reason: 'NOT_ELIGIBLE' };
+  const service = definitions(c).find(s => s.id === 'runtime');
+  const observation = await probe(service, c.env.GATEWAY_TOKEN);
+  if (observation.state === 'READY') return { restarted: false, reason: 'RECOVERED' };
+  const pid = pendingProcess(c, 'runtime');
+  if (!pid) return { restarted: false, reason: 'NO_OWNED_PROCESS' };
+  // A foreign listener may not be stopped, even if a stale receipt exists.
+  if (await occupied(service.url) && !ownsListener(c, service)) return { restarted: false, reason: 'FOREIGN_LISTENER' };
+  const receiptPath = path.join(c.dataRoot, 'logs/startup/runtime.process.json');
+  const record = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+  if (record.pid !== pid || !record.birth || processBirth(pid) !== record.birth) return { restarted: false, reason: 'OWNER_CHANGED' };
+  // Stop only an owned, repeatedly unhealthy API process. This is not a mission action.
+  process.kill(pid, 'SIGTERM');
+  return { restarted: true, reason: 'OWNED_UNHEALTHY_CORE_TERMINATED', pid };
+}
 // Another reader can hold the receipt open for a moment on Windows; that must not abort the startup it describes.
 export function renameWithRetry(from, to, { attempts = 20, waitMs = 100, rename = fs.renameSync } = {}) {
   for (let attempt = 1; ; attempt++) {
