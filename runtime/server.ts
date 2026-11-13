@@ -39,6 +39,7 @@ import { actuatorLeases } from './src/server/handsOff/actuatorLease.js';
 import { ConnectedRuntime, mountConnectedRoutes } from './src/server/connected/connectedRuntime.mjs';
 import { validProviderId } from './src/server/connected/providerRegistry.mjs';
 import { createIdeRemoteGate, ideDeviceRegistryAdapter, upgradeAllowed, ideHost } from './src/server/connected/ideAccess.mjs';
+import { auraLegacyStatePath } from './src/lib/auraLegacyStatePath.mjs';
 import { mountVscodeEmbedHeaders } from './src/server/security/vscodeEmbed.mjs';
 import { normalizeAuraChatMode, normalizeAuraMissionMode } from './src/lib/auraRunModes.mjs';
 import { validateOperatorConfirmation } from './src/lib/operatorApproval.mjs';
@@ -2432,7 +2433,7 @@ const notifyPhone = async (action) => {
 
   app.get('/api/aura/workbench/local-memory', requireLocalUi, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    try { res.json({ success: true, ...localMemoryActivity(continuumSurface.runtime, { legacyFile: path.join(WORKSPACE_ROOT, '.jaco', 'memory', 'memory-store.json') }) }); }
+    try { res.json({ success: true, ...localMemoryActivity(continuumSurface.runtime, { legacyFile: auraLegacyStatePath('memory', 'memory-store.json') }) }); }
     catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }
   });
   // The plan as the operator sees it (SEER's mission graphs, read only) and the operator's comments on it.
