@@ -286,7 +286,7 @@ export async function runAgentMission({
         log('warn', `model error ${modelErrors}/${maxModelErrors}: ${errorText(error)}`);
         const modelIssue = errorText(error);
         // A rate window ends by itself: give the mission back and try on a later tick.
-        if (/^MODEL_TEMPORARILY_LIMITED/.test(modelIssue)) return end({ deferred: true, reason: modelIssue }, {});
+        if (/^MODEL_TEMPORARILY_LIMITED/.test(modelIssue)) return end({ deferred: true, recovery: 'WAIT_PROVIDER', reason: modelIssue }, {});
         // The request is over the operator's per-call budget: send less before asking for more budget.
         if (/TASK_COST_LIMIT/.test(modelIssue) && !costCondensed) {
           costCondensed = true;
