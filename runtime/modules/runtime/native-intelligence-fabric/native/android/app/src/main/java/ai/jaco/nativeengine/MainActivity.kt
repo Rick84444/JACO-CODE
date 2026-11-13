@@ -159,7 +159,8 @@ class MainActivity : Activity() {
             message.setText(R.string.recovery_token_copied)
         }
         advancedButton("Rotera token") {
-            SessionToken.rotate(this); paired = false
+            // Rotating the canonical session token immediately invalidates old clients.
+            SessionToken.rotate(this)
             // The running server resolves the current token for every request. No restart race.
             message.text = "Lokal motortoken roterad. Kontrollera anslutna klienter innan nästa anrop."
         }
