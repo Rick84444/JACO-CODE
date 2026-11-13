@@ -104,3 +104,23 @@ test('cross-platform validation accepts Win32 absolute syntax but never writes i
     assert.deepEqual([result.ok,result.verified,result.error],[false,false,'LOCAL_WRITE_PATH_PLATFORM_MISMATCH']);
   }
 });
+
+test('one-shot local-write refuses a linked parent before making any file', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-linked-parent-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const actual = path.join(root, 'actual');
+  const shortcut = path.join(root, 'shortcut');
+  fs.mkdirSync(actual, {recursive:true});
+  try {
+    fs.symlinkSync(actual, shortcut, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    if (error.code === 'EPERM' || error.code === 'EACCES') return t.skip('Creating directory symlinks requires privileges on this host');
+    throw error;
+  }
+  const destination = path.join(shortcut, 'nested', 'important.txt');
+  const observed = performLocalWrite({path:destination,content:'must not reach the linked tree'});
+  assert.equal(observed.ok,false);
+  assert.equal(observed.verified,false);
+  assert.match(observed.error,/LOCAL_WRITE_PARENT_IS_LINK/);
+  assert.equal(fs.existsSync(path.join(actual,'nested','important.txt')),false);
+});
