@@ -34,8 +34,8 @@ export function checkLocalWritePath(input, { platform = process.platform } = {})
   // Mission validation is transport-independent. Recognize a fully qualified
   // Windows path even when CI validates the contract on Linux. Execution below
   // still rejects paths that are not native to the *actual* host.
-  const windowsDrive = /^[a-z]:[\\\\/]/i.test(raw);
-  if (/^(?:\\\\\\\\|\/\/|\\\\\\\\[?.]\\\\)/.test(raw)) throw new Error('LOCAL_WRITE_PATH_UNC_NOT_SUPPORTED');
+  const windowsDrive = /^[a-z]:[\\/]/i.test(raw);
+  if (/^(?:\\\\|\/\/)/.test(raw)) throw new Error('LOCAL_WRITE_PATH_UNC_NOT_SUPPORTED');
   const lib = (platform === 'win32' || windowsDrive) ? path.win32 : path.posix;
   if (lib === path.win32 && !windowsDrive) throw new Error('LOCAL_WRITE_PATH_NOT_ABSOLUTE');
   if (!lib.isAbsolute(raw)) throw new Error('LOCAL_WRITE_PATH_NOT_ABSOLUTE');
