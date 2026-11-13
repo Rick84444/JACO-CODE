@@ -8,7 +8,7 @@ Reuse the existing root Git tree as truth for **tracked-file inventory**, AGENTS
 
 Run git ls-tree -r -z HEAD on the checked-out commit. Parse NUL-separated records; count all blobs and group identical blob SHAs. Report categories: public distribution mirror, launcher duplicate, licensing copy, type declaration shim, branded copy and unclassified. Emit an explicit NOT_DEBT_FREE status regardless of whether duplicate groups exist. Never mutate or delete.
 
-The scanner also reports one bounded, static launcher mismatch if the root start.sh advertises npm run start but the root package.json has no start script. It does not claim live execution failure. It uses no network, package installation, model or private secrets.
+The scanner also reports one bounded, static launcher mismatch if the identical root and runtime start.sh scripts use cwd-relative paths but their package start commands select distinct lifecycles. It does not claim live execution failure. It uses no network, package installation, model or private secrets.
 
 ## Phase B: actual architecture audit (not yet complete)
 
