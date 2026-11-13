@@ -6,6 +6,7 @@ import { exec } from "child_process";
 import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
+import { auraLegacyStatePath } from "./lib/auraLegacyStatePath.mjs";
 import util from "util";
 const execAsync = util.promisify(exec);
 
@@ -817,7 +818,7 @@ export class AuraEngineManager {
 
     // Load persisted skills from disk
     try {
-      const dir = path.join(process.cwd(), '.jaco', 'skills');
+      const dir = auraLegacyStatePath('skills');
       if (fsSync.existsSync(dir)) {
         const files = fsSync.readdirSync(dir);
         for (const f of files) {
@@ -836,7 +837,7 @@ export class AuraEngineManager {
 
     // Load persisted memories from disk to prevent memory loss
     try {
-      const memFile = path.join(process.cwd(), '.jaco', 'memory', 'memory-store.json');
+      const memFile = auraLegacyStatePath('memory', 'memory-store.json');
       if (fsSync.existsSync(memFile)) {
         const rawMem = fsSync.readFileSync(memFile, 'utf-8');
         const parsedMem = JSON.parse(rawMem);
@@ -866,7 +867,7 @@ export class AuraEngineManager {
     this.startAutonomousPodarLoop();
   }
 
-  private chatHistoryFile = path.join(process.cwd(), '.jaco', 'memory', 'chat-history.json');
+  private chatHistoryFile = auraLegacyStatePath('memory', 'chat-history.json');
   private chatHistory: Array<{ role: 'user' | 'assistant'; content: string; timestamp: string; modelUsed?: string }> = [];
 
   private loadChatHistory() {
@@ -1334,7 +1335,7 @@ export class AuraEngineManager {
   private loadGoalsFromDisk() {
     const canonical = buildCanonicalAuraGoal();
     try {
-      const goalFile = path.join(process.cwd(), '.jaco', 'goals', 'goals-store.json');
+      const goalFile = auraLegacyStatePath('goals', 'goals-store.json');
       if (!fsSync.existsSync(goalFile)) {
         this.strategicGoals = [canonical];
         return;
@@ -1370,7 +1371,7 @@ export class AuraEngineManager {
 
   private saveGoalsToDisk() {
     try {
-      const goalDir = path.join(process.cwd(), '.jaco', 'goals');
+      const goalDir = auraLegacyStatePath('goals');
       if (!fsSync.existsSync(goalDir)) {
         fsSync.mkdirSync(goalDir, { recursive: true });
       }
@@ -1623,7 +1624,7 @@ export class AuraEngineManager {
 
     // Save skill to disk
     try {
-      const dir = path.join(process.cwd(), '.jaco', 'skills');
+      const dir = auraLegacyStatePath('skills');
       if (!fsSync.existsSync(dir)) {
         fsSync.mkdirSync(dir, { recursive: true });
       }
@@ -1909,7 +1910,7 @@ export class AuraEngineManager {
     return newPlan;
   }
 
-  private strategyStoreFile = path.join(process.cwd(), '.jaco', 'strategy', 'strategy-store.json');
+  private strategyStoreFile = auraLegacyStatePath('strategy', 'strategy-store.json');
 
   private loadStrategyFromDisk() {
     try {
@@ -2110,7 +2111,7 @@ export class AuraEngineManager {
     }
 
     // Write physical worker script file to .jaco/workers/
-    const workersDir = path.join(process.cwd(), '.jaco', 'workers');
+    const workersDir = auraLegacyStatePath('workers');
     const workerScriptPath = path.join(workersDir, `${workerName}.js`);
     const scriptCode = `/**
  * [AUTONOMOUS CLOUDFLARE WORKER PACKAGE] - JACO OS MimirPower Edge Node & Sales Gateway
@@ -2523,7 +2524,7 @@ export class ${toolName.replace(/\.ts$/, '')} {
 
     // Persist to disk - Global memory store & Agent-scoped memory
     try {
-      const memDir = path.join(process.cwd(), '.jaco', 'memory');
+      const memDir = auraLegacyStatePath('memory');
       const agentDir = path.join(memDir, 'agents');
       if (!fsSync.existsSync(agentDir)) {
         fsSync.mkdirSync(agentDir, { recursive: true });
@@ -2571,7 +2572,7 @@ export class ${toolName.replace(/\.ts$/, '')} {
 
     // Update disk memory store
     try {
-      const memFile = path.join(process.cwd(), '.jaco', 'memory', 'memory-store.json');
+      const memFile = auraLegacyStatePath('memory', 'memory-store.json');
       fsSync.writeFileSync(memFile, JSON.stringify(this.memory, null, 2), 'utf-8');
     } catch (e) {
       console.warn("[AuraEngine] Clear memory disk write error:", e);
