@@ -29,6 +29,21 @@ test('the Gameboard opens on the plan asked for, else the one Aura is working on
   assert.equal(pickPlan([], null), null);
 });
 
+test('the board offers only the mission controls the ledger allows', async () => {
+  const { missionControlState } = await import('../components/StrategyBoard');
+  const m = (over: Record<string, unknown>) => ({ identity: 'm', goal: 'g', status: 'ACTIVE', verifiedActions: 0, ...over });
+  assert.deepEqual(missionControlState(m({})), { live: true, pause: true, resume: false, steer: true, end: true, endGoal: false, state: 'working' });
+  assert.deepEqual(missionControlState(m({ paused: { at: 't' }, graphId: 'g1' })), { live: true, pause: false, resume: true, steer: true, end: true, endGoal: true, state: 'paused' });
+  // A blocker is decided through the approval row, not paused; a pause on a blocked mission can still be lifted.
+  const blocked = missionControlState(m({ status: 'BLOCKED' }));
+  assert.deepEqual([blocked.pause, blocked.steer, blocked.end, blocked.state], [false, false, true, 'blocked']);
+  assert.equal(missionControlState(m({ status: 'BLOCKED', paused: { at: 't' } })).resume, true);
+  assert.equal(missionControlState(m({ status: 'AWAITING_VERIFICATION' })).state, 'verifying');
+  // Once ending or ended, nothing is offered.
+  assert.deepEqual([missionControlState(m({ cancelRequested: true })).live, missionControlState(m({ cancelRequested: true })).state], [false, 'ending']);
+  assert.deepEqual([missionControlState(m({ status: 'DONE' })).live, missionControlState(m({ status: 'CANCELLED', graphId: 'g1' })).endGoal], [false, false]);
+});
+
 test('the line from the active subgoal to the goal glows all the way to the middle', async () => {
   const { litLine } = await import('../components/StrategyBoard');
   const item = (status: string) => ({ node: node('n', [], status), children: [], repeat: false });

@@ -2595,6 +2595,25 @@ const notifyPhone = async (action) => {
     }
   });
 
+  // Pause and resume are operator decisions recorded on the mission ledger. Nothing running is aborted; no new
+  // tool starts while paused. Resume lifts the pause only: a blocker still needs its own decision.
+  app.post('/api/aura/workbench/missions/:id/pause', requireLocalUi, (req, res) => {
+    try {
+      const mission = connectedRuntime.novaMissions.pause(req.params.id, String(req.body?.note || 'The operator pauses the mission from the Gameboard.').slice(0, 1000));
+      seerLiveWorkstream.record({ actor: 'Aura Gameboard', type: 'mission.paused', message: `Mission paused by the operator: ${mission.id}`, verified: true, receipt: { missionId: mission.id, pausedAt: mission.paused?.at || null } });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ success: true, missionId: mission.id, paused: mission.paused, status: mission.status });
+    } catch (error: any) { res.status(409).json({ success: false, error: String(error?.message || error) }); }
+  });
+  app.post('/api/aura/workbench/missions/:id/resume', requireLocalUi, (req, res) => {
+    try {
+      const mission = connectedRuntime.novaMissions.resumePaused(req.params.id, String(req.body?.note || 'The operator resumes the mission from the Gameboard.').slice(0, 1000));
+      seerLiveWorkstream.record({ actor: 'Aura Gameboard', type: 'mission.resumed', message: `Mission resumed by the operator: ${mission.id}`, verified: true, receipt: { missionId: mission.id } });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ success: true, missionId: mission.id, paused: mission.paused, status: mission.status });
+    } catch (error: any) { res.status(409).json({ success: false, error: String(error?.message || error) }); }
+  });
+
   app.post('/api/aura/workbench/missions/:id/cancel', requireLocalUi, async (req, res) => {
     try {
       const control = connectedRuntime.novaMissions;

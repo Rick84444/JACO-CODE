@@ -97,7 +97,12 @@ No layer can grant a tool. The capsule attenuates; the mission and the executor 
 - **Deny a tool for Aura** in her capsule (`capsule.json`, `tools.deny`). Deny always wins over allow.
 - **Narrow a mission** by editing its scope before or during the run; the change is versioned and reconciled with
   outstanding work.
-- **Stop** a mission, or end its goal. Unknown outcomes are reconciled, not repeated.
+- **Pause** a mission from the Gameboard: no new tool starts, a running step finishes and keeps its receipt, later
+  missions are not held up, and the pause survives a restart. **Resume** lifts it; the operator's "continue" on a
+  blocker lifts it too, an automated resume never does.
+- **Send a change** from the Gameboard: Aura reads it at her next planning step; a running step is not interrupted,
+  and a plan made before the change cannot start a tool after it.
+- **Stop** a mission, or end its goal, from the Gameboard or the chat. Unknown outcomes are reconciled, not repeated.
 - **Retire a lesson** that does not help (`POST …/meta-lessons/:id/retire`), or approve a proposed one
   (`POST …/meta-lessons/:id/approve`).
 
@@ -118,7 +123,8 @@ Not verified:
 1. Capability observations are not yet produced by the runtime: `capability-observation.mjs` exists and is tested,
    but no probe or execution path writes records yet.
 2. The Gameboard still shows some availability by inference (see `docs/aura-autonomy-tool-audit-2026-11-07.md`).
-3. Mission scope edits during a run are not yet versioned (section 7 describes the target).
+3. A change of direction during a run is versioned (steering revision); a change of a mission's tool scope is not
+   yet, so narrowing a running mission's tools still goes through the capability switches.
 4. The capsule for Aura is not yet written. Until it is, her tools are governed by the mission and the operator
    switches only.
 5. Memory provenance (a source reference on every fact) is not enforced yet.

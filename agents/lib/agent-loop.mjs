@@ -128,7 +128,7 @@ export async function runAgentMission({
   let presentedSteerVersion = modelSteerVersion;
   // Queue admission is scheduler state, never evidence that a tool is forbidden.
   // Do not send these refusals back to the model as capability failures.
-  const queueRefusal = reason => /^(?:MISSION_NOT_CURRENT|NOVA_LEASE_BUSY|NOVA_LEASE_INVALID|MISSION_BUSY|NOVA_NOT_PLANNING)(?::|$)/.test(reason);
+  const queueRefusal = reason => /^(?:MISSION_NOT_CURRENT|NOVA_LEASE_BUSY|NOVA_LEASE_INVALID|MISSION_BUSY|NOVA_NOT_PLANNING|MISSION_PAUSED)(?::|$)/.test(reason);
   const yieldQueue = reason => ({executed:receipts.length>0,receipts,steps,deferred:true,queueChanged:true,reason});
 
 
@@ -223,9 +223,15 @@ export async function runAgentMission({
       // Check the durable operator input before every model turn. Never abort
       // an already-executing tool, and do not start tools from a stale response.
       const scheduled = await client.current();
-      if (!scheduled || scheduled.id !== mission.id) return yieldQueue('MISSION_NOT_CURRENT');
+      if (!scheduled || scheduled.id !== mission.id) {
+        // A paused mission leaves the queue head on purpose: report the pause, not a queue change.
+        const latest = await client.get(mission.id).catch(() => null);
+        return yieldQueue(latest?.paused ? 'MISSION_PAUSED' : 'MISSION_NOT_CURRENT');
+      }
       mission = await client.get(mission.id);
       if (mission.status !== 'ACTIVE' || mission.cancelRequested) return { executed: receipts.length > 0, receipts, steps, stopped: mission.status };
+      // The operator paused the mission: give the turn back without planning; the conversation resumes from the ledger later.
+      if (mission.paused) return yieldQueue('MISSION_PAUSED');
       // Operator switches may narrow the live mission during a long conversation.
       // Do not keep showing a tool that this mission no longer offers.
       const liveAllowed = JSON.stringify(mission.allowedTasks || []);

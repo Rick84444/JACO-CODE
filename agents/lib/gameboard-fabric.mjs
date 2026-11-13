@@ -103,6 +103,11 @@ export function gameboardProjection({
       actionCount: receipts.length, verifiedActions,
       reviewAvailable: m.reviewAvailable === true,
       lastError: lastFailure ? clipped(lastFailure.error, 260) : null,
+      // Operator control state, read from the mission ledger: what the Gameboard's buttons may offer.
+      paused: m.paused && typeof m.paused === 'object' ? { at: clipped(m.paused.at, 60) || null } : null,
+      cancelRequested: m.cancelRequested === true,
+      steeringRevision: Number.isSafeInteger(m.steering?.revision) ? m.steering.revision : null,
+      graphId: clipped(m.metadata?.parent?.graphId, 160) || null,
       evidenceStatus: verifiedActions ? 'VERIFIED_ACTION_RECEIPTS' : 'NO_VERIFIED_ACTION_RECEIPTS',
     };
   });

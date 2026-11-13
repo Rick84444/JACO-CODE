@@ -18,6 +18,27 @@ The original desktop UI remains the canonical JacoAuraComputeIDE on both Windows
 - The board reuses the existing Aura live SSE stream and refreshes from the plan source; no additional SSE connection, model or tool grant.
 - If Aura's graph adapter or live stream is unavailable, the last observed graph remains visible but active pulses stop. No simulated work is displayed as real execution.
 
+## Operator controls on the board
+
+The board is the operator's hand on a running mission as well as a view of it. Every control goes through the same
+workbench routes as the chat (`/api/aura/workbench/missions/:id/...`); the board grants no authority of its own, and
+what it offers is derived from the mission ledger (`missionControlState` in `StrategyBoard.tsx`), never from the goal's
+wording.
+
+| Control | Route | Effect | Offered when |
+| --- | --- | --- | --- |
+| Pause | `pause` | No new planning lease, no new tool; a running step finishes and keeps its receipt; later missions are not held up; survives a restart | mission ACTIVE and not paused |
+| Resume | `resume` | Lifts the pause only; a blocker still needs its own decision | mission paused |
+| Send a change | `steer` | Recorded as a steering revision; Aura reads it at her next planning step; a plan made before it cannot start a tool after it | mission ACTIVE |
+| End the mission | `cancel` | A running step may finish, nothing new starts, the goal stays | mission not already ending |
+| End the goal | `end-goal` | Ends the strategic goal, stops its open graphs and their missions | mission belongs to a graph |
+
+Pause and resume are recorded as `NOVA_OPERATOR_PAUSE` / `NOVA_OPERATOR_PAUSE_END` events on the mission bus
+(`novaMissionControl.mjs`: `pause`, `resumePaused`, `pauseState`). The operator's own "continue" on a blocked mission
+also lifts a pause; an automated resume from the approval policy never does. Ending is confirmed in place, with its
+effect spelled out, before anything is sent. Contract: `tests/nova/mission-pause.test.mjs` and
+`runtime/src/lib/gameboardTree.test.tsx`.
+
 ## Independent perspectives implemented as automated tests, not extra AI agents
 
 Senior adversarial checks: tests/nova/reverse-goal-layout.test.mjs and tests/nova/aura-plan.test.mjs. These cover cycles, unknown links, duplicate identities, shared prerequisites, false verification, stale execution, replan anchoring and operator authority.

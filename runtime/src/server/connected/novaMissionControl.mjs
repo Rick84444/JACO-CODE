@@ -436,6 +436,7 @@ export class NovaMissionControl {
       preflight: this.bus.lastMissionEvent(id,'NOVA_PREFLIGHT')?.payload || null,
       replanRequest: this.bus.lastMissionEvent(id,'NOVA_REPLAN_REQUEST')?.payload || null,
       cancelRequested: !TERMINAL.has(base.status) && Boolean(this.bus.lastMissionEvent(id,'NOVA_CANCEL_REQUEST')),
+      paused: TERMINAL.has(base.status) ? null : this.pauseState(id),
       // Immutable operator instructions share this mission's durable event ledger.
       // Revision is the event sequence: a stale model proposal cannot start a tool after a steer.
       steering: this.latestSteering(id),
@@ -475,15 +476,18 @@ export class NovaMissionControl {
       const ids = this.db.prepare("SELECT s.mission_id FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='ACTIVE' ORDER BY " + QUEUE_ORDER).all();
       for (const { mission_id } of ids) {
         const mission = this.get(mission_id);
-        if ((mission.metadata?.executor || 'nova') === executor) return mission;
+        if (!mission.paused && (mission.metadata?.executor || 'nova') === executor) return mission;
       }
       return null;
     }
     // Only executable ACTIVE missions belong at the queue head. BLOCKED and
     // AWAITING_VERIFICATION missions remain durable and visible by id, but must
     // not silently starve unrelated later work.
-    const row = this.db.prepare("SELECT s.mission_id FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='ACTIVE' ORDER BY " + QUEUE_ORDER + " LIMIT 1").get();
-    return row ? this.get(row.mission_id) : null;
+    for (const row of this.db.prepare("SELECT s.mission_id FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='ACTIVE' ORDER BY " + QUEUE_ORDER).all()) {
+      const mission = this.get(row.mission_id);
+      if (!mission.paused) return mission;
+    }
+    return null;
   }
 
   // A planning lease belongs to one running agent. The agent keeps its registered id across restarts, so after a restart the
@@ -527,6 +531,7 @@ export class NovaMissionControl {
     if (typeof owner !== 'string' || !owner || owner.length > 200) throw new Error('MISSION_NOT_CURRENT');
     if (executor != null && !EXECUTOR.test(String(executor))) throw new Error('INVALID_MISSION_EXECUTOR');
     const mission = this.get(id);
+    if (mission.paused) throw new Error('MISSION_PAUSED');
     const claimant = executor ? String(executor) : owner.startsWith('desktop-agentos-') ? 'desktop-agentos' : 'nova';
     const desktopOwner = executorKind(claimant) === 'desktop-agentos';
     const missionExecutor = mission.metadata?.executor || 'nova';
@@ -585,6 +590,7 @@ export class NovaMissionControl {
     if ((currentVersion || steerVersion !== undefined) && steerVersion !== currentVersion) throw new Error('NOVA_STEER_STALE');
     if (row.phase !== 'PLANNING' || mission.status !== 'ACTIVE') throw new Error('NOVA_NOT_PLANNING');
     if (mission.cancelRequested) throw new Error('MISSION_CANCEL_REQUESTED');
+    if (mission.paused) throw new Error('MISSION_PAUSED');
     if (mission.contract) {
       const used = row.turn - (row.budget_turn_base || 0);
       const startedAt = row.budget_started_at ?? Date.parse(mission.createdAt || mission.created_at || '');
@@ -749,6 +755,34 @@ export class NovaMissionControl {
     return { steering: this.latestSteering(id), replayed: false };
   }
 
+  // Operator pause (docs/aura/OPERATING_CONTRACT.md, section 7). Durable and event-sourced like a cancel request.
+  // The mission keeps its status, queue place, budget and receipts: no new planning lease is given and no new tool
+  // starts until the operator resumes. A tool that is already executing finishes and records its receipt; nothing
+  // running is aborted, so no outcome becomes unknown because of a pause.
+  pauseState(id) {
+    const pause = this.bus.lastMissionEvent(id, 'NOVA_OPERATOR_PAUSE');
+    if (!pause) return null;
+    const lifted = this.bus.lastMissionEvent(id, 'NOVA_OPERATOR_PAUSE_END');
+    if (lifted && lifted.seq > pause.seq) return null;
+    return { at: pause.ts, note: String(pause.payload?.note || ''), revision: pause.seq };
+  }
+
+  pause(id, note = 'The operator pauses the mission from the Gameboard.') {
+    const mission = this.get(id);
+    if (TERMINAL.has(mission.status)) throw new Error('MISSION_TERMINAL');
+    if (mission.cancelRequested) throw new Error('MISSION_CANCEL_REQUESTED');
+    if (mission.paused) return mission;
+    this.bus.event('NOVA_OPERATOR_PAUSE', { missionId: id, payload: { note: String(note).slice(0, 1000) } });
+    return this.get(id);
+  }
+
+  resumePaused(id, note = 'The operator resumes the mission from the Gameboard.') {
+    const mission = this.get(id);
+    if (!mission.paused) return mission;
+    this.bus.event('NOVA_OPERATOR_PAUSE_END', { missionId: id, payload: { note: String(note).slice(0, 1000) } });
+    return this.get(id);
+  }
+
   requestCancel(id, note = 'The operator ends the mission from Aura.') {
     const mission = this.get(id);
     if (TERMINAL.has(mission.status)) return mission;
@@ -804,6 +838,9 @@ export class NovaMissionControl {
     }
     if (decision !== 'resume') this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=?').run(id);
     this.setStatus(id, decision === 'confirm' ? 'DONE' : decision === 'cancel' ? 'CANCELLED' : 'ACTIVE');
+    if (decision === 'resume' && normalizedAuthority === 'operator' && !/^auto-/i.test(note.trim()) && this.pauseState(id)) {
+      this.bus.event('NOVA_OPERATOR_PAUSE_END', { missionId: id, payload: { note: 'Lifted by the operator decision to continue.' } });
+    }
     this.db.prepare('UPDATE nova_sessions SET phase=?,failures=0 WHERE mission_id=?').run(decision === 'resume' ? 'READY' : 'CLOSED', id);
     // Automated resumes (auto-approval policy) never extend the budget; only the operator's own decision does.
     if (decision === 'resume' && normalizedAuthority === 'operator' && !/^auto-/i.test(note.trim())) {
