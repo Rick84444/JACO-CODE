@@ -36,9 +36,9 @@ export const isProxied = req => {
   const headers = req?.headers || {};
   if (headers['cf-connecting-ip'] || headers['x-forwarded-for'] || headers['x-forwarded-host']) return true;
   const peer = String(req?.socket?.remoteAddress || req?.connection?.remoteAddress || '');
-  if (peer && !/^(?:127(?:\\.\\d+){3}|::1|::ffff:127(?:\\.\\d+){3})$/.test(peer)) return true;
+  if (peer && !/^(?:127(?:\.\d+){3}|::1|::ffff:127(?:\.\d+){3})$/.test(peer)) return true;
   const host = String(headers.host || '').toLowerCase();
-  return Boolean(host && !/^(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::\\d+)?$/.test(host));
+  return Boolean(host && !/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(host));
 };
 export const ideHost = (env = process.env) => String(env.JACO_IDE_PUBLIC_HOST || '').trim().toLowerCase();
 
