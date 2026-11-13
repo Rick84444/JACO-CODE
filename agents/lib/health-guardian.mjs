@@ -11,8 +11,10 @@ const nowIso = () => new Date().toISOString();
 const critical = new Set(['runtime', 'workplace', 'nova-supervisor', 'nova-session']);
 export function unhealthyServices(snapshot) {
   const services = Array.isArray(snapshot?.services) ? snapshot.services : [];
-  const criticalObserved = services.filter(s => critical.has(s.id));
-  return criticalObserved.length ? criticalObserved.filter(s => s.state !== 'READY').map(s => s.id) : ['NO_CRITICAL_OBSERVATIONS'];
+  // Missing observations are not evidence of health: a partially failed health
+  // probe used to hide a missing Workplace supervisor in the previous version.
+  const byId = new Map(services.filter(s => critical.has(s.id)).map(s => [s.id, s.state]));
+  return [...critical].filter(id => byId.get(id) !== 'READY');
 }
 export function guardianBackoffMs(failures) {
   return Math.min(10 * 60_000, INTERVAL_MS * 2 ** Math.min(Math.max(0, failures - 1), 5));
@@ -26,19 +28,29 @@ export async function guardianTick(c, state, {
 } = {}) {
   const observed = await inspect(c);
   const unhealthy = unhealthyServices(observed);
+  // Each service owns its own sustained-failure clock. A broken optional worker
+  // must not make a later, briefly unhealthy Core appear to have failed for 5 min.
+  state.unhealthySinceByService ||= {};
+  for (const id of critical) {
+    if (unhealthy.includes(id)) state.unhealthySinceByService[id] ??= now;
+    else delete state.unhealthySinceByService[id];
+  }
   if (!unhealthy.length) {
-    state.unhealthySince = null;
     state.failures = 0;
     state.nextAttemptAt = 0;
     return { kind: 'HEALTHY', unhealthy };
   }
-  state.unhealthySince ??= now;
   if (now < (state.nextAttemptAt || 0)) return { kind: 'COOLDOWN', unhealthy };
   // The owner is reverified in local-stack. Never terminate Workplace/Nova: it
   // could orphan an in-flight executor and create duplicate external effects.
   let recycling = null;
-  if (unhealthy.includes('runtime') && now - state.unhealthySince >= 300_000) {
-    recycling = await restartCore(c, { unhealthyForMs: now - state.unhealthySince });
+  const coreUnhealthyForMs = unhealthy.includes('runtime') ? Math.max(0, now - state.unhealthySinceByService.runtime) : 0;
+  if (coreUnhealthyForMs >= 300_000) {
+    try { recycling = await restartCore(c, { unhealthyForMs: coreUnhealthyForMs }); }
+    catch (cause) {
+      // A failed diagnostic must not suppress the normal recovery attempt.
+      recycling = { restarted: false, reason: 'CORE_RECYCLE_DIAGNOSTIC_FAILED', error: String(cause?.message || cause).slice(0, 160) };
+    }
   }
   state.failures = (state.failures || 0) + 1;
   state.nextAttemptAt = now + guardianBackoffMs(state.failures);
@@ -89,7 +101,7 @@ export async function main() {
   const log = event => {
     try { fs.appendFileSync(logPath, JSON.stringify({ at: nowIso(), ...event }) + '\n'); } catch {}
   };
-  const state = { unhealthySince: null, failures: 0, nextAttemptAt: 0 };
+  const state = { unhealthySinceByService: {}, failures: 0, nextAttemptAt: 0 };
   try {
     // The launcher already performed the first activation; do not race its lock.
     while (fs.existsSync(path.join(c.runtime, 'dist/server.cjs')) &&
