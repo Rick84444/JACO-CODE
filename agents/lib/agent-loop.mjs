@@ -19,6 +19,7 @@ import { executionExceptionResult } from './replay-semantics.mjs';
 import { verifiedOutcomeHints } from './verified-outcome-context.mjs';
 import { decisionLessonHints } from './meta-reasoning.mjs';
 import { observeMissionCapabilities, capabilityDenialCorrection } from './capability-recovery.mjs';
+import { isTransientModelFailure, isRecoverableToolHealthError } from './mission-health-policy.mjs';
 
 const RESULT_CHARS = 6000;
 const clip = (text, max = RESULT_CHARS) => {
@@ -139,6 +140,7 @@ export async function runAgentMission({
   let steps = 0, modelErrors = 0, idle = 0, turns = 0;
   let capabilityEvidence = null;
   let capabilityCorrections = 0;
+  let healthCatalogRefreshes = 0;
   const MAX_CAPABILITY_CORRECTIONS = 2;
   let modelSteerVersion = mission.steering?.revision || 0;
   let presentedSteerVersion = modelSteerVersion;
@@ -290,9 +292,13 @@ export async function runAgentMission({
             continue;
           }
         }
-        // Aura's only authorized model is missing or unavailable. A repeating
-        // step-0 defer hid the problem indefinitely, falsely implying active work.
-        // Release an explicit blocker with no tool side effects and no provider fallback.
+        // Temporary provider outages are a health condition, not an operator decision.
+        // Release the planning window and let the existing supervisor retry on a later tick.
+        // Never switch to a model the operator did not select or bypass budgets.
+        if (isTransientModelFailure(modelIssue)) {
+          return end({ deferred: true, recovery: 'WAIT_PROVIDER', reason: modelIssue }, {});
+        }
+        // Configuration, credentials and policies remain explicit blockers.
         if (/^AURA_(MODEL_SELECTION_REQUIRED|SELECTED_MODEL_UNAVAILABLE)/.test(modelIssue)) {
           return end({ blocked: true, reason: modelIssue }, { error: `PLANNER_BLOCKED:${modelIssue}` });
         }
@@ -440,6 +446,21 @@ export async function runAgentMission({
           for (const rest of calls.slice(i + 1)) messages.push({ role: 'tool', tool_call_id: rest.id, content: `SKIPPED: mission is ${mission.status}` });
           return { executed: true, receipts, steps, mission, stopped: mission.status };
         }
+        // A failing service can return with a changed available-tool catalog. Re-discover
+        // from the exact current mission allowance; no new grants or blind write retries.
+        if (!receipt.ok && !receipt.outcomeUnknown && isRecoverableToolHealthError(receipt.error) && healthCatalogRefreshes < 2) {
+          healthCatalogRefreshes++;
+          try {
+            const fresh = await toolsFor(mission);
+            tools = fresh.tools;
+            resolve = fresh.resolve;
+            deferred = fresh.deferred || [];
+            capabilityEvidence = observeMissionCapabilities(mission, tools);
+            messages.push({ role: 'user', content: 'TOOL_HEALTH_RECOVERY: The previous tool failed. Fresh authorized catalog: ' + JSON.stringify(capabilityEvidence) + '. Choose a different available tool, or use tool_search for an existing deferred tool. Do not repeat an uncertain write or change permissions.' });
+          } catch (error) {
+            log('warn', 'Tool catalog refresh failed: ' + errorText(error));
+          }
+        }
         if ((mission.steering?.revision || 0) !== modelSteerVersion) {
           for (const rest of calls.slice(i + 1)) messages.push({ role: 'tool', tool_call_id: rest.id, content: 'SKIPPED: operator changed direction during the previous action' });
           break;
@@ -458,7 +479,9 @@ export async function runAgentMission({
         messages.push({ role: 'user', content: `STUCK: ${nudge.hint}` });
       }
     }
-    return end({ failed: true, reason: 'STEP_LIMIT' }, { error: `STEP_LIMIT:${steps}/${maxSteps}` });
+    // This is a per-invocation context window, not the mission's durable budget.
+    // Let the canonical queue resume with receipts and fresh context on its next turn.
+    return { executed: receipts.length > 0, receipts, steps, deferred: true, reason: `TURN_WINDOW_EXHAUSTED:${steps}/${maxSteps}` };
   } finally {
     await onActivity({ phase: 'READY', missionId: null }).catch(() => {});
   }
