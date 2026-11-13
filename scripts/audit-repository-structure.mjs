@@ -24,7 +24,7 @@ export function duplicateClass(paths) {
       names[1] === 'runtime/' + names[0]) return 'PUBLIC_DISTRIBUTION_MIRROR';
   if (names.every(name => name.endsWith('/LICENSE') || name === 'LICENSE')) return 'LICENSE_DISTRIBUTION_COPY';
   if (names.length === 2 && names.includes('runtime/src/adk/index.mjs') && names.includes('runtime/src/adk/index.d.mts')) return 'ESM_TYPE_SHIM_REVIEW';
-  if (names.every(name => /(?:^|\/)(?:branding|brand|public|media)\//.test(name))) return 'BRAND_DISTRIBUTION_COPY_REVIEW';
+  if (names.every(name => /(?:^|\/)(?:branding|brand|media)\//.test(name))) return 'BRAND_DISTRIBUTION_COPY_REVIEW';
   return 'UNCLASSIFIED_REVIEW';
 }
 
