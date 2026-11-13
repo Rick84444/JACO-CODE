@@ -65,9 +65,14 @@ function acquire(root) {
     let previous;
     try { previous = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { throw Error('GUARDIAN_LOCK_INVALID'); }
     if (!Number.isInteger(previous.pid) || !previous.birth) throw Error('GUARDIAN_LOCK_INVALID');
-    if (alive(previous.pid) && processBirth(previous.pid) === previous.birth) return null;
-    // A stale lock may be recovered, never an unverified live process.
-    if (alive(previous.pid)) throw Error('GUARDIAN_LOCK_OWNER_UNVERIFIED');
+    const live = alive(previous.pid);
+    if (live) {
+      const actualBirth = processBirth(previous.pid);
+      if (!actualBirth) throw Error('GUARDIAN_LOCK_OWNER_UNVERIFIED');
+      if (actualBirth === previous.birth) return null;
+      // Windows reused the PID for another process: the prior guardian is gone.
+      // Never kill that unrelated process; only reclaim our stale lock file.
+    }
     fs.unlinkSync(file);
     try { fs.writeFileSync(file, JSON.stringify(record), { flag: 'wx', mode: 0o600 }); return { file, record }; }
     catch (again) { if (again?.code === 'EEXIST') return null; throw again; }
