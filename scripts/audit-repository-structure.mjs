@@ -44,11 +44,11 @@ export function auditGitEntries(entries, { rootPackage = {}, rootLauncher = '' }
   const source = new Set(files.map(f => f.path));
   const staticRisks = [];
   if (source.has('start.sh') && source.has('runtime/start.sh') &&
-      !rootPackage.scripts?.start && rootLauncher.includes('npm run start')) {
+      rootLauncher.includes('dist/server.cjs') && rootLauncher.includes('npm run start')) {
     staticRisks.push({
-      id: 'ROOT_LAUNCHER_SCRIPT_DRIFT',
+      id: 'ROOT_LAUNCHER_CONTEXT_REVIEW',
       evidence: ['start.sh', 'runtime/start.sh', 'package.json'],
-      limitation: 'Static inconsistency only. Runtime execution and distribution compatibility are not proved.',
+      limitation: 'Root and runtime contain an identical cwd-relative launcher, but their package start scripts select different runtimes. No installed-host failure has been observed.',
     });
   }
   return {
