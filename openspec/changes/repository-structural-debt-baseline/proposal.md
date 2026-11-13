@@ -13,9 +13,11 @@ The repository's existing debt gate protects only newly added risky JavaScript/T
 
 ## Capabilities
 
-### Modified: repository-debt-verification
+### New Capabilities
+- `repository-debt-verification`: provide a traceable full tracked-tree inventory with exact-file duplicate candidates and honest verification limits, reusing the existing debt gate.
 
-Use the existing Technical Debt Steward Gate as the execution owner for a full tracked-tree inventory. No second runtime, scheduler, memory store or developer policy.
+### Modified Capabilities
+None. No existing OpenSpec capability lives in main at the reference baseline.
 
 ## Impact
 
