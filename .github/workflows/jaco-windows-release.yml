@@ -112,7 +112,7 @@ jobs:
       - name: Run Windows release contract tests
         shell: pwsh
         run: |
-          node --test tests/nova/github-release-status.test.mjs tests/nova/windows-product-install.test.mjs tests/nova/startup-safety.test.mjs tests/nova/capability-recovery.test.mjs tests/nova/agent-loop.test.mjs tests/nova/reverse-goal-layout.test.mjs tests/nova/ide-access.test.mjs tests/nova/local-memory-activity.test.mjs
+          node --test tests/nova/github-release-status.test.mjs tests/nova/windows-product-install.test.mjs tests/nova/startup-safety.test.mjs tests/nova/capability-recovery.test.mjs tests/nova/agent-loop.test.mjs tests/nova/reverse-goal-layout.test.mjs tests/nova/ide-access.test.mjs tests/nova/local-memory-activity.test.mjs tests/nova/local-write.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'WINDOWS_UPDATE_CONTRACT_FAILED' }
           npm run lint --prefix runtime
           if ($LASTEXITCODE -ne 0) { throw 'RUNTIME_TYPECHECK_FAILED' }
