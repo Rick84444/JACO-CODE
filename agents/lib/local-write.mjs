@@ -31,7 +31,13 @@ const FORBIDDEN = [
 export function checkLocalWritePath(input, { platform = process.platform } = {}) {
   const raw = String(input ?? '').trim();
   if (!raw || raw.length > 400 || /[\0\r\n]/.test(raw)) throw new Error('LOCAL_WRITE_PATH_INVALID');
-  const lib = platform === 'win32' ? path.win32 : path.posix;
+  // Mission validation is transport-independent. Recognize a fully qualified
+  // Windows path even when CI validates the contract on Linux. Execution below
+  // still rejects paths that are not native to the *actual* host.
+  const windowsDrive = /^[a-z]:[\\/]/i.test(raw);
+  if (/^(?:\\\\|\/\/)/.test(raw)) throw new Error('LOCAL_WRITE_PATH_UNC_NOT_SUPPORTED');
+  const lib = (platform === 'win32' || windowsDrive) ? path.win32 : path.posix;
+  if (lib === path.win32 && !windowsDrive) throw new Error('LOCAL_WRITE_PATH_NOT_ABSOLUTE');
   if (!lib.isAbsolute(raw)) throw new Error('LOCAL_WRITE_PATH_NOT_ABSOLUTE');
   if (raw.replace(/\\/g, '/').split('/').includes('..')) throw new Error('LOCAL_WRITE_PATH_PARENT_SEGMENT');
   if (/[*?<>|"]/.test(raw.replace(/^[a-zA-Z]:/, ''))) throw new Error('LOCAL_WRITE_PATH_GLOB_NOT_SUPPORTED');
@@ -57,6 +63,9 @@ export function performLocalWrite(data, { fsImpl = fs } = {}) {
   try { ({ path: target, content } = checkLocalWriteTask(data)); }
   catch (error) { return { ok: false, verified: false, error: error.message }; }
   try {
+    // Never reinterpret C:\\... as a relative POSIX filename, or POSIX paths as
+    // drive-relative paths on Windows, even if a remote mission described them.
+    if (!path.isAbsolute(target)) return { ok: false, verified: false, error: 'LOCAL_WRITE_PATH_PLATFORM_MISMATCH' };
     const parent = path.dirname(target);
     fsImpl.mkdirSync(parent, { recursive: true });
     let existed = false, previousSha = null;

@@ -86,6 +86,11 @@ on:
       - 'runtime/src/main.tsx'
       - 'runtime/public/remote.webmanifest'
       - 'tests/nova/aura-cloudflare-remote.test.mjs'
+      - 'tests/nova/ide-access.test.mjs'
+      - 'tests/nova/local-memory-activity.test.mjs'
+      - 'runtime/src/lib/auraLegacyStatePath.mjs'
+      - 'runtime/src/auraEngine.ts'
+      - 'runtime/src/server/connected/ideAccess.mjs'
       - 'runtime/src/components/NovaPlannerCard.tsx'
       - 'runtime/src/components/ProviderConnect.tsx'
       - 'runtime/src/cognitive-workspace.css'
@@ -194,6 +199,11 @@ on:
       - 'runtime/src/main.tsx'
       - 'runtime/public/remote.webmanifest'
       - 'tests/nova/aura-cloudflare-remote.test.mjs'
+      - 'tests/nova/ide-access.test.mjs'
+      - 'tests/nova/local-memory-activity.test.mjs'
+      - 'runtime/src/lib/auraLegacyStatePath.mjs'
+      - 'runtime/src/auraEngine.ts'
+      - 'runtime/src/server/connected/ideAccess.mjs'
       - 'runtime/src/components/NovaPlannerCard.tsx'
       - 'runtime/src/components/ProviderConnect.tsx'
       - 'runtime/src/cognitive-workspace.css'
@@ -237,7 +247,7 @@ jobs:
       - name: Setup and npm distribution
         run: node --test tests/nova/setup.test.mjs tests/nova/package-content.test.mjs
       - name: Workbench truth contract
-        run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs tests/nova/aura-single-agent-functions.test.mjs tests/nova/nova-activity-text.test.mjs tests/nova/aura-cloudflare-remote.test.mjs
+        run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs tests/nova/aura-single-agent-functions.test.mjs tests/nova/nova-activity-text.test.mjs tests/nova/aura-cloudflare-remote.test.mjs tests/nova/ide-access.test.mjs tests/nova/local-memory-activity.test.mjs
       - name: Aura control plane, browser WebSocket and false-READY regressions
         run: node --experimental-sqlite --test tests/nova/aura-cdp-truth.test.mjs tests/nova/aura-oversight.test.mjs tests/nova/cdp-mcp.test.mjs tests/nova/bridges.test.mjs tests/nova/aura-termux-service-health.test.mjs tests/nova/aura-agent-board.test.mjs
       - name: Full JACO GUI VS Code extension safety contract

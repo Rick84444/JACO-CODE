@@ -5,6 +5,19 @@
 // IDE's Devices view, kept in an HttpOnly cookie and revocable there. Requests from this computer itself
 // (loopback, not proxied) are unchanged. The terminal stays local only (requireLocalUiSameOrigin).
 
+// Keep all browser-session operations wired to the canonical Windows device registry.
+// The runtime must not expose a verify/redeem-only adapter: logout needs revoke.
+export function ideDeviceRegistryAdapter(devices) {
+  for (const method of ['verify', 'redeem', 'revoke']) {
+    if (typeof devices?.[method] !== 'function') throw new Error('IDE_REGISTRY_' + method.toUpperCase() + '_MISSING');
+  }
+  return {
+    verify: (key, kind) => devices.verify(key, kind),
+    redeem: (code, kind) => devices.redeem(code, kind),
+    revoke: (name, kind) => devices.revoke(name, kind),
+  };
+}
+
 export const IDE_COOKIE = 'jaco_ide';
 // Android Chrome fetches icons when installing before a pairing cookie exists.
 // Only the two actual Remote manifest icons are public, never the app shell or API.
@@ -16,7 +29,17 @@ export const PUBLIC_APP_FILES = new Set([
 const SESSION_DAYS = 30;
 const PAIR_ATTEMPTS_PER_HOUR = 10;
 
-export const isProxied = req => Boolean(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.headers['x-forwarded-host']);
+// Do not grant local access just because an intermediary omitted proxy headers.
+// Real loopback clients must also present a loopback Host. This applies to HTTP
+// and WebSocket upgrades; the browser's paired session still controls remote access.
+export const isProxied = req => {
+  const headers = req?.headers || {};
+  if (headers['cf-connecting-ip'] || headers['x-forwarded-for'] || headers['x-forwarded-host']) return true;
+  const peer = String(req?.socket?.remoteAddress || req?.connection?.remoteAddress || '');
+  if (peer && !/^(?:127(?:\.\d+){3}|::1|::ffff:127(?:\.\d+){3})$/.test(peer)) return true;
+  const host = String(headers.host || '').toLowerCase();
+  return Boolean(host && !/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(host));
+};
 export const ideHost = (env = process.env) => String(env.JACO_IDE_PUBLIC_HOST || '').trim().toLowerCase();
 
 export function readCookie(header, name) {
@@ -60,7 +83,7 @@ catch{m.textContent='The hub is not responding.'}b.disabled=false});
 
 // Mounted first, before every route, static file and the Vite dev server.
 /**
- * @param {{ verify: (key: string, kind: string) => any, redeem: (code: string, kind: string) => any }} registry
+ * @param {{ verify: (key: string, kind: string) => any, redeem: (code: string, kind: string) => any, revoke: (name: string, kind: string) => any }} registry
  * @param {{ env?: Record<string, string | undefined>, onEvent?: (event: any) => void }} [options]
  */
 export function createIdeRemoteGate(registry, { env = process.env, onEvent = () => {} } = {}) {
@@ -93,7 +116,7 @@ export function createIdeRemoteGate(registry, { env = process.env, onEvent = () 
       return res.end(loginPage());
     }
     if (req.method === 'POST' && path === '/ide-auth/pair') {
-      const ip = String(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+      const ip = String(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req?.socket?.remoteAddress || '').split(',')[0].trim();
       if (!allowed(ip)) return res.status(429).json({ success: false, error: 'TOO_MANY_ATTEMPTS' });
       try {
         const { device, key } = registry.redeem(req.body?.code, 'ide');

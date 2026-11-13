@@ -92,3 +92,15 @@ test('validateTask refuses a protected path before anything is asked of the oper
   assert.throws(() => validateTask({ type: 'local-write', data: { path: 'C:\\x\\a.txt', content: 'x' } }, ['web-fetch']), /TASK_NOT_ALLOWED/);
   assert.equal(validateTask({ type: 'local-write', data: { path: 'C:\\Users\\dickj\\Documents\\a.md', content: 'x' } }, ['local-write']).type, 'local-write');
 });
+
+test('cross-platform validation accepts Win32 absolute syntax but never writes it on POSIX', () => {
+  const windowsFile = 'C:\\Users\\operator\\Documents\\verified-note.md';
+  const validated = checkLocalWritePath(windowsFile, { platform: 'linux' });
+  assert.equal(validated.path, windowsFile);
+  assert.equal(checkLocalWriteTask({path: windowsFile, content: 'safe'}, {platform:'linux'}).path, windowsFile);
+  assert.throws(() => checkLocalWritePath('\\\\remote\\share\\unsafe.txt', {platform:'linux'}), /UNC_NOT_SUPPORTED/);
+  if (process.platform !== 'win32') {
+    const result = performLocalWrite({path:windowsFile,content:'never written'});
+    assert.deepEqual([result.ok,result.verified,result.error],[false,false,'LOCAL_WRITE_PATH_PLATFORM_MISMATCH']);
+  }
+});
