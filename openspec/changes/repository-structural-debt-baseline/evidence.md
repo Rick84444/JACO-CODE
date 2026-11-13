@@ -7,7 +7,7 @@
 - Exact Git SHA duplicate groups: 23; files participating: 48. This is byte-identical content only.
 - 8 identical documentation pairs under `public/docs/` and `runtime/public/docs/`.
 - 7 files under `runtime/docs/archive/`; 4 under `runtime/docs/wip/`.
-- No OpenSpec files in main at this commit. **Open PR #231 does contain an OpenSpec change**, but this is not merged into main.
+- No OpenSpec files existed at the frozen baseline. **Subsequent main `96f3e483b49dcd6106c07078e72828c2846cf0a9` merged PR #231**, adding an Aura recovery OpenSpec change. The newer, complete Git tree contains 1,253 blobs and still has 23 exact SHA duplicate groups (48 paths).
 
 ## Evidence-backed findings
 
@@ -24,7 +24,7 @@ Source: [October 28 debt audit](https://github.com/Rick84444/JACO-CODE/blob/118f
 Root `AGENTS.md`, root `JACO_MASTER_BEHAVIOR_CONTRACT.md` and nested `runtime/AGENTS.md` all contain contributor/agent direction. In particular, root master says respond in the operator's language, while nested runtime contract says default English. Instructions apply at different scopes, so this is a **governance reconciliation candidate**, not proof that either file is unused.
 
 ### F-05 [REAL] Open overlapping mission-recovery changes (P0 integration risk)
-PR [#230](https://github.com/Rick84444/JACO-CODE/pull/230) and PR [#231](https://github.com/Rick84444/JACO-CODE/pull/231) both modify `runtime/src/server/connected/novaMissionControl.mjs` against the same baseline. PR #231 has an OpenSpec delta; PR #230 is draft. These need review/rebase and joint regression tests. This evidence alone does not prove a merge conflict.
+PR [#231](https://github.com/Rick84444/JACO-CODE/pull/231) has now merged into main. Draft PR [#230](https://github.com/Rick84444/JACO-CODE/pull/230) was based on the earlier main and also edits `runtime/src/server/connected/novaMissionControl.mjs`. It requires rebase/reconciliation and joint regression tests before merge. This observation does not establish an unavoidable merge conflict.
 
 ### F-06 [RISK] Deprecated worker compatibility remains in source (P2)
 `runtime/src/server/agents/workerRunner.ts` explicitly labels polling APIs deprecated and retains a disabled implementation. It also lists job types such as model_benchmark/system_patch while processSingleJob does not handle those in its switch. Callers and execution reachability are not yet inventoried, so deleting it would be premature.
