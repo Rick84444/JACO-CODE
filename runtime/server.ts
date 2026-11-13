@@ -670,7 +670,12 @@ async function startServer() {
   // Remote IDE (src/server/connected/ideAccess.mjs): anything arriving through the tunnel needs a
   // signed-in IDE session before any route, static file or the dev server sees it. The registry is the
   // connected runtime's, created further down; requests only arrive after listen.
-  const ideDevices = ideDeviceRegistryAdapter(connectedRuntime.devices);
+  // Constructed before connectedRuntime initializes: defer registry access until request time.
+  const ideDevices = ideDeviceRegistryAdapter({
+    verify: (key: string, kind: string) => connectedRuntime.devices.verify(key, kind),
+    redeem: (code: string, kind: string) => connectedRuntime.devices.redeem(code, kind),
+    revoke: (name: string, kind: string) => connectedRuntime.devices.revoke(name, kind),
+  });
   app.use(createIdeRemoteGate(ideDevices, {
     onEvent: (event: any) => seerLiveWorkstream.record({ actor: 'Remote IDE', type: event.type, message: `Remote IDE signed in on ${event.device}`, verified: true, receipt: event }),
   }));
