@@ -148,6 +148,12 @@ export async function runAgentMission({
   // Do not send these refusals back to the model as capability failures.
   const queueRefusal = reason => /^(?:MISSION_NOT_CURRENT|NOVA_LEASE_BUSY|NOVA_LEASE_INVALID|MISSION_BUSY|NOVA_NOT_PLANNING|MISSION_PAUSED)(?::|$)/.test(reason);
   const yieldQueue = reason => ({executed:receipts.length>0,receipts,steps,deferred:true,queueChanged:true,reason});
+  const recentServiceOutage = () => [...(mission.receipts || []).slice(-8), ...receipts]
+    .some(r => r.ok === false && !r.outcomeUnknown && isRecoverableToolHealthError(r.error));
+  // Health recovery is not a way to bypass approvals, credentials or the contract.
+  const mayDeferHealthBlock = reason => recentServiceOutage() &&
+    !/(?:OPERATOR|APPROVAL|POLICY|PERMISSION|CREDENTIAL|SECRET|AUTH|PAYMENT|BUDGET|COST|SCOPE|OUTCOME_UNKNOWN)/i.test(String(reason));
+  const deferHealth = reason => end({ deferred: true, recovery: 'WAIT_TOOL', reason }, {});
 
 
   // A short lease for the parts that are not a tool step (finishing, blocking).
@@ -316,6 +322,7 @@ export async function runAgentMission({
         // auto-confirmed and the mission closed as DONE without the work (2026-11-05).
         if (text && SAYS_BLOCKED.test(text)) {
           const reason = text.slice(0, 500);
+          if (mayDeferHealthBlock(reason)) return deferHealth(reason);
           const correction = capabilityDenialCorrection(reason, capabilityEvidence);
           if (correction && capabilityCorrections++ < MAX_CAPABILITY_CORRECTIONS) {
             messages.push({ role: 'user', content: correction.message });
@@ -385,6 +392,7 @@ export async function runAgentMission({
         if (target.kind === 'blocked' || target.kind === 'replan') {
           const reason = String(args.reason || 'no allowed tool can make progress').slice(0, 500);
           if (target.kind === 'blocked') {
+            if (mayDeferHealthBlock(reason)) return deferHealth(reason);
             const correction = capabilityDenialCorrection(reason, capabilityEvidence);
             if (correction && capabilityCorrections++ < MAX_CAPABILITY_CORRECTIONS) {
               reply_(correction.message);
@@ -474,7 +482,10 @@ export async function runAgentMission({
       }
       if (nudge) {
         // Once: tell the model what it is doing. A second time in a fresh window: stop and say so.
-        if (stuck.nudge() > 1) return end({ blocked: true, reason: `STUCK:${nudge.kind}` }, { error: `PLANNER_BLOCKED:STUCK:${nudge.kind}` });
+        if (stuck.nudge() > 1) {
+          if (recentServiceOutage()) return deferHealth('STUCK_AFTER_TOOL_OUTAGE:'+nudge.kind);
+          return end({ blocked: true, reason: `STUCK:${nudge.kind}` }, { error: `PLANNER_BLOCKED:STUCK:${nudge.kind}` });
+        }
         log('warn', `agent looks stuck (${nudge.kind})`);
         messages.push({ role: 'user', content: `STUCK: ${nudge.hint}` });
       }
