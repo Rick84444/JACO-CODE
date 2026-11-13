@@ -2481,7 +2481,7 @@ const ACTIVE_TURN_DELAY_MS = Math.max(500, Number(process.env.JACO_NOVA_ACTIVE_D
 export function novaLoopDelay(turn, tickIntervalMs = CONFIG.tickIntervalMs, activeTurnDelayMs = ACTIVE_TURN_DELAY_MS) {
   // A successful turn window continues quickly; an unhealthy dependency must
   // cool down even if earlier steps in that window already executed.
-  if (turn?.recovery === 'WAIT_PROVIDER' || turn?.recovery === 'WAIT_TOOL') return tickIntervalMs;
+  if (['WAIT_PROVIDER', 'WAIT_TOOL', 'WAIT_RUNTIME'].includes(turn?.recovery)) return tickIntervalMs;
   return turn?.executed ? activeTurnDelayMs : tickIntervalMs;
 }
 
