@@ -24,7 +24,7 @@ export const TASK_GROUPS = [
 ];
 
 const GROUP_OF = {
-  files: ['repo-list', 'repo-read', 'repo-write', 'repo-edit', 'repo-test', 'repo-service', 'repo-scan'],
+  files: ['repo-list', 'repo-read', 'repo-write', 'repo-edit', 'repo-test', 'repo-service', 'repo-scan', 'local-write'],
   git: ['git-status', 'git-diff', 'git-commit', 'git-push', 'git-merge', 'github-create-repo'],
   shell: ['shell', 'invoke-worker'],
   web: ['web-fetch', 'browser-survey-site', 'browser-click', 'browser-type'],
@@ -49,7 +49,7 @@ const LABEL = {
   'desktop-invoke': 'Invoke a control', 'windows-wmi-read': 'Read Windows system info', screenshot: 'Take a screenshot',
   'mouse-move': 'Move the mouse', 'mouse-click': 'Click the mouse', 'mouse-scroll': 'Scroll', 'key-press': 'Press keys',
   'type-text': 'Type text', 'get-cursor': 'Read the cursor position',
-  'mcp-call': 'Call an MCP tool (read)', 'mcp-write': 'Call an MCP tool (write)', 'skill-load': 'Use a skill', 'propose-tool': 'Propose a new tool (you approve it)',
+  'mcp-call': 'Call an MCP tool (read)', 'mcp-write': 'Call an MCP tool (write)', 'skill-load': 'Use a skill', 'propose-tool': 'Propose a new tool (you approve it)', 'local-write': 'Write a file outside the project (you approve each one)',
   'vault-generate-secret': 'Generate a secret', 'vault-get-secret': 'Use a stored secret', 'vault-list-secrets': 'List secret names',
   'secret-store': 'Store a secret', 'email-inbox': 'Read the agent inbox',
   'detect-surfaces': 'Detect what is available', 'health-check': 'Health check', 'check-revenue': 'Check revenue', 'promote-hf': 'Promote on Hugging Face',

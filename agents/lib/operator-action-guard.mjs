@@ -95,6 +95,13 @@ export function operatorApprovalCheck(task, { sandbox = false } = {}) {
     const rule = SHELL_RULES.find(([pattern, reason]) => pattern.test(command) && !(sandbox && SANDBOX_LOCAL.has(reason)));
     return rule ? { reason: rule[1] } : null;
   }
+  // Always the operator, sandbox or not: the file lands outside the mission's reviewed worktree.
+  if (task?.type === 'local-write') {
+    // The operator sees where it goes, how big it is and how it starts: approval is bound to this exact content.
+    const text = String(data.content ?? '');
+    const start = text.replace(/\s+/g, ' ').trim().slice(0, 160);
+    return { reason: `write a file outside the project: ${String(data.path || '').slice(0, 200)} (${Buffer.byteLength(text, 'utf8')} bytes, starts: "${start}${text.length > 160 ? '…' : ''}")` };
+  }
   if (task?.type === 'mcp-write') {
     const tool = String(data.tool || '');
     return MCP_WRITE.test(tool) || OUTWARD_TOOL.test(tool) ? { reason: `external write ${data.server || 'connector'}.${data.tool}` } : null;

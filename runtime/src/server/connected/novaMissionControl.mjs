@@ -1,5 +1,6 @@
 import {actionLeaseMs} from '../../../../agents/lib/web-fetch-policy.mjs';
 import { validateToolProposal } from '../../../../agents/lib/tool-proposals.mjs';
+import { checkLocalWriteTask } from '../../../../agents/lib/local-write.mjs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { CODE_TASKS, assertCodingBudget, contractVerificationStatus, codingExecutionSummary, normalizeCodingContract, validateCodingTask } from '../../../../agents/lib/coding-contract.mjs';
@@ -62,6 +63,8 @@ const DEFAULT_TASKS = [
   'android-open-app', 'android-tap', 'android-type', 'android-scroll', 'android-back', 'android-home',
   'windows-wmi-read', 'screenshot', 'get-cursor',
   'invoke-worker', 'shell', 'github-create-repo', 'repo-scan', 'mcp-call', 'mcp-write', 'skill-load', 'propose-tool',
+  // One file anywhere on this computer: always a one-shot decision for exactly that path and content.
+  'local-write',
   // Operating the computer as a user: the operator-action guard asks before anything hard to undo or visible to others.
   'mouse-move', 'mouse-click', 'mouse-scroll', 'key-press', 'type-text',
   'vault-generate-secret', 'vault-get-secret', 'vault-list-secrets', 'secret-store', 'email-inbox',
@@ -246,6 +249,7 @@ export function validateTask(task, allowed) {
   }
   if (['browser-survey-site', 'web-fetch'].includes(task.type) && !['http:', 'https:'].includes(new URL(data.url).protocol)) throw new Error('INVALID_URL');
   if (task.type === 'skill-load' && !/^[a-z][a-z0-9-]{1,60}$/.test(String(data.id))) throw new Error('INVALID_SKILL_ID');
+  if (task.type === 'local-write') { const w = checkLocalWriteTask(data); return { type: task.type, data: { path: w.path, content: w.content }, ...(task.expectedOutcome ? { expectedOutcome: task.expectedOutcome } : {}) }; }
   if (task.type === 'propose-tool') return { type: task.type, data: validateToolProposal(data), ...(task.expectedOutcome ? { expectedOutcome: task.expectedOutcome } : {}) };
   if (['vault-generate-secret', 'vault-get-secret', 'secret-store'].includes(task.type) && !/^NOVA_[A-Z0-9_]{2,77}$/.test(String(data.key))) throw new Error('INVALID_VAULT_KEY');
   if (task.type === 'secret-store' && !/^\[?secret:[0-9a-f]{12}\]?$/.test(String(data.handle))) throw new Error('INVALID_SECRET_HANDLE');

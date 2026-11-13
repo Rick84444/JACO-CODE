@@ -100,6 +100,15 @@ nothing. It appears in the approval center and on the Gameboard as a decision. T
 it: a Git source is staged and promoted; a command or HTTP server is saved with read access, to be widened later
 in the tool settings. The same wish from several missions is one proposal with every mission recorded.
 
+### 6.3 Writing outside the project (decided 2026-11-13)
+
+Missions write inside their own git worktree, which the operator reviews before anything reaches the real folder.
+Outside the project there is one explicit exception, `local-write` (`agents/lib/local-write.mjs`): one file at an
+absolute path, **always** a one-shot decision for exactly that path and content, in sandbox or not, and never
+auto-approved (an automated resume does not cover it; a second write asks again). Refused even with a yes: system,
+program, startup (persistence), credential and key locations, git internals, and JACO's own state and secrets. Every
+write is read back and hashed, and the receipt names the hash of what it replaced.
+
 ### 6.2 Operating the computer as a user
 
 Aura may look at windows, move and click the mouse, scroll, press keys and type (`desktop-*`, `mouse-*`,

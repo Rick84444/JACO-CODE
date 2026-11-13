@@ -31,7 +31,7 @@ export const TASK_FIELDS = {
   // An MCP tool that changes something, on a server the operator opened to agents for writing.
   'mcp-write': ['server', 'tool'],
   // Loads one of JACO's skills (SKILL.md) so the planner can follow it (agents/lib/skills.mjs).
-  'skill-load': ['id'], 'propose-tool': ['kind', 'name', 'reason'],
+  'skill-load': ['id'], 'propose-tool': ['kind', 'name', 'reason'], 'local-write': ['path', 'content'],
   // Secrets for sign-ups and API keys (agents/lib/secret-capture.mjs); only NOVA_* keys, values never returned.
   'vault-generate-secret': ['key'], 'vault-get-secret': ['key'], 'vault-list-secrets': [], 'secret-store': ['handle', 'key'],
   // JACO's own inbox: verification mail to jaco-*@ addresses (agents/lib/inbox.mjs).
@@ -42,6 +42,7 @@ export const TASK_FIELDS = {
 export const TASK_SCHEMAS = {
   'repo-service': {id:{type:'string'},action:{type:'string',enum:['start','status','stop']}},
   'repo-list': {path:{type:'string'}}, 'repo-read': {path:{type:'string'}},
+  'local-write': {path:{type:'string'},content:{type:'string'}},
   'propose-tool': {kind:{type:'string',enum:['mcp-git','mcp-command','mcp-http']},name:{type:'string'},reason:{type:'string'},need:{type:'string'},repoUrl:{type:'string'},ref:{type:'string'},command:{type:'string'},args:{type:'array',items:{type:'string'}},env:{type:'object'},url:{type:'string'},tokenEnv:{type:'string'}},
   'repo-write': {path:{type:'string'},content:{type:'string'}},
   'repo-edit': {path:{type:'string'},old:{type:'string'},new:{type:'string'},replaceAll:{type:'boolean'}},
