@@ -24,7 +24,7 @@ import path from 'node:path';
 export const READ_ONLY_TASKS = new Set([
   'detect-surfaces', 'health-check', 'check-revenue', 'browser-survey-site', 'web-fetch',
   'desktop-windows', 'desktop-observe', 'windows-wmi-read', 'screenshot', 'get-cursor',
-  'repo-list', 'repo-read', 'git-status', 'git-diff', 'mcp-call', 'skill-load',
+  'repo-list', 'repo-read', 'git-status', 'git-diff', 'mcp-call', 'skill-load', 'propose-tool',
 ]);
 export const VERIFIED_CODE_TASKS = new Set(['repo-write', 'repo-edit', 'repo-test', 'git-commit']);
 // Unambiguous spend vocabulary: always blocks, no matter the surrounding text.

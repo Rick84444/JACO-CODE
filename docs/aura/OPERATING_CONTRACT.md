@@ -91,6 +91,23 @@ a mission follow the same approval path. Memory is read at planning time and wri
 
 No layer can grant a tool. The capsule attenuates; the mission and the executor decide.
 
+### 6.1 Tools Aura asks for herself
+
+When a goal needs a capability no observed tool has, or a tool keeps failing, Aura may use `propose-tool`
+(`agents/lib/tool-proposals.mjs`). A proposal is a record with a kind (`mcp-git`, `mcp-command`, `mcp-http`), a
+name, a reason and a concrete source; it never carries a secret value (only `${ENV_NAME}` references) and installs
+nothing. It appears in the approval center and on the Gameboard as a decision. The operator's yes is what installs
+it: a Git source is staged and promoted; a command or HTTP server is saved with read access, to be widened later
+in the tool settings. The same wish from several missions is one proposal with every mission recorded.
+
+### 6.2 Operating the computer as a user
+
+Aura may look at windows, move and click the mouse, scroll, press keys and type (`desktop-*`, `mouse-*`,
+`key-press`, `type-text`, `screenshot`) inside a mission. The operator-action guard stops the mission and asks
+before anything hard to undo or visible to others: deleting in a live application, publishing, sending or posting
+in the operator's name, signing in, and any typed secret (which is never composed by Aura: it comes from the vault
+by reference). Everything local and reversible stays autonomous.
+
 ## 7. How the operator reduces autonomy
 
 - **Switch a tool or group off** in the capability settings. Observations show it as `unknown` for Aura until switched on again.

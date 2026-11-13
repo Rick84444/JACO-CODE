@@ -92,6 +92,7 @@ import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPoli
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
 import { taskCatalog, ALWAYS_ASK } from './src/server/capabilities/capabilityPolicy.mjs';
 import { observationsFromMissions, plannerView } from '../agents/lib/capability-observation.mjs';
+import { proposalStore, serverEntryFor } from '../agents/lib/tool-proposals.mjs';
 import { TASK_FIELDS } from "../agents/lib/task-fields.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
 import { metaStore, decisionFindings, metaTrigger, buildReflection, askPremise, reflectionStage } from "../agents/lib/meta-reasoning.mjs";
@@ -223,6 +224,7 @@ const skillRoots = () => [...new Set([
 // Learned proposals and approved tool notes; approved learned skills land in .jaco/skills above.
 const skillLearning = learningStore(path.join(WORKSPACE_ROOT, '.jaco'));
 const metaLessons = metaStore(path.join(WORKSPACE_ROOT, '.jaco'));
+const toolProposals = proposalStore(path.join(WORKSPACE_ROOT, '.jaco'));
 
 function resolveWorkspacePath(relativePath) {
   if (!relativePath || typeof relativePath !== "string") {
@@ -1790,6 +1792,22 @@ const notifyPhone = async (action) => {
       });
     }
 
+    for (const proposal of toolProposals.list().filter((item: any) => item.status === 'PENDING')) {
+      items.push({
+        id: `tool:${proposal.id}`,
+        kind: 'TOOL',
+        source: 'aura-tool-proposal',
+        title: `${proposal.name}: ${proposal.reason}`,
+        status: 'REVIEW',
+        risk: proposal.kind === 'mcp-git' ? 'HIGH' : 'MEDIUM',
+        reason: proposal.kind === 'mcp-git'
+          ? 'Aura asks for a new tool from a Git repository. Approving fetches and enables its code; check the source first.'
+          : 'Aura asks for a new tool server. Approving saves it with read access only; it can be widened later in the tool settings.',
+        createdAt: proposal.createdAt,
+        actions: ['approve', 'reject'],
+        details: { proposalId: proposal.id, kind: proposal.kind, repoUrl: proposal.repoUrl || null, command: proposal.command ? `${proposal.command} ${proposal.args.join(' ')}` : null, url: proposal.url || null, missions: proposal.missions, need: proposal.need },
+      });
+    }
     for (const source of auraMcpSources.list().filter(item => item.status === 'STAGED')) {
       items.push({
         id: `mcp-source:${source.id}`,
@@ -2989,6 +3007,27 @@ const notifyPhone = async (action) => {
         } else if (decision === 'reject') {
           auraMcpSources.quarantine(id, note || 'Rejected by operator');
         } else throw new Error('INVALID_MCP_SOURCE_DECISION');
+      } else if (kind === 'tool') {
+        // Aura's proposal becomes a tool only here. A Git source is staged and promoted in one decision; a
+        // command or HTTP server is saved with read access. Either way it is the operator's yes that installs.
+        const proposal = toolProposals.get(id);
+        if (!proposal) throw new Error('TOOL_PROPOSAL_NOT_FOUND');
+        if (decision === 'approve') {
+          let result: any = null;
+          if (proposal.kind === 'mcp-git') {
+            const source = await auraMcpSources.stageGit({ repoUrl: proposal.repoUrl, ref: proposal.ref });
+            auraMcpSources.promote(source.id, 'Aura Approval Center (tool proposal)');
+            result = { sourceId: source.id, resolvedSha: source.resolvedSha };
+          } else {
+            const server = mcpHost.saveServer(proposal.name, serverEntryFor(proposal));
+            getAuraMcpFabric.invalidate();
+            result = { serverId: server?.id, status: server?.status };
+          }
+          toolProposals.decide(id, 'approve', { note, result });
+          seerLiveWorkstream.record({ actor: 'Aura Approval Center', type: 'tool.proposal.approved', message: `Tool proposal approved: ${proposal.name}`, verified: true, receipt: { proposalId: id, result } });
+        } else if (decision === 'reject') {
+          toolProposals.decide(id, 'reject', { note });
+        } else throw new Error('INVALID_TOOL_PROPOSAL_DECISION');
       } else if (kind === 'mandate') {
         const endpoint = decision === 'approve' ? 'sign' : decision === 'reject' ? 'revoke' : null;
         if (!endpoint) throw new Error('INVALID_MANDATE_DECISION');
@@ -3033,6 +3072,19 @@ const notifyPhone = async (action) => {
     } catch { res.status(400).json({ success: false, error: 'MCP_CONFIGURATION_INVALID' }); }
   });
 
+  // Tools Aura proposes for herself (agents/lib/tool-proposals.mjs). Recording is loopback-only like the rest of the
+  // workbench; installing happens only through the approval center's decision below.
+  app.post('/api/aura/workbench/tool-proposals', requireLocalUi, (req, res) => {
+    try {
+      const proposal = toolProposals.add(req.body || {}, { missionId: req.body?.missionId == null ? null : String(req.body.missionId).slice(0, 120) });
+      seerLiveWorkstream.record({ actor: 'Aura', type: 'tool.proposed', message: `Aura proposes a tool: ${proposal.name} (${proposal.kind})`, verified: true, receipt: { proposalId: proposal.id, kind: proposal.kind, missions: proposal.missions } });
+      res.status(201).json({ success: true, proposal });
+    } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error) }); }
+  });
+  app.get('/api/aura/workbench/tool-proposals', requireLocalUi, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, proposals: toolProposals.list() });
+  });
   app.post('/api/aura/workbench/mcp/import-git', requireLocalUi, async (req, res) => {
     try {
       const source = await auraMcpSources.stageGit({

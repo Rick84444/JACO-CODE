@@ -172,6 +172,8 @@ export function decisionGuidance(decision: Decision, language: 'sv' | 'en' = 'en
     ? positive === 'confirm'
       ? (sv ? 'markerar uppdragets verifierade resultat som godkänt' : 'mark the mission’s verified result as approved')
       : (sv ? 'fortsätter uppdraget en gång från det senast sparade läget' : 'continue the mission once from its latest saved state')
+    : decision.kind === 'TOOL'
+      ? (sv ? 'får det nya verktyget hon föreslår, med läsåtkomst' : 'get the new tool she proposes, with read access')
     : decision.kind === 'MCP_SOURCE'
       ? (sv ? 'aktiverar den här avgränsade verktygskällan' : 'activate this bounded tool source')
       : decision.kind === 'MANDATE'
@@ -181,6 +183,8 @@ export function decisionGuidance(decision: Decision, language: 'sv' | 'en' = 'en
           : (sv ? 'utför den här avgränsade åtgärden en gång' : 'perform this bounded action once');
   const safer = decision.kind === 'MISSION'
     ? (sv ? 'Öppna evidensen först eller avsluta uppdraget utan att fortsätta.' : 'Review the evidence first, or end the mission without continuing it.')
+    : decision.kind === 'TOOL'
+      ? (sv ? 'Avslå och be Aura lösa steget med de verktyg hon har, eller lägg till verktyget själv i inställningarna.' : 'Reject and ask Aura to solve the step with the tools she has, or add the tool yourself in the settings.')
     : decision.kind === 'MCP_SOURCE'
       ? (sv ? 'Låt verktyget vara avstängt och granska källan innan den aktiveras.' : 'Keep the tool disabled and inspect its source before activating it.')
       : decision.kind === 'MANDATE'
