@@ -173,7 +173,7 @@ export function decisionGuidance(decision: Decision, language: 'sv' | 'en' = 'en
       ? (sv ? 'markerar uppdragets verifierade resultat som godkänt' : 'mark the mission’s verified result as approved')
       : (sv ? 'fortsätter uppdraget en gång från det senast sparade läget' : 'continue the mission once from its latest saved state')
     : decision.kind === 'TOOL'
-      ? (sv ? 'får det nya verktyget hon föreslår, med läsåtkomst' : 'get the new tool she proposes, with read access')
+      ? (sv ? 'lägga till verktyget hon föreslår, med läsåtkomst' : 'add the tool she proposes, with read access')
     : decision.kind === 'MCP_SOURCE'
       ? (sv ? 'aktiverar den här avgränsade verktygskällan' : 'activate this bounded tool source')
       : decision.kind === 'MANDATE'
@@ -504,8 +504,9 @@ export function StrategyBoard({ focusPlanId = null, focusNodeKey = null, onClose
   // Stable node identities come from Aura's durable mission graph.
   // Tree layout is derived by ReverseGoalCanvas from the canonical DAG.
   const planMissions = new Set((plan?.nodes || []).map(n => n.missionId).filter((m): m is string => Boolean(m)));
-  const planDecisions = decisions.filter(d => planMissions.has(decisionMission(d) || ''));
-  const waitingOn = new Set<string>(planDecisions.map(d => String(decisionMission(d) || '')));
+  // Decisions for this plan's missions, and a tool Aura proposes for herself, which belongs to no single step.
+  const planDecisions = decisions.filter(d => d.kind === 'TOOL' || planMissions.has(decisionMission(d) || ''));
+  const waitingOn = new Set<string>(planDecisions.map(d => String(decisionMission(d) || '')).filter(Boolean));
   // Missions the operator can act on from the board: the plan's own first, then any other live mission.
   const liveMissions = (observed?.missions || []).filter(m => missionControlState(m).live)
     .sort((a, b) => Number(planMissions.has(b.identity)) - Number(planMissions.has(a.identity))).slice(0, 6);
