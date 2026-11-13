@@ -152,6 +152,7 @@ export async function runAgentMission({
     .some(r => r.ok === false && !r.outcomeUnknown && isRecoverableToolHealthError(r.error));
   // Health recovery is not a way to bypass approvals, credentials or the contract.
   const mayDeferHealthBlock = reason => recentServiceOutage() &&
+    /(?:UNAVAILABLE|UNHEALTHY|OFFLINE|DISCONNECTED|TIMEOUT|TIMED OUT|CONNECTION|NETWORK|BRIDGE|PROVIDER|SERVICE|NOT REACHABLE|FETCH FAILED|OTILLGÄNGLIG|ANSLUTNING|AVBROTT)/i.test(String(reason)) &&
     !/(?:OPERATOR|APPROVAL|POLICY|PERMISSION|CREDENTIAL|SECRET|AUTH|PAYMENT|BUDGET|COST|SCOPE|OUTCOME_UNKNOWN)/i.test(String(reason));
   const deferHealth = reason => end({ deferred: true, recovery: 'WAIT_TOOL', reason }, {});
 
