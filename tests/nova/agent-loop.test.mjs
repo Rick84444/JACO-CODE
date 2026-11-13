@@ -1025,3 +1025,25 @@ test('service failure refreshes currently allowed catalog and offers an alternat
   assert.match(JSON.stringify(model.seen[1]),/TOOL_HEALTH_RECOVERY/);
   assert.equal(s.control.get(m.id).receipts.length,2);
 });
+
+test('a temporary broken tool followed by a model block stays active for later repair', async x => {
+  const s=setup(x,['web-fetch','health-check']);
+  const mission=s.control.create({goal:'Read the page',idempotencyKey:'tool-health-block',allowedTasks:['web-fetch','health-check']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://unreachable.test'})]},
+    {tool_calls:[call('blocked',{reason:'Browser bridge unavailable while trying the page'})]}]);
+  const result=await run(s,model,async()=>({ok:false,verified:false,error:'ECONNREFUSED'}));
+  assert.equal(result.deferred,true);
+  assert.equal(result.recovery,'WAIT_TOOL');
+  assert.equal(s.control.get(mission.id).status,'ACTIVE');
+  assert.equal(s.control.get(mission.id).receipts.length,1);
+});
+
+test('operator authorization is never disguised as a health defer', async x => {
+  const s=setup(x,['web-fetch']);
+  const mission=s.control.create({goal:'Read page',idempotencyKey:'tool-health-approval',allowedTasks:['web-fetch']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://unreachable.test'})]},
+    {tool_calls:[call('blocked',{reason:'Operator approval required to proceed'})]}]);
+  const result=await run(s,model,async()=>({ok:false,verified:false,error:'ECONNREFUSED'}));
+  assert.equal(result.blocked,true);
+  assert.equal(s.control.get(mission.id).status,'BLOCKED');
+});
