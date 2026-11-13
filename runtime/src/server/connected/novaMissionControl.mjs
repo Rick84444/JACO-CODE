@@ -707,7 +707,7 @@ export class NovaMissionControl {
       if (mission.source !== 'seer-mission-graph' || !mission.metadata?.parent?.graphId) throw new Error('REPLAN_REQUIRES_GRAPH_MISSION');
       if (completionProposed || error) throw new Error('REPLAN_RESULT_CONFLICT');
       if (Object.keys(replanRequest).some(key => !['reason','subgoals'].includes(key))) throw new Error('REPLAN_REQUEST_INVALID');
-      if (typeof replanRequest.reason !== 'string' || !replanRequest.reason.trim() || replanRequest.reason.length > 1000 || !Array.isArray(replanRequest.subgoals) || replanRequest.subgoals.length < 2 || replanRequest.subgoals.length > 8) throw new Error('REPLAN_REQUEST_INVALID');
+      if (typeof replanRequest.reason !== 'string' || !replanRequest.reason.trim() || replanRequest.reason.length > 1000 || !Array.isArray(replanRequest.subgoals) || (replanRequest.subgoals.length === 1 || replanRequest.subgoals.length > 8)) throw new Error('REPLAN_REQUEST_INVALID');
       for (const subgoal of replanRequest.subgoals) {
         if (!subgoal || Object.keys(subgoal).some(key => !['title','objective'].includes(key)) || typeof subgoal.title !== 'string' || !subgoal.title.trim() || subgoal.title.length > 300 || typeof subgoal.objective !== 'string' || !subgoal.objective.trim() || subgoal.objective.length > 2000) throw new Error('REPLAN_SUBGOAL_INVALID');
       }
