@@ -19,6 +19,7 @@ import { executionExceptionResult } from './replay-semantics.mjs';
 import { verifiedOutcomeHints } from './verified-outcome-context.mjs';
 import { decisionLessonHints } from './meta-reasoning.mjs';
 import { observeMissionCapabilities, capabilityDenialCorrection } from './capability-recovery.mjs';
+import { isTransientModelFailure, isRecoverableToolHealthError } from './mission-health-policy.mjs';
 
 const RESULT_CHARS = 6000;
 const clip = (text, max = RESULT_CHARS) => {
@@ -139,6 +140,7 @@ export async function runAgentMission({
   let steps = 0, modelErrors = 0, idle = 0, turns = 0;
   let capabilityEvidence = null;
   let capabilityCorrections = 0;
+  let healthCatalogRefreshes = 0;
   const MAX_CAPABILITY_CORRECTIONS = 2;
   let modelSteerVersion = mission.steering?.revision || 0;
   let presentedSteerVersion = modelSteerVersion;
@@ -146,6 +148,13 @@ export async function runAgentMission({
   // Do not send these refusals back to the model as capability failures.
   const queueRefusal = reason => /^(?:MISSION_NOT_CURRENT|NOVA_LEASE_BUSY|NOVA_LEASE_INVALID|MISSION_BUSY|NOVA_NOT_PLANNING|MISSION_PAUSED)(?::|$)/.test(reason);
   const yieldQueue = reason => ({executed:receipts.length>0,receipts,steps,deferred:true,queueChanged:true,reason});
+  const recentServiceOutage = () => [...(mission.receipts || []).slice(-8), ...receipts]
+    .some(r => r.ok === false && !r.outcomeUnknown && isRecoverableToolHealthError(r.error));
+  // Health recovery is not a way to bypass approvals, credentials or the contract.
+  const mayDeferHealthBlock = reason => recentServiceOutage() &&
+    /(?:UNAVAILABLE|UNHEALTHY|OFFLINE|DISCONNECTED|TIMEOUT|TIMED OUT|CONNECTION|NETWORK|BRIDGE|PROVIDER|SERVICE|NOT REACHABLE|FETCH FAILED|OTILLGÄNGLIG|ANSLUTNING|AVBROTT)/i.test(String(reason)) &&
+    !/(?:OPERATOR|APPROVAL|POLICY|PERMISSION|CREDENTIAL|SECRET|AUTH|PAYMENT|BUDGET|COST|SCOPE|OUTCOME_UNKNOWN)/i.test(String(reason));
+  const deferHealth = reason => end({ deferred: true, recovery: 'WAIT_TOOL', reason }, {});
 
 
   // A short lease for the parts that are not a tool step (finishing, blocking).
@@ -278,7 +287,7 @@ export async function runAgentMission({
         log('warn', `model error ${modelErrors}/${maxModelErrors}: ${errorText(error)}`);
         const modelIssue = errorText(error);
         // A rate window ends by itself: give the mission back and try on a later tick.
-        if (/^MODEL_TEMPORARILY_LIMITED/.test(modelIssue)) return end({ deferred: true, reason: modelIssue }, {});
+        if (/^MODEL_TEMPORARILY_LIMITED/.test(modelIssue)) return end({ deferred: true, recovery: 'WAIT_PROVIDER', reason: modelIssue }, {});
         // The request is over the operator's per-call budget: send less before asking for more budget.
         if (/TASK_COST_LIMIT/.test(modelIssue) && !costCondensed) {
           costCondensed = true;
@@ -290,9 +299,13 @@ export async function runAgentMission({
             continue;
           }
         }
-        // Aura's only authorized model is missing or unavailable. A repeating
-        // step-0 defer hid the problem indefinitely, falsely implying active work.
-        // Release an explicit blocker with no tool side effects and no provider fallback.
+        // Temporary provider outages are a health condition, not an operator decision.
+        // Release the planning window and let the existing supervisor retry on a later tick.
+        // Never switch to a model the operator did not select or bypass budgets.
+        if (isTransientModelFailure(modelIssue)) {
+          return end({ deferred: true, recovery: 'WAIT_PROVIDER', reason: modelIssue }, {});
+        }
+        // Configuration, credentials and policies remain explicit blockers.
         if (/^AURA_(MODEL_SELECTION_REQUIRED|SELECTED_MODEL_UNAVAILABLE)/.test(modelIssue)) {
           return end({ blocked: true, reason: modelIssue }, { error: `PLANNER_BLOCKED:${modelIssue}` });
         }
@@ -310,6 +323,7 @@ export async function runAgentMission({
         // auto-confirmed and the mission closed as DONE without the work (2026-11-05).
         if (text && SAYS_BLOCKED.test(text)) {
           const reason = text.slice(0, 500);
+          if (mayDeferHealthBlock(reason)) return deferHealth(reason);
           const correction = capabilityDenialCorrection(reason, capabilityEvidence);
           if (correction && capabilityCorrections++ < MAX_CAPABILITY_CORRECTIONS) {
             messages.push({ role: 'user', content: correction.message });
@@ -379,6 +393,7 @@ export async function runAgentMission({
         if (target.kind === 'blocked' || target.kind === 'replan') {
           const reason = String(args.reason || 'no allowed tool can make progress').slice(0, 500);
           if (target.kind === 'blocked') {
+            if (mayDeferHealthBlock(reason)) return deferHealth(reason);
             const correction = capabilityDenialCorrection(reason, capabilityEvidence);
             if (correction && capabilityCorrections++ < MAX_CAPABILITY_CORRECTIONS) {
               reply_(correction.message);
@@ -440,6 +455,21 @@ export async function runAgentMission({
           for (const rest of calls.slice(i + 1)) messages.push({ role: 'tool', tool_call_id: rest.id, content: `SKIPPED: mission is ${mission.status}` });
           return { executed: true, receipts, steps, mission, stopped: mission.status };
         }
+        // A failing service can return with a changed available-tool catalog. Re-discover
+        // from the exact current mission allowance; no new grants or blind write retries.
+        if (!receipt.ok && !receipt.outcomeUnknown && isRecoverableToolHealthError(receipt.error) && healthCatalogRefreshes < 2) {
+          healthCatalogRefreshes++;
+          try {
+            const fresh = await toolsFor(mission);
+            tools = fresh.tools;
+            resolve = fresh.resolve;
+            deferred = fresh.deferred || [];
+            capabilityEvidence = observeMissionCapabilities(mission, tools);
+            messages.push({ role: 'user', content: 'TOOL_HEALTH_RECOVERY: The previous tool failed. Fresh authorized catalog: ' + JSON.stringify(capabilityEvidence) + '. Choose a different available tool, or use tool_search for an existing deferred tool. Do not repeat an uncertain write or change permissions.' });
+          } catch (error) {
+            log('warn', 'Tool catalog refresh failed: ' + errorText(error));
+          }
+        }
         if ((mission.steering?.revision || 0) !== modelSteerVersion) {
           for (const rest of calls.slice(i + 1)) messages.push({ role: 'tool', tool_call_id: rest.id, content: 'SKIPPED: operator changed direction during the previous action' });
           break;
@@ -453,12 +483,17 @@ export async function runAgentMission({
       }
       if (nudge) {
         // Once: tell the model what it is doing. A second time in a fresh window: stop and say so.
-        if (stuck.nudge() > 1) return end({ blocked: true, reason: `STUCK:${nudge.kind}` }, { error: `PLANNER_BLOCKED:STUCK:${nudge.kind}` });
+        if (stuck.nudge() > 1) {
+          if (recentServiceOutage()) return deferHealth('STUCK_AFTER_TOOL_OUTAGE:'+nudge.kind);
+          return end({ blocked: true, reason: `STUCK:${nudge.kind}` }, { error: `PLANNER_BLOCKED:STUCK:${nudge.kind}` });
+        }
         log('warn', `agent looks stuck (${nudge.kind})`);
         messages.push({ role: 'user', content: `STUCK: ${nudge.hint}` });
       }
     }
-    return end({ failed: true, reason: 'STEP_LIMIT' }, { error: `STEP_LIMIT:${steps}/${maxSteps}` });
+    // This is a per-invocation context window, not the mission's durable budget.
+    // Let the canonical queue resume with receipts and fresh context on its next turn.
+    return { executed: receipts.length > 0, receipts, steps, deferred: true, reason: `TURN_WINDOW_EXHAUSTED:${steps}/${maxSteps}` };
   } finally {
     await onActivity({ phase: 'READY', missionId: null }).catch(() => {});
   }

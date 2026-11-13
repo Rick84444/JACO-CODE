@@ -109,15 +109,16 @@ test('blocked ends the mission with the reason; no model at all defers without s
   assert.equal(s.control.get(m.id).status, 'BLOCKED');
 });
 
-test('Aura selected model failure is an explicit blocker rather than a permanent step-zero defer', async t => {
+test('Aura defers temporary selected-model outage without ending the durable mission', async t => {
   const s = setup(t, ['web-fetch']);
   const mission = s.control.create({ goal: 'Read an authorized page', idempotencyKey: 'aura-model-block', allowedTasks: ['web-fetch'] });
   let attempts = 0;
   const result = await run(s, { chat: async () => { attempts++; throw Error('AURA_SELECTED_MODEL_UNAVAILABLE:gemini:PROVIDER_TIMEOUT'); } }, async () => assert.fail('no mutation when model is unavailable'));
-  assert.equal(result.blocked, true);
-  assert.equal(attempts, 1, 'a provider outage must not be retried without bounded operator control');
+  assert.equal(result.deferred, true);
+  assert.equal(result.recovery, 'WAIT_PROVIDER');
+  assert.equal(attempts, 1, 'retry happens on the next supervised tick, not in a burst');
   assert.match(result.reason, /AURA_SELECTED_MODEL_UNAVAILABLE/);
-  assert.equal(s.control.get(mission.id).status, 'BLOCKED');
+  assert.equal(s.control.get(mission.id).status, 'ACTIVE');
   assert.equal(s.control.get(mission.id).receipts.length, 0);
 });
 
@@ -983,4 +984,84 @@ test('queue changes at a planning boundary do not consume another model turn',as
   });
   assert.equal(result.queueChanged,true);assert.equal(model.seen.length,1);
   assert.equal(s.control.get(original.id).status,'ACTIVE');assert.equal(result.receipts.length,1);
+});
+
+test('invalid selected-model credentials remain blocked rather than retried indefinitely', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal:'Inspect a page', idempotencyKey:'health-bad-key', allowedTasks:['web-fetch'] });
+  const result = await run(s, { chat: async () => { throw Error('AURA_SELECTED_MODEL_UNAVAILABLE:gemini:AUTH_INVALID_KEY'); } }, async () => assert.fail('no side effects'));
+  assert.equal(result.blocked, true);
+  assert.equal(s.control.get(m.id).status, 'BLOCKED');
+});
+
+test('per-run step window yields ACTIVE durable work and resumes with its receipts', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal:'Read two pages', idempotencyKey:'health-step-yield', allowedTasks:['web-fetch'] });
+  const first = await run(s, scripted([{tool_calls:[call('web-fetch',{url:'https://first.test'})]}]),
+    async () => ({ok:true,verified:true,content:'first'}), {maxSteps:1});
+  assert.equal(first.deferred,true);
+  assert.match(first.reason,/TURN_WINDOW_EXHAUSTED/);
+  assert.equal(s.control.get(m.id).status,'ACTIVE');
+  assert.equal(s.control.get(m.id).receipts.length,1);
+  const next = await run(s, scripted([{tool_calls:[call('web-fetch',{url:'https://second.test'})]},
+    {tool_calls:[call('complete',{reason:'Both pages verified'})]}]),
+    async () => ({ok:true,verified:true,content:'second'}));
+  assert.equal(next.completed,true);
+  assert.equal(s.control.get(m.id).receipts.length,2);
+});
+
+test('service failure refreshes currently allowed catalog and offers an alternate tool', async t => {
+  const s=setup(t,['web-fetch','health-check']);
+  const m=s.control.create({goal:'Check service with a fallback',idempotencyKey:'health-tool-fallback',allowedTasks:['web-fetch','health-check']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://offline.test'})]},
+    {tool_calls:[call('health-check',{})]},
+    {tool_calls:[call('complete',{reason:'Verified by available health-check'})]}]);
+  let catalogs=0;
+  const result=await run(s,model,async action => action.type==='web-fetch'
+    ? {ok:false,verified:false,error:'ECONNREFUSED'} : {ok:true,verified:true,content:'READY'},
+    {toolsFor:mission=>{catalogs++;return plannerTools(mission.allowedTasks,[],{},false);}});
+  assert.equal(result.completed,true);
+  assert.ok(catalogs>=2);
+  assert.match(JSON.stringify(model.seen[1]),/TOOL_HEALTH_RECOVERY/);
+  assert.equal(s.control.get(m.id).receipts.length,2);
+});
+
+test('a temporary broken tool followed by a model block stays active for later repair', async x => {
+  const s=setup(x,['web-fetch','health-check']);
+  const mission=s.control.create({goal:'Read the page',idempotencyKey:'tool-health-block',allowedTasks:['web-fetch','health-check']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://unreachable.test'})]},
+    {tool_calls:[call('blocked',{reason:'Browser bridge unavailable while trying the page'})]}]);
+  const result=await run(s,model,async()=>({ok:false,verified:false,error:'ECONNREFUSED'}));
+  assert.equal(result.deferred,true);
+  assert.equal(result.recovery,'WAIT_TOOL');
+  assert.equal(s.control.get(mission.id).status,'ACTIVE');
+  assert.equal(s.control.get(mission.id).receipts.length,1);
+});
+
+test('operator authorization is never disguised as a health defer', async x => {
+  const s=setup(x,['web-fetch']);
+  const mission=s.control.create({goal:'Read page',idempotencyKey:'tool-health-approval',allowedTasks:['web-fetch']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://unreachable.test'})]},
+    {tool_calls:[call('blocked',{reason:'Operator approval required to proceed'})]}]);
+  const result=await run(s,model,async()=>({ok:false,verified:false,error:'ECONNREFUSED'}));
+  assert.equal(result.blocked,true);
+  assert.equal(s.control.get(mission.id).status,'BLOCKED');
+});
+
+test('a health-deferred mission cools down even after useful work, while a turn window keeps moving', async () => {
+  const { novaLoopDelay } = await import('../../agents/hands-off-agent.mjs');
+  assert.equal(novaLoopDelay({executed:true,deferred:true,recovery:'WAIT_PROVIDER'},60000,3000),60000);
+  assert.equal(novaLoopDelay({executed:true,deferred:true,recovery:'WAIT_TOOL'},60000,3000),60000);
+  assert.equal(novaLoopDelay({executed:true,deferred:true,reason:'TURN_WINDOW_EXHAUSTED'},60000,3000),3000);
+  assert.equal(novaLoopDelay({executed:false,deferred:true},60000,3000),60000);
+});
+
+test('a missing operator fact remains a real question even after a network outage', async x => {
+  const s=setup(x,['web-fetch']);
+  const mission=s.control.create({goal:'Read a user-selected article',idempotencyKey:'health-needs-input',allowedTasks:['web-fetch']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://offline.test'})]},
+    {tool_calls:[call('blocked',{reason:'Which page should I use for the article?'})]}]);
+  const result=await run(s,model,async()=>({ok:false,verified:false,error:'ECONNREFUSED'}));
+  assert.equal(result.blocked,true);
+  assert.equal(s.control.get(mission.id).status,'BLOCKED');
 });
