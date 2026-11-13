@@ -4,7 +4,7 @@
 - [x] Capture exact main commit and complete non-truncated recursive GitHub tree (1,248 blobs).
 - [x] Group exact Git object IDs (23 duplicate groups, 48 file occurrences); classify only by observed path/content.
 - [x] Inspect root and runtime AGENTS.md, master behavior contract, existing debt workflow and prior 2026-10-28 audit.
-- [x] Inspect root/runtime start.sh, package scripts and root install.sh for a static launcher mismatch.
+- [x] Inspect root/runtime start.sh, package scripts and root install.sh for a static launcher-context ambiguity.
 - [x] Identify PR #230 / PR #231 overlap on NovaMissionControl.mjs; do not merge them blindly.
 - [x] Implement a read-only Git-tree scanner and its synthetic regression cases.
 - [x] Integrate inventory command into the existing technical-debt gate.
