@@ -162,9 +162,15 @@ jobs:
           $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$installDir")
           $first = Start-Process -FilePath $exe -ArgumentList $args -Wait -PassThru
           if ($first.ExitCode -ne 0) { throw "INSTALL_FAILED:$($first.ExitCode)" }
-          foreach ($file in @('runtime/dist/index.html','runtime/dist/server.cjs','tools/node/node.exe','windows/product/Start-JACO.ps1')) {
+          foreach ($file in @('runtime/dist/index.html','runtime/dist/server.cjs','tools/node/node.exe','windows/product/Start-JACO.ps1','windows/product/JACO-guardian-launch.vbs')) {
             if (-not (Test-Path (Join-Path $installDir $file))) { throw "INSTALLED_FILE_MISSING:$file" }
           }
+          # Check the real per-user startup shortcut, not just the Inno definition.
+          $autostart = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\JACO Health Guardian.lnk'
+          if (-not (Test-Path -LiteralPath $autostart)) { throw 'JACO_GUARDIAN_AUTOSTART_NOT_INSTALLED' }
+          $link = (New-Object -ComObject WScript.Shell).CreateShortcut($autostart)
+          if ($link.Arguments -notmatch 'JACO-guardian-launch\.vbs' -or $link.TargetPath -notmatch 'wscript\.exe$') { throw 'JACO_GUARDIAN_AUTOSTART_TARGET_INVALID' }
+
           $env:JACO_DATA_DIR = Join-Path $env:RUNNER_TEMP 'JACO-PreservedUserData'
           $env:JACO_START_MODE = 'production'
           $result = & (Join-Path $installDir 'tools/node/node.exe') (Join-Path $installDir 'agents/lib/local-stack.mjs') --preflight | Out-String
@@ -214,6 +220,7 @@ jobs:
           if (-not (Test-Path $uninstaller)) { throw 'UNINSTALLER_MISSING' }
           $remove = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
           if ($remove.ExitCode -ne 0) { throw "UNINSTALL_FAILED:$($remove.ExitCode)" }
+          if (Test-Path -LiteralPath $autostart) { throw 'JACO_GUARDIAN_AUTOSTART_LEFT_BEHIND' }
           Write-Host 'JACO_WINDOWS_INSTALL_REINSTALL_UNINSTALL_VERIFIED'
       - name: SHA256 release manifest
         shell: pwsh

@@ -474,3 +474,56 @@ test('steering while a tool executes waits for its receipt and rejects stale com
   s.control.release(m.id,{owner:'nova',token:next.token});
   assert.equal(s.control.get(m.id).status,'ACTIVE');
 });
+
+test('requeues a known failed read automatically without resetting its failure budget',t=>{
+ const s=setup(t,['web-fetch','health-check']);
+ const m=s.control.create({goal:'Read an endpoint safely',idempotencyKey:'auto-health-requeue',allowedTasks:['web-fetch','health-check']});
+ for(let i=0;i<5;i++){
+   const {token}=s.control.claim(m.id,'nova');
+   const a=s.control.begin(m.id,{owner:'nova',token,task:{type:'web-fetch',data:{url:'https://unreachable.example.test'}}});
+   s.control.finish(m.id,{owner:'nova',token,actionId:a.id,receipt:{ok:false,verified:false,error:'ECONNREFUSED'}});
+ }
+ assert.equal(s.control.get(m.id).status,'BLOCKED');
+ assert.equal(s.control.current(),null,'no retry burst during cooldown');
+ // The fixture clock starts before the durable receipt timestamp is written.
+ // Stay outside the two-minute cooldown rather than racing the CI runner clock.
+ s.advance(130000);
+ const active=s.control.current();
+ assert.equal(active.id,m.id);
+ assert.equal(active.failures,5,'automatic recovery never resets mission failure accounting');
+ assert.equal(active.phase,'READY');
+ const event=s.control.bus.lastMissionEvent(m.id,'NOVA_HEALTH_REQUEUED');
+ assert.equal(event.payload.retry,1);
+ assert.equal(event.payload.preservedBudget,true);
+ const {token}=s.control.claim(m.id,'nova');
+ const a=s.control.begin(m.id,{owner:'nova',token,task:{type:'health-check',data:{}}});
+ s.control.finish(m.id,{owner:'nova',token,actionId:a.id,receipt:{ok:true,verified:true,result:{healthy:true}}});
+ assert.equal(s.control.get(m.id).status,'ACTIVE');
+ assert.equal(s.control.get(m.id).failures,0);
+});
+
+test('a blocked unsafe mutation never gets a health requeue even after long delay',t=>{
+ const s=setup(t,['browser-click']);
+ const m=s.control.create({goal:'Save in web browser',idempotencyKey:'no-replay-mutation',allowedTasks:['browser-click']});
+ const {token}=s.control.claim(m.id,'nova');
+ const action=s.control.begin(m.id,{owner:'nova',token,task:{type:'browser-click',data:{name:'Save'}}});
+ s.control.finish(m.id,{owner:'nova',token,actionId:action.id,receipt:{ok:false,verified:false,outcomeUnknown:true,error:'ECONNRESET'}});
+ s.advance(200000);
+ assert.equal(s.control.current(),null);
+ assert.equal(s.control.get(m.id).status,'BLOCKED');
+ assert.equal(s.control.bus.lastMissionEvent(m.id,'NOVA_HEALTH_REQUEUED'),null);
+});
+
+test('a blocked health read does not override a newer policy or operator approval event',t=>{
+ const s=setup(t,['web-fetch']);
+ const m=s.control.create({goal:'Inspect endpoint',idempotencyKey:'health-after-policy',allowedTasks:['web-fetch']});
+ for(let i=0;i<5;i++){
+   const {token}=s.control.claim(m.id,'nova');
+   const a=s.control.begin(m.id,{owner:'nova',token,task:{type:'web-fetch',data:{url:'https://offline.example.test'}}});
+   s.control.finish(m.id,{owner:'nova',token,actionId:a.id,receipt:{ok:false,verified:false,error:'ECONNREFUSED'}});
+ }
+ s.control.bus.event('NOVA_OPERATOR_APPROVAL_REQUIRED',{missionId:m.id,payload:{error:'POLICY_REQUIRED'}});
+ s.advance(200000);
+ assert.equal(s.control.current(),null);
+ assert.equal(s.control.get(m.id).status,'BLOCKED');
+});
