@@ -485,7 +485,9 @@ test('requeues a known failed read automatically without resetting its failure b
  }
  assert.equal(s.control.get(m.id).status,'BLOCKED');
  assert.equal(s.control.current(),null,'no retry burst during cooldown');
- s.advance(120001);
+ // The fixture clock starts before the durable receipt timestamp is written.
+ // Stay outside the two-minute cooldown rather than racing the CI runner clock.
+ s.advance(130000);
  const active=s.control.current();
  assert.equal(active.id,m.id);
  assert.equal(active.failures,5,'automatic recovery never resets mission failure accounting');
