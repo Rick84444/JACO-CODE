@@ -168,7 +168,7 @@ test('canonical runtime adapter revokes a paired device during logout', t => {
   assert.deepEqual(logout.body,{success:true,revoked:true});
   assert.equal(s.run({path:'/ide-auth/status',headers:{cookie}}).status,401);
   const source = fs.readFileSync(new URL('../../runtime/server.ts',import.meta.url),'utf8');
-  assert.match(source, /const ideDevices = ideDeviceRegistryAdapter\\(connectedRuntime\\.devices\\)/);
+  assert.ok(source.includes('const ideDevices = ideDeviceRegistryAdapter(connectedRuntime.devices);'));
   assert.throws(() => ideDeviceRegistryAdapter({verify(){},redeem(){}}), /IDE_REGISTRY_REVOKE_MISSING/);
 });
 
