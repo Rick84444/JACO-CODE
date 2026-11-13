@@ -91,6 +91,7 @@ import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec
 import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy, policyFilePath, CLAIM_RESUME_NOTE } from "../agents/lib/approval-policy.mjs";
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
 import { taskCatalog, ALWAYS_ASK } from './src/server/capabilities/capabilityPolicy.mjs';
+import { observationsFromMissions, plannerView } from '../agents/lib/capability-observation.mjs';
 import { TASK_FIELDS } from "../agents/lib/task-fields.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
 import { metaStore, decisionFindings, metaTrigger, buildReflection, askPremise, reflectionStage } from "../agents/lib/meta-reasoning.mjs";
@@ -3224,6 +3225,16 @@ const notifyPhone = async (action) => {
     return sendSkill(req, res);
   });
 
+  // What each tool has actually done, derived from mission receipts (docs/aura/OPERATING_CONTRACT.md, section 3).
+  app.get('/api/aura/capabilities/observations', requireLocalUi, (_req, res) => {
+    try {
+      const policy = connectedRuntime.capabilities;
+      const missions = connectedRuntime.bus.listMissions(50).map((m: any) => { try { return connectedRuntime.novaMissions.get(m.id); } catch { return { ...m, receipts: [] }; } });
+      const observations = observationsFromMissions({ tools: Object.keys(TASK_FIELDS), missions, isEnabled: (t: string) => policy ? policy.isTaskEnabled(t) : true });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ success: true, view: plannerView(observations), observations });
+    } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
+  });
   // What Aura may use. Everything is on until the operator turns it off here (capabilityPolicy.mjs).
   app.get('/api/aura/capabilities', requireLocalUi, (_req, res) => {
     try {

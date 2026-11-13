@@ -4,6 +4,7 @@ import { readAuraResponse } from '../lib/auraApi.mjs';
 import { buildOperatorConfirmation, requiresOperatorConfirmation } from '../lib/operatorApproval.mjs';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { LocalMemoryPanel } from './LocalMemoryPanel';
+import { MetaLessonsPanel } from './MetaLessonsPanel';
 import { ReverseGoalCanvas } from './ReverseGoalCanvas';
 
 // The Gameboard: one plan at a time, drawn like a family tree read backwards. The goal (what the operator wants) is
@@ -37,6 +38,7 @@ export function missionControlState(m: ObservedMission): MissionControlState {
     state: !live ? (m.cancelRequested ? 'ending' : 'closed') : paused ? 'paused' : m.status === 'ACTIVE' ? 'working' : m.status === 'BLOCKED' ? 'blocked' : 'verifying',
   };
 }
+export const UNDO_SECONDS = 8;
 const MISSION_STATE_WORD: Record<MissionControlState['state'], [string, string]> = {
   working: ['arbetar', 'working'], paused: ['pausat', 'paused'], blocked: ['blockerat', 'blocked'],
   verifying: ['väntar på verifiering', 'awaiting verification'], ending: ['avslutas', 'ending'], closed: ['avslutat', 'closed'],
@@ -290,8 +292,25 @@ function MissionControls({ mission, onDone, compact = false }: { mission: Observ
       onDone();
     }
   };
-  const end = async () => { if (await post('end', 'cancel', {})) { setAsk(null); onDone(); } };
-  const endGoal = async () => { if (await post('goal', 'end-goal', { confirm: true })) { setAsk(null); onDone(); } };
+  // Ending is held here for UNDO_SECONDS before anything is sent: a wrong click is taken back without reaching the
+  // runtime, where a cancelled mission cannot be reopened.
+  const [pending, setPending] = useState<{ kind: 'end' | 'goal'; left: number } | null>(null);
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current) window.clearInterval(timer.current); }, []);
+  const undo = () => { if (timer.current) window.clearInterval(timer.current); timer.current = null; setPending(null); };
+  const schedule = (kind: 'end' | 'goal') => {
+    if (timer.current) return;
+    setAsk(null); setPending({ kind, left: UNDO_SECONDS });
+    timer.current = window.setInterval(() => setPending(current => {
+      if (!current) return null;
+      if (current.left > 1) return { ...current, left: current.left - 1 };
+      if (timer.current) window.clearInterval(timer.current); timer.current = null;
+      void (current.kind === 'end' ? post('end', 'cancel', {}) : post('goal', 'end-goal', { confirm: true })).then(r => { if (r) onDone(); });
+      return null;
+    }), 1000);
+  };
+  const end = async () => schedule('end');
+  const endGoal = async () => schedule('goal');
   const button = 'rounded border px-2.5 py-1 text-xs font-medium disabled:opacity-50';
   const stateColour = can.state === 'paused' ? 'text-amber-200' : can.state === 'blocked' ? 'text-rose-200' : can.state === 'working' ? 'text-sky-200' : 'text-neutral-300';
   return <div data-testid="mission-controls" data-mission-id={mission.identity} data-mission-state={can.state}
@@ -326,6 +345,10 @@ function MissionControls({ mission, onDone, compact = false }: { mission: Observ
         <button type="button" disabled={busy !== null} onClick={() => void endGoal()} className={`${button} border-rose-300/60 bg-rose-300 text-black`}>{busy === 'goal' ? '…' : tr('Ja, avsluta målet', 'Yes, end the goal')}</button>
         <button type="button" onClick={() => setAsk(null)} className={`${button} border-neutral-600 text-neutral-200`}>{tr('Ångra', 'Keep it')}</button>
       </div>
+    </div>}
+    {pending && <div role="status" data-testid="mission-end-undo" className="mt-2 flex items-center justify-between gap-2 rounded border border-amber-300/50 bg-amber-950/30 p-2 text-sm text-amber-50">
+      <span>{pending.kind === 'end' ? tr(`Uppdraget avslutas om ${pending.left} s.`, `The mission ends in ${pending.left} s.`) : tr(`Målet avslutas om ${pending.left} s.`, `The goal ends in ${pending.left} s.`)}</span>
+      <button type="button" onClick={undo} className={`${button} border-amber-200 bg-amber-200 text-black`}>{tr('Ångra', 'Undo')}</button>
     </div>}
     {note && <p role="status" className="mt-2 text-xs text-sky-200">{note}</p>}
     {error && <p role="alert" className="mt-2 text-xs text-rose-300">{error}</p>}
@@ -533,6 +556,10 @@ export function StrategyBoard({ focusPlanId = null, focusNodeKey = null, onClose
     <details className="rounded border border-neutral-800 p-3 text-xs text-neutral-300" data-testid="gameboard-memory-section">
       <summary className="cursor-pointer">{tr('Tidigare erfarenheter och minne','Prior experience and memory')}</summary>
       <div className="mt-3"><LocalMemoryPanel missionIds={Array.from(planMissions)} /></div>
+    </details>
+    <details className="rounded border border-neutral-800 p-3 text-xs text-neutral-300" data-testid="gameboard-lessons-section">
+      <summary className="cursor-pointer">{tr('Auras lärdomar om sina beslut','Aura’s lessons about her decisions')}</summary>
+      <div className="mt-3"><MetaLessonsPanel /></div>
     </details>
     {plan && open === 'goal' && <GoalCard plan={plan} missions={observed?.missions || []} onClose={close} onSaved={load} />}
     {plan && node && <StepCard plan={plan} node={node} decisions={decisions} missions={observed?.missions || []} onPick={key => setOpen(key ?? 'goal')} onClose={close} onSaved={load} />}

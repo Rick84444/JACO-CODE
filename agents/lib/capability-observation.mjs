@@ -69,6 +69,21 @@ export function withEvidence(record, { probe = null, execution = null, now = Dat
   return { ...next, status: deriveStatus(next, now) };
 }
 
+// Builds one observation per tool from the mission ledger: the latest receipt of each tool type across missions is
+// its execution evidence. The ledger stays the single store; nothing is written here.
+/** @param {{ agentId?: string, tools?: string[], missions?: any[], isEnabled?: (tool: string) => boolean, now?: number }} [options] */
+export function observationsFromMissions({ agentId = 'aura', tools = [], missions = [], isEnabled = _tool => true, now = Date.now() } = {}) {
+  const latest = new Map();
+  for (const m of missions) for (const r of Array.isArray(m?.receipts) ? m.receipts : []) {
+    const type = String(r?.type || ''), at = r?.at || m.updatedAt || null;
+    if (!type || !Number.isFinite(Date.parse(at))) continue;
+    const prev = latest.get(type);
+    if (!prev || Date.parse(at) >= Date.parse(prev.at)) latest.set(type, { ok: r.ok === true, verified: r.verified === true, at, receipt: r.actionId, error: r.ok === false ? r.error : null });
+  }
+  return [...new Set([...tools, ...latest.keys()])].filter(t => ID.test(t)).sort().map(tool =>
+    observe({ agentId, tool, registered: tools.includes(tool), operatorEnabled: isEnabled(tool), execution: latest.get(tool) || null, now }));
+}
+
 // What the operator sees and what a planner may rely on. Only `verified` counts as proven.
 export function plannerView(records = [], now = Date.now()) {
   const rows = records.map(r => ({ ...r, status: deriveStatus(r, now) }));

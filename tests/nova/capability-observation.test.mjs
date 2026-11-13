@@ -1,7 +1,7 @@
 // Contract: a capability status comes from evidence only, expires, and a failure is never hidden by an older success.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { observe, withEvidence, deriveStatus, plannerView, observationId, MAX_AGE_MS, PROBE_MAX_AGE_MS } from '../../agents/lib/capability-observation.mjs';
+import { observe, withEvidence, deriveStatus, plannerView, observationId, observationsFromMissions, MAX_AGE_MS, PROBE_MAX_AGE_MS } from '../../agents/lib/capability-observation.mjs';
 
 const NOW = Date.parse('2026-11-13T10:00:00Z');
 const iso = ms => new Date(NOW - ms).toISOString();
@@ -58,4 +58,17 @@ test('the planner view lists only verified or reachable tools as usable and name
   assert.deepEqual(view.blocked, [{ tool: 'shell', error: 'denied', receipt: 'aura:turn:3' }]);
   assert.equal(view.counts.enabled, 1);
   assert.equal(view.counts.verified, 1);
+});
+
+test('observations come from the latest receipt per tool across missions, and switches still count', () => {
+  const missions = [
+    { id: 'm1', updatedAt: iso(9000), receipts: [{ type: 'web-fetch', ok: true, verified: true, at: iso(8000), actionId: 'm1:turn:1' }] },
+    { id: 'm2', updatedAt: iso(1000), receipts: [{ type: 'web-fetch', ok: false, at: iso(2000), actionId: 'm2:turn:1', error: 'ENOTFOUND' }, { type: 'repo-read', ok: true, verified: true, at: iso(1500), actionId: 'm2:turn:2' }] },
+  ];
+  const obs = observationsFromMissions({ tools: ['web-fetch', 'repo-read', 'shell'], missions, isEnabled: t => t !== 'shell', now: NOW });
+  const by = Object.fromEntries(obs.map(o => [o.tool, o]));
+  assert.equal(by['web-fetch'].status, 'failed', 'the newer failure wins');
+  assert.equal(by['web-fetch'].lastExecution.receipt, 'm2:turn:1');
+  assert.equal(by['repo-read'].status, 'verified');
+  assert.equal(by.shell.status, 'registered', 'switched off and never run');
 });

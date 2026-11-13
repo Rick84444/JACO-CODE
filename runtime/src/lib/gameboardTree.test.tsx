@@ -70,3 +70,14 @@ test('a Gameboard approval explains the action, the reason and a safer path in p
   assert.match(guidance.safer, /evidensen|avsluta/);
   assert.match(guidance.acknowledgement, /Jag förstår.*godkänner/);
 });
+
+test('lessons waiting for the operator come first, retired ones last', async () => {
+  const { lessonOrder } = await import('../components/MetaLessonsPanel');
+  const l = (id: string, status: string, n = 1) => ({ id, status, sources: Array(n).fill({ missionId: 'm', evidence: ['e'] }) }) as any;
+  assert.deepEqual(lessonOrder([l('r', 'RETIRED'), l('t1', 'TRIAL', 1), l('a', 'ACTIVE'), l('t2', 'TRIAL', 3), l('p', 'PROPOSED')]).map(x => x.id), ['p', 'a', 't2', 't1', 'r']);
+});
+
+test('ending a mission from the board waits long enough to undo', async () => {
+  const { UNDO_SECONDS } = await import('../components/StrategyBoard');
+  assert.ok(UNDO_SECONDS >= 5 && UNDO_SECONDS <= 15);
+});
