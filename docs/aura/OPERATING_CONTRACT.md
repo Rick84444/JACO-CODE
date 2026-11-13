@@ -120,8 +120,10 @@ Not verified:
 
 ## 9. Gaps between this contract and the code
 
-1. Capability observations are derived from mission receipts and served at `GET /api/aura/capabilities/observations`.
-   Probes (`reachable`) are not produced yet, and the planner does not read the view yet.
+1. Capability observations cover built-in tasks and every MCP tool (`mcp:<server>.<tool>`): receipts are execution
+   evidence, a server the host lists as READY is a probe. The planner receives the view in its preflight context and
+   the Gameboard's "service connection" need resolves against it. Not yet: a probe that actually calls a tool, and a
+   planner that refuses a step on a `failed` tool by itself (today it is told, not stopped).
 2. The Gameboard still shows some availability by inference (see `docs/aura-autonomy-tool-audit-2026-11-07.md`).
 3. A change of direction during a run is versioned (steering revision); a change of a mission's tool scope is not
    yet, so narrowing a running mission's tools still goes through the capability switches.

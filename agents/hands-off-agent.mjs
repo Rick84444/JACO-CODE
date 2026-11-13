@@ -2149,6 +2149,7 @@ async function runAgentLoop(state) {
         skillCandidates: extras['Available skill candidates'] || '',
         learnedOutcomes: mission.contract ? state.preflight?.knowledge?.outcomes || [] : [],
         decisionLessons: mission.contract ? state.preflight?.knowledge?.decisionLessons || [] : [],
+        capabilities: mission.contract ? state.preflight?.knowledge?.capabilities || null : null,
         inboxAddress: extras["JACO's own e-mail addresses (for sign-ups)"] || '',
       });
       const intro = repoPreflight ? `${packet}\n${repoPreflight}` : packet;

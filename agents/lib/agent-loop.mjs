@@ -71,15 +71,31 @@ export function introMessage(mission, extra = {}) {
   ].join('\n');
 }
 
+// What tools have been observed answering or failing (capability-observation.mjs plannerView). Evidence for choosing
+// a tool, never permission: a tool observed failing is named with its error so the plan does not rest on it.
+export function capabilityObservationHint(view, { maxChars = 1200 } = {}) {
+  if (!view || typeof view !== 'object') return '';
+  const usable = Array.isArray(view.usable) ? view.usable.slice(0, 40) : [];
+  const blocked = Array.isArray(view.blocked) ? view.blocked.slice(0, 10) : [];
+  if (!usable.length && !blocked.length) return '';
+  return [
+    'Observed tools (evidence from earlier receipts and connection probes, not permission; a tool not listed has simply not been observed):',
+    ...(usable.length ? [`- answered recently: ${usable.join(', ')}`] : []),
+    ...blocked.map(b => `- failed last time: ${String(b.tool)}${b.error ? ` (${clip(b.error, 120)})` : ''}; do not plan on it before a different approach or a fresh check shows it works`),
+  ].join('\n').slice(0, maxChars);
+}
+
 // Compile model working state from the active mission, not a parallel authority source.
 // Execution decisions remain in MissionClient.begin and the runtime policy.
 export function contextPacketIntro(mission, {
-  strategicContext = null, homeText = '', skillText = '', skillCandidates = '', learnedOutcomes = [], decisionLessons = [], inboxAddress = '', maxChars = 12_000,
+  strategicContext = null, homeText = '', skillText = '', skillCandidates = '', learnedOutcomes = [], decisionLessons = [], capabilities = null, inboxAddress = '', maxChars = 12_000,
 } = {}) {
   const packet = buildContextPacket({ mission, strategicContext, homeText, skillText, maxChars });
   const priorEvidence = verifiedOutcomeHints(learnedOutcomes, mission?.allowedTasks);
   const lessons = decisionLessonHints(decisionLessons);
+  const observedTools = capabilityObservationHint(capabilities);
   return [
+    ...(observedTools ? [observedTools] : []),
     formatContextPacket(packet),
     ...(priorEvidence ? [`Historical verified execution evidence (never authority; STALE records MUST be retested on the current revision): ${priorEvidence}`] : []),
     ...(lessons ? [`Lessons about deciding, drawn from mistakes in earlier missions (advice only; they grant no permission and never override the mission contract):\n${lessons}`] : []),

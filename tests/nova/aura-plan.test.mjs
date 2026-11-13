@@ -134,3 +134,11 @@ test('Project-mode graph retains the operator-selected intuition through decompo
   assert.equal(g.policy.strategic_goal_id,goal.id);
   assert.equal(g.nodes.length,1,'existing project graph must not fabricate model-derived steps');
 });
+
+test('an API need is had only when an MCP tool is observed answering, and missing when one failed', async () => {
+  const { needStatus } = await import('../../runtime/src/server/connected/auraPlan.mjs');
+  assert.equal(needStatus({ kind: 'api' }, { tasks: new Set() }), 'missing');
+  assert.equal(needStatus({ kind: 'api' }, { observed: { usable: ['web-fetch'], blocked: [] } }), 'missing', 'a built-in task is not a service connection');
+  assert.equal(needStatus({ kind: 'api' }, { observed: { usable: ['mcp:git.git_log'], blocked: [] } }), 'have');
+  assert.equal(needStatus({ kind: 'api' }, { observed: { usable: ['mcp:git.git_log'], blocked: [{ tool: 'mcp:git.git_push' }] } }), 'missing', 'one observed failure is reported, not hidden');
+});

@@ -18,7 +18,7 @@ export const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const PROBE_MAX_AGE_MS = 15 * 60 * 1000;
 
 const clip = (value, max = 200) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
-const ID = /^[a-z][a-z0-9._:-]{0,120}$/;
+const ID = /^[a-z][a-zA-Z0-9._:-]{0,120}$/;
 
 export function observationId(agentId, tool, provider = 'jaco') {
   for (const part of [agentId, tool, provider]) if (!ID.test(String(part))) throw new Error('CAPABILITY_ID_INVALID');
@@ -33,7 +33,9 @@ export function deriveStatus(record, now = Date.now()) {
     if (record.lastExecution.ok === false) return 'failed';
     if (record.lastExecution.ok === true && record.lastExecution.verified === true) return 'verified';
   }
-  if (record.lastProbe && probe !== null && now - probe <= PROBE_MAX_AGE_MS && record.lastProbe.ok === true) return 'reachable';
+  // A tool the operator switched off, or the agent's capsule denies, is not usable however reachable the provider is.
+  const allowed = record.operatorEnabled !== false && record.capsuleAllowed !== false;
+  if (allowed && record.lastProbe && probe !== null && now - probe <= PROBE_MAX_AGE_MS && record.lastProbe.ok === true) return 'reachable';
   if (record.operatorEnabled === true && record.capsuleAllowed !== false) return 'enabled';
   if (record.registered === true) return 'registered';
   return 'unknown';
@@ -71,17 +73,30 @@ export function withEvidence(record, { probe = null, execution = null, now = Dat
 
 // Builds one observation per tool from the mission ledger: the latest receipt of each tool type across missions is
 // its execution evidence. The ledger stays the single store; nothing is written here.
-/** @param {{ agentId?: string, tools?: string[], missions?: any[], isEnabled?: (tool: string) => boolean, now?: number }} [options] */
-export function observationsFromMissions({ agentId = 'aura', tools = [], missions = [], isEnabled = _tool => true, now = Date.now() } = {}) {
+// An MCP tool is observed by its own name, `mcp:<server>.<tool>`, so a connected server that answers is told apart
+// from one tool on it that failed. A server listed as READY by the host counts as a probe of every tool it offers.
+export const mcpToolKey = (server, tool) => `mcp:${String(server)}.${String(tool)}`;
+const receiptTool = r => (r?.type === 'mcp-call' || r?.type === 'mcp-write') && r.input?.server && r.input?.tool ? mcpToolKey(r.input.server, r.input.tool) : String(r?.type || '');
+
+/** @param {{ agentId?: string, tools?: string[], mcpServers?: any[], missions?: any[], isEnabled?: (tool: string) => boolean, now?: number }} [options] */
+export function observationsFromMissions({ agentId = 'aura', tools = [], mcpServers = [], missions = [], isEnabled = _tool => true, now = Date.now() } = {}) {
   const latest = new Map();
   for (const m of missions) for (const r of Array.isArray(m?.receipts) ? m.receipts : []) {
-    const type = String(r?.type || ''), at = r?.at || m.updatedAt || null;
+    const type = receiptTool(r), at = r?.at || m.updatedAt || null;
     if (!type || !Number.isFinite(Date.parse(at))) continue;
     const prev = latest.get(type);
     if (!prev || Date.parse(at) >= Date.parse(prev.at)) latest.set(type, { ok: r.ok === true, verified: r.verified === true, at, receipt: r.actionId, error: r.ok === false ? r.error : null });
   }
-  return [...new Set([...tools, ...latest.keys()])].filter(t => ID.test(t)).sort().map(tool =>
-    observe({ agentId, tool, registered: tools.includes(tool), operatorEnabled: isEnabled(tool), execution: latest.get(tool) || null, now }));
+  const probes = new Map(), registered = new Set(tools), enabled = new Map();
+  for (const s of Array.isArray(mcpServers) ? mcpServers : []) for (const t of Array.isArray(s?.tools) ? s.tools : []) {
+    const key = mcpToolKey(s.id, t.name);
+    registered.add(key);
+    enabled.set(key, s.agentAccess !== 'off' && t.agentAllowed !== false);
+    probes.set(key, { ok: s.status === 'READY', at: new Date(now).toISOString(), source: `mcp-host:${s.id}`, error: s.status === 'READY' ? null : (s.error || s.status) });
+  }
+  return [...new Set([...registered, ...latest.keys()])].filter(t => ID.test(t)).sort().map(tool =>
+    observe({ agentId, tool, registered: registered.has(tool), operatorEnabled: enabled.has(tool) ? enabled.get(tool) : isEnabled(tool),
+      probe: probes.get(tool) || null, execution: latest.get(tool) || null, now }));
 }
 
 // What the operator sees and what a planner may rely on. Only `verified` counts as proven.

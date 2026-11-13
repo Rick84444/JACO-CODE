@@ -42,7 +42,15 @@ export function needStatus(need, available = {}) {
     case 'helpers': return available.helpersVerified === true ? 'have' : 'missing';
     case 'skill': return (available.skills || new Set()).has(need.id) ? 'have' : 'missing';
     case 'payment': return available.payments ? 'approval' : 'missing';
-    case 'api': return 'missing';
+    // A service connection is "had" only when an MCP tool for it is observed answering (reachable or verified);
+    // one observed failing is missing even if it is registered. Nothing is read from the goal's wording.
+    case 'api': {
+      const view = available.observed;
+      if (!view) return 'missing';
+      const match = key => key.startsWith('mcp:') && (!need.id || key.toLowerCase().includes(String(need.id).toLowerCase()));
+      if ((view.blocked || []).some(b => match(String(b.tool)))) return 'missing';
+      return (view.usable || []).some(match) ? 'have' : 'missing';
+    }
     case 'account': case 'publish': return 'approval';
     default: return 'missing';
   }

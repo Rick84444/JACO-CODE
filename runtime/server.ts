@@ -2442,6 +2442,8 @@ const notifyPhone = async (action) => {
         tasks: new Set(capabilityTasks.filter(t => connectedRuntime.capabilities?.isTaskEnabled ? connectedRuntime.capabilities.isTaskEnabled(t) : true)),
         skills: new Set(skills.filter((k: any) => !k.error).map((k: any) => k.id)),
         payments: Boolean(process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY),
+        // Observed MCP tools, so an "api" need shows whether a connected service actually answers.
+        observed: (() => { try { return capabilityView(); } catch { return null; } })(),
       };
       const plans = graphs.slice(0, 10).map((g: any) => planView(g, { comments: planComments.list(g.id), skills, language, available }));
       res.json({ success: true, plans });
@@ -3230,11 +3232,17 @@ const notifyPhone = async (action) => {
     try {
       const policy = connectedRuntime.capabilities;
       const missions = connectedRuntime.bus.listMissions(50).map((m: any) => { try { return connectedRuntime.novaMissions.get(m.id); } catch { return { ...m, receipts: [] }; } });
-      const observations = observationsFromMissions({ tools: Object.keys(TASK_FIELDS), missions, isEnabled: (t: string) => policy ? policy.isTaskEnabled(t) : true });
+      const observations = observationsFromMissions({ tools: Object.keys(TASK_FIELDS), mcpServers: mcpHost.status(), missions, isEnabled: (t: string) => policy ? policy.isTaskEnabled(t) : true });
       res.setHeader('Cache-Control', 'no-store');
       res.json({ success: true, view: plannerView(observations), observations });
     } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
   });
+  // The same view for the planner and the Gameboard: one source for "does this tool answer?".
+  const capabilityView = () => {
+    const missions = connectedRuntime.bus.listMissions(50).map((m: any) => { try { return connectedRuntime.novaMissions.get(m.id); } catch { return { ...m, receipts: [] }; } });
+    const policy = connectedRuntime.capabilities;
+    return plannerView(observationsFromMissions({ tools: Object.keys(TASK_FIELDS), mcpServers: mcpHost.status(), missions, isEnabled: (t: string) => policy ? policy.isTaskEnabled(t) : true }));
+  };
   // What Aura may use. Everything is on until the operator turns it off here (capabilityPolicy.mjs).
   app.get('/api/aura/capabilities', requireLocalUi, (_req, res) => {
     try {
@@ -3310,7 +3318,10 @@ const notifyPhone = async (action) => {
       const economic=continuumSurface.runtime.economic.snapshot();
       // Decision-method lessons from earlier missions (agents/lib/meta-reasoning.mjs): advice, never authority.
       const decisionLessons=metaLessons.recall({missionId:mission.id,allowedTasks:mission.allowedTasks});
-      res.json({success:true,context:{budget:{policy:economic.policy,headroom:economic.headroom},outcomes,approvedToolNotes:skillLearning.notes(),decisionLessons}});
+      // What tools have actually answered (agents/lib/capability-observation.mjs): evidence for planning, never permission.
+      let capabilities: any = null;
+      try { capabilities = capabilityView(); } catch { capabilities = null; }
+      res.json({success:true,context:{budget:{policy:economic.policy,headroom:economic.headroom},outcomes,approvedToolNotes:skillLearning.notes(),decisionLessons,capabilities}});
     } catch(error:any) {res.status(400).json({success:false,error:error?.message||'MISSION_CONTEXT_FAILED'});}
   });
   // Run a skill as a Nova mission: the goal names the skill and carries the operator's input; the

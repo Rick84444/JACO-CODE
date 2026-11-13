@@ -72,3 +72,24 @@ test('observations come from the latest receipt per tool across missions, and sw
   assert.equal(by['repo-read'].status, 'verified');
   assert.equal(by.shell.status, 'registered', 'switched off and never run');
 });
+
+test('MCP tools are observed by server and tool: a READY server is a probe, a failed call still blocks', () => {
+  const servers = [{ id: 'git', status: 'READY', agentAccess: 'read', tools: [{ name: 'git_log', agentAllowed: true }, { name: 'git_push', agentAllowed: false }] },
+    { id: 'stripe', status: 'FAILED', error: 'ECONNREFUSED', tools: [{ name: 'list_charges' }] }];
+  const missions = [{ id: 'm', updatedAt: iso(500), receipts: [{ type: 'mcp-call', input: { server: 'git', tool: 'git_log' }, ok: false, at: iso(500), actionId: 'm:turn:1', error: 'timeout' }] }];
+  const by = Object.fromEntries(observationsFromMissions({ tools: [], mcpServers: servers, missions, now: NOW }).map(o => [o.tool, o]));
+  assert.equal(by['mcp:git.git_log'].status, 'failed', 'a failed call outranks a READY server');
+  assert.equal(by['mcp:git.git_push'].status, 'registered', 'denied to the agent: not enabled');
+  assert.equal(by['mcp:stripe.list_charges'].status, 'enabled', 'a failed server probe proves nothing');
+  const ok = Object.fromEntries(observationsFromMissions({ mcpServers: [servers[0]], now: NOW }).map(o => [o.tool, o]));
+  assert.equal(ok['mcp:git.git_log'].status, 'reachable');
+});
+
+test('the planner hint names answering tools and failed ones with their error, and is empty without evidence', async () => {
+  const { capabilityObservationHint } = await import('../../agents/lib/agent-loop.mjs');
+  const hint = capabilityObservationHint({ usable: ['web-fetch', 'mcp:git.git_log'], blocked: [{ tool: 'shell', error: 'denied' }] });
+  assert.match(hint, /answered recently: web-fetch, mcp:git.git_log/);
+  assert.match(hint, /failed last time: shell \(denied\)/);
+  assert.equal(capabilityObservationHint(null), '');
+  assert.equal(capabilityObservationHint({ usable: [], blocked: [] }), '');
+});
