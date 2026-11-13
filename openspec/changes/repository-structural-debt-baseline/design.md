@@ -12,7 +12,7 @@ The scanner also reports one bounded, static launcher mismatch if the identical 
 
 ## Phase B: actual architecture audit (not yet complete)
 
-Trace every candidate's imports, callers, service ownership and installed distribution consumers. Produce a call graph covering Aura planner, Mission Control, Durable Mission Bus, Workplace supervisor, local-stack, Windows installer and VS Code/Android clients. Mark runtime probes and execution receipts separately from simulation. Resolve overlap between active PR #230 and #231 before merge.
+Trace every candidate's imports, callers, service ownership and installed distribution consumers. Produce a call graph covering Aura planner, Mission Control, Durable Mission Bus, Workplace supervisor, local-stack, Windows installer and VS Code/Android clients. Mark runtime probes and execution receipts separately from simulation. Resolve PR #230 against newly merged PR #231 before touching the same mission-control surface.
 
 ## Phase C: controlled remediation (not yet complete)
 
