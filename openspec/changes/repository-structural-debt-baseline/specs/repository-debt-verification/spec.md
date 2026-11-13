@@ -1,5 +1,9 @@
 # Repository structural-debt verification
 
+## Purpose
+
+This capability makes technical-debt evidence reproducible and auditable for each repository revision while preserving clear boundaries between static inventory, code integration tests and installed-host verification.
+
 ## ADDED Requirements
 
 ### Requirement: Complete tracked-tree inventory
