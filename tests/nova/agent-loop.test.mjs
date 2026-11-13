@@ -1132,3 +1132,20 @@ test('a durable release failure does not falsely report autonomous repair as acc
   assert.equal(result.replanRequested, undefined);
   assert.equal(s.control.get(m.id).status, 'ACTIVE');
 });
+
+test('provider loss after verified work preserves receipts and waits for recovery', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({goal:'Read and summarize',idempotencyKey:'provider-drop-mid-mission',allowedTasks:['web-fetch']});
+  let calls=0;
+  const result=await run(s,{
+    chat:async()=>{
+      if(calls++===0) return {tool_calls:[call('web-fetch',{url:'https://verified.test'})]};
+      throw Error('NO_PLANNER_AVAILABLE:local model temporarily offline');
+    },
+  },async()=>({ok:true,verified:true,content:'verified page'}));
+  assert.equal(result.deferred,true);
+  assert.equal(result.recovery,'WAIT_PROVIDER');
+  assert.equal(s.control.get(m.id).status,'ACTIVE');
+  assert.equal(s.control.get(m.id).receipts.length,1);
+  assert.equal(s.control.get(m.id).failures,0);
+});

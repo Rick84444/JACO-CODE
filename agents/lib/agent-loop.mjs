@@ -328,7 +328,13 @@ export async function runAgentMission({
           return end({ blocked: true, reason: modelIssue }, { error: `PLANNER_BLOCKED:${modelIssue}` });
         }
         // No model answered at all: give the mission back untouched; the next tick tries again.
-        if (/NO_PLANNER_AVAILABLE|ALL_PROVIDERS_FAILED/.test(errorText(error)) && !receipts.length) return { executed: false, deferred: true, reason: errorText(error) };
+        if (/NO_PLANNER_AVAILABLE|ALL_PROVIDERS_FAILED/.test(modelIssue) &&
+            !/(?:AUTH|UNAUTHORIZED|FORBIDDEN|INVALID_KEY|MODEL_SELECTION_REQUIRED|POLICY|BUDGET)/i.test(modelIssue)) {
+          // A provider can disappear after successful actions. Keep all receipts
+          // and the ACTIVE mission instead of converting temporary health into
+          // three planning failures that eventually demand human intervention.
+          return end({ deferred: true, recovery: 'WAIT_PROVIDER', reason: modelIssue }, {});
+        }
         if (modelErrors >= maxModelErrors) return end({ failed: true, reason: errorText(error) }, { error: `MODEL_FAILED:${errorText(error)}` });
         continue;
       }
