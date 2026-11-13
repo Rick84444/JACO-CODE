@@ -22,7 +22,7 @@ test('full tracked blob inventory reports identical assets without claiming dele
   ];
   const report = auditGitEntries(records, {
     rootPackage: { scripts: { 'jaco:start': 'node agents/lib/local-stack.mjs' } },
-    rootLauncher: 'npm run start',
+    rootLauncher: 'npm run start; test -f dist/server.cjs',
   });
   assert.equal(report.summary.trackedFiles, 10);
   assert.equal(report.summary.duplicateGroups, 4);
@@ -30,7 +30,7 @@ test('full tracked blob inventory reports identical assets without claiming dele
   assert.equal(report.summary.archivedDocuments, 1);
   assert.equal(report.summary.wipDocuments, 1);
   assert.equal(report.status, 'INVENTORIED_NOT_DEBT_FREE');
-  assert.deepEqual(report.staticRisks.map(x => x.id), ['ROOT_LAUNCHER_SCRIPT_DRIFT']);
+  assert.deepEqual(report.staticRisks.map(x => x.id), ['ROOT_LAUNCHER_CONTEXT_REVIEW']);
   assert.ok(report.exactDuplicates.some(x => x.category === 'PUBLIC_DISTRIBUTION_MIRROR'));
   assert.ok(report.exactDuplicates.some(x => x.category === 'ENTRYPOINT_DUPLICATE_REVIEW'));
   assert.ok(report.exactDuplicates.some(x => x.category === 'ESM_TYPE_SHIM_REVIEW'));
