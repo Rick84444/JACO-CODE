@@ -1,6 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import { resolve } from 'node:path';
-import { plannerChoiceFile, readPlannerChoice } from '../../../agents/lib/planner-choice.mjs';
 
 function normalizeToken(env = {}) {
   return env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || env.SEER_TOKEN || '';
@@ -119,47 +118,43 @@ export function createWorkplaceAgentSupervisor({
   const ollamaBase = ollamaRoot(env.OLLAMA_BASE_URL || env.JACO_OLLAMA_URL);
 
   function snapshot() {
-    const providerVerification = modelState === 'READY' ? 'VERIFIED' : 'UNVERIFIED';
-    const selectedProvider = auraOwnsRuntime ? readPlannerChoice(plannerChoiceFile(env)) : null;
     return {
-      schema: 'jaco.aura-runtime/v1',
       enabled,
       state: aggregateState,
       workplaceUrl,
       runtimeUrl,
       seerUrl,
-      identity: 'Aura',
-      architecture: 'single-runtime',
-      modelRequirement: 'OPERATOR_SELECTED_PROVIDER',
-      capabilities: {
-        strategy: {
-          implementation: 'seer',
-          state: seerState,
-          supervised: superviseSeer,
-          ownership: seerOwnership,
-          pid: seerChild?.pid ?? null,
-          lastExit: lastSeerExit,
-        },
-        execution: {
-          implementation: 'nova',
-          executor: supervisedNovaExecutor(env),
-          supervised: superviseNova,
-          state: novaState,
-          pid: novaChild?.pid ?? null,
-          lastExit: lastNovaExit,
-        },
+      aura: {
+        identity: 'Aura',
+        architecture: 'single-agent',
+        strategyCapability: { service: 'seer', state: seerState },
+        executionCapability: { service: 'nova', state: novaState },
+        providerVerification: modelState === 'READY' ? 'VERIFIED' : 'UNVERIFIED',
       },
-      provider: {
-        source: 'aura-selection',
-        localRequired: false,
-        verification: providerVerification,
+      model: {
         supervised: superviseModel,
         state: modelState,
         ownership: modelOwnership,
-        id: selectedProvider?.provider || modelProvider,
-        model: selectedProvider?.model || null,
+        provider: modelProvider,
         pid: modelChild?.pid ?? null,
+        litertUrl: litertV1,
+        llamaCppUrl: llamaCppV1,
+        ollamaUrl: ollamaBase,
         lastExit: lastModelExit,
+      },
+      seer: {
+        supervised: superviseSeer,
+        state: seerState,
+        ownership: seerOwnership,
+        pid: seerChild?.pid ?? null,
+        lastExit: lastSeerExit,
+      },
+      nova: {
+        executor: supervisedNovaExecutor(env),
+        supervised: superviseNova,
+        state: novaState,
+        pid: novaChild?.pid ?? null,
+        lastExit: lastNovaExit,
       },
     };
   }
@@ -311,7 +306,7 @@ export function createWorkplaceAgentSupervisor({
         modelState = 'RESTARTING';
         modelProvider = null;
         aggregateState = 'RECOVERING_MODEL';
-        error(`[JACO Workplace] ${label} exited code=${code} signal=${signal || 'none'}; stopping dependent Aura capabilities`);
+        error(`[JACO Workplace] ${label} exited code=${code} signal=${signal || 'none'}; stopping dependent agents`);
         void Promise.all([terminate(novaChild), seerOwnership === 'workplace' ? terminate(seerChild) : Promise.resolve()])
           .finally(() => {
             novaChild = null;
@@ -361,7 +356,7 @@ export function createWorkplaceAgentSupervisor({
         windowsHide: true,
       });
       seerChild = child;
-      log(`[JACO Workplace] Aura strategy runtime started PID ${child.pid}`);
+      log(`[JACO Workplace] SEER supervisor started PID ${child.pid}`);
 
       child.once('spawn', () => { seerState = 'STARTING'; });
       child.once('exit', (code, signal) => {
@@ -373,7 +368,7 @@ export function createWorkplaceAgentSupervisor({
         }
         seerState = 'RESTARTING';
         aggregateState = 'RECOVERING_SEER';
-        error(`[JACO Workplace] Aura strategy runtime exited code=${code} signal=${signal || 'none'}; stopping execution capability and recovering`);
+        error(`[JACO Workplace] SEER exited code=${code} signal=${signal || 'none'}; stopping Nova and recovering`);
         void terminate(novaChild).finally(() => {
           novaChild = null;
           novaState = 'STOPPED';
@@ -443,7 +438,7 @@ export function createWorkplaceAgentSupervisor({
       windowsHide: true,
     });
     novaChild = child;
-    log(`[JACO Workplace] Aura execution runtime started PID ${child.pid}`);
+    log(`[JACO Workplace] Nova supervisor started PID ${child.pid}`);
 
     child.once('spawn', () => {
       novaState = 'RUNNING';
@@ -459,7 +454,7 @@ export function createWorkplaceAgentSupervisor({
       }
       novaState = 'RESTARTING';
       aggregateState = 'RECOVERING_NOVA';
-      error(`[JACO Workplace] Aura execution runtime exited code=${code} signal=${signal || 'none'}; restarting`);
+      error(`[JACO Workplace] Nova exited code=${code} signal=${signal || 'none'}; restarting`);
       schedule(launch);
     });
     child.once('error', cause => {
@@ -518,7 +513,7 @@ export function createWorkplaceAgentSupervisor({
     } catch (cause) {
       if (stopping) return;
       aggregateState = 'DEPENDENCY_FAILED';
-      error(`[JACO Workplace] Aura runtime dependency failed: ${cause?.message || cause}`);
+      error(`[JACO Workplace] agent supervisor dependency failed: ${cause?.message || cause}`);
       schedule(launch);
     } finally {
       launching = false;

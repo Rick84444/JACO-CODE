@@ -100,19 +100,19 @@ export class SystemControl {
       coreProbe.value && coreProbe.value.success !== false;
     const w = workplaceProbe.status === 'fulfilled' ? workplaceProbe.value : null;
     const workplaceUp = Boolean(w);
-    const wpState = w?.auraRuntime?.state === 'RUNNING' ? 'RUNNING'
+    const wpState = w?.supervisedAgents?.state === 'RUNNING' ? 'RUNNING'
       : workplaceUp ? 'DEGRADED' : 'DOWN';
-    const executionState = w?.auraRuntime?.capabilities?.execution?.state === 'RUNNING' ? 'RUNNING'
+    const novaState = w?.supervisedAgents?.nova?.state === 'RUNNING' ? 'RUNNING'
       : workplaceUp ? 'DEGRADED' : 'DOWN';
     const startup = String(this.jacoctl || '').endsWith('.mjs')
       ? readStartupEvidence(this.repoRoot) : null;
-    const status = coreUp && wpState === 'RUNNING' && executionState === 'RUNNING'
+    const status = coreUp && wpState === 'RUNNING' && novaState === 'RUNNING'
       ? (startup && !startup.ok ? 'DEGRADED' : 'READY')
       : coreUp || workplaceUp ? 'DEGRADED' : 'DOWN';
     return {
       schema:'jaco.service-health/v1', status,
       core:{up:Boolean(coreUp)},
-      workplace:{up:workplaceUp,state:wpState,executionState},
+      workplace:{up:workplaceUp,state:wpState,novaState},
       aura:{state:'NOT_INDEPENDENTLY_PROBED'},
       ...(startup ? { startup } : {}),
     };
