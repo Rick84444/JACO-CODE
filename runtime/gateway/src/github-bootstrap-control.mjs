@@ -20,8 +20,8 @@ export function safeBootstrapHealthLines(result) {
     const core = result.core?.up === true ? 'UP' : result.core?.up === false ? 'DOWN' : 'UNVERIFIED';
     const workplace = ['RUNNING','DEGRADED','DOWN'].includes(result.workplace?.state)
       ? result.workplace.state : 'UNVERIFIED';
-    const nova = ['RUNNING','DEGRADED','DOWN'].includes(result.workplace?.novaState)
-      ? result.workplace.novaState : 'UNVERIFIED';
+    const execution = ['RUNNING','DEGRADED','DOWN'].includes(result.workplace?.executionState)
+      ? result.workplace.executionState : 'UNVERIFIED';
     const overall = ['READY','DEGRADED','DOWN'].includes(result.status) ? result.status : 'UNVERIFIED';
     const startupState = ['READY','DEGRADED','BLOCKED','STARTING'].includes(result.startup?.state)
       ? result.startup.state : 'UNVERIFIED';
@@ -30,7 +30,7 @@ export function safeBootstrapHealthLines(result) {
     return ['#### Verified loopback services (allowlisted)',
       '- Core: `' + core + '`',
       '- Workplace: `' + workplace + '`',
-      '- Durable Nova: `' + nova + '`',
+      '- Aura execution: `' + execution + '`',
       '- Aura operator: `NOT_INDEPENDENTLY_PROBED`',
       '- Service health: `' + overall + '`',
       ...(result.startup ? ['- Windows startup: `' + startupState + '`',
@@ -43,10 +43,10 @@ export function safeBootstrapHealthLines(result) {
     : result.workplace?.up === false ? 'DOWN'
     : result.workplace?.up === true && result.workplace?.state === 'RUNNING' ? 'RUNNING'
     : result.workplace?.up === true ? 'DEGRADED' : 'UNVERIFIED';
-  const nova = result.workplace?.required === false ? 'NOT_REQUIRED'
-    : result.workplace?.novaState === 'RUNNING' ? 'RUNNING'
+  const execution = result.workplace?.required === false ? 'NOT_REQUIRED'
+    : result.workplace?.executionState === 'RUNNING' ? 'RUNNING'
     : result.workplace?.up === false ? 'DOWN'
-    : result.workplace?.novaState ? 'DEGRADED' : 'UNVERIFIED';
+    : result.workplace?.executionState ? 'DEGRADED' : 'UNVERIFIED';
   const planner = result.planner?.reachable === true ? 'REACHABLE'
     : result.planner?.reachable === false ? 'UNREACHABLE' : 'UNVERIFIED';
   const count = Number.isSafeInteger(result.tools?.toolCount) && result.tools.toolCount >= 0 && result.tools.toolCount <= 100000
@@ -62,7 +62,7 @@ export function safeBootstrapHealthLines(result) {
     '#### Verified service signals (allowlisted)',
     '- Core: `' + core + '`',
     '- Workplace: `' + workplace + '`',
-    '- Durable Nova: `' + nova + '`',
+    '- Aura execution: `' + execution + '`',
     '- Aura operator: `NOT_INDEPENDENTLY_PROBED`',
     '- Selected planner: `' + planner + '`',
     '- Active tools: `' + count + '`',

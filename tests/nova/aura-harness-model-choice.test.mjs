@@ -72,11 +72,21 @@ test('UI and backend route share the selection rather than spawning another mode
   const parent=fs.readFileSync(path.join(root,'runtime/src/components/JacoAuraComputeIDE.tsx'),'utf8');
   const server=fs.readFileSync(path.join(root,'runtime/server.ts'),'utf8');
   const seer=fs.readFileSync(path.join(root,'gateway/src/seer.mjs'),'utf8');
+  const seerStart=fs.readFileSync(path.join(root,'gateway/src/seer-start.mjs'),'utf8');
+  const workplace=fs.readFileSync(path.join(root,'gateway/src/workplace/workplace-server.mjs'),'utf8');
   assert.match(gui,/selectedProvider === 'seer' \? undefined : \{providerId:selectedProvider,model:chatModel\}/);
   assert.match(parent,/\.\.\.\(harnessModel \? \{ harnessModel \} : \{\}\)/);
   assert.match(server,/await synchronizeAuraHarnessModel\(req\.body\.harnessModel/);
   assert.match(server,/testPlannerModel\(valid/);
   assert.match(seer,/const auraOnly = process\.env\.JACO_SEER_PROVIDER_PREFERENCE === 'aura' \|\| process\.env\.JACO_AURA_UNIFIED_RUNTIME === '1' \|\| \(pinned && !startup_probe\)/);
+  assert.match(seerStart,/if \(process\.env\.JACO_AURA_UNIFIED_RUNTIME === '1' \|\| process\.env\.JACO_SEER_PROVIDER_PREFERENCE === 'aura'\)/,
+    'unified Aura startup must not require local-model discovery');
+  assert.match(seerStart,/else \{\s+const selected = await discoverSeerLocalProvider\(\)/,
+    'provider discovery is isolated to compatibility startup');
+  assert.match(seerStart,/Strategy capability uses Aura provider selection; no local model prerequisite/);
+  assert.match(workplace,/auraRuntime: supervisor\.snapshot\(\)/);
+  assert.doesNotMatch(workplace,/supervisedAgents:/,
+    'Workplace health exposes one Aura runtime, not SEER and Nova as agents');
 });
 
 test('same chosen model falls back to structured planning protocol, not another provider',()=>{

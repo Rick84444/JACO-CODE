@@ -73,7 +73,7 @@ export function projectCognitiveContext({continuity,health,economic}={}){
       status:safeState(health?.status),
       core:health?.core?.up===true?'UP':health?.core?.up===false?'DOWN':'UNVERIFIED',
       workplace:safeState(health?.workplace?.state),
-      durableNova:safeState(health?.workplace?.novaState),
+      durableExecution:safeState(health?.workplace?.executionState),
       aura:'NOT_INDEPENDENTLY_PROBED',
     },
     economic:{

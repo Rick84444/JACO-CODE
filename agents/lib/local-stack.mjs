@@ -67,15 +67,13 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   if (new Set(enabledPorts).size !== enabledPorts.length) throw new Error('DUPLICATE_LISTENER_PORT');
   for (const [key, name] of Object.entries({runtime:'PORT',workplace:'JACO_WORKPLACE_PORT',seer:'SEER_PORT',remote:'JACO_REMOTE_BRIDGE_PORT',a2a:'JACO_A2A_PORT',novaBridge:'NOVA_BRIDGE_PORT',cdp:'JACO_CDP_BRIDGE_PORT',gateway:'JACO_GATEWAY_PORT',chrome:'CDP_PORT'})) env[name] = String(ports[key]);
   Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_INSTALL_ROOT: root, JACO_RUNTIME_DIR: runtime });
-  // Single Aura runtime: SEER (strategy) and Nova (execution) are internal capabilities.
-  // Do not spin up or pin Ollama simply because it happens to be installed.
-  // An explicit JACO_AURA_UNIFIED_RUNTIME=0 retains the legacy independent-model profile.
-  if (env.JACO_AURA_UNIFIED_RUNTIME !== '0') {
-    env.JACO_AURA_UNIFIED_RUNTIME = '1';
-    env.JACO_SEER_PROVIDER_PREFERENCE = 'aura';
-    env.JACO_WORKPLACE_SUPERVISE_MODEL = '0';
-    env.JACO_MODEL_PROVIDER = 'aura';
-  }
+  // Single Aura runtime: strategy (historical SEER) and execution (historical Nova) are capabilities,
+  // never separate model owners. The provider/model selected for Aura is authoritative for both.
+  // Old environment flags must not restore the retired local-model prerequisite.
+  env.JACO_AURA_UNIFIED_RUNTIME = '1';
+  env.JACO_SEER_PROVIDER_PREFERENCE = 'aura';
+  env.JACO_WORKPLACE_SUPERVISE_MODEL = '0';
+  env.JACO_MODEL_PROVIDER = 'aura';
   env.JACO_RUNTIME_URL = `http://127.0.0.1:${ports.runtime}`;
   env.JACO_RELEASE_ROOT = runtime;
   // One model choice for every service. Without this each service reads the file under its own working
@@ -255,8 +253,8 @@ function save(c, result) {
 function novaReadiness(c) {
   const workplace = definitions(c).find(s => s.id === 'workplace');
   return [
-    { ...workplace, id: 'nova-supervisor', accept: d => d.supervisedAgents?.nova?.supervised === true && d.supervisedAgents.nova.state === 'RUNNING' },
-    { id: 'nova-session', token: c.env.JACO_WORKPLACE_TOKEN || '', url: c.env.JACO_WORKPLACE_URL + '/v1/agents', accept: d => d.agents?.some(a => (c.env.JACO_EXECUTOR === 'desktop-agentos' ? a.requestedName === 'Desktop AgentOS' : ['Nova', 'Aura'].includes(a.requestedName)) && a.sessions?.some(s => ['READY', 'BUSY', 'AVAILABLE'].includes(s.status))) },
+    { ...workplace, id: 'aura-execution-runtime', accept: d => d.auraRuntime?.capabilities?.execution?.supervised === true && d.auraRuntime.capabilities.execution.state === 'RUNNING' },
+    { id: 'aura-execution-session', token: c.env.JACO_WORKPLACE_TOKEN || '', url: c.env.JACO_WORKPLACE_URL + '/v1/agents', accept: d => d.agents?.some(a => (c.env.JACO_EXECUTOR === 'desktop-agentos' ? a.requestedName === 'Desktop AgentOS' : a.requestedName === 'Aura') && a.sessions?.some(s => ['READY', 'BUSY', 'AVAILABLE'].includes(s.status))) },
   ];
 }
 export async function inspectStatus(c, services = [...definitions(c), ...novaReadiness(c)]) {
@@ -375,7 +373,7 @@ export async function activate(c, { open = false } = {}) {
     }
     checkpoint('nova');
     for (const check of novaReadiness(c)) await waitReady(check, c.env.GATEWAY_TOKEN);
-    result.services.push({ id: 'nova', state: 'READY', owner: 'workplace' });
+    result.services.push({ id: 'aura-execution', state: 'READY', owner: 'aura-runtime' });
     if (c.cdp) {
       checkpoint('browser-attachment');
       if (!chromeAvailable) {

@@ -44,7 +44,7 @@ test('Fresh context uses canonical Continuum envelope and economic policy, strip
       headroom:{dailyUsd:0.83},
     }};},
   };
-  const sys={health:async()=>{requests.push('health');return {status:'READY',core:{up:true},workplace:{state:'RUNNING',novaState:'RUNNING'}};}};
+  const sys={health:async()=>{requests.push('health');return {status:'READY',core:{up:true},workplace:{state:'RUNNING',executionState:'RUNNING'}};}};
   const h=createToolHandlers({core:fakeCore,system:sys,modelId:'m'});
   const context=await h.jaco_cognitive_context();
   assert.equal(context.schema,'jaco.chatgpt-cognitive-context/v1');

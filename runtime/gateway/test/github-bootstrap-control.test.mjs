@@ -368,7 +368,7 @@ test('GitHub bootstrap system.health returns independent Core and Workplace rece
   let called=0;
   const system={health:async()=>{called++;return {
     schema:'jaco.service-health/v1',status:'DEGRADED',
-    core:{up:true},workplace:{up:false,state:'DOWN',novaState:'DOWN'},
+    core:{up:true},workplace:{up:false,state:'DOWN',executionState:'DOWN'},
     aura:{state:'NOT_INDEPENDENTLY_PROBED'},secret:'NEVER-PUBLISH'
   }}};
   const control=createGithubBootstrapControl({system,fetchImpl,enabled:true,token:'test-token',repo:'Rick84444/jaco-code',actor:'Rick84444',stateFile:stateFile()});

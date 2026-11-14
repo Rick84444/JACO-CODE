@@ -43,7 +43,7 @@ Usage:
   jacoctl repair-supervisor [--json] (JACO-only recovery, leaves Core/Workplace DOWN)
   jacoctl restart [--provider auto|litert|llamacpp|ollama|aura] [--model ID] [--fast] [--json]
 
-The full profile supervises Sentinel, Core, and Workplace. Workplace owns Durable Nova.
+The full profile supervises Sentinel, Core, and Workplace. Aura exposes durable execution through its runtime.
 Aura Lean is the Termux default; set JACO_AURA_LEAN=0 in the private runtime.env to restore legacy background workers.
 The aura provider uses the operator-saved IDE planner choice without starting local models.
 Provider selection is saved for Core/Aura and SEER. Omit --model with litert to discover its registry ID.
@@ -521,20 +521,20 @@ configure_local_llamacpp(){
 workplace_running(){
   svc_owner_matches_checkout "$WORKPLACE_SERVICE" || return 1
   curl -fsS --max-time 3 "$WORKPLACE_URL/health" 2>/dev/null |
-    node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s),a=j.supervisedAgents||{};process.exit(a.state==='RUNNING'&&a.nova?.state==='RUNNING'?0:1)}catch{process.exit(1)}})"
+    node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s),a=j.auraRuntime||{},e=a.capabilities?.execution||{};process.exit(a.state==='RUNNING'&&e.state==='RUNNING'?0:1)}catch{process.exit(1)}})"
 }
 
 # Status must explain the reason that Nova is not running, not merely report DEGRADED.
 workplace_status_summary(){
   curl -fsS --max-time 3 "$WORKPLACE_URL/health" 2>/dev/null |
-    node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s),a=j.supervisedAgents||{},m=a.model||{},se=a.seer||{},n=a.nova||{};process.stdout.write('overall='+(a.state||'UNKNOWN')+' model='+(m.state||'UNKNOWN')+' seer='+(se.state||'UNKNOWN')+' nova='+(n.state||'UNKNOWN')+' supervised='+(n.supervised===true?'yes':'no')+' lastNovaExit='+(n.lastExit?.code??'-'))}catch{process.exit(1)}})"
+    node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s),a=j.auraRuntime||{},p=a.provider||{},st=a.capabilities?.strategy||{},ex=a.capabilities?.execution||{};process.stdout.write('overall='+(a.state||'UNKNOWN')+' provider='+(p.state||'UNKNOWN')+' strategy='+(st.state||'UNKNOWN')+' execution='+(ex.state||'UNKNOWN')+' supervised='+(ex.supervised===true?'yes':'no')+' lastExecutionExit='+(ex.lastExit?.code??'-'))}catch{process.exit(1)}})"
 }
 
 workplace_progress(){
   local snapshot
   snapshot="$(
     curl -fsS --max-time 3 "$WORKPLACE_URL/health" 2>/dev/null |
-      node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s),a=j.supervisedAgents||{},m=a.model||{},se=a.seer||{},n=a.nova||{};process.stdout.write('overall='+(a.state||'UNKNOWN')+' provider='+(m.provider||'-')+' model='+(m.state||'UNKNOWN')+' seer='+(se.state||'UNKNOWN')+' nova='+(n.state||'UNKNOWN')+' novaPid='+(n.pid??'-'))}catch{process.exit(1)}})" 2>/dev/null || true
+      node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s),a=j.auraRuntime||{},p=a.provider||{},st=a.capabilities?.strategy||{},ex=a.capabilities?.execution||{};process.stdout.write('overall='+(a.state||'UNKNOWN')+' provider='+(p.id||'-')+' providerState='+(p.state||'UNKNOWN')+' strategy='+(st.state||'UNKNOWN')+' execution='+(ex.state||'UNKNOWN')+' executionPid='+(ex.pid??'-'))}catch{process.exit(1)}})" 2>/dev/null || true
   )"
   if [[ -n "$snapshot" ]]; then
     printf '[JACO] STARTING — %s\n' "$snapshot" >&2
@@ -571,7 +571,7 @@ wait_workplace_running(){
     sleep 1
   done
   workplace_progress
-  echo "Workplace became reachable but Durable Nova did not reach RUNNING within ${max}s" >&2
+  echo "Workplace became reachable but Aura execution did not reach RUNNING within ${max}s" >&2
   return 1
 }
 
@@ -747,7 +747,7 @@ case "$ACTION" in
       wait_workplace_owner 10 || { emit DEGRADED 'Canonical Workplace failed to start'; exit 33; }
     else
       wait_url "$WORKPLACE_URL/health" Workplace 80
-      wait_workplace_running "${JACO_ACTIVATE_WAIT_SECONDS:-300}" || { emit DEGRADED 'Workplace reachable but Durable Nova is not RUNNING'; exit 33; }
+      wait_workplace_running "${JACO_ACTIVATE_WAIT_SECONDS:-300}" || { emit DEGRADED 'Workplace reachable but Aura execution is not RUNNING'; exit 33; }
     fi
     if [[ "${JACO_ENABLE_CDP:-1}" == "1" && "${JACO_AURA_LEAN:-0}" != "1" ]]; then
       svc_up "$NOVA_BRIDGE_SERVICE"
@@ -760,13 +760,13 @@ case "$ACTION" in
       sentinel_truth_ready && core_truth_ready && svc_owner_matches_checkout "$WORKPLACE_SERVICE" ||
         { emit DEGRADED 'Canonical Sentinel/Core/Workplace process ownership failed'; exit 34; }
       if workplace_running; then
-        emit READY 'Canonical Sentinel/Core/Workplace and Durable Nova are RUNNING'
+        emit READY 'Canonical Sentinel/Core/Workplace and Aura execution are RUNNING'
       else
-        emit STARTING 'Core and Workplace supervised; model, SEER and Durable Nova warm up asynchronously'
+        emit STARTING 'Core and Workplace supervised; the selected provider and Aura capabilities warm up asynchronously'
       fi
     else
       sentinel_truth_ready && core_truth_ready && workplace_running || { emit DEGRADED 'Canonical Sentinel/Core/Workplace ownership failed after activation'; exit 34; }
-      emit READY 'canonical Sentinel, Core, and Workplace are supervised; Workplace owns Durable Nova'
+      emit READY 'canonical Sentinel, Core, and Workplace are supervised; Aura owns durable execution'
     fi
     ;;
   deactivate)
@@ -822,7 +822,7 @@ case "$ACTION" in
       wait_workplace_owner 10 || { emit DEGRADED 'Canonical Workplace failed to start'; exit 33; }
     else
       wait_url "$WORKPLACE_URL/health" Workplace 80
-      wait_workplace_running "${JACO_ACTIVATE_WAIT_SECONDS:-300}" || { emit DEGRADED 'Workplace reachable but Durable Nova is not RUNNING'; exit 33; }
+      wait_workplace_running "${JACO_ACTIVATE_WAIT_SECONDS:-300}" || { emit DEGRADED 'Workplace reachable but Aura execution is not RUNNING'; exit 33; }
     fi
     if [[ "${JACO_ENABLE_CDP:-1}" == "1" && "${JACO_AURA_LEAN:-0}" != "1" ]]; then
       svc_up "$NOVA_BRIDGE_SERVICE"
@@ -835,13 +835,13 @@ case "$ACTION" in
       sentinel_truth_ready && core_truth_ready && svc_owner_matches_checkout "$WORKPLACE_SERVICE" ||
         { emit DEGRADED 'Canonical Sentinel/Core/Workplace process ownership failed'; exit 34; }
       if workplace_running; then
-        emit READY 'Canonical Sentinel/Core/Workplace and Durable Nova are RUNNING'
+        emit READY 'Canonical Sentinel/Core/Workplace and Aura execution are RUNNING'
       else
-        emit STARTING 'Core and Workplace supervised; model, SEER and Durable Nova warm up asynchronously'
+        emit STARTING 'Core and Workplace supervised; the selected provider and Aura capabilities warm up asynchronously'
       fi
     else
       sentinel_truth_ready && core_truth_ready && workplace_running || { emit DEGRADED 'Canonical Sentinel/Core/Workplace ownership failed after restart'; exit 34; }
-      emit READY 'Core restarted; Workplace resumed Durable Nova; local model/CDP auxiliaries restored'
+      emit READY 'Core restarted; Workplace resumed Aura execution; provider/CDP auxiliaries restored'
     fi
     ;;
   status)
@@ -849,7 +849,7 @@ case "$ACTION" in
        ! bash "$JACO_ROOT/termux/reconcile-runit.sh" --check >/dev/null 2>&1; then
       emit DEGRADED 'Split or missing runsvdir detected; use repair-supervisor (no automatic port takeover)'
     elif sentinel_truth_ready && core_truth_ready && workplace_running; then
-      emit READY 'Supervised Sentinel, Core, Workplace, and Durable Nova are RUNNING'
+      emit READY 'Supervised Sentinel, Core, Workplace, and Aura execution are RUNNING'
     elif core_truth_ready && workplace_running; then
       emit DEGRADED 'Core and Workplace are running but canonical Sentinel is unavailable'
     elif http_ok "$CORE_URL/api/runtime/identity" && ! core_truth_ready; then

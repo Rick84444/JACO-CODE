@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { activationReport, formatReport, runtimeUp } from '../../agents/lib/activate.mjs';
 
 // A runtime stand-in: tool servers that start on request, a provider scan and the planner state.
-function fakeRuntime({ servers, scan, planner, workplace = { state: 'RUNNING', novaState: 'RUNNING' }, startFails = [] }) {
+function fakeRuntime({ servers, scan, planner, workplace = { state: 'RUNNING', executionState: 'RUNNING' }, startFails = [] }) {
   const calls = [];
   const f = async (url, init = {}) => {
     const route = new URL(url).pathname, method = init.method || 'GET';
@@ -12,7 +12,7 @@ function fakeRuntime({ servers, scan, planner, workplace = { state: 'RUNNING', n
     const bad = (status, error) => ({ ok: false, status, json: async () => ({ success: false, error }) });
     if (route === '/api/runtime/identity') return ok({ version: '0.21.0' });
     if (route === '/api/system/status') return ok({ status: { state: workplace.supervisorState || 'READY' } });
-    if (route === '/health') return ok({ supervisedAgents: { state: workplace.state, nova: { state: workplace.novaState } } });
+    if (route === '/health') return ok({ auraRuntime: { state: workplace.state, capabilities: { execution: { state: workplace.executionState } } } });
     if (route === '/api/mcp/tools') {
       assert.ok(init.headers['x-gateway-token'], 'tool routes carry the gateway token');
       return ok({ servers: servers.map(s => ({ id: s.id, status: s.status, agentAccess: s.agentAccess || 'read', tools: s.status === 'READY' ? Array.from({ length: s.tools }, (_, i) => ({ name: `t${i}` })) : [] })) });
@@ -51,20 +51,20 @@ test('stopped tool servers are started and counted; a working stack reports ok',
 });
 
 test('Termux supervisor ownership is part of READY truth when required', async () => {
-  const g = GOOD(); g.workplace = { state: 'RUNNING', novaState: 'RUNNING', supervisorState: 'DEGRADED' };
+  const g = GOOD(); g.workplace = { state: 'RUNNING', executionState: 'RUNNING', supervisorState: 'DEGRADED' };
   const r = await activationReport({ baseUrl: 'http://x', workplaceUrl: 'http://w', sentinelUrl: 'http://s', token: 't', fetchImpl: fakeRuntime(g), requireSupervisor: true });
   assert.equal(r.supervisor.state, 'DEGRADED');
   assert.equal(r.ok, false);
   assert.ok(r.problems.some(p => /supervisor.*not READY/i.test(p)));
 });
 
-test('Workplace/Durable Nova are part of READY truth, not just Core/tools/provider', async () => {
-  const g = GOOD(); g.workplace = { state: 'RUNNING', novaState: 'STOPPED' };
+test('Aura durable execution is part of READY truth, not just Core/tools/provider', async () => {
+  const g = GOOD(); g.workplace = { state: 'RUNNING', executionState: 'STOPPED' };
   const r = await activationReport({ baseUrl: 'http://x', workplaceUrl: 'http://w', token: 't', fetchImpl: fakeRuntime(g) });
   assert.equal(r.workplace.up, true);
-  assert.equal(r.workplace.novaState, 'STOPPED');
+  assert.equal(r.workplace.executionState, 'STOPPED');
   assert.equal(r.ok, false);
-  assert.ok(r.problems.some(p => /Durable Nova.*not RUNNING|Workplace\/Durable Nova är inte RUNNING/.test(p)));
+  assert.ok(r.problems.some(p => /Aura durable execution is not RUNNING/.test(p)));
 });
 
 test('a selected planner that was not actually scanned cannot make READY true', async () => {

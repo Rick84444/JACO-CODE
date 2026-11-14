@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createWorkplaceAgentSupervisor, supervisedNovaExecutor } from '../../gateway/src/workplace/workplace-agent-supervisor.mjs';
 import { joinWorkplace, buildAgentCard } from '../../agents/lib/workplace-session.mjs';
 
@@ -102,7 +105,7 @@ test('supervisor starts the configured desktop executor and withholds operator c
   assert.deepEqual(spawns[0].args, ['agents/run-desktop-agentos.mjs']);
   assert.equal(spawns[0].opts.windowsHide, true);
   for (const key of ['JACO_WORKPLACE_OPERATOR_TOKEN', 'JACO_CHATGPT_WORKPLACE_TOKEN', 'GITHUB_TOKEN', 'STRIPE_SECRET_KEY']) assert.equal(spawns[0].opts.env[key], undefined);
-  assert.equal(supervisor.snapshot().nova.executor, 'desktop-agentos');
+  assert.equal(supervisor.snapshot().capabilities.execution.executor, 'desktop-agentos');
   spawns[0].child.emit('exit', 1, null);
   for (let i = 0; i < 100 && spawns.length < 2; i++) await new Promise(resolve => setTimeout(resolve, 5));
   assert.equal(spawns.length, 2, 'failed executor must restart through its existing supervisor');
@@ -181,15 +184,15 @@ test('Workplace starts LiteRT, then SEER, verifies brain inference, then starts 
 
   const state=supervisor.snapshot();
   assert.equal(state.state,'RUNNING');
-  assert.equal(state.model.state,'READY');
-  assert.equal(state.model.ownership,'workplace');
-  assert.equal(state.model.provider,'litert');
-  assert.ok(state.model.pid);
-  assert.equal(state.seer.state,'READY');
-  assert.equal(state.seer.ownership,'workplace');
-  assert.ok(state.seer.pid);
-  assert.equal(state.nova.state,'RUNNING');
-  assert.ok(state.nova.pid);
+  assert.equal(state.provider.state,'READY');
+  assert.equal(state.provider.ownership,'workplace');
+  assert.equal(state.provider.id,'litert');
+  assert.ok(state.provider.pid);
+  assert.equal(state.capabilities.strategy.state,'READY');
+  assert.equal(state.capabilities.strategy.ownership,'workplace');
+  assert.ok(state.capabilities.strategy.pid);
+  assert.equal(state.capabilities.execution.state,'RUNNING');
+  assert.ok(state.capabilities.execution.pid);
 
   await supervisor.stop();
   assert.equal(supervisor.snapshot().state,'STOPPED');
@@ -232,11 +235,11 @@ test('Workplace adopts healthy external provider and SEER without duplicate proc
   assert.equal(spawns.length,1);
   assert.deepEqual(spawns[0].args,['agents/hands-off-agent.mjs']);
   const state=supervisor.snapshot();
-  assert.equal(state.model.ownership,'external');
-  assert.equal(state.model.pid,null);
-  assert.equal(state.seer.ownership,'external');
-  assert.equal(state.seer.pid,null);
-  assert.equal(state.nova.state,'RUNNING');
+  assert.equal(state.provider.ownership,'external');
+  assert.equal(state.provider.pid,null);
+  assert.equal(state.capabilities.strategy.ownership,'external');
+  assert.equal(state.capabilities.strategy.pid,null);
+  assert.equal(state.capabilities.execution.state,'RUNNING');
 
   await supervisor.stop();
 });
@@ -298,10 +301,10 @@ test('Workplace supervises forced llama.cpp, verifies SEER brain, then starts No
     '--reasoning','off',
   ]);
   const state=supervisor.snapshot();
-  assert.equal(state.model.provider,'llamacpp');
-  assert.equal(state.model.ownership,'workplace');
-  assert.ok(state.model.pid);
-  assert.equal(state.nova.state,'RUNNING');
+  assert.equal(state.provider.id,'llamacpp');
+  assert.equal(state.provider.ownership,'workplace');
+  assert.ok(state.provider.pid);
+  assert.equal(state.capabilities.execution.state,'RUNNING');
 
   await supervisor.stop();
 });
@@ -372,13 +375,13 @@ test('Aura-only startup skips all local model probes and waits for actual select
   await supervisor.start('http://127.0.0.1:2995');
   for (let i=0;i<100 && !calls.some(u=>u.endsWith('/cortex/brain'));i++) await new Promise(r=>setTimeout(r,2));
   assert.equal(supervisor.snapshot().state, 'VERIFYING_SEER_BRAIN');
-  assert.equal(supervisor.snapshot().model.state, 'WAITING_SELECTED_PROVIDER');
+  assert.equal(supervisor.snapshot().provider.state, 'WAITING_SELECTED_PROVIDER');
   assert.equal(spawns.length, 0, 'no Nova before inference succeeds');
   releaseBrain(jsonResponse({ ok: true, text: 'JACO_SEER_READY', provider: 'fixture-cloud', local: false }));
   for (let i=0;i<100 && !spawns.length;i++) await new Promise(r=>setTimeout(r,2));
   assert.equal(supervisor.snapshot().state, 'RUNNING');
-  assert.equal(supervisor.snapshot().model.provider, 'fixture-cloud');
-  assert.equal(supervisor.snapshot().model.pid, null);
+  assert.equal(supervisor.snapshot().provider.id, 'fixture-cloud');
+  assert.equal(supervisor.snapshot().provider.pid, null);
   assert.deepEqual(spawns.map(s=>s.args), [['agents/hands-off-agent.mjs']]);
 });
 
@@ -416,6 +419,10 @@ test('shutdown does not await a second exit from an already-exited child', async
 });
 
 test('Aura unified startup launches the executor without Ollama or an inference startup gate', async t => {
+  const stateDir = mkdtempSync(join(tmpdir(), 'jaco-aura-provider-'));
+  const choiceFile = join(stateDir, 'provider-preference.json');
+  writeFileSync(choiceFile, JSON.stringify({ provider: 'gemini', model: 'models/gemini-2.5-flash', by: 'operator' }));
+  t.after(() => rmSync(stateDir, { recursive: true, force: true }));
   const spawns = [], calls = [], failures = [];
   const supervisor = createWorkplaceAgentSupervisor({
     env: {
@@ -426,6 +433,7 @@ test('Aura unified startup launches the executor without Ollama or an inference 
       JACO_WORKPLACE_SUPERVISE_NOVA: '1',
       JACO_GATEWAY_TOKEN: 'fixture-gateway-token-1234567890',
       JACO_MODEL_PROVIDER: 'ollama', // stale local config cannot override Aura
+      JACO_PLANNER_CHOICE_FILE: choiceFile,
     },
     spawnImpl: (cmd, args) => {
       const child = fakeChild(14700 + spawns.length);
@@ -448,11 +456,16 @@ test('Aura unified startup launches the executor without Ollama or an inference 
   for (let n=0;n<100 && !spawns.some(x=>x.args.includes('agents/hands-off-agent.mjs'));n++) await new Promise(resolve=>setTimeout(resolve,5));
   assert.deepEqual(spawns.map(x=>x.args), [['agents/hands-off-agent.mjs']], 'existing healthy SEER is adopted; only the Aura executor is launched');
   assert.equal(supervisor.snapshot().state, 'RUNNING');
-  assert.equal(supervisor.snapshot().aura.identity, 'Aura');
-  assert.equal(supervisor.snapshot().aura.strategyCapability.service, 'seer');
-  assert.equal(supervisor.snapshot().aura.executionCapability.service, 'nova');
-  assert.equal(supervisor.snapshot().aura.providerVerification, 'UNVERIFIED');
-  assert.equal(supervisor.snapshot().model.state, 'SELECTED_MODEL_UNVERIFIED');
+  assert.equal(supervisor.snapshot().identity, 'Aura');
+  assert.equal(supervisor.snapshot().architecture, 'single-runtime');
+  assert.equal(supervisor.snapshot().modelRequirement, 'OPERATOR_SELECTED_PROVIDER');
+  assert.equal(supervisor.snapshot().capabilities.strategy.implementation, 'seer');
+  assert.equal(supervisor.snapshot().capabilities.execution.implementation, 'nova');
+  assert.equal(supervisor.snapshot().provider.localRequired, false);
+  assert.equal(supervisor.snapshot().provider.verification, 'UNVERIFIED');
+  assert.equal(supervisor.snapshot().provider.state, 'SELECTED_MODEL_UNVERIFIED');
+  assert.equal(supervisor.snapshot().provider.id, 'gemini');
+  assert.equal(supervisor.snapshot().provider.model, 'models/gemini-2.5-flash');
   assert.equal(failures.length, 0);
   assert.ok(!calls.some(url => url.endsWith('/cortex/brain') || url.endsWith('/api/tags') || url.endsWith('/models')));
 });

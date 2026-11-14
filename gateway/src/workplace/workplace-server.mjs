@@ -128,7 +128,7 @@ const server = createServer(async (req, res) => {
       transport: ['HTTP', 'SSE'],
       auth: TOKEN ? 'bearer' : 'loopback-local',
       port: server.address()?.port || PORT,
-      supervisedAgents: supervisor.snapshot(),
+      auraRuntime: supervisor.snapshot(),
       chatgptRelay: chatgptRelay.status()
     });
   }

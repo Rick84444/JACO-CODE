@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SystemControl } from '../src/system-control.mjs';
 
-function fixture({coreUp=true,wpUp=true,wpState='RUNNING',novaState='RUNNING',wpIdentity='JACO Workplace',url='http://127.0.0.1:2995'}={}) {
+function fixture({coreUp=true,wpUp=true,wpState='RUNNING',executionState='RUNNING',wpIdentity='JACO Workplace',url='http://127.0.0.1:2995'}={}) {
   const calls=[];
   const core={request:async(path,opts)=>{
     calls.push(['core',path]);assert.equal(path,'/api/runtime/identity');
@@ -15,17 +15,17 @@ function fixture({coreUp=true,wpUp=true,wpState='RUNNING',novaState='RUNNING',wp
     if(!wpUp)throw Error('WP_DOWN');
     return {ok:true,json:async()=>({
       product:wpIdentity,
-      supervisedAgents:{state:wpState,nova:{state:novaState}}
+      auraRuntime:{state:wpState,capabilities:{execution:{state:executionState}}}
     })};
   };
   const sys = new SystemControl({jacoctl:'/unused',repoRoot:'/unused',core,workplaceUrl:url,fetchImpl});
   return {sys,calls};
 }
 
-test('health reports READY only after independent real Core and Workplace/Nova observations',async()=>{
+test('health reports READY only after independent real Core and Aura execution observations',async()=>{
   const {sys,calls}=fixture();
   const r=await sys.health();
-  assert.deepEqual(r,{schema:'jaco.service-health/v1',status:'READY',core:{up:true},workplace:{up:true,state:'RUNNING',novaState:'RUNNING'},aura:{state:'NOT_INDEPENDENTLY_PROBED'}});
+  assert.deepEqual(r,{schema:'jaco.service-health/v1',status:'READY',core:{up:true},workplace:{up:true,state:'RUNNING',executionState:'RUNNING'},aura:{state:'NOT_INDEPENDENTLY_PROBED'}});
   assert.equal(calls.length,2);
 });
 test('health reports degradation when Workplace is unavailable',async()=>{

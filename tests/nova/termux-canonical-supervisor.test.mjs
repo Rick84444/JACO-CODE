@@ -64,7 +64,7 @@ test('READY requires canonical Sentinel, Core and Workplace PID owners, not HTTP
     '#!/bin/sh',
     'case "$*" in',
     '  *api/runtime/identity*) [ "${JACO_TEST_CORE_DOWN:-0}" = "1" ] && exit 7; printf "%s\n" "$JACO_TEST_CORE_IDENTITY";;',
-    '  *2995/health*) if [ -n "${JACO_TEST_WORKPLACE_JSON:-}" ]; then printf "%s\n" "$JACO_TEST_WORKPLACE_JSON"; else printf \'{"supervisedAgents":{"state":"RUNNING","nova":{"state":"RUNNING"}}}\n\'; fi;;',
+    '  *2995/health*) if [ -n "${JACO_TEST_WORKPLACE_JSON:-}" ]; then printf "%s\n" "$JACO_TEST_WORKPLACE_JSON"; else printf \'{"auraRuntime":{"state":"RUNNING","capabilities":{"execution":{"state":"RUNNING"}}}}\n\'; fi;;',
     '  *) printf "{}\n";;',
     'esac',
   ]);
@@ -117,14 +117,14 @@ test('READY requires canonical Sentinel, Core and Workplace PID owners, not HTTP
     assert.match(right.stdout,/\[JACO\] READY/);
     const absentCore=spawnSync('bash',[ctl,'status'],{
       encoding:'utf8', timeout:10000,
-      env:{...common,JACO_TEST_SENTINEL_PID:String(canonicalSentinel),JACO_TEST_CORE_DOWN:'1',JACO_TEST_WORKPLACE_JSON:JSON.stringify({supervisedAgents:{state:'WAITING_RUNTIME',nova:{state:'DISABLED'}}})}
+      env:{...common,JACO_TEST_SENTINEL_PID:String(canonicalSentinel),JACO_TEST_CORE_DOWN:'1',JACO_TEST_WORKPLACE_JSON:JSON.stringify({auraRuntime:{state:'WAITING_RUNTIME',capabilities:{execution:{state:'DISABLED'}}}})}
     });
     assert.equal(absentCore.status,0,absentCore.stderr);
     assert.match(absentCore.stdout,/Core HTTP unavailable on port 3000/);
     assert.doesNotMatch(absentCore.stdout,/does not belong to the canonical supervisor/);
     const waitingNova=spawnSync('bash',[ctl,'status'],{
       encoding:'utf8', timeout:10000,
-      env:{...common,JACO_TEST_SENTINEL_PID:String(canonicalSentinel),JACO_TEST_WORKPLACE_JSON:JSON.stringify({supervisedAgents:{state:'WAITING_SEER',model:{state:'READY'},seer:{state:'STARTING'},nova:{state:'DISABLED',supervised:true}}})}
+      env:{...common,JACO_TEST_SENTINEL_PID:String(canonicalSentinel),JACO_TEST_WORKPLACE_JSON:JSON.stringify({auraRuntime:{state:'WAITING_STRATEGY',provider:{state:'READY'},capabilities:{strategy:{state:'STARTING'},execution:{state:'DISABLED',supervised:true}}}})}
     });
     assert.equal(waitingNova.status,0,waitingNova.stderr);
     assert.match(waitingNova.stdout,/Canonical Workplace responds but supervised SEER\/Nova are not RUNNING/);

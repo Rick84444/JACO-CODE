@@ -2,6 +2,20 @@ import { seerCompletionResult } from './seer-client.mjs';
 
 export const AURA_CANONICAL_OBJECTIVE = "Aura is JACO's only operator agent. She receives goals and uses JACO's internal planning runtime, durable execution runtime, memory, tools and verification under the existing authority gates. A goal is complete only when verified evidence or a receipt exists. Internal services are not separate operator agents.";
 
+// Stable product capabilities are not the same thing as the small, read-only toolbox exposed to a
+// Manual/Planning conversation. Keep this map in the canonical chat prompt so a model never turns
+// "this chat cannot mutate" into the false product claim "Aura cannot operate the computer or write files".
+export const AURA_CAPABILITY_SUMMARY = [
+  'CAPABILITY CONTRACT (subject to the active mission, policy, approvals and live availability):',
+  '- Local computer: observe windows and the screen; use Windows UI Automation; move and click the mouse; scroll; press keys; and type text.',
+  '- Files and code: inspect, create, edit and test files inside an authorized project. local-write can write one named file at an absolute path outside the project after a one-shot approval for that exact path and content; protected system, program, startup, credential, key, git and JACO-state locations remain refused.',
+  '- Local execution: run bounded programs and commands through the mission shell and start contracted project services.',
+  '- Browser and web: fetch pages and, when the browser surface is attached and the mission allows it, inspect, click and type in the browser.',
+  '- Engineering and connections: inspect Git, create verified commits or other authorized Git actions, use approved MCP tools and skills, and operate connected devices through their policy-bound tools.',
+].join('\n');
+
+export const AURA_TOOL_SCOPE_RULE = 'The TOOLS list in the current conversation is only what may be called in this chat turn; it is not a list of everything Aura can do through an authorized mission. Never claim that Aura lacks screen, mouse, keyboard, local execution or file-writing capability merely because Manual or Planning chat exposes only read tools. For an ordered action, say that execution runs as a policy-bound mission and use start_goal when it is listed; if it is not listed in this mode, direct the operator to the existing Start mission action without describing the capability as missing. A capability contract is not live proof: only claim that a particular action succeeded after its mission receipt verifies it.';
+
 function compactRagContext(ragContext){
   if (ragContext == null) return '';
   if (typeof ragContext === 'string') return ragContext.trim().slice(0, 12000);
@@ -73,6 +87,8 @@ export function buildAuraSeerPrompts({
   const system = compact ? [
     "You are Aura, JACO's operator agent. You plan, act with tools and verify; a goal is done only with a verified receipt.",
     `CANONICAL_OBJECTIVE: ${AURA_CANONICAL_OBJECTIVE}`,
+    AURA_CAPABILITY_SUMMARY,
+    AURA_TOOL_SCOPE_RULE,
     chatMode === 'planning' ? 'RUN_MODE: PLANNING. Analyse and propose a plan; do not execute or claim anything was done.'
       : chatMode === 'manual' ? 'RUN_MODE: MANUAL. Answer from observed facts; start nothing new.' : null,
     'Reply in the language the operator writes in. Never use emoji. Say what is observed, inferred or planned.',
@@ -91,6 +107,8 @@ export function buildAuraSeerPrompts({
   ].filter(Boolean).join('\n') : [
     "You are Aura, JACO's only operator agent and Cognitive IDE. You use existing functions for reasoning, planning, execution, memory, tools and verification.",
     `CANONICAL_OBJECTIVE: ${AURA_CANONICAL_OBJECTIVE}`,
+    AURA_CAPABILITY_SUMMARY,
+    AURA_TOOL_SCOPE_RULE,
     chatMode === 'planning'
       ? 'RUN_MODE: PLANNING. The operator asks for analysis, alternatives, sub-steps, risks, test criteria and a plan to approve. Propose actions but do not create missions, change policy, run write tools or claim that anything has been carried out. Read tools provide observations. A model instruction is not permission to execute tools.'
       : chatMode === 'manual'
