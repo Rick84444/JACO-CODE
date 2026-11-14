@@ -5,7 +5,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { configuration, definitions, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess,renameWithRetry, ollamaExecutable } from '../../agents/lib/local-stack.mjs';
+import { configuration, definitions, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess,renameWithRetry, ollamaExecutable, resolveServicePorts, readResolvedPorts } from '../../agents/lib/local-stack.mjs';
 const IDENTITY="app.get('/api/runtime/identity',()=>{});";
 function fixture(t, env = {}) {
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-start-test-'));
@@ -85,16 +85,19 @@ test('pending service process requires a matching creation time, not just a PID'
  fs.writeFileSync(file,JSON.stringify({pid:process.pid,birth:'2020-01-01T00:00:00.0000000Z'}));
  assert.equal(pendingProcess(c,'runtime'),null);assert.equal(fs.existsSync(file),false);
 });
-test('foreign listener blocks startup and stays running with failure evidence',async t=>{
+test('foreign listener is left running and the service is moved to a free port',async t=>{
  const server=http.createServer((q,r)=>{r.setHeader('content-type','application/json');r.end('{"success":true,"releaseId":"foreign"}');});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  t.after(()=>new Promise(r=>server.close(r)));
- const c=fixture(t,{PORT:String(server.address().port),JACO_ENABLE_CDP:'1'});
- await assert.rejects(activate(c),/PORT_CONFLICT_OR_UNHEALTHY:runtime/);
+ const foreignPort=server.address().port;
+ const c=fixture(t,{PORT:String(foreignPort),JACO_ENABLE_CDP:'1'});
+ const moves=await resolveServicePorts(c);
+ const runtime=moves.find(m=>m.service==='runtime');
+ assert.ok(runtime,'runtime is moved instead of blocking startup');
+ assert.equal(runtime.from,foreignPort);assert.notEqual(runtime.to,foreignPort);
+ assert.equal(c.env.JACO_RUNTIME_URL,'http://127.0.0.1:'+runtime.to);
  assert.equal(server.listening,true);
- const receipt=JSON.parse(fs.readFileSync(path.join(c.root,'logs/startup/status.json')));
- assert.equal(receipt.state,'BLOCKED');assert.deepEqual(receipt.services,[]);
- assert.equal(fs.existsSync(path.join(c.root,'logs/startup/startup.lock')),false);
+ assert.equal(readResolvedPorts(c.dataRoot).runtime.port,runtime.to);
 });
 test('PowerShell wrapper preserves BOM and preflight has no launch effects',{skip:process.platform!=='win32'},()=>{
  const file=path.resolve('agents/start-all.ps1');assert.equal(fs.readFileSync(file,'utf8').charCodeAt(0),0xFEFF);

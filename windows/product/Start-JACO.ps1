@@ -54,7 +54,14 @@ try {
     try {
       $receipt = Get-Content (Join-Path $DataRoot 'logs\startup\runtime.process.json') -Raw | ConvertFrom-Json
       $process = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$receipt.pid)" -ErrorAction Stop
-      $identity = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/runtime/identity' -TimeoutSec 5
+      # The runtime may have been moved off port 3000 because another program held it.
+      $runtimeUrl = 'http://127.0.0.1:3000'
+      try {
+        $startup = Get-Content (Join-Path $DataRoot 'logs\startup\status.json') -Raw | ConvertFrom-Json
+        $observed = @($startup.services | Where-Object { $_.id -eq 'runtime' -and $_.url })[0]
+        if ($observed) { $runtimeUrl = ([Uri]$observed.url).GetLeftPart([UriPartial]::Authority) }
+      } catch {}
+      $identity = Invoke-RestMethod -Uri ($runtimeUrl + '/api/runtime/identity') -TimeoutSec 5
       $expected = (Get-Content (Join-Path $InstallRoot 'runtime\CURRENT_RELEASE.json') -Raw | ConvertFrom-Json).releaseId
       $validCore = ($process -and $process.CommandLine.Contains($InstallRoot) -and $identity.success -eq $true -and $identity.releaseId -eq $expected)
     } catch {}

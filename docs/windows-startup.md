@@ -28,11 +28,17 @@ Build the runtime client and server before distribution and use `JACO_START_MODE
 
 ## Readiness and recovery
 
-`npm run jaco:preflight` reads configuration without launching services. `npm run jaco:status` observes service identities. Startup rejects invalid or overlapping ports, an emergency latch, unknown listeners, conflicting startup locks and unverified process ownership. A timed-out process is retained in an ownership record and is not blindly launched a second time. Separate Workplace and gateway credentials are respected.
+`npm run jaco:preflight` reads configuration without launching services. `npm run jaco:status` observes service identities. Startup rejects invalid or overlapping ports, an emergency latch, conflicting startup locks and unverified process ownership. A timed-out process is retained in an ownership record and is not blindly launched a second time. Separate Workplace and gateway credentials are respected.
 
 The optional `agents/watchdog.ps1` reconciles through this same launcher. It can be invoked with `-Once` for one check or `-IntervalSeconds` for repeated checks; it does not maintain a second port map or unload models. It is not installed as a Windows login task by this change.
 
 `logs/startup/status.json` is a local readiness receipt. `READY` refers to checked local services. A Cloudflare process is reported separately as `PROCESS_PRESENT_PUBLIC_REACHABILITY_UNVERIFIED`: external reachability and account/API permissions require separate verification. Browser opt-in creates a runtime tab if needed and requires a successful attachment.
+
+## Ports and sign-in start
+
+The operator never edits ports. If another program already holds a service port, startup moves that service to the next free port (scanning upward from the default), never stops the other program, and records the choice in `.jaco/state/resolved-ports.json` under the data root. Every later process (status, guardian, launcher) reads the same file, and every dependent URL is derived from it. A resolution only applies while the requested port in `.env` is unchanged; editing `PORT` takes precedence. A listener that JACO itself owns keeps its port and is recycled by the guardian. The receipt in `logs/startup/status.json` lists `portResolutions`. An opt-in Cloudflare tunnel still points at the configured ingress port, so a moved runtime adds the warning `TUNNEL_INGRESS_PORT_CHANGED`. The emergency stop follows resolved ports and does not touch the other program on the default port.
+
+The installer offers "Start Aura automatically when I sign in" (on by default). It registers `JACO-launch.vbs --background` under the current user's Run key. That start is silent (no browser window, no dialog), uses the same launcher, starts the health guardian, and needs no assistant. Failures are written to `logs/startup/launcher.log`. Uninstalling removes the entry. This is source and unit verification only: a reboot on a clean Windows machine is still a release acceptance check.
 
 ## Budget
 

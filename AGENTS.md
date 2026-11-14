@@ -83,3 +83,7 @@ State exactly:
 - what was removed or consolidated;
 - which checks actually ran and their results;
 - what remains unobserved.
+
+## Spec-driven workflow (OpenSpec)
+
+Non-trivial behavior changes start as an OpenSpec change under `openspec/changes/<change-id>/` (proposal, design, tasks, spec deltas) before code. See `openspec/project.md`. Tasks are ticked only on observed evidence; merge only from a branch with green CI; archive the change after merge.
