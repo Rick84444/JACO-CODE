@@ -186,6 +186,7 @@ TOOLS.push(
     return runtime('POST',`${BASE}/gameboard/events`,{...args,actorId:String(actorId)});
   }, false),
 );
+let clientInfo = {};
 async function initialize(info = {}) {
   if (initialized) return;
   if (managed && !session) {
@@ -201,13 +202,16 @@ async function handle(msg) {
   if (msg?.id === undefined) return null;
   const reply = result => ({ jsonrpc:'2.0',id:msg.id,result });
   try {
-    if (msg.method === 'initialize') {await initialize(msg.params?.clientInfo);return reply({protocolVersion:msg.params?.protocolVersion || '2025-06-18',capabilities:{tools:{}},serverInfo:{name:'jaco-editor',version:'1.1.0'}});}
+    // The MCP handshake must always succeed: a runtime or Workplace that is not up yet when the client
+    // starts used to fail initialize and leave the editor dead for the whole client session. Joining is
+    // retried on the first tool call instead.
+    if (msg.method === 'initialize') {clientInfo = msg.params?.clientInfo || {};try {await initialize(clientInfo);} catch {}return reply({protocolVersion:msg.params?.protocolVersion || '2025-06-18',capabilities:{tools:{}},serverInfo:{name:'jaco-editor',version:'1.1.0'}});}
     if (msg.method === 'tools/list') return reply({tools:TOOLS.map(({run,readOnly,...t})=>({...t,annotations:{readOnlyHint:Boolean(readOnly),destructiveHint:t.name==='delete_file'}}))});
     if (msg.method === 'tools/call') {
       const tool = TOOLS.find(t=>t.name===msg.params?.name);
       if (!tool) return {jsonrpc:'2.0',id:msg.id,error:{code:-32602,message:'unknown tool'}};
       if (managed) {
-        if (!initialized) throw Error('MCP_INITIALIZE_REQUIRED');
+        if (!initialized) await initialize(clientInfo);
         if (!tool.readOnly) {const synced = await session?.syncNow();if (!synced || session?.state!=='READY') throw Error('DEGRADED_UNSYNCED');}
       }
       const busy = managed && !tool.readOnly;
