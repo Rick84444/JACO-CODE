@@ -1,4 +1,4 @@
-h ladda ned den name: jaco-browser-mcp
+name: jaco-browser-mcp
 
 on:
   pull_request:

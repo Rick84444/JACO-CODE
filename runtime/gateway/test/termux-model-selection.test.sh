@@ -27,7 +27,7 @@ case "${*: -1}" in
   *:3000/*) [[ -f "$JACO_MODEL_TEST_STATE/jaco-core" ]] ;;
   *:2995/*)
     [[ -f "$JACO_MODEL_TEST_STATE/jaco-workplace" ]] || exit 22
-    echo '{"auraRuntime":{"state":"RUNNING","capabilities":{"execution":{"state":"RUNNING"}}}}'
+    echo '{"supervisedAgents":{"state":"RUNNING","nova":{"state":"RUNNING"}}}'
     ;;
   *:9379/v1/models)
     [[ "${JACO_MODEL_TEST_LITERT_READY:-0}" == 1 ]] || exit 22

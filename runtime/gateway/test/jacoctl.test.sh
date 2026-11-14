@@ -108,7 +108,7 @@ case "$url" in
    ;;
  *:2995/*)
    [[ -f "$STUB_STATE/jaco-workplace" ]] || exit 22
-   printf '%s\n' '{"product":"JACO Workplace","auraRuntime":{"state":"RUNNING","capabilities":{"execution":{"state":"RUNNING"}}}}'
+   printf '%s\n' '{"product":"JACO Workplace","supervisedAgents":{"state":"RUNNING","nova":{"state":"RUNNING"}}}'
    ;;
  *:9380/v1/models)
    [[ -f "$STUB_STATE/llamacpp" ]] || exit 22
