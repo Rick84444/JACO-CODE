@@ -53,3 +53,7 @@ ecosystem.config.cjs
 # Python bytecode is generated
 __pycache__/
 *.pyc
+
+# Aura-generated output (not source)
+/artifacts/
+/runtime/artifacts/
