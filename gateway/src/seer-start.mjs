@@ -1,27 +1,25 @@
-// JACO strategy runtime bootstrap (historical SEER service name).
-// In the canonical Aura runtime, provider selection belongs to Aura and is read on every inference turn.
-// Local discovery remains only for callers that run this compatibility service outside the canonical launcher.
+// JACO SEER model bootstrap
+// Cross-platform local inference discovery:
+//   1. healthy LiteRT-LM / Gemma (preferred when available, typically Android)
+//   2. healthy Ollama model (desktop/local fallback)
+// Provider identity is preserved so /cortex/brain reports what actually ran.
 
 import 'dotenv/config';
 import { applySeerLocalProvider, discoverSeerLocalProvider } from './seer-model-provider.mjs';
 
-if (process.env.JACO_AURA_UNIFIED_RUNTIME === '1' || process.env.JACO_SEER_PROVIDER_PREFERENCE === 'aura') {
+const selected = await discoverSeerLocalProvider();
+
+if (selected.provider) {
   delete process.env.JACO_SEER_BOOTSTRAP_NO_PROVIDER;
-  console.log('[JACO Aura] Strategy capability uses Aura provider selection; no local model prerequisite.');
+  applySeerLocalProvider(selected.provider);
+  console.log(
+    `[SEER] Selected provider: ${selected.provider.id} model=${selected.provider.model} execution=${selected.provider.local ? 'local' : 'cloud'} source=${selected.provider.source}`,
+  );
 } else {
-  const selected = await discoverSeerLocalProvider();
-  if (selected.provider) {
-    delete process.env.JACO_SEER_BOOTSTRAP_NO_PROVIDER;
-    applySeerLocalProvider(selected.provider);
-    console.log(
-      `[JACO strategy compatibility] Selected provider: ${selected.provider.id} model=${selected.provider.model} execution=${selected.provider.local ? 'local' : 'cloud'} source=${selected.provider.source}`,
-    );
-  } else {
-    process.env.JACO_SEER_BOOTSTRAP_NO_PROVIDER = '1';
-    console.warn(
-      `[JACO strategy compatibility] No provider selected (preference=${selected.preference}; ${selected.reason})`,
-    );
-  }
+  process.env.JACO_SEER_BOOTSTRAP_NO_PROVIDER = '1';
+  console.warn(
+    `[SEER] No verified local model provider selected (preference=${selected.preference}; ${selected.reason})`,
+  );
 }
 
 await import('./seer.mjs');

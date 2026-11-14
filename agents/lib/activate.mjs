@@ -38,7 +38,7 @@ export async function activationReport({
     schema: 'jaco.activation/v2',
     at: new Date().toISOString(),
     runtime: { up: false, version: null },
-    workplace: { required: requireWorkplace, up: false, state: null, executionState: null },
+    workplace: { required: requireWorkplace, up: false, state: null, novaState: null },
     supervisor: { required: requireSupervisor, up: null, state: null },
     tools: { servers: [], ready: 0, toolCount: 0 },
     providers: [],
@@ -66,28 +66,27 @@ export async function activationReport({
     report.supervisor = { required: false, up: null, state: 'NOT_REQUIRED' };
   }
 
-  // Durable execution truth: Core alone is not JACO READY. Aura's execution capability must be RUNNING
-  // when Workplace is required, otherwise missions cannot continue after the chat returns.
+  // Durable execution truth: Core alone is not JACO READY. Workplace must be reachable and Durable Nova
+  // must be RUNNING when Workplace is required, otherwise missions cannot continue after the chat returns.
   if (requireWorkplace) {
     try {
       const health = await call(fetchImpl, workplaceUrl.replace(/\/+$/, ''), '', 'GET', '/health', null, 4000);
-      const auraRuntime = health?.auraRuntime || {};
-      const execution = auraRuntime?.capabilities?.execution || {};
+      const supervised = health?.supervisedAgents || {};
       report.workplace = {
         required: true,
         up: true,
-        state: auraRuntime.state || health?.status || null,
-        executionState: execution.state || null,
+        state: supervised.state || health?.status || null,
+        novaState: supervised.nova?.state || null,
       };
-      if (auraRuntime.state !== 'RUNNING' || execution.state !== 'RUNNING') {
-        report.problems.push(`Aura durable execution is not RUNNING (runtime=${auraRuntime.state || 'UNKNOWN'}, execution=${execution.state || 'UNKNOWN'}).`);
+      if (supervised.state !== 'RUNNING' || supervised.nova?.state !== 'RUNNING') {
+        report.problems.push(`Workplace/Durable Nova is not RUNNING (workplace=${supervised.state || 'UNKNOWN'}, nova=${supervised.nova?.state || 'UNKNOWN'}).`);
       }
     } catch (error) {
-      report.workplace = { required: true, up: false, state: null, executionState: null };
+      report.workplace = { required: true, up: false, state: null, novaState: null };
       report.problems.push(`Workplace is not answering: ${errorText(error)}`);
     }
   } else {
-    report.workplace = { required: false, up: null, state: 'NOT_REQUIRED', executionState: 'NOT_REQUIRED' };
+    report.workplace = { required: false, up: null, state: 'NOT_REQUIRED', novaState: 'NOT_REQUIRED' };
   }
 
   // Tools: start what is stopped, then count what answers.
@@ -137,11 +136,11 @@ export async function activationReport({
       const first = report.providers.find(p => p.active);
       report.planner = first ? describe(first.id, first.defaultModel, 'automatic') : { provider: null, model: null, source: 'automatic', reachable: false, why: 'NO_ACTIVE_PROVIDER' };
     }
-    if (report.planner.reachable === false && report.planner.why !== 'NO_ACTIVE_PROVIDER') report.problems.push(`Aura's selected planner ${report.planner.provider || '(none)'} is not answering (${report.planner.why}). Choose another under Providers > Use.`);
+    if (report.planner.reachable === false && report.planner.why !== 'NO_ACTIVE_PROVIDER') report.problems.push(`Nova's planner ${report.planner.provider || '(none)'} is not answering (${report.planner.why}). Choose another under Providers > Use.`);
   } catch (error) { report.problems.push(`Could not read the planner choice: ${errorText(error)}`); }
   if (report.providers.length && !report.providers.some(p => p.active)) report.problems.push('No model provider is answering. Paste an API key under Providers or start a local model (Ollama).');
 
-  const workplaceReady = !requireWorkplace || (report.workplace.up === true && report.workplace.state === 'RUNNING' && report.workplace.executionState === 'RUNNING');
+  const workplaceReady = !requireWorkplace || (report.workplace.up === true && report.workplace.state === 'RUNNING' && report.workplace.novaState === 'RUNNING');
   const supervisorReady = !requireSupervisor || (report.supervisor.up === true && report.supervisor.state === 'READY');
   report.ok = Boolean(
     report.runtime.up &&
@@ -161,12 +160,12 @@ export function formatReport(r) {
   out.push(`JACO ${r.ok ? 'is active' : 'is not fully active'}${r.runtime.version ? ` (runtime ${r.runtime.version})` : ''}`);
   if (!r.runtime.up) { out.push(...r.problems.map(p => `  ! ${p}`)); return out.join('\n'); }
   if (r.supervisor?.required) out.push('', `Supervisor: ${r.supervisor.up ? r.supervisor.state || 'UNKNOWN' : 'NOT ANSWERING'}`);
-  if (r.workplace?.required) out.push('', `Aura runtime: ${r.workplace.up ? `${r.workplace.state || 'UNKNOWN'} / execution ${r.workplace.executionState || 'UNKNOWN'}` : 'NOT ANSWERING'}`);
+  if (r.workplace?.required) out.push('', `Workplace/Nova: ${r.workplace.up ? `${r.workplace.state || 'UNKNOWN'} / ${r.workplace.novaState || 'UNKNOWN'}` : 'NOT ANSWERING'}`);
   out.push('', `Tools: ${r.tools.toolCount} in ${r.tools.ready} of ${r.tools.servers.length} servers`);
   for (const s of r.tools.servers) out.push(`  ${s.status === 'READY' ? 'ok ' : '-- '} ${s.id.padEnd(12)} ${s.status === 'READY' ? `${s.tools} tools${s.started ? ' (started now)' : ''}` : s.error ? `error: ${s.error}` : 'stopped'}`);
   out.push('', 'Models:');
   for (const p of r.providers) out.push(`  ${p.active ? 'ok ' : '-- '} ${String(p.id).padEnd(14)} ${p.active ? `${p.models} models${p.ms != null ? `, ${p.ms} ms` : ''}` : PROVIDER_TEXT[p.state] || p.state}`);
-  if (r.planner) out.push('', `Aura plans with: ${r.planner.provider ? `${r.planner.provider} / ${r.planner.model || '?'}` : '(none)'} [${r.planner.source}] ${r.planner.reachable === true ? 'answering' : r.planner.reachable === false ? 'NOT ANSWERING' : 'key present, not probed'}`);
+  if (r.planner) out.push('', `Nova plans with: ${r.planner.provider ? `${r.planner.provider} / ${r.planner.model || '?'}` : '(none)'} [${r.planner.source}] ${r.planner.reachable === true ? 'answering' : r.planner.reachable === false ? 'NOT ANSWERING' : 'key present, not probed'}`);
   if (r.problems.length) out.push('', 'To fix:', ...r.problems.map(p => `  ! ${p}`));
   return out.join('\n');
 }

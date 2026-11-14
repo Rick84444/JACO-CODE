@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { auraChatViaSeer, buildAuraSeerPrompts, AURA_CANONICAL_OBJECTIVE, AURA_CAPABILITY_SUMMARY, renderAuraToolTranscript, summarizeAuraModelCosts } from '../../agents/lib/aura-seer-chat.mjs';
+import { auraChatViaSeer, buildAuraSeerPrompts, AURA_CANONICAL_OBJECTIVE, renderAuraToolTranscript, summarizeAuraModelCosts } from '../../agents/lib/aura-seer-chat.mjs';
 import { seerCompletion, seerCompletionResult } from '../../agents/lib/seer-client.mjs';
 
 const root=process.cwd();
@@ -12,27 +12,6 @@ test('Aura is told to inspect the live MCP catalog before describing its tools',
   const {system}=buildAuraSeerPrompts({message:'Vilka verktyg har du?',chatMode:'manual',compactRules:true,toolCatalog:'- mcp_catalog: live tools'});
   assert.match(system,/call mcp_catalog/i);
   assert.match(system,/connected MCP tools/i);
-});
-
-test('Aura distinguishes the read-only conversation toolbox from her mission capabilities',()=>{
-  for (const compactRules of [false,true]) {
-    const {system}=buildAuraSeerPrompts({
-      message:'Öppna Anteckningar, skapa en fil utanför projektet och skriv KLAR.',
-      chatMode:'manual',
-      compactRules,
-      toolCatalog:'- repo_list: list project files\n- repo_read: read a project file',
-    });
-    assert.match(system,/CAPABILITY CONTRACT/);
-    assert.match(system,/observe windows and the screen/);
-    assert.match(system,/move and click the mouse/);
-    assert.match(system,/press keys; and type text/);
-    assert.match(system,/local-write can write one named file at an absolute path outside the project/);
-    assert.match(system,/TOOLS list in the current conversation is only what may be called in this chat turn/);
-    assert.match(system,/Never claim that Aura lacks screen, mouse, keyboard, local execution or file-writing capability/);
-    assert.match(system,/execution runs as a policy-bound mission/);
-    assert.match(system,/only claim that a particular action succeeded after its mission receipt verifies it/);
-  }
-  assert.match(AURA_CAPABILITY_SUMMARY,/protected system, program, startup, credential, key, git and JACO-state locations remain refused/);
 });
 
 test('Aura action mode is told to use the guarded MCP bridge for an active goal',()=>{

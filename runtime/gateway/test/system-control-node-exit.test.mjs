@@ -67,8 +67,8 @@ test('independent Windows service health is DEGRADED while browser attachment is
     const system=new SystemControl({
       jacoctl:path.join(root,'agents','jaco-cli.mjs'),repoRoot:root,runtimeRoot:path.join(root,'runtime'),
       core:{request:async()=>({success:true})},
-      fetchImpl:async()=>({ok:true,json:async()=>({product:'JACO Workplace',auraRuntime:{
-        state:'RUNNING',capabilities:{execution:{state:'RUNNING'}}}})}),
+      fetchImpl:async()=>({ok:true,json:async()=>({product:'JACO Workplace',supervisedAgents:{
+        state:'RUNNING',nova:{state:'RUNNING'}}})}),
     });
     const result=await system.health();
     assert.equal(result.core.up,true);
