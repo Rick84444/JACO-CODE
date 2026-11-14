@@ -56,7 +56,8 @@ import { nonTextModelKind, openAiChatCompletionsUrl, plannerChoiceFile, readPlan
 import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs';
 import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs';
 import { validateRepoScanTask, runRepoScanTask } from './lib/repo-scan.mjs';
-import { validateMcpCall, callMcpTool, mcpCatalog, mcpCatalogTools, learnedTaskNotes } from './lib/mcp-tools.mjs';
+import { validateMcpCall, callMcpTool, mcpCatalog, mcpCatalogTools, learnedTaskNotes, resetMcpCatalog } from './lib/mcp-tools.mjs';
+import { createToolDiagnoser } from './lib/tool-failure-diagnosis.mjs';
 import { plannerTools, structuredPlannerTools, planFromToolCalls, planSchema } from './lib/native-tools.mjs';
 import { runAgentMission, introMessage, contextPacketIntro } from './lib/agent-loop.mjs';
 import { isTransientPreflightBlockers } from './lib/mission-health-policy.mjs';
@@ -2105,6 +2106,8 @@ async function runAgentLoop(state) {
     system: mission => agentSystemFor(capsuleAllowedTasks(mission), process.platform,
       mission.source === 'seer-mission-graph' && Boolean(mission.metadata?.parent?.graphId)),
     preflight: context => runCodingPreflight(state, context),
+    // A failed tool is investigated and, where safe, repaired before the model decides what to do next.
+    diagnose: createToolDiagnoser({ runtimeUrl: CONFIG.runtimeUrl, onServerStarted: () => resetMcpCatalog() }),
     toolsFor: async mission => {
       const permitted = capsuleAllowedTasks(mission);
       const write = permitted.includes('mcp-write');

@@ -122,7 +122,7 @@ const SAYS_BLOCKED = /\b(?:i am|i'm|i was) (?:blocked|unable|not able)\b|\bi (?:
 export async function runAgentMission({
   client, owner, chat, toolsFor, execute, system,
   observe = async () => null, intro = introMessage, refreshIntro = false, acceptMission = null,
-  preflight = null,
+  preflight = null, diagnose = null,
   onActivity = async () => {}, onReceipt = async () => {}, log = () => {},
   maxSteps = 40, maxModelErrors = 3, maxIdleReplies = 2,
   maxContextChars = 60_000, onCondense = () => {}, stuck = new StuckDetector(),
@@ -141,6 +141,12 @@ export async function runAgentMission({
   let capabilityEvidence = null;
   let capabilityCorrections = 0;
   let healthCatalogRefreshes = 0;
+  // Failed tools are diagnosed (evidence plus the one safe remedy) at most a few times per run and once
+  // per distinct failure, then the findings reach the model after the tool results of that turn.
+  const MAX_DIAGNOSES = 4;
+  let diagnoses = 0;
+  const diagnosed = new Set();
+  const diagnosisNotes = [];
   const MAX_CAPABILITY_CORRECTIONS = 2;
   let modelSteerVersion = mission.steering?.revision || 0;
   let presentedSteerVersion = modelSteerVersion;
@@ -479,6 +485,17 @@ export async function runAgentMission({
           for (const rest of calls.slice(i + 1)) messages.push({ role: 'tool', tool_call_id: rest.id, content: `SKIPPED: mission is ${mission.status}` });
           return { executed: true, receipts, steps, mission, stopped: mission.status };
         }
+        if (diagnose && !receipt.ok && !receipt.outcomeUnknown && diagnoses < MAX_DIAGNOSES) {
+          const key = `${begun.type}:${begun.data?.server || ''}:${begun.data?.tool || ''}:${String(receipt.error || '').slice(0, 80)}`;
+          if (!diagnosed.has(key)) {
+            diagnosed.add(key);
+            diagnoses++;
+            try {
+              const found = await diagnose({ task: begun, receipt, mission });
+              if (found?.text) diagnosisNotes.push(found.text);
+            } catch (error) { log('warn', 'Tool diagnosis failed: ' + errorText(error)); }
+          }
+        }
         // A failing service can return with a changed available-tool catalog. Re-discover
         // from the exact current mission allowance; no new grants or blind write retries.
         if (!receipt.ok && !receipt.outcomeUnknown && isRecoverableToolHealthError(receipt.error) && healthCatalogRefreshes < 2) {
@@ -505,6 +522,7 @@ export async function runAgentMission({
           break;
         }
       }
+      while (diagnosisNotes.length) messages.push({ role: 'user', content: diagnosisNotes.shift() });
       if (nudge) {
         // Once: tell the model what it is doing. A second time in a fresh window: stop and say so.
         if (stuck.nudge() > 1) {

@@ -74,3 +74,7 @@ make `/mcp` anonymously public or reuse the local JACO gateway token as a
 ChatGPT credential. Until that OAuth/public endpoint is configured, ChatGPT
 can participate through the existing Workplace relay but is not a direct
 normal-chat MCP client.
+
+## Tool failures
+
+When a tool step fails, Aura diagnoses it before the model decides what to do (`agents/lib/tool-failure-diagnosis.mjs`). The diagnosis classifies the failure, reads the server status and the startup log tail, starts a configured stopped MCP server or asks the local launcher to recover the stack (at most once per five minutes), and gives the model a concrete next step. Credential, permission, approval, budget and unknown-outcome failures are never worked around. The `filesystem` server is the one default server that starts through `npx` and needs network on first use; the others use JACO's bundled Node.
