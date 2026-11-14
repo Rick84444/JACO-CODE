@@ -49,7 +49,8 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
     },
     filesystem: {
       name: 'Filesystem', role: `read and write files under ${repoRoot}`, icon: 'mcp', agentAccess: 'write',
-      command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', repoRoot],
+      // JACO's own server on the bundled Node: works offline right after installation, nothing downloaded.
+      command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-filesystem-mcp.mjs'), repoRoot], cwd: runtimeRoot,
     },
     // Switching branch or resetting would move the checkout the running runtime is built from.
     git: {
