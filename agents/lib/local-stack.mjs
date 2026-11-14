@@ -32,6 +32,35 @@ export function runtimeDirectory(root, configured) {
   if (candidates.length !== 1) throw new Error(candidates.length ? 'RUNTIME_DIR_AMBIGUOUS:set JACO_RUNTIME_DIR' : 'RUNTIME_DIR_MISSING:set JACO_RUNTIME_DIR');
   return candidates[0];
 }
+// Service port -> environment variable. One table for configuration, resolution and persistence.
+export const PORT_ENV = { runtime: 'PORT', workplace: 'JACO_WORKPLACE_PORT', seer: 'SEER_PORT', remote: 'JACO_REMOTE_BRIDGE_PORT', a2a: 'JACO_A2A_PORT', novaBridge: 'NOVA_BRIDGE_PORT', cdp: 'JACO_CDP_BRIDGE_PORT', gateway: 'JACO_GATEWAY_PORT', chrome: 'CDP_PORT' };
+export const resolvedPortsFile = dataRoot => path.join(dataRoot, '.jaco', 'state', 'resolved-ports.json');
+// Ports chosen automatically after a foreign process took a default. Entries only apply while the
+// operator's requested port is unchanged, so editing PORT in .env always wins over an old resolution.
+export function readResolvedPorts(dataRoot) {
+  try {
+    const data = JSON.parse(fs.readFileSync(resolvedPortsFile(dataRoot), 'utf8'));
+    return data && data.schema === 'jaco.resolved-ports/v1' && data.ports && typeof data.ports === 'object' ? data.ports : {};
+  } catch { return {}; }
+}
+function applyResolvedPorts(ports, resolved) {
+  for (const [key, entry] of Object.entries(resolved)) {
+    if (key in PORT_ENV && entry && entry.requested === ports[key] && Number.isInteger(entry.port) && entry.port >= 1 && entry.port <= 65535) ports[key] = entry.port;
+  }
+}
+// Every URL and variable derived from a port lives here so a later port change cannot leave a stale consumer.
+export function portEnvironment(env, ports, previous = null) {
+  for (const [key, name] of Object.entries(PORT_ENV)) env[name] = String(ports[key]);
+  const local = key => `http://127.0.0.1:${ports[key]}`;
+  env.JACO_RUNTIME_URL = local('runtime');
+  env.JACO_BASE_URL = env.JACO_RUNTIME_URL;
+  env.JACO_WORKPLACE_URL = local('workplace');
+  env.SEER_URL = local('seer');
+  env.JACO_REMOTE_BRIDGE_URL = local('remote');
+  env.JACO_NOVA_URL = local('novaBridge');
+  env.NOVA_BRIDGE_URL = env.JACO_NOVA_URL;
+  if (!env.JACO_A2A_PUBLIC_URL || (previous && env.JACO_A2A_PUBLIC_URL === `http://127.0.0.1:${previous.a2a}`)) env.JACO_A2A_PUBLIC_URL = local('a2a');
+}
 export function configuration(root = ROOT, inherited = process.env, overrides = {}) {
   root = path.resolve(root);
   // Installed Program Files are immutable; per-user credentials, mission state and startup receipts live elsewhere.
@@ -58,6 +87,8 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   };
   const ports = { runtime: port('PORT', 3000), workplace: port('JACO_WORKPLACE_PORT', 2995), seer: port('SEER_PORT', 2997), remote: port('JACO_REMOTE_BRIDGE_PORT', 2994), a2a: port('JACO_A2A_PORT', 2998), novaBridge: port('NOVA_BRIDGE_PORT', 4243), cdp: port('JACO_CDP_BRIDGE_PORT', 2996), gateway: port('JACO_GATEWAY_PORT', 4250) };
   ports.chrome = port('CDP_PORT', 9222);
+  const requestedPorts = { ...ports };
+  applyResolvedPorts(ports, readResolvedPorts(dataRoot));
   // Operator 2026-10-22: the agent connects its own browser. Chrome (a dedicated JACO profile), the Nova bridge
   // and the CDP MCP start by default; JACO_ENABLE_CDP=0 turns them off. The ChatGPT gateway stays opt-in
   // (JACO_ENABLE_CHATGPT_GATEWAY=1, or the earlier JACO_ENABLE_CDP=1 that used to start it).
@@ -65,7 +96,6 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   const gateway = env.JACO_ENABLE_CHATGPT_GATEWAY === '1' || env.JACO_ENABLE_CDP === '1';
   const enabledPorts = Object.entries(ports).filter(([key]) => key === 'gateway' ? gateway : ['chrome','cdp','novaBridge'].includes(key) ? cdp : true).map(([, value]) => value);
   if (new Set(enabledPorts).size !== enabledPorts.length) throw new Error('DUPLICATE_LISTENER_PORT');
-  for (const [key, name] of Object.entries({runtime:'PORT',workplace:'JACO_WORKPLACE_PORT',seer:'SEER_PORT',remote:'JACO_REMOTE_BRIDGE_PORT',a2a:'JACO_A2A_PORT',novaBridge:'NOVA_BRIDGE_PORT',cdp:'JACO_CDP_BRIDGE_PORT',gateway:'JACO_GATEWAY_PORT',chrome:'CDP_PORT'})) env[name] = String(ports[key]);
   Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_INSTALL_ROOT: root, JACO_RUNTIME_DIR: runtime });
   // Single Aura runtime: strategy (historical SEER) and execution (historical Nova) are capabilities,
   // never separate model owners. The provider/model selected for Aura is authoritative for both.
@@ -74,25 +104,18 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   env.JACO_SEER_PROVIDER_PREFERENCE = 'aura';
   env.JACO_WORKPLACE_SUPERVISE_MODEL = '0';
   env.JACO_MODEL_PROVIDER = 'aura';
-  env.JACO_RUNTIME_URL = `http://127.0.0.1:${ports.runtime}`;
   env.JACO_RELEASE_ROOT = runtime;
+  portEnvironment(env, ports);
   // One model choice for every service. Without this each service reads the file under its own working
   // directory, and the planner can stay pinned to a model the operator replaced long ago.
   env.JACO_PLANNER_CHOICE_FILE ||= path.join(dataRoot === root ? runtime : dataRoot, '.jaco', 'state', 'provider-preference.json');
-  env.JACO_WORKPLACE_URL = `http://127.0.0.1:${ports.workplace}`;
-  env.SEER_URL = `http://127.0.0.1:${ports.seer}`;
-  env.JACO_REMOTE_BRIDGE_URL = `http://127.0.0.1:${ports.remote}`;
-  env.JACO_BASE_URL = env.JACO_RUNTIME_URL;
-  env.JACO_NOVA_URL = `http://127.0.0.1:${ports.novaBridge}`;
-  env.NOVA_BRIDGE_URL = env.JACO_NOVA_URL;
-  env.JACO_A2A_PUBLIC_URL ||= `http://127.0.0.1:${ports.a2a}`;
   env.JACO_A2A_BEARER ||= env.A2A_BEARER_TOKEN || '';
   const mode = env.JACO_START_MODE || 'auto';
   if (!['auto','source','production'].includes(mode)) throw new Error('START_MODE_INVALID');
   const built = fs.existsSync(path.join(runtime, 'dist/server.cjs')) && fs.existsSync(path.join(runtime, 'dist/index.html'));
   if (mode === 'production' && !built) throw new Error('PRODUCTION_BUILD_REQUIRED');
   const production = mode === 'production' || (mode === 'auto' && built);
-  return { root, dataRoot, runtime, version: manifest.version, releaseId, env, ports, production, cdp, gateway, tunnel: env.JACO_START_TUNNEL === '1' };
+  return { root, dataRoot, runtime, version: manifest.version, releaseId, env, ports, requestedPorts, production, cdp, gateway, tunnel: env.JACO_START_TUNNEL === '1' };
 }
 export function serviceEnvironment(config, kind) {
   const env = { ...config.env };
@@ -276,6 +299,50 @@ export async function inspectStatus(c, services = [...definitions(c), ...novaRea
       : 'fresh service readiness only; no task execution verified',
     ...(startup ? { startup } : {}), services: observed };
 }
+async function canBind(port) {
+  return new Promise(resolve => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
+  });
+}
+async function nextFreePort(start, taken, isOccupied, bindable) {
+  for (let port = start + 1; port <= Math.min(65535, start + 1000); port++) {
+    if (taken.has(port) || await isOccupied(port) || !(await bindable(port))) continue;
+    return port;
+  }
+  throw new Error(`NO_FREE_PORT:${start}`);
+}
+// A foreign process on a service port must never stop JACO and must never be stopped by it. Unhealthy
+// listeners that JACO owns keep their port (the guardian recycles them); a foreign listener moves the
+// service to the next free port, and the choice is persisted so every later process agrees.
+export async function resolveServicePorts(c, io = {}) {
+  const isOccupied = io.occupied || (port => occupied(`http://127.0.0.1:${port}/`));
+  const probeService = io.probe || (s => probe(s, c.env.GATEWAY_TOKEN));
+  const owns = io.owns || ownsListener;
+  const bindable = io.bindable || canBind;
+  const checks = definitions(c).map(service => ({ key: service.id, service }));
+  if (c.cdp) checks.push({ key: 'chrome', service: { id: 'chrome', url: `http://127.0.0.1:${c.ports.chrome}/json/version`, accept: d => Boolean(d.webSocketDebuggerUrl) } });
+  const previous = { ...c.ports };
+  const moves = [];
+  for (const { key, service } of checks) {
+    const port = c.ports[key];
+    if ((await probeService(service)).state === 'READY') continue;
+    if (!(await isOccupied(port)) || await owns(c, service)) continue;
+    const next = await nextFreePort(port, new Set(Object.values(c.ports)), isOccupied, bindable);
+    c.ports[key] = next;
+    moves.push({ service: key, from: port, to: next });
+  }
+  if (!moves.length) return moves;
+  const stored = readResolvedPorts(c.dataRoot);
+  for (const m of moves) stored[m.service] = { requested: c.requestedPorts?.[m.service] ?? m.from, port: m.to };
+  const file = resolvedPortsFile(c.dataRoot);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file + '.tmp', JSON.stringify({ schema: 'jaco.resolved-ports/v1', updatedAt: new Date().toISOString(), ports: stored }, null, 2));
+  renameWithRetry(file + '.tmp', file);
+  portEnvironment(c.env, c.ports, previous);
+  return moves;
+}
 export async function activate(c, { open = false } = {}) {
   if (fs.existsSync(path.join(c.dataRoot || c.root, '.jaco-emergency-stop.json'))) throw new Error('EMERGENCY_STOP_ACTIVE');
   if (c.env.GATEWAY_TOKEN.length < 24) throw new Error('GATEWAY_TOKEN_REQUIRED_MIN_24');
@@ -302,6 +369,14 @@ export async function activate(c, { open = false } = {}) {
   const checkpoint = phase => { result.phase = phase; result.sequence++; result.observedAt = new Date().toISOString(); save(c, result); };
   try {
     checkpoint('preflight');
+    // Operators never edit ports: a foreign listener moves the service instead of blocking startup.
+    const portMoves = await resolveServicePorts(c);
+    if (portMoves.length) {
+      result.portResolutions = portMoves;
+      for (const m of portMoves) console.log(`PORT_REASSIGNED ${m.service} ${m.from} -> ${m.to}`);
+      if (c.tunnel && portMoves.some(m => m.service === 'runtime')) result.warnings.push('TUNNEL_INGRESS_PORT_CHANGED');
+      checkpoint('ports-resolved');
+    }
     // Reject foreign listeners before starting any optional helper.
     for (const service of [...definitions(c)].sort((a, b) => a.id === 'runtime' ? -1 : b.id === 'runtime' ? 1 : 0)) {
       const observed = await probe(service, c.env.GATEWAY_TOKEN);

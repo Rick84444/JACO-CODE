@@ -33,15 +33,18 @@ test('new startup replaces a stale READY receipt before probing and retains fail
   fs.mkdirSync(path.join(root,'dist'));
   fs.writeFileSync(path.join(root,'dist/server.cjs'),'');
   fs.writeFileSync(path.join(root,'dist/index.html'),'');
-  const dir = path.join(root,'logs/startup');fs.mkdirSync(dir,{recursive:true});
+  // A READY runtime that a different checkout owns blocks startup in preflight; a foreign program does not (its port is routed around).
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(),'jaco-startup-data-'));
+  t.after(()=>fs.rmSync(dataRoot,{recursive:true,force:true}));
+  const dir = path.join(dataRoot,'logs/startup');fs.mkdirSync(dir,{recursive:true});
   const receiptPath = path.join(dir,'status.json');
   fs.writeFileSync(receiptPath,JSON.stringify({state:'READY',runId:'stale'}));
   let during;
-  const server = http.createServer((_req,res) => { during = JSON.parse(fs.readFileSync(receiptPath));res.setHeader('content-type','application/json');res.end('{}'); });
+  const server = http.createServer((_req,res) => { during = JSON.parse(fs.readFileSync(receiptPath));res.setHeader('content-type','application/json');res.end(JSON.stringify({success:true,product:'JACO Autonomus IDE',version:'test'})); });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
   t.after(()=>new Promise(resolve=>server.close(resolve)));
-  const c = configuration(root,{GATEWAY_TOKEN:'x'.repeat(32),PORT:String(server.address().port),JACO_START_MODE:'production',JACO_ENABLE_CDP:'0'});
-  await assert.rejects(activate(c),/PORT_CONFLICT_OR_UNHEALTHY:runtime/);
+  const c = configuration(root,{GATEWAY_TOKEN:'x'.repeat(32),PORT:String(server.address().port),JACO_START_MODE:'production',JACO_ENABLE_CDP:'0',JACO_DATA_DIR:dataRoot});
+  await assert.rejects(activate(c),/OTHER_JACO_INSTANCE_RUNNING:runtime/);
   assert.equal(during.state,'STARTING');assert.notEqual(during.runId,'stale');
   const receipt = JSON.parse(fs.readFileSync(receiptPath));
   assert.equal(receipt.state,'BLOCKED');assert.equal(receipt.phase,'preflight');

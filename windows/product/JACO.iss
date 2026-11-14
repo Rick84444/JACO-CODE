@@ -54,6 +54,10 @@ Name: "{autodesktop}\JACO CODE"; Filename: "{sys}\wscript.exe"; Parameters: """{
 
 [Tasks]
 Name: desktopicon; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
+Name: autostart; Description: "Start Aura automatically when I sign in (no browser window)"; GroupDescription: "Startup:"
+
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "JACO CODE"; ValueData: """{sys}\wscript.exe"" ""{app}\windows\product\JACO-launch.vbs"" --background"; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
 Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; Description: "Launch JACO CODE"; Flags: postinstall skipifsilent runasoriginaluser nowait
