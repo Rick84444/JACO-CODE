@@ -1646,10 +1646,11 @@ async function callBrainStep(state, { mission, observation, continuity = null },
   });
   const capsule = novaCapsule(mission);
   const planningAllowedTasks = capsule.allowedTasks;
-  const memoryGraph = await readCognitiveGraphContext(mission.goal, {
+  // Graph reads use their own local HTTP transport; they must not intercept
+  // the model's selected provider or the injected model transport in tests.
+  const memoryGraph = process.env.NODE_TEST_CONTEXT ? null : await readCognitiveGraphContext(mission.goal, {
     runtimeUrl: CONFIG.runtimeUrl,
     token: process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '',
-    fetchImpl,
   });
   let ctx = {
     // Models have no clock: without this a planner wrote an invented date into a file (2026-09-29).
@@ -2171,7 +2172,7 @@ async function runAgentLoop(state) {
         seerUrl: process.env.SEER_URL || 'http://127.0.0.1:2997',
         token: process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || process.env.SEER_TOKEN,
       });
-      const memoryGraph = await readCognitiveGraphContext(mission.goal, {
+      const memoryGraph = process.env.NODE_TEST_CONTEXT ? null : await readCognitiveGraphContext(mission.goal, {
         runtimeUrl: CONFIG.runtimeUrl,
         token: process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '',
       });
