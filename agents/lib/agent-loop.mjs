@@ -89,9 +89,9 @@ export function capabilityObservationHint(view, { maxChars = 1200 } = {}) {
 // Compile model working state from the active mission, not a parallel authority source.
 // Execution decisions remain in MissionClient.begin and the runtime policy.
 export function contextPacketIntro(mission, {
-  strategicContext = null, homeText = '', skillText = '', skillCandidates = '', learnedOutcomes = [], decisionLessons = [], capabilities = null, inboxAddress = '', maxChars = 12_000,
+  strategicContext = null, homeText = '', skillText = '', memoryGraph = null, skillCandidates = '', learnedOutcomes = [], decisionLessons = [], capabilities = null, inboxAddress = '', maxChars = 12_000,
 } = {}) {
-  const packet = buildContextPacket({ mission, strategicContext, homeText, skillText, maxChars });
+  const packet = buildContextPacket({ mission, strategicContext, homeText, skillText, memoryGraph, maxChars });
   const priorEvidence = verifiedOutcomeHints(learnedOutcomes, mission?.allowedTasks);
   const lessons = decisionLessonHints(decisionLessons);
   const observedTools = capabilityObservationHint(capabilities);
