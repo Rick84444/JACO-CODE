@@ -58,6 +58,7 @@ Name: "{userstartup}\JACO Health Guardian"; Filename: "{sys}\wscript.exe"; Param
 [Tasks]
 Name: desktopicon; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
 Name: autostart; Description: "Start Aura automatically when I sign in (no browser window)"; GroupDescription: "Startup:"
+Name: guardianautostart; Description: "Resume JACO background missions on Windows sign-in"; GroupDescription: "Background operation:"; Flags: checkedonce
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "JACO CODE"; ValueData: """{sys}\wscript.exe"" ""{app}\windows\product\JACO-launch.vbs"" --background"; Flags: uninsdeletevalue; Tasks: autostart
