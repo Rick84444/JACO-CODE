@@ -25,6 +25,7 @@ function makeZip(dir, name, builtAt) {
   fs.mkdirSync(top, { recursive: true });
   fs.writeFileSync(path.join(top, 'start.mjs'), `console.log('FAKE-LITE ' + process.argv.slice(2).join(' ') + ' built=${builtAt}');\n`);
   fs.writeFileSync(path.join(top, 'start.sh'), '#!/bin/sh\n'); fs.writeFileSync(path.join(top, 'START-ANDROID.sh'), '#!/bin/sh\n');
+  fs.writeFileSync(path.join(top, 'START-PIXEL-TERMINAL.sh'), '#!/bin/sh\n');
   const zip = path.join(dir, `${name}.zip`);
   assert.equal(spawnSync('python3', ['-m', 'zipfile', '-c', zip, top], { cwd: path.join(dir, 'stage') }).status, 0);
   return fs.readFileSync(zip);
@@ -34,7 +35,7 @@ async function release(t, { builtAt = '2026-10-13T10:00:00.000Z', tamper = false
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-install-srv-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const zip = makeZip(dir, 'jaco-lite-fake', builtAt);
-  const latest = { schema: 'jaco.lite-latest/v1', version: '9.9.9', builtAt, files: { universal: { file: unsafeFile ? '../evil.zip' : 'jaco-lite.zip', bytes: zip.length, sha256: sha(zip) }, windows: { file: 'jaco-lite-windows.zip', bytes: zip.length, sha256: sha(zip) } } };
+  const latest = { schema: 'jaco.lite-latest/v1', version: '9.9.9', builtAt, files: { universal: { file: unsafeFile ? '../evil.zip' : 'jaco-lite.zip', bytes: zip.length, sha256: sha(zip) }, windows: { file: 'jaco-lite-windows.zip', bytes: zip.length, sha256: sha(zip) }, android: { file: 'jaco-lite-android.zip', bytes: zip.length, sha256: sha(zip) } } };
   // a fake Node.js: a script named bin/node that accepts -e (version check) and --version
   const nodeDir = path.join(dir, 'nodepkg', `node-v24.0.0-${NODE_OS}-${NODE_ARCH}`, 'bin');
   fs.mkdirSync(nodeDir, { recursive: true });
@@ -46,6 +47,7 @@ async function release(t, { builtAt = '2026-10-13T10:00:00.000Z', tamper = false
     '/latest.json': JSON.stringify(latest, null, 2),
     '/jaco-lite.zip': tamper ? Buffer.concat([zip, Buffer.from('x')]) : zip,
     '/jaco-lite-windows.zip': tamper ? Buffer.concat([zip, Buffer.from('x')]) : zip,
+    '/jaco-lite-android.zip': tamper ? Buffer.concat([zip, Buffer.from('x')]) : zip,
     '/install.ps1': fs.readFileSync(path.join(root, 'lite', 'install.ps1')),
     '/install.sh': fs.readFileSync(SCRIPT),
     '/node/SHASUMS256.txt': `${nodeSumOk ? sha(tgz) : '0'.repeat(64)}  ${tgzName}\n`,
@@ -199,3 +201,34 @@ test('install.ps1: a download that does not match latest.json is refused and exi
   assert.match(r.out + r.err, /does not match its SHA-256/);
   assert.equal(fs.existsSync(path.join(home, 'jl', 'current')), false);
 });
+
+test('Pixel Debian explicitly selects Android Lite archive without switching to Termux', { skip }, async t => {
+  const rel = await release(t), s = setup(t, rel);
+  const uname = path.join(s.env.PATH,'uname');
+  fs.rmSync(uname);
+  fs.writeFileSync(uname,'#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo aarch64;; esac\n',{mode:0o755});
+  const env={...s.env,JACO_LITE_PLATFORM:'android'};
+  const first=await run(SCRIPT,env);
+  assert.equal(first.code,0,first.err+first.out);
+  assert.match(first.out,/jaco-lite-android.zip/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(s.jl,'install.json'),'utf8')).kind,'android');
+  assert.ok(fs.existsSync(path.join(s.jl,'current','START-PIXEL-TERMINAL.sh')));
+  const bad=await run(SCRIPT,{...env,JACO_LITE_PLATFORM:'something-else',JACO_LITE_HOME:path.join(s.home,'rejected')});
+  assert.notEqual(bad.code,0);assert.match(bad.err,/JACO_LITE_PLATFORM must be/);
+  assert.equal(fs.existsSync(path.join(s.home,'rejected')),false);
+});
+
+test('Pixel Debian rejects missing or mismatched Android artifact before installation', { skip }, async t => {
+  const rel=await release(t),s=setup(t,rel);
+  const uname=path.join(s.env.PATH,'uname');fs.rmSync(uname);
+  fs.writeFileSync(uname,'#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo aarch64;; esac\n',{mode:0o755});
+  const env={...s.env,JACO_LITE_PLATFORM:'android'};
+  rel.setBuild({'/jaco-lite-android.zip': Buffer.from('not the published archive')});
+  const r=await run(SCRIPT,env);
+  assert.notEqual(r.code,0);assert.match(r.err,/does not match its SHA-256/);
+  assert.equal(fs.existsSync(path.join(s.jl,'current')),false);
+  rel.setBuild({'/jaco-lite-android.zip':undefined});
+  const missing=await run(SCRIPT,env);
+  assert.notEqual(missing.code,0);assert.equal(fs.existsSync(path.join(s.jl,'current')),false);
+});
+
