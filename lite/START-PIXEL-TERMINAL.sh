@@ -9,7 +9,7 @@ if [[ -n "${TERMUX_VERSION:-}" || -d /data/data/com.termux/files/usr ]]; then
   exit 2
 fi
 
-if ! grep -Eqs '^ID=(debian|ubuntu)
+if ! grep -Eqs '^ID=(debian|ubuntu)$' /etc/os-release; then
   printf 'Expected Debian/Ubuntu in the Pixel Linux Terminal VM.\n' >&2
   exit 2
 fi
