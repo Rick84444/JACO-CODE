@@ -26,11 +26,11 @@ export function AuraPresence({data:raw,language='sv'}:{data:AuraPresenceView;lan
       </div>
 
     </div>
-    {data.missionId && <dl className="grid gap-2 px-3 py-3 text-xs border-t border-neutral-600" aria-label={tr('Uppdraget och nästa steg','The mission and the next step')}>
-      <div><dt className="text-neutral-300">{tr('Aktuellt uppdrag','Current mission')}</dt><dd className="mt-1 break-words">{data.missionGoal}</dd></div>
-      <div><dt className="text-neutral-300">{tr('Senaste steget','Latest step')}</dt><dd className="mt-1">{data.step || tr('Inget steg rapporterat','No step reported')}{data.stepAge!==null?' · '+ageLabel(data.stepAge):''}</dd></div>
-      <div><dt className="text-neutral-300">{tr('Vad stoppar arbetet?','What is stopping the work?')}</dt><dd className="mt-1" role={data.mode==='stalled'||data.mode==='blocked'?'status':undefined}>{data.blocker}</dd></div>
-      <div><dt className="text-neutral-300">{tr('Nästa steg','Next step')}</dt><dd className="mt-1">{data.nextAction}</dd></div>
+    {/* What stops the work is the one thing the operator must see; it stays visible. The rest of the mission is folded:
+        its goal and latest step are already shown in the stage below, and a tall panel hid the work it describes. */}
+    {data.missionId && (data.mode==='stalled'||data.mode==='blocked') && <dl className="aura-presence-blocker" role="status">
+      <div><dt>{tr('Vad stoppar arbetet?','What is stopping the work?')}</dt><dd>{data.blocker}</dd></div>
+      <div><dt>{tr('Nästa steg','Next step')}</dt><dd>{data.nextAction}</dd></div>
     </dl>}
     <div className="aura-presence-bottom">
 
@@ -38,7 +38,14 @@ export function AuraPresence({data:raw,language='sv'}:{data:AuraPresenceView;lan
       {data.step && <span className="aura-presence-time"><Clock3 size={12}/>{ageLabel(data.stepAge)}</span>}
       {data.approvals>0 && <span className="aura-presence-warning"><CircleAlert size={12}/>{data.approvals} {data.approvals===1?tr('beslut','decision'):tr('beslut','decisions')}</span>}
     </div>
-    <details className="aura-presence-details"><summary>{tr('Anslutningar och kontroll','Connections and checks')}</summary><div className="aura-presence-bottom"><span className="aura-presence-phase">{data.phaseLabel}</span>      {data.maxSteps!==null && data.stepCount!==null && <span className="aura-presence-number">{tr('Steg','Step')} {data.stepCount}/{data.maxSteps}</span>}
+    <details className="aura-presence-details"><summary>{tr('Uppdrag, anslutningar och kontroll','Mission, connections and checks')}</summary>
+      {data.missionId && <dl className="aura-presence-mission" aria-label={tr('Uppdraget och nästa steg','The mission and the next step')}>
+        <div><dt>{tr('Aktuellt uppdrag','Current mission')}</dt><dd>{data.missionGoal}</dd></div>
+        <div><dt>{tr('Senaste steget','Latest step')}</dt><dd>{data.step || tr('Inget steg rapporterat','No step reported')}{data.stepAge!==null?' · '+ageLabel(data.stepAge):''}</dd></div>
+        <div><dt>{tr('Vad stoppar arbetet?','What is stopping the work?')}</dt><dd>{data.blocker}</dd></div>
+        <div><dt>{tr('Nästa steg','Next step')}</dt><dd>{data.nextAction}</dd></div>
+      </dl>}
+      <div className="aura-presence-bottom"><span className="aura-presence-phase">{data.phaseLabel}</span>      {data.maxSteps!==null && data.stepCount!==null && <span className="aura-presence-number">{tr('Steg','Step')} {data.stepCount}/{data.maxSteps}</span>}
       {data.verified!==null && <span className="aura-presence-number"><CheckCheck size={12}/>{data.verified} {tr('kontrollerade steg','checked steps')}</span>}
 </div>      <div className="aura-presence-signals" aria-label={tr('Anslutningar','Connections')}>
         <span title={tr('Modellen som svarade senast','The model that answered last')}><PlugZap size={12}/>{data.modelLabel}</span>

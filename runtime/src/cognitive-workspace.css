@@ -527,7 +527,7 @@
 .aura-live-inline-editor p{font-size:10px;color:#d6b995;padding:0 12px 8px}
 
 .aura-live-capture-button{display:flex;align-items:center;gap:9px;margin-top:9px;border:1px solid #898a8c;background:#143345;border-radius:7px;padding:9px 13px;color:#c7e6f1;font-size:11px}
-.aura-live-browser-bar{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+.aura-live-browser-bar{display:flex;flex-wrap:wrap;gap:8px;padding:10px 20px;border-bottom:1px solid #3d3e40}
 .aura-live-browser-bar .aura-live-capture-button{margin-top:0}
 .aura-live-empty-cdp{max-width:min(650px,100%);display:flex;flex-direction:column;align-items:center;gap:7px;border:1px solid #606163;border-radius:9px;overflow:hidden}
 .aura-live-empty-cdp img{max-width:100%;max-height:320px;object-fit:contain}
@@ -544,7 +544,7 @@
 
 /* Observability is always visible, but never conflates a responsive SSE socket
    with an actually progressing mission. No decorative simulated telemetry. */
-.aura-presence{position:sticky;top:0;z-index:5;flex-shrink:0;background:linear-gradient(108deg,#37383a 0%,#292a2c 62%,#222325 100%);border-bottom:1px solid #666769;padding:13px 20px 12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.aura-presence{position:relative;flex-shrink:0;background:linear-gradient(108deg,#37383a 0%,#292a2c 62%,#222325 100%);border-bottom:1px solid #666769;padding:13px 20px 12px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .aura-presence-top{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
 .aura-presence-heading{display:flex;align-items:center;gap:12px;min-width:0}
 .aura-presence-light{width:10px;height:10px;border-radius:50%;background:#adaeb0;border:2px solid #acbbc25c;flex-shrink:0}
@@ -566,6 +566,11 @@
 .aura-presence-time{white-space:nowrap}
 .aura-presence-number{white-space:nowrap;color:#8ed0bc}
 .aura-presence-warning{white-space:nowrap;color:#f0c18b}
+.aura-presence-blocker,.aura-presence-mission{display:grid;gap:6px;margin:0;font-size:12px;color:#d7d8da}
+.aura-presence-blocker{border:1px solid #8a6a3f;background:#3a3126;border-radius:7px;padding:8px 10px}
+.aura-presence-blocker dt,.aura-presence-mission dt{color:#b7b8ba;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.aura-presence-blocker dd,.aura-presence-mission dd{margin:2px 0 0;overflow-wrap:anywhere}
+.aura-presence-mission{padding:2px 0 8px}
 .aura-live-empty-context{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;color:#bbbcbe;font-size:10px}
 .aura-live-empty-context span{border:1px solid #67686a;background:#363739;padding:6px 9px;border-radius:6px}
 @media(max-width:1000px){.aura-presence{padding:12px}.aura-presence-top{align-items:flex-start;flex-direction:column;gap:9px}.aura-presence-signals{justify-content:flex-start}.aura-presence-signals>span{max-width:210px}}

@@ -1801,6 +1801,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     provider:snapshot?.seer?.provider||null,model:snapshot?.seer?.model||null,
     cdpState:snapshot?.integrations?.cdp?.state||'UNOBSERVED',
     approvals:snapshot?.approvals?.count||0,latestEvent:cognitiveEvents.at(-1)||null,
+    missionEvent:currentMission?.id?cognitiveEvents.findLast((event:any)=>event?.missionId===currentMission.id)||null:null,
     runtimeBlocker:snapshot?.seer?.blocker||null
   });
   const codeWorkspace = (

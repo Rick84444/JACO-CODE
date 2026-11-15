@@ -19,7 +19,7 @@ export function auraPresence({
   now=Date.now(),connection='connecting',lastObservedAt=null,
   snapshotObservedAt=null,runtimeRunning=null,mission=null,
   agents=[],provider=null,model=null,cdpState='UNOBSERVED',approvals=0,
-  latestEvent=null,runtimeBlocker=null,
+  latestEvent=null,runtimeBlocker=null,missionEvent=null,
 }={}){
   const streamAge=ageInSeconds(lastObservedAt,now);
   const snapshotAge=ageInSeconds(snapshotObservedAt,now);
@@ -36,7 +36,11 @@ export function auraPresence({
   const active=state==='ACTIVE';
   const blocking=state==='BLOCKED'||state==='AWAITING_VERIFICATION'||approvals>0||Boolean(runtimeBlocker);
   const lastAction=mission?.lastAction||null;
-  const actionAge=ageInSeconds(lastAction?.at,now);
+  // A step the executor reports for this same mission is progress even when the mission record has not caught up
+  // (its lastAction can lack a time). Events of other missions or of chat never count.
+  const ownEvent=missionEvent&&mission?.id&&missionEvent.missionId===mission.id?missionEvent:null;
+  const ages=[ageInSeconds(lastAction?.at,now),ageInSeconds(ownEvent?.at,now)].filter(a=>a!==null);
+  const actionAge=ages.length?Math.min(...ages):null;
   const missionAge=ageInSeconds(mission?.updatedAt||mission?.createdAt,now);
   // "running" can persist when a tool hangs. Mission timestamps, rather than
   // a provider's RUNNING flag, determine whether recent activity is evidenced.
@@ -65,7 +69,7 @@ export function auraPresence({
   if(!step && active) step='No tool step reported yet';
   if(!step && latestEvent?.text) step=bounded(latestEvent.text);
   // Unrelated chat/MCP events must never reset the apparent age of a stalled mission.
-  const stepAt=active?lastAction?.at||null:latestEvent?.at||null;
+  const stepAt=active?lastAction?.at||ownEvent?.at||null:latestEvent?.at||null;
   const blocker=runtimeBlocker?bounded(runtimeBlocker):approvals>0?'A decision is waiting for you.':
     state==='AWAITING_VERIFICATION'?'The result is waiting for verification.':
     state==='BLOCKED'?bounded(lastAction?.result?.text)||'The mission is blocked. The cause has not been reported.':

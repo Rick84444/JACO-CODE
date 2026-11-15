@@ -168,7 +168,13 @@ export function AuraLiveStage({ candidate, projectRevision, events, liveConnecti
   const material = candidate?.material;
   const url = event ? cognitiveLink(event.evidence.url) : null;
   return <div className="aura-live-stage" data-testid="aura-live-stage">
-    <div className="aura-live-stage-main"><AuraPresence data={presence} language={language}/>
+    <div className="aura-live-stage-main">
+    {/* Aura's browser is one click away at the top of Work, whatever else is on stage. */}
+    {cdpReady && !screenshot && !capturedPage && <div className="aura-live-browser-bar" data-testid="aura-live-browser-bar">
+      <button type="button" className="aura-live-capture-button" disabled={captureBusy} onClick={()=>void captureBrowser()}><Camera size={14}/>{captureBusy?tr('Hämtar bild…','Capturing image…'):tr('Visa Auras webbläsare','View Aura\'s browser')}</button>
+      <button type="button" className="aura-live-capture-button" disabled={pageBusy} onClick={()=>void capturePageHtml()}><Code2 size={14}/>{pageBusy?tr('Hämtar sidan…','Loading page…'):tr('Hämta sidans HTML','Get page HTML')}</button>
+    </div>}
+    <AuraPresence data={presence} language={language}/>
     <section className="aura-activity" aria-label={tr('Vad Aura gör','What Aura is doing')} data-testid="aura-activity">
       <header>
         <span className="aura-activity-pulse" data-active={activityState === 'working'} data-state={activityState} aria-hidden="true"/>
@@ -192,11 +198,6 @@ export function AuraLiveStage({ candidate, projectRevision, events, liveConnecti
       </ol> : <p className="aura-activity-empty">{activityState === 'stalled' ? tr('Uppdraget är registrerat men inget steg har rapporterats. Du kan avsluta det med Stop mission.','The mission is registered but no step has been reported. You can end it with Stop mission.') : activeMission ? tr('Inget steg har rapporterats ännu. Här syns varje steg när det sker.','No step has been reported yet. Each step appears here as it happens.') : tr('Starta ett uppdrag i chatten så syns arbetet här.','Start a mission in the chat and the work appears here.')}</p>}
     </section>
     <AuraLiveToolSurfaces events={events} missionId={activeMission?.id || null} connection={liveConnection} onInspect={onInspect} onOpenFile={onOpenFile} onOpenPlan={onOpenPlan}/>
-    {/* Aura's browser stays one click away while other material is on stage; the empty stage has its own buttons. */}
-    {cdpReady && event && !screenshot && !capturedPage && <div className="aura-live-browser-bar" data-testid="aura-live-browser-bar">
-      <button type="button" className="aura-live-capture-button" disabled={captureBusy} onClick={()=>void captureBrowser()}><Camera size={14}/>{captureBusy?tr('Hämtar bild…','Capturing image…'):tr('Visa Auras webbläsare','View Aura\'s browser')}</button>
-      <button type="button" className="aura-live-capture-button" disabled={pageBusy} onClick={()=>void capturePageHtml()}><Code2 size={14}/>{pageBusy?tr('Hämtar sidan…','Loading page…'):tr('Hämta sidans HTML','Get page HTML')}</button>
-    </div>}
     {capturedPage ? <CapturedPage page={capturedPage} onClose={()=>setCapturedPage(null)}/> : !event ? screenshot ? <div className="aura-live-standalone-cdp" aria-label={tr('Observerad webbläsarsida','Observed browser page')}>
       <div className="aura-live-cdp-frame-bar"><Camera size={13}/> {tr('Nova-bryggans fästa CDP-flik','Nova bridge attached CDP tab')} · {time(screenshot.at, language)}
         <button type="button" disabled={pageBusy} onClick={()=>void capturePageHtml()}>{pageBusy?tr('Hämtar sidan…','Loading page…'):tr('Hämta HTML','Fetch HTML')}</button>
@@ -215,8 +216,6 @@ export function AuraLiveStage({ candidate, projectRevision, events, liveConnecti
         <div><span>{agentActivity.working} {tr('rapporterade arbetsessioner','reported work sessions')}</span><span>{agentActivity.connected} {tr('anslutna agenter','connected agents')}</span></div>
         <small>{tr('Aura följer observerade uppdrag; inget verifierat visuellt resultat ännu.','Aura follows observed missions; no verified visual result yet.')}</small>
       </section>}
-      {cdpReady && <button type="button" className="aura-live-capture-button" disabled={captureBusy} onClick={()=>void captureBrowser()}><Camera size={14}/>{captureBusy?tr('Hämtar bild…','Capturing image…'):tr('Visa aktiv CDP-flik','View active CDP tab')}</button>}
-      {cdpReady && <button type="button" className="aura-live-capture-button" disabled={pageBusy} onClick={()=>void capturePageHtml()}><Code2 size={14}/>{pageBusy?tr('Hämtar sidan…','Loading page…'):tr('Hämta sidans HTML','Get page HTML')}</button>}
     </div> : <>
       <header className="aura-live-material-header">
         <div className="aura-live-material-name">

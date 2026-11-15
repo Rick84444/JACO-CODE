@@ -123,3 +123,15 @@ test('The real IDE wires fresh runtime, SSE, mission and model information to th
   assert.match(status,/data-mode=\{data\.mode\}/);
   assert.doesNotMatch(ui,/cognitive-view-tabs/);
 });
+
+test('a fresh step event of the same mission is progress even when the mission record lacks a time',async()=>{
+  const {auraPresence}=await import('../../runtime/src/lib/auraPresence.mjs');
+  const now=Date.parse('2026-11-15T18:07:39Z');
+  const base={now,connection:'live',lastObservedAt:'2026-11-15T18:07:38Z',snapshotObservedAt:'2026-11-15T18:07:38Z',runtimeRunning:true,
+    mission:{id:'m1',status:'ACTIVE',phase:'EXECUTING',goal:'g',createdAt:'2026-11-15T17:50:00Z',lastAction:{text:'open https://chat.openai.com/'}}};
+  assert.equal(auraPresence(base).mode,'stalled','without any timed evidence the old mission reads as stalled');
+  const fresh=auraPresence({...base,missionEvent:{missionId:'m1',at:'2026-11-15T18:06:30Z'}});
+  assert.equal(fresh.mode,'working');
+  assert.equal(fresh.stepAge,69);
+  assert.equal(auraPresence({...base,missionEvent:{missionId:'other',at:'2026-11-15T18:07:30Z'}}).mode,'stalled','another mission never counts');
+});
