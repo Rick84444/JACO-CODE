@@ -74,8 +74,16 @@ case "$OS" in
   *) die "this installer is for macOS, Linux and Termux. On Windows use:  irm https://jacocode.com/install.ps1 | iex" ;;
 esac
 [ "$TERMUX" = 1 ] && KIND=android
+# Reinstall/update retains the previously chosen platform unless explicitly
+# overridden. Otherwise a Pixel "jaco-lite update" silently switches to the
+# universal archive, so the operator's actual installation changes identity.
+SELECTED_PLATFORM="${JACO_LITE_PLATFORM:-auto}"
+if [ "$SELECTED_PLATFORM" = auto ] && [ "$TERMUX" = 0 ] && [ -f "$HOME_DIR/install.json" ]; then
+  PREVIOUS_KIND="$(json_field kind < "$HOME_DIR/install.json")"
+  [ "$PREVIOUS_KIND" = android ] && SELECTED_PLATFORM=android
+fi
 # Pixel Terminal is Debian Linux, NOT Termux. Android Lite is opt-in.
-case "${JACO_LITE_PLATFORM:-auto}" in
+case "$SELECTED_PLATFORM" in
   auto|'') ;;
   android)
     [ "$OS" = Linux ] || die "JACO_LITE_PLATFORM=android requires Linux."
