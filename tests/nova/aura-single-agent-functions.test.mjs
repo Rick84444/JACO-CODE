@@ -109,3 +109,15 @@ test('Aura exposes a real live read-only oversight route and no second agent own
   assert.match(ui,/Aura control plane/);
   assert.match(ui,/oversight\.browser\.state/);
 });
+
+test('with no SEER local model, reasoning is observed only from a probed operator model choice',()=>{
+  const seer={reachable:true,health:{local_model:null}};
+  const reason=planner=>projectAuraFunctions({now,coordinator:seer,planner}).functions.find(x=>x.id==='reason');
+  assert.equal(reason(null).state,'NO_MODEL_OBSERVED');
+  assert.equal(reason({provider:'gemini',model:'m',by:'aura-chat'}).state,'NO_MODEL_OBSERVED','an unprobed automatic choice is not evidence');
+  const chosen=reason({provider:'gemini',model:'models/gemini-2.5-flash',by:'operator',at:'2026-11-15T17:15:00.032Z'});
+  assert.equal(chosen.state,'OBSERVED');
+  assert.match(chosen.detail,/gemini\/models\/gemini-2\.5-flash · answered a test request when chosen \(2026-11-15T17:15:00\.032Z\)/);
+  const local=projectAuraFunctions({now,coordinator:{reachable:true,health:{local_model:{model:'gemma-local'}}},planner:{provider:'gemini',model:'x',by:'operator'}});
+  assert.equal(local.functions.find(x=>x.id==='reason').detail,'gemma-local','a SEER local model still wins');
+});

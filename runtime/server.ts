@@ -1665,7 +1665,9 @@ const notifyPhone = async (action) => {
   };
 
   const getAuraMcpFabric = sharedObservation(async () => {
-    const signal = AbortSignal.timeout(4000);
+    // Each provider gets its own budget, and readiness rests on health and tools/list only. The extra status probes
+    // describe the surface; one slow probe (a browser tab that stops answering) must not mark a working bridge down.
+    const PROBE_MS = 2500;
 
     const providerIds = ['remote','cdp'];
     const providers = await Promise.all(providerIds.map(async id => {
@@ -1675,11 +1677,11 @@ const notifyPhone = async (action) => {
       let observation: any = null;
       let error: string | null = null;
       try {
-        const response = await fetch(`${config.endpoint}/health`, { signal: AbortSignal.any([signal, AbortSignal.timeout(1200)]) });
+        const response = await fetch(`${config.endpoint}/health`, { signal: AbortSignal.timeout(1200) });
         health = await response.json().catch(() => null);
         if (!response.ok) throw new Error(`HTTP_${response.status}`);
         if (GATEWAY_TOKEN.length >= 24) {
-          const listed: any = await callAuraMcpRpc(id, 'tools/list', undefined, signal);
+          const listed: any = await callAuraMcpRpc(id, 'tools/list', undefined, AbortSignal.timeout(PROBE_MS));
           tools = Array.isArray(listed?.tools) ? listed.tools.map((tool: any) => ({
             name: String(tool?.name || ''),
             description: String(tool?.description || ''),
@@ -1689,8 +1691,8 @@ const notifyPhone = async (action) => {
 
           if (id === 'remote') {
             const [statusResult, windowsResult] = await Promise.allSettled([
-              callAuraMcpRpc('remote', 'tools/call', { name: 'remote_status', arguments: {} }, signal),
-              callAuraMcpRpc('remote', 'tools/call', { name: 'remote_windows', arguments: {} }, signal),
+              callAuraMcpRpc('remote', 'tools/call', { name: 'remote_status', arguments: {} }, AbortSignal.timeout(PROBE_MS)),
+              callAuraMcpRpc('remote', 'tools/call', { name: 'remote_windows', arguments: {} }, AbortSignal.timeout(PROBE_MS)),
             ]);
             observation = {
               status: statusResult.status === 'fulfilled' ? parseAuraMcpTextResult(statusResult.value) : { ok: false, error: String(statusResult.reason) },
@@ -1702,7 +1704,7 @@ const notifyPhone = async (action) => {
                 targets: parseAuraMcpTextResult(await callAuraMcpRpc('cdp', 'tools/call', {
                   name: 'nova_targets',
                   arguments: {},
-                }, signal)),
+                }, AbortSignal.timeout(PROBE_MS))),
               };
             } catch (probeError: any) {
               observation = { targets: { ok: false, error: probeError?.message || String(probeError) } };
@@ -1717,11 +1719,11 @@ const notifyPhone = async (action) => {
         name: config.name,
         endpoint: config.endpoint,
         role: config.role,
-        status: health?.ok === true && !signal.aborted && !error ? 'READY' : 'UNAVAILABLE',
+        status: health?.ok === true && !error ? 'READY' : 'UNAVAILABLE',
         health,
         observation,
         tools,
-        error: signal.aborted ? 'MCP_OBSERVATION_TIMEOUT' : error,
+        error: /TimeoutError|aborted due to timeout/i.test(String(error)) ? 'MCP_OBSERVATION_TIMEOUT' : error,
       };
     }));
 
@@ -2616,6 +2618,7 @@ const notifyPhone = async (action) => {
       // The operator's planner choice is what plans; SEER's local slot is only the fallback when none is chosen.
       workplace, coordinator:operatorPlannerView(coordinator), graphs:planning, workers:connectedRuntime.bus.listWorkers(),
       tools:mcpHost.status(), services,
+      planner: (() => { try { return readPlannerChoice(plannerChoiceFile({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT })); } catch { return null; } })(),
       secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key)).map(([,value]) => value),
     });
   };
