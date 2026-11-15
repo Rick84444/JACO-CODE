@@ -213,6 +213,9 @@ test('Pixel Debian explicitly selects Android Lite archive without switching to 
   assert.match(first.out,/jaco-lite-android.zip/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(s.jl,'install.json'),'utf8')).kind,'android');
   assert.ok(fs.existsSync(path.join(s.jl,'current','START-PIXEL-TERMINAL.sh')));
+  const updated=await run(SCRIPT,s.env);
+  assert.equal(updated.code,0,updated.err+updated.out);
+  assert.match(updated.out,/already up to date/, 'update retains Pixel platform selection without another environment flag');
   const bad=await run(SCRIPT,{...env,JACO_LITE_PLATFORM:'something-else',JACO_LITE_HOME:path.join(s.home,'rejected')});
   assert.notEqual(bad.code,0);assert.match(bad.err,/JACO_LITE_PLATFORM must be/);
   assert.equal(fs.existsSync(path.join(s.home,'rejected')),false);
