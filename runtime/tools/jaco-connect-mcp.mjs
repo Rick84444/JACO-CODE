@@ -8,6 +8,7 @@
 //   node tools/jaco-connect-mcp.mjs --http [port]   its own endpoint, POST /mcp on 127.0.0.1 (default
 //                                                    2993), Bearer JACO_GATEWAY_TOKEN; put a tunnel in
 //                                                    front of it to reach it from outside
+import { localServiceUrl } from '../../agents/lib/resolved-endpoints.mjs';
 import http from 'node:http';
 import readline from 'node:readline';
 import { timingSafeEqual } from 'node:crypto';
@@ -15,7 +16,7 @@ import { pathToFileURL } from 'node:url';
 import { SecretStore, generateSecretValue, validateSecretName } from '../../agents/lib/secret-store.mjs';
 import { listVoices, pickAuraVoice, saveAuraVoice, readAuraVoice, blandConfigured } from '../../agents/lib/bland.mjs';
 
-const RUNTIME = String(process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
+const RUNTIME = localServiceUrl('runtime', process.env);
 const store = new SecretStore();
 
 async function runtime(method, route, body) {

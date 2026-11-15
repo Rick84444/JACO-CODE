@@ -18,10 +18,7 @@
       "args": [
         "runtime/tools/jaco-editor-mcp.mjs"
       ],
-      "env": {
-        "JACO_RUNTIME_URL": "http://127.0.0.1:3000",
-        "JACO_WORKPLACE_URL": "http://127.0.0.1:2995"
-      }
+      "env": {}
     },
     "jaco-connect": {
       "command": "node",

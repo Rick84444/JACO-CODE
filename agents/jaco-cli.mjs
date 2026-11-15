@@ -5,6 +5,7 @@
 //   status    the same report without starting anything.
 //   --json    machine-readable report; exit code 0 only when everything needed works.
 //   --no-tools  do not start tool servers.
+import { localServiceUrl } from './lib/resolved-endpoints.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -92,7 +93,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     process.stdout.write('Usage: jaco activate [--json] [--no-tools]\n       jaco status [--json]\n');
     return command === 'activate' || argv.includes('--help') ? 0 : 2;
   }
-  const baseUrl = String(env.JACO_RUNTIME_URL || `http://127.0.0.1:${env.PORT || 3000}`).replace(/\/+$/, '');
+  const baseUrl = localServiceUrl('runtime', env);
   const say = text => { if (!json) process.stderr.write(`${text}\n`); };
 
   if (command === 'activate' && !(await runtimeUp({ baseUrl }))) {

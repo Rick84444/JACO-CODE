@@ -1,3 +1,5 @@
+import { localServiceUrl } from '../../agents/lib/resolved-endpoints.mjs';
+
 export function resolveMcpCoreBaseUrl(env = process.env) {
   const explicit = String(env.JACO_BASE_URL || '').trim();
   if (explicit) return explicit.replace(/\/+$/, '');
@@ -8,5 +10,6 @@ export function resolveMcpCoreBaseUrl(env = process.env) {
   const core = String(env.JACO_CORE_URL || '').trim();
   if (core) return core.replace(/\/+$/, '');
 
-  return 'http://127.0.0.1:3000';
+  // The launcher may have moved Core off 3000 because another program held it.
+  return localServiceUrl('runtime', env);
 }
