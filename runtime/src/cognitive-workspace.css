@@ -527,6 +527,8 @@
 .aura-live-inline-editor p{font-size:10px;color:#d6b995;padding:0 12px 8px}
 
 .aura-live-capture-button{display:flex;align-items:center;gap:9px;margin-top:9px;border:1px solid #898a8c;background:#143345;border-radius:7px;padding:9px 13px;color:#c7e6f1;font-size:11px}
+.aura-live-browser-bar{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+.aura-live-browser-bar .aura-live-capture-button{margin-top:0}
 .aura-live-empty-cdp{max-width:min(650px,100%);display:flex;flex-direction:column;align-items:center;gap:7px;border:1px solid #606163;border-radius:9px;overflow:hidden}
 .aura-live-empty-cdp img{max-width:100%;max-height:320px;object-fit:contain}
 .aura-live-empty-cdp small{font-size:10px;color:#b8b9bb;padding:6px}
