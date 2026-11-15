@@ -4187,7 +4187,7 @@ const notifyPhone = async (action) => {
   app.use('/api/desktop/hands-off', createDesktopRouter(WORKSPACE_ROOT, RELEASE_ROOT, requireAuth, event => {
     seerLiveWorkstream.update({ activeModule: 'DesktopHandsOff', phase: event.verified ? 'VERIFYING' : 'DEGRADED' });
     seerLiveWorkstream.record({ actor: event.actor, type: event.type, message: event.message, verified: event.verified });
-  }));
+  }, { read: requireLocalUi, write: requireInterfaceWrite }));
 
   app.use('/api/browser/hands-off', browserSurface.router);
   // The IDE page reads the run status without a gateway token; starting or stopping runs still requires one.

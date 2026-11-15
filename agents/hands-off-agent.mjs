@@ -172,7 +172,12 @@ async function runtimeApi(method, path, body = null) {
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(`${CONFIG.runtimeUrl}${path}`, opts);
   const result = await res.json();
-  if (!res.ok || result.success === false) throw new Error(typeof result.error === 'string' ? result.error : `RUNTIME_HTTP_${res.status}`);
+  // A refused or unverified surface action answers with its receipt; its reason must reach the planner, not only the status.
+  if (!res.ok || result.success === false) {
+    if (typeof result.error === 'string') throw new Error(result.error);
+    const reason = result.receipt?.refusal || result.receipt?.error;
+    throw new Error(reason ? `${reason} (RUNTIME_HTTP_${res.status})` : `RUNTIME_HTTP_${res.status}`);
+  }
   return result;
 }
 

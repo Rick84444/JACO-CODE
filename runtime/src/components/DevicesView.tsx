@@ -1,6 +1,7 @@
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import React, { useEffect, useRef, useState } from 'react';
+import { DesktopControlCard } from './DesktopControlCard';
 
 // Devices view: other computers and the phone that work with this hub (src/server/connected/deviceAccess.mjs).
 // Two kinds: 'nova' (the device runs its own Nova for missions routed to it) and 'ide' (a browser signed
@@ -144,6 +145,7 @@ export const DevicesView: React.FC<{ browser?: { targetCount: number; error: str
           <p>{browser?.error ? tr('Kontakten behöver kontrolleras', 'Connection needs attention') : browser?.targetCount ? `${browser.targetCount} ${tr('observerade flikar', 'observed tabs')}` : tr('Ingen webbläsarflik observerad', 'No browser tab observed')}</p>
           <button type="button" onClick={onInspectBrowser} disabled={!onInspectBrowser}>{tr('Inspektera webbläsare', 'Inspect browser')}</button>
         </div>
+        <DesktopControlCard/>
         {viewer.remote && (
           <div className="border border-neutral-800 bg-[#303133] rounded p-2 text-[10px] text-neutral-200">
             {tr('Du är inloggad på distans som', 'You are signed in remotely as')} <span className="text-white">{viewer.name}</span>. {tr('Terminalen finns bara på datorn.', 'The terminal is only available on the host.')}

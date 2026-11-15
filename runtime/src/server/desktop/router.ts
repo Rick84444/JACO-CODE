@@ -16,12 +16,44 @@ export function createDesktopRouter(
   releaseRoot: string,
   requireMutationAuth: express.RequestHandler,
   onEvent?: (event: { actor: string; type: string; message: string; verified: boolean }) => void,
+  operator?: { read: express.RequestHandler; write: express.RequestHandler },
 ): express.Router {
   const router = express.Router();
   const client = new DesktopHandsOffClient(workspaceRoot, releaseRoot);
 
   const fail = (res: express.Response, status: number, error: unknown) =>
     res.status(status).json({ success: false, error: error instanceof Error ? error.message : String(error) });
+
+  // The operator gives or revokes the grant from the interface. These routes take the interface's own guards, not the
+  // gateway token, so the grant stays an operator decision; the token routes below remain for existing callers.
+  if (operator) {
+    router.get('/operator/grant', operator.read, (_req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ success: true, grant: client.getGrant() ?? { enabled: false } });
+    });
+    router.post('/operator/grant', operator.write, (req, res) => {
+      try {
+        const body = req.body ?? {};
+        const minutes = Number(body.minutes);
+        if (body.enabled !== false && (!Number.isInteger(minutes) || minutes < 1 || minutes > 480)) throw new Error('minutes must be 1-480');
+        const grant = client.configureGrant(body.enabled === false ? { enabled: false } : {
+          enabled: true,
+          allowed_processes: Array.isArray(body.processes) ? body.processes : [],
+          allow_value_set: body.allowTyping === true,
+          expires_at: new Date(Date.now() + minutes * 60_000).toISOString(),
+        });
+        onEvent?.({
+          actor: 'Operator',
+          type: grant.enabled ? 'desktop.grant.enabled' : 'desktop.grant.revoked',
+          message: grant.enabled ? `desktop grant for ${grant.allowed_processes.join(', ')} until ${grant.expires_at}` : 'desktop grant revoked',
+          verified: true,
+        });
+        res.json({ success: true, grant });
+      } catch (error) {
+        fail(res, 400, error);
+      }
+    });
+  }
 
   router.get('/status', requireMutationAuth, async (_req, res) => {
     try {

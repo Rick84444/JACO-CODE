@@ -303,7 +303,7 @@ export class DesktopHandsOffClient {
     // belong on this side.
     if (MUTATING.includes(action.type)) {
       const grant = this.getGrant();
-      if (!grant?.enabled) return fail('no active desktop hands-off grant', true);
+      if (!grant?.enabled) return fail('no active desktop hands-off grant: the operator gives one under Devices > Windows desktop control', true);
       if (Date.parse(grant.expires_at) <= Date.now()) return fail('desktop hands-off grant has expired', true);
       const capabilityDenied =
         (action.type === 'invoke' && !grant.allow_invoke) ||
