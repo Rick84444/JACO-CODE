@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process';
+import { localServiceUrl } from '../../../agents/lib/resolved-endpoints.mjs';
 import { resolve } from 'node:path';
 
 function normalizeToken(env = {}) {
@@ -111,7 +112,8 @@ export function createWorkplaceAgentSupervisor({
   const novaEntry = env.JACO_EXECUTOR === 'desktop-agentos'
     ? 'agents/run-desktop-agentos.mjs' : 'agents/hands-off-agent.mjs';
 
-  const runtimeUrl = String(env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
+  // Resolved at spawn time: the launcher may have moved Core off its default port.
+  const runtimeUrl = localServiceUrl('runtime', env).replace(/\/+$/, '');
   const seerUrl = String(env.SEER_URL || 'http://127.0.0.1:2997').replace(/\/+$/, '');
   const litertV1 = asV1(env.JACO_LITERT_URL);
   const llamaCppV1 = asV1(env.JACO_LLAMACPP_URL || 'http://127.0.0.1:9380/v1');

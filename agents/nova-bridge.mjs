@@ -15,6 +15,8 @@ import { createInputActions, listDownloadFiles, digestFile, signInSession } from
 import { approvedLoginOrigins, siteLoginFor } from "./lib/site-logins.mjs";
 import { createAuraOverlay } from "./lib/aura-overlay.mjs";
 import { readOperatorLanguage } from "./lib/operator-language.mjs";
+import { followResolvedRuntime } from "./lib/resolved-endpoints.mjs";
+followResolvedRuntime(process.env);
 
 const CDP_PORT = parseInt(process.env.CDP_PORT || "9222");
 const BRIDGE_PORT = parseInt(process.env.NOVA_BRIDGE_PORT || "4243");

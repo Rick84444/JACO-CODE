@@ -10,6 +10,8 @@ import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { buildAgentCard, joinWorkplace } from './lib/workplace-session.mjs';
+import { followResolvedRuntime } from './lib/resolved-endpoints.mjs';
+followResolvedRuntime(process.env);
 
 const TOOL_DEFINITIONS = [
   ['remote_status', 'Read runtime, relay and hands-off status', 'GET', '/status', {}],
