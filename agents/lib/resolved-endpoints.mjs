@@ -6,7 +6,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+// The production server bundles this module as CommonJS, where import.meta.url is empty.
+const moduleFile = () => {
+  if (typeof __filename === 'string') return __filename;
+  try { return fileURLToPath(import.meta.url); } catch { return null; }
+};
+const ROOT = (() => { const file = moduleFile(); return file ? path.resolve(path.dirname(file), '../..') : process.cwd(); })();
 const DEFAULTS = { runtime: ['PORT', 3000], workplace: ['JACO_WORKPLACE_PORT', 2995], seer: ['SEER_PORT', 2997], remote: ['JACO_REMOTE_BRIDGE_PORT', 2994] };
 
 function dataRoots(env) {
