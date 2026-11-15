@@ -7,6 +7,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import {
   parseTerminalCommand, safeRuntimeUrl, enforceGitVerb, gitAdmission, gitContext,
@@ -120,8 +121,8 @@ test('pairing secret is sent via stdin, not argv, and pairing helper is bounded'
 
 test('terminal CLI entry is explicit and does not launch background work on --help', () => {
   const entry = new URL('../../agents/jaco-cli.mjs', import.meta.url);
-  const r = spawnSync(process.execPath, [entry.pathname, 'ide', '--help'], {
-    cwd: path.resolve(new URL('../..', import.meta.url).pathname), encoding:'utf8', timeout:10000,
+  const r = spawnSync(process.execPath, [fileURLToPath(entry), 'ide', '--help'], {
+    cwd: fileURLToPath(new URL('../..', import.meta.url)), encoding:'utf8', timeout:10000,
   });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /jaco ide/);
@@ -129,7 +130,7 @@ test('terminal CLI entry is explicit and does not launch background work on --he
 
 test('VS Code MCP uses the canonical installer and existing device pairing tools', () => {
   const require = createRequire(import.meta.url);
-  const root = path.resolve(new URL('../..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('../..', import.meta.url));
   const terminal = fs.readFileSync(path.join(root, 'agents/lib/terminal-ide.mjs'), 'utf8');
   const cli = fs.readFileSync(path.join(root, 'agents/jaco-cli.mjs'), 'utf8');
   const termux = fs.readFileSync(path.join(root, 'runtime/bin/jaco'), 'utf8');

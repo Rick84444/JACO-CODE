@@ -57,3 +57,6 @@ __pycache__/
 # Aura-generated output (not source)
 /artifacts/
 /runtime/artifacts/
+
+# Chrome profile created by the local stack for browser attachment
+/Chrome-CDP/

@@ -30,7 +30,7 @@ test('setup installs all manifests then builds both canonical production artifac
     },
     logger: noLog,
   });
-  assert.deepEqual(calls.map(c => [path.relative(root, c.cwd), c.args[0]]), [
+  assert.deepEqual(calls.map(c => [path.relative(root, c.cwd).split(path.sep).join('/'), c.args[0]]), [
     ['', 'ci'], ['runtime', 'ci'], ['runtime/gateway', 'install'],
     ['runtime', 'run'], ['runtime', 'run'],
   ]);
