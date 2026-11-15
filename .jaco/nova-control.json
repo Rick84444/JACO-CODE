@@ -1,8 +1,8 @@
 {
   "schema": "jaco.nova-control/v1",
-  "commandId": "aura-real-nova-smoke-20261030-2252-v1",
+  "commandId": "chatgpt-relay-activate-20261115-2134-v1",
   "op": "mission.create",
-  "goal": "AURA LIVE ACCEPTANCE: Perform exactly one read-only JACO Core health-check on the local Windows runtime. Record the real tool outcome and a durable Nova receipt; no file writes, browser navigation, payments, installations, process controls, git mutations, or external communications. End only with evidence, not a simulated success.",
+  "goal": "Verify ChatGPT-to-JACO Git relay connectivity on the running local Aura/Nova runtime. Perform one read-only health-check and record a durable receipt. Do not mutate files, browser, processes, git working tree, security settings, or external accounts. Report actual verified results only.",
   "allowedTasks": [
     "health-check"
   ]
