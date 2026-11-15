@@ -40,3 +40,46 @@ export function localServiceUrl(service, env = process.env, options) {
   if (explicit && String(explicit).trim()) return String(explicit).trim().replace(/\/+$/, '');
   return `http://127.0.0.1:${resolvedLocalPort(service, env, options)}`;
 }
+
+function readEntry(service, env, { roots = dataRoots(env), read = file => fs.readFileSync(file, 'utf8') } = {}) {
+  for (const root of roots) {
+    try {
+      const data = JSON.parse(read(path.join(root, '.jaco', 'state', 'resolved-ports.json')));
+      const entry = data?.schema === 'jaco.resolved-ports/v1' ? data.ports?.[service] : null;
+      if (entry && Number.isInteger(entry.requested) && Number.isInteger(entry.port)) return entry;
+    } catch {}
+  }
+  return null;
+}
+
+// Long-running processes (Workplace, Aura's executor, bridges) receive the runtime URL once, at spawn.
+// When the launcher later moves Core because another program took its port, they kept calling the old
+// address and every mission tick failed with "fetch failed". This follower re-reads the resolution and
+// updates the process environment in place; code that reads process.env per call follows immediately.
+// Only a loopback URL that points at the requested or a previously resolved port is rewritten, so an
+// address the operator pinned elsewhere is never touched.
+export function followResolvedRuntime(env = process.env, { intervalMs = 5000, onChange = () => {}, ...io } = {}) {
+  const seen = new Set();
+  const check = () => {
+    const entry = readEntry('runtime', env, io);
+    if (!entry) return false;
+    seen.add(entry.requested);
+    let current;
+    try { current = new URL(env.JACO_RUNTIME_URL || `http://127.0.0.1:${env.PORT || 3000}`); } catch { return false; }
+    if (!['127.0.0.1', 'localhost'].includes(current.hostname)) return false;
+    const port = Number(current.port || 80);
+    if (port === entry.port) { seen.add(port); return false; }
+    if (!seen.has(port)) return false;
+    const url = `http://127.0.0.1:${entry.port}`;
+    env.JACO_RUNTIME_URL = url;
+    env.JACO_BASE_URL = url;
+    env.PORT = String(entry.port);
+    seen.add(entry.port);
+    try { onChange(url); } catch {}
+    return true;
+  };
+  check();
+  const timer = intervalMs > 0 ? setInterval(check, intervalMs) : null;
+  timer?.unref?.();
+  return { check, stop: () => timer && clearInterval(timer) };
+}

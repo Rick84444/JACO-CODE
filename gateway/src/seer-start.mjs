@@ -22,4 +22,6 @@ if (selected.provider) {
   );
 }
 
+import { followResolvedRuntime } from '../../agents/lib/resolved-endpoints.mjs';
+followResolvedRuntime(process.env);
 await import('./seer.mjs');
