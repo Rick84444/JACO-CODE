@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { wouldCompleteTrifecta } from '../lib/organizationRisk.mjs';
 import { AURA_SPECIALISTS, provisionAuraSpecialists } from '../lib/auraSpecialistBlueprints.mjs';
+import { plannerErrorText } from '../lib/plannerErrors';
 import { Bot, BriefcaseBusiness, Check, ChevronRight, KeyRound, Plus, RefreshCw, ShieldAlert, ShieldCheck, Users, X } from 'lucide-react';
 
 type Locale = 'en' | 'sv';
@@ -8,6 +9,7 @@ type Risk = 'low' | 'medium' | 'high' | 'locked';
 type Exposure = 'untrusted' | 'private' | 'external';
 type Permission = { label: string; risk: Risk; exposure: Exposure[] };
 type Grant = { grantedBy: string; grantedAt: string; riskAcceptedAt?: string; expiresAt?: string };
+type ProviderOption = { id: string; defaultModel: string; baseUrl: string; local: boolean; credentialConfigured: boolean };
 type Model = { kind: 'local' | 'api'; providerId: string; model: string };
 type Agent = {
   id: string; name: string; title: string; reportsTo: string; status: string; mail: string; task: string; goal: string;
@@ -37,7 +39,7 @@ type NewAgent = { name: string; title: string; reportsTo: string; task: string; 
 const translations = {
   en: {
     title: 'Agent Organization', subtitle: 'Operator → Aura → delegated agents', refresh: 'Refresh',
-    registry: 'Configuration only — runtime enforcement is not connected yet.',
+    registry: 'Permissions are enforced. Approval levels and budgets are not yet.',
     key: 'Operator approval credential', keyHint: 'Session only. Never saved by the browser.',
     select: 'Select an agent to manage its mandate.', noServer: 'Organization registry is not available.',
     create: 'Create agent', cancel: 'Cancel', save: 'Save', apply: 'Apply', approve: 'Approve agent',
@@ -53,7 +55,7 @@ const translations = {
     rigor: 'Rigor', reporting: 'Reporting', active: 'active', paused: 'paused',
     profileSaved: 'Profile saved', permissionSaved: 'Mandate updated',
     credentialNeeded: 'Enter your operator credential before changing the organization.',
-    noExecution: 'These settings do not yet restrict Nova, MCP, chat, email or external processes.',
+    noExecution: "An unchecked permission blocks Aura's tools and Nova's tasks at once. Autonomy levels, the approval warning, traits and budgets are recorded but do not stop anything yet. MCP tools and the chat model are not covered.",
     teamTitle: 'Aura specialist team', teamInstall: 'Create four specialists',
     teamPreview: 'Research, architecture, debugging and user acceptance. Each agent starts at L1 with zero budget, zero permissions and no active model execution.',
     teamConfirm: 'Create four agent records under Aura? This changes the local organization register but does not start any worker or grant access.',
@@ -62,7 +64,7 @@ const translations = {
   },
   sv: {
     title: 'Agentorganisation', subtitle: 'Operatör → Aura → underagenter', refresh: 'Uppdatera',
-    registry: 'Endast konfiguration — kontroll i runtime är ännu inte inkopplad.',
+    registry: 'Befogenheter gäller på riktigt. Autonominivåer och budget gör det inte ännu.',
     key: 'Operatörens godkännandenyckel', keyHint: 'Endast under denna session. Sparas aldrig i webbläsaren.',
     select: 'Välj en agent för att hantera mandatet.', noServer: 'Organisationsregistret är inte tillgängligt.',
     create: 'Skapa agent', cancel: 'Avbryt', save: 'Spara', apply: 'Tillämpa', approve: 'Godkänn agent',
@@ -78,7 +80,7 @@ const translations = {
     rigor: 'Noggrannhet', reporting: 'Rapportering', active: 'aktiv', paused: 'pausad',
     profileSaved: 'Profil sparad', permissionSaved: 'Mandat uppdaterat',
     credentialNeeded: 'Ange operatörsnyckeln innan du ändrar organisationen.',
-    noExecution: 'Inställningarna begränsar ännu inte Nova, MCP, chatt, e-post eller externa processer.',
+    noExecution: 'En urbockad befogenhet stoppar Auras verktyg och Novas uppgifter direkt. Autonominivåer, godkännandevarningen, egenskaper och budget sparas men stoppar inget ännu. MCP-verktyg och chattmodellen omfattas inte.',
     teamTitle: 'Auras specialistteam', teamInstall: 'Skapa fyra specialister',
     teamPreview: 'Omvärldsanalys, arkitektur, felsökning och användartest. Alla startar på L1 med noll budget, inga behörigheter och utan att någon modell startas.',
     teamConfirm: 'Skapa fyra agenter under Aura? Detta ändrar det lokala organisationsregistret men startar inga arbetare eller tilldelar åtkomst.',
@@ -98,6 +100,9 @@ export function AuraOrganizationPanel() {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [selectedId, setSelectedId] = useState('aura');
   const [operatorKey, setOperatorKey] = useState('');
+  const [authRequired, setAuthRequired] = useState(true);
+  const [providers, setProviders] = useState<ProviderOption[]>([]);
+  const [newApi, setNewApi] = useState({ open: false, id: '', baseUrl: '', defaultModel: '', apiKey: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -111,7 +116,7 @@ export function AuraOrganizationPanel() {
 
   async function api(method: string, suffix = '', body?: unknown) {
     const headers: Record<string, string> = { 'content-type': 'application/json' };
-    if (method !== 'GET') headers['x-jaco-operator-token'] = operatorKey;
+    if (method !== 'GET' && operatorKey) headers['x-jaco-operator-token'] = operatorKey;
     const response = await fetch('/api/aura/organization' + suffix, {
       method, headers, cache: 'no-store', credentials: 'same-origin',
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -126,12 +131,16 @@ export function AuraOrganizationPanel() {
     try {
       const result = await api('GET');
       setOrganization(result.organization as Organization);
+      setAuthRequired(result.mutationAuthRequired !== false);
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   }
-  useEffect(() => { void refresh(); }, []);
+  async function refreshProviders() {
+    try { setProviders(((await api('GET', '/providers')).providers || []) as ProviderOption[]); } catch { setProviders([]); }
+  }
+  useEffect(() => { void refresh(); void refreshProviders(); }, []);
 
   const agents = organization?.agents || [];
   const selected = agents.find(agent => agent.id === selectedId) || agents.find(agent => agent.id === 'aura') || null;
@@ -147,7 +156,7 @@ export function AuraOrganizationPanel() {
   }, [selected?.id, organization]);
 
   async function mutate(suffix: string, method: string, body: unknown, success?: string) {
-    if (!operatorKey.trim()) { setError(t.credentialNeeded); return false; }
+    if (authRequired && !operatorKey.trim()) { setError(t.credentialNeeded); return false; }
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -157,7 +166,8 @@ export function AuraOrganizationPanel() {
       setNotice(success || 'Saved');
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(plannerErrorText(message) || message);
       return false;
     } finally { setBusy(false); }
   }
@@ -178,6 +188,41 @@ export function AuraOrganizationPanel() {
       name: profile.name, title: profile.title, task: profile.task, goal: profile.goal, mail: profile.mail,
       model: { kind: profile.kind, providerId: profile.providerId, model: profile.model },
     }, t.profileSaved);
+  }
+  async function registerApi() {
+    const ok = await mutate('/providers', 'POST', { id: newApi.id, baseUrl: newApi.baseUrl, defaultModel: newApi.defaultModel, apiKey: newApi.apiKey }, 'Provider added');
+    if (ok) { await refreshProviders(); setNewApi({ open: false, id: '', baseUrl: '', defaultModel: '', apiKey: '' }); }
+  }
+  function providerPicker<T extends { kind: 'local' | 'api'; providerId: string; model: string }>(value: T, set: (patch: Partial<T>) => void) {
+    const known = providers.some(p => p.id === value.providerId);
+    return <div className="space-y-2 sm:col-span-2">
+      <label className="block text-xs text-neutral-300">Provider
+        <select className={inputClass} value={known ? value.providerId : ''} onChange={e => {
+          if (e.target.value === '__new') { setNewApi(current => ({ ...current, open: true })); return; }
+          const p = providers.find(item => item.id === e.target.value);
+          if (p) set({ providerId: p.id, kind: p.local ? 'local' : 'api', model: p.defaultModel || value.model } as Partial<T>);
+        }}>
+          {!known && <option value="">{value.providerId || '—'}</option>}
+          {providers.map(p => <option key={p.id} value={p.id}>{p.id}{p.local ? ' · local' : ' · API'}{p.credentialConfigured ? '' : ' · no key'}</option>)}
+          <option value="__new">+ Add separate API…</option>
+        </select>
+      </label>
+      <label className="block text-xs text-neutral-300">{t.model}
+        <input className={inputClass} value={value.model} onChange={e => set({ model: e.target.value } as Partial<T>)}/>
+      </label>
+      {newApi.open && <div className="space-y-2 rounded-lg border border-[#616264] p-3">
+        {([['id', 'Provider ID (a-z, 0-9)'], ['baseUrl', 'Base URL (OpenAI-compatible, ends in /v1)'], ['defaultModel', 'Default model']] as const).map(([field, label]) => <label key={field} className="block text-xs text-neutral-300">{label}
+          <input className={inputClass} value={newApi[field]} onChange={e => setNewApi(current => ({ ...current, [field]: e.target.value }))}/>
+        </label>)}
+        <label className="block text-xs text-neutral-300">API key (stored encrypted on this computer, never shown again)
+          <input className={inputClass} type="password" autoComplete="off" value={newApi.apiKey} onChange={e => setNewApi(current => ({ ...current, apiKey: e.target.value }))}/>
+        </label>
+        <div className="flex gap-2">
+          <button type="button" className={buttonClass} disabled={busy || !newApi.id || !newApi.baseUrl} onClick={() => void registerApi()}>Add provider</button>
+          <button type="button" className={buttonClass} onClick={() => setNewApi(current => ({ ...current, open: false, apiKey: '' }))}>{'Cancel'}</button>
+        </div>
+      </div>}
+    </div>;
   }
   async function createAgent() {
     const success = await mutate('/agents', 'POST', {
@@ -237,11 +282,11 @@ export function AuraOrganizationPanel() {
         <div className="flex items-center gap-2 font-semibold"><ShieldAlert size={16}/>{t.registry}</div>
         <p className="mt-1 opacity-90">{t.noExecution}</p>
       </div>
-      <label className="block rounded-lg border border-[#616264] bg-[#242527] p-3 text-sm">
+      {authRequired && <label className="block rounded-lg border border-[#616264] bg-[#242527] p-3 text-sm">
         <span className="mb-2 flex items-center gap-2 font-medium"><KeyRound size={15}/>{t.key}</span>
         <input aria-label={t.key} type="password" autoComplete="off" value={operatorKey} onChange={e => setOperatorKey(e.target.value)} className={inputClass} placeholder="JACO_ORG_OPERATOR_TOKEN"/>
         <span className="mt-1 block text-[11px] text-neutral-300">{t.keyHint}</span>
-      </label>
+      </label>}
       {error && <div role="alert" className="rounded-md border border-red-900 bg-red-950/30 px-3 py-2 text-xs text-red-200">{error}</div>}
       {notice && <div role="status" className="rounded-md border border-emerald-900 px-3 py-2 text-xs text-emerald-300">{notice}</div>}
 
@@ -267,15 +312,13 @@ export function AuraOrganizationPanel() {
           </section>
           <button type="button" disabled={busy} onClick={() => setShowCreate(value => !value)} className={buttonClass + ' flex w-full items-center justify-center gap-2'}><Plus size={15}/>{t.create}</button>
           {showCreate && <div className="space-y-2 rounded-lg border border-[#616264] p-3">
-            {(['name','title','task','goal','mail','model','providerId'] as const).map(field => <label key={field} className="block text-xs text-neutral-300">{field === 'title' ? t.role : field === 'mail' ? t.email : field === 'task' ? t.task : field === 'goal' ? t.goal : field === 'model' ? t.model : field === 'name' ? t.name : 'Provider ID'}
+            {(['name','title','task','goal','mail'] as const).map(field => <label key={field} className="block text-xs text-neutral-300">{field === 'title' ? t.role : field === 'mail' ? t.email : field === 'task' ? t.task : field === 'goal' ? t.goal : t.name}
               <input className={inputClass} value={draft[field]} onChange={e => setDraft(current => ({ ...current, [field]: e.target.value }))}/>
             </label>)}
             <label className="block text-xs text-neutral-300">{t.manager}
               <select className={inputClass} value={draft.reportsTo} onChange={e => setDraft(current => ({ ...current, reportsTo: e.target.value }))}>{agents.filter(a => a.status === 'active').map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
             </label>
-            <label className="block text-xs text-neutral-300">Model runtime
-              <select className={inputClass} value={draft.kind} onChange={e => setDraft(current => ({ ...current, kind: e.target.value as 'local'|'api' }))}><option value="local">Local</option><option value="api">API</option></select>
-            </label>
+            {providerPicker(draft, patch => setDraft(current => ({ ...current, ...patch })))}
             <div className="flex gap-2"><button disabled={busy || !draft.name.trim()} onClick={() => void createAgent()} className={buttonClass}>{t.create}</button><button onClick={() => setShowCreate(false)} className={buttonClass}>{t.cancel}</button></div>
           </div>}
         </aside>
@@ -297,10 +340,10 @@ export function AuraOrganizationPanel() {
           <div className="rounded-xl border border-[#616264] bg-[#202123] p-4">
             <h4 className="mb-3 text-sm font-semibold">{t.profile}</h4>
             <div className="grid gap-3 sm:grid-cols-2">
-              {(['name','title','mail','task','goal','providerId','model'] as const).map(field => <label key={field} className="block text-xs text-neutral-300">{field === 'title' ? t.role : field === 'mail' ? t.email : field === 'task' ? t.task : field === 'goal' ? t.goal : field === 'model' ? t.model : field === 'name' ? t.name : 'Provider ID'}
+              {(['name','title','mail','task','goal'] as const).map(field => <label key={field} className="block text-xs text-neutral-300">{field === 'title' ? t.role : field === 'mail' ? t.email : field === 'task' ? t.task : field === 'goal' ? t.goal : t.name}
                 <input className={inputClass} value={profile[field]} onChange={e => setProfile(current => ({ ...current, [field]: e.target.value }))}/>
               </label>)}
-              <label className="block text-xs text-neutral-300">Model runtime<select className={inputClass} value={profile.kind} onChange={e => setProfile(current => ({ ...current, kind: e.target.value as 'local'|'api' }))}><option value="local">Local</option><option value="api">API</option></select></label>
+              {providerPicker(profile, patch => setProfile(current => ({ ...current, ...patch })))}
             </div>
             <button className={buttonClass + ' mt-3'} disabled={busy || !profile.name.trim()} onClick={() => void saveProfile()}>{t.save}</button>
           </div>

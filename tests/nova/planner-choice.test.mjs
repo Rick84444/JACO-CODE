@@ -347,3 +347,12 @@ test('a key withheld from workers only counts for the agent when it is in the se
   assert.equal(agentCanUseKey('GEMINI_API_KEY', { env: {}, store: store('other') }), true);
   assert.equal(agentCanUseKey(null), true);
 });
+
+test('a model that answers text but refuses tools cannot become the planner; a thinking model that only reasoned can', async () => {
+  const local = { provider: 'ollama', model: 'm' };
+  const env = { OLLAMA_MODEL: 'm' };
+  const refused = await testPlannerModel(local, { env, fetchImpl: async (_url, init) => { assert.ok(JSON.parse(init.body).tools?.length); return Response.json({ error: { message: 'm does not support tools' } }, { status: 400 }); } });
+  assert.deepEqual([refused.ok, refused.error], [false, 'PLANNER_MODEL_NO_TOOLS']);
+  const thinking = await testPlannerModel(local, { env, fetchImpl: async () => Response.json({ choices: [{ message: { content: '', reasoning: 'hmm' } }] }) });
+  assert.equal(thinking.ok, true);
+});

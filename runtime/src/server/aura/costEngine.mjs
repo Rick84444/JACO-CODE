@@ -1,6 +1,7 @@
 // Canonical Aura cost engine for operator chat, SEER and Nova.
-// Prices are USD per million tokens. Reference rates are estimates,
-// NOT guaranteed upper bounds or externally verified provider invoices.
+// Prices are USD per million tokens, from the operator's configuration or the live catalog (priceCatalog.mjs).
+// They are NOT externally verified provider invoices.
+import { catalogMedianPrice, providerHighestPrice, syncedPrice } from './priceCatalog.mjs';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,20 +58,22 @@ export function auraProviderPrices(env = process.env) {
   return configured;
 }
 
-// A model without a configured provider rate is accounted using a reference rate (USD per
-// million tokens). This is NOT a verified provider invoice or a guaranteed upper bound:
-// a provider can charge more or less. Persist the source for later reconciliation.
-export const REFERENCE_PRICE = { input: 3, output: 15 };
+// The operator's own rate wins, then today's catalog price. A model no catalog lists is reserved at the operator's default or the
+// provider's highest listed rate, or today's market median for a provider no catalog lists. Before any catalog has been fetched the
+// price is unknown and the call is refused: nothing here makes up a number.
 export function modelPrice(providerId, model, env = process.env) {
   const configured = auraProviderPrices(env)[`${providerId}/${model}`];
   if (configured) return { ...configured, source: 'configured' };
   if (providerId === 'openrouter' && /:free$/i.test(String(model))) return { input: 0, output: 0, free: true, source: 'free' };
-  let reference = REFERENCE_PRICE;
+  const synced = syncedPrice(providerId, model, env);
+  if (synced) return synced;
   try {
     const custom = JSON.parse(env.JACO_AURA_DEFAULT_PRICE_JSON || 'null');
-    if (custom && Number.isFinite(custom.input) && Number.isFinite(custom.output) && custom.input > 0 && custom.output > 0) reference = custom;
-  } catch { /* an invalid override falls back to the built-in reference */ }
-  return { ...reference, source: 'reference' };
+    if (custom && Number.isFinite(custom.input) && Number.isFinite(custom.output) && custom.input > 0 && custom.output > 0) return { input: custom.input, output: custom.output, source: 'operator-default' };
+  } catch { /* an invalid override is ignored */ }
+  const estimate = providerHighestPrice(providerId, env) || catalogMedianPrice(env);
+  if (estimate) return estimate;
+  throw new Error(`MODEL_PRICE_UNKNOWN:${providerId}/${model}`);
 }
 // An HTTP answer that says the call was refused or limited (wrong key, rate limit, bad request) was not
 // billed, so its reservation is released at once instead of being held as "unknown".

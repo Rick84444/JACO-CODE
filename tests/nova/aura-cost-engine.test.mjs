@@ -1,3 +1,4 @@
+import { NO_PRICE_ENV, PRICED_ENV } from './priced-env.mjs';
 import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -5,7 +6,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import {
   auraCostQuote, auraCostSettlement, modelPrice, novaProviderCostUsd,
-  ollamaCloudCostUsd, REFERENCE_PRICE,
+  ollamaCloudCostUsd,
 } from '../../runtime/src/server/aura/costEngine.mjs';
 import {
   auraCostQuote as legacyAuraCostQuote,
@@ -37,7 +38,7 @@ test('Aura settlement keeps the reserved price snapshot across config changes', 
 });
 
 test('Aura never silently settles missing, excessive, forged or malformed usage', () => {
-  const quote = auraCostQuote({ providerId: 'deepseek', model: 'm', promptBytes: 300, maxTokens: 10, env: {} });
+  const quote = auraCostQuote({ providerId: 'deepseek', model: 'm', promptBytes: 300, maxTokens: 10, env: PRICED_ENV });
   for (const usage of [
     {}, null, { prompt_tokens: null, completion_tokens: 1 },
     { prompt_tokens: 301, completion_tokens: 1 },
@@ -50,14 +51,15 @@ test('Aura never silently settles missing, excessive, forged or malformed usage'
   assert.throws(() => auraCostQuote({ providerId: 'x', model: 'm', promptBytes: 0, maxTokens: 10 }), /AURA_COST_QUOTE_INVALID_INPUT/);
 });
 
-test('Aura explicitly distinguishes configured, reference and OpenRouter free rate provenance', () => {
-  const fallback = auraCostQuote({ providerId: 'unknown', model: 'some-model', promptBytes: 1000, maxTokens: 200, env: {} });
-  assert.equal(fallback.priceSource, 'reference');
-  assert.deepEqual([fallback.inputUsdPerMillion, fallback.outputUsdPerMillion], [REFERENCE_PRICE.input, REFERENCE_PRICE.output]);
-  const free = auraCostQuote({ providerId: 'openrouter', model: 'any:free', promptBytes: 1000, maxTokens: 100, env: {} });
+test('Aura explicitly distinguishes configured, operator default and OpenRouter free rate provenance, and refuses an unknown price', () => {
+  assert.throws(() => auraCostQuote({ providerId: 'no-such-provider', model: 'some-model', promptBytes: 1000, maxTokens: 200, env: NO_PRICE_ENV }), /MODEL_PRICE_UNKNOWN/);
+  const fallback = auraCostQuote({ providerId: 'no-such-provider', model: 'some-model', promptBytes: 1000, maxTokens: 200, env: { ...NO_PRICE_ENV, JACO_AURA_DEFAULT_PRICE_JSON: '{"input":2,"output":4}' } });
+  assert.equal(fallback.priceSource, 'operator-default');
+  assert.deepEqual([fallback.inputUsdPerMillion, fallback.outputUsdPerMillion], [2, 4]);
+  const free = auraCostQuote({ providerId: 'openrouter', model: 'any:free', promptBytes: 1000, maxTokens: 100, env: PRICED_ENV });
   assert.equal(free.estimatedUsd, 0);
   assert.equal(free.priceSource, 'free');
-  const notFree = auraCostQuote({ providerId: 'unknown', model: 'any:free', promptBytes: 1000, maxTokens: 100, env: {} });
+  const notFree = auraCostQuote({ providerId: 'unknown', model: 'any:free', promptBytes: 1000, maxTokens: 100, env: PRICED_ENV });
   assert.ok(notFree.estimatedUsd > 0, 'no arbitrary provider can label itself free');
   const env = { JACO_OLLAMA_CLOUD_PRICES_JSON: JSON.stringify({ model: { input: 2, output: 4 } }) };
   const ollama = auraCostQuote({ providerId: 'ollama-cloud', model: 'model', promptBytes: 1000, maxTokens: 100, env });
@@ -107,7 +109,7 @@ test('manual Aura chat leaves unknown usage unverified, rather than inventing a 
     list: () => [{ id: 'example', baseUrl: 'https://example.test/v1', defaultModel: 'm', credentialConfigured: true }],
     chat: async () => ({ content: 'ok', usage: { completion_tokens: 2 } }),
   };
-  const result = await manualAuraProviderCompletion({ providerId: 'example', model: 'm', system: 'system', user: 'user' }, { env: {}, economic, providers });
+  const result = await manualAuraProviderCompletion({ providerId: 'example', model: 'm', system: 'system', user: 'user' }, { env: PRICED_ENV, economic, providers });
   assert.equal(result.costStatus, 'OUTCOME_UNKNOWN');
   assert.deepEqual(records, ['unknown']);
 });
@@ -116,13 +118,13 @@ test('an operator price file gives a model its real rate; env wins over the file
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-prices-'));
   try {
     const file = path.join(dir, 'provider-prices.json');
-    const env = { JACO_PROVIDER_PRICES_FILE: file };
+    const env = { ...NO_PRICE_ENV, JACO_PROVIDER_PRICES_FILE: file };
     const quote = e => auraCostQuote({ providerId: 'gemini', model: 'models/gemini-2.5-flash', promptBytes: 60000, maxTokens: 8192, env: e });
-    assert.equal(quote(env).priceSource, 'reference', 'no file: the expensive reference rate');
+    assert.throws(() => quote(env), /MODEL_PRICE_UNKNOWN/, 'no file and no catalog: spending stops instead of guessing a rate');
     fs.writeFileSync(file, JSON.stringify({ 'gemini/models/gemini-2.5-flash': { input: 0.3, output: 2.5 } }));
     const real = quote(env);
     assert.equal(real.priceSource, 'configured');
-    assert.ok(real.estimatedUsd < quote({ JACO_PROVIDER_PRICES_FILE: path.join(dir, 'none.json') }).estimatedUsd / 5, 'about a tenth of the reference estimate');
+    assert.ok(real.estimatedUsd < quote({ ...PRICED_ENV, JACO_PROVIDER_PRICES_FILE: path.join(dir, 'none.json') }).estimatedUsd / 5, 'about a tenth of the operator default estimate');
     const overridden = quote({ ...env, JACO_AURA_PROVIDER_PRICES_JSON: JSON.stringify({ 'gemini/models/gemini-2.5-flash': { input: 1, output: 1 } }) });
     assert.equal(overridden.inputUsdPerMillion, 1);
     fs.writeFileSync(file, '{ not json');

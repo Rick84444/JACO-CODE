@@ -77,11 +77,14 @@ import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
+import { PRICE_SYNC_INTERVAL_MS, readPriceCatalog, syncPrices } from "./src/server/aura/priceCatalog.mjs";
+import { modelPrice } from "./src/server/aura/costEngine.mjs";
+import { loadState as loadAgentOrders } from "../agents/lib/agent-orders.mjs";
 import { createAuraChatSession } from './src/server/connected/auraChatSession.mjs';
 import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderCompletion, chatFallbackChoice, chatFailureHint } from "./src/server/connected/auraOllamaChat.mjs";
 import { auraCostQuote, auraCostSettlement } from "./src/server/aura/costEngine.mjs";
 import { createEconomicBudgetRouter } from './src/server/connected/economicBudget.mjs';
-import { AgentOrganization, createAgentOrganizationRouter } from './src/server/connected/agentOrganization.mjs';
+import { AgentOrganization, createAgentOrganizationRouter, gateAgentTools } from './src/server/connected/agentOrganization.mjs';
 import { AgentReputation, createAgentBoardRouter } from './src/server/connected/agentReputation.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
@@ -275,7 +278,21 @@ async function seerOperatorGoal(): Promise<string | null> {
   return value;
 }
 
-function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam }: { connectedRuntime: any; seerLiveWorkstream: any; readAgentTeam?: () => Promise<any> }) {
+// What the operator has recorded for an agent in the organization registry. It is a recorded mandate: the registry itself
+// does not switch tools on, and a running mission's own restrictions still apply until that mission ends.
+function organizationMandate(organization: any, agentId = 'aura') {
+  const agent = organization?.snapshot().agents.find((a: any) => a.id === agentId);
+  if (!agent) return null;
+  return {
+    id: agent.id, name: agent.name, title: agent.title, status: agent.status, reportsTo: agent.reportsTo, mail: agent.mail || null, folder: agent.folder,
+    grantedPermissions: Object.entries(agent.mandate.permissions).map(([key, grant]: [string, any]) => ({ key, grantedBy: grant.grantedBy, grantedAt: grant.grantedAt, expiresAt: grant.expiresAt || null })),
+    usablePermissions: agent.effective.permissions,
+    budgetUsdPerDay: agent.effective.budgetUsdPerDay, maxSubAgents: agent.mandate.maxSubAgents, autonomy: agent.effective.autonomy,
+    traits: agent.effective.traits, exposure: agent.effective.exposure,
+  };
+}
+
+function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam, organization }: { connectedRuntime: any; seerLiveWorkstream: any; readAgentTeam?: () => Promise<any>; organization?: any }) {
   return {
     observe: async () => {
       const mission: any = connectedRuntime.novaMissions.current();
@@ -285,9 +302,14 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
         currentNovaMission: mission ? { id: mission.id, status: mission.status, phase: mission.phase, turn: mission.turn, failures: mission.failures, goal: String(mission.goal).slice(0, 200) } : null,
         providers: connectedRuntime.providers.list().map((p: any) => ({ id: p.id, model: p.defaultModel, credentialConfigured: p.credentialConfigured })),
         workspaceRoot: path.basename(projectRoot.get()),
+        operatorMandate: organizationMandate(organization, 'aura'),
       }, null, 1);
     },
     tools: {
+      org_mandate: {
+        description: 'Read the mandate the operator has recorded for an agent in the organization registry (permissions granted, budget, autonomy, traits, mail, folder). Use this, not the mission text, to answer what the operator has granted you. It is a record: it does not enable tools, and a running mission may restrict you further. args: {"agentId":"aura"}',
+        run: async (args: any) => organizationMandate(organization, String(args?.agentId || 'aura')) || { error: 'AGENT_NOT_FOUND' },
+      },
       health: { description: 'Read-only HTTP service probes. READY/REACHABLE are not proof of model or tool execution; AUTH_REQUIRED is not healthy. In Termux the ChatGPT gateway is not managed by runit. args: {}', run: async () => auraServiceHealth() },
       mcp_catalog: {
         description: 'Read the live catalog of connected MCP tool servers and the tools they currently advertise. Use this before answering what tools Aura has. This only observes metadata and never starts or calls a tool. args: {}',
@@ -766,7 +788,10 @@ function requireLocalUiSameOrigin(req: express.Request, res: express.Response, n
 
 // Organization mutation credential is separate from the generic gateway token shared with tools.
 // No configured token means read-only organization UI, never a privileged localhost bypass.
+// JACO_ORG_OPERATOR_AUTH=off is an explicit local opt-out: the loopback/same-origin operator UI may then write without a key.
+const organizationMutationAuthRequired = () => process.env.JACO_ORG_OPERATOR_AUTH !== 'off';
 function requireOrganizationMutationAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (!organizationMutationAuthRequired()) return next();
   const expected = String(process.env.JACO_ORG_OPERATOR_TOKEN || '');
   const provided = String(req.headers['x-jaco-operator-token'] || '');
   if (!expected || provided.length !== expected.length ||
@@ -2566,6 +2591,12 @@ const notifyPhone = async (action) => {
     } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error) }); }
   });
 
+  const operatorPlannerView = (coordinator: any) => {
+    let choice: any = null;
+    try { choice = readPlannerChoice(plannerChoiceFile(process.env)); } catch {}
+    if (!coordinator?.health || choice?.by !== 'operator' || !choice.model) return coordinator;
+    return { ...coordinator, health: { ...coordinator.health, local_model: { provider: choice.provider, model: choice.model, source: 'operator-choice' } } };
+  };
   const readAuraAgentBoard = async () => {
     const [workplace, coordinator, planning, services] = await Promise.all([
       getAuraWorkbenchWorkplace(), getAuraSeerHealth(),
@@ -2582,7 +2613,8 @@ const notifyPhone = async (action) => {
       auraServiceHealth(),
     ]);
     return buildAgentBoard({ bus: connectedRuntime.bus, control: connectedRuntime.novaMissions,
-      workplace, coordinator, graphs:planning, workers:connectedRuntime.bus.listWorkers(),
+      // The operator's planner choice is what plans; SEER's local slot is only the fallback when none is chosen.
+      workplace, coordinator:operatorPlannerView(coordinator), graphs:planning, workers:connectedRuntime.bus.listWorkers(),
       tools:mcpHost.status(), services,
       secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key)).map(([,value]) => value),
     });
@@ -3550,12 +3582,26 @@ const notifyPhone = async (action) => {
 
   // Stripe revenue, read-only, for the IDE's Revenue view. Cached for a minute: the view polls.
   let revenueCache: { at: number; value: any } = { at: 0, value: null };
-  app.get('/api/revenue/stripe', requireLocalUi, async (req, res) => {
-    if (!revenueCache.value || Date.now() - revenueCache.at > 60_000 || req.query.refresh === '1') {
-      revenueCache = { at: Date.now(), value: await stripeRevenueSnapshot({ key: process.env.STRIPE_SECRET_KEY || '' }) };
+  const readStripeRevenue = async (refresh: boolean) => {
+    if (refresh || !revenueCache.value || Date.now() - revenueCache.at > 60_000) {
+      revenueCache = { at: Date.now(), value: await stripeRevenueSnapshot({ key: credential('STRIPE_SECRET_KEY') || '' }) };
     }
-    res.json({ success: !revenueCache.value.error, ...revenueCache.value });
+    return revenueCache.value;
+  };
+  app.get('/api/revenue/stripe', requireLocalUi, async (req, res) => {
+    const value = await readStripeRevenue(req.query.refresh === '1');
+    res.json({ success: !value.error, ...value });
   });
+  // Only a model that has just answered a short text request becomes the planner. Also used by the organization panel.
+  const choosePlanner = async ({ provider, model }: { provider: string; model: string }) => {
+    if (process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1') throw new Error('PLANNER_ENV_PRIMARY_AUTHORITATIVE');
+    const extra = await connectedPlannerChoices(true);
+    const valid = validatePlannerChoice({ provider, model }, process.env, extra);
+    if (!agentCanUseKey(plannerChoices(process.env, extra)[provider]?.keyEnv)) throw Object.assign(new Error('KEY_NOT_AVAILABLE_TO_AGENT'), { status: 422 });
+    const probe = await testPlannerModel(valid, { extra, timeoutMs: 30_000 });
+    if (!probe.ok) throw Object.assign(new Error(`PLANNER_MODEL_TEXT_PROBE_FAILED:${probe.error || probe.status || 'NO_ANSWER'}`), { probe, status: 422 });
+    writePlannerChoice(plannerChoicePath, valid, 'operator');
+  };
   const chooseAuraModel = async (req: express.Request, res: express.Response) => {
     try {
       if (process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1') return res.status(409).json({ success: false, error: 'PLANNER_ENV_PRIMARY_AUTHORITATIVE' });
@@ -3563,13 +3609,11 @@ const notifyPhone = async (action) => {
       if (provider === 'auto') {
         clearPlannerChoice(plannerChoicePath);
       } else {
-        const extra = await connectedPlannerChoices(true);
-        const valid = validatePlannerChoice({ provider, model: req.body?.model }, process.env, extra);
-        if (!agentCanUseKey(plannerChoices(process.env, extra)[provider]?.keyEnv)) return res.status(422).json({ success: false, error: 'KEY_NOT_AVAILABLE_TO_AGENT' });
-        // Only a model that has just answered a short text request becomes Nova's planner.
-        const probe = await testPlannerModel(valid, { extra, timeoutMs: 30_000 });
-        if (!probe.ok) return res.status(422).json({ success: false, error: 'PLANNER_MODEL_TEXT_PROBE_FAILED', probe });
-        writePlannerChoice(plannerChoicePath, valid, 'operator');
+        try { await choosePlanner({ provider, model: req.body?.model }); }
+        catch (error: any) {
+          if (error?.status === 422) return res.status(422).json({ success: false, error: error.message, ...(error.probe ? { probe: error.probe } : {}) });
+          throw error;
+        }
       }
       const state = await plannerState();
       seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.model.chosen', message: `Aura model: ${state.choice ? `${state.choice.provider}/${state.choice.model}` : 'selection required'}`, verified: true, receipt: { choice: state.choice } });
@@ -4835,6 +4879,11 @@ const notifyPhone = async (action) => {
   });
 
   const costBalances = createBalanceFetcher({ env: process.env });
+  // Prices follow the market: fetched now if the last sync is old, then every six hours. A failed fetch keeps the last known prices.
+  const refreshPrices = () => syncPrices({ env: process.env }).then((result: any) => { if (!result.ok) console.warn('[economy] price sync failed:', JSON.stringify(result.sources)); return result; });
+  const priceAge = Date.now() - Date.parse(readPriceCatalog(process.env)?.fetchedAt || '');
+  if (!(priceAge < PRICE_SYNC_INTERVAL_MS)) void refreshPrices().catch((error: any) => console.warn('[economy] price sync failed:', error?.message));
+  setInterval(() => { void refreshPrices().catch((error: any) => console.warn('[economy] price sync failed:', error?.message)); }, PRICE_SYNC_INTERVAL_MS).unref();
   continuumSurface.runtime.economic.seedFromLedger(path.join(process.cwd(), '.jaco', 'continuum', 'ledger', 'events.jsonl'))
     .then((r: any) => { if (r?.seeded) console.log('[cost] live tally seeded from ledger:', r.events, 'events'); })
     .catch((error: any) => console.warn('[cost] tally seed failed:', error?.message || error));
@@ -4845,10 +4894,15 @@ const notifyPhone = async (action) => {
     try { res.json({ success: true, ...writeOperatorLanguage(operatorLanguagePath(), String(req.body?.language || '')) }); }
     catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
   });
-  app.use('/api/aura/budget', createEconomicBudgetRouter({ economic: continuumSurface.runtime.economic, requireOperatorUi: requireLocalUi, getBalances: costBalances }));
+  app.use('/api/aura/budget', createEconomicBudgetRouter({ economic: continuumSurface.runtime.economic, requireOperatorUi: requireLocalUi, getBalances: costBalances, getStripeRevenue: () => readStripeRevenue(false), getAgentOrders: () => loadAgentOrders(process.env), listProviders: () => connectedRuntime.providers.list().map((p: any) => { let local = false; try { local = ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(p.baseUrl).hostname); } catch {} return { id: p.id, defaultModel: p.defaultModel, local }; }), modelPrice: (provider: string, model: string) => modelPrice(provider, model, process.env), readPrices: () => readPriceCatalog(process.env), syncPrices: refreshPrices }));
   const agentOrganization = new AgentOrganization(path.resolve(process.env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco')));
   app.use('/api/aura/organization', createAgentOrganizationRouter({
     organization: agentOrganization, requireOperatorUi: requireLocalUi, requireMutationAuth: requireOrganizationMutationAuth,
+    mutationAuthRequired: organizationMutationAuthRequired,
+    providers: connectedRuntime.providers,
+    secrets: new SecretStore(),
+    applyPlanner: choosePlanner,
+    readPlanner: () => process.env.JACO_PRIMARY_PROVIDER ? { provider: process.env.JACO_PRIMARY_PROVIDER, by: 'environment' } : readPlannerChoice(plannerChoicePath),
   }));
 
   app.post('/api/nova/ollama-cost/reserve', requireAuth, (req, res) => {
@@ -5039,7 +5093,7 @@ const notifyPhone = async (action) => {
       }
 
       const auraState = auraEngineManager.getState();
-      const allTools=buildAuraToolbox({connectedRuntime,seerLiveWorkstream,readAgentTeam:readAuraAgentBoard});
+      const allTools=(()=>{const box=buildAuraToolbox({connectedRuntime,seerLiveWorkstream,readAgentTeam:readAuraAgentBoard,organization:agentOrganization});return {...box,tools:gateAgentTools(box.tools,agentOrganization)};})();
       const questionTools=questionMode ? cognitiveQuestionToolbox(allTools,()=>readCognitiveFeed({
         bus:connectedRuntime.bus,workstream:seerLiveWorkstream,limit:30,
         secrets:Object.entries(process.env).filter(([key])=>/secret|token|password|api_?key/i.test(key)).map(([,value])=>value).filter(Boolean),
@@ -6807,7 +6861,7 @@ const notifyPhone = async (action) => {
     logs: string[];
   } = {
     status: 'idle',
-    localTarget: 'http://localhost:11434',
+    localTarget: 'http://127.0.0.1:11434',
     logs: ['[tunnel] Cloudflare Tunnel subsystem initialized. Ready to generate tunnel for local Ollama.']
   };
 
@@ -6824,7 +6878,7 @@ const notifyPhone = async (action) => {
   // Generate / start a real cloudflared quick tunnel. No synthetic URL is emitted.
   let activeCloudflareProcess: ReturnType<typeof spawn> | null = null;
   app.post("/api/cloudflare/generate-tunnel", async (req, res) => {
-    const { localTarget = "http://localhost:11434", tunnelName = "jaco-quick-tunnel" } = req.body || {};
+    const { localTarget = "http://127.0.0.1:11434", tunnelName = "jaco-quick-tunnel" } = req.body || {};
     if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/.*)?$/i.test(String(localTarget))) {
       return res.status(400).json({ success:false, error:'localTarget must be a localhost HTTP(S) URL' });
     }

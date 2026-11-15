@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { validProviderId } from './providerRegistry.mjs';
 import { AURA_SPECIALISTS, SPECIALIST_PROCEDURES } from '../../lib/auraSpecialistBlueprints.mjs';
+import { inboxDomain, isJacoAddress } from '../../../../agents/lib/inbox.mjs';
+import { AURA_TOOL_PERMISSIONS, authorizeChain, mandateDenied } from '../../../../agents/lib/org-permission.mjs';
 
 // The operator's agent company. The operator is CEO, Aura is vice CEO, and every other agent reports to someone.
 // One store holds who exists, what each agent may do (mandate) and how each should work (traits).
@@ -60,6 +62,8 @@ export const TRAITS = {
 
 const ID = /^[a-z][a-z0-9-]{1,39}$/;
 const MAIL = /^[a-z0-9._-]{1,64}@[a-z0-9.-]+\.[a-z]{2,}$/i;
+// Every agent gets the real address jaco-<id>@<JACO_INBOX_DOMAIN>. Cloudflare Email Routing and the jaco-inbox worker
+// deliver mail for it into the agent's mail/inbox folder (agents/lib/inbox.mjs). Receiving only: sending is not wired.
 const text = (value, max, error) => {
   const v = String(value ?? '').trim();
   if (!v || v.length > max) throw new Error(error);
@@ -85,6 +89,15 @@ export class AgentOrganization {
     this.now = now;
     this.state = this.load();
     this.committedState = structuredClone(this.state);
+    // Agents created before automatic mail existed get their address too, once.
+    let backfilled = false;
+    for (const agent of Object.values(this.state.agents)) {
+      // An earlier build assigned placeholder .local addresses that no mail system can reach. Replace them.
+      if (agent.mail.endsWith('@agents.jaco.local')) { agent.mail = ''; backfilled = true; }
+      if (!agent.mail) { agent.mail = this.defaultMail(agent.id); backfilled = true; }
+      this.ensureFolder(agent.id);
+    }
+    if (backfilled) this.save();
   }
 
   load() {
@@ -130,7 +143,13 @@ export class AgentOrganization {
   // owner of identity, mandate and traits.
   ensureFolder(id) {
     const root = this.folder(id);
-    for (const sub of ['skills', 'memory']) fs.mkdirSync(path.join(root, sub), { recursive: true });
+    for (const sub of ['skills', 'memory', 'mail/inbox', 'mail/outbox']) fs.mkdirSync(path.join(root, sub), { recursive: true });
+    const memory = path.join(root, 'memory', 'MEMORY.md');
+    if (!fs.existsSync(memory)) {
+      const who = this.state?.agents?.[id];
+      const identity = (who?.name || id) + (who?.mail ? ' <' + who.mail + '>' : '');
+      fs.writeFileSync(memory, ['# Memory', '', 'Durable notes this agent keeps between sessions. One note per line.', '', '- Identity: ' + identity, ''].join('\n'));
+    }
     const rules = path.join(root, 'rules.md');
     if (!fs.existsSync(rules)) fs.writeFileSync(rules, '# Rules\n\nRules the agent must never break. One rule per line.\n');
     const mcp = path.join(root, 'mcp.json');
@@ -148,6 +167,12 @@ export class AgentOrganization {
   }
 
   folder(id) { return path.join(this.dir, 'agents', id); }
+
+  defaultMail(id) {
+    const taken = new Set(Object.values(this.state.agents).map(a => (a.mail || '').toLowerCase()));
+    const mail = `jaco-${id}@${inboxDomain()}`;
+    return isJacoAddress(mail) && !taken.has(mail) ? mail : '';
+  }
 
   agent(id) {
     const agent = this.state.agents[id];
@@ -182,14 +207,7 @@ export class AgentOrganization {
   authorize(id, key) {
     if (!PERMISSIONS[key]) return { allowed: false, reason: 'PERMISSION_UNKNOWN' };
     if (PERMISSIONS[key].risk === 'locked') return { allowed: false, reason: 'OPERATOR_APPROVAL_REQUIRED' };
-    if (!this.state.agents[id]) return { allowed: false, reason: 'AGENT_NOT_FOUND' };
-    for (const at of [id, ...this.managers(id)]) {
-      const agent = this.agent(at);
-      if (agent.status !== 'active') return { allowed: false, reason: at === id ? 'AGENT_NOT_ACTIVE' : 'MANAGER_NOT_ACTIVE', at };
-      if (agent.mandate.permissions[key] && !this.holds(at, key)) return { allowed: false, reason: 'GRANT_EXPIRED', at };
-      if (!agent.mandate.permissions[key]) return { allowed: false, reason: at === id ? 'PERMISSION_NOT_GRANTED' : 'MANAGER_LACKS_PERMISSION', at };
-    }
-    return { allowed: true };
+    return authorizeChain(this.state.agents, id, key, this.now());
   }
 
   // Which of untrusted input, private data and external reach the agent's usable permissions add up to.
@@ -322,7 +340,7 @@ export class AgentOrganization {
       if (hires >= this.agent(actor).mandate.maxSubAgents) throw new Error('SUB_AGENT_QUOTA_REACHED');
       if (!this.agent(actor).mandate.autoApproveSubAgents) status = 'pending';
     }
-    const mail = optionalText(input.mail, 120, 'AGENT_MAIL_INVALID');
+    const mail = optionalText(input.mail, 120, 'AGENT_MAIL_INVALID') || this.defaultMail(id);
     if (mail && !MAIL.test(mail)) throw new Error('AGENT_MAIL_INVALID');
     if (mail && Object.values(this.state.agents).some(a => a.mail.toLowerCase() === mail.toLowerCase())) throw new Error('AGENT_MAIL_TAKEN');
     const managerTraits = this.effectiveTraits(reportsTo);
@@ -505,8 +523,21 @@ export class AgentOrganization {
   }
 }
 
+// Aura's tools run only while its mandate holds the permission they need. Checked on every call, so the panel applies at once.
+export function gateAgentTools(tools, organization, agentId = AURA) {
+  return Object.fromEntries(Object.entries(tools).map(([name, tool]) => {
+    const key = AURA_TOOL_PERMISSIONS[name];
+    if (!key) return [name, tool];
+    return [name, { ...tool, run: async (...args) => {
+      const check = organization.authorize(agentId, key);
+      if (!check.allowed) throw mandateDenied(agentId, key, check);
+      return tool.run(...args);
+    } }];
+  }));
+}
+
 // Operator UI adapter: every change through these routes is made by the operator (local UI only, same origin).
-export function createAgentOrganizationRouter({ organization, requireOperatorUi, requireMutationAuth = (_req, res, _next) => res.status(403).json({ success: false, error: 'OPERATOR_AUTH_REQUIRED' }) }) {
+export function createAgentOrganizationRouter({ organization, requireOperatorUi, mutationAuthRequired = () => true, providers = null, secrets = null, applyPlanner = null, readPlanner = () => null, requireMutationAuth = (_req, res, _next) => res.status(403).json({ success: false, error: 'OPERATOR_AUTH_REQUIRED' }) }) {
   const router = express.Router();
   router.use(requireOperatorUi);
   router.use((req, res, next) => {
@@ -525,9 +556,51 @@ export function createAgentOrganizationRouter({ organization, requireOperatorUi,
     try { res.json({ success: true, ...run(req) }); }
     catch (error) { res.status(error.message === 'AGENT_NOT_FOUND' ? 404 : 400).json({ success: false, error: error.message }); }
   };
-  router.get('/', handle(() => ({ organization: organization.snapshot() })));
+  router.get('/', handle(() => ({ organization: organization.snapshot(), mutationAuthRequired: mutationAuthRequired(), planner: readPlanner() })));
+  // The provider list an agent can be given: the one provider registry, never a second one. Keys never leave the server.
+  const providerView = p => {
+    let local = false;
+    try { local = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(new URL(p.baseUrl).hostname); } catch {}
+    return { id: p.id, defaultModel: p.defaultModel || '', baseUrl: p.baseUrl, local, credentialConfigured: p.credentialConfigured === true || local };
+  };
+  router.get('/providers', handle(() => {
+    if (!providers) throw new Error('PROVIDER_REGISTRY_UNAVAILABLE');
+    return { providers: providers.list().map(providerView) };
+  }));
+  // A separate API for one agent: the key goes to JACO's encrypted secret store and is referenced by name only.
+  router.post('/providers', handle(req => {
+    if (!providers || !secrets) throw new Error('PROVIDER_REGISTRY_UNAVAILABLE');
+    const id = String(req.body?.id || '').trim().toLowerCase();
+    if (!validProviderId(id)) throw new Error('INVALID_PROVIDER_ID');
+    if (providers.list().some(p => p.id === id)) throw new Error('PROVIDER_ID_TAKEN');
+    const apiKey = String(req.body?.apiKey || '');
+    const probe = { id, baseUrl: req.body?.baseUrl, defaultModel: req.body?.defaultModel };
+    let apiKeyEnv = null;
+    let local = false;
+    try { local = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(new URL(String(probe.baseUrl)).hostname); } catch { throw new Error('PROVIDER_URL_INVALID'); }
+    if (!local && !apiKey) throw new Error('PROVIDER_API_KEY_REQUIRED');
+    if (apiKey) {
+      apiKeyEnv = `AGENT_PROVIDER_${id.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`;
+      secrets.set(apiKeyEnv, apiKey, { source: 'operator', purpose: `API key for agent provider ${id}` });
+    }
+    try { return { provider: providerView(providers.register({ ...probe, apiKeyEnv })) }; }
+    catch (error) { if (apiKeyEnv) try { secrets.delete(apiKeyEnv); } catch {} throw error; }
+  }));
   router.post('/agents', handle(req => ({ agent: organization.createAgent(req.body) })));
-  router.patch('/agents/:id', handle(req => ({ agent: organization.updateProfile(req.params.id, req.body) })));
+  // Aura and Nova plan with the one planner choice (agents/lib/planner-choice.mjs), so choosing their model here switches it.
+  // A model that cannot answer is refused before anything is saved.
+  router.patch('/agents/:id', async (req, res) => {
+    try {
+      const next = req.body?.model;
+      const current = organization.agent(req.params.id).model;
+      if (applyPlanner && ['aura', 'nova'].includes(req.params.id) && next?.model && (next.providerId !== current.providerId || next.model !== current.model)) {
+        await applyPlanner({ provider: next.providerId, model: next.model });
+      }
+      res.json({ success: true, agent: organization.updateProfile(req.params.id, req.body) });
+    } catch (error) {
+      res.status(error.message === 'AGENT_NOT_FOUND' ? 404 : 400).json({ success: false, error: error.message });
+    }
+  });
   router.put('/agents/:id/permissions/:key', handle(req => ({
     mandate: organization.setPermission(req.params.id, req.params.key, req.body?.granted === true, OPERATOR,
       { acceptRisk: req.body?.acceptRisk === true, ...(req.body?.days != null ? { days: req.body.days } : {}) }),

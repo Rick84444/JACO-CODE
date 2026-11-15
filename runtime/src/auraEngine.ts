@@ -2754,7 +2754,7 @@ export class ${toolName.replace(/\.ts$/, '')} {
     const candidates = [
       ...(configuredHost ? [configuredHost] : []),
       "http://127.0.0.1:11434",
-      "http://localhost:11434",
+      "http://127.0.0.1:11434",
       ...String(process.env.JACO_OLLAMA_EXTRA_HOSTS || "").split(",").map(v => v.trim()).filter(Boolean)
     ];
 

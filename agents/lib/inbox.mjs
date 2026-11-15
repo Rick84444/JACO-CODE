@@ -78,6 +78,17 @@ export function extractVerification(text) {
 }
 
 // ---- store -------------------------------------------------------------------------------------
+// jaco-<agent>@domain is also copied into that agent's own mail/inbox folder (runtime/src/server/connected/agentOrganization.mjs).
+// Only an existing agent folder receives mail; the id is restricted so the address can never choose another path.
+export function deliverToAgentMailbox(message, env = process.env) {
+  const id = /^jaco-([a-z][a-z0-9-]{1,39})@/.exec(String(message.to || ''))?.[1];
+  if (!id) return false;
+  const state = env.JACO_STATE_DIR || path.join(env.USERPROFILE || env.HOME || '', '.jaco');
+  const inbox = path.join(path.resolve(state), 'org', 'agents', id, 'mail', 'inbox');
+  if (!fs.existsSync(inbox)) return false;
+  fs.writeFileSync(path.join(inbox, `${message.id}.json`), JSON.stringify(message, null, 2), { mode: 0o600 });
+  return true;
+}
 export function loadInbox(env = process.env) { try { return JSON.parse(fs.readFileSync(inboxFile(env), 'utf8')); } catch { return []; } }
 export function storeMessage({ from, to, raw, receivedAt }, env = process.env, now = Date.now()) {
   if (!isJacoAddress(to, env)) return { stored: false, reason: 'NOT_A_JACO_ADDRESS' };
@@ -87,7 +98,7 @@ export function storeMessage({ from, to, raw, receivedAt }, env = process.env, n
   const next = [...kept, message].slice(-MAX_MESSAGES);
   fs.mkdirSync(path.dirname(inboxFile(env)), { recursive: true });
   fs.writeFileSync(inboxFile(env), JSON.stringify(next, null, 2));
-  return { stored: true, id: message.id };
+  return { stored: true, id: message.id, agentMailbox: deliverToAgentMailbox(message, env) };
 }
 
 // What Nova sees: recent mail to one JACO address (or all), newest first, with codes and links.

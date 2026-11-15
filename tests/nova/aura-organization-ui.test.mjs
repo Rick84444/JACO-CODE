@@ -26,7 +26,7 @@ test('dashboard source uses the real organization API, never simulated agents', 
   assert.match(source, /fetch\('\/api\/aura\/organization'/);
   assert.match(source, /x-jaco-operator-token/);
   assert.match(source, /wouldCompleteTrifecta/);
-  assert.match(source, /runtime enforcement is not connected yet/);
+  assert.match(source, /Permissions are enforced. Approval levels and budgets are not yet/);
   assert.match(board, /view==='organization'/);
   assert.match(board, /React\.lazy\(\(\) => import\('\.\/AuraOrganizationPanel'\)/);
 });

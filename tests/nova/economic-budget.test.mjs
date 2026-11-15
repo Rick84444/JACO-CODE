@@ -1,3 +1,4 @@
+import { NO_PRICE_ENV, PRICED_ENV } from './priced-env.mjs';
 import { validProviderId } from '../../runtime/src/server/connected/providerRegistry.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -17,9 +18,9 @@ function governor(t) {
   return new EconomicGovernor(root,{append(){}});
 }
 
-test('DeepSeek and Ollama share the GUI ceiling; unknown prices use the high reference price', t => {
+test('DeepSeek and Ollama share the GUI ceiling', t => {
   const g=governor(t);g.updatePolicy({novaOllamaCloudEnabled:true,dailyCloudUsd:1,maxCloudUsdPerTask:1});
-  const env={JACO_AURA_PROVIDER_PRICES_JSON:JSON.stringify({'deepseek/configured':{input:1,output:2}}),JACO_OLLAMA_CLOUD_PRICES_JSON:JSON.stringify({configured:{input:1,output:2}})};
+  const env={...PRICED_ENV,JACO_AURA_PROVIDER_PRICES_JSON:JSON.stringify({'deepseek/configured':{input:1,output:2}}),JACO_OLLAMA_CLOUD_PRICES_JSON:JSON.stringify({configured:{input:1,output:2}})};
   const cost=novaProviderCostUsd('deepseek','configured',200000,200000,env);
   const r=g.authorizeCloud({estimatedUsd:cost,purpose:'nova-ollama-cloud',metadata:{providerId:'deepseek'}});
   assert.equal(r.allowed,true);g.settleCloud(r.reservationId,cost);
@@ -121,9 +122,9 @@ test('an unsettled reservation stops holding headroom once it is older than any 
 
 test('a model called :free is only unmetered on OpenRouter, not arbitrary connected providers', t => {
   const g = governor(t);
-  assert.equal(modelPrice('openrouter', 'listed:free', {}).source, 'free');
-  assert.equal(modelPrice('custom', 'listed:free', {}).source, 'reference');
-  const cost = novaProviderCostUsd('custom', 'listed:free', 1000, 200, {});
+  assert.equal(modelPrice('openrouter', 'listed:free', PRICED_ENV).source, 'free');
+  assert.equal(modelPrice('custom', 'listed:free', PRICED_ENV).source, 'operator-default');
+  const cost = novaProviderCostUsd('custom', 'listed:free', 1000, 200, PRICED_ENV);
   assert.ok(cost > 0, 'a custom provider may bill for a model named free');
   assert.equal(g.authorizeCloud({ estimatedUsd: cost, purpose: 'nova-ollama-cloud', metadata: { providerId: 'custom' } }).allowed, true);
 });

@@ -1,3 +1,4 @@
+import { NO_PRICE_ENV, PRICED_ENV } from './priced-env.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -262,7 +263,7 @@ test('manual Aura Gemini 429 triggers the same per-model pause', async t => {
     chat:async()=>{throw Error('PROVIDER_HTTP_429:RESOURCE_EXHAUSTED');},
   };
   await assert.rejects(()=>manualAuraProviderCompletion({providerId:'gemini',model:'gemini-2.5-flash',system:'s',user:'u'},
-    {providers,economic:g,env:{}}),/PROVIDER_HTTP_429/);
+    {providers,economic:g,env:PRICED_ENV}),/PROVIDER_HTTP_429/);
   assert.equal(g.geminiQuotaSnapshot().models['gemini-2.5-flash'].usedRpd,1);
   const subsequent=rate(g,'gemini-2.5-flash',100,'manual-aura-chat');
   assert.equal(subsequent.reason,'GEMINI_PROVIDER_BACKOFF');

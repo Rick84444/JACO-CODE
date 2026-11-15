@@ -4,7 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import test from 'node:test';
-import { AgentOrganization, createAgentOrganizationRouter } from '../../runtime/src/server/connected/agentOrganization.mjs';
+import { inboxDomain, storeMessage } from '../../agents/lib/inbox.mjs';
+import { assertTaskMandate } from '../../agents/lib/org-permission.mjs';
+import { plannerChoices } from '../../agents/lib/planner-choice.mjs';
+import { AgentOrganization, createAgentOrganizationRouter, gateAgentTools } from '../../runtime/src/server/connected/agentOrganization.mjs';
 const express = createRequire(new URL('../../runtime/package.json', import.meta.url))('express');
 
 function org(t, options) {
@@ -232,4 +235,52 @@ test('organization writes fail closed without an operator mutation authenticator
   });
   assert.equal(write.status, 403);
   assert.equal(organization.authorize('aura', 'publish').allowed, false);
+});
+
+test('a new agent gets a real jaco-<id>@domain address, a mailbox and a memory file, and inbound mail lands in its inbox', t => {
+  const { root, organization } = org(t);
+  const nova = organization.createAgent({ name: 'Nova' });
+  assert.equal(nova.mail, `jaco-nova@${inboxDomain()}`);
+  const folder = organization.folder('nova');
+  for (const sub of ['memory', 'skills', 'mail/inbox', 'mail/outbox']) assert.ok(fs.statSync(path.join(folder, sub)).isDirectory(), sub);
+  assert.ok(fs.readFileSync(path.join(folder, 'memory', 'MEMORY.md'), 'utf8').includes('<jaco-nova@'));
+  assert.equal(organization.createAgent({ name: 'Scout', mail: 'scout@example.org' }).mail, 'scout@example.org');
+  assert.equal(organization.snapshot().agents.find(a => a.id === 'aura').mail, `jaco-aura@${inboxDomain()}`);
+  const env = { JACO_STATE_DIR: root, JACO_WORKSPACE_ROOT: root };
+  const raw = ['From: a@b.example', 'Subject: Hello Nova', '', 'Hi'].join('\r\n');
+  const stored = storeMessage({ from: 'a@b.example', to: nova.mail, raw, receivedAt: new Date().toISOString() }, env);
+  assert.equal(stored.agentMailbox, true);
+  assert.equal(fs.readdirSync(path.join(folder, 'mail', 'inbox')).length, 1);
+  // An address cannot pick another path, and an unknown agent has no mailbox.
+  assert.equal(storeMessage({ from: 'a@b.example', to: `jaco-ghost@${inboxDomain()}`, raw, receivedAt: new Date().toISOString() }, env).agentMailbox, false);
+});
+
+test('a permission that is not held stops Aura tools and Nova tasks, and granting or revoking applies at once', async t => {
+  const { root, organization } = org(t);
+  let ran = 0;
+  const { repo_read, health } = gateAgentTools({ repo_read: { run: async () => ++ran }, health: { run: async () => 'up' } }, organization);
+  await assert.rejects(repo_read.run(), /MANDATE_DENIED:aura:files\.read:PERMISSION_NOT_GRANTED/);
+  assert.equal(ran, 0);
+  assert.equal(await health.run(), 'up');
+  organization.setPermission('aura', 'files.read', true);
+  assert.equal(await repo_read.run(), 1);
+
+  const env = { JACO_STATE_DIR: root };
+  assert.doesNotThrow(() => assertTaskMandate('repo-read', { env }), 'an agent outside the organization is not restricted');
+  organization.createAgent({ name: 'Nova' });
+  assert.throws(() => assertTaskMandate('repo-read', { env }), /MANDATE_DENIED:nova:files\.read:PERMISSION_NOT_GRANTED/);
+  assert.doesNotThrow(() => assertTaskMandate('health-check', { env }));
+  organization.setPermission('nova', 'files.read', true);
+  assert.doesNotThrow(() => assertTaskMandate('repo-read', { env }));
+  // Revoking the manager stops the report without touching its own grant.
+  organization.setPermission('aura', 'files.read', false);
+  assert.throws(() => assertTaskMandate('repo-read', { env }), /MANAGER_LACKS_PERMISSION/);
+  fs.writeFileSync(path.join(root, 'org', 'organization.json'), '{broken');
+  assert.throws(() => assertTaskMandate('repo-read', { env }), /ORGANIZATION_UNREADABLE/);
+});
+
+test('the local Ollama planner uses the loopback address and a connected provider URL wins', () => {
+  assert.equal(plannerChoices({}).ollama.url, 'http://127.0.0.1:11434/v1/chat/completions');
+  const merged = plannerChoices({}, { ollama: { models: ['m'], url: 'http://127.0.0.1:9/v1/chat/completions' } });
+  assert.equal(merged.ollama.url, 'http://127.0.0.1:9/v1/chat/completions');
 });

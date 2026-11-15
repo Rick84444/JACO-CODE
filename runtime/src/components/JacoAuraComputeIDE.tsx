@@ -8,7 +8,6 @@ import {
   Bot,
   BookOpen,
   Braces,
-  CircleDollarSign,
   MonitorSmartphone,
   Database,
   FileCode2,
@@ -61,11 +60,10 @@ import { NovaPlannerCard } from './NovaPlannerCard';
 import { ActivationCard, useActivationReport } from './ActivationCard';
 import { FirstRunGuide } from './FirstRunGuide';
 // Loaded only when the operator opens this workspace; idle Aura stays small.
-const RevenueView = React.lazy(() => import('./RevenueView').then(module => ({ default: module.RevenueView })));
+const EconomyView = React.lazy(() => import('./EconomyView').then(module => ({ default: module.EconomyView })));
 // Loaded only when the operator opens this workspace; idle Aura stays small.
 const SkillsView = React.lazy(() => import('./SkillsView').then(module => ({ default: module.SkillsView })));
 import { ProviderConnect } from './ProviderConnect';
-import { EconomicBudgetPanel } from './EconomicBudgetPanel';
 // Loaded only when the operator opens this workspace; idle Aura stays small.
 const DevicesView = React.lazy(() => import('./DevicesView').then(module => ({ default: module.DevicesView })));
 import { McpServersPanel, type McpCallRecord } from './McpServersPanel';
@@ -270,7 +268,7 @@ interface FileResponse extends AuraEditorFile {
   success: boolean;
 }
 
-type SidebarView = 'explorer' | 'source-control' | 'tools' | 'skills' | 'devices' | 'providers' | 'revenue';
+type SidebarView = 'explorer' | 'source-control' | 'tools' | 'skills' | 'devices' | 'providers';
 type TerminalMode = 'human' | 'raw';
 type BottomPanel = 'missions' | 'terminal' | 'problems' | 'output' | 'evidence';
 
@@ -1320,7 +1318,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
       );
     }
 
-    if (sidebar === 'revenue') return <React.Suspense fallback={<div className="p-3 text-xs">Opening budget…</div>}><div className="flex-1 overflow-auto px-2 py-2 space-y-3"><EconomicBudgetPanel inline /><RevenueView /></div></React.Suspense>;
     if (sidebar === 'skills') return <React.Suspense fallback={<div className="p-3 text-xs">Opening skills…</div>}><SkillsView /></React.Suspense>;
     if (sidebar === 'devices') return <React.Suspense fallback={<div className="p-3 text-xs">Opening devices…</div>}><DevicesView browser={snapshot?.integrations?.cdp} onInspectBrowser={() => void selectMcpToolByName('cdp', 'nova_targets')} /></React.Suspense>;
 
@@ -1491,7 +1488,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
       <>
         <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-neutral-300">Providers</div>
         <div className="flex-1 overflow-auto px-2 space-y-2">
-          <EconomicBudgetPanel inline />
           <NovaPlannerCard />
           {(snapshot?.providers || []).map(provider => {
             const receipt = probeReceipts[provider.id];
@@ -1774,7 +1770,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
     ['source-control', GitBranch, 'Git'],
     ['tools', Wrench, 'Tools'],
     ['providers', PlugZap, 'Models'],
-    ['revenue', CircleDollarSign, 'Revenue'],
   ];
   const remoteViewer = typeof window !== 'undefined' && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
   const signOut = async () => {
@@ -1951,6 +1946,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     presence={presence}/>
   </div>;
   const canvasDetail = <>
+    {workspaceView==='economy'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening economy…</div>}><EconomyView/></React.Suspense>}
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
     {workspaceView==='agents'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening agent map…</div>}><AuraAgentWorkspace goal={goal} onGoalChange={setGoal} onStartGoal={()=>{void startGoal().catch(()=>{});}} submitting={missionSubmitting} notice={missionNotice} onReview={()=>setWorkspaceView('evidence')} onCancelMission={cancelMission}/></React.Suspense>}

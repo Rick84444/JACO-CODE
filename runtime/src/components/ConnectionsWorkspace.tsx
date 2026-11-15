@@ -8,6 +8,7 @@ import { CapabilitiesPanel } from './CapabilitiesPanel';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { SiteLoginsPanel } from './SiteLoginsPanel';
 import { useOptionalUiLanguage } from '../i18n/UiLanguage';
+import { plannerErrorText } from '../lib/plannerErrors';
 const request=async(url:string,body?:unknown)=>fetch(url,{...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),signal:AbortSignal.timeout(30000)}).then(readAuraResponse);
 const unwrap=(result:any)=>{const text=result?.content?.find((c:any)=>c.type==='text')?.text;try{return text?JSON.parse(text):result;}catch{return result;}};
 export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChange}:{initialTab?:string;onTabChange:(tab:string)=>void;onSelectTool:(provider:McpProvider,tool:McpTool)=>void}) {
@@ -30,7 +31,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
     }finally{loading.current=false;}
   },[]);
   useEffect(()=>{alive.current=true;void refresh();const timer=setInterval(()=>{if(!document.hidden)void refresh();},30000);return()=>{alive.current=false;clearInterval(timer);};},[refresh]);
-  const act=async(name:string,action:()=>Promise<any>)=>{if(busy)return;setBusy(name);setNotice('');setResult(null);try{const value=await action();setResult(value);return value;}catch(e:any){if(e.toolResult)setResult(e.toolResult);setNotice(e.message==='PLANNER_ENV_PRIMARY_AUTHORITATIVE'?"The agent's model is locked by JACO_PRIMARY_PROVIDER in the server settings. Change that setting to choose a model here.":['TimeoutError','TypeError'].includes(e.name)?'The response could not be confirmed. Check the latest MCP calls and the project state before running again. '+e.message:e.message);}finally{setBusy(null);}};
+  const act=async(name:string,action:()=>Promise<any>)=>{if(busy)return;setBusy(name);setNotice('');setResult(null);try{const value=await action();setResult(value);return value;}catch(e:any){if(e.toolResult)setResult(e.toolResult);setNotice(plannerErrorText(e.message)?plannerErrorText(e.message):e.message==='PLANNER_ENV_PRIMARY_AUTHORITATIVE'?"The agent's model is locked by JACO_PRIMARY_PROVIDER in the server settings. Change that setting to choose a model here.":['TimeoutError','TypeError'].includes(e.name)?'The response could not be confirmed. Check the latest MCP calls and the project state before running again. '+e.message:e.message);}finally{setBusy(null);}};
   const call=async(server:string,tool:string,arguments_:any)=>{
     const data=await request('/api/aura/workbench/mcp/call',{providerId:server,toolName:tool,arguments:arguments_});
     if(data.result?.isError)throw Object.assign(Error(tr('Verktyget rapporterade ett fel. Se felutdata och slutkod i resultatet.','The tool reported an error. See the error output and exit code in the result.')),{toolResult:unwrap(data.result)});
