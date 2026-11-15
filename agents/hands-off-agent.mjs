@@ -64,6 +64,7 @@ import { followResolvedRuntime } from './lib/resolved-endpoints.mjs';
 followResolvedRuntime(process.env);
 import { plannerTools, structuredPlannerTools, planFromToolCalls, planSchema } from './lib/native-tools.mjs';
 import { runAgentMission, introMessage, contextPacketIntro } from './lib/agent-loop.mjs';
+import { readCognitiveGraphContext } from './lib/cognitive-graph-context.mjs';
 import { isTransientPreflightBlockers } from './lib/mission-health-policy.mjs';
 import { agentHomeDir, loadHome, HOME_LIMITS } from './lib/agent-home.mjs';
 import { loadCognitiveCapsule, assertCognitiveCapsuleTask } from './lib/cognitive-capsule.mjs';
@@ -1645,6 +1646,11 @@ async function callBrainStep(state, { mission, observation, continuity = null },
   });
   const capsule = novaCapsule(mission);
   const planningAllowedTasks = capsule.allowedTasks;
+  const memoryGraph = await readCognitiveGraphContext(mission.goal, {
+    runtimeUrl: CONFIG.runtimeUrl,
+    token: process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '',
+    fetchImpl,
+  });
   let ctx = {
     // Models have no clock: without this a planner wrote an invented date into a file (2026-09-29).
     now: new Date().toISOString(),
@@ -1653,6 +1659,7 @@ async function callBrainStep(state, { mission, observation, continuity = null },
     observation: compactObservation(observation),
     continuity: compactContinuityForBrain(continuity),
     ...(strategicContext ? { strategicContext } : {}),
+    ...(memoryGraph ? { memoryGraph } : {}),
     surfaces: state.surfaces,
     recentErrors: state.errors.slice(-3).map(e => clipText(e.msg, 200)),
     ...(mission?.contract && state.repositoryContext ? { repository: state.repositoryContext } : {}),
@@ -2164,8 +2171,13 @@ async function runAgentLoop(state) {
         seerUrl: process.env.SEER_URL || 'http://127.0.0.1:2997',
         token: process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || process.env.SEER_TOKEN,
       });
+      const memoryGraph = await readCognitiveGraphContext(mission.goal, {
+        runtimeUrl: CONFIG.runtimeUrl,
+        token: process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '',
+      });
       const packet = contextPacketIntro(mission, {
         strategicContext,
+        memoryGraph,
         homeText: Object.entries(extras).filter(([key]) => key.startsWith('Your home')).map(([, value]) => value).join('\n'),
         skillText: activeProcedure || extras['Skill procedure to follow'] || extras['Skill procedure'] || '',
         skillCandidates: extras['Available skill candidates'] || '',
