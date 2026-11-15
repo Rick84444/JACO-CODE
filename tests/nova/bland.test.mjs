@@ -38,7 +38,7 @@ test('the chosen voice is kept privately and read back', () => {
   const saved = saveAuraVoice({ id: 'c', name: 'Helga 2' }, { language: 'Swedish', env });
   assert.equal(readAuraVoice(env).id, 'c');
   assert.equal(saved.provider, 'bland');
-  assert.equal(fs.statSync(path.join(env.JACO_STATE_DIR, 'aura-voice.json')).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(env.JACO_STATE_DIR, 'aura-voice.json')).mode & 0o777, 0o600);
   assert.throws(() => saveAuraVoice({}, { env }), /VOICE_REQUIRED/);
 });
 

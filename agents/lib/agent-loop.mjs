@@ -122,7 +122,7 @@ const SAYS_BLOCKED = /\b(?:i am|i'm|i was) (?:blocked|unable|not able)\b|\bi (?:
 export async function runAgentMission({
   client, owner, chat, toolsFor, execute, system,
   observe = async () => null, intro = introMessage, refreshIntro = false, acceptMission = null,
-  preflight = null,
+  preflight = null, diagnose = null,
   onActivity = async () => {}, onReceipt = async () => {}, log = () => {},
   maxSteps = 40, maxModelErrors = 3, maxIdleReplies = 2,
   maxContextChars = 60_000, onCondense = () => {}, stuck = new StuckDetector(),
@@ -141,6 +141,12 @@ export async function runAgentMission({
   let capabilityEvidence = null;
   let capabilityCorrections = 0;
   let healthCatalogRefreshes = 0;
+  // Failed tools are diagnosed (evidence plus the one safe remedy) at most a few times per run and once
+  // per distinct failure, then the findings reach the model after the tool results of that turn.
+  const MAX_DIAGNOSES = 4;
+  let diagnoses = 0;
+  const diagnosed = new Set();
+  const diagnosisNotes = [];
   const MAX_CAPABILITY_CORRECTIONS = 2;
   let modelSteerVersion = mission.steering?.revision || 0;
   let presentedSteerVersion = modelSteerVersion;
@@ -192,8 +198,26 @@ export async function runAgentMission({
       }
       if (queueRefusal(errorText(error))) return yieldQueue(errorText(error));
       log('warn', `release failed: ${errorText(error)}`);
+      // A failed durable release is NOT evidence that the mission was blocked,
+      // completed or handed to graph repair. Leave authority with the runtime.
+      return { executed: receipts.length > 0, receipts, steps, deferred: true,
+        recovery: 'WAIT_RUNTIME', reason: `RELEASE_FAILED:${errorText(error)}` };
     }
     return { executed: receipts.length > 0, receipts, steps, ...outcome };
+  };
+  // A protocol failure is not an operator blocker. Retry with the existing
+  // structured planner on the SAME selected provider, mission and contracts.
+  const structuredRecovery = reason => end({ deferred: true, recovery: 'STRUCTURED_PLANNER', reason }, {});
+  const recoverStalledStrategy = reason => {
+    // Graph missions have a bounded, durable SEER repair path, preserving the
+    // original contract, approval constraints, receipts and replan budget.
+    if (mission.source === 'seer-mission-graph' && mission.metadata?.parent?.graphId) {
+      return end({ replanRequested: true, recovery: 'REPLAN_GRAPH', reason },
+        { replanRequest: { reason, subgoals: [] } });
+    }
+    // Standalone missions cannot submit a graph repair. Change planner protocol
+    // rather than repeating the same native-tool conversation indefinitely.
+    return structuredRecovery(reason);
   };
 
   try {
@@ -310,7 +334,13 @@ export async function runAgentMission({
           return end({ blocked: true, reason: modelIssue }, { error: `PLANNER_BLOCKED:${modelIssue}` });
         }
         // No model answered at all: give the mission back untouched; the next tick tries again.
-        if (/NO_PLANNER_AVAILABLE|ALL_PROVIDERS_FAILED/.test(errorText(error)) && !receipts.length) return { executed: false, deferred: true, reason: errorText(error) };
+        if (/NO_PLANNER_AVAILABLE|ALL_PROVIDERS_FAILED/.test(modelIssue) &&
+            !/(?:AUTH|UNAUTHORIZED|FORBIDDEN|INVALID_KEY|MODEL_SELECTION_REQUIRED|POLICY|BUDGET)/i.test(modelIssue)) {
+          // A provider can disappear after successful actions. Keep all receipts
+          // and the ACTIVE mission instead of converting temporary health into
+          // three planning failures that eventually demand human intervention.
+          return end({ deferred: true, recovery: 'WAIT_PROVIDER', reason: modelIssue }, {});
+        }
         if (modelErrors >= maxModelErrors) return end({ failed: true, reason: errorText(error) }, { error: `MODEL_FAILED:${errorText(error)}` });
         continue;
       }
@@ -337,11 +367,11 @@ export async function runAgentMission({
           const refused = await proposeCompletion(text);
           if (!refused) return { executed: true, receipts, steps, completed: true, answer: text };
           // Text-only retries bought nothing and were 45% of a 2 600-call run (2026-10-31).
-          if (++idle > maxIdleReplies) return end({ failed: true, reason: 'MODEL_DID_NOT_USE_TOOLS' }, { error: 'MODEL_DID_NOT_USE_TOOLS' });
+          if (++idle > maxIdleReplies) return structuredRecovery('NATIVE_TOOL_PROTOCOL_STALLED');
           messages.push({ role: 'user', content: `COMPLETION REFUSED: ${refused}. Do what is missing with the tools, then call complete.` });
           continue;
         }
-        if (++idle > maxIdleReplies) return end({ failed: true, reason: 'MODEL_DID_NOT_USE_TOOLS' }, { error: 'MODEL_DID_NOT_USE_TOOLS' });
+        if (++idle > maxIdleReplies) return structuredRecovery('NATIVE_TOOL_PROTOCOL_STALLED');
         messages.push({ role: 'user', content: 'Use one of the tools for the next step, or call complete / blocked.' });
         continue;
       }
@@ -455,6 +485,17 @@ export async function runAgentMission({
           for (const rest of calls.slice(i + 1)) messages.push({ role: 'tool', tool_call_id: rest.id, content: `SKIPPED: mission is ${mission.status}` });
           return { executed: true, receipts, steps, mission, stopped: mission.status };
         }
+        if (diagnose && !receipt.ok && !receipt.outcomeUnknown && diagnoses < MAX_DIAGNOSES) {
+          const key = `${begun.type}:${begun.data?.server || ''}:${begun.data?.tool || ''}:${String(receipt.error || '').slice(0, 80)}`;
+          if (!diagnosed.has(key)) {
+            diagnosed.add(key);
+            diagnoses++;
+            try {
+              const found = await diagnose({ task: begun, receipt, mission });
+              if (found?.text) diagnosisNotes.push(found.text);
+            } catch (error) { log('warn', 'Tool diagnosis failed: ' + errorText(error)); }
+          }
+        }
         // A failing service can return with a changed available-tool catalog. Re-discover
         // from the exact current mission allowance; no new grants or blind write retries.
         if (!receipt.ok && !receipt.outcomeUnknown && isRecoverableToolHealthError(receipt.error) && healthCatalogRefreshes < 2) {
@@ -481,11 +522,12 @@ export async function runAgentMission({
           break;
         }
       }
+      while (diagnosisNotes.length) messages.push({ role: 'user', content: diagnosisNotes.shift() });
       if (nudge) {
         // Once: tell the model what it is doing. A second time in a fresh window: stop and say so.
         if (stuck.nudge() > 1) {
           if (recentServiceOutage()) return deferHealth('STUCK_AFTER_TOOL_OUTAGE:'+nudge.kind);
-          return end({ blocked: true, reason: `STUCK:${nudge.kind}` }, { error: `PLANNER_BLOCKED:STUCK:${nudge.kind}` });
+          return recoverStalledStrategy(`STUCK:${nudge.kind}`);
         }
         log('warn', `agent looks stuck (${nudge.kind})`);
         messages.push({ role: 'user', content: `STUCK: ${nudge.hint}` });

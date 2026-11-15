@@ -56,6 +56,24 @@ export function checkLocalWriteTask(data = {}, options) {
   return { path: target, content: data.content };
 }
 
+// A name can look permitted while its parent is a symlink/junction into a
+// protected tree. Do not follow such paths for the one-shot external write.
+function rejectLinkedAncestors(target, fsImpl) {
+  let parent = path.dirname(target);
+  for (;;) {
+    try {
+      const stat = fsImpl.lstatSync(parent);
+      if (stat.isSymbolicLink()) throw new Error('LOCAL_WRITE_PARENT_IS_LINK');
+      if (!stat.isDirectory()) throw new Error('LOCAL_WRITE_PARENT_NOT_DIRECTORY');
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    const above = path.dirname(parent);
+    if (above === parent) break;
+    parent = above;
+  }
+}
+
 // Performs the write after approval and proves it: the file is read back and its hash compared with the intended
 // content. A target that is a directory, a link, or changed under us is a failure, never a silent success.
 export function performLocalWrite(data, { fsImpl = fs } = {}) {
@@ -67,7 +85,9 @@ export function performLocalWrite(data, { fsImpl = fs } = {}) {
     // drive-relative paths on Windows, even if a remote mission described them.
     if (!path.isAbsolute(target)) return { ok: false, verified: false, error: 'LOCAL_WRITE_PATH_PLATFORM_MISMATCH' };
     const parent = path.dirname(target);
+    rejectLinkedAncestors(target, fsImpl);
     fsImpl.mkdirSync(parent, { recursive: true });
+    rejectLinkedAncestors(target, fsImpl);
     let existed = false, previousSha = null;
     try {
       const stat = fsImpl.lstatSync(target);

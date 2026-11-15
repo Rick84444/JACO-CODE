@@ -15,3 +15,10 @@ export function isRecoverableToolHealthError(message) {
   return /(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|TIMEOUT|SERVICE_NOT_READY|SERVICE_UNAVAILABLE|BRIDGE_UNAVAILABLE|HTTP_50[02347]|MCP_SERVER_UNAVAILABLE)/i.test(value) &&
     !SECURITY_OR_CONFIGURATION.test(value);
 }
+
+// Preflight is observation, not authorization: retry only transport outages.
+// Identity, access, missing repository and policy failures remain hard blockers.
+export function isTransientPreflightBlockers(blockers) {
+  return Array.isArray(blockers) && blockers.length > 0 &&
+    blockers.every(code => code === 'RUNTIME_PREFLIGHT_UNAVAILABLE' || code === 'BROWSER_BRIDGE_UNAVAILABLE');
+}

@@ -10,7 +10,7 @@ const filename = resolve(root, 'runtime/bin/jacoctl');
 const script = readFileSync(filename, 'utf8');
 const expected = 'jaco-code-0.23.1';
 
-test('Termux supervisor script is valid bash', () => {
+test('Termux supervisor script is valid bash', { skip: process.platform === 'win32' && 'needs a POSIX bash' }, () => {
   const proc = spawnSync('bash', ['-n', filename], { encoding: 'utf8' });
   assert.equal(proc.status, 0, proc.stderr);
 });
@@ -20,7 +20,7 @@ test('Core identity is checked against the checkout release, not HTTP 200 alone'
   assert.match(script, /core_truth_ready\(\)\{ svc_stable "\$CORE_SERVICE" && svc_owner_matches_checkout "\$CORE_SERVICE" && core_identity_matches_release;/);
 });
 
-const identityParserLine = script.split('\n').find(line => line.includes('JACO_EXPECTED_RELEASE_ID="$EXPECTED_CORE_RELEASE_ID" node -e'));
+const identityParserLine = script.split(/\r?\n/).find(line => line.includes('JACO_EXPECTED_RELEASE_ID="$EXPECTED_CORE_RELEASE_ID" node -e'));
 assert.ok(identityParserLine, 'Core identity JSON parser must exist in jacoctl');
 const match = identityParserLine.match(/node -e '(.*)'$/);
 assert.ok(match, 'Core identity JSON parser needs a single-quoted node expression');
