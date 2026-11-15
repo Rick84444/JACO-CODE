@@ -17,7 +17,7 @@ test('Windows launcher explains incomplete ZIP extraction before invoking Node',
   const dir = tmp();
   try {
     fs.copyFileSync(new URL('../../lite/START.cmd', import.meta.url), path.join(dir, 'START.cmd'));
-    const result = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'START.cmd'], {
+    const result = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', path.join(dir, 'START.cmd')], {
       cwd: dir, input: '\n', encoding: 'utf8', timeout: 10_000,
     });
     assert.ifError(result.error);

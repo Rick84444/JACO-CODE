@@ -6,6 +6,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const SCRIPT = path.resolve('runtime/termux/boot/10-jaco-auto-activate');
+// The script runs on Android under Termux; Windows has no POSIX sh, PATH syntax or executable bit to test it with.
+const posix = { skip: process.platform === 'win32' && 'needs a POSIX shell' };
 
 // Run the boot script with a stand-in jacoctl on PATH; resolves with what the stand-in saw.
 async function boot({ config, withJacoctl = true }) {
@@ -21,23 +23,23 @@ async function boot({ config, withJacoctl = true }) {
   return { run, called: fs.existsSync(seen) ? fs.readFileSync(seen, 'utf8').trim() : null, log: (() => { try { return fs.readFileSync(path.join(home, '.jaco/logs/boot-activate.log'), 'utf8'); } catch { return ''; } })() };
 }
 
-test('the boot script is valid shell and executable', () => {
+test('the boot script is valid shell and executable', posix, () => {
   assert.equal(spawnSync('sh', ['-n', SCRIPT]).status, 0);
   assert.ok(fs.statSync(SCRIPT).mode & 0o111, 'executable');
 });
-test('on demand stays the default: no config, or the flag off, activates nothing', async () => {
+test('on demand stays the default: no config, or the flag off, activates nothing', posix, async () => {
   assert.equal((await boot({ config: null })).called, null);
   assert.equal((await boot({ config: 'export JACO_AUTO_ACTIVATE=0\n' })).called, null);
   assert.equal((await boot({ config: 'export OTHER=1\n' })).called, null);
 });
-test('JACO_AUTO_ACTIVATE=1 runs jacoctl activate --profile full at boot and logs it', async () => {
+test('JACO_AUTO_ACTIVATE=1 runs jacoctl activate --profile full at boot and logs it', posix, async () => {
   const r = await boot({ config: 'export JACO_AUTO_ACTIVATE=1\n' });
   assert.equal(r.run.status, 0);
   assert.equal(r.called, 'activate --profile full --json');
   assert.match(r.log, /jacoctl activate --profile full/);
   assert.match(r.log, /READY/);
 });
-test('requested but jacoctl missing: says so and does not fail the boot', async () => {
+test('requested but jacoctl missing: says so and does not fail the boot', posix, async () => {
   const r = await boot({ config: 'export JACO_AUTO_ACTIVATE=1\n', withJacoctl: false });
   assert.equal(r.run.status, 0);
   assert.match(r.run.stderr, /jacoctl is not installed/);
