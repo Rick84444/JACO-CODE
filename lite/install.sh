@@ -1,5 +1,5 @@
 #!/bin/sh
-# JACO Lite installer for macOS, Linux and Android (Termux).
+# JACO Lite installer for macOS, Linux, Pixel Debian VM and legacy Termux.
 #
 #   curl -fsSL https://jacocode.com/install.sh | sh
 #
@@ -25,6 +25,7 @@
 #   JACO_LITE_NODE_DIST_URL where Node.js builds are (default https://nodejs.org/dist/latest-v24.x)
 #   JACO_LITE_BIN_DIR       where the command goes (default ~/.local/bin, Termux $PREFIX/bin)
 #   JACO_LITE_FORCE=1       install even if this build is already installed
+#   JACO_LITE_PLATFORM=android  use Android Lite ZIP inside Linux arm64 Pixel Debian VM
 set -eu
 
 BASE_URL="${JACO_LITE_BASE_URL:-https://jacocode.com/download}"
@@ -73,6 +74,19 @@ case "$OS" in
   *) die "this installer is for macOS, Linux and Termux. On Windows use:  irm https://jacocode.com/install.ps1 | iex" ;;
 esac
 [ "$TERMUX" = 1 ] && KIND=android
+# Pixel Terminal is Debian Linux, NOT Termux. Android Lite is opt-in.
+case "${JACO_LITE_PLATFORM:-auto}" in
+  auto|'') ;;
+  android)
+    [ "$OS" = Linux ] || die "JACO_LITE_PLATFORM=android requires Linux."
+    case "$ARCH" in aarch64|arm64) ;; *) die "Pixel Android Lite requires Linux arm64."; esac
+    if [ "$TERMUX" = 0 ]; then
+      [ -r /etc/os-release ] && grep -Eqs '^ID=(debian|ubuntu)$' /etc/os-release ||
+        die "Pixel Android Lite requires Debian or Ubuntu in the Linux VM."
+    fi
+    KIND=android ;;
+  *) die "JACO_LITE_PLATFORM must be 'android' or omitted." ;;
+esac
 case "$ARCH" in
   x86_64|amd64) NODE_ARCH=x64 ;;
   aarch64|arm64) NODE_ARCH=arm64 ;;
@@ -161,9 +175,12 @@ if [ "${DONE_UP_TO_DATE:-0}" != 1 ]; then
   else python3 -m zipfile -e "$WORK/$FILE" "$WORK/unpack"; fi
   TOP="$(ls "$WORK/unpack" | head -n1)"
   [ -f "$WORK/unpack/$TOP/start.mjs" ] || die "the archive does not look like JACO Lite (no start.mjs). Nothing was installed."
+  if [ "$KIND" = android ] && [ "$TERMUX" = 0 ]; then
+    [ -f "$WORK/unpack/$TOP/START-PIXEL-TERMINAL.sh" ] || die "Android Lite archive is missing the Pixel Terminal launcher. Nothing was installed."
+  fi
   rm -rf "$DEST.new" "$DEST"
   mv "$WORK/unpack/$TOP" "$DEST.new" && mv "$DEST.new" "$DEST"
-  chmod +x "$DEST/start.sh" "$DEST/START-ANDROID.sh" 2>/dev/null || true
+  chmod +x "$DEST/start.sh" "$DEST/START-ANDROID.sh" "$DEST/START-PIXEL-TERMINAL.sh" 2>/dev/null || true
   PREVIOUS=""
   [ -L "$HOME_DIR/current" ] && PREVIOUS="$(readlink "$HOME_DIR/current")"
   [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "versions/$STAMP" ] && ln -sfn "$PREVIOUS" "$HOME_DIR/previous"
