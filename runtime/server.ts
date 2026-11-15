@@ -2616,6 +2616,7 @@ const notifyPhone = async (action) => {
       // The operator's planner choice is what plans; SEER's local slot is only the fallback when none is chosen.
       workplace, coordinator:operatorPlannerView(coordinator), graphs:planning, workers:connectedRuntime.bus.listWorkers(),
       tools:mcpHost.status(), services,
+      planner: (() => { try { return readPlannerChoice(plannerChoiceFile({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT })); } catch { return null; } })(),
       secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key)).map(([,value]) => value),
     });
   };
