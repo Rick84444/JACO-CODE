@@ -38,12 +38,41 @@ node start.mjs ~/my-project    # or a specific project folder
 
 On Windows you can double-click `START.cmd`; on macOS and Linux run `./start.sh`.
 
+### Install and start inside Pixel's Debian Terminal
+
+The built-in Pixel Terminal is a Linux arm64 virtual machine. It is not Termux.
+
+```sh
+sudo apt update
+sudo apt install -y git curl ca-certificates unzip
+curl -fL https://jacocode.com/install.sh -o jaco-install.sh
+JACO_LITE_PLATFORM=android sh jaco-install.sh
+export PATH="$HOME/.local/bin:$PATH"
+mkdir -p "$HOME/jaco-pixel-project"
+cd "$HOME/jaco-pixel-project"
+jaco-lite doctor
+jaco-lite --no-open
+```
+
+The installer verifies the selected Android Lite archive against `latest.json`,
+installs a supported Node.js arm64 build if necessary, and retains the Android
+variant across later `jaco-lite update` calls. If the public download is
+unavailable, do **not** pipe an unverified script into a shell: obtain the
+`verified-jaco-lite` GitHub Actions artifact, verify the Android zip against
+its SHA-256 file, unpack it inside the Debian VM, install Node.js >=22.5 with
+`node:sqlite`, and use the packaged launcher below.
+
+The URL printed after successful startup is **VM-local**. Open the exact address
+in Pixel Chrome only if the phone's localhost forwarding has been verified.
+JACO Lite here has independent local state and does not gain access to the
+Android APK's private LiteRT model or Windows Aura's memories.
+
 ### Pixel Terminal (Android Linux, Debian VM) — primary on-phone runtime
 
 Use the **built-in Pixel Linux Terminal**, based on Android Virtualization Framework (AVF).
 It is a separate Debian VM, **not Termux** and not the Android host shell.
 
-1. Enable the Linux development environment in Android developer options and open Terminal.
+1. Enable the Linux development environment in Android developer options and open Terminal. Prefer the installer above; the manual ZIP path below is a fallback.
 2. In Debian, install the base tools: `sudo apt update && sudo apt install -y git curl ca-certificates unzip`.
 3. Install Node.js **22.5+** for Linux arm64 and check `node --version` and
    `node --experimental-sqlite -e 'require("node:sqlite")'`. Debian's packaged
