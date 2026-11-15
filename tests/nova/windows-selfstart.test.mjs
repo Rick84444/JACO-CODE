@@ -34,3 +34,11 @@ test('emergency stop follows resolved ports and spares a foreign program on a de
   assert.match(ps, /resolved-ports\.json/);
   assert.match(ps, /\$_ -ne \$requested/);
 });
+
+test('every installer entry that names a task refers to a defined task', () => {
+  const iss = read('windows/product/JACO.iss');
+  const defined = new Set([...iss.matchAll(/^Name: ([a-z0-9_]+);/gim)].map(m => m[1]));
+  const used = [...iss.matchAll(/Tasks: ([a-z0-9_]+)/gi)].map(m => m[1]);
+  assert.ok(used.length > 0);
+  for (const task of used) assert.ok(defined.has(task), `task ${task} is used but not defined in [Tasks]`);
+});

@@ -76,6 +76,5 @@ async function tick() {
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const once = process.argv.includes('--once');
   const run = () => tick().catch(e => console.error(`[repo-scan-orders] ${e.message}`));
-  await run();
-  if (!once) setInterval(run, Number(process.env.JACO_REPO_SCAN_POLL_MS || 60_000));
+  run().then(() => { if (!once) setInterval(run, Number(process.env.JACO_REPO_SCAN_POLL_MS || 60_000)); });
 }
