@@ -18,7 +18,9 @@ export function classifyToolFailure(error, task = null) {
   const text = String(error || '').slice(0, 600);
   const server = text.match(SERVER_IN_ERROR)?.[1] || (task?.type?.startsWith?.('mcp') ? task.data?.server : null) || null;
   if (NOT_REPAIRABLE.test(text)) return { kind: 'NEEDS_OPERATOR', server, restart: false, ensureStack: false };
-  if (/MCP_SERVER_SPAWN_FAILED|\bENOENT\b|not recognized as an internal|command not found/i.test(text)) return { kind: 'COMMAND_MISSING', server, restart: false, ensureStack: false };
+  // ENOENT means a missing command only when a process was being spawned; reading a missing file is a path problem.
+  if (/MCP_SERVER_SPAWN_FAILED|spawn\s+\S+\s+ENOENT|not recognized as an internal|command not found/i.test(text)) return { kind: 'COMMAND_MISSING', server, restart: false, ensureStack: false };
+  if (/\bENOENT\b|no such file or directory|does not exist|not found:/i.test(text)) return { kind: 'PATH_NOT_FOUND', server, restart: false, ensureStack: false };
   if (/EADDRINUSE|PORT_CONFLICT|address already in use/i.test(text)) return { kind: 'PORT_CONFLICT', server, restart: false, ensureStack: false };
   if (/MCP_SERVER_(?:EXITED|STOPPED)/i.test(text)) return { kind: 'SERVER_STOPPED', server, restart: Boolean(server), ensureStack: false };
   if (/MCP_SERVER_UNAVAILABLE|MCP_TOOL_UNAVAILABLE/i.test(text)) return { kind: 'SERVER_UNAVAILABLE', server, restart: Boolean(server), ensureStack: false };
@@ -31,6 +33,7 @@ export function classifyToolFailure(error, task = null) {
 const ADVICE = {
   NEEDS_OPERATOR: 'This needs an operator decision (credentials, permission, approval or budget). Do not try to work around it. Say exactly what is needed and call blocked if nothing else can progress.',
   COMMAND_MISSING: 'The command this tool needs is not installed or not on PATH. Check with a shell/repo tool which command is missing (where/which), then use an equivalent tool you already have. Install only what the mission is allowed to install; otherwise report the exact missing command.',
+  PATH_NOT_FOUND: 'The file or directory does not exist. List the parent directory or search for the name to find the right path, then retry with it. Do not create the file unless the goal asks for it.',
   PORT_CONFLICT: 'Another program holds a port this tool wants. JACO resolves its own service ports itself; for a tool, set a different port in its configuration instead of stopping the other program.',
   SERVER_STOPPED: 'The tool server ended. It was started again. A read can be repeated once; for anything that may have changed state, observe the current state first and do not blindly repeat it.',
   SERVER_UNAVAILABLE: 'The tool server is not available. It was asked to start; see the evidence for the reason it gave.',

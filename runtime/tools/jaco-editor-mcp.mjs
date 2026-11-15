@@ -13,10 +13,11 @@ import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { joinWorkplace, buildAgentCard } from '../../agents/lib/workplace-session.mjs';
+import { localServiceUrl } from '../../agents/lib/resolved-endpoints.mjs';
 
 export function createEditorServer({ env = process.env, fetchImpl = fetch, join = joinWorkplace, managed = true } = {}) {
 let session = null, pinnedRoot = null, initialized = false, inbox = [], inboxSeq = 0, droppedThrough = 0;
-const RUNTIME = String(env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
+const RUNTIME = localServiceUrl('runtime', env);
 const BASE = '/api/aura/workbench';
 
 async function runtime(method, route, body) {
@@ -192,7 +193,7 @@ async function initialize(info = {}) {
   if (managed && !session) {
     const name = String(info.name || 'Unknown MCP client').slice(0,100);
     const card = buildAgentCard({stableId:env.JACO_AGENT_STABLE_ID || `jaco-editor:${name}`,name,agentType:'coding',role:'coding-agent',description:'MCP client using JACO workbench; client name is self-reported, model unknown.',environment:'mcp',tools:TOOLS.map(t=>t.name),capabilities:{filesystem_read:true,filesystem_write:true,code_edit:true,git_read:true,git_write:true,terminal:false},constraints:['No shell; command execution delegated to Nova','Client identity self-reported; model unknown'],version:'1.1.0'});
-    session = await join({card,env:{...env,JACO_WORKPLACE_URL:env.JACO_WORKPLACE_URL || 'http://127.0.0.1:2995'},onEvents:receive});
+    session = await join({card,env:{...env,JACO_WORKPLACE_URL:localServiceUrl('workplace', env)},onEvents:receive});
   }
   pinnedRoot = (await runtime('GET',`${BASE}/project`)).root;
   if (typeof pinnedRoot !== 'string' || !pinnedRoot) throw Error('WORKBENCH_PROJECT_ROOT_REQUIRED');
