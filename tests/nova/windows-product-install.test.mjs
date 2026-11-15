@@ -85,3 +85,15 @@ test('Windows installation smoke validates the packaged runtime identity, not a 
   // A Windows product release can differ from the version of the embedded runtime.
   assert.ok(workflow.includes('Get-Content windows/product/version.json'));
 });
+
+test('Windows setup registers a per-user autostart guardian through the immutable product payload', () => {
+  const setup=fs.readFileSync(new URL('../../windows/product/JACO.iss',import.meta.url),'utf8');
+  const bridge=fs.readFileSync(new URL('../../windows/product/JACO-guardian-launch.vbs',import.meta.url),'utf8');
+  assert.match(setup,/Source: "\{#SourcePath\}JACO-guardian-launch\.vbs"; DestDir: "\{app\}\\windows\\product"/);
+  assert.match(setup,/\{userstartup\}\\JACO Health Guardian/);
+  assert.match(setup,/Tasks: guardianautostart/);
+  assert.match(bridge,/JACO_INSTALLED/);
+  assert.match(bridge,/JACO_DATA_DIR/);
+  assert.match(bridge,/health-guardian\.mjs/);
+  assert.doesNotMatch(bridge, /GATEWAY_TOKEN|STRIPE_|APPROVAL/);
+});

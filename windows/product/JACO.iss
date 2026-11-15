@@ -47,10 +47,13 @@ Source: "{#SourcePath}Start-JACO.ps1"; DestDir: "{app}\windows\product"; Flags: 
 Source: "{#SourcePath}JACO-launch.vbs"; DestDir: "{app}\windows\product"; Flags: ignoreversion
 Source: "{#SourcePath}version.json"; DestDir: "{app}\windows\product"; Flags: ignoreversion
 Source: "{#SourcePath}Stop-JACO-Guardian.ps1"; DestDir: "{app}\windows\product"; Flags: ignoreversion
+Source: "{#SourcePath}JACO-guardian-launch.vbs"; DestDir: "{app}\windows\product"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\JACO CODE"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\JACO.ico"; Comment: "Open JACO CODE and Aura"
 Name: "{autodesktop}\JACO CODE"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\JACO.ico"; Tasks: desktopicon
+; Run the existing guardian after sign-in without opening GUI or granting new permissions.
+Name: "{userstartup}\JACO Health Guardian"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-guardian-launch.vbs"""; WorkingDir: "{app}"; Tasks: guardianautostart
 
 [Tasks]
 Name: desktopicon; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"

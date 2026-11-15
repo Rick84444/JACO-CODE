@@ -16,6 +16,7 @@ import { validateGithubRepoTask } from '../../../../agents/lib/github-repo.mjs';
 import { validateRepoScanTask } from '../../../../agents/lib/repo-scan.mjs';
 import { validateMcpCall } from '../../../../agents/lib/mcp-tools.mjs';
 import { mayAutoReplayTask } from '../../../../agents/lib/replay-semantics.mjs';
+import { isRecoverableToolHealthError } from '../../../../agents/lib/mission-health-policy.mjs';
 
 // Marks a result whose state changes must commit even though the call itself fails.
 class CommittedFailure { constructor(error) { this.error = error; } }
@@ -338,7 +339,7 @@ export class NovaMissionControl {
     if (!sessionColumns.has('budget_turn_base')) this.db.exec('ALTER TABLE nova_sessions ADD COLUMN budget_turn_base INTEGER NOT NULL DEFAULT 0');
     if (!sessionColumns.has('budget_started_at')) this.db.exec('ALTER TABLE nova_sessions ADD COLUMN budget_started_at INTEGER');
     this.transactionDepth = 0;
-    for (const name of ['create','claim','preflight','begin','finish','release','resolve','requestCancel','steer']) {
+    for (const name of ['create','claim','preflight','begin','finish','release','resolve','requestCancel','steer','recoverBlockedHealth']) {
       const operation=this[name].bind(this);
       this[name]=(...args)=> {
         if (this.transactionDepth) return operation(...args);
@@ -475,10 +476,65 @@ export class NovaMissionControl {
     } };
   }
 
+  // Resume a known-failed, replay-safe read after a bounded cooldown, without
+  // requiring the operator to unblock a transient service outage. Unlike resolve(),
+  // this never changes authority, approvals, tool grants or any coding budget.
+  // An unknown/side-effecting outcome or an operator/policy decision stays BLOCKED.
+  recoverBlockedHealth() {
+    const rows = this.db.prepare("SELECT s.* FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='BLOCKED' AND s.phase='BLOCKED' AND s.token IS NULL AND s.active_task_json IS NULL").all();
+    for (const row of rows) {
+      const id = row.mission_id;
+      const mission = this.get(id);
+      if (mission.cancelRequested || mission.paused || this.pendingOperatorAction(id)) continue;
+      if (mission.receipts.some(r => r?.outcomeUnknown === true || (r?.ok === true && r?.verified === false))) continue;
+      const last = mission.receipts.at(-1);
+      if (!last || last.ok !== false || !mayAutoReplayTask(last.type) || !isRecoverableToolHealthError(last.error)) continue;
+
+      // The failure must be the very action that blocked the mission, not a
+      // historical read preceding a later approval or budget denial.
+      const actionEvent = this.bus.lastMissionEvent(id, 'NOVA_ACTION_RESULT');
+      if (!actionEvent || actionEvent.payload?.actionId !== last.actionId) continue;
+      const blockers = [
+        'NOVA_OPERATOR_APPROVAL_REQUIRED', 'NOVA_SPEND_BLOCKED',
+        'NOVA_PREFLIGHT_BLOCKED', 'NOVA_PLANNING_RESULT',
+        'NOVA_LEASE_EXPIRED', 'NOVA_CANCEL_REQUEST',
+      ];
+      if (blockers.some(type => (this.bus.lastMissionEvent(id, type)?.seq || 0) > actionEvent.seq)) continue;
+      if (mission.source === 'seer-mission-graph' && (this.bus.lastMissionEvent(id, 'NOVA_REPLAN_REQUEST')?.seq || 0) > actionEvent.seq) continue;
+      const prior = this.bus.lastMissionEvent(id, 'NOVA_HEALTH_REQUEUED');
+      if (prior?.seq >= actionEvent.seq) continue;
+      const count = this.db.prepare("SELECT COUNT(*) AS n FROM events WHERE mission_id=? AND type='NOVA_HEALTH_REQUEUED'").get(id).n;
+      if (count >= 2) continue;
+      const ageMs = this.now() - Date.parse(last.at || '');
+      if (!Number.isFinite(ageMs) || ageMs < 120_000) continue;
+      if (mission.contract) {
+        try {
+          assertCodingBudget(mission.contract, {
+            toolCallsUsed: row.turn - (row.budget_turn_base || 0),
+            stepsUsed: row.turn - (row.budget_turn_base || 0),
+            failures: row.failures,
+            startedAt: row.budget_started_at,
+            now: this.now(),
+          });
+        } catch { continue; }
+      }
+      const changed = this.db.prepare("UPDATE nova_sessions SET phase='READY' WHERE mission_id=? AND token IS NULL AND phase='BLOCKED' AND active_task_json IS NULL").run(id);
+      if (changed.changes !== 1) continue;
+      this.setStatus(id, 'ACTIVE');
+      this.bus.event('NOVA_HEALTH_REQUEUED', { missionId: id, payload: {
+        evidenceRef: `nova:${id}:receipt:${last.actionId}`,
+        error: String(last.error || '').slice(0, 160), retry: count + 1,
+        next: 'Choose an alternative authorized tool. Never replay an unknown mutation.',
+        preservedBudget: true,
+      } });
+    }
+  }
+
   // executor (optional): only missions routed to that executor ('nova' or 'desktop-agentos'), so one
   // executor's mission at the queue head never starves the other executor's work.
   current(executor = null) {
     this.recoverExpired();
+    this.recoverBlockedHealth();
     for (const row of this.db.prepare("SELECT s.mission_id FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='ACTIVE' AND s.token IS NULL").all()) this.finishRequestedCancel(row.mission_id);
     if (executor) {
       const ids = this.db.prepare("SELECT s.mission_id FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='ACTIVE' ORDER BY " + QUEUE_ORDER).all();
