@@ -3,8 +3,6 @@
 // X402_PAY_TO. Settlement happens before the scan starts, because the buyer's signed authorization is
 // only valid for maxTimeoutSeconds; a paid scan that then fails is left for the operator to refund.
 import crypto from 'node:crypto';
-import { HTTPFacilitatorClient } from '@x402/core/http';
-import { createFacilitatorConfig } from '@coinbase/x402';
 import { repoScanPriceUsd } from './skyfire-seller.mjs';
 
 export const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -83,7 +81,11 @@ export function matchesRequirements(payload, env = process.env, priceUsd = repoS
 
 export const orderIdFor = header => `x4_${crypto.createHash('sha256').update(String(header)).digest('hex').slice(0, 32)}`;
 
-export function facilitatorClient(env = process.env) {
+// The payment SDKs load only when a payment is actually verified. Listing orders, the offer and the
+// terms never need them, and not every JACO package ships them (Lite runs without them).
+export async function facilitatorClient(env = process.env) {
+  const { HTTPFacilitatorClient } = await import('@x402/core/http');
+  const { createFacilitatorConfig } = await import('@coinbase/x402');
   return new HTTPFacilitatorClient(createFacilitatorConfig(env.CDP_API_KEY_ID, env.CDP_API_KEY_SECRET));
 }
 
@@ -94,7 +96,7 @@ export async function verifyAndSettle(header, { env = process.env, client = null
   if (!payload) return { ok: false, error: 'X402_PAYMENT_MALFORMED' };
   if (!matchesRequirements(payload, env, priceUsd)) return { ok: false, error: 'X402_PAYMENT_DOES_NOT_MATCH_OFFER' };
   const requirements = paymentRequirements(env, priceUsd);
-  client ||= facilitatorClient(env);
+  client ||= await facilitatorClient(env);
   const verified = await client.verify(payload, requirements);
   if (!verified?.isValid) return { ok: false, error: `X402_INVALID:${verified?.invalidReason || 'unknown'}` };
   const settlement = await client.settle(payload, requirements);
