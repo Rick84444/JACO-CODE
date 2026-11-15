@@ -54,6 +54,8 @@ import { pickTarget } from './lib/browser-target-match.mjs';
 import { readOperatorLanguage, languageInstruction } from './lib/operator-language.mjs';
 import { nonTextModelKind, openAiChatCompletionsUrl, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
 import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs';
+import { assertTaskMandate } from './lib/org-permission.mjs';
+import { withLocalOllamaContext } from './lib/ollama-native.mjs';
 import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs';
 import { validateRepoScanTask, runRepoScanTask } from './lib/repo-scan.mjs';
 import { validateMcpCall, callMcpTool, mcpCatalog, mcpCatalogTools, learnedTaskNotes, resetMcpCatalog } from './lib/mcp-tools.mjs';
@@ -920,6 +922,7 @@ export async function processQueue(state, executor = executeTask) {
 }
 
 export async function executeTask(task, state, mission = null) {
+  assertTaskMandate(task.type);
   switch (task.type) {
     case "health-check": return runHealthCheck(state);
     case "check-revenue":
@@ -1630,7 +1633,8 @@ export async function callBrain(state, input, fetchImpl = fetch) {
     state.plannerMetrics=[...(Array.isArray(state.plannerMetrics)?state.plannerMetrics:[]).slice(-19),metric];
   }
 }
-async function callBrainStep(state, { mission, observation, continuity = null }, fetchImpl = fetch) {
+async function callBrainStep(state, { mission, observation, continuity = null }, rawFetch = fetch) {
+  const fetchImpl = withLocalOllamaContext(rawFetch);
   await refreshConnectedProviders(fetchImpl);
   const strategicContext = await readStrategicContext(mission, {
     seerUrl: process.env.SEER_URL || 'http://127.0.0.1:2997',
@@ -1964,7 +1968,8 @@ const TEMPORARY_COOLDOWN_MS = 15 * 60_000;
 const TEMPORARY_MODEL_LIMIT = /:(429|COOLDOWN|AUTONOMOUS_CLOUD_BURST_LIMIT)\b/;
 
 // One model turn with native tools: the first available provider in Nova's chain answers.
-export async function agentChat({ messages, tools }, fetchImpl = fetch, env = process.env) {
+export async function agentChat({ messages, tools }, rawFetch = fetch, env = process.env) {
+  const fetchImpl = withLocalOllamaContext(rawFetch, env);
   // A chosen connected provider may not be in the fixed provider list. Native
   // turns must refresh the same discovered registry as structured turns before
   // deciding whether that exact operator model is available.
@@ -2008,7 +2013,7 @@ export async function agentChat({ messages, tools }, fetchImpl = fetch, env = pr
         continue;
       }
       recordModelCall(provider, "plan");
-      log("info", "brain", `${id} answered: ${message.tool_calls?.length || 0} tool call(s)`);
+      log("info", "brain", `${id} answered: ${message.tool_calls?.length || 0} tool call(s), prompt ${data?.usage?.prompt_tokens ?? "?"} tokens`);
       return { content: message.content || '', tool_calls: message.tool_calls || [], provider: id };
     } catch (error) {
       parkProvider(provider, providerParkMs({ error }), String(error?.message || error).slice(0, 80));
@@ -2434,7 +2439,7 @@ async function callLLM(system, user) {
         ? await budgetedNovaOllamaCall({ provider: { ...provider, key }, requestBody, runtimeUrl: CONFIG.runtimeUrl,
           token: process.env.GATEWAY_TOKEN || process.env.JACO_GATEWAY_TOKEN || '', signal: AbortSignal.timeout(30000) })
         : null;
-      const res = cloudResult?.response || await fetch(provider.url, {
+      const res = cloudResult?.response || await withLocalOllamaContext()(provider.url, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
         body: JSON.stringify(requestBody),

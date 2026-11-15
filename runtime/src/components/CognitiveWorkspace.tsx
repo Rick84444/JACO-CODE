@@ -7,8 +7,8 @@ import { useUiLanguage } from '../i18n/UiLanguage';
 
 const VSCODE_OPEN_URL = 'vscode://jacocode.jaco-cognitive-ide/open';
 
-export type CognitiveCanvas='conversation'|'stage'|'agents'|'code'|'preview'|'evidence'|'gameboard'|'voice'|'connections';
-type Sidebar='explorer'|'source-control'|'tools'|'skills'|'devices'|'providers'|'revenue';
+export type CognitiveCanvas='conversation'|'stage'|'agents'|'code'|'preview'|'evidence'|'gameboard'|'voice'|'connections'|'economy';
+type Sidebar='explorer'|'source-control'|'tools'|'skills'|'devices'|'providers';
 interface Props {
   remoteMode?:boolean;
   canvas:CognitiveCanvas;onCanvas:(view:CognitiveCanvas)=>void;conversation:React.ReactNode;detail:React.ReactNode;
@@ -19,8 +19,8 @@ interface Props {
   lastObservedAt:string|null;error:string|null;
   attention?:React.ReactNode;
 }
-const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['connections',PlugZap,'Anslutningar'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
-const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter'],['revenue',CircleDollarSign,'Budget & ekonomi']] as const;
+const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['connections',PlugZap,'Anslutningar'],['economy',CircleDollarSign,'Ekonomi'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
+const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter']] as const;
 
 const EN_LABELS: Record<string, string> = {
   "Samtal": "Conversation",
@@ -37,7 +37,7 @@ const EN_LABELS: Record<string, string> = {
   "Färdigheter": "Skills",
   "Modellanslutningar": "Model connections",
   "Enheter": "Devices",
-  "Budget & ekonomi": "Budget & spending",
+  "Ekonomi": "Economy",
   "Arbete": "Work",
   "Filer": "Files",
   "Mer": "More",
@@ -115,7 +115,7 @@ export function CognitiveWorkspace(props:Props) {
       <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">Aura</span></div>
       <button type="button" className="cognitive-project" aria-label={`${tr('Öppna projekt', 'Open project')}: ${props.projectName}`} onClick={()=>openPanel('explorer')}><Folder size={14}/><span>{props.projectName}</span><ChevronRight size={12}/><span className="cognitive-branch">{props.branch || tr('Projekt', 'Project')}</span></button>
       <div className="cognitive-top-actions">
-        <CostChip onOpen={()=>props.onSidebar('revenue')}/>
+        <CostChip onOpen={()=>props.onCanvas('economy')}/>
         <JacoWindowsUpdates/>
         <select className="cognitive-language-select" aria-label={tr('Språk', 'Language')} title={tr('Språk', 'Language')} value={language} onChange={event => setLanguage(event.target.value === 'sv' ? 'sv' : 'en')} style={{color:'inherit',background:'#2f3032',border:'1px solid #3b4652',borderRadius:6,padding:'4px 5px',fontSize:11}}><option value="en">EN</option><option value="sv">SV</option></select>
         {props.approvalCount>0 && <button type="button" className="cognitive-approval-button" aria-label={`${props.approvalCount} ${tr('beslut behöver dig', 'decisions need your attention')}`} onClick={props.onApprovals}><CircleAlert size={14}/><span>{props.approvalCount} {tr('beslut','decisions')}</span></button>}
@@ -143,8 +143,8 @@ export function CognitiveWorkspace(props:Props) {
         <div className="cognitive-contextbar">
           {props.status.tone !== 'idle' && <div className="cognitive-status" data-tone={props.status.tone} role="status"><span/>{L(props.status.label)}</div>}
           <nav className="cognitive-stage-switcher" aria-label={tr('Arbetsyta','Workspace')}>
-            {([['stage', Eye, 'Arbete'], ['code', Code2, 'Kod'], ['preview', Eye, 'Förhandsvisa'], ['evidence', ShieldCheck, 'Belägg'], ['gameboard', Network, 'Spelplan']] as const).map(([view, Icon, label]) =>
-              <button key={view} type="button" title={L(label)+(view==='gameboard'?'':' · Ctrl/Cmd+Shift+'+({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view])} aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{L(label)}</span></button>)}
+            {([['stage', Eye, 'Arbete'], ['agents', Bot, 'Agenter'], ['code', Code2, 'Kod'], ['preview', Eye, 'Förhandsvisa'], ['evidence', ShieldCheck, 'Belägg'], ['connections', PlugZap, 'Anslutningar'], ['economy', CircleDollarSign, 'Ekonomi'], ['gameboard', Network, 'Spelplan']] as const).map(([view, Icon, label]) =>
+              <button key={view} type="button" title={L(label)+(({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view] ? ' · Ctrl/Cmd+Shift+'+({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view] : '')} aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{L(label)}</span></button>)}
           </nav>
           <button type="button" className="cognitive-mobile-focus" onClick={()=>props.onCanvas(showStage?'conversation':'stage')}>
             {showStage ? <MessageSquare size={15}/> : <Eye size={15}/>}
@@ -188,7 +188,7 @@ export function CognitiveWorkspace(props:Props) {
         <p>{tr('Modeller, verktyg och projektinställningar','Models, tools and project settings')}</p>
         <div className="cognitive-mobile-menu-grid">
           {views.filter(([id])=>!['conversation','agents'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>navigate(id)}><Icon size={20}/>{L(label)}</button>)}
-          {tools.filter(([id])=>['source-control','devices','revenue'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>openPanel(id)}><Icon size={20}/>{L(label)}</button>)}
+          {tools.filter(([id])=>['source-control','devices'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>openPanel(id)}><Icon size={20}/>{L(label)}</button>)}
           <button type="button" onClick={()=>{menu.current?.close();props.onApprovals();}}><ShieldCheck size={20}/>{L('Beslut')}{props.approvalCount>0 ? ` (${props.approvalCount})` : ''}</button>
           <button type="button" onClick={()=>{menu.current?.close();props.onCommands();}}><Search size={20}/>{L('Sök funktion')}</button>
           <button type="button" onClick={()=>{menu.current?.close();props.onSignOut();}}><LogOut size={20}/>{L('Logga ut')}</button>

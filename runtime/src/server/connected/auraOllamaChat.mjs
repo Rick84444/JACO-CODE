@@ -5,7 +5,7 @@ import {
 } from '../aura/costEngine.mjs';
 export {
   auraProviderPrices, ollamaCloudPrices, ollamaCloudCostUsd, modelPrice, novaProviderCostUsd,
-  auraCostQuote, auraCostSettlement, NOT_BILLED_FAILURE, REFERENCE_PRICE,
+  auraCostQuote, auraCostSettlement, NOT_BILLED_FAILURE,
 } from '../aura/costEngine.mjs';
 
 // Gemini 2.5 and other thinking models spend hidden reasoning tokens from the same output budget. At 700

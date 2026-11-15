@@ -54,6 +54,6 @@ test('active GUI keeps one conversation controller while contextual workspaces c
   assert.doesNotMatch(ide, /hidden lg:flex lg:h-auto lg:w-\[360px\].*Aura \/ SEER chat/s);
   assert.doesNotMatch(read('components/AuraChatPanel.tsx'), /Aura is connected to SEER|VERIFIED RUNTIME EVENTS/);
   assert.doesNotMatch(read('components/DevicesView.tsx'), /ide\.jacocode\.com|<hub-url>/);
-  assert.doesNotMatch(read('components/RevenueView.tsx'), /No charge has ever been made/);
+  assert.doesNotMatch(read('components/EconomyView.tsx'), /No charge has ever been made/);
   assert.doesNotMatch(read('App.tsx'), /pb-10/);
 });

@@ -167,7 +167,7 @@ export function CostChip({onOpen}:{onOpen?:()=>void}) {
         <React.Fragment key={`${live.policy.dailyCloudUsd}-${live.policy.monthlyCloudUsd}`}><LimitEditor live={live} onSaved={()=>void refresh()}/></React.Fragment>
         <section className="space-y-1">
           <h3 className="font-semibold text-neutral-200">{tr("Beräknat (tokens × JACOs pris)","Estimated (tokens × JACO price)")}</h3>
-          <p className="text-amber-200">{tr("Inte kontrollerat mot faktura. Okända modeller kan använda referenspriser som skiljer sig från leverantörens.","Not invoice-verified. Unknown models may use reference prices that differ from the provider's price.")}</p>
+          <p className="text-amber-200">{tr("Inte kontrollerat mot faktura. Priserna hämtas från publika prislistor och visas under Ekonomi.","Not invoice-verified. Prices come from public price lists and are shown under Economy.")}</p>
           <div className="flex justify-between"><span className="text-neutral-300">{tr('I dag','Today')}</span><span>{usd(live.today.usd)} · {live.today.calls} {tr('anrop','calls')}</span></div>
           <div className="flex justify-between"><span className="text-neutral-300">{tr("Senaste timmen","Last hour")}</span><span>{usd(live.lastHourUsd)}</span></div>
           <div className="flex justify-between"><span className="text-neutral-300">{tr("Den här månaden","This month")}</span><span>{usd(live.month.usd)} · {live.month.calls} {tr('anrop','calls')}</span></div>
@@ -199,7 +199,7 @@ export function CostChip({onOpen}:{onOpen?:()=>void}) {
         </section>
         <div className="flex justify-between items-center text-[10px] text-neutral-400">
           <span>{tr('Observerat','Observed')} {new Date(live.observedAt).toLocaleTimeString(locale)}</span>
-          {onOpen&&<button type="button" className="underline" onClick={()=>{setOpen(false);onOpen();}}>{tr('Öppna budget','Open budget')}</button>}
+          {onOpen&&<button type="button" className="underline" onClick={()=>{setOpen(false);onOpen();}}>{tr('Öppna Ekonomi','Open economy')}</button>}
         </div>
       </>}
     </div>}

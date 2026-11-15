@@ -21,6 +21,7 @@
 import { plannerChoiceFile, plannerChoices, readPlannerChoice } from '../../agents/lib/planner-choice.mjs';
 import { budgetedNovaOllamaCall } from '../../agents/lib/nova-ollama-cost.mjs';
 import { credential } from '../../agents/lib/secret-store.mjs';
+import { withLocalOllamaContext } from '../../agents/lib/ollama-native.mjs';
 
 const trimSlash = value => String(value || '').replace(/\/+$/, '');
 
@@ -166,7 +167,9 @@ export async function invokeSeerProvider(provider, args, {
   try {
     const headers = { 'Content-Type': 'application/json' };
     if (key) headers.Authorization = `Bearer ${key}`;
-    const response = await fetchFn(provider.url, {
+    // Only an Ollama provider speaks /api/chat; LiteRT or llama.cpp may share a port with OLLAMA_BASE_URL.
+    const send = ['ollama', 'local'].includes(provider.name) ? withLocalOllamaContext(fetchFn, env) : fetchFn;
+    const response = await send(provider.url, {
       method: 'POST', headers,
       body: JSON.stringify({
         model: provider.model,

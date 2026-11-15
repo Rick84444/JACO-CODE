@@ -134,7 +134,7 @@ export class EconomicGovernor {
     const reservationId=makeId('costres');
     this.state.reservations[reservationId]={reservationId,missionId,taskId,estimatedUsd:estimate,expectedValueUsd,purpose,...(metadata?{metadata}:{}),createdAt:nowIso()};
     this.state.reservedUsd+=estimate;
-    if(autonomous)this.state.autonomousCloudCalls=[...recent,Date.now()];
+    if(autonomous){const burstAt=Date.now();this.state.autonomousCloudCalls=[...recent,burstAt];this.state.reservations[reservationId].burstAt=burstAt;}
     if(geminiQuotaCheck)recordGeminiQuotaReservation(this.state,geminiQuotaCheck,reservationId);
     this.#persist();
     this.events.append({stream:'economic',type:'cloud.cost_reserved',entityId:reservationId,actor:'economic-governor',data:this.state.reservations[reservationId]});
@@ -147,6 +147,7 @@ export class EconomicGovernor {
     if(r.metadata?.providerId==='gemini')
       reconcileGeminiQuotaUsage(this.state,reservationId,Number(usage?.prompt_tokens));
     this.#book('settled',providerKey(r),{actualUsd:actual,estimatedUsd:r.estimatedUsd});
+    this.#bookModel(r,actual,usage);
     this.state.reservedUsd=Math.max(0,this.state.reservedUsd-r.estimatedUsd);
     delete this.state.reservations[reservationId];
     this.state.dailySpentUsd+=actual;this.state.monthlySpentUsd+=actual;this.#persist();
@@ -163,6 +164,12 @@ export class EconomicGovernor {
     const r=this.state.reservations[reservationId];if(!r)return this.snapshot();
     if(r.metadata?.providerId==='gemini' && /\b429\b/.test(String(reason)))
       markGeminiQuotaBackoff(this.state,r.metadata.model);
+    // A provider that refused the request outright (empty balance, bad key, unknown model) did no work and charged nothing,
+    // so it must not use up the fuse and stop the providers that do work. Rate limits and lost outcomes still count.
+    if(r.burstAt&&/\bHTTP (?:400|401|402|403|404)\b/.test(String(reason))){
+      const list=Array.isArray(this.state.autonomousCloudCalls)?this.state.autonomousCloudCalls:[];
+      const at=list.indexOf(r.burstAt);if(at>=0)this.state.autonomousCloudCalls=[...list.slice(0,at),...list.slice(at+1)];
+    }
     this.state.reservedUsd=Math.max(0,this.state.reservedUsd-r.estimatedUsd);delete this.state.reservations[reservationId];this.#persist();this.events.append({stream:'economic',type:'cloud.cost_released',entityId:reservationId,actor:'economic-governor',data:{reason}});return this.snapshot();
   }
   // Sets the conservative counters to what was measured (settled provider usage), dropping the part that came from
@@ -258,6 +265,28 @@ export class EconomicGovernor {
       autonomousCloudCallsLast15m:(Array.isArray(this.state.autonomousCloudCalls)?this.state.autonomousCloudCalls:[]).filter(at=>Number.isFinite(at)&&at>Date.now()-15*60_000).length,
       billingVerification:'UNRECONCILED_ESTIMATE_FROM_PROVIDER_TOKENS_AND_CONFIGURED_OR_REFERENCE_RATE',
     };
+  }
+  // Cost per model and month, kept here because the ledger redacts token counts.
+  #bookModel(r,actual,usage){
+    const month=new Date().toISOString().slice(0,7);const t=this.state.tally;
+    const months=t.models&&typeof t.models==='object'?t.models:(t.models={});
+    const book=months[month]||(months[month]={});
+    const key=`${providerKey(r)}/${r.metadata?.model||'okänd'}`;
+    const row=book[key]||(book[key]={provider:providerKey(r),model:r.metadata?.model||'okänd',usd:0,calls:0,inputTokens:0,outputTokens:0,priceSource:null});
+    row.usd+=actual;row.calls+=1;row.inputTokens+=safeNumber(usage?.prompt_tokens,0);row.outputTokens+=safeNumber(usage?.completion_tokens,0);
+    row.priceSource=r.metadata?.priceSource||row.priceSource;
+    for(const old of Object.keys(months).sort().slice(0,-13))delete months[old];
+  }
+  // What the economy view shows: the same books as liveSnapshot, plus the last 30 days and the cost per model.
+  economySnapshot(now=Date.now()){
+    const live=this.liveSnapshot(now);const t=this.state.tally;
+    const since=new Date(now-30*86400e3).toISOString().slice(0,10);
+    const last30Days={usd:0,calls:0};
+    for(const [day,d] of Object.entries(t.days))if(day>=since)for(const p of Object.values(d.providers||{})){last30Days.usd+=p.usd;last30Days.calls+=p.calls;}
+    const rows=Object.entries(t.models?.[new Date(now).toISOString().slice(0,7)]||{}).map(([key,row])=>({key,...row})).sort((a,b)=>b.usd-a.usd);
+    const perModelUsd=rows.reduce((sum,row)=>sum+row.usd,0);
+    return {today:{usd:live.today.usd,calls:live.today.calls},month:{usd:live.month.usd,calls:live.month.calls},last30Days,lastHourUsd:live.lastHourUsd,
+      byProvider:live.month.byProvider,models:rows,legacyEstimateUsd:Math.max(0,live.month.usd-perModelUsd),pending:live.pending,unknown:live.unknown,revenueUsd:safeNumber(this.state.revenueUsd,0)};
   }
   // Fills the tally from the ledger once (history before the tally existed). Events at or after the cutoff are
   // counted live, so nothing is counted twice.

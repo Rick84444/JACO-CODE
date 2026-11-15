@@ -18,7 +18,7 @@ export function plannerChoices(env = process.env, extra = {}) {
   for (const [name, c] of Object.entries(extra || {})) {
     if (!c || !Array.isArray(c.models)) continue;
     const known = fixed[name];
-    if (known) fixed[name] = { ...known, models: [...new Set([...known.models, ...c.models])], dynamic: true };
+    if (known) fixed[name] = { ...known, url: c.url || known.url, models: [...new Set([...known.models, ...c.models])], dynamic: true };
     else fixed[name] = { label: c.label || name, paid: Boolean(c.paid), keyEnv: c.keyEnv || null, url: c.url, models: [...new Set(c.models)], dynamic: true };
   }
   return fixed;
@@ -29,7 +29,7 @@ const keyOf = (choice, env) => (choice.keyEnv ? credential(choice.keyEnv, { env 
 // Services do not agree on whether OLLAMA_BASE_URL names the bare Ollama host
 // or its OpenAI-compatible /v1 root. Keep endpoint construction in one owner so
 // a production environment ending in /v1 never becomes /v1/v1/chat/completions.
-export function openAiChatCompletionsUrl(base, fallback = 'http://localhost:11434') {
+export function openAiChatCompletionsUrl(base, fallback = 'http://127.0.0.1:11434') {
   const root = String(base || fallback).replace(/\/+$/, '').replace(/\/v1$/i, '');
   return `${root}/v1/chat/completions`;
 }
@@ -167,7 +167,10 @@ export async function testPlannerModel({ provider, model }, { env = process.env,
     if (loopback && cloudRelay) throw new Error('OLLAMA_CLOUD_RELAY_NOT_RESERVABLE');
     if (!loopback && endpoint.protocol !== 'https:') throw new Error('PLANNER_ENDPOINT_UNTRUSTED');
     if (metered && env.JACO_ALLOW_PAID_MODELS === '0') throw new Error('PAID_PROVIDER_DISABLED');
-    const requestBody = { model, messages: [{ role: 'user', content: 'Reply with the single word OK.' }], max_tokens: 200 };
+    // The agent plans through tool calls, so the test request offers one: a model that answers text but refuses tools would pass a
+    // plain test and then leave every mission without a planner.
+    const requestBody = { model, messages: [{ role: 'user', content: 'Reply with the single word OK.' }], max_tokens: 200,
+      tools: [{ type: 'function', function: { name: 'noop', description: 'Does nothing. Do not call it.', parameters: { type: 'object', properties: {} } } }] };
     const cloudResult = metered
       ? await budgetedNovaOllamaCall({ provider: { name: provider, model, url: choice.url, key }, requestBody,
         runtimeUrl: env.JACO_RUNTIME_URL || `http://127.0.0.1:${Number(env.PORT) || 3000}`, token: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '',
@@ -179,8 +182,11 @@ export async function testPlannerModel({ provider, model }, { env = process.env,
       signal: AbortSignal.timeout(timeoutMs),
     });
     const data = cloudResult?.data ?? await res.json().catch(() => null);
-    const reply = data?.choices?.[0]?.message?.content ?? null;
+    const message = data?.choices?.[0]?.message;
+    // A thinking model can use up the short test answer on reasoning; a tool call is an answer too.
+    const reply = message?.content || message?.reasoning || (message?.tool_calls?.length ? 'tool call' : null);
     const latencyMs = Date.now() - started;
+    if (res.status === 400 && /tool|function/i.test(String(data?.error?.message || ''))) return { ok: false, provider, model, latencyMs, status: 400, error: 'PLANNER_MODEL_NO_TOOLS' };
     if (!res.ok || !reply) return { ok: false, provider, model, latencyMs, status: res.status, error: String(data?.error?.message || 'no answer').slice(0, 300) };
     return { ok: true, provider, model, latencyMs, reply: String(reply).trim().slice(0, 200), usage: data?.usage || null };
   } catch (error) {

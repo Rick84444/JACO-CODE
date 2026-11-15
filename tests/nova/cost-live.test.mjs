@@ -173,3 +173,19 @@ test('Aura budget policy can configure the autonomous fuse without changing mone
   assert.equal(g.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' }).allowed, true);
   assert.deepEqual([off.policy.dailyCloudUsd, off.policy.monthlyCloudUsd, off.policy.maxCloudUsdPerTask], [null,null,null]);
 });
+
+test('a provider that refuses without generating does not use up the autonomous fuse, while rate limits and unknown outcomes do', () => {
+  const { g } = governor({ dailyCloudUsd: null, monthlyCloudUsd: null, maxCloudUsdPerTask: null });
+  g.updatePolicy({ maxAutonomousCloudCallsPer15m: 2 });
+  const reserve = () => g.authorizeCloud({ estimatedUsd: 0.01, purpose: 'nova-ollama-cloud' });
+  for (let i = 0; i < 20; i++) {
+    const r = reserve();
+    assert.equal(r.allowed, true, String(i));
+    g.releaseReservation(r.reservationId, 'provider returned HTTP 402 without generating');
+  }
+  assert.equal(g.liveSnapshot().autonomousCloudCallsLast15m, 0);
+  const limited = reserve();
+  g.releaseReservation(limited.reservationId, 'provider returned HTTP 429 without generating');
+  reserve();
+  assert.equal(reserve().reason, 'AUTONOMOUS_CLOUD_BURST_LIMIT');
+});

@@ -411,7 +411,7 @@ const agentRegistry = {
 // JACO_SEER_LOCAL_* contract. Direct seer.mjs launches keep backward-compatible
 // Ollama behavior for tests/advanced operators. Paid providers remain disabled
 // unless JACO_ALLOW_PAID_MODELS=1.
-const legacyOllamaRoot = String(process.env.OLLAMA_BASE_URL || 'http://localhost:11434')
+const legacyOllamaRoot = String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434')
   .replace(/\/+$/, '')
   .replace(/\/v1$/i, '');
 

@@ -33,7 +33,7 @@ const PERMISSIONS=Object.freeze({
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const canonical=x=>JSON.stringify(Object.fromEntries(Object.keys(x).sort().map(k=>[k,x[k]])));
 function result(cmd,args,{cwd,timeout=12000}={}) {
-  const proc=spawnSync(cmd,args,{cwd,encoding:'utf8',timeout,maxBuffer:600000,env:{...process.env,GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:os.devNull}});
+  const proc=spawnSync(cmd,args,{cwd,encoding:'utf8',timeout,maxBuffer:600000,env:{...process.env,GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'core.autocrlf',GIT_CONFIG_VALUE_0:'false',GIT_CONFIG_GLOBAL:process.platform==='win32'?'NUL':os.devNull}});
   if(proc.error||proc.status!==0)throw new Error(`PROCESS_FAILED ${cmd} ${args.join(' ')}: ${proc.error?.message||proc.stderr?.slice(0,450)} (exit ${proc.status})`);
   return proc.stdout.trim();
 }
@@ -50,7 +50,7 @@ function validateRoot(state){
 function safeFile(file){try{const st=fs.lstatSync(file);if(st.isSymbolicLink()||!st.isFile())throw new Error('FILE_NOT_REGULAR')}catch(e){if(e.code!=='ENOENT')throw e;}return file;}
 function saveJson(file,body){safeFile(file);const temp=`${file}.${randomUUID()}.tmp`;fs.writeFileSync(temp,JSON.stringify(body,null,2)+'\n',{mode:0o600,flag:'wx'});fs.renameSync(temp,file)}
 function allowed(role,action){if(!PERMISSIONS[role]?.includes(action))throw new Error(`ROLE_CAPABILITY_DENIED:${role}:${action}`);}
-function authorityKey(root){const file=path.join(root,'.cycle-authority.key');if(!fs.existsSync(file))fs.writeFileSync(file,randomBytes(32),{mode:0o600,flag:'wx'});const stat=fs.lstatSync(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size!==32||(stat.mode&0o077)!==0)throw new Error('AUTHORITY_KEY_UNSAFE');return fs.readFileSync(file)}
+function authorityKey(root){const file=path.join(root,'.cycle-authority.key');if(!fs.existsSync(file))fs.writeFileSync(file,randomBytes(32),{mode:0o600,flag:'wx'});const stat=fs.lstatSync(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size!==32||(process.platform!=='win32'&&(stat.mode&0o077)!==0))throw new Error('AUTHORITY_KEY_UNSAFE');return fs.readFileSync(file)}
 function sign(root,payload){const mac=createHmac('sha256',authorityKey(root)).update(canonical(payload)).digest('hex');return {...payload,mac}}
 function verify(root,record){if(!record||!/^[a-f0-9]{64}$/.test(record.mac||''))return false;const {mac,...payload}=record;const actual=createHmac('sha256',authorityKey(root)).update(canonical(payload)).digest();return timingSafeEqual(actual,Buffer.from(mac,'hex'))}
 export function readCycleLedger(root){
@@ -60,7 +60,7 @@ export function readCycleLedger(root){
  return parseCycleLedger(fs.readFileSync(file,'utf8'));
 }
 function writer(root){let log=readCycleLedger(root);return (type,role,data)=>{if(!PERMISSIONS[role]&&role!=='controller')throw new Error('UNKNOWN_ACTOR');const e={schema:'jaco.autonomous-cycle-event/v1',seq:log.length+1,at:new Date().toISOString(),type,role,data,prev:log.at(-1)?.hash??ZERO};e.hash=hashCycleEvent(e);fs.appendFileSync(safeFile(path.join(root,'events.jsonl')),JSON.stringify(e)+'\n',{mode:0o600});log.push(e);return e};}
-function candidateSource(features){const rendered=fs.readFileSync(TEMPLATE,'utf8').replace('/*__FEATURES__*/',JSON.stringify(features));if(rendered.includes('__FEATURES__'))throw new Error('UNFILLED_TEMPLATE');return rendered;}
+function candidateSource(features){const rendered=fs.readFileSync(TEMPLATE,'utf8').replace(/\r\n/g,'\n').replace('/*__FEATURES__*/',JSON.stringify(features));if(rendered.includes('__FEATURES__'))throw new Error('UNFILLED_TEMPLATE');return rendered;}
 function evidencePath(root,cycle){return path.join(root,'evidence',`cycle-${String(cycle).padStart(2,'0')}.json`)}
 function verifyOldReports(root,ledger){for(const entry of ledger.filter(x=>x.type==='review.attested')){const file=evidencePath(root,entry.data.cycle);if(!fs.existsSync(file))throw new Error('REVIEW_EVIDENCE_MISSING');const proof=JSON.parse(fs.readFileSync(file,'utf8'));if(!verify(root,proof)||proof.cycle!==entry.data.cycle||proof.codeHash!==entry.data.codeHash||proof.passed!==entry.data.passed||proof.total!==entry.data.total)throw new Error('REVIEW_EVIDENCE_TAMPERED');}}
 function initialize(root){fs.mkdirSync(root,{recursive:true,mode:0o700});for(const d of ['work','evidence','agents'])fs.mkdirSync(path.join(root,d),{recursive:true,mode:0o700});for(const role of Object.keys(PERMISSIONS)){

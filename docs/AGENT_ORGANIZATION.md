@@ -10,7 +10,7 @@ Each agent has its own name, title, picture, model (a separate API key or a loca
 
 Owner: `runtime/src/server/connected/agentOrganization.mjs`. The operator UI routes are at `/api/aura/organization`. Reads use the existing local/paired-IDE gate; **all writes also require a dedicated `JACO_ORG_OPERATOR_TOKEN`** supplied by the secure host launcher and sent only by the operator UI in the `x-jaco-operator-token` header. An unset token leaves the organization read-only. Never put this credential in the repo, client bundle or agent MCP configuration. The browser input is session-memory-only. A general gateway token or localhost access is insufficient to change the organization.
 
-The state file is replaced atomically, and failed writes restore the last persisted in-memory authorization snapshot. The audit log is still a separate JSONL append after state persistence; **the two files are not a cross-file transaction**. Reconcile audit failures before claiming independently tamper-evident organization history. The organization remains a configuration registry, not a runtime execution gate.
+The state file is replaced atomically, and failed writes restore the last persisted in-memory authorization snapshot. The audit log is still a separate JSONL append after state persistence; **the two files are not a cross-file transaction**. Reconcile audit failures before claiming independently tamper-evident organization history. Permissions are a runtime gate; the rest of the organization is still configuration (see "What is enforced").
 
 This document records what was built, why each rule exists (with the research behind it), and what comes next.
 
@@ -180,9 +180,17 @@ There is no metric for an agent's inner state. A self-reported number would be f
 - `closeMeeting()` writes the minutes from those decisions. Undecided items are `deferred`.
 - Decisions also go to the organization audit.
 
+### What is enforced
+
+Permissions are enforced by `agents/lib/org-permission.mjs`. Aura's mapped chat tools check `authorize()` on every call, and Nova's `executeTask` checks its mandate before every mapped task. A denial is `MANDATE_DENIED:<agent>:<permission>:<reason>`, and approval policy never auto-resumes it. An installation without an organization, or without that agent in it, is not restricted. An unreadable store stops Nova's mapped tasks.
+
+Choosing a model for `aura` or `nova` in the panel writes the one planner choice (`agents/lib/planner-choice.mjs`), after the model has answered a test request.
+
 ### Not wired yet
 
-Nova, Aura chat, MCP tools, the mail worker and the wake runner do not yet call `decide()`, `mailPolicy()` or the `record*` functions, and they do not apply the weights. Until they do, the organization limits nothing at runtime and the metrics stay empty. Agent-side review, proposal and vote routes arrive with the wake runner, which knows which agent is calling.
+Nova, Aura chat, MCP tools, the mail worker and the wake runner do not yet call `decide()`, `mailPolicy()` or the `record*` functions, and they do not apply the weights. Until they do, only the permission checks above apply at runtime and the metrics stay empty. Agent-side review, proposal and vote routes arrive with the wake runner, which knows which agent is calling.
+
+Because `decide()` is not called, autonomy levels and the rule of two stop nothing yet: an action that "needs approval" still runs if the permission is held. Traits, budgets, MCP tools and the chat model are also not enforced.
 
 ## Next steps, in order
 
