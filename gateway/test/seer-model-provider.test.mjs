@@ -46,6 +46,8 @@ function jsonResponse(payload, status = 200) {
     ok: status >= 200 && status < 300,
     status,
     async json() { return payload; },
+    // A real fetch Response has text(); the Ollama adapter reads it to map native replies.
+    async text() { return JSON.stringify(payload); },
   };
 }
 

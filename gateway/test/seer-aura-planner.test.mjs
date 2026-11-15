@@ -68,7 +68,10 @@ test('JACO_ALLOW_PAID_MODELS=0 or a missing key stops a paid choice before any r
   const local = await invokeAuraPlanner({ name: 'ollama', url: 'http://127.0.0.1:11434/v1/chat/completions', model: 'gemma3:4b', local: true, envKey: null },
     { system: 's', user: 'u', max_tokens: 100 }, { env: {}, fetchFn, runtimeUrl: RUNTIME });
   assert.equal(local.ok, true);
-  assert.deepEqual(calls.map(c => new URL(c.url).pathname), ['/v1/chat/completions']);
+  // Provider-neutral: the call reaches the provider's own endpoint and the reply is mapped back. The wire
+  // format (OpenAI-compatible or a provider's native route) is an adapter detail, not part of this contract.
+  assert.equal(calls.length, 1);
+  assert.equal(new URL(calls[0].url).host, '127.0.0.1:11434');
 });
 
 test('SEER fails closed on missing paid opt-in, even if Aura has saved Gemini', async () => {
