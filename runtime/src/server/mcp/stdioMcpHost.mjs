@@ -73,6 +73,12 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
       name: 'JACO Connect', role: 'connect services from a URL, store or generate secrets, request accounts and API keys',
       command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-connect-mcp.mjs')],
     },
+    // Aura's own browser (tools/jaco-browser-mcp.mjs): the CDP bridge's tools through this host's access rules. Reading
+    // any public page is allowed; clicking and typing stay limited to JACO_BROWSER_ALLOWED_ORIGINS by nova-bridge.
+    ...(process.env.JACO_ENABLE_CDP !== '0' ? { browser: {
+      name: 'Browser', role: 'Aura\'s own Chrome: open pages, read them, click and type (input only on allowed origins)', icon: 'jaco', agentAccess: 'write',
+      command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-browser-mcp.mjs')], cwd: runtimeRoot,
+    } } : {}),
     // JACO Shell (tools/jaco-shell-mcp.mjs): bounded commands in the repository. No shell interprets anything; read-only
     // commands by default, shell_run only when the operator sets this server's access to write.
     shell: {

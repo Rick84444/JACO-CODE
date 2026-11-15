@@ -29,7 +29,7 @@ fs.writeFileSync(configFile, JSON.stringify({ servers: { fake: { name: 'Fake', c
 
 test('config: built-in servers plus the file; disabled and malformed entries are dropped', () => {
   const s = loadServerConfig({ configFile, repoRoot: dir, runtimeRoot: dir });
-  assert.deepEqual(Object.keys(s).sort(), ['cloudflare', 'connect', 'fake', 'filesystem', 'git', 'jaco', 'repo', 'shell']);
+  assert.deepEqual(Object.keys(s).sort(), ['browser', 'cloudflare', 'connect', 'fake', 'filesystem', 'git', 'jaco', 'repo', 'shell']);
   assert.deepEqual(s.filesystem.args.slice(-1), [dir], 'filesystem is confined to the repo root');
 });
 
