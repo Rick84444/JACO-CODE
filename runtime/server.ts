@@ -4196,6 +4196,27 @@ const notifyPhone = async (action) => {
   });
   app.use('/api/continuum', continuumSurface.router);
   app.use('/api/relay', modelRelay.router);
+  // Autonomy clock (GUI): a time-boxed, operator-signed mandate. Financial actions stay on REVIEW in code.
+  const CLOCK_NAME = 'Autonomi-klocka';
+  const clockMandates = () => modelRelay.mandates.list().filter((m: any) => m.name === CLOCK_NAME && modelRelay.mandates.isActive(m.id));
+  app.get('/api/aura/autonomy', requireLocalUi, (_req, res) => {
+    const active = clockMandates().sort((a: any, b: any) => Date.parse(b.expiresAt) - Date.parse(a.expiresAt))[0] || null;
+    res.json({ success: true, active: active ? { id: active.id, expiresAt: active.expiresAt, maxHours: active.maxHours, signedAt: active.signedAt } : null });
+  });
+  app.post('/api/aura/autonomy/start', requireLocalUi, (req, res) => {
+    const hours = Number(req.body?.hours);
+    if (!Number.isFinite(hours) || hours < 1 || hours > 8760) return res.status(400).json({ success: false, error: 'HOURS_OUT_OF_RANGE' });
+    try {
+      for (const old of clockMandates()) modelRelay.mandates.revoke(old.id);
+      const created = modelRelay.mandates.create({ name: CLOCK_NAME, maxHours: Math.round(hours), mission: 'Aura arbetar fritt inom det operatören startat: läsning, lokala ändringar, tester, commits och PR på egna grenar, webbläsning. Pengar, publicering av release, hemligheter och åtkomst kräver alltid granskning.' });
+      const signed = modelRelay.mandates.sign(created.id);
+      res.status(201).json({ success: true, active: { id: signed.id, expiresAt: signed.expiresAt, maxHours: signed.maxHours, signedAt: signed.signedAt } });
+    } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 200) }); }
+  });
+  app.post('/api/aura/autonomy/stop', requireLocalUi, (_req, res) => {
+    const stopped = clockMandates().map((m: any) => modelRelay.mandates.revoke(m.id).id);
+    res.json({ success: true, stopped });
+  });
   mountConnectedRoutes(app, requireAuth, connectedRuntime);
   seerService.setMissionContextProvider(() => connectedRuntime.novaMissions.current());
 
