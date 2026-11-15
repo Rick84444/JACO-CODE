@@ -74,6 +74,39 @@ jobs:
             build/lite/platforms/*.receipt.json
           if-no-files-found: error
 
+  pixel-arm64-smoke:
+    needs: verified-lite
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-jaco-lite
+          path: pixel-release
+      - name: Check OpenSpec and AVF launcher negative cases on real ARM64 Linux
+        run: |
+          test "$(uname -m)" = aarch64
+          node --test tests/nova/pixel-avf-contract.test.mjs
+      - name: Check the shared Android ZIP and execute its Pixel launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip="$(find pixel-release -name 'jaco-lite-android-*.zip' -type f | head -1)"
+          test -n "$zip" && test -f "$zip.sha256"
+          expected="$(cut -d ' ' -f1 < "$zip.sha256")"
+          actual="$(sha256sum "$zip" | cut -d ' ' -f1)"
+          test "$actual" = "$expected"
+          stage="$(mktemp -d)"
+          unzip -q "$zip" -d "$stage"
+          launcher="$(find "$stage" -name 'START-PIXEL-TERMINAL.sh' -type f | head -1)"
+          test -n "$launcher"
+          bash "$launcher" --check
+          node tools/verify-lite.mjs "$zip"
+
   windows-lite-smoke:
     needs: verified-lite
     runs-on: windows-latest
