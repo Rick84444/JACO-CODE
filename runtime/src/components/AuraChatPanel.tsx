@@ -14,6 +14,7 @@ import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
 import { budgetIntent, type BudgetIntent } from '../lib/budgetIntent';
 import { humanChatEvents } from '../lib/humanChat';
 import { BudgetCard } from './CostChip';
+import { AutonomyClock } from './AutonomyClock';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
 
 // The conversation is not a telemetry console. Keep the newest instance of an identical
@@ -773,6 +774,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           {olderCount>0&&<button type="button" className="cognitive-feed-older" onClick={()=>setFeedLimit(limit=>limit+CHAT_FEED_PAGE)}>{tr(`Visa äldre (${olderCount})`,`Show older (${olderCount})`)}</button>}
         </div>
       </div>
+      <AutonomyClock />
       <form onSubmit={event=>{event.preventDefault();void submit();}} className="cognitive-composer">
         <div className="cognitive-composer-inner">
           {!following&&<button type="button" className="cognitive-follow-latest" onClick={followLatest}><ArrowUp size={13}/>{tr('Följ senaste arbetet','Follow latest work')}</button>}
