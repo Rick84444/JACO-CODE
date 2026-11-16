@@ -113,7 +113,9 @@ export function createChatGptGithubRelay({
   const token=env.JACO_CHATGPT_WORKPLACE_TOKEN||env.JACO_GITHUB_CONTROL_TOKEN||env.GH_TOKEN||env.GITHUB_TOKEN||'';
   const actor=env.JACO_CHATGPT_WORKPLACE_ACTOR||String(repo).split('/')[0];
   const [owner,name]=String(repo).split('/');
-  const pollMs=Math.max(5000,Number(env.JACO_CHATGPT_WORKPLACE_POLL_MS||10000));
+  // A tokenless fetch should not hammer the Git remote or block normal missions.
+  const pollMs=Math.max((env.JACO_CHATGPT_WORKPLACE_TRANSPORT==='git-ref'||(!token&&env.JACO_CHATGPT_WORKPLACE_TRANSPORT!=='github-issue'))?30000:5000,
+    Number(env.JACO_CHATGPT_WORKPLACE_POLL_MS||30000));
   const stateFile=path.join(root,'.jaco','workplace','chatgpt-github-relay.json');
   const persisted=readState(stateFile);
   let registration=null;
@@ -317,6 +319,15 @@ export function createChatGptGithubRelay({
         lastError=clip(error?.message||error,500);
         relayState='DEGRADED_UNSYNCED';
         log('warn',lastError);
+        // On a missing Git ref/network outage, retry onboarding without asking
+        // the operator to restart Windows or manually recreate the session.
+        if(transport==='git-ref'&&!registration&&!timer){
+          timer=setInterval(()=>{
+            clearInterval(timer);timer=null;started=false;
+            void this.start();
+          },pollMs);
+          timer.unref?.();
+        }
       }
       return this.status();
     },
