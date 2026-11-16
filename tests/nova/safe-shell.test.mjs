@@ -113,6 +113,10 @@ test('the command gets a minimal environment: no token, key or password of the s
   const env = commandEnv({ PATH: '/usr/bin', HOME: '/h', DEEPSEEK_API_KEY: 'sk-x', JACO_GATEWAY_TOKEN: 't', GITHUB_TOKEN: 'g', BLAND_API_KEY: 'b', JACO_DRIVE_CRED: 'd', LANG: 'sv_SE.UTF-8' });
   assert.deepEqual(Object.keys(env).sort(), ['CI', 'GIT_TERMINAL_PROMPT', 'HOME', 'LANG', 'NO_COLOR', 'PATH']);
   assert.deepEqual(resolveProgram('npm', 'win32', 'C:\\node\\node.exe', () => true).prefix.length, 1, 'npm.cmd is never started directly on Windows');
+  const winPath = commandEnv({ Path: 'C:\\Node;C:\\Windows', GEMINI_API_KEY: 'sk-secret' });
+  assert.equal(winPath.Path, 'C:\\Node;C:\\Windows');
+  assert.equal('PATH' in winPath, false, 'avoid duplicate case variants on Windows');
+  assert.equal('GEMINI_API_KEY' in winPath, false, 'PATH support cannot leak secrets');
   assert.equal(resolveProgram('git', 'win32').cmd, 'git');
 });
 

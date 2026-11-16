@@ -196,7 +196,14 @@ const redact = text => String(text).replace(/\b(?:sk|gsk|hf|ghp|gho|ghs|xox[abp]
 // Only what a build or a test needs. No token, key or password from the server's environment reaches the command.
 export function commandEnv(env = process.env) {
   const keep = ['PATH', 'HOME', 'USERPROFILE', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'TEMP', 'TMP', 'SystemRoot', 'ComSpec', 'PREFIX', 'TERMUX_VERSION', 'ANDROID_ROOT', 'ANDROID_DATA'];
-  return { ...Object.fromEntries(keep.filter(k => env[k] !== undefined).map(k => [k, env[k]])), GIT_TERMINAL_PROMPT: '0', CI: '1', NO_COLOR: '1' };
+  const filtered = Object.fromEntries(keep.filter(k => env[k] !== undefined).map(k => [k, env[k]]));
+  // Windows commonly exposes Path rather than PATH. Preserve the native key
+  // when PATH is absent so child processes can still resolve contracted tools.
+  if (!('PATH' in filtered)) {
+    const nativePath = Object.keys(env).find(k => k.toLowerCase() === 'path');
+    if (nativePath) filtered[nativePath] = env[nativePath];
+  }
+  return { ...filtered, GIT_TERMINAL_PROMPT: '0', CI: '1', NO_COLOR: '1' };
 }
 // npm is a .cmd file on Windows and cannot be started without a shell: run its own script through node instead.
 export function resolveProgram(command, platform = process.platform, execPath = process.execPath, exists = fs.existsSync) {
