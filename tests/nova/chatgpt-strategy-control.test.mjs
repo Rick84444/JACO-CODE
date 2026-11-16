@@ -69,13 +69,43 @@ test('remote strategy cannot grant shell, money, deployment or unscoped code',()
   incoming.graph.nodes[0].contract.scope.allowed=['gateway/src/workplace/**'];
   incoming.graph.nodes[0].contract.verification={commands:['rm -rf .']};
   assert.throws(()=>prepareChatGptStrategy(incoming,{env}),/CHATGPT_STRATEGY_TEST_COMMAND_NOT_APPROVED/);
-  incoming.graph.nodes[0].contract.verification={commands:[]};
+  incoming.graph.nodes[0].contract.verification={commands:[],allow_workspace_tests:true,tests_required:false};
   const graph=prepareChatGptStrategy(incoming,{env});
+  assert.equal(graph.nodes[0].contract.verification.allow_workspace_tests,false,
+    'Git cannot enable dynamic execution of a newly written Node test');
+  assert.equal(graph.nodes[0].contract.verification.tests_required,true);
+  assert.equal(graph.nodes[0].contract.execution.require_human_before_destructive_action,true);
   assert.equal(graph.nodes[0].contract.execution.allow_git_push,false);
   assert.equal(graph.nodes[0].contract.execution.allow_git_merge,false);
   assert.equal(graph.nodes[0].contract.execution.allow_git_commit,false);
   assert.deepEqual(graph.nodes[0].contract.preApproved,[]);
 });
+test('fractional budgets cannot bypass local operator hard limits',()=>{
+  const env={...enabled,JACO_CHATGPT_STRATEGY_ALLOWED_TASKS:'repo-test,repo-write',
+    JACO_CHATGPT_STRATEGY_CODE_ROOTS:'tests/**',
+    JACO_CHATGPT_STRATEGY_MAX_STEPS:'2',JACO_CHATGPT_STRATEGY_MAX_TOOL_CALLS:'3',
+    JACO_CHATGPT_STRATEGY_MAX_DURATION_MS:'60000',JACO_CHATGPT_STRATEGY_MAX_FAILURES:'2'};
+  const payload=copy(base);
+  payload.graph.nodes=payload.graph.nodes.slice(0,1);
+  payload.graph.nodes[0].contract={
+    schema:'jaco.coding-contract/v1',scope:{allowed:['tests/**']},
+    acceptance:['verified receipt'],verification:{commands:[]},
+    budget:{max_steps:2,max_tool_calls:3,max_duration_ms:60000,max_failures:2},
+  };
+  for(const key of ['max_steps','max_tool_calls','max_duration_ms','max_failures']){
+    const modified=copy(payload);
+    modified.graph.nodes[0].contract.budget[key]=0.5;
+    assert.throws(()=>prepareChatGptStrategy(modified,{env}),/CHATGPT_STRATEGY_BUDGET_INVALID/,key);
+  }
+  payload.graph.nodes[0].contract.budget={
+    max_steps:100,max_tool_calls:300,max_duration_ms:8000000,max_failures:100,
+  };
+  const graph=prepareChatGptStrategy(payload,{env});
+  assert.deepEqual(graph.nodes[0].contract.budget,{
+    max_steps:2,max_tool_calls:3,max_failures:2,max_duration_ms:60000,
+  });
+});
+
 test('graph service client is restricted to authenticated localhost only',async()=>{
   assert.throws(()=>createLocalAuraGraphClient({env:{JACO_CHATGPT_STRATEGY_URL:'https://evil.example'}}),
     /CHATGPT_STRATEGY_LOOPBACK_REQUIRED/);
