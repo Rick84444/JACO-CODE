@@ -287,7 +287,10 @@ function organizationMandate(organization: any, agentId = 'aura') {
     id: agent.id, name: agent.name, title: agent.title, status: agent.status, reportsTo: agent.reportsTo, mail: agent.mail || null, folder: agent.folder,
     grantedPermissions: Object.entries(agent.mandate.permissions).map(([key, grant]: [string, any]) => ({ key, grantedBy: grant.grantedBy, grantedAt: grant.grantedAt, expiresAt: grant.expiresAt || null })),
     usablePermissions: agent.effective.permissions,
-    budgetUsdPerDay: agent.effective.budgetUsdPerDay, maxSubAgents: agent.mandate.maxSubAgents, autonomy: agent.effective.autonomy,
+    // Budget for sub-agents this agent delegates. Its own model calls are governed by the operator's economic policy
+    // (daily and monthly cloud limits in the budget settings), not by this number.
+    subAgentBudgetUsdPerDay: agent.effective.budgetUsdPerDay, maxSubAgents: agent.mandate.maxSubAgents, autonomy: agent.effective.autonomy,
+    ownModelCallBudget: 'governed by the operator economic policy (daily and monthly cloud limits)',
     traits: agent.effective.traits, exposure: agent.effective.exposure,
   };
 }
