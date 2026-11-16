@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createGitRefChatGptTransport } from './chatgpt-git-ref.mjs';
 
 const ISSUE_MARKER='<!-- jaco-chatgpt-workplace-bridge:v1 -->';
 const IN_MARKER='<!-- jaco-chatgpt-workplace-in:v1 -->';
@@ -103,6 +105,7 @@ export function createChatGptGithubRelay({
   root=process.cwd(),
   env=process.env,
   fetchImpl=globalThis.fetch,
+  gitExecImpl=undefined,
   log=(level,message)=>console.log(`[JACO Workplace] [chatgpt-relay] ${level.toUpperCase()} ${message}`),
 }={}){
   if(!store)throw new Error('CHATGPT_RELAY_STORE_REQUIRED');
@@ -119,7 +122,13 @@ export function createChatGptGithubRelay({
   let polling=false;
   let lastError=null;
   let started=false;
-  const enabled=Boolean(owner&&name&&token&&actor);
+  const selectedTransport=env.JACO_CHATGPT_WORKPLACE_TRANSPORT||'auto';
+  const transport=selectedTransport==='auto'?(token?'github-issue':'git-ref'):selectedTransport;
+  const enabled=Boolean(owner&&name&&actor&&['github-issue','git-ref'].includes(transport)&&(transport==='git-ref'||token));
+  const gitRef=transport==='git-ref'&&enabled?createGitRefChatGptTransport({
+    repo, repoRoot:env.JACO_CHATGPT_GIT_REPO_ROOT||env.JACO_REPO_ROOT||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..'),
+    ...(gitExecImpl?{gitExecImpl}:{}),
+  }):null;
   let relayState=enabled?'REGISTERING':'DISABLED';
 
   async function api(apiPath,{method='GET',body=null}={}){
@@ -221,9 +230,30 @@ export function createChatGptGithubRelay({
     if(!enabled||!registration||polling)return;
     polling=true;
     try{
-      const issueNumber=await findIssue();
-      await ingestGithub(issueNumber);
-      await mirrorWorkplace(issueNumber);
+      if(transport==='git-ref'){
+        const inbound=await gitRef.read();
+        const msg=parseInbound({user:{login:actor},body:jsonBlock(IN_MARKER,inbound)},actor);
+        if(!msg)throw new Error('CHATGPT_GIT_MESSAGE_REQUIRED');
+        store.postEvent({
+          sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',
+          thread:msg.thread,kind:msg.kind,targets:msg.targets,body:msg.body,
+          payload:{transport:'git-ref',messageId:msg.messageId},
+          references:msg.references,eventId:'chatgpt-git:'+msg.messageId,
+        });
+        const page=store.sync({
+          sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',
+          after:Number(persisted.lastMirroredSeq||0),limit:500,
+        });
+        await gitRef.publish({agentId:registration.agentId,receivedId:msg.messageId,
+          scannedCursor:page.scannedCursor,events:(page.events||[]).filter(isForRelay)});
+        persisted.lastMirroredSeq=Number(page.scannedCursor||persisted.lastMirroredSeq||0);
+        store.ack({sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',cursor:persisted.lastMirroredSeq});
+        writeState(stateFile,persisted);
+      }else{
+        const issueNumber=await findIssue();
+        await ingestGithub(issueNumber);
+        await mirrorWorkplace(issueNumber);
+      }
       lastError=null;
       relayState='READY';
     }catch(error){
@@ -237,7 +267,7 @@ export function createChatGptGithubRelay({
     get enabled(){return enabled;},
     status(){
       return {
-        enabled,started,state:relayState,
+        enabled,started,state:relayState,transport,
         agentId:registration?.agentId||null,
         sessionId:registration?.sessionId||null,
         issueNumber:persisted.issueNumber||null,
@@ -249,9 +279,11 @@ export function createChatGptGithubRelay({
     async start(){
       if(started)return this.status();
       started=true;
-      if(!enabled){relayState='DISABLED';log('info','disabled: no GitHub token configured');return this.status();}
+      if(!enabled){relayState='DISABLED';log('info','disabled: relay transport not configured');return this.status();}
       try{
         relayState='REGISTERING';
+        // Prove the Git origin and inbound ref exist before creating a Workplace session.
+        if(transport==='git-ref')await gitRef.read();
         registration=store.registerAgent(agentCard(env),{workspace:'JACO'});
         const initialSeq=Number(registration.latestSeq||0);
         // A new relay session starts at the current Workplace head; historical
@@ -260,7 +292,7 @@ export function createChatGptGithubRelay({
         store.postEvent({
           sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',
           kind:'STATUS',thread:'agent-status',body:'ChatGPT GitHub relay READY',
-          payload:{status:'READY',transport:'github',issueNumber:persisted.issueNumber||null},
+          payload:{status:'READY',transport,issueNumber:transport==='github-issue'?persisted.issueNumber||null:null},
         });
         if(!persisted.lastMirroredSeq || Number(persisted.lastMirroredSeq)>initialSeq) persisted.lastMirroredSeq=initialSeq;
         writeState(stateFile,persisted);
@@ -271,7 +303,7 @@ export function createChatGptGithubRelay({
           try{store.heartbeat({sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',status:'READY'});}
           catch(error){lastError=clip(error?.message||error,500);}
         },60000);heartbeatTimer.unref?.();
-        log('info',`READY as ${registration.agentId}`);
+        log(relayState==='READY'?'info':'warn',`${relayState} as ${registration.agentId} (${transport})`);
       }catch(error){
         lastError=clip(error?.message||error,500);
         relayState='DEGRADED_UNSYNCED';
