@@ -1,8 +1,8 @@
 {
   "schema": "jaco.nova-control/v1",
-  "commandId": "chatgpt-relay-activate-20261115-2134-v1",
+  "commandId": "chatgpt-remote-control-probe-20261116-104624-v1",
   "op": "mission.create",
-  "goal": "Verify ChatGPT-to-JACO Git relay connectivity on the running local Aura/Nova runtime. Perform one read-only health-check and record a durable receipt. Do not mutate files, browser, processes, git working tree, security settings, or external accounts. Report actual verified results only.",
+  "goal": "Verify that the local canonical JACO Aura/Nova runtime receives a fresh command through its existing Git-only control bridge. Perform a read-only health-check and publish the actual durable command receipt/status via jaco-control-status. If observable using already approved read-only tools, report whether Workplace and CDP are healthy. No browser clicks, files, process changes, new agent creation, approvals, spending, or secret access; do not disrupt active missions. Treat this as a connectivity probe, not a grant of remote desktop control.",
   "allowedTasks": [
     "health-check"
   ]
