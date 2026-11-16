@@ -34,7 +34,10 @@ export function createGithubNovaControlInbox({
   strategyClient = null,
 } = {}) {
   if (!missionClient) throw new Error('GITHUB_CONTROL_MISSION_CLIENT_REQUIRED');
-  const auraGraphs = strategyClient || createLocalAuraGraphClient({env:strategyEnv,fetchImpl});
+  // Instantiate the optional strategy connector only on a real strategy command.
+  // A bad SEER configuration must never disable ordinary Git mission receipts.
+  let defaultAuraGraphs=null;
+  const graphs=()=>strategyClient||(defaultAuraGraphs ||= createLocalAuraGraphClient({env:strategyEnv,fetchImpl}));
   const [owner, name] = String(repo).split('/');
   const configured = Boolean(owner && name && actor);
   const transport = transportMode === 'git-ref' ? 'git-ref' : token ? 'github-api' : 'git-ref';
@@ -228,7 +231,7 @@ export function createGithubNovaControlInbox({
   }
 
   async function submit(command, issue) {
-    if(command.op === 'strategy.graph.create') return await auraGraphs.create(command.graph);
+    if(command.op === 'strategy.graph.create') return await graphs().create(command.graph);
     if (command.op === 'mission.create') {
       return await missionClient.create({
         goal: command.goal,
@@ -335,7 +338,7 @@ export function createGithubNovaControlInbox({
     for (const [issueNumber, record] of Object.entries(control.issues)) {
       if ((!record?.missionId&&!record?.graphId) || record.closed) continue;
       let mission;
-      try { mission = record.graphId ? await auraGraphs.get(record.graphId) : await missionClient.get(record.missionId); }
+      try { mission = record.graphId ? await graphs().get(record.graphId) : await missionClient.get(record.missionId); }
       catch { continue; }
 
       const statusChanged =
