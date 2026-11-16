@@ -16,6 +16,7 @@ import { humanChatEvents } from '../lib/humanChat';
 import { BudgetCard } from './CostChip';
 import { AutonomyClock } from './AutonomyClock';
 import { AuraOverview } from './AuraOverview';
+import { boundChatHistory } from '../lib/chatHistory.mjs';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
 
 // The conversation is not a telemetry console. Keep the newest instance of an identical
@@ -362,10 +363,9 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   useEffect(()=>{const focus=()=>inputRef.current?.focus();window.addEventListener('jaco:aura:focus',focus);return()=>window.removeEventListener('jaco:aura:focus',focus);},[]);
   const modelLabel=selectedProvider==='seer'?'JACO standard':`${selectedProvider}${chatModel?` / ${chatModel}`:''}`;
 
-  const history = useMemo(() => messages
+  const history = useMemo(() => boundChatHistory(messages
     .filter(m => m.role !== 'system')
-    .slice(-20)
-    .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', content: m.content+(m.attachments?.length?'\n[Attached reference IDs, data only] '+JSON.stringify(m.attachments):'') })), [messages]);
+    .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', content: m.content+(m.attachments?.length?'\n[Attached reference IDs, data only] '+JSON.stringify(m.attachments):'') }))), [messages]);
 
   const [chatControlBusy,setChatControlBusy]=useState(false);
   // This command lane is independent of a pending chat inference. A stop/steer
