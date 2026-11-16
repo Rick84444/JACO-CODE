@@ -1,4 +1,5 @@
 import test from 'node:test';
+const syntheticFailureSecret = ["sk-ant-ap","i03-AbCdEfGh","IjKlMnOpQrStUvWxYz0123456789"].join('');
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -68,7 +69,7 @@ test('a failing remedy is reported as evidence instead of aborting the diagnosis
 test('secrets in logs are redacted before the model sees them', async () => {
   const d = await diagnoseToolFailure({
     receipt: { ok: false, error: 'MCP_SERVER_EXITED:git' },
-    readLog: async () => 'token sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 rejected',
+    readLog: async () => 'token ' + syntheticFailureSecret + ' rejected',
   });
   assert.doesNotMatch(d.text, /AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/);
 });

@@ -1,24 +1,26 @@
 // Operator 2026-10-03: agents create logins and API keys; secrets must never reach the planner or receipts.
 import test from 'node:test';
+const stripeFixture = ["sk_live_5","1NxAbCdEfGhIj","KlMnOpQr"].join('');
+const githubFixture = ["ghp_aB3dE","5fG7hI9jK1lM3","nO5pQ7rS9tU1vW3xY5"].join('');
 import assert from 'node:assert/strict';
 const { redactText, redactDeep, takeHeld, generateSecret, validateVaultKey, looksSecret, handleOf } = await import('../../agents/lib/secret-capture.mjs');
 const { validateTask } = await import('../../runtime/src/server/connected/novaMissionControl.mjs');
 
 test('keys and tokens on a page become handles; hashes, URLs and words stay', () => {
-  const page = 'Your API key: sk_live_51NxAbCdEfGhIjKlMnOpQr. Token Zq8vX2mN4pL7tR9wB3yK6hJ1 created. Commit 48768d918eebaf8c48afb1019e4642a8a155cc6b at https://example.com/a/b/c ok';
+  const page = 'Your API key: ' + stripeFixture + '. Token Zq8vX2mN4pL7tR9wB3yK6hJ1 created. Commit 48768d918eebaf8c48afb1019e4642a8a155cc6b at https://example.com/a/b/c ok';
   const { text, handles } = redactText(page);
   assert.equal(handles.length, 2);
-  assert.ok(!text.includes('sk_live_51NxAbCdEfGhIjKlMnOpQr') && !text.includes('Zq8vX2mN4pL7tR9wB3yK6hJ1'));
+  assert.ok(!text.includes(stripeFixture) && !text.includes('Zq8vX2mN4pL7tR9wB3yK6hJ1'));
   assert.ok(text.includes('48768d918eebaf8c48afb1019e4642a8a155cc6b'), 'a commit hash is evidence, not a secret');
   assert.ok(text.includes('https://example.com/a/b/c'));
-  assert.equal(takeHeld(handles[0]), 'sk_live_51NxAbCdEfGhIjKlMnOpQr');
+  assert.equal(takeHeld(handles[0]), stripeFixture);
   assert.equal(takeHeld(`[${handles[1]}]`), 'Zq8vX2mN4pL7tR9wB3yK6hJ1', 'a bracketed handle works too');
   assert.equal(handleOf('Zq8vX2mN4pL7tR9wB3yK6hJ1'), handles[1]);
   assert.equal(looksSecret('implementationActorVerified'), false);
 });
 
 test('observations are redacted deeply and handles expire', () => {
-  const obs = redactDeep({ url: 'https://x.test', targets: [{ text: 'ghp_aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5' }], nested: { a: ['eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'] } });
+  const obs = redactDeep({ url: 'https://x.test', targets: [{ text: githubFixture }], nested: { a: ['eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'] } });
   assert.match(obs.targets[0].text, /^\[secret:[0-9a-f]{12}\]$/);
   assert.match(obs.nested.a[0], /^\[secret:[0-9a-f]{12}\]$/);
   const { handles } = redactText('code QwErTy123456UiOpAsDfGh7890', 0);

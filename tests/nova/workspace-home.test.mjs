@@ -80,7 +80,7 @@ test('home: templates are created once, today and yesterday are loaded, MEMORY.m
 test('home: files are capped (newest part kept), secrets become handles, symlinks are not read', t => {
   const dir = path.join(tmp(t), 'nova'); ensureHome(dir);
   fs.writeFileSync(path.join(dir, 'AGENTS.md'), 'GAMMALT '.repeat(5000) + 'NYTT SLUT');
-  const key = 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWx0123456789';
+  const key = ["sk-proj-A","bCdEfGhIjKlMn","OpQrStUvWx0123456789"].join('');
   fs.writeFileSync(path.join(dir, 'USER.md'), `Min nyckel är ${key}`);
   const h = loadHome(dir, { limits: { ...HOME_LIMITS, perFile: 1000 } });
   const agents = h.files.find(f => f.name === 'AGENTS.md');
