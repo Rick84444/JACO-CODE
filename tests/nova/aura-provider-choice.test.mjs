@@ -64,6 +64,6 @@ test('missing usage and dispatched transport failure remain unknown',async()=>{
 });
 test('provider-aware context limits enlarge remote prompts without exceeding local inference budget', () => {
   assert.equal(auraPromptByteLimit({local:true}),12000);
-  assert.equal(auraPromptByteLimit({local:false}),120000);
-  assert.equal(auraPromptByteLimit({local:true,cloudRelay:true}),120000);
+  assert.equal(auraPromptByteLimit({local:false}),200000);
+  assert.equal(auraPromptByteLimit({local:true,cloudRelay:true}),200000);
 });
