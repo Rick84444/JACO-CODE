@@ -14,13 +14,15 @@ const clean=(v,max)=>typeof v==='string'&&v.trim()&&v.trim().length<=max?v.trim(
 const reject=code=>{throw Error('CHATGPT_STRATEGY_'+code);};
 const csv=v=>String(v||'').split(',').map(s=>s.trim()).filter(Boolean);
 const boundedLocal=(input,defaultValue,min,max)=>{
+  if(input===undefined||input===null||input==='')return defaultValue;
   const n=Number(input);
-  return Number.isSafeInteger(n)&&n>=min?Math.min(max,n):defaultValue;
+  if(!Number.isSafeInteger(n)||n<min)reject('LOCAL_BUDGET_INVALID');
+  return Math.min(max,n);
 };
-const requestedBounded=(input,limit)=>{
+const requestedBounded=(input,limit,min=1)=>{
   if(input===undefined||input===null)return limit;
   const n=Number(input);
-  if(!Number.isSafeInteger(n)||n<1)reject('BUDGET_INVALID');
+  if(!Number.isSafeInteger(n)||n<min)reject('BUDGET_INVALID');
   return Math.min(n,limit);
 };
 
@@ -103,7 +105,7 @@ export function prepareChatGptStrategy(payload,{env=process.env,repo='Rick84444/
           tests_required:true,receipt_required:true},
         budget:{max_steps:requestedBounded(source.budget?.max_steps,policy.maxSteps),
           max_tool_calls:requestedBounded(source.budget?.max_tool_calls,policy.maxToolCalls),
-          max_duration_ms:requestedBounded(source.budget?.max_duration_ms,policy.maxDurationMs),
+          max_duration_ms:requestedBounded(source.budget?.max_duration_ms,policy.maxDurationMs,1000),
           max_failures:requestedBounded(source.budget?.max_failures,policy.maxFailures)},
       },stepObjective);
       node.contract=normalized;
