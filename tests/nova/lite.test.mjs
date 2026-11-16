@@ -9,7 +9,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createZip, readZip, crc32 } from '../../tools/lib/zip.mjs';
 import { buildLite, liteDependencies, secretValues, findSecrets, collectFiles, LITE_DEPENDENCIES } from '../../tools/build-lite.mjs';
-import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, liteChildEnv, writeRuntimeRecord, removeRuntimeRecord, runtimeRecordFile, agentEnv, agentCommand, openBrowser, liteExitCode, appendLiteLifecycle, HELP } from '../../lite/start.mjs';
+import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, liteChildEnv, writeRuntimeRecord, removeRuntimeRecord, runtimeRecordFile, agentEnv, agentCommand, openBrowser, liteWorkplaceChildEnv, liteExitCode, appendLiteLifecycle, HELP } from '../../lite/start.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-lite-test-'));
 
@@ -104,6 +104,25 @@ test('Lite propagates its selected Node tool bin to every child without losing t
   assert.equal(win.Path, 'C:\\Node;C:\\Windows\\System32');
   assert.equal(liteChildEnv(win, 'c:\\node\\node.exe', 'win32').Path, win.Path);
   assert.equal(liteChildEnv({ PATH: '/usr/bin' }, 'node', 'linux').PATH, '/usr/bin', 'relative executable paths are ignored');
+});
+
+test('Lite Workplace relays from the operator project, not its packaged dist folder', () => {
+  const project = path.resolve('/home/droid/JACO-CODE');
+  const env = liteWorkplaceChildEnv({
+    childEnv: { PATH:'/usr/bin', GITHUB_TOKEN:'test-secret', JACO_CHATGPT_GIT_REPO_ROOT:'' },
+    project, workplacePort:2995,
+  });
+  assert.equal(env.JACO_CHATGPT_GIT_REPO_ROOT, project);
+  assert.equal(env.JACO_WORKSPACE_ROOT, project);
+  assert.equal(env.JACO_WORKPLACE_PORT, '2995');
+  assert.equal(env.GITHUB_TOKEN, '', 'tokenless Git transport must not inherit GitHub credentials');
+  assert.equal(env.JACO_CHATGPT_WORKPLACE_TOKEN, '');
+  assert.equal(env.JACO_WORKPLACE_OPERATOR_TOKEN, '');
+  const explicit = liteWorkplaceChildEnv({
+    childEnv: { JACO_CHATGPT_GIT_REPO_ROOT:'/existing/project' },
+    project, workplacePort:3015,
+  });
+  assert.equal(explicit.JACO_CHATGPT_GIT_REPO_ROOT, '/existing/project', 'honor an explicitly configured checkout');
 });
 
 test('builder: stages dist without maps, adds launcher and license, scans for secrets, writes a verified zip', async () => {

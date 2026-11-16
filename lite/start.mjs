@@ -120,6 +120,19 @@ export function ensureEconomicPolicy(project, fsImpl = fs) {
   return true;
 }
 
+// In a packaged Lite build, Workplace's __dirname points inside dist, not to
+// the operator's Git checkout. The public tokenless relay must read the actual
+// open project repo; its Git transport independently validates the origin.
+// Never manufacture a checkout, grant host permissions or expose credentials.
+export function liteWorkplaceChildEnv({ childEnv, project, workplacePort }) {
+  return { ...childEnv, JACO_WORKPLACE_HOST: HOST, JACO_WORKPLACE_PORT: String(workplacePort),
+    JACO_WORKSPACE_ROOT: project,
+    JACO_CHATGPT_GIT_REPO_ROOT: childEnv.JACO_CHATGPT_GIT_REPO_ROOT || childEnv.JACO_REPO_ROOT || project,
+    JACO_WORKPLACE_SUPERVISE_MODEL: '0', JACO_WORKPLACE_SUPERVISE_NOVA: '0',
+    JACO_WORKPLACE_SUPERVISE_SEER: '0', JACO_CHATGPT_WORKPLACE_TOKEN: '', JACO_GITHUB_CONTROL_TOKEN: '',
+    GH_TOKEN: '', GITHUB_TOKEN: '', JACO_WORKPLACE_TOKEN: '', JACO_WORKPLACE_OPERATOR_TOKEN: '' };
+}
+
 export function checkInstall(installDir, fsImpl = fs) {
   const need = ['dist/server.cjs', 'dist/index.html', 'dist/workplace.mjs', 'dist/jaco-editor.mjs', 'dist/connect.html', 'node_modules/express/package.json'];
   return need.filter(rel => !fsImpl.existsSync(path.join(installDir, rel))).map(rel => `missing ${rel}`);
@@ -396,10 +409,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   // Every Lite installation owns its loopback Workplace; never attach to an unrelated installation.
   const workplacePort = await (deps.findPort ?? findFreePort)(2995);
   const workplaceUrl = 'http://' + HOST + ':' + workplacePort;
-  const workplaceEnv = { ...childEnv, JACO_WORKPLACE_HOST: HOST, JACO_WORKPLACE_PORT: String(workplacePort),
-    JACO_WORKSPACE_ROOT: project, JACO_WORKPLACE_SUPERVISE_MODEL: '0', JACO_WORKPLACE_SUPERVISE_NOVA: '0',
-    JACO_WORKPLACE_SUPERVISE_SEER: '0', JACO_CHATGPT_WORKPLACE_TOKEN: '', JACO_GITHUB_CONTROL_TOKEN: '',
-    GH_TOKEN: '', GITHUB_TOKEN: '', JACO_WORKPLACE_TOKEN: '', JACO_WORKPLACE_OPERATOR_TOKEN: '' };
+  const workplaceEnv = liteWorkplaceChildEnv({ childEnv, project, workplacePort });
   let shutdownRequested = false;
   const lifecycle = event => appendLiteLifecycle(project, { launcherPid: process.pid, ...event }, fsImpl);
   const processStopped = (component, proc, code, signal) => {
