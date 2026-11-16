@@ -163,6 +163,9 @@ export function createAuraOverlay({ CDPSession, runtimeUrl = 'http://127.0.0.1:3
         contextId = world.executionContextId;
         await next.send('Runtime.evaluate', { expression: overlaySource(language()), contextId });
       }
+      // The world can exist without the script having run in it (live: the binding and world came up, the
+      // element did not). The script is idempotent, so running it once more in Aura's world is always safe.
+      if (contextId) await next.send('Runtime.evaluate', { expression: overlaySource(language()), contextId }).catch(() => {});
     } catch (error) { log('overlay', String(error?.message || error)); }
   }
   return {
