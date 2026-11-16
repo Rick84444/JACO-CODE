@@ -23,3 +23,11 @@ test('her packet shows the contract\'s booked kinds', () => {
   const c = boundContract({ objective: 'Fix tests', preApproved: ['merge-or-release', 'publish-or-deploy'], scope: { allowed: ['src/**'] } });
   assert.deepEqual(c.preApproved, ['merge-or-release', 'publish-or-deploy']);
 });
+
+import { localServicesFact } from '../../agents/hands-off-agent.mjs';
+test('Aura is given the resolved local service addresses as fact, so she does not search for them', () => {
+  const fact = localServicesFact({});
+  assert.match(fact, /runtime \(Core\) http:\/\/127\.0\.0\.1:\d+/);
+  assert.match(fact, /do not search for them/);
+  assert.match(agentSystemFor(['repo-read'], 'win32', false, 'sv'), /runtime \(Core\) http:\/\/127\.0\.0\.1:/);
+});

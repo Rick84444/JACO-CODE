@@ -61,7 +61,7 @@ import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs'
 import { validateRepoScanTask, runRepoScanTask } from './lib/repo-scan.mjs';
 import { validateMcpCall, callMcpTool, mcpCatalog, mcpCatalogTools, learnedTaskNotes, resetMcpCatalog } from './lib/mcp-tools.mjs';
 import { createToolDiagnoser } from './lib/tool-failure-diagnosis.mjs';
-import { followResolvedRuntime } from './lib/resolved-endpoints.mjs';
+import { followResolvedRuntime, localServiceUrl } from './lib/resolved-endpoints.mjs';
 followResolvedRuntime(process.env);
 import { plannerTools, structuredPlannerTools, planFromToolCalls, planSchema } from './lib/native-tools.mjs';
 import { runAgentMission, introMessage, contextPacketIntro } from './lib/agent-loop.mjs';
@@ -1979,10 +1979,20 @@ export const AUTONOMY_RULE = [
   "Decide with this test: is the action inside the contract, and is it reversible and not visible to others? Then do it. Is it outward, but booked in preApproved? Then do it. Is it a hard limit or not booked? Then stop for it only and say why.",
 ].join(' ');
 
+// The local services and their resolved addresses. Stated as fact so Aura never has to search for a port.
+export function localServicesFact(env = process.env) {
+  const a2a = env.JACO_A2A_PORT || 2998;
+  const bridge = env.NOVA_BRIDGE_PORT || 4243;
+  return 'Local JACO services on this machine, already resolved (do not search for them): ' +
+    'runtime (Core) ' + localServiceUrl('runtime', env) + '; Workplace ' + localServiceUrl('workplace', env) + '; ' +
+    'SEER ' + localServiceUrl('seer', env) + '; A2A http://127.0.0.1:' + a2a + '; nova-bridge http://127.0.0.1:' + bridge + '. ' +
+    'Use these addresses directly. Check a service with a read-only request; do not guess ports.';
+}
+
 export function agentSystemFor(allowedTasks, platform = process.platform, graphMission = false, language = readOperatorLanguage()) {
   const lines = brainSystemFor(allowedTasks, graphMission, platform).split("\n").filter(line => !AGENT_DROP.test(line));
   const speak = languageInstruction(language);
-  return lines.join("\n") + "\n" + WEB_RULE + "\n" + NARRATION_RULE + "\n" + PLAN_RULE + "\n" + AUTONOMY_RULE + (speak ? "\n" + speak : "") + "\nYou act through the functions provided. Call them; each result comes back to you, including errors and refusals: read them and adapt instead of repeating the same call. Several reading calls may go in one answer. When the goal is achieved, call complete with the answer for the operator, citing steps as [#n].";
+  return lines.join("\n") + "\n" + WEB_RULE + "\n" + NARRATION_RULE + "\n" + PLAN_RULE + "\n" + AUTONOMY_RULE + "\n" + localServicesFact() + (speak ? "\n" + speak : "") + "\nYou act through the functions provided. Call them; each result comes back to you, including errors and refusals: read them and adapt instead of repeating the same call. Several reading calls may go in one answer. When the goal is achieved, call complete with the answer for the operator, citing steps as [#n].";
 }
 
 const TEMPORARY_COOLDOWN_MS = 15 * 60_000;
