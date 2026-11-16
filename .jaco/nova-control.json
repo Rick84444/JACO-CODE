@@ -1,9 +1,13 @@
 {
   "schema": "jaco.nova-control/v1",
-  "commandId": "chatgpt-remote-control-probe-20261116-1425-v2",
+  "commandId": "chatgpt-workplace-register-20261116-1445-v1",
   "op": "mission.create",
-  "goal": "Second fresh read-only ChatGPT-to-JACO control test. On the actual local Aura/Nova runtime, execute only the existing health-check task, without disturbing any running operator mission. Acknowledge receipt and publish bounded status in jaco-control-status; include real error code if rejected. Do not write project files, run browser or desktop mutations, change permissions, install anything, change model, approve costs, or access secrets. This is a connectivity test only.",
+  "goal": "OPERATOR-REQUESTED JACO CHATGPT WORKPLACE REGISTRATION. Use the existing canonical Workplace and ChatGPT relay implementation, NOT a new runtime or simulated agent. On the local host first verify Workspace health /v1 Workplace (default loopback 127.0.0.1:2995) and gateway status without printing credentials. If already enabled, start/reconnect the existing chatgpt-jaco-relay using already-authorized JACO credential configuration only, and verify its honest jaco.agent-card/v1 identity, server-issued agentId and sessionId, sync+ACK, STATUS READY, and two-way relay message evidence. Do not claim this specific ChatGPT browser session has joined unless true end-to-end delivery exists. Existing closed/public GitHub issue #15 must not be used for private message contents; fail closed if no secure authorized transport. If the relay cannot start because of a missing credential, unsupported access, down gateway, or absence of a suitable private transport, report precise BLOCKED status and a minimal safe remedy. Do not create new secrets, weaken authentication, change permissions, expose localhost/CDP to Internet, touch other active missions, modify financial policy, deploy, or publish confidential data. Use only ordinary configured local tooling and preserve unrelated workspace state. Report observable evidence of registration; do not equate a Git receipt with registration.",
   "allowedTasks": [
-    "health-check"
+    "health-check",
+    "repo-read",
+    "mcp-call",
+    "repo-service",
+    "shell"
   ]
 }
