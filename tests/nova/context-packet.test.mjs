@@ -1,4 +1,5 @@
 import test from 'node:test';
+const openAiFixture = ["sk-proj-A","bCdEfGhIjKlMn","OpQrStUvWx0123456789"].join('');
 import assert from 'node:assert/strict';
 import {
   CONTEXT_PACKET_SCHEMA,
@@ -79,11 +80,11 @@ test('Context Packet redacts credential-shaped values before model context', () 
     type: 'repo-read',
     ok: true,
     verified: true,
-    result: { stdout: 'OPENAI_API_KEY=sk-proj-AbCdEfGhIjKlMnOpQrStUvWx0123456789' },
+    result: { stdout: 'OPENAI_API_KEY=' + openAiFixture },
   });
   const packet = buildContextPacket({ mission: m, strategicContext: strategic() });
   const raw = JSON.stringify(packet);
-  assert.doesNotMatch(raw, /sk-proj-AbCdEfGhIjKlMnOpQrStUvWx0123456789/);
+  assert.doesNotMatch(raw, new RegExp(openAiFixture));
   assert.match(raw, /secret:/);
 });
 

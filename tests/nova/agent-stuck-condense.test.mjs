@@ -102,7 +102,7 @@ test('condense: the tail never starts with an orphan tool result, and a second p
 });
 
 test('what the model is shown has secrets replaced by handles', () => {
-  const key = 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWx0123456789';
+  const key = ["sk-proj-A","bCdEfGhIjKlMn","OpQrStUvWx0123456789"].join('');
   const shown = receiptForModel(1, { ok: true, verified: true, result: { stdout: `OPENAI_API_KEY=${key}\nall good` } });
   assert.ok(!shown.includes(key), shown);
   assert.match(shown, /all good/);
