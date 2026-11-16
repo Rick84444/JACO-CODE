@@ -40,7 +40,7 @@ test('packaged Node directory is visible to contracted npm tests without forward
   assert.equal(codingWorkspaceExecutionEnv({env,execPath:nodePath,platform:'linux'}).PATH,env.PATH);
   if (process.platform !== 'win32') {
     const npm = path.join(dir, 'npm');
-    fs.writeFileSync(npm, '#!/bin/sh\\nprintf "verified-npm-sibling\\n"\\n', { mode: 0o755 });
+    fs.writeFileSync(npm, ['#!/bin/sh', 'echo verified-npm-sibling', ''].join(String.fromCharCode(10)), { mode: 0o755 });
     assert.equal(execSync('npm --version', { env, encoding:'utf8' }).trim(), 'verified-npm-sibling');
   }
 });
