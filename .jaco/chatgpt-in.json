@@ -1,10 +1,10 @@
 {
   "schema": "jaco.chatgpt-workplace/v1",
-  "messageId": "chatgpt-workplace-git-handshake-20261116-v1",
+  "messageId": "chatgpt-pixel-relay-handshake-20261116-v1",
   "kind": "QUESTION",
   "thread": "chatgpt",
   "targets": [
     "*"
   ],
-  "body": "Non-sensitive transport handshake. Aura: please acknowledge receipt of this Git-ref message in Workplace. This message carries no permissions, no external actions and no credentials."
+  "body": "Non-sensitive ChatGPT relay handshake for JACO. Please record receipt in Workplace; if a connected agent is available, reply with a plain ACK in thread chatgpt. No mission, approval, secret, or external action requested."
 }
