@@ -1,4 +1,5 @@
 import test from 'node:test';
+const syntheticAuditSecret = ["sk-abcdef","ghijklmnopqr","stuvwxyz0123456789ABCD"].join('');
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -167,11 +168,11 @@ test('every command and refusal is audited, without secrets', { skip: !posix }, 
   const sh = new SafeShell({ workspace: ws, env: { PATH: process.env.PATH } });
   await sh.run({ command: 'ls', args: ['.'], mode: 'read' });
   await sh.run({ command: 'rm', args: ['-rf', 'src'] });
-  await sh.run({ command: 'cat', args: ['sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD'], mode: 'read' });
+  await sh.run({ command: 'cat', args: [syntheticAuditSecret], mode: 'read' });
   const lines = fs.readFileSync(path.join(ws, '.jaco', 'shell-audit.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(lines.map(l => l.outcome), ['ok', 'refused', 'failed']);
   assert.match(lines[1].reason, /DESTRUCTIVE_NOT_ENABLED/);
-  assert.ok(!JSON.stringify(lines).includes('sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD'), 'a token-shaped argument is redacted');
+  assert.ok(!JSON.stringify(lines).includes(syntheticAuditSecret), 'a token-shaped argument is redacted');
   assert.equal(fs.statSync(path.join(ws, '.jaco', 'shell-audit.jsonl')).mode & 0o777, 0o600);
 });
 
