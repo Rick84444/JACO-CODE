@@ -1,9 +1,55 @@
 {
   "schema": "jaco.nova-control/v1",
-  "commandId": "chatgpt-relay-activate-20261115-2134-v1",
+  "commandId": "chatgpt-workplace-register-contract-20261116-1449-v2",
   "op": "mission.create",
-  "goal": "Verify ChatGPT-to-JACO Git relay connectivity on the running local Aura/Nova runtime. Perform one read-only health-check and record a durable receipt. Do not mutate files, browser, processes, git working tree, security settings, or external accounts. Report actual verified results only.",
+  "goal": "Register and verify the existing ChatGPT GitHub relay transport as a real limited Workplace Agent Card on the local JACO host, without impersonating a live GPT session. Use the canonical Workplace service and already installed gateway/src/workplace/chatgpt-github-relay.mjs. Inspect existing status/credentials by presence only, never reveal or export values. If the configured relay can be safely started using already authorized credentials and a private transport, start or reconnect it without disrupting other processes; then require server-issued agentId, sessionId, sync/ACK, READY and a real Workplace-to-ChatGPT-to-Workplace message receipt. Respect all auth, operator approval, and safety gates. If gateway is down, insecure public Issue #15 is the only transport, or credentials are absent, stop and report BLOCKED with reason and exact minimal operator action. Do not fabricate registration, create secrets, change permissions, edit unrelated code, expose localhost or CDP, or read private data. An ACK for this Git mission alone is not registration evidence.",
   "allowedTasks": [
-    "health-check"
-  ]
+    "health-check",
+    "repo-read",
+    "mcp-call",
+    "shell"
+  ],
+  "contract": {
+    "schema": "jaco.coding-contract/v1",
+    "objective": "Safely verify and initialize the existing ChatGPT Workplace relay agent registration and return independently observable local session evidence",
+    "scope": {
+      "allowed": [
+        "gateway/src/workplace/workplace-server.mjs",
+        "gateway/src/workplace/chatgpt-github-relay.mjs",
+        "gateway/src/workplace/workplace-client.mjs",
+        "JACO_AGENT_BOOTSTRAP.md",
+        "docs/WORKPLACE_CHATGPT_CODEX_BRIDGE.md",
+        "docs/JACO_CHATGPT_PRIVATE_TUNNEL.md",
+        "runtime/gateway/src/mcp-cognitive-stdio.mjs"
+      ],
+      "forbidden": []
+    },
+    "acceptance": [
+      "Real ChatGPT relay Agent Card exists in canonical Workplace with issued agentId",
+      "Relay session reaches READY through sync and ACK and message crosses both ways, OR report truthful BLOCKED status",
+      "No credentials, local port exposure, permissions change, or unrelated project changes"
+    ],
+    "execution": {
+      "autonomous": true,
+      "require_human_before_destructive_action": true,
+      "allow_git_commit": false,
+      "require_git_commit": false,
+      "allow_git_push": false,
+      "allow_git_merge": false
+    },
+    "verification": {
+      "tests_required": false,
+      "falsifier_required": false,
+      "independent_verification": false,
+      "receipt_required": true,
+      "change_required": false,
+      "commands": []
+    },
+    "budget": {
+      "max_steps": 10,
+      "max_tool_calls": 25,
+      "max_failures": 2,
+      "max_duration_ms": 900000
+    }
+  }
 }
