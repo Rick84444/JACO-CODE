@@ -2,3 +2,7 @@ test/**
 **/.DS_Store
 *.vsix
 node_modules/**
+.vscode/**
+test/**
+*.vsix
+node_modules/**
