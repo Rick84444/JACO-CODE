@@ -80,7 +80,8 @@ export function prepareChatGptStrategy(payload,{env=process.env,repo='Rick84444/
         reject('CODE_SCOPE_DENIED');
       if((source.services||[]).length)reject('EXTERNAL_SERVICE_CONTRACT_DENIED');
       const approvedTests=csv(env.JACO_CHATGPT_STRATEGY_TEST_COMMANDS);
-      if((source.verification?.commands||[]).some(command=>!approvedTests.includes(command)))
+      const requestedTests=source.verification?.commands||[];
+      if(!Array.isArray(requestedTests)||requestedTests.some(command=>!approvedTests.includes(command)))
         reject('TEST_COMMAND_NOT_APPROVED');
       const normalized=normalizeCodingContract({
         ...source,scope:{allowed:paths,forbidden:source.scope?.forbidden||[]},preApproved:[],
@@ -125,7 +126,10 @@ export function createLocalAuraGraphClient({
       method,headers:{authorization:'Bearer '+token,'content-type':'application/json'},
       ...(payload?{body:JSON.stringify(payload)}:{}),signal:AbortSignal.timeout(12000),
     });
-    if(res.status===404)return null;
+    if(res.status===404){
+      if(method==='GET')return null;
+      reject('SEER_ENDPOINT_NOT_FOUND');
+    }
     const data=await res.json();
     if(!res.ok)throw Error(typeof data?.error==='string'?data.error:'CHATGPT_STRATEGY_SEER_HTTP_'+res.status);
     return data;
