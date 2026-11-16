@@ -8,6 +8,16 @@
 // The loop nudges the model once with a hint; if the next window is stuck again it stops and says so.
 import crypto from 'node:crypto';
 
+// Only a launcher's explicit missing-executable errors are equivalent blockers.
+// File ENOENT (a missing source file) is deliberately not a missing tool.
+export function missingExecutable(error) {
+  const message = String(error || '');
+  const match = message.match(/\\bspawn\\s+([a-z][a-z0-9._-]{0,40})\\s+ENOENT\\b/i)
+    || message.match(/\\b([a-z][a-z0-9._-]{0,40})\\s*:\\s*(?:command\\s+)?not found\\b/i)
+    || message.match(/\\b(?:the\\s+)?[`'"]?([a-z][a-z0-9._-]{0,40})[`'"]?\\s+command\\s+(?:is\\s+)?not found\\b/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
 // Key order does not make a different call: a planner sent {command,args} and {args,command} alternately.
 const stable = value => JSON.stringify(value ?? null, (_k, v) => v && typeof v === 'object' && !Array.isArray(v)
   ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);
@@ -34,6 +44,7 @@ export class StuckDetector {
       outcome: digest(ok === false ? String(error || result?.error || 'failed') : result),
       ok: ok !== false,
       error: ok === false ? String(error || result?.error || 'failed').slice(0, 200) : '',
+      missing: ok === false ? missingExecutable(error || result?.error) : null,
     });
     if (this.steps.length > 24) this.steps.shift();
   }
@@ -41,6 +52,18 @@ export class StuckDetector {
   check() {
     const s = this.steps, { repeat, errorRun, pingPong, recurring, pollLimit } = this.limits;
     const tail = n => s.slice(-n);
+    // An error interleaved with successful reads can otherwise look like progress.
+    // Count only failures since a successful run of that same tool; a restored
+    // executable must never inherit the previous missing-tool diagnosis.
+    const last = s.at(-1);
+    if (last?.missing) {
+      const recent = tail(12);
+      const restoredAt = recent.findLastIndex(x => x.ok && x.name === last.name);
+      const failures = recent.slice(restoredAt + 1).filter(x => !x.ok && x.missing === last.missing).length;
+      if (failures >= 3) {
+        return { stuck: true, kind: 'missing-command', hint: `The executable ${last.missing} was missing on ${failures} attempts even after other reads. Do not reread the same setup files or bypass the mission contract. Repair the tool environment using permitted actions, or report the exact missing prerequisite and call blocked.` };
+      }
+    }
     if (s.length >= repeat) {
       const t = tail(repeat);
       if (t.every(x => x.call === t[0].call && x.outcome === t[0].outcome)) {
@@ -64,7 +87,6 @@ export class StuckDetector {
     // Back-to-back calls are a poll and stay allowed up to pollLimit (a status read whose timestamp changes
     // each time looked like progress 40 times in a row, 2026-10-31); a call that keeps coming back between
     // other steps counts from the recurring limit.
-    const last = s.at(-1);
     const at = last ? s.flatMap((x, i) => x.call === last.call ? [i] : []) : [];
     const interleaved = at.length >= recurring && at.at(-1) - at[0] + 1 > at.length;
     if (interleaved || at.length >= pollLimit) {

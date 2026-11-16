@@ -9,7 +9,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createZip, readZip, crc32 } from '../../tools/lib/zip.mjs';
 import { buildLite, liteDependencies, secretValues, findSecrets, collectFiles, LITE_DEPENDENCIES } from '../../tools/build-lite.mjs';
-import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, writeRuntimeRecord, removeRuntimeRecord, runtimeRecordFile, agentEnv, agentCommand, openBrowser, liteExitCode, appendLiteLifecycle, HELP } from '../../lite/start.mjs';
+import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, liteChildEnv, writeRuntimeRecord, removeRuntimeRecord, runtimeRecordFile, agentEnv, agentCommand, openBrowser, liteExitCode, appendLiteLifecycle, HELP } from '../../lite/start.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-lite-test-'));
 
@@ -90,6 +90,20 @@ test('launcher: Node version, arguments, free port, project folder and the serve
   assert.equal(JSON.stringify(agent).includes('OLLAMA'), false, 'the agent is not tied to one local server');
   const env = serverEnv({ env: { PATH: 'p' }, installDir: install, project: dir, port: 3999, token: 'tok' });
   assert.deepEqual([env.PORT, env.NODE_ENV, env.JACO_LITE, env.JACO_WORKSPACE_ROOT, env.GATEWAY_TOKEN, env.PATH, env.JACO_AUTO_APPROVE_LEVEL], ['3999', 'production', '1', dir, 'tok', 'p', '5']);
+});
+
+test('Lite propagates its selected Node tool bin to every child without losing the operator PATH', () => {
+  const selected = '/home/droid/.local/share/jaco-lite/runtime/node/bin/node';
+  const original = { PATH: '/usr/local/bin:/usr/bin', GEMINI_API_KEY: 'untouched-parent-secret' };
+  const child = liteChildEnv(original, selected, 'linux');
+  assert.equal(child.PATH, '/home/droid/.local/share/jaco-lite/runtime/node/bin:/usr/local/bin:/usr/bin');
+  assert.equal(original.PATH, '/usr/local/bin:/usr/bin', 'parent is not mutated');
+  assert.equal(liteChildEnv(child, selected, 'linux').PATH, child.PATH, 'repeated startup does not duplicate bins');
+  const win = liteChildEnv({ Path: 'C:\\Windows\\System32' }, 'C:\\Node\\node.exe', 'win32');
+  assert.deepEqual(Object.keys(win), ['Path']);
+  assert.equal(win.Path, 'C:\\Node;C:\\Windows\\System32');
+  assert.equal(liteChildEnv(win, 'c:\\node\\node.exe', 'win32').Path, win.Path);
+  assert.equal(liteChildEnv({ PATH: '/usr/bin' }, 'node', 'linux').PATH, '/usr/bin', 'relative executable paths are ignored');
 });
 
 test('builder: stages dist without maps, adds launcher and license, scans for secrets, writes a verified zip', async () => {

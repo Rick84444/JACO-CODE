@@ -62,6 +62,29 @@ test('stuck: a call that keeps recurring between other steps is caught, whatever
   assert.deepEqual(kinds, [null, null, null, null, null, null, null, 'poll-limit']);
 });
 
+test('stuck: missing npm across successful reads is still one blocker; a restored test clears it', () => {
+  const d = new StuckDetector();
+  for (let i = 0; i < 3; i++) {
+    d.record(step('repo-test', { command: 'npm test' }, false, null, i % 2 ? 'spawn npm ENOENT' : 'npm: not found'));
+    if (i < 2) d.record(step('repo-read', { path: i ? 'install.sh' : 'package.json' }, true, { content: 'diagnostic read' }));
+  }
+  const verdict = d.check();
+  assert.equal(verdict.kind, 'missing-command');
+  assert.match(verdict.hint, /npm/);
+  assert.equal(d.nudge(), 1);
+  d.record(step('repo-test', { command: 'npm test' }, true, { passed: true }));
+  d.record(step('repo-test', { command: 'npm test' }, false, null, 'npm: not found'));
+  d.record(step('repo-read', { path: 'README.md' }, true, { content: 'more evidence' }));
+  d.record(step('repo-test', { command: 'npm test' }, false, null, 'npm: not found'));
+  assert.equal(d.check().stuck, false, 'fresh failure window is below threshold');
+  const notCommand = new StuckDetector();
+  for (let i = 0; i < 3; i++) {
+    notCommand.record(step('repo-read', { path: `no-${i}.txt` }, false, null, 'ENOENT: no such file or directory'));
+    notCommand.record(step('git-status', {}, true, { head: i }));
+  }
+  assert.equal(notCommand.check().stuck, false, 'missing source files are not missing executables');
+});
+
 const assistant = (id, name, args) => ({ role: 'assistant', content: '', tool_calls: [{ id, type: 'function', function: { name, arguments: JSON.stringify(args) } }] });
 const tool = (id, ok, extra = 'x'.repeat(2000)) => ({ role: 'tool', tool_call_id: id, content: JSON.stringify({ ok, error: ok ? undefined : 'ENOENT', data: extra }) });
 const conversation = n => {
