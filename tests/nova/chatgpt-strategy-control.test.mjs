@@ -97,6 +97,11 @@ test('fractional budgets cannot bypass local operator hard limits',()=>{
     modified.graph.nodes[0].contract.budget[key]=0.5;
     assert.throws(()=>prepareChatGptStrategy(modified,{env}),/CHATGPT_STRATEGY_BUDGET_INVALID/,key);
   }
+  for(const key of ['JACO_CHATGPT_STRATEGY_MAX_STEPS','JACO_CHATGPT_STRATEGY_MAX_TOOL_CALLS',
+    'JACO_CHATGPT_STRATEGY_MAX_DURATION_MS','JACO_CHATGPT_STRATEGY_MAX_FAILURES']){
+    const wrong={...env,[key]:'0.5'};
+    assert.throws(()=>prepareChatGptStrategy(payload,{env:wrong}),/CHATGPT_STRATEGY_LOCAL_BUDGET_INVALID/,key);
+  }
   payload.graph.nodes[0].contract.budget={
     max_steps:100,max_tool_calls:300,max_duration_ms:8000000,max_failures:100,
   };
