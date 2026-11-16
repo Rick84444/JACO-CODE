@@ -1,10 +1,10 @@
 # Tasks
 
 - [x] Inspect repository policy, existing scanning controls and test fixtures.
-- [ ] Consolidate scanning and remove directory/type exemptions for text files.
-- [ ] Convert synthetic test tokens to runtime-assembled fixture strings.
-- [ ] Add positive/negative regression tests including test fixture paths.
-- [ ] Wire the audit into PR/main CI with read-only token permissions.
-- [ ] Document limitations and incident-response guidance.
-- [ ] Verify syntax, focused tests and all required CI on the exact PR SHA.
+- [x] Consolidate scanning and remove directory/type exemptions for text files.
+- [x] Convert synthetic test tokens to runtime-assembled fixture strings.
+- [x] Add positive/negative regression tests including test fixture paths.
+- [x] Wire the audit into PR/main CI with read-only token permissions.
+- [x] Document limitations and incident-response guidance.
+- [x] Verify syntax, focused tests and all required CI on PR head `98c873a` (GitHub Actions Repository Secret Gate, Technical Debt Steward, Autonomous Coding Contract all PASS). Recheck final docs commit before merge.
 - [ ] Merge the green PR without bypassing gates.
