@@ -83,6 +83,29 @@ test('an autonomous coding contract keeps resuming within its budget, then stops
   assert.equal(autoResolution({ ...m, contract: { ...contract, execution: { autonomous: false } } }, { level: 5, lastError: 'Command failed', autoResumes: 1 }), null, 'non-autonomous contract: one retry');
 });
 
+test('autonomous recovery does not replay the same failed test without a verified repair', () => {
+  const error = 'Command failed: npm test';
+  const failed = { type: 'repo-test', ok: false, verified: false, error };
+  const contract = { execution: { autonomous: true }, budget: { max_steps: 40, max_failures: 3 } };
+  const mission = receipts => ({ id: 'repeat', goal: 'fix code', status: 'BLOCKED', contract, receipts });
+  const opts = { level: 5, lastError: error, autoResumes: 1 };
+
+  assert.equal(autoResolution(mission([failed]), opts)?.decision, 'resume', 'one failure can be diagnosed');
+  assert.equal(autoResolution(mission([failed, { type: 'repo-list', ok: true, verified: true }, failed]), opts), null,
+    'a read-only listing does not fix an identical failed test');
+  assert.equal(autoResolution(mission([failed, { type: 'repo-edit', ok: true, verified: true }, failed]), opts)?.decision,
+    'resume', 'a verified code repair resets the failure streak');
+  assert.equal(autoResolution(mission([failed, { type: 'shell', ok: true, verified: true }, failed]), opts)?.decision,
+    'resume', 'a verified shell action might have changed the environment');
+  assert.equal(autoResolution(mission([
+    { ...failed, error: 'Command failed: node --test a' },
+    failed,
+  ]), opts)?.decision, 'resume', 'distinct failures should not be treated as identical');
+  const transient = { type: 'web-fetch', ok: false, verified: false, error: 'fetch failed' };
+  assert.equal(autoResolution(mission([transient, transient]), { ...opts, lastError: 'fetch failed' })?.decision,
+    'resume', 'transient network errors may recover, within the existing budget');
+});
+
 test('jobs from level 4, MCP sources from level 5, never spend', () => {
   assert.equal(autoApproveGate('JOB', 'report job', { level: 3 }), false);
   assert.equal(autoApproveGate('JOB', 'report job', { level: 4 }), true);
