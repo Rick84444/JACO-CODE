@@ -33,7 +33,7 @@ function agentCard(env){
       stable_id:'chatgpt-jaco-relay',
       requested_name:'ChatGPT',
       provider:'openai',
-      model:env.JACO_CHATGPT_MODEL||'gpt-5.6-sol',
+      model:env.JACO_CHATGPT_MODEL||'unknown',
       agent_type:'chat',
     },
     session:{environment:'chatgpt-github-relay',persistent:false,sandboxed:true},
@@ -256,9 +256,11 @@ export function createChatGptGithubRelay({
       }
       lastError=null;
       relayState='READY';
+      store.heartbeat({sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',status:'READY'});
     }catch(error){
       lastError=clip(error?.message||error,500);
       relayState='DEGRADED_UNSYNCED';
+      try{store.heartbeat({sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',status:'DEGRADED_UNSYNCED'});}catch{}
       log('warn',lastError);
     }finally{polling=false;}
   }
@@ -285,6 +287,13 @@ export function createChatGptGithubRelay({
         // Prove the Git origin and inbound ref exist before creating a Workplace session.
         if(transport==='git-ref')await gitRef.read();
         registration=store.registerAgent(agentCard(env),{workspace:'JACO'});
+        // Agent Card capability claims never grant authority. Restrict this
+        // transport identity to communications, not missions or approvals.
+        store.setPermissions(registration.agentId,{
+          'workplace.read':true,'workplace.post':true,
+          'workplace.claim':false,'decision.publish':false,
+          'mission.create':false,'deployment.execute':false,
+        });
         const initialSeq=Number(registration.latestSeq||0);
         // A new relay session starts at the current Workplace head; historical
         // conversation remains in Workplace but is not bulk-exported to GitHub.
