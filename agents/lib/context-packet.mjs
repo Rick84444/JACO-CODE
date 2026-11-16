@@ -79,6 +79,10 @@ function trimPacket(packet, maxChars) {
   // Lowest-value historical material is removed first. Current objective,
   // authority and selected move are never removed.
   for (const key of ['operatorNotes', 'observations', 'failures', 'evidence']) shrink(key);
+  if (packetSize(out) > maxChars && out.graphMemory) {
+    while (out.graphMemory.matches?.length > 1 && packetSize(out) > maxChars) out.graphMemory.matches.pop();
+    if (packetSize(out) > maxChars) out.graphMemory = null;
+  }
   if (packetSize(out) > maxChars && out.memory) out.memory = text(out.memory, 800);
   if (packetSize(out) > maxChars) {
     out.known = asArray(out.known).slice(0, 6).map(v => text(v, 300));
@@ -97,6 +101,7 @@ export function buildContextPacket({
   strategicContext = null,
   homeText = '',
   skillText = '',
+  memoryGraph = null,
   maxChars = 12_000,
 } = {}) {
   if (!mission?.goal) throw new Error('CONTEXT_PACKET_MISSION_REQUIRED');
@@ -133,6 +138,17 @@ export function buildContextPacket({
     observations,
     procedure: skillText ? text(redactDeep(skillText), 2500) : null,
     memory: homeText ? text(redactDeep(homeText), 2500) : null,
+    graphMemory: memoryGraph?.source === 'canonical_continuum_graph' ? redactDeep({
+      source: 'canonical_continuum_graph',
+      authority: 'read_only_context',
+      graphHash: text(memoryGraph.graphHash, 100) || null,
+      repositorySnapshotHash: text(memoryGraph.repositorySnapshotHash, 100) || null,
+      partial: memoryGraph.partial === true,
+      matches: asArray(memoryGraph.matches).slice(0, 8).map(row => ({
+        id: text(row.id, 180), type: text(row.type, 20),
+        label: text(row.label, 160), verification: text(row.verification, 20),
+      })),
+    }) : null,
     operatorNotes: [],
     authority: {
       mode: 'mission_contract_only',
