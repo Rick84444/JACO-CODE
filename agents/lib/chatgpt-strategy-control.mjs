@@ -13,6 +13,16 @@ const idPattern=/^[A-Za-z0-9._:-]{1,80}$/;
 const clean=(v,max)=>typeof v==='string'&&v.trim()&&v.trim().length<=max?v.trim():null;
 const reject=code=>{throw Error('CHATGPT_STRATEGY_'+code);};
 const csv=v=>String(v||'').split(',').map(s=>s.trim()).filter(Boolean);
+const boundedLocal=(input,defaultValue,min,max)=>{
+  const n=Number(input);
+  return Number.isSafeInteger(n)&&n>=min?Math.min(max,n):defaultValue;
+};
+const requestedBounded=(input,limit)=>{
+  if(input===undefined||input===null)return limit;
+  const n=Number(input);
+  if(!Number.isSafeInteger(n)||n<1)reject('BUDGET_INVALID');
+  return Math.min(n,limit);
+};
 
 // The operator's on-host policy, never a document from a public Git ref.
 export function strategyPolicy(env=process.env){
@@ -24,10 +34,11 @@ export function strategyPolicy(env=process.env){
   if(allowedTasks.some(t=>CODE_TASKS.has(t))&&!codeRoots.length)
     reject('CODE_SCOPE_NOT_CONFIGURED');
   return {enabled,allowedTasks,codeRoots,
-    maxNodes:Math.min(12,Math.max(1,Number(env.JACO_CHATGPT_STRATEGY_MAX_NODES)||8)),
-    maxSteps:Math.min(100,Math.max(1,Number(env.JACO_CHATGPT_STRATEGY_MAX_STEPS)||20)),
-    maxToolCalls:Math.min(300,Math.max(1,Number(env.JACO_CHATGPT_STRATEGY_MAX_TOOL_CALLS)||60)),
-    maxDurationMs:Math.min(8*3600000,Math.max(60000,Number(env.JACO_CHATGPT_STRATEGY_MAX_DURATION_MS)||3600000)),
+    maxNodes:boundedLocal(env.JACO_CHATGPT_STRATEGY_MAX_NODES,8,1,12),
+    maxSteps:boundedLocal(env.JACO_CHATGPT_STRATEGY_MAX_STEPS,20,1,100),
+    maxToolCalls:boundedLocal(env.JACO_CHATGPT_STRATEGY_MAX_TOOL_CALLS,60,1,300),
+    maxDurationMs:boundedLocal(env.JACO_CHATGPT_STRATEGY_MAX_DURATION_MS,3600000,60000,8*3600000),
+    maxFailures:boundedLocal(env.JACO_CHATGPT_STRATEGY_MAX_FAILURES,3,1,10),
   };
 }
 
@@ -86,10 +97,14 @@ export function prepareChatGptStrategy(payload,{env=process.env,repo='Rick84444/
       const normalized=normalizeCodingContract({
         ...source,scope:{allowed:paths,forbidden:source.scope?.forbidden||[]},preApproved:[],
         execution:{...source.execution,allow_git_push:false,allow_git_merge:false,
-          allow_git_commit:false,require_git_commit:false},
-        budget:{max_steps:Math.min(policy.maxSteps,Number(source.budget?.max_steps)||policy.maxSteps),
-          max_tool_calls:Math.min(policy.maxToolCalls,Number(source.budget?.max_tool_calls)||policy.maxToolCalls),
-          max_duration_ms:Math.min(policy.maxDurationMs,Number(source.budget?.max_duration_ms)||policy.maxDurationMs)},
+          allow_git_commit:false,require_git_commit:false,
+          require_human_before_destructive_action:true},
+        verification:{...source.verification,allow_workspace_tests:false,
+          tests_required:true,receipt_required:true},
+        budget:{max_steps:requestedBounded(source.budget?.max_steps,policy.maxSteps),
+          max_tool_calls:requestedBounded(source.budget?.max_tool_calls,policy.maxToolCalls),
+          max_duration_ms:requestedBounded(source.budget?.max_duration_ms,policy.maxDurationMs),
+          max_failures:requestedBounded(source.budget?.max_failures,policy.maxFailures)},
       },stepObjective);
       node.contract=normalized;
     }else if(policy.allowedTasks.some(t=>CODE_TASKS.has(t))){
@@ -105,7 +120,8 @@ export function prepareChatGptStrategy(payload,{env=process.env,repo='Rick84444/
     policy:{owner:'aura',source:'chatgpt-git-strategy',origin_command_id:commandId,
       allowedTasks:policy.allowedTasks,executor:'nova',autonomy:'closed-loop',
       strategyBudget:{maxNodes:policy.maxNodes,maxSteps:policy.maxSteps,
-        maxToolCalls:policy.maxToolCalls,maxDurationMs:policy.maxDurationMs}},
+        maxToolCalls:policy.maxToolCalls,maxDurationMs:policy.maxDurationMs,
+        maxFailures:policy.maxFailures}},
   };
 }
 
