@@ -6,6 +6,23 @@ export const ESCALATION_SCHEMA = 'jaco.reasoning-escalation/v1';
 const asArray = value => Array.isArray(value) ? value : [];
 const text = (value, max = 1200) => String(value ?? '').trim().slice(0, max);
 const uniq = values => [...new Set(values.filter(Boolean))];
+// A long coding contract was carried whole into the packet and blocked every planning turn
+// (CONTEXT_PACKET_BUDGET_EXCEEDED). The planner keeps what it must follow; long lists are capped.
+export function boundContract(contract) {
+  if (!contract || typeof contract !== 'object') return null;
+  const list = (value, count, max) => asArray(value).slice(0, count).map(v => text(v, max));
+  return {
+    schema: text(contract.schema, 80) || null,
+    objective: text(contract.objective, 1500),
+    acceptance: list(contract.acceptance, 12, 300),
+    scope: contract.scope && typeof contract.scope === 'object'
+      ? { allowed: list(contract.scope.allowed, 40, 160), forbidden: list(contract.scope.forbidden, 40, 160) } : null,
+    verification: contract.verification && typeof contract.verification === 'object'
+      ? { commands: list(contract.verification.commands, 8, 300), required_stages: list(contract.verification.required_stages, 12, 80) } : null,
+    execution: contract.execution && typeof contract.execution === 'object' ? { ...contract.execution } : null,
+    budget: contract.budget ?? null,
+  };
+}
 
 function summarizeReceipt(receipt, index) {
   const result = receipt?.result && typeof receipt.result === 'object'
@@ -67,6 +84,10 @@ function trimPacket(packet, maxChars) {
     out.known = asArray(out.known).slice(0, 6).map(v => text(v, 300));
     out.blockers = asArray(out.blockers).slice(0, 6).map(v => text(v, 300));
   }
+  if (packetSize(out) > maxChars && out.authority?.contract) {
+    const c = out.authority.contract;
+    out.authority.contract = { objective: text(c.objective, 400), execution: c.execution ?? null, verification: c.verification ?? null };
+  }
   if (packetSize(out) > maxChars) throw new Error('CONTEXT_PACKET_BUDGET_EXCEEDED');
   return out;
 }
@@ -87,7 +108,7 @@ export function buildContextPacket({
   const blockers = uniq(asArray(board?.activeObstacles).map(item => text(item?.description || item?.title || item?.label || item, 500)));
   const constraints = redactDeep({
     allowedTasks: asArray(mission.allowedTasks).map(v => text(v, 120)),
-    contract: mission.contract || null,
+    contract: boundContract(mission.contract),
     budget: mission.budget || null,
   });
 
