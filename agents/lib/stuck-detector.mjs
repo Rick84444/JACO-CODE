@@ -44,7 +44,7 @@ export class StuckDetector {
       outcome: digest(ok === false ? String(error || result?.error || 'failed') : result),
       ok: ok !== false,
       error: ok === false ? String(error || result?.error || 'failed').slice(0, 200) : '',
-      missing: ok === false ? missingExecutable(error || result?.error) : null,
+      missing: ok === false ? missingExecutable([error, result?.error, result?.stderr, result?.output].filter(Boolean).join('\n')) : null,
     });
     if (this.steps.length > 24) this.steps.shift();
   }
@@ -56,6 +56,20 @@ export class StuckDetector {
     // Count only failures since a successful run of that same tool; a restored
     // executable must never inherit the previous missing-tool diagnosis.
     const last = s.at(-1);
+    // A failed executable followed by repeated read-only setup inspection is
+    // not a repair. In particular, "Command failed: npm test" can hold the
+    // useful "npm: not found" evidence only in the receipt's stderr field.
+    const missingAt = s.findLastIndex(x => x.missing);
+    if (missingAt >= 0) {
+      const after = s.slice(missingAt + 1);
+      const repaired = after.some(x => x.ok && (x.name === s[missingAt].name ||
+        ['repo-edit','repo-write','repo-service','shell','local-write','git-commit'].includes(x.name)));
+      const reads = after.filter(x => x.ok && ['repo-read','repo-list'].includes(x.name)).length;
+      if (!repaired && reads >= 6) {
+        return { stuck: true, kind: 'unrepaired-missing-command',
+          hint: `Executable ${s[missingAt].missing} is missing. ${reads} read-only inspections have not repaired the environment. Stop the mission rather than rereading package.json/install.sh. Repair PATH or the tool installation outside this unchanged mission, then verify the contracted command.` };
+      }
+    }
     if (last?.missing) {
       const recent = tail(12);
       const restoredAt = recent.findLastIndex(x => x.ok && x.name === last.name);

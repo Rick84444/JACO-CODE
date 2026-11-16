@@ -258,6 +258,13 @@ export async function runAgentMission({
     messages.push({ role: 'system', content: typeof system === 'function' ? system(mission) : system },
       { role: 'user', content: await intro(mission) });
     messages.push({ role: 'user', content: 'CURRENT CAPABILITY EVIDENCE (catalog, not permission or proof of execution): '+JSON.stringify(capabilityEvidence) });
+    if (inheritedCircle.kind === 'unrepaired-missing-command') {
+      // The durable ledger proves the same missing executable survived a run
+      // of read-only diagnostics. A new Gemini turn cannot repair PATH by
+      // reading more files; block once until the host environment changes.
+      const reason = ('UNREPAIRED_TOOL_ENV:' + inheritedCircle.hint).slice(0, 500);
+      return end({ blocked: true, reason }, { error: 'PLANNER_BLOCKED:' + reason });
+    }
     if (inheritedCircle.stuck) {
       // Count the nudge but keep the history. stuck.nudge() also wipes the window, so a run cut short by a rate
       // limit started clean every time and the same circle ran for 88 steps. Now the next repeated step is a
@@ -523,6 +530,10 @@ export async function runAgentMission({
         }
       }
       while (diagnosisNotes.length) messages.push({ role: 'user', content: diagnosisNotes.shift() });
+      if (nudge?.kind === 'unrepaired-missing-command') {
+        const reason = ('UNREPAIRED_TOOL_ENV:' + nudge.hint).slice(0, 500);
+        return end({ blocked: true, reason }, { error: 'PLANNER_BLOCKED:' + reason });
+      }
       if (nudge) {
         // Once: tell the model what it is doing. A second time in a fresh window: stop and say so.
         if (stuck.nudge() > 1) {

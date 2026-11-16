@@ -10,6 +10,26 @@ const sha = value => crypto.createHash('sha256').update(value).digest('hex');
 
 export const DEFAULT_PROTECTED_BRANCHES = ['master', 'main'];
 
+// A packaged Lite launcher may use a bundled Node in a user-owned directory,
+// while the host's default PATH lacks npm. Child test commands must find the
+// same Node/npm installation that runs the executor. This changes no mission
+// grant: the exact verification command is still checked by the coding contract.
+export function codingWorkspaceExecutionEnv({ env = process.env, execPath = process.execPath, platform = process.platform } = {}) {
+  const clean = Object.fromEntries(Object.entries(env).filter(([key]) =>
+    key !== 'NODE_TEST_CONTEXT' && !/TOKEN|SECRET|API_KEY|PASSWORD|PRIVATE/i.test(key)));
+  if (path.isAbsolute(execPath)) {
+    const bin = path.dirname(execPath);
+    const key = Object.keys(clean).find(k => k.toLowerCase() === 'path') || (platform === 'win32' ? 'Path' : 'PATH');
+    const current = String(clean[key] || '');
+    const sep = platform === 'win32' ? ';' : ':';
+    if (!current.split(sep).some(p => platform === 'win32' ? p.toLowerCase() === bin.toLowerCase() : p === bin)) {
+      clean[key] = current ? bin + sep + current : bin;
+    }
+  }
+  return clean;
+}
+
+
 export function createCodingWorkspace({ root = process.cwd(), protectedBranches: protectedList = (process.env.JACO_PROTECTED_BRANCHES || DEFAULT_PROTECTED_BRANCHES.join(',')).split(',') } = {}) {
   // A missing coding root (e.g. the jaco-nova worktree was deleted) used to throw at import and take
   // the whole Nova daemon down. Now only code tasks fail, with a reason the planner and operator see.
@@ -59,7 +79,8 @@ export function createCodingWorkspace({ root = process.cwd(), protectedBranches:
   const gitOptional = args => { try { return git(args); } catch { return ''; } };
   // Node's test-runner marker can suppress nested `node --test` execution entirely.
   // Verification children must run as independent processes, including inside integration tests.
-  const safeEnv = () => Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'NODE_TEST_CONTEXT' && !/TOKEN|SECRET|API_KEY|PASSWORD|PRIVATE/i.test(key)));
+  const safeEnv = () => codingWorkspaceExecutionEnv();
+
   const serviceDir = path.join(workspaceRoot, '.jaco', 'services');
   const serviceFile = id => path.join(serviceDir, `${id}.json`);
   const readService = id => { const file=resolvePath(path.relative(workspaceRoot,serviceFile(id)));return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file,'utf8')) : null; };

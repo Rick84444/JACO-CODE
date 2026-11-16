@@ -67,6 +67,20 @@ test('Workplace/Durable Nova are part of READY truth, not just Core/tools/provid
   assert.ok(r.problems.some(p => /Durable Nova.*not RUNNING|Workplace\/Durable Nova är inte RUNNING/.test(p)));
 });
 
+test('Lite disabled Workplace supervisor is not misdiagnosed as a stopped managed Nova', async () => {
+  const g = GOOD();
+  g.workplace = { state:'DISABLED', novaState:'DISABLED' };
+  const report = await activationReport({ baseUrl:'http://x', workplaceUrl:'http://w',
+    token:'t', fetchImpl:fakeRuntime(g), lite:true });
+  assert.equal(report.workplace.up, true);
+  assert.equal(report.workplace.state, 'READY');
+  assert.equal(report.workplace.novaState, 'EXTERNAL_UNVERIFIED');
+  assert.equal(report.workplace.externalExecutor, true);
+  assert.ok(report.problems.some(p => /managed by the separate Lite launcher/.test(p)));
+  assert.ok(report.problems.every(p => !/Workplace\\/Durable Nova is not RUNNING/.test(p)));
+  assert.equal(report.ok, false, 'never attest an unprobed external worker');
+});
+
 test('a selected planner that was not actually scanned cannot make READY true', async () => {
   const g = GOOD();
   g.planner = { choice: { provider: 'mistral', model: 'mistral-large-latest', by: 'operator' }, choices: [{ provider: 'mistral', usable: true, keyConfigured: true }] };
