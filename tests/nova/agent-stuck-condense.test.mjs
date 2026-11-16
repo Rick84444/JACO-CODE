@@ -22,6 +22,26 @@ test('stuck: the same call with the same result three times is a repeat; a chang
   assert.equal(ok.check().stuck, false, 'same call but new results is progress (a poll)');
 });
 
+test('missing npm in stderr followed by six reads must stop an unrepaired diagnosis', () => {
+  const d = new StuckDetector();
+  d.record(step('repo-test', {command:'npm test'}, false,
+    {stderr:'/bin/sh: 1: npm: not found'}, 'Command failed: npm test'));
+  for (let i = 0; i < 5; i++) {
+    d.record(step(i % 2 ? 'repo-list' : 'repo-read', {path:i % 2 ? '.' : 'package.json'}, true, {content:'same'}));
+  }
+  assert.equal(d.check().kind === 'unrepaired-missing-command', false);
+  d.record(step('repo-read', {path:'install.sh'}, true, {content:'same'}));
+  const verdict = d.check();
+  assert.equal(verdict.kind, 'unrepaired-missing-command');
+  assert.match(verdict.hint, /npm/);
+  const repaired = new StuckDetector();
+  repaired.record(step('repo-test', {command:'npm test'}, false,
+    {stderr:'npm: not found'}, 'Command failed: npm test'));
+  repaired.record(step('repo-edit', {path:'setup.sh'}, true, {changed:true}));
+  for (let i = 0; i < 6; i++) repaired.record(step('repo-read',{path:'f'+i},true,{content:'ok'}));
+  assert.equal(repaired.check().kind === 'unrepaired-missing-command', false);
+});
+
 test('stuck: four failures with the same error are a loop even with different arguments', () => {
   const d = new StuckDetector();
   for (const f of ['a', 'b', 'c']) d.record(step('shell', { f }, false, null, 'ENOENT: no such file'));

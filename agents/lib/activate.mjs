@@ -33,6 +33,7 @@ export async function activationReport({
   startTools = true,
   requireWorkplace = process.env.JACO_WORKPLACE_REQUIRED !== '0',
   requireSupervisor = Boolean(process.env.TERMUX_VERSION) || /com\.termux/.test(process.env.PREFIX || ''),
+  lite = process.env.JACO_LITE === '1',
 } = {}) {
   const report = {
     schema: 'jaco.activation/v2',
@@ -72,13 +73,19 @@ export async function activationReport({
     try {
       const health = await call(fetchImpl, workplaceUrl.replace(/\/+$/, ''), '', 'GET', '/health', null, 4000);
       const supervised = health?.supervisedAgents || {};
+      // Lite owns the Nova child from its launcher, not the Workplace
+      // supervisor. DISABLED is therefore not evidence of a stopped worker.
+      // Do not declare READY either: only the launcher can attest its child.
+      const liteExternal = lite && supervised.state === 'DISABLED' && supervised.nova?.state === 'DISABLED';
       report.workplace = {
-        required: true,
-        up: true,
-        state: supervised.state || health?.status || null,
-        novaState: supervised.nova?.state || null,
+        required: true, up: true,
+        state: liteExternal ? String(health?.status || 'UNKNOWN') : supervised.state || health?.status || null,
+        novaState: liteExternal ? 'EXTERNAL_UNVERIFIED' : supervised.nova?.state || null,
+        externalExecutor: liteExternal,
       };
-      if (supervised.state !== 'RUNNING' || supervised.nova?.state !== 'RUNNING') {
+      if (liteExternal) {
+        report.problems.push('JACO Lite Workplace is READY; its Nova worker is managed by the separate Lite launcher and has not been verified. Check .jaco/nova.log and Lite lifecycle rather than restarting the Workplace supervisor.');
+      } else if (supervised.state !== 'RUNNING' || supervised.nova?.state !== 'RUNNING') {
         report.problems.push(`Workplace/Durable Nova is not RUNNING (workplace=${supervised.state || 'UNKNOWN'}, nova=${supervised.nova?.state || 'UNKNOWN'}).`);
       }
     } catch (error) {

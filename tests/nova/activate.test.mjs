@@ -12,7 +12,7 @@ function fakeRuntime({ servers, scan, planner, workplace = { state: 'RUNNING', n
     const bad = (status, error) => ({ ok: false, status, json: async () => ({ success: false, error }) });
     if (route === '/api/runtime/identity') return ok({ version: '0.21.0' });
     if (route === '/api/system/status') return ok({ status: { state: workplace.supervisorState || 'READY' } });
-    if (route === '/health') return ok({ supervisedAgents: { state: workplace.state, nova: { state: workplace.novaState } } });
+    if (route === '/health') return ok({ status: 'READY', supervisedAgents: { state: workplace.state, nova: { state: workplace.novaState } } });
     if (route === '/api/mcp/tools') {
       assert.ok(init.headers['x-gateway-token'], 'tool routes carry the gateway token');
       return ok({ servers: servers.map(s => ({ id: s.id, status: s.status, agentAccess: s.agentAccess || 'read', tools: s.status === 'READY' ? Array.from({ length: s.tools }, (_, i) => ({ name: `t${i}` })) : [] })) });
@@ -65,6 +65,20 @@ test('Workplace/Durable Nova are part of READY truth, not just Core/tools/provid
   assert.equal(r.workplace.novaState, 'STOPPED');
   assert.equal(r.ok, false);
   assert.ok(r.problems.some(p => /Durable Nova.*not RUNNING|Workplace\/Durable Nova är inte RUNNING/.test(p)));
+});
+
+test('Lite disabled Workplace supervisor is not misdiagnosed as a stopped managed Nova', async () => {
+  const g = GOOD();
+  g.workplace = { state:'DISABLED', novaState:'DISABLED' };
+  const report = await activationReport({ baseUrl:'http://x', workplaceUrl:'http://w',
+    token:'t', fetchImpl:fakeRuntime(g), lite:true });
+  assert.equal(report.workplace.up, true);
+  assert.equal(report.workplace.state, 'READY');
+  assert.equal(report.workplace.novaState, 'EXTERNAL_UNVERIFIED');
+  assert.equal(report.workplace.externalExecutor, true);
+  assert.ok(report.problems.some(p => /managed by the separate Lite launcher/.test(p)));
+  assert.ok(report.problems.every(p => !p.includes('Workplace/Durable Nova is not RUNNING')));
+  assert.equal(report.ok, false, 'never attest an unprobed external worker');
 });
 
 test('a selected planner that was not actually scanned cannot make READY true', async () => {
