@@ -55,10 +55,10 @@ test('unpackaged checkout preserves legacy root layout for existing Windows and 
 });
 
 
-test('Windows setup publishing is tag-gated, not triggered merely by a main merge', () => {
+test('Windows setup publishing: stable is tag-gated; a changed preview version from main publishes a pre-release', () => {
   const workflow = fs.readFileSync(new URL('../../.github/workflows/jaco-windows-release.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /publish-github-release:[\s\S]*?if: github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/tags\/v'\)/);
-  assert.doesNotMatch(workflow, /needs\.windows-setup\.outputs\.version_changed == 'true'/);
+  assert.match(workflow, /publish-github-release:[\s\S]*?startsWith\(github\.ref, 'refs\/tags\/v'\)/);
+  assert.match(workflow, /github\.ref == 'refs\/heads\/main' && needs\.windows-setup\.outputs\.version_changed == 'true' && needs\.windows-setup\.outputs\.channel == 'preview'/);
 });
 
 test('Windows packaged boot validates its own runtime version and runs Aura capability acceptance', () => {
