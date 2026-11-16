@@ -125,7 +125,10 @@ export function createChatGptGithubRelay({
   let lastError=null;
   let started=false;
   const selectedTransport=env.JACO_CHATGPT_WORKPLACE_TRANSPORT||'auto';
-  const transport=selectedTransport==='auto'?(token?'github-issue':'git-ref'):selectedTransport;
+  // The default JACO-CODE repository is public. Never auto-enable the
+  // issue-based transport that mirrors arbitrary Workplace text into it.
+  const knownPublicRepo=String(repo).toLowerCase()==='rick84444/jaco-code';
+  const transport=selectedTransport==='auto'?(knownPublicRepo?'git-ref':token?'github-issue':'git-ref'):selectedTransport;
   const enabled=Boolean(owner&&name&&actor&&['github-issue','git-ref'].includes(transport)&&(transport==='git-ref'||token));
   const gitRef=transport==='git-ref'&&enabled?createGitRefChatGptTransport({
     repo, repoRoot:env.JACO_CHATGPT_GIT_REPO_ROOT||env.JACO_REPO_ROOT||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..'),
