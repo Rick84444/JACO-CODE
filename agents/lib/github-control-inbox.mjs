@@ -356,6 +356,21 @@ export function createGithubNovaControlInbox({
       let mission;
       try { mission = record.graphId ? await graphs().get(record.graphId) : await missionClient.get(record.missionId); }
       catch { continue; }
+      // SEER may confirm that a once-tracked graph no longer exists (404).
+      // Never dereference null or let a stale strategy graph poison the entire
+      // inbox: continue processing ordinary missions and later Git commands.
+      // This is an unknown outcome, NOT a successful graph completion.
+      if(record.graphId && !mission?.id){
+        record.status='UNVERIFIED';
+        record.phase='GRAPH_MISSING';
+        record.error='CHATGPT_STRATEGY_GRAPH_NOT_FOUND';
+        record.closed=true;
+        updates.push({issue:record.issueNumber??null,graphId:record.graphId,
+          status:record.status,errorCode:record.error});
+        if(record.commentId)await updateComment(record.commentId,statusText(record,{status:record.status,phase:record.phase})).catch(()=>{});
+        continue;
+      }
+      if(!mission)continue;
 
       const statusChanged =
         mission.status !== record.status ||

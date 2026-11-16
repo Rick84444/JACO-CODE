@@ -27,7 +27,7 @@ const ERROR_CODES = new Set([
   'CHATGPT_STRATEGY_NODE_CODING_CONTRACT_REQUIRED','CHATGPT_STRATEGY_CONTRACT_NOT_AUTHORIZED',
   'CHATGPT_STRATEGY_GIT_REF_REQUIRED','CHATGPT_STRATEGY_GRAPH_CYCLE',
   'CHATGPT_STRATEGY_NODE_COUNT_INVALID','CHATGPT_STRATEGY_TEST_COMMAND_NOT_APPROVED',
-  'CHATGPT_STRATEGY_BUDGET_INVALID',
+  'CHATGPT_STRATEGY_BUDGET_INVALID','CHATGPT_STRATEGY_GRAPH_NOT_FOUND',
   'WINDOWS_WMI_REQUIRES_DESKTOP_AGENTOS',
 ]);
 
@@ -49,7 +49,8 @@ export function gitControlReceiptSnapshot(control) {
       missionId: bounded(entry.missionId || '', 200) || null,
       graphId: bounded(entry.graphId || '', 200) || null,
       errorCode: entry.status === 'REJECTED'
-        ? (ERROR_CODES.has(String(entry.error || '')) ? entry.error : 'COMMAND_REJECTED') : null,
+        ? (ERROR_CODES.has(String(entry.error || '')) ? entry.error : 'COMMAND_REJECTED')
+        : (entry.status === 'UNVERIFIED' && ERROR_CODES.has(String(entry.error || '')) ? entry.error : null),
       status: bounded(entry.status || 'UNKNOWN', 40),
       phase: bounded(entry.phase || '', 80) || null,
       turn: digits(entry.turn),
