@@ -22,6 +22,12 @@ const ERROR_CODES = new Set([
   'GITHUB_CONTROL_SPEND_APPROVAL_NOT_ALLOWED','GITHUB_CONTROL_OPERATION_UNSUPPORTED',
   'INVALID_MISSION_ALLOWED_TASKS','GOAL_REQUIRED','IDEMPOTENCY_KEY_REQUIRED',
   'CODING_CONTRACT_REQUIRED','NOVA_MISSION_NOT_FOUND',
+  'CHATGPT_STRATEGY_OPERATOR_OPT_IN_REQUIRED','CHATGPT_STRATEGY_TASK_POLICY_INVALID',
+  'CHATGPT_STRATEGY_CODE_SCOPE_NOT_CONFIGURED','CHATGPT_STRATEGY_CODE_SCOPE_DENIED',
+  'CHATGPT_STRATEGY_NODE_CODING_CONTRACT_REQUIRED','CHATGPT_STRATEGY_CONTRACT_NOT_AUTHORIZED',
+  'CHATGPT_STRATEGY_GIT_REF_REQUIRED','CHATGPT_STRATEGY_GRAPH_CYCLE',
+  'CHATGPT_STRATEGY_NODE_COUNT_INVALID','CHATGPT_STRATEGY_TEST_COMMAND_NOT_APPROVED',
+  'CHATGPT_STRATEGY_BUDGET_INVALID',
   'WINDOWS_WMI_REQUIRES_DESKTOP_AGENTOS',
 ]);
 
@@ -39,8 +45,9 @@ export function gitControlReceiptSnapshot(control) {
     authoritative: false,
     entries: records.map(entry => ({
       commandId: bounded(entry.commandId),
-      operation: entry.op === 'invalid' ? 'rejected' : entry.op === 'mission.resolve' ? 'mission.resolve' : 'mission.create',
+      operation: entry.op === 'invalid' ? 'rejected' : entry.op === 'strategy.graph.create' ? 'strategy.graph.create' : entry.op === 'mission.resolve' ? 'mission.resolve' : 'mission.create',
       missionId: bounded(entry.missionId || '', 200) || null,
+      graphId: bounded(entry.graphId || '', 200) || null,
       errorCode: entry.status === 'REJECTED'
         ? (ERROR_CODES.has(String(entry.error || '')) ? entry.error : 'COMMAND_REJECTED') : null,
       status: bounded(entry.status || 'UNKNOWN', 40),
