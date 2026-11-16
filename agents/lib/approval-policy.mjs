@@ -41,6 +41,25 @@ const POLICY_BLOCK = /PAYMENT|SECRET_POLICY|ORIGIN_DENIED|Payment Required|SPEND
 // (novaMissionControl.resolve), so resuming it would only spend a planner call.
 const BUDGET_EXHAUSTED = /CODING_CONTRACT_\w*(BUDGET|DURATION)_EXCEEDED/;
 const CAPABILITY_GAP = /PLANNER_BLOCKED|UNKNOWN_TASK_TYPE|WORKER_KEY_MISSING/;
+
+// An unchanged failure cannot be fixed by replaying the same command.
+// Only verified, potentially corrective actions reset this streak. Read-only
+// receipts and aggregate counters are not evidence of a repair.
+const POSSIBLE_REPAIRS = new Set(['repo-write', 'repo-edit', 'git-commit', 'shell', 'local-write']);
+const errorSignature = value => String(value || '').trim().replace(/\s+/g, ' ').slice(0, 240);
+
+export function repeatedUnrepairedFailure(receipts = [], lastError = '') {
+  const target = errorSignature(lastError);
+  if (!target || TRANSIENT.test(target)) return false;
+  let count = 0;
+  for (const receipt of [...receipts].reverse()) {
+    if (receipt?.ok === true && receipt.verified === true && POSSIBLE_REPAIRS.has(receipt.type)) return false;
+    if (receipt?.ok !== false || receipt.outcomeUnknown === true) continue;
+    if (errorSignature(receipt.error) !== target) return false;
+    if (++count >= 2) return true;
+  }
+  return false;
+}
 export const MAX_AUTO_RESUMES = 1;
 export const MAX_LEVEL = 5;
 
@@ -145,6 +164,9 @@ export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastE
     // A missing capability or a planner refusal is not transient. Replaying the unchanged
     // mission cannot grant a tool; level 5 must not turn it into an infinite resume loop.
     if (!error || POLICY_BLOCK.test(error) || BUDGET_EXHAUSTED.test(error) || CAPABILITY_GAP.test(error)) return null;
+    // Preserve the blocked mission for a different diagnosis instead of
+    // blindly repeating a deterministic command failure for a third time.
+    if (repeatedUnrepairedFailure(receipts, error)) return null;
     // Operator 2026-10-02: an autonomous coding contract is the authority to keep working. Within it,
     // failures are retried without approvals; the contract budget (steps, tool calls, time) bounds the
     // retries, and when it is used up the mission stops for the operator (BUDGET_EXHAUSTED above).
