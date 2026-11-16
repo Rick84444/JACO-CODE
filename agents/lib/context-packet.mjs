@@ -21,6 +21,7 @@ export function boundContract(contract) {
       ? { commands: list(contract.verification.commands, 8, 300), required_stages: list(contract.verification.required_stages, 12, 80) } : null,
     execution: contract.execution && typeof contract.execution === 'object' ? { ...contract.execution } : null,
     budget: contract.budget ?? null,
+    preApproved: list(contract.preApproved, 6, 40),
   };
 }
 
