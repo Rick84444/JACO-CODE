@@ -78,6 +78,10 @@ export function prepareChatGptStrategy(payload,{env=process.env,repo='Rick84444/
       const paths=source.scope?.allowed;
       if(!Array.isArray(paths)||paths.length===0||paths.some(p=>!policy.codeRoots.includes(p)))
         reject('CODE_SCOPE_DENIED');
+      if((source.services||[]).length)reject('EXTERNAL_SERVICE_CONTRACT_DENIED');
+      const approvedTests=csv(env.JACO_CHATGPT_STRATEGY_TEST_COMMANDS);
+      if((source.verification?.commands||[]).some(command=>!approvedTests.includes(command)))
+        reject('TEST_COMMAND_NOT_APPROVED');
       const normalized=normalizeCodingContract({
         ...source,scope:{allowed:paths,forbidden:source.scope?.forbidden||[]},preApproved:[],
         execution:{...source.execution,allow_git_push:false,allow_git_merge:false,
