@@ -1,3 +1,4 @@
+import { PRE_APPROVABLE } from './operator-action-guard.mjs';
 import path from 'node:path';
 
 export const CODING_CONTRACT_SCHEMA = 'jaco.coding-contract/v1';
@@ -96,9 +97,13 @@ export function normalizeCodingContract(input = {}, fallbackObjective = '') {
   if (services.length > 10 || new Set(services.map(s=>s.id)).size !== services.length) throw new Error('CODING_SERVICES_INVALID');
   const requiredStages = input.verification?.required_stages || [];
   if (!Array.isArray(requiredStages) || requiredStages.some(s=>!['service','api','browser'].includes(s))) throw new Error('CODING_VERIFICATION_STAGE_INVALID');
+  // Operator-booked pre-approvals: fixed ids only; an unknown id is dropped, never widened.
+  if (input.preApproved !== undefined && !Array.isArray(input.preApproved)) throw new Error('CODING_PREAPPROVAL_INVALID');
+  const preApproved = [...new Set((input.preApproved || []).map(String).filter(id => Object.hasOwn(PRE_APPROVABLE, id)))];
   return {
     schema: CODING_CONTRACT_SCHEMA,
     objective,
+    preApproved,
     scope: { allowed, forbidden },
     services,
     acceptance,

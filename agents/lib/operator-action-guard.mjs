@@ -23,7 +23,8 @@ const SHELL_RULES = [
   [/\bgit\s+reset\s+--hard\b/, 'git reset --hard discards local work'],
   [/\bgit\s+clean\s+-\S*f/, 'git clean deletes untracked files'],
   [/\bgit\s+branch\s+-D\b/, 'force-delete of a git branch'],
-  [/\bgh\s+(?:pr\s+merge|release\s+create|repo\s+delete)\b/, 'GitHub merge, release or repository delete'],
+  [/\bgh\s+(?:pr\s+merge|release\s+create)\b/, 'GitHub merge or release'],
+  [/\bgh\s+repo\s+delete\b/, 'GitHub repository delete'],
   [/\bgh\s+auth\b|\bnpm\s+login\b|\bwrangler\s+login\b/, 'sign-in or credential change'],
   // The operator's own settings in JACO: saved logins and the spending limit are changed in the interface, never by the agent.
   [/\/api\/aura\/(?:logins|budget)\b|site-logins\.json|secrets\.json|secret\.key/i, 'change to an operator-only setting (logins, budget or secrets)'],
@@ -87,7 +88,52 @@ const SANDBOX_LOCAL = new Set(['git reset --hard discards local work', 'git clea
 // sandbox: the mission runs under a contract in its own worktree. The contract is the standing
 // permission for everything inside it; only what leaves it (push to a shared branch, publish,
 // deploy, send, sign in, delete outside the worktree) still asks.
-export function operatorApprovalCheck(task, { sandbox = false } = {}) {
+// Pre-approval: the operator books in advance which kinds of outward action a coding contract may do
+// without stopping. Fixed ids only; free text never widens authority. Anything not listed here stays a
+// hard limit, whatever the contract says.
+export const PRE_APPROVABLE = Object.freeze({
+  'push-protected-branch': 'push to a protected branch (main) after the work is verified',
+  'merge-or-release': 'merge a pull request or create a release',
+  'publish-or-deploy': 'publish or deploy',
+  'external-write': 'write through an outward-facing connector or tool',
+  'send-in-operator-name': "send, post or reply in the operator's name",
+  'sign-in': 'sign in or grant access on a site the operator set up',
+});
+// Never pre-approvable: effects that cannot be undone or that the operator alone decides.
+export const HARD_LIMITS = Object.freeze([
+  'force-push or history rewrite', 'recursive delete outside the worktree', 'system-level change',
+  'operator-only settings (logins, budget, secrets)', 'credential change', 'delete in a live application',
+  'write a file outside the project', 'typing a stored credential', 'remote delete request', 'repository delete',
+  'outgoing spend (separate guard)', 'uncertain outcome',
+]);
+
+// Maps a guard reason to its pre-approval category; HARD unless it is clearly one of the listed kinds.
+export function categoryOf(reason) {
+  const r = String(reason || '');
+  if (/force-push|rewrites shared history|reset --hard|git clean|git branch -D|recursive delete|system-level|operator-only|credential|live application|outside the project|stored credential|remote delete|repository delete/i.test(r)) return 'HARD';
+  if (/protected branch/i.test(r)) return 'push-protected-branch';
+  if (/publish or deploy/i.test(r)) return 'publish-or-deploy';
+  if (/external write/i.test(r)) return 'external-write';
+  if (/send or post/i.test(r)) return 'send-in-operator-name';
+  if (/sign-in or access grant/i.test(r)) return 'sign-in';
+  if (/^GitHub merge or release$/i.test(r)) return 'merge-or-release';
+  return 'HARD';
+}
+
+export function preApprovedFor(reason, preApproved = []) {
+  const category = categoryOf(reason);
+  return category !== 'HARD' && Array.isArray(preApproved) && preApproved.includes(category) && Object.hasOwn(PRE_APPROVABLE, category);
+}
+
+// Inside a contract, an action whose category the contract pre-approved does not stop the mission.
+// Outside a contract pre-approval has no effect: the operator decides there, as before.
+export function operatorApprovalCheck(task, { sandbox = false, preApproved = [] } = {}) {
+  const reason = guardCheck(task, { sandbox });
+  if (reason && sandbox && preApprovedFor(reason.reason, preApproved)) return null;
+  return reason;
+}
+
+function guardCheck(task, { sandbox = false } = {}) {
   const data = task?.data || {};
   if (task?.type === 'shell') {
     const command = [data.command, ...(Array.isArray(data.args) ? data.args : [])].filter(Boolean).join(' ');
