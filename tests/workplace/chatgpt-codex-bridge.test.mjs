@@ -72,6 +72,7 @@ test('ChatGPT GitHub relay transports messages bidirectionally through canonical
   const relay=createChatGptGithubRelay({
     store,root,fetchImpl,
     env:{
+      JACO_CHATGPT_WORKPLACE_TRANSPORT:'github-issue',
       JACO_CHATGPT_WORKPLACE_TOKEN:'fixture-token',
       JACO_CHATGPT_WORKPLACE_REPO:'Rick84444/jaco-code',
       JACO_CHATGPT_WORKPLACE_ACTOR:'Rick84444',

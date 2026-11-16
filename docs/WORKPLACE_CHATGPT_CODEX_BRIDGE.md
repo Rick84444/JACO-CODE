@@ -50,7 +50,7 @@ The canonical Workplace process owns a stable Agent Card:
 - no background-cognition claim
 - cannot receive missions through this relay
 
-The relay is enabled only when a GitHub token is available through
+For the legacy Github-issue transport, the relay requires a GitHub token through
 `JACO_CHATGPT_WORKPLACE_TOKEN`, `JACO_GITHUB_CONTROL_TOKEN`, `GH_TOKEN` or
 `GITHUB_TOKEN`.
 
@@ -69,6 +69,57 @@ cross-agent threads, are mirrored back to that issue.
 
 Session tokens never leave Workplace. The relay redacts token/secret/password/
 authorization/API-key-shaped fields from mirrored references.
+
+
+## Tokenless Git-ref transport for the public JACO repository
+
+On the default public `Rick84444/JACO-CODE` repository, `auto` chooses the
+**git-ref** transport even if a legacy GitHub token exists. The old authenticated
+`github-issue` transport remains available explicitly for a suitable private repo.
+
+The bridge uses the **existing** `chatgpt-jaco-relay` Workplace Agent Card,
+session, sync/ACK, encrypted event log and normal permissions.
+
+- Inbound: branch `jaco-chatgpt-in`, file `.jaco/chatgpt-in.json`, with exactly
+  one operator-sent `jaco.chatgpt-workplace/v1` communication message.
+- Outbound: branch `jaco-chatgpt-out`, file `.jaco/chatgpt-out.json`, created
+  using a temporary Git index and a non-forced push.
+- Only server-issued agent ID, input message ID, cursor, event kinds and body
+  SHA-256 digests can appear in the outbound receipt. **Never export Workplace
+  message text, URLs, references or session credentials to the public repo.**
+- Local Git origin must match the configured repo. Existing Git credentials
+  must permit status pushes. No API key, extra daemon or public port is added.
+- Only communication events are allowed. The relay has no mission, approval,
+  claim or deployment permissions; policy-bound Nova Git control is separate.
+- After initial ref/network failures the process retries on its own, with Git
+  polling spaced at least 30 seconds apart.
+
+Example safe inbound payload:
+
+```json
+{
+  "schema": "jaco.chatgpt-workplace/v1",
+  "messageId": "chatgpt-workplace-git-handshake-20261116-v1",
+  "kind": "QUESTION",
+  "thread": "chatgpt",
+  "targets": ["*"],
+  "body": "Aura: acknowledge this non-sensitive handshake."
+}
+```
+
+**Public-branch rule:** do not include secrets or private conversation text in
+`jaco-chatgpt-in`. Outbound provides a verifiable hash/receipt, not a private
+conversation channel. Use the separate authenticated private MCP tunnel for
+confidential ChatGPT collaboration.
+
+**Real Windows verification:** update the installed checkout without overwriting
+uncommitted work, restart only Workplace through its normal supervisor, and
+check `GET /health` for `chatgptRelay.transport=git-ref`,
+`chatgptRelay.state=READY` and a real `agentId`. Then read
+`jaco-chatgpt-out:.jaco/chatgpt-out.json` on GitHub, match `receivedId` to the
+handshake, and verify a later response generates a distinct event-kind/body-hash
+receipt. The source code alone does not establish a running local connection.
+
 
 ## Truth boundary
 
