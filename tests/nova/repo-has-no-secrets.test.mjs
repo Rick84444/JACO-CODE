@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { generateKeyPairSync } from 'node:crypto';
 import { scanRepositorySecrets } from '../../agents/lib/repo-secret-scan.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -71,4 +72,43 @@ test('untracked but publishable files are scanned; ignored private files remain 
   assert.equal(result.ok, false);
   assert.deepEqual(result.findings, [{ path: 'publishable.txt', kind: 'github' }]);
   assert.equal(result.errors.length, 0);
+});
+
+test('short Ed25519 PKCS#8 PEM private keys are detected', t => {
+  const dir = temporaryRepository(t);
+  const { privateKey } = generateKeyPairSync('ed25519');
+  const pem = privateKey.export({ type: 'pkcs8', format: 'pem' });
+  // A real ephemeral key is generated only inside the disposable test repository.
+  fs.writeFileSync(path.join(dir, 'short-key.txt'), pem);
+  git(dir, ['add', 'short-key.txt']);
+  const result = scanRepositorySecrets({ root: dir });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.findings, [{ path: 'short-key.txt', kind: 'private-key-block' }]);
+  assert.equal(result.errors.length, 0);
+});
+
+test('Latin-1 text with valid ASCII credential characters is never skipped', t => {
+  const dir = temporaryRepository(t);
+  const synthetic = 'gh' + 'p_' + 'R'.repeat(36);
+  fs.writeFileSync(path.join(dir, 'latin1.txt'), Buffer.concat([
+    Buffer.from('caf', 'ascii'), Buffer.from([0xe9]), Buffer.from(' ' + synthetic, 'ascii'),
+  ]));
+  git(dir, ['add', 'latin1.txt']);
+  const result = scanRepositorySecrets({ root: dir });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.findings, [{ path: 'latin1.txt', kind: 'github' }]);
+  assert.equal(result.binaryFiles, 0);
+});
+
+test('UTF-16 private data is detected even when NUL bytes are present', t => {
+  const dir = temporaryRepository(t);
+  const synthetic = 'gh' + 'p_' + 'M'.repeat(36);
+  fs.writeFileSync(path.join(dir, 'utf16.txt'), Buffer.concat([
+    Buffer.from([0xff, 0xfe]),
+    Buffer.from('token ' + synthetic, 'utf16le'),
+  ]));
+  git(dir, ['add', 'utf16.txt']);
+  const result = scanRepositorySecrets({ root: dir });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.findings, [{ path: 'utf16.txt', kind: 'github' }]);
 });

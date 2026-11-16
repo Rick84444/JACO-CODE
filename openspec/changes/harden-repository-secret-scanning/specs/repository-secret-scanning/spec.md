@@ -43,3 +43,19 @@ The current-tree scan SHALL NOT be described as a complete Git history audit.
 - **WHEN** current-tree checks pass
 - **THEN** documentation SHALL still state that previously published secrets
   require separate history inspection and rotation when found.
+
+### Requirement: Compact private-key blocks and legacy encodings
+
+Recognizable private-key blocks SHALL be detected independent of key algorithm
+and payload length. ASCII credential markers embedded in non-UTF-8 source
+files SHALL be inspected, not silently classified as binary.
+
+#### Scenario: Ed25519 private key
+
+- **WHEN** a tracked file contains an Ed25519 PKCS#8 PEM private key
+- **THEN** the scanner SHALL reject it without logging the key.
+
+#### Scenario: Latin-1 source fixture
+
+- **WHEN** a tracked Latin-1 text file contains a recognizable provider token
+- **THEN** the scanner SHALL reject it despite non-UTF-8 characters.

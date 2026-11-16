@@ -3,7 +3,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { TextDecoder } from 'node:util';
 
 const PATTERNS = Object.freeze([
   ['openai', /\bsk-(?:proj-|live-|ant-)?[A-Za-z0-9_-]{32,}\b/],
@@ -16,10 +15,9 @@ const PATTERNS = Object.freeze([
   ['stripe-webhook', /\bwhsec_[A-Za-z0-9]{24,}\b/],
   ['hugging-face', /\bhf_[A-Za-z0-9]{20,}\b/],
   ['cloudflare-token', /\bcf[au]t_[A-Za-z0-9_-]{30,}\b/],
-  ['private-key-block', /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]{100,}?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/],
+  ['private-key-block', /-----BEGIN ((?:ENCRYPTED |RSA |EC |OPENSSH |DSA )?)PRIVATE KEY-----[\s\S]{16,16384}?-----END \1PRIVATE KEY-----/],
 ]);
 
-const decoder = new TextDecoder('utf-8', { fatal: true });
 const readGit = (args, cwd) => execFileSync('git', args, { cwd, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 const safeError = error => error?.code || error?.name || 'IO_ERROR';
 
@@ -55,14 +53,33 @@ export function scanRepositorySecrets({ root = process.cwd() } = {}) {
       errors.push({ path: relative, code: safeError(error) });
       continue;
     }
-    if (bytes.includes(0)) { binaryFiles++; continue; }
-    let content;
-    try { content = decoder.decode(bytes); }
-    catch { binaryFiles++; continue; }
-    filesChecked++;
-    for (const [kind, pattern] of PATTERNS) {
-      if (pattern.test(content)) findings.push({ path: relative, kind });
+    // Provider credentials are ASCII-shaped. Latin-1 and Windows-1252 files
+    // can contain valid ASCII secrets despite not being valid UTF-8. Decode
+    // bytes losslessly, rather than silently discarding those files as binary.
+    const hasNul = bytes.includes(0);
+    const utf16Bom = bytes.length > 1 && (
+      (bytes[0] === 0xff && bytes[1] === 0xfe) ||
+      (bytes[0] === 0xfe && bytes[1] === 0xff)
+    );
+    const candidates = [bytes.toString('latin1')];
+    if (hasNul || utf16Bom) {
+      const even = bytes.length - (bytes.length % 2);
+      if (even > 0) {
+        candidates.push(bytes.subarray(0, even).toString('utf16le'));
+        const swapped = Buffer.from(bytes.subarray(0, even));
+        swapped.swap16();
+        candidates.push(swapped.toString('utf16le'));
+      }
     }
+    if (hasNul && !utf16Bom) binaryFiles++;
+    else filesChecked++;
+    const matched = new Set();
+    for (const content of candidates) {
+      for (const [kind, pattern] of PATTERNS) {
+        if (pattern.test(content)) matched.add(kind);
+      }
+    }
+    for (const kind of matched) findings.push({ path: relative, kind });
   }
   return { ok: errors.length === 0 && findings.length === 0, listed, filesChecked, binaryFiles, findings, errors };
 }
