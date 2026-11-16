@@ -12,9 +12,9 @@ import crypto from 'node:crypto';
 // File ENOENT (a missing source file) is deliberately not a missing tool.
 export function missingExecutable(error) {
   const message = String(error || '');
-  const match = message.match(/\\bspawn\\s+([a-z][a-z0-9._-]{0,40})\\s+ENOENT\\b/i)
-    || message.match(/\\b([a-z][a-z0-9._-]{0,40})\\s*:\\s*(?:command\\s+)?not found\\b/i)
-    || message.match(/\\b(?:the\\s+)?[`'"]?([a-z][a-z0-9._-]{0,40})[`'"]?\\s+command\\s+(?:is\\s+)?not found\\b/i);
+  const match = message.match(/\bspawn\s+([a-z][a-z0-9._-]{0,40})\s+ENOENT\b/i)
+    || message.match(/\b([a-z][a-z0-9._-]{0,40})\s*:\s*(?:command\s+)?not found\b/i)
+    || message.match(/\b(?:the\s+)?[`'"]?([a-z][a-z0-9._-]{0,40})[`'"]?\s+command\s+(?:is\s+)?not found\b/i);
   return match ? match[1].toLowerCase() : null;
 }
 
