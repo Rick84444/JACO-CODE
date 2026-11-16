@@ -1,15 +1,14 @@
 {
   "name": "jaco-cognitive-ide",
   "displayName": "JACO Code IDE",
-  "description": "Your own AI agent inside VS Code: Aura plans, writes code in a safe copy of your project, uses a real browser and shows every step. Runs locally with your own model.",
-  "version": "0.1.7",
+  "description": "Connect VS Code to your existing JACO Core: Aura plans and verifies work while you choose a local or cloud model.",
+  "version": "0.1.8",
   "publisher": "jacocode",
   "icon": "media/icon.png",
   "galleryBanner": {
     "color": "#0b1220",
     "theme": "dark"
   },
-  "private": true,
   "license": "MIT",
   "homepage": "https://jacocode.com/",
   "bugs": {
