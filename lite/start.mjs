@@ -201,6 +201,23 @@ export function serverCommand(installDir, execPath = process.execPath) {
   return { cmd: execPath, args: ['--experimental-sqlite', path.join(installDir, 'dist', 'server.cjs')] };
 }
 
+// The installer's private Node runs JACO by absolute path, but the agent starts
+// npm and other tools by name. All Lite children must inherit that Node bin.
+// Preserve the operator PATH and avoid a second differently-cased Windows Path.
+export function liteChildEnv(env = process.env, execPath = process.execPath, platform = process.platform) {
+  const windows = platform === 'win32';
+  const paths = windows ? path.win32 : path.posix;
+  const key = Object.keys(env).find(k => k.toLowerCase() === 'path') || 'PATH';
+  const original = String(env[key] ?? '');
+  if (typeof execPath !== 'string' || !paths.isAbsolute(execPath)) return { ...env };
+  const bin = paths.dirname(execPath);
+  const separator = windows ? ';' : ':';
+  const parts = original.split(separator).filter(Boolean);
+  const matches = part => windows ? part.toLowerCase() === bin.toLowerCase() : part === bin;
+  if (!parts.some(matches)) parts.unshift(bin);
+  return { ...env, [key]: parts.join(separator) };
+}
+
 export function serverEnv({ env, installDir, project, port, token }) {
   return {
     ...env,
@@ -324,6 +341,7 @@ export function updateNotice(result, env = process.env) {
 
 export async function main(argv = process.argv.slice(2), deps = {}) {
   const env = deps.env ?? process.env;
+  const childEnv = liteChildEnv(env, deps.execPath ?? process.execPath);
   const out = deps.out ?? (line => process.stdout.write(`${line}\n`));
   const err = deps.err ?? (line => process.stderr.write(`${line}\n`));
   const installDir = deps.installDir ?? path.dirname(fileURLToPath(import.meta.url));
@@ -378,7 +396,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   // Every Lite installation owns its loopback Workplace; never attach to an unrelated installation.
   const workplacePort = await (deps.findPort ?? findFreePort)(2995);
   const workplaceUrl = 'http://' + HOST + ':' + workplacePort;
-  const workplaceEnv = { ...env, JACO_WORKPLACE_HOST: HOST, JACO_WORKPLACE_PORT: String(workplacePort),
+  const workplaceEnv = { ...childEnv, JACO_WORKPLACE_HOST: HOST, JACO_WORKPLACE_PORT: String(workplacePort),
     JACO_WORKSPACE_ROOT: project, JACO_WORKPLACE_SUPERVISE_MODEL: '0', JACO_WORKPLACE_SUPERVISE_NOVA: '0',
     JACO_WORKPLACE_SUPERVISE_SEER: '0', JACO_CHATGPT_WORKPLACE_TOKEN: '', JACO_GITHUB_CONTROL_TOKEN: '',
     GH_TOKEN: '', GITHUB_TOKEN: '', JACO_WORKPLACE_TOKEN: '', JACO_WORKPLACE_OPERATOR_TOKEN: '' };
@@ -408,7 +426,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   if (!await waitForHealth(workplaceUrl, { alive: () => workplaceAlive, fetchImpl: deps.fetchImpl, timeoutMs: deps.healthTimeoutMs, expectedProduct: 'JACO Workplace' })) {
     shutdownRequested = true; workplace.kill(); err('JACO Workplace could not be started. See .jaco/workplace.log.'); return 5;
   }
-  const connectedEnv = { ...env, JACO_WORKPLACE_URL: workplaceUrl, JACO_WORKPLACE_REQUIRED: '1',
+  const connectedEnv = { ...childEnv, JACO_WORKPLACE_URL: workplaceUrl, JACO_WORKPLACE_REQUIRED: '1',
     JACO_WORKPLACE_TOKEN: '', JACO_HUB_URL: '', JACO_DEVICE_KEY: '' };
   const logFile = path.join(project, '.jaco', 'lite.log');
   const log = fsImpl.createWriteStream ? fsImpl.createWriteStream(logFile, { flags: 'a' }) : null;
