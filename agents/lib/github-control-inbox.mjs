@@ -155,6 +155,21 @@ export function createGithubNovaControlInbox({
     });
   }
 
+  // Preserve a valid command ID even when the operator policy rejects a
+  // command before execution. Never use a public error string as a key.
+  function recoverCommandId(issue){
+    try{
+      const raw=String(issue.body||'');
+      const markerAt=raw.indexOf(MARKER);
+      if(markerAt<0)return null;
+      const content=raw.slice(markerAt+MARKER.length);
+      const fenced=content.match(/```json\s*([\s\S]*?)\s*```/i);
+      const data=JSON.parse((fenced?fenced[1]:content).trim());
+      const id=String(data?.commandId||'').trim();
+      return data?.schema==='jaco.nova-control/v1'&&/^[a-zA-Z0-9._:-]{6,160}$/.test(id)?id:null;
+    }catch{return null;}
+  }
+
   function parse(issue) {
     const raw = String(issue.body || '');
     const markerAt = raw.indexOf(MARKER);
@@ -260,8 +275,9 @@ export function createGithubNovaControlInbox({
         '### JACO Nova local — REJECTED',
         `- error: \`${String(error.message || error).slice(0, 300)}\``,
       ].join('\n')).catch(() => null);
-      control.issues[issue.number == null ? 'git:invalid' : String(issue.number)] = {
-        commandId: issue.number == null ? 'invalid-control-ref' : null,
+      const rejectedId=issue.number == null ? recoverCommandId(issue) : null;
+      control.issues[issue.number == null ? (rejectedId ? 'git:'+rejectedId : 'git:invalid') : String(issue.number)] = {
+        commandId: issue.number == null ? (rejectedId || 'invalid-control-ref') : null,
         op: 'invalid',
         missionId: null,
         commentId: comment?.id || null,
@@ -390,9 +406,7 @@ export function createGithubNovaControlInbox({
         const accepted = [];
         for (const issue of issues) {
           let commandId = null;
-          if (issue.number == null) {
-            try { commandId = parse(issue).commandId; } catch {}
-          }
+          if (issue.number == null) commandId = recoverCommandId(issue);
           const key = issue.number == null ? (commandId ? `git:${commandId}` : 'git:invalid') : String(issue.number);
           const record = control.issues[key];
           if (record && (record.closed || record.commandId)) continue;
