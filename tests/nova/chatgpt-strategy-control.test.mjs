@@ -197,3 +197,51 @@ test('accepted ChatGPT strategy persists in the actual SEER mission graph with e
     assert.equal(graphRuntime.get(saved.id).status,'ACTIVE');
   }finally{db.close();}
 });
+
+test('a missing tracked SEER graph stays UNVERIFIED while later Git missions still enter the inbox',async()=>{
+  let input=copy(base),graphPresent=true,created=0;
+  const graphId=prepareChatGptStrategy(base,{env:enabled}).id;
+  const canonicalGraph={id:graphId,status:'ACTIVE',nodes:[]};
+  const novaMission={id:'mission-after-missing-graph',status:'ACTIVE',phase:'READY',
+    turn:0,failures:0,receipts:[]};
+  const missionClient={
+    async create(command){created++;assert.equal(command.source,'git-control');return novaMission;},
+    async get(id){assert.equal(id,novaMission.id);return novaMission;},
+    async resolve(){throw Error('unexpected');},
+  };
+  const strategyClient={
+    async create(graph){assert.equal(graph.id,graphId);return canonicalGraph;},
+    async get(id){assert.equal(id,graphId);return graphPresent?canonicalGraph:null;},
+  };
+  const inbox=createGithubNovaControlInbox({
+    missionClient,strategyClient,strategyEnv:enabled,
+    repo:'Rick84444/JACO-CODE',actor:'Rick84444',token:'',
+    transportMode:'git-ref',repoRoot:'/test/repo',
+    gitExecImpl:async(_bin,args)=>{
+      if(args[2]==='fetch')return {stdout:''};
+      if(args[2]==='show')return {stdout:JSON.stringify(input)};
+      throw Error('outbound Git receipt unavailable in fixture');
+    },
+  });
+  const state={};
+  assert.equal((await inbox.poll(state,{force:true})).accepted.length,1);
+  graphPresent=false; // confirmed SEER 404 after the earlier graph had been admitted
+  input={schema:'jaco.nova-control/v1',commandId:'chatgpt-next-mission-after-loss-001',
+    op:'mission.create',goal:'Verify local health without mutations',
+    allowedTasks:['health-check']};
+  const second=await inbox.poll(state,{force:true});
+  assert.equal(second.accepted.length,1,'graph disappearance cannot starve normal commands');
+  assert.equal(created,1);
+  const receipts=gitControlReceiptSnapshot(state.githubControl);
+  const missing=receipts.entries.find(e=>e.graphId===graphId);
+  assert.equal(missing.status,'UNVERIFIED');
+  assert.equal(missing.phase,'GRAPH_MISSING');
+  assert.equal(missing.errorCode,'CHATGPT_STRATEGY_GRAPH_NOT_FOUND');
+  assert.equal(missing.closed,true);
+  assert.equal(missing.missionId,null);
+  const received=receipts.entries.find(e=>e.commandId===input.commandId);
+  assert.equal(received.missionId,novaMission.id);
+  assert.equal(received.status,'ACTIVE');
+  assert.equal((await inbox.poll(state,{force:true})).accepted.length,0);
+  assert.equal(created,1,'poll retries are idempotent');
+});
