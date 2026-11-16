@@ -112,7 +112,9 @@ export function createLocalAuraGraphClient({
   fetchImpl=globalThis.fetch,
   env=process.env,
 }={}){
-  const raw=String(env.JACO_CHATGPT_STRATEGY_URL||'http://127.0.0.1:2997').replace(/\/+$/,'');
+  // Follow the existing SEER endpoint configuration when Windows allocated
+  // a nondefault service port; never fall back to an Internet endpoint.
+  const raw=String(env.JACO_CHATGPT_STRATEGY_URL||env.JACO_SEER_URL||('http://127.0.0.1:'+(env.SEER_PORT||2997))).replace(/\/+$/,'');
   const target=new URL(raw);
   if(!['127.0.0.1','localhost','::1'].includes(target.hostname)||target.protocol!=='http:')
     reject('LOOPBACK_REQUIRED');
