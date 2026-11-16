@@ -103,7 +103,7 @@ export function buildContextPacket({
   homeText = '',
   skillText = '',
   memoryGraph = null,
-  maxChars = 30_000,
+  maxChars = 200_000,
 } = {}) {
   if (!mission?.goal) throw new Error('CONTEXT_PACKET_MISSION_REQUIRED');
   const board = strategicContext?.board || null;
@@ -160,7 +160,7 @@ export function buildContextPacket({
       rule: 'done requires observed evidence; model confidence is not evidence',
     },
   };
-  return trimPacket(redactDeep(packet), Math.max(4000, Number(maxChars) || 30_000));
+  return trimPacket(redactDeep(packet), Math.max(4000, Number(maxChars) || 200_000));
 }
 
 export function formatContextPacket(packet) {
