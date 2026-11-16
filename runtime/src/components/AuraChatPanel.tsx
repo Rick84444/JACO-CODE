@@ -15,6 +15,7 @@ import { budgetIntent, type BudgetIntent } from '../lib/budgetIntent';
 import { humanChatEvents } from '../lib/humanChat';
 import { BudgetCard } from './CostChip';
 import { AutonomyClock } from './AutonomyClock';
+import { AuraOverview } from './AuraOverview';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
 
 // The conversation is not a telemetry console. Keep the newest instance of an identical
@@ -694,6 +695,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label={tr('Chattinställningar','Chat settings')} title={tr('Modell och budget','Model and budget')}><Settings2 size={15}/><span>{modelLabel}</span></button>
       </div>
 
+      <AuraOverview />
       {runControls && <div className="cognitive-run-controls">{runControls}</div>}
 
       {showSettings && (
