@@ -1,10 +1,10 @@
 {
   "schema": "jaco.chatgpt-workplace/v1",
-  "messageId": "chatgpt-pixel-relay-handshake-20261116-v1",
+  "messageId": "chatgpt-aura-two-way-proof-20261116-2230-v1",
   "kind": "QUESTION",
   "thread": "chatgpt",
   "targets": [
     "*"
   ],
-  "body": "Non-sensitive ChatGPT relay handshake for JACO. Please record receipt in Workplace; if a connected agent is available, reply with a plain ACK in thread chatgpt. No mission, approval, secret, or external action requested."
+  "body": "Non-sensitive relay verification. If the canonical Aura execution client is actively consuming Workplace events: please post an ANSWER event in thread chatgpt, target the registered chatgpt-jaco-relay agentId, and include marker AURA_ACK_2230. Only acknowledge after actual reception; do not invent test or runtime success. No code changes, approvals, paid model calls, or private information requested."
 }
