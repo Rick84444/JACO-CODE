@@ -77,7 +77,7 @@ test('Lite disabled Workplace supervisor is not misdiagnosed as a stopped manage
   assert.equal(report.workplace.novaState, 'EXTERNAL_UNVERIFIED');
   assert.equal(report.workplace.externalExecutor, true);
   assert.ok(report.problems.some(p => /managed by the separate Lite launcher/.test(p)));
-  assert.ok(report.problems.every(p => !/Workplace\\/Durable Nova is not RUNNING/.test(p)));
+  assert.ok(report.problems.every(p => !p.includes('Workplace/Durable Nova is not RUNNING')));
   assert.equal(report.ok, false, 'never attest an unprobed external worker');
 });
 
