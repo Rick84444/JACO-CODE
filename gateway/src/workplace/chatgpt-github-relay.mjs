@@ -274,9 +274,10 @@ export function createChatGptGithubRelay({
         enabled,started,state:relayState,transport,
         agentId:registration?.agentId||null,
         sessionId:registration?.sessionId||null,
-        issueNumber:persisted.issueNumber||null,
+        issueNumber:transport==='github-issue'?persisted.issueNumber||null:null,
+        ...(transport==='git-ref'?{inboundRef:'jaco-chatgpt-in',outboundRef:'jaco-chatgpt-out'}:{}),
         lastMirroredSeq:Number(persisted.lastMirroredSeq||0),
-        lastGithubAt:persisted.lastGithubAt||null,
+        lastGithubAt:transport==='github-issue'?persisted.lastGithubAt||null:null,
         lastError,
       };
     },
@@ -311,7 +312,7 @@ export function createChatGptGithubRelay({
         await poll();
         timer=setInterval(()=>{void poll();},pollMs);timer.unref?.();
         heartbeatTimer=setInterval(()=>{
-          try{store.heartbeat({sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',status:'READY'});}
+          try{store.heartbeat({sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',status:relayState==='READY'?'READY':'DEGRADED_UNSYNCED'});}
           catch(error){lastError=clip(error?.message||error,500);}
         },60000);heartbeatTimer.unref?.();
         log(relayState==='READY'?'info':'warn',`${relayState} as ${registration.agentId} (${transport})`);
