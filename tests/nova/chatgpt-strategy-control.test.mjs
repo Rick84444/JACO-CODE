@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { prepareChatGptStrategy, strategyPolicy, createLocalAuraGraphClient } from '../../agents/lib/chatgpt-strategy-control.mjs';
 import { createGithubNovaControlInbox } from '../../agents/lib/github-control-inbox.mjs';
 import { gitControlReceiptSnapshot } from '../../agents/lib/git-control-receipts.mjs';
@@ -140,4 +139,26 @@ test('without operator opt-in a Git strategy command is REJECTED without graph s
   assert.equal(called,0);
   const entry=gitControlReceiptSnapshot(s.githubControl).entries.find(e=>e.commandId===base.commandId);
   assert.equal(entry.status,'REJECTED');
+});
+
+test('accepted ChatGPT strategy persists in the actual SEER mission graph with evidence-gated dependencies',async()=>{
+  const {DatabaseSync}=await import('node:sqlite');
+  const {createMissionGraph}=await import('../../gateway/src/seer-mission-graph.mjs');
+  const db=new DatabaseSync(':memory:');let seq=0;
+  const graphRuntime=createMissionGraph({db,uid:()=>String(++seq),now:()=>Date.now()});
+  try{
+    const plan=prepareChatGptStrategy(base,{env:enabled});
+    const saved=graphRuntime.create(plan);
+    assert.equal(saved.id,plan.id);
+    assert.equal(saved.nodes.find(n=>n.key==='health').status,'READY');
+    assert.equal(saved.nodes.find(n=>n.key==='report').status,'BLOCKED');
+    const spec=graphRuntime.dispatchSpec(saved.id,'health');
+    assert.equal(spec.source,'seer-mission-graph');
+    assert.equal(spec.parent.mainGoal,base.graph.objective);
+    assert.deepEqual(spec.allowedTasks,['health-check','detect-surfaces']);
+    graphRuntime.bindNova(saved.id,'health','mission-health-1');
+    const verified=graphRuntime.verify(saved.id,'health',{verified:true,evidence_refs:['receipt-health']});
+    assert.equal(verified.nodes.find(n=>n.key==='report').status,'READY');
+    assert.equal(graphRuntime.get(saved.id).status,'ACTIVE');
+  }finally{db.close();}
 });
