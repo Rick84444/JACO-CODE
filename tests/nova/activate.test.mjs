@@ -12,7 +12,7 @@ function fakeRuntime({ servers, scan, planner, workplace = { state: 'RUNNING', n
     const bad = (status, error) => ({ ok: false, status, json: async () => ({ success: false, error }) });
     if (route === '/api/runtime/identity') return ok({ version: '0.21.0' });
     if (route === '/api/system/status') return ok({ status: { state: workplace.supervisorState || 'READY' } });
-    if (route === '/health') return ok({ supervisedAgents: { state: workplace.state, nova: { state: workplace.novaState } } });
+    if (route === '/health') return ok({ status: 'READY', supervisedAgents: { state: workplace.state, nova: { state: workplace.novaState } } });
     if (route === '/api/mcp/tools') {
       assert.ok(init.headers['x-gateway-token'], 'tool routes carry the gateway token');
       return ok({ servers: servers.map(s => ({ id: s.id, status: s.status, agentAccess: s.agentAccess || 'read', tools: s.status === 'READY' ? Array.from({ length: s.tools }, (_, i) => ({ name: `t${i}` })) : [] })) });
