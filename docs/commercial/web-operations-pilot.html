@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>JACO Web Operations – en tydlig förbättring, verifierat utförd</title>
+<meta name="description" content="Ett avgränsat pilotuppdrag för svenska småföretag: identifiera, förbättra och dokumentera ett konkret problem på företagets befintliga webbplats.">
+<style>
+:root{color-scheme:dark;--bg:#08111e;--panel:#111e2e;--line:#293a4d;--text:#eff7ff;--muted:#b1c2d2;--accent:#62d6e8;--warm:#f2c17e;--white:#fff}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:radial-gradient(ellipse at 70% -10%,#174b59 0,transparent 38%),linear-gradient(160deg,#07111e,#0b1725 70%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;line-height:1.55}
+a{color:inherit}button{font:inherit;cursor:pointer}main,header,footer{max-width:1110px;margin:auto;padding-left:26px;padding-right:26px}
+header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding-top:26px;padding-bottom:26px;border-bottom:1px solid rgba(255,255,255,.09)}
+.logo{font-size:1.12rem;letter-spacing:.08em;font-weight:800}.logo span{font-size:.7rem;display:block;letter-spacing:.16em;font-weight:600;color:var(--accent)}
+nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:.93rem;margin-left:24px}
+.preview{display:inline-block;font-size:.77rem;letter-spacing:.02em;padding:6px 12px;border:1px solid #6c6079;border-radius:40px;color:#f3d9ad;background:#211e2c}
+.hero{padding-top:78px;padding-bottom:80px;display:grid;grid-template-columns:1.15fr .85fr;gap:46px;align-items:center}
+.eyebrow{color:var(--accent);font-weight:800;letter-spacing:.14em;font-size:.78rem;text-transform:uppercase}
+h1{font-size:clamp(2.65rem,5vw,4.6rem);line-height:1.06;letter-spacing:-.045em;margin:.6rem 0 1.3rem}
+h1 em{font-style:normal;color:var(--accent)}h2{font-size:clamp(1.7rem,3vw,2.4rem);letter-spacing:-.032em;line-height:1.15;margin:.5rem 0 1rem}
+p{color:var(--muted);margin:0 0 1rem}.lead{font-size:1.16rem;max-width:610px}
+.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
+.button{display:inline-flex;align-items:center;justify-content:center;padding:14px 22px;border-radius:10px;text-decoration:none;font-weight:750;border:1px solid var(--accent);background:var(--accent);color:#08202c;min-height:48px}
+.button.ghost{background:transparent;color:var(--text);border-color:#48667c}
+.note{font-size:.88rem;margin-top:18px;color:#9cb4c5}.eyebox{border:1px solid #37566a;border-radius:20px;background:linear-gradient(145deg,rgba(36,81,94,.56),rgba(14,26,44,.9));padding:27px;box-shadow:0 22px 65px #0003}
+.eyebox .top{font-size:.8rem;color:#a9e9f0;text-transform:uppercase;letter-spacing:.12em;font-weight:800}
+.eyebox .problem{margin-top:22px;padding:20px;border:1px solid #4b5165;border-radius:11px;color:var(--muted)}
+.eyebox .result{margin-top:12px;padding:20px;border:1px solid #3b797b;border-radius:11px;background:#143a42;color:var(--text)}
+.small{font-size:.83rem;color:#b6c8d9}.eyebox strong{color:white}
+.section{padding:56px 0;border-top:1px solid rgba(255,255,255,.1)}
+.columns{display:grid;grid-template-columns:repeat(3,1fr);gap:17px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:26px}
+.panel h3{font-size:1.14rem;margin:.2rem 0 .65rem}.panel p:last-child{margin:0}
+.no{font-size:.82rem;color:var(--accent);font-weight:800;letter-spacing:.13em}.step{margin-top:20px}
+.offer{border:1px solid #3c6875;border-radius:17px;padding:32px;background:linear-gradient(105deg,#142e3a,#122231)}
+.offergrid{display:grid;grid-template-columns:1fr .72fr;gap:38px;align-items:center}
+.price{font-size:3.35rem;letter-spacing:-.055em;line-height:1.05;font-weight:850;color:white}
+.price span{font-size:1rem;color:#a8c0cd;font-weight:500;letter-spacing:0}
+ul{padding-left:20px;color:var(--muted)}li{margin-bottom:9px}li::marker{color:var(--accent)}
+.sample{border-left:3px solid var(--warm);padding:12px 20px;background:#241f25;color:#e3d5c8;border-radius:0 9px 9px 0}
+.cta{display:grid;grid-template-columns:1.2fr .8fr;gap:24px;align-items:center}
+footer{padding-top:30px;padding-bottom:50px;border-top:1px solid #223748;color:#9badbd;font-size:.86rem;display:flex;justify-content:space-between;gap:25px}
+:focus-visible{outline:3px solid var(--warm);outline-offset:4px}
+@media(max-width:760px){.hero,.offergrid,.cta{grid-template-columns:1fr}.columns{grid-template-columns:1fr}nav{display:none}.hero{padding:46px 0 58px}footer{display:block}h1{font-size:2.7rem}}
+@media print{body{color:#111;background:white}header,main,footer{max-width:none}p,ul,footer,.note{color:#333}.eyebox,.panel,.offer{background:#f6f8fa;color:#111;box-shadow:none}.eyebox strong,.price{color:#111}h1 em{color:#135d67}.preview,.actions{display:none}a{text-decoration:none}section{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">JACO <span>WEB OPERATIONS</span></div>
+  <nav aria-label="Sidnavigation"><a href="#hur">Så fungerar det</a><a href="#erbjudande">Pilotpris</a><a href="#start">Nästa steg</a></nav>
+  <span class="preview">Intern förhandsvisning – ej publicerad</span>
+</header>
+<main>
+  <section class="hero">
+    <div>
+      <div class="eyebrow">En sak i taget. Tydligt resultat.</div>
+      <h1>Din webbplats har ett problem. <em>Vi löser ett.</em></h1>
+      <p class="lead">För småföretag som redan har en webbplats men behöver få en konkret sak att fungera bättre. Vi avgränsar jobbet, genomför den överenskomna förbättringen och visar vad som faktiskt ändrats.</p>
+      <div class="actions">
+        <a class="button" href="#start">Beskriv ditt problem</a>
+        <a class="button ghost" href="#erbjudande">Se pilotupplägget</a>
+      </div>
+      <p class="note">Ingen onödig totalombyggnad. Ingen bindande prenumeration. Inga löften om topplaceringar eller försäljningsresultat.</p>
+    </div>
+    <aside class="eyebox" aria-label="Illustrativt exempel på ett uppdrag">
+      <div class="top">Så kan ett uppdrag se ut</div>
+      <div class="problem"><strong>Före</strong><p>Mobilbesökare hittar inte tydligt hur de skickar en offertförfrågan.</p></div>
+      <div class="result"><strong>Efter</strong><p>Tydligare väg till kontakt, genomgång i mobilvy och dokumentation av ändringen.</p></div>
+      <div class="small">Illustrativt exempel – inte ett genomfört kundcase.</div>
+    </aside>
+  </section>
+  <section class="section" id="hur">
+    <div class="eyebrow">Arbetssätt</div>
+    <h2>Från irritation till kontrollerad förbättring</h2>
+    <div class="columns">
+      <div class="panel"><div class="no">01 / Avgränsa</div><h3>Vi väljer ett problem</h3><p>Du visar var det brister. Vi kommer överens om omfattning, åtkomst och hur ett godkänt resultat ska se ut.</p></div>
+      <div class="panel"><div class="no">02 / Genomför</div><h3>Vi gör den avtalade ändringen</h3><p>Ändringen görs på överenskommet sätt, med säkerhetskopia eller återställningsplan där det är relevant. Publicering kräver ditt klartecken.</p></div>
+      <div class="panel"><div class="no">03 / Redovisa</div><h3>Du ser vad du fått</h3><p>Vi redovisar vad som ändrades, hur resultatet kontrollerades, eventuella begränsningar och nästa rekommenderade steg.</p></div>
+    </div>
+  </section>
+  <section class="section" id="erbjudande">
+    <div class="eyebrow">Avgränsat pilotuppdrag</div>
+    <div class="offer offergrid">
+      <div>
+        <h2>En tydlig webbplatsförbättring</h2>
+        <p>Exempel: förbättra en kontaktväg, en mobilvy, en viktig informationssida eller ett avgränsat tekniskt fel på en befintlig webbplats.</p>
+        <ul>
+          <li>Skriftlig avgränsning och godkännandekriterier före arbetet</li>
+          <li>En avtalad ändring, inte ett öppet konsultuppdrag</li>
+          <li>Före-/efterredovisning och verifieringsunderlag</li>
+          <li>Inga ändringar i produktionsmiljö utan tillstånd</li>
+        </ul>
+      </div>
+      <div>
+        <p>Prisidé för första pilotkunder</p>
+        <div class="price">4 900 kr <span>exkl. moms</span></div>
+        <p>Förutsätter att problemet ryms inom en överenskommen liten leverans. Slutlig offert ges efter avgränsning.</p>
+        <p class="small">Priset är en hypotes under validering, inte en accepterad offert eller verifierad betalningsvilja.</p>
+      </div>
+    </div>
+  </section>
+  <section class="section">
+    <h2>Vad som inte ingår</h2>
+    <p>Ny komplett webbplats, obegränsade ändringar, löpande drift, köpt annonsering, hantering av kunddata utan avtal, säkerhetsgarantier eller garanterade placeringar i sökmotorer. Eventuellt större arbete offereras separat.</p>
+    <div class="sample">AI kan hjälpa till med analys, genomförande och dokumentation. En ansvarig människa granskar omfattning, behörigheter och ändringar innan de påverkar en kunds verksamhet.</div>
+  </section>
+  <section class="section cta" id="start">
+    <div>
+      <div class="eyebrow">Starta med en beskrivning</div>
+      <h2>Vilken enda sak stör dig mest på din webbplats?</h2>
+      <p>Det räcker med adressen till sidan, en kort beskrivning av problemet och vad du vill att en besökare ska kunna göra. Vi avgör först om uppdraget passar ett avgränsat pilotpris.</p>
+    </div>
+    <div class="panel">
+      <h3>Förslag på första kontakt</h3>
+      <p id="brief">Hej! Jag har en webbplats där jag vill förbättra [problemet]. Sidan är [webbadress]. Målet är att [önskat resultat]. Går detta att göra som ett avgränsat uppdrag?</p>
+      <button class="button" id="copy" type="button">Kopiera frågan</button>
+      <p class="small" role="status" id="copyStatus" aria-live="polite">Klistra in texten i ditt valda meddelande. Kontaktväg läggs till före publicering.</p>
+    </div>
+  </section>
+</main>
+<footer><div><strong>JACO Web Operations</strong> · Pilotmaterial för intern granskning</div><div>Inget kundcase, kundavtal eller produktionspublicering påstås.</div></footer>
+<script>
+document.getElementById('copy').addEventListener('click',async()=>{
+ const text=document.getElementById('brief').textContent.trim();
+ const status=document.getElementById('copyStatus');
+ try{await navigator.clipboard.writeText(text);status.textContent='Kopierat. Lägg till dina uppgifter och skicka via valfri kanal.';}
+ catch{status.textContent='Markera och kopiera texten ovan. Den här förhandsvisningen skickar inget.';}
+});
+</script>
+</body>
+</html>
