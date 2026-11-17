@@ -356,13 +356,15 @@ test('a cancellation during planning prevents a new tool call and survives resta
 
 // A verified mutation proposed again on an unchanged view is not re-run (an endless mkdir), but the
 // same action on a changed view is (Next on consecutive wizard pages), and long arguments still match.
-test('the same verified mutation on an unchanged view proposes completion instead of re-running',async t=>{
+test('the same verified mutation requests bounded replanning instead of premature completion',async t=>{
  const s=setup(t,['browser-click']);const m=await s.client.create({...goal,allowedTasks:['browser-click']});
  const long={name:'Save',note:'x'.repeat(5000)};let runs=0;
  const turn=()=>processMissionTurn({client:s.client,owner:'nova',observe:async()=>({url:'https://a.test/form',title:'Form'}),plan:async()=>({task:{type:'browser-click',data:long,expectedOutcome:'saved'}}),execute:async()=>{runs++;return {ok:true,verified:true};}});
  await turn();const second=await turn();
- assert.equal(runs,1);assert.equal(second.awaitingVerification,true);assert.equal(second.reason,'REPEAT_OF_VERIFIED_ACTION');
+ assert.equal(runs,1);assert.equal(second.replanRequired,true);assert.equal(second.awaitingVerification,undefined);assert.equal(second.reason,'REPEAT_OF_VERIFIED_ACTION');
+ assert.equal(s.control.get(m.id).status,'ACTIVE');
  const r=s.control.get(m.id).receipts.at(-1);assert.equal(r.input.note,'[5000 chars]');assert.equal(r.inputHash.length,64);
+ await turn();await turn();assert.equal(runs,1);assert.equal(s.control.get(m.id).status,'BLOCKED');
 });
 test('the same mutation runs again when the view changed since its receipt',async t=>{
  const s=setup(t,['browser-click']);await s.client.create({...goal,allowedTasks:['browser-click']});

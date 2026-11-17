@@ -1,0 +1,4 @@
+- [x] Trace duplicate-action handling and canonical release behavior.
+- [ ] Replace premature completion with bounded planning feedback.
+- [ ] Run mission regression tests and syntax checks.
+- [ ] Verify live provider and runtime behavior.
