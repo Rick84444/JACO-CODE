@@ -85,8 +85,9 @@ export async function activationReport({
   if (lite) {
     try {
       const health = await call(fetchImpl, baseUrl, token, 'GET', '/api/connected/nova/executor-health', null, 4000);
+      const age = Date.now() - Date.parse(health.observedAt);
       if (health.schema !== 'jaco.nova-executor-health/v1' || health.state !== 'RUNNING' ||
-          !Number.isFinite(Date.parse(health.observedAt))) throw new Error('NO_FRESH_EXECUTOR_HEARTBEAT');
+          !Number.isFinite(age) || age < -1000 || age > 45_000) throw new Error('NO_FRESH_EXECUTOR_HEARTBEAT');
       report.executor = { owner: 'lite-launcher', state: 'RUNNING', observedAt: health.observedAt };
     } catch (error) {
       report.problems.push('The durable executor managed by the separate Lite launcher has not been verified. Check Lite lifecycle and .jaco/nova.log.');

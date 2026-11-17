@@ -315,6 +315,7 @@ test('Lite restarts an exited durable executor, keeps Core alive and does not re
     while(children.length<count && Date.now()<deadline) await new Promise(r=>setTimeout(r,20));
     assert.equal(children.length,count);
   }
+  let coreStopped=false;
   try {
     await waitFor(3);
     assert.equal(children[2].file,'nova.mjs');
@@ -322,13 +323,14 @@ test('Lite restarts an exited durable executor, keeps Core alive and does not re
     await waitFor(4);
     assert.equal(children[3].file,'nova.mjs');
     assert.equal(children.filter(c=>c.file==='server.cjs').length,1);
+    coreStopped=true;
     children[1].emit('exit',1,null);
     assert.equal(await start,1);
     const events=fs.readFileSync(path.join(project,'.jaco','lite-lifecycle.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
     assert.equal(events.filter(e=>e.event==='RESTART_SCHEDULED').length,1);
     assert.equal(events.filter(e=>e.component==='agent' && e.event==='EXIT' && e.expected).length,1);
   } finally {
-    if(children[1] && children.length<4) children[1].emit('exit',1,null);
+    if(children[1] && !coreStopped) children[1].emit('exit',1,null);
     await start.catch(()=>{});
     // Let closed log streams flush before removing the disposable project.
     await new Promise(r=>setTimeout(r,50));
