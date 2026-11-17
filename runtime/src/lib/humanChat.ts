@@ -50,6 +50,12 @@ export function isInternalEvent(event: CognitiveEvent): boolean {
 
 // The event as the chat shows it: plain words in the chosen language. The original stays in evidence.error so the
 // Evidence view can still show exactly what the runtime reported.
+// Emoji and status symbols (check marks, crosses, warnings) copied from test output broke the chat's layout.
+// Aura's own words are shown plain; the operator's words and the evidence are left as they are.
+export function plainChatText(text: string): string {
+  return String(text).replace(/[\p{Extended_Pictographic}\u2139\uFE0F\u200D]/gu, '').replace(/[ \t]{2,}/g, ' ').trim();
+}
+
 export function humanizeEvent(event: CognitiveEvent, language: string): CognitiveEvent {
   const text = String(event.text || '');
   const goal = event.category === 'goal' ? operatorWords(text) : text;
@@ -66,10 +72,11 @@ export function humanizeEvent(event: CognitiveEvent, language: string): Cognitiv
     !['failed','unknown'].includes(event.evidence?.outcome) &&
     /\b(?:Jag|jag|I|We|Nu|För att|Next|First)\b/.test(goal);
   const human = narrated ? null : humanCodeText(goal, language);
-  if (!human && goal === text) return event;
+  const shown = event.category === 'goal' ? (human || goal) : plainChatText(human || goal);
+  if (!human && goal === text && shown === text) return event;
   return {
     ...event,
-    text: human || goal,
+    text: shown,
     evidence: { ...event.evidence, error: event.evidence?.error || (human ? text : event.evidence?.error ?? null) },
   };
 }

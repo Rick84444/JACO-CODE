@@ -2604,9 +2604,9 @@ export async function main() {
   log("info", "brain", `Reasoning timeout ${timing.requestMs} ms; planning budget ${timing.planBudgetMs} ms; planning lease ${timing.planningLeaseMs} ms`);
 
   const envStatus = [
-    `HF=${(process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN) ? "✔" : "✖"}`,
-    `STRIPE=${process.env.STRIPE_SECRET_KEY || process.env.STRIPE_RESTRICTED_KEY ? "✔" : "✖"}`,
-    `GITHUB=${process.env.GITHUB_TOKEN ? "✔" : "✖"}`,
+    `HF=${(process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN) ? "ok" : "missing"}`,
+    `STRIPE=${process.env.STRIPE_SECRET_KEY || process.env.STRIPE_RESTRICTED_KEY ? "ok" : "missing"}`,
+    `GITHUB=${process.env.GITHUB_TOKEN ? "ok" : "missing"}`,
   ].join("  ");
   log("info", "agent", `Env: ${envStatus}`);
   log("info", "agent", `Runtime: ${CONFIG.runtimeUrl} | CDP: :${CONFIG.cdpPort}`);
