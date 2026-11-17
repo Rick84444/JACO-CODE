@@ -854,3 +854,8 @@
   .cognitive-chat-diagnostics-content { padding:6px 12px 10px; }
   .cognitive-chat-attention>summary { padding-left:14px; padding-right:14px; }
 }
+
+/* A real blocked step remains discoverable, but never permanently covers the reply. */
+.cognitive-chat-blockers { border:1px solid #6b5737; border-radius:7px; margin:5px 0; }
+.cognitive-chat-blockers>summary { cursor:pointer; color:#e2c29b; min-height:34px; padding:7px 10px; font-size:12px; }
+.cognitive-chat-blockers .cognitive-background-events-list { padding:3px 12px; }
