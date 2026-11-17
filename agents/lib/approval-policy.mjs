@@ -26,7 +26,8 @@ export const READ_ONLY_TASKS = new Set([
   'desktop-windows', 'desktop-observe', 'windows-wmi-read', 'screenshot', 'get-cursor',
   'repo-list', 'repo-read', 'git-status', 'git-diff', 'mcp-call', 'skill-load', 'propose-tool',
 ]);
-export const VERIFIED_CODE_TASKS = new Set(['repo-write', 'repo-edit', 'repo-test', 'git-commit']);
+// A contracted repo-service start/status/stop is bounded to the registered local worktree service.
+export const VERIFIED_CODE_TASKS = new Set(['repo-write', 'repo-edit', 'repo-test', 'repo-service', 'git-commit']);
 // Unambiguous spend vocabulary: always blocks, no matter the surrounding text.
 export const OUTGOING_SPEND = /\b(pay|payment|payout|purchase|buy|subscri(be|ption)|top[- ]?up|send (money|funds)|refund|x402|skyfire|invoice (a|the) vendor|checkout\.sessions?\.create)\b|betal|köp|prenumerer|utbetal/i;
 // Ambiguous vocabulary that also has common non-financial engineering meanings (data transfer,
@@ -152,7 +153,8 @@ export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastE
     if (mission.contract && mission.contractStatus?.machineVerified !== true) return null;
     const types = done.map(r => String(r.type || ''));
     if (types.every(t => READ_ONLY_TASKS.has(t))) return { decision: 'confirm', note: `auto-approved (level ${level}): ${done.length} verified read-only receipt(s)` };
-    if (level >= 2 && types.every(t => READ_ONLY_TASKS.has(t) || VERIFIED_CODE_TASKS.has(t))) {
+    if (level >= 2 && types.every(t => READ_ONLY_TASKS.has(t) || VERIFIED_CODE_TASKS.has(t)) &&
+        (!types.includes('repo-service') || mission.contract?.execution?.autonomous === true)) {
       return { decision: 'confirm', note: `auto-approved (level ${level}): verified code work; merge still requires green CI` };
     }
     if (level >= 3) return { decision: 'confirm', note: `auto-approved (level ${level}): ${done.length} verified receipt(s), no outgoing spend` };
