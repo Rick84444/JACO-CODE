@@ -800,3 +800,57 @@
 .aura-terminal-output small{color:#96a6b5;font:10px/1.6 system-ui}.aura-terminal-output p{margin:3px 0;color:#96a6b5}
 @media(max-width:700px){.aura-terminal-output{max-height:130px}.aura-terminal>header>span{display:none}}
 .aura-terminal{display:flex;flex-direction:column;overflow:hidden}.aura-terminal>header{flex-shrink:0}.aura-terminal-output{flex:1;min-height:0}
+
+/* Conversation focus means an actual full-width chat, including landscape phones
+   whose CSS viewport exceeds the portrait breakpoint. Other workspaces retain
+   their split panes; chat focus never layers a canvas on top of the replies. */
+.cognitive-main[data-focus="conversation"]>.cognitive-conversation {
+  display:flex; flex:1 1 100%; width:100%; max-width:none; min-width:0;
+}
+.cognitive-main[data-focus="conversation"]>.cognitive-canvas { display:none; }
+.cognitive-main[data-focus="conversation"] .cognitive-feed,
+.cognitive-main[data-focus="conversation"] .cognitive-composer-inner { max-width:820px; }
+
+/* Status, mission steps and autonomy controls remain accessible, but not as
+   permanent panels consuming the height of the assistant's answers. */
+.cognitive-chat-diagnostics { flex-shrink:0; border-bottom:1px solid var(--cw-line); }
+.cognitive-chat-diagnostics>summary {
+  list-style:none; cursor:pointer; display:flex; align-items:center; gap:7px;
+  min-height:30px; padding:4px 24px; font-size:11px; color:#bfc1c4;
+}
+.cognitive-chat-diagnostics>summary::-webkit-details-marker { display:none; }
+.cognitive-chat-diagnostics>summary::before { content:'▸'; font-size:12px; }
+.cognitive-chat-diagnostics[open]>summary::before { content:'▾'; }
+.cognitive-chat-diagnostics-content { padding:6px 20px 12px; max-height:min(48dvh,340px); overflow-y:auto; }
+.cognitive-chat-diagnostics-content .cognitive-run-controls { max-height:none; overflow:visible; padding:6px 0; }
+.cognitive-chat-diagnostics-content .aura-overview { margin:0 0 8px; }
+.cognitive-chat-diagnostics-content .autonomy-clock { margin:8px 0 0; }
+.cognitive-background-events { margin:8px 0 0; }
+.cognitive-background-events-list { max-height:190px; overflow-y:auto; }
+.cognitive-chat-attention { flex-shrink:0; border-bottom:1px solid #554634; }
+.cognitive-chat-attention>summary {
+  display:flex; align-items:center; gap:8px; cursor:pointer;
+  padding:7px 24px; color:#e4c59f; font-size:12px; min-height:34px;
+}
+.cognitive-chat-attention>.cognitive-decision { margin:3px 20px 10px; max-height:40dvh; }
+.cognitive-chat-attention[open] { max-height:48dvh; overflow-y:auto; }
+
+/* Short landscape screens must retain room for at least several reply lines
+   with keyboard hidden; action buttons remain keyboard/touch accessible. */
+@media (max-height:600px) {
+  .cognitive-topbar { min-height:43px; padding-top:4px; padding-bottom:4px; }
+  .cognitive-contextbar { min-height:32px; padding-top:2px; padding-bottom:2px; }
+  .cognitive-footbar { display:none; }
+  .cognitive-chat-heading { min-height:31px; padding:3px 14px; }
+  .cognitive-chat-diagnostics>summary { min-height:27px; padding:3px 14px; }
+  .cognitive-chat-attention>summary { min-height:29px; padding:4px 14px; }
+  .cognitive-chat-scroll { padding-top:6px; padding-bottom:7px; }
+  .cognitive-composer,.cognitive-main[data-canvas=true] .cognitive-composer { padding:3px 12px 5px; }
+  .cognitive-input-box textarea { min-height:38px; }
+  .cognitive-input-actions { padding-bottom:4px; }
+}
+@media (max-width:767px) {
+  .cognitive-chat-diagnostics>summary { padding-left:16px; padding-right:16px; }
+  .cognitive-chat-diagnostics-content { padding:6px 12px 10px; }
+  .cognitive-chat-attention>summary { padding-left:14px; padding-right:14px; }
+}

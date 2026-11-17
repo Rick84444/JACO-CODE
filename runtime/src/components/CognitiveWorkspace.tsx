@@ -152,7 +152,16 @@ export function CognitiveWorkspace(props:Props) {
           </button>
         </div>
         {props.error && <div className="cognitive-connection-notice" role="alert"><CircleAlert size={14}/><span>{tr('Runtime kan inte nås just nu. Tidigare observationer visas tills anslutningen är tillbaka.','Runtime is currently unreachable. Earlier observations remain visible until the connection returns.')}</span></div>}
-        {props.attention}
+        {props.attention && (showStage ? props.attention : (
+          <details className="cognitive-chat-attention" data-testid="jaco-chat-attention">
+            <summary><CircleAlert size={14}/>{props.approvalCount>0
+              ? tr('Beslut kräver din uppmärksamhet','Decisions need your attention')
+              : tr('Ett hinder behöver uppmärksamhet','An issue needs attention')}
+              {props.approvalCount>0 ? ` (${props.approvalCount})` : ''}
+            </summary>
+            {props.attention}
+          </details>
+        ))}
         <main className="cognitive-main" data-canvas="true" data-focus={showStage?'stage':'conversation'}>
           <section className="cognitive-conversation" aria-label={tr('Aura-konversation','Aura conversation')}>{props.conversation}</section>
           <aside className="cognitive-canvas" aria-label="Aura Live Workspace">
