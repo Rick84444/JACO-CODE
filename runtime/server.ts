@@ -4402,7 +4402,8 @@ const notifyPhone = async (action) => {
         recordAuto(`mcp-source:${source.id} -> approve (level ${level})`, { sourceId: source.id, resolvedSha: source.resolvedSha, level });
       }
     } catch (error: any) { console.warn('[auto-approve] gate tick failed:', error?.message || error); }
-    for (const base of connectedRuntime.bus.missionsAwaitingResolution()) void resolvePolicyMission(base.id);
+    try { for (const base of connectedRuntime.bus.missionsAwaitingResolution()) void resolvePolicyMission(base.id); }
+    catch (error: any) { console.warn('[aura-resolution] scan failed:', error?.message || error); }
   };
   setInterval(autoApproveTick, 5_000).unref?.();
 

@@ -1,5 +1,5 @@
 // No model/provider fixture: this exercises actual Shack calculation, HTTP dispatch,
-// SQLite receipts, filesystem changes, child-process tests and SEER auto-confirmation.
+// SQLite receipts, filesystem changes, child-process tests and Core policy resolution.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -13,6 +13,7 @@ import { NovaMissionControl, mountNovaMissionRoutes } from '../../runtime/src/se
 import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
 import { normalizeCodingContract } from '../../agents/lib/coding-contract.mjs';
 import { checkedReceipt } from '../../agents/lib/mission-client.mjs';
+import { autoResolution } from '../../agents/lib/approval-policy.mjs';
 import { readStrategicContext } from '../../agents/lib/strategic-context.mjs';
 
 async function until(read, accept, timeout = 10000) {
@@ -137,6 +138,14 @@ test('operational Shack closes actual failing code through SEER HTTP -> Nova -> 
     const lease = control.claim(mission.id, 'nova-runtime-proof');
     const awaiting = control.release(mission.id, { owner: 'nova-runtime-proof', token: lease.token, completionProposed: true });
     assert.equal(awaiting.contractStatus.machineVerified, true);
+    // Strategy is now read-only with respect to outcome approval. The test
+    // harness calls the same Core policy function on real SQLite receipts.
+    const pending = await request(`${route}/nodes/${key}/reconcile`, {});
+    assert.equal(pending.outcome, 'awaiting_verification');
+    assert.equal(control.get(mission.id).status,'AWAITING_VERIFICATION');
+    const verdict = autoResolution({...awaiting,receipts:control.evidenceReceipts(mission.id)}, {level:2,graph:pending.graph});
+    assert.equal(verdict?.decision,'confirm');
+    control.resolveAutomatic(mission.id,verdict);
     const reconciled = await request(`${route}/nodes/${key}/reconcile`, {});
     assert.equal(reconciled.outcome, 'verified');
     assert.equal(control.get(mission.id).status, 'DONE', 'pre-authorized work closes without a new operator approval');

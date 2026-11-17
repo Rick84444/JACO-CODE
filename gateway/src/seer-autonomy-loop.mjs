@@ -155,7 +155,7 @@ export function createAutonomyLoop({
   async function replanFailures(report) {
     const graphs = missionGraph.list().filter(graph => graph.status === 'NEEDS_REPLAN');
     for (const graph of graphs) {
-      const failedNodes = graph.nodes.filter(node => node.status === 'FAILED');
+      const failedNodes = graph.nodes.filter(node => node.status === 'FAILED' && !Object.hasOwn(graph.policy?.exhausted_nodes || {},node.key));
       for (const failed of failedNodes) {
         if (['NOVA_UNCERTAIN_OUTCOME_BUDGET_EXHAUSTED','NOVA_BINDING_MISSING_OUTCOME_UNKNOWN'].includes(failed.failure_reason)) {
           missionGraph.quarantine(graph.id, failed.key, failed.failure_reason, failed.evidence_refs || []);
@@ -235,7 +235,7 @@ export function createAutonomyLoop({
     let remaining = Math.max(0, Number(maxDispatchPerTurn) || 0);
     if (!remaining) return;
 
-    const graphs = missionGraph.list().filter(graph => graph.status === 'ACTIVE');
+    const graphs = missionGraph.list().filter(graph => ['ACTIVE','NEEDS_REPLAN'].includes(graph.status));
     for (const graph of graphs) {
       if (!remaining) break;
       const readyNodes = missionGraph.ready(graph.id);

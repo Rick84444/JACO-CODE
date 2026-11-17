@@ -178,6 +178,7 @@ export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastE
     // Graph repair owns the next approach after an explicit replan request.
     // The completion resolver must not simultaneously restart the old child.
     if (mission.replanRequest) return null;
+    if (mission.source === 'seer-mission-graph' && Number(mission.failures || 0) >= Number(mission.contract?.budget?.max_failures || 3) && receipts.some(r=>r.ok===false && !r.outcomeUnknown)) return null;
     const error = String(lastError || [...receipts].reverse().find(r => r?.error)?.error || '');
     // A missing capability or a planner refusal is not transient. Replaying the unchanged
     // mission cannot grant a tool; level 5 must not turn it into an infinite resume loop.
