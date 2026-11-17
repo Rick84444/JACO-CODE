@@ -17,8 +17,10 @@ async function call(fetchImpl, baseUrl, token, method, route, body, timeoutMs = 
 const errorText = error => String(error?.message || error).split('\n')[0].slice(0, 160);
 
 async function runtimeIdentity(baseUrl, fetchImpl) {
-  try { return await call(fetchImpl, baseUrl, '', 'GET', '/api/runtime/identity', null, 4000); }
-  catch { return null; }
+  try {
+    const identity = await call(fetchImpl, baseUrl, '', 'GET', '/api/runtime/identity', null, 4000);
+    return identity?.success === true && identity.product === 'JACO Autonomus IDE' ? identity : null;
+  } catch { return null; }
 }
 export async function runtimeUp({ baseUrl, fetchImpl = fetch } = {}) {
   const identity = await runtimeIdentity(baseUrl, fetchImpl);
@@ -98,7 +100,7 @@ export async function activationReport({
       const supervised = health?.supervisedAgents || {};
       // Lite owns the Nova child from its launcher, not the Workplace
       // supervisor. DISABLED is therefore not evidence of a stopped worker.
-      // Do not declare READY either: only the launcher can attest its child.
+      // Readiness of the executor comes only from its fresh authenticated observation.
       const liteExternal = lite;
       report.workplace = {
         required: true, up: true,

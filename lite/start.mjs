@@ -516,7 +516,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   out(`  Project:  ${project}`);
   const agentCmd = args.agent ? agentCommand(installDir, deps.execPath, fsImpl) : null;
   const launchAgent = () => {
-    if (!agentCmd || shutdownRequested || agent) return;
+    if (!agentCmd || shutdownRequested || exited !== null || agent) return;
     const startedAt = Date.now();
     fsImpl.mkdirSync(path.join(project, '.jaco', 'nova-state'), { recursive: true });
     const agentLog = fsImpl.createWriteStream ? fsImpl.createWriteStream(path.join(project, '.jaco', 'nova.log'), { flags: 'a' }) : null;

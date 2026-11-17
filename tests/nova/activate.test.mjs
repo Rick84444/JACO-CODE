@@ -10,7 +10,7 @@ function fakeRuntime({ servers, scan, planner, workplace = { state: 'RUNNING', n
     calls.push(`${method} ${route}`);
     const ok = body => ({ ok: true, status: 200, json: async () => ({ success: true, ...body }) });
     const bad = (status, error) => ({ ok: false, status, json: async () => ({ success: false, error }) });
-    if (route === '/api/runtime/identity') return ok({ version: '0.21.0', ...identity });
+    if (route === '/api/runtime/identity') return ok({ product:'JACO Autonomus IDE', version: '0.21.0', ...identity });
     if (route === '/api/connected/nova/executor-health') {
       assert.ok(init.headers['x-gateway-token']);
       return executorHealth ? ok(executorHealth) : bad(404, 'NOT_FOUND');
@@ -164,6 +164,14 @@ test('no provider answers at all is a problem with a way out', async () => {
   const r = await activationReport({ baseUrl: 'http://x', token: 't', fetchImpl: fakeRuntime(g) });
   assert.equal(r.ok, false);
   assert.ok(r.problems.some(p => /No model provider is answering/.test(p)));
+});
+
+test('activation rejects HTML fallback and an unrelated JSON listener', async () => {
+  for (const body of ['<html>SPA</html>', JSON.stringify({success:true, product:'Unrelated'})]) {
+    const r=await activationReport({baseUrl:'http://x',fetchImpl:async()=>new Response(body)});
+    assert.equal(r.runtime.up,false);
+    assert.equal(r.ok,false);
+  }
 });
 
 test('a runtime that is down is reported plainly', async () => {
