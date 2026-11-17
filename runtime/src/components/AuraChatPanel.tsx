@@ -349,8 +349,12 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   // The chat is for operator and Aura messages. Runtime steps belong in a
   // collapsed diagnostics section (and the existing Evidence/Live surfaces),
   // not between the assistant's actual replies.
+  const blockerEvents=useMemo(
+    ()=>dedupeConversationEvents(humanEvents.conversation.filter(event=>event.category==='blocked')).slice(-5),
+    [humanEvents],
+  );
   const backgroundEvents=useMemo(
-    ()=>dedupeConversationEvents([...humanEvents.background,...humanEvents.conversation]).slice(-80),
+    ()=>dedupeConversationEvents([...humanEvents.background,...humanEvents.conversation.filter(event=>event.category!=='blocked')]).slice(-80),
     [humanEvents],
   );
   const feed=useMemo(()=>messages.filter(m=>m.id!=='welcome')
@@ -703,6 +707,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       <details className="cognitive-chat-diagnostics" data-testid="jaco-chat-diagnostics">
         <summary>{tr('Drift, uppdrag och aktivitet','Runtime, missions and activity')}{backgroundEvents.length ? ` · ${backgroundEvents.length}` : ''}</summary>
         <div className="cognitive-chat-diagnostics-content">
+          {blockerEvents.length>0&&<details className="cognitive-chat-blockers"><summary>{tr('Hinder som behöver uppmärksamhet','Issues needing attention')} ({blockerEvents.length})</summary><div className="cognitive-background-events-list">{blockerEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</div></details>}
           <AuraOverview />
           {runControls && <div className="cognitive-run-controls">{runControls}</div>}
           <AutonomyClock />
