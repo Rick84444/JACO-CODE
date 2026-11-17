@@ -23,6 +23,11 @@ foreach ($name in $dirs) {
 foreach ($name in @('package.json', 'package-lock.json')) {
   Copy-Item -LiteralPath (Join-Path $root $name) -Destination (Join-Path $Destination $name) -Force
 }
+# Both release families carry the immutable commit of the product build.
+$sourceCommit = (& git -C $root rev-parse HEAD | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'WINDOWS_SOURCE_COMMIT_INVALID' }
+if ($env:GITHUB_SHA -and $sourceCommit -ne $env:GITHUB_SHA) { throw 'WINDOWS_SOURCE_COMMIT_MISMATCH' }
+@{ schema='jaco.full-release/v1'; version=$version; sourceCommit=$sourceCommit } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Destination 'runtime\release.json') -Encoding ascii
 $nodeDir = Join-Path $Destination 'tools\node'
 New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
 Copy-Item -LiteralPath $node -Destination (Join-Path $nodeDir 'node.exe') -Force

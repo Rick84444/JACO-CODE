@@ -17,7 +17,7 @@ import { createMissionGraph } from './seer-mission-graph.mjs';
 import { createMissionDispatcher } from './seer-mission-dispatch.mjs';
 import { STRATEGIC_AGENT_INSTRUCTIONS } from '../../agents/lib/strategic-context.mjs';
 import { buildSelfDevelopmentGraph } from './seer-self-development.mjs';
-import { createAutonomyLoop, shouldAutoConfirmNova } from './seer-autonomy-loop.mjs';
+import { createAutonomyLoop } from './seer-autonomy-loop.mjs';
 import { createAuraControlLoop } from './aura-control-loop.mjs';
 import { createAuraControlLease } from './aura-control-lease.mjs';
 import { createDevelopmentCycle, chooseGovernorFocus, governorBaseline } from './seer-development-cycle.mjs';
@@ -763,40 +763,14 @@ async function fetchNovaMission(novaMissionId) {
   return mission;
 }
 
-async function resolveNovaMission(novaMissionId, payload) {
-  const response = await fetch(`${process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000'}/api/connected/nova/missions/${encodeURIComponent(novaMissionId)}/resolve`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-gateway-token': process.env.GATEWAY_TOKEN || TOKEN },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(10_000),
-  });
-  const data = await response.json();
-  if (!response.ok || data?.success === false) {
-    const detail = typeof data?.error === 'string' ? data.error : `NOVA_RESOLVE_HTTP_${response.status}`;
-    throw new Error(detail);
-  }
-  return data?.mission || data;
-}
-
 async function reconcileGraphNode(graphId, nodeKey) {
   const graph = missionGraph.get(graphId);
   const node = graph?.nodes?.find(item => item.key === nodeKey);
   if (!node) throw new Error('MISSION_GRAPH_NODE_NOT_FOUND');
   if (!node.nova_mission_id) throw new Error('NOVA_MISSION_NOT_BOUND');
 
-  let novaMission = await fetchNovaMission(node.nova_mission_id);
-  if (shouldAutoConfirmNova(graph, novaMission)) {
-    novaMission = await resolveNovaMission(node.nova_mission_id, {
-      decision: 'confirm',
-      authority: 'seer',
-      note: 'SEER closed-loop confirmation: machine-verified receipts satisfy the pre-authorized Mission Graph.',
-    });
-    emit('autonomy.nova_confirmed', {
-      graph_id: graphId,
-      node_key: nodeKey,
-      nova_mission_id: node.nova_mission_id,
-    });
-  }
+  // Strategy observes Core's durable outcome. It never approves the mission.
+  const novaMission = await fetchNovaMission(node.nova_mission_id);
 
   return missionGraph.reconcileNova(graphId, nodeKey, novaMission);
 }
@@ -806,6 +780,7 @@ async function reconcileGraphNode(graphId, nodeKey) {
 // standing still on the operator (operator 2026-10-08).
 const graphsWaitingOnOperator = new Map();
 const OPERATOR_WAIT_OUTCOMES = new Set(['operator_required', 'awaiting_operator', 'blocked']);
+// A canonical verification in progress is not an operator approval request.
 
 async function reconcileNovaMissionGraphs() {
   if (novaReconcileInFlight) return;

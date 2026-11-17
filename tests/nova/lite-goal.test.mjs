@@ -29,7 +29,7 @@ test('the contract REQUIRES the project\'s tests when there is a command, and sa
   assert.ok(withTests.acceptance.some(a => /npm test.*pass after the last change/.test(a)));
   const without = liteContract({ goal: 'Add mul', testCommand: null });
   assert.equal(without.verification.tests_required, false);
-  assert.ok(without.acceptance.some(a => /NOT verified by tests/.test(a)));
+  assert.ok(without.acceptance.some(a => /automated tests were not verified/.test(a)));
   for (const c of [withTests, without]) {
     assert.deepEqual([c.execution.allow_git_push, c.execution.allow_git_merge, c.execution.require_git_commit], [false, false, true], 'the agent can commit on its own branch, never push or merge');
     assert.equal(c.schema, 'jaco.coding-contract/v1');
@@ -90,4 +90,29 @@ test('Lite never takes commands from the maintainers\' GitHub repository', async
   assert.equal(lite.enabled, false, 'an empty repo switches the inbox off');
   const src = fs.readFileSync(new URL('../../agents/hands-off-agent.mjs', import.meta.url), 'utf8');
   assert.match(src, /JACO_LITE === '1' && !process\.env\.JACO_GITHUB_CONTROL_REPO \? \{ repo: '' \}/, 'the agent passes it in Lite');
+});
+
+// Lite and the graph path share the same contract instead of imposing an extra test suite.
+test('Lite project contracts match full mode and preserve explicit restrictions', async () => {
+  const { projectNodeContract, projectGoalCapabilities } = await import('../../gateway/src/seer-project.mjs');
+  const dir = tmp();
+  try {
+    write(dir, 'package.json', JSON.stringify({ scripts: { test: 'node --test' } }));
+    for (const goal of ['Fix a bug in the parser', 'Create an HTML demo', 'Read only, change nothing. No network.']) {
+      const full = projectNodeContract({ title: goal.slice(0,80), objective: goal, mainGoal: goal, projectRoot: dir });
+      const lite = liteContract({ goal, testCommand: 'npm test' });
+      assert.deepEqual(lite, full);
+      const requests = [];
+      const created = createLiteGoal({ novaMissions:{create: input=>{requests.push(input);return {id:'proof'};}}, projectRoot:dir, goal, run:()=>({status:0}) });
+      assert.deepEqual(requests[0].allowedTasks, projectGoalCapabilities(goal).tasks);
+      assert.equal(created.testsRequired, full.verification.tests_required);
+      if (goal.includes('demo')) { assert.equal(created.testCommand,null); assert.equal(created.testsRequired,false); }
+      if (goal.includes('Read only')) {
+        assert.equal(requests[0].allowedTasks.includes('repo-write'),false);
+        assert.equal(requests[0].allowedTasks.includes('web-fetch'),false);
+        assert.equal(requests[0].allowedTasks.includes('mcp-call'),false);
+      }
+    }
+    assert.ok(LITE_TASKS.includes('mcp-call'));
+  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
 });

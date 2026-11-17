@@ -139,3 +139,18 @@ test('the local judge URL is built once whether or not OLLAMA_BASE_URL already e
   assert.equal(local({ OLLAMA_BASE_URL: 'http://127.0.0.1:11434' }), 'http://127.0.0.1:11434/v1/chat/completions');
   assert.equal(local({}), 'http://127.0.0.1:11434/v1/chat/completions');
 });
+
+test('optional judge deadline keeps rule evidence without any extra inference call', async () => {
+  let calls=0;
+  const verified = await checkClaims('Read-only result from the inspected receipt [#1].', [], {
+    maxJudgeMs:0, fetchImpl:async()=>{calls++;throw Error('unexpected');}
+  });
+  assert.equal(calls,0);
+  assert.equal(verified.judged,0);
+  assert.equal(verified.judgeError,'JUDGE_DEADLINE_EXCEEDED');
+  const unsupported = await checkClaims('Commit `abcdef1234567` was created [#1].', [], {
+    maxJudgeMs:0, fetchImpl:async()=>{calls++;throw Error('unexpected');}
+  });
+  assert.equal(unsupported.ok,false);
+  assert.equal(calls,0);
+});

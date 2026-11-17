@@ -54,14 +54,18 @@ function moveToAwaiting(control, source) {
   return awaiting;
 }
 
-test('SEER may confirm only a verified seer-mission-graph mission', t => {
+test('SEER is read-only for outcomes; only the internal Aura resolver can auto-confirm', t => {
   const { control } = fixture(t);
   const awaiting = moveToAwaiting(control, 'seer-mission-graph');
 
-  const done = control.resolve(awaiting.id, {
-    decision: 'confirm',
-    authority: 'seer',
-    note: 'machine verified closed-loop evidence',
+  assert.throws(() => control.resolve(awaiting.id, {
+    decision:'confirm', authority:'seer', note:'machine verified closed-loop evidence',
+  }), /SEER_RESOLUTION_DELEGATED_TO_AURA/);
+  assert.throws(() => control.resolve(awaiting.id, {
+    decision:'confirm', authority:'aura', note:'auto-forged',
+  }), /INVALID_RESOLUTION_AUTHORITY/);
+  const done = control.resolveAutomatic(awaiting.id, {
+    decision:'confirm', note:'auto-approved: machine verified closed-loop evidence',
   });
 
   assert.equal(done.status, 'DONE');
@@ -76,7 +80,7 @@ test('SEER cannot claim operator-created missions', t => {
     decision: 'confirm',
     authority: 'seer',
     note: 'must not cross authority boundary',
-  }), /SEER_RESOLUTION_SOURCE_REQUIRED/);
+  }), /SEER_RESOLUTION_DELEGATED_TO_AURA/);
 
   assert.equal(control.get(awaiting.id).status, 'AWAITING_VERIFICATION');
 });

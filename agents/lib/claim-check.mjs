@@ -171,13 +171,13 @@ export function judgeCandidates(env = process.env, { exclude = [] } = {}) {
   return list.filter(j => !exclude.includes(`${j.name}/${j.model}`) && !excluded.has(modelIdentity(j.model)));
 }
 
-async function askJudge(judge, request, fetchImpl) {
+async function askJudge(judge, request, fetchImpl, timeoutMs = Infinity) {
   const res = await fetchImpl(judge.url, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${judge.key}` },
     body: JSON.stringify({ model: judge.model, temperature: 0, max_tokens: 2048,
       ...(judge.name === 'groq' ? { reasoning_effort: 'low' } : {}),
       messages: [{ role: 'system', content: request.system }, { role: 'user', content: request.user }] }),
-    signal: AbortSignal.timeout(judge.name === 'ollama' ? 240_000 : 60_000),
+    signal: AbortSignal.timeout(Math.max(1, Math.min(timeoutMs, judge.name === 'ollama' ? 240_000 : 60_000))),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`JUDGE_HTTP_${res.status}`);
@@ -186,13 +186,16 @@ async function askJudge(judge, request, fetchImpl) {
 
 // The full check. ok is false when a fact was found in no receipt or a claim was contradicted; a judge
 // that could not run leaves those claims unjudged (reported), never approved by default reasoning.
-export async function checkClaims(answer, receipts = [], { env = process.env, fetchImpl = fetch, exclude = [] } = {}) {
+export async function checkClaims(answer, receipts = [], { env = process.env, fetchImpl = fetch, exclude = [], maxJudgeMs = Infinity } = {}) {
   const rules = checkClaimsByRules(answer, receipts);
   const request = judgeRequest(rules, receipts);
   let judge = null, verdicts = [], judgeError = null;
   if (request) {
+    const deadline = Date.now() + maxJudgeMs;
     for (const candidate of judgeCandidates(env, { exclude })) {
-      try { verdicts = await askJudge(candidate, request, fetchImpl); judge = `${candidate.name}/${candidate.model}`; judgeError = null; break; }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) { judgeError = 'JUDGE_DEADLINE_EXCEEDED'; break; }
+      try { verdicts = await askJudge(candidate, request, fetchImpl, remaining); judge = `${candidate.name}/${candidate.model}`; judgeError = null; break; }
       catch (error) { judgeError = String(error?.message || error).slice(0, 160); }
     }
   }

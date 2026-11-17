@@ -529,3 +529,33 @@ test('a blocked health read does not override a newer policy or operator approva
  assert.equal(s.control.current(),null);
  assert.equal(s.control.get(m.id).status,'BLOCKED');
 });
+
+test('contract failure allowance admits distinct recovery steps but not repeated unsafe actions',t=>{
+ const s=setup(t,['repo-read','browser-click','health-check']);
+ const contract={scope:{allowed:['src/**']}, acceptance:['Inspect the project'], execution:{autonomous:true}, verification:{tests_required:false}, budget:{max_failures:5}};
+ const m=s.control.create({...goal,idempotencyKey:'five-known-failures',contract,allowedTasks:['repo-read','health-check','browser-click']});
+ const fail=(id,name,unknown=false)=>{
+   const {token}=s.control.claim(id,'a');
+   const a=s.control.begin(id,{owner:'a',token,task:{type:'browser-click',data:{name}}});
+   return s.control.finish(id,{owner:'a',token,actionId:a.id,receipt:{ok:false,verified:false,error:'KNOWN_FAILURE',...(unknown?{outcomeUnknown:true}:{})}});
+ };
+ for(let i=0;i<4;i++)assert.equal(fail(m.id,'Option '+i).status,'ACTIVE');
+ assert.equal(fail(m.id,'Option 4').status,'BLOCKED');
+ const same=s.control.create({...goal,idempotencyKey:'repeat-same',contract,allowedTasks:['browser-click']});
+ assert.equal(fail(same.id,'Option').status,'ACTIVE');
+ assert.equal(fail(same.id,'Option').status,'ACTIVE');
+ assert.equal(fail(same.id,'Option').status,'BLOCKED');
+ const uncertain=s.control.create({...goal,idempotencyKey:'unknown-outcome',contract,allowedTasks:['browser-click']});
+ assert.equal(fail(uncertain.id,'Option',true).status,'BLOCKED');
+});
+
+test('contracted planning error allowance replaces the fixed three-error gate',t=>{
+ const s=setup(t);
+ const m=s.control.create({...goal,idempotencyKey:'planning-budget-five',contract:{
+   scope:{allowed:['src/**']},acceptance:['Inspect project'],budget:{max_failures:5}}});
+ for(let i=0;i<5;i++){
+   const {token}=s.control.claim(m.id,'a');
+   const result=s.control.release(m.id,{owner:'a',token,error:'RETRYABLE_PLAN_ERROR_'+i});
+   assert.equal(result.status,i===4?'BLOCKED':'ACTIVE');
+ }
+});

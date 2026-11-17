@@ -97,3 +97,16 @@ test('Windows setup registers a per-user autostart guardian through the immutabl
   assert.match(bridge,/health-guardian\.mjs/);
   assert.doesNotMatch(bridge, /GATEWAY_TOKEN|STRIPE_|APPROVAL/);
 });
+
+test('Lite and full Windows product changes build from the same main commits', () => {
+  const lite=fs.readFileSync(new URL('../../.github/workflows/lite-release.yml', import.meta.url),'utf8');
+  const full=fs.readFileSync(new URL('../../.github/workflows/jaco-windows-release.yml', import.meta.url),'utf8');
+  const filters = src => src.slice(src.indexOf('  push:')).match(/^    paths: \[([^\n]+)\]/m)?.[1];
+  assert.ok(filters(lite));
+  assert.equal(filters(lite),filters(full));
+  const payload=fs.readFileSync(new URL('../../windows/product/Prepare-Release.ps1',import.meta.url),'utf8');
+  assert.match(payload,/git -C \$root rev-parse HEAD/);
+  assert.match(payload,/sourceCommit=\$sourceCommit/);
+  assert.match(full,/\$identity\.sourceCommit -eq \$env:GITHUB_SHA/);
+  assert.match(lite,/needs: \[verified-lite, pixel-arm64-smoke, windows-lite-smoke\]/);
+});

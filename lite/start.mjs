@@ -133,6 +133,19 @@ export function liteWorkplaceChildEnv({ childEnv, project, workplacePort }) {
     GH_TOKEN: '', GITHUB_TOKEN: '', JACO_WORKPLACE_TOKEN: '', JACO_WORKPLACE_OPERATOR_TOKEN: '' };
 }
 
+// Only this isolated local launcher may default to unsynchronized operation.
+// Paired Hub/device credentials are never inherited by its local executor.
+export function liteWorkplaceRequired(env = {}) {
+  return env.JACO_WORKPLACE_REQUIRED != null && env.JACO_WORKPLACE_REQUIRED !== '0';
+}
+
+export function liteLocalConnectionEnv({ childEnv, workplacePort, workplaceReady }) {
+  return { ...childEnv, JACO_WORKPLACE_PORT: String(workplacePort),
+    JACO_WORKPLACE_URL: workplaceReady ? 'http://' + HOST + ':' + workplacePort : '',
+    JACO_WORKPLACE_REQUIRED: liteWorkplaceRequired(childEnv) ? '1' : '0',
+    JACO_WORKPLACE_SCOPE: 'local', JACO_WORKPLACE_TOKEN: '', JACO_HUB_URL: '', JACO_DEVICE_KEY: '' };
+}
+
 export function checkInstall(installDir, fsImpl = fs) {
   const need = ['dist/server.cjs', 'dist/index.html', 'dist/workplace.mjs', 'dist/jaco-editor.mjs', 'dist/connect.html', 'node_modules/express/package.json'];
   return need.filter(rel => !fsImpl.existsSync(path.join(installDir, rel))).map(rel => `missing ${rel}`);
@@ -433,11 +446,27 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   workplace.stderr?.on('data', c => workplaceLog?.write(c));
   workplace.once('exit', (code, signal) => { workplaceAlive = false; processStopped('workplace', workplace, code, signal); workplaceLog?.end(); });
   workplace.once('error', e => { workplaceAlive = false; lifecycle({ component:'workplace', event:'SPAWN_ERROR', reason: e.code || 'UNKNOWN' }); err('The connection service could not be started: ' + e.message); });
-  if (!await waitForHealth(workplaceUrl, { alive: () => workplaceAlive, fetchImpl: deps.fetchImpl, timeoutMs: deps.healthTimeoutMs, expectedProduct: 'JACO Workplace' })) {
-    shutdownRequested = true; workplace.kill(); err('JACO Workplace could not be started. See .jaco/workplace.log.'); return 5;
+  const workplaceRequired = liteWorkplaceRequired(childEnv);
+  const workplaceReady = await waitForHealth(workplaceUrl, { alive: () => workplaceAlive,
+    fetchImpl: deps.fetchImpl, timeoutMs: deps.healthTimeoutMs ?? (workplaceRequired ? 90_000 : 10_000),
+    expectedProduct: 'JACO Workplace' });
+  if (shutdownRequested || (!workplaceReady && workplaceRequired)) {
+    shutdownRequested = true;
+    try { workplace.kill(); } catch { /* already gone */ }
+    if (!deps.noSignals) {
+      process.removeListener('SIGINT', stopStartingWorkplace); process.removeListener('SIGTERM', stopStartingWorkplace);
+    }
+    if (!workplaceReady) err('JACO Workplace could not be started. See .jaco/workplace.log.');
+    return 5;
   }
-  const connectedEnv = { ...childEnv, JACO_WORKPLACE_URL: workplaceUrl, JACO_WORKPLACE_REQUIRED: '1',
-    JACO_WORKPLACE_TOKEN: '', JACO_HUB_URL: '', JACO_DEVICE_KEY: '' };
+  if (!workplaceReady) {
+    // Never attach to an unverified listener or claim remote coordination.
+    // Core/Nova retain their own local mission, tool and budget checks.
+    try { workplace.kill(); } catch { /* already gone */ }
+    lifecycle({ component: 'workplace', event: 'DEGRADED_UNSYNCED', reason: 'STARTUP_UNVERIFIED' });
+    err('JACO Workplace unavailable; continuing local work without synchronized coordination. See .jaco/workplace.log.');
+  }
+  const connectedEnv = liteLocalConnectionEnv({ childEnv, workplacePort, workplaceReady });
   const logFile = path.join(project, '.jaco', 'lite.log');
   const log = fsImpl.createWriteStream ? fsImpl.createWriteStream(logFile, { flags: 'a' }) : null;
   // JACO_LITE_TOKEN lets a test follow the agent's missions; normally the token is random and never shown.
