@@ -91,8 +91,10 @@ export function createAutonomyLoop({
 
   async function proposeRepair(graph, failed, sequence) {
     let parsed = null;
+    let remainingBudget = null;
     if (failed.failure_reason?.startsWith('NOVA_REPLAN_REQUEST:')) {
       const request = parseModelJson(failed.failure_reason.slice('NOVA_REPLAN_REQUEST:'.length));
+      remainingBudget = request?.remaining_budget || null;
       if (Array.isArray(request?.subgoals) && request.subgoals.length >= 2 && request.subgoals.length <= 8 && request.subgoals.every(s => typeof s?.title === 'string' && s.title.trim() && typeof s.objective === 'string' && s.objective.trim())) {
         const base = `${rootRepairKey(failed.key)}.repair.${sequence}`;
         return { reason: request.reason, remaining_budget: request.remaining_budget, model_candidate_accepted: true, replacements: request.subgoals.map((s,index) => ({
@@ -147,13 +149,13 @@ export function createAutonomyLoop({
         });
       }
     }
-    return safeRepairCandidate(graph, failed, parsed, sequence);
+    return { ...safeRepairCandidate(graph, failed, parsed, sequence), ...(remainingBudget ? {remaining_budget:remainingBudget} : {}) };
   }
 
   async function replanFailures(report) {
     const graphs = missionGraph.list().filter(graph => graph.status === 'NEEDS_REPLAN');
     for (const graph of graphs) {
-      const failedNodes = graph.nodes.filter(node => node.status === 'FAILED');
+      const failedNodes = graph.nodes.filter(node => node.status === 'FAILED' && !Object.hasOwn(graph.policy?.exhausted_nodes || {},node.key));
       for (const failed of failedNodes) {
         if (['NOVA_UNCERTAIN_OUTCOME_BUDGET_EXHAUSTED','NOVA_BINDING_MISSING_OUTCOME_UNKNOWN'].includes(failed.failure_reason)) {
           missionGraph.quarantine(graph.id, failed.key, failed.failure_reason, failed.evidence_refs || []);
@@ -233,7 +235,7 @@ export function createAutonomyLoop({
     let remaining = Math.max(0, Number(maxDispatchPerTurn) || 0);
     if (!remaining) return;
 
-    const graphs = missionGraph.list().filter(graph => graph.status === 'ACTIVE');
+    const graphs = missionGraph.list().filter(graph => ['ACTIVE','NEEDS_REPLAN'].includes(graph.status));
     for (const graph of graphs) {
       if (!remaining) break;
       const readyNodes = missionGraph.ready(graph.id);

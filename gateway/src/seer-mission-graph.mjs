@@ -215,8 +215,12 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
     // EXHAUSTED is an explicit terminal decision and is never re-derived from node states.
     if (rawGraph(graphId)?.status === 'EXHAUSTED') return next;
     const active = next.filter(item => !['VERIFIED','SUPERSEDED','CANCELLED'].includes(item.status));
+    const failed = next.filter(item=>item.status==='FAILED');
+    const exhausted = jp(rawGraph(graphId).policy, {}).exhausted_nodes || {};
+    const hasWork = next.some(item=>['READY','DISPATCHED','RUNNING'].includes(item.status));
     const status = next.length && active.length === 0 ? 'VERIFIED'
-      : next.some(item => item.status === 'FAILED') ? 'NEEDS_REPLAN'
+      : failed.length && failed.every(item=>Object.hasOwn(exhausted,item.key)) && !hasWork ? 'EXHAUSTED'
+      : failed.length ? 'NEEDS_REPLAN'
         : 'ACTIVE';
     db.prepare('UPDATE mission_graphs SET status=?,updated_at=? WHERE id=?').run(status, now(), graphId);
     return next;
@@ -281,7 +285,7 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
   function ready(graphId) {
     if (!rawGraph(graphId)) throw new Error('MISSION_GRAPH_NOT_FOUND');
     const graph = get(graphId);
-    if (graph.status !== 'ACTIVE') return [];
+    if (!['ACTIVE','NEEDS_REPLAN'].includes(graph.status)) return [];
     const byKey = new Map(graph.nodes.map(item => [item.key, item]));
     return graph.strategic_board.moves.filter(move => move.executable).map(move => ({ ...byKey.get(move.stepId), strategic_move: move }));
   }
@@ -289,7 +293,7 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
   function dispatchSpec(graphId, key) {
     const graph = get(graphId);
     if (!graph) throw new Error('MISSION_GRAPH_NOT_FOUND');
-    if (graph.status !== 'ACTIVE') throw new Error(`GRAPH_NOT_ACTIVE:${graph.status}`);
+    if (!['ACTIVE','NEEDS_REPLAN'].includes(graph.status)) throw new Error(`GRAPH_NOT_ACTIVE:${graph.status}`);
     const item = node(graphId, key);
     if (!item) throw new Error('MISSION_GRAPH_NODE_NOT_FOUND');
     if (item.status !== 'READY') throw new Error(`NODE_NOT_READY:${item.status}`);
@@ -436,8 +440,17 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
       if (graph.status !== 'NEEDS_REPLAN') throw new Error(`GRAPH_NOT_EXHAUSTIBLE:${graph.status}`);
       const reason = String(input.reason || '').trim();
       if (!reason) throw new Error('EXHAUST_REASON_REQUIRED');
-      db.prepare("UPDATE mission_graphs SET status='EXHAUSTED',updated_at=? WHERE id=?").run(now(), graphId);
-      emit('mission_graph.exhausted', { graph_id: graphId, node_key: input.node_key || null, reason });
+      // Exhaust only the failed branch; independent runnable work stays eligible.
+      const policy = jp(graph.policy,{});
+      const failed = nodeRows(graphId).filter(item=>item.status==='FAILED');
+      const targets = input.node_key ? failed.filter(item=>item.key===input.node_key) : failed;
+      if (!targets.length) throw new Error('FAILED_NODE_NOT_FOUND');
+      policy.exhausted_nodes = {...(policy.exhausted_nodes || {})};
+      for(const item of targets) policy.exhausted_nodes[item.key] = {reason,at:now()};
+      db.prepare("UPDATE mission_graphs SET policy=?,updated_at=? WHERE id=?").run(js(policy),now(),graphId);
+      refresh(graphId);
+      emit('mission_graph.node_repair_exhausted',{graph_id:graphId,node_key:input.node_key||null,reason});
+      if(rawGraph(graphId).status==='EXHAUSTED') emit('mission_graph.exhausted', { graph_id: graphId, node_key: input.node_key || null, reason });
       return get(graphId);
     });
   }
@@ -450,6 +463,11 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
       const failed = node(graphId, failedKey);
       if (!failed) throw new Error('FAILED_NODE_NOT_FOUND');
       if (failed.status !== 'FAILED') throw new Error('REPLAN_REQUIRES_FAILED_NODE');
+      if (Object.hasOwn(jp(rawGraph(graphId).policy,{}).exhausted_nodes || {},failedKey)) throw new Error('REPLAN_BUDGET_TOO_SMALL');
+      let recordedBudget=null;
+      if(failed.failure_reason?.startsWith('NOVA_REPLAN_REQUEST:')){
+        try {recordedBudget=JSON.parse(failed.failure_reason.slice('NOVA_REPLAN_REQUEST:'.length)).remaining_budget||null;} catch {}
+      }
       const replacements = input.replacements || [input.replacement || {}];
       if (!Array.isArray(replacements) || !replacements.length || replacements.length > 8) throw new Error('REPLAN_NODE_LIMIT');
       const existing = nodeRows(graphId);
@@ -460,19 +478,19 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
         keys.add(key);
         return { key, title: String(replacement.title || `${failed.title} (replan)`), objective: String(replacement.objective || failed.objective),
           strategy: { ...failed.strategy, ...(replacement.strategy || {}), delegatedFrom: failedKey },
-          contract: replacements.length > 1 ? structuredClone(failed.contract || {}) : replacement.contract || failed.contract || {},
+          contract: structuredClone(failed.contract && Object.keys(failed.contract).length ? failed.contract : replacement.contract || {}),
           dependencies: uniqueStrings(replacement.dependencies ?? (index ? [replacements[index - 1].key] : failed.dependencies)) };
       });
       for (const item of inserts) {
         if (item.dependencies.includes(failedKey)) throw new Error(`INVALID_REPLAN_DEPENDENCY:${failedKey}`);
-        // Divide per-node execution limits rather than multiply the original budget by the split.
-        if (replacements.length > 1 && item.contract.budget) {
+        // A single replacement also spends only the original remaining allocation.
+        if (item.contract.budget && (replacements.length > 1 || input.remaining_budget || recordedBudget)) {
           for (const field of ['max_steps','max_tool_calls','max_duration_ms']) {
             const value = item.contract.budget[field];
             if (value == null) continue;
-            const remaining = input.remaining_budget?.[field];
-            if (remaining !== undefined && (!Number.isFinite(remaining) || remaining < 0)) throw new Error('REPLAN_BUDGET_INVALID');
-            const divided = Math.floor(Math.min(value, remaining ?? value) / replacements.length);
+            const remaining = [input.remaining_budget?.[field],recordedBudget?.[field]].filter(v=>v!==undefined);
+            if (remaining.some(v=>!Number.isFinite(v)||v<0)) throw new Error('REPLAN_BUDGET_INVALID');
+            const divided = Math.floor(Math.min(value,...remaining) / replacements.length);
             if (divided < (field === 'max_duration_ms' ? 1000 : 1)) throw new Error('REPLAN_BUDGET_TOO_SMALL');
             item.contract.budget[field] = divided;
           }
@@ -579,7 +597,7 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
     const novaStatus = String(novaMission.status || '').toUpperCase();
     const unresolved = asArray(novaMission.receipts).filter(receipt => receipt?.outcomeUnknown === true ||
       (receipt?.ok === true && receipt?.verified !== true));
-    if (novaMission.phase === 'INTERRUPTED' || unresolved.length) {
+    if (novaMission.hasUncertainOutcome || novaMission.phase === 'INTERRUPTED' || unresolved.length) {
       return { outcome: 'quarantined', nova_status: novaStatus, reason: 'NOVA_BLOCKED_OUTCOME_UNCERTAIN',
         graph: quarantine(graphId, key, 'NOVA_BLOCKED_OUTCOME_UNCERTAIN', unresolved.map(receipt =>
           `nova:${novaMission.id}:uncertain:${receipt.actionId || receipt.at || 'uncertain'}`)) };
@@ -594,7 +612,7 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
       }) };
     }
     const verifiedReceipts = asArray(novaMission.receipts).filter(receipt => receipt?.ok === true && receipt?.verified === true);
-    const evidenceRefs = verifiedReceipts.map(receipt =>
+    const evidenceRefs = Array.isArray(novaMission.verifiedEvidenceRefs) ? novaMission.verifiedEvidenceRefs : verifiedReceipts.map(receipt =>
       `nova:${novaMission.id}:receipt:${receipt.actionId || receipt.at || 'verified'}`
     );
 
@@ -623,12 +641,17 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
 
     if (['ACTIVE','AWAITING_VERIFICATION'].includes(novaStatus)) {
       if (item.status === 'DISPATCHED') running(graphId, key, novaMission.id);
-      return { outcome: novaStatus === 'AWAITING_VERIFICATION' ? 'awaiting_operator' : 'running', nova_status: novaStatus, graph: get(graphId) };
+      return { outcome: novaStatus === 'AWAITING_VERIFICATION' ?
+        (jp(rawGraph(graphId).policy, {}).autonomy === 'closed-loop' && !jp(rawGraph(graphId).policy, {}).operator_confirmation_required_for_release ? 'awaiting_verification' : 'awaiting_operator')
+        : 'running', nova_status: novaStatus, graph: get(graphId) };
     }
 
+    if (novaStatus === 'BLOCKED' && (novaMission.paused || novaMission.pendingOperatorAction || novaMission.spendApprovalPending)) {
+      return { outcome: 'operator_required', nova_status:novaStatus, graph:get(graphId) };
+    }
     if (novaStatus === 'BLOCKED' && novaMission.replanRequest && novaMission.phase !== 'INTERRUPTED' && !asArray(novaMission.receipts).some(r => r.outcomeUnknown || (r.ok && !r.verified))) {
       return { outcome: 'failed', nova_status: novaStatus, graph: fail(graphId, key, {
-        reason: `NOVA_REPLAN_REQUEST:${JSON.stringify(novaMission.replanRequest)}`,
+        reason: `NOVA_REPLAN_REQUEST:${JSON.stringify({...novaMission.replanRequest, ...(novaMission.remainingBudget ? {remaining_budget:novaMission.remainingBudget} : {})})}`,
         evidence_refs: novaMission.replanRequest.evidence_refs || [],
       }) };
     }
@@ -639,7 +662,7 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
       const knownFailures = receipts.filter(receipt =>
         receipt?.ok === false && receipt?.outcomeUnknown !== true
       );
-      if (Number(novaMission.failures || 0) >= 3 && knownFailures.length) {
+      if (Number(novaMission.failures || 0) >= Number(novaMission.contract?.budget?.max_failures || 3) && knownFailures.length) {
         const refs = knownFailures.slice(-3).map(receipt =>
           `nova:${novaMission.id}:known-failure:${receipt.actionId || receipt.at || 'failed'}`
         );
@@ -649,7 +672,7 @@ export function createMissionGraph({ db, emit = () => {}, uid, now, js = JSON.st
           nova_status: novaStatus,
           reason,
           graph: fail(graphId, key, {
-            reason: `NOVA_KNOWN_FAILURE:${reason}`,
+            reason: novaMission.remainingBudget ? `NOVA_REPLAN_REQUEST:${JSON.stringify({reason,subgoals:[],remaining_budget:novaMission.remainingBudget})}` : `NOVA_KNOWN_FAILURE:${reason}`,
             evidence_refs: refs,
           }),
         };

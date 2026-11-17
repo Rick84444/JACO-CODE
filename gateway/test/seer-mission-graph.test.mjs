@@ -364,3 +364,53 @@ test('operator Aura planning exposes a bounded artifact contract and can really 
   await assert.rejects(workspace.execute({type:'repo-write',data:{path:'runtime/server.ts',content:'denied'}},contract),/SCOPE_DENIED/);
   assert.equal(auraArtifactContract({goal:'Read files only; do not edit files'}),null);
 });
+
+test('single-node replan preserves original scope and remaining budget',()=>{
+ const {db,graph}=fixture();
+ try {
+  const contract={scope:{allowed:['src/**']},budget:{max_steps:60,max_tool_calls:120,max_duration_ms:10000,max_failures:5},verification:{tests_required:true}};
+  const g=graph.create({title:'Bound repair',objective:'Implement and verify',nodes:[{key:'a',objective:'Implement',contract}]});
+  graph.fail(g.id,'a',{reason:'known test failure',evidence_refs:['real-failure']});
+  const next=graph.replan(g.id,{failed_key:'a',remaining_budget:{max_steps:7,max_tool_calls:9,max_duration_ms:4000},replacement:{key:'b',objective:'Repair',contract:{scope:{allowed:['/']},budget:{max_steps:999}}}});
+  const b=next.nodes.find(n=>n.key==='b');
+  assert.deepEqual(b.contract.scope,contract.scope);
+  assert.deepEqual(b.contract.verification,contract.verification);
+  assert.deepEqual(b.contract.budget,{max_steps:7,max_tool_calls:9,max_duration_ms:4000,max_failures:5});
+ }finally{db.close();}
+});
+test('pending operator action is not classified as a replannable graph failure',()=>{
+ const {db,graph}=fixture();try{
+ const g=graph.create({title:'Operator boundary',objective:'Bound task',nodes:[{key:'a',objective:'Do work'}]});
+ graph.bindNova(g.id,'a','nova-a');
+ const r=graph.reconcileNova(g.id,'a',{id:'nova-a',status:'BLOCKED',phase:'BLOCKED',failures:5,pendingOperatorAction:{id:'pending'},replanRequest:{reason:'old request',subgoals:[]},receipts:[{ok:false,error:'old failure'}]});
+ assert.equal(r.outcome,'operator_required');assert.equal(r.graph.replans.length,0);assert.equal(r.graph.status,'ACTIVE');
+ }finally{db.close();}
+});
+
+test('exhaustion of one failed branch preserves independent work and never reports false success',()=>{
+ const {db,graph}=fixture();try{
+ const g=graph.create({title:'Parallel work',objective:'Finish independent branches',nodes:[
+  {key:'a',objective:'Failed work'},{key:'downstream',objective:'Depends on failure',dependencies:['a']},{key:'b',objective:'Independent permitted work'}
+ ]});
+ graph.fail(g.id,'a',{reason:'Known failure'});
+ assert.deepEqual(graph.ready(g.id).map(n=>n.key),['b']);
+ const partial=graph.exhaust(g.id,{node_key:'a',reason:'All repairs consumed'});
+ assert.equal(partial.status,'NEEDS_REPLAN');assert.ok(partial.policy.exhausted_nodes.a);
+ graph.bindNova(g.id,'b','nova-b');
+ graph.verify(g.id,'b',{verified:true,evidence_refs:['b-proof']});
+ const after=graph.get(g.id);
+ assert.equal(after.status,'EXHAUSTED');
+ assert.equal(after.nodes.find(n=>n.key==='b').status,'VERIFIED');
+ assert.equal(after.nodes.find(n=>n.key==='downstream').status,'BLOCKED');
+ assert.equal(graph.ready(g.id).length,0);
+ }finally{db.close();}
+});
+test('a replacement cannot discard the budget recorded by Nova in the failed node',()=>{
+ const {db,graph}=fixture();try{
+ const contract={scope:{allowed:['src/**']},budget:{max_steps:40,max_tool_calls:50,max_duration_ms:10000}};
+ const g=graph.create({title:'Budget conservation',objective:'Repair',nodes:[{key:'a',objective:'Fix',contract}]});
+ graph.fail(g.id,'a',{reason:'NOVA_REPLAN_REQUEST:'+JSON.stringify({reason:'Failure',subgoals:[],remaining_budget:{max_steps:3,max_tool_calls:4,max_duration_ms:2000}})});
+ const result=graph.replan(g.id,{failed_key:'a',remaining_budget:{max_steps:40,max_tool_calls:50,max_duration_ms:10000},replacement:{key:'b',objective:'Try another approach'}});
+ assert.deepEqual(result.nodes.find(n=>n.key==='b').contract.budget,{max_steps:3,max_tool_calls:4,max_duration_ms:2000});
+ }finally{db.close();}
+});

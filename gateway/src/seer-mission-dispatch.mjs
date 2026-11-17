@@ -14,7 +14,7 @@ export function createMissionDispatcher({ missionGraph, createNova, cancelNova, 
       const graph = missionGraph.get(entry.graph_id);
       if (!graph) throw new Error('MISSION_GRAPH_NOT_FOUND');
       const node = graph.nodes.find(item => item.key === entry.node_key);
-      if (graph.status !== 'ACTIVE' || graph.policy?.outcome_unknown) {
+      if (!['ACTIVE','NEEDS_REPLAN'].includes(graph.status) || graph.policy?.outcome_unknown) {
         await cancelNova(nova.id);
         missionGraph.settleDispatch(entry.idempotency_key);
         emit('mission_graph.dispatch_cancelled', { graph_id: graph.id, node_key: entry.node_key, nova_mission_id: nova.id });

@@ -131,8 +131,19 @@ function spendRelated(mission, extraBlocked = []) {
 // check goes to the operator.
 export const CLAIM_RESUME_NOTE = 'auto-resumed: answer contradicted by its own evidence';
 
-export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastError = '', extraBlocked = [], evidence = null, claimCheck = null, claimResumes = 0 } = {}) {
-  if (level <= 0 || !mission?.id) return null;
+// The graph is a strategy projection, not a second approval authority.
+export function graphAllowsAutomaticCompletion(mission, graph) {
+  if (mission?.source !== 'seer-mission-graph') return true;
+  const parent = mission.metadata?.parent;
+  if (!parent?.graphId || !parent?.nodeKey || graph?.id !== parent.graphId) return false;
+  if (!['ACTIVE','NEEDS_REPLAN'].includes(graph.status) || graph.policy?.outcome_unknown) return false;
+  if (graph.policy?.autonomy !== 'closed-loop' || graph.policy?.operator_confirmation_required_for_release === true) return false;
+  return Array.isArray(graph.nodes) && graph.nodes.some(node =>
+    node.key === parent.nodeKey && node.nova_mission_id === mission.id && ['DISPATCHED','RUNNING'].includes(node.status));
+}
+
+export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastError = '', extraBlocked = [], evidence = null, claimCheck = null, claimResumes = 0, graph = null } = {}) {
+  if (level <= 0 || !mission?.id || mission.paused || mission.cancelRequested || mission.pendingOperatorAction || mission.spendApprovalPending) return null;
   if (spendRelated(mission, extraBlocked)) return null;
   const status = String(mission.status || '').toUpperCase();
   const receipts = Array.isArray(mission.receipts) ? mission.receipts : [];
@@ -140,6 +151,8 @@ export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastE
   if (uncertain) return null;
 
   if (status === 'AWAITING_VERIFICATION') {
+    if (!graphAllowsAutomaticCompletion(mission, graph)) return null;
+    if (mission.source === 'seer-mission-graph' && mission.contract?.execution?.autonomous === false) return null;
     const done = receipts.filter(r => r?.ok === true);
     if (!done.length || done.some(r => r.verified !== true)) return null;
     // An answer that cites a step that does not exist or is unverified goes to the operator.
@@ -162,6 +175,10 @@ export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastE
   }
 
   if (status === 'BLOCKED') {
+    // Graph repair owns the next approach after an explicit replan request.
+    // The completion resolver must not simultaneously restart the old child.
+    if (mission.replanRequest) return null;
+    if (mission.source === 'seer-mission-graph' && Number(mission.failures || 0) >= Number(mission.contract?.budget?.max_failures || 3) && receipts.some(r=>r.ok===false && !r.outcomeUnknown)) return null;
     const error = String(lastError || [...receipts].reverse().find(r => r?.error)?.error || '');
     // A missing capability or a planner refusal is not transient. Replaying the unchanged
     // mission cannot grant a tool; level 5 must not turn it into an infinite resume loop.

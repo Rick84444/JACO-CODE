@@ -430,20 +430,50 @@ export class NovaMissionControl {
     return this.get(mission.id);
   }
 
+  // The 40-entry session window is model/UI context, never the evidence authority.
+  // Reuse the existing immutable mission events and merge legacy session-only receipts.
+  evidenceReceipts(id, recent = null) {
+    const rows = this.db.prepare("SELECT payload_json FROM events WHERE mission_id=? AND type='NOVA_ACTION_RESULT' ORDER BY seq ASC").all(id);
+    const receipts = new Map();
+    for (const row of rows) {
+      const receipt = decode(row.payload_json);
+      if (receipt?.actionId) receipts.set(receipt.actionId, receipt);
+    }
+    const window = recent ?? decode(this.db.prepare('SELECT receipts_json FROM nova_sessions WHERE mission_id=?').get(id)?.receipts_json || '[]');
+    for (const receipt of window || []) if (receipt?.actionId && !receipts.has(receipt.actionId)) receipts.set(receipt.actionId, receipt);
+    return [...receipts.values()].sort((a,b) => (Number(String(a.actionId).split(':').at(-1)) || 0) - (Number(String(b.actionId).split(':').at(-1)) || 0));
+  }
+
   get(id) {
     const row = this.db.prepare('SELECT * FROM nova_sessions WHERE mission_id=?').get(id);
     if (!row) throw new Error('NOVA_MISSION_NOT_FOUND');
     const base = this.bus.getMission(id);
     const receipts = decode(row.receipts_json);
     const contract = base.metadata?.codingContract || null;
+    const proof = this.evidenceReceipts(id, receipts);
+    const replan = this.bus.lastMissionEvent(id,'NOVA_REPLAN_REQUEST');
+    const lastResolution = this.bus.lastMissionEvent(id,'NOVA_OPERATOR_RESOLUTION');
+    const lastResult = this.bus.lastMissionEvent(id,'NOVA_ACTION_RESULT');
+    const spend = this.bus.lastMissionEvent(id,'NOVA_SPEND_BLOCKED');
+    const used = row.turn - (row.budget_turn_base || 0);
+    const remainingBudget = contract ? {
+      max_steps: Math.max(0, contract.budget.max_steps - used),
+      max_tool_calls: Math.max(0, contract.budget.max_tool_calls - used),
+      max_duration_ms: Math.max(0, contract.budget.max_duration_ms - Math.max(0, this.now() - (row.budget_started_at ?? this.now()))),
+    } : null;
     return { ...base, phase: row.phase, turn: row.turn,
+      remainingBudget,
+      pendingOperatorAction: this.pendingOperatorAction(id),
+      spendApprovalPending: base.status === 'BLOCKED' && Boolean(spend && spend.seq > (lastResolution?.seq || 0) && spend.seq > (lastResult?.seq || 0)),
+      hasUncertainOutcome: row.phase === 'INTERRUPTED' || proof.some(r => r.outcomeUnknown === true || (r.ok === true && r.verified !== true)),
+      verifiedEvidenceRefs: proof.filter(r => r.ok && r.verified).slice(-40).map(r => `nova:${id}:receipt:${r.actionId}`),
       allowedTasks: base.metadata.allowedTasks.filter(t => this.allowedTasks.includes(t) && (!this.capabilities || this.capabilities.isTaskEnabled(t))),
       observation: decode(row.observation_json), receipts,
       activeTask: decode(row.active_task_json), failures: row.failures,
-      contract, contractStatus: contract ? contractVerificationStatus(contract, receipts) : null,
-      execution: contract ? codingExecutionSummary(contract, receipts, row.phase) : null,
+      contract, contractStatus: contract ? contractVerificationStatus(contract, proof) : null,
+      execution: contract ? codingExecutionSummary(contract, proof, row.phase) : null,
       preflight: this.bus.lastMissionEvent(id,'NOVA_PREFLIGHT')?.payload || null,
-      replanRequest: this.bus.lastMissionEvent(id,'NOVA_REPLAN_REQUEST')?.payload || null,
+      replanRequest: replan && replan.seq > (lastResolution?.seq || 0) && replan.seq > (lastResult?.seq || 0) ? replan.payload : null,
       cancelRequested: !TERMINAL.has(base.status) && Boolean(this.bus.lastMissionEvent(id,'NOVA_CANCEL_REQUEST')),
       paused: TERMINAL.has(base.status) ? null : this.pauseState(id),
       // Immutable operator instructions share this mission's durable event ledger.
@@ -662,7 +692,7 @@ export class NovaMissionControl {
     }
     if (this.capabilities && !this.capabilities.isTaskEnabled(String(task?.type))) throw new Error(`TASK_TURNED_OFF_BY_OPERATOR:${String(task?.type).slice(0, 60)}`);
     let checked = validateTask(task, mission.allowedTasks);
-    if (CODE_TASKS.has(checked.type)) checked = validateCodingTask(checked, mission.contract, mission.receipts);
+    if (CODE_TASKS.has(checked.type)) checked = validateCodingTask(checked, mission.contract, this.evidenceReceipts(id));
     if (checked.type === 'github-create-repo') checked = validateGithubRepoTask(checked, mission.goal);
     if (checked.type === 'repo-scan') checked = validateRepoScanTask(checked, mission.goal);
     if (checked.type === 'mcp-call' || checked.type === 'mcp-write') checked = validateMcpCall(checked);
@@ -709,7 +739,7 @@ export class NovaMissionControl {
   }
 
   finish(id, { owner, token, actionId, receipt }) {
-    const existing = this.get(id).receipts.find(r => r.actionId === actionId);
+    const existing = this.evidenceReceipts(id).find(r => r.actionId === actionId);
     if (existing) return this.get(id);
     const row = this.assertLease(id, owner, token);
     const action = decode(row.active_task_json);
@@ -780,7 +810,7 @@ export class NovaMissionControl {
     if (completionProposed) {
       const mission = this.get(id);
       if (mission.contract) {
-        const status = contractVerificationStatus(mission.contract, mission.receipts);
+        const status = mission.contractStatus;
         if (!status.machineVerified) throw new Error(`CONTRACT_VERIFICATION_INCOMPLETE:${status.missing.join(',')}`);
       }
     }
@@ -796,7 +826,7 @@ export class NovaMissionControl {
     // The completion reason is kept: for a read-only mission it is the answer the operator asked for.
     const reason = completionProposed && typeof completionReason === 'string' && completionReason.trim() ? stripEmoji(completionReason).trim().slice(0, 4000) : undefined;
     // Each [#n] the answer cites is checked against the receipts (agents/lib/evidence.mjs).
-    const evidence = reason ? checkCitations(reason, this.get(id).receipts) : undefined;
+    const evidence = reason ? checkCitations(reason, this.evidenceReceipts(id)) : undefined;
     this.bus.event('NOVA_PLANNING_RESULT', { missionId: id, payload: { error, completionProposed, ...(reason ? { reason, evidence } : {}) } });
     return this.get(id);
   }
@@ -867,28 +897,30 @@ export class NovaMissionControl {
     return true;
   }
 
-  resolve(id, { decision, note, authority = 'operator' }) {
+  // Only Core's internal resolver may act as Aura. The public compatibility
+  // route cannot impersonate it by supplying authority in a request body.
+  resolveAutomatic(id, verdict) { return this.resolve(id, { ...verdict, authority: 'aura' }, true); }
+
+  resolve(id, { decision, note, authority = 'operator' }, internal = false) {
     const mission = this.get(id);
     if (TERMINAL.has(mission.status)) throw new Error('MISSION_TERMINAL');
 
     const normalizedAuthority = String(authority || 'operator').toLowerCase();
-    if (!['operator', 'seer'].includes(normalizedAuthority)) throw new Error('INVALID_RESOLUTION_AUTHORITY');
+    if (normalizedAuthority === 'seer') throw new Error('SEER_RESOLUTION_DELEGATED_TO_AURA');
+    if (normalizedAuthority !== 'operator' && !(internal && normalizedAuthority === 'aura')) throw new Error('INVALID_RESOLUTION_AUTHORITY');
     if (!['resume', 'cancel', 'confirm'].includes(decision) || typeof note !== 'string' || !note.trim()) throw new Error('OPERATOR_DECISION_REQUIRED');
 
-    if (normalizedAuthority === 'seer') {
-      if (decision !== 'confirm') throw new Error('SEER_RESOLUTION_CONFIRM_ONLY');
-      if (mission.source !== 'seer-mission-graph') throw new Error('SEER_RESOLUTION_SOURCE_REQUIRED');
-      if (mission.status !== 'AWAITING_VERIFICATION') throw new Error('SEER_RESOLUTION_AWAITING_VERIFICATION_REQUIRED');
-      if (mission.receipts.some(r => r?.outcomeUnknown === true || (r?.ok === true && r?.verified !== true))) {
-        throw new Error('SEER_RESOLUTION_UNCERTAIN_OUTCOME');
-      }
+    if (normalizedAuthority === 'aura') {
+      if (!['confirm','resume'].includes(decision) || !/^auto-/i.test(note)) throw new Error('AURA_RESOLUTION_INVALID');
+      if (mission.paused || mission.cancelRequested || mission.pendingOperatorAction || mission.spendApprovalPending || mission.hasUncertainOutcome) throw new Error('AURA_RESOLUTION_OPERATOR_BOUNDARY');
+      if (decision === 'confirm' && mission.status !== 'AWAITING_VERIFICATION') throw new Error('AURA_RESOLUTION_AWAITING_VERIFICATION_REQUIRED');
     }
 
     if (decision === 'confirm' && mission.contract) {
-      const status = contractVerificationStatus(mission.contract, mission.receipts);
+      const status = mission.contractStatus;
       if (!status.machineVerified) throw new Error(`CONTRACT_VERIFICATION_INCOMPLETE:${status.missing.join(',')}`);
     }
-    if (decision === 'confirm' && !mission.receipts.some(r => r.ok && r.verified)) throw new Error('VERIFIED_RECEIPT_REQUIRED');
+    if (decision === 'confirm' && !mission.verifiedEvidenceRefs.length) throw new Error('VERIFIED_RECEIPT_REQUIRED');
 
     this.recoverExpired();
     // Duplicate delivery cannot renew a grant or reset an active mission's budget.
@@ -914,7 +946,8 @@ export class NovaMissionControl {
     if (decision === 'resume' && normalizedAuthority === 'operator' && !/^auto-/i.test(note.trim())) {
       this.db.prepare('UPDATE nova_sessions SET budget_turn_base=turn,budget_started_at=? WHERE mission_id=?').run(this.now(), id);
     }
-    this.bus.event(normalizedAuthority === 'seer' ? 'NOVA_SEER_RESOLUTION' : 'NOVA_OPERATOR_RESOLUTION', {
+    // Keep the existing event stream for recovery accounting; actor is now truthful.
+    this.bus.event('NOVA_OPERATOR_RESOLUTION', {
       missionId: id,
       payload: { decision, note, authority: normalizedAuthority },
     });
