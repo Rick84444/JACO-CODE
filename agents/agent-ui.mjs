@@ -57,10 +57,10 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .log-body{flex:1;word-break:break-word}
 .log-comp{color:var(--purple);font-weight:500}
 .log-msg{color:var(--text)}
-.level-ok .log-icon::before{content:"✔";color:var(--green)}
-.level-info .log-icon::before{content:"ℹ";color:var(--accent)}
-.level-warn .log-icon::before{content:"⚠";color:var(--yellow)}
-.level-error .log-icon::before{content:"✖";color:var(--red)}
+.level-ok .log-icon::before{content:"OK";color:var(--green)}
+.level-info .log-icon::before{content:"i";color:var(--accent)}
+.level-warn .log-icon::before{content:"!";color:var(--yellow)}
+.level-error .log-icon::before{content:"X";color:var(--red)}
 .level-revenue .log-icon::before{content:"$";color:var(--green)}
 .level-route .log-icon::before{content:"~";color:var(--accent)}
 
