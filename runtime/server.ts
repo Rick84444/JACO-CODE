@@ -4262,7 +4262,7 @@ const notifyPhone = async (action) => {
     claimChecksRunning.add(key);
     let planner: string[] = [];
     try { const choice: any = readPlannerChoice(plannerChoiceFile(process.env)); if (choice?.provider && choice?.model) planner = [`${choice.provider}/${choice.model}`]; } catch {}
-    checkClaims(planned.payload.reason, mission.receipts || [], { exclude: planner, maxJudgeMs: 15_000 })
+    checkClaims(planned.payload.reason, connectedRuntime.novaMissions.evidenceReceipts(mission.id), { exclude: planner, maxJudgeMs: 15_000 })
       .catch((error: any) => ({ ok: false, error: String(error?.message || error).slice(0, 200), claims: 0, unsupportedFacts: [], contradicted: [], partial: [] }))
       .then((result: any) => {
         connectedRuntime.bus.event('NOVA_CLAIM_CHECK', { missionId: mission.id, payload: { planSeq: planned.seq, ...result } });
@@ -4338,6 +4338,48 @@ const notifyPhone = async (action) => {
     let payload: any = {}; try { payload = JSON.parse(r.payload_json || '{}'); } catch {}
     return { seq: r.seq, ts: r.ts, type: r.type, payload };
   });
+  const graphResolution = new Set<string>();
+  const readResolutionGraph = async (mission: any) => {
+    const parent = mission.metadata?.parent;
+    if (!parent?.graphId) return null;
+    const base = String(process.env.SEER_URL || 'http://127.0.0.1:2997').replace(/\/+$/, '');
+    const token = process.env.SEER_TOKEN || process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || GATEWAY_TOKEN;
+    const response = await fetch(base + '/cortex/mission-graphs/' + encodeURIComponent(parent.graphId), {
+      headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(4000),
+    });
+    if (!response.ok) throw new Error('AURA_GRAPH_READ_' + response.status);
+    return response.json();
+  };
+  // Per-mission asynchronous reads: one unavailable graph cannot hold unrelated work.
+  const resolvePolicyMission = async (id: string) => {
+    if (graphResolution.has(id)) return;
+    graphResolution.add(id);
+    try {
+      let mission = connectedRuntime.novaMissions.get(id);
+      const graph = mission.source === 'seer-mission-graph' && mission.status === 'AWAITING_VERIFICATION'
+        ? await readResolutionGraph(mission) : null;
+      // Re-read after I/O; a stale proposal may have been superseded by the operator.
+      mission = connectedRuntime.novaMissions.get(id);
+      const status = String(mission.status || '').toUpperCase();
+      if (!['BLOCKED','AWAITING_VERIFICATION'].includes(status) || mission.paused || mission.cancelRequested || mission.pendingOperatorAction || mission.spendApprovalPending) return;
+      const { level, extraBlocked } = loadApprovalPolicy({ file: policyFilePath(WORKSPACE_ROOT) });
+      if (!level) return;
+      const own = resolutionEvents(id);
+      const resolutions = own.filter((e: any) => e.type === 'NOVA_OPERATOR_RESOLUTION');
+      const lastManual = resolutions.findIndex((e: any) => !String(e.payload?.note || '').startsWith('auto-'));
+      const autoResumes = (lastManual === -1 ? resolutions : resolutions.slice(0,lastManual)).filter((e: any) => String(e.payload?.note || '').startsWith('auto-resumed')).length;
+      const lastError = own.find((e: any) => e.payload?.error)?.payload?.error || '';
+      const evidence = own.find((e: any) => e.type === 'NOVA_PLANNING_RESULT' && e.payload?.completionProposed)?.payload?.evidence || null;
+      const { planned, check: claimCheck } = claimCheckFor(own);
+      if (status === 'AWAITING_VERIFICATION' && planned && !claimCheck) return;
+      const claimResumes = resolutions.filter((e: any) => String(e.payload?.note || '').startsWith(CLAIM_RESUME_NOTE)).length;
+      const verdict = autoResolution({ ...mission, receipts: connectedRuntime.novaMissions.evidenceReceipts(id) }, { level, autoResumes, lastError: String(lastError), extraBlocked, evidence, claimCheck, claimResumes, graph });
+      if (!verdict) return;
+      connectedRuntime.novaMissions.resolveAutomatic(id, verdict);
+      recordAuto(`mission:${id} -> ${verdict.decision} (${verdict.note})`, { missionId:id, ...verdict });
+    } catch (error: any) { console.warn('[aura-resolution]', id, error?.message || error); }
+    finally { graphResolution.delete(id); }
+  };
   const autoApproveTick = () => {
     const { level, extraBlocked } = loadApprovalPolicy({ file: policyFilePath(WORKSPACE_ROOT) });
     try {
@@ -4360,35 +4402,7 @@ const notifyPhone = async (action) => {
         recordAuto(`mcp-source:${source.id} -> approve (level ${level})`, { sourceId: source.id, resolvedSha: source.resolvedSha, level });
       }
     } catch (error: any) { console.warn('[auto-approve] gate tick failed:', error?.message || error); }
-    try {
-      for (const base of connectedRuntime.bus.missionsAwaitingResolution()) {
-        const status = String(base?.status || '').toUpperCase();
-        if (!['BLOCKED', 'AWAITING_VERIFICATION'].includes(status)) continue;
-        let mission: any;
-        try { mission = connectedRuntime.novaMissions.get(base.id); } catch { continue; }
-        if (mission.paused || connectedRuntime.novaMissions.pendingOperatorAction(mission.id)) continue;
-        const own = resolutionEvents(mission.id);
-        // Auto-resumes since the operator's last own decision (events are newest first): a manual resume
-        // starts a new budget window, and with it a new allowance of automatic retries.
-        const resolutions = own.filter((e: any) => e.type === 'NOVA_OPERATOR_RESOLUTION');
-        const lastManual = resolutions.findIndex((e: any) => !String(e.payload?.note || '').startsWith('auto-'));
-        const autoResumes = (lastManual === -1 ? resolutions : resolutions.slice(0, lastManual)).filter((e: any) => String(e.payload?.note || '').startsWith('auto-resumed')).length;
-        const lastError = own.find((e: any) => e.payload?.error)?.payload?.error || '';
-        const evidence = own.find((e: any) => e.type === 'NOVA_PLANNING_RESULT' && e.payload?.completionProposed)?.payload?.evidence || null;
-        const { planned, check: claimCheck } = claimCheckFor(own);
-        // An answer is not resolved before its claim check has run.
-        if (status === 'AWAITING_VERIFICATION' && planned && !claimCheck) continue;
-        const claimResumes = resolutions.filter((e: any) => String(e.payload?.note || '').startsWith(CLAIM_RESUME_NOTE)).length;
-        const verdict = autoResolution(mission, { level, autoResumes, lastError: String(lastError), extraBlocked, evidence, claimCheck, claimResumes });
-        if (!verdict) continue;
-        try {
-          connectedRuntime.novaMissions.resolve(mission.id, { ...verdict, authority: 'operator' });
-          recordAuto(`mission:${mission.id} -> ${verdict.decision} (${verdict.note})`, { missionId: mission.id, ...verdict });
-        } catch (error: any) {
-          console.warn(`[auto-approve] ${mission.id} ${verdict.decision} refused: ${error?.message || error}`);
-        }
-      }
-    } catch (error: any) { console.warn('[auto-approve] tick failed:', error?.message || error); }
+    for (const base of connectedRuntime.bus.missionsAwaitingResolution()) void resolvePolicyMission(base.id);
   };
   setInterval(autoApproveTick, 5_000).unref?.();
 

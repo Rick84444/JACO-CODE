@@ -364,3 +364,25 @@ test('operator Aura planning exposes a bounded artifact contract and can really 
   await assert.rejects(workspace.execute({type:'repo-write',data:{path:'runtime/server.ts',content:'denied'}},contract),/SCOPE_DENIED/);
   assert.equal(auraArtifactContract({goal:'Read files only; do not edit files'}),null);
 });
+
+test('single-node replan preserves original scope and remaining budget',()=>{
+ const {db,graph}=fixture();
+ try {
+  const contract={scope:{allowed:['src/**']},budget:{max_steps:60,max_tool_calls:120,max_duration_ms:10000,max_failures:5},verification:{tests_required:true}};
+  const g=graph.create({objective:'Implement and verify',nodes:[{key:'a',objective:'Implement',contract}]});
+  graph.fail(g.id,'a',{reason:'known test failure',evidence_refs:['real-failure']});
+  const next=graph.replan(g.id,{failed_key:'a',remaining_budget:{max_steps:7,max_tool_calls:9,max_duration_ms:4000},replacement:{key:'b',objective:'Repair',contract:{scope:{allowed:['/']},budget:{max_steps:999}}}});
+  const b=next.nodes.find(n=>n.key==='b');
+  assert.deepEqual(b.contract.scope,contract.scope);
+  assert.deepEqual(b.contract.verification,contract.verification);
+  assert.deepEqual(b.contract.budget,{max_steps:7,max_tool_calls:9,max_duration_ms:4000,max_failures:5});
+ }finally{db.close();}
+});
+test('pending operator action is not classified as a replannable graph failure',()=>{
+ const {db,graph}=fixture();try{
+ const g=graph.create({objective:'Bound task',nodes:[{key:'a',objective:'Do work'}]});
+ graph.bindNova(g.id,'a','nova-a');
+ const r=graph.reconcileNova(g.id,'a',{id:'nova-a',status:'BLOCKED',phase:'BLOCKED',failures:5,pendingOperatorAction:{id:'pending'},replanRequest:{reason:'old request',subgoals:[]},receipts:[{ok:false,error:'old failure'}]});
+ assert.equal(r.outcome,'operator_required');assert.equal(r.graph.replans.length,0);assert.equal(r.graph.status,'ACTIVE');
+ }finally{db.close();}
+});

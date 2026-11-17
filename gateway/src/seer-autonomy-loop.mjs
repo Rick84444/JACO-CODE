@@ -91,8 +91,10 @@ export function createAutonomyLoop({
 
   async function proposeRepair(graph, failed, sequence) {
     let parsed = null;
+    let remainingBudget = null;
     if (failed.failure_reason?.startsWith('NOVA_REPLAN_REQUEST:')) {
       const request = parseModelJson(failed.failure_reason.slice('NOVA_REPLAN_REQUEST:'.length));
+      remainingBudget = request?.remaining_budget || null;
       if (Array.isArray(request?.subgoals) && request.subgoals.length >= 2 && request.subgoals.length <= 8 && request.subgoals.every(s => typeof s?.title === 'string' && s.title.trim() && typeof s.objective === 'string' && s.objective.trim())) {
         const base = `${rootRepairKey(failed.key)}.repair.${sequence}`;
         return { reason: request.reason, remaining_budget: request.remaining_budget, model_candidate_accepted: true, replacements: request.subgoals.map((s,index) => ({
@@ -147,7 +149,7 @@ export function createAutonomyLoop({
         });
       }
     }
-    return safeRepairCandidate(graph, failed, parsed, sequence);
+    return { ...safeRepairCandidate(graph, failed, parsed, sequence), ...(remainingBudget ? {remaining_budget:remainingBudget} : {}) };
   }
 
   async function replanFailures(report) {
