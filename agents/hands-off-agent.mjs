@@ -38,6 +38,7 @@ import { novaTiming, planningDeadline } from './lib/nova-timing.mjs';
 import { MissionClient, processMissionTurn, checkedReceipt, planTasks, BATCHABLE } from './lib/mission-client.mjs';
 import { performLocalWrite } from './lib/local-write.mjs';
 import { buildAgentCard, hubDeviceLinked, joinWorkplace } from './lib/workplace-session.mjs';
+import { createRelayReceiptQueue } from './lib/workplace-relay-receipts.mjs';
 import { createCodingWorkspace } from './lib/coding-workspace.mjs';
 import { createMissionWorktrees } from './lib/mission-worktree.mjs';
 import { homedir } from 'os';
@@ -2618,9 +2619,25 @@ export async function main() {
 
   await detectSurfaces(state);
 
+  // The public Git-ref transport proves only delivery to Workplace. Nova must
+  // acknowledge a QUESTION itself; never treat inbox text as a mission or
+  // invoke a model, tool or approval on the sender's authority.
+  const relayReceipts = createRelayReceiptQueue();
+  const flushRelayReceipts = async client => {
+    if (!client || relayReceipts.size === 0) return;
+    const sent = await relayReceipts.flush((kind, body, options) => client.post(kind, body, options));
+    if (sent) log("ok", "workplace", `Confirmed ${sent} ChatGPT question receipt(s); no mission or model invoked`);
+  };
   // Register with the surfaces actually detected above, not the ones this agent could have.
   const workplace = await joinWorkplace({
     card: novaAgentCard(state.surfaces),
+    onEvents: async (events, _page, session) => {
+      relayReceipts.accept(events);
+      // Bootstrap processes events before assigning session.client. Preserve
+      // the pending receipts until registration finishes instead of fabricating
+      // an acknowledgment or accidentally dropping them.
+      if (session.client) await flushRelayReceipts(session.client);
+    },
     log: (level, msg) => log(level, "workplace", msg),
   });
   if (!workplace.allowed) {
@@ -2630,6 +2647,8 @@ export async function main() {
     return;
   }
 
+  try { await flushRelayReceipts(workplace.client); }
+  catch (error) { log("warn", "workplace", `ChatGPT receipt pending: ${error.message}`); }
   const githubControlTimer = startGithubControlPolling(state);
   activeWorkplace = workplace;
   if (workplace.registration?.agentId) state.agentId = workplace.registration.agentId;
@@ -2643,6 +2662,12 @@ export async function main() {
       continue;
     }
     if (pausedForWorkplace) { log("ok", "agent", "Workplace READY again; resuming"); pausedForWorkplace = false; }
+    // A temporary post failure must not lose the receipt after bootstrap ACK.
+    // Idempotent Workplace event IDs permit safe retry without duplicate events.
+    if (relayReceipts.size) {
+      try { await flushRelayReceipts(workplace.client); }
+      catch (error) { log("warn", "workplace", `ChatGPT receipt remains pending: ${error.message}`); }
+    }
     let turn = null;
     try { turn = await tick(state); }
     catch (e) {
