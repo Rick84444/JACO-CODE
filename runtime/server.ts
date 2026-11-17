@@ -4199,6 +4199,18 @@ const notifyPhone = async (action) => {
   });
   app.use('/api/continuum', continuumSurface.router);
   app.use('/api/relay', modelRelay.router);
+  // Open a local folder or file in Windows Explorer (operator's own GUI only; allowed roots only).
+  app.post('/api/local/reveal', requireLocalUi, async (req, res) => {
+    if (process.platform !== 'win32') return res.status(501).json({ success: false, error: 'EXPLORER_WINDOWS_ONLY' });
+    try {
+      const { resolveOpenTarget, explorerArgs } = await import('../agents/lib/local-open.mjs');
+      const target = resolveOpenTarget(String(req.body?.path || ''), [WORKSPACE_ROOT, process.env.JACO_DATA_DIR, process.env.JACO_INSTALL_ROOT]);
+      const { spawn } = await import('node:child_process');
+      const child = spawn('explorer.exe', explorerArgs(target), { windowsHide: false, detached: true, stdio: 'ignore' });
+      child.unref();
+      res.json({ success: true, mode: target.mode, path: target.path });
+    } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 120) }); }
+  });
   // Autonomy clock (GUI): a time-boxed, operator-signed mandate. Financial actions stay on REVIEW in code.
   const CLOCK_NAME = 'Autonomi-klocka';
   const clockMandates = () => modelRelay.mandates.list().filter((m: any) => m.name === CLOCK_NAME && modelRelay.mandates.isActive(m.id));
