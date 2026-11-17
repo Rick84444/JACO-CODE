@@ -705,7 +705,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       </div>
 
       <details className="cognitive-chat-diagnostics" data-testid="jaco-chat-diagnostics">
-        <summary>{tr('Drift, uppdrag och aktivitet','Runtime, missions and activity')}{backgroundEvents.length ? ` · ${backgroundEvents.length}` : ''}</summary>
+        <summary>{blockerEvents.length ? tr('Hinder att granska','Issues to review') : tr('Drift, uppdrag och aktivitet','Runtime, missions and activity')}{blockerEvents.length ? ` · ${blockerEvents.length}` : ''}{backgroundEvents.length ? ` · ${backgroundEvents.length} ${tr('händelser','events')}` : ''}</summary>
         <div className="cognitive-chat-diagnostics-content">
           {blockerEvents.length>0&&<details className="cognitive-chat-blockers"><summary>{tr('Hinder som behöver uppmärksamhet','Issues needing attention')} ({blockerEvents.length})</summary><div className="cognitive-background-events-list">{blockerEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</div></details>}
           <AuraOverview />
