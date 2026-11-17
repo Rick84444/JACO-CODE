@@ -346,12 +346,20 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   const [following,setFollowing]=useState(true);
   // Only plain human language in the conversation: codes become sentences, runtime bookkeeping goes to Background activity.
   const humanEvents=useMemo(()=>humanChatEvents(liveEvents,language),[liveEvents,language]);
-  const backgroundEvents=humanEvents.background;
-  const conversationEvents=useMemo(()=>dedupeConversationEvents(humanEvents.conversation),[humanEvents]);
-  const feed=useMemo(()=>[
-    ...messages.filter(m=>m.id!=='welcome').map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message})),
-    ...conversationEvents.map(event=>({kind:'event' as const,id:event.id,at:event.at,event})),
-  ].sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages,conversationEvents]);
+  // The chat is for operator and Aura messages. Runtime steps belong in a
+  // collapsed diagnostics section (and the existing Evidence/Live surfaces),
+  // not between the assistant's actual replies.
+  const blockerEvents=useMemo(
+    ()=>dedupeConversationEvents(humanEvents.conversation.filter(event=>event.category==='blocked')).slice(-5),
+    [humanEvents],
+  );
+  const backgroundEvents=useMemo(
+    ()=>dedupeConversationEvents([...humanEvents.background,...humanEvents.conversation.filter(event=>event.category!=='blocked')]).slice(-80),
+    [humanEvents],
+  );
+  const feed=useMemo(()=>messages.filter(m=>m.id!=='welcome')
+    .map(message=>({kind:'message' as const,id:message.id,at:message.at||'',message}))
+    .sort((a,b)=>(Date.parse(a.at)||0)-(Date.parse(b.at)||0)||a.id.localeCompare(b.id)),[messages]);
   const currentMission=missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
   const followLatest=()=>{followRef.current=true;setFollowing(true);if(scrollRef.current)scrollRef.current.scrollTop=0;};
   useEffect(()=>{if(followRef.current && scrollRef.current)scrollRef.current.scrollTop=0;},[feed,busy]);
@@ -696,8 +704,17 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label={tr('Chattinställningar','Chat settings')} title={tr('Modell och budget','Model and budget')}><Settings2 size={15}/><span>{modelLabel}</span></button>
       </div>
 
-      <AuraOverview />
-      {runControls && <div className="cognitive-run-controls">{runControls}</div>}
+      <details className="cognitive-chat-diagnostics" data-testid="jaco-chat-diagnostics">
+        <summary>{blockerEvents.length ? tr('Hinder att granska','Issues to review') : tr('Drift, uppdrag och aktivitet','Runtime, missions and activity')}{blockerEvents.length ? ` · ${blockerEvents.length}` : ''}{backgroundEvents.length ? ` · ${backgroundEvents.length} ${tr('händelser','events')}` : ''}</summary>
+        <div className="cognitive-chat-diagnostics-content">
+          {blockerEvents.length>0&&<details className="cognitive-chat-blockers"><summary>{tr('Hinder som behöver uppmärksamhet','Issues needing attention')} ({blockerEvents.length})</summary><div className="cognitive-background-events-list">{blockerEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</div></details>}
+          <AuraOverview />
+          {runControls && <div className="cognitive-run-controls">{runControls}</div>}
+          <AutonomyClock />
+          {backgroundEvents.length>0&&<details className="cognitive-background-events"><summary>{tr('Visa tekniska händelser','Show technical events')} ({backgroundEvents.length})</summary><div className="cognitive-background-events-list">{backgroundEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</div></details>}
+          {historyTruncated&&<p className="cognitive-history-note">{tr('Det senaste arbetet visas. Äldre händelser finns kvar i uppdragshistoriken.','The latest work is shown. Older events remain in mission history.')}</p>}
+        </div>
+      </details>
 
       {showSettings && (
         <div className="px-4 py-3 border-b border-[#404143] bg-[#262729] space-y-2 text-xs max-h-[50%] overflow-auto">
@@ -753,8 +770,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       <div ref={scrollRef} onScroll={()=>{const el=scrollRef.current;if(el){const near=el.scrollTop<80;followRef.current=near;setFollowing(near);}}} role="log" aria-live="polite" aria-relevant="additions" aria-label={tr('JACO-konversation','JACO conversation')} className="cognitive-chat-scroll">
         <div className="cognitive-feed">
           {!storageReady && !storageError && <p className="cognitive-muted">{tr('Läser din sparade konversation…','Loading your saved conversation…')}</p>}
-          {backgroundEvents.length>0&&<details className="cognitive-background-events"><summary>{tr('Aktivitet i bakgrunden','Background activity')} ({backgroundEvents.length})</summary>{backgroundEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</details>}
-          {historyTruncated&&<p className="cognitive-history-note">{tr('Det senaste arbetet visas. Äldre händelser finns kvar i uppdragshistoriken.','The latest work is shown. Older events remain in mission history.')}</p>}
           {storageReady&&feed.length===0&&<div className="cognitive-welcome">
             <JacoWordmark size="lg"/>
             <div className="cognitive-section-kicker">{tr('Din idé. Ett sammanhängande arbete.','Your idea. One continuous workflow.')}</div>
@@ -767,7 +782,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           </div>}
           {busy&&<div className="cognitive-response-wait"><span role="status"><AuraAvatar thinking size={3}/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}{busy==='chat'&&waitingSeconds>=25&&<small>{' '}{tr('Det tar en stund. Svarar inte modellen provar Aura nästa automatiskt.','This is taking a while. If the model does not answer, Aura tries the next one automatically.')}</small>}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
           {[...visibleFeed].reverse().map(item=>{
-            if(item.kind==='event')return <CognitiveEventCard key={item.id} event={item.event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>;
             const message=item.message;
             return message.role==='user'?<div key={item.id} className="cognitive-user-message"><LongMessage text={message.content}/>{message.attachments?.map(item=><small key={item.id} className="block mt-2">{tr('Bifogat','Attached')}: {item.name} · {item.fileCount} {tr('filer','files')}</small>)}</div>
               :message.role==='assistant'?<article key={item.id} className="cognitive-assistant-message"><div className="cognitive-message-author"><AuraFace label={tr('Öppna Gameboard','Open the Gameboard')}/>Aura</div><ChatMarkdown text={message.content}/><CopyMessageButton text={message.content}/>{message.meta&&<details className="cognitive-message-meta"><summary>{tr('Svar & källor','Answer & sources')}</summary><p>{message.meta}</p></details>}</article>
@@ -777,7 +791,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           {olderCount>0&&<button type="button" className="cognitive-feed-older" onClick={()=>setFeedLimit(limit=>limit+CHAT_FEED_PAGE)}>{tr(`Visa äldre (${olderCount})`,`Show older (${olderCount})`)}</button>}
         </div>
       </div>
-      <AutonomyClock />
       <form onSubmit={event=>{event.preventDefault();void submit();}} className="cognitive-composer">
         <div className="cognitive-composer-inner">
           {!following&&<button type="button" className="cognitive-follow-latest" onClick={followLatest}><ArrowUp size={13}/>{tr('Följ senaste arbetet','Follow latest work')}</button>}

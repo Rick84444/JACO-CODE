@@ -269,10 +269,15 @@ try {
   await page.setViewportSize({width:1440,height:960});
   const mission=bus.createMission({goal:'Testuppdrag: verifiera HTTP-klienten',source:'browser-test'});
   bus.event('NOVA_ACTION_STARTED',{missionId:mission.id,payload:{action:{id:'read-example',type:'repo-read',data:{path:'example.ts'}}}});
+  await page.locator('[data-event-id="mission:2"]').waitFor({state:'attached'});
+  assert.equal(await page.locator('.cognitive-chat-scroll [data-event-id="mission:2"]').count(),0,
+    'a runtime step must not occupy the human conversation');
+  await page.getByTestId('jaco-chat-diagnostics').locator('summary').first().click();
+  await page.locator('.cognitive-background-events > summary').click();
   await page.locator('[data-event-id="mission:2"]').waitFor();
   assert.equal(await page.locator('[data-event-id="mission:2"]').count(),1);
   await page.locator('[data-mission-id]').waitFor({state:'attached',timeout:10000});
-  passed('A real SSE event is inserted exactly once in the conversation with its mission');
+  passed('A real SSE event is accessible exactly once in diagnostics while chat remains readable');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'read-example',type:'repo-read',ok:true,verified:false,result:{path:'example.ts'}}});
   // Evidence outcome is the contract; its translated label depends on the
   // current UI language and must never be mistaken for verified success.
@@ -416,10 +421,15 @@ try {
   for(const response of liveResponses)response.end();
   bus.close();bus=new DurableMissionBus(directory);chat=createAuraChatSession(bus);
   await page.reload({waitUntil:'networkidle'});
+  await page.locator(verifiedSelector).waitFor({state:'attached'});
+  assert.equal(await page.locator('.cognitive-chat-scroll '+verifiedSelector).count(),0,
+    'replayed execution logs remain out of the readable chat');
+  await page.getByTestId('jaco-chat-diagnostics').locator('summary').first().click();
+  await page.locator('.cognitive-background-events > summary').click();
   await page.locator(verifiedSelector).waitFor();
   assert.equal(await page.locator(verifiedSelector).count(),1);
   await page.getByText('Testsvaret använder de observerade händelserna. Uppdraget fortsätter.',{exact:true}).waitFor();
-  passed('A store restart replays both durable events and the saved encrypted conversation');
+  passed('A store restart replays durable diagnostics and the visible saved encrypted conversation');
   liteAck=true;
   await input().fill('Testa ett Lite-uppdrag');
   await page.getByTestId('jaco-run-mode-toggle').click();
