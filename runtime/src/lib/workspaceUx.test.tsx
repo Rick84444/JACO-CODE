@@ -91,13 +91,16 @@ test('CDP refuses ambiguous URL-only attachment instead of choosing another iden
  }finally{globalThis.fetch=original;}
 });
 
-test('routine background observations are grouped while mission blockers stay in the conversation', () => {
+test('routine observations stay collapsed while actionable blockers remain discoverable', () => {
   const session:any={messages:[],setMessages:noop,appendMessage:async()=>{},storageReady:true,storageError:null,retryStorage:noop,input:'',setInput:noop,busy:null,setBusy:noop,toolArguments:'{}',setToolArguments:noop};
   const event:any={id:'background',at:'2026-10-22T10:00:00Z',type:'mission.dispatch.started',category:'observation',title:'New observation',text:'Dispatcher started',missionId:null,evidence:{outcome:'observed'}};
   const html=renderToStaticMarkup(<AuraChatPanel session={session} onStartGoal={noop} liveEvents={[event,{...event,id:'blocked',category:'blocked',title:'Work is blocked',text:'Connection lost',evidence:{outcome:'unknown'}}]}/>);
-  const grouped=html.slice(html.indexOf('<details class="cognitive-background-events"'),html.indexOf('</details>')+10);
+  const start=html.indexOf('<details class="cognitive-background-events"');
+  assert.ok(start>=0,'runtime activity remains accessible under diagnostics');
+  const grouped=html.slice(start,html.indexOf('</details>',start)+10);
   assert.match(grouped,/Dispatcher started/);
   assert.doesNotMatch(grouped,/Connection lost/);
+  assert.match(html,/<details class="cognitive-chat-blockers"/);
   assert.match(html,/Connection lost/);
 });
 
