@@ -36,7 +36,7 @@ export function dedupeConversationEvents(events: CognitiveEvent[]): CognitiveEve
 const AuraAvatar=({thinking=false,size=40}:{thinking?:boolean;size?:number})=><span role="img" aria-label="Aura" className="aura-avatar aura-dot" data-thinking={thinking||undefined} style={{width:size,height:size}}/>;
 // Clicking Aura's face opens the Gameboard: the way from the chat to her plan.
 const openGameboard=()=>window.dispatchEvent(new CustomEvent('jaco:open-plan',{detail:''}));
-const AuraFace=({thinking=false,size=12,label}:{thinking?:boolean;size?:number;label:string})=><button type="button" className="aura-avatar-button" onClick={openGameboard} title={label} aria-label={label}><AuraAvatar thinking={thinking} size={size}/></button>;
+const AuraFace=({thinking=false,size=4,label}:{thinking?:boolean;size?:number;label:string})=><button type="button" className="aura-avatar-button" onClick={openGameboard} title={label} aria-label={label}><AuraAvatar thinking={thinking} size={size}/></button>;
 
 // A long pasted message must not push the answers out of reach; the whole text is one click away.
 const LongMessage: React.FC<{ text: string }> = ({ text }) => {
@@ -692,7 +692,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
   return (
     <div className="cognitive-chat h-full min-h-0 flex flex-col">
       <div className="cognitive-chat-heading">
-        <span><AuraFace thinking={Boolean(busy)||currentMission?.status==='ACTIVE'} size={14} label={tr('Öppna Gameboard','Open the Gameboard')}/>Aura <span className="cognitive-chat-subtitle">{tr('Samtal & skapande','Conversation & creation')}</span></span>
+        <span><AuraFace thinking={Boolean(busy)||currentMission?.status==='ACTIVE'} size={5} label={tr('Öppna Gameboard','Open the Gameboard')}/>Aura <span className="cognitive-chat-subtitle">{tr('Samtal & skapande','Conversation & creation')}</span></span>
         <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label={tr('Chattinställningar','Chat settings')} title={tr('Modell och budget','Model and budget')}><Settings2 size={15}/><span>{modelLabel}</span></button>
       </div>
 
@@ -765,7 +765,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               <button type="button" onClick={()=>prompt(tr('Hjälp mig förbättra en funktion i projektet. Börja med att kartlägga den relevanta koden.','Help improve one feature in this project. Start by mapping the relevant code.'),'goal')}><FileCode2 size={17}/><span>{tr('Utveckla vidare','Develop further')}<small>{tr('Bygg på det som redan finns','Build on what already exists')}</small></span><ArrowUpRight size={14}/></button>
             </div>
           </div>}
-          {busy&&<div className="cognitive-response-wait"><span role="status"><AuraAvatar thinking size={10}/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}{busy==='chat'&&waitingSeconds>=25&&<small>{' '}{tr('Det tar en stund. Svarar inte modellen provar Aura nästa automatiskt.','This is taking a while. If the model does not answer, Aura tries the next one automatically.')}</small>}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
+          {busy&&<div className="cognitive-response-wait"><span role="status"><AuraAvatar thinking size={3}/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}{busy==='chat'&&waitingSeconds>=25&&<small>{' '}{tr('Det tar en stund. Svarar inte modellen provar Aura nästa automatiskt.','This is taking a while. If the model does not answer, Aura tries the next one automatically.')}</small>}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
           {[...visibleFeed].reverse().map(item=>{
             if(item.kind==='event')return <CognitiveEventCard key={item.id} event={item.event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>;
             const message=item.message;
