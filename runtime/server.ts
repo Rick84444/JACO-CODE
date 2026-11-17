@@ -1326,6 +1326,10 @@ const notifyPhone = async (action) => {
       version: JSON.parse(fs.readFileSync(path.join(process.env.JACO_RELEASE_ROOT || process.cwd(), 'package.json'), 'utf8')).version,
       releaseId: 'jaco-code-0.23.1',
       canonicalGui: 'JACO Autonomous IDE',
+      executionProfile: process.env.JACO_LITE === '1' ? 'lite' : 'full',
+      workplaceRequired: process.env.JACO_LITE === '1'
+        ? Boolean(process.env.JACO_WORKPLACE_REQUIRED && process.env.JACO_WORKPLACE_REQUIRED !== '0')
+        : process.env.JACO_WORKPLACE_REQUIRED !== '0',
       primaryPort: PORT,
       // Only surfaces this runtime can actually drive. The list used to be fixed, so a PC runtime with
       // no paired phone advertised Android and Nova offered Android tools that could only fail.

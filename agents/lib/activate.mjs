@@ -16,9 +16,13 @@ async function call(fetchImpl, baseUrl, token, method, route, body, timeoutMs = 
 }
 const errorText = error => String(error?.message || error).split('\n')[0].slice(0, 160);
 
+async function runtimeIdentity(baseUrl, fetchImpl) {
+  try { return await call(fetchImpl, baseUrl, '', 'GET', '/api/runtime/identity', null, 4000); }
+  catch { return null; }
+}
 export async function runtimeUp({ baseUrl, fetchImpl = fetch } = {}) {
-  try { return (await call(fetchImpl, baseUrl, '', 'GET', '/api/runtime/identity', null, 4000)).version || true; }
-  catch { return false; }
+  const identity = await runtimeIdentity(baseUrl, fetchImpl);
+  return identity ? identity.version || true : false;
 }
 
 /**
@@ -31,14 +35,22 @@ export async function activationReport({
   token = '',
   fetchImpl = fetch,
   startTools = true,
-  requireWorkplace = process.env.JACO_WORKPLACE_REQUIRED !== '0',
-  requireSupervisor = Boolean(process.env.TERMUX_VERSION) || /com\.termux/.test(process.env.PREFIX || ''),
-  lite = process.env.JACO_LITE === '1',
+  requireWorkplace,
+  requireSupervisor,
+  lite,
 } = {}) {
+  const identity = await runtimeIdentity(baseUrl, fetchImpl);
+  // Trust the responding Core's profile rather than the shell launching the CLI.
+  // Older builds retain the explicit option/environment fallback.
+  lite = identity?.executionProfile === 'lite' ? true : identity?.executionProfile === 'full' ? false : (lite ?? process.env.JACO_LITE === '1');
+  requireWorkplace ??= typeof identity?.workplaceRequired === 'boolean' ? identity.workplaceRequired
+    : process.env.JACO_WORKPLACE_REQUIRED != null ? process.env.JACO_WORKPLACE_REQUIRED !== '0' : !lite;
+  requireSupervisor ??= !lite && (Boolean(process.env.TERMUX_VERSION) || /com\.termux/.test(process.env.PREFIX || ''));
   const report = {
     schema: 'jaco.activation/v2',
     at: new Date().toISOString(),
     runtime: { up: false, version: null },
+    executor: { owner: lite ? 'lite-launcher' : 'workplace-supervisor', state: 'UNVERIFIED', observedAt: null },
     workplace: { required: requireWorkplace, up: false, state: null, novaState: null },
     supervisor: { required: requireSupervisor, up: null, state: null },
     tools: { servers: [], ready: 0, toolCount: 0 },
@@ -47,9 +59,8 @@ export async function activationReport({
     problems: [],
     ok: false,
   };
-  const version = await runtimeUp({ baseUrl, fetchImpl });
-  if (!version) { report.problems.push('The JACO runtime is not answering. Start the stack with: jaco activate'); return report; }
-  report.runtime = { up: true, version: version === true ? null : version };
+  if (!identity) { report.problems.push('The JACO runtime is not answering. Start the stack with: jaco activate'); return report; }
+  report.runtime = { up: true, version: identity.version || null, executionProfile: lite ? 'lite' : 'full' };
 
   // On Termux, functional HTTP health is not enough: Sentinel/jacoctl owns the canonical runit tree.
   // A stray/orphan Core must never be allowed to make the product report READY.
@@ -67,8 +78,20 @@ export async function activationReport({
     report.supervisor = { required: false, up: null, state: 'NOT_REQUIRED' };
   }
 
-  // Durable execution truth: Core alone is not JACO READY. Workplace must be reachable and Durable Nova
-  // must be RUNNING when Workplace is required, otherwise missions cannot continue after the chat returns.
+  // In Lite the separately launched worker is mandatory even when coordination is optional.
+  // A heartbeat only proves a recent worker observation, not successful inference or mission completion.
+  if (lite) {
+    try {
+      const health = await call(fetchImpl, baseUrl, token, 'GET', '/api/connected/nova/executor-health', null, 4000);
+      if (health.schema !== 'jaco.nova-executor-health/v1' || health.state !== 'RUNNING' ||
+          !Number.isFinite(Date.parse(health.observedAt))) throw new Error('NO_FRESH_EXECUTOR_HEARTBEAT');
+      report.executor = { owner: 'lite-launcher', state: 'RUNNING', observedAt: health.observedAt };
+    } catch (error) {
+      report.problems.push('The durable executor managed by the separate Lite launcher has not been verified. Check Lite lifecycle and .jaco/nova.log.');
+    }
+  }
+  // Required coordination is independent of the launcher-managed executor in Lite.
+  // Full runtime retains mandatory supervised Nova when Workplace is required.
   if (requireWorkplace) {
     try {
       const health = await call(fetchImpl, workplaceUrl.replace(/\/+$/, ''), '', 'GET', '/health', null, 4000);
@@ -76,17 +99,19 @@ export async function activationReport({
       // Lite owns the Nova child from its launcher, not the Workplace
       // supervisor. DISABLED is therefore not evidence of a stopped worker.
       // Do not declare READY either: only the launcher can attest its child.
-      const liteExternal = lite && supervised.state === 'DISABLED' && supervised.nova?.state === 'DISABLED';
+      const liteExternal = lite;
       report.workplace = {
         required: true, up: true,
         state: liteExternal ? String(health?.status || 'UNKNOWN') : supervised.state || health?.status || null,
-        novaState: liteExternal ? 'EXTERNAL_UNVERIFIED' : supervised.nova?.state || null,
+        novaState: liteExternal ? (report.executor.state === 'RUNNING' ? 'RUNNING' : 'EXTERNAL_UNVERIFIED') : supervised.nova?.state || null,
         externalExecutor: liteExternal,
       };
       if (liteExternal) {
-        report.problems.push('JACO Lite Workplace is READY; its Nova worker is managed by the separate Lite launcher and has not been verified. Check .jaco/nova.log and Lite lifecycle rather than restarting the Workplace supervisor.');
+        if (health?.status !== 'READY') report.problems.push('Required Lite Workplace coordination is not READY.');
       } else if (supervised.state !== 'RUNNING' || supervised.nova?.state !== 'RUNNING') {
         report.problems.push(`Workplace/Durable Nova is not RUNNING (workplace=${supervised.state || 'UNKNOWN'}, nova=${supervised.nova?.state || 'UNKNOWN'}).`);
+      } else {
+        report.executor = { owner: 'workplace-supervisor', state: 'RUNNING', observedAt: new Date().toISOString() };
       }
     } catch (error) {
       report.workplace = { required: true, up: false, state: null, novaState: null };
@@ -147,12 +172,16 @@ export async function activationReport({
   } catch (error) { report.problems.push(`Could not read the planner choice: ${errorText(error)}`); }
   if (report.providers.length && !report.providers.some(p => p.active)) report.problems.push('No model provider is answering. Paste an API key under Providers or start a local model (Ollama).');
 
-  const workplaceReady = !requireWorkplace || (report.workplace.up === true && report.workplace.state === 'RUNNING' && report.workplace.novaState === 'RUNNING');
+  const workplaceReady = !requireWorkplace || (report.workplace.up === true && (lite
+    ? report.workplace.state === 'READY'
+    : report.workplace.state === 'RUNNING' && report.workplace.novaState === 'RUNNING'));
+  const executorReady = !lite || report.executor.state === 'RUNNING';
   const supervisorReady = !requireSupervisor || (report.supervisor.up === true && report.supervisor.state === 'READY');
   report.ok = Boolean(
     report.runtime.up &&
     supervisorReady &&
     workplaceReady &&
+    executorReady &&
     report.tools.toolCount > 0 &&
     report.planner?.reachable === true &&
     report.providers.some(p => p.active || false) &&
@@ -168,6 +197,7 @@ export function formatReport(r) {
   if (!r.runtime.up) { out.push(...r.problems.map(p => `  ! ${p}`)); return out.join('\n'); }
   if (r.supervisor?.required) out.push('', `Supervisor: ${r.supervisor.up ? r.supervisor.state || 'UNKNOWN' : 'NOT ANSWERING'}`);
   if (r.workplace?.required) out.push('', `Workplace/Nova: ${r.workplace.up ? `${r.workplace.state || 'UNKNOWN'} / ${r.workplace.novaState || 'UNKNOWN'}` : 'NOT ANSWERING'}`);
+  if (r.executor?.owner === 'lite-launcher') out.push('', `Aura durable executor: ${r.executor.state} (Lite launcher)`);
   out.push('', `Tools: ${r.tools.toolCount} in ${r.tools.ready} of ${r.tools.servers.length} servers`);
   for (const s of r.tools.servers) out.push(`  ${s.status === 'READY' ? 'ok ' : '-- '} ${s.id.padEnd(12)} ${s.status === 'READY' ? `${s.tools} tools${s.started ? ' (started now)' : ''}` : s.error ? `error: ${s.error}` : 'stopped'}`);
   out.push('', 'Models:');
