@@ -25,33 +25,7 @@ foreach ($name in @('package.json', 'package-lock.json')) {
 }
 # Both release families carry the immutable commit of the product build.
 $sourceCommit = (& git -C $root rev-parse HEAD | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}
-New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
-Copy-Item -LiteralPath $node -Destination (Join-Path $nodeDir 'node.exe') -Force
-# A one-click full IDE also needs npm for workspace dependency installs and test commands.
-$nodeHome = Split-Path $node -Parent
-foreach ($command in @('npm.cmd','npx.cmd')) {
-  $candidate = Join-Path $nodeHome $command
-  if (-not (Test-Path $candidate)) { throw "BUNDLED_NODE_COMMAND_MISSING:$command" }
-  Copy-Item -LiteralPath $candidate -Destination (Join-Path $nodeDir $command) -Force
-}
-$npm = Join-Path $nodeHome 'node_modules\npm'
-if (-not (Test-Path $npm)) { throw 'BUNDLED_NPM_PACKAGE_MISSING' }
-New-Item -ItemType Directory -Force -Path (Join-Path $nodeDir 'node_modules') | Out-Null
-Copy-Item -LiteralPath $npm -Destination (Join-Path $nodeDir 'node_modules\npm') -Recurse -Force
-
-# Guard against secrets or runtime state accidentally packaged by a future git change.
-foreach ($dir in @((Join-Path $Destination 'agents'), (Join-Path $Destination 'gateway'), (Join-Path $Destination 'runtime'))) {
-  Get-ChildItem -LiteralPath $dir -Recurse -Force -Directory |
-    Where-Object { $_.Name -in @('.git', '.jaco', 'logs', '.agent-state', '.env') } |
-    Sort-Object FullName -Descending | Remove-Item -Force -Recurse
-}
-Get-ChildItem -LiteralPath $Destination -Recurse -Force -File |
-  Where-Object { $_.Name -in @('.env', '.env.local', '.env.production') -or $_.Name -like '*.pem' } |
-  Remove-Item -Force
-$nodeVersion = & (Join-Path $nodeDir 'node.exe') --version
-Write-Host "JACO_WINDOWS_PAYLOAD_READY version=$version node=$nodeVersion"
-) { throw 'WINDOWS_SOURCE_COMMIT_INVALID' }
+if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'WINDOWS_SOURCE_COMMIT_INVALID' }
 if ($env:GITHUB_SHA -and $sourceCommit -ne $env:GITHUB_SHA) { throw 'WINDOWS_SOURCE_COMMIT_MISMATCH' }
 @{ schema='jaco.full-release/v1'; version=$version; sourceCommit=$sourceCommit } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Destination 'runtime\release.json') -Encoding ascii
 $nodeDir = Join-Path $Destination 'tools\node'
