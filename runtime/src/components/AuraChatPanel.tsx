@@ -32,8 +32,8 @@ export function dedupeConversationEvents(events: CognitiveEvent[]): CognitiveEve
 }
 
 // Aura's face in the chat: the blue queen. It glows faint blue while she is thinking or working on a mission.
-// Aura as a round frosted glass sphere with colour pulsing inside (CSS only; no image to load).
-const AuraAvatar=({thinking=false,size=40}:{thinking?:boolean;size?:number})=><span role="img" aria-label="Aura" className="aura-avatar aura-orb" data-thinking={thinking||undefined} style={{width:size,height:size}}><span className="aura-orb-core"/></span>;
+// Aura is a small white point of light: no colour, no sphere. It brightens while she thinks.
+const AuraAvatar=({thinking=false,size=40}:{thinking?:boolean;size?:number})=><span role="img" aria-label="Aura" className="aura-avatar aura-dot" data-thinking={thinking||undefined} style={{width:size,height:size}}/>;
 // Clicking Aura's face opens the Gameboard: the way from the chat to her plan.
 const openGameboard=()=>window.dispatchEvent(new CustomEvent('jaco:open-plan',{detail:''}));
 const AuraFace=({thinking=false,size=28,label}:{thinking?:boolean;size?:number;label:string})=><button type="button" className="aura-avatar-button" onClick={openGameboard} title={label} aria-label={label}><AuraAvatar thinking={thinking} size={size}/></button>;
