@@ -859,3 +859,12 @@
 .cognitive-chat-blockers { border:1px solid #6b5737; border-radius:7px; margin:5px 0; }
 .cognitive-chat-blockers>summary { cursor:pointer; color:#e2c29b; min-height:34px; padding:7px 10px; font-size:12px; }
 .cognitive-chat-blockers .cognitive-background-events-list { padding:3px 12px; }
+
+/* Adaptive workspace: keep the existing execution surface and improve legibility. */
+.cognitive-terminal-dock { background: #080d12; border-top-color:#435467; color:#a9c5df; }
+.cognitive-terminal-dock .font-mono { font-variant-ligatures:none; letter-spacing:.025em; }
+.cognitive-terminal-dock input { color:#c4def6; caret-color:#8fc9ff; }
+.cognitive-terminal-dock button:focus-visible,.cognitive-remote-navigation button:focus-visible { outline:2px solid #85bfff; outline-offset:2px; }
+.cognitive-workspace[data-remote-mode="true"] .cognitive-remote-navigation { flex-wrap:nowrap; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:thin; }
+.cognitive-workspace[data-remote-mode="true"] .cognitive-remote-navigation > * { flex-shrink:0; min-height:40px; white-space:nowrap; }
+@media(max-width:600px){.cognitive-terminal-dock{height:clamp(145px,28dvh,220px)}.cognitive-terminal-dock input{font-size:16px}}
