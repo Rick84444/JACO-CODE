@@ -941,7 +941,14 @@ export async function executeTask(task, state, mission = null) {
     case "detect-surfaces": return detectSurfaces(state);
     case "browser-survey-site": return lawnmower.navigateAndSurvey(task.data.url, task.data.label);
     case "web-fetch": return webFetchGet(task.data.url, fetch, task.data.expect);
-    case "browser-click": return lawnmower.clickByName(task.data.name, task.data.expect,{missionId:mission?.id,actionId:task.id});
+    case "browser-click":
+      // A click without a machine-checkable postcondition can leave a mutation's
+      // outcome unknown. Reject it before dispatch so the planner can add an
+      // observable URL/selector expectation instead of blocking after the click.
+      if (!task.data?.expect || (typeof task.data.expect !== 'object') || (!task.data.expect.url && !task.data.expect.selector)) {
+        return { ok: false, verified: false, outcomeUnknown: false, error: 'BROWSER_CLICK_EXPECTATION_REQUIRED' };
+      }
+      return lawnmower.clickByName(task.data.name, task.data.expect,{missionId:mission?.id,actionId:task.id});
     case "browser-type": return lawnmower.typeInto(task.data.name, task.data.text,{missionId:mission?.id,actionId:task.id});
     case "browser-sign-in": return lawnmower.signIn({missionId:mission?.id,actionId:task.id});
     case "desktop-observe": return desktopMower.observe(task.data.hwnd);
