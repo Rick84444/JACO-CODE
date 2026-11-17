@@ -731,7 +731,10 @@ export class NovaMissionControl {
     const previousSuccess = receipts.findLastIndex(r => sameAction(r) && r.ok && r.verified);
     const repeatedFailures = receipts.slice(previousSuccess + 1).filter(r => sameAction(r) && r.ok === false && !r.outcomeUnknown).length;
     const stalled = !uncertain && !record.ok && repeatedFailures >= (BATCHABLE.has(action.type) ? 5 : 3);
-    const blocked = uncertain || stalled || failures >= (BATCHABLE.has(action.type) ? 5 : 3);
+    // Distinct known failures use the operator's contracted failure allowance.
+    // The independent repeated-action stop is unchanged and prevents replay loops.
+    const failureLimit = this.get(id).contract?.budget?.max_failures ?? (BATCHABLE.has(action.type) ? 5 : 3);
+    const blocked = uncertain || stalled || failures >= failureLimit;
     this.db.prepare('UPDATE nova_sessions SET phase=?,owner=NULL,token=NULL,lease_until=NULL,active_task_json=NULL,observation_json=?,receipts_json=?,failures=? WHERE mission_id=?')
       .run(blocked ? 'BLOCKED' : 'READY', JSON.stringify(record.after || record.observation || decode(row.observation_json)), JSON.stringify(receipts), failures, id);
     this.setStatus(id, blocked ? 'BLOCKED' : 'ACTIVE');
@@ -784,7 +787,8 @@ export class NovaMissionControl {
     const failures=error ? row.failures+1 : row.failures;
     // Budget exhaustion and missing-capability errors do not recover by retrying.
     const terminalError=/CODING_CONTRACT_\w*(BUDGET|DURATION)_EXCEEDED|UNKNOWN_TASK_TYPE|WORKER_KEY_MISSING|PLANNER_BLOCKED/.test(String(error || ''));
-    const blocked=Boolean(replanRequest) || failures>=3 || terminalError;
+    const failureLimit = this.get(id).contract?.budget?.max_failures ?? 3;
+    const blocked=Boolean(replanRequest) || failures>=failureLimit || terminalError;
     this.db.prepare("UPDATE nova_sessions SET phase=?,owner=NULL,token=NULL,lease_until=NULL,failures=? WHERE mission_id=?")
       .run(completionProposed ? 'AWAITING_VERIFICATION' : blocked ? 'BLOCKED' : 'READY', failures, id);
     if(blocked)this.setStatus(id,'BLOCKED');

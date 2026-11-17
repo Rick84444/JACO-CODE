@@ -1313,7 +1313,14 @@ const notifyPhone = async (action) => {
 
 
   app.get('/api/runtime/identity', (_req, res) => {
+    // Build-time commit evidence, never inferred from the mutable project checkout.
+    let sourceCommit: string | null = null;
+    try {
+      const manifest = JSON.parse(fs.readFileSync(path.join(process.env.JACO_RELEASE_ROOT || process.cwd(), 'release.json'), 'utf8'));
+      if (/^[a-f0-9]{40}$/.test(String(manifest.sourceCommit || ''))) sourceCommit = manifest.sourceCommit;
+    } catch {}
     res.json({
+      sourceCommit,
       success: true,
       product: 'JACO Autonomus IDE',
       version: JSON.parse(fs.readFileSync(path.join(process.env.JACO_RELEASE_ROOT || process.cwd(), 'package.json'), 'utf8')).version,
@@ -4255,7 +4262,7 @@ const notifyPhone = async (action) => {
     claimChecksRunning.add(key);
     let planner: string[] = [];
     try { const choice: any = readPlannerChoice(plannerChoiceFile(process.env)); if (choice?.provider && choice?.model) planner = [`${choice.provider}/${choice.model}`]; } catch {}
-    checkClaims(planned.payload.reason, mission.receipts || [], { exclude: planner })
+    checkClaims(planned.payload.reason, mission.receipts || [], { exclude: planner, maxJudgeMs: 15_000 })
       .catch((error: any) => ({ ok: false, error: String(error?.message || error).slice(0, 200), claims: 0, unsupportedFacts: [], contradicted: [], partial: [] }))
       .then((result: any) => {
         connectedRuntime.bus.event('NOVA_CLAIM_CHECK', { missionId: mission.id, payload: { planSeq: planned.seq, ...result } });
@@ -4323,13 +4330,20 @@ const notifyPhone = async (action) => {
   };
   setInterval(() => { void learnTick(); }, 60_000).unref?.();
 
+  // Per-mission history, not a global event window: concurrent work must not hide
+  // a completion check, previous denial, or consumed auto-resume allowance.
+  const resolutionEvents = (id: string) => connectedRuntime.bus.db.prepare(
+    "SELECT seq,ts,type,payload_json FROM events WHERE mission_id=? ORDER BY seq DESC"
+  ).all(id).map((r: any) => {
+    let payload: any = {}; try { payload = JSON.parse(r.payload_json || '{}'); } catch {}
+    return { seq: r.seq, ts: r.ts, type: r.type, payload };
+  });
   const autoApproveTick = () => {
     const { level, extraBlocked } = loadApprovalPolicy({ file: policyFilePath(WORKSPACE_ROOT) });
     try {
-      const events = connectedRuntime.bus.listEvents(1000);
       for (const base of connectedRuntime.bus.missionsAwaitingResolution()) {
         if (String(base?.status || '').toUpperCase() !== 'AWAITING_VERIFICATION') continue;
-        const { planned, check } = claimCheckFor(events.filter((e: any) => e.missionId === base.id));
+        const { planned, check } = claimCheckFor(resolutionEvents(base.id));
         if (planned && !check) { try { startClaimCheck(connectedRuntime.novaMissions.get(base.id), planned); } catch {} }
       }
     } catch (error: any) { console.warn('[claim-check] tick failed:', error?.message || error); }
@@ -4347,13 +4361,13 @@ const notifyPhone = async (action) => {
       }
     } catch (error: any) { console.warn('[auto-approve] gate tick failed:', error?.message || error); }
     try {
-      const events = connectedRuntime.bus.listEvents(1000);
       for (const base of connectedRuntime.bus.missionsAwaitingResolution()) {
         const status = String(base?.status || '').toUpperCase();
         if (!['BLOCKED', 'AWAITING_VERIFICATION'].includes(status)) continue;
         let mission: any;
         try { mission = connectedRuntime.novaMissions.get(base.id); } catch { continue; }
-        const own = events.filter((e: any) => e.missionId === mission.id);
+        if (mission.paused || connectedRuntime.novaMissions.pendingOperatorAction(mission.id)) continue;
+        const own = resolutionEvents(mission.id);
         // Auto-resumes since the operator's last own decision (events are newest first): a manual resume
         // starts a new budget window, and with it a new allowance of automatic retries.
         const resolutions = own.filter((e: any) => e.type === 'NOVA_OPERATOR_RESOLUTION');
@@ -4376,7 +4390,7 @@ const notifyPhone = async (action) => {
       }
     } catch (error: any) { console.warn('[auto-approve] tick failed:', error?.message || error); }
   };
-  setInterval(autoApproveTick, 30_000).unref?.();
+  setInterval(autoApproveTick, 5_000).unref?.();
 
   // Voice channel: the operator's own WhatsApp, linked once (JACO Lite: node start.mjs --whatsapp +46...). A mission that
   // needs the operator or has finished is reported there; the channel can only message the one number named by the operator.

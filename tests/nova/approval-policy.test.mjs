@@ -138,3 +138,17 @@ test('level 5: our own LLM API usage is outside the spend stop, real outgoing sp
   }
   assert.equal(autoApproveGate('JOB', 'Refresh the Groq API key usage report', { level: 5 }), true);
 });
+
+// The operator's standing worktree/service contract is sufficient for the
+// final verified local completion. A separate approval for running its
+// verification service would only repeat a decision already made.
+test('verified contracted local service work completes at the code autonomy level', () => {
+  const contract={execution:{autonomous:true}};
+  const m=awaiting([r('repo-write'),r('repo-service'),r('repo-test'),r('git-commit')],{contract,contractStatus:{machineVerified:true}});
+  assert.equal(autoResolution(m,{level:2})?.decision,'confirm');
+  assert.equal(autoResolution({...m,contractStatus:{machineVerified:false}},{level:5}),null);
+  assert.equal(autoResolution({...m,contract:null},{level:2}),null);
+  assert.equal(autoResolution(m,{level:0}),null);
+  assert.equal(autoResolution({...m,receipts:[r('repo-service',{outcomeUnknown:true})]},{level:5}),null);
+  assert.equal(autoResolution({...m,goal:'Buy a domain for launch'},{level:5}),null);
+});
