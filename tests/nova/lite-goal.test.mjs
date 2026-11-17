@@ -29,7 +29,7 @@ test('the contract REQUIRES the project\'s tests when there is a command, and sa
   assert.ok(withTests.acceptance.some(a => /npm test.*pass after the last change/.test(a)));
   const without = liteContract({ goal: 'Add mul', testCommand: null });
   assert.equal(without.verification.tests_required, false);
-  assert.ok(without.acceptance.some(a => /NOT verified by tests/.test(a)));
+  assert.ok(without.acceptance.some(a => /automated tests were not verified/.test(a)));
   for (const c of [withTests, without]) {
     assert.deepEqual([c.execution.allow_git_push, c.execution.allow_git_merge, c.execution.require_git_commit], [false, false, true], 'the agent can commit on its own branch, never push or merge');
     assert.equal(c.schema, 'jaco.coding-contract/v1');

@@ -59,7 +59,7 @@ export function projectNodeContract({ title, objective, mainGoal, projectRoot = 
     scope: { allowed: ['**'] },
     acceptance: readOnly
       ? [`${String(title || what).slice(0, 300)} is answered from verified read receipts`, 'No repository mutation is permitted']
-      : [`${String(title || what).slice(0, 300)} is implemented in the project and observable through a receipt`, testCommand ? `The project's tests (${testCommand}) pass after the last change` : needsNewTests ? 'Create and pass a new workspace test after the final code change' : 'No project test command is required for this ticket; report that the result is NOT verified by tests'],
+      : [`${String(title || what).slice(0, 300)} is implemented in the project and observable through a receipt`, testCommand ? `The project's tests (${testCommand}) pass after the last change` : needsNewTests ? 'Create and pass a new workspace test after the final code change' : 'No project test command is required for this ticket; report that automated tests were not verified'],
     execution: {
       autonomous: true,
       require_human_before_destructive_action: true,
