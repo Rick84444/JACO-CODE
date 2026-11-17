@@ -124,11 +124,10 @@ export function createChatGptGithubRelay({
   let polling=false;
   let lastError=null;
   let started=false;
-  const selectedTransport=env.JACO_CHATGPT_WORKPLACE_TRANSPORT||'auto';
-  // The default JACO-CODE repository is public. Never auto-enable the
-  // issue-based transport that mirrors arbitrary Workplace text into it.
-  const knownPublicRepo=String(repo).toLowerCase()==='rick84444/jaco-code';
-  const transport=selectedTransport==='auto'?(knownPublicRepo?'git-ref':token?'github-issue':'git-ref'):selectedTransport;
+  // ChatGPT Workplace relay is opt-in. A public GitHub repository must never
+  // implicitly create a background fetch/publish loop on the operator host.
+  const selectedTransport=env.JACO_CHATGPT_WORKPLACE_TRANSPORT||'off';
+  const transport=['git-ref','github-issue'].includes(selectedTransport)?selectedTransport:'off';
   const enabled=Boolean(owner&&name&&actor&&['github-issue','git-ref'].includes(transport)&&(transport==='git-ref'||token));
   const gitRef=transport==='git-ref'&&enabled?createGitRefChatGptTransport({
     repo, repoRoot:env.JACO_CHATGPT_GIT_REPO_ROOT||env.JACO_REPO_ROOT||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..'),

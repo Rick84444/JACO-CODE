@@ -1713,11 +1713,8 @@ if (A2ACOLONY_SYNC_INTERVAL_MS > 0) {
 }
 
 const shutdown = async () => {
-  if (novaReconcileTimer) clearInterval(novaReconcileTimer);
-  if (autonomyTimer) clearInterval(autonomyTimer);
   if (governorTimer) clearInterval(governorTimer);
   if (a2acolonySyncTimer) clearInterval(a2acolonySyncTimer);
-  await workplace.end?.();
   db.close();
   process.exit(0);
 };
