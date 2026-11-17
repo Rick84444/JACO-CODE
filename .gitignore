@@ -60,3 +60,6 @@ __pycache__/
 
 # Chrome profile created by the local stack for browser attachment
 /Chrome-CDP/
+
+# Lock file for the VS Code extension is not used; the package is built with --no-dependencies
+extensions/jaco-vscode/package-lock.json
