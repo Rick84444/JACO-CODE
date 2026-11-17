@@ -17,7 +17,9 @@ test('assistant and operator are primary; runtime cards and controls are collaps
   const css=read('cognitive-workspace.css');
   assert.match(chat,/data-testid="jaco-chat-diagnostics"/);
   assert.match(chat,/<details className="cognitive-chat-diagnostics"/);
-  assert.match(chat,/\.\.\.humanEvents\.background,\.\.\.humanEvents\.conversation/);
+  assert.match(chat,/blockerEvents=useMemo/);
+  assert.match(chat,/event\.category==='blocked'/);
+  assert.match(chat,/\.\.\.humanEvents\.background,\.\.\.humanEvents\.conversation\.filter/);
   assert.match(chat,/messages\.filter\(m=>m\.id!=='welcome'\)/);
   assert.doesNotMatch(chat,/\.\.\.conversationEvents\.map\(event=>\(\{kind:'event'/);
   assert.match(chat,/<ChatMarkdown text=\{message\.content\}/);
