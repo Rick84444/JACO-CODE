@@ -6,26 +6,7 @@ on:
     branches: [main]
     tags:
       - 'v*.*.*'
-    paths:
-      - 'windows/product/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'runtime/package.json'
-      - 'runtime/package-lock.json'
-      - 'runtime/gateway/package.json'
-      - 'runtime/gateway/package-lock.json'
-      - 'runtime/src/auraEngine.ts'
-      - 'runtime/src/lib/auraLegacyStatePath.mjs'
-      - 'runtime/src/server/connected/ideAccess.mjs'
-      - 'agents/lib/local-write.mjs'
-      - 'runtime/src/components/StrategyBoard.tsx'
-      - 'runtime/src/components/ReverseGoalCanvas.tsx'
-      - 'runtime/src/lib/reverseGoalLayout.mjs'
-      - 'runtime/src/server/connected/auraPlan.mjs'
-      - 'gateway/src/seer.mjs'
-      - 'gateway/src/seer-project.mjs'
-      - 'tests/nova/reverse-goal-layout.test.mjs'
-      - '.github/workflows/jaco-windows-release.yml'
+    paths: ['runtime/**', 'agents/**', 'gateway/**', 'lite/**', 'windows/product/**', 'tools/**', 'scripts/**', 'skills/**', 'public/**', 'site/**', 'extensions/**', 'package.json', 'package-lock.json', '.github/workflows/lite-release.yml', '.github/workflows/jaco-windows-release.yml']
   pull_request:
     paths:
       - 'windows/product/**'
@@ -190,6 +171,8 @@ jobs:
           if ($expectedRuntimeVersion -notmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'INSTALLED_RUNTIME_VERSION_INVALID' }
           $env:JACO_WORKSPACE_ROOT = $env:JACO_DATA_DIR
           $env:JACO_RELEASE_ROOT = Join-Path $installDir 'runtime'
+          $manifest = Get-Content (Join-Path $env:JACO_RELEASE_ROOT 'release.json') -Raw | ConvertFrom-Json
+          if ($manifest.sourceCommit -ne $env:GITHUB_SHA -or $manifest.version -ne $expectedRuntimeVersion) { throw 'INSTALLED_SOURCE_COMMIT_MISMATCH' }
           $env:JACO_GATEWAY_TOKEN = 'ci_test_operator_token_exceeding_twenty_four_chars'
           $env:JACO_MODEL_PROVIDER = 'aura'
           $env:NODE_ENV = 'production'
@@ -205,7 +188,7 @@ jobs:
               if ($core.HasExited) { break }
               try {
                 $identity = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/runtime/identity' -TimeoutSec 2
-                if ($identity.success -eq $true -and $identity.version -eq $expectedRuntimeVersion) { $healthy = $true; break }
+                if ($identity.success -eq $true -and $identity.version -eq $expectedRuntimeVersion -and $identity.sourceCommit -eq $env:GITHUB_SHA) { $healthy = $true; break }
               } catch {}
               Start-Sleep -Seconds 1
             }
@@ -236,13 +219,16 @@ jobs:
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
           $output = Join-Path (Split-Path $exe -Parent) ((Split-Path $exe -Leaf) + '.sha256')
           "$hash  $(Split-Path $exe -Leaf)" | Out-File $output -Encoding ascii
-          Write-Host "WINDOWS_INSTALLER_SHA256=$hash"
+          $receipt = @{ schema='jaco.windows-release-receipt/v1'; sourceCommit=$env:GITHUB_SHA; version=$env:JACO_VERSION; sha256=$hash; file=(Split-Path $exe -Leaf) } | ConvertTo-Json
+          $receipt | Out-File "$exe.receipt.json" -Encoding ascii
+          Write-Host "WINDOWS_INSTALLER_SHA256=$hash sourceCommit=$env:GITHUB_SHA"
       - uses: actions/upload-artifact@v4
         with:
           name: jaco-full-windows-setup
           path: |
             build/windows/output/JACO-Setup-*-win-x64.exe
             build/windows/output/JACO-Setup-*-win-x64.exe.sha256
+            build/windows/output/JACO-Setup-*-win-x64.exe.receipt.json
           if-no-files-found: error
 
   publish-github-release:
@@ -267,3 +253,4 @@ jobs:
           files: |
             release/JACO-Setup-*-win-x64.exe
             release/JACO-Setup-*-win-x64.exe.sha256
+            release/JACO-Setup-*-win-x64.exe.receipt.json

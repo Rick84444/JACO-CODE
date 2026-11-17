@@ -6,25 +6,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { projectNodeContract } from '../../../../gateway/src/seer-project.mjs';
+import { projectNodeContract, projectGoalCapabilities, PROJECT_TASKS } from '../../../../gateway/src/seer-project.mjs';
 import { detectProjectTestCommand } from '../../../../agents/lib/project-test-command.mjs';
 
-export const LITE_TASKS = ['repo-list', 'repo-read', 'repo-write', 'repo-edit', 'repo-test', 'repo-service', 'git-status', 'git-diff', 'git-commit', 'web-fetch'];
+// The same bounded project tools, including read-only MCP, are available in Lite.
+export const LITE_TASKS = [...PROJECT_TASKS];
 
 // The complete IDE and Lite modes use the same evidence-based test discovery.
 export { detectProjectTestCommand as detectTestCommand } from '../../../../agents/lib/project-test-command.mjs';
 
 export function liteContract({ goal, testCommand }) {
-  const base = projectNodeContract({ title: String(goal).slice(0, 120), objective: goal, mainGoal: goal });
-  return {
-    ...base,
-    acceptance: [
-      ...base.acceptance.slice(0, 1),
-      testCommand ? `The project's tests (${testCommand}) pass after the last change` : 'No test command was found in this project: the result is NOT verified by tests',
-    ],
-    verification: { ...base.verification, tests_required: Boolean(testCommand) || base.verification.tests_required, falsifier_required: false, independent_verification: false, receipt_required: true, commands: testCommand ? [testCommand] : [], required_stages: [] },
-    budget: { max_steps: 60, max_tool_calls: 120, max_failures: 5, max_duration_ms: 3_600_000 },
-  };
+  return projectNodeContract({
+    title: String(goal).replace(/\s+/g, ' ').slice(0, 80),
+    objective: goal, mainGoal: goal, discoveredTestCommand: testCommand,
+  });
 }
 
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true });
@@ -55,9 +50,12 @@ export function createLiteGoal({ novaMissions, projectRoot, goal, initGit = fals
   const repo = ensureGitProject(projectRoot, { initGit, run });
   if (!repo.ok) return repo;
   const testCommand = detectProjectTestCommand(projectRoot, fsImpl);
+  const contract = liteContract({ goal: text, testCommand });
+  const scope = projectGoalCapabilities(text);
   const mission = novaMissions.create({
     goal: text, source: 'lite-goal', idempotencyKey: `lite-${Date.now()}-${crypto.randomUUID()}`,
-    allowedTasks: LITE_TASKS, contract: liteContract({ goal: text, testCommand }), projectRoot,
+    allowedTasks: scope.tasks, contract, projectRoot,
   });
-  return { ok: true, mission, testCommand, testsRequired: Boolean(testCommand), initialized: Boolean(repo.initialized) };
+  return { ok: true, mission, testCommand: contract.verification.commands[0] || null,
+    testsRequired: contract.verification.tests_required, initialized: Boolean(repo.initialized) };
 }
