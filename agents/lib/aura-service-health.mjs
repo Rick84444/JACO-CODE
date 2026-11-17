@@ -17,7 +17,14 @@ function portOf(name, env) {
   return Number.isSafeInteger(n) && n > 0 && n <= 65535 ? n : DEFAULT_PORTS[name];
 }
 
+function absentLiteService(name, env) {
+  return env.JACO_LITE === '1' &&
+    ((name === 'seer' && !env.SEER_PORT && !env.SEER_URL) ||
+     (name === 'gateway' && env.JACO_ENABLE_CHATGPT_GATEWAY !== '1' && !env.JACO_GATEWAY_PORT));
+}
+
 export function serviceUnavailableLabel(name, env = {}, platform = process.platform) {
+  if (absentLiteService(name, env)) return 'NOT_SUPERVISED (LITE)';
   if (['cdpBridge','novaBridge'].includes(name) && env.JACO_AURA_LEAN === '1') return 'DISABLED (AURA_LEAN)';
   if (['chromeCdp', 'cdpBridge', 'novaBridge'].includes(name) && env.JACO_ENABLE_CDP === '0') return 'DISABLED (CDP_POLICY)';
   if (name === 'ollama' && env.JACO_ENABLE_OLLAMA === '0') return 'DISABLED (MODEL_POLICY)';
@@ -33,7 +40,8 @@ export async function readAuraServiceHealth({ env = process.env, platform = proc
   await Promise.all(Object.keys(DEFAULT_PORTS).map(async name => {
     // Avoid polling deliberately dormant Termux adapters on every board
     // refresh. DISABLED means configuration intent, not proven process exit.
-    if ((['cdpBridge','novaBridge'].includes(name) && env.JACO_AURA_LEAN === '1') ||
+    if (absentLiteService(name, env) ||
+        (['cdpBridge','novaBridge'].includes(name) && env.JACO_AURA_LEAN === '1') ||
         (['cdpBridge','novaBridge','chromeCdp'].includes(name) && env.JACO_ENABLE_CDP === '0') ||
         (name === 'ollama' && env.JACO_ENABLE_OLLAMA === '0')) {
       result[name] = serviceUnavailableLabel(name, env, platform);

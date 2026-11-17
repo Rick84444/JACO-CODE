@@ -9,7 +9,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createZip, readZip, crc32 } from '../../tools/lib/zip.mjs';
 import { buildLite, liteDependencies, secretValues, findSecrets, collectFiles, LITE_DEPENDENCIES } from '../../tools/build-lite.mjs';
-import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, liteChildEnv, writeRuntimeRecord, removeRuntimeRecord, runtimeRecordFile, agentEnv, agentCommand, openBrowser, liteWorkplaceChildEnv, liteExitCode, appendLiteLifecycle, HELP } from '../../lite/start.mjs';
+import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, liteChildEnv, writeRuntimeRecord, removeRuntimeRecord, runtimeRecordFile, agentEnv, agentCommand, openBrowser, liteWorkplaceChildEnv, liteWorkplaceRequired, liteLocalConnectionEnv, liteExitCode, appendLiteLifecycle, HELP } from '../../lite/start.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-lite-test-'));
 
@@ -104,6 +104,25 @@ test('Lite propagates its selected Node tool bin to every child without losing t
   assert.equal(win.Path, 'C:\\Node;C:\\Windows\\System32');
   assert.equal(liteChildEnv(win, 'c:\\node\\node.exe', 'win32').Path, win.Path);
   assert.equal(liteChildEnv({ PATH: '/usr/bin' }, 'node', 'linux').PATH, '/usr/bin', 'relative executable paths are ignored');
+});
+
+test('Lite defaults local work to optional Workplace, keeps explicit strict mode and never inherits a remote session', () => {
+  assert.equal(liteWorkplaceRequired({}), false);
+  assert.equal(liteWorkplaceRequired({ JACO_WORKPLACE_REQUIRED:'0' }), false);
+  assert.equal(liteWorkplaceRequired({ JACO_WORKPLACE_REQUIRED:'1' }), true);
+  const supplied = { JACO_HUB_URL:'https://example.invalid', JACO_DEVICE_KEY:'fixture', JACO_WORKPLACE_TOKEN:'fixture' };
+  const ready = liteLocalConnectionEnv({ childEnv:supplied, workplacePort:3015, workplaceReady:true });
+  assert.equal(ready.JACO_WORKPLACE_REQUIRED,'0');
+  assert.equal(ready.JACO_WORKPLACE_URL,'http://127.0.0.1:3015');
+  assert.equal(ready.JACO_WORKPLACE_PORT,'3015');
+  assert.equal(ready.JACO_WORKPLACE_SCOPE,'local');
+  assert.equal(ready.JACO_HUB_URL,'');
+  assert.equal(ready.JACO_DEVICE_KEY,'');
+  assert.equal(ready.JACO_WORKPLACE_TOKEN,'');
+  const failed = liteLocalConnectionEnv({ childEnv:{}, workplacePort:3015, workplaceReady:false });
+  assert.equal(failed.JACO_WORKPLACE_URL,'');
+  assert.equal(failed.JACO_WORKPLACE_REQUIRED,'0');
+  assert.equal(liteLocalConnectionEnv({ childEnv:{JACO_WORKPLACE_REQUIRED:'1'}, workplacePort:3015, workplaceReady:true }).JACO_WORKPLACE_REQUIRED,'1');
 });
 
 test('Lite Workplace relays from the operator project, not its packaged dist folder', () => {

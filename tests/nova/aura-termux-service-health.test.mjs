@@ -52,6 +52,29 @@ test('401, non-2xx and boolean-negative responses never masquerade as healthy', 
   assert.equal(state.seer, 'READY (200)');
 });
 
+test('Lite does not probe absent standalone SEER or gateway and uses the selected Workplace port', async () => {
+  const visited = [];
+  const state = await readAuraServiceHealth({
+    env: { JACO_LITE:'1', JACO_WORKPLACE_PORT:'3015' },
+    platform:'linux',
+    fetchImpl: async url => {
+      const port = new URL(url).port; visited.push(port);
+      if (port === '3015') return answer(200,{ok:true});
+      throw Error('not listening');
+    },
+  });
+  assert.equal(state.seer,'NOT_SUPERVISED (LITE)');
+  assert.equal(state.gateway,'NOT_SUPERVISED (LITE)');
+  assert.equal(state.workplace,'READY (200)');
+  assert.ok(!visited.includes('2997') && !visited.includes('4250') && !visited.includes('2995'));
+  const explicitlyConfigured = await readAuraServiceHealth({
+    env:{JACO_LITE:'1',SEER_PORT:'2997',JACO_ENABLE_CHATGPT_GATEWAY:'1'},
+    fetchImpl:async url => new URL(url).port === '2997' ? answer(401) : answer(503),
+  });
+  assert.equal(explicitlyConfigured.seer,'AUTH_REQUIRED (401)');
+  assert.equal(explicitlyConfigured.gateway,'UNHEALTHY (503)');
+});
+
 test('configured CDP and Ollama distinguish disabled from unreachable', () => {
   assert.equal(serviceUnavailableLabel('novaBridge', { JACO_ENABLE_CDP: '0' }, 'android'), 'DISABLED (CDP_POLICY)');
   assert.equal(serviceUnavailableLabel('chromeCdp', { JACO_ENABLE_CDP: '0' }, 'android'), 'DISABLED (CDP_POLICY)');
