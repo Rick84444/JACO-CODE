@@ -269,10 +269,15 @@ try {
   await page.setViewportSize({width:1440,height:960});
   const mission=bus.createMission({goal:'Testuppdrag: verifiera HTTP-klienten',source:'browser-test'});
   bus.event('NOVA_ACTION_STARTED',{missionId:mission.id,payload:{action:{id:'read-example',type:'repo-read',data:{path:'example.ts'}}}});
+  await page.locator('[data-event-id="mission:2"]').waitFor({state:'attached'});
+  assert.equal(await page.locator('.cognitive-chat-scroll [data-event-id="mission:2"]').count(),0,
+    'a runtime step must not occupy the human conversation');
+  await page.getByTestId('jaco-chat-diagnostics').locator('summary').first().click();
+  await page.locator('.cognitive-background-events > summary').click();
   await page.locator('[data-event-id="mission:2"]').waitFor();
   assert.equal(await page.locator('[data-event-id="mission:2"]').count(),1);
   await page.locator('[data-mission-id]').waitFor({state:'attached',timeout:10000});
-  passed('A real SSE event is inserted exactly once in the conversation with its mission');
+  passed('A real SSE event is accessible exactly once in diagnostics while chat remains readable');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'read-example',type:'repo-read',ok:true,verified:false,result:{path:'example.ts'}}});
   // Evidence outcome is the contract; its translated label depends on the
   // current UI language and must never be mistaken for verified success.
