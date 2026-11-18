@@ -1,0 +1,12 @@
+# Replace the face-only mask with a rigged upper-body lightform
+
+## Problem and acceptance
+The merged 7,200-point renderer projects MediaPipe's face-only surface. It cannot produce scalp/hair, neck, shoulders or expression deformation. Operator rejected the mask. A new painted portrait or synthetic neck/hair appended to a face-only mesh would not satisfy acceptance.
+
+Use a genuinely rigged human GLB, verified skeletal nodes and facial morph targets; render emissive particles attached to the deforming geometry, with visible hair and upper torso in the camera frame. Existing single Aura runtime, chat, dialog, speech controls and mission continuity remain authoritative. No separate agent and no camera or microphone permission change. No claim of actual lip synchronization until timed visemes exist. Idle blinks, gaze/head/shoulder motion and jaw expressions must alter geometry and respect reduced motion. Real screenshots and operator acceptance precede a default replacement.
+
+## Reuse candidates and asset provenance
+TalkingHead upstream revision 1563de184c19b310de4b636664d5835e2c74dbba, avatars/mpfb.glb (36,815,920 bytes, Git blob cd2ebbe1fe8bcbf3d5b2dfbf1262a7f76814e68f) is explicitly CC0 per the upstream README. The Ready Player Me brunette and other sample avatars have non-commercial restrictions and are excluded. Verify the MPFB model's actual hair, anatomical framing, skeletal and morph data before selecting it; do not infer appearance solely from licensing. Three.js 0.186.1 is MIT and its pinned integrity was verified by dependency experiment 44304424541. If the model is not suitable, evaluate another commercially redistributable rigged model (MakeHuman/MPFB). Use actual geometry and morph targets, not a simulated face.
+
+## Experiment
+Acquire the exact immutable model at build/research time, verify byte length and Git blob hash, inspect GLB JSON for named meshes, skin/joints, morph names and compression extensions, emit a reproducible manifest and source asset as an Actions artifact. This research workflow does not change the running production UI or add an external asset download to startup. Use the inspected artifact to implement a locally bundled rig/particle renderer; avoid a runtime CDN dependency. Real device resource and visual acceptance are distinct from the format audit. Current repository main 39bd0f2 remains unaffected until implementation and verification.

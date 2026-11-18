@@ -1,0 +1,26 @@
+name: Aura rigged model evidence
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aura-rigged-model.yml'
+      - 'runtime/scripts/inspect-aura-rig.mjs'
+      - 'openspec/changes/add-interactive-avatar/rigged-model-evaluation.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify exact CC0 model and inspect real skeleton and morphs
+        run: node runtime/scripts/inspect-aura-rig.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aura-verified-rig
+          path: aura-rig-evidence/
+          retention-days: 7
