@@ -22,7 +22,7 @@ export function commercialTaskAllowed(task) {
   const name = raw.startsWith(server + '.') ? raw.slice(server.length + 1) : raw;
   if (task.type === 'mcp-write') return server === 'agentgigs' && name === 'apply';
   return (server === 'jobbi' && name === 'list_gigs') ||
-    (server === 'agentgigs' && ['list_available','job_status','list_attempted'].includes(name));
+    (server === 'agentgigs' && ['list_available','job_status','list_attempted','list_applications'].includes(name));
 }
 export function seedCommercialKnowledge(knowledge) {
   const id = 'commercial-opportunity-policy-v1';
@@ -57,7 +57,8 @@ export function reconcileCommercialClock({mandates,operator,bus,nova,knowledge,c
   seedCommercialKnowledge(knowledge);
   const allowedTasks=COMMERCIAL_TASKS.filter(t=>t!=='mcp-write' || m.decisions?.EXTERNAL_MUTATION==='ALLOW').filter(t=>!capabilities || capabilities.isTaskEnabled(t));
   if(!allowedTasks.includes('mcp-call') || !allowedTasks.includes('skill-load')) return {state:'REQUIRED_TOOLS_DISABLED'};
-  const goal='Skill '+COMMERCIAL_SKILL+': run one bounded evidence-led revenue opportunity cycle before the signed clock expires. Find or reconcile paid AI-agent work, no outgoing spend, do not accept new legal terms or binding financial obligations without operator review. Review previous attempts before discovery. Read-only work can continue when marketplace credentials are missing. Record observations, IDs, blockers and next action, never invented earnings. Clock '+m.id+' cycle '+slot+'.';
+  const recall=knowledge.list({kind:'commercial-outcome',limit:1000}).sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt)).slice(0,5).map(k=>({missionId:k.implementation?.missionId,status:k.implementation?.status,applications:k.implementation?.applications||[],verifiedReceipts:k.metrics?.verifiedReceipts||0}));
+  const goal='Skill '+COMMERCIAL_SKILL+': run one bounded evidence-led revenue opportunity cycle before the signed clock expires. Find or reconcile paid AI-agent work, no outgoing spend, do not accept new legal terms or binding financial obligations without operator review. Review previous attempts before discovery. Read-only work can continue when marketplace credentials are missing. Record observations, IDs, blockers and next action, never invented earnings. Clock '+m.id+' cycle '+slot+'. Prior observations (unverified, recheck live): '+JSON.stringify(recall).slice(0,3000);
   const result=nova.create({goal,source:COMMERCIAL_SOURCE,mandateId:m.id,idempotencyKey:'commercial-clock:'+m.id+':'+slot,allowedTasks});
   if(result.source!==COMMERCIAL_SOURCE || result.metadata?.mandateId!==m.id) return {state:'DEDUPLICATED_OTHER_WORK',missionId:result.id};
   return {state:'QUEUED',missionId:result.id,mandateId:m.id};
@@ -67,9 +68,14 @@ export function archiveCommercialOutcome({mission,nova,knowledge}) {
   const id='commercial-outcome-'+mission.id;
   try { knowledge.get(id); return null; } catch(e){if(!String(e.message).includes('not found')) throw e;}
   const receipts=nova.evidenceReceipts(mission.id);
+  const applications=[];
+  const idPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  for(const r of receipts){if(r.ok!==true||r.verified!==true||r.truncated||r.server!=='agentgigs'||!['job_status','list_applications','apply'].includes(String(r.tool).replace(/^agentgigs\./,'')))continue;
+    try{const x=JSON.parse(r.output);const rows=Array.isArray(x.applications)?x.applications:[{job_id:x.job_id||x.job?.id,status:x.application?.status,proposed_price:x.application?.proposed_price,job_status:x.job?.status}];for(const row of rows){if(!idPattern.test(row?.job_id||''))continue;const status=['pending','accepted','funded','rejected'].includes(row.status)?row.status:'unknown';applications.push({job_id:row.job_id,status,proposed_price:Number.isSafeInteger(row.proposed_price)?row.proposed_price:null});}}catch{/* transport receipt is not proof of a marketplace observation */}
+  }
   return knowledge.put({id,kind:'commercial-outcome',purpose:'Observed commercial mission outcome '+mission.status,
     confidence:0,verificationStatus:'UNVERIFIED',reusable:false,usedIn:[mission.id],
     reasoningSummary:'Mission state and receipt counts only; settlement requires independent provider evidence.',
     metrics:{receipts:receipts.length,verifiedReceipts:receipts.filter(r=>r.ok===true&&r.verified===true).length},
-    implementation:{missionId:mission.id,status:mission.status,receiptIds:receipts.map(r=>String(r.actionId)).slice(-100)}},'commercial-outcome');
+    implementation:{missionId:mission.id,status:mission.status,applications:applications.slice(-20),receiptIds:receipts.map(r=>String(r.actionId)).slice(-100)}},'commercial-outcome');
 }

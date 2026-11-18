@@ -47,3 +47,8 @@ test('durable attempt IDs survive adapter restart, including ambiguous writes',a
  const reopened=createAgentGigs({stateDir:dir,env:{},fetchImpl:async()=>{throw Error('network should not be called');}});
  assert.deepEqual(await reopened.call('list_attempted'),{job_ids:[job],truncated:false});assert.equal(calls,1);
 });
+
+test('own application history is read-only and strips third-party data',async()=>{
+ const c=createAgentGigs({env:{JACO_AGENTGIGS_API_KEY:'age_test'},fetchImpl:async(url,opt)=>{assert.ok(url.endsWith('/api/agent/applications?limit=50'));assert.equal(opt.method,'GET');return json({applications:[{job_id:job,status:'funded',proposed_price:1000,job:{status:'assigned',description:'private',download_url:'private'}}],counts:{total:1}});}});
+ assert.deepEqual(await c.call('list_applications'),{applications:[{job_id:job,status:'funded',proposed_price:1000,job_status:'assigned'}],count:1,truncated:false});
+});

@@ -69,5 +69,5 @@ test('out-of-scope tools rejected in real Nova begin; no fabricated revenue in o
   assert.equal(item.verificationStatus,'UNVERIFIED');assert.equal(item.metrics.verifiedReceipts,1);
   assert.equal(archiveCommercialOutcome({mission,nova:s.nova,knowledge:s.knowledge}),null);
   assert.equal(s.tick().state,'COOLDOWN');
-  s.advance(3600000+1);assert.equal(s.tick().state,'QUEUED');
+  s.advance(3600000+Math.max(0,Date.parse(mission.createdAt)-Date.parse(s.m.signedAt))+1);assert.equal(s.tick().state,'QUEUED');
 });
