@@ -73,7 +73,11 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const lastRead = useRef(latestReply?.id);
   const active = tone === 'active' || speaking;
   const activity = useRef(0);
-  activity.current = active ? 1 : listening ? .55 : 0;
+  const renderStill = useRef<()=>void>(()=>{});
+  useEffect(()=>{
+    activity.current=active ? 1 : listening ? .55 : 0;
+    renderStill.current();
+  },[active,listening]);
   const locale = language === 'sv' ? 'sv-SE' : 'en-US';
   const speechWindow = window as Window & {
     SpeechRecognition?: new () => Dictation;
@@ -281,15 +285,17 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       render(motion.matches?0:performance.now());
       if(!motion.matches)frame=requestAnimationFrame(tick);
     };
+    renderStill.current=()=>{if(motion.matches&&!document.hidden)render(0);};
     refresh();
     motion.addEventListener('change',refresh);
     document.addEventListener('visibilitychange',refresh);
     return()=>{
+      renderStill.current=()=>{};
       cancelAnimationFrame(frame);
       motion.removeEventListener('change',refresh);
       document.removeEventListener('visibilitychange',refresh);
     };
-  },[lightMask,active,listening]);
+  },[lightMask]);
 
   return <dialog ref={dialog} className="aura-portrait" aria-labelledby="aura-portrait-title"
     onCancel={event => { event.preventDefault(); onClose(); }}>
