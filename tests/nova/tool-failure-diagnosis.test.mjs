@@ -20,7 +20,8 @@ test('failures are classified by what can be done about them', () => {
   assert.equal(kind('MCP_SERVER_SPAWN_FAILED:gitx:ENOENT'), 'COMMAND_MISSING');
   assert.equal(kind('listen EADDRINUSE: address already in use 127.0.0.1:5000'), 'PORT_CONFLICT');
   assert.equal(kind('fetch failed ECONNREFUSED 127.0.0.1:2995'), 'LOCAL_SERVICE_DOWN');
-  assert.equal(kind('Cannot find module ./x.mjs'), 'PROJECT_ENVIRONMENT');
+  assert.equal(kind("Cannot find module './x.mjs'"), 'CODE_ERROR');
+  assert.equal(kind("Cannot find module 'express'"), 'PROJECT_ENVIRONMENT');
   assert.equal(kind('HTTP 401 UNAUTHORIZED'), 'NEEDS_OPERATOR');
   assert.equal(kind('something odd'), 'UNKNOWN');
   assert.equal(classifyToolFailure('MCP_SERVER_STOPPED:git').server, 'git');

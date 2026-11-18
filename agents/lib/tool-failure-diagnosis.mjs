@@ -23,6 +23,7 @@ export function classifyToolFailure(error, task = null) {
   if (/WRITE_COMMAND_IN_READ_MODE/i.test(text)) return {kind:'WRONG_TOOL_MODE',server,restart:false,ensureStack:false};
   if (/SHELL_SYNTAX_NOT_SUPPORTED|COMMAND_QUOTE_NOT_CLOSED|ARGUMENTS_INVALID|COMMAND_NAME_INVALID|unrecognized arguments|unknown option|invalid option/i.test(text)) return {kind:'COMMAND_SYNTAX',server,restart:false,ensureStack:false};
   if (/PROGRAM_NOT_ALLOWED|PROTECTED_PATH|PATH_OUTSIDE_WORKSPACE|CWD_OUTSIDE_WORKSPACE|DESTRUCTIVE_NOT_ENABLED|GIT_PUSH_NOT_ENABLED/i.test(text)) return {kind:'NEEDS_OPERATOR',server,restart:false,ensureStack:false};
+  if (/Cannot find module ['\"](?:\.{1,2}[\\/]|[A-Za-z]:[\\/]|\/)/i.test(text)) return {kind:'CODE_ERROR',server,restart:false,ensureStack:false};
   if (/ModuleNotFoundError|No module named|ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND|Cannot find module|externally.managed.environment|EBADENGINE|unsupported engine/i.test(text)) return {kind:'PROJECT_ENVIRONMENT',server,restart:false,ensureStack:false};
   // ENOENT means a missing command only when a process was being spawned; reading a missing file is a path problem.
   if (/MCP_SERVER_SPAWN_FAILED|spawn\s+\S+\s+ENOENT|not recognized as an internal|command not found/i.test(text)) return { kind: 'COMMAND_MISSING', server, restart: false, ensureStack: false };

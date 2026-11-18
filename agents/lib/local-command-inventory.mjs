@@ -71,7 +71,7 @@ export function commandRecipe(name,available=[],platform=process.platform){
   const r=recipeMap.get(name);
   if(!r)return null;
   const alternatives=r.alternatives.filter(n=>n!==name&&available.includes(n));
-  return {...r,alternatives,platform,examplesAreTemplates:true};
+  return {...r,alternatives,platform,examplesAreTemplates:true, note:'Read/write describe intended effects, not MCP access mode. Interpreter invocations can require shell_run even for inspection.'};
 }
 export function shellHostGuidance(platform=process.platform){
   if(platform==='win32')return 'Host is Windows. Native mission shell uses cmd.exe; PowerShell is a separate interpreter. Use explicit argv for MCP shell_run, not nested shell quoting. Prefer pwsh/powershell only if observed. Use repo-list/repo-read for portable file operations.';
@@ -98,6 +98,18 @@ function logicalName(name,platform){
 }
 function executable(file,platform,api){
   try {return api.statSync(file).isFile()&&(platform==='win32'||(api.accessSync(file,fs.constants.X_OK),true));} catch{return false;}
+}
+// Internal lookup only: never expose resolved paths in a planner inventory.
+export function findLocalExecutable(name,{env=process.env,platform=process.platform,api=fs}={}){
+  if(typeof name!=='string'||!NAME.test(name))return null;
+  const pp=platformPath(platform);
+  // Direct spawn supports native executables on Windows, not .bat/.cmd wrappers.
+  const suffixes=platform==='win32'?['.exe','.com']:[''];
+  for(const dir of directories(env,platform))for(const suffix of suffixes){
+    const candidate=pp.join(dir,name+suffix);
+    if(executable(candidate,platform,api))return candidate;
+  }
+  return null;
 }
 export function discoverLocalCommands({env=process.env,platform=process.platform,execPath=process.execPath,api=fs,query='',limit=120}={}){
   const pp=platformPath(platform),dirs=directories(env,platform);

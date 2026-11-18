@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { operatorApprovalCheck } from './operator-action-guard.mjs';
-import { discoverLocalCommands } from './local-command-inventory.mjs';
+import { discoverLocalCommands, findLocalExecutable } from './local-command-inventory.mjs';
 
 export const LIMITS = { timeoutMs: 30_000, maxTimeoutMs: 300_000, outputBytes: 64 * 1024, concurrent: 4, argCount: 64, argLength: 4096 };
 export const PROTECTED_READ = /(^|[\\/])\.env(\.[^\\/]*)?([\\/]|$)|secret|credential/i;
@@ -207,15 +207,21 @@ export function commandEnv(env = process.env) {
   return { ...filtered, GIT_TERMINAL_PROMPT: '0', CI: '1', NO_COLOR: '1' };
 }
 // npm is a .cmd file on Windows and cannot be started without a shell: run its own script through node instead.
-export function resolveProgram(command, platform = process.platform, execPath = process.execPath, exists = fs.existsSync) {
+export function resolveProgram(command, platform = process.platform, execPath = process.execPath, exists = fs.existsSync, env = process.env) {
   if (command === 'npm' && platform === 'win32') {
     const cli = path.join(path.dirname(execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
     if (exists(cli)) return { cmd: execPath, prefix: [cli] };
   }
   if (command === 'node') return { cmd: execPath, prefix: [] };
-  if (command === 'python3' && platform === 'win32') return { cmd: 'python', prefix: [] };
-  if (command === 'python' && platform !== 'win32') return { cmd: 'python3', prefix: [] };
-  if (command === 'powershell' && platform !== 'win32') return { cmd: 'pwsh', prefix: [] };
+  // Prefer the requested executable when installed. Fall back only to an
+  // observed equivalent interpreter, not an assumed platform alias.
+  const aliases={python:['python3'],python3:['python'],powershell:['pwsh'],pwsh:['powershell']};
+  if(Object.hasOwn(aliases,command)){
+    for(const candidate of [command,...aliases[command]]){
+      const resolved=findLocalExecutable(candidate,{env,platform});
+      if(resolved)return {cmd:resolved,prefix:[]};
+    }
+  }
   return { cmd: command, prefix: [] };
 }
 
@@ -232,7 +238,7 @@ export class SafeShell {
   }
   info({query='',limit=120}={}) {
     const local=discoverLocalCommands({env:this.env,platform:this.platform,query,limit});
-    local.capabilities=local.capabilities.map(tool=>({ ...tool, route: Object.hasOwn(PROGRAMS,tool.name) && (!INTERPRETER_NAMES.has(tool.name)||interpretersAllowed(this.env)) ? 'shell_read or shell_run according to command policy' : 'authorized mission shell (not a SafeShell allowlist command)' }));
+    local.capabilities=local.capabilities.map(tool=>({ ...tool, route: INTERPRETER_NAMES.has(tool.name)&&!interpretersAllowed(this.env) ? 'interpreter disabled by operator; do not bypass' : Object.hasOwn(PROGRAMS,tool.name) ? 'shell_read or shell_run according to command policy' : 'authorized mission shell only if permitted (not a SafeShell allowlist command)' }));
     return { workspace: this.workspace, platform: this.platform, shell: 'none (argv only, no interpretation)', programs: Object.keys(PROGRAMS), local, limits: { ...LIMITS },
       destructiveEnabled: this.env.JACO_SHELL_ALLOW_DESTRUCTIVE === '1', pushEnabled: this.env.JACO_SHELL_ALLOW_PUSH === '1',
       interpretersEnabled: interpretersAllowed(this.env),
@@ -250,7 +256,7 @@ export class SafeShell {
     if (!verdict.ok) return refused(verdict.reason);
     if (running >= LIMITS.concurrent) return refused('TOO_MANY_COMMANDS_RUNNING');
     const timeoutMs = Math.min(LIMITS.maxTimeoutMs, Math.max(1000, (Number(timeoutSeconds) || LIMITS.timeoutMs / 1000) * 1000));
-    const program = resolveProgram(command, this.platform);
+    const program = resolveProgram(command, this.platform, process.execPath, fs.existsSync, this.env);
     running++;
     try {
       return await new Promise(resolve => {

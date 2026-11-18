@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {discoverLocalCommands,localCommandHint,commandRecipe,shellHostGuidance} from '../../agents/lib/local-command-inventory.mjs';
-import {SafeShell,classify} from '../../agents/lib/safe-shell.mjs';
+import {SafeShell,classify,resolveProgram} from '../../agents/lib/safe-shell.mjs';
 
 test('actual local inventory discovers executable fixtures, not files without execute permission or relative PATH', {skip:process.platform==='win32'},t=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'aura-path-'));
@@ -46,4 +46,19 @@ test('recipes distinguish host syntax, prerequisites, evidence and installed alt
   assert.match(shellHostGuidance('linux'),/Pixel Debian is Linux/);
   assert.match(shellHostGuidance('win32'),/cmd.exe/);
   assert.deepEqual(commandRecipe('pwsh',['pwsh','python3'],'win32').read,['-NoProfile','-Command','Get-Location']);
+});
+
+test('interpreter resolution respects the real PATH rather than an assumed alias',{skip:process.platform==='win32'},t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'aura-interpreter-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const python=path.join(dir,'python'),pwsh=path.join(dir,'pwsh');
+  fs.writeFileSync(python,'#!/bin/sh\nexit 0\n',{mode:0o700});
+  fs.writeFileSync(pwsh,'#!/bin/sh\nexit 0\n',{mode:0o700});
+  const env={PATH:dir};
+  assert.equal(resolveProgram('python','linux',process.execPath,fs.existsSync,env).cmd,python);
+  assert.equal(resolveProgram('python3','linux',process.execPath,fs.existsSync,env).cmd,python);
+  assert.equal(resolveProgram('powershell','linux',process.execPath,fs.existsSync,env).cmd,pwsh);
+  assert.equal(resolveProgram('powershell','linux',process.execPath,fs.existsSync,{PATH:''}).cmd,'powershell');
+  const info=new SafeShell({workspace:dir,env:{...env,JACO_SHELL_INTERPRETERS:'0'},auditFile:false}).info({query:'pwsh'});
+  assert.match(info.local.capabilities[0].route,/disabled by operator/);
 });
