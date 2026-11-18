@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {selectFrontier} from '../../gateway/src/cognitive-selection.mjs';
+const row = (id,a,b,cost=1,contractPassed=true)=>({id,cost,contractPassed,scores:{a,b}});
+const cases=['a','b'];
+test('dominated candidates removed',()=>assert.deepEqual(selectFrontier([row('x',1,1),row('y',0,1)],cases),['x']));
+test('tradeoffs retained',()=>assert.deepEqual(selectFrontier([row('x',1,0),row('y',0,1)],cases),['x','y']));
+test('cost matters',()=>assert.deepEqual(selectFrontier([row('x',1,1,2),row('y',1,1,1)],cases),['y']));
+test('failed contracts excluded',()=>assert.deepEqual(selectFrontier([row('x',1,1,1,false),row('y',0,0)],cases),['y']));
+test('incomplete and nonfinite evidence rejected',()=>{assert.throws(()=>selectFrontier([row('x',1,NaN)],cases),/INVALID_EVIDENCE/);assert.throws(()=>selectFrontier([{...row('x',1,1),scores:{a:1}}],cases),/INVALID_EVIDENCE/)});
+test('duplicate ids and cases rejected',()=>{assert.throws(()=>selectFrontier([row('x',1,1),row('x',1,1)],cases),/INVALID_CANDIDATES/);assert.throws(()=>selectFrontier([],['a','a']),/INVALID_CASES/)});
