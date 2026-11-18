@@ -683,6 +683,8 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     } finally {setBusy(null);}
   };
   const submit=()=>{
+    // External form submitters (including the portrait) obey the same guards as the primary send button.
+    if (!input.trim() || !storageReady || uploading || chatControlBusy || (busy && !parseAuraMissionCommand(input))) return;
     // Build Agent is a local UI action in every mode, never a model directive or a mission.
     if(/^\/?build agent$/i.test(input.trim())) {
       setShowBuildAgent(true);setShowModePicker(false);setInput('');
