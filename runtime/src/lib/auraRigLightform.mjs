@@ -119,7 +119,7 @@ void main(){
   vColor=mix(vColor,pureDiamond,rim*.65);
   if(aKind<.5){strength*=.55;}
   if(aKind>1.5&&aKind<2.5){vColor=mix(deepBiolum,pureDiamond,.45+aSeed*.50);strength*=.30;}
-  if(aKind>.5&&aKind<1.5){vColor=mix(deepBiolum,pureDiamond,.55+aSeed*.45);strength*=.80;}
+  if(aKind>.5&&aKind<1.5){vColor=mix(deepBiolum,pureDiamond,.55+aSeed*.45);strength*=1.15;}
   if(aKind>2.5){vColor=pureDiamond;strength*=.52;}
   vAlpha=clamp(strength*pulse*fade*(1.08+.38*uEnergy),0.0,.96);
   gl_PointSize=clamp(aSize*uPixelRatio*(2.05+.46*uEnergy)*(0.85+0.25*dof)/max(.82,-mv.z),.70,4.5*uPixelRatio);
@@ -567,7 +567,9 @@ function createLightBody(scene,model,bones,groups,isMobile){
   baseSkin=mix(baseSkin,highlightIce,pow(max(0.0,keyWrap),2.2)*0.48+topLight*0.18+broadSpec);
   baseSkin+=diamondWhite*sharpSpec;
   baseSkin+=activeCyan*underBounce*0.14;
-  baseSkin+=highlightIce*veinPattern*(0.24+0.16*uEnergy+lowMask*0.28);
+  baseSkin+=highlightIce*veinPattern*(0.24+0.16*uEnergy+lowMask*0.62);
+  float bodyNet=pow(max(0.0,1.0-abs(auraGyroid(vAuraLocalPos*34.0+vec3(0.0,uTime*0.2,0.0)))),9.0);
+  baseSkin=mix(baseSkin,baseSkin*0.55,lowMask*0.55)+vec3(.55,.82,1.0)*bodyNet*lowMask*0.55;
   baseSkin+=vec3(.55,.80,1.0)*lowMask*(0.10+0.10*sin(vAuraWorldPos.y*38.0-uTime*1.6))*(0.5+0.5*uEnergy);
 
   float lidZone=smoothstep(1.650,1.660,vAuraWorldPos.y)*(1.0-smoothstep(1.672,1.684,vAuraWorldPos.y))
@@ -672,7 +674,7 @@ function createLightBody(scene,model,bones,groups,isMobile){
   float catch2=pow(max(0.0,dot(n,normalize(vec3(-0.35,-0.22,0.91)))),48.0)*0.45;
   vec3 sclera=vec3(.86,.92,1.0)*0.92;
   float crypts=.5+.5*sin(angle*11.0+radial*38.0);
-  vec3 irisColor=mix(vec3(.06,.26,.78),vec3(.42,.72,1.0),fibers*.75+crypts*.25)*(1.0+0.25*uEnergy);
+  vec3 irisColor=mix(vec3(.05,.42,.95),vec3(.55,.95,1.0),fibers*.75+crypts*.25)*(1.1+0.3*uEnergy);
   irisColor=mix(irisColor,vec3(.70,.86,1.0),smoothstep(uPupil+0.02,uPupil+0.10,radial)*(1.0-smoothstep(uPupil+0.10,uPupil+0.18,radial))*.35);
   vec3 col=sclera*(1.0-irisMask)+irisColor*irisMask+vec3(.02,.08,.30)*limbalRing*0.9;
   col=mix(col,vec3(.02,.04,.12),pupilCore*0.92);
@@ -806,6 +808,14 @@ void main(){${SWAY}
     }
     vbase+=points.length*2;
   };
+  const HAIRLINE=isMobile?36:64,hlRand=seeded(3301);
+  for(let k=0;k<HAIRLINE;k++){
+    const side=k%2?1:-1,seed=hlRand(),r=1.06+hlRand()*.035,w0=.012+hlRand()*.008;
+    const th0=.58+hlRand()*.18,th1=.90+hlRand()*.25,ph0=side*(.02+hlRand()*.30),ph1=side*(2.2+hlRand()*.5);
+    const pts=[];pts.seed=seed;
+    for(let i=0;i<LSTEPS;i++){const t=i/(LSTEPS-1),e=t*t*(3-2*t),ph=ph0+(ph1-ph0)*e;const p=scalp(th0+(th1-th0)*e,ph,r);p.sub(restPos);pts.push({p,ph,t:t*.6});}
+    pushLock(pts,w0);
+  }
   const COVER=isMobile?44:80,FRONT=0;
   for(let k=0;k<COVER+FRONT;k++){
     const side=k%2?1:-1,front=k>=COVER,seed=wigRand();
@@ -893,17 +903,21 @@ void main(){
   const crown=sprite(.20,.32,0xcfe6ff);crown.position.set(C.x,top+.055,C.z).sub(restPos);
   hair.add(halo,hairLocks,lines,sparks,crown);scene.add(hair);
 
-  const eyeCore=[sprite(.006,.30,0xeaf6ff),sprite(.006,.30,0xeaf6ff)];
-  const eyeHalo=[sprite(.026,.14,0x7fb8ff),sprite(.026,.14,0x7fb8ff)];
+  const eyeCore=[sprite(.008,.60,0xb8f6ff),sprite(.008,.60,0xb8f6ff)];
+  const eyeHalo=[sprite(.032,.34,0x45d6ff),sprite(.032,.34,0x45d6ff)];
   scene.add(...eyeCore,...eyeHalo);
   // A soft veil of light over neck, shoulders and chest binds head, hair and body into one glowing form.
-  const veilChest=sprite(.60,.12,0x6fb6ff),veilNeck=sprite(.34,.10,0xb8dcff);
-  veilChest.position.set(0,1.34,.18);veilNeck.position.set(0,1.46,.14);
-  scene.add(veilChest,veilNeck);
+  const veilChest=sprite(.82,.30,0x7cc4ff),veilNeck=sprite(.36,.14,0xb8dcff),chestCore=sprite(.26,.40,0xeaf6ff);
+  veilChest.position.set(0,1.32,.18);veilNeck.position.set(0,1.46,.14);chestCore.position.set(0,1.34,.20);
+  scene.add(veilChest,veilNeck,chestCore);
   const orbitPts=[];for(let i=0;i<96;i++){const a=i/96*Math.PI*2;orbitPts.push(new THREE.Vector3(Math.cos(a)*.31,1.33+Math.sin(a)*.11,.02+Math.sin(a)*.24));}
-  const orbitGeo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(orbitPts,true),240,.0022,6,true);
+  const orbitCurve=new THREE.CatmullRomCurve3(orbitPts,true);
+  const orbitGeo=new THREE.TubeGeometry(orbitCurve,240,.0036,6,true);
+  const orbitGlowGeo=new THREE.TubeGeometry(orbitCurve,240,.012,8,true);
   const orbitMat=new THREE.MeshBasicMaterial({color:0x7cc8ff,transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthWrite:false});
-  const orbit=new THREE.Mesh(orbitGeo,orbitMat);orbit.rotation.z=-.10;orbit.renderOrder=4;scene.add(orbit);owned.push(orbitGeo,orbitMat);
+  const orbit=new THREE.Mesh(orbitGeo,orbitMat);orbit.rotation.z=-.10;orbit.renderOrder=4;
+  const orbitGlowMat=new THREE.MeshBasicMaterial({color:0x3f9dff,transparent:true,opacity:.16,blending:THREE.AdditiveBlending,depthWrite:false});
+  orbit.add(new THREE.Mesh(orbitGlowGeo,orbitGlowMat));scene.add(orbit);owned.push(orbitGeo,orbitMat,orbitGlowGeo,orbitGlowMat);
 
   const starCount=isMobile?180:340;
   const starPos=[],starTw=[],stars=seeded(4242);
@@ -944,7 +958,7 @@ void main(){
       else{hairQuat.slerp(hq,0.14);}
       hair.position.copy(hp);hair.quaternion.copy(hairQuat).multiply(restInv);
       crown.material.opacity=0;
-      veilChest.material.opacity=.11+.04*Math.sin(t*.9)+.06*energyValue;veilNeck.material.opacity=.09+.03*Math.sin(t*1.3+1.0)+.05*energyValue;orbitMat.opacity=.70+.15*Math.sin(t*1.2)+.10*energyValue;
+      veilChest.material.opacity=.28+.06*Math.sin(t*.9)+.08*energyValue;chestCore.material.opacity=.36+.10*Math.sin(t*1.4)+.10*energyValue;veilNeck.material.opacity=.09+.03*Math.sin(t*1.3+1.0)+.05*energyValue;orbitMat.opacity=.70+.15*Math.sin(t*1.2)+.10*energyValue;
       halo.material.opacity=.28+.15*energyValue+.04*Math.sin(t*1.2);
 
       sums[0].set(0,0,0);sums[1].set(0,0,0);counts[0]=counts[1]=0;
@@ -955,11 +969,11 @@ void main(){
         if(!counts[s])continue;
         sums[s].divideScalar(counts[s]).z+=.012;
         eyeCore[s].position.copy(sums[s]);eyeHalo[s].position.copy(sums[s]);
-        eyeCore[s].material.opacity=.30*open;
-        eyeHalo[s].material.opacity=(.12+.10*energyValue)*open;
+        eyeCore[s].material.opacity=.60*open;
+        eyeHalo[s].material.opacity=(.30+.14*energyValue)*open;
       }
     },
-    dispose(){scene.remove(hair,starField,auraBackdrop,veilChest,veilNeck,orbit,...eyeCore,...eyeHalo);owned.forEach(o=>o.dispose());}
+    dispose(){scene.remove(hair,starField,auraBackdrop,veilChest,veilNeck,chestCore,orbit,...eyeCore,...eyeHalo);owned.forEach(o=>o.dispose());}
   };
 }
 
