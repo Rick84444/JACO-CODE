@@ -14,3 +14,6 @@ References:
 - https://design-science-research.de/en/publication/peffers-2007/
 - https://doi.org/10.1007/s10664-020-09818-7
 Environment limitation: local GitHub DNS resolution failed; Node 22 is below repository's stated Node 24 baseline. Full product build and target-device results remain unobserved.
+
+## Bounded replay experiment
+Node 22.16.0: node --test presentation.test.mjs — 6 passed, 0 failed. Source and tests committed separately. Further counterexample executed: advancePresentation(advancePresentation(null,['a','b','c'],true,2),['a','b','c'],true,2) returns fresh ['a']. An evicted ID can be replayed. This falsifies unrestricted exactly-once presentation with a finite ID set. Do not wire this experimental cursor to automatic audio/popup. Production requires a stable stream epoch and monotonic sequence/cursor, or an explicit bounded replay guarantee verified against the existing transport. Silent reconnect intentionally suppresses events delivered during disconnect; they must remain available in existing chat/approval surfaces. No claim of durable delivery or exactly-once mission execution.
