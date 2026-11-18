@@ -232,10 +232,11 @@ export class SafeShell {
   }
   info({query='',limit=120}={}) {
     const local=discoverLocalCommands({env:this.env,platform:this.platform,query,limit});
+    local.capabilities=local.capabilities.map(tool=>({ ...tool, route: Object.hasOwn(PROGRAMS,tool.name) && (!INTERPRETER_NAMES.has(tool.name)||interpretersAllowed(this.env)) ? 'shell_read or shell_run according to command policy' : 'authorized mission shell (not a SafeShell allowlist command)' }));
     return { workspace: this.workspace, platform: this.platform, shell: 'none (argv only, no interpretation)', programs: Object.keys(PROGRAMS), local, limits: { ...LIMITS },
       destructiveEnabled: this.env.JACO_SHELL_ALLOW_DESTRUCTIVE === '1', pushEnabled: this.env.JACO_SHELL_ALLOW_PUSH === '1',
       interpretersEnabled: interpretersAllowed(this.env),
-      note: 'programs is the bounded shell policy list; local.programs is actual PATH discovery, not a grant to execute every binary. Use shell_run for permitted writes or the authorized mission shell for other commands. npm: test, run, ci, ls, install without packages.' };
+      note: 'programs is the bounded shell policy list; local.programs is actual PATH discovery; local.capabilities describes intended uses and routes, not verified execution or a grant to execute every binary. Use shell_run for permitted writes or the authorized mission shell for other commands. npm: test, run, ci, ls, install without packages.' };
   }
   async run({ command, args = [], cwd = '.', timeoutSeconds, mode = 'write' } = {}) {
     const started = Date.now();

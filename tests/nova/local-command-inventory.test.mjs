@@ -15,6 +15,10 @@ test('actual local inventory discovers executable fixtures, not files without ex
   const result=discoverLocalCommands({env,execPath:path.join(dir,'node')});
   assert.deepEqual(result.programs,['pwsh','python3','node','custom-tool']);
   assert.equal(result.totalDiscovered,4);
+  assert.deepEqual(discoverLocalCommands({env,query:'data processing'}).programs,['python3']);
+  const python=result.capabilities.find(x=>x.name==='python3');
+  assert.equal(python.knowledge,'curated');assert.equal(python.execution,'unverified');assert.deepEqual(python.exampleArgs,['--version']);
+  assert.equal(result.capabilities.find(x=>x.name==='custom-tool').knowledge,'unknown');
   assert.deepEqual(discoverLocalCommands({env,query:'custom'}).programs,['custom-tool']);
   assert.equal(discoverLocalCommands({env,limit:1}).omitted,3);
   assert.ok(!JSON.stringify(result).includes(dir)&&!JSON.stringify(result).includes(env.SECRET_TOKEN));

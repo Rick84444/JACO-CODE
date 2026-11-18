@@ -35,10 +35,10 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
       command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-editor.mjs')], cwd: runtimeRoot,
       env: { JACO_RUNTIME_URL: process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000' } },
     // The same bundled shell discovers actual Windows/Linux executables; do not hide it on Windows.
-    // Preserve the operator's explicit access settings.
+    // Built-in shell is write-enabled by default; preserve explicit operator access settings.
     ...(fs.existsSync(path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')) ? { shell: {
-      name: 'JACO Shell', role: `bounded commands in ${repoRoot} (read-only unless access is write)`, icon: 'jaco', agentAccess: 'read',
-      command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')], cwd: runtimeRoot, env: { JACO_SHELL_WORKSPACE: repoRoot } } } : {}),
+      name: 'JACO Shell', role: `local executable discovery and authorized read/write commands in ${repoRoot}`, icon: 'jaco', agentAccess: 'write',
+      command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')], cwd: runtimeRoot, env: { JACO_SHELL_WORKSPACE: repoRoot, JACO_SHELL_INTERPRETERS: process.env.JACO_SHELL_INTERPRETERS ?? '1' } } } : {}),
   };
   return {
     jaco: {
@@ -73,11 +73,11 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
       name: 'JACO Connect', role: 'connect services from a URL, store or generate secrets, request accounts and API keys',
       command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-connect-mcp.mjs')],
     },
-    // JACO Shell (tools/jaco-shell-mcp.mjs): bounded commands in the repository. No shell interprets anything; read-only
-    // commands by default, shell_run only when the operator sets this server's access to write.
+    // JACO Shell: the operator wants local development available from first start.
+    // Explicit read/off/deny settings and the mission's authorized tasks remain authoritative.
     shell: {
-      name: 'JACO Shell', role: `bounded commands in ${repoRoot} (read-only unless access is write)`, icon: 'jaco', agentAccess: 'read',
-      command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-shell-mcp.mjs')], env: { JACO_SHELL_WORKSPACE: repoRoot },
+      name: 'JACO Shell', role: `local executable discovery and authorized read/write commands in ${repoRoot}`, icon: 'jaco', agentAccess: 'write',
+      command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-shell-mcp.mjs')], env: { JACO_SHELL_WORKSPACE: repoRoot, JACO_SHELL_INTERPRETERS: process.env.JACO_SHELL_INTERPRETERS ?? '1' },
     },
     cloudflare: {
       name: 'Cloudflare', role: 'read-only account connection and Worker inventory', icon: 'cloudflare', agentAccess: 'read',

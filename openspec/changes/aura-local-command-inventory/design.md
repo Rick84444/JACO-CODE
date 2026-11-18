@@ -1,3 +1,6 @@
 # Design
 
 Scan bounded absolute PATH directories without running executable files. Report names only, separate discovered names from the bounded shell allowlist, and prioritize common runtimes. Search additional names through shell_info. Use existing mission shell and repo-test contracts; arbitrary discovery never grants write or execution authority. Make the existing bundled shell available on Windows as well as Linux. Retain explicit operator settings. No installation, root access, authentication changes or secrets.
+
+## Operator decision: write by default
+Built-in JACO Shell is write-enabled in Lite/full on first start, and its supported interpreters are enabled unless explicitly disabled. Existing custom servers, explicit read/off/deny access, mission task authority and command policies are preserved. The inventory enriches discovered names with curated uses, categories, argument examples and execution routes; unknown programs remain unknown and can be investigated through authorized local documentation. Do not run arbitrary --help during discovery. Interpreter code runs with the user's OS rights; this is not an OS sandbox. No new unrestricted command endpoint or elevation is introduced. Unknown tools use the existing authorized mission shell rather than silently extending the bounded allowlist.
