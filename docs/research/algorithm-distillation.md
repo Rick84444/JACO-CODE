@@ -1,0 +1,5 @@
+# Algorithm distillation policy
+
+Extract mechanisms, not frameworks. Inspect upstream source, tests, paper and license at a pinned revision before selecting an algorithm. Document exact provenance, assumptions, invariants and failure modes. Prefer minimal native implementations in existing Aura modules; preserve required notices for copied or adapted code. Do not import entire frameworks or create parallel runtimes or memory stores. Compare candidate against simple baselines under matched budgets, test on held-out cases, remove unnecessary complexity and retain only measurable improvements.
+
+Initial targets: GEPA reflective mutation and Pareto selection; DSPy metric-guided optimization; Voyager verified executable skill accumulation; Agent Memory selective consolidation. These are candidates, not validated selections. Authorization, identity invariants and evaluation criteria must remain outside the optimization target. Keep each change feature-gated, backward compatible and independently mergeable after synchronization with main and regression testing.
