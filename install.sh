@@ -343,7 +343,14 @@ FULL_STACK=false
 RUNTIME_DIR=""
 if [[ -f agents/lib/local-stack.mjs ]]; then
     FULL_STACK=true
-    [[ "$(node -p process.platform)" == win32 ]] || die "The full-stack launcher currently supports Windows. Unix/Termux full-stack installation is not release verified; no agent-only fallback will be started."
+    if node --input-type=module -e 'import {pixelDebian} from "./scripts/pixel-browser-setup.mjs";process.exit(pixelDebian()?0:1)'; then
+        [[ "$LAN_MODE" == false ]] || die "Full-stack Pixel startup binds loopback."
+        log "Detected Debian/Ubuntu arm64; installing canonical JACO with automatic browser activation."
+        if [[ "$DO_CLEAN" == true ]]; then rm -rf -- node_modules dist; fi
+        export JACO_SETUP_ACTIVATE=1
+        exec npm run setup
+    fi
+    [[ "$(node -p process.platform)" == win32 ]] || die "Full-stack install supports Windows and the experimental Debian arm64 Pixel path; no agent-only fallback will be started."
 
 fi
 log "Resolved project root: $PROJECT_ROOT"

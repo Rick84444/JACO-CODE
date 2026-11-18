@@ -31,6 +31,10 @@ npm run jaco:start
 
 Setup installs dependencies in the root, runtime and MCP gateway (using lockfiles when present), **builds the canonical production client and server on desktop (or the Termux Aura frontend with its native Rollup preflight on Android)**, and creates a local gateway token in `.env` if none is configured. A failed build stops setup instead of reporting a successful installation. Existing configuration is preserved. Install and start Ollama with a downloaded model before starting JACO, or configure another supported provider in `.env`. Setup does not download models or call paid providers.
 
+### Pixel Terminal (Debian arm64)
+
+In a full source checkout, run `npm run setup`. On Debian/Ubuntu arm64 (not Termux), setup prepares Chromium using the distribution package manager when missing, creates internal authentication, and launches the canonical stack with sandboxed headless CDP. Normal sudo authorization may be needed for apt. Missing browser support is explicitly reported, never represented as ready. Open the exact runtime URL printed after activation. Existing browser opt-out `JACO_ENABLE_CDP=0` remains honored; `JACO_SETUP_ACTIVATE=0` performs installation without activation. `JACO_PIXEL_SETUP=0` opts out of the Pixel-specific setup path. No separate Lite runtime is started. This is not yet physical-device qualification.
+
 Then inspect observed activation state:
 
 ```bash
