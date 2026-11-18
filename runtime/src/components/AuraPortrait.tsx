@@ -30,7 +30,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const dialog = useRef<HTMLDialogElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const dictation = useRef<Dictation | null>(null);
-  const utterance = useRef<SpeechSynthesisUtterance | null>(null);
+  // The reply currently being read aloud: the neural voice (audio element) or the browser fallback.
+  const utterance = useRef<{ cancel: () => void } | null>(null);
   const [listening, setListening] = useState(false);
   const [readReplies, setReadReplies] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -62,7 +63,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       dictation.current = null;
       utterance.current = null;
       try { recording?.abort(); } catch { /* Browser engine already ended. */ }
-      if (reply) { try { synthesis?.cancel(); } catch { /* Engine unavailable. */ } }
+      if (reply) { try { reply.cancel(); } catch { /* Engine unavailable. */ } }
     };
     const onVisibility = () => {
       if (!document.hidden) return;
@@ -81,30 +82,71 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   useEffect(() => {
     if (!latestReply || lastRead.current === latestReply.id) return;
     lastRead.current = latestReply.id;
-    // Never play into an open microphone, read restored history or start audio
-    // in a hidden tab. This optional reader is not the planned neural voice.
-    if (!readReplies || !synthesis || !chat?.storageReady || document.hidden || dictation.current) return;
+    // Never play into an open microphone, read restored history or start audio in a hidden tab.
+    if (!readReplies || !chat?.storageReady || document.hidden || dictation.current) return;
     if (utterance.current) {
+      const previous = utterance.current;
       utterance.current = null;
       setSpeaking(false);
-      try { synthesis.cancel(); } catch { setVoiceError(true); return; }
+      try { previous.cancel(); } catch { /* Already stopped. */ }
     }
-    const reply = new SpeechSynthesisUtterance(latestReply.content);
-    reply.lang = locale;
-    reply.onstart = () => { if (utterance.current === reply) setSpeaking(true); };
+    const text = latestReply.content;
+    // Aura's own female neural voice (the same engine as her voice notes), played through an audio element so
+    // the rig's formant tracker drives her mouth from the real sound. The browser voice is only a fallback.
+    const controller = new AbortController();
+    const audio = new Audio();
+    let url = '';
+    const handle = {
+      cancel: () => {
+        controller.abort();
+        audio.pause();
+        if (url) URL.revokeObjectURL(url);
+        rig.current?.setState({ audioSource: null });
+      },
+    };
     const finish = () => {
-      if (utterance.current !== reply) return;
+      if (utterance.current !== handle) return;
       utterance.current = null;
       setSpeaking(false);
+      rig.current?.setState({ audioSource: null });
+      if (url) URL.revokeObjectURL(url);
     };
-    reply.onend = finish;
-    reply.onerror = event => {
-      if (utterance.current === reply && !['canceled', 'interrupted'].includes(event.error)) setVoiceError(true);
-      finish();
+    const browserFallback = () => {
+      if (utterance.current !== handle || !synthesis) { setVoiceError(true); finish(); return; }
+      const reply = new SpeechSynthesisUtterance(text);
+      reply.lang = locale;
+      reply.onstart = () => { if (utterance.current === handle) setSpeaking(true); };
+      reply.onend = finish;
+      reply.onerror = event => {
+        if (utterance.current === handle && !['canceled', 'interrupted'].includes(event.error)) setVoiceError(true);
+        finish();
+      };
+      handle.cancel = () => { try { synthesis.cancel(); } catch { /* Engine unavailable. */ } };
+      try { synthesis.speak(reply); } catch { setVoiceError(true); finish(); }
     };
-    utterance.current = reply;
-    try { synthesis.speak(reply); }
-    catch { if (utterance.current === reply) { setVoiceError(true); finish(); } }
+    utterance.current = handle;
+    void fetch('/api/aura/voice/speak', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+      body: JSON.stringify({ text, lang: locale }),
+    }).then(async response => {
+      if (!response.ok) throw new Error('VOICE_UNAVAILABLE');
+      const blob = await response.blob();
+      if (utterance.current !== handle) return;
+      url = URL.createObjectURL(blob);
+      audio.src = url;
+      audio.onplay = () => {
+        if (utterance.current !== handle) return;
+        setSpeaking(true);
+        rig.current?.setState({ audioSource: audio, speaking: true });
+      };
+      audio.onended = finish;
+      audio.onerror = () => { if (utterance.current === handle) { setVoiceError(true); finish(); } };
+      await audio.play();
+    }).catch(error => {
+      if (controller.signal.aborted || utterance.current !== handle) return;
+      void error;
+      browserFallback();
+    });
   }, [latestReply, locale, readReplies, synthesis, chat?.storageReady]);
 
   function toggleDictation() {
@@ -149,8 +191,9 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   function toggleReadReplies() {
     setVoiceError(false);
     if (readReplies && utterance.current) {
+      const reply = utterance.current;
       utterance.current = null;
-      try { synthesis?.cancel(); } catch { setVoiceError(true); }
+      try { reply.cancel(); } catch { setVoiceError(true); }
       setSpeaking(false);
     }
     // Establish the baseline on enable, including restored chat history.
@@ -204,7 +247,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
           {listening ? <MicOff size={16}/> : <Mic size={16}/>}
           {listening ? tr('Sluta lyssna', 'Stop listening') : tr('Diktera', 'Dictate')}
         </button>
-        <button type="button" onClick={toggleReadReplies} disabled={!synthesis || !chat.storageReady || listening} aria-pressed={readReplies}>
+        <button type="button" onClick={toggleReadReplies} disabled={!chat.storageReady || listening} aria-pressed={readReplies}>
           {readReplies ? <Volume2 size={16}/> : <VolumeX size={16}/>}
           {tr('Läs upp svar', 'Read replies aloud')}
         </button>

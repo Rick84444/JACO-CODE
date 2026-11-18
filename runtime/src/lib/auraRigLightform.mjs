@@ -117,7 +117,7 @@ void main(){
   vColor=mix(deepBiolum,cyanCore,.32+aSeed*.55);
   vColor=mix(vColor,decisionGold,uDecisionMode*rim*.55);
   vColor=mix(vColor,pureDiamond,rim*.65);
-  if(aKind<.5){strength*=.13;}
+  if(aKind<.5){strength*=.06;}
   if(aKind>1.5&&aKind<2.5){vColor=mix(deepBiolum,pureDiamond,.45+aSeed*.50);strength*=.30;}
   if(aKind>.5&&aKind<1.5){strength*=.03;}
   if(aKind>2.5){vColor=pureDiamond;strength*=.52;}
@@ -518,7 +518,9 @@ function createLightBody(scene,model,bones,groups,isMobile){
   vec2 bio=auraBioField3D(vAuraLocalPos,uTime,uDetailLevel);
   float microRelief=bio.x;
   float veinPattern=bio.y;
-  vec3 perturbedN=normalize(vAuraNormal+vec3(microRelief,microRelief*0.7,-microRelief*0.4)*0.028);
+  float lowMask=1.0-smoothstep(1.33,1.43,vAuraWorldPos.y);
+  vec3 baseN=normalize(mix(vAuraNormal,vec3(0.0,0.0,1.0),lowMask*0.88));
+  vec3 perturbedN=normalize(baseN+vec3(microRelief,microRelief*0.7,-microRelief*0.4)*0.028*(1.0-lowMask));
 
   float auraFacing=clamp(dot(perturbedN,auraV),0.0,1.0);
 
@@ -571,11 +573,9 @@ function createLightBody(scene,model,bones,groups,isMobile){
     *smoothstep(0.012,0.022,abs(vAuraWorldPos.x))*(1.0-smoothstep(0.052,0.064,abs(vAuraWorldPos.x)))*smoothstep(0.04,0.08,vAuraWorldPos.z);
   baseSkin=mix(baseSkin,vec3(.66,.72,.94),lidZone*.22)+vec3(.10,.11,.14)*lidZone*sharpSpec*2.0;
   vec3 rimGlow=activeCyan*midRim*(0.62+0.26*uEnergy)+diamondWhite*outerRim*(0.92+0.38*uEnergy);
-  vec3 detailed=(baseSkin*(0.92+0.14*uEnergy)*voicePulse+rimGlow*0.85)*scanline;
+  vec3 detailed=(baseSkin*(0.70+0.12*uEnergy)*voicePulse+rimGlow*1.15)*scanline;
   // No anatomy below the collarbones: uniform white light that softly dissolves.
-  vec3 softGlow=vec3(.80,.90,1.0)*(0.62+0.18*uEnergy);
-  float detailMask=smoothstep(1.33,1.43,vAuraWorldPos.y);
-  outgoingLight=mix(softGlow,detailed,detailMask);
+  outgoingLight=detailed;
   diffuseColor.a=auraFade;
   #include <opaque_fragment>`);
   };
@@ -619,8 +619,8 @@ function createLightBody(scene,model,bones,groups,isMobile){
   float flow=vHairW.x*820.0+sin(vHairW.z*60.0+vHairW.y*40.0)*3.0;
   float strand=.55+.45*sin(flow)*sin(flow*.37+1.3);
   float sheen=pow(max(0.0,dot(n,normalize(vec3(0.15,0.75,0.65)))),6.0);
-  vec3 base=mix(vec3(.52,.68,.92),vec3(.95,.98,1.0),strand*.75+sheen*.5);
-  outgoingLight=base*(.70+.35*strand)+vec3(.85,.95,1.0)*(rim*.55+sheen*.35)*(1.0+.25*uEnergy);
+  vec3 base=mix(vec3(.50,.30,.09),vec3(1.0,.82,.42),strand*.75+sheen*.5);
+  outgoingLight=base*(.72+.35*strand)+vec3(1.0,.86,.52)*(rim*.45+sheen*.35)*(1.0+.25*uEnergy);
   diffuseColor.a=.94;
   #include <opaque_fragment>`);
   };
@@ -688,7 +688,7 @@ function createLightBody(scene,model,bones,groups,isMobile){
   if(!eyeGroup.mesh.geometry.attributes.normal)eyeGroup.mesh.geometry.computeVertexNormals();
 
   body.material=skin;body.visible=true;
-  jacket.material=whiteMat;jacket.visible=true;
+  jacket.visible=false;
   hairMesh.material=hairMat;hairMesh.visible=true;
 
   const prepass=new THREE.SkinnedMesh(body.geometry,new THREE.MeshBasicMaterial({colorWrite:false}));
@@ -747,7 +747,7 @@ function createLightBody(scene,model,bones,groups,isMobile){
 void main(){${SWAY}
   float travel=sin(uTime*2.2+aSeed*19.0-aT*9.0);
   vA=(1.0-aT*.78)*(.66+.34*travel)*(.88+.40*uEnergy);
-  vC=mix(vec3(.97,.995,1.0),vec3(.22,.64,1.0),pow(max(0.0,aT),.85));
+  vC=mix(vec3(1.0,.92,.66),vec3(.86,.60,.20),pow(max(0.0,aT),.85));
   gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
     fragmentShader:String.raw`varying float vA;varying vec3 vC;void main(){gl_FragColor=vec4(vC,vA*.22);}`});
 
@@ -804,8 +804,8 @@ void main(){
   float round=sin(vU*3.14159);
   float tone=.70+.45*fract(vS*7.31);
   float highlight=pow(max(0.0,sin(vT*18.0+vS*12.0)),6.0)*round;
-  vec3 shadow=vec3(.20,.30,.52),light=vec3(.86,.92,1.0);
-  vec3 col=mix(shadow,light,clamp(round*.65+strands*.25+(1.0-vT)*.10,0.0,1.0))*tone+vec3(.95,.98,1.0)*highlight*.35;
+  vec3 shadow=vec3(.32,.18,.05),light=vec3(1.0,.81,.40);
+  vec3 col=mix(shadow,light,clamp(round*.65+strands*.25+(1.0-vT)*.10,0.0,1.0))*tone+vec3(1.0,.92,.68)*highlight*.35;
   float a=edge*tip*(.86+.12*strands);
   if(a<.02)discard;
   gl_FragColor=vec4(col*(.85+.25*uEnergy),a);
@@ -813,7 +813,7 @@ void main(){
   const hairLocks=new THREE.Mesh(lockGeo,lockMat);hairLocks.frustumCulled=false;
   owned.push(lockGeo,lockMat);
 
-  const auraPlaneGeo=new THREE.PlaneGeometry(1.15,1.15);
+  const auraPlaneGeo=new THREE.PlaneGeometry(1.7,1.7);
   const auraPlaneMat=new THREE.ShaderMaterial({
     uniforms:{uTime:time,uEnergy:energy,uCognitiveTint:cognitiveTint},transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending,
     vertexShader:String.raw`varying vec2 vUv;void main(){vUv=uv*2.0-1.0;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
@@ -824,11 +824,11 @@ void main(){
   float a=atan(vUv.y,vUv.x);
   float ring1=exp(-sq((r-0.34)*30.0))*(0.92+0.08*sin(a*3.0-uTime*0.8));
   float ring2=exp(-sq((r-0.68)*12.0))*(0.5+0.5*cos(a*10.0+uTime*0.8));
-  float coreGlow=exp(-r*r*3.8)*0.24;
+  float coreGlow=exp(-r*r*7.5);
   float radialFade=1.0-smoothstep(0.65,1.0,r);
-  float alpha=(coreGlow*0.5+ring1*0.0+ring2*0.0)*(0.75+0.45*uEnergy)*radialFade;
+  float alpha=(coreGlow*0.92+exp(-r*r*2.2)*0.22)*(0.85+0.30*uEnergy)*radialFade;
   vec3 baseCol=mix(vec3(.14,.48,.96),vec3(.96,.72,.30),uCognitiveTint*0.45);
-  gl_FragColor=vec4(mix(baseCol,vec3(.65,.92,1.0),clamp(ring1+ring2,0.0,1.0)),alpha);
+  gl_FragColor=vec4(mix(baseCol,vec3(.78,.93,1.0),coreGlow),alpha);
 }`
   });
   const auraBackdrop=new THREE.Mesh(auraPlaneGeo,auraPlaneMat);
@@ -837,12 +837,12 @@ void main(){
   scene.add(auraBackdrop);
 
   const texture=glowTexture();
-  const sprite=(scale,opacity,color=0xffffff)=>{
-    const m=new THREE.SpriteMaterial({map:texture,color,transparent:true,opacity,blending:THREE.AdditiveBlending,depthTest:false,depthWrite:false});
+  const sprite=(scale,opacity,color=0xffffff,depthTest=false)=>{
+    const m=new THREE.SpriteMaterial({map:texture,color,transparent:true,opacity,blending:THREE.AdditiveBlending,depthTest,depthWrite:false});
     owned.push(m);const s=new THREE.Sprite(m);s.scale.setScalar(scale);return s;
   };
   const hair=new THREE.Group();
-  const halo=sprite(.82,.34,0x2b7fff);halo.position.copy(C).sub(restPos).add(new THREE.Vector3(0,-.03,-.09));
+  const halo=sprite(.95,.30,0x5aa0ff,true);halo.position.copy(C).sub(restPos).add(new THREE.Vector3(0,-.03,-.09));
   const crown=sprite(.20,.32,0xcfe6ff);crown.position.set(C.x,top+.055,C.z).sub(restPos);
   hair.add(halo,hairLocks,lines,sparks,crown);scene.add(hair);
 
@@ -858,7 +858,7 @@ void main(){
     starTw.push(stars());
   }
   const starGeo=new THREE.BufferGeometry();attr(starGeo,'position',starPos,3);attr(starGeo,'aTw',starTw,1);
-  const starMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uPixelRatio:pixelRatio},transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending,
+  const starMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uPixelRatio:pixelRatio},transparent:true,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,
     vertexShader:String.raw`attribute float aTw;uniform float uTime;uniform float uPixelRatio;varying float vA;
 void main(){
   vec3 pos=position;
@@ -888,7 +888,7 @@ void main(){
       if(!hairInitialized){hairQuat.copy(hq);hairInitialized=true;}
       else{hairQuat.slerp(hq,0.14);}
       hair.position.copy(hp);hair.quaternion.copy(hairQuat).multiply(restInv);
-      crown.material.opacity=.26+.08*Math.sin(t*1.1)+.08*energyValue;
+      crown.material.opacity=0;
       halo.material.opacity=.28+.15*energyValue+.04*Math.sin(t*1.2);
 
       sums[0].set(0,0,0);sums[1].set(0,0,0);counts[0]=counts[1]=0;

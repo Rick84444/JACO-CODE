@@ -74,7 +74,7 @@ import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAc
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
 import { auraAlwaysAnswers, answerInOrder, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
-import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier } from "./src/server/connected/voiceChannel.mjs";
+import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier, synthesize as synthesizeVoice } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
 import { PRICE_SYNC_INTERVAL_MS, readPriceCatalog, syncPrices } from "./src/server/aura/priceCatalog.mjs";
@@ -916,6 +916,24 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   app.get('/api/aura/workbench/connections', requireLocalUi, async (_req, res) => {
     try { res.json({ success: true, ...(await connections.refresh()) }); }
     catch { res.status(503).json({ success: false, error: 'CONNECTION_REFRESH_FAILED' }); }
+  });
+  // Aura's spoken voice for the portrait: the same female neural voice as her voice notes (voiceChannel.synthesize).
+  // The text is spoken by the operator's chosen engine; edge-tts sends it to Microsoft, as documented in voiceChannel.
+  app.post('/api/aura/voice/speak', requireLocalUiSameOrigin, async (req, res) => {
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+    if (!text.trim() || text.length > 6000) return res.status(400).json({ success: false, error: 'VOICE_TEXT_INVALID' });
+    const lang = typeof req.body?.lang === 'string' && /^[a-z]{2}-[A-Z]{2}$/.test(req.body.lang) ? req.body.lang : 'sv-SE';
+    try {
+      const env = { ...process.env, JACO_VOICE_ENGINE: process.env.JACO_VOICE_ENGINE || 'edge', JACO_VOICE_LANG: process.env.JACO_VOICE_LANG || lang };
+      const sound = await synthesizeVoice(text, { env });
+      try {
+        const bytes = fs.readFileSync(sound.file);
+        res.setHeader('Cache-Control', 'no-store');
+        res.type(sound.mimetype.split(';')[0]).send(bytes);
+      } finally { fs.rmSync(sound.file, { force: true }); }
+    } catch (error: any) {
+      res.status(503).json({ success: false, error: String(error?.message || 'VOICE_UNAVAILABLE').slice(0, 160) });
+    }
   });
   // Metadata only. Existing env, encrypted store and legacy Windows vault remain the owners.
   app.get('/api/aura/workbench/vault/discovery', requireLocalUiSameOrigin, (_req, res) => {
