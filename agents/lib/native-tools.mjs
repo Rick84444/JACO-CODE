@@ -65,7 +65,13 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
   for (const type of allowedTasks) {
     if (!Object.hasOwn(TASK_FIELDS, type) || (['mcp-call', 'mcp-write'].includes(type) && mcpAllowed && mcpTools.length)) continue;
     const fields = TASK_FIELDS[type];
-    tools.push(fn(type, taskNotes[type] ? `Learned: ${taskNotes[type]}` : null, {
+    const perception = {
+      'browser-survey-site': 'DOM TRACK: survey a permitted browser page and map semantic targets before acting.',
+      'desktop-observe': 'DOM TRACK: inspect desktop accessibility structure before using pixel coordinates.',
+      'screenshot': 'LASER VISION: capture fresh desktop pixels for the existing vision-capable planner; use adaptive ROI first, then full only if needed.',
+    }[type];
+    const description = [perception, taskNotes[type] ? `Learned: ${taskNotes[type]}` : null].filter(Boolean).join(' ') || null;
+    tools.push(fn(type, description, {
       ...taskContract(type),
       properties: { ...taskContract(type).properties, expectedOutcome: { type: 'string' }, say: SAY, learned: LEARNED },
       required: fields, additionalProperties: true,
