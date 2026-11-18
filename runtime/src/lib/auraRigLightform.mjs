@@ -117,9 +117,9 @@ void main(){
   vColor=mix(deepBiolum,cyanCore,.32+aSeed*.55);
   vColor=mix(vColor,decisionGold,uDecisionMode*rim*.55);
   vColor=mix(vColor,pureDiamond,rim*.65);
-  if(aKind<.5){strength*=.06;}
+  if(aKind<.5){strength*=.55;}
   if(aKind>1.5&&aKind<2.5){vColor=mix(deepBiolum,pureDiamond,.45+aSeed*.50);strength*=.30;}
-  if(aKind>.5&&aKind<1.5){vColor=mix(deepBiolum,pureDiamond,.55+aSeed*.45);strength*=.55;}
+  if(aKind>.5&&aKind<1.5){vColor=mix(deepBiolum,pureDiamond,.55+aSeed*.45);strength*=.80;}
   if(aKind>2.5){vColor=pureDiamond;strength*=.52;}
   vAlpha=clamp(strength*pulse*fade*(1.08+.38*uEnergy),0.0,.96);
   gl_PointSize=clamp(aSize*uPixelRatio*(2.05+.46*uEnergy)*(0.85+0.25*dof)/max(.82,-mv.z),.70,4.5*uPixelRatio);
@@ -552,8 +552,8 @@ function createLightBody(scene,model,bones,groups,isMobile){
   float voicePulse=1.0+lipZone*uSpeaking*(0.28+0.15*sin(uTime*18.0));
   float auraFade=smoothstep(1.14,1.27,vAuraWorldPos.y)*mix(0.62,1.0,smoothstep(1.27,1.44,vAuraWorldPos.y))*(1.0-smoothstep(0.26,0.38,abs(vAuraWorldPos.x)));
 
-  vec3 deepShadow=vec3(.06,.22,.62);
-  vec3 biolumCyan=vec3(.24,.66,.99);
+  vec3 deepShadow=vec3(.02,.10,.42);
+  vec3 biolumCyan=vec3(.10,.46,1.0);
   vec3 sssWarmAzure=vec3(.42,.58,1.0);
   vec3 decisionAmber=vec3(1.0,.76,.35);
   vec3 lipRoseCyan=vec3(.58,.82,1.0);
@@ -567,14 +567,14 @@ function createLightBody(scene,model,bones,groups,isMobile){
   baseSkin=mix(baseSkin,highlightIce,pow(max(0.0,keyWrap),2.2)*0.48+topLight*0.18+broadSpec);
   baseSkin+=diamondWhite*sharpSpec;
   baseSkin+=activeCyan*underBounce*0.14;
-  baseSkin+=highlightIce*veinPattern*(0.06+0.12*uEnergy+lowMask*0.42);
+  baseSkin+=highlightIce*veinPattern*(0.24+0.16*uEnergy+lowMask*0.28);
   baseSkin+=vec3(.55,.80,1.0)*lowMask*(0.10+0.10*sin(vAuraWorldPos.y*38.0-uTime*1.6))*(0.5+0.5*uEnergy);
 
   float lidZone=smoothstep(1.650,1.660,vAuraWorldPos.y)*(1.0-smoothstep(1.672,1.684,vAuraWorldPos.y))
     *smoothstep(0.012,0.022,abs(vAuraWorldPos.x))*(1.0-smoothstep(0.052,0.064,abs(vAuraWorldPos.x)))*smoothstep(0.04,0.08,vAuraWorldPos.z);
   baseSkin=mix(baseSkin,vec3(.66,.72,.94),lidZone*.22)+vec3(.10,.11,.14)*lidZone*sharpSpec*2.0;
   vec3 rimGlow=activeCyan*midRim*(0.62+0.26*uEnergy)+diamondWhite*outerRim*(0.92+0.38*uEnergy);
-  vec3 detailed=(baseSkin*(0.70+0.12*uEnergy)*voicePulse+rimGlow*1.15)*scanline;
+  vec3 detailed=(baseSkin*(0.56+0.12*uEnergy)*voicePulse+rimGlow*1.65)*scanline;
   // No anatomy below the collarbones: uniform white light that softly dissolves.
   outgoingLight=detailed;
   diffuseColor.a=auraFade;
@@ -765,14 +765,14 @@ void main(){${SWAY}
   lines.frustumCulled=false;sparks.frustumCulled=false;
 
   // Long, thick, wavy hair: textured ribbons that follow the scalp, frame the face and fall in waves past the shoulders.
-  const LOCKS=isMobile?140:260,LSTEPS=34,lockRand=seeded(1709);
+  const LOCKS=isMobile?28:48,LSTEPS=isMobile?56:84,lockRand=seeded(1709);
   const lp=[],lt=[],lu=[],ls=[],lidx=[];let vbase=0;
   const tan=new THREE.Vector3(),outV=new THREE.Vector3(),acrossV=new THREE.Vector3();
   for(let k=0;k<LOCKS;k++){
     const side=k%2?1:-1;
     const ph0=side*(0.62+lockRand()*2.45);
     const seed=lockRand(),thEnd=1.35+lockRand()*.35,r=1.05+lockRand()*.06;
-    const len=.32+lockRand()*.24,waveA=.020+lockRand()*.018,waveF=15+lockRand()*8,flare=.035+lockRand()*.07;
+    const len=.03+lockRand()*.06,waveA=.010+lockRand()*.012,waveF=5+lockRand()*4,flare=.008+lockRand()*.016;
     const w0=.010+lockRand()*.008;
     for(let i=0;i<LSTEPS;i++){
       const t=i/(LSTEPS-1),ts=.30;let p,ph;
@@ -792,8 +792,52 @@ void main(){${SWAY}
     }
     vbase+=LSTEPS*2;
   }
+  // Second layer of hair (the 'wig'): locks that cover the parting and hairline at the forehead, and locks that
+  // fall from the temples down over the front of the shoulders and chest.
+  const wigRand=seeded(2711);
+  const pushLock=(points,w0)=>{
+    for(let i=0;i<points.length;i++){
+      const {p,ph,t}=points[i];
+      tan.set(Math.cos(ph),0,-Math.sin(ph));
+      const w=w0*(1-.55*t);
+      lp.push(p.x-tan.x*w,p.y,p.z-tan.z*w,p.x+tan.x*w,p.y,p.z+tan.z*w);
+      lt.push(t,t);lu.push(0,1);ls.push(points.seed,points.seed);
+      if(i>0){const a0=vbase+(i-1)*2;lidx.push(a0,a0+1,a0+2,a0+1,a0+3,a0+2);}
+    }
+    vbase+=points.length*2;
+  };
+  const COVER=isMobile?44:80,FRONT=0;
+  for(let k=0;k<COVER+FRONT;k++){
+    const side=k%2?1:-1,front=k>=COVER,seed=wigRand();
+    const r=1.075+wigRand()*.04,w0=.011+wigRand()*.008;
+    const ph0=front?side*(1.02+wigRand()*0.40):side*(0.04+wigRand()*0.34);
+    const phEnd=front?ph0:side*(1.9+wigRand()*0.6);
+    const thEnd=front?1.40+wigRand()*.25:0.80+wigRand()*.30;
+    const len=front?.34+wigRand()*.16:.02+wigRand()*.04;
+    const waveA=.016+wigRand()*.014,waveF=5+wigRand()*4,ts=front?.30:.48;
+    const pts=[];pts.seed=seed;
+    for(let i=0;i<LSTEPS;i++){
+      const t=i/(LSTEPS-1);let p,ph;
+      if(t<=ts){
+        const u=t/ts,e=u*u*(3-2*u);
+        ph=ph0+(phEnd-ph0)*e;
+        p=scalp(.05+u*(thEnd-.05),ph,r);
+      }else{
+        const q=(t-ts)/(1-ts),curl=Math.min(1,q*2.2);ph=phEnd;
+        // Front locks are pushed forward so they lie over the shoulders and chest.
+        if(front)outV.set(Math.sin(ph)*.45,0,Math.cos(ph)+.65).normalize();
+        else outV.set(Math.sin(ph),0,Math.cos(ph)*.6).normalize();
+        acrossV.set(Math.cos(ph),0,-Math.sin(ph));
+        const reach=front?.12:.05;const ramp=front?Math.min(1,Math.max(0,(q-.30)/.40)):Math.min(1,q*1.6);
+        p=scalp(thEnd,ph,r).addScaledVector(outV,reach*ramp+waveA*Math.sin(q*waveF+seed*6.283)*curl).add(new THREE.Vector3(0,-len*q,0)).addScaledVector(acrossV,waveA*Math.cos(q*waveF+seed*6.283)*curl);
+      }
+      p.sub(restPos);
+      pts.push({p,ph,t});
+    }
+    pushLock(pts,w0);
+  }
   const lockGeo=new THREE.BufferGeometry();attr(lockGeo,'position',lp,3);attr(lockGeo,'aT',lt,1);attr(lockGeo,'aU',lu,1);attr(lockGeo,'aSeed',ls,1);lockGeo.setIndex(lidx);
-  const lockMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uEnergy:energy},transparent:true,depthWrite:false,depthTest:true,side:THREE.DoubleSide,blending:THREE.NormalBlending,
+  const lockMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uEnergy:energy},transparent:true,depthWrite:false,depthTest:true,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,
     vertexShader:String.raw`attribute float aT;attribute float aU;attribute float aSeed;uniform float uTime;varying float vT;varying float vU;varying float vS;
 void main(){${SWAY}
   vT=aT;vU=aU;vS=aSeed;
@@ -806,13 +850,14 @@ void main(){
   float round=sin(vU*3.14159);
   float tone=.70+.45*fract(vS*7.31);
   float highlight=pow(max(0.0,sin(vT*18.0+vS*12.0)),6.0)*round;
-  vec3 shadow=vec3(.10,.28,.66),light=vec3(.74,.90,1.0);
+  vec3 shadow=vec3(.04,.18,.62),light=vec3(.58,.84,1.0);
   vec3 col=mix(shadow,light,clamp(round*.65+strands*.25+(1.0-vT)*.10,0.0,1.0))*tone+vec3(.85,.96,1.0)*highlight*.45+vec3(.30,.62,1.0)*(.10+.08*round);
-  float a=edge*tip*(.86+.12*strands);
+  float a=edge*tip*(.24+.18*strands);
+  col+=vec3(.70,.90,1.0)*pow(1.0-round,3.0)*.8;
   if(a<.02)discard;
   gl_FragColor=vec4(col*(.85+.25*uEnergy),a);
 }`});
-  const hairLocks=new THREE.Mesh(lockGeo,lockMat);hairLocks.frustumCulled=false;
+  const hairLocks=new THREE.Mesh(lockGeo,lockMat);hairLocks.frustumCulled=false;hairLocks.renderOrder=3;
   owned.push(lockGeo,lockMat);
 
   const auraPlaneGeo=new THREE.PlaneGeometry(1.7,1.7);
@@ -828,8 +873,8 @@ void main(){
   float ring2=exp(-sq((r-0.68)*12.0))*(0.5+0.5*cos(a*10.0+uTime*0.8));
   float coreGlow=exp(-r*r*7.5);
   float radialFade=1.0-smoothstep(0.65,1.0,r);
-  float alpha=(coreGlow*0.92+exp(-r*r*2.2)*0.22)*(0.85+0.30*uEnergy)*radialFade;
-  vec3 baseCol=mix(vec3(.14,.48,.96),vec3(.96,.72,.30),uCognitiveTint*0.45);
+  float alpha=(coreGlow*0.42+exp(-r*r*2.2)*0.14)*(0.85+0.30*uEnergy)*radialFade;
+  vec3 baseCol=mix(vec3(.08,.30,.92),vec3(.96,.72,.30),uCognitiveTint*0.45);
   gl_FragColor=vec4(mix(baseCol,vec3(.78,.93,1.0),coreGlow),alpha);
 }`
   });
@@ -852,9 +897,13 @@ void main(){
   const eyeHalo=[sprite(.026,.14,0x7fb8ff),sprite(.026,.14,0x7fb8ff)];
   scene.add(...eyeCore,...eyeHalo);
   // A soft veil of light over neck, shoulders and chest binds head, hair and body into one glowing form.
-  const veilChest=sprite(.70,.20,0x9cd2ff),veilNeck=sprite(.38,.16,0xd6ecff);
+  const veilChest=sprite(.60,.12,0x6fb6ff),veilNeck=sprite(.34,.10,0xb8dcff);
   veilChest.position.set(0,1.34,.18);veilNeck.position.set(0,1.46,.14);
   scene.add(veilChest,veilNeck);
+  const orbitPts=[];for(let i=0;i<96;i++){const a=i/96*Math.PI*2;orbitPts.push(new THREE.Vector3(Math.cos(a)*.31,1.33+Math.sin(a)*.11,.02+Math.sin(a)*.24));}
+  const orbitGeo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(orbitPts,true),240,.0022,6,true);
+  const orbitMat=new THREE.MeshBasicMaterial({color:0x7cc8ff,transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthWrite:false});
+  const orbit=new THREE.Mesh(orbitGeo,orbitMat);orbit.rotation.z=-.10;orbit.renderOrder=4;scene.add(orbit);owned.push(orbitGeo,orbitMat);
 
   const starCount=isMobile?180:340;
   const starPos=[],starTw=[],stars=seeded(4242);
@@ -895,7 +944,7 @@ void main(){
       else{hairQuat.slerp(hq,0.14);}
       hair.position.copy(hp);hair.quaternion.copy(hairQuat).multiply(restInv);
       crown.material.opacity=0;
-      veilChest.material.opacity=.18+.06*Math.sin(t*.9)+.08*energyValue;veilNeck.material.opacity=.14+.05*Math.sin(t*1.3+1.0)+.06*energyValue;
+      veilChest.material.opacity=.11+.04*Math.sin(t*.9)+.06*energyValue;veilNeck.material.opacity=.09+.03*Math.sin(t*1.3+1.0)+.05*energyValue;orbitMat.opacity=.70+.15*Math.sin(t*1.2)+.10*energyValue;
       halo.material.opacity=.28+.15*energyValue+.04*Math.sin(t*1.2);
 
       sums[0].set(0,0,0);sums[1].set(0,0,0);counts[0]=counts[1]=0;
@@ -910,7 +959,7 @@ void main(){
         eyeHalo[s].material.opacity=(.12+.10*energyValue)*open;
       }
     },
-    dispose(){scene.remove(hair,starField,auraBackdrop,veilChest,veilNeck,...eyeCore,...eyeHalo);owned.forEach(o=>o.dispose());}
+    dispose(){scene.remove(hair,starField,auraBackdrop,veilChest,veilNeck,orbit,...eyeCore,...eyeHalo);owned.forEach(o=>o.dispose());}
   };
 }
 
