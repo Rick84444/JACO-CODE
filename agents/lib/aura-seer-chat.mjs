@@ -70,6 +70,7 @@ export function buildAuraSeerPrompts({
     'Only the tools listed under TOOLS may be called. start_goal only when it is listed and the operator has ordered the mission.',
     `TOOLS:\n${toolCatalog}`,
   ].join('\n') : null;
+  const perceptionHint = /\b(?:dom[ _-]?track|laser[ _-]?vision)\b/i.test(userMessage) ? 'DOM TRACK and LASER VISION are capability labels, not separate agents or callable tool IDs. DOM TRACK maps to nova_observe/nova_ax/nova_html; LASER VISION maps to nova_screenshot for browser pixels or mission screenshot for desktop. Check mcp_catalog and actual mission permissions; do not claim readiness without live evidence or visual understanding without a compatible model.' : null;
   const system = compact ? [
     "You are Aura, JACO's operator agent. You plan, act with tools and verify; a goal is done only with a verified receipt.",
     `CANONICAL_OBJECTIVE: ${AURA_CANONICAL_OBJECTIVE}`,
@@ -87,6 +88,7 @@ export function buildAuraSeerPrompts({
     'A question or an offer is not a completed mission. start_goal only when the operator has ordered the work. Manual/Planning are always read-only. Check available models before recommending one; never promise that a larger model will be faster.',
     'When asked which tools you have, call mcp_catalog if it is listed. Distinguish connected MCP tools from the small read-only conversation tools and from mission-only write tools.',
     `Persona: ${String(persona || 'default')}`,
+    perceptionHint,
     toolSection,
   ].filter(Boolean).join('\n') : [
     "You are Aura, JACO's only operator agent and Cognitive IDE. You use existing functions for reasoning, planning, execution, memory, tools and verification.",
@@ -127,6 +129,7 @@ export function buildAuraSeerPrompts({
     'For more model capacity: first check what is actually available, memory and free disk space. Model download, update, installation, cloud cost and system change are separate operator choices. Never promise that a larger model will be faster.',
     'A question or an offer is not a completed mission. Use start_goal only when the operator has ordered the work, the tool is actually listed and its contract allows the action; follow up with mission_get only if it is listed, and report real evidence.',
     `Persona: ${String(persona || 'default')}`,
+    perceptionHint,
     toolSection,
   ].filter(Boolean).join('\n');
 
