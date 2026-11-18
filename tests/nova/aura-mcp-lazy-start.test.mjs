@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { discoverAuraMcpTools, callAuraMcpTool } from '../../runtime/src/server/mcp/auraAgentMcpCall.mjs';
+import { discoverAuraMcpTools, callAuraMcpTool, readGithubPullRequest, githubRepoFromRemote } from '../../runtime/src/server/mcp/auraAgentMcpCall.mjs';
 import { cognitiveQuestionToolbox } from '../../runtime/src/server/connected/cognitiveQuestionToolbox.mjs';
 
 function hostFixture(access='write',transport='stdio') {
@@ -83,4 +83,30 @@ test('question mode allows tool discovery but not actual MCP execution',async()=
   assert.deepEqual(await toolbox.tools.mcp_discover.run({}),{server:'workspace',tools:[]});
   assert.equal(toolbox.tools.mcp_tool,undefined);
   assert.equal(executes,0);
+});
+
+test('qualified MCP aliases keep canonical deny and read/write checks',async()=>{
+  const a=hostFixture();
+  await callAuraMcpTool(a.host,{server:'workspace',tool:'workspace.repo_read'});
+  assert.equal(a.calls[0].name,'repo_read');
+  a.def.deny=['repo_read'];
+  await assert.rejects(callAuraMcpTool(a.host,{server:'workspace',tool:'workspace.repo_read'}),/MCP_TOOL_DENIED/);
+  await assert.rejects(callAuraMcpTool(a.host,{server:'workspace',tool:'workspace.workspace_write'}),/MCP_TOOL_WRITE_MODE_REQUIRED/);
+  assert.equal(a.calls.length,1);
+});
+test('public PR reader uses the read-only fetch server with validated paths and no browser',async()=>{
+  const calls=[];
+  const host={servers:()=>({fetch:{id:'fetch',agentAccess:'read',deny:[]}}),listTools:async()=>[{name:'fetch',readOnly:true}],call:async(id,name,args,opts)=>{
+    calls.push({id,name,args,opts});
+    const data=args.url.includes('/files?')?[{filename:'src/a.js',patch:'+hello',status:'modified'}]:{number:301,head:{sha:'abc'},base:{sha:'def'},changed_files:1};
+    return {content:[{type:'text',text:JSON.stringify(data)}]};
+  }};
+  assert.equal(githubRepoFromRemote('https://github.com/example/project.git'),'example/project');
+  assert.equal(githubRepoFromRemote('git@github.com:example/project.git'),'example/project');
+  assert.equal(githubRepoFromRemote('https://user:pass@github.com/example/project.git'),null);
+  assert.equal((await readGithubPullRequest(host,{repository:'example/project',number:301})).headSha,'abc');
+  assert.equal((await readGithubPullRequest(host,{repository:'example/project',number:301,section:'files',page:2})).records[0].filename,'src/a.js');
+  assert.equal(calls[1].opts.readOnly,true);
+  await assert.rejects(readGithubPullRequest(host,{repository:'../project',number:301}),/ARGUMENTS_INVALID/);
+  assert.equal(calls.length,2);
 });

@@ -85,7 +85,7 @@ app.use(express.static(path.join(release,'dist')));
 app.get('*',(_req,res)=>res.sendFile(path.join(release,'dist/index.html')));
 const server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});
 const base='http://127.0.0.1:'+server.address().port;
-const browser=await chromium.launch({headless:true,...(process.env.JACO_BROWSER_EXECUTABLE?{executablePath:process.env.JACO_BROWSER_EXECUTABLE,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']}: {})});
+const browser=await chromium.launch({headless:true,...(process.env.JACO_BROWSER_EXECUTABLE?{executablePath:process.env.JACO_BROWSER_EXECUTABLE,args:['--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--use-angle=swiftshader']}: {})});
 const page=await browser.newPage({viewport:{width:1440,height:960},deviceScaleFactor:1});
 page.setDefaultTimeout(15000);
 // Existing functional contract uses Swedish labels; English is verified independently below.
@@ -210,7 +210,93 @@ try {
   assert.equal(await page.locator('.monaco-editor').count(),0,'defer the editor until a file is opened');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   passed('Production client opens with the real JACO brand, one conversation and no overflow');
+  // Check actual computed production theme, not a mock/design image.
+  const visual=await page.locator('.cognitive-workspace').evaluate(root=>{
+    const rgb=value=>(value.match(/[\d.]+/g)||[]).slice(0,3).map(Number);
+    const luminance=value=>rgb(value).map(c=>{const n=c/255;return n<=.04045?n/12.92:Math.pow((n+.055)/1.055,2.4);}).reduce((a,c,i)=>a+c*[.2126,.7152,.0722][i],0);
+    const ratio=(a,b)=>{const values=[luminance(a),luminance(b)].sort((x,y)=>y-x); return (values[0]+.05)/(values[1]+.05);};
+    const rootStyle=getComputedStyle(root);
+    const box=root.querySelector('.cognitive-input-box');
+    const input=box?.querySelector('textarea');
+    if(!box||!input)throw Error('canonical composer missing');
+    return {background:rootStyle.backgroundColor, contrast:ratio(rootStyle.color,rootStyle.backgroundColor), composer:ratio(getComputedStyle(input).color,getComputedStyle(box).backgroundColor)};
+  });
+  assert.equal(visual.background,'rgb(13, 16, 20)','canonical obsidian working surface');
+  assert.ok(visual.contrast>=4.5&&visual.composer>=4.5,'primary text on tested solid surfaces must be readable');
+  passed('Obsidian theme preserves readable primary and composer text on measured solid surfaces');
   await screenshot('cognitive-workspace-desktop');
+  for(const width of [360,393,412]){
+    await page.setViewportSize({width,height:852});
+    const navigation=page.getByRole('navigation',{name:'Mobilnavigation'});
+    await navigation.waitFor();
+    const dimensions=await navigation.evaluate(nav=>({width:document.documentElement.scrollWidth,viewport:innerWidth,buttons:[...nav.querySelectorAll('button')].map(b=>{const rect=b.getBoundingClientRect();return {width:rect.width,height:rect.height,inView:rect.left>=0&&rect.right<=innerWidth&&rect.top>=0&&rect.bottom<=innerHeight};})}));
+    assert.ok(dimensions.width<=width,'no horizontal document overflow at '+width);
+    assert.ok(dimensions.buttons.every(b=>b.width>=44&&b.height>=44&&b.inView),'visible 44px navigation targets at '+width);
+    const headerFits=await page.locator('.cognitive-topbar').evaluate(header=>
+      [...header.querySelectorAll('button, select')].every(control=>{
+        const rect=control.getBoundingClientRect();
+        return !rect.width||(rect.left>=0&&rect.right<=innerWidth);
+      }));
+    assert.ok(headerFits,'top bar controls fit at '+width);
+    await screenshot('jaco-visual-'+width+'px');
+  }
+  await page.setViewportSize({width:1440,height:960});
+  passed('Canonical mobile controls remain within the viewport at three phone sizes');
+  const portraitTrigger=page.getByRole('button',{name:'Öppna Auras porträtt'});
+  const portrait=page.getByRole('dialog',{name:'Aura',exact:true});
+  await input().fill('Porträttet bevarar utkastet');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  for(const width of [1440,360,393,412]){
+    await page.setViewportSize({width,height:852});
+    await portraitTrigger.click();
+    await portrait.waitFor();
+    await page.waitForFunction(()=>{
+      const canvas=document.querySelector('.aura-portrait-scene canvas');
+      if(!canvas)return false;
+      if(canvas.dataset.renderer!=='rigged-particle-field')return false;
+      const gl=canvas.getContext('webgl2');if(!gl)return false;
+      const data=new Uint8Array(canvas.width*canvas.height*4);gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,data);
+      let lit=0,bright=0;for(let i=0;i<data.length;i+=4){if(data[i+2]>12)lit++;if(data[i+2]>100)bright++;}
+      return Number(canvas.dataset.renderedPoints)>10000&&Number(canvas.dataset.hairPoints)>2000&&Number(canvas.dataset.torsoPoints)>2500&&lit>2000&&bright>250;
+    });
+    assert.equal(await portrait.locator('img').count(),0,'portrait uses a surface light field rather than a photograph');
+    if(width===1440){
+      const reducedCanvas=portrait.locator('canvas');
+      const still=await reducedCanvas.evaluate(canvas=>canvas.toDataURL());
+      await reducedCanvas.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      assert.equal(await reducedCanvas.evaluate(canvas=>canvas.toDataURL()),still,'reduced motion keeps the mask still');
+    }
+    const bounds=await portrait.boundingBox();
+    assert.ok(bounds.x>=0&&bounds.x+bounds.width<=width,'portrait fits viewport at '+width);
+    if(width===1440||width===393)await screenshot('aura-particle-portrait-'+width);
+    await page.keyboard.press('Escape');
+    await portrait.waitFor({state:'detached'});
+    assert.equal(await input().inputValue(),'Porträttet bevarar utkastet');
+  }
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.setViewportSize({width:1440,height:960});
+  passed('Aura particle portrait renders on desktop and phones and preserves the chat draft');
+  await portraitTrigger.click();
+  const scene=portrait.locator('.aura-portrait-scene');
+  await scene.waitFor();
+  await page.waitForFunction(()=>{
+    const canvas=document.querySelector('.aura-portrait-scene canvas');
+    return canvas?.dataset.renderer==='rigged-particle-field'&&Number(canvas.dataset.renderedPoints)>10000;
+  });
+  const renderMask=()=>scene.locator('canvas').evaluate(canvas=>canvas.toDataURL());
+  const initialMask=await renderMask();
+  const initialYaw=Number(await scene.locator('canvas').getAttribute('data-yaw'));
+  const initialGeometry=await scene.locator('canvas').getAttribute('data-geometry-signature');
+  await scene.hover({position:{x:18,y:60}});
+  await page.waitForFunction(({initial,yaw,geometry})=>{
+    const canvas=document.querySelector('.aura-portrait-scene canvas');
+    return Number(canvas?.dataset.renderedPoints)>5000 && Math.abs(Number(canvas?.dataset.yaw)-yaw)>.06 && canvas?.dataset.geometrySignature!==geometry && canvas?.toDataURL()!==initial;
+  },{initial:initialMask,yaw:initialYaw,geometry:initialGeometry});
+  await page.waitForFunction(()=>Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.blinkMm)>2,{},{timeout:12000});
+  await screenshot('aura-rig-blink');
+  await page.keyboard.press('Escape');
+  await portrait.waitFor({state:'detached'});
+  passed('Aura rigged lightform changes actual geometry and rendered frame with motion enabled');
   await input().fill('Behåll mitt utkast');
   await canvas('Kod').click();await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
@@ -418,6 +504,13 @@ try {
   await page.getByRole('status').filter({hasText:'Working'}).waitFor({timeout:15000});
   assert.equal(await page.locator(verifiedSelector).count(),1);
   passed('Live connection interruption preserves the draft, exposes uncertainty and reconnects without duplicates');
+  await portraitTrigger.click();
+  await portrait.locator('p[data-tone="active"]').filter({hasText:'Working'}).waitFor();
+  await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
+  await portrait.waitFor({state:'detached'});
+  assert.equal(await input().inputValue(),'Ett bevarat utkast');
+  assert.equal(bus.listMissions(30).find(item=>item.id===mission.id).status,'ACTIVE');
+  passed('Aura portrait reflects active work and dismissal preserves the running mission');
   for(const response of liveResponses)response.end();
   bus.close();bus=new DurableMissionBus(directory);chat=createAuraChatSession(bus);
   await page.reload({waitUntil:'networkidle'});
@@ -497,6 +590,64 @@ try {
   await page.getByTestId('terminal-receipts-toggle').click();
   assert.equal(await receipts.count(),0,'dismissal disposes the terminal component');
   passed('Actual xterm renders a controlled command receipt at desktop and mobile viewport without changing command authority');
+  await page.evaluate(() => {
+    window.auraSpokenReplies = [];
+    window.SpeechRecognition = class {
+      start() { queueMicrotask(() => { this.onresult({results:[[{transcript:'Kan du svara i JACO?'}]]}); this.onend(); }); }
+      abort() {}
+    };
+    Object.defineProperty(window, 'speechSynthesis', {configurable:true,value:{
+      speak(reply) { window.auraSpokenReplies.push(reply.text); window.auraCurrentReply=reply; reply.onstart?.(); },
+      cancel() {},
+    }});
+  });
+  await portraitTrigger.click();
+  await portrait.getByRole('button',{name:'Läs upp svar'}).click();
+  const portraitInput=portrait.getByRole('textbox',{name:'Meddelande till Aura'});
+  await portraitInput.fill('Hej Aura.');
+  await portrait.getByRole('button',{name:'Diktera'}).click();
+  assert.equal(await portraitInput.inputValue(),'Hej Aura. Kan du svara i JACO?');
+  const previousChatRequests=requests.filter(request=>request.kind==='chat').length;
+  await portrait.getByRole('button',{name:'Skicka',exact:true}).click();
+  await page.waitForFunction(()=>window.auraSpokenReplies.length===1);
+  assert.equal(requests.filter(request=>request.kind==='chat').length,previousChatRequests+1);
+  assert.deepEqual(await page.evaluate(()=>window.auraSpokenReplies),['Testsvaret använder de observerade händelserna. Uppdraget fortsätter.']);
+  await page.waitForFunction(()=>Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm)>3,{},{timeout:15000});
+  await screenshot('aura-rig-speaking');
+  await page.evaluate(()=>window.auraCurrentReply.onend?.());
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm==='0.000');
+  passed('Controlled speech drives actual jaw morph displacement, then returns to rest; blinking independently moves eyelid vertices');
+  await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
+  passed('Portrait dictation uses the canonical chat and reads its new reply with a controlled speech adapter');
+  // A browser engine may report an error without an end event. Late callbacks
+  // from that abandoned recording must never modify the shared draft.
+  await page.evaluate(()=>{
+    window.SpeechRecognition=class {
+      start(){window.auraTestRecording=this;}
+      abort(){window.auraTestAbortCount=(window.auraTestAbortCount||0)+1;}
+    };
+    window.auraTestAbortCount=0;
+  });
+  await portraitTrigger.click();
+  await portraitInput.fill('Behåll detta utkast');
+  await portrait.getByRole('button',{name:'Diktera',exact:true}).click();
+  await portrait.getByRole('button',{name:'Sluta lyssna',exact:true}).waitFor();
+  assert.equal(await portrait.getByRole('button',{name:'Läs upp svar'}).isDisabled(),true,'reader cannot be enabled during recording');
+  await page.evaluate(()=>window.auraTestRecording.onerror());
+  await portrait.getByRole('button',{name:'Diktera',exact:true}).waitFor();
+  await portrait.getByText('Röstfunktionen kunde inte användas.',{exact:false}).waitFor();
+  await page.evaluate(()=>window.auraTestRecording.onresult({results:[[{transcript:'STALE_CALLBACK'}]]}));
+  assert.equal(await portraitInput.inputValue(),'Behåll detta utkast');
+  await portrait.getByRole('button',{name:'Diktera',exact:true}).click();
+  assert.equal(await portrait.getByRole('button',{name:'Sluta lyssna',exact:true}).getAttribute('aria-pressed'),'true');
+  await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
+  await portrait.waitFor({state:'detached'});
+  await page.evaluate(()=>window.auraTestRecording.onresult({results:[[{transcript:'AFTER_CLOSE'}]]}));
+  await canvas('Samtal').click();
+  assert.equal(await input().inputValue(),'Behåll detta utkast');
+  assert.ok(await page.evaluate(()=>window.auraTestAbortCount>=2),'failed and dismissed recordings were aborted');
+  assert.equal(await page.evaluate(()=>window.auraSpokenReplies.length),1,'reopening does not replay history');
+  passed('Speech errors and dismissal revoke recording callbacks without changing the shared draft');
   assert.deepEqual(errors,[], 'no unexpected uncaught app/browser errors');
   if(expectedEditorCancels.length) console.log('Monaco disposal cancellations observed: '+expectedEditorCancels.length);
   const report={status:'PASS',checks:results.length,browser:browser.version(),observedAt:new Date().toISOString(),scope:'Controlled UI integration; no inference, Android or operator runtime execution',clientIndexSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'dist/index.html'))).digest('hex'),results};

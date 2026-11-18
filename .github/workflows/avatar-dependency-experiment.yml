@@ -6,6 +6,7 @@ on:
       - 'openspec/changes/add-interactive-avatar/**'
       - 'runtime/src/lib/terminalText*.mjs'
       - 'runtime/src/lib/terminalTranscript*.mjs'
+      - 'runtime/src/lib/auraLightField*.mjs'
   workflow_dispatch:
 permissions:
   contents: read
@@ -51,4 +52,4 @@ jobs:
         with:
           node-version: '24'
       - name: Run research and terminal regressions from checked-out source
-        run: node --test openspec/changes/add-interactive-avatar/notification-model.test.mjs openspec/changes/add-interactive-avatar/presentation.test.mjs runtime/src/lib/terminalText.test.mjs runtime/src/lib/terminalTranscript.test.mjs
+        run: node --test openspec/changes/add-interactive-avatar/notification-model.test.mjs openspec/changes/add-interactive-avatar/presentation.test.mjs runtime/src/lib/terminalText.test.mjs runtime/src/lib/terminalTranscript.test.mjs runtime/src/lib/auraLightField.test.mjs

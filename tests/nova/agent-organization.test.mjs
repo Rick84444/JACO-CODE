@@ -7,7 +7,7 @@ import test from 'node:test';
 import { inboxDomain, storeMessage } from '../../agents/lib/inbox.mjs';
 import { assertTaskMandate } from '../../agents/lib/org-permission.mjs';
 import { plannerChoices } from '../../agents/lib/planner-choice.mjs';
-import { AgentOrganization, createAgentOrganizationRouter, gateAgentTools } from '../../runtime/src/server/connected/agentOrganization.mjs';
+import { AgentOrganization, AURA_DEVELOPMENT_DEFAULTS, createAgentOrganizationRouter, gateAgentTools } from '../../runtime/src/server/connected/agentOrganization.mjs';
 const express = createRequire(new URL('../../runtime/package.json', import.meta.url))('express');
 
 function org(t, options) {
@@ -16,11 +16,13 @@ function org(t, options) {
   return { root, organization: new AgentOrganization(root, options) };
 }
 
-test('Aura starts as vice CEO under the operator with no powers, its own folder, and survives restart', t => {
+test('Aura starts under the operator with scoped development defaults, its own folder, and survives restart', t => {
   const { root, organization } = org(t);
   const aura = organization.snapshot().agents.find(a => a.id === 'aura');
   assert.equal(aura.reportsTo, 'operator');
-  assert.deepEqual(aura.effective.permissions, []);
+  assert.deepEqual([...aura.effective.permissions].sort(), [...AURA_DEVELOPMENT_DEFAULTS].sort());
+  assert.equal(organization.authorize('aura','browser').allowed,false);
+  assert.equal(organization.authorize('aura','git.merge').allowed,false);
   for (const file of ['rules.md', 'mcp.json', 'skills', 'memory']) assert.ok(fs.existsSync(path.join(root, 'org', 'agents', 'aura', file)), file);
   organization.setPermission('aura', 'files.read', true);
   assert.equal(new AgentOrganization(root).authorize('aura', 'files.read').allowed, true);
@@ -35,6 +37,7 @@ test('a report holds a permission only while its whole chain holds it and is act
   organization.createAgent({ name: 'Ekonomi', title: 'Accountant', mail: 'jaco-ekonomi@jacocode.com' });
   organization.setPermission('ekonomi', 'files.write', true);
   assert.equal(organization.authorize('ekonomi', 'files.write').allowed, true);
+  organization.setPermission('aura','commands.run',false);
   assert.throws(() => organization.setPermission('ekonomi', 'commands.run', true), /MANAGER_LACKS_PERMISSION/);
 
   organization.setPermission('aura', 'files.write', false);
@@ -127,11 +130,12 @@ test('operator UI routes reject cross-origin calls and require the risk to be ac
   assert.equal((await call('/agents/aura/permissions/publish', 'PUT', { granted: true, acceptRisk: true })).status, 200);
   assert.equal((await call('/agents/nobody/weights', 'GET')).status, 404);
   const { data } = await call('/', 'GET');
-  assert.deepEqual(data.organization.agents.find(a => a.id === 'aura').effective.permissions, ['publish']);
+  assert.deepEqual([...data.organization.agents.find(a => a.id === 'aura').effective.permissions].sort(), [...AURA_DEVELOPMENT_DEFAULTS,'publish'].sort());
 });
 
 test('Rule of Two: untrusted input, private data and external reach together make every outbound action wait for the operator', t => {
   const { organization } = org(t);
+  organization.setPermission('aura','web.read',false); // isolate the mail-triggered exposure transition
   organization.setLimits('aura', { autonomy: 5 });
   organization.setPermission('aura', 'files.read', true);
   organization.setPermission('aura', 'git.branch', true);
@@ -152,6 +156,7 @@ test('Rule of Two: untrusted input, private data and external reach together mak
 
 test('autonomy levels decide what needs approval and are capped by the manager', t => {
   const { organization } = org(t);
+  organization.setPermission('aura','web.read',false); // isolate autonomy level from Rule of Two
   organization.setPermission('aura', 'files.read', true);
   organization.setPermission('aura', 'files.write', true);
   organization.setPermission('aura', 'publish', true, 'operator', { acceptRisk: true });
@@ -203,6 +208,7 @@ test('pending hire cannot bypass operator approval through pause and resume', t 
 
 test('failed persistent write cannot publish in-memory permission, limits or status', t => {
   const { organization, root } = org(t);
+  organization.setPermission('aura', 'files.read', false); // establish an explicitly revoked baseline
   const tempPath = path.join(root, 'org', 'organization.json.' + process.pid + '.tmp');
   fs.mkdirSync(tempPath);
   try {
@@ -257,6 +263,7 @@ test('a new agent gets a real jaco-<id>@domain address, a mailbox and a memory f
 
 test('a permission that is not held stops Aura tools and Nova tasks, and granting or revoking applies at once', async t => {
   const { root, organization } = org(t);
+  organization.setPermission('aura','files.read',false);
   let ran = 0;
   const { repo_read, health } = gateAgentTools({ repo_read: { run: async () => ++ran }, health: { run: async () => 'up' } }, organization);
   await assert.rejects(repo_read.run(), /MANDATE_DENIED:aura:files\.read:PERMISSION_NOT_GRANTED/);
@@ -283,4 +290,46 @@ test('the local Ollama planner uses the loopback address and a connected provide
   assert.equal(plannerChoices({}).ollama.url, 'http://127.0.0.1:11434/v1/chat/completions');
   const merged = plannerChoices({}, { ollama: { models: ['m'], url: 'http://127.0.0.1:9/v1/chat/completions' } });
   assert.equal(merged.ollama.url, 'http://127.0.0.1:9/v1/chat/completions');
+});
+
+test('public fetch has a separate revocable mandate; legacy grants are not restored',async t=>{
+  const {root,organization}=org(t);
+  const tools=gateAgentTools({web_fetch:{run:async()=> 'public text'},git_pr:{run:async()=> 'public PR'}},organization);
+  assert.equal(await tools.web_fetch.run(), 'public text');
+  assert.equal(await tools.git_pr.run(), 'public PR');
+  assert.equal(organization.authorize('aura','browser').allowed,false);
+  organization.setPermission('aura','web.read',false);
+  await assert.rejects(tools.web_fetch.run(),/MANDATE_DENIED:aura:web\.read/);
+  assert.equal(new AgentOrganization(root).authorize('aura','web.read').allowed,false);
+  const file=path.join(root,'org','organization.json');
+  const previous=JSON.parse(fs.readFileSync(file,'utf8'));
+  delete previous.publicWebReadInitialized;
+  previous.agents.aura.mandate.permissions={};
+  fs.writeFileSync(file,JSON.stringify(previous));
+  const upgraded=new AgentOrganization(root);
+  assert.equal(upgraded.authorize('aura','web.read').allowed,true);
+  assert.equal(upgraded.authorize('aura','files.write').allowed,false);
+  assert.equal(upgraded.authorize('aura','browser').allowed,false);
+});
+
+test('operator-only Rule of Two waiver lets Aura act freely, keeps hard limits and is revocable', t => {
+  const { root, organization } = org(t);
+  organization.setLimits('aura', { autonomy: 5 });
+  organization.setPermission('aura', 'browser', true, 'operator', { acceptRisk: true, days: 30 });
+  assert.equal(organization.decide('aura', 'commands.run').reason, 'RULE_OF_TWO');
+  assert.equal(organization.effectiveAutonomy('aura'), 4);
+  // Only the operator may accept the exposure.
+  assert.throws(() => organization.setLimits('aura', { ruleOfTwoWaived: true }, 'aura'), /HIGH_RISK_OPERATOR_ONLY|AUTHORITY/);
+  assert.throws(() => organization.setLimits('aura', { ruleOfTwoWaived: 'yes' }), /RULE_OF_TWO_WAIVER_INVALID/);
+  organization.setLimits('aura', { ruleOfTwoWaived: true });
+  assert.equal(organization.effectiveAutonomy('aura'), 5);
+  for (const key of ['commands.run', 'browser', 'git.branch', 'files.write'])
+    assert.deepEqual(organization.decide('aura', key), { allowed: true, needsApproval: false, reason: 'WITHIN_MANDATE' }, key);
+  // Ungranted and locked permissions stay refused.
+  assert.equal(organization.decide('aura', 'git.merge').allowed, false);
+  assert.equal(organization.decide('aura', 'payments').allowed, false);
+  // Persists across restart, and revoking restores the approval requirement.
+  assert.equal(new AgentOrganization(root).decide('aura', 'commands.run').needsApproval, false);
+  organization.setLimits('aura', { ruleOfTwoWaived: false });
+  assert.equal(organization.decide('aura', 'commands.run').reason, 'RULE_OF_TWO');
 });

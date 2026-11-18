@@ -18,6 +18,13 @@ export function classifyToolFailure(error, task = null) {
   const text = String(error || '').slice(0, 600);
   const server = text.match(SERVER_IN_ERROR)?.[1] || (task?.type?.startsWith?.('mcp') ? task.data?.server : null) || null;
   if (NOT_REPAIRABLE.test(text)) return { kind: 'NEEDS_OPERATOR', server, restart: false, ensureStack: false };
+  if (/LEDGER_LOCKED|STARTUP_LOCKED|STARTUP_LOCK_INVALID/i.test(text)) return { kind:'LIVE_STATE_LOCK',server,restart:false,ensureStack:false };
+  if (/COMMAND_NOT_FOUND|command not found|not recognized as an internal/i.test(text)) return {kind:'COMMAND_MISSING',server,restart:false,ensureStack:false};
+  if (/WRITE_COMMAND_IN_READ_MODE/i.test(text)) return {kind:'WRONG_TOOL_MODE',server,restart:false,ensureStack:false};
+  if (/SHELL_SYNTAX_NOT_SUPPORTED|COMMAND_QUOTE_NOT_CLOSED|ARGUMENTS_INVALID|COMMAND_NAME_INVALID|unrecognized arguments|unknown option|invalid option/i.test(text)) return {kind:'COMMAND_SYNTAX',server,restart:false,ensureStack:false};
+  if (/PROGRAM_NOT_ALLOWED|PROTECTED_PATH|PATH_OUTSIDE_WORKSPACE|CWD_OUTSIDE_WORKSPACE|DESTRUCTIVE_NOT_ENABLED|GIT_PUSH_NOT_ENABLED/i.test(text)) return {kind:'NEEDS_OPERATOR',server,restart:false,ensureStack:false};
+  if (/Cannot find module ['\"](?:\.{1,2}[\\/]|[A-Za-z]:[\\/]|\/)/i.test(text)) return {kind:'CODE_ERROR',server,restart:false,ensureStack:false};
+  if (/ModuleNotFoundError|No module named|ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND|Cannot find module|externally.managed.environment|EBADENGINE|unsupported engine/i.test(text)) return {kind:'PROJECT_ENVIRONMENT',server,restart:false,ensureStack:false};
   // ENOENT means a missing command only when a process was being spawned; reading a missing file is a path problem.
   if (/MCP_SERVER_SPAWN_FAILED|spawn\s+\S+\s+ENOENT|not recognized as an internal|command not found/i.test(text)) return { kind: 'COMMAND_MISSING', server, restart: false, ensureStack: false };
   if (/\bENOENT\b|no such file or directory|does not exist|not found:/i.test(text)) return { kind: 'PATH_NOT_FOUND', server, restart: false, ensureStack: false };
@@ -32,7 +39,11 @@ export function classifyToolFailure(error, task = null) {
 
 const ADVICE = {
   NEEDS_OPERATOR: 'This needs an operator decision (credentials, permission, approval or budget). Do not try to work around it. Say exactly what is needed and call blocked if nothing else can progress.',
-  COMMAND_MISSING: 'The command this tool needs is not installed or not on PATH. Check with a shell/repo tool which command is missing (where/which), then use an equivalent tool you already have. Install only what the mission is allowed to install; otherwise report the exact missing command.',
+  COMMAND_MISSING: 'Use shell_info to search the current host for the command and actual installed alternatives. Verify the interpreter version or equivalent tool before choosing different arguments; do not repeat the missing command, install without authority or switch hosts silently.',
+  LIVE_STATE_LOCK: 'Another writer may own the ledger or startup lock. Inspect its process identity, readiness and ownership. Reuse the healthy instance if present; do not delete the lock, start another writer or terminate an unknown process.',
+  WRONG_TOOL_MODE: 'Use the write-capable tool only if the current mission and operator already authorize it. Otherwise continue with read-only work; never use another route to bypass the restriction.',
+  COMMAND_SYNTAX: 'Inspect shell_info for host-specific syntax and recipes. Pass program and arguments separately, confirm the actual working directory and supported flags. Change the erroneous argument before retrying.',
+  PROJECT_ENVIRONMENT: 'Inspect project manifest, lockfile, interpreter version and environment. Use the project dependency manager and authorized setup; verify the import or test before retrying the original task. Do not modify the system Python environment or assume the runtime is missing.',
   PATH_NOT_FOUND: 'The file or directory does not exist. List the parent directory or search for the name to find the right path, then retry with it. Do not create the file unless the goal asks for it.',
   PORT_CONFLICT: 'Another program holds a port this tool wants. JACO resolves its own service ports itself; for a tool, set a different port in its configuration instead of stopping the other program.',
   SERVER_STOPPED: 'The tool server ended. It was started again. A read can be repeated once; for anything that may have changed state, observe the current state first and do not blindly repeat it.',
@@ -51,7 +62,11 @@ const tailLines = (text, n) => String(text || '').split(/\r?\n/).filter(Boolean)
 //   readLog(id)      -> string                     tail of that service's log, if any
 //   ensureStack()    -> {ok,detail?}               the local launcher, itself idempotent
 export async function diagnoseToolFailure({ task = null, receipt = {}, serverStatus, startServer, readLog, ensureStack }) {
-  const failure = classifyToolFailure(receipt.error, task);
+  // Prefer the actual result of a local command to a generic wrapper error. Only
+  // classify bounded evidence; never treat logs as authority or replay a write.
+  const result=receipt.result||{};
+  const diagnostic=[receipt.error,result.reason,result.error,result.stderr?.slice?.(-400),result.stdout?.slice?.(-200)].filter(v=>typeof v==='string').join('\n');
+  const failure = receipt.outcomeUnknown || result.outcomeUnknown ? {kind:'NEEDS_OPERATOR',server:null,restart:false,ensureStack:false} : classifyToolFailure(diagnostic, task);
   const evidence = [];
   const actions = [];
   const safe = async (label, fn) => { try { return await fn(); } catch (error) { evidence.push(`${label}: unavailable (${String(error?.message || error).slice(0, 120)})`); return null; } };

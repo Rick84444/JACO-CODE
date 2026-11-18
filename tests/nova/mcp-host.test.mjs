@@ -42,6 +42,9 @@ test('a stdio server starts on first use, lists tools, runs calls, and restarts 
     const tools = await host.start('fake');
     assert.deepEqual(tools.map(t => [t.name, t.readOnly]), [['echo', true], ['write', false], ['crash', false]]);
     assert.equal((await host.call('fake', 'echo', { text: 'hi' })).content[0].text, 'echo:hi');
+    assert.equal((await host.call('fake','fake.echo',{text:'alias'},{actor:'agent',readOnly:true})).content[0].text,'echo:alias');
+    await assert.rejects(host.call('fake','other.echo',{}, {actor:'agent',readOnly:true}),/MCP_TOOL_UNKNOWN/);
+    await assert.rejects(host.call('fake','fake.write',{}, {actor:'agent',readOnly:true}),/MCP_TOOL_NOT_READ_ONLY/);
     await assert.rejects(host.call('fake', 'write', {}, { readOnly: true }), /MCP_TOOL_NOT_READ_ONLY:fake.write/, 'agents cannot run mutating tools');
     assert.equal((await host.call('fake', 'write', {})).content[0].text, 'write:', 'the operator click can');
     await assert.rejects(host.call('fake', 'nope', {}), /MCP_TOOL_UNKNOWN/);
@@ -246,13 +249,19 @@ test('Gameboard journal is the only write exception for built-in JacoEdit and ne
   assert.equal(agentRefusal(editor,tool,{...request,scope:'other/malformed'}),'MCP_GAMEBOARD_MESSAGE_INVALID');
 });
 
-test('JACO Shell: agents read by default, shell_run needs write access, and the workspace is the repo root', async () => {
+test('JACO Shell: agents write by default, explicit read/off/deny remain effective, and the workspace is the repo root', async () => {
   const { agentRefusal } = await import('../../runtime/src/server/mcp/stdioMcpHost.mjs');
   const servers = loadServerConfig({ configFile: path.join(dir, 'none.json'), repoRoot: dir, runtimeRoot: path.resolve('runtime') });
-  assert.equal(servers.shell.agentAccess, 'read');
+  assert.equal(servers.shell.agentAccess, 'write');
   assert.equal(servers.shell.env.JACO_SHELL_WORKSPACE, dir);
   assert.equal(agentRefusal(servers.shell, { name: 'shell_read', readOnly: true }), null);
-  assert.equal(agentRefusal(servers.shell, { name: 'shell_run', readOnly: false }, { command: 'npm', args: ['test'] }), 'MCP_TOOL_NOT_READ_ONLY');
+  assert.equal(agentRefusal(servers.shell, { name: 'shell_run', readOnly: false }, { command: 'npm', args: ['test'] }), null);
+  assert.equal(agentRefusal({...servers.shell,agentAccess:'read'}, { name: 'shell_run', readOnly: false }), 'MCP_TOOL_NOT_READ_ONLY');
+  assert.equal(agentRefusal({...servers.shell,agentAccess:'off'}, { name: 'shell_info', readOnly: true }), 'MCP_AGENT_ACCESS_OFF');
+  assert.equal(agentRefusal({...servers.shell,deny:['shell_run']}, { name: 'shell_run', readOnly: false }), 'MCP_TOOL_DENIED');
+  const explicit=path.join(dir,'explicit-shell-access.json');
+  fs.writeFileSync(explicit,JSON.stringify({servers:{shell:{agentAccess:'read'}}}));
+  assert.equal(loadServerConfig({configFile:explicit,repoRoot:dir,runtimeRoot:path.resolve('runtime')}).shell.agentAccess,'read');
   assert.equal(agentRefusal({ ...servers.shell, agentAccess: 'write' }, { name: 'shell_run', readOnly: false }, { command: 'npm', args: ['test'] }), null);
   const host = new StdioMcpHost({ configFile: path.join(dir, 'none.json'), repoRoot: dir, runtimeRoot: path.resolve('runtime') });
   try {
@@ -261,10 +270,13 @@ test('JACO Shell: agents read by default, shell_run needs write access, and the 
     fs.writeFileSync(path.join(dir, 'hello.txt'), 'hej\n');
     const out = await host.call('shell', 'shell_read', { command: 'cat', args: ['hello.txt'] });
     assert.match(JSON.stringify(out), /hej/);
+    const run=await host.call('shell','shell_run',{command:'node',args:['-e',"require('node:fs').writeFileSync('shell-write-proof.txt','verified')"]},{actor:'agent'});
+    assert.equal(JSON.parse(run.content[0].text).ok,true);
+    assert.equal(fs.readFileSync(path.join(dir,'shell-write-proof.txt'),'utf8'),'verified');
   } finally { host.stopAll?.(); }
 });
 
-test('Lite offers the shell server only where its bundle exists and the programs are POSIX', async () => {
+test('Lite offers the shell server on every host where its bundle exists', async () => {
   const { defaultServers } = await import('../../runtime/src/server/mcp/stdioMcpHost.mjs');
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-lite-shell-'));
   const before = process.env.JACO_LITE; process.env.JACO_LITE = '1';
@@ -272,10 +284,9 @@ test('Lite offers the shell server only where its bundle exists and the programs
     assert.deepEqual(Object.keys(defaultServers({ repoRoot: dir, runtimeRoot })), ['editor'], 'no bundle, no shell server');
     fs.mkdirSync(path.join(runtimeRoot, 'dist')); fs.writeFileSync(path.join(runtimeRoot, 'dist', 'jaco-shell.mjs'), '// bundle');
     const servers = defaultServers({ repoRoot: dir, runtimeRoot });
-    if (process.platform === 'win32') assert.deepEqual(Object.keys(servers), ['editor']);
-    else {
+    {
       assert.deepEqual(Object.keys(servers), ['editor', 'shell']);
-      assert.equal(servers.shell.agentAccess, 'read');
+      assert.equal(servers.shell.agentAccess, 'write');
       assert.equal(servers.shell.env.JACO_SHELL_WORKSPACE, dir);
     }
   } finally { if (before === undefined) delete process.env.JACO_LITE; else process.env.JACO_LITE = before; }

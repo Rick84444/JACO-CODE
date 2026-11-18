@@ -23,7 +23,7 @@ export const TASK_PERMISSIONS = Object.freeze({
 // Aura's chat tools. Tools that are not listed read runtime status or have their own operator gate.
 export const AURA_TOOL_PERMISSIONS = Object.freeze({
   repo_list: 'files.read', repo_read: 'files.read', git_status: 'files.read', git_log: 'files.read', seer_memory: 'files.read', attachment_read: 'files.read', env_keys: 'files.read',
-  web_fetch: 'browser', nova_deliver: 'git.merge',
+  web_fetch: 'web.read', git_pr: 'web.read', nova_deliver: 'git.merge',
 });
 
 // The agent and everyone above it must be active and hold an unexpired grant: revoking a manager stops the whole branch.

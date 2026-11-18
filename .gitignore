@@ -63,3 +63,8 @@ __pycache__/
 
 # Lock file for the VS Code extension is not used; the package is built with --no-dependencies
 extensions/jaco-vscode/package-lock.json
+
+# Pinned, generated CC0 Aura rig (prepare:aura-rig)
+/runtime/public/branding/aura-rig.glb
+/runtime/public/branding/aura-rig.glb.tmp-*
+/aura-rig-evidence/

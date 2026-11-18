@@ -48,7 +48,8 @@ test('native git MCP stages and commits via SafeShell without Python or a shell'
   fs.writeFileSync(path.join(dir,'hello.txt'),'hello\n');
   const shell=new SafeShell({workspace:dir,auditFile:false});
   const listed=await handleGitMcp({id:1,method:'tools/list'},{shell});
-  assert.equal(listed.result.tools.length,9);
+  assert.ok(listed.result.tools.some(t => t.name === 'git_merge' && t.annotations.readOnlyHint === false));
+  assert.equal(listed.result.tools.length,10);
   assert.equal(parsed(await handleGitMcp(request(2,'git_add',{path:'hello.txt'}),{shell})).ok,true);
   const committed=parsed(await handleGitMcp(request(3,'git_commit',{message:'test: native MCP commit'}),{shell}));
   assert.equal(committed.ok,true, JSON.stringify(committed));
@@ -141,4 +142,26 @@ test('a page over the limit returns its start, marked as truncated', async () =>
   assert.equal(out.truncated, true);
   assert.equal(out.bytes, 128 * 1024);
   assert.match(out.content, /\[truncated at 131072 bytes\]$/);
+});
+
+test('native MCP merges only a fast-forward into a nonprotected branch',async t=>{
+  const dir=createTemp(t);
+  const git=(...args)=>execFileSync('git',args,{cwd:dir,encoding:'utf8'}).trim();
+  git('init','-q','-b','main');
+  git('config','user.name','MCP fixture');git('config','user.email','fixture@example.test');
+  fs.writeFileSync(path.join(dir,'a.txt'),'base');git('add','a.txt');git('commit','-qm','base');
+  git('branch','work');git('checkout','-qb','source');
+  fs.writeFileSync(path.join(dir,'a.txt'),'changed');git('add','a.txt');git('commit','-qm','change');
+  const target=git('rev-parse','HEAD');
+  const shell=new SafeShell({workspace:dir,auditFile:false});
+  git('checkout','-q','main');
+  const denied=await handleGitMcp(request(1,'git_merge',{ref:'source'}),{shell});
+  assert.equal(denied.result.isError,true);
+  assert.match(denied.result.content[0].text,/PROTECTED_OR_DETACHED/);
+  git('checkout','-q','work');
+  const merged=await handleGitMcp(request(2,'git_merge',{ref:'source'}),{shell});
+  assert.equal(parsed(merged).ok,true,JSON.stringify(merged));
+  assert.equal(git('rev-parse','HEAD'),target);
+  const bad=await handleGitMcp(request(3,'git_merge',{ref:'--abort'}),{shell});
+  assert.equal(bad.result.isError,true);
 });
