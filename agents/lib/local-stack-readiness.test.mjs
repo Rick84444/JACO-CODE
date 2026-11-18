@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyStartupServices, optionalStartupService, optionalOwnershipFailure, processBirth, pendingProcess, configuration, resolveServicePorts } from './local-stack.mjs';
+import { classifyStartupServices, optionalStartupService, optionalOwnershipFailure, processBirth, pendingProcess, configuration, resolveServicePorts, chromeExecutable, chromeLaunchArgs } from './local-stack.mjs';
 const ready = id => ({ id, state: 'READY' });
 const failed = id => ({ id, state: 'UNAVAILABLE' });
 const core = ['runtime', 'workplace', 'seer', 'nova-supervisor', 'nova-session'].map(ready);
@@ -49,4 +49,24 @@ test('port resolver leaves occupied legacy bridge alone and keeps Core port',asy
   const skipped=[],original=c.ports.novaBridge;
   const moves=await resolveServicePorts(c,{probe:async s=>({state:s.id==='novaBridge'?'UNAVAILABLE':'READY'}),occupied:async p=>p===original,owns:async()=>{throw Error('PROCESS_OWNER_NOT_VERIFIED:novaBridge');},onOptionalBlocked:id=>skipped.push(id)});
   assert.deepEqual(moves,[]);assert.deepEqual(skipped,['novaBridge']);assert.equal(c.ports.novaBridge,original);
+});
+
+test('Linux browser discovery uses Chromium and preserves an explicit path',t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-chromium-'));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const chromium=path.join(root,'chromium');fs.writeFileSync(chromium,'');
+  assert.equal(chromeExecutable({PATH:root},'linux'),chromium);
+  assert.equal(chromeExecutable({PATH:root,JACO_CHROME_EXECUTABLE:path.join(root,'missing')},'linux'),null);
+  assert.equal(chromeExecutable({PATH:root},'win32'),null);
+});
+test('Pixel headless Chromium retains loopback debug and dedicated profile without disabling sandbox',()=>{
+  const c={root:os.tmpdir(),env:{},ports:{chrome:9222}};
+  const args=chromeLaunchArgs(c,'linux');
+  assert.ok(args.includes('--headless=new'));
+  assert.ok(args.includes('--remote-debugging-address=127.0.0.1'));
+  assert.ok(args.includes('--remote-debugging-port=9222'));
+  assert.ok(args.some(a=>a.startsWith('--user-data-dir=')));
+  assert.ok(!args.includes('--no-sandbox'));
+  assert.ok(!chromeLaunchArgs({...c,env:{DISPLAY:':0'}},'linux').includes('--headless=new'));
+  assert.ok(!chromeLaunchArgs(c,'win32').includes('--headless=new'));
 });
