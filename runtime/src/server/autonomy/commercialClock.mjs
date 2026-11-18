@@ -20,9 +20,9 @@ export function commercialTaskAllowed(task) {
   if (task.type !== 'mcp-call' && task.type !== 'mcp-write') return true;
   const server = task.data?.server, raw = String(task.data?.tool || '');
   const name = raw.startsWith(server + '.') ? raw.slice(server.length + 1) : raw;
-  if (task.type === 'mcp-write') return server === 'agentgigs' && name === 'apply';
+  if (task.type === 'mcp-write') return server === 'agentgigs' && ['apply','stage_text_delivery','deliver_staged_text','send_job_message'].includes(name);
   return (server === 'jobbi' && name === 'list_gigs') ||
-    (server === 'agentgigs' && ['list_available','job_status','list_attempted','list_applications'].includes(name));
+    (server === 'agentgigs' && ['list_available','job_status','list_attempted','list_applications','quote_economics','earnings_summary','notifications','job_messages'].includes(name));
 }
 export function seedCommercialKnowledge(knowledge) {
   const id = 'commercial-opportunity-policy-v1';

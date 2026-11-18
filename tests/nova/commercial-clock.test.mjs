@@ -71,3 +71,10 @@ test('out-of-scope tools rejected in real Nova begin; no fabricated revenue in o
   assert.equal(s.tick().state,'COOLDOWN');
   s.advance(3600000+Math.max(0,Date.parse(mission.createdAt)-Date.parse(s.m.signedAt))+1);assert.equal(s.tick().state,'QUEUED');
 });
+
+test('commercial toolkit keeps outward writes on review',()=>{
+ for(const tool of ['quote_economics','earnings_summary','notifications','job_messages'])assert.equal(commercialTaskAllowed({type:'mcp-call',data:{server:'agentgigs',tool}}),true);
+ for(const tool of ['apply','send_job_message','deliver_staged_text']){const task={type:'mcp-write',data:{server:'agentgigs',tool}};assert.equal(commercialTaskAllowed(task),true);assert.ok(operatorApprovalCheck(task));}
+ assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'agentgigs',tool:'stage_text_delivery'}}),true);
+ assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'agentgigs',tool:'fund-escrow'}}),false);
+});
