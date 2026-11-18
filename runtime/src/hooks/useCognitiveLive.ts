@@ -37,8 +37,9 @@ export function useCognitiveLive() {
     const open = () => {
       if (source || !active) return;
       setConnection('connecting');
+      observedAt.current = new Date().toISOString();
       const next = new EventSource('/api/aura/workbench/live');
-      next.onopen = () => { if (active && source === next) setConnection('connecting'); };
+      next.onopen = () => { if (active && source === next) { observedAt.current = new Date().toISOString(); setConnection('connecting'); } };
       next.addEventListener('observation', observation);
       next.addEventListener('source-error', () => { if(active && source === next) setConnection('unavailable'); });
       next.onerror = () => { if(active && source === next) setConnection('reconnecting'); };
