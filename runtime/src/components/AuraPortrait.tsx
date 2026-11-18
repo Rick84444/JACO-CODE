@@ -204,11 +204,19 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       // Browsers end recognition after a pause; keep listening until the operator presses stop.
       base = [base, committed].filter(Boolean).join(' ');
       committed = '';
-      try { recording.start(); }
-      catch { dictation.current = null; setListening(false); }
+      // Only resume a session that actually listened for a while, with a short delay and a cap, so an engine that
+      // ends immediately (no microphone, denied, test double) stops instead of restarting in a tight loop.
+      if (Date.now() - startedAt < 800 || restarts >= 30) { dictation.current = null; setListening(false); return; }
+      setTimeout(() => {
+        if (dictation.current !== recording) return;
+        try { startedAt = Date.now(); restarts++; recording.start(); }
+        catch { dictation.current = null; setListening(false); }
+      }, 150);
     };
+    let startedAt = Date.now(), restarts = 0;
     try {
       dictation.current = recording;
+      startedAt = Date.now();
       recording.start();
       setListening(true);
     } catch {
