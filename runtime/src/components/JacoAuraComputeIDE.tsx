@@ -1997,6 +1997,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   </section> : null;
   return <>
     <CognitiveWorkspace remoteMode={remoteMode} attention={attention} canvas={workspaceView} onCanvas={chooseWorkspace} conversation={renderChatContent()} detail={detail}
+      portraitChat={chatSession}
       stage={stage} stagePinned={workspacePinned} onTogglePin={()=>setWorkspacePinned(value=>!value)}
       sidebar={sidebar} sidePanelOpen={sidePanelOpen} sidePanel={renderSidebar()}
       onSidebar={view => { if(workspaceView==='gameboard')setWorkspaceView('conversation'); if(['tools','providers','skills'].includes(view)){setConnectionsTab(view==='tools'?'capabilities':view==='providers'?'models':'skills');setWorkspaceView('connections');setSidePanelOpen(false);}else{setSidebar(view);setSidePanelOpen(current => sidebar === view ? !current : true);} }}

@@ -884,6 +884,54 @@
 .cognitive-workspace .cognitive-topbar{border-bottom-color:#727f9045;box-shadow:inset 0 1px 0 #ffffff14,0 1px 0 #0008}
 .cognitive-workspace .cognitive-brand-divider{background:#8091a640}
 .cognitive-workspace .cognitive-product{color:var(--cw-titanium);letter-spacing:.055em}
+.cognitive-workspace .aura-portrait-trigger {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 8px;
+  min-height: 32px;
+  border: 1px solid #384855;
+  border-radius: 7px;
+  background: #18222c;
+}
+.aura-portrait-trigger:hover, .aura-portrait-trigger:focus-visible { border-color: #79baff; }
+.aura-portrait {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  box-sizing: border-box;
+  width: min(460px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 14px;
+  border: 1px solid #465b6b;
+  border-radius: 16px;
+  color: #d9e3ec;
+  background: radial-gradient(ellipse at 50% 48%, #192e40, #0d1014 68%);
+  box-shadow: 0 26px 72px #000b, inset 0 1px #c5ced633;
+}
+.aura-portrait::backdrop { background: #070b11bf; }
+.aura-portrait header { display: flex; align-items: center; justify-content: space-between; }
+.aura-portrait header h2 { margin: 0; font-size: 1rem; }
+.aura-portrait header button { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 8px; }
+.aura-portrait header button:hover, .aura-portrait header button:focus-visible { background: #243848; }
+.aura-portrait-scene { position: relative; width: min(100%, 49dvh); margin: 0 auto; overflow: hidden; border-radius: 10px; background: #060b18; }
+.aura-portrait-scene canvas { display: block; width: 100%; height: auto; pointer-events: none; }
+.aura-portrait p { margin: 0; min-height: 1.5em; text-align: center; color: #aec1d2; font-size: .875rem; }
+.aura-portrait p[data-tone="active"], .aura-portrait p[data-tone="busy"] { color: #96ceff; }
+.aura-portrait-conversation { display: grid; gap: 8px; margin-top: 10px; }
+.aura-portrait-reply { max-height: min(16dvh, 140px); overflow: auto; padding: 9px 10px; border-radius: 8px; background: #15212e; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .875rem; }
+.aura-portrait-conversation textarea { display: block; width: 100%; padding: 9px 10px; resize: vertical; border: 1px solid #455970; border-radius: 8px; color: inherit; background: #0d1520; font-size: 1rem; }
+.aura-portrait-controls { display: flex; flex-wrap: wrap; gap: 6px; }
+.aura-portrait-controls button { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; padding: 0 8px; border: 1px solid #455970; border-radius: 8px; font-size: .75rem; }
+.aura-portrait-controls button[aria-pressed=true], .aura-portrait-controls button[type=submit] { background: #1c3552; }
+.aura-portrait-controls button:disabled { opacity: .5; }
+@media (max-width: 767px) {
+  .cognitive-brand:has(.aura-portrait-trigger) { gap: 6px; }
+  .cognitive-workspace .aura-portrait-trigger { min-height: 44px; }
+}
+@media (max-width: 440px) {
+  .cognitive-workspace .cognitive-topbar { flex-wrap: wrap; gap: 4px 8px; padding-inline: 8px; }
+  .cognitive-workspace .cognitive-top-actions { flex-wrap: wrap; margin-inline-start: auto; max-width: 100%; }
+}
 .cognitive-workspace .cognitive-rail{background:linear-gradient(90deg,#222830 0%,#181d24 23%,#1b2129 84%,#2c343d 100%);border-right-color:var(--cw-line)}
 .cognitive-workspace .cognitive-rail>button{color:var(--cw-muted)}
 .cognitive-workspace .cognitive-rail>button:hover,.cognitive-workspace .cognitive-top-actions>button:hover{background:#303943;color:var(--cw-text)}
