@@ -163,14 +163,16 @@ function Do-KeyPress($keysStr) {
   if (-not $VK.ContainsKey($key)) { throw 'UNSUPPORTED_KEY' }
   foreach ($m in $mods) { if ($m -notin @('ctrl','alt','shift','win')) { throw 'UNSUPPORTED_MODIFIER' } }
   $held = New-Object System.Collections.Generic.List[UInt16]
+  $releaseFailed = $false
   try {
     foreach ($m in $mods) { $vkCode=[UInt16]$VK[$m]; [WinInput]::KeyDown($vkCode); $held.Add($vkCode) }
     $vkCode=[UInt16]$VK[$key]
     [WinInput]::KeyDown($vkCode); $held.Add($vkCode)
     Start-Sleep -Milliseconds 30
   } finally {
-    for ($n=$held.Count-1; $n -ge 0; $n--) { try { [WinInput]::KeyUp($held[$n]) } catch { Write-Warning 'KEY_RELEASE_FAILED' } }
+    for ($n=$held.Count-1; $n -ge 0; $n--) { try { [WinInput]::KeyUp($held[$n]) } catch { $releaseFailed = $true } }
   }
+  if ($releaseFailed) { throw 'KEY_RELEASE_FAILED' }
 }
 
 function Do-TypeText($text) {

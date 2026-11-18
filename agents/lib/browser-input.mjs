@@ -179,7 +179,7 @@ export function createInputActions({ evaluate, observe, tabs = null, downloads =
     return now.filter(f => !f.partial).map(f => ({ name: f.name, bytes: f.bytes, sha256: digestFile(path.join(downloads.dir, f.name), fsImpl) }));
   }
 
-  async function actSession(session, { selector, frame, role, name, text, key, modifiers, files, expectedUrl, expect }, kind) {
+  async function actSession(session, { selector, frame, role, name, text, key, modifiers, files, expectedUrl, expect, expectedTarget }, kind) {
     if (!['click', 'type', 'press', 'upload'].includes(kind)) throw new Error('ACTION_KIND_UNSUPPORTED');
     if (kind === 'press') {
       if (!Object.hasOwn(KEYS, key)) throw new Error('KEY_NOT_SUPPORTED');
@@ -188,6 +188,11 @@ export function createInputActions({ evaluate, observe, tabs = null, downloads =
     const uploadPaths = kind === 'upload' ? checkUploadFiles(files, uploads?.roots, fsImpl) : null;
     const before = await observe(session);
     if (expectedUrl && before.url !== expectedUrl) throw new Error('STALE_PAGE');
+    if(expectedTarget){
+      const hits=(before.targets||[]).filter(t=>t.visible&&t.selector===selector&&t.text===expectedTarget.text&&t.role===expectedTarget.role);
+      const same=(before.targets||[]).filter(t=>t.visible&&t.text===expectedTarget.text&&t.role===expectedTarget.role);
+      if(hits.length!==1||same.length!==1)throw new Error('DOM_TARGET_IDENTITY_CHANGED');
+    }
     const mask = (Array.isArray(modifiers) ? modifiers : []).reduce((m, x) => m | (MODIFIERS[String(x).toLowerCase()] || 0), 0);
     const predicate = expect?.url
       ? `location.href===${JSON.stringify(expect.url)}`
@@ -207,6 +212,10 @@ export function createInputActions({ evaluate, observe, tabs = null, downloads =
         target = await resolveTarget(session, { selector, frame, role, name });
         info = (await callOn(session, target.objectId, TARGET_FN)).result?.value;
         if (!info || info.disabled) throw new Error('TARGET_NOT_UNIQUE_OR_ACTIONABLE');
+        if(expectedTarget){
+          const identity=(await callOn(session,target.objectId,`function(){const e=this;return {text:(e.innerText||e.getAttribute('aria-label')||e.getAttribute('placeholder')||e.name||'').trim().replace(/\\s+/g,' ').slice(0,100),role:e.getAttribute('role')||e.tagName.toLowerCase()};}`)).result?.value;
+          if(identity?.text!==expectedTarget.text||identity?.role!==expectedTarget.role)throw new Error('DOM_TARGET_IDENTITY_CHANGED');
+        }
         if (kind === 'upload') { if (!info.fileInput) throw new Error('NOT_A_FILE_INPUT'); }
         else {
           if (info.w <= 0 || info.h <= 0) throw new Error('TARGET_NOT_UNIQUE_OR_ACTIONABLE');

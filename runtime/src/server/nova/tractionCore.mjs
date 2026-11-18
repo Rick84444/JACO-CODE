@@ -47,7 +47,7 @@ const emptyState = ()                    => ({
   events: [],
 });
 
-export class NovaTractionEngine {
+export class DomTractionEngine {
           runtime = emptyState();
 
   getState()                    { return structuredClone(this.runtime); }
@@ -143,3 +143,6 @@ export class NovaTractionEngine {
   }
 }
 
+
+// Backward-compatible export for existing Android traction routes and consumers.
+export { DomTractionEngine as NovaTractionEngine };
