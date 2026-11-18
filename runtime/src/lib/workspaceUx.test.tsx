@@ -122,3 +122,9 @@ test('explicit mission controls are still sendable while an unrelated chat answe
   const ordinaryButton=ordinaryHtml.match(/<button data-testid="jaco-chat-send"[^>]*>/)?.[0] || '';
   assert.ok(ordinaryButton.includes('disabled'), 'ordinary second model turn remains bounded');
 });
+
+ test('remote navigation exposes existing work views without losing chat or approvals', () => {
+ const html=renderToStaticMarkup(<CognitiveWorkspace remoteMode canvas="conversation" onCanvas={noop} conversation="Conversation" detail="Code" stage="Stage" stagePinned={false} onTogglePin={noop} sidePanel={null} sidebar="explorer" sidePanelOpen={false} onSidebar={noop} onCloseSidebar={noop} status={{label:'Ready',tone:'idle'}} projectName="Project" changes={0} approvalCount={0} onApprovals={noop} onCommands={noop} onSignOut={noop} lastObservedAt={null} error={null}/>);
+ const nav=html.match(/<nav[^>]*aria-label="Remote control"[^>]*>[\s\S]*?<\/nav>/)?.[0];
+ assert.ok(nav); for(const label of ['Chat','Code','Preview','Tools &amp; models','Approvals']) assert.ok(nav.includes(label), label);
+ });

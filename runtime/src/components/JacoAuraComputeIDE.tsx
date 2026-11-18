@@ -1,3 +1,4 @@
+import { terminalText } from '../lib/terminalText.mjs';
 import { MissionReview } from './MissionReview';
 import { ConnectionsWorkspace } from './ConnectionsWorkspace';
 import { readAuraResponse as json, acknowledgeSavedDraft } from '../lib/auraApi.mjs';
@@ -1850,7 +1851,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
               {bottomPanel === 'terminal' && (
                 <>
                   <div className="flex-1 overflow-auto p-3 font-mono text-[11px] leading-5">
-                    {terminalNotice && <div className="text-neutral-200 mb-2">{terminalNotice}</div>}
+                    {terminalNotice && <div className="text-neutral-200 mb-2">{terminalText(terminalNotice)}</div>}
                     {/* Newest first, each line naming its mission, so the latest work is visible without scrolling. */}
                     {activity.slice(-40).reverse().map(event => (
                       <div key={event.id} className="flex gap-2">
@@ -1860,7 +1861,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                           {(event.missionGoal || (event.missionId && missionGoals.get(event.missionId))) && (
                             <span className="text-neutral-600" title={String(event.missionGoal || missionGoals.get(String(event.missionId)))}>[{String(event.missionGoal || missionGoals.get(String(event.missionId))).slice(0, 36)}] </span>
                           )}
-                          {terminalMode === 'human' ? humanizeActivity(event) : JSON.stringify({ source: event.source, type: event.type, verified: event.verified, payload: event.payload })}
+                          {terminalText(terminalMode === 'human' ? humanizeActivity(event) : JSON.stringify({ source: event.source, type: event.type, verified: event.verified, payload: event.payload }))}
                         </span>
                       </div>
                     ))}
