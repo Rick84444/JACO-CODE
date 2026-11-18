@@ -1,3 +1,5 @@
+import { terminalText } from '../lib/terminalText.mjs';
+import { ReceiptTerminal } from './ReceiptTerminal';
 import { MissionReview } from './MissionReview';
 import { ConnectionsWorkspace } from './ConnectionsWorkspace';
 import { readAuraResponse as json, acknowledgeSavedDraft } from '../lib/auraApi.mjs';
@@ -269,7 +271,7 @@ interface FileResponse extends AuraEditorFile {
 }
 
 type SidebarView = 'explorer' | 'source-control' | 'tools' | 'skills' | 'devices' | 'providers';
-type TerminalMode = 'human' | 'raw';
+type TerminalMode = 'human' | 'raw' | 'xterm';
 type BottomPanel = 'missions' | 'terminal' | 'problems' | 'output' | 'evidence';
 
 
@@ -1849,8 +1851,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
 
               {bottomPanel === 'terminal' && (
                 <>
-                  <div className="flex-1 overflow-auto p-3 font-mono text-[11px] leading-5">
-                    {terminalNotice && <div className="text-neutral-200 mb-2">{terminalNotice}</div>}
+                  {terminalMode === 'xterm' ? <ReceiptTerminal events={cognitiveEvents}/> : <div className="flex-1 overflow-auto p-3 font-mono text-[11px] leading-5">
+                    {terminalNotice && <div className="text-neutral-200 mb-2">{terminalText(terminalNotice)}</div>}
                     {/* Newest first, each line naming its mission, so the latest work is visible without scrolling. */}
                     {activity.slice(-40).reverse().map(event => (
                       <div key={event.id} className="flex gap-2">
@@ -1860,15 +1862,17 @@ export const JacoAuraComputeIDE: React.FC = () => {
                           {(event.missionGoal || (event.missionId && missionGoals.get(event.missionId))) && (
                             <span className="text-neutral-600" title={String(event.missionGoal || missionGoals.get(String(event.missionId)))}>[{String(event.missionGoal || missionGoals.get(String(event.missionId))).slice(0, 36)}] </span>
                           )}
-                          {terminalMode === 'human' ? humanizeActivity(event) : JSON.stringify({ source: event.source, type: event.type, verified: event.verified, payload: event.payload })}
+                          {terminalText(terminalMode === 'human' ? humanizeActivity(event) : JSON.stringify({ source: event.source, type: event.type, verified: event.verified, payload: event.payload }))}
                         </span>
                       </div>
                     ))}
-                  </div>
+                  </div>}
+                  {terminalMode === 'xterm' && terminalNotice && <div className="px-3 text-[11px] text-neutral-200">{terminalText(terminalNotice)}</div>}
                   <form onSubmit={event => { event.preventDefault(); void runTerminalCommand(); }} className="h-9 border-t border-[#444547] px-3 flex items-center gap-2 shrink-0">
                     <span className="text-emerald-400 font-mono text-xs">$</span>
                     <input value={terminalCommand} onChange={event => setTerminalCommand(event.target.value)} placeholder="Run local shell / npm / node / git command" className="flex-1 bg-transparent outline-none text-[11px] font-mono text-neutral-200 placeholder:text-neutral-500" />
                     <button className="text-[10px] px-2 py-1 border border-[#696a6c] rounded hover:bg-[#464749]">Run</button>
+                    <button type="button" data-testid="terminal-receipts-toggle" aria-pressed={terminalMode==='xterm'} onClick={()=>setTerminalMode(terminalMode==='xterm'?'human':'xterm')} className="text-[10px] px-2 py-1 border border-[#696a6c] rounded">Xterm</button>
                     <button type="button" onClick={() => setTerminalMode(terminalMode === 'human' ? 'raw' : 'human')} className="text-[9px] text-neutral-400 hover:text-neutral-200">{terminalMode === 'human' ? 'human' : 'raw'}</button>
                   </form>
                 </>

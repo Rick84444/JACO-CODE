@@ -476,6 +476,27 @@ try {
   assert.equal(await page.getByText('The work needs help',{exact:true}).count(),0,'a repaired file read cannot leave a stale global failure');
   passed('Missing material exposes an actionable error and retry reads the real file instead of spinning forever');
   await screenshot('aura-stage-hardened-mobile');
+  // Controlled receipt fixture: exercise the actual installed xterm renderer,
+  // without submitting a shell command or claiming agent execution.
+  await page.setViewportSize({width:1440,height:960});
+  await canvas('Kod').click();
+  const terminalDock=page.locator('.cognitive-terminal-dock');
+  if(!await terminalDock.isVisible())await page.getByRole('button',{name:'Open terminal & details',exact:true}).click();
+  await terminalDock.getByRole('button',{name:'TERMINAL',exact:true}).click();
+  await page.getByTestId('terminal-receipts-toggle').click();
+  const receipts=page.getByTestId('receipt-terminal');
+  await receipts.locator('.xterm-screen').waitFor();
+  bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'receipt-fixture',type:'shell',command:'fixture-only',ok:true,verified:true,result:{stdout:'JACO_RECEIPT_FIXTURE',exitCode:0}}});
+  await receipts.getByText('JACO_RECEIPT_FIXTURE',{exact:false}).first().waitFor({state:'attached',timeout:15000});
+  assert.equal(await receipts.getAttribute('data-renderer'),'xterm');
+  await screenshot('aura-xterm-desktop');
+  await page.setViewportSize({width:393,height:852});
+  await receipts.locator('.xterm-screen').waitFor();
+  assert.equal(await page.getByTestId('terminal-receipts-toggle').isEnabled(),true);
+  await screenshot('aura-xterm-mobile');
+  await page.getByTestId('terminal-receipts-toggle').click();
+  assert.equal(await receipts.count(),0,'dismissal disposes the terminal component');
+  passed('Actual xterm renders a controlled command receipt at desktop and mobile viewport without changing command authority');
   assert.deepEqual(errors,[], 'no unexpected uncaught app/browser errors');
   if(expectedEditorCancels.length) console.log('Monaco disposal cancellations observed: '+expectedEditorCancels.length);
   const report={status:'PASS',checks:results.length,browser:browser.version(),observedAt:new Date().toISOString(),scope:'Controlled UI integration; no inference, Android or operator runtime execution',clientIndexSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'dist/index.html'))).digest('hex'),results};
