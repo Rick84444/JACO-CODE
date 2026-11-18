@@ -932,6 +932,26 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
         res.type(sound.mimetype.split(';')[0]).send(bytes);
       } finally { fs.rmSync(sound.file, { force: true }); }
     } catch (error: any) {
+      // Local fallback so Aura is never mute: the Swedish Piper voice (Alma, CC-BY-4.0) runs on this computer.
+      const model = process.env.JACO_PIPER_MODEL || path.join(os.homedir(), '.jaco', 'voice', 'piper', 'sv_SE-alma-medium.onnx');
+      if (lang.startsWith('sv') && fs.existsSync(model)) {
+        const out = path.join(os.tmpdir(), `jaco-aura-voice-${process.pid}-${Date.now()}.wav`);
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const python = process.env.JACO_VOICE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+            const child = spawn(python, ['-m', 'piper', '-m', model, '-f', out], { windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'] });
+            const timer = setTimeout(() => { child.kill(); reject(new Error('PIPER_TIMEOUT')); }, 60000);
+            child.on('error', err => { clearTimeout(timer); reject(err); });
+            child.on('close', code => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`PIPER_EXIT_${code}`)); });
+            child.stdin.end(text.slice(0, 6000));
+          });
+          if (fs.existsSync(out) && fs.statSync(out).size > 200) {
+            res.setHeader('Cache-Control', 'no-store');
+            return res.type('audio/wav').send(fs.readFileSync(out));
+          }
+        } catch { /* fall through to the error below */ }
+        finally { fs.rmSync(out, { force: true }); }
+      }
       res.status(503).json({ success: false, error: String(error?.message || 'VOICE_UNAVAILABLE').slice(0, 160) });
     }
   });
