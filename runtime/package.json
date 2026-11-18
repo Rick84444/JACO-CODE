@@ -49,12 +49,14 @@
     "test:reflective-futures": "node scripts/continuum/reflective-futures.test.mjs",
     "test:021": "node scripts/verify_021_reflective_futures.mjs",
     "test:release:021": "npm run test:021 && npm run test:reflective-futures && npm run test:continuum-runtime && npm run test:ledger && npm run test:idle-churn && npm run test:continuum-standalone && npm run test:a2a-continuum && npm run test:a2a-v1 && npm run test:a2a-outbound && npm run test:truth && npm run test:frozen-hands-off && npm run test:connected && npm run test:wifi-contract && node scripts/verify_gateway_wip.mjs && node gateway/test/tool-registry.test.mjs && node gateway/test/security.test.mjs && node gateway/test/sdk-boundary.test.mjs && npm run test:secrets && npm run test:rollup-native && npm run test:sqlite-cjs",
-    "build:client": "vite build",
+    "build:client": "npm run prepare:aura-rig && vite build",
     "build:server": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --banner:js=\"#!/usr/bin/env node\" --outdir=dist --out-extension:.js=.cjs",
     "build:termux": "npm run build:client",
     "verify:aura-operator": "node scripts/verify_aura_operator_workbench.mjs",
     "verify:aura-operator:strict": "node scripts/verify_aura_operator_workbench.mjs --strict-product",
-    "test:workspace-ux": "node --import tsx --test src/lib/workspaceUx.test.tsx"
+    "test:workspace-ux": "node --import tsx --test src/lib/workspaceUx.test.tsx",
+    "prepare:aura-rig": "node scripts/prepare-aura-rig.mjs",
+    "predev": "npm run prepare:aura-rig"
   },
   "dependencies": {
     "@google/genai": "^2.13.0",
@@ -76,6 +78,7 @@
     "react-dom": "^19.0.1",
     "recharts": "^3.10.0",
     "stripe": "^22.5.0",
+    "three": "0.186.1",
     "vite": "^6.4.5",
     "ws": "^8.21.3",
     "zod": "^4.6.6"

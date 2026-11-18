@@ -1,0 +1,5 @@
+Aura rig source: mpfb.glb, created using MakeHuman/MPFB and Blender, distributed as CC0 by met4citizen/TalkingHead. Source revision 1563de184c19b310de4b636664d5835e2c74dbba. Source Git blob cd2ebbe1fe8bcbf3d5b2dfbf1262a7f76814e68f.
+https://github.com/met4citizen/TalkingHead/blob/1563de184c19b310de4b636664d5835e2c74dbba/README.md
+https://creativecommons.org/publicdomain/zero/1.0/
+JACO changes: deterministic removal of texture/render-only data, selection of upper body samples, independent particle renderer and animation. No other TalkingHead example avatar is shipped.
+Three.js is MIT; code is installed through the pinned npm package.
