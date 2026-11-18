@@ -78,3 +78,28 @@ test('commercial toolkit keeps outward writes on review',()=>{
  assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'agentgigs',tool:'stage_text_delivery'}}),true);
  assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'agentgigs',tool:'fund-escrow'}}),false);
 });
+
+test('real nested Nova tool receipts are remembered without promoting estimates or delivery to cash',t=>{
+  const s=setup(t),id=s.tick().missionId,job='12345678-1234-1234-1234-123456789abc';
+  const {token}=s.nova.claim(id,'agent');
+  const a=s.nova.begin(id,{owner:'agent',token,task:{type:'mcp-call',data:{server:'agentgigs',tool:'quote_economics'}}});
+  s.nova.finish(id,{owner:'agent',token,actionId:a.id,receipt:{ok:true,verified:true,result:{server:'agentgigs',tool:'quote_economics',output:JSON.stringify({price_cents:5000,expected_contribution_cents:3100,expected_cents_per_hour:1550,settlement_verified:false})}}});
+  const b=s.nova.claim(id,'agent');
+  const act=s.nova.begin(id,{owner:'agent',token:b.token,task:{type:'mcp-call',data:{server:'agentgigs',tool:'job_status'}}});
+  s.nova.finish(id,{owner:'agent',token:b.token,actionId:act.id,receipt:{ok:true,verified:true,result:{server:'agentgigs',tool:'job_status',output:JSON.stringify({job:{id:job},application:{status:'funded',proposed_price:5000}})}}});
+  s.nova.requestCancel(id,'test end');
+  const m=s.nova.get(id),k=archiveCommercialOutcome({mission:m,nova:s.nova,knowledge:s.knowledge});
+  assert.deepEqual(k.implementation.applications,[{job_id:job,status:'funded',proposed_price:5000}]);
+  assert.equal(k.implementation.quotes[0].expected_contribution_cents,3100);
+  assert.equal(k.implementation.quotes[0].settled,false);
+  assert.equal(k.verificationStatus,'UNVERIFIED');
+});
+test('blocked commercial approval allows an independent read-only cycle, never a new write',t=>{
+  const s=setup(t),id=s.tick().missionId,m=s.nova.get(id);
+  const {token}=s.nova.claim(id,'agent');
+  assert.throws(()=>s.nova.begin(id,{owner:'agent',token,task:{type:'mcp-write',data:{server:'agentgigs',tool:'apply',arguments:{}}}}),/OPERATOR_APPROVAL_REQUIRED/);
+  s.advance(3600000+Math.max(0,Date.parse(m.createdAt)-Date.parse(s.m.signedAt))+1);
+  const next=s.tick();assert.equal(next.state,'QUEUED');assert.notEqual(next.missionId,id);
+  const later=s.nova.get(next.missionId);assert.equal(later.allowedTasks.includes('mcp-write'),false);
+  assert.equal(s.nova.get(id).status,'BLOCKED');
+});
