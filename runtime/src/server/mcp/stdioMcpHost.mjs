@@ -41,6 +41,8 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
       command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')], cwd: runtimeRoot, env: { JACO_SHELL_WORKSPACE: repoRoot } } } : {}),
   };
   return {
+    jobbi: { name: 'Jobbi', role: 'Public paid agent-gig discovery; never claims or pays', icon: 'mcp', transport: 'http', url: 'https://jobbi.org/mcp', agentAccess: 'read' },
+    ...(process.env.JACO_AGENTGIGS_API_KEY ? { agentgigs: { name: 'AgentGigs', role: 'Worker-side job status and scoped applications; local commercial mandate required', icon: 'mcp', agentAccess: 'write', command: process.execPath, args: [path.join(runtimeRoot,'tools','jaco-agentgigs-mcp.mjs')], cwd: runtimeRoot, env: { JACO_AGENTGIGS_API_KEY: '${JACO_AGENTGIGS_API_KEY}', JACO_AGENTGIGS_ENABLE_WRITES: '${JACO_AGENTGIGS_ENABLE_WRITES}' } } } : {}),
     jaco: {
       name: 'JACO', role: 'runtime, missions, Workplace, providers', icon: 'jaco', agentAccess: 'write',
       command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-mcp-launch.mjs')],
