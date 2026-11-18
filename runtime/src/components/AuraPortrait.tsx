@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react';
 import { useUiLanguage } from '../i18n/UiLanguage';
+import { sampleLightField, projectLightPoint } from '../lib/auraLightField.mjs';
 
 // MediaPipe canonical face model, Apache-2.0; byte-identical to upstream
 // 727e43fcb7c7477f3fdf88c0498588349baaf2e5. See public/branding/mediapipe-license.txt.
@@ -50,12 +51,6 @@ interface Dictation {
   abort(): void;
 }
 
-const network = Array.from({ length: 34 }, (_, index) => {
-  const angle = index * Math.PI * (3 - Math.sqrt(5));
-  const radius = 0.72 + (index % 5) * 0.062;
-  return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
-});
-
 export default function AuraPortrait({ tone, label, chat, onClose }: {
   tone: string;
   label: string;
@@ -77,6 +72,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const latestReply = chat?.messages.filter(message => message.role === 'assistant' && message.content.trim()).at(-1);
   const lastRead = useRef(latestReply?.id);
   const active = tone === 'active' || speaking;
+  const activity = useRef(0);
+  activity.current = active ? 1 : listening ? .55 : 0;
   const locale = language === 'sv' ? 'sv-SE' : 'en-US';
   const speechWindow = window as Window & {
     SpeechRecognition?: new () => Dictation;
@@ -212,108 +209,87 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const context = element?.getContext('2d');
     if (!element || !context) return;
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
-    let frame = 0;
-    let lastDraw = -Infinity;
-    let yaw = 0;
-    let pitch = 0;
-    const render = (time: number) => {
-      const phase = motion.matches ? 0 : time / 1000;
-      const scale = element.width / 2;
-      context.clearRect(0, 0, element.width, element.height);
-      const targetYaw = motion.matches ? 0 : pointer.current.x * .31 + .12 * Math.sin(phase * .65);
-      const targetPitch = motion.matches ? 0 : pointer.current.y * .19 + .055 * Math.sin(phase * .81);
-      yaw = motion.matches ? 0 : yaw + (targetYaw - yaw) * .13;
-      pitch = motion.matches ? 0 : pitch + (targetPitch - pitch) * .13;
-      const cx = Math.cos(yaw), sx = Math.sin(yaw), cy = Math.cos(pitch), sy = Math.sin(pitch);
-      const mesh = lightMask;
-      let drawn = 0;
-      if (mesh) {
-        const projected = mesh.vertices.map(point => {
-          const x = point.x * cx + point.z * sx;
-          const depth = point.z * cx - point.x * sx;
-          const y = point.y * cy - depth * sy;
-          const z = depth * cy + point.y * sy;
-          const size = scale * .87 * 2.8 / (2.8 - z);
-          return { x: scale + x * size, y: scale + y * size, z, mx:x, my:y };
-        });
-        const ordered = mesh.triangles.map(([i, j, k]) => {
-          const a = projected[i], b = projected[j], c = projected[k];
-          return { a, b, c, depth: (a.z + b.z + c.z) / 3 };
-        }).sort((a, b) => a.depth - b.depth);
-        for (const { a, b, c, depth } of ordered) {
-          const ux = b.mx-a.mx, uy = b.my-a.my, uz = b.z-a.z;
-          const vx = c.mx-a.mx, vy = c.my-a.my, vz = c.z-a.z;
-          const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-          const normal = Math.hypot(nx, ny, nz);
-          if (nz >= 0 || normal < 1e-9) continue;
-          drawn++;
-          const diffuse = Math.max(0, (nx * .42 + ny * .35 - nz * .84) / normal);
-          const rim = (1 + nz / normal) ** 2;
-          const pulse = active ? (1 + Math.sin(phase * 3 - depth * 12)) * 9 : 0;
-          const light = Math.round(Math.min(240, 38 + 132 * diffuse + 65 * rim + pulse));
-          context.beginPath();
-          context.moveTo(a.x, a.y);
-          context.lineTo(b.x, b.y);
-          context.lineTo(c.x, c.y);
-          context.closePath();
-          context.fillStyle = `rgb(${Math.round(light * .57)},${Math.round(light * .8)},${Math.min(255, light + 44)})`;
-          context.fill();
-          context.strokeStyle = 'rgba(156,213,255,.16)';
-          context.lineWidth = .75;
-          context.stroke();
-          context.fillStyle = `rgba(193,228,255,${(.26 + .48 * diffuse).toFixed(2)})`;
-          // Barycentric surface highlights remain attached to the rotating mesh.
-          for (const [u,v] of [[.34,.33],[.18,.62],[.62,.18]]) {
-            const w=1-u-v;
-            const x=u*a.x+v*b.x+w*c.x;
-            const y=u*a.y+v*b.y+w*c.y;
-            context.fillRect(x,y,1.12,1.12);
-          }
+    const points = lightMask ? sampleLightField(lightMask.vertices,lightMask.triangles) : [];
+    let frame=0,lastDraw=-Infinity,yaw=0,pitch=0,energy=activity.current;
+    // One pre-rendered radial sprite. No painted skin or filled triangles.
+    const glow=document.createElement('canvas');
+    glow.width=24;glow.height=24;
+    const g=glow.getContext('2d');
+    if(g){
+      const gradient=g.createRadialGradient(12,12,0,12,12,12);
+      gradient.addColorStop(0,'rgba(214,240,255,1)');
+      gradient.addColorStop(.16,'rgba(120,205,255,.64)');
+      gradient.addColorStop(.45,'rgba(50,130,255,.16)');
+      gradient.addColorStop(1,'rgba(30,80,255,0)');
+      g.fillStyle=gradient;g.fillRect(0,0,24,24);
+    }
+    const render=(time:number)=>{
+      const still=motion.matches;
+      const phase=still?0:time/1000;
+      const scale=element.width/2;
+      energy=still?activity.current:energy+(activity.current-energy)*.07;
+      const targetYaw=still?0:pointer.current.x*.54+.24*Math.sin(phase*.49);
+      const targetPitch=still?0:pointer.current.y*.24+.075*Math.sin(phase*.67);
+      yaw=still?0:yaw+(targetYaw-yaw)*.09;
+      pitch=still?0:pitch+(targetPitch-pitch)*.09;
+      context.clearRect(0,0,element.width,element.height);
+      context.globalCompositeOperation='lighter';
+      // Independent, dim orbital points with their own 3D depth, not a ring overlay.
+      for(let i=0;i<96;i++){
+        const angle=i*2.39996323+phase*.055;
+        const height=(i/95)*2-1;
+        const radius=Math.sqrt(Math.max(0,1-height*height))*1.02;
+        const depth=Math.sin(angle)*radius;
+        const factor=2.8/(2.8-depth*.55);
+        const x=scale+Math.cos(angle)*radius*scale*.86*factor;
+        const y=scale+height*scale*.86*factor;
+        context.globalAlpha=.08+.08*(.5+.5*Math.sin(i+phase*.7));
+        context.fillStyle='#458ffc';context.fillRect(x,y,1,1);
+      }
+      // Every visible pixel of the face comes from a point on the licensed mesh.
+      // Additive light, with deliberately darker rear-facing points, reveals depth.
+      let drawn=0;
+      for(const p of points){
+        const q=projectLightPoint(p,yaw,pitch,phase,energy,scale);
+        if(q.x<0||q.y<0||q.x>=element.width||q.y>=element.height)continue;
+        const radius=q.radius;
+        context.globalAlpha=q.brightness*.68;
+        context.fillStyle=p.energy>.78?'#d8f5ff':p.energy>.38?'#78c9ff':'#377ce0';
+        context.fillRect(q.x-radius,q.y-radius,radius*2,radius*2);
+        if(g && p.energy>.88){
+          const size=radius*(5+energy*2);
+          context.globalAlpha=q.brightness*.42;
+          context.drawImage(glow,q.x-size/2,q.y-size/2,size,size);
         }
+        drawn++;
       }
-      context.fillStyle = '#79baff';
-      context.strokeStyle = '#79baff';
-      for (const [index, node] of network.entries()) {
-        const neighbor = network[(index + 8) % network.length];
-        const drift = 0.035 * Math.sin(phase * 0.75 + index * 0.7);
-        const x = scale * (1 + node.x * (1 + drift));
-        const y = scale * (1 + node.y * (1 + drift));
-        context.globalAlpha = active ? 0.24 + 0.12 * Math.sin(phase * 2 - index * 0.45) : 0.08;
-        context.beginPath();
-        context.moveTo(x, y);
-        context.lineTo((x + scale * (1 + neighbor.x)) / 2, (y + scale * (1 + neighbor.y)) / 2);
-        context.stroke();
-        context.beginPath();
-        context.arc(x, y, active ? 1.8 : 1.1, 0, Math.PI * 2);
-        context.fill();
-      }
-      context.globalAlpha = 1;
-      element.dataset.renderedFaces=String(drawn);
+      context.globalAlpha=1;
+      context.globalCompositeOperation='source-over';
+      element.dataset.renderedPoints=String(drawn);
       element.dataset.yaw=yaw.toFixed(4);
+      element.dataset.renderer='surface-light-field';
     };
-    const tick = (time: number) => {
-      if (time - lastDraw >= 32) {
-        render(time);
-        lastDraw = time;
-      }
-      frame = requestAnimationFrame(tick);
+    const tick=(time:number)=>{
+      if(document.hidden||motion.matches)return;
+      if(time-lastDraw>=32){render(time);lastDraw=time;}
+      frame=requestAnimationFrame(tick);
     };
-    const refresh = () => {
+    const refresh=()=>{
       cancelAnimationFrame(frame);
-      if (document.hidden) return;
+      if(document.hidden)return;
       lastDraw=-Infinity;
-      render(motion.matches ? 0 : performance.now());
-      if (!motion.matches) frame = requestAnimationFrame(tick);
+      render(motion.matches?0:performance.now());
+      if(!motion.matches)frame=requestAnimationFrame(tick);
     };
     refresh();
-    motion.addEventListener('change', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    return () => {
+    motion.addEventListener('change',refresh);
+    document.addEventListener('visibilitychange',refresh);
+    return()=>{
       cancelAnimationFrame(frame);
-      motion.removeEventListener('change', refresh);
-      document.removeEventListener('visibilitychange', refresh);
+      motion.removeEventListener('change',refresh);
+      document.removeEventListener('visibilitychange',refresh);
     };
-  }, [active,lightMask]);
+  },[lightMask,active,listening]);
 
   return <dialog ref={dialog} className="aura-portrait" aria-labelledby="aura-portrait-title"
     onCancel={event => { event.preventDefault(); onClose(); }}>

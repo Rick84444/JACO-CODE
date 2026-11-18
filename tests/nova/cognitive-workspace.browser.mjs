@@ -254,9 +254,9 @@ try {
       const canvas=document.querySelector('.aura-portrait-scene canvas');
       if(!canvas)return false;
       const data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
-      return Number(canvas.dataset.renderedFaces)>100 && data.filter((value,index)=>index%4===3&&value>0).length>10000;
+      return Number(canvas.dataset.renderedPoints)>5000 && canvas.dataset.renderer==='surface-light-field' && data.filter((value,index)=>index%4===3&&value>0).length>2500;
     });
-    assert.equal(await portrait.locator('img').count(),0,'portrait uses mesh geometry rather than a photograph');
+    assert.equal(await portrait.locator('img').count(),0,'portrait uses a surface light field rather than a photograph');
     if(width===1440){
       const reducedCanvas=portrait.locator('canvas');
       const still=await reducedCanvas.evaluate(canvas=>canvas.toDataURL());
@@ -278,7 +278,7 @@ try {
   await scene.waitFor();
   await page.waitForFunction(()=>{
     const canvas=document.querySelector('.aura-portrait-scene canvas');
-    return Number(canvas?.dataset.renderedFaces)>100 && canvas?.getContext('2d').getImageData(225,225,30,30).data.some((value,index)=>index%4===3&&value>50);
+    return Number(canvas?.dataset.renderedPoints)>5000 && canvas?.getContext('2d').getImageData(200,200,80,80).data.some((value,index)=>index%4===3&&value>30);
   });
   const renderMask=()=>scene.locator('canvas').evaluate(canvas=>canvas.toDataURL());
   const initialMask=await renderMask();
@@ -286,7 +286,7 @@ try {
   await scene.hover({position:{x:18,y:60}});
   await page.waitForFunction(({initial,yaw})=>{
     const canvas=document.querySelector('.aura-portrait-scene canvas');
-    return Number(canvas?.dataset.renderedFaces)>100 && Math.abs(Number(canvas?.dataset.yaw)-yaw)>.06 && canvas?.toDataURL()!==initial;
+    return Number(canvas?.dataset.renderedPoints)>5000 && Math.abs(Number(canvas?.dataset.yaw)-yaw)>.06 && canvas?.toDataURL()!==initial;
   },{initial:initialMask,yaw:initialYaw});
   await page.keyboard.press('Escape');
   await portrait.waitFor({state:'detached'});
