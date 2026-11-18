@@ -27,6 +27,7 @@ export const AURA = 'aura';
 // Cloud models are trusted infrastructure here; their spend is bounded by budget, not by this rule.
 export const PERMISSIONS = {
   'files.read': { risk: 'low', exposure: ['private'], label: 'Read project and files' },
+  'web.read': { risk: 'low', exposure: ['untrusted'], label: 'Read public HTTPS pages and GitHub pull requests' },
   'mail.internal': { risk: 'low', exposure: [], label: 'Mail with agents in the organization' },
   'mail.receive': { risk: 'low', exposure: ['untrusted'], label: 'Receive outside mail' },
   'files.write': { risk: 'medium', exposure: [], label: 'Write in the project folder' },
@@ -73,6 +74,9 @@ const optionalText = (value, max, error) => value == null || value === '' ? '' :
 const slug = name => String(name).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
 const defaultTraits = () => Object.fromEntries(Object.keys(TRAITS).map(key => [key, 50]));
 const emptyMandate = () => ({ permissions: {}, budgetUsdPerDay: 0, maxSubAgents: 0, autoApproveSubAgents: false, autonomy: 1 });
+export const AURA_DEVELOPMENT_DEFAULTS = Object.freeze(['files.read', 'web.read', 'files.write', 'commands.run', 'git.branch']);
+const defaultGrant = at => ({ grantedBy: OPERATOR, grantedAt: at, source: 'product-development-default' });
+const newAuraMandate = at => ({ ...emptyMandate(), permissions: Object.fromEntries(AURA_DEVELOPMENT_DEFAULTS.map(key => [key, defaultGrant(at)])) });
 
 function checkModel(model) {
   if (model == null) return { kind: 'local', providerId: 'ollama', model: '' };
@@ -91,6 +95,14 @@ export class AgentOrganization {
     this.committedState = structuredClone(this.state);
     // Agents created before automatic mail existed get their address too, once.
     let backfilled = false;
+    // New capability, not a restoration of a revoked browser or development grant.
+    // Mark initialization durably so an operator can revoke it permanently.
+    if (this.state.publicWebReadInitialized !== true) {
+      const permissions = this.state.agents[AURA].mandate.permissions;
+      if (!Object.hasOwn(permissions, 'web.read')) permissions['web.read'] = defaultGrant(this.now());
+      this.state.publicWebReadInitialized = true;
+      backfilled = true;
+    }
     for (const agent of Object.values(this.state.agents)) {
       // An earlier build assigned placeholder .local addresses that no mail system can reach. Replace them.
       if (agent.mail.endsWith('@agents.jaco.local')) { agent.mail = ''; backfilled = true; }
@@ -103,9 +115,9 @@ export class AgentOrganization {
   load() {
     if (!fs.existsSync(this.file)) {
       const at = this.now();
-      const state = { version: 1, contacts: [], agents: { [AURA]: {
+      const state = { version: 1, publicWebReadInitialized: true, contacts: [], agents: { [AURA]: {
         id: AURA, name: 'Aura', title: 'Vice CEO', reportsTo: OPERATOR, model: checkModel(null), mail: '', task: '', goal: '',
-        status: 'active', createdBy: OPERATOR, createdAt: at, mandate: emptyMandate(), traits: defaultTraits(),
+        status: 'active', createdBy: OPERATOR, createdAt: at, mandate: newAuraMandate(at), traits: defaultTraits(),
       } } };
       this.save(state);
       this.ensureFolder(AURA);

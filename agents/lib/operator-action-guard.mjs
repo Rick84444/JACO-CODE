@@ -46,7 +46,7 @@ const TYPE_TASKS = new Set(['browser-type', 'type-text']);
 // Outward effects and financial actions need the operator; draft/local record
 // changes remain autonomous. Payment-related names are checked here as a
 // second boundary for chat-origin MCP calls that do not enter a durable mission.
-const MCP_WRITE = /(?:^|[_.-])(send|publish|post|reply|forward|delete|remove|trash|merge|deploy|share|invite|transfer|pay|payment|payout|charge|purchase|buy|checkout|refund|withdraw|invoice|subscribe|subscription|settle)(?:[_.-]|$)/i;
+const MCP_WRITE = /(?:^|[_.-])(send|publish|post|reply|forward|delete|remove|trash|merge|push|deploy|share|invite|transfer|pay|payment|payout|charge|purchase|buy|checkout|refund|withdraw|invoice|subscribe|subscription|settle)(?:[_.-]|$)/i;
 
 // A path that stays inside the working directory: relative, no parent segments, and neither the
 // directory itself nor its git metadata. Inside a contract the working directory is the mission's

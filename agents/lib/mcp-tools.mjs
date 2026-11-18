@@ -27,7 +27,7 @@ export async function mcpCatalog({ env = process.env, fetchImpl = fetch, runtime
   const base = runtimeUrl || env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000';
   const get = async () => (await (await fetchImpl(`${base}/api/mcp/tools`, { headers: auth(env), signal: AbortSignal.timeout(15_000) })).json()).servers || [];
   let servers = await get();
-  const idle = servers.filter(s => !s.tools?.length && s.status !== 'FAILED');
+  const idle = servers.filter(s => s.agentAccess !== 'off' && !s.tools?.length && s.status !== 'FAILED');
   if (idle.length) {
     await Promise.allSettled(idle.map(s => fetchImpl(`${base}/api/mcp/start`, { method: 'POST', headers: { ...auth(env), 'Content-Type': 'application/json' }, body: JSON.stringify({ server: s.id }), signal: AbortSignal.timeout(180_000) })));
     servers = await get();

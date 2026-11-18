@@ -21,6 +21,14 @@ const PROTOCOL_VERSION = '2025-06-18';
 // Tools that only read but do not declare readOnlyHint.
 const KNOWN_READ_ONLY = { fetch: new Set(['fetch']) };
 export const isReadOnlyTool = (server, tool) => Boolean(tool?.readOnly || KNOWN_READ_ONLY[server]?.has(tool?.name));
+// Never invent a tool or strip another server's namespace. Exact registered names win.
+export function resolveAdvertisedTool(server, name, tools) {
+  if (typeof name !== 'string') return null;
+  const exact = tools.find(t => t.name === name);
+  if (exact) return exact;
+  const prefix = server + '.';
+  return name.startsWith(prefix) ? tools.find(t => t.name === name.slice(prefix.length)) || null : null;
+}
 const ID = /^[a-z][a-z0-9-]{1,40}$/;
 export const AGENT_ACCESS = ['off', 'read', 'write'];
 // Logos the IDE ships (src/components/mcpLogos.ts); anything else shows the MCP logo.
@@ -54,7 +62,7 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
     },
     // Switching branch or resetting would move the checkout the running runtime is built from.
     git: {
-      name: 'Git', role: `git status, diff, log and commit in ${repoRoot}`, icon: 'git', agentAccess: 'write', deny: ['git_reset', 'git_checkout', 'git_init'],
+      name: 'Git', role: `git status, diff, log, fetch, pull, commit and fast-forward merge in ${repoRoot}`, icon: 'git', agentAccess: 'write', deny: ['git_reset', 'git_checkout', 'git_init'],
       command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-git-mcp.mjs'), repoRoot],
       cwd: runtimeRoot, env: { JACO_GIT_WORKSPACE: repoRoot },
     },
@@ -415,10 +423,13 @@ export class StdioMcpHost {
     let c;
     try {
       c = this.client(id);
+      if (actor === 'agent' && c.def.agentAccess === 'off') throw Error('MCP_AGENT_ACCESS_OFF');
+      if (actor === 'agent' && c.def.deny?.includes(name)) throw Error('MCP_TOOL_DENIED');
       await c.start();
     } catch (e) { done('failed', String(e.message || e).slice(0, 300)); throw e; }
-    const tool = c.tools.find(t => t.name === name);
+    const tool = resolveAdvertisedTool(id, name, c.tools);
     if (!tool) { done('failed', `MCP_TOOL_UNKNOWN:${id}.${name}`); throw new Error(`MCP_TOOL_UNKNOWN:${id}.${name}`); }
+    name = tool.name;
     const reads = Boolean(tool.readOnly || KNOWN_READ_ONLY[id]?.has(name));
     const refusal = actor === 'agent' ? agentRefusal(c.def, tool, args) || (readOnly && !reads ? 'MCP_TOOL_NOT_READ_ONLY' : null)
       : c.def.transport === 'http' && !tool.readOnly ? 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY' : null;

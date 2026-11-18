@@ -40,6 +40,9 @@ test('a stdio server starts on first use, lists tools, runs calls, and restarts 
     const tools = await host.start('fake');
     assert.deepEqual(tools.map(t => [t.name, t.readOnly]), [['echo', true], ['write', false], ['crash', false]]);
     assert.equal((await host.call('fake', 'echo', { text: 'hi' })).content[0].text, 'echo:hi');
+    assert.equal((await host.call('fake','fake.echo',{text:'alias'},{actor:'agent',readOnly:true})).content[0].text,'echo:alias');
+    await assert.rejects(host.call('fake','other.echo',{}, {actor:'agent',readOnly:true}),/MCP_TOOL_UNKNOWN/);
+    await assert.rejects(host.call('fake','fake.write',{}, {actor:'agent',readOnly:true}),/MCP_TOOL_NOT_READ_ONLY/);
     await assert.rejects(host.call('fake', 'write', {}, { readOnly: true }), /MCP_TOOL_NOT_READ_ONLY:fake.write/, 'agents cannot run mutating tools');
     assert.equal((await host.call('fake', 'write', {})).content[0].text, 'write:', 'the operator click can');
     await assert.rejects(host.call('fake', 'nope', {}), /MCP_TOOL_UNKNOWN/);
