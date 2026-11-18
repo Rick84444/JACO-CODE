@@ -9,3 +9,5 @@ test('cost matters',()=>assert.deepEqual(selectFrontier([row('x',1,1,2),row('y',
 test('failed contracts excluded',()=>assert.deepEqual(selectFrontier([row('x',1,1,1,false),row('y',0,0)],cases),['y']));
 test('incomplete and nonfinite evidence rejected',()=>{assert.throws(()=>selectFrontier([row('x',1,NaN)],cases),/INVALID_EVIDENCE/);assert.throws(()=>selectFrontier([{...row('x',1,1),scores:{a:1}}],cases),/INVALID_EVIDENCE/)});
 test('duplicate ids and cases rejected',()=>{assert.throws(()=>selectFrontier([row('x',1,1),row('x',1,1)],cases),/INVALID_CANDIDATES/);assert.throws(()=>selectFrontier([],['a','a']),/INVALID_CASES/)});
+test('null candidates and sparse arrays rejected',()=>{assert.throws(()=>selectFrontier([null],cases),/INVALID_CANDIDATES/);assert.throws(()=>selectFrontier(Array(1),cases),/INVALID_CANDIDATES/);assert.throws(()=>selectFrontier([],Array(1)),/INVALID_CASES/)});
+test('array scores rejected',()=>assert.throws(()=>selectFrontier([{...row('x',1,1),scores:[1,1]}],['0','1']),/INVALID_EVIDENCE/));
