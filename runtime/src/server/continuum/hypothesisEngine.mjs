@@ -36,7 +36,8 @@ export class HypothesisEngine {
     const set=this.#getMutable(setId),criteria=this.#criteria(set);
     const complete=set.candidates.filter(c=>['EVALUATED','VERIFIED'].includes(c.status)&&this.#complete(c,criteria)&&(!verifiedOnly||this.#hasProof(c)));
     const ranges=criteria.map(c=>{let lo=Infinity,hi=-Infinity;for(const x of complete){const v=this.#metric(x,c.name);lo=Math.min(lo,v);hi=Math.max(hi,v);}return {c,lo,hi};});
-    const total=criteria.reduce((sum,c)=>sum+Number(c.weight),0);
+    const weightScale=Math.max(1,...criteria.map(c=>Number(c.weight)));
+    const total=criteria.reduce((sum,c)=>sum+Number(c.weight)/weightScale,0);
     return complete.map(candidate=>{
       let score=0;
       for(const {c,lo,hi} of ranges){
@@ -45,7 +46,7 @@ export class HypothesisEngine {
         const scale=Math.max(Math.abs(lo),Math.abs(hi),1);
         const span=hi/scale-lo/scale;
         const normalized=span>0?Math.max(0,Math.min(1,(raw/scale-lo/scale)/span)):0.5;
-        score+=(c.direction==='min'?1-normalized:normalized)*(Number(c.weight)/total);
+        score+=(c.direction==='min'?1-normalized:normalized)*(Number(c.weight)/weightScale/total);
       }
       return {...deepClone(candidate),score:total?score:0};
     }).sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id));

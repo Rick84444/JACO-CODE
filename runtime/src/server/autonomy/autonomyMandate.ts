@@ -65,13 +65,13 @@ export class AutonomyMandateStore {
     let all: AutonomyMandate[];
     try { all = this.readStrict(); } catch { return; }
     const now = new Date();
-    if (all.some(item => item.id === 'operator-level5-default')) return;
     const marker = path.join(path.dirname(this.file), 'bootstrap-initialized');
     const configured = fresh && process.env.JACO_LEVEL5_AUTONOMY === '1' && !fs.existsSync(marker);
     if (!fs.existsSync(marker)) {
       try { fs.writeFileSync(marker, 'initialized\n', { flag: 'wx', mode: 0o600 }); }
       catch { return; }
     }
+    if (all.some(item => item.id === 'operator-level5-default')) return;
     const mandate: AutonomyMandate = {
       id: 'operator-level5-default',
       name: 'Operator Level 5 Build Authority',
