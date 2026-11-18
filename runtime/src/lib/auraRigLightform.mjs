@@ -70,15 +70,15 @@ void main(){
   float facing=max(0.0,dot(n,normalize(-mv.xyz)));
   float pulse=.88+.12*sin(uTime*1.9+aSeed*19.0+position.y*10.0);
   float fade=smoothstep(1.105,1.29,position.y);
-  float rear=.09;
-  float strength=rear+.60*pow(facing,.65);
-  vec3 blue=vec3(.12,.49,.99), ice=vec3(.57,.88,1.0);
+  float rear=.17;
+  float strength=rear+.70*pow(facing,.60);
+  vec3 blue=vec3(.16,.57,1.0), ice=vec3(.68,.93,1.0);
   vColor=mix(blue,ice,.28+aSeed*.58);
-  if(aKind>1.5&&aKind<2.5){vColor=mix(blue,ice,.16+aSeed*.35);strength*=.82;}
-  if(aKind>.5&&aKind<1.5){strength*=.65;}
-  if(aKind>2.5){strength*=.80;}
-  vAlpha=clamp(strength*pulse*fade*(.92+.32*uEnergy),0.0,.86);
-  gl_PointSize=clamp(aSize*uPixelRatio*(1.75+.38*uEnergy)/max(.85,-mv.z),.8,5.5*uPixelRatio);
+  if(aKind>1.5&&aKind<2.5){vColor=mix(blue,ice,.40+aSeed*.48);strength*=1.20;}
+  if(aKind>.5&&aKind<1.5){strength*=.92;}
+  if(aKind>2.5){strength*=.70;}
+  vAlpha=clamp(strength*pulse*fade*(1.12+.35*uEnergy),0.0,.96);
+  gl_PointSize=clamp(aSize*uPixelRatio*(2.65+.50*uEnergy)/max(.85,-mv.z),.8,5.5*uPixelRatio);
   gl_Position=projectionMatrix*mv;
 }
 `;
@@ -87,9 +87,9 @@ varying float vAlpha;
 varying vec3 vColor;
 void main(){
   float d=length(gl_PointCoord-vec2(.5));
-  float core=1.0-smoothstep(.08,.34,d);
-  float halo=1.0-smoothstep(.16,.50,d);
-  float alpha=(core*.80+halo*.20)*vAlpha;
+  float core=1.0-smoothstep(.10,.30,d);
+  float halo=1.0-smoothstep(.12,.50,d);
+  float alpha=(core*.86+halo*.30)*vAlpha;
   if(alpha<.004)discard;
   gl_FragColor=vec4(mix(vColor,vec3(.83,.96,1.0),core*.35),alpha);
 }
@@ -123,7 +123,28 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     if(names.some(n=>!bones.has(n)))throw Error('AURA_RIG_BONES');
     const morphs=[];model.traverse(o=>{if(o.isSkinnedMesh&&o.morphTargetDictionary)morphs.push(o);});
     const required=['eyeBlinkLeft','eyeBlinkRight','jawOpen','mouthSmileLeft','mouthSmileRight','browInnerUp','viseme_aa','viseme_O'];
-    if(!morphs.some(m=>required.every(n=>n in m.morphTargetDictionary)))throw Error('AURA_RIG_MORPHS');
+    const face=morphs.find(m=>required.every(n=>n in m.morphTargetDictionary));
+    if(!face)throw Error('AURA_RIG_MORPHS');
+    const probes=['eyeBlinkLeft','jawOpen'].map(name=>{
+      const index=face.morphTargetDictionary[name],attr=face.geometry.morphAttributes.position[index];
+      let magnitude=0,vertex=0;
+      for(let i=0;i<attr.count;i++){
+        const d=attr.getX(i)**2+attr.getY(i)**2+attr.getZ(i)**2;
+        if(d>magnitude){magnitude=d;vertex=i;}
+      }
+      if(magnitude<1e-8)throw Error('AURA_RIG_EMPTY_MORPH:'+name);
+      return {index,vertex};
+    });
+    const probeA=new THREE.Vector3(),probeB=new THREE.Vector3();
+    // Measure displacement at the same bone pose with only the selected morph removed.
+    const displacement=({index,vertex})=>{
+      const weight=face.morphTargetInfluences[index];if(!weight)return 0;
+      face.getVertexPosition(vertex,probeA).applyMatrix4(face.matrixWorld);
+      face.morphTargetInfluences[index]=0;
+      try{face.getVertexPosition(vertex,probeB).applyMatrix4(face.matrixWorld);}
+      finally{face.morphTargetInfluences[index]=weight;}
+      return 1000*probeA.distanceTo(probeB);
+    };
     model.updateMatrixWorld(true);
     // Width is CSS, not DPR; keep the mobile CPU skinning budget bounded.
     const groups=createSamples(model,window.innerWidth<768?.64:1);
@@ -141,8 +162,9 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     material=new THREE.ShaderMaterial({vertexShader,fragmentShader,uniforms:{uTime:{value:0},uEnergy:{value:0},uPixelRatio:{value:1}},transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending});
     const scene=new THREE.Scene(),cloud=new THREE.Points(geometry,material);
     cloud.frustumCulled=false;scene.add(cloud);
+    // Three-quarter framing reveals the actual ponytail behind the head and keeps shoulders in view.
     const camera=new THREE.PerspectiveCamera(34,1,.03,20);
-    camera.position.set(0,1.48,1.42);camera.lookAt(0,1.48,.035);
+    camera.position.set(.48,1.53,1.07);camera.lookAt(0,1.50,.035);
     renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:false,powerPreference:'low-power',preserveDrawingBuffer:true});
     renderer.setClearColor(0x000000,0);
     let energy=0,yaw=0,pitch=0,last=-Infinity,state={active:false,speaking:false,listening:false,x:0,y:0};
@@ -202,6 +224,8 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       canvas.dataset.torsoPoints=String(groups.find(g=>g.kind===1).samples.length);
       canvas.dataset.yaw=yaw.toFixed(4);canvas.dataset.blink=blink.toFixed(4);canvas.dataset.jaw=jaw.toFixed(4);
       canvas.dataset.geometrySignature=signature.toFixed(5);
+      canvas.dataset.blinkMm=displacement(probes[0]).toFixed(3);
+      canvas.dataset.jawMm=displacement(probes[1]).toFixed(3);
     };
     const render=time=>{if(disposed||document.hidden)return;pose(time);renderer.render(scene,camera);};
     const tick=time=>{

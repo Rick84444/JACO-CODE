@@ -256,8 +256,8 @@ try {
       if(canvas.dataset.renderer!=='rigged-particle-field')return false;
       const gl=canvas.getContext('webgl2');if(!gl)return false;
       const data=new Uint8Array(canvas.width*canvas.height*4);gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,data);
-      let lit=0;for(let i=0;i<data.length;i+=4)if(data[i+2]>12)lit++;
-      return Number(canvas.dataset.renderedPoints)>10000&&Number(canvas.dataset.hairPoints)>2000&&Number(canvas.dataset.torsoPoints)>2500&&lit>2000;
+      let lit=0,bright=0;for(let i=0;i<data.length;i+=4){if(data[i+2]>12)lit++;if(data[i+2]>100)bright++;}
+      return Number(canvas.dataset.renderedPoints)>10000&&Number(canvas.dataset.hairPoints)>2000&&Number(canvas.dataset.torsoPoints)>2500&&lit>2000&&bright>250;
     });
     assert.equal(await portrait.locator('img').count(),0,'portrait uses a surface light field rather than a photograph');
     if(width===1440){
@@ -292,6 +292,8 @@ try {
     const canvas=document.querySelector('.aura-portrait-scene canvas');
     return Number(canvas?.dataset.renderedPoints)>5000 && Math.abs(Number(canvas?.dataset.yaw)-yaw)>.06 && canvas?.dataset.geometrySignature!==geometry && canvas?.toDataURL()!==initial;
   },{initial:initialMask,yaw:initialYaw,geometry:initialGeometry});
+  await page.waitForFunction(()=>Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.blinkMm)>2,{},{timeout:12000});
+  await screenshot('aura-rig-blink');
   await page.keyboard.press('Escape');
   await portrait.waitFor({state:'detached'});
   passed('Aura rigged lightform changes actual geometry and rendered frame with motion enabled');
@@ -595,7 +597,7 @@ try {
       abort() {}
     };
     Object.defineProperty(window, 'speechSynthesis', {configurable:true,value:{
-      speak(reply) { window.auraSpokenReplies.push(reply.text); reply.onstart?.(); reply.onend?.(); },
+      speak(reply) { window.auraSpokenReplies.push(reply.text); window.auraCurrentReply=reply; reply.onstart?.(); },
       cancel() {},
     }});
   });
@@ -610,6 +612,11 @@ try {
   await page.waitForFunction(()=>window.auraSpokenReplies.length===1);
   assert.equal(requests.filter(request=>request.kind==='chat').length,previousChatRequests+1);
   assert.deepEqual(await page.evaluate(()=>window.auraSpokenReplies),['Testsvaret använder de observerade händelserna. Uppdraget fortsätter.']);
+  await page.waitForFunction(()=>Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm)>3,{},{timeout:15000});
+  await screenshot('aura-rig-speaking');
+  await page.evaluate(()=>window.auraCurrentReply.onend?.());
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm==='0.000');
+  passed('Controlled speech drives actual jaw morph displacement, then returns to rest; blinking independently moves eyelid vertices');
   await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
   passed('Portrait dictation uses the canonical chat and reads its new reply with a controlled speech adapter');
   // A browser engine may report an error without an end event. Late callbacks
