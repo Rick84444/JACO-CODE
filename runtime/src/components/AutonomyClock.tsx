@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 // The autonomy clock: an operator-chosen, time-boxed window in which Aura works freely inside the
 // coding contract. Money, release publication, secrets and access stay on REVIEW in the runtime.
-type Active = { id: string; expiresAt: string; maxHours: number; signedAt: string | null } | null;
+type Active = { id: string; expiresAt: string; maxHours: number; signedAt: string | null; commercial?: boolean } | null;
 const CHOICES: Array<{ hours: number; label: string }> = [
   { hours: 1, label: '1 timme' },
   { hours: 8, label: '8 timmar' },
@@ -26,6 +26,7 @@ function remaining(expiresAt: string, now: number): string {
 export function AutonomyClock() {
   const [active, setActive] = useState<Active>(null);
   const [hours, setHours] = useState(8);
+  const [commercial, setCommercial] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,7 +50,7 @@ export function AutonomyClock() {
   const start = async () => {
     setBusy(true);
     try {
-      const response = await fetch('/api/aura/autonomy/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hours }) });
+      const response = await fetch('/api/aura/autonomy/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hours, commercial }) });
       const body = await response.json();
       if (!response.ok || !body.success) throw Error(body.error || 'AUTONOMY_START_FAILED');
       setActive(body.active); setError(null);
@@ -72,7 +73,7 @@ export function AutonomyClock() {
     <div className="autonomy-clock" role="group" aria-label="Autonomi-klocka">
       {active ? (
         <>
-          <span>Aura arbetar fritt · {remaining(active.expiresAt, now)}</span>
+          <span>{active.commercial ? 'Aura arbetar med intäktsmöjligheter' : 'Aura arbetar fritt'} · {remaining(active.expiresAt, now)}</span>
           <button type="button" onClick={stop} disabled={busy}>Stoppa</button>
         </>
       ) : (
@@ -81,6 +82,7 @@ export function AutonomyClock() {
           <select value={hours} onChange={e => setHours(Number(e.target.value))} disabled={busy} aria-label="Hur länge">
             {CHOICES.map(c => <option key={c.hours} value={c.hours}>{c.label}</option>)}
           </select>
+          <label><input type="checkbox" checked={commercial} disabled={busy} onChange={e => setCommercial(e.target.checked)}/> Företagarläge (inga utgående betalningar)</label>
           <button type="button" onClick={start} disabled={busy}>Starta</button>
         </>
       )}

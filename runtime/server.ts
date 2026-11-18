@@ -92,6 +92,7 @@ import { createJacoLinkHost } from './src/server/connected/jacoLinkHost.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
 import { readAutonomousCycleBoard } from "./src/server/connected/autonomousCycleBoard.mjs";
 import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec, fetchSkillFromUrl } from "../agents/lib/skills.mjs";
+import { COMMERCIAL_CLOCK, commercialAuthorized, reconcileCommercialClock, archiveCommercialOutcome } from "./src/server/autonomy/commercialClock.mjs";
 import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy, policyFilePath, CLAIM_RESUME_NOTE } from "../agents/lib/approval-policy.mjs";
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
 import { taskCatalog, ALWAYS_ASK } from './src/server/capabilities/capabilityPolicy.mjs';
@@ -899,6 +900,11 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
     }
   });
 
+  (connectedRuntime.novaMissions as any).commercialAuthorization = (mission: any, task: any = null) => commercialAuthorized(mission, modelRelay.mandates, continuumSurface.runtime.operator, task, connectedRuntime.capabilities);
+  const commercialTick = () => reconcileCommercialClock({
+    mandates: modelRelay.mandates, operator: continuumSurface.runtime.operator, bus: connectedRuntime.bus,
+    nova: connectedRuntime.novaMissions, knowledge: continuumSurface.runtime.knowledge, capabilities: connectedRuntime.capabilities
+  });
   let windowsModelDiscovery: { sourceAvailable: boolean; configured: string[] } = { sourceAvailable: false, configured: [] };
   const connections = automaticConnections({ registry: connectedRuntime.providers, mcpHost,
     loadCredentials: async () => {
@@ -3000,6 +3006,7 @@ const notifyPhone = async (action) => {
     catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
   });
   const routineTimer = setInterval(() => {
+    try { commercialTick(); } catch (error: any) { console.warn("[commercial clock] reconcile failed:", error?.message || error); }
     void routines.tick({
       startGoal: async (goal: string) => {
         const r = await fetch(`http://127.0.0.1:${PORT}/api/aura/workbench/start-goal`, {
@@ -4241,22 +4248,27 @@ const notifyPhone = async (action) => {
   });
   // Autonomy clock (GUI): a time-boxed, operator-signed mandate. Financial actions stay on REVIEW in code.
   const CLOCK_NAME = 'Autonomi-klocka';
-  const clockMandates = () => modelRelay.mandates.list().filter((m: any) => m.name === CLOCK_NAME && modelRelay.mandates.isActive(m.id));
+  const clockMandates = () => modelRelay.mandates.list().filter((m: any) => [CLOCK_NAME, COMMERCIAL_CLOCK].includes(m.name) && modelRelay.mandates.isActive(m.id));
   app.get('/api/aura/autonomy', requireLocalUi, (_req, res) => {
     const active = clockMandates().sort((a: any, b: any) => Date.parse(b.expiresAt) - Date.parse(a.expiresAt))[0] || null;
-    res.json({ success: true, active: active ? { id: active.id, expiresAt: active.expiresAt, maxHours: active.maxHours, signedAt: active.signedAt } : null });
+    res.json({ success: true, active: active ? { id: active.id, expiresAt: active.expiresAt, maxHours: active.maxHours, signedAt: active.signedAt, commercial: active.name === COMMERCIAL_CLOCK } : null });
   });
-  app.post('/api/aura/autonomy/start', requireLocalUi, (req, res) => {
+  app.post('/api/aura/autonomy/start', requireLocalUiSameOrigin, (req, res) => {
     const hours = Number(req.body?.hours);
     if (!Number.isFinite(hours) || hours < 1 || hours > 8760) return res.status(400).json({ success: false, error: 'HOURS_OUT_OF_RANGE' });
     try {
       for (const old of clockMandates()) modelRelay.mandates.revoke(old.id);
-      const created = modelRelay.mandates.create({ name: CLOCK_NAME, maxHours: Math.round(hours), mission: 'Aura arbetar fritt inom det operatören startat: läsning, lokala ändringar, tester, commits och PR på egna grenar, webbläsning. Pengar, publicering av release, hemligheter och åtkomst kräver alltid granskning.' });
+      const commercial = req.body?.commercial === true;
+      const created = modelRelay.mandates.create({ name: commercial ? COMMERCIAL_CLOCK : CLOCK_NAME, maxHours: Math.round(hours), mission: commercial ? 'Aura: bounded commercial opportunity discovery and authorized proposals. No outgoing spend or new contractual obligations without operator review.' : 'Aura arbetar fritt inom det operatören startat: läsning, lokala ändringar, tester, commits och PR på egna grenar, webbläsning. Pengar, publicering av release, hemligheter och åtkomst kräver alltid granskning.' });
       const signed = modelRelay.mandates.sign(created.id);
-      res.status(201).json({ success: true, active: { id: signed.id, expiresAt: signed.expiresAt, maxHours: signed.maxHours, signedAt: signed.signedAt } });
+      let commercialState: any = null;
+      if (commercial) {
+        try { commercialState = commercialTick(); } catch { commercialState = {state:'QUEUING_FAILED'}; }
+      }
+      res.status(201).json({ success: true, active: { id: signed.id, expiresAt: signed.expiresAt, maxHours: signed.maxHours, signedAt: signed.signedAt, commercial }, commercialState });
     } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 200) }); }
   });
-  app.post('/api/aura/autonomy/stop', requireLocalUi, (_req, res) => {
+  app.post('/api/aura/autonomy/stop', requireLocalUiSameOrigin, (_req, res) => {
     const stopped = clockMandates().map((m: any) => modelRelay.mandates.revoke(m.id).id);
     res.json({ success: true, stopped });
   });
@@ -4333,6 +4345,7 @@ const notifyPhone = async (action) => {
         try { mission = connectedRuntime.novaMissions.get(base.id); } catch { skillLearning.markLearned(base.id); continue; }
         const check = events.find((e: any) => e.missionId === base.id && e.type === 'NOVA_CLAIM_CHECK')?.payload || null;
         const lessons = lessonsFrom(mission, check);
+        try { archiveCommercialOutcome({mission,nova:connectedRuntime.novaMissions,knowledge:continuumSurface.runtime.knowledge}); } catch (error: any) { console.warn('[commercial memory] archive failed:', error?.message || error); }
         const reflection=skillLearning.recordOutcome(mission);
         connectedRuntime.bus.event('NOVA_REFLECTION',{missionId:mission.id,payload:{schema:reflection.schema,verificationStatus:reflection.verificationStatus,worked:reflection.worked,failed:reflection.failed,evidence:reflection.evidence}});
         const made: string[] = [];

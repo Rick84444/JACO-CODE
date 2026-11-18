@@ -150,6 +150,7 @@ function guardCheck(task, { sandbox = false } = {}) {
   }
   if (task?.type === 'mcp-write') {
     const tool = String(data.tool || '');
+    if (data.server === 'agentgigs' && /^(?:agentgigs\.)?apply$/.test(tool)) return { reason: 'AgentGigs proposal and NDA acknowledgement require explicit operator review' };
     return MCP_WRITE.test(tool) || OUTWARD_TOOL.test(tool) ? { reason: `external write ${data.server || 'connector'}.${data.tool}` } : null;
   }
   if (CLICK_TASKS.has(task?.type)) {
