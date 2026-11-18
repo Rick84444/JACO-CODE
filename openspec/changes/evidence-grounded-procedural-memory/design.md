@@ -1,0 +1,5 @@
+# Design
+
+Existing owners: SurveyLibrary, adaptive perception, DOM Traction (PR 303), agents/lib/skill-learning.mjs, ContinuumRuntime's SkillRuntime / process verifier / knowledge store. No new service. Prior-art comparison and cost-matched protocol in docs/research/evidence-grounded-procedural-memory.md.
+
+The first step corrects the legacy candidate admission: verified=true and ok=true are required together; unknown outcome and explicit postconditionVerified=false / input-dispatch-only are not positive evidence. A failed call with unknown effects cannot teach a correction; an intervening unknown/dispatch-only receipt cannot establish a clean correction pair. Whole-mission unverified effects block a procedure candidate but do not block general mission execution. The existing operator approval and independent verification policy remain unchanged. These are necessary conditions, not sufficient proof of independent outcome. Historical reflection stays labeled correctly. Future steps: identity-bound recall, verified reusable typed procedure, cost-matched ablation, real devices.

@@ -1,0 +1,7 @@
+- [x] Audit relevant repository owners and public research/project/issue sources.
+- [x] Define falsifiable protocol, baseline, cost accounting and licensing boundaries.
+- [x] Implement negative-evidence admission and tests in existing skill-learning path.
+- [ ] Verify exact-head CI.
+- [ ] Connect identity-bound RobotMower route evidence to existing SkillIR through canonical verifier.
+- [ ] Run paired local fixture and budget-matched benchmarks.
+- [ ] Validate physical devices and held-out domains, then decide promotion.
