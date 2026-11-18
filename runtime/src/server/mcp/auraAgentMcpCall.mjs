@@ -67,6 +67,7 @@ export function githubRepoFromRemote(remote) {
   return match?.[1] || null;
 }
 
+/** @param {any} host @param {{repository?: string, number?: number, page?: number, section?: string}} [options] */
 export async function readGithubPullRequest(host, {repository, number, page = 1, section = 'summary'} = {}) {
   if (typeof repository !== 'string' || !/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(repository) ||
       repository.split('/').some(v => v === '.' || v === '..') ||
