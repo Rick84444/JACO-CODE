@@ -1,4 +1,5 @@
 import { compactPlannerStep, focusPlannerToolDescriptions } from './lib/context-packet.mjs';
+import { localCommandHint } from './lib/local-command-inventory.mjs';
 import { PRE_APPROVABLE, HARD_LIMITS } from './lib/operator-action-guard.mjs';
 /**
  * JACO Hands-Off Agent v3.0 — Long-running autonomous daemon
@@ -1671,6 +1672,7 @@ async function callBrainStep(state, { mission, observation, continuity = null },
     ...(strategicContext ? { strategicContext } : {}),
     ...(memoryGraph ? { memoryGraph: redactDeep(memoryGraph) } : {}),
     surfaces: state.surfaces,
+    ...(planningAllowedTasks.some(t=>['shell','repo-test','mcp-call','mcp-write'].includes(t)) ? { localCommands:localCommandHint() } : {}),
     recentErrors: state.errors.slice(-3).map(e => clipText(e.msg, 200)),
     ...(mission?.contract && state.repositoryContext ? { repository: state.repositoryContext } : {}),
     ...(mission?.contract && state.preflight ? { preflight:state.preflight,execution:mission.execution } : {}),
@@ -2216,7 +2218,8 @@ async function runAgentLoop(state) {
         capabilities: mission.contract ? state.preflight?.knowledge?.capabilities || null : null,
         inboxAddress: extras["JACO's own e-mail addresses (for sign-ups)"] || '',
       });
-      const intro = repoPreflight ? `${packet}\n${repoPreflight}` : packet;
+      const localHint = capsuleAllowedTasks(mission).some(t=>['shell','repo-test','mcp-call','mcp-write'].includes(t)) ? '\nLocal executable observation (not authority): '+JSON.stringify(localCommandHint()) : '';
+      const intro = (repoPreflight ? `${packet}\n${repoPreflight}` : packet)+localHint;
       // Put current operator notes after compressed context so a new instruction remains visible.
       // This text gives direction only; it does not authorize new actions.
       return livePlanDirection ? `${intro}\n\n${livePlanDirection}` : intro;

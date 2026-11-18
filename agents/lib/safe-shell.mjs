@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { operatorApprovalCheck } from './operator-action-guard.mjs';
+import { discoverLocalCommands } from './local-command-inventory.mjs';
 
 export const LIMITS = { timeoutMs: 30_000, maxTimeoutMs: 300_000, outputBytes: 64 * 1024, concurrent: 4, argCount: 64, argLength: 4096 };
 export const PROTECTED_READ = /(^|[\\/])\.env(\.[^\\/]*)?([\\/]|$)|secret|credential/i;
@@ -229,10 +230,12 @@ export class SafeShell {
     if (!this.auditFile) return;
     try { fs.mkdirSync(path.dirname(this.auditFile), { recursive: true }); fs.appendFileSync(this.auditFile, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n', { mode: 0o600 }); } catch { /* the command result is still returned */ }
   }
-  info() {
-    return { workspace: this.workspace, platform: this.platform, shell: 'none (argv only, no interpretation)', programs: Object.keys(PROGRAMS), limits: { ...LIMITS },
+  info({query='',limit=120}={}) {
+    const local=discoverLocalCommands({env:this.env,platform:this.platform,query,limit});
+    return { workspace: this.workspace, platform: this.platform, shell: 'none (argv only, no interpretation)', programs: Object.keys(PROGRAMS), local, limits: { ...LIMITS },
       destructiveEnabled: this.env.JACO_SHELL_ALLOW_DESTRUCTIVE === '1', pushEnabled: this.env.JACO_SHELL_ALLOW_PUSH === '1',
-      note: 'git: read subcommands in read mode; add/commit/switch/merge/fetch and the like in write mode. node and python3 run a script inside the workspace, never inline code. npm: test, run, ci, ls, install without packages.' };
+      interpretersEnabled: interpretersAllowed(this.env),
+      note: 'programs is the bounded shell policy list; local.programs is actual PATH discovery, not a grant to execute every binary. Use shell_run for permitted writes or the authorized mission shell for other commands. npm: test, run, ci, ls, install without packages.' };
   }
   async run({ command, args = [], cwd = '.', timeoutSeconds, mode = 'write' } = {}) {
     const started = Date.now();

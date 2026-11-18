@@ -34,9 +34,9 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
     editor: { name: 'JACO Editor', role: 'project files, git and observed runtime', icon: 'jaco', agentAccess: 'read', gameboardJournalOnly: true,
       command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-editor.mjs')], cwd: runtimeRoot,
       env: { JACO_RUNTIME_URL: process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000' } },
-    // Bounded commands in the project (ls, cat, grep, git ...) for agents on a phone or Linux. The programs it runs are
-    // POSIX ones, so it is not offered on Windows. Read-only for agents unless the operator sets its access to write.
-    ...(process.platform !== 'win32' && fs.existsSync(path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')) ? { shell: {
+    // The same bundled shell discovers actual Windows/Linux executables; do not hide it on Windows.
+    // Preserve the operator's explicit access settings.
+    ...(fs.existsSync(path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')) ? { shell: {
       name: 'JACO Shell', role: `bounded commands in ${repoRoot} (read-only unless access is write)`, icon: 'jaco', agentAccess: 'read',
       command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')], cwd: runtimeRoot, env: { JACO_SHELL_WORKSPACE: repoRoot } } } : {}),
   };

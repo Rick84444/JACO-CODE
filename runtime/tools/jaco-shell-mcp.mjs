@@ -20,8 +20,8 @@ const text = value => JSON.stringify(value, null, 2);
 const argSchema = { command: { type: 'string', description: 'the program, e.g. "git", or the whole command as one string, e.g. "git status --short" (no shell: pipes, ; && and $() are refused)' }, args: { type: 'array', items: { type: 'string' }, description: 'its arguments, one string each' }, cwd: { type: 'string', description: 'folder inside the workspace (default: the workspace)' } };
 
 const TOOLS = [
-  { name: 'shell_info', readOnly: true, description: 'What this shell may run: workspace, allowed programs, limits, and whether destructive commands or push are enabled. Read only.',
-    inputSchema: { type: 'object', properties: {} }, run: async () => shell.info() },
+  { name: 'shell_info', readOnly: true, description: 'Discover actual installed executables on the local host, the bounded shell policy list, and limits. Search executable names with query, including PowerShell, Python, Node, Git and system tools. No commands run. Read only.',
+    inputSchema: { type: 'object', properties: {query:{type:'string',maxLength:64},limit:{type:'integer',minimum:1,maximum:300}} }, run: async args => shell.info(args) },
   { name: 'shell_read', readOnly: true, description: 'Run a read-only command in the workspace: ls, cat, head, tail, wc, grep, find, stat, du, file, pwd, uname, df, git status/diff/log/show/blame/ls-files, npm ls, node --version. Anything that would change something is refused. Returns stdout, stderr, exit code, timing.',
     inputSchema: { type: 'object', properties: { ...argSchema, timeoutSeconds: { type: 'number' } }, required: ['command'] },
     run: args => shell.run({ ...args, mode: 'read' }) },

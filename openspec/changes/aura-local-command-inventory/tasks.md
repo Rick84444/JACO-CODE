@@ -1,0 +1,4 @@
+- [x] Inspect canonical SafeShell, MCP host, planner and native tool contracts.
+- [x] Implement bounded command discovery, shell info search and planner context.
+- [x] Add regression fixtures for POSIX and Windows naming.
+- [ ] Verify exact-head CI and actual operator host inventory.

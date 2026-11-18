@@ -262,7 +262,7 @@ test('JACO Shell: agents read by default, shell_run needs write access, and the 
   } finally { host.stopAll?.(); }
 });
 
-test('Lite offers the shell server only where its bundle exists and the programs are POSIX', async () => {
+test('Lite offers the shell server on every host where its bundle exists', async () => {
   const { defaultServers } = await import('../../runtime/src/server/mcp/stdioMcpHost.mjs');
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-lite-shell-'));
   const before = process.env.JACO_LITE; process.env.JACO_LITE = '1';
@@ -270,8 +270,7 @@ test('Lite offers the shell server only where its bundle exists and the programs
     assert.deepEqual(Object.keys(defaultServers({ repoRoot: dir, runtimeRoot })), ['editor'], 'no bundle, no shell server');
     fs.mkdirSync(path.join(runtimeRoot, 'dist')); fs.writeFileSync(path.join(runtimeRoot, 'dist', 'jaco-shell.mjs'), '// bundle');
     const servers = defaultServers({ repoRoot: dir, runtimeRoot });
-    if (process.platform === 'win32') assert.deepEqual(Object.keys(servers), ['editor']);
-    else {
+    {
       assert.deepEqual(Object.keys(servers), ['editor', 'shell']);
       assert.equal(servers.shell.agentAccess, 'read');
       assert.equal(servers.shell.env.JACO_SHELL_WORKSPACE, dir);
