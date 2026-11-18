@@ -1,3 +1,4 @@
+import { COMMERCIAL_SOURCE, commercialTaskAllowed } from '../autonomy/commercialClock.mjs';
 import {actionLeaseMs} from '../../../../agents/lib/web-fetch-policy.mjs';
 import { validateToolProposal } from '../../../../agents/lib/tool-proposals.mjs';
 import { checkLocalWriteTask } from '../../../../agents/lib/local-write.mjs';
@@ -314,6 +315,7 @@ export class NovaMissionControl {
   // capabilities: the operator's switches (capabilityPolicy.mjs). Without it missions keep the narrow legacy scope.
   constructor(bus, { allowedTasks = DEFAULT_TASKS, now = () => Date.now(), knownExecutor = () => true, capabilities = null } = {}) {
     this.bus = bus;
+    this.commercialAuthorization = (_mission, _task = null) => false;
     this.capabilities = capabilities;
     this.knownExecutor = knownExecutor;
     this.db = bus.db;
@@ -562,6 +564,8 @@ export class NovaMissionControl {
 
   // executor (optional): only missions routed to that executor ('nova' or 'desktop-agentos'), so one
   // executor's mission at the queue head never starves the other executor's work.
+  commercialAllowed(mission, task = null) { return mission.source !== COMMERCIAL_SOURCE || this.commercialAuthorization(mission, task); }
+
   current(executor = null) {
     this.recoverExpired();
     this.recoverBlockedHealth();
@@ -570,7 +574,7 @@ export class NovaMissionControl {
       const ids = this.db.prepare("SELECT s.mission_id FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='ACTIVE' ORDER BY " + QUEUE_ORDER).all();
       for (const { mission_id } of ids) {
         const mission = this.get(mission_id);
-        if (!mission.paused && (mission.metadata?.executor || 'nova') === executor) return mission;
+        if (!mission.paused && this.commercialAllowed(mission) && (mission.metadata?.executor || 'nova') === executor) return mission;
       }
       return null;
     }
@@ -579,7 +583,7 @@ export class NovaMissionControl {
     // not silently starve unrelated later work.
     for (const row of this.db.prepare("SELECT s.mission_id FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='ACTIVE' ORDER BY " + QUEUE_ORDER).all()) {
       const mission = this.get(row.mission_id);
-      if (!mission.paused) return mission;
+      if (!mission.paused && this.commercialAllowed(mission)) return mission;
     }
     return null;
   }
@@ -626,6 +630,7 @@ export class NovaMissionControl {
     if (executor != null && !EXECUTOR.test(String(executor))) throw new Error('INVALID_MISSION_EXECUTOR');
     const mission = this.get(id);
     if (mission.paused) throw new Error('MISSION_PAUSED');
+    if (!this.commercialAllowed(mission)) throw Error('COMMERCIAL_CLOCK_INACTIVE');
     const claimant = executor ? String(executor) : owner.startsWith('desktop-agentos-') ? 'desktop-agentos' : 'nova';
     const desktopOwner = executorKind(claimant) === 'desktop-agentos';
     const missionExecutor = mission.metadata?.executor || 'nova';
@@ -685,6 +690,8 @@ export class NovaMissionControl {
     if (row.phase !== 'PLANNING' || mission.status !== 'ACTIVE') throw new Error('NOVA_NOT_PLANNING');
     if (mission.cancelRequested) throw new Error('MISSION_CANCEL_REQUESTED');
     if (mission.paused) throw new Error('MISSION_PAUSED');
+    if (!this.commercialAllowed(mission, task)) throw Error('COMMERCIAL_CLOCK_INACTIVE');
+    if (mission.source === COMMERCIAL_SOURCE && !commercialTaskAllowed(task)) throw Error('COMMERCIAL_TASK_OUT_OF_SCOPE');
     if (mission.contract) {
       const used = row.turn - (row.budget_turn_base || 0);
       const startedAt = row.budget_started_at ?? Date.parse(mission.createdAt || mission.created_at || '');

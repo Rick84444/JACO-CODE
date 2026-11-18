@@ -34,3 +34,16 @@ test('unknown outcome locks application, no second mutation',async t=>{
  await assert.rejects(c.call('apply',proposal),/OUTCOME_UNKNOWN/);
  await assert.rejects(c.call('apply',proposal),/ALREADY_ATTEMPTED/);assert.equal(writes,1);
 });
+
+test('durable attempt IDs survive adapter restart, including ambiguous writes',async t=>{
+ const dir=await mkdtemp(path.join(os.tmpdir(),'jaco-gigs-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ let calls=0;
+ const c=createAgentGigs({env,stateDir:dir,fetchImpl:async(url,opt)=>{
+ if(url.endsWith('/available'))return json({jobs:[{id:job,budget_min:500,budget_max:1500}]});
+ calls++;throw Error('timeout');
+ }});
+ assert.deepEqual(await c.call('list_attempted'),{job_ids:[],truncated:false});
+ await assert.rejects(c.call('apply',proposal),/OUTCOME_UNKNOWN/);
+ const reopened=createAgentGigs({stateDir:dir,env:{},fetchImpl:async()=>{throw Error('network should not be called');}});
+ assert.deepEqual(await reopened.call('list_attempted'),{job_ids:[job],truncated:false});assert.equal(calls,1);
+});
