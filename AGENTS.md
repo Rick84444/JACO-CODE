@@ -87,3 +87,6 @@ State exactly:
 ## Spec-driven workflow (OpenSpec)
 
 Non-trivial behavior changes start as an OpenSpec change under `openspec/changes/<change-id>/` (proposal, design, tasks, spec deltas) before code. See `openspec/project.md`. Tasks are ticked only on observed evidence; merge only from a branch with green CI; archive the change after merge.
+
+## Research-driven engineering
+For substantial architectural changes, record the research question, competing hypotheses, prior work (including upstream revision and license), baseline, falsifiers, experimental budget and acceptance thresholds before implementation. Use ACM SIGSOFT Engineering Research empirical standards and Peffers et al. DSRM as methodological references, not claims of academic endorsement. Prefer paired experiments, fixed seeds, held-out scenarios and ablations; distinguish simulation from production observations. Record negative results, uncertainty, confounders and reproduction commands. Review security, architecture, usability and empirical validity independently where possible; model-generated specialist perspectives are not independent peer review. Continue unblocked work within authorized scope, but preserve existing CI and operator boundaries. See the change-specific research protocol under OpenSpec.
