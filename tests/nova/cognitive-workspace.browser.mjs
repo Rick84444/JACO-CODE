@@ -210,7 +210,32 @@ try {
   assert.equal(await page.locator('.monaco-editor').count(),0,'defer the editor until a file is opened');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   passed('Production client opens with the real JACO brand, one conversation and no overflow');
+  // Check actual computed production theme, not a mock/design image.
+  const visual=await page.locator('.cognitive-workspace').evaluate(root=>{
+    const rgb=value=>(value.match(/[\d.]+/g)||[]).slice(0,3).map(Number);
+    const luminance=value=>rgb(value).map(c=>{const n=c/255;return n<=.04045?n/12.92:Math.pow((n+.055)/1.055,2.4);}).reduce((a,c,i)=>a+c*[.2126,.7152,.0722][i],0);
+    const ratio=(a,b)=>{const values=[luminance(a),luminance(b)].sort((x,y)=>y-x); return (values[0]+.05)/(values[1]+.05);};
+    const rootStyle=getComputedStyle(root);
+    const box=root.querySelector('.cognitive-input-box');
+    const input=box?.querySelector('textarea');
+    if(!box||!input)throw Error('canonical composer missing');
+    return {background:rootStyle.backgroundColor, contrast:ratio(rootStyle.color,rootStyle.backgroundColor), composer:ratio(getComputedStyle(input).color,getComputedStyle(box).backgroundColor)};
+  });
+  assert.equal(visual.background,'rgb(13, 16, 20)','canonical obsidian working surface');
+  assert.ok(visual.contrast>=4.5&&visual.composer>=4.5,'primary text on tested solid surfaces must be readable');
+  passed('Obsidian theme preserves readable primary and composer text on measured solid surfaces');
   await screenshot('cognitive-workspace-desktop');
+  for(const width of [360,393,412]){
+    await page.setViewportSize({width,height:852});
+    const navigation=page.getByRole('navigation',{name:'Mobilnavigation'});
+    await navigation.waitFor();
+    const dimensions=await navigation.evaluate(nav=>({width:document.documentElement.scrollWidth,viewport:innerWidth,buttons:[...nav.querySelectorAll('button')].map(b=>{const rect=b.getBoundingClientRect();return {width:rect.width,height:rect.height,inView:rect.left>=0&&rect.right<=innerWidth&&rect.top>=0&&rect.bottom<=innerHeight};})}));
+    assert.ok(dimensions.width<=width,'no horizontal document overflow at '+width);
+    assert.ok(dimensions.buttons.every(b=>b.width>=44&&b.height>=44&&b.inView),'visible 44px navigation targets at '+width);
+    await screenshot('jaco-visual-'+width+'px');
+  }
+  await page.setViewportSize({width:1440,height:960});
+  passed('Canonical mobile controls remain within the viewport at three phone sizes');
   await input().fill('Behåll mitt utkast');
   await canvas('Kod').click();await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
