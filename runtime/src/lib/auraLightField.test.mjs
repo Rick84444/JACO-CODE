@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {sampleLightField,projectLightPoint} from './auraLightField.mjs';
+const v=[{x:0,y:0,z:0},{x:2,y:0,z:0},{x:0,y:2,z:0},{x:0,y:0,z:1}];
+const faces=[[0,1,2],[0,1,3]];
+test('fixed seed is deterministic and bounded',()=>{assert.deepEqual(sampleLightField(v,faces,100,42),sampleLightField(v,faces,100,42));assert.throws(()=>sampleLightField(v,faces,16001));});
+test('samples stay in triangle interiors and carry unit normals',()=>{const points=sampleLightField(v,faces,1200);for(const p of points){assert.ok(Math.abs(Math.hypot(p.nx,p.ny,p.nz)-1)<1e-9);assert.ok(p.x>=0&&p.y>=0&&p.z>=0&&p.x/2+p.y/2+p.z<=1+1e-9);assert.ok(p.z===0||p.y===0);}});
+test('surface area determines sampling density',()=>{const points=sampleLightField(v,faces,1200);assert.equal(points.filter(p=>p.z===0).length,800);});
+test('rotation changes depth and perspective, not merely a flat image transform',()=>{const p={x:.4,y:.2,z:.3,nx:0,ny:0,nz:-1,phase:0,energy:.5};const a=projectLightPoint(p,0,0,0),b=projectLightPoint(p,.45,.12,0);assert.notEqual(a.z,b.z);assert.notEqual(a.x,b.x);assert.notEqual(a.radius,b.radius);assert.ok(Object.values(b).every(Number.isFinite));});
+test('time and activity modulate projected particles without random reseeding',()=>{const p=sampleLightField(v,faces,1)[0];assert.notDeepEqual(projectLightPoint(p,0,0,0),projectLightPoint(p,0,0,2,1));assert.deepEqual(projectLightPoint(p,0,0,0),projectLightPoint(p,0,0,0));});
+test('degenerate surfaces are rejected',()=>assert.throws(()=>sampleLightField(v,[[0,0,0]],100)));

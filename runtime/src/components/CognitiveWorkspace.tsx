@@ -1,11 +1,13 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MessageSquare, Code2, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone, MoreHorizontal, Bot, Pin, PinOff } from 'lucide-react';
 import { JacoWordmark } from './JacoWordmark';
 import { CostChip } from './CostChip';
 import { JacoWindowsUpdates } from './JacoWindowsUpdates';
 import { useUiLanguage } from '../i18n/UiLanguage';
+import type { AuraPortraitChat } from './AuraPortrait';
 
 const VSCODE_OPEN_URL = 'vscode://jacocode.jaco-cognitive-ide/open';
+const AuraPortrait = React.lazy(() => import('./AuraPortrait'));
 
 export type CognitiveCanvas='conversation'|'stage'|'agents'|'code'|'preview'|'evidence'|'gameboard'|'voice'|'connections'|'economy';
 type Sidebar='explorer'|'source-control'|'tools'|'skills'|'devices'|'providers';
@@ -18,6 +20,7 @@ interface Props {
   approvalCount:number;onApprovals:()=>void;onCommands:()=>void;onSignOut:()=>void;
   lastObservedAt:string|null;error:string|null;
   attention?:React.ReactNode;
+  portraitChat?: AuraPortraitChat;
 }
 const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['connections',PlugZap,'Anslutningar'],['economy',CircleDollarSign,'Ekonomi'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
 const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter']] as const;
@@ -74,6 +77,7 @@ export function CognitiveWorkspace(props:Props) {
   // Local browser only: a remote viewer's VS Code cannot reach this runtime, and the VS Code tab is already open.
   const canOpenInVsCode = typeof window !== 'undefined' && ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname) && window.self === window.top;
   const menu = useRef<HTMLDialogElement>(null);
+  const [portraitOpen, setPortraitOpen] = useState(false);
   // Desktop shortcuts are intentionally inactive while composing chat, editing
   // code or using another control. No agent authority is changed by navigation.
   useEffect(() => {
@@ -112,7 +116,10 @@ export function CognitiveWorkspace(props:Props) {
   const showStage=props.canvas!=='conversation';
   return <div className="cognitive-workspace" data-cognitive-workspace="true" data-remote-mode={props.remoteMode ? "true" : "false"}>
     <header className="cognitive-topbar">
-      <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">Aura</span></div>
+      <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/>
+        <button type="button" className="cognitive-product aura-portrait-trigger" aria-haspopup="dialog"
+          aria-label={tr('Öppna Auras porträtt', 'Open Aura portrait')} onClick={() => setPortraitOpen(true)}>Aura</button>
+      </div>
       <button type="button" className="cognitive-project" aria-label={`${tr('Öppna projekt', 'Open project')}: ${props.projectName}`} onClick={()=>openPanel('explorer')}><Folder size={14}/><span>{props.projectName}</span><ChevronRight size={12}/><span className="cognitive-branch">{props.branch || tr('Projekt', 'Project')}</span></button>
       <div className="cognitive-top-actions">
         <CostChip onOpen={()=>props.onCanvas('economy')}/>
@@ -122,8 +129,11 @@ export function CognitiveWorkspace(props:Props) {
         <button type="button" aria-label={tr('Sök verktyg och kommandon', 'Search tools and commands')} title={tr('Sök', 'Search')+' · Ctrl+Shift+P'} onClick={props.onCommands}><Search size={16}/></button>
       </div>
     </header>
+    {portraitOpen && <React.Suspense fallback={null}>
+      <AuraPortrait tone={props.status.tone} label={L(props.status.label)} chat={props.portraitChat} onClose={() => setPortraitOpen(false)}/>
+    </React.Suspense>}
     {props.remoteMode && <nav className="cognitive-remote-navigation" aria-label="Remote control">
-      {([['conversation','Chat'],['stage','Mission'],['gameboard','Plan'],['evidence','Results']] as const).map(([view,label]) =>
+      {([['conversation','Chat'],['stage','Mission'],['code','Code'],['preview','Preview'],['connections','Tools & models'],['gameboard','Plan'],['evidence','Results']] as const).map(([view,label]) =>
         <button key={view} type="button" aria-pressed={props.canvas===view} onClick={()=>props.onCanvas(view)}>{label}</button>)}
       <button type="button" onClick={props.onApprovals}>Approvals{props.approvalCount ? ' ('+props.approvalCount+')' : ''}</button>
       <a href="/" className="cognitive-remote-full">Open full JACO</a>
