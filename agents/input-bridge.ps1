@@ -28,6 +28,8 @@ param(
   [Nullable[int]]$MaxHeight = $null
 )
 
+$ErrorActionPreference = 'Stop'
+
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
@@ -81,28 +83,32 @@ public class WinInput {
   public const uint MOUSEEVENTF_WHEEL      = 0x0800;
   public const uint KEYEVENTF_KEYUP        = 0x0002;
 
+  public static void SendChecked(INPUT[] inputs) {
+    uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+    if (sent != (uint)inputs.Length) throw new InvalidOperationException("WINDOWS_INPUT_PARTIAL_OR_REJECTED");
+  }
   public static void MouseClick(uint down, uint up) {
     var inputs = new INPUT[2];
     inputs[0].type = INPUT_MOUSE; inputs[0].u.mi.dwFlags = down;
     inputs[1].type = INPUT_MOUSE; inputs[1].u.mi.dwFlags = up;
-    SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
+    SendChecked(inputs);
   }
 
   public static void KeyDown(ushort vk) {
     var i = new INPUT[1];
     i[0].type = INPUT_KEYBOARD; i[0].u.ki.wVk = vk;
-    SendInput(1, i, Marshal.SizeOf(typeof(INPUT)));
+    SendChecked(i);
   }
   public static void KeyUp(ushort vk) {
     var i = new INPUT[1];
     i[0].type = INPUT_KEYBOARD; i[0].u.ki.wVk = vk; i[0].u.ki.dwFlags = KEYEVENTF_KEYUP;
-    SendInput(1, i, Marshal.SizeOf(typeof(INPUT)));
+    SendChecked(i);
   }
   public static void TypeChar(char c) {
     var i = new INPUT[2];
     i[0].type = INPUT_KEYBOARD; i[0].u.ki.wScan = (ushort)c; i[0].u.ki.dwFlags = 0x0004; // UNICODE
     i[1].type = INPUT_KEYBOARD; i[1].u.ki.wScan = (ushort)c; i[1].u.ki.dwFlags = 0x0006; // UNICODE+KEYUP
-    SendInput(2, i, Marshal.SizeOf(typeof(INPUT)));
+    SendChecked(i);
   }
 }
 "@ -ErrorAction Stop
@@ -122,8 +128,10 @@ $VK = @{
 }
 
 function Do-MouseMove($x, $y) {
-  [WinInput]::SetCursorPos($x, $y) | Out-Null
+  if (-not [WinInput]::SetCursorPos($x, $y)) { throw 'CURSOR_MOVE_REJECTED' }
   Start-Sleep -Milliseconds 50
+  $p = New-Object WinInput+POINT
+  if (-not [WinInput]::GetCursorPos([ref]$p) -or $p.X -ne $x -or $p.Y -ne $y) { throw 'CURSOR_POSITION_UNVERIFIED' }
 }
 
 function Do-MouseClick($x, $y, $btn, $dbl) {
@@ -132,13 +140,16 @@ function Do-MouseClick($x, $y, $btn, $dbl) {
   switch ($btn) {
     "right"  { [WinInput]::MouseClick([WinInput]::MOUSEEVENTF_RIGHTDOWN,  [WinInput]::MOUSEEVENTF_RIGHTUP) }
     "middle" { [WinInput]::MouseClick([WinInput]::MOUSEEVENTF_MIDDLEDOWN, [WinInput]::MOUSEEVENTF_MIDDLEUP) }
-    default  { [WinInput]::MouseClick([WinInput]::MOUSEEVENTF_LEFTDOWN,   [WinInput]::MOUSEEVENTF_LEFTUP) }
+    'left' { [WinInput]::MouseClick([WinInput]::MOUSEEVENTF_LEFTDOWN, [WinInput]::MOUSEEVENTF_LEFTUP) }
+    default { throw 'INVALID_MOUSE_BUTTON' }
   }
   if ($dbl) {
     Start-Sleep -Milliseconds 100
     switch ($btn) {
       "right"  { [WinInput]::MouseClick([WinInput]::MOUSEEVENTF_RIGHTDOWN,  [WinInput]::MOUSEEVENTF_RIGHTUP) }
-      default  { [WinInput]::MouseClick([WinInput]::MOUSEEVENTF_LEFTDOWN,   [WinInput]::MOUSEEVENTF_LEFTUP) }
+      'middle' { [WinInput]::MouseClick([WinInput]::MOUSEEVENTF_MIDDLEDOWN, [WinInput]::MOUSEEVENTF_MIDDLEUP) }
+      'left' { [WinInput]::MouseClick([WinInput]::MOUSEEVENTF_LEFTDOWN, [WinInput]::MOUSEEVENTF_LEFTUP) }
+      default { throw 'INVALID_MOUSE_BUTTON' }
     }
   }
 }
@@ -149,28 +160,23 @@ function Do-KeyPress($keysStr) {
   $mods = $parts | Select-Object -SkipLast 1
   $key  = $parts | Select-Object -Last 1
 
-  foreach ($m in $mods) {
-    if ($VK.ContainsKey($m)) { [WinInput]::KeyDown([System.UInt16]$VK[$m]) }
-  }
-  Start-Sleep -Milliseconds 30
-  if ($VK.ContainsKey($key)) {
-    [WinInput]::KeyDown([System.UInt16]$VK[$key])
+  if (-not $VK.ContainsKey($key)) { throw 'UNSUPPORTED_KEY' }
+  foreach ($m in $mods) { if ($m -notin @('ctrl','alt','shift','win')) { throw 'UNSUPPORTED_MODIFIER' } }
+  $held = New-Object System.Collections.Generic.List[UInt16]
+  try {
+    foreach ($m in $mods) { $vkCode=[UInt16]$VK[$m]; [WinInput]::KeyDown($vkCode); $held.Add($vkCode) }
+    $vkCode=[UInt16]$VK[$key]
+    [WinInput]::KeyDown($vkCode); $held.Add($vkCode)
     Start-Sleep -Milliseconds 30
-    [WinInput]::KeyUp([System.UInt16]$VK[$key])
-  }
-  Start-Sleep -Milliseconds 30
-  if ($mods -and $mods.Count -gt 0) {
-    $revMods = [System.Linq.Enumerable]::Reverse([string[]]$mods)
-    foreach ($m in $revMods) {
-      if ($VK.ContainsKey($m)) { [WinInput]::KeyUp([System.UInt16]$VK[$m]) }
-    }
+  } finally {
+    for ($n=$held.Count-1; $n -ge 0; $n--) { try { [WinInput]::KeyUp($held[$n]) } catch { Write-Warning 'KEY_RELEASE_FAILED' } }
   }
 }
 
 function Do-TypeText($text) {
   foreach ($c in $text.ToCharArray()) {
     [WinInput]::TypeChar($c)
-    Start-Sleep -Milliseconds 20
+    Start-Sleep -Milliseconds 2
   }
 }
 
@@ -240,8 +246,8 @@ function Do-Screenshot($outFile, $cropX, $cropY, $cropWidth, $cropHeight, $maxWi
 
 function Do-GetCursor {
   $p = New-Object WinInput+POINT
-  [WinInput]::GetCursorPos([ref]$p) | Out-Null
-  Write-Output "{`"x`":$($p.X),`"y`":$($p.Y)}"
+  if (-not [WinInput]::GetCursorPos([ref]$p)) { throw 'CURSOR_READ_REJECTED' }
+  [ordered]@{ok=$true;verified=$true;x=$p.X;y=$p.Y} | ConvertTo-Json -Compress
 }
 
 function Do-Scroll($x, $y, $delta) {
@@ -250,16 +256,16 @@ function Do-Scroll($x, $y, $delta) {
   $i = New-Object WinInput+INPUT
   $i.type = [WinInput]::INPUT_MOUSE
   $i.u.mi.dwFlags = [WinInput]::MOUSEEVENTF_WHEEL
-  $i.u.mi.mouseData = [uint32]($delta * 120)
-  [WinInput]::SendInput(1, [WinInput+INPUT[]]@($i), [System.Runtime.InteropServices.Marshal]::SizeOf([type][WinInput+INPUT])) | Out-Null
+  $i.u.mi.mouseData = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int]($delta * 120)),0)
+  [WinInput]::SendChecked([WinInput+INPUT[]]@($i))
 }
 
 switch ($Op) {
-  "mouse_move"   { Do-MouseMove $X $Y; Write-Output '{"ok":true}' }
-  "mouse_click"  { Do-MouseClick $X $Y $Button $Double; Write-Output '{"ok":true}' }
-  "mouse_scroll" { Do-Scroll $X $Y $Delta; Write-Output '{"ok":true}' }
-  "key_press"    { Do-KeyPress $Keys; Write-Output '{"ok":true}' }
-  "type_text"    { Do-TypeText $Text; Write-Output '{"ok":true}' }
+  "mouse_move"   { Do-MouseMove $X $Y; Write-Output '{"ok":true,"verified":true,"evidence":"cursor-position-observed"}' }
+  "mouse_click"  { Do-MouseClick $X $Y $Button $Double; Write-Output '{"ok":true,"verified":true,"evidence":"input-dispatch-only","postconditionVerified":false}' }
+  "mouse_scroll" { Do-Scroll $X $Y $Delta; Write-Output '{"ok":true,"verified":true,"evidence":"input-dispatch-only","postconditionVerified":false}' }
+  "key_press"    { Do-KeyPress $Keys; Write-Output '{"ok":true,"verified":true,"evidence":"input-dispatch-only","postconditionVerified":false}' }
+  "type_text"    { Do-TypeText $Text; Write-Output '{"ok":true,"verified":true,"evidence":"input-dispatch-only","postconditionVerified":false}' }
   "screenshot"   { Do-Screenshot $OutFile $CropX $CropY $CropWidth $CropHeight $MaxWidth $MaxHeight }
   "get_cursor"   { Do-GetCursor }
   default        { Write-Output "{`"error`":`"unknown op: $Op`"}" }

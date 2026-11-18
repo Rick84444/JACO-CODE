@@ -49,6 +49,7 @@ hydrateEnvFromStore(process.env);
 import { redactDeep, takeHeld, generateSecret, validateVaultKey, holdValue } from './lib/secret-capture.mjs';
 import { readInbox, inboxDomain } from './lib/inbox.mjs';
 import { selectPerceptionRegion, captureMetrics } from './lib/adaptive-perception.mjs';
+import { freshMissionFrame, permittedFrameMessages } from './lib/mission-screen-frame.mjs';
 import { createGithubNovaControlInbox } from './lib/github-control-inbox.mjs';
 import { enqueueVerifiedReceiptPromotion, flushLivingCorePromotions, ensureLivingCorePromotionState } from './lib/living-core-promotion.mjs';
 import { TASK_FIELDS, taskContract } from './lib/task-fields.mjs';
@@ -718,11 +719,16 @@ const lawnmower = {
 const INPUT_BRIDGE = join(__dirname, "input-bridge.ps1");
 
 function runBridge(args) {
+  if(process.platform!=='win32'||!existsSync(INPUT_BRIDGE))return {ok:false,verified:false,error:'WINDOWS_INPUT_BRIDGE_UNAVAILABLE'};
+  const mutating=['mouse_move','mouse_click','mouse_scroll','key_press','type_text'].includes(args[1]);
   try {
     const out = execFileSync('powershell', ['-NonInteractive', '-NoProfile', '-File', INPUT_BRIDGE, ...args.map(String)], { timeout: 10000, encoding: "utf8", windowsHide: true }).trim();
-    return JSON.parse(out);
+    const result=JSON.parse(out);
+    if(mutating&&result.ok!==true)return {...result,verified:false,outcomeUnknown:result.outcomeUnknown!==false};
+    return result;
   } catch (e) {
-    return { ok: false, error: e.message.slice(0, 200) };
+    // Never include process arguments (typed text) in a failure receipt.
+    return { ok:false,verified:false,error:'WINDOWS_INPUT_BRIDGE_FAILED', outcomeUnknown:mutating, exitCode:Number.isInteger(e.status)?e.status:null };
   }
 }
 
@@ -747,9 +753,9 @@ const computerTools = {
     return runBridge(['-Op', 'key_press', '-Keys', keys]);
   },
 
-  // Type arbitrary text (Unicode-safe)
+  // Type ordinary non-secret text (Unicode-safe)
   typeText(text) {
-    // Escape for PowerShell: replace double-quotes
+    if(typeof text!=='string'||!text.length||text.length>2000||/^vault:|(?:password|lösenord|passcode|otp|api.?key|seed phrase|private.?key)/i.test(text))return {ok:false,verified:false,error:'INPUT_TEXT_INVALID_OR_SENSITIVE'};
     return runBridge(['-Op', 'type_text', '-Text', text]);
   },
 
@@ -1712,16 +1718,7 @@ async function callBrainStep(state, { mission, observation, continuity = null },
   // With native tools the MCP catalog is in the tool list itself, with full schemas.
   const { mcpTools: _catalog, learnedTaskNotes: _notes, ...nativeCtx } = ctx;
   const userMsgNative = "Current state:\n" + JSON.stringify(nativeCtx) + "\nCall the tool(s) for the next step(s) of mission.goal, or complete/blocked.";
-  const screenshot = join(STATE_DIR, "latest-observation.png");
-  let image = null;
-  const screenshotReceipt = mission.receipts?.findLast(r => r.type === "screenshot" && r.ok && r.verified);
-  if (screenshotReceipt && existsSync(screenshot)) {
-    const info = statSync(screenshot);
-    if (Math.abs(info.mtimeMs - Date.parse(screenshotReceipt.at)) < 10000 && Date.now() - info.mtimeMs < 120000 && info.size < 2_000_000) {
-      const bytes=readFileSync(screenshot);
-      if(createHash("sha256").update(bytes).digest("hex")===screenshotReceipt.result?.imageSha256) image = "data:image/png;base64," + bytes.toString("base64");
-    }
-  }
+  const frame = freshMissionFrame(mission,join(STATE_DIR,'latest-observation.png'));
   const system = brainSystemFor(planningAllowedTasks, Boolean(mission?.metadata?.parent?.graphId));
   state.plannerInputMetrics.systemChars=system.length;
   if (process.env.NOVA_BRAIN_MODE !== 'direct') {
@@ -1790,9 +1787,7 @@ Plans already rejected this turn (do not repeat them): ${rejectedPlans.slice(-3)
           model: provider.model,
           messages: [
             { role: "system", content: native ? system + NATIVE_TOOLS_NOTE : system },
-            { role: "user", content: image && (provider.name === "ollama" || process.env.NOVA_ALLOW_CLOUD_IMAGES === "1")
-              ? [{ type: "text", text: userText(Boolean(native)) }, { type: "image_url", image_url: { url: image } }]
-              : userText(Boolean(native)) },
+            ...permittedFrameMessages([{ role: "user", content: userText(Boolean(native)) }],frame,provider),
           ],
           ...(native ? { tools: native.tools, tool_choice: "auto" } : {}),
           // Local models cannot leave the plan's structure: decoding is constrained to the schema.
@@ -2009,7 +2004,8 @@ const TEMPORARY_COOLDOWN_MS = 15 * 60_000;
 const TEMPORARY_MODEL_LIMIT = /:(429|COOLDOWN|AUTONOMOUS_CLOUD_BURST_LIMIT)\b/;
 
 // One model turn with native tools: the first available provider in Nova's chain answers.
-export async function agentChat({ messages, tools }, rawFetch = fetch, env = process.env) {
+export async function agentChat({ messages, tools, mission }, rawFetch = fetch, env = process.env) {
+  const frame=freshMissionFrame(mission,join(STATE_DIR,'latest-observation.png'));
   const fetchImpl = withLocalOllamaContext(rawFetch, env);
   // A chosen connected provider may not be in the fixed provider list. Native
   // turns must refresh the same discovered registry as structured turns before
@@ -2030,7 +2026,7 @@ export async function agentChat({ messages, tools }, rawFetch = fetch, env = pro
     const cooldownMs = (providerCooldownUntil.get(id) || 0) - Date.now();
     if (cooldownMs > 0) { failures.push(`${provider.name}:${cooldownMs <= TEMPORARY_COOLDOWN_MS ? 'COOLDOWN' : 'PARKED'}`); continue; }
     const requestBody = {
-      model: provider.model, messages, tools, tool_choice: "auto", temperature: 0.2,
+      model: provider.model, messages:permittedFrameMessages(messages,frame,provider,env), tools, tool_choice: "auto", temperature: 0.2,
       max_tokens: provider.name === "deepseek" ? Number(env.JACO_DEEPSEEK_MAX_TOKENS) || 32768 : 8192,
       ...(provider.name === "groq" ? { reasoning_effort: env.GROQ_REASONING_EFFORT || "low" } : {}),
     };

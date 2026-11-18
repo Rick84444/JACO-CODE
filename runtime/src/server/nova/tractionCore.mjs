@@ -65,7 +65,8 @@ export class NovaTractionEngine {
   }
 
   acquireTarget(target                                                                                                                                                                                 )                    {
-    const confidence = Math.max(0, Math.min(1, Number(target.confidence ?? 0.5)));
+    const supplied=Number(target.confidence ?? 0.5);
+    const confidence = Number.isFinite(supplied)?Math.max(0,Math.min(1,supplied)):0;
     this.runtime = {
       ...this.runtime,
       target: {
@@ -85,6 +86,11 @@ export class NovaTractionEngine {
   observe(observation                 )                    {
     const at = observation.timestamp || new Date().toISOString();
     let next                    = { ...this.runtime, app: observation.app ?? this.runtime.app, lastObservationAt: at };
+    const age=Date.now()-Date.parse(at);
+    if(!Number.isFinite(age)||age<0||age>5000|| (this.runtime.app&&observation.app&&observation.app!==this.runtime.app)) {
+      this.runtime={...next,state:'REIDENTIFYING',target:next.target?{...next.target,confidence:0}:null};
+      return this.getState();
+    }
     if (observation.expectedTransitionObserved === true && next.state === 'VERIFYING') {
       next = { ...next, state: 'COMPLETE', target: next.target ? { ...next.target, confidence: 1 } : null };
       next.events = [...next.events, { at, type: 'transition.verified', message: next.expectedNextState || 'Expected UI transition verified' }].slice(-200);
