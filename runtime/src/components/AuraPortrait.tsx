@@ -56,21 +56,45 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
   const synthesis = window.speechSynthesis;
 
-  useEffect(() => () => {
-    const recording = dictation.current;
-    dictation.current = null;
-    recording?.abort();
-    if (utterance.current) synthesis?.cancel();
+  // Speech is opt-in and belongs to this presentation only. Revoke pending
+  // callbacks before stopping browser engines, which may emit delayed events.
+  useEffect(() => {
+    const stop = () => {
+      const recording = dictation.current;
+      const reply = utterance.current;
+      dictation.current = null;
+      utterance.current = null;
+      try { recording?.abort(); } catch { /* Browser engine already ended. */ }
+      if (reply) { try { synthesis?.cancel(); } catch { /* Engine unavailable. */ } }
+    };
+    const onVisibility = () => {
+      if (!document.hidden) return;
+      stop();
+      setListening(false);
+      setSpeaking(false);
+      setReadReplies(false);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      stop();
+    };
   }, [synthesis]);
 
   useEffect(() => {
     if (!latestReply || lastRead.current === latestReply.id) return;
     lastRead.current = latestReply.id;
-    if (!readReplies || !synthesis) return;
-    if (utterance.current) synthesis.cancel();
+    // Never play into an open microphone, read restored history or start audio
+    // in a hidden tab. This optional reader is not the planned neural voice.
+    if (!readReplies || !synthesis || !chat?.storageReady || document.hidden || dictation.current) return;
+    if (utterance.current) {
+      utterance.current = null;
+      setSpeaking(false);
+      try { synthesis.cancel(); } catch { setVoiceError(true); return; }
+    }
     const reply = new SpeechSynthesisUtterance(latestReply.content);
     reply.lang = locale;
-    reply.onstart = () => setSpeaking(true);
+    reply.onstart = () => { if (utterance.current === reply) setSpeaking(true); };
     const finish = () => {
       if (utterance.current !== reply) return;
       utterance.current = null;
@@ -82,18 +106,19 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       finish();
     };
     utterance.current = reply;
-    synthesis.speak(reply);
-  }, [latestReply, locale, readReplies, synthesis]);
+    try { synthesis.speak(reply); }
+    catch { if (utterance.current === reply) { setVoiceError(true); finish(); } }
+  }, [latestReply, locale, readReplies, synthesis, chat?.storageReady]);
 
   function toggleDictation() {
     if (dictation.current) {
       const recording = dictation.current;
       dictation.current = null;
       setListening(false);
-      recording.abort();
+      try { recording.abort(); } catch { setVoiceError(true); }
       return;
     }
-    if (!Recognition || !chat) return;
+    if (!Recognition || !chat || utterance.current || document.hidden) return;
     setVoiceError(false);
     const recording = new Recognition();
     recording.lang = locale;
@@ -102,7 +127,13 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       const text = Array.from(event.results, result => result[0]?.transcript ?? '').join(' ').trim();
       if (text) chat.setInput(previous => [previous.trimEnd(), text].filter(Boolean).join(' '));
     };
-    recording.onerror = () => { if (dictation.current === recording) setVoiceError(true); };
+    recording.onerror = () => {
+      if (dictation.current !== recording) return;
+      dictation.current = null;
+      setListening(false);
+      setVoiceError(true);
+      try { recording.abort(); } catch { /* Engine already stopped. */ }
+    };
     recording.onend = () => {
       if (dictation.current !== recording) return;
       dictation.current = null;
@@ -122,9 +153,11 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     setVoiceError(false);
     if (readReplies && utterance.current) {
       utterance.current = null;
-      synthesis?.cancel();
+      try { synthesis?.cancel(); } catch { setVoiceError(true); }
       setSpeaking(false);
     }
+    // Establish the baseline on enable, including restored chat history.
+    lastRead.current = latestReply?.id;
     setReadReplies(!readReplies);
   }
 
@@ -221,7 +254,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
           {listening ? <MicOff size={16}/> : <Mic size={16}/>}
           {listening ? tr('Sluta lyssna', 'Stop listening') : tr('Diktera', 'Dictate')}
         </button>
-        <button type="button" onClick={toggleReadReplies} disabled={!synthesis || !chat.storageReady} aria-pressed={readReplies}>
+        <button type="button" onClick={toggleReadReplies} disabled={!synthesis || !chat.storageReady || listening} aria-pressed={readReplies}>
           {readReplies ? <Volume2 size={16}/> : <VolumeX size={16}/>}
           {tr('Läs upp svar', 'Read replies aloud')}
         </button>
@@ -229,6 +262,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
           <ArrowUp size={16}/>{tr('Skicka', 'Send')}
         </button>
       </div>
+      <p className="aura-portrait-voice-note">{tr('Webbläsartal är en reservfunktion. Diktering kan använda webbläsarleverantörens externa tjänst.', 'Browser speech is a fallback. Dictation may use the browser provider’s external service.')}</p>
       {listening && <p role="status">{tr('Lyssnar…', 'Listening…')}</p>}
       {voiceError && <p role="status">{tr('Röstfunktionen kunde inte användas. Försök igen eller skriv till Aura.', 'Voice was unavailable. Try again or type to Aura.')}</p>}
       {chat.storageError && <p role="status">{chat.storageError}</p>}
