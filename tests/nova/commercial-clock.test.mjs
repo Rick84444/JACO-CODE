@@ -6,7 +6,7 @@ import path from 'node:path';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl } from '../../runtime/src/server/connected/novaMissionControl.mjs';
 import { KnowledgeStore } from '../../runtime/src/server/continuum/knowledgeStore.mjs';
-import { COMMERCIAL_CLOCK, COMMERCIAL_SOURCE, COMMERCIAL_TASKS, commercialAuthorized, commercialTaskAllowed, reconcileCommercialClock, archiveCommercialOutcome } from '../../runtime/src/server/autonomy/commercialClock.mjs';
+import { COMMERCIAL_CLOCK, COMMERCIAL_SOURCE, COMMERCIAL_TASKS, commercialAuthorized, commercialTaskAllowed, reconcileCommercialClock, archiveCommercialOutcome, archiveCommercialBatch } from '../../runtime/src/server/autonomy/commercialClock.mjs';
 import { operatorApprovalCheck } from '../../agents/lib/operator-action-guard.mjs';
 
 function setup(t) {
@@ -70,4 +70,20 @@ test('out-of-scope tools rejected in real Nova begin; no fabricated revenue in o
   assert.equal(archiveCommercialOutcome({mission,nova:s.nova,knowledge:s.knowledge}),null);
   assert.equal(s.tick().state,'COOLDOWN');
   s.advance(3600000+Math.max(0,Date.parse(mission.createdAt)-Date.parse(s.m.signedAt))+1);assert.equal(s.tick().state,'QUEUED');
+});
+
+test('commercial archive retry does not block unrelated completed missions', () => {
+  const rows=[{id:'a',source:COMMERCIAL_SOURCE,status:'DONE'},{id:'b',source:COMMERCIAL_SOURCE,status:'DONE'}];
+  const stored=new Map(), errors=[];
+  let fail=true;
+  const bus={listTerminalMissionsBySource:(_source,after,limit)=>rows.filter(x=>x.id>after).slice(0,limit)};
+  const nova={get:id=>rows.find(x=>x.id===id),evidenceReceipts:()=>[]};
+  const knowledge={get:id=>{if(!stored.has(id))throw Error('not found');return stored.get(id);},put:item=>{if(fail&&item.id.endsWith('-a'))throw Error('disk temporarily unavailable');stored.set(item.id,item);return item;}};
+  const args={bus,nova,knowledge,onError:(_error,id)=>errors.push(id)};
+  archiveCommercialBatch(args);
+  assert.deepEqual(errors,['a']);
+  assert.equal(stored.has('commercial-outcome-b'),true);
+  fail=false;
+  archiveCommercialBatch(args);
+  assert.equal(stored.has('commercial-outcome-a'),true);
 });
