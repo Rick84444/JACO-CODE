@@ -106,7 +106,7 @@ void main(){
   float facing=max(0.0,dot(n,viewDir));
   float rim=pow(max(0.0,1.0-facing),1.75);
   float pulse=.84+.16*sin(uTime*2.0+aSeed*23.0+displaced.y*14.0);
-  float fade=smoothstep(1.30,1.42,displaced.y);
+  float fade=(aKind>.5&&aKind<1.5)?smoothstep(1.12,1.28,displaced.y):smoothstep(1.30,1.42,displaced.y);
   float dof=1.0-clamp(abs(-mv.z-1.02)*1.6,0.0,0.45);
   vDepth=dof;
   float strength=(.12+.44*pow(facing,.7)+.58*rim)*dof;
@@ -119,7 +119,7 @@ void main(){
   vColor=mix(vColor,pureDiamond,rim*.65);
   if(aKind<.5){strength*=.06;}
   if(aKind>1.5&&aKind<2.5){vColor=mix(deepBiolum,pureDiamond,.45+aSeed*.50);strength*=.30;}
-  if(aKind>.5&&aKind<1.5){strength*=.03;}
+  if(aKind>.5&&aKind<1.5){vColor=mix(deepBiolum,pureDiamond,.55+aSeed*.45);strength*=.55;}
   if(aKind>2.5){vColor=pureDiamond;strength*=.52;}
   vAlpha=clamp(strength*pulse*fade*(1.08+.38*uEnergy),0.0,.96);
   gl_PointSize=clamp(aSize*uPixelRatio*(2.05+.46*uEnergy)*(0.85+0.25*dof)/max(.82,-mv.z),.70,4.5*uPixelRatio);
@@ -550,7 +550,7 @@ function createLightBody(scene,model,bones,groups,isMobile){
 
   float scanline=.99+.01*sin(vAuraWorldPos.y*480.0-uTime*3.4);
   float voicePulse=1.0+lipZone*uSpeaking*(0.28+0.15*sin(uTime*18.0));
-  float auraFade=smoothstep(1.22,1.42,vAuraWorldPos.y)*mix(0.6,1.0,smoothstep(1.33,1.43,vAuraWorldPos.y))*(1.0-smoothstep(0.22,0.31,abs(vAuraWorldPos.x)));
+  float auraFade=smoothstep(1.14,1.27,vAuraWorldPos.y)*mix(0.62,1.0,smoothstep(1.27,1.44,vAuraWorldPos.y))*(1.0-smoothstep(0.26,0.38,abs(vAuraWorldPos.x)));
 
   vec3 deepShadow=vec3(.06,.22,.62);
   vec3 biolumCyan=vec3(.24,.66,.99);
@@ -567,7 +567,8 @@ function createLightBody(scene,model,bones,groups,isMobile){
   baseSkin=mix(baseSkin,highlightIce,pow(max(0.0,keyWrap),2.2)*0.48+topLight*0.18+broadSpec);
   baseSkin+=diamondWhite*sharpSpec;
   baseSkin+=activeCyan*underBounce*0.14;
-  baseSkin+=highlightIce*veinPattern*(0.06+0.12*uEnergy);
+  baseSkin+=highlightIce*veinPattern*(0.06+0.12*uEnergy+lowMask*0.42);
+  baseSkin+=vec3(.55,.80,1.0)*lowMask*(0.10+0.10*sin(vAuraWorldPos.y*38.0-uTime*1.6))*(0.5+0.5*uEnergy);
 
   float lidZone=smoothstep(1.650,1.660,vAuraWorldPos.y)*(1.0-smoothstep(1.672,1.684,vAuraWorldPos.y))
     *smoothstep(0.012,0.022,abs(vAuraWorldPos.x))*(1.0-smoothstep(0.052,0.064,abs(vAuraWorldPos.x)))*smoothstep(0.04,0.08,vAuraWorldPos.z);
@@ -619,8 +620,8 @@ function createLightBody(scene,model,bones,groups,isMobile){
   float flow=vHairW.x*820.0+sin(vHairW.z*60.0+vHairW.y*40.0)*3.0;
   float strand=.55+.45*sin(flow)*sin(flow*.37+1.3);
   float sheen=pow(max(0.0,dot(n,normalize(vec3(0.15,0.75,0.65)))),6.0);
-  vec3 base=mix(vec3(.50,.30,.09),vec3(1.0,.82,.42),strand*.75+sheen*.5);
-  outgoingLight=base*(.72+.35*strand)+vec3(1.0,.86,.52)*(rim*.45+sheen*.35)*(1.0+.25*uEnergy);
+  vec3 base=mix(vec3(.58,.66,.82),vec3(1.0,1.0,1.0),strand*.75+sheen*.5);
+  outgoingLight=base*(.76+.30*strand)+vec3(1.0,1.0,1.0)*(rim*.45+sheen*.35)*(1.0+.25*uEnergy);
   diffuseColor.a=.94;
   #include <opaque_fragment>`);
   };
@@ -688,7 +689,8 @@ function createLightBody(scene,model,bones,groups,isMobile){
   if(!eyeGroup.mesh.geometry.attributes.normal)eyeGroup.mesh.geometry.computeVertexNormals();
 
   body.material=skin;body.visible=true;
-  jacket.visible=false;
+  // The rig has no skin under the outfit, so the outfit shape carries the torso in the same light material as the face.
+  jacket.material=skin;jacket.visible=true;
   hairMesh.material=hairMat;hairMesh.visible=true;
 
   const prepass=new THREE.SkinnedMesh(body.geometry,new THREE.MeshBasicMaterial({colorWrite:false}));
@@ -747,7 +749,7 @@ function createLightBody(scene,model,bones,groups,isMobile){
 void main(){${SWAY}
   float travel=sin(uTime*2.2+aSeed*19.0-aT*9.0);
   vA=(1.0-aT*.78)*(.66+.34*travel)*(.88+.40*uEnergy);
-  vC=mix(vec3(1.0,.92,.66),vec3(.86,.60,.20),pow(max(0.0,aT),.85));
+  vC=mix(vec3(1.0,1.0,1.0),vec3(.72,.82,1.0),pow(max(0.0,aT),.85));
   gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
     fragmentShader:String.raw`varying float vA;varying vec3 vC;void main(){gl_FragColor=vec4(vC,vA*.22);}`});
 
@@ -804,8 +806,8 @@ void main(){
   float round=sin(vU*3.14159);
   float tone=.70+.45*fract(vS*7.31);
   float highlight=pow(max(0.0,sin(vT*18.0+vS*12.0)),6.0)*round;
-  vec3 shadow=vec3(.32,.18,.05),light=vec3(1.0,.81,.40);
-  vec3 col=mix(shadow,light,clamp(round*.65+strands*.25+(1.0-vT)*.10,0.0,1.0))*tone+vec3(1.0,.92,.68)*highlight*.35;
+  vec3 shadow=vec3(.46,.54,.72),light=vec3(1.0,1.0,1.0);
+  vec3 col=mix(shadow,light,clamp(round*.65+strands*.25+(1.0-vT)*.10,0.0,1.0))*tone+vec3(1.0,1.0,1.0)*highlight*.35;
   float a=edge*tip*(.86+.12*strands);
   if(a<.02)discard;
   gl_FragColor=vec4(col*(.85+.25*uEnergy),a);
