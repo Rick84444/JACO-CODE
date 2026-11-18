@@ -423,10 +423,14 @@ export class StdioMcpHost {
     let c;
     try {
       c = this.client(id);
-      if (actor === 'agent' && c.def.agentAccess === 'off') throw Error('MCP_AGENT_ACCESS_OFF');
-      if (actor === 'agent' && c.def.deny?.includes(name)) throw Error('MCP_TOOL_DENIED');
+      const earlyRefusal = actor === 'agent' && (c.def.agentAccess === 'off' ? 'MCP_AGENT_ACCESS_OFF' : c.def.deny?.includes(name) ? 'MCP_TOOL_DENIED' : null);
+      if (earlyRefusal) throw Error(`${earlyRefusal}:${id}.${name}`);
       await c.start();
-    } catch (e) { done('failed', String(e.message || e).slice(0, 300)); throw e; }
+    } catch (e) {
+      const message = String(e.message || e).slice(0, 300);
+      done(/^(MCP_AGENT_ACCESS_OFF|MCP_TOOL_DENIED):/.test(message) ? 'refused' : 'failed', message);
+      throw e;
+    }
     const tool = resolveAdvertisedTool(id, name, c.tools);
     if (!tool) { done('failed', `MCP_TOOL_UNKNOWN:${id}.${name}`); throw new Error(`MCP_TOOL_UNKNOWN:${id}.${name}`); }
     name = tool.name;

@@ -208,6 +208,7 @@ test('pending hire cannot bypass operator approval through pause and resume', t 
 
 test('failed persistent write cannot publish in-memory permission, limits or status', t => {
   const { organization, root } = org(t);
+  organization.setPermission('aura', 'files.read', false); // establish an explicitly revoked baseline
   const tempPath = path.join(root, 'org', 'organization.json.' + process.pid + '.tmp');
   fs.mkdirSync(tempPath);
   try {
