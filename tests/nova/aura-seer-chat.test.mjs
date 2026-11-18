@@ -322,3 +322,12 @@ test('Aura acts on clear requests and turns risky or misleading work into one sc
   assert.match(system, /intelligent amateur understands on the first reading/);
   assert.match(system, /Never dump raw internal error codes into the main answer/);
 });
+
+test('perception names resolve to real tools in both chat prompt variants without claiming availability',()=>{
+  for(const compactRules of [true,false]){
+    const {system}=buildAuraSeerPrompts({message:'Använd DOM TRACK och LASER VISION',compactRules,toolCatalog:'- mcp_catalog: live tools'});
+    assert.match(system,/DOM TRACK maps to nova_observe\/nova_ax\/nova_html/);
+    assert.match(system,/LASER VISION maps to nova_screenshot/);
+    assert.match(system,/do not claim readiness without live evidence/);
+  }
+});
