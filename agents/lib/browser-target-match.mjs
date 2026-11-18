@@ -38,7 +38,8 @@ export async function trackDomTarget(observe,name,{roles=null,now=Date.now}={}){
   const initial=pickTarget(candidates(first),name);
   if(!initial.target)return refusal(initial.error,initial.available);
   try{second=await observe();}catch{return refusal('DOM_OBSERVATION_FAILED');}
-  if(!usable(second)||first.url!==second.url||first.targetId!==second.targetId)return refusal('DOM_TARGET_PAGE_CHANGED');
+  if(!usable(second))return refusal('DOM_OBSERVATION_STALE_OR_UNAVAILABLE');
+  if(first.url!==second.url||first.targetId!==second.targetId)return refusal('DOM_TARGET_PAGE_CHANGED');
   const current=pickTarget(candidates(second),name);
   if(!current.target)return refusal(current.error,current.available);
   if(normal(initial.target.text)!==normal(current.target.text)||initial.target.role!==current.target.role||typeof current.target.selector!=='string'||!current.target.selector)return refusal('DOM_TARGET_IDENTITY_CHANGED');
