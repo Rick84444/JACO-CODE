@@ -13,10 +13,13 @@ export interface AuraPortraitChat {
 
 interface Dictation {
   lang: string;
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  continuous?: boolean;
+  interimResults?: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }> }) => void) | null;
   onend: (() => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((event?: { error?: string }) => void) | null;
   start(): void;
+  stop?(): void;
   abort(): void;
 }
 
@@ -137,7 +140,10 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       audio.onplay = () => {
         if (utterance.current !== handle) return;
         setSpeaking(true);
-        rig.current?.setState({ audioSource: audio, speaking: true });
+        // Lip sync listens to a copy of the stream; the audio element itself plays straight to the speakers, so a
+        // suspended Web Audio context can never silence Aura.
+        const tap = (audio as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream?.();
+        rig.current?.setState({ audioSource: tap ?? null, speaking: true });
       };
       audio.onended = finish;
       audio.onerror = () => { if (utterance.current === handle) { setVoiceError(true); finish(); } };
@@ -157,17 +163,37 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       try { recording.abort(); } catch { setVoiceError(true); }
       return;
     }
-    if (!Recognition || !chat || utterance.current || document.hidden) return;
+    if (!Recognition || !chat || document.hidden) return;
+    // Talking interrupts Aura's read-aloud instead of being blocked by it (and never records her own voice).
+    if (utterance.current) {
+      const reply = utterance.current;
+      utterance.current = null;
+      try { reply.cancel(); } catch { /* Already stopped. */ }
+      setSpeaking(false);
+    }
     setVoiceError(false);
     const recording = new Recognition();
     recording.lang = locale;
+    recording.continuous = true;
+    recording.interimResults = true;
+    // Text already in the box stays; this session's words are shown live and replaced as they are refined.
+    let base = (chat.input || '').trimEnd();
+    let committed = '';
     recording.onresult = event => {
       if (dictation.current !== recording) return;
-      const text = Array.from(event.results, result => result[0]?.transcript ?? '').join(' ').trim();
-      if (text) chat.setInput(previous => [previous.trimEnd(), text].filter(Boolean).join(' '));
+      let finals = '', interim = '';
+      for (const result of Array.from(event.results)) {
+        const piece = result[0]?.transcript ?? '';
+        if (result.isFinal) finals += piece; else interim += piece;
+      }
+      committed = finals.trim();
+      const spoken = [committed, interim.trim()].filter(Boolean).join(' ');
+      chat.setInput(() => [base, spoken].filter(Boolean).join(' '));
     };
-    recording.onerror = () => {
+    recording.onerror = event => {
       if (dictation.current !== recording) return;
+      // Silence and engine restarts are normal while listening; only real failures are reported.
+      if (event?.error === 'no-speech' || event?.error === 'aborted') return;
       dictation.current = null;
       setListening(false);
       setVoiceError(true);
@@ -175,8 +201,11 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     };
     recording.onend = () => {
       if (dictation.current !== recording) return;
-      dictation.current = null;
-      setListening(false);
+      // Browsers end recognition after a pause; keep listening until the operator presses stop.
+      base = [base, committed].filter(Boolean).join(' ');
+      committed = '';
+      try { recording.start(); }
+      catch { dictation.current = null; setListening(false); }
     };
     try {
       dictation.current = recording;
@@ -242,7 +271,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
         aria-label={tr('Meddelande till Aura', 'Message to Aura')}
         placeholder={tr('Skriv till Aura…', 'Message Aura…')} rows={2}/>
       <div className="aura-portrait-controls">
-        <button type="button" onClick={toggleDictation} disabled={!Recognition || speaking} aria-pressed={listening}
+        <button type="button" onClick={toggleDictation} disabled={!Recognition} aria-pressed={listening}
           title={tr('Webbläsarens taligenkänning kan använda en extern tjänst', 'Browser dictation may use an external service')}>
           {listening ? <MicOff size={16}/> : <Mic size={16}/>}
           {listening ? tr('Sluta lyssna', 'Stop listening') : tr('Diktera', 'Dictate')}
