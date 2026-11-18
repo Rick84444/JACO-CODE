@@ -913,7 +913,7 @@
 .aura-portrait header h2 { margin: 0; font-size: 1rem; }
 .aura-portrait header button { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 8px; }
 .aura-portrait header button:hover, .aura-portrait header button:focus-visible { background: #243848; }
-.aura-portrait-scene { position: relative; width: min(100%, 49dvh); margin: 0 auto; overflow: hidden; border-radius: 10px; background: radial-gradient(ellipse at 50% 42%,#123577 0%,#071a47 45%,#020613 82%); }
+.aura-portrait-scene { position: relative; width: min(100%, 49dvh); margin: 0 auto; overflow: hidden; border-radius: 10px; background: radial-gradient(ellipse at 50% 40%,#0a1f4a 0%,#040b1e 50%,#01030a 85%); }
 .aura-portrait-scene canvas { display:block; width:100%; height:auto; aspect-ratio:1; pointer-events:none; }
 .aura-portrait p { margin: 0; min-height: 1.5em; text-align: center; color: #aec1d2; font-size: .875rem; }
 .aura-portrait p[data-tone="active"], .aura-portrait p[data-tone="busy"] { color: #96ceff; }
