@@ -396,6 +396,8 @@
 .cognitive-mobile-menu-grid button svg { flex-shrink:0; color:#cecfd1; }
 @media (max-width:767px) {
   .cognitive-workspace { font-size:14px; }
+  /* Keep overflowing mission controls and project overlays below mobile navigation. */
+  .cognitive-body { isolation:isolate; }
   .cognitive-rail,.cognitive-view-tabs,.cognitive-footbar { display:none; }
   .cognitive-topbar { min-height:64px; padding:8px 16px; padding-top:max(8px,env(safe-area-inset-top)); gap:12px; }
   .cognitive-brand img { height:30px; }
@@ -405,7 +407,7 @@
   .cognitive-top-actions>button[title^="Sök"] { display:none; }
   .cognitive-contextbar { min-height:34px; padding:4px 16px 8px; border-bottom:0; }
   .cognitive-status { font-size:12px; color:#c5c6c8; }
-  .cognitive-mobile-nav { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); flex-shrink:0; padding:6px 8px max(6px,env(safe-area-inset-bottom)); border-top:1px solid #4a4b4d; background:#222325; }
+  .cognitive-mobile-nav { position:relative; z-index:50; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); flex-shrink:0; padding:6px 8px max(6px,env(safe-area-inset-bottom)); border-top:1px solid #4a4b4d; background:#222325; }
   .cognitive-mobile-nav button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; min-height:52px; border-radius:12px; font-size:11px; color:#c4c5c7; }
   .cognitive-mobile-nav button[aria-pressed=true] { color:#e5e7eb; background:#464749; }
   .cognitive-sidebar { left:0; width:100%; max-width:none; border:0; box-shadow:none; }
