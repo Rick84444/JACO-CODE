@@ -1,5 +1,5 @@
 import { compactPlannerStep, focusPlannerToolDescriptions } from './lib/context-packet.mjs';
-import { localCommandHint } from './lib/local-command-inventory.mjs';
+import { localCommandHint, shellHostGuidance } from './lib/local-command-inventory.mjs';
 import { PRE_APPROVABLE, HARD_LIMITS } from './lib/operator-action-guard.mjs';
 /**
  * JACO Hands-Off Agent v3.0 — Long-running autonomous daemon
@@ -1509,7 +1509,7 @@ const NATIVE_TOOLS_NOTE ="\nTools are available as functions: answer by calling 
 export function hostLine(platform = process.platform) {
   if (platform === 'win32') return null;
   if (platform === 'android') return "The host is Android (Termux). shell commands run in sh: use POSIX commands (ls, cat, grep, find, sed), never cmd.exe or PowerShell syntax. There is no sudo and no desktop; install a package with pkg only when the goal asks for it. Prefer repo-list/repo-read.";
-  return `The host is ${platform}. shell commands run in sh: use POSIX commands (ls, cat, grep), and prefer repo-list/repo-read.`;
+  return `The host is ${platform}. shell commands run in sh: use POSIX commands (ls, cat, grep), and prefer repo-list/repo-read. ${shellHostGuidance(platform)}`;
 }
 const WINDOWS_HOST_LINE = /^The host is Windows\. shell/;
 export function brainSystemFor(allowedTasks, graphMission = false, platform = process.platform) {

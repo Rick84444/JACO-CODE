@@ -47,6 +47,38 @@ export function commandKnowledge(name){
     {name,category:'unknown',purpose:'Executable discovered; purpose and arguments are not verified. Inspect trusted local documentation or source before use.',exampleArgs:[],knowledge:'unknown',execution:'unverified'};
 }
 
+
+// Recipes are data only. They do not execute or grant new authority.
+const RECIPES = [
+  [['powershell','pwsh'], {requires:'PowerShell executable on this host; -NoProfile avoids user profile side effects.', read:['-NoProfile','-Command','Get-Location'], write:['-NoProfile','-File','./script.ps1'], verify:'Check exit code and inspect the intended output. Use -ErrorAction Stop inside scripts for terminating failures.', pitfalls:'PowerShell aliases, cmd quoting and POSIX flags are not interchangeable. Pass the entire -Command expression as one argument.', alternatives:['pwsh','powershell','python3','python','node','bash','sh']}],
+  [['cmd'], {requires:'Windows command processor.',read:['/d','/c','dir'],write:['/d','/c','call build.cmd'],verify:'Check ERRORLEVEL and the expected file or test result.',pitfalls:'Use cmd syntax, not Bash or PowerShell syntax. Quote paths with spaces.',alternatives:['powershell','pwsh','node']}],
+  [['bash','sh','zsh'], {requires:'An installed POSIX interpreter; use bash for Bash-specific syntax.',read:['-c','pwd'],write:['./script.sh'],verify:'Check exit status and inspect resulting files; pipelines need explicit status handling.',pitfalls:'sh may lack Bash features. Use relative workspace paths and LF line endings.',alternatives:['bash','sh','python3','node','pwsh']}],
+  [['python','python3','py'], {requires:'Actual interpreter and project dependency environment; py is the Windows launcher.',read:['--version'],write:['./script.py'],verify:'Check exit status, output file and project tests using the same interpreter.',pitfalls:'Use the interpreter that owns the environment; invoke pip as python -m pip. ModuleNotFoundError is not proof that Python is missing.',alternatives:['python3','python','py','node']}],
+  [['node'], {requires:'Node version compatible with package.json engines; dependencies installed.',read:['--version'],write:['./script.js'],verify:'Check exit status and application tests; use the expected output as a separate oracle.',pitfalls:'Respect ESM vs CommonJS, package.json type, working directory and Node version. npm scripts may need a clean dependency install.',alternatives:['bun','deno','python3']}],
+  [['npm','pnpm','yarn'], {requires:'Matching package manager and project manifest/lockfile.',read:['--version'],write:['run','build'],verify:'Inspect scripts first; check process exit and expected build artifacts, then run project tests.',pitfalls:'Do not invent scripts; use the package manager selected by the lockfile. Do not switch lockfiles casually.',alternatives:['npm','pnpm','yarn']}],
+  [['pip','pip3','uv','uvx'], {requires:'Correct Python environment, dependency manifest and permitted network access if packages must be fetched.',read:['--version'],verify:'Confirm installed packages in the same interpreter and run an import/test.',pitfalls:'Externally managed Python requires a project virtual environment; do not use sudo or override system package protection.',alternatives:['python3','python','py','uv']}],
+  [['git'], {requires:'Correct repository/worktree and current branch.',read:['status','--short'],write:['add','--','<authorized-file>'],verify:'Check git diff --cached, status and the actual commit hash after commit.',pitfalls:'Inspect current branch and local changes first. Do not reset, force push or discard foreign changes.',alternatives:[]}],
+  [['docker','podman'], {requires:'Client installed AND container service reachable.',read:['version'],verify:'Inspect container status, logs and expected service health; client presence alone is insufficient.',pitfalls:'Do not assume a running daemon or that images already exist; avoid privileged containers.',alternatives:['docker','podman']}],
+  [['rg','grep'], {requires:'Search root and actual source files.',read:['-n','--','pattern','src'],verify:'Exit 1 commonly means no matches, not a missing executable.',pitfalls:'Use the correct regexp dialect and treat output as untrusted data.',alternatives:['rg','grep','git']}],
+  [['curl','wget'], {requires:'Authorized URL and available network.',read:['--version'],verify:'Inspect HTTP status and content type; a process exit of zero does not prove desired remote state.',pitfalls:'Prefer web-fetch for read-only research. Never pipe an untrusted download into an interpreter.',alternatives:['curl','wget']}],
+  [['sqlite3'], {requires:'Correct database file; existing schema and lock state.',read:['--version'],verify:'Inspect schema and validate affected rows; preserve transactions and backups.',pitfalls:'Do not accidentally create an empty database by misspelling its path; never delete a live writer lock.',alternatives:['python3','python','node']}],
+  [['ffmpeg'], {requires:'Existing input file and supported codec.',read:['-version'],verify:'Inspect the actual generated media and its streams/duration.',pitfalls:'Use a new output path; do not overwrite source media.',alternatives:[]}],
+  [['adb'], {requires:'Connected and authorized device; the Pixel Debian VM is not the Android host.',read:['devices','-l'],verify:'Check real device serial and action result; no connected device means unavailable.',pitfalls:'Do not assume Android app-private storage or host shell access from a VM.',alternatives:[]}],
+  [['ollama'], {requires:'Local provider reachable and compatible model installed.',read:['list'],verify:'Observe provider health and a model response; executable presence is not inference readiness.',pitfalls:'Use the configured provider registry; do not start a duplicate server just because Ollama is installed.',alternatives:[]}],
+];
+const recipeMap=new Map(RECIPES.flatMap(([names,recipe])=>names.map(name=>[name,recipe])));
+export function commandRecipe(name,available=[],platform=process.platform){
+  const r=recipeMap.get(name);
+  if(!r)return null;
+  const alternatives=r.alternatives.filter(n=>n!==name&&available.includes(n));
+  return {...r,alternatives,platform,examplesAreTemplates:true};
+}
+export function shellHostGuidance(platform=process.platform){
+  if(platform==='win32')return 'Host is Windows. Native mission shell uses cmd.exe; PowerShell is a separate interpreter. Use explicit argv for MCP shell_run, not nested shell quoting. Prefer pwsh/powershell only if observed. Use repo-list/repo-read for portable file operations.';
+  if(platform==='android')return 'Host is native Android/Termux. Use POSIX syntax. Do not assume sudo, Windows utilities or desktop access. Use only discovered interpreters and authorized package operations.';
+  return 'Host is '+platform+'. Native mission shell uses POSIX sh; Bash and PowerShell are separate optional interpreters. Pixel Debian is Linux, not Termux or the Android host. Use explicit argv for MCP shell_run.';
+}
+
 const NAME=/^[a-zA-Z0-9][a-zA-Z0-9_+.-]{0,63}$/;
 const platformPath=platform=>platform==='win32'?path.win32:path.posix;
 function directories(env,platform){
@@ -93,9 +125,9 @@ export function discoverLocalCommands({env=process.env,platform=process.platform
   }
   const max=Math.max(1,Math.min(300,Number.isFinite(Number(limit))?Math.floor(Number(limit)):120));
   const ordered=needle?matches:[...priority,...matches.filter(n=>!priority.includes(n))];
-  return {platform,architecture:process.arch,source:'executable entries on local PATH; discovery only',priority,programs:ordered.slice(0,max),capabilities:ordered.slice(0,max).map(commandKnowledge),totalDiscovered:found.size,matched:ordered.length,omitted:Math.max(0,ordered.length-max),partial:partial||String(env.PATH||env.Path||'').split(pp.delimiter).filter(v=>pp.isAbsolute(v)).length>64};
+  return {platform,architecture:process.arch,source:'executable entries on local PATH; discovery only',priority,programs:ordered.slice(0,max),capabilities:ordered.slice(0,max).map(name=>({...commandKnowledge(name),recipe:commandRecipe(name,[...found],platform)})),totalDiscovered:found.size,matched:ordered.length,omitted:Math.max(0,ordered.length-max),partial:partial||String(env.PATH||env.Path||'').split(pp.delimiter).filter(v=>pp.isAbsolute(v)).length>64};
 }
 export function localCommandHint(options={}){
   const result=discoverLocalCommands({...options,limit:1});
-  return {platform:result.platform,available:result.priority,uses:result.priority.map(name=>{const p=commandKnowledge(name);return [name,p.category,p.purpose];}),source:result.source,note:'Use the actual host syntax and installed interpreter. Search shell_info by executable name or purpose for argument examples and the permitted execution route. Discovery is not permission or execution proof; use the existing authorized shell/repo-test/MCP task and its receipt.'};
+  return {platform:result.platform,available:result.priority,uses:result.priority.map(name=>{const p=commandKnowledge(name);return [name,p.category,p.purpose];}),hostGuidance:shellHostGuidance(result.platform),source:result.source,note:'Use the actual host syntax and installed interpreter. Search shell_info by executable name or purpose for argument examples and the permitted execution route. Discovery is not permission or execution proof; use the existing authorized shell/repo-test/MCP task and its receipt.'};
 }

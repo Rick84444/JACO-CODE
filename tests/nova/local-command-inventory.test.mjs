@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {discoverLocalCommands,localCommandHint} from '../../agents/lib/local-command-inventory.mjs';
+import {discoverLocalCommands,localCommandHint,commandRecipe,shellHostGuidance} from '../../agents/lib/local-command-inventory.mjs';
 import {SafeShell,classify} from '../../agents/lib/safe-shell.mjs';
 
 test('actual local inventory discovers executable fixtures, not files without execute permission or relative PATH', {skip:process.platform==='win32'},t=>{
@@ -34,4 +34,16 @@ test('Windows Path casing, executable extensions and duplicate names are handled
   assert.deepEqual(result.priority,['powershell','pwsh','python','py','node','npm','git']);
   assert.equal(result.totalDiscovered,7);
   assert.ok(!JSON.stringify(result).includes('C:\\\\Tools'));
+});
+
+test('recipes distinguish host syntax, prerequisites, evidence and installed alternatives',()=>{
+  const p=commandRecipe('python3',['python3','node','pwsh'],'linux');
+  assert.deepEqual(p.write,['./script.py']);
+  assert.deepEqual(p.alternatives,['node']);
+  assert.match(p.pitfalls,/ModuleNotFoundError/);
+  assert.match(p.verify,/same interpreter/);
+  assert.equal(commandRecipe('unknown-command',[],'linux'),null);
+  assert.match(shellHostGuidance('linux'),/Pixel Debian is Linux/);
+  assert.match(shellHostGuidance('win32'),/cmd.exe/);
+  assert.deepEqual(commandRecipe('pwsh',['pwsh','python3'],'win32').read,['-NoProfile','-Command','Get-Location']);
 });

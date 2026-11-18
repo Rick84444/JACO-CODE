@@ -20,7 +20,7 @@ test('failures are classified by what can be done about them', () => {
   assert.equal(kind('MCP_SERVER_SPAWN_FAILED:gitx:ENOENT'), 'COMMAND_MISSING');
   assert.equal(kind('listen EADDRINUSE: address already in use 127.0.0.1:5000'), 'PORT_CONFLICT');
   assert.equal(kind('fetch failed ECONNREFUSED 127.0.0.1:2995'), 'LOCAL_SERVICE_DOWN');
-  assert.equal(kind('Cannot find module ./x.mjs'), 'CODE_ERROR');
+  assert.equal(kind('Cannot find module ./x.mjs'), 'PROJECT_ENVIRONMENT');
   assert.equal(kind('HTTP 401 UNAUTHORIZED'), 'NEEDS_OPERATOR');
   assert.equal(kind('something odd'), 'UNKNOWN');
   assert.equal(classifyToolFailure('MCP_SERVER_STOPPED:git').server, 'git');
@@ -157,4 +157,15 @@ test('a diagnosis that throws never stops the mission', async t => {
   });
   assert.notEqual(result.stopped, 'diagnosis broke');
   assert.equal(model.seen.length >= 2, true);
+});
+
+test('local tool errors distinguish syntax, interpreter, lock, mode and policy without restarts',async()=>{
+  for(const [error,kind] of [['COMMAND_NOT_FOUND:python','COMMAND_MISSING'],['SHELL_SYNTAX_NOT_SUPPORTED','COMMAND_SYNTAX'],['WRITE_COMMAND_IN_READ_MODE','WRONG_TOOL_MODE'],['PROTECTED_PATH:.env','NEEDS_OPERATOR'],['ModuleNotFoundError: pandas','PROJECT_ENVIRONMENT'],['LEDGER_LOCKED: pid 707','LIVE_STATE_LOCK']]){
+    const d=await diagnoseToolFailure({receipt:{error},startServer:async()=>{throw Error('unexpected start')},ensureStack:async()=>{throw Error('unexpected recovery')}});
+    assert.equal(d.kind,kind);assert.deepEqual(d.actions,[]);
+  }
+  const d=await diagnoseToolFailure({receipt:{error:'command exited',result:{stderr:'ModuleNotFoundError: pandas'}}});
+  assert.equal(d.kind,'PROJECT_ENVIRONMENT');
+  const unknown=await diagnoseToolFailure({receipt:{error:'ECONNREFUSED',outcomeUnknown:true},ensureStack:async()=>{throw Error('unknown mutation must not restart')}});
+  assert.equal(unknown.kind,'NEEDS_OPERATOR');
 });
