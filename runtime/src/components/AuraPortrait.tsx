@@ -40,6 +40,10 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const [speaking, setSpeaking] = useState(false);
   const [voiceError, setVoiceError] = useState(false);
   const [maskError, setMaskError] = useState(false);
+  // Conversation mode: listen, send after a pause, hear the reply, listen again.
+  const [conversation, setConversation] = useState(false);
+  const [awaiting, setAwaiting] = useState(false);
+  const conversationRef = useRef(false);
   const rig = useRef<Awaited<ReturnType<typeof import('../lib/auraRigLightform.mjs')['createAuraRigLightform']>> | null>(null);
   const latestReply = chat?.messages.filter(message => message.role === 'assistant' && message.content.trim()).at(-1);
   const lastRead = useRef(latestReply?.id);
@@ -179,6 +183,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     // Text already in the box stays; this session's words are shown live and replaced as they are refined.
     let base = (chat.input || '').trimEnd();
     let committed = '';
+    let silence: ReturnType<typeof setTimeout> | undefined;
     recording.onresult = event => {
       if (dictation.current !== recording) return;
       let finals = '', interim = '';
@@ -189,6 +194,19 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       committed = finals.trim();
       const spoken = [committed, interim.trim()].filter(Boolean).join(' ');
       chat.setInput(() => [base, spoken].filter(Boolean).join(' '));
+      // In conversation mode a short pause after speaking sends the message, like talking to a person.
+      if (conversationRef.current && spoken) {
+        if (silence) clearTimeout(silence);
+        silence = setTimeout(() => {
+          if (dictation.current !== recording || !conversationRef.current) return;
+          dictation.current = null;
+          setListening(false);
+          try { recording.abort(); } catch { /* Engine already stopped. */ }
+          setAwaiting(true);
+          setTimeout(() => { if (!submitDraft()) setAwaiting(false); }, 60);
+          setTimeout(() => setAwaiting(false), 90000);
+        }, 1300);
+      }
     };
     recording.onerror = event => {
       if (dictation.current !== recording) return;
@@ -224,6 +242,35 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       setVoiceError(true);
     }
   }
+
+  // Sends the shared draft through the existing chat composer (same path as the Send button).
+  function submitDraft() {
+    const form = document.getElementById('aura-chat-composer') as HTMLFormElement | null;
+    if (!form || !chat || chat.busy || !chat.storageReady) return false;
+    form.requestSubmit();
+    return true;
+  }
+
+  function toggleConversation() {
+    const next = !conversation;
+    conversationRef.current = next;
+    setConversation(next);
+    setVoiceError(false);
+    if (next) {
+      if (!readReplies) { lastRead.current = latestReply?.id; setReadReplies(true); }
+    } else {
+      if (dictation.current) toggleDictation();
+      setAwaiting(false);
+    }
+  }
+
+  // Conversation loop: when Aura is neither working nor speaking, start listening again.
+  useEffect(() => {
+    conversationRef.current = conversation;
+    if (!conversation || !chat || listening || speaking || awaiting || chat.busy || document.hidden || dictation.current) return;
+    const id = setTimeout(() => { if (conversationRef.current && !dictation.current) toggleDictation(); }, 450);
+    return () => clearTimeout(id);
+  });
 
   function toggleReadReplies() {
     setVoiceError(false);
@@ -276,9 +323,22 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     {chat && <div className="aura-portrait-conversation">
       {latestReply && <div className="aura-portrait-reply" aria-live="polite">{latestReply.content}</div>}
       <textarea value={chat.input} onChange={event => { const text = event.currentTarget.value; chat.setInput(() => text); }}
+        onKeyDown={event => {
+          // Enter sends, Shift+Enter makes a new line.
+          if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+          event.preventDefault();
+          if (!chat.input.trim()) return;
+          if (dictation.current) toggleDictation();
+          setTimeout(submitDraft, 30);
+        }}
         aria-label={tr('Meddelande till Aura', 'Message to Aura')}
         placeholder={tr('Skriv till Aura…', 'Message Aura…')} rows={2}/>
       <div className="aura-portrait-controls">
+        <button type="button" onClick={toggleConversation} disabled={!Recognition || !chat.storageReady} aria-pressed={conversation}
+          title={tr('Prata med Aura: hon lyssnar, svarar med röst och lyssnar igen', 'Talk with Aura: she listens, answers aloud and listens again')}>
+          <Volume2 size={16}/>
+          {conversation ? tr('Avsluta samtal', 'End conversation') : tr('Prata med Aura', 'Talk with Aura')}
+        </button>
         <button type="button" onClick={toggleDictation} disabled={!Recognition} aria-pressed={listening}
           title={tr('Webbläsarens taligenkänning kan använda en extern tjänst', 'Browser dictation may use an external service')}>
           {listening ? <MicOff size={16}/> : <Mic size={16}/>}
