@@ -870,3 +870,9 @@
 .cognitive-workspace[data-remote-mode="true"] .cognitive-remote-navigation { flex-wrap:nowrap; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:thin; }
 .cognitive-workspace[data-remote-mode="true"] .cognitive-remote-navigation > * { flex-shrink:0; min-height:40px; white-space:nowrap; }
 @media(max-width:600px){.cognitive-terminal-dock{height:clamp(145px,28dvh,220px)}.cognitive-terminal-dock input{font-size:16px}}
+
+/* Read-only command receipts; do not allow terminal content to cover operator controls. */
+.cognitive-receipt-terminal{position:relative;flex:1;min-height:0;min-width:0;overflow:hidden;background:#080d12;isolation:isolate;}
+.cognitive-receipt-terminal-host{position:absolute;inset:4px;overflow:hidden;}
+.cognitive-receipt-terminal-fallback{position:absolute;inset:4px;margin:0;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:#d2e4f5;font:12px/1.4 Consolas,monospace;}
+.cognitive-receipt-terminal-status{position:absolute;bottom:0;right:0;background:#162331;padding:4px;color:#e2e9f0;font-size:10px;}
