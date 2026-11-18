@@ -604,6 +604,35 @@ try {
   assert.deepEqual(await page.evaluate(()=>window.auraSpokenReplies),['Testsvaret använder de observerade händelserna. Uppdraget fortsätter.']);
   await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
   passed('Portrait dictation uses the canonical chat and reads its new reply with a controlled speech adapter');
+  // A browser engine may report an error without an end event. Late callbacks
+  // from that abandoned recording must never modify the shared draft.
+  await page.evaluate(()=>{
+    window.SpeechRecognition=class {
+      start(){window.auraTestRecording=this;}
+      abort(){window.auraTestAbortCount=(window.auraTestAbortCount||0)+1;}
+    };
+    window.auraTestAbortCount=0;
+  });
+  await portraitTrigger.click();
+  await portraitInput.fill('Behåll detta utkast');
+  await portrait.getByRole('button',{name:'Diktera',exact:true}).click();
+  await portrait.getByRole('button',{name:'Sluta lyssna',exact:true}).waitFor();
+  assert.equal(await portrait.getByRole('button',{name:'Läs upp svar'}).isDisabled(),true,'reader cannot be enabled during recording');
+  await page.evaluate(()=>window.auraTestRecording.onerror());
+  await portrait.getByRole('button',{name:'Diktera',exact:true}).waitFor();
+  await portrait.getByText('Röstfunktionen kunde inte användas.',{exact:false}).waitFor();
+  await page.evaluate(()=>window.auraTestRecording.onresult({results:[[{transcript:'STALE_CALLBACK'}]]}));
+  assert.equal(await portraitInput.inputValue(),'Behåll detta utkast');
+  await portrait.getByRole('button',{name:'Diktera',exact:true}).click();
+  assert.equal(await portrait.getByRole('button',{name:'Sluta lyssna',exact:true}).getAttribute('aria-pressed'),'true');
+  await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
+  await portrait.waitFor({state:'detached'});
+  await page.evaluate(()=>window.auraTestRecording.onresult({results:[[{transcript:'AFTER_CLOSE'}]]}));
+  await canvas('Samtal').click();
+  assert.equal(await input().inputValue(),'Behåll detta utkast');
+  assert.ok(await page.evaluate(()=>window.auraTestAbortCount>=2),'failed and dismissed recordings were aborted');
+  assert.equal(await page.evaluate(()=>window.auraSpokenReplies.length),1,'reopening does not replay history');
+  passed('Speech errors and dismissal revoke recording callbacks without changing the shared draft');
   assert.deepEqual(errors,[], 'no unexpected uncaught app/browser errors');
   if(expectedEditorCancels.length) console.log('Monaco disposal cancellations observed: '+expectedEditorCancels.length);
   const report={status:'PASS',checks:results.length,browser:browser.version(),observedAt:new Date().toISOString(),scope:'Controlled UI integration; no inference, Android or operator runtime execution',clientIndexSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'dist/index.html'))).digest('hex'),results};
