@@ -1,0 +1,39 @@
+name: Avatar dependency integration experiment
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/avatar-dependency-experiment.yml'
+      - 'openspec/changes/add-interactive-avatar/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Isolated dependency resolution
+        run: |
+          mkdir avatar-probe
+          cd avatar-probe
+          npm init -y
+          npm install --save-exact --ignore-scripts --no-audit --no-fund @xterm/xterm@6.0.0 @met4citizen/talkinghead@1.8.2 @met4citizen/headtts@1.4.0
+          npm ls --all --json > dependency-tree.json
+          node -e "for(const p of ['@xterm/xterm','@met4citizen/talkinghead','@met4citizen/headtts']) console.log(p,require.resolve(p))"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avatar-dependencies-${{ matrix.os }}
+          path: |
+            avatar-probe/package.json
+            avatar-probe/package-lock.json
+            avatar-probe/dependency-tree.json
