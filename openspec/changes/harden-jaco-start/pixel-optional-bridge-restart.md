@@ -1,0 +1,5 @@
+# Pixel Debian startup: optional bridge ownership
+
+Observed physical Pixel receipt: Core, Workplace, SEER, Nova, remote and A2A READY, Chrome unavailable; subsequent activation threw PROCESS_OWNER_NOT_VERIFIED:novaBridge. Root cause: processBirth only produced a Windows birth identity, legacy Linux receipts have null birth, and resolveServicePorts/preflight invoked ownership verification outside optional-service failure handling.
+
+Change: Linux process birth is verified from boot ID and /proc stat start ticks. Legacy live receipts remain untrusted. Optional ownership failures during port resolution and preflight skip the helper, preserve its process and port, and report DEGRADED. Required ownership failures remain fail-closed. No termination, ledger deletion, duplicate worker or authority change. CDP remains optional; actual Chrome and bridging on Pixel require separate verification. Existing manual workaround JACO_ENABLE_CDP=0. Tests cover real Linux birth, legacy receipts and port resolver isolation. Physical-device retest pending.

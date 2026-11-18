@@ -220,6 +220,17 @@ function launch(c, s) {
   }); });
 }
 export function processBirth(pid) {
+  if (!Number.isSafeInteger(pid) || pid < 1) return null;
+  if (process.platform === 'linux') {
+    // /proc stat field 22 is the process start time in boot-relative ticks.
+    // The comm field may contain spaces or parentheses; split after its last ')'.
+    try {
+      const stat = fs.readFileSync('/proc/' + pid + '/stat', 'utf8');
+      const fields = stat.slice(stat.lastIndexOf(')') + 2).trim().split(/\s+/);
+      const boot = fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+      return /^[0-9]+$/.test(fields[19] || '') && /^[0-9a-f-]{36}$/i.test(boot) ? 'linux:' + boot + ':' + fields[19] : null;
+    } catch { return null; }
+  }
   if (process.platform !== 'win32') return null;
   const value = execFileSync('powershell.exe', ['-NoProfile','-NonInteractive','-Command', `$p=Get-CimInstance Win32_Process -Filter "ProcessId=${Number(pid)}"; if($p){$p.CreationDate.ToUniversalTime().ToString('o')}`], { encoding: 'utf8', windowsHide: true, timeout: 15000 }).trim();
   return value || null;
@@ -233,7 +244,9 @@ export function pendingProcess(c, id) {
   if (!record.birth) throw new Error(`PROCESS_OWNER_NOT_VERIFIED:${id}`);
   // Windows reuses PIDs. A different creation time proves the recorded process has ended, so the record is stale.
   // A foreign process holding the service port is still refused by the listener check.
-  if (processBirth(record.pid) !== record.birth) { fs.rmSync(file, { force: true }); return null; }
+  const birth = processBirth(record.pid);
+  if (!birth) throw new Error(`PROCESS_OWNER_NOT_VERIFIED:${id}`);
+  if (birth !== record.birth) { fs.rmSync(file, { force: true }); return null; }
   return record.pid;
 }
 export function recoverableListener(ownedPid,listenerPid) {
@@ -325,6 +338,13 @@ async function nextFreePort(start, taken, isOccupied, bindable) {
 // A foreign process on a service port must never stop JACO and must never be stopped by it. Unhealthy
 // listeners that JACO owns keep their port (the guardian recycles them); a foreign listener moves the
 // service to the next free port, and the choice is persisted so every later process agrees.
+// Optional helpers with unresolved ownership stay untouched. Do not reassign a
+// port or spawn a second copy merely because a legacy receipt lacks birth data.
+export function optionalOwnershipFailure(id, error) {
+  return (id === 'chrome' || optionalStartupService(id)) &&
+    (/^(PROCESS_OWNER_NOT_VERIFIED|PROCESS_RECORD_INVALID):/.test(error?.message || '') ||
+      ['EPERM','EACCES'].includes(error?.code));
+}
 export async function resolveServicePorts(c, io = {}) {
   const isOccupied = io.occupied || (port => occupied(`http://127.0.0.1:${port}/`));
   const probeService = io.probe || (s => probe(s, c.env.GATEWAY_TOKEN));
@@ -337,7 +357,13 @@ export async function resolveServicePorts(c, io = {}) {
   for (const { key, service } of checks) {
     const port = c.ports[key];
     if ((await probeService(service)).state === 'READY') continue;
-    if (!(await isOccupied(port)) || await owns(c, service)) continue;
+    if (!(await isOccupied(port))) continue;
+    try { if (await owns(c, service)) continue; }
+    catch (error) {
+      if (!optionalOwnershipFailure(key, error) || !io.onOptionalBlocked) throw error;
+      io.onOptionalBlocked(key);
+      continue;
+    }
     const next = await nextFreePort(port, new Set(Object.values(c.ports)), isOccupied, bindable);
     c.ports[key] = next;
     moves.push({ service: key, from: port, to: next });
@@ -379,7 +405,13 @@ export async function activate(c, { open = false } = {}) {
   try {
     checkpoint('preflight');
     // Operators never edit ports: a foreign listener moves the service instead of blocking startup.
-    const portMoves = await resolveServicePorts(c);
+    const skippedOptional = new Set();
+    const skipOptional = id => {
+      if (skippedOptional.has(id)) return;
+      skippedOptional.add(id);
+      result.warnings.push(`OPTIONAL_PROCESS_OWNER_UNVERIFIED:${id}`);
+    };
+    const portMoves = await resolveServicePorts(c, { onOptionalBlocked: skipOptional });
     if (portMoves.length) {
       result.portResolutions = portMoves;
       for (const m of portMoves) console.log(`PORT_REASSIGNED ${m.service} ${m.from} -> ${m.to}`);
@@ -388,6 +420,8 @@ export async function activate(c, { open = false } = {}) {
     }
     // Reject foreign listeners before starting any optional helper.
     for (const service of [...definitions(c)].sort((a, b) => a.id === 'runtime' ? -1 : b.id === 'runtime' ? 1 : 0)) {
+      if (skippedOptional.has(service.id)) continue;
+      try {
       const observed = await probe(service, c.env.GATEWAY_TOKEN);
       // A different checkout of the same JACO release must not impersonate this installed product.
       if (c.dataRoot !== c.root && observed.state === 'READY' && !ownsListener(c, service)) throw new Error(`OTHER_JACO_INSTANCE_RUNNING:${service.id}:stop old checkout before launching installed JACO`);
@@ -395,11 +429,16 @@ export async function activate(c, { open = false } = {}) {
         if (!optionalStartupService(service.id)) throw new Error(`PORT_CONFLICT_OR_UNHEALTHY:${service.id}`);
         result.warnings.push(`OPTIONAL_PORT_CONFLICT:${service.id}`);
       }
+      } catch (error) {
+        if (!optionalOwnershipFailure(service.id, error)) throw error;
+        skipOptional(service.id);
+      }
     }
     let chromeAvailable = !c.cdp;
     if (c.cdp) {
       checkpoint('chrome');
       try {
+        if (skippedOptional.has('chrome')) throw new Error('PROCESS_OWNER_NOT_VERIFIED:chrome');
         const chrome = { id: 'chrome', url: `http://127.0.0.1:${c.ports.chrome}/json/version`, accept: d => Boolean(d.webSocketDebuggerUrl) };
         if ((await probe(chrome)).state !== 'READY') {
           if (await occupied(chrome.url)) throw new Error('PORT_CONFLICT:chrome');
@@ -439,6 +478,11 @@ export async function activate(c, { open = false } = {}) {
     }
     for (const s of definitions(c)) {
       checkpoint(`service:${s.id}`);
+      if (skippedOptional.has(s.id)) {
+        result.services.push({ id: s.id, state: 'UNAVAILABLE', url: s.url });
+        checkpoint(`degraded:${s.id}`);
+        continue;
+      }
       try {
       let state = await probe(s, c.env.GATEWAY_TOKEN);
       if (state.state !== 'READY') {
