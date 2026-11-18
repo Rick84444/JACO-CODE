@@ -311,3 +311,25 @@ test('public fetch has a separate revocable mandate; legacy grants are not resto
   assert.equal(upgraded.authorize('aura','files.write').allowed,false);
   assert.equal(upgraded.authorize('aura','browser').allowed,false);
 });
+
+test('operator-only Rule of Two waiver lets Aura act freely, keeps hard limits and is revocable', t => {
+  const { root, organization } = org(t);
+  organization.setLimits('aura', { autonomy: 5 });
+  organization.setPermission('aura', 'browser', true, 'operator', { acceptRisk: true, days: 30 });
+  assert.equal(organization.decide('aura', 'commands.run').reason, 'RULE_OF_TWO');
+  assert.equal(organization.effectiveAutonomy('aura'), 4);
+  // Only the operator may accept the exposure.
+  assert.throws(() => organization.setLimits('aura', { ruleOfTwoWaived: true }, 'aura'), /HIGH_RISK_OPERATOR_ONLY|AUTHORITY/);
+  assert.throws(() => organization.setLimits('aura', { ruleOfTwoWaived: 'yes' }), /RULE_OF_TWO_WAIVER_INVALID/);
+  organization.setLimits('aura', { ruleOfTwoWaived: true });
+  assert.equal(organization.effectiveAutonomy('aura'), 5);
+  for (const key of ['commands.run', 'browser', 'git.branch', 'files.write'])
+    assert.deepEqual(organization.decide('aura', key), { allowed: true, needsApproval: false, reason: 'WITHIN_MANDATE' }, key);
+  // Ungranted and locked permissions stay refused.
+  assert.equal(organization.decide('aura', 'git.merge').allowed, false);
+  assert.equal(organization.decide('aura', 'payments').allowed, false);
+  // Persists across restart, and revoking restores the approval requirement.
+  assert.equal(new AgentOrganization(root).decide('aura', 'commands.run').needsApproval, false);
+  organization.setLimits('aura', { ruleOfTwoWaived: false });
+  assert.equal(organization.decide('aura', 'commands.run').reason, 'RULE_OF_TWO');
+});
