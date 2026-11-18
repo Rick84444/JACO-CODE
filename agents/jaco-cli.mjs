@@ -93,17 +93,19 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     process.stdout.write('Usage: jaco activate [--json] [--no-tools]\n       jaco status [--json]\n');
     return command === 'activate' || argv.includes('--help') ? 0 : 2;
   }
-  const baseUrl = localServiceUrl('runtime', env);
+  let baseUrl = localServiceUrl('runtime', env);
+  const startupRoot = env.JACO_DATA_DIR ? path.resolve(env.JACO_DATA_DIR) : ROOT;
   const say = text => { if (!json) process.stderr.write(`${text}\n`); };
 
-  if (command === 'activate' && !(await runtimeUp({ baseUrl }))) {
+  if (command === 'activate' && (!(await runtimeUp({ baseUrl })) || (process.platform === 'win32' && !readStartupEvidence(startupRoot).ok))) {
     const plan = startPlan({ env });
     say(`Starting the stack: ${plan.label}`);
     const started = spawnSync(plan.cmd, plan.args, { cwd: ROOT, stdio: json ? 'ignore' : ['ignore', process.stderr, process.stderr], env });
     if (started.status !== 0) say(`The start command exited with code ${started.status ?? 'unknown'}; checking whether the runtime answers anyway.`);
     // A canonical launcher BLOCKED checkpoint must not cause 90 seconds of
     // misleading additional polling; partial starts are reported below.
-    const startup = process.platform === 'win32' ? readStartupEvidence(ROOT) : null;
+    baseUrl = localServiceUrl('runtime', env);
+    const startup = process.platform === 'win32' ? readStartupEvidence(startupRoot) : null;
     if (!startup || !['BLOCKED', 'DEGRADED'].includes(startup.state)) {
       for (let waited = 0; waited < 90_000 && !(await runtimeUp({ baseUrl })); waited += 2000) await sleep(2000);
     }
@@ -111,7 +113,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
 
   const observed = await activationReport({ baseUrl, token: gatewayToken(env), startTools: command === 'activate' && !argv.includes('--no-tools') });
   const report = process.platform === 'win32'
-    ? reconcileStartupActivation(observed, readStartupEvidence(ROOT))
+    ? reconcileStartupActivation(observed, readStartupEvidence(startupRoot))
     : observed;
   process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : `${formatReport(report)}${report.startup ? '\nWindows startup: ' + report.startup.state + ' (browser=' + report.startup.browserAttachment + ')' : ''}\n`);
   return report.ok ? 0 : 1;
