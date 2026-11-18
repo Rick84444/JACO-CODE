@@ -1,10 +1,12 @@
 .cognitive-workspace {
-  /* Brushed titanium and light silver; the Gameboard stays black. Blue is kept for "Aura is working". */
-  --cw-bg:#1b1c1e; --cw-surface:#232427; --cw-raised:#2e2f32;
-  --cw-line:#ffffff1f; --cw-muted:#b4b7bc; --cw-accent:#e2e5e9;
-  --cw-brushed:repeating-linear-gradient(90deg,#ffffff05 0 1px,#00000000 1px 3px,#0000000a 3px 4px),linear-gradient(180deg,#34363a 0%,#26282b 55%,#202124 100%);
+  /* Obsidian work surfaces and restrained titanium chrome. Semantic highlights are not decoration. */
+  --cw-bg:#0d1014; --cw-surface:#13171d; --cw-raised:#1c2229;
+  --cw-line:#a8b8c422; --cw-muted:#b2bcc7; --cw-accent:#8ac5f6;
+  --cw-text:#e5eaf0; --cw-subtle:#9ba6b2; --cw-active:#79baff;
+  --cw-edge:#37434f; --cw-titanium:#c5ced6;
+  --cw-brushed:repeating-linear-gradient(90deg,#ffffff05 0 1px,#00000000 1px 3px,#00000008 3px 4px),linear-gradient(175deg,#30363d 0%,#242a31 27%,#191e25 72%,#222830 100%);
   height:100dvh; display:flex; flex-direction:column; overflow:hidden;
-  background:repeating-linear-gradient(90deg,#ffffff03 0 1px,#00000000 1px 4px),var(--cw-bg); color:#e5e6e8; font-size:13px; line-height:1.5;
+  background:var(--cw-bg); color:var(--cw-text); font-size:13px; line-height:1.5;
   font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
 }
 .cognitive-workspace button,.cognitive-workspace a { transition:background .15s,color .15s,border-color .15s; }
@@ -12,7 +14,7 @@
 .cognitive-workspace button:disabled { cursor:default; opacity:.4; }
 .cognitive-workspace button:focus-visible,.cognitive-workspace a:focus-visible,.cognitive-workspace summary:focus-visible { outline:2px solid var(--cw-accent); outline-offset:3px; border-radius:4px; }
 .cognitive-workspace ::-webkit-scrollbar { width:6px; height:6px; }
-.cognitive-workspace ::-webkit-scrollbar-thumb { background:#565759; border-radius:8px; }
+.cognitive-workspace ::-webkit-scrollbar-thumb { background:#4c5662; border-radius:8px; }
 .cognitive-topbar { min-height:62px; padding:8px 22px; display:flex; align-items:center; gap:24px; border-bottom:1px solid var(--cw-line); background:var(--cw-brushed); box-shadow:inset 0 1px 0 #ffffff14; padding-top:max(8px,env(safe-area-inset-top)); flex-shrink:0; }
 .cognitive-brand { display:flex; align-items:center; gap:20px; flex-shrink:0; }
 .cognitive-brand img { height:38px; filter:none; }
@@ -78,8 +80,8 @@
 .cognitive-start-prompts>button>svg:last-child { margin-left:auto; }
 .cognitive-start-prompts small { display:block; color:#a2a3a5; font-size:10px; margin-top:3px; }
 .cognitive-user-message { display:flex; justify-content:flex-end; padding-top:10px; }
-.cognitive-user-message>div { border:1px solid #36516742; background:#3a3b3d; padding:11px 16px; max-width:87%; border-radius:15px 15px 4px 15px; font-size:14px; line-height:1.75; white-space:pre-wrap; overflow-wrap:anywhere; }
-.cognitive-assistant-message { font-size:16px; line-height:1.8; padding:0 0 8px; overflow-wrap:anywhere; }
+.cognitive-user-message>div { border:1px solid #36516742; background:#202731; padding:11px 16px; max-width:87%; border-radius:15px 15px 4px 15px; font-size:14px; line-height:1.75; white-space:pre-wrap; overflow-wrap:anywhere; }
+.cognitive-assistant-message { font-size:16px; line-height:1.8; color:var(--cw-text); padding:0 0 8px; overflow-wrap:anywhere; }
 .cognitive-assistant-message p { margin:0 0 1em; }
 .cognitive-assistant-message p:last-child { margin-bottom:0; }
 .cognitive-message-author { display:flex; gap:8px; align-items:center; font-size:10px; font-weight:600; letter-spacing:.03em; color:#c6c7c9; margin-bottom:12px; }
@@ -105,8 +107,8 @@
 .cognitive-response-wait { display:flex; align-items:center; gap:9px; padding:14px 0; font-size:12px; color:#bbbcbe; }
 .cognitive-composer { padding:8px 38px 28px; flex-shrink:0; }
 .cognitive-composer-inner { max-width:780px; margin:0 auto; }
-.cognitive-input-box { border:1px solid #606163; background:#292a2c; border-radius:14px; box-shadow:0 12px 35px #00000022; }
-.cognitive-input-box:focus-within { border-color:#9d9ea0; }
+.cognitive-input-box { border:1px solid #465360; background:#171d25; border-radius:14px; box-shadow:0 8px 28px #00000040,inset 0 1px 0 #ffffff08; }
+.cognitive-input-box:focus-within { border-color:var(--cw-accent); box-shadow:0 0 0 2px #79baff20,0 8px 28px #00000040; }
 .cognitive-input-box textarea { min-height:64px; font-size:14px; line-height:1.8; }
 .cognitive-input-actions { display:flex; align-items:center; padding:4px 12px 10px; gap:9px; }
 .cognitive-compose-modes { display:flex; gap:3px; border-radius:7px; padding:2px; background:#080e1480; }
@@ -396,6 +398,8 @@
 .cognitive-mobile-menu-grid button svg { flex-shrink:0; color:#cecfd1; }
 @media (max-width:767px) {
   .cognitive-workspace { font-size:14px; }
+  /* Keep overflowing mission controls and project overlays below mobile navigation. */
+  .cognitive-body { isolation:isolate; }
   .cognitive-rail,.cognitive-view-tabs,.cognitive-footbar { display:none; }
   .cognitive-topbar { min-height:64px; padding:8px 16px; padding-top:max(8px,env(safe-area-inset-top)); gap:12px; }
   .cognitive-brand img { height:30px; }
@@ -405,7 +409,7 @@
   .cognitive-top-actions>button[title^="Sök"] { display:none; }
   .cognitive-contextbar { min-height:34px; padding:4px 16px 8px; border-bottom:0; }
   .cognitive-status { font-size:12px; color:#c5c6c8; }
-  .cognitive-mobile-nav { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); flex-shrink:0; padding:6px 8px max(6px,env(safe-area-inset-bottom)); border-top:1px solid #4a4b4d; background:#222325; }
+  .cognitive-mobile-nav { position:relative; z-index:50; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); flex-shrink:0; padding:6px 8px max(6px,env(safe-area-inset-bottom)); border-top:1px solid #4a4b4d; background:#222325; }
   .cognitive-mobile-nav button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; min-height:52px; border-radius:12px; font-size:11px; color:#c4c5c7; }
   .cognitive-mobile-nav button[aria-pressed=true] { color:#e5e7eb; background:#464749; }
   .cognitive-sidebar { left:0; width:100%; max-width:none; border:0; box-shadow:none; }
@@ -455,9 +459,9 @@
 .cognitive-stage-actions button{min-width:32px;min-height:30px;padding:5px 10px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#c1c2c4;font-size:11px}
 .cognitive-stage-actions button[aria-pressed=true]{color:#cfd1d5;background:#133744}
 .cognitive-stage-actions button:hover{background:#3f4042}
-.cognitive-canvas{background:#1a1b1d}
+.cognitive-canvas{background:var(--cw-surface)}
 .cognitive-canvas-content{overflow:hidden}
-.aura-live-stage{height:100%;overflow:auto;display:flex;flex-direction:column;color:#d6e5ef;background:radial-gradient(ellipse at 65% 6%,#323335 0%,#202123 43%,#1d1e20 85%)}
+.aura-live-stage{height:100%;overflow:auto;display:flex;flex-direction:column;color:#d6e5ef;background:radial-gradient(ellipse at 65% 0%,#202a35 0%,#151b22 38%,#10151b 78%)}
 .aura-live-empty{flex:1;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:38px;color:#aaabad}
 .aura-live-empty h2{font-size:26px;font-weight:480;letter-spacing:-.04em;color:#d1e3ee}
 .aura-live-empty p{font-size:14px;line-height:1.75;max-width:430px;color:#c8c9cb}
@@ -758,7 +762,7 @@
 .aura-live-tool-surfaces>header small,.aura-live-tool-footnote{font-size:10px;color:#aeb7bd}
 .aura-live-tool-empty{font-size:12px;color:#b7b9bb;line-height:1.6}
 .aura-live-tool-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-.aura-live-tool-card{min-width:0;border:1px solid #54575b;background:#1b1d1f;border-radius:8px;padding:9px 10px}
+.aura-live-tool-card{min-width:0;border:1px solid var(--cw-edge);background:var(--cw-surface);border-radius:8px;padding:9px 10px}
 .aura-live-tool-card[data-status=RUNNING]{border-color:#336479}
 .aura-live-tool-card[data-status=FAILED],.aura-live-tool-card[data-status=UNKNOWN]{border-color:#805448}
 .aura-live-tool-head{display:flex;gap:7px;align-items:center;color:#a8c9d9}
@@ -860,15 +864,109 @@
 .cognitive-chat-blockers>summary { cursor:pointer; color:#e2c29b; min-height:34px; padding:7px 10px; font-size:12px; }
 .cognitive-chat-blockers .cognitive-background-events-list { padding:3px 12px; }
 
-/* Obsidian: visual layer only; existing layout and controls remain authoritative. */
-.cognitive-workspace .cognitive-chat { isolation:isolate; background:#050709; }
+/* Adaptive workspace: keep the existing execution surface and improve legibility. */
+.cognitive-terminal-dock { background: #080d12; border-top-color:#435467; color:#a9c5df; }
+.cognitive-terminal-dock .font-mono { font-variant-ligatures:none; letter-spacing:.025em; }
+.cognitive-terminal-dock input { color:#c4def6; caret-color:#8fc9ff; }
+.cognitive-terminal-dock button:focus-visible,.cognitive-remote-navigation button:focus-visible { outline:2px solid #85bfff; outline-offset:2px; }
+.cognitive-workspace[data-remote-mode="true"] .cognitive-remote-navigation { flex-wrap:nowrap; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:thin; }
+.cognitive-workspace[data-remote-mode="true"] .cognitive-remote-navigation > * { flex-shrink:0; min-height:40px; white-space:nowrap; }
+@media(max-width:600px){.cognitive-terminal-dock{height:clamp(145px,28dvh,220px)}.cognitive-terminal-dock input{font-size:16px}}
+
+/* Read-only command receipts; do not allow terminal content to cover operator controls. */
+.cognitive-receipt-terminal{position:relative;flex:1;min-height:0;min-width:0;overflow:hidden;background:#080d12;isolation:isolate;}
+.cognitive-receipt-terminal-host{position:absolute;inset:4px;overflow:hidden;}
+.cognitive-receipt-terminal-fallback{position:absolute;inset:4px;margin:0;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:#d2e4f5;font:12px/1.4 Consolas,monospace;}
+.cognitive-receipt-terminal-status{position:absolute;bottom:0;right:0;background:#162331;padding:4px;color:#e2e9f0;font-size:10px;}
+
+/* Canonical visual refinement. No visibility, positioning or execution changes.
+   Metal belongs to the frame; reading and editing surfaces remain quiet. */
+.cognitive-workspace .cognitive-topbar{border-bottom-color:#727f9045;box-shadow:inset 0 1px 0 #ffffff14,0 1px 0 #0008}
+.cognitive-workspace .cognitive-brand-divider{background:#8091a640}
+.cognitive-workspace .cognitive-product{color:var(--cw-titanium);letter-spacing:.055em}
+.cognitive-workspace .aura-portrait-trigger {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 8px;
+  min-height: 32px;
+  border: 1px solid #384855;
+  border-radius: 7px;
+  background: #18222c;
+}
+.aura-portrait-trigger:hover, .aura-portrait-trigger:focus-visible { border-color: #79baff; }
+.aura-portrait {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  box-sizing: border-box;
+  width: min(460px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 14px;
+  border: 1px solid #465b6b;
+  border-radius: 16px;
+  color: #d9e3ec;
+  background: radial-gradient(ellipse at 50% 48%, #192e40, #0d1014 68%);
+  box-shadow: 0 26px 72px #000b, inset 0 1px #c5ced633;
+}
+.aura-portrait::backdrop { background: #070b11bf; }
+.aura-portrait header { display: flex; align-items: center; justify-content: space-between; }
+.aura-portrait header h2 { margin: 0; font-size: 1rem; }
+.aura-portrait header button { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 8px; }
+.aura-portrait header button:hover, .aura-portrait header button:focus-visible { background: #243848; }
+.aura-portrait-scene { position: relative; width: min(100%, 49dvh); margin: 0 auto; overflow: hidden; border-radius: 10px; background: radial-gradient(ellipse at 50% 48%,#071321 0%,#03070c 69%); }
+.aura-portrait-scene canvas { display:block; width:100%; height:auto; aspect-ratio:1; pointer-events:none; }
+.aura-portrait p { margin: 0; min-height: 1.5em; text-align: center; color: #aec1d2; font-size: .875rem; }
+.aura-portrait p[data-tone="active"], .aura-portrait p[data-tone="busy"] { color: #96ceff; }
+.aura-portrait-conversation { display: grid; gap: 8px; margin-top: 10px; }
+.aura-portrait-reply { max-height: min(16dvh, 140px); overflow: auto; padding: 9px 10px; border-radius: 8px; background: #15212e; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .875rem; }
+.aura-portrait-conversation textarea { display: block; width: 100%; padding: 9px 10px; resize: vertical; border: 1px solid #455970; border-radius: 8px; color: inherit; background: #0d1520; font-size: 1rem; }
+.aura-portrait-controls { display: flex; flex-wrap: wrap; gap: 6px; }
+.aura-portrait-controls button { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; padding: 0 8px; border: 1px solid #455970; border-radius: 8px; font-size: .75rem; }
+.aura-portrait-controls button[aria-pressed=true], .aura-portrait-controls button[type=submit] { background: #1c3552; }
+.aura-portrait-controls button:disabled { opacity: .5; }
+@media (max-width: 767px) {
+  .cognitive-brand:has(.aura-portrait-trigger) { gap: 6px; }
+  .cognitive-workspace .aura-portrait-trigger { min-height: 44px; }
+}
+@media (max-width: 440px) {
+  .cognitive-workspace .cognitive-topbar { flex-wrap: wrap; gap: 4px 8px; padding-inline: 8px; }
+  .cognitive-workspace .cognitive-top-actions { flex-wrap: wrap; margin-inline-start: auto; max-width: 100%; }
+}
+.cognitive-workspace .cognitive-rail{background:linear-gradient(90deg,#222830 0%,#181d24 23%,#1b2129 84%,#2c343d 100%);border-right-color:var(--cw-line)}
+.cognitive-workspace .cognitive-rail>button{color:var(--cw-muted)}
+.cognitive-workspace .cognitive-rail>button:hover,.cognitive-workspace .cognitive-top-actions>button:hover{background:#303943;color:var(--cw-text)}
+.cognitive-workspace .cognitive-rail>button.active{color:var(--cw-text);background:#273443;box-shadow:inset 2px 0 0 var(--cw-active)}
+.cognitive-workspace .cognitive-contextbar,.cognitive-workspace .cognitive-canvas-bar{background:#141a21;border-bottom-color:var(--cw-line)}
+.cognitive-workspace .cognitive-stage-switcher button{color:var(--cw-muted)}
+.cognitive-workspace .cognitive-stage-switcher button:hover{background:#25303a;color:var(--cw-text)}
+.cognitive-workspace .cognitive-stage-switcher button[aria-pressed=true]{background:#253342;border-color:#54708d;color:#f0f5fa;box-shadow:inset 0 -1px 0 var(--cw-active)}
+.cognitive-workspace .cognitive-status{color:var(--cw-muted)}
+.cognitive-workspace .cognitive-status[data-tone=active]>span{background:var(--cw-active);box-shadow:0 0 7px #79baff66}
+.cognitive-workspace .cognitive-chat-diagnostics>summary{color:var(--cw-muted)}
+.cognitive-workspace .cognitive-chat-diagnostics>summary:hover{background:#17202a}
+.cognitive-workspace .cognitive-chat-heading,.cognitive-workspace .cognitive-message-author{color:var(--cw-titanium)}
+.cognitive-workspace .cognitive-welcome h1{color:var(--cw-text)}
+.cognitive-workspace .cognitive-welcome>p,.cognitive-workspace .cognitive-composer-help{color:var(--cw-muted)}
+.cognitive-workspace .cognitive-start-prompts>button{background:var(--cw-surface);border-color:var(--cw-edge);color:var(--cw-text);box-shadow:inset 0 1px 0 #ffffff06}
+.cognitive-workspace .cognitive-start-prompts>button:hover{background:var(--cw-raised);border-color:#6281a1}
+.cognitive-workspace .cognitive-start-prompts small{color:var(--cw-muted)}
+.cognitive-workspace .cognitive-user-message>div{border-color:#405164;color:var(--cw-text)}
+.cognitive-workspace .cognitive-input-box textarea{color:var(--cw-text);caret-color:var(--cw-accent)}
+.cognitive-workspace .cognitive-input-box textarea::placeholder{color:var(--cw-subtle)}
+.cognitive-workspace .cognitive-send-button{background:linear-gradient(180deg,#dae4ed,#a9b7c5);color:#15202b;border:1px solid #d4dee6;box-shadow:inset 0 1px 0 #ffffff55}
+.cognitive-workspace .cognitive-send-button:disabled{background:#4c5661;color:#d0d9e2;border-color:#596571;box-shadow:none}
+.cognitive-workspace .cognitive-footbar{color:var(--cw-subtle);background:#10151b}
+.cognitive-workspace .cognitive-remote-navigation,.cognitive-workspace .cognitive-mobile-nav{background:#171d24;border-color:var(--cw-line)}
+.cognitive-workspace .cognitive-remote-navigation button[aria-pressed=true],.cognitive-workspace .cognitive-mobile-nav button[aria-pressed=true]{background:#223346;color:var(--cw-text);box-shadow:inset 0 -2px 0 var(--cw-active)}
+.cognitive-workspace .cognitive-mobile-menu{background:var(--cw-surface);border-color:var(--cw-edge)}
+.cognitive-workspace .cognitive-mobile-menu-grid button{color:var(--cw-text);border-color:var(--cw-edge)}
+.cognitive-workspace .cognitive-terminal-dock{border-top-color:#37495b}
+.cognitive-workspace .aura-terminal{background:#0b1118;border-top-color:#37495b}
+@media (prefers-reduced-motion:reduce) {
+  .cognitive-workspace button,.cognitive-workspace a{transition:none}
+}
+
+/* Obsidian conversation light field: retain current workspace styling. */
+.cognitive-workspace .cognitive-chat { position:relative; isolation:isolate; }
 .cognitive-workspace .jaco-quantum-conversation { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:-1; }
 .cognitive-workspace .cognitive-chat-scroll { background:transparent; }
-.cognitive-workspace .cognitive-user-message>div { background:#111820ed; border-color:#324658; border-radius:3px; }
-.cognitive-workspace .cognitive-input-box { background:#0c1116f5; border:1px solid #36414c; border-radius:4px; }
-.cognitive-workspace .cognitive-topbar,
-.cognitive-workspace .cognitive-canvas-bar { background:repeating-linear-gradient(0deg,#ffffff04 0px,transparent 1px,transparent 3px),linear-gradient(105deg,#202327,#30353a,#202327); border-bottom:1px solid #454d55; }
-.cognitive-workspace .cognitive-stage-switcher button,
-.cognitive-workspace .cognitive-canvas-bar,
-.cognitive-workspace .cognitive-chat-heading { font-family:"Barlow Condensed","Arial Narrow","Roboto Condensed",sans-serif; font-weight:300; letter-spacing:.035em; }
-.cognitive-workspace .cognitive-terminal-dock { background:#030608; }

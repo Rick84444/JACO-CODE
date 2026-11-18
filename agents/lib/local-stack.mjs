@@ -186,6 +186,13 @@ async function occupied(url) {
     socket.once('connect', () => done(true)); socket.once('error', () => done(false)); socket.once('timeout', () => done(false));
   });
 }
+export function optionalStartupService(id) {
+  return ['remote', 'a2a', 'novaBridge', 'cdp', 'gateway', 'tunnel'].includes(id);
+}
+export function classifyStartupServices(observed) {
+  const failed = observed.filter(s => s.state !== 'READY');
+  return !observed.some(s => s.id === 'runtime' && s.state === 'READY') || failed.some(s => !optionalStartupService(s.id)) ? 'BLOCKED' : failed.length ? 'DEGRADED' : 'READY';
+}
 async function waitReady(s, token, timeout = 180000) {
   const deadline = Date.now() + timeout;
   do {
@@ -292,8 +299,8 @@ export async function inspectStatus(c, services = [...definitions(c), ...novaRea
   // reconcile. Only the real startup configuration requires the durable receipt.
   const canonical = Boolean(c?.root && c?.runtime && c?.ports);
   const startup = canonical ? readStartupEvidence(c.dataRoot || c.root) : null;
-  const servicesReady = observed.length > 0 && observed.every(s => s.state === 'READY');
-  const state = !servicesReady ? 'BLOCKED' : startup && !startup.ok ? 'DEGRADED' : 'READY';
+  const readiness = classifyStartupServices(observed);
+  const state = readiness === 'READY' && startup && !startup.ok ? 'DEGRADED' : readiness;
   return { schema: 'jaco.local-startup/v1', state,
     startedAt, observedAt: new Date().toISOString(), runtime: c.runtime,
     scope: canonical
@@ -384,7 +391,10 @@ export async function activate(c, { open = false } = {}) {
       const observed = await probe(service, c.env.GATEWAY_TOKEN);
       // A different checkout of the same JACO release must not impersonate this installed product.
       if (c.dataRoot !== c.root && observed.state === 'READY' && !ownsListener(c, service)) throw new Error(`OTHER_JACO_INSTANCE_RUNNING:${service.id}:stop old checkout before launching installed JACO`);
-      if (observed.state !== 'READY' && await occupied(service.url) && !ownsListener(c,service)) throw new Error(`PORT_CONFLICT_OR_UNHEALTHY:${service.id}`);
+      if (observed.state !== 'READY' && await occupied(service.url) && !ownsListener(c,service)) {
+        if (!optionalStartupService(service.id)) throw new Error(`PORT_CONFLICT_OR_UNHEALTHY:${service.id}`);
+        result.warnings.push(`OPTIONAL_PORT_CONFLICT:${service.id}`);
+      }
     }
     let chromeAvailable = !c.cdp;
     if (c.cdp) {
@@ -429,6 +439,7 @@ export async function activate(c, { open = false } = {}) {
     }
     for (const s of definitions(c)) {
       checkpoint(`service:${s.id}`);
+      try {
       let state = await probe(s, c.env.GATEWAY_TOKEN);
       if (state.state !== 'READY') {
         // Workplace exclusively owns SEER and Nova. Never launch a second copy.
@@ -437,7 +448,7 @@ export async function activate(c, { open = false } = {}) {
           const pending = pendingProcess(c, s.id);
           const pid = pending || await launch(c, s); console.log(`${pending ? 'WAITING' : 'STARTED'} ${s.id} PID=${pid}`);
         }
-        state = await waitReady(s, c.env.GATEWAY_TOKEN);
+        state = await waitReady(s, c.env.GATEWAY_TOKEN, optionalStartupService(s.id) ? 30000 : 180000);
       }
       result.services.push({ id: s.id, state: state.state, url: s.url }); console.log(`READY ${s.id}`);
       // Product GUI stays usable for first-run model onboarding even if later workers are DEGRADED.
@@ -447,6 +458,12 @@ export async function activate(c, { open = false } = {}) {
         installedGuiOpened = true;
       }
       checkpoint(`ready:${s.id}`);
+      } catch (error) {
+        if (!optionalStartupService(s.id)) throw error;
+        result.services.push({ id: s.id, state: 'UNAVAILABLE', url: s.url });
+        result.warnings.push(`OPTIONAL_SERVICE_UNAVAILABLE:${s.id}`);
+        checkpoint(`degraded:${s.id}`);
+      }
     }
     checkpoint('nova');
     for (const check of novaReadiness(c)) await waitReady(check, c.env.GATEWAY_TOKEN);
@@ -483,6 +500,7 @@ export async function activate(c, { open = false } = {}) {
     }
     if (c.tunnel) {
       checkpoint('tunnel');
+      try {
       const config = path.resolve(c.root, c.env.JACO_TUNNEL_CONFIG || 'logs/cloudflared-config.yml');
       if (!fs.existsSync(config)) throw new Error('TUNNEL_CONFIGURATION_MISSING');
       // A tunnel is a single long-lived service. Query process ownership before spawn.
@@ -496,6 +514,11 @@ export async function activate(c, { open = false } = {}) {
         await launch(c, { id: 'tunnel', cwd: c.root, cmd: exe, args: ['tunnel', '--config', config, 'run'] });
       }
       result.tunnel = 'PROCESS_PRESENT_PUBLIC_REACHABILITY_UNVERIFIED';
+      } catch {
+        result.tunnel = 'UNAVAILABLE';
+        result.warnings.push('OPTIONAL_SERVICE_UNAVAILABLE:tunnel');
+        checkpoint('tunnel-degraded');
+      }
     }
     result.state = result.warnings.length || (c.cdp && result.browserAttachment !== 'ATTACHED') ? 'DEGRADED' : 'READY'; result.completedAt = new Date().toISOString(); checkpoint('complete');
     if (open && !installedGuiOpened) { const child = spawn('explorer.exe', [c.env.JACO_RUNTIME_URL], { windowsHide: true, detached: true, stdio: 'ignore' }); child.unref(); }
