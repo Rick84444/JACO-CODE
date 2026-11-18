@@ -1,0 +1,7 @@
+# Aura cognitive evolution — integration contract
+
+This is a short-lived integration branch of the canonical JACO Aura runtime, not a separate runtime or product. Keep current with main; resolve integration conflicts incrementally. Reuse canonical memory, Mission Bus, Gameboard, identity, tools, and authorization. No duplicate services or stores. Each change must be small, independently reviewable, backward compatible, and pass existing regression tests. Experimental behavior must be disabled by default using existing feature-flag mechanisms where available. No automatic merge or production activation before operator approval. Never modify authorization boundaries through adaptive learning. 
+
+Research hypotheses: adaptive intuition, evidence-sensitive disagreement, persistent identity, coherence, geometric representations and intrinsic motivation. Symmetry and temporal spectral analysis require controlled ablations before adoption; Hz is not a quality unit. Compare against the existing Aura runtime at matched resource budgets, using held-out tasks, reproducible evidence, and safety regressions. Reject mechanisms without measurable benefit. Keep research outputs mergeable incrementally; do not wait for completion of the entire research program.
+
+Before each proposed merge: synchronize with main, inspect actual integration diff, run existing and new tests, verify disabled-feature behavior, document evidence and remaining limitations. Branch existence or a clean merge alone does not establish correctness.
