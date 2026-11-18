@@ -620,8 +620,8 @@ function createLightBody(scene,model,bones,groups,isMobile){
   float flow=vHairW.x*820.0+sin(vHairW.z*60.0+vHairW.y*40.0)*3.0;
   float strand=.55+.45*sin(flow)*sin(flow*.37+1.3);
   float sheen=pow(max(0.0,dot(n,normalize(vec3(0.15,0.75,0.65)))),6.0);
-  vec3 base=mix(vec3(.58,.66,.82),vec3(1.0,1.0,1.0),strand*.75+sheen*.5);
-  outgoingLight=base*(.76+.30*strand)+vec3(1.0,1.0,1.0)*(rim*.45+sheen*.35)*(1.0+.25*uEnergy);
+  vec3 base=mix(vec3(.12,.32,.70),vec3(.78,.92,1.0),strand*.7+sheen*.5);
+  outgoingLight=base*(.78+.28*strand)+vec3(.80,.94,1.0)*(rim*.60+sheen*.40)*(1.0+.25*uEnergy)+vec3(.30,.62,1.0)*.10;
   diffuseColor.a=.94;
   #include <opaque_fragment>`);
   };
@@ -749,7 +749,7 @@ function createLightBody(scene,model,bones,groups,isMobile){
 void main(){${SWAY}
   float travel=sin(uTime*2.2+aSeed*19.0-aT*9.0);
   vA=(1.0-aT*.78)*(.66+.34*travel)*(.88+.40*uEnergy);
-  vC=mix(vec3(1.0,1.0,1.0),vec3(.72,.82,1.0),pow(max(0.0,aT),.85));
+  vC=mix(vec3(.85,.95,1.0),vec3(.30,.60,1.0),pow(max(0.0,aT),.85));
   gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
     fragmentShader:String.raw`varying float vA;varying vec3 vC;void main(){gl_FragColor=vec4(vC,vA*.22);}`});
 
@@ -806,8 +806,8 @@ void main(){
   float round=sin(vU*3.14159);
   float tone=.70+.45*fract(vS*7.31);
   float highlight=pow(max(0.0,sin(vT*18.0+vS*12.0)),6.0)*round;
-  vec3 shadow=vec3(.46,.54,.72),light=vec3(1.0,1.0,1.0);
-  vec3 col=mix(shadow,light,clamp(round*.65+strands*.25+(1.0-vT)*.10,0.0,1.0))*tone+vec3(1.0,1.0,1.0)*highlight*.35;
+  vec3 shadow=vec3(.10,.28,.66),light=vec3(.74,.90,1.0);
+  vec3 col=mix(shadow,light,clamp(round*.65+strands*.25+(1.0-vT)*.10,0.0,1.0))*tone+vec3(.85,.96,1.0)*highlight*.45+vec3(.30,.62,1.0)*(.10+.08*round);
   float a=edge*tip*(.86+.12*strands);
   if(a<.02)discard;
   gl_FragColor=vec4(col*(.85+.25*uEnergy),a);
@@ -851,6 +851,10 @@ void main(){
   const eyeCore=[sprite(.006,.30,0xeaf6ff),sprite(.006,.30,0xeaf6ff)];
   const eyeHalo=[sprite(.026,.14,0x7fb8ff),sprite(.026,.14,0x7fb8ff)];
   scene.add(...eyeCore,...eyeHalo);
+  // A soft veil of light over neck, shoulders and chest binds head, hair and body into one glowing form.
+  const veilChest=sprite(.70,.20,0x9cd2ff),veilNeck=sprite(.38,.16,0xd6ecff);
+  veilChest.position.set(0,1.34,.18);veilNeck.position.set(0,1.46,.14);
+  scene.add(veilChest,veilNeck);
 
   const starCount=isMobile?180:340;
   const starPos=[],starTw=[],stars=seeded(4242);
@@ -891,6 +895,7 @@ void main(){
       else{hairQuat.slerp(hq,0.14);}
       hair.position.copy(hp);hair.quaternion.copy(hairQuat).multiply(restInv);
       crown.material.opacity=0;
+      veilChest.material.opacity=.18+.06*Math.sin(t*.9)+.08*energyValue;veilNeck.material.opacity=.14+.05*Math.sin(t*1.3+1.0)+.06*energyValue;
       halo.material.opacity=.28+.15*energyValue+.04*Math.sin(t*1.2);
 
       sums[0].set(0,0,0);sums[1].set(0,0,0);counts[0]=counts[1]=0;
@@ -905,7 +910,7 @@ void main(){
         eyeHalo[s].material.opacity=(.12+.10*energyValue)*open;
       }
     },
-    dispose(){scene.remove(hair,starField,auraBackdrop,...eyeCore,...eyeHalo);owned.forEach(o=>o.dispose());}
+    dispose(){scene.remove(hair,starField,auraBackdrop,veilChest,veilNeck,...eyeCore,...eyeHalo);owned.forEach(o=>o.dispose());}
   };
 }
 
