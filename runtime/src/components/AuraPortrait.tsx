@@ -2,7 +2,35 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react';
 import { useUiLanguage } from '../i18n/UiLanguage';
 
-const portraitUrl = new URL('../assets/aura-portrait.webp', import.meta.url).href;
+// MediaPipe canonical face model, Apache-2.0; byte-identical to upstream
+// 727e43fcb7c7477f3fdf88c0498588349baaf2e5. See public/branding/mediapipe-license.txt.
+const meshUrl = new URL('../assets/aura-face.obj', import.meta.url).href;
+type Vertex = { x: number; y: number; z: number };
+type Triangle = [number, number, number];
+
+async function loadLightMask(signal: AbortSignal) {
+  const response = await fetch(meshUrl, { signal });
+  if (!response.ok) throw new Error('AURA_FACE_ASSET_UNAVAILABLE');
+  const vertices: Vertex[] = [];
+  const triangles: Triangle[] = [];
+  for (const line of (await response.text()).split('\n')) {
+    const [kind, ...values] = line.trim().split(/\s+/);
+    if (kind === 'v') {
+      if (values.length !== 3 || values.some(v => !Number.isFinite(Number(v)))) throw new Error('AURA_FACE_VERTEX_INVALID');
+      const [a,b,c] = values.map(Number);
+      vertices.push({x:a/9,y:(.65-b)/9,z:(c-3)/9});
+    }
+    if (kind === 'f') {
+      if (values.length !== 3) throw new Error('AURA_FACE_TRIANGLE_INVALID');
+      triangles.push(values.map(v=>Number(v.split('/')[0])-1) as Triangle);
+    }
+  }
+  if (vertices.length !== 468 || triangles.length !== 898 ||
+      triangles.some(face => new Set(face).size !== 3 || face.some(i => !Number.isInteger(i) || !vertices[i]))) {
+    throw new Error('AURA_FACE_ASSET_INVALID');
+  }
+  return { vertices, triangles };
+}
 
 export interface AuraPortraitChat {
   input: string;
@@ -43,7 +71,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const [readReplies, setReadReplies] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [voiceError, setVoiceError] = useState(false);
-  const artwork = useRef<HTMLImageElement>(null);
+  const [maskError, setMaskError] = useState(false);
+  const [lightMask,setLightMask] = useState<Awaited<ReturnType<typeof loadLightMask>> | null>(null);
   const pointer = useRef({ x: 0, y: 0 });
   const latestReply = chat?.messages.filter(message => message.role === 'assistant' && message.content.trim()).at(-1);
   const lastRead = useRef(latestReply?.id);
@@ -168,6 +197,17 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   }, []);
 
   useEffect(() => {
+    const controller=new AbortController();
+    let active=true;
+    void loadLightMask(controller.signal).then(mesh=>{
+      if(active) setLightMask(mesh);
+    }).catch(()=>{
+      if(active && !controller.signal.aborted) setMaskError(true);
+    });
+    return ()=>{active=false;controller.abort();};
+  }, []);
+
+  useEffect(() => {
     const element = canvas.current;
     const context = element?.getContext('2d');
     if (!element || !context) return;
@@ -179,13 +219,57 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const render = (time: number) => {
       const phase = motion.matches ? 0 : time / 1000;
       const scale = element.width / 2;
+      context.clearRect(0, 0, element.width, element.height);
       const targetYaw = motion.matches ? 0 : pointer.current.x * .31 + .12 * Math.sin(phase * .65);
       const targetPitch = motion.matches ? 0 : pointer.current.y * .19 + .055 * Math.sin(phase * .81);
-      yaw += (targetYaw - yaw) * .13;
-      pitch += (targetPitch - pitch) * .13;
-      context.clearRect(0, 0, element.width, element.height);
-      if (artwork.current) {
-        artwork.current.style.transform = motion.matches ? '' : `scale(1.06) rotateX(${pitch}rad) rotateY(${yaw}rad)`;
+      yaw = motion.matches ? 0 : yaw + (targetYaw - yaw) * .13;
+      pitch = motion.matches ? 0 : pitch + (targetPitch - pitch) * .13;
+      const cx = Math.cos(yaw), sx = Math.sin(yaw), cy = Math.cos(pitch), sy = Math.sin(pitch);
+      const mesh = lightMask;
+      let drawn = 0;
+      if (mesh) {
+        const projected = mesh.vertices.map(point => {
+          const x = point.x * cx + point.z * sx;
+          const depth = point.z * cx - point.x * sx;
+          const y = point.y * cy - depth * sy;
+          const z = depth * cy + point.y * sy;
+          const size = scale * .87 * 2.8 / (2.8 - z);
+          return { x: scale + x * size, y: scale + y * size, z, mx:x, my:y };
+        });
+        const ordered = mesh.triangles.map(([i, j, k]) => {
+          const a = projected[i], b = projected[j], c = projected[k];
+          return { a, b, c, depth: (a.z + b.z + c.z) / 3 };
+        }).sort((a, b) => a.depth - b.depth);
+        for (const { a, b, c, depth } of ordered) {
+          const ux = b.mx-a.mx, uy = b.my-a.my, uz = b.z-a.z;
+          const vx = c.mx-a.mx, vy = c.my-a.my, vz = c.z-a.z;
+          const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+          const normal = Math.hypot(nx, ny, nz);
+          if (nz >= 0 || normal < 1e-9) continue;
+          drawn++;
+          const diffuse = Math.max(0, (nx * .42 + ny * .35 - nz * .84) / normal);
+          const rim = (1 + nz / normal) ** 2;
+          const pulse = active ? (1 + Math.sin(phase * 3 - depth * 12)) * 9 : 0;
+          const light = Math.round(Math.min(240, 38 + 132 * diffuse + 65 * rim + pulse));
+          context.beginPath();
+          context.moveTo(a.x, a.y);
+          context.lineTo(b.x, b.y);
+          context.lineTo(c.x, c.y);
+          context.closePath();
+          context.fillStyle = `rgb(${Math.round(light * .57)},${Math.round(light * .8)},${Math.min(255, light + 44)})`;
+          context.fill();
+          context.strokeStyle = 'rgba(156,213,255,.16)';
+          context.lineWidth = .75;
+          context.stroke();
+          context.fillStyle = `rgba(193,228,255,${(.26 + .48 * diffuse).toFixed(2)})`;
+          // Barycentric surface highlights remain attached to the rotating mesh.
+          for (const [u,v] of [[.34,.33],[.18,.62],[.62,.18]]) {
+            const w=1-u-v;
+            const x=u*a.x+v*b.x+w*c.x;
+            const y=u*a.y+v*b.y+w*c.y;
+            context.fillRect(x,y,1.12,1.12);
+          }
+        }
       }
       context.fillStyle = '#79baff';
       context.strokeStyle = '#79baff';
@@ -204,6 +288,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
         context.fill();
       }
       context.globalAlpha = 1;
+      element.dataset.renderedFaces=String(drawn);
+      element.dataset.yaw=yaw.toFixed(4);
     };
     const tick = (time: number) => {
       if (time - lastDraw >= 32) {
@@ -215,7 +301,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const refresh = () => {
       cancelAnimationFrame(frame);
       if (document.hidden) return;
-      render(0);
+      lastDraw=-Infinity;
+      render(motion.matches ? 0 : performance.now());
       if (!motion.matches) frame = requestAnimationFrame(tick);
     };
     refresh();
@@ -226,7 +313,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       motion.removeEventListener('change', refresh);
       document.removeEventListener('visibilitychange', refresh);
     };
-  }, [active]);
+  }, [active,lightMask]);
 
   return <dialog ref={dialog} className="aura-portrait" aria-labelledby="aura-portrait-title"
     onCancel={event => { event.preventDefault(); onClose(); }}>
@@ -238,10 +325,10 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       const rect = event.currentTarget.getBoundingClientRect();
       pointer.current = {x: 2 * (event.clientX - rect.left) / rect.width - 1, y: 2 * (event.clientY - rect.top) / rect.height - 1};
     }} onPointerLeave={() => { pointer.current = {x:0, y:0}; }}>
-      <img ref={artwork} src={portraitUrl} width={960} height={960}
-        alt={tr('Aura som en blåvit ljusgestalt', 'Aura as a blue-white being of light')}/>
-      <canvas ref={canvas} width={480} height={480} aria-hidden="true"/>
+      <canvas ref={canvas} width={480} height={480} role="img"
+        aria-label={tr('Auras tredimensionella ljusmask', 'Aura’s three-dimensional light mask')}/>
     </div>
+    {maskError && <p role="status">{tr('Ljusmasken kunde inte laddas.', 'The light mask could not load.')}</p>}
     <p data-tone={tone}>{label}</p>
     {chat && <div className="aura-portrait-conversation">
       {latestReply && <div className="aura-portrait-reply" aria-live="polite">{latestReply.content}</div>}
