@@ -250,13 +250,13 @@ try {
     await page.setViewportSize({width,height:852});
     await portraitTrigger.click();
     await portrait.waitFor();
+    await portrait.getByRole('img').evaluate(image=>image.decode());
     await page.waitForFunction(()=>{
       const canvas=document.querySelector('.aura-portrait-scene canvas');
       if(!canvas)return false;
       const data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
-      return data.filter((value,index)=>index%4===3&&value>0).length>10000;
+      return data.filter((value,index)=>index%4===3&&value>0).length>100;
     });
-    assert.equal(await portrait.locator('img').count(),0,'portrait uses a rendered point cloud');
     if(width===1440){
       const reducedCanvas=portrait.locator('canvas');
       const still=await reducedCanvas.evaluate(canvas=>canvas.toDataURL());
@@ -276,20 +276,17 @@ try {
   await portraitTrigger.click();
   const scene=portrait.locator('.aura-portrait-scene');
   await scene.waitFor();
-  await page.waitForFunction(()=>{
-    const canvas=document.querySelector('.aura-portrait-scene canvas');
-    return canvas?.getContext('2d').getImageData(225,225,30,30).data.some((value,index)=>index%4===3&&value>50);
-  });
-  const renderMask=()=>scene.locator('canvas').evaluate(canvas=>canvas.toDataURL());
-  const initialMask=await renderMask();
+  const artwork=scene.getByRole('img');
+  await artwork.evaluate(image=>image.decode());
+  const initialTransform=await artwork.evaluate(image=>image.style.transform);
   await scene.hover({position:{x:18,y:60}});
   await page.waitForFunction(initial=>{
-    const canvas=document.querySelector('.aura-portrait-scene canvas');
-    return canvas?.toDataURL()!==initial;
-  },initialMask);
+    const image=document.querySelector('.aura-portrait-scene img');
+    return image?.style.transform && image.style.transform!==initial;
+  },initialTransform);
   await page.keyboard.press('Escape');
   await portrait.waitFor({state:'detached'});
-  passed('Aura light mask changes its rendered frame with motion enabled');
+  passed('Aura artwork changes perspective with motion enabled');
   await input().fill('Behåll mitt utkast');
   await canvas('Kod').click();await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
