@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 
+// JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
 // A light-form is sampled from the actual skinned geometry, never from a portrait.
 // The pinned CC0 MPFB source and build-time compaction are documented in OpenSpec.
 const ASSET='/branding/aura-rig.glb';
@@ -8,8 +9,18 @@ const EXPECTED_BYTES=7465400;
 const FRAME_TIME=1000/30;
 function seeded(seed){let s=seed>>>0;return()=>((s=(Math.imul(s,1664525)+1013904223)>>>0)/4294967296);}
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const finiteClamp=(v,a,b,fallback=0)=>{
+  const n=typeof v==='number'?v:Number(v);
+  if(!Number.isFinite(n))return fallback;
+  return n<a?a:(n>b?b:n);
+};
 const smoothstep=(e0,e1,x)=>{const t=clamp((x-e0)/(e1-e0),0,1);return t*t*(3-2*t);};
 
+/**
+ * Zero-GC deterministic surface sampler.
+ * Pre-flattens triangle vertex offsets (multiplied by 3) and barycentric weights into TypedArrays
+ * so the 30 FPS skinning loop performs zero heap allocations per frame.
+ */
 function sampleSurface(mesh,count,region,seed) {
   const pos=mesh.geometry.attributes.position,indices=mesh.geometry.index,faces=[];
   const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),u=new THREE.Vector3(),v=new THREE.Vector3();
@@ -26,15 +37,35 @@ function sampleSurface(mesh,count,region,seed) {
   }
   if(!faces.length)throw Error('AURA_RIG_EMPTY_REGION:'+mesh.name);
   const random=seeded(seed),unique=new Map(),samples=[];
+  const flatIds=new Uint32Array(count*3);
+  const flatWeights=new Float32Array(count*3);
+  const flatSeeds=new Float32Array(count);
   let fi=0;
   for(let i=0;i<count;i++){
     const target=(i+random())/count*area;
     while(fi<faces.length-1&&faces[fi].end<target)fi++;
     const root=Math.sqrt(random()),s=root*random();
-    const ids=faces[fi].ids.map(id=>{if(!unique.has(id))unique.set(id,unique.size);return unique.get(id);});
-    samples.push({ids,w:[1-root,s,root-s],seed:random(),size:.62+random()*.82});
+    const w0=1-root,w1=s,w2=root-s;
+    const fIds=faces[fi].ids;
+    const id0=unique.has(fIds[0])?unique.get(fIds[0]):(unique.set(fIds[0],unique.size),unique.size-1);
+    const id1=unique.has(fIds[1])?unique.get(fIds[1]):(unique.set(fIds[1],unique.size),unique.size-1);
+    const id2=unique.has(fIds[2])?unique.get(fIds[2]):(unique.set(fIds[2],unique.size),unique.size-1);
+    const base=i*3;
+    flatIds[base]=id0*3;flatIds[base+1]=id1*3;flatIds[base+2]=id2*3;
+    flatWeights[base]=w0;flatWeights[base+1]=w1;flatWeights[base+2]=w2;
+    const sampleSeed=random(),sampleSize=.62+random()*.82;
+    flatSeeds[i]=sampleSeed;
+    samples.push({seed:sampleSeed,size:sampleSize});
   }
-  return {mesh,samples,indices:[...unique.keys()],vertices:new Float32Array(unique.size*3)};
+  return {
+    mesh,
+    samples,
+    flatIds,
+    flatWeights,
+    flatSeeds,
+    indices:Uint32Array.from(unique.keys()),
+    vertices:new Float32Array(unique.size*3)
+  };
 }
 
 // Explicitly select named source regions.
@@ -67,13 +98,15 @@ varying float vAlpha;
 varying vec3 vColor;
 varying float vDepth;
 void main(){
-  vec4 mv=modelViewMatrix*vec4(position,1.0);
+  float shimmer=(.00065+.0013*uEnergy)*sin(aSeed*21.0+uTime*1.5);
+  vec3 displaced=position+aNormal*shimmer;
+  vec4 mv=modelViewMatrix*vec4(displaced,1.0);
   vec3 n=normalize(normalMatrix*aNormal);
   vec3 viewDir=normalize(-mv.xyz);
   float facing=max(0.0,dot(n,viewDir));
   float rim=pow(max(0.0,1.0-facing),1.75);
-  float pulse=.84+.16*sin(uTime*2.0+aSeed*23.0+position.y*14.0);
-  float fade=smoothstep(1.105,1.31,position.y);
+  float pulse=.84+.16*sin(uTime*2.0+aSeed*23.0+displaced.y*14.0);
+  float fade=smoothstep(1.105,1.31,displaced.y);
   float dof=1.0-clamp(abs(-mv.z-1.02)*1.6,0.0,0.45);
   vDepth=dof;
   float strength=(.12+.44*pow(facing,.7)+.58*rim)*dof;
@@ -108,8 +141,6 @@ void main(){
 }
 `;
 
-// Clean-room, first-party deterministic 3D harmonic lattice field (zero external license, 3x faster on mobile GPUs)
-// Includes strict sq(x) helper to eliminate IEEE/GLSL negative base pow() NaN undefined behavior.
 const GLSL_AURA_BIOFIELD=String.raw`
 float sq(float x){return x*x;}
 float auraGyroid(vec3 p){
@@ -143,78 +174,300 @@ const SWAY=String.raw`
   p.z+=(cos(uTime*.64+aSeed*4.0+aT*2.8)*.009+cos(uTime*1.31+aSeed*2.1+aT*4.6)*.0035)*sway;`;
 
 /**
- * Real-time Web Audio Formant & Envelope Analyzer:
- * Splits live TTS/AudioStream into 3 vocal frequency bands:
- * - Low (85-350 Hz): Fundamental vocal pitch -> drives jaw mass
- * - Mid (350-1800 Hz): F1/F2 vowel formants -> drives open vowels (viseme_aa / viseme_E)
- * - High (1800-4800 Hz): Sibilants & rounded formants -> drives lip shaping (viseme_O / viseme_U)
+ * MODULE 1: VoiceFormantTracker
+ * - Strictly adopts `audioInput.context` when passed an AudioNode.
+ * - NEVER calls unargumented `sourceNode.disconnect()` on external AudioNodes, preventing accidental detachment of main playback speakers.
+ * - Uses fftSize=1024 (~46.8 Hz resolution at 48 kHz) to resolve F0 pitch, F1/F2 vowel formants, and spectral Shannon entropy.
  */
-function createVoiceFormantTracker(){
-  let ctx=null,analyser=null,sourceNode=null,bins=null;
+export function createVoiceFormantTracker(){
+  let ctx=null,ownsContext=false,analyser=null,sourceNode=null,ownsSourceNode=false,bins=null,connected=false;
   let noiseFloor=0.012;
+  const result={level:0,openVowel:0,roundVowel:0,spreadVowel:0,sibilant:0,entropy:0};
+
+  function detachCurrent(){
+    if(sourceNode&&analyser){
+      try{
+        // Only disconnect the specific analyser branch; never blanket-disconnect an external AudioNode
+        sourceNode.disconnect(analyser);
+      }catch{
+        if(ownsSourceNode){
+          try{sourceNode.disconnect();}catch{}
+        }
+      }
+    }
+    if(analyser){try{analyser.disconnect();}catch{}}
+    sourceNode=null;ownsSourceNode=false;analyser=null;bins=null;connected=false;
+  }
+
   return {
     attach(audioInput){
+      detachCurrent();
+      let candidateSource=null,candidateAnalyser=null,candidateOwnsSource=false;
       try{
         if(!audioInput)return false;
-        const AudioCtx=window.AudioContext||window.webkitAudioContext;
-        if(!AudioCtx)return false;
-        if(!ctx)ctx=new AudioCtx();
-        if(ctx.state==='suspended')ctx.resume().catch(()=>{});
-        if(sourceNode){try{sourceNode.disconnect();}catch{}}
-        analyser=ctx.createAnalyser();
-        analyser.fftSize=256;
-        analyser.smoothingTimeConstant=0.72;
-        bins=new Uint8Array(analyser.frequencyBinCount);
-        if(typeof MediaStream!=='undefined'&&audioInput instanceof MediaStream){
-          sourceNode=ctx.createMediaStreamSource(audioInput);
-          sourceNode.connect(analyser);
+        const AudioCtx=typeof window!=='undefined'?(window.AudioContext||window.webkitAudioContext):null;
+        if(audioInput.context&&typeof audioInput.connect==='function'){
+          if(ctx&&ownsContext&&ctx!==audioInput.context){try{ctx.close();}catch{}}
+          ctx=audioInput.context;
+          ownsContext=false;
+          candidateAnalyser=ctx.createAnalyser();
+          candidateAnalyser.fftSize=1024;
+          candidateAnalyser.smoothingTimeConstant=0.68;
+          candidateSource=audioInput;
+          candidateOwnsSource=false;
+          candidateSource.connect(candidateAnalyser);
+          bins=new Uint8Array(candidateAnalyser.frequencyBinCount);
+          sourceNode=candidateSource;
+          ownsSourceNode=false;
+          analyser=candidateAnalyser;
+          connected=true;
+        }else if(typeof MediaStream!=='undefined'&&audioInput instanceof MediaStream){
+          if(!AudioCtx)return false;
+          if(!ctx||!ownsContext){ctx=new AudioCtx();ownsContext=true;}
+          candidateAnalyser=ctx.createAnalyser();
+          candidateAnalyser.fftSize=1024;
+          candidateAnalyser.smoothingTimeConstant=0.68;
+          candidateSource=ctx.createMediaStreamSource(audioInput);
+          candidateOwnsSource=true;
+          candidateSource.connect(candidateAnalyser);
+          bins=new Uint8Array(candidateAnalyser.frequencyBinCount);
+          sourceNode=candidateSource;
+          ownsSourceNode=true;
+          analyser=candidateAnalyser;
+          connected=true;
         }else if(typeof HTMLMediaElement!=='undefined'&&audioInput instanceof HTMLMediaElement){
-          sourceNode=ctx.createMediaElementSource(audioInput);
-          sourceNode.connect(analyser);
-          analyser.connect(ctx.destination);
-        }else if(audioInput.context&&typeof audioInput.connect==='function'){
-          sourceNode=audioInput;
-          sourceNode.connect(analyser);
+          if(!AudioCtx)return false;
+          if(!ctx||!ownsContext){ctx=new AudioCtx();ownsContext=true;}
+          candidateAnalyser=ctx.createAnalyser();
+          candidateAnalyser.fftSize=1024;
+          candidateAnalyser.smoothingTimeConstant=0.68;
+          candidateSource=ctx.createMediaElementSource(audioInput);
+          candidateOwnsSource=true;
+          candidateSource.connect(candidateAnalyser);
+          candidateAnalyser.connect(ctx.destination);
+          bins=new Uint8Array(candidateAnalyser.frequencyBinCount);
+          sourceNode=candidateSource;
+          ownsSourceNode=true;
+          analyser=candidateAnalyser;
+          connected=true;
         }else{
           return false;
         }
+        if(ctx&&ctx.state==='suspended'&&typeof ctx.resume==='function'){
+          ctx.resume().catch(()=>{});
+        }
         return true;
       }catch{
+        // Safe cleanup on error: never call unargumented disconnect() on an external node
+        if(candidateSource&&candidateAnalyser){
+          try{candidateSource.disconnect(candidateAnalyser);}catch{
+            if(candidateOwnsSource){try{candidateSource.disconnect();}catch{}}
+          }
+        }
+        if(candidateAnalyser){try{candidateAnalyser.disconnect();}catch{}}
+        sourceNode=null;ownsSourceNode=false;analyser=null;bins=null;connected=false;
         return false;
       }
     },
     sample(){
-      if(!analyser||!bins)return null;
+      if(!connected||!analyser||!bins)return null;
       analyser.getByteFrequencyData(bins);
-      const sampleRate=ctx?.sampleRate||44100;
+      const sampleRate=ctx?.sampleRate||48000;
       const hzPerBin=sampleRate/analyser.fftSize;
-      let lowSum=0,lowN=0,midSum=0,midN=0,highSum=0,highN=0;
-      for(let i=1;i<bins.length;i++){
+      let f0Sum=0,f0N=0,f1OpenSum=0,f1OpenN=0,f1CloseSum=0,f1CloseN=0,f2FrontSum=0,f2FrontN=0,sibSum=0,sibN=0;
+      let totalPower=0;
+      const maxBin=Math.min(bins.length,Math.ceil(5600/hzPerBin));
+      for(let i=1;i<maxBin;i++){
         const hz=i*hzPerBin,val=bins[i]/255;
-        if(hz>=80&&hz<360){lowSum+=val;lowN++;}
-        else if(hz>=360&&hz<1850){midSum+=val;midN++;}
-        else if(hz>=1850&&hz<=4800){highSum+=val;highN++;}
+        totalPower+=val;
+        if(hz>=85&&hz<290){f0Sum+=val;f0N++;}
+        else if(hz>=290&&hz<560){f1CloseSum+=val;f1CloseN++;}
+        else if(hz>=560&&hz<1050){f1OpenSum+=val;f1OpenN++;}
+        else if(hz>=1050&&hz<2650){f2FrontSum+=val;f2FrontN++;}
+        else if(hz>=2650&&hz<=5500){sibSum+=val;sibN++;}
       }
-      const low=lowN?lowSum/lowN:0;
-      const mid=midN?midSum/midN:0;
-      const high=highN?highSum/highN:0;
-      const rawEnergy=low*0.42+mid*0.44+high*0.14;
-      // Adaptive noise floor gate ensures total silence during speech pauses
-      noiseFloor=Math.min(0.04,Math.max(0.008,noiseFloor*0.995+Math.min(rawEnergy,noiseFloor)*0.005));
-      const gated=Math.max(0,rawEnergy-noiseFloor*1.45)/(1-noiseFloor);
-      if(gated<0.015)return {level:0,openVowel:0,roundVowel:0,spreadVowel:0,sibilant:0};
-      return {
-        level:clamp(gated*1.65,0,1),
-        openVowel:clamp((mid*1.4+low*0.4)*1.2,0,1),
-        roundVowel:clamp((low*1.35-high*0.5)*1.2,0,1),
-        spreadVowel:clamp((mid*0.9+high*0.9)*1.2,0,1),
-        sibilant:clamp(high*1.8,0,1)
-      };
+      const f0=f0N?f0Sum/f0N:0;
+      const f1Close=f1CloseN?f1CloseSum/f1CloseN:0;
+      const f1Open=f1OpenN?f1OpenSum/f1OpenN:0;
+      const f2Front=f2FrontN?f2FrontSum/f2FrontN:0;
+      const sibilant=sibN?sibSum/sibN:0;
+
+      let entropy=0;
+      if(totalPower>1e-4){
+        for(let i=1;i<maxBin;i++){
+          const p=(bins[i]/255)/totalPower;
+          if(p>1e-5)entropy-=p*Math.log2(p);
+        }
+        entropy=finiteClamp(entropy/Math.log2(maxBin),0,1,0);
+      }
+
+      const rawEnergy=f0*0.26+f1Close*0.24+f1Open*0.30+f2Front*0.14+sibilant*0.06;
+      noiseFloor=Math.min(0.04,Math.max(0.007,noiseFloor*0.995+Math.min(rawEnergy,noiseFloor)*0.005));
+      const gated=Math.max(0,rawEnergy-noiseFloor*1.42)/(1-noiseFloor);
+      if(gated<0.014){
+        result.level=0;result.openVowel=0;result.roundVowel=0;result.spreadVowel=0;result.sibilant=0;result.entropy=0;
+        return result;
+      }
+      const structuredGain=1.15-0.25*entropy;
+      result.level=finiteClamp(gated*1.72*structuredGain,0,1,0);
+      result.openVowel=finiteClamp((f1Open*1.55+f0*0.25)*structuredGain,0,1,0);
+      result.roundVowel=finiteClamp((f1Close*1.48+f0*0.30-f2Front*0.35)*structuredGain,0,1,0);
+      result.spreadVowel=finiteClamp((f2Front*1.50+f1Close*0.20)*structuredGain,0,1,0);
+      result.sibilant=finiteClamp(sibilant*1.85,0,1,0);
+      result.entropy=entropy;
+      return result;
     },
-    hasHardwareSource(){return Boolean(analyser);},
+    isConnected(){return connected;},
     dispose(){
-      try{sourceNode?.disconnect();analyser?.disconnect();ctx?.close();}catch{}
-      sourceNode=analyser=ctx=bins=null;
+      detachCurrent();
+      if(ctx&&ownsContext){try{ctx.close();}catch{}}
+      ctx=null;ownsContext=false;
+    }
+  };
+}
+
+/**
+ * MODULE 2: QualityGovernor
+ * - Calibrated for a 30 FPS target loop (FRAME_TIME = 33.33ms):
+ *   Downgrades when smoothed frame interval exceeds 46.0ms (~21.7 FPS)
+ *   Upgrades back to high quality when smoothed frame interval recovers below 36.5ms (>= 27.4 FPS, covering healthy 30 FPS at 33.3ms)
+ *   after a 2500ms hysteresis cooldown.
+ */
+export function createQualityGovernor(isMobile=false){
+  let avgFrameMs=33.33;
+  let tier=isMobile?0.0:1.0;
+  let lastSwitchTime=-Infinity;
+  const DOWNGRADE_MS=46.0;
+  const UPGRADE_MS=36.5;
+  const COOLDOWN_MS=2500;
+  return {
+    update(rawDtMs,nowMs=0){
+      const safeDt=finiteClamp(rawDtMs,8,120,33.33);
+      const safeNow=finiteClamp(nowMs,0,1e15,0);
+      avgFrameMs=avgFrameMs*0.88+safeDt*0.12;
+      if(isMobile)return 0.0;
+      if(safeNow-lastSwitchTime<COOLDOWN_MS)return tier;
+      if(tier>0.5&&avgFrameMs>DOWNGRADE_MS){
+        tier=0.0;lastSwitchTime=safeNow;
+      }else if(tier<0.5&&avgFrameMs<=UPGRADE_MS){
+        tier=1.0;lastSwitchTime=safeNow;
+      }
+      return tier;
+    },
+    getTier(){return tier;},
+    getAverageFrameMs(){return avgFrameMs;}
+  };
+}
+
+/**
+ * MODULE 3: BehaviorEngine (Cognitive Expression & NaN-Safe Phoneme Co-Articulation)
+ * - Auto-derives cognitivePhase when state.cognitivePhase is null/undefined.
+ * - Sanitizes all incoming phoneme weights with `finiteClamp` so NaN, strings, or +/-Infinity never corrupt morph targets.
+ * - Reuses a pre-allocated output object for Zero-GC execution in the 30 FPS loop.
+ */
+export function createBehaviorEngine(){
+  const PHONEME_MAP={
+    AA:{jaw:0.46,aa:0.78,O:0.08,E:0.10,U:0.0},
+    A:{jaw:0.42,aa:0.72,O:0.10,E:0.15,U:0.0},
+    O:{jaw:0.34,aa:0.12,O:0.74,E:0.0,U:0.22},
+    U:{jaw:0.22,aa:0.05,O:0.32,E:0.0,U:0.68},
+    E:{jaw:0.26,aa:0.18,O:0.0,E:0.68,U:0.0},
+    I:{jaw:0.18,aa:0.10,O:0.0,E:0.58,U:0.08},
+    M:{jaw:0.02,aa:0.0,O:0.0,E:0.0,U:0.08},
+    B:{jaw:0.04,aa:0.0,O:0.0,E:0.0,U:0.10},
+    P:{jaw:0.04,aa:0.0,O:0.0,E:0.0,U:0.10},
+    F:{jaw:0.12,aa:0.05,O:0.08,E:0.18,U:0.25},
+    V:{jaw:0.12,aa:0.05,O:0.08,E:0.18,U:0.25},
+    S:{jaw:0.10,aa:0.05,O:0.0,E:0.32,U:0.18},
+    SIL:{jaw:0.0,aa:0.0,O:0.0,E:0.0,U:0.0}
+  };
+
+  const out={jaw:0,aa:0,O:0,E:0,U:0,cheek:0};
+  const explicitBuf={jaw:0,aa:0,O:0,E:0,U:0};
+
+  function resolvePhonemeWeights(phonemes){
+    if(!phonemes)return null;
+    if(typeof phonemes==='string'){
+      const key=phonemes.trim().toUpperCase();
+      return PHONEME_MAP[key]||PHONEME_MAP.SIL;
+    }
+    if(typeof phonemes==='object'){
+      const aa=finiteClamp(phonemes.aa??phonemes.viseme_aa,0,1,0);
+      const O=finiteClamp(phonemes.O??phonemes.o??phonemes.viseme_O,0,1,0);
+      const E=finiteClamp(phonemes.E??phonemes.e??phonemes.viseme_E,0,1,0);
+      const U=finiteClamp(phonemes.U??phonemes.u??phonemes.viseme_U,0,1,0);
+      const rawJaw=phonemes.jaw??phonemes.jawOpen;
+      const derivedJaw=aa*0.52+O*0.40+E*0.28+U*0.20;
+      const jaw=rawJaw!==undefined&&rawJaw!==null?finiteClamp(rawJaw,0,1,derivedJaw):finiteClamp(derivedJaw,0,1,0);
+      explicitBuf.jaw=jaw;explicitBuf.aa=aa;explicitBuf.O=O;explicitBuf.E=E;explicitBuf.U=U;
+      return explicitBuf;
+    }
+    return null;
+  }
+
+  return {
+    resolvePhase(state,busPhase){
+      if(state&&typeof state.cognitivePhase==='string'&&state.cognitivePhase.length>0)return state.cognitivePhase;
+      if(typeof busPhase==='string'&&busPhase.length>0)return busPhase;
+      if(state?.speaking)return 'speaking';
+      if(state?.listening)return 'listening';
+      if(state?.active)return 'analyzing';
+      return 'idle';
+    },
+    computeVisemes(t,still,state,liveFormants,hasExternalLevel){
+      if(still||!state?.speaking){
+        out.jaw=0;out.aa=0;out.O=0;out.E=0;out.U=0;out.cheek=0;
+        return out;
+      }
+      const safeT=finiteClamp(t,0,1e12,0);
+      // Priority 1: Explicit phoneme/viseme input (strictly NaN-sanitized)
+      const explicit=resolvePhonemeWeights(state.phonemes);
+      if(explicit){
+        out.jaw=explicit.jaw;
+        out.aa=explicit.aa;
+        out.O=explicit.O;
+        out.E=explicit.E;
+        out.U=explicit.U;
+        out.cheek=finiteClamp(explicit.jaw*0.42+explicit.E*0.25,0,0.32,0);
+        return out;
+      }
+      // Priority 2: Live Web Audio FFT Formant Tracker
+      if(liveFormants){
+        const lvl=finiteClamp(liveFormants.level,0,1,0);
+        out.jaw=lvl>0.014?finiteClamp(.05+.46*lvl,0,1,0):0;
+        out.aa=finiteClamp(liveFormants.openVowel*.78,0,.76,0);
+        out.O=finiteClamp(liveFormants.roundVowel*.70,0,.68,0);
+        out.E=finiteClamp(liveFormants.spreadVowel*.58,0,.56,0);
+        out.U=finiteClamp(liveFormants.sibilant*.46,0,.46,0);
+        out.cheek=finiteClamp(lvl*.22,0,0.32,0);
+        return out;
+      }
+      // Priority 3: Caller-supplied numeric audioLevel (0 = true silence pause)
+      if(hasExternalLevel){
+        const lvl=finiteClamp(state.audioLevel,0,1,0);
+        if(lvl<=0.015){
+          out.jaw=0;out.aa=0;out.O=0;out.E=0;out.U=0;out.cheek=0;
+          return out;
+        }
+        out.jaw=finiteClamp(.06+.45*lvl,0,1,0);
+        out.aa=finiteClamp(lvl*(.55+.35*Math.sin(safeT*5.8)),0,.74,0);
+        out.O=finiteClamp(lvl*(.45+.35*Math.cos(safeT*4.5)),0,.64,0);
+        out.E=finiteClamp(lvl*.38,0,.50,0);
+        out.U=finiteClamp(lvl*.32,0,.45,0);
+        out.cheek=finiteClamp(lvl*.20,0,0.32,0);
+        return out;
+      }
+      // Priority 4: Deterministic cadence fallback when only speaking:true is set
+      const syllable=Math.pow(Math.max(0,Math.sin(safeT*10.6+Math.sin(safeT*3.3)*1.35)),1.3);
+      const phraseEnv=.64+.36*Math.sin(safeT*2.4+.4);
+      const drive=syllable*phraseEnv;
+      out.jaw=finiteClamp(.07+.43*drive,0,1,0);
+      out.aa=finiteClamp(drive*(.54+.46*Math.sin(safeT*5.8)),0,.74,0);
+      out.O=finiteClamp(drive*(.44+.48*Math.cos(safeT*4.5)),0,.64,0);
+      out.E=finiteClamp(drive*(.35+.35*Math.sin(safeT*7.2+1.1)),0,.50,0);
+      out.U=finiteClamp(drive*(.30+.30*Math.cos(safeT*6.1+2.0)),0,.45,0);
+      out.cheek=finiteClamp(drive*.22,0,0.32,0);
+      return out;
     }
   };
 }
@@ -231,7 +484,6 @@ function createLightBody(scene,model,bones,groups,isMobile){
   const pixelRatio={value:Math.min(window.devicePixelRatio||1,1.5)};
   const owned=[];
 
-  // 1. Sculpted Biomorphic Skin Shader (strictly NaN-safe, valid smoothstep order, adaptive detail)
   const skin=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,blending:THREE.AdditiveBlending,depthWrite:true});
   skin.onBeforeCompile=shader=>{
     shader.uniforms.uEnergy=energy;
@@ -282,7 +534,6 @@ function createLightBody(scene,model,bones,groups,isMobile){
   float topLight=max(0.0,dot(perturbedN,topDir));
   float underBounce=max(0.0,dot(perturbedN,underDir));
 
-  // Strictly positive sq() instead of pow(negative, 2.0) to prevent IEEE/WebGL NaNs
   float lipZone=exp(-sq((vAuraWorldPos.y-1.522)*42.0))*exp(-sq(vAuraWorldPos.x*22.0))*smoothstep(0.04,0.11,vAuraWorldPos.z);
   float cheekZone=exp(-sq((vAuraWorldPos.y-1.558)*24.0))*smoothstep(0.02,0.08,abs(vAuraWorldPos.x))*smoothstep(0.02,0.09,vAuraWorldPos.z);
 
@@ -322,7 +573,6 @@ function createLightBody(scene,model,bones,groups,isMobile){
   #include <opaque_fragment>`);
   };
 
-  // 2. Sculpted Translucent Bust / Collar & Ponytail Volume Shaders
   const torsoMat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false});
   torsoMat.onBeforeCompile=shader=>{
     shader.uniforms.uEnergy=energy;
@@ -345,7 +595,6 @@ function createLightBody(scene,model,bones,groups,isMobile){
   #include <opaque_fragment>`);
   };
 
-  // 3. Procedural 3D Iris, Pupil & Cornea Shader (strictly ordered smoothstep boundaries)
   const eyeMat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false});
   eyeMat.onBeforeCompile=shader=>{
     shader.uniforms.uEnergy=energy;
@@ -362,7 +611,6 @@ function createLightBody(scene,model,bones,groups,isMobile){
   float radial=length(n.xy);
   float angle=atan(n.y,n.x);
   float fibers=.65+.35*sin(angle*28.0+sin(radial*24.0)*2.5);
-  // Strictly ascending smoothstep edge0 < edge1 per GLSL specification
   float irisOuter=1.0-smoothstep(0.52,0.62,radial);
   float irisInner=smoothstep(uPupil-0.04,uPupil+0.05,radial);
   float irisMask=irisOuter*irisInner;
@@ -416,7 +664,6 @@ function createLightBody(scene,model,bones,groups,isMobile){
   if(!(top>1.6))throw Error('AURA_RIG_HEAD_BOUNDS');
   const a=(maxX-minX)/2,c=(maxZ-minZ)/2,b=.125,C=new THREE.Vector3((minX+maxX)/2,top-b,(minZ+maxZ)/2);
 
-  // Adaptive strand geometry budget: 280 strands on mobile, 540 on desktop
   const random=seeded(907),STRANDS=isMobile?280:540,STEPS=isMobile?32:40;
   const linePos=[],lineT=[],lineSeed=[],sparkPos=[],sparkT=[],sparkSeed=[],sparkTw=[];
   const scalp=(th,ph,r)=>new THREE.Vector3(C.x+a*r*Math.sin(th)*Math.sin(ph),C.y+b*r*Math.cos(th),C.z+c*r*Math.sin(th)*Math.cos(ph));
@@ -462,7 +709,6 @@ void main(){${SWAY}
   const lines=new THREE.LineSegments(lineGeo,lineMat),sparks=new THREE.Points(sparkGeo,sparkMat);
   lines.frustumCulled=false;sparks.frustumCulled=false;
 
-  // Volumetric 3D Neural Aura Halo (strictly ascending smoothstep & sq() helper)
   const auraPlaneGeo=new THREE.PlaneGeometry(1.15,1.15);
   const auraPlaneMat=new THREE.ShaderMaterial({
     uniforms:{uTime:time,uEnergy:energy,uCognitiveTint:cognitiveTint},transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending,
@@ -567,7 +813,7 @@ function disposeModel(model){
   geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());skeletons.forEach(s=>s.dispose());
 }
 
-/** GPU point drawing; exact CPU interpolation of vertices after real morph and skin transforms. */
+/** GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms. */
 export async function createAuraRigLightform(canvas,{signal,onError}={}){
   const response=await fetch(ASSET,{signal,cache:'force-cache'});
   if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
@@ -575,7 +821,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
   if(bytes.byteLength!==EXPECTED_BYTES)throw Error('AURA_RIG_ASSET_SIZE');
   const gltf=await new GLTFLoader().parseAsync(bytes,'');
   const model=gltf.scene;
-  let renderer,geometry,material,observer,lightBody,voiceTracker,raf=0,disposed=false;
+  let renderer,geometry,material,observer,domTelemetryObserver,lightBody,voiceTracker,qualityGovernor,behaviorEngine,raf=0,disposed=false;
   const motion=window.matchMedia('(prefers-reduced-motion: reduce)');
   let cleanup=()=>{};
   try{
@@ -632,24 +878,41 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     camera.position.set(0,1.570,1.05);camera.lookAt(0,1.540,.03);
     renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power',preserveDrawingBuffer:true});
     renderer.setClearColor(0x000000,0);
+
     lightBody=createLightBody(scene,model,bones,groups,isMobile);
     voiceTracker=createVoiceFormantTracker();
+    qualityGovernor=createQualityGovernor(isMobile);
+    behaviorEngine=createBehaviorEngine();
 
-    // Spring dynamics, adaptive quality governor, and cognitive runtime state
-    let energy=0,yaw=0,yawVel=0,pitch=0,pitchVel=0,roll=0,rollVel=0,gazeX=0,gazeY=0,smoothJaw=0;
+    // Pre-allocated spring state objects (zero array allocations per frame)
+    const yawSpring={val:0,vel:0};
+    const pitchSpring={val:0,vel:0};
+    const rollSpring={val:0,vel:0};
+    const stepSpring=(s,target,omega,dt)=>{
+      const f=1+2*dt*omega,oo=omega*omega,hoo=dt*oo,hhoo=dt*hoo,detInv=1/(f+hhoo);
+      const nextVal=(f*s.val+dt*s.vel+hhoo*target)*detInv;
+      s.vel=(s.vel+hoo*(target-s.val))*detInv;
+      s.val=nextVal;
+    };
+
+    let energy=0,gazeX=0,gazeY=0,smoothJaw=0;
     let smoothAA=0,smoothO=0,smoothE=0,smoothU=0,decisionBlend=0,pupilSize=0.31;
-    let pointerX=0,pointerY=0,camX=0,camY=0;
-    let avgFrameMs=33.3,qualityTier=isMobile?0.0:1.0;
+    let pointerX=0,pointerY=0,camX=0,camY=0,busPhase=null;
     let last=-Infinity,lastStepTime=0;
     let state={
       active:false,speaking:false,listening:false,
-      // 'idle' | 'listening' | 'analyzing' | 'verifying' | 'awaiting_decision' | 'speaking'; null derives it from active/speaking/listening.
       cognitivePhase:null,
       x:0,y:0,audioLevel:null,phonemes:null
     };
-    const temp=new THREE.Vector3(),n=new THREE.Vector3(),edge1=new THREE.Vector3(),edge2=new THREE.Vector3(),q=new THREE.Quaternion(),euler=new THREE.Euler(0,0,0,'YXZ');
+    const temp=new THREE.Vector3(),q=new THREE.Quaternion(),euler=new THREE.Euler(0,0,0,'YXZ');
     const rotate=(name,x,y,z)=>{const entry=bones.get(name);if(!entry)return;entry.bone.quaternion.copy(entry.base).multiply(q.setFromEuler(euler.set(x,y,z,'YXZ')));};
-    const assign=(name,value)=>{for(const o of morphs){const idx=o.morphTargetDictionary[name];if(idx!==undefined)o.morphTargetInfluences[idx]=clamp(value,0,1);}};
+    const assign=(name,value)=>{
+      const safeVal=finiteClamp(value,0,1,0);
+      for(let m=0;m<morphs.length;m++){
+        const o=morphs[m],idx=o.morphTargetDictionary[name];
+        if(idx!==undefined)o.morphTargetInfluences[idx]=safeVal;
+      }
+    };
 
     const onPointerMove=e=>{
       if(motion.matches)return;
@@ -663,23 +926,50 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       }
     };
 
-    const springStep=(cur,vel,target,omega,dt)=>{
-      const f=1+2*dt*omega,oo=omega*omega,hoo=dt*oo,hhoo=dt*hoo,detInv=1/(f+hhoo);
-      return [(f*cur+dt*vel+hhoo*target)*detInv,(vel+hoo*(target-cur))*detInv];
+    const onMissionEvent=e=>{
+      const d=e?.detail;
+      if(!d)return;
+      if(typeof d.cognitivePhase==='string')busPhase=d.cognitivePhase;
+      else if(d.state==='blocked'||d.pendingDecisions>0)busPhase='awaiting_decision';
+      else if(d.phase==='verify'||d.tool==='repo-read'||d.tool==='git_diff')busPhase='verifying';
+      else if(d.running)busPhase='analyzing';
+      else busPhase=null;
     };
+
+    // Automatic DOM Telemetry Bridge: reads real JACO CognitiveWorkspace attributes without requiring CustomEvent producers
+    const pollWorkspaceTelemetry=()=>{
+      if(typeof document==='undefined')return;
+      const missionEl=document.querySelector('[data-mission-state]');
+      const mState=missionEl?.getAttribute('data-mission-state');
+      if(mState==='blocked'){busPhase='awaiting_decision';return;}
+      const pulseEl=document.querySelector('.aura-activity-pulse');
+      const isPulseActive=pulseEl?.getAttribute('data-active')==='true';
+      const latestStepText=document.querySelector('.aura-presence-step')?.textContent||'';
+      if(isPulseActive||mState==='running'){
+        if(/read|diff|test|verify|check|inspect/i.test(latestStepText))busPhase='verifying';
+        else busPhase='analyzing';
+      }else if(busPhase==='awaiting_decision'||busPhase==='verifying'||busPhase==='analyzing'){
+        busPhase=null;
+      }
+    };
+
+    if(typeof MutationObserver!=='undefined'&&typeof document!=='undefined'){
+      const rootEl=document.querySelector('[data-cognitive-workspace]')||document.body;
+      if(rootEl){
+        domTelemetryObserver=new MutationObserver(pollWorkspaceTelemetry);
+        domTelemetryObserver.observe(rootEl,{attributes:true,subtree:true,attributeFilter:['data-mission-state','data-active','data-mode']});
+        pollWorkspaceTelemetry();
+      }
+    }
 
     const pose=time=>{
       const still=motion.matches,t=still?0:time/1000;
-      const rawDt=lastStepTime?(time-lastStepTime):33.3;
+      const rawDt=lastStepTime?(time-lastStepTime):33.33;
       const dt=clamp(rawDt/1000,0.008,0.06);
       lastStepTime=time;
 
-      // Adaptive GPU quality governor: drops secondary FBM octave if frame time exceeds 42ms
-      avgFrameMs=avgFrameMs*0.92+clamp(rawDt,10,100)*0.08;
-      if(!isMobile)qualityTier=avgFrameMs>44?0.0:1.0;
-
-      // Resolve JACO cognitive runtime phase
-      const phase=state.cognitivePhase||(state.speaking?'speaking':state.listening?'listening':state.active?'analyzing':'idle');
+      const qualityTier=qualityGovernor.update(rawDt,time);
+      const phase=behaviorEngine.resolvePhase(state,busPhase);
       const isAnalyzing=phase==='analyzing';
       const isVerifying=phase==='verifying';
       const isDecision=phase==='awaiting_decision';
@@ -687,15 +977,13 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       decisionBlend=still?Number(isDecision):decisionBlend+(Number(isDecision)-decisionBlend)*0.08;
       material.uniforms.uDecisionMode.value=decisionBlend;
 
-      // Sample live Web Audio FFT formants if attached
       const liveFormants=voiceTracker.sample();
       const hasExternalLevel=typeof state.audioLevel==='number'&&Number.isFinite(state.audioLevel);
-      const currentAudioLevel=liveFormants?liveFormants.level:(hasExternalLevel?clamp(state.audioLevel,0,1):0);
+      const currentAudioLevel=liveFormants?liveFormants.level:(hasExternalLevel?finiteClamp(state.audioLevel,0,1,0):0);
 
       const activeSignal=Number(state.active||state.speaking||state.listening||isAnalyzing||isVerifying)+currentAudioLevel*0.48;
       energy=still?Number(state.active):energy+(activeSignal-energy)*.08;
 
-      // Cognitive kinematics: subtle reading/scanning motion during 'verifying', focused tilt during 'analyzing'
       const verifyScanX=isVerifying&&!still?0.08*Math.sin(t*2.8):0;
       const analyzeTilt=isAnalyzing&&!still?0.045:0;
 
@@ -703,22 +991,23 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       const organicPitch=.036*Math.sin(t*.59+.4)+.020*Math.cos(t*.23)+.011*Math.sin(t*1.25);
       const organicRoll=.032*Math.sin(t*.35+.8)+.015*Math.cos(t*.79);
 
-      const inputX=Math.abs(state.x)>0.01?state.x:pointerX;
-      const inputY=Math.abs(state.y)>0.01?state.y:pointerY;
+      const inputX=Math.abs(state.x)>0.01?finiteClamp(state.x,-1,1,0):pointerX;
+      const inputY=Math.abs(state.y)>0.01?finiteClamp(state.y,-1,1,0):pointerY;
 
       const targetYaw=still?0:clamp(inputX,-1,1)*.36+organicYaw+verifyScanX*.35;
       const targetPitch=still?0:clamp(inputY,-1,1)*.16+organicPitch+(state.listening?.032:0)-(isAnalyzing?.025:0);
       const targetRoll=still?0:organicRoll-targetYaw*.15+(state.listening?.042:0)+analyzeTilt;
 
       if(still){
-        yaw=pitch=roll=yawVel=pitchVel=rollVel=camX=camY=0;
+        yawSpring.val=yawSpring.vel=pitchSpring.val=pitchSpring.vel=rollSpring.val=rollSpring.vel=camX=camY=0;
       }else{
-        [yaw,yawVel]=springStep(yaw,yawVel,targetYaw,3.1,dt);
-        [pitch,pitchVel]=springStep(pitch,pitchVel,targetPitch,3.5,dt);
-        [roll,rollVel]=springStep(roll,rollVel,targetRoll,2.7,dt);
-        camX+=(yaw*0.038-camX)*0.08;
-        camY+=(pitch*0.025-camY)*0.08;
+        stepSpring(yawSpring,targetYaw,3.1,dt);
+        stepSpring(pitchSpring,targetPitch,3.5,dt);
+        stepSpring(rollSpring,targetRoll,2.7,dt);
+        camX+=(yawSpring.val*0.038-camX)*0.08;
+        camY+=(pitchSpring.val*0.025-camY)*0.08;
       }
+      const yaw=yawSpring.val,pitch=pitchSpring.val,roll=rollSpring.val;
       camera.position.set(camX,1.570+camY,1.05);
       camera.lookAt(0,1.540,.03);
 
@@ -744,50 +1033,13 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       const b2=smoothstep(2.32,2.39,blinkCycle)*(1-smoothstep(2.39,2.54,blinkCycle))*.84;
       const blink=still?0:Math.max(b1,b2);
 
-      // Speech synchronization:
-      // 1. If Web Audio FFT formants are active, drive visemes directly from real acoustic bands (pauses stay silent).
-      // 2. If explicit state.audioLevel is provided by caller, respect 0 as true silence (no sine fallback during pauses).
-      // 3. Only use expressive syllable cadence when state.speaking is true AND no audio stream/level is wired.
-      let targetJaw=0,targetAA=0,targetO=0,targetE=0,targetU=0,cheekSquint=0;
-      if(!still&&state.speaking){
-        if(liveFormants){
-          targetJaw=liveFormants.level>0.015?(.06+.46*liveFormants.level):0;
-          targetAA=clamp(liveFormants.openVowel*.78,0,.76);
-          targetO=clamp(liveFormants.roundVowel*.68,0,.66);
-          targetE=clamp(liveFormants.spreadVowel*.52,0,.52);
-          targetU=clamp(liveFormants.sibilant*.45,0,.46);
-          cheekSquint=liveFormants.level*.22;
-        }else if(hasExternalLevel){
-          // Caller controls audioLevel: 0 means a real pause in speech
-          const lvl=clamp(state.audioLevel,0,1);
-          if(lvl>0.015){
-            targetJaw=.06+.45*lvl;
-            targetAA=clamp(lvl*(.55+.35*Math.sin(t*5.8)),0,.74);
-            targetO=clamp(lvl*(.45+.35*Math.cos(t*4.5)),0,.64);
-            targetE=clamp(lvl*.38,0,.50);
-            targetU=clamp(lvl*.32,0,.45);
-            cheekSquint=lvl*.20;
-          }
-        }else{
-          // Fallback cadence (keeps existing unit tests passing when only setState({ speaking: true }) is called)
-          const syllable=Math.pow(Math.max(0,Math.sin(t*10.6+Math.sin(t*3.3)*1.35)),1.3);
-          const phraseEnv=.64+.36*Math.sin(t*2.4+.4);
-          const speechDrive=syllable*phraseEnv;
-          targetJaw=.07+.43*speechDrive;
-          targetAA=clamp(speechDrive*(.54+.46*Math.sin(t*5.8)),0,.74);
-          targetO=clamp(speechDrive*(.44+.48*Math.cos(t*4.5)),0,.64);
-          targetE=clamp(speechDrive*(.35+.35*Math.sin(t*7.2+1.1)),0,.50);
-          targetU=clamp(speechDrive*(.30+.30*Math.cos(t*6.1+2.0)),0,.45);
-          cheekSquint=speechDrive*.22;
-        }
-      }
-      smoothJaw=still?0:smoothJaw+(targetJaw-smoothJaw)*.32;
-      smoothAA=still?0:smoothAA+(targetAA-smoothAA)*.30;
-      smoothO=still?0:smoothO+(targetO-smoothO)*.30;
-      smoothE=still?0:smoothE+(targetE-smoothE)*.28;
-      smoothU=still?0:smoothU+(targetU-smoothU)*.28;
+      const visemes=behaviorEngine.computeVisemes(t,still,state,liveFormants,hasExternalLevel);
+      smoothJaw=still?0:finiteClamp(smoothJaw+(visemes.jaw-smoothJaw)*.32,0,1,0);
+      smoothAA=still?0:finiteClamp(smoothAA+(visemes.aa-smoothAA)*.30,0,1,0);
+      smoothO=still?0:finiteClamp(smoothO+(visemes.O-smoothO)*.30,0,1,0);
+      smoothE=still?0:finiteClamp(smoothE+(visemes.E-smoothE)*.28,0,1,0);
+      smoothU=still?0:finiteClamp(smoothU+(visemes.U-smoothU)*.28,0,1,0);
 
-      // Dynamic pupil response to cognitive state (dilates when analyzing/listening)
       const targetPupil=0.30+(isAnalyzing?0.065:0)+(state.listening?0.045:0)+0.03*energy+0.02*Math.sin(t*0.7);
       pupilSize=still?0.32:pupilSize+(targetPupil-pupilSize)*0.12;
 
@@ -797,7 +1049,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       gazeX=still?0:gazeX+((yaw*.44+microSaccadeX)-gazeX)*.24;
       gazeY=still?0:gazeY+((pitch*.46+microSaccadeY)-gazeY)*.24;
 
-      const squint=still?0:clamp(smile*.45+cheekSquint+(isAnalyzing?.14:0),0,.38);
+      const squint=still?0:finiteClamp(smile*.45+visemes.cheek+(isAnalyzing?.14:0),0,.38,0);
 
       assign('eyeBlinkLeft',blink);assign('eyeBlinkRight',blink);
       assign('eyeSquintLeft',squint);assign('eyeSquintRight',squint);
@@ -818,29 +1070,44 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       assign('eyeLookUpRight',Math.max(0,gazeY));assign('eyeLookDownRight',Math.max(0,-gazeY));
 
       model.updateMatrixWorld(true);
+
       let cursor=0;
-      for(const group of groups){
-        const {mesh,samples,vertices,indices}=group;
-        for(let k=0;k<indices.length;k++){
+      for(let g=0;g<groups.length;g++){
+        const group=groups[g];
+        const {mesh,vertices,indices,flatIds,flatWeights}=group;
+        const idxCount=indices.length;
+        for(let k=0;k<idxCount;k++){
           mesh.getVertexPosition(indices[k],temp).applyMatrix4(mesh.matrixWorld);
-          temp.toArray(vertices,k*3);
+          const vBase=k*3;
+          vertices[vBase]=temp.x;vertices[vBase+1]=temp.y;vertices[vBase+2]=temp.z;
         }
-        for(const s of samples){
-          const [ia,ib,ic]=s.ids.map(i=>i*3),[a,b,c]=s.w;
-          const x=a*vertices[ia]+b*vertices[ib]+c*vertices[ic];
-          const y=a*vertices[ia+1]+b*vertices[ib+1]+c*vertices[ic+1];
-          const z=a*vertices[ia+2]+b*vertices[ib+2]+c*vertices[ic+2];
-          edge1.set(vertices[ib]-vertices[ia],vertices[ib+1]-vertices[ia+1],vertices[ib+2]-vertices[ia+2]);
-          edge2.set(vertices[ic]-vertices[ia],vertices[ic+1]-vertices[ia+1],vertices[ic+2]-vertices[ia+2]);
-          n.crossVectors(edge1,edge2).normalize();
-          const shimmer=still?0:(.00065+.0013*energy)*Math.sin(s.seed*21+t*1.5);
-          positions[cursor]=x+n.x*shimmer;positions[cursor+1]=y+n.y*shimmer;positions[cursor+2]=z+n.z*shimmer;
-          n.toArray(normals,cursor);cursor+=3;
+        const sampleLen=flatIds.length;
+        for(let s=0;s<sampleLen;s+=3){
+          const ia=flatIds[s],ib=flatIds[s+1],ic=flatIds[s+2];
+          const wa=flatWeights[s],wb=flatWeights[s+1],wc=flatWeights[s+2];
+          const ax=vertices[ia],ay=vertices[ia+1],az=vertices[ia+2];
+          const bx=vertices[ib],by=vertices[ib+1],bz=vertices[ib+2];
+          const cx=vertices[ic],cy=vertices[ic+1],cz=vertices[ic+2];
+
+          positions[cursor]=wa*ax+wb*bx+wc*cx;
+          positions[cursor+1]=wa*ay+wb*by+wc*cy;
+          positions[cursor+2]=wa*az+wb*bz+wc*cz;
+
+          const e1x=bx-ax,e1y=by-ay,e1z=bz-az;
+          const e2x=cx-ax,e2y=cy-ay,e2z=cz-az;
+          const nx=e1y*e2z-e1z*e2y;
+          const ny=e1z*e2x-e1x*e2z;
+          const nz=e1x*e2y-e1y*e2x;
+          const invLen=1/Math.max(1e-10,Math.hypot(nx,ny,nz));
+          normals[cursor]=nx*invLen;
+          normals[cursor+1]=ny*invLen;
+          normals[cursor+2]=nz*invLen;
+          cursor+=3;
         }
       }
       geometry.attributes.position.needsUpdate=true;geometry.attributes.aNormal.needsUpdate=true;
       material.uniforms.uTime.value=t;material.uniforms.uEnergy.value=energy;
-      lightBody.update(t,energy,blink,clamp(smoothJaw*2.0,0,1),qualityTier,decisionBlend,pupilSize);
+      lightBody.update(t,energy,blink,finiteClamp(smoothJaw*2.0,0,1,0),qualityTier,decisionBlend,pupilSize);
 
       let signature=0;for(let j=0;j<Math.min(positions.length,6000);j+=31)signature+=positions[j]*(j+1);
       canvas.dataset.renderedPoints=String(total);canvas.dataset.renderer='rigged-particle-field';
@@ -852,6 +1119,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       canvas.dataset.jawMm=displacement(probes[1]).toFixed(3);
       canvas.dataset.cognitivePhase=phase;
       canvas.dataset.qualityTier=qualityTier>0.5?'high':'mobile-adaptive';
+      canvas.dataset.audioConnected=String(voiceTracker.isConnected());
     };
 
     const render=time=>{if(disposed||document.hidden)return;pose(time);renderer.render(scene,camera);};
@@ -875,14 +1143,18 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     };
     const lost=event=>{event.preventDefault();dispose();onError?.(Error('AURA_RIG_WEBGL_CONTEXT_LOST'));};
     function dispose(){
-      if(disposed)return;disposed=true;cancelAnimationFrame(raf);observer?.disconnect();
+      if(disposed)return;disposed=true;cancelAnimationFrame(raf);observer?.disconnect();domTelemetryObserver?.disconnect();
       window.removeEventListener('pointermove',onPointerMove);
+      window.removeEventListener('jaco:mission-state',onMissionEvent);
+      window.removeEventListener('jaco:cognitive-phase',onMissionEvent);
       motion.removeEventListener('change',refresh);document.removeEventListener('visibilitychange',refresh);
       canvas.removeEventListener('webglcontextlost',lost);signal?.removeEventListener('abort',dispose);
       voiceTracker?.dispose();lightBody?.dispose();geometry.dispose();material.dispose();renderer.dispose();disposeModel(model);
     }
     cleanup=dispose;
     window.addEventListener('pointermove',onPointerMove,{passive:true});
+    window.addEventListener('jaco:mission-state',onMissionEvent);
+    window.addEventListener('jaco:cognitive-phase',onMissionEvent);
     canvas.addEventListener('webglcontextlost',lost);
     signal?.addEventListener('abort',dispose,{once:true});
     observer=new ResizeObserver(resize);observer.observe(canvas);
@@ -890,7 +1162,10 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     resize();refresh();
     return {
       setState(next){
-        if(next?.audioSource)voiceTracker.attach(next.audioSource);
+        if(next&&'audioSource' in next){
+          if(next.audioSource)voiceTracker.attach(next.audioSource);
+          else voiceTracker.dispose();
+        }
         state={...state,...next};
         if(motion.matches)render(0);
       },
