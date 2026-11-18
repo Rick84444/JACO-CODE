@@ -21,6 +21,14 @@ const PROTOCOL_VERSION = '2025-06-18';
 // Tools that only read but do not declare readOnlyHint.
 const KNOWN_READ_ONLY = { fetch: new Set(['fetch']) };
 export const isReadOnlyTool = (server, tool) => Boolean(tool?.readOnly || KNOWN_READ_ONLY[server]?.has(tool?.name));
+// Never invent a tool or strip another server's namespace. Exact registered names win.
+export function resolveAdvertisedTool(server, name, tools) {
+  if (typeof name !== 'string') return null;
+  const exact = tools.find(t => t.name === name);
+  if (exact) return exact;
+  const prefix = server + '.';
+  return name.startsWith(prefix) ? tools.find(t => t.name === name.slice(prefix.length)) || null : null;
+}
 const ID = /^[a-z][a-z0-9-]{1,40}$/;
 export const AGENT_ACCESS = ['off', 'read', 'write'];
 // Logos the IDE ships (src/components/mcpLogos.ts); anything else shows the MCP logo.
@@ -34,11 +42,11 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
     editor: { name: 'JACO Editor', role: 'project files, git and observed runtime', icon: 'jaco', agentAccess: 'read', gameboardJournalOnly: true,
       command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-editor.mjs')], cwd: runtimeRoot,
       env: { JACO_RUNTIME_URL: process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000' } },
-    // Bounded commands in the project (ls, cat, grep, git ...) for agents on a phone or Linux. The programs it runs are
-    // POSIX ones, so it is not offered on Windows. Read-only for agents unless the operator sets its access to write.
-    ...(process.platform !== 'win32' && fs.existsSync(path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')) ? { shell: {
-      name: 'JACO Shell', role: `bounded commands in ${repoRoot} (read-only unless access is write)`, icon: 'jaco', agentAccess: 'read',
-      command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')], cwd: runtimeRoot, env: { JACO_SHELL_WORKSPACE: repoRoot } } } : {}),
+    // The same bundled shell discovers actual Windows/Linux executables; do not hide it on Windows.
+    // Built-in shell is write-enabled by default; preserve explicit operator access settings.
+    ...(fs.existsSync(path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')) ? { shell: {
+      name: 'JACO Shell', role: `local executable discovery and authorized read/write commands in ${repoRoot}`, icon: 'jaco', agentAccess: 'write',
+      command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')], cwd: runtimeRoot, env: { JACO_SHELL_WORKSPACE: repoRoot, JACO_SHELL_INTERPRETERS: process.env.JACO_SHELL_INTERPRETERS ?? '1' } } } : {}),
   };
   return {
     jaco: {
@@ -54,7 +62,7 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
     },
     // Switching branch or resetting would move the checkout the running runtime is built from.
     git: {
-      name: 'Git', role: `git status, diff, log and commit in ${repoRoot}`, icon: 'git', agentAccess: 'write', deny: ['git_reset', 'git_checkout', 'git_init'],
+      name: 'Git', role: `git status, diff, log, fetch, pull, commit and fast-forward merge in ${repoRoot}`, icon: 'git', agentAccess: 'write', deny: ['git_reset', 'git_checkout', 'git_init'],
       command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-git-mcp.mjs'), repoRoot],
       cwd: runtimeRoot, env: { JACO_GIT_WORKSPACE: repoRoot },
     },
@@ -73,11 +81,11 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
       name: 'JACO Connect', role: 'connect services from a URL, store or generate secrets, request accounts and API keys',
       command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-connect-mcp.mjs')],
     },
-    // JACO Shell (tools/jaco-shell-mcp.mjs): bounded commands in the repository. No shell interprets anything; read-only
-    // commands by default, shell_run only when the operator sets this server's access to write.
+    // JACO Shell: the operator wants local development available from first start.
+    // Explicit read/off/deny settings and the mission's authorized tasks remain authoritative.
     shell: {
-      name: 'JACO Shell', role: `bounded commands in ${repoRoot} (read-only unless access is write)`, icon: 'jaco', agentAccess: 'read',
-      command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-shell-mcp.mjs')], env: { JACO_SHELL_WORKSPACE: repoRoot },
+      name: 'JACO Shell', role: `local executable discovery and authorized read/write commands in ${repoRoot}`, icon: 'jaco', agentAccess: 'write',
+      command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-shell-mcp.mjs')], env: { JACO_SHELL_WORKSPACE: repoRoot, JACO_SHELL_INTERPRETERS: process.env.JACO_SHELL_INTERPRETERS ?? '1' },
     },
     cloudflare: {
       name: 'Cloudflare', role: 'read-only account connection and Worker inventory', icon: 'cloudflare', agentAccess: 'read',
@@ -415,10 +423,17 @@ export class StdioMcpHost {
     let c;
     try {
       c = this.client(id);
+      const earlyRefusal = actor === 'agent' && (c.def.agentAccess === 'off' ? 'MCP_AGENT_ACCESS_OFF' : c.def.deny?.includes(name) ? 'MCP_TOOL_DENIED' : null);
+      if (earlyRefusal) throw Error(`${earlyRefusal}:${id}.${name}`);
       await c.start();
-    } catch (e) { done('failed', String(e.message || e).slice(0, 300)); throw e; }
-    const tool = c.tools.find(t => t.name === name);
+    } catch (e) {
+      const message = String(e.message || e).slice(0, 300);
+      done(/^(MCP_AGENT_ACCESS_OFF|MCP_TOOL_DENIED):/.test(message) ? 'refused' : 'failed', message);
+      throw e;
+    }
+    const tool = resolveAdvertisedTool(id, name, c.tools);
     if (!tool) { done('failed', `MCP_TOOL_UNKNOWN:${id}.${name}`); throw new Error(`MCP_TOOL_UNKNOWN:${id}.${name}`); }
+    name = tool.name;
     const reads = Boolean(tool.readOnly || KNOWN_READ_ONLY[id]?.has(name));
     const refusal = actor === 'agent' ? agentRefusal(c.def, tool, args) || (readOnly && !reads ? 'MCP_TOOL_NOT_READ_ONLY' : null)
       : c.def.transport === 'http' && !tool.readOnly ? 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY' : null;

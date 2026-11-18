@@ -19,7 +19,12 @@ const TOOLS = [
   tool('git_fetch', 'Fetch origin without changing the checkout.', false, {}, [], () => ['fetch', 'origin']),
   tool('git_pull', 'Fast-forward-only update of the current checkout.', false, {}, [], () => ['pull', '--ff-only']),
   tool('git_push', 'Push current branch; requires JACO_SHELL_ALLOW_PUSH=1.', false, {}, [], () => ['push']),
+  tool('git_merge', 'Fast-forward-only merge into a non-protected current branch. Use an existing authorized mission and verify the resulting commit.', false, { ref: { type:'string', description:'Existing local branch, remote tracking branch or commit SHA.' } }, ['ref'], a => ['merge','--ff-only','--no-edit',checkedRef(a.ref)]),
 ];
+function checkedRef(v) {
+  if(typeof v!=='string'||! /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(v)||v.includes('..')||v.endsWith('/')||v.includes('//'))throw Error('GIT_MERGE_REF_INVALID');
+  return v;
+}
 function checkedPath(v) {
   if (typeof v !== 'string' || !v.trim() || v.length > 2048 || v.includes('\0') || v.startsWith('-')) throw Error('GIT_PATH_REQUIRED');
   return v;
@@ -39,6 +44,12 @@ export async function handleGitMcp(msg, { shell = new SafeShell({ workspace: pat
   if (!selected) return { jsonrpc: '2.0', id: msg.id, error: { code: -32602, message: 'UNKNOWN_TOOL' } };
   try {
     const args = selected.args(msg.params?.arguments || {});
+    if (selected.name === 'git_merge') {
+      const branch = await shell.run({command:'git',args:['branch','--show-current'],mode:'read'});
+      const current = String(branch.stdout||'').trim();
+      const protectedBranches = new Set(['main','master',...String(process.env.JACO_PROTECTED_BRANCHES||'').split(',').map(s=>s.trim())]);
+      if (!branch.ok || !current || protectedBranches.has(current)) throw Error('GIT_MERGE_PROTECTED_OR_DETACHED_BRANCH');
+    }
     const result = await shell.run({ command: 'git', args, mode: selected.readOnly ? 'read' : 'write' });
     return reply({ content: [{ type: 'text', text: JSON.stringify(result) }], ...(!result.ok ? { isError: true } : {}) });
   } catch (e) {

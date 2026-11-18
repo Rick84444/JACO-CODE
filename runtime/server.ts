@@ -68,7 +68,7 @@ import { stripeRevenueSnapshot } from "./src/server/revenue/stripeRevenue.mjs";
 import { automaticConnections } from "./src/server/connected/automaticConnections.mjs";
 import { liteChatAnswer } from "./src/server/connected/liteChatRouter.mjs";
 import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/mcp/stdioMcpHost.mjs";
-import { discoverAuraMcpTools, callAuraMcpTool } from './src/server/mcp/auraAgentMcpCall.mjs';
+import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFromRemote, readGithubPullRequest } from './src/server/mcp/auraAgentMcpCall.mjs';
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
@@ -334,6 +334,17 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         description: 'Discover currently advertised tools from one already configured MCP server, starting it on demand. Only reads the catalog and never calls a tool or broadens policy. args: {server}',
         run: async (args: any) => discoverAuraMcpTools(mcpHost, String(args?.server || '')),
       },
+      mcp_read: {
+        description: 'Execute an advertised READ-ONLY MCP tool; use mcp_discover to get its exact name and input schema. args: {server,tool,arguments?}. No writes in Manual or Planning.',
+        run: async (args: any) => {
+          if (connectedRuntime.capabilities?.isTaskEnabled?.('mcp-call') === false) throw Error('CAPABILITY_DISABLED:mcp-call');
+          const server = String(args?.server || '');
+          const key = ['git','repo','filesystem','shell','jaco','editor'].includes(server) ? 'files.read' : 'web.read';
+          const check = organization?.authorize('aura', key);
+          if (!check?.allowed) throw Error('MANDATE_DENIED:aura:' + key + ':' + (check?.reason || 'ORGANIZATION_UNAVAILABLE'));
+          return callAuraMcpTool(mcpHost, {server,tool:String(args?.tool||''),args:args?.arguments ?? {},mode:'read'});
+        },
+      },
       mcp_tool: {
         description: 'Call a configured MCP tool for this Aura goal. Automatically connects when permitted. args: {server,tool,arguments?,mode:"read"|"write"}. Existing access, deny rules, argument checks and mission approval requirements still apply.',
         run: async (args: any) => callAuraMcpTool(mcpHost, {
@@ -487,13 +498,23 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         },
       },
       web_fetch: {
-        description: 'HTTP GET a public http(s) URL and return the first 15000 characters of text. Read-only. args: {"url":"https://..."}',
+        description: 'Read public HTTPS text without CDP or browser control. Uses the configured Fetch MCP with DNS and redirect safety checks. args: {"url":"https://..."}',
         run: async (args: any) => {
-          const url = new URL(String(args?.url || ''));
-          if (!['http:', 'https:'].includes(url.protocol)) throw new Error('only http(s)');
-          const r = await fetch(url, { signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'JACO-Aura/0.21' } });
-          const text = (await r.text()).replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-          return `HTTP ${r.status}\n${text.slice(0, 15000)}`;
+          if (connectedRuntime.capabilities?.isTaskEnabled?.('web-fetch') === false) throw Error('CAPABILITY_DISABLED:web-fetch');
+          return (await readPublicViaMcp(mcpHost, String(args?.url || ''))).slice(0, 15000);
+        },
+      },
+      git_pr: {
+        description: 'Inspect public GitHub PR metadata, changed files or commits without a browser. args: {number:301,repository?:"owner/repo",section?:"summary"|"files"|"commits",page?:1}. Defaults to current GitHub origin. Request further pages and source for incomplete patches.',
+        run: async (args: any) => {
+          if (connectedRuntime.capabilities?.isTaskEnabled?.('web-fetch') === false) throw Error('CAPABILITY_DISABLED:web-fetch');
+          let repository = args?.repository;
+          if (repository == null) {
+            const remote = await execFileAsync('git', ['remote','get-url','origin'], {cwd:projectRoot.get(),windowsHide:true,timeout:5000});
+            repository = githubRepoFromRemote(remote.stdout);
+            if (!repository) throw Error('GITHUB_ORIGIN_NOT_AVAILABLE: specify owner/repo');
+          }
+          return readGithubPullRequest(mcpHost, {repository,number: Number(args?.number),section:args?.section, page:args?.page});
         },
       },
       env_keys: {
