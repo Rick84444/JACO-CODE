@@ -74,9 +74,11 @@ void main(){
   float strength=rear+.70*pow(facing,.60);
   vec3 blue=vec3(.16,.57,1.0), ice=vec3(.68,.93,1.0);
   vColor=mix(blue,ice,.28+aSeed*.58);
-  if(aKind>1.5&&aKind<2.5){vColor=mix(blue,ice,.40+aSeed*.48);strength*=1.20;}
-  if(aKind>.5&&aKind<1.5){strength*=.92;}
-  if(aKind>2.5){strength*=.70;}
+  // The lit skin surface carries the form; points are fine glitter on it, as in the reference.
+  if(aKind<.5){strength*=.14;}
+  if(aKind>1.5&&aKind<2.5){vColor=mix(blue,ice,.40+aSeed*.48);strength*=.55;}
+  if(aKind>.5&&aKind<1.5){strength*=.30;}
+  if(aKind>2.5){strength*=.45;}
   vAlpha=clamp(strength*pulse*fade*(1.12+.35*uEnergy),0.0,.96);
   gl_PointSize=clamp(aSize*uPixelRatio*(2.65+.50*uEnergy)/max(.85,-mv.z),.8,5.5*uPixelRatio);
   gl_Position=projectionMatrix*mv;
@@ -94,6 +96,166 @@ void main(){
   gl_FragColor=vec4(mix(vColor,vec3(.83,.96,1.0),core*.35),alpha);
 }
 `;
+
+function glowTexture(){
+  const c=document.createElement('canvas');c.width=c.height=64;
+  const g=c.getContext('2d'),r=g.createRadialGradient(32,32,0,32,32,32);
+  r.addColorStop(0,'rgba(255,255,255,1)');r.addColorStop(.18,'rgba(205,230,255,.75)');
+  r.addColorStop(.5,'rgba(90,150,255,.18)');r.addColorStop(1,'rgba(40,90,255,0)');
+  g.fillStyle=r;g.fillRect(0,0,64,64);
+  const texture=new THREE.CanvasTexture(c);texture.colorSpace=THREE.SRGBColorSpace;return texture;
+}
+const SWAY=String.raw`
+  vec3 p=position;float sway=aT*aT;
+  p.x+=sin(uTime*.8+aSeed*6.283+aT*3.5)*.012*sway;
+  p.z+=cos(uTime*.7+aSeed*4.0+aT*3.0)*.008*sway;`;
+
+/**
+ * The luminous body of the reference look, drawn from the same rig:
+ * - the actual skinned, morphing skin mesh as translucent light (soft fill, bright silhouette rim),
+ *   so blinks, smiles and jaw motion deform the visible face itself;
+ * - glowing eyes on the real eye mesh, a crown spark and a faint halo;
+ * - flowing light strands and sparks anchored to the head bone, plus a twinkling star field.
+ */
+function createLightBody(scene,model,bones,groups){
+  const body=groups.find(g=>g.kind===0).mesh,eyeGroup=groups.find(g=>g.kind===3),brows=groups.find(g=>g.kind===4).mesh;
+  const energy={value:0},time={value:0},pixelRatio={value:Math.min(window.devicePixelRatio||1,1.5)};
+  const owned=[];
+  const skin=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,blending:THREE.AdditiveBlending,depthWrite:true});
+  skin.onBeforeCompile=shader=>{
+    shader.uniforms.uEnergy=energy;
+    shader.vertexShader=shader.vertexShader
+      .replace('#include <common>','#include <common>\nvarying vec3 vAuraNormal;\nvarying vec3 vAuraView;\nvarying float vAuraY;')
+      .replace('#include <project_vertex>','#include <project_vertex>\n  vAuraView=-mvPosition.xyz;\n  vAuraY=(modelMatrix*vec4(transformed,1.0)).y;\n  vAuraNormal=normalize(transformedNormal);');
+    shader.fragmentShader=shader.fragmentShader
+      .replace('#include <common>','#include <common>\nuniform float uEnergy;\nvarying vec3 vAuraNormal;\nvarying vec3 vAuraView;\nvarying float vAuraY;')
+      .replace('#include <opaque_fragment>',String.raw`
+  vec3 auraN=normalize(vAuraNormal);vec3 auraV=normalize(vAuraView);
+  float auraFacing=clamp(dot(auraN,auraV),0.0,1.0);
+  float auraRim=pow(1.0-auraFacing,2.4);
+  float auraKey=max(0.0,dot(auraN,normalize(vec3(0.0,.15,1.0))));
+  float auraFade=smoothstep(1.25,1.45,vAuraY);
+  vec3 auraBase=vec3(.26,.45,.92),auraIce=vec3(.82,.93,1.0);
+  outgoingLight=(auraBase*(.10+.24*auraKey)+auraIce*auraRim*(.72+.3*uEnergy))*auraFade;
+  diffuseColor.a=auraFade;
+  #include <opaque_fragment>`);
+  };
+  model.traverse(o=>{if(o.isMesh){o.visible=false;o.frustumCulled=false;}});
+  // The compacted rig keeps positions, joints and weights only; derive normals for the rim light.
+  if(!body.geometry.attributes.normal)body.geometry.computeVertexNormals();
+  body.material=skin;body.visible=true;
+  // Depth-only prepass on the same skinned, morphing geometry: only the nearest skin surface lights up,
+  // so the mouth interior and the far side of the head do not shine through.
+  const prepass=new THREE.SkinnedMesh(body.geometry,new THREE.MeshBasicMaterial({colorWrite:false}));
+  prepass.bind(body.skeleton,body.bindMatrix);
+  prepass.morphTargetInfluences=body.morphTargetInfluences;prepass.morphTargetDictionary=body.morphTargetDictionary;
+  prepass.position.copy(body.position);prepass.quaternion.copy(body.quaternion);prepass.scale.copy(body.scale);
+  prepass.frustumCulled=false;prepass.renderOrder=-1;body.parent.add(prepass);owned.push(prepass.material);
+  eyeGroup.mesh.material=new THREE.MeshBasicMaterial({color:0xdff1ff,transparent:true,opacity:.5,blending:THREE.AdditiveBlending,depthWrite:false});
+  eyeGroup.mesh.visible=true;
+  brows.material=new THREE.MeshBasicMaterial({color:0x8fc0ff,transparent:true,opacity:.28,blending:THREE.AdditiveBlending,depthWrite:false});
+  brows.visible=true;
+  scene.add(model);
+
+  // Head frame at rest; strands are authored relative to it and follow the head bone.
+  model.updateMatrixWorld(true);
+  const head=bones.get('Head').bone;
+  const restPos=head.getWorldPosition(new THREE.Vector3()),restInv=head.getWorldQuaternion(new THREE.Quaternion()).invert();
+  const pos=body.geometry.attributes.position,v=new THREE.Vector3();
+  let minX=1e9,maxX=-1e9,minZ=1e9,maxZ=-1e9,top=-1e9;
+  for(let i=0;i<pos.count;i++){
+    v.fromBufferAttribute(pos,i).applyMatrix4(body.matrixWorld);
+    if(v.y>1.6&&Math.abs(v.x)<.14){minX=Math.min(minX,v.x);maxX=Math.max(maxX,v.x);minZ=Math.min(minZ,v.z);maxZ=Math.max(maxZ,v.z);top=Math.max(top,v.y);}
+  }
+  if(!(top>1.6))throw Error('AURA_RIG_HEAD_BOUNDS');
+  const a=(maxX-minX)/2,c=(maxZ-minZ)/2,b=.125,C=new THREE.Vector3((minX+maxX)/2,top-b,(minZ+maxZ)/2);
+
+  const random=seeded(907),STRANDS=230,STEPS=34;
+  const linePos=[],lineT=[],lineSeed=[],sparkPos=[],sparkT=[],sparkSeed=[],sparkTw=[];
+  const scalp=(th,ph,r)=>new THREE.Vector3(C.x+a*r*Math.sin(th)*Math.sin(ph),C.y+b*r*Math.cos(th),C.z+c*r*Math.sin(th)*Math.cos(ph));
+  for(let k=0;k<STRANDS;k++){
+    const side=k%2?1:-1,phi0=side*(1.0+random()*2.1),seed=random();
+    const thetaEnd=1.55+random()*.45,r=1.05+random()*.05,ts=.36;
+    const flare=.05+random()*.11,drop=.24+random()*.16,waveA=.008+random()*.016,waveF=4+random()*5;
+    let prev=null;
+    for(let i=0;i<STEPS;i++){
+      const t=i/(STEPS-1);let p;
+      if(t<=ts){const u=t/ts;p=scalp(u*thetaEnd,phi0+side*.35*Math.sin(u*Math.PI/2),r);}
+      else{
+        const s=(t-ts)/(1-ts),ph=phi0+side*.35;
+        const out=new THREE.Vector3(Math.sin(ph),0,Math.cos(ph)*.5).normalize(),across=new THREE.Vector3(Math.cos(ph),0,-Math.sin(ph));
+        p=scalp(thetaEnd,ph,r).addScaledVector(out,flare*Math.pow(s,.8)).add(new THREE.Vector3(0,-drop*s,0)).addScaledVector(across,Math.sin(s*waveF+seed*6.283)*waveA*s);
+      }
+      p.sub(restPos);
+      if(prev){linePos.push(prev.x,prev.y,prev.z,p.x,p.y,p.z);lineT.push((i-1)/(STEPS-1),t);lineSeed.push(seed,seed);}
+      if(random()<.07){sparkPos.push(p.x,p.y,p.z);sparkT.push(t);sparkSeed.push(seed);sparkTw.push(random());}
+      prev=p;
+    }
+  }
+  const attr=(geo,name,data,size)=>geo.setAttribute(name,new THREE.Float32BufferAttribute(data,size));
+  const lineGeo=new THREE.BufferGeometry();attr(lineGeo,'position',linePos,3);attr(lineGeo,'aT',lineT,1);attr(lineGeo,'aSeed',lineSeed,1);
+  const lineMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uEnergy:energy},transparent:true,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,
+    vertexShader:String.raw`attribute float aT;attribute float aSeed;uniform float uTime;uniform float uEnergy;varying float vA;varying vec3 vC;
+void main(){${SWAY}
+  vA=(1.0-aT*.8)*(.62+.38*sin(uTime*1.4+aSeed*23.0-aT*7.0))*(.85+.3*uEnergy);
+  vC=mix(vec3(.92,.97,1.0),vec3(.35,.62,1.0),aT);
+  gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
+    fragmentShader:String.raw`varying float vA;varying vec3 vC;void main(){gl_FragColor=vec4(vC,vA*.34);}`});
+  const sparkGeo=new THREE.BufferGeometry();attr(sparkGeo,'position',sparkPos,3);attr(sparkGeo,'aT',sparkT,1);attr(sparkGeo,'aSeed',sparkSeed,1);attr(sparkGeo,'aTw',sparkTw,1);
+  const sparkMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uPixelRatio:pixelRatio},transparent:true,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,
+    vertexShader:String.raw`attribute float aT;attribute float aSeed;attribute float aTw;uniform float uTime;uniform float uPixelRatio;varying float vA;
+void main(){${SWAY}
+  vA=.3+.7*pow(.5+.5*sin(uTime*2.3+aTw*40.0),3.0);
+  gl_PointSize=(1.6+2.8*aTw)*uPixelRatio;
+  gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
+    fragmentShader:String.raw`varying float vA;void main(){float d=length(gl_PointCoord-vec2(.5));gl_FragColor=vec4(.88,.95,1.0,(1.0-smoothstep(0.0,.5,d))*vA*.9);}`});
+  const lines=new THREE.LineSegments(lineGeo,lineMat),sparks=new THREE.Points(sparkGeo,sparkMat);
+  lines.frustumCulled=false;sparks.frustumCulled=false;
+
+  const texture=glowTexture();
+  const sprite=(scale,opacity,color=0xffffff)=>{
+    const m=new THREE.SpriteMaterial({map:texture,color,transparent:true,opacity,blending:THREE.AdditiveBlending,depthTest:false,depthWrite:false});
+    owned.push(m);const s=new THREE.Sprite(m);s.scale.setScalar(scale);return s;
+  };
+  const hair=new THREE.Group();
+  const halo=sprite(.62,.28,0x3d7dff);halo.position.copy(C).sub(restPos).add(new THREE.Vector3(0,-.02,-.08));
+  const crown=sprite(.075,.85);crown.position.set(C.x,top+.006,C.z+c*.3).sub(restPos);
+  hair.add(halo,lines,sparks,crown);scene.add(hair);
+  const eyeCore=[sprite(.016,.95),sprite(.016,.95)],eyeHalo=[sprite(.045,.35,0x8fc6ff),sprite(.045,.35,0x8fc6ff)];
+  scene.add(...eyeCore,...eyeHalo);
+
+  const starPos=[],starTw=[],stars=seeded(4242);
+  for(let i=0;i<260;i++){starPos.push((stars()-.5)*1.0,1.08+stars()*.87,-.45-stars()*.2);starTw.push(stars());}
+  const starGeo=new THREE.BufferGeometry();attr(starGeo,'position',starPos,3);attr(starGeo,'aTw',starTw,1);
+  const starMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uPixelRatio:pixelRatio},transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending,
+    vertexShader:String.raw`attribute float aTw;uniform float uTime;uniform float uPixelRatio;varying float vA;
+void main(){vA=(.25+.6*aTw)*(.55+.45*sin(uTime*(.6+aTw*1.8)+aTw*50.0));gl_PointSize=(1.0+2.2*aTw*aTw)*uPixelRatio;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+    fragmentShader:String.raw`varying float vA;void main(){float d=length(gl_PointCoord-vec2(.5));gl_FragColor=vec4(.75,.86,1.0,(1.0-smoothstep(0.0,.5,d))*vA);}`});
+  const starField=new THREE.Points(starGeo,starMat);starField.frustumCulled=false;scene.add(starField);
+  owned.push(lineGeo,lineMat,sparkGeo,sparkMat,starGeo,starMat,texture);
+
+  const hp=new THREE.Vector3(),hq=new THREE.Quaternion(),sums=[new THREE.Vector3(),new THREE.Vector3()],counts=[0,0];
+  return {
+    update(t,energyValue,blink){
+      energy.value=energyValue;time.value=t;
+      head.getWorldPosition(hp);head.getWorldQuaternion(hq);
+      hair.position.copy(hp);hair.quaternion.copy(hq).multiply(restInv);
+      crown.material.opacity=.65+.25*Math.sin(t*1.6);
+      // Eye glow follows the real (skinned) eye mesh and closes with the blink morph.
+      sums[0].set(0,0,0);sums[1].set(0,0,0);counts[0]=counts[1]=0;
+      const vs=eyeGroup.vertices;
+      for(let i=0;i<vs.length;i+=3){const s=vs[i]>hp.x?0:1;sums[s].x+=vs[i];sums[s].y+=vs[i+1];sums[s].z+=vs[i+2];counts[s]++;}
+      const open=1-.92*blink;
+      for(let s=0;s<2;s++){
+        if(!counts[s])continue;
+        sums[s].divideScalar(counts[s]).z+=.012;
+        eyeCore[s].position.copy(sums[s]);eyeHalo[s].position.copy(sums[s]);
+        eyeCore[s].material.opacity=.95*open;eyeHalo[s].material.opacity=(.3+.15*energyValue)*open;
+      }
+    },
+    dispose(){scene.remove(hair,starField,...eyeCore,...eyeHalo);owned.forEach(o=>o.dispose());}
+  };
+}
 
 function disposeModel(model){
   const geometries=new Set(),materials=new Set(),skeletons=new Set();
@@ -113,7 +275,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
   if(bytes.byteLength!==EXPECTED_BYTES)throw Error('AURA_RIG_ASSET_SIZE');
   const gltf=await new GLTFLoader().parseAsync(bytes,'');
   const model=gltf.scene;
-  let renderer,geometry,material,observer,raf=0,disposed=false;
+  let renderer,geometry,material,observer,lightBody,raf=0,disposed=false;
   const motion=window.matchMedia('(prefers-reduced-motion: reduce)');
   let cleanup=()=>{};
   try{
@@ -162,11 +324,12 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     material=new THREE.ShaderMaterial({vertexShader,fragmentShader,uniforms:{uTime:{value:0},uEnergy:{value:0},uPixelRatio:{value:1}},transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending});
     const scene=new THREE.Scene(),cloud=new THREE.Points(geometry,material);
     cloud.frustumCulled=false;scene.add(cloud);
-    // Three-quarter framing reveals the actual ponytail behind the head and keeps shoulders in view.
+    // Frontal head-and-shoulders framing, as in the reference portrait.
     const camera=new THREE.PerspectiveCamera(34,1,.03,20);
-    camera.position.set(.48,1.53,1.07);camera.lookAt(0,1.50,.035);
-    renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:false,powerPreference:'low-power',preserveDrawingBuffer:true});
+    camera.position.set(0,1.565,1.12);camera.lookAt(0,1.53,.03);
+    renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power',preserveDrawingBuffer:true});
     renderer.setClearColor(0x000000,0);
+    lightBody=createLightBody(scene,model,bones,groups);
     let energy=0,yaw=0,pitch=0,last=-Infinity,state={active:false,speaking:false,listening:false,x:0,y:0};
     const temp=new THREE.Vector3(),n=new THREE.Vector3(),edge1=new THREE.Vector3(),edge2=new THREE.Vector3(),q=new THREE.Quaternion(),euler=new THREE.Euler(0,0,0,'YXZ');
     const rotate=(name,x,y,z)=>{const entry=bones.get(name);if(!entry)return;entry.bone.quaternion.copy(entry.base).multiply(q.setFromEuler(euler.set(x,y,z,'YXZ')));};
@@ -217,6 +380,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       }
       geometry.attributes.position.needsUpdate=true;geometry.attributes.aNormal.needsUpdate=true;
       material.uniforms.uTime.value=t;material.uniforms.uEnergy.value=energy;
+      lightBody.update(t,energy,blink);
       // A small head-relative motion statistic from actual sampled coordinates for regression.
       let signature=0;for(let j=0;j<Math.min(positions.length,6000);j+=31)signature+=positions[j]*(j+1);
       canvas.dataset.renderedPoints=String(total);canvas.dataset.renderer='rigged-particle-field';
@@ -251,7 +415,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       if(disposed)return;disposed=true;cancelAnimationFrame(raf);observer?.disconnect();
       motion.removeEventListener('change',refresh);document.removeEventListener('visibilitychange',refresh);
       canvas.removeEventListener('webglcontextlost',lost);signal?.removeEventListener('abort',dispose);
-      geometry.dispose();material.dispose();renderer.dispose();disposeModel(model);
+      lightBody?.dispose();geometry.dispose();material.dispose();renderer.dispose();disposeModel(model);
     }
     cleanup=dispose;
     canvas.addEventListener('webglcontextlost',lost);
@@ -261,7 +425,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     resize();refresh();
     return {setState(next){state={...state,...next};if(motion.matches)render(0);},dispose};
   }catch(error){
-    if(!disposed){cleanup();if(!disposed){disposed=true;geometry?.dispose();material?.dispose();renderer?.dispose();disposeModel(model);}}
+    if(!disposed){cleanup();if(!disposed){disposed=true;lightBody?.dispose();geometry?.dispose();material?.dispose();renderer?.dispose();disposeModel(model);}}
     throw error;
   }
 }
