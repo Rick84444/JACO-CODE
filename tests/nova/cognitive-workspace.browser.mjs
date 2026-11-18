@@ -85,7 +85,7 @@ app.use(express.static(path.join(release,'dist')));
 app.get('*',(_req,res)=>res.sendFile(path.join(release,'dist/index.html')));
 const server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});
 const base='http://127.0.0.1:'+server.address().port;
-const browser=await chromium.launch({headless:true,...(process.env.JACO_BROWSER_EXECUTABLE?{executablePath:process.env.JACO_BROWSER_EXECUTABLE,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']}: {})});
+const browser=await chromium.launch({headless:true,...(process.env.JACO_BROWSER_EXECUTABLE?{executablePath:process.env.JACO_BROWSER_EXECUTABLE,args:['--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--use-angle=swiftshader']}: {})});
 const page=await browser.newPage({viewport:{width:1440,height:960},deviceScaleFactor:1});
 page.setDefaultTimeout(15000);
 // Existing functional contract uses Swedish labels; English is verified independently below.
@@ -253,8 +253,11 @@ try {
     await page.waitForFunction(()=>{
       const canvas=document.querySelector('.aura-portrait-scene canvas');
       if(!canvas)return false;
-      const data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
-      return Number(canvas.dataset.renderedPoints)>5000 && canvas.dataset.renderer==='surface-light-field' && data.filter((value,index)=>index%4===3&&value>0).length>2500;
+      if(canvas.dataset.renderer!=='rigged-particle-field')return false;
+      const gl=canvas.getContext('webgl2');if(!gl)return false;
+      const data=new Uint8Array(canvas.width*canvas.height*4);gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,data);
+      let lit=0,bright=0;for(let i=0;i<data.length;i+=4){if(data[i+2]>12)lit++;if(data[i+2]>100)bright++;}
+      return Number(canvas.dataset.renderedPoints)>10000&&Number(canvas.dataset.hairPoints)>2000&&Number(canvas.dataset.torsoPoints)>2500&&lit>2000&&bright>250;
     });
     assert.equal(await portrait.locator('img').count(),0,'portrait uses a surface light field rather than a photograph');
     if(width===1440){
@@ -278,19 +281,22 @@ try {
   await scene.waitFor();
   await page.waitForFunction(()=>{
     const canvas=document.querySelector('.aura-portrait-scene canvas');
-    return Number(canvas?.dataset.renderedPoints)>5000 && canvas?.getContext('2d').getImageData(200,200,80,80).data.some((value,index)=>index%4===3&&value>30);
+    return canvas?.dataset.renderer==='rigged-particle-field'&&Number(canvas.dataset.renderedPoints)>10000;
   });
   const renderMask=()=>scene.locator('canvas').evaluate(canvas=>canvas.toDataURL());
   const initialMask=await renderMask();
   const initialYaw=Number(await scene.locator('canvas').getAttribute('data-yaw'));
+  const initialGeometry=await scene.locator('canvas').getAttribute('data-geometry-signature');
   await scene.hover({position:{x:18,y:60}});
-  await page.waitForFunction(({initial,yaw})=>{
+  await page.waitForFunction(({initial,yaw,geometry})=>{
     const canvas=document.querySelector('.aura-portrait-scene canvas');
-    return Number(canvas?.dataset.renderedPoints)>5000 && Math.abs(Number(canvas?.dataset.yaw)-yaw)>.06 && canvas?.toDataURL()!==initial;
-  },{initial:initialMask,yaw:initialYaw});
+    return Number(canvas?.dataset.renderedPoints)>5000 && Math.abs(Number(canvas?.dataset.yaw)-yaw)>.06 && canvas?.dataset.geometrySignature!==geometry && canvas?.toDataURL()!==initial;
+  },{initial:initialMask,yaw:initialYaw,geometry:initialGeometry});
+  await page.waitForFunction(()=>Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.blinkMm)>2,{},{timeout:12000});
+  await screenshot('aura-rig-blink');
   await page.keyboard.press('Escape');
   await portrait.waitFor({state:'detached'});
-  passed('Aura light mask changes its rendered frame with motion enabled');
+  passed('Aura rigged lightform changes actual geometry and rendered frame with motion enabled');
   await input().fill('Behåll mitt utkast');
   await canvas('Kod').click();await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
@@ -591,7 +597,7 @@ try {
       abort() {}
     };
     Object.defineProperty(window, 'speechSynthesis', {configurable:true,value:{
-      speak(reply) { window.auraSpokenReplies.push(reply.text); reply.onstart?.(); reply.onend?.(); },
+      speak(reply) { window.auraSpokenReplies.push(reply.text); window.auraCurrentReply=reply; reply.onstart?.(); },
       cancel() {},
     }});
   });
@@ -606,6 +612,11 @@ try {
   await page.waitForFunction(()=>window.auraSpokenReplies.length===1);
   assert.equal(requests.filter(request=>request.kind==='chat').length,previousChatRequests+1);
   assert.deepEqual(await page.evaluate(()=>window.auraSpokenReplies),['Testsvaret använder de observerade händelserna. Uppdraget fortsätter.']);
+  await page.waitForFunction(()=>Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm)>3,{},{timeout:15000});
+  await screenshot('aura-rig-speaking');
+  await page.evaluate(()=>window.auraCurrentReply.onend?.());
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm==='0.000');
+  passed('Controlled speech drives actual jaw morph displacement, then returns to rest; blinking independently moves eyelid vertices');
   await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
   passed('Portrait dictation uses the canonical chat and reads its new reply with a controlled speech adapter');
   // A browser engine may report an error without an end event. Late callbacks
