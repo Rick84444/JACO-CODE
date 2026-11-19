@@ -2664,6 +2664,22 @@ export async function main() {
   if (workplace.registration?.agentId) state.agentId = workplace.registration.agentId;
   const livingCorePromotionTimer = startLivingCorePromotionFlusher(state);
   let pausedForWorkplace = false;
+  // Lite's launcher, not Workplace supervision, owns this process. Report from the actual
+  // running executor, including while a model/tool call is pending; no heartbeat grants authority.
+  let executorHeartbeatBusy = false;
+  const reportExecutor = async () => {
+    if (executorHeartbeatBusy || !running || !workplace.allowed) return;
+    executorHeartbeatBusy = true;
+    try { await missionClient.request('POST', '/executor-health', { executor: 'nova' }); }
+    catch (error) { log('warn', 'agent', `Executor health observation failed: ${error.message}`); }
+    finally { executorHeartbeatBusy = false; }
+  };
+  let executorHeartbeat = null;
+  if (process.env.JACO_LITE === '1' && !DEVICE_MODE && missionClient.executor === 'nova') {
+    void reportExecutor();
+    executorHeartbeat = setInterval(() => void reportExecutor(), 10_000);
+    executorHeartbeat.unref();
+  }
   while (running) {
     if (!workplace.allowed) {
       if (!pausedForWorkplace) log("warn", "agent", `Paused: Workplace session is ${workplace.state}; no tasks run until it is READY again`);
@@ -2688,6 +2704,7 @@ export async function main() {
     await new Promise(r => setTimeout(r, novaLoopDelay(turn)));
   }
 
+  if (executorHeartbeat) clearInterval(executorHeartbeat);
   if (githubControlTimer) clearInterval(githubControlTimer);
   if (livingCorePromotionTimer) clearInterval(livingCorePromotionTimer);
   saveState(state);

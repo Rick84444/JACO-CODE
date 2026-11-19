@@ -7,6 +7,8 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { main as startLite } from '../../lite/start.mjs';
 import { createZip, readZip, crc32 } from '../../tools/lib/zip.mjs';
 import { buildLite, liteDependencies, secretValues, findSecrets, collectFiles, LITE_DEPENDENCIES } from '../../tools/build-lite.mjs';
 import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, liteChildEnv, writeRuntimeRecord, removeRuntimeRecord, runtimeRecordFile, agentEnv, agentCommand, openBrowser, liteWorkplaceChildEnv, liteWorkplaceRequired, liteLocalConnectionEnv, liteExitCode, appendLiteLifecycle, HELP } from '../../lite/start.mjs';
@@ -279,6 +281,61 @@ test('Lite health accepts only the real JSON product, never the SPA HTML fallbac
       return new Response(JSON.stringify({product:'JACO Workplace',status:'READY'}),{status:200});
     }
   }),true,'Workplace readiness keeps its own JSON health contract');
+});
+
+test('Lite restarts an exited durable executor, keeps Core alive and does not restart during shutdown', async () => {
+  const root = tmp(), install = path.join(root,'install'), project = path.join(root,'project');
+  const files = ['dist/server.cjs','dist/index.html','dist/assets/test.js','dist/workplace.mjs',
+    'dist/jaco-editor.mjs','dist/connect.html','dist/nova.mjs','node_modules/express/package.json'];
+  for (const file of files) {
+    const full=path.join(install,file);
+    fs.mkdirSync(path.dirname(full),{recursive:true});
+    fs.writeFileSync(full,'test fixture');
+  }
+  const sha=crypto.createHash('sha256').update('test fixture').digest('hex');
+  fs.writeFileSync(path.join(install,'release.json'),JSON.stringify({schema:'jaco.lite-release/v1',
+    workspace:'cognitive-live/v1',entry:'/assets/test.js',serverSha256:sha,indexSha256:sha,clientSha256:sha}));
+  const children=[];
+  const start=startLite([project,'--no-open'],{
+    installDir:install,homedir:root,cwd:root,nodeVersion:'24.0.0',env:{PATH:process.env.PATH},
+    noSignals:true,out:()=>{},err:()=>{},findPort:async p=>p,
+    fetchImpl:async uri=>new Response(JSON.stringify(uri.endsWith('/health')
+      ? {product:'JACO Workplace',status:'READY'} : {success:true,product:'JACO Autonomus IDE'})),
+    spawnImpl:(_cmd,args)=>{
+      const child=new EventEmitter();
+      child.pid=100+children.length;
+      child.file=path.basename(args.at(-1));
+      child.kill=()=>{child.emit('exit',null,'SIGTERM');return true;};
+      children.push(child);
+      return child;
+    }
+  });
+  async function waitFor(count){
+    const deadline=Date.now()+5000;
+    while(children.length<count && Date.now()<deadline) await new Promise(r=>setTimeout(r,20));
+    assert.equal(children.length,count);
+  }
+  let coreStopped=false;
+  try {
+    await waitFor(3);
+    assert.equal(children[2].file,'nova.mjs');
+    children[2].emit('exit',1,null);
+    await waitFor(4);
+    assert.equal(children[3].file,'nova.mjs');
+    assert.equal(children.filter(c=>c.file==='server.cjs').length,1);
+    coreStopped=true;
+    children[1].emit('exit',1,null);
+    assert.equal(await start,1);
+    const events=fs.readFileSync(path.join(project,'.jaco','lite-lifecycle.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(events.filter(e=>e.event==='RESTART_SCHEDULED').length,1);
+    assert.equal(events.filter(e=>e.component==='agent' && e.event==='EXIT' && e.expected).length,1);
+  } finally {
+    if(children[1] && !coreStopped) children[1].emit('exit',1,null);
+    await start.catch(()=>{});
+    // Let closed log streams flush before removing the disposable project.
+    await new Promise(r=>setTimeout(r,50));
+    fs.rmSync(root,{recursive:true,force:true});
+  }
 });
 
 test('Lite records signal termination as a failure, never a false exit code zero', () => {
