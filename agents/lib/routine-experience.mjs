@@ -10,7 +10,7 @@ const groups={
 };
 const ok=r=>r?.ok===true&&r.verified===true&&!r.outcomeUnknown&&!r.result?.outcomeUnknown&&r.result?.postconditionVerified!==false;
 const knownFailure=r=>r?.ok===false&&r.outcomeUnknown!==true&&r.result?.outcomeUnknown!==true;
-const unknown=r=>r?.outcomeUnknown===true||r?.result?.outcomeUnknown===true||(r?.ok===true&&r.verified!==true)||r?.result?.postconditionVerified===false;
+const unknown=r=>r?.outcomeUnknown===true||r?.result?.outcomeUnknown===true||(r?.ok===true&&(r.verified!==true||r.result?.postconditionVerified===false));
 const id=r=>typeof r?.actionId==='string'&&/:turn:\d+$/.test(r.actionId)?r.actionId:null;
 function origin(value){try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password?u.origin:null;}catch{return null;}}
 function scopeOf(r,mission){
