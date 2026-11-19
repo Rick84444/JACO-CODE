@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {freshMissionFrame,permittedFrameMessages} from '../../agents/lib/mission-screen-frame.mjs';
+import {freshMissionFrame,permittedFrameMessages,observedInputBinding} from '../../agents/lib/mission-screen-frame.mjs';
 import {NovaTractionEngine,computeManifoldDrift} from '../../runtime/src/server/nova/tractionCore.mjs';
 import {taskContract} from '../../agents/lib/task-fields.mjs';
 const bytes=Buffer.from([137,80,78,71,13,10,26,10,1,2,3]),now=Date.now(),sha=createHash('sha256').update(bytes).digest('hex');
@@ -71,4 +71,16 @@ test('trajectory evaluates the matched candidate, not first item, and vetoes a m
   assert.equal(engine.observe({app:'editor',timestamp:at,semanticTargets:[{text:'Delete'},base]}).state,'LOCKED');
   assert.equal(engine.observe({app:'editor',timestamp:at,semanticTargets:[{...base,bbox:[140,100,80,30]}]}).state,'REIDENTIFYING');
   assert.equal(engine.beforeAction('click').state,'RECOVERING');
+});
+
+test('raw input requires the intended recent window and observed coordinates',()=>{
+  const task={type:'mouse-click',data:{x:20,y:30,expectedHwnd:17}};
+  const screen={...receipt,result:{...receipt.result,perception:{inputWindow:{hwnd:17,processId:8,rect:{x:0,y:0,width:100,height:100}},capture:{x:0,y:0,width:50,height:50}}}};
+  const opts={now};
+  assert.equal(observedInputBinding(task,{receipts:[screen]},opts).processId,8);
+  assert.throws(()=>observedInputBinding({...task,data:{...task.data,expectedHwnd:18}},{receipts:[screen]},opts),/FRESH_BOUND/);
+  assert.throws(()=>observedInputBinding({...task,data:{...task.data,x:80}},{receipts:[screen]},opts),/OUTSIDE_OBSERVED/);
+  assert.throws(()=>observedInputBinding(task,{receipts:[screen,{type:'mouse-click'}]},opts),/FRESH_BOUND/);
+  assert.throws(()=>observedInputBinding(task,{receipts:[screen]},{now:now+31000}),/FRESH_BOUND/);
+  assert.throws(()=>observedInputBinding(task,{receipts:[{...screen,ok:false}]},opts),/FRESH_BOUND/);
 });
