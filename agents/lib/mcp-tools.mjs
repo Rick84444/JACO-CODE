@@ -15,27 +15,20 @@ export function validateMcpCall(task) {
 
 const auth = env => { const t = env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || ''; return { Authorization: `Bearer ${t}`, 'x-gateway-token': t }; };
 
-let catalogCache = { at: 0, servers: null, notes: {}, taskNotes: {}, write: false, base: null };
-let catalogGeneration=0;
-const startAttempts=new Map();
+// Snapshots and refreshes belong to their runtime endpoint, never a mission's
+// write flag. Refresh publication is atomic; invalidated refreshes cannot repopulate it.
+const catalogs=new Map(), inFlight=new Map(), startAttempts=new Map();
 const CATALOG_TTL=15_000;
+const runtimeBase=(runtimeUrl,env=process.env)=>(runtimeUrl||env.JACO_RUNTIME_URL||'http://127.0.0.1:3000').replace(/\/$/,'');
+let lastBase=null;
 const readyServer=s=>s?.status==='READY'&&s.agentAccess!=='off';
-// Which tools a mission sees: read-only ones, plus changing ones when it may run mcp-write. A runtime
-// that predates agent access sends no agentAllowed: then only read-only tools.
-const usable = write => t => Boolean(t.readOnly ? (t.agentAllowed ?? true) : write && t.agentAllowed);
-// Compact catalog for the planner prompt: the tools this mission may use, short descriptions, a tool
-// that changes something marked [changes: mcp-write]. Servers are started
-// once so their tools are known; a server that fails to start is listed with its error.
-export async function mcpCatalog({ env = process.env, fetchImpl = fetch, runtimeUrl, now = Date.now(), write = false, discoveryWaitMs = 1500 } = {}) {
-  const base = (runtimeUrl || env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000').replace(/\/$/,'');
-  if (catalogCache.base===base&&catalogCache.servers&&now-catalogCache.at>=0&&now-catalogCache.at<CATALOG_TTL) return catalogView(write);
-  const generation=++catalogGeneration;
-  // A failed refresh must never advertise the previous endpoint's or
-  // previous operator configuration's tools as observed ready.
-  catalogCache={at:now,base,servers:null,notes:{},taskNotes:{},write};
-  const get = async () => {
-    const response=await fetchImpl(`${base}/api/mcp/tools`,{headers:auth(env),signal:AbortSignal.timeout(5000)});
-    if(!response.ok)throw Error(`MCP_CATALOG_HTTP_${response.status}`);
+const usable=write=>t=>Boolean(t.readOnly===true?(t.agentAllowed??true):write&&t.agentAllowed===true);
+const empty={servers:[],notes:{},taskNotes:{}};
+const snapshotFor=runtimeUrl=>catalogs.get(runtimeUrl?runtimeBase(runtimeUrl):lastBase)||empty;
+async function refreshCatalog(base,{env,fetchImpl,now,discoveryWaitMs}){
+  const get=async()=>{
+    const response=await fetchImpl(base+'/api/mcp/tools',{headers:auth(env),signal:AbortSignal.timeout(5000)});
+    if(!response.ok)throw Error('MCP_CATALOG_HTTP_'+response.status);
     const payload=await response.json();
     if(!Array.isArray(payload.servers)||payload.success===false)throw Error('MCP_CATALOG_INVALID');
     return payload.servers;
@@ -47,45 +40,55 @@ export async function mcpCatalog({ env = process.env, fetchImpl = fetch, runtime
     const starts=idle.map(s=>{
       startAttempts.set(base+'|'+s.id,now);
       if(startAttempts.size>128)startAttempts.delete(startAttempts.keys().next().value);
-      return fetchImpl(`${base}/api/mcp/start`,{method:'POST',headers:{...auth(env),'Content-Type':'application/json'},body:JSON.stringify({server:s.id}),signal:AbortSignal.timeout(wait)});
+      return Promise.resolve().then(()=>fetchImpl(base+'/api/mcp/start',{method:'POST',headers:{...auth(env),'Content-Type':'application/json'},body:JSON.stringify({server:s.id}),signal:AbortSignal.timeout(wait)}));
     });
     let timer;
-    try {await Promise.race([Promise.allSettled(starts),new Promise(resolve=>{timer=setTimeout(resolve,wait);})]);}
-    finally {clearTimeout(timer);}
-    // A failed follow-up does not make verified projections of the first
-    // snapshot disappear; never infer that a requested start succeeded.
+    try{await Promise.race([Promise.allSettled(starts),new Promise(resolve=>{timer=setTimeout(resolve,wait);})]);}
+    finally{clearTimeout(timer);}
+    // Preserve the first observed snapshot if the second probe fails.
     try{servers=await get();}catch{}
   }
   let notes={};
-  try {const response=await fetchImpl(`${base}/api/tool-notes`,{headers:auth(env),signal:AbortSignal.timeout(1000)});if(response.ok)notes=(await response.json()).notes||{};}catch{}
-  const taskNotes=Object.fromEntries(Object.keys(notes).filter(k=>!k.includes('.')).map(k=>[k,(notes[k]||[]).map(n=>n.note).join(' | ').slice(0,300)]));
-  if(generation!==catalogGeneration)return catalogCache.base===base?catalogView(write):[];
-  catalogCache={at:now,base,servers,notes,taskNotes,write};
-  return catalogView(write);
+  try{const response=await fetchImpl(base+'/api/tool-notes',{headers:auth(env),signal:AbortSignal.timeout(1000)});if(response.ok)notes=(await response.json()).notes||{};}catch{}
+  const taskNotes=Object.fromEntries(Object.keys(notes).filter(k=>!k.includes('.')).map(k=>[k,(Array.isArray(notes[k])?notes[k]:[]).map(n=>n.note).join(' | ').slice(0,300)]));
+  return {at:now,servers,notes,taskNotes};
 }
-
-function catalogView(write) {
-  const { servers = [], notes = {} } = catalogCache;
-  if(!servers)return [];
-  catalogCache.write = write;
-  const noteText = key => (notes[key] || []).map(n => n.note).join(' | ').slice(0, 300);
-  return servers.map(s => ({
-    server: s.id, name: s.name, role: s.role,
-    tools: (readyServer(s)?s.tools||[]:[]).filter(usable(write)).map(t => {
-      const note = noteText(`${s.id}.${t.name}`);
-      return `${t.name}${argList(t.inputSchema)}${t.readOnly ? '' : ' [changes: mcp-write]'}: ${String(t.description).replace(/\s+/g, ' ').slice(0, 90)}${note ? ` [learned: ${note}]` : ''}`;
+export async function mcpCatalog({env=process.env,fetchImpl=fetch,runtimeUrl,now=Date.now(),write=false,discoveryWaitMs=1500}={}){
+  const base=runtimeBase(runtimeUrl,env);
+  lastBase=base;
+  const cached=catalogs.get(base);
+  if(cached&&now-cached.at>=0&&now-cached.at<CATALOG_TTL)return catalogView(cached,write);
+  let pending=inFlight.get(base);
+  if(!pending){
+    pending=refreshCatalog(base,{env,fetchImpl,now,discoveryWaitMs}).then(snapshot=>{
+      if(inFlight.get(base)!==pending)throw Error('MCP_CATALOG_REFRESH_INVALIDATED');
+      catalogs.set(base,snapshot);
+      if(catalogs.size>16)catalogs.delete(catalogs.keys().next().value);
+      return snapshot;
+    }).catch(error=>{
+      if(inFlight.get(base)===pending)catalogs.delete(base);
+      throw error;
+    }).finally(()=>{if(inFlight.get(base)===pending)inFlight.delete(base);});
+    inFlight.set(base,pending);
+  }
+  return catalogView(await pending,write);
+}
+function noteText(notes,key){return (Array.isArray(notes[key])?notes[key]:[]).map(n=>n.note).join(' | ').slice(0,300);}
+function catalogView({servers,notes},write){
+  return servers.map(s=>({
+    server:s.id,name:s.name,role:s.role,
+    tools:(readyServer(s)?s.tools||[]:[]).filter(usable(write)).map(t=>{
+      const note=noteText(notes,s.id+'.'+t.name);
+      return t.name+argList(t.inputSchema)+(t.readOnly?'':' [changes: mcp-write]')+': '+String(t.description).replace(/\s+/g,' ').slice(0,90)+(note?' [learned: '+note+']':'');
     }),
-    ...(!readyServer(s)&&s.agentAccess!=='off' ? { unavailable: true } : {}),
-  })).filter(s => s.tools.length || s.unavailable);
+    ...(!readyServer(s)&&s.agentAccess!=='off'?{unavailable:true}:{}),
+  })).filter(s=>s.tools.length||s.unavailable);
 }
-// The usable tools of the last catalog with their input schemas, for native tool calling.
-export function mcpCatalogTools({ write = catalogCache.write ?? false } = {}) {
-  const { servers = [], notes = {} } = catalogCache;
-  const noteText = key => (notes[key] || []).map(n => n.note).join(' | ').slice(0, 300);
-  return (servers||[]).filter(readyServer).flatMap(s => (s.tools || []).filter(usable(write)).map(t => ({ server: s.id, name: t.name, description: String(t.description || ''), inputSchema: t.inputSchema, readOnly: Boolean(t.readOnly), note: noteText(`${s.id}.${t.name}`) })));
+export function mcpCatalogTools({write=false,runtimeUrl}={}){
+  const {servers,notes}=snapshotFor(runtimeUrl);
+  return servers.filter(readyServer).flatMap(s=>(s.tools||[]).filter(usable(write)).map(t=>({server:s.id,name:t.name,description:String(t.description||''),inputSchema:t.inputSchema,readOnly:t.readOnly===true,note:noteText(notes,s.id+'.'+t.name)})));
 }
-// Approved notes for Nova's own tasks (e.g. web-fetch), keyed by task type.
-export function learnedTaskNotes() { return catalogCache.taskNotes || {}; }
+export function learnedTaskNotes({runtimeUrl}={}){return snapshotFor(runtimeUrl).taskNotes;}
 // Argument names in the catalog (required ones without '?'): without them a planner guessed names
 // (observed 2026-10-03: git_show called with 'commit' instead of 'revision', and without repo_path).
 export function argList(schema) {
@@ -94,7 +97,11 @@ export function argList(schema) {
   const required = new Set(Array.isArray(schema.required) ? schema.required : []);
   return `(${props.slice(0, 8).map(p => required.has(p) ? p : `${p}?`).join(', ')}${props.length > 8 ? ', ...' : ''})`;
 }
-export function resetMcpCatalog() { catalogGeneration++; startAttempts.clear(); catalogCache = { at: 0, servers: null, notes: {}, taskNotes: {}, write: false, base:null }; }
+export function resetMcpCatalog({clearCooldowns=false,runtimeUrl}={}){
+  if(runtimeUrl){const base=runtimeBase(runtimeUrl);catalogs.delete(base);inFlight.delete(base);}
+  else{catalogs.clear();inFlight.clear();lastBase=null;}
+  if(clearCooldowns)startAttempts.clear();
+}
 
 // Executes one mcp-call (mode 'read') or mcp-write (mode 'write'). The receipt carries a bounded text
 // excerpt of the tool result.
@@ -115,7 +122,7 @@ export async function callMcpTool(data, { env = process.env, fetchImpl = fetch, 
     const knownRefusal = decoded && body?.dispatchState === 'NOT_DISPATCHED' && !toolError && body?.success === false && !res.ok;
     const legacyAuthRefusal = decoded && [401,403].includes(res.status) && body?.dispatchState !== 'UNKNOWN' && !toolError;
     const outcomeUnknown = mode === 'write' && !acknowledged && !knownRefusal && !legacyAuthRefusal;
-    if(!acknowledged&&/MCP_(?:SERVER|SESSION|TOOL_UNKNOWN)/.test(String(body?.error||'')))resetMcpCatalog();
+    if(!acknowledged&&/MCP_(?:SERVER|SESSION|TOOL_UNKNOWN)/.test(String(body?.error||'')))resetMcpCatalog({runtimeUrl:base});
     if (!acknowledged) return { ok: false, verified: false,
       ...(outcomeUnknown ? { outcomeUnknown: true } : {}),
       error: String(body?.error || (toolError ? 'MCP_TOOL_ERROR' : !decoded ? 'MCP_RESPONSE_UNREADABLE' : !res.ok ? `HTTP_${res.status}` : 'MCP_ACK_INVALID')).slice(0, 300),
