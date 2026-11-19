@@ -13,7 +13,7 @@ import { createBrowserActionJournal } from "./lib/browser-action-journal.mjs";
 import { inputAllowed, mutationsEnabled } from "./lib/browser-scope.mjs";
 import { createInputActions, listDownloadFiles, digestFile, signInSession } from "./lib/browser-input.mjs";
 import { approvedLoginOrigins, siteLoginFor } from "./lib/site-logins.mjs";
-import { createAuraOverlay } from "./lib/aura-overlay.mjs";
+import { createAuraOverlay, POINTER_GLIDE_MS } from "./lib/aura-overlay.mjs";
 import { readOperatorLanguage } from "./lib/operator-language.mjs";
 import { followResolvedRuntime } from "./lib/resolved-endpoints.mjs";
 followResolvedRuntime(process.env);
@@ -414,7 +414,7 @@ const overlay = createAuraOverlay({
 const inputActions = createInputActions({
   evaluate, observe: observeSession,
   // The arrow glides to the target first, so the operator sees where Aura is about to click or type.
-  pointer: async (info, kind) => { await overlay.point(info.x, info.y, kind === 'click'); await new Promise(r => setTimeout(r, 380)); },
+  pointer: async (info, kind) => { await overlay.point(info.x, info.y, kind === 'click'); await new Promise(r => setTimeout(r, POINTER_GLIDE_MS)); },
   tabs: { list: async () => (await getTabs()).filter(t => t.type === 'page'), adopt: tab => { if (!tab.url || tab.url === 'about:blank' || readable(tab.url)) ownedTabs.add(tab.id); } },
   downloads: { dir: DOWNLOAD_DIR },
   uploads: { roots: UPLOAD_ROOTS },
