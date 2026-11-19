@@ -25,7 +25,14 @@ param(
   [Nullable[int]]$CropWidth = $null,
   [Nullable[int]]$CropHeight = $null,
   [Nullable[int]]$MaxWidth = $null,
-  [Nullable[int]]$MaxHeight = $null
+  [Nullable[int]]$MaxHeight = $null,
+  [long]$ExpectedHwnd = 0,
+  [uint32]$ExpectedPid = 0,
+  [int]$ExpectedLeft = 0,
+  [int]$ExpectedTop = 0,
+  [int]$ExpectedWidth = 0,
+  [int]$ExpectedHeight = 0,
+  [switch]$MeasureEntropy
 )
 
 $ErrorActionPreference = 'Stop'
@@ -83,9 +90,79 @@ public class WinInput {
   public const uint MOUSEEVENTF_WHEEL      = 0x0800;
   public const uint KEYEVENTF_KEYUP        = 0x0002;
 
+
+  [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
+  [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(POINT pt);
+  [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd,uint flags);
+  [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd,out RECT rect);
+  [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr hwnd,int attribute,out RECT rect,int size);
+  [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr value);
+  [DllImport("user32.dll")] private static extern IntPtr GetThreadDpiAwarenessContext();
+  [DllImport("user32.dll")] private static extern bool AreDpiAwarenessContextsEqual(IntPtr a,IntPtr b);
+  [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left,Top,Right,Bottom; }
+  static IntPtr target;
+  static uint targetPid;
+  static int left,top,width,height,pointX,pointY;
+  static bool pointRequired;
+  public static bool DispatchAttempted {get;private set;}
+  public static bool FocusDrifted {get;private set;}
+  public static long PostDispatchHwnd {get;private set;}
+  public static bool CursorChanged {get;private set;}
+  public static bool EnableDpiV2() {
+    try {
+      IntPtr context=new IntPtr(-4);
+      SetThreadDpiAwarenessContext(context);
+      return AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(),context);
+    } catch {return false;}
+  }
+  public static void Configure(long hwnd,uint pid,int x,int y,int w,int h,bool point,int px,int py) {
+    if(hwnd<=0||pid==0||w<=0||h<=0) throw new InvalidOperationException("TARGET_BINDING_REQUIRED");
+    target=new IntPtr(hwnd);targetPid=pid;left=x;top=y;width=w;height=h;
+    pointRequired=point;pointX=px;pointY=py;
+    if(!EnableDpiV2()) throw new InvalidOperationException("DPI_CONTEXT_UNVERIFIED");
+    AssertTarget(false);
+  }
+  static bool MatchesRect(RECT r) {
+    // UIA and Win32 can report different invisible resize borders; accept only
+    // a small, explicit edge tolerance, never an arbitrary moved rectangle.
+    const int tolerance=16;
+    return Math.Abs((long)r.Left-left)<=tolerance&&Math.Abs((long)r.Top-top)<=tolerance
+      &&Math.Abs((long)r.Right-left-width)<=tolerance&&Math.Abs((long)r.Bottom-top-height)<=tolerance;
+  }
+  static bool SameForeground() {
+    uint pid;
+    return GetForegroundWindow()==target&&GetWindowThreadProcessId(target,out pid)!=0&&pid==targetPid;
+  }
+  public static void AssertTarget(bool checkCursor) {
+    if(!EnableDpiV2())throw new InvalidOperationException("DPI_CONTEXT_UNVERIFIED");
+    if(target==IntPtr.Zero||!SameForeground())throw new InvalidOperationException("FOCUS_OR_PID_DRIFT");
+    RECT rect,frame;
+    if(!GetWindowRect(target,out rect))throw new InvalidOperationException("WINDOW_RECT_UNAVAILABLE");
+    if(!MatchesRect(rect)&&(DwmGetWindowAttribute(target,9,out frame,Marshal.SizeOf(typeof(RECT)))!=0||!MatchesRect(frame)))throw new InvalidOperationException("WINDOW_GEOMETRY_DRIFT");
+    if(pointRequired){
+      POINT p=new POINT{X=pointX,Y=pointY};
+      if(GetAncestor(WindowFromPoint(p),2)!=target)throw new InvalidOperationException("TARGET_POINT_OCCLUDED");
+      if(checkCursor){POINT cursor;if(!GetCursorPos(out cursor)||cursor.X!=pointX||cursor.Y!=pointY)throw new InvalidOperationException("CURSOR_POSITION_DRIFT");}
+    }
+  }
+  public static void MoveChecked(int x,int y) {
+    AssertTarget(false);
+    CursorChanged=true;
+    if(!SetCursorPos(x,y))throw new InvalidOperationException("CURSOR_MOVE_REJECTED");
+  }
+  public static bool PostFocus() {
+    PostDispatchHwnd=GetForegroundWindow().ToInt64();
+    bool same=SameForeground();if(!same)FocusDrifted=true;return same;
+  }
+
   public static void SendChecked(INPUT[] inputs) {
+    AssertTarget(pointRequired);
+    DispatchAttempted=true;
     uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+    bool same=PostFocus();
     if (sent != (uint)inputs.Length) throw new InvalidOperationException("WINDOWS_INPUT_PARTIAL_OR_REJECTED");
+    if(!same)throw new InvalidOperationException("FOCUS_DRIFT_AFTER_DISPATCH");
   }
   public static void MouseClick(uint down, uint up) {
     var inputs = new INPUT[2];
@@ -110,6 +187,25 @@ public class WinInput {
     i[1].type = INPUT_KEYBOARD; i[1].u.ki.wScan = (ushort)c; i[1].u.ki.dwFlags = 0x0006; // UNICODE+KEYUP
     SendChecked(i);
   }
+  public static void Chord(ushort[] keys) {
+    INPUT[] batch=new INPUT[keys.Length*2];
+    for(int i=0;i<keys.Length;i++){
+      batch[i].type=INPUT_KEYBOARD;batch[i].u.ki.wVk=keys[i];
+      int j=batch.Length-1-i;batch[j].type=INPUT_KEYBOARD;batch[j].u.ki.wVk=keys[i];batch[j].u.ki.dwFlags=KEYEVENTF_KEYUP;
+    }
+    SendChecked(batch);
+  }
+  public static void TypeBatch(string text) {
+    if(String.IsNullOrEmpty(text)||text.Length>2000)throw new InvalidOperationException("INVALID_TYPE_LENGTH");
+    INPUT[] batch=new INPUT[text.Length*2];
+    for(int i=0;i<text.Length;i++){
+      int j=2*i;
+      batch[j].type=INPUT_KEYBOARD;batch[j].u.ki.wScan=text[i];batch[j].u.ki.dwFlags=4;
+      batch[j+1].type=INPUT_KEYBOARD;batch[j+1].u.ki.wScan=text[i];batch[j+1].u.ki.dwFlags=6;
+    }
+    SendChecked(batch);
+  }
+
 }
 "@ -ErrorAction Stop
 
@@ -128,7 +224,7 @@ $VK = @{
 }
 
 function Do-MouseMove($x, $y) {
-  if (-not [WinInput]::SetCursorPos($x, $y)) { throw 'CURSOR_MOVE_REJECTED' }
+  [WinInput]::MoveChecked($x,$y)
   Start-Sleep -Milliseconds 50
   $p = New-Object WinInput+POINT
   if (-not [WinInput]::GetCursorPos([ref]$p) -or $p.X -ne $x -or $p.Y -ne $y) { throw 'CURSOR_POSITION_UNVERIFIED' }
@@ -162,24 +258,13 @@ function Do-KeyPress($keysStr) {
 
   if (-not $VK.ContainsKey($key)) { throw 'UNSUPPORTED_KEY' }
   foreach ($m in $mods) { if ($m -notin @('ctrl','alt','shift','win')) { throw 'UNSUPPORTED_MODIFIER' } }
-  $held = New-Object System.Collections.Generic.List[UInt16]
-  $releaseFailed = $false
-  try {
-    foreach ($m in $mods) { $vkCode=[UInt16]$VK[$m]; [WinInput]::KeyDown($vkCode); $held.Add($vkCode) }
-    $vkCode=[UInt16]$VK[$key]
-    [WinInput]::KeyDown($vkCode); $held.Add($vkCode)
-    Start-Sleep -Milliseconds 30
-  } finally {
-    for ($n=$held.Count-1; $n -ge 0; $n--) { try { [WinInput]::KeyUp($held[$n]) } catch { $releaseFailed = $true } }
-  }
-  if ($releaseFailed) { throw 'KEY_RELEASE_FAILED' }
+  # Submit press and release in one batch; never send a repair chord to another window.
+  $codes = @($mods | ForEach-Object { [UInt16]$VK[$_] }) + @([UInt16]$VK[$key])
+  [WinInput]::Chord([UInt16[]]$codes)
 }
 
 function Do-TypeText($text) {
-  foreach ($c in $text.ToCharArray()) {
-    [WinInput]::TypeChar($c)
-    Start-Sleep -Milliseconds 2
-  }
+  [WinInput]::TypeBatch($text)
 }
 
 function Do-Screenshot($outFile, $cropX, $cropY, $cropWidth, $cropHeight, $maxWidth, $maxHeight) {
@@ -262,13 +347,80 @@ function Do-Scroll($x, $y, $delta) {
   [WinInput]::SendChecked([WinInput+INPUT[]]@($i))
 }
 
-switch ($Op) {
-  "mouse_move"   { Do-MouseMove $X $Y; Write-Output '{"ok":true,"verified":true,"evidence":"cursor-position-observed"}' }
-  "mouse_click"  { Do-MouseClick $X $Y $Button $Double; Write-Output '{"ok":true,"verified":true,"evidence":"input-dispatch-only","postconditionVerified":false}' }
-  "mouse_scroll" { Do-Scroll $X $Y $Delta; Write-Output '{"ok":true,"verified":true,"evidence":"input-dispatch-only","postconditionVerified":false}' }
-  "key_press"    { Do-KeyPress $Keys; Write-Output '{"ok":true,"verified":true,"evidence":"input-dispatch-only","postconditionVerified":false}' }
-  "type_text"    { Do-TypeText $Text; Write-Output '{"ok":true,"verified":true,"evidence":"input-dispatch-only","postconditionVerified":false}' }
-  "screenshot"   { Do-Screenshot $OutFile $CropX $CropY $CropWidth $CropHeight $MaxWidth $MaxHeight }
-  "get_cursor"   { Do-GetCursor }
-  default        { Write-Output "{`"error`":`"unknown op: $Op`"}" }
+
+# ROI telemetry is optional and read-only. It never attests a semantic effect.
+function Get-GrayRoi($cx,$cy) {
+  Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+  $r=New-Object System.Drawing.Rectangle(($cx-32),($cy-32),64,64)
+  $bounds=[System.Windows.Forms.SystemInformation]::VirtualScreen
+  if (-not $bounds.Contains($r)) { throw 'ROI_OUTSIDE_DESKTOP' }
+  $bmp=$null;$g=$null
+  try {
+    $bmp=New-Object System.Drawing.Bitmap(64,64)
+    $g=[System.Drawing.Graphics]::FromImage($bmp)
+    $g.CopyFromScreen($r.Location,[System.Drawing.Point]::Empty,$r.Size)
+    $gray=New-Object byte[] 4096
+    for($y=0;$y -lt 64;$y++){for($x=0;$x -lt 64;$x++){
+      $c=$bmp.GetPixel($x,$y)
+      $gray[$y*64+$x]=[byte](($c.B*18+$c.G*183+$c.R*54) -shr 8)
+    }}
+    return ,$gray
+  } finally {if($null -ne $g){$g.Dispose()};if($null -ne $bmp){$bmp.Dispose()}}
+}
+function Measure-Roi($before,$after) {
+  if($before.Length -ne 4096 -or $after.Length -ne 4096){throw 'INVALID_ROI'}
+  $bins=New-Object int[] 16;$changed=0
+  for($i=0;$i -lt 4096;$i++){
+    $d=[Math]::Abs([int]$after[$i]-[int]$before[$i])
+    if($d -ge 8){$changed++}
+    $bins[($d -shr 4)]++
+  }
+  $entropy=0.0
+  foreach($count in $bins){if($count -gt 0){$p=$count/4096.0;$entropy-=$p*[Math]::Log($p,2)}}
+  $ratio=$changed/4096.0
+  $signal=if($entropy -ge 0.45 -and $ratio -ge 0.015){'VISUAL_CHANGE_DETECTED'}elseif($ratio -gt 0){'VISUAL_CHANGE_WEAK'}else{'NO_VISUAL_CHANGE_DETECTED'}
+  return [ordered]@{signal=$signal;changedPixelRatio=[Math]::Round($ratio,4);deltaEntropyBits=[Math]::Round($entropy,4)}
+}
+$mutating=$Op -in @('mouse_move','mouse_click','mouse_scroll','key_press','type_text')
+if($mutating){
+  $visual=$null
+  try {
+    $point=$Op -in @('mouse_move','mouse_click','mouse_scroll')
+    [WinInput]::Configure($ExpectedHwnd,$ExpectedPid,$ExpectedLeft,$ExpectedTop,$ExpectedWidth,$ExpectedHeight,$point,$X,$Y)
+    $before=$null
+    if($MeasureEntropy -and $Op -eq 'mouse_click'){
+      try{$before=Get-GrayRoi $X $Y}catch{$visual=[ordered]@{signal='UNAVAILABLE'}}
+    }
+    switch($Op){
+      'mouse_move' {Do-MouseMove $X $Y}
+      'mouse_click' {Do-MouseClick $X $Y $Button $Double}
+      'mouse_scroll' {Do-Scroll $X $Y $Delta}
+      'key_press' {Do-KeyPress $Keys}
+      'type_text' {Do-TypeText $Text}
+    }
+    if(-not [WinInput]::PostFocus()){throw 'FOCUS_DRIFT_AFTER_DISPATCH'}
+    if($null -ne $before){
+      try{
+        Start-Sleep -Milliseconds 120
+        [WinInput]::AssertTarget($true)
+        $after=Get-GrayRoi $X $Y
+        [WinInput]::AssertTarget($true)
+        $visual=Measure-Roi $before $after
+      }catch{$visual=[ordered]@{signal='UNAVAILABLE_OR_TARGET_CHANGED'}}
+    }
+    [ordered]@{ok=$true;verified=$true;outcomeUnknown=$false;postconditionVerified=$false;focusDriftedDuringDispatch=[WinInput]::FocusDrifted;evidence=$(if($Op -eq 'mouse_move'){'cursor-position-observed'}else{'input-dispatch-only'});visualObservation=$visual;telemetry=[ordered]@{hwnd=$ExpectedHwnd;pid=$ExpectedPid;postDispatchHwnd=[WinInput]::PostDispatchHwnd}} | ConvertTo-Json -Depth 5 -Compress
+  } catch {
+    $unknown=[WinInput]::DispatchAttempted -or [WinInput]::CursorChanged
+    # Do not leak typed text or arbitrary exception content in the receipt.
+    $message=$_.Exception.GetBaseException().Message
+    $errorCode=if($message -match '^[A-Z][A-Z0-9_]{2,80}$'){$message}else{'WINDOWS_INPUT_GUARD_FAILED'}
+    [ordered]@{ok=$false;verified=$false;outcomeUnknown=$unknown;postconditionVerified=$false;focusDriftedDuringDispatch=[WinInput]::FocusDrifted;error=$errorCode;telemetry=[ordered]@{hwnd=$ExpectedHwnd;postDispatchHwnd=[WinInput]::PostDispatchHwnd}} | ConvertTo-Json -Depth 5 -Compress
+  }
+} else {
+  if(-not [WinInput]::EnableDpiV2()){throw 'DPI_CONTEXT_UNVERIFIED'}
+  switch($Op){
+    'screenshot' {Do-Screenshot $OutFile $CropX $CropY $CropWidth $CropHeight $MaxWidth $MaxHeight}
+    'get_cursor' {Do-GetCursor}
+    default {throw 'UNKNOWN_INPUT_OPERATION'}
+  }
 }
