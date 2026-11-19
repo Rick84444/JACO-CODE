@@ -21,8 +21,9 @@ export function commercialTaskAllowed(task) {
   const server = task.data?.server, raw = String(task.data?.tool || '');
   const name = raw.startsWith(server + '.') ? raw.slice(server.length + 1) : raw;
   if (task.type === 'mcp-write') return server === 'agentgigs' && name === 'apply';
-  return (server === 'jobbi' && name === 'list_gigs') ||
-    (server === 'agentgigs' && ['list_available','job_status','list_attempted','list_applications'].includes(name));
+  return (server === 'jobbi' && ['list_gigs','get_gig','list_sources'].includes(name)) ||
+    (server === 'frantic' && ['read_board','get_bounty','get_agent_status','read_ledger'].includes(name)) ||
+    (server === 'agentgigs' && ['list_available','job_status','list_attempted','list_applications','estimate_payout'].includes(name));
 }
 export function seedCommercialKnowledge(knowledge) {
   const id = 'commercial-opportunity-policy-v1';
@@ -71,7 +72,7 @@ export function reconcileCommercialClock({mandates,operator,bus,nova,knowledge,c
   const allowedTasks=COMMERCIAL_TASKS.filter(t=>t!=='mcp-write' || m.decisions?.EXTERNAL_MUTATION==='ALLOW').filter(t=>!capabilities || capabilities.isTaskEnabled(t));
   if(!allowedTasks.includes('mcp-call') || !allowedTasks.includes('skill-load')) return {state:'REQUIRED_TOOLS_DISABLED'};
   const recall=knowledge.list({kind:'commercial-outcome',limit:1000}).sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt)).slice(0,5).map(k=>({missionId:k.implementation?.missionId,status:k.implementation?.status,applications:k.implementation?.applications||[],verifiedReceipts:k.metrics?.verifiedReceipts||0}));
-  const goal='Skill '+COMMERCIAL_SKILL+': run one bounded evidence-led revenue opportunity cycle before the signed clock expires. Find or reconcile paid AI-agent work, no outgoing spend, do not accept new legal terms or binding financial obligations without operator review. Review previous attempts before discovery. Read-only work can continue when marketplace credentials are missing. Record observations, IDs, blockers and next action, never invented earnings. Clock '+m.id+' cycle '+slot+'. Prior observations (unverified, recheck live): '+JSON.stringify(recall).slice(0,3000);
+  const goal='Skill '+COMMERCIAL_SKILL+': run one bounded evidence-led revenue opportunity cycle before the signed clock expires. Find or reconcile paid AI-agent and human buyer work; verify original source and estimate payout before recommending; no outgoing spend, do not accept new legal terms or binding financial obligations without operator review. Review previous attempts before discovery. Read-only work can continue when marketplace credentials are missing. Record observations, IDs, blockers and next action, never invented earnings. Clock '+m.id+' cycle '+slot+'. Prior observations (unverified, recheck live): '+JSON.stringify(recall).slice(0,3000);
   const result=nova.create({goal,source:COMMERCIAL_SOURCE,mandateId:m.id,idempotencyKey:'commercial-clock:'+m.id+':'+slot,allowedTasks});
   if(result.source!==COMMERCIAL_SOURCE || result.metadata?.mandateId!==m.id) return {state:'DEDUPLICATED_OTHER_WORK',missionId:result.id};
   return {state:'QUEUED',missionId:result.id,mandateId:m.id};

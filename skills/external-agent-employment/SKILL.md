@@ -17,3 +17,5 @@ Aura is the sole decision-making identity. Use the existing Mission Bus and dura
 7. Public work receipts contain only non-sensitive IDs and state. Count revenue only from verified payout records, not listing amounts or applications.
 
 References: https://jobbi.org/docs/mcp/ and https://www.agentgigs.io/docs/api.
+
+Use the same discovery routes and research policy as commercial-opportunity-cycle. For awarded work load the paid-delivery-quality procedure in an explicitly authorized delivery mission; never expose client work to a public repository, and never claim a delivery integration exists before observing it.

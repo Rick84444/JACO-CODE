@@ -54,6 +54,12 @@ test('expiry and revocation stop new actions, including an already claimed plann
 });
 test('scoped tool allowlist cannot grant spend or arbitrary MCP writes',()=>{
   assert.equal(commercialTaskAllowed(read),true);
+  for(const [server,tool] of [['jobbi','get_gig'],['jobbi','list_sources'],['frantic','frantic.read_board'],['frantic','frantic.get_bounty'],['frantic','frantic.read_ledger'],['agentgigs','estimate_payout']]){
+    assert.equal(commercialTaskAllowed({type:'mcp-call',data:{server,tool}}),true);
+    assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server,tool}}),false);
+  }
+  assert.equal(commercialTaskAllowed({type:'mcp-call',data:{server:'frantic',tool:'frantic.claim'}}),false);
+  assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'frantic',tool:'frantic.claim'}}),false);
   assert.equal(commercialTaskAllowed({type:'mcp-call',data:{server:'jobbi',tool:'jobbi.list_gigs'}}),true);
   assert.equal(commercialTaskAllowed({type:'mcp-call',data:{server:'jobbi',tool:'apply'}}),false);
   assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'agentgigs',tool:'fund'}}),false);

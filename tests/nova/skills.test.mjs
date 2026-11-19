@@ -66,7 +66,7 @@ test('an oversized skill is listed with its error; runs of different skills are 
 
 test('the repository skills all parse and declare supported tasks', () => {
   const list = listSkills([repoSkills]);
-  assert.deepEqual(list.map(s => s.id), ['autonomous-api-connection', 'browser-authorized-action', 'browser-workflow-understanding', 'build-web-page', 'commercial-opportunity-cycle', 'community-post', 'create-github-repo', 'external-agent-employment', 'fix-a-bug', 'product-validation', 'repo-insight', 'repo-security-scan', 'web-research']);
+  assert.deepEqual(list.map(s => s.id), ['autonomous-api-connection', 'browser-authorized-action', 'browser-workflow-understanding', 'build-web-page', 'commercial-opportunity-cycle', 'community-post', 'create-github-repo', 'external-agent-employment', 'fix-a-bug', 'paid-delivery-quality', 'product-validation', 'repo-insight', 'repo-security-scan', 'web-research']);
   for (const s of list) assert.equal(s.error, undefined, `${s.id}: ${s.error}`);
 });
 
@@ -119,4 +119,10 @@ test('browser skills keep read-only observation separate from authorized mutatio
   assert.match(action.body, /If a required approval cannot be verified/);
   assert.match(action.body, /never issue a fresh actionId/);
   assert.match(read.body, /no alternate input route/);
+});
+
+test('paid delivery review is read-only and does not imply a delivery connector',()=>{
+  const s=loadSkill([repoSkills],'paid-delivery-quality');
+  assert.deepEqual(s.tasks,['health-check','web-fetch','mcp-call','skill-load']);
+  assert.match(s.body,/does NOT expose those delivery writes/);
 });
