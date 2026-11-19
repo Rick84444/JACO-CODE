@@ -104,6 +104,7 @@ import { observationsFromMissions, plannerView } from '../agents/lib/capability-
 import { proposalStore, serverEntryFor } from '../agents/lib/tool-proposals.mjs';
 import { TASK_FIELDS } from "../agents/lib/task-fields.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
+import { currentRoutineHints, routineCoversNote, routineCoversProcedure } from "../agents/lib/routine-experience.mjs";
 import { metaStore, decisionFindings, metaTrigger, buildReflection, askPremise, reflectionStage } from "../agents/lib/meta-reasoning.mjs";
 import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
 import { operatorLanguageFile, readOperatorLanguage, writeOperatorLanguage } from "../agents/lib/operator-language.mjs";
@@ -3487,6 +3488,9 @@ const notifyPhone = async (action) => {
   app.get('/api/connected/nova/missions/:id/preflight-context', requireAuth, (req,res) => {
     try {
       const mission:any=connectedRuntime.novaMissions.get(req.params.id);
+      const routineMission={...mission,receipts:connectedRuntime.novaMissions.evidenceReceipts(mission.id)};
+      const routineExperience={schema:'jaco.routine-context/v1',authority:'advisory_only',current:currentRoutineHints(routineMission),historical:skillLearning.recallRoutine(routineMission)};
+      if(req.query.routineOnly==='1'){res.setHeader('Cache-Control','no-store');res.json({success:true,context:routineExperience});return;}
       const revision=String(req.query.revision||'').slice(0,160);
       const outcomes=skillLearning.recallOutcome(mission.contract,revision);
       const economic=continuumSurface.runtime.economic.snapshot();
@@ -3495,7 +3499,7 @@ const notifyPhone = async (action) => {
       // What tools have actually answered (agents/lib/capability-observation.mjs): evidence for planning, never permission.
       let capabilities: any = null;
       try { capabilities = capabilityView(); } catch { capabilities = null; }
-      res.json({success:true,context:{budget:{policy:economic.policy,headroom:economic.headroom},outcomes,approvedToolNotes:skillLearning.notes(),decisionLessons,capabilities}});
+      res.json({success:true,context:{budget:{policy:economic.policy,headroom:economic.headroom},outcomes,approvedToolNotes:skillLearning.notes(),decisionLessons,capabilities,routineExperience}});
     } catch(error:any) {res.status(400).json({success:false,error:error?.message||'MISSION_CONTEXT_FAILED'});}
   });
   // Run a skill as a Nova mission: the goal names the skill and carries the operator's input; the
@@ -4395,15 +4399,16 @@ const notifyPhone = async (action) => {
         try { mission = connectedRuntime.novaMissions.get(base.id); } catch { skillLearning.markLearned(base.id); continue; }
         const check = events.find((e: any) => e.missionId === base.id && e.type === 'NOVA_CLAIM_CHECK')?.payload || null;
         const lessons = lessonsFrom(mission, check);
-        const reflection=skillLearning.recordOutcome(mission);
+        const reflection: any=skillLearning.recordOutcome({...mission,receipts:connectedRuntime.novaMissions.evidenceReceipts(mission.id)},{claimCheck:check});
         connectedRuntime.bus.event('NOVA_REFLECTION',{missionId:mission.id,payload:{schema:reflection.schema,verificationStatus:reflection.verificationStatus,worked:reflection.worked,failed:reflection.failed,evidence:reflection.evidence}});
         const made: string[] = [];
-        for (const note of lessons.notes) { const p = skillLearning.add(note); if (p) made.push(p.key); }
-        if (lessons.procedure) {
+        for (const note of lessons.notes) { if(routineCoversNote(reflection.routine,note)) continue; const p = skillLearning.add(note); if (p) made.push(p.key); }
+        if (lessons.procedure && !routineCoversProcedure(reflection.routine,lessons.procedure.steps)) {
           const named = await nameProcedure(mission.goal, lessons.procedure.steps, { candidates: judgeCandidates(process.env) });
           const p = skillLearning.add({ ...skillProposal(mission, mission.receipts, named), missionId: mission.id, namedBy: named.by });
           if (p) made.push(p.key);
         }
+        if(reflection.routine) connectedRuntime.bus.event('NOVA_ROUTINE_EXPERIENCE',{missionId:mission.id,payload:{authority:'advisory_only',playbook:Boolean(reflection.routine.playbook),lessonCount:reflection.routine.lessons.length}});
         skillLearning.markLearned(base.id);
         if (made.length) seerLiveWorkstream.record({ actor: 'JACO learning', type: 'skill.proposed', message: `${base.id}: ${made.length} proposal(s) for operator review`, verified: true, receipt: { missionId: base.id, proposals: made } });
       }
