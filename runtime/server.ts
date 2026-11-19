@@ -930,42 +930,47 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
     try { res.json({ success: true, ...(await connections.refresh()) }); }
     catch { res.status(503).json({ success: false, error: 'CONNECTION_REFRESH_FAILED' }); }
   });
-  // Aura's spoken voice for the portrait: the same female neural voice as her voice notes (voiceChannel.synthesize).
-  // The text is spoken by the operator's chosen engine; edge-tts sends it to Microsoft, as documented in voiceChannel.
+  // Aura's spoken voice for the portrait: local Piper Alma first; the voiceChannel engine (edge-tts, which sends the
+  // text to Microsoft, as documented in voiceChannel) only when Piper is unavailable.
   app.post('/api/aura/voice/speak', requireLocalUiSameOrigin, async (req, res) => {
     const text = typeof req.body?.text === 'string' ? req.body.text : '';
     if (!text.trim() || text.length > 6000) return res.status(400).json({ success: false, error: 'VOICE_TEXT_INVALID' });
     const lang = typeof req.body?.lang === 'string' && /^[a-z]{2}-[A-Z]{2}$/.test(req.body.lang) ? req.body.lang : 'sv-SE';
+    // Operator 2026-11-19: Aura's voice is Piper TTS with Alma (sv_SE-alma-medium, CC-BY-4.0). It runs on this
+    // computer, so nothing she says leaves the machine. The neural edge voice is only the fallback when Piper fails.
+    const model = process.env.JACO_PIPER_MODEL || path.join(os.homedir(), '.jaco', 'voice', 'piper', 'sv_SE-alma-medium.onnx');
+    let piperError = 'PIPER_MODEL_MISSING';
+    if (lang.startsWith('sv') && fs.existsSync(model)) {
+      const out = path.join(os.tmpdir(), `jaco-aura-voice-${process.pid}-${Date.now()}.wav`);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const python = process.env.JACO_VOICE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+          const child = spawn(python, ['-m', 'piper', '-m', model, '-f', out], { windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'] });
+          const timer = setTimeout(() => { child.kill(); reject(new Error('PIPER_TIMEOUT')); }, 60000);
+          child.on('error', err => { clearTimeout(timer); reject(err); });
+          child.on('close', code => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`PIPER_EXIT_${code}`)); });
+          child.stdin.end(text.slice(0, 6000));
+        });
+        if (fs.existsSync(out) && fs.statSync(out).size > 200) {
+          res.setHeader('Cache-Control', 'no-store');
+          res.setHeader('X-Jaco-Voice', 'piper-alma');
+          return res.type('audio/wav').send(fs.readFileSync(out));
+        }
+        piperError = 'PIPER_EMPTY_OUTPUT';
+      } catch (error: any) { piperError = String(error?.message || 'PIPER_FAILED').slice(0, 80); }
+      finally { fs.rmSync(out, { force: true }); }
+    }
     try {
       const env = { ...process.env, JACO_VOICE_ENGINE: process.env.JACO_VOICE_ENGINE || 'edge', JACO_VOICE_LANG: process.env.JACO_VOICE_LANG || lang };
       const sound = await synthesizeVoice(text, { env });
       try {
         const bytes = fs.readFileSync(sound.file);
         res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Jaco-Voice', 'fallback');
         res.type(sound.mimetype.split(';')[0]).send(bytes);
       } finally { fs.rmSync(sound.file, { force: true }); }
     } catch (error: any) {
-      // Local fallback so Aura is never mute: the Swedish Piper voice (Alma, CC-BY-4.0) runs on this computer.
-      const model = process.env.JACO_PIPER_MODEL || path.join(os.homedir(), '.jaco', 'voice', 'piper', 'sv_SE-alma-medium.onnx');
-      if (lang.startsWith('sv') && fs.existsSync(model)) {
-        const out = path.join(os.tmpdir(), `jaco-aura-voice-${process.pid}-${Date.now()}.wav`);
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const python = process.env.JACO_VOICE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
-            const child = spawn(python, ['-m', 'piper', '-m', model, '-f', out], { windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'] });
-            const timer = setTimeout(() => { child.kill(); reject(new Error('PIPER_TIMEOUT')); }, 60000);
-            child.on('error', err => { clearTimeout(timer); reject(err); });
-            child.on('close', code => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`PIPER_EXIT_${code}`)); });
-            child.stdin.end(text.slice(0, 6000));
-          });
-          if (fs.existsSync(out) && fs.statSync(out).size > 200) {
-            res.setHeader('Cache-Control', 'no-store');
-            return res.type('audio/wav').send(fs.readFileSync(out));
-          }
-        } catch { /* fall through to the error below */ }
-        finally { fs.rmSync(out, { force: true }); }
-      }
-      res.status(503).json({ success: false, error: String(error?.message || 'VOICE_UNAVAILABLE').slice(0, 160) });
+      res.status(503).json({ success: false, error: `${piperError}; ${String(error?.message || 'VOICE_UNAVAILABLE')}`.slice(0, 200) });
     }
   });
   // Metadata only. Existing env, encrypted store and legacy Windows vault remain the owners.
