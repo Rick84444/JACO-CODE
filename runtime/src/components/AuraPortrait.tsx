@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react';
 import { useUiLanguage } from '../i18n/UiLanguage';
+import { workspaceReplyText } from '../lib/workspaceActions.mjs';
 
 export interface AuraPortraitChat {
   input: string;
@@ -101,7 +102,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       setSpeaking(false);
       try { previous.cancel(); } catch { /* Already stopped. */ }
     }
-    const text = latestReply.content;
+    const text = workspaceReplyText(latestReply.content);
     // Aura's own female neural voice (the same engine as her voice notes), played through an audio element so
     // the rig's formant tracker drives her mouth from the real sound. The browser voice is only a fallback.
     const controller = new AbortController();
@@ -328,7 +329,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     {maskError && <p role="status">{tr('Den tredimensionella gestalten kunde inte laddas. Chatten är fortfarande tillgänglig.', 'The 3D lightform could not load. Chat remains available.')}</p>}
     <p data-tone={tone}>{label}</p>
     {chat && <div className="aura-portrait-conversation">
-      {latestReply && <div className="aura-portrait-reply" aria-live="polite">{latestReply.content}</div>}
+      {latestReply && <div className="aura-portrait-reply" aria-live="polite">{workspaceReplyText(latestReply.content)}</div>}
       <textarea value={chat.input} onChange={event => { const text = event.currentTarget.value; chat.setInput(() => text); }}
         onKeyDown={event => {
           // Enter sends, Shift+Enter makes a new line.
