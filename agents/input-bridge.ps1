@@ -32,7 +32,8 @@ param(
   [int]$ExpectedTop = 0,
   [int]$ExpectedWidth = 0,
   [int]$ExpectedHeight = 0,
-  [switch]$MeasureEntropy
+  [switch]$MeasureEntropy,
+  [switch]$Daemon
 )
 
 $ErrorActionPreference = 'Stop'
@@ -109,6 +110,19 @@ public class WinInput {
   public static bool FocusDrifted {get;private set;}
   public static long PostDispatchHwnd {get;private set;}
   public static bool CursorChanged {get;private set;}
+  static long deadlineMs;
+  public static void ResetRequest(long deadline) {
+    target=IntPtr.Zero;targetPid=0;pointRequired=false;
+    DispatchAttempted=false;FocusDrifted=false;PostDispatchHwnd=0;CursorChanged=false;
+    deadlineMs=deadline;
+  }
+  static void AssertLive() {
+    if(deadlineMs>0 && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()>=deadlineMs)
+      throw new InvalidOperationException("BRIDGE_REQUEST_EXPIRED");
+    string stop=Environment.GetEnvironmentVariable("JACO_KILL_SWITCH_FILE");
+    if(!String.IsNullOrEmpty(stop)&&System.IO.File.Exists(stop))
+      throw new InvalidOperationException("HUMAN_KILL_SWITCH_ACTIVE");
+  }
   public static bool EnableDpiV2() {
     try {
       IntPtr context=new IntPtr(-4);
@@ -135,6 +149,7 @@ public class WinInput {
     return GetForegroundWindow()==target&&GetWindowThreadProcessId(target,out pid)!=0&&pid==targetPid;
   }
   public static void AssertTarget(bool checkCursor) {
+    AssertLive();
     if(!EnableDpiV2())throw new InvalidOperationException("DPI_CONTEXT_UNVERIFIED");
     if(target==IntPtr.Zero||!SameForeground())throw new InvalidOperationException("FOCUS_OR_PID_DRIFT");
     RECT rect,frame;
@@ -148,6 +163,7 @@ public class WinInput {
   }
   public static void MoveChecked(int x,int y) {
     AssertTarget(false);
+    AssertLive();
     CursorChanged=true;
     if(!SetCursorPos(x,y))throw new InvalidOperationException("CURSOR_MOVE_REJECTED");
   }
@@ -158,6 +174,7 @@ public class WinInput {
 
   public static void SendChecked(INPUT[] inputs) {
     AssertTarget(pointRequired);
+    AssertLive();
     DispatchAttempted=true;
     uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
     bool same=PostFocus();
@@ -424,6 +441,33 @@ function Measure-Roi($before,$after) {
 }
 # Deterministic Windows CI probe: compile Win32 bindings, exercise entropy and
 # invalid-binding refusal; never dispatch an actual input event.
+function Invoke-BridgeRequest {
+param(
+  [string]$Op,
+  [int]$X = 0,
+  [int]$Y = 0,
+  [string]$Button = "left",
+  [switch]$Double,
+  [int]$Delta = 3,
+  [string]$Keys = "",
+  [string]$Text = "",
+  [string]$OutFile = "",
+  [Nullable[int]]$CropX = $null,
+  [Nullable[int]]$CropY = $null,
+  [Nullable[int]]$CropWidth = $null,
+  [Nullable[int]]$CropHeight = $null,
+  [Nullable[int]]$MaxWidth = $null,
+  [Nullable[int]]$MaxHeight = $null,
+  [long]$ExpectedHwnd = 0,
+  [uint32]$ExpectedPid = 0,
+  [int]$ExpectedLeft = 0,
+  [int]$ExpectedTop = 0,
+  [int]$ExpectedWidth = 0,
+  [int]$ExpectedHeight = 0,
+  [switch]$MeasureEntropy,
+  [long]$DeadlineMs=0
+)
+[WinInput]::ResetRequest($DeadlineMs)
 if($Op -eq 'self_test'){
   $a=New-Object byte[] 4096
   $b=New-Object byte[] 4096
@@ -484,5 +528,46 @@ if($mutating){
     'screenshot' {Do-Screenshot $OutFile $CropX $CropY $CropWidth $CropHeight $MaxWidth $MaxHeight}
     'get_cursor' {Do-GetCursor}
     default {throw 'UNKNOWN_INPUT_OPERATION'}
+  }
+}
+
+}
+
+if(-not $Daemon){
+  $bound=@{}
+  foreach($k in $PSBoundParameters.Keys){if($k -ne 'Daemon'){$bound[$k]=$PSBoundParameters[$k]}}
+  Invoke-BridgeRequest @bound
+  return
+}
+# Strict local stdio protocol. No evaluation, no arbitrary command or script.
+[Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false)
+[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
+$allowed=@('Op','X','Y','Button','Double','Delta','Keys','Text','OutFile','CropX','CropY','CropWidth','CropHeight','MaxWidth','MaxHeight','ExpectedHwnd','ExpectedPid','ExpectedLeft','ExpectedTop','ExpectedWidth','ExpectedHeight','MeasureEntropy','DeadlineMs')
+while($null -ne ($line=[Console]::ReadLine())){
+  $reqId=$null;$started=$false;$mutation=$false
+  try{
+    if($line.Length -gt 65536){throw 'BRIDGE_FRAME_TOO_LARGE'}
+    $req=$line | ConvertFrom-Json -ErrorAction Stop
+    $reqId=$req.reqId
+    if($reqId -isnot [string] -or $reqId -notmatch '^[0-9a-f-]{36}$'){throw 'BRIDGE_INVALID_REQUEST_ID'}
+    $bound=@{}
+    foreach($property in $req.PSObject.Properties){
+      $name=$property.Name
+      if($name -eq 'reqId'){continue}
+      if($allowed -notcontains $name){throw 'BRIDGE_INVALID_FIELD'}
+      if($name -in @('Double','MeasureEntropy') -and $property.Value -isnot [bool]){throw 'BRIDGE_INVALID_FLAG'}
+      $bound[$name]=$property.Value
+    }
+    if($bound.Op -notin @('mouse_move','mouse_click','mouse_scroll','key_press','type_text','get_cursor','screenshot','self_test')){throw 'UNKNOWN_INPUT_OPERATION'}
+    if(-not $bound.DeadlineMs -or [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() -ge [long]$bound.DeadlineMs){throw 'BRIDGE_REQUEST_EXPIRED'}
+    $mutation=$bound.Op -in @('mouse_move','mouse_click','mouse_scroll','key_press','type_text')
+    $started=$true
+    $output=Invoke-BridgeRequest @bound
+    $receipt=$output | ConvertFrom-Json -ErrorAction Stop
+    if($null -eq $receipt.verified){$receipt | Add-Member -NotePropertyName verified -NotePropertyValue ($receipt.ok -eq $true)}
+    $receipt | Add-Member -NotePropertyName reqId -NotePropertyValue $reqId
+    [Console]::WriteLine(($receipt | ConvertTo-Json -Depth 8 -Compress))
+  }catch{
+    [Console]::WriteLine(([ordered]@{reqId=$reqId;ok=$false;verified=$false;outcomeUnknown=($started -and $mutation);error='BRIDGE_REQUEST_FAILED'} | ConvertTo-Json -Compress))
   }
 }

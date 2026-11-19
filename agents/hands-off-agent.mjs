@@ -1,3 +1,4 @@
+import { createInputBridgeDaemon } from './lib/input-bridge-daemon.mjs';
 import { compactPlannerStep, focusPlannerToolDescriptions } from './lib/context-packet.mjs';
 import { localCommandHint, shellHostGuidance } from './lib/local-command-inventory.mjs';
 import { PRE_APPROVABLE, HARD_LIMITS } from './lib/operator-action-guard.mjs';
@@ -717,18 +718,21 @@ const lawnmower = {
 
 const INPUT_BRIDGE = join(__dirname, "input-bridge.ps1");
 
+const inputBridgeDaemon=createInputBridgeDaemon(INPUT_BRIDGE);
 function runBridge(args) {
-  if(process.platform!=='win32'||!existsSync(INPUT_BRIDGE))return {ok:false,verified:false,error:'WINDOWS_INPUT_BRIDGE_UNAVAILABLE'};
-  const mutating=['mouse_move','mouse_click','mouse_scroll','key_press','type_text'].includes(args[1]);
-  try {
-    const out = execFileSync('powershell', ['-NonInteractive', '-NoProfile', '-File', INPUT_BRIDGE, ...args.map(String)], { timeout: 10000, encoding: "utf8", windowsHide: true }).trim();
-    const result=JSON.parse(out);
-    if(mutating&&result.ok!==true)return {...result,verified:false,outcomeUnknown:result.outcomeUnknown!==false};
-    return result;
-  } catch (e) {
-    // Never include process arguments (typed text) in a failure receipt.
-    return { ok:false,verified:false,error:'WINDOWS_INPUT_BRIDGE_FAILED', outcomeUnknown:mutating, exitCode:Number.isInteger(e.status)?e.status:null };
+  if(process.platform!=='win32'||!existsSync(INPUT_BRIDGE))return Promise.resolve({ok:false,verified:false,error:'WINDOWS_INPUT_BRIDGE_UNAVAILABLE',outcomeUnknown:false});
+  const payload={};
+  const flags=new Set(['Double','MeasureEntropy']);
+  const fields=new Set(['Op','X','Y','Button','Delta','Keys','Text','OutFile','CropX','CropY','CropWidth','CropHeight','MaxWidth','MaxHeight','ExpectedHwnd','ExpectedPid','ExpectedLeft','ExpectedTop','ExpectedWidth','ExpectedHeight']);
+  for(let i=0;i<args.length;i++){
+    const key=String(args[i]).slice(1);
+    if(flags.has(key)){payload[key]=true;continue;}
+    if(!fields.has(key)||i+1>=args.length)return Promise.resolve({ok:false,verified:false,error:'BRIDGE_INVALID_ARGUMENTS',outcomeUnknown:false});
+    payload[key==='Op'?'op':key]=args[++i];
   }
+  // Never fall back to a separate process or retry a mutation when the bridge
+  // lost its receipt. The existing mission reconciliation owns that boundary.
+  return inputBridgeDaemon.send(payload);
 }
 
 const computerTools = {
@@ -815,7 +819,7 @@ const computerTools = {
     if (maxWidth) args.push('-MaxWidth', maxWidth);
     if (maxHeight) args.push('-MaxHeight', maxHeight);
 
-    const result = runBridge(args);
+    const result = await runBridge(args);
     if (!result.ok) return result;
 
     const imageSha256 = createHash('sha256').update(readFileSync(file)).digest('hex');
