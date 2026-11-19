@@ -126,7 +126,9 @@ jobs:
           grep -q 'installation OK' "$RUNNER_TEMP/pixel-doctor.txt"
           grep -q 'kind *: android' "$RUNNER_TEMP/pixel-doctor.txt"
           grep -q "source commit *: $GITHUB_SHA" "$RUNNER_TEMP/pixel-doctor.txt"
-          "$JACO_LITE_BIN_DIR/jaco-lite" update | grep -q 'already up to date'
+          "$JACO_LITE_BIN_DIR/jaco-lite" update > "$RUNNER_TEMP/pixel-update.txt"
+          cat "$RUNNER_TEMP/pixel-update.txt"
+          grep -q 'already up to date' "$RUNNER_TEMP/pixel-update.txt"
           test -f "$JACO_LITE_HOME/current/START-PIXEL-TERMINAL.sh"
           "$JACO_LITE_BIN_DIR/jaco-lite" uninstall --yes
 
