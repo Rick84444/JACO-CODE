@@ -187,6 +187,63 @@ public class WinInput {
     i[1].type = INPUT_KEYBOARD; i[1].u.ki.wScan = (ushort)c; i[1].u.ki.dwFlags = 0x0006; // UNICODE+KEYUP
     SendChecked(i);
   }
+
+  [StructLayout(LayoutKind.Sequential)] private struct BITMAPINFOHEADER {
+    public uint biSize;public int biWidth,biHeight;public ushort biPlanes,biBitCount;
+    public uint biCompression,biSizeImage;public int biXPelsPerMeter,biYPelsPerMeter;
+    public uint biClrUsed,biClrImportant;
+  }
+  [StructLayout(LayoutKind.Sequential)] private struct BITMAPINFO {
+    public BITMAPINFOHEADER header;public uint colors;
+  }
+  [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
+  [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd,IntPtr dc);
+  [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleDC(IntPtr dc);
+  [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleBitmap(IntPtr dc,int w,int h);
+  [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr dc,IntPtr obj);
+  [DllImport("gdi32.dll")] private static extern bool BitBlt(IntPtr dest,int x,int y,int w,int h,IntPtr src,int sx,int sy,uint rop);
+  [DllImport("gdi32.dll")] private static extern int GetDIBits(IntPtr dc,IntPtr bitmap,uint start,uint lines,[Out] byte[] bytes,ref BITMAPINFO info,uint usage);
+  [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr obj);
+  [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr dc);
+  static bool ValidHandle(IntPtr p){return p!=IntPtr.Zero&&p!=new IntPtr(-1);}
+  public static byte[] CaptureGrayRoi64(int cx,int cy) {
+    AssertTarget(false);
+    int x=cx-32,y=cy-32;
+    // ROI is an optional local visual signal, not a general screen capture.
+    for(int i=0;i<4;i++){
+      POINT corner=new POINT{X=x+((i&1)!=0?63:0),Y=y+((i&2)!=0?63:0)};
+      if(GetAncestor(WindowFromPoint(corner),2)!=target)throw new InvalidOperationException("ROI_OUTSIDE_TARGET");
+    }
+    IntPtr screen=IntPtr.Zero,mem=IntPtr.Zero,bmp=IntPtr.Zero,old=IntPtr.Zero;
+    bool selected=false;
+    try {
+      screen=GetDC(IntPtr.Zero);if(!ValidHandle(screen))throw new InvalidOperationException("ROI_DC_FAILED");
+      mem=CreateCompatibleDC(screen);if(!ValidHandle(mem))throw new InvalidOperationException("ROI_MEM_DC_FAILED");
+      bmp=CreateCompatibleBitmap(screen,64,64);if(!ValidHandle(bmp))throw new InvalidOperationException("ROI_BITMAP_FAILED");
+      old=SelectObject(mem,bmp);if(!ValidHandle(old))throw new InvalidOperationException("ROI_SELECT_FAILED");
+      selected=true;
+      if(!BitBlt(mem,0,0,64,64,screen,x,y,0x00CC0020))throw new InvalidOperationException("ROI_COPY_FAILED");
+      // GetDIBits requires the bitmap not to be selected into a DC.
+      if(!ValidHandle(SelectObject(mem,old)))throw new InvalidOperationException("ROI_DESELECT_FAILED");
+      selected=false;
+      BITMAPINFO info=new BITMAPINFO();
+      info.header.biSize=(uint)Marshal.SizeOf(typeof(BITMAPINFOHEADER));
+      info.header.biWidth=64;info.header.biHeight=-64;info.header.biPlanes=1;info.header.biBitCount=32;
+      byte[] bgra=new byte[64*64*4];
+      if(GetDIBits(screen,bmp,0,64,bgra,ref info,0)!=64)throw new InvalidOperationException("ROI_READ_FAILED");
+      AssertTarget(false);
+      byte[] gray=new byte[4096];
+      for(int i=0,j=0;i<gray.Length;i++,j+=4)gray[i]=(byte)((bgra[j]*18+bgra[j+1]*183+bgra[j+2]*54)>>8);
+      return gray;
+    } finally {
+      // Delete the memory DC before its bitmap if deselection failed.
+      if(selected&&ValidHandle(mem)&&ValidHandle(old))SelectObject(mem,old);
+      if(ValidHandle(mem))DeleteDC(mem);
+      if(ValidHandle(bmp))DeleteObject(bmp);
+      if(ValidHandle(screen))ReleaseDC(IntPtr.Zero,screen);
+    }
+  }
+
   public static void Chord(ushort[] keys) {
     INPUT[] batch=new INPUT[keys.Length*2];
     for(int i=0;i<keys.Length;i++){
@@ -350,22 +407,7 @@ function Do-Scroll($x, $y, $delta) {
 
 # ROI telemetry is optional and read-only. It never attests a semantic effect.
 function Get-GrayRoi($cx,$cy) {
-  Add-Type -AssemblyName System.Windows.Forms,System.Drawing
-  $r=New-Object System.Drawing.Rectangle(($cx-32),($cy-32),64,64)
-  $bounds=[System.Windows.Forms.SystemInformation]::VirtualScreen
-  if (-not $bounds.Contains($r)) { throw 'ROI_OUTSIDE_DESKTOP' }
-  $bmp=$null;$g=$null
-  try {
-    $bmp=New-Object System.Drawing.Bitmap(64,64)
-    $g=[System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen($r.Location,[System.Drawing.Point]::Empty,$r.Size)
-    $gray=New-Object byte[] 4096
-    for($y=0;$y -lt 64;$y++){for($x=0;$x -lt 64;$x++){
-      $c=$bmp.GetPixel($x,$y)
-      $gray[$y*64+$x]=[byte](($c.B*18+$c.G*183+$c.R*54) -shr 8)
-    }}
-    return ,$gray
-  } finally {if($null -ne $g){$g.Dispose()};if($null -ne $bmp){$bmp.Dispose()}}
+  return ,([WinInput]::CaptureGrayRoi64($cx,$cy))
 }
 function Measure-Roi($before,$after) {
   if($before.Length -ne 4096 -or $after.Length -ne 4096){throw 'INVALID_ROI'}
