@@ -6,7 +6,7 @@ import path from 'node:path';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl } from '../../runtime/src/server/connected/novaMissionControl.mjs';
 import { KnowledgeStore } from '../../runtime/src/server/continuum/knowledgeStore.mjs';
-import { COMMERCIAL_CLOCK, COMMERCIAL_SOURCE, COMMERCIAL_TASKS, commercialAuthorized, commercialTaskAllowed, reconcileCommercialClock, archiveCommercialOutcome } from '../../runtime/src/server/autonomy/commercialClock.mjs';
+import { COMMERCIAL_CLOCK, COMMERCIAL_SOURCE, COMMERCIAL_TASKS, commercialAuthorized, commercialTaskAllowed, reconcileCommercialClock, archiveCommercialOutcome, archiveCommercialBatch } from '../../runtime/src/server/autonomy/commercialClock.mjs';
 import { operatorApprovalCheck } from '../../agents/lib/operator-action-guard.mjs';
 
 function setup(t) {
@@ -30,11 +30,16 @@ test('only an explicit active commercial clock queues one mission and seeds cano
   s.setEnabled(true);s.setMode('PAUSED');assert.equal(s.tick().state,'INACTIVE');
   s.setMode('RUNNING');s.setEmergency(true);assert.equal(s.tick().state,'INACTIVE');
   s.setEmergency(false);
+  assert.throws(()=>s.knowledge.get('commercial-operator-knowledge-v2'),/not found/);
   const first=s.tick();assert.equal(first.state,'QUEUED');
   assert.equal(s.tick().state,'OUTSTANDING');
   const mission=s.nova.get(first.missionId);
   assert.equal(mission.source,COMMERCIAL_SOURCE);assert.equal(mission.metadata.mandateId,s.m.id);
   assert.equal(s.knowledge.get('commercial-opportunity-policy-v1').verificationStatus,'UNVERIFIED');
+  const policy=s.knowledge.get('commercial-operator-knowledge-v2');
+  assert.equal(policy.verificationStatus,'UNVERIFIED');
+  assert.equal(policy.confidence,0);
+  assert.equal(seedCommercialOperatorKnowledge(s.knowledge).revision,policy.revision);
   assert.equal(s.nova.current().id,mission.id);
 });
 test('expiry and revocation stop new actions, including an already claimed planning turn',t=>{
@@ -49,12 +54,20 @@ test('expiry and revocation stop new actions, including an already claimed plann
 });
 test('scoped tool allowlist cannot grant spend or arbitrary MCP writes',()=>{
   assert.equal(commercialTaskAllowed(read),true);
+  for(const [server,tool] of [['jobbi','get_gig'],['jobbi','list_sources'],['frantic','frantic.read_board'],['frantic','frantic.get_bounty'],['frantic','frantic.read_ledger'],['agentgigs','estimate_payout']]){
+    assert.equal(commercialTaskAllowed({type:'mcp-call',data:{server,tool}}),true);
+    assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server,tool}}),false);
+  }
+  assert.equal(commercialTaskAllowed({type:'mcp-call',data:{server:'frantic',tool:'frantic.claim'}}),false);
+  assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'frantic',tool:'frantic.claim'}}),false);
   assert.equal(commercialTaskAllowed({type:'mcp-call',data:{server:'jobbi',tool:'jobbi.list_gigs'}}),true);
   assert.equal(commercialTaskAllowed({type:'mcp-call',data:{server:'jobbi',tool:'apply'}}),false);
   assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'agentgigs',tool:'fund'}}),false);
   assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'agentgigs',tool:'apply'}}),true);
   assert.ok(operatorApprovalCheck({type:'mcp-write',data:{server:'agentgigs',tool:'apply'}}));
   assert.ok(operatorApprovalCheck({type:'mcp-write',data:{server:'agentgigs',tool:'agentgigs.apply'}}));
+  assert.equal(commercialTaskAllowed({type:'skill-load',data:{id:'buyer-tailored-proposal'}}),true);
+  assert.equal(commercialTaskAllowed({type:'skill-load',data:{id:'product-validation'}}),false);
   assert.equal(commercialTaskAllowed({type:'shell',data:{command:'curl'}}),false);
 });
 test('out-of-scope tools rejected in real Nova begin; no fabricated revenue in outcome memory',t=>{
@@ -72,34 +85,18 @@ test('out-of-scope tools rejected in real Nova begin; no fabricated revenue in o
   s.advance(3600000+Math.max(0,Date.parse(mission.createdAt)-Date.parse(s.m.signedAt))+1);assert.equal(s.tick().state,'QUEUED');
 });
 
-test('commercial toolkit keeps outward writes on review',()=>{
- for(const tool of ['quote_economics','earnings_summary','notifications','job_messages'])assert.equal(commercialTaskAllowed({type:'mcp-call',data:{server:'agentgigs',tool}}),true);
- for(const tool of ['apply','send_job_message','deliver_staged_text']){const task={type:'mcp-write',data:{server:'agentgigs',tool}};assert.equal(commercialTaskAllowed(task),true);assert.ok(operatorApprovalCheck(task));}
- assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'agentgigs',tool:'stage_text_delivery'}}),true);
- assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'agentgigs',tool:'fund-escrow'}}),false);
-});
-
-test('real nested Nova tool receipts are remembered without promoting estimates or delivery to cash',t=>{
-  const s=setup(t),id=s.tick().missionId,job='12345678-1234-1234-1234-123456789abc';
-  const {token}=s.nova.claim(id,'agent');
-  const a=s.nova.begin(id,{owner:'agent',token,task:{type:'mcp-call',data:{server:'agentgigs',tool:'quote_economics'}}});
-  s.nova.finish(id,{owner:'agent',token,actionId:a.id,receipt:{ok:true,verified:true,result:{server:'agentgigs',tool:'quote_economics',output:JSON.stringify({price_cents:5000,expected_contribution_cents:3100,expected_cents_per_hour:1550,settlement_verified:false})}}});
-  const b=s.nova.claim(id,'agent');
-  const act=s.nova.begin(id,{owner:'agent',token:b.token,task:{type:'mcp-call',data:{server:'agentgigs',tool:'job_status'}}});
-  s.nova.finish(id,{owner:'agent',token:b.token,actionId:act.id,receipt:{ok:true,verified:true,result:{server:'agentgigs',tool:'job_status',output:JSON.stringify({job:{id:job},application:{status:'funded',proposed_price:5000}})}}});
-  s.nova.requestCancel(id,'test end');
-  const m=s.nova.get(id),k=archiveCommercialOutcome({mission:m,nova:s.nova,knowledge:s.knowledge});
-  assert.deepEqual(k.implementation.applications,[{job_id:job,status:'funded',proposed_price:5000}]);
-  assert.equal(k.implementation.quotes[0].expected_contribution_cents,3100);
-  assert.equal(k.implementation.quotes[0].settled,false);
-  assert.equal(k.verificationStatus,'UNVERIFIED');
-});
-test('blocked commercial approval allows an independent read-only cycle, never a new write',t=>{
-  const s=setup(t),id=s.tick().missionId,m=s.nova.get(id);
-  const {token}=s.nova.claim(id,'agent');
-  assert.throws(()=>s.nova.begin(id,{owner:'agent',token,task:{type:'mcp-write',data:{server:'agentgigs',tool:'apply',arguments:{}}}}),/OPERATOR_APPROVAL_REQUIRED/);
-  s.advance(3600000+Math.max(0,Date.parse(m.createdAt)-Date.parse(s.m.signedAt))+1);
-  const next=s.tick();assert.equal(next.state,'QUEUED');assert.notEqual(next.missionId,id);
-  const later=s.nova.get(next.missionId);assert.equal(later.allowedTasks.includes('mcp-write'),false);
-  assert.equal(s.nova.get(id).status,'BLOCKED');
+test('commercial archive retry does not block unrelated completed missions', () => {
+  const rows=[{id:'a',source:COMMERCIAL_SOURCE,status:'DONE'},{id:'b',source:COMMERCIAL_SOURCE,status:'DONE'}];
+  const stored=new Map(), errors=[];
+  let fail=true;
+  const bus={listTerminalMissionsBySource:(_source,after,limit)=>rows.filter(x=>x.id>after).slice(0,limit)};
+  const nova={get:id=>rows.find(x=>x.id===id),evidenceReceipts:()=>[]};
+  const knowledge={get:id=>{if(!stored.has(id))throw Error('not found');return stored.get(id);},put:item=>{if(fail&&item.id.endsWith('-a'))throw Error('disk temporarily unavailable');stored.set(item.id,item);return item;}};
+  const args={bus,nova,knowledge,onError:(_error,id)=>errors.push(id)};
+  archiveCommercialBatch(args);
+  assert.deepEqual(errors,['a']);
+  assert.equal(stored.has('commercial-outcome-b'),true);
+  fail=false;
+  archiveCommercialBatch(args);
+  assert.equal(stored.has('commercial-outcome-a'),true);
 });

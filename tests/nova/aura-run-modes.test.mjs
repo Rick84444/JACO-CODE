@@ -15,7 +15,8 @@ test('Manual and Planning cannot create a mission; Full Autonomous never represe
   assert.equal(AURA_RUN_MODES.manual.createsMission, false);
   assert.equal(AURA_RUN_MODES.planning.createsMission, false);
   assert.equal(AURA_RUN_MODES.autonomous.createsMission, true);
-  assert.equal(AURA_RUN_MODES.autonomous.interactionMode, 'question');
+  assert.equal(AURA_RUN_MODES.autonomous.interactionMode, 'action', 'in Full Autonomous Aura acts in the conversation under her mandate');
+  assert.equal(AURA_RUN_MODES.manual.interactionMode, 'question');
   assert.equal(AURA_RUN_MODES.planning.interactionMode, 'planning');
   assert.equal(normalizeAuraRunMode('autonomous').executionMode, 'autonomous');
   assert.throws(() => normalizeAuraRunMode('unlimited'), /AURA_RUN_MODE_UNKNOWN/);

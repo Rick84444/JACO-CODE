@@ -9,6 +9,8 @@
 // sends is a credential.
 export const OVERLAY_WORLD = 'jaco-aura';
 export const OVERLAY_BINDING = '__jacoAura';
+// Operator-visible preview only; does not synthesize a mouse trajectory or change input authorization.
+export const POINTER_GLIDE_MS = 1100;
 
 const WORDS = {
   sv: { title: 'Aura', working: 'Arbetar i det här fönstret', idle: 'Väntar', placeholder: 'Skriv till Aura, uppdraget fortsätter…', send: 'Skicka', stop: 'Stoppa', sure: 'Ja, stoppa', stopped: 'Uppdraget stoppas.', hide: 'Dölj', show: 'Aura' },
@@ -34,8 +36,9 @@ export function overlaySource(language = 'en') {
     .edge.on { opacity: 1; animation: pulse 2.2s ease-in-out infinite; }
     @keyframes pulse { 50% { box-shadow: inset 0 0 0 2px rgba(56,189,248,.95), inset 0 0 36px rgba(56,189,248,.4); } }
     @media (prefers-reduced-motion: reduce) { .edge.on { animation: none; } }
-    .cursor { position: fixed; left: 0; top: 0; width: 26px; height: 26px; pointer-events: none; z-index: 2147483647; opacity: 0; transition: transform .45s cubic-bezier(.2,.8,.2,1), opacity .3s; filter: drop-shadow(0 0 6px rgba(56,189,248,.95)); }
+    .cursor { position: fixed; left: 0; top: 0; width: 26px; height: 26px; pointer-events: none; z-index: 2147483647; opacity: 0; transition: transform ${POINTER_GLIDE_MS}ms cubic-bezier(.37,0,.63,1), opacity .3s; filter: drop-shadow(0 0 6px rgba(56,189,248,.95)); }
     .cursor.on { opacity: 1; }
+    @media (prefers-reduced-motion: reduce) { .cursor { transition: none; } }
     .ring { position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(56,189,248,.9); opacity: 0; }
     .ring.go { animation: ring .6s ease-out; }
     @keyframes ring { from { opacity: 1; transform: scale(.4); } to { opacity: 0; transform: scale(2.2); } }
@@ -62,7 +65,7 @@ export function overlaySource(language = 'en') {
       <div class="row"><button class="b send" type="button">\${W.send}</button><button class="b stop" type="button">\${W.stop}</button></div></div></div>\`;
   const $ = s => root.querySelector(s);
   const edge = $('.edge'), cursor = $('.cursor'), ring = $('.ring'), panel = $('.panel'), state = $('.state'), log = $('.log'), text = $('textarea'), stop = $('.stop');
-  let idleTimer = null, sure = false;
+  let idleTimer = null, ringTimer = null, panelTimer = null, sure = false;
   const line = (who, words) => { const p = document.createElement('p'); p.className = who; p.textContent = words; log.append(p); while (log.children.length > 30) log.firstChild.remove(); log.scrollTop = log.scrollHeight; };
   const working = words => {
     // Keep what she said she is doing while she keeps working; the plain "working" line only when nothing was said.
@@ -88,8 +91,23 @@ export function overlaySource(language = 'en') {
     point(x, y, click) {
       // A click under the panel goes to the page: the panel steps aside for a moment.
       const r = panel.getBoundingClientRect();
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) { panel.style.visibility = 'hidden'; setTimeout(() => { panel.style.visibility = ''; }, 1500); }
-      cursor.classList.add('on'); cursor.style.transform = 'translate(' + (x - 3) + 'px,' + (y - 2) + 'px)'; working(); if (click) { ring.classList.remove('go'); void ring.offsetWidth; ring.classList.add('go'); } },
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) { panel.style.visibility = 'hidden'; clearTimeout(panelTimer); panelTimer = setTimeout(() => { panel.style.visibility = ''; }, ${POINTER_GLIDE_MS + 700}); }
+      clearTimeout(ringTimer);
+      ring.classList.remove('go');
+      const destination = 'translate(' + (x - 3) + 'px,' + (y - 2) + 'px)';
+      // No invented path from the top-left corner after navigation or idle.
+      if (!cursor.classList.contains('on')) {
+        cursor.style.transition = 'none';
+        cursor.style.transform = destination;
+        void cursor.offsetWidth;
+        cursor.style.transition = '';
+      } else { cursor.style.transform = destination; }
+      cursor.classList.add('on');
+      working();
+      if (click) {
+        ringTimer = setTimeout(() => { if (cursor.classList.contains('on')) ring.classList.add('go'); }, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : ${POINTER_GLIDE_MS});
+      }
+    },
     working, line,
   };
 })();`;

@@ -98,7 +98,7 @@ test('Aura exposes one active chat surface and routes it through JACO',()=>{
   assert.match(app,/<JacoAuraComputeIDE \/>/);
   assert.match(panel,/\/api\/aura\/chat/);
   assert.match(panel,/Starta uppdrag/);
-  assert.match(panel,/interactionMode: runMode === 'planning' \? 'planning' : 'question'/);
+  assert.match(panel,/interactionMode: runMode === 'planning' \? 'planning' : runMode === 'autonomous' \? 'action' : 'question'/);
   assert.match(panel,/initialAuraRunMode/);
   assert.match(server,/normalizeAuraChatMode/);
   assert.match(server,/cognitiveQuestionToolbox/);
@@ -321,4 +321,13 @@ test('Aura acts on clear requests and turns risky or misleading work into one sc
   assert.match(system, /When the operator confirms, carry it out without asking again/);
   assert.match(system, /intelligent amateur understands on the first reading/);
   assert.match(system, /Never dump raw internal error codes into the main answer/);
+});
+
+test('perception names resolve to real tools in both chat prompt variants without claiming availability',()=>{
+  for(const compactRules of [true,false]){
+    const {system}=buildAuraSeerPrompts({message:'Använd DOM TRACK och LASER VISION',compactRules,toolCatalog:'- mcp_catalog: live tools'});
+    assert.match(system,/DOM TRACK maps to nova_observe\/nova_ax\/nova_html/);
+    assert.match(system,/LASER VISION maps to nova_screenshot/);
+    assert.match(system,/do not claim readiness without live evidence/);
+  }
 });

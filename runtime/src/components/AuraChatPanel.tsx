@@ -17,7 +17,45 @@ import { BudgetCard } from './CostChip';
 import { AutonomyClock } from './AutonomyClock';
 import { AuraOverview } from './AuraOverview';
 import { boundChatHistory } from '../lib/chatHistory.mjs';
+import { extractWorkspaceActions, workspaceReplyText } from '../lib/workspaceActions.mjs';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
+
+// Decorative only: the existing chat request lifecycle is the source of truth.
+function QuantumConversationField({active}:{active:boolean}) {
+  const ref=useRef<HTMLCanvasElement>(null);
+  const activity=useRef(active);
+  useEffect(()=>{activity.current=active;},[active]);
+  useEffect(()=>{
+    const canvas=ref.current;
+    if(!canvas)return;
+    const ctx=canvas.getContext('2d');
+    if(!ctx)return;
+    const motion=window.matchMedia('(prefers-reduced-motion: reduce)');
+    let frame=0,energy=0;
+    const points=Array.from({length:52},(_,i)=>({x:((i*137.51)%100)/100,y:((i*67.13)%100)/100,phase:i*2.399}));
+    const draw=(time:number)=>{
+      const w=canvas.clientWidth,h=canvas.clientHeight,d=Math.min(window.devicePixelRatio||1,2);
+      if(canvas.width!==Math.round(w*d)||canvas.height!==Math.round(h*d)){canvas.width=Math.round(w*d);canvas.height=Math.round(h*d);}
+      ctx.setTransform(d,0,0,d,0,0);ctx.clearRect(0,0,w,h);
+      energy+=(Number(activity.current)-energy)*.04;
+      const t=motion.matches?0:time;
+      const p=points.map(n=>[n.x*w+Math.sin(t*.00012+n.phase)*6,n.y*h+Math.cos(t*.00016+n.phase)*6]);
+      for(let i=0;i<p.length;i++){
+        for(let j=i+1;j<p.length;j++){
+          const distance=Math.hypot(p[i][0]-p[j][0],p[i][1]-p[j][1]);
+          if(distance<48){ctx.strokeStyle='rgba(56,151,230,'+((1-distance/48)*(.045+energy*.07))+')';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(p[i][0],p[i][1]);ctx.lineTo(p[j][0],p[j][1]);ctx.stroke();}
+        }
+        ctx.fillStyle='rgba(112,196,255,'+(.17+energy*.17)+')';ctx.beginPath();ctx.arc(p[i][0],p[i][1],.8,0,Math.PI*2);ctx.fill();
+      }
+    };
+    const loop=(time:number)=>{draw(time);frame=window.requestAnimationFrame(loop);};
+    const sync=()=>{window.cancelAnimationFrame(frame);if(!document.hidden&&!motion.matches)frame=window.requestAnimationFrame(loop);else draw(0);};
+    const resize=new ResizeObserver(()=>{if(motion.matches)draw(0);});resize.observe(canvas);
+    motion.addEventListener('change',sync);document.addEventListener('visibilitychange',sync);sync();
+    return()=>{window.cancelAnimationFrame(frame);resize.disconnect();motion.removeEventListener('change',sync);document.removeEventListener('visibilitychange',sync);};
+  },[]);
+  return <canvas ref={ref} className="jaco-quantum-conversation" aria-hidden="true"/>;
+}
 
 // The conversation is not a telemetry console. Keep the newest instance of an identical
 // human-facing update; the complete durable sequence remains available under Evidence.
@@ -495,7 +533,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           attachmentIds: attachments.map(item=>item.id),
           message: text,
           connectedSession: { id: user.id, source: 'Aura GUI' },
-          interactionMode: runMode === 'planning' ? 'planning' : 'question',
+          interactionMode: runMode === 'planning' ? 'planning' : runMode === 'autonomous' ? 'action' : 'question',
           selectedProvider,
           model: selectedProvider === 'seer' ? undefined : chatModel,
           activeFilePath: activeFilePath || null,
@@ -506,8 +544,12 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         // Longer than SEER's own provider chain; a hung request still ends in a message.
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(360_000)]),
       }).then(chatJson);
-      const answer=String(data.reply || data.text || '').trim();
-      if(!answer) throw new Error(tr('Modellen returnerade ett tomt svar.', 'The model returned an empty response.'));
+      const rawAnswer=String(data.reply || data.text || '').trim();
+      if(!rawAnswer) throw new Error(tr('Modellen returnerade ett tomt svar.', 'The model returned an empty response.'));
+      // Aura may ask the workspace to show a view, the terminal or a file; the GUI performs it and hides the directive.
+      const workspace=extractWorkspaceActions(rawAnswer);
+      for(const action of workspace.actions) window.dispatchEvent(new CustomEvent('jaco:workspace-action',{detail:action}));
+      const answer=workspaceReplyText(rawAnswer);
       await appendMessage({
         id: `${user.id}:reply`,
         role: 'assistant',
@@ -701,6 +743,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
 
   return (
     <div className="cognitive-chat h-full min-h-0 flex flex-col">
+      <QuantumConversationField active={Boolean(busy)}/>
       <div className="cognitive-chat-heading">
         <span><AuraFace thinking={Boolean(busy)||currentMission?.status==='ACTIVE'} size={5} label={tr('Öppna Gameboard','Open the Gameboard')}/>Aura <span className="cognitive-chat-subtitle">{tr('Samtal & skapande','Conversation & creation')}</span></span>
         <button type="button" onClick={()=>setShowSettings(v=>!v)} aria-expanded={showSettings} aria-label={tr('Chattinställningar','Chat settings')} title={tr('Modell och budget','Model and budget')}><Settings2 size={15}/><span>{modelLabel}</span></button>

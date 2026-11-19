@@ -480,6 +480,8 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   let tail = '';
   let exited = null;
   let agent = null;
+  let agentRestartTimer = null;
+  let agentRestartAttempts = 0;
   const onData = chunk => {
     const text = String(chunk);
     log?.write(text);
@@ -492,7 +494,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     child.once('exit', (code, signal) => { exited = processStopped('ide', child, code, signal); resolve(exited); });
     child.once('error', error => { exited = 1; tail += `\n${error.message}`; lifecycle({ component:'ide', event:'SPAWN_ERROR', reason: error.code || 'UNKNOWN' }); resolve(1); });
   });
-  const stop = () => { shutdownRequested = true; for (const p of [agent, child, workplace]) { try { p?.kill(); } catch { /* already gone */ } } };
+  const stop = () => { shutdownRequested = true; clearTimeout(agentRestartTimer); for (const p of [agent, child, workplace]) { try { p?.kill(); } catch { /* already gone */ } } };
   if (!deps.noSignals) {
     process.removeListener('SIGINT', stopStartingWorkplace); process.removeListener('SIGTERM', stopStartingWorkplace);
     process.once('SIGINT', stop); process.once('SIGTERM', stop);
@@ -513,7 +515,9 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   out(`  IDE:      ${url}`);
   out(`  Project:  ${project}`);
   const agentCmd = args.agent ? agentCommand(installDir, deps.execPath, fsImpl) : null;
-  if (agentCmd) {
+  const launchAgent = () => {
+    if (!agentCmd || shutdownRequested || exited !== null || agent) return;
+    const startedAt = Date.now();
     fsImpl.mkdirSync(path.join(project, '.jaco', 'nova-state'), { recursive: true });
     const agentLog = fsImpl.createWriteStream ? fsImpl.createWriteStream(path.join(project, '.jaco', 'nova.log'), { flags: 'a' }) : null;
     agent = (deps.spawnImpl ?? spawn)(agentCmd.cmd, agentCmd.args, {
@@ -521,19 +525,38 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
       env: agentEnv({ env: connectedEnv, installDir, project, url, token }),
       stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
     });
-    agent.stdout?.on('data', c => agentLog?.write(c));
-    agent.stderr?.on('data', c => agentLog?.write(c));
-    agent.once('exit', (code, signal) => {
-      const exitCode = processStopped('agent', agent, code, signal);
+    const current = agent;
+    const restart = () => {
+      if (agent !== current) return;
+      agent = null;
+      if (shutdownRequested || exited !== null) return;
+      if (Date.now() - startedAt >= 300_000) agentRestartAttempts = 0;
+      if (agentRestartAttempts >= 3) {
+        lifecycle({ component:'agent', event:'RESTART_EXHAUSTED' });
+        return;
+      }
+      const delay = 1000 * 2 ** agentRestartAttempts++;
+      lifecycle({ component:'agent', event:'RESTART_SCHEDULED', delayMs:delay, attempt:agentRestartAttempts });
+      agentRestartTimer = setTimeout(() => { agentRestartTimer = null; launchAgent(); }, delay);
+      agentRestartTimer.unref();
+    };
+    current.stdout?.on('data', c => agentLog?.write(c));
+    current.stderr?.on('data', c => agentLog?.write(c));
+    current.once('exit', (code, signal) => {
+      const exitCode = processStopped('agent', current, code, signal);
       agentLog?.write(`\n[nova exited ${exitCode}${signal ? ' signal ' + signal : ''}]\n`);
       agentLog?.end();
+      restart();
     });
-    agent.once('error', error => {
+    current.once('error', error => {
       lifecycle({ component:'agent', event:'SPAWN_ERROR', reason:error.code || 'UNKNOWN' });
       agentLog?.write(`\n[nova failed to start: ${error.message}]\n`);
+      // Spawn failure has no child PID. Other process errors must wait for exit.
+      if (!current.pid) { agentLog?.end(); restart(); }
     });
-  }
-  out(`  Agent:    ${agentCmd ? 'Nova is running: give it a goal in the chat (log: .jaco/nova.log)' : args.agent ? 'not part of this installation' : 'off (--no-agent)'}`);
+  };
+  launchAgent();
+  out(`  Agent:    ${agentCmd ? 'Nova launch requested; waiting for executor observation (log: .jaco/nova.log)' : args.agent ? 'not part of this installation' : 'off (--no-agent)'}`);
   out('  Stop:     press Ctrl+C in this window');
   // Never blocks the start: a failed or slow check prints nothing. Tests that inject a fetch skip the real one.
   const updateFetch = deps.updateFetch ?? (deps.fetchImpl ? null : fetch);
@@ -549,6 +572,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   removeRuntimeRecord({ home }, fsImpl);
   const intentionalStop = shutdownRequested;
   shutdownRequested = true;
+  clearTimeout(agentRestartTimer);
   try { agent?.kill(); } catch { /* already gone */ }
   try { workplace?.kill(); } catch { /* already gone */ }
   log?.end();

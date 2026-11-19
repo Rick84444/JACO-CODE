@@ -6,14 +6,14 @@ import {pathToFileURL} from 'node:url';
 
 const definitions=[
   ['nova_targets','List allowed browser tabs','GET','/targets',{}],
-  ['nova_observe','Observe the pinned allowed page','GET','/observe',{}],
-  ['nova_screenshot','Capture the pinned allowed page','GET','/screenshot',{}],
-  ['nova_html','Read the pinned allowed page as cleaned HTML: no scripts, comments, element values, hidden fields, token metadata, event handlers, data attributes, or URL query strings and fragments. Visible page text is returned as shown','GET','/html',{}],
+  ['nova_observe','DOM TRACK: observe the pinned allowed page and its current state','GET','/observe',{}],
+  ['nova_screenshot','LASER VISION: capture pixels of the pinned allowed browser page; image observation, not semantic proof','GET','/screenshot',{}],
+  ['nova_html','DOM TRACK: read the pinned allowed page as cleaned HTML: no scripts, comments, element values, hidden fields, token metadata, event handlers, data attributes, or URL query strings and fragments. Visible page text is returned as shown','GET','/html',{}],
   ['nova_navigate','Navigate within configured origins','POST','/navigate',{url:{type:'string'},actionId:{type:'string'}}],
   ['nova_click','Click a unique selector and verify an explicit transition','POST','/click',{selector:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
   ['nova_type','Set a field and read back the value','POST','/type',{selector:{type:'string'},expectedUrl:{type:'string'},text:{type:'string'},actionId:{type:'string'}}],
   // Targets named the way the page names them (its accessibility tree), with real input events.
-  ['nova_ax','List what can be clicked or typed into on the pinned page, by accessible role and name','GET','/ax',{}],
+  ['nova_ax','DOM TRACK: list what can be clicked or typed into on the pinned page, by accessible role and name','GET','/ax',{}],
   ['nova_click_named','Click the one control with this accessible role and name and verify an explicit transition','POST','/click',{role:{type:'string'},name:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
   ['nova_type_named','Type into the one field with this accessible role and name and read back the value','POST','/type',{role:{type:'string'},name:{type:'string'},expectedUrl:{type:'string'},text:{type:'string'},actionId:{type:'string'}}],
   ['nova_upload','Attach files from the workspace to the one file input (selector, optionally inside a same-origin frame or a shadow root written host >>> inner) and read the names back','POST','/upload',{selector:{type:'string'},files:{type:'array',items:{type:'string'},minItems:1,maxItems:10},expectedUrl:{type:'string'},actionId:{type:'string'}}],

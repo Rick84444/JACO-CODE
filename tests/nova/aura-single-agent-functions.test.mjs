@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { AURA_FUNCTION_DEFINITIONS, projectAuraFunctions } from '../../runtime/src/server/connected/auraFunctions.mjs';
-import { cognitiveQuestionToolbox } from '../../runtime/src/server/connected/cognitiveQuestionToolbox.mjs';
+import { cognitiveQuestionToolbox, withPerceptionTools } from '../../runtime/src/server/connected/cognitiveQuestionToolbox.mjs';
 
 test('manual conversation can inspect the live MCP catalog without gaining mutation tools',async()=>{
   const observed={servers:[{id:'git',status:'READY',tools:[{name:'git_status',readOnly:true}]}]};
@@ -120,4 +120,39 @@ test('with no SEER local model, reasoning is observed only from a probed operato
   assert.match(chosen.detail,/gemini\/models\/gemini-2\.5-flash · answered a test request when chosen \(2026-11-15T17:15:00\.032Z\)/);
   const local=projectAuraFunctions({now,coordinator:{reachable:true,health:{local_model:{model:'gemma-local'}}},planner:{provider:'gemini',model:'x',by:'operator'}});
   assert.equal(local.functions.find(x=>x.id==='reason').detail,'gemma-local','a SEER local model still wins');
+});
+
+test('Aura perception tools use only the guarded canonical MCP read route',async()=>{
+  const calls=[];
+  const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY1kAAAAASUVORK5CYII=';
+  const tools=withPerceptionTools({mcp_read:{run:async args=>{
+    calls.push(args);
+    return args.tool==='nova_screenshot'?{content:[{type:'image',mimeType:'image/png',data:png}]}:{content:[{type:'text',text:'observed'}]};
+  }},mcp_tool:{run:async()=>assert.fail('no write path')}});
+  const question=cognitiveQuestionToolbox({tools},()=>({})).tools;
+  assert.equal(question.mcp_tool,undefined);
+  for(const view of ['observe','accessibility','html']) await question.dom_track.run({view});
+  const capture=await question.laser_vision.run({});
+  assert.equal(capture.captured,true);
+  assert.equal(capture.visualAnalysis,'NOT_PERFORMED');
+  assert.match(capture.imageSha256,/^[a-f0-9]{64}$/);
+  assert.doesNotMatch(JSON.stringify(capture),/iVBOR/);
+  assert.deepEqual(calls.map(x=>x.tool),['nova_observe','nova_ax','nova_html','nova_screenshot']);
+  assert.ok(calls.every(x=>x.server==='cdp' && Object.keys(x.arguments).length===0));
+  await assert.rejects(()=>question.dom_track.run({view:'nova_click'}),/DOM_TRACK_VIEW_INVALID/);
+  await assert.rejects(()=>question.laser_vision.run({server:'other'}),/PERCEPTION_ARGUMENTS_INVALID/);
+  assert.equal(calls.length,4);
+  assert.equal(withPerceptionTools({}).dom_track,undefined);
+});
+test('perception tools preserve denied and unsuccessful reads',async()=>{
+  const denied=withPerceptionTools({mcp_read:{run:async()=>{throw Error('MANDATE_DENIED');}}});
+  await assert.rejects(()=>denied.dom_track.run({}),/MANDATE_DENIED/);
+  await assert.rejects(()=>denied.laser_vision.run({}),/MANDATE_DENIED/);
+  const failed=withPerceptionTools({mcp_read:{run:async()=>({isError:true})}});
+  await assert.rejects(()=>failed.dom_track.run({}),/PERCEPTION_MCP_READ_FAILED/);
+  const malformed=withPerceptionTools({mcp_read:{run:async()=>({content:[{type:'image',mimeType:'image/png',data:'YWJj'}]})}});
+  await assert.rejects(()=>malformed.laser_vision.run({}),/LASER_VISION_INVALID_PNG/);
+});
+test('production chat toolbox is wired through existing mandate gate',()=>{
+  assert.match(read('runtime/server.ts'),/withPerceptionTools\(gateAgentTools\(box\.tools,agentOrganization\)\)/);
 });

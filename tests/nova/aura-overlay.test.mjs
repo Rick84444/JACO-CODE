@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { overlaySource, createAuraOverlay, OVERLAY_WORLD, OVERLAY_BINDING } from '../../agents/lib/aura-overlay.mjs';
+import { overlaySource, createAuraOverlay, OVERLAY_WORLD, OVERLAY_BINDING, POINTER_GLIDE_MS } from '../../agents/lib/aura-overlay.mjs';
 
 test('the overlay script is valid JavaScript in both languages and only acts on trusted clicks', () => {
   for (const lang of ['sv', 'en']) {
@@ -99,4 +99,14 @@ test('navigation restores the active edge in the new isolated world, without gue
   await overlay.point(120,85,true);
   assert.ok(cdp.sent.at(-1).params.expression.includes('.point(120, 85, true)'));
   const n=cdp.sent.length;await overlay.point(NaN,Infinity);assert.equal(cdp.sent.length,n);
+});
+
+test('visible pointer uses a slow shared glide duration and honors reduced motion', () => {
+  assert.equal(POINTER_GLIDE_MS, 1100);
+  const script = overlaySource();
+  assert.match(script, new RegExp('transform ' + POINTER_GLIDE_MS + 'ms'));
+  assert.match(script, /prefers-reduced-motion: reduce/);
+  assert.match(script, /cursor.style.transition = 'none'/);
+  assert.match(script, /clearTimeout\(ringTimer\)/);
+  assert.doesNotThrow(() => new Function(script));
 });

@@ -30,7 +30,7 @@ import { createDesktopRouter } from './src/server/desktop/router.js';
 import { DesktopHandsOffClient, type DesktopAction } from './src/server/desktop/desktopHandsOff.js';
 import { createCognitiveStreamHandler, readCognitiveFeed } from './src/server/connected/cognitiveLiveStream.mjs';
 import { projectAuraLiveWorkspace } from './src/lib/liveWorkspaceProjection.mjs';
-import { cognitiveQuestionToolbox } from './src/server/connected/cognitiveQuestionToolbox.mjs';
+import { cognitiveQuestionToolbox, withPerceptionTools } from './src/server/connected/cognitiveQuestionToolbox.mjs';
 import { seerLiveWorkstream } from './src/server/seer/liveWorkstream.js';
 import { createBrowserRouter } from './src/server/browser/router.js';
 import { createContinuumRouter } from './src/server/continuum/router.mjs';
@@ -74,7 +74,11 @@ import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAc
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
 import { auraAlwaysAnswers, answerInOrder, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
-import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier } from "./src/server/connected/voiceChannel.mjs";
+import { WORKSPACE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
+import { createStackRepair } from "./src/server/connected/stackRepair.mjs";
+import { createPiperVoice } from "./src/server/connected/piperVoice.mjs";
+const repairStack = createStackRepair();
+import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier, synthesize as synthesizeVoice } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
 import { PRICE_SYNC_INTERVAL_MS, readPriceCatalog, syncPrices } from "./src/server/aura/priceCatalog.mjs";
@@ -92,7 +96,7 @@ import { createJacoLinkHost } from './src/server/connected/jacoLinkHost.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
 import { readAutonomousCycleBoard } from "./src/server/connected/autonomousCycleBoard.mjs";
 import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec, fetchSkillFromUrl } from "../agents/lib/skills.mjs";
-import { COMMERCIAL_CLOCK, commercialAuthorized, reconcileCommercialClock, archiveCommercialOutcome } from "./src/server/autonomy/commercialClock.mjs";
+import { COMMERCIAL_CLOCK, commercialAuthorized, reconcileCommercialClock, archiveCommercialBatch } from "./src/server/autonomy/commercialClock.mjs";
 import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy, policyFilePath, CLAIM_RESUME_NOTE } from "../agents/lib/approval-policy.mjs";
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
 import { taskCatalog, ALWAYS_ASK } from './src/server/capabilities/capabilityPolicy.mjs';
@@ -219,6 +223,10 @@ const mcpHost = new StdioMcpHost({
   runtimeRoot: RELEASE_ROOT,
 });
 process.on('exit', () => mcpHost.stopAll());
+// Aura's voice (Piper Alma) stays loaded in one worker; loaded at start so her first sentence is not late.
+const piperVoice = createPiperVoice({ workerScript: path.join(RELEASE_ROOT, 'tools', 'piper-voice-worker.py') });
+if (piperVoice.available()) void piperVoice.warm();
+process.on('exit', () => piperVoice.stop());
 // JACO skills (SKILL.md). The operator's repository first, so a skill written there is usable without a
 // runtime redeploy; then this checkout; then skills kept in the runtime state.
 const skillRoots = () => [...new Set([
@@ -315,6 +323,10 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         run: async (args: any) => organizationMandate(organization, String(args?.agentId || 'aura')) || { error: 'AGENT_NOT_FOUND' },
       },
       health: { description: 'Read-only HTTP service probes. READY/REACHABLE are not proof of model or tool execution; AUTH_REQUIRED is not healthy. In Termux the ChatGPT gateway is not managed by runit. args: {}', run: async () => auraServiceHealth() },
+      stack_repair: {
+        description: 'Repair the local JACO stack yourself when health shows a service DOWN or 503 (Chrome debug browser 9222, CDP bridge, Nova bridge, gateway, Workplace, SEER). Reruns the canonical starter: only services that are down are relaunched, READY services and foreign listeners are left alone. At most once a minute; call health afterwards to verify. args: {}',
+        run: async () => repairStack(),
+      },
       mcp_catalog: {
         description: 'Read the live catalog of connected MCP tool servers and the tools they currently advertise. Use this before answering what tools Aura has. This only observes metadata and never starts or calls a tool. args: {}',
         run: async () => ({
@@ -923,6 +935,36 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
     try { res.json({ success: true, ...(await connections.refresh()) }); }
     catch { res.status(503).json({ success: false, error: 'CONNECTION_REFRESH_FAILED' }); }
   });
+  // Aura's spoken voice for the portrait: local Piper Alma first; the voiceChannel engine (edge-tts, which sends the
+  // text to Microsoft, as documented in voiceChannel) only when Piper is unavailable.
+  app.post('/api/aura/voice/speak', requireLocalUiSameOrigin, async (req, res) => {
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+    if (!text.trim() || text.length > 6000) return res.status(400).json({ success: false, error: 'VOICE_TEXT_INVALID' });
+    const lang = typeof req.body?.lang === 'string' && /^[a-z]{2}-[A-Z]{2}$/.test(req.body.lang) ? req.body.lang : 'sv-SE';
+    // Operator 2026-11-19: Aura's voice is Piper TTS with Alma (sv_SE-alma-medium, CC-BY-4.0). It runs on this
+    // computer, so nothing she says leaves the machine. The neural edge voice is only the fallback when Piper fails.
+    let piperError = 'PIPER_MODEL_MISSING';
+    if (lang.startsWith('sv') && piperVoice.available()) {
+      try {
+        const bytes = await piperVoice.synthesize(text);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Jaco-Voice', 'piper-alma');
+        return res.type('audio/wav').send(bytes);
+      } catch (error: any) { piperError = String(error?.message || 'PIPER_FAILED').slice(0, 80); }
+    }
+    try {
+      const env = { ...process.env, JACO_VOICE_ENGINE: process.env.JACO_VOICE_ENGINE || 'edge', JACO_VOICE_LANG: process.env.JACO_VOICE_LANG || lang };
+      const sound = await synthesizeVoice(text, { env });
+      try {
+        const bytes = fs.readFileSync(sound.file);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Jaco-Voice', 'fallback');
+        res.type(sound.mimetype.split(';')[0]).send(bytes);
+      } finally { fs.rmSync(sound.file, { force: true }); }
+    } catch (error: any) {
+      res.status(503).json({ success: false, error: `${piperError}; ${String(error?.message || 'VOICE_UNAVAILABLE')}`.slice(0, 200) });
+    }
+  });
   // Metadata only. Existing env, encrypted store and legacy Windows vault remain the owners.
   app.get('/api/aura/workbench/vault/discovery', requireLocalUiSameOrigin, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -1353,6 +1395,10 @@ const notifyPhone = async (action) => {
       version: JSON.parse(fs.readFileSync(path.join(process.env.JACO_RELEASE_ROOT || process.cwd(), 'package.json'), 'utf8')).version,
       releaseId: 'jaco-code-0.23.1',
       canonicalGui: 'JACO Autonomous IDE',
+      executionProfile: process.env.JACO_LITE === '1' ? 'lite' : 'full',
+      workplaceRequired: process.env.JACO_LITE === '1'
+        ? Boolean(process.env.JACO_WORKPLACE_REQUIRED && process.env.JACO_WORKPLACE_REQUIRED !== '0')
+        : process.env.JACO_WORKPLACE_REQUIRED !== '0',
       primaryPort: PORT,
       // Only surfaces this runtime can actually drive. The list used to be fixed, so a PC runtime with
       // no paired phone advertised Android and Nova offered Android tools that could only fail.
@@ -4332,10 +4378,14 @@ const notifyPhone = async (action) => {
     }
   };
   let learningBusy = false;
+  let commercialArchiveCursor = '';
   const learnTick = async () => {
     if (learningBusy) return;
     learningBusy = true;
     try {
+      try {
+        commercialArchiveCursor = archiveCommercialBatch({bus:connectedRuntime.bus,nova:connectedRuntime.novaMissions,knowledge:continuumSurface.runtime.knowledge,after:commercialArchiveCursor,onError:(error: any,id: string)=>console.warn('[commercial memory] archive retry:',id,error?.message||error)});
+      } catch (error: any) { console.warn('[commercial memory] batch failed:',error?.message||error); }
       const events = connectedRuntime.bus.listEvents(1000);
       // Missions read before 2026-10-03 20:30 carry a NOVA_LEARNED bus event; later ones are kept in the store.
       const learned = new Set(events.filter((e: any) => e.type === 'NOVA_LEARNED').map((e: any) => e.missionId));
@@ -4345,7 +4395,6 @@ const notifyPhone = async (action) => {
         try { mission = connectedRuntime.novaMissions.get(base.id); } catch { skillLearning.markLearned(base.id); continue; }
         const check = events.find((e: any) => e.missionId === base.id && e.type === 'NOVA_CLAIM_CHECK')?.payload || null;
         const lessons = lessonsFrom(mission, check);
-        try { archiveCommercialOutcome({mission,nova:connectedRuntime.novaMissions,knowledge:continuumSurface.runtime.knowledge}); } catch (error: any) { console.warn('[commercial memory] archive failed:', error?.message || error); }
         const reflection=skillLearning.recordOutcome(mission);
         connectedRuntime.bus.event('NOVA_REFLECTION',{missionId:mission.id,payload:{schema:reflection.schema,verificationStatus:reflection.verificationStatus,worked:reflection.worked,failed:reflection.failed,evidence:reflection.evidence}});
         const made: string[] = [];
@@ -5102,6 +5151,8 @@ const notifyPhone = async (action) => {
     try {
       const { message, activeFilePath, targetSubAgent, selectedModel, selectedProvider, model, messagesHistory, interactionMode } = req.body;
       const ragContext = [...(Array.isArray(req.body.ragContext) ? req.body.ragContext : []), ...attachmentContext(req.body.attachmentIds)];
+      // The local GUI can show views and files Aura asks for while she talks (display only, never execution).
+      if (req.body?.connectedSession?.source === 'Aura GUI') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: WORKSPACE_CONTROL_INSTRUCTION } });
       const userMsg = String(message || "Hi");
       const cognitiveActivation = cognitiveActivationPreview(userMsg, {
         knowledge: continuumSurface.runtime.knowledge,
@@ -5139,7 +5190,7 @@ const notifyPhone = async (action) => {
       });
       const sendChatResult = (result: any) => {
         if (connectedReplyId) auraChatSession.append({
-          id: connectedReplyId, role: 'assistant', content: String(result.reply || result.text || ''),
+          id: connectedReplyId, role: 'assistant', content: workspaceReplyText(String(result.reply || result.text || '')),
           meta: [
             connectedSource,
             result.modelUsed || [result.provider, result.model].filter(Boolean).join('/'),
@@ -5195,7 +5246,7 @@ const notifyPhone = async (action) => {
       }
 
       const auraState = auraEngineManager.getState();
-      const allTools=(()=>{const box=buildAuraToolbox({connectedRuntime,seerLiveWorkstream,readAgentTeam:readAuraAgentBoard,organization:agentOrganization});return {...box,tools:gateAgentTools(box.tools,agentOrganization)};})();
+      const allTools=(()=>{const box=buildAuraToolbox({connectedRuntime,seerLiveWorkstream,readAgentTeam:readAuraAgentBoard,organization:agentOrganization});return {...box,tools:withPerceptionTools(gateAgentTools(box.tools,agentOrganization))};})();
       const questionTools=questionMode ? cognitiveQuestionToolbox(allTools,()=>readCognitiveFeed({
         bus:connectedRuntime.bus,workstream:seerLiveWorkstream,limit:30,
         secrets:Object.entries(process.env).filter(([key])=>/secret|token|password|api_?key/i.test(key)).map(([,value])=>value).filter(Boolean),

@@ -1,0 +1,2 @@
+# Discovery expansion
+Add fixed public read-only Jobbi and Frantic discovery to full and Lite host; only named read tools in commercial clock. Add read-only cents quote via existing AgentGigs endpoint. No write scope change. Regression: allow only listed reads; reject claim/write; quote validates integer cents and sum. Delivery remains separate operator-scoped work; no production upload or settlement claimed. CI and live remote connection verification pending.

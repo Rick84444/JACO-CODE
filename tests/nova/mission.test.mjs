@@ -29,6 +29,22 @@ function setup(t, allowedTasks=['health-check','browser-click']) {
  });
  return {client,get control(){return control;},advance(ms){clock+=ms;},reopen(){bus.close();bus=new DurableMissionBus(dir);control=new NovaMissionControl(bus,{allowedTasks,now:()=>clock});}};
 }
+test('executor observation is authenticated, expires and never changes mission state', async t => {
+ const s=setup(t);
+ const m=await s.client.create({goal:'Keep mission intact',idempotencyKey:'executor-health'});
+ const get=()=>s.client.request('GET','/executor-health');
+ assert.equal((await get()).state,'UNVERIFIED');
+ await assert.rejects(s.client.request('POST','/executor-health',{executor:'nova@remote'}),/LOCAL_EXECUTOR_REQUIRED/);
+ const fresh=await s.client.request('POST','/executor-health',{executor:'nova'});
+ assert.equal(fresh.state,'RUNNING');
+ assert.equal((await get()).state,'RUNNING');
+ s.advance(45_001);
+ assert.equal((await get()).state,'UNVERIFIED');
+ assert.equal(s.control.get(m.id).status,'ACTIVE');
+ assert.equal(s.control.get(m.id).receipts.length,0);
+ s.reopen();
+ assert.equal(s.control.localExecutorHealth().state,'UNVERIFIED');
+});
 const goal={goal:'Kontrollera sidan och rapportera vad som faktiskt hände',idempotencyKey:'operator-1'};
 const task={type:'health-check',data:{}};
 

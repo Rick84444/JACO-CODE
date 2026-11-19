@@ -320,6 +320,8 @@ export class NovaMissionControl {
     this.knownExecutor = knownExecutor;
     this.db = bus.db;
     this.now = now;
+    // Volatile observation only: after Core restart the actual local executor must report again.
+    this.localExecutorObservedAt = null;
     this.allowedTasks = [...new Set(allowedTasks)].filter(t => Object.hasOwn(TASK_FIELDS, t));
     this.db.exec(`CREATE TABLE IF NOT EXISTS nova_sessions (
       mission_id TEXT PRIMARY KEY REFERENCES missions(id), owner TEXT, token TEXT,
@@ -356,6 +358,20 @@ export class NovaMissionControl {
         return result;
       };
     }
+  }
+
+  observeLocalExecutor(executor) {
+    if (executor !== 'nova') throw new Error('LOCAL_EXECUTOR_REQUIRED');
+    this.localExecutorObservedAt = this.now();
+    return this.localExecutorHealth();
+  }
+
+  localExecutorHealth() {
+    const at = this.localExecutorObservedAt;
+    const age = at === null ? Infinity : this.now() - at;
+    return { schema: 'jaco.nova-executor-health/v1',
+      state: age >= 0 && age <= 45_000 ? 'RUNNING' : 'UNVERIFIED',
+      observedAt: at === null ? null : new Date(at).toISOString() };
   }
 
   create({ goal, idempotencyKey, source = 'operator', mandateId = null, contract = null, allowedTasks = null, executor = 'nova',parent=null, projectRoot = null }) {
@@ -976,6 +992,13 @@ export function mountNovaMissionRoutes(app, requireAuth, control, onUpdate = () 
     catch (e) { res.status(409).json({ success: false, error: e.message }); }
   };
   const root = '/api/connected/nova';
+  // No mission mutation or update callbacks: health is an observation, not an execution event.
+  app.get(`${root}/executor-health`, requireAuth, (_req, res) =>
+    res.json({ success: true, ...control.localExecutorHealth() }));
+  app.post(`${root}/executor-health`, requireAuth, (req, res) => {
+    try { res.json({ success: true, ...control.observeLocalExecutor(req.body?.executor) }); }
+    catch (error) { res.status(409).json({ success: false, error: error.message }); }
+  });
   app.get(`${root}/current`, requireAuth, route(req => ({ mission: control.current(req.query?.executor ? String(req.query.executor) : null) })));
   app.post(`${root}/missions`, requireAuth, route(req => ({ mission: control.create(req.body || {}) })));
   app.get(`${root}/missions/:id`, requireAuth, route(req => ({ mission: control.get(req.params.id) })));

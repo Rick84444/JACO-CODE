@@ -605,6 +605,20 @@ export const JacoAuraComputeIDE: React.FC = () => {
     setOpenFiles(current => current.includes(path) ? current : [...current, path]);
   };
 
+  // Aura steers the visible workspace during a conversation: views, terminal and files (display only).
+  const workspaceActionTargets = useRef({ chooseWorkspace, openFile });
+  workspaceActionTargets.current = { chooseWorkspace, openFile };
+  useEffect(() => {
+    const onAction = (event: Event) => {
+      const action = (event as CustomEvent).detail as { type?: string; view?: string; path?: string } | undefined;
+      if (action?.type === 'open' && action.view) workspaceActionTargets.current.chooseWorkspace(action.view as CognitiveCanvas);
+      else if (action?.type === 'terminal') { setSidePanelOpen(false); setWorkspaceView('code'); setShowTerminal(true); setBottomPanel('terminal'); }
+      else if (action?.type === 'file' && action.path) workspaceActionTargets.current.openFile(action.path);
+    };
+    window.addEventListener('jaco:workspace-action', onAction);
+    return () => window.removeEventListener('jaco:workspace-action', onAction);
+  }, []);
+
   const closeFile = (path: string) => {
     setOpenFiles(current => {
       const next = current.filter(item => item !== path);

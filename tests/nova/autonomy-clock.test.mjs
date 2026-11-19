@@ -41,3 +41,45 @@ test('an unsigned or expired clock grants nothing', () => {
   const unsigned = store.create({ name: 'Autonomi-klocka', maxHours: 8, mission: 'Aura väntar på operatörens signering.' });
   assert.equal(store.isActive(unsigned.id), false);
 });
+
+test('startup keeps active and expired default signatures unchanged; corrupt state cannot recreate authority', () => {
+  const root=dir(), previous=process.env.JACO_LEVEL5_AUTONOMY;
+  process.env.JACO_LEVEL5_AUTONOMY='1';
+  try {
+    let store=new AutonomyMandateStore(root);
+    const id='operator-level5-default', initial=store.get(id);
+    assert.equal(store.isActive(id),true);
+    store=new AutonomyMandateStore(root);
+    assert.deepEqual(store.get(id),initial);
+    const expired={...initial,expiresAt:new Date(Date.now()-1000).toISOString()};
+    store.save(expired);
+    store=new AutonomyMandateStore(root);
+    assert.equal(store.isActive(id),false);
+    assert.equal(store.get(id).expiresAt,expired.expiresAt);
+    assert.equal(store.sign(id).enabled,true);
+    const file=path.join(root,'.jaco','state','autonomy','mandates.json');
+    fs.writeFileSync(file,'corrupt');
+    store=new AutonomyMandateStore(root);
+    assert.equal(store.isActive(id),false);
+    assert.equal(fs.readFileSync(file,'utf8'),'corrupt');
+    fs.unlinkSync(file);
+    store=new AutonomyMandateStore(root);
+    assert.equal(store.isActive(id),false);
+  } finally { if(previous===undefined)delete process.env.JACO_LEVEL5_AUTONOMY;else process.env.JACO_LEVEL5_AUTONOMY=previous;fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('legacy active grant is preserved and its later deletion does not rebootstrap', () => {
+  const root=dir(), previous=process.env.JACO_LEVEL5_AUTONOMY;
+  process.env.JACO_LEVEL5_AUTONOMY='1';
+  try {
+    let store=new AutonomyMandateStore(root);
+    const id='operator-level5-default', original=store.get(id);
+    const state=path.join(root,'.jaco','state','autonomy');
+    fs.unlinkSync(path.join(state,'bootstrap-initialized'));
+    store=new AutonomyMandateStore(root);
+    assert.deepEqual(store.get(id),original);
+    fs.unlinkSync(path.join(state,'mandates.json'));
+    store=new AutonomyMandateStore(root);
+    assert.equal(store.isActive(id),false);
+  } finally { if(previous===undefined)delete process.env.JACO_LEVEL5_AUTONOMY;else process.env.JACO_LEVEL5_AUTONOMY=previous;fs.rmSync(root,{recursive:true,force:true}); }
+});

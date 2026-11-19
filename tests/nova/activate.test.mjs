@@ -3,14 +3,18 @@ import assert from 'node:assert/strict';
 import { activationReport, formatReport, runtimeUp } from '../../agents/lib/activate.mjs';
 
 // A runtime stand-in: tool servers that start on request, a provider scan and the planner state.
-function fakeRuntime({ servers, scan, planner, workplace = { state: 'RUNNING', novaState: 'RUNNING' }, startFails = [] }) {
+function fakeRuntime({ servers, scan, planner, workplace = { state: 'RUNNING', novaState: 'RUNNING' }, startFails = [], identity = {}, executorHealth = null }) {
   const calls = [];
   const f = async (url, init = {}) => {
     const route = new URL(url).pathname, method = init.method || 'GET';
     calls.push(`${method} ${route}`);
     const ok = body => ({ ok: true, status: 200, json: async () => ({ success: true, ...body }) });
     const bad = (status, error) => ({ ok: false, status, json: async () => ({ success: false, error }) });
-    if (route === '/api/runtime/identity') return ok({ version: '0.21.0' });
+    if (route === '/api/runtime/identity') return ok({ product:'JACO Autonomus IDE', version: '0.21.0', ...identity });
+    if (route === '/api/connected/nova/executor-health') {
+      assert.ok(init.headers['x-gateway-token']);
+      return executorHealth ? ok(executorHealth) : bad(404, 'NOT_FOUND');
+    }
     if (route === '/api/system/status') return ok({ status: { state: workplace.supervisorState || 'READY' } });
     if (route === '/health') return ok({ status: 'READY', supervisedAgents: { state: workplace.state, nova: { state: workplace.novaState } } });
     if (route === '/api/mcp/tools') {
@@ -71,7 +75,7 @@ test('Lite disabled Workplace supervisor is not misdiagnosed as a stopped manage
   const g = GOOD();
   g.workplace = { state:'DISABLED', novaState:'DISABLED' };
   const report = await activationReport({ baseUrl:'http://x', workplaceUrl:'http://w',
-    token:'t', fetchImpl:fakeRuntime(g), lite:true });
+    token:'t', fetchImpl:fakeRuntime(g), lite:true, requireWorkplace:true });
   assert.equal(report.workplace.up, true);
   assert.equal(report.workplace.state, 'READY');
   assert.equal(report.workplace.novaState, 'EXTERNAL_UNVERIFIED');
@@ -79,6 +83,42 @@ test('Lite disabled Workplace supervisor is not misdiagnosed as a stopped manage
   assert.ok(report.problems.some(p => /managed by the separate Lite launcher/.test(p)));
   assert.ok(report.problems.every(p => !p.includes('Workplace/Durable Nova is not RUNNING')));
   assert.equal(report.ok, false, 'never attest an unprobed external worker');
+});
+
+test('Lite observes its own worker even when coordination is optional and caller assumed full', async () => {
+  const g = GOOD();
+  g.identity = { executionProfile: 'lite', workplaceRequired: false };
+  g.executorHealth = { schema: 'jaco.nova-executor-health/v1', state: 'RUNNING', observedAt: new Date().toISOString() };
+  const f = fakeRuntime(g);
+  const r = await activationReport({ baseUrl:'http://x', token:'t', fetchImpl:f, lite:false });
+  assert.equal(r.ok, true);
+  assert.equal(r.executor.state, 'RUNNING');
+  assert.equal(r.workplace.required, false);
+  assert.ok(!f.calls.includes('GET /health'));
+  assert.ok(f.calls.includes('GET /api/connected/nova/executor-health'));
+});
+
+test('Lite does not attest READY for absent, stale or malformed worker observations', async () => {
+  for (const health of [null, { schema:'jaco.nova-executor-health/v1', state:'UNVERIFIED', observedAt:new Date().toISOString() },
+    { state:'RUNNING', observedAt:new Date().toISOString() }, { schema:'jaco.nova-executor-health/v1', state:'RUNNING', observedAt:null }]) {
+    const g = GOOD();
+    g.identity = { executionProfile:'lite', workplaceRequired:false };
+    g.executorHealth = health;
+    const r = await activationReport({ baseUrl:'http://x', token:'t', fetchImpl:fakeRuntime(g) });
+    assert.equal(r.ok, false);
+    assert.equal(r.executor.state, 'UNVERIFIED');
+  }
+});
+
+test('required Lite coordination checks service health, not disabled supervision', async () => {
+  const g = GOOD();
+  g.identity = { executionProfile:'lite', workplaceRequired:true };
+  g.workplace = { state:'DISABLED', novaState:'DISABLED' };
+  g.executorHealth = { schema:'jaco.nova-executor-health/v1', state:'RUNNING', observedAt:new Date().toISOString() };
+  const r = await activationReport({ baseUrl:'http://x', token:'t', fetchImpl:fakeRuntime(g) });
+  assert.equal(r.ok, true);
+  assert.equal(r.workplace.state, 'READY');
+  assert.equal(r.workplace.novaState, 'RUNNING');
 });
 
 test('a selected planner that was not actually scanned cannot make READY true', async () => {
@@ -124,6 +164,14 @@ test('no provider answers at all is a problem with a way out', async () => {
   const r = await activationReport({ baseUrl: 'http://x', token: 't', fetchImpl: fakeRuntime(g) });
   assert.equal(r.ok, false);
   assert.ok(r.problems.some(p => /No model provider is answering/.test(p)));
+});
+
+test('activation rejects HTML fallback and an unrelated JSON listener', async () => {
+  for (const body of ['<html>SPA</html>', JSON.stringify({success:true, product:'Unrelated'})]) {
+    const r=await activationReport({baseUrl:'http://x',fetchImpl:async()=>new Response(body)});
+    assert.equal(r.runtime.up,false);
+    assert.equal(r.ok,false);
+  }
 });
 
 test('a runtime that is down is reported plainly', async () => {

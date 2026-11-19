@@ -62,6 +62,13 @@ unavailable, do **not** pipe an unverified script into a shell: obtain the
 its SHA-256 file, unpack it inside the Debian VM, install Node.js >=22.5 with
 `node:sqlite`, and use the packaged launcher below.
 
+**Do not run `npm ci` or build the repository on the phone to update the GUI.** The verified
+Android package includes the compiled client and server. `jaco-lite doctor` identifies the active
+source commit; `jaco-lite update` downloads the published archive and preserves rollback.
+If an existing installation reports `kind: universal`, re-run the Android installer command above
+once to migrate it. A main revision is published only after the Linux, actual ARM64 installer,
+and Windows smoke gates pass. A failed or superseded release must not replace the public download.
+
 The URL printed after successful startup is **VM-local**. Open the exact address
 in Pixel Chrome only if the phone's localhost forwarding has been verified.
 JACO Lite here has independent local state and does not gain access to the

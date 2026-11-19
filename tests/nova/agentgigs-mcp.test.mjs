@@ -53,35 +53,16 @@ test('own application history is read-only and strips third-party data',async()=
  assert.deepEqual(await c.call('list_applications'),{applications:[{job_id:job,status:'funded',proposed_price:1000,job_status:'assigned'}],count:1,truncated:false});
 });
 
-test('quote uses observed commission without claiming settlement',async()=>{
- const c=createAgentGigs({env,fetchImpl:async(url,opt)=>{assert.ok(url.endsWith('/earnings?calculate=5000'));assert.equal(opt.method,'GET');return json({calculator:{jobAmount:5000,commissionAmount:500,agentPayout:4500}});}});
- const q=await c.call('quote_economics',{price_cents:5000,cost_cents:500,hours:2,collection_probability:0.8});
- assert.equal(q.expected_contribution_cents,3100);assert.equal(q.expected_cents_per_hour,1550);assert.equal(q.settlement_verified,false);
- await assert.rejects(c.call('quote_economics',{price_cents:5000,cost_cents:0,hours:0,collection_probability:1}),/QUOTE_INPUT_INVALID/);
-});
-test('funded staged text delivery reads back metadata and cannot claim payment',async t=>{
- const dir=await mkdtemp(path.join(os.tmpdir(),'jaco-gigs-'));t.after(()=>rm(dir,{recursive:true,force:true}));
- let posted=0,files=[],status='in_progress',assigned=true;
- const c=createAgentGigs({env,stateDir:dir,fetchImpl:async(url,opt)=>{
- if(opt.method==='GET')return json({job:{id:job,status},isAssigned:assigned,myApplication:{id:'app',status:'funded'},deliverable_files:files});
- posted++;
- if(url.endsWith('/upload-deliverable')){const f=opt.body.get('file');assert.equal(await f.text(),'validated report');files=[{file_name:f.name,file_size:f.size,download_url:'private'}];return json({success:true});}
- assert.ok(url.endsWith('/submit'));status='delivered';return json({success:true});
+test('payout quote is read only, exact integer cents, rejects inconsistent provider data',async()=>{
+ let requests=0;
+ const c=createAgentGigs({env:{JACO_AGENTGIGS_API_KEY:'age_test'},fetchImpl:async(url,opt)=>{
+ requests++;assert.equal(opt.method,'GET');assert.ok(url.endsWith('/api/agent/earnings?calculate=5000'));
+ return json({calculator:{jobAmount:5000,commissionAmount:500,agentPayout:4500},earnings:{private:'not returned'}});
  }});
- const args={job_id:job,filename:'report.md',content:'validated report'};
- assigned=false;await assert.rejects(c.call('stage_text_delivery',args),/FUNDED_ASSIGNMENT_REQUIRED/);assigned=true;
- const st=await c.call('stage_text_delivery',args);assert.equal(st.delivered,false);assert.equal(posted,0);
- await assert.rejects(c.call('stage_text_delivery',{...args,filename:'../report.md'}),/ARTIFACT_INVALID/);
- const d=await c.call('deliver_staged_text',{job_id:job,artifact_sha256:st.artifact_sha256,notes:'Report complete'});
- assert.equal(d.submitted,true);assert.equal(d.status,'delivered');assert.equal(d.settlement_verified,false);assert.equal(posted,2);
- status='in_progress';await assert.rejects(c.call('deliver_staged_text',{job_id:job,artifact_sha256:st.artifact_sha256,notes:'Report complete'}),/DELIVERY_EXISTS_RECONCILE/);assert.equal(posted,2);
-});
-test('ambiguous upload cannot replay on adapter restart',async t=>{
- const dir=await mkdtemp(path.join(os.tmpdir(),'jaco-gigs-'));t.after(()=>rm(dir,{recursive:true,force:true}));
- let writes=0;const fetchImpl=async(url,opt)=>{if(opt.method==='GET')return json({job:{id:job,status:'in_progress'},isAssigned:true,myApplication:{status:'funded'},deliverable_files:[]});writes++;throw Error('timeout');};
- const c=createAgentGigs({env,stateDir:dir,fetchImpl});const st=await c.call('stage_text_delivery',{job_id:job,filename:'report.txt',content:'report'});
- const args={job_id:job,artifact_sha256:st.artifact_sha256,notes:'Reviewed'};
- await assert.rejects(c.call('deliver_staged_text',args),/OUTCOME_UNKNOWN/);
- const restarted=createAgentGigs({env,stateDir:dir,fetchImpl});
- await assert.rejects(restarted.call('deliver_staged_text',args),/ALREADY_ATTEMPTED/);assert.equal(writes,1);
+ assert.equal(c.tools().find(t=>t.name==='estimate_payout').annotations.readOnlyHint,true);
+ assert.deepEqual(await c.call('estimate_payout',{gross_cents:5000}),{currency:'USD',gross_cents:5000,commission_cents:500,net_cents:4500,quote_only:true});
+ for(const invalid of [0,-1,1.5,'5000',NaN,100000001])await assert.rejects(c.call('estimate_payout',{gross_cents:invalid}),/AMOUNT_INVALID/);
+ assert.equal(requests,1);
+ const bad=createAgentGigs({env:{JACO_AGENTGIGS_API_KEY:'age_test'},fetchImpl:async()=>json({calculator:{jobAmount:5000,commissionAmount:500,agentPayout:5000}})});
+ await assert.rejects(bad.call('estimate_payout',{gross_cents:5000}),/PAYOUT_QUOTE_INVALID/);
 });

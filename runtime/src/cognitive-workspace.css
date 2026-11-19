@@ -894,13 +894,16 @@
   background: #18222c;
 }
 .aura-portrait-trigger:hover, .aura-portrait-trigger:focus-visible { border-color: #79baff; }
+/* Docked, non-modal: Aura stays visible in the corner while she and the operator use the rest of the workspace. */
 .aura-portrait {
   position: fixed;
-  inset: 0;
-  margin: auto;
+  inset: auto 16px 16px auto;
+  margin: 0;
+  z-index: 60;
+  overflow-y: auto;
   box-sizing: border-box;
-  width: min(460px, calc(100vw - 24px));
-  max-height: calc(100dvh - 24px);
+  width: min(380px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
   padding: 14px;
   border: 1px solid #465b6b;
   border-radius: 16px;
@@ -913,7 +916,7 @@
 .aura-portrait header h2 { margin: 0; font-size: 1rem; }
 .aura-portrait header button { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 8px; }
 .aura-portrait header button:hover, .aura-portrait header button:focus-visible { background: #243848; }
-.aura-portrait-scene { position: relative; width: min(100%, 49dvh); margin: 0 auto; overflow: hidden; border-radius: 10px; background: radial-gradient(ellipse at 50% 42%,#123577 0%,#071a47 45%,#020613 82%); }
+.aura-portrait-scene { position: relative; width: min(100%, 49dvh); margin: 0 auto; overflow: hidden; border-radius: 10px; background: radial-gradient(ellipse at 50% 40%,#0a1f4a 0%,#040b1e 50%,#01030a 85%); }
 .aura-portrait-scene canvas { display:block; width:100%; height:auto; aspect-ratio:1; pointer-events:none; }
 .aura-portrait p { margin: 0; min-height: 1.5em; text-align: center; color: #aec1d2; font-size: .875rem; }
 .aura-portrait p[data-tone="active"], .aura-portrait p[data-tone="busy"] { color: #96ceff; }
@@ -965,3 +968,8 @@
 @media (prefers-reduced-motion:reduce) {
   .cognitive-workspace button,.cognitive-workspace a{transition:none}
 }
+
+/* Obsidian conversation light field: retain current workspace styling. */
+.cognitive-workspace .cognitive-chat { position:relative; isolation:isolate; }
+.cognitive-workspace .jaco-quantum-conversation { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:-1; }
+.cognitive-workspace .cognitive-chat-scroll { background:transparent; }
