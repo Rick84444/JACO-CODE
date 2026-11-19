@@ -314,7 +314,9 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
     const key = mode === 'write' ? 'commands.run' : ['git','repo','filesystem','shell','jaco','editor'].includes(server) ? 'files.read' : 'web.read';
     const check = organization?.authorize('aura', key);
     if (!check?.allowed) throw Error('MANDATE_DENIED:aura:' + key + ':' + (check?.reason || 'ORGANIZATION_UNAVAILABLE'));
-    return callAuraMcpTool(mcpHost, {server,tool:String(args?.tool||''),args:args?.arguments ?? {},mode});
+    const input=args?.arguments === undefined ? {} : args.arguments;
+    if(!input||typeof input!=='object'||Array.isArray(input)) throw Error('MCP_ARGUMENTS_INVALID');
+    return callAuraMcpTool(mcpHost, {server,tool:String(args?.tool||''),args:input,mode});
   };
   return {
     observe: async () => {
@@ -356,7 +358,10 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
       },
       mcp_discover: {
         description: 'Discover currently advertised tools from one already configured MCP server, starting it on demand. Only reads the catalog and never calls a tool or broadens policy. args: {server}',
-        run: async (args: any) => discoverAuraMcpTools(mcpHost, String(args?.server || '')),
+        run: async (args: any) => {
+          if(connectedRuntime.capabilities?.isTaskEnabled?.('mcp-call')===false && connectedRuntime.capabilities?.isTaskEnabled?.('mcp-write')===false) throw Error('CAPABILITY_DISABLED:mcp');
+          return discoverAuraMcpTools(mcpHost, String(args?.server || ''));
+        },
       },
       mcp_read: {
         description: 'Execute an advertised READ-ONLY MCP tool; use mcp_discover to get its exact name and input schema. args: {server,tool,arguments?}. No writes in Manual or Planning.',
@@ -3311,20 +3316,21 @@ const notifyPhone = async (action) => {
   });
   app.post('/api/mcp/start', requireAuth, async (req, res) => {
     try {
+      if(connectedRuntime.capabilities?.isTaskEnabled?.('mcp-call')===false && connectedRuntime.capabilities?.isTaskEnabled?.('mcp-write')===false) return res.status(409).json({success:false,error:'CAPABILITY_DISABLED:mcp',dispatchState:'NOT_DISPATCHED'});
       const server=String(req.body?.server||'');
       const def=mcpHost.servers()[server];
       if(!def||def.validationError||def.agentAccess==='off') return res.status(409).json({success:false,error:'MCP_SERVER_NOT_AVAILABLE_FOR_AGENT',dispatchState:'NOT_DISPATCHED'});
       res.json({ success: true, tools: (await mcpHost.start(server)).map((t: any) => t.name) });
     }
-    catch (error: any) { res.status(409).json({ success: false, error: error?.message || String(error) }); }
+    catch (error: any) { res.status(409).json({ success: false, error: error?.message || String(error), dispatchState:'NOT_DISPATCHED' }); }
   });
   app.post('/api/mcp/call', requireAuth, async (req, res) => {
     const server = String(req.body?.server || ''), tool = String(req.body?.tool || '');
     try {
       const mode=req.body?.mode ?? 'read';
-      const args=req.body?.arguments ?? {};
+      const args=req.body?.arguments === undefined ? {} : req.body.arguments;
       if(mode!=='read'&&mode!=='write') return res.status(400).json({success:false,error:'MCP_MODE_INVALID',dispatchState:'NOT_DISPATCHED'});
-      if(typeof args!=='object'||Array.isArray(args)) return res.status(400).json({success:false,error:'MCP_ARGUMENTS_INVALID',dispatchState:'NOT_DISPATCHED'});
+      if(!args||typeof args!=='object'||Array.isArray(args)) return res.status(400).json({success:false,error:'MCP_ARGUMENTS_INVALID',dispatchState:'NOT_DISPATCHED'});
       const task=mode==='write'?'mcp-write':'mcp-call';
       if(connectedRuntime.capabilities?.isTaskEnabled?.(task)===false) return res.status(409).json({success:false,error:'CAPABILITY_DISABLED:'+task,dispatchState:'NOT_DISPATCHED'});
       // The server's agent access decides (read, write or off; see stdioMcpHost.mjs). Nova's mcp-call
