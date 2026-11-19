@@ -61,17 +61,19 @@ test('every workflow can actually be triggered', () => {
 
 // Making the publish job reachable is only safe if it is also pinned: workflow_dispatch takes a ref, so a gate on
 // the input alone would let publish=true on any feature branch put unreviewed code on jacocode.com.
-test('publishing the public site is restricted to a deliberate dispatch on main', () => {
+test('publishing the public site is restricted to verified current main (push or explicit republish)', () => {
   // The job, not the `publish:` input of the same name under workflow_dispatch: anchor on the job's indentation.
   const job = /\n {2}publish:\n([\s\S]*?)(?=\n {2}\S|$)/.exec(read('lite-release.yml'));
   assert.ok(job, 'no publish job found in lite-release.yml');
   const gate = /^\s*if:\s*(.+)$/m.exec(job[1]);
   assert.ok(gate, 'the publish job has no `if` gate at all');
   const condition = gate[1];
-  for (const required of ["github.event_name == 'workflow_dispatch'", "github.ref == 'refs/heads/main'", 'inputs.publish']) {
-    assert.ok(condition.includes(required), `publish gate is missing ${required}: ${condition}`);
-  }
-  assert.doesNotMatch(condition, /\|\|/, 'an || in the publish gate widens it: every clause must hold');
+  // #323 deliberately enabled verified main pushes; preserve every other publication gate.
+  assert.equal(condition.trim(),"github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))");
+  assert.match(job[1], /needs: \[verified-lite, pixel-arm64-smoke, windows-lite-smoke\]/);
+  assert.match(job[1], /git ls-remote origin refs\/heads\/main/);
+  assert.match(job[1], /if \[ "\$current" = "\$GITHUB_SHA" \]/);
+  assert.match(job[1], /name: Publish existing jacocode\.com Worker\s+if: steps\.freshness\.outputs\.publish == 'true'/);
 });
 
 test('nova delivery asks the repository for its base branch instead of assuming one', () => {

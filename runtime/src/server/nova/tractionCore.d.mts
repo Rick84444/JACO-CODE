@@ -1,4 +1,4 @@
-import type {NovaObservation, NovaTractionState} from './traction';
+import type {NovaObservation, NovaTractionState, ManifoldDrift} from './traction';
 export class DomTractionEngine {
   getState(): NovaTractionState;
   beginIntent(intent: string, expectedNextState?: string | null): NovaTractionState;
@@ -9,3 +9,6 @@ export class DomTractionEngine {
 }
 
 export { DomTractionEngine as NovaTractionEngine };
+
+export const DRIFT_THRESHOLD: number;
+export function computeManifoldDrift(previous: {role?:string;text?:string;bbox?:number[];lastBbox?:number[];confidence?:number}, current:{role?:string;text?:string;bbox?:number[];lastBbox?:number[]},dt:number):ManifoldDrift;

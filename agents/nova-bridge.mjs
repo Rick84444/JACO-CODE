@@ -1,3 +1,4 @@
+import {DOM_IDENTITY_FN} from './lib/browser-target-match.mjs';
 // JACO Nova Bridge — Chrome CDP wrapper for agent browser control
 // Listens on port 4243, connects to Chrome CDP at port 9222
 // No external dependencies — uses Node.js 24+ built-in WebSocket + fetch
@@ -293,11 +294,11 @@ export async function observeSession(session) {
     // can report what a page says instead of only its first 40 links and buttons.
     const all=[...document.querySelectorAll('a,button,input,select,textarea,[role=button],[role=link],[role=tab]')].map(e=>{
       const r=e.getBoundingClientRect(); const visible=r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden';
-      return {e,r,visible,text:(e.innerText || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.name || '').trim().replace(/\\s+/g,' ').slice(0,100)};
+      return {e,r,visible,...(${DOM_IDENTITY_FN}).call(e)};
     });
     const ranked=[...all.filter(x=>x.visible&&x.text), ...all.filter(x=>x.visible&&!x.text), ...all.filter(x=>!x.visible)].slice(0,80);
     const text=(document.body?.innerText||'').replace(/\\n{3,}/g,'\\n\\n').trim().slice(0,6000);
-    return {url:location.href,title:document.title,text,targets:ranked.map(({e,r,visible,text})=>({selector:selector(e),text,role:e.getAttribute('role')||e.tagName.toLowerCase(),visible,bbox:[r.x,r.y,r.width,r.height]}))};
+    return {url:location.href,title:document.title,text,targets:ranked.map(({e,r,visible,text,role})=>({selector:selector(e),text,role,visible,bbox:[r.x,r.y,r.width,r.height]}))};
   })()`);
   if (!data?.url) throw new Error('OBSERVATION_MISSING');
   return {ok:true, observed:true, at:new Date().toISOString(), ...data};

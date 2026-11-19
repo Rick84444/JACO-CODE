@@ -1,3 +1,4 @@
+import {DOM_IDENTITY_FN} from './browser-target-match.mjs';
 // Browser input for the Nova bridge: real input events, targets named by the page's own accessibility tree or found
 // through shadow roots and same-origin frames, file upload, downloads, new tabs and dialogs that are dismissed.
 //
@@ -213,7 +214,7 @@ export function createInputActions({ evaluate, observe, tabs = null, downloads =
         info = (await callOn(session, target.objectId, TARGET_FN)).result?.value;
         if (!info || info.disabled) throw new Error('TARGET_NOT_UNIQUE_OR_ACTIONABLE');
         if(expectedTarget){
-          const identity=(await callOn(session,target.objectId,`function(){const e=this;return {text:(e.innerText||e.getAttribute('aria-label')||e.getAttribute('placeholder')||e.name||'').trim().replace(/\\s+/g,' ').slice(0,100),role:e.getAttribute('role')||e.tagName.toLowerCase()};}`)).result?.value;
+          const identity=(await callOn(session,target.objectId,DOM_IDENTITY_FN)).result?.value;
           if(identity?.text!==expectedTarget.text||identity?.role!==expectedTarget.role)throw new Error('DOM_TARGET_IDENTITY_CHANGED');
         }
         if (kind === 'upload') { if (!info.fileInput) throw new Error('NOT_A_FILE_INPUT'); }

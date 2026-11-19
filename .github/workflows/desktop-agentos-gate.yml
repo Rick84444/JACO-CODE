@@ -137,6 +137,14 @@ jobs:
           }
           if ($failed) { throw 'PowerShell 5.1 parser gate failed.' }
 
+      - name: Compile Win32 guard and test local entropy fixtures
+        shell: powershell
+        run: |
+          $result = & powershell -NoProfile -NonInteractive -File agents/input-bridge.ps1 -Op self_test
+          if ($LASTEXITCODE -ne 0) { throw 'WIN32_GUARD_COMPILATION_OR_TEST_FAILED' }
+          $json = $result | ConvertFrom-Json
+          if (-not $json.ok -or $json.inputDispatched -or $json.checks -ne 3) { throw 'WIN32_GUARD_SELF_TEST_FAILED' }
+
       - name: Execute startup safety contracts on Windows
         shell: powershell
         run: |

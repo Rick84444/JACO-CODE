@@ -87,7 +87,7 @@ test('observation-only graph task scope is accepted by the real Nova mission con
  for(const forbidden of ['repo-read','windows-wmi-read','browser-click','mcp-write','vault-get-secret'])
    assert.equal(mission.allowedTasks.includes(forbidden),false,forbidden);
 });
-test('task permission and schema are enforced',()=>{assert.throws(()=>validateTask({type:'shell',data:{command:'anything'}},['health-check']),/NOT_ALLOWED/);assert.throws(()=>validateTask({type:'browser-click',data:{}},['browser-click']),/REQUIRED/);assert.throws(()=>validateTask({type:'mouse-click',data:{x:NaN,y:0}},['mouse-click']),/COORDINATE/);assert.throws(()=>validateTask({type:'screenshot',data:{outFile:'custom'}},['screenshot']),/RUNTIME_OWNED/);});
+test('task permission and schema are enforced',()=>{assert.throws(()=>validateTask({type:'shell',data:{command:'anything'}},['health-check']),/NOT_ALLOWED/);assert.throws(()=>validateTask({type:'browser-click',data:{}},['browser-click']),/REQUIRED/);assert.throws(()=>validateTask({type:'mouse-click',data:{x:NaN,y:0,expectedHwnd:123}},['mouse-click']),/COORDINATE/);assert.throws(()=>validateTask({type:'screenshot',data:{outFile:'custom'}},['screenshot']),/RUNTIME_OWNED/);});
 test('adaptive screenshot task is bounded and runtime-owned',()=>{
  const checked=validateTask({type:'screenshot',data:{hwnd:123,mode:'adaptive',maxWidth:768,maxHeight:512},expectedOutcome:'fresh terminal ROI'},['screenshot']);
  assert.deepEqual(checked.data,{hwnd:123,mode:'adaptive',maxWidth:768,maxHeight:512});

@@ -255,6 +255,12 @@ export function validateTask(task, allowed) {
   if (task.type === 'propose-tool') return { type: task.type, data: validateToolProposal(data), ...(task.expectedOutcome ? { expectedOutcome: task.expectedOutcome } : {}) };
   if (['vault-generate-secret', 'vault-get-secret', 'secret-store'].includes(task.type) && !/^NOVA_[A-Z0-9_]{2,77}$/.test(String(data.key))) throw new Error('INVALID_VAULT_KEY');
   if (task.type === 'secret-store' && !/^\[?secret:[0-9a-f]{12}\]?$/.test(String(data.handle))) throw new Error('INVALID_SECRET_HANDLE');
+  if (['mouse-move','mouse-click','mouse-scroll','key-press','type-text'].includes(task.type)) {
+    if(!Number.isSafeInteger(data.expectedHwnd)||data.expectedHwnd<=0)throw Error('INVALID_EXPECTED_HWND');
+    if(task.type.startsWith('mouse-')&&(!Number.isSafeInteger(data.x)||!Number.isSafeInteger(data.y)))throw Error('INVALID_INPUT_COORDINATES');
+    if(data.measureEntropy!==undefined&&(task.type!=='mouse-click'||typeof data.measureEntropy!=='boolean'))throw Error('INVALID_ENTROPY_OPTION');
+    if(data.double!==undefined&&typeof data.double!=='boolean')throw Error('INVALID_DOUBLE_CLICK');
+  }
   if (data.button && !['left', 'right', 'middle'].includes(data.button)) throw new Error('INVALID_BUTTON');
   if (task.type === 'screenshot') {
     if (data.outFile) throw new Error('SCREENSHOT_PATH_IS_RUNTIME_OWNED');

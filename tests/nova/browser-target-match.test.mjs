@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickTarget,trackDomTarget } from '../../agents/lib/browser-target-match.mjs';
+import { pickTarget,trackDomTarget,DOM_IDENTITY_FN } from '../../agents/lib/browser-target-match.mjs';
 
 const t = (text, visible = true, selector = text) => ({ text, visible, selector });
 
@@ -49,4 +49,10 @@ test('DOM Traction refuses stale, ambiguous or switched tab observations before 
  for(const [next,error] of [[{...p,targetId:'tab-b'},'DOM_TARGET_PAGE_CHANGED'],[{...p,targets:[t('Save'),t('Save')]},'AMBIGUOUS_TARGET'],[{...p,at:new Date(now-6000).toISOString()},'DOM_OBSERVATION_STALE_OR_UNAVAILABLE']]){
   let n=0;const result=await trackDomTarget(async()=>n++?next:p,'Save',{now:()=>now});assert.equal(result.error,error);assert.equal(result.outcomeUnknown,false);
  }
+});
+
+test('DOM identity does not read form values and normalizes exact actuator labels',()=>{
+  const identity=Function('return ('+DOM_IDENTITY_FN+')')();
+  const observed=identity.call({tagName:'INPUT',innerText:'',get value(){throw Error('SECRET_READ');},getAttribute(name){return name==='aria-label'?'  Email  address  ':null;}});
+  assert.deepEqual(observed,{text:'Email address',role:'input'});
 });

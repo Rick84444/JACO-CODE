@@ -6,7 +6,7 @@ import path from 'node:path';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl } from '../../runtime/src/server/connected/novaMissionControl.mjs';
 import { KnowledgeStore } from '../../runtime/src/server/continuum/knowledgeStore.mjs';
-import { COMMERCIAL_CLOCK, COMMERCIAL_SOURCE, COMMERCIAL_TASKS, commercialAuthorized, commercialTaskAllowed, reconcileCommercialClock, archiveCommercialOutcome, archiveCommercialBatch } from '../../runtime/src/server/autonomy/commercialClock.mjs';
+import { COMMERCIAL_CLOCK, COMMERCIAL_SOURCE, COMMERCIAL_TASKS, commercialAuthorized, commercialTaskAllowed, reconcileCommercialClock, archiveCommercialOutcome, archiveCommercialBatch, seedCommercialOperatorKnowledge } from '../../runtime/src/server/autonomy/commercialClock.mjs';
 import { operatorApprovalCheck } from '../../agents/lib/operator-action-guard.mjs';
 
 function setup(t) {
