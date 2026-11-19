@@ -59,7 +59,7 @@ export async function mcpCatalog({ env = process.env, fetchImpl = fetch, runtime
   let notes={};
   try {const response=await fetchImpl(`${base}/api/tool-notes`,{headers:auth(env),signal:AbortSignal.timeout(1000)});if(response.ok)notes=(await response.json()).notes||{};}catch{}
   const taskNotes=Object.fromEntries(Object.keys(notes).filter(k=>!k.includes('.')).map(k=>[k,(notes[k]||[]).map(n=>n.note).join(' | ').slice(0,300)]));
-  if(generation!==catalogGeneration)return catalogView(write);
+  if(generation!==catalogGeneration)return catalogCache.base===base?catalogView(write):[];
   catalogCache={at:now,base,servers,notes,taskNotes,write};
   return catalogView(write);
 }
@@ -111,7 +111,7 @@ export async function callMcpTool(data, { env = process.env, fetchImpl = fetch, 
     // The standard MCP isError flag wins over a 200 / success=true wrapper.
     // A write may have changed external state before its error was returned.
     const toolError = body?.result?.isError === true;
-    const acknowledged = decoded && res.ok && body?.success === true && !toolError && Array.isArray(body?.result?.content) && (!body.dispatchState||body.dispatchState==='ACKNOWLEDGED');
+    const acknowledged = decoded && res.ok && body?.success === true && !toolError && (Array.isArray(body?.result?.content)||Boolean(body?.result?.structuredContent && typeof body.result.structuredContent==='object')) && (!body.dispatchState||body.dispatchState==='ACKNOWLEDGED');
     const knownRefusal = decoded && body?.dispatchState === 'NOT_DISPATCHED' && !toolError && body?.success === false && !res.ok;
     const legacyAuthRefusal = decoded && [401,403].includes(res.status) && body?.dispatchState !== 'UNKNOWN' && !toolError;
     const outcomeUnknown = mode === 'write' && !acknowledged && !knownRefusal && !legacyAuthRefusal;
@@ -134,5 +134,5 @@ export async function callMcpTool(data, { env = process.env, fetchImpl = fetch, 
 
 // Stored on the receipt (a receipt may be 50 kB); the planner sees a digest of it (head plus key lines).
 const MAX_OUTPUT = 30_000;
-const fullTextOf = result => (result?.content || []).map(c => c?.type === 'text' ? c.text : `[${c?.type}]`).join('\n');
+const fullTextOf = result => Array.isArray(result?.content) && result.content.length ? result.content.map(c => c?.type === 'text' ? c.text : `[${c?.type}]`).join('\n') : result?.structuredContent ? JSON.stringify(result.structuredContent) : '';
 export const textOf = result => fullTextOf(result).slice(0, MAX_OUTPUT);
