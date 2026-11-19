@@ -23,6 +23,10 @@ interface Dictation {
   abort(): void;
 }
 
+// Per-viewer convenience: a conversation left on stays on when the portrait opens again.
+const CONVERSATION_KEY = 'jaco.aura.conversation';
+function savedConversation() { try { return localStorage.getItem(CONVERSATION_KEY) === '1'; } catch { return false; } }
+
 export default function AuraPortrait({ tone, label, chat, onClose }: {
   tone: string;
   label: string;
@@ -36,12 +40,12 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   // The reply currently being read aloud: the neural voice (audio element) or the browser fallback.
   const utterance = useRef<{ cancel: () => void } | null>(null);
   const [listening, setListening] = useState(false);
-  const [readReplies, setReadReplies] = useState(false);
+  const [readReplies, setReadReplies] = useState(savedConversation);
   const [speaking, setSpeaking] = useState(false);
   const [voiceError, setVoiceError] = useState(false);
   const [maskError, setMaskError] = useState(false);
   // Conversation mode: listen, send after a pause, hear the reply, listen again.
-  const [conversation, setConversation] = useState(false);
+  const [conversation, setConversation] = useState(savedConversation);
   const [awaiting, setAwaiting] = useState(false);
   const conversationRef = useRef(false);
   const rig = useRef<Awaited<ReturnType<typeof import('../lib/auraRigLightform.mjs')['createAuraRigLightform']>> | null>(null);
@@ -255,6 +259,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const next = !conversation;
     conversationRef.current = next;
     setConversation(next);
+    try { localStorage.setItem(CONVERSATION_KEY, next ? '1' : '0'); } catch { /* Storage unavailable. */ }
     setVoiceError(false);
     if (next) {
       if (!readReplies) { lastRead.current = latestReply?.id; setReadReplies(true); }
@@ -287,7 +292,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
 
   useEffect(() => {
     const element = dialog.current;
-    element?.showModal();
+    // Non-modal: the rest of the workspace stays usable while the conversation runs.
+    element?.show();
     return () => { element?.close(); };
   }, []);
 
@@ -305,7 +311,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   },[]);
 
   return <dialog ref={dialog} className="aura-portrait" aria-labelledby="aura-portrait-title"
-    onCancel={event => { event.preventDefault(); onClose(); }}>
+    onCancel={event => { event.preventDefault(); onClose(); }}
+    onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); onClose(); } }}>
     <header>
       <h2 id="aura-portrait-title">Aura</h2>
       <button type="button" onClick={onClose} aria-label={tr('Stäng Auras porträtt', 'Close Aura portrait')}><X size={20}/></button>

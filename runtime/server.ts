@@ -74,6 +74,7 @@ import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAc
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
 import { auraAlwaysAnswers, answerInOrder, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
+import { WORKSPACE_CONTROL_INSTRUCTION } from "./src/lib/workspaceActions.mjs";
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier, synthesize as synthesizeVoice } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
@@ -5140,6 +5141,8 @@ const notifyPhone = async (action) => {
     try {
       const { message, activeFilePath, targetSubAgent, selectedModel, selectedProvider, model, messagesHistory, interactionMode } = req.body;
       const ragContext = [...(Array.isArray(req.body.ragContext) ? req.body.ragContext : []), ...attachmentContext(req.body.attachmentIds)];
+      // The local GUI can show views and files Aura asks for while she talks (display only, never execution).
+      if (req.body?.connectedSession?.source === 'Aura GUI') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: WORKSPACE_CONTROL_INSTRUCTION } });
       const userMsg = String(message || "Hi");
       const cognitiveActivation = cognitiveActivationPreview(userMsg, {
         knowledge: continuumSurface.runtime.knowledge,
