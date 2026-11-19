@@ -75,6 +75,8 @@ import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-se
 import { auraAlwaysAnswers, answerInOrder, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { WORKSPACE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
+import { createStackRepair } from "./src/server/connected/stackRepair.mjs";
+const repairStack = createStackRepair();
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier, synthesize as synthesizeVoice } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
@@ -316,6 +318,10 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         run: async (args: any) => organizationMandate(organization, String(args?.agentId || 'aura')) || { error: 'AGENT_NOT_FOUND' },
       },
       health: { description: 'Read-only HTTP service probes. READY/REACHABLE are not proof of model or tool execution; AUTH_REQUIRED is not healthy. In Termux the ChatGPT gateway is not managed by runit. args: {}', run: async () => auraServiceHealth() },
+      stack_repair: {
+        description: 'Repair the local JACO stack yourself when health shows a service DOWN or 503 (Chrome debug browser 9222, CDP bridge, Nova bridge, gateway, Workplace, SEER). Reruns the canonical starter: only services that are down are relaunched, READY services and foreign listeners are left alone. At most once a minute; call health afterwards to verify. args: {}',
+        run: async () => repairStack(),
+      },
       mcp_catalog: {
         description: 'Read the live catalog of connected MCP tool servers and the tools they currently advertise. Use this before answering what tools Aura has. This only observes metadata and never starts or calls a tool. args: {}',
         run: async () => ({

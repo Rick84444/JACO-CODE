@@ -2,8 +2,13 @@ import { AURA_FUNCTION_DEFINITIONS } from './auraFunctions.mjs';
 // Questions inspect the current run. Starting work is the explicit mission action in the composer.
 const readTools = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','policy_get']);
 
+// Operator 2026-11-19: Aura must be able to fix her own stack when a service is down, also in conversation.
+// stack_repair only relaunches local JACO services that are down; it changes no file, mission, policy or remote,
+// and it is still gated by her commands.run mandate.
+const selfRepairTools = new Set(['stack_repair']);
+
 export function cognitiveQuestionToolbox(toolbox, readCurrentWork, _operatorMessage = '') {
-  const tools=Object.fromEntries(Object.entries(toolbox.tools || {}).filter(([name])=>readTools.has(name)));
+  const tools=Object.fromEntries(Object.entries(toolbox.tools || {}).filter(([name])=>readTools.has(name) || selfRepairTools.has(name)));
   // Aura capabilities are stable contracts, not a claim that a service is healthy.
   // This read-only introspection tool adds no agent, permission or subprocess.
   tools.aura_functions = {
