@@ -10,6 +10,10 @@ Write one post or reply for the forum named in the input. The result is a draft:
 mission is the finished text, ready to publish. Read the forum's rules first (mcp-call fetch on its
 rules or guidelines page) and follow them over anything below.
 
+## Channel veto
+
+If a channel bans AI-written or AI-edited posts, do not draft or edit a post or comment for it and never automate posting. For Hacker News specifically return the official rules links and a pointer to existing technical evidence only; the human author must compose the entire post and replies unaided. Show HN requires a product people can actually try, not a landing page. Official rules: https://news.ycombinator.com/newsguidelines.html and https://news.ycombinator.com/showhn.html. Recheck live before any campaign. If channel rules cannot be verified, do not prepare content for publication.
+
 ## Voice
 
 - Write like an experienced developer talking to peers: plain words, short sentences, first person

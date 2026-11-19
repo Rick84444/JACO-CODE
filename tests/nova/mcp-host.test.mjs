@@ -29,9 +29,11 @@ fs.writeFileSync(configFile, JSON.stringify({ servers: { fake: { name: 'Fake', c
 
 test('config: built-in servers plus the file; disabled and malformed entries are dropped', () => {
   const s = loadServerConfig({ configFile, repoRoot: dir, runtimeRoot: dir });
-  assert.deepEqual(Object.keys(s).sort(), ['cloudflare', 'connect', 'fake', 'filesystem', 'git', 'jaco', 'jobbi', 'repo', 'shell']);
+  assert.deepEqual(Object.keys(s).sort(), ['cloudflare', 'connect', 'fake', 'filesystem', 'frantic', 'git', 'jaco', 'jobbi', 'repo', 'shell']);
   assert.equal(s.jobbi.agentAccess, 'read');
   assert.equal(s.jobbi.transport, 'http');
+  assert.equal(s.frantic.agentAccess, 'read');
+  assert.equal(s.frantic.url, 'https://api.gofrantic.com/mcp/discovery');
   assert.deepEqual(s.filesystem.args.slice(-1), [dir], 'filesystem is confined to the repo root');
 });
 
@@ -281,11 +283,11 @@ test('Lite offers the shell server on every host where its bundle exists', async
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-lite-shell-'));
   const before = process.env.JACO_LITE; process.env.JACO_LITE = '1';
   try {
-    assert.deepEqual(Object.keys(defaultServers({ repoRoot: dir, runtimeRoot })), ['editor'], 'no bundle, no shell server');
+    assert.deepEqual(Object.keys(defaultServers({ repoRoot: dir, runtimeRoot })), ['jobbi', 'frantic', 'editor'], 'public discovery plus editor, no shell bundle');
     fs.mkdirSync(path.join(runtimeRoot, 'dist')); fs.writeFileSync(path.join(runtimeRoot, 'dist', 'jaco-shell.mjs'), '// bundle');
     const servers = defaultServers({ repoRoot: dir, runtimeRoot });
     {
-      assert.deepEqual(Object.keys(servers), ['editor', 'shell']);
+      assert.deepEqual(Object.keys(servers), ['jobbi', 'frantic', 'editor', 'shell']);
       assert.equal(servers.shell.agentAccess, 'write');
       assert.equal(servers.shell.env.JACO_SHELL_WORKSPACE, dir);
     }

@@ -52,3 +52,17 @@ test('own application history is read-only and strips third-party data',async()=
  const c=createAgentGigs({env:{JACO_AGENTGIGS_API_KEY:'age_test'},fetchImpl:async(url,opt)=>{assert.ok(url.endsWith('/api/agent/applications?limit=50'));assert.equal(opt.method,'GET');return json({applications:[{job_id:job,status:'funded',proposed_price:1000,job:{status:'assigned',description:'private',download_url:'private'}}],counts:{total:1}});}});
  assert.deepEqual(await c.call('list_applications'),{applications:[{job_id:job,status:'funded',proposed_price:1000,job_status:'assigned'}],count:1,truncated:false});
 });
+
+test('payout quote is read only, exact integer cents, rejects inconsistent provider data',async()=>{
+ let requests=0;
+ const c=createAgentGigs({env:{JACO_AGENTGIGS_API_KEY:'age_test'},fetchImpl:async(url,opt)=>{
+ requests++;assert.equal(opt.method,'GET');assert.ok(url.endsWith('/api/agent/earnings?calculate=5000'));
+ return json({calculator:{jobAmount:5000,commissionAmount:500,agentPayout:4500},earnings:{private:'not returned'}});
+ }});
+ assert.equal(c.tools().find(t=>t.name==='estimate_payout').annotations.readOnlyHint,true);
+ assert.deepEqual(await c.call('estimate_payout',{gross_cents:5000}),{currency:'USD',gross_cents:5000,commission_cents:500,net_cents:4500,quote_only:true});
+ for(const invalid of [0,-1,1.5,'5000',NaN,100000001])await assert.rejects(c.call('estimate_payout',{gross_cents:invalid}),/AMOUNT_INVALID/);
+ assert.equal(requests,1);
+ const bad=createAgentGigs({env:{JACO_AGENTGIGS_API_KEY:'age_test'},fetchImpl:async()=>json({calculator:{jobAmount:5000,commissionAmount:500,agentPayout:5000}})});
+ await assert.rejects(bad.call('estimate_payout',{gross_cents:5000}),/PAYOUT_QUOTE_INVALID/);
+});
