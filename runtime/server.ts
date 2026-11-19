@@ -74,7 +74,7 @@ import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAc
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
 import { auraAlwaysAnswers, answerInOrder, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
-import { WORKSPACE_CONTROL_INSTRUCTION } from "./src/lib/workspaceActions.mjs";
+import { WORKSPACE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier, synthesize as synthesizeVoice } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
@@ -5180,7 +5180,7 @@ const notifyPhone = async (action) => {
       });
       const sendChatResult = (result: any) => {
         if (connectedReplyId) auraChatSession.append({
-          id: connectedReplyId, role: 'assistant', content: String(result.reply || result.text || ''),
+          id: connectedReplyId, role: 'assistant', content: workspaceReplyText(String(result.reply || result.text || '')),
           meta: [
             connectedSource,
             result.modelUsed || [result.provider, result.model].filter(Boolean).join('/'),

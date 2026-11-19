@@ -30,3 +30,9 @@ export function extractWorkspaceActions(reply) {
   }).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   return { text, actions };
 }
+
+/** The reply text everyone stores and shows: directives removed, never empty. @param {string} reply */
+export function workspaceReplyText(reply) {
+  const { text } = extractWorkspaceActions(reply);
+  return text || 'Showing it in the workspace.';
+}

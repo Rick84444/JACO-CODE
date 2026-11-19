@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { extractWorkspaceActions, WORKSPACE_CONTROL_INSTRUCTION } from '../../runtime/src/lib/workspaceActions.mjs';
+import { extractWorkspaceActions, workspaceReplyText, WORKSPACE_CONTROL_INSTRUCTION } from '../../runtime/src/lib/workspaceActions.mjs';
 
 test('directives become workspace actions and disappear from the reply', () => {
   const { text, actions } = extractWorkspaceActions('Jag öppnar koden.\n[[jaco:open code]]\n[[jaco:terminal]]\n[[jaco:file runtime/src/App.tsx]]\nKlart.');
@@ -19,4 +19,9 @@ test('unknown views, unsafe paths and excess directives are dropped, never execu
 test('plain replies are unchanged and the instruction names every directive', () => {
   assert.deepEqual(extractWorkspaceActions('Inga kommandon här.'), { text: 'Inga kommandon här.', actions: [] });
   for (const word of ['[[jaco:open', '[[jaco:terminal]]', '[[jaco:file']) assert.ok(WORKSPACE_CONTROL_INSTRUCTION.includes(word));
+});
+
+test('stored and shown reply text never contains directives and is never empty', () => {
+  assert.equal(workspaceReplyText('Här.\n[[jaco:open preview]]\nKlart.'), 'Här.\n\nKlart.');
+  assert.equal(workspaceReplyText('[[jaco:terminal]]'), 'Showing it in the workspace.');
 });

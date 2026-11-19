@@ -17,7 +17,7 @@ import { BudgetCard } from './CostChip';
 import { AutonomyClock } from './AutonomyClock';
 import { AuraOverview } from './AuraOverview';
 import { boundChatHistory } from '../lib/chatHistory.mjs';
-import { extractWorkspaceActions } from '../lib/workspaceActions.mjs';
+import { extractWorkspaceActions, workspaceReplyText } from '../lib/workspaceActions.mjs';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
 
 // The conversation is not a telemetry console. Keep the newest instance of an identical
@@ -512,7 +512,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
       // Aura may ask the workspace to show a view, the terminal or a file; the GUI performs it and hides the directive.
       const workspace=extractWorkspaceActions(rawAnswer);
       for(const action of workspace.actions) window.dispatchEvent(new CustomEvent('jaco:workspace-action',{detail:action}));
-      const answer=workspace.text || tr('Jag visar det för dig nu.', 'Showing it to you now.');
+      const answer=workspaceReplyText(rawAnswer);
       await appendMessage({
         id: `${user.id}:reply`,
         role: 'assistant',
