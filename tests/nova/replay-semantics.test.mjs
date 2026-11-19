@@ -81,3 +81,10 @@ test('MCP HTTP 409 distinguishes a known refusal from a possible dispatched writ
  assert.equal((await invoke({success:false,error:'legacy 409'})).outcomeUnknown,true);
  assert.equal((await invoke({success:false,dispatchState:'NOT_DISPATCHED',result:{isError:true,content:[]}})).outcomeUnknown,true);
 });
+
+test('an ambiguous non-JSON intermediary 401/403 must not attest no write',async()=>{
+  for(const status of [401,403]){
+    const r=await callMcpTool({server:'files',tool:'save_file'},{mode:'write',runtimeUrl:'http://localhost',fetchImpl:async()=>new Response('Unauthorized',{status})});
+    assert.equal(r.outcomeUnknown,true);assert.equal(r.verified,false);
+  }
+});
