@@ -9,11 +9,11 @@ const mcp = [{ server: 'git', name: 'git_show', readOnly: true, description: 'Sh
 test('tool list: one function per allowed task, MCP tools with their real schemas, complete and blocked', () => {
   const { tools, resolve } = plannerTools(['web-fetch', 'mcp-call', 'repo-write'], mcp);
   const names = tools.map(t => t.function.name);
-  assert.deepEqual(names, ['web-fetch', 'repo-write', 'mcp__git__git_show', 'complete', 'blocked', 'request_replan', 'delegate']);
+  assert.deepEqual(names, ['web-fetch', 'mcp-call', 'repo-write', 'mcp__git__git_show', 'complete', 'blocked', 'request_replan', 'delegate']);
   const show = tools.find(t => t.function.name === 'mcp__git__git_show').function.parameters;
   assert.deepEqual(show.required, ['repo_path', 'revision']);
   assert.equal(show.properties.repo_path.description, undefined, 'prose is dropped from schemas');
-  assert.deepEqual(tools[1].function.parameters.required, ['path', 'content']);
+  assert.deepEqual(tools.find(t => t.function.name === 'repo-write').function.parameters.required, ['path', 'content']);
   assert.deepEqual(resolve('mcp__git__git_show'), { kind: 'mcp', server: 'git', tool: 'git_show', write: false });
   assert.equal(resolve('shell'), null, 'a task that is not allowed has no function');
   assert.ok(plannerTools(['mcp-call'], []).tools.some(t => t.function.name === 'mcp-call'), 'generic mcp-call without a catalog');
@@ -105,7 +105,7 @@ test('local planners are constrained to a plan schema built from the allowed tas
 
 test('a direct mcp-call is understood when the MCP tools are offered as their own functions', () => {
   const { tools, resolve } = plannerTools(['mcp-call'], [{ server: 'fetch', name: 'fetch', readOnly: true, inputSchema: { type: 'object', properties: { url: { type: 'string' } } } }]);
-  assert.ok(!tools.some(t => t.function.name === 'mcp-call'), 'not offered twice');
+  assert.ok(tools.some(t => t.function.name === 'mcp-call'), 'generic fallback stays callable with a partial catalog');
   const plan = planFromToolCalls({ tool_calls: [{ function: { name: 'mcp-call', arguments: JSON.stringify({ server: 'fetch', tool: 'fetch', arguments: { url: 'https://example.com' } }) } }] }, resolve);
   assert.deepEqual(plan, { task: { type: 'mcp-call', data: { server: 'fetch', tool: 'fetch', arguments: { url: 'https://example.com' } } } });
   assert.throws(() => planFromToolCalls({ tool_calls: [{ function: { name: 'mcp-call', arguments: '{}' } }] }, plannerTools(['web-fetch'], []).resolve), /PLAN_TOOL_UNKNOWN/);
@@ -131,4 +131,11 @@ test('stale MCP write catalog is filtered by current mission authority', () => {
   assert.equal(plannerTools(['mcp-call','mcp-write'],[unclassified]).resolve('mcp__files__opaque_tool').write,true,'opaque tools require explicit write authority');
   assert.equal(write.resolve('mcp__files__save_file').write,true);
   assert.equal(planFromToolCalls({tool_calls:[{function:{name:'mcp__files__save_file',arguments:'{}'}}]},write.resolve).task.type,'mcp-write');
+});
+
+test('a write-only MCP mission does not gain the read task or read aliases',()=>{
+ const p=plannerTools(['mcp-write'],[{server:'fetch',name:'fetch',readOnly:true},{server:'files',name:'write',readOnly:false}]);
+ assert.equal(p.resolve('mcp-call'),null);
+ assert.equal(p.resolve('mcp__fetch__fetch'),null);
+ assert.equal(p.resolve('mcp__files__write').write,true);
 });
