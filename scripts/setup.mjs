@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { parseEnv } from 'node:util';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pixelDebian, preparePixelBrowser, activatePixelInstallation } from './pixel-browser-setup.mjs';
 
 export function ensureGatewayToken(root, env = process.env) {
   const file = path.join(root, '.env');
@@ -20,7 +21,7 @@ export function ensureGatewayToken(root, env = process.env) {
 }
 
 // The injected spawn/logger are for isolated setup-contract tests only.
-export function setup(root, env = process.env, { spawn = spawnSync, logger = console } = {}) {
+export function setup(root, env = process.env, { spawn = spawnSync, logger = console, system, pixelBrowser = preparePixelBrowser, pixelActivate = activatePixelInstallation } = {}) {
   if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('Node.js 24 or newer is required');
 
   const runNpm = (cwd, args, label) => {
@@ -62,7 +63,16 @@ export function setup(root, env = process.env, { spawn = spawnSync, logger = con
   }
 
   ensureGatewayToken(root, env);
-  logger.log('Setup complete. Configure a model provider, then run npm run jaco:start.');
+  // Retain explicit .env preferences, including a CDP opt-out and custom executable.
+  const configFile = path.join(env.JACO_DATA_DIR || root, '.env');
+  const configured = { ...(fs.existsSync(configFile) ? parseEnv(fs.readFileSync(configFile, 'utf8')) : {}), ...env };
+  if (pixelDebian(configured, system)) {
+    const browser = pixelBrowser(root, configured, { spawn, logger });
+    logger.log('Pixel Chromium: ' + browser.state + (browser.reason ? ' (' + browser.reason + ')' : ''));
+    const activation = pixelActivate(root, configured, { spawn, logger });
+    if (activation.state === 'BLOCKED') throw new Error('PIXEL_ACTIVATION_UNVERIFIED:' + activation.reason);
+    logger.log('Setup complete. Pixel activation: ' + activation.state + '; CDP: ' + (activation.browser || 'NOT_VERIFIED'));
+  } else logger.log('Setup complete. Configure a model provider, then run npm run jaco:start.');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
