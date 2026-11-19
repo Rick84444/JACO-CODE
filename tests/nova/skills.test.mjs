@@ -66,7 +66,7 @@ test('an oversized skill is listed with its error; runs of different skills are 
 
 test('the repository skills all parse and declare supported tasks', () => {
   const list = listSkills([repoSkills]);
-  assert.deepEqual(list.map(s => s.id), ['autonomous-api-connection', 'build-web-page', 'commercial-opportunity-cycle', 'community-post', 'create-github-repo', 'external-agent-employment', 'fix-a-bug', 'product-validation', 'repo-insight', 'repo-security-scan', 'web-research']);
+  assert.deepEqual(list.map(s => s.id), ['autonomous-api-connection', 'browser-authorized-action', 'browser-workflow-understanding', 'build-web-page', 'commercial-opportunity-cycle', 'community-post', 'create-github-repo', 'external-agent-employment', 'fix-a-bug', 'product-validation', 'repo-insight', 'repo-security-scan', 'web-research']);
   for (const s of list) assert.equal(s.error, undefined, `${s.id}: ${s.error}`);
 });
 
@@ -107,4 +107,16 @@ test('product validation is discoverable and read-only; no publish or shell perm
   assert.equal(skill.truncated, false);
   assert.match(skill.body, /Hacker News prohibits AI-written/);
   assert.match(skill.body, /settled payment/);
+});
+
+test('browser skills keep read-only observation separate from authorized mutation', () => {
+  const read = loadSkill([repoSkills], 'browser-workflow-understanding');
+  const action = loadSkill([repoSkills], 'browser-authorized-action');
+  assert.deepEqual(read.tasks, ['web-fetch', 'mcp-call', 'skill-load']);
+  assert.deepEqual(action.tasks, ['web-fetch', 'mcp-call', 'mcp-write', 'skill-load']);
+  assert.equal(read.truncated, false);
+  assert.equal(action.truncated, false);
+  assert.match(action.body, /If a required approval cannot be verified/);
+  assert.match(action.body, /never issue a fresh actionId/);
+  assert.match(read.body, /no alternate input route/);
 });
