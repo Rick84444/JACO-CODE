@@ -1,4 +1,4 @@
-export { DomTractionEngine, NovaTractionEngine } from './tractionCore.mjs';
+export { DomTractionEngine, NovaTractionEngine, computeManifoldDrift, DRIFT_THRESHOLD } from './tractionCore.mjs';
 
 export type NovaTrackState = 'IDLE' | 'ACQUIRING' | 'LOCKED' | 'OCCLUDED' | 'OFFSCREEN' | 'REIDENTIFYING' | 'VERIFYING' | 'RECOVERING' | 'COMPLETE';
 
@@ -26,9 +26,12 @@ export interface NovaTractionState {
   app: string | null;
   expectedNextState: string | null;
   lastObservationAt: string | null;
+  drift?: ManifoldDrift | null;
   lastAction: string | null;
   wrongActionCount: number;
   reidentificationCount: number;
   events: Array<{ at: string; type: string; message: string }>;
 }
 
+
+export interface ManifoldDrift { drift:number; semanticMismatch:number; geomDrift:number|null; timeDecay:number; decayedConfidence:number; geometryObserved:boolean; lockBroken:boolean }
