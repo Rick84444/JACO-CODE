@@ -6,7 +6,7 @@ import path from 'node:path';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl } from '../../runtime/src/server/connected/novaMissionControl.mjs';
 import { KnowledgeStore } from '../../runtime/src/server/continuum/knowledgeStore.mjs';
-import { COMMERCIAL_CLOCK, COMMERCIAL_SOURCE, COMMERCIAL_TASKS, commercialAuthorized, commercialTaskAllowed, reconcileCommercialClock, archiveCommercialOutcome } from '../../runtime/src/server/autonomy/commercialClock.mjs';
+import { COMMERCIAL_CLOCK, COMMERCIAL_SOURCE, COMMERCIAL_TASKS, commercialAuthorized, commercialTaskAllowed, reconcileCommercialClock, archiveCommercialOutcome, seedCommercialOperatorKnowledge } from '../../runtime/src/server/autonomy/commercialClock.mjs';
 import { operatorApprovalCheck } from '../../agents/lib/operator-action-guard.mjs';
 
 function setup(t) {
@@ -30,6 +30,7 @@ test('only an explicit active commercial clock queues one mission and seeds cano
   s.setEnabled(true);s.setMode('PAUSED');assert.equal(s.tick().state,'INACTIVE');
   s.setMode('RUNNING');s.setEmergency(true);assert.equal(s.tick().state,'INACTIVE');
   s.setEmergency(false);
+  assert.throws(()=>s.knowledge.get('commercial-operator-knowledge-v2'),/not found/);
   const first=s.tick();assert.equal(first.state,'QUEUED');
   assert.equal(s.tick().state,'OUTSTANDING');
   const mission=s.nova.get(first.missionId);
@@ -38,7 +39,7 @@ test('only an explicit active commercial clock queues one mission and seeds cano
   const policy=s.knowledge.get('commercial-operator-knowledge-v2');
   assert.equal(policy.verificationStatus,'UNVERIFIED');
   assert.equal(policy.confidence,0);
-  assert.equal(policy.revision, s.knowledge.get('commercial-operator-knowledge-v2').revision);
+  assert.equal(seedCommercialOperatorKnowledge(s.knowledge).revision,policy.revision);
   assert.equal(s.nova.current().id,mission.id);
 });
 test('expiry and revocation stop new actions, including an already claimed planning turn',t=>{
@@ -59,6 +60,7 @@ test('scoped tool allowlist cannot grant spend or arbitrary MCP writes',()=>{
   assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'agentgigs',tool:'apply'}}),true);
   assert.ok(operatorApprovalCheck({type:'mcp-write',data:{server:'agentgigs',tool:'apply'}}));
   assert.ok(operatorApprovalCheck({type:'mcp-write',data:{server:'agentgigs',tool:'agentgigs.apply'}}));
+  assert.equal(commercialTaskAllowed({type:'skill-load',data:{id:'product-validation'}}),false);
   assert.equal(commercialTaskAllowed({type:'shell',data:{command:'curl'}}),false);
 });
 test('out-of-scope tools rejected in real Nova begin; no fabricated revenue in outcome memory',t=>{
