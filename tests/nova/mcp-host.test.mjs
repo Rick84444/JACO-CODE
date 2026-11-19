@@ -213,7 +213,7 @@ test('Nova: changing tools appear only for missions with mcp-write and run as mc
   assert.deepEqual(reading[0].tools, ['read_file(path?): Read']);
   const writing = await mcpCatalog({ env: {}, fetchImpl, runtimeUrl: 'http://rt', write: true });
   assert.deepEqual(writing[0].tools, ['read_file(path?): Read', 'write_file(path?, content?) [changes: mcp-write]: Write'], 'a tool the operator did not open stays out');
-  const { resolve } = plannerTools(['mcp-call', 'mcp-write'], mcpCatalogTools({write:true}));
+  const { resolve } = plannerTools(['mcp-call', 'mcp-write'], mcpCatalogTools({write:true,runtimeUrl:'http://rt'}));
   const plan = planFromToolCalls({ tool_calls: [{ function: { name: 'mcp__filesystem__write_file', arguments: '{"path":"a.txt","content":"x"}' } }] }, resolve);
   assert.equal(plan.task.type, 'mcp-write');
   await callMcpTool({ server: 'filesystem', tool: 'write_file', arguments: {} }, { env: {}, fetchImpl, runtimeUrl: 'http://rt', mode: 'write' });
@@ -312,7 +312,7 @@ test('partial MCP discovery preserves ready tools and bounds slow connector wait
  };
  const begin=Date.now();const catalog=await mcpCatalog({runtimeUrl:'http://rt',env:{},fetchImpl,discoveryWaitMs:100});
  assert.ok(Date.now()-begin<2000);assert.equal(starts,1);assert.equal(catalog.find(s=>s.server==='slow').unavailable,true);
- assert.deepEqual(mcpCatalogTools().map(t=>t.server),['fast']);
+ assert.deepEqual(mcpCatalogTools({runtimeUrl:'http://rt'}).map(t=>t.server),['fast']);
  resetMcpCatalog({clearCooldowns:true});
 });
 
