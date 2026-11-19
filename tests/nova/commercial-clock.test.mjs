@@ -35,6 +35,10 @@ test('only an explicit active commercial clock queues one mission and seeds cano
   const mission=s.nova.get(first.missionId);
   assert.equal(mission.source,COMMERCIAL_SOURCE);assert.equal(mission.metadata.mandateId,s.m.id);
   assert.equal(s.knowledge.get('commercial-opportunity-policy-v1').verificationStatus,'UNVERIFIED');
+  const policy=s.knowledge.get('commercial-operator-knowledge-v2');
+  assert.equal(policy.verificationStatus,'UNVERIFIED');
+  assert.equal(policy.confidence,0);
+  assert.equal(policy.revision, s.knowledge.get('commercial-operator-knowledge-v2').revision);
   assert.equal(s.nova.current().id,mission.id);
 });
 test('expiry and revocation stop new actions, including an already claimed planning turn',t=>{

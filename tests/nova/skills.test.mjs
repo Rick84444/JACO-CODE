@@ -66,7 +66,7 @@ test('an oversized skill is listed with its error; runs of different skills are 
 
 test('the repository skills all parse and declare supported tasks', () => {
   const list = listSkills([repoSkills]);
-  assert.deepEqual(list.map(s => s.id), ['autonomous-api-connection', 'build-web-page', 'commercial-opportunity-cycle', 'community-post', 'create-github-repo', 'external-agent-employment', 'fix-a-bug', 'repo-insight', 'repo-security-scan', 'web-research']);
+  assert.deepEqual(list.map(s => s.id), ['autonomous-api-connection', 'build-web-page', 'commercial-opportunity-cycle', 'community-post', 'create-github-repo', 'external-agent-employment', 'fix-a-bug', 'product-validation', 'repo-insight', 'repo-security-scan', 'web-research']);
   for (const s of list) assert.equal(s.error, undefined, `${s.id}: ${s.error}`);
 });
 
@@ -99,4 +99,12 @@ test('Nova can pick a skill itself: skill-load is a validated read-only task and
   assert.equal(brain.recentReceipts[0].n, 1);
   assert.match(JSON.stringify(brain.recentReceipts[0].result), /see state.skill/);
   assert.ok(JSON.stringify(brain).length < 1000, 'instructions are not repeated in the receipt');
+});
+
+test('product validation is discoverable and read-only; no publish or shell permission', () => {
+  const skill = loadSkill([repoSkills], 'product-validation');
+  assert.deepEqual(skill.tasks, ['health-check', 'web-fetch', 'mcp-call', 'skill-load']);
+  assert.equal(skill.truncated, false);
+  assert.match(skill.body, /Hacker News prohibits AI-written/);
+  assert.match(skill.body, /settled payment/);
 });

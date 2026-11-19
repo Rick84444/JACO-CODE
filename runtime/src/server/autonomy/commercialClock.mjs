@@ -33,6 +33,18 @@ export function seedCommercialKnowledge(knowledge) {
     failureModes:['unfunded application','ambiguous write','fees exceed reward','expired mandate','unverified payout'],
     implementation:{skill:COMMERCIAL_SKILL,source:COMMERCIAL_SOURCE}},'operator-commercial-policy');
 }
+// Versioned procedural knowledge: not verified market outcomes or a capability grant.
+export function seedCommercialOperatorKnowledge(knowledge) {
+  const id = 'commercial-operator-knowledge-v2';
+  try { return knowledge.get(id); } catch (e) { if(!String(e.message).includes('not found')) throw e; }
+  return knowledge.put({id,kind:'commercial-procedure',
+    purpose:'Prioritize external user outcomes, funded demand, low irreversible cost and independently verified paid delivery.',
+    confidence:0,verificationStatus:'UNVERIFIED',reusable:true,
+    dependencies:['RevenueOpportunityEngine','EconomicGovernor','Nova','commercial-opportunity-cycle'],
+    reasoningSummary:'Demand before building; compare free alternatives; rank probability-adjusted contribution, effort and collection time. Distinguish market signal, qualified buyer, assignment, accepted delivery and settlement. Product activation is separate from revenue. Follow channel rules; no unsupported performance claims. Record falsifiers and actual receipts; no unknown values treated as success.',
+    failureModes:['speculative feature work','unverified buyer','unsupported benchmark claim','prohibited outreach','unapproved spend','uncollected revenue'],
+    implementation:{skill:COMMERCIAL_SKILL,relatedOperatorSkill:'product-validation',reference:'docs/commercial/operating-knowledge-v2.md'}},'operator-commercial-policy');
+}
 export function reconcileCommercialClock({mandates,operator,bus,nova,knowledge,capabilities,now=Date.now()}) {
   const clocks = mandates.list().filter(m=>m.name===COMMERCIAL_CLOCK && mandates.isActive(m.id));
   const m = clocks.sort((a,b)=>Date.parse(b.signedAt)-Date.parse(a.signedAt))[0];
@@ -55,6 +67,7 @@ export function reconcileCommercialClock({mandates,operator,bus,nova,knowledge,c
   const recent=history.find(x=>x.metadata?.mandateId===m.id);
   if(recent && now-Date.parse(recent.createdAt)<HOUR) return {state:'COOLDOWN'};
   seedCommercialKnowledge(knowledge);
+  seedCommercialOperatorKnowledge(knowledge);
   const allowedTasks=COMMERCIAL_TASKS.filter(t=>t!=='mcp-write' || m.decisions?.EXTERNAL_MUTATION==='ALLOW').filter(t=>!capabilities || capabilities.isTaskEnabled(t));
   if(!allowedTasks.includes('mcp-call') || !allowedTasks.includes('skill-load')) return {state:'REQUIRED_TOOLS_DISABLED'};
   const recall=knowledge.list({kind:'commercial-outcome',limit:1000}).sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt)).slice(0,5).map(k=>({missionId:k.implementation?.missionId,status:k.implementation?.status,applications:k.implementation?.applications||[],verifiedReceipts:k.metrics?.verifiedReceipts||0}));
