@@ -42,7 +42,7 @@ function scopeFor(mission){
   return null;
 }
 const RULES=Object.freeze([
-  {id:'REOBSERVE_DOM',error:/^(?:DOM_TARGET_LOCK_LOST|DOM_TARGET_IDENTITY_CHANGED|DOM_TARGET_PAGE_CHANGED|DOM_OBSERVATION_STALE_OR_UNAVAILABLE|NO_TARGET|AMBIGUOUS_TARGET)(?::|$)/,tasks:['browser-click','browser-type','browser-survey-site'],observe:['browser-survey-site'],hint:'Read the current authorized page and resolve a unique semantic target again; never reuse the old selector or blindly repeat the click.'},
+  {id:'REOBSERVE_DOM',error:/^(?:DOM_TARGET_LOCK_LOST|DOM_TARGET_TAB_CHANGED|DOM_TARGET_IDENTITY_CHANGED|DOM_TARGET_PAGE_CHANGED|DOM_OBSERVATION_STALE_OR_UNAVAILABLE|NO_TARGET|AMBIGUOUS_TARGET)(?::|$)/,tasks:['browser-click','browser-type','browser-survey-site'],observe:['browser-survey-site'],hint:'Read the current authorized page and resolve a unique semantic target again; never reuse the old selector or blindly repeat the click.'},
   {id:'REOBSERVE_WINDOW',error:/^(?:FRESH_BOUND_DESKTOP_OBSERVATION_REQUIRED|EXPECTED_HWND_REQUIRED|FOCUS_OR_PID_DRIFT|WINDOW_GEOMETRY_DRIFT|TARGET_POINT_OCCLUDED|CURSOR_POSITION_DRIFT|INPUT_POINT_OUTSIDE_OBSERVED_REGION)(?::|$)/,tasks:['mouse-move','mouse-click','mouse-scroll','key-press','type-text'],observe:['desktop-observe','screenshot'],hint:'Observe the permitted window again, reacquire the target and current geometry; choose semantic input when available. Never repeat an uncertain input event.'},
   {id:'LOCATE_PATH',error:/^(?:ENOENT|CODING_PATH_NOT_FOUND|REPO_PATH_NOT_FOUND)(?::|$)/,tasks:['repo-read','repo-list'],observe:['repo-list'],hint:'List the permitted parent directory and use an observed path instead of guessing or repeating the same read.'},
 ]);
@@ -67,6 +67,8 @@ export function routineExperience(mission,claimCheck=null){
   for(let i=0;i<receipts.length;i++){
     const failed=receipts[i],rule=ruleFor(failed);
     if(!rule||!id(failed))continue;
+    const previous=receipts.slice(0,i).findLast(r=>scopeOf(r,mission));
+    if(!previous||!inScope(previous))continue;
     const window=receipts.slice(i+1,i+4),next=window.find(r=>ok(r)&&id(r)&&rule.observe.includes(r.type)&&inScope(r));
     // An intervening mutation could have changed the context; do not infer a fix.
     if(next&&window.slice(0,window.indexOf(next)).every(r=>safe.has(r.type))){
@@ -76,14 +78,14 @@ export function routineExperience(mission,claimCheck=null){
   // Only observation-only, checked completed missions become automatic playbooks.
   // Do not store executable commands, old coordinates, paths, selectors, or form data.
   const positive=receipts.filter(ok);
-  const playbook=mission.status==='DONE'&&claimCheck?.ok===true&&receipts.every(r=>safe.has(r.type))&&positive.length>=2&&positive.every(r=>id(r)&&inScope(r))
-    ? {steps:unique(positive.map(r=>r.type)).slice(0,8),evidence:positive.map(id).slice(0,20)}:null;
+  const playbook=mission.status==='DONE'&&claimCheck?.ok===true&&(!mission.contract||mission.contractStatus?.machineVerified===true)&&receipts.every(r=>safe.has(r.type))&&positive.length>=2&&positive.length<=8&&positive.every(r=>id(r)&&inScope(r))
+    ? {steps:positive.map(r=>r.type).slice(0,8),evidence:positive.map(id).slice(0,20)}:null;
   if(!playbook&&!lessons.length)return null;
   return {schema:'jaco.routine-experience/v1',scope,goalTerms:tokens(mission.goal),playbook,lessons:lessons.slice(-12)};
 }
 export function recallRoutineExperience(records,mission,{limit=5}={}){
   const scope=scopeFor(mission);
-  if(!scope||!Array.isArray(records))return [];
+  if(!scope||!Array.isArray(records)||!Number.isInteger(limit)||limit<1)return [];
   const allowed=new Set(mission.allowedTasks||[]),terms=new Set(tokens(mission.goal)),result=[];
   const seen=new Set();
   const ranked=records.filter(r=>r?.missionId!==mission.id&&r?.routine?.schema==='jaco.routine-experience/v1'&&r.routine.scope?.key===scope.key&&r.routine.scope?.kind===scope.kind)
