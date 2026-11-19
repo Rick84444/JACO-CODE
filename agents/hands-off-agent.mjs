@@ -768,7 +768,7 @@ const computerTools = {
       maxHeight: mode === 'full' ? null : 540,
     };
 
-    if (state?.surfaces?.runtime && state?.surfaces?.desktop) {
+    if (process.platform === 'win32' || (state?.surfaces?.runtime && state?.surfaces?.desktop)) {
       try {
         const observed = await runtime.desktopObserve(options.hwnd);
         structural = observed?.observation || null;
@@ -1365,7 +1365,7 @@ export function compactMissionForBrain(mission = {}) {
     ...(mission.steering ? { steering: mission.steering } : {}),
     ...(mission.answerReview ? { answerReview: mission.answerReview } : {}),
     receiptsTotal: receipts.length,
-    desktopWindow: receipts.findLast(r=>r.type==='desktop-observe')?.result?.observation?.window ?? null,
+    desktopWindow: receipts.findLast(r=>r.type==='desktop-observe'&&r.ok===true&&r.verified===true&&!r.result?.observation?.blocked)?.result?.observation?.window ?? null,
     openFiles: openFilesForBrain(receipts),
     recentReceipts: receipts.slice(-8).map(receipt => ({
       n: Number(/:turn:(\d+)$/.exec(String(receipt.actionId || ''))?.[1]) || undefined,
