@@ -75,6 +75,6 @@ export class HttpMcpClient {
     })().catch(error => { this.error = /^MCP_/.test(error.message) ? error.message : 'MCP_CONNECTION_FAILED'; this.stop(); throw Error(this.error); });
     return this.ready;
   }
-  stop() { this.ready = null; this.initialized = false; this.session = null; }
+  stop() { this.ready = null; this.initialized = false; this.session = null; this.tools = []; }
 }
 
