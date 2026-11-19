@@ -452,7 +452,11 @@ const runtime = {
 // ── Local Tools ──────────────────────────────────────────────────────────────
 
 export const localTools = {
-  shell(command, timeoutMs = 30000, cwd = undefined) {
+  shell(command, timeoutMs = undefined, cwd = undefined) {
+    // A planned command that omits its timeout used to get 30 s, so npm test, installs and builds died with
+    // "spawnSync cmd.exe ETIMEDOUT" and Aura reported herself blocked (79 such failures observed 2026-11-19).
+    // Default two minutes, an explicit request up to five, the same bounds repo-test uses.
+    timeoutMs = Math.min(Math.max(Number(timeoutMs) || 120000, 1000), 300000);
     // Operator policy: agents must never reach the Stripe account. Planned shell
     // commands run without secrets in their environment and may not name Stripe or .env files.
     if (/stripe|\.env\b|rk_live_|sk_live_/i.test(String(command))) {
