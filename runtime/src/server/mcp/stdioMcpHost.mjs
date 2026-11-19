@@ -270,6 +270,7 @@ class StdioClient {
         if (this.proc !== proc) return;
         this.error = e.message;
         this.failPending(`MCP_SERVER_SPAWN_FAILED:${this.id}:${e.code || e.message}`);
+        this.stop();
       });
       proc.stdin.on('error', () => {});
       await this.request('initialize', { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'jaco', version: '0.21' } }, 120_000);
@@ -416,14 +417,15 @@ export class StdioMcpHost {
       const c = this.clients.get(id);
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
       if (def.validationError) return { id, name: def.name, role: def.role, transport: 'http', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
-      const tools = (c?.initialized && launchKey(c.def) === launchKey(def) ? c.tools : []).map(t => ({ ...t, readOnly: Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name)), agentAllowed: agentRefusal(def, t) === null }));
+      const sameLaunch = Boolean(c && launchKey(c.def) === launchKey(def));
+      const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => ({ ...t, readOnly: Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name)), agentAllowed: agentRefusal(def, t) === null }));
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
         credentialEnv: id === 'huggingface' ? def.tokenEnv || '' : undefined,
         credentialConfigured: def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
         builtIn: Boolean(defaultServers(this)[id]),
         icon: def.icon, agentAccess: def.agentAccess, deny: def.deny, stats,
-        status: c && launchKey(c.def) === launchKey(def) ? (c.initialized ? 'READY' : c.ready ? 'STARTING' : c.error ? 'FAILED' : 'STOPPED') : 'STOPPED',
-        tools, error: c?.error || null, startedAt: c?.startedAt || null };
+        status: sameLaunch ? (c.initialized ? 'READY' : c.ready ? 'STARTING' : c.error ? 'FAILED' : 'STOPPED') : 'STOPPED',
+        tools, error: sameLaunch ? c.error || null : null, startedAt: sameLaunch ? c.startedAt || null : null };
     });
   }
 
