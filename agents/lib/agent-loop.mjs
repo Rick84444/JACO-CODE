@@ -312,7 +312,7 @@ export async function runAgentMission({
       }
       let nudge = null;
       let reply;
-      try { reply = await chat({ messages, tools }); modelErrors = 0; costCondensed = false; }
+      try { reply = await chat({ messages, tools, mission }); modelErrors = 0; costCondensed = false; }
       catch (error) {
         modelErrors++;
         log('warn', `model error ${modelErrors}/${maxModelErrors}: ${errorText(error)}`);

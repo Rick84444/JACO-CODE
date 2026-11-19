@@ -13,7 +13,7 @@ import { inputAllowed, browserScope, mutationsEnabled, hardDenied, isPrivateHost
 const OBSERVATION = { url: 'https://example.test/', title: 't', text: '', targets: [] };
 
 // A page that answers the way Chrome does for the calls the bridge makes.
-function page({ unique = true, covered = false, password = false, activePassword = false, value = '', inputFails = false, axNodes = [], tree = [], predicate = [], dialog = null } = {}) {
+function page({ unique = true, covered = false, password = false, activePassword = false, value = '', inputFails = false, axNodes = [], tree = [], predicate = [], dialog = null, observedTargets = [], identity = null } = {}) {
   const calls = [];
   const handlers = new Map();
   let typed = '';
@@ -26,13 +26,14 @@ function page({ unique = true, covered = false, password = false, activePassword
         const e = String(params.expression);
         if (e.includes("split('>>>')")) return unique ? { result: { objectId: 'node-1' } } : { result: {} };
         if (e.includes('activeElement')) return { result: { value: activePassword } };
-        if (e.includes("querySelectorAll('a,button,input")) return { result: { value: OBSERVATION } };
+        if (e.includes("querySelectorAll('a,button,input")) return { result: { value: {...OBSERVATION,targets:observedTargets} } };
         if (e.includes('location.href===') || e.includes('document.querySelector(')) return { result: { value: predicate.length ? predicate.shift() : false } };
         return { result: { value: true } };
       }
       if (method === 'Runtime.callFunctionOn') {
         const fn = String(params.functionDeclaration);
         if (fn.includes('scrollIntoView')) return { result: { value: { x: 60, y: 35, w: 100, h: 30, covered, password, disabled: false, tag: 'button' } } };
+        if (fn.includes('const e=this;return {text:')) return { result: { value: identity } };
         if (fn.includes('this.focus()')) return { result: { value: true } };
         return { result: { value: typed || value } };
       }
@@ -389,4 +390,17 @@ test('a click on a link to a slow site waits for the page to leave before judgin
   assert.equal(r.verified, true);
   assert.equal(r.effect, 'navigated');
   assert.equal(r.observation.url, 'https://slow.example/next');
+});
+
+test('DOM Traction checks identity again on actual actuator session, before dispatch',async()=>{
+ const expectedTarget={text:'Save',role:'button'},target={...expectedTarget,visible:true,selector:'button.save'};
+ for(const options of [{observedTargets:[{...target,text:'Delete'}],identity:expectedTarget},{observedTargets:[target,{...target,selector:'button.other'}],identity:expectedTarget},{observedTargets:[target],identity:{text:'Delete',role:'button'}}]){
+   const s=page(options);
+   await assert.rejects(actSession(s,{selector:target.selector,expectedTarget},'click'),/DOM_TARGET_IDENTITY_CHANGED/);
+   assert.ok(!names(s).some(n=>n.startsWith('Input.')));
+ }
+ const s=page({observedTargets:[target],identity:expectedTarget,predicate:[false,true]});
+ const result=await actSession(s,{selector:target.selector,expectedTarget,expect:{selector:'#saved'}},'click');
+ assert.equal(result.verified,true);
+ assert.ok(names(s).includes('Input.dispatchMouseEvent'));
 });

@@ -1,3 +1,4 @@
+import { DomTractionEngine } from '../../runtime/src/server/nova/tractionCore.mjs';
 // Picks the one visible page element a model means by a name. Models quote a link from memory ("Learn more" for a
 // page whose link reads "More information..."), so an exact match alone failed with NO_TARGET and the model had no way
 // to correct itself. Exact (ignoring case, spacing and a trailing ellipsis) first; then a unique partial match; and when
@@ -23,4 +24,33 @@ export function pickTarget(targets, name) {
     if (ofKind.length === 1) return { target: ofKind[0], matched: 'only-one-of-kind' };
   }
   return { error: partial.length ? 'AMBIGUOUS_TARGET' : 'NO_TARGET', available };
+}
+
+
+// DOM Traction is the live browser target acquisition/re-identification phase.
+// Saved routes are hypotheses: the current CDP observations must independently resolve the same semantic object.
+export async function trackDomTarget(observe,name,{roles=null,now=Date.now}={}){
+  const refusal=(error,available=[])=>({ok:false,verified:false,outcomeUnknown:false,error,available,domTraction:{engine:'DOM Traction',state:'REIDENTIFYING'}});
+  const candidates=page=>(page.targets||[]).filter(t=>!roles||roles.includes(t.role));
+  const usable=page=>{const age=now()-Date.parse(page?.at||'');return page?.ok===true&&typeof page.url==='string'&&page.url&&Array.isArray(page.targets)&&Number.isFinite(age)&&age>=0&&age<=5000;};
+  let first,second;
+  try{first=await observe();}catch{return refusal('DOM_OBSERVATION_FAILED');}
+  if(!usable(first))return refusal('DOM_OBSERVATION_STALE_OR_UNAVAILABLE');
+  const initial=pickTarget(candidates(first),name);
+  if(!initial.target)return refusal(initial.error,initial.available);
+  const engine=new DomTractionEngine();
+  const app=JSON.stringify([first.url,first.targetId||null]);
+  engine.beginIntent(String(name),'input receipt');
+  engine.acquireTarget({semanticPurpose:String(name),text:initial.target.text,role:initial.target.role,bbox:initial.target.bbox,confidence:1,source:'dom'});
+  engine.observe({app,timestamp:first.at,semanticTargets:[{...initial.target,confidence:1}]});
+  try{second=await observe();}catch{return refusal('DOM_OBSERVATION_FAILED');}
+  if(!usable(second))return refusal('DOM_OBSERVATION_STALE_OR_UNAVAILABLE');
+  if(first.url!==second.url||first.targetId!==second.targetId)return refusal('DOM_TARGET_PAGE_CHANGED');
+  const current=pickTarget(candidates(second),name);
+  if(!current.target)return refusal(current.error,current.available);
+  if(normal(initial.target.text)!==normal(current.target.text)||initial.target.role!==current.target.role||typeof current.target.selector!=='string'||!current.target.selector)return refusal('DOM_TARGET_IDENTITY_CHANGED');
+  // Do not confuse a selector change with a lost target: a DOM insertion may move the same unique control.
+  const lock=engine.observe({app,timestamp:second.at,semanticTargets:[{...current.target,confidence:1}]});
+  if(lock.state!=='LOCKED'||engine.beforeAction('browser-input').state!=='VERIFYING')return refusal('DOM_TARGET_LOCK_LOST');
+  return {ok:true,target:current.target,url:second.url,targetId:second.targetId,traction:{engine:'DOM Traction',trackId:lock.trackId,state:lock.state,reidentified:initial.target.selector!==current.target.selector,observedAt:second.at,matched:current.matched}};
 }

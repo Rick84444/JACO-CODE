@@ -1,4 +1,4 @@
-export { NovaTractionEngine } from './tractionCore.mjs';
+export { DomTractionEngine, NovaTractionEngine } from './tractionCore.mjs';
 
 export type NovaTrackState = 'IDLE' | 'ACQUIRING' | 'LOCKED' | 'OCCLUDED' | 'OFFSCREEN' | 'REIDENTIFYING' | 'VERIFYING' | 'RECOVERING' | 'COMPLETE';
 

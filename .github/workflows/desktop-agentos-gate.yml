@@ -17,6 +17,11 @@ on:
       - 'agents/grant-desktop-agentos.ps1'
       - 'agents/start-all.ps1'
       - 'agents/lib/mission-client.mjs'
+      - 'agents/lib/mission-screen-frame.mjs'
+      - 'agents/input-bridge.ps1'
+      - 'agents/lib/task-fields.mjs'
+      - 'runtime/src/server/nova/tractionCore.mjs'
+      - 'tests/nova/mission-screen-frame.test.mjs'
       - 'agents/lib/workplace-session.mjs'
       - 'agents/lib/windows-wmi-read.mjs'
       - 'agents/windows-wmi-read.ps1'
@@ -117,7 +122,8 @@ jobs:
             'agents/setup-desktop-agentos.ps1',
             'agents/grant-desktop-agentos.ps1',
             'agents/start-all.ps1',
-            'agents/windows-wmi-read.ps1'
+            'agents/windows-wmi-read.ps1',
+            'agents/input-bridge.ps1'
           )
           $failed = $false
           foreach ($file in $files) {

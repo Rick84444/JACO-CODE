@@ -167,8 +167,9 @@ export async function captureSession(session) {
   return {ok:true,observed:true,mimeType:'image/png',...result};
 }
 
-async function withTab(fn, { input = false, active = false, missionOrigin = null } = {}) {
+async function withTab(fn, { input = false, active = false, missionOrigin = null, expectedTargetId = null } = {}) {
   const tab = await getActiveTab();
+  if(expectedTargetId&&tab.id!==expectedTargetId)throw new Error('DOM_TARGET_TAB_CHANGED');
   // Draw Aura's window overlay in the tab she works in (kept on its own connection; decoration, never blocking).
   await overlay.attach(tab).catch(() => {});
   if (input || active) await overlay.working().catch(() => {});
@@ -422,7 +423,7 @@ const inputActions = createInputActions({
 export const actSession = inputActions.actSession;
 export const axSession = inputActions.axSession;
 async function navigate(url,settleMs) { return withTab(s=>navigateSession(s,url,settleMs), {active:true}); }
-async function observe() { return withTab(observeSession); }
+async function observe() { return withTab(async (session,tab)=>({...await observeSession(session),targetId:tab.id})); }
 async function survey(label) {
   const data=await observe();
   const routes=existsSync(ROUTES_FILE)?JSON.parse(readFileSync(ROUTES_FILE,'utf8')):{};
@@ -498,13 +499,13 @@ export const server = createServer(async (req, res) => {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'click');
       if (!b.expectedUrl || (!inputAllowed(b.expectedUrl, process.env, approvedLoginOrigins())&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
-      return json(res, await guardedBrowserWrite("click", b, () => withTab(s=>actSession(s,b,"click"), { input: true,missionOrigin })));
+      return json(res, await guardedBrowserWrite("click", b, () => withTab(s=>actSession(s,b,"click"), { input: true,missionOrigin,expectedTargetId:b.expectedTargetId })));
     }
     if (req.method === "POST" && url.pathname === "/type") {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'type');
       if (!b.expectedUrl || (!inputAllowed(b.expectedUrl, process.env, approvedLoginOrigins())&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
-      return json(res, await guardedBrowserWrite("type", b, () => withTab(s=>actSession(s,b,"type"), { input: true,missionOrigin })));
+      return json(res, await guardedBrowserWrite("type", b, () => withTab(s=>actSession(s,b,"type"), { input: true,missionOrigin,expectedTargetId:b.expectedTargetId })));
     }
     if (req.method === "POST" && url.pathname === "/press") {
       const b = await readBody(req);

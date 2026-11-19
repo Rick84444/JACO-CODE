@@ -40,6 +40,16 @@ export const TASK_FIELDS = {
 
 // Shared contracts for native tools and constrained JSON planning.
 export const TASK_SCHEMAS = {
+  'screenshot':{hwnd:{type:'integer',minimum:1},mode:{type:'string',enum:['adaptive','full']},maxWidth:{type:'integer',minimum:320,maximum:1600},maxHeight:{type:'integer',minimum:180,maximum:1200}},
+  'desktop-observe':{hwnd:{type:'integer',minimum:1}},
+  'browser-survey-site':{url:{type:'string'},label:{type:'string'}},
+  'browser-type':{name:{type:'string'},text:{type:'string'}},
+  'mouse-move':{x:{type:'integer'},y:{type:'integer'}},
+  'mouse-click':{x:{type:'integer'},y:{type:'integer'},button:{type:'string',enum:['left','right','middle']},double:{type:'boolean'}},
+  'mouse-scroll':{x:{type:'integer'},y:{type:'integer'},delta:{type:'integer',minimum:-100,maximum:100}},
+  'key-press':{keys:{type:'string',description:'Key chord e.g. ctrl+s, enter, esc; not shell commands'}},
+  'type-text':{text:{type:'string',maxLength:2000}},
+
   'repo-service': {id:{type:'string'},action:{type:'string',enum:['start','status','stop']}},
   'repo-list': {path:{type:'string'}}, 'repo-read': {path:{type:'string'}},
   'local-write': {path:{type:'string'},content:{type:'string'}},

@@ -41,10 +41,10 @@ test('planner receives mission evidence plus durable continuity without making c
  });assert.equal(r.task.type,'health-check');assert.equal(r.continuity.attention,'health verification');
 });
 test('a screenshot is attached only when its hash belongs to this mission',async()=>{
- const bytes=Buffer.from('offline-image-fixture');fs.writeFileSync(path.join(dir,'latest-observation.png'),bytes);
+ const bytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jv9sAAAAASUVORK5CYII=','base64');fs.writeFileSync(path.join(dir,'latest-observation.png'),bytes);
  for(const matches of [false,true]){
  const mission={id:'mission-screenshot-fixture',allowedTasks:['health-check'],goal:'Inspect',receipts:matches?[{type:'screenshot',ok:true,verified:true,at:new Date().toISOString(),result:{imageSha256:createHash('sha256').update(bytes).digest('hex')}}]:[]};
- const result=await callBrain(loadState(),{mission,observation:null},async(url,opts)=>{assert.equal(Array.isArray(JSON.parse(opts.body).messages[1].content),matches);return Response.json({choices:[{message:{content:'{"complete":true}'}}]});});
+ const result=await callBrain(loadState(),{mission,observation:null},async(url,opts)=>{assert.equal(JSON.parse(opts.body).messages.some(m=>Array.isArray(m.content)&&m.content.some(c=>c.type==='image_url')),matches);return Response.json({choices:[{message:{content:'{"complete":true}'}}]});});
  assert.equal(result.complete,true);
  }
 });

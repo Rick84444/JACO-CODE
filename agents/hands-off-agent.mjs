@@ -49,11 +49,12 @@ hydrateEnvFromStore(process.env);
 import { redactDeep, takeHeld, generateSecret, validateVaultKey, holdValue } from './lib/secret-capture.mjs';
 import { readInbox, inboxDomain } from './lib/inbox.mjs';
 import { selectPerceptionRegion, captureMetrics } from './lib/adaptive-perception.mjs';
+import { freshMissionFrame, permittedFrameMessages } from './lib/mission-screen-frame.mjs';
 import { createGithubNovaControlInbox } from './lib/github-control-inbox.mjs';
 import { enqueueVerifiedReceiptPromotion, flushLivingCorePromotions, ensureLivingCorePromotionState } from './lib/living-core-promotion.mjs';
 import { TASK_FIELDS, taskContract } from './lib/task-fields.mjs';
 import { CODE_TASKS, validateCodingTask } from './lib/coding-contract.mjs';
-import { pickTarget } from './lib/browser-target-match.mjs';
+import { trackDomTarget } from './lib/browser-target-match.mjs';
 import { readOperatorLanguage, languageInstruction } from './lib/operator-language.mjs';
 import { nonTextModelKind, openAiChatCompletionsUrl, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
 import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs';
@@ -613,7 +614,7 @@ export async function resolveGuardedTypeText(name, text) {
 // otherwise every browser task fell through to the runtime route and failed with RUNTIME_HTTP_403 (2026-11-06).
 async function novaBridgeUp() {
   if (state?.surfaces?.nova) return true;
-  try { const h = await nova.health(); if (h?.ok) { state.surfaces.nova = true; state.surfaces.browser = true; return true; } } catch { /* not up */ }
+  try { const h = await nova.health(); if (h?.ok) { if(state?.surfaces){state.surfaces.nova = true; state.surfaces.browser = true;} return true; } } catch { /* not up */ }
   return false;
 }
 const lawnmower = {
@@ -670,11 +671,10 @@ const lawnmower = {
 
   async clickByName(name, expect, authority) {
     if (await novaBridgeUp()) {
-      const page = await nova.observe();
-      if (!page.ok) return page;
-      const picked = pickTarget(page.targets, name);
-      if (!picked.target) return { ok: false, error: picked.error, available: picked.available };
-      return nova.click(picked.target.selector, page.url, expect, authority);
+      const picked=await trackDomTarget(nova.observe,name);
+      if(!picked.ok)return picked;
+      const result=await nova.click(picked.target.selector,picked.url,expect,{...authority,expectedTargetId:picked.targetId,expectedTarget:{text:picked.target.text,role:picked.target.role}});
+      return {...result,domTraction:{...picked.traction,state:result.verified?'COMPLETE':result.outcomeUnknown?'RECOVERING':'VERIFYING'}};
     }
     const routes = await this.findRoute(name);
     if (routes.length === 0) {
@@ -699,11 +699,10 @@ const lawnmower = {
     if (guarded.error) return guarded;
     text = guarded.text;
     if (await novaBridgeUp()) {
-      const page = await nova.observe();
-      if (!page.ok) return page;
-      const picked = pickTarget((page.targets || []).filter(t => ['input', 'textarea', 'select'].includes(t.role)), name);
-      if (!picked.target) return { ok: false, error: picked.error === 'NO_TARGET' ? 'TARGET_NOT_FOUND' : 'TARGET_NOT_UNIQUE', available: picked.available };
-      return novaApi('POST','/type',{selector:picked.target.selector,text,expectedUrl:page.url,...authority});
+      const picked=await trackDomTarget(nova.observe,name,{roles:['input','textarea','select','textbox','searchbox','combobox']});
+      if(!picked.ok)return picked;
+      const result=await novaApi('POST','/type',{selector:picked.target.selector,text,expectedUrl:picked.url,...authority,expectedTargetId:picked.targetId,expectedTarget:{text:picked.target.text,role:picked.target.role}});
+      return {...result,domTraction:{...picked.traction,state:result.verified?'COMPLETE':result.outcomeUnknown?'RECOVERING':'VERIFYING'}};
     }
     const routes = await this.findRoute(name);
     if (routes.length === 0) return { error: "no_route" };
@@ -718,11 +717,16 @@ const lawnmower = {
 const INPUT_BRIDGE = join(__dirname, "input-bridge.ps1");
 
 function runBridge(args) {
+  if(process.platform!=='win32'||!existsSync(INPUT_BRIDGE))return {ok:false,verified:false,error:'WINDOWS_INPUT_BRIDGE_UNAVAILABLE'};
+  const mutating=['mouse_move','mouse_click','mouse_scroll','key_press','type_text'].includes(args[1]);
   try {
     const out = execFileSync('powershell', ['-NonInteractive', '-NoProfile', '-File', INPUT_BRIDGE, ...args.map(String)], { timeout: 10000, encoding: "utf8", windowsHide: true }).trim();
-    return JSON.parse(out);
+    const result=JSON.parse(out);
+    if(mutating&&result.ok!==true)return {...result,verified:false,outcomeUnknown:result.outcomeUnknown!==false};
+    return result;
   } catch (e) {
-    return { ok: false, error: e.message.slice(0, 200) };
+    // Never include process arguments (typed text) in a failure receipt.
+    return { ok:false,verified:false,error:'WINDOWS_INPUT_BRIDGE_FAILED', outcomeUnknown:mutating, exitCode:Number.isInteger(e.status)?e.status:null };
   }
 }
 
@@ -747,9 +751,9 @@ const computerTools = {
     return runBridge(['-Op', 'key_press', '-Keys', keys]);
   },
 
-  // Type arbitrary text (Unicode-safe)
+  // Type ordinary non-secret text (Unicode-safe)
   typeText(text) {
-    // Escape for PowerShell: replace double-quotes
+    if(typeof text!=='string'||!text.length||text.length>2000||/^vault:|(?:password|lösenord|passcode|otp|api.?key|seed phrase|private.?key)/i.test(text))return {ok:false,verified:false,error:'INPUT_TEXT_INVALID_OR_SENSITIVE'};
     return runBridge(['-Op', 'type_text', '-Text', text]);
   },
 
@@ -1712,23 +1716,17 @@ async function callBrainStep(state, { mission, observation, continuity = null },
   // With native tools the MCP catalog is in the tool list itself, with full schemas.
   const { mcpTools: _catalog, learnedTaskNotes: _notes, ...nativeCtx } = ctx;
   const userMsgNative = "Current state:\n" + JSON.stringify(nativeCtx) + "\nCall the tool(s) for the next step(s) of mission.goal, or complete/blocked.";
-  const screenshot = join(STATE_DIR, "latest-observation.png");
-  let image = null;
-  const screenshotReceipt = mission.receipts?.findLast(r => r.type === "screenshot" && r.ok && r.verified);
-  if (screenshotReceipt && existsSync(screenshot)) {
-    const info = statSync(screenshot);
-    if (Math.abs(info.mtimeMs - Date.parse(screenshotReceipt.at)) < 10000 && Date.now() - info.mtimeMs < 120000 && info.size < 2_000_000) {
-      const bytes=readFileSync(screenshot);
-      if(createHash("sha256").update(bytes).digest("hex")===screenshotReceipt.result?.imageSha256) image = "data:image/png;base64," + bytes.toString("base64");
-    }
-  }
+  const frame = freshMissionFrame(mission,join(STATE_DIR,'latest-observation.png'));
   const system = brainSystemFor(planningAllowedTasks, Boolean(mission?.metadata?.parent?.graphId));
   state.plannerInputMetrics.systemChars=system.length;
   if (process.env.NOVA_BRAIN_MODE !== 'direct') {
     let correction = '';
     for (let attempt = 0; attempt < 2; attempt++) {
       // Retry only a rejected proposal, never an execution or an uncertain request.
-      const text = await seerCompletion({system,user:userMsg + correction,image,max_tokens:2048}, fetchImpl);
+      // SEER may select a remote model behind its local endpoint. Never send pixels through that route without consent.
+      const image=process.env.NOVA_ALLOW_CLOUD_IMAGES==='1'?frame?.url:undefined;
+      const visualNote=frame&&!image?'\nLaser Vision frame not forwarded through the model router; use semantic observations.':'';
+      const text = await seerCompletion({system,user:userMsg + correction + visualNote,image,max_tokens:2048}, fetchImpl);
       try {
         const proposal = extractJsonObject(text.replace(/^```(?:json)?\s*|```$/g, '').trim());
         if (proposal?.complete !== true && proposal?.blocked !== true && proposal?.replan !== true && !planTasks(proposal).length) throw new Error('INVALID_PLAN');
@@ -1790,9 +1788,7 @@ Plans already rejected this turn (do not repeat them): ${rejectedPlans.slice(-3)
           model: provider.model,
           messages: [
             { role: "system", content: native ? system + NATIVE_TOOLS_NOTE : system },
-            { role: "user", content: image && (provider.name === "ollama" || process.env.NOVA_ALLOW_CLOUD_IMAGES === "1")
-              ? [{ type: "text", text: userText(Boolean(native)) }, { type: "image_url", image_url: { url: image } }]
-              : userText(Boolean(native)) },
+            ...permittedFrameMessages([{ role: "user", content: userText(Boolean(native)) }],frame,provider),
           ],
           ...(native ? { tools: native.tools, tool_choice: "auto" } : {}),
           // Local models cannot leave the plan's structure: decoding is constrained to the schema.
@@ -1978,7 +1974,7 @@ const AGENT_DROP = /^(Output JSON:|Several independent reading steps|continuity 
 // does not lead there instead of finishing it anyway (operator 2026-11-07: the game plan).
 export const PLAN_RULE = "When this mission is a step of a larger plan, keep the final goal of the whole plan in view and follow the operator's comments on the plan. If what you find shows that this step will not move the final goal forward, do not finish it for its own sake: ask for a new plan with request_replan, saying what you learned and proposing steps that do lead there. Split clearly separate parts between helper agents with delegate.";
 export const NARRATION_RULE ="Talk to the operator like a colleague who works next to them and thinks aloud, in the operator's language, in plain words with no tool names or jargon. Use the say and learned fields of every tool call. On your FIRST call, say your plan: what you will do, in what order, and what the finished result will be. On every later call, learned is one sentence on what the previous result showed and how it changes the plan, and say is one sentence on what you do now and why. If something failed, say what failed and what you will try instead; if you repeat a step, say why. If the goal asks for helper agents, or has clearly separate parts (for example research, writing and building), create helper agents with delegate and say why you split the work that way. When you complete, answer in short parts: what you did, what you found or made and where it is, what you checked yourself, and what you could not verify.";
-export const WEB_RULE ="Web pages: read with web-fetch. To act on a page use the browser tasks first (browser-survey-site to open and read it, then browser-click and browser-type; give browser-click an expect {url} or {selector} when you know what should appear; a click that moves the page or opens a tab counts as done without one). They send real input events through the browser protocol and verify the result. If nova_* browser tools are listed (nova_ax, nova_click_named, nova_upload, nova_tabs), prefer them for the same reason. Use mouse-move, mouse-click, key-press, type-text and desktop-* only when the browser cannot reach the target (a native dialog, a window outside the browser), never to get around a refusal: a refused sign-in, payment or password surface stays the operator's to do. To sign in on a site the operator has saved a login for, open its sign-in page and call browser-sign-in: JACO fills the form itself and you only learn whether it worked; never type a password with browser-type. If it says operatorNeeded (a CAPTCHA or a one-time code) or that there is no saved login for the site, ask the operator in one sentence. Signed in, the same limits hold: nothing that buys, subscribes, upgrades or pays.";
+export const WEB_RULE ="DOM Traction: browser-click and browser-type automatically re-identify the current visible target; never use old coordinates or repeat a lost/ambiguous target unchanged. Laser Vision: use screenshot for native desktop visual evidence when semantic UIA is insufficient; only a current mission-bound frame is evidence. Web pages: read with web-fetch. To act on a page use the browser tasks first (browser-survey-site to open and read it, then browser-click and browser-type; give browser-click an expect {url} or {selector} when you know what should appear; a click that moves the page or opens a tab counts as done without one). They send real input events through the browser protocol and verify the result. If nova_* browser tools are listed (nova_ax, nova_click_named, nova_upload, nova_tabs), prefer them for the same reason. Use mouse-move, mouse-click, key-press, type-text and desktop-* only when the browser cannot reach the target (a native dialog, a window outside the browser), never to get around a refusal: a refused sign-in, payment or password surface stays the operator's to do. To sign in on a site the operator has saved a login for, open its sign-in page and call browser-sign-in: JACO fills the form itself and you only learn whether it worked; never type a password with browser-type. If it says operatorNeeded (a CAPTCHA or a one-time code) or that there is no saved login for the site, ask the operator in one sentence. Signed in, the same limits hold: nothing that buys, subscribes, upgrades or pays.";
 // Aura's autonomy policy, generated from the same registers the runtime enforces, so the rule she follows
 // and the rule the runtime applies cannot drift apart.
 export const AUTONOMY_RULE = [
@@ -2009,7 +2005,8 @@ const TEMPORARY_COOLDOWN_MS = 15 * 60_000;
 const TEMPORARY_MODEL_LIMIT = /:(429|COOLDOWN|AUTONOMOUS_CLOUD_BURST_LIMIT)\b/;
 
 // One model turn with native tools: the first available provider in Nova's chain answers.
-export async function agentChat({ messages, tools }, rawFetch = fetch, env = process.env) {
+export async function agentChat({ messages, tools, mission }, rawFetch = fetch, env = process.env) {
+  const frame=freshMissionFrame(mission,join(STATE_DIR,'latest-observation.png'));
   const fetchImpl = withLocalOllamaContext(rawFetch, env);
   // A chosen connected provider may not be in the fixed provider list. Native
   // turns must refresh the same discovered registry as structured turns before
@@ -2030,7 +2027,7 @@ export async function agentChat({ messages, tools }, rawFetch = fetch, env = pro
     const cooldownMs = (providerCooldownUntil.get(id) || 0) - Date.now();
     if (cooldownMs > 0) { failures.push(`${provider.name}:${cooldownMs <= TEMPORARY_COOLDOWN_MS ? 'COOLDOWN' : 'PARKED'}`); continue; }
     const requestBody = {
-      model: provider.model, messages, tools, tool_choice: "auto", temperature: 0.2,
+      model: provider.model, messages:permittedFrameMessages(messages,frame,provider,env), tools, tool_choice: "auto", temperature: 0.2,
       max_tokens: provider.name === "deepseek" ? Number(env.JACO_DEEPSEEK_MAX_TOKENS) || 32768 : 8192,
       ...(provider.name === "groq" ? { reasoning_effort: env.GROQ_REASONING_EFFORT || "low" } : {}),
     };
