@@ -306,6 +306,16 @@ function organizationMandate(organization: any, agentId = 'aura') {
 }
 
 function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam, organization }: { connectedRuntime: any; seerLiveWorkstream: any; readAgentTeam?: () => Promise<any>; organization?: any }) {
+  // Both chat entry points share the same live capability and existing mandate check.
+  const checkedMcp = async (args: any, mode: 'read'|'write') => {
+    const task = mode === 'write' ? 'mcp-write' : 'mcp-call';
+    if (connectedRuntime.capabilities?.isTaskEnabled?.(task) === false) throw Error('CAPABILITY_DISABLED:'+task);
+    const server = String(args?.server || '');
+    const key = mode === 'write' ? 'commands.run' : ['git','repo','filesystem','shell','jaco','editor'].includes(server) ? 'files.read' : 'web.read';
+    const check = organization?.authorize('aura', key);
+    if (!check?.allowed) throw Error('MANDATE_DENIED:aura:' + key + ':' + (check?.reason || 'ORGANIZATION_UNAVAILABLE'));
+    return callAuraMcpTool(mcpHost, {server,tool:String(args?.tool||''),args:args?.arguments ?? {},mode});
+  };
   return {
     observe: async () => {
       const mission: any = connectedRuntime.novaMissions.current();
@@ -350,21 +360,15 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
       },
       mcp_read: {
         description: 'Execute an advertised READ-ONLY MCP tool; use mcp_discover to get its exact name and input schema. args: {server,tool,arguments?}. No writes in Manual or Planning.',
-        run: async (args: any) => {
-          if (connectedRuntime.capabilities?.isTaskEnabled?.('mcp-call') === false) throw Error('CAPABILITY_DISABLED:mcp-call');
-          const server = String(args?.server || '');
-          const key = ['git','repo','filesystem','shell','jaco','editor'].includes(server) ? 'files.read' : 'web.read';
-          const check = organization?.authorize('aura', key);
-          if (!check?.allowed) throw Error('MANDATE_DENIED:aura:' + key + ':' + (check?.reason || 'ORGANIZATION_UNAVAILABLE'));
-          return callAuraMcpTool(mcpHost, {server,tool:String(args?.tool||''),args:args?.arguments ?? {},mode:'read'});
-        },
+        run: async (args: any) => checkedMcp(args,'read'),
       },
       mcp_tool: {
         description: 'Call a configured MCP tool for this Aura goal. Automatically connects when permitted. args: {server,tool,arguments?,mode:"read"|"write"}. Existing access, deny rules, argument checks and mission approval requirements still apply.',
-        run: async (args: any) => callAuraMcpTool(mcpHost, {
-          server: String(args?.server || ''), tool: String(args?.tool || ''),
-          args: args?.arguments ?? {}, mode: args?.mode || 'read',
-        }),
+        run: async (args: any) => {
+          const mode=args?.mode ?? 'read';
+          if(mode!=='read'&&mode!=='write') throw Error('MCP_MODE_INVALID');
+          return checkedMcp(args,mode);
+        },
       },
       termux_services: {
         description: 'Read-only actual runit process status for canonical Termux services. Never starts/restarts a second stack. args: {}',
@@ -3317,10 +3321,15 @@ const notifyPhone = async (action) => {
   app.post('/api/mcp/call', requireAuth, async (req, res) => {
     const server = String(req.body?.server || ''), tool = String(req.body?.tool || '');
     try {
-      const args = req.body?.arguments && typeof req.body.arguments === 'object' && !Array.isArray(req.body.arguments) ? req.body.arguments : {};
+      const mode=req.body?.mode ?? 'read';
+      const args=req.body?.arguments ?? {};
+      if(mode!=='read'&&mode!=='write') return res.status(400).json({success:false,error:'MCP_MODE_INVALID',dispatchState:'NOT_DISPATCHED'});
+      if(typeof args!=='object'||Array.isArray(args)) return res.status(400).json({success:false,error:'MCP_ARGUMENTS_INVALID',dispatchState:'NOT_DISPATCHED'});
+      const task=mode==='write'?'mcp-write':'mcp-call';
+      if(connectedRuntime.capabilities?.isTaskEnabled?.(task)===false) return res.status(409).json({success:false,error:'CAPABILITY_DISABLED:'+task,dispatchState:'NOT_DISPATCHED'});
       // The server's agent access decides (read, write or off; see stdioMcpHost.mjs). Nova's mcp-call
       // runs read-only tools; a tool that changes something needs its mcp-write task (mode 'write').
-      const result: any = await mcpHost.call(server, tool, args, { actor: 'agent', readOnly: req.body?.mode !== 'write' });
+      const result: any = await mcpHost.call(server, tool, args, { actor: 'agent', readOnly: mode !== 'write' });
       const failed = result?.isError === true;
       seerLiveWorkstream.record({ actor: 'JACO MCP host', type: 'mcp.tool.called', message: `${server}.${tool}`, verified: !failed, receipt: { server, tool, isError: failed } });
       getAuraMcpFabric.invalidate();
