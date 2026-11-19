@@ -48,10 +48,10 @@ export function createInputBridgeDaemon(scriptPath,{spawnImpl=spawn,platform=pro
   function send(payload,timeoutMs=10000){
     if(platform!=='win32'||closed)return Promise.resolve(fail('BRIDGE_UNAVAILABLE'));
     if(!payload||!OPS.has(payload.op)||queued>=8)return Promise.resolve(fail('BRIDGE_REQUEST_REFUSED'));
-    let body;try{body=JSON.stringify({...payload,reqId:randomUUID()});}catch{return Promise.resolve(fail('BRIDGE_INVALID_REQUEST'));}
+    const deadline=Date.now()+Math.max(100,Math.min(30000,Number(timeoutMs)||10000));
+    let body;try{body=JSON.stringify({...payload,DeadlineMs:deadline,reqId:randomUUID()});}catch{return Promise.resolve(fail('BRIDGE_INVALID_REQUEST'));}
     if(body.length>MAX)return Promise.resolve(fail('BRIDGE_REQUEST_TOO_LARGE'));
     const reqId=JSON.parse(body).reqId;
-    const deadline=Date.now()+Math.max(100,Math.min(30000,Number(timeoutMs)||10000));
     queued++;
     const run=()=>new Promise(resolve=>{
       if(closed||Date.now()>=deadline){resolve(fail('BRIDGE_NOT_DISPATCHED'));return;}
