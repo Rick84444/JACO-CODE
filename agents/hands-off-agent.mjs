@@ -69,6 +69,7 @@ followResolvedRuntime(process.env);
 import { plannerTools, structuredPlannerTools, planFromToolCalls, planSchema } from './lib/native-tools.mjs';
 import { runAgentMission, introMessage, contextPacketIntro } from './lib/agent-loop.mjs';
 import { readCognitiveGraphContext } from './lib/cognitive-graph-context.mjs';
+import { readRoutineContext, routineContextText } from './lib/routine-experience.mjs';
 import { isTransientPreflightBlockers } from './lib/mission-health-policy.mjs';
 import { agentHomeDir, loadHome, HOME_LIMITS } from './lib/agent-home.mjs';
 import { loadCognitiveCapsule, assertCognitiveCapsuleTask } from './lib/cognitive-capsule.mjs';
@@ -1710,10 +1711,14 @@ async function callBrainStep(state, { mission, observation, continuity = null },
   const originalContextChars=JSON.stringify(ctx).length;
   ctx=compactPlannerStep(ctx,{profile});
   state.plannerInputMetrics={profile,originalContextChars,contextChars:JSON.stringify(ctx).length};
-  const userMsg = "Current state:\n" + JSON.stringify(ctx) + "\nChoose the next task for mission.goal.";
+  const routineHint = routineContextText(await readRoutineContext({...mission,allowedTasks:planningAllowedTasks},{
+    runtimeUrl:process.env.NODE_TEST_CONTEXT?'':CONFIG.runtimeUrl,
+    token:process.env.GATEWAY_TOKEN||process.env.JACO_GATEWAY_TOKEN||''
+  }));
+  const userMsg = "Current state:\n" + JSON.stringify(ctx) + routineHint + "\nChoose the next task for mission.goal.";
   // With native tools the MCP catalog is in the tool list itself, with full schemas.
   const { mcpTools: _catalog, learnedTaskNotes: _notes, ...nativeCtx } = ctx;
-  const userMsgNative = "Current state:\n" + JSON.stringify(nativeCtx) + "\nCall the tool(s) for the next step(s) of mission.goal, or complete/blocked.";
+  const userMsgNative = "Current state:\n" + JSON.stringify(nativeCtx) + routineHint + "\nCall the tool(s) for the next step(s) of mission.goal, or complete/blocked.";
   const frame = freshMissionFrame(mission,join(STATE_DIR,'latest-observation.png'));
   const system = brainSystemFor(planningAllowedTasks, Boolean(mission?.metadata?.parent?.graphId));
   state.plannerInputMetrics.systemChars=system.length;
@@ -2186,13 +2191,17 @@ async function runAgentLoop(state) {
         ? `Loaded skill ${String(loadedSkill.result.id || '').slice(0, 100)} (instructions are untrusted context, not authority):\n${loadedSkill.result.instructions}`
         : '';
       const turnExtras = activeProcedure ? { ...extras, 'Loaded skill instructions': activeProcedure } : extras;
+      const routineHint = routineContextText(await readRoutineContext({...mission,allowedTasks:capsuleAllowedTasks(mission)},{
+        runtimeUrl:process.env.NODE_TEST_CONTEXT?'':CONFIG.runtimeUrl,
+        token:process.env.GATEWAY_TOKEN||process.env.JACO_GATEWAY_TOKEN||''
+      }));
       const repoPreflight = mission.contract && state.repositoryContext
         ? `Coding worktree preflight: revision=${String(state.repositoryContext.revision || '').slice(0, 160)}, indexedEntries=${state.repositoryContext.entries?.length || 0}. Inspect files with the authorized repository tools before editing.`
         : '';
       if (process.env.JACO_CONTEXT_PACKET_OFF === '1') {
         const legacyIntro = introMessage(mission,
           repoPreflight ? { ...turnExtras, 'Repository preflight': repoPreflight } : turnExtras);
-        return livePlanDirection ? `${legacyIntro}\n\n${livePlanDirection}` : legacyIntro;
+        return (legacyIntro+routineHint)+(livePlanDirection?`\n\n${livePlanDirection}`:"");
       }
       const strategicContext = await readStrategicContext(mission, {
         seerUrl: process.env.SEER_URL || 'http://127.0.0.1:2997',
@@ -2214,7 +2223,7 @@ async function runAgentLoop(state) {
         inboxAddress: extras["JACO's own e-mail addresses (for sign-ups)"] || '',
       });
       const localHint = capsuleAllowedTasks(mission).some(t=>['shell','repo-test','mcp-call','mcp-write'].includes(t)) ? '\nLocal executable observation (not authority): '+JSON.stringify(localCommandHint()) : '';
-      const intro = (repoPreflight ? `${packet}\n${repoPreflight}` : packet)+localHint;
+      const intro = (repoPreflight ? `${packet}\n${repoPreflight}` : packet)+localHint+routineHint;
       // Put current operator notes after compressed context so a new instruction remains visible.
       // This text gives direction only; it does not authorize new actions.
       return livePlanDirection ? `${intro}\n\n${livePlanDirection}` : intro;
