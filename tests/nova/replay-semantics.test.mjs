@@ -72,3 +72,12 @@ test('MCP tool-level errors are not verified even when HTTP 200 and host success
   assert.equal(failedAfterExecution.ok,false);
   assert.equal(failedAfterExecution.outcomeUnknown,true);
 });
+
+test('MCP HTTP 409 distinguishes a known refusal from a possible dispatched write',async()=>{
+ const data={server:'files',tool:'save_file',arguments:{path:'x'}};
+ const invoke=body=>callMcpTool(data,{mode:'write',runtimeUrl:'http://localhost',fetchImpl:async()=>new Response(JSON.stringify(body),{status:409})});
+ assert.equal((await invoke({success:false,dispatchState:'NOT_DISPATCHED',error:'MCP_TOOL_DENIED'})).outcomeUnknown,undefined);
+ assert.equal((await invoke({success:false,dispatchState:'UNKNOWN',error:'MCP_SERVER_EXITED'})).outcomeUnknown,true);
+ assert.equal((await invoke({success:false,error:'legacy 409'})).outcomeUnknown,true);
+ assert.equal((await invoke({success:false,dispatchState:'NOT_DISPATCHED',result:{isError:true,content:[]}})).outcomeUnknown,true);
+});
