@@ -1,0 +1,3 @@
+# Design
+
+Current source shows `cdp` aliases against the `browser` built-in, ten-minute process-global catalog caching, stale descriptors after exit, and HTTP 409 covering both pre-dispatch refusal and uncertain effects. Use the existing host as authority. Bound discovery waiting, key cache by runtime endpoint, omit non-ready tools; allow explicit calls to start a configured server. Refresh configuration after handshake, never retry a dispatched write, and carry an explicit host-owned dispatch state through the existing API. Unknown outcomes remain blocked for reconciliation. Failures in one server must not erase healthy servers or imply authority. No credential, spend, or protected-path policy is relaxed.
