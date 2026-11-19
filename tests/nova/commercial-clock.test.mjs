@@ -66,6 +66,7 @@ test('scoped tool allowlist cannot grant spend or arbitrary MCP writes',()=>{
   assert.equal(commercialTaskAllowed({type:'mcp-write',data:{server:'agentgigs',tool:'apply'}}),true);
   assert.ok(operatorApprovalCheck({type:'mcp-write',data:{server:'agentgigs',tool:'apply'}}));
   assert.ok(operatorApprovalCheck({type:'mcp-write',data:{server:'agentgigs',tool:'agentgigs.apply'}}));
+  assert.equal(commercialTaskAllowed({type:'skill-load',data:{id:'buyer-tailored-proposal'}}),true);
   assert.equal(commercialTaskAllowed({type:'skill-load',data:{id:'product-validation'}}),false);
   assert.equal(commercialTaskAllowed({type:'shell',data:{command:'curl'}}),false);
 });

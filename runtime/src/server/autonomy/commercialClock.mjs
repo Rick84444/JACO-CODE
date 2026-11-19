@@ -16,7 +16,7 @@ export function commercialAuthorized(mission, mandates, operator, task=null, cap
 }
 export function commercialTaskAllowed(task) {
   if (!COMMERCIAL_TASKS.includes(task?.type)) return false;
-  if (task.type === 'skill-load') return [COMMERCIAL_SKILL,'external-agent-employment'].includes(task.data?.id);
+  if (task.type === 'skill-load') return [COMMERCIAL_SKILL,'external-agent-employment','buyer-tailored-proposal'].includes(task.data?.id);
   if (task.type !== 'mcp-call' && task.type !== 'mcp-write') return true;
   const server = task.data?.server, raw = String(task.data?.tool || '');
   const name = raw.startsWith(server + '.') ? raw.slice(server.length + 1) : raw;

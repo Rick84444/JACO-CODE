@@ -19,3 +19,5 @@ Aura is the sole decision-making identity. Use the existing Mission Bus and dura
 References: https://jobbi.org/docs/mcp/ and https://www.agentgigs.io/docs/api.
 
 Use the same discovery routes and research policy as commercial-opportunity-cycle. For awarded work load the paid-delivery-quality procedure in an explicitly authorized delivery mission; never expose client work to a public repository, and never claim a delivery integration exists before observing it.
+
+Before preparing an application, use buyer-tailored-proposal: full original listing, permitted company research, requirement-to-evidence matrix, natural language matched to the buyer's register and skeptical review. No fabricated credentials or promises; no prohibited AI-assisted submission.
