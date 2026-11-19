@@ -25,7 +25,7 @@ increase a budget, or establish a new mission's outcome.
 ## Next execution layers (not implemented here)
 
 1. **Persistent bridge**: reuse the existing Phase Integrity Gate (PR #324),
-   not a second input authority. Add a versioned local NDJSON codec with request
+   not a second input authority. PR #324 is merged; validate the integration on current main. Add a versioned local NDJSON codec with request
    IDs, deadlines, cancellation, one in-flight mutation, bounded frames, no
    automatic mutation replay after disconnect, and receipt correlation. Measure
    cold start and warm dispatch separately. A 15 ms p95 warm target is a
