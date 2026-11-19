@@ -29,7 +29,7 @@ fs.writeFileSync(configFile, JSON.stringify({ servers: { fake: { name: 'Fake', c
 
 test('config: built-in servers plus the file; disabled and malformed entries are dropped', () => {
   const s = loadServerConfig({ configFile, repoRoot: dir, runtimeRoot: dir });
-  assert.deepEqual(Object.keys(s).sort(), ['cloudflare', 'connect', 'fake', 'filesystem', 'frantic', 'git', 'jaco', 'jobbi', 'repo', 'shell']);
+  assert.deepEqual(Object.keys(s).sort(), ['browser', 'cloudflare', 'connect', 'fake', 'filesystem', 'frantic', 'git', 'jaco', 'jobbi', 'repo', 'shell']);
   assert.equal(s.jobbi.agentAccess, 'read');
   assert.equal(s.jobbi.transport, 'http');
   assert.equal(s.frantic.agentAccess, 'read');

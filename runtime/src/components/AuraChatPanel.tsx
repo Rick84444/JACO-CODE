@@ -496,7 +496,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           attachmentIds: attachments.map(item=>item.id),
           message: text,
           connectedSession: { id: user.id, source: 'Aura GUI' },
-          interactionMode: runMode === 'planning' ? 'planning' : 'question',
+          interactionMode: runMode === 'planning' ? 'planning' : runMode === 'autonomous' ? 'action' : 'question',
           selectedProvider,
           model: selectedProvider === 'seer' ? undefined : chatModel,
           activeFilePath: activeFilePath || null,
