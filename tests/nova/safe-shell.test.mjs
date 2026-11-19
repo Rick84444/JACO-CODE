@@ -72,7 +72,16 @@ test('destructive uses and push are the operator\'s to enable, never the agent\'
     assert.match(c(ws, cmd, args).reason, /DESTRUCTIVE_NOT_ENABLED/, `${cmd} ${args.join(' ')}`);
   assert.match(c(ws, 'git', ['push']).reason, /GIT_PUSH_NOT_ENABLED/);
   assert.match(c(ws, 'git', ['push', '--force'], { env: { JACO_SHELL_ALLOW_DESTRUCTIVE: '1' } }).reason, /GIT_PUSH_NOT_ENABLED/, 'destructive does not enable push');
-  assert.equal(c(ws, 'git', ['push'], { env: { JACO_SHELL_ALLOW_PUSH: '1' } }).ok, true);
+  const push = { env: { JACO_SHELL_ALLOW_PUSH: '1', JACO_PROTECTED_BRANCHES: 'release' } };
+  assert.equal(c(ws, 'git', ['push', '-u', 'origin', 'aura/site-copy'], push).ok, true);
+  assert.equal(c(ws, 'git', ['push', 'origin', 'HEAD:aura/fix'], push).ok, true);
+  assert.match(c(ws, 'git', ['push'], push).reason, /GIT_PUSH_NEEDS_REMOTE_AND_BRANCH/, 'the checkout must not decide the target');
+  for (const target of [['origin', 'main'], ['origin', 'HEAD:main'], ['origin', 'x:refs/heads/master'], ['origin', 'release']])
+    assert.match(c(ws, 'git', ['push', ...target], push).reason, /GIT_PUSH_PROTECTED_BRANCH/, target.join(' '));
+  for (const bad of [['--force', 'origin', 'w'], ['-f', 'origin', 'w'], ['--all', 'origin'], ['--mirror', 'origin'], ['--delete', 'origin', 'w']])
+    assert.match(c(ws, 'git', ['push', ...bad], push).reason, /GIT_PUSH_OPTION_NOT_ALLOWED/, bad.join(' '));
+  for (const bad of [['origin', '+w'], ['origin', ':w'], ['origin', 'HEAD']])
+    assert.match(c(ws, 'git', ['push', ...bad], push).reason, /GIT_PUSH_(REFSPEC_NOT_ALLOWED|DELETE_NOT_ALLOWED|NEEDS_BRANCH_NAME)/, bad.join(' '));
   assert.equal(c(ws, 'git', ['reset', '--hard'], { env: { JACO_SHELL_ALLOW_DESTRUCTIVE: '1' } }).destructive, 'GIT_RESET');
   assert.equal(c(ws, 'rm', ['-r', 'src'], { env: { JACO_SHELL_ALLOW_DESTRUCTIVE: '1' } }).ok, true);
   // even enabled, the workspace itself and protected places are not removable
