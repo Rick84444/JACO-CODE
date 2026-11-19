@@ -138,6 +138,10 @@ test('update: same build says up to date; a new build keeps the old one for roll
   assert.deepEqual(fs.readdirSync(path.join(s.jl, 'versions')).sort(), ['2026-10-14T10-00-00-000Z'.replace('T', 'T'), '2026-10-15T10-00-00-000Z'].map(x => x), 'the oldest build was removed');
   assert.match(cmd(launcher, ['rollback'], s.env).stdout, /now on versions\/2026-10-14/);
   assert.match(cmd(launcher, ['--x'], s.env).stdout, /built=2026-10-14/);
+  assert.match(cmd(launcher, ['doctor'], s.env).stdout, /built at *: 2026-10-14/);
+  const restored = await run(launcher, s.env, ['update']);
+  assert.equal(restored.code, 0, restored.err + restored.out);
+  assert.match(cmd(launcher, ['--x'], s.env).stdout, /built=2026-10-15/);
   const gone = cmd(launcher, ['uninstall', '--yes'], s.env);
   assert.match(gone.stdout, /removed/);
   assert.equal(fs.existsSync(s.jl), false); assert.equal(fs.existsSync(path.join(s.home, 'bin', 'jaco-lite')), false);
@@ -216,6 +220,8 @@ test('Pixel Debian explicitly selects Android Lite archive without switching to 
   const updated=await run(SCRIPT,s.env);
   assert.equal(updated.code,0,updated.err+updated.out);
   assert.match(updated.out,/already up to date/, 'update retains Pixel platform selection without another environment flag');
+  const started=cmd(path.join(s.home,'bin','jaco-lite'),['--check'],s.env);
+  assert.match(started.stdout,/FAKE-LITE --no-open --check/);
   const bad=await run(SCRIPT,{...env,JACO_LITE_PLATFORM:'something-else',JACO_LITE_HOME:path.join(s.home,'rejected')});
   assert.notEqual(bad.code,0);assert.match(bad.err,/JACO_LITE_PLATFORM must be/);
   assert.equal(fs.existsSync(path.join(s.home,'rejected')),false);
@@ -235,3 +241,28 @@ test('Pixel Debian rejects missing or mismatched Android artifact before install
   assert.notEqual(missing.code,0);assert.equal(fs.existsSync(path.join(s.jl,'current')),false);
 });
 
+
+test('Pixel migration from same-timestamp universal build preserves previous and selects Android', { skip }, async t => {
+  const rel=await release(t), s=setup(t,rel);
+  const uname=path.join(s.env.PATH,'uname'); fs.rmSync(uname);
+  fs.writeFileSync(uname,'#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo aarch64;; esac\n',{mode:0o755});
+  assert.equal((await run(SCRIPT,s.env)).code,0);
+  const old=fs.readlinkSync(path.join(s.jl,'current'));
+  const r=await run(SCRIPT,{...s.env,JACO_LITE_PLATFORM:'android'});
+  assert.equal(r.code,0,r.err+r.out);
+  assert.notEqual(fs.readlinkSync(path.join(s.jl,'current')),old);
+  assert.equal(fs.readlinkSync(path.join(s.jl,'previous')),old);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(s.jl,'install.json'),'utf8')).kind,'android');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(s.jl,'previous','.install.json'),'utf8')).kind,'universal');
+});
+
+test('Lite release gates include GUI changes, exact ARM64 install and only current main publication', () => {
+  const workflow=fs.readFileSync(path.join(root,'.github/workflows/lite-release.yml'),'utf8');
+  assert.match(workflow,/pull_request:\n[^\n]*\x27runtime\/\*\*\x27/);
+  assert.match(workflow,/needs: \[verified-lite, pixel-arm64-smoke, windows-lite-smoke\]/);
+  assert.match(workflow,/github\.ref == 'refs\/heads\/main' && \(github\.event_name == 'push'/);
+  assert.match(workflow,/JACO_LITE_PLATFORM=android sh lite\/install\.sh/);
+  assert.match(workflow,/source commit \*: \$GITHUB_SHA/);
+  assert.match(workflow,/git ls-remote origin refs\/heads\/main/);
+  assert.match(workflow,/if: steps\.freshness\.outputs\.publish == 'true'/);
+});

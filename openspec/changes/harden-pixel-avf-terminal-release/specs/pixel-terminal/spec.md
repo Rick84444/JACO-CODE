@@ -35,3 +35,15 @@ Changes MUST pass executable package/launcher tests, Android APK build checks, a
 #### Scenario: Physical device untested
 - **WHEN** no real Pixel AVF device was used for testing
 - **THEN** the release documentation MUST label physical AVF, Chrome forwarding, offline LiteRT and host pairing as unverified.
+
+### Requirement: Main-to-Pixel release continuity
+The canonical Lite workflow SHALL build from an exact main revision and publish the same checked archives only after Linux, ARM64 and Windows gates succeed.
+#### Scenario: GUI changes merged to main
+- **WHEN** an affected main revision passes the download and platform smoke gates and is still current
+- **THEN** the workflow SHALL publish the same checksum-verified artifacts and confirm the public files match.
+#### Scenario: Superseded or unverified revision
+- **WHEN** a revision is superseded, on a feature branch, or a required smoke test fails
+- **THEN** it MUST NOT publish a download.
+#### Scenario: Android platform migration and rollback
+- **WHEN** Linux arm64 switches from a universal archive to Android or rolls back a retained build
+- **THEN** the installer SHALL preserve the prior archive, report active metadata, and use the platform-specific precompiled package without opening a VM browser.
