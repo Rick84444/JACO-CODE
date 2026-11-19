@@ -894,13 +894,16 @@
   background: #18222c;
 }
 .aura-portrait-trigger:hover, .aura-portrait-trigger:focus-visible { border-color: #79baff; }
+/* Docked, non-modal: Aura stays visible in the corner while she and the operator use the rest of the workspace. */
 .aura-portrait {
   position: fixed;
-  inset: 0;
-  margin: auto;
+  inset: auto 16px 16px auto;
+  margin: 0;
+  z-index: 60;
+  overflow-y: auto;
   box-sizing: border-box;
-  width: min(460px, calc(100vw - 24px));
-  max-height: calc(100dvh - 24px);
+  width: min(380px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
   padding: 14px;
   border: 1px solid #465b6b;
   border-radius: 16px;

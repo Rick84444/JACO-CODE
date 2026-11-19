@@ -11,7 +11,7 @@ agents/.agent-state/
 latest-checkpoint.json
 
 # Dependencies and build output
-node_modules/
+node_modules
 dist/
 .gradle/
 

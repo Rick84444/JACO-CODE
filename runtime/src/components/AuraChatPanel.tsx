@@ -17,6 +17,7 @@ import { BudgetCard } from './CostChip';
 import { AutonomyClock } from './AutonomyClock';
 import { AuraOverview } from './AuraOverview';
 import { boundChatHistory } from '../lib/chatHistory.mjs';
+import { extractWorkspaceActions, workspaceReplyText } from '../lib/workspaceActions.mjs';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
 
 // The conversation is not a telemetry console. Keep the newest instance of an identical
@@ -495,7 +496,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           attachmentIds: attachments.map(item=>item.id),
           message: text,
           connectedSession: { id: user.id, source: 'Aura GUI' },
-          interactionMode: runMode === 'planning' ? 'planning' : 'question',
+          interactionMode: runMode === 'planning' ? 'planning' : runMode === 'autonomous' ? 'action' : 'question',
           selectedProvider,
           model: selectedProvider === 'seer' ? undefined : chatModel,
           activeFilePath: activeFilePath || null,
@@ -506,8 +507,12 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         // Longer than SEER's own provider chain; a hung request still ends in a message.
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(360_000)]),
       }).then(chatJson);
-      const answer=String(data.reply || data.text || '').trim();
-      if(!answer) throw new Error(tr('Modellen returnerade ett tomt svar.', 'The model returned an empty response.'));
+      const rawAnswer=String(data.reply || data.text || '').trim();
+      if(!rawAnswer) throw new Error(tr('Modellen returnerade ett tomt svar.', 'The model returned an empty response.'));
+      // Aura may ask the workspace to show a view, the terminal or a file; the GUI performs it and hides the directive.
+      const workspace=extractWorkspaceActions(rawAnswer);
+      for(const action of workspace.actions) window.dispatchEvent(new CustomEvent('jaco:workspace-action',{detail:action}));
+      const answer=workspaceReplyText(rawAnswer);
       await appendMessage({
         id: `${user.id}:reply`,
         role: 'assistant',

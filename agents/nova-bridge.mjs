@@ -465,8 +465,14 @@ export const server = createServer(async (req, res) => {
     if (req.headers.origin) return json(res,{ok:false,error:'BROWSER_ORIGIN_DENIED'},403);
     if (req.method==='POST' && ['/navigate','/click','/type','/press','/upload','/sign-in','/tab/open','/tab/switch','/tab/close'].includes(url.pathname) && !mutationsEnabled()) return json(res,{ok:false,error:'MUTATIONS_DISABLED'},403);
     if (req.method === "GET" && url.pathname === "/health") {
-      const result = workplace.allowed ? browserHealth.status() :
+      let result = workplace.allowed ? browserHealth.status() :
         { ok: false, state: 'BLOCKED', browserVerified: false, error: 'WORKPLACE_UNSYNCED' };
+      // After an idle period the receipt has expired and a fresh probe has just started. Wait for it briefly
+      // instead of reporting a working browser as down (every first health poll used to answer 503).
+      if (workplace.allowed && !result.ok && result.state === 'VERIFYING') {
+        await Promise.race([browserHealth.settle(), new Promise(resolve => setTimeout(resolve, 3000))]);
+        result = browserHealth.status();
+      }
       const ready = result.ok === true && result.browserVerified === true && workplace.allowed;
       return json(res, { ...result, ok: ready, state: ready ? 'READY' : 'BLOCKED',
         service: 'nova-bridge', cdpPort: CDP_PORT }, ready ? 200 : 503);

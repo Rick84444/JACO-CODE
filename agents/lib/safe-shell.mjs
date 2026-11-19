@@ -140,6 +140,29 @@ export function normalizeCommand(command, args) {
   return { command: words[0], args: words.slice(1) };
 }
 
+// With push enabled an agent may publish its own work branches, never a protected branch: main and master (and
+// JACO_PROTECTED_BRANCHES) change only through a pull request with green CI. A push must name the remote and the
+// branch, so the current checkout cannot decide it; force, delete, mirror and all-branches pushes are refused.
+const PUSH_OPTION_ALLOWED = /^(-u|--set-upstream|-n|--dry-run|--porcelain|-q|--quiet|-v|--verbose|--no-progress)$/;
+export const protectedBranches = (env = process.env) => new Set(['main', 'master', ...String(env.JACO_PROTECTED_BRANCHES || '').split(',').map(s => s.trim()).filter(Boolean)]);
+export function pushRefusal(args, env = process.env) {
+  const rest = args.slice(1);
+  const option = rest.find(a => a.startsWith('-') && !PUSH_OPTION_ALLOWED.test(a));
+  if (option) return `GIT_PUSH_OPTION_NOT_ALLOWED:${option}`;
+  const [remote, ...refspecs] = positional(rest);
+  if (!remote || !refspecs.length) return 'GIT_PUSH_NEEDS_REMOTE_AND_BRANCH (git push -u origin <work-branch>)';
+  const guarded = protectedBranches(env);
+  for (const spec of refspecs) {
+    if (spec.startsWith('+') || spec.includes('*')) return `GIT_PUSH_REFSPEC_NOT_ALLOWED:${spec}`;
+    const target = (spec.includes(':') ? spec.slice(spec.lastIndexOf(':') + 1) : spec).replace(/^refs\/heads\//, '');
+    if (!target || spec.startsWith(':')) return `GIT_PUSH_DELETE_NOT_ALLOWED:${spec}`;
+    if (target === 'HEAD' || target.startsWith('refs/')) return `GIT_PUSH_NEEDS_BRANCH_NAME:${spec}`;
+    if (guarded.has(target)) return `GIT_PUSH_PROTECTED_BRANCH:${target} (open a pull request instead)`;
+  }
+  return null;
+}
+const linkedDependencies = dir => { try { return fs.lstatSync(path.join(dir, 'node_modules')).isSymbolicLink(); } catch { return false; } };
+
 // Why this command may not run, or its mode. Pure: no process is started here.
 export function classify(command, args, { workspace, cwd = workspace, env = process.env, mode: requested = 'write' } = {}) {
   const refuse = reason => ({ ok: false, reason });
@@ -157,6 +180,9 @@ export function classify(command, args, { workspace, cwd = workspace, env = proc
   destructive = destructive || spec.destructiveIf?.(args) || null;
   if (requested === 'read' && mode !== 'read') return refuse('WRITE_COMMAND_IN_READ_MODE');
   if (push && env.JACO_SHELL_ALLOW_PUSH !== '1') return refuse('GIT_PUSH_NOT_ENABLED (the operator enables it with JACO_SHELL_ALLOW_PUSH=1)');
+  if (push) { const problem = pushRefusal(args, env); if (problem) return refuse(problem); }
+  // A mission worktree borrows the project's packages through a link; an install there would rewrite the project's own.
+  if (command === 'npm' && ['ci', 'install', 'i'].includes(args[0]) && linkedDependencies(cwd || workspace)) return refuse('NPM_INSTALL_INTO_LINKED_DEPENDENCIES (this worktree uses the project\'s installed packages)');
   if (destructive && !push && env.JACO_SHELL_ALLOW_DESTRUCTIVE !== '1') return refuse(`DESTRUCTIVE_NOT_ENABLED:${destructive} (the operator enables it with JACO_SHELL_ALLOW_DESTRUCTIVE=1)`);
   // A script argument for node/python must exist inside the workspace.
   const pathArgs = [...(spec.paths ? spec.paths(args) : []), ...(spec.script && mode === 'write' ? (inline ? scriptOf(args) : positional(args).slice(0, 1)) : [])];

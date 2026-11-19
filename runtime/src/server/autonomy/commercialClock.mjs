@@ -16,13 +16,14 @@ export function commercialAuthorized(mission, mandates, operator, task=null, cap
 }
 export function commercialTaskAllowed(task) {
   if (!COMMERCIAL_TASKS.includes(task?.type)) return false;
-  if (task.type === 'skill-load') return [COMMERCIAL_SKILL,'external-agent-employment'].includes(task.data?.id);
+  if (task.type === 'skill-load') return [COMMERCIAL_SKILL,'external-agent-employment','buyer-tailored-proposal'].includes(task.data?.id);
   if (task.type !== 'mcp-call' && task.type !== 'mcp-write') return true;
   const server = task.data?.server, raw = String(task.data?.tool || '');
   const name = raw.startsWith(server + '.') ? raw.slice(server.length + 1) : raw;
   if (task.type === 'mcp-write') return server === 'agentgigs' && name === 'apply';
-  return (server === 'jobbi' && name === 'list_gigs') ||
-    (server === 'agentgigs' && ['list_available','job_status','list_attempted','list_applications'].includes(name));
+  return (server === 'jobbi' && ['list_gigs','get_gig','list_sources'].includes(name)) ||
+    (server === 'frantic' && ['read_board','get_bounty','get_agent_status','read_ledger'].includes(name)) ||
+    (server === 'agentgigs' && ['list_available','job_status','list_attempted','list_applications','estimate_payout'].includes(name));
 }
 export function seedCommercialKnowledge(knowledge) {
   const id = 'commercial-opportunity-policy-v1';
@@ -32,6 +33,18 @@ export function seedCommercialKnowledge(knowledge) {
     reasoningSummary:'Policy, not proven profitability. Recheck funding, fees, AI permission, scope, deadlines and cost; compare free alternatives. Work from actual payout evidence, never credit listing reward or proposal.',
     failureModes:['unfunded application','ambiguous write','fees exceed reward','expired mandate','unverified payout'],
     implementation:{skill:COMMERCIAL_SKILL,source:COMMERCIAL_SOURCE}},'operator-commercial-policy');
+}
+// Versioned procedural knowledge: not verified market outcomes or a capability grant.
+export function seedCommercialOperatorKnowledge(knowledge) {
+  const id = 'commercial-operator-knowledge-v2';
+  try { return knowledge.get(id); } catch (e) { if(!String(e.message).includes('not found')) throw e; }
+  return knowledge.put({id,kind:'commercial-procedure',
+    purpose:'Prioritize external user outcomes, funded demand, low irreversible cost and independently verified paid delivery.',
+    confidence:0,verificationStatus:'UNVERIFIED',reusable:true,
+    dependencies:['RevenueOpportunityEngine','EconomicGovernor','Nova','commercial-opportunity-cycle'],
+    reasoningSummary:'Demand before building; compare free alternatives; rank probability-adjusted contribution, effort and collection time. Distinguish market signal, qualified buyer, assignment, accepted delivery and settlement. Product activation is separate from revenue. Follow channel rules; no unsupported performance claims. Record falsifiers and actual receipts; no unknown values treated as success.',
+    failureModes:['speculative feature work','unverified buyer','unsupported benchmark claim','prohibited outreach','unapproved spend','uncollected revenue'],
+    implementation:{skill:COMMERCIAL_SKILL,relatedOperatorSkill:'product-validation',reference:'docs/commercial/operating-knowledge-v2.md'}},'operator-commercial-policy');
 }
 export function reconcileCommercialClock({mandates,operator,bus,nova,knowledge,capabilities,now=Date.now()}) {
   const clocks = mandates.list().filter(m=>m.name===COMMERCIAL_CLOCK && mandates.isActive(m.id));
@@ -55,10 +68,11 @@ export function reconcileCommercialClock({mandates,operator,bus,nova,knowledge,c
   const recent=history.find(x=>x.metadata?.mandateId===m.id);
   if(recent && now-Date.parse(recent.createdAt)<HOUR) return {state:'COOLDOWN'};
   seedCommercialKnowledge(knowledge);
+  seedCommercialOperatorKnowledge(knowledge);
   const allowedTasks=COMMERCIAL_TASKS.filter(t=>t!=='mcp-write' || m.decisions?.EXTERNAL_MUTATION==='ALLOW').filter(t=>!capabilities || capabilities.isTaskEnabled(t));
   if(!allowedTasks.includes('mcp-call') || !allowedTasks.includes('skill-load')) return {state:'REQUIRED_TOOLS_DISABLED'};
   const recall=knowledge.list({kind:'commercial-outcome',limit:1000}).sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt)).slice(0,5).map(k=>({missionId:k.implementation?.missionId,status:k.implementation?.status,applications:k.implementation?.applications||[],verifiedReceipts:k.metrics?.verifiedReceipts||0}));
-  const goal='Skill '+COMMERCIAL_SKILL+': run one bounded evidence-led revenue opportunity cycle before the signed clock expires. Find or reconcile paid AI-agent work, no outgoing spend, do not accept new legal terms or binding financial obligations without operator review. Review previous attempts before discovery. Read-only work can continue when marketplace credentials are missing. Record observations, IDs, blockers and next action, never invented earnings. Clock '+m.id+' cycle '+slot+'. Prior observations (unverified, recheck live): '+JSON.stringify(recall).slice(0,3000);
+  const goal='Skill '+COMMERCIAL_SKILL+': run one bounded evidence-led revenue opportunity cycle before the signed clock expires. Find or reconcile paid AI-agent and human buyer work; verify original source and estimate payout before recommending; no outgoing spend, do not accept new legal terms or binding financial obligations without operator review. Review previous attempts before discovery. Read-only work can continue when marketplace credentials are missing. Record observations, IDs, blockers and next action, never invented earnings. Clock '+m.id+' cycle '+slot+'. Prior observations (unverified, recheck live): '+JSON.stringify(recall).slice(0,3000);
   const result=nova.create({goal,source:COMMERCIAL_SOURCE,mandateId:m.id,idempotencyKey:'commercial-clock:'+m.id+':'+slot,allowedTasks});
   if(result.source!==COMMERCIAL_SOURCE || result.metadata?.mandateId!==m.id) return {state:'DEDUPLICATED_OTHER_WORK',missionId:result.id};
   return {state:'QUEUED',missionId:result.id,mandateId:m.id};

@@ -66,7 +66,7 @@ test('an oversized skill is listed with its error; runs of different skills are 
 
 test('the repository skills all parse and declare supported tasks', () => {
   const list = listSkills([repoSkills]);
-  assert.deepEqual(list.map(s => s.id), ['autonomous-api-connection', 'build-web-page', 'commercial-opportunity-cycle', 'community-post', 'create-github-repo', 'external-agent-employment', 'fix-a-bug', 'repo-insight', 'repo-security-scan', 'web-research']);
+  assert.deepEqual(list.map(s => s.id), ['autonomous-api-connection', 'browser-authorized-action', 'browser-workflow-understanding', 'build-web-page', 'buyer-tailored-proposal', 'commercial-opportunity-cycle', 'community-post', 'create-github-repo', 'external-agent-employment', 'fix-a-bug', 'paid-delivery-quality', 'product-validation', 'repo-insight', 'repo-security-scan', 'web-research']);
   for (const s of list) assert.equal(s.error, undefined, `${s.id}: ${s.error}`);
 });
 
@@ -99,4 +99,40 @@ test('Nova can pick a skill itself: skill-load is a validated read-only task and
   assert.equal(brain.recentReceipts[0].n, 1);
   assert.match(JSON.stringify(brain.recentReceipts[0].result), /see state.skill/);
   assert.ok(JSON.stringify(brain).length < 1000, 'instructions are not repeated in the receipt');
+});
+
+test('product validation is discoverable and read-only; no publish or shell permission', () => {
+  const skill = loadSkill([repoSkills], 'product-validation');
+  assert.deepEqual(skill.tasks, ['health-check', 'web-fetch', 'mcp-call', 'skill-load']);
+  assert.equal(skill.truncated, false);
+  assert.match(skill.body, /Hacker News prohibits AI-written/);
+  assert.match(skill.body, /settled payment/);
+});
+
+test('browser skills keep read-only observation separate from authorized mutation', () => {
+  const read = loadSkill([repoSkills], 'browser-workflow-understanding');
+  const action = loadSkill([repoSkills], 'browser-authorized-action');
+  assert.deepEqual(read.tasks, ['web-fetch', 'mcp-call', 'skill-load']);
+  assert.deepEqual(action.tasks, ['web-fetch', 'mcp-call', 'mcp-write', 'skill-load']);
+  assert.equal(read.truncated, false);
+  assert.equal(action.truncated, false);
+  assert.match(action.body, /If a required approval cannot be verified/);
+  assert.match(action.body, /never issue a fresh actionId/);
+  assert.match(read.body, /no alternate input route/);
+});
+
+test('paid delivery review is read-only and does not imply a delivery connector',()=>{
+  const s=loadSkill([repoSkills],'paid-delivery-quality');
+  assert.deepEqual(s.tasks,['health-check','web-fetch','mcp-call','skill-load']);
+  assert.match(s.body,/does NOT expose those delivery writes/);
+});
+
+test('buyer proposal research is available without write authority',()=>{
+ const s=loadSkill([repoSkills],'buyer-tailored-proposal');
+ assert.deepEqual(s.tasks,['web-fetch','mcp-call','skill-load']);
+ assert.equal(s.truncated,false);
+ assert.match(s.body,/Read the entire request before drafting/);
+ assert.match(s.body,/Research the buyer before choosing language/);
+ assert.match(s.body,/requirement-to-evidence matrix/);
+ assert.match(s.body,/not an estimate of external rating/);
 });

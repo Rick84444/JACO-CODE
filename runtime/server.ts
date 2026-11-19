@@ -30,7 +30,7 @@ import { createDesktopRouter } from './src/server/desktop/router.js';
 import { DesktopHandsOffClient, type DesktopAction } from './src/server/desktop/desktopHandsOff.js';
 import { createCognitiveStreamHandler, readCognitiveFeed } from './src/server/connected/cognitiveLiveStream.mjs';
 import { projectAuraLiveWorkspace } from './src/lib/liveWorkspaceProjection.mjs';
-import { cognitiveQuestionToolbox } from './src/server/connected/cognitiveQuestionToolbox.mjs';
+import { cognitiveQuestionToolbox, withPerceptionTools } from './src/server/connected/cognitiveQuestionToolbox.mjs';
 import { seerLiveWorkstream } from './src/server/seer/liveWorkstream.js';
 import { createBrowserRouter } from './src/server/browser/router.js';
 import { createContinuumRouter } from './src/server/continuum/router.mjs';
@@ -74,6 +74,10 @@ import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAc
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
 import { auraAlwaysAnswers, answerInOrder, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
+import { WORKSPACE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
+import { createStackRepair } from "./src/server/connected/stackRepair.mjs";
+import { createPiperVoice } from "./src/server/connected/piperVoice.mjs";
+const repairStack = createStackRepair();
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier, synthesize as synthesizeVoice } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
@@ -219,6 +223,10 @@ const mcpHost = new StdioMcpHost({
   runtimeRoot: RELEASE_ROOT,
 });
 process.on('exit', () => mcpHost.stopAll());
+// Aura's voice (Piper Alma) stays loaded in one worker; loaded at start so her first sentence is not late.
+const piperVoice = createPiperVoice({ workerScript: path.join(RELEASE_ROOT, 'tools', 'piper-voice-worker.py') });
+if (piperVoice.available()) void piperVoice.warm();
+process.on('exit', () => piperVoice.stop());
 // JACO skills (SKILL.md). The operator's repository first, so a skill written there is usable without a
 // runtime redeploy; then this checkout; then skills kept in the runtime state.
 const skillRoots = () => [...new Set([
@@ -315,6 +323,10 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         run: async (args: any) => organizationMandate(organization, String(args?.agentId || 'aura')) || { error: 'AGENT_NOT_FOUND' },
       },
       health: { description: 'Read-only HTTP service probes. READY/REACHABLE are not proof of model or tool execution; AUTH_REQUIRED is not healthy. In Termux the ChatGPT gateway is not managed by runit. args: {}', run: async () => auraServiceHealth() },
+      stack_repair: {
+        description: 'Repair the local JACO stack yourself when health shows a service DOWN or 503 (Chrome debug browser 9222, CDP bridge, Nova bridge, gateway, Workplace, SEER). Reruns the canonical starter: only services that are down are relaunched, READY services and foreign listeners are left alone. At most once a minute; call health afterwards to verify. args: {}',
+        run: async () => repairStack(),
+      },
       mcp_catalog: {
         description: 'Read the live catalog of connected MCP tool servers and the tools they currently advertise. Use this before answering what tools Aura has. This only observes metadata and never starts or calls a tool. args: {}',
         run: async () => ({
@@ -923,42 +935,34 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
     try { res.json({ success: true, ...(await connections.refresh()) }); }
     catch { res.status(503).json({ success: false, error: 'CONNECTION_REFRESH_FAILED' }); }
   });
-  // Aura's spoken voice for the portrait: the same female neural voice as her voice notes (voiceChannel.synthesize).
-  // The text is spoken by the operator's chosen engine; edge-tts sends it to Microsoft, as documented in voiceChannel.
+  // Aura's spoken voice for the portrait: local Piper Alma first; the voiceChannel engine (edge-tts, which sends the
+  // text to Microsoft, as documented in voiceChannel) only when Piper is unavailable.
   app.post('/api/aura/voice/speak', requireLocalUiSameOrigin, async (req, res) => {
     const text = typeof req.body?.text === 'string' ? req.body.text : '';
     if (!text.trim() || text.length > 6000) return res.status(400).json({ success: false, error: 'VOICE_TEXT_INVALID' });
     const lang = typeof req.body?.lang === 'string' && /^[a-z]{2}-[A-Z]{2}$/.test(req.body.lang) ? req.body.lang : 'sv-SE';
+    // Operator 2026-11-19: Aura's voice is Piper TTS with Alma (sv_SE-alma-medium, CC-BY-4.0). It runs on this
+    // computer, so nothing she says leaves the machine. The neural edge voice is only the fallback when Piper fails.
+    let piperError = 'PIPER_MODEL_MISSING';
+    if (lang.startsWith('sv') && piperVoice.available()) {
+      try {
+        const bytes = await piperVoice.synthesize(text);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Jaco-Voice', 'piper-alma');
+        return res.type('audio/wav').send(bytes);
+      } catch (error: any) { piperError = String(error?.message || 'PIPER_FAILED').slice(0, 80); }
+    }
     try {
       const env = { ...process.env, JACO_VOICE_ENGINE: process.env.JACO_VOICE_ENGINE || 'edge', JACO_VOICE_LANG: process.env.JACO_VOICE_LANG || lang };
       const sound = await synthesizeVoice(text, { env });
       try {
         const bytes = fs.readFileSync(sound.file);
         res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Jaco-Voice', 'fallback');
         res.type(sound.mimetype.split(';')[0]).send(bytes);
       } finally { fs.rmSync(sound.file, { force: true }); }
     } catch (error: any) {
-      // Local fallback so Aura is never mute: the Swedish Piper voice (Alma, CC-BY-4.0) runs on this computer.
-      const model = process.env.JACO_PIPER_MODEL || path.join(os.homedir(), '.jaco', 'voice', 'piper', 'sv_SE-alma-medium.onnx');
-      if (lang.startsWith('sv') && fs.existsSync(model)) {
-        const out = path.join(os.tmpdir(), `jaco-aura-voice-${process.pid}-${Date.now()}.wav`);
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const python = process.env.JACO_VOICE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
-            const child = spawn(python, ['-m', 'piper', '-m', model, '-f', out], { windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'] });
-            const timer = setTimeout(() => { child.kill(); reject(new Error('PIPER_TIMEOUT')); }, 60000);
-            child.on('error', err => { clearTimeout(timer); reject(err); });
-            child.on('close', code => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`PIPER_EXIT_${code}`)); });
-            child.stdin.end(text.slice(0, 6000));
-          });
-          if (fs.existsSync(out) && fs.statSync(out).size > 200) {
-            res.setHeader('Cache-Control', 'no-store');
-            return res.type('audio/wav').send(fs.readFileSync(out));
-          }
-        } catch { /* fall through to the error below */ }
-        finally { fs.rmSync(out, { force: true }); }
-      }
-      res.status(503).json({ success: false, error: String(error?.message || 'VOICE_UNAVAILABLE').slice(0, 160) });
+      res.status(503).json({ success: false, error: `${piperError}; ${String(error?.message || 'VOICE_UNAVAILABLE')}`.slice(0, 200) });
     }
   });
   // Metadata only. Existing env, encrypted store and legacy Windows vault remain the owners.
@@ -5143,6 +5147,8 @@ const notifyPhone = async (action) => {
     try {
       const { message, activeFilePath, targetSubAgent, selectedModel, selectedProvider, model, messagesHistory, interactionMode } = req.body;
       const ragContext = [...(Array.isArray(req.body.ragContext) ? req.body.ragContext : []), ...attachmentContext(req.body.attachmentIds)];
+      // The local GUI can show views and files Aura asks for while she talks (display only, never execution).
+      if (req.body?.connectedSession?.source === 'Aura GUI') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: WORKSPACE_CONTROL_INSTRUCTION } });
       const userMsg = String(message || "Hi");
       const cognitiveActivation = cognitiveActivationPreview(userMsg, {
         knowledge: continuumSurface.runtime.knowledge,
@@ -5180,7 +5186,7 @@ const notifyPhone = async (action) => {
       });
       const sendChatResult = (result: any) => {
         if (connectedReplyId) auraChatSession.append({
-          id: connectedReplyId, role: 'assistant', content: String(result.reply || result.text || ''),
+          id: connectedReplyId, role: 'assistant', content: workspaceReplyText(String(result.reply || result.text || '')),
           meta: [
             connectedSource,
             result.modelUsed || [result.provider, result.model].filter(Boolean).join('/'),
@@ -5236,7 +5242,7 @@ const notifyPhone = async (action) => {
       }
 
       const auraState = auraEngineManager.getState();
-      const allTools=(()=>{const box=buildAuraToolbox({connectedRuntime,seerLiveWorkstream,readAgentTeam:readAuraAgentBoard,organization:agentOrganization});return {...box,tools:gateAgentTools(box.tools,agentOrganization)};})();
+      const allTools=(()=>{const box=buildAuraToolbox({connectedRuntime,seerLiveWorkstream,readAgentTeam:readAuraAgentBoard,organization:agentOrganization});return {...box,tools:withPerceptionTools(gateAgentTools(box.tools,agentOrganization))};})();
       const questionTools=questionMode ? cognitiveQuestionToolbox(allTools,()=>readCognitiveFeed({
         bus:connectedRuntime.bus,workstream:seerLiveWorkstream,limit:30,
         secrets:Object.entries(process.env).filter(([key])=>/secret|token|password|api_?key/i.test(key)).map(([,value])=>value).filter(Boolean),

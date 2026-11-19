@@ -42,6 +42,30 @@ const assertStateOutside = (stateReal, projectReal) => {
   if (target === root || target.startsWith(root + path.sep)) throw new Error('STATE_INSIDE_PROJECT');
 };
 
+// A mission worktree lives outside the project, so Node cannot find the project's installed packages from it
+// and every script fails with ERR_MODULE_NOT_FOUND. It borrows them through a link (a junction on Windows),
+// read only in practice: safe-shell refuses writes under node_modules and npm installs into a linked folder.
+export const LINKED_DEPENDENCY_DIRS = ['node_modules', path.join('runtime', 'node_modules')];
+export function linkDependencies(project, target) {
+  const linked = [];
+  for (const rel of LINKED_DEPENDENCY_DIRS) {
+    const source = path.join(project, rel), link = path.join(target, rel);
+    if (!fs.existsSync(source) || !fs.existsSync(path.dirname(link))) continue;
+    try { fs.lstatSync(link); continue; } catch (error) { if (error?.code !== 'ENOENT') continue; }
+    fs.symlinkSync(source, link, 'junction');
+    linked.push(rel);
+  }
+  return linked;
+}
+// Unlinks the borrowed folders before the worktree is deleted. `git worktree remove --force` follows a junction
+// and empties the project's own node_modules (observed 2026-11-18), so this must run first.
+export function unlinkDependencies(target) {
+  for (const rel of LINKED_DEPENDENCY_DIRS) {
+    const link = path.join(target, rel);
+    try { if (fs.lstatSync(link).isSymbolicLink()) fs.unlinkSync(link); } catch {}
+  }
+}
+
 /** @param {{stateDir?:string, git?:typeof defaultGit}} [options] */
 export function createMissionWorktrees({ stateDir, git = defaultGit } = {}) {
   if (typeof stateDir !== 'string' || !stateDir.trim()) throw new Error('STATE_DIR_INVALID');
@@ -119,6 +143,7 @@ export function createMissionWorktrees({ stateDir, git = defaultGit } = {}) {
       const { target, project } = guard(projectRoot, missionId);
       const branchName = `jaco/${missionId}`;
       if (fs.existsSync(target) && currentBranch(target) === branchName) {
+        linkDependencies(project, target);
         return { path: target, branch: branchName, created: false };
       }
       const base = git(['rev-parse', 'HEAD'], project);
@@ -129,12 +154,14 @@ export function createMissionWorktrees({ stateDir, git = defaultGit } = {}) {
       } else {
         git(['worktree', 'add', '-b', branchName, target, 'HEAD'], project);
       }
+      linkDependencies(project, target);
       return { path: target, branch: branchName, created: true, base };
     },
     remove({ projectRoot, missionId } = {}) {
       const { target, project } = guard(projectRoot, missionId);
       if (!fs.existsSync(target)) return { removed: false };
       // Branch is deliberately kept so a later ensure() re-attaches it with its commits.
+      unlinkDependencies(target);
       git(['worktree', 'remove', '--force', target], project);
       return { removed: true };
     },

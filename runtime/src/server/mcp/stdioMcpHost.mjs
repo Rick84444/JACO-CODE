@@ -36,9 +36,17 @@ export const ICONS = ['jaco', 'mcp', 'git', 'github', 'cloudflare', 'huggingface
 // Paths an agent may never write through a tool, whatever the server's access.
 const PROTECTED_PATH = /(^|[\\/])(\.env(\.[^\\/]*)?|\.git|node_modules)([\\/]|$)|secret|credential/i;
 
+function commercialDiscoveryServers() {
+  return {
+    jobbi: { name: 'Jobbi', role: 'Public paid agent-gig discovery; never claims or pays', icon: 'mcp', transport: 'http', url: 'https://jobbi.org/mcp', agentAccess: 'read' },
+    frantic: { name: 'Frantic discovery', role: 'Public bounty and payout-ledger research only', icon: 'mcp', transport: 'http', url: 'https://api.gofrantic.com/mcp/discovery', agentAccess: 'read' },
+  };
+}
+
 export function defaultServers({ repoRoot, runtimeRoot }) {
   // Lite ships this server; full-runtime launchers and uvx/npx are not bundled dependencies.
   if (process.env.JACO_LITE === '1') return {
+    ...commercialDiscoveryServers(),
     editor: { name: 'JACO Editor', role: 'project files, git and observed runtime', icon: 'jaco', agentAccess: 'read', gameboardJournalOnly: true,
       command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-editor.mjs')], cwd: runtimeRoot,
       env: { JACO_RUNTIME_URL: process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000' } },
@@ -49,7 +57,7 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
       command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')], cwd: runtimeRoot, env: { JACO_SHELL_WORKSPACE: repoRoot, JACO_SHELL_INTERPRETERS: process.env.JACO_SHELL_INTERPRETERS ?? '1' } } } : {}),
   };
   return {
-    jobbi: { name: 'Jobbi', role: 'Public paid agent-gig discovery; never claims or pays', icon: 'mcp', transport: 'http', url: 'https://jobbi.org/mcp', agentAccess: 'read' },
+    ...commercialDiscoveryServers(),
     ...(process.env.JACO_AGENTGIGS_API_KEY ? { agentgigs: { name: 'AgentGigs', role: 'Worker-side job status and scoped applications; local commercial mandate required', icon: 'mcp', agentAccess: 'write', command: process.execPath, args: [path.join(runtimeRoot,'tools','jaco-agentgigs-mcp.mjs')], cwd: runtimeRoot, env: { JACO_AGENTGIGS_API_KEY: '${JACO_AGENTGIGS_API_KEY}', JACO_AGENTGIGS_ENABLE_WRITES: '${JACO_AGENTGIGS_ENABLE_WRITES}' } } } : {}),
     jaco: {
       name: 'JACO', role: 'runtime, missions, Workplace, providers', icon: 'jaco', agentAccess: 'write',
@@ -93,8 +101,21 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
       name: 'Cloudflare', role: 'read-only account connection and Worker inventory', icon: 'cloudflare', agentAccess: 'read',
       command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'cloudflare-read-mcp.mjs')],
     },
+    // Aura's own Chrome through JACO's local CDP bridge (agents/cdp-bridge.mjs on loopback). It opens and reads any
+    // http(s) page; clicks and typing stay limited to JACO_BROWSER_ALLOWED_ORIGINS and the bridge's spend guard.
+    ...(process.env.JACO_ENABLE_CDP !== '0' ? { browser: {
+      name: 'Browser', role: 'Aura\'s own Chrome: open pages, read text, accessibility tree and screenshots; click and type on allowed origins', icon: 'mcp', agentAccess: 'write',
+      transport: 'http', url: `http://127.0.0.1:${Number(process.env.JACO_CDP_BRIDGE_PORT) || 2996}/mcp`,
+      tokenEnv: process.env.JACO_GATEWAY_TOKEN ? 'JACO_GATEWAY_TOKEN' : 'GATEWAY_TOKEN', localBridge: true,
+    } } : {}),
   };
 }
+
+// Only the built-in loopback browser bridge counts as local; a configured remote MCP never gets this flag.
+const localBridge = def => {
+  if (def.localBridge !== true || def.transport !== 'http') return false;
+  try { const url = new URL(def.url); return url.protocol === 'http:' && url.hostname === '127.0.0.1'; } catch { return false; }
+};
 
 // Applies the operator's access settings from the config entry onto a server definition.
 function withAccess(def, s = {}) {
@@ -112,7 +133,7 @@ export function agentRefusal(def, tool, args = {}) {
   if (def.deny?.includes(tool.name)) return 'MCP_TOOL_DENIED';
   const reads = Boolean(tool.readOnly || KNOWN_READ_ONLY[def.id]?.has(tool.name));
   if (reads) return null;
-  if (def.transport === 'http') return 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY';
+  if (def.transport === 'http' && !localBridge(def)) return 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY';
   // A single scoped, append-only coordination exception for the bundled JacoEdit,
   // never a general write grant. It is available only to the built-in stdio server;
   // overriding it with a user command or remote MCP removes this trusted flag.
@@ -438,7 +459,7 @@ export class StdioMcpHost {
     name = tool.name;
     const reads = Boolean(tool.readOnly || KNOWN_READ_ONLY[id]?.has(name));
     const refusal = actor === 'agent' ? agentRefusal(c.def, tool, args) || (readOnly && !reads ? 'MCP_TOOL_NOT_READ_ONLY' : null)
-      : c.def.transport === 'http' && !tool.readOnly ? 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY' : null;
+      : c.def.transport === 'http' && !tool.readOnly && !localBridge(c.def) ? 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY' : null;
     if (refusal) { done('refused', `${refusal}:${id}.${name}`); throw new Error(`${refusal}:${id}.${name}`); }
     try {
       let result;
