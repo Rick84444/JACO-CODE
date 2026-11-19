@@ -30,7 +30,7 @@ import { createDesktopRouter } from './src/server/desktop/router.js';
 import { DesktopHandsOffClient, type DesktopAction } from './src/server/desktop/desktopHandsOff.js';
 import { createCognitiveStreamHandler, readCognitiveFeed } from './src/server/connected/cognitiveLiveStream.mjs';
 import { projectAuraLiveWorkspace } from './src/lib/liveWorkspaceProjection.mjs';
-import { cognitiveQuestionToolbox } from './src/server/connected/cognitiveQuestionToolbox.mjs';
+import { cognitiveQuestionToolbox, withPerceptionTools } from './src/server/connected/cognitiveQuestionToolbox.mjs';
 import { seerLiveWorkstream } from './src/server/seer/liveWorkstream.js';
 import { createBrowserRouter } from './src/server/browser/router.js';
 import { createContinuumRouter } from './src/server/continuum/router.mjs';
@@ -5247,7 +5247,7 @@ const notifyPhone = async (action) => {
       }
 
       const auraState = auraEngineManager.getState();
-      const allTools=(()=>{const box=buildAuraToolbox({connectedRuntime,seerLiveWorkstream,readAgentTeam:readAuraAgentBoard,organization:agentOrganization});return {...box,tools:gateAgentTools(box.tools,agentOrganization)};})();
+      const allTools=(()=>{const box=buildAuraToolbox({connectedRuntime,seerLiveWorkstream,readAgentTeam:readAuraAgentBoard,organization:agentOrganization});return {...box,tools:withPerceptionTools(gateAgentTools(box.tools,agentOrganization))};})();
       const questionTools=questionMode ? cognitiveQuestionToolbox(allTools,()=>readCognitiveFeed({
         bus:connectedRuntime.bus,workstream:seerLiveWorkstream,limit:30,
         secrets:Object.entries(process.env).filter(([key])=>/secret|token|password|api_?key/i.test(key)).map(([,value])=>value).filter(Boolean),
