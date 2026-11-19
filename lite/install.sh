@@ -179,7 +179,7 @@ if [ "${DONE_UP_TO_DATE:-0}" != 1 ]; then
   DEST="$HOME_DIR/versions/$STAMP"
   # Different platform archives can share a timestamp. Never overwrite a retained build.
   if [ -e "$DEST" ]; then
-    STAMP="$STAMP-$KIND-$(printf '%s' "$WANT_SHA" | cut -c1-12)-$"
+    STAMP="$STAMP-$KIND-$(printf '%s' "$WANT_SHA" | cut -c1-12)-$$"
     DEST="$HOME_DIR/versions/$STAMP"
   fi
   mkdir -p "$HOME_DIR/versions" "$WORK/unpack"
@@ -212,7 +212,7 @@ if [ "${DONE_UP_TO_DATE:-0}" != 1 ]; then
 fi
 
 mkdir -p "$HOME_DIR/bin"
-# On a phone there is no browser to open from Termux: print the address instead.
+# Both the Pixel VM and Termux print the address instead of opening a desktop browser.
 LAUNCH_ARGS=""; [ "$KIND" = android ] && LAUNCH_ARGS="--no-open"
 # a copy of this installer, so  jaco-lite update  works offline from the script (the download itself is fetched fresh)
 if [ -f "$0" ] && grep -q "JACO Lite installer" "$0" 2>/dev/null; then cp "$0" "$HOME_DIR/install.sh" 2>/dev/null || true  # (same file when run as  jaco-lite update)

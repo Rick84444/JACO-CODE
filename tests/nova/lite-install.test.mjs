@@ -255,3 +255,14 @@ test('Pixel migration from same-timestamp universal build preserves previous and
   assert.equal(JSON.parse(fs.readFileSync(path.join(s.jl,'install.json'),'utf8')).kind,'android');
   assert.equal(JSON.parse(fs.readFileSync(path.join(s.jl,'previous','.install.json'),'utf8')).kind,'universal');
 });
+
+test('Lite release gates include GUI changes, exact ARM64 install and only current main publication', () => {
+  const workflow=fs.readFileSync(path.join(root,'.github/workflows/lite-release.yml'),'utf8');
+  assert.match(workflow,/pull_request:\n[^\n]*\x27runtime\/\*\*\x27/);
+  assert.match(workflow,/needs: \[verified-lite, pixel-arm64-smoke, windows-lite-smoke\]/);
+  assert.match(workflow,/github\.ref == 'refs\/heads\/main' && \(github\.event_name == 'push'/);
+  assert.match(workflow,/JACO_LITE_PLATFORM=android sh lite\/install\.sh/);
+  assert.match(workflow,/source commit \*: \$GITHUB_SHA/);
+  assert.match(workflow,/git ls-remote origin refs\/heads\/main/);
+  assert.match(workflow,/if: steps\.freshness\.outputs\.publish == 'true'/);
+});
