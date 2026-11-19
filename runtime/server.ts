@@ -3303,10 +3303,15 @@ const notifyPhone = async (action) => {
   // Nova's access to JACO's MCP tools (token auth). Nova calls these through its mcp-call task, so every
   // tool any connected server offers is usable in missions, whichever LLM plans.
   app.get('/api/mcp/tools', requireAuth, async (_req, res) => {
-    res.json({ success: true, servers: mcpHost.status().map((s: any) => ({ id: s.id, name: s.name, role: s.role, status: s.status, agentAccess: s.agentAccess, tools: s.tools.map((t: any) => ({ name: t.name, description: t.description.slice(0, 300), readOnly: isReadOnlyMcpTool(s.id, t), agentAllowed: t.agentAllowed === true, inputSchema: t.inputSchema })) })) });
+    res.json({ success: true, servers: mcpHost.status().map((s: any) => ({ id: s.id, name: s.name, role: s.role, status: s.status, agentAccess: s.agentAccess, transport:s.transport, error:s.error, tools: s.tools.map((t: any) => ({ name: t.name, description: t.description.slice(0, 300), readOnly: isReadOnlyMcpTool(s.id, t), agentAllowed: t.agentAllowed === true, inputSchema: t.inputSchema })) })) });
   });
   app.post('/api/mcp/start', requireAuth, async (req, res) => {
-    try { res.json({ success: true, tools: (await mcpHost.start(String(req.body?.server || ''))).map((t: any) => t.name) }); }
+    try {
+      const server=String(req.body?.server||'');
+      const def=mcpHost.servers()[server];
+      if(!def||def.validationError||def.agentAccess==='off') return res.status(409).json({success:false,error:'MCP_SERVER_NOT_AVAILABLE_FOR_AGENT',dispatchState:'NOT_DISPATCHED'});
+      res.json({ success: true, tools: (await mcpHost.start(server)).map((t: any) => t.name) });
+    }
     catch (error: any) { res.status(409).json({ success: false, error: error?.message || String(error) }); }
   });
   app.post('/api/mcp/call', requireAuth, async (req, res) => {
@@ -3319,12 +3324,12 @@ const notifyPhone = async (action) => {
       const failed = result?.isError === true;
       seerLiveWorkstream.record({ actor: 'JACO MCP host', type: 'mcp.tool.called', message: `${server}.${tool}`, verified: !failed, receipt: { server, tool, isError: failed } });
       getAuraMcpFabric.invalidate();
-      res.status(failed ? 409 : 200).json({ success: !failed, server, tool, result });
+      res.status(failed ? 409 : 200).json({ success: !failed, server, tool, result, dispatchState: failed ? 'UNKNOWN' : 'ACKNOWLEDGED' });
     } catch (error: any) {
       const message = error?.message || String(error);
       seerLiveWorkstream.record({ actor: 'JACO MCP host', type: 'mcp.tool.refused', message: `${server}.${tool}: ${message}`, verified: false, receipt: { server, tool, error: message } });
       getAuraMcpFabric.invalidate();
-      res.status(409).json({ success: false, server, tool, error: message });
+      res.status(409).json({ success: false, server, tool, error: message, dispatchState: error?.dispatchState === 'NOT_DISPATCHED' ? 'NOT_DISPATCHED' : 'UNKNOWN' });
     }
   });
 
