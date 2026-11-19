@@ -3,11 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>JACO – autonomous coding agent that proves every step</title>
-<meta name="description" content="An autonomous coding agent on your own machine and your own model. Every step leaves a receipt and every answer is checked. Free download, open source.">
+<title>JACO – open source AI coding agent, local-first</title>
+<meta name="description" content="Free, open source AI coding agent that runs on your own computer and model. Aura plans, codes and uses a browser; every step leaves a checked receipt.">
 <link rel="canonical" href="https://jacocode.com/">
 <meta name="robots" content="index, follow, max-image-preview:large, max-video-preview:-1">
 <meta name="theme-color" content="#03080d">
+<meta name="keywords" content="AI coding agent, autonomous coding agent, open source, local-first, MCP, Ollama, VS Code, verifiable agent, Aura">
 <link rel="icon" type="image/png" href="/brand/jaco-icon-192.png">
 <link rel="apple-touch-icon" href="/brand/jaco-icon-192.png">
 <link rel="stylesheet" href="/style.css?v=glass-4">
@@ -15,14 +16,14 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="JACO">
 <meta property="og:url" content="https://jacocode.com/">
-<meta property="og:title" content="JACO – watch the agent work, then check every step">
+<meta property="og:title" content="JACO – open source AI coding agent that proves every step">
 <meta property="og:description" content="An autonomous coding agent on your own machine and your own model. Every action leaves a receipt, and the final answer is checked against them.">
 <meta property="og:image" content="https://jacocode.com/replay/poster.jpg">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="720">
 <meta property="og:image:alt" content="A JACO Lite run with its receipts beside the recording">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="JACO – watch the agent work, then check every step">
+<meta name="twitter:title" content="JACO – open source AI coding agent that proves every step">
 <meta name="twitter:description" content="An autonomous coding agent on your own machine and your own model. Every action leaves a receipt.">
 <meta name="twitter:image" content="https://jacocode.com/replay/poster.jpg">
 
@@ -48,6 +49,7 @@
       "@id": "https://jacocode.com/#website",
       "url": "https://jacocode.com/",
       "name": "JACO",
+      "description": "Open source, local-first AI coding agent with receipts for every action.",
       "publisher": { "@id": "https://jacocode.com/#org" },
       "inLanguage": "en"
     },
@@ -85,6 +87,18 @@
       "publisher": { "@id": "https://jacocode.com/#org" }
     },
     {
+      "@type": "FAQPage",
+      "@id": "https://jacocode.com/#faq",
+      "mainEntity": [
+        { "@type": "Question", "name": "What is JACO?", "acceptedAnswer": { "@type": "Answer", "text": "JACO is a free, open source (MIT) AI coding agent and IDE that runs on your own computer. Its agent, Aura, plans with the model you choose, works on a separate git branch with real tools, and leaves a receipt for every action." } },
+        { "@type": "Question", "name": "Does JACO need a cloud account?", "acceptedAnswer": { "@type": "Answer", "text": "No. JACO Lite is one folder on your computer. You connect a model yourself, either a local one such as Ollama or LM Studio, or an API key from a provider. Nothing runs in the JACO cloud, and your code stays on your machine." } },
+        { "@type": "Question", "name": "Which AI models can JACO use?", "acceptedAnswer": { "@type": "Answer", "text": "Ollama and LM Studio on your own machine, or an API key for DeepSeek, Groq, OpenAI, Anthropic, Gemini, Mistral, xAI, Qwen, Together, OpenRouter or Hugging Face. JACO checks the key and keeps the model inside a contract of allowed tools, budgets and approvals." } },
+        { "@type": "Question", "name": "How does JACO prove what the agent did?", "acceptedAnswer": { "@type": "Answer", "text": "Every action is a mission step that leaves a receipt. A separate model checks the final answer claim by claim against those receipts, and an answer that does not hold is sent back. The agent does not report done until your project's own tests pass." } },
+        { "@type": "Question", "name": "Can I use JACO in VS Code?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The JACO Cognitive IDE extension opens the JACO IDE that already runs on your machine in a VS Code editor tab, using the same runtime, missions, Git and MCP connections." } },
+        { "@type": "Question", "name": "Does Aura speak?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. In the desktop IDE Aura can read her answers aloud with a local Swedish voice, Piper TTS with the Alma voice, so the spoken text stays on your computer." } }
+      ]
+    },
+    {
       "@type": "VideoObject",
       "@id": "https://jacocode.com/#replay",
       "name": "JACO Lite evidence replay",
@@ -115,6 +129,7 @@
     <a href="#vscode">VS Code</a>
     <a href="#cloud">JacoCloud</a>
     <a href="#agents">For agents</a>
+    <a href="#faq">FAQ</a>
     <a href="#open">Open source</a>
   </nav>
   <a class="signin" id="signin" href="/auth/google">Sign in with Google</a>
@@ -162,6 +177,37 @@
       <li><b>Act with real tools.</b> Files, git, MCP servers and your own browser through CDP. Each step is a mission action with a lease, not a chat message.</li>
       <li><b>Prove it.</b> Every action leaves a receipt. A separate model checks the final answer claim by claim against those receipts, and an answer that does not hold is sent back.</li>
     </ol>
+  </section>
+
+  <section id="aura" class="how" aria-labelledby="aura-title">
+    <h2 id="aura-title">What the Aura coding agent can do</h2>
+    <p class="lead">Aura is the one agent you talk to. She uses the tools on your computer, under limits you set.</p>
+    <div class="cards">
+      <article class="card">
+        <h3>Work on your code</h3>
+        <p>Reads and edits files, runs your tests and commits on her own git branch. Merging to your main branch stays a pull request with passing checks.</p>
+      </article>
+      <article class="card">
+        <h3>Use a real browser</h3>
+        <p>Opens pages, reads them and takes screenshots in a Chrome of her own through the Chrome DevTools Protocol. Clicking and typing stay limited to the sites you allow.</p>
+      </article>
+      <article class="card">
+        <h3>Repair her own setup</h3>
+        <p>When a local service is down, such as the browser bridge, she restarts only what is down and checks it again. She does not touch missions, files or remotes to do it.</p>
+      </article>
+      <article class="card">
+        <h3>Speak and listen</h3>
+        <p>Talk to her hands-free and hear the answer in a local Swedish voice (Piper TTS, Alma). The text she speaks stays on your computer.</p>
+      </article>
+      <article class="card">
+        <h3>Ask before it matters</h3>
+        <p>Publishing, sending messages, payments, sign-ins and secrets wait for your approval. Each approval covers one action, once.</p>
+      </article>
+      <article class="card">
+        <h3>Show you the work</h3>
+        <p>The workspace beside the chat renders what she builds while she builds it, with the receipts behind each step.</p>
+      </article>
+    </div>
   </section>
 
   <section id="gameboard" class="how" aria-labelledby="gameboard-title">
@@ -282,6 +328,36 @@
     </div>
   </section>
 
+  <section id="faq" class="how" aria-labelledby="faq-title">
+    <h2 id="faq-title">Frequently asked questions</h2>
+    <div class="cards">
+      <article class="card">
+        <h3>What is JACO?</h3>
+        <p>JACO is a free, open source (MIT) AI coding agent and IDE that runs on your own computer. Its agent, Aura, plans with the model you choose, works on a separate git branch with real tools, and leaves a receipt for every action.</p>
+      </article>
+      <article class="card">
+        <h3>Does JACO need a cloud account?</h3>
+        <p>No. JACO Lite is one folder on your computer. You connect a model yourself, either a local one such as Ollama or LM Studio, or an API key from a provider. Nothing runs in the JACO cloud, and your code stays on your machine.</p>
+      </article>
+      <article class="card">
+        <h3>Which AI models can JACO use?</h3>
+        <p>Ollama and LM Studio on your own machine, or an API key for DeepSeek, Groq, OpenAI, Anthropic, Gemini, Mistral, xAI, Qwen, Together, OpenRouter or Hugging Face. JACO checks the key and keeps the model inside a contract of allowed tools, budgets and approvals.</p>
+      </article>
+      <article class="card">
+        <h3>How does JACO prove what the agent did?</h3>
+        <p>Every action is a mission step that leaves a receipt. A separate model checks the final answer claim by claim against those receipts, and an answer that does not hold is sent back. The agent does not report done until your project&rsquo;s own tests pass.</p>
+      </article>
+      <article class="card">
+        <h3>Can I use JACO in VS Code?</h3>
+        <p>Yes. The JACO Cognitive IDE extension opens the JACO IDE that already runs on your machine in a VS Code editor tab, using the same runtime, missions, Git and MCP connections.</p>
+      </article>
+      <article class="card">
+        <h3>Does Aura speak?</h3>
+        <p>Yes. In the desktop IDE Aura can read her answers aloud with a local Swedish voice, Piper TTS with the Alma voice, so the spoken text stays on your computer.</p>
+      </article>
+    </div>
+  </section>
+
   <section id="open" class="open" aria-labelledby="open-title">
     <h2 id="open-title">Open source</h2>
     <p class="lead">Read the code, follow the work and try it where you already are.</p>
@@ -289,12 +365,12 @@
       <article class="card link-card">
         <h3><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</h3>
         <p>The whole runtime, the agent and the IDE, MIT licensed. Read how the receipts and checks work, open an issue or send a change.</p>
-        <p><a class="ghost" href="https://github.com/Rick84444/JACO-CODE" rel="noopener">Rick84444/JACO-CODE</a></p>
+        <p><a class="ghost" href="https://github.com/Rick84444/JACO-CODE" rel="noopener">JACO source code on GitHub</a></p>
       </article>
       <article class="card link-card">
         <h3><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8.6" cy="10" r="1.3" fill="currentColor"/><circle cx="15.4" cy="10" r="1.3" fill="currentColor"/><path d="M7.8 14.2c1 1.6 2.5 2.4 4.2 2.4s3.2-.8 4.2-2.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Hugging Face</h3>
         <p>The JACO Space on the Hugging Face Hub: local coding with Aura, MCP tools and verifiable results.</p>
-        <p><a class="ghost" href="https://huggingface.co/spaces/Rick8444/JACO-Autonomous-IDE" rel="noopener">Rick8444/JACO-Autonomous-IDE</a></p>
+        <p><a class="ghost" href="https://huggingface.co/spaces/Rick8444/JACO-Autonomous-IDE" rel="noopener">JACO on Hugging Face Spaces</a></p>
       </article>
     </div>
   </section>

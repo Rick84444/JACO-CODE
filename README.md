@@ -2,6 +2,8 @@
 
 JACO is a local-first runtime for persistent, policy-bound and verifiable agent execution.
 
+JACO is an open source (MIT) AI coding agent and IDE that runs on your own computer and model. Its agent, Aura, plans, edits code on a separate git branch, drives a browser and speaks, and every action leaves a receipt. Download and docs: [jacocode.com](https://jacocode.com/) · [Hugging Face Space](https://huggingface.co/spaces/Rick8444/JACO-Autonomous-IDE) · [VS Code extension](https://marketplace.visualstudio.com/items?itemName=jacocode.jaco-cognitive-ide).
+
 The model is replaceable. JACO owns the execution state around it: goals, tools, policy, durable mission state, verification, receipts and restart continuity.
 
 ## Product contract
