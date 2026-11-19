@@ -21,6 +21,7 @@ import { loadState, executeTask as legacyExecuteTask } from './hands-off-agent.m
 import { buildAgentCard, joinWorkplace } from './lib/workplace-session.mjs';
 import { windowsWmiRead } from './lib/windows-wmi-read.mjs';
 import { CODE_TASKS } from './lib/coding-contract.mjs';
+import { readRoutineContext, routineContextText } from './lib/routine-experience.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -186,7 +187,10 @@ Otherwise return {"complete":false,"task":{"type":"...","data":{},"expectedOutco
 
   const recentReceipts = (mission.receipts || []).slice(-8);
   const user = `MISSION\n${mission.goal}\n\nMISSION_CONTRACT\n${compact(mission.contract || null)}\n\nMISSION_METADATA\n${compact(mission.metadata || {})}\n\nCURRENT_OBSERVATION\n${compact(observation || {})}\n\nWORKPLACE_UPDATES\n${compact(workplaceUpdates.slice(-20))}\n\nRECENT_RECEIPTS\n${compact(recentReceipts)}\n\nSelect the single next verifiable step.`;
-  const proposal = extractJson(await seerCompletion({ system, user, max_tokens: 1300 }));
+  const routineHint=routineContextText(await readRoutineContext({...mission,allowedTasks:allowed},{
+    runtimeUrl:process.env.NODE_TEST_CONTEXT?'':RUNTIME_URL,token:TOKEN
+  }));
+  const proposal = extractJson(await seerCompletion({ system, user:user+routineHint, max_tokens: 1300 }));
   if (proposal?.complete === true) return { complete: true, reason: String(proposal.reason || '').slice(0, 1000) };
   const task = proposal?.task;
   if (!task || typeof task !== 'object' || !allowed.includes(task.type)) throw new Error('SEER_PLAN_TASK_NOT_ALLOWED');
