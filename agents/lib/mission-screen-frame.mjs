@@ -38,3 +38,32 @@ export function permittedFrameMessages(messages,frame,provider,env=process.env){
   }
   return [...messages,{role:'user',content:permitted?addition:note}];
 }
+
+const RAW_INPUT_TASKS=new Set(['mouse-move','mouse-click','mouse-scroll','key-press','type-text']);
+const NON_INVALIDATING=new Set(['health-check','detect-surfaces','get-cursor','desktop-windows','windows-wmi-read','repo-list','repo-read','git-status','git-diff','skill-load']);
+export function observedInputBinding(task,mission,{now=Date.now(),maxAgeMs=30000}={}){
+  if(!RAW_INPUT_TASKS.has(task?.type))return null;
+  const data=task.data||{},hwnd=data.expectedHwnd;
+  if(!Number.isSafeInteger(hwnd)||hwnd<=0)throw Error('EXPECTED_HWND_REQUIRED');
+  const pointer=task.type.startsWith('mouse-');
+  if(pointer&&(!Number.isSafeInteger(data.x)||!Number.isSafeInteger(data.y)))throw Error('INVALID_INPUT_COORDINATES');
+  if(data.measureEntropy!==undefined&&(task.type!=='mouse-click'||typeof data.measureEntropy!=='boolean'))throw Error('INVALID_ENTROPY_OPTION');
+  for(const r of [...(mission?.receipts||[])].reverse()){
+    if(r.type==='screenshot'||r.type==='desktop-observe'){
+      const age=now-Date.parse(r.at||'');
+      const o=r.type==='screenshot'?r.result?.perception?.inputWindow:r.result?.observation?.blocked?null:r.result?.observation?.window;
+      if(!r.ok||!r.verified||r.outcomeUnknown||!Number.isFinite(age)||age<0||age>maxAgeMs||!o||o.hwnd!==hwnd||!Number.isSafeInteger(o.processId)||o.processId<=0)break;
+      const rect=o.rect;
+      if(!rect||![rect.x,rect.y,rect.width,rect.height].every(Number.isSafeInteger)||rect.width<=0||rect.height<=0)break;
+      if(pointer){
+        if(r.type!=='screenshot'||!r.result?.imageSha256)break;
+        const capture=r.result.perception?.capture;
+        const inside=(p)=>p&&data.x>=p.x&&data.y>=p.y&&data.x<p.x+p.width&&data.y<p.y+p.height;
+        if(!inside(rect)||!inside(capture))throw Error('INPUT_POINT_OUTSIDE_OBSERVED_REGION');
+      }
+      return {hwnd,processId:o.processId,rect:{...rect}};
+    }
+    if(!NON_INVALIDATING.has(r.type))break;
+  }
+  throw Error('FRESH_BOUND_DESKTOP_OBSERVATION_REQUIRED');
+}
