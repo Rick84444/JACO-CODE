@@ -117,7 +117,7 @@ export function archiveCommercialOutcome({mission,nova,knowledge}) {
 }
 
 // Durable mission rows are the retry source, not the unrelated learned marker.
-export function archiveCommercialBatch({bus,nova,knowledge,after='',limit=50,onError=()=>{}}) {
+export function archiveCommercialBatch({bus,nova,knowledge,after='',limit=50,onError=/** @type {(error: unknown, id: string) => void} */ (()=>{})}) {
   const rows=bus.listTerminalMissionsBySource(COMMERCIAL_SOURCE,after,limit);
   for(const base of rows){
     try { archiveCommercialOutcome({mission:nova.get(base.id),nova,knowledge}); }
