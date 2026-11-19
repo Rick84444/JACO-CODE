@@ -93,3 +93,13 @@ export function archiveCommercialOutcome({mission,nova,knowledge}) {
     metrics:{receipts:receipts.length,verifiedReceipts:receipts.filter(r=>r.ok===true&&r.verified===true).length},
     implementation:{missionId:mission.id,status:mission.status,applications:applications.slice(-20),receiptIds:receipts.map(r=>String(r.actionId)).slice(-100)}},'commercial-outcome');
 }
+
+// Durable mission rows are the retry source, not the unrelated learned marker.
+export function archiveCommercialBatch({bus,nova,knowledge,after='',limit=50,onError=()=>{}}) {
+  const rows=bus.listTerminalMissionsBySource(COMMERCIAL_SOURCE,after,limit);
+  for(const base of rows){
+    try { archiveCommercialOutcome({mission:nova.get(base.id),nova,knowledge}); }
+    catch(error){onError(error,base.id);}
+  }
+  return rows.length>=limit?rows[rows.length-1].id:'';
+}

@@ -96,7 +96,7 @@ import { createJacoLinkHost } from './src/server/connected/jacoLinkHost.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
 import { readAutonomousCycleBoard } from "./src/server/connected/autonomousCycleBoard.mjs";
 import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec, fetchSkillFromUrl } from "../agents/lib/skills.mjs";
-import { COMMERCIAL_CLOCK, commercialAuthorized, reconcileCommercialClock, archiveCommercialOutcome } from "./src/server/autonomy/commercialClock.mjs";
+import { COMMERCIAL_CLOCK, commercialAuthorized, reconcileCommercialClock, archiveCommercialBatch } from "./src/server/autonomy/commercialClock.mjs";
 import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy, policyFilePath, CLAIM_RESUME_NOTE } from "../agents/lib/approval-policy.mjs";
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
 import { taskCatalog, ALWAYS_ASK } from './src/server/capabilities/capabilityPolicy.mjs';
@@ -4378,10 +4378,14 @@ const notifyPhone = async (action) => {
     }
   };
   let learningBusy = false;
+  let commercialArchiveCursor = '';
   const learnTick = async () => {
     if (learningBusy) return;
     learningBusy = true;
     try {
+      try {
+        commercialArchiveCursor = archiveCommercialBatch({bus:connectedRuntime.bus,nova:connectedRuntime.novaMissions,knowledge:continuumSurface.runtime.knowledge,after:commercialArchiveCursor,onError:(error: any,id: string)=>console.warn('[commercial memory] archive retry:',id,error?.message||error)});
+      } catch (error: any) { console.warn('[commercial memory] batch failed:',error?.message||error); }
       const events = connectedRuntime.bus.listEvents(1000);
       // Missions read before 2026-10-03 20:30 carry a NOVA_LEARNED bus event; later ones are kept in the store.
       const learned = new Set(events.filter((e: any) => e.type === 'NOVA_LEARNED').map((e: any) => e.missionId));
@@ -4391,7 +4395,6 @@ const notifyPhone = async (action) => {
         try { mission = connectedRuntime.novaMissions.get(base.id); } catch { skillLearning.markLearned(base.id); continue; }
         const check = events.find((e: any) => e.missionId === base.id && e.type === 'NOVA_CLAIM_CHECK')?.payload || null;
         const lessons = lessonsFrom(mission, check);
-        try { archiveCommercialOutcome({mission,nova:connectedRuntime.novaMissions,knowledge:continuumSurface.runtime.knowledge}); } catch (error: any) { console.warn('[commercial memory] archive failed:', error?.message || error); }
         const reflection=skillLearning.recordOutcome(mission);
         connectedRuntime.bus.event('NOVA_REFLECTION',{missionId:mission.id,payload:{schema:reflection.schema,verificationStatus:reflection.verificationStatus,worked:reflection.worked,failed:reflection.failed,evidence:reflection.evidence}});
         const made: string[] = [];

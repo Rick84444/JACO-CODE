@@ -41,6 +41,19 @@ try {
   assert.deepEqual(recovered.get(falsificationSet.id).candidates[0].terminalEvidenceRefs,[terminal.id]);
   assert.deepEqual(recovered.get(selectionSet.id).candidates[0].terminalEvidenceRefs,[winnerProof.id]);
 
+  for(const factor of [1,1000]){
+    const set=hypotheses.createSet({problem:'unit invariant choice',criteria:[{name:'success',weight:4},{name:'duration',weight:1,direction:'min'},{name:'ignored',weight:0}]});
+    const a=hypotheses.addCandidate(set.id,{label:'reliable'});
+    const b=hypotheses.addCandidate(set.id,{label:'fast'});
+    const partial=hypotheses.addCandidate(set.id,{label:'missing metric'});
+    const speculative=hypotheses.addCandidate(set.id,{label:'unverified best'});
+    for(const [candidate,metrics,ref] of [[a,{success:0.99,duration:800*factor},winnerProof],[b,{success:0.85,duration:100*factor},winnerProof],[partial,{success:1},winnerProof],[speculative,{success:1,duration:1},pendingForWinner]]){
+      hypotheses.evaluate(set.id,candidate.id,{metrics,evidenceRefs:[ref.id]});
+    }
+    assert.equal(hypotheses.rank(set.id).some(x=>x.id===partial.id),false);
+    assert.throws(()=>hypotheses.selectWinner(set.id,partial.id),/not eligible/);
+    assert.equal(hypotheses.selectWinner(set.id).winnerId,a.id);
+  }
   console.log('HYPOTHESIS_TERMINAL_EVIDENCE: PASS');
 } finally {
   fs.rmSync(root,{recursive:true,force:true});

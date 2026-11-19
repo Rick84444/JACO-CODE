@@ -1,0 +1,3 @@
+# Harden autonomous cognitive continuity
+
+Preserve Aura's existing execution owners and broad operator-authorized work. Fix restart authority expansion, incomparable hypothesis metrics, premature knowledge retrieval truncation and lost commercial archive retries. No new approval layer or scheduler. Acceptance: active signed grants survive restart unchanged; expired grants cannot renew implicitly; candidate scoring is unit-invariant; incomplete candidates cannot win; relevant knowledge beyond the first 1,000 items is found; a failed archive remains retryable without preventing other missions from learning.
