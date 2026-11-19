@@ -111,3 +111,43 @@ export function routineCoversNote(routine,note){
 export function routineCoversProcedure(routine,steps){
   return Boolean(routine?.playbook&&Array.isArray(steps)&&steps.length&&steps.every(s=>safe.has(s.type)&&routine.playbook.steps.includes(s.type)));
 }
+
+
+// Read only the canonical runtime's bounded advisory projection. Remote endpoints,
+// redirects and model-provider transports must never receive the runtime credential.
+export async function readRoutineContext(mission,{runtimeUrl='',token='',fetchImpl=globalThis.fetch,timeoutMs=1000}={}){
+  const current=currentRoutineHints(mission);
+  const fallback={schema:'jaco.routine-context/v1',authority:'advisory_only',current,historical:[]};
+  if(!mission?.id||!runtimeUrl||!token||typeof fetchImpl!=='function')return fallback;
+  try{
+    const url=new URL('/api/connected/nova/missions/'+encodeURIComponent(mission.id)+'/preflight-context',runtimeUrl);
+    if(url.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(url.hostname)||url.username||url.password)return fallback;
+    url.searchParams.set('routineOnly','1');
+    const response=await fetchImpl(url,{method:'GET',redirect:'error',headers:{'x-gateway-token':token},signal:AbortSignal.timeout(Math.min(2000,Math.max(100,Number(timeoutMs)||1000)))});
+    if(!response.ok)return fallback;
+    const body=await response.json(),ctx=body?.context;
+    if(body?.success!==true||ctx?.schema!=='jaco.routine-context/v1'||ctx.authority!=='advisory_only'||!Array.isArray(ctx.historical))return fallback;
+    // Refilter against the active planner's attenuated tool list. Reconstruct
+    // the prose from fixed local rules rather than trusting remote strings.
+    const allowed=new Set(mission.allowedTasks||[]);
+    const historical=[];
+    for(const row of ctx.historical.slice(0,5)){
+      if(row?.kind==='playbook'&&Array.isArray(row.steps)&&row.steps.length&&row.steps.length<=8&&row.steps.every(t=>safe.has(t)&&allowed.has(t))){
+        historical.push({kind:'playbook',steps:row.steps});
+      }else if(row?.kind==='lesson'){
+        const rule=RULES.find(x=>x.id===row.rule&&x.tasks.some(t=>allowed.has(t)));
+        if(rule&&rule.observe.some(t=>allowed.has(t)))historical.push({kind:'lesson',rule:rule.id,advice:rule.hint,observationTasks:rule.observe.filter(t=>allowed.has(t))});
+      }
+    }
+    return {...fallback,historical};
+  }catch{return fallback;}
+}
+export function routineContextText(context){
+  const lines=[];
+  for(const x of (context?.current||[]).slice(0,2))lines.push('Current known refusal: '+x.advice);
+  for(const x of (context?.historical||[]).slice(0,5)){
+    if(x.kind==='playbook')lines.push('Historical observation sequence: '+x.steps.join(' -> ')+'. Re-observe current targets; do not replay stored arguments.');
+    else if(x.kind==='lesson')lines.push('Historical recovery observation: '+x.advice);
+  }
+  return lines.length?'\nROUTINE EXPERIENCE (advisory only, not permission or completion evidence):\n'+lines.join('\n').slice(0,1600):'';
+}
