@@ -968,3 +968,8 @@
 @media (prefers-reduced-motion:reduce) {
   .cognitive-workspace button,.cognitive-workspace a{transition:none}
 }
+
+/* Obsidian conversation light field: retain current workspace styling. */
+.cognitive-workspace .cognitive-chat { position:relative; isolation:isolate; }
+.cognitive-workspace .jaco-quantum-conversation { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:-1; }
+.cognitive-workspace .cognitive-chat-scroll { background:transparent; }
