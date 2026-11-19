@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { workspaceReplyText } from '../lib/workspaceActions.mjs';
+import { speechParts } from '../lib/speechParts.mjs';
 
 export interface AuraPortraitChat {
   input: string;
@@ -105,14 +106,16 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const text = workspaceReplyText(latestReply.content);
     // Aura's own female neural voice (the same engine as her voice notes), played through an audio element so
     // the rig's formant tracker drives her mouth from the real sound. The browser voice is only a fallback.
+    // Spoken sentence by sentence: the next part is synthesized while the current one plays, so Aura starts
+    // talking after the first sentence instead of after the whole reply.
     const controller = new AbortController();
     const audio = new Audio();
-    let url = '';
+    const urls: string[] = [];
     const handle = {
       cancel: () => {
         controller.abort();
         audio.pause();
-        if (url) URL.revokeObjectURL(url);
+        urls.forEach(u => URL.revokeObjectURL(u));
         rig.current?.setState({ audioSource: null });
       },
     };
@@ -121,7 +124,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       utterance.current = null;
       setSpeaking(false);
       rig.current?.setState({ audioSource: null });
-      if (url) URL.revokeObjectURL(url);
+      urls.forEach(u => URL.revokeObjectURL(u));
     };
     const browserFallback = () => {
       if (utterance.current !== handle || !synthesis) { setVoiceError(true); finish(); return; }
@@ -137,31 +140,51 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       try { synthesis.speak(reply); } catch { setVoiceError(true); finish(); }
     };
     utterance.current = handle;
-    void fetch('/api/aura/voice/speak', {
+    const parts = speechParts(text);
+    const synthesize = (part: string) => fetch('/api/aura/voice/speak', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-      body: JSON.stringify({ text, lang: locale }),
+      body: JSON.stringify({ text: part, lang: locale }),
     }).then(async response => {
       if (!response.ok) throw new Error('VOICE_UNAVAILABLE');
-      const blob = await response.blob();
-      if (utterance.current !== handle) return;
-      url = URL.createObjectURL(blob);
-      audio.src = url;
-      audio.onplay = () => {
-        if (utterance.current !== handle) return;
-        setSpeaking(true);
-        // Lip sync listens to a copy of the stream; the audio element itself plays straight to the speakers, so a
-        // suspended Web Audio context can never silence Aura.
-        const tap = (audio as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream?.();
-        rig.current?.setState({ audioSource: tap ?? null, speaking: true });
-      };
-      audio.onended = finish;
-      audio.onerror = () => { if (utterance.current === handle) { setVoiceError(true); finish(); } };
-      await audio.play();
-    }).catch(error => {
-      if (controller.signal.aborted || utterance.current !== handle) return;
-      void error;
-      browserFallback();
+      const url = URL.createObjectURL(await response.blob());
+      urls.push(url);
+      return url;
     });
+    // Lip sync listens to a copy of the stream; the audio element itself plays straight to the speakers, so a
+    // suspended Web Audio context can never silence Aura.
+    audio.onplay = () => {
+      if (utterance.current !== handle) return;
+      setSpeaking(true);
+      const tap = (audio as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream?.();
+      rig.current?.setState({ audioSource: tap ?? null, speaking: true });
+    };
+    const playPart = (url: string) => new Promise<void>((resolve, reject) => {
+      audio.onended = () => resolve();
+      audio.onerror = () => reject(new Error('VOICE_PLAYBACK_FAILED'));
+      audio.src = url;
+      audio.play().catch(reject);
+    });
+    void (async () => {
+      let started = false;
+      if (!parts.length) { finish(); return; }
+      try {
+        let next = synthesize(parts[0]);
+        for (let index = 0; index < parts.length; index++) {
+          const url = await next;
+          if (utterance.current !== handle) return;
+          // Prefetch the following sentence while this one plays.
+          if (index + 1 < parts.length) { next = synthesize(parts[index + 1]); next.catch(() => {}); }
+          await playPart(url);
+          started = true;
+          if (utterance.current !== handle) return;
+        }
+        finish();
+      } catch {
+        if (controller.signal.aborted || utterance.current !== handle) return;
+        // Only fall back before Aura has spoken; switching voice mid-reply would be worse than stopping.
+        if (!started) browserFallback(); else { setVoiceError(true); finish(); }
+      }
+    })();
   }, [latestReply, locale, readReplies, synthesis, chat?.storageReady]);
 
   function toggleDictation() {

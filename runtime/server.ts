@@ -76,6 +76,7 @@ import { auraAlwaysAnswers, answerInOrder, answerWithin, auraChatDeadlines, aura
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { WORKSPACE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
 import { createStackRepair } from "./src/server/connected/stackRepair.mjs";
+import { createPiperVoice } from "./src/server/connected/piperVoice.mjs";
 const repairStack = createStackRepair();
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier, synthesize as synthesizeVoice } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
@@ -222,6 +223,10 @@ const mcpHost = new StdioMcpHost({
   runtimeRoot: RELEASE_ROOT,
 });
 process.on('exit', () => mcpHost.stopAll());
+// Aura's voice (Piper Alma) stays loaded in one worker; loaded at start so her first sentence is not late.
+const piperVoice = createPiperVoice({ workerScript: path.join(RELEASE_ROOT, 'tools', 'piper-voice-worker.py') });
+if (piperVoice.available()) void piperVoice.warm();
+process.on('exit', () => piperVoice.stop());
 // JACO skills (SKILL.md). The operator's repository first, so a skill written there is usable without a
 // runtime redeploy; then this checkout; then skills kept in the runtime state.
 const skillRoots = () => [...new Set([
@@ -938,27 +943,14 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
     const lang = typeof req.body?.lang === 'string' && /^[a-z]{2}-[A-Z]{2}$/.test(req.body.lang) ? req.body.lang : 'sv-SE';
     // Operator 2026-11-19: Aura's voice is Piper TTS with Alma (sv_SE-alma-medium, CC-BY-4.0). It runs on this
     // computer, so nothing she says leaves the machine. The neural edge voice is only the fallback when Piper fails.
-    const model = process.env.JACO_PIPER_MODEL || path.join(os.homedir(), '.jaco', 'voice', 'piper', 'sv_SE-alma-medium.onnx');
     let piperError = 'PIPER_MODEL_MISSING';
-    if (lang.startsWith('sv') && fs.existsSync(model)) {
-      const out = path.join(os.tmpdir(), `jaco-aura-voice-${process.pid}-${Date.now()}.wav`);
+    if (lang.startsWith('sv') && piperVoice.available()) {
       try {
-        await new Promise<void>((resolve, reject) => {
-          const python = process.env.JACO_VOICE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
-          const child = spawn(python, ['-m', 'piper', '-m', model, '-f', out], { windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'] });
-          const timer = setTimeout(() => { child.kill(); reject(new Error('PIPER_TIMEOUT')); }, 60000);
-          child.on('error', err => { clearTimeout(timer); reject(err); });
-          child.on('close', code => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`PIPER_EXIT_${code}`)); });
-          child.stdin.end(text.slice(0, 6000));
-        });
-        if (fs.existsSync(out) && fs.statSync(out).size > 200) {
-          res.setHeader('Cache-Control', 'no-store');
-          res.setHeader('X-Jaco-Voice', 'piper-alma');
-          return res.type('audio/wav').send(fs.readFileSync(out));
-        }
-        piperError = 'PIPER_EMPTY_OUTPUT';
+        const bytes = await piperVoice.synthesize(text);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Jaco-Voice', 'piper-alma');
+        return res.type('audio/wav').send(bytes);
       } catch (error: any) { piperError = String(error?.message || 'PIPER_FAILED').slice(0, 80); }
-      finally { fs.rmSync(out, { force: true }); }
     }
     try {
       const env = { ...process.env, JACO_VOICE_ENGINE: process.env.JACO_VOICE_ENGINE || 'edge', JACO_VOICE_LANG: process.env.JACO_VOICE_LANG || lang };
