@@ -66,3 +66,13 @@ test('a mission worktree borrows the project packages and the link is removed be
   assert.equal(fs.existsSync(path.join(target, 'node_modules')), false);
   assert.ok(fs.existsSync(path.join(project, 'node_modules', 'dotenv', 'index.js')), 'the project keeps its packages');
 });
+
+test('Aura drives her own browser through the loopback bridge; remote HTTP MCP writes stay refused', async () => {
+  const { agentRefusal, defaultServers } = await import('../../runtime/src/server/mcp/stdioMcpHost.mjs');
+  const browser = defaultServers({ repoRoot: process.cwd(), runtimeRoot: path.join(process.cwd(), 'runtime') }).browser;
+  assert.equal(browser.transport, 'http');
+  assert.match(browser.url, /^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+  assert.equal(agentRefusal({ id: 'browser', ...browser }, { name: 'nova_navigate', readOnly: false }), null);
+  assert.equal(agentRefusal({ id: 'remote', transport: 'http', url: 'https://example.com/mcp', agentAccess: 'write' }, { name: 'do', readOnly: false }), 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY');
+  assert.equal(agentRefusal({ id: 'x', transport: 'http', url: 'https://example.com/mcp', agentAccess: 'write', localBridge: true }, { name: 'do', readOnly: false }), 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY', 'the flag alone does not trust a non-loopback url');
+});

@@ -15,7 +15,9 @@ export const AURA_RUN_MODES = Object.freeze({
   }),
   autonomous: Object.freeze({
     id: 'autonomous',
-    interactionMode: 'question', // Chat remains read-only even while durable work runs.
+    // Operator 2026-11-19: in Full Autonomous Aura acts in the conversation too (browser, local tools, missions).
+    // Her mandate, the operator-action guard (publish, send, pay, sign in, secrets) and budgets still decide.
+    interactionMode: 'action',
     executionMode: 'autonomous',
     createsMission: true,
     scope: 'durable mission via the canonical Aura runtime under existing budgets, approvals and tools',
