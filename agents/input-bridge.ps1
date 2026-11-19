@@ -288,8 +288,7 @@ function Do-MouseMove($x, $y) {
 }
 
 function Do-MouseClick($x, $y, $btn, $dbl) {
-  Do-MouseMove $x $y
-  Start-Sleep -Milliseconds 80
+  # Cursor is already positioned and checked; SendChecked revalidates it immediately.
   switch ($btn) {
     "right"  { [WinInput]::MouseClick([WinInput]::MOUSEEVENTF_RIGHTDOWN,  [WinInput]::MOUSEEVENTF_RIGHTUP) }
     "middle" { [WinInput]::MouseClick([WinInput]::MOUSEEVENTF_MIDDLEDOWN, [WinInput]::MOUSEEVENTF_MIDDLEUP) }
@@ -445,6 +444,11 @@ if($mutating){
   try {
     $point=$Op -in @('mouse_move','mouse_click','mouse_scroll')
     [WinInput]::Configure($ExpectedHwnd,$ExpectedPid,$ExpectedLeft,$ExpectedTop,$ExpectedWidth,$ExpectedHeight,$point,$X,$Y)
+    if($Op -eq 'mouse_click'){
+      if($Button -notin @('left','right','middle')){throw 'INVALID_MOUSE_BUTTON'}
+      Do-MouseMove $X $Y
+      Start-Sleep -Milliseconds 80
+    }
     $before=$null
     if($MeasureEntropy -and $Op -eq 'mouse_click'){
       try{$before=Get-GrayRoi $X $Y}catch{$visual=[ordered]@{signal='UNAVAILABLE'}}
@@ -466,9 +470,9 @@ if($mutating){
         $visual=Measure-Roi $before $after
       }catch{$visual=[ordered]@{signal='UNAVAILABLE_OR_TARGET_CHANGED'}}
     }
-    [ordered]@{ok=$true;verified=$true;outcomeUnknown=$false;postconditionVerified=$false;focusDriftedDuringDispatch=[WinInput]::FocusDrifted;evidence=$(if($Op -eq 'mouse_move'){'cursor-position-observed'}else{'input-dispatch-only'});visualObservation=$visual;telemetry=[ordered]@{hwnd=$ExpectedHwnd;pid=$ExpectedPid;postDispatchHwnd=[WinInput]::PostDispatchHwnd}} | ConvertTo-Json -Depth 5 -Compress
+    [ordered]@{ok=$true;verified=$true;outcomeUnknown=$false;postconditionVerified=$false;focusDriftedDuringDispatch=[WinInput]::FocusDrifted;evidence=$(if($Op -eq 'mouse_move'){'cursor-position-observed'}else{'input-dispatch-only'});visualObservation=$visual;telemetry=[ordered]@{hwnd=$ExpectedHwnd;pid=$ExpectedPid;postDispatchHwnd=[WinInput]::PostDispatchHwnd;dispatchAttempted=[WinInput]::DispatchAttempted;cursorMoveAttempted=[WinInput]::CursorChanged}} | ConvertTo-Json -Depth 5 -Compress
   } catch {
-    $unknown=[WinInput]::DispatchAttempted -or [WinInput]::CursorChanged
+    $unknown=[WinInput]::DispatchAttempted -or ($Op -eq 'mouse_move' -and [WinInput]::CursorChanged)
     # Do not leak typed text or arbitrary exception content in the receipt.
     $message=$_.Exception.GetBaseException().Message
     $errorCode=if($message -match '^[A-Z][A-Z0-9_]{2,80}$'){$message}else{'WINDOWS_INPUT_GUARD_FAILED'}
