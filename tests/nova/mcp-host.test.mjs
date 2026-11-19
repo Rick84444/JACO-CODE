@@ -188,6 +188,9 @@ test('a server that exited between calls is started again and the call succeeds'
     await host.start('fake');
     host.clients.get('fake').proc.kill();
     await new Promise(r => setTimeout(r, 300));
+    const stopped=host.status().find(s=>s.id==='fake');
+    assert.notEqual(stopped.status,'READY');
+    assert.deepEqual(stopped.tools,[],'old descriptors must not look ready');
     assert.equal((await host.call('fake', 'echo', { text: 'again' })).content[0].text, 'echo:again');
   } finally { host.stopAll(); }
 });
@@ -292,4 +295,33 @@ test('Lite offers the shell server on every host where its bundle exists', async
       assert.equal(servers.shell.env.JACO_SHELL_WORKSPACE, dir);
     }
   } finally { if (before === undefined) delete process.env.JACO_LITE; else process.env.JACO_LITE = before; }
+});
+
+test('partial MCP discovery preserves ready tools and bounds slow connector waits',async()=>{
+ const {mcpCatalogTools}=await import('../../agents/lib/mcp-tools.mjs');
+ resetMcpCatalog();let starts=0;
+ const ready={id:'fast',status:'READY',agentAccess:'read',tools:[{name:'read',description:'Read',readOnly:true,agentAllowed:true}]};
+ const slow={id:'slow',status:'STOPPED',transport:'stdio',agentAccess:'read',tools:[]};
+ const remote={id:'remote',transport:'http',status:'STOPPED',agentAccess:'read',tools:[]};
+ const stopped={id:'stale',status:'FAILED',agentAccess:'read',tools:[{name:'old',readOnly:true}]};
+ const disabled={id:'off',status:'READY',agentAccess:'off',tools:ready.tools};
+ const fetchImpl=async(url)=>{
+  if(url.endsWith('/api/mcp/start')){starts++;return new Promise(()=>{});}
+  if(url.endsWith('/api/tool-notes'))return Response.json({notes:{}});
+  return Response.json({success:true,servers:[ready,slow,remote,stopped,disabled]});
+ };
+ const begin=Date.now();const catalog=await mcpCatalog({runtimeUrl:'http://rt',env:{},fetchImpl,discoveryWaitMs:100});
+ assert.ok(Date.now()-begin<2000);assert.equal(starts,1);assert.equal(catalog.find(s=>s.server==='slow').unavailable,true);
+ assert.deepEqual(mcpCatalogTools().map(t=>t.server),['fast']);
+ resetMcpCatalog();
+});
+
+test('revoked access during MCP handshake refuses dispatch and stale descriptors',async()=>{
+ const cfg=path.join(dir,'race-access.json');fs.writeFileSync(cfg,JSON.stringify({servers:{fake:{command:process.execPath,args:[serverFile],agentAccess:'read'}}}));
+ const host=new StdioMcpHost({configFile:cfg,repoRoot:dir,runtimeRoot:dir});
+ try{
+  const c=host.client('fake');const start=c.start.bind(c);
+  c.start=async()=>{await start();host.setAccess('fake',{agentAccess:'off'});return c;};
+  await assert.rejects(host.call('fake','echo',{}, {actor:'agent',readOnly:true}),e=>/MCP_AGENT_ACCESS_OFF/.test(e.message)&&e.dispatchState==='NOT_DISPATCHED');
+ }finally{host.stopAll();}
 });
