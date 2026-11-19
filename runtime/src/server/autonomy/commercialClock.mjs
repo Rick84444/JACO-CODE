@@ -27,12 +27,12 @@ export function commercialTaskAllowed(task) {
 }
 export function seedCommercialKnowledge(knowledge) {
   const id = 'commercial-opportunity-policy-v1';
-  try { return knowledge.get(id); } catch (e) { if(!String(e.message).includes('not found')) throw e; }
+  try { const existing=knowledge.get(id); if(existing.implementation?.version===2)return existing; } catch (e) { if(!String(e.message).includes('not found')) throw e; }
   return knowledge.put({id,kind:'commercial-procedure',purpose:'Find funded, lawful, profitable work for Aura within an explicitly signed commercial clock.',
     reusable:true,confidence:0,verificationStatus:'UNVERIFIED',dependencies:['RevenueOpportunityEngine','EconomicGovernor','Nova','external-agent-employment'],
-    reasoningSummary:'Policy, not proven profitability. Recheck funding, fees, AI permission, scope, deadlines and cost; compare free alternatives. Work from actual payout evidence, never credit listing reward or proposal.',
+    reasoningSummary:'Policy, not proven profitability. Start with existing means and affordable loss; check demand, free alternatives, AI permission, assignment, fees, downside, time to cash and capacity. Compare estimated contribution per total hour and prioritize funded obligations. Verify delivery and payment separately; never credit listing rewards, proposals or provider aggregates.',
     failureModes:['unfunded application','ambiguous write','fees exceed reward','expired mandate','unverified payout'],
-    implementation:{skill:COMMERCIAL_SKILL,source:COMMERCIAL_SOURCE}},'operator-commercial-policy');
+    implementation:{skill:COMMERCIAL_SKILL,source:COMMERCIAL_SOURCE,version:2}},'operator-commercial-policy');
 }
 // Versioned procedural knowledge: not verified market outcomes or a capability grant.
 export function seedCommercialOperatorKnowledge(knowledge) {
@@ -63,7 +63,10 @@ export function reconcileCommercialClock({mandates,operator,bus,nova,knowledge,c
     if(!detail.hasUncertainOutcome && !detail.activeTask && !detail.pendingOperatorAction && !detail.spendApprovalPending) nova.requestCancel(old.id,'Previous commercial clock expired');
   }
   const unresolved=history.filter(x=>x.metadata?.mandateId===m.id && !['DONE','CANCELLED'].includes(x.status));
-  if(unresolved.length) return {state:'OUTSTANDING',missionId:unresolved[0].id};
+  const active=unresolved.find(x=>x.status==='ACTIVE');
+  if(active) return {state:'OUTSTANDING',missionId:active.id};
+  // A pending decision must not halt independent read-only commercial work or grant new writes.
+  const readOnly=unresolved.length>0;
   if(nova.current()) return {state:'OTHER_WORK_ACTIVE'};
   const recent=history.find(x=>x.metadata?.mandateId===m.id);
   if(recent && now-Date.parse(recent.createdAt)<HOUR) return {state:'COOLDOWN'};
@@ -82,16 +85,35 @@ export function archiveCommercialOutcome({mission,nova,knowledge}) {
   const id='commercial-outcome-'+mission.id;
   try { knowledge.get(id); return null; } catch(e){if(!String(e.message).includes('not found')) throw e;}
   const receipts=nova.evidenceReceipts(mission.id);
-  const applications=[];
+  const applications=[],quotes=[],deliveries=[];
   const idPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  for(const r of receipts){if(r.ok!==true||r.verified!==true||r.truncated||r.server!=='agentgigs'||!['job_status','list_applications','apply'].includes(String(r.tool).replace(/^agentgigs\./,'')))continue;
-    try{const x=JSON.parse(r.output);const rows=Array.isArray(x.applications)?x.applications:[{job_id:x.job_id||x.job?.id,status:x.application?.status,proposed_price:x.application?.proposed_price,job_status:x.job?.status}];for(const row of rows){if(!idPattern.test(row?.job_id||''))continue;const status=['pending','accepted','funded','rejected'].includes(row.status)?row.status:'unknown';applications.push({job_id:row.job_id,status,proposed_price:Number.isSafeInteger(row.proposed_price)?row.proposed_price:null});}}catch{/* transport receipt is not proof of a marketplace observation */}
+  for(const r of receipts){
+    const result=r.result||r; // Nova's actual receipt envelope, legacy top-level accepted for older records.
+    if(r.ok!==true||r.verified!==true||result.truncated||result.server!=='agentgigs')continue;
+    const name=String(result.tool).replace(/^agentgigs\./,'');
+    if(r.input?.server && (r.input.server!==result.server || String(r.input.tool).replace(/^agentgigs\./,'')!==name))continue;
+    try {
+      const x=JSON.parse(result.output);
+      if(['job_status','list_applications','apply'].includes(name)){
+        const rows=Array.isArray(x.applications)?x.applications:[{job_id:x.job_id||x.job?.id,status:x.application?.status,proposed_price:x.application?.proposed_price,job_status:x.job?.status}];
+        for(const row of rows){if(!idPattern.test(row?.job_id||''))continue;
+          const status=['pending','accepted','funded','rejected'].includes(row.status)?row.status:'unknown';
+          applications.push({job_id:row.job_id,status,proposed_price:Number.isSafeInteger(row.proposed_price)?row.proposed_price:null});
+        }
+      }
+      if(name==='quote_economics'&&x.settlement_verified===false&&Number.isSafeInteger(x.expected_contribution_cents)&&Number.isSafeInteger(x.expected_cents_per_hour)&&Number.isSafeInteger(x.price_cents)&&x.price_cents>0){
+        quotes.push({price_cents:x.price_cents,expected_contribution_cents:x.expected_contribution_cents,expected_cents_per_hour:x.expected_cents_per_hour,settled:false});
+      }
+      if(name==='deliver_staged_text'&&idPattern.test(x.job_id||'')&&x.submitted===true&&x.settlement_verified===false&&['delivered','pending_proof','completed'].includes(x.status)){
+        deliveries.push({job_id:x.job_id,status:x.status,settled:false});
+      }
+    }catch{/* transport receipt is not proof of marketplace or payment truth */}
   }
   return knowledge.put({id,kind:'commercial-outcome',purpose:'Observed commercial mission outcome '+mission.status,
     confidence:0,verificationStatus:'UNVERIFIED',reusable:false,usedIn:[mission.id],
-    reasoningSummary:'Mission state and receipt counts only; settlement requires independent provider evidence.',
+    reasoningSummary:'Mission state, receipt-indexed proposals, forecast contribution and observed delivery metadata only; never settled revenue. Independent provider evidence is required.',
     metrics:{receipts:receipts.length,verifiedReceipts:receipts.filter(r=>r.ok===true&&r.verified===true).length},
-    implementation:{missionId:mission.id,status:mission.status,applications:applications.slice(-20),receiptIds:receipts.map(r=>String(r.actionId)).slice(-100)}},'commercial-outcome');
+    implementation:{missionId:mission.id,status:mission.status,applications:applications.slice(-20),quotes:quotes.slice(-10),deliveries:deliveries.slice(-10),receiptIds:receipts.map(r=>String(r.actionId)).slice(-100)}},'commercial-outcome');
 }
 
 // Durable mission rows are the retry source, not the unrelated learned marker.

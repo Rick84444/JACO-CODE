@@ -1,0 +1,2 @@
+# Design
+Reuse AgentGigs adapter; immutable job-scoped UTF-8 artifact; external exact-action review; durable one-attempt lock and provider readback. No arbitrary file read, payment or external URL. Provider data is not settlement. Research: https://www.darden.virginia.edu/effectuation ; https://www.nsf.gov/funding/information/faq-i-corpstm-team-solicitation ; https://www.agentgigs.io/docs/api. Falsifiers: unfunded delivery, repeat mutation, false payment, invalid artifact escaping scope. Binary files and revisions not supported.
