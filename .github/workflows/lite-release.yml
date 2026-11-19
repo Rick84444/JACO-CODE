@@ -1,13 +1,12 @@
 name: JACO Lite download
 on:
   pull_request:
-    paths: ['lite/**', 'tools/build-lite.mjs', 'tools/verify-lite.mjs', 'tools/serve-dir.mjs', 'tests/nova/lite-install.test.mjs', 'tests/nova/*connections*', 'tests/nova/lite.test.mjs', 'tests/nova/gameboard-mcp-access.test.mjs', 'tests/nova/lite-chat-routing.test.mjs', 'tests/nova/jacocode-site.test.mjs', 'tests/nova/jaco-link-saas.test.mjs', 'site/**', 'agents/lib/aura-seer-chat.mjs', 'runtime/server.ts', 'runtime/src/server/**', '.github/workflows/lite-release.yml']
+    paths: ['lite/**', 'tools/build-lite.mjs', 'tools/verify-lite.mjs', 'tools/serve-dir.mjs', 'tests/nova/lite-install.test.mjs', 'tests/nova/*connections*', 'tests/nova/lite.test.mjs', 'tests/nova/gameboard-mcp-access.test.mjs', 'tests/nova/lite-chat-routing.test.mjs', 'tests/nova/jacocode-site.test.mjs', 'tests/nova/jaco-link-saas.test.mjs', 'site/**', 'agents/lib/aura-seer-chat.mjs', 'runtime/**', 'agents/**', 'gateway/**', 'package.json', 'package-lock.json', 'tests/nova/pixel-avf-contract.test.mjs', 'openspec/changes/harden-pixel-avf-terminal-release/**', '.github/workflows/lite-release.yml']
   push:
     branches: [main]
     paths: ['runtime/**', 'agents/**', 'gateway/**', 'lite/**', 'windows/product/**', 'tools/**', 'scripts/**', 'skills/**', 'public/**', 'site/**', 'extensions/**', 'package.json', 'package-lock.json', '.github/workflows/lite-release.yml', '.github/workflows/jaco-windows-release.yml']
-  # Building and verifying the download happens on every merge to main. Publishing it to jacocode.com does not:
-  # that is a deliberate act, asked for here. (This trigger named a `master` branch that does not exist, so none
-  # of it had ever run.)
+  # Every affected main revision builds, verifies and publishes the same checked downloads.
+  # Manual dispatch remains available to recover or explicitly republish main.
   workflow_dispatch:
     inputs:
       publish:
@@ -108,6 +107,28 @@ jobs:
           test -n "$launcher"
           bash "$launcher" --check
           node tools/verify-lite.mjs "$zip"
+      - name: Exercise the actual Android installer and retained platform on ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          serve="$RUNNER_TEMP/pixel-download"; mkdir -p "$serve"
+          zip="$(find pixel-release -name 'jaco-lite-android-*.zip' -type f | head -1)"
+          cp "$zip" "$serve/jaco-lite-android.zip"
+          cp "$(find pixel-release -name latest.json -type f | head -1)" "$serve/latest.json"
+          cp lite/install.sh "$serve/install.sh"
+          node tools/serve-dir.mjs "$serve" 8792 > "$RUNNER_TEMP/pixel-serve.log" 2>&1 &
+          server=$!; trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in {1..30}; do curl -fsS http://127.0.0.1:8792/latest.json >/dev/null && break; sleep 1; done
+          export JACO_LITE_BASE_URL=http://127.0.0.1:8792 JACO_LITE_INSTALL_URL=http://127.0.0.1:8792/install.sh
+          export JACO_LITE_HOME="$RUNNER_TEMP/pixel-home" JACO_LITE_BIN_DIR="$RUNNER_TEMP/pixel-bin"
+          JACO_LITE_PLATFORM=android sh lite/install.sh
+          "$JACO_LITE_BIN_DIR/jaco-lite" doctor | tee "$RUNNER_TEMP/pixel-doctor.txt"
+          grep -q 'installation OK' "$RUNNER_TEMP/pixel-doctor.txt"
+          grep -q 'kind *: android' "$RUNNER_TEMP/pixel-doctor.txt"
+          grep -q "source commit *: $GITHUB_SHA" "$RUNNER_TEMP/pixel-doctor.txt"
+          "$JACO_LITE_BIN_DIR/jaco-lite" update | grep -q 'already up to date'
+          test -f "$JACO_LITE_HOME/current/START-PIXEL-TERMINAL.sh"
+          "$JACO_LITE_BIN_DIR/jaco-lite" uninstall --yes
 
   windows-lite-smoke:
     needs: verified-lite
@@ -186,10 +207,8 @@ jobs:
 
   # Publishing waits for the Windows run: a broken Windows download must not go live before the check that finds it.
   publish:
-    # Deploying the public site is restricted to a deliberate dispatch on main. `workflow_dispatch` lets the
-    # caller choose any ref, so without the ref check `publish=true` on a feature branch would put unreviewed
-    # code on jacocode.com. The build and verify jobs above still run on any ref; only publishing is pinned.
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish
+    # Only a verified main build can change the existing website; PRs and feature branches never publish.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
     needs: [verified-lite, pixel-arm64-smoke, windows-lite-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -231,7 +250,21 @@ jobs:
             }'
           # A deploy that lost the logo or the favicon would strip them from the live site.
           test -f "$SITE/brand/jaco-logo.png" && test -f "$SITE/brand/jaco-icon-192.png"
+      - name: Refuse to publish a superseded main revision
+        id: freshness
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test -n "$current"
+          if [ "$current" = "$GITHUB_SHA" ]; then
+            echo 'publish=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping superseded main revision $GITHUB_SHA; current main is $current"
+          fi
       - name: Publish existing jacocode.com Worker
+        if: steps.freshness.outputs.publish == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
@@ -241,6 +274,7 @@ jobs:
           fi
           npx --yes wrangler@4 deploy --config site/jacocode.com/wrangler.jsonc
       - name: Verify the public site matches what was published
+        if: steps.freshness.outputs.publish == 'true'
         run: |
           SITE=site/jacocode.com/public
           # `index.html` is fetched as `/`: Cloudflare's default HTML handling redirects the explicit path to the

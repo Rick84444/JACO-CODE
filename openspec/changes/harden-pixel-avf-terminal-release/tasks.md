@@ -13,3 +13,6 @@
 - [ ] Prove deployed and authenticated Windows Aura Link with the operator's host.
 
 Unchecked tasks are NOT completed by a source review, mock test or green unrelated CI.
+
+- [ ] Verify exact main source commit through the actual Android installer on ARM64 CI and after publication.
+- [ ] Verify same-timestamp platform migration and update after rollback with installer regression tests.
