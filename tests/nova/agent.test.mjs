@@ -220,6 +220,6 @@ test('a coding prompt retains available tool contracts without advertising unrel
  assert.ok(desktop.includes('screenshot {hwnd?'));
  assert.ok(!desktop.includes('desktop-invoke {'));
  const pointer=brainSystemFor(['mouse-click'],false,'win32');
- assert.ok(pointer.includes('mouse-move/mouse-click {x,y}'));
+ assert.ok(pointer.includes('mouse-move/mouse-click {x,y,expectedHwnd}'));
  assert.ok(!pointer.includes('key-press {'));
 });
