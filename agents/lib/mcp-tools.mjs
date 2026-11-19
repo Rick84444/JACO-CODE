@@ -20,12 +20,11 @@ const auth = env => { const t = env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '
 const catalogs=new Map(), inFlight=new Map(), startAttempts=new Map();
 const CATALOG_TTL=15_000;
 const runtimeBase=(runtimeUrl,env=process.env)=>(runtimeUrl||env.JACO_RUNTIME_URL||'http://127.0.0.1:3000').replace(/\/$/,'');
-let lastBase=null;
 const readyServer=s=>s?.status==='READY'&&s.agentAccess!=='off';
 const usable=write=>t=>Boolean(t.readOnly===true?(t.agentAllowed??true):write&&t.agentAllowed===true);
 const empty={servers:[],notes:{},taskNotes:{}};
-const snapshotFor=runtimeUrl=>catalogs.get(runtimeUrl?runtimeBase(runtimeUrl):lastBase)||empty;
-async function refreshCatalog(base,{env,fetchImpl,now,discoveryWaitMs}){
+const snapshotFor=runtimeUrl=>catalogs.get(runtimeBase(runtimeUrl))||empty;
+async function refreshCatalog(base,{env,fetchImpl,now,discoveryWaitMs,isCurrent}){
   const get=async()=>{
     const response=await fetchImpl(base+'/api/mcp/tools',{headers:auth(env),signal:AbortSignal.timeout(5000)});
     if(!response.ok)throw Error('MCP_CATALOG_HTTP_'+response.status);
@@ -34,20 +33,23 @@ async function refreshCatalog(base,{env,fetchImpl,now,discoveryWaitMs}){
     return payload.servers;
   };
   let servers=await get();
+  if(!isCurrent())throw Error('MCP_CATALOG_REFRESH_INVALIDATED');
   const idle=servers.filter(s=>s.agentAccess!=='off'&&s.transport!=='http'&&['STOPPED','FAILED'].includes(s.status)&&!s.tools?.length&&now-(startAttempts.get(base+'|'+s.id)??-Infinity)>=60_000).slice(0,8);
   if(idle.length){
     const wait=Math.min(3000,Math.max(100,Number(discoveryWaitMs)||1500));
     const starts=idle.map(s=>{
       startAttempts.set(base+'|'+s.id,now);
       if(startAttempts.size>128)startAttempts.delete(startAttempts.keys().next().value);
-      return Promise.resolve().then(()=>fetchImpl(base+'/api/mcp/start',{method:'POST',headers:{...auth(env),'Content-Type':'application/json'},body:JSON.stringify({server:s.id}),signal:AbortSignal.timeout(wait)}));
+      return Promise.resolve().then(()=>{if(!isCurrent())return null;return fetchImpl(base+'/api/mcp/start',{method:'POST',headers:{...auth(env),'Content-Type':'application/json'},body:JSON.stringify({server:s.id}),signal:AbortSignal.timeout(wait)});});
     });
     let timer;
     try{await Promise.race([Promise.allSettled(starts),new Promise(resolve=>{timer=setTimeout(resolve,wait);})]);}
     finally{clearTimeout(timer);}
     // Preserve the first observed snapshot if the second probe fails.
+    if(!isCurrent())throw Error('MCP_CATALOG_REFRESH_INVALIDATED');
     try{servers=await get();}catch{}
   }
+  if(!isCurrent())throw Error('MCP_CATALOG_REFRESH_INVALIDATED');
   let notes={};
   try{const response=await fetchImpl(base+'/api/tool-notes',{headers:auth(env),signal:AbortSignal.timeout(1000)});if(response.ok)notes=(await response.json()).notes||{};}catch{}
   const taskNotes=Object.fromEntries(Object.keys(notes).filter(k=>!k.includes('.')).map(k=>[k,(Array.isArray(notes[k])?notes[k]:[]).map(n=>n.note).join(' | ').slice(0,300)]));
@@ -55,12 +57,11 @@ async function refreshCatalog(base,{env,fetchImpl,now,discoveryWaitMs}){
 }
 export async function mcpCatalog({env=process.env,fetchImpl=fetch,runtimeUrl,now=Date.now(),write=false,discoveryWaitMs=1500}={}){
   const base=runtimeBase(runtimeUrl,env);
-  lastBase=base;
   const cached=catalogs.get(base);
   if(cached&&now-cached.at>=0&&now-cached.at<CATALOG_TTL)return catalogView(cached,write);
   let pending=inFlight.get(base);
   if(!pending){
-    pending=refreshCatalog(base,{env,fetchImpl,now,discoveryWaitMs}).then(snapshot=>{
+    pending=refreshCatalog(base,{env,fetchImpl,now,discoveryWaitMs,isCurrent:()=>inFlight.get(base)===pending}).then(snapshot=>{
       if(inFlight.get(base)!==pending)throw Error('MCP_CATALOG_REFRESH_INVALIDATED');
       catalogs.set(base,snapshot);
       if(catalogs.size>16)catalogs.delete(catalogs.keys().next().value);
@@ -99,7 +100,7 @@ export function argList(schema) {
 }
 export function resetMcpCatalog({clearCooldowns=false,runtimeUrl}={}){
   if(runtimeUrl){const base=runtimeBase(runtimeUrl);catalogs.delete(base);inFlight.delete(base);}
-  else{catalogs.clear();inFlight.clear();lastBase=null;}
+  else{catalogs.clear();inFlight.clear();}
   if(clearCooldowns)startAttempts.clear();
 }
 
