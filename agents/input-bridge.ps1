@@ -381,6 +381,22 @@ function Measure-Roi($before,$after) {
   $signal=if($entropy -ge 0.45 -and $ratio -ge 0.015){'VISUAL_CHANGE_DETECTED'}elseif($ratio -gt 0){'VISUAL_CHANGE_WEAK'}else{'NO_VISUAL_CHANGE_DETECTED'}
   return [ordered]@{signal=$signal;changedPixelRatio=[Math]::Round($ratio,4);deltaEntropyBits=[Math]::Round($entropy,4)}
 }
+# Deterministic Windows CI probe: compile Win32 bindings, exercise entropy and
+# invalid-binding refusal; never dispatch an actual input event.
+if($Op -eq 'self_test'){
+  $a=New-Object byte[] 4096
+  $b=New-Object byte[] 4096
+  $same=Measure-Roi $a $b
+  if($same.changedPixelRatio -ne 0 -or $same.deltaEntropyBits -ne 0){throw 'ROI_ZERO_DIFFERENCE_FAILED'}
+  for($i=0;$i -lt 2048;$i++){$b[$i]=[byte]64}
+  $different=Measure-Roi $a $b
+  if($different.changedPixelRatio -ne 0.5 -or $different.deltaEntropyBits -ne 1 -or $different.signal -ne 'VISUAL_CHANGE_DETECTED'){throw 'ROI_ENTROPY_FIXTURE_FAILED'}
+  $rejected=$false
+  try{[WinInput]::Configure(0,0,0,0,0,0,$false,0,0)}catch{$rejected=$true}
+  if(-not $rejected -or [WinInput]::DispatchAttempted){throw 'INVALID_BINDING_DISPATCHED'}
+  Write-Output '{"ok":true,"checks":3,"inputDispatched":false}'
+  return
+}
 $mutating=$Op -in @('mouse_move','mouse_click','mouse_scroll','key_press','type_text')
 if($mutating){
   $visual=$null
