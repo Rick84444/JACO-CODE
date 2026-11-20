@@ -156,6 +156,32 @@ test('dedicated private profile cannot expose raw execution, approval or credent
     const res=await handler.fetch(new Request('http://test.local/mcp',{method:'POST',headers:{'content-type':'application/json','accept':'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list'})}));
     const messages=(await res.text()).split(/\r?\n/).filter(s=>s.startsWith('data: ')).map(s=>JSON.parse(s.slice(6)));
     const listed=messages.find(m=>Array.isArray(m?.result?.tools)).result.tools.map(t=>t.name);
-    assert.deepEqual(listed,[...JACO_MCP_COGNITIVE_READ,'jaco_aura_submit_goal','jaco_aura_current_mission','jaco_aura_mission_status','jaco_aura_steer_mission']);
+    assert.deepEqual(listed,[...JACO_MCP_COGNITIVE_READ,'jaco_aura_submit_goal','jaco_aura_current_mission','jaco_aura_mission_status','jaco_aura_android_bonsai','jaco_aura_steer_mission']);
   }finally{await handler.close();}
+});
+
+
+test('private ChatGPT relay calls Android Bonsai through Core with bounded receipts only',async()=>{
+  const {privateAuraTools}=await import('../src/private-aura-tools.mjs');
+  const calls=[];
+  const core={baseUrl:'http://127.0.0.1:3000',token:'x'.repeat(24),request:async(path,opts)=>{
+    calls.push({path,opts});
+    if(path.endsWith('/readiness'))return {success:true,schema:'jaco.aura-readiness/v1',core:{authenticated:true}};
+    if(path.endsWith('/android-bonsai'))return {success:true,task:{
+      schema:'jaco.bonsai-android-task/v1',taskId:'task-ok',missionId:null,
+      status:'DONE_WITH_OBSERVED_TEXT',verifiedSteps:2,attemptedSteps:2,
+      receipts:[{action_id:'id-1',action_type:'tap',verified:true,success:true,screen:'private text'}],
+    }};
+    assert.fail('unexpected Core path '+path);
+  }};
+  const tool=privateAuraTools({core,env:{JACO_MCP_ALLOW_AURA_MISSIONS:'1'}}).find(x=>x.name==='jaco_aura_android_bonsai');
+  const result=await tool.handler({instruction:'Open browser and find a button',packageName:'com.android.chrome',mandateId:'mandate-1'});
+  assert.equal(calls[1].path,'/api/relay/android-bonsai');
+  assert.equal(JSON.parse(calls[1].opts.body).maxSteps,undefined);
+  assert.equal(result.semanticCompletionVerified,true);
+  assert.equal(result.verifiedSteps,2);
+  assert.doesNotMatch(JSON.stringify(result),/private text/);
+  const length=calls.length;
+  await assert.rejects(tool.handler({instruction:'use password=private',packageName:'com.android.chrome',mandateId:'mandate-1'}),/SECRET_REFUSED/);
+  assert.equal(calls.length,length);
 });
