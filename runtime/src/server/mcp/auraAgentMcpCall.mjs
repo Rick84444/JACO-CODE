@@ -14,8 +14,9 @@ function configured(host, server) {
   return def;
 }
 export async function discoverAuraMcpTools(host, server) {
-  const def = configured(host, server);
+  configured(host, server);
   const tools = await host.listTools(server);
+  const def = configured(host, server);
   return {
     server, access: def.agentAccess,
     // Discovery does not imply readiness to act or permission for a particular input.
@@ -26,7 +27,7 @@ export async function discoverAuraMcpTools(host, server) {
   };
 }
 export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'read' }) {
-  const def = configured(host, server);
+  let def = configured(host, server);
   if (!TOOL.test(tool)) throw Error('MCP_TOOL_ID_INVALID');
   if (mode !== 'read' && mode !== 'write') throw Error('MCP_MODE_INVALID');
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw Error('MCP_ARGUMENTS_INVALID');
@@ -34,6 +35,7 @@ export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'r
   // This starts a configured but stopped server; status READY is not a
   // prerequisite. Never start an "off" server or widen its access level.
   const tools = await host.listTools(server);
+  def = configured(host, server);
   const advertised = resolveAdvertisedTool(server, tool, tools);
   if (!advertised) throw Error('MCP_TOOL_UNAVAILABLE');
   tool = advertised.name;

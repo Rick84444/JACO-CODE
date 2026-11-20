@@ -49,7 +49,7 @@ test('Hugging Face setup preserves other servers, persists only a credential ref
   host.configureHuggingFace({enabled:false});assert.equal(host.servers().huggingface,undefined);
 });
 test('remote tools without read-only annotation do not obtain write authority',async()=>{
-  const host=new StdioMcpHost({});host.client=()=>({def:{transport:'http'},start:async()=>{},tools:[{name:'create_job',readOnly:false}],request:()=>{throw Error('must not dispatch');}});
+  const host=new StdioMcpHost({});const client={def:{transport:'http'},initialized:true,start:async()=>{},tools:[{name:'create_job',readOnly:false}],request:()=>{throw Error('must not dispatch');}};host.client=()=>client;
   await assert.rejects(()=>host.call('hf','create_job'),/REMOTE_WRITE_REQUIRES_AUTHORITY/);
 });
 test('invalid remote config is isolated from other MCP servers',t=>{
@@ -61,4 +61,43 @@ test('invalid remote config is isolated from other MCP servers',t=>{
 test('remote MCP requires TLS verification before dispatch',async()=>{
   const client=new HttpMcpClient('fixture',{url:'https://example.org/mcp'},{env:{NODE_TLS_REJECT_UNAUTHORIZED:'0'},fetchImpl:()=>{throw Error('must not dispatch');}});
   await assert.rejects(()=>client.start(),/MCP_TLS_VERIFICATION_REQUIRED/);
+});
+
+test('retired HTTP handshake cannot stop or overwrite its replacement',async()=>{
+  for(const late of ['success','failure','expired']){
+    let resolveOld,rejectOld,initializations=0;
+    const client=new HttpMcpClient('fixture',{url:'https://example.org/mcp'},{env:{},fetchImpl:async(_url,opt)=>{
+      const body=JSON.parse(opt.body);
+      if(body.method==='initialize'){
+        initializations++;
+        if(initializations===1)return new Promise((resolve,reject)=>{resolveOld=()=>resolve(late==='expired'?new Response(null,{status:404}):Response.json({id:body.id,result:{protocolVersion:'2025-03-26'}},{headers:{'mcp-session-id':'old'}}));rejectOld=reject;});
+        return Response.json({id:body.id,result:{protocolVersion:'2025-06-18'}},{headers:{'mcp-session-id':'new'}});
+      }
+      if(body.method==='notifications/initialized')return new Response(null,{status:202});
+      return Response.json({id:body.id,result:{tools:[{name:'new_tool',annotations:{readOnlyHint:true}}]}});
+    }});
+    const old=client.start();const oldRejected=assert.rejects(old,/MCP_REQUEST_SUPERSEDED|MCP_CONNECTION_FAILED/);
+    client.stop();await client.start();
+    if(late==='failure')rejectOld(Error('old connection failed'));else resolveOld();
+    await oldRejected;
+    assert.equal(client.initialized,true);assert.equal(client.session,'new');
+    assert.equal(client.protocol,'2025-06-18');assert.equal(client.error,null);
+    assert.deepEqual(client.tools.map(t=>t.name),['new_tool']);
+    client.stop();
+  }
+});
+test('retired HTTP tool response cannot expire the current session',async()=>{
+  let release,serial=0;
+  const client=new HttpMcpClient('fixture',{url:'https://example.org/mcp'},{env:{},fetchImpl:async(_url,opt)=>{
+    const p=JSON.parse(opt.body);
+    if(p.method==='initialize')return Response.json({id:p.id,result:{protocolVersion:'2025-06-18'}},{headers:{'mcp-session-id':'session-'+(++serial)}});
+    if(p.method==='notifications/initialized')return new Response(null,{status:202});
+    if(p.method==='tools/list')return Response.json({id:p.id,result:{tools:[{name:'read',annotations:{readOnlyHint:true}}]}});
+    return new Promise(resolve=>{release=()=>resolve(new Response(null,{status:404}));});
+  }});
+  await client.start();const old=client.request('tools/call',{name:'read'});
+  const rejected=assert.rejects(old,/MCP_REQUEST_SUPERSEDED/);
+  client.stop();await client.start();release();await rejected;
+  assert.equal(client.session,'session-2');assert.equal(client.initialized,true);
+  client.stop();
 });

@@ -7,7 +7,7 @@ const readTools = new Set(['attachment_read','health','termux_services','mcp_cat
 export function withPerceptionTools(tools) {
   if (typeof tools.mcp_read?.run !== 'function') return tools;
   const read = async (tool) => {
-    const result = await tools.mcp_read.run({server:'cdp',tool,arguments:{}});
+    const result = await tools.mcp_read.run({server:'browser',tool,arguments:{}});
     if (result?.isError === true) throw Error('PERCEPTION_MCP_READ_FAILED:' + tool);
     return result;
   };
@@ -35,7 +35,7 @@ export function withPerceptionTools(tools) {
         if (typeof image?.data !== 'string' || image.data.length > 8_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(image.data)) throw Error('LASER_VISION_IMAGE_UNAVAILABLE');
         const bytes=Buffer.from(image.data,'base64');
         if (bytes.length < 24 || !bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw Error('LASER_VISION_INVALID_PNG');
-        return {captured:true,source:'cdp/nova_screenshot',bytes:bytes.length,imageSha256:createHash('sha256').update(bytes).digest('hex'),visualAnalysis:'NOT_PERFORMED',note:'Pixels are not sent to the text chat model. For visual interpretation use the existing mission screenshot workflow with a compatible model.'};
+        return {captured:true,source:'browser/nova_screenshot',bytes:bytes.length,imageSha256:createHash('sha256').update(bytes).digest('hex'),visualAnalysis:'NOT_PERFORMED',note:'Pixels are not sent to the text chat model. For visual interpretation use the existing mission screenshot workflow with a compatible model.'};
       },
     },
   };

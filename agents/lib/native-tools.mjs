@@ -63,12 +63,14 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
   const mcpDefinitions = [];
   const mcpAllowed = allowedTasks.includes('mcp-call') || allowedTasks.includes('mcp-write');
   for (const type of allowedTasks) {
-    if (!Object.hasOwn(TASK_FIELDS, type) || (['mcp-call', 'mcp-write'].includes(type) && mcpAllowed && mcpTools.length)) continue;
+    if (!Object.hasOwn(TASK_FIELDS, type)) continue;
     const fields = TASK_FIELDS[type];
     const perception = {
       'browser-survey-site': 'DOM TRACK: survey a permitted browser page and map semantic targets before acting.',
       'desktop-observe': 'DOM TRACK: inspect desktop accessibility structure before using pixel coordinates.',
       'screenshot': 'LASER VISION: capture fresh desktop pixels for the existing vision-capable planner; use adaptive ROI first, then full only if needed.',
+      'mcp-call': 'Call a configured read-only MCP tool by exact server and tool ID; starts on demand. Runtime checks actual access and tool schema.',
+      'mcp-write': 'Call a configured MCP tool by exact server and tool ID. Requires current mission and operator write authority; do not repeat unknown outcomes.',
     }[type];
     const description = [perception, taskNotes[type] ? `Learned: ${taskNotes[type]}` : null].filter(Boolean).join(' ') || null;
     tools.push(fn(type, description, {
@@ -79,16 +81,15 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
     targets.set(type, { kind: 'task', type });
   }
   if (mcpAllowed) {
-    // Not offered as a function when the MCP tools are, but the prompt still names the mcp-call task:
-    // gpt-oss on Ollama Cloud called it directly (PLAN_TOOL_UNKNOWN:mcp-call, 2026-10-04). Such a call
-    // becomes an ordinary mcp-call task and is validated like one (server, tool, read-only).
-    for (const alias of ['mcp-call', 'mcp_call']) targets.set(alias, { kind: 'task', type: 'mcp-call' });
+    // Generic fallbacks stay callable even with a partial live catalog. Only
+    // current mission-authorized task types get a schema or alias.
+    if (allowedTasks.includes('mcp-call')) for (const alias of ['mcp-call', 'mcp_call']) targets.set(alias, { kind: 'task', type: 'mcp-call' });
     if (allowedTasks.includes('mcp-write')) for (const alias of ['mcp-write', 'mcp_write']) targets.set(alias, { kind: 'task', type: 'mcp-write' });
     for (const t of mcpTools) {
       // Tool catalog caches may outlive an earlier, more privileged mission.
       // Only readOnly===true is a positive read-only attestation; missing/unknown
       // metadata must require the stronger mcp-write mission capability.
-      if (t.readOnly !== true && !allowedTasks.includes('mcp-write')) continue;
+      if (t.readOnly === true ? !allowedTasks.includes('mcp-call') : !allowedTasks.includes('mcp-write')) continue;
       const name = `mcp__${t.server}__${t.name}`.replace(NAME, '_').slice(0, 64);
       if (targets.has(name)) continue;
       const schema = compactSchema(t.inputSchema && typeof t.inputSchema === 'object' ? t.inputSchema : {});

@@ -1697,7 +1697,7 @@ async function callBrainStep(state, { mission, observation, continuity = null },
   if (!process.env.NODE_TEST_CONTEXT && Array.isArray(mission?.allowedTasks) && (planningAllowedTasks.includes('mcp-call') || planningAllowedTasks.includes('mcp-write'))) {
     try { ctx.mcpTools = await mcpCatalog({ runtimeUrl: CONFIG.runtimeUrl, write: planningAllowedTasks.includes('mcp-write') }); } catch {}
     // Approved notes for Nova's own tasks, learned from earlier mistakes (MCP tools carry theirs inline).
-    const learned = Object.fromEntries(Object.entries(learnedTaskNotes()).filter(([task]) => planningAllowedTasks.includes(task)));
+    const learned = Object.fromEntries(Object.entries(learnedTaskNotes({runtimeUrl:CONFIG.runtimeUrl})).filter(([task]) => planningAllowedTasks.includes(task)));
     if (Object.keys(learned).length) ctx.learnedTaskNotes = learned;
   }
   // A skill run ("Skill <id>: ..."): the skill's instructions are the procedure for the goal. If the
@@ -1794,7 +1794,7 @@ Plans already rejected this turn (do not repeat them): ${rejectedPlans.slice(-3)
     }
     console.log(`[DEBUG] Trying provider: ${provider.name} model: ${provider.model}`);
     // The structured fallback cannot process tool_search; use bounded generic MCP tasks for large catalogs.
-    const native = nativeToolsFor(provider) ? structuredPlannerTools(planningAllowedTasks, profile==='compact'?focusPlannerToolDescriptions(mcpCatalogTools(),mission):mcpCatalogTools(), learnedTaskNotes(), Boolean(mission?.metadata?.parent?.graphId)) : null;
+    const native = nativeToolsFor(provider) ? structuredPlannerTools(planningAllowedTasks, profile==='compact'?focusPlannerToolDescriptions(mcpCatalogTools({runtimeUrl:CONFIG.runtimeUrl,write:planningAllowedTasks.includes('mcp-write')}),mission):mcpCatalogTools({runtimeUrl:CONFIG.runtimeUrl,write:planningAllowedTasks.includes('mcp-write')}), learnedTaskNotes({runtimeUrl:CONFIG.runtimeUrl}), Boolean(mission?.metadata?.parent?.graphId)) : null;
     state.plannerInputMetrics.nativeToolsCount=native?.tools.length||0;
     state.plannerInputMetrics.nativeToolsChars=native?JSON.stringify(native.tools).length:0;
     try {
@@ -2164,7 +2164,7 @@ async function runAgentLoop(state) {
       mission.source === 'seer-mission-graph' && Boolean(mission.metadata?.parent?.graphId)),
     preflight: context => runCodingPreflight(state, context),
     // A failed tool is investigated and, where safe, repaired before the model decides what to do next.
-    diagnose: createToolDiagnoser({ runtimeUrl: CONFIG.runtimeUrl, onServerStarted: () => resetMcpCatalog() }),
+    diagnose: createToolDiagnoser({ runtimeUrl: CONFIG.runtimeUrl, onServerStarted: () => resetMcpCatalog({runtimeUrl:CONFIG.runtimeUrl}) }),
     toolsFor: async mission => {
       const permitted = capsuleAllowedTasks(mission);
       const write = permitted.includes('mcp-write');
@@ -2172,9 +2172,9 @@ async function runAgentLoop(state) {
         try { await mcpCatalog({ runtimeUrl: CONFIG.runtimeUrl, write }); }
         catch (error) { log('warn', 'agent', `MCP catalog unavailable: ${String(error?.message || error).slice(0, 120)}`); }
       }
-      const catalog = mcpCatalogTools({ write });
+      const catalog = mcpCatalogTools({ write, runtimeUrl:CONFIG.runtimeUrl });
       return plannerTools(permitted, process.env.NOVA_CONTEXT_PROFILE === 'standard'
-        ? catalog : focusPlannerToolDescriptions(catalog, mission), learnedTaskNotes(),
+        ? catalog : focusPlannerToolDescriptions(catalog, mission), learnedTaskNotes({runtimeUrl:CONFIG.runtimeUrl}),
         mission.source === 'seer-mission-graph' && Boolean(mission.metadata?.parent?.graphId));
     },
     refreshIntro: true,

@@ -250,43 +250,48 @@ class StdioClient {
 
   start() {
     if (this.ready) return this.ready;
+    let startingProc = null;
     this.ready = (async () => {
       const [command, args] = resolveCommand(this.def.command, this.def.args);
       // No shell: arguments are passed as an array and never concatenated into a command line.
-      const proc = this.proc = spawn(command, args, {
+      const proc = startingProc = this.proc = spawn(command, args, {
         cwd: this.def.cwd || process.cwd(), env: { ...process.env, ...resolveEnv(this.def.env) },
         stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
       });
-      this.initialized = false; this.buf = '';
+      this.initialized = false; this.buf = ''; this.tools = []; this.lastStderr = '';
       this.startedAt = new Date().toISOString();
       proc.stdout.setEncoding('utf8');
       proc.stdout.on('data', chunk => { if (this.proc === proc) this.onData(chunk); });
-      proc.stderr.on('data', chunk => { this.lastStderr = String(chunk).slice(-500); });
+      proc.stderr.on('data', chunk => { if (this.proc === proc) this.lastStderr = String(chunk).slice(-500); });
       // Events of a process that was already replaced (stop + restart) must not touch the new one.
       proc.on('exit', code => {
         if (this.proc !== proc) return;
         this.error = `exited with code ${code}${this.lastStderr ? `: ${this.lastStderr.trim().slice(-200)}` : ''}`;
         this.failPending(`MCP_SERVER_EXITED:${this.id}`);
-        this.proc = null; this.ready = null; this.initialized = false;
+        this.proc = null; this.ready = null; this.initialized = false; this.tools = [];
       });
       // A command that cannot be spawned (e.g. uvx not installed) fails now, not after the 120 s timeout.
       proc.on('error', e => {
         if (this.proc !== proc) return;
         this.error = e.message;
         this.failPending(`MCP_SERVER_SPAWN_FAILED:${this.id}:${e.code || e.message}`);
+        this.stop();
       });
       proc.stdin.on('error', () => {});
       await this.request('initialize', { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'jaco', version: '0.21' } }, 120_000);
+      if (this.proc !== proc) throw Error(`MCP_START_SUPERSEDED:${this.id}`);
       this.notify('notifications/initialized');
       const listed = await this.request('tools/list', {}, 60_000);
-      this.tools = (listed?.tools || []).map(t => ({
+      if (this.proc !== proc) throw Error(`MCP_START_SUPERSEDED:${this.id}`);
+      if (!Array.isArray(listed?.tools)) throw Error('MCP_TOOL_LIST_INVALID');
+      this.tools = listed.tools.map(t => ({
         name: String(t.name), description: String(t.description || ''),
         inputSchema: t.inputSchema || { type: 'object', properties: {} },
         readOnly: t.annotations?.readOnlyHint === true,
       }));
       this.error = null; this.initialized = true;
       return this;
-    })().catch(e => { this.error = String(e.message || e); this.stop(); throw e; });
+    })().catch(e => { if (this.proc === startingProc) { this.error = String(e.message || e); this.stop(); } throw e; });
     return this.ready;
   }
 
@@ -318,7 +323,7 @@ class StdioClient {
   failPending(message) { for (const p of this.pending.values()) p.reject(new Error(message)); this.pending.clear(); }
   stop() {
     const proc = this.proc;
-    this.proc = null; this.ready = null; this.initialized = false;
+    this.proc = null; this.ready = null; this.initialized = false; this.tools = [];
     this.failPending(`MCP_SERVER_STOPPED:${this.id}`);
     try { proc?.kill(); } catch {}
   }
@@ -417,14 +422,15 @@ export class StdioMcpHost {
       const c = this.clients.get(id);
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
       if (def.validationError) return { id, name: def.name, role: def.role, transport: 'http', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
-      const tools = (c?.tools || []).map(t => ({ ...t, readOnly: Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name)), agentAllowed: agentRefusal(def, t) === null }));
+      const sameLaunch = Boolean(c && launchKey(c.def) === launchKey(def));
+      const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => ({ ...t, readOnly: Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name)), agentAllowed: agentRefusal(def, t) === null }));
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
         credentialEnv: id === 'huggingface' ? def.tokenEnv || '' : undefined,
         credentialConfigured: def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
         builtIn: Boolean(defaultServers(this)[id]),
         icon: def.icon, agentAccess: def.agentAccess, deny: def.deny, stats,
-        status: c?.initialized ? 'READY' : c?.ready ? 'STARTING' : c?.error ? 'FAILED' : 'STOPPED',
-        tools, error: c?.error || null, startedAt: c?.startedAt || null };
+        status: sameLaunch ? (c.initialized ? 'READY' : c.ready ? 'STARTING' : c.error ? 'FAILED' : 'STOPPED') : 'STOPPED',
+        tools, error: sameLaunch ? c.error || null : null, startedAt: sameLaunch ? c.startedAt || null : null };
     });
   }
 
@@ -454,31 +460,27 @@ export class StdioMcpHost {
       const earlyRefusal = actor === 'agent' && (c.def.agentAccess === 'off' ? 'MCP_AGENT_ACCESS_OFF' : c.def.deny?.includes(name) ? 'MCP_TOOL_DENIED' : null);
       if (earlyRefusal) throw Error(`${earlyRefusal}:${id}.${name}`);
       await c.start();
+      // The operator may change access, workspace or the server launch config during initialize.
+      if (this.client(id) !== c || !c.initialized) throw Error(`MCP_START_SUPERSEDED:${id}`);
     } catch (e) {
       const message = String(e.message || e).slice(0, 300);
       done(/^(MCP_AGENT_ACCESS_OFF|MCP_TOOL_DENIED):/.test(message) ? 'refused' : 'failed', message);
-      throw e;
+      throw Object.assign(new Error(message), { dispatchState: 'NOT_DISPATCHED' });
     }
     const tool = resolveAdvertisedTool(id, name, c.tools);
-    if (!tool) { done('failed', `MCP_TOOL_UNKNOWN:${id}.${name}`); throw new Error(`MCP_TOOL_UNKNOWN:${id}.${name}`); }
+    if (!tool) { done('failed', `MCP_TOOL_UNKNOWN:${id}.${name}`); throw Object.assign(new Error(`MCP_TOOL_UNKNOWN:${id}.${name}`), { dispatchState: 'NOT_DISPATCHED' }); }
     name = tool.name;
     const reads = Boolean(tool.readOnly || KNOWN_READ_ONLY[id]?.has(name));
     const refusal = actor === 'agent' ? agentRefusal(c.def, tool, args) || (readOnly && !reads ? 'MCP_TOOL_NOT_READ_ONLY' : null)
       : c.def.transport === 'http' && !tool.readOnly && !localBridge(c.def) ? 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY' : null;
-    if (refusal) { done('refused', `${refusal}:${id}.${name}`); throw new Error(`${refusal}:${id}.${name}`); }
+    if (refusal) { done('refused', `${refusal}:${id}.${name}`); throw Object.assign(new Error(`${refusal}:${id}.${name}`), { dispatchState: 'NOT_DISPATCHED' }); }
     try {
-      let result;
-      try { result = await c.request('tools/call', { name, arguments: args }, timeoutMs); }
-      catch (e) {
-        // A server that is not running (exited between calls) is started again and the call retried once.
-        // A server that exits during the call is not retried: the call may have had an effect.
-        if (!/^MCP_SERVER_NOT_RUNNING/.test(e.message)) throw e;
-        c = this.client(id); await c.start();
-        result = await c.request('tools/call', { name, arguments: args }, timeoutMs);
-      }
+      // Never retry a call after entering the transport. A remote error string
+      // is not evidence that dispatch did not occur.
+      const result = await c.request('tools/call', { name, arguments: args }, timeoutMs);
       done(result?.isError === true ? 'tool_error' : 'ok', result?.isError === true ? String((result.content || []).map(x => x?.text || '').join(' ')).slice(0, 300) : null);
       return result;
-    } catch (e) { done('failed', String(e.message || e).slice(0, 300)); throw e; }
+    } catch (e) { const message = String(e.message || e).slice(0,300); done('failed',message); throw Object.assign(new Error(message),{dispatchState:'UNKNOWN'}); }
   }
 
   stopAll() { for (const c of this.clients.values()) c.stop(); }

@@ -3,9 +3,13 @@ export class HttpMcpClient {
   constructor(id, def, { fetchImpl = fetch, env = process.env } = {}) {
     Object.assign(this, { id, def, fetchImpl, env });
     this.protocol = '2025-06-18'; this.nextId = 1; this.tools = []; this.ready = null; this.initialized = false;
-    this.session = null; this.error = null; this.startedAt = null;
+    this.session = null; this.error = null; this.startedAt = null; this.generation = 0;
+  }
+  assertCurrent(generation) {
+    if (generation !== this.generation) throw Error('MCP_REQUEST_SUPERSEDED');
   }
   async request(method, params, timeoutMs = 20000, notification = false) {
+    const generation = this.generation;
     if (this.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw Error('MCP_TLS_VERIFICATION_REQUIRED');
     const id = notification ? undefined : this.nextId++;
     const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': this.protocol };
@@ -17,7 +21,10 @@ export class HttpMcpClient {
     }
     const response = await this.fetchImpl(this.def.url, { method: 'POST', redirect: 'error', headers,
       body: JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id }), method, params }), signal: AbortSignal.timeout(timeoutMs) });
-    if (response.status === 404 && this.session) { this.stop(); throw Error('MCP_SESSION_EXPIRED'); }
+    // A late reply from a retired session may neither overwrite its replacement's
+    // session header nor stop the replacement on a stale 404.
+    if (generation !== this.generation) { void response.body?.cancel().catch(() => {}); throw Error('MCP_REQUEST_SUPERSEDED'); }
+    if (response.status === 404 && this.session) { this.error = 'MCP_SESSION_EXPIRED'; this.stop(); throw Error('MCP_SESSION_EXPIRED'); }
     if (!response.ok) throw Error(response.status === 401 || response.status === 403 ? 'MCP_AUTH_REQUIRED' : `MCP_HTTP_${response.status}`);
     const session = response.headers.get('mcp-session-id');
     if (session) this.session = session;
@@ -29,6 +36,7 @@ export class HttpMcpClient {
     try {
       while (true) {
         const chunk = await reader.read();
+        this.assertCurrent(generation);
         if (chunk.done) break;
         bytes += chunk.value.byteLength;
         if (bytes > 2 * 1024 * 1024) throw Error('MCP_RESPONSE_TOO_LARGE');
@@ -56,25 +64,36 @@ export class HttpMcpClient {
   }
   start() {
     if (this.ready) return this.ready;
-    this.ready = (async () => {
+    const generation = ++this.generation;
+    this.protocol = '2025-06-18'; this.session = null; this.tools = []; this.initialized = false; this.error = null;
+    const pending = (async () => {
       this.startedAt = new Date().toISOString();
       const initialized = await this.request('initialize', { protocolVersion: this.protocol, capabilities: {}, clientInfo: { name: 'jaco', version: '0.21' } });
+      this.assertCurrent(generation);
       if (!['2025-03-26','2025-06-18'].includes(initialized?.protocolVersion)) throw Error('MCP_PROTOCOL_UNSUPPORTED');
       this.protocol = initialized.protocolVersion;
       await this.request('notifications/initialized', {}, 20000, true);
+      this.assertCurrent(generation);
       let cursor, tools = [], seen = new Set();
       do {
         const listed = await this.request('tools/list', cursor ? { cursor } : {});
+        this.assertCurrent(generation);
         if (!Array.isArray(listed?.tools)) throw Error('MCP_TOOL_LIST_INVALID');
         tools.push(...listed.tools); cursor = listed.nextCursor;
         if (tools.length > 500 || seen.size >= 20 || (cursor && seen.has(cursor))) throw Error('MCP_TOOL_LIST_LIMIT');
         if (cursor) seen.add(cursor);
       } while (cursor);
+      this.assertCurrent(generation);
       this.tools = tools.map(t => ({ name: String(t.name).slice(0,200), description: String(t.description || '').slice(0,3000), inputSchema: t.inputSchema || {type:'object'}, readOnly: t.annotations?.readOnlyHint === true }));
       this.initialized = true; this.error = null; return this;
-    })().catch(error => { this.error = /^MCP_/.test(error.message) ? error.message : 'MCP_CONNECTION_FAILED'; this.stop(); throw Error(this.error); });
-    return this.ready;
+    })().catch(error => {
+      const code = /^MCP_/.test(error.message) ? error.message : 'MCP_CONNECTION_FAILED';
+      if (generation === this.generation && this.ready === pending) { this.error = code; this.stop(); }
+      throw Error(code);
+    });
+    this.ready = pending;
+    return pending;
   }
-  stop() { this.ready = null; this.initialized = false; this.session = null; }
+  stop() { this.generation++; this.ready = null; this.initialized = false; this.session = null; this.tools = []; }
 }
 
