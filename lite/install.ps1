@@ -75,7 +75,10 @@ if ($Action -eq 'doctor') {
 if ($Action -eq 'rollback') {
   $prev = LinkTarget (Join-Path $InstallDir 'previous'); $cur = LinkTarget (Join-Path $InstallDir 'current')
   if (-not $prev) { Write-Host 'jaco-lite: there is no previous build to go back to.'; $script:Code = 1; return }
+  $previousInfo = Join-Path $prev '.install.json'
+  if (-not (Test-Path -LiteralPath $previousInfo)) { Fail 'previous build metadata missing; update before rollback.' }
   SetLink (Join-Path $InstallDir 'current') $prev; SetLink (Join-Path $InstallDir 'previous') $cur
+  Copy-Item -LiteralPath $previousInfo -Destination (Join-Path $InstallDir 'install.json') -Force
   Say "jaco-lite: now on $prev (was $cur)."; return
 }
 if ($Action -eq 'uninstall') {
@@ -173,9 +176,12 @@ try {
     $current = Join-Path $InstallDir 'current'
     $before = LinkTarget $current
     if ($before -and ((Split-Path $before -Leaf) -ne $stamp)) { SetLink (Join-Path $InstallDir 'previous') $before }
+    # Preserve build metadata so a rollback selects the matching version, not the latest manifest.
+    if ($before -and -not (Test-Path -LiteralPath (Join-Path $before '.install.json')) -and (Test-Path -LiteralPath (Join-Path $InstallDir 'install.json'))) { Copy-Item -LiteralPath (Join-Path $InstallDir 'install.json') -Destination (Join-Path $before '.install.json') }
+    @{ version = $version; builtAt = $builtAt; file = $entry.file; sha256 = $entry.sha256; kind = 'windows' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dest '.install.json') -Encoding UTF8
     SetLink $current $dest
     # A running launcher may still lazily use any older immutable build. Do not prune here.
-    @{ version = $version; builtAt = $builtAt; file = $entry.file; sha256 = $entry.sha256; kind = 'windows' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $InstallDir 'install.json') -Encoding UTF8
+    Copy-Item -LiteralPath (Join-Path $dest '.install.json') -Destination (Join-Path $InstallDir 'install.json') -Force
   }
 
   # --- launcher, this installer (for  jaco-lite update ), PATH, shortcut -----------------------------------------
