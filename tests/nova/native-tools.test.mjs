@@ -132,3 +132,18 @@ test('stale MCP write catalog is filtered by current mission authority', () => {
   assert.equal(write.resolve('mcp__files__save_file').write,true);
   assert.equal(planFromToolCalls({tool_calls:[{function:{name:'mcp__files__save_file',arguments:'{}'}}]},write.resolve).task.type,'mcp-write');
 });
+
+
+test('native and structured planners can propose a strategy switch without forced decomposition', async () => {
+  const { planSchema } = await import('../../agents/lib/native-tools.mjs');
+  const { tools, resolve } = plannerTools(['repo-read']);
+  const replan = tools.find(t => t.function.name === 'request_replan');
+  assert.equal(replan.function.parameters.properties.subgoals.minItems, 0);
+  assert.match(replan.function.description, /subgoals: \[\]/);
+  const structured = planSchema(['repo-read']).anyOf.find(s => s.properties.replan);
+  assert.equal(structured.properties.subgoals.minItems, 0);
+  const args = { reason: 'Observed a better route', subgoals: [] };
+  assert.deepEqual(planFromToolCalls({ tool_calls: [{ function: { name: 'request_replan', arguments: JSON.stringify(args) } }] }, resolve),
+    { replan: true, ...args });
+  assert.equal(plannerTools(['repo-read'], [], {}, false).resolve('request_replan'), null);
+});

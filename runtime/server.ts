@@ -4356,10 +4356,18 @@ const notifyPhone = async (action) => {
   // receipts by rules and by an independent cheap model before anything approves it. Runs at every
   // approval level, so the operator sees the result too.
   const claimChecksRunning = new Set<string>();
+  // How many times a claim check may be re-judged when no judge model could be reached in time.
+  const CLAIM_JUDGE_ATTEMPTS = 3;
   const claimCheckFor = (own: any[]) => {
     const planned = own.find((e: any) => e.type === 'NOVA_PLANNING_RESULT' && e.payload?.completionProposed);
     if (!planned?.payload?.reason) return { planned: null, check: null };
-    const check = own.find((e: any) => e.type === 'NOVA_CLAIM_CHECK' && e.payload?.planSeq === planned.seq)?.payload || null;
+    const checks = own.filter((e: any) => e.type === 'NOVA_CLAIM_CHECK' && e.payload?.planSeq === planned.seq).map((e: any) => e.payload);
+    // A judge that timed out returns no verdict at all: no claim is supported, none is contradicted. That is not a
+    // finished check, and treating it as one left the mission in AWAITING_VERIFICATION for good, because automatic
+    // resolution can neither confirm nor send back an answer it was never able to judge. Retry a bounded number of
+    // times, then keep the last attempt so the mission goes to the operator instead of being re-judged forever.
+    const judged = checks.find((c: any) => c?.judge || Number(c?.judged) > 0 || !c?.judgeError) || null;
+    const check = judged || (checks.length >= CLAIM_JUDGE_ATTEMPTS ? checks[checks.length - 1] : null);
     return { planned, check };
   };
   const startClaimCheck = (mission: any, planned: any) => {

@@ -100,3 +100,32 @@ test('commercial archive retry does not block unrelated completed missions', () 
   archiveCommercialBatch(args);
   assert.equal(stored.has('commercial-outcome-a'),true);
 });
+
+// Observed 2026-11-19: one commercial cycle reached AWAITING_VERIFICATION, its claim-check judge timed out, and the
+// clock then created a cycle every minute that mission dedupe rejected against it. Over 80 MISSION_DEDUPED events
+// and no further work. An unverified cycle is outstanding work; the clock waits for it instead of re-queueing.
+test('a cycle awaiting verification is outstanding work, not a reason to queue another every tick', t => {
+  const s = setup(t);
+  const first = s.tick();
+  assert.equal(first.state, 'QUEUED');
+  const lease = s.nova.claim(first.missionId, 'nova');
+  const action = s.nova.begin(first.missionId, { owner: 'nova', token: lease.token, task: { type: 'health-check', data: {} } });
+  s.nova.finish(first.missionId, { owner: 'nova', token: lease.token, actionId: action.id, receipt: { ok: true, verified: true, result: { ok: true } } });
+  const closing = s.nova.claim(first.missionId, 'nova');
+  s.nova.release(first.missionId, { owner: 'nova', token: closing.token, completionProposed: true, reason: 'one cycle observed' });
+  assert.equal(s.nova.get(first.missionId).status, 'AWAITING_VERIFICATION');
+  const before = s.bus.listEvents(1000).filter(e => e.type === 'MISSION_DEDUPED').length;
+  for (let minute = 0; minute < 5; minute++) {
+    s.advance(61 * 60_000);
+    const result = s.tick();
+    assert.equal(result.state, 'OUTSTANDING', `tick ${minute}`);
+    assert.equal(result.missionId, first.missionId);
+  }
+  assert.equal(s.bus.listEvents(1000).filter(e => e.type === 'MISSION_DEDUPED').length, before, 'no duplicate cycle is created');
+  // Once the operator or automatic verification resolves it, the clock queues the next cycle again.
+  s.nova.resolve(first.missionId, { decision: 'cancel', note: 'operator closed the unverified cycle' });
+  s.advance(61 * 60_000);
+  const next = s.tick();
+  assert.equal(next.state, 'QUEUED');
+  assert.notEqual(next.missionId, first.missionId);
+});

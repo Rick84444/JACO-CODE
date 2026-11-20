@@ -18,7 +18,7 @@ Then, in any project folder: `jaco-lite`. Later:
 
 | Command | What it does |
 | --- | --- |
-| `jaco-lite update` | installs the newest build; the previous one is kept |
+| `jaco-lite update` | safely stages a checked new build, including while an older launcher is running; the next launch uses it |
 | `jaco-lite rollback` | goes back to the previous build |
 | `jaco-lite doctor` | shows what is installed and whether it can start |
 | `jaco-lite uninstall` | removes it (your projects and `~/.jaco` are not touched) |
@@ -206,3 +206,6 @@ spend has no caps until you set them: turn on a daily, monthly or per-task limit
 `<project>/.jaco/continuum/economic-policy.json`); an empty field means no cap. Lite never overwrites your changes.
 
 Licensed under the MIT License (see `LICENSE`).
+
+### Update during operation
+`jaco-lite update` downloads and verifies a new immutable build, without stopping a running launcher or deleting older build directories. The running process keeps its original code; no live module replacement or automatic restart is performed. Finish the current tool action and stop normally before launching the staged version in the same project. The runtime record `~/.jaco/lite-runtime.json` includes the running source commit and installation directory on new builds. Old installations may use a cached installer: obtain the current installer from jacocode.com once after this change is published. Old builds consume disk space and are intentionally not pruned automatically; only remove them after all launchers are stopped.

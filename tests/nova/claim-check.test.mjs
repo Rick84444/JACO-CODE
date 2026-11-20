@@ -154,3 +154,21 @@ test('optional judge deadline keeps rule evidence without any extra inference ca
   assert.equal(unsupported.ok,false);
   assert.equal(calls,0);
 });
+
+// Observed 2026-11-19: every claim check that day came back with judged:0, judge:null and
+// judgeError "The operation was aborted due to timeout". With no supported and no contradicted claim,
+// automatic resolution could neither confirm the answer nor send it back, so each mission stayed in
+// AWAITING_VERIFICATION for good. server.ts retries an unjudged check up to CLAIM_JUDGE_ATTEMPTS times
+// and only then hands the last attempt to the operator.
+test('server.ts retries a claim check whose judge never answered, a bounded number of times', () => {
+  const server = fs.readFileSync(new URL('../../runtime/server.ts', import.meta.url), 'utf8');
+  const attempts = /const CLAIM_JUDGE_ATTEMPTS = (\d+)/.exec(server);
+  assert.ok(attempts, 'the retry bound is named in server.ts');
+  assert.ok(Number(attempts[1]) >= 2 && Number(attempts[1]) <= 5, `bounded retries, got ${attempts[1]}`);
+  const picker = /const judged = checks\.find\([^;]+\) \|\| null;/.exec(server);
+  assert.ok(picker, 'an unjudged check is told apart from a judged one');
+  assert.match(picker[0], /judgeError/);
+  assert.match(server, /checks\.length >= CLAIM_JUDGE_ATTEMPTS \? checks\[checks\.length - 1\] : null/);
+  // A judged check still counts on the first attempt: a real verdict is never re-judged.
+  assert.match(picker[0], /c\?\.judge \|\| Number\(c\?\.judged\) > 0/);
+});

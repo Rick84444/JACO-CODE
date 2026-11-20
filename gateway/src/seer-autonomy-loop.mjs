@@ -83,7 +83,7 @@ function safeRepairCandidate(graph, failed, parsed, sequence) {
   return {
     key: `${rootRepairKey(failed.key)}.repair.${sequence}`,
     title: parsedTitle || `${failed.title || failed.key} (autonomous repair ${sequence})`,
-    objective: reversible && externalSpend <= 0 && parsedObjective ? `${failed.objective}\nADAPTIVE REPAIR APPROACH (original acceptance unchanged): ${parsedObjective}` : fallbackObjective,
+    objective: reversible && externalSpend <= 0 && parsedObjective ? [failed.objective, '', 'REVISED IMPLEMENTATION STRATEGY:', parsedObjective].join('\n') : fallbackObjective,
     contract: failed.contract || {},
     dependencies: Array.isArray(failed.dependencies) ? failed.dependencies : [],
     reason: reversible && externalSpend <= 0 && parsedReason
@@ -143,6 +143,7 @@ export function createAutonomyLoop({
             'You are Aura’s strategic repair planner.',
             'Compare three materially different, reversible alternatives grounded in current evidence; provide estimated metrics and a concrete verification approach for each. Do not resubmit the failed approach blindly.',
             'Return JSON only.',
+            'Compare at least two materially different feasible approaches using the strategic board, previous results, blockers, risk, and verification criteria. Choose the approach best supported by the evidence; explain why in reason. Treat forecast scores as estimates, not proof.',
             'You may change the implementation approach, but not authority, budget, protected scope, or verification requirements.',
             'No external spend. No destructive action. Preserve the failed node contract.',
           ].join(' '),
@@ -273,9 +274,13 @@ export function createAutonomyLoop({
     const graphs = missionGraph.list().filter(graph => ['ACTIVE','NEEDS_REPLAN'].includes(graph.status));
     for (const graph of graphs) {
       if (!remaining) break;
-      const readyNodes = missionGraph.ready(graph.id);
-      for (const node of readyNodes) {
-        if (!remaining) break;
+      const attempted = new Set();
+      while (remaining > 0) {
+        // ready() rebuilds the canonical strategic ranking from the current graph.
+        // Re-evaluate after each awaited dispatch; never reuse stale candidate order.
+        const node = missionGraph.ready(graph.id).find(candidate => !attempted.has(candidate.key));
+        if (!node) break;
+        attempted.add(node.key);
         // Failed attempts consume the same per-turn budget as successful dispatches.
         remaining--;
         try {
@@ -284,11 +289,13 @@ export function createAutonomyLoop({
             graph_id: graph.id,
             node_key: node.key,
             nova_mission_id: result?.nova?.id || null,
+            ...(node.strategic_move ? { strategic_move: node.strategic_move } : {}),
           });
           emit('autonomy.node_dispatched', {
             graph_id: graph.id,
             node_key: node.key,
             nova_mission_id: result?.nova?.id || null,
+            ...(node.strategic_move ? { strategic_move: node.strategic_move } : {}),
           });
         } catch (error) {
           report.errors.push({ phase: 'dispatch', graph_id: graph.id, node_key: node.key, error: error.message });
