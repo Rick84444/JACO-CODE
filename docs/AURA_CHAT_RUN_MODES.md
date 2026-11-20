@@ -4,15 +4,15 @@ This is **one** JACO GUI inside the browser and the VS Code full-GUI extension. 
 
 ## Operator experience
 
-The composer displays **only the selected execution mode**. Clicking its text opens a small inline choice between:
+The operator-facing composer is **Full Autonomous** from the first render, on reload, and after using suggestions. Old stored Manual/Planning preferences cannot change the mode. A non-interactive, motion-safe blue status label replaces the mode picker. There is no automatic work submission on page load.
 
-| Mode | Dispatch | Changes and tools |
-|---|---|---|
-| **Manual** (default) | `POST /api/aura/chat` with `interactionMode:question` | Read-only cognitive conversation; never creates a mission |
-| **Planning** | `POST /api/aura/chat` with `interactionMode:planning` | Read-only tools and verified knowledge/skill metadata, no new mission, no policy update |
-| **Full Autonomous** | Chat: `POST /api/aura/chat` with `interactionMode:question`. Explicit **Start mission**: `POST /api/aura/workbench/start-goal` with `executionMode:autonomous` | Conversation remains read-only while the existing durable mission runs. Start, stop and steer are separate operator actions with existing mandates. |
+| Control | Dispatch |
+|---|---|
+| **Send message** | `POST /api/aura/chat` with `interactionMode:action`; Aura can use authorized tools for explicit orders, and ordinary questions remain conversational. |
+| **Start mission** | `POST /api/aura/workbench/start-goal` with `executionMode:autonomous`; explicit durable Gameboard mission, independent of the chat response. |
+| **Stop / Steer** | Existing operator controls for the identified running mission. |
 
-The active Full Autonomous label glows/pulses softly blue and respects `prefers-reduced-motion`. Selecting a mode never starts work; pressing Send is the explicit dispatch. No `window.confirm` popup appears merely for switching modes. After submitting a mission the selected mode stays Full Autonomous, so the operator can continue the conversation and steer or stop the running work. **Send** always sends a chat message; **Start mission** is a separate button and never an implicit side effect. Full Autonomous is **not** restored from browser storage on reload.
+The Manual and Planning API contracts remain available for read-only integrations and compatibility; they are not selectable GUI states. The runtime continues to enforce per-tool permission, approvals, budgets and authorization. A mode label is never an authority grant. A chat work order should use the existing `start_goal` tool when available, avoid duplicate missions, or direct the operator to the explicit mission button if it cannot dispatch. A chat narrative is not an execution receipt.
 
 Clicking **Build Agent** opens a compact form inside the conversation. Typing `build agent` in the Manual/Planning composer does the same. Name, role, responsibility, success criteria and an operator credential are supplied to the **existing** `POST /api/aura/organization/agents`. A successful record is under Aura, with `L1`, no permissions, no paid model budget, no started worker and no invented communication identity. Its token is only held in component memory, not localStorage. No autonomous model output can bypass the operator-authenticated endpoint by claiming to be the operator.
 
@@ -28,15 +28,15 @@ The composer can show small live counts for matching verified knowledge and elig
 
 - Invalid interaction modes yield HTTP 400, instead of silently changing a command into ordinary chat.
 - Manual/Planning use only the read-oriented toolbox; Planning does not include the previously available policy-change exception.
-- Full Autonomous keeps chat available, and starts a durable canonical mission only through a separate explicit Start mission button; returns a real acknowledged ID without creating a second executor.
-- The default remains Manual on every new session; one single selected-mode label and a subtle pulse in Full Autonomous.
+- Full Autonomous keeps chat available; the separate Start mission button directly creates a durable canonical mission and returns a real acknowledged ID without creating a second executor. Chat dispatch remains subject to existing tool contracts.
+- Full Autonomous is the only operator-facing mode on every session; a non-interactive status has a subtle motion-safe pulse.
 - Build Agent stays within the existing operator-key route; no API key is sent to an LLM, no auto-grant.
 - Knowledge must have verified evidence; skill candidates must be ACTIVE, with **no** execution authority inferred.
 - Pass contract/unit tests, TypeScript, production frontend/backend build, and target-host browser interaction. CI does not by itself prove local Windows/Termux or VS Code behavior.
 
 ## Operator stop from the conversation
 
-The Aura conversation may request cancellation of an observed active mission through the existing `/api/aura/workbench/missions/:id/cancel` route. The runtime keeps its own graph-cancellation and mission-receipt semantics. A successful request confirms that stop was requested, not that an in-flight tool or the complete mission has already stopped. This control is separate from cancelling a chat response. Operator steering within an ACTIVE mission is now available from the same composer through **Ändra uppdrag / Steer mission**. This is an explicit operator-only action; normal Manual/Planning messages remain read-only and Full Autonomous still requires explicit submission. The request is persisted as an immutable `NOVA_OPERATOR_STEER` event with a unique request ID in the existing mission bus, with no second planner or model call.
+The Aura conversation may request cancellation of an observed active mission through the existing `/api/aura/workbench/missions/:id/cancel` route. The runtime keeps its own graph-cancellation and mission-receipt semantics. A successful request confirms that stop was requested, not that an in-flight tool or the complete mission has already stopped. This control is separate from cancelling a chat response. Operator steering within an ACTIVE mission is now available from the same composer through **Ändra uppdrag / Steer mission**. This is an explicit operator-only action; the internal Manual/Planning API remains read-only and autonomous work still requires explicit submission. The request is persisted as an immutable `NOVA_OPERATOR_STEER` event with a unique request ID in the existing mission bus, with no second planner or model call.
 
 Each model turn reads the latest steering revision. The existing `begin` boundary rejects an action planned against an older revision (`NOVA_STEER_STALE`) before starting any new tool, and stale completion/replan/blocking proposals are rejected. If an action is already executing, its lease and receipt are preserved; any subsequent batched step must use the new revision. The UI reports **queued for next planning step**, not already applied or verified. No model/plan/contract/permissions/budget changes result from steering, and the original parent graph's acceptance remains authoritative. A fundamentally different goal or expanded scope must be submitted as a new mission with appropriate authorization. Steering is not yet a generalized graph-node rewrite, and real device/provider tests remain necessary.
 

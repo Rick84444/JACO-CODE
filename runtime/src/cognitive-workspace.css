@@ -115,7 +115,8 @@
 .cognitive-compose-modes button { display:flex; align-items:center; gap:5px; padding:5px 9px; border-radius:5px; font-size:12px; color:#cccdcf; }
 .cognitive-compose-modes button[aria-pressed=true] { background:#444547; color:#b5d6e3; }
 /* Show one compact mode label; autonomous is a quiet, motion-safe blue glow. */
-.cognitive-compose-modes button.jaco-autonomous-active {
+.cognitive-compose-modes .jaco-autonomous-active {
+  display:flex; align-items:center; gap:5px; padding:5px 9px; border-radius:5px; font-size:12px;
   color:#84caff;
   background:transparent;
   text-shadow:0 0 5px rgba(57,150,245,.30);
@@ -126,7 +127,7 @@
   50% { color:#bee5ff; text-shadow:0 0 10px rgba(57,150,245,.55); }
 }
 @media (prefers-reduced-motion:reduce) {
-  .cognitive-compose-modes button.jaco-autonomous-active { animation:none; }
+  .cognitive-compose-modes .jaco-autonomous-active { animation:none; }
 }
 
 .cognitive-enter-hint { font-size:11px; color:#c8c9cb; margin-left:auto; }
