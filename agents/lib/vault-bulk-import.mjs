@@ -98,11 +98,14 @@ export function importVaultText(text, { store = new SecretStore(), dryRun = fals
   for (const [name,{value,line}] of entries) {
     if (conflicts.has(name)) { report.pending.push({line,reason:'CONFLICTING_VALUES',candidates:[name]}); continue; }
     try {
-      if (store.has(name)) { report.kept.push(name); continue; }
-      if (dryRun) { report.ready.push(name); continue; }
-      store.set(name,value,{source:'operator-bulk-import',purpose:'Operator-selected service credential'});
+      if (dryRun) {
+        (store.has(name) ? report.kept : report.ready).push(name);
+        continue;
+      }
+      const meta = {source:'operator-bulk-import',purpose:'Operator-selected service credential'};
+      if (!store.setIfAbsent(name,value,meta)) { report.kept.push(name); continue; }
       report.imported.push(name);
-    } catch { report.failed.push({name,line,reason:'STORE_FAILED'}); }
+    } catch (error) { report.failed.push({name,line,reason:error?.message === 'VAULT_WRITE_BUSY' ? 'VAULT_WRITE_BUSY' : 'STORE_FAILED'}); }
   }
   return report;
 }
