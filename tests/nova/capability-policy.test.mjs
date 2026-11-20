@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl } from '../../runtime/src/server/connected/novaMissionControl.mjs';
-import { CapabilityPolicy, taskCatalog, ALWAYS_ASK } from '../../runtime/src/server/capabilities/capabilityPolicy.mjs';
+import { CapabilityPolicy, taskCatalog, ALWAYS_ASK, configuredTaskCeiling } from '../../runtime/src/server/capabilities/capabilityPolicy.mjs';
 import { operatorApprovalCheck } from '../../agents/lib/operator-action-guard.mjs';
 import { TASK_FIELDS } from '../../agents/lib/task-fields.mjs';
 
@@ -74,4 +74,18 @@ test('Aura\'s own outward tools ask like other connector writes', () => {
     assert.ok(operatorApprovalCheck({ type: 'mcp-write', data: { server: 'jaco', tool } }), tool);
   for (const tool of ['jaco_system_health', 'wordpress_status', 'knowledge_search'])
     assert.equal(operatorApprovalCheck({ type: 'mcp-write', data: { server: 'jaco', tool } }), null, tool);
+});
+
+
+test('sandbox profile follows canonical capabilities and preserves explicit ceilings and operator switches', t => {
+  assert.equal(configuredTaskCeiling('sandbox'), undefined);
+  assert.equal(configuredTaskCeiling(''), undefined);
+  assert.deepEqual(configuredTaskCeiling('web-fetch, repo-read'), ['web-fetch','repo-read']);
+  const policy = new CapabilityPolicy(path.join(tmp(t), 'sandbox.json'), { taskIds });
+  policy.update({ tasks: { 'mcp-write': false } });
+  const mission = control(t, policy).create({ goal: 'Research and inspect', idempotencyKey: 'sandbox-profile' });
+  for (const task of ['mcp-call','skill-load','screenshot','browser-survey-site','mouse-move','android-observe','vault-get-secret']) assert.ok(mission.allowedTasks.includes(task), task);
+  assert.ok(!mission.allowedTasks.includes('mcp-write'));
+  assert.ok(!mission.allowedTasks.includes('repo-scan'));
+  assert.ok(!mission.allowedTasks.includes('repo-write'), 'coding writes require a separate contract');
 });
