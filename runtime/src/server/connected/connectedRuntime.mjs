@@ -35,7 +35,7 @@ export class ConnectedRuntime {
     const knownExecutor = executor => !String(executor).includes('@')
       || this.devices.list().some(device => device.executor === executor && !device.revokedAt);
     this.capabilities = new CapabilityPolicy(path.join(workspaceRoot, '.jaco', 'state', 'capabilities.json'), { taskIds: Object.keys(TASK_FIELDS) });
-    this.novaMissions = new NovaMissionControl(this.bus, env.JACO_NOVA_ALLOWED_TASKS
+    this.novaMissions = new NovaMissionControl(this.bus, env.JACO_NOVA_ALLOWED_TASKS?.trim() && env.JACO_NOVA_ALLOWED_TASKS.trim() !== 'sandbox'
       ? { allowedTasks: env.JACO_NOVA_ALLOWED_TASKS.split(',').map(s => s.trim()), knownExecutor, capabilities: this.capabilities }
       : { knownExecutor, capabilities: this.capabilities });
     this.running = false;
