@@ -81,7 +81,7 @@ export function createGithubBootstrapControl({
   system,
   fetchImpl = globalThis.fetch,
   enabled = process.env.JACO_GITHUB_BOOTSTRAP_ENABLE === '1',
-  repo = process.env.JACO_GITHUB_BOOTSTRAP_REPO || process.env.JACO_GITHUB_CONTROL_REPO || 'Rick84444/jaco-code',
+  repo = process.env.JACO_GITHUB_BOOTSTRAP_REPO || process.env.JACO_GITHUB_CONTROL_REPO || '',
   token = process.env.JACO_GITHUB_BOOTSTRAP_TOKEN || process.env.JACO_GITHUB_CONTROL_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '',
   actor = process.env.JACO_GITHUB_BOOTSTRAP_ACTOR || process.env.JACO_GITHUB_CONTROL_ACTOR || String(repo).split('/')[0],
   pollMs = Number(process.env.JACO_GITHUB_BOOTSTRAP_POLL_MS || 15000),
