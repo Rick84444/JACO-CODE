@@ -424,7 +424,8 @@ export function adaptiveMissionStrategy(mission = {}) {
       last.ok === false ? 'FAILED' : last.ok === true && last.verified === true ? 'VERIFIED' : 'UNVERIFIED',
   };
   let hold = null;
-  if (mission.hasUncertainOutcome === true || last?.outcomeUnknown === true) hold = 'RECONCILE_UNKNOWN_OUTCOME';
+  if (mission.strategicStateObserved === false) hold = 'MISSION_STATE_UNOBSERVED';
+  else if (mission.hasUncertainOutcome === true || last?.outcomeUnknown === true) hold = 'RECONCILE_UNKNOWN_OUTCOME';
   else if (mission.cancelRequested || mission.status !== 'ACTIVE') hold = 'MISSION_NOT_ACTIVE';
   else if (mission.paused) hold = 'OPERATOR_PAUSED';
   else if (mission.pendingOperatorAction || mission.spendApprovalPending || mission.replanRequest) hold = 'WAIT_FOR_EXISTING_GATE';
@@ -471,6 +472,6 @@ export function adaptiveStrategyInstruction(mission) {
     JSON.stringify(state),
     state.status === 'HOLD'
       ? 'Do not start another mutation or retry an uncertain action. Respect the existing mission gate and reconcile from actual receipts.'
-      : 'Compare the recommended posture and alternatives against the current goal, operator steering, tool availability and remaining budget. Choose the next permitted action, not a new goal. After a known failure, diagnose the actual cause or choose a materially different route; never blindly repeat. After verification, advance the next unmet prerequisite or complete only if acceptance is satisfied. State a concise rationale in say, and use learned to describe what the receipt actually establishes.',
+      : 'Compare the recommended posture and alternatives against the current goal, operator steering, tool availability and remaining budget. If assigned a graph move, preserve that move’s objective and dependencies; tactical suggestions do not replace the graph. Choose the next permitted action, not a new goal. After a known failure, diagnose the actual cause or choose a materially different route; never blindly repeat. After verification, advance the next unmet prerequisite or complete only if acceptance is satisfied. State a concise rationale in say, and use learned to describe what the receipt actually establishes.',
   ].join('\n');
 }
