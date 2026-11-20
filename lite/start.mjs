@@ -388,7 +388,7 @@ export function updateNotice(result, env = process.env) {
   if (result?.state !== 'UPDATE') return [];
   const head = ['', `A newer JACO Lite is available (built ${result.builtAt}, yours ${result.installedBuiltAt}).`];
   // Installed with install.sh / install.ps1: one command does it, checks the download and keeps the old build for rollback.
-  if (env.JACO_LITE_INSTALLER === '1') return [...head, '  Update with:  jaco-lite update     (back to this build with:  jaco-lite rollback)'];
+  if (env.JACO_LITE_INSTALLER === '1') return [...head, '  Stage update with:  jaco-lite update     (back to this build with:  jaco-lite rollback)'];
   return [...head, `  ${result.url}${result.sha256 ? `   SHA-256 ${result.sha256}` : ''}`, '  Unzip it into a new folder; your projects stay where they are.'];
 }
 
@@ -397,7 +397,8 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   let childEnv = liteChildEnv(env, deps.execPath ?? process.execPath);
   const out = deps.out ?? (line => process.stdout.write(`${line}\n`));
   const err = deps.err ?? (line => process.stderr.write(`${line}\n`));
-  const installDir = deps.installDir ?? path.dirname(fileURLToPath(import.meta.url));
+  // Pin the running launcher to the immutable version directory, never the movable current link.
+  const installDir = deps.installDir ?? fs.realpathSync(path.dirname(fileURLToPath(import.meta.url)));
   const fsImpl = deps.fs ?? fs;
   const args = parseArgs(argv);
   if (args.help) { out(HELP); return 0; }
