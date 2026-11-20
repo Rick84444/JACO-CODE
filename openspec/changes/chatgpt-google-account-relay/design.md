@@ -31,6 +31,21 @@ Customer's ChatGPT (custom MCP plugin)
   authorization server metadata (RFC 8414), protected resource metadata
   (RFC 9728), resource indicator (RFC 8707) and client registration/client-ID
   metadata as supported by current ChatGPT plugin auth contract.
+- Prefer ChatGPT Client ID Metadata Documents (CIMD) if supported:
+  `client_id_metadata_document_supported: true`, validate the declared
+  client metadata URL and **exact** registered redirect URLs. Fallback to
+  DCR only as needed. Never accept arbitrary client-declared callback URLs.
+- Advertise `authorization_response_iss_parameter_supported: true` and
+  include the exact issuer `iss` in successful and error authorization
+  responses (RFC 9207) to prevent authorization-server mix-up.
+- For unauthorized MCP requests, return a standards-compliant `401`
+  with a `WWW-Authenticate` challenge and protected-resource metadata.
+  Accept access tokens only for the exact JACO MCP resource URL and
+  granted scope; authentication must never be skipped because the request
+  happens to arrive from a Google-signed-in web browser.
+- Follow current ChatGPT OAuth requirements for token endpoint auth methods,
+  `resource` propagation and approved PKCE S256 verifier handling. User
+  consent (scope + device) is separate from Google sign-in.
 - Validate explicit allowlisted client redirect URIs, issuer, audience,
   `resource`, `state`, code verifier, one-time code, expiry and scope before
   issuing a grant. Bind grants to stable `sub`, chosen `deviceId`, client
