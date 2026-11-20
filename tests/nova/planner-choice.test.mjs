@@ -356,3 +356,16 @@ test('a model that answers text but refuses tools cannot become the planner; a t
   const thinking = await testPlannerModel(local, { env, fetchImpl: async () => Response.json({ choices: [{ message: { content: '', reasoning: 'hmm' } }] }) });
   assert.equal(thinking.ok, true);
 });
+
+test('explicit structured llama.cpp probe requires actual text, not native tools or reasoning-only', async()=>{
+ const extra={llamacpp:{url:'http://127.0.0.1:9380/v1/chat/completions',models:['bonsai-4b'],paid:false,keyEnv:null}};
+ const env={JACO_NOVA_NATIVE_TOOLS:'0',JACO_LOCAL_ONLY:'1',JACO_ALLOW_PAID_MODELS:'0'};
+ const call=(message)=>testPlannerModel({provider:'llamacpp',model:'bonsai-4b'},{env,extra,fetchImpl:async(url,init)=>{
+   assert.equal(url,extra.llamacpp.url);assert.equal(init.redirect,'error');
+   assert.equal(JSON.parse(init.body).tools,undefined);
+   return Response.json({choices:[{message}]});
+ }});
+ const result=await call({content:'OK'});
+ assert.equal(result.ok,true);assert.equal(result.verifiedToolCalling,false);assert.equal(result.plannerProtocol,'structured');
+ assert.equal((await call({content:' ',reasoning:'still thinking'})).ok,false);
+});
