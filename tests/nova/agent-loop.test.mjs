@@ -304,8 +304,10 @@ test('refresh replaces one mission packet with updated receipt state between tur
     intro: mission => `BOARD receipts=${mission.receipts?.length || 0}`,
   });
   assert.equal(result.completed, true);
-  assert.equal(model.seen[0][1].content, 'BOARD receipts=0');
-  assert.equal(model.seen[1][1].content, 'BOARD receipts=1');
+  assert.match(model.seen[0][1].content, /^BOARD receipts=0\n/);
+  assert.match(model.seen[1][1].content, /^BOARD receipts=1\n/);
+  assert.match(model.seen[0][1].content, /"recommendedMove":"inspect"/);
+  assert.match(model.seen[1][1].content, /"recommendedMove":"advance"/);
   assert.equal(model.seen[1].filter(m => m.content?.startsWith('BOARD')).length, 1);
   assert.ok(model.seen[1].some(m => m.role === 'tool'));
 });
