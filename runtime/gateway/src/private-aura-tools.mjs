@@ -4,12 +4,11 @@ const ID=/^[a-zA-Z0-9_.:-]{1,160}$/;
 const safeId=value=>typeof value==='string'&&ID.test(value)?value:null;
 const STATES=new Set(['ACTIVE','PENDING','QUEUED','READY','PLANNING','EXECUTING','BLOCKED','DONE','CANCELLED','FAILED','AWAITING_VERIFICATION','RECONCILIATION_REQUIRED','INTERRUPTED','CLOSED']);
 const state=value=>STATES.has(value)?value:'UNVERIFIED';
-const text=(value,max)=>typeof value==='string'?value.trim().slice(0,max):'';
 const noSecrets=value=>!(/\bBearer\s+[^\s,;]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[\w-]{24,}|(?:api.?key|password|token)\s*[:=]\s*\S+/i.test(value));
 const noArgs=z.object({}).strict();
 const missionId=z.string().regex(ID);
 const goalSchema=z.object({goal:z.string().trim().min(1).max(8000)}).strict();
-const steerSchema=z.object({missionId,instruction:z.string().trim().min(1).max(2000),requestId:z.string().regex(ID)}).strict();
+const steerSchema=z.object({missionId,instruction:z.string().trim().min(1).max(2000),requestId:z.string().regex(/^[0-9a-f]{8}-[0-9a-f-]{27,50}$/i)}).strict();
 export function assertPrivateAuraBridge(core,env=process.env){
   if(env.JACO_MCP_ALLOW_AURA_MISSIONS!=='1')throw Error('JACO_PRIVATE_AURA_BRIDGE_DISABLED');
   const u=new URL(String(core?.baseUrl||''));
@@ -30,6 +29,7 @@ export function privateAuraTools({core,env=process.env}){
     // Authenticate every call against the existing operator readiness endpoint.
     const ready=await core.request('/api/aura/workbench/readiness',{method:'GET',redirect:'error'});
     if(ready?.success!==true||ready?.schema!=='jaco.aura-readiness/v1'||ready.core?.authenticated!==true)throw Error('JACO_PRIVATE_AURA_AUTH_UNVERIFIED');
+    if(path==='/api/aura/workbench/start-goal'&&ready.ready!==true)throw Error('JACO_PRIVATE_AURA_NOT_READY');
     return core.request(path,{...options,redirect:'error'});
   };
   const tool=(name,title,description,inputSchema,handler,readOnlyHint=false)=>({name,config:{title,description,inputSchema,annotations:{readOnlyHint,destructiveHint:false,idempotentHint:readOnlyHint,openWorldHint:!readOnlyHint}},handler});
