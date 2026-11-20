@@ -13,7 +13,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const MIN_NODE = '22.5';
 export const DEFAULT_PORT = 3000;
@@ -496,7 +496,17 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     lifecycle({ component: 'workplace', event: 'DEGRADED_UNSYNCED', reason: 'STARTUP_UNVERIFIED' });
     err('JACO Workplace unavailable; continuing local work without synchronized coordination. See .jaco/workplace.log.');
   }
-  const connectedEnv = liteLocalConnectionEnv({ childEnv, workplacePort, workplaceReady });
+  let connectedEnv = liteLocalConnectionEnv({ childEnv, workplacePort, workplaceReady });
+  let browser=null;
+  const browserModule=path.join(installDir,'dist','lite-browser-supervisor.mjs');
+  if(fsImpl.existsSync(browserModule)){
+    try{
+      const {prepareLiteBrowser}=await import(pathToFileURL(browserModule).href);
+      browser=await prepareLiteBrowser({env:connectedEnv,installDir,project,corePort:port,workplacePort,workplaceReady,findPort:deps.findPort??findFreePort,portFree:isPortFree,platform:deps.platform??process.platform,fsImpl});
+      connectedEnv=browser.env;
+      if(browser.reason)lifecycle({component:'browser',event:'UNAVAILABLE',reason:browser.reason});
+    }catch{lifecycle({component:'browser',event:'UNAVAILABLE',reason:'BROWSER_STARTUP_CONFIGURATION_FAILED'});}
+  }
   const logFile = path.join(project, '.jaco', 'lite.log');
   const log = fsImpl.createWriteStream ? fsImpl.createWriteStream(logFile, { flags: 'a' }) : null;
   // JACO_LITE_TOKEN lets a test follow the agent's missions; normally the token is random and never shown.
@@ -524,7 +534,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     child.once('exit', (code, signal) => { exited = processStopped('ide', child, code, signal); resolve(exited); });
     child.once('error', error => { exited = 1; tail += `\n${error.message}`; lifecycle({ component:'ide', event:'SPAWN_ERROR', reason: error.code || 'UNKNOWN' }); resolve(1); });
   });
-  const stop = () => { shutdownRequested = true; clearTimeout(agentRestartTimer); for (const p of [agent, child, workplace]) { try { p?.kill(); } catch { /* already gone */ } } };
+  const stop = () => { shutdownRequested = true; browser?.stop(); clearTimeout(agentRestartTimer); for (const p of [agent, child, workplace]) { try { p?.kill(); } catch { /* already gone */ } } };
   if (!deps.noSignals) {
     process.removeListener('SIGINT', stopStartingWorkplace); process.removeListener('SIGTERM', stopStartingWorkplace);
     process.once('SIGINT', stop); process.once('SIGTERM', stop);
@@ -601,6 +611,10 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     });
   };
   launchAgent();
+  if(browser&&!browser.reason){
+    out('  CDP:      starting independently of Core');
+    void browser.start({token,execPath:deps.execPath??process.execPath,spawnImpl:deps.spawnImpl??spawn,fetchImpl:deps.fetchImpl??fetch,report:event=>{lifecycle(event);if(event.component==='browser')out('  CDP:      '+event.event+(event.reason?' '+event.reason:''));}}).catch(()=>lifecycle({component:'browser',event:'DEGRADED',reason:'BROWSER_START_FAILED'}));
+  }else if(browser?.reason)out('  CDP:      '+browser.reason);
   out(`  Agent:    ${agentCmd ? 'Nova launch requested; waiting for executor observation (log: .jaco/nova.log)' : args.agent ? 'not part of this installation' : 'off (--no-agent)'}`);
   out('  Stop:     press Ctrl+C in this window');
   // Never blocks the start: a failed or slow check prints nothing. Tests that inject a fetch skip the real one.
@@ -617,6 +631,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   removeRuntimeRecord({ home }, fsImpl);
   const intentionalStop = shutdownRequested;
   shutdownRequested = true;
+  browser?.stop();
   clearTimeout(agentRestartTimer);
   try { agent?.kill(); } catch { /* already gone */ }
   try { workplace?.kill(); } catch { /* already gone */ }
