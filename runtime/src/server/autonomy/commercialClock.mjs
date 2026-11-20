@@ -63,7 +63,10 @@ export function reconcileCommercialClock({mandates,operator,bus,nova,knowledge,c
     if(!detail.hasUncertainOutcome && !detail.activeTask && !detail.pendingOperatorAction && !detail.spendApprovalPending) nova.requestCancel(old.id,'Previous commercial clock expired');
   }
   const unresolved=history.filter(x=>x.metadata?.mandateId===m.id && !['DONE','CANCELLED'].includes(x.status));
-  const active=unresolved.find(x=>x.status==='ACTIVE');
+  // A cycle still waiting for its answer to be verified is outstanding work, exactly like a running one.
+  // Treating only ACTIVE as outstanding made every tick create a cycle that mission dedupe rejected against the
+  // unverified one, so the clock logged MISSION_DEDUPED once a minute and never started another cycle again.
+  const active=unresolved.find(x=>x.status==='ACTIVE')||unresolved.find(x=>x.status==='AWAITING_VERIFICATION');
   if(active) return {state:'OUTSTANDING',missionId:active.id};
   // A pending decision must not halt independent read-only commercial work or grant new writes.
   const readOnly=unresolved.length>0;
