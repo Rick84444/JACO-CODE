@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAutonomyLoop, parseModelJson, shouldAutoConfirmNova } from '../src/seer-autonomy-loop.mjs';
+import { createAutonomyLoop, parseModelJson, shouldAutoConfirmNova, selectRepairHypothesis } from '../src/seer-autonomy-loop.mjs';
 import { createAuraControlLoop } from '../src/aura-control-loop.mjs';
 import { createAuraControlLease } from '../src/aura-control-lease.mjs';
 import { createAuraCoreController } from '../../runtime/src/server/connected/auraCoreController.mjs';
@@ -456,4 +456,30 @@ test('an evidence-backed stuck graph node requests an automatically contracted r
   assert.deepEqual(replacement.contract, original);
   assert.match(replacement.objective, /Diagnose the concrete root cause/);
   assert.equal(after.status, 'ACTIVE');
+});
+
+
+test('Gameboard compares safe repair hypotheses and records the selected approach without replacing the goal',async()=>{
+  const m={confidence:.7,verificationGain:.9,informationGain:.8,risk:.1,effort:.2};
+  const suggestion=(title,metrics,extra={})=>({title,objective:title,reason:'based on failure evidence',reversible:true,external_spend:0,metrics,...extra});
+  const candidates=[
+    suggestion('Unsafe',m,{external_spend:1}),
+    suggestion('Weak alternative',{...m,confidence:.1,verificationGain:.1,informationGain:.1,risk:1,effort:1}),
+    suggestion('Strong alternative',m),
+    suggestion('Invalid metric',{...m,confidence:2}),
+  ];
+  assert.equal(selectRepairHypothesis({alternatives:candidates}).title,'Strong alternative');
+  assert.equal(selectRepairHypothesis({alternatives:[candidates[0],candidates[3]]}),null);
+  const contract={scope:{allowed:['src/**']},verification:{tests_required:true}};
+  const fixture=graphFixture({id:'g-adapt',status:'NEEDS_REPLAN',title:'Original',objective:'Original goal',policy:{},replans:[],
+    nodes:[{key:'a',title:'A',objective:'Original obligation',status:'FAILED',failure_reason:'known failure',dependencies:[],contract,evidence_refs:['receipt:1']}]});
+  const loop=createAutonomyLoop({missionGraph:fixture.api,dispatch:fixture.dispatch,callLLM:async()=>({ok:true,text:JSON.stringify({alternatives:candidates})})});
+  const report=await loop.turn();
+  assert.equal(report.replanned.length,1);
+  const replacement=fixture.snapshot().nodes.find(n=>n.key==='a.repair.1');
+  assert.match(replacement.objective,/Original obligation/);
+  assert.match(replacement.objective,/Strong alternative/);
+  assert.deepEqual(replacement.contract,contract);
+  assert.match(fixture.snapshot().replans[0].reason,/compared 2 admissible hypotheses/);
+  assert.match(fixture.snapshot().replans[0].reason,/Forecasts are not evidence/);
 });
