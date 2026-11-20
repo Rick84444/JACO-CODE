@@ -36,7 +36,8 @@ export async function prepareLiteBrowser({env,installDir,project,corePort,workpl
     started=true;
     const browserEnv={...next,PORT:String(corePort),JACO_RUNTIME_URL:'http://127.0.0.1:'+corePort,JACO_GATEWAY_TOKEN:token,GATEWAY_TOKEN:token,JACO_WORKPLACE_REQUIRED:'1',JACO_WORKSPACE_ROOT:project};
     const launch=(id,cmd,args)=>{
-      const proc=spawnImpl(cmd,args,{cwd:project,env:browserEnv,stdio:'ignore',windowsHide:true,shell:false});
+      const chromeEnv=Object.fromEntries(Object.entries(browserEnv).filter(([name])=>/^(PATH|HOME|USER|USERPROFILE|APPDATA|LOCALAPPDATA|SYSTEMROOT|WINDIR|TEMP|TMP|TMPDIR|LANG|LC_.*|DISPLAY|WAYLAND_DISPLAY|XDG_[A-Z_]+|DBUS_SESSION_BUS_ADDRESS|LD_LIBRARY_PATH)$/i.test(name)));
+      const proc=spawnImpl(cmd,args,{cwd:project,env:id==='chrome'?chromeEnv:browserEnv,stdio:'ignore',windowsHide:true,shell:false});
       const c={proc,closed:false,id,promise:null};children.push(c);
       c.promise=new Promise(resolve=>{
         proc.once('error',()=>{c.closed=true;resolve();report({component:id,event:'SPAWN_ERROR'});});
@@ -48,7 +49,7 @@ export async function prepareLiteBrowser({env,installDir,project,corePort,workpl
       const deadline=Date.now()+30000;
       while(!stopping&&!c.closed&&Date.now()<deadline){
         try{
-          const r=await fetchImpl(url,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(1500),redirect:'error'});
+          const r=await fetchImpl(url,{...(c.id==='novaBridge'?{headers:{Authorization:'Bearer '+token}}:{}),signal:AbortSignal.timeout(1500),redirect:'error'});
           if(r.ok&&accept(await r.json())&&!c.closed&&!stopping)return true;
         }catch{}
         await new Promise(resolve=>setTimeout(resolve,500));
