@@ -115,6 +115,21 @@ The old `START-ANDROID.sh` launcher is retained for compatibility with
 existing Termux installations. The Pixel deployment uses
 `START-PIXEL-TERMINAL.sh` instead.
 
+### Mobile startup and recovery
+
+Android Lite defaults to Aura Lean (less idle polling and on-demand MCP startup).
+Existing explicit environment settings take precedence. Set `JACO_AURA_LEAN=0`
+to restore the full startup profile, or `JACO_AUTO_START_TOOLS=1` to prestart tools.
+No model is hardcoded or downloaded: choose any connected model in the IDE.
+An unavailable external model is not a Core startup prerequisite.
+
+Before reporting the IDE ready, Lite verifies its HTTP identity and the served
+HTML/JavaScript entry against the installed release manifest. This does not
+prove a browser rendered the UI. If startup fails, inspect
+`<project>/.jaco/lite.log` and `<project>/.jaco/lite-lifecycle.jsonl`.
+A child signal exit is retained, including 137 for SIGKILL; that alone does
+not prove memory pressure.
+
 ### Gameboard and simulation
 The `Spelplan` tab in Cognitive Live Workspace reads `/api/aura/workbench/gameboard` and shows stable numeric agent and MCP-tool IDs and, where SEER is connected, observed mission-graph forecasts. The simulation control accepts assumptions for a hypothetical tool chain; it neither invokes a tool nor claims a verified outcome. A Lite install without SEER reports `UNAVAILABLE` for the canonical strategic graph, rather than faking it; the hypothetical scenario simulator remains available. The durable revisioned exchange stores agent `OBSERVATION`, `HYPOTHESIS` and numeric `MOVE_PROPOSAL` entries with optimistic locking. Entries are self-reported, not verified and cannot invoke an executor. JACO Editor MCP exposes `gameboard_status`, `gameboard_events` and `gameboard_simulate` as read-only tools, plus the Workplace-synchronized `gameboard_publish` operation for clients that connect locally. Public ChatGPT access still requires the authenticated remote JacoEdit transport from PR #142 and its secure OAuth/Cloudflare deployment.
 
