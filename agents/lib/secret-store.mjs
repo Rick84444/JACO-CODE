@@ -10,8 +10,6 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
 
 export const SECRET_NAME = /^[A-Z][A-Z0-9_]{1,127}$/;
 const MAX_VALUE = 16 * 1024;
@@ -69,9 +67,8 @@ export class SecretStore {
   // crash. No PID guessing or stale lock-file deletion. The encrypted JSON stays canonical.
   #withWriteLock(fn) {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-    let DatabaseSync;
-    try { ({ DatabaseSync } = require('node:sqlite')); }
-    catch { throw Error('VAULT_WRITE_REQUIRES_NODE_SQLITE'); }
+    const DatabaseSync = process.getBuiltinModule?.('node:sqlite')?.DatabaseSync;
+    if (!DatabaseSync) throw Error('VAULT_WRITE_REQUIRES_NODE_SQLITE');
     const file = this.file + '.mutex.sqlite';
     const db = new DatabaseSync(file);
     try {
