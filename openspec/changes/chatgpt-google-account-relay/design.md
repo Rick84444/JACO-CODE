@@ -1,7 +1,7 @@
 # Design: per-account remote MCP adapter to canonical Aura
 
 ```text
-Customer's ChatGPT (custom MCP plugin)
+Customer's ChatGPT mobile or desktop (same custom MCP plugin)
           |
       HTTPS/OAuth 2.1
           |
@@ -89,3 +89,22 @@ Customer's ChatGPT (custom MCP plugin)
 - Feature flags default OFF; stage through controlled Cloudflare deploy and
   independent security review; do not deploy via raw Worker publish that
   overwrites the JACO download artifacts.
+
+## Mobile conversation acceptance
+
+- The **same OAuth JACO app and OAuth grant** must be discoverable from an
+  eligible customer's ChatGPT mobile session and desktop session, subject to
+  the current ChatGPT client capabilities. Never equate JACO PWA login with
+  ChatGPT app connection or an unsupported account feature.
+- A user utterance in a ChatGPT mobile chat (for example, “Aura, inspect
+  my JACO runtime and report failures”) calls the JACO MCP action through
+  the account-scoped JACO Link transport, not instructions to paste CLI
+  snippets. Return an actual `goalId` or `missionId`, then continue with
+  status and verified receipts in the same ChatGPT conversation.
+- The ChatGPT conversation can end while Aura continues executing. Future
+  turns can reconnect to the same mission by scoped identity and durable ID;
+  the JACO service stores no global mutable “current ChatGPT user”.
+- “Operate phone from ChatGPT” is not automatically equivalent to
+  “operate the phone's Android OS”. Additional mobile-device integration
+  must be explicitly paired, permission-scoped, auditable and not rely
+  on a second Android Aura runtime.
