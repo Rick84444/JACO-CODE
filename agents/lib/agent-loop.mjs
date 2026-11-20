@@ -15,6 +15,7 @@ import { redactDeep } from './secret-capture.mjs';
 import { StuckDetector } from './stuck-detector.mjs';
 import { condenseMessages } from './condenser.mjs';
 import { buildContextPacket, formatContextPacket } from './context-packet.mjs';
+import { adaptiveStrategyInstruction } from './aura-strategic-board.mjs';
 import { executionExceptionResult } from './replay-semantics.mjs';
 import { verifiedOutcomeHints } from './verified-outcome-context.mjs';
 import { decisionLessonHints } from './meta-reasoning.mjs';
@@ -255,8 +256,9 @@ export async function runAgentMission({
     capabilityEvidence = observeMissionCapabilities(mission, tools);
     // Keep the canonical mission packet at index 1 so refreshed introductions
     // replace the correct message and never overwrite the capability observation.
+    let missionIntro = await intro(mission);
     messages.push({ role: 'system', content: typeof system === 'function' ? system(mission) : system },
-      { role: 'user', content: await intro(mission) });
+      { role: 'user', content: missionIntro });
     messages.push({ role: 'user', content: 'CURRENT CAPABILITY EVIDENCE (catalog, not permission or proof of execution): '+JSON.stringify(capabilityEvidence) });
     if (inheritedCircle.kind === 'unrepaired-missing-command') {
       // The durable ledger proves the same missing executable survived a run
@@ -303,7 +305,8 @@ export async function runAgentMission({
       }
       await onActivity({ phase: 'PLANNING', missionId: mission.id });
       // Replace the retained mission packet; never accumulate duplicate board snapshots.
-      if (refreshIntro && turns > 1) messages[1] = { role: 'user', content: await intro(mission) };
+      if (refreshIntro && turns > 1) missionIntro = await intro(mission);
+      messages[1] = { role: 'user', content: missionIntro + '\n\n' + adaptiveStrategyInstruction(mission) };
       const condensed = condenseMessages(messages, { maxChars: maxContextChars });
       if (condensed.condensed) {
         messages.splice(0, messages.length, ...condensed.messages);
