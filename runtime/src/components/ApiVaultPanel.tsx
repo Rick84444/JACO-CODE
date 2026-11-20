@@ -76,7 +76,7 @@ export function ApiVaultPanel({ onChanged }: { onChanged?: () => void | Promise<
       }).then(readAuraResponse);
       setBulkReport(result);
       if (!dryRun) {
-        if (!(result.pending?.length || result.failed?.length)) setBulkText('');
+        setBulkText('');
         await refresh();
         await onChanged?.();
       }
@@ -132,7 +132,7 @@ export function ApiVaultPanel({ onChanged }: { onChanged?: () => void | Promise<
     </form>
     <h4>{tr('Massimport och automatisk matchning', 'Bulk import and automatic matching')}</h4>
     <p>{tr('Endast lokal runtime. Klistra in tjänstenamn och nyckel per rad eller NAME=value. Tvetydiga rader och befintliga nycklar skrivs inte över.', 'Local runtime only. Paste one service name and key per line or NAME=value. Ambiguous rows and existing credentials are not overwritten.')}</p>
-    <textarea value={bulkText} onChange={e => { setBulkText(e.target.value); setBulkReport(null); }} rows={6} maxLength={131072} autoComplete="off" spellCheck={false} aria-label={tr('Massimport av API-nycklar','Bulk credential input')} placeholder="SERVICE_API_KEY=..." />
+    <textarea disabled={!!busy} value={bulkText} onChange={e => { setBulkText(e.target.value); setBulkReport(null); }} rows={6} maxLength={131072} autoComplete="off" spellCheck={false} aria-label={tr('Massimport av API-nycklar','Bulk credential input')} placeholder="SERVICE_API_KEY=..." />
     <button type="button" disabled={!!busy || !bulkText.trim()} onClick={() => void bulkImport(true)}>{tr('Matcha utan att spara','Preview matches')}</button>
     <button type="button" disabled={!!busy || !bulkText.trim()} onClick={() => void bulkImport(false)}>{tr('Importera matchade nycklar','Import matched credentials')}</button>
     <button type="button" disabled={!!busy} onClick={() => {setBulkText('');setBulkReport(null);}}>{tr('Rensa inmatning','Clear input')}</button>
