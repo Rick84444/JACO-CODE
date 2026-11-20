@@ -30,3 +30,21 @@ test('size bound and store failures are sanitized',()=>{
  const r=importVaultText('render api sensitive-value',{store});
  assert.equal(r.failed.length,1);assert.ok(!JSON.stringify(r).includes('sensitive-value'));
 });
+
+test('known credential prefix must agree with explicit service and generic Google needs a label',()=>{
+ const store=makeStore();
+ const r=importVaultText('openai rnd_fixture123456\nAIza_fixture_google_key\nQWEN_API_KEY=sk-'+ 'b'.repeat(32)+'\nrender api your_api_key',{store});
+ assert.deepEqual(r.imported,['QWEN_API_KEY']);
+ assert.equal(r.pending[0].reason,'LABEL_MISMATCH');
+ assert.equal(r.pending[1].reason,'AMBIGUOUS');
+ assert.equal(r.pending[2].reason,'MULTIPLE_OR_INVALID_VALUES');
+});
+test('Zapier URL is stored only for the real HTTPS MCP origin and exact path',()=>{
+ const store=makeStore();
+ const u='https://mcp.zapier.com/api/v1/connect?token=fixture-url-token';
+ const r=importVaultText(u+'\nZAPIER_MCP_URL=https://mcp.zapier.com.evil.invalid/api/v1/connect?token=other\nopenai https://evil.invalid/key',{store});
+ assert.deepEqual(r.imported,['ZAPIER_MCP_URL']);
+ assert.equal(store.data.get('ZAPIER_MCP_URL'),u);
+ assert.ok(!JSON.stringify(r).includes('fixture-url-token'));
+ assert.deepEqual(r.pending.map(x=>x.reason),['INVALID_ENDPOINT','UNEXPECTED_URL']);
+});
