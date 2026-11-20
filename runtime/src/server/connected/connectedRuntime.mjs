@@ -5,7 +5,7 @@ import { ProviderRegistry } from './providerRegistry.mjs';
 import { WordPressService } from './wordpressService.mjs';
 import { discoverAgentCards, sendA2ATask } from './a2aNetwork.mjs';
 import { NovaMissionControl, mountNovaMissionRoutes } from './novaMissionControl.mjs';
-import { CapabilityPolicy } from '../capabilities/capabilityPolicy.mjs';
+import { CapabilityPolicy, configuredTaskCeiling } from '../capabilities/capabilityPolicy.mjs';
 import { TASK_FIELDS } from '../../../../agents/lib/task-fields.mjs';
 import { DeviceRegistry, mountDeviceRoutes } from './deviceAccess.mjs';
 
@@ -35,9 +35,8 @@ export class ConnectedRuntime {
     const knownExecutor = executor => !String(executor).includes('@')
       || this.devices.list().some(device => device.executor === executor && !device.revokedAt);
     this.capabilities = new CapabilityPolicy(path.join(workspaceRoot, '.jaco', 'state', 'capabilities.json'), { taskIds: Object.keys(TASK_FIELDS) });
-    this.novaMissions = new NovaMissionControl(this.bus, env.JACO_NOVA_ALLOWED_TASKS?.trim() && env.JACO_NOVA_ALLOWED_TASKS.trim() !== 'sandbox'
-      ? { allowedTasks: env.JACO_NOVA_ALLOWED_TASKS.split(',').map(s => s.trim()), knownExecutor, capabilities: this.capabilities }
-      : { knownExecutor, capabilities: this.capabilities });
+    const taskCeiling = configuredTaskCeiling(env.JACO_NOVA_ALLOWED_TASKS);
+    this.novaMissions = new NovaMissionControl(this.bus, { ...(taskCeiling === undefined ? {} : { allowedTasks: taskCeiling }), knownExecutor, capabilities: this.capabilities });
     this.running = false;
     this.timer = null;
     this.bus.registerWorker('forge-worker', ['forge.plan'], { role: 'Forge' });
