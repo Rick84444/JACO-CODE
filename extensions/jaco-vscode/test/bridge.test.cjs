@@ -110,3 +110,18 @@ test('discovery falls back to the running Lite record only when the configured a
   assert.equal(readRuntimeRecord({ fs: fsStub(JSON.stringify({ ...rec, url: 'https://evil.example' })), os: osStub, alive: () => true }), null, 'only local addresses');
   assert.equal(readRuntimeRecord({ fs: fsStub('not json'), os: osStub, alive: () => true }), null);
 });
+
+test('installed Windows discovery reads canonical Core receipt and ignores dead or nonlocal endpoints',async()=>{
+ const {readRuntimeRecord,probeWithDiscovery}=require('../lib/bridge.cjs');
+ const receipt={schema:'jaco.local-startup/v1',services:[{id:'runtime',state:'READY',url:'http://127.0.0.1:3010/api/runtime/identity'}]};
+ const owner={pid:42,birth:'fixture'};
+ const fixture={platform:'win32',env:{LOCALAPPDATA:'/local'},os:{homedir:()=>'/home/u'},alive:()=>true,
+ fs:{readFileSync:file=>{if(file.endsWith('status.json'))return JSON.stringify(receipt);if(file.endsWith('runtime.process.json'))return JSON.stringify(owner);throw Error('missing');}}};
+ assert.equal(readRuntimeRecord(fixture),'http://127.0.0.1:3010');
+ assert.equal(readRuntimeRecord({...fixture,alive:()=>false}),null);
+ receipt.services[0].url='https://evil.example/api/runtime/identity';
+ assert.equal(readRuntimeRecord(fixture),null);
+ const fetchImpl=async url=>url.endsWith('/identity')?{ok:true,json:async()=>({success:true,product:url.includes(':3010')?'JACO Autonomus IDE':'Other server'})}:{ok:true,headers:{get:k=>k==='x-jaco-embed'?'vscode-v1':'text/html'}};
+ assert.equal((await probeWithDiscovery('http://127.0.0.1:3000',{record:()=> 'http://127.0.0.1:3010',preferRecord:true,fetchImpl})).base,'http://127.0.0.1:3010');
+ await assert.rejects(probeWithDiscovery('http://127.0.0.1:3000',{record:()=>null,fetchImpl}),/IDENTITY_MISMATCH/);
+});
