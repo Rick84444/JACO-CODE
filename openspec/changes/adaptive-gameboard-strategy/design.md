@@ -1,0 +1,5 @@
+# Design
+
+A pure receipt-derived tactical projection in the existing strategic-board module ranks bounded posture hypotheses (diagnose, change approach, verify, advance). It grants no tools, creates no execution graph and makes no claim of model adoption. Unknown outcomes and paused/inactive missions return hold posture. Both agent-turn context and Gameboard projection use this function. Recompute each turn from persisted receipts; operator steering stays the existing revision-fenced route. Full graph repair compares up to five model proposals in one already-budgeted planner call, ranks admissible hypotheses with existing scoring, keeps original obligation and dependencies, writes selected rationale through the existing replan history. Forecast metrics are assumptions, not verified. No new scheduler, model or permission.
+
+Falsifiers: latest known failure does not promote diagnosis/alternative; uncertain action treated as retry; no evidence claimed from model; model can replace parent goal or widen scope; stale or invalid candidate preferred. Physical Pixel adoption and full graph availability are separate acceptance criteria.
