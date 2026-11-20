@@ -93,7 +93,15 @@ function readRuntimeRecord({ fs = require('node:fs'), os = require('node:os'), p
   } catch { return null; }
 }
 
-async function probeWithDiscovery(configured, { fetchImpl = globalThis.fetch, record = readRuntimeRecord } = {}) {
+async function probeWithDiscovery(configured, { fetchImpl = globalThis.fetch, record = readRuntimeRecord, preferRecord = false } = {}) {
+  // Only when the user has not pinned an address: a foreign process on 3000
+  // must not prevent connecting to the recorded, independently verified Core.
+  if (preferRecord) {
+    const found = record();
+    if (found && found !== runtimeOrigin(configured)) {
+      try { return await probeJacoRuntime(found, fetchImpl); } catch { /* stale record */ }
+    }
+  }
   try { return await probeJacoRuntime(configured, fetchImpl); }
   catch (first) {
     if (!/^JACO_VSCODE_RUNTIME_UNREACHABLE|fetch failed|timeout|aborted|ECONNREFUSED/i.test(String(first?.message || first))) throw first;
