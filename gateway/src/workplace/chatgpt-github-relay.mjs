@@ -109,9 +109,11 @@ export function createChatGptGithubRelay({
   log=(level,message)=>console.log(`[JACO Workplace] [chatgpt-relay] ${level.toUpperCase()} ${message}`),
 }={}){
   if(!store)throw new Error('CHATGPT_RELAY_STORE_REQUIRED');
-  const repo=env.JACO_CHATGPT_WORKPLACE_REPO||env.JACO_GITHUB_CONTROL_REPO||'Rick84444/jaco-code';
+  // Git transport is legacy developer tooling, never customer onboarding.
+  // No customer installation inherits the repository owner's identity.
+  const repo=env.JACO_CHATGPT_WORKPLACE_REPO||env.JACO_GITHUB_CONTROL_REPO||'';
   const token=env.JACO_CHATGPT_WORKPLACE_TOKEN||env.JACO_GITHUB_CONTROL_TOKEN||env.GH_TOKEN||env.GITHUB_TOKEN||'';
-  const actor=env.JACO_CHATGPT_WORKPLACE_ACTOR||String(repo).split('/')[0];
+  const actor=env.JACO_CHATGPT_WORKPLACE_ACTOR||(repo?String(repo).split('/')[0]:'');
   const [owner,name]=String(repo).split('/');
   // A tokenless fetch should not hammer the Git remote or block normal missions.
   const pollMs=Math.max((env.JACO_CHATGPT_WORKPLACE_TRANSPORT==='git-ref'||(!token&&env.JACO_CHATGPT_WORKPLACE_TRANSPORT!=='github-issue'))?30000:5000,
