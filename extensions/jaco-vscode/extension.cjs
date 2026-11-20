@@ -9,6 +9,10 @@ let panel = null;
 function runtimeUrl() {
   return runtimeOrigin(vscode.workspace.getConfiguration('jaco').get('runtimeUrl'));
 }
+function hasPinnedRuntimeUrl() {
+  const setting = vscode.workspace.getConfiguration('jaco').inspect('runtimeUrl');
+  return Boolean(setting && ['globalValue','workspaceValue','workspaceFolderValue','globalLanguageValue','workspaceLanguageValue','workspaceFolderLanguageValue'].some(key => setting[key] !== undefined));
+}
 function checkout() {
   const configured = String(vscode.workspace.getConfiguration('jaco').get('checkoutPath') || '').trim();
   const roots = configured
@@ -52,7 +56,7 @@ function openTerminalCommand(command) {
 async function openFullGUI(context) {
   let base;
   try {
-    const connected = await probeWithDiscovery(runtimeUrl());
+    const connected = await probeWithDiscovery(runtimeUrl(), hasPinnedRuntimeUrl() ? { record: () => null } : { preferRecord: true });
     base = connected.base;
     if (panel) { panel.reveal(vscode.ViewColumn.One); return; }
     const mapped = await vscode.env.asExternalUri(vscode.Uri.parse(connected.embed));
@@ -83,7 +87,7 @@ async function openFullGUI(context) {
 }
 
 async function openBrowser() {
-  try { await vscode.env.openExternal(vscode.Uri.parse(readRuntimeRecord() || runtimeUrl())); }
+  try { await vscode.env.openExternal(vscode.Uri.parse((!hasPinnedRuntimeUrl() && readRuntimeRecord()) || runtimeUrl())); }
   catch (error) { void vscode.window.showErrorMessage('JACO: ' + String(error?.message || error)); }
 }
 
