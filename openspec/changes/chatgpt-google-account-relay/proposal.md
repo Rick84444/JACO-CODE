@@ -25,9 +25,18 @@ hardcoded personal account identifiers.
 3. Customer connects the JACO MCP app within ChatGPT; ChatGPT initiates OAuth
    authorization to JACO, where the customer reviews account, exact paired
    device, capability scopes and revocation controls.
-4. After explicit consent, ChatGPT can read real Aura status and optionally
-   submit/steer strictly policy-gated goals through that account's existing
-   outbound JACO Link. Neither JACO nor this assistant may silently link a
+4. After explicit consent, the user's **ordinary ChatGPT conversation on
+   Android/iOS or desktop** can invoke the same named JACO MCP tools: submit a
+   goal to canonical Aura, query actual mission status and verified receipts,
+   and steer an ongoing mission at the next planning boundary.
+5. This works from the ChatGPT mobile app itself, not by telling the user to
+   switch to the JACO PWA, Termux or a terminal command. The chat client must
+   actually support the connected MCP app; no server-side relay code may
+   falsely claim that current ChatGPT account/app access is provisioned.
+6. Controlling Android OS/apps on the phone is a distinct device capability
+   requiring a specifically paired Android companion, OS-granted permissions
+   and proof of execution. The baseline mobile experience is to operate
+   the user's paired canonical desktop Aura from ChatGPT on the phone. Neither JACO nor this assistant may silently link a
    ChatGPT account merely because Google sign-in succeeded.
 
 ## Non-goals
