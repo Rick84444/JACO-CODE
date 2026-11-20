@@ -25,8 +25,8 @@ function absentLiteService(name, env) {
 
 export function serviceUnavailableLabel(name, env = {}, platform = process.platform) {
   if (absentLiteService(name, env)) return 'NOT_SUPERVISED (LITE)';
-  if (env.JACO_LITE === '1' && env.JACO_LITE_BROWSER_AVAILABLE === '0' && ['chromeCdp','novaBridge','cdpBridge'].includes(name)) return 'UNAVAILABLE (' + (env.JACO_LITE_BROWSER_REASON || 'BROWSER_STARTUP') + ')';
-  if (['cdpBridge','novaBridge'].includes(name) && env.JACO_AURA_LEAN === '1') return 'DISABLED (AURA_LEAN)';
+  if (env.JACO_LITE === '1' && env.JACO_LITE_BROWSER_AVAILABLE === '0' && ['chromeCdp','novaBridge','cdpBridge'].includes(name)) return (['CDP_POLICY','AURA_LEAN'].includes(env.JACO_LITE_BROWSER_REASON) ? 'DISABLED' : 'UNAVAILABLE') + ' (' + (env.JACO_LITE_BROWSER_REASON || 'BROWSER_STARTUP') + ')';
+  if (['cdpBridge','novaBridge'].includes(name) && env.JACO_AURA_LEAN === '1' && env.JACO_LITE_BROWSER_AVAILABLE !== '1') return 'DISABLED (AURA_LEAN)';
   if (['chromeCdp', 'cdpBridge', 'novaBridge'].includes(name) && env.JACO_ENABLE_CDP === '0') return 'DISABLED (CDP_POLICY)';
   if (name === 'ollama' && env.JACO_ENABLE_OLLAMA === '0') return 'DISABLED (MODEL_POLICY)';
   // Termux's canonical jacoctl does not start the optional ChatGPT gateway.
@@ -42,7 +42,7 @@ export async function readAuraServiceHealth({ env = process.env, platform = proc
     // Avoid polling deliberately dormant Termux adapters on every board
     // refresh. DISABLED means configuration intent, not proven process exit.
     if ((env.JACO_LITE === '1' && env.JACO_LITE_BROWSER_AVAILABLE === '0' && ['chromeCdp','novaBridge','cdpBridge'].includes(name)) || absentLiteService(name, env) ||
-        (['cdpBridge','novaBridge'].includes(name) && env.JACO_AURA_LEAN === '1') ||
+        (['cdpBridge','novaBridge'].includes(name) && env.JACO_AURA_LEAN === '1' && env.JACO_LITE_BROWSER_AVAILABLE !== '1') ||
         (['cdpBridge','novaBridge','chromeCdp'].includes(name) && env.JACO_ENABLE_CDP === '0') ||
         (name === 'ollama' && env.JACO_ENABLE_OLLAMA === '0')) {
       result[name] = serviceUnavailableLabel(name, env, platform);
