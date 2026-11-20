@@ -117,6 +117,8 @@ existing Termux installations. The Pixel deployment uses
 
 ### Mobile startup and recovery
 
+Use `jaco-lite --port 3000 --recover --no-open` to explicitly authorize a graceful restart of an old, positively identified Linux Lite process belonging to this workspace. A healthy matching release on the requested port is reused. Lite checks the existing Continuum writer before launching children. A live unknown or foreign holder, unrelated port listener, or unsuccessful handoff is reported without force-killing processes or deleting the ledger. Stale locks remain the ledger's responsibility. Default Core port is 3000; no automatic port drift. Explicit alternative ports remain possible. Reuse/recovery is not available for unverified process identities (including non-Linux live owners).
+
 Android Lite starts its bundled editor and shell MCP servers automatically. Existing
 explicit access settings and environment overrides take precedence. Set `JACO_AURA_LEAN=1`
 for lower idle overhead and on-demand tools. New Aura organizations start with scoped
@@ -177,7 +179,8 @@ reaches our server logs like any visit). It never downloads or installs anything
 
 | Option | Meaning |
 | --- | --- |
-| `--port N` | use this port (default 3000, or the next free one) |
+| `--port N` | use this port (default 3000; no silent fallback) |
+| `--recover` | on Linux, gracefully hand off a verified prior Lite writer of this workspace | 
 | `--no-open` | do not open the browser |
 | `--check` | check this installation and print what would start |
 | `--verbose` | also print the server log (it is always saved in `<project>/.jaco/lite.log`) |

@@ -25,7 +25,8 @@ export const HELP = [
   'Usage: node start.mjs [project-folder] [options]',
   '',
   '  project-folder   the folder to open in the IDE (default: the folder you run this from)',
-  '  --port N         use this port (default 3000, or the next free one)',
+  '  --port N         use this exact port (default 3000; no silent fallback)',
+  '  --recover        gracefully hand off a verified prior Linux Lite owner',
   '  --no-open        do not open the browser',
   '  --no-agent       start the IDE without the Nova agent',
   '  --check          check this installation and print what would start, then exit',
@@ -47,7 +48,7 @@ export function nodeSupported(version = process.versions.node) {
 }
 
 export function parseArgs(argv = []) {
-  const out = { help: false, check: false, open: true, agent: true, verbose: false, whatsapp: null, whatsappCheck: false, port: null, project: null, errors: [] };
+  const out = { help: false, check: false, open: true, agent: true, verbose: false, recover: false, whatsapp: null, whatsappCheck: false, port: null, project: null, errors: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = String(argv[i]);
     if (arg === '--help' || arg === '-h') out.help = true;
@@ -55,6 +56,7 @@ export function parseArgs(argv = []) {
     else if (arg === '--no-open') out.open = false;
     else if (arg === '--no-agent') out.agent = false;
     else if (arg === '--verbose') out.verbose = true;
+    else if (arg === '--recover') out.recover = true;
     else if (arg === '--whatsapp-check') out.whatsappCheck = true;
     else if (arg === '--whatsapp' || arg.startsWith('--whatsapp=')) {
       const value = arg === '--whatsapp' ? argv[++i] : arg.slice('--whatsapp='.length);
@@ -88,6 +90,132 @@ export async function findFreePort(start = DEFAULT_PORT, { tries = 20, strict = 
     if (await check(p)) return p;
   }
   throw new Error(strict ? `PORT_IN_USE:${start}` : `NO_FREE_PORT:${start}`);
+}
+
+// The ledger owns stale-lock reclamation. The launcher only diagnoses or gracefully
+// hands off a positively identified previous Lite owner; it never removes its lock.
+function linuxProcess(pid, io = fs) {
+  try {
+    const base = '/proc/' + pid;
+    const stat = io.readFileSync(base + '/stat', 'utf8');
+    const fields = stat.slice(stat.lastIndexOf(') ') + 2).trim().split(/\s+/);
+    return { pid, state: fields[0], parent: Number(fields[1]), startTicks: fields[19],
+      uid: io.statSync(base).uid, cwd: io.realpathSync(base + '/cwd'),
+      argv: io.readFileSync(base + '/cmdline', 'utf8').split('\0').filter(Boolean) };
+  } catch { return null; }
+}
+
+function processAlive(pid) {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error.code !== 'ESRCH'; }
+}
+
+export function inspectStartupWriter({ project, installDir, fsImpl = fs, platform = process.platform,
+  hostname = os.hostname(), uid = process.getuid?.(), alive = processAlive,
+  inspect = pid => linuxProcess(pid, fsImpl) }) {
+  const file = path.join(project, '.jaco', 'continuum', 'ledger', 'events.lock');
+  let holder;
+  try { holder = JSON.parse(fsImpl.readFileSync(file, 'utf8')); }
+  catch (error) { return { state: error.code === 'ENOENT' ? 'CLEAR' : 'UNKNOWN_LOCK' }; }
+  const pid = holder?.pid;
+  if (holder?.host !== hostname || !Number.isSafeInteger(pid) || pid <= 1) return { state: 'UNKNOWN_LOCK' };
+  if (!alive(pid)) return { state: 'CLEAR' };
+  if (platform !== 'linux') return { state: 'LIVE_UNVERIFIED', pid };
+  let boot, root, install;
+  try {
+    boot = fsImpl.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+    root = fsImpl.realpathSync(project);
+    install = fsImpl.realpathSync(installDir);
+  } catch { return { state: 'LIVE_UNVERIFIED', pid }; }
+  const core = inspect(pid);
+  if (holder.bootId && boot && holder.bootId !== boot) return { state: 'CLEAR' };
+  if (core?.startTicks && holder.startTicks && String(holder.startTicks) !== core.startTicks) return { state: 'CLEAR' };
+  if (!core || !holder.ownerId || !holder.bootId || !holder.startTicks || !boot ||
+      typeof uid !== 'number' || core.uid !== uid || core.cwd !== root ||
+      core.state === 'Z' || !core.startTicks || core.argv.length !== 3 ||
+      core.argv[1] !== '--experimental-sqlite' || !path.isAbsolute(core.argv[2])) return { state: 'LIVE_UNVERIFIED', pid };
+  let oldInstall;
+  try {
+    const server = fsImpl.realpathSync(core.argv[2]);
+    oldInstall = path.dirname(path.dirname(server));
+    const samePackageFamily = oldInstall === install ||
+      (path.basename(path.dirname(install)) === 'versions' && path.dirname(oldInstall) === path.dirname(install));
+    if (!samePackageFamily || server !== path.join(oldInstall, 'dist', 'server.cjs')) return { state: 'LIVE_UNVERIFIED', pid };
+    const release = JSON.parse(fsImpl.readFileSync(path.join(oldInstall, 'release.json'), 'utf8'));
+    if (release.schema !== 'jaco.lite-release/v1' || !release.indexSha256 || !release.clientSha256 || !release.entry) return { state: 'LIVE_UNVERIFIED', pid };
+  } catch { return { state: 'LIVE_UNVERIFIED', pid }; }
+  // A live launcher must own this actual core as its direct child. Do not signal a
+  // shell, system supervisor, other workspace, or arbitrary PID from a lockfile.
+  let target = core;
+  if (core.parent !== 1) {
+    const parent = inspect(core.parent);
+    try {
+      if (!parent || parent.pid <= 1 || parent.uid !== uid || parent.cwd !== root ||
+          !parent.startTicks || parent.state === 'Z' || !parent.argv[1] ||
+          ![path.join(oldInstall, 'start.mjs'), path.join(install, 'start.mjs')].includes(fsImpl.realpathSync(path.resolve(parent.cwd, parent.argv[1])))) {
+        return { state: 'LIVE_UNVERIFIED', pid };
+      }
+    } catch { return { state: 'LIVE_UNVERIFIED', pid }; }
+    target = parent;
+  }
+  if (target.pid === process.pid || core.pid === process.pid) return { state: 'LIVE_UNVERIFIED', pid };
+  return { state: 'OWNED', pid, ownerId: holder.ownerId, core, target, oldInstall, sameRelease: oldInstall === install };
+}
+
+function ownsLoopbackListener(pid, port, io = fs) {
+  try {
+    const inodes = new Set(io.readdirSync('/proc/' + pid + '/fd').flatMap(fd => {
+      try { return [io.readlinkSync('/proc/' + pid + '/fd/' + fd).match(/^socket:\[(\d+)\]$/)?.[1]]; } catch { return []; }
+    }).filter(Boolean));
+    const address = '0100007F:' + port.toString(16).toUpperCase().padStart(4, '0');
+    return io.readFileSync('/proc/net/tcp', 'utf8').split('\n').some(line => {
+      const f = line.trim().split(/\s+/);
+      return f[1] === address && f[3] === '0A' && inodes.has(f[9]);
+    });
+  } catch { return false; }
+}
+
+function sameWriter(a, b) {
+  return a.state === 'OWNED' && b.state === 'OWNED' && a.pid === b.pid &&
+    a.ownerId === b.ownerId && a.core.startTicks === b.core.startTicks &&
+    a.target.pid === b.target.pid && a.target.startTicks === b.target.startTicks;
+}
+
+export async function recoverLiteStartup({ project, installDir, port, release, recover = false,
+  fsImpl = fs, platform = process.platform, fetchImpl = fetch,
+  observe = () => inspectStartupWriter({ project, installDir, fsImpl, platform }),
+  ownsPort = pid => ownsLoopbackListener(pid, port, fsImpl),
+  signal = pid => process.kill(pid, 'SIGTERM'), alive = processAlive,
+  inspect = pid => linuxProcess(pid, fsImpl), portFree = () => isPortFree(port),
+  timeoutMs = 30_000, pause = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
+  const initial = observe();
+  if (initial.state === 'CLEAR') return { action: 'START' };
+  if (initial.state !== 'OWNED') return { action: 'BLOCKED', reason: initial.state, pid: initial.pid };
+  const url = 'http://' + HOST + ':' + port;
+  if (initial.sameRelease && ownsPort(initial.pid)) {
+    const healthy = await waitForHealth(url, { fetchImpl, timeoutMs: 2500 });
+    const ui = healthy ? await verifyLiteUi(url, release, { fetchImpl }) : { ok: false };
+    if (ui.ok && sameWriter(initial, observe()) && ownsPort(initial.pid)) return { action: 'REUSE', pid: initial.pid, url };
+  }
+  if (!recover) return { action: 'BLOCKED', reason: 'OWNED_WRITER_RESTART_REQUIRES_RECOVER', pid: initial.pid };
+  if (!ownsPort(initial.pid) && !await portFree()) return { action: 'BLOCKED', reason: 'PORT_OWNERSHIP_UNKNOWN', pid: initial.pid };
+  if (!sameWriter(initial, observe())) return { action: 'BLOCKED', reason: 'OWNER_CHANGED', pid: initial.pid };
+  try { signal(initial.target.pid); }
+  catch { return { action: 'BLOCKED', reason: 'GRACEFUL_STOP_FAILED', pid: initial.pid }; }
+  const gone = p => {
+    if (!alive(p.pid)) return true;
+    const live = inspect(p.pid);
+    return Boolean(live?.startTicks && live.startTicks !== p.startTicks);
+  };
+  const deadline = Date.now() + timeoutMs;
+  do {
+    if (gone(initial.core) && gone(initial.target) && observe().state === 'CLEAR' && await portFree()) {
+      return { action: 'RECOVERED', pid: initial.pid };
+    }
+    if (Date.now() >= deadline) break;
+    await pause(250);
+  } while (true);
+  return { action: 'BLOCKED', reason: 'HANDOFF_NOT_VERIFIED', pid: initial.pid };
 }
 
 // Which folder the IDE opens: the one asked for, else where you ran the command, else a "workspace"
@@ -428,11 +556,30 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     if (args.whatsappCheck || run.status !== 0) return run.status ?? 1;
   }
   const project = resolveProject({ project: args.project, cwd: deps.cwd ?? process.cwd(), installDir });
+  const requestedPort = args.port ?? DEFAULT_PORT;
+  if (!args.check) {
+    const result = await (deps.recoverStartup ?? recoverLiteStartup)({ project, installDir, port: requestedPort, release,
+      recover: args.recover, fsImpl, platform: deps.platform ?? process.platform, fetchImpl: deps.fetchImpl ?? fetch });
+    if (result.action !== 'START') {
+      appendLiteLifecycle(project, { component: 'startup', event: result.action, pid: result.pid ?? null, reason: result.reason ?? null, port: requestedPort }, fsImpl);
+      if (result.action === 'REUSE') {
+        out('Existing JACO Lite verified: ' + result.url);
+        if (args.open) (deps.openBrowser ?? openBrowser)(result.url, deps.platform ?? process.platform);
+        return 0;
+      }
+      if (result.action === 'BLOCKED') {
+        err('jaco-lite: ' + result.reason + (result.pid ? ' (ledger pid ' + result.pid + ')' : '') + '. No ledger data removed.');
+        if (result.reason === 'OWNED_WRITER_RESTART_REQUIRES_RECOVER') err('Use --recover for a graceful same-workspace restart.');
+        return 4;
+      }
+      out('Previous JACO Lite owner stopped; handoff verified.');
+    }
+  }
   let port;
-  try { port = await (deps.findPort ?? findFreePort)(args.port ?? DEFAULT_PORT, { strict: args.port !== null }); }
+  try { port = await (deps.findPort ?? findFreePort)(requestedPort, { strict: true }); }
   catch (error) {
     err(String(error.message).startsWith('PORT_IN_USE')
-      ? `jaco-lite: port ${args.port} is in use. Pick another with --port, or leave it out to take the next free one.`
+      ? `jaco-lite: port ${requestedPort} is in use by an unverified listener; no alternate port was selected.`
       : `jaco-lite: no free port found from ${args.port ?? DEFAULT_PORT}.`);
     return 4;
   }

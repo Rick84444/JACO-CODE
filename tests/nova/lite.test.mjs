@@ -55,11 +55,12 @@ test('zip: round trip keeps names, bytes, modes and UTF-8; empty and incompressi
 
 test('launcher: Node version, arguments, free port, project folder and the server environment', async () => {
   assert.deepEqual(['22.4.0', '22.5.0', '24.11.0', '20.19.0', 'x'].map(v => nodeSupported(v)), [false, true, true, false, false]);
-  assert.deepEqual(parseArgs(['proj', '--port', '3100', '--no-open', '--check']), { help: false, check: true, open: false, agent: true, verbose: false, whatsapp: null, whatsappCheck: false, port: 3100, project: 'proj', errors: [] });
+  assert.deepEqual(parseArgs(['proj', '--port', '3100', '--no-open', '--check']), { help: false, check: true, open: false, agent: true, verbose: false, recover: false, whatsapp: null, whatsappCheck: false, port: 3100, project: 'proj', errors: [] });
   assert.equal(parseArgs(['--whatsapp', '+46701234567']).whatsapp, '+46701234567');
   assert.equal(parseArgs(['--whatsapp']).errors.length, 1);
   assert.equal(parseArgs(['--whatsapp-check']).whatsappCheck, true);
   assert.equal(parseArgs(['--port=99999']).errors.length, 1);
+  assert.equal(parseArgs(['--recover']).recover, true);
   assert.equal(parseArgs(['a', 'b', '--nope']).errors.length, 2);
   assert.match(HELP, /Node.js 22.5/);
 
@@ -468,4 +469,111 @@ test('an identity response from a process that exited while probing is not READY
  let alive=true;
  const result=await waitForHealth('http://127.0.0.1:3000',{alive:()=>alive,fetchImpl:async()=>{alive=false;return Response.json({success:true,product:'JACO Autonomus IDE'});}});
  assert.equal(result,false);
+});
+
+
+import { recoverLiteStartup, inspectStartupWriter } from '../../lite/start.mjs';
+
+test('startup: positively identify a previous same-workspace packaged Linux writer', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lite-recover-'));
+  try {
+    const project = path.join(tmp, 'project');
+    const install = path.join(tmp, 'versions', 'new');
+    const old = path.join(tmp, 'versions', 'old');
+    const ledger = path.join(project, '.jaco', 'continuum', 'ledger');
+    fs.mkdirSync(ledger, { recursive: true });
+    fs.mkdirSync(install, { recursive: true });
+    fs.mkdirSync(path.join(old, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(old, 'dist', 'server.cjs'), '');
+    fs.writeFileSync(path.join(old, 'start.mjs'), '');
+    fs.writeFileSync(path.join(old, 'release.json'), JSON.stringify({schema:'jaco.lite-release/v1',indexSha256:'a',clientSha256:'b',entry:'/assets/a.js'}));
+    const lock = path.join(ledger, 'events.lock');
+    const holder = {pid:112, host:'host', bootId:'boot', startTicks:'11', ownerId:'owner'};
+    const writeLock = v => fs.writeFileSync(lock, JSON.stringify(v));
+    writeLock(holder);
+    const core = {pid:112,parent:111,startTicks:'11',uid:10,cwd:project,state:'S',
+      argv:['node','--experimental-sqlite',path.join(old,'dist','server.cjs')]};
+    const launcher = {pid:111,parent:1,startTicks:'9',uid:10,cwd:project,state:'S',argv:['node',path.join(old,'start.mjs')]};
+    const io = {...fs,readFileSync: (p,...a) => p==='/proc/sys/kernel/random/boot_id'?'boot':fs.readFileSync(p,...a)};
+    const opts = {project,installDir:install,fsImpl:io,hostname:'host',uid:10,platform:'linux',alive:()=>true,inspect:pid=>pid===112?core:launcher};
+    assert.equal(inspectStartupWriter(opts).target.pid,111);
+    assert.equal(inspectStartupWriter({...opts, inspect:()=>({...core,cwd:tmp})}).state,'LIVE_UNVERIFIED');
+    writeLock({...holder,startTicks:'999'});
+    assert.equal(inspectStartupWriter(opts).state,'CLEAR');
+    writeLock({...holder,host:'foreign'});
+    assert.equal(inspectStartupWriter(opts).state,'UNKNOWN_LOCK');
+    writeLock(holder);
+    assert.equal(inspectStartupWriter({...opts,platform:'win32'}).state,'LIVE_UNVERIFIED');
+    assert.equal(inspectStartupWriter({...opts,alive:()=>false}).state,'CLEAR');
+    assert.equal(inspectStartupWriter({...opts,inspect:pid=>pid===112?core:{...launcher,argv:['node','/unrelated']}}).state,'LIVE_UNVERIFIED');
+    assert.equal(inspectStartupWriter({...opts,inspect:()=>({...core,parent:1})}).target.pid,112);
+    assert.equal(JSON.parse(fs.readFileSync(lock)).ownerId,'owner');
+  } finally { fs.rmSync(tmp,{recursive:true,force:true}); }
+});
+
+test('startup: only explicitly approved owned handoff sends a signal, then verifies release', async () => {
+  const core={pid:112,startTicks:'11'}, target={pid:111,startTicks:'9'};
+  const owned={state:'OWNED',pid:112,ownerId:'a',core,target,sameRelease:false};
+  const calls=[];
+  let stopped=false;
+  const opts={port:3000,observe:()=>stopped?{state:'CLEAR'}:owned,
+    ownsPort:()=>false,portFree:async()=>true,signal:pid=>{calls.push(pid);stopped=true},
+    alive:()=>!stopped,inspect:()=>null,timeoutMs:0};
+  assert.equal((await recoverLiteStartup(opts)).reason,'OWNED_WRITER_RESTART_REQUIRES_RECOVER');
+  assert.deepEqual(calls,[]);
+  assert.equal((await recoverLiteStartup({...opts,recover:true,portFree:async()=>false})).reason,'PORT_OWNERSHIP_UNKNOWN');
+  assert.deepEqual(calls,[]);
+  assert.equal((await recoverLiteStartup({...opts,recover:true,observe:()=>({state:'LIVE_UNVERIFIED',pid:112})})).action,'BLOCKED');
+  assert.deepEqual(calls,[]);
+  let n=0;
+  assert.equal((await recoverLiteStartup({...opts,recover:true,observe:()=>++n===1?owned:{...owned,ownerId:'changed'}})).reason,'OWNER_CHANGED');
+  assert.deepEqual(calls,[]);
+  assert.equal((await recoverLiteStartup({...opts,recover:true,signal:()=>{},alive:()=>true})).reason,'HANDOFF_NOT_VERIFIED');
+  assert.deepEqual(calls,[]);
+  assert.equal((await recoverLiteStartup({...opts,recover:true})).action,'RECOVERED');
+  assert.deepEqual(calls,[111]);
+});
+
+test('startup: reuse requires actual socket owner and verified current GUI bytes', async () => {
+  const html='<script src="/assets/main.js"></script>', js='export default 1;';
+  const sha=v=>crypto.createHash('sha256').update(v).digest('hex');
+  const release={indexSha256:sha(html),clientSha256:sha(js),entry:'/assets/main.js'};
+  const core={pid:112,startTicks:'11'};
+  const owned={state:'OWNED',pid:112,ownerId:'a',core,target:core,sameRelease:true};
+  const fetchImpl=async url=> url.endsWith('/api/runtime/identity')?
+    Response.json({success:true,product:'JACO Autonomus IDE'}):
+    new Response(url.endsWith('/')?html:js,{headers:{'content-type':url.endsWith('/')?'text/html':'text/javascript'}});
+  const opts={port:3000,release,observe:()=>owned,ownsPort:()=>true,fetchImpl,signal:()=>assert.fail('reuse must not signal')};
+  assert.equal((await recoverLiteStartup(opts)).action,'REUSE');
+  assert.equal((await recoverLiteStartup({...opts,ownsPort:()=>false})).action,'BLOCKED');
+  assert.equal((await recoverLiteStartup({...opts,release:{...release,clientSha256:'wrong'}})).action,'BLOCKED');
+});
+
+
+test('startup admission: blocked owner does not spawn anything; default port is strict', async () => {
+  const root=tmp(), install=path.join(root,'install'), project=path.join(root,'project');
+  try {
+    for (const file of ['dist/server.cjs','dist/index.html','dist/assets/test.js','dist/workplace.mjs',
+      'dist/jaco-editor.mjs','dist/connect.html','dist/nova.mjs','node_modules/express/package.json']) {
+      const full=path.join(install,file);
+      fs.mkdirSync(path.dirname(full),{recursive:true});fs.writeFileSync(full,'test fixture');
+    }
+    const html='<script type="module" src="/assets/test.js"></script>';
+    fs.writeFileSync(path.join(install,'dist/index.html'),html);
+    const sha=v=>crypto.createHash('sha256').update(v).digest('hex');
+    fs.writeFileSync(path.join(install,'release.json'),JSON.stringify({schema:'jaco.lite-release/v1',
+      workspace:'cognitive-live/v1',entry:'/assets/test.js',serverSha256:sha('test fixture'),indexSha256:sha(html),clientSha256:sha('test fixture')}));
+    fs.mkdirSync(path.join(project,'.jaco'),{recursive:true});
+    const opts={installDir:install,cwd:root,nodeVersion:'24.0.0',env:{},out:()=>{},err:()=>{},noSignals:true,
+      spawnImpl:()=>assert.fail('must not spawn children')};
+    let calls=0;
+    const blocked=await startLite([project,'--recover','--no-open'],{...opts,
+      recoverStartup:async ({port,recover})=>{assert.equal(port,3000); assert.equal(recover,true);calls++;return {action:'BLOCKED',reason:'LIVE_UNVERIFIED'}},
+      findPort:()=>assert.fail('must not choose port after ownership refusal')});
+    assert.equal(blocked,4);
+    assert.equal(calls,1);
+    const busy=await startLite([project,'--no-open'],{...opts,recoverStartup:async()=>({action:'START'}),
+      findPort:async (port,{strict})=>{assert.equal(port,3000);assert.equal(strict,true);throw Error('PORT_IN_USE:3000')}});
+    assert.equal(busy,4);
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
