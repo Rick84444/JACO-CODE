@@ -8,6 +8,13 @@ const noSecrets=value=>!(/\bBearer\s+[^\s,;]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY--
 const noArgs=z.object({}).strict();
 const missionId=z.string().regex(ID);
 const goalSchema=z.object({goal:z.string().trim().min(1).max(8000)}).strict();
+const androidBonsaiSchema=z.object({
+  instruction:z.string().trim().min(4).max(2000),
+  packageName:z.string().regex(/^[A-Za-z0-9_.]{3,200}$/),
+  mandateId:z.string().regex(ID),
+  missionId:z.string().regex(ID).optional(),
+  maxSteps:z.number().int().min(1).max(20).optional(),
+}).strict();
 const steerSchema=z.object({missionId,instruction:z.string().trim().min(1).max(2000),requestId:z.string().regex(/^[0-9a-f]{8}-[0-9a-f-]{27,50}$/i)}).strict();
 export function assertPrivateAuraBridge(core,env=process.env){
   if(env.JACO_MCP_ALLOW_AURA_MISSIONS!=='1')throw Error('JACO_PRIVATE_AURA_BRIDGE_DISABLED');
@@ -55,6 +62,17 @@ export function privateAuraTools({core,env=process.env}){
       if(r?.success!==true||r.mission?.id!==id)throw Error('JACO_PRIVATE_AURA_STATUS_UNAVAILABLE');
       return {mission:receiptView(r.mission)};
     },true),
+    tool('jaco_aura_android_bonsai','Control approved Android app via Bonsai','Run one bounded, operator-requested on-device Android task: ChatGPT private MCP -> authenticated Aura/Core relay -> local Bonsai 4B -> native Android Accessibility. Requires a signed mandate allowing the selected Android package and a local Android Native Engine. No direct system access, public Git relay, payment, login, arbitrary shell or permissions. A model completion is not proof unless the observed UI satisfies its postcondition.',androidBonsaiSchema,async args=>{
+      const a=androidBonsaiSchema.parse(args);
+      if(!noSecrets(a.instruction))throw Error('JACO_PRIVATE_AURA_SECRET_REFUSED');
+      const r=await call('/api/relay/android-bonsai',{method:'POST',body:JSON.stringify(a)});
+      if(!r?.task || r.task.schema!=='jaco.bonsai-android-task/v1')throw Error('JACO_ANDROID_BONSAI_RECEIPT_UNAVAILABLE');
+      // Return bounded evidence only, never screen content, user text or raw tool calls.
+      return {taskId:r.task.taskId,missionId:r.task.missionId,
+        status:r.task.status,verifiedSteps:r.task.verifiedSteps,attemptedSteps:r.task.attemptedSteps,
+        actionReceipts:(r.task.receipts||[]).slice(0,20).map(x=>({id:x.action_id,type:x.action_type,verified:x.verified===true,success:x.success===true})),
+        semanticCompletionVerified:r.success===true};
+    }),
     tool('jaco_aura_steer_mission','Adjust Aura mission','Queue an operator-requested change of strategy in an existing mission. Existing authority, scope and running action are unchanged.',steerSchema,async args=>{
       const a=steerSchema.parse(args);
       if(!noSecrets(a.instruction))throw Error('JACO_PRIVATE_AURA_SECRET_REFUSED');
