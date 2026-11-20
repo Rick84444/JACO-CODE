@@ -134,8 +134,18 @@ export function createBonsaiAndroidAgent({android, fetchImpl = fetch, env = proc
             ? 'DONE_WITH_OBSERVED_TEXT' : 'MODEL_DONE_UNVERIFIED';
           break;
         }
+        // Model inference can take many seconds; reject an action if the UI
+        // changed while the model was deciding (stale element / wrong button).
+        const fresh = await android.observe();
+        if (fresh?.success === false || fresh?.package_name !== packageName || !fresh?.root) {
+          status = 'TARGET_STALE'; break;
+        }
+        if (['tap','type_text'].includes(decision.action?.type) &&
+            JSON.stringify(compactNode(fresh.root, {left:120})) !== JSON.stringify(compact.root)) {
+          status = 'TARGET_STALE'; break;
+        }
         let action;
-        try {action = validateAction(decision.action, snapshot, packageName);} catch (error) {status='ACTION_REJECTED'; reason=String(error?.message || error);break;}
+        try {action = validateAction(decision.action, fresh, packageName);} catch (error) {status='ACTION_REJECTED'; reason=String(error?.message || error);break;}
         const receipt = await android.executeVerified({...action, action_id:crypto.randomUUID()});
         receipts.push({action_id:receipt.action_id, action_type:receipt.action_type, success:receipt.success===true, verified:receipt.verified===true, before_hash:receipt.before_hash||null, after_hash:receipt.after_hash||null});
         onEvent({type:'bonsai.android.step',taskId,step,verified:receipt.success===true&&receipt.verified===true});
