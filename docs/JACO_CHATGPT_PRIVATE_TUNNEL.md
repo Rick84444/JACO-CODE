@@ -59,10 +59,13 @@ Important: installing Plugin Creator is NOT the same as having account/workspace
 - JACO's dollar ledger is an internal estimate, not independently proven vendor billing.
 - Repository tests demonstrate the MCP tool profile and KnowledgeStore interface. Only a successful target-host call from ChatGPT proves that the private runtime bridge is active.
 
-## Git-ref relay is not a private mission tunnel
+## Git-ref developer relay is not a customer ChatGPT integration
 
-The optional public Git-ref communication relay can be enabled on the
-existing host without a manual token:
+The optional Git-ref communication relay is **for a configured developer-owned
+repository**, not the normal connection method for JACO customers. It has no
+hardcoded developer repository. Configure `JACO_CHATGPT_WORKPLACE_REPO`
+to the operator's own repository in the trusted Workplace environment before
+using these commands:
 
 ```bash
 npm run jaco:relay -- enable
@@ -70,6 +73,9 @@ npm run jaco:relay -- status
 ```
 
 This only enables the existing Workplace `MESSAGE/QUESTION/ANSWER` channel.
+Generic JACO customer onboarding must use a Google-account-bound OAuth
+connection to the hosted JACO MCP app instead; see
+`openspec/changes/chatgpt-google-account-relay/`.
 It does **not** install an OpenAI MCP connector, authorize arbitrary goals,
 or expose a ChatGPT session to localhost. A real mission-capable connection
 still requires connecting the separately authenticated private MCP tool
