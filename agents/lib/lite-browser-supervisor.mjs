@@ -76,9 +76,11 @@ export async function prepareLiteBrowser({env,installDir,project,corePort,workpl
         const cdp=launch('cdpBridge',execPath,[cdpFile]);
         if(!await wait(cdp,'http://127.0.0.1:'+ports.cdp+'/health',attested))throw Error('CDP_BROWSER_UNVERIFIED');
         report({component:'browser',event:'READY',attempt,ports});
-        // Actual exits are observable. Never blindly replay an in-flight action;
-        // the existing durable browser action journal owns outcome reconciliation.
-        return;
+        // Restart only the owned services, never an action. The existing durable
+        // browser action journal/mission receipts own outcome reconciliation.
+        await Promise.race(children.map(c=>c.promise));
+        if(stopping)return;
+        throw Error('BROWSER_OWNED_PROCESS_EXITED');
       }catch(e){
         report({component:'browser',event:'DEGRADED',attempt,reason:String(e.message).slice(0,120)});
         if(!await cleanup()||stopping)return;
