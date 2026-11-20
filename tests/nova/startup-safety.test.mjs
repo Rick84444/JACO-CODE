@@ -76,7 +76,7 @@ test('canonical local startup provisions a private internal credential only when
  assert.equal(c.env.SEER_TOKEN,c.env.GATEWAY_TOKEN);
  assert.equal(fs.existsSync(file),true);
  const text=fs.readFileSync(file,'utf8');
- assert.match(text,/^JACO_GATEWAY_TOKEN=[a-f0-9]{64}\\n$/);
+ assert.match(text,/^JACO_GATEWAY_TOKEN=[a-f0-9]{64}\n$/);
  assert.deepEqual(provisionLocalStartupCredential(c),{provisioned:false});
  assert.equal(fs.readFileSync(file,'utf8'),text,'already provisioned token is never rotated');
 });
