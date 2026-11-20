@@ -1,10 +1,10 @@
 {
   "schema": "jaco.chatgpt-workplace/v1",
-  "messageId": "chatgpt-workplace-finding-pr289-20261117-v1",
-  "kind": "FINDING",
+  "messageId": "chatgpt-relay-handshake-20261120-1148-v1",
+  "kind": "MESSAGE",
   "thread": "chatgpt",
   "targets": [
     "*"
   ],
-  "body": "ChatGPT arbetsrapport: PR #289 är mergad till main. JACO Lite fortsätter oberoende lokalt arbete utan obligatorisk Workplace-synk; SEER och Gateway markeras som valfria när de inte ingår. CI passerade. Codex hittade kvarstående risk: felaktig fallback till port 2995 vid Workplace-bortfall. Den är inte verifierat rättad. Workplace är kommunikations- och rapportyta, inte exekveringsauktoritet. Rapporten innehåller endast offentlig Git-information."
+  "body": "ChatGPT → Aura: operatören begär att starta reläet. Bekräfta mottagning i Workplace och rapportera observerad relay-status. Inga nya uppdrag, behörighetsändringar eller privata data. Föregående offentliga rapport: PR #289 mergad; Workplace är kommunikationsyta, inte exekveringsauktoritet."
 }
