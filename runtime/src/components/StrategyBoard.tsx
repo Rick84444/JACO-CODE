@@ -332,10 +332,11 @@ function MissionControls({ mission, onDone, compact = false }: { mission: Observ
     </div>
     {can.steer && <div className="mt-2 flex gap-1">
       <input value={change} onChange={e => setChange(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void steer(); }} maxLength={2000} disabled={busy !== null}
-        aria-label={tr('Ändring till Aura', 'Change for Aura')} placeholder={tr('Skicka in en ändring: vad Aura ska göra annorlunda…', 'Send a change: what Aura should do differently…')}
+        aria-label={tr('Ändring till Aura', 'Change for Aura')} placeholder={tr('Uppdatera körande strategi: vad Aura ska göra annorlunda…', 'Update running strategy: what Aura should do differently…')}
         className="flex-1 rounded border border-neutral-700 bg-black px-2 py-1.5 text-sm" />
-      <button type="button" disabled={busy !== null || change.trim().length < 2} onClick={() => void steer()} className={`${button} border-neutral-600 text-neutral-100`}>{busy === 'steer' ? '…' : tr('Skicka', 'Send')}</button>
+      <button type="button" disabled={busy !== null || change.trim().length < 2} onClick={() => void steer()} className={`${button} border-neutral-600 text-neutral-100`}>{busy === 'steer' ? '…' : tr('Uppdatera', 'Update')}</button>
     </div>}
+    {can.steer && <p className="mt-1 text-xs text-neutral-400">{tr('Ändringen gäller nästa säkra planeringssteg. Aura kan byta strategi utan att avbryta ett verktyg som redan kör.', 'The change applies at the next safe planning step. Aura can switch strategy without interrupting an in-flight tool.')}</p>}
     {ask === 'end' && <div role="group" aria-label={tr('Bekräfta avslut', 'Confirm ending')} className="mt-2 rounded border border-amber-200/30 bg-black/30 p-2.5 text-sm leading-relaxed text-amber-50">
       <p>{tr('Uppdraget avslutas: ett steg som redan kör får bli klart, inget nytt startas, och målet finns kvar på spelplanen.', 'The mission ends: a step already running may finish, nothing new starts, and the goal stays on the board.')}</p>
       <div className="mt-2 flex flex-wrap gap-1.5">
