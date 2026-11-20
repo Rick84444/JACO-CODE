@@ -425,9 +425,11 @@ test('Lite turns the VS Code embed on and leaves a runtime record that is remove
   assert.equal(serverEnv({ env: { JACO_VSCODE_EMBED: '0' }, installDir: '/i', project: '/p', port: 3001, token: 't' }).JACO_VSCODE_EMBED, '0', 'the operator can switch it off');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'lite-record-'));
   try {
-    writeRuntimeRecord({ home, url: 'http://127.0.0.1:3001', port: 3001, project: '/p' });
+    writeRuntimeRecord({ home, url: 'http://127.0.0.1:3001', port: 3001, project: '/p', installDir: '/versions/pinned', sourceCommit: 'test-commit' });
     const record = JSON.parse(fs.readFileSync(runtimeRecordFile(home), 'utf8'));
     assert.deepEqual([record.product, record.url, record.launcherPid], ['JACO Autonomus IDE', 'http://127.0.0.1:3001', process.pid]);
+    assert.equal(record.installDir, '/versions/pinned');
+    assert.equal(record.sourceCommit, 'test-commit');
     removeRuntimeRecord({ home });
     assert.equal(fs.existsSync(runtimeRecordFile(home)), false);
     fs.mkdirSync(path.dirname(runtimeRecordFile(home)), { recursive: true });
