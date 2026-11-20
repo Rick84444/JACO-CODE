@@ -117,9 +117,12 @@ existing Termux installations. The Pixel deployment uses
 
 ### Mobile startup and recovery
 
-Android Lite defaults to Aura Lean (less idle polling and on-demand MCP startup).
-Existing explicit environment settings take precedence. Set `JACO_AURA_LEAN=0`
-to restore the full startup profile, or `JACO_AUTO_START_TOOLS=1` to prestart tools.
+Android Lite starts its bundled editor and shell MCP servers automatically. Existing
+explicit access settings and environment overrides take precedence. Set `JACO_AURA_LEAN=1`
+for lower idle overhead and on-demand tools. New Aura organizations start with scoped
+development grants and autonomy level 5; saved restrictions are never overwritten.
+Agent-driven policy editing is off by default. The operator retains high-impact approvals.
+VS Code loopback embedding is enabled on full and Lite startup.
 No model is hardcoded or downloaded: choose any connected model in the IDE.
 An unavailable external model is not a Core startup prerequisite.
 
