@@ -575,3 +575,38 @@ test('contracted planning error allowance replaces the fixed three-error gate',t
    assert.equal(result.status,i===4?'BLOCKED':'ACTIVE');
  }
 });
+
+test('operator model selection requeues only a pure local selection blocker, preserves budget and receipts', t=>{
+ const s=setup(t);
+ const m=s.control.create({...goal,idempotencyKey:'model-selection-recovery'});
+ const {token}=s.control.claim(m.id,'nova');
+ s.control.release(m.id,{owner:'nova',token,error:'PLANNER_BLOCKED:AURA_MODEL_SELECTION_REQUIRED'});
+ assert.equal(s.control.get(m.id).status,'BLOCKED');
+ assert.deepEqual(s.control.recoverModelSelection({provider:'fixture',model:'text',by:'aura-chat'}),[]);
+ const choice={provider:'fixture',model:'text',by:'operator'};
+ s.reopen();
+ assert.deepEqual(s.control.recoverModelSelection(choice),[m.id]);
+ const ready=s.control.get(m.id);
+ assert.equal(ready.status,'ACTIVE');
+ assert.equal(ready.failures,1);
+ assert.equal(ready.receipts.length,0);
+ assert.equal(s.control.bus.lastMissionEvent(m.id,'NOVA_MODEL_SELECTION_REQUEUED').payload.preservedBudget,true);
+ assert.deepEqual(s.control.recoverModelSelection(choice),[]);
+ assert.ok(s.control.claim(m.id,'nova').token);
+});
+test('model recovery does not lift another blocker, later approval or operator pause',t=>{
+ const s=setup(t);
+ for(const [key,error,event] of [
+   ['policy','PLANNER_BLOCKED:MANDATE_DENIED',null],
+   ['approval','PLANNER_BLOCKED:AURA_MODEL_SELECTION_REQUIRED','NOVA_OPERATOR_APPROVAL_REQUIRED'],
+   ['paused','PLANNER_BLOCKED:AURA_MODEL_SELECTION_REQUIRED',null]
+ ]){
+   const m=s.control.create({...goal,idempotencyKey:key,goal:key});
+   const {token}=s.control.claim(m.id,'nova');
+   s.control.release(m.id,{owner:'nova',token,error});
+   if(event)s.control.bus.event(event,{missionId:m.id,payload:{error:'POLICY_REQUIRED'}});
+   if(key==='paused')s.control.pause(m.id,'operator paused');
+ }
+ assert.deepEqual(s.control.recoverModelSelection({provider:'fixture',model:'text',by:'operator'}),[]);
+ assert.equal(s.control.current(),null);
+});

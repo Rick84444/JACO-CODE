@@ -20,6 +20,7 @@ test('Aura starts under the operator with scoped development defaults, its own f
   const { root, organization } = org(t);
   const aura = organization.snapshot().agents.find(a => a.id === 'aura');
   assert.equal(aura.reportsTo, 'operator');
+  assert.equal(aura.mandate.autonomy, 5);
   assert.deepEqual([...aura.effective.permissions].sort(), [...AURA_DEVELOPMENT_DEFAULTS].sort());
   assert.equal(organization.authorize('aura','browser').allowed,false);
   assert.equal(organization.authorize('aura','git.merge').allowed,false);
@@ -160,6 +161,7 @@ test('autonomy levels decide what needs approval and are capped by the manager',
   organization.setPermission('aura', 'files.read', true);
   organization.setPermission('aura', 'files.write', true);
   organization.setPermission('aura', 'publish', true, 'operator', { acceptRisk: true });
+  organization.setLimits('aura', { autonomy: 1 });
   const ask = key => organization.decide('aura', key).needsApproval;
   assert.deepEqual([ask('files.read'), ask('files.write'), ask('publish')], [true, true, true], 'L1 operator');
   organization.setLimits('aura', { autonomy: 3 });
@@ -215,7 +217,7 @@ test('failed persistent write cannot publish in-memory permission, limits or sta
     assert.throws(() => organization.setPermission('aura', 'files.read', true), /EISDIR|EEXIST|EPERM/);
     assert.equal(organization.authorize('aura', 'files.read').allowed, false);
     assert.throws(() => organization.setLimits('aura', { autonomy: 5 }), /EISDIR|EEXIST|EPERM/);
-    assert.equal(organization.agent('aura').mandate.autonomy, 1);
+    assert.equal(organization.agent('aura').mandate.autonomy, 5);
     assert.throws(() => organization.setStatus('aura', 'pause'), /EISDIR|EEXIST|EPERM/);
     assert.equal(organization.agent('aura').status, 'active');
   } finally {
@@ -332,4 +334,14 @@ test('operator-only Rule of Two waiver lets Aura act freely, keeps hard limits a
   assert.equal(new AgentOrganization(root).decide('aura', 'commands.run').needsApproval, false);
   organization.setLimits('aura', { ruleOfTwoWaived: false });
   assert.equal(organization.decide('aura', 'commands.run').reason, 'RULE_OF_TWO');
+});
+
+test('unified executor uses Aura mandate for public web and project tools, honoring revocation',t=>{
+ const {root,organization}=org(t);
+ const env={JACO_STATE_DIR:root,JACO_AURA_UNIFIED_RUNTIME:'1'};
+ for(const task of ['web-fetch','repo-read','repo-write','shell','git-commit'])assert.doesNotThrow(()=>assertTaskMandate(task,{env}));
+ assert.throws(()=>assertTaskMandate('browser-click',{env}),/MANDATE_DENIED:aura:browser/);
+ organization.setPermission('aura','web.read',false);
+ assert.throws(()=>assertTaskMandate('web-fetch',{env}),/MANDATE_DENIED:aura:web.read/);
+ assert.equal(new AgentOrganization(root).authorize('aura','web.read').allowed,false);
 });

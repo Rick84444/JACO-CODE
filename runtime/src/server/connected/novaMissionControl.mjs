@@ -349,7 +349,7 @@ export class NovaMissionControl {
     if (!sessionColumns.has('budget_turn_base')) this.db.exec('ALTER TABLE nova_sessions ADD COLUMN budget_turn_base INTEGER NOT NULL DEFAULT 0');
     if (!sessionColumns.has('budget_started_at')) this.db.exec('ALTER TABLE nova_sessions ADD COLUMN budget_started_at INTEGER');
     this.transactionDepth = 0;
-    for (const name of ['create','claim','preflight','begin','finish','release','resolve','requestCancel','steer','recoverBlockedHealth']) {
+    for (const name of ['create','claim','preflight','begin','finish','release','resolve','requestCancel','steer','recoverBlockedHealth','recoverModelSelection']) {
       const operation=this[name].bind(this);
       this[name]=(...args)=> {
         if (this.transactionDepth) return operation(...args);
@@ -582,6 +582,40 @@ export class NovaMissionControl {
         preservedBudget: true,
       } });
     }
+  }
+
+  // Called only after an explicit operator planner selection has passed its
+  // provider probe and has been persisted. No approval, budget or task replay.
+  recoverModelSelection(choice) {
+    if (!choice?.provider || !choice?.model || choice.by !== 'operator') return [];
+    const recovered = [];
+    const rows = this.db.prepare("SELECT s.* FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='BLOCKED' AND s.phase='BLOCKED' AND s.token IS NULL AND s.active_task_json IS NULL").all();
+    for (const row of rows) {
+      const id = row.mission_id, mission = this.get(id);
+      if (mission.paused || mission.cancelRequested || mission.pendingOperatorAction || mission.spendApprovalPending || mission.hasUncertainOutcome || mission.replanRequest) continue;
+      // Do not reassign remote, commercial, or other explicitly routed workers.
+      if ((mission.metadata?.executor || 'nova') !== 'nova' || mission.source === COMMERCIAL_SOURCE || mission.source === 'seer-mission-graph') continue;
+      const failure = this.bus.lastMissionEvent(id, 'NOVA_PLANNING_RESULT');
+      if (!failure || failure.payload?.error !== 'PLANNER_BLOCKED:AURA_MODEL_SELECTION_REQUIRED') continue;
+      const blockers = ['NOVA_OPERATOR_APPROVAL_REQUIRED','NOVA_SPEND_BLOCKED','NOVA_PREFLIGHT_BLOCKED','NOVA_ACTION_RESULT','NOVA_LEASE_EXPIRED','NOVA_CANCEL_REQUEST','NOVA_OPERATOR_RESOLUTION','NOVA_MODEL_SELECTION_REQUEUED','NOVA_REPLAN_REQUEST'];
+      if (blockers.some(type => (this.bus.lastMissionEvent(id,type)?.seq || 0) > failure.seq)) continue;
+      if (mission.contract) {
+        try { assertCodingBudget(mission.contract, {
+          toolCallsUsed: row.turn - (row.budget_turn_base || 0),
+          stepsUsed: row.turn - (row.budget_turn_base || 0),
+          failures: row.failures, startedAt: row.budget_started_at, now: this.now(),
+        }); } catch { continue; }
+      }
+      const changed = this.db.prepare("UPDATE nova_sessions SET phase='READY' WHERE mission_id=? AND token IS NULL AND phase='BLOCKED' AND active_task_json IS NULL").run(id);
+      if (changed.changes !== 1) continue;
+      this.setStatus(id,'ACTIVE');
+      this.bus.event('NOVA_MODEL_SELECTION_REQUEUED',{missionId:id,payload:{
+        provider:choice.provider, model:choice.model, blockerSeq:failure.seq,
+        preservedBudget:true, next:'Acquire a fresh planning lease; do not replay an unknown action.',
+      }});
+      recovered.push(id);
+    }
+    return recovered;
   }
 
   // executor (optional): only missions routed to that executor ('nova' or 'desktop-agentos'), so one

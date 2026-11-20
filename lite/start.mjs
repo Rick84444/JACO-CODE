@@ -13,7 +13,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const MIN_NODE = '22.5';
 export const DEFAULT_PORT = 3000;
@@ -244,6 +244,33 @@ export function liteChildEnv(env = process.env, execPath = process.execPath, pla
   return { ...env, [key]: parts.join(separator) };
 }
 
+// Android packages opt into lower idle overhead, not a particular model or provider.
+export function liteMobileEnv(env, release = {}, platform = process.platform) {
+  const mobile = release.platform === 'android' || platform === 'android' || Boolean(env.TERMUX_VERSION) || env.JACO_LITE_MOBILE === '1';
+  if (!mobile) return { ...env };
+  const lean = env.JACO_AURA_LEAN ?? '0';
+  return { ...env, JACO_AURA_LEAN: lean, JACO_AUTO_START_TOOLS: env.JACO_AUTO_START_TOOLS ?? (lean === '1' ? '0' : '1') };
+}
+
+// Check the installed release's actual entry bytes, not merely the SPA fallback or API identity.
+export async function verifyLiteUi(url, release, { fetchImpl = fetch } = {}) {
+  try {
+    const get = route => fetchImpl(url + route, { redirect: 'error', signal: AbortSignal.timeout(10000) });
+    const page = await get('/');
+    if (!page.ok || !/text\/html/i.test(page.headers.get('content-type') || '')) return { ok:false, reason:'GUI_HTML_HTTP_' + page.status };
+    const html = Buffer.from(await page.arrayBuffer());
+    if (crypto.createHash('sha256').update(html).digest('hex') !== release.indexSha256) return { ok:false, reason:'GUI_HTML_DIGEST_MISMATCH' };
+    if (!html.toString('utf8').includes(release.entry)) return { ok:false, reason:'GUI_ENTRY_MISSING' };
+    const asset = await get(release.entry);
+    if (!asset.ok || !/(?:java|ecma)script/i.test(asset.headers.get('content-type') || '')) return { ok:false, reason:'GUI_ENTRY_HTTP_' + asset.status };
+    const hash = crypto.createHash('sha256');
+    if (!asset.body) return { ok:false, reason:'GUI_ENTRY_EMPTY' };
+    for await (const chunk of asset.body) hash.update(chunk);
+    if (hash.digest('hex') !== release.clientSha256) return { ok:false, reason:'GUI_ENTRY_DIGEST_MISMATCH' };
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:'GUI_FETCH_FAILED:' + (e.cause?.code || e.name || 'Error') }; }
+}
+
 export function serverEnv({ env, installDir, project, port, token }) {
   return {
     ...env,
@@ -262,7 +289,7 @@ export function serverEnv({ env, installDir, project, port, token }) {
     // budget panel's default limits (5 USD a day, 1 USD a task) that the operator can change.
     JACO_CLOUD_ENABLED: env.JACO_CLOUD_ENABLED ?? 'true',
     JACO_AUTO_APPROVE_LEVEL: env.JACO_AUTO_APPROVE_LEVEL ?? '5',
-    JACO_POLICY_EDIT_GRANT: env.JACO_POLICY_EDIT_GRANT ?? '1',
+    JACO_POLICY_EDIT_GRANT: env.JACO_POLICY_EDIT_GRANT ?? '0',
   };
 }
 
@@ -291,7 +318,7 @@ export function agentEnv({ env, installDir, project, url, token }) {
     // Work autonomously within the mission contract and operator boundaries. Hard payment,
     // uncertain-outcome and policy stops remain in approval-policy.mjs at every level.
     JACO_AUTO_APPROVE_LEVEL: env.JACO_AUTO_APPROVE_LEVEL ?? '5',
-    JACO_POLICY_EDIT_GRANT: env.JACO_POLICY_EDIT_GRANT ?? '1',
+    JACO_POLICY_EDIT_GRANT: env.JACO_POLICY_EDIT_GRANT ?? '0',
   };
 }
 
@@ -307,8 +334,8 @@ export async function waitForHealth(url, { timeoutMs = 90_000, intervalMs = 400,
       const res = await fetchImpl(`${url}${healthPath}`, { signal: AbortSignal.timeout(2000) });
       if (res.ok) {
         const payload = await res.json();
-        if (payload?.success === true && payload.product === expectedProduct) return true;
-        if (expectedProduct === 'JACO Workplace' && payload?.product === expectedProduct) return true;
+        if (payload?.success === true && payload.product === expectedProduct) return alive();
+        if (expectedProduct === 'JACO Workplace' && payload?.product === expectedProduct) return alive();
       }
     } catch { /* not ready, or HTML fallback instead of a service health receipt */ }
     await new Promise(r => setTimeout(r, intervalMs));
@@ -367,7 +394,7 @@ export function updateNotice(result, env = process.env) {
 
 export async function main(argv = process.argv.slice(2), deps = {}) {
   const env = deps.env ?? process.env;
-  const childEnv = liteChildEnv(env, deps.execPath ?? process.execPath);
+  let childEnv = liteChildEnv(env, deps.execPath ?? process.execPath);
   const out = deps.out ?? (line => process.stdout.write(`${line}\n`));
   const err = deps.err ?? (line => process.stderr.write(`${line}\n`));
   const installDir = deps.installDir ?? path.dirname(fileURLToPath(import.meta.url));
@@ -390,6 +417,8 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     err('jaco-lite: installation verification failed: ' + integrityErrors.join(', ') + '. Extract a fresh verified ZIP.');
     return 3;
   }
+  const release = JSON.parse(fsImpl.readFileSync(path.join(installDir, 'release.json'), 'utf8'));
+  childEnv = liteMobileEnv(childEnv, release, deps.platform ?? process.platform);
   // The WhatsApp voice channel (see src/server/connected/voiceChannel.mjs in the runtime): link once from the terminal.
   if (args.whatsappCheck || args.whatsapp) {
     const linker = path.join(installDir, 'dist', 'voice-link.mjs');
@@ -420,7 +449,8 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   ensureProject(project, fsImpl);
   ensureEconomicPolicy(project, fsImpl);
   // Every Lite installation owns its loopback Workplace; never attach to an unrelated installation.
-  const workplacePort = await (deps.findPort ?? findFreePort)(2995);
+  // Core has not bound its port yet; reserve a distinct port for Workplace.
+  const workplacePort = await (deps.findPort ?? findFreePort)(port === 2995 ? 2996 : 2995, { check: candidate => candidate !== port && isPortFree(candidate) });
   const workplaceUrl = 'http://' + HOST + ':' + workplacePort;
   const workplaceEnv = liteWorkplaceChildEnv({ childEnv, project, workplacePort });
   let shutdownRequested = false;
@@ -466,7 +496,17 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     lifecycle({ component: 'workplace', event: 'DEGRADED_UNSYNCED', reason: 'STARTUP_UNVERIFIED' });
     err('JACO Workplace unavailable; continuing local work without synchronized coordination. See .jaco/workplace.log.');
   }
-  const connectedEnv = liteLocalConnectionEnv({ childEnv, workplacePort, workplaceReady });
+  let connectedEnv = liteLocalConnectionEnv({ childEnv, workplacePort, workplaceReady });
+  let browser=null;
+  const browserModule=path.join(installDir,'dist','lite-browser-supervisor.mjs');
+  if(fsImpl.existsSync(browserModule)){
+    try{
+      const {prepareLiteBrowser}=await import(pathToFileURL(browserModule).href);
+      browser=await prepareLiteBrowser({env:connectedEnv,installDir,project,corePort:port,workplacePort,workplaceReady,findPort:deps.findPort??findFreePort,portFree:isPortFree,platform:deps.platform??process.platform,fsImpl});
+      connectedEnv=browser.env;
+      if(browser.reason)lifecycle({component:'browser',event:'UNAVAILABLE',reason:browser.reason});
+    }catch{lifecycle({component:'browser',event:'UNAVAILABLE',reason:'BROWSER_STARTUP_CONFIGURATION_FAILED'});}
+  }
   const logFile = path.join(project, '.jaco', 'lite.log');
   const log = fsImpl.createWriteStream ? fsImpl.createWriteStream(logFile, { flags: 'a' }) : null;
   // JACO_LITE_TOKEN lets a test follow the agent's missions; normally the token is random and never shown.
@@ -494,7 +534,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     child.once('exit', (code, signal) => { exited = processStopped('ide', child, code, signal); resolve(exited); });
     child.once('error', error => { exited = 1; tail += `\n${error.message}`; lifecycle({ component:'ide', event:'SPAWN_ERROR', reason: error.code || 'UNKNOWN' }); resolve(1); });
   });
-  const stop = () => { shutdownRequested = true; clearTimeout(agentRestartTimer); for (const p of [agent, child, workplace]) { try { p?.kill(); } catch { /* already gone */ } } };
+  const stop = () => { shutdownRequested = true; browser?.stop(); clearTimeout(agentRestartTimer); for (const p of [agent, child, workplace]) { try { p?.kill(); } catch { /* already gone */ } } };
   if (!deps.noSignals) {
     process.removeListener('SIGINT', stopStartingWorkplace); process.removeListener('SIGTERM', stopStartingWorkplace);
     process.once('SIGINT', stop); process.once('SIGTERM', stop);
@@ -502,12 +542,27 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
 
   const url = `http://${HOST}:${port}`;
   const up = await waitForHealth(url, { alive: () => exited === null, fetchImpl: deps.fetchImpl, timeoutMs: deps.healthTimeoutMs });
-  if (!up) {
+  if (!up || exited !== null || shutdownRequested) {
+    const exitBeforeStop = exited;
+    const intentional = shutdownRequested;
     stop();
     err(exited !== null ? `jaco-lite: the server stopped right after starting (exit code ${exited}).` : 'jaco-lite: the server did not answer within 90 seconds.');
     if (tail.trim()) err(`--- last server output (full log: ${logFile}) ---\n${tail.trim()}`);
-    return 5;
+    log?.end();
+    if (!deps.noSignals) { process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); }
+    return intentional ? 0 : exitBeforeStop === null || exitBeforeStop === 0 ? 5 : exitBeforeStop;
   }
+  const ui = await verifyLiteUi(url, release, { fetchImpl: deps.fetchImpl });
+  if (!ui.ok || exited !== null || shutdownRequested) {
+    const intentional = shutdownRequested, failureCode = exited;
+    lifecycle({ component:'ide', event:'GUI_UNAVAILABLE', reason:ui.reason || 'CORE_EXITED' });
+    stop();
+    log?.end();
+    if (!deps.noSignals) { process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); }
+    err('jaco-lite: GUI delivery not verified: ' + (ui.reason || 'CORE_EXITED'));
+    return intentional ? 0 : failureCode && failureCode !== 0 ? failureCode : 5;
+  }
+  out('GUI HTTP_READY (rendering on the device is not yet verified)');
   lifecycle({ component: 'ide', event: 'READY', pid: child.pid ?? null, port, agentEnabled: args.agent, workplacePid: workplace.pid ?? null });
   const home = deps.homedir ?? os.homedir();
   writeRuntimeRecord({ home, url, port, project }, fsImpl);
@@ -556,6 +611,10 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     });
   };
   launchAgent();
+  if(browser&&!browser.reason){
+    out('  CDP:      starting independently of Core');
+    void browser.start({token,execPath:deps.execPath??process.execPath,spawnImpl:deps.spawnImpl??spawn,fetchImpl:deps.fetchImpl??fetch,report:event=>{lifecycle(event);if(event.component==='browser')out('  CDP:      '+event.event+(event.reason?' '+event.reason:''));}}).catch(()=>lifecycle({component:'browser',event:'DEGRADED',reason:'BROWSER_START_FAILED'}));
+  }else if(browser?.reason)out('  CDP:      '+browser.reason);
   out(`  Agent:    ${agentCmd ? 'Nova launch requested; waiting for executor observation (log: .jaco/nova.log)' : args.agent ? 'not part of this installation' : 'off (--no-agent)'}`);
   out('  Stop:     press Ctrl+C in this window');
   // Never blocks the start: a failed or slow check prints nothing. Tests that inject a fetch skip the real one.
@@ -572,10 +631,12 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   removeRuntimeRecord({ home }, fsImpl);
   const intentionalStop = shutdownRequested;
   shutdownRequested = true;
+  browser?.stop();
   clearTimeout(agentRestartTimer);
   try { agent?.kill(); } catch { /* already gone */ }
   try { workplace?.kill(); } catch { /* already gone */ }
   log?.end();
+  if (!deps.noSignals) { process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); }
   // A clean '0' without a requested shutdown is still an IDE outage.
   return intentionalStop ? 0 : code === 0 ? 1 : code;
 }

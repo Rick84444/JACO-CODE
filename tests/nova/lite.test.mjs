@@ -11,7 +11,7 @@ import { EventEmitter } from 'node:events';
 import { main as startLite } from '../../lite/start.mjs';
 import { createZip, readZip, crc32 } from '../../tools/lib/zip.mjs';
 import { buildLite, liteDependencies, secretValues, findSecrets, collectFiles, LITE_DEPENDENCIES } from '../../tools/build-lite.mjs';
-import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, liteChildEnv, writeRuntimeRecord, removeRuntimeRecord, runtimeRecordFile, agentEnv, agentCommand, openBrowser, liteWorkplaceChildEnv, liteWorkplaceRequired, liteLocalConnectionEnv, liteExitCode, appendLiteLifecycle, HELP } from '../../lite/start.mjs';
+import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, liteChildEnv, writeRuntimeRecord, removeRuntimeRecord, runtimeRecordFile, agentEnv, agentCommand, openBrowser, liteWorkplaceChildEnv, liteWorkplaceRequired, liteLocalConnectionEnv, liteExitCode, appendLiteLifecycle, liteMobileEnv, verifyLiteUi, HELP } from '../../lite/start.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-lite-test-'));
 
@@ -87,7 +87,7 @@ test('launcher: Node version, arguments, free port, project folder and the serve
   assert.equal(JSON.parse(fs.readFileSync(policyFile, 'utf8')).dailyCloudUsd, 2, 'a change the operator made is never overwritten');
   assert.equal(agentCommand(dir), null, 'no agent file, no agent');
   const agent = agentEnv({ env: {}, installDir: install, project: dir, url: 'http://127.0.0.1:3999', token: 'tok' });
-  assert.deepEqual([agent.JACO_LITE, agent.NOVA_BRAIN_MODE, agent.JACO_RUNTIME_URL, agent.JACO_AUTO_APPROVE_LEVEL, agent.JACO_POLICY_EDIT_GRANT], ['1', 'direct', 'http://127.0.0.1:3999', '5', '1']);
+  assert.deepEqual([agent.JACO_LITE, agent.NOVA_BRAIN_MODE, agent.JACO_RUNTIME_URL, agent.JACO_AUTO_APPROVE_LEVEL, agent.JACO_POLICY_EDIT_GRANT], ['1', 'direct', 'http://127.0.0.1:3999', '5', '0']);
   assert.equal(agentEnv({env:{JACO_AUTO_APPROVE_LEVEL:'1',JACO_POLICY_EDIT_GRANT:'0'},installDir:install,project:dir,url:'http://127.0.0.1:3999',token:'tok'}).JACO_AUTO_APPROVE_LEVEL,'1');
   assert.equal(JSON.stringify(agent).includes('OLLAMA'), false, 'the agent is not tied to one local server');
   const env = serverEnv({ env: { PATH: 'p' }, installDir: install, project: dir, port: 3999, token: 'tok' });
@@ -292,14 +292,16 @@ test('Lite restarts an exited durable executor, keeps Core alive and does not re
     fs.mkdirSync(path.dirname(full),{recursive:true});
     fs.writeFileSync(full,'test fixture');
   }
+  const html='<script type="module" src="/assets/test.js"></script>';
+  fs.writeFileSync(path.join(install,'dist/index.html'),html);
   const sha=crypto.createHash('sha256').update('test fixture').digest('hex');
   fs.writeFileSync(path.join(install,'release.json'),JSON.stringify({schema:'jaco.lite-release/v1',
-    workspace:'cognitive-live/v1',entry:'/assets/test.js',serverSha256:sha,indexSha256:sha,clientSha256:sha}));
+    workspace:'cognitive-live/v1',entry:'/assets/test.js',serverSha256:sha,indexSha256:crypto.createHash('sha256').update(html).digest('hex'),clientSha256:sha}));
   const children=[];
   const start=startLite([project,'--no-open'],{
     installDir:install,homedir:root,cwd:root,nodeVersion:'24.0.0',env:{PATH:process.env.PATH},
     noSignals:true,out:()=>{},err:()=>{},findPort:async p=>p,
-    fetchImpl:async uri=>new Response(JSON.stringify(uri.endsWith('/health')
+    fetchImpl:async uri=>uri.endsWith('/assets/test.js')?new Response('test fixture',{headers:{'content-type':'text/javascript'}}):uri.endsWith('/')?new Response(html,{headers:{'content-type':'text/html'}}):new Response(JSON.stringify(uri.endsWith('/health')
       ? {product:'JACO Workplace',status:'READY'} : {success:true,product:'JACO Autonomus IDE'})),
     spawnImpl:(_cmd,args)=>{
       const child=new EventEmitter();
@@ -439,4 +441,29 @@ test('Pixel APK session-token rotation has no obsolete paired-state reference', 
   const src = fs.readFileSync(new URL('../../runtime/modules/runtime/native-intelligence-fabric/native/android/app/src/main/java/ai/jaco/nativeengine/MainActivity.kt',import.meta.url), 'utf8');
   assert.match(src, /SessionToken[.]rotate[(]this[)]/);
   assert.doesNotMatch(src, /\bpaired\s*=/);
+});
+
+test('Android Lite starts tools by default without selecting or changing the operator model',()=>{
+ const env={JACO_LLAMACPP_MODEL:'existing-alias',JACO_LOCAL_ONLY:'1',JACO_PRIMARY_PROVIDER:'custom',JACO_ALLOW_PAID_MODELS:'0'};
+ const mobile=liteMobileEnv(env,{platform:'android'},'linux');
+ assert.deepEqual(mobile,{...env,JACO_AURA_LEAN:'0',JACO_AUTO_START_TOOLS:'1'});
+ assert.deepEqual(liteMobileEnv(env,{platform:'windows'},'win32'),env);
+ assert.equal(liteMobileEnv({...env,JACO_AURA_LEAN:'1'},{platform:'android'}).JACO_AUTO_START_TOOLS,'0');
+ assert.equal(liteMobileEnv({...env,JACO_AUTO_START_TOOLS:'1'},{platform:'android'}).JACO_AUTO_START_TOOLS,'1');
+});
+
+test('Lite verifies served frontend bytes, not a stale bundle or HTML SPA fallback',async()=>{
+ const entry='/assets/app.js',html='<script src="'+entry+'"></script>',js='console.log("ready")';
+ const sha=s=>crypto.createHash('sha256').update(s).digest('hex');
+ const release={entry,indexSha256:sha(html),clientSha256:sha(js)};
+ const run=(asset,mime='text/javascript')=>verifyLiteUi('http://127.0.0.1:3000',release,{fetchImpl:async url=>url.endsWith('/')?new Response(html,{headers:{'content-type':'text/html'}}):new Response(asset,{headers:{'content-type':mime}})});
+ assert.deepEqual(await run(js),{ok:true});
+ assert.equal((await run('different')).reason,'GUI_ENTRY_DIGEST_MISMATCH');
+ assert.equal((await run(html,'text/html')).ok,false);
+});
+
+test('an identity response from a process that exited while probing is not READY',async()=>{
+ let alive=true;
+ const result=await waitForHealth('http://127.0.0.1:3000',{alive:()=>alive,fetchImpl:async()=>{alive=false;return Response.json({success:true,product:'JACO Autonomus IDE'});}});
+ assert.equal(result,false);
 });

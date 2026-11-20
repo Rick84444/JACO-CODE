@@ -16,7 +16,7 @@ export const TASK_PERMISSIONS = Object.freeze({
   'android-scroll': 'commands.run', 'android-back': 'commands.run', 'android-home': 'commands.run',
   'git-commit': 'git.branch', 'git-push': 'git.branch', 'git-merge': 'git.merge',
   'github-create-repo': 'publish', 'promote-hf': 'publish',
-  'browser-survey-site': 'browser', 'web-fetch': 'browser', 'browser-click': 'browser', 'browser-type': 'browser',
+  'browser-survey-site': 'browser', 'web-fetch': 'web.read', 'browser-click': 'browser', 'browser-type': 'browser',
   'email-inbox': 'mail.receive',
 });
 
@@ -49,7 +49,7 @@ const organizationFile = env => path.join(path.resolve(env.JACO_STATE_DIR || os.
 
 // Nova's check before a task runs. Read on every task so a change in the panel applies without a restart. An installation
 // that has no organization, or has not put this agent in it, is not restricted; a store that cannot be read stops the work.
-export function assertTaskMandate(taskType, { agentId = 'nova', env = process.env, now } = {}) {
+export function assertTaskMandate(taskType, { env = process.env, agentId = env.JACO_AURA_UNIFIED_RUNTIME === '1' || env.JACO_LITE === '1' ? 'aura' : 'nova', now } = {}) {
   const key = TASK_PERMISSIONS[taskType];
   if (!key) return;
   let text;

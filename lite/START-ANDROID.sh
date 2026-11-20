@@ -14,4 +14,5 @@ if ! node --experimental-sqlite -e "require('node:sqlite')" >/dev/null 2>&1; the
   exit 2
 fi
 echo "Open the IDE URL that JACO Lite prints after it reports 'JACO Lite is running' (the port may differ from 3000)."
+export JACO_LITE_MOBILE="${JACO_LITE_MOBILE:-1}"
 exec node "$DIR/start.mjs" "$PROJECT" --no-open "$@"

@@ -76,7 +76,7 @@ const defaultTraits = () => Object.fromEntries(Object.keys(TRAITS).map(key => [k
 const emptyMandate = () => ({ permissions: {}, budgetUsdPerDay: 0, maxSubAgents: 0, autoApproveSubAgents: false, autonomy: 1 });
 export const AURA_DEVELOPMENT_DEFAULTS = Object.freeze(['files.read', 'web.read', 'files.write', 'commands.run', 'git.branch']);
 const defaultGrant = at => ({ grantedBy: OPERATOR, grantedAt: at, source: 'product-development-default' });
-const newAuraMandate = at => ({ ...emptyMandate(), permissions: Object.fromEntries(AURA_DEVELOPMENT_DEFAULTS.map(key => [key, defaultGrant(at)])) });
+const newAuraMandate = at => ({ ...emptyMandate(), autonomy: 5, permissions: Object.fromEntries(AURA_DEVELOPMENT_DEFAULTS.map(key => [key, defaultGrant(at)])) });
 
 function checkModel(model) {
   if (model == null) return { kind: 'local', providerId: 'ollama', model: '' };
