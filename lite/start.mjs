@@ -209,11 +209,11 @@ export function appendLiteLifecycle(project, event, fsImpl = fs) {
 // Where this installation is running, for the VS Code extension: a free port other than 3000 is otherwise
 // invisible to it. One small file, removed when Lite stops; a stale one is recognised by its dead process id.
 export const runtimeRecordFile = (home = os.homedir()) => path.join(home, '.jaco', 'lite-runtime.json');
-export function writeRuntimeRecord({ home, url, port, project }, fsImpl = fs) {
+export function writeRuntimeRecord({ home, url, port, project, installDir, sourceCommit }, fsImpl = fs) {
   try {
     const file = runtimeRecordFile(home);
     fsImpl.mkdirSync(path.dirname(file), { recursive: true });
-    fsImpl.writeFileSync(file, JSON.stringify({ schema: 'jaco.runtime-record/v1', product: 'JACO Autonomus IDE', url, port, project, launcherPid: process.pid, startedAt: new Date().toISOString() }, null, 2));
+    fsImpl.writeFileSync(file, JSON.stringify({ schema: 'jaco.runtime-record/v1', product: 'JACO Autonomus IDE', url, port, project, installDir, sourceCommit, launcherPid: process.pid, startedAt: new Date().toISOString() }, null, 2));
   } catch { /* observability must never stop the start */ }
 }
 export function removeRuntimeRecord({ home }, fsImpl = fs) {
@@ -566,7 +566,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   out('GUI HTTP_READY (rendering on the device is not yet verified)');
   lifecycle({ component: 'ide', event: 'READY', pid: child.pid ?? null, port, agentEnabled: args.agent, workplacePid: workplace.pid ?? null });
   const home = deps.homedir ?? os.homedir();
-  writeRuntimeRecord({ home, url, port, project }, fsImpl);
+  writeRuntimeRecord({ home, url, port, project, installDir, sourceCommit: release.sourceCommit }, fsImpl);
   out('JACO Lite is running.');
   out(`  IDE:      ${url}`);
   out(`  Project:  ${project}`);
