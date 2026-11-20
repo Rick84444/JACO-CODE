@@ -3,11 +3,12 @@ on:
   pull_request:
     paths:
       - 'agents/lib/local-stack.mjs'
+      - 'lite/start.mjs'
+      - 'tests/nova/lite.test.mjs'
       - 'agents/lib/planner-choice.mjs'
       - 'runtime/server.ts'
       - 'runtime/package.json'
       - 'scripts/verify-core-startup.mjs'
-      - 'scripts/start-local-bonsai.mjs'
       - 'tests/nova/startup-safety.test.mjs'
       - 'tests/nova/planner-choice.test.mjs'
       - '.github/workflows/core-startup-regression.yml'
@@ -28,7 +29,7 @@ jobs:
           node-version: '24'
       - run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
       - run: npm ci --prefix runtime --no-audit --no-fund
-      - run: node --check agents/lib/local-stack.mjs && node --check agents/lib/planner-choice.mjs && node --check scripts/verify-core-startup.mjs && node --check scripts/start-local-bonsai.mjs
-      - run: node --test tests/nova/startup-safety.test.mjs tests/nova/planner-choice.test.mjs tests/nova/remote-startup-contract.test.mjs
+      - run: node --check agents/lib/local-stack.mjs && node --check agents/lib/planner-choice.mjs && node --check scripts/verify-core-startup.mjs
+      - run: node --test tests/nova/startup-safety.test.mjs tests/nova/planner-choice.test.mjs tests/nova/remote-startup-contract.test.mjs tests/nova/lite.test.mjs
       - run: npm --prefix runtime run build
       - run: node scripts/verify-core-startup.mjs
