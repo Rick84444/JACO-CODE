@@ -225,7 +225,7 @@ export async function waitReady(s, token, timeout = 180000, { child = null, prob
   const deadline = Date.now() + timeout;
   do {
     const checkExit = () => {
-      if (child && (child.exitCode !== null || child.signalCode !== null)) throw new Error(`SERVICE_EXITED_BEFORE_READY:${s.id}:code=${child.exitCode}:signal=${child.signalCode || 'none'}`);
+      if (child && (child.exitCode != null || child.signalCode != null)) throw new Error(`SERVICE_EXITED_BEFORE_READY:${s.id}:code=${child.exitCode}:signal=${child.signalCode || 'none'}`);
     };
     checkExit();
     const result = await probeImpl(s, token);
@@ -335,6 +335,27 @@ function novaReadiness(c) {
     { id: 'nova-session', token: c.env.JACO_WORKPLACE_TOKEN || '', url: c.env.JACO_WORKPLACE_URL + '/v1/agents', accept: d => d.agents?.some(a => (c.env.JACO_EXECUTOR === 'desktop-agentos' ? a.requestedName === 'Desktop AgentOS' : ['Nova', 'Aura'].includes(a.requestedName)) && a.sessions?.some(s => ['READY', 'BUSY', 'AVAILABLE'].includes(s.status))) },
   ];
 }
+// HTTP delivery proof only: this does not claim that React has rendered on a device.
+export async function inspectStaticUi(base, fetchImpl = fetch) {
+  try {
+    const origin = new URL(base);
+    const get = pathname => fetchImpl(new URL(pathname, origin), { redirect: 'error', signal: AbortSignal.timeout(10000) });
+    const root = await get('/');
+    if (!root.ok) return { state: 'UNAVAILABLE', reason: 'GUI_HTTP_' + root.status };
+    if (!/text\/html/i.test(root.headers.get('content-type') || '')) return { state: 'UNAVAILABLE', reason: 'GUI_NOT_HTML' };
+    const html = await root.text();
+    const script = html.match(/<script\b[^>]*\bsrc=["'](\/assets\/[^"'<>]+\.js)["']/i)?.[1];
+    if (!script || !html.includes('id="root"')) return { state: 'UNAVAILABLE', reason: 'GUI_ENTRY_MISSING' };
+    const asset = await get(script);
+    const mime = asset.headers.get('content-type') || '';
+    if (!asset.ok || !/(?:java|ecma)script/i.test(mime)) return { state: 'UNAVAILABLE', reason: 'GUI_SCRIPT_HTTP_' + asset.status };
+    const body = await asset.text();
+    if (!body.trim()) return { state: 'UNAVAILABLE', reason: 'GUI_SCRIPT_EMPTY' };
+    return { state: 'HTTP_READY', entry: script };
+  } catch (error) {
+    return { state: 'UNAVAILABLE', reason: 'GUI_FETCH_FAILED:' + (error?.name || 'Error') };
+  }
+}
 export async function inspectStatus(c, services = [...definitions(c), ...novaReadiness(c)]) {
   const startedAt = new Date().toISOString();
   const observed = await Promise.all(services.map(async s => {
@@ -346,13 +367,14 @@ export async function inspectStatus(c, services = [...definitions(c), ...novaRea
   const canonical = Boolean(c?.root && c?.runtime && c?.ports);
   const startup = canonical ? readStartupEvidence(c.dataRoot || c.root) : null;
   const readiness = classifyStartupServices(observed);
-  const state = readiness === 'READY' && startup && !startup.ok ? 'DEGRADED' : readiness;
+  const ui = canonical && c.staticUi && observed.some(s => s.id === 'runtime' && s.state === 'READY') ? await inspectStaticUi(c.env.JACO_RUNTIME_URL) : null;
+  const state = readiness === 'READY' && ((startup && !startup.ok) || (ui && ui.state !== 'HTTP_READY')) ? 'DEGRADED' : readiness;
   return { schema: 'jaco.local-startup/v1', state,
     startedAt, observedAt: new Date().toISOString(), runtime: c.runtime,
     scope: canonical
       ? 'fresh service readiness and canonical startup evidence; no task execution verified'
       : 'fresh service readiness only; no task execution verified',
-    ...(startup ? { startup } : {}), services: observed };
+    ...(startup ? { startup } : {}), ...(ui ? { ui } : {}), services: observed };
 }
 async function canBind(port) {
   return new Promise(resolve => {
@@ -545,6 +567,11 @@ export async function activate(c, { open = false } = {}) {
         browser.unref();
         installedGuiOpened = true;
       }
+      if (s.id === 'runtime' && c.staticUi) {
+        result.ui = await inspectStaticUi(c.env.JACO_RUNTIME_URL);
+        console.log('GUI ' + result.ui.state + (result.ui.reason ? ' ' + result.ui.reason : '') + ' ' + c.env.JACO_RUNTIME_URL);
+        if (result.ui.state !== 'HTTP_READY') result.warnings.push(result.ui.reason);
+      }
       checkpoint(`ready:${s.id}`);
       } catch (error) {
         if (!optionalStartupService(s.id)) throw error;
@@ -554,7 +581,12 @@ export async function activate(c, { open = false } = {}) {
       }
     }
     checkpoint('nova');
-    for (const check of novaReadiness(c)) await waitReady(check, c.env.GATEWAY_TOKEN);
+    for (const check of novaReadiness(c)) {
+      checkpoint(`service:${check.id}`);
+      console.log(`WAITING ${check.id}`);
+      await waitReady(check, c.env.GATEWAY_TOKEN);
+      console.log(`READY ${check.id}`);
+    }
     result.services.push({ id: 'nova', state: 'READY', owner: 'workplace' });
     if (c.cdp) {
       checkpoint('browser-attachment');
