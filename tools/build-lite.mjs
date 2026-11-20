@@ -56,7 +56,7 @@ export function workspaceBuild(dist) {
 
 export async function bundleConnections(stage, { repoRoot, runtimeDir }) {
   const esbuild = createRequire(path.join(runtimeDir, 'package.json'))('esbuild');
-  for (const [source, target] of [[path.join(runtimeDir, 'src', 'server', 'connected', 'voiceLink.mjs'), 'voice-link.mjs'], [path.join(runtimeDir, 'tools', 'jaco-editor-mcp.mjs'), 'jaco-editor.mjs'], [path.join(repoRoot, 'gateway', 'src', 'workplace', 'workplace-server.mjs'), 'workplace.mjs'], [path.join(runtimeDir, 'tools', 'jaco-shell-mcp.mjs'), 'jaco-shell.mjs']]) {
+  for (const [source, target] of [[path.join(runtimeDir, 'src', 'server', 'connected', 'voiceLink.mjs'), 'voice-link.mjs'], [path.join(runtimeDir, 'tools', 'jaco-editor-mcp.mjs'), 'jaco-editor.mjs'], [path.join(repoRoot, 'gateway', 'src', 'workplace', 'workplace-server.mjs'), 'workplace.mjs'], [path.join(runtimeDir, 'tools', 'jaco-shell-mcp.mjs'), 'jaco-shell.mjs'], [path.join(repoRoot, 'agents', 'nova-bridge.mjs'), 'nova-bridge.mjs'], [path.join(repoRoot, 'agents', 'cdp-bridge.mjs'), 'cdp-bridge.mjs'], [path.join(repoRoot, 'agents', 'lib', 'lite-browser-supervisor.mjs'), 'lite-browser-supervisor.mjs']]) {
     await esbuild.build({ entryPoints: [source], bundle: true, platform: 'node', format: 'esm', packages: 'external', outfile: path.join(stage, 'dist', target), logLevel: 'error' });
   }
 }
