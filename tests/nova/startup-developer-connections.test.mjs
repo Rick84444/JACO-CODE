@@ -57,15 +57,17 @@ test('Lite browser prerequisites do not block Core; healthy own children use dis
  assert.equal(launch.env.JACO_LITE_BROWSER_AVAILABLE,'1');
  assert.equal(new Set([3000,2995,Number(launch.env.CDP_PORT),Number(launch.env.NOVA_BRIDGE_PORT),Number(launch.env.JACO_CDP_BRIDGE_PORT)]).size,5);
  const children=[],events=[];
- await launch.start({token:'test-internal-token-not-for-chrome',spawnImpl:(_cmd,args,opts)=>{
+ let reportReady;const ready=new Promise(resolve=>{reportReady=resolve;});
+ const running=launch.start({token:'test-internal-token-not-for-chrome',spawnImpl:(_cmd,args,opts)=>{
    if(children.length===0){assert.equal(opts.env.JACO_GATEWAY_TOKEN,undefined);assert.ok(args.includes('--remote-debugging-address=127.0.0.1'));assert.ok(!args.includes('--no-sandbox'));}
    const child=fakeChild();children.push(child);return child;
  },fetchImpl:async(url,opts)=>{
    if(url.endsWith('/json/version')){assert.equal(opts.headers,undefined);return Response.json({webSocketDebuggerUrl:'ws://127.0.0.1:9222/devtools/browser/test'});}
    return Response.json({ok:true,browserVerified:true,state:'READY',verificationAgeMs:0});
- },report:e=>events.push(e)});
+ },report:e=>{events.push(e);if(e.component==='browser'&&e.event==='READY')reportReady();}});
+ await ready;
  assert.equal(children.length,3);assert.ok(events.some(e=>e.component==='browser'&&e.event==='READY'));
- launch.stop();assert.ok(children.every(c=>c.killed));
+ launch.stop();await running;assert.ok(children.every(c=>c.killed));
 });
 
 test('Lite automatically starts bundled editor, shell and configured CDP but not arbitrary external servers',async()=>{
