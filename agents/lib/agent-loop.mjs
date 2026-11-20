@@ -19,6 +19,7 @@ import { executionExceptionResult } from './replay-semantics.mjs';
 import { verifiedOutcomeHints } from './verified-outcome-context.mjs';
 import { decisionLessonHints } from './meta-reasoning.mjs';
 import { observeMissionCapabilities, capabilityDenialCorrection } from './capability-recovery.mjs';
+import { recoveryStrategy } from './strategy-recovery.mjs';
 import { isTransientModelFailure, isRecoverableToolHealthError } from './mission-health-policy.mjs';
 
 const RESULT_CHARS = 6000;
@@ -161,6 +162,30 @@ export async function runAgentMission({
     /(?:UNAVAILABLE|UNHEALTHY|OFFLINE|DISCONNECTED|TIMEOUT|TIMED OUT|CONNECTION|NETWORK|BRIDGE|PROVIDER|SERVICE|NOT REACHABLE|FETCH FAILED|OTILLGÄNGLIG|ANSLUTNING|AVBROTT)/i.test(String(reason)) &&
     !/(?:OPERATOR|APPROVAL|POLICY|PERMISSION|CREDENTIAL|SECRET|AUTH|PAYMENT|BUDGET|COST|SCOPE|OUTCOME_UNKNOWN)/i.test(String(reason));
   const deferHealth = reason => end({ deferred: true, recovery: 'WAIT_TOOL', reason }, {});
+  // FAILED_TOOL != FAILED_MISSION. Before the mission is allowed to stop, look for another route to the same
+  // capability that this mission can actually call and has not already burned, and send the planner down it.
+  // The message is appended to the existing conversation, so the goal, the evidence and every partial result
+  // are preserved across the switch. A route is tried once per run: a strategy that failed is not repeated
+  // unless the receipts show the conditions changed.
+  const recoveryNotes = [];
+  const MAX_STRATEGY_RECOVERIES = 4;
+  const recoveriesTried = new Set();
+  let strategyRecoveries = 0;
+  const tryRecovery = reason => {
+    if (strategyRecoveries >= MAX_STRATEGY_RECOVERIES) return null;
+    const strategy = recoveryStrategy({
+      reason,
+      evidence: capabilityEvidence,
+      receipts: [...(mission.receipts || []), ...receipts],
+      attempted: recoveriesTried,
+    });
+    if (!strategy) return null;
+    strategyRecoveries++;
+    recoveriesTried.add(strategy.route.id);
+    recoveryNotes.push({ family: strategy.family, route: strategy.route.id, reason: String(reason).slice(0, 200) });
+    messages.push({ role: 'user', content: strategy.message });
+    return strategy;
+  };
 
 
   // A short lease for the parts that are not a tool step (finishing, blocking).
@@ -360,6 +385,8 @@ export async function runAgentMission({
         // auto-confirmed and the mission closed as DONE without the work (2026-11-05).
         if (text && SAYS_BLOCKED.test(text)) {
           const reason = text.slice(0, 500);
+          const recovered = tryRecovery(reason);
+          if (recovered) continue;
           if (mayDeferHealthBlock(reason)) return deferHealth(reason);
           const correction = capabilityDenialCorrection(reason, capabilityEvidence);
           if (correction && capabilityCorrections++ < MAX_CAPABILITY_CORRECTIONS) {
@@ -430,6 +457,7 @@ export async function runAgentMission({
         if (target.kind === 'blocked' || target.kind === 'replan') {
           const reason = String(args.reason || 'no allowed tool can make progress').slice(0, 500);
           if (target.kind === 'blocked') {
+            if (tryRecovery(reason)) continue;
             if (mayDeferHealthBlock(reason)) return deferHealth(reason);
             const correction = capabilityDenialCorrection(reason, capabilityEvidence);
             if (correction && capabilityCorrections++ < MAX_CAPABILITY_CORRECTIONS) {

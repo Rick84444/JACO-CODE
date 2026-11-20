@@ -938,6 +938,9 @@ export async function executeTask(task, state, mission = null) {
   assertTaskMandate(task.type);
   switch (task.type) {
     case "health-check": return runHealthCheck(state);
+    // Restart only the authorized local JACO services that are down (the canonical starter decides what).
+    // A failing tool must not end a mission: this is the repair route the strategy recovery sends Aura down.
+    case "stack-repair": return runtimeApi("POST", "/api/system/stack-repair");
     case "check-revenue":
       // Bug fix #1: Skip revenue check entirely when Stripe key is unavailable
       // (start-all.ps1 strips it from agent env for security). Prevents 4500+ dead log entries.
