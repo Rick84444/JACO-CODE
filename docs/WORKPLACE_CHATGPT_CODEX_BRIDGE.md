@@ -74,15 +74,24 @@ authorization/API-key-shaped fields from mirrored references.
 ## Tokenless Git-ref transport for the public JACO repository
 
 On the default public `Rick84444/JACO-CODE` repository, the relay is
-**disabled until the operator enables it locally**. Once enabled, `git-ref` is
+**disabled until the operator enables it locally**. Once explicitly configured by a developer, `git-ref` is
 used without requiring any manually entered bearer token. The legacy
 `github-issue` transport remains available only through separately configured
 environment settings for a suitable private repo.
 
-### Live, tokenless local activation (Core and Nova stay running)
+### Developer Git-ref transport only (not customer ChatGPT onboarding)
 
-From the canonical JACO-CODE checkout (Debian or Termux shell that shares the
-Workplace workspace root):
+**This is NOT the ChatGPT product connection.** It is a repository-scoped
+diagnostic/communications channel for operators who deliberately configure
+their **own** GitHub repository. Public JACO installations do not default to
+the JACO developer's repository. For the customer Google-account route, see
+`openspec/changes/chatgpt-google-account-relay/`.
+
+### Live developer activation (Core and Nova stay running)
+
+For a developer who owns a suitable Git repository, explicitly configure
+`JACO_CHATGPT_WORKPLACE_REPO=your-owner/your-repository` in Workplace's
+trusted environment first. From that same JACO checkout and workspace root:
 
 ```bash
 npm run jaco:relay -- enable
