@@ -1,6 +1,6 @@
 {
   "schema": "jaco.nova-control/v1",
-  "commandId": "chatgpt-aura-start-20261120-1833",
+  "commandId": "chatgpt-aura-start-20261120-1857",
   "op": "strategy.graph.create",
   "graph": {
     "title": "Verify Aura strategic control",
