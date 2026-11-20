@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAutonomyLoop, parseModelJson, shouldAutoConfirmNova } from '../src/seer-autonomy-loop.mjs';
+import { createAutonomyLoop, parseModelJson, shouldAutoConfirmNova, selectRepairHypothesis } from '../src/seer-autonomy-loop.mjs';
 import { createAuraControlLoop } from '../src/aura-control-loop.mjs';
 import { createAuraControlLease } from '../src/aura-control-lease.mjs';
 import { createAuraCoreController } from '../../runtime/src/server/connected/auraCoreController.mjs';
