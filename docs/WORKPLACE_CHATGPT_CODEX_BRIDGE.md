@@ -73,9 +73,49 @@ authorization/API-key-shaped fields from mirrored references.
 
 ## Tokenless Git-ref transport for the public JACO repository
 
-On the default public `Rick84444/JACO-CODE` repository, `auto` chooses the
-**git-ref** transport even if a legacy GitHub token exists. The old authenticated
-`github-issue` transport remains available explicitly for a suitable private repo.
+On the default public `Rick84444/JACO-CODE` repository, the relay is
+**disabled until the operator enables it locally**. Once enabled, `git-ref` is
+used without requiring any manually entered bearer token. The legacy
+`github-issue` transport remains available only through separately configured
+environment settings for a suitable private repo.
+
+### Live, tokenless local activation (Core and Nova stay running)
+
+From the canonical JACO-CODE checkout (Debian or Termux shell that shares the
+Workplace workspace root):
+
+```bash
+npm run jaco:relay -- enable
+npm run jaco:relay -- status
+```
+
+The enable command writes only a mode flag under the ignored
+`.jaco/workplace/chatgpt-relay-control.json` file with owner-only
+permissions. It does not open a listener, copy credentials, restart services,
+authorize strategy creation or invoke an LLM. The already-running Workplace
+checks this operator flag about every five seconds and hot-reloads **only the
+existing communication relay**. If the Git remote or credentials are
+unavailable, the relay reports `DEGRADED_UNSYNCED`, not `READY`.
+
+To disable:
+
+```bash
+npm run jaco:relay -- disable
+npm run jaco:relay -- status
+```
+
+`status` reads the real localhost Workplace `/health` observation. A
+configured `git-ref` is **not** the same as a verified connection: expect
+`connected: true`, `relayState: READY`, an actual `agentId` and an
+outbound receipt on GitHub before claiming end-to-end transport. If a
+separate project workspace root was explicitly configured, launch the CLI
+with the same `JACO_WORKSPACE_ROOT` as Workplace.
+
+**This is the communications bridge only.** To submit or steer private
+missions from ChatGPT, use the separately authenticated private Aura MCP
+profile in `docs/JACO_CHATGPT_PRIVATE_TUNNEL.md`. Do not put secrets, source
+code, private conversation content or execution instructions on the public
+Git control branches.
 
 The bridge uses the **existing** `chatgpt-jaco-relay` Workplace Agent Card,
 session, sync/ACK, encrypted event log and normal permissions.
