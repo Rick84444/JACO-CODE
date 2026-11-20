@@ -230,3 +230,24 @@ test('npm jaco:status uses the same activation truth command', () => {
   const pkg = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'));
   assert.equal(pkg.scripts['jaco:status'], 'node agents/jaco-cli.mjs status');
 });
+
+test('Debian CLI prefers the live portable launcher token over stale Termux and state files', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-debian-cli-'));
+  const state = path.join(root, 'state');
+  fs.mkdirSync(state);
+  const runtimeEnv = path.join(root, 'runtime.env');
+  fs.writeFileSync(path.join(root, '.env'), 'JACO_GATEWAY_TOKEN="launcher-current"\nGATEWAY_TOKEN="launcher-old"\n');
+  fs.writeFileSync(runtimeEnv, 'GATEWAY_TOKEN="termux-stale"\n');
+  fs.writeFileSync(path.join(state, 'gateway.token'), 'state-stale\n');
+  assert.equal(gatewayToken({JACO_RUNTIME_ENV:runtimeEnv,JACO_STATE_DIR:state},root),'launcher-current');
+  assert.equal(gatewayToken({TERMUX_VERSION:'0.118',JACO_RUNTIME_ENV:runtimeEnv,JACO_STATE_DIR:state},root),'termux-stale');
+  assert.equal(gatewayToken({GATEWAY_TOKEN:'explicit-override',JACO_RUNTIME_ENV:runtimeEnv,JACO_STATE_DIR:state},root),'explicit-override');
+});
+
+test('installed portable CLI reads JACO_DATA_DIR .env as local-stack does',()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-cli-installed-'));
+  const data=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-cli-data-'));
+  fs.writeFileSync(path.join(root,'.env'),'GATEWAY_TOKEN="checkout-old"\n');
+  fs.writeFileSync(path.join(data,'.env'),'GATEWAY_TOKEN="installed-current"\n');
+  assert.equal(gatewayToken({JACO_DATA_DIR:data,JACO_RUNTIME_ENV:path.join(root,'missing.env')},root),'installed-current');
+});
