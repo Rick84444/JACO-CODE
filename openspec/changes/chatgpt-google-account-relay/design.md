@@ -90,6 +90,25 @@ Customer's ChatGPT mobile or desktop (same custom MCP plugin)
   independent security review; do not deploy via raw Worker publish that
   overwrites the JACO download artifacts.
 
+## ChatGPT client availability and distribution (verified Nov 2026)
+
+OpenAI's current documentation distinguishes the **custom MCP connection/testing
+setup, currently supported on ChatGPT web**, from **publicly published plugins**
+in the universal directory, which must work across ChatGPT desktop and mobile.
+Do not claim a private, unapproved developer MCP server is callable today from
+the user's ChatGPT Android app. JACO product needs a reviewed/published
+remote HTTPS MCP plugin with account-level OAuth, proper OpenAI listing and
+mobile tests. Publication and runtime use depend on OpenAI review, plan and
+tool availability. Reference:
+https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt
+https://help.openai.com/en/articles/20001256-plugins-in-chatgpt
+https://developers.openai.com/plugins/plugin-guidelines
+
+**Phased acceptance:** Build and verify OAuth/MCP on web during development;
+submit for directory review and then validate on real mobile ChatGPT.
+Keep JACO Link mobile UI as a separately available option, not a substitute
+for the requested ordinary ChatGPT conversation.
+
 ## Mobile conversation acceptance
 
 - The **same OAuth JACO app and OAuth grant** must be discoverable from an
