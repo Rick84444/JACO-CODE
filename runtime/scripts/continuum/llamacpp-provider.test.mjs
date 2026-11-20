@@ -14,6 +14,18 @@ assert.equal(p.protocol,'openai-chat');assert.equal(p.baseUrl,'http://127.0.0.1:
 assert.equal(p.model,'Bonsai-27B-Q1_0');assert.equal(p.local,true);
 assert.ok(rt.providers.candidates({requiredCapabilities:['reasoning'],prompt:'x'}).some(c=>c.provider.id==='llamacpp-env'),'eligible for reasoning work');
 
+
+process.env.JACO_LLAMACPP_URL='http://127.0.0.1:8081/v1';
+process.env.JACO_LLAMACPP_MODEL='C:\\Users\\operator\\Bonsai9B-Test\\models\\Ternary-Bonsai-2-9B-PQ2_0.gguf';
+process.env.JACO_LLAMACPP_MODEL_ALIAS='bonsai-9b';
+const windows=fresh();
+const bonsai=windows.models.listProviders().find(x=>x.id==='llamacpp-env');
+assert.ok(bonsai);
+assert.equal(bonsai.baseUrl,'http://127.0.0.1:8081/v1');
+assert.equal(bonsai.model,'bonsai-9b','the alias advertised by llama-server wins over the GGUF basename');
+assert.ok(windows.providers.candidates({requiredCapabilities:['code'],prompt:'x'}).some(c=>c.provider.id==='llamacpp-env'));
+delete process.env.JACO_LLAMACPP_MODEL_ALIAS;
+
 delete process.env.JACO_LLAMACPP_URL;delete process.env.JACO_LLAMACPP_MODEL;
 assert.equal(fresh().models.listProviders().some(x=>x.id==='llamacpp-env'),false,'not seeded without JACO_LLAMACPP_URL');
 console.log('LLAMACPP_PROVIDER: PASS');process.exit(0);

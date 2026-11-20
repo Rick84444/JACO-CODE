@@ -82,3 +82,17 @@ test('scan discovers credentials added after startup without making inference ca
   assert.equal(result.find(p => p.id === 'groq').state, 'KEY_REJECTED');
   assert.equal(JSON.stringify(result).includes('test-only-credential'), false);
 });
+
+test('Aura uses the llama-server advertised alias for a Windows Bonsai GGUF instead of the file name', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-llamacpp-alias-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const registry = new ProviderRegistry(dir, {
+    JACO_LLAMACPP_URL: 'http://127.0.0.1:8081/v1',
+    JACO_LLAMACPP_MODEL: 'C:\\Users\\operator\\Bonsai9B-Test\\models\\Ternary-Bonsai-2-9B-PQ2_0.gguf',
+    JACO_LLAMACPP_MODEL_ALIAS: 'bonsai-9b',
+  });
+  const provider = registry.list().find(p => p.id === 'llamacpp');
+  assert.equal(provider.baseUrl, 'http://127.0.0.1:8081/v1');
+  assert.equal(provider.defaultModel, 'bonsai-9b');
+  assert.equal(provider.apiKeyEnv, null);
+});
