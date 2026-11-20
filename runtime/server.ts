@@ -313,7 +313,11 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         observedAt: new Date().toISOString(),
         services: await auraServiceHealth(),
         currentNovaMission: mission ? { id: mission.id, status: mission.status, phase: mission.phase, turn: mission.turn, failures: mission.failures, goal: String(mission.goal).slice(0, 200) } : null,
-        providers: connectedRuntime.providers.list().map((p: any) => ({ id: p.id, model: p.defaultModel, credentialConfigured: p.credentialConfigured })),
+        providers: connectedRuntime.providers.list().map((p: any) => {
+          let local = false;
+          try { local = ['127.0.0.1','localhost','[::1]'].includes(new URL(p.baseUrl).hostname); } catch {}
+          return { id: p.id, model: p.defaultModel, local, credentialRequired: Boolean(p.apiKeyEnv) && !local, credentialConfigured: p.credentialConfigured };
+        }),
         workspaceRoot: path.basename(projectRoot.get()),
         operatorMandate: organizationMandate(organization, 'aura'),
       }, null, 1);
@@ -2200,7 +2204,7 @@ const notifyPhone = async (action) => {
     // What each provider is used for, so the IDE does not show a working planner as merely "REGISTERED"
     // (operator 2026-10-03: "how do I activate providers"). SEER and Aura chat use the observed local
     // model; Nova follows the configured primary provider and then eligible fallbacks.
-    let plannerChoice: any = process.env.JACO_PRIMARY_PROVIDER
+    let plannerChoice: any = process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1'
       ? { provider: process.env.JACO_PRIMARY_PROVIDER, model: plannerChoices(process.env)[process.env.JACO_PRIMARY_PROVIDER]?.models[0] || null }
       : null;
     if (!plannerChoice) try { plannerChoice = readPlannerChoice(plannerChoiceFile(process.env)); } catch {}
@@ -2210,9 +2214,12 @@ const notifyPhone = async (action) => {
       const roles: string[] = [];
       if (active) roles.push(`SEER + Aura chat (${activeModelId || 'local model'})`);
       if (plannerChoice?.provider === provider.id) roles.push(`Nova planner (${plannerChoice.model})`);
-      else if (!disabledProviders.includes(String(provider.id)) && (provider.credentialConfigured || !provider.apiKeyEnv) && provider.id !== 'lmstudio') roles.push('Nova fallback');
+      else if (process.env.JACO_AURA_UNIFIED_RUNTIME !== '1' && !disabledProviders.includes(String(provider.id)) && (provider.credentialConfigured || !provider.apiKeyEnv) && provider.id !== 'lmstudio') roles.push('Nova fallback');
+      let local = false;
+      try { local = ['127.0.0.1','localhost','[::1]'].includes(new URL(provider.baseUrl).hostname); } catch {}
       return {
         roles,
+        local,
         disabled: disabledProviders.includes(String(provider.id)),
         id: provider.id,
         kind: provider.kind,
@@ -2220,7 +2227,7 @@ const notifyPhone = async (action) => {
         apiKeyEnv: provider.apiKeyEnv || null,
         defaultModel: provider.defaultModel || '',
         credentialConfigured: Boolean(provider.credentialConfigured),
-        credentialRequired: Boolean(provider.apiKeyEnv),
+        credentialRequired: Boolean(provider.apiKeyEnv) && !local,
         active,
         status: disabledProviders.includes(String(provider.id)) ? 'DISABLED' : roles.length ? 'ACTIVE' : 'REGISTERED',
         evidenceSource: active ? 'seer-health.local_model' : 'provider-registry',
