@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { setup } from '../../scripts/setup.mjs';
+import { setup, resolveSetupNpm } from '../../scripts/setup.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-setup-contract-'));
@@ -19,6 +19,8 @@ function fixture(t) {
 }
 
 const noLog = { log() {} };
+const npmPrefix = process.platform === 'win32' ? 1 : 0;
+const npmArgs = args => args.slice(npmPrefix);
 
 test('setup installs all manifests then builds both canonical production artifacts', t => {
   const root = fixture(t);
@@ -30,14 +32,14 @@ test('setup installs all manifests then builds both canonical production artifac
     },
     logger: noLog,
   });
-  assert.deepEqual(calls.map(c => [path.relative(root, c.cwd).split(path.sep).join('/'), c.args[0]]), [
+  assert.deepEqual(calls.map(c => [path.relative(root, c.cwd).split(path.sep).join('/'), npmArgs(c.args)[0]]), [
     ['', 'ci'], ['runtime', 'ci'], ['runtime/gateway', 'install'],
     ['runtime', 'run'], ['runtime', 'run'],
   ]);
-  assert.deepEqual(calls.slice(-2).map(c => c.args), [
+  assert.deepEqual(calls.slice(-2).map(c => npmArgs(c.args)), [
     ['run', 'build:client'], ['run', 'build:server'],
   ]);
-  assert(calls.every(c => c.binary === (process.platform === 'win32' ? 'npm.cmd' : 'npm')));
+  assert(calls.every(c => c.binary === (process.platform === 'win32' ? process.execPath : 'npm')));
   const envText = fs.readFileSync(path.join(root, '.env'), 'utf8');
   assert.match(envText, /^JACO_GATEWAY_TOKEN=[a-f0-9]{64}\n$/);
 });
@@ -47,7 +49,7 @@ test('setup refuses a failed build and does not claim completion', t => {
   let completed = false;
   assert.throws(() => setup(root, { JACO_PIXEL_SETUP: '0' }, {
     spawn(_binary, args) {
-      if (args.join(' ') === 'run build:server') return { status: 9 };
+      if (npmArgs(args).join(' ') === 'run build:server') return { status: 9 };
       return { status: 0 };
     },
     logger: { log(message) { if (message.startsWith('Setup complete')) completed = true; } },
@@ -97,7 +99,7 @@ test('Termux setup prepares native Rollup and builds Aura without desktop server
   assert.equal(calls[3].binary, process.execPath);
   assert.deepEqual(calls[3].args, ['scripts/ensure_rollup_native.mjs']);
   assert.equal(calls[3].cwd, path.join(root, 'runtime'));
-  assert.deepEqual(calls[4].args, ['run', 'build:termux']);
+  assert.deepEqual(npmArgs(calls[4].args), ['run', 'build:termux']);
   assert.equal(calls.some(c => c.args.join(' ').includes('build:server')), false);
 });
 
@@ -134,7 +136,7 @@ test('Pixel setup generates internal credentials before canonical activation and
   const root=fixture(t),calls=[];
   fs.writeFileSync(path.join(root,'.env'),'JACO_ENABLE_CDP=0\n');
   setup(root,{}, {system:pixel,logger:noLog,
-    spawn(_binary,args){calls.push(args.join(' '));return {status:0};},
+    spawn(_binary,args){calls.push(npmArgs(args).join(' '));return {status:0};},
     pixelBrowser(_root,env){assert.equal(env.JACO_ENABLE_CDP,'0');assert.ok(env.JACO_GATEWAY_TOKEN.length>=24);calls.push('browser');return {state:'DISABLED'};},
     pixelActivate(_root,env){assert.equal(env.JACO_ENABLE_CDP,'0');calls.push('activate');return {state:'READY',browser:'DISABLED'};}});
   assert.deepEqual(calls.slice(-4),['run build:client','run build:server','browser','activate']);
@@ -147,4 +149,14 @@ test('activation accepts only fresh canonical receipt from its own process and r
   assert.deepEqual(activatePixelInstallation(root,{},options),{state:'DEGRADED',browser:'UNAVAILABLE'});
   receipt.runId='456-'+start;
   assert.equal(activatePixelInstallation(root,{},options).state,'BLOCKED');
+});
+
+test('Windows setup invokes npm JavaScript directly with Node and never spawns npm.cmd',()=>{
+  const execPath='C:\\Program Files\\nodejs\\node.exe';
+  const cli='C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js';
+  const opts={platform:'win32',execPath,exists:p=>p===cli};
+  assert.deepEqual(resolveSetupNpm({},opts),{executable:execPath,prefix:[cli]});
+  assert.throws(()=>resolveSetupNpm({}, {...opts,exists:()=>false}),/SETUP_NPM_CLI_NOT_FOUND/);
+  assert.deepEqual(resolveSetupNpm({npm_execpath:'custom.js'},opts),{executable:execPath,prefix:['custom.js']});
+  assert.deepEqual(resolveSetupNpm({}, {platform:'linux'}),{executable:'npm',prefix:[]});
 });

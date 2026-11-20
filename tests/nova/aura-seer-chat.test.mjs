@@ -331,3 +331,67 @@ test('perception names resolve to real tools in both chat prompt variants withou
     assert.match(system,/do not claim readiness without live evidence/);
   }
 });
+
+
+const fixtureCompletion=text=>({provider:'fixture',model:'fixture',local:true,text});
+const batchText=(...names)=>'TOOL_CALLS '+JSON.stringify(names.map(name=>({name,args:{}})));
+
+test('Aura executes distinct independent reads in one model reply and sends separate receipts',async()=>{
+  const seen=[],prompts=[];
+  const replies=[batchText('health','dom_track','laser_vision','dom_track'),'Verifierat.'];
+  const tools=Object.fromEntries(['health','dom_track','laser_vision'].map(name=>[name,{description:'read',run:async()=>{seen.push(name);return {ok:true,marker:name};}}]));
+  const out=await auraChatViaSeer({message:'Kontrollera tre funktioner',toolbox:{tools},
+    complete:async ({user})=>{prompts.push(user);return fixtureCompletion(replies.shift());}});
+  assert.deepEqual(seen,['health','dom_track','laser_vision']);
+  assert.deepEqual(out.toolReceipts.map(r=>r.name),seen);
+  assert.equal(prompts.length,2);
+  assert.match(prompts[1],/TOOL_RESULT \(ok/);
+  assert.match(prompts[1],/laser_vision/);
+});
+
+test('invalid or unlisted batches have no side effects; Python-shaped output is never evaluated',async()=>{
+  let reads=0,writes=0;
+  const replies=['I will run a screenshot.\nTOOL_CODE:\nprint(mcp_tool(server="browser", tool="nova_screenshot", mode="read"))',
+    batchText('health','unknown_tool'),batchText('health','mcp_tool'),
+    'TOOL_CALL {"name":"health","args":{}}','Klart.'];
+  const out=await auraChatViaSeer({message:'Inspect',toolbox:{tools:{
+    health:{description:'read',run:async()=>{reads++;return {ok:true};}},
+    mcp_tool:{description:'action',run:async()=>{writes++;return {ok:true};}},
+  }},complete:async()=>fixtureCompletion(replies.shift())});
+  assert.equal(reads,1);
+  assert.equal(writes,0);
+  assert.equal(out.toolReceipts.length,1);
+  assert.equal(out.reply,'Klart.');
+});
+
+test('explicit tool failure stops the remainder of an independent-read batch and is not a success receipt',async()=>{
+  let later=0;
+  const replies=[batchText('dom_track','laser_vision'),'Kunde inte läsa sidan.'];
+  const out=await auraChatViaSeer({message:'Inspect',toolbox:{tools:{
+    dom_track:{description:'read',run:async()=>({isError:true})},
+    laser_vision:{description:'read',run:async()=>{later++;return {};}},
+  }},complete:async()=>fixtureCompletion(replies.shift())});
+  assert.equal(later,0);
+  assert.equal(out.toolReceipts.length,1);
+  assert.equal(out.toolReceipts[0].ok,false);
+});
+
+test('unknown mutation outcome stops chat execution without replay',async()=>{
+  let runs=0,turns=0;
+  const out=await auraChatViaSeer({message:'Inspect',toolbox:{tools:{
+    mcp_tool:{description:'action',run:async()=>{runs++;return {ok:false,outcomeUnknown:true};}},
+  }},complete:async()=>{turns++;return fixtureCompletion('TOOL_CALL {"name":"mcp_tool","args":{}}');}});
+  assert.equal(runs,1);
+  assert.equal(turns,1);
+  assert.equal(out.toolReceipts[0].outcomeUnknown,true);
+  assert.match(out.reply,/not retried/i);
+});
+
+test('batch call budget is capped at twelve independently of model-round budget',async()=>{
+  const names=['health','dom_track','laser_vision','mission_list'];let runs=0;
+  const tools=Object.fromEntries(names.map(name=>[name,{description:'read',run:async()=>{runs++;return {};}}]));
+  const out=await auraChatViaSeer({message:'Inspect',toolbox:{tools},complete:async()=>fixtureCompletion(batchText(...names))});
+  assert.equal(runs,12);
+  assert.equal(out.toolReceipts.length,12);
+  assert.doesNotMatch(out.reply,/TOOL_CALL/);
+});

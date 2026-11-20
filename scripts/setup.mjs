@@ -20,14 +20,22 @@ export function ensureGatewayToken(root, env = process.env) {
   fs.chmodSync(file, 0o600);
 }
 
+// Windows .cmd shims cannot be spawned directly without a command shell.
+export function resolveSetupNpm(env = process.env, { platform = process.platform, execPath = process.execPath, exists = fs.existsSync } = {}) {
+  if (env.npm_execpath) return { executable: execPath, prefix: [env.npm_execpath] };
+  if (platform !== 'win32') return { executable: 'npm', prefix: [] };
+  const cli = path.win32.join(path.win32.dirname(execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  if (!exists(cli)) throw Error('SETUP_NPM_CLI_NOT_FOUND: run setup through npm or install npm alongside Node');
+  return { executable: execPath, prefix: [cli] };
+}
+
 // The injected spawn/logger are for isolated setup-contract tests only.
 export function setup(root, env = process.env, { spawn = spawnSync, logger = console, system, pixelBrowser = preparePixelBrowser, pixelActivate = activatePixelInstallation } = {}) {
   if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('Node.js 24 or newer is required');
 
   const runNpm = (cwd, args, label) => {
-    const npmScript = env.npm_execpath;
-    const executable = npmScript ? process.execPath : process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    const commandArgs = npmScript ? [npmScript, ...args] : args;
+    const { executable, prefix } = resolveSetupNpm(env);
+    const commandArgs = [...prefix, ...args];
     const result = spawn(executable, commandArgs, { cwd, env, stdio: 'inherit' });
     if (result.error) throw new Error(`${label}: ${result.error.message}`, { cause: result.error });
     if (result.status !== 0) throw new Error(`${label} (exit ${result.status ?? 'unknown'})`);
