@@ -41,6 +41,7 @@ import { validProviderId } from './src/server/connected/providerRegistry.mjs';
 import { createIdeRemoteGate, ideDeviceRegistryAdapter, upgradeAllowed, ideHost } from './src/server/connected/ideAccess.mjs';
 import { auraLegacyStatePath } from './src/lib/auraLegacyStatePath.mjs';
 import { mountVscodeEmbedHeaders } from './src/server/security/vscodeEmbed.mjs';
+import { githubGuiAuth } from './src/server/connected/githubGuiAuth.mjs';
 import { normalizeAuraChatMode, normalizeAuraMissionMode } from './src/lib/auraRunModes.mjs';
 import { validateOperatorConfirmation } from './src/lib/operatorApproval.mjs';
 import { cognitiveActivationPreview } from './src/lib/auraCognitiveActivation.mjs';
@@ -3763,6 +3764,16 @@ const notifyPhone = async (action) => {
 
   // Write-only key entry (agents/lib/secret-store.mjs): the operator hands JACO an API key in the
   // local IDE, it is stored encrypted, and no route ever returns a value, only name, length and dates.
+  // A distinct UI flow, not an Aura tool. Provider consent is always human.
+  const githubLogin = githubGuiAuth();
+  app.get('/api/aura/workbench/github/auth', requireLocalUiSameOrigin, requireOrganizationMutationAuth, async (_req, res) => {
+    res.set('Cache-Control', 'no-store').json({ success: true, ...(await githubLogin.status()) });
+  });
+  app.post('/api/aura/workbench/github/auth', requireLocalUiSameOrigin, requireOrganizationMutationAuth, async (req, res) => {
+    if (!req.get('origin') || req.get('origin')?.replace(/^https?:\/\//,'') !== req.get('host')) return res.status(403).json({success:false,error:'GITHUB_AUTH_ORIGIN_REQUIRED'});
+    if (!['start','cancel'].includes(req.body?.action)) return res.status(400).json({success:false,error:'GITHUB_AUTH_ACTION_INVALID'});
+    res.set('Cache-Control','no-store').json({ success: true, ...(req.body.action === 'start' ? await githubLogin.start() : githubLogin.cancel()) });
+  });
   app.get('/api/aura/workbench/secrets', requireLocalUi, (_req, res) => {
     try { res.json({ success: true, secrets: new SecretStore().list() }); }
     catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
