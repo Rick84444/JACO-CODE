@@ -38,12 +38,12 @@ test('turning things off persists across restart, validates ids and can be reset
   assert.deepEqual(new CapabilityPolicy(file, { taskIds }).snapshot().disabledTasks, [], 'a damaged file means everything on, not everything off');
 });
 
-function control(t, capabilities) {
+function control(t, capabilities, options = {}) {
   // The database must be closed before its folder can be removed on Windows.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-capabilities-mission-'));
   const bus = new DurableMissionBus(dir);
   t.after(() => { bus.close(); fs.rmSync(dir, { recursive: true, force: true }); });
-  return new NovaMissionControl(bus, capabilities ? { capabilities } : {});
+  return new NovaMissionControl(bus, { ...options, ...(capabilities ? { capabilities } : {}) });
 }
 
 test('with the switches, a mission starts with every enabled task; without them the legacy scope is unchanged', t => {
@@ -88,4 +88,14 @@ test('sandbox profile follows canonical capabilities and preserves explicit ceil
   assert.ok(!mission.allowedTasks.includes('mcp-write'));
   assert.ok(!mission.allowedTasks.includes('repo-scan'));
   assert.ok(!mission.allowedTasks.includes('repo-write'), 'coding writes require a separate contract');
+});
+
+
+test('desktop sandbox enables read-only WMI through the canonical registry and honors operator disable', t => {
+  const policy = new CapabilityPolicy(path.join(tmp(t), 'desktop.json'), { taskIds });
+  const missions = control(t, policy, { allowedTasks: configuredTaskCeiling('sandbox') });
+  const m = missions.create({goal:'Inspect Windows system',idempotencyKey:'desktop-wmi',executor:'desktop-agentos'});
+  assert.ok(m.allowedTasks.includes('windows-wmi-read'));
+  policy.update({tasks:{'windows-wmi-read':false}});
+  assert.ok(!missions.get(m.id).allowedTasks.includes('windows-wmi-read'));
 });
