@@ -10,6 +10,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 
 export const SECRET_NAME = /^[A-Z][A-Z0-9_]{1,127}$/;
 const MAX_VALUE = 16 * 1024;
@@ -18,20 +20,26 @@ export function stateDir(env = process.env) {
   return path.resolve(env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco'));
 }
 
-function masterKey(env, dir) {
-  if (env.JACO_SECRET_KEY) {
-    const key = Buffer.from(String(env.JACO_SECRET_KEY).trim(), 'hex');
-    if (key.length !== 32) throw new Error('JACO_SECRET_KEY_MUST_BE_64_HEX');
-    return key;
-  }
+function masterKey(env, dir, { create = false } = {}) {
+  const decode = raw => {
+    const text = String(raw).trim();
+    if (!/^[a-f0-9]{64}$/i.test(text)) throw Error('JACO_SECRET_KEY_MUST_BE_64_HEX');
+    return Buffer.from(text, 'hex');
+  };
+  if (env.JACO_SECRET_KEY) return decode(env.JACO_SECRET_KEY);
   const file = path.join(dir, 'secret.key');
-  try { return Buffer.from(fs.readFileSync(file, 'utf8').trim(), 'hex'); }
+  try { return decode(fs.readFileSync(file, 'utf8')); }
   catch (error) { if (error?.code !== 'ENOENT') throw error; }
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (!create) throw Error('JACO_SECRET_KEY_MISSING');
+  // The caller owns the write transaction. Publish the complete key atomically;
+  // a process killed before rename cannot leave an empty or truncated master key.
   const key = crypto.randomBytes(32);
-  // wx: two processes racing to create the key must not overwrite each other's.
-  try { fs.writeFileSync(file, key.toString('hex'), { mode: 0o600, flag: 'wx' }); return key; }
-  catch (error) { if (error?.code === 'EEXIST') return Buffer.from(fs.readFileSync(file, 'utf8').trim(), 'hex'); throw error; }
+  const tmp = file + '.' + crypto.randomUUID() + '.tmp';
+  try {
+    fs.writeFileSync(tmp, key.toString('hex'), { mode: 0o600, flag: 'wx', flush: true });
+    fs.renameSync(tmp, file);
+  } finally { fs.rmSync(tmp, { force: true }); }
+  return key;
 }
 
 export function validateSecretName(name) {
@@ -53,25 +61,33 @@ export class SecretStore {
   #write(data) {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     const tmp = `${this.file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600, flush: true });
     fs.renameSync(tmp, this.file);
   }
-  // All writers share the same cross-process lock. Readers continue to see the last complete
-  // atomic snapshot. Fail boundedly instead of overwriting another process's credentials.
+  // SQLite is used only as an OS-backed interprocess mutex; it contains no credentials.
+  // BEGIN IMMEDIATE holds a write lock until close/rollback, even across a process
+  // crash. No PID guessing or stale lock-file deletion. The encrypted JSON stays canonical.
   #withWriteLock(fn) {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-    const lock = this.file + '.write-lock';
-    const deadline = Date.now() + 1000;
-    for (;;) {
-      try { fs.mkdirSync(lock, { mode: 0o700 }); break; }
+    let DatabaseSync;
+    try { ({ DatabaseSync } = require('node:sqlite')); }
+    catch { throw Error('VAULT_WRITE_REQUIRES_NODE_SQLITE'); }
+    const file = this.file + '.mutex.sqlite';
+    const db = new DatabaseSync(file);
+    try {
+      if (process.platform !== 'win32') fs.chmodSync(file, 0o600);
+      db.exec('PRAGMA busy_timeout = 1000');
+      try { db.exec('BEGIN IMMEDIATE'); }
       catch (error) {
-        if (error?.code !== 'EEXIST') throw error;
-        if (Date.now() >= deadline) throw Error('VAULT_WRITE_BUSY');
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+        if (error?.errcode === 5 || error?.errcode === 6 || /database is locked|database table is locked/i.test(error?.message || '')) throw Error('VAULT_WRITE_BUSY');
+        throw error;
       }
+      return fn();
+    } finally {
+      // Closing a connection rolls back any outstanding transaction and releases
+      // the OS lock. No plaintext or ciphertext is ever written to this database.
+      db.close();
     }
-    try { return fn(); }
-    finally { fs.rmdirSync(lock); }
   }
   set(name, value, meta = {}) {
     return this.#withWriteLock(() => this.#setUnlocked(name, value, meta));
@@ -90,11 +106,11 @@ export class SecretStore {
     if (!text) throw new Error('SECRET_VALUE_REQUIRED');
     if (text.length > MAX_VALUE) throw new Error('SECRET_VALUE_TOO_LARGE');
     const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv('aes-256-gcm', masterKey(this.env, this.dir), iv);
+    const data = this.#read();
+    const cipher = crypto.createCipheriv('aes-256-gcm', masterKey(this.env, this.dir, { create: Object.keys(data.secrets).length === 0 }), iv);
     // The name is authenticated data: a ciphertext moved to another name does not decrypt.
     cipher.setAAD(Buffer.from(key));
     const ct = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
-    const data = this.#read();
     const previous = data.secrets[key];
     data.secrets[key] = {
       iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), ct: ct.toString('base64'),
