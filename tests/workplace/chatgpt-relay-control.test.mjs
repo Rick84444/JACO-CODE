@@ -63,7 +63,8 @@ test('CLI enable and disable only change local ignored config, with no network c
   const stdout = stream();
   let networkCalls = 0;
   const fetchImpl = async () => { networkCalls++; throw Error('network must not be contacted'); };
-  assert.equal(await relayCli(['enable'], { root, out:stdout, fetchImpl }), 0);
+  assert.equal(await relayCli(['enable'], { root, out:stdout, fetchImpl,
+    env:{JACO_CHATGPT_WORKPLACE_REPO:'example-org/jaco-bridge'} }), 0);
   assert.equal(readRelayControl(root).enabled, true);
   assert.equal(await relayCli(['disable'], { root, out:stdout, fetchImpl }), 0);
   assert.equal(readRelayControl(root).enabled, false);
@@ -100,6 +101,15 @@ test('CLI fails closed when Workplace is unreachable or URL is remote', async t 
   const out2=stream();
   assert.equal(await relayCli(['status'],{root,out:out2,fetchImpl:async()=>{throw Error('connection refused');}}),1);
   assert.equal(JSON.parse(out2.text).observed,false);
+});
+
+test('customer installs have no default GitHub identity, never bind to developer repository', async t => {
+  const root=fixture(t);
+  const out=stream(), err=stream();
+  assert.equal(await relayCli(['enable'],{root,out,err,env:{}}),2);
+  assert.equal(readRelayControl(root).configured,false);
+  assert.match(err.text,/developer-only/);
+  assert.match(err.text,/Google-account-bound OAuth MCP/);
 });
 
 test('CLI never treats a configured relay as connected without live acknowledgement', async t => {
