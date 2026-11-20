@@ -45,3 +45,26 @@ jobs:
             $errors | ForEach-Object { Write-Error $_.Message }
             throw "Windows local-model launcher has PowerShell syntax errors."
           }
+      - name: Reject occupied loopback port without launching another model
+        shell: powershell
+        run: |
+          $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback), 0
+          $listener.Start()
+          $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+          $model = Join-Path $env:RUNNER_TEMP 'test-model.gguf'
+          $binary = Join-Path $env:RUNNER_TEMP 'llama-server.exe'
+          [System.IO.File]::WriteAllText($model, 'test-only')
+          [System.IO.File]::WriteAllText($binary, 'test-only')
+          $observed = ''
+          try {
+            & .\windows\product\Start-JACO-LocalModel.ps1 -ServerExe $binary -ModelFile $model -Port $port -Alias 'test-local' 2>&1 | Out-Null
+          }
+          catch {
+            $observed = $_.Exception.Message
+          }
+          finally {
+            $listener.Stop()
+          }
+          if ($observed -notmatch 'LOCAL_MODEL_PORT_OCCUPIED') {
+            throw "Launcher failed to reject the occupied port: $observed"
+          }
