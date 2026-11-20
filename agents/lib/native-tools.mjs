@@ -115,8 +115,8 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
     { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] }));
   targets.set('complete', { kind: 'complete' });
   targets.set('blocked', { kind: 'blocked' });
-  if (allowReplan) tools.push(fn('request_replan', 'Ask the internal Aura strategy planner to refine this graph node into smaller sequential subgoals. Preserve the original goal, authority and verification. This pauses execution; it does not complete the mission.', {
-    type: 'object', properties: { reason: { type: 'string' }, subgoals: { type: 'array', minItems: 2, maxItems: 8, items: { type: 'object', properties: { title: { type: 'string' }, objective: { type: 'string' } }, required: ['title','objective'], additionalProperties: false } } }, required: ['reason','subgoals'], additionalProperties: false,
+  if (allowReplan) tools.push(fn('request_replan', 'Ask the internal Aura strategy planner to change approach when evidence indicates a better route or a known blocker. Use subgoals: [] to revise this node without forced decomposition, or 2-8 sequential subgoals when splitting helps. Explain the evidence and proposed alternative in reason. Preserve the original goal, authority and verification. This pauses execution; it does not complete the mission. Never use it to retry an uncertain outcome.', {
+    type: 'object', properties: { reason: { type: 'string' }, subgoals: { type: 'array', minItems: 0, maxItems: 8, items: { type: 'object', properties: { title: { type: 'string' }, objective: { type: 'string' } }, required: ['title','objective'], additionalProperties: false } } }, required: ['reason','subgoals'], additionalProperties: false,
   }));
   if (allowReplan) targets.set('request_replan', { kind: 'replan' });
   if (allowReplan) {
@@ -214,7 +214,7 @@ export function planSchema(allowedTasks = [], allowReplan = true) {
       { type: 'object', properties: { tasks: { type: 'array', items: taskSchema, minItems: 1, maxItems: 4 }, continuity }, required: ['tasks'] },
       { type: 'object', properties: { complete: { type: 'boolean', const: true }, reason: { type: 'string' } }, required: ['complete', 'reason'] },
       { type: 'object', properties: { blocked: { type: 'boolean', const: true }, reason: { type: 'string' } }, required: ['blocked', 'reason'] },
-      ...(allowReplan ? [{ type: 'object', properties: { replan: { type: 'boolean', const: true }, reason: { type: 'string' }, subgoals: { type: 'array', minItems: 2, maxItems: 8, items: { type: 'object', properties: { title: { type: 'string' }, objective: { type: 'string' } }, required: ['title','objective'], additionalProperties: false } } }, required: ['replan','reason','subgoals'] }] : []),
+      ...(allowReplan ? [{ type: 'object', properties: { replan: { type: 'boolean', const: true }, reason: { type: 'string' }, subgoals: { type: 'array', minItems: 0, maxItems: 8, items: { type: 'object', properties: { title: { type: 'string' }, objective: { type: 'string' } }, required: ['title','objective'], additionalProperties: false } } }, required: ['replan','reason','subgoals'] }] : []),
     ],
   };
 }
