@@ -93,10 +93,11 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   const requestedPorts = { ...ports };
   applyResolvedPorts(ports, readResolvedPorts(dataRoot));
   // Operator 2026-10-22: the agent connects its own browser. Chrome (a dedicated JACO profile), the Nova bridge
-  // and the CDP MCP start by default; JACO_ENABLE_CDP=0 turns them off. The ChatGPT gateway stays opt-in
-  // (JACO_ENABLE_CHATGPT_GATEWAY=1, or the earlier JACO_ENABLE_CDP=1 that used to start it).
+  // and the CDP MCP start by default; JACO_ENABLE_CDP=0 turns them off. The
+  // legacy ChatGPT HTTP gateway is a separate product transport. Never
+  // start it implicitly for CDP: only explicit legacy opt-in enables it.
   const cdp = env.JACO_ENABLE_CDP !== '0';
-  const gateway = env.JACO_ENABLE_CHATGPT_GATEWAY === '1' || env.JACO_ENABLE_CDP === '1';
+  const gateway = env.JACO_ENABLE_CHATGPT_GATEWAY === '1';
   const enabledPorts = Object.entries(ports).filter(([key]) => key === 'gateway' ? gateway : ['chrome','cdp','novaBridge'].includes(key) ? cdp : true).map(([, value]) => value);
   if (new Set(enabledPorts).size !== enabledPorts.length) throw new Error('DUPLICATE_LISTENER_PORT');
   Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_INSTALL_ROOT: root, JACO_RUNTIME_DIR: runtime });
