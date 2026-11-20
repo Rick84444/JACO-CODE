@@ -161,6 +161,7 @@ export async function runAgentMission({
   const activated = new Set();
   const messages = [];
   const receipts = [];
+  const attemptedWebRecovery = new Set();
   let steps = 0, modelErrors = 0, idle = 0, turns = 0;
   let capabilityEvidence = null;
   let capabilityCorrections = 0;
@@ -336,7 +337,15 @@ export async function runAgentMission({
       }
       let nudge = null;
       let reply;
-      try { reply = webRecoveryCall(mission, tools, resolve) || await chat({ messages, tools, mission }); modelErrors = 0; costCondensed = false; }
+      try {
+        const recovery = webRecoveryCall(mission, tools, resolve);
+        const key = recovery?.tool_calls[0].function.arguments;
+        if (key && !attemptedWebRecovery.has(key)) {
+          attemptedWebRecovery.add(key);
+          reply = recovery;
+        } else reply = await chat({ messages, tools, mission });
+        modelErrors = 0; costCondensed = false;
+      }
       catch (error) {
         modelErrors++;
         log('warn', `model error ${modelErrors}/${maxModelErrors}: ${errorText(error)}`);
