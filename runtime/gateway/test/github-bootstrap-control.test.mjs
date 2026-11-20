@@ -844,3 +844,47 @@ test('corrupt legacy state fails closed instead of dropping deduplication histor
   const file=stateFile();writeFileSync(file,'{"handled":');
   assert.throws(()=>reliabilityControl({file,system:{},fetchImpl:async()=>response(200,[])}),/BOOTSTRAP_STATE_UNREADABLE/);
 });
+
+
+test('Sentinel activation receipt remains compatible with actual 0.23.1 cognitive runtime contract', async () => {
+  // Read the runtime release instead of confusing it with gateway (0.22.0)
+  // or monorepo CLI (0.21.0) package versions.
+  const runtimePkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+  const release = JSON.parse(readFileSync(new URL('../../CURRENT_RELEASE.json', import.meta.url), 'utf8'));
+  assert.equal(runtimePkg.version, release.version);
+  assert.equal(release.releaseId, 'jaco-code-' + runtimePkg.version);
+  assert.equal(runtimePkg.version, '0.23.1'); // current target of this regression
+  assert.equal(release.canonical, false); // release candidate is not an installed host proof
+  const file = stateFile(), id='real-runtime-version-contract-0231';
+  const issue = reliabilityIssue(923, id), comments=[];
+  let calls=0;
+  const control = reliabilityControl({
+    file,
+    system: {
+      async activate(profile, {fromMcp}) {
+        calls++;
+        assert.equal(profile, 'full');
+        assert.equal(fromMcp, false);
+        return {
+          schema: 'jaco.activation/v2', ok: true,
+          runtime:{up:true,version:runtimePkg.version},
+          workplace:{required:true,up:true,state:'RUNNING',novaState:'RUNNING'},
+          planner:{reachable:true},tools:{toolCount:42},
+          startup:{state:'READY',browserAttachment:'ATTACHED',phase:'complete'},
+        };
+      },
+    },
+    fetchImpl: async (url,opts={}) => {
+      if (url.includes('/issues?')) return response(200,[issue]);
+      if(opts.method==='POST'){comments.push(JSON.parse(opts.body).body);return response(201,{});}
+      if(opts.method==='PATCH')return response(200,{});
+      throw Error('Unexpected HTTP request');
+    },
+  });
+  assert.equal((await control.pollOnce()).processed[0].status,'READY');
+  assert.equal(calls,1);
+  assert.equal(readJournal(file,id).state,'READY');
+  assert.match(comments[1],/End-to-end activation: .READY./);
+  assert.match(comments[1],/Browser attachment: .ATTACHED./);
+  assert.doesNotMatch(comments.join('\n'),/real-runtime-version-contract-0231.*TOKEN=/);
+});
