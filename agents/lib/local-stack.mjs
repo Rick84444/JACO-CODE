@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
 import { spawn, execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'dotenv';
@@ -113,11 +114,13 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   env.JACO_PLANNER_CHOICE_FILE ||= path.join(dataRoot === root ? runtime : dataRoot, '.jaco', 'state', 'provider-preference.json');
   env.JACO_A2A_BEARER ||= env.A2A_BEARER_TOKEN || '';
   const mode = env.JACO_START_MODE || 'auto';
-  if (!['auto','source','production'].includes(mode)) throw new Error('START_MODE_INVALID');
+  if (!['auto','source','source-static','production'].includes(mode)) throw new Error('START_MODE_INVALID');
   const built = fs.existsSync(path.join(runtime, 'dist/server.cjs')) && fs.existsSync(path.join(runtime, 'dist/index.html'));
   if (mode === 'production' && !built) throw new Error('PRODUCTION_BUILD_REQUIRED');
+  if (mode === 'source-static' && !fs.existsSync(path.join(runtime, 'dist/index.html'))) throw new Error('CLIENT_BUILD_REQUIRED:npm --prefix runtime run build:client');
   const production = mode === 'production' || (mode === 'auto' && built);
-  return { root, dataRoot, runtime, version: manifest.version, releaseId, env, ports, requestedPorts, production, cdp, gateway, tunnel: env.JACO_START_TUNNEL === '1' };
+  const staticUi = production || mode === 'source-static';
+  return { root, dataRoot, runtime, version: manifest.version, releaseId, env, ports, requestedPorts, production, staticUi, cdp, gateway, tunnel: env.JACO_START_TUNNEL === '1' };
 }
 export function serviceEnvironment(config, kind) {
   const env = { ...config.env };
@@ -132,7 +135,7 @@ export function serviceEnvironment(config, kind) {
     // Preserve legacy checkout behavior unless this is a packaged product with a separate writable data root.
     if (config.dataRoot === config.root) delete env.JACO_WORKSPACE_ROOT;
     else env.JACO_WORKSPACE_ROOT = config.dataRoot;
-    env.NODE_ENV = config.production ? 'production' : 'development';
+    env.NODE_ENV = (config.staticUi ?? config.production) ? 'production' : 'development';
     env.OLLAMA_BASE_URL = (env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/v1\/?$/, '').replace(/\/$/, '') + '/v1';
   } else env.JACO_WORKSPACE_ROOT = config.dataRoot || config.root;
   return env;
@@ -218,12 +221,17 @@ export function classifyStartupServices(observed) {
   const failed = observed.filter(s => s.state !== 'READY');
   return !observed.some(s => s.id === 'runtime' && s.state === 'READY') || failed.some(s => !optionalStartupService(s.id)) ? 'BLOCKED' : failed.length ? 'DEGRADED' : 'READY';
 }
-async function waitReady(s, token, timeout = 180000) {
+export async function waitReady(s, token, timeout = 180000, { child = null, probeImpl = probe, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
   const deadline = Date.now() + timeout;
   do {
-    const result = await probe(s, token);
+    const checkExit = () => {
+      if (child && (child.exitCode !== null || child.signalCode !== null)) throw new Error(`SERVICE_EXITED_BEFORE_READY:${s.id}:code=${child.exitCode}:signal=${child.signalCode || 'none'}`);
+    };
+    checkExit();
+    const result = await probeImpl(s, token);
+    checkExit();
     if (result.state === 'READY') return result;
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await sleep(1500);
   } while (Date.now() < deadline);
   throw new Error(`SERVICE_NOT_READY:${s.id}:see logs/startup/${s.id}.err.log`);
 }
@@ -240,7 +248,7 @@ function launch(c, s) {
       // for this process rather than spawning a second executor.
       const record = { pid: child.pid, createdAt: new Date().toISOString(), birth: processBirth(child.pid) };
       fs.writeFileSync(path.join(logs, `${s.id}.process.json`), JSON.stringify(record));
-      resolve(child.pid);
+      resolve(child);
     } catch (error) { reject(error); }
   }); });
 }
@@ -414,14 +422,24 @@ export async function activate(c, { open = false } = {}) {
   }
   const dir = path.join(c.dataRoot || c.root, 'logs', 'startup'); fs.mkdirSync(dir, { recursive: true });
   const lock = path.join(dir, 'startup.lock');
-  try { fs.writeFileSync(lock, String(process.pid), { flag: 'wx' }); }
+  // Publish a complete PID atomically; a killed writer cannot leave a zero-byte lock.
+  const publishLock = () => {
+    const temporary = `${lock}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(temporary, String(process.pid), { flag: 'wx', mode: 0o600 });
+      fs.linkSync(temporary, lock);
+    } finally { fs.rmSync(temporary, { force: true }); }
+  };
+  try { publishLock(); }
   catch (e) {
     if (e.code !== 'EEXIST') throw e;
     const pid = Number(fs.readFileSync(lock, 'utf8'));
     if (!Number.isInteger(pid) || pid < 1) throw new Error('STARTUP_LOCK_INVALID');
     try { process.kill(pid, 0); throw new Error('STARTUP_ALREADY_IN_PROGRESS'); }
     catch (error) { if (error.code !== 'ESRCH') throw error; }
-    fs.unlinkSync(lock); fs.writeFileSync(lock, String(process.pid), { flag: 'wx' });
+    // Refuse to remove a lock that changed after the liveness check.
+    if (Number(fs.readFileSync(lock, 'utf8')) !== pid) throw new Error('STARTUP_LOCK_CHANGED');
+    fs.unlinkSync(lock); publishLock();
   }
   const startedAt = new Date().toISOString();
   let installedGuiOpened = false;
@@ -508,15 +526,17 @@ export async function activate(c, { open = false } = {}) {
       }
       try {
       let state = await probe(s, c.env.GATEWAY_TOKEN);
+      let child = null;
       if (state.state !== 'READY' && !chromeAvailable && ['novaBridge','cdp'].includes(s.id)) throw new Error('BROWSER_CHROME_UNAVAILABLE');
       if (state.state !== 'READY') {
         // Workplace exclusively owns SEER and Nova. Never launch a second copy.
         if (s.id !== 'seer') {
           if (await occupied(s.url) && !ownsListener(c,s)) throw new Error(`PORT_CONFLICT_OR_UNHEALTHY:${s.id}`);
           const pending = pendingProcess(c, s.id);
-          const pid = pending || await launch(c, s); console.log(`${pending ? 'WAITING' : 'STARTED'} ${s.id} PID=${pid}`);
+          if (!pending) child = await launch(c, s);
+          console.log(`${pending ? 'WAITING' : 'STARTED'} ${s.id} PID=${pending || child.pid}`);
         }
-        state = await waitReady(s, c.env.GATEWAY_TOKEN, optionalStartupService(s.id) ? 30000 : 180000);
+        state = await waitReady(s, c.env.GATEWAY_TOKEN, optionalStartupService(s.id) ? 30000 : 180000, { child });
       }
       result.services.push({ id: s.id, state: state.state, url: s.url }); console.log(`READY ${s.id}`);
       // Product GUI stays usable for first-run model onboarding even if later workers are DEGRADED.
@@ -592,7 +612,7 @@ export async function activate(c, { open = false } = {}) {
     if (open && process.platform === 'win32' && !installedGuiOpened) { const child = spawn('explorer.exe', [c.env.JACO_RUNTIME_URL], { windowsHide: true, detached: true, stdio: 'ignore' }); child.unref(); }
     return result;
   } catch (error) { result.state = 'BLOCKED'; result.error = error.message; result.completedAt = new Date().toISOString(); checkpoint(result.phase); throw error; }
-  finally { fs.unlinkSync(lock); }
+  finally { if (fs.existsSync(lock) && fs.readFileSync(lock, 'utf8') === String(process.pid)) fs.unlinkSync(lock); }
 }
 export async function main(args = process.argv.slice(2)) {
   const runtimeArg = args.indexOf('--runtime');
