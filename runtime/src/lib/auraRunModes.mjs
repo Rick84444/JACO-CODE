@@ -27,9 +27,10 @@ export const AURA_RUN_MODES = Object.freeze({
 export function knownAuraRunMode(value) {
   return typeof value === 'string' && Object.hasOwn(AURA_RUN_MODES, value);
 }
-export function initialAuraRunMode(value) {
-  // Autonomous cannot persist across reloads: the operator selects it explicitly per session.
-  return value === 'planning' ? 'planning' : 'manual';
+// The operator UI has one active workflow. Retain read-only API modes for
+// integrations and explicit internal inspection; a default never grants authority.
+export function initialAuraRunMode() {
+  return 'autonomous';
 }
 export function normalizeAuraRunMode(value) {
   if (!knownAuraRunMode(value)) throw new Error('AURA_RUN_MODE_UNKNOWN');
