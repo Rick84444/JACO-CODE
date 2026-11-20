@@ -50,6 +50,7 @@ import { discoverProvider, identifyKey } from './src/server/connected/providerDi
 import { CATALOG as PROVIDER_CATALOG, catalogById, catalogProvider } from './src/server/connected/providerCatalog.mjs';
 import { activationReport } from '../agents/lib/activate.mjs';
 import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret, validateSecretName } from '../agents/lib/secret-store.mjs';
+import { importVaultText } from '../agents/lib/vault-bulk-import.mjs';
 import { listVaultSecrets, runVaultHelper } from '../agents/lib/vault-tools.mjs';
 import { loadLocalJacoEnv, loadWindowsModelKeys, LOCAL_SERVICE_KEYS } from '../agents/lib/local-credential-discovery.mjs';
 const localEnvDiscovery = loadLocalJacoEnv();
@@ -3812,6 +3813,24 @@ const notifyPhone = async (action) => {
     } catch (error: any) {
       res.status(400).json({ success: false, error: error?.message || String(error) });
     }
+  });
+
+  // Local operator only: no separate organization token or agent mission required.
+  app.post('/api/aura/workbench/secrets/bulk-import', requireLocalUiSameOrigin, (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (typeof req.body?.text !== 'string' || typeof req.body?.dryRun !== 'boolean') return res.status(400).json({ success: false, error: 'VAULT_IMPORT_INVALID' });
+    try {
+      const report = importVaultText(req.body.text, { dryRun: req.body.dryRun });
+      let providerRefresh = 'NOT_NEEDED';
+      if (report.imported.length) {
+        try {
+          hydrateEnvFromStore(process.env);
+          connectedRuntime.providers.ensureDefaults();
+          providerRefresh = 'REFRESHED';
+        } catch { providerRefresh = 'PENDING'; }
+      }
+      res.json({ success: true, ...report, providerRefresh });
+    } catch { res.status(400).json({ success: false, error: 'VAULT_IMPORT_FAILED' }); }
   });
 
   // Bridge the existing Windows JACO Credential Manager vault to the canonical encrypted store.
