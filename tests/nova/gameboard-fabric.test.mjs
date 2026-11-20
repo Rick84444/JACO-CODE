@@ -137,7 +137,7 @@ test('tactical board holds on uncertain outcome, paused or existing gate; no ret
   const base={id:'m',status:'ACTIVE',receipts:[{ok:false,outcomeUnknown:true,type:'mcp-write'}]};
   assert.equal(adaptiveMissionStrategy(base).reason,'RECONCILE_UNKNOWN_OUTCOME');
   assert.deepEqual(adaptiveMissionStrategy(base).moves,[]);
-  for(const props of [{paused:{at:'now'}},{pendingOperatorAction:true},{spendApprovalPending:true},{cancelRequested:true},{status:'BLOCKED'},{hasUncertainOutcome:true}]){
+  for(const props of [{paused:{at:'now'}},{pendingOperatorAction:true},{spendApprovalPending:true},{cancelRequested:true},{status:'BLOCKED'},{hasUncertainOutcome:true},{strategicStateObserved:false}]){
     const plan=adaptiveMissionStrategy({...base,receipts:[],...props});
     assert.equal(plan.status,'HOLD');
     assert.equal(plan.recommendedMove,null);
