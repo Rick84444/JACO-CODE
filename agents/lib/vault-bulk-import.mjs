@@ -95,8 +95,10 @@ export function importVaultText(text, { store = new SecretStore(), dryRun = fals
       report.pending.push({ line, reason:'CONFLICTING_VALUES', candidates:[name] });
     } else if (!entries.has(name)) entries.set(name,{value,line});
   }
+  let writeBusy = false;
   for (const [name,{value,line}] of entries) {
     if (conflicts.has(name)) { report.pending.push({line,reason:'CONFLICTING_VALUES',candidates:[name]}); continue; }
+    if (writeBusy) { report.failed.push({name,line,reason:'VAULT_WRITE_BUSY'}); continue; }
     try {
       if (dryRun) {
         (store.has(name) ? report.kept : report.ready).push(name);
@@ -105,7 +107,10 @@ export function importVaultText(text, { store = new SecretStore(), dryRun = fals
       const meta = {source:'operator-bulk-import',purpose:'Operator-selected service credential'};
       if (!store.setIfAbsent(name,value,meta)) { report.kept.push(name); continue; }
       report.imported.push(name);
-    } catch (error) { report.failed.push({name,line,reason:error?.message === 'VAULT_WRITE_BUSY' ? 'VAULT_WRITE_BUSY' : 'STORE_FAILED'}); }
+    } catch (error) {
+      writeBusy = error?.message === 'VAULT_WRITE_BUSY';
+      report.failed.push({name,line,reason:writeBusy ? 'VAULT_WRITE_BUSY' : 'STORE_FAILED'});
+    }
   }
   return report;
 }
