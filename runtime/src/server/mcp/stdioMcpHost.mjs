@@ -47,6 +47,11 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
   // Lite ships this server; full-runtime launchers and uvx/npx are not bundled dependencies.
   if (process.env.JACO_LITE === '1') return {
     ...commercialDiscoveryServers(),
+    ...(process.env.JACO_LITE_BROWSER_AVAILABLE === '1' && process.env.JACO_ENABLE_CDP !== '0' ? { browser: {
+      name: 'Browser', role: 'Aura browser: existing CDP bridge and verified page actions', icon: 'mcp', agentAccess: 'write',
+      transport: 'http', url: `http://127.0.0.1:${Number(process.env.JACO_CDP_BRIDGE_PORT) || 2996}/mcp`,
+      tokenEnv: 'JACO_GATEWAY_TOKEN', localBridge: true,
+    } } : {}),
     editor: { name: 'JACO Editor', role: 'project files, git and observed runtime', icon: 'jaco', agentAccess: 'read', gameboardJournalOnly: true,
       command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-editor.mjs')], cwd: runtimeRoot,
       env: { JACO_RUNTIME_URL: process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000' } },
