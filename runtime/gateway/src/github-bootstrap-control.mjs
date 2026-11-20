@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync, renameSync, openSync, closeSync, fsyncSync, readdirSync, unlinkSync, linkSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { safeNovaReceiptLines } from './nova-receipt-inspector.mjs';
 import { safeAuraAcceptanceLines, safeAuraNotReadyLines } from './aura-operator-command.mjs';
@@ -95,6 +95,7 @@ export function createGithubBootstrapControl({
   transportMode = process.env.JACO_GITHUB_BOOTSTRAP_TRANSPORT || 'auto',
 } = {}) {
   if (!system) throw new Error('GITHUB_BOOTSTRAP_SYSTEM_REQUIRED');
+  stateFile = resolve(stateFile);
   const [owner, name] = String(repo).split('/');
   const configured = Boolean(enabled && owner && name && actor);
   const loadState = () => {
@@ -119,15 +120,17 @@ export function createGithubBootstrapControl({
   const persistState = () => {
     mkdirSync(dirname(stateFile), { recursive: true });
     const temp = stateFile + '.tmp.' + process.pid + '.' + randomUUID();
-    writeFileSync(temp, JSON.stringify({
+    try {
+      writeFileSync(temp, JSON.stringify({
       schema: 'jaco.bootstrap-state/v1',
       handled: [...handled],
       lastPollAt: durable.lastPollAt,
       lastSuccessfulPollAt: durable.lastSuccessfulPollAt,
       lastProcessed: durable.lastProcessed,
       lastError: durable.lastError,
-    }, null, 2), { mode: 0o600 });
-    renameSync(temp, stateFile);
+      }, null, 2), { mode: 0o600 });
+      renameSync(temp, stateFile);
+    } finally { try { unlinkSync(temp); } catch { /* already renamed */ } }
   };
   const remember = key => { handled.add(String(key)); persistState(); };
   if (!['auto', 'github-api', 'git-ref'].includes(transportMode)) {
@@ -135,6 +138,7 @@ export function createGithubBootstrapControl({
   }
   const transport = transportMode === 'auto' ? (token ? 'github-api' : 'git-ref') : transportMode;
   const apiMode = transport === 'github-api';
+  const transportReason = transportMode !== 'auto' ? 'EXPLICIT' : token ? 'TOKEN_PRESENT' : 'NO_TOKEN_GIT_REF';
   let inboxState = 'UNCHECKED';
   let pendingReceipts = 0;
   let unresolvedClaims = 0;
@@ -372,6 +376,12 @@ export function createGithubBootstrapControl({
       }
       if (record.phase === 'CLAIMED') unresolvedClaims++;
       if (record.phase === 'TERMINAL' && !record.delivered) {
+        // The canonical listener is the only writeback worker; do not race
+        // another live local claimant while its initial receipt is in flight.
+        if (liveClaims.has(file) || (record.pid !== process.pid && claimOwnerAlive(file, record))) {
+          pendingReceipts++;
+          continue;
+        }
         try { await flushReceipt(file, record); }
         catch (error) { durable.lastError = String(error?.message || error).slice(0, 500); }
         if (!JSON.parse(readFileSync(file, 'utf8')).delivered) pendingReceipts++;
@@ -507,21 +517,21 @@ export function createGithubBootstrapControl({
             }
             dispatchStarted = true;
             const result = await execute(command);
-          const reported = result?.schema === 'jaco.aura-operator-command/v1'
-            ? (result.status === 'ACCEPTED' ? 'ACCEPTED' : 'UNVERIFIED')
-            : result?.schema === 'jaco.nova-receipt-summary/v1'
-            ? (result.matched === true ? 'OBSERVED' : 'DEGRADED')
-            : result?.schema === 'jaco.activation/v2'
-            ? (result.ok === true ? 'READY' : 'DEGRADED')
-            : result?.error ? 'DEGRADED'
-            : result?.state || result?.status || (command.op === 'system.status' ? 'OBSERVED' : 'READY');
-          // The issue is public: an untrusted runtime status must never become free-form text.
-          const state = ['READY', 'RUNNING', 'DEGRADED', 'FAILED', 'OBSERVED', 'UPDATED', 'ACCEPTED'].includes(reported)
-            ? reported : 'UNVERIFIED';
-          const healthLines = result?.schema === 'jaco.aura-operator-command/v1'
-            ? safeAuraAcceptanceLines(result)
-            : result?.schema === 'jaco.nova-receipt-summary/v1'
-            ? safeNovaReceiptLines(result) : safeBootstrapHealthLines(result);
+            const reported = result?.schema === 'jaco.aura-operator-command/v1'
+              ? (result.status === 'ACCEPTED' ? 'ACCEPTED' : 'UNVERIFIED')
+              : result?.schema === 'jaco.nova-receipt-summary/v1'
+              ? (result.matched === true ? 'OBSERVED' : 'DEGRADED')
+              : result?.schema === 'jaco.activation/v2'
+              ? (result.ok === true ? 'READY' : 'DEGRADED')
+              : result?.error ? 'DEGRADED'
+              : result?.state || result?.status || (command.op === 'system.status' ? 'OBSERVED' : 'READY');
+            // The issue is public: an untrusted runtime status must never become free-form text.
+            const state = ['READY', 'RUNNING', 'DEGRADED', 'FAILED', 'OBSERVED', 'UPDATED', 'ACCEPTED'].includes(reported)
+              ? reported : 'UNVERIFIED';
+            const healthLines = result?.schema === 'jaco.aura-operator-command/v1'
+              ? safeAuraAcceptanceLines(result)
+              : result?.schema === 'jaco.nova-receipt-summary/v1'
+              ? safeNovaReceiptLines(result) : safeBootstrapHealthLines(result);
             terminal = { state, lines: [
               '<!-- jaco-bootstrap-status:v1 -->',
               '### JACO Sentinel bootstrap',
@@ -574,6 +584,7 @@ export function createGithubBootstrapControl({
       pollMs: effectivePollMs,
       transport,
       transportMode,
+      transportReason,
       inboxState,
       pendingReceipts,
       unresolvedClaims,
