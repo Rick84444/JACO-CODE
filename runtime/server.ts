@@ -3636,7 +3636,7 @@ const notifyPhone = async (action) => {
       const listed: any = (p.apiKeyEnv && !p.credentialConfigured && !local) ? null : await connectedRuntime.providers.probe(p.id).catch(() => null);
       const models = [...new Set([p.defaultModel, ...((listed?.ok ? listed.models : []) as string[]).filter(m => !NON_CHAT.test(m))].filter(Boolean))] as string[];
       if (!models.length) return null;
-      return [p.id, { label: `${p.id}${local ? ' (local)' : ''}`, paid: Boolean(p.apiKeyEnv) && !local && !models.every((m: string) => /:free$/.test(m)), keyEnv: (local && !p.credentialConfigured) ? null : (p.apiKeyEnv || null), url: `${String(p.baseUrl).replace(/\/+$/, '')}/chat/completions`, models }] as const;
+      return [p.id, { label: `${p.id}${local ? ' (local)' : ''}`, paid: !local && !(p.id === 'openrouter' && models.every((m: string) => /:free$/.test(m))), keyEnv: (local && !p.credentialConfigured) ? null : (p.apiKeyEnv || null), url: `${String(p.baseUrl).replace(/\/+$/, '')}/chat/completions`, models }] as const;
     }));
     connectedChoiceCache = { at: Date.now(), sig, value: Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, any]>) };
     return connectedChoiceCache.value;
@@ -3842,7 +3842,7 @@ const notifyPhone = async (action) => {
     try {
       const submittedKey = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
       const found: any = await discoverProvider(req.body?.url, {
-        env: process.env, keyFor: (name: string) => submittedKey || credential(name),
+        env: process.env, isolateEndpoint: true, keyFor: (name: string) => submittedKey || credential(name),
       });
       if (submittedKey && found.state === 'READY') {
         const saved = new SecretStore().set(found.apiKeyEnv, submittedKey, { source: 'operator', purpose: `${found.id} API` });
@@ -3851,7 +3851,7 @@ const notifyPhone = async (action) => {
       // KEY_REJECTED and UNREACHABLE must not become registered/active providers.
       const provider = (found.state === 'READY' || (found.state === 'NEEDS_KEY' && !submittedKey))
         ? connectedRuntime.providers.register({
-          id: found.id, baseUrl: found.baseUrl, apiKeyEnv: found.apiKeyEnv, defaultModel: found.defaultModel,
+          id: found.id, baseUrl: found.baseUrl, apiKeyEnv: found.requiresKey ? found.apiKeyEnv : null, defaultModel: found.defaultModel,
         }) : null;
       seerLiveWorkstream.record({
         actor: 'Aura Workbench', type: 'provider.discovered',
