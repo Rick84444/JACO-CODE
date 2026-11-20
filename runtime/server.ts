@@ -4147,6 +4147,13 @@ const notifyPhone = async (action) => {
     } catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
   });
 
+  // The same service recovery Aura has in conversation, reachable as the `stack-repair` mission task so a
+  // mission can reconnect a bridge that went down instead of ending. It restarts only services that are down.
+  app.post('/api/system/stack-repair', requireAuth, async (_req, res) => {
+    try { res.json({ success: true, ...(await repairStack()) }); }
+    catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error).slice(0, 200) }); }
+  });
+
   app.get('/api/hands-off/receipts', requireAuth, (req, res) => {
     res.json({ success: true, receipts: handsOff.listReceipts(Number(req.query.limit || 50)) });
   });

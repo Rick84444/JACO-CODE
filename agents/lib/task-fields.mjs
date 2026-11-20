@@ -1,7 +1,7 @@
 // Required data fields per Nova task type. Shared by the runtime (validateTask) and the planner
 // (assertPlanTaskAllowed), so a plan with a missing field is rejected before it costs a mission failure.
 export const TASK_FIELDS = {
-  'detect-surfaces': [], 'health-check': [], 'check-revenue': [],
+  'detect-surfaces': [], 'health-check': [], 'check-revenue': [], 'stack-repair': [],
   'browser-survey-site': ['url'], 'browser-click': ['name'],
   // Read-only HTTP GET for research; no method/body/headers, so it cannot post or pay.
   'web-fetch': ['url'],
