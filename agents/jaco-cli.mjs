@@ -15,6 +15,7 @@ import { activationReport, formatReport, runtimeUp } from './lib/activate.mjs';
 import { homeCli } from './lib/home-cli.mjs';
 import { runTerminalIDE } from './lib/terminal-ide.mjs';
 import { readStartupEvidence, reconcileStartupActivation } from './lib/startup-evidence.mjs';
+import { readRelayControl, writeRelayControl } from '../gateway/src/workplace/chatgpt-relay-control.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -94,7 +95,66 @@ export function gatewayToken(env = process.env, root = ROOT) {
   return '';
 }
 
+
+/**
+ * Explicit, tokenless local operator control for the communication relay.
+ * Enabling it never authorizes mission creation or remote MCP access.
+ */
+export async function relayCli(argv = [], { root = ROOT, env = process.env, fetchImpl = fetch, out = process.stdout, err = process.stderr } = {}) {
+  const action = argv[0] || 'status';
+  if (argv.length > 1 || !['enable', 'disable', 'status'].includes(action)) {
+    err.write('Usage: jaco relay enable|disable|status\n');
+    return 2;
+  }
+  if (action === 'enable' || action === 'disable') {
+    writeRelayControl(root, action === 'enable');
+    out.write('JACO ChatGPT Git-ref relay ' + (action === 'enable' ? 'enabled' : 'disabled') +
+      ' locally. Workplace applies the change without restarting the stack.\n' +
+      'Verify: node agents/jaco-cli.mjs relay status\n');
+    return 0;
+  }
+
+  const control = readRelayControl(root);
+  const endpoint = String(env.JACO_WORKPLACE_URL || 'http://127.0.0.1:2995');
+  let workplace = null;
+  let observed = false;
+  try {
+    const u = new URL(endpoint);
+    if (u.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) ||
+      u.username || u.password || u.pathname !== '/' || u.search || u.hash)
+      throw Error('WORKPLACE_LOOPBACK_REQUIRED');
+    const response = await fetchImpl(u.origin + '/health', { redirect: 'error', signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw Error('WORKPLACE_HTTP_' + response.status);
+    const health = await response.json();
+    if (health?.schema !== 'jaco.workplace/v1') throw Error('WORKPLACE_HEALTH_UNVERIFIED');
+    const relay = health?.chatgptRelay;
+    if (relay && typeof relay.state === 'string') {
+      observed = true;
+      workplace = {
+        relayState: relay.state,
+        transport: relay.transport,
+        agentId: relay.agentId || null,
+        lastInboundRef: relay.inboundRef || null,
+        lastOutboundRef: relay.outboundRef || null,
+        messageReceived: Number(relay.lastMirroredSeq || 0),
+      };
+    }
+  } catch {
+    workplace = null;
+  }
+  out.write(JSON.stringify({
+    schema: 'jaco.chatgpt-relay-status/v1',
+    configured: control.configured, requested: control.configured ? (control.enabled ? 'git-ref' : 'off') : 'environment',
+    ...(control.error ? { configError: control.error } : {}),
+    observed, workplace,
+    connected: observed && workplace?.relayState === 'READY' && workplace?.transport === 'git-ref' &&
+      typeof workplace.agentId === 'string' && workplace.agentId.length > 0,
+  }, null, 2) + '\n');
+  return observed ? 0 : 1;
+}
+
 export async function main(argv = process.argv.slice(2), env = process.env) {
+  if (argv[0] === 'relay') return relayCli(argv.slice(1), { root: env.JACO_WORKSPACE_ROOT || ROOT, env });
   if (argv[0] === 'ide' || (argv.length === 0 && process.stdin.isTTY)) {
     const opts = argv[0] === 'ide' ? argv.slice(1) : argv;
     if (opts.includes('--help')) {
