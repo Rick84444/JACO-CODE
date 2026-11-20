@@ -74,6 +74,7 @@ The profile exposes the four existing cognitive read tools plus:
 - `jaco_aura_current_mission`: current durable mission and bounded receipt status.
 - `jaco_aura_mission_status`: the same observation by exact mission ID.
 - `jaco_aura_steer_mission`: queue context-only steering at a planning boundary.
+- `jaco_aura_android_bonsai`: execute a bounded Android UI task only through authenticated local Core, a signed package-scoped mandate, local Bonsai inference and existing native Accessibility receipts; see [Bonsai Android Relay](BONSAI_ANDROID_CHATGPT_RELAY.md).
 
 A goal is not a grant. Existing sandbox, active project, operator policy, service
 availability and spending gates remain authoritative. The MCP profile cannot
@@ -87,6 +88,6 @@ output. In full mode goal admission may precede mission creation; Lite returns
 a durable mission ID instead. Revoke the opt-in and stop/disconnect the tunnel
 to remove this capability; existing missions can be paused in the local UI.
 
-Acceptance: discover exactly eight tools through the authenticated ChatGPT
+Acceptance: discover exactly nine tools through the authenticated ChatGPT
 connection; submit a harmless inspection goal and observe a real mission
 receipt. Code and CI alone do not establish live connectivity.
