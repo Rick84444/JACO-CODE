@@ -43,9 +43,11 @@ test('chat exposes response cancellation separately from the running mission', (
   assert.match(html,/Avbryt svar/);
   assert.match(html,/aria-label="Väntetid"/);
   assert.match(html,/Setup action/);
-  assert.match(html,/data-testid="jaco-run-mode-toggle"/);
-  assert.match(html,/Manual/);
-  assert.doesNotMatch(html,/jaco-autonomous-active/);
+  assert.match(html,/data-testid="jaco-run-mode-status"/);
+  assert.match(html,/data-run-mode="autonomous"/);
+  assert.match(html,/jaco-autonomous-active/);
+  assert.doesNotMatch(html,/jaco-run-mode-toggle/);
+  assert.match(html,/jaco-start-mission/);
   assert.match(html,/jaco-build-agent-toggle/);
 });
 
