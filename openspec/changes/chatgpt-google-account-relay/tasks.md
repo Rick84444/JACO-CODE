@@ -9,6 +9,10 @@
 - [ ] Implement tenant- and device-bound MCP-to-JACO Link request bridging,
       bounded cross-tenant routing and replay protection.
 - [ ] Build connect/status/revoke UX and consent scopes in JACO account portal.
+- [ ] Verify private developer MCP connection and tool invocation on ChatGPT
+      web first; this is not mobile support.
+- [ ] Submit a reviewed, publishable JACO remote MCP plugin to the universal
+      Plugins Directory; account OAuth and tool safety must pass review.
 - [ ] Register/connect the JACO MCP plugin in ChatGPT through user action;
       verify both eligible mobile-app and desktop-chat sessions use the same
       account-bound tool scopes and paired Aura.
