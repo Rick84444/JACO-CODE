@@ -109,9 +109,11 @@ export function createChatGptGithubRelay({
   log=(level,message)=>console.log(`[JACO Workplace] [chatgpt-relay] ${level.toUpperCase()} ${message}`),
 }={}){
   if(!store)throw new Error('CHATGPT_RELAY_STORE_REQUIRED');
-  const repo=env.JACO_CHATGPT_WORKPLACE_REPO||env.JACO_GITHUB_CONTROL_REPO||'Rick84444/jaco-code';
+  // A customer installation has no default GitHub account or ChatGPT identity.
+  // Git-ref is an explicitly configured developer transport, NOT SaaS onboarding.
+  const repo=env.JACO_CHATGPT_WORKPLACE_REPO||env.JACO_GITHUB_CONTROL_REPO||'';
   const token=env.JACO_CHATGPT_WORKPLACE_TOKEN||env.JACO_GITHUB_CONTROL_TOKEN||env.GH_TOKEN||env.GITHUB_TOKEN||'';
-  const actor=env.JACO_CHATGPT_WORKPLACE_ACTOR||String(repo).split('/')[0];
+  const actor=env.JACO_CHATGPT_WORKPLACE_ACTOR||(repo?String(repo).split('/')[0]:'');
   const [owner,name]=String(repo).split('/');
   // A tokenless fetch should not hammer the Git remote or block normal missions.
   const pollMs=Math.max((env.JACO_CHATGPT_WORKPLACE_TRANSPORT==='git-ref'||(!token&&env.JACO_CHATGPT_WORKPLACE_TRANSPORT!=='github-issue'))?30000:5000,
@@ -128,7 +130,8 @@ export function createChatGptGithubRelay({
   // implicitly create a background fetch/publish loop on the operator host.
   const selectedTransport=env.JACO_CHATGPT_WORKPLACE_TRANSPORT||'off';
   const transport=['git-ref','github-issue'].includes(selectedTransport)?selectedTransport:'off';
-  const enabled=Boolean(owner&&name&&actor&&['github-issue','git-ref'].includes(transport)&&(transport==='git-ref'||token));
+  const validRepo=/^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9_.-]{1,100}$/.test(repo);
+  const enabled=Boolean(validRepo&&actor&&['github-issue','git-ref'].includes(transport)&&(transport==='git-ref'||token));
   const gitRef=transport==='git-ref'&&enabled?createGitRefChatGptTransport({
     repo, repoRoot:env.JACO_CHATGPT_GIT_REPO_ROOT||env.JACO_REPO_ROOT||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..'),
     ...(gitExecImpl?{gitExecImpl}:{}),
