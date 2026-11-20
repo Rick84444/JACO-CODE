@@ -138,7 +138,7 @@ test('Aura perception tools use only the guarded canonical MCP read route',async
   assert.match(capture.imageSha256,/^[a-f0-9]{64}$/);
   assert.doesNotMatch(JSON.stringify(capture),/iVBOR/);
   assert.deepEqual(calls.map(x=>x.tool),['nova_observe','nova_ax','nova_html','nova_screenshot']);
-  assert.ok(calls.every(x=>x.server==='cdp' && Object.keys(x.arguments).length===0));
+  assert.ok(calls.every(x=>x.server==='browser' && Object.keys(x.arguments).length===0));
   await assert.rejects(()=>question.dom_track.run({view:'nova_click'}),/DOM_TRACK_VIEW_INVALID/);
   await assert.rejects(()=>question.laser_vision.run({server:'other'}),/PERCEPTION_ARGUMENTS_INVALID/);
   assert.equal(calls.length,4);
