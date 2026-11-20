@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { WorkplaceStore } from './workplace-store.mjs';
 import { createWorkplaceAgentSupervisor } from './workplace-agent-supervisor.mjs';
 import { createChatGptGithubRelay } from './chatgpt-github-relay.mjs';
+import { readRelayControl, relayEnvironment } from './chatgpt-relay-control.mjs';
 
 const HOST = process.env.JACO_WORKPLACE_HOST || '127.0.0.1';
 const PORT = Number(process.env.JACO_WORKPLACE_PORT || 2995);
@@ -25,7 +26,24 @@ if (!TOKEN && !isLoopback(HOST)) {
 
 const store = new WorkplaceStore(ROOT);
 const supervisor = createWorkplaceAgentSupervisor({ root: EXECUTION_ROOT, env: process.env });
-const chatgptRelay = createChatGptGithubRelay({ store, root: ROOT, env: process.env });
+// Workplace keeps the one canonical relay instance. An explicit local operator
+// control file can switch the Git-ref communication transport at runtime.
+let chatgptRelay = createChatGptGithubRelay({ store, root: ROOT, env: relayEnvironment(ROOT, process.env) });
+let relayConfigKey = JSON.stringify(readRelayControl(ROOT));
+let relayControlTimer = null;
+let relayTransition = Promise.resolve();
+function reconcileChatGptRelay() {
+  relayTransition = relayTransition.catch(() => {}).then(async () => {
+    const control = readRelayControl(ROOT);
+    const key = JSON.stringify(control);
+    if (key === relayConfigKey) return;
+    await chatgptRelay.stop();
+    chatgptRelay = createChatGptGithubRelay({ store, root: ROOT, env: relayEnvironment(ROOT, process.env) });
+    relayConfigKey = key;
+    const status = await chatgptRelay.start();
+    console.log('[JACO Workplace] ChatGPT relay updated: ' + status.state + ' (' + status.transport + ')');
+  }).catch(error => console.error('[JACO Workplace] ChatGPT relay control failed:', error?.message || error));
+}
 const streams = new Map();
 
 function send(res, status, data, headers = {}) {
@@ -243,6 +261,8 @@ const server = createServer(async (req, res) => {
 
 async function shutdown(signal) {
   console.log(`[JACO Workplace] ${signal} received; shutting down`);
+  if (relayControlTimer) clearInterval(relayControlTimer);
+  await relayTransition.catch(() => {});
   await chatgptRelay.stop().catch(error => console.error('[JACO Workplace] ChatGPT relay stop failed:', error?.message || error));
   await supervisor.stop().catch(error => console.error('[JACO Workplace] supervisor stop failed:', error?.message || error));
   server.close(() => {
@@ -262,5 +282,9 @@ server.listen(PORT, HOST, () => {
   console.log(`[JACO Workplace] DB ${store.dbPath}`);
   console.log(`[JACO Workplace] auth=${TOKEN ? 'bearer' : 'loopback-local'}`);
   void supervisor.start(workplaceUrl);
-  void chatgptRelay.start();
+  // A change to the local control file is picked up without restarting Core,
+  // Nova, Workplace or the model. No HTTP/remote enable endpoint exists.
+  relayTransition = chatgptRelay.start();
+  relayControlTimer = setInterval(reconcileChatGptRelay, 5000);
+  relayControlTimer.unref?.();
 });
