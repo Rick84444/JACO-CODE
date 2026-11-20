@@ -9,7 +9,15 @@
 - [ ] Implement tenant- and device-bound MCP-to-JACO Link request bridging,
       bounded cross-tenant routing and replay protection.
 - [ ] Build connect/status/revoke UX and consent scopes in JACO account portal.
-- [ ] Register/connect the JACO MCP plugin in ChatGPT through user action.
+- [ ] Register/connect the JACO MCP plugin in ChatGPT through user action;
+      verify both eligible mobile-app and desktop-chat sessions use the same
+      account-bound tool scopes and paired Aura.
+- [ ] Run a mobile ChatGPT conversation → submit harmless goal → receive
+      canonical admission ID → poll durable mission → show verified tool
+      receipt **within the same ChatGPT conversation**, no Termux/PWA switching.
+- [ ] If phone OS actions are required, implement a separate optional
+      Android companion with user-granted platform permissions and independent
+      end-to-end receipts; do not hide this behind the PWA.
 - [ ] Run OAuth negative tests, account A/B isolation, device revocation,
       expired grants, disconnected host and unknown-outcome reconciliation.
 - [ ] Verify on two real Google accounts, two paired Aura hosts and two separate
