@@ -3691,16 +3691,18 @@ const notifyPhone = async (action) => {
     if (!agentCanUseKey(plannerChoices(process.env, extra)[provider]?.keyEnv)) throw Object.assign(new Error('KEY_NOT_AVAILABLE_TO_AGENT'), { status: 422 });
     const probe = await testPlannerModel(valid, { extra, timeoutMs: 30_000 });
     if (!probe.ok) throw Object.assign(new Error(`PLANNER_MODEL_TEXT_PROBE_FAILED:${probe.error || probe.status || 'NO_ANSWER'}`), { probe, status: 422 });
-    writePlannerChoice(plannerChoicePath, valid, 'operator');
+    const saved = writePlannerChoice(plannerChoicePath, valid, 'operator');
+    return connectedRuntime.novaMissions.recoverModelSelection(saved);
   };
   const chooseAuraModel = async (req: express.Request, res: express.Response) => {
     try {
       if (process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1') return res.status(409).json({ success: false, error: 'PLANNER_ENV_PRIMARY_AUTHORITATIVE' });
       const provider = String(req.body?.provider || '');
+      let recoveredMissions: string[] = [];
       if (provider === 'auto') {
         clearPlannerChoice(plannerChoicePath);
       } else {
-        try { await choosePlanner({ provider, model: req.body?.model }); }
+        try { recoveredMissions = await choosePlanner({ provider, model: req.body?.model }); }
         catch (error: any) {
           if (error?.status === 422) return res.status(422).json({ success: false, error: error.message, ...(error.probe ? { probe: error.probe } : {}) });
           throw error;
@@ -3708,7 +3710,7 @@ const notifyPhone = async (action) => {
       }
       const state = await plannerState();
       seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.model.chosen', message: `Aura model: ${state.choice ? `${state.choice.provider}/${state.choice.model}` : 'selection required'}`, verified: true, receipt: { choice: state.choice } });
-      res.json(state);
+      res.json({ ...state, recoveredMissions });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error?.message || String(error) });
     }
