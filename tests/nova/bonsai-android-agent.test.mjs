@@ -16,3 +16,16 @@ test('strict JSON and no model-supplied coordinates',async()=>{const x=setup([ac
 test('does not accept model done without visible completion',async()=>{const x=setup([{type:'done',expected_text:'nonexistent'}]);const r=await x.agent.run(input());assert.equal(r.status,'MODEL_DONE_UNVERIFIED')});
 test('launches only approved Android package when not foreground',async()=>{const x=setup([{type:'done',expected_text:'Search'}],{currentPackage:'com.other.app'});const r=await x.agent.run(input());assert.equal(x.calls.length,1);assert.equal(x.calls[0].type,'open_app');assert.equal(x.calls[0].package_name,pkg);assert.equal(r.status,'DONE_WITH_OBSERVED_TEXT')});
 test('requires Android accessibility service ready',async()=>{const a=createBonsaiAndroidAgent({android:{status:async()=>({enabled:false,accessibility_connected:false}),observe:async()=>observe(),executeVerified:async()=>{}},fetchImpl:async()=>reply({type:'stop'})});await assert.rejects(a.run(input()),/ANDROID_ACCESSIBILITY_NOT_READY/)});
+
+test('stops on a stale UI after local Bonsai inference',async()=>{
+  let observations=0,executions=0;
+  const android={
+    status:async()=>({enabled:true,accessibility_connected:true,active_package:pkg}),
+    observe:async()=>{observations++;const s=observe();if(observations===2)s.root.children[1].text='changed while deciding';return s;},
+    executeVerified:async()=>{executions++;throw Error('must not execute stale target');},
+  };
+  const agent=createBonsaiAndroidAgent({android,fetchImpl:async()=>reply(action('tap',{view_id:'result-1'}))});
+  const result=await agent.run(input());
+  assert.equal(result.status,'TARGET_STALE');
+  assert.equal(executions,0);
+});
