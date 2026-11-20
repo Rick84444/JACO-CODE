@@ -88,17 +88,11 @@ Set-EnvValue $lines 'JACO_ALLOW_SHELL_TASKS' '1'
 Set-EnvValue $lines 'JACO_LEVEL5_AUTONOMY' '1'
 Set-EnvValue $lines 'JACO_REMOTE_ALLOW_MUTATIONS' '1'
 
-$requiredTasks = @('detect-surfaces','health-check','check-revenue','browser-survey-site','browser-click','browser-type','desktop-windows','desktop-observe','desktop-action','desktop-invoke','windows-wmi-read','screenshot','get-cursor','invoke-worker','shell','repo-list','repo-read','repo-write','repo-test','git-status','git-diff','git-commit','git-push','git-merge')
+# Preserve explicit operator restrictions. New installs use the canonical registry.
 $currentTasks = Get-EnvValue $lines 'JACO_NOVA_ALLOWED_TASKS'
-$tasks = New-StringList
-if ($currentTasks) {
-  foreach ($item in ($currentTasks -split ',')) {
-    $value = $item.Trim()
-    if ($value -and -not $tasks.Contains($value)) { [void]$tasks.Add($value) }
-  }
+if (-not $currentTasks) {
+  Set-EnvValue $lines 'JACO_NOVA_ALLOWED_TASKS' 'sandbox'
 }
-foreach ($task in $requiredTasks) { if (-not $tasks.Contains($task)) { [void]$tasks.Add($task) } }
-Set-EnvValue $lines 'JACO_NOVA_ALLOWED_TASKS' ($tasks -join ',')
 
 [System.IO.File]::WriteAllLines($EnvPath, $lines.ToArray(), (New-Object System.Text.UTF8Encoding($false)))
 
