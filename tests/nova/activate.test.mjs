@@ -2,6 +2,50 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { activationReport, formatReport, runtimeUp } from '../../agents/lib/activate.mjs';
 
+import { localCoreActivationReport } from '../../agents/jaco-cli.mjs';
+
+test('local Core status fallback is read-only and requires a validated activation report', async () => {
+  const calls = [];
+  const expected = {
+    schema: 'jaco.activation/v2', runtime: { up: true, version: '0.23.1' },
+    tools: { servers: [{ id: 'jaco', status: 'READY' }], toolCount: 42 },
+    problems: [], ok: true,
+  };
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, method: init.method });
+    return { ok: true, json: async () => ({ success: true, report: expected }) };
+  };
+  const actual = await localCoreActivationReport({ baseUrl: 'http://127.0.0.1:3000', fetchImpl });
+  assert.deepEqual(actual, expected);
+  assert.deepEqual(calls, [{ url: 'http://127.0.0.1:3000/api/jaco/activation', method: 'GET' }]);
+});
+
+test('local Core activation is POST only when explicitly requested', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, method: init.method });
+    return { ok: true, json: async () => ({ success: true, report: {
+      schema: 'jaco.activation/v2', runtime: { up: true },
+      tools: { servers: [] }, problems: [], ok: false,
+    } }) };
+  };
+  const actual = await localCoreActivationReport({ baseUrl: 'http://localhost:3000', activate: true, fetchImpl });
+  assert.equal(actual.ok, false);
+  assert.deepEqual(calls, [{ url: 'http://localhost:3000/api/jaco/activate', method: 'POST' }]);
+});
+
+test('CLI never delegates authentication to non-local targets or forged responses', async () => {
+  let called = 0;
+  const malicious = async () => { called++; return { ok: true, json: async () => ({ success: true, report: {} }) }; };
+  for (const baseUrl of ['https://localhost:3000', 'http://192.168.1.1:3000', 'http://example.com', 'http://127.0.0.1.evil.test:3000', 'http://user@localhost:3000', 'http://127.0.0.1:3000/api', 'invalid']) {
+    assert.equal(await localCoreActivationReport({ baseUrl, fetchImpl: malicious }), null);
+  }
+  assert.equal(called, 0);
+  assert.equal(await localCoreActivationReport({ baseUrl: 'http://[::1]:3000', fetchImpl: malicious }), null);
+  assert.equal(called, 1);
+});
+
+
 // A runtime stand-in: tool servers that start on request, a provider scan and the planner state.
 function fakeRuntime({ servers, scan, planner, workplace = { state: 'RUNNING', novaState: 'RUNNING' }, startFails = [], identity = {}, executorHealth = null }) {
   const calls = [];
