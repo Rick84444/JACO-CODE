@@ -457,3 +457,58 @@ test('an evidence-backed stuck graph node requests an automatically contracted r
   assert.match(replacement.objective, /Diagnose the concrete root cause/);
   assert.equal(after.status, 'ACTIVE');
 });
+
+
+test('adaptive Gameboard re-ranks before each dispatch and never repeats a failed move in one turn', async () => {
+  const graph = { id: 'adaptive', status: 'ACTIVE' };
+  let rank = ['a','b','c'], calls = 0;
+  const attempted = [], events = [];
+  const loop = createAutonomyLoop({
+    missionGraph: {
+      list: () => [graph],
+      ready: () => { calls++; return rank.map(key => ({ key, strategic_move: { stepId: key, executable: true } })); },
+      replan: () => assert.fail('No failed graph node to replan'),
+    },
+    dispatch: async (_id, key) => {
+      attempted.push(key);
+      if (key === 'a') {
+        rank = ['a','c']; // b stopped being eligible while a was being dispatched
+        throw Error('temporary dispatch failure');
+      }
+      rank = [];
+      return { nova: { id: 'nova-c' } };
+    },
+    emit: (type, data) => events.push({ type, data }),
+    maxDispatchPerTurn: 2,
+  });
+  const report = await loop.turn();
+  assert.deepEqual(attempted, ['a','c']);
+  assert.equal(calls, 2);
+  assert.equal(report.errors.length, 1);
+  assert.equal(report.dispatched[0].strategic_move.stepId, 'c');
+  assert.equal(events.find(e => e.type === 'autonomy.node_dispatched').data.strategic_move.stepId, 'c');
+});
+
+test('an explicit strategy switch without splitting keeps the original objective, contract and budget', async () => {
+  const remaining = { max_steps: 5, max_tool_calls: 9, max_duration_ms: 9000 };
+  const failed = {
+    key: 'build', title: 'Build', objective: 'Original acceptance obligation', status: 'FAILED',
+    dependencies: [], contract: { guard: 'preserve' },
+    failure_reason: 'NOVA_REPLAN_REQUEST:' + JSON.stringify({reason: 'Evidence reveals a simpler approach', subgoals: [], remaining_budget: remaining}),
+    evidence_refs: ['receipt:1'],
+  };
+  let applied;
+  const graph = { id: 'adaptive-switch', status: 'NEEDS_REPLAN', objective: 'Operator goal', nodes: [failed], replans: [] };
+  const loop = createAutonomyLoop({
+    missionGraph: { list: () => [graph], ready: () => [], replan: (_id, input) => { applied = input; graph.status = 'ACTIVE'; return graph; } },
+    callLLM: async () => ({ text: JSON.stringify({ title: 'New route', objective: 'Use the verified alternative', reason: 'Evidence supports the alternative', reversible: true, external_spend: 0 }) }),
+    dispatch: () => assert.fail('No ready fixture nodes'),
+  });
+  const report = await loop.turn();
+  assert.equal(report.replanned.length, 1);
+  assert.match(applied.replacement.objective, /Original acceptance obligation/);
+  assert.match(applied.replacement.objective, /Use the verified alternative/);
+  assert.deepEqual(applied.replacement.contract, failed.contract);
+  assert.deepEqual(applied.remaining_budget, remaining);
+  assert.deepEqual(applied.evidence_refs, ['receipt:1']);
+});

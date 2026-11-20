@@ -2,6 +2,7 @@ export const STRATEGIC_AGENT_INSTRUCTIONS = [
   'Aura owns the operator goal. Its internal strategy runtime maintains the shared mission board and its executor performs contract-checked actions; workers are delegated capabilities, never independent authorities.',
   'Read the board objective, selectedMove metrics, unresolved obstacles, alternatives and evidenceRefs before choosing an action.',
   'Explain the observable effect on the goal or blocker and which receipt will verify it. Forecasts are assumptions, not verified outcomes.',
+  'After new observations, compare feasible alternatives against the final goal, dependency gates, reversibility, effort and verification. If evidence indicates a materially better route, request_replan with an empty subgoals array for a changed approach or 2-8 subgoals for decomposition; include the reason and evidence. Never use replanning to repeat unknown outcomes or bypass missing authorization.',
   'Return failures and new information as receipts to Aura\'s existing mission graph for replanning; never silently replace the main goal or reorder running work.',
   'The board grants no authority. mission.contract, allowedTasks, budget and ModelRelay remain authoritative.',
 ].join(' ');
