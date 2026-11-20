@@ -172,9 +172,9 @@ export async function testPlannerModel({ provider, model }, { env = process.env,
     // The operator can explicitly select the existing structured planner for a
     // loopback llama.cpp model. Do not require unsupported native function calls
     // just to verify text inference; this does not verify mission execution.
-    const structuredLocal = loopback && provider === 'llamacpp' && env.JACO_NOVA_NATIVE_TOOLS === '0';
+    const structuredLocal = loopback && env.JACO_NOVA_NATIVE_TOOLS === '0';
     const requestBody = { model, messages: [{ role: 'user', content: 'Reply with the single word OK.' }], max_tokens: 200,
-      ...(structuredLocal ? { chat_template_kwargs: { enable_thinking: false } } :
+      ...(structuredLocal ? (provider === 'llamacpp' ? { chat_template_kwargs: { enable_thinking: false } } : {}) :
         { tools: [{ type: 'function', function: { name: 'noop', description: 'Does nothing. Do not call it.', parameters: { type: 'object', properties: {} } } }] }) };
     const cloudResult = metered
       ? await budgetedNovaOllamaCall({ provider: { name: provider, model, url: choice.url, key }, requestBody,

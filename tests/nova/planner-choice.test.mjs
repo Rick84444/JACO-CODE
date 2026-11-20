@@ -369,3 +369,18 @@ test('explicit structured llama.cpp probe requires actual text, not native tools
  assert.equal(result.ok,true);assert.equal(result.verifiedToolCalling,false);assert.equal(result.plannerProtocol,'structured');
  assert.equal((await call({content:' ',reasoning:'still thinking'})).ok,false);
 });
+
+test('any custom loopback endpoint can use the explicitly selected structured planner', async()=>{
+ const {testPlannerModel}=await import('../../agents/lib/planner-choice.mjs');
+ const provider='custom-model-local';
+ const extra={[provider]:{url:'http://127.0.0.1:8000/v1/chat/completions',models:['my-model'],paid:false,keyEnv:null}};
+ const r=await testPlannerModel({provider,model:'my-model'},{env:{JACO_NOVA_NATIVE_TOOLS:'0',JACO_ALLOW_PAID_MODELS:'0'},extra,fetchImpl:async(url,init)=>{
+   assert.equal(url,extra[provider].url);
+   assert.equal(JSON.parse(init.body).tools,undefined);
+   assert.equal(init.redirect,'error');
+   return new Response(JSON.stringify({choices:[{message:{content:'OK'}}]}),{status:200});
+ }});
+ assert.equal(r.ok,true);
+ assert.equal(r.plannerProtocol,'structured');
+ assert.equal(r.verifiedToolCalling,false);
+});
