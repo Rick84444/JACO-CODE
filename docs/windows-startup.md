@@ -13,7 +13,7 @@ Root `.env` supplies configuration; inherited process environment takes preceden
 | Setting | Purpose |
 | --- | --- |
 | `JACO_RUNTIME_DIR` | Optional runtime path, relative or absolute |
-| `JACO_START_MODE` | `auto` prefers a complete build; `source` uses tsx; `production` requires `dist/server.cjs` and `dist/index.html` |
+| `JACO_START_MODE` | `auto` prefers a complete build; `source` uses tsx; `source-static` uses tsx with built frontend assets; `production` requires `dist/server.cjs` and `dist/index.html` |
 | `PORT`, `JACO_WORKPLACE_PORT`, `SEER_PORT`, `JACO_REMOTE_BRIDGE_PORT`, `JACO_A2A_PORT` | Core listeners; established ports remain defaults |
 | `JACO_ENABLE_CDP=0` | Turns off Chrome (dedicated JACO profile) and the browser bridges, which start by default so the agent connects its own browser |
 | `JACO_ENABLE_CHATGPT_GATEWAY=1` | Starts the ChatGPT Nova gateway (opt-in; `JACO_ENABLE_CDP=1` still starts it for existing setups) |
@@ -39,6 +39,14 @@ The optional `agents/watchdog.ps1` reconciles through this same launcher. It can
 The operator never edits ports. If another program already holds a service port, startup moves that service to the next free port (scanning upward from the default), never stops the other program, and records the choice in `.jaco/state/resolved-ports.json` under the data root. Every later process (status, guardian, launcher) reads the same file, and every dependent URL is derived from it. A resolution only applies while the requested port in `.env` is unchanged; editing `PORT` takes precedence. A listener that JACO itself owns keeps its port and is recycled by the guardian. The receipt in `logs/startup/status.json` lists `portResolutions`. An opt-in Cloudflare tunnel still points at the configured ingress port, so a moved runtime adds the warning `TUNNEL_INGRESS_PORT_CHANGED`. The emergency stop follows resolved ports and does not touch the other program on the default port.
 
 The installer offers "Start Aura automatically when I sign in" (on by default). It registers `JACO-launch.vbs --background` under the current user's Run key. That start is silent (no browser window, no dialog), uses the same launcher, starts the health guardian, and needs no assistant. Failures are written to `logs/startup/launcher.log`. Uninstalling removes the entry. This is source and unit verification only: a reboot on a clean Windows machine is still a release acceptance check.
+
+## Shared developer startup (desktop and Lite)
+
+The same Core owns model selection, mission recovery, Vault references, scoped development authority and bundled tooling on Windows and Android Lite. No provider is required for starting the GUI. Existing operator limits and revocations remain authoritative. The local VS Code embed defaults on; the extension verifies runtime identity and its embed marker. When the address has not been explicitly pinned, it discovers the installed Core from the Windows startup receipt under LocalAppData, including reassigned ports. Explicitly configured addresses remain authoritative.
+
+Chrome is preferred and Microsoft Edge is an automatic fallback, both with a dedicated JACO CDP profile. The installed health guardian also reconciles enabled browser bridges and the browser attachment through the existing launcher with bounded backoff. An optional browser fault never authorizes recycling a healthy Core. Missing browser binaries and unverified process ownership remain reported rather than bypassed.
+
+GitHub browser sign-in is available under Connections → Sign-ins. It requires the installed GitHub CLI and the existing operator credential when required; the user completes GitHub consent. No terminal commands need to be typed for the sign-in. Windows Vault/credential manager integration remains the existing implementation. VS Code and its extension are still external installation prerequisites.
 
 ## Budget
 
