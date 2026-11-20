@@ -48,7 +48,7 @@ jobs:
       - name: Reject occupied loopback port without launching another model
         shell: powershell
         run: |
-          $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback), 0
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
           $listener.Start()
           $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
           $model = Join-Path $env:RUNNER_TEMP 'test-model.gguf'
