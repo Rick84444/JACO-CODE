@@ -7,6 +7,7 @@ const aliases = new Map(Object.entries({
   'deepseek':'DEEPSEEK_API_KEY','deepseek api':'DEEPSEEK_API_KEY',
   'qwen':'QWEN_API_KEY','qwen api':'QWEN_API_KEY','qwen 3.7':'QWEN_API_KEY',
   'gemini':'GEMINI_API_KEY','google ai':'GEMINI_API_KEY',
+  'google cloud api':'GOOGLE_CLOUD_API_KEY','cloudrun api':'GOOGLE_CLOUD_API_KEY',
   'openrouter':'OPENROUTER_API_KEY','huggingface':'HUGGINGFACE_TOKEN',
   'lm studio':'LM_STUDIO_API_KEY','lmstudio':'LM_STUDIO_API_KEY',
   'ollama':'OLLAMA_API_KEY','open claws ollama key':'OLLAMA_API_KEY',
@@ -15,7 +16,7 @@ const aliases = new Map(Object.entries({
   'skyfire api':'SKYFIRE_API_KEY','skyfire seller':'SKYFIRE_SELLER_ID',
   'cloudflare':'CLOUDFLARE_API_TOKEN','cloudflare api':'CLOUDFLARE_API_TOKEN',
   'git':'GITHUB_TOKEN','github':'GITHUB_TOKEN','github token':'GITHUB_TOKEN',
-  'bolt':'BOLT_API_KEY','pydantic':'PYDANTIC_API_KEY','logfire':'LOGFIRE_TOKEN',
+  'bolt':'BOLT_API_KEY','pydantic':'LOGFIRE_TOKEN','logfire':'LOGFIRE_TOKEN',
   'zapier':'ZAPIER_API_KEY','zapier mcp url':'ZAPIER_MCP_URL',
   'apollo':'APOLLO_API_KEY','appollo':'APOLLO_API_KEY',
   'twilio api key':'TWILIO_API_KEY','twilio auth token':'TWILIO_AUTH_TOKEN',
@@ -34,9 +35,11 @@ const patterns = [
 ];
 function candidates(value) {
   return [...new Set([...patterns.filter(([p]) => p.test(value)).map(([,n]) => n),
-    ...CATALOG.filter(p => p.keyPrefix?.test(value)).map(p => p.apiKeyEnv)])];
+    ...CATALOG.filter(p => p.keyPrefix?.test(value)).map(p => p.apiKeyEnv),
+    ...(/^AIza/.test(value) ? ['GOOGLE_CLOUD_API_KEY'] : [])])];
 }
 const token = /^[^\s"'\\]{8,16384}$/;
+const valid = value => token.test(value) && !/^(?:your[_-]|replace[_-]|example[_-]|changeme|placeholder|<|\$\{)/i.test(value);
 function parseLine(raw) {
   const line = raw.trim();
   if (!line || line.startsWith('#')) return null;
@@ -46,17 +49,17 @@ function parseLine(raw) {
     if (!names.has(assignment[1])) return { reason: 'UNRECOGNIZED_NAME' };
     let value = assignment[2].trim();
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1,-1);
-    if (!token.test(value)) return { reason: 'INVALID_VALUE' };
+    if (!valid(value)) return { reason: 'INVALID_VALUE' };
     return { name: assignment[1], value };
   }
   const normalized = line.toLowerCase();
   for (const [label,name] of [...aliases].sort((a,b) => b[0].length-a[0].length)) {
     if (!normalized.startsWith(label+' ') && !normalized.startsWith(label+':')) continue;
     const value = line.slice(label.length).replace(/^\s*:\s*|^\s+/,'').trim();
-    if (!token.test(value)) return { reason:'MULTIPLE_OR_INVALID_VALUES' };
+    if (!valid(value)) return { reason:'MULTIPLE_OR_INVALID_VALUES' };
     return { name,value };
   }
-  if (!token.test(line)) return { reason:'UNRECOGNIZED_LINE' };
+  if (!valid(line)) return { reason:'UNRECOGNIZED_LINE' };
   const matches = candidates(line);
   return matches.length === 1 ? { name:matches[0], value:line } :
     { reason: matches.length ? 'AMBIGUOUS' : 'UNRECOGNIZED_LINE', candidates:matches };
