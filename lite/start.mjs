@@ -142,7 +142,7 @@ export function inspectStartupWriter({ project, installDir, fsImpl = fs, platfor
       (path.basename(path.dirname(install)) === 'versions' && path.dirname(oldInstall) === path.dirname(install));
     if (!samePackageFamily || server !== path.join(oldInstall, 'dist', 'server.cjs')) return { state: 'LIVE_UNVERIFIED', pid };
     const release = JSON.parse(fsImpl.readFileSync(path.join(oldInstall, 'release.json'), 'utf8'));
-    if (!release.indexSha256 || !release.clientSha256 || !release.entry) return { state: 'LIVE_UNVERIFIED', pid };
+    if (release.schema !== 'jaco.lite-release/v1' || !release.indexSha256 || !release.clientSha256 || !release.entry) return { state: 'LIVE_UNVERIFIED', pid };
   } catch { return { state: 'LIVE_UNVERIFIED', pid }; }
   // A live launcher must own this actual core as its direct child. Do not signal a
   // shell, system supervisor, other workspace, or arbitrary PID from a lockfile.
@@ -152,7 +152,7 @@ export function inspectStartupWriter({ project, installDir, fsImpl = fs, platfor
     try {
       if (!parent || parent.pid <= 1 || parent.uid !== uid || parent.cwd !== root ||
           !parent.startTicks || parent.state === 'Z' || !parent.argv[1] ||
-          fsImpl.realpathSync(path.resolve(parent.cwd, parent.argv[1])) !== path.join(oldInstall, 'start.mjs')) {
+          ![path.join(oldInstall, 'start.mjs'), path.join(install, 'start.mjs')].includes(fsImpl.realpathSync(path.resolve(parent.cwd, parent.argv[1])))) {
         return { state: 'LIVE_UNVERIFIED', pid };
       }
     } catch { return { state: 'LIVE_UNVERIFIED', pid }; }
