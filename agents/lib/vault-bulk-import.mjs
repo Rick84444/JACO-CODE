@@ -40,6 +40,20 @@ function candidates(value) {
 }
 const token = /^[^\s"'\\]{8,16384}$/;
 const valid = value => token.test(value) && !/^(?:your[_-]|replace[_-]|example[_-]|changeme|placeholder|<|\$\{)/i.test(value);
+function zapierUrl(value) {
+  try {
+    const u = new URL(value);
+    return u.origin === 'https://mcp.zapier.com' && !u.username && !u.password &&
+      u.pathname === '/api/v1/connect' && Boolean(u.searchParams.get('token')) && !u.hash;
+  } catch { return false; }
+}
+function labelled(name, value) {
+  if (name === 'ZAPIER_MCP_URL') return zapierUrl(value) ? {name,value} : {reason:'INVALID_ENDPOINT'};
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return {reason:'UNEXPECTED_URL'};
+  const matches = candidates(value);
+  if (matches.length && !matches.includes(name)) return {reason:'LABEL_MISMATCH',candidates:matches};
+  return {name,value};
+}
 function parseLine(raw) {
   const line = raw.trim();
   if (!line || line.startsWith('#')) return null;
@@ -50,16 +64,17 @@ function parseLine(raw) {
     let value = assignment[2].trim();
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1,-1);
     if (!valid(value)) return { reason: 'INVALID_VALUE' };
-    return { name: assignment[1], value };
+    return labelled(assignment[1], value);
   }
   const normalized = line.toLowerCase();
   for (const [label,name] of [...aliases].sort((a,b) => b[0].length-a[0].length)) {
     if (!normalized.startsWith(label+' ') && !normalized.startsWith(label+':')) continue;
     const value = line.slice(label.length).replace(/^\s*:\s*|^\s+/,'').trim();
     if (!valid(value)) return { reason:'MULTIPLE_OR_INVALID_VALUES' };
-    return { name,value };
+    return labelled(name,value);
   }
   if (!valid(line)) return { reason:'UNRECOGNIZED_LINE' };
+  if (zapierUrl(line)) return {name:'ZAPIER_MCP_URL',value:line};
   const matches = candidates(line);
   return matches.length === 1 ? { name:matches[0], value:line } :
     { reason: matches.length ? 'AMBIGUOUS' : 'UNRECOGNIZED_LINE', candidates:matches };
