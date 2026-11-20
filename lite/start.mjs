@@ -248,8 +248,8 @@ export function liteChildEnv(env = process.env, execPath = process.execPath, pla
 export function liteMobileEnv(env, release = {}, platform = process.platform) {
   const mobile = release.platform === 'android' || platform === 'android' || Boolean(env.TERMUX_VERSION) || env.JACO_LITE_MOBILE === '1';
   if (!mobile) return { ...env };
-  const lean = env.JACO_AURA_LEAN ?? '1';
-  return { ...env, JACO_AURA_LEAN: lean, ...(lean === '1' ? { JACO_AUTO_START_TOOLS: env.JACO_AUTO_START_TOOLS ?? '0' } : {}) };
+  const lean = env.JACO_AURA_LEAN ?? '0';
+  return { ...env, JACO_AURA_LEAN: lean, JACO_AUTO_START_TOOLS: env.JACO_AUTO_START_TOOLS ?? (lean === '1' ? '0' : '1') };
 }
 
 // Check the installed release's actual entry bytes, not merely the SPA fallback or API identity.
@@ -289,7 +289,7 @@ export function serverEnv({ env, installDir, project, port, token }) {
     // budget panel's default limits (5 USD a day, 1 USD a task) that the operator can change.
     JACO_CLOUD_ENABLED: env.JACO_CLOUD_ENABLED ?? 'true',
     JACO_AUTO_APPROVE_LEVEL: env.JACO_AUTO_APPROVE_LEVEL ?? '5',
-    JACO_POLICY_EDIT_GRANT: env.JACO_POLICY_EDIT_GRANT ?? '1',
+    JACO_POLICY_EDIT_GRANT: env.JACO_POLICY_EDIT_GRANT ?? '0',
   };
 }
 
@@ -318,7 +318,7 @@ export function agentEnv({ env, installDir, project, url, token }) {
     // Work autonomously within the mission contract and operator boundaries. Hard payment,
     // uncertain-outcome and policy stops remain in approval-policy.mjs at every level.
     JACO_AUTO_APPROVE_LEVEL: env.JACO_AUTO_APPROVE_LEVEL ?? '5',
-    JACO_POLICY_EDIT_GRANT: env.JACO_POLICY_EDIT_GRANT ?? '1',
+    JACO_POLICY_EDIT_GRANT: env.JACO_POLICY_EDIT_GRANT ?? '0',
   };
 }
 
