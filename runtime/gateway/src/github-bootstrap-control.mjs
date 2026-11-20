@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, renameSync, openSync, closeSync, fsyncSync, readdirSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, openSync, closeSync, fsyncSync, readdirSync, unlinkSync, linkSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -100,15 +100,18 @@ export function createGithubBootstrapControl({
   const loadState = () => {
     try {
       const parsed = JSON.parse(readFileSync(stateFile, 'utf8'));
+      if (!Array.isArray(parsed?.handled) || parsed.handled.some(id => typeof id !== 'string'))
+        throw new Error('BOOTSTRAP_STATE_INVALID');
       return {
         handled: Array.isArray(parsed?.handled) ? parsed.handled.map(String) : [],
         lastPollAt: parsed?.lastPollAt || null,
+        lastSuccessfulPollAt: parsed?.lastSuccessfulPollAt || null,
         lastProcessed: parsed?.lastProcessed || null,
         lastError: parsed?.lastError || null,
       };
     } catch (error) {
       if (error?.code !== 'ENOENT') throw new Error('BOOTSTRAP_STATE_UNREADABLE', { cause: error });
-      return { handled: [], lastPollAt: null, lastProcessed: null, lastError: null };
+      return { handled: [], lastPollAt: null, lastSuccessfulPollAt: null, lastProcessed: null, lastError: null };
     }
   };
   const durable = loadState();
@@ -120,6 +123,7 @@ export function createGithubBootstrapControl({
       schema: 'jaco.bootstrap-state/v1',
       handled: [...handled],
       lastPollAt: durable.lastPollAt,
+      lastSuccessfulPollAt: durable.lastSuccessfulPollAt,
       lastProcessed: durable.lastProcessed,
       lastError: durable.lastError,
     }, null, 2), { mode: 0o600 });
@@ -132,13 +136,15 @@ export function createGithubBootstrapControl({
   const transport = transportMode === 'auto' ? (token ? 'github-api' : 'git-ref') : transportMode;
   const apiMode = transport === 'github-api';
   let inboxState = 'UNCHECKED';
+  let pendingReceipts = 0;
+  let unresolvedClaims = 0;
   const journalDir = stateFile + '.journal';
   const journalPath = commandId => join(journalDir, createHash('sha256').update(commandId).digest('hex') + '.json');
   // Exclusive creation is the cross-process command claim. Never delete a claim
   // or evict an ID: a crash between dispatch and a receipt is irreducibly unknown.
   function writeDurable(file, record, exclusive = false) {
     mkdirSync(journalDir, { recursive: true });
-    const target = exclusive ? file : file + '.tmp.' + randomUUID();
+    const target = file + '.tmp.' + randomUUID();
     let fd;
     try {
       fd = openSync(target, 'wx', 0o600);
@@ -146,10 +152,17 @@ export function createGithubBootstrapControl({
       fsyncSync(fd);
       closeSync(fd);
       fd = undefined;
-      if (!exclusive) renameSync(target, file);
+      // Hard-link publication is atomic and does not replace an existing claim.
+      // An incomplete temp file can never become an executable claim.
+      if (exclusive) linkSync(target, file);
+      else renameSync(target, file);
+      if (process.platform !== 'win32') {
+        const dirFd = openSync(journalDir, 'r');
+        try { fsyncSync(dirFd); } finally { closeSync(dirFd); }
+      }
     } finally {
       if (fd !== undefined) closeSync(fd);
-      if (!exclusive) try { unlinkSync(target); } catch { /* already renamed */ }
+      try { unlinkSync(target); } catch { /* already renamed */ }
     }
   }
   function claim(command, issueNumber) {
@@ -342,6 +355,8 @@ export function createGithubBootstrapControl({
     'The command was durably claimed but its dispatch/result could not be reconciled. Never replay automatically.',
   ];
   async function drainOutbox() {
+    pendingReceipts = 0;
+    unresolvedClaims = 0;
     mkdirSync(journalDir, { recursive: true });
     for (const name of readdirSync(journalDir)) {
       if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
@@ -355,10 +370,28 @@ export function createGithubBootstrapControl({
           commandId: record.commandId, op: record.op, status: 'UNKNOWN' };
         remember(record.commandId);
       }
+      if (record.phase === 'CLAIMED') unresolvedClaims++;
       if (record.phase === 'TERMINAL' && !record.delivered) {
         try { await flushReceipt(file, record); }
         catch (error) { durable.lastError = String(error?.message || error).slice(0, 500); }
+        if (!JSON.parse(readFileSync(file, 'utf8')).delivered) pendingReceipts++;
       }
+    }
+  }
+  // Upgrade safety: old Sentinel versions could leave a RUNNING receipt
+  // without a local journal on a crash. Never assume such a command is new.
+  async function legacyDispatched(issue, command) {
+    if (!apiMode || !Number.isSafeInteger(issue.number) || !(issue.comments > 0)) return false;
+    for (let page = 1; ; page++) {
+      const batch = await api(`/repos/${owner}/${name}/issues/${issue.number}/comments?per_page=100&page=${page}`);
+      if (!Array.isArray(batch)) throw new Error('GITHUB_BOOTSTRAP_INVALID_COMMENT_LIST');
+      if (batch.some(c => c.user?.login === actor &&
+        String(c.body || '').includes('<!-- jaco-bootstrap-status:v1 -->') &&
+        String(c.body || '').includes('- command: `' + command.commandId + '`') &&
+        String(c.body || '').includes('- operation: `' + command.op + '`') &&
+        !String(c.body || '').includes('- status: **NOT_READY**'))) return true;
+      if (batch.length < 100) return false;
+      if (page >= 100) throw new Error('GITHUB_BOOTSTRAP_COMMENT_PAGINATION_LIMIT');
     }
   }
   async function execute(command) {
@@ -404,6 +437,23 @@ export function createGithubBootstrapControl({
           continue;
         }
         if (handled.has(command.commandId)) continue;
+        if (await legacyDispatched(issue, command)) {
+          const claimed = claim(command, issue.number);
+          if (!claimed) continue;
+          try {
+            const saved = finish(claimed.file, claimed.record, 'UNKNOWN', [
+              ...unknownLines(claimed.record),
+              'An earlier Sentinel receipt exists; no command was re-dispatched during migration.',
+            ]);
+            durable.lastProcessed = { at: saved.finishedAt, issue: issue.number,
+              commandId: command.commandId, op: command.op, status: 'UNKNOWN' };
+            remember(command.commandId);
+            processed.push({ issue: issue.number, status: 'UNKNOWN' });
+            try { await flushReceipt(claimed.file, saved); }
+            catch (error) { pendingReceipts++; durable.lastError = String(error?.message || error).slice(0, 500); }
+          } finally { liveClaims.delete(claimed.file); }
+          continue;
+        }
 
         // Readiness comes before the journal: nothing has been created yet, so a
         // NOT_READY command stays open and unjournaled and a later poll may retry it.
@@ -499,11 +549,12 @@ export function createGithubBootstrapControl({
           remember(command.commandId);
           processed.push({ issue: issue.number, status: terminal.state });
           try { await flushReceipt(file, saved); }
-          catch (error) { durable.lastError = String(error?.message || error).slice(0, 500); }
+          catch (error) { pendingReceipts++; durable.lastError = String(error?.message || error).slice(0, 500); }
         } finally {
           liveClaims.delete(file);
         }
       }
+      durable.lastSuccessfulPollAt = new Date().toISOString();
       persistState();
       return { enabled: configured, processed };
     } catch (error) {
@@ -524,8 +575,11 @@ export function createGithubBootstrapControl({
       transport,
       transportMode,
       inboxState,
+      pendingReceipts,
+      unresolvedClaims,
       writeback: apiMode && token ? 'github' : 'local-only',
       lastPollAt: durable.lastPollAt,
+      lastSuccessfulPollAt: durable.lastSuccessfulPollAt,
       lastProcessed: durable.lastProcessed,
       lastError: durable.lastError,
     };
