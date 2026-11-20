@@ -68,6 +68,26 @@ second runtime is active. Do not shut down an already-running path before
 the canonical replacement has produced a real accepted mission and a verified
 execution receipt.
 
+## Known compatibility debt not silently removed
+
+- `agents/lib/github-control-inbox.mjs` still has a historical default
+  developer repository for existing standalone Nova Git missions. New
+  customer Relay and OAuth MCP code MUST NOT call or depend on this module;
+  migrate those explicit operators to JACO Link with real mission receipts
+  before changing its default or relocating the module.
+- Older operator `~/.config/jaco/runtime.env` may already contain
+  `JACO_GITHUB_BOOTSTRAP_ENABLE=1`. The new installer preserves it rather
+  than silently interrupting real in-flight commands. Only new installations
+  default to disabled; migration needs an operator-visible state diff.
+- The embedded JACO Link host cannot currently activate a stopped Core
+  because it runs inside Core. Cold start requires ownership transfer to
+  existing Sentinel and a real bootstrap/ready receipt, not a second Link
+  instance.
+
+These are tracked retirement blockers, not parallel product features.
+A legacy source file being left in place does NOT mean its lifetime is
+unbounded.
+
 ## Release acceptance
 
 1. One JACO account / Google subject, one chosen paired device, one Aura
