@@ -47,4 +47,5 @@ mkdir -p "$PROJECT"
 printf 'JACO Pixel Terminal (Debian VM)\nProject: %s\n' "$PROJECT"
 printf 'After READY, open the exact URL reported by JACO in Pixel Chrome.\n'
 printf 'Pixel Chrome localhost forwarding must be tested on this device; only VM loopback is bound.\n'
+export JACO_LITE_MOBILE="${JACO_LITE_MOBILE:-1}"
 exec node "$DIR/start.mjs" "$PROJECT" --no-open "$@"
