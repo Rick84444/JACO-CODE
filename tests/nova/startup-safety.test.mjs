@@ -5,7 +5,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { configuration, definitions, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess,renameWithRetry, ollamaExecutable, resolveServicePorts, readResolvedPorts } from '../../agents/lib/local-stack.mjs';
+import { configuration, definitions, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess,renameWithRetry, ollamaExecutable, resolveServicePorts, readResolvedPorts, waitReady, inspectStaticUi } from '../../agents/lib/local-stack.mjs';
 const IDENTITY="app.get('/api/runtime/identity',()=>{});";
 function fixture(t, env = {}) {
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-start-test-'));
@@ -165,4 +165,43 @@ test('Aura owns the default Windows stack and never auto-selects Ollama despite 
  });
  assert.equal(legacy.env.JACO_MODEL_PROVIDER,'ollama');
  assert.equal(legacy.env.JACO_SEER_PROVIDER_PREFERENCE,'ollama');
+});
+
+test('source-static uses TypeScript with the compiled UI and no dev Vite server', t=>{
+ const c=fixture(t,{JACO_START_MODE:'source-static'});
+ assert.equal(c.production,false);
+ assert.equal(c.staticUi,true);
+ assert.equal(serviceEnvironment(c,'runtime').NODE_ENV,'production');
+ assert.deepEqual(definitions(c).find(s=>s.id==='runtime').args,['--import','tsx','server.ts']);
+ fs.unlinkSync(path.join(c.runtime,'dist/server.cjs'));
+ assert.equal(configuration(c.root,{JACO_START_MODE:'source-static'}).staticUi,true);
+ fs.unlinkSync(path.join(c.runtime,'dist/index.html'));
+ assert.throws(()=>configuration(c.root,{JACO_START_MODE:'source-static'}),/CLIENT_BUILD_REQUIRED/);
+});
+
+test('a child exiting cleanly without HTTP readiness fails immediately',async()=>{
+ let calls=0;
+ await assert.rejects(waitReady({id:'runtime'},'',180000,{
+   child:{exitCode:0,signalCode:null},probeImpl:async()=>{calls++;return {state:'READY'};}
+ }),/SERVICE_EXITED_BEFORE_READY:runtime:code=0/);
+ assert.equal(calls,0);
+});
+
+test('a child exiting during a readiness probe cannot be reported ready',async()=>{
+ const child={exitCode:null,signalCode:null};
+ await assert.rejects(waitReady({id:'runtime'},'',180000,{
+   child,probeImpl:async()=>{child.signalCode='SIGKILL';return {state:'READY'};}
+ }),/SERVICE_EXITED_BEFORE_READY:runtime:code=null:signal=SIGKILL/);
+});
+
+test('static UI HTTP readiness requires a real nonempty JavaScript asset',async()=>{
+ const base='http://127.0.0.1:3000';
+ const html='<div id="root"></div><script type="module" src="/assets/index-test.js"></script>';
+ const page=()=>new Response(html,{headers:{'content-type':'text/html'}});
+ const ok=await inspectStaticUi(base,async url=>url.pathname==='/'?page():new Response('console.log("ok")',{headers:{'content-type':'text/javascript'}}));
+ assert.equal(ok.state,'HTTP_READY');
+ const missing=await inspectStaticUi(base,async()=>page());
+ assert.equal(missing.state,'UNAVAILABLE','HTML fallback must not count as JavaScript');
+ const empty=await inspectStaticUi(base,async url=>url.pathname==='/'?page():new Response('',{headers:{'content-type':'text/javascript'}}));
+ assert.equal(empty.reason,'GUI_SCRIPT_EMPTY');
 });
