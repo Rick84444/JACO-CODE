@@ -98,7 +98,7 @@ test('Aura exposes one active chat surface and routes it through JACO',()=>{
   assert.match(app,/<JacoAuraComputeIDE \/>/);
   assert.match(panel,/\/api\/aura\/chat/);
   assert.match(panel,/Starta uppdrag/);
-  assert.match(panel,/interactionMode: runMode === 'planning' \? 'planning' : runMode === 'autonomous' \? 'action' : 'question'/);
+  assert.match(panel,/interactionMode: 'action'/);
   assert.match(panel,/initialAuraRunMode/);
   assert.match(server,/normalizeAuraChatMode/);
   assert.match(server,/cognitiveQuestionToolbox/);
