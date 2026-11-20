@@ -107,6 +107,10 @@ export async function relayCli(argv = [], { root = ROOT, env = process.env, fetc
     return 2;
   }
   if (action === 'enable' || action === 'disable') {
+    if (action === 'enable' && !/^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9_.-]{1,100}$/.test(String(env.JACO_CHATGPT_WORKPLACE_REPO || env.JACO_GITHUB_CONTROL_REPO || ''))) {
+      err.write('Git-ref relay is a developer-only channel. Configure your own JACO_CHATGPT_WORKPLACE_REPO first. Customer ChatGPT access must use Google-account-bound OAuth MCP, not a shared GitHub branch.\n');
+      return 2;
+    }
     writeRelayControl(root, action === 'enable');
     out.write('JACO ChatGPT Git-ref relay ' + (action === 'enable' ? 'enabled' : 'disabled') +
       ' locally. Workplace applies the change without restarting the stack.\n' +
