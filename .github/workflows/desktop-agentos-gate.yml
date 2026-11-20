@@ -182,7 +182,9 @@ jobs:
           if ($src -notmatch 'ValidateSet') { throw 'WMI query allowlist missing' }
           if ($src -match 'Invoke-Expression|Start-Process|Invoke-Command') { throw 'WMI bridge exposes an unsafe execution primitive' }
           $setup = Get-Content 'agents/setup-desktop-agentos.ps1' -Raw
-          if ($setup -notmatch "requiredTasks.*windows-wmi-read") { throw 'Desktop AgentOS onboarding does not enable windows-wmi-read' }
+          if ($setup -notmatch "Set-EnvValue.*JACO_NOVA_ALLOWED_TASKS.*sandbox") { throw 'Desktop AgentOS onboarding does not select the canonical sandbox profile' }
+          node --test tests/nova/capability-policy.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical desktop capability contract failed' }
           if ($setup -notmatch 'windows-wmi-read\.mjs') { throw 'Desktop AgentOS onboarding does not validate WMI module' }
           if ($setup -notmatch 'windows-wmi-read\.ps1') { throw 'Desktop AgentOS onboarding does not validate WMI bridge' }
 
