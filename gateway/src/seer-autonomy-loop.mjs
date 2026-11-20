@@ -83,7 +83,7 @@ function safeRepairCandidate(graph, failed, parsed, sequence) {
   return {
     key: `${rootRepairKey(failed.key)}.repair.${sequence}`,
     title: parsedTitle || `${failed.title || failed.key} (autonomous repair ${sequence})`,
-    objective: reversible && externalSpend <= 0 && parsedObjective ? `${failed.objective}\nADAPTIVE REPAIR APPROACH (original acceptance unchanged): ${parsedObjective}`.slice(0,12000) : fallbackObjective,
+    objective: reversible && externalSpend <= 0 && parsedObjective ? `${failed.objective}\nADAPTIVE REPAIR APPROACH (original acceptance unchanged): ${parsedObjective}` : fallbackObjective,
     contract: failed.contract || {},
     dependencies: Array.isArray(failed.dependencies) ? failed.dependencies : [],
     reason: reversible && externalSpend <= 0 && parsedReason
