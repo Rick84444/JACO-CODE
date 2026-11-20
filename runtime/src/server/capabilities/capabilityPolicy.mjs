@@ -10,6 +10,12 @@ import crypto from 'node:crypto';
 
 export const CAPABILITY_SCHEMA = 'jaco.capabilities/v1';
 
+// Undefined selects the canonical registry. A configured list is a deliberate ceiling.
+export function configuredTaskCeiling(value) {
+  const raw = String(value ?? '').trim();
+  return !raw || raw === 'sandbox' ? undefined : raw.split(',').map(s => s.trim());
+}
+
 // Operator-facing grouping of the mission task types (agents/lib/task-fields.mjs).
 export const TASK_GROUPS = [
   ['files', 'Files and code', 'Read, create, edit and test the files in your project.'],
