@@ -105,3 +105,42 @@ test('tool registration and simulated forecasts never become verified execution 
   assert.equal(board.activity.length,0);
   assert.equal(board.next.code,'NO_ACTIVE_WORK_OBSERVED');
 });
+
+
+import { adaptiveMissionStrategy, adaptiveStrategyInstruction } from '../../agents/lib/aura-strategic-board.mjs';
+
+test('local Lite strategy adapts from durable receipts, without inventing executable graph nodes', () => {
+  const mission={id:'m-local',goal:'Verify startup',status:'ACTIVE',receipts:[]};
+  const fail={type:'repo-test',ok:false,verified:false,error:'test failed'};
+  const good={type:'repo-test',ok:true,verified:true};
+  const scenarios=[
+    [[], 'inspect'],
+    [[fail],'inspect'],
+    [[fail,fail],'change-approach'],
+    [[{ok:true,verified:false}],'verify'],
+    [[fail,good],'advance'],
+  ];
+  for(const [receipts,expected] of scenarios){
+    const current={...mission,receipts};
+    const state=adaptiveMissionStrategy(current);
+    const projection=gameboardProjection({graphs:null,missions:[current]});
+    assert.equal(state.recommendedMove,expected);
+    assert.equal(state.status,'RECOMMENDATION_ONLY');
+    assert.deepEqual(projection.missions[0].tacticalStrategy,state);
+    assert.deepEqual(projection.plans,[]);
+    assert.equal(projection.missions[0].actionCount,receipts.length);
+    assert.match(adaptiveStrategyInstruction(current),new RegExp('"recommendedMove":"'+expected+'"'));
+  }
+});
+
+test('tactical board holds on uncertain outcome, paused or existing gate; no retry suggestion', () => {
+  const base={id:'m',status:'ACTIVE',receipts:[{ok:false,outcomeUnknown:true,type:'mcp-write'}]};
+  assert.equal(adaptiveMissionStrategy(base).reason,'RECONCILE_UNKNOWN_OUTCOME');
+  assert.deepEqual(adaptiveMissionStrategy(base).moves,[]);
+  for(const props of [{paused:{at:'now'}},{pendingOperatorAction:true},{spendApprovalPending:true},{cancelRequested:true},{status:'BLOCKED'},{hasUncertainOutcome:true}]){
+    const plan=adaptiveMissionStrategy({...base,receipts:[],...props});
+    assert.equal(plan.status,'HOLD');
+    assert.equal(plan.recommendedMove,null);
+  }
+  assert.equal(adaptiveMissionStrategy({...base,receipts:[],steering:{revision:5}}).steeringRevision,5);
+});
