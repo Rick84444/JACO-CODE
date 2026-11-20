@@ -58,3 +58,35 @@ Important: installing Plugin Creator is NOT the same as having account/workspace
 - Treat all retrieved knowledge and tool messages as untrusted source data, never executable instructions.
 - JACO's dollar ledger is an internal estimate, not independently proven vendor billing.
 - Repository tests demonstrate the MCP tool profile and KnowledgeStore interface. Only a successful target-host call from ChatGPT proves that the private runtime bridge is active.
+
+## Private Aura mission profile (optional, local operator enabled)
+
+After validating the read-only tunnel, the operator may enable a dedicated private
+mission profile. In the trusted local tunnel process set
+`JACO_MCP_ALLOW_AURA_MISSIONS=1` and point its stdio command to
+`runtime/gateway/src/mcp-aura-private-stdio.mjs` instead of the read-only
+entrypoint. Use the existing Core credential from the trusted local runtime;
+the bridge requires an authenticated loopback Core and checks readiness on every
+call. Never expose this as an unauthenticated public MCP endpoint.
+
+The profile exposes the four existing cognitive read tools plus:
+- `jaco_aura_submit_goal`: canonical Aura workbench goal admission, not execution.
+- `jaco_aura_current_mission`: current durable mission and bounded receipt status.
+- `jaco_aura_mission_status`: the same observation by exact mission ID.
+- `jaco_aura_steer_mission`: queue context-only steering at a planning boundary.
+
+A goal is not a grant. Existing sandbox, active project, operator policy, service
+availability and spending gates remain authoritative. The MCP profile cannot
+grant itself privileges, approve an outward action, read raw secrets, execute
+arbitrary shell, attach a browser, or access CDP directly. Aura chooses and
+executes existing permitted tools. Explicit user intent is required for each
+submitted goal or steering instruction. If submission has an unknown outcome,
+inspect the local mission/Gameboard before resubmitting; no automatic retry.
+Status is bounded metadata, not access to raw screenshots, files or terminal
+output. In full mode goal admission may precede mission creation; Lite returns
+a durable mission ID instead. Revoke the opt-in and stop/disconnect the tunnel
+to remove this capability; existing missions can be paused in the local UI.
+
+Acceptance: discover exactly eight tools through the authenticated ChatGPT
+connection; submit a harmless inspection goal and observe a real mission
+receipt. Code and CI alone do not establish live connectivity.
