@@ -178,7 +178,7 @@ test('private ChatGPT relay calls Android Bonsai through Core with bounded recei
   const result=await tool.handler({instruction:'Open browser and find a button',packageName:'com.android.chrome',mandateId:'mandate-1'});
   assert.equal(calls[1].path,'/api/relay/android-bonsai');
   assert.equal(JSON.parse(calls[1].opts.body).maxSteps,undefined);
-  assert.equal(result.semanticCompletionVerified,true);
+  assert.equal(result.observedTextPostcondition,true);
   assert.equal(result.verifiedSteps,2);
   assert.doesNotMatch(JSON.stringify(result),/private text/);
   const length=calls.length;
