@@ -9,12 +9,20 @@ const INTERVAL_MS = 30_000;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const nowIso = () => new Date().toISOString();
 const critical = new Set(['runtime', 'workplace', 'nova-supervisor', 'nova-session']);
-export function unhealthyServices(snapshot) {
+export function unhealthyServices(snapshot, config = {}) {
   const services = Array.isArray(snapshot?.services) ? snapshot.services : [];
   // Missing observations are not evidence of health: a partially failed health
   // probe used to hide a missing Workplace supervisor in the previous version.
-  const byId = new Map(services.filter(s => critical.has(s.id)).map(s => [s.id, s.state]));
-  return [...critical].filter(id => byId.get(id) !== 'READY');
+  const expected = [...critical];
+  if (config.cdp) expected.push('novaBridge', 'cdp');
+  if (config.gateway) expected.push('gateway');
+  const byId = new Map(services.map(s => [s.id, s.state]));
+  const unhealthy = expected.filter(id => byId.get(id) !== 'READY');
+  // A bridge can listen while the Core has no attached tab. Reconcile that
+  // through the existing launcher; never force-stop Core for an optional fault.
+  if (config.cdp && snapshot?.startup?.browserAttachment !== 'ATTACHED' &&
+      !unhealthy.includes('novaBridge') && !unhealthy.includes('cdp')) unhealthy.push('browser-attachment');
+  return unhealthy;
 }
 export function guardianBackoffMs(failures) {
   return Math.min(10 * 60_000, INTERVAL_MS * 2 ** Math.min(Math.max(0, failures - 1), 5));
@@ -27,7 +35,7 @@ export async function guardianTick(c, state, {
   now = Date.now(),
 } = {}) {
   const observed = await inspect(c);
-  const unhealthy = unhealthyServices(observed);
+  const unhealthy = unhealthyServices(observed, c);
   // Each service owns its own sustained-failure clock. A broken optional worker
   // must not make a later, briefly unhealthy Core appear to have failed for 5 min.
   state.unhealthySinceByService ||= {};
@@ -107,7 +115,8 @@ export async function main() {
     while (fs.existsSync(path.join(c.runtime, 'dist/server.cjs')) &&
            !fs.existsSync(path.join(c.dataRoot, '.jaco-emergency-stop.json'))) {
       await sleep(INTERVAL_MS);
-      const result = await guardianTick(c, state).catch(error => ({ kind: 'ERROR', error: String(error?.message || error).slice(0, 240) }));
+      // Re-read the persisted ports and operator settings on every tick.
+      const result = await Promise.resolve().then(() => guardianTick(configuration(ROOT, process.env), state)).catch(error => ({ kind: 'ERROR', error: String(error?.message || error).slice(0, 240) }));
       if (result.kind !== 'HEALTHY' && result.kind !== 'COOLDOWN') log(result);
     }
   } finally {
