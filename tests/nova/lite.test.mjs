@@ -87,7 +87,7 @@ test('launcher: Node version, arguments, free port, project folder and the serve
   assert.equal(JSON.parse(fs.readFileSync(policyFile, 'utf8')).dailyCloudUsd, 2, 'a change the operator made is never overwritten');
   assert.equal(agentCommand(dir), null, 'no agent file, no agent');
   const agent = agentEnv({ env: {}, installDir: install, project: dir, url: 'http://127.0.0.1:3999', token: 'tok' });
-  assert.deepEqual([agent.JACO_LITE, agent.NOVA_BRAIN_MODE, agent.JACO_RUNTIME_URL, agent.JACO_AUTO_APPROVE_LEVEL, agent.JACO_POLICY_EDIT_GRANT], ['1', 'direct', 'http://127.0.0.1:3999', '5', '1']);
+  assert.deepEqual([agent.JACO_LITE, agent.NOVA_BRAIN_MODE, agent.JACO_RUNTIME_URL, agent.JACO_AUTO_APPROVE_LEVEL, agent.JACO_POLICY_EDIT_GRANT], ['1', 'direct', 'http://127.0.0.1:3999', '5', '0']);
   assert.equal(agentEnv({env:{JACO_AUTO_APPROVE_LEVEL:'1',JACO_POLICY_EDIT_GRANT:'0'},installDir:install,project:dir,url:'http://127.0.0.1:3999',token:'tok'}).JACO_AUTO_APPROVE_LEVEL,'1');
   assert.equal(JSON.stringify(agent).includes('OLLAMA'), false, 'the agent is not tied to one local server');
   const env = serverEnv({ env: { PATH: 'p' }, installDir: install, project: dir, port: 3999, token: 'tok' });
@@ -443,12 +443,12 @@ test('Pixel APK session-token rotation has no obsolete paired-state reference', 
   assert.doesNotMatch(src, /\bpaired\s*=/);
 });
 
-test('Android Lite is lean by default without selecting or changing the operator model',()=>{
+test('Android Lite starts tools by default without selecting or changing the operator model',()=>{
  const env={JACO_LLAMACPP_MODEL:'existing-alias',JACO_LOCAL_ONLY:'1',JACO_PRIMARY_PROVIDER:'custom',JACO_ALLOW_PAID_MODELS:'0'};
  const mobile=liteMobileEnv(env,{platform:'android'},'linux');
- assert.deepEqual(mobile,{...env,JACO_AURA_LEAN:'1',JACO_AUTO_START_TOOLS:'0'});
+ assert.deepEqual(mobile,{...env,JACO_AURA_LEAN:'0',JACO_AUTO_START_TOOLS:'1'});
  assert.deepEqual(liteMobileEnv(env,{platform:'windows'},'win32'),env);
- assert.equal(liteMobileEnv({...env,JACO_AURA_LEAN:'0'},{platform:'android'}).JACO_AUTO_START_TOOLS,undefined);
+ assert.equal(liteMobileEnv({...env,JACO_AURA_LEAN:'1'},{platform:'android'}).JACO_AUTO_START_TOOLS,'0');
  assert.equal(liteMobileEnv({...env,JACO_AUTO_START_TOOLS:'1'},{platform:'android'}).JACO_AUTO_START_TOOLS,'1');
 });
 
