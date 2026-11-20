@@ -189,7 +189,7 @@ export function createModelRelayRouter(input: {
       input.onEvent?.({ actor: 'Bonsai via Aura', type: 'android.bonsai.finished',
         message: task.status, verified: success, receipt: { taskId: task.taskId, verifiedSteps: task.verifiedSteps } });
       // No screen text or model prompt is returned through ChatGPT MCP.
-      return res.status(success ? 200 : 409).json({ success, task });
+      return res.json({ success, task });
     } catch (error) {
       return fail(res, 409, error instanceof Error ? error.message : 'ANDROID_BONSAI_FAILED');
     } finally {
