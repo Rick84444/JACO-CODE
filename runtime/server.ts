@@ -2653,8 +2653,11 @@ const notifyPhone = async (action) => {
       const missions = missionRows.map((base: any) => {
         try {
           const current = connectedRuntime.novaMissions.get(base.id);
-          return { ...base, phase: current.phase, receipts: current.receipts, reviewAvailable: true };
-        } catch { return { ...base, reviewAvailable: false }; }
+          return { ...base, status: current.status, phase: current.phase, receipts: current.receipts, reviewAvailable: true,
+            paused: current.paused, cancelRequested: current.cancelRequested, steering: current.steering,
+            hasUncertainOutcome: current.hasUncertainOutcome, pendingOperatorAction: Boolean(current.pendingOperatorAction),
+            spendApprovalPending: current.spendApprovalPending, replanRequest: Boolean(current.replanRequest) };
+        } catch { return { ...base, reviewAvailable: false, strategicStateObserved: false }; }
       });
       const projection = gameboardProjection({
         graphs, graphError, providers: mcpHost.status(),
