@@ -1,3 +1,5 @@
+import { createStrategicBoard, rankStrategicMoves } from '../../agents/lib/aura-strategic-board.mjs';
+
 const cleanText = value => String(value ?? '').trim();
 
 function parseModelJson(result) {
@@ -29,7 +31,38 @@ function repairCount(graph, failedKey) {
   ).length;
 }
 
+// Model estimates rank hypotheses only. The original graph contract, budget,
+// evidence checks and dependencies are never inferred from these estimates.
+const hypothesisMetrics = ['confidence','verificationGain','informationGain','risk','effort'];
+export function selectRepairHypothesis(parsed) {
+  const batch = Array.isArray(parsed?.alternatives);
+  const raw = batch ? parsed.alternatives.slice(0,5) : [parsed];
+  const accepted = [];
+  const seen = new Set();
+  for (const item of raw) {
+    if (!item || item.reversible !== true || item.external_spend !== 0 ||
+        typeof item.objective !== 'string' || !item.objective.trim() || item.objective.length > 4000 ||
+        typeof item.reason !== 'string' || !item.reason.trim() || item.reason.length > 1000) continue;
+    if (item.title !== undefined && (typeof item.title !== 'string' || item.title.length > 300)) continue;
+    const key = item.objective.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    const metrics = item.metrics;
+    if (batch && (!metrics || !hypothesisMetrics.every(k=>typeof metrics[k]==='number' && Number.isFinite(metrics[k]) && metrics[k]>=0 && metrics[k]<=1))) continue;
+    seen.add(key);
+    const values = batch ? Object.fromEntries(hypothesisMetrics.map(k=>[k,metrics[k]])) :
+      {confidence:.5,verificationGain:.5,informationGain:.5,risk:.5,effort:.5};
+    accepted.push({item, id:'candidate-'+accepted.length, values});
+  }
+  if (!accepted.length) return null;
+  const board = createStrategicBoard({goalId:'repair-hypotheses',missionId:'repair-hypotheses',
+    steps:accepted.map(x=>({id:x.id,status:'READY',goalImpact:1,reversibility:1,...x.values}))});
+  const ranked = rankStrategicMoves(board);
+  const winner = accepted.find(x=>x.id===ranked[0].stepId);
+  return { ...winner.item, reason: (winner.item.reason + ' | Gameboard compared '+accepted.length+' admissible hypotheses; estimated scores: '+ranked.map(r=>r.stepId+'='+r.score).join(', ')+'; selected '+winner.id+'. Forecasts are not evidence.').slice(0,1500) };
+}
+
 function safeRepairCandidate(graph, failed, parsed, sequence) {
+  parsed = selectRepairHypothesis(parsed);
   const externalSpend = Number(parsed?.external_spend ?? 0);
   const reversible = parsed?.reversible !== false;
   const parsedObjective = cleanText(parsed?.objective);
@@ -50,7 +83,7 @@ function safeRepairCandidate(graph, failed, parsed, sequence) {
   return {
     key: `${rootRepairKey(failed.key)}.repair.${sequence}`,
     title: parsedTitle || `${failed.title || failed.key} (autonomous repair ${sequence})`,
-    objective: reversible && externalSpend <= 0 && parsedObjective ? parsedObjective : fallbackObjective,
+    objective: reversible && externalSpend <= 0 && parsedObjective ? [failed.objective, '', 'REVISED IMPLEMENTATION STRATEGY:', parsedObjective].join('\n') : fallbackObjective,
     contract: failed.contract || {},
     dependencies: Array.isArray(failed.dependencies) ? failed.dependencies : [],
     reason: reversible && externalSpend <= 0 && parsedReason
@@ -107,8 +140,10 @@ export function createAutonomyLoop({
       try {
         const result = await callLLM({
           system: [
-            'You are SEER repair planning.',
+            'You are Aura’s strategic repair planner.',
+            'Compare three materially different, reversible alternatives grounded in current evidence; provide estimated metrics and a concrete verification approach for each. Do not resubmit the failed approach blindly.',
             'Return JSON only.',
+            'Compare at least two materially different feasible approaches using the strategic board, previous results, blockers, risk, and verification criteria. Choose the approach best supported by the evidence; explain why in reason. Treat forecast scores as estimates, not proof.',
             'You may change the implementation approach, but not authority, budget, protected scope, or verification requirements.',
             'No external spend. No destructive action. Preserve the failed node contract.',
           ].join(' '),
@@ -129,15 +164,16 @@ export function createAutonomyLoop({
             },
             prior_replans: (graph.replans || []).slice(-5),
             strategic_board: graph.strategic_board || null,
-            response_schema: {
+            response_schema: { alternatives: [{
               title: 'short repair title',
-              objective: 'concrete replacement objective',
+              objective: 'concrete replacement objective with a verification approach',
               reason: 'why this approach differs and addresses the failure',
               reversible: true,
               external_spend: 0,
-            },
+              metrics: { confidence: 0.5, verificationGain: 0.5, informationGain: 0.5, risk: 0.5, effort: 0.5 },
+            }] },
           }),
-          max_tokens: 700,
+          max_tokens: 1300,
           temperature: 0.2,
         });
         if (result?.ok !== false) parsed = parseModelJson(result);
@@ -238,9 +274,13 @@ export function createAutonomyLoop({
     const graphs = missionGraph.list().filter(graph => ['ACTIVE','NEEDS_REPLAN'].includes(graph.status));
     for (const graph of graphs) {
       if (!remaining) break;
-      const readyNodes = missionGraph.ready(graph.id);
-      for (const node of readyNodes) {
-        if (!remaining) break;
+      const attempted = new Set();
+      while (remaining > 0) {
+        // ready() rebuilds the canonical strategic ranking from the current graph.
+        // Re-evaluate after each awaited dispatch; never reuse stale candidate order.
+        const node = missionGraph.ready(graph.id).find(candidate => !attempted.has(candidate.key));
+        if (!node) break;
+        attempted.add(node.key);
         // Failed attempts consume the same per-turn budget as successful dispatches.
         remaining--;
         try {
@@ -249,11 +289,13 @@ export function createAutonomyLoop({
             graph_id: graph.id,
             node_key: node.key,
             nova_mission_id: result?.nova?.id || null,
+            ...(node.strategic_move ? { strategic_move: node.strategic_move } : {}),
           });
           emit('autonomy.node_dispatched', {
             graph_id: graph.id,
             node_key: node.key,
             nova_mission_id: result?.nova?.id || null,
+            ...(node.strategic_move ? { strategic_move: node.strategic_move } : {}),
           });
         } catch (error) {
           report.errors.push({ phase: 'dispatch', graph_id: graph.id, node_key: node.key, error: error.message });

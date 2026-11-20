@@ -9,7 +9,7 @@
 #   3. uses the Node.js you have if it is new enough; otherwise downloads the official Node.js LTS build from
 #      nodejs.org into the JACO folder (checked against nodejs.org's SHASUMS256.txt). Termux gets nodejs-lts from pkg.
 #   4. unpacks into  $JACO_LITE_HOME/versions/<build>  and points  current  at it (the previous build is kept for
-#      rollback, older ones are removed)
+#      rollback; older immutable builds are retained because a running launcher may still use them)
 #   5. puts a  jaco-lite  command in ~/.local/bin (or tells you what to add to PATH)
 # No administrator rights, nothing outside $JACO_LITE_HOME and that one command. Run it again to update.
 #
@@ -203,11 +203,8 @@ if [ "${DONE_UP_TO_DATE:-0}" != 1 ]; then
   printf '{\n  "version": "%s",\n  "builtAt": "%s",\n  "file": "%s",\n  "sha256": "%s",\n  "kind": "%s"\n}\n' "$VERSION" "$BUILT" "$FILE" "$WANT_SHA" "$KIND" > "$DEST/.install.json"
   [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "versions/$STAMP" ] && ln -sfn "$PREVIOUS" "$HOME_DIR/previous"
   ln -sfn "versions/$STAMP" "$HOME_DIR/current"
-  # keep the build before this one for rollback, remove the rest
-  for old in "$HOME_DIR"/versions/*; do
-    [ -d "$old" ] || continue
-    case "versions/$(basename "$old")" in "versions/$STAMP"|"$PREVIOUS") ;; *) rm -rf "$old" ;; esac
-  done
+  # Never prune a version here: a different running launcher can still lazily load its files.
+  # The previous pointer is for rollback, not a complete inventory of live processes.
   cp "$DEST/.install.json" "$HOME_DIR/install.json"
 fi
 
@@ -269,5 +266,6 @@ else
   say "    To type just  jaco-lite  add this to your shell profile:  export PATH=\"$BIN_DIR:\$PATH\""
 fi
 say "    Update:  jaco-lite update    Remove:  jaco-lite uninstall"
+say "    Updates stage a new build for the next launch. Running sessions keep their build; finish or pause work before restarting."
 [ "$TERMUX" = 1 ] && say "    Android is experimental: it has not been verified on a phone yet. Open the address JACO prints in your browser."
 exit 0

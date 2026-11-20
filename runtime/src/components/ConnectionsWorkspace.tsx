@@ -7,6 +7,7 @@ import { RoutinesPanel } from './RoutinesPanel';
 import { CapabilitiesPanel } from './CapabilitiesPanel';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { SiteLoginsPanel } from './SiteLoginsPanel';
+import { GitHubLoginPanel } from './GitHubLoginPanel';
 import { useOptionalUiLanguage } from '../i18n/UiLanguage';
 import { plannerErrorText } from '../lib/plannerErrors';
 const request=async(url:string,body?:unknown)=>fetch(url,{...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),signal:AbortSignal.timeout(30000)}).then(readAuraResponse);
@@ -57,7 +58,7 @@ export function ConnectionsWorkspace({onSelectTool,initialTab='models',onTabChan
         {!p.modelIds?.length&&<p>{tr('Ingen tillgänglig modell hittades.','No available model observed.')}</p>}
       </article>)}<ProviderConnect onConnected={async()=>{await refresh();window.dispatchEvent(new Event('jaco:aura:provider-chosen'));}}/>
     </section>}
-    {tab==='logins'&&<SiteLoginsPanel/>}
+    {tab==='logins'&&<><GitHubLoginPanel/><SiteLoginsPanel/></>}
     {tab==='mcp'&&<McpServersPanel providers={(mcp?.providers||[]).map((p:any)=>errors.mcp?{...p,status:'UNOBSERVED'}:p)} recentCalls={mcp?.recentCalls||[]} busy={busy} selectedToolId={null} onStart={id=>void act(id,async()=>{const value=await request('/api/aura/workbench/mcp/start',{providerId:id});await refresh();return value;})} onSelectTool={onSelectTool} onChanged={message=>{setNotice(message);void refresh();}}/>}
     {tab==='local'&&<section><h3>{tr('Kör ett lokalt verktyg','Run a local tool')}</h3><p>{tr('Kommandot körs av JACO:s lokala MCP-server. Resultat och fel kommer från den verkliga processen.','The command is run by JACO\'s local MCP server. Results and errors come from the real process.')}</p><label>{tr('Körläge','Run mode')}<select value={localMode} onChange={e=>setLocalMode(e.target.value)}><option value="read">{tr('Bara läsa','Read only')}</option><option value="write">{tr('Projektkommando, kan ändra filer','Project command, may change files')}</option></select></label><label>{tr('Program','Program')}<input value={command} onChange={e=>setCommand(e.target.value)}/></label><label>{tr('Argument som JSON-lista','Arguments as a JSON array')}<input value={args} onChange={e=>setArgs(e.target.value)}/></label>
       <button type="button" disabled={!!busy} onClick={()=>void act('local',async()=>{const parsed=JSON.parse(args);if(!Array.isArray(parsed)||parsed.some(x=>typeof x!=='string'))throw Error(tr('Argumenten måste vara en lista med textsträngar.','Arguments must be an array of strings.'));return call('shell',localMode==='read'?'shell_read':'shell_run',{command,args:parsed});})}>{busy==='local'?tr('Kör lokalt…','Running locally…'):localMode==='read'?tr('Kör läsning lokalt','Run read locally'):tr('Kör projektkommando','Run project command')}</button>

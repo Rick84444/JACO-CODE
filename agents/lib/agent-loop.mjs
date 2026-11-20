@@ -15,6 +15,7 @@ import { redactDeep } from './secret-capture.mjs';
 import { StuckDetector } from './stuck-detector.mjs';
 import { condenseMessages } from './condenser.mjs';
 import { buildContextPacket, formatContextPacket } from './context-packet.mjs';
+import { adaptiveStrategyInstruction } from './aura-strategic-board.mjs';
 import { executionExceptionResult } from './replay-semantics.mjs';
 import { verifiedOutcomeHints } from './verified-outcome-context.mjs';
 import { decisionLessonHints } from './meta-reasoning.mjs';
@@ -118,6 +119,30 @@ export function contextPacketIntro(mission, {
  */
 // Roughly what fits the default per-call budget at reference prices, with room for tool schemas.
 const COST_RETRY_CONTEXT_CHARS = 20_000;
+// A fetch can be a verified HTTP observation without yielding usable page content.
+// Recovery is a normal leased browser action, never an authorization override.
+export function webRecoveryCall(mission, tools, resolve) {
+  const history = Array.isArray(mission?.receipts) ? mission.receipts : [];
+  const last = history.at(-1);
+  if (last?.type !== 'web-fetch' || last.outcomeUnknown || last.input?.expect ||
+      !mission.allowedTasks?.includes('browser-survey-site')) return null;
+  const r = last.result || {};
+  const url = last.input?.url || r.url;
+  let parsed;
+  try { parsed = new URL(url); } catch { return null; }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return null;
+  const evidence = String(r.excerpt || '') + ' ' + String(last.error || r.error || '');
+  // Explicit access challenges are not permission to try a different transport.
+  if ([401,403,407,429,451].includes(Number(r.status)) ||
+      /captcha|verify (?:that )?you are human|access denied|bot detection|rate limit|too many requests|sign in to continue/i.test(evidence)) return null;
+  if (!/enable javascript|javascript (?:is required|must be enabled)|requires javascript|turn on javascript|fetch failed|timed? ?out|timeout|ECONNRESET/i.test(evidence)) return null;
+  if (history.some(x => x.type === 'browser-survey-site' && x.input?.url === url)) return null;
+  const tool = tools.find(t => resolve(t.function?.name)?.type === 'browser-survey-site');
+  if (!tool) return null;
+  return { content: '', tool_calls: [{ id: 'web_recovery_' + history.length, type: 'function',
+    function: { name: tool.function.name, arguments: JSON.stringify({ url, label: 'Web research recovery', say: 'I will read the page using the browser because the fetch did not provide usable content.' }) } }] };
+}
+
 const SAYS_BLOCKED = /\b(?:i am|i'm|i was) (?:blocked|unable|not able)\b|\bi (?:cannot|can't|could not|couldn't) (?:complete|proceed|continue|do|fetch|perform|finish|create|write|save|edit|modify|make)\b|\bi do(?:n't| not) have (?:a|an|the|any) (?:\w+ )?(?:tool|access|permission)\b|(?:jag kan inte|jag saknar|jag har inte)/i;
 export async function runAgentMission({
   client, owner, chat, toolsFor, execute, system,
@@ -137,6 +162,7 @@ export async function runAgentMission({
   const activated = new Set();
   const messages = [];
   const receipts = [];
+  const attemptedWebRecovery = new Set();
   let steps = 0, modelErrors = 0, idle = 0, turns = 0;
   let capabilityEvidence = null;
   let capabilityCorrections = 0;
@@ -255,8 +281,9 @@ export async function runAgentMission({
     capabilityEvidence = observeMissionCapabilities(mission, tools);
     // Keep the canonical mission packet at index 1 so refreshed introductions
     // replace the correct message and never overwrite the capability observation.
+    let missionIntro = await intro(mission);
     messages.push({ role: 'system', content: typeof system === 'function' ? system(mission) : system },
-      { role: 'user', content: await intro(mission) });
+      { role: 'user', content: missionIntro });
     messages.push({ role: 'user', content: 'CURRENT CAPABILITY EVIDENCE (catalog, not permission or proof of execution): '+JSON.stringify(capabilityEvidence) });
     if (inheritedCircle.kind === 'unrepaired-missing-command') {
       // The durable ledger proves the same missing executable survived a run
@@ -303,7 +330,8 @@ export async function runAgentMission({
       }
       await onActivity({ phase: 'PLANNING', missionId: mission.id });
       // Replace the retained mission packet; never accumulate duplicate board snapshots.
-      if (refreshIntro && turns > 1) messages[1] = { role: 'user', content: await intro(mission) };
+      if (refreshIntro && turns > 1) missionIntro = await intro(mission);
+      messages[1] = { role: 'user', content: missionIntro + '\n\n' + adaptiveStrategyInstruction(mission) };
       const condensed = condenseMessages(messages, { maxChars: maxContextChars });
       if (condensed.condensed) {
         messages.splice(0, messages.length, ...condensed.messages);
@@ -312,7 +340,15 @@ export async function runAgentMission({
       }
       let nudge = null;
       let reply;
-      try { reply = await chat({ messages, tools, mission }); modelErrors = 0; costCondensed = false; }
+      try {
+        const recovery = webRecoveryCall(mission, tools, resolve);
+        const key = recovery?.tool_calls[0].function.arguments;
+        if (key && !attemptedWebRecovery.has(key)) {
+          attemptedWebRecovery.add(key);
+          reply = recovery;
+        } else reply = await chat({ messages, tools, mission });
+        modelErrors = 0; costCondensed = false;
+      }
       catch (error) {
         modelErrors++;
         log('warn', `model error ${modelErrors}/${maxModelErrors}: ${errorText(error)}`);

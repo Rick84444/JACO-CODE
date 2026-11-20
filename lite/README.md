@@ -18,7 +18,7 @@ Then, in any project folder: `jaco-lite`. Later:
 
 | Command | What it does |
 | --- | --- |
-| `jaco-lite update` | installs the newest build; the previous one is kept |
+| `jaco-lite update` | safely stages a checked new build, including while an older launcher is running; the next launch uses it |
 | `jaco-lite rollback` | goes back to the previous build |
 | `jaco-lite doctor` | shows what is installed and whether it can start |
 | `jaco-lite uninstall` | removes it (your projects and `~/.jaco` are not touched) |
@@ -115,6 +115,30 @@ The old `START-ANDROID.sh` launcher is retained for compatibility with
 existing Termux installations. The Pixel deployment uses
 `START-PIXEL-TERMINAL.sh` instead.
 
+### Mobile startup and recovery
+
+Use `jaco-lite --port 3000 --recover --no-open` to explicitly authorize a graceful restart of an old, positively identified Linux Lite process belonging to this workspace. A healthy matching release on the requested port is reused. Lite checks the existing Continuum writer before launching children. A live unknown or foreign holder, unrelated port listener, or unsuccessful handoff is reported without force-killing processes or deleting the ledger. Stale locks remain the ledger's responsibility. Default Core port is 3000; no automatic port drift. Explicit alternative ports remain possible. Reuse/recovery is not available for unverified process identities (including non-Linux live owners).
+
+Android Lite starts its bundled editor and shell MCP servers automatically. Existing
+explicit access settings and environment overrides take precedence. Set `JACO_AURA_LEAN=1`
+for lower idle overhead and on-demand tools. New Aura organizations start with scoped
+development grants and autonomy level 5; saved restrictions are never overwritten.
+Agent-driven policy editing is off by default. The operator retains high-impact approvals.
+VS Code loopback embedding is enabled on full and Lite startup. The installed extension can attach to this runtime; it is not installed automatically.
+
+Lite includes the existing Nova browser and CDP bridges. If Chromium/Chrome is installed and local Workplace is ready, the launcher allocates distinct loopback ports, starts a dedicated sandboxed browser profile, verifies both bridges and retries owned process failures up to three attempts. Core remains available when the browser is missing. A missing browser must still be installed by the operator/host setup (no automatic sudo). The browser launched in Pixel Debian is not Android Chrome.
+
+In Connections → Sign-ins → GitHub, the local operator can initiate GitHub CLI's official browser sign-in and configure Git's github.com credential helper without typing terminal commands. GitHub CLI must already be installed. The existing organization authentication is required when configured; no bypass is added. GitHub CLI may fall back to its own local credential file if the OS keyring is unavailable; this is disclosed in the UI. No account, password or OAuth access token is returned to Aura.
+No model is hardcoded or downloaded: choose any connected model in the IDE.
+An unavailable external model is not a Core startup prerequisite.
+
+Before reporting the IDE ready, Lite verifies its HTTP identity and the served
+HTML/JavaScript entry against the installed release manifest. This does not
+prove a browser rendered the UI. If startup fails, inspect
+`<project>/.jaco/lite.log` and `<project>/.jaco/lite-lifecycle.jsonl`.
+A child signal exit is retained, including 137 for SIGKILL; that alone does
+not prove memory pressure.
+
 ### Gameboard and simulation
 The `Spelplan` tab in Cognitive Live Workspace reads `/api/aura/workbench/gameboard` and shows stable numeric agent and MCP-tool IDs and, where SEER is connected, observed mission-graph forecasts. The simulation control accepts assumptions for a hypothetical tool chain; it neither invokes a tool nor claims a verified outcome. A Lite install without SEER reports `UNAVAILABLE` for the canonical strategic graph, rather than faking it; the hypothetical scenario simulator remains available. The durable revisioned exchange stores agent `OBSERVATION`, `HYPOTHESIS` and numeric `MOVE_PROPOSAL` entries with optimistic locking. Entries are self-reported, not verified and cannot invoke an executor. JACO Editor MCP exposes `gameboard_status`, `gameboard_events` and `gameboard_simulate` as read-only tools, plus the Workplace-synchronized `gameboard_publish` operation for clients that connect locally. Public ChatGPT access still requires the authenticated remote JacoEdit transport from PR #142 and its secure OAuth/Cloudflare deployment.
 
@@ -155,7 +179,8 @@ reaches our server logs like any visit). It never downloads or installs anything
 
 | Option | Meaning |
 | --- | --- |
-| `--port N` | use this port (default 3000, or the next free one) |
+| `--port N` | use this port (default 3000; no silent fallback) |
+| `--recover` | on Linux, gracefully hand off a verified prior Lite writer of this workspace | 
 | `--no-open` | do not open the browser |
 | `--check` | check this installation and print what would start |
 | `--verbose` | also print the server log (it is always saved in `<project>/.jaco/lite.log`) |
@@ -184,3 +209,6 @@ spend has no caps until you set them: turn on a daily, monthly or per-task limit
 `<project>/.jaco/continuum/economic-policy.json`); an empty field means no cap. Lite never overwrites your changes.
 
 Licensed under the MIT License (see `LICENSE`).
+
+### Update during operation
+`jaco-lite update` downloads and verifies a new immutable build, without stopping a running launcher or deleting older build directories. The running process keeps its original code; no live module replacement or automatic restart is performed. Finish the current tool action and stop normally before launching the staged version in the same project. The runtime record `~/.jaco/lite-runtime.json` includes the running source commit and installation directory on new builds. Old installations may use a cached installer: obtain the current installer from jacocode.com once after this change is published. Old builds consume disk space and are intentionally not pruned automatically; only remove them after all launchers are stopped.

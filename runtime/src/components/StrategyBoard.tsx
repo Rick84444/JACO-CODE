@@ -21,7 +21,8 @@ export type Decision = { id: string; kind: string; title: string; risk: string; 
 const decisionMission = (d: Decision): string | null => d.details?.missionId || d.details?.mission_id || (d.id.startsWith('mission:') ? d.id.slice(8) : null);
 // A mission as the board observes it (from /api/aura/workbench/gameboard): its ledger state decides which operator
 // controls the board may offer. Nothing here is inferred from the goal's wording.
-export type ObservedMission = { identity: string; goal: string; status: string; verifiedActions: number; paused?: { at: string | null } | null; cancelRequested?: boolean; steeringRevision?: number | null; graphId?: string | null };
+type TacticalStrategy = { status: 'HOLD' | 'RECOMMENDATION_ONLY'; reason: string; receiptCount: number; steeringRevision: number; recommendedMove: string | null; moves: Array<{ id: string; title: string; score: number; preferred: boolean }> };
+export type ObservedMission = { tacticalStrategy?: TacticalStrategy; identity: string; goal: string; status: string; verifiedActions: number; paused?: { at: string | null } | null; cancelRequested?: boolean; steeringRevision?: number | null; graphId?: string | null };
 export type MissionControlState = { live: boolean; pause: boolean; resume: boolean; steer: boolean; end: boolean; endGoal: boolean; state: 'working' | 'paused' | 'blocked' | 'verifying' | 'ending' | 'closed' };
 // Pure, so the rules are testable: pause only while Aura may act, resume only while paused, a change only while the
 // mission plans, end while it is not already ending, and end the goal only when the mission belongs to one.
@@ -330,12 +331,25 @@ function MissionControls({ mission, onDone, compact = false }: { mission: Observ
       {can.end && <button type="button" disabled={busy !== null} aria-pressed={ask === 'end'} onClick={() => setAsk(ask === 'end' ? null : 'end')} className={`${button} border-white/40 text-white hover:bg-white/10`}>{tr('Avsluta uppdraget', 'End the mission')}</button>}
       {can.endGoal && <button type="button" disabled={busy !== null} aria-pressed={ask === 'goal'} onClick={() => setAsk(ask === 'goal' ? null : 'goal')} className={`${button} border-rose-300/50 text-rose-100 hover:bg-rose-950/40`}>{tr('Avsluta målet', 'End the goal')}</button>}
     </div>
+    {mission.tacticalStrategy && <div data-testid="gameboard-tactical-strategy" className="mt-2 space-y-1 rounded border border-sky-900/60 bg-sky-950/20 p-2 text-xs">
+      <div className="font-semibold text-sky-200">{tr('Strategiskt nästa drag', 'Strategic next move')} · {mission.tacticalStrategy.receiptCount} {tr('kvitton', 'receipts')}</div>
+      <p className="text-neutral-400">{tr('Rekommendation från uppdragsloggen, inte ett utfört steg.', 'Recommendation from the mission ledger, not an executed step.')}</p>
+      {mission.tacticalStrategy.status === 'HOLD' ? <p className="text-amber-200">{tr('Avvaktar befintlig kontroll', 'Waiting for existing control')} · {mission.tacticalStrategy.reason}</p>
+        : <div className="flex flex-wrap gap-1.5">{mission.tacticalStrategy.moves.map(move => {
+          const labels: Record<string, [string, string]> = { inspect: ['Undersök orsaken', 'Inspect evidence'], 'change-approach': ['Byt strategi', 'Change approach'], verify: ['Verifiera', 'Verify'], advance: ['Fortsätt mot målet', 'Advance toward goal'] };
+          const label = labels[move.id] ? tr(...labels[move.id]) : move.title;
+          return <button key={move.id} type="button" disabled={!can.steer || busy !== null} title={move.title}
+            onClick={() => setChange(tr('Anpassa nästa drag inom befintligt mandat: ', 'Adapt the next move within the existing mandate: ') + move.title)}
+            className={`${button} ${move.preferred ? 'border-sky-400/70 text-sky-100' : 'border-neutral-700 text-neutral-300'}`}>{label}{move.preferred ? tr(' · rek.', ' · rec.') : ''}</button>;
+        })}</div>}
+    </div>}
     {can.steer && <div className="mt-2 flex gap-1">
       <input value={change} onChange={e => setChange(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void steer(); }} maxLength={2000} disabled={busy !== null}
-        aria-label={tr('Ändring till Aura', 'Change for Aura')} placeholder={tr('Skicka in en ändring: vad Aura ska göra annorlunda…', 'Send a change: what Aura should do differently…')}
+        aria-label={tr('Ändring till Aura', 'Change for Aura')} placeholder={tr('Uppdatera körande strategi: vad Aura ska göra annorlunda…', 'Update running strategy: what Aura should do differently…')}
         className="flex-1 rounded border border-neutral-700 bg-black px-2 py-1.5 text-sm" />
-      <button type="button" disabled={busy !== null || change.trim().length < 2} onClick={() => void steer()} className={`${button} border-neutral-600 text-neutral-100`}>{busy === 'steer' ? '…' : tr('Skicka', 'Send')}</button>
+      <button type="button" disabled={busy !== null || change.trim().length < 2} onClick={() => void steer()} className={`${button} border-neutral-600 text-neutral-100`}>{busy === 'steer' ? '…' : tr('Uppdatera', 'Update')}</button>
     </div>}
+    {can.steer && <p className="mt-1 text-xs text-neutral-400">{tr('Ändringen gäller nästa säkra planeringssteg. Aura kan byta strategi utan att avbryta ett verktyg som redan kör.', 'The change applies at the next safe planning step. Aura can switch strategy without interrupting an in-flight tool.')}</p>}
     {ask === 'end' && <div role="group" aria-label={tr('Bekräfta avslut', 'Confirm ending')} className="mt-2 rounded border border-amber-200/30 bg-black/30 p-2.5 text-sm leading-relaxed text-amber-50">
       <p>{tr('Uppdraget avslutas: ett steg som redan kör får bli klart, inget nytt startas, och målet finns kvar på spelplanen.', 'The mission ends: a step already running may finish, nothing new starts, and the goal stays on the board.')}</p>
       <div className="mt-2 flex flex-wrap gap-1.5">

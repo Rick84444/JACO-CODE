@@ -41,6 +41,7 @@ import { validProviderId } from './src/server/connected/providerRegistry.mjs';
 import { createIdeRemoteGate, ideDeviceRegistryAdapter, upgradeAllowed, ideHost } from './src/server/connected/ideAccess.mjs';
 import { auraLegacyStatePath } from './src/lib/auraLegacyStatePath.mjs';
 import { mountVscodeEmbedHeaders } from './src/server/security/vscodeEmbed.mjs';
+import { githubGuiAuth } from './src/server/connected/githubGuiAuth.mjs';
 import { normalizeAuraChatMode, normalizeAuraMissionMode } from './src/lib/auraRunModes.mjs';
 import { validateOperatorConfirmation } from './src/lib/operatorApproval.mjs';
 import { cognitiveActivationPreview } from './src/lib/auraCognitiveActivation.mjs';
@@ -325,7 +326,11 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         observedAt: new Date().toISOString(),
         services: await auraServiceHealth(),
         currentNovaMission: mission ? { id: mission.id, status: mission.status, phase: mission.phase, turn: mission.turn, failures: mission.failures, goal: String(mission.goal).slice(0, 200) } : null,
-        providers: connectedRuntime.providers.list().map((p: any) => ({ id: p.id, model: p.defaultModel, credentialConfigured: p.credentialConfigured })),
+        providers: connectedRuntime.providers.list().map((p: any) => {
+          let local = false;
+          try { local = ['127.0.0.1','localhost','[::1]'].includes(new URL(p.baseUrl).hostname); } catch {}
+          return { id: p.id, model: p.defaultModel, local, credentialRequired: Boolean(p.apiKeyEnv) && !local, credentialConfigured: p.credentialConfigured };
+        }),
         workspaceRoot: path.basename(projectRoot.get()),
         operatorMandate: organizationMandate(organization, 'aura'),
       }, null, 1);
@@ -2209,7 +2214,7 @@ const notifyPhone = async (action) => {
     // What each provider is used for, so the IDE does not show a working planner as merely "REGISTERED"
     // (operator 2026-10-03: "how do I activate providers"). SEER and Aura chat use the observed local
     // model; Nova follows the configured primary provider and then eligible fallbacks.
-    let plannerChoice: any = process.env.JACO_PRIMARY_PROVIDER
+    let plannerChoice: any = process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1'
       ? { provider: process.env.JACO_PRIMARY_PROVIDER, model: plannerChoices(process.env)[process.env.JACO_PRIMARY_PROVIDER]?.models[0] || null }
       : null;
     if (!plannerChoice) try { plannerChoice = readPlannerChoice(plannerChoiceFile(process.env)); } catch {}
@@ -2219,9 +2224,12 @@ const notifyPhone = async (action) => {
       const roles: string[] = [];
       if (active) roles.push(`SEER + Aura chat (${activeModelId || 'local model'})`);
       if (plannerChoice?.provider === provider.id) roles.push(`Nova planner (${plannerChoice.model})`);
-      else if (!disabledProviders.includes(String(provider.id)) && (provider.credentialConfigured || !provider.apiKeyEnv) && provider.id !== 'lmstudio') roles.push('Nova fallback');
+      else if (process.env.JACO_AURA_UNIFIED_RUNTIME !== '1' && !disabledProviders.includes(String(provider.id)) && (provider.credentialConfigured || !provider.apiKeyEnv) && provider.id !== 'lmstudio') roles.push('Nova fallback');
+      let local = false;
+      try { local = ['127.0.0.1','localhost','[::1]'].includes(new URL(provider.baseUrl).hostname); } catch {}
       return {
         roles,
+        local,
         disabled: disabledProviders.includes(String(provider.id)),
         id: provider.id,
         kind: provider.kind,
@@ -2229,7 +2237,7 @@ const notifyPhone = async (action) => {
         apiKeyEnv: provider.apiKeyEnv || null,
         defaultModel: provider.defaultModel || '',
         credentialConfigured: Boolean(provider.credentialConfigured),
-        credentialRequired: Boolean(provider.apiKeyEnv),
+        credentialRequired: Boolean(provider.apiKeyEnv) && !local,
         active,
         status: disabledProviders.includes(String(provider.id)) ? 'DISABLED' : roles.length ? 'ACTIVE' : 'REGISTERED',
         evidenceSource: active ? 'seer-health.local_model' : 'provider-registry',
@@ -2654,8 +2662,11 @@ const notifyPhone = async (action) => {
       const missions = missionRows.map((base: any) => {
         try {
           const current = connectedRuntime.novaMissions.get(base.id);
-          return { ...base, phase: current.phase, receipts: current.receipts, reviewAvailable: true };
-        } catch { return { ...base, reviewAvailable: false }; }
+          return { ...base, status: current.status, phase: current.phase, receipts: current.receipts, reviewAvailable: true,
+            paused: current.paused, cancelRequested: current.cancelRequested, steering: current.steering,
+            hasUncertainOutcome: current.hasUncertainOutcome, pendingOperatorAction: Boolean(current.pendingOperatorAction),
+            spendApprovalPending: current.spendApprovalPending, replanRequest: Boolean(current.replanRequest) };
+        } catch { return { ...base, reviewAvailable: false, strategicStateObserved: false }; }
       });
       const projection = gameboardProjection({
         graphs, graphError, providers: mcpHost.status(),
@@ -3711,16 +3722,18 @@ const notifyPhone = async (action) => {
     if (!agentCanUseKey(plannerChoices(process.env, extra)[provider]?.keyEnv)) throw Object.assign(new Error('KEY_NOT_AVAILABLE_TO_AGENT'), { status: 422 });
     const probe = await testPlannerModel(valid, { extra, timeoutMs: 30_000 });
     if (!probe.ok) throw Object.assign(new Error(`PLANNER_MODEL_TEXT_PROBE_FAILED:${probe.error || probe.status || 'NO_ANSWER'}`), { probe, status: 422 });
-    writePlannerChoice(plannerChoicePath, valid, 'operator');
+    const saved = writePlannerChoice(plannerChoicePath, valid, 'operator');
+    return connectedRuntime.novaMissions.recoverModelSelection(saved);
   };
   const chooseAuraModel = async (req: express.Request, res: express.Response) => {
     try {
       if (process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1') return res.status(409).json({ success: false, error: 'PLANNER_ENV_PRIMARY_AUTHORITATIVE' });
       const provider = String(req.body?.provider || '');
+      let recoveredMissions: string[] = [];
       if (provider === 'auto') {
         clearPlannerChoice(plannerChoicePath);
       } else {
-        try { await choosePlanner({ provider, model: req.body?.model }); }
+        try { recoveredMissions = await choosePlanner({ provider, model: req.body?.model }); }
         catch (error: any) {
           if (error?.status === 422) return res.status(422).json({ success: false, error: error.message, ...(error.probe ? { probe: error.probe } : {}) });
           throw error;
@@ -3728,7 +3741,7 @@ const notifyPhone = async (action) => {
       }
       const state = await plannerState();
       seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.model.chosen', message: `Aura model: ${state.choice ? `${state.choice.provider}/${state.choice.model}` : 'selection required'}`, verified: true, receipt: { choice: state.choice } });
-      res.json(state);
+      res.json({ ...state, recoveredMissions });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error?.message || String(error) });
     }
@@ -3774,6 +3787,16 @@ const notifyPhone = async (action) => {
 
   // Write-only key entry (agents/lib/secret-store.mjs): the operator hands JACO an API key in the
   // local IDE, it is stored encrypted, and no route ever returns a value, only name, length and dates.
+  // A distinct UI flow, not an Aura tool. Provider consent is always human.
+  const githubLogin = githubGuiAuth();
+  app.get('/api/aura/workbench/github/auth', requireLocalUiSameOrigin, requireOrganizationMutationAuth, async (_req, res) => {
+    res.set('Cache-Control', 'no-store').json({ success: true, ...(await githubLogin.status()) });
+  });
+  app.post('/api/aura/workbench/github/auth', requireLocalUiSameOrigin, requireOrganizationMutationAuth, async (req, res) => {
+    if (!req.get('origin') || req.get('origin')?.replace(/^https?:\/\//,'') !== req.get('host')) return res.status(403).json({success:false,error:'GITHUB_AUTH_ORIGIN_REQUIRED'});
+    if (!['start','cancel'].includes(req.body?.action)) return res.status(400).json({success:false,error:'GITHUB_AUTH_ACTION_INVALID'});
+    res.set('Cache-Control','no-store').json({ success: true, ...(req.body.action === 'start' ? await githubLogin.start() : githubLogin.cancel()) });
+  });
   app.get('/api/aura/workbench/secrets', requireLocalUi, (_req, res) => {
     try { res.json({ success: true, secrets: new SecretStore().list() }); }
     catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
@@ -4353,10 +4376,18 @@ const notifyPhone = async (action) => {
   // receipts by rules and by an independent cheap model before anything approves it. Runs at every
   // approval level, so the operator sees the result too.
   const claimChecksRunning = new Set<string>();
+  // How many times a claim check may be re-judged when no judge model could be reached in time.
+  const CLAIM_JUDGE_ATTEMPTS = 3;
   const claimCheckFor = (own: any[]) => {
     const planned = own.find((e: any) => e.type === 'NOVA_PLANNING_RESULT' && e.payload?.completionProposed);
     if (!planned?.payload?.reason) return { planned: null, check: null };
-    const check = own.find((e: any) => e.type === 'NOVA_CLAIM_CHECK' && e.payload?.planSeq === planned.seq)?.payload || null;
+    const checks = own.filter((e: any) => e.type === 'NOVA_CLAIM_CHECK' && e.payload?.planSeq === planned.seq).map((e: any) => e.payload);
+    // A judge that timed out returns no verdict at all: no claim is supported, none is contradicted. That is not a
+    // finished check, and treating it as one left the mission in AWAITING_VERIFICATION for good, because automatic
+    // resolution can neither confirm nor send back an answer it was never able to judge. Retry a bounded number of
+    // times, then keep the last attempt so the mission goes to the operator instead of being re-judged forever.
+    const judged = checks.find((c: any) => c?.judge || Number(c?.judged) > 0 || !c?.judgeError) || null;
+    const check = judged || (checks.length >= CLAIM_JUDGE_ATTEMPTS ? checks[checks.length - 1] : null);
     return { planned, check };
   };
   const startClaimCheck = (mission: any, planned: any) => {

@@ -75,7 +75,10 @@ if ($Action -eq 'doctor') {
 if ($Action -eq 'rollback') {
   $prev = LinkTarget (Join-Path $InstallDir 'previous'); $cur = LinkTarget (Join-Path $InstallDir 'current')
   if (-not $prev) { Write-Host 'jaco-lite: there is no previous build to go back to.'; $script:Code = 1; return }
+  $previousInfo = Join-Path $prev '.install.json'
+  if (-not (Test-Path -LiteralPath $previousInfo)) { Fail 'previous build metadata missing; update before rollback.' }
   SetLink (Join-Path $InstallDir 'current') $prev; SetLink (Join-Path $InstallDir 'previous') $cur
+  Copy-Item -LiteralPath $previousInfo -Destination (Join-Path $InstallDir 'install.json') -Force
   Say "jaco-lite: now on $prev (was $cur)."; return
 }
 if ($Action -eq 'uninstall') {
@@ -165,15 +168,20 @@ try {
     $top = Get-ChildItem $unpack -Directory | Select-Object -First 1
     if (-not $top -or -not (Test-Path -LiteralPath (Join-Path $top.FullName 'start.mjs'))) { Fail 'the archive does not look like JACO Lite (no start.mjs). Nothing was installed.' }
     $dest = Join-Path $versions $stamp
-    if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Recurse -Force }
+    if (Test-Path -LiteralPath $dest) {
+      $stamp = "$stamp-$($entry.sha256.Substring(0,12))-$([guid]::NewGuid().ToString('N'))"
+      $dest = Join-Path $versions $stamp
+    }
     Move-Item -LiteralPath $top.FullName -Destination $dest
     $current = Join-Path $InstallDir 'current'
     $before = LinkTarget $current
     if ($before -and ((Split-Path $before -Leaf) -ne $stamp)) { SetLink (Join-Path $InstallDir 'previous') $before }
+    # Preserve build metadata so a rollback selects the matching version, not the latest manifest.
+    if ($before -and -not (Test-Path -LiteralPath (Join-Path $before '.install.json')) -and (Test-Path -LiteralPath (Join-Path $InstallDir 'install.json'))) { Copy-Item -LiteralPath (Join-Path $InstallDir 'install.json') -Destination (Join-Path $before '.install.json') }
+    @{ version = $version; builtAt = $builtAt; file = $entry.file; sha256 = $entry.sha256; kind = 'windows' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dest '.install.json') -Encoding UTF8
     SetLink $current $dest
-    $keep = @($stamp); $prevNow = LinkTarget (Join-Path $InstallDir 'previous'); if ($prevNow) { $keep += (Split-Path $prevNow -Leaf) }
-    Get-ChildItem $versions -Directory | Where-Object { $keep -notcontains $_.Name } | Remove-Item -Recurse -Force
-    @{ version = $version; builtAt = $builtAt; file = $entry.file; sha256 = $entry.sha256; kind = 'windows' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $InstallDir 'install.json') -Encoding UTF8
+    # A running launcher may still lazily use any older immutable build. Do not prune here.
+    Copy-Item -LiteralPath (Join-Path $dest '.install.json') -Destination (Join-Path $InstallDir 'install.json') -Force
   }
 
   # --- launcher, this installer (for  jaco-lite update ), PATH, shortcut -----------------------------------------
@@ -223,6 +231,7 @@ Step 'Done'
 Say "    JACO Lite is installed in $InstallDir"
 Say '    Start it in any project folder with:  jaco-lite     (or from the Start menu)'
 Say '    Update:  jaco-lite update    Remove:  jaco-lite uninstall'
+Say '    Updates stage a new build for the next launch. Running sessions keep their build; finish or pause work before restarting.'
 }
 
 # Under  irm | iex  there is no script file and  exit  would close the user's PowerShell; as a file (jaco-lite update) the exit code matters.

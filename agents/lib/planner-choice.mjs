@@ -169,8 +169,13 @@ export async function testPlannerModel({ provider, model }, { env = process.env,
     if (metered && env.JACO_ALLOW_PAID_MODELS === '0') throw new Error('PAID_PROVIDER_DISABLED');
     // The agent plans through tool calls, so the test request offers one: a model that answers text but refuses tools would pass a
     // plain test and then leave every mission without a planner.
+    // The operator can explicitly select the existing structured planner for a
+    // loopback llama.cpp model. Do not require unsupported native function calls
+    // just to verify text inference; this does not verify mission execution.
+    const structuredLocal = loopback && provider === 'llamacpp' && env.JACO_NOVA_NATIVE_TOOLS === '0';
     const requestBody = { model, messages: [{ role: 'user', content: 'Reply with the single word OK.' }], max_tokens: 200,
-      tools: [{ type: 'function', function: { name: 'noop', description: 'Does nothing. Do not call it.', parameters: { type: 'object', properties: {} } } }] };
+      ...(structuredLocal ? { chat_template_kwargs: { enable_thinking: false } } :
+        { tools: [{ type: 'function', function: { name: 'noop', description: 'Does nothing. Do not call it.', parameters: { type: 'object', properties: {} } } }] }) };
     const cloudResult = metered
       ? await budgetedNovaOllamaCall({ provider: { name: provider, model, url: choice.url, key }, requestBody,
         runtimeUrl: env.JACO_RUNTIME_URL || `http://127.0.0.1:${Number(env.PORT) || 3000}`, token: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '',
@@ -180,15 +185,16 @@ export async function testPlannerModel({ provider, model }, { env = process.env,
       headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) },
       body: JSON.stringify(requestBody),
       signal: AbortSignal.timeout(timeoutMs),
+      ...(loopback ? { redirect: 'error' } : {}),
     });
     const data = cloudResult?.data ?? await res.json().catch(() => null);
     const message = data?.choices?.[0]?.message;
     // A thinking model can use up the short test answer on reasoning; a tool call is an answer too.
-    const reply = message?.content || message?.reasoning || (message?.tool_calls?.length ? 'tool call' : null);
+    const reply = structuredLocal ? (typeof message?.content === 'string' ? message.content.trim() : '') : (message?.content || message?.reasoning || (message?.tool_calls?.length ? 'tool call' : null));
     const latencyMs = Date.now() - started;
     if (res.status === 400 && /tool|function/i.test(String(data?.error?.message || ''))) return { ok: false, provider, model, latencyMs, status: 400, error: 'PLANNER_MODEL_NO_TOOLS' };
     if (!res.ok || !reply) return { ok: false, provider, model, latencyMs, status: res.status, error: String(data?.error?.message || 'no answer').slice(0, 300) };
-    return { ok: true, provider, model, latencyMs, reply: String(reply).trim().slice(0, 200), usage: data?.usage || null };
+    return { ok: true, provider, model, latencyMs, reply: String(reply).trim().slice(0, 200), usage: data?.usage || null, ...(structuredLocal ? { verifiedText: true, verifiedToolCalling: false, plannerProtocol: 'structured' } : {}) };
   } catch (error) {
     return { ok: false, provider, model, latencyMs: Date.now() - started, error: String(error?.message || error).slice(0, 300) };
   }
