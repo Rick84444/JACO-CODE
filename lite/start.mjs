@@ -198,10 +198,15 @@ export async function recoverLiteStartup({ project, installDir, port, release, r
     if (ui.ok && sameWriter(initial, observe()) && ownsPort(initial.pid)) return { action: 'REUSE', pid: initial.pid, url };
   }
   if (!recover) return { action: 'BLOCKED', reason: 'OWNED_WRITER_RESTART_REQUIRES_RECOVER', pid: initial.pid };
+  if (!ownsPort(initial.pid) && !await portFree()) return { action: 'BLOCKED', reason: 'PORT_OWNERSHIP_UNKNOWN', pid: initial.pid };
   if (!sameWriter(initial, observe())) return { action: 'BLOCKED', reason: 'OWNER_CHANGED', pid: initial.pid };
   try { signal(initial.target.pid); }
   catch { return { action: 'BLOCKED', reason: 'GRACEFUL_STOP_FAILED', pid: initial.pid }; }
-  const gone = p => !alive(p.pid) || (inspect(p.pid)?.startTicks && inspect(p.pid)?.startTicks !== p.startTicks);
+  const gone = p => {
+    if (!alive(p.pid)) return true;
+    const live = inspect(p.pid);
+    return Boolean(live?.startTicks && live.startTicks !== p.startTicks);
+  };
   const deadline = Date.now() + timeoutMs;
   do {
     if (gone(initial.core) && gone(initial.target) && observe().state === 'CLEAR' && await portFree()) {
@@ -573,7 +578,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   try { port = await (deps.findPort ?? findFreePort)(requestedPort, { strict: true }); }
   catch (error) {
     err(String(error.message).startsWith('PORT_IN_USE')
-      ? `jaco-lite: port ${requestedPort} is in use by an unverified listener; no process was stopped and no alternate port was selected.`
+      ? `jaco-lite: port ${requestedPort} is in use by an unverified listener; no alternate port was selected.`
       : `jaco-lite: no free port found from ${args.port ?? DEFAULT_PORT}.`);
     return 4;
   }
