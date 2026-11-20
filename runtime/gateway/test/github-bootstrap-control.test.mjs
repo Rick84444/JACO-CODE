@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, mkdirSync, rmdirSync, writeFileSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createGithubBootstrapControl, safeBootstrapHealthLines } from '../src/github-bootstrap-control.mjs';
@@ -583,4 +584,263 @@ test('Aura command without a readiness probe fails closed as NOT_READY',async()=
     repo:'Rick84444/JACO-CODE',token:'token',actor:'Rick84444',stateFile:stateFile()}).pollOnce();
   assert.equal(result.processed[0].status,'NOT_READY');
   assert.equal(goals,0);
+});
+
+
+// Reliability regressions: no real network, process activation or repo mutation.
+function reliabilityIssue(number, commandId, extra = {}) {
+  return {
+    number, title: '[JACO BOOT] reliability regression', user: { login: 'Rick84444' },
+    body: '<!-- jaco-bootstrap-control:v1 -->\n' + JSON.stringify({
+      schema: 'jaco.bootstrap-control/v1', commandId, op: 'system.activate',
+    }), ...extra,
+  };
+}
+
+function reliabilityControl({file, fetchImpl, system, ...rest}) {
+  return createGithubBootstrapControl({
+    system, fetchImpl, enabled: true, repo: 'Rick84444/JACO-CODE',
+    token: 'mock-token', actor: 'Rick84444', stateFile: file, ...rest,
+  });
+}
+
+function readJournal(file, id) {
+  return JSON.parse(readFileSync(join(file + '.journal', createHash('sha256').update(id).digest('hex') + '.json'), 'utf8'));
+}
+
+test('durable claim precedes activation; acknowledged terminal receipt is retained', async () => {
+  const file = stateFile(), id = 'claim-before-dispatch-001', issue = reliabilityIssue(901, id);
+  let actions = 0;
+  const control = reliabilityControl({file, system: {
+    async activate() {
+      actions++;
+      assert.equal(readJournal(file, id).phase, 'CLAIMED');
+      return {state:'READY'};
+    }
+  }, fetchImpl: async (url, opts = {}) => {
+    if (url.includes('/issues?')) return response(200, [issue]);
+    if (opts.method === 'POST') return response(201, {});
+    if (opts.method === 'PATCH') return response(200, {});
+    throw Error('unexpected request');
+  }});
+  assert.equal((await control.pollOnce()).processed[0].status, 'READY');
+  const record = readJournal(file, id);
+  assert.equal(record.phase, 'TERMINAL');
+  assert.equal(record.delivered, true);
+  assert.equal(record.state, 'READY');
+  assert.deepEqual((await control.pollOnce()).processed, []);
+  assert.equal(actions, 1);
+});
+
+test('ambiguous terminal comment POST is reconciled after restart without activation replay', async () => {
+  const file = stateFile(), id = 'outbox-post-ambiguous-001', issue = reliabilityIssue(902, id);
+  let actions = 0, closed = false, lost = false;
+  const notes = [];
+  const system = {async activate() { actions++; return {state:'READY'}; }};
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.includes('/issues?')) return response(200, closed ? [] : [issue]);
+    if (url.includes('/comments?')) return response(200, notes.map(body => ({body,user:{login:'Rick84444'}})));
+    if (opts.method === 'POST') {
+      const body = JSON.parse(opts.body).body; notes.push(body);
+      if (body.includes('jaco-bootstrap-receipt:') && !lost) {
+        lost = true;
+        throw Error('connection reset after GitHub stored receipt');
+      }
+      return response(201, {});
+    }
+    if (opts.method === 'PATCH') { closed = true; return response(200, {}); }
+    throw Error('unexpected request');
+  };
+  const make = () => reliabilityControl({file, system, fetchImpl});
+  assert.equal((await make().pollOnce()).processed[0].status, 'READY');
+  assert.equal(readJournal(file, id).delivered, false);
+  assert.equal(readJournal(file, id).state, 'READY');
+  assert.equal(closed, false);
+  const restarted = make();
+  await restarted.pollOnce();
+  assert.equal(readJournal(file, id).delivered, true);
+  assert.equal(restarted.status().pendingReceipts, 0);
+  assert.equal(closed, true);
+  assert.equal(actions, 1);
+  assert.equal(notes.filter(n=>n.includes('jaco-bootstrap-receipt:')).length, 1);
+});
+
+test('closure failure does not erase successful result or duplicate the terminal comment', async () => {
+  const file = stateFile(), id = 'outbox-close-failed-001', issue = reliabilityIssue(903, id);
+  let posts = 0, actions = 0, closes = 0;
+  const system = {async activate() { actions++; return {state:'READY'}; }};
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.includes('/issues?')) return response(200, [issue]);
+    if (opts.method === 'POST') { posts++; return response(201, {}); }
+    if (opts.method === 'PATCH') {
+      if (++closes === 1) return response(503, {message:'temporary outage'});
+      return response(200, {});
+    }
+    throw Error('unexpected request');
+  };
+  const make = () => reliabilityControl({file, system, fetchImpl});
+  const first = make();
+  assert.equal((await first.pollOnce()).processed[0].status, 'READY');
+  assert.equal(first.status().pendingReceipts, 1);
+  assert.equal(readJournal(file,id).commentSent, true);
+  await make().pollOnce();
+  assert.equal(readJournal(file,id).delivered, true);
+  assert.deepEqual([actions, posts, closes], [1,2,2]);
+});
+
+test('a stranded claim is UNKNOWN, not auto-dispatched after restart', async () => {
+  const file = stateFile(), id = 'stranded-claim-001', issue = reliabilityIssue(904, id);
+  mkdirSync(file + '.journal');
+  writeFileSync(join(file + '.journal', createHash('sha256').update(id).digest('hex') + '.json'), JSON.stringify({
+    schema:'jaco.bootstrap-journal/v1', commandId:id, op:'system.activate', issueNumber:904,
+    phase:'CLAIMED', pid:process.pid, at:new Date().toISOString(),
+  }));
+  let actions = 0; const notes = [];
+  const control = reliabilityControl({file, system:{async activate(){actions++;}}, fetchImpl: async (url,opts={})=>{
+    if (url.includes('/issues?')) return response(200,[issue]);
+    if (opts.method === 'POST') {notes.push(JSON.parse(opts.body).body);return response(201,{});}
+    if (opts.method === 'PATCH') return response(200,{});
+    throw Error('unexpected request');
+  }});
+  await control.pollOnce();
+  assert.equal(actions, 0);
+  assert.equal(readJournal(file,id).state,'UNKNOWN');
+  assert.equal(readJournal(file,id).delivered,true);
+  assert.match(notes[0], /UNKNOWN/);
+  assert.equal(control.status().lastProcessed.status,'UNKNOWN');
+});
+
+test('two simultaneous pollers sharing a journal cannot dispatch identical command twice', async () => {
+  const file = stateFile(), id = 'parallel-command-claim-001', issue = reliabilityIssue(905,id);
+  let actions=0, release, started;
+  const hold = new Promise(r=>{release=r;});
+  const entered = new Promise(r=>{started=r;});
+  const system={async activate(){actions++; started(); await hold; return {state:'READY'};}};
+  const fetchImpl=async(url,opts={})=>{
+    if(url.includes('/issues?'))return response(200,[issue]);
+    if(opts.method==='POST')return response(201,{});
+    if(opts.method==='PATCH')return response(200,{});
+    throw Error('unexpected request');
+  };
+  const first=reliabilityControl({file,system,fetchImpl});
+  const second=reliabilityControl({file,system,fetchImpl});
+  const running=first.pollOnce();
+  await entered;
+  try {
+    assert.deepEqual((await second.pollOnce()).processed,[]);
+    assert.equal(readJournal(file,id).phase,'CLAIMED');
+    assert.equal(actions,1);
+  } finally { release(); await running; }
+  assert.equal(readJournal(file,id).state,'READY');
+});
+
+test('journal storage fault clears inFlight so a repaired state path can poll again', async () => {
+  const file=stateFile();
+  let requests=0;
+  const control=reliabilityControl({file,system:{},fetchImpl:async()=>{requests++; return response(200,[]);}});
+  mkdirSync(file);
+  await assert.rejects(control.pollOnce());
+  assert.equal(requests,0);
+  rmdirSync(file);
+  assert.equal((await control.pollOnce()).enabled,true);
+  assert.equal(requests,1);
+  assert.ok(control.status().lastSuccessfulPollAt);
+});
+
+test('explicit API mode fails closed when token absent; does not read or execute git-ref', async()=>{
+  let reads=0;
+  const control=reliabilityControl({file:stateFile(),system:{},token:'',transportMode:'github-api',
+    fetchImpl:async()=>{throw Error('no HTTP without token');},
+    gitReadImpl:async()=>{reads++;throw Error('no implicit fallback');}
+  });
+  await assert.rejects(control.pollOnce(),/GITHUB_BOOTSTRAP_TOKEN_REQUIRED/);
+  assert.equal(reads,0);
+  assert.equal(control.status().inboxState,'AUTH_REQUIRED');
+  assert.equal(control.status().transport,'github-api');
+});
+
+test('unauthorized API transport does not silently fall back to git-ref',async()=>{
+  let reads=0;
+  const control=reliabilityControl({file:stateFile(),system:{},transportMode:'auto',
+    fetchImpl:async()=>response(401,{message:'Bad credentials'}),
+    gitReadImpl:async()=>{reads++;return '';}
+  });
+  await assert.rejects(control.pollOnce(),/GITHUB_BOOTSTRAP_HTTP_401/);
+  assert.equal(reads,0);
+  assert.equal(control.status().transport,'github-api');
+});
+
+test('empty tokenless inbox is distinguished from failed or unchecked polling',async()=>{
+  const control=reliabilityControl({file:stateFile(),system:{},token:'',transportMode:'git-ref',
+    gitReadImpl:async()=>'',fetchImpl:async()=>{throw Error('unexpected API');}
+  });
+  assert.equal(control.status().inboxState,'UNCHECKED');
+  await control.pollOnce();
+  assert.equal(control.status().inboxState,'GIT_REF_EMPTY');
+  assert.equal(control.status().writeback,'local-only');
+  assert.ok(control.status().lastSuccessfulPollAt);
+});
+
+test('issue listing paginates open owner issues before filtering',async()=>{
+  const file=stateFile(),id='pagination-command-001';
+  let requests=[],actions=0;
+  const issue=reliabilityIssue(906,id);
+  const control=reliabilityControl({file,system:{async activate(){actions++;return {state:'READY'};}},fetchImpl:async(url,opts={})=>{
+    if(url.includes('/issues?')){
+      const page=new URL(url).searchParams.get('page');requests.push(page);
+      return response(200,page==='1'?Array.from({length:100},()=>({title:'ordinary issue'})):[issue]);
+    }
+    if(opts.method==='POST')return response(201,{});
+    if(opts.method==='PATCH')return response(200,{});
+    throw Error('unexpected request');
+  }});
+  await control.pollOnce();
+  assert.deepEqual(requests,['1','2']);
+  assert.equal(actions,1);
+});
+
+test('legacy RUNNING receipt is not executed again when upgrading from old journal format',async()=>{
+  const file=stateFile(),id='legacy-running-command-001';
+  const issue=reliabilityIssue(907,id,{comments:1});
+  let actions=0;
+  const control=reliabilityControl({file,system:{async activate(){actions++;return {state:'READY'};}},fetchImpl:async(url,opts={})=>{
+    if(url.includes('/issues?'))return response(200,[issue]);
+    if(url.includes('/comments?'))return response(200,[{user:{login:'Rick84444'},body:
+      '<!-- jaco-bootstrap-status:v1 -->\n- command: '+String.fromCharCode(96)+id+String.fromCharCode(96)+'\n- operation: '+String.fromCharCode(96)+'system.activate'+String.fromCharCode(96)+'\n- status: **RUNNING**'}]);
+    if(opts.method==='POST')return response(201,{});
+    if(opts.method==='PATCH')return response(200,{});
+    throw Error('unexpected request');
+  }});
+  assert.equal((await control.pollOnce()).processed[0].status,'UNKNOWN');
+  assert.equal(actions,0);
+  assert.equal(readJournal(file,id).state,'UNKNOWN');
+});
+
+test('write preflight failure records NOT_DISPATCHED and never activates',async()=>{
+  const file=stateFile(),id='preflight-failed-001';let actions=0,posts=0;
+  const issue=reliabilityIssue(908,id);
+  const control=reliabilityControl({file,system:{async activate(){actions++;}},fetchImpl:async(url,opts={})=>{
+    if(url.includes('/issues?'))return response(200,[issue]);
+    if(opts.method==='POST')return ++posts===1?response(403,{message:'Forbidden'}):response(201,{});
+    if(opts.method==='PATCH')return response(200,{});
+    throw Error('unexpected request');
+  }});
+  assert.equal((await control.pollOnce()).processed[0].status,'NOT_DISPATCHED');
+  assert.equal(readJournal(file,id).state,'NOT_DISPATCHED');
+  await control.pollOnce();
+  assert.equal(actions,0);
+});
+
+test('legacy handled IDs are never evicted at 500 entries',async()=>{
+  const file=stateFile(), ids=Array.from({length:600},(_,i)=>'legacy-command-'+i);
+  writeFileSync(file,JSON.stringify({schema:'jaco.bootstrap-state/v1',handled:ids}));
+  const control=reliabilityControl({file,system:{},fetchImpl:async()=>response(200,[])});
+  await control.pollOnce();
+  assert.equal(JSON.parse(readFileSync(file,'utf8')).handled.length,600);
+  assert.equal(readdirSync(file+'.journal').length,0);
+});
+
+test('corrupt legacy state fails closed instead of dropping deduplication history',()=>{
+  const file=stateFile();writeFileSync(file,'{"handled":');
+  assert.throws(()=>reliabilityControl({file,system:{},fetchImpl:async()=>response(200,[])}),/BOOTSTRAP_STATE_UNREADABLE/);
 });
