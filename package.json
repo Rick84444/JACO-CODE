@@ -11,6 +11,7 @@
     "jaco:start": "node agents/lib/local-stack.mjs --open",
     "jaco:activate": "node agents/jaco-cli.mjs activate",
     "jaco:status": "node agents/jaco-cli.mjs status",
+    "jaco:relay": "node agents/jaco-cli.mjs relay",
     "jaco:preflight": "node agents/lib/local-stack.mjs --preflight",
     "dev": "npm --prefix runtime run dev",
     "start": "node agents/hands-off-agent.mjs",
