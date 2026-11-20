@@ -20,7 +20,10 @@ delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
 
 let token = process.env.JACO_GITHUB_BOOTSTRAP_TOKEN || process.env.JACO_GITHUB_CONTROL_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '';
 // Without a token the Sentinel can read but never answer or close an issue; take the gh CLI login from the OS keyring.
-if (!token) try { token = execFileSync('gh', ['auth', 'token'], { encoding: 'utf8', windowsHide: true }).trim(); } catch { /* git-ref transport */ }
+if (!token && process.env.JACO_GITHUB_BOOTSTRAP_ENABLE === '1') {
+  try { token = execFileSync('gh', ['auth', 'token'], { encoding: 'utf8', windowsHide: true }).trim(); }
+  catch { /* explicit legacy git-ref transport */ }
+}
 
 // The Sentinel reads its bind settings from names the local stack uses for the ChatGPT gateway. Set them only while
 // the frozen Sentinel config loads, so the jaco CLI and the stack it starts still see the stack's own values.
@@ -32,7 +35,9 @@ const sentinelOnly = {
 };
 const saved = Object.fromEntries(Object.keys(sentinelOnly).map(key => [key, process.env[key]]));
 Object.assign(process.env, sentinelOnly, {
-  JACO_GITHUB_BOOTSTRAP_ENABLE: '1',
+  // Do not turn on a developer's GitHub receiver just because a customer
+  // launched the Sentinel. Explicit old installations stay supported.
+  JACO_GITHUB_BOOTSTRAP_ENABLE: process.env.JACO_GITHUB_BOOTSTRAP_ENABLE || '0',
   JACOCTL_PATH: path.join(repo, 'agents', 'jaco-cli.mjs'),
   JACO_ROOT: path.join(repo, 'runtime'),
   JACO_REPO_ROOT: repo,
