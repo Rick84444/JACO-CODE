@@ -37,9 +37,10 @@ export const config = Object.freeze({
   // merely because it may start an already-installed runtime.
   allowMcpUpdate: process.env.JACO_MCP_ALLOW_UPDATE === '1',
   githubBootstrapEnabled: process.env.JACO_GITHUB_BOOTSTRAP_ENABLE === '1',
-  githubBootstrapRepo: process.env.JACO_GITHUB_BOOTSTRAP_REPO || process.env.JACO_GITHUB_CONTROL_REPO || 'Rick84444/jaco-code',
+  githubBootstrapRepo: process.env.JACO_GITHUB_BOOTSTRAP_REPO || process.env.JACO_GITHUB_CONTROL_REPO || '',
   githubBootstrapToken: process.env.JACO_GITHUB_BOOTSTRAP_TOKEN || process.env.JACO_GITHUB_CONTROL_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '',
-  githubBootstrapActor: process.env.JACO_GITHUB_BOOTSTRAP_ACTOR || process.env.JACO_GITHUB_CONTROL_ACTOR || 'Rick84444',
+  githubBootstrapActor: process.env.JACO_GITHUB_BOOTSTRAP_ACTOR || process.env.JACO_GITHUB_CONTROL_ACTOR ||
+    (process.env.JACO_GITHUB_BOOTSTRAP_REPO || process.env.JACO_GITHUB_CONTROL_REPO || '').split('/')[0],
   githubBootstrapPollMs: int('JACO_GITHUB_BOOTSTRAP_POLL_MS', 15000),
   requestTimeoutMs: int('JACO_GATEWAY_TIMEOUT_MS', 30000),
   jacoctl: defaultJacoctl()
