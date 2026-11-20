@@ -118,6 +118,30 @@ export function contextPacketIntro(mission, {
  */
 // Roughly what fits the default per-call budget at reference prices, with room for tool schemas.
 const COST_RETRY_CONTEXT_CHARS = 20_000;
+// A fetch can be a verified HTTP observation without yielding usable page content.
+// Recovery is a normal leased browser action, never an authorization override.
+export function webRecoveryCall(mission, tools, resolve) {
+  const history = Array.isArray(mission?.receipts) ? mission.receipts : [];
+  const last = history.at(-1);
+  if (last?.type !== 'web-fetch' || last.outcomeUnknown || last.input?.expect ||
+      !mission.allowedTasks?.includes('browser-survey-site')) return null;
+  const r = last.result || {};
+  const url = last.input?.url || r.url;
+  let parsed;
+  try { parsed = new URL(url); } catch { return null; }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return null;
+  const evidence = String(r.excerpt || '') + ' ' + String(last.error || r.error || '');
+  // Explicit access challenges are not permission to try a different transport.
+  if ([401,403,407,429,451].includes(Number(r.status)) ||
+      /captcha|verify (?:that )?you are human|access denied|bot detection|rate limit|too many requests|sign in to continue/i.test(evidence)) return null;
+  if (!/enable javascript|javascript (?:is required|must be enabled)|requires javascript|turn on javascript|fetch failed|timed? ?out|timeout|ECONNRESET/i.test(evidence)) return null;
+  if (history.some(x => x.type === 'browser-survey-site' && x.input?.url === url)) return null;
+  const tool = tools.find(t => resolve(t.function?.name)?.type === 'browser-survey-site');
+  if (!tool) return null;
+  return { content: '', tool_calls: [{ id: 'web_recovery_' + history.length, type: 'function',
+    function: { name: tool.function.name, arguments: JSON.stringify({ url, label: 'Web research recovery', say: 'I will read the page using the browser because the fetch did not provide usable content.' }) } }] };
+}
+
 const SAYS_BLOCKED = /\b(?:i am|i'm|i was) (?:blocked|unable|not able)\b|\bi (?:cannot|can't|could not|couldn't) (?:complete|proceed|continue|do|fetch|perform|finish|create|write|save|edit|modify|make)\b|\bi do(?:n't| not) have (?:a|an|the|any) (?:\w+ )?(?:tool|access|permission)\b|(?:jag kan inte|jag saknar|jag har inte)/i;
 export async function runAgentMission({
   client, owner, chat, toolsFor, execute, system,
@@ -312,7 +336,7 @@ export async function runAgentMission({
       }
       let nudge = null;
       let reply;
-      try { reply = await chat({ messages, tools, mission }); modelErrors = 0; costCondensed = false; }
+      try { reply = webRecoveryCall(mission, tools, resolve) || await chat({ messages, tools, mission }); modelErrors = 0; costCondensed = false; }
       catch (error) {
         modelErrors++;
         log('warn', `model error ${modelErrors}/${maxModelErrors}: ${errorText(error)}`);
