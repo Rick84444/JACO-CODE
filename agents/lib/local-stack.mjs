@@ -107,6 +107,9 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
     env.JACO_WORKPLACE_SUPERVISE_MODEL = '0';
     env.JACO_MODEL_PROVIDER = 'aura';
   }
+  env.JACO_VSCODE_EMBED ??= '1';
+  env.JACO_AUTO_APPROVE_LEVEL ??= '5';
+  env.JACO_AUTO_START_TOOLS ??= '1';
   env.JACO_RELEASE_ROOT = runtime;
   portEnvironment(env, ports);
   // One model choice for every service. Without this each service reads the file under its own working
