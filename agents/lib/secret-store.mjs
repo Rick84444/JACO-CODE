@@ -56,7 +56,35 @@ export class SecretStore {
     fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
     fs.renameSync(tmp, this.file);
   }
+  // All writers share the same cross-process lock. Readers continue to see the last complete
+  // atomic snapshot. Fail boundedly instead of overwriting another process's credentials.
+  #withWriteLock(fn) {
+    fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    const lock = this.file + '.write-lock';
+    const deadline = Date.now() + 1000;
+    for (;;) {
+      try { fs.mkdirSync(lock, { mode: 0o700 }); break; }
+      catch (error) {
+        if (error?.code !== 'EEXIST') throw error;
+        if (Date.now() >= deadline) throw Error('VAULT_WRITE_BUSY');
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+      }
+    }
+    try { return fn(); }
+    finally { fs.rmdirSync(lock); }
+  }
   set(name, value, meta = {}) {
+    return this.#withWriteLock(() => this.#setUnlocked(name, value, meta));
+  }
+  setIfAbsent(name, value, meta = {}) {
+    const key = validateSecretName(name);
+    return this.#withWriteLock(() => {
+      if (this.has(key)) return false;
+      this.#setUnlocked(key, value, meta);
+      return true;
+    });
+  }
+  #setUnlocked(name, value, meta) {
     const key = validateSecretName(name);
     const text = String(value ?? '');
     if (!text) throw new Error('SECRET_VALUE_REQUIRED');
@@ -95,11 +123,13 @@ export class SecretStore {
   list() { return Object.keys(this.#read().secrets).sort().map(name => this.describe(name)); }
   delete(name) {
     const key = validateSecretName(name);
-    const data = this.#read();
-    if (!data.secrets[key]) return false;
-    delete data.secrets[key];
-    this.#write(data);
-    return true;
+    return this.#withWriteLock(() => {
+      const data = this.#read();
+      if (!data.secrets[key]) return false;
+      delete data.secrets[key];
+      this.#write(data);
+      return true;
+    });
   }
 }
 
