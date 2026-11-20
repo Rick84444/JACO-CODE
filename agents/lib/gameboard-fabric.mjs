@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createStrategicBoard, simulateStrategicBoard, rankStrategicMoves } from './aura-strategic-board.mjs';
+import { createStrategicBoard, simulateStrategicBoard, rankStrategicMoves, adaptiveMissionStrategy } from './aura-strategic-board.mjs';
 
 export const GAMEBOARD_FABRIC_SCHEMA = 'jaco.gameboard-fabric/v1';
 
@@ -101,6 +101,7 @@ export function gameboardProjection({
       source: clipped(m.source, 80), phase: clipped(m.phase, 40) || null,
       updatedAt: clipped(m.updatedAt, 60) || null,
       actionCount: receipts.length, verifiedActions,
+      tacticalStrategy: adaptiveMissionStrategy(m),
       reviewAvailable: m.reviewAvailable === true,
       lastError: lastFailure ? clipped(lastFailure.error, 260) : null,
       // Operator control state, read from the mission ledger: what the Gameboard's buttons may offer.
