@@ -65,13 +65,13 @@ export function privateAuraTools({core,env=process.env}){
     tool('jaco_aura_android_bonsai','Control approved Android app via Bonsai','Run one bounded, operator-requested on-device Android task: ChatGPT private MCP -> authenticated Aura/Core relay -> local Bonsai 4B -> native Android Accessibility. Requires a signed mandate allowing the selected Android package and a local Android Native Engine. No direct system access, public Git relay, payment, login, arbitrary shell or permissions. A model completion is not proof unless the observed UI satisfies its postcondition.',androidBonsaiSchema,async args=>{
       const a=androidBonsaiSchema.parse(args);
       if(!noSecrets(a.instruction))throw Error('JACO_PRIVATE_AURA_SECRET_REFUSED');
-      const r=await call('/api/relay/android-bonsai',{method:'POST',body:JSON.stringify(a)});
+      const r=await call('/api/relay/android-bonsai',{method:'POST',body:JSON.stringify(a),signal:AbortSignal.timeout(90_000*(a.maxSteps||8))});
       if(!r?.task || r.task.schema!=='jaco.bonsai-android-task/v1')throw Error('JACO_ANDROID_BONSAI_RECEIPT_UNAVAILABLE');
       // Return bounded evidence only, never screen content, user text or raw tool calls.
       return {taskId:r.task.taskId,missionId:r.task.missionId,
         status:r.task.status,verifiedSteps:r.task.verifiedSteps,attemptedSteps:r.task.attemptedSteps,
         actionReceipts:(r.task.receipts||[]).slice(0,20).map(x=>({id:x.action_id,type:x.action_type,verified:x.verified===true,success:x.success===true})),
-        semanticCompletionVerified:r.success===true};
+        observedTextPostcondition:r.success===true};
     }),
     tool('jaco_aura_steer_mission','Adjust Aura mission','Queue an operator-requested change of strategy in an existing mission. Existing authority, scope and running action are unchanged.',steerSchema,async args=>{
       const a=steerSchema.parse(args);
