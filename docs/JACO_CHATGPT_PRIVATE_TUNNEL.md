@@ -59,6 +59,22 @@ Important: installing Plugin Creator is NOT the same as having account/workspace
 - JACO's dollar ledger is an internal estimate, not independently proven vendor billing.
 - Repository tests demonstrate the MCP tool profile and KnowledgeStore interface. Only a successful target-host call from ChatGPT proves that the private runtime bridge is active.
 
+## Git-ref relay is not a private mission tunnel
+
+The optional public Git-ref communication relay can be enabled on the
+existing host without a manual token:
+
+```bash
+npm run jaco:relay -- enable
+npm run jaco:relay -- status
+```
+
+This only enables the existing Workplace `MESSAGE/QUESTION/ANSWER` channel.
+It does **not** install an OpenAI MCP connector, authorize arbitrary goals,
+or expose a ChatGPT session to localhost. A real mission-capable connection
+still requires connecting the separately authenticated private MCP tool
+profile and verifying its eight tools in the ChatGPT client.
+
 ## Private Aura mission profile (optional, local operator enabled)
 
 After validating the read-only tunnel, the operator may enable a dedicated private
