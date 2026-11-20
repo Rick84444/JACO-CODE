@@ -122,7 +122,11 @@ explicit access settings and environment overrides take precedence. Set `JACO_AU
 for lower idle overhead and on-demand tools. New Aura organizations start with scoped
 development grants and autonomy level 5; saved restrictions are never overwritten.
 Agent-driven policy editing is off by default. The operator retains high-impact approvals.
-VS Code loopback embedding is enabled on full and Lite startup.
+VS Code loopback embedding is enabled on full and Lite startup. The installed extension can attach to this runtime; it is not installed automatically.
+
+Lite includes the existing Nova browser and CDP bridges. If Chromium/Chrome is installed and local Workplace is ready, the launcher allocates distinct loopback ports, starts a dedicated sandboxed browser profile, verifies both bridges and retries owned process failures up to three attempts. Core remains available when the browser is missing. A missing browser must still be installed by the operator/host setup (no automatic sudo). The browser launched in Pixel Debian is not Android Chrome.
+
+In Connections → Sign-ins → GitHub, the local operator can initiate GitHub CLI's official browser sign-in and configure Git's github.com credential helper without typing terminal commands. GitHub CLI must already be installed. The existing organization authentication is required when configured; no bypass is added. GitHub CLI may fall back to its own local credential file if the OS keyring is unavailable; this is disclosed in the UI. No account, password or OAuth access token is returned to Aura.
 No model is hardcoded or downloaded: choose any connected model in the IDE.
 An unavailable external model is not a Core startup prerequisite.
 
