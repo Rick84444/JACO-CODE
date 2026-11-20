@@ -1,4 +1,4 @@
-// lite/install.sh against a local release server: checksum refusal, update/rollback/prune, a downloaded Node.js
+// lite/install.sh against a local release server: checksum refusal, update/rollback/retention, a downloaded Node.js
 // checked against SHASUMS256, and uninstall. Needs sh, curl, unzip, tar and python3 (to make a zip); skipped elsewhere.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -118,7 +118,7 @@ test('install: an unsafe file name in latest.json is refused before anything is 
   assert.notEqual(r.code, 0); assert.match(r.err, /unsafe file/);
 });
 
-test('update: same build says up to date; a new build keeps the old one for rollback and removes older ones; rollback and uninstall work', { skip }, async t => {
+test('update: same build says up to date; new builds preserve all older files for running launchers; rollback and uninstall work', { skip }, async t => {
   const rel = await release(t, { builtAt: '2026-10-13T10:00:00.000Z' }), s = setup(t, rel);
   assert.equal((await run(SCRIPT, s.env)).code, 0);
   const again = await run(SCRIPT, s.env);
@@ -135,7 +135,8 @@ test('update: same build says up to date; a new build keeps the old one for roll
   assert.ok(fs.lstatSync(path.join(s.jl, 'previous')).isSymbolicLink());
   await build('2026-10-15T10:00:00.000Z');
   assert.equal((await run(launcher, s.env, ['update'])).code, 0);
-  assert.deepEqual(fs.readdirSync(path.join(s.jl, 'versions')).sort(), ['2026-10-14T10-00-00-000Z'.replace('T', 'T'), '2026-10-15T10-00-00-000Z'].map(x => x), 'the oldest build was removed');
+  assert.deepEqual(fs.readdirSync(path.join(s.jl, 'versions')).sort(), ['2026-10-13T10-00-00-000Z', '2026-10-14T10-00-00-000Z', '2026-10-15T10-00-00-000Z'], 'all builds remain available to running launchers');
+  assert.match(cmd(process.execPath, [path.join(s.jl, 'versions', '2026-10-13T10-00-00-000Z', 'start.mjs'), '--x'], s.env).stdout, /built=2026-10-13/, 'a pinned older launcher can still read its original files after two updates');
   assert.match(cmd(launcher, ['rollback'], s.env).stdout, /now on versions\/2026-10-14/);
   assert.match(cmd(launcher, ['--x'], s.env).stdout, /built=2026-10-14/);
   assert.match(cmd(launcher, ['doctor'], s.env).stdout, /built at *: 2026-10-14/);
@@ -191,8 +192,12 @@ test('install.ps1: installs from a checked download, keeps the real ISO build ti
   rel.setBuild({ '/latest.json': next.files['/latest.json'], '/jaco-lite-windows.zip': next.files['/jaco-lite-windows.zip'] });
   assert.equal((await runPs(env)).code, 0);
   assert.deepEqual(fs.readdirSync(path.join(home, 'jl', 'versions')).sort(), ['2026-10-13T10-00-00-000Z', '2026-10-14T10-00-00-000Z']);
+  const third = await release(t, { builtAt: '2026-10-15T10:00:00.000Z' });
+  rel.setBuild({ '/latest.json': third.files['/latest.json'], '/jaco-lite-windows.zip': third.files['/jaco-lite-windows.zip'] });
+  assert.equal((await runPs(env)).code, 0);
+  assert.deepEqual(fs.readdirSync(path.join(home, 'jl', 'versions')).sort(), ['2026-10-13T10-00-00-000Z', '2026-10-14T10-00-00-000Z', '2026-10-15T10-00-00-000Z']);
   const back = await runPs(env, { JACO_LITE_ACTION: 'rollback' });
-  assert.match(back.out, /now on .*2026-10-13T10-00-00-000Z/);
+  assert.match(back.out, /now on .*2026-10-14T10-00-00-000Z/);
   const gone = await runPs(env, { JACO_LITE_ACTION: 'uninstall', JACO_LITE_YES: '1' });
   assert.match(gone.out, /removed/); assert.equal(fs.existsSync(path.join(home, 'jl')), false);
 });
