@@ -77,3 +77,50 @@ test('concurrent processes preserve all independent credentials',async t=>{
  await Promise.all([0,1,2,3].map(run));
  assert.equal(new SecretStore({dir,env:{}}).list().length,48);
 });
+
+test('killed writer releases OS-backed lock without manual recovery', {timeout:10000}, async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'vault-crash-'));
+ const store=new SecretStore({dir,env:{}});
+ store.set('EXISTING_API_KEY','fixture-existing');
+ const dbFile=store.file+'.mutex.sqlite';
+ const code="const db=new (require('node:sqlite').DatabaseSync)(process.argv[1]);db.exec('BEGIN IMMEDIATE');console.log('locked');setInterval(()=>{},1000);";
+ const child=spawn(process.execPath,['-e',code,dbFile],{stdio:['ignore','pipe','ignore']});
+ const exited=new Promise(resolve=>child.once('exit',(code,signal)=>resolve({code,signal})));
+ t.after(async()=>{if(child.exitCode===null&&child.signalCode===null){child.kill('SIGKILL');await exited;}fs.rmSync(dir,{recursive:true,force:true});});
+ await new Promise((resolve,reject)=>{
+   let output=''; const timer=setTimeout(()=>reject(Error('lock handshake timeout')),3000);
+   child.once('error',e=>{clearTimeout(timer);reject(e);});
+   child.once('exit',()=>{clearTimeout(timer);reject(Error('child exited before handshake'));});
+   child.stdout.on('data',chunk=>{output+=chunk;if(output.includes('locked')){clearTimeout(timer);resolve();}});
+ });
+ assert.throws(()=>store.setIfAbsent('BLOCKED_API_KEY','fixture-blocked'),/VAULT_WRITE_BUSY/);
+ child.kill('SIGKILL');await exited;
+ assert.equal(store.setIfAbsent('RECOVERED_API_KEY','fixture-recovered'),true);
+ assert.equal(store.get('EXISTING_API_KEY'),'fixture-existing');
+ assert.equal(store.get('RECOVERED_API_KEY'),'fixture-recovered');
+ assert.equal(store.has('BLOCKED_API_KEY'),false);
+});
+test('missing or malformed master key cannot silently replace a populated vault',t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'vault-key-loss-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+ const store=new SecretStore({dir,env:{}});
+ store.set('EXISTING_API_KEY','fixture-existing');
+ const keyFile=path.join(dir,'secret.key'),key=fs.readFileSync(keyFile,'utf8');
+ const snapshot=fs.readFileSync(store.file,'utf8');
+ fs.unlinkSync(keyFile);
+ assert.throws(()=>store.get('EXISTING_API_KEY'),/JACO_SECRET_KEY_MISSING/);
+ assert.throws(()=>store.set('NEW_API_KEY','fixture-new'),/JACO_SECRET_KEY_MISSING/);
+ assert.equal(fs.existsSync(keyFile),false);
+ assert.equal(fs.readFileSync(store.file,'utf8'),snapshot);
+ fs.writeFileSync(keyFile,key+'zz');
+ assert.throws(()=>store.get('EXISTING_API_KEY'),/JACO_SECRET_KEY_MUST_BE_64_HEX/);
+ fs.writeFileSync(keyFile,key);
+ assert.equal(store.get('EXISTING_API_KEY'),'fixture-existing');
+});
+test('busy store aborts further write attempts without blocking unrelated runtime work',()=>{
+ let attempts=0;
+ const store={setIfAbsent:()=>{attempts++;throw Error('VAULT_WRITE_BUSY');}};
+ const r=importVaultText('render api fixture-render\nopenai fixture-openai\nqwen fixture-qwen',{store});
+ assert.equal(attempts,1);
+ assert.equal(r.failed.length,3);
+ assert.ok(r.failed.every(x=>x.reason==='VAULT_WRITE_BUSY'));
+});
