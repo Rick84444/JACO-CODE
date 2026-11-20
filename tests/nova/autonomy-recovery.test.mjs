@@ -72,3 +72,22 @@ test('web fetch still aborts at its configured deadline',async()=>{const result=
 test('durable web-fetch execution survives the old five-minute deadline',async t=>{const root=fs.mkdtempSync(path.join(os.tmpdir(),'nova-fetch-lease-'));const bus=new DurableMissionBus(root);const original=process.env.JACO_WEB_FETCH_TIMEOUT_MS;process.env.JACO_WEB_FETCH_TIMEOUT_MS='14400000';t.after(async()=>{if(original===undefined)delete process.env.JACO_WEB_FETCH_TIMEOUT_MS;else process.env.JACO_WEB_FETCH_TIMEOUT_MS=original;bus.close();await fs.promises.rm(root,{recursive:true,force:true});});let clock=1000000;const control=new NovaMissionControl(bus,{allowedTasks:['web-fetch'],now:()=>clock});const m=control.create({goal:'Read slow endpoint',idempotencyKey:'slow-web-lease-test',allowedTasks:['web-fetch']});const {token}=control.claim(m.id,'nova');control.begin(m.id,{owner:'nova',token,task:{type:'web-fetch',data:{url:'https://example.test'}}});clock+=300001;control.recoverExpired();assert.equal(control.get(m.id).phase,'EXECUTING');clock+=14430000;control.recoverExpired();
 // A read changes nothing: past its lease it is planned again instead of being held for the operator.
 assert.equal(control.get(m.id).phase,'READY');assert.equal(control.get(m.id).status,'ACTIVE');});
+
+test('web research automatically chooses an allowed browser tool for JavaScript-only content', async () => {
+  const {webRecoveryCall}=await import('../../agents/lib/agent-loop.mjs');
+  const tools=[{function:{name:'survey'}}];
+  const resolve=name=>name==='survey'?{type:'browser-survey-site'}:null;
+  const url='https://example.test/docs';
+  const last={type:'web-fetch',input:{url},ok:true,result:{status:200,excerpt:'Please enable JavaScript'}};
+  const mission={allowedTasks:['web-fetch','browser-survey-site'],receipts:[last]};
+  const call=webRecoveryCall(mission,tools,resolve);
+  assert.equal(call.tool_calls[0].function.name,'survey');
+  assert.equal(JSON.parse(call.tool_calls[0].function.arguments).url,url);
+  assert.equal(webRecoveryCall({...mission,allowedTasks:['web-fetch']},tools,resolve),null);
+  assert.equal(webRecoveryCall(mission,[],resolve),null);
+  for(const result of [{status:403,excerpt:'Please enable JavaScript'},{status:200,excerpt:'CAPTCHA: please enable JavaScript'},{status:429,excerpt:'timeout'},{status:200,excerpt:'Complete documentation'}]){
+    assert.equal(webRecoveryCall({...mission,receipts:[{...last,result}]},tools,resolve),null);
+  }
+  assert.equal(webRecoveryCall({...mission,receipts:[{type:'browser-survey-site',input:{url}},last]},tools,resolve),null);
+  assert.equal(webRecoveryCall({...mission,receipts:[{...last,input:{url,expect:{status:200}}}]},tools,resolve),null);
+});
