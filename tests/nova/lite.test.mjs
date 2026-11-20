@@ -60,6 +60,7 @@ test('launcher: Node version, arguments, free port, project folder and the serve
   assert.equal(parseArgs(['--whatsapp']).errors.length, 1);
   assert.equal(parseArgs(['--whatsapp-check']).whatsappCheck, true);
   assert.equal(parseArgs(['--port=99999']).errors.length, 1);
+  assert.equal(parseArgs(['--recover']).recover, true);
   assert.equal(parseArgs(['a', 'b', '--nope']).errors.length, 2);
   assert.match(HELP, /Node.js 22.5/);
 
@@ -483,7 +484,7 @@ test('startup: positively identify a previous same-workspace packaged Linux writ
     fs.mkdirSync(path.join(old, 'dist'), { recursive: true });
     fs.writeFileSync(path.join(old, 'dist', 'server.cjs'), '');
     fs.writeFileSync(path.join(old, 'start.mjs'), '');
-    fs.writeFileSync(path.join(old, 'release.json'), JSON.stringify({indexSha256:'a',clientSha256:'b',entry:'/assets/a.js'}));
+    fs.writeFileSync(path.join(old, 'release.json'), JSON.stringify({schema:'jaco.lite-release/v1',indexSha256:'a',clientSha256:'b',entry:'/assets/a.js'}));
     const lock = path.join(ledger, 'events.lock');
     const holder = {pid:112, host:'host', bootId:'boot', startTicks:'11', ownerId:'owner'};
     const writeLock = v => fs.writeFileSync(lock, JSON.stringify(v));
@@ -544,4 +545,33 @@ test('startup: reuse requires actual socket owner and verified current GUI bytes
   assert.equal((await recoverLiteStartup(opts)).action,'REUSE');
   assert.equal((await recoverLiteStartup({...opts,ownsPort:()=>false})).action,'BLOCKED');
   assert.equal((await recoverLiteStartup({...opts,release:{...release,clientSha256:'wrong'}})).action,'BLOCKED');
+});
+
+
+test('startup admission: blocked owner does not spawn anything; default port is strict', async () => {
+  const root=tmp(), install=path.join(root,'install'), project=path.join(root,'project');
+  try {
+    for (const file of ['dist/server.cjs','dist/index.html','dist/assets/test.js','dist/workplace.mjs',
+      'dist/jaco-editor.mjs','dist/connect.html','dist/nova.mjs','node_modules/express/package.json']) {
+      const full=path.join(install,file);
+      fs.mkdirSync(path.dirname(full),{recursive:true});fs.writeFileSync(full,'test fixture');
+    }
+    const html='<script type="module" src="/assets/test.js"></script>';
+    fs.writeFileSync(path.join(install,'dist/index.html'),html);
+    const sha=v=>crypto.createHash('sha256').update(v).digest('hex');
+    fs.writeFileSync(path.join(install,'release.json'),JSON.stringify({schema:'jaco.lite-release/v1',
+      workspace:'cognitive-live/v1',entry:'/assets/test.js',serverSha256:sha('test fixture'),indexSha256:sha(html),clientSha256:sha('test fixture')}));
+    fs.mkdirSync(path.join(project,'.jaco'),{recursive:true});
+    const opts={installDir:install,cwd:root,nodeVersion:'24.0.0',env:{},out:()=>{},err:()=>{},noSignals:true,
+      spawnImpl:()=>assert.fail('must not spawn children')};
+    let calls=0;
+    const blocked=await startLite([project,'--recover','--no-open'],{...opts,
+      recoverStartup:async ({port,recover})=>{assert.equal(port,3000); assert.equal(recover,true);calls++;return {action:'BLOCKED',reason:'LIVE_UNVERIFIED'}},
+      findPort:()=>assert.fail('must not choose port after ownership refusal')});
+    assert.equal(blocked,4);
+    assert.equal(calls,1);
+    const busy=await startLite([project,'--no-open'],{...opts,recoverStartup:async()=>({action:'START'}),
+      findPort:async (port,{strict})=>{assert.equal(port,3000);assert.equal(strict,true);throw Error('PORT_IN_USE:3000')}});
+    assert.equal(busy,4);
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
