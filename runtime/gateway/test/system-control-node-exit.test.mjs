@@ -77,3 +77,71 @@ test('independent Windows service health is DEGRADED while browser attachment is
     assert.equal(result.startup.browserAttachment,'FAILED');
   }finally{fs.rmSync(root,{recursive:true,force:true})}
 });
+
+
+test('Windows MCP health and status read the checkout receipt, not a stale repoRoot', async t => {
+  const checkout=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-checkout-'));
+  const staleRoot=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-stale-root-'));
+  t.after(()=>{fs.rmSync(checkout,{recursive:true,force:true});fs.rmSync(staleRoot,{recursive:true,force:true})});
+  const file=root=>path.join(root,'logs','startup','status.json');
+  for (const root of [checkout,staleRoot]) fs.mkdirSync(path.dirname(file(root)),{recursive:true});
+  fs.writeFileSync(file(checkout),JSON.stringify({
+    schema:'jaco.local-startup/v1',state:'READY',phase:'complete',
+    browserAttachment:'ATTACHED',expected:{browserAttachment:true}
+  }));
+  fs.writeFileSync(file(staleRoot),JSON.stringify({
+    schema:'jaco.local-startup/v1',state:'BLOCKED',phase:'browser-attachment',
+    browserAttachment:'FAILED',expected:{browserAttachment:true}
+  }));
+  const saved=process.env.JACO_DATA_DIR;
+  delete process.env.JACO_DATA_DIR;
+  try {
+    const system=new SystemControl({
+      jacoctl:path.join(checkout,'agents','jaco-cli.mjs'),
+      repoRoot:staleRoot,runtimeRoot:path.join(checkout,'runtime'),
+      core:{request:async()=>({success:true})},
+      fetchImpl:async()=>({ok:true,json:async()=>({
+        product:'JACO Workplace',supervisedAgents:{state:'RUNNING',nova:{state:'RUNNING'}}
+      })}),
+      execFileImpl:async()=>({stdout:JSON.stringify({
+        schema:'jaco.activation/v2',ok:true,problems:[]}),stderr:''}),
+    });
+    assert.equal(system.startupDataRoot,checkout);
+    const health=await system.health();
+    assert.equal(health.status,'READY');
+    assert.equal(health.startup.browserAttachment,'ATTACHED');
+    assert.equal(health.startup.ok,true);
+    const status=await system.status();
+    assert.equal(status.ok,true);
+    assert.equal(status.startup.state,'READY');
+  } finally {
+    if (saved === undefined) delete process.env.JACO_DATA_DIR;
+    else process.env.JACO_DATA_DIR=saved;
+  }
+});
+
+test('explicit startup data root overrides checkout, and missing evidence fails closed', async t => {
+  const checkout=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-checkout-'));
+  const dataRoot=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-data-root-'));
+  t.after(()=>{fs.rmSync(checkout,{recursive:true,force:true});fs.rmSync(dataRoot,{recursive:true,force:true})});
+  const system=new SystemControl({
+    jacoctl:path.join(checkout,'agents','jaco-cli.mjs'),
+    repoRoot:checkout,startupDataRoot:dataRoot,
+    core:{request:async()=>({success:true})},
+    fetchImpl:async()=>({ok:true,json:async()=>({
+      product:'JACO Workplace',supervisedAgents:{state:'RUNNING',nova:{state:'RUNNING'}}
+    })}),
+    execFileImpl:async()=>({stdout:JSON.stringify({
+      schema:'jaco.activation/v2',ok:true,problems:[]}),stderr:''}),
+  });
+  assert.equal((await system.health()).status,'DEGRADED');
+  assert.equal((await system.status()).startup.state,'UNVERIFIED');
+  const receipt=path.join(dataRoot,'logs','startup','status.json');
+  fs.mkdirSync(path.dirname(receipt),{recursive:true});
+  fs.writeFileSync(receipt,JSON.stringify({
+    schema:'jaco.local-startup/v1',state:'READY',phase:'complete',
+    browserAttachment:'ATTACHED',expected:{browserAttachment:true}
+  }));
+  assert.equal((await system.health()).status,'READY');
+  assert.equal((await system.status()).startup.ok,true);
+});
