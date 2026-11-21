@@ -8,6 +8,7 @@ import {
   classifyMcpChildExit,
   isOneShotSellerScript,
   validateServerEntry,
+  agentRefusal,
 } from '../../runtime/src/server/mcp/stdioMcpHost.mjs';
 import { HttpMcpClient, classifyMcpNetworkError } from '../../runtime/src/server/mcp/httpMcpClient.mjs';
 import { remedyFor } from '../../runtime/src/server/connected/automaticConnections.mjs';
@@ -65,4 +66,15 @@ test('HTTP MCP transport diagnostics are stable and do not disclose endpoint err
   assert.equal(classifyToolFailure('MCP_TRANSPORT_TIMEOUT').kind, 'TIMEOUT');
   assert.match(remedyFor('MCP_TRANSPORT_DNS'), /DNS/);
   assert.match(remedyFor('MCP_ONE_SHOT_NOT_MCP_SERVER'), /not an MCP server/);
+});
+
+test('read and write tools retain the local policy boundary', () => {
+  const readTool = { name: 'observe', readOnly: true };
+  const writeTool = { name: 'change', readOnly: false };
+  const local = { id: 'fixture', agentAccess: 'write', transport: 'stdio', deny: [] };
+  assert.equal(agentRefusal(local, readTool), null);
+  assert.equal(agentRefusal(local, writeTool), null, 'write-enabled local MCP server may expose changing tools to a permitted mission');
+  assert.equal(agentRefusal({ ...local, agentAccess: 'read' }, writeTool), 'MCP_TOOL_NOT_READ_ONLY');
+  assert.equal(agentRefusal({ ...local, transport: 'http' }, writeTool), 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY');
+  assert.equal(agentRefusal({ ...local, deny: ['change'] }, writeTool), 'MCP_TOOL_DENIED');
 });
