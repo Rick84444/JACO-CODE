@@ -2559,7 +2559,7 @@ const notifyPhone = async (action) => {
     if (!GATEWAY_TOKEN || GATEWAY_TOKEN.length < 24)
       return res.status(503).json({success:false,error:'LINK_SENTINEL_SHARED_AUTH_REQUIRED'});
     const port = process.env.JACO_SENTINEL_PORT || process.env.JACO_GATEWAY_PORT || '2999';
-    if (!/^\\d{1,5}$/.test(port) || Number(port) < 1 || Number(port) > 65535)
+    if (!Number.isInteger(Number(port)) || String(Number(port)) !== String(port) || Number(port) < 1 || Number(port) > 65535)
       return res.status(503).json({success:false,error:'LINK_SENTINEL_PORT_INVALID'});
     try {
       const result = await fetch('http://127.0.0.1:' + port + '/api/link-host/' + action, {
