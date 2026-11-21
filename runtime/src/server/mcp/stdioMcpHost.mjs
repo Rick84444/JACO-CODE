@@ -190,7 +190,7 @@ export function loadServerConfig({ configFile, repoRoot, runtimeRoot }) {
       if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
       if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
       servers[id] = withAccess({ name: String(s.name || id), role: String(s.role || ''), transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, icon: id === 'huggingface' ? 'huggingface' : undefined }, s);
-      } catch { servers[id] = { name: String(s.name || id), role: '', validationError: 'MCP_CONFIGURATION_INVALID' }; }
+      } catch { servers[id] = { name: String(s.name || id), role: '', transport: 'http', validationError: 'MCP_CONFIGURATION_INVALID' }; }
       continue;
     }
     // An entry without a command only changes a built-in server's access (icon, agentAccess, deny).
@@ -199,7 +199,7 @@ export function loadServerConfig({ configFile, repoRoot, runtimeRoot }) {
       continue;
     }
     if (isOneShotSellerScript(s.command, s.args)) {
-      servers[id] = { name: String(s.name || id).slice(0, 80), role: '', validationError: 'MCP_ONE_SHOT_NOT_MCP_SERVER' };
+      servers[id] = { name: String(s.name || id).slice(0, 80), role: '', transport: 'stdio', validationError: 'MCP_ONE_SHOT_NOT_MCP_SERVER' };
       continue;
     }
     // Migrate exactly the old built-in uvx commands, preserving operator access settings.
@@ -459,7 +459,7 @@ export class StdioMcpHost {
     return Object.entries(this.servers()).map(([id, def]) => {
       const c = this.clients.get(id);
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
-      if (def.validationError) return { id, name: def.name, role: def.role, transport: 'http', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
+      if (def.validationError) return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
       const sameLaunch = Boolean(c && launchKey(c.def) === launchKey(def));
       const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => ({ ...t, readOnly: Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name)), agentAllowed: agentRefusal(def, t) === null }));
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
