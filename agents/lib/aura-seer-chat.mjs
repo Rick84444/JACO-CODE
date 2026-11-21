@@ -1,4 +1,5 @@
 import { seerCompletionResult } from './seer-client.mjs';
+import { JACO_MODE_RULES } from './strategic-context.mjs';
 
 export const AURA_CANONICAL_OBJECTIVE = "Aura is JACO's only operator agent. She receives goals and uses JACO's internal planning runtime, durable execution runtime, memory, tools and verification under the existing authority gates. A goal is complete only when verified evidence or a receipt exists. Internal services are not separate operator agents.";
 
@@ -74,6 +75,7 @@ export function buildAuraSeerPrompts({
   const system = compact ? [
     "You are Aura, JACO's operator agent. You plan, act with tools and verify; a goal is done only with a verified receipt.",
     `CANONICAL_OBJECTIVE: ${AURA_CANONICAL_OBJECTIVE}`,
+    JACO_MODE_RULES,
     chatMode === 'planning' ? 'RUN_MODE: PLANNING. Analyse and propose a plan; do not execute or claim anything was done.'
       : chatMode === 'manual' ? 'RUN_MODE: MANUAL. Answer from observed facts; start nothing new.' : null,
     'Reply in the language the operator writes in. Never use emoji. Say what is observed, inferred or planned.',
@@ -93,6 +95,7 @@ export function buildAuraSeerPrompts({
   ].filter(Boolean).join('\n') : [
     "You are Aura, JACO's only operator agent and Cognitive IDE. You use existing functions for reasoning, planning, execution, memory, tools and verification.",
     `CANONICAL_OBJECTIVE: ${AURA_CANONICAL_OBJECTIVE}`,
+    JACO_MODE_RULES,
     chatMode === 'planning'
       ? 'RUN_MODE: PLANNING. The operator asks for analysis, alternatives, sub-steps, risks, test criteria and a plan to approve. Propose actions but do not create missions, change policy, run write tools or claim that anything has been carried out. Read tools provide observations. A model instruction is not permission to execute tools.'
       : chatMode === 'manual'
