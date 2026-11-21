@@ -29,6 +29,13 @@ on:
       - 'tests/nova/aura-desktop-virtual-input.test.mjs'
       - 'tests/nova/aura-desktop-live-view.test.mjs'
       - 'tests/nova/aura-desktop-monitor.test.mjs'
+      - 'tests/nova/aura-desktop-takeover.test.mjs'
+      - 'runtime/src/server/desktop/desktopTakeover.mjs'
+      - 'runtime/src/server/desktop/desktopTakeover.d.mts'
+      - 'runtime/src/server/desktop/router.ts'
+      - 'runtime/src/server/relay/modelRelay.ts'
+      - 'runtime/src/server/handsOff/actuatorLease.ts'
+      - 'openspec/changes/harden-aura-desktop-e2e/**'
       - 'agents/lib/aura-desktop-live-view.mjs'
       - 'runtime/src/components/AuraDesktopMonitor.tsx'
       - 'runtime/src/components/AuraLiveStage.tsx'
@@ -81,6 +88,7 @@ jobs:
           node --check agents/desktop-agentos.mjs
           node --check runtime/src/server/desktop/desktopTraction.mjs
           node --check agents/lib/aura-desktop-virtual-input.mjs
+          node --check runtime/src/server/desktop/desktopTakeover.mjs
           node --check agents/run-desktop-agentos.mjs
           node --check agents/lib/mission-client.mjs
           node --check agents/lib/workplace-session.mjs
@@ -97,7 +105,7 @@ jobs:
         run: npm test
 
       - name: Verify Laser Vision / DOM Traction desktop safety
-        run: node --test tests/nova/desktop-traction.test.mjs tests/nova/mission-screen-frame.test.mjs tests/nova/aura-desktop-skill.test.mjs tests/nova/aura-desktop-virtual-input.test.mjs tests/nova/aura-desktop-live-view.test.mjs tests/nova/aura-desktop-monitor.test.mjs
+        run: node --test tests/nova/desktop-traction.test.mjs tests/nova/mission-screen-frame.test.mjs tests/nova/aura-desktop-skill.test.mjs tests/nova/aura-desktop-virtual-input.test.mjs tests/nova/aura-desktop-live-view.test.mjs tests/nova/aura-desktop-monitor.test.mjs tests/nova/aura-desktop-takeover.test.mjs
 
       - name: Run Workplace regression suite
         run: npm run test:workplace
