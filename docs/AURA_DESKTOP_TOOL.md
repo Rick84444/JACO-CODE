@@ -18,6 +18,7 @@ The unique existing JACO code is retained as the source of truth:
 | Desktop semantic observation and action | `runtime/src/server/desktop/desktopHandsOff.ts`, `runtime/scripts/windows/jaco-uia-bridge.ps1` |
 | Browser specialist | RobotMower and CDP; do not use DOM queries against non-browser apps |
 | Durable learning and experience | existing Continuum/skills/evidence pipeline |
+| Reusable operator procedure for future missions | `skills/aura-desktop/SKILL.md` (loaded through the existing Skill Engine; never grants new permissions) |
 
 ### New integration
 
