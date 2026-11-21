@@ -17,7 +17,7 @@ Customer's ChatGPT mobile or desktop (same custom MCP plugin)
           |
   existing outbound host WSS, no inbound PC port
           |
-  customer's canonical Aura Runtime -> SEER -> Mission Bus -> Nova
+  customer's canonical Aura Runtime (reason + plan + Mission Bus + execute)
 ```
 
 ## Identity and authorization boundaries
@@ -135,8 +135,9 @@ cannot receive a remote activation request while Core is stopped**. Do not
 advertise cold-start as working until the existing single JACO Link host
 lifecycle is transferred to the already-installed Sentinel supervisor, which
 can survive Core shutdown. This is a *migration of one transport owner*, not
-creation of another independent JACO Link process. Sentinel must expose only
+creation of another independent JACO Link process. Sentinel remains a *non-agent* supervision service and must expose only
 explicit fixed bootstrap intents and positive host-ownership verification.
+No "Sentinel agent" identity or extra mission authority is permitted.
 
 Monitoring uses durable Core/Workplace/SEER/Mission Bus receipts and
 `OUTCOME_UNKNOWN` for interrupted state-changing calls. No copied database.
