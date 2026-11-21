@@ -1,9 +1,50 @@
 {
   "schema": "jaco.nova-control/v1",
-  "commandId": "chatgpt-jaco-status-probe-20261121-0023-v1",
+  "commandId": "chatgpt-write-proof-20261121-0025-v1",
   "op": "mission.create",
-  "goal": "Read-only operational handshake: verify the currently running JACO/Aura runtime is reachable, report runtime health and available MCP tool count from actual observed evidence. Do not modify source, files, settings, models, credentials, providers, services, or devices. Do not start another agent, restart anything, spend money, or access private data. If unavailable or unverified, report the specific blocker rather than claiming success.",
+  "goal": "WRITE SMOKE TEST ONLY. In the currently selected JACO workspace, use repo-write to create exactly artifacts/aura/chatgpt-control-write-test-20261121.txt with exactly this one line (including trailing newline): JACO_CONTROL_WRITE_TEST_20261121_0025_OK. Use repo-read to read the same file back and compare every byte to this exact marker. Do not modify any other file, do not commit, push or merge, do not access secrets, and do not restart or install anything. After the successful write AND read-back, conclude with verified outcome. If a step is blocked, report the blocker rather than inventing a successful write.",
   "allowedTasks": [
-    "health-check"
-  ]
+    "repo-write",
+    "repo-read"
+  ],
+  "contract": {
+    "schema": "jaco.coding-contract/v1",
+    "objective": "Verify ChatGPT-to-JACO local scoped write and read-back with one non-sensitive test artifact",
+    "scope": {
+      "allowed": [
+        "artifacts/aura/chatgpt-control-write-test-20261121.txt"
+      ],
+      "forbidden": [
+        ".env*",
+        "**/*secret*",
+        "**/*credential*"
+      ]
+    },
+    "acceptance": [
+      "Create only artifacts/aura/chatgpt-control-write-test-20261121.txt",
+      "Read back exact contents JACO_CONTROL_WRITE_TEST_20261121_0025_OK including terminal newline",
+      "Keep all other workspace files unchanged; no commit or push"
+    ],
+    "execution": {
+      "autonomous": true,
+      "require_human_before_destructive_action": true,
+      "allow_git_commit": false,
+      "allow_git_push": false,
+      "allow_git_merge": false
+    },
+    "verification": {
+      "tests_required": false,
+      "falsifier_required": false,
+      "independent_verification": false,
+      "receipt_required": true,
+      "change_required": true,
+      "commands": []
+    },
+    "budget": {
+      "max_steps": 8,
+      "max_tool_calls": 16,
+      "max_failures": 2,
+      "max_duration_ms": 300000
+    }
+  }
 }
