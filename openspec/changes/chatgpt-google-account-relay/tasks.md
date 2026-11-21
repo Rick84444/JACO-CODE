@@ -41,3 +41,16 @@ connection were finished based only on green unit tests.
       reporting ChatGPT as invoked.
 - [ ] Disable and retire legacy Git/HTTP control transports after validated
       migration receipts; preserve unrelated active missions and credentials.
+
+## JACO Cloud bootstrap and downloadable API extensions (additional scope)
+
+- [x] Publish a read-only, bounded install-plan handler in the existing site Worker (source implementation).
+- [x] Validate platform, release manifest schema, exact artifact name, byte count and digest; default to no execution.
+- [ ] Verify the new installer plan regression tests pass in the GitHub CI for the exact PR head.
+- [ ] Deploy the updated Worker and observe a real `GET /cloud/v1/install-plan` response from jacocode.com.
+- [ ] Produce the full signed Aura desktop distribution (Lite is insufficient); test clean Windows host, update, rollback and reboot.
+- [ ] Implement authenticated JACO Cloud API adapter package catalog, immutable artifact signing, quarantine, least-privilege vault registration and local rollback.
+- [ ] Bind account-scoped ChatGPT JACO Control install and connector requests to the cloud catalog through explicit OAuth scopes and an existing paired host.
+- [ ] Verify hardware bootstrap, first-login consent, two-account isolation and real read/write mission receipts.
+
+Design and canonical owners: `docs/architecture/JACO_CLOUD_BOOTSTRAP_AND_API_DISTRIBUTION.md`.
