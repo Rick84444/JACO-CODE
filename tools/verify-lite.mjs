@@ -196,7 +196,7 @@ try {
     const editor = body.tools?.find(t => t.id === 'editor');
     must(editor?.state === 'CONNECTED' && editor.tools.includes('read_file'), 'bundled Editor MCP did not initialize');
     const call = await getJson(`${base}/api/mcp/call`, { method:'POST', headers:{'content-type':'application/json','x-gateway-token':liteToken}, body:JSON.stringify({ server:'editor', tool:'read_file', arguments:{path:'hello.txt'} }) });
-    must(call.res.ok && call.body.success && JSON.stringify(call.body.result).includes('a project file'), 'bundled MCP read tool failed against the actual project');
+    must(call.res.ok && call.body?.success && JSON.stringify(call.body.result).includes('a project file'), 'bundled MCP read tool failed against the actual project: '+JSON.stringify({http:call.res.status,success:call.body?.success,error:typeof call.body?.error==='string'?call.body.error.slice(0,220):call.body?.error?.code||null,toolError:call.body?.result?.error||null}).slice(0,450));
     return { evidence: { observedAt: body.observedAt, models: body.providers.map(p => ({ id:p.id, state:p.state })), tools: editor.tools } };
   });
 
@@ -217,7 +217,7 @@ try {
     const evaluate = () => getJson(url + '/simulate', { method:'POST',
       headers:{'content-type':'application/json'}, body:JSON.stringify(scenario) });
     const [simulationA, simulationB] = [await evaluate(), await evaluate()];
-    must(simulationA.res.ok && simulationA.body.status === 'SIMULATED', 'hypothetical simulation unavailable');
+    must(simulationA.res.ok && simulationA.body?.status === 'SIMULATED', 'hypothetical simulation unavailable: '+JSON.stringify({http:simulationA.res.status,success:simulationA.body?.success,status:simulationA.body?.status,error:String(simulationA.body?.error||'').slice(0,220)}));
     must(simulationA.body.executed === false && simulationA.body.verified === false,
       'simulation falsely claimed execution or verification');
     must(JSON.stringify(simulationA.body) === JSON.stringify(simulationB.body), 'same scenario produced non-deterministic values');
@@ -286,7 +286,7 @@ try {
       body:JSON.stringify({message:'Reply with one word: OK',selectedProvider:'seer',interactionMode:'question'})
     });
     must(res.status===200 && body?.success===true && !body.degraded,
-      'Lite routed to SEER or failed to use the local provider: '+JSON.stringify(body).slice(0,450));
+      'Lite routed to SEER or failed to use the local provider: '+JSON.stringify({http:res.status,success:body?.success,degraded:body?.degraded,provider:body?.provider,model:body?.model,error:String(body?.error||'').slice(0,250),code:body?.code||null}).slice(0,450));
     must(body.provider==='litert' && body.model==='jaco-lite-mock-probe',
       'JACO selected a non-observed provider/model: '+JSON.stringify(body).slice(0,350));
     must(body.reply==='LITE_DIRECT_ROUTE_OK','Lite did not forward the model response');
