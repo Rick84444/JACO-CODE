@@ -20,6 +20,29 @@ Current implementation owners:
 
 Historical component names are implementation details. New files and APIs should use responsibility-based names.
 
+## One canonical JACO Mode
+
+Aura is JACO's **sole agent identity**. SEER, Nova, Workplace, repository
+intelligence, Skills, tools and memory are functions or infrastructure owned
+by Aura, never separately empowered operator agents.
+
+**Conversation does not imply implementation.** For software discussions,
+investigate the existing repository and verified knowledge first. A new idea
+does not justify a new file, capability owner, prompt or agent. Before an
+authorized code change, identify the canonical owner, inspect exact callers
+and tests, compare alternatives, choose the smallest proven extension and
+record any necessary legacy retirement. Hypotheses and unsupported previous
+code stay unverified. Follow the existing permissions and mission contracts.
+
+**Source of truth:** this root `AGENTS.md` is the only active engineering
+behavior contract. The runtime's shared `JACO_MODE_RULES` in
+`agents/lib/strategic-context.mjs` is a task-scaled prompt projection of
+this rule, not another policy owner. The historical
+`JACO_MASTER_BEHAVIOR_CONTRACT.md` and `runtime/AGENTS.md` have been
+retired from active paths; inspect Git history for old text. GodPrompt is
+a development methodology for contributors, **not** a separate JACO runtime,
+agent identity or automatic policy permission.
+
 ## Before changing code
 
 1. Inspect the current branch and preserve unrelated work.
