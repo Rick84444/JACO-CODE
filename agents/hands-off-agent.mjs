@@ -721,6 +721,9 @@ const lawnmower = {
 // ── Computer Tools (raw mouse + keyboard + screenshot) ───────────────────────
 
 const INPUT_BRIDGE = join(__dirname, "input-bridge.ps1");
+// The desktop executor uses the exact file produced by Laser Vision; no
+// parallel screenshot store or second image-capture implementation.
+export const computerScreenshotPath = () => join(STATE_DIR, 'latest-observation.png');
 
 const inputBridgeDaemon=createInputBridgeDaemon(INPUT_BRIDGE);
 function runBridge(args) {
@@ -809,7 +812,7 @@ const computerTools = {
       };
     }
 
-    const file = join(STATE_DIR, 'latest-observation.png');
+    const file = computerScreenshotPath();
     const args = ['-Op', 'screenshot', '-OutFile', file];
     if (plan.rect) {
       args.push('-CropX', plan.rect.x, '-CropY', plan.rect.y, '-CropWidth', plan.rect.width, '-CropHeight', plan.rect.height);
