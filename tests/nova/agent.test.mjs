@@ -9,8 +9,19 @@ process.env.NOVA_STATE_DIR=dir;
 // The live planner choice (from the IDE) must not steer these tests.
 process.env.JACO_PLANNER_CHOICE_FILE = path.join(dir, 'planner-choice.json');
 process.env.NOVA_BRAIN_MODE='direct';
-const {loadState,processChat,callBrain,processQueue,executeTask,novaLoopDelay,compactContinuityForBrain,continuityDeltaFromProposal,createAndroidNovaTools,androidRuntimeRequest,novaAgentCard}=await import('../../agents/hands-off-agent.mjs');
+const {brainSystemFor,loadState,processChat,callBrain,processQueue,executeTask,novaLoopDelay,compactContinuityForBrain,continuityDeltaFromProposal,createAndroidNovaTools,androidRuntimeRequest,novaAgentCard}=await import('../../agents/hands-off-agent.mjs');
 test.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+test('JACO Mode is injected into authorized repository planning but omitted from unrelated lightweight missions', () => {
+  const coding = brainSystemFor(['repo-read','repo-edit','git-status'],true,'linux');
+  assert.match(coding, /JACO MODE/);
+  assert.match(coding, /REPO BEFORE BUILD/);
+  assert.match(coding, /reusable/);
+  assert.doesNotMatch(coding, /Use meaningful specialist titles for task agents/);
+  const lightweight = brainSystemFor(['health-check'],false,'linux');
+  assert.doesNotMatch(lightweight, /REPO BEFORE BUILD/);
+  assert.match(lightweight, /only agent/);
+});
+
 test('chat stores exact instruction and retries using the same idempotency key',async()=>{
  const file=path.join(dir,'chat-inbox.json');const text='Öppna min lokala testsida och kontrollera titeln';
  fs.writeFileSync(file,JSON.stringify([{role:'user',kind:'mission',text}]));let key;
