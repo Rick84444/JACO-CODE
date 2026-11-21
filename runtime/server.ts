@@ -4371,7 +4371,7 @@ const notifyPhone = async (action) => {
   // A read-only operator view into the *original* Laser Vision PNG. Never
   // capture the screen or execute tools in this HTTP route. Only a recent
   // mission-bound screenshot, hash-checked by freshMissionFrame, can be shown.
-  // DeskRoll/VMConnect remain the real continuous remote-desktop viewers.
+  // Chrome Remote Desktop (or host-local VMConnect) remains the continuous viewer.
   app.get('/api/aura/desktop/live-frame', requireLocalUi, (_req, res) => {
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('Pragma', 'no-cache');
