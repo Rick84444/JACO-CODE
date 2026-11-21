@@ -54,3 +54,19 @@ connection were finished based only on green unit tests.
 - [ ] Verify hardware bootstrap, first-login consent, two-account isolation and real read/write mission receipts.
 
 Design and canonical owners: `docs/architecture/JACO_CLOUD_BOOTSTRAP_AND_API_DISTRIBUTION.md`.
+
+## Opt-in Sentinel JACO Link host handoff (source changes only)
+
+- [x] Add exact status/activate RPC verbs to existing JACO Link allowlist.
+- [x] Delegate those verbs through the existing JACO Link host to the existing Sentinel SystemControl; no generic remote terminal.
+- [x] Allow Sentinel to own the original `.jaco/link/host.json` outbound connection behind `JACO_LINK_LIFECYCLE_OWNER=sentinel`.
+- [x] Disable embedded Core host socket under that same opt-in and proxy local UI pairing through an authenticated Sentinel loopback endpoint.
+- [x] Require both `JACO_LINK_REMOTE_ACTIVATE=1` and `JACO_MCP_ALLOW_ACTIVATION=1` before remote activation.
+- [x] Add source and mocked callback regression tests for Core-down status and denied activation.
+- [ ] Verify relevant Node and TypeScript regression gates on the exact PR head.
+- [ ] Verify both Sentinel and Core use identical real shared gateway credentials and host state paths on Windows and Android.
+- [ ] Run one real stop → sentinel still connected → activate → Core/Workplace READY → mission receipt end-to-end test, with no duplicate socket.
+- [ ] Verify rollback to Core ownership, preserving pairing, active missions and durable receipts.
+- [ ] Add durable idempotency/unknown-outcome reconciliation and customer-scoped OAuth before shipping remote activation as enabled-by-default.
+
+No operator device configuration has been changed by the repository code. Source-level delegation is not live service proof.
