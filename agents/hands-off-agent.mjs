@@ -76,7 +76,7 @@ import { agentHomeDir, loadHome, HOME_LIMITS } from './lib/agent-home.mjs';
 import { loadCognitiveCapsule, assertCognitiveCapsuleTask } from './lib/cognitive-capsule.mjs';
 import { digest } from './lib/claim-check.mjs';
 import { skillIdOfGoal, fetchSkill, fetchSkillList, relevantAuthorizedSkills } from './lib/skills.mjs';
-import { STRATEGIC_AGENT_INSTRUCTIONS, readStrategicContext, workerStrategicPrompt } from './lib/strategic-context.mjs';
+import { JACO_MODE_RULES, STRATEGIC_AGENT_INSTRUCTIONS, readStrategicContext, workerStrategicPrompt } from './lib/strategic-context.mjs';
 import { readAuraServiceHealth } from './lib/aura-service-health.mjs';
 import { readLivePlanContext } from './lib/live-plan-context.mjs';
 import { shouldCreateChatMission } from './lib/chat-mission-intent.mjs';
@@ -1512,7 +1512,7 @@ export function schemaOutputFor(provider, env = process.env) {
   if (mode === '0' || schemaOutputUnsupported.has(`${provider.name}/${provider.model}`)) return false;
   return mode === 'all' || LOCAL_OLLAMA.test(provider.name);
 }
-const REPLAN_NOTE = "\nInspect, plan, execute, verify. For a broad graph mission, call request_replan or return {\"replan\":true,\"reason\":\"why\",\"subgoals\":[{\"title\":\"step\",\"objective\":\"measurable result\"}]} with 2-8 sequential subgoals, or use an empty subgoals array to change strategy in place without splitting. Compare at least two feasible approaches against the board goal, real evidence, blockers, cost and risk; explain why the new route is better. Never replan solely because a forecast changes without actionable evidence. Use meaningful specialist titles for task agents. Each subgoal gets a durable context; it does not start a separate process. Delegate only when it helps the goal; there is no fixed team template. Aura preserves operator authority through the existing mission contract; the last step verifies the original goal. Never split unknown outcomes or missing authorization.";
+const REPLAN_NOTE = "\nInspect, plan, execute, verify. For a broad graph mission, call request_replan or return {\"replan\":true,\"reason\":\"why\",\"subgoals\":[{\"title\":\"step\",\"objective\":\"measurable result\"}]} with 2-8 sequential subgoals, or use an empty subgoals array to change strategy in place without splitting. Compare at least two feasible approaches against the board goal, real evidence, blockers, cost and risk; explain why the new route is better. Never replan solely because a forecast changes without actionable evidence. Describe internal Aura functional responsibilities rather than separately empowered agent personas. Each subgoal has durable context; it does not create another agent identity or process. Reuse existing owners instead of duplicating modules. Aura preserves operator authority through the existing mission contract; the last step verifies the original goal. Never split unknown outcomes or missing authorization.";
 const NATIVE_TOOLS_NOTE ="\nTools are available as functions: answer by calling them (one call per step; several reading calls in one answer run in order), or call complete/blocked/request_replan. mcp__<server>__<tool> runs that MCP tool. You may add the continuity JSON object as message text.";
 
 // What the planner is told about the machine it runs on. The prompt used to say "The host is Windows" everywhere,
@@ -1527,10 +1527,15 @@ export function brainSystemFor(allowedTasks, graphMission = false, platform = pr
   // Assigned graph agents need the full shared reasoning contract; unrelated missions
   // retain their small task-specific prompt instead of paying for unused board instructions.
   const replanNote = graphMission ? REPLAN_NOTE + '\n' + STRATEGIC_AGENT_INSTRUCTIONS : "";
+  // Repo-mode instructions are loaded only when the mission exposes relevant
+  // repository work; small local models should not pay for these on other jobs.
+  const codingWork = !Array.isArray(allowedTasks) || !allowedTasks.length ||
+    allowedTasks.some(task => /^(?:repo-|git-|mcp-call$)/.test(task));
+  const prompt = BRAIN_SYSTEM + (codingWork ? '\n' + JACO_MODE_RULES : '') + replanNote;
   const host = hostLine(platform);
   const forHost = line => (host && WINDOWS_HOST_LINE.test(line) ? host : line);
-  if (!Array.isArray(allowedTasks) || !allowedTasks.length) return (BRAIN_SYSTEM + replanNote).split("\n").map(forHost).join("\n");
-  return (BRAIN_SYSTEM + replanNote).split("\n").filter(line => {
+  if (!Array.isArray(allowedTasks) || !allowedTasks.length) return prompt.split("\n").map(forHost).join("\n");
+  return prompt.split("\n").filter(line => {
     const rule = BRAIN_SYSTEM_LINE_TASKS.find(([pattern]) => pattern.test(line));
     return !rule || allowedTasks.some(task => rule[1].test(task));
   }).map(line => {
