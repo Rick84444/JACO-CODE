@@ -13,6 +13,7 @@ export function AuraDesktopMonitor({
   const [frame, setFrame] = useState<{ src: string; sha256: string; at: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const currentUrl = useRef<string | null>(null);
+  const lastHash = useRef<string | null>(null);
 
   useEffect(() => {
     if (!open || !active || !missionId || missionStatus !== 'ACTIVE') return;
@@ -31,6 +32,9 @@ export function AuraDesktopMonitor({
           const payload = await response.json().catch(() => ({}));
           if (!disposed) {
             setFrame(null);
+            lastHash.current = null;
+            if (currentUrl.current) URL.revokeObjectURL(currentUrl.current);
+            currentUrl.current = null;
             setError(String(payload.error || 'DESKTOP_FRAME_UNAVAILABLE'));
           }
           return;
@@ -44,16 +48,19 @@ export function AuraDesktopMonitor({
         const bytes = await response.blob();
         if (disposed) return;
         setError(null);
-        setFrame(previous => {
-          if (previous?.sha256 === sha256) return previous;
+        if (lastHash.current !== sha256) {
           const src = URL.createObjectURL(bytes);
           if (currentUrl.current) URL.revokeObjectURL(currentUrl.current);
           currentUrl.current = src;
-          return { src, sha256, at };
-        });
+          lastHash.current = sha256;
+          setFrame({ src, sha256, at });
+        }
       } catch (reason: any) {
         if (!disposed && reason?.name !== 'AbortError') {
           setFrame(null);
+          lastHash.current = null;
+          if (currentUrl.current) URL.revokeObjectURL(currentUrl.current);
+          currentUrl.current = null;
           setError(String(reason?.message || 'DESKTOP_FRAME_UNAVAILABLE'));
         }
       } finally {
