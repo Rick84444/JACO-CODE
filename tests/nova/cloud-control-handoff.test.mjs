@@ -56,6 +56,15 @@ function fixture() {
       hostA:{tenantId:'tenant-A',deviceId:deviceA},
       hostB:{tenantId:'tenant-B',deviceId:deviceB},
     })[credential]||null,
+    // Only configured server-side dependencies can authorize dispatch or
+    // verify canonical evidence. No caller-provided callback is trusted.
+    authorizeDispatch:async credential=>credential==='internal-dispatcher-key',
+    verifyEvidence:async ({tenantId,deviceId,jobId,receiptId,evidenceRef})=>{
+      const task=tasks.get(jobId);
+      return task?.tenantId===tenantId && task.deviceId===deviceId &&
+        evidenceRef==='evidence-12345678' &&
+        ['receipt-test-1006','receipt-test-1008'].includes(receiptId);
+    },
     ownsDevice:async (actor,id)=>actor.tenantId==='tenant-A'?id===deviceA:id===deviceB,
     store, clock:()=> '2026-11-21T00:00:00.000Z',
   });
@@ -99,15 +108,17 @@ test('durable idempotency scoped to tenant, conflicting reuse denied',async()=>{
 test('beginDispatch marks UNKNOWN before delivery and forbids automatic retry',async()=>{
   const {service}=fixture();
   const task=await submit(service);
-  await bad(service.beginDispatch({jobId:task.id,authorizeInternalDispatch:async()=>false}),'DISPATCHER_AUTH_DENIED');
-  const dispatched=await service.beginDispatch({jobId:task.id,authorizeInternalDispatch:async()=>true});
+  await bad(service.beginDispatch({jobId:task.id}),'DISPATCHER_AUTH_DENIED');
+  await bad(service.beginDispatch({jobId:task.id,dispatchCredential:'forged'}),'DISPATCHER_AUTH_DENIED');
+  await bad(service.beginDispatch({jobId:task.id,authorizeInternalDispatch:async()=>true}),'DISPATCHER_AUTH_DENIED');
+  const dispatched=await service.beginDispatch({jobId:task.id,dispatchCredential:'internal-dispatcher-key'});
   assert.equal(dispatched.deviceId,deviceA);
   assert.equal(dispatched.tenantId,'tenant-A');
   assert.equal(dispatched.goal,'Build the gateway and run regression tests');
   const unknown=await service.status({bearer:'A',jobId:task.id});
   assert.equal(unknown.state,'DELIVERY_UNKNOWN');
   assert.equal(unknown.dispatchState,'UNKNOWN');
-  await bad(service.beginDispatch({jobId:task.id,authorizeInternalDispatch:async()=>true}),'DISPATCH_ALREADY_CLAIMED');
+  await bad(service.beginDispatch({jobId:task.id,dispatchCredential:'internal-dispatcher-key'}),'DISPATCH_ALREADY_CLAIMED');
 });
 
 test('only paired host can provide completion, always with durable evidence',async()=>{
@@ -117,11 +128,13 @@ test('only paired host can provide completion, always with durable evidence',asy
     hostCredential,jobId:task.id,event:{type,receiptId,...extra},
   });
   await bad(receipt('hostA','VERIFIED','receipt-test-1000',{verified:true,evidenceRef:'evidence-12345678'}),'TASK_NOT_DELIVERED');
-  await service.beginDispatch({jobId:task.id,authorizeInternalDispatch:async()=>true});
+  await service.beginDispatch({jobId:task.id,dispatchCredential:'internal-dispatcher-key'});
   await bad(receipt('hostB','RECEIVED','receipt-test-1001'),'TASK_NOT_FOUND');
   await bad(receipt('UNVERIFIED','RECEIVED','receipt-test-1001'),'HOST_AUTH_DENIED');
   await bad(receipt('hostA','VERIFIED','receipt-test-1002'),'VERIFICATION_EVIDENCE_REQUIRED');
   await bad(receipt('hostA','RECEIVED','receipt-test-1003',{verified:true}),'UNVERIFIED_RESULT_CLAIM');
+  await bad(receipt('hostA','VERIFIED','receipt-test-1009',
+    {verified:true,evidenceRef:'evidence-12345678'}),'EVIDENCE_NOT_VERIFIED');
   const accepted=await receipt('hostA','RECEIVED','receipt-test-1004');
   assert.equal(accepted.state,'RECEIVED');
   const running=await receipt('hostA','RUNNING','receipt-test-1005');
@@ -139,7 +152,7 @@ test('only paired host can provide completion, always with durable evidence',asy
 test('bounded schema never treats arbitrary host instructions as valid events',async()=>{
   const {service}=fixture();
   const task=await submit(service);
-  await service.beginDispatch({jobId:task.id,authorizeInternalDispatch:async()=>true});
+  await service.beginDispatch({jobId:task.id,dispatchCredential:'internal-dispatcher-key'});
   await bad(service.hostReceipt({hostCredential:'hostA',jobId:task.id,
     event:{type:'RUN_SHELL',receiptId:'receipt-test-2000',command:'rm -rf /'}}),'HOST_EVENT_INVALID');
 });
