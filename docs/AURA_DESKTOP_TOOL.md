@@ -53,6 +53,18 @@ Setup confirms actual guest hardware through Windows CIM (Microsoft Corporation 
 
 This does not install, provision or configure Hyper-V. The operator still must provision and isolate the guest before running it.
 
+## Visible execution: one screen, two views
+
+**True continuous view:** open the sandbox's same interactive Windows session in VMConnect, or use an operator-authorized DeskRoll session on that guest. Aura's existing Win32 input and UIA act on that exact session. Neither viewer is an agent, an alternative executor or a source of permission. Operator takeover should stop/pause the current mission first; a parallel human pointer is not protected by model-only actuator leases.
+
+**In JACO GUI:** the existing `AuraLiveStage` now contains an optional read-only **Windows Desktop** panel. It requests `GET /api/aura/desktop/live-frame` only after the operator clicks **Visa skärmbild**, while the UI is visible and an ACTIVE `desktop-agentos` mission exists. The response is the existing `agents/input-bridge.ps1` PNG, exposed after `freshMissionFrame` checks original mission receipt, SHA-256, modification time, age (12 seconds), and invalidating actions. Server sends only `image/png` with private/no-store headers. Authentication is inherited from JACO's local IDE or signed-in remote IDE session; no query token, public file path, browser CDP action or new capture worker is created.
+
+This is **an observed snapshot refreshed when new mission screenshots arrive, not 30 FPS video**. When no fresh verified screenshot exists, the panel reports the absence rather than displaying old frames as live. VMConnect/DeskRoll remain the full-motion screen sharing and takeover layer.
+
+Operator screen-sharing opt-in: `JACO_AURA_DESKTOP_SCREEN_VIEW=1`. This is enabled by `setup-desktop-agentos.ps1 -EnableSandboxInput` when run inside a verified Hyper-V Windows guest and may otherwise be configured explicitly by the operator. Default is off. No camera content or image is sent to a model merely by enabling this GUI view; separate `NOVA_ALLOW_CLOUD_IMAGES=1` is still required to send a screenshot through the SEER proxy to a potentially cloud model.
+
+**Live acceptance (not yet performed):** a real Windows guest, live remote window, one active authenticated mission, mouse/keyboard movements visibly reflected in the window, matching verified mission receipts, and a corresponding recent frame shown in Aura Live Stage. No current GitHub CI result attests this physical end-to-end behavior.
+
 ## Isolated desktop and remote display
 
 The first supported remote display is **Hyper-V VMConnect**, not an extra agent and not a browser DOM bridge. `agents/aura-desktop-vm.ps1` only observes, starts and opens an **existing** Windows VM. It does not create a VM, alter networking, copy host files, inject credentials, install software or execute code inside a guest.
