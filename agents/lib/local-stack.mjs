@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'dotenv';
+import { ensureGatewayToken } from '../../scripts/setup.mjs';
 import { readStartupEvidence } from './startup-evidence.mjs';
 import { WORKER_WITHHELD_KEY } from './planner-choice.mjs';
 import { executable, chromeExecutable, chromeLaunchArgs } from './chrome-bootstrap.mjs';
@@ -409,9 +410,26 @@ export async function resolveServicePorts(c, io = {}) {
   portEnvironment(c.env, c.ports, previous);
   return moves;
 }
+// Start-up credentials are an internal IPC detail, never an operator setup step.
+// Do not generate them for read-only status/preflight or before the exclusive start lock.
+// Never silently replace an explicit invalid credential: another runtime may be using it.
+export function provisionLocalStartupCredential(c) {
+  const existing = String(c.env.GATEWAY_TOKEN || c.env.JACO_GATEWAY_TOKEN || '');
+  if (existing) {
+    if (existing.length < 24) throw new Error('GATEWAY_TOKEN_REQUIRED_MIN_24: configured credential is invalid');
+    c.env.GATEWAY_TOKEN = existing;
+    c.env.SEER_TOKEN = existing;
+    return { provisioned: false };
+  }
+  const token = ensureGatewayToken(c.dataRoot || c.root, c.env);
+  if (typeof token !== 'string' || token.length < 24) throw new Error('LOCAL_GATEWAY_CREDENTIAL_PROVISION_FAILED');
+  c.env.JACO_GATEWAY_TOKEN = token;
+  c.env.GATEWAY_TOKEN = token;
+  c.env.SEER_TOKEN = token;
+  return { provisioned: true };
+}
 export async function activate(c, { open = false } = {}) {
   if (fs.existsSync(path.join(c.dataRoot || c.root, '.jaco-emergency-stop.json'))) throw new Error('EMERGENCY_STOP_ACTIVE');
-  if (c.env.GATEWAY_TOKEN.length < 24) throw new Error('GATEWAY_TOKEN_REQUIRED_MIN_24');
   if (!fs.existsSync(path.join(c.runtime, 'server.ts'))) throw new Error('RUNTIME_DIR_INVALID');
   if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('NODE_24_OR_NEWER_REQUIRED');
   if (!c.production) {
@@ -444,6 +462,8 @@ export async function activate(c, { open = false } = {}) {
   const result = { schema: 'jaco.local-startup/v1', runId: `${process.pid}-${Date.now()}`, startedAt, observedAt: startedAt, sequence: 0, state: 'STARTING', phase: 'preflight', runtime: c.runtime, services: [], expected: { browserAttachment: c.cdp }, browserAttachment: c.cdp ? 'PENDING' : 'NOT_REQUIRED', warnings: [] };
   const checkpoint = phase => { result.phase = phase; result.sequence++; result.observedAt = new Date().toISOString(); save(c, result); };
   try {
+    const credential = provisionLocalStartupCredential(c);
+    if (credential.provisioned) result.warnings.push('LOCAL_GATEWAY_CREDENTIAL_PROVISIONED');
     checkpoint('preflight');
     // Operators never edit ports: a foreign listener moves the service instead of blocking startup.
     const skippedOptional = new Set();
