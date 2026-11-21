@@ -3387,6 +3387,27 @@ const notifyPhone = async (action) => {
       res.json({ success: true, ...result });
     } catch (error: any) { res.status(/UNKNOWN/.test(error?.message) ? 404 : 400).json({ success: false, error: error?.message || String(error) }); }
   });
+  // A single operator action quarantines only failed *custom* MCP servers.
+  // Definitions remain in workspace configuration with enabled:false; there
+  // is no credential read, payment setup, arbitrary process launch or deletion.
+  app.post('/api/aura/workbench/mcp/quarantine-failed', requireLocalUi, (_req, res) => {
+    if (!localOperatorOnly(_req, res)) return;
+    try {
+      const result = mcpHost.quarantineFailedCustom();
+      if (result.disabled.length) {
+        getAuraMcpFabric.invalidate();
+        seerLiveWorkstream.record({
+          actor: 'Aura Tool Fabric', type: 'mcp.failed-custom.quarantined',
+          message: `Disabled ${result.disabled.length} failed custom MCP connections; definitions preserved`,
+          verified: true, receipt: { disabled: result.disabled, definitionsPreserved: true },
+        });
+      }
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      res.status(409).json({ success: false, error: error?.message || String(error) });
+    }
+  });
+
   app.patch('/api/aura/workbench/mcp/servers/:id/access', requireLocalUi, (req, res) => {
     if (!localOperatorOnly(req, res)) return;
     try {

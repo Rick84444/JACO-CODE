@@ -389,3 +389,54 @@ test('changed launch definition has no stale error, tools or start timestamp',as
   assert.equal(state.error,null);assert.equal(state.startedAt,null);
  }finally{host.stopAll();}
 });
+
+
+test('failed custom MCP connections are disabled reversibly without affecting working or built-in servers', async t => {
+  const cfg = path.join(dir, 'quarantine-' + process.pid + '.json');
+  const missing = path.join(dir, 'missing-custom-mcp-entrypoint.mjs');
+  const broken = {command:process.execPath,args:[missing],agentAccess:'write',env:{API_KEY:'${LOCAL_TEST_KEY}'}};
+  const good = {command:process.execPath,args:[serverFile],agentAccess:'read'};
+  const remote = {transport:'http',url:'https://offline.example.test/mcp',agentAccess:'read'};
+  fs.writeFileSync(cfg,JSON.stringify({schema:'custom-layout',servers:{bad:broken,good,remote}}));
+  t.after(()=>{fs.rmSync(cfg,{force:true})});
+  const host=new StdioMcpHost({configFile:cfg,repoRoot:dir,runtimeRoot:dir});
+  try {
+    await host.start('good');
+    await assert.rejects(host.start('bad'),/MCP_SERVER_EXITED:bad:ENTRYPOINT_NOT_FOUND/);
+    assert.equal(host.status().find(x=>x.id==='bad').status,'FAILED');
+    const remoteClient=host.client('remote');
+    remoteClient.error='MCP_CONNECTION_FAILED'; // Observed transport failure; no network request here.
+    assert.equal(host.status().find(x=>x.id==='remote').status,'FAILED');
+    const repaired=host.quarantineFailedCustom();
+    assert.deepEqual(repaired,{disabled:['bad','remote'],definitionsPreserved:true});
+    const disk=JSON.parse(fs.readFileSync(cfg,'utf8'));
+    assert.equal(disk.schema,'custom-layout');
+    assert.deepEqual(disk.servers.bad,{...broken,enabled:false});
+    assert.deepEqual(disk.servers.good,good);
+    assert.deepEqual(disk.servers.remote,{...remote,enabled:false});
+    assert.equal(host.status().some(x=>x.id==='bad'||x.id==='remote'),false);
+    assert.equal(host.status().find(x=>x.id==='good').status,'READY');
+    assert.ok(host.status().find(x=>x.id==='git'),'built-in git was not changed');
+    assert.deepEqual(host.quarantineFailedCustom().disabled,[],'second run is idempotent');
+    // Repair is reversible by restoring the saved definition.
+    disk.servers.bad.enabled=true;
+    fs.writeFileSync(cfg,JSON.stringify(disk));
+    assert.equal(host.status().find(x=>x.id==='bad').status,'STOPPED');
+  } finally {host.stopAll()}
+});
+
+test('non-MCP Node script exits with an actionable handshake error, not a misleading READY state', async t => {
+  const script=path.join(dir,'non-mcp-cli.mjs');
+  const cfg=path.join(dir,'non-mcp-cli.json');
+  fs.writeFileSync(script,'process.stdout.write("dry run complete\\n");\n');
+  fs.writeFileSync(cfg,JSON.stringify({servers:{demo:{command:process.execPath,args:[script]}}}));
+  t.after(()=>{fs.rmSync(script,{force:true});fs.rmSync(cfg,{force:true})});
+  const host=new StdioMcpHost({configFile:cfg,repoRoot:dir,runtimeRoot:dir});
+  try {
+    await assert.rejects(host.start('demo'),/MCP_SERVER_EXITED:demo:NO_MCP_HANDSHAKE/);
+    const state=host.status().find(x=>x.id==='demo');
+    assert.equal(state.status,'FAILED');
+    assert.deepEqual(state.tools,[]);
+    assert.equal(state.error,'MCP_SERVER_EXITED:demo:NO_MCP_HANDSHAKE');
+  } finally {host.stopAll()}
+});

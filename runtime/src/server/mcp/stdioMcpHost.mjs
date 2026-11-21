@@ -18,6 +18,14 @@ import path from 'node:path';
 import { HttpMcpClient } from './httpMcpClient.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
+// Classify a failed MCP child without leaking its stderr, which may contain
+// private paths, environment variables, or provider diagnostics.
+export function classifyMcpChildExit(code, stderr = '', initialized = false) {
+  if (!initialized && /(?:ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND)/.test(String(stderr))) return 'ENTRYPOINT_NOT_FOUND';
+  if (!initialized && code === 0) return 'NO_MCP_HANDSHAKE';
+  return 'EXIT_' + (Number.isInteger(code) ? code : 'UNKNOWN');
+}
+
 // Tools that only read but do not declare readOnlyHint.
 const KNOWN_READ_ONLY = { fetch: new Set(['fetch']) };
 export const isReadOnlyTool = (server, tool) => Boolean(tool?.readOnly || KNOWN_READ_ONLY[server]?.has(tool?.name));
@@ -266,8 +274,8 @@ class StdioClient {
       // Events of a process that was already replaced (stop + restart) must not touch the new one.
       proc.on('exit', code => {
         if (this.proc !== proc) return;
-        this.error = `exited with code ${code}${this.lastStderr ? `: ${this.lastStderr.trim().slice(-200)}` : ''}`;
-        this.failPending(`MCP_SERVER_EXITED:${this.id}`);
+        this.error = `MCP_SERVER_EXITED:${this.id}:${classifyMcpChildExit(code, this.lastStderr, this.initialized)}`;
+        this.failPending(this.error);
         this.proc = null; this.ready = null; this.initialized = false; this.tools = [];
       });
       // A command that cannot be spawned (e.g. uvx not installed) fails now, not after the 120 s timeout.
@@ -390,6 +398,26 @@ export class StdioMcpHost {
     this.writeConfig(config);
     this.clients.get(id)?.stop(); this.clients.delete(id);
     return { id, removed: !builtIn, disabled: builtIn };
+  }
+
+  // Operator-only cleanup: quarantine only *observed FAILED* custom servers.
+  // Keep their full saved definitions (including credential references), so the
+  // operator can repair/re-enable them later. Built-ins and healthy servers stay.
+  quarantineFailedCustom() {
+    const failed = this.status().filter(s => s.status === 'FAILED' && s.builtIn === false).map(s => s.id);
+    if (!failed.length) return { disabled: [], definitionsPreserved: true };
+    let config;
+    try { config = JSON.parse(fs.readFileSync(this.configFile, 'utf8')); }
+    catch { throw Error('MCP_CONFIG_UNREADABLE'); }
+    if (!config || typeof config !== 'object' || !config.servers ||
+        typeof config.servers !== 'object' || Array.isArray(config.servers)) throw Error('MCP_CONFIG_INVALID');
+    const disabled = failed.filter(id => Object.hasOwn(config.servers, id) &&
+      config.servers[id] && config.servers[id].enabled !== false);
+    if (!disabled.length) return { disabled: [], definitionsPreserved: true };
+    for (const id of disabled) config.servers[id] = { ...config.servers[id], enabled: false };
+    this.writeConfig(config);
+    for (const id of disabled) { this.clients.get(id)?.stop(); this.clients.delete(id); }
+    return { disabled, definitionsPreserved: true };
   }
 
   // Agent access for one server; takes effect on the next call without restarting the server.
