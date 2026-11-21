@@ -66,7 +66,7 @@ test('an oversized skill is listed with its error; runs of different skills are 
 
 test('the repository skills all parse and declare supported tasks', () => {
   const list = listSkills([repoSkills]);
-  assert.deepEqual(list.map(s => s.id), ['autonomous-api-connection', 'browser-authorized-action', 'browser-workflow-understanding', 'build-web-page', 'buyer-tailored-proposal', 'commercial-opportunity-cycle', 'community-post', 'create-github-repo', 'external-agent-employment', 'fix-a-bug', 'paid-delivery-quality', 'product-validation', 'repo-insight', 'repo-security-scan', 'web-research']);
+  assert.deepEqual(list.map(s => s.id), ['aura-desktop', 'autonomous-api-connection', 'browser-authorized-action', 'browser-workflow-understanding', 'build-web-page', 'buyer-tailored-proposal', 'commercial-opportunity-cycle', 'community-post', 'create-github-repo', 'external-agent-employment', 'fix-a-bug', 'paid-delivery-quality', 'product-validation', 'repo-insight', 'repo-security-scan', 'web-research']);
   for (const s of list) assert.equal(s.error, undefined, `${s.id}: ${s.error}`);
 });
 

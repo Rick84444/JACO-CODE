@@ -49,3 +49,21 @@ test('actual Windows daemon compiles and executes consecutive non-input fixtures
     }
   }finally{bridge.close();}
 });
+
+test('read-only interactive session probe reuses the original single Win32 worker',async()=>{
+  let starts=0,mutations=0;
+  const bridge=createInputBridgeDaemon('fixture',{platform:'win32',spawnImpl:()=>{
+    starts++;
+    return worker((request,child)=>{
+      if(request.op!=='session_status')mutations++;
+      answer(child,request,{schema:'jaco.desktop-session/v1',interactive:true,sessionId:2,foregroundHwnd:410,inputDesktop:'Default'});
+    });
+  }});
+  try {
+    const result=await bridge.send({op:'session_status'});
+    assert.equal(result.ok,true);
+    assert.equal(result.sessionId,2);
+    assert.equal(mutations,0);
+    assert.equal(starts,1);
+  } finally {bridge.close();}
+});

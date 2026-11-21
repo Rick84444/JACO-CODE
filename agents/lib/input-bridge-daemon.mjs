@@ -2,7 +2,7 @@
 import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 const MUTATING=new Set(['mouse_move','mouse_click','mouse_scroll','key_press','type_text']);
-const OPS=new Set([...MUTATING,'get_cursor','screenshot','self_test']);
+const OPS=new Set([...MUTATING,'get_cursor','screenshot','session_status','self_test']);
 const MAX=64*1024;
 export function createInputBridgeDaemon(scriptPath,{spawnImpl=spawn,platform=process.platform}={}){
   let child=null,pending=null,closed=false,queue=Promise.resolve(),queued=0;

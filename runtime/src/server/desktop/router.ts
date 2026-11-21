@@ -16,9 +16,12 @@ export function createDesktopRouter(
   releaseRoot: string,
   requireMutationAuth: express.RequestHandler,
   onEvent?: (event: { actor: string; type: string; message: string; verified: boolean }) => void,
+  canonicalClient?: DesktopHandsOffClient,
 ): express.Router {
   const router = express.Router();
-  const client = new DesktopHandsOffClient(workspaceRoot, releaseRoot);
+  // Reuse ModelRelay's exact actuator instance. A second client would have a
+  // separate in-flight lock and could dispatch UIA concurrently with Aura.
+  const client = canonicalClient ?? new DesktopHandsOffClient(workspaceRoot, releaseRoot);
 
   const fail = (res: express.Response, status: number, error: unknown) =>
     res.status(status).json({ success: false, error: error instanceof Error ? error.message : String(error) });

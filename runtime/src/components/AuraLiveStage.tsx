@@ -9,6 +9,7 @@ import { AuraPresence, type AuraPresenceView } from './AuraPresence';
 import { CapturedPage, type CapturedPageData } from './CapturedPage';
 import { AuraTerminal } from './AuraTerminal';
 import { AuraLiveToolSurfaces } from './AuraLiveToolSurfaces';
+import { AuraDesktopMonitor } from './AuraDesktopMonitor';
 import { useUiLanguage } from '../i18n/UiLanguage';
 
 type Candidate = { event: CognitiveEvent; material: string | null } | null;
@@ -192,6 +193,7 @@ export function AuraLiveStage({ candidate, projectRevision, events, liveConnecti
       </ol> : <p className="aura-activity-empty">{activityState === 'stalled' ? tr('Uppdraget är registrerat men inget steg har rapporterats. Du kan avsluta det med Stop mission.','The mission is registered but no step has been reported. You can end it with Stop mission.') : activeMission ? tr('Inget steg har rapporterats ännu. Här syns varje steg när det sker.','No step has been reported yet. Each step appears here as it happens.') : tr('Starta ett uppdrag i chatten så syns arbetet här.','Start a mission in the chat and the work appears here.')}</p>}
     </section>
     <AuraLiveToolSurfaces events={events} missionId={activeMission?.id || null} connection={liveConnection} onInspect={onInspect} onOpenFile={onOpenFile} onOpenPlan={onOpenPlan}/>
+    <AuraDesktopMonitor active={active} missionId={activeMission?.id || null} missionStatus={activeMission?.status || null}/>
     {capturedPage ? <CapturedPage page={capturedPage} onClose={()=>setCapturedPage(null)}/> : !event ? screenshot ? <div className="aura-live-standalone-cdp" aria-label={tr('Observerad webbläsarsida','Observed browser page')}>
       <div className="aura-live-cdp-frame-bar"><Camera size={13}/> {tr('Nova-bryggans fästa CDP-flik','Nova bridge attached CDP tab')} · {time(screenshot.at, language)}
         <button type="button" disabled={pageBusy} onClick={()=>void capturePageHtml()}>{pageBusy?tr('Hämtar sidan…','Loading page…'):tr('Hämta HTML','Fetch HTML')}</button>

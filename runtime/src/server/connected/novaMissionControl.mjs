@@ -494,6 +494,10 @@ export class NovaMissionControl {
       allowedTasks: base.metadata.allowedTasks.filter(t => this.allowedTasks.includes(t) && (!this.capabilities || this.capabilities.isTaskEnabled(t))),
       observation: decode(row.observation_json), receipts,
       activeTask: decode(row.active_task_json), failures: row.failures,
+      // Read-only public lease presence. Never expose the bearer lease token
+      // or owner identity. Operator takeover must wait for planning as well as
+      // execution to quiesce; READY alone must not be treated as permission.
+      executionLeaseActive: Boolean(row.token || row.owner || (row.lease_until && row.lease_until > this.now())),
       contract, contractStatus: contract ? contractVerificationStatus(contract, proof) : null,
       execution: contract ? codingExecutionSummary(contract, proof, row.phase) : null,
       preflight: this.bus.lastMissionEvent(id,'NOVA_PREFLIGHT')?.payload || null,

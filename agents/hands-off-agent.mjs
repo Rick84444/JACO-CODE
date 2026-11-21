@@ -50,7 +50,7 @@ hydrateEnvFromStore(process.env);
 import { redactDeep, takeHeld, generateSecret, validateVaultKey, holdValue } from './lib/secret-capture.mjs';
 import { readInbox, inboxDomain } from './lib/inbox.mjs';
 import { selectPerceptionRegion, captureMetrics } from './lib/adaptive-perception.mjs';
-import { freshMissionFrame, permittedFrameMessages, observedInputBinding } from './lib/mission-screen-frame.mjs';
+import { freshMissionFrame, permittedFrameMessages, observedInputBinding, missionScreenshotPath } from './lib/mission-screen-frame.mjs';
 import { createGithubNovaControlInbox } from './lib/github-control-inbox.mjs';
 import { enqueueVerifiedReceiptPromotion, flushLivingCorePromotions, ensureLivingCorePromotionState } from './lib/living-core-promotion.mjs';
 import { TASK_FIELDS, taskContract } from './lib/task-fields.mjs';
@@ -721,6 +721,9 @@ const lawnmower = {
 // ── Computer Tools (raw mouse + keyboard + screenshot) ───────────────────────
 
 const INPUT_BRIDGE = join(__dirname, "input-bridge.ps1");
+// The desktop executor uses the exact file produced by Laser Vision; no
+// parallel screenshot store or second image-capture implementation.
+export const computerScreenshotPath = () => missionScreenshotPath();
 
 const inputBridgeDaemon=createInputBridgeDaemon(INPUT_BRIDGE);
 function runBridge(args) {
@@ -738,6 +741,10 @@ function runBridge(args) {
   // lost its receipt. The existing mission reconciliation owns that boundary.
   return inputBridgeDaemon.send(payload);
 }
+
+// Read-only native proof of the bridge's actual interactive Windows session.
+// Uses the same single serialized Win32 daemon as screenshot/input.
+export const computerSessionStatus = () => runBridge(['-Op', 'session_status']);
 
 const computerTools = {
   // Raw actions consume only a receipt-bound target, never an arbitrary HWND.
@@ -809,7 +816,7 @@ const computerTools = {
       };
     }
 
-    const file = join(STATE_DIR, 'latest-observation.png');
+    const file = computerScreenshotPath();
     const args = ['-Op', 'screenshot', '-OutFile', file];
     if (plan.rect) {
       args.push('-CropX', plan.rect.x, '-CropY', plan.rect.y, '-CropWidth', plan.rect.width, '-CropHeight', plan.rect.height);
