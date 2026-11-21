@@ -10,7 +10,7 @@ export function AuraDesktopMonitor({
 }: { active: boolean; missionId: string | null; missionStatus: string | null }) {
   const { tr } = useUiLanguage();
   const [open, setOpen] = useState(false);
-  const [frame, setFrame] = useState<{ src: string; sha256: string; at: string } | null>(null);
+  const [frame, setFrame] = useState<{ src: string; sha256: string; at: string; sessionId: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const currentUrl = useRef<string | null>(null);
   const lastHash = useRef<string | null>(null);
@@ -42,6 +42,8 @@ export function AuraDesktopMonitor({
         const sha256 = response.headers.get('X-JACO-Frame-SHA256') || '';
         const receivedMission = response.headers.get('X-JACO-Mission-Id');
         const at = response.headers.get('X-JACO-Frame-Observed-At') || '';
+        const sessionId = Number(response.headers.get('X-JACO-Windows-Session-Id'));
+        if (!Number.isSafeInteger(sessionId) || sessionId <= 0) throw Error('DESKTOP_FRAME_SESSION_UNVERIFIED');
         if (receivedMission !== missionId || !/^[a-f0-9]{64}$/.test(sha256)) {
           throw Error('DESKTOP_FRAME_MISSION_MISMATCH');
         }
@@ -53,7 +55,7 @@ export function AuraDesktopMonitor({
           if (currentUrl.current) URL.revokeObjectURL(currentUrl.current);
           currentUrl.current = src;
           lastHash.current = sha256;
-          setFrame({ src, sha256, at });
+          setFrame({ src, sha256, at, sessionId });
         }
       } catch (reason: any) {
         if (!disposed && reason?.name !== 'AbortError') {
@@ -93,7 +95,7 @@ export function AuraDesktopMonitor({
     {open && <div className="mt-2">
       {frame ? <div>
         <img src={frame.src} alt={tr('Senaste verifierade Windows-skärmbild från Laser Vision', 'Latest verified Windows screenshot from Laser Vision')} className="max-w-full rounded border border-neutral-700"/>
-        <small className="text-neutral-400">{tr('Observerad', 'Observed')}: {new Date(frame.at).toLocaleTimeString()} · SHA-256: {frame.sha256.slice(0, 12)}</small>
+        <small className="text-neutral-400">{tr('Observerad', 'Observed')}: {new Date(frame.at).toLocaleTimeString()} · Windows Session {frame.sessionId} · SHA-256: {frame.sha256.slice(0, 12)}</small>
       </div> : <p role="status" className="text-neutral-400 text-xs">{error || tr('Väntar på en färsk bild från Auras uppdrag.', 'Waiting for a fresh frame from Aura mission.')}</p>}
       <p className="text-neutral-400 text-xs mt-1">
         {tr('Detta är verifierade stillbilder, inte video. Använd Chrome Remote Desktop eller lokal VMConnect för kontinuerlig visning och manuellt övertagande av Auras Windows-session.', 'These are verified snapshots, not video. Use Chrome Remote Desktop or local VMConnect to view and manually take over the Aura Windows session.')}
