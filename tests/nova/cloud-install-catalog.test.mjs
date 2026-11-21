@@ -65,6 +65,6 @@ test('external mutation cannot change the canonical allowlisted recipe',()=>{
 test('existing Cloudflare Worker mounts both public discovery routes',()=>{
   const worker=fs.readFileSync('site/jacocode.com/worker.mjs','utf8');
   assert.match(worker,/handleInstallDiscovery/);
-  assert.match(worker,/cloud\\/v1\\/catalog/);
-  assert.match(worker,/cloud\\/v1\\/recipe-plan/);
+  assert.ok(worker.includes("'/cloud/v1/catalog'"));
+  assert.ok(worker.includes("'/cloud/v1/recipe-plan'"));
 });
