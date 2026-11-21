@@ -72,7 +72,7 @@ async function downloadPinnedRig(fetchImpl = fetch) {
           if (res.status !== 429 && res.status < 500) break;
         } else {
           const bytes=Buffer.from(await res.arrayBuffer());
-          const hash=createHash('sha1').update('blob '+bytes.length+'\\0').update(bytes).digest('hex');
+          const hash=createHash('sha1').update('blob '+bytes.length).update(Buffer.from([0])).update(bytes).digest('hex');
           if (bytes.length!==SIZE||hash!==BLOB) throw Error('AURA_RIG_SOURCE_MISMATCH');
           return bytes;
         }
