@@ -164,6 +164,17 @@ export const modelIdentity = model => String(model || '').toLowerCase().split('/
 // the gpt-oss planners, and it found a planted contradiction in about a second (2026-10-04).
 export function judgeCandidates(env = process.env, { exclude = [] } = {}) {
   const list = [];
+  // Any OpenAI-compatible endpoint the operator already pays for can judge. Without this the only cloud
+  // judges were Groq and Ollama Cloud, so a host with OpenRouter or DeepSeek configured fell through to the
+  // small local model — and a small model is worse than none here: asked to grade "I deployed the site",
+  // qwen2.5:1.5b answered "supported" because the README mentions the project (measured 2026-11-21).
+  // It graded a fabricated deployment as verified, which is the one outcome this check exists to prevent.
+  const configuredUrl = String(env.JACO_CLAIM_JUDGE_URL || '').trim();
+  const configuredKey = String(env.JACO_CLAIM_JUDGE_KEY_ENV ? env[env.JACO_CLAIM_JUDGE_KEY_ENV] || '' : env.JACO_CLAIM_JUDGE_KEY || '').trim();
+  const configuredModel = String(env.JACO_CLAIM_JUDGE_MODEL || '').trim();
+  if (configuredUrl && configuredModel) {
+    list.push({ name: env.JACO_CLAIM_JUDGE_NAME || 'configured', model: configuredModel, url: configuredUrl, key: configuredKey });
+  }
   if (env.GROQ_API_KEY) list.push({ name: 'groq', model: env.JACO_CLAIM_JUDGE_GROQ_MODEL || 'openai/gpt-oss-120b', url: 'https://api.groq.com/openai/v1/chat/completions', key: env.GROQ_API_KEY });
   if (env.OLLAMA_API_KEY) list.push({ name: 'ollama-cloud', model: env.JACO_CLAIM_JUDGE_OLLAMA_CLOUD_MODEL || 'gemma4:31b', url: `${env.OLLAMA_CLOUD_URL || 'https://ollama.com'}/v1/chat/completions`, key: env.OLLAMA_API_KEY });
   list.push({ name: 'ollama', model: env.JACO_CLAIM_JUDGE_OLLAMA_MODEL || env.JACO_OLLAMA_LOCAL_MODEL || 'gemma3:4b', url: openAiChatCompletionsUrl(env.OLLAMA_BASE_URL, 'http://127.0.0.1:11434'), key: 'ollama' });

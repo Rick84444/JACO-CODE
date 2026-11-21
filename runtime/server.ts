@@ -4506,7 +4506,9 @@ const notifyPhone = async (action) => {
     claimChecksRunning.add(key);
     let planner: string[] = [];
     try { const choice: any = readPlannerChoice(plannerChoiceFile(process.env)); if (choice?.provider && choice?.model) planner = [`${choice.provider}/${choice.model}`]; } catch {}
-    checkClaims(planned.payload.reason, connectedRuntime.novaMissions.evidenceReceipts(mission.id), { exclude: planner, maxJudgeMs: 15_000 })
+    // 15 s cut off every judge on this host: a local judge answered in 15.4 s and a cloud one needs its
+    // round trip too, so every check came back judged:0 and the mission waited for the operator forever.
+    checkClaims(planned.payload.reason, connectedRuntime.novaMissions.evidenceReceipts(mission.id), { exclude: planner, maxJudgeMs: Number(process.env.JACO_CLAIM_JUDGE_TIMEOUT_MS) || 60_000 })
       .catch((error: any) => ({ ok: false, error: String(error?.message || error).slice(0, 200), claims: 0, unsupportedFacts: [], contradicted: [], partial: [] }))
       .then((result: any) => {
         connectedRuntime.bus.event('NOVA_CLAIM_CHECK', { missionId: mission.id, payload: { planSeq: planned.seq, ...result } });
