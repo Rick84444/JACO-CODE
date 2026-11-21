@@ -86,6 +86,7 @@ jobs:
       - name: Syntax check executor
         run: |
           node --check agents/desktop-agentos.mjs
+          node --check agents/hands-off-agent.mjs
           node --check runtime/src/server/desktop/desktopTraction.mjs
           node --check agents/lib/aura-desktop-virtual-input.mjs
           node --check runtime/src/server/desktop/desktopTakeover.mjs
@@ -143,6 +144,7 @@ jobs:
         shell: pwsh
         run: |
           node --check agents/desktop-agentos.mjs
+          node --check agents/hands-off-agent.mjs
           node --check runtime/src/server/desktop/desktopTraction.mjs
           if ($LASTEXITCODE -ne 0) { throw 'desktop-agentos syntax check failed' }
           node --check agents/run-desktop-agentos.mjs
