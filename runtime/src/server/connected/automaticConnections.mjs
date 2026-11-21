@@ -35,7 +35,9 @@ export function automaticConnections({ registry, mcpHost, env = process.env, now
   async function connectTools() {
     if (!mcpHost || !autoStart) return [];
     const lite = env.JACO_LITE === '1';
-    const rows = mcpHost.status().filter(s => s.agentAccess !== 'off' && (!lite || ['editor','shell','browser'].includes(s.id)));
+    // Include invalid custom definitions in diagnostics even though status() safely reports agentAccess=off.
+    // Do not start them or widen their access; make the failure visible instead of silently filtering it.
+    const rows = mcpHost.status().filter(s => (s.agentAccess !== 'off' || (s.status === 'FAILED' && Boolean(s.error))) && (!lite || ['editor','shell','browser'].includes(s.id)));
     const out = [], todo = [];
     for (const s of rows) {
       if (s.status === 'READY') { retry.delete(s.id); out.push({ id: s.id, state: 'CONNECTED', tools: s.tools.map(t => t.name) }); continue; }
