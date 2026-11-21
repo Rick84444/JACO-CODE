@@ -14,6 +14,59 @@ export function AuraDesktopMonitor({
   const [error, setError] = useState<string | null>(null);
   const currentUrl = useRef<string | null>(null);
   const lastHash = useRef<string | null>(null);
+  const [takeover, setTakeover] = useState<'idle'|'pending'|'ready'>('idle');
+  const [takeoverBusy, setTakeoverBusy] = useState(false);
+  const [takeoverError, setTakeoverError] = useState<string | null>(null);
+
+  // A takeover belongs to one durable mission only. Never inherit a prior
+  // mission's quiescent state when the operator starts a new mission.
+  useEffect(() => { setTakeover('idle'); setTakeoverError(null); }, [missionId]);
+
+  useEffect(() => {
+    if (takeover === 'idle' || !missionId || missionStatus !== 'ACTIVE' || !active) return;
+    let disposed = false;
+    let checking = false;
+    const inspect = async () => {
+      if (disposed || checking || document.visibilityState !== 'visible') return;
+      checking = true;
+      try {
+        const result = await fetch('/api/aura/desktop/takeover/' + encodeURIComponent(missionId) + '/status', {
+          credentials:'same-origin', cache:'no-store',
+        });
+        const state = await result.json();
+        if (!result.ok || state.success !== true) throw Error(String(state.error || 'TAKEOVER_STATUS_UNAVAILABLE'));
+        if (disposed) return;
+        setTakeover(state.ready === true ? 'ready' : 'pending');
+        if (state.paused !== true) setTakeoverError('DESKTOP_MISSION_NOT_PAUSED');
+        else setTakeoverError(null);
+      } catch (error: any) {
+        if (!disposed) {
+          setTakeover('pending');
+          setTakeoverError(String(error?.message || error));
+        }
+      } finally { checking = false; }
+    };
+    void inspect();
+    const timer = window.setInterval(() => { void inspect(); }, 1200);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [active, missionId, missionStatus, takeover]);
+
+  const setOperatorPause = async (pause: boolean) => {
+    if (!missionId || takeoverBusy) return;
+    setTakeoverBusy(true);setTakeoverError(null);
+    try {
+      const route = '/api/aura/workbench/missions/' + encodeURIComponent(missionId) + (pause ? '/pause' : '/resume');
+      const response = await fetch(route, {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({note:pause ? 'Operator requests manual desktop takeover' : 'Operator returns desktop control to Aura'}),
+      });
+      const result = await response.json();
+      if (!response.ok || result.success !== true) throw Error(String(result.error || 'MISSION_PAUSE_FAILED'));
+      setTakeover(pause ? 'pending' : 'idle');
+    } catch (error: any) {setTakeoverError(String(error?.message || error));}
+    finally {setTakeoverBusy(false);}
+  };
 
   useEffect(() => {
     if (!open || !active || !missionId || missionStatus !== 'ACTIVE') return;
@@ -91,7 +144,19 @@ export function AuraDesktopMonitor({
         {open ? tr('Dölj skärmbild', 'Hide screenshot') : tr('Visa skärmbild', 'View screenshot')}
       </button>
       {open && canShow && <span className="text-neutral-400"><RefreshCw size={12} className="inline" aria-hidden="true"/> {tr('Uppdaterar observerad bild', 'Refreshing observed frame')}</span>}
+      {canShow && <button type="button" disabled={takeoverBusy}
+        onClick={() => { void setOperatorPause(takeover === 'idle'); }}
+        className="rounded border border-neutral-600 px-2 py-1 disabled:opacity-40">
+        {takeover === 'idle' ? tr('Ta över', 'Take control') : takeover === 'ready' ? tr('Återuppta Aura', 'Resume Aura') : tr('Väntar på aktivt verktyg', 'Waiting for active tool')}
+      </button>}
     </div>
+    {takeover !== 'idle' && <div className="mt-2 text-xs" role="status">
+      {takeover === 'ready' ? <span>
+        {tr('Auras uppdrag är pausat och inga aktiva skrivbordsåtgärder observeras inom JACO. Öppna Chrome Remote Desktop för att ta över.', 'Aura is paused and JACO observes no active desktop actions. Open Chrome Remote Desktop to take control.')}
+        {' '}<a href="https://remotedesktop.google.com/access" target="_blank" rel="noopener noreferrer" className="underline">Chrome Remote Desktop</a>
+      </span> : tr('Paus begärd. Väntar på att Auras pågående verktygsanrop och skrivbordslås ska avslutas.', 'Pause requested. Waiting for Aura tools and desktop lock to quiesce.')}
+    </div>}
+    {takeoverError && <p role="alert" className="mt-1 text-xs text-red-400">{takeoverError}</p>}
     {open && <div className="mt-2">
       {frame ? <div>
         <img src={frame.src} alt={tr('Senaste verifierade Windows-skärmbild från Laser Vision', 'Latest verified Windows screenshot from Laser Vision')} className="max-w-full rounded border border-neutral-700"/>
