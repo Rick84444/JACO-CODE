@@ -15,11 +15,11 @@ test('JACO Mode is injected into authorized repository planning but omitted from
   const coding = brainSystemFor(['repo-read','repo-edit','git-status'],true,'linux');
   assert.match(coding, /JACO MODE/);
   assert.match(coding, /REPO BEFORE BUILD/);
-  assert.match(coding, /reusable/);
+  assert.match(coding, /reuse map/);
   assert.doesNotMatch(coding, /Use meaningful specialist titles for task agents/);
   const lightweight = brainSystemFor(['health-check'],false,'linux');
   assert.doesNotMatch(lightweight, /REPO BEFORE BUILD/);
-  assert.match(lightweight, /only agent/);
+  assert.match(lightweight, /operator's single agent/);
 });
 
 test('chat stores exact instruction and retries using the same idempotency key',async()=>{
