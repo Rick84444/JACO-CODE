@@ -21,6 +21,7 @@ on:
       - 'agents/input-bridge.ps1'
       - 'agents/lib/input-bridge-daemon.mjs'
       - 'agents/aura-desktop-vm.ps1'
+      - 'agents/aura-desktop-acceptance.ps1'
       - 'runtime/src/server/desktop/desktopTraction.mjs'
       - 'runtime/src/server/desktop/desktopTraction.d.mts'
       - 'runtime/src/server/desktop/desktopHandsOff.ts'
@@ -160,6 +161,7 @@ jobs:
             'agents/grant-desktop-agentos.ps1',
             'agents/start-all.ps1',
             'agents/aura-desktop-vm.ps1',
+            'agents/aura-desktop-acceptance.ps1',
             'agents/windows-wmi-read.ps1',
             'agents/input-bridge.ps1'
           )
