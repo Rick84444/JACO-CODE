@@ -218,3 +218,17 @@ jobs:
           if ($src -notmatch 'singleWriter\s*!==\s*true') { throw 'ModelRelay single-writer gate missing' }
           $start = (Get-Content 'agents/start-all.ps1' -Raw) + (Get-Content 'agents/lib/local-stack.mjs' -Raw)
           if ($start -match 'google-remote-agent\.mjs') { throw 'Reverted Google Remote Agent wiring returned' }
+
+  desktop-typecheck:
+    name: Canonical desktop TypeScript integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked runtime dependencies
+        run: npm ci --prefix runtime --no-audit --no-fund
+      - name: Check DesktopHandsOff client and DOM Traction adapter types
+        run: npm --prefix runtime run lint
