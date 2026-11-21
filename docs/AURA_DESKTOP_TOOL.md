@@ -2,6 +2,8 @@
 
 Status: **implemented code path; not verified on a live operator VM** (2026-11-21).
 
+**Installationsmanual för Laser Vision:** [JACO_LASER_VISION_SETUP.md](JACO_LASER_VISION_SETUP.md) beskriver den faktiska konfigurationen, opt-in, bildflödet, diagnostik, fjärrvisning, kvitton och det ännu ej genomförda fysiska acceptanstestet.
+
 ## Non-negotiable ownership
 Aura is the **single root agent**. Desktop AgentOS is an executor/tool, not another planner.
 No new Mission Bus, ModelRelay, memory, approvals, agent identity, relay or CDP fork.
