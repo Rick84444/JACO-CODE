@@ -28,6 +28,11 @@ export function classifyMcpChildExit(code, stderr = '', initialized = false) {
 
 // Tools that only read but do not declare readOnlyHint.
 const KNOWN_READ_ONLY = { fetch: new Set(['fetch']) };
+// This seller-registration script is a one-off task, not a JSON-RPC MCP server.
+// Reject accidental registration rather than repeatedly spawning it.
+export function isOneShotSellerScript(command, args = []) {
+  return [command, ...args].some(part => /(?:^|[\\/])create-skyfire-seller-service\.mjs$/i.test(String(part)));
+}
 export const isReadOnlyTool = (server, tool) => Boolean(tool?.readOnly || KNOWN_READ_ONLY[server]?.has(tool?.name));
 // Never invent a tool or strip another server's namespace. Exact registered names win.
 export function resolveAdvertisedTool(server, name, tools) {
@@ -193,6 +198,10 @@ export function loadServerConfig({ configFile, repoRoot, runtimeRoot }) {
       if (servers[id]) servers[id] = withAccess(servers[id], s);
       continue;
     }
+    if (isOneShotSellerScript(s.command, s.args)) {
+      servers[id] = { name: String(s.name || id).slice(0, 80), role: '', validationError: 'MCP_ONE_SHOT_NOT_MCP_SERVER' };
+      continue;
+    }
     // Migrate exactly the old built-in uvx commands, preserving operator access settings.
     // Do not replace arbitrary user-defined uvx servers or other custom commands.
     const legacyGit = id === 'git' && s.command === 'uvx'
@@ -229,6 +238,7 @@ export function validateServerEntry(id, s = {}) {
   const command = String(s.command || '').trim();
   if (!command || command.length > 300) throw Error('MCP_COMMAND_REQUIRED');
   if (!Array.isArray(s.args) || s.args.length > 40) throw Error('MCP_ARGS_INVALID');
+  if (isOneShotSellerScript(command, s.args)) throw Error('MCP_ONE_SHOT_NOT_MCP_SERVER');
   const env = {};
   for (const [k, v] of Object.entries(s.env || {})) {
     if (!/^[A-Z][A-Z0-9_]{0,79}$/.test(k)) throw Error('MCP_ENV_NAME_INVALID');
