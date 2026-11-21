@@ -71,3 +71,30 @@ The remote Link protocol adds two fixed verbs:
 - `POST /api/jaco-link/system/activate` with `{}` → only after both `JACO_LINK_REMOTE_ACTIVATE=1` and `JACO_MCP_ALLOW_ACTIVATION=1`; Sentinel invokes the existing `jaco activate` path and requires a fresh health probe. It never accepts a command or arbitrary executable path.
 
 Opt-in requires a shared `JACO_GATEWAY_TOKEN` of at least 24 characters for Core-to-Sentinel pairing UI delegation. Unset `JACO_LINK_LIFECYCLE_OWNER` and restart services to roll back to embedded Core ownership; **do not leave both modes running**. The state file and pairing token are preserved. A real target-host migration, durable activation deduplication, verified restart and remote OAuth scopes remain pending. Do not advertise this candidate as a functioning cold-start path on a particular device until measured.
+
+## Product boundary: JACO Cloud is not Render
+
+Render (or another cloud compute provider) is the optional hosting substrate. JACO Cloud is a provider-neutral orchestration and installation product that may deploy to Render, manage authorized external cloud APIs, or connect customer-owned computers. Render is not an Aura agent, is not the tenant's identity authority, and MUST NOT be treated as the customer's account or the only supported backend.
+
+The user's one-line intent ("Lös det med JACO") MUST be carried directly from authenticated ChatGPT to a single durable JACO mission handoff. The user must not copy/paste messages or relay receipts between ChatGPT and Aura.
+
+### Durable handoff contract (new source candidate)
+
+Source: cloud/control/handoff.mjs; negative tests: tests/nova/cloud-control-handoff.test.mjs. This specifies, but does not yet host, OAuth-authenticated mission submission with idempotency, read-scoped status, an internal dispatcher claim, and paired-host evidence receipts.
+
+1. submit derives tenant and scopes only from a trusted OAuth verifier and authorizes the exact paired device. It reserves (tenantId, idempotencyKey) uniquely in a durable store; conflicting reuses fail. An HTTP response means ACCEPTED, not executed.
+2. beginDispatch requires an internal dispatcher authorization and an atomic durable transition to UNKNOWN before network delivery, so ambiguous writes cannot be silently retried.
+3. Host acknowledgements may progress DELIVERY_UNKNOWN to RECEIVED to RUNNING to VERIFIED or FAILED. Only an authenticated paired host may report those states. A VERIFIED receipt must carry an evidence reference; the server must independently validate evidence integrity and mission ownership before asserting success.
+4. Customer A cannot access customer B's devices or missions. OAuth audience/expiry, host proof, device scopes and revocation belong to future production adapters and must never be derived from client-supplied JSON.
+
+**Critical remaining work:** no public OAuth MCP endpoint, no actual persistent Postgres adapter, no Render deployment or hosted connection, no background dispatcher wired to JACO Link, no callback/push into an ordinary inactive ChatGPT conversation, and no host evidence attestation pipeline. The unit tests use an in-memory fake store only for contract testing. Do not represent this as operational JACO Cloud.
+
+### Product decomposition
+
+- JACO Cloud API / Control Plane: authenticated tenant/device identity, package catalog, durable job orchestration, status and receipts. Can run on Render or another backend.
+- JACO Cloud Deploy Adapter: explicit connector for external cloud hosting APIs (e.g. Render) to deploy approved services; no reliance on the developer's personal account for customers.
+- JACO Link transport: existing paired per-account outbound device channel, reused until there is a verified reason to replace it.
+- Sentinel: local supervisor and future verified installer-recipe interpreter with bounded permissions and recovery.
+- Aura / Continuum: the canonical sole agent; local mission graph, policy and verification remain authoritative.
+
+A new unpaired computer still needs one trusted local bootstrap action. After pairing, subsequent goals should not require manual mediation between ChatGPT and Aura.
