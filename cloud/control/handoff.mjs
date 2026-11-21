@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 
 const DEVICE = /^[A-Za-z0-9_-]{8,100}$/;
 const KEY = /^[A-Za-z0-9_-]{12,100}$/;
-const TASK = /^[0-9a-f-]{36}$/i;
+const TASK = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const RECEIPT = /^[A-Za-z0-9._:-]{8,160}$/;
 const SCOPE = 'missions:write';
 const STATES = new Set(['ACCEPTED','DELIVERY_UNKNOWN','RECEIVED','RUNNING','VERIFIED','FAILED']);
