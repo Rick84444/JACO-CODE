@@ -50,7 +50,7 @@ hydrateEnvFromStore(process.env);
 import { redactDeep, takeHeld, generateSecret, validateVaultKey, holdValue } from './lib/secret-capture.mjs';
 import { readInbox, inboxDomain } from './lib/inbox.mjs';
 import { selectPerceptionRegion, captureMetrics } from './lib/adaptive-perception.mjs';
-import { freshMissionFrame, permittedFrameMessages, observedInputBinding } from './lib/mission-screen-frame.mjs';
+import { freshMissionFrame, permittedFrameMessages, observedInputBinding, missionScreenshotPath } from './lib/mission-screen-frame.mjs';
 import { createGithubNovaControlInbox } from './lib/github-control-inbox.mjs';
 import { enqueueVerifiedReceiptPromotion, flushLivingCorePromotions, ensureLivingCorePromotionState } from './lib/living-core-promotion.mjs';
 import { TASK_FIELDS, taskContract } from './lib/task-fields.mjs';
@@ -723,7 +723,7 @@ const lawnmower = {
 const INPUT_BRIDGE = join(__dirname, "input-bridge.ps1");
 // The desktop executor uses the exact file produced by Laser Vision; no
 // parallel screenshot store or second image-capture implementation.
-export const computerScreenshotPath = () => join(STATE_DIR, 'latest-observation.png');
+export const computerScreenshotPath = () => missionScreenshotPath();
 
 const inputBridgeDaemon=createInputBridgeDaemon(INPUT_BRIDGE);
 function runBridge(args) {
