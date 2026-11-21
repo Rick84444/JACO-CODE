@@ -27,6 +27,12 @@ on:
       - 'tests/nova/desktop-traction.test.mjs'
       - 'tests/nova/aura-desktop-skill.test.mjs'
       - 'tests/nova/aura-desktop-virtual-input.test.mjs'
+      - 'tests/nova/aura-desktop-live-view.test.mjs'
+      - 'agents/lib/aura-desktop-live-view.mjs'
+      - 'runtime/src/components/AuraDesktopMonitor.tsx'
+      - 'runtime/src/components/AuraLiveStage.tsx'
+      - 'runtime/server.ts'
+      - '.env.example'
       - 'agents/lib/aura-desktop-virtual-input.mjs'
       - 'agents/hands-off-agent.mjs'
       - 'agents/setup-desktop-agentos.ps1'
@@ -90,7 +96,7 @@ jobs:
         run: npm test
 
       - name: Verify Laser Vision / DOM Traction desktop safety
-        run: node --test tests/nova/desktop-traction.test.mjs tests/nova/mission-screen-frame.test.mjs tests/nova/aura-desktop-skill.test.mjs tests/nova/aura-desktop-virtual-input.test.mjs
+        run: node --test tests/nova/desktop-traction.test.mjs tests/nova/mission-screen-frame.test.mjs tests/nova/aura-desktop-skill.test.mjs tests/nova/aura-desktop-virtual-input.test.mjs tests/nova/aura-desktop-live-view.test.mjs
 
       - name: Run Workplace regression suite
         run: npm run test:workplace
@@ -241,3 +247,5 @@ jobs:
         run: npm --prefix runtime run lint
       - name: Bundle the canonical runtime with the desktop adapter
         run: npm --prefix runtime run build:server
+      - name: Build the actual Aura GUI with Windows live monitor
+        run: npm --prefix runtime run build:client
