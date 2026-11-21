@@ -91,6 +91,7 @@ if ($EnableSandboxInput) {
     throw 'VIRTUAL_INPUT_HYPERV_GUEST_REQUIRED'
   }
   Set-EnvValue $lines 'JACO_AURA_DESKTOP_SANDBOX' 'hyperv-guest'
+  Set-EnvValue $lines 'JACO_AURA_DESKTOP_SCREEN_VIEW' '1'
   Set-EnvValue $lines 'JACO_ALLOW_COORDINATE_FALLBACK' '1'
 } else {
   Set-EnvValue $lines 'JACO_ALLOW_COORDINATE_FALLBACK' '0'
