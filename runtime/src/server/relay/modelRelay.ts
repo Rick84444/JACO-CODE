@@ -221,7 +221,10 @@ export function createModelRelayRouter(input: {
     );
     if (targetBearing) {
       const traction = input.nova.beforeAction(String(action.type));
-      if (traction.state !== 'VERIFYING') return fail(res, 409, 'Nova target lock is not verified', { traction });
+      if (traction.state !== 'VERIFYING') {
+        actuatorLeases.release(surface, modelId);
+        return fail(res, 409, 'Nova target lock is not verified', { traction });
+      }
     }
 
     input.onEvent?.({ actor: 'ModelRelay', type: 'relay.action.started', message: `${modelId} → ${surface} ${String(action.type)} [${consequence}]`, verified: true });
@@ -252,6 +255,11 @@ export function createModelRelayRouter(input: {
     } catch (error) {
       input.nova.markActionFailure(error instanceof Error ? error.message : String(error));
       return fail(res, 500, error);
+    } finally {
+      // ModelRelay leases are in-flight ownership, not persistent grants. A
+      // completed action must free the surface so a paused mission can yield
+      // the Windows pointer to the human without waiting for a stale TTL.
+      actuatorLeases.release(surface, modelId);
     }
   });
 
