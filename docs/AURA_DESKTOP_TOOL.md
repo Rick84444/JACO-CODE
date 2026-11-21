@@ -36,7 +36,7 @@ DOM Track still operates on web documents through CDP. **Desktop Traction** cons
 ## Windows screenshot + virtual mouse/keyboard (no new capture backend)
 
 JACO **already** provides the complete native Windows primitives:
-- `agents/input-bridge.ps1`: `screenshot` uses `System.Drawing.Graphics.CopyFromScreen` on the actual Windows virtual desktop (multiple monitors included), with optional crop and resize. It creates PNG; no DeskRoll API, PrintScreen clipboard or parallel screen engine is needed.
+- `agents/input-bridge.ps1`: `screenshot` uses `System.Drawing.Graphics.CopyFromScreen` on the actual Windows virtual desktop (multiple monitors included), with optional crop and resize. It creates PNG; no Chrome Remote Desktop API, PrintScreen clipboard or parallel screen engine is needed.
 - `agents/hands-off-agent.mjs`: `computerTools.screenshot` hashes the PNG, records capture geometry/window and exposes the existing mission receipt. `agents/lib/mission-screen-frame.mjs` accepts **only the current mission's** fresh, hashed unchanged image.
 - `agents/desktop-agentos.mjs`: the SEER planning call can now consume this original Laser Vision screenshot **only when `NOVA_ALLOW_CLOUD_IMAGES=1`** because the SEER proxy may route to a remote provider. When transfer is off, SEER receives only a textual provenance note, never pixels.
 - The **same** `agents/input-bridge.ps1` supports `mouse_move`, `mouse_click`, `mouse_scroll`, `key_press` and `type_text` via the original Win32 SendInput; `agents/lib/input-bridge-daemon.mjs` serializes calls, associates receipts and refuses uncertain retries.
@@ -55,11 +55,11 @@ This does not install, provision or configure Hyper-V. The operator still must p
 
 ## Visible execution: one screen, two views
 
-**True continuous view:** open the sandbox's same interactive Windows session in VMConnect, or use an operator-authorized DeskRoll session on that guest. Aura's existing Win32 input and UIA act on that exact session. Neither viewer is an agent, an alternative executor or a source of permission. Operator takeover should stop/pause the current mission first; a parallel human pointer is not protected by model-only actuator leases.
+**True continuous view (recommended):** install and configure **Chrome Remote Desktop** inside the dedicated Windows guest, then connect from the operator's computer/phone through https://remotedesktop.google.com/access. Hyper-V **VMConnect** remains the host-local fallback. Both viewers must be checked to display the **same interactive Windows session** as JACO's Win32/UIA worker; never assume session identity across remote logins or Windows desktop switches. Aura's native input works within that session, not through Google's API. Neither viewer becomes an agent, second executor or authority source. Stop/pause the mission before manual takeover: a separate human cursor is not controlled by the ModelRelay lease.
 
 **In JACO GUI:** the existing `AuraLiveStage` now contains an optional read-only **Windows Desktop** panel. It requests `GET /api/aura/desktop/live-frame` only after the operator clicks **Visa skärmbild**, while the UI is visible and an ACTIVE `desktop-agentos` mission exists. The response is the existing `agents/input-bridge.ps1` PNG, exposed after `freshMissionFrame` checks original mission receipt, SHA-256, modification time, age (12 seconds), and invalidating actions. Server sends only `image/png` with private/no-store headers. Authentication is inherited from JACO's local IDE or signed-in remote IDE session; no query token, public file path, browser CDP action or new capture worker is created.
 
-This is **an observed snapshot refreshed when new mission screenshots arrive, not 30 FPS video**. When no fresh verified screenshot exists, the panel reports the absence rather than displaying old frames as live. VMConnect/DeskRoll remain the full-motion screen sharing and takeover layer.
+This is **an observed snapshot refreshed when new mission screenshots arrive, not 30 FPS video**. When no fresh verified screenshot exists, the panel reports the absence rather than displaying old frames as live. Chrome Remote Desktop (or host-local VMConnect) remains the continuous remote-viewing and takeover layer.
 
 Operator screen-sharing opt-in: `JACO_AURA_DESKTOP_SCREEN_VIEW=1`. This is enabled by `setup-desktop-agentos.ps1 -EnableSandboxInput` when run inside a verified Hyper-V Windows guest and may otherwise be configured explicitly by the operator. Default is off. No camera content or image is sent to a model merely by enabling this GUI view; separate `NOVA_ALLOW_CLOUD_IMAGES=1` is still required to send a screenshot through the SEER proxy to a potentially cloud model.
 
@@ -67,7 +67,7 @@ Operator screen-sharing opt-in: `JACO_AURA_DESKTOP_SCREEN_VIEW=1`. This is enabl
 
 ## Isolated desktop and remote display
 
-The first supported remote display is **Hyper-V VMConnect**, not an extra agent and not a browser DOM bridge. `agents/aura-desktop-vm.ps1` only observes, starts and opens an **existing** Windows VM. It does not create a VM, alter networking, copy host files, inject credentials, install software or execute code inside a guest.
+The recommended viewer is **Chrome Remote Desktop installed inside the Windows guest**; native Hyper-V VMConnect remains the built-in host-local fallback. Neither is an extra agent or a browser DOM bridge. `agents/aura-desktop-vm.ps1` only observes, starts and opens an **existing** Windows VM. It does not create a VM, alter networking, copy host files, inject credentials, install software or execute code inside a guest.
 
 On the Windows host with Hyper-V installed, create/configure a dedicated **Windows VM** named `JACO-Aura-Desktop`. Install a licensed Windows guest. Review Hyper-V networking, host drive/resource redirection, VM checkpoint/restore and administrator rights. Do not expose guest RDP or the JACO Core port publicly. Use the host's Hyper-V Manager to establish the boundary before claiming isolation.
 
@@ -90,7 +90,7 @@ Within the interactive guest desktop (not an unattended Windows service/session-
 .\agents\start-all.ps1
 ```
 
-Use the existing remote PWA through its established **authenticated Cloudflare Access** path to reach that guest-owned Aura Runtime. VMConnect is for operator view and takeover; the canonical mission/executor in the guest performs UIA actions. The VM must have its own allowed repository and tools. Do not mount host secrets or grant host filesystem access.
+Use the existing remote PWA through its established **authenticated Cloudflare Access** path to reach that guest-owned Aura Runtime. Chrome Remote Desktop is for continuous operator viewing and takeover from another device, and VMConnect is the local host fallback; the canonical mission/executor in the guest performs UIA actions. The VM must have its own allowed repository and tools. Do not mount host secrets or grant host filesystem access.
 
 For a code/edit mission, the signed mandate grants relevant guest app processes and the mission contract bounds work to the guest worktree. Reversible guest-local operations need no click-by-click approvals; financial, outward, identity, security or destructive consequences retain the canonical approval requirements.
 
@@ -98,9 +98,9 @@ For a code/edit mission, the signed mandate grants relevant guest app processes 
 
 - **Code-level:** DesktopHandsOffClient uses DomTractionEngine and refuses stale/ambiguous/cross-process UIA target locks before bridge dispatch; `tests/nova/desktop-traction.test.mjs` covers these cases.
 - **Windows CI:** PowerShell parser checks the VMConnect helper; the existing Desktop AgentOS tests and TypeScript build validate integration.
-- **NOT PROVEN:** a Hyper-V VM exists on the operator's PC; a guest is isolated from host drives/network; an active authenticated guest mission; live UIA click/readback; an embedded WebRTC desktop stream in JACO GUI; a real GUI acceptance receipt.
+- **NOT PROVEN:** a Hyper-V VM exists on the operator's PC; a guest is isolated from host drives/network; Chrome Remote Desktop is installed or connected in that guest; an active authenticated guest mission; live UIA click/readback; an embedded WebRTC desktop stream in JACO GUI; a real GUI acceptance receipt.
 
-The first end-to-end acceptance mission is: **inside the guest** open Notepad, type harmless local text, save to the guest worktree, independently read back the file and show the live result in VMConnect. Do not call this DONE until the actual guest receipt exists.
+The first end-to-end acceptance mission is: **inside the guest** open Notepad, type harmless local text, save to the guest worktree, independently read back the file and show the live result in Chrome Remote Desktop (or host-local VMConnect). Do not call this DONE until the actual guest receipt exists.
 
 ## Deferred, without shadow runtimes
 
