@@ -60,3 +60,14 @@ Query `platform=windows|linux|macos|android-chat`; optional `profile=lite|full`.
 - One root agent: Aura; external ChatGPT is a control/model client and does not gain its own local agent identity.
 
 Falsifiers: manifest corruption or unknown platform must fail; API prompt alone must not claim installation; Core-down status must not claim ONLINE unless Sentinel independently serves a paired Link; cross-account calls must fail; unknown write outcomes must not repeat.
+
+## Optional migration: Sentinel Link ownership (code candidate)
+
+The existing Core-embedded JACO Link host cannot receive a request when Core is stopped. The candidate moves the **same** outbound host connection into Sentinel only when `JACO_LINK_LIFECYCLE_OWNER=sentinel` is explicitly configured for the same host. The Core refuses to create its own Link socket in that mode and proxies its existing local pairing/status buttons to Sentinel using the existing shared gateway token over loopback.
+
+The remote Link protocol adds two fixed verbs:
+
+- `GET /api/jaco-link/system/status` → Sentinel SystemControl health projection; safe while Core is down.
+- `POST /api/jaco-link/system/activate` with `{}` → only after both `JACO_LINK_REMOTE_ACTIVATE=1` and `JACO_MCP_ALLOW_ACTIVATION=1`; Sentinel invokes the existing `jaco activate` path and requires a fresh health probe. It never accepts a command or arbitrary executable path.
+
+Opt-in requires a shared `JACO_GATEWAY_TOKEN` of at least 24 characters for Core-to-Sentinel pairing UI delegation. Unset `JACO_LINK_LIFECYCLE_OWNER` and restart services to roll back to embedded Core ownership; **do not leave both modes running**. The state file and pairing token are preserved. A real target-host migration, durable activation deduplication, verified restart and remote OAuth scopes remain pending. Do not advertise this candidate as a functioning cold-start path on a particular device until measured.
