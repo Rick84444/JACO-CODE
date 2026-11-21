@@ -33,6 +33,26 @@ The existing `DesktopHandsOffClient.executeVerified` performs this gate before t
 
 DOM Track still operates on web documents through CDP. **Desktop Traction** consumes Windows UI Automation trees; it does not pretend that arbitrary Windows applications have HTML DOMs. Laser Vision supplies fresh pixels where UIA is insufficient; the existing screen-binding policy prevents stale cross-window raw input.
 
+## Windows screenshot + virtual mouse/keyboard (no new capture backend)
+
+JACO **already** provides the complete native Windows primitives:
+- `agents/input-bridge.ps1`: `screenshot` uses `System.Drawing.Graphics.CopyFromScreen` on the actual Windows virtual desktop (multiple monitors included), with optional crop and resize. It creates PNG; no DeskRoll API, PrintScreen clipboard or parallel screen engine is needed.
+- `agents/hands-off-agent.mjs`: `computerTools.screenshot` hashes the PNG, records capture geometry/window and exposes the existing mission receipt. `agents/lib/mission-screen-frame.mjs` accepts **only the current mission's** fresh, hashed unchanged image.
+- `agents/desktop-agentos.mjs`: the SEER planning call can now consume this original Laser Vision screenshot **only when `NOVA_ALLOW_CLOUD_IMAGES=1`** because the SEER proxy may route to a remote provider. When transfer is off, SEER receives only a textual provenance note, never pixels.
+- The **same** `agents/input-bridge.ps1` supports `mouse_move`, `mouse_click`, `mouse_scroll`, `key_press` and `type_text` via the original Win32 SendInput; `agents/lib/input-bridge-daemon.mjs` serializes calls, associates receipts and refuses uncertain retries.
+- `observedInputBinding` requires a fresh mission-bound HWND, PID, window geometry and screenshot capture for pointer input. Keyboard input needs a fresh bound UIA observation or screenshot. Dispatch attestation is **not** semantic postcondition verification.
+
+To opt in to raw virtual input **inside a preconfigured dedicated Hyper-V Windows guest**:
+
+```powershell
+.\\agents\\setup-desktop-agentos.ps1 -EnableSandboxInput
+.\\agents\\start-all.ps1
+```
+
+Setup confirms actual guest hardware through Windows CIM (Microsoft Corporation / Virtual Machine); runtime preflight checks it again. Default without the opt-in is **semantic UI Automation and screenshot only**. Even when enabled, raw input is restricted to the mission's declared tasks, existing active window/process binding and operator-action policy. Do not use raw input to bypass blocked semantic/UIA/credential/security operations.
+
+This does not install, provision or configure Hyper-V. The operator still must provision and isolate the guest before running it.
+
 ## Isolated desktop and remote display
 
 The first supported remote display is **Hyper-V VMConnect**, not an extra agent and not a browser DOM bridge. `agents/aura-desktop-vm.ps1` only observes, starts and opens an **existing** Windows VM. It does not create a VM, alter networking, copy host files, inject credentials, install software or execute code inside a guest.
