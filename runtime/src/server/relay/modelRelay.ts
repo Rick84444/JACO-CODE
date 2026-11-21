@@ -1,4 +1,6 @@
 import express from 'express';
+import crypto from 'node:crypto';
+import { createBonsaiAndroidAgent } from '../android/bonsaiAndroidAgent.mjs';
 import type { BrowserSessionManager } from '../browser/router.js';
 import type { BrowserAction } from '../browser/browserHandsOff.js';
 import type { DesktopHandsOffClient, DesktopAction } from '../desktop/desktopHandsOff.js';
@@ -138,6 +140,73 @@ export function createModelRelayRouter(input: {
       input.onEvent?.({ actor: 'AutonomyContract', type: 'mandate.revoked', message: `${mandate.name} revoked; local grants and actuator leases cleared`, verified: true, receipt: revokedGrants });
       res.json({ success: true, mandate, revokedGrants });
     } catch (error) { fail(res, 400, error); }
+  });
+
+  // ChatGPT's private MCP bridge may call this route, but the actual actuator is
+  // always the existing local Android Hands-Off client and its signed mandate.
+  // The GitHub Workplace communication relay has no access to this endpoint.
+  let androidBonsaiBusy = false;
+  router.post('/android-bonsai', input.requireAuth, async (req, res) => {
+    if (androidBonsaiBusy) return fail(res, 423, 'ANDROID_BONSAI_BUSY');
+    const instruction = req.body?.instruction;
+    const packageName = String(req.body?.packageName || '');
+    const mandateId = String(req.body?.mandateId || '');
+    const missionId = typeof req.body?.missionId === 'string' ? req.body.missionId.slice(0, 160) : null;
+    const maxSteps = req.body?.maxSteps === undefined ? 8 : req.body.maxSteps;
+    if (typeof instruction !== 'string' || instruction.length < 4 || instruction.length > 2000 ||
+        !/^[a-zA-Z0-9_.]{3,200}$/.test(packageName) ||
+        !Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 20 ||
+        /(?:password|passcode|otp|secret|api.?key|bearer\s+\S+)/i.test(instruction)) {
+      return fail(res, 400, 'ANDROID_BONSAI_INPUT_INVALID');
+    }
+    const policy = mandates.evaluate(mandateId, 'LOCAL_MUTATION', false);
+    if (!policy.allowed) return fail(res, policy.requireReview ? 428 : 403, policy.reason, { consequence: 'LOCAL_MUTATION' });
+    if (!policy.mandate?.allowedAndroidPackages.includes(packageName)) return fail(res, 403, 'ANDROID_PACKAGE_OUTSIDE_MANDATE');
+    const leaseHolder = 'bonsai-android:' + crypto.randomUUID();
+    let lease = false;
+    let grantAttempted = false;
+    androidBonsaiBusy = true;
+    try {
+      actuatorLeases.acquire('ANDROID', leaseHolder, missionId, 120_000);
+      lease = true;
+      const expiresAt = new Date(Math.min(Date.parse(policy.mandate.expiresAt), Date.now() + 15 * 60_000)).toISOString();
+      grantAttempted = true;
+      await input.android.configureGrant({
+        enabled: true, allowed_packages: [packageName],
+        allow_typing: true, allow_gestures: true, allow_navigation: true,
+        expires_at: expiresAt,
+      });
+      const agent = createBonsaiAndroidAgent({
+        android: input.android,
+        onEvent: event => {
+          actuatorLeases.acquire('ANDROID', leaseHolder, missionId, 120_000);
+          input.onEvent?.({ actor: 'Bonsai via Aura', type: 'android.bonsai.step',
+            message: 'Android semantic action step ' + String(event.step), verified: event.verified });
+        },
+      });
+      const task = await agent.run({ instruction, packageName, maxSteps, mandate: policy.mandate, missionId });
+      const success = task.status === 'DONE_WITH_OBSERVED_TEXT';
+      input.onEvent?.({ actor: 'Bonsai via Aura', type: 'android.bonsai.finished',
+        message: task.status, verified: success, receipt: { taskId: task.taskId, verifiedSteps: task.verifiedSteps } });
+      // No screen text or model prompt is returned through ChatGPT MCP.
+      return res.json({ success, task });
+    } catch (error) {
+      return fail(res, 409, error instanceof Error ? error.message : 'ANDROID_BONSAI_FAILED');
+    } finally {
+      if (grantAttempted) {
+        try {
+          await input.android.configureGrant({
+            enabled: false, allowed_packages: [], allow_typing: false, allow_gestures: false,
+            allow_navigation: false, expires_at: new Date().toISOString(),
+          });
+        } catch {
+          input.onEvent?.({ actor: 'Bonsai via Aura', type: 'android.bonsai.grant_cleanup_failed',
+            message: 'Android Hands-Off grant cleanup unverified', verified: false });
+        }
+      }
+      if (lease) actuatorLeases.release('ANDROID', leaseHolder);
+      androidBonsaiBusy = false;
+    }
   });
 
   router.post('/action', input.requireAuth, async (req, res) => {
