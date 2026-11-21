@@ -1,5 +1,6 @@
 import { readAuraServiceHealth } from '../agents/lib/aura-service-health.mjs';
 import { readAuraDesktopLiveFrame } from '../agents/lib/aura-desktop-live-view.mjs';
+import { missionScreenshotPath } from '../agents/lib/mission-screen-frame.mjs';
 import { githubWindowsReleaseStatus } from './src/server/updates/githubRelease.mjs';
 import { sharedObservation } from './src/server/connected/sharedObservation.mjs';
 import { readMissionReview } from './src/server/connected/missionReview.mjs';
@@ -4382,7 +4383,7 @@ const notifyPhone = async (action) => {
     }
     let mission: any = null;
     try { mission = connectedRuntime.novaMissions.current(); } catch {}
-    const file = path.join(process.env.NOVA_STATE_DIR || path.join(RELEASE_ROOT, 'agents', '.agent-state'), 'latest-observation.png');
+    const file = missionScreenshotPath();
     const frame = readAuraDesktopLiveFrame({ mission, file });
     if ('reason' in frame) {
       return res.status(frame.reason === 'DESKTOP_SCREEN_VIEW_NOT_ENABLED' ? 403 : 409)
