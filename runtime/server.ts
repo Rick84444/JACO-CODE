@@ -4392,6 +4392,7 @@ const notifyPhone = async (action) => {
     res.setHeader('X-JACO-Frame-SHA256', frame.sha256);
     res.setHeader('X-JACO-Frame-Observed-At', frame.at);
     res.setHeader('X-JACO-Mission-Id', frame.missionId);
+    res.setHeader('X-JACO-Windows-Session-Id', String(frame.sessionId));
     return res.status(200).type('png').send(frame.png);
   });
 
