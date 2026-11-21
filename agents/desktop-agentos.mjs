@@ -333,7 +333,7 @@ async function preflight() {
   // Fail closed like the former start-all.ps1 gate: two writers through ModelRelay could act twice.
   if (relay?.singleWriter !== true) throw new Error('MODELRELAY_SINGLE_WRITER_UNAVAILABLE');
   // WMI reads actual guest hardware identity, never a caller-supplied hostname
-  // or a visual claim from DeskRoll. Absent permission leaves raw input off.
+  // or a remote-viewer screenshot. Absent permission leaves raw input off.
   const guest = ALLOW_COORDINATE_FALLBACK ? await windowsWmiRead({ query: 'computer', limit: 1 }) : null;
   virtualInput = virtualInputGrant({ wmi: guest });
   if (ALLOW_COORDINATE_FALLBACK && !virtualInput.allowed) {
