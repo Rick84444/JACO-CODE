@@ -52,7 +52,40 @@ const output=resolve(process.argv[2]||fileURLToPath(new URL('../public/branding/
 const expected='ac10ed2361d02634524cf3e0d1c8b5e6ec10bc67d9a589c5567c6b873bd8307d';
 let existing;try{existing=await readFile(output)}catch(e){if(e.code!=='ENOENT')throw e;}
 if(existing&&sha256(existing)===expected){console.log('Aura rig ready: '+expected);process.exit(0);}
-let source;if(process.env.JACO_AURA_RIG_SOURCE)source=await readFile(process.env.JACO_AURA_RIG_SOURCE);else{const response=await fetch(SOURCE,{signal:AbortSignal.timeout(120000)});if(!response.ok)throw Error('AURA_RIG_DOWNLOAD_'+response.status);source=Buffer.from(await response.arrayBuffer());}
+// This is one pinned asset with two transport mirrors, not two versions.
+ // GitHub raw intermittently returns HTTP 429 on parallel CI builds.
+ // All successful transfers are checked against the *same* upstream Git blob
+ // SHA-1, expected GLB structure and deterministic compact SHA-256 below.
+export const SOURCE_MIRRORS = Object.freeze([
+  SOURCE,
+  'https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@1563de184c19b310de4b636664d5835e2c74dbba/avatars/mpfb.glb',
+]);
+async function downloadPinnedRig(fetchImpl = fetch) {
+  const errors = [];
+  for (const url of SOURCE_MIRRORS) {
+    // A short retry handles burst rate limits without hanging the build.
+    for (let attempt=0; attempt<2; attempt++) {
+      try {
+        const res=await fetchImpl(url,{signal:AbortSignal.timeout(120000)});
+        if (!res.ok) {
+          errors.push(res.status);
+          if (res.status !== 429 && res.status < 500) break;
+        } else {
+          const bytes=Buffer.from(await res.arrayBuffer());
+          const hash=createHash('sha1').update('blob '+bytes.length+'\\0').update(bytes).digest('hex');
+          if (bytes.length!==SIZE||hash!==BLOB) throw Error('AURA_RIG_SOURCE_MISMATCH');
+          return bytes;
+        }
+      } catch (error) {
+        errors.push(String(error?.message||error));
+        if (errors.at(-1)==='AURA_RIG_SOURCE_MISMATCH') throw error;
+      }
+      if (!attempt) await new Promise(resolve=>setTimeout(resolve,1500));
+    }
+  }
+  throw Error('AURA_RIG_ALL_PINNED_SOURCES_FAILED:' + errors.map(x=>String(x).slice(0,50)).join(','));
+}
+let source;if(process.env.JACO_AURA_RIG_SOURCE)source=await readFile(process.env.JACO_AURA_RIG_SOURCE);else source=await downloadPinnedRig();
 const compact=compactRig(source),digest=sha256(compact);
 if(digest!==expected)throw Error('AURA_RIG_COMPACT_HASH');
 await mkdir(dirname(output),{recursive:true});const tmp=output+'.tmp-'+process.pid;await writeFile(tmp,compact);await rename(tmp,output);console.log(JSON.stringify({bytes:compact.length,sha256:digest,source:BLOB}));
