@@ -2,6 +2,7 @@
 // replay video, and robots.txt pointing at the sitemap. Reconstructed from the deployed jaco-site bundle; the only
 // behavioural change is the Sitemap line in robots.txt.
 import { handleAuth } from './auth.mjs';
+import { handleCloudInstall } from './cloud-install.mjs';
 import { handleLink, handleLinkHostSocket, JacoLinkRoom, JacoLinkPairing } from './link.mjs';
 export { JacoLinkRoom, JacoLinkPairing };
 
@@ -72,6 +73,11 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.hostname === 'www.jacocode.com') return Response.redirect('https://jacocode.com' + url.pathname + url.search, 301);
+    // Public read-only installation planning; no device execution or auth delegation.
+    if (url.pathname === '/cloud/v1/install-plan') {
+      const response = await handleCloudInstall(request, env, url);
+      return withHeaders(response, url.pathname, { noStore: true });
+    }
     // JACO Link is a shared multi-tenant service. The Windows PC does not expose
     // a tunnel and never needs the site's session cookie in its outgoing socket.
     if (url.pathname === '/link/ws' && url.searchParams.get('role') === 'host') {
