@@ -118,6 +118,10 @@ test('browser skills keep read-only observation separate from authorized mutatio
   assert.equal(action.truncated, false);
   assert.match(action.body, /If a required approval cannot be verified/);
   assert.match(action.body, /never issue a fresh actionId/);
+  assert.match(action.body, /ChatGPT callback through an already signed-in account/);
+  assert.match(action.body, /Do not programmatically scrape responses/);
+  assert.match(action.body, /PENDING_CHATGPT_SUBSCRIPTION/);
+  assert.match(action.body, /MCP Events subscription/);
   assert.match(read.body, /no alternate input route/);
 });
 
