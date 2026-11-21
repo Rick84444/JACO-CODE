@@ -82,6 +82,7 @@ import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { WORKSPACE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
 import { createStackRepair } from "./src/server/connected/stackRepair.mjs";
 import { createPiperVoice } from "./src/server/connected/piperVoice.mjs";
+import { renewStandingGrants } from "./src/server/desktop/grantAtStart.mjs";
 const repairStack = createStackRepair();
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier, synthesize as synthesizeVoice } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
@@ -217,6 +218,14 @@ const inspectJacoSource = createAuraSourceInspector({ candidateRoots: [
 ] });
 const handsOff = new HandsOffClient(WORKSPACE_ROOT);
 const desktopHandsOff = new DesktopHandsOffClient(WORKSPACE_ROOT, RELEASE_ROOT);
+// Operator standing instruction: the tools are on when JACO activates and the operator switches off what
+// they do not want. Renewing here goes through each surface's own configureGrant, so blocked credential
+// surfaces, name validation and the 8-hour ceiling all still apply; only the opening of the UI is removed.
+const standingGrants = renewStandingGrants({
+  desktop: desktopHandsOff,
+  env: process.env,
+  log: (level, message) => console[level === 'warn' ? 'warn' : 'log'](`[grant-at-start] ${message}`),
+});
 const handsOffPlans = createHandsOffPlanRunner(handsOff, WORKSPACE_ROOT);
 const novaTraction = new NovaTractionEngine();
 const intuitionContracts = new IntuitionContractStore(WORKSPACE_ROOT);
