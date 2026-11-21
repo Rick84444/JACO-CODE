@@ -54,13 +54,15 @@ function safePublic(task) {
  * Strict application contract for a future hosted HTTPS/MCP handler.
  * authenticateUser: validates OAuth token, audience, expiry, scopes, revocation.
  * authenticateHost: validates paired device signature/socket identity and revocation.
+ * authorizeDispatch: authenticates server-internal worker credential (never caller function).
+ * verifyEvidence: independently validates a canonical Aura receipt before VERIFIED.
  * ownsDevice: checks immutable tenant/device membership and per-device authorization.
  * store: must provide atomic, durable reserveUnique(), get(), beginDispatch(),
  *        and applyHostEvent() transactions. In-memory stores are NOT production safe.
  * No HTTP listener or unauthenticated mutation route is exported here.
  */
-export function createCloudHandoff({authenticateUser, authenticateHost, ownsDevice, store, clock = () => new Date().toISOString()}) {
-  if ([authenticateUser,authenticateHost,ownsDevice,store?.reserveUnique,store?.get,
+export function createCloudHandoff({authenticateUser, authenticateHost, authorizeDispatch, verifyEvidence, ownsDevice, store, clock = () => new Date().toISOString()}) {
+  if ([authenticateUser,authenticateHost,authorizeDispatch,verifyEvidence,ownsDevice,store?.reserveUnique,store?.get,
        store?.beginDispatch,store?.applyHostEvent].some(f => typeof f !== 'function')) {
     throw new HandoffError('CLOUD_DEPENDENCIES_MISSING');
   }
@@ -99,11 +101,10 @@ export function createCloudHandoff({authenticateUser, authenticateHost, ownsDevi
     return safePublic(task);
   }
 
-  async function beginDispatch({jobId, authorizeInternalDispatch}) {
-    // Internal dispatcher capability is verified by server-side transport,
-    // never a boolean / tenantId supplied by an external HTTP caller.
-    if (typeof authorizeInternalDispatch !== 'function' ||
-        !await authorizeInternalDispatch()) throw new HandoffError('DISPATCHER_AUTH_DENIED');
+  async function beginDispatch({jobId, dispatchCredential}) {
+    // The caller cannot inject an authorization callback; only server-side
+    // transport configuration can validate an internal dispatcher credential.
+    if (!await authorizeDispatch(dispatchCredential)) throw new HandoffError('DISPATCHER_AUTH_DENIED');
     requireValue(jobId, TASK, 'TASK_ID_INVALID');
     // Atomic state change BEFORE sending through the customer-scoped transport.
     // If send/ack is ambiguous, do NOT silently retry with a second request.
@@ -134,6 +135,13 @@ export function createCloudHandoff({authenticateUser, authenticateHost, ownsDevi
     if (task.state !== event.type && !allowed[task.state]?.has(event.type)) {
       throw new HandoffError('HOST_STATE_TRANSITION_DENIED');
     }
+    // A host-provided boolean and evidenceRef string do NOT prove completion.
+    // Verify against a trusted canonical Aura evidence source (signature, ledger
+    // ownership, exact mission and device binding) before a terminal write.
+    if (event.type === 'VERIFIED' && !await verifyEvidence({
+      tenantId:host.tenantId,deviceId:host.deviceId,jobId,
+      receiptId,evidenceRef:event.evidenceRef,
+    })) throw new HandoffError('EVIDENCE_NOT_VERIFIED');
     // Must compare/dedupe receiptId and state atomically in persistent store,
     // including the existing terminal state. Only a host receipt can resolve
     // unknown delivery; an HTTP timeout cannot.
