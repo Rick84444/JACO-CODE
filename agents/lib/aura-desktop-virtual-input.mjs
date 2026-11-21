@@ -14,11 +14,18 @@ export function verifiedHyperVGuest(wmi) {
     typeof Model === 'string' && /^virtual machine$/i.test(Model.trim());
 }
 
-export function virtualInputGrant({ env = process.env, platform = process.platform, wmi } = {}) {
+export function virtualInputGrant({ env = process.env, platform = process.platform, wmi, session } = {}) {
   const requested = env.JACO_ALLOW_COORDINATE_FALLBACK === '1';
   if (!requested) return { requested: false, allowed: false, reason: 'VIRTUAL_INPUT_OPERATOR_OPT_IN_REQUIRED' };
   if (env.JACO_AURA_DESKTOP_SANDBOX !== 'hyperv-guest' || platform !== 'win32') {
     return { requested: true, allowed: false, reason: 'VIRTUAL_INPUT_SANDBOX_MODE_REQUIRED' };
+  }
+  if (!session || session.schema !== 'jaco.desktop-session/v1' ||
+      session.ok !== true || session.verified !== true || session.interactive !== true ||
+      session.inputDesktop !== 'Default' || !Number.isSafeInteger(session.sessionId) ||
+      session.sessionId <= 0 || !Number.isSafeInteger(session.foregroundHwnd) ||
+      session.foregroundHwnd <= 0) {
+    return { requested: true, allowed: false, reason: 'VIRTUAL_INPUT_INTERACTIVE_SESSION_UNVERIFIED' };
   }
   if (!verifiedHyperVGuest(wmi)) {
     return { requested: true, allowed: false, reason: 'VIRTUAL_INPUT_HYPERV_GUEST_UNVERIFIED' };
