@@ -396,20 +396,25 @@ test('failed custom MCP connections are disabled reversibly without affecting wo
   const missing = path.join(dir, 'missing-custom-mcp-entrypoint.mjs');
   const broken = {command:process.execPath,args:[missing],agentAccess:'write',env:{API_KEY:'${LOCAL_TEST_KEY}'}};
   const good = {command:process.execPath,args:[serverFile],agentAccess:'read'};
-  fs.writeFileSync(cfg,JSON.stringify({schema:'custom-layout',servers:{bad:broken,good}}));
+  const remote = {transport:'http',url:'https://offline.example.test/mcp',agentAccess:'read'};
+  fs.writeFileSync(cfg,JSON.stringify({schema:'custom-layout',servers:{bad:broken,good,remote}}));
   t.after(()=>{fs.rmSync(cfg,{force:true})});
   const host=new StdioMcpHost({configFile:cfg,repoRoot:dir,runtimeRoot:dir});
   try {
     await host.start('good');
     await assert.rejects(host.start('bad'),/MCP_SERVER_EXITED:bad:ENTRYPOINT_NOT_FOUND/);
     assert.equal(host.status().find(x=>x.id==='bad').status,'FAILED');
+    const remoteClient=host.client('remote');
+    remoteClient.error='MCP_CONNECTION_FAILED'; // Observed transport failure; no network request here.
+    assert.equal(host.status().find(x=>x.id==='remote').status,'FAILED');
     const repaired=host.quarantineFailedCustom();
-    assert.deepEqual(repaired,{disabled:['bad'],definitionsPreserved:true});
+    assert.deepEqual(repaired,{disabled:['bad','remote'],definitionsPreserved:true});
     const disk=JSON.parse(fs.readFileSync(cfg,'utf8'));
     assert.equal(disk.schema,'custom-layout');
     assert.deepEqual(disk.servers.bad,{...broken,enabled:false});
     assert.deepEqual(disk.servers.good,good);
-    assert.equal(host.status().some(x=>x.id==='bad'),false);
+    assert.deepEqual(disk.servers.remote,{...remote,enabled:false});
+    assert.equal(host.status().some(x=>x.id==='bad'||x.id==='remote'),false);
     assert.equal(host.status().find(x=>x.id==='good').status,'READY');
     assert.ok(host.status().find(x=>x.id==='git'),'built-in git was not changed');
     assert.deepEqual(host.quarantineFailedCustom().disabled,[],'second run is idempotent');
