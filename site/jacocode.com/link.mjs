@@ -283,7 +283,11 @@ export class JacoLinkRoom {
         // ChatGPT subscriptions are unavailable or the host retries.
         const rows=await tx.list({prefix:'call:'});
         const now=Date.now();
-        const active=[...rows.entries()].filter(([_,v])=>v?.createdAt>now-7*86400_000);
+        const active=[];
+        for(const [key,value] of rows) {
+          if(value?.createdAt>now-7*86400_000)active.push(key);
+          else await tx.delete(key); // bounded retention after previous calls expire
+        }
         if(active.length>=64)return {state:'REJECTED',error:'AURA_CALL_INBOX_FULL'};
         await tx.put(id,{schema:'jaco.aura-call/v1',eventId:call.eventId,
           deviceId:info.deviceId,missionId:call.missionId,reason:call.reason,createdAt:now});
