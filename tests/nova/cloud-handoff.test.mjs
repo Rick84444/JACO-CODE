@@ -51,7 +51,8 @@ function harness() {
       token==='host-b'?{tenantId:'tenant-b',deviceId:'device-bbbb2222'}:null,
     authorizeDispatch: async credential=>credential==='worker-credential',
     verifyEvidence: async receipt=>receipt.tenantId==='tenant-a' &&
-      receipt.deviceId==='device-aaaa1111' && receipt.receiptId==='receipt-0003' &&
+      receipt.deviceId==='device-aaaa1111' &&
+      ['receipt-0003','receipt-0005'].includes(receipt.receiptId) &&
       receipt.evidenceRef==='ledger:11111111',
     ownsDevice: async (p,d)=>Boolean(devices.get(p.tenantId)?.has(d)),
     store,clock:()=> '2026-11-21T01:00:00.000Z',
