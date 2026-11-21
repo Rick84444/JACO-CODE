@@ -26,6 +26,10 @@ on:
       - 'runtime/src/server/desktop/desktopHandsOff.ts'
       - 'tests/nova/desktop-traction.test.mjs'
       - 'tests/nova/aura-desktop-skill.test.mjs'
+      - 'tests/nova/aura-desktop-virtual-input.test.mjs'
+      - 'agents/lib/aura-desktop-virtual-input.mjs'
+      - 'agents/hands-off-agent.mjs'
+      - 'agents/setup-desktop-agentos.ps1'
       - 'skills/aura-desktop/SKILL.md'
       - 'docs/AURA_DESKTOP_TOOL.md'
       - 'tests/nova/input-bridge-daemon.test.mjs'
@@ -69,6 +73,7 @@ jobs:
         run: |
           node --check agents/desktop-agentos.mjs
           node --check runtime/src/server/desktop/desktopTraction.mjs
+          node --check agents/lib/aura-desktop-virtual-input.mjs
           node --check agents/run-desktop-agentos.mjs
           node --check agents/lib/mission-client.mjs
           node --check agents/lib/workplace-session.mjs
@@ -85,7 +90,7 @@ jobs:
         run: npm test
 
       - name: Verify Laser Vision / DOM Traction desktop safety
-        run: node --test tests/nova/desktop-traction.test.mjs tests/nova/mission-screen-frame.test.mjs tests/nova/aura-desktop-skill.test.mjs
+        run: node --test tests/nova/desktop-traction.test.mjs tests/nova/mission-screen-frame.test.mjs tests/nova/aura-desktop-skill.test.mjs tests/nova/aura-desktop-virtual-input.test.mjs
 
       - name: Run Workplace regression suite
         run: npm run test:workplace
