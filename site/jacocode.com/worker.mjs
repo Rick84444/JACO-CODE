@@ -3,6 +3,7 @@
 // behavioural change is the Sitemap line in robots.txt.
 import { handleAuth } from './auth.mjs';
 import { handleCloudInstall } from './cloud-install.mjs';
+import { handleInstallDiscovery } from './cloud-discovery.mjs';
 import { handleLink, handleLinkHostSocket, JacoLinkRoom, JacoLinkPairing } from './link.mjs';
 export { JacoLinkRoom, JacoLinkPairing };
 
@@ -77,6 +78,10 @@ export default {
     if (url.pathname === '/cloud/v1/install-plan') {
       const response = await handleCloudInstall(request, env, url);
       return withHeaders(response, url.pathname, { noStore: true });
+    }
+    // Catalog is public discovery only. Executions require a future OAuth+paired device service.
+    if (url.pathname === '/cloud/v1/catalog' || url.pathname === '/cloud/v1/recipe-plan') {
+      return withHeaders(handleInstallDiscovery(request,url), url.pathname, {noStore:true});
     }
     // JACO Link is a shared multi-tenant service. The Windows PC does not expose
     // a tunnel and never needs the site's session cookie in its outgoing socket.
