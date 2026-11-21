@@ -266,6 +266,12 @@ export async function executeTask(task, mission) {
     if (!mission?.id || !Array.isArray(mission.allowedTasks) || !mission.allowedTasks.includes(task.type)) {
       return { ok:false, verified:false, outcomeUnknown:false, error:'VIRTUAL_INPUT_MISSION_TASK_DENIED' };
     }
+    // Raw input must not become a shadow authority when semantic UIA is blocked.
+    // Require the same currently signed autonomy mandate as desktop-action.
+    try { await resolveMandateId(mission); }
+    catch (error) {
+      return { ok:false, verified:false, outcomeUnknown:false, error:error instanceof Error ? error.message : 'AUTONOMY_MANDATE_REQUIRED' };
+    }
   }
   return legacyExecuteTask(task, legacyState, mission);
 }
