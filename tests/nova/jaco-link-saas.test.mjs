@@ -143,6 +143,27 @@ test('Windows host is outbound-only, stores no account passwords, and never forw
   assert.equal(host.status().hostToken,undefined);
   websocket.emit('open');
   assert.equal(host.status().state,'CONNECTED');
+  const queued=host.requestAttention({
+    eventId:'attention-from-aura-001',missionId:'mission-demo-001',
+    reason:'MISSION_BLOCKED',
+  });
+  const queuedAgain=host.requestAttention({
+    eventId:'attention-from-aura-001',missionId:'mission-demo-001',
+    reason:'MISSION_BLOCKED',
+  });
+  assert.strictEqual(queuedAgain,queued,'same pending event reuses the same Promise');
+  assert.equal(websocket.sent.at(-1).type,'aura_call_requested');
+  assert.equal(websocket.sent.at(-1).eventId,'attention-from-aura-001');
+  assert.equal(Object.hasOwn(websocket.sent.at(-1),'token'),false);
+  websocket.emit('message',Buffer.from(JSON.stringify({
+    type:'aura_call_ack',eventId:'attention-from-aura-001',
+    state:'PENDING_CHATGPT_SUBSCRIPTION',
+  })));
+  assert.deepEqual(await queued,{state:'PENDING_CHATGPT_SUBSCRIPTION'});
+  assert.deepEqual(await host.requestAttention({
+    eventId:'bad',missionId:'mission-demo-001',reason:'MISSION_BLOCKED',
+  }),{state:'REJECTED',error:'AURA_CALL_INVALID'});
+  assert.equal(JSON.stringify(host.status()).includes('hostToken'),false);
   websocket.emit('message',Buffer.from(JSON.stringify(rpc('GET','/api/aura/plan'))));
   await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal(websocket.sent[0].status,200);
