@@ -2,7 +2,7 @@
 // PC makes an outbound WebSocket, Android uses the existing jacocode.com Google session.
 // Nothing on this cloud worker executes Aura, reads local files, or owns missions.
 import { verifySiteSession } from './auth.mjs';
-import { LINK_PROTOCOL, MAX_MESSAGE_BYTES, validateRemoteCall, validateHostResponse } from './link-protocol.mjs';
+import { LINK_PROTOCOL, MAX_MESSAGE_BYTES, validateRemoteCall, validateHostResponse, validateAuraCallRequest } from './link-protocol.mjs';
 
 const enc = new TextEncoder(), dec = new TextDecoder();
 const CODE = /^[A-Za-z0-9_-]{18,28}$/;
@@ -105,6 +105,8 @@ export async function handleLink(request,env,url) {
   }
   if (route==='/link/v1/hosts' && request.method==='GET')
     return room(env,session.sub).fetch('https://internal/hosts');
+  if (route==='/link/v1/calls' && request.method==='GET')
+    return room(env,session.sub).fetch('https://internal/calls');
   if (route==='/link/v1/revoke' && request.method==='POST') {
     if(!originOk(request))return json({error:'ORIGIN_DENIED'},403);
     const data=await safeJson(request);
@@ -213,6 +215,19 @@ export class JacoLinkRoom {
       const hosts=[...devices].map(([key,value])=>({deviceId:key.slice(7),online:online.has(key.slice(7)),label:value?.label||'Windows PC',createdAt:value?.createdAt}));
       return json({hosts,online:online.size>0});
     }
+    if(url.pathname==='/calls' && request.method==='GET'){
+      // This route is only reached through a verified Google site session in
+      // handleLink, or a later *authenticated* MCP adapter. No arbitrary tenant
+      // parameter can select another account's Durable Object room.
+      const all=await this.ctx.storage.list({prefix:'call:'});
+      const calls=[...all.values()].filter(v=>v?.schema==='jaco.aura-call/v1' &&
+        v.createdAt>Date.now()-7*86400_000).sort((a,b)=>a.createdAt-b.createdAt);
+      return json({schema:'jaco.aura-call-inbox/v1',calls:calls.slice(-64).map(v=>({
+        eventId:v.eventId,deviceId:v.deviceId,missionId:v.missionId,
+        reason:v.reason,state:'PENDING_CHATGPT_SUBSCRIPTION',
+        createdAt:new Date(v.createdAt).toISOString(),
+      }))});
+    }
     if(url.pathname==='/revoke'&&request.method==='POST'){
       const {deviceId}=await request.json();
       // Revocation is permanent for this device token. Never age out previous
@@ -248,6 +263,38 @@ export class JacoLinkRoom {
     return new Response(null,{status:101,webSocket:client});
   }
   send(ws,value){try{ws.send(JSON.stringify(value));}catch{/* client disconnected */}}
+  // Only a paired, online host can publish a local Aura attention request.
+  // State is account-scoped, durable across Worker hibernation, and carries
+  // no arbitrary prompt text, access tokens, file contents or device commands.
+  async receiveAuraCall(ws, info, value) {
+    const call=validateAuraCallRequest(value);
+    if(!call.ok)return this.send(ws,{type:'aura_call_ack',eventId:String(value?.eventId||'').slice(0,100),
+      state:'REJECTED',error:call.error});
+    try {
+      const id='call:'+call.eventId;
+      const result=await this.ctx.storage.transaction(async tx=>{
+        const prior=await tx.get(id);
+        if(prior) {
+          if(prior.deviceId!==info.deviceId || prior.missionId!==call.missionId || prior.reason!==call.reason)
+            return {state:'CONFLICT',error:'AURA_CALL_EVENT_ID_CONFLICT'};
+          return {state:'PENDING_CHATGPT_SUBSCRIPTION',duplicate:true};
+        }
+        // At most 64 unexpired calls per user. No unbounded queue growth when
+        // ChatGPT subscriptions are unavailable or the host retries.
+        const rows=await tx.list({prefix:'call:'});
+        const now=Date.now();
+        const active=[...rows.entries()].filter(([_,v])=>v?.createdAt>now-7*86400_000);
+        if(active.length>=64)return {state:'REJECTED',error:'AURA_CALL_INBOX_FULL'};
+        await tx.put(id,{schema:'jaco.aura-call/v1',eventId:call.eventId,
+          deviceId:info.deviceId,missionId:call.missionId,reason:call.reason,createdAt:now});
+        return {state:'PENDING_CHATGPT_SUBSCRIPTION'};
+      });
+      this.send(ws,{type:'aura_call_ack',eventId:call.eventId,...result});
+    }catch {
+      this.send(ws,{type:'aura_call_ack',eventId:call.eventId,
+        state:'UNKNOWN',error:'AURA_CALL_PERSISTENCE_UNVERIFIED'});
+    }
+  }
   webSocketMessage(ws, raw) {
     if(typeof raw!=='string'||raw.length>MAX_MESSAGE_BYTES){ws.close(1009,'Message too large');return;}
     let value;
@@ -295,6 +342,13 @@ export class JacoLinkRoom {
     }
     if(info?.role==='host'&&info.expiresAt&&info.expiresAt<=Date.now()){
       ws.close(4003,'Credential expired');this.webSocketClose(ws);return;
+    }
+    if(info?.role==='host' && value?.type==='aura_call_requested'){
+      // No second relay or agent: the same authenticated host WebSocket
+      // delivers an account-owned inbox event. Callback to ChatGPT itself
+      // is exclusively a separately authorized MCP Events subscription.
+      void this.receiveAuraCall(ws,info,value);
+      return;
     }
     if(info?.role==='host'&&validateHostResponse(value)){
       for(const phone of this.sockets('phone')){
