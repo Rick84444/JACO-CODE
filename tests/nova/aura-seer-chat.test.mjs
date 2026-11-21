@@ -19,7 +19,7 @@ test('One canonical JACO Mode reuses verified repository knowledge rather than s
       const {system} = buildAuraSeerPrompts({message:'Kontrollera om koden redan finns', chatMode, compactRules});
       assert.match(system, /JACO MODE/);
       assert.match(system, /REPO BEFORE BUILD/);
-      assert.match(system, /sole agent identity/);
+      assert.match(system, /Aura is the one and only agent/);
     }
   }
   assert.equal(fs.existsSync(path.join(root, 'runtime/AGENTS.md')), false);
