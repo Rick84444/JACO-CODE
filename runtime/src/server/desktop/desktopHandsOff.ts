@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { verifyDesktopTraction, type DesktopTractionEvidence } from './desktopTraction.mjs';
 
 /**
  * Desktop hands-off client (Windows, UI Automation).
@@ -59,6 +60,7 @@ export interface DesktopReceipt {
   after_hash: string | null;
   window: Record<string, unknown> | null;
   result: unknown;
+  traction?: DesktopTractionEvidence;
   refusal?: string;
   error?: string;
 }
@@ -279,6 +281,7 @@ export class DesktopHandsOffClient {
     const startedAt = new Date().toISOString();
     let before: Record<string, unknown> | null = null;
     let after: Record<string, unknown> | null = null;
+    let traction: DesktopTractionEvidence | null = null;
 
     const fail = (reason: string, refusal = false): DesktopReceipt => {
       const receipt: DesktopReceipt = {
@@ -325,6 +328,20 @@ export class DesktopHandsOffClient {
 
     try {
       before = await this.observe(action.hwnd);
+      if (MUTATING.includes(action.type)) {
+        // This preserves JACO's existing DOM Traction / Manifold Drift code on
+        // Windows UIA. Never dispatch a changing action from a single stale
+        // screenshot, guessed HWND or index-based selector.
+        const firstAt = Date.now();
+        const current = await this.observe(action.hwnd);
+        const secondAt = Date.now();
+        try {
+          traction = verifyDesktopTraction(before, current, action, { firstAt, secondAt, now: secondAt });
+        } catch (error) {
+          return fail(error instanceof Error ? error.message : String(error), true);
+        }
+        before = current;
+      }
 
       const grant = this.getGrant();
       const response = await this.runBridge({
@@ -364,6 +381,7 @@ export class DesktopHandsOffClient {
         after_hash: afterHash,
         window: (after?.window as Record<string, unknown>) ?? (before?.window as Record<string, unknown>) ?? null,
         result: response.data ?? null,
+        ...(traction ? { traction } : {}),
       };
       this.appendReceipt(receipt);
       return receipt;
