@@ -1,4 +1,5 @@
 import { readAuraServiceHealth } from '../agents/lib/aura-service-health.mjs';
+import { readAuraDesktopLiveFrame } from '../agents/lib/aura-desktop-live-view.mjs';
 import { githubWindowsReleaseStatus } from './src/server/updates/githubRelease.mjs';
 import { sharedObservation } from './src/server/connected/sharedObservation.mjs';
 import { readMissionReview } from './src/server/connected/missionReview.mjs';
@@ -4366,6 +4367,32 @@ const notifyPhone = async (action) => {
     seerLiveWorkstream.update({ activeModule: 'DesktopHandsOff', phase: event.verified ? 'VERIFYING' : 'DEGRADED' });
     seerLiveWorkstream.record({ actor: event.actor, type: event.type, message: event.message, verified: event.verified });
   }));
+
+  // A read-only operator view into the *original* Laser Vision PNG. Never
+  // capture the screen or execute tools in this HTTP route. Only a recent
+  // mission-bound screenshot, hash-checked by freshMissionFrame, can be shown.
+  // DeskRoll/VMConnect remain the real continuous remote-desktop viewers.
+  app.get('/api/aura/desktop/live-frame', requireLocalUi, (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    if (process.platform !== 'win32') {
+      return res.status(503).json({ success:false, error:'DESKTOP_VIEW_WINDOWS_ONLY' });
+    }
+    let mission: any = null;
+    try { mission = connectedRuntime.novaMissions.current(); } catch {}
+    const file = path.join(process.env.NOVA_STATE_DIR || path.join(RELEASE_ROOT, 'agents', '.agent-state'), 'latest-observation.png');
+    const frame = readAuraDesktopLiveFrame({ mission, file });
+    if (!frame.ok) {
+      return res.status(frame.reason === 'DESKTOP_SCREEN_VIEW_NOT_ENABLED' ? 403 : 409)
+        .json({ success:false, error:frame.reason });
+    }
+    res.setHeader('X-JACO-Frame-SHA256', frame.sha256);
+    res.setHeader('X-JACO-Frame-Observed-At', frame.at);
+    res.setHeader('X-JACO-Mission-Id', frame.missionId);
+    return res.status(200).type('png').send(frame.png);
+  });
 
   app.use('/api/browser/hands-off', browserSurface.router);
   // The IDE page reads the run status without a gateway token; starting or stopping runs still requires one.
