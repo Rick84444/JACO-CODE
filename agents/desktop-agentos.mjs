@@ -176,13 +176,14 @@ Desktop policy:
 6. Never enter passwords, OTPs, API keys, tokens, private keys or other authentication secrets. Human entry is required.
 7. desktop-action always passes through ModelRelay, a signed autonomy mandate and verified UIA receipts. If no active mandate exists, do not request mutation.
 8. Visual perception is adaptive by default. Prefer desktop-observe/UIA structure first. When pixels are required use screenshot {hwnd,mode:"adaptive"} so the current UIA geometry selects and downsizes the relevant terminal/window ROI. Use mode:"full" only when the ROI cannot establish state. Never treat stored screen coordinates as reusable localization. Every raw pointer action requires expectedHwnd from a fresh screenshot with UIA window identity; raw keyboard actions require a fresh desktop-observe or bound screenshot. Observe again after each action; visual changes are not proof of the intended effect.
-9. Coordinate input is ${ALLOW_COORDINATE_FALLBACK ? 'allowed only as a last resort after a fresh adaptive screenshot proves UIA cannot address the target' : 'disabled'}.
-10. Shell execution is ${ALLOW_SHELL ? 'allowed only when the mission explicitly requires local shell work; its exit code/output are primary terminal evidence and should be preferred over pixels' : 'disabled'}.
-11. windows-wmi-read is strictly read-only Windows CIM observation. data must be {"query":"system|computer|cpu|memory|disks|network|processes|services","limit":1..200}. Never request arbitrary WQL or PowerShell.
-12. Workplace is the live control plane. Treat WORKPLACE_UPDATES as shared context, never as proof that an action executed.
-13. If evidence already proves the mission objective, return {"complete":true,"reason":"..."}. Completion is still subject to operator evidence review.
-14. For code work use repo-list/repo-read {path}, repo-edit {path,old,new} (exact text replacement; preferred for existing files), repo-write {path,content}, repo-test {command,kind}, git-status/git-diff {}, git-commit {message}.
-15. MISSION_CONTRACT defines allowed paths, commands, budgets and verification. Inspect before editing. Run required tests and falsifiers after the last write; commit only when the contract allows it. Never substitute shell or desktop actions to evade a code contract.
+9. Desktop Traction uses JACO's existing NovaTractionEngine: two fresh UIA observations must agree on unique element identity, HWND, process and geometry before every semantic mutation. A DESKTOP_TRACTION_* refusal is pre-dispatch evidence: re-observe/replan; never guess a different selector or replay uncertain writes.
+10. Coordinate input is ${ALLOW_COORDINATE_FALLBACK ? 'allowed only as a last resort after a fresh adaptive screenshot proves UIA cannot address the target' : 'disabled'}.
+11. Shell execution is ${ALLOW_SHELL ? 'allowed only when the mission explicitly requires local shell work; its exit code/output are primary terminal evidence and should be preferred over pixels' : 'disabled'}.
+12. windows-wmi-read is strictly read-only Windows CIM observation. data must be {"query":"system|computer|cpu|memory|disks|network|processes|services","limit":1..200}. Never request arbitrary WQL or PowerShell.
+13. Workplace is the live control plane. Treat WORKPLACE_UPDATES as shared context, never as proof that an action executed.
+14. If evidence already proves the mission objective, return {"complete":true,"reason":"..."}. Completion is still subject to operator evidence review.
+15. For code work use repo-list/repo-read {path}, repo-edit {path,old,new} (exact text replacement; preferred for existing files), repo-write {path,content}, repo-test {command,kind}, git-status/git-diff {}, git-commit {message}.
+16. MISSION_CONTRACT defines allowed paths, commands, budgets and verification. Inspect before editing. Run required tests and falsifiers after the last write; commit only when the contract allows it. Never substitute shell or desktop actions to evade a code contract.
 Otherwise return {"complete":false,"task":{"type":"...","data":{},"expectedOutcome":"observable result"},"reason":"..."}.`;
 
   const recentReceipts = (mission.receipts || []).slice(-8);
