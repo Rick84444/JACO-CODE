@@ -29,6 +29,8 @@ import { createHandsOffPlanRunner } from './src/server/android/handsOffPlanRunne
 import { NovaTractionEngine } from './src/server/nova/traction.js';
 import { IntuitionContractStore } from './src/server/autonomy/intuitionContractStore.js';
 import { createDesktopRouter } from './src/server/desktop/router.js';
+import { desktopTakeoverState } from './src/server/desktop/desktopTakeover.mjs';
+import { actuatorLeases } from './src/server/handsOff/actuatorLease.js';
 import { DesktopHandsOffClient, type DesktopAction } from './src/server/desktop/desktopHandsOff.js';
 import { createCognitiveStreamHandler, readCognitiveFeed } from './src/server/connected/cognitiveLiveStream.mjs';
 import { projectAuraLiveWorkspace } from './src/lib/liveWorkspaceProjection.mjs';
@@ -4394,6 +4396,30 @@ const notifyPhone = async (action) => {
     res.setHeader('X-JACO-Mission-Id', frame.missionId);
     res.setHeader('X-JACO-Windows-Session-Id', String(frame.sessionId));
     return res.status(200).type('png').send(frame.png);
+  });
+
+  // The existing Nova / Mission Bus operator pause is the only command.
+  // This read-only gate must remain PENDING while its tool, shared UIA client
+  // or ModelRelay desktop lease is still active. An ACK to pause is NOT proof
+  // of human-exclusive keyboard/mouse control.
+  app.get('/api/aura/desktop/takeover/:id/status', requireLocalUi, (req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    try {
+      const mission = connectedRuntime.novaMissions.get(req.params.id);
+      const gate = desktopTakeoverState(mission, {
+        desktopBusy: desktopHandsOff.isActuatorBusy(),
+        relayLease: actuatorLeases.get('DESKTOP'),
+      });
+      return res.json({
+        success:true,
+        missionId:mission.id,
+        paused:Boolean(mission.paused),
+        phase:mission.phase,
+        ...gate,
+      });
+    } catch (error: any) {
+      return res.status(409).json({success:false,error:String(error?.message || error).slice(0,180)});
+    }
   });
 
   app.use('/api/browser/hands-off', browserSurface.router);
