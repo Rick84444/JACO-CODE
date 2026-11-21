@@ -8,6 +8,7 @@
 import { localServiceUrl } from './lib/resolved-endpoints.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
+import { parse } from 'dotenv';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -64,9 +65,9 @@ export async function localCoreActivationReport({ baseUrl, activate = false, fet
 
 function tokenFromEnvFile(file) {
   try {
-    const text = fs.readFileSync(file, 'utf8');
-    const m = /^\s*(?:export\s+)?(?:JACO_)?GATEWAY_TOKEN\s*=\s*(.+?)\s*$/m.exec(text);
-    return m ? m[1].trim().replace(/^["']|["']$/g, '') : '';
+    // Use the same dotenv parser as the portable launcher.
+    const data = parse(fs.readFileSync(file, 'utf8'));
+    return data.JACO_GATEWAY_TOKEN || data.GATEWAY_TOKEN || '';
   } catch { return ''; }
 }
 
@@ -74,19 +75,29 @@ export function gatewayToken(env = process.env, root = ROOT) {
   const direct = env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN;
   if (direct) return direct;
 
-  // Termux Core reads ~/.config/jaco/runtime.env. Read that canonical file before the older
-  // ~/.jaco/gateway.token so a stale cloud-stack token cannot make activation report 401.
   const runtimeEnv = env.JACO_RUNTIME_ENV || path.join(os.homedir(), '.config', 'jaco', 'runtime.env');
+  const dataRoot = env.JACO_DATA_DIR ? path.resolve(env.JACO_DATA_DIR) : root;
+  const launcher = tokenFromEnvFile(path.join(dataRoot, '.env'));
   const canonical = tokenFromEnvFile(runtimeEnv);
-  if (canonical) return canonical;
+
+  // Termux Core is supervised from runtime.env; Debian/Windows portable Core
+  // uses the launcher's JACO_DATA_DIR/.env (or checkout .env).
+  if (isTermux(env)) {
+    if (canonical) return canonical;
+    if (launcher) return launcher;
+  } else {
+    if (launcher) return launcher;
+    if (canonical) return canonical;
+  }
 
   try {
     const stateToken = fs.readFileSync(path.join(env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco'), 'gateway.token'), 'utf8').trim();
     if (stateToken) return stateToken;
   } catch { /* next */ }
 
-  // Portable/cloud starters may persist the token in a checkout .env.
-  const dirs = [root, ...fs.readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map(e => path.join(root, e.name))];
+  const dirs = fs.readdirSync(root, { withFileTypes: true })
+    .filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+    .map(e => path.join(root, e.name));
   for (const dir of dirs) {
     const t = tokenFromEnvFile(path.join(dir, '.env'));
     if (t) return t;
