@@ -130,7 +130,8 @@ export function mergeGitControlReceiptSnapshots(local, remote=null) {
     const e=safeIndexEntry(raw);
     if(!e) throw Error('GIT_CONTROL_REMOTE_STATUS_INVALID');
     const old=output.get(e.commandId);
-    if (old) output.delete(e.commandId);
+    // Map#set preserves established ordering for known commands; deleting and
+    // reinserting them makes two publishers endlessly reorder A,B -> B,A.
     output.set(e.commandId,old?reconcileEntry(old,e):e);
   }
   return {schema:local.schema,transport:'git-ref',authoritative:false,
