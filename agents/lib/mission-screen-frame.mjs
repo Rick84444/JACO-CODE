@@ -1,6 +1,17 @@
 // Read only a fresh frame attested by this mission. Never persist image bytes in the mission or model history.
 import {readFileSync,statSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+import {join, dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+// Single source of truth shared by the original Win32 capture tool and
+// authenticated runtime preview. Never resolve relative to runtime/:
+// packaged GUI releases can reside in a different directory than agents/.
+export function missionScreenshotPath(env = process.env) {
+  const state = env.NOVA_STATE_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', '.agent-state');
+  return join(state, 'latest-observation.png');
+}
+
 const INVALIDATING=new Set(['mouse-click','mouse-move','mouse-scroll','key-press','type-text','desktop-action','desktop-invoke','browser-survey-site','browser-click','browser-type','browser-sign-in','android-tap','android-type','android-scroll','android-back','android-home','android-open-app','shell','mcp-write','repo-service']);
 export function freshMissionFrame(mission,file,{now=Date.now(),maxAgeMs=30000,stat=statSync,read=readFileSync}={}){
   const receipts=Array.isArray(mission?.receipts)?mission.receipts:[];
