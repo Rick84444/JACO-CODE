@@ -27,3 +27,16 @@ test('desktop frame route is login-gated, read-only, no-store and bound to canon
   assert.match(server,/res.status\(200\).type\('png'\).send\(frame.png\)/);
   assert.ok(!/app.post\('\/api\/aura\/desktop\/live-frame'/.test(server),'must stay read-only');
 });
+
+test('Chrome Remote Desktop is the selected operator live viewer; local VMConnect remains optional',()=>{
+  const ui=read('src/components/AuraDesktopMonitor.tsx');
+  const skill=fs.readFileSync(fileURLToPath(new URL('../../skills/aura-desktop/SKILL.md',import.meta.url)),'utf8');
+  const docs=fs.readFileSync(fileURLToPath(new URL('../../docs/AURA_DESKTOP_TOOL.md',import.meta.url)),'utf8');
+  for (const source of [ui,skill,docs]) {
+    assert.match(source,/Chrome Remote Desktop/);
+    assert.match(source,/VMConnect/);
+  }
+  assert.match(docs,/remotedesktop\.google\.com\/access/);
+  assert.match(docs,/same interactive Windows session/);
+  assert.match(docs,/stop\/pause the mission|Stop\/pause the mission/);
+});
