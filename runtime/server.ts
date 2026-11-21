@@ -873,17 +873,20 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   // the default so nothing that relied on it changes.
   const PORT = Number(process.env.PORT) || 3000;
   const HOST = process.env.HOST || "127.0.0.1";
-  // One Aura runtime remains the owner of local state and execution. JACO Link is
-  // only an optional outbound customer transport; no local port or tunnel exposed.
+  // The opt-in Sentinel handoff prevents a second host WebSocket when Core
+  // starts, and preserves the original .jaco/link/host.json device ticket.
+  const linkOwnedBySentinel = process.env.JACO_LINK_LIFECYCLE_OWNER === 'sentinel';
   let jacoLink: ReturnType<typeof createJacoLinkHost> | null = null;
-  try {
-    jacoLink = createJacoLinkHost({
-      file: path.join(WORKSPACE_ROOT, '.jaco', 'link', 'host.json'),
-      localBaseUrl: 'http://127.0.0.1:' + PORT,
-    });
-    if (process.env.JACO_LINK_ENABLED !== '0') jacoLink.resume();
-  } catch (error) {
-    console.warn('[JACO Link] Initialization failed:', String((error as Error)?.message || error));
+  if (!linkOwnedBySentinel) {
+    try {
+      jacoLink = createJacoLinkHost({
+        file: path.join(WORKSPACE_ROOT, '.jaco', 'link', 'host.json'),
+        localBaseUrl: 'http://127.0.0.1:' + PORT,
+      });
+      if (process.env.JACO_LINK_ENABLED !== '0') jacoLink.resume();
+    } catch (error) {
+      console.warn('[JACO Link] Initialization failed:', String((error as Error)?.message || error));
+    }
   }
 
 
@@ -2549,17 +2552,40 @@ const notifyPhone = async (action) => {
   // Local Continuum knowledge, read-only and backed by the existing durable knowledge ledger.
   // Customer onboarding is local-only; no cloud account can create a new PC
   // pairing or read the temporary poll credential through the Remote UI.
+  // Preserve the existing local UI and pairing contract while the independent
+  // Sentinel owns the one Link transport. Every proxy call stays on loopback
+  // and authenticates with the same existing gateway token.
+  const sentinelLinkRequest = async (method: 'GET' | 'POST', action: 'status' | 'start' | 'stop', res: any) => {
+    if (!GATEWAY_TOKEN || GATEWAY_TOKEN.length < 24)
+      return res.status(503).json({success:false,error:'LINK_SENTINEL_SHARED_AUTH_REQUIRED'});
+    const port = process.env.JACO_SENTINEL_PORT || process.env.JACO_GATEWAY_PORT || '2999';
+    if (!Number.isInteger(Number(port)) || String(Number(port)) !== String(port) || Number(port) < 1 || Number(port) > 65535)
+      return res.status(503).json({success:false,error:'LINK_SENTINEL_PORT_INVALID'});
+    try {
+      const result = await fetch('http://127.0.0.1:' + port + '/api/link-host/' + action, {
+        method, headers: {authorization: 'Bearer ' + GATEWAY_TOKEN},
+        redirect:'error', signal:AbortSignal.timeout(12_000),
+      });
+      const body = await result.json();
+      return res.status(result.status).json(body);
+    } catch {
+      return res.status(503).json({success:false,error:method==='POST'?'LINK_SENTINEL_RESULT_UNKNOWN':'LINK_SENTINEL_UNAVAILABLE'});
+    }
+  };
   app.get('/api/aura/workbench/link/status', requireLocalUiSameOrigin, (_req, res) => {
+    if (linkOwnedBySentinel) return void sentinelLinkRequest('GET','status',res);
     if (!jacoLink) return res.status(503).json({success:false,error:'LINK_HOST_UNAVAILABLE'});
     return res.json({success:true,...jacoLink.status()});
   });
   app.post('/api/aura/workbench/link/start', requireLocalUiSameOrigin, async (_req, res) => {
     if (process.env.JACO_LINK_ENABLED === '0') return res.status(403).json({success:false,error:'LINK_DISABLED'});
+    if (linkOwnedBySentinel) return sentinelLinkRequest('POST','start',res);
     if (!jacoLink) return res.status(503).json({success:false,error:'LINK_HOST_UNAVAILABLE'});
     try { return res.json({success:true,...await jacoLink.startPairing()}); }
     catch (error: any) {return res.status(503).json({success:false,error:String(error?.message||error).slice(0,160)});}
   });
   app.post('/api/aura/workbench/link/stop', requireLocalUiSameOrigin, (_req, res) => {
+    if (linkOwnedBySentinel) return void sentinelLinkRequest('POST','stop',res);
     if (!jacoLink) return res.status(503).json({success:false,error:'LINK_HOST_UNAVAILABLE'});
     jacoLink.stop();return res.json({success:true,...jacoLink.status()});
   });

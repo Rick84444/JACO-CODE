@@ -9,12 +9,14 @@ const DEVICE = /^[A-Za-z0-9_-]{8,100}$/;
 
 // Explicit API delegation; do not forward arbitrary /api, shell, Git or model credentials.
 const READS = new Set([
+  '/api/jaco-link/system/status',
   '/api/aura/plan',
   '/api/aura/workbench/local-memory',
   '/api/aura/chat/session',
   '/api/aura/workbench/approvals',
 ]);
 const WRITES = new Set([
+  '/api/jaco-link/system/activate',
   '/api/aura/chat',
   '/api/aura/workbench/start-goal',
   '/api/aura/plan/comments',

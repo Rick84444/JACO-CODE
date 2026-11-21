@@ -23,7 +23,7 @@ Before changing shared repository state:
 
 1. Read `AGENTS.md`.
 2. Read `.github/copilot-instructions.md`.
-3. Read `JACO_MASTER_BEHAVIOR_CONTRACT.md` and `JACO_AGENT_BOOTSTRAP.md` when they are relevant to the task.
+3. Use the root `AGENTS.md` as the sole behavior contract; read `JACO_AGENT_BOOTSTRAP.md` for Workplace coordination only when relevant.
 4. Inspect the current branch, `git status`, affected call sites, tests, and current canonical owner of the subsystem.
 5. If JACO Workplace is not actually reachable from this cloud environment, explicitly treat coordination as `DEGRADED_UNSYNCED`. Do not start or invent a parallel Workplace.
 

@@ -1,0 +1,72 @@
+# Delivery gates (not completed by the legacy Git-ref PR)
+
+- [x] Locate existing Google-session and JACO Link tenant foundations.
+- [x] Specify one-Aura / account-bound OAuth architecture and default-off rules.
+- [x] Remove the developer's hardcoded repository from the legacy bridge.
+- [ ] Implement per-account OAuth authorization code + PKCE and token services
+      with verified redirect/client identity, resource indicator and revocation.
+- [ ] Implement the shared hosted MCP endpoint and explicit tool profiles.
+- [ ] Implement tenant- and device-bound MCP-to-JACO Link request bridging,
+      bounded cross-tenant routing and replay protection.
+- [ ] Build connect/status/revoke UX and consent scopes in JACO account portal.
+- [ ] Verify private developer MCP connection and tool invocation on ChatGPT
+      web first; this is not mobile support.
+- [ ] Submit a reviewed, publishable JACO remote MCP plugin to the universal
+      Plugins Directory; account OAuth and tool safety must pass review.
+- [ ] Register/connect the JACO MCP plugin in ChatGPT through user action;
+      verify both eligible mobile-app and desktop-chat sessions use the same
+      account-bound tool scopes and paired Aura.
+- [ ] Run a mobile ChatGPT conversation → submit harmless goal → receive
+      canonical admission ID → poll durable mission → show verified tool
+      receipt **within the same ChatGPT conversation**, no Termux/PWA switching.
+- [ ] If phone OS actions are required, implement a separate optional
+      Android companion with user-granted platform permissions and independent
+      end-to-end receipts; do not hide this behind the PWA.
+- [ ] Run OAuth negative tests, account A/B isolation, device revocation,
+      expired grants, disconnected host and unknown-outcome reconciliation.
+- [ ] Verify on two real Google accounts, two paired Aura hosts and two separate
+      ChatGPT sessions; confirm no cross-account information or execution.
+- [ ] Perform security review and production deployment with rollout opt-in.
+
+**Launch blocker:** Do not merge/deploy this as if customer ChatGPT
+connection were finished based only on green unit tests.
+
+- [ ] Move the single JACO Link host connection under existing Sentinel
+      lifecycle before claiming cold-start when Aura Core is stopped; do not
+      run two outbound Link connections for the same device.
+- [ ] Validate ChatGPT requests for activate, monitor and observe before
+      dispatch; prevent duplicate requests and report interrupted outcomes.
+- [ ] Add bounded CALL_REQUESTED inbox event and true receipt acknowledgments;
+      verify a supported ChatGPT client actually receives a call before
+      reporting ChatGPT as invoked.
+- [ ] Disable and retire legacy Git/HTTP control transports after validated
+      migration receipts; preserve unrelated active missions and credentials.
+
+## JACO Cloud bootstrap and downloadable API extensions (additional scope)
+
+- [x] Publish a read-only, bounded install-plan handler in the existing site Worker (source implementation).
+- [x] Validate platform, release manifest schema, exact artifact name, byte count and digest; default to no execution.
+- [ ] Verify the new installer plan regression tests pass in the GitHub CI for the exact PR head.
+- [ ] Deploy the updated Worker and observe a real `GET /cloud/v1/install-plan` response from jacocode.com.
+- [ ] Produce the full signed Aura desktop distribution (Lite is insufficient); test clean Windows host, update, rollback and reboot.
+- [ ] Implement authenticated JACO Cloud API adapter package catalog, immutable artifact signing, quarantine, least-privilege vault registration and local rollback.
+- [ ] Bind account-scoped ChatGPT JACO Control install and connector requests to the cloud catalog through explicit OAuth scopes and an existing paired host.
+- [ ] Verify hardware bootstrap, first-login consent, two-account isolation and real read/write mission receipts.
+
+Design and canonical owners: `docs/architecture/JACO_CLOUD_BOOTSTRAP_AND_API_DISTRIBUTION.md`.
+
+## Opt-in Sentinel JACO Link host handoff (source changes only)
+
+- [x] Add exact status/activate RPC verbs to existing JACO Link allowlist.
+- [x] Delegate those verbs through the existing JACO Link host to the existing Sentinel SystemControl; no generic remote terminal.
+- [x] Allow Sentinel to own the original `.jaco/link/host.json` outbound connection behind `JACO_LINK_LIFECYCLE_OWNER=sentinel`.
+- [x] Disable embedded Core host socket under that same opt-in and proxy local UI pairing through an authenticated Sentinel loopback endpoint.
+- [x] Require both `JACO_LINK_REMOTE_ACTIVATE=1` and `JACO_MCP_ALLOW_ACTIVATION=1` before remote activation.
+- [x] Add source and mocked callback regression tests for Core-down status and denied activation.
+- [ ] Verify relevant Node and TypeScript regression gates on the exact PR head.
+- [ ] Verify both Sentinel and Core use identical real shared gateway credentials and host state paths on Windows and Android.
+- [ ] Run one real stop → sentinel still connected → activate → Core/Workplace READY → mission receipt end-to-end test, with no duplicate socket.
+- [ ] Verify rollback to Core ownership, preserving pairing, active missions and durable receipts.
+- [ ] Add durable idempotency/unknown-outcome reconciliation and customer-scoped OAuth before shipping remote activation as enabled-by-default.
+
+No operator device configuration has been changed by the repository code. Source-level delegation is not live service proof.

@@ -1,5 +1,13 @@
 # Workplace ChatGPT / Claude / Codex bridge
 
+> **Legacy/diagnostic interface — not a second JACO customer Relay.**
+> The canonical customer connection is account-bound JACO Link. This interface
+> remains only for previously configured development or migration workflows.
+> Do not enable it by default, connect customer accounts through GitHub, or
+> claim that it gives ChatGPT mobile access. See
+> `docs/architecture/CANONICAL_RELAY_AND_DEDUPLICATION.md`.
+
+
 Status: implementation for canonical JACO Workplace.
 
 ## Goal

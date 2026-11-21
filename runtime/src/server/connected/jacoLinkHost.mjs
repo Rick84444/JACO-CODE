@@ -44,6 +44,7 @@ const isLocal = input => {
  *   fetchImpl?: typeof fetch,
  *   websocketFactory?: (url:string, options:any)=>any,
  *   onStatus?: (value:any)=>void,
+ *   lifecycleRequest?: (request:any)=>Promise<{status:number,body:any}>,
  *   schedule?: typeof setTimeout,
  *   cancel?: typeof clearTimeout
  * }} [options]
@@ -51,7 +52,7 @@ const isLocal = input => {
 export function createJacoLinkHost({
   file, localBaseUrl='http://127.0.0.1:3000', origin=DEFAULT_ORIGIN,
   fetchImpl=fetch, websocketFactory=(url,options)=>new WebSocket(url,options),
-  onStatus=()=>{}, schedule=setTimeout, cancel=clearTimeout,
+  onStatus=()=>{}, lifecycleRequest=null, schedule=setTimeout, cancel=clearTimeout,
 }={}) {
   if(!file || !isLocal(localBaseUrl)) throw Error('LINK_REQUIRES_LOCAL_AURA');
   if(!/^https:\/\/[A-Za-z0-9.-]+$/.test(origin) || new URL(origin).hostname!==new URL(DEFAULT_ORIGIN).hostname)
@@ -117,6 +118,18 @@ export function createJacoLinkHost({
   async function respond(id,request) {
     pendingCalls++;
     try{
+      // Only Sentinel may handle these exact cold-start routes. The cloud
+      // cannot supply an arbitrary local path, command, token or shell call.
+      if (request.path === '/api/jaco-link/system/status' ||
+          request.path === '/api/jaco-link/system/activate') {
+        if (typeof lifecycleRequest !== 'function') throw Error('LINK_LIFECYCLE_NOT_CONFIGURED');
+        const result = await lifecycleRequest(request);
+        if (!Number.isInteger(result?.status) || result.status < 200 || result.status > 599 ||
+            !result.body || typeof result.body !== 'object' ||
+            JSON.stringify(result.body).length > MAX_RESPONSE_BYTES) throw Error('LINK_LIFECYCLE_RESPONSE_INVALID');
+        if (socket?.readyState===1) socket.send(json({type:'rpc_result',id,status:result.status,body:result.body}));
+        return;
+      }
       const method=request.method;
       const url=localBaseUrl.replace(/\/$/,'')+request.path;
       const options={method,redirect:'error',headers:{'accept':'application/json'}};

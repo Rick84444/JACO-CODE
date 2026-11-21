@@ -156,6 +156,30 @@ test('dedicated private profile cannot expose raw execution, approval or credent
     const res=await handler.fetch(new Request('http://test.local/mcp',{method:'POST',headers:{'content-type':'application/json','accept':'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list'})}));
     const messages=(await res.text()).split(/\r?\n/).filter(s=>s.startsWith('data: ')).map(s=>JSON.parse(s.slice(6)));
     const listed=messages.find(m=>Array.isArray(m?.result?.tools)).result.tools.map(t=>t.name);
-    assert.deepEqual(listed,[...JACO_MCP_COGNITIVE_READ,'jaco_aura_submit_goal','jaco_aura_current_mission','jaco_aura_mission_status','jaco_aura_steer_mission']);
+    assert.deepEqual(listed,[...JACO_MCP_COGNITIVE_READ,'jaco_install_catalog','jaco_install_plan','jaco_aura_submit_goal','jaco_aura_current_mission','jaco_aura_mission_status','jaco_aura_steer_mission']);
+    assert.equal(listed.includes('jaco_install_execute'),false,'no unauthenticated public installer is exported');
   }finally{await handler.close();}
+});
+
+test('private ChatGPT profile can read install catalog and plan without granting execution',async()=>{
+  const {privateAuraTools}=await import('../src/private-aura-tools.mjs');
+  const core={baseUrl:'http://127.0.0.1:3000',token:'x'.repeat(24),
+    request:async()=>assert.fail('catalog must not contact running Core')};
+  const allowed=privateAuraTools({core,env:{JACO_MCP_ALLOW_AURA_MISSIONS:'1'}});
+  const catalog=allowed.find(tool=>tool.name==='jaco_install_catalog');
+  const plan=allowed.find(tool=>tool.name==='jaco_install_plan');
+  assert.ok(catalog.config.annotations.readOnlyHint);
+  assert.ok(plan.config.annotations.readOnlyHint);
+  const result=await catalog.handler({platform:'windows'});
+  assert.equal(result.schema,'jaco.install-catalog/v1');
+  assert.ok(result.recipes.some(recipe=>recipe.id==='ollama-windows'));
+  const p=await plan.handler({platform:'windows',recipeId:'ollama-windows'});
+  assert.equal(p.status,'PLAN_ONLY');
+  assert.equal(p.operatorApproval,'REQUIRED');
+  assert.equal(p.execution,'NOT_STARTED');
+  await assert.rejects(()=>plan.handler({platform:'windows',recipeId:'ollama-windows',command:'powershell -enc ...'}));
+  await assert.rejects(()=>plan.handler({platform:'windows',recipeId:'unknown'}),/INSTALL_RECIPE_UNKNOWN/);
+  assert.equal(allowed.some(tool=>tool.name==='jaco_install_execute'),false);
+  const denied=privateAuraTools({core,env:{}});
+  await assert.rejects(()=>denied.find(tool=>tool.name==='jaco_install_catalog').handler({}),/BRIDGE_DISABLED/);
 });

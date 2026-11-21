@@ -2,9 +2,12 @@
 
 ## Decision
 
-Aura is the **only operator-facing agent identity**. Existing SEER and Nova
-are implementation details exposed as Aura functions. The operator gives goals
-to Aura, not to a roster of competing personalities.
+Aura is the **only agent identity, including internally**. Historical SEER
+and Nova names describe technical planning and execution functions that must
+be absorbed into canonical Aura Runtime. Sentinel is a lifecycle supervisor
+(service and health recovery), **not** an agent. The operator gives goals to
+Aura; technical workers may execute bounded steps without a separate identity
+or goal authority.
 
 ```text
                          Operator
@@ -15,7 +18,7 @@ to Aura, not to a roster of competing personalities.
         +----------+--------+---------+---------+
         |          |        |         |         |
       Reason      Plan     Execute   Memory    Verify
-      model       SEER     Nova      Workplace receipts
+      model       internal capabilities / shared receipts
                     \         |        /
                      MCP tools on demand
 ```
@@ -118,8 +121,13 @@ delete models. A genuine one-process consolidation is **not** implied.
 5. Require physical 10+ chat turns and one verified mission on the device with
    no phantom processes/port conflicts before setting `runtimeConsolidated: true`.
 
-The central distinction is **one agent identity** now versus **one OS process**
-after a separate, explicitly verified migration. The latter cannot be assumed.
+The target is **one Aura agent** with native in-process planning, execution,
+memory and verification. Separate service processes can temporarily remain
+as compatibility owners of their existing durable state, but are not agents.
+Sentinel stays as a non-agent watchdog/lifecycle service. A single Aura
+process has **not** yet been proven; only the identity and control ownership
+have been partially consolidated. Do not conflate agent count with OS
+process count.
 
 
 ## 2026-10-30: Runtime debt reduction (Aura Lean default on Termux)

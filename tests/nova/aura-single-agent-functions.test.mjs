@@ -15,9 +15,9 @@ test('manual conversation can inspect the live MCP catalog without gaining mutat
 const now = '2026-10-30T12:00:00.000Z';
 const read = rel => fs.readFileSync(path.join(process.cwd(),rel),'utf8');
 
-test('Aura is exactly one operator identity with six stable internal functions, not six agents', () => {
+test('Aura is the sole agent with six internal functions and honest process status', () => {
   const f=projectAuraFunctions({ now });
-  assert.deepEqual(f.identity,{ id:'aura',name:'Aura',agentCount:1,meaning:'operator-facing-identity-only' });
+  assert.deepEqual(f.identity,{ id:'aura',name:'Aura',agentCount:1,meaning:'sole-agent' });
   assert.equal(f.runtimeConsolidated,false,'do not claim the services have been merged into one OS process');
   assert.deepEqual(f.functions.map(x=>x.id),['reason','plan','execute','memory','tools','verify']);
   assert.deepEqual(new Set(AURA_FUNCTION_DEFINITIONS.map(x=>x.id)).size,6);

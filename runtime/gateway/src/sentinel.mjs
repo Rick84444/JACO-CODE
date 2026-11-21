@@ -3,11 +3,12 @@ import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { config } from './config.mjs';
 import { JacoCoreClient } from './jaco-client.mjs';
+import { createJacoLinkHost } from '../../src/server/connected/jacoLinkHost.mjs';
 import { SystemControl } from './system-control.mjs';
 import { createGithubBootstrapControl } from './github-bootstrap-control.mjs';
 import { buildJacoMcpServer } from './mcp-factory.mjs';
@@ -33,6 +34,48 @@ const githubBootstrap = createGithubBootstrapControl({
 });
 const mcp = createMcpHandler(() => buildJacoMcpServer({ core, system, modelId: config.modelId }));
 const mcpNodeHandler = toNodeHandler(mcp);
+
+ // Opt-in migration: Sentinel, not Core, owns the *same* persisted JACO Link
+ // device ticket and one outbound connection. No second customer relay.
+ const linkOwned = process.env.JACO_LINK_LIFECYCLE_OWNER === 'sentinel';
+ const linkRoot = resolve(process.env.JACO_WORKSPACE_ROOT || resolve(here, '../../..'));
+ let linkHost = null;
+ let remoteActivationInFlight = false;
+ if (linkOwned) {
+   try {
+     linkHost = createJacoLinkHost({
+       file: join(linkRoot, '.jaco', 'link', 'host.json'),
+       localBaseUrl: config.coreBaseUrl,
+       lifecycleRequest: async request => {
+         if (request.method === 'GET' && request.path === '/api/jaco-link/system/status') {
+           const health = await system.health();
+           return {status:200,body:{schema:'jaco.link-lifecycle/v1', state:health.status,
+             coreReady:health.core.up === true, workplaceReady:health.workplace.state === 'RUNNING',
+             activationPermitted:process.env.JACO_LINK_REMOTE_ACTIVATE === '1' && config.allowMcpActivation}};
+         }
+         if (request.method !== 'POST' || request.path !== '/api/jaco-link/system/activate')
+           return {status:403,body:{error:'LINK_LIFECYCLE_VERB_DENIED'}};
+         if (process.env.JACO_LINK_REMOTE_ACTIVATE !== '1' || !config.allowMcpActivation)
+           return {status:403,body:{error:'LINK_REMOTE_ACTIVATION_DISABLED'}};
+         if (remoteActivationInFlight) return {status:409,body:{error:'LINK_ACTIVATION_IN_PROGRESS'}};
+         remoteActivationInFlight = true;
+         try {
+           const before = await system.health();
+           if (before.status === 'READY')
+             return {status:200,body:{schema:'jaco.link-lifecycle/v1',state:'READY',alreadyRunning:true}};
+           const activated = await system.activate('full', {fromMcp:true});
+           const observed = await system.health();
+           const ready = activated?.ok === true && observed.status === 'READY';
+           return {status:ready?200:503,body:{schema:'jaco.link-lifecycle/v1',
+             state:ready?'READY':'DEGRADED',activationAttempted:true,coreReady:observed.core.up === true}};
+         } finally { remoteActivationInFlight = false; }
+       },
+     });
+     if (process.env.JACO_LINK_ENABLED !== '0') linkHost.resume();
+   } catch (error) {
+     console.error('[JACO Sentinel] JACO Link unavailable:', String(error?.message || error));
+   }
+ }
 
 if (config.gatewayMode !== 'loopback' && !config.mcpBearer) {
   throw new Error('JACO_GATEWAY_MODE is not loopback but JACO_MCP_BEARER is empty; refusing unsafe remote-capable startup');
@@ -69,6 +112,25 @@ const server = createServer((req, res) => {
     }
 
     if (!sameLocalBoundary(req)) return writeJson(res, 403, { error: 'LOCAL_BOUNDARY_REJECTED' });
+
+    // The Core UI proxies pairing to this protected local endpoint during
+    // explicit migration. It cannot expose the host ticket or poll secret.
+    if (url.pathname.startsWith('/api/link-host/')) {
+      if (!linkOwned || !linkHost) return writeJson(res, 503, {error:'LINK_NOT_OWNED_BY_SENTINEL'});
+      if (!config.coreToken || config.coreToken.length < 24 ||
+          !bearerAllowed(req, config.coreToken)) return writeJson(res, 401, {error:'LINK_LOCAL_AUTH_REQUIRED'});
+      if (req.method === 'GET' && url.pathname === '/api/link-host/status')
+        return writeJson(res, 200, {success:true,...linkHost.status()});
+      if (req.method === 'POST' && url.pathname === '/api/link-host/start') {
+        const status = await linkHost.startPairing();
+        return writeJson(res, 200, {success:true,...status});
+      }
+      if (req.method === 'POST' && url.pathname === '/api/link-host/stop') {
+        linkHost.stop();
+        return writeJson(res, 200, {success:true,...linkHost.status()});
+      }
+      return writeJson(res, 404, {error:'LINK_HOST_ROUTE_NOT_FOUND'});
+    }
 
     if (req.method === 'GET' && url.pathname === '/health') {
       return writeJson(res, 200, {
@@ -143,6 +205,7 @@ server.listen(config.gatewayPort, config.gatewayHost, () => {
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     if (githubBootstrapTimer) clearInterval(githubBootstrapTimer);
+    linkHost?.stop();
     server.close(() => process.exit(0));
   });
 }
