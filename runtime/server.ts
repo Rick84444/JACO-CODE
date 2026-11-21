@@ -4384,7 +4384,7 @@ const notifyPhone = async (action) => {
     try { mission = connectedRuntime.novaMissions.current(); } catch {}
     const file = path.join(process.env.NOVA_STATE_DIR || path.join(RELEASE_ROOT, 'agents', '.agent-state'), 'latest-observation.png');
     const frame = readAuraDesktopLiveFrame({ mission, file });
-    if (!frame.ok) {
+    if ('reason' in frame) {
       return res.status(frame.reason === 'DESKTOP_SCREEN_VIEW_NOT_ENABLED' ? 403 : 409)
         .json({ success:false, error:frame.reason });
     }
