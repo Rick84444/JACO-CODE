@@ -25,7 +25,7 @@ export function freshMissionFrame(mission,file,{now=Date.now(),maxAgeMs=30000,st
     const bytes=read(file);
     if(bytes.length!==st.size||bytes.length>2000000||!bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))||createHash('sha256').update(bytes).digest('hex')!==result.imageSha256)return null;
     return {url:'data:image/png;base64,'+bytes.toString('base64'),sha256:result.imageSha256,at:receipt.at,
-      capture:result.perception?.capture||result.capture||null,width:result.width,height:result.height,hwnd:result.perception?.hwnd||null};
+      capture:result.perception?.capture||result.capture||null,width:result.width,height:result.height,hwnd:result.perception?.hwnd||null,sessionId:result.sessionId??null};
   }catch{return null;}
 }
 export function permittedFrameMessages(messages,frame,provider,env=process.env){
