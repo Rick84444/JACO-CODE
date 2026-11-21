@@ -144,7 +144,7 @@ export function AuraDesktopMonitor({
         {open ? tr('Dölj skärmbild', 'Hide screenshot') : tr('Visa skärmbild', 'View screenshot')}
       </button>
       {open && canShow && <span className="text-neutral-400"><RefreshCw size={12} className="inline" aria-hidden="true"/> {tr('Uppdaterar observerad bild', 'Refreshing observed frame')}</span>}
-      {canShow && <button type="button" disabled={takeoverBusy}
+      {canShow && <button type="button" disabled={takeoverBusy || takeover === 'pending'}
         onClick={() => { void setOperatorPause(takeover === 'idle'); }}
         className="rounded border border-neutral-600 px-2 py-1 disabled:opacity-40">
         {takeover === 'idle' ? tr('Ta över', 'Take control') : takeover === 'ready' ? tr('Återuppta Aura', 'Resume Aura') : tr('Väntar på aktivt verktyg', 'Waiting for active tool')}
