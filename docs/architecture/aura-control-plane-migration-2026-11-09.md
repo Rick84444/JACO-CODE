@@ -3,8 +3,9 @@
 ## Canonical architecture
 
 **Aura alone accepts the operator's goals and owns their execution policy.** The old
-SEER and Nova process names are compatibility adapters; they are not independent
-agents and may not escalate permissions. This migration deliberately preserves
+SEER and Nova process names are transitional implementation adapters; they
+are not agents and may not escalate permissions. Sentinel is a separate
+watchdog/lifecycle **service**, never a third agent. This migration deliberately preserves
 all existing on-disk strategy SQLite, mission ledger, worker leases, receipts,
 operator decisions and stored identifiers until equivalent in-process services
 pass restart/recovery tests.
@@ -57,6 +58,22 @@ pass restart/recovery tests.
 - Read-only planning configuration continues to reconcile execution outcomes.
 - Full HTTP strategy route verifies authenticated ownership, tick, health
   redaction, release and fallback.
+
+## Sole-agent migration target
+
+Aura Runtime must own the existing graph planning and durable mission execution
+**in-process**, through the same storage, authorization, leases and receipt
+contracts. Former service names survive only as compatibility identifiers
+in persisted state and API routes until all live consumers migrate; they
+are not user-facing agents, spawnable subagents or independent authorities.
+Sentinel stays a service outside Aura for cold-start/restart, device
+liveness and fault recovery, with no model reasoning or mission authority.
+There is exactly **one agent: Aura**.
+
+Do not remove a compatibility process while it owns active leases, SQLite
+transactions or action receipts. Measure the migration by the same
+mission IDs, no duplicate dispatch, clean crash-restart and a fresh
+verified execution receipt, not by renamed source files.
 
 ## Remaining engineering work before removing compatibility services
 
