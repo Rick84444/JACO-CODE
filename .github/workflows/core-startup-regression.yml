@@ -17,9 +17,9 @@ on:
       - 'runtime/server.ts'
       - 'site/jacocode.com/worker.mjs'
       - 'site/jacocode.com/cloud-install.mjs'
-      - 'cloud/control/handoff.mjs'
       - 'cloud/control/**'
       - 'tests/nova/cloud-control-handoff.test.mjs'
+      - 'tests/nova/cloud-postgres-store.test.mjs'
       - 'site/jacocode.com/link-protocol.mjs'
       - 'runtime/src/server/connected/jacoLinkHost.mjs'
       - 'runtime/gateway/src/sentinel.mjs'
@@ -52,8 +52,8 @@ jobs:
       - run: node --check agents/lib/local-stack.mjs && node --check agents/lib/planner-choice.mjs && node --check scripts/verify-core-startup.mjs
       - run: node --test tests/nova/startup-safety.test.mjs tests/nova/planner-choice.test.mjs tests/nova/remote-startup-contract.test.mjs tests/nova/lite.test.mjs tests/nova/startup-developer-connections.test.mjs tests/nova/agent-organization.test.mjs tests/nova/mission.test.mjs
       - name: JACO Cloud and Sentinel Link syntax
-        run: node --check cloud/control/handoff.mjs && node --check cloud/control/handoff.mjs && node --check site/jacocode.com/cloud-install.mjs && node --check site/jacocode.com/worker.mjs && node --check runtime/gateway/src/sentinel.mjs && node --check runtime/src/server/connected/jacoLinkHost.mjs
+        run: node --check cloud/control/handoff.mjs && node --check cloud/control/postgres-store.mjs && node --check site/jacocode.com/cloud-install.mjs && node --check site/jacocode.com/worker.mjs && node --check runtime/gateway/src/sentinel.mjs && node --check runtime/src/server/connected/jacoLinkHost.mjs
       - name: JACO Cloud install and single-host cold-start contract
-        run: node --test tests/nova/cloud-control-handoff.test.mjs tests/nova/cloud-install-plan.test.mjs tests/nova/cloud-handoff.test.mjs tests/nova/link-sentinel-handoff.test.mjs tests/nova/jaco-link-saas.test.mjs
+        run: node --test tests/nova/cloud-postgres-store.test.mjs tests/nova/cloud-control-handoff.test.mjs tests/nova/cloud-install-plan.test.mjs tests/nova/cloud-handoff.test.mjs tests/nova/link-sentinel-handoff.test.mjs tests/nova/jaco-link-saas.test.mjs
       - run: npm --prefix runtime run build
       - run: node scripts/verify-core-startup.mjs
