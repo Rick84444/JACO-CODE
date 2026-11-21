@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {desktopTakeoverState} from '../../runtime/src/server/desktop/desktopTakeover.mjs';
 
 const mission={id:'mission-test',status:'ACTIVE',metadata:{executor:'desktop-agentos'},
-  phase:'READY',activeTask:null,paused:{at:'2026-11-21T18:00:00.000Z'},cancelRequested:false};
+  phase:'READY',executionLeaseActive:false,activeTask:null,paused:{at:'2026-11-21T18:00:00.000Z'},cancelRequested:false};
 const read=relative=>fs.readFileSync(fileURLToPath(new URL(relative,import.meta.url)),'utf8');
 
 test('pause acknowledgement never grants takeover until original mission lease and UIA/relay action settle',()=>{
@@ -14,6 +14,9 @@ test('pause acknowledgement never grants takeover until original mission lease a
     {...mission,paused:null},
     {...mission,phase:'EXECUTING'},
     {...mission,phase:'PLANNING'},
+    {...mission,executionLeaseActive:true},
+    {...mission,executionLeaseActive:undefined},
+    {...mission,executionLeaseActive:null},
     {...mission,activeTask:{type:'mouse-click'}},
     {...mission,cancelRequested:true},
   ]) assert.equal(desktopTakeoverState(notReady).ready,false);
@@ -50,4 +53,14 @@ test('manual control requires operator pause and a separate quiescence check, no
   assert.match(ui,/\/pause' : '\/resume'/);
   assert.match(ui,/remotedesktop\.google\.com\/access/);
   assert.ok(!/SendInput|mouse_click|powershell/.test(ui),'Viewer must not dispatch its own Windows input');
+});
+
+test('takeover requires a real token-free lease state from canonical Nova control',()=>{
+  const control=read('../../runtime/src/server/connected/novaMissionControl.mjs');
+  const takeover=read('../../runtime/src/server/desktop/desktopTakeover.mjs');
+  assert.match(control,/executionLeaseActive: Boolean\(row\.token \|\| row\.owner/);
+  assert.match(takeover,/mission\.executionLeaseActive !== false/);
+  assert.equal(desktopTakeoverState({...mission,executionLeaseActive:true}).ready,false);
+  assert.equal(desktopTakeoverState({...mission,executionLeaseActive:undefined}).ready,false);
+  assert.equal(desktopTakeoverState({...mission,executionLeaseActive:false}).ready,true);
 });
