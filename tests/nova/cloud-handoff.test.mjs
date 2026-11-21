@@ -109,11 +109,11 @@ test('host receipt requires correct paired device, real receipt ID and evidence 
   await assert.rejects(()=>controller.hostReceipt({hostCredential:'forged',jobId:task.id,event:{type:'RECEIVED',receiptId:'receipt-0001'}}),assertCode('HOST_AUTH_DENIED'));
   await assert.rejects(()=>controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'VERIFIED',receiptId:'receipt-0001',verified:true}}),assertCode('VERIFICATION_EVIDENCE_REQUIRED'));
   await assert.rejects(()=>controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'RUNNING',receiptId:'receipt-0001',verified:true}}),assertCode('UNVERIFIED_RESULT_CLAIM'));
-  await assert.rejects(()=>controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'VERIFIED',receiptId:'receipt-1111',verified:true,evidenceRef:'ledger:fake-ref'}}),assertCode('EVIDENCE_NOT_VERIFIED'));
   const received=await controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'RECEIVED',receiptId:'receipt-0001'}});
   assert.equal(received.state,'RECEIVED');
   const running=await controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'RUNNING',receiptId:'receipt-0002'}});
   assert.equal(running.state,'RUNNING');
+  await assert.rejects(()=>controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'VERIFIED',receiptId:'receipt-1111',verified:true,evidenceRef:'ledger:fake-ref'}}),assertCode('EVIDENCE_NOT_VERIFIED'));
   const done=await controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'VERIFIED',receiptId:'receipt-0003',verified:true,evidenceRef:'ledger:11111111'}});
   assert.equal(done.state,'VERIFIED');
   assert.equal(done.evidenceRef,'ledger:11111111');
