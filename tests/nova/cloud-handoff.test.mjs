@@ -49,6 +49,10 @@ function harness() {
     authenticateUser: async token=>auth[token]||null,
     authenticateHost: async token=>token==='host-a'?{tenantId:'tenant-a',deviceId:'device-aaaa1111'}:
       token==='host-b'?{tenantId:'tenant-b',deviceId:'device-bbbb2222'}:null,
+    authorizeDispatch: async credential=>credential==='worker-credential',
+    verifyEvidence: async receipt=>receipt.tenantId==='tenant-a' &&
+      receipt.deviceId==='device-aaaa1111' && receipt.receiptId==='receipt-0003' &&
+      receipt.evidenceRef==='ledger:11111111',
     ownsDevice: async (p,d)=>Boolean(devices.get(p.tenantId)?.has(d)),
     store,clock:()=> '2026-11-21T01:00:00.000Z',
   });
@@ -89,22 +93,23 @@ test('dispatch requires an internal capability and never silently retries ambigu
   const {controller,submit}=harness();
   const task=await submit();
   await assert.rejects(()=>controller.beginDispatch({jobId:task.id}),assertCode('DISPATCHER_AUTH_DENIED'));
-  await assert.rejects(()=>controller.beginDispatch({jobId:task.id,authorizeInternalDispatch:async()=>false}),assertCode('DISPATCHER_AUTH_DENIED'));
-  const delivery=await controller.beginDispatch({jobId:task.id,authorizeInternalDispatch:async()=>true});
+  await assert.rejects(()=>controller.beginDispatch({jobId:task.id,dispatchCredential:'forged-worker'}),assertCode('DISPATCHER_AUTH_DENIED'));
+  const delivery=await controller.beginDispatch({jobId:task.id,dispatchCredential:'worker-credential'});
   assert.equal(delivery.deviceId,'device-aaaa1111');
   assert.equal((await controller.status({bearer:'alice',jobId:task.id})).dispatchState,'UNKNOWN');
-  await assert.rejects(()=>controller.beginDispatch({jobId:task.id,authorizeInternalDispatch:async()=>true}),assertCode('DISPATCH_ALREADY_CLAIMED'));
+  await assert.rejects(()=>controller.beginDispatch({jobId:task.id,dispatchCredential:'worker-credential'}),assertCode('DISPATCH_ALREADY_CLAIMED'));
 });
 
 test('host receipt requires correct paired device, real receipt ID and evidence for VERIFIED',async()=>{
   const {controller,submit}=harness();
   const task=await submit();
   await assert.rejects(()=>controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'VERIFIED',receiptId:'receipt-0001',verified:true,evidenceRef:'ledger:11111111'}}),assertCode('TASK_NOT_DELIVERED'));
-  await controller.beginDispatch({jobId:task.id,authorizeInternalDispatch:async()=>true});
+  await controller.beginDispatch({jobId:task.id,dispatchCredential:'worker-credential'});
   await assert.rejects(()=>controller.hostReceipt({hostCredential:'host-b',jobId:task.id,event:{type:'RECEIVED',receiptId:'receipt-0001'}}),assertCode('TASK_NOT_FOUND'));
   await assert.rejects(()=>controller.hostReceipt({hostCredential:'forged',jobId:task.id,event:{type:'RECEIVED',receiptId:'receipt-0001'}}),assertCode('HOST_AUTH_DENIED'));
   await assert.rejects(()=>controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'VERIFIED',receiptId:'receipt-0001',verified:true}}),assertCode('VERIFICATION_EVIDENCE_REQUIRED'));
   await assert.rejects(()=>controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'RUNNING',receiptId:'receipt-0001',verified:true}}),assertCode('UNVERIFIED_RESULT_CLAIM'));
+  await assert.rejects(()=>controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'VERIFIED',receiptId:'receipt-1111',verified:true,evidenceRef:'ledger:fake-ref'}}),assertCode('EVIDENCE_NOT_VERIFIED'));
   const received=await controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'RECEIVED',receiptId:'receipt-0001'}});
   assert.equal(received.state,'RECEIVED');
   const running=await controller.hostReceipt({hostCredential:'host-a',jobId:task.id,event:{type:'RUNNING',receiptId:'receipt-0002'}});
