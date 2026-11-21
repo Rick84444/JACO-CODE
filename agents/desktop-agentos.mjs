@@ -17,7 +17,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { MissionClient, processMissionTurn } from './lib/mission-client.mjs';
 import { seerCompletion } from './lib/seer-client.mjs';
-import { loadState, executeTask as legacyExecuteTask, computerScreenshotPath } from './hands-off-agent.mjs';
+import { loadState, executeTask as legacyExecuteTask, computerScreenshotPath, computerSessionStatus } from './hands-off-agent.mjs';
 import { desktopPlannerVision, virtualInputGrant } from './lib/aura-desktop-virtual-input.mjs';
 import { buildAgentCard, joinWorkplace } from './lib/workplace-session.mjs';
 import { windowsWmiRead } from './lib/windows-wmi-read.mjs';
@@ -332,17 +332,29 @@ async function preflight() {
   const relay = await requireRuntime('GET', '/api/relay/status');
   // Fail closed like the former start-all.ps1 gate: two writers through ModelRelay could act twice.
   if (relay?.singleWriter !== true) throw new Error('MODELRELAY_SINGLE_WRITER_UNAVAILABLE');
-  // WMI reads actual guest hardware identity, never a caller-supplied hostname
-  // or a remote-viewer screenshot. Absent permission leaves raw input off.
+  // This is the *same* persistent Win32 input daemon the mission uses, not a
+  // second bridge. It refuses session 0, Winlogon/UAC, and a foreground
+  // window attached to another Windows session before any screenshot/input.
+  const session = await computerSessionStatus();
+  if (session?.ok !== true || session?.verified !== true || session?.interactive !== true ||
+      !Number.isSafeInteger(session.sessionId) || session.sessionId <= 0) {
+    throw new Error('DESKTOP_INTERACTIVE_SESSION_UNVERIFIED:' + String(session?.error || 'NO_SESSION').slice(0, 120));
+  }
   const guest = ALLOW_COORDINATE_FALLBACK ? await windowsWmiRead({ query: 'computer', limit: 1 }) : null;
-  virtualInput = virtualInputGrant({ wmi: guest });
+  virtualInput = virtualInputGrant({ wmi: guest, session });
   if (ALLOW_COORDINATE_FALLBACK && !virtualInput.allowed) {
     console.warn('[AGENTOS] virtual input refused: ' + virtualInput.reason);
   }
-  return { identity, desktop: desktop.status, relay, virtualInput };
+  return { identity, desktop: desktop.status, relay, virtualInput, session: { sessionId: session.sessionId, interactive: true } };
 }
 
 export async function runTurn() {
+  // Checking each turn makes a newly disconnected, switched or locked Windows
+  // desktop a PAUSE, not a reason for the model to keep planning blind writes.
+  const session = await computerSessionStatus();
+  if (session?.ok !== true || session?.verified !== true || session?.interactive !== true) {
+    return {executed:false, skipped:'interactive_session_unavailable', reason:session?.error || 'DESKTOP_SESSION_UNAVAILABLE'};
+  }
   return processMissionTurn({
     client: missionClient,
     owner: OWNER,
