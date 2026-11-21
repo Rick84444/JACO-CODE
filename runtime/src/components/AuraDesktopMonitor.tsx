@@ -4,7 +4,7 @@ import { useUiLanguage } from '../i18n/UiLanguage';
 
 // This is an OBSERVATION panel, not a separate remote controller. The images
 // come from the canonical Nova mission's existing Laser Vision PNG receipts.
-// DeskRoll/VMConnect provide continuous video and manual keyboard takeover.
+// Chrome Remote Desktop or local Hyper-V VMConnect provide continuous viewing and operator takeover.
 export function AuraDesktopMonitor({
   active, missionId, missionStatus,
 }: { active: boolean; missionId: string | null; missionStatus: string | null }) {
@@ -96,7 +96,7 @@ export function AuraDesktopMonitor({
         <small className="text-neutral-400">{tr('Observerad', 'Observed')}: {new Date(frame.at).toLocaleTimeString()} · SHA-256: {frame.sha256.slice(0, 12)}</small>
       </div> : <p role="status" className="text-neutral-400 text-xs">{error || tr('Väntar på en färsk bild från Auras uppdrag.', 'Waiting for a fresh frame from Aura mission.')}</p>}
       <p className="text-neutral-400 text-xs mt-1">
-        {tr('Detta är verifierade stillbilder, inte video. För kontinuerlig livebild och manuellt övertagande använder du DeskRoll eller VMConnect i samma Windows-session.', 'These are verified snapshots, not video. Use DeskRoll or VMConnect in the same Windows session for continuous viewing and manual takeover.')}
+        {tr('Detta är verifierade stillbilder, inte video. Använd Chrome Remote Desktop eller lokal VMConnect för kontinuerlig visning och manuellt övertagande av Auras Windows-session.', 'These are verified snapshots, not video. Use Chrome Remote Desktop or local VMConnect to view and manually take over Aura's Windows session.')}
       </p>
     </div>}
   </section>;
