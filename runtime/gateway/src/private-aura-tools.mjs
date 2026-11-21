@@ -1,11 +1,15 @@
 // Private, locally enabled ChatGPT mission bridge. Aura remains the only executor.
 import * as z from 'zod/v4';
+import {installRecipes,installRecipePlan} from '../../../site/jacocode.com/install-recipes.mjs';
 const ID=/^[a-zA-Z0-9_.:-]{1,160}$/;
 const safeId=value=>typeof value==='string'&&ID.test(value)?value:null;
 const STATES=new Set(['ACTIVE','PENDING','QUEUED','READY','PLANNING','EXECUTING','BLOCKED','DONE','CANCELLED','FAILED','AWAITING_VERIFICATION','RECONCILIATION_REQUIRED','INTERRUPTED','CLOSED']);
 const state=value=>STATES.has(value)?value:'UNVERIFIED';
 const noSecrets=value=>!(/\bBearer\s+[^\s,;]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[\w-]{24,}|(?:api.?key|password|token)\s*[:=]\s*\S+/i.test(value));
 const noArgs=z.object({}).strict();
+const installPlatform=z.enum(['windows','linux','macos','android-termux','android-chat']);
+const catalogSchema=z.object({platform:installPlatform.optional()}).strict();
+const recipePlanSchema=z.object({platform:installPlatform,recipeId:z.string().regex(/^[a-z0-9][a-z0-9-]{2,100}$/)}).strict();
 const missionId=z.string().regex(ID);
 const goalSchema=z.object({goal:z.string().trim().min(1).max(8000)}).strict();
 const steerSchema=z.object({missionId,instruction:z.string().trim().min(1).max(2000),requestId:z.string().regex(/^[0-9a-f]{8}-[0-9a-f-]{27,50}$/i)}).strict();
@@ -34,6 +38,20 @@ export function privateAuraTools({core,env=process.env}){
   };
   const tool=(name,title,description,inputSchema,handler,readOnlyHint=false)=>({name,config:{title,description,inputSchema,annotations:{readOnlyHint,destructiveHint:false,idempotentHint:readOnlyHint,openWorldHint:!readOnlyHint}},handler});
   return [
+    tool('jaco_install_catalog','List JACO install recipes',
+      'Read-only catalog of supported local software and model recipes. Does not download, approve or install anything.',
+      catalogSchema,async args=>{
+        assertPrivateAuraBridge(core,env);
+        const {platform}=catalogSchema.parse(args);
+        return {schema:'jaco.install-catalog/v1',recipes:installRecipes({platform}),execution:'NOT_STARTED'};
+      },true),
+    tool('jaco_install_plan','Plan a JACO install recipe',
+      'Read-only fixed-recipe plan with prerequisites and required operator approvals. Never executes software.',
+      recipePlanSchema,async args=>{
+        assertPrivateAuraBridge(core,env);
+        const {platform,recipeId}=recipePlanSchema.parse(args);
+        return installRecipePlan(recipeId,platform);
+      },true),
     tool('jaco_aura_submit_goal','Send goal to Aura','Submit a goal explicitly requested by the operator to the canonical local Aura planner. Never send credentials, new authority, direct commands or approval decisions. Accepted is not completed. On unknown result inspect current work before retrying.',goalSchema,async args=>{
       const {goal}=goalSchema.parse(args);
       if(!noSecrets(goal))throw Error('JACO_PRIVATE_AURA_SECRET_REFUSED');
