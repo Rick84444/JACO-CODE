@@ -8,7 +8,7 @@ export function readAuraDesktopLiveFrame({mission, file, env = process.env, now 
   if (env.JACO_AURA_DESKTOP_SCREEN_VIEW !== '1') {
     return { ok:false, reason:'DESKTOP_SCREEN_VIEW_NOT_ENABLED' };
   }
-  if (!mission || mission.status !== 'ACTIVE' || mission.executor !== 'desktop-agentos') {
+  if (!mission || mission.status !== 'ACTIVE' || (mission.metadata?.executor ?? mission.executor) !== 'desktop-agentos') {
     return { ok:false, reason:'NO_ACTIVE_DESKTOP_MISSION' };
   }
   const options = { now, maxAgeMs:12000, ...(read ? {read} : {}), ...(stat ? {stat} : {}) };
