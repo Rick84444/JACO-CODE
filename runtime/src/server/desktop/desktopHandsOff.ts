@@ -114,6 +114,11 @@ interface BridgeResponse {
 }
 
 export class DesktopHandsOffClient {
+  // One process-local writer protects both the direct Desktop API and the
+  // ModelRelay route. The runtime passes the same client instance to both.
+  private inFlight = false;
+  public isActuatorBusy(): boolean { return this.inFlight; }
+
   private readonly stateRoot: string;
   private readonly ledgerPath: string;
   private readonly grantPath: string;
@@ -277,6 +282,30 @@ export class DesktopHandsOffClient {
 
   // ── Verified execution ─────────────────────────────────────────────────────
   public async executeVerified(action: DesktopAction): Promise<DesktopReceipt> {
+    if (this.inFlight) {
+      const at = new Date().toISOString();
+      const receipt: DesktopReceipt = {
+        action_id: action.action_id || crypto.randomUUID(),
+        action_type: action.type,
+        started_at: at,
+        finished_at: at,
+        success: false,
+        verified: false,
+        refusal: 'DESKTOP_ACTUATOR_BUSY',
+        before_hash: null,
+        after_hash: null,
+        window: null,
+        result: null,
+      };
+      this.appendReceipt(receipt);
+      return receipt;
+    }
+    this.inFlight = true;
+    try { return await this.executeVerifiedSingle(action); }
+    finally { this.inFlight = false; }
+  }
+
+  private async executeVerifiedSingle(action: DesktopAction): Promise<DesktopReceipt> {
     const actionId = action.action_id || crypto.randomUUID();
     const startedAt = new Date().toISOString();
     let before: Record<string, unknown> | null = null;
@@ -415,6 +444,7 @@ export class DesktopHandsOffClient {
       platform: process.platform,
       bridgePath: this.bridgePath,
       actuation: 'ui-automation',
+      inFlight: this.inFlight,
       syntheticInput: false,
       grant: grant ?? { enabled: false },
       grantActive: Boolean(grant?.enabled && Date.parse(grant.expires_at) > Date.now()),
