@@ -22,9 +22,14 @@ Historical component names are implementation details. New files and APIs should
 
 ## One canonical JACO Mode
 
-Aura is JACO's **sole agent identity**. SEER, Nova, Workplace, repository
-intelligence, Skills, tools and memory are functions or infrastructure owned
-by Aura, never separately empowered operator agents.
+Aura is JACO's **only agent**, both internally and in the product interface.
+There is no second agent called Sentinel, SEER or Nova. Sentinel is lifecycle
+supervision; planning, execution, workplace coordination, repository
+intelligence, Skills, tools and memory are Aura's capabilities or services,
+not separately empowered agents. Do not create sub-agents or autonomous
+worker personas as a solution to a task. Internal execution workers may
+perform bounded jobs but cannot own independent goals, identity, policy or
+memory.
 
 **Conversation does not imply implementation.** For software discussions,
 investigate the existing repository and verified knowledge first. A new idea
