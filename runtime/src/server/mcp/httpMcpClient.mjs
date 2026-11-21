@@ -1,4 +1,19 @@
 // Streamable HTTP transport used by the canonical MCP host.
+// Only emit finite error codes; low-level fetch errors can contain private
+// network details and must not leak into the agent log or public UI.
+export function classifyMcpNetworkError(error) {
+  const message = String(error?.message || '');
+  if (/^MCP_[A-Z0-9_]+(?::[-A-Z0-9_]+)?$/.test(message)) return message;
+  const causes = [];
+  for (let current = error, depth = 0; current && depth < 4; current = current.cause, depth++) {
+    if (typeof current.code === 'string') causes.push(current.code);
+  }
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError' || causes.includes('ETIMEDOUT')) return 'MCP_TRANSPORT_TIMEOUT';
+  if (causes.some(code => ['ENOTFOUND', 'EAI_AGAIN'].includes(code))) return 'MCP_TRANSPORT_DNS';
+  if (causes.some(code => ['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE'].includes(code))) return 'MCP_TRANSPORT_UNREACHABLE';
+  if (causes.some(code => /^(ERR_TLS_|ERR_SSL_|CERT_|UNABLE_TO_VERIFY|DEPTH_ZERO|SELF_SIGNED_CERT)/.test(code))) return 'MCP_TRANSPORT_TLS';
+  return 'MCP_CONNECTION_FAILED';
+}
 export class HttpMcpClient {
   constructor(id, def, { fetchImpl = fetch, env = process.env } = {}) {
     Object.assign(this, { id, def, fetchImpl, env });
@@ -19,8 +34,14 @@ export class HttpMcpClient {
       if (!token) throw Error('MCP_CREDENTIAL_REQUIRED');
       headers.authorization = `Bearer ${token}`;
     }
-    const response = await this.fetchImpl(this.def.url, { method: 'POST', redirect: 'error', headers,
-      body: JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id }), method, params }), signal: AbortSignal.timeout(timeoutMs) });
+    let response;
+    try {
+      response = await this.fetchImpl(this.def.url, { method: 'POST', redirect: 'error', headers,
+        body: JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id }), method, params }), signal: AbortSignal.timeout(timeoutMs) });
+    } catch (error) {
+      if (generation !== this.generation) throw Error('MCP_REQUEST_SUPERSEDED');
+      throw Error(classifyMcpNetworkError(error));
+    }
     // A late reply from a retired session may neither overwrite its replacement's
     // session header nor stop the replacement on a stale 404.
     if (generation !== this.generation) { void response.body?.cancel().catch(() => {}); throw Error('MCP_REQUEST_SUPERSEDED'); }
@@ -87,7 +108,7 @@ export class HttpMcpClient {
       this.tools = tools.map(t => ({ name: String(t.name).slice(0,200), description: String(t.description || '').slice(0,3000), inputSchema: t.inputSchema || {type:'object'}, readOnly: t.annotations?.readOnlyHint === true }));
       this.initialized = true; this.error = null; return this;
     })().catch(error => {
-      const code = /^MCP_/.test(error.message) ? error.message : 'MCP_CONNECTION_FAILED';
+      const code = classifyMcpNetworkError(error);
       if (generation === this.generation && this.ready === pending) { this.error = code; this.stop(); }
       throw Error(code);
     });
