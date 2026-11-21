@@ -166,8 +166,9 @@ test('Windows host is outbound-only, stores no account passwords, and never forw
   assert.equal(JSON.stringify(host.status()).includes('hostToken'),false);
   websocket.emit('message',Buffer.from(JSON.stringify(rpc('GET','/api/aura/plan'))));
   await new Promise(resolve=>setTimeout(resolve,20));
-  assert.equal(websocket.sent[0].status,200);
-  assert.deepEqual(websocket.sent[0].body.plans,[{goal:'Works'}]);
+  const rpcReply=websocket.sent.find(x=>x.type==='rpc_result' && x.id===id);
+  assert.equal(rpcReply?.status,200);
+  assert.deepEqual(rpcReply?.body.plans,[{goal:'Works'}]);
   websocket.emit('message',Buffer.from(JSON.stringify(rpc('POST','/api/terminal/exec',{command:'rm'}))));
   assert.equal(websocket.sent.at(-1).status,403);
   assert.equal(calls.filter(c=>c.url.includes('/api/terminal/')).length,0);
