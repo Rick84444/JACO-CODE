@@ -30,7 +30,6 @@ import { NovaTractionEngine } from './src/server/nova/traction.js';
 import { IntuitionContractStore } from './src/server/autonomy/intuitionContractStore.js';
 import { createDesktopRouter } from './src/server/desktop/router.js';
 import { desktopTakeoverState } from './src/server/desktop/desktopTakeover.mjs';
-import { actuatorLeases } from './src/server/handsOff/actuatorLease.js';
 import { DesktopHandsOffClient, type DesktopAction } from './src/server/desktop/desktopHandsOff.js';
 import { createCognitiveStreamHandler, readCognitiveFeed } from './src/server/connected/cognitiveLiveStream.mjs';
 import { projectAuraLiveWorkspace } from './src/lib/liveWorkspaceProjection.mjs';
