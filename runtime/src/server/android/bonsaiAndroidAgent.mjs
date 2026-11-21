@@ -92,7 +92,7 @@ function modelUrl(env) {
   if (url.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || url.username || url.password || url.search || url.hash || !/^\/v1\/?$/.test(url.pathname)) throw Error('BONSAI_LOOPBACK_URL_REQUIRED');
   return new URL('chat/completions', url.toString().replace(/\/?$/, '/') );
 }
-export function createBonsaiAndroidAgent({android, fetchImpl = fetch, env = process.env, onEvent = () => {}}) {
+export function createBonsaiAndroidAgent({android, fetchImpl = fetch, env = process.env, onEvent = (_event) => {}}) {
   if (!android || typeof android.observe !== 'function' || typeof android.executeVerified !== 'function') throw Error('ANDROID_HANDS_OFF_REQUIRED');
   return {
     async run({instruction, packageName, maxSteps = 8, mandate, missionId = null}) {
