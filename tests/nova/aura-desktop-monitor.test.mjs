@@ -24,6 +24,8 @@ test('desktop frame route is login-gated, read-only, no-store and bound to canon
   assert.match(server,/connectedRuntime.novaMissions.current\(\)/);
   assert.match(server,/private, no-store, max-age=0/);
   assert.match(server,/X-Content-Type-Options', 'nosniff'/);
+  assert.match(server,/X-JACO-Windows-Session-Id/);
+  assert.match(read('src/components/AuraDesktopMonitor.tsx'),/DESKTOP_FRAME_SESSION_UNVERIFIED/);
   assert.match(server,/res.status\(200\).type\('png'\).send\(frame.png\)/);
   assert.ok(!/app.post\('\/api\/aura\/desktop\/live-frame'/.test(server),'must stay read-only');
 });
