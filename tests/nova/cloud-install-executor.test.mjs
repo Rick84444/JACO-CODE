@@ -6,6 +6,10 @@ const expiry='2031-11-21T00:00:00.000Z';
 const sha='a'.repeat(64);
 const approval=(recipeId,extra={})=>({
   approved:true,deviceId,recipeId,recipeVersion:'1.0.0',
+  tenantId:'test-tenant',subject:'user-subject',scopes:['install:execute'],
+  permissions:recipeId==='ollama-windows'?[
+    'install-software','accept-winget-package-agreements','accept-winget-source-agreements',
+  ]:['download-model','consume-local-storage'],
   approvalId:'approval-test-0001',expiresAt:expiry,...extra,
 });
 const assertCode=(code)=>e=>e instanceof InstallExecutionError&&e.code===code;
@@ -75,6 +79,9 @@ test('denied/mismatched/expired/unsupported approval cannot execute or claim',as
     {approvalVerifier:async()=>approval('ollama-windows',{deviceId:'other-device-1234'})},
     {approvalVerifier:async()=>approval('ollama-windows',{recipeVersion:'2.0.0'})},
     {approvalVerifier:async()=>approval('ollama-windows',{approvalId:'bad'})},
+    {approvalVerifier:async()=>approval('ollama-windows',{permissions:[]})},
+    {approvalVerifier:async()=>approval('ollama-windows',{scopes:['missions:write']})},
+    {approvalVerifier:async()=>approval('ollama-windows',{tenantId:''})},
     {recipeId:'bonsai-llamacpp-existing-windows'},
     {recipeId:'unknown-recipe-id'},
   ]) {
