@@ -15,7 +15,7 @@ Aura is the **single root agent**. This is a procedure for the existing Desktop 
 - **DOM Traction**: `runtime/src/server/nova/tractionCore.mjs` exports the original `DomTractionEngine` / `NovaTractionEngine` and Manifold Drift. The desktop adapter is `runtime/src/server/desktop/desktopTraction.mjs`. UIA trees are not HTML DOMs.
 - **Execution**: `runtime/src/server/desktop/desktopHandsOff.ts` and `runtime/scripts/windows/jaco-uia-bridge.ps1`; the existing `runtime/src/server/relay/modelRelay.ts` is the one mutation gateway.
 - **Strategy and memory**: existing Aura/SEER, RobotMower (browser), Nova Mission Bus, Gameboard, verified receipts and Continuum. Do not create another runtime, event ledger or memory store.
-- **Sandbox/remote window**: `agents/aura-desktop-vm.ps1` operates a previously configured Hyper-V VM through native VMConnect; it is not a computer-use API. See `docs/AURA_DESKTOP_TOOL.md` for real readiness boundaries.
+- **Sandbox/remote window**: **Chrome Remote Desktop** is the recommended human live viewer installed inside the guest; `agents/aura-desktop-vm.ps1` opens native Hyper-V VMConnect on the host as a local fallback. Neither grants tool authority or acts as a computer-use API. See `docs/AURA_DESKTOP_TOOL.md` for readiness boundaries.
 
 ## Read → lock → act → verify
 
@@ -30,4 +30,4 @@ Aura is the **single root agent**. This is a procedure for the existing Desktop 
 
 ## Deployment boundary
 
-For a truly separate work computer, the operator must first prepare and verify the Windows Hyper-V guest, host-drive redirection and network access, then run exactly one canonical Aura Runtime inside that guest. The host opens the VMConnect window. Until actual guest receipts exist, report the sandbox, browser/desktop control and VM readiness as **UNVERIFIED**. Do not start a second Aura on the host or imply that VMConnect itself gives the agent actuation.
+For a truly separate work computer, the operator must first prepare and verify the Windows Hyper-V guest, host-drive redirection and network access, then run exactly one canonical Aura Runtime inside that guest. The operator views the same guest Windows session through Chrome Remote Desktop (or host-local VMConnect). Until actual guest receipts exist, report the sandbox, browser/desktop control and VM readiness as **UNVERIFIED**. Do not start a second Aura on the host or imply that VMConnect itself gives the agent actuation.
