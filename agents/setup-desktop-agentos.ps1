@@ -1,6 +1,7 @@
 param(
   [string]$RepoRoot = (Split-Path $PSScriptRoot -Parent),
-  [switch]$InstallDependencies
+  [switch]$InstallDependencies,
+  [switch]$EnableSandboxInput
 )
 
 $ErrorActionPreference = 'Stop'
@@ -83,7 +84,90 @@ Set-EnvValue $lines 'JACO_RUNTIME_DIR' $RuntimeName
 Set-EnvValue $lines 'JACO_RUNTIME_URL' 'http://127.0.0.1:3000'
 Set-EnvValue $lines 'SEER_URL' 'http://127.0.0.1:2997'
 Set-EnvValue $lines 'JACO_EXECUTOR' 'desktop-agentos'
-Set-EnvValue $lines 'JACO_ALLOW_COORDINATE_FALLBACK' '0'
+# Raw Win32 mouse and keyboard are opt-in inside a real Hyper-V guest only.
+if ($EnableSandboxInput) {
+  $computer = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+  if ($computer.Manufacturer -notmatch '^Microsoft Corporation
+Set-EnvValue $lines 'JACO_ALLOW_SHELL_TASKS' '1'
+Set-EnvValue $lines 'JACO_LEVEL5_AUTONOMY' '1'
+Set-EnvValue $lines 'JACO_REMOTE_ALLOW_MUTATIONS' '1'
+
+# Preserve explicit operator restrictions. New installs use the canonical registry.
+$currentTasks = Get-EnvValue $lines 'JACO_NOVA_ALLOWED_TASKS'
+if (-not $currentTasks) {
+  Set-EnvValue $lines 'JACO_NOVA_ALLOWED_TASKS' 'sandbox'
+}
+
+[System.IO.File]::WriteAllLines($EnvPath, $lines.ToArray(), (New-Object System.Text.UTF8Encoding($false)))
+
+if ($InstallDependencies) {
+  Push-Location $RuntimeRoot
+  try {
+    if (Test-Path (Join-Path $RuntimeRoot 'package-lock.json')) { & npm.cmd ci }
+    else { & npm.cmd install }
+    if ($LASTEXITCODE -ne 0) { throw 'Runtime dependency installation failed.' }
+  } finally { Pop-Location }
+}
+
+Write-Host ''
+Write-Host 'Desktop AgentOS setup completed.' -ForegroundColor Green
+Write-Host "Repository: $RepoRoot"
+Write-Host "Runtime:    $RuntimeRoot"
+Write-Host "UIA bridge: $UiaBridge"
+Write-Host "Config:     $EnvPath"
+Write-Host 'Gateway token is configured but is not printed.'
+Write-Host ''
+Write-Host 'Next:' -ForegroundColor Cyan
+Write-Host '  1. Start the stack: .\agents\start-all.ps1'
+Write-Host '  2. The durable Level-5 mandate is created by the runtime; use grant-desktop-agentos.ps1 only to narrow a specific desktop process scope.'
+Write-Host '  3. Submit one operator goal through Aura/SEER; Git, shell, web and verified execution are pre-authorized.'
+Write-Host ''
+Write-Host ('Virtual mouse and keyboard: ' + $(if ($EnableSandboxInput) { 'sandbox opt-in; WMI and mission validated' } else { 'disabled; use -EnableSandboxInput inside dedicated Hyper-V VM' })) -ForegroundColor Yellow
+Write-Host 'Local shell is available only when an explicit mission requests it.' -ForegroundColor Yellow
+ -or $computer.Model -notmatch '^Virtual Machine
+Set-EnvValue $lines 'JACO_ALLOW_SHELL_TASKS' '1'
+Set-EnvValue $lines 'JACO_LEVEL5_AUTONOMY' '1'
+Set-EnvValue $lines 'JACO_REMOTE_ALLOW_MUTATIONS' '1'
+
+# Preserve explicit operator restrictions. New installs use the canonical registry.
+$currentTasks = Get-EnvValue $lines 'JACO_NOVA_ALLOWED_TASKS'
+if (-not $currentTasks) {
+  Set-EnvValue $lines 'JACO_NOVA_ALLOWED_TASKS' 'sandbox'
+}
+
+[System.IO.File]::WriteAllLines($EnvPath, $lines.ToArray(), (New-Object System.Text.UTF8Encoding($false)))
+
+if ($InstallDependencies) {
+  Push-Location $RuntimeRoot
+  try {
+    if (Test-Path (Join-Path $RuntimeRoot 'package-lock.json')) { & npm.cmd ci }
+    else { & npm.cmd install }
+    if ($LASTEXITCODE -ne 0) { throw 'Runtime dependency installation failed.' }
+  } finally { Pop-Location }
+}
+
+Write-Host ''
+Write-Host 'Desktop AgentOS setup completed.' -ForegroundColor Green
+Write-Host "Repository: $RepoRoot"
+Write-Host "Runtime:    $RuntimeRoot"
+Write-Host "UIA bridge: $UiaBridge"
+Write-Host "Config:     $EnvPath"
+Write-Host 'Gateway token is configured but is not printed.'
+Write-Host ''
+Write-Host 'Next:' -ForegroundColor Cyan
+Write-Host '  1. Start the stack: .\agents\start-all.ps1'
+Write-Host '  2. The durable Level-5 mandate is created by the runtime; use grant-desktop-agentos.ps1 only to narrow a specific desktop process scope.'
+Write-Host '  3. Submit one operator goal through Aura/SEER; Git, shell, web and verified execution are pre-authorized.'
+Write-Host ''
+Write-Host 'Coordinate fallback remains disabled. Local shell is available only when an explicit mission requests it.' -ForegroundColor Yellow
+) {
+    throw 'VIRTUAL_INPUT_HYPERV_GUEST_REQUIRED'
+  }
+  Set-EnvValue $lines 'JACO_AURA_DESKTOP_SANDBOX' 'hyperv-guest'
+  Set-EnvValue $lines 'JACO_ALLOW_COORDINATE_FALLBACK' '1'
+} else {
+  Set-EnvValue $lines 'JACO_ALLOW_COORDINATE_FALLBACK' '0'
+}
 Set-EnvValue $lines 'JACO_ALLOW_SHELL_TASKS' '1'
 Set-EnvValue $lines 'JACO_LEVEL5_AUTONOMY' '1'
 Set-EnvValue $lines 'JACO_REMOTE_ALLOW_MUTATIONS' '1'
