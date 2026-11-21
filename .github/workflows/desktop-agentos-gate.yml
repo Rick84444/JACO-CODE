@@ -20,6 +20,12 @@ on:
       - 'agents/lib/mission-screen-frame.mjs'
       - 'agents/input-bridge.ps1'
       - 'agents/lib/input-bridge-daemon.mjs'
+      - 'agents/aura-desktop-vm.ps1'
+      - 'runtime/src/server/desktop/desktopTraction.mjs'
+      - 'runtime/src/server/desktop/desktopTraction.d.mts'
+      - 'runtime/src/server/desktop/desktopHandsOff.ts'
+      - 'tests/nova/desktop-traction.test.mjs'
+      - 'docs/AURA_DESKTOP_TOOL.md'
       - 'tests/nova/input-bridge-daemon.test.mjs'
       - 'agents/lib/task-fields.mjs'
       - 'runtime/src/server/nova/tractionCore.mjs'
@@ -60,6 +66,7 @@ jobs:
       - name: Syntax check executor
         run: |
           node --check agents/desktop-agentos.mjs
+          node --check runtime/src/server/desktop/desktopTraction.mjs
           node --check agents/run-desktop-agentos.mjs
           node --check agents/lib/mission-client.mjs
           node --check agents/lib/workplace-session.mjs
@@ -74,6 +81,9 @@ jobs:
 
       - name: Run Nova tests
         run: npm test
+
+      - name: Verify Laser Vision / DOM Traction desktop safety
+        run: node --test tests/nova/desktop-traction.test.mjs tests/nova/mission-screen-frame.test.mjs
 
       - name: Run Workplace regression suite
         run: npm run test:workplace
@@ -111,6 +121,7 @@ jobs:
         shell: pwsh
         run: |
           node --check agents/desktop-agentos.mjs
+          node --check runtime/src/server/desktop/desktopTraction.mjs
           if ($LASTEXITCODE -ne 0) { throw 'desktop-agentos syntax check failed' }
           node --check agents/run-desktop-agentos.mjs
           if ($LASTEXITCODE -ne 0) { throw 'run-desktop-agentos syntax check failed' }
@@ -124,6 +135,7 @@ jobs:
             'agents/setup-desktop-agentos.ps1',
             'agents/grant-desktop-agentos.ps1',
             'agents/start-all.ps1',
+            'agents/aura-desktop-vm.ps1',
             'agents/windows-wmi-read.ps1',
             'agents/input-bridge.ps1'
           )
