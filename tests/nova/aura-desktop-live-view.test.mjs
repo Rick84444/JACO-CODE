@@ -12,7 +12,7 @@ const sha=createHash('sha256').update(png).digest('hex');
 const now=Date.now();
 const observation={
   type:'screenshot',ok:true,verified:true,at:new Date(now-100).toISOString(),
-  result:{imageSha256:sha,width:400,height:300,perception:{hwnd:321,capture:{x:0,y:0,width:400,height:300}}},
+  result:{imageSha256:sha,sessionId:3,width:400,height:300,perception:{hwnd:321,capture:{x:0,y:0,width:400,height:300}}},
 };
 const mission={id:'mission-local-123',status:'ACTIVE',metadata:{executor:'desktop-agentos'},receipts:[observation]};
 const opts={file:'fixture',env:{JACO_AURA_DESKTOP_SCREEN_VIEW:'1'},now,
@@ -24,6 +24,7 @@ test('Windows live preview reads the unchanged original mission-bound Laser Visi
   assert.equal(r.sha256,sha);
   assert.deepEqual(r.png,png);
   assert.equal(r.missionId,mission.id);
+  assert.equal(r.sessionId,3);
   assert.equal(r.at,observation.at);
 });
 
@@ -40,6 +41,10 @@ test('preview never serves stale, overwritten, unverified or post-mutation frame
   assert.equal(readAuraDesktopLiveFrame({mission:{...mission,receipts:[observation,{type:'mouse-click',ok:true,verified:true}]},...opts}).ok,false);
   assert.equal(readAuraDesktopLiveFrame({mission,...opts,now:now+13000}).ok,false);
   assert.equal(readAuraDesktopLiveFrame({mission,...opts,read:()=>Buffer.alloc(png.length)}).ok,false);
+  const noSession={...observation,result:{...observation.result,sessionId:undefined}};
+  assert.equal(readAuraDesktopLiveFrame({mission:{...mission,receipts:[noSession]},...opts}).reason,'DESKTOP_FRAME_SESSION_UNVERIFIED');
+  const sessionZero={...observation,result:{...observation.result,sessionId:0}};
+  assert.equal(readAuraDesktopLiveFrame({mission:{...mission,receipts:[sessionZero]},...opts}).ok,false);
 });
 
 test('shared screenshot path matches the original agent state directory, not runtime release root',()=>{
@@ -56,4 +61,15 @@ test('shared screenshot path matches the original agent state directory, not run
 test('authoritative mission.metadata.executor cannot be overridden by a forged top-level executor',()=>{
   const forged={...mission,executor:'desktop-agentos',metadata:{executor:'nova'}};
   assert.equal(readAuraDesktopLiveFrame({mission:forged,...opts}).reason,'NO_ACTIVE_DESKTOP_MISSION');
+});
+
+test('native screenshot and pointer injection share interactive Windows-session checks',()=>{
+  const source=fs.readFileSync(fileURLToPath(new URL('../../agents/input-bridge.ps1',import.meta.url)),'utf8');
+  assert.match(source,/ProcessIdToSessionId/);
+  assert.match(source,/OpenInputDesktop/);
+  assert.match(source,/GetUserObjectInformation/);
+  assert.match(source,/public static void AssertTarget\(bool checkCursor\)[\s\S]{0,450}InteractiveSessionId\(\)/);
+  assert.match(source,/function Do-Screenshot[\s\S]{0,450}InteractiveSessionId\(\)/);
+  assert.match(source,/sessionId = \[int\]\$sessionId/);
+  assert.match(source,/'session_status' \{/);
 });
