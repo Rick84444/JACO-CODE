@@ -234,3 +234,5 @@ jobs:
         run: npm ci --prefix runtime --no-audit --no-fund
       - name: Check DesktopHandsOff client and DOM Traction adapter types
         run: npm --prefix runtime run lint
+      - name: Bundle the canonical runtime with the desktop adapter
+        run: npm --prefix runtime run build:server
