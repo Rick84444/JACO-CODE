@@ -99,6 +99,11 @@ export async function executeApprovedInstall({
   });
   if(!grant || grant.approved!==true || grant.deviceId!==deviceId ||
      grant.recipeId!==recipeId || grant.recipeVersion!==recipe.version ||
+     typeof grant.tenantId!=='string'||!grant.tenantId ||
+     typeof grant.subject!=='string'||!grant.subject ||
+     !Array.isArray(grant.scopes)||!grant.scopes.includes('install:execute') ||
+     !Array.isArray(grant.permissions)||
+     !recipe.approvals.every(p=>grant.permissions.includes(p)) ||
      typeof grant.approvalId!=='string' || !APPROVAL_ID.test(grant.approvalId) ||
      typeof grant.expiresAt!=='string' || !Number.isFinite(Date.parse(grant.expiresAt)) ||
      Date.parse(grant.expiresAt)<=Date.now()) {
@@ -107,14 +112,15 @@ export async function executeApprovedInstall({
   // Claim before first side effect. Ambiguous network/host crash is UNKNOWN,
   // never an automatic second install; a separate audited reconcile is needed.
   const claimed=await onceClaim({
-    approvalId:grant.approvalId,deviceId,recipeId,recipeVersion:recipe.version,
+    approvalId:grant.approvalId,tenantId:grant.tenantId,deviceId,
+    recipeId,recipeVersion:recipe.version,
   });
   if(!claimed || claimed.claimed!==true || !APPROVAL_ID.test(String(claimed.executionId||''))) {
     throw new InstallExecutionError('INSTALL_ALREADY_CLAIMED');
   }
   const base={schema:'jaco.install-receipt/v1',
     executionId:claimed.executionId,approvalId:grant.approvalId,
-    deviceId,recipeId,recipeVersion:recipe.version,agent:'Aura',agentCount:1,
+    tenantId:grant.tenantId,deviceId,recipeId,recipeVersion:recipe.version,agent:'Aura',agentCount:1,
   };
   let details=null, failure=null;
   try {
