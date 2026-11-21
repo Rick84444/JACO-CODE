@@ -75,6 +75,10 @@ function safeIndexEntry(e) {
   if (!e || typeof e !== 'object' || !RECEIPT_ID.test(String(e.commandId || '')) ||
       !ENTRY_STATES.has(e.status) || !OPERATIONS.has(e.operation)) return null;
   const validRef = v => typeof v === 'string' && /^[A-Za-z0-9._:-]{1,200}$/.test(v) ? v : null;
+  // A malformed remote mission ID must never turn into an apparently normal
+  // null reference: that would hide a competing or poisoned publisher.
+  if ((e.missionId != null && !validRef(e.missionId)) ||
+      (e.graphId != null && !validRef(e.graphId))) return null;
   return {
     commandId: e.commandId,
     operation: e.operation,
@@ -139,7 +143,6 @@ export function githubOriginMatches(remote, repo) {
 export function createGitControlReceiptPublisher({
   repo, repoRoot, gitBin = 'git', gitExecImpl = execFileAsync, log = () => {},
 } = {}) {
-  let lastDigest = null;
   let retryAfter = 0;
   const git = (args, env, timeout = 20_000) =>
     gitExecImpl(gitBin, ['-C', repoRoot, ...args], {
@@ -186,7 +189,6 @@ export function createGitControlReceiptPublisher({
         if (remoteSnapshot && JSON.stringify(mergeGitControlReceiptSnapshots(status,remoteSnapshot)) ===
               JSON.stringify({schema:remoteSnapshot.schema,transport:remoteSnapshot.transport,
                 authoritative:remoteSnapshot.authoritative,entries:remoteSnapshot.entries})) {
-          lastDigest=digest;
           control.gitReceiptDigest=digest;
           return {sent:false,reason:'unchanged'};
         }
@@ -201,7 +203,6 @@ export function createGitControlReceiptPublisher({
         if (!/^[0-9a-f]{40,64}$/.test(commit)) throw new Error('GIT_CONTROL_COMMIT_INVALID');
         // No force push; a concurrent writer cannot be overwritten.
         await git(['push', '--porcelain', 'origin', commit + ':' + STATUS_BRANCH], env, 25_000);
-        lastDigest = digest;
         control.gitReceiptDigest = digest;
         control.gitReceiptPushError = null;
         control.gitReceiptPushedAt = new Date().toISOString();
