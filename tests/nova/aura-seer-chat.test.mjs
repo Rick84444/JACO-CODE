@@ -26,7 +26,7 @@ test('One canonical JACO Mode reuses verified repository knowledge rather than s
   assert.equal(fs.existsSync(path.join(root, 'JACO_MASTER_BEHAVIOR_CONTRACT.md')), false);
   const rules = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
   assert.match(rules, /only active engineering/);
-  assert.match(rules, /GodPrompt is a development methodology/);
+  assert.match(rules, /GodPrompt is\s+a development methodology/);
   const providerPrompt = fs.readFileSync(path.join(root, 'runtime/src/prompts/gemma4AgenticPrompt.ts'), 'utf8');
   assert.match(providerPrompt, /import \{ JACO_MODE_RULES \}/);
   assert.doesNotMatch(providerPrompt, /CodeRefactorAgent|QualityAuditorAgent|ArchitecturePlannerAgent|SystemExecutionAgent/);
