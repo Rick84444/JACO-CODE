@@ -40,7 +40,17 @@ export function createGithubNovaControlInbox({
   const graphs=()=>strategyClient||(defaultAuraGraphs ||= createLocalAuraGraphClient({env:strategyEnv,fetchImpl}));
   const [owner, name] = String(repo).split('/');
   const configured = Boolean(owner && name && actor);
-  const transport = transportMode === 'git-ref' ? 'git-ref' : token ? 'github-api' : 'git-ref';
+  // A token the API rejects is worse than no token: observed 2026-11-21, the inbox retried the same rejected
+  // credential 42,518 times, read no command and published no receipt, while the git transport beside it
+  // could authenticate through the host credential helper the whole time. The first "Bad credentials" now
+  // retires the API transport for this process and falls back to git, which needs no token at all.
+  let transport = transportMode === 'git-ref' ? 'git-ref' : token ? 'github-api' : 'git-ref';
+  const retireApiTransport = reason => {
+    if (transport !== 'github-api') return false;
+    transport = 'git-ref';
+    log('warn', `GitHub control: API credential rejected (${reason}); continuing on the git transport, which needs no token`);
+    return true;
+  };
   const effectivePollMs = transport === 'github-api'
     ? Math.max(5000, Number.isFinite(pollMs) ? pollMs : 15000)
     : Math.max(30000, Number.isFinite(pollMs) ? pollMs : 30000);
@@ -403,8 +413,10 @@ export function createGithubNovaControlInbox({
     repo,
     actor,
     pollMs: effectivePollMs,
-    transport,
-    writeback: transport === 'github-api' ? 'github' : 'git-ref-when-authorized',
+    // Getters, so a fallback away from a rejected credential is reported truthfully rather than
+    // frozen at whatever the transport was when this object was built.
+    get transport() { return transport; },
+    get writeback() { return transport === 'github-api' ? 'github' : 'git-ref-when-authorized'; },
 
     async poll(state, { force = false } = {}) {
       const control = ensureState(state);
@@ -458,6 +470,11 @@ export function createGithubNovaControlInbox({
         return { enabled: true, accepted, updates, statusReceipt };
       } catch (error) {
         control.lastError = String(error.message || error).slice(0, 500);
+        if (/^GITHUB_CONTROL_HTTP_(401|403)/.test(control.lastError) && retireApiTransport(control.lastError)) {
+          // Poll again straight away on the transport that can actually authenticate.
+          control.lastPollAt = 0;
+          return { enabled: true, accepted: [], updates: [], transport, error: control.lastError };
+        }
         log('warn', `GitHub control poll failed: ${control.lastError}`);
         return { enabled: true, accepted: [], updates: [], error: control.lastError };
       }

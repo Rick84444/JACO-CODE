@@ -387,3 +387,36 @@ test('the published receipt names the refusal so the sender can correct the comm
   assert.equal(controlRefusalCode(new Error('GITHUB_CONTROL_HTTP_401:Bad credentials')), null);
   assert.equal(controlRefusalCode(new Error('fetch failed')), null);
 });
+
+// Observed 2026-11-21: the inbox held a credential the API rejected and retried it 42,518 times. It read no
+// command and published no receipt for 20 hours, while the git transport beside it could authenticate through
+// the host credential helper the whole time. A rejected credential now retires the API transport, once.
+test('a credential the API rejects falls back to the git transport instead of repeating forever', async () => {
+  let apiCalls = 0, gitReads = 0;
+  const fetchImpl = async () => { apiCalls += 1; return { ok: false, status: 401, text: async () => JSON.stringify({ message: 'Bad credentials' }) }; };
+  const payload = { schema: 'jaco.nova-control/v1', commandId: 'after-fallback-001', op: 'mission.create', goal: 'Check health' };
+  const gitExecImpl = async (file, args) => {
+    if (args[2] === 'show') { gitReads += 1; return { stdout: JSON.stringify(payload) }; }
+    return { stdout: '' };
+  };
+  const created = [];
+  const inbox = createGithubNovaControlInbox({
+    missionClient: { async create(input) { created.push(input.goal); return { id: 'mission-1', status: 'ACTIVE' }; }, async get() { return { id: 'mission-1', status: 'ACTIVE', receipts: [] }; }, async resolve() { throw new Error('unexpected'); } },
+    fetchImpl, gitExecImpl, repoRoot: '/repo', repo: 'Rick84444/jaco-code', token: 'rejected-token', actor: 'Rick84444',
+  });
+  assert.equal(inbox.transport, 'github-api', 'a configured token still selects the API first');
+
+  const state = {};
+  const first = await inbox.poll(state, { force: true });
+  assert.match(String(first.error), /GITHUB_CONTROL_HTTP_401/);
+  assert.equal(inbox.transport, 'git-ref', 'the rejected credential retired the API transport');
+  assert.equal(inbox.writeback, 'git-ref-when-authorized');
+
+  // The very next poll works over git, and the command is finally read.
+  const callsBefore = apiCalls;
+  const second = await inbox.poll(state, { force: true });
+  assert.equal(second.accepted.length, 1);
+  assert.deepEqual(created, ['Check health']);
+  assert.ok(gitReads > 0, 'the command came from the git ref');
+  assert.equal(apiCalls, callsBefore, 'the rejected credential is never retried');
+});
