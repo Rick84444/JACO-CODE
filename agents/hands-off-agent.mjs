@@ -742,7 +742,7 @@ function runBridge(args) {
   return inputBridgeDaemon.send(payload);
 }
 
-const computerTools = {
+// Read-only native proof of the bridge's actual interactive Windows session.\n// Uses the same single serialized Win32 daemon as screenshot/input.\nexport const computerSessionStatus = () => runBridge(['-Op', 'session_status']);\n\nconst computerTools = {
   // Raw actions consume only a receipt-bound target, never an arbitrary HWND.
   rawInput(task,mission) {
     let target;
