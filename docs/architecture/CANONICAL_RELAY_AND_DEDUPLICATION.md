@@ -27,6 +27,15 @@ old launch path, move its historic implementation/docs to `legacy/` or delete
 it if no historical value, and remove obsolete flags, examples and tests.
 Never move a live module while a supervised process still imports it.
 
+## One agent — no extra personas
+
+Aura is the **only agent**. SEER/strategy and Nova/execution are legacy names
+for functions being moved into the existing Aura Runtime; Sentinel is a
+standalone non-agent lifecycle supervisor required for cold-start.
+Tool and mission workers do not gain their own goals, durable memory or
+operator-facing identity. Refactoring function ownership does not authorize
+deleting active process data or abandoning real mission receipts.
+
 ## One Relay — the canonical product decision
 
 **Customer transport owner:** `JACO Link`, not GitHub. Key components:
