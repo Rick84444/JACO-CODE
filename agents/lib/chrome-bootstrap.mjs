@@ -7,8 +7,13 @@ export function executable(env, configured, name, candidates = []) {
 }
 export function chromeExecutable(env, platform = process.platform) {
   if (env.JACO_CHROME_EXECUTABLE) return executable(env, env.JACO_CHROME_EXECUTABLE, '');
-  if (platform === 'win32') return executable(env, null, 'chrome.exe',
-    [env.ProgramFiles, env['ProgramFiles(x86)'], env.LOCALAPPDATA].filter(Boolean).map(p => path.join(p, 'Google/Chrome/Application/chrome.exe')));
+  if (platform === 'win32') {
+    const roots = [env.ProgramFiles, env['ProgramFiles(x86)'], env.LOCALAPPDATA].filter(Boolean);
+    // Use the same CDP protocol and private JACO profile, including on Windows
+    // systems with Edge but no separately installed Chrome.
+    return executable(env, null, 'chrome.exe', roots.map(p => path.join(p, 'Google/Chrome/Application/chrome.exe')))
+      || executable(env, null, 'msedge.exe', roots.map(p => path.join(p, 'Microsoft/Edge/Application/msedge.exe')));
+  }
   const names = platform === 'darwin' ? ['google-chrome', 'chromium'] : ['chromium', 'chromium-browser', 'google-chrome-stable', 'google-chrome'];
   if (platform === 'darwin') {
     const mac = executable(env, null, 'Google Chrome', ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium']);
