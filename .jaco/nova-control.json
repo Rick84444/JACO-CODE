@@ -1,25 +1,9 @@
 {
   "schema": "jaco.nova-control/v1",
-  "commandId": "chatgpt-aura-start-20261120-1857",
-  "op": "strategy.graph.create",
-  "graph": {
-    "title": "Verify Aura strategic control",
-    "objective": "Confirm the canonical runtime can accept and execute a harmless observation-only task. Return verified health and tool availability without exposing private information.",
-    "nodes": [
-      {
-        "key": "health",
-        "title": "Observe runtime health",
-        "objective": "Verify runtime health and available execution surfaces using observation-only diagnostics. No changes, spending or credential access.",
-        "dependencies": []
-      },
-      {
-        "key": "report",
-        "title": "Report verified readiness",
-        "objective": "Summarize observed readiness and blockers using actual evidence. No modifications.",
-        "dependencies": [
-          "health"
-        ]
-      }
-    ]
-  }
+  "commandId": "chatgpt-jaco-status-probe-20261121-0023-v1",
+  "op": "mission.create",
+  "goal": "Read-only operational handshake: verify the currently running JACO/Aura runtime is reachable, report runtime health and available MCP tool count from actual observed evidence. Do not modify source, files, settings, models, credentials, providers, services, or devices. Do not start another agent, restart anything, spend money, or access private data. If unavailable or unverified, report the specific blocker rather than claiming success.",
+  "allowedTasks": [
+    "health-check"
+  ]
 }
