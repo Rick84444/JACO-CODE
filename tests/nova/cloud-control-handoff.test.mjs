@@ -133,12 +133,14 @@ test('only paired host can provide completion, always with durable evidence',asy
   await bad(receipt('UNVERIFIED','RECEIVED','receipt-test-1001'),'HOST_AUTH_DENIED');
   await bad(receipt('hostA','VERIFIED','receipt-test-1002'),'VERIFICATION_EVIDENCE_REQUIRED');
   await bad(receipt('hostA','RECEIVED','receipt-test-1003',{verified:true}),'UNVERIFIED_RESULT_CLAIM');
-  await bad(receipt('hostA','VERIFIED','receipt-test-1009',
-    {verified:true,evidenceRef:'evidence-12345678'}),'EVIDENCE_NOT_VERIFIED');
   const accepted=await receipt('hostA','RECEIVED','receipt-test-1004');
   assert.equal(accepted.state,'RECEIVED');
   const running=await receipt('hostA','RUNNING','receipt-test-1005');
   assert.equal(running.state,'RUNNING');
+  // False evidence is rejected from a legitimate RUNNING transition,
+  // not masked by the state-machine guard for an undelivered mission.
+  await bad(receipt('hostA','VERIFIED','receipt-test-1009',
+    {verified:true,evidenceRef:'evidence-12345678'}),'EVIDENCE_NOT_VERIFIED');
   const verified=await receipt('hostA','VERIFIED','receipt-test-1006',{verified:true,evidenceRef:'evidence-12345678'});
   assert.equal(verified.state,'VERIFIED');
   assert.equal(verified.evidenceRef,'evidence-12345678');
