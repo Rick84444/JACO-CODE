@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createGitControlReceiptPublisher } from './git-control-receipts.mjs';
+import { createGitControlReceiptPublisher, controlRefusalCode } from './git-control-receipts.mjs';
 import { prepareChatGptStrategy, createLocalAuraGraphClient } from './chatgpt-strategy-control.mjs';
 const execFileAsync = promisify(execFile);
 const DEFAULT_REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -425,7 +425,28 @@ export function createGithubNovaControlInbox({
           const key = issue.number == null ? (commandId ? `git:${commandId}` : 'git:invalid') : String(issue.number);
           const record = control.issues[key];
           if (record && (record.closed || record.commandId)) continue;
-          const result = await acceptIssue(issue, control);
+          let result;
+          try {
+            result = await acceptIssue(issue, control);
+          } catch (error) {
+            // A command the runtime refuses is an answer, not a reason to stop answering. This used to
+            // throw out of the whole poll before the receipt publisher below ever ran, so one malformed
+            // command froze the channel: the sender saw no receipt for it and none for anything after it.
+            // Only a named, permanent refusal is recorded; a transient failure keeps its existing retry.
+            const code = controlRefusalCode(error);
+            if (!code) throw error;
+            control.issues[key] = {
+              ...(record || {}),
+              commandId: commandId || record?.commandId || null,
+              transport: issue.transport === 'git-ref' ? 'git-ref' : record?.transport,
+              op: record?.op || 'invalid',
+              status: 'REJECTED',
+              error: code,
+              closed: true,
+            };
+            log('warn', `GitHub control: command ${commandId || key} rejected: ${code}`);
+            continue;
+          }
           if (result.accepted) accepted.push(result);
         }
         // Best-effort telemetry: inability to push Git status must never block

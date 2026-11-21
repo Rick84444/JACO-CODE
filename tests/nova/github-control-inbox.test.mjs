@@ -340,3 +340,50 @@ test('forced Git-only mode never calls REST even if a GH token is configured', a
   assert.equal(calls[0].executor,'nova');
   assert.equal(result.statusReceipt.error,'GIT_CONTROL_STATUS_PUSH_UNAVAILABLE');
 });
+
+// Observed 2026-11-21: a command whose coding contract declared no scope threw CODING_CONTRACT_SCOPE_REQUIRED
+// out of the whole poll, before the receipt publisher ran. The sender got no receipt for that command and none
+// for anything sent afterwards: the channel had been frozen since 01:24 while commands kept arriving.
+test('a refused command answers with a refusal and the channel keeps working', async () => {
+  const seen = [];
+  const client = {
+    async create(input) { seen.push(input.goal); if (input.goal === 'bad') throw new Error('CODING_CONTRACT_SCOPE_REQUIRED'); return { id: 'mission-ok', status: 'ACTIVE' }; },
+    async get() { return { id: 'mission-ok', status: 'ACTIVE', receipts: [] }; },
+    async resolve() { throw new Error('unexpected'); },
+  };
+  const payload = id => ({ schema: 'jaco.nova-control/v1', commandId: id, op: 'mission.create', goal: id === 'refused-001' ? 'bad' : 'good' });
+  let current = 'refused-001';
+  const gitExecImpl = async (file, args) => (args[2] === 'show' ? { stdout: JSON.stringify(payload(current)) } : { stdout: '' });
+  const inbox = createGithubNovaControlInbox({
+    missionClient: client, gitExecImpl, repoRoot: '/repo', repo: 'Rick84444/jaco-code', token: '', actor: 'Rick84444',
+  });
+  const state = {};
+
+  const refused = await inbox.poll(state, { force: true });
+  assert.equal(refused.error, undefined, 'a refusal is an answer, not a poll failure');
+  const record = state.githubControl.issues['git:refused-001'];
+  assert.equal(record.status, 'REJECTED');
+  assert.equal(record.error, 'CODING_CONTRACT_SCOPE_REQUIRED');
+  assert.equal(record.closed, true);
+  assert.equal(record.transport, 'git-ref', 'so the refusal reaches the published receipt index');
+
+  // The next command is still accepted: one bad command no longer freezes the channel.
+  current = 'accepted-002';
+  const after = await inbox.poll(state, { force: true });
+  assert.equal(after.accepted.length, 1);
+  assert.deepEqual(seen, ['bad', 'good']);
+});
+
+test('the published receipt names the refusal so the sender can correct the command', async () => {
+  const { gitControlReceiptSnapshot, controlRefusalCode } = await import('../../agents/lib/git-control-receipts.mjs');
+  const snapshot = gitControlReceiptSnapshot({ issues: {
+    'git:refused-001': { transport: 'git-ref', commandId: 'refused-001', op: 'invalid', status: 'REJECTED', error: 'CODING_CONTRACT_SCOPE_REQUIRED', closed: true },
+  } });
+  assert.equal(snapshot.entries[0].errorCode, 'CODING_CONTRACT_SCOPE_REQUIRED');
+  assert.equal(snapshot.entries[0].status, 'REJECTED');
+  assert.equal(snapshot.authoritative, false, 'a status index, never proof of completion');
+  // Only named permanent refusals are decisions; anything else keeps its retry.
+  assert.equal(controlRefusalCode(new Error('CODING_CONTRACT_SCOPE_REQUIRED')), 'CODING_CONTRACT_SCOPE_REQUIRED');
+  assert.equal(controlRefusalCode(new Error('GITHUB_CONTROL_HTTP_401:Bad credentials')), null);
+  assert.equal(controlRefusalCode(new Error('fetch failed')), null);
+});
