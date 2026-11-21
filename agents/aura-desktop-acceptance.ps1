@@ -49,9 +49,7 @@ function Probe-Runtime([string]$Route) {
   # Never print or persist the response headers, token or raw mission receipts.
   return Invoke-RestMethod -Method Get -Uri ("http://127.0.0.1:{0}{1}" -f $RuntimePort,$Route) -Headers $headers -TimeoutSec 8 -ErrorAction Stop
 }
-if (-not $IsWindows -and $PSVersionTable.PSEdition -eq 'Core') {
-  Add-Blocker 'WINDOWS_GUEST_REQUIRED'
-} elseif ($env:OS -ne 'Windows_NT') {
+if ($env:OS -ne 'Windows_NT') {
   Add-Blocker 'WINDOWS_GUEST_REQUIRED'
 } else {
   try {
@@ -86,7 +84,11 @@ if (-not $IsWindows -and $PSVersionTable.PSEdition -eq 'Core') {
       $item = Get-Item -LiteralPath $image -ErrorAction Stop
       if ($capture.ok -ne $true -or $item.Length -lt 8) { throw 'SCREENSHOT_CAPTURE_FAILED' }
       $bytes = [IO.File]::ReadAllBytes($image)
-      if (-not ([Linq.Enumerable]::SequenceEqual([byte[]]$bytes[0..7],[byte[]](137,80,78,71,13,10,26,10)))) { throw 'SCREENSHOT_NOT_PNG' }
+      $pngMagic = [byte[]](137,80,78,71,13,10,26,10)
+      for ($i=0; $i -lt 8; $i++) {
+        if ($bytes[$i] -ne $pngMagic[$i]) { throw 'SCREENSHOT_NOT_PNG' }
+      }
+      if ([int]$capture.sessionId -ne [int]$session.sessionId) { throw 'SCREENSHOT_SESSION_MISMATCH' }
       $report.win32Capture = 'OBSERVED'
       $report.screenSha256 = (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant()
     } catch { Add-Blocker 'WIN32_SCREENSHOT_UNVERIFIED' }
