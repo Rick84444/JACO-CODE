@@ -84,7 +84,7 @@ function safeIndexEntry(e) {
     operation: e.operation,
     missionId: validRef(e.missionId),
     graphId: validRef(e.graphId),
-    errorCode: typeof e.errorCode === 'string' && (ERROR_CODES.has(e.errorCode) || e.errorCode === 'GIT_CONTROL_COMMAND_CONFLICT') ? e.errorCode : null,
+    errorCode: typeof e.errorCode === 'string' && (ERROR_CODES.has(e.errorCode) || ['COMMAND_REJECTED','GIT_CONTROL_COMMAND_CONFLICT'].includes(e.errorCode)) ? e.errorCode : null,
     status: e.status,
     phase: ENTRY_PHASES.has(e.phase) ? e.phase : null,
     turn: digits(e.turn),
@@ -111,7 +111,10 @@ function reconcileEntry(a,b) {
   const evidence = v => [v.turn,v.receipts,TERMINAL.has(v.status)?1:0];
   const aa=evidence(a),bb=evidence(b);
   const newer=bb[0]>aa[0] || (bb[0]===aa[0] && (bb[1]>aa[1] || (bb[1]===aa[1] && bb[2]>aa[2])));
-  const chosen = newer ? b : a;
+  // A stale runtime must not reopen a terminal mission, even if it has
+  // published a larger local counter from a conflicting cache generation.
+  const chosen=TERMINAL.has(a.status)!==TERMINAL.has(b.status)
+    ? (TERMINAL.has(a.status)?a:b) : (newer?b:a);
   return {...chosen,missionId:chosen.missionId || a.missionId || b.missionId,
     graphId:chosen.graphId || a.graphId || b.graphId};
 }
