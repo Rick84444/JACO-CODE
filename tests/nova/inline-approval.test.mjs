@@ -29,10 +29,15 @@ test('payment and critical decisions require deliberate extra review, not a one-
 
 test('stale Nova mission failure cannot be presented as a valid positive confirmation',()=>{
   for(const entry of [
-    {...base,title:'NOVA_MISSION_NOT_FOUND'},
     {...base,details:{error:'NOVA_MISSION_NOT_FOUND'}},
+    {...base,details:{code:'NOVA_MISSION_NOT_FOUND'}},
     {...base,details:{latestReceipt:{error:'NOVA_MISSION_NOT_FOUND'}}},
   ])assert.equal(inlineApprovalPresentation(entry).missingMission,true);
+  assert.equal(inlineApprovalPresentation({
+    ...base,title:'Fix NOVA_MISSION_NOT_FOUND when resuming missions',
+    reason:'Investigate NOVA_MISSION_NOT_FOUND and prevent it returning',
+    details:{missionId:'mission-1',phase:'BLOCKED',latestReceipt:null},
+  }).missingMission,false,'operator goal text is not authoritative evidence of a missing executor mission');
 });
 
 test('long goal text is compacted for chat without losing original decision scope',()=>{
