@@ -1593,7 +1593,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       <div className="flex-1 min-h-0">
         <AuraChatPanel
           session={chatSession}
-          approvalPrompt={pendingDecision ? <InlineAuraApproval key={pendingDecision.id} approval={pendingDecision} count={snapshot?.approvals?.count ?? 1}
+          approvalPrompt={pendingDecision ? <InlineAuraApproval approval={pendingDecision} count={snapshot?.approvals?.count ?? 1}
             busy={Boolean(approvalBusy)} error={approvalError}
             onDecision={(action, acknowledged) => { void resolveApproval(pendingDecision, action, acknowledged); }}
             onAll={() => setShowApprovals(true)} /> : null}
