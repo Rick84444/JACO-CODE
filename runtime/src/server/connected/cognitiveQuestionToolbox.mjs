@@ -42,13 +42,20 @@ export function withPerceptionTools(tools) {
   // A single intent-oriented browser observation replaces several manual
   // DOM/AX commands. This is NOT an actuator or a cross-platform permission:
   // desktop/UIA and Android still use their own signed mission tools.
-  const parsePage = receipt => {
+  const parseReceipt = receipt => {
     const message = receipt?.content?.find(item => item?.type === 'text' && typeof item.text === 'string')?.text;
     if (typeof message !== 'string' || message.length > 100_000) return null;
-    try {
-      const page = JSON.parse(message);
-      return page?.ok === true && Array.isArray(page.targets) && typeof page.url === 'string' ? page : null;
-    } catch { return null; }
+    try { return JSON.parse(message); } catch { return null; }
+  };
+  const isFresh = at => {
+    const ageMs = Date.now() - Date.parse(at || '');
+    return Number.isFinite(ageMs) && ageMs >= -5_000 && ageMs <= 15_000;
+  };
+  const pick = (nodes, query, textKey) => {
+    const valid = nodes.filter(node => node && typeof node === 'object' && (textKey !== 'text' || node.visible === true));
+    const matched = query ? valid.filter(node => String(node[textKey] || '').toLocaleLowerCase().includes(query)) : valid;
+    const exact = query ? matched.filter(node => String(node[textKey] || '').trim().toLocaleLowerCase() === query) : [];
+    return (exact.length ? exact : matched).slice(0, 12);
   };
   const candidate = node => ({
     role: String(node.role || '').slice(0, 50),
@@ -65,46 +72,65 @@ export function withPerceptionTools(tools) {
       if (typeof target !== 'string' || target.length > 120) throw Error('TARGET_TRACK_TARGET_INVALID');
       if (typeof view !== 'string' || !['auto', 'observe', 'accessibility', 'html'].includes(view)) throw Error('TARGET_TRACK_VIEW_INVALID');
       // Explicit modes preserve the legacy raw reads without extra calls.
-      if (view !== 'auto') return perceptionTools.dom_track.run({ view });
+      if (view !== 'auto') {
+        if (target.trim()) throw Error('TARGET_TRACK_TARGET_REQUIRES_AUTO_VIEW');
+        return perceptionTools.dom_track.run({ view });
+      }
       const receipt = await read('nova_observe');
-      const page = parsePage(receipt);
+      const page = parseReceipt(receipt);
       const query = target.trim().toLocaleLowerCase();
-      if (!page) return {
+      if (!page || page.ok !== true || !Array.isArray(page.targets) || typeof page.url !== 'string') return {
         schema: 'jaco.target-track/v1', surface, mode: 'read-only', status: 'UNPARSED_OBSERVATION',
         usedTools: ['nova_observe'], verifiedTarget: false, actionDispatched: false,
         observation: receipt,
       };
       // The receipt must be fresh; mismatched clocks or unknown timestamps
       // cannot establish a target candidate that might already have moved.
-      const ageMs = Date.now() - Date.parse(page.at || '');
-      if (!Number.isFinite(ageMs) || ageMs < -5_000 || ageMs > 15_000) return {
+      if (!isFresh(page.at)) return {
         schema: 'jaco.target-track/v1', surface, adapter: 'cdp', mode: 'read-only',
         status: 'STALE_OBSERVATION', usedTools: ['nova_observe'],
         verifiedTarget: false, actionDispatched: false,
       };
       // Only visible controls can become candidates. This does not bind a
       // control to the future actuator; browser-click re-identifies it later.
-      const visible = page.targets.filter(node => node && typeof node === 'object' && node.visible === true);
-      const matched = query ? visible.filter(node => String(node.text || '').toLocaleLowerCase().includes(query)) : visible;
-      const exact = query ? matched.filter(node => String(node.text || '').trim().toLocaleLowerCase() === query) : [];
-      const candidates = (exact.length ? exact : matched).slice(0, 12).map(candidate);
+      let candidates = pick(page.targets.slice(0, 200), query, 'text').map(candidate);
       const usedTools = ['nova_observe'];
-      let accessibility = null;
+      let fallbackStatus = 'NOT_NEEDED';
       if (query && candidates.length === 0) {
         // Fallback is an authorized *read*, not a retry of a failed operation.
         // Refused/failed observations fail closed and are never masked.
-        accessibility = await read('nova_ax');
+        const axReceipt = await read('nova_ax');
         usedTools.push('nova_ax');
+        const ax = parseReceipt(axReceipt);
+        if (!ax || ax.ok !== true || !Array.isArray(ax.nodes)) {
+          fallbackStatus = 'AX_UNPARSED';
+        } else if (!isFresh(ax.at)) {
+          fallbackStatus = 'AX_STALE';
+        } else {
+          candidates = pick(ax.nodes.slice(0, 200), query, 'name').map(node => ({
+            role: String(node.role || '').slice(0, 50),
+            text: String(node.name || '').slice(0, 160),
+            selectorHint: '',
+          }));
+          fallbackStatus = 'AX_SEARCHED';
+        }
       }
       return {
         schema: 'jaco.target-track/v1', surface, adapter: 'cdp', mode: 'read-only',
         query: target.trim(), observedAt: typeof page.at === 'string' ? page.at : null,
         page: { title: String(page.title || '').slice(0, 160),
           // The browser observation may contain credential-bearing URL parameters.
-          url: (() => { try { const u = new URL(page.url); u.search = ''; u.hash = ''; return u.toString().slice(0, 512); } catch { return 'URL_UNAVAILABLE'; } })() },
+          url: (() => {
+            try {
+              const u = new URL(page.url);
+              if (!['http:', 'https:'].includes(u.protocol)) return 'URL_UNAVAILABLE';
+              u.search = ''; u.hash = '';
+              u.pathname = u.pathname.split('/').map(segment => /^[A-Za-z0-9_~-]{32,}$/.test(segment) ? 'redacted' : segment).join('/');
+              return u.toString().slice(0, 512);
+            } catch { return 'URL_UNAVAILABLE'; }
+          })() },
         status: query ? (candidates.length === 1 ? 'CANDIDATE' : candidates.length > 1 ? 'AMBIGUOUS' : 'NOT_FOUND') : 'OBSERVED',
-        candidates, usedTools, verifiedTarget: false, actionDispatched: false,
-        ...(accessibility ? { accessibility } : {}),
+        candidates, usedTools, fallbackStatus, verifiedTarget: false, actionDispatched: false,
         note: 'Read-only candidate information; use the existing signed browser actuator to re-identify before any action.',
       };
     },
