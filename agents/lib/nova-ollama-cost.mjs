@@ -18,7 +18,9 @@ export async function novaOllamaCostRequest(path, body, { runtimeUrl, token, fet
 // refused it as invalid (promptBytes > 200000) and the mission stopped right after its first screenshot
 // (observed 2026-11-22, live desktop test). Each image now costs a fixed, deliberately generous byte budget
 // that covers the largest tiled image a provider charges for, so the spend estimate stays an upper bound.
-export const IMAGE_COST_BYTES = 8000;
+// The operator can set their provider's real per-image input-token cost with JACO_IMAGE_INPUT_TOKENS.
+export const IMAGE_COST_BYTES = Number.isSafeInteger(Number(process.env.JACO_IMAGE_INPUT_TOKENS)) && Number(process.env.JACO_IMAGE_INPUT_TOKENS) > 0
+  ? Number(process.env.JACO_IMAGE_INPUT_TOKENS) : 8000;
 
 export function costPromptBytes(requestBody) {
   let images = 0;

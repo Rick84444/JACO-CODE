@@ -5236,7 +5236,7 @@ const notifyPhone = async (action) => {
     if (!paidModelsAllowed() || disabled.includes(providerId)) return res.status(403).json({ success: false, error: 'NOVA_PROVIDER_DISABLED' });
     if (!validProviderId(providerId) || !validPlannerModelId(model) ||
         (providerId === 'ollama-cloud' && (!configuredModel || model !== configuredModel)) || !Number.isSafeInteger(promptBytes) || promptBytes < 1 ||
-        !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 32768) {
+        !Number.isSafeInteger(maxTokens) || maxTokens < 1) {
       return res.status(400).json({ success: false, error: 'NOVA_OLLAMA_COST_INPUT_INVALID' });
     }
     const economic = continuumSurface.runtime.economic;

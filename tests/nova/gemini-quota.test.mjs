@@ -67,7 +67,7 @@ test('JACO quota check is per model, per Pacific day, and persistent across runt
     'Daily reset uses midnight Pacific (PDT on 1 Nov 2026), not UTC');
 });
 
-test('RPM TPM and RPD refuse reservations before provider dispatch, including unknown models', t => {
+test('RPM TPM and RPD refuse reservations before provider dispatch, and an unlisted model the operator chose still runs', t => {
   const { g } = create(t);
   g.updateGeminiQuotaProfile({ models: {
     'gemini-2.5-flash': { rpm: 3, tpm: 100, rpd: 5, label: 'Gemini 2.5 Flash', category: 'text' },
@@ -79,7 +79,7 @@ test('RPM TPM and RPD refuse reservations before provider dispatch, including un
   g.settleCloud(res, 0.001, { prompt_tokens: 10, completion_tokens: 1 });
   assert.equal(rate(g, 'gemini-2.5-flash', 40).allowed, true);
   assert.equal(rate(g, 'gemini-2.5-flash', 10).reason, 'GEMINI_PROJECT_RPM_LIMIT', 'two calls reach 90%-rounded 2 RPM');
-  assert.equal(rate(g, 'models/gemini-2.5-pro-preview-tts').reason, 'GEMINI_QUOTA_MODEL_UNCONFIGURED');
+  assert.equal(rate(g, 'models/gemini-2.5-pro-preview-tts').allowed, true, 'the operator chose it; JACO has no limits to refuse it by');
   assert.equal(rate(g, 'gemini-2.5-flash', 0).reason, 'GEMINI_QUOTA_INPUT_REQUIRED');
   assert.equal(g.state.geminiQuota.days[pacificQuotaDay()][ 'gemini-2.5-flash'], 2);
 });

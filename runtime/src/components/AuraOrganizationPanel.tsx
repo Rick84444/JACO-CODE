@@ -10,7 +10,7 @@ type Exposure = 'untrusted' | 'private' | 'external';
 type Permission = { label: string; risk: Risk; exposure: Exposure[] };
 type Grant = { grantedBy: string; grantedAt: string; riskAcceptedAt?: string; expiresAt?: string };
 type ProviderOption = { id: string; defaultModel: string; baseUrl: string; local: boolean; credentialConfigured: boolean };
-type Model = { kind: 'local' | 'api'; providerId: string; model: string };
+type Model = { kind: 'planner' | 'local' | 'api'; providerId: string; model: string };
 type Agent = {
   id: string; name: string; title: string; reportsTo: string; status: string; mail: string; task: string; goal: string;
   model: Model; mandate: {
@@ -34,7 +34,7 @@ type Organization = {
     grantDays: { default: number; max: number };
   };
 };
-type NewAgent = { name: string; title: string; reportsTo: string; task: string; goal: string; mail: string; providerId: string; model: string; kind: 'local' | 'api' };
+type NewAgent = { name: string; title: string; reportsTo: string; task: string; goal: string; mail: string; providerId: string; model: string; kind: 'planner' | 'local' | 'api' };
 
 const translations = {
   en: {
@@ -89,7 +89,7 @@ const translations = {
   },
 } as const;
 
-const emptyAgent: NewAgent = { name: '', title: '', reportsTo: 'aura', task: '', goal: '', mail: '', kind: 'local', providerId: 'ollama', model: '' };
+const emptyAgent: NewAgent = { name: '', title: '', reportsTo: 'aura', task: '', goal: '', mail: '', kind: 'planner', providerId: '', model: '' };
 const inputClass = 'w-full rounded-md border border-[#616264] bg-[#1f2022] px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-500';
 const buttonClass = 'rounded-md border border-[#616264] px-3 py-2 text-xs font-medium text-neutral-200 hover:border-neutral-600 disabled:opacity-40';
 const dateText = (value?: string) => value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleDateString() : '—';
@@ -109,7 +109,7 @@ export function AuraOrganizationPanel() {
   const [showCreate, setShowCreate] = useState(false);
   const [draft, setDraft] = useState<NewAgent>(emptyAgent);
   const [grantDays, setGrantDays] = useState(30);
-  const [profile, setProfile] = useState({ name: '', title: '', task: '', goal: '', mail: '', kind: 'local' as 'local' | 'api', providerId: 'ollama', model: '' });
+  const [profile, setProfile] = useState({ name: '', title: '', task: '', goal: '', mail: '', kind: 'planner' as 'planner' | 'local' | 'api', providerId: '', model: '' });
   const [traitDraft, setTraitDraft] = useState<Record<string, number>>({});
   const [budgetDraft, setBudgetDraft] = useState('0');
   const [hiresDraft, setHiresDraft] = useState('0');
@@ -193,15 +193,18 @@ export function AuraOrganizationPanel() {
     const ok = await mutate('/providers', 'POST', { id: newApi.id, baseUrl: newApi.baseUrl, defaultModel: newApi.defaultModel, apiKey: newApi.apiKey }, 'Provider added');
     if (ok) { await refreshProviders(); setNewApi({ open: false, id: '', baseUrl: '', defaultModel: '', apiKey: '' }); }
   }
-  function providerPicker<T extends { kind: 'local' | 'api'; providerId: string; model: string }>(value: T, set: (patch: Partial<T>) => void) {
-    const known = providers.some(p => p.id === value.providerId);
+  function providerPicker<T extends { kind: 'planner' | 'local' | 'api'; providerId: string; model: string }>(value: T, set: (patch: Partial<T>) => void) {
+    const follows = value.kind === 'planner';
+    const known = follows || providers.some(p => p.id === value.providerId);
     return <div className="space-y-2 sm:col-span-2">
       <label className="block text-xs text-neutral-300">Provider
-        <select className={inputClass} value={known ? value.providerId : ''} onChange={e => {
+        <select className={inputClass} value={follows ? '__planner' : known ? value.providerId : ''} onChange={e => {
+          if (e.target.value === '__planner') { set({ kind: 'planner', providerId: '', model: '' } as Partial<T>); return; }
           if (e.target.value === '__new') { setNewApi(current => ({ ...current, open: true })); return; }
           const p = providers.find(item => item.id === e.target.value);
           if (p) set({ providerId: p.id, kind: p.local ? 'local' : 'api', model: p.defaultModel || value.model } as Partial<T>);
         }}>
+          <option value="__planner">Same model as Aura (your choice)</option>
           {!known && <option value="">{value.providerId || '—'}</option>}
           {providers.map(p => <option key={p.id} value={p.id}>{p.id}{p.local ? ' · local' : ' · API'}{p.credentialConfigured ? '' : ' · no key'}</option>)}
           <option value="__new">+ Add separate API…</option>
