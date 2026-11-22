@@ -14,7 +14,7 @@ The unique existing JACO code is retained as the source of truth:
 | Durable execution/receipts | `MissionClient`, `NovaMissionControl`, canonical Mission Bus and Gameboard |
 | Decision/mission authority and consequence policy | `runtime/src/server/relay/modelRelay.ts`, autonomy mandates, actuator leases |
 | Laser Vision | `agents/lib/mission-screen-frame.mjs`, `agents/input-bridge.ps1`; fresh screenshot, ROI, image hash and cloud-vision opt-in |
-| DOM Traction, identity and Manifold Drift | `runtime/src/server/nova/tractionCore.mjs`, `DomTractionEngine` / `NovaTractionEngine` |
+| Target Track, identity and Manifold Drift | `runtime/src/server/nova/tractionCore.mjs`, `TargetTractionEngine` / `NovaTractionEngine` |
 | Desktop semantic observation and action | `runtime/src/server/desktop/desktopHandsOff.ts`, `runtime/scripts/windows/jaco-uia-bridge.ps1` |
 | Browser specialist | RobotMower and CDP; do not use DOM queries against non-browser apps |
 | Durable learning and experience | existing Continuum/skills/evidence pipeline |
@@ -22,7 +22,7 @@ The unique existing JACO code is retained as the source of truth:
 
 ### New integration
 
-`runtime/src/server/desktop/desktopTraction.mjs` adapts **two independent UIA observations** into the **same** `DomTractionEngine` used by the existing browser/Android track. Before a changing UIA action is sent, it checks:
+`runtime/src/server/desktop/desktopTraction.mjs` adapts **two independent UIA observations** into the **same** `TargetTractionEngine` used by the existing browser/Android track. Before a changing UIA action is sent, it checks:
 - fresh, real HWND and stable PID/process identity;
 - unique, enabled, on-screen semantic target, no index-only guess;
 - the same target identity across both observations;
@@ -31,7 +31,7 @@ The unique existing JACO code is retained as the source of truth:
 
 The existing `DesktopHandsOffClient.executeVerified` performs this gate before the unchanged Windows UIA bridge. It continues to use the same grant, ModelRelay mandate, single-writer lease, before/after observation, action receipt, mission scope and recovery rules. A successful UI change is not automatically proof that the overall user goal is complete.
 
-DOM Track still operates on web documents through CDP. **Desktop Traction** consumes Windows UI Automation trees; it does not pretend that arbitrary Windows applications have HTML DOMs. Laser Vision supplies fresh pixels where UIA is insufficient; the existing screen-binding policy prevents stale cross-window raw input.
+Target Track's browser adapter operates on web documents through CDP. **Desktop Traction** consumes Windows UI Automation trees; it does not pretend that arbitrary Windows applications have HTML DOMs. Laser Vision supplies fresh pixels where UIA is insufficient; the existing screen-binding policy prevents stale cross-window raw input.
 
 ## Windows screenshot + virtual mouse/keyboard (no new capture backend)
 
@@ -94,9 +94,11 @@ Use the existing remote PWA through its established **authenticated Cloudflare A
 
 For a code/edit mission, the signed mandate grants relevant guest app processes and the mission contract bounds work to the guest worktree. Reversible guest-local operations need no click-by-click approvals; financial, outward, identity, security or destructive consequences retain the canonical approval requirements.
 
+The exported `DomTractionEngine` and legacy `dom_track` remain compatibility aliases. The new `target_track` chat tool is currently a read-only browser adapter, not a universal actuator. Windows actions continue through DesktopHandsOff/ModelRelay.
+
 ## Verification / status
 
-- **Code-level:** DesktopHandsOffClient uses DomTractionEngine and refuses stale/ambiguous/cross-process UIA target locks before bridge dispatch; `tests/nova/desktop-traction.test.mjs` covers these cases.
+- **Code-level:** DesktopHandsOffClient uses TargetTractionEngine and refuses stale/ambiguous/cross-process UIA target locks before bridge dispatch; `tests/nova/desktop-traction.test.mjs` covers these cases.
 - **Windows CI:** PowerShell parser checks the VMConnect helper; the existing Desktop AgentOS tests and TypeScript build validate integration.
 - **NOT PROVEN:** a Hyper-V VM exists on the operator's PC; a guest is isolated from host drives/network; Chrome Remote Desktop is installed or connected in that guest; an active authenticated guest mission; live UIA click/readback; an embedded WebRTC desktop stream in JACO GUI; a real GUI acceptance receipt.
 
