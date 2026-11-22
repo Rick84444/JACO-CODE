@@ -38,13 +38,13 @@ test('a description like "click the link" finds the page\'s only link, never one
   assert.equal(pickTarget([link('Learn more')], 'Sign in').error, 'NO_TARGET', 'an unrelated name is not guessed');
 });
 
-test('DOM Traction reacquires a moved unique control using a fresh observation',async()=>{
+test('Target Track reacquires a moved unique control using a fresh observation',async()=>{
  const now=Date.now(),page=targets=>({ok:true,url:'https://example.test',targetId:'tab-a',at:new Date(now).toISOString(),targets});
  const pages=[page([t('Save',true,'#old')]),page([t('Save',true,'#new')])];
  let reads=0;const picked=await trackDomTarget(async()=>pages[reads++],'Save',{now:()=>now});
  assert.equal(reads,2);assert.equal(picked.target.selector,'#new');assert.equal(picked.traction.reidentified,true);
 });
-test('DOM Traction refuses stale, ambiguous or switched tab observations before dispatch',async()=>{
+test('Target Track refuses stale, ambiguous or switched tab observations before dispatch',async()=>{
  const now=Date.now(),p={ok:true,url:'https://example.test',targetId:'tab-a',at:new Date(now).toISOString(),targets:[t('Save')]};
  for(const [next,error] of [[{...p,targetId:'tab-b'},'DOM_TARGET_PAGE_CHANGED'],[{...p,targets:[t('Save'),t('Save')]},'AMBIGUOUS_TARGET'],[{...p,at:new Date(now-6000).toISOString()},'DOM_OBSERVATION_STALE_OR_UNAVAILABLE']]){
   let n=0;const result=await trackDomTarget(async()=>n++?next:p,'Save',{now:()=>now});assert.equal(result.error,error);assert.equal(result.outcomeUnknown,false);
