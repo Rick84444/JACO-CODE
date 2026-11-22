@@ -193,13 +193,18 @@ test('Target Track makes a bounded accessibility fallback only after a successfu
     if (args.tool==='nova_observe') return {content:[{type:'text',text:JSON.stringify({
       ok:true,url:'https://example.test/',at:new Date().toISOString(),title:'Example',targets:[]
     })}]};
-    if (args.tool==='nova_ax') return {content:[{type:'text',text:'{"controls":["Save"]}'}]};
+    if (args.tool==='nova_ax') return {content:[{type:'text',text:JSON.stringify({
+      ok:true,observed:true,at:new Date().toISOString(),nodes:[{role:'button',name:'Save'}]
+    })}]};
     throw Error('UNEXPECTED_CALL');
   }}});
   const result = await toolbox.target_track.run({target:'Save'});
-  assert.equal(result.status,'NOT_FOUND');
+  assert.equal(result.status,'CANDIDATE');
   assert.deepEqual(result.usedTools,['nova_observe','nova_ax']);
-  assert.ok(result.accessibility);
+  assert.equal(result.candidates[0].text,'Save');
+  assert.equal(result.candidates[0].selectorHint,'');
+  assert.equal(result.fallbackStatus,'AX_SEARCHED');
+  assert.equal(result.verifiedTarget,false);
   assert.deepEqual(calls,['nova_observe','nova_ax']);
   const summary = await toolbox.target_track.run();
   assert.equal(summary.status,'OBSERVED');
@@ -220,6 +225,7 @@ test('Target Track refuses ambiguous, stale, unsupported and failed reads withou
   assert.equal(calls,2);
   await assert.rejects(()=>toolbox.target_track.run({surface:'desktop'}),/SURFACE_UNAVAILABLE/);
   await assert.rejects(()=>toolbox.target_track.run({view:'click'}),/VIEW_INVALID/);
+  await assert.rejects(()=>toolbox.target_track.run({target:'Save',view:'html'}),/TARGET_REQUIRES_AUTO_VIEW/);
   await assert.rejects(()=>toolbox.target_track.run({target:'x'.repeat(121)}),/TARGET_INVALID/);
   assert.equal(calls,2);
   const denied = withPerceptionTools({mcp_read:{run:async()=>{ throw Error('MANDATE_DENIED'); }}});
