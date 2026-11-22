@@ -74,6 +74,14 @@ export function withPerceptionTools(tools) {
         usedTools: ['nova_observe'], verifiedTarget: false, actionDispatched: false,
         observation: receipt,
       };
+      // The receipt must be fresh; mismatched clocks or unknown timestamps
+      // cannot establish a target candidate that might already have moved.
+      const ageMs = Date.now() - Date.parse(page.at || '');
+      if (!Number.isFinite(ageMs) || ageMs < -5_000 || ageMs > 15_000) return {
+        schema: 'jaco.target-track/v1', surface, adapter: 'cdp', mode: 'read-only',
+        status: 'STALE_OBSERVATION', usedTools: ['nova_observe'],
+        verifiedTarget: false, actionDispatched: false,
+      };
       // Only visible controls can become candidates. This does not bind a
       // control to the future actuator; browser-click re-identifies it later.
       const visible = page.targets.filter(node => node && typeof node === 'object' && node.visible === true);
@@ -91,7 +99,9 @@ export function withPerceptionTools(tools) {
       return {
         schema: 'jaco.target-track/v1', surface, adapter: 'cdp', mode: 'read-only',
         query: target.trim(), observedAt: typeof page.at === 'string' ? page.at : null,
-        page: { title: String(page.title || '').slice(0, 160), url: page.url },
+        page: { title: String(page.title || '').slice(0, 160),
+          // The browser observation may contain credential-bearing URL parameters.
+          url: (() => { try { const u = new URL(page.url); u.search = ''; u.hash = ''; return u.toString().slice(0, 512); } catch { return 'URL_UNAVAILABLE'; } })() },
         status: query ? (candidates.length === 1 ? 'CANDIDATE' : candidates.length > 1 ? 'AMBIGUOUS' : 'NOT_FOUND') : 'OBSERVED',
         candidates, usedTools, verifiedTarget: false, actionDispatched: false,
         ...(accessibility ? { accessibility } : {}),
