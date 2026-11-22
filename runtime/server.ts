@@ -5224,6 +5224,8 @@ const notifyPhone = async (action) => {
     readPlanner: () => process.env.JACO_PRIMARY_PROVIDER ? { provider: process.env.JACO_PRIMARY_PROVIDER, by: 'environment' } : readPlannerChoice(plannerChoicePath),
   }));
 
+  // No per-call prompt ceiling: refusing a large agent turn wastes every token the interrupted task already
+  // spent. Spend stays bounded by the EconomicGovernor daily budget, which prices each reservation below.
   app.post('/api/nova/ollama-cost/reserve', requireAuth, (req, res) => {
     const providerId = String(req.body?.providerId || 'ollama-cloud');
     const model = String(req.body?.model || '');
@@ -5233,7 +5235,7 @@ const notifyPhone = async (action) => {
     const disabled = String(process.env.JACO_DISABLED_PROVIDERS || '').split(',').map(s => s.trim());
     if (!paidModelsAllowed() || disabled.includes(providerId)) return res.status(403).json({ success: false, error: 'NOVA_PROVIDER_DISABLED' });
     if (!validProviderId(providerId) || !validPlannerModelId(model) ||
-        (providerId === 'ollama-cloud' && (!configuredModel || model !== configuredModel)) || !Number.isInteger(promptBytes) || promptBytes < 1 || promptBytes > 200000 ||
+        (providerId === 'ollama-cloud' && (!configuredModel || model !== configuredModel)) || !Number.isSafeInteger(promptBytes) || promptBytes < 1 ||
         !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 32768) {
       return res.status(400).json({ success: false, error: 'NOVA_OLLAMA_COST_INPUT_INVALID' });
     }
