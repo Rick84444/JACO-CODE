@@ -5224,6 +5224,9 @@ const notifyPhone = async (action) => {
     readPlanner: () => process.env.JACO_PRIMARY_PROVIDER ? { provider: process.env.JACO_PRIMARY_PROVIDER, by: 'environment' } : readPlannerChoice(plannerChoicePath),
   }));
 
+  // Per-call prompt ceiling for agent runs. The cost engine treats one prompt byte as one input token (an upper
+  // bound), so this is also the largest input-token reservation one agent call may make. Operator default: 500k.
+  const agentPromptTokenLimit = Math.max(1, Math.min(2_000_000, Number(process.env.JACO_AGENT_PROMPT_TOKEN_LIMIT) || 500_000));
   app.post('/api/nova/ollama-cost/reserve', requireAuth, (req, res) => {
     const providerId = String(req.body?.providerId || 'ollama-cloud');
     const model = String(req.body?.model || '');
@@ -5233,7 +5236,7 @@ const notifyPhone = async (action) => {
     const disabled = String(process.env.JACO_DISABLED_PROVIDERS || '').split(',').map(s => s.trim());
     if (!paidModelsAllowed() || disabled.includes(providerId)) return res.status(403).json({ success: false, error: 'NOVA_PROVIDER_DISABLED' });
     if (!validProviderId(providerId) || !validPlannerModelId(model) ||
-        (providerId === 'ollama-cloud' && (!configuredModel || model !== configuredModel)) || !Number.isInteger(promptBytes) || promptBytes < 1 || promptBytes > 200000 ||
+        (providerId === 'ollama-cloud' && (!configuredModel || model !== configuredModel)) || !Number.isInteger(promptBytes) || promptBytes < 1 || promptBytes > agentPromptTokenLimit ||
         !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 32768) {
       return res.status(400).json({ success: false, error: 'NOVA_OLLAMA_COST_INPUT_INVALID' });
     }
