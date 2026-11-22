@@ -3,11 +3,11 @@
  * JACO Desktop AgentOS executor.
  *
  * Architecture:
- *   SEER -> durable Nova mission lease -> this executor -> ModelRelay
+ *   Aura planning -> durable mission lease -> this executor -> ModelRelay
  *        -> DesktopHandsOffClient -> Windows UI Automation -> verified receipt.
  *
  * This process is an executor, not a second planner authority or control plane.
- * SEER remains the sole planner. ModelRelay remains the sole mutation gateway.
+ * Aura is the sole operator-facing planning authority. ModelRelay remains the mutation gateway.
  */
 
 import fs from 'node:fs';
@@ -166,7 +166,7 @@ function compact(value, max = 24_000) {
 async function planMission({ mission, observation }) {
   const allowed = plannerAllowedTasks(mission);
   if (!allowed.length) throw new Error('NO_EXECUTABLE_TASKS_ALLOWED');
-  const system = `You are SEER, the sole planning authority for JACO Desktop AgentOS.
+  const system = `You are Aura's mission planner inside the existing JACO Cognitive Runtime. You are not a separate agent or authority.
 Return one JSON object only. Never claim an action happened unless a receipt proves it.
 The executor supports exactly these mission tasks: ${allowed.join(', ')}.
 
@@ -180,7 +180,7 @@ Desktop policy:
 6. Never enter passwords, OTPs, API keys, tokens, private keys or other authentication secrets. Human entry is required.
 7. desktop-action always passes through ModelRelay, a signed autonomy mandate and verified UIA receipts. If no active mandate exists, do not request mutation.
 8. Visual perception is adaptive by default. Prefer desktop-observe/UIA structure first. When pixels are required use screenshot {hwnd,mode:"adaptive"} so the current UIA geometry selects and downsizes the relevant terminal/window ROI. Use mode:"full" only when the ROI cannot establish state. Never treat stored screen coordinates as reusable localization. Every raw pointer action requires expectedHwnd from a fresh screenshot with UIA window identity; raw keyboard actions require a fresh desktop-observe or bound screenshot. Observe again after each action; visual changes are not proof of the intended effect.
-9. Desktop Traction uses JACO's existing NovaTractionEngine: two fresh UIA observations must agree on unique element identity, HWND, process and geometry before every semantic mutation. A DESKTOP_TRACTION_* refusal is pre-dispatch evidence: re-observe/replan; never guess a different selector or replay uncertain writes.
+9. Target Track uses JACO's existing surface-neutral TargetTractionEngine: two fresh UIA observations must agree on unique element identity, HWND, process and geometry before every semantic mutation. A DESKTOP_TRACTION_* refusal is pre-dispatch evidence: re-observe/replan; never guess a different selector or replay uncertain writes.
 10. Coordinate input is ${ALLOW_COORDINATE_FALLBACK ? 'allowed only as a last resort after a fresh adaptive screenshot proves UIA cannot address the target' : 'disabled'}.
 11. Shell execution is ${ALLOW_SHELL ? 'allowed only when the mission explicitly requires local shell work; its exit code/output are primary terminal evidence and should be preferred over pixels' : 'disabled'}.
 12. windows-wmi-read is strictly read-only Windows CIM observation. data must be {"query":"system|computer|cpu|memory|disks|network|processes|services","limit":1..200}. Never request arbitrary WQL or PowerShell.
