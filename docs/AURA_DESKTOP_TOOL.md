@@ -10,7 +10,7 @@ The unique existing JACO code is retained as the source of truth:
 
 | Purpose | Existing owner, retained |
 | --- | --- |
-| Strategy and operator goal | SEER + Aura Runtime |
+| Strategy and operator goal | Aura Cognitive Runtime (single planner and mission authority) |
 | Durable execution/receipts | `MissionClient`, `NovaMissionControl`, canonical Mission Bus and Gameboard |
 | Decision/mission authority and consequence policy | `runtime/src/server/relay/modelRelay.ts`, autonomy mandates, actuator leases |
 | Laser Vision | `agents/lib/mission-screen-frame.mjs`, `agents/input-bridge.ps1`; fresh screenshot, ROI, image hash and cloud-vision opt-in |
@@ -44,7 +44,7 @@ For full autonomous missions, ask Aura for the **goal**, not a sequence of DOM/A
 JACO **already** provides the complete native Windows primitives:
 - `agents/input-bridge.ps1`: `screenshot` uses `System.Drawing.Graphics.CopyFromScreen` on the actual Windows virtual desktop (multiple monitors included), with optional crop and resize. It creates PNG; no Chrome Remote Desktop API, PrintScreen clipboard or parallel screen engine is needed.
 - `agents/hands-off-agent.mjs`: `computerTools.screenshot` hashes the PNG, records capture geometry/window and exposes the existing mission receipt. `agents/lib/mission-screen-frame.mjs` accepts **only the current mission's** fresh, hashed unchanged image.
-- `agents/desktop-agentos.mjs`: the SEER planning call can now consume this original Laser Vision screenshot **only when `NOVA_ALLOW_CLOUD_IMAGES=1`** because the SEER proxy may route to a remote provider. When transfer is off, SEER receives only a textual provenance note, never pixels.
+- `agents/desktop-agentos.mjs`: Aura's planning adapter uses the original Laser Vision screenshot **only when `NOVA_ALLOW_CLOUD_IMAGES=1`**, because the underlying model connection may route to a remote provider. When transfer is off, the planner receives only a textual provenance note, never pixels. Historical `seer*` function names are compatibility interfaces, not a separate agent.
 - The **same** `agents/input-bridge.ps1` supports `mouse_move`, `mouse_click`, `mouse_scroll`, `key_press` and `type_text` via the original Win32 SendInput; `agents/lib/input-bridge-daemon.mjs` serializes calls, associates receipts and refuses uncertain retries.
 - `observedInputBinding` requires a fresh mission-bound HWND, PID, window geometry and screenshot capture for pointer input. Keyboard input needs a fresh bound UIA observation or screenshot. Dispatch attestation is **not** semantic postcondition verification.
 
