@@ -19,6 +19,15 @@ const { executeTask, plannerAllowedTasks, desktopAgentCard } = await import('../
 
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
+test('Desktop planner identifies as Aura rather than a separate SEER agent', () => {
+  const source = fs.readFileSync(new URL('../../agents/desktop-agentos.mjs', import.meta.url), 'utf8');
+  assert.match(source, /You are Aura's mission planner inside the existing JACO Cognitive Runtime/);
+  assert.doesNotMatch(source, /You are SEER, the sole planning authority/);
+  assert.match(source, /ModelRelay remains the mutation gateway/);
+});
+
+
+
 test('Desktop AgentOS advertises canonical code tools and offers them only with a contract', () => {
   assert.ok(desktopAgentCard().capabilities.tools.includes('repo-write'));
   assert.deepEqual(plannerAllowedTasks({ allowedTasks: ['repo-write', 'desktop-windows'] }), ['desktop-windows']);
