@@ -70,7 +70,7 @@ export function buildAuraSeerPrompts({
     'Only the tools listed under TOOLS may be called. start_goal only when it is listed and the operator has ordered the mission.',
     `TOOLS:\n${toolCatalog}`,
   ].join('\n') : null;
-  const perceptionHint = /\b(?:dom[ _-]?track|laser[ _-]?vision)\b/i.test(userMessage) ? 'DOM TRACK and LASER VISION are capabilities under Aura, not separate agents. Use dom_track or laser_vision when listed in TOOLS; otherwise discover the existing authorized tool IDs. DOM TRACK maps to nova_observe/nova_ax/nova_html; LASER VISION maps to nova_screenshot for browser pixels or mission screenshot for desktop. Check mcp_catalog and actual mission permissions; do not claim readiness without live evidence or visual understanding without a compatible model.' : null;
+  const perceptionHint = /\b(?:target[ _-]?track|dom[ _-]?track|laser[ _-]?vision)\b/i.test(userMessage) ? 'TARGET TRACK is Auras cross-surface target-tracking capability, not a browser-only agent. Use target_track when listed; that chat tool currently reads the browser/CDP adapter (nova_observe/nova_ax/nova_html). dom_track is the legacy browser-only alias. On Windows use authorized desktop-windows/desktop-observe/desktop-action with UIA Target Track; on Android use its own authorized tools. LASER VISION maps to nova_screenshot for browser pixels or a mission screenshot for desktop. Check mcp_catalog and actual mission permissions; do not claim readiness without live evidence or visual understanding without a compatible model.' : null;
   const system = compact ? [
     "You are Aura, JACO's operator agent. You plan, act with tools and verify; a goal is done only with a verified receipt.",
     `CANONICAL_OBJECTIVE: ${AURA_CANONICAL_OBJECTIVE}`,
