@@ -33,6 +33,12 @@ The existing `DesktopHandsOffClient.executeVerified` performs this gate before t
 
 Target Track's browser adapter operates on web documents through CDP. **Desktop Traction** consumes Windows UI Automation trees; it does not pretend that arbitrary Windows applications have HTML DOMs. Laser Vision supplies fresh pixels where UIA is insufficient; the existing screen-binding policy prevents stale cross-window raw input.
 
+### One intent, minimal commands
+
+Aura Chat offers read-only `target_track({target:'Save'})` **when the tool is actually discovered**. It performs one `nova_observe` over the existing gated `mcp_read` route; if the named visible control is absent, it can perform one `nova_ax` fallback in the same high-level tool call. The response contains bounded role/name/selector hints, the observation source and explicit `CANDIDATE`/`AMBIGUOUS`/`NOT_FOUND` state. Neither a candidate nor a screenshot is an action receipt; the browser actuator must re-identify the target again before any click. Legacy `dom_track` calls keep their prior interface, and no new tool authorization is introduced.
+
+For full autonomous missions, ask Aura for the **goal**, not a sequence of DOM/AX/CDP commands. When a target is already known on the authorized attached page, existing `browser-click`/`browser-type` performs the fresh identity check, so the planner need not issue a separate preliminary survey. For a Windows program, existing `desktop-windows`, `desktop-observe` and `desktop-action` remain authoritative; this chat convenience tool does **not** pretend to control UIA or Android. An action with unknown outcome is reconciled from evidence, never blindly repeated.
+
 ## Windows screenshot + virtual mouse/keyboard (no new capture backend)
 
 JACO **already** provides the complete native Windows primitives:
