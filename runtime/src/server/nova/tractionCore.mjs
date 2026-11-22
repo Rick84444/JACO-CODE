@@ -174,5 +174,8 @@ export class DomTractionEngine {
 }
 
 
+// Surface-neutral alias used by browser, Windows UIA and Android integrations.
+export { DomTractionEngine as TargetTractionEngine };
+
 // Backward-compatible export for existing Android traction routes and consumers.
 export { DomTractionEngine as NovaTractionEngine };
