@@ -1,12 +1,12 @@
 ---
 name: Browser workflow understanding
-description: DOM TRACK and LASER VISION for web navigation, accessibility, forms, website rules, page state, validation and operator handoff. Swedish webbläsare formulär navigering webbplats.
+description: TARGET TRACK (browser/CDP) and LASER VISION for web navigation, accessibility, forms, website rules, page state, validation and operator handoff. Swedish webbläsare formulär navigering webbplats.
 tasks: [web-fetch, mcp-call, skill-load]
 ---
 
 # Browser workflow understanding
 
-Aura owns the task. This is a read-only procedure. Never infer permission to manipulate a page, submit information or act as the operator from this skill. Use only live tools in the authorized catalog. DOM TRACK and LASER VISION are labels, not callable tool IDs. Resolve their real tools and server IDs in the current catalog. Do not invent tool availability.
+Aura owns the task. This is a read-only procedure. Never infer permission to manipulate a page, submit information or act as the operator from this skill. Use only live tools in the authorized catalog. TARGET TRACK (browser/CDP) and LASER VISION are labels, not callable tool IDs. Resolve their real tools and server IDs in the current catalog. Do not invent tool availability.
 
 ## Understand the interface before interacting
 
