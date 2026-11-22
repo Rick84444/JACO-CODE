@@ -15,6 +15,9 @@ on:
       - 'runtime/server.ts'
       - 'runtime/src/App.tsx'
       - 'runtime/src/components/AuraChatPanel.tsx'
+      - 'runtime/src/components/InlineAuraApproval.tsx'
+      - 'runtime/src/lib/inlineApproval.mjs'
+      - 'tests/nova/inline-approval.test.mjs'
       - 'runtime/src/components/AuraCodeEditor.tsx'
       - 'runtime/src/components/AuraCommandPalette.tsx'
       - 'runtime/src/components/AuraRepositoryTree.tsx'
@@ -129,6 +132,9 @@ on:
       - 'runtime/server.ts'
       - 'runtime/src/App.tsx'
       - 'runtime/src/components/AuraChatPanel.tsx'
+      - 'runtime/src/components/InlineAuraApproval.tsx'
+      - 'runtime/src/lib/inlineApproval.mjs'
+      - 'tests/nova/inline-approval.test.mjs'
       - 'runtime/src/components/AuraCodeEditor.tsx'
       - 'runtime/src/components/AuraCommandPalette.tsx'
       - 'runtime/src/components/AuraRepositoryTree.tsx'
@@ -248,6 +254,8 @@ jobs:
         run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
       - name: Setup and npm distribution
         run: node --test tests/nova/setup.test.mjs tests/nova/package-content.test.mjs
+      - name: Inline chat approval contract
+        run: node --test tests/nova/inline-approval.test.mjs
       - name: MCP lifecycle and quarantine regressions
         run: node --test tests/nova/mcp-host.test.mjs
       - name: Workbench truth contract
