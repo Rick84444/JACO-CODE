@@ -84,7 +84,7 @@ test('perception capability labels are discoverable without new authority or too
     const tools=(await (await rpc('tools/list')).json()).result.tools;
     for(const name of ['nova_observe','nova_ax','nova_html','nova_screenshot']){
       const t=tools.find(t=>t.name===name);
-      assert.match(t.description,name==='nova_screenshot'?/LASER VISION/:/DOM TRACK/);
+      assert.match(t.description,name==='nova_screenshot'?/LASER VISION/:/TARGET TRACK \(browser\/CDP\)/);
       assert.equal(t.annotations.readOnlyHint,true);
     }
     assert.ok(!tools.some(t=>['dom_track','laser_vision'].includes(t.name)));
