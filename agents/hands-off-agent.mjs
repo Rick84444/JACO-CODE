@@ -445,9 +445,18 @@ const runtime = {
     return runtimeApi("POST", "/api/desktop/hands-off/observe", hwnd ? { hwnd } : {});
   },
   async desktopAction(action) {
-    return runtimeApi("POST", "/api/desktop/hands-off/action", action);
+    return desktopActionRequest(action);
   },
 };
+
+// The desktop router answers an unverified action with 409 and the reason inside receipt.error. runtimeApi threw
+// that away as a bare RUNTIME_HTTP_409, which the loop could only treat as an unknown outcome: the live Notepad
+// run (2026-11-22) stopped for good when invoking a text box that has no Invoke pattern, instead of switching to
+// keyboard input. The receipt-aware request keeps the real reason, and a receipt that says success:false is a
+// definite failure the loop can recover from; transport errors and 5xx still count as unknown.
+export function desktopActionRequest(action, options = {}) {
+  return androidRuntimeRequest("POST", "/api/desktop/hands-off/action", action, { mutation: true, ...options });
+}
 
 // ── Local Tools ──────────────────────────────────────────────────────────────
 
