@@ -1025,7 +1025,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           decision,
-          note: `Operator decision from Aura ${inlineAcknowledged ? 'inline chat' : 'Approval Center'}: ${decision}`, 
+          note: `Operator decision from Aura ${inlineAcknowledged ? 'inline chat' : 'Approval Center'}: ${decision}`,
           confirmation: buildOperatorConfirmation(
             approval.id,
             decision,
