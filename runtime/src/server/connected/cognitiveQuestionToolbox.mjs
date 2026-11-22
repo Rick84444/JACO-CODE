@@ -39,10 +39,67 @@ export function withPerceptionTools(tools) {
       },
     },
   };
-  // New cross-surface name, but this chat tool is deliberately browser/CDP-only.
-  // Keep dom_track as an identical read-only compatibility alias; desktop/UIA acts through its own authorized tools.
-  perceptionTools.target_track = { ...perceptionTools.dom_track,
-    description: 'TARGET TRACK (browser/CDP adapter): inspect the currently pinned permitted browser page. view: observe (default), accessibility or html. Read-only; no desktop/Android action or extra authority. args: {view?}' };
+  // A single intent-oriented browser observation replaces several manual
+  // DOM/AX commands. This is NOT an actuator or a cross-platform permission:
+  // desktop/UIA and Android still use their own signed mission tools.
+  const parsePage = receipt => {
+    const message = receipt?.content?.find(item => item?.type === 'text' && typeof item.text === 'string')?.text;
+    if (typeof message !== 'string' || message.length > 100_000) return null;
+    try {
+      const page = JSON.parse(message);
+      return page?.ok === true && Array.isArray(page.targets) && typeof page.url === 'string' ? page : null;
+    } catch { return null; }
+  };
+  const candidate = node => ({
+    role: String(node.role || '').slice(0, 50),
+    text: String(node.text || '').slice(0, 160),
+    // A selector from a read-only observation is only a hint, never an action lock.
+    selectorHint: String(node.selector || '').slice(0, 300),
+  });
+  perceptionTools.target_track = {
+    description: 'TARGET TRACK (browser/CDP): one read-only goal-driven inspection. Give {target:"Save"} to find a visible control with one observation; automatically inspect accessibility if not found. Defaults to a compact page survey. view: auto (default), observe, accessibility or html. The result is NOT a click or a verified action. Windows/Android use their own authorized mission tools. args: {target?,view?,surface?}',
+    run: async (args = {}) => {
+      validate(args, ['target', 'view', 'surface']);
+      const { target = '', view = 'auto', surface = 'browser' } = args;
+      if (surface !== 'browser') throw Error('TARGET_TRACK_SURFACE_UNAVAILABLE_USE_MISSION_TOOLS');
+      if (typeof target !== 'string' || target.length > 120) throw Error('TARGET_TRACK_TARGET_INVALID');
+      if (typeof view !== 'string' || !['auto', 'observe', 'accessibility', 'html'].includes(view)) throw Error('TARGET_TRACK_VIEW_INVALID');
+      // Explicit modes preserve the legacy raw reads without extra calls.
+      if (view !== 'auto') return perceptionTools.dom_track.run({ view });
+      const receipt = await read('nova_observe');
+      const page = parsePage(receipt);
+      const query = target.trim().toLocaleLowerCase();
+      if (!page) return {
+        schema: 'jaco.target-track/v1', surface, mode: 'read-only', status: 'UNPARSED_OBSERVATION',
+        usedTools: ['nova_observe'], verifiedTarget: false, actionDispatched: false,
+        observation: receipt,
+      };
+      // Only visible controls can become candidates. This does not bind a
+      // control to the future actuator; browser-click re-identifies it later.
+      const visible = page.targets.filter(node => node && typeof node === 'object' && node.visible === true);
+      const matched = query ? visible.filter(node => String(node.text || '').toLocaleLowerCase().includes(query)) : visible;
+      const exact = query ? matched.filter(node => String(node.text || '').trim().toLocaleLowerCase() === query) : [];
+      const candidates = (exact.length ? exact : matched).slice(0, 12).map(candidate);
+      const usedTools = ['nova_observe'];
+      let accessibility = null;
+      if (query && candidates.length === 0) {
+        // Fallback is an authorized *read*, not a retry of a failed operation.
+        // Refused/failed observations fail closed and are never masked.
+        accessibility = await read('nova_ax');
+        usedTools.push('nova_ax');
+      }
+      return {
+        schema: 'jaco.target-track/v1', surface, adapter: 'cdp', mode: 'read-only',
+        query: target.trim(), observedAt: typeof page.at === 'string' ? page.at : null,
+        page: { title: String(page.title || '').slice(0, 160), url: page.url },
+        status: query ? (candidates.length === 1 ? 'CANDIDATE' : candidates.length > 1 ? 'AMBIGUOUS' : 'NOT_FOUND') : 'OBSERVED',
+        candidates, usedTools, verifiedTarget: false, actionDispatched: false,
+        ...(accessibility ? { accessibility } : {}),
+        note: 'Read-only candidate information; use the existing signed browser actuator to re-identify before any action.',
+      };
+    },
+  };
+  // The old ID and its response shape are unchanged.
   return perceptionTools;
 }
 
