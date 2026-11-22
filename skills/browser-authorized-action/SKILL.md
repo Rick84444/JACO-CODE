@@ -1,6 +1,6 @@
 ---
 name: Authorized browser action
-description: Execute permitted web forms and GUI operations through DOM TRACK and LASER VISION, with exact approval, safe input, readback, evidence and recovery. Swedish klicka fylla formulär.
+description: Execute permitted web forms and GUI operations through TARGET TRACK (browser/CDP) and LASER VISION, with exact approval, safe input, readback, evidence and recovery. Swedish klicka fylla formulär.
 tasks: [web-fetch, mcp-call, mcp-write, skill-load]
 ---
 
