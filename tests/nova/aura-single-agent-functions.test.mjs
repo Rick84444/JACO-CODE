@@ -159,6 +159,73 @@ test('perception tools preserve denied and unsuccessful reads',async()=>{
   const malformed=withPerceptionTools({mcp_read:{run:async()=>({content:[{type:'image',mimeType:'image/png',data:'YWJj'}]})}});
   await assert.rejects(()=>malformed.laser_vision.run({}),/LASER_VISION_INVALID_PNG/);
 });
+test('Target Track finds a live browser goal with one guarded read, without clicking', async () => {
+  const calls = [];
+  const now = new Date().toISOString();
+  const page = {ok:true, url:'https://example.test/editor?token=hidden#secret', title:'Editor', at:now,
+    targets:[
+      {role:'button',text:'Save draft',visible:true,selector:'#draft'},
+      {role:'button',text:'Save',visible:true,selector:'#save'},
+      {role:'button',text:'Save',visible:false,selector:'#hidden'},
+    ]};
+  const toolbox = withPerceptionTools({mcp_read:{run:async args=>{
+    calls.push(args);
+    return {content:[{type:'text',text:JSON.stringify(page)}]};
+  }}});
+  const result = await toolbox.target_track.run({target:'Save'});
+  assert.equal(result.schema,'jaco.target-track/v1');
+  assert.equal(result.status,'CANDIDATE');
+  assert.equal(result.candidates.length,1);
+  assert.equal(result.candidates[0].text,'Save');
+  assert.equal(result.candidates[0].selectorHint,'#save');
+  assert.equal(result.page.url,'https://example.test/editor');
+  assert.deepEqual(result.usedTools,['nova_observe']);
+  assert.equal(result.verifiedTarget,false);
+  assert.equal(result.actionDispatched,false);
+  assert.deepEqual(calls.map(call=>call.tool),['nova_observe']);
+  assert.ok(calls.every(call=>call.server==='browser'));
+});
+
+test('Target Track makes a bounded accessibility fallback only after a successful empty observation', async () => {
+  const calls = [];
+  const toolbox = withPerceptionTools({mcp_read:{run:async args=>{
+    calls.push(args.tool);
+    if (args.tool==='nova_observe') return {content:[{type:'text',text:JSON.stringify({
+      ok:true,url:'https://example.test/',at:new Date().toISOString(),title:'Example',targets:[]
+    })}]};
+    if (args.tool==='nova_ax') return {content:[{type:'text',text:'{"controls":["Save"]}'}]};
+    throw Error('UNEXPECTED_CALL');
+  }}});
+  const result = await toolbox.target_track.run({target:'Save'});
+  assert.equal(result.status,'NOT_FOUND');
+  assert.deepEqual(result.usedTools,['nova_observe','nova_ax']);
+  assert.ok(result.accessibility);
+  assert.deepEqual(calls,['nova_observe','nova_ax']);
+  const summary = await toolbox.target_track.run();
+  assert.equal(summary.status,'OBSERVED');
+  assert.deepEqual(calls,['nova_observe','nova_ax','nova_observe']);
+});
+
+test('Target Track refuses ambiguous, stale, unsupported and failed reads without inventing a lock', async () => {
+  let calls = 0;
+  const page = {ok:true,at:new Date().toISOString(),url:'https://example.test/',
+    targets:[{role:'button',text:'Save',visible:true},{role:'button',text:'Save',visible:true}]};
+  const toolbox = withPerceptionTools({mcp_read:{run:async()=>{
+    calls += 1;
+    return {content:[{type:'text',text:JSON.stringify(page)}]};
+  }}});
+  assert.equal((await toolbox.target_track.run({target:'Save'})).status,'AMBIGUOUS');
+  page.at = new Date(Date.now()-60_000).toISOString();
+  assert.equal((await toolbox.target_track.run({target:'Save'})).status,'STALE_OBSERVATION');
+  assert.equal(calls,2);
+  await assert.rejects(()=>toolbox.target_track.run({surface:'desktop'}),/SURFACE_UNAVAILABLE/);
+  await assert.rejects(()=>toolbox.target_track.run({view:'click'}),/VIEW_INVALID/);
+  await assert.rejects(()=>toolbox.target_track.run({target:'x'.repeat(121)}),/TARGET_INVALID/);
+  assert.equal(calls,2);
+  const denied = withPerceptionTools({mcp_read:{run:async()=>{ throw Error('MANDATE_DENIED'); }}});
+  await assert.rejects(()=>denied.target_track.run({target:'Save'}),/MANDATE_DENIED/);
+});
+
 test('production chat toolbox is wired through existing mandate gate',()=>{
   assert.match(read('runtime/server.ts'),/withPerceptionTools\(gateAgentTools\(box\.tools,agentOrganization\)\)/);
 });
