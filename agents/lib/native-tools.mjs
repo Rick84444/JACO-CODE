@@ -66,8 +66,8 @@ export function plannerTools(allowedTasks = [], mcpTools = [], taskNotes = {}, a
     if (!Object.hasOwn(TASK_FIELDS, type)) continue;
     const fields = TASK_FIELDS[type];
     const perception = {
-      'browser-survey-site': 'DOM TRACK: survey a permitted browser page and map semantic targets before acting.',
-      'desktop-observe': 'DOM TRACK: inspect desktop accessibility structure before using pixel coordinates.',
+      'browser-survey-site': 'TARGET TRACK (browser/CDP): survey a permitted browser page and map semantic targets before acting.',
+      'desktop-observe': 'TARGET TRACK (Windows/UIA): inspect desktop accessibility structure before using pixel coordinates.',
       'screenshot': 'LASER VISION: capture fresh desktop pixels for the existing vision-capable planner; use adaptive ROI first, then full only if needed.',
       'mcp-call': 'Call a configured read-only MCP tool by exact server and tool ID; starts on demand. Runtime checks actual access and tool schema.',
       'mcp-write': 'Call a configured MCP tool by exact server and tool ID. Requires current mission and operator write authority; do not repeat unknown outcomes.',
