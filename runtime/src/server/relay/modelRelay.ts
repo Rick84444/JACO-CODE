@@ -209,7 +209,7 @@ export function createModelRelayRouter(input: {
     catch (error) { return fail(res, 423, error, { lease: actuatorLeases.get(surface) }); }
 
     // Browser and Android keep the existing shared Nova pre-lock. Desktop is
-    // different: DesktopHandsOffClient now reuses the same DomTractionEngine
+    // different: DesktopHandsOffClient now reuses the same TargetTractionEngine
     // *on two live UIA snapshots* immediately before dispatch. Requiring the
     // unrelated browser/Android lock here would always reject desktop work
     // before that stronger window-specific verification could run.
