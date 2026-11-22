@@ -671,7 +671,7 @@ test('changing historical results do not trigger a false STUCK warning on resume
 
 test('missing executable across earlier runs tries a different authorized tool before blocking', async t => {
   const s = setup(t, ['shell', 'repo-read', 'stack-repair']);
-  const m = s.control.create({ goal: 'Diagnose and repair the failed Windows command without repeating it', idempotencyKey: 'missing-command-recovery-1', allowedTasks: ['shell', 'repo-read', 'stack-repair'] });
+  const m = s.control.create({ goal: 'Diagnose and repair the failed Windows command without repeating it', idempotencyKey: 'missing-command-recovery-1', allowedTasks: ['shell', 'repo-read', 'stack-repair'], contract: { scope: { allowed: ['**'] }, acceptance: ['Repair authorized local command environment'], verification: { tests_required: false } } });
   const prior = [
     { type: 'shell', data: { command: 'npm test' }, receipt: { ok: false, verified: false, error: 'spawn npm ENOENT' } },
     ...Array.from({ length: 6 }, (_, i) => ({ type: 'repo-read', data: { path: `diagnostic-${i}.txt` }, receipt: { ok: true, verified: true, result: { path: `diagnostic-${i}.txt` } } })),
@@ -696,7 +696,7 @@ test('missing executable across earlier runs tries a different authorized tool b
 
 test('unrepaired missing executable blocks when no different permitted route remains', async t => {
   const s = setup(t, ['shell', 'repo-read']);
-  const m = s.control.create({ goal: 'Run a command that is not installed', idempotencyKey: 'missing-command-exhausted-1', allowedTasks: ['shell', 'repo-read'] });
+  const m = s.control.create({ goal: 'Run a command that is not installed', idempotencyKey: 'missing-command-exhausted-1', allowedTasks: ['shell', 'repo-read'], contract: { scope: { allowed: ['**'] }, acceptance: ['Observe real missing tool evidence'], verification: { tests_required: false } } });
   const prior = [
     { type: 'shell', data: { command: 'npm test' }, receipt: { ok: false, verified: false, error: 'spawn npm ENOENT' } },
     ...Array.from({ length: 6 }, (_, i) => ({ type: 'repo-read', data: { path: `diagnostic-${i}.txt` }, receipt: { ok: true, verified: true, result: { path: `diagnostic-${i}.txt` } } })),
