@@ -325,8 +325,9 @@ test('Aura acts on clear requests and turns risky or misleading work into one sc
 
 test('perception names resolve to real tools in both chat prompt variants without claiming availability',()=>{
   for(const compactRules of [true,false]){
-    const {system}=buildAuraSeerPrompts({message:'Använd DOM TRACK och LASER VISION',compactRules,toolCatalog:'- mcp_catalog: live tools'});
-    assert.match(system,/DOM TRACK maps to nova_observe\/nova_ax\/nova_html/);
+    const {system}=buildAuraSeerPrompts({message:'Använd TARGET TRACK och LASER VISION',compactRules,toolCatalog:'- mcp_catalog: live tools'});
+    assert.match(system,/TARGET TRACK is Auras cross-surface target-tracking capability/);
+    assert.match(system,/dom_track is the legacy browser-only alias/);
     assert.match(system,/LASER VISION maps to nova_screenshot/);
     assert.match(system,/do not claim readiness without live evidence/);
   }
