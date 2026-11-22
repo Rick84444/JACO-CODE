@@ -133,7 +133,7 @@ test('Aura perception tools use only the guarded canonical MCP read route',async
   assert.equal(question.mcp_tool,undefined);
   for(const view of ['observe','accessibility','html']) await question.dom_track.run({view});
   await question.target_track.run({view:'observe'});
-  assert.match(question.target_track.description,/TARGET TRACK \(browser\/CDP adapter\)/);
+  assert.match(question.target_track.description,/TARGET TRACK \(browser\/CDP\)/);
   const capture=await question.laser_vision.run({});
   assert.equal(capture.captured,true);
   assert.equal(capture.source,'browser/nova_screenshot');
