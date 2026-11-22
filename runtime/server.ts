@@ -14,6 +14,7 @@ import http from "http";
 import { WebSocketServer } from "ws";
 import path from "path";
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { runtimeReleaseRoot } from './src/server/runtimeReleaseRoot.mjs';
 import fs from "fs";
 import os from "os";
@@ -209,6 +210,21 @@ const projectRoot = createProjectRoot({ stateDir: path.join(WORKSPACE_ROOT, '.ja
 process.on('unhandledRejection', (reason: any) => {
   console.error('[runtime] unhandled rejection (kept running):', reason?.stack || reason);
 });
+// The JSON body parser looks up its UTF-8 decoder lazily, on the first request with a body. In the packaged
+// Lite CI run that lookup failed after startup (body-parser: 'unsupported charset "UTF-8"', HTTP 415 for every
+// POST, 2026-11-22), intermittently, while the same package passed elsewhere. Loading the decoder once at startup
+// caches it before the server opens its watchers and sockets, so later requests never need the lookup again.
+function preloadJsonBodyDecoder(): void {
+  try {
+    const own = createRequire(typeof __filename === 'string' ? __filename : fileURLToPath(import.meta.url));
+    const fromExpress = createRequire(own.resolve('express/package.json'));
+    const fromBodyParser = createRequire(fromExpress.resolve('body-parser/package.json'));
+    fromBodyParser('iconv-lite').getCodec('utf-8');
+  } catch (error: any) {
+    console.warn(`[http] JSON body decoder preload failed: ${error?.message || error}`);
+  }
+}
+
 const RELEASE_ROOT = runtimeReleaseRoot({ override: process.env.JACO_RELEASE_ROOT, moduleFile: typeof __filename === 'string' ? __filename : fileURLToPath(import.meta.url) });
 // A running packaged IDE may be separate from its editable source checkout. If the
 // checkout is present, Aura can inspect JACO code without changing the selected project.
@@ -748,6 +764,7 @@ async function startServer() {
   app.use(securityHeaders({ httpsOnly: process.env.JACO_HTTPS_ONLY === 'true', dev: process.env.NODE_ENV !== 'production' }));
   app.use(requireJsonBody(2 * 1024 * 1024));
   app.use('/api', rateLimit({ windowMs: 60_000, max: 600 }, 'api'));
+  preloadJsonBodyDecoder();
   app.use(express.json({
     limit: '10mb',
     verify: (req: any, _res, buf) => {
