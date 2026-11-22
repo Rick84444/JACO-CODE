@@ -351,7 +351,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         body:JSON.stringify({
           name:agentDraft.name.trim(),title:agentDraft.title.trim(),
           task:agentDraft.task.trim(),goal:agentDraft.goal.trim(),
-          reportsTo:'aura',model:{kind:'local',providerId:'ollama',model:''},
+          reportsTo:'aura',model:{kind:'planner',providerId:'',model:''},
         }),
       });
       const data=await response.json().catch(()=>({}));
