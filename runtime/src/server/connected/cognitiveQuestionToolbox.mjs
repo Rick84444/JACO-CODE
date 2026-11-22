@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { AURA_FUNCTION_DEFINITIONS } from './auraFunctions.mjs';
 // Questions inspect the current run. Starting work is the explicit mission action in the composer.
-const readTools = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','policy_get','dom_track','laser_vision']);
+const readTools = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','policy_get','target_track','dom_track','laser_vision']);
 
 // The existing mcp_read tool is the sole authority for these convenience entry points.
 export function withPerceptionTools(tools) {
@@ -15,9 +15,9 @@ export function withPerceptionTools(tools) {
     if (!args || typeof args !== 'object' || Array.isArray(args) ||
         Object.keys(args).some(key => !allowed.includes(key))) throw Error('PERCEPTION_ARGUMENTS_INVALID');
   };
-  return {...tools,
+  const perceptionTools = {...tools,
     dom_track: {
-      description:'DOM TRACK: read the currently pinned allowed browser page. view: observe (default), accessibility or html. Read-only; respects the existing CDP and organization policy. args: {view?}',
+      description:'Legacy DOM TRACK alias for TARGET TRACK (browser/CDP): read the currently pinned allowed browser page. view: observe (default), accessibility or html. Read-only; respects the existing CDP and organization policy. args: {view?}',
       run: async (args = {}) => {
         validate(args,['view']);
         const views={observe:'nova_observe',accessibility:'nova_ax',html:'nova_html'};
@@ -39,6 +39,11 @@ export function withPerceptionTools(tools) {
       },
     },
   };
+  // New cross-surface name, but this chat tool is deliberately browser/CDP-only.
+  // Keep dom_track as an identical read-only compatibility alias; desktop/UIA acts through its own authorized tools.
+  perceptionTools.target_track = { ...perceptionTools.dom_track,
+    description: 'TARGET TRACK (browser/CDP adapter): inspect the currently pinned permitted browser page. view: observe (default), accessibility or html. Read-only; no desktop/Android action or extra authority. args: {view?}' };
+  return perceptionTools;
 }
 
 // Operator 2026-11-19: Aura must be able to fix her own stack when a service is down, also in conversation.
