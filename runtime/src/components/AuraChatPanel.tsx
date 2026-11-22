@@ -173,6 +173,7 @@ export function useAuraChatSession() {
 interface Props {
   session: ReturnType<typeof useAuraChatSession>;
   runControls?: React.ReactNode;
+  approvalPrompt?: React.ReactNode;
   onOpenProviders?: () => void;
   activeFilePath?: string | null;
   activeFileContent?: string | null;
@@ -202,7 +203,7 @@ async function chatJson(response: Response) {
   return data;
 }
 
-export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onCancelMission, onSteerMission, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
+export const AuraChatPanel: React.FC<Props> = ({ session, runControls, approvalPrompt, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onCancelMission, onSteerMission, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
   const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments } = session;
   const { tr, language } = useUiLanguage();
   const [attachments, setAttachments] = useState<Array<{id:string;files:Array<{path:string;format:string}>}>>(()=>{
@@ -803,6 +804,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
 
       <div ref={scrollRef} onScroll={()=>{const el=scrollRef.current;if(el){const near=el.scrollTop<80;followRef.current=near;setFollowing(near);}}} role="log" aria-live="polite" aria-relevant="additions" aria-label={tr('JACO-konversation','JACO conversation')} className="cognitive-chat-scroll">
         <div className="cognitive-feed">
+          {approvalPrompt}
           {!storageReady && !storageError && <p className="cognitive-muted">{tr('Läser din sparade konversation…','Loading your saved conversation…')}</p>}
           {storageReady&&feed.length===0&&<div className="cognitive-welcome">
             <JacoWordmark size="lg"/>
