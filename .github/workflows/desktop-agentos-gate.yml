@@ -17,6 +17,11 @@ on:
       - 'agents/grant-desktop-agentos.ps1'
       - 'agents/start-all.ps1'
       - 'agents/lib/mission-client.mjs'
+      - 'agents/lib/agent-loop.mjs'
+      - 'agents/lib/strategy-recovery.mjs'
+      - 'tests/nova/agent-loop.test.mjs'
+      - 'tests/nova/strategy-recovery.test.mjs'
+      - 'tests/nova/agent-stuck-condense.test.mjs'
       - 'agents/lib/mission-screen-frame.mjs'
       - 'agents/input-bridge.ps1'
       - 'agents/lib/input-bridge-daemon.mjs'
@@ -102,6 +107,9 @@ jobs:
       - name: Install locked test dependencies
         # Install the locked runtime imports without browser/Electron downloads.
         run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+
+      - name: Verify recovery-first mission regression
+        run: node --test tests/nova/agent-loop.test.mjs tests/nova/strategy-recovery.test.mjs tests/nova/agent-stuck-condense.test.mjs
 
       - name: Run Nova tests
         run: npm test

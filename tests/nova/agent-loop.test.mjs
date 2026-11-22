@@ -669,6 +669,56 @@ test('changing historical results do not trigger a false STUCK warning on resume
   assert.doesNotMatch(firstTurn, /^STUCK:/m, 'historical progress is not an identical-result loop');
 });
 
+test('missing executable across earlier runs tries a different authorized tool before blocking', async t => {
+  const s = setup(t, ['shell', 'repo-read', 'stack-repair']);
+  const m = s.control.create({ goal: 'Diagnose and repair the failed Windows command without repeating it', idempotencyKey: 'missing-command-recovery-1', allowedTasks: ['shell', 'repo-read', 'stack-repair'], contract: { scope: { allowed: ['**'] }, acceptance: ['Repair authorized local command environment'], verification: { tests_required: false } } });
+  const prior = [
+    { type: 'shell', data: { command: 'npm test' }, receipt: { ok: false, verified: false, error: 'spawn npm ENOENT' } },
+    ...Array.from({ length: 6 }, (_, i) => ({ type: 'repo-read', data: { path: `diagnostic-${i}.txt` }, receipt: { ok: true, verified: true, result: { path: `diagnostic-${i}.txt` } } })),
+  ];
+  for (const {type,data,receipt} of prior) {
+    const claimed = await s.client.claim(m.id, 'nova');
+    const lease = { owner: 'nova', token: claimed.token };
+    const action = await s.client.begin(m.id, { ...lease, task: { type, data } });
+    await s.client.finish(m.id, { ...lease, actionId: action.id, receipt });
+  }
+  const model = scripted([
+    { tool_calls: [call('stack-repair', {})] },
+    { tool_calls: [call('complete', { reason: 'Authorized service repair finished and verified [#8]' })] },
+  ]);
+  const executed = [];
+  const result = await run(s, model, async task => { executed.push(task.type); return { ok: true, verified: true }; });
+  assert.equal(result.completed, true, 'mission stays active to recover instead of blocking at startup');
+  assert.deepEqual(executed, ['stack-repair'], 'repeated broken shell command was not executed again');
+  assert.match(JSON.stringify(model.seen[0]), /STRATEGY_RECOVERY.*stack-repair/);
+  assert.equal(s.control.get(m.id).status, 'AWAITING_VERIFICATION');
+});
+
+test('unrepaired missing executable blocks when no different permitted route remains', async t => {
+  const s = setup(t, ['shell', 'repo-read']);
+  const m = s.control.create({ goal: 'Run a command that is not installed', idempotencyKey: 'missing-command-exhausted-1', allowedTasks: ['shell', 'repo-read'], contract: { scope: { allowed: ['**'] }, acceptance: ['Observe real missing tool evidence'], verification: { tests_required: false } } });
+  const prior = [
+    { type: 'shell', data: { command: 'npm test' }, receipt: { ok: false, verified: false, error: 'spawn npm ENOENT' } },
+    ...Array.from({ length: 6 }, (_, i) => ({ type: 'repo-read', data: { path: `diagnostic-${i}.txt` }, receipt: { ok: true, verified: true, result: { path: `diagnostic-${i}.txt` } } })),
+  ];
+  for (const {type,data,receipt} of prior) {
+    const claimed = await s.client.claim(m.id, 'nova');
+    const lease = { owner: 'nova', token: claimed.token };
+    const action = await s.client.begin(m.id, { ...lease, task: { type, data } });
+    await s.client.finish(m.id, { ...lease, actionId: action.id, receipt });
+  }
+  let calls = 0;
+  const result = await run(s, { chat: async () => { calls++; return { content: 'not called' }; } }, async () => assert.fail('no viable tool may execute'));
+  assert.equal(result.blocked, true);
+  assert.equal(calls, 0, 'no paid planning turn when the granted alternatives have all failed or already been tried');
+  assert.match(result.reason, /UNREPAIRED_TOOL_ENV/);
+});
+
+test('failed click or lost desktop target supplies a corrective next-step hint, never an implied approval', () => {
+  assert.match(receiptForModel(1, { ok: false, error: 'BROWSER_CLICK_EXPECTATION_REQUIRED' }), /expect\.url or expect\.selector/);
+  assert.match(receiptForModel(2, { ok: false, error: 'DESKTOP_TRACTION_TARGET_DRIFT' }), /fresh desktop-windows and desktop-observe/);
+});
+
 test('a result that means "already done" says so to the model', () => {
   const commit = receiptForModel(3, { ok: false, verified: false, error: 'CODING_GIT_NOTHING_IN_SCOPE' });
   assert.match(commit, /Nothing to commit: your changes are already committed/);

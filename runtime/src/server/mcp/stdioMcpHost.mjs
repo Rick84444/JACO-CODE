@@ -272,7 +272,12 @@ class StdioClient {
       proc.stdout.on('data', chunk => { if (this.proc === proc) this.onData(chunk); });
       proc.stderr.on('data', chunk => { if (this.proc === proc) this.lastStderr = String(chunk).slice(-500); });
       // Events of a process that was already replaced (stop + restart) must not touch the new one.
-      proc.on('exit', code => {
+      // Node emits 'exit' before stdio pipes necessarily drain. A missing
+      // entrypoint can therefore be misclassified as EXIT_1 instead of
+      // ENTRYPOINT_NOT_FOUND if the error text arrives after 'exit'.
+      // 'close' happens after the stdio streams close, preserving the actual
+      // failure classification without reading or publishing private stderr.
+      proc.on('close', code => {
         if (this.proc !== proc) return;
         this.error = `MCP_SERVER_EXITED:${this.id}:${classifyMcpChildExit(code, this.lastStderr, this.initialized)}`;
         this.failPending(this.error);
