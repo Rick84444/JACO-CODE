@@ -1,4 +1,4 @@
-export { DomTractionEngine, NovaTractionEngine, computeManifoldDrift, DRIFT_THRESHOLD } from './tractionCore.mjs';
+export { TargetTractionEngine, DomTractionEngine, NovaTractionEngine, computeManifoldDrift, DRIFT_THRESHOLD } from './tractionCore.mjs';
 
 export type NovaTrackState = 'IDLE' | 'ACQUIRING' | 'LOCKED' | 'OCCLUDED' | 'OFFSCREEN' | 'REIDENTIFYING' | 'VERIFYING' | 'RECOVERING' | 'COMPLETE';
 
