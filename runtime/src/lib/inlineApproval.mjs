@@ -10,11 +10,11 @@ export function inlineApprovalPresentation(approval) {
   const kind = String(approval?.kind || '').toUpperCase();
   const actions = Array.isArray(approval?.actions) ? approval.actions.filter(a => typeof a === 'string') : [];
 
-  // A stale execution binding is NOT an action the operator can bless back into existence.
-  // No positive control may be shown for a mission that is missing from Nova's durable store.
-  const error = [title, reason, details.error, details.code, details.latestReceipt?.error]
-    .filter(value => typeof value === 'string').join(' ');
-  const missingMission = /\bNOVA_MISSION_NOT_FOUND\b/.test(error);
+  // Only structured runtime errors count: titles and reasons are untrusted
+  // mission text and may discuss this very error during a legitimate repair task.
+  const errorCodes = [details.error, details.code, details.errorCode,
+    details.latestReceipt?.error, details.latestReceipt?.code];
+  const missingMission = errorCodes.some(value => value === 'NOVA_MISSION_NOT_FOUND');
   const requiresReview = ['HIGH','CRITICAL'].includes(risk)
     || /PAYMENT|SPEND|PURCHASE|CREDENTIAL|DELETE|SECURITY|PERMISSION/.test(kind)
     || /(?:PAYMENT|SPEND|PURCHASE|CREDENTIAL|DELETE|SECURITY|PERMISSION)/i.test(String(approval?.source || ''))
