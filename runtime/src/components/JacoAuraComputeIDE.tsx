@@ -4,6 +4,7 @@ import { MissionReview } from './MissionReview';
 import { ConnectionsWorkspace } from './ConnectionsWorkspace';
 import { readAuraResponse as json, acknowledgeSavedDraft } from '../lib/auraApi.mjs';
 import { buildOperatorConfirmation, requiresOperatorConfirmation } from '../lib/operatorApproval.mjs';
+import { InlineAuraApproval } from './InlineAuraApproval';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
@@ -1007,10 +1008,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
     }
   };
 
-  const resolveApproval = async (approval: OperatorApproval, decision: string) => {
+  const resolveApproval = async (approval: OperatorApproval, decision: string, inlineAcknowledged = false) => {
     const busyKey = `${approval.id}:${decision}`;
     if (approvalBusy) return;
-    const acknowledged = approvalAcknowledged[approval.id] === true;
+    const acknowledged = inlineAcknowledged === true || approvalAcknowledged[approval.id] === true;
     if (requiresOperatorConfirmation(decision) && !acknowledged) {
       setApprovalError('Check the confirmation box so Aura receives an explicit, scoped approval.');
       return;
@@ -1024,7 +1025,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           decision,
-          note: `Operator decision from Aura Approval Center: ${decision}`,
+          note: `Operator decision from Aura ${inlineAcknowledged ? 'inline chat' : 'Approval Center'}: ${decision}`, 
           confirmation: buildOperatorConfirmation(
             approval.id,
             decision,
@@ -1585,12 +1586,17 @@ export const JacoAuraComputeIDE: React.FC = () => {
     await refresh({ includeFiles: false });
   };
 
+  const pendingDecision = snapshot?.approvals?.items?.[0];
   const renderChatContent = () => (
     <>
       {needsModel && !guideClosed && <FirstRunGuide onConnected={() => activation.read()} onClose={() => setGuideClosed(true)} />}
       <div className="flex-1 min-h-0">
         <AuraChatPanel
           session={chatSession}
+          approvalPrompt={pendingDecision ? <InlineAuraApproval key={pendingDecision.id} approval={pendingDecision} count={snapshot?.approvals?.count ?? 1}
+            busy={Boolean(approvalBusy)} error={approvalError}
+            onDecision={(action, acknowledged) => { void resolveApproval(pendingDecision, action, acknowledged); }}
+            onAll={() => setShowApprovals(true)} /> : null}
           runControls={activation.report?.ok && !activation.error ? null : <ActivationCard activation={activation} projectName={projectName}
             repairBlocked={missionSubmitting || missions.some(item => item.status === 'ACTIVE')}
             onRepair={async problems => {
@@ -1980,27 +1986,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     {externalFile&&externalFile.path===selectedFile&&<div role="alert" className="cognitive-operation-notice">The file changed in the workspace. Your draft is preserved.<button type="button" onClick={acceptExternalFile}>Load latest file</button></div>}
     <div className="cognitive-detail-body">{canvasDetail}</div>
   </div>;
-  const pendingDecision = snapshot?.approvals?.items?.[0];
-  const attention = pendingDecision ? <section className="cognitive-decision" aria-label="Decisions that need you">
-    <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>JACO needs your decision</strong><span>{snapshot.approvals.count} pending</span></div>
-    <h2>{pendingDecision.title}</h2>
-    <p>{pendingDecision.reason}</p>
-    {['command', 'targetFilePath', 'repoUrl'].map(key => typeof pendingDecision.details?.[key] === 'string' && pendingDecision.details[key] &&
-      <p key={key} className="cognitive-decision-context"><span>{({command:'Command',targetFilePath:'File',repoUrl:'Source'})[key]}: </span><code>{pendingDecision.details[key]}</code></p>)}
-    {pendingDecision.actions.some(requiresOperatorConfirmation) && <label className="cognitive-decision-context flex items-start gap-2">
-      <input type="checkbox" checked={approvalAcknowledged[pendingDecision.id] === true}
-        onChange={event => setApprovalAcknowledged(current => ({ ...current, [pendingDecision.id]: event.target.checked }))}
-        className="mt-1 h-4 w-4 accent-amber-300" />
-      <span>I understand the displayed action and risk and explicitly approve Aura to carry it out within this scope.</span>
-    </label>}
-    <div className="cognitive-decision-actions">
-      {pendingDecision.actions.map(action => <button key={action} type="button" disabled={Boolean(approvalBusy) || (requiresOperatorConfirmation(action) && approvalAcknowledged[pendingDecision.id] !== true)}
-        onClick={() => void resolveApproval(pendingDecision, action)}>{approvalBusy === `${pendingDecision.id}:${action}` ? 'Saving decision…' : approvalLabel(action)}</button>)}
-      <button type="button" onClick={() => setShowApprovals(true)}>Show details{snapshot.approvals.count > 1 ? ' and all decisions' : ''}</button>
-    </div>
-    {!pendingDecision.actions.length && <p>A setting needs fixing. Open details to see what is missing.</p>}
-    {approvalError && <p role="alert">The decision could not be saved: {approvalError}</p>}
-  </section> : (snapshot?.seer?.blocker || runtimeError) ? <section className="cognitive-decision" aria-label="This needs attention">
+  const attention = !pendingDecision && (snapshot?.seer?.blocker || runtimeError) ? <section className="cognitive-decision" aria-label="This needs attention">
     <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>The work needs help</strong></div>
     <p>{snapshot?.seer?.blocker || runtimeError}</p>
     <div className="cognitive-decision-actions">
