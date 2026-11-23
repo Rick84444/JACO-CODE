@@ -120,7 +120,7 @@ void main(){
   if(aKind<.5){strength*=.55;}
   if(aKind>1.5&&aKind<2.5){vColor=mix(deepBiolum,pureDiamond,.45+aSeed*.50);strength*=.30;}
   if(aKind>.5&&aKind<1.5){vColor=mix(deepBiolum,pureDiamond,.55+aSeed*.45);strength*=1.15;}
-  if(aKind>2.5){vColor=pureDiamond;strength*=.52;}
+  if(aKind>2.5){strength=0.0;} // The eyes, brows and lashes use their own surfaces.
   vAlpha=clamp(strength*pulse*fade*(1.08+.38*uEnergy),0.0,.96);
   gl_PointSize=clamp(aSize*uPixelRatio*(2.05+.46*uEnergy)*(0.85+0.25*dof)/max(.82,-mv.z),.70,4.5*uPixelRatio);
   gl_Position=projectionMatrix*mv;
@@ -672,7 +672,6 @@ function createLightBody(scene,model,bones,groups,isMobile){
   float limbalRing=(1.0-smoothstep(0.55,0.64,radial))*smoothstep(0.44,0.55,radial);
   float pupilCore=1.0-smoothstep(uPupil-0.03,uPupil+0.03,radial);
   float catch1=pow(max(0.0,dot(n,normalize(vec3(0.28,0.34,0.90)))),72.0);
-  float catch2=pow(max(0.0,dot(n,normalize(vec3(-0.35,-0.22,0.91)))),48.0)*0.45;
   float lidShade=1.0-.24*smoothstep(.04,.62,n.y);
   vec3 sclera=mix(vec3(.55,.63,.68),vec3(.82,.85,.84),forward);
   float crypts=.5+.5*sin(angle*11.0+radial*38.0);
@@ -681,7 +680,7 @@ function createLightBody(scene,model,bones,groups,isMobile){
   vec3 col=mix(sclera,irisColor,irisMask);
   col=mix(col,vec3(.045,.10,.13),limbalRing*.80);
   col=mix(col,vec3(.02,.04,.12),pupilCore*0.92);
-  col=col*lidShade+vec3(.94,.97,1.0)*(catch1*.95+catch2*.32);
+  col=col*lidShade+vec3(.94,.97,1.0)*catch1*.48;
   outgoingLight=col*smoothstep(0.1,0.5,forward);
   diffuseColor.a=0.97;
   #include <opaque_fragment>`);
@@ -706,7 +705,14 @@ function createLightBody(scene,model,bones,groups,isMobile){
 
   eyeGroup.mesh.material=eyeMat;
   eyeGroup.mesh.visible=true;
-  brows.material=new THREE.MeshBasicMaterial({color:0xaab8d4,transparent:true,opacity:.72,blending:THREE.NormalBlending,depthWrite:false});
+  brows.material=new THREE.MeshBasicMaterial({color:0x515c68,transparent:true,opacity:.64,depthWrite:false});
+  brows.material.onBeforeCompile=shader=>{
+    shader.vertexShader='varying vec3 vBrowRest;\n'+shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n vBrowRest=position;');
+    shader.fragmentShader='varying vec3 vBrowRest;\n'+shader.fragmentShader.replace('#include <alphamap_fragment>',`#include <alphamap_fragment>
+      float strandPhase=abs(vBrowRest.x)*840.0-vBrowRest.y*620.0;
+      float hairContrast=1.0-smoothstep(.4,2.8,fwidth(strandPhase));
+      diffuseColor.a*=.78+.22*cos(strandPhase)*hairContrast;`);
+  };
   brows.visible=true;
   lashes.material=new THREE.MeshBasicMaterial({color:0x7d8fb4,transparent:true,opacity:.92,blending:THREE.NormalBlending,depthWrite:false,side:THREE.DoubleSide});
   lashes.visible=true;
@@ -909,9 +915,6 @@ void main(){
   const crown=sprite(.20,.32,0xcfe6ff);crown.position.set(C.x,top+.055,C.z).sub(restPos);
   hair.add(halo,hairLocks,lines,sparks,crown);scene.add(hair);
 
-  const eyeCore=[sprite(.008,.60,0xb8f6ff),sprite(.008,.60,0xb8f6ff)];
-  const eyeHalo=[sprite(.032,.34,0x45d6ff),sprite(.032,.34,0x45d6ff)];
-  scene.add(...eyeCore,...eyeHalo);
   // A soft veil of light over neck, shoulders and chest binds head, hair and body into one glowing form.
   const veilChest=sprite(.82,.30,0x7cc4ff),veilNeck=sprite(.36,.14,0xb8dcff),chestCore=sprite(.26,.40,0xeaf6ff);
   veilChest.position.set(0,1.32,.18);veilNeck.position.set(0,1.46,.14);chestCore.position.set(0,1.34,.20);
@@ -948,7 +951,7 @@ void main(){
   const starField=new THREE.Points(starGeo,starMat);starField.frustumCulled=false;scene.add(starField);
   owned.push(lineGeo,lineMat,sparkGeo,sparkMat,starGeo,starMat,auraPlaneGeo,auraPlaneMat,texture);
 
-  const hp=new THREE.Vector3(),hq=new THREE.Quaternion(),sums=[new THREE.Vector3(),new THREE.Vector3()],counts=[0,0];
+  const hp=new THREE.Vector3(),hq=new THREE.Quaternion();
   const hairQuat=new THREE.Quaternion();
   let hairInitialized=false;
 
@@ -967,19 +970,8 @@ void main(){
       veilChest.material.opacity=.28+.06*Math.sin(t*.9)+.08*energyValue;chestCore.material.opacity=.36+.10*Math.sin(t*1.4)+.10*energyValue;veilNeck.material.opacity=.09+.03*Math.sin(t*1.3+1.0)+.05*energyValue;orbitMat.opacity=.70+.15*Math.sin(t*1.2)+.10*energyValue;
       halo.material.opacity=.28+.15*energyValue+.04*Math.sin(t*1.2);
 
-      sums[0].set(0,0,0);sums[1].set(0,0,0);counts[0]=counts[1]=0;
-      const vs=eyeGroup.vertices;
-      for(let i=0;i<vs.length;i+=3){const s=vs[i]>hp.x?0:1;sums[s].x+=vs[i];sums[s].y+=vs[i+1];sums[s].z+=vs[i+2];counts[s]++;}
-      const open=1-.96*blink;
-      for(let s=0;s<2;s++){
-        if(!counts[s])continue;
-        sums[s].divideScalar(counts[s]).z+=.012;
-        eyeCore[s].position.copy(sums[s]);eyeHalo[s].position.copy(sums[s]);
-        eyeCore[s].material.opacity=.60*open;
-        eyeHalo[s].material.opacity=(.30+.14*energyValue)*open;
-      }
     },
-    dispose(){scene.remove(hair,starField,auraBackdrop,veilChest,veilNeck,chestCore,orbit,...eyeCore,...eyeHalo);owned.forEach(o=>o.dispose());}
+    dispose(){scene.remove(hair,starField,auraBackdrop,veilChest,veilNeck,chestCore,orbit);owned.forEach(o=>o.dispose());}
   };
 }
 
