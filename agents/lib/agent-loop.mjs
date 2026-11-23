@@ -9,6 +9,7 @@
 // validates the task against the mission's allowed tasks, contract and approvals), execute, finish
 // with a receipt. A step the runtime refuses is reported to the model and costs the mission nothing;
 // a step that runs and fails counts against the mission's failure budget as before.
+import { contextCharsBudget } from './context-budget.mjs';
 import { BATCHABLE, checkedReceipt, hashTaskInput } from './mission-client.mjs';
 import { searchDeferredTools } from './native-tools.mjs';
 import { redactDeep } from './secret-capture.mjs';
@@ -153,7 +154,7 @@ export async function runAgentMission({
   preflight = null, diagnose = null,
   onActivity = async () => {}, onReceipt = async () => {}, log = () => {},
   maxSteps = 40, maxModelErrors = 3, maxIdleReplies = 2,
-  maxContextChars = 60_000, onCondense = () => {}, stuck = new StuckDetector(),
+  maxContextChars = 60_000, contextTokens = null, onCondense = () => {}, stuck = new StuckDetector(),
 }) {
   const current = await client.current();
   if (!current || current.status !== 'ACTIVE') return { executed: false, mission: current };
@@ -367,7 +368,16 @@ export async function runAgentMission({
       // Replace the retained mission packet; never accumulate duplicate board snapshots.
       if (refreshIntro && turns > 1) missionIntro = await intro(mission);
       messages[1] = { role: 'user', content: missionIntro + '\n\n' + adaptiveStrategyInstruction(mission) };
-      const condensed = condenseMessages(messages, { maxChars: maxContextChars });
+      // The history budget follows the model's real window when it is known (contextTokens: a number or a function);
+      // the tool schemas travel with every request, so they are counted. It only ever lowers the default.
+      let historyChars = maxContextChars;
+      try {
+        const windowTokens = typeof contextTokens === 'function' ? await contextTokens() : contextTokens;
+        const toolsChars = JSON.stringify(tools).length;
+        if (Number.isSafeInteger(windowTokens)) historyChars = contextCharsBudget({ contextTokens: windowTokens, reservedChars: toolsChars, fallback: maxContextChars });
+        log('info', `prompt parts: tools=${toolsChars} chars, system=${String(messages[0]?.content || '').length}, intro=${String(messages[1]?.content || '').length}, messages=${messages.length}, window=${windowTokens ?? 'unknown'} tokens, history budget=${historyChars} chars`);
+      } catch { /* an unreadable window keeps the default budget */ }
+      const condensed = condenseMessages(messages, { maxChars: historyChars });
       if (condensed.condensed) {
         messages.splice(0, messages.length, ...condensed.messages);
         log('info', `condensed ${condensed.dropped.length} messages into one summary`);
