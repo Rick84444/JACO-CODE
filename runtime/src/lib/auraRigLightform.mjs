@@ -576,7 +576,8 @@ function createLightBody(scene,model,bones,groups,isMobile){
     *smoothstep(0.012,0.022,abs(vAuraWorldPos.x))*(1.0-smoothstep(0.052,0.064,abs(vAuraWorldPos.x)))*smoothstep(0.04,0.08,vAuraWorldPos.z);
   baseSkin=mix(baseSkin,vec3(.66,.72,.94),lidZone*.22)+vec3(.10,.11,.14)*lidZone*sharpSpec*2.0;
   vec3 rimGlow=activeCyan*midRim*(0.62+0.26*uEnergy)+diamondWhite*outerRim*(0.92+0.38*uEnergy);
-  vec3 detailed=(baseSkin*(0.56+0.12*uEnergy)*voicePulse+rimGlow*1.65)*scanline;
+  float cheekPlane=1.0+.12*cheekZone*(2.0*keyWrap-1.0);
+  vec3 detailed=(baseSkin*cheekPlane*(0.56+0.12*uEnergy)*voicePulse+rimGlow*1.52)*scanline;
   // No anatomy below the collarbones: uniform white light that softly dissolves.
   outgoingLight=detailed;
   diffuseColor.a=auraFade;
@@ -672,13 +673,15 @@ function createLightBody(scene,model,bones,groups,isMobile){
   float pupilCore=1.0-smoothstep(uPupil-0.03,uPupil+0.03,radial);
   float catch1=pow(max(0.0,dot(n,normalize(vec3(0.28,0.34,0.90)))),72.0);
   float catch2=pow(max(0.0,dot(n,normalize(vec3(-0.35,-0.22,0.91)))),48.0)*0.45;
-  vec3 sclera=vec3(.86,.92,1.0)*0.92;
+  float lidShade=1.0-.24*smoothstep(.04,.62,n.y);
+  vec3 sclera=mix(vec3(.55,.63,.68),vec3(.82,.85,.84),forward);
   float crypts=.5+.5*sin(angle*11.0+radial*38.0);
-  vec3 irisColor=mix(vec3(.05,.42,.95),vec3(.55,.95,1.0),fibers*.75+crypts*.25)*(1.1+0.3*uEnergy);
+  vec3 irisColor=mix(vec3(.04,.16,.22),vec3(.35,.63,.64),fibers*.65+crypts*.35)*(1.0+.12*uEnergy);
   irisColor=mix(irisColor,vec3(.70,.86,1.0),smoothstep(uPupil+0.02,uPupil+0.10,radial)*(1.0-smoothstep(uPupil+0.10,uPupil+0.18,radial))*.35);
-  vec3 col=sclera*(1.0-irisMask)+irisColor*irisMask+vec3(.02,.08,.30)*limbalRing*0.9;
+  vec3 col=mix(sclera,irisColor,irisMask);
+  col=mix(col,vec3(.045,.10,.13),limbalRing*.80);
   col=mix(col,vec3(.02,.04,.12),pupilCore*0.92);
-  col+=vec3(1.0,1.0,1.0)*(catch1*1.4+catch2);
+  col=col*lidShade+vec3(.94,.97,1.0)*(catch1*.95+catch2*.32);
   outgoingLight=col*smoothstep(0.1,0.5,forward);
   diffuseColor.a=0.97;
   #include <opaque_fragment>`);
@@ -882,10 +885,13 @@ void main(){
   float ring1=exp(-sq((r-0.34)*30.0))*(0.92+0.08*sin(a*3.0-uTime*0.8));
   float ring2=exp(-sq((r-0.68)*12.0))*(0.5+0.5*cos(a*10.0+uTime*0.8));
   float coreGlow=exp(-r*r*7.5);
+  // Interference fringes emerge at the sides, leaving the face in clear space.
+  float fringe=ring1*ring2+0.45*ring2;
+  fringe*=smoothstep(.14,.42,abs(vUv.x));
   float radialFade=1.0-smoothstep(0.65,1.0,r);
   float alpha=(coreGlow*0.42+exp(-r*r*2.2)*0.14)*(0.85+0.30*uEnergy)*radialFade;
   vec3 baseCol=mix(vec3(.08,.30,.92),vec3(.96,.72,.30),uCognitiveTint*0.45);
-  gl_FragColor=vec4(mix(baseCol,vec3(.78,.93,1.0),coreGlow),alpha);
+  gl_FragColor=vec4(mix(baseCol,vec3(.78,.93,1.0),coreGlow),alpha+.14*fringe*radialFade);
 }`
   });
   const auraBackdrop=new THREE.Mesh(auraPlaneGeo,auraPlaneMat);
@@ -932,7 +938,7 @@ void main(){
 void main(){
   vec3 pos=position;
   float drift=uTime*(.015+aTw*.024)+aTw*6.28;
-  pos.y+=mod(drift,0.22)-0.11;
+  pos.y+=sin(drift)*0.08;
   pos.x+=sin(drift*2.4)*0.012;
   vA=(.22+.64*aTw)*(.55+.45*sin(uTime*(.7+aTw*1.9)+aTw*50.0));
   gl_PointSize=(0.9+2.4*aTw*aTw)*uPixelRatio;
@@ -1189,7 +1195,8 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       const breath=still?0:Math.sin(breathPhase)+.24*Math.sin(breathPhase*2.0-.55);
       rotate('Spine2',still?0:.021*breath,yaw*.16,roll*.24);
       rotate('Neck',pitch*.36-.008*breath,yaw*.28,roll*.34);
-      rotate('Head',pitch*.72+(state.speaking&&!still?.018*Math.sin(t*3.9)*clamp(smoothJaw*2.5,0.2,1.0):0),yaw*.76,roll*.64);
+      const speechNod=state.speaking&&!still?.024*smoothJaw:0;
+      rotate('Head',pitch*.72+speechNod,yaw*.76,roll*.64);
       rotate('LeftShoulder',still?0:.016*breath,0,-.009*breath);
       rotate('RightShoulder',still?0:.016*breath+.003,0,.009*breath);
 
@@ -1202,10 +1209,11 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
         );
       }
 
-      const blinkCycle=t%5.3;
+      const blinkTime=t+.38*Math.sin(t*.46);
+      const blinkCycle=blinkTime%5.3;
       const b1=smoothstep(1.98,2.06,blinkCycle)*(1-smoothstep(2.06,2.23,blinkCycle));
       const b2=smoothstep(2.32,2.39,blinkCycle)*(1-smoothstep(2.39,2.54,blinkCycle))*.84;
-      const blink=still?0:Math.max(b1,b2);
+      const blink=still?0:Math.max(b1,Math.floor(blinkTime/5.3)%4===2?b2:0);
 
       const visemes=behaviorEngine.computeVisemes(t,still,state,liveFormants,hasExternalLevel);
       smoothJaw=still?0:finiteClamp(smoothJaw+(visemes.jaw-smoothJaw)*.32,0,1,0);
@@ -1217,7 +1225,8 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       const targetPupil=0.30+(isAnalyzing?0.065:0)+(state.listening?0.045:0)+0.03*energy+0.02*Math.sin(t*0.7);
       pupilSize=still?0.32:pupilSize+(targetPupil-pupilSize)*0.12;
 
-      const smile=still?.09:.09+.045*(1+Math.sin(t*.72))+.04*energy-(isAnalyzing?.03:0);
+      const attention=still?0:state.listening?1:0;
+      const smile=still?.04:.04+.045*attention+.035*energy-(isAnalyzing?.025:0);
       const microSaccadeX=still?0:(isVerifying?verifyScanX:(.032*Math.sin(t*2.05)+.018*Math.cos(t*4.9)));
       const microSaccadeY=still?0:.022*Math.cos(t*1.75)-(isVerifying?.03:0);
       gazeX=still?0:gazeX+((yaw*.44+microSaccadeX)-gazeX)*.24;
@@ -1233,9 +1242,9 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       assign('viseme_O',smoothO);
       assign('viseme_E',smoothE);
       assign('viseme_U',smoothU);
-      assign('mouthSmileLeft',smile);assign('mouthSmileRight',smile);
+      assign('mouthSmileLeft',smile+.012*attention);assign('mouthSmileRight',smile);
       assign('browInnerUp',still?0:.05+.15*energy*(.5+.5*Math.sin(t*1.25))+smoothJaw*.15+(isDecision?.14:0));
-      assign('browOuterUpLeft',still?0:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
+      assign('browOuterUpLeft',still?0:.03+.045*attention+.08*energy*(.5+.5*Math.cos(t*1.1)));
       assign('browOuterUpRight',still?0:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
       assign('noseSneerLeft',smoothJaw*.12);assign('noseSneerRight',smoothJaw*.12);
       assign('eyeLookInLeft',Math.max(0,gazeX));assign('eyeLookOutLeft',Math.max(0,-gazeX));
