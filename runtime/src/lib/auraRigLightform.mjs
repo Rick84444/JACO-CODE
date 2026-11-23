@@ -988,7 +988,7 @@ function disposeModel(model){
 }
 
 /** GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms. */
-export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=false,trackPointer=true}={}){
+export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true}={}){
   const response=await fetch(ASSET,{signal,cache:'force-cache'});
   if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
   const bytes=await response.arrayBuffer();
