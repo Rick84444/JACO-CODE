@@ -12,7 +12,7 @@ process.env.NOVA_STATE_DIR = dir;
 // The live planner choice (from the IDE) must not steer these tests.
 process.env.JACO_PLANNER_CHOICE_FILE = path.join(dir, 'planner-choice.json');
 process.env.NOVA_BRAIN_MODE = 'direct';
-const { orderedBrainProviders, paidCallAllowed, recordModelCall, paidCallsToday, paidCallLimit, assertPlanTaskAllowed, openFilesForBrain, compactMissionForBrain, brainSystemFor, callBrain, extractJsonObject, providerParkMs } =
+const { orderedBrainProviders, paidCallAllowed, recordModelCall, paidCallsToday, paidCallLimit, assertPlanTaskAllowed, openFilesForBrain, compactMissionForBrain, brainSystemFor, callBrain, extractJsonObject, providerParkMs, providerFailureLabel } =
   await import('../../agents/hands-off-agent.mjs');
 import { providerCooldownUntil } from '../../agents/hands-off-agent.mjs';
 
@@ -40,6 +40,25 @@ test('providers that reject the key or cannot be reached are parked instead of r
   assert.equal(providerParkMs({ error: new Error('fetch failed') }), 10 * 60_000);
   assert.equal(providerParkMs({ status: 500 }), 0, 'a transient server error is not parked');
   assert.equal(providerParkMs({ error: new Error('INVALID_PLAN') }), 0, 'a bad answer is not a dead provider');
+});
+
+test('a server on this computer is parked for seconds, not minutes, after a connection error', () => {
+  const refused = new Error('connect ECONNREFUSED 127.0.0.1:8081');
+  assert.equal(providerParkMs({ error: refused, url: 'http://127.0.0.1:8081/v1/chat/completions' }), 15_000);
+  assert.equal(providerParkMs({ error: new Error('fetch failed'), url: 'http://localhost:11434/v1' }), 15_000);
+  assert.equal(providerParkMs({ error: refused, url: 'https://api.example.test/v1' }), 10 * 60_000, 'a remote endpoint keeps the long park');
+  assert.equal(providerParkMs({ error: refused }), 10 * 60_000, 'no url: unchanged');
+  assert.equal(providerParkMs({ status: 401, url: 'http://127.0.0.1:8081/v1' }), 60 * 60_000, 'a rejected key is still long');
+  assert.equal(providerParkMs({ error: new Error('INVALID_PLAN'), url: 'http://127.0.0.1:8081/v1' }), 0);
+});
+
+test('a local server that did not answer makes the mission wait, a remote one keeps its error text', () => {
+  const down = new Error('fetch failed');
+  assert.equal(providerFailureLabel(down, 'http://127.0.0.1:8081/v1/chat/completions'), 'COOLDOWN');
+  assert.equal(providerFailureLabel(new Error('The operation was aborted due to timeout'), 'http://localhost:11434/v1'), 'COOLDOWN');
+  assert.equal(providerFailureLabel(down, 'https://api.example.test/v1'), 'fetch failed');
+  assert.equal(providerFailureLabel(new Error('INVALID_PLAN'), 'http://127.0.0.1:8081/v1'), 'INVALID_PLAN', 'a bad answer is not a pause');
+  assert.match('llamacpp:' + providerFailureLabel(down, 'http://127.0.0.1:8081/v1'), /:(429|COOLDOWN)\b/, 'the label is one the mission treats as temporary');
 });
 
 test('the planner prompt drops instructions for tasks the mission cannot use', () => {
