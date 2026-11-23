@@ -4466,6 +4466,44 @@ const notifyPhone = async (action) => {
       res.json({ success: true, mode: target.mode, path: target.path });
     } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 120) }); }
   });
+  // Persistent operator mandate editor. This is a view of the existing model-relay
+  // store, not a second policy engine. Changes require the operator mutation
+  // credential, while ordinary model/tool credentials cannot rewrite authority.
+  const standingMandateId = 'operator-level5-default';
+  app.get('/api/aura/standing-mandate', requireLocalUi, (_req, res) => {
+    const mandate = modelRelay.mandates.get(standingMandateId);
+    if (!mandate) return res.status(404).json({ success: false, error: 'STANDING_MANDATE_NOT_CONFIGURED' });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ success: true, mandate, active: modelRelay.mandates.isActive(standingMandateId),
+      mutationAuthRequired: organizationMutationAuthRequired() });
+  });
+  app.patch('/api/aura/standing-mandate', requireLocalUi, requireOrganizationMutationAuth, (req, res) => {
+    try {
+      const mandate = modelRelay.mandates.updateOperator(standingMandateId, req.body?.patch, req.body?.expectedRevision);
+      res.json({ success: true, mandate, active: modelRelay.mandates.isActive(standingMandateId) });
+    } catch (error: any) {
+      const message = String(error?.message || error);
+      res.status(message === 'MANDATE_REVISION_CONFLICT' ? 409 : 400).json({ success: false, error: message });
+    }
+  });
+  app.post('/api/aura/standing-mandate/:decision', requireLocalUi, requireOrganizationMutationAuth, (req, res) => {
+    try {
+      const decision = req.params.decision;
+      if (!['sign', 'revoke'].includes(decision)) return res.status(400).json({ success: false, error: 'MANDATE_DECISION_INVALID' });
+      const current = modelRelay.mandates.get(standingMandateId);
+      if (!current) return res.status(404).json({ success: false, error: 'STANDING_MANDATE_NOT_CONFIGURED' });
+      if (current.revision !== req.body?.expectedRevision) return res.status(409).json({ success: false, error: 'MANDATE_REVISION_CONFLICT' });
+      const mandate = decision === 'sign' ? modelRelay.mandates.sign(standingMandateId) : modelRelay.mandates.revoke(standingMandateId);
+      // The relay evaluates the current authority before each new effect, and
+      // generates short-lived grants for standing mandates just in time.
+      for (const surface of ['BROWSER', 'DESKTOP', 'ANDROID'] as const) {
+        const lease = actuatorLeases.get(surface);
+        if (decision === 'revoke' && lease) actuatorLeases.release(surface, lease.holder);
+      }
+      res.json({ success: true, mandate, active: modelRelay.mandates.isActive(standingMandateId) });
+    } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error) }); }
+  });
+
   // Autonomy clock (GUI): a time-boxed, operator-signed mandate. Financial actions stay on REVIEW in code.
   const CLOCK_NAME = 'Autonomi-klocka';
   const clockMandates = () => modelRelay.mandates.list().filter((m: any) => [CLOCK_NAME, COMMERCIAL_CLOCK].includes(m.name) && modelRelay.mandates.isActive(m.id));
