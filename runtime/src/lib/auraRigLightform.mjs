@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {createOpticalHairRig} from './auraOpticalHair.mjs';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 
 // JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
@@ -118,7 +119,7 @@ void main(){
   vColor=mix(vColor,decisionGold,uDecisionMode*rim*.55);
   vColor=mix(vColor,pureDiamond,rim*.65);
   if(aKind<.5){strength*=.55;}
-  if(aKind>1.5&&aKind<2.5){vColor=mix(deepBiolum,pureDiamond,.45+aSeed*.50);strength*=.30;}
+  if(aKind>1.5&&aKind<2.5){strength=0.0;}
   if(aKind>.5&&aKind<1.5){vColor=mix(deepBiolum,pureDiamond,.55+aSeed*.45);strength*=1.15;}
   if(aKind>2.5){strength=0.0;} // The eyes, brows and lashes use their own surfaces.
   vAlpha=clamp(strength*pulse*fade*(1.08+.38*uEnergy),0.0,.96);
@@ -734,152 +735,8 @@ function createLightBody(scene,model,bones,groups,isMobile){
 
   const random=seeded(907),STRANDS=isMobile?36:70,STEPS=isMobile?28:36;
   const linePos=[],lineT=[],lineSeed=[],sparkPos=[],sparkT=[],sparkSeed=[],sparkTw=[];
-  const scalp=(th,ph,r)=>new THREE.Vector3(C.x+a*r*Math.sin(th)*Math.sin(ph),C.y+b*r*Math.cos(th),C.z+c*r*Math.sin(th)*Math.cos(ph));
-  for(let k=0;k<STRANDS;k++){
-    const side=k%2?1:-1,layer=k%3;
-    const phi0=side*(1.35+random()*1.75),seed=random();
-    const thetaEnd=1.45+random()*.55,r=1.025+layer*.018+random()*.045,ts=.32;
-    const flare=.045+layer*.025+random()*.11,drop=.10+layer*.03+random()*.12,waveA=.008+random()*.019,waveF=3.5+random()*5.5;
-    let prev=null;
-    for(let i=0;i<STEPS;i++){
-      const t=i/(STEPS-1);let p;
-      if(t<=ts){const u=t/ts;p=scalp(u*thetaEnd,phi0+side*.39*Math.sin(u*Math.PI/2),r);}
-      else{
-        const s=(t-ts)/(1-ts),ph=phi0+side*.39;
-        const out=new THREE.Vector3(Math.sin(ph),0,Math.cos(ph)*.52).normalize(),across=new THREE.Vector3(Math.cos(ph),0,-Math.sin(ph));
-        p=scalp(thetaEnd,ph,r).addScaledVector(out,flare*Math.pow(s,.84)).add(new THREE.Vector3(0,-drop*s,0)).addScaledVector(across,Math.sin(s*waveF+seed*6.283)*waveA*s);
-      }
-      p.sub(restPos);
-      if(prev){linePos.push(prev.x,prev.y,prev.z,p.x,p.y,p.z);lineT.push((i-1)/(STEPS-1),t);lineSeed.push(seed,seed);}
-      if(random()<.075){sparkPos.push(p.x,p.y,p.z);sparkT.push(t);sparkSeed.push(seed);sparkTw.push(random());}
-      prev=p;
-    }
-  }
   const attr=(geo,name,data,size)=>geo.setAttribute(name,new THREE.Float32BufferAttribute(data,size));
-  const lineGeo=new THREE.BufferGeometry();attr(lineGeo,'position',linePos,3);attr(lineGeo,'aT',lineT,1);attr(lineGeo,'aSeed',lineSeed,1);
-  const lineMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uEnergy:energy},transparent:true,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,
-    vertexShader:String.raw`attribute float aT;attribute float aSeed;uniform float uTime;uniform float uEnergy;varying float vA;varying vec3 vC;
-void main(){${SWAY}
-  float travel=sin(uTime*2.2+aSeed*19.0-aT*9.0);
-  vA=(1.0-aT*.78)*(.66+.34*travel)*(.88+.40*uEnergy);
-  vC=mix(vec3(.85,.95,1.0),vec3(.30,.60,1.0),pow(max(0.0,aT),.85));
-  gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
-    fragmentShader:String.raw`varying float vA;varying vec3 vC;void main(){gl_FragColor=vec4(vC,vA*.22);}`});
-
-  const sparkGeo=new THREE.BufferGeometry();attr(sparkGeo,'position',sparkPos,3);attr(sparkGeo,'aT',sparkT,1);attr(sparkGeo,'aSeed',sparkSeed,1);attr(sparkGeo,'aTw',sparkTw,1);
-  const sparkMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uPixelRatio:pixelRatio},transparent:true,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,
-    vertexShader:String.raw`attribute float aT;attribute float aSeed;attribute float aTw;uniform float uTime;uniform float uPixelRatio;varying float vA;
-void main(){${SWAY}
-  vA=.32+.68*pow(max(0.0,.5+.5*sin(uTime*2.5+aTw*40.0)),3.2);
-  gl_PointSize=(1.4+2.9*aTw)*uPixelRatio;
-  gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
-    fragmentShader:String.raw`varying float vA;void main(){float d=length(gl_PointCoord-vec2(.5));gl_FragColor=vec4(.94,.99,1.0,(1.0-smoothstep(0.0,.5,d))*vA*.95);}`});
-  const lines=new THREE.LineSegments(lineGeo,lineMat),sparks=new THREE.Points(sparkGeo,sparkMat);
-  lines.frustumCulled=false;sparks.frustumCulled=false;
-
-  // Long, thick, wavy hair: textured ribbons that follow the scalp, frame the face and fall in waves past the shoulders.
-  const LOCKS=isMobile?28:48,LSTEPS=isMobile?56:84,lockRand=seeded(1709);
-  const lp=[],lt=[],lu=[],ls=[],lidx=[];let vbase=0;
-  const tan=new THREE.Vector3(),outV=new THREE.Vector3(),acrossV=new THREE.Vector3();
-  for(let k=0;k<LOCKS;k++){
-    const side=k%2?1:-1;
-    const ph0=side*(0.62+lockRand()*2.45);
-    const seed=lockRand(),thEnd=1.35+lockRand()*.35,r=1.05+lockRand()*.06;
-    const len=.03+lockRand()*.06,waveA=.010+lockRand()*.012,waveF=5+lockRand()*4,flare=.008+lockRand()*.016;
-    const w0=.010+lockRand()*.008;
-    for(let i=0;i<LSTEPS;i++){
-      const t=i/(LSTEPS-1),ts=.30;let p,ph;
-      if(t<=ts){const u=t/ts;ph=ph0*(.35+.65*u);p=scalp(.12+u*(thEnd-.12),ph,r);}
-      else{
-        const q=(t-ts)/(1-ts);ph=ph0;
-        outV.set(Math.sin(ph),0,Math.cos(ph)*.6).normalize();acrossV.set(Math.cos(ph),0,-Math.sin(ph));
-        const curl=Math.min(1,q*2.2);
-        p=scalp(thEnd,ph,r).addScaledVector(outV,flare*q+waveA*Math.sin(q*waveF+seed*6.283)*curl).add(new THREE.Vector3(0,-len*q,0)).addScaledVector(acrossV,waveA*Math.cos(q*waveF+seed*6.283)*curl);
-      }
-      tan.set(Math.cos(ph),0,-Math.sin(ph));
-      const w=w0*(1-.55*t);
-      p.sub(restPos);
-      lp.push(p.x-tan.x*w,p.y,p.z-tan.z*w,p.x+tan.x*w,p.y,p.z+tan.z*w);
-      lt.push(t,t);lu.push(0,1);ls.push(seed,seed);
-      if(i>0){const a0=vbase+(i-1)*2;lidx.push(a0,a0+1,a0+2,a0+1,a0+3,a0+2);}
-    }
-    vbase+=LSTEPS*2;
-  }
-  // Second layer of hair (the 'wig'): locks that cover the parting and hairline at the forehead, and locks that
-  // fall from the temples down over the front of the shoulders and chest.
-  const wigRand=seeded(2711);
-  const pushLock=(points,w0)=>{
-    for(let i=0;i<points.length;i++){
-      const {p,ph,t}=points[i];
-      tan.set(Math.cos(ph),0,-Math.sin(ph));
-      const w=w0*(1-.55*t);
-      lp.push(p.x-tan.x*w,p.y,p.z-tan.z*w,p.x+tan.x*w,p.y,p.z+tan.z*w);
-      lt.push(t,t);lu.push(0,1);ls.push(points.seed,points.seed);
-      if(i>0){const a0=vbase+(i-1)*2;lidx.push(a0,a0+1,a0+2,a0+1,a0+3,a0+2);}
-    }
-    vbase+=points.length*2;
-  };
-  const HAIRLINE=isMobile?8:14,hlRand=seeded(3301);
-  for(let k=0;k<HAIRLINE;k++){
-    const side=k%2?1:-1,seed=hlRand(),r=1.018+hlRand()*.022,w0=.003+hlRand()*.004;
-    const th0=.58+hlRand()*.18,th1=.90+hlRand()*.25,ph0=side*(.02+hlRand()*.30),ph1=side*(2.2+hlRand()*.5);
-    const pts=[];pts.seed=seed;
-    for(let i=0;i<LSTEPS;i++){const t=i/(LSTEPS-1),e=t*t*(3-2*t),ph=ph0+(ph1-ph0)*e;const p=scalp(th0+(th1-th0)*e,ph,r);p.sub(restPos);pts.push({p,ph,t:t*.6});}
-    pushLock(pts,w0);
-  }
-  const COVER=isMobile?8:16,FRONT=isMobile?4:8;
-  for(let k=0;k<COVER+FRONT;k++){
-    const side=k%2?1:-1,front=k>=COVER,seed=wigRand();
-    const r=1.025+wigRand()*.025,w0=.004+wigRand()*.004;
-    const ph0=front?side*(1.02+wigRand()*0.40):side*(0.04+wigRand()*0.34);
-    const phEnd=front?ph0:side*(1.9+wigRand()*0.6);
-    const thEnd=front?1.40+wigRand()*.25:0.80+wigRand()*.30;
-    const len=front?.34+wigRand()*.16:.02+wigRand()*.04;
-    const waveA=.016+wigRand()*.014,waveF=5+wigRand()*4,ts=front?.30:.48;
-    const pts=[];pts.seed=seed;
-    for(let i=0;i<LSTEPS;i++){
-      const t=i/(LSTEPS-1);let p,ph;
-      if(t<=ts){
-        const u=t/ts,e=u*u*(3-2*u);
-        ph=ph0+(phEnd-ph0)*e;
-        p=scalp(.05+u*(thEnd-.05),ph,r);
-      }else{
-        const q=(t-ts)/(1-ts),curl=Math.min(1,q*2.2);ph=phEnd;
-        // Front locks are pushed forward so they lie over the shoulders and chest.
-        if(front)outV.set(Math.sin(ph)*.45,0,Math.cos(ph)+.65).normalize();
-        else outV.set(Math.sin(ph),0,Math.cos(ph)*.6).normalize();
-        acrossV.set(Math.cos(ph),0,-Math.sin(ph));
-        const reach=front?.12:.05;const ramp=front?Math.min(1,Math.max(0,(q-.30)/.40)):Math.min(1,q*1.6);
-        p=scalp(thEnd,ph,r).addScaledVector(outV,reach*ramp+waveA*Math.sin(q*waveF+seed*6.283)*curl).add(new THREE.Vector3(0,-len*q,0)).addScaledVector(acrossV,waveA*Math.cos(q*waveF+seed*6.283)*curl);
-      }
-      p.sub(restPos);
-      pts.push({p,ph,t});
-    }
-    pushLock(pts,w0);
-  }
-  const lockGeo=new THREE.BufferGeometry();attr(lockGeo,'position',lp,3);attr(lockGeo,'aT',lt,1);attr(lockGeo,'aU',lu,1);attr(lockGeo,'aSeed',ls,1);lockGeo.setIndex(lidx);
-  const lockMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uEnergy:energy},transparent:true,depthWrite:false,depthTest:true,side:THREE.DoubleSide,blending:THREE.NormalBlending,
-    vertexShader:String.raw`attribute float aT;attribute float aU;attribute float aSeed;uniform float uTime;varying float vT;varying float vU;varying float vS;
-void main(){${SWAY}
-  vT=aT;vU=aU;vS=aSeed;
-  gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
-    fragmentShader:String.raw`varying float vT;varying float vU;varying float vS;uniform float uEnergy;
-void main(){
-  float edge=smoothstep(0.0,0.2,vU)*(1.0-smoothstep(0.8,1.0,vU));
-  float strands=.55+.45*sin(vU*46.0+vS*31.0)*sin(vU*17.0+vT*9.0+vS*7.0);
-  float tip=1.0-smoothstep(0.82,1.0,vT);
-  float round=sin(vU*3.14159);
-  float tone=.70+.45*fract(vS*7.31);
-  float highlight=pow(max(0.0,sin(vT*18.0+vS*12.0)),6.0)*round;
-  vec3 shadow=vec3(.04,.18,.62),light=vec3(.58,.84,1.0);
-  vec3 col=mix(shadow,light,clamp(round*.65+strands*.25+(1.0-vT)*.10,0.0,1.0))*tone+vec3(.85,.96,1.0)*highlight*.45+vec3(.30,.62,1.0)*(.10+.08*round);
-  float a=edge*tip*(.24+.18*strands);
-  col+=vec3(.70,.90,1.0)*pow(1.0-round,3.0)*.8;
-  if(a<.02)discard;
-  gl_FragColor=vec4(col*(.85+.25*uEnergy),a);
-}`});
-  const hairLocks=new THREE.Mesh(lockGeo,lockMat);hairLocks.frustumCulled=false;hairLocks.renderOrder=3;
-  owned.push(lockGeo,lockMat);
+  const opticalHair=createOpticalHairRig({strandCount:isMobile?180:320,headRadius:b,headAxes:[a,b,c],crownCenter:C.clone().sub(restPos).toArray()});
 
   const auraPlaneGeo=new THREE.PlaneGeometry(1.7,1.7);
   const auraPlaneMat=new THREE.ShaderMaterial({
@@ -914,9 +771,7 @@ void main(){
   };
   const hair=new THREE.Group();
   const halo=sprite(.95,.30,0x5aa0ff,true);halo.position.copy(C).sub(restPos).add(new THREE.Vector3(0,-.03,-.09));
-  const crown=sprite(.20,.32,0xcfe6ff);crown.position.set(C.x,top+.055,C.z).sub(restPos);
-  hair.add(halo,hairLocks,lines,sparks,crown);scene.add(hair);
-
+  hair.add(halo,opticalHair.mesh);scene.add(hair);
   // A soft veil of light over neck, shoulders and chest binds head, hair and body into one glowing form.
   const veilChest=sprite(.82,.30,0x7cc4ff),veilNeck=sprite(.36,.14,0xb8dcff),chestCore=sprite(.26,.40,0xeaf6ff);
   veilChest.position.set(0,1.32,.18);veilNeck.position.set(0,1.46,.14);chestCore.position.set(0,1.34,.20);
@@ -951,29 +806,24 @@ void main(){
 }`,
     fragmentShader:String.raw`varying float vA;void main(){float d=length(gl_PointCoord-vec2(.5));gl_FragColor=vec4(.80,.93,1.0,(1.0-smoothstep(0.0,.5,d))*vA);}`});
   const starField=new THREE.Points(starGeo,starMat);starField.frustumCulled=false;scene.add(starField);
-  owned.push(lineGeo,lineMat,sparkGeo,sparkMat,starGeo,starMat,auraPlaneGeo,auraPlaneMat,texture);
+  owned.push(starGeo,starMat,auraPlaneGeo,auraPlaneMat,texture);
 
   const hp=new THREE.Vector3(),hq=new THREE.Quaternion();
-  const hairQuat=new THREE.Quaternion();
-  let hairInitialized=false;
-
   return {
-    update(t,energyValue,blink,speakingLevel,qualityTier,decisionSignal,pupilTarget){
+    update(t,energyValue,blink,speakingLevel,qualityTier,decisionSignal,pupilTarget,dt,yaw,pitch,roll){
       energy.value=energyValue;time.value=t;speaking.value=speakingLevel;
       detailLevel.value=qualityTier;
       cognitiveTint.value=decisionSignal;
       pupil.value=pupilTarget;
 
       head.getWorldPosition(hp);head.getWorldQuaternion(hq);
-      if(!hairInitialized){hairQuat.copy(hq);hairInitialized=true;}
-      else{hairQuat.slerp(hq,0.14);}
-      hair.position.copy(hp);hair.quaternion.copy(hairQuat).multiply(restInv);
-      crown.material.opacity=0;
+      hair.position.copy(hp);hair.quaternion.copy(hq).multiply(restInv);
+      opticalHair.update(t,dt,{yaw,pitch,roll,speaking:speakingLevel});
       veilChest.material.opacity=.28+.06*Math.sin(t*.9)+.08*energyValue;chestCore.material.opacity=.36+.10*Math.sin(t*1.4)+.10*energyValue;veilNeck.material.opacity=.09+.03*Math.sin(t*1.3+1.0)+.05*energyValue;orbitMat.opacity=.70+.15*Math.sin(t*1.2)+.10*energyValue;
       halo.material.opacity=.28+.15*energyValue+.04*Math.sin(t*1.2);
 
     },
-    dispose(){scene.remove(hair,starField,auraBackdrop,veilChest,veilNeck,chestCore,orbit);owned.forEach(o=>o.dispose());}
+    dispose(){scene.remove(hair,starField,auraBackdrop,veilChest,veilNeck,chestCore,orbit);opticalHair.dispose();owned.forEach(o=>o.dispose());}
   };
 }
 
@@ -1287,7 +1137,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       }
       geometry.attributes.position.needsUpdate=true;geometry.attributes.aNormal.needsUpdate=true;
       material.uniforms.uTime.value=t;material.uniforms.uEnergy.value=energy;
-      lightBody.update(t,energy,blink,finiteClamp(smoothJaw*2.0,0,1,0),qualityTier,decisionBlend,pupilSize);
+      lightBody.update(t,energy,blink,finiteClamp(smoothJaw*2.0,0,1,0),qualityTier,decisionBlend,pupilSize,dt,yaw,pitch,roll);
 
       let signature=0;for(let j=0;j<Math.min(positions.length,6000);j+=31)signature+=positions[j]*(j+1);
       canvas.dataset.renderedPoints=String(total);canvas.dataset.renderer='rigged-particle-field';
