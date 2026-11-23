@@ -5,7 +5,7 @@ import type { DesktopHandsOffClient, DesktopAction } from '../desktop/desktopHan
 import type { HandsOffClient, HandsOffAction } from '../android/handsOffClient.js';
 import type { NovaTractionEngine } from '../nova/traction.js';
 import { actuatorLeases, type ActuatorSurface } from '../handsOff/actuatorLease.js';
-import { AutonomyMandateStore, type ConsequenceClass } from '../autonomy/autonomyMandate.js';
+import { AutonomyMandateStore, actuatorGrantExpiry, type ConsequenceClass } from '../autonomy/autonomyMandate.js';
 
 const RANK: Record<ConsequenceClass, number> = {
   READ: 0, LOCAL_MUTATION: 1, EXTERNAL_MUTATION: 2, PUBLISH: 3,
@@ -55,6 +55,19 @@ export function createModelRelayRouter(input: {
   });
 
   router.get('/mandates', input.requireAuth, (_req, res) => res.json({ success: true, mandates: mandates.list() }));
+  // An operator's standing mandate is edited in place, not regenerated per mission.
+  // Revision checking rejects stale GUI edits, while signatures and tool grants
+  // remain separate operator-only actions. Only explicitly allowed fields apply.
+  router.patch('/mandates/:id', input.requireAuth, (req, res) => {
+    try {
+      const revision = req.body?.expectedRevision;
+      const mandate = mandates.updateOperator(req.params.id, req.body?.patch, revision);
+      input.onEvent?.({ actor: 'AutonomyContract', type: 'mandate.operator.updated', message: `${mandate.id} revision ${mandate.revision} changed by operator`, verified: true });
+      res.json({ success: true, mandate });
+    } catch (error) {
+      fail(res, error instanceof Error && error.message === 'MANDATE_REVISION_CONFLICT' ? 409 : 400, error);
+    }
+  });
   router.post('/mandates', input.requireAuth, (req, res) => {
     try { res.status(201).json({ success: true, mandate: mandates.create(req.body || {}) }); }
     catch (error) { fail(res, 400, error); }
@@ -77,7 +90,7 @@ export function createModelRelayRouter(input: {
           allow_select: true,
           allow_scroll: true,
           contract_id: mandate.id,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       }
       if (mandate.allowedDesktopProcesses.length) {
@@ -89,7 +102,7 @@ export function createModelRelayRouter(input: {
           allow_toggle: true,
           allow_select: true,
           allow_scroll: true,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       }
       if (mandate.allowedAndroidPackages.length) {
@@ -99,10 +112,10 @@ export function createModelRelayRouter(input: {
           allow_typing: true,
           allow_gestures: true,
           allow_navigation: true,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       }
-      input.onEvent?.({ actor: 'AutonomyContract', type: 'mandate.signed', message: `${mandate.name} signed until ${mandate.expiresAt}; eligible Hands-Off grants propagated`, verified: true, receipt: grants });
+      input.onEvent?.({ actor: 'AutonomyContract', type: 'mandate.signed', message: `${mandate.name} signed ${mandate.expiresAt ? 'until '+mandate.expiresAt : 'until operator revocation'}; eligible Hands-Off grants propagated`, verified: true, receipt: grants });
       res.json({ success: true, mandate, grants });
     } catch (error) {
       // Fail closed: a mandate that could not propagate its requested grants must not remain active.
@@ -178,7 +191,7 @@ export function createModelRelayRouter(input: {
           allow_select: true,
           allow_scroll: true,
           contract_id: mandate.id,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       } else if (surface === 'DESKTOP' && mandate.allowedDesktopProcesses.length) {
         input.desktop.configureGrant({
@@ -189,7 +202,7 @@ export function createModelRelayRouter(input: {
           allow_toggle: true,
           allow_select: true,
           allow_scroll: true,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       } else if (surface === 'ANDROID' && mandate.allowedAndroidPackages.length) {
         await input.android.configureGrant({
@@ -198,7 +211,7 @@ export function createModelRelayRouter(input: {
           allow_typing: true,
           allow_gestures: true,
           allow_navigation: true,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       }
     } catch (error) {
