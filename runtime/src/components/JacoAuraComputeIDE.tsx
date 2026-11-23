@@ -1895,7 +1895,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                     <input value={terminalCommand} onChange={event => setTerminalCommand(event.target.value)} placeholder="Run local shell / npm / node / git command" className="flex-1 bg-transparent outline-none text-[11px] font-mono text-neutral-200 placeholder:text-neutral-500" />
                     <button className="text-[10px] px-2 py-1 border border-[#696a6c] rounded hover:bg-[#464749]">Run</button>
                     <button type="button" data-testid="terminal-receipts-toggle" aria-pressed={terminalMode==='xterm'} onClick={()=>setTerminalMode(terminalMode==='xterm'?'raw':'xterm')} className="text-[10px] px-2 py-1 border border-[#696a6c] rounded">Xterm</button>
-                    
+
                   </form>
                 </>
               )}
