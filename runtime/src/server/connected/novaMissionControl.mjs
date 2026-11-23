@@ -10,6 +10,7 @@ import { novaTiming } from '../../../../agents/lib/nova-timing.mjs';
 import { checkCitations } from '../../../../agents/lib/evidence.mjs';
 import { stripEmoji } from '../../../../agents/lib/writing-policy.mjs';
 import { outgoingSpendCheck } from './spendGuard.mjs';
+import { planMissionTriage, findSimilarMissions } from './missionTriage.mjs';
 import { operatorApprovalCheck, categoryOf } from '../../../../agents/lib/operator-action-guard.mjs';
 import { standingToolAuthority } from '../../../../agents/lib/standing-tool-authority.mjs';
 import { findDuplicate } from './missionDedupe.mjs';
@@ -969,6 +970,30 @@ export class NovaMissionControl {
     const lifted = this.bus.lastMissionEvent(id, 'NOVA_OPERATOR_PAUSE_END');
     if (lifted && lifted.seq > pause.seq) return null;
     return { at: pause.ts, note: String(pause.payload?.note || ''), revision: pause.seq };
+  }
+
+  // Which missions keep running, wait or end (missionTriage.mjs). Dry run unless apply: pausing is reversible, and only a
+  // retry of the same task that has no verified progress is cancelled. Every action is recorded on the mission with its reason.
+  triage({ apply = false, now = Date.now() } = {}) {
+    const ids = this.db.prepare("SELECT s.mission_id AS id FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='ACTIVE'").all();
+    const decisions = planMissionTriage(ids.map(row => this.get(row.id)), { now });
+    if (apply) for (const decision of decisions) {
+      try {
+        if (decision.action === 'cancel') this.requestCancel(decision.id, `Aura triage: ${decision.reason}`);
+        else this.pause(decision.id, `Aura triage: ${decision.reason}`);
+        decision.applied = true;
+      } catch (error) { decision.applied = false; decision.error = String(error?.message || error); }
+    }
+    return decisions;
+  }
+
+  // The same task already running, or finished in the last day: asked before a new goal is started.
+  findSimilar(goal, now = Date.now()) {
+    // Only Nova missions (those with a session) can be read with get(); the bus also holds other missions.
+    const ids = this.db.prepare("SELECT m.id AS id FROM missions m JOIN nova_sessions s ON s.mission_id=m.id WHERE m.status IN ('ACTIVE','DONE') ORDER BY m.created_at DESC LIMIT 200").all();
+    const missions = [];
+    for (const row of ids) { try { missions.push(this.get(row.id)); } catch { /* a mission that cannot be read is not a duplicate */ } }
+    return findSimilarMissions(goal, missions, { now });
   }
 
   pause(id, note = 'The operator pauses the mission from the Gameboard.') {
