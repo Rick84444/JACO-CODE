@@ -524,7 +524,7 @@ function createLightBody(scene,model,bones,groups,isMobile){
 
   float auraFacing=clamp(dot(perturbedN,auraV),0.0,1.0);
 
-  vec3 keyDir=normalize(vec3(0.28,0.42,0.86));
+  vec3 keyDir=normalize(vec3(-0.74,0.56,0.54));
   vec3 fillDir=normalize(vec3(-0.62,0.10,0.78));
   vec3 topDir=normalize(vec3(0.0,0.88,0.47));
   vec3 underDir=normalize(vec3(0.0,-0.55,0.83));
@@ -541,8 +541,8 @@ function createLightBody(scene,model,bones,groups,isMobile){
 
   vec3 halfKey=normalize(keyDir+auraV);
   float NdotH=max(0.0,dot(perturbedN,halfKey));
-  float broadSpec=pow(NdotH,16.0)*0.34*(1.0+cheekZone*0.45);
-  float sharpSpec=pow(NdotH,64.0)*(0.24+lipZone*(0.55+0.25*uSpeaking))*(0.85+0.25*microRelief);
+  float broadSpec=pow(NdotH,12.0)*0.14*(1.0+cheekZone*0.30);
+  float sharpSpec=pow(NdotH,64.0)*(0.045+lipZone*0.22)*(0.85+0.25*microRelief);
 
   float oneMinusFacing=max(0.0,1.0-auraFacing);
   float midRim=pow(oneMinusFacing,2.05);
@@ -577,7 +577,7 @@ function createLightBody(scene,model,bones,groups,isMobile){
   baseSkin=mix(baseSkin,vec3(.66,.72,.94),lidZone*.22)+vec3(.10,.11,.14)*lidZone*sharpSpec*2.0;
   vec3 rimGlow=activeCyan*midRim*(0.62+0.26*uEnergy)+diamondWhite*outerRim*(0.92+0.38*uEnergy);
   float cheekPlane=1.0+.12*cheekZone*(2.0*keyWrap-1.0);
-  vec3 detailed=(baseSkin*cheekPlane*(0.56+0.12*uEnergy)*voicePulse+rimGlow*1.52)*scanline;
+  vec3 detailed=(baseSkin*cheekPlane*(0.56+0.12*uEnergy)*voicePulse+rimGlow*.80)*scanline;
   // No anatomy below the collarbones: uniform white light that softly dissolves.
   outgoingLight=detailed;
   diffuseColor.a=auraFade;
@@ -623,8 +623,8 @@ function createLightBody(scene,model,bones,groups,isMobile){
   float flow=vHairW.x*820.0+sin(vHairW.z*60.0+vHairW.y*40.0)*3.0;
   float strand=.55+.45*sin(flow)*sin(flow*.37+1.3);
   float sheen=pow(max(0.0,dot(n,normalize(vec3(0.15,0.75,0.65)))),6.0);
-  vec3 base=mix(vec3(.12,.32,.70),vec3(.78,.92,1.0),strand*.7+sheen*.5);
-  outgoingLight=base*(.78+.28*strand)+vec3(.80,.94,1.0)*(rim*.60+sheen*.40)*(1.0+.25*uEnergy)+vec3(.30,.62,1.0)*.10;
+  vec3 base=mix(vec3(.045,.10,.22),vec3(.47,.65,.82),strand*.56+sheen*.32);
+  outgoingLight=base*(.72+.26*strand)+vec3(.70,.86,1.0)*(rim*.34+sheen*.16)*(1.0+.15*uEnergy);
   diffuseColor.a=.94;
   #include <opaque_fragment>`);
   };
@@ -1046,8 +1046,9 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     const scene=new THREE.Scene(),cloud=new THREE.Points(geometry,material);
     cloud.frustumCulled=false;scene.add(cloud);
 
-    const camera=new THREE.PerspectiveCamera(31,1,.03,20);
-    camera.position.set(0,1.570,1.05);camera.lookAt(0,1.540,.03);
+    const camera=new THREE.PerspectiveCamera(21,1,.03,20);
+    const portraitCenterY=1.62;
+    camera.position.set(0,portraitCenterY+.03,1.05);camera.lookAt(0,portraitCenterY,.03);
     renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power',preserveDrawingBuffer:true});
     renderer.setClearColor(0x000000,0);
 
@@ -1180,8 +1181,8 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
         camY+=(pitchSpring.val*0.025-camY)*0.08;
       }
       const yaw=yawSpring.val,pitch=pitchSpring.val,roll=rollSpring.val;
-      camera.position.set(camX,1.570+camY,1.05);
-      camera.lookAt(0,1.540,.03);
+      camera.position.set(camX,portraitCenterY+.03+camY,1.05);
+      camera.lookAt(0,portraitCenterY,.03);
 
       const breathPhase=t*1.15;
       const breath=still?0:Math.sin(breathPhase)+.24*Math.sin(breathPhase*2.0-.55);
