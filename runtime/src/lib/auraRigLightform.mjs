@@ -883,7 +883,7 @@ void main(){
   float ring2=exp(-sq((r-0.68)*12.0))*(0.5+0.5*cos(a*10.0+uTime*0.8));
   float coreGlow=exp(-r*r*7.5);
   float radialFade=1.0-smoothstep(0.65,1.0,r);
-  float alpha=(coreGlow*0.42+exp(-r*r*2.2)*0.14)*(0.85+0.30*uEnergy)*radialFade;
+  float alpha=(coreGlow*0.15+exp(-r*r*2.2)*0.045)*(0.85+0.30*uEnergy)*radialFade;
   vec3 baseCol=mix(vec3(.08,.30,.92),vec3(.96,.72,.30),uCognitiveTint*0.45);
   gl_FragColor=vec4(mix(baseCol,vec3(.78,.93,1.0),coreGlow),alpha);
 }`
@@ -959,7 +959,7 @@ void main(){
       hair.position.copy(hp);hair.quaternion.copy(hairQuat).multiply(restInv);
       crown.material.opacity=0;
       veilChest.material.opacity=.28+.06*Math.sin(t*.9)+.08*energyValue;chestCore.material.opacity=.36+.10*Math.sin(t*1.4)+.10*energyValue;veilNeck.material.opacity=.09+.03*Math.sin(t*1.3+1.0)+.05*energyValue;orbitMat.opacity=.70+.15*Math.sin(t*1.2)+.10*energyValue;
-      halo.material.opacity=.28+.15*energyValue+.04*Math.sin(t*1.2);
+      halo.material.opacity=.11+.055*energyValue+.015*Math.sin(t*1.2);
 
       sums[0].set(0,0,0);sums[1].set(0,0,0);counts[0]=counts[1]=0;
       const vs=eyeGroup.vertices;
