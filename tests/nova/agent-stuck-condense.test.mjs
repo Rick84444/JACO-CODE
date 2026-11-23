@@ -187,3 +187,29 @@ test('changing the argument or observation is genuine new evidence, not an ident
   }
 });
 
+
+// 2026-11-23: a 4B model wrote and read back its line, then kept observing and running git-status/git-diff instead of concluding.
+import { StuckDetector as EvidenceDetector } from '../../agents/lib/stuck-detector.mjs';
+
+test('looking again and again after a verified change is called out, with a hint to conclude', () => {
+  const d = new EvidenceDetector();
+  d.record({ name: 'desktop-windows', args: {}, ok: true, result: { w: 1 } });
+  d.record({ name: 'desktop-action', args: { a: 1 }, ok: true, result: { verified: true } });
+  for (const [name, n] of [['desktop-observe', 1], ['git-status', 2], ['git-diff', 3]]) d.record({ name, args: { n }, ok: true, result: { n } });
+  assert.equal(d.check().stuck, false, 'three looks are fine');
+  d.record({ name: 'desktop-observe', args: { n: 4 }, ok: true, result: { n: 4 } });
+  const verdict = d.check();
+  assert.equal(verdict.stuck, true);
+  assert.equal(verdict.kind, 'evidence-without-conclusion');
+  assert.match(verdict.hint, /call complete now/);
+});
+
+test('a new change, a failure or a non-looking step resets the pattern', () => {
+  const run = steps => { const d = new EvidenceDetector(); steps.forEach(([name, ok = true], i) => d.record({ name, args: { i }, ok, result: { i }, error: ok ? undefined : 'boom' })); return d.check(); };
+  const looks = [['desktop-observe'], ['git-status'], ['git-diff'], ['desktop-windows']];
+  assert.equal(run([['desktop-action'], ...looks]).kind, 'evidence-without-conclusion');
+  assert.equal(run([['desktop-action'], ...looks.slice(0, 2), ['desktop-action'], ...looks.slice(2)]).stuck, false, 'a second change restarts the count');
+  assert.equal(run([['desktop-action', false], ...looks]).stuck, false, 'a failed change is not evidence to conclude on');
+  assert.equal(run([['desktop-action'], ...looks.slice(0, 3), ['repo-write']]).stuck, false, 'another change in between');
+  assert.equal(run(looks).stuck, false, 'looking with no change at all is ordinary exploration');
+});

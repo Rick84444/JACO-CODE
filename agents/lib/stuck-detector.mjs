@@ -23,9 +23,17 @@ const stable = value => JSON.stringify(value ?? null, (_k, v) => v && typeof v =
   ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);
 const digest = value => crypto.createHash('sha1').update(typeof value === 'string' ? value : stable(value)).digest('hex').slice(0, 16);
 
+// Steps that change something, and steps that only look. After a verified change, reading again and again is not progress: a
+// 4B model that had written and read back its line went on to observe, git-status and git-diff instead of concluding
+// (2026-11-23, five missions in a row).
+const CHANGING = new Set(['desktop-action', 'desktop-invoke', 'type-text', 'key-press', 'mouse-click', 'mouse-move', 'mouse-scroll',
+  'shell', 'repo-write', 'repo-edit', 'repo-service', 'local-write', 'git-commit', 'git-push', 'browser-click', 'browser-type', 'mcp-write']);
+const LOOKING = new Set(['desktop-observe', 'desktop-windows', 'screenshot', 'git-status', 'git-diff', 'repo-read', 'repo-list',
+  'web-fetch', 'health-check', 'get-cursor', 'detect-surfaces']);
+
 export class StuckDetector {
-  constructor({ repeat = 3, errorRun = 4, pingPong = 6, recurring = 4, pollLimit = 8 } = {}) {
-    this.limits = { repeat, errorRun, pingPong, recurring, pollLimit };
+  constructor({ repeat = 3, errorRun = 4, pingPong = 6, recurring = 4, pollLimit = 8, idleReads = 4 } = {}) {
+    this.limits = { repeat, errorRun, pingPong, recurring, pollLimit, idleReads };
     this.steps = [];
     this.nudges = 0;
   }
@@ -50,7 +58,7 @@ export class StuckDetector {
   }
 
   check() {
-    const s = this.steps, { repeat, errorRun, pingPong, recurring, pollLimit } = this.limits;
+    const s = this.steps, { repeat, errorRun, pingPong, recurring, pollLimit, idleReads } = this.limits;
     const tail = n => s.slice(-n);
     // An error interleaved with successful reads can otherwise look like progress.
     // Count only failures since a successful run of that same tool; a restored
@@ -76,6 +84,15 @@ export class StuckDetector {
       const failures = recent.slice(restoredAt + 1).filter(x => !x.ok && x.missing === last.missing).length;
       if (failures >= 3) {
         return { stuck: true, kind: 'missing-command', hint: `The executable ${last.missing} was missing on ${failures} attempts even after other reads. Do not reread the same setup files or bypass the mission contract. Repair the tool environment using permitted actions, or report the exact missing prerequisite and call blocked.` };
+      }
+    }
+    // A verified change followed by only looking: the evidence is in hand, the next step is to conclude.
+    const changedAt = s.findLastIndex(x => x.ok && CHANGING.has(x.name));
+    if (changedAt >= 0) {
+      const after = s.slice(changedAt + 1);
+      if (after.length >= idleReads && after.every(x => x.ok && LOOKING.has(x.name))) {
+        return { stuck: true, kind: 'evidence-without-conclusion',
+          hint: `${s[changedAt].name} succeeded and you have looked ${after.length} times since (${[...new Set(after.map(x => x.name))].join(', ')}) without changing anything. You already have what you need: call complete now with a report that cites only what you read, or take one concrete step that changes something. Do not observe again.` };
       }
     }
     if (s.length >= repeat) {
