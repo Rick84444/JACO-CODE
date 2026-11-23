@@ -406,3 +406,72 @@ export function strategicBoardSnapshot(board) {
   });
 }
 
+
+
+// Tactical Gameboard projection for every durable mission, including Lite without
+// a graph adapter. These are planning postures, NOT fabricated mission nodes or
+// permission to invoke a tool. Shared scoring is a heuristic, never evidence.
+export function adaptiveMissionStrategy(mission = {}) {
+  const receipts = Array.isArray(mission.receipts) ? mission.receipts : [];
+  const last = receipts.at(-1);
+  const base = {
+    schema: 'jaco.adaptive-mission-strategy/v1',
+    source: 'DURABLE_MISSION_RECEIPTS',
+    status: 'RECOMMENDATION_ONLY',
+    receiptCount: receipts.length,
+    steeringRevision: Number.isSafeInteger(mission.steering?.revision) ? mission.steering.revision : 0,
+    latestOutcome: !last ? 'NONE' : last.outcomeUnknown === true ? 'UNKNOWN' :
+      last.ok === false ? 'FAILED' : last.ok === true && last.verified === true ? 'VERIFIED' : 'UNVERIFIED',
+  };
+  let hold = null;
+  if (mission.strategicStateObserved === false) hold = 'MISSION_STATE_UNOBSERVED';
+  else if (mission.hasUncertainOutcome === true || last?.outcomeUnknown === true) hold = 'RECONCILE_UNKNOWN_OUTCOME';
+  else if (mission.cancelRequested || mission.status !== 'ACTIVE') hold = 'MISSION_NOT_ACTIVE';
+  else if (mission.paused) hold = 'OPERATOR_PAUSED';
+  else if (mission.pendingOperatorAction || mission.spendApprovalPending || mission.replanRequest) hold = 'WAIT_FOR_EXISTING_GATE';
+  if (hold) return { ...base, status: 'HOLD', reason: hold, moves: [], recommendedMove: null };
+  const failed = base.latestOutcome === 'FAILED';
+  const unverified = base.latestOutcome === 'UNVERIFIED';
+  const verified = base.latestOutcome === 'VERIFIED';
+  const repeated = failed && receipts.slice(-3).filter(r => r?.ok === false && r?.type === last.type).length >= 2;
+  // Fixed heuristic priors; they are policy-independent and deliberately not
+  // labeled measured probabilities. Do not infer success from a model response.
+  const definitions = [
+    { id:'inspect', title:'Inspect current prerequisites and evidence', goalImpact: failed ? .85 : unverified ? .7 : .5,
+      informationGain: 1, verificationGain:.65, confidence:.65, reversibility:1, risk:0, effort:.25 },
+    { id:'change-approach', title:'Choose a materially different permitted route', goalImpact: failed ? 1 : .25,
+      informationGain:failed ? .9 : .35, verificationGain:.65, confidence:failed ? .55 : .3, reversibility:.8, risk:.2, effort:.5 },
+    { id:'verify', title:'Check the actual acceptance evidence', goalImpact: verified || unverified ? 1 : .35,
+      informationGain:.6, verificationGain:1, confidence:.7, reversibility:1, risk:0, effort:.3 },
+    { id:'advance', title:'Advance the next unmet prerequisite', goalImpact: failed || unverified ? .15 : 1,
+      informationGain:.45, verificationGain:.6, confidence:failed || unverified ? .2 : .65, reversibility:.7, risk:.15, effort:.5 },
+  ];
+  if (repeated) {
+    definitions[0].goalImpact = .45;
+    definitions[1].verificationGain = .95;
+  }
+  const board = createStrategicBoard({goalId:'tactical-goal',missionId:'tactical-mission',
+    steps:definitions.map(step=>({...step,status:'READY'}))});
+  const ranks = rankStrategicMoves(board);
+  // All four postures are alternatives, not parallel actions. Explicitly choose
+  // by evidence condition first; score determines the order within each group.
+  const preferred = failed ? (repeated ? 'change-approach' : 'inspect') :
+    unverified ? 'verify' : verified ? 'advance' : 'inspect';
+  const moves = ranks.map(move=>({ id:move.stepId, title:definitions.find(d=>d.id===move.stepId).title,
+    score:move.score, preferred:move.stepId===preferred }))
+    .sort((a,b)=>Number(b.preferred)-Number(a.preferred)||b.score-a.score);
+  return {...base, reason: repeated?'REPEATED_KNOWN_FAILURE':failed?'KNOWN_FAILURE':
+    unverified?'ACCEPTANCE_UNCONFIRMED':verified?'VERIFIED_ACTION':'INITIAL_OBSERVATION',
+    moves, recommendedMove:moves[0].id };
+}
+
+export function adaptiveStrategyInstruction(mission) {
+  const state = adaptiveMissionStrategy(mission);
+  return [
+    'CURRENT GAMEBOARD TACTICAL STRATEGY (heuristic recommendation, not authority or an execution graph):',
+    JSON.stringify(state),
+    state.status === 'HOLD'
+      ? 'Do not start another mutation or retry an uncertain action. Respect the existing mission gate and reconcile from actual receipts.'
+      : 'Compare the recommended posture and alternatives against the current goal, operator steering, tool availability and remaining budget. If assigned a graph move, preserve that move’s objective and dependencies; tactical suggestions do not replace the graph. Choose the next permitted action, not a new goal. After a known failure, diagnose the actual cause or choose a materially different route; never blindly repeat. After verification, advance the next unmet prerequisite or complete only if acceptance is satisfied. State a concise rationale in say, and use learned to describe what the receipt actually establishes.',
+  ].join('\n');
+}

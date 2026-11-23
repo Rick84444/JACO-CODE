@@ -6,14 +6,14 @@ import {pathToFileURL} from 'node:url';
 
 const definitions=[
   ['nova_targets','List allowed browser tabs','GET','/targets',{}],
-  ['nova_observe','Observe the pinned allowed page','GET','/observe',{}],
-  ['nova_screenshot','Capture the pinned allowed page','GET','/screenshot',{}],
-  ['nova_html','Read the pinned allowed page as cleaned HTML: no scripts, comments, element values, hidden fields, token metadata, event handlers, data attributes, or URL query strings and fragments. Visible page text is returned as shown','GET','/html',{}],
+  ['nova_observe','DOM TRACK: observe the pinned allowed page and its current state','GET','/observe',{}],
+  ['nova_screenshot','LASER VISION: capture pixels of the pinned allowed browser page; image observation, not semantic proof','GET','/screenshot',{}],
+  ['nova_html','DOM TRACK: read the pinned allowed page as cleaned HTML: no scripts, comments, element values, hidden fields, token metadata, event handlers, data attributes, or URL query strings and fragments. Visible page text is returned as shown','GET','/html',{}],
   ['nova_navigate','Navigate within configured origins','POST','/navigate',{url:{type:'string'},actionId:{type:'string'}}],
   ['nova_click','Click a unique selector and verify an explicit transition','POST','/click',{selector:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
   ['nova_type','Set a field and read back the value','POST','/type',{selector:{type:'string'},expectedUrl:{type:'string'},text:{type:'string'},actionId:{type:'string'}}],
   // Targets named the way the page names them (its accessibility tree), with real input events.
-  ['nova_ax','List what can be clicked or typed into on the pinned page, by accessible role and name','GET','/ax',{}],
+  ['nova_ax','DOM TRACK: list what can be clicked or typed into on the pinned page, by accessible role and name','GET','/ax',{}],
   ['nova_click_named','Click the one control with this accessible role and name and verify an explicit transition','POST','/click',{role:{type:'string'},name:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
   ['nova_type_named','Type into the one field with this accessible role and name and read back the value','POST','/type',{role:{type:'string'},name:{type:'string'},expectedUrl:{type:'string'},text:{type:'string'},actionId:{type:'string'}}],
   ['nova_upload','Attach files from the workspace to the one file input (selector, optionally inside a same-origin frame or a shadow root written host >>> inner) and read the names back','POST','/upload',{selector:{type:'string'},files:{type:'array',items:{type:'string'},minItems:1,maxItems:10},expectedUrl:{type:'string'},actionId:{type:'string'}}],
@@ -24,6 +24,27 @@ const definitions=[
   ['nova_downloads','List files the browser has downloaded (names, sizes, digests; never content)','GET','/downloads',{}],
   ['nova_press','Press one key (Enter, Tab, Escape, arrows, Home, End, PageUp, PageDown, Backspace, Delete, space) and verify an explicit transition','POST','/press',{key:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
 ];
+// Explicitly optional transition constraints. An actionId and the tool's actual
+// target/operation fields remain mandatory; a caller can omit postconditions.
+const OPTIONAL_ARGUMENTS = new Set(['expectedUrl', 'expect']);
+export function validCdpArgument(value, schema) {
+  if (!schema || value === null || value === undefined) return false;
+  if (schema.type === 'array') {
+    return Array.isArray(value) &&
+      (schema.minItems === undefined || value.length >= schema.minItems) &&
+      (schema.maxItems === undefined || value.length <= schema.maxItems) &&
+      (!schema.items || value.every(item => validCdpArgument(item, schema.items)));
+  }
+  if (schema.type === 'object') {
+    if (typeof value !== 'object' || Array.isArray(value)) return false;
+    if (schema.properties) {
+      return Object.entries(value).every(([key, item]) =>
+        Object.hasOwn(schema.properties, key) && validCdpArgument(item, schema.properties[key]));
+    }
+    return true;
+  }
+  return typeof value === schema.type;
+}
 export function createCdpFacade({token=process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '',base=process.env.NOVA_BRIDGE_URL || 'http://127.0.0.1:4243',fetchImpl=fetch}={}) {
   const send=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(data));};
   return createServer(async(req,res)=>{
@@ -74,14 +95,17 @@ export function createCdpFacade({token=process.env.JACO_GATEWAY_TOKEN || process
       if(msg.id===undefined) {res.writeHead(202);res.end();return;}
       if(msg.method==='initialize') return reply({protocolVersion:['2024-11-05','2025-03-26','2025-06-18'].includes(msg.params?.protocolVersion)?msg.params.protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'jaco-nova',version:'1.1.0'}});
       if(msg.method==='ping') return reply({});
-      if(msg.method==='tools/list') return reply({tools:definitions.map(([name,description,method,path,properties])=>({name,description,inputSchema:{type:'object',properties,required:Object.keys(properties),additionalProperties:false},annotations:{readOnlyHint:method==='GET',openWorldHint:true}}))});
+      if(msg.method==='tools/list') return reply({tools:definitions.map(([name,description,method,path,properties])=>({name,description,inputSchema:{type:'object',properties,required:Object.keys(properties).filter(key=>!OPTIONAL_ARGUMENTS.has(key)),additionalProperties:false},annotations:{readOnlyHint:method==='GET',openWorldHint:true}}))});
       if(msg.method!=='tools/call') return error(-32601,'Method not found');
       const def=definitions.find(d=>d[0]===msg.params?.name);
       if(!def) return error(-32602,'Unknown tool');
       const args=msg.params.arguments || {};
       if(!args || typeof args!=='object' || Array.isArray(args)) return error(-32602,'Invalid arguments');
-      for(const [key,schema] of Object.entries(def[4])) if(typeof args[key]!==schema.type || args[key]===null) return error(-32602,'Invalid '+key);
-      if(Object.keys(args).some(k=>!(k in def[4]))) return error(-32602,'Unexpected argument');
+      if(Object.keys(args).some(k=>!Object.hasOwn(def[4],k))) return error(-32602,'Unexpected argument');
+      for(const [key,schema] of Object.entries(def[4])) {
+        if(!Object.hasOwn(args,key) && OPTIONAL_ARGUMENTS.has(key)) continue;
+        if(!validCdpArgument(args[key],schema)) return error(-32602,'Invalid '+key);
+      }
       if(def[2]==='POST' && !/^[A-Za-z0-9][A-Za-z0-9:_-]{7,127}$/.test(args.actionId)) return error(-32602,'Invalid actionId');
       try {
         const r=await fetchImpl(base+def[3],{method:def[2],headers:{'content-type':'application/json',Authorization:'Bearer '+token},...(def[2]==='POST'?{body:JSON.stringify(args)}:{}),signal:AbortSignal.timeout(20000)});

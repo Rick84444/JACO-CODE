@@ -58,7 +58,7 @@ test('a local MCP command actually executes in the selected project and follows 
  const first=await call();assert.equal(first.exitCode,0);assert.match(first.stdout,/v\d+\./);
  host.useWorkspaceRoot(other);
  const second=JSON.parse((await host.call('shell','shell_info',{},{actor:'agent',readOnly:true})).content[0].text);
- assert.ok(JSON.stringify(second).includes(other));
+ assert.ok(JSON.stringify(second).includes(JSON.stringify(other).slice(1,-1)));
  fs.writeFileSync(path.join(other,'make.mjs'),"import fs from 'node:fs'; fs.writeFileSync('proof.txt','actual command result');");
  const written=JSON.parse((await host.call('shell','shell_run',{command:'node',args:['make.mjs']},{actor:'operator'})).content[0].text);
  assert.equal(written.exitCode,0);assert.equal(fs.readFileSync(path.join(other,'proof.txt'),'utf8'),'actual command result');

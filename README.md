@@ -2,6 +2,8 @@
 
 JACO is a local-first runtime for persistent, policy-bound and verifiable agent execution.
 
+JACO is an open source (MIT) AI coding agent and IDE that runs on your own computer and model. Its agent, Aura, plans, edits code on a separate git branch, drives a browser and speaks, and every action leaves a receipt. Download and docs: [jacocode.com](https://jacocode.com/) · [Hugging Face Space](https://huggingface.co/spaces/Rick8444/JACO-Autonomous-IDE) · [VS Code extension](https://marketplace.visualstudio.com/items?itemName=jacocode.jaco-cognitive-ide).
+
 The model is replaceable. JACO owns the execution state around it: goals, tools, policy, durable mission state, verification, receipts and restart continuity.
 
 ## Product contract
@@ -30,6 +32,10 @@ npm run jaco:start
 ```
 
 Setup installs dependencies in the root, runtime and MCP gateway (using lockfiles when present), **builds the canonical production client and server on desktop (or the Termux Aura frontend with its native Rollup preflight on Android)**, and creates a local gateway token in `.env` if none is configured. A failed build stops setup instead of reporting a successful installation. Existing configuration is preserved. Install and start Ollama with a downloaded model before starting JACO, or configure another supported provider in `.env`. Setup does not download models or call paid providers.
+
+### Pixel Terminal (Debian arm64)
+
+In a full source checkout, run `npm run setup`. On Debian/Ubuntu arm64 (not Termux), setup prepares Chromium using the distribution package manager when missing, creates internal authentication, and launches the canonical stack with sandboxed headless CDP. Normal sudo authorization may be needed for apt. Missing browser support is explicitly reported, never represented as ready. Open the exact runtime URL printed after activation. Existing browser opt-out `JACO_ENABLE_CDP=0` remains honored; `JACO_SETUP_ACTIVATE=0` performs installation without activation. `JACO_PIXEL_SETUP=0` opts out of the Pixel-specific setup path. No separate Lite runtime is started. This is not yet physical-device qualification.
 
 Then inspect observed activation state:
 

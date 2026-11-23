@@ -1,4 +1,5 @@
 import test from 'node:test';
+const syntheticAuditSecret = ["sk-abcdef","ghijklmnopqr","stuvwxyz0123456789ABCD"].join('');
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -71,7 +72,16 @@ test('destructive uses and push are the operator\'s to enable, never the agent\'
     assert.match(c(ws, cmd, args).reason, /DESTRUCTIVE_NOT_ENABLED/, `${cmd} ${args.join(' ')}`);
   assert.match(c(ws, 'git', ['push']).reason, /GIT_PUSH_NOT_ENABLED/);
   assert.match(c(ws, 'git', ['push', '--force'], { env: { JACO_SHELL_ALLOW_DESTRUCTIVE: '1' } }).reason, /GIT_PUSH_NOT_ENABLED/, 'destructive does not enable push');
-  assert.equal(c(ws, 'git', ['push'], { env: { JACO_SHELL_ALLOW_PUSH: '1' } }).ok, true);
+  const push = { env: { JACO_SHELL_ALLOW_PUSH: '1', JACO_PROTECTED_BRANCHES: 'release' } };
+  assert.equal(c(ws, 'git', ['push', '-u', 'origin', 'aura/site-copy'], push).ok, true);
+  assert.equal(c(ws, 'git', ['push', 'origin', 'HEAD:aura/fix'], push).ok, true);
+  assert.match(c(ws, 'git', ['push'], push).reason, /GIT_PUSH_NEEDS_REMOTE_AND_BRANCH/, 'the checkout must not decide the target');
+  for (const target of [['origin', 'main'], ['origin', 'HEAD:main'], ['origin', 'x:refs/heads/master'], ['origin', 'release']])
+    assert.match(c(ws, 'git', ['push', ...target], push).reason, /GIT_PUSH_PROTECTED_BRANCH/, target.join(' '));
+  for (const bad of [['--force', 'origin', 'w'], ['-f', 'origin', 'w'], ['--all', 'origin'], ['--mirror', 'origin'], ['--delete', 'origin', 'w']])
+    assert.match(c(ws, 'git', ['push', ...bad], push).reason, /GIT_PUSH_OPTION_NOT_ALLOWED/, bad.join(' '));
+  for (const bad of [['origin', '+w'], ['origin', ':w'], ['origin', 'HEAD']])
+    assert.match(c(ws, 'git', ['push', ...bad], push).reason, /GIT_PUSH_(REFSPEC_NOT_ALLOWED|DELETE_NOT_ALLOWED|NEEDS_BRANCH_NAME)/, bad.join(' '));
   assert.equal(c(ws, 'git', ['reset', '--hard'], { env: { JACO_SHELL_ALLOW_DESTRUCTIVE: '1' } }).destructive, 'GIT_RESET');
   assert.equal(c(ws, 'rm', ['-r', 'src'], { env: { JACO_SHELL_ALLOW_DESTRUCTIVE: '1' } }).ok, true);
   // even enabled, the workspace itself and protected places are not removable
@@ -113,6 +123,10 @@ test('the command gets a minimal environment: no token, key or password of the s
   const env = commandEnv({ PATH: '/usr/bin', HOME: '/h', DEEPSEEK_API_KEY: 'sk-x', JACO_GATEWAY_TOKEN: 't', GITHUB_TOKEN: 'g', BLAND_API_KEY: 'b', JACO_DRIVE_CRED: 'd', LANG: 'sv_SE.UTF-8' });
   assert.deepEqual(Object.keys(env).sort(), ['CI', 'GIT_TERMINAL_PROMPT', 'HOME', 'LANG', 'NO_COLOR', 'PATH']);
   assert.deepEqual(resolveProgram('npm', 'win32', 'C:\\node\\node.exe', () => true).prefix.length, 1, 'npm.cmd is never started directly on Windows');
+  const winPath = commandEnv({ Path: 'C:\\Node;C:\\Windows', GEMINI_API_KEY: 'sk-secret' });
+  assert.equal(winPath.Path, 'C:\\Node;C:\\Windows');
+  assert.equal('PATH' in winPath, false, 'avoid duplicate case variants on Windows');
+  assert.equal('GEMINI_API_KEY' in winPath, false, 'PATH support cannot leak secrets');
   assert.equal(resolveProgram('git', 'win32').cmd, 'git');
 });
 
@@ -167,11 +181,11 @@ test('every command and refusal is audited, without secrets', { skip: !posix }, 
   const sh = new SafeShell({ workspace: ws, env: { PATH: process.env.PATH } });
   await sh.run({ command: 'ls', args: ['.'], mode: 'read' });
   await sh.run({ command: 'rm', args: ['-rf', 'src'] });
-  await sh.run({ command: 'cat', args: ['sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD'], mode: 'read' });
+  await sh.run({ command: 'cat', args: [syntheticAuditSecret], mode: 'read' });
   const lines = fs.readFileSync(path.join(ws, '.jaco', 'shell-audit.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(lines.map(l => l.outcome), ['ok', 'refused', 'failed']);
   assert.match(lines[1].reason, /DESTRUCTIVE_NOT_ENABLED/);
-  assert.ok(!JSON.stringify(lines).includes('sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD'), 'a token-shaped argument is redacted');
+  assert.ok(!JSON.stringify(lines).includes(syntheticAuditSecret), 'a token-shaped argument is redacted');
   assert.equal(fs.statSync(path.join(ws, '.jaco', 'shell-audit.jsonl')).mode & 0o777, 0o600);
 });
 

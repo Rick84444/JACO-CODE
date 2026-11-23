@@ -6,15 +6,30 @@ on:
     branches: [main]
     tags:
       - 'v*.*.*'
-    paths:
-      - 'windows/product/**'
-      - '.github/workflows/jaco-windows-release.yml'
+    paths: ['runtime/**', 'agents/**', 'gateway/**', 'lite/**', 'windows/product/**', 'tools/**', 'scripts/**', 'skills/**', 'public/**', 'site/**', 'extensions/**', 'package.json', 'package-lock.json', '.github/workflows/lite-release.yml', '.github/workflows/jaco-windows-release.yml']
   pull_request:
     paths:
       - 'windows/product/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'runtime/package.json'
+      - 'runtime/package-lock.json'
+      - 'runtime/gateway/package.json'
+      - 'runtime/gateway/package-lock.json'
+      - 'runtime/src/auraEngine.ts'
+      - 'runtime/src/lib/auraLegacyStatePath.mjs'
+      - 'runtime/src/server/connected/ideAccess.mjs'
+      - 'agents/lib/local-write.mjs'
       - 'runtime/src/server/updates/**'
       - 'runtime/src/components/JacoWindowsUpdates.tsx'
       - 'runtime/src/components/CognitiveWorkspace.tsx'
+      - 'runtime/src/components/StrategyBoard.tsx'
+      - 'runtime/src/components/ReverseGoalCanvas.tsx'
+      - 'runtime/src/lib/reverseGoalLayout.mjs'
+      - 'runtime/src/server/connected/auraPlan.mjs'
+      - 'gateway/src/seer.mjs'
+      - 'gateway/src/seer-project.mjs'
+      - 'tests/nova/reverse-goal-layout.test.mjs'
       - 'runtime/server.ts'
       - 'agents/lib/local-stack.mjs'
       - 'tests/nova/github-release-status.test.mjs'
@@ -31,6 +46,7 @@ jobs:
     outputs:
       version: ${{ steps.product-version.outputs.version }}
       version_changed: ${{ steps.product-version.outputs.version_changed }}
+      channel: ${{ steps.product-version.outputs.channel }}
     env:
       PUPPETEER_SKIP_DOWNLOAD: '1'
     steps:
@@ -48,7 +64,12 @@ jobs:
         id: product-version
         shell: pwsh
         run: |
-          $version = (Get-Content windows/product/version.json -Raw | ConvertFrom-Json).version
+          $product = Get-Content windows/product/version.json -Raw | ConvertFrom-Json
+          $version = $product.version
+          # stable: published only from a tag. preview: a GitHub pre-release, published automatically from main
+          # when the version changes (the in-app updater never offers pre-releases).
+          $channel = if ($product.channel) { [string]$product.channel } else { 'stable' }
+          if ($channel -notin @('stable','preview')) { throw "RELEASE_CHANNEL_INVALID:$channel" }
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'RELEASE_VERSION_INVALID' }
           if ($env:GITHUB_REF -like 'refs/tags/*') {
             if ($env:GITHUB_REF_NAME -ne "v$version") { throw "TAG_VERSION_MISMATCH expected=v$version actual=$env:GITHUB_REF_NAME" }
@@ -68,6 +89,7 @@ jobs:
           "JACO_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "version_changed=$changed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "channel=$channel" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
       - name: Install locked dependencies
         shell: pwsh
         run: |
@@ -78,7 +100,7 @@ jobs:
       - name: Run Windows release contract tests
         shell: pwsh
         run: |
-          node --test tests/nova/github-release-status.test.mjs tests/nova/windows-product-install.test.mjs tests/nova/startup-safety.test.mjs
+          node --test tests/nova/github-release-status.test.mjs tests/nova/windows-product-install.test.mjs tests/nova/startup-safety.test.mjs tests/nova/capability-recovery.test.mjs tests/nova/agent-loop.test.mjs tests/nova/reverse-goal-layout.test.mjs tests/nova/ide-access.test.mjs tests/nova/local-memory-activity.test.mjs tests/nova/local-write.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'WINDOWS_UPDATE_CONTRACT_FAILED' }
           npm run lint --prefix runtime
           if ($LASTEXITCODE -ne 0) { throw 'RUNTIME_TYPECHECK_FAILED' }
@@ -128,9 +150,15 @@ jobs:
           $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$installDir")
           $first = Start-Process -FilePath $exe -ArgumentList $args -Wait -PassThru
           if ($first.ExitCode -ne 0) { throw "INSTALL_FAILED:$($first.ExitCode)" }
-          foreach ($file in @('runtime/dist/index.html','runtime/dist/server.cjs','tools/node/node.exe','windows/product/Start-JACO.ps1')) {
+          foreach ($file in @('runtime/dist/index.html','runtime/dist/server.cjs','tools/node/node.exe','windows/product/Start-JACO.ps1','windows/product/JACO-guardian-launch.vbs')) {
             if (-not (Test-Path (Join-Path $installDir $file))) { throw "INSTALLED_FILE_MISSING:$file" }
           }
+          # Check the real per-user startup shortcut, not just the Inno definition.
+          $autostart = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\JACO Health Guardian.lnk'
+          if (-not (Test-Path -LiteralPath $autostart)) { throw 'JACO_GUARDIAN_AUTOSTART_NOT_INSTALLED' }
+          $link = (New-Object -ComObject WScript.Shell).CreateShortcut($autostart)
+          if ($link.Arguments -notmatch 'JACO-guardian-launch\.vbs' -or $link.TargetPath -notmatch 'wscript\.exe$') { throw 'JACO_GUARDIAN_AUTOSTART_TARGET_INVALID' }
+
           $env:JACO_DATA_DIR = Join-Path $env:RUNNER_TEMP 'JACO-PreservedUserData'
           $env:JACO_START_MODE = 'production'
           $result = & (Join-Path $installDir 'tools/node/node.exe') (Join-Path $installDir 'agents/lib/local-stack.mjs') --preflight | Out-String
@@ -138,8 +166,13 @@ jobs:
           if (Test-Path (Join-Path $installDir '.env')) { throw 'PRIVATE_ENV_IN_PROGRAM_FILES' }
 
           # Boot the ACTUAL installed Core and request the real GUI, with no cloud model configured.
+          # Assert the identity served by the installed payload, never a stale CI constant.
+          $expectedRuntimeVersion = (Get-Content (Join-Path $installDir 'runtime/package.json') -Raw | ConvertFrom-Json).version
+          if ($expectedRuntimeVersion -notmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'INSTALLED_RUNTIME_VERSION_INVALID' }
           $env:JACO_WORKSPACE_ROOT = $env:JACO_DATA_DIR
           $env:JACO_RELEASE_ROOT = Join-Path $installDir 'runtime'
+          $manifest = Get-Content (Join-Path $env:JACO_RELEASE_ROOT 'release.json') -Raw | ConvertFrom-Json
+          if ($manifest.sourceCommit -ne $env:GITHUB_SHA -or $manifest.version -ne $expectedRuntimeVersion) { throw 'INSTALLED_SOURCE_COMMIT_MISMATCH' }
           $env:JACO_GATEWAY_TOKEN = 'ci_test_operator_token_exceeding_twenty_four_chars'
           $env:JACO_MODEL_PROVIDER = 'aura'
           $env:NODE_ENV = 'production'
@@ -155,13 +188,13 @@ jobs:
               if ($core.HasExited) { break }
               try {
                 $identity = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/runtime/identity' -TimeoutSec 2
-                if ($identity.success -eq $true -and $identity.version -eq '0.22.0') { $healthy = $true; break }
+                if ($identity.success -eq $true -and $identity.version -eq $expectedRuntimeVersion -and $identity.sourceCommit -eq $env:GITHUB_SHA) { $healthy = $true; break }
               } catch {}
               Start-Sleep -Seconds 1
             }
             if (-not $healthy) {
               Write-Host (Get-Content $stdErr -Raw -ErrorAction SilentlyContinue)
-              throw 'INSTALLED_CORE_FAILED_HTTP_IDENTITY'
+              throw "INSTALLED_CORE_FAILED_HTTP_IDENTITY:expected=$expectedRuntimeVersion"
             }
             $gui = Invoke-WebRequest -Uri 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 10
             if ($gui.StatusCode -ne 200 -or $gui.Content -notmatch '<html') { throw 'INSTALLED_GUI_NOT_SERVED' }
@@ -177,6 +210,7 @@ jobs:
           if (-not (Test-Path $uninstaller)) { throw 'UNINSTALLER_MISSING' }
           $remove = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
           if ($remove.ExitCode -ne 0) { throw "UNINSTALL_FAILED:$($remove.ExitCode)" }
+          if (Test-Path -LiteralPath $autostart) { throw 'JACO_GUARDIAN_AUTOSTART_LEFT_BEHIND' }
           Write-Host 'JACO_WINDOWS_INSTALL_REINSTALL_UNINSTALL_VERIFIED'
       - name: SHA256 release manifest
         shell: pwsh
@@ -185,18 +219,21 @@ jobs:
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
           $output = Join-Path (Split-Path $exe -Parent) ((Split-Path $exe -Leaf) + '.sha256')
           "$hash  $(Split-Path $exe -Leaf)" | Out-File $output -Encoding ascii
-          Write-Host "WINDOWS_INSTALLER_SHA256=$hash"
+          $receipt = @{ schema='jaco.windows-release-receipt/v1'; sourceCommit=$env:GITHUB_SHA; version=$env:JACO_VERSION; sha256=$hash; file=(Split-Path $exe -Leaf) } | ConvertTo-Json
+          $receipt | Out-File "$exe.receipt.json" -Encoding ascii
+          Write-Host "WINDOWS_INSTALLER_SHA256=$hash sourceCommit=$env:GITHUB_SHA"
       - uses: actions/upload-artifact@v4
         with:
           name: jaco-full-windows-setup
           path: |
             build/windows/output/JACO-Setup-*-win-x64.exe
             build/windows/output/JACO-Setup-*-win-x64.exe.sha256
+            build/windows/output/JACO-Setup-*-win-x64.exe.receipt.json
           if-no-files-found: error
 
   publish-github-release:
-    name: Attach verified Windows installer to stable release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    name: Publish verified Windows installer
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && needs.windows-setup.outputs.version_changed == 'true' && needs.windows-setup.outputs.channel == 'preview'))
     needs: windows-setup
     runs-on: ubuntu-latest
     permissions:
@@ -209,10 +246,11 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           draft: false
-          prerelease: false
+          prerelease: ${{ needs.windows-setup.outputs.channel == 'preview' }}
           tag_name: v${{ needs.windows-setup.outputs.version }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: |
             release/JACO-Setup-*-win-x64.exe
             release/JACO-Setup-*-win-x64.exe.sha256
+            release/JACO-Setup-*-win-x64.exe.receipt.json

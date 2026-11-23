@@ -1,7 +1,18 @@
 import express from 'express';
 
 // Operator UI adapter over the canonical governor, with no second policy store.
-export function createEconomicBudgetRouter({ economic, requireOperatorUi, getBalances = async () => ({}) }) {
+// Paid agent orders as recorded by agents/lib/agent-orders.mjs.
+export function agentOrderRevenue(orders = {}) {
+  const out = { usd: 0, paid: 0, needsOperator: 0 };
+  for (const order of Object.values(orders)) {
+    if (order?.status === 'PAID_NEEDS_OPERATOR') out.needsOperator += 1;
+    const amount = order?.status === 'CHARGED' ? Number(order.amountCharged) : order?.status === 'PAID' ? Number(order.amountUsd) : NaN;
+    if (Number.isFinite(amount) && amount > 0) { out.usd += amount; out.paid += 1; }
+  }
+  return out;
+}
+
+export function createEconomicBudgetRouter({ economic, requireOperatorUi, getBalances = async () => ({}), getStripeRevenue = async () => ({ configured: null }), getAgentOrders = () => ({}), listProviders = () => [], modelPrice = null, readPrices = () => null, syncPrices = async () => ({ ok: false }) }) {
   const router = express.Router();
   router.use(requireOperatorUi);
   router.use((req, res, next) => {
@@ -16,6 +27,41 @@ export function createEconomicBudgetRouter({ economic, requireOperatorUi, getBal
     next();
   });
   router.get('/', (_req, res) => res.json({ success: true, economic: economic.snapshot() }));
+  // Costs, income, balances and prices in one answer. A source that cannot be read says so and does not stop the others.
+  router.get('/economy', async (_req, res) => {
+    try {
+      const costs = economic.economySnapshot();
+      const [balances, stripe] = await Promise.all([
+        Promise.resolve().then(getBalances).catch(() => ({})),
+        Promise.resolve().then(getStripeRevenue).catch(error => ({ configured: null, error: String(error?.message || error) })),
+      ]);
+      const orders = agentOrderRevenue(getAgentOrders());
+      const byCurrency = { ...(stripe.last30Days?.revenue || {}) };
+      if (orders.usd + costs.revenueUsd > 0) byCurrency.USD = (byCurrency.USD || 0) + orders.usd + costs.revenueUsd;
+      const currencies = Object.keys(byCurrency).filter(currency => byCurrency[currency] > 0);
+      const stripeRead = stripe.configured === true && !stripe.error;
+      const result = currencies.some(currency => currency !== 'USD') ? { last30DaysUsd: null, reason: 'Intäkter i annan valuta än USD räknas inte om.' }
+        : { last30DaysUsd: (byCurrency.USD || 0) - costs.last30Days.usd, reason: stripeRead ? null : 'Utan Stripe, som inte kunde läsas.' };
+      const seen = new Set();
+      const inUse = [...listProviders().map(p => ({ provider: p.id, model: p.defaultModel || '', local: p.local === true })),
+        ...costs.models.map(row => ({ provider: row.provider, model: row.model, local: false }))]
+        .filter(row => { const key = `${row.provider}/${row.model}`; if (seen.has(key)) return false; seen.add(key); return true; })
+        .map(row => {
+          if (row.local) return { ...row, known: true };
+          try { const rate = modelPrice(row.provider, row.model); return { ...row, known: true, input: rate.input, output: rate.output, source: rate.source, free: rate.free === true }; }
+          catch { return { ...row, known: false }; }
+        });
+      const prices = readPrices();
+      const { revenueUsd, ...costBooks } = costs;
+      res.json({ success: true, economy: { observedAt: new Date().toISOString(), costs: costBooks, balances,
+        revenue: { stripe, orders, verifiedUsd: revenueUsd, last30DaysByCurrency: byCurrency }, result,
+        prices: { fetchedAt: prices?.fetchedAt || null, sources: prices?.sources || [], inUse } } });
+    } catch (error) { res.status(500).json({ success: false, error: String(error?.message || error) }); }
+  });
+  router.post('/economy/sync-prices', async (_req, res) => {
+    try { res.json({ success: true, sync: await syncPrices() }); }
+    catch (error) { res.status(500).json({ success: false, error: String(error?.message || error) }); }
+  });
   // Operator-imported project quotas, not an AI Studio live quota feed. Report source and
   // that only this JACO runtime's requests are counted in local rate windows.
   router.get('/gemini-quotas', (_req, res) =>

@@ -1,0 +1,64 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {discoverLocalCommands,localCommandHint,commandRecipe,shellHostGuidance} from '../../agents/lib/local-command-inventory.mjs';
+import {SafeShell,classify,resolveProgram} from '../../agents/lib/safe-shell.mjs';
+
+test('actual local inventory discovers executable fixtures, not files without execute permission or relative PATH', {skip:process.platform==='win32'},t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'aura-path-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  for(const name of ['python3','pwsh','custom-tool','node']){fs.writeFileSync(path.join(dir,name),'#!/bin/sh\nexit 0\n',{mode:0o700});}
+  fs.writeFileSync(path.join(dir,'not-executable'),'private data',{mode:0o600});
+  const env={PATH:dir+':relative',SECRET_TOKEN:'never-return-this'};
+  const result=discoverLocalCommands({env,execPath:path.join(dir,'node')});
+  assert.deepEqual(result.programs,['pwsh','python3','node','custom-tool']);
+  assert.equal(result.totalDiscovered,4);
+  assert.deepEqual(discoverLocalCommands({env,query:'data processing'}).programs,['python3']);
+  const python=result.capabilities.find(x=>x.name==='python3');
+  assert.equal(python.knowledge,'curated');assert.equal(python.execution,'unverified');assert.deepEqual(python.exampleArgs,['--version']);
+  assert.equal(result.capabilities.find(x=>x.name==='custom-tool').knowledge,'unknown');
+  assert.deepEqual(discoverLocalCommands({env,query:'custom'}).programs,['custom-tool']);
+  assert.equal(discoverLocalCommands({env,limit:1}).omitted,3);
+  assert.ok(!JSON.stringify(result).includes(dir)&&!JSON.stringify(result).includes(env.SECRET_TOKEN));
+  assert.ok(localCommandHint({env}).available.includes('python3'));
+  const info=new SafeShell({workspace:dir,env,auditFile:false}).info({query:'custom'});
+  assert.deepEqual(info.local.programs,['custom-tool']);
+  assert.equal(classify('custom-tool',[],{workspace:dir,env}).ok,false,'discovery does not expand the execution allowlist');
+});
+test('Windows Path casing, executable extensions and duplicate names are handled',()=>{
+  const rows=['PowerShell.EXE','pwsh.exe','python.exe','py.exe','npm.cmd','npm.exe','readme.txt','git.exe'];
+  const api={opendirSync:()=>{let i=0;return {readSync:()=>i<rows.length?{name:rows[i++]}:null,closeSync(){}}},statSync:()=>({isFile:()=>true})};
+  const result=discoverLocalCommands({env:{Path:'C:\\Tools;relative'},platform:'win32',execPath:'C:\\Node\\node.exe',api});
+  assert.deepEqual(result.priority,['powershell','pwsh','python','py','node','npm','git']);
+  assert.equal(result.totalDiscovered,7);
+  assert.ok(!JSON.stringify(result).includes('C:\\\\Tools'));
+});
+
+test('recipes distinguish host syntax, prerequisites, evidence and installed alternatives',()=>{
+  const p=commandRecipe('python3',['python3','node','pwsh'],'linux');
+  assert.deepEqual(p.write,['./script.py']);
+  assert.deepEqual(p.alternatives,['node']);
+  assert.match(p.pitfalls,/ModuleNotFoundError/);
+  assert.match(p.verify,/same interpreter/);
+  assert.equal(commandRecipe('unknown-command',[],'linux'),null);
+  assert.match(shellHostGuidance('linux'),/Pixel Debian is Linux/);
+  assert.match(shellHostGuidance('win32'),/cmd.exe/);
+  assert.deepEqual(commandRecipe('pwsh',['pwsh','python3'],'win32').read,['-NoProfile','-Command','Get-Location']);
+});
+
+test('interpreter resolution respects the real PATH rather than an assumed alias',{skip:process.platform==='win32'},t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'aura-interpreter-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const python=path.join(dir,'python'),pwsh=path.join(dir,'pwsh');
+  fs.writeFileSync(python,'#!/bin/sh\nexit 0\n',{mode:0o700});
+  fs.writeFileSync(pwsh,'#!/bin/sh\nexit 0\n',{mode:0o700});
+  const env={PATH:dir};
+  assert.equal(resolveProgram('python','linux',process.execPath,fs.existsSync,env).cmd,python);
+  assert.equal(resolveProgram('python3','linux',process.execPath,fs.existsSync,env).cmd,python);
+  assert.equal(resolveProgram('powershell','linux',process.execPath,fs.existsSync,env).cmd,pwsh);
+  assert.equal(resolveProgram('powershell','linux',process.execPath,fs.existsSync,{PATH:''}).cmd,'powershell');
+  const info=new SafeShell({workspace:dir,env:{...env,JACO_SHELL_INTERPRETERS:'0'},auditFile:false}).info({query:'pwsh'});
+  assert.match(info.local.capabilities[0].route,/disabled by operator/);
+});

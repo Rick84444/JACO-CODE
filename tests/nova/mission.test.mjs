@@ -29,6 +29,22 @@ function setup(t, allowedTasks=['health-check','browser-click']) {
  });
  return {client,get control(){return control;},advance(ms){clock+=ms;},reopen(){bus.close();bus=new DurableMissionBus(dir);control=new NovaMissionControl(bus,{allowedTasks,now:()=>clock});}};
 }
+test('executor observation is authenticated, expires and never changes mission state', async t => {
+ const s=setup(t);
+ const m=await s.client.create({goal:'Keep mission intact',idempotencyKey:'executor-health'});
+ const get=()=>s.client.request('GET','/executor-health');
+ assert.equal((await get()).state,'UNVERIFIED');
+ await assert.rejects(s.client.request('POST','/executor-health',{executor:'nova@remote'}),/LOCAL_EXECUTOR_REQUIRED/);
+ const fresh=await s.client.request('POST','/executor-health',{executor:'nova'});
+ assert.equal(fresh.state,'RUNNING');
+ assert.equal((await get()).state,'RUNNING');
+ s.advance(45_001);
+ assert.equal((await get()).state,'UNVERIFIED');
+ assert.equal(s.control.get(m.id).status,'ACTIVE');
+ assert.equal(s.control.get(m.id).receipts.length,0);
+ s.reopen();
+ assert.equal(s.control.localExecutorHealth().state,'UNVERIFIED');
+});
 const goal={goal:'Kontrollera sidan och rapportera vad som faktiskt hände',idempotencyKey:'operator-1'};
 const task={type:'health-check',data:{}};
 
@@ -71,7 +87,7 @@ test('observation-only graph task scope is accepted by the real Nova mission con
  for(const forbidden of ['repo-read','windows-wmi-read','browser-click','mcp-write','vault-get-secret'])
    assert.equal(mission.allowedTasks.includes(forbidden),false,forbidden);
 });
-test('task permission and schema are enforced',()=>{assert.throws(()=>validateTask({type:'shell',data:{command:'anything'}},['health-check']),/NOT_ALLOWED/);assert.throws(()=>validateTask({type:'browser-click',data:{}},['browser-click']),/REQUIRED/);assert.throws(()=>validateTask({type:'mouse-click',data:{x:NaN,y:0}},['mouse-click']),/COORDINATE/);assert.throws(()=>validateTask({type:'screenshot',data:{outFile:'custom'}},['screenshot']),/RUNTIME_OWNED/);});
+test('task permission and schema are enforced',()=>{assert.throws(()=>validateTask({type:'shell',data:{command:'anything'}},['health-check']),/NOT_ALLOWED/);assert.throws(()=>validateTask({type:'browser-click',data:{}},['browser-click']),/REQUIRED/);assert.throws(()=>validateTask({type:'mouse-click',data:{x:NaN,y:0,expectedHwnd:123}},['mouse-click']),/COORDINATE/);assert.throws(()=>validateTask({type:'screenshot',data:{outFile:'custom'}},['screenshot']),/RUNTIME_OWNED/);});
 test('adaptive screenshot task is bounded and runtime-owned',()=>{
  const checked=validateTask({type:'screenshot',data:{hwnd:123,mode:'adaptive',maxWidth:768,maxHeight:512},expectedOutcome:'fresh terminal ROI'},['screenshot']);
  assert.deepEqual(checked.data,{hwnd:123,mode:'adaptive',maxWidth:768,maxHeight:512});
@@ -356,13 +372,15 @@ test('a cancellation during planning prevents a new tool call and survives resta
 
 // A verified mutation proposed again on an unchanged view is not re-run (an endless mkdir), but the
 // same action on a changed view is (Next on consecutive wizard pages), and long arguments still match.
-test('the same verified mutation on an unchanged view proposes completion instead of re-running',async t=>{
+test('the same verified mutation requests bounded replanning instead of premature completion',async t=>{
  const s=setup(t,['browser-click']);const m=await s.client.create({...goal,allowedTasks:['browser-click']});
  const long={name:'Save',note:'x'.repeat(5000)};let runs=0;
  const turn=()=>processMissionTurn({client:s.client,owner:'nova',observe:async()=>({url:'https://a.test/form',title:'Form'}),plan:async()=>({task:{type:'browser-click',data:long,expectedOutcome:'saved'}}),execute:async()=>{runs++;return {ok:true,verified:true};}});
  await turn();const second=await turn();
- assert.equal(runs,1);assert.equal(second.awaitingVerification,true);assert.equal(second.reason,'REPEAT_OF_VERIFIED_ACTION');
+ assert.equal(runs,1);assert.equal(second.replanRequired,true);assert.equal(second.awaitingVerification,undefined);assert.equal(second.reason,'REPEAT_OF_VERIFIED_ACTION');
+ assert.equal(s.control.get(m.id).status,'ACTIVE');
  const r=s.control.get(m.id).receipts.at(-1);assert.equal(r.input.note,'[5000 chars]');assert.equal(r.inputHash.length,64);
+ await turn();await turn();assert.equal(runs,1);assert.equal(s.control.get(m.id).status,'BLOCKED');
 });
 test('the same mutation runs again when the view changed since its receipt',async t=>{
  const s=setup(t,['browser-click']);await s.client.create({...goal,allowedTasks:['browser-click']});
@@ -473,4 +491,122 @@ test('steering while a tool executes waits for its receipt and rejects stale com
   assert.throws(()=>s.control.release(m.id,{owner:'nova',token:next.token,steerVersion:0,completionProposed:true,completionReason:'old plan'}),/NOVA_STEER_STALE/);
   s.control.release(m.id,{owner:'nova',token:next.token});
   assert.equal(s.control.get(m.id).status,'ACTIVE');
+});
+
+test('requeues a known failed read automatically without resetting its failure budget',t=>{
+ const s=setup(t,['web-fetch','health-check']);
+ const m=s.control.create({goal:'Read an endpoint safely',idempotencyKey:'auto-health-requeue',allowedTasks:['web-fetch','health-check']});
+ for(let i=0;i<5;i++){
+   const {token}=s.control.claim(m.id,'nova');
+   const a=s.control.begin(m.id,{owner:'nova',token,task:{type:'web-fetch',data:{url:'https://unreachable.example.test'}}});
+   s.control.finish(m.id,{owner:'nova',token,actionId:a.id,receipt:{ok:false,verified:false,error:'ECONNREFUSED'}});
+ }
+ assert.equal(s.control.get(m.id).status,'BLOCKED');
+ assert.equal(s.control.current(),null,'no retry burst during cooldown');
+ // The fixture clock starts before the durable receipt timestamp is written.
+ // Stay outside the two-minute cooldown rather than racing the CI runner clock.
+ s.advance(130000);
+ const active=s.control.current();
+ assert.equal(active.id,m.id);
+ assert.equal(active.failures,5,'automatic recovery never resets mission failure accounting');
+ assert.equal(active.phase,'READY');
+ const event=s.control.bus.lastMissionEvent(m.id,'NOVA_HEALTH_REQUEUED');
+ assert.equal(event.payload.retry,1);
+ assert.equal(event.payload.preservedBudget,true);
+ const {token}=s.control.claim(m.id,'nova');
+ const a=s.control.begin(m.id,{owner:'nova',token,task:{type:'health-check',data:{}}});
+ s.control.finish(m.id,{owner:'nova',token,actionId:a.id,receipt:{ok:true,verified:true,result:{healthy:true}}});
+ assert.equal(s.control.get(m.id).status,'ACTIVE');
+ assert.equal(s.control.get(m.id).failures,0);
+});
+
+test('a blocked unsafe mutation never gets a health requeue even after long delay',t=>{
+ const s=setup(t,['browser-click']);
+ const m=s.control.create({goal:'Save in web browser',idempotencyKey:'no-replay-mutation',allowedTasks:['browser-click']});
+ const {token}=s.control.claim(m.id,'nova');
+ const action=s.control.begin(m.id,{owner:'nova',token,task:{type:'browser-click',data:{name:'Save'}}});
+ s.control.finish(m.id,{owner:'nova',token,actionId:action.id,receipt:{ok:false,verified:false,outcomeUnknown:true,error:'ECONNRESET'}});
+ s.advance(200000);
+ assert.equal(s.control.current(),null);
+ assert.equal(s.control.get(m.id).status,'BLOCKED');
+ assert.equal(s.control.bus.lastMissionEvent(m.id,'NOVA_HEALTH_REQUEUED'),null);
+});
+
+test('a blocked health read does not override a newer policy or operator approval event',t=>{
+ const s=setup(t,['web-fetch']);
+ const m=s.control.create({goal:'Inspect endpoint',idempotencyKey:'health-after-policy',allowedTasks:['web-fetch']});
+ for(let i=0;i<5;i++){
+   const {token}=s.control.claim(m.id,'nova');
+   const a=s.control.begin(m.id,{owner:'nova',token,task:{type:'web-fetch',data:{url:'https://offline.example.test'}}});
+   s.control.finish(m.id,{owner:'nova',token,actionId:a.id,receipt:{ok:false,verified:false,error:'ECONNREFUSED'}});
+ }
+ s.control.bus.event('NOVA_OPERATOR_APPROVAL_REQUIRED',{missionId:m.id,payload:{error:'POLICY_REQUIRED'}});
+ s.advance(200000);
+ assert.equal(s.control.current(),null);
+ assert.equal(s.control.get(m.id).status,'BLOCKED');
+});
+
+test('contract failure allowance admits distinct recovery steps but not repeated unsafe actions',t=>{
+ const s=setup(t,['repo-read','browser-click','health-check']);
+ const contract={scope:{allowed:['src/**']}, acceptance:['Inspect the project'], execution:{autonomous:true}, verification:{tests_required:false}, budget:{max_failures:5}};
+ const m=s.control.create({...goal,idempotencyKey:'five-known-failures',contract,allowedTasks:['repo-read','health-check','browser-click']});
+ const fail=(id,name,unknown=false)=>{
+   const {token}=s.control.claim(id,'a');
+   const a=s.control.begin(id,{owner:'a',token,task:{type:'browser-click',data:{name}}});
+   return s.control.finish(id,{owner:'a',token,actionId:a.id,receipt:{ok:false,verified:false,error:'KNOWN_FAILURE',...(unknown?{outcomeUnknown:true}:{})}});
+ };
+ for(let i=0;i<4;i++)assert.equal(fail(m.id,'Option '+i).status,'ACTIVE');
+ assert.equal(fail(m.id,'Option 4').status,'BLOCKED');
+ const same=s.control.create({...goal,idempotencyKey:'repeat-same',contract,allowedTasks:['browser-click']});
+ assert.equal(fail(same.id,'Option').status,'ACTIVE');
+ assert.equal(fail(same.id,'Option').status,'ACTIVE');
+ assert.equal(fail(same.id,'Option').status,'BLOCKED');
+ const uncertain=s.control.create({...goal,idempotencyKey:'unknown-outcome',contract,allowedTasks:['browser-click']});
+ assert.equal(fail(uncertain.id,'Option',true).status,'BLOCKED');
+});
+
+test('contracted planning error allowance replaces the fixed three-error gate',t=>{
+ const s=setup(t);
+ const m=s.control.create({...goal,idempotencyKey:'planning-budget-five',contract:{
+   scope:{allowed:['src/**']},acceptance:['Inspect project'],budget:{max_failures:5}}});
+ for(let i=0;i<5;i++){
+   const {token}=s.control.claim(m.id,'a');
+   const result=s.control.release(m.id,{owner:'a',token,error:'RETRYABLE_PLAN_ERROR_'+i});
+   assert.equal(result.status,i===4?'BLOCKED':'ACTIVE');
+ }
+});
+
+test('operator model selection requeues only a pure local selection blocker, preserves budget and receipts', t=>{
+ const s=setup(t);
+ const m=s.control.create({...goal,idempotencyKey:'model-selection-recovery'});
+ const {token}=s.control.claim(m.id,'nova');
+ s.control.release(m.id,{owner:'nova',token,error:'PLANNER_BLOCKED:AURA_MODEL_SELECTION_REQUIRED'});
+ assert.equal(s.control.get(m.id).status,'BLOCKED');
+ assert.deepEqual(s.control.recoverModelSelection({provider:'fixture',model:'text',by:'aura-chat'}),[]);
+ const choice={provider:'fixture',model:'text',by:'operator'};
+ s.reopen();
+ assert.deepEqual(s.control.recoverModelSelection(choice),[m.id]);
+ const ready=s.control.get(m.id);
+ assert.equal(ready.status,'ACTIVE');
+ assert.equal(ready.failures,1);
+ assert.equal(ready.receipts.length,0);
+ assert.equal(s.control.bus.lastMissionEvent(m.id,'NOVA_MODEL_SELECTION_REQUEUED').payload.preservedBudget,true);
+ assert.deepEqual(s.control.recoverModelSelection(choice),[]);
+ assert.ok(s.control.claim(m.id,'nova').token);
+});
+test('model recovery does not lift another blocker, later approval or operator pause',t=>{
+ const s=setup(t);
+ for(const [key,error,event] of [
+   ['policy','PLANNER_BLOCKED:MANDATE_DENIED',null],
+   ['approval','PLANNER_BLOCKED:AURA_MODEL_SELECTION_REQUIRED','NOVA_OPERATOR_APPROVAL_REQUIRED'],
+   ['paused','PLANNER_BLOCKED:AURA_MODEL_SELECTION_REQUIRED',null]
+ ]){
+   const m=s.control.create({...goal,idempotencyKey:key,goal:key});
+   const {token}=s.control.claim(m.id,'nova');
+   s.control.release(m.id,{owner:'nova',token,error});
+   if(event)s.control.bus.event(event,{missionId:m.id,payload:{error:'POLICY_REQUIRED'}});
+   if(key==='paused')s.control.pause(m.id,'operator paused');
+ }
+ assert.deepEqual(s.control.recoverModelSelection({provider:'fixture',model:'text',by:'operator'}),[]);
+ assert.equal(s.control.current(),null);
 });

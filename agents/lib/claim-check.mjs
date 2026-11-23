@@ -7,6 +7,7 @@
 // A fact found in no receipt, or a claim the judge finds contradicted, stops auto-approval; the
 // operator sees which claim and why. A claim resting on a cut receipt is reported as partial.
 import { citedSteps } from './evidence.mjs';
+import { openAiChatCompletionsUrl } from './planner-choice.mjs';
 
 const stepOf = receipt => Number(/:turn:(\d+)$/.exec(String(receipt?.actionId || ''))?.[1]) || null;
 // Models write typographic hyphens and markdown; receipts are plain.
@@ -163,20 +164,31 @@ export const modelIdentity = model => String(model || '').toLowerCase().split('/
 // the gpt-oss planners, and it found a planted contradiction in about a second (2026-10-04).
 export function judgeCandidates(env = process.env, { exclude = [] } = {}) {
   const list = [];
+  // Any OpenAI-compatible endpoint the operator already pays for can judge. Without this the only cloud
+  // judges were Groq and Ollama Cloud, so a host with OpenRouter or DeepSeek configured fell through to the
+  // small local model — and a small model is worse than none here: asked to grade "I deployed the site",
+  // qwen2.5:1.5b answered "supported" because the README mentions the project (measured 2026-11-21).
+  // It graded a fabricated deployment as verified, which is the one outcome this check exists to prevent.
+  const configuredUrl = String(env.JACO_CLAIM_JUDGE_URL || '').trim();
+  const configuredKey = String(env.JACO_CLAIM_JUDGE_KEY_ENV ? env[env.JACO_CLAIM_JUDGE_KEY_ENV] || '' : env.JACO_CLAIM_JUDGE_KEY || '').trim();
+  const configuredModel = String(env.JACO_CLAIM_JUDGE_MODEL || '').trim();
+  if (configuredUrl && configuredModel) {
+    list.push({ name: env.JACO_CLAIM_JUDGE_NAME || 'configured', model: configuredModel, url: configuredUrl, key: configuredKey });
+  }
   if (env.GROQ_API_KEY) list.push({ name: 'groq', model: env.JACO_CLAIM_JUDGE_GROQ_MODEL || 'openai/gpt-oss-120b', url: 'https://api.groq.com/openai/v1/chat/completions', key: env.GROQ_API_KEY });
   if (env.OLLAMA_API_KEY) list.push({ name: 'ollama-cloud', model: env.JACO_CLAIM_JUDGE_OLLAMA_CLOUD_MODEL || 'gemma4:31b', url: `${env.OLLAMA_CLOUD_URL || 'https://ollama.com'}/v1/chat/completions`, key: env.OLLAMA_API_KEY });
-  list.push({ name: 'ollama', model: env.JACO_CLAIM_JUDGE_OLLAMA_MODEL || env.JACO_OLLAMA_LOCAL_MODEL || 'gemma3:4b', url: `${env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434'}/v1/chat/completions`, key: 'ollama' });
+  list.push({ name: 'ollama', model: env.JACO_CLAIM_JUDGE_OLLAMA_MODEL || env.JACO_OLLAMA_LOCAL_MODEL || 'gemma3:4b', url: openAiChatCompletionsUrl(env.OLLAMA_BASE_URL, 'http://127.0.0.1:11434'), key: 'ollama' });
   const excluded = new Set(exclude.map(e => modelIdentity(String(e).slice(String(e).indexOf('/') + 1))));
   return list.filter(j => !exclude.includes(`${j.name}/${j.model}`) && !excluded.has(modelIdentity(j.model)));
 }
 
-async function askJudge(judge, request, fetchImpl) {
+async function askJudge(judge, request, fetchImpl, timeoutMs = Infinity) {
   const res = await fetchImpl(judge.url, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${judge.key}` },
     body: JSON.stringify({ model: judge.model, temperature: 0, max_tokens: 2048,
       ...(judge.name === 'groq' ? { reasoning_effort: 'low' } : {}),
       messages: [{ role: 'system', content: request.system }, { role: 'user', content: request.user }] }),
-    signal: AbortSignal.timeout(judge.name === 'ollama' ? 240_000 : 60_000),
+    signal: AbortSignal.timeout(Math.max(1, Math.min(timeoutMs, judge.name === 'ollama' ? 240_000 : 60_000))),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`JUDGE_HTTP_${res.status}`);
@@ -185,13 +197,16 @@ async function askJudge(judge, request, fetchImpl) {
 
 // The full check. ok is false when a fact was found in no receipt or a claim was contradicted; a judge
 // that could not run leaves those claims unjudged (reported), never approved by default reasoning.
-export async function checkClaims(answer, receipts = [], { env = process.env, fetchImpl = fetch, exclude = [] } = {}) {
+export async function checkClaims(answer, receipts = [], { env = process.env, fetchImpl = fetch, exclude = [], maxJudgeMs = Infinity } = {}) {
   const rules = checkClaimsByRules(answer, receipts);
   const request = judgeRequest(rules, receipts);
   let judge = null, verdicts = [], judgeError = null;
   if (request) {
+    const deadline = Date.now() + maxJudgeMs;
     for (const candidate of judgeCandidates(env, { exclude })) {
-      try { verdicts = await askJudge(candidate, request, fetchImpl); judge = `${candidate.name}/${candidate.model}`; judgeError = null; break; }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) { judgeError = 'JUDGE_DEADLINE_EXCEEDED'; break; }
+      try { verdicts = await askJudge(candidate, request, fetchImpl, remaining); judge = `${candidate.name}/${candidate.model}`; judgeError = null; break; }
       catch (error) { judgeError = String(error?.message || error).slice(0, 160); }
     }
   }

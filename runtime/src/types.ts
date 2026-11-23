@@ -539,6 +539,8 @@ export interface AuraMemoryItem {
 }
 
 export interface CompetitiveIntelligenceMemoryItem {
+  // Optional for legacy records, which are excluded from planning without provenance.
+  evidence?: { status: 'HYPOTHESIS'; origin: 'model-analysis'; sourceHash: string; fetchedAt: string };
   id: string;
   timestamp: string;
   competitorName: string;

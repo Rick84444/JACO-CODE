@@ -15,13 +15,14 @@ test('Manual and Planning cannot create a mission; Full Autonomous never represe
   assert.equal(AURA_RUN_MODES.manual.createsMission, false);
   assert.equal(AURA_RUN_MODES.planning.createsMission, false);
   assert.equal(AURA_RUN_MODES.autonomous.createsMission, true);
-  assert.equal(AURA_RUN_MODES.autonomous.interactionMode, 'question');
+  assert.equal(AURA_RUN_MODES.autonomous.interactionMode, 'action', 'in Full Autonomous Aura acts in the conversation under her mandate');
+  assert.equal(AURA_RUN_MODES.manual.interactionMode, 'question');
   assert.equal(AURA_RUN_MODES.planning.interactionMode, 'planning');
   assert.equal(normalizeAuraRunMode('autonomous').executionMode, 'autonomous');
   assert.throws(() => normalizeAuraRunMode('unlimited'), /AURA_RUN_MODE_UNKNOWN/);
-  assert.equal(initialAuraRunMode('autonomous'), 'manual', 'autonomous must require explicit selection per session');
-  assert.equal(initialAuraRunMode('planning'), 'planning');
-  assert.equal(initialAuraRunMode(null), 'manual');
+  for (const stored of [undefined, null, 'manual', 'planning', 'autonomous', 'invalid']) {
+    assert.equal(initialAuraRunMode(stored), 'autonomous', 'legacy storage cannot downgrade the operator workflow');
+  }
   assert.equal(normalizeAuraChatMode('planning'), 'planning');
   assert.equal(normalizeAuraChatMode('question'), 'question');
   assert.equal(normalizeAuraChatMode(undefined), 'action', 'old API clients retain their behavior');
@@ -85,14 +86,16 @@ test('Planning system instruction survives a completely full RAG budget on all t
   assert.ok(planning.system.length > 1000,'system instruction is not truncated with RAG');
 });
 
-test('The current GUI has a single compact label, inline build flow and no popup on autonomous selection', () => {
+test('The GUI is autonomous at startup with a non-interactive status and explicit mission start', () => {
   const gui = read('runtime/src/components/AuraChatPanel.tsx');
   const css = read('runtime/src/cognitive-workspace.css');
   const parent = read('runtime/src/components/JacoAuraComputeIDE.tsx');
   const backend = read('runtime/server.ts');
-  assert.match(gui,/data-testid="jaco-run-mode-toggle"/);
+  assert.match(gui,/<span data-testid="jaco-run-mode-status"/);
   assert.match(gui,/data-run-mode=\{runMode\}/);
-  assert.match(gui,/showModePicker &&/);
+  assert.match(gui,/const runMode = initialAuraRunMode\(\)/);
+  assert.match(gui,/interactionMode: 'action'/);
+  assert.doesNotMatch(gui,/showModePicker|setRunMode|selectRunMode|jaco-run-mode-toggle|jaco:aura:run-mode:v1/);
   assert.match(gui,/jaco-autonomous-active/);
   assert.match(gui,/data-testid="jaco-build-agent-toggle"/);
   assert.match(gui,/data-testid="jaco-build-agent-panel"/);
@@ -100,7 +103,7 @@ test('The current GUI has a single compact label, inline build flow and no popup
   assert.match(gui,/x-jaco-operator-token/);
   assert.match(gui,/reportsTo:'aura'/);
   assert.match(gui,/Build Agent is a local UI action in every mode/);
-  assert.ok(gui.includes('return ask(); // Every mode retains normal conversation; mission start is explicit.'));
+  assert.ok(gui.includes('return ask(); // Conversation remains available; direct mission start is explicit.'));
   assert.match(gui,/data-testid="jaco-chat-send"/);
   assert.match(gui,/data-testid="jaco-start-mission"/);
   assert.ok(gui.includes('onClick={()=>void goal()}'));
@@ -122,7 +125,7 @@ test('The Build Agent operator action uses the existing dedicated organization a
   const gui = read('runtime/src/components/AuraChatPanel.tsx');
   const org = read('runtime/src/server/connected/agentOrganization.mjs');
   assert.match(gui,/fetch\('\/api\/aura\/organization\/agents'/);
-  assert.match(gui,/kind:'local',providerId:'ollama',model:''/);
+  assert.match(gui,/kind:'planner',providerId:'',model:''/);
   assert.match(gui,/type="password" autoComplete="off"/);
   assert.match(org,/router\.post\('\/agents', handle\(req => \(\{ agent: organization\.createAgent/);
   assert.match(org,/requireMutationAuth\(req, res, next\)/);

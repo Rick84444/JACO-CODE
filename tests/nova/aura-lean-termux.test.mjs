@@ -20,7 +20,7 @@ test('Aura Lean is optional and does not change SEER/Nova/model or stored secret
   assert.match(ctl,/set_config_export JACO_WORKPLACE_SUPERVISE_NOVA/);
 });
 
-test('Termux Core launcher disables MCP eager start only when Aura Lean is selected',t=>{
+test('Termux Core launcher disables MCP eager start only when Aura Lean is selected',{skip:process.platform==='win32'&&'links /bin/bash, needs POSIX'},t=>{
   const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-aura-lean-'));
   t.after(()=>fs.rmSync(tmp,{recursive:true,force:true}));
   const prefix=path.join(tmp,'prefix'),home=path.join(tmp,'home');

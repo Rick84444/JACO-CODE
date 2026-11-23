@@ -61,9 +61,9 @@ test('a monthly budget blocker is explained to a person instead of dumped as an 
   assert.doesNotMatch(event.text,/PLANNER_BLOCKED|AURA_SELECTED_MODEL_UNAVAILABLE/);
 });
 
-test('raw arguments, credentials and untrusted result URLs stay out of the live contract',()=>{
+test('nonterminal raw payloads, credentials and untrusted result URLs stay out of the live contract',()=>{
   const secret='private-random-value';
-  const event=toCognitiveEvent(action({ok:false,error:'password=hunter2 Bearer confidential ghp_123456 '+secret,data:{apiKey:'do-not-copy'},result:{url:'javascript:alert(1)',output:'raw-private-output'}}),{secrets:[secret]});
+  const event=toCognitiveEvent(action({type:'repo-read',ok:false,error:'password=hunter2 Bearer confidential ghp_123456 '+secret,data:{apiKey:'do-not-copy'},result:{url:'javascript:alert(1)',output:'raw-private-output'}}),{secrets:[secret]});
   const text=JSON.stringify(event);
   for(const privateValue of ['hunter2','confidential','ghp_123456',secret,'do-not-copy','raw-private-output'])assert.equal(text.includes(privateValue),false);
   assert.equal(event.evidence.url,null);
@@ -101,6 +101,24 @@ test('real SQLite mission history replays after a process-store restart without 
     const resumed=readCognitiveFeed({bus,workstream,after:first.cursor});
     assert.equal(resumed.events.length,1);assert.equal(resumed.events[0].evidence.outcome,'verified');
   } finally {bus?.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('live tool evidence retains its exact parent Gameboard graph and node',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-live-node-'));
+  const bus=new DurableMissionBus(dir);
+  try {
+    const mission=bus.createMission({goal:'Inspect provider routing',
+      metadata:{parent:{graphId:'graph:provider',nodeKey:'provider-routing'}}});
+    bus.event('NOVA_ACTION_STARTED',{missionId:mission.id,payload:{
+      action:{id:'action-routing',type:'repo-read',data:{path:'runtime.ts'}}
+    }});
+    const feed=readCognitiveFeed({bus,workstream});
+    const event=feed.events.find(item=>item.type==='NOVA_ACTION_STARTED');
+    assert.equal(event.planId,'graph:provider');
+    assert.equal(event.nodeKey,'provider-routing');
+    assert.equal(event.toolType,'repo-read');
+    assert.equal(event.actionId,'action-routing');
+  }finally{bus.close();fs.rmSync(dir,{recursive:true,force:true});}
 });
 
 test('bounded replay explicitly identifies missing older history',()=>{

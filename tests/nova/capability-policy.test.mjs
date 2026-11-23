@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl } from '../../runtime/src/server/connected/novaMissionControl.mjs';
-import { CapabilityPolicy, taskCatalog, ALWAYS_ASK } from '../../runtime/src/server/capabilities/capabilityPolicy.mjs';
+import { CapabilityPolicy, taskCatalog, ALWAYS_ASK, configuredTaskCeiling } from '../../runtime/src/server/capabilities/capabilityPolicy.mjs';
 import { operatorApprovalCheck } from '../../agents/lib/operator-action-guard.mjs';
 import { TASK_FIELDS } from '../../agents/lib/task-fields.mjs';
 
@@ -38,12 +38,12 @@ test('turning things off persists across restart, validates ids and can be reset
   assert.deepEqual(new CapabilityPolicy(file, { taskIds }).snapshot().disabledTasks, [], 'a damaged file means everything on, not everything off');
 });
 
-function control(t, capabilities) {
+function control(t, capabilities, options = {}) {
   // The database must be closed before its folder can be removed on Windows.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-capabilities-mission-'));
   const bus = new DurableMissionBus(dir);
   t.after(() => { bus.close(); fs.rmSync(dir, { recursive: true, force: true }); });
-  return new NovaMissionControl(bus, capabilities ? { capabilities } : {});
+  return new NovaMissionControl(bus, { ...options, ...(capabilities ? { capabilities } : {}) });
 }
 
 test('with the switches, a mission starts with every enabled task; without them the legacy scope is unchanged', t => {
@@ -63,6 +63,7 @@ test('a task the operator turned off is missing from new missions and refused fo
   const mission = missions.create({ goal: 'Look at the page', idempotencyKey: 'cap-3' });
   assert.ok(mission.allowedTasks.includes('browser-click'));
   policy.update({ tasks: { 'browser-click': false } });
+  assert.ok(!missions.get(mission.id).allowedTasks.includes('browser-click'), 'existing mission must see the live operator restriction');
   assert.ok(!missions.create({ goal: 'Look at another page', idempotencyKey: 'cap-4' }).allowedTasks.includes('browser-click'));
   const { token } = missions.claim(mission.id, 'agent');
   assert.throws(() => missions.begin(mission.id, { owner: 'agent', token, task: { type: 'browser-click', data: { selector: 'a' } } }), /TASK_TURNED_OFF_BY_OPERATOR:browser-click/);
@@ -73,4 +74,28 @@ test('Aura\'s own outward tools ask like other connector writes', () => {
     assert.ok(operatorApprovalCheck({ type: 'mcp-write', data: { server: 'jaco', tool } }), tool);
   for (const tool of ['jaco_system_health', 'wordpress_status', 'knowledge_search'])
     assert.equal(operatorApprovalCheck({ type: 'mcp-write', data: { server: 'jaco', tool } }), null, tool);
+});
+
+
+test('sandbox profile follows canonical capabilities and preserves explicit ceilings and operator switches', t => {
+  assert.equal(configuredTaskCeiling('sandbox'), undefined);
+  assert.equal(configuredTaskCeiling(''), undefined);
+  assert.deepEqual(configuredTaskCeiling('web-fetch, repo-read'), ['web-fetch','repo-read']);
+  const policy = new CapabilityPolicy(path.join(tmp(t), 'sandbox.json'), { taskIds });
+  policy.update({ tasks: { 'mcp-write': false } });
+  const mission = control(t, policy).create({ goal: 'Research and inspect', idempotencyKey: 'sandbox-profile' });
+  for (const task of ['mcp-call','skill-load','screenshot','browser-survey-site','mouse-move','android-observe','vault-get-secret']) assert.ok(mission.allowedTasks.includes(task), task);
+  assert.ok(!mission.allowedTasks.includes('mcp-write'));
+  assert.ok(!mission.allowedTasks.includes('repo-scan'));
+  assert.ok(!mission.allowedTasks.includes('repo-write'), 'coding writes require a separate contract');
+});
+
+
+test('desktop sandbox enables read-only WMI through the canonical registry and honors operator disable', t => {
+  const policy = new CapabilityPolicy(path.join(tmp(t), 'desktop.json'), { taskIds });
+  const missions = control(t, policy, { allowedTasks: configuredTaskCeiling('sandbox') });
+  const m = missions.create({goal:'Inspect Windows system',idempotencyKey:'desktop-wmi',executor:'desktop-agentos'});
+  assert.ok(m.allowedTasks.includes('windows-wmi-read'));
+  policy.update({tasks:{'windows-wmi-read':false}});
+  assert.ok(!missions.get(m.id).allowedTasks.includes('windows-wmi-read'));
 });

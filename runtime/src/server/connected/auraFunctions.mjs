@@ -13,10 +13,13 @@ export const AURA_FUNCTION_DEFINITIONS = Object.freeze([
 const observed = (ready, fallback = 'UNOBSERVED') => ready ? 'OBSERVED' : fallback;
 
 export function projectAuraFunctions({ workplace = null, coordinator = null, graphs = null,
-  missions = null, workers = [], tools = null, now = new Date().toISOString(), safeText = value => String(value ?? '').slice(0, 200) } = {}) {
+  missions = null, workers = [], tools = null, planner = null, now = new Date().toISOString(), safeText = value => String(value ?? '').slice(0, 200) } = {}) {
   const workplaceReachable = workplace?.reachable === true;
   const seerReachable = coordinator?.reachable === true;
   const model = seerReachable ? coordinator?.health?.local_model : null;
+  // With the unified Aura runtime SEER has no local model on purpose; Aura reasons with the model the operator chose,
+  // which is saved only after it answered a test request. That saved choice is the inference evidence here.
+  const chosen = !model?.model && planner?.by === 'operator' && planner.provider && planner.model ? planner : null;
   const visibleMissions = Array.isArray(missions) ? missions : null;
   const active = visibleMissions?.filter(m => m.status === 'ACTIVE') || [];
   const verifiedSteps = visibleMissions?.reduce((n, mission) =>
@@ -28,7 +31,7 @@ export function projectAuraFunctions({ workplace = null, coordinator = null, gra
   const toolRows = Array.isArray(tools) ? tools : null;
   const connectedTools = toolRows?.filter(tool => tool.status === 'READY').length ?? null;
   const states = {
-    reason: seerReachable ? observed(Boolean(model?.model), 'NO_MODEL_OBSERVED') : 'UNAVAILABLE',
+    reason: chosen ? 'OBSERVED' : seerReachable ? observed(Boolean(model?.model), 'NO_MODEL_OBSERVED') : 'UNAVAILABLE',
     plan: !seerReachable ? 'UNAVAILABLE' : observed(Array.isArray(graphs), 'UNOBSERVED'),
     execute: !visibleMissions ? 'UNAVAILABLE' : freshWorkers > 0 ? 'OBSERVED' : active.length ? 'NO_WORKER_OBSERVED' : 'IDLE',
     memory: !workplaceReachable ? 'UNAVAILABLE' : observed(Boolean(workplace?.memoryState), 'UNOBSERVED'),
@@ -36,7 +39,7 @@ export function projectAuraFunctions({ workplace = null, coordinator = null, gra
     verify: !visibleMissions ? 'UNAVAILABLE' : verifiedSteps > 0 ? 'EVIDENCE_OBSERVED' : 'NO_EVIDENCE_OBSERVED',
   };
   const detail = {
-    reason: model?.model ? safeText(model.model) : 'No working inference verified',
+    reason: model?.model ? safeText(model.model) : chosen ? `${safeText(chosen.provider)}/${safeText(chosen.model)} · answered a test request when chosen${chosen.at ? ` (${safeText(chosen.at)})` : ''}` : 'No working inference verified',
     plan: Array.isArray(graphs) ? String(graphs.length) + ' observed plan graphs' : 'Plan graphs not observed',
     execute: String(active.length) + ' active missions, ' + String(freshWorkers) + ' fresh worker processes',
     memory: workplace?.memoryState?.storage ? safeText(workplace.memoryState.storage) : 'Memory layer not verified',

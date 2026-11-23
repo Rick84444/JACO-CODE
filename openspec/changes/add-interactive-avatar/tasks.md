@@ -1,0 +1,11 @@
+# Tasks
+- [x] Inspect repository architecture and OpenSpec conventions.
+- [x] Inspect candidate upstream documentation and Talking Avatar LICENSE.
+- [ ] Verify all asset and dependency licenses and pin versions.
+- [ ] Trace existing voice audio and communication events.
+- [ ] Build isolated integration spike with rigged face, visemes and deformed particle rendering.
+- [ ] Integrate accessible responsive dialog with existing UI and voice.
+- [ ] Add lifecycle, deduplication, mission continuity and fallback tests.
+- [ ] Run typecheck, client build, focused tests and affected CI.
+- [ ] Measure Windows and Android performance and speech synchronization.
+- [ ] Independent review and archive after verified merge.

@@ -78,3 +78,17 @@ test('SEER client preserves mission context and reports an unavailable model',as
     /all_providers_failed \[llamacpp:PROVIDER_HTTP_ERROR:400\]/
   );
 });
+
+test('perception capability labels are discoverable without new authority or tool IDs',async()=>{
+  await fixture(async rpc=>{
+    const tools=(await (await rpc('tools/list')).json()).result.tools;
+    for(const name of ['nova_observe','nova_ax','nova_html','nova_screenshot']){
+      const t=tools.find(t=>t.name===name);
+      assert.match(t.description,name==='nova_screenshot'?/LASER VISION/:/DOM TRACK/);
+      assert.equal(t.annotations.readOnlyHint,true);
+    }
+    assert.ok(!tools.some(t=>['dom_track','laser_vision'].includes(t.name)));
+    const r=await (await rpc('tools/call',{name:'laser_vision'})).json();
+    assert.equal(r.error.code,-32602);
+  },async()=>{throw Error('UNEXPECTED_UPSTREAM');});
+});

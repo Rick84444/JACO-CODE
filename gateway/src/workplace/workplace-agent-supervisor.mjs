@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process';
+import { localServiceUrl, followResolvedRuntime } from '../../../agents/lib/resolved-endpoints.mjs';
 import { resolve } from 'node:path';
 
 function normalizeToken(env = {}) {
@@ -83,6 +84,7 @@ export function createWorkplaceAgentSupervisor({
   let seerChild = null;
   let novaChild = null;
   let stopping = false;
+  let endpointFollower = null;
   let restartTimer = null;
   let launching = false;
   let restartAttempts = 0;
@@ -111,7 +113,8 @@ export function createWorkplaceAgentSupervisor({
   const novaEntry = env.JACO_EXECUTOR === 'desktop-agentos'
     ? 'agents/run-desktop-agentos.mjs' : 'agents/hands-off-agent.mjs';
 
-  const runtimeUrl = String(env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
+  // Resolved at spawn time: the launcher may have moved Core off its default port.
+  const runtimeUrl = () => localServiceUrl('runtime', env).replace(/\/+$/, '');
   const seerUrl = String(env.SEER_URL || 'http://127.0.0.1:2997').replace(/\/+$/, '');
   const litertV1 = asV1(env.JACO_LITERT_URL);
   const llamaCppV1 = asV1(env.JACO_LLAMACPP_URL || 'http://127.0.0.1:9380/v1');
@@ -122,7 +125,7 @@ export function createWorkplaceAgentSupervisor({
       enabled,
       state: aggregateState,
       workplaceUrl,
-      runtimeUrl,
+      runtimeUrl: runtimeUrl(),
       seerUrl,
       aura: {
         identity: 'Aura',
@@ -172,7 +175,7 @@ export function createWorkplaceAgentSupervisor({
       JACO_WORKPLACE_URL: workplaceUrl,
       JACO_WORKPLACE_REQUIRED: '1',
       JACO_NOVA_EXECUTOR: supervisedNovaExecutor(env),
-      JACO_RUNTIME_URL: runtimeUrl,
+      JACO_RUNTIME_URL: runtimeUrl(),
       SEER_URL: seerUrl,
       JACO_LITERT_URL: litertV1,
       JACO_LLAMACPP_URL: llamaCppV1,
@@ -377,6 +380,11 @@ export function createWorkplaceAgentSupervisor({
       });
       child.once('error', cause => {
         error(`[JACO Workplace] SEER spawn error: ${cause?.message || cause}`);
+        if (seerChild === child && child.pid == null) {
+          seerChild = null;
+          seerState = stopping ? 'STOPPED' : 'RESTARTING';
+          schedule(launch);
+        }
       });
     }
 
@@ -459,6 +467,12 @@ export function createWorkplaceAgentSupervisor({
     });
     child.once('error', cause => {
       error(`[JACO Workplace] Nova spawn error: ${cause?.message || cause}`);
+      if (novaChild === child && child.pid == null) {
+        novaChild = null;
+        novaState = stopping ? 'STOPPED' : 'RESTARTING';
+        aggregateState = stopping ? 'STOPPED' : 'RECOVERING_NOVA';
+        schedule(launch);
+      }
     });
   }
 
@@ -469,7 +483,7 @@ export function createWorkplaceAgentSupervisor({
 
     aggregateState = 'WAITING_RUNTIME';
     try {
-      await waitForJson(`${runtimeUrl}/api/runtime/identity`, fetchImpl, waitMs);
+      await waitForJson(`${runtimeUrl()}/api/runtime/identity`, fetchImpl, waitMs);
       if (stopping) return;
 
       aggregateState = 'WAITING_MODEL';
@@ -528,12 +542,15 @@ export function createWorkplaceAgentSupervisor({
     }
     if (!workplaceUrl) throw new Error('WORKPLACE_SUPERVISOR_URL_REQUIRED');
     stopping = false;
+    if (!endpointFollower) endpointFollower = followResolvedRuntime(env);
     void launch();
     return snapshot();
   }
 
   async function stop() {
     stopping = true;
+    endpointFollower?.stop();
+    endpointFollower = null;
     if (restartTimer) clearTimeout(restartTimer);
     restartTimer = null;
 

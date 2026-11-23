@@ -102,7 +102,7 @@ test('optional browser services report intentional disablement, not false downti
 
 test('dormant Aura views code-split; supervisor reduces retry/probe pressure without losing receipts',() => {
   const ui=source('runtime/src/components/JacoAuraComputeIDE.tsx');
-  for(const name of ['CognitiveGameboard','VoiceChannel','RevenueView','SkillsView','DevicesView']) {
+  for(const name of ['CognitiveGameboard','VoiceChannel','EconomyView','SkillsView','DevicesView']) {
     assert.match(ui,new RegExp('React\\.lazy\\(\\(\\) => import\\(\\x27\\./'+name+'\\x27\\)'));
   }
   const supervisor=source('gateway/src/workplace/workplace-agent-supervisor.mjs');

@@ -1,0 +1,11 @@
+# Tasks
+- [x] Price catalog with source and fetch time, persisted in the state directory (`tests/nova/price-catalog.test.mjs`).
+- [x] Cost engine uses catalog prices and fails closed without a price (`tests/nova/aura-cost-engine.test.mjs`).
+- [x] Economy route and view; Revenue sidebar removed (`tests/nova/economic-budget.test.mjs`, `aura-gui-audit.test.mjs`).
+- [x] Native local Ollama with explicit context; structured errors keep their message (`tests/nova/ollama-native.test.mjs`).
+- [x] Planner probe rejects tool-less models (`tests/nova/planner-choice.test.mjs`).
+- [x] Org permissions enforced for Aura tools and Nova tasks (`tests/nova/agent-organization.test.mjs`).
+- [x] Rebased onto `main` 0d61684; full suite green on Windows together with `fix/windows-test-portability`.
+- [ ] Observe CI on the exact SHA.
+- [ ] Observe the Economy view in the running GUI with live prices fetched.
+- [ ] Observe a local Ollama planner run that keeps the full prompt.

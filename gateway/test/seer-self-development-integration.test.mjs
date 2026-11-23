@@ -12,6 +12,7 @@ import { DurableMissionBus } from '../../runtime/src/server/connected/durableMis
 import { NovaMissionControl } from '../../runtime/src/server/connected/novaMissionControl.mjs';
 import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
 import { checkedReceipt } from '../../agents/lib/mission-client.mjs';
+import { autoResolution } from '../../agents/lib/approval-policy.mjs';
 
 function graphFixture() {
   const db = new DatabaseSync(':memory:');
@@ -145,14 +146,13 @@ test('self-development closes SEER -> Mission Graph -> Nova -> coding workspace 
   assert.equal(awaiting.status, 'AWAITING_VERIFICATION');
   assert.equal(awaiting.contractStatus.machineVerified, true);
 
-  const beforeOperator = graph.reconcileNova(createdGraph.id, 'code-change', awaiting);
-  assert.equal(beforeOperator.outcome, 'awaiting_operator');
-  assert.equal(beforeOperator.graph.nodes[0].status, 'RUNNING');
-
-  const done = control.resolve(novaMission.id, {
-    decision: 'confirm',
-    note: 'E2E operator confirms verified local commit',
-  });
+  const beforeResolution = graph.reconcileNova(createdGraph.id, 'code-change', awaiting);
+  assert.equal(beforeResolution.outcome, 'awaiting_verification');
+  assert.equal(beforeResolution.graph.nodes[0].status, 'RUNNING');
+  assert.equal(control.get(novaMission.id).status,'AWAITING_VERIFICATION');
+  const verdict=autoResolution({...awaiting,receipts:control.evidenceReceipts(novaMission.id)},{level:2,graph:beforeResolution.graph});
+  assert.equal(verdict?.decision,'confirm');
+  const done = control.resolveAutomatic(novaMission.id,verdict);
   assert.equal(done.status, 'DONE');
 
   const reconciled = graph.reconcileNova(createdGraph.id, 'code-change', done);

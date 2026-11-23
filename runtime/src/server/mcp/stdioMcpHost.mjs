@@ -18,9 +18,25 @@ import path from 'node:path';
 import { HttpMcpClient } from './httpMcpClient.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
+// Classify a failed MCP child without leaking its stderr, which may contain
+// private paths, environment variables, or provider diagnostics.
+export function classifyMcpChildExit(code, stderr = '', initialized = false) {
+  if (!initialized && /(?:ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND)/.test(String(stderr))) return 'ENTRYPOINT_NOT_FOUND';
+  if (!initialized && code === 0) return 'NO_MCP_HANDSHAKE';
+  return 'EXIT_' + (Number.isInteger(code) ? code : 'UNKNOWN');
+}
+
 // Tools that only read but do not declare readOnlyHint.
 const KNOWN_READ_ONLY = { fetch: new Set(['fetch']) };
 export const isReadOnlyTool = (server, tool) => Boolean(tool?.readOnly || KNOWN_READ_ONLY[server]?.has(tool?.name));
+// Never invent a tool or strip another server's namespace. Exact registered names win.
+export function resolveAdvertisedTool(server, name, tools) {
+  if (typeof name !== 'string') return null;
+  const exact = tools.find(t => t.name === name);
+  if (exact) return exact;
+  const prefix = server + '.';
+  return name.startsWith(prefix) ? tools.find(t => t.name === name.slice(prefix.length)) || null : null;
+}
 const ID = /^[a-z][a-z0-9-]{1,40}$/;
 export const AGENT_ACCESS = ['off', 'read', 'write'];
 // Logos the IDE ships (src/components/mcpLogos.ts); anything else shows the MCP logo.
@@ -28,19 +44,34 @@ export const ICONS = ['jaco', 'mcp', 'git', 'github', 'cloudflare', 'huggingface
 // Paths an agent may never write through a tool, whatever the server's access.
 const PROTECTED_PATH = /(^|[\\/])(\.env(\.[^\\/]*)?|\.git|node_modules)([\\/]|$)|secret|credential/i;
 
+function commercialDiscoveryServers() {
+  return {
+    jobbi: { name: 'Jobbi', role: 'Public paid agent-gig discovery; never claims or pays', icon: 'mcp', transport: 'http', url: 'https://jobbi.org/mcp', agentAccess: 'read' },
+    frantic: { name: 'Frantic discovery', role: 'Public bounty and payout-ledger research only', icon: 'mcp', transport: 'http', url: 'https://api.gofrantic.com/mcp/discovery', agentAccess: 'read' },
+  };
+}
+
 export function defaultServers({ repoRoot, runtimeRoot }) {
   // Lite ships this server; full-runtime launchers and uvx/npx are not bundled dependencies.
   if (process.env.JACO_LITE === '1') return {
+    ...commercialDiscoveryServers(),
+    ...(process.env.JACO_LITE_BROWSER_AVAILABLE === '1' && process.env.JACO_ENABLE_CDP !== '0' ? { browser: {
+      name: 'Browser', role: 'Aura browser: existing CDP bridge and verified page actions', icon: 'mcp', agentAccess: 'write',
+      transport: 'http', url: `http://127.0.0.1:${Number(process.env.JACO_CDP_BRIDGE_PORT) || 2996}/mcp`,
+      tokenEnv: 'JACO_GATEWAY_TOKEN', localBridge: true,
+    } } : {}),
     editor: { name: 'JACO Editor', role: 'project files, git and observed runtime', icon: 'jaco', agentAccess: 'read', gameboardJournalOnly: true,
       command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-editor.mjs')], cwd: runtimeRoot,
       env: { JACO_RUNTIME_URL: process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000' } },
-    // Bounded commands in the project (ls, cat, grep, git ...) for agents on a phone or Linux. The programs it runs are
-    // POSIX ones, so it is not offered on Windows. Read-only for agents unless the operator sets its access to write.
-    ...(process.platform !== 'win32' && fs.existsSync(path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')) ? { shell: {
-      name: 'JACO Shell', role: `bounded commands in ${repoRoot} (read-only unless access is write)`, icon: 'jaco', agentAccess: 'read',
-      command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')], cwd: runtimeRoot, env: { JACO_SHELL_WORKSPACE: repoRoot } } } : {}),
+    // The same bundled shell discovers actual Windows/Linux executables; do not hide it on Windows.
+    // Built-in shell is write-enabled by default; preserve explicit operator access settings.
+    ...(fs.existsSync(path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')) ? { shell: {
+      name: 'JACO Shell', role: `local executable discovery and authorized read/write commands in ${repoRoot}`, icon: 'jaco', agentAccess: 'write',
+      command: process.execPath, args: [path.join(runtimeRoot, 'dist', 'jaco-shell.mjs')], cwd: runtimeRoot, env: { JACO_SHELL_WORKSPACE: repoRoot, JACO_SHELL_INTERPRETERS: process.env.JACO_SHELL_INTERPRETERS ?? '1' } } } : {}),
   };
   return {
+    ...commercialDiscoveryServers(),
+    ...(process.env.JACO_AGENTGIGS_API_KEY ? { agentgigs: { name: 'AgentGigs', role: 'Worker-side job status and scoped applications; local commercial mandate required', icon: 'mcp', agentAccess: 'write', command: process.execPath, args: [path.join(runtimeRoot,'tools','jaco-agentgigs-mcp.mjs')], cwd: runtimeRoot, env: { JACO_AGENTGIGS_API_KEY: '${JACO_AGENTGIGS_API_KEY}', JACO_AGENTGIGS_ENABLE_WRITES: '${JACO_AGENTGIGS_ENABLE_WRITES}' } } } : {}),
     jaco: {
       name: 'JACO', role: 'runtime, missions, Workplace, providers', icon: 'jaco', agentAccess: 'write',
       command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-mcp-launch.mjs')],
@@ -49,11 +80,12 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
     },
     filesystem: {
       name: 'Filesystem', role: `read and write files under ${repoRoot}`, icon: 'mcp', agentAccess: 'write',
-      command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', repoRoot],
+      // JACO's own server on the bundled Node: works offline right after installation, nothing downloaded.
+      command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-filesystem-mcp.mjs'), repoRoot], cwd: runtimeRoot,
     },
     // Switching branch or resetting would move the checkout the running runtime is built from.
     git: {
-      name: 'Git', role: `git status, diff, log and commit in ${repoRoot}`, icon: 'git', agentAccess: 'write', deny: ['git_reset', 'git_checkout', 'git_init'],
+      name: 'Git', role: `git status, diff, log, fetch, pull, commit and fast-forward merge in ${repoRoot}`, icon: 'git', agentAccess: 'write', deny: ['git_reset', 'git_checkout', 'git_init'],
       command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-git-mcp.mjs'), repoRoot],
       cwd: runtimeRoot, env: { JACO_GIT_WORKSPACE: repoRoot },
     },
@@ -72,18 +104,31 @@ export function defaultServers({ repoRoot, runtimeRoot }) {
       name: 'JACO Connect', role: 'connect services from a URL, store or generate secrets, request accounts and API keys',
       command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-connect-mcp.mjs')],
     },
-    // JACO Shell (tools/jaco-shell-mcp.mjs): bounded commands in the repository. No shell interprets anything; read-only
-    // commands by default, shell_run only when the operator sets this server's access to write.
+    // JACO Shell: the operator wants local development available from first start.
+    // Explicit read/off/deny settings and the mission's authorized tasks remain authoritative.
     shell: {
-      name: 'JACO Shell', role: `bounded commands in ${repoRoot} (read-only unless access is write)`, icon: 'jaco', agentAccess: 'read',
-      command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-shell-mcp.mjs')], env: { JACO_SHELL_WORKSPACE: repoRoot },
+      name: 'JACO Shell', role: `local executable discovery and authorized read/write commands in ${repoRoot}`, icon: 'jaco', agentAccess: 'write',
+      command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'jaco-shell-mcp.mjs')], env: { JACO_SHELL_WORKSPACE: repoRoot, JACO_SHELL_INTERPRETERS: process.env.JACO_SHELL_INTERPRETERS ?? '1' },
     },
     cloudflare: {
       name: 'Cloudflare', role: 'read-only account connection and Worker inventory', icon: 'cloudflare', agentAccess: 'read',
       command: process.execPath, args: [path.join(runtimeRoot, 'tools', 'cloudflare-read-mcp.mjs')],
     },
+    // Aura's own Chrome through JACO's local CDP bridge (agents/cdp-bridge.mjs on loopback). It opens and reads any
+    // http(s) page; clicks and typing stay limited to JACO_BROWSER_ALLOWED_ORIGINS and the bridge's spend guard.
+    ...(process.env.JACO_ENABLE_CDP !== '0' ? { browser: {
+      name: 'Browser', role: 'Aura\'s own Chrome: open pages, read text, accessibility tree and screenshots; click and type on allowed origins', icon: 'mcp', agentAccess: 'write',
+      transport: 'http', url: `http://127.0.0.1:${Number(process.env.JACO_CDP_BRIDGE_PORT) || 2996}/mcp`,
+      tokenEnv: process.env.JACO_GATEWAY_TOKEN ? 'JACO_GATEWAY_TOKEN' : 'GATEWAY_TOKEN', localBridge: true,
+    } } : {}),
   };
 }
+
+// Only the built-in loopback browser bridge counts as local; a configured remote MCP never gets this flag.
+const localBridge = def => {
+  if (def.localBridge !== true || def.transport !== 'http') return false;
+  try { const url = new URL(def.url); return url.protocol === 'http:' && url.hostname === '127.0.0.1'; } catch { return false; }
+};
 
 // Applies the operator's access settings from the config entry onto a server definition.
 function withAccess(def, s = {}) {
@@ -101,7 +146,7 @@ export function agentRefusal(def, tool, args = {}) {
   if (def.deny?.includes(tool.name)) return 'MCP_TOOL_DENIED';
   const reads = Boolean(tool.readOnly || KNOWN_READ_ONLY[def.id]?.has(tool.name));
   if (reads) return null;
-  if (def.transport === 'http') return 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY';
+  if (def.transport === 'http' && !localBridge(def)) return 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY';
   // A single scoped, append-only coordination exception for the bundled JacoEdit,
   // never a general write grant. It is available only to the built-in stdio server;
   // overriding it with a user command or remote MCP removes this trusted flag.
@@ -213,43 +258,53 @@ class StdioClient {
 
   start() {
     if (this.ready) return this.ready;
+    let startingProc = null;
     this.ready = (async () => {
       const [command, args] = resolveCommand(this.def.command, this.def.args);
       // No shell: arguments are passed as an array and never concatenated into a command line.
-      const proc = this.proc = spawn(command, args, {
+      const proc = startingProc = this.proc = spawn(command, args, {
         cwd: this.def.cwd || process.cwd(), env: { ...process.env, ...resolveEnv(this.def.env) },
         stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
       });
-      this.initialized = false; this.buf = '';
+      this.initialized = false; this.buf = ''; this.tools = []; this.lastStderr = '';
       this.startedAt = new Date().toISOString();
       proc.stdout.setEncoding('utf8');
       proc.stdout.on('data', chunk => { if (this.proc === proc) this.onData(chunk); });
-      proc.stderr.on('data', chunk => { this.lastStderr = String(chunk).slice(-500); });
+      proc.stderr.on('data', chunk => { if (this.proc === proc) this.lastStderr = String(chunk).slice(-500); });
       // Events of a process that was already replaced (stop + restart) must not touch the new one.
-      proc.on('exit', code => {
+      // Node emits 'exit' before stdio pipes necessarily drain. A missing
+      // entrypoint can therefore be misclassified as EXIT_1 instead of
+      // ENTRYPOINT_NOT_FOUND if the error text arrives after 'exit'.
+      // 'close' happens after the stdio streams close, preserving the actual
+      // failure classification without reading or publishing private stderr.
+      proc.on('close', code => {
         if (this.proc !== proc) return;
-        this.error = `exited with code ${code}${this.lastStderr ? `: ${this.lastStderr.trim().slice(-200)}` : ''}`;
-        this.failPending(`MCP_SERVER_EXITED:${this.id}`);
-        this.proc = null; this.ready = null; this.initialized = false;
+        this.error = `MCP_SERVER_EXITED:${this.id}:${classifyMcpChildExit(code, this.lastStderr, this.initialized)}`;
+        this.failPending(this.error);
+        this.proc = null; this.ready = null; this.initialized = false; this.tools = [];
       });
       // A command that cannot be spawned (e.g. uvx not installed) fails now, not after the 120 s timeout.
       proc.on('error', e => {
         if (this.proc !== proc) return;
         this.error = e.message;
         this.failPending(`MCP_SERVER_SPAWN_FAILED:${this.id}:${e.code || e.message}`);
+        this.stop();
       });
       proc.stdin.on('error', () => {});
       await this.request('initialize', { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'jaco', version: '0.21' } }, 120_000);
+      if (this.proc !== proc) throw Error(`MCP_START_SUPERSEDED:${this.id}`);
       this.notify('notifications/initialized');
       const listed = await this.request('tools/list', {}, 60_000);
-      this.tools = (listed?.tools || []).map(t => ({
+      if (this.proc !== proc) throw Error(`MCP_START_SUPERSEDED:${this.id}`);
+      if (!Array.isArray(listed?.tools)) throw Error('MCP_TOOL_LIST_INVALID');
+      this.tools = listed.tools.map(t => ({
         name: String(t.name), description: String(t.description || ''),
         inputSchema: t.inputSchema || { type: 'object', properties: {} },
         readOnly: t.annotations?.readOnlyHint === true,
       }));
       this.error = null; this.initialized = true;
       return this;
-    })().catch(e => { this.error = String(e.message || e); this.stop(); throw e; });
+    })().catch(e => { if (this.proc === startingProc) { this.error = String(e.message || e); this.stop(); } throw e; });
     return this.ready;
   }
 
@@ -281,7 +336,7 @@ class StdioClient {
   failPending(message) { for (const p of this.pending.values()) p.reject(new Error(message)); this.pending.clear(); }
   stop() {
     const proc = this.proc;
-    this.proc = null; this.ready = null; this.initialized = false;
+    this.proc = null; this.ready = null; this.initialized = false; this.tools = [];
     this.failPending(`MCP_SERVER_STOPPED:${this.id}`);
     try { proc?.kill(); } catch {}
   }
@@ -350,6 +405,26 @@ export class StdioMcpHost {
     return { id, removed: !builtIn, disabled: builtIn };
   }
 
+  // Operator-only cleanup: quarantine only *observed FAILED* custom servers.
+  // Keep their full saved definitions (including credential references), so the
+  // operator can repair/re-enable them later. Built-ins and healthy servers stay.
+  quarantineFailedCustom() {
+    const failed = this.status().filter(s => s.status === 'FAILED' && s.builtIn === false).map(s => s.id);
+    if (!failed.length) return { disabled: [], definitionsPreserved: true };
+    let config;
+    try { config = JSON.parse(fs.readFileSync(this.configFile, 'utf8')); }
+    catch { throw Error('MCP_CONFIG_UNREADABLE'); }
+    if (!config || typeof config !== 'object' || !config.servers ||
+        typeof config.servers !== 'object' || Array.isArray(config.servers)) throw Error('MCP_CONFIG_INVALID');
+    const disabled = failed.filter(id => Object.hasOwn(config.servers, id) &&
+      config.servers[id] && config.servers[id].enabled !== false);
+    if (!disabled.length) return { disabled: [], definitionsPreserved: true };
+    for (const id of disabled) config.servers[id] = { ...config.servers[id], enabled: false };
+    this.writeConfig(config);
+    for (const id of disabled) { this.clients.get(id)?.stop(); this.clients.delete(id); }
+    return { disabled, definitionsPreserved: true };
+  }
+
   // Agent access for one server; takes effect on the next call without restarting the server.
   setAccess(id, { agentAccess, deny } = {}) {
     if (!this.servers()[id]) throw Error(`MCP_SERVER_UNKNOWN:${id}`);
@@ -380,14 +455,15 @@ export class StdioMcpHost {
       const c = this.clients.get(id);
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
       if (def.validationError) return { id, name: def.name, role: def.role, transport: 'http', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
-      const tools = (c?.tools || []).map(t => ({ ...t, readOnly: Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name)), agentAllowed: agentRefusal(def, t) === null }));
+      const sameLaunch = Boolean(c && launchKey(c.def) === launchKey(def));
+      const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => ({ ...t, readOnly: Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name)), agentAllowed: agentRefusal(def, t) === null }));
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
         credentialEnv: id === 'huggingface' ? def.tokenEnv || '' : undefined,
         credentialConfigured: def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
         builtIn: Boolean(defaultServers(this)[id]),
         icon: def.icon, agentAccess: def.agentAccess, deny: def.deny, stats,
-        status: c?.initialized ? 'READY' : c?.ready ? 'STARTING' : c?.error ? 'FAILED' : 'STOPPED',
-        tools, error: c?.error || null, startedAt: c?.startedAt || null };
+        status: sameLaunch ? (c.initialized ? 'READY' : c.ready ? 'STARTING' : c.error ? 'FAILED' : 'STOPPED') : 'STOPPED',
+        tools, error: sameLaunch ? c.error || null : null, startedAt: sameLaunch ? c.startedAt || null : null };
     });
   }
 
@@ -414,27 +490,30 @@ export class StdioMcpHost {
     let c;
     try {
       c = this.client(id);
+      const earlyRefusal = actor === 'agent' && (c.def.agentAccess === 'off' ? 'MCP_AGENT_ACCESS_OFF' : c.def.deny?.includes(name) ? 'MCP_TOOL_DENIED' : null);
+      if (earlyRefusal) throw Error(`${earlyRefusal}:${id}.${name}`);
       await c.start();
-    } catch (e) { done('failed', String(e.message || e).slice(0, 300)); throw e; }
-    const tool = c.tools.find(t => t.name === name);
-    if (!tool) { done('failed', `MCP_TOOL_UNKNOWN:${id}.${name}`); throw new Error(`MCP_TOOL_UNKNOWN:${id}.${name}`); }
+      // The operator may change access, workspace or the server launch config during initialize.
+      if (this.client(id) !== c || !c.initialized) throw Error(`MCP_START_SUPERSEDED:${id}`);
+    } catch (e) {
+      const message = String(e.message || e).slice(0, 300);
+      done(/^(MCP_AGENT_ACCESS_OFF|MCP_TOOL_DENIED):/.test(message) ? 'refused' : 'failed', message);
+      throw Object.assign(new Error(message), { dispatchState: 'NOT_DISPATCHED' });
+    }
+    const tool = resolveAdvertisedTool(id, name, c.tools);
+    if (!tool) { done('failed', `MCP_TOOL_UNKNOWN:${id}.${name}`); throw Object.assign(new Error(`MCP_TOOL_UNKNOWN:${id}.${name}`), { dispatchState: 'NOT_DISPATCHED' }); }
+    name = tool.name;
     const reads = Boolean(tool.readOnly || KNOWN_READ_ONLY[id]?.has(name));
     const refusal = actor === 'agent' ? agentRefusal(c.def, tool, args) || (readOnly && !reads ? 'MCP_TOOL_NOT_READ_ONLY' : null)
-      : c.def.transport === 'http' && !tool.readOnly ? 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY' : null;
-    if (refusal) { done('refused', `${refusal}:${id}.${name}`); throw new Error(`${refusal}:${id}.${name}`); }
+      : c.def.transport === 'http' && !tool.readOnly && !localBridge(c.def) ? 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY' : null;
+    if (refusal) { done('refused', `${refusal}:${id}.${name}`); throw Object.assign(new Error(`${refusal}:${id}.${name}`), { dispatchState: 'NOT_DISPATCHED' }); }
     try {
-      let result;
-      try { result = await c.request('tools/call', { name, arguments: args }, timeoutMs); }
-      catch (e) {
-        // A server that is not running (exited between calls) is started again and the call retried once.
-        // A server that exits during the call is not retried: the call may have had an effect.
-        if (!/^MCP_SERVER_NOT_RUNNING/.test(e.message)) throw e;
-        c = this.client(id); await c.start();
-        result = await c.request('tools/call', { name, arguments: args }, timeoutMs);
-      }
+      // Never retry a call after entering the transport. A remote error string
+      // is not evidence that dispatch did not occur.
+      const result = await c.request('tools/call', { name, arguments: args }, timeoutMs);
       done(result?.isError === true ? 'tool_error' : 'ok', result?.isError === true ? String((result.content || []).map(x => x?.text || '').join(' ')).slice(0, 300) : null);
       return result;
-    } catch (e) { done('failed', String(e.message || e).slice(0, 300)); throw e; }
+    } catch (e) { const message = String(e.message || e).slice(0,300); done('failed',message); throw Object.assign(new Error(message),{dispatchState:'UNKNOWN'}); }
   }
 
   stopAll() { for (const c of this.clients.values()) c.stop(); }

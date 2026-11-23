@@ -1,3 +1,4 @@
+import { NO_PRICE_ENV, PRICED_ENV } from './priced-env.mjs';
 // The budget must not silently block the chat (operator 2026-10-09): cloud is one visible switch, an
 // unknown-outcome reservation cannot hold the budget forever, a refused call releases at once, a new
 // model needs no hand-written price, and a failed message says what to do.
@@ -9,7 +10,7 @@ import path from 'node:path';
 import express from 'express';
 import { EconomicGovernor } from '../../runtime/src/server/continuum/economicGovernor.mjs';
 import { createEconomicBudgetRouter } from '../../runtime/src/server/connected/economicBudget.mjs';
-import { manualAuraProviderCompletion, modelPrice, chatFallbackChoice, chatFailureHint, REFERENCE_PRICE } from '../../runtime/src/server/connected/auraOllamaChat.mjs';
+import { manualAuraProviderCompletion, modelPrice, chatFallbackChoice, chatFailureHint } from '../../runtime/src/server/connected/auraOllamaChat.mjs';
 import { SecretStore, hydrateEnvFromStore } from '../../agents/lib/secret-store.mjs';
 
 const governor = t => {
@@ -59,30 +60,30 @@ const ask = { providerId: 'newprov', model: 'm', system: 'system prompt', user: 
 test('a refused or limited call (wrong key, rate limit) releases its reservation at once; a lost response stays unknown', async () => {
   for (const status of [401, 403, 429]) {
     const h = harness(`PROVIDER_HTTP_${status}: nope`);
-    await assert.rejects(() => manualAuraProviderCompletion(ask, { providers: h.providers, economic: h.economic, env: {} }));
+    await assert.rejects(() => manualAuraProviderCompletion(ask, { providers: h.providers, economic: h.economic, env: PRICED_ENV }));
     assert.deepEqual(h.costs.map(c => c[0]), ['reserve', 'release'], `HTTP ${status}`);
   }
   for (const failure of ['PROVIDER_HTTP_503: down', 'The operation was aborted due to timeout']) {
     const h = harness(failure);
-    await assert.rejects(() => manualAuraProviderCompletion(ask, { providers: h.providers, economic: h.economic, env: {} }));
+    await assert.rejects(() => manualAuraProviderCompletion(ask, { providers: h.providers, economic: h.economic, env: PRICED_ENV }));
     assert.deepEqual(h.costs.map(c => c[0]), ['reserve', 'unknown'], failure);
   }
 });
 
-test('models need no hand-written price: configured wins, :free costs nothing, anything else uses the reference price', async () => {
+test('no price is made up: configured wins, :free costs nothing, an unlisted model with no catalog is refused', async () => {
   assert.deepEqual(modelPrice('x', 'm', { JACO_AURA_PROVIDER_PRICES_JSON: '{"x/m":{"input":1,"output":2}}' }), { input: 1, output: 2, source: 'configured' });
-  assert.equal(modelPrice('openrouter', 'qwen/q:free', {}).free, true);
-  assert.deepEqual([modelPrice('x', 'm', {}).input, modelPrice('x', 'm', {}).output], [REFERENCE_PRICE.input, REFERENCE_PRICE.output]);
-  assert.equal(modelPrice('x', 'm', { JACO_AURA_DEFAULT_PRICE_JSON: '{"input":1,"output":5}' }).output, 5);
-  assert.equal(modelPrice('x', 'm', { JACO_AURA_DEFAULT_PRICE_JSON: 'not json' }).output, REFERENCE_PRICE.output, 'a bad override falls back');
+  assert.equal(modelPrice('openrouter', 'qwen/q:free', NO_PRICE_ENV).free, true);
+  assert.throws(() => modelPrice('no-such-provider', 'm', NO_PRICE_ENV), /MODEL_PRICE_UNKNOWN/);
+  assert.equal(modelPrice('x', 'm', { ...NO_PRICE_ENV, JACO_AURA_DEFAULT_PRICE_JSON: '{"input":1,"output":5}' }).output, 5);
+  assert.throws(() => modelPrice('no-such-provider', 'm', { ...NO_PRICE_ENV, JACO_AURA_DEFAULT_PRICE_JSON: 'not json' }), /MODEL_PRICE_UNKNOWN/, 'a bad override is ignored');
   const paid = harness(null);
-  const r = await manualAuraProviderCompletion(ask, { providers: paid.providers, economic: paid.economic, env: {} });
+  const r = await manualAuraProviderCompletion(ask, { providers: paid.providers, economic: paid.economic, env: PRICED_ENV });
   assert.equal(r.costStatus, 'SETTLED'); assert.equal(paid.calls.length, 1);
   const free = harness(null, 'openrouter'); free.providers.list = () => [{ ...provider('openrouter'), defaultModel: 'a:free' }];
-  const f = await manualAuraProviderCompletion({ ...ask, providerId: 'openrouter', model: 'a:free' }, { providers: free.providers, economic: free.economic, env: {} });
+  const f = await manualAuraProviderCompletion({ ...ask, providerId: 'openrouter', model: 'a:free' }, { providers: free.providers, economic: free.economic, env: PRICED_ENV });
   assert.equal(f.costStatus, 'FREE'); assert.equal(free.costs.length, 0, 'verified OpenRouter free suffix needs no reservation');
   const disguised = harness(null); disguised.providers.list = () => [{ ...provider('newprov'), defaultModel: 'a:free' }];
-  const paidNamedFree = await manualAuraProviderCompletion({ ...ask, model: 'a:free' }, { providers: disguised.providers, economic: disguised.economic, env: {} });
+  const paidNamedFree = await manualAuraProviderCompletion({ ...ask, model: 'a:free' }, { providers: disguised.providers, economic: disguised.economic, env: PRICED_ENV });
   assert.equal(paidNamedFree.costStatus, 'SETTLED');
   assert.deepEqual(disguised.costs.map(c => c[0]), ['reserve', 'settle'], 'unknown providers cannot claim free billing by naming their model :free');
 });
@@ -112,7 +113,7 @@ test('every failure says in plain Swedish what is wrong and offers one next step
 
 test('saved provider keys become environment variables in each process; the environment still wins; agent passwords are not exported', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hydrate-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const store = new SecretStore({ env: {}, dir });
+  const store = new SecretStore({ env: PRICED_ENV, dir });
   store.set('DEEPSEEK_API_KEY', 'ds-secret'); store.set('GROQ_API_KEY', 'groq-secret'); store.set('NOVA_GITHUB_PASSWORD', 'pw'); store.set('PLAIN_NAME', 'x');
   const env = { GROQ_API_KEY: 'from-env' };
   assert.deepEqual(hydrateEnvFromStore(env, store), ['DEEPSEEK_API_KEY']);

@@ -17,10 +17,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { MissionClient, processMissionTurn } from './lib/mission-client.mjs';
 import { seerCompletion } from './lib/seer-client.mjs';
-import { loadState, executeTask as legacyExecuteTask } from './hands-off-agent.mjs';
+import { loadState, executeTask as legacyExecuteTask, computerScreenshotPath, computerSessionStatus } from './hands-off-agent.mjs';
+import { desktopPlannerVision, virtualInputGrant } from './lib/aura-desktop-virtual-input.mjs';
 import { buildAgentCard, joinWorkplace } from './lib/workplace-session.mjs';
 import { windowsWmiRead } from './lib/windows-wmi-read.mjs';
 import { CODE_TASKS } from './lib/coding-contract.mjs';
+import { readRoutineContext, routineContextText } from './lib/routine-experience.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -29,6 +31,9 @@ const TOKEN = process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '';
 const OWNER = process.env.JACO_AGENTOS_OWNER || `desktop-agentos-${os.hostname()}-${process.pid}`;
 const POLL_MS = Math.max(500, Math.min(Number(process.env.JACO_AGENTOS_POLL_MS || 1500), 30_000));
 const ALLOW_COORDINATE_FALLBACK = process.env.JACO_ALLOW_COORDINATE_FALLBACK === '1';
+// Never infer sandbox isolation from a window title or an environment flag alone.
+// An interactive Windows Hyper-V guest is verified at preflight before raw input.
+let virtualInput = virtualInputGrant();
 const ALLOW_SHELL = process.env.JACO_ALLOW_SHELL_TASKS === '1';
 const STATE_DIR = process.env.JACO_AGENTOS_STATE_DIR || path.join(ROOT, '.jaco', 'state', 'desktop-agentos');
 const LOCK_FILE = path.join(STATE_DIR, 'executor.lock.json');
@@ -147,7 +152,7 @@ function extractJson(text) {
 export function plannerAllowedTasks(mission) {
   let tasks = (mission.allowedTasks || []).filter(task => LOCAL_SUPPORTED.has(task));
   if (!mission.contract) tasks = tasks.filter(task => !CODE_TASKS.has(task));
-  if (!ALLOW_COORDINATE_FALLBACK) tasks = tasks.filter(task => !COORDINATE_TASKS.has(task));
+  if (!virtualInput.allowed) tasks = tasks.filter(task => !COORDINATE_TASKS.has(task));
   if (!ALLOW_SHELL) tasks = tasks.filter(task => task !== 'shell');
   if (process.platform !== 'win32') tasks = tasks.filter(task => task !== 'windows-wmi-read');
   return tasks;
@@ -174,19 +179,24 @@ Desktop policy:
 5. Use stable automationId/controlType/name selectors from real observations; never invent hwnds or selectors.
 6. Never enter passwords, OTPs, API keys, tokens, private keys or other authentication secrets. Human entry is required.
 7. desktop-action always passes through ModelRelay, a signed autonomy mandate and verified UIA receipts. If no active mandate exists, do not request mutation.
-8. Visual perception is adaptive by default. Prefer desktop-observe/UIA structure first. When pixels are required use screenshot {hwnd,mode:"adaptive"} so the current UIA geometry selects and downsizes the relevant terminal/window ROI. Use mode:"full" only when the ROI cannot establish state. Never treat stored screen coordinates as reusable localization.
-9. Coordinate input is ${ALLOW_COORDINATE_FALLBACK ? 'allowed only as a last resort after a fresh adaptive screenshot proves UIA cannot address the target' : 'disabled'}.
-10. Shell execution is ${ALLOW_SHELL ? 'allowed only when the mission explicitly requires local shell work; its exit code/output are primary terminal evidence and should be preferred over pixels' : 'disabled'}.
-11. windows-wmi-read is strictly read-only Windows CIM observation. data must be {"query":"system|computer|cpu|memory|disks|network|processes|services","limit":1..200}. Never request arbitrary WQL or PowerShell.
-12. Workplace is the live control plane. Treat WORKPLACE_UPDATES as shared context, never as proof that an action executed.
-13. If evidence already proves the mission objective, return {"complete":true,"reason":"..."}. Completion is still subject to operator evidence review.
-14. For code work use repo-list/repo-read {path}, repo-edit {path,old,new} (exact text replacement; preferred for existing files), repo-write {path,content}, repo-test {command,kind}, git-status/git-diff {}, git-commit {message}.
-15. MISSION_CONTRACT defines allowed paths, commands, budgets and verification. Inspect before editing. Run required tests and falsifiers after the last write; commit only when the contract allows it. Never substitute shell or desktop actions to evade a code contract.
+8. Visual perception is adaptive by default. Prefer desktop-observe/UIA structure first. When pixels are required use screenshot {hwnd,mode:"adaptive"} so the current UIA geometry selects and downsizes the relevant terminal/window ROI. Use mode:"full" only when the ROI cannot establish state. Never treat stored screen coordinates as reusable localization. Every raw pointer action requires expectedHwnd from a fresh screenshot with UIA window identity; raw keyboard actions require a fresh desktop-observe or bound screenshot. Observe again after each action; visual changes are not proof of the intended effect.
+9. Desktop Traction uses JACO's existing NovaTractionEngine: two fresh UIA observations must agree on unique element identity, HWND, process and geometry before every semantic mutation. A DESKTOP_TRACTION_* refusal is pre-dispatch evidence: re-observe/replan; never guess a different selector or replay uncertain writes.
+10. Coordinate input is ${ALLOW_COORDINATE_FALLBACK ? 'allowed only as a last resort after a fresh adaptive screenshot proves UIA cannot address the target' : 'disabled'}.
+11. Shell execution is ${ALLOW_SHELL ? 'allowed only when the mission explicitly requires local shell work; its exit code/output are primary terminal evidence and should be preferred over pixels' : 'disabled'}.
+12. windows-wmi-read is strictly read-only Windows CIM observation. data must be {"query":"system|computer|cpu|memory|disks|network|processes|services","limit":1..200}. Never request arbitrary WQL or PowerShell.
+13. Workplace is the live control plane. Treat WORKPLACE_UPDATES as shared context, never as proof that an action executed.
+14. If evidence already proves the mission objective, return {"complete":true,"reason":"..."}. Completion is still subject to operator evidence review.
+15. For code work use repo-list/repo-read {path}, repo-edit {path,old,new} (exact text replacement; preferred for existing files), repo-write {path,content}, repo-test {command,kind}, git-status/git-diff {}, git-commit {message}.
+16. MISSION_CONTRACT defines allowed paths, commands, budgets and verification. Inspect before editing. Run required tests and falsifiers after the last write; commit only when the contract allows it. Never substitute shell or desktop actions to evade a code contract.
 Otherwise return {"complete":false,"task":{"type":"...","data":{},"expectedOutcome":"observable result"},"reason":"..."}.`;
 
+  const vision = desktopPlannerVision(mission, computerScreenshotPath());
   const recentReceipts = (mission.receipts || []).slice(-8);
-  const user = `MISSION\n${mission.goal}\n\nMISSION_CONTRACT\n${compact(mission.contract || null)}\n\nMISSION_METADATA\n${compact(mission.metadata || {})}\n\nCURRENT_OBSERVATION\n${compact(observation || {})}\n\nWORKPLACE_UPDATES\n${compact(workplaceUpdates.slice(-20))}\n\nRECENT_RECEIPTS\n${compact(recentReceipts)}\n\nSelect the single next verifiable step.`;
-  const proposal = extractJson(await seerCompletion({ system, user, max_tokens: 1300 }));
+  const user = `MISSION\n${mission.goal}\n\nMISSION_CONTRACT\n${compact(mission.contract || null)}\n\nMISSION_METADATA\n${compact(mission.metadata || {})}\n\nCURRENT_OBSERVATION\n${compact(observation || {})}\n\nWORKPLACE_UPDATES\n${compact(workplaceUpdates.slice(-20))}\n\nRECENT_RECEIPTS\n${compact(recentReceipts)}\n${vision.note}\nSelect the single next verifiable step.`;
+  const routineHint=routineContextText(await readRoutineContext({...mission,allowedTasks:allowed},{
+    runtimeUrl:process.env.NODE_TEST_CONTEXT?'':RUNTIME_URL,token:TOKEN
+  }));
+  const proposal = extractJson(await seerCompletion({ system, user:user+routineHint, ...(vision.image ? { image: vision.image } : {}), max_tokens: 1300 }));
   if (proposal?.complete === true) return { complete: true, reason: String(proposal.reason || '').slice(0, 1000) };
   const task = proposal?.task;
   if (!task || typeof task !== 'object' || !allowed.includes(task.type)) throw new Error('SEER_PLAN_TASK_NOT_ALLOWED');
@@ -249,6 +259,20 @@ export async function executeTask(task, mission) {
   }
   if (task.type === 'desktop-action' || task.type === 'desktop-invoke') return executeDesktopAction(task);
   if (task.type === 'windows-wmi-read') return windowsWmiRead(task.data || {});
+  if (COORDINATE_TASKS.has(task.type)) {
+    // These are the *existing* JACO virtual mouse/keyboard tools. Require both
+    // a verified guest preflight and the exact current mission task allowance.
+    if (!virtualInput.allowed) return { ok:false, verified:false, outcomeUnknown:false, error:virtualInput.reason };
+    if (!mission?.id || !Array.isArray(mission.allowedTasks) || !mission.allowedTasks.includes(task.type)) {
+      return { ok:false, verified:false, outcomeUnknown:false, error:'VIRTUAL_INPUT_MISSION_TASK_DENIED' };
+    }
+    // Raw input must not become a shadow authority when semantic UIA is blocked.
+    // Require the same currently signed autonomy mandate as desktop-action.
+    try { await resolveMandateId(mission); }
+    catch (error) {
+      return { ok:false, verified:false, outcomeUnknown:false, error:error instanceof Error ? error.message : 'AUTONOMY_MANDATE_REQUIRED' };
+    }
+  }
   return legacyExecuteTask(task, legacyState, mission);
 }
 
@@ -308,10 +332,29 @@ async function preflight() {
   const relay = await requireRuntime('GET', '/api/relay/status');
   // Fail closed like the former start-all.ps1 gate: two writers through ModelRelay could act twice.
   if (relay?.singleWriter !== true) throw new Error('MODELRELAY_SINGLE_WRITER_UNAVAILABLE');
-  return { identity, desktop: desktop.status, relay };
+  // This is the *same* persistent Win32 input daemon the mission uses, not a
+  // second bridge. It refuses session 0, Winlogon/UAC, and a foreground
+  // window attached to another Windows session before any screenshot/input.
+  const session = await computerSessionStatus();
+  if (session?.ok !== true || session?.verified !== true || session?.interactive !== true ||
+      !Number.isSafeInteger(session.sessionId) || session.sessionId <= 0) {
+    throw new Error('DESKTOP_INTERACTIVE_SESSION_UNVERIFIED:' + String(session?.error || 'NO_SESSION').slice(0, 120));
+  }
+  const guest = ALLOW_COORDINATE_FALLBACK ? await windowsWmiRead({ query: 'computer', limit: 1 }) : null;
+  virtualInput = virtualInputGrant({ wmi: guest, session });
+  if (ALLOW_COORDINATE_FALLBACK && !virtualInput.allowed) {
+    console.warn('[AGENTOS] virtual input refused: ' + virtualInput.reason);
+  }
+  return { identity, desktop: desktop.status, relay, virtualInput, session: { sessionId: session.sessionId, interactive: true } };
 }
 
 export async function runTurn() {
+  // Checking each turn makes a newly disconnected, switched or locked Windows
+  // desktop a PAUSE, not a reason for the model to keep planning blind writes.
+  const session = await computerSessionStatus();
+  if (session?.ok !== true || session?.verified !== true || session?.interactive !== true) {
+    return {executed:false, skipped:'interactive_session_unavailable', reason:session?.error || 'DESKTOP_SESSION_UNAVAILABLE'};
+  }
   return processMissionTurn({
     client: missionClient,
     owner: OWNER,
@@ -356,7 +399,7 @@ export function desktopAgentCard(status = { desktop: { evidenceState: 'UNKNOWN' 
       `UIA evidence at startup: ${status.desktop?.evidenceState || 'UNKNOWN'}`,
       'windows-wmi-read is read-only and limited to fixed CIM profiles; arbitrary WQL/PowerShell is not exposed',
       'Mutations require an active signed autonomy mandate and pass ModelRelay single-writer lease',
-      `coordinate fallback ${ALLOW_COORDINATE_FALLBACK ? 'enabled' : 'disabled'}, shell ${ALLOW_SHELL ? 'enabled' : 'disabled'}`,
+      `virtual mouse/keyboard ${virtualInput.allowed ? 'verified sandbox guest' : virtualInput.reason}, shell ${ALLOW_SHELL ? 'enabled' : 'disabled'}`,
     ],
     preferredTasks: ['Windows system observation', 'desktop application control', 'IDE operation through UI Automation'],
   });
@@ -370,7 +413,7 @@ export async function main() {
     console.log(`[AGENTOS] [REAL] runtime=${RUNTIME_URL}`);
     console.log(`[AGENTOS] [REAL] desktop=${status.desktop.evidenceState} actuation=${status.desktop.actuation}`);
     console.log(`[AGENTOS] [REAL] singleWriter=${status.relay.singleWriter === true}`);
-    console.log(`[AGENTOS] [REAL] coordinateFallback=${ALLOW_COORDINATE_FALLBACK} shell=${ALLOW_SHELL}`);
+    console.log(`[AGENTOS] [REAL] virtualInput=${status.virtualInput.allowed ? 'VERIFIED_HYPERV_GUEST' : status.virtualInput.reason} shell=${ALLOW_SHELL}`);
 
     // Same rule as every JACO executor: no READY Workplace session, no tool use.
     workplace = await joinWorkplace({

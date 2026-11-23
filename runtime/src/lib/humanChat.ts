@@ -19,7 +19,7 @@ const CODES: Array<[RegExp, Words]> = [
   [/MODEL_UNAVAILABLE|NO_PROVIDER|PROVIDER_EMPTY|ALL_PROVIDERS/, ['Ingen modell kunde svara just nu. Kontrollera anslutningen under Anslutningar, så försöker jag igen.', 'No model could answer right now. Check the connection under Connections and I will try again.']],
   [/ENOENT|NOT_FOUND/, ['Något jag letade efter fanns inte där jag trodde. Jag tittar efter på ett annat ställe.', 'Something I looked for was not where I expected. I will look somewhere else.']],
 ];
-const GENERIC: Words = ['Det här steget stoppades av ett tekniskt fel. Detaljerna finns under Bevis, och jag provar ett annat sätt.', 'This step was stopped by a technical error. The details are under Evidence, and I will try another way.'];
+const GENERIC: Words = ['Det här steget gick inte att slutföra. Detaljerna finns under Bevis; något verifierat resultat finns ännu inte.', 'This step could not be completed. The details are under Evidence; there is no verified result yet.'];
 
 // A machine code: SHOUTING_SNAKE with an underscore, often joined by colons (PLANNER_BLOCKED:...:MONTHLY_BUDGET_LIMIT).
 // System error names (ETIMEDOUT, ENOENT) and spawnSync count too: they mean nothing to the operator.
@@ -50,6 +50,12 @@ export function isInternalEvent(event: CognitiveEvent): boolean {
 
 // The event as the chat shows it: plain words in the chosen language. The original stays in evidence.error so the
 // Evidence view can still show exactly what the runtime reported.
+// Emoji and status symbols (check marks, crosses, warnings) copied from test output broke the chat's layout.
+// Aura's own words are shown plain; the operator's words and the evidence are left as they are.
+export function plainChatText(text: string): string {
+  return String(text).replace(/[\p{Extended_Pictographic}\u2139\uFE0F\u200D]/gu, '').replace(/[ \t]{2,}/g, ' ').trim();
+}
+
 export function humanizeEvent(event: CognitiveEvent, language: string): CognitiveEvent {
   const text = String(event.text || '');
   const goal = event.category === 'goal' ? operatorWords(text) : text;
@@ -59,11 +65,18 @@ export function humanizeEvent(event: CognitiveEvent, language: string): Cognitiv
     return { ...event, text: `${dumped[1]}. ${language === 'sv' ? 'Utdata finns under Bevis, och jag tittar på vad som gick fel.' : 'The output is under Evidence, and I am looking at what went wrong.'}`,
       evidence: { ...event.evidence, error: event.evidence?.error || text } };
   }
-  const human = humanCodeText(goal, language);
-  if (!human && goal === text) return event;
+  // Narration may legitimately name a configuration field or a file. That does
+  // not turn the whole human explanation into an error code. Keep intention and
+  // observed learning; error outcomes still use the plain-language diagnostics.
+  const narrated = ['action','plan'].includes(event.category) &&
+    !['failed','unknown'].includes(event.evidence?.outcome) &&
+    /\b(?:Jag|jag|I|We|Nu|För att|Next|First)\b/.test(goal);
+  const human = narrated ? null : humanCodeText(goal, language);
+  const shown = event.category === 'goal' ? (human || goal) : plainChatText(human || goal);
+  if (!human && goal === text && shown === text) return event;
   return {
     ...event,
-    text: human || goal,
+    text: shown,
     evidence: { ...event.evidence, error: event.evidence?.error || (human ? text : event.evidence?.error ?? null) },
   };
 }

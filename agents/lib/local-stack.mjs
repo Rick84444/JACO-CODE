@@ -2,11 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
 import { spawn, execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'dotenv';
+import { ensureGatewayToken } from '../../scripts/setup.mjs';
 import { readStartupEvidence } from './startup-evidence.mjs';
 import { WORKER_WITHHELD_KEY } from './planner-choice.mjs';
+import { executable, chromeExecutable, chromeLaunchArgs } from './chrome-bootstrap.mjs';
+export { executable, chromeExecutable, chromeLaunchArgs };
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -31,6 +35,35 @@ export function runtimeDirectory(root, configured) {
     .map(e => path.join(root, e.name)).filter(isRuntime);
   if (candidates.length !== 1) throw new Error(candidates.length ? 'RUNTIME_DIR_AMBIGUOUS:set JACO_RUNTIME_DIR' : 'RUNTIME_DIR_MISSING:set JACO_RUNTIME_DIR');
   return candidates[0];
+}
+// Service port -> environment variable. One table for configuration, resolution and persistence.
+export const PORT_ENV = { runtime: 'PORT', workplace: 'JACO_WORKPLACE_PORT', seer: 'SEER_PORT', remote: 'JACO_REMOTE_BRIDGE_PORT', a2a: 'JACO_A2A_PORT', novaBridge: 'NOVA_BRIDGE_PORT', cdp: 'JACO_CDP_BRIDGE_PORT', gateway: 'JACO_GATEWAY_PORT', chrome: 'CDP_PORT' };
+export const resolvedPortsFile = dataRoot => path.join(dataRoot, '.jaco', 'state', 'resolved-ports.json');
+// Ports chosen automatically after a foreign process took a default. Entries only apply while the
+// operator's requested port is unchanged, so editing PORT in .env always wins over an old resolution.
+export function readResolvedPorts(dataRoot) {
+  try {
+    const data = JSON.parse(fs.readFileSync(resolvedPortsFile(dataRoot), 'utf8'));
+    return data && data.schema === 'jaco.resolved-ports/v1' && data.ports && typeof data.ports === 'object' ? data.ports : {};
+  } catch { return {}; }
+}
+function applyResolvedPorts(ports, resolved) {
+  for (const [key, entry] of Object.entries(resolved)) {
+    if (key in PORT_ENV && entry && entry.requested === ports[key] && Number.isInteger(entry.port) && entry.port >= 1 && entry.port <= 65535) ports[key] = entry.port;
+  }
+}
+// Every URL and variable derived from a port lives here so a later port change cannot leave a stale consumer.
+export function portEnvironment(env, ports, previous = null) {
+  for (const [key, name] of Object.entries(PORT_ENV)) env[name] = String(ports[key]);
+  const local = key => `http://127.0.0.1:${ports[key]}`;
+  env.JACO_RUNTIME_URL = local('runtime');
+  env.JACO_BASE_URL = env.JACO_RUNTIME_URL;
+  env.JACO_WORKPLACE_URL = local('workplace');
+  env.SEER_URL = local('seer');
+  env.JACO_REMOTE_BRIDGE_URL = local('remote');
+  env.JACO_NOVA_URL = local('novaBridge');
+  env.NOVA_BRIDGE_URL = env.JACO_NOVA_URL;
+  if (!env.JACO_A2A_PUBLIC_URL || (previous && env.JACO_A2A_PUBLIC_URL === `http://127.0.0.1:${previous.a2a}`)) env.JACO_A2A_PUBLIC_URL = local('a2a');
 }
 export function configuration(root = ROOT, inherited = process.env, overrides = {}) {
   root = path.resolve(root);
@@ -58,6 +91,8 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   };
   const ports = { runtime: port('PORT', 3000), workplace: port('JACO_WORKPLACE_PORT', 2995), seer: port('SEER_PORT', 2997), remote: port('JACO_REMOTE_BRIDGE_PORT', 2994), a2a: port('JACO_A2A_PORT', 2998), novaBridge: port('NOVA_BRIDGE_PORT', 4243), cdp: port('JACO_CDP_BRIDGE_PORT', 2996), gateway: port('JACO_GATEWAY_PORT', 4250) };
   ports.chrome = port('CDP_PORT', 9222);
+  const requestedPorts = { ...ports };
+  applyResolvedPorts(ports, readResolvedPorts(dataRoot));
   // Operator 2026-10-22: the agent connects its own browser. Chrome (a dedicated JACO profile), the Nova bridge
   // and the CDP MCP start by default; JACO_ENABLE_CDP=0 turns them off. The ChatGPT gateway stays opt-in
   // (JACO_ENABLE_CHATGPT_GATEWAY=1, or the earlier JACO_ENABLE_CDP=1 that used to start it).
@@ -65,7 +100,6 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
   const gateway = env.JACO_ENABLE_CHATGPT_GATEWAY === '1' || env.JACO_ENABLE_CDP === '1';
   const enabledPorts = Object.entries(ports).filter(([key]) => key === 'gateway' ? gateway : ['chrome','cdp','novaBridge'].includes(key) ? cdp : true).map(([, value]) => value);
   if (new Set(enabledPorts).size !== enabledPorts.length) throw new Error('DUPLICATE_LISTENER_PORT');
-  for (const [key, name] of Object.entries({runtime:'PORT',workplace:'JACO_WORKPLACE_PORT',seer:'SEER_PORT',remote:'JACO_REMOTE_BRIDGE_PORT',a2a:'JACO_A2A_PORT',novaBridge:'NOVA_BRIDGE_PORT',cdp:'JACO_CDP_BRIDGE_PORT',gateway:'JACO_GATEWAY_PORT',chrome:'CDP_PORT'})) env[name] = String(ports[key]);
   Object.assign(env, { HOST: '127.0.0.1', JACO_WORKPLACE_HOST: '127.0.0.1', JACO_A2A_HOST: '127.0.0.1', GATEWAY_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', SEER_TOKEN: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '', DISABLE_HMR: 'true', JACO_WORKPLACE_SUPERVISE_NOVA: '1', JACO_WORKPLACE_SUPERVISE_SEER: '1', JACO_WORKPLACE_REQUIRED: '1', JACO_MCP_REPO_ROOT: root, JACO_INSTALL_ROOT: root, JACO_RUNTIME_DIR: runtime });
   // Single Aura runtime: SEER (strategy) and Nova (execution) are internal capabilities.
   // Do not spin up or pin Ollama simply because it happens to be installed.
@@ -76,25 +110,23 @@ export function configuration(root = ROOT, inherited = process.env, overrides = 
     env.JACO_WORKPLACE_SUPERVISE_MODEL = '0';
     env.JACO_MODEL_PROVIDER = 'aura';
   }
-  env.JACO_RUNTIME_URL = `http://127.0.0.1:${ports.runtime}`;
+  env.JACO_VSCODE_EMBED ??= '1';
+  env.JACO_AUTO_APPROVE_LEVEL ??= '5';
+  env.JACO_AUTO_START_TOOLS ??= '1';
   env.JACO_RELEASE_ROOT = runtime;
+  portEnvironment(env, ports);
   // One model choice for every service. Without this each service reads the file under its own working
   // directory, and the planner can stay pinned to a model the operator replaced long ago.
   env.JACO_PLANNER_CHOICE_FILE ||= path.join(dataRoot === root ? runtime : dataRoot, '.jaco', 'state', 'provider-preference.json');
-  env.JACO_WORKPLACE_URL = `http://127.0.0.1:${ports.workplace}`;
-  env.SEER_URL = `http://127.0.0.1:${ports.seer}`;
-  env.JACO_REMOTE_BRIDGE_URL = `http://127.0.0.1:${ports.remote}`;
-  env.JACO_BASE_URL = env.JACO_RUNTIME_URL;
-  env.JACO_NOVA_URL = `http://127.0.0.1:${ports.novaBridge}`;
-  env.NOVA_BRIDGE_URL = env.JACO_NOVA_URL;
-  env.JACO_A2A_PUBLIC_URL ||= `http://127.0.0.1:${ports.a2a}`;
   env.JACO_A2A_BEARER ||= env.A2A_BEARER_TOKEN || '';
   const mode = env.JACO_START_MODE || 'auto';
-  if (!['auto','source','production'].includes(mode)) throw new Error('START_MODE_INVALID');
+  if (!['auto','source','source-static','production'].includes(mode)) throw new Error('START_MODE_INVALID');
   const built = fs.existsSync(path.join(runtime, 'dist/server.cjs')) && fs.existsSync(path.join(runtime, 'dist/index.html'));
   if (mode === 'production' && !built) throw new Error('PRODUCTION_BUILD_REQUIRED');
+  if (mode === 'source-static' && !fs.existsSync(path.join(runtime, 'dist/index.html'))) throw new Error('CLIENT_BUILD_REQUIRED:npm --prefix runtime run build:client');
   const production = mode === 'production' || (mode === 'auto' && built);
-  return { root, dataRoot, runtime, version: manifest.version, releaseId, env, ports, production, cdp, gateway, tunnel: env.JACO_START_TUNNEL === '1' };
+  const staticUi = production || mode === 'source-static';
+  return { root, dataRoot, runtime, version: manifest.version, releaseId, env, ports, requestedPorts, production, staticUi, cdp, gateway, tunnel: env.JACO_START_TUNNEL === '1' };
 }
 export function serviceEnvironment(config, kind) {
   const env = { ...config.env };
@@ -109,7 +141,7 @@ export function serviceEnvironment(config, kind) {
     // Preserve legacy checkout behavior unless this is a packaged product with a separate writable data root.
     if (config.dataRoot === config.root) delete env.JACO_WORKSPACE_ROOT;
     else env.JACO_WORKSPACE_ROOT = config.dataRoot;
-    env.NODE_ENV = config.production ? 'production' : 'development';
+    env.NODE_ENV = (config.staticUi ?? config.production) ? 'production' : 'development';
     env.OLLAMA_BASE_URL = (env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/v1\/?$/, '').replace(/\/$/, '') + '/v1';
   } else env.JACO_WORKSPACE_ROOT = config.dataRoot || config.root;
   return env;
@@ -132,10 +164,6 @@ export function definitions(c) {
   if (c.gateway) items.push(svc('gateway', c.root, ['gateway/src/chatgpt-nova-gateway.mjs'], url('gateway'), d => d.ok === true && d.service === 'jaco-chatgpt-nova-gateway'));
   for (const item of items) if (item.id === 'workplace') item.token = c.env.JACO_WORKPLACE_TOKEN || '';
   return items;
-}
-export function executable(env, configured, name, candidates = []) {
-  const paths = configured ? [path.resolve(configured)] : [...candidates, ...(env.PATH || env.Path || '').split(path.delimiter).filter(Boolean).map(p => path.join(p.replace(/^"|"$/g, ''), name))];
-  return paths.find(p => fs.existsSync(p) && fs.statSync(p).isFile()) || null;
 }
 export function ollamaExecutable(env, platform = process.platform) {
   return executable(env, env.JACO_OLLAMA_EXECUTABLE, platform === 'win32' ? 'ollama.exe' : 'ollama',
@@ -163,12 +191,24 @@ async function occupied(url) {
     socket.once('connect', () => done(true)); socket.once('error', () => done(false)); socket.once('timeout', () => done(false));
   });
 }
-async function waitReady(s, token, timeout = 180000) {
+export function optionalStartupService(id) {
+  return ['remote', 'a2a', 'novaBridge', 'cdp', 'gateway', 'tunnel'].includes(id);
+}
+export function classifyStartupServices(observed) {
+  const failed = observed.filter(s => s.state !== 'READY');
+  return !observed.some(s => s.id === 'runtime' && s.state === 'READY') || failed.some(s => !optionalStartupService(s.id)) ? 'BLOCKED' : failed.length ? 'DEGRADED' : 'READY';
+}
+export async function waitReady(s, token, timeout = 180000, { child = null, probeImpl = probe, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
   const deadline = Date.now() + timeout;
   do {
-    const result = await probe(s, token);
+    const checkExit = () => {
+      if (child && (child.exitCode != null || child.signalCode != null)) throw new Error(`SERVICE_EXITED_BEFORE_READY:${s.id}:code=${child.exitCode}:signal=${child.signalCode || 'none'}`);
+    };
+    checkExit();
+    const result = await probeImpl(s, token);
+    checkExit();
     if (result.state === 'READY') return result;
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await sleep(1500);
   } while (Date.now() < deadline);
   throw new Error(`SERVICE_NOT_READY:${s.id}:see logs/startup/${s.id}.err.log`);
 }
@@ -185,11 +225,22 @@ function launch(c, s) {
       // for this process rather than spawning a second executor.
       const record = { pid: child.pid, createdAt: new Date().toISOString(), birth: processBirth(child.pid) };
       fs.writeFileSync(path.join(logs, `${s.id}.process.json`), JSON.stringify(record));
-      resolve(child.pid);
+      resolve(child);
     } catch (error) { reject(error); }
   }); });
 }
 export function processBirth(pid) {
+  if (!Number.isSafeInteger(pid) || pid < 1) return null;
+  if (process.platform === 'linux') {
+    // /proc stat field 22 is the process start time in boot-relative ticks.
+    // The comm field may contain spaces or parentheses; split after its last ')'.
+    try {
+      const stat = fs.readFileSync('/proc/' + pid + '/stat', 'utf8');
+      const fields = stat.slice(stat.lastIndexOf(')') + 2).trim().split(/\s+/);
+      const boot = fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+      return /^[0-9]+$/.test(fields[19] || '') && /^[0-9a-f-]{36}$/i.test(boot) ? 'linux:' + boot + ':' + fields[19] : null;
+    } catch { return null; }
+  }
   if (process.platform !== 'win32') return null;
   const value = execFileSync('powershell.exe', ['-NoProfile','-NonInteractive','-Command', `$p=Get-CimInstance Win32_Process -Filter "ProcessId=${Number(pid)}"; if($p){$p.CreationDate.ToUniversalTime().ToString('o')}`], { encoding: 'utf8', windowsHide: true, timeout: 15000 }).trim();
   return value || null;
@@ -203,7 +254,9 @@ export function pendingProcess(c, id) {
   if (!record.birth) throw new Error(`PROCESS_OWNER_NOT_VERIFIED:${id}`);
   // Windows reuses PIDs. A different creation time proves the recorded process has ended, so the record is stale.
   // A foreign process holding the service port is still refused by the listener check.
-  if (processBirth(record.pid) !== record.birth) { fs.rmSync(file, { force: true }); return null; }
+  const birth = processBirth(record.pid);
+  if (!birth) throw new Error(`PROCESS_OWNER_NOT_VERIFIED:${id}`);
+  if (birth !== record.birth) { fs.rmSync(file, { force: true }); return null; }
   return record.pid;
 }
 export function recoverableListener(ownedPid,listenerPid) {
@@ -215,6 +268,25 @@ function ownsListener(c,s) {
   const port=Number(new URL(s.url).port);
   const listener=Number(execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`(Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Where-Object { $_.RemotePort -eq 0 } | Select-Object -First 1).OwningProcess`],{encoding:'utf8',windowsHide:true,timeout:15000}).trim());
   return recoverableListener(pid,listener);
+}
+// Only the canonical installed Core can be recycled for sustained unresponsiveness.
+// Verify its recorded PID, birth time and listener again immediately before termination.
+// The durable mission leases decide recovery on boot; never replay unknown writes here.
+export async function restartOwnedUnhealthyRuntime(c, { unhealthyForMs = 0 } = {}) {
+  if (process.platform !== 'win32' || c.dataRoot === c.root || unhealthyForMs < 300_000) return { restarted: false, reason: 'NOT_ELIGIBLE' };
+  const service = definitions(c).find(s => s.id === 'runtime');
+  const observation = await probe(service, c.env.GATEWAY_TOKEN);
+  if (observation.state === 'READY') return { restarted: false, reason: 'RECOVERED' };
+  const pid = pendingProcess(c, 'runtime');
+  if (!pid) return { restarted: false, reason: 'NO_OWNED_PROCESS' };
+  // A foreign listener may not be stopped, even if a stale receipt exists.
+  if (await occupied(service.url) && !ownsListener(c, service)) return { restarted: false, reason: 'FOREIGN_LISTENER' };
+  const receiptPath = path.join(c.dataRoot, 'logs/startup/runtime.process.json');
+  const record = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+  if (record.pid !== pid || !record.birth || processBirth(pid) !== record.birth) return { restarted: false, reason: 'OWNER_CHANGED' };
+  // Stop only an owned, repeatedly unhealthy API process. This is not a mission action.
+  process.kill(pid, 'SIGTERM');
+  return { restarted: true, reason: 'OWNED_UNHEALTHY_CORE_TERMINATED', pid };
 }
 // Another reader can hold the receipt open for a moment on Windows; that must not abort the startup it describes.
 export function renameWithRetry(from, to, { attempts = 20, waitMs = 100, rename = fs.renameSync } = {}) {
@@ -240,6 +312,27 @@ function novaReadiness(c) {
     { id: 'nova-session', token: c.env.JACO_WORKPLACE_TOKEN || '', url: c.env.JACO_WORKPLACE_URL + '/v1/agents', accept: d => d.agents?.some(a => (c.env.JACO_EXECUTOR === 'desktop-agentos' ? a.requestedName === 'Desktop AgentOS' : ['Nova', 'Aura'].includes(a.requestedName)) && a.sessions?.some(s => ['READY', 'BUSY', 'AVAILABLE'].includes(s.status))) },
   ];
 }
+// HTTP delivery proof only: this does not claim that React has rendered on a device.
+export async function inspectStaticUi(base, fetchImpl = fetch) {
+  try {
+    const origin = new URL(base);
+    const get = pathname => fetchImpl(new URL(pathname, origin), { redirect: 'error', signal: AbortSignal.timeout(10000) });
+    const root = await get('/');
+    if (!root.ok) return { state: 'UNAVAILABLE', reason: 'GUI_HTTP_' + root.status };
+    if (!/text\/html/i.test(root.headers.get('content-type') || '')) return { state: 'UNAVAILABLE', reason: 'GUI_NOT_HTML' };
+    const html = await root.text();
+    const script = html.match(/<script\b[^>]*\bsrc=["'](\/assets\/[^"'<>]+\.js)["']/i)?.[1];
+    if (!script || !html.includes('id="root"')) return { state: 'UNAVAILABLE', reason: 'GUI_ENTRY_MISSING' };
+    const asset = await get(script);
+    const mime = asset.headers.get('content-type') || '';
+    if (!asset.ok || !/(?:java|ecma)script/i.test(mime)) return { state: 'UNAVAILABLE', reason: 'GUI_SCRIPT_HTTP_' + asset.status };
+    const body = await asset.text();
+    if (!body.trim()) return { state: 'UNAVAILABLE', reason: 'GUI_SCRIPT_EMPTY' };
+    return { state: 'HTTP_READY', entry: script };
+  } catch (error) {
+    return { state: 'UNAVAILABLE', reason: 'GUI_FETCH_FAILED:' + (error?.name || 'Error') };
+  }
+}
 export async function inspectStatus(c, services = [...definitions(c), ...novaReadiness(c)]) {
   const startedAt = new Date().toISOString();
   const observed = await Promise.all(services.map(async s => {
@@ -250,18 +343,93 @@ export async function inspectStatus(c, services = [...definitions(c), ...novaRea
   // reconcile. Only the real startup configuration requires the durable receipt.
   const canonical = Boolean(c?.root && c?.runtime && c?.ports);
   const startup = canonical ? readStartupEvidence(c.dataRoot || c.root) : null;
-  const servicesReady = observed.length > 0 && observed.every(s => s.state === 'READY');
-  const state = !servicesReady ? 'BLOCKED' : startup && !startup.ok ? 'DEGRADED' : 'READY';
+  const readiness = classifyStartupServices(observed);
+  const ui = canonical && c.staticUi && observed.some(s => s.id === 'runtime' && s.state === 'READY') ? await inspectStaticUi(c.env.JACO_RUNTIME_URL) : null;
+  const state = readiness === 'READY' && ((startup && !startup.ok) || (ui && ui.state !== 'HTTP_READY')) ? 'DEGRADED' : readiness;
   return { schema: 'jaco.local-startup/v1', state,
     startedAt, observedAt: new Date().toISOString(), runtime: c.runtime,
     scope: canonical
       ? 'fresh service readiness and canonical startup evidence; no task execution verified'
       : 'fresh service readiness only; no task execution verified',
-    ...(startup ? { startup } : {}), services: observed };
+    ...(startup ? { startup } : {}), ...(ui ? { ui } : {}), services: observed };
+}
+async function canBind(port) {
+  return new Promise(resolve => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
+  });
+}
+async function nextFreePort(start, taken, isOccupied, bindable) {
+  for (let port = start + 1; port <= Math.min(65535, start + 1000); port++) {
+    if (taken.has(port) || await isOccupied(port) || !(await bindable(port))) continue;
+    return port;
+  }
+  throw new Error(`NO_FREE_PORT:${start}`);
+}
+// A foreign process on a service port must never stop JACO and must never be stopped by it. Unhealthy
+// listeners that JACO owns keep their port (the guardian recycles them); a foreign listener moves the
+// service to the next free port, and the choice is persisted so every later process agrees.
+// Optional helpers with unresolved ownership stay untouched. Do not reassign a
+// port or spawn a second copy merely because a legacy receipt lacks birth data.
+export function optionalOwnershipFailure(id, error) {
+  return (id === 'chrome' || optionalStartupService(id)) &&
+    (/^(PROCESS_OWNER_NOT_VERIFIED|PROCESS_RECORD_INVALID):/.test(error?.message || '') ||
+      ['EPERM','EACCES'].includes(error?.code));
+}
+export async function resolveServicePorts(c, io = {}) {
+  const isOccupied = io.occupied || (port => occupied(`http://127.0.0.1:${port}/`));
+  const probeService = io.probe || (s => probe(s, c.env.GATEWAY_TOKEN));
+  const owns = io.owns || ownsListener;
+  const bindable = io.bindable || canBind;
+  const checks = definitions(c).map(service => ({ key: service.id, service }));
+  if (c.cdp) checks.push({ key: 'chrome', service: { id: 'chrome', url: `http://127.0.0.1:${c.ports.chrome}/json/version`, accept: d => Boolean(d.webSocketDebuggerUrl) } });
+  const previous = { ...c.ports };
+  const moves = [];
+  for (const { key, service } of checks) {
+    const port = c.ports[key];
+    if ((await probeService(service)).state === 'READY') continue;
+    if (!(await isOccupied(port))) continue;
+    try { if (await owns(c, service)) continue; }
+    catch (error) {
+      if (!optionalOwnershipFailure(key, error) || !io.onOptionalBlocked) throw error;
+      io.onOptionalBlocked(key);
+      continue;
+    }
+    const next = await nextFreePort(port, new Set(Object.values(c.ports)), isOccupied, bindable);
+    c.ports[key] = next;
+    moves.push({ service: key, from: port, to: next });
+  }
+  if (!moves.length) return moves;
+  const stored = readResolvedPorts(c.dataRoot);
+  for (const m of moves) stored[m.service] = { requested: c.requestedPorts?.[m.service] ?? m.from, port: m.to };
+  const file = resolvedPortsFile(c.dataRoot);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file + '.tmp', JSON.stringify({ schema: 'jaco.resolved-ports/v1', updatedAt: new Date().toISOString(), ports: stored }, null, 2));
+  renameWithRetry(file + '.tmp', file);
+  portEnvironment(c.env, c.ports, previous);
+  return moves;
+}
+// Start-up credentials are an internal IPC detail, never an operator setup step.
+// Do not generate them for read-only status/preflight or before the exclusive start lock.
+// Never silently replace an explicit invalid credential: another runtime may be using it.
+export function provisionLocalStartupCredential(c) {
+  const existing = String(c.env.GATEWAY_TOKEN || c.env.JACO_GATEWAY_TOKEN || '');
+  if (existing) {
+    if (existing.length < 24) throw new Error('GATEWAY_TOKEN_REQUIRED_MIN_24: configured credential is invalid');
+    c.env.GATEWAY_TOKEN = existing;
+    c.env.SEER_TOKEN = existing;
+    return { provisioned: false };
+  }
+  const token = ensureGatewayToken(c.dataRoot || c.root, c.env);
+  if (typeof token !== 'string' || token.length < 24) throw new Error('LOCAL_GATEWAY_CREDENTIAL_PROVISION_FAILED');
+  c.env.JACO_GATEWAY_TOKEN = token;
+  c.env.GATEWAY_TOKEN = token;
+  c.env.SEER_TOKEN = token;
+  return { provisioned: true };
 }
 export async function activate(c, { open = false } = {}) {
   if (fs.existsSync(path.join(c.dataRoot || c.root, '.jaco-emergency-stop.json'))) throw new Error('EMERGENCY_STOP_ACTIVE');
-  if (c.env.GATEWAY_TOKEN.length < 24) throw new Error('GATEWAY_TOKEN_REQUIRED_MIN_24');
   if (!fs.existsSync(path.join(c.runtime, 'server.ts'))) throw new Error('RUNTIME_DIR_INVALID');
   if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('NODE_24_OR_NEWER_REQUIRED');
   if (!c.production) {
@@ -270,40 +438,74 @@ export async function activate(c, { open = false } = {}) {
   }
   const dir = path.join(c.dataRoot || c.root, 'logs', 'startup'); fs.mkdirSync(dir, { recursive: true });
   const lock = path.join(dir, 'startup.lock');
-  try { fs.writeFileSync(lock, String(process.pid), { flag: 'wx' }); }
+  // Publish a complete PID atomically; a killed writer cannot leave a zero-byte lock.
+  const publishLock = () => {
+    const temporary = `${lock}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(temporary, String(process.pid), { flag: 'wx', mode: 0o600 });
+      fs.linkSync(temporary, lock);
+    } finally { fs.rmSync(temporary, { force: true }); }
+  };
+  try { publishLock(); }
   catch (e) {
     if (e.code !== 'EEXIST') throw e;
     const pid = Number(fs.readFileSync(lock, 'utf8'));
     if (!Number.isInteger(pid) || pid < 1) throw new Error('STARTUP_LOCK_INVALID');
     try { process.kill(pid, 0); throw new Error('STARTUP_ALREADY_IN_PROGRESS'); }
     catch (error) { if (error.code !== 'ESRCH') throw error; }
-    fs.unlinkSync(lock); fs.writeFileSync(lock, String(process.pid), { flag: 'wx' });
+    // Refuse to remove a lock that changed after the liveness check.
+    if (Number(fs.readFileSync(lock, 'utf8')) !== pid) throw new Error('STARTUP_LOCK_CHANGED');
+    fs.unlinkSync(lock); publishLock();
   }
   const startedAt = new Date().toISOString();
   let installedGuiOpened = false;
   const result = { schema: 'jaco.local-startup/v1', runId: `${process.pid}-${Date.now()}`, startedAt, observedAt: startedAt, sequence: 0, state: 'STARTING', phase: 'preflight', runtime: c.runtime, services: [], expected: { browserAttachment: c.cdp }, browserAttachment: c.cdp ? 'PENDING' : 'NOT_REQUIRED', warnings: [] };
   const checkpoint = phase => { result.phase = phase; result.sequence++; result.observedAt = new Date().toISOString(); save(c, result); };
   try {
+    const credential = provisionLocalStartupCredential(c);
+    if (credential.provisioned) result.warnings.push('LOCAL_GATEWAY_CREDENTIAL_PROVISIONED');
     checkpoint('preflight');
+    // Operators never edit ports: a foreign listener moves the service instead of blocking startup.
+    const skippedOptional = new Set();
+    const skipOptional = id => {
+      if (skippedOptional.has(id)) return;
+      skippedOptional.add(id);
+      result.warnings.push(`OPTIONAL_PROCESS_OWNER_UNVERIFIED:${id}`);
+    };
+    const portMoves = await resolveServicePorts(c, { onOptionalBlocked: skipOptional });
+    if (portMoves.length) {
+      result.portResolutions = portMoves;
+      for (const m of portMoves) console.log(`PORT_REASSIGNED ${m.service} ${m.from} -> ${m.to}`);
+      if (c.tunnel && portMoves.some(m => m.service === 'runtime')) result.warnings.push('TUNNEL_INGRESS_PORT_CHANGED');
+      checkpoint('ports-resolved');
+    }
     // Reject foreign listeners before starting any optional helper.
     for (const service of [...definitions(c)].sort((a, b) => a.id === 'runtime' ? -1 : b.id === 'runtime' ? 1 : 0)) {
+      if (skippedOptional.has(service.id)) continue;
+      try {
       const observed = await probe(service, c.env.GATEWAY_TOKEN);
       // A different checkout of the same JACO release must not impersonate this installed product.
       if (c.dataRoot !== c.root && observed.state === 'READY' && !ownsListener(c, service)) throw new Error(`OTHER_JACO_INSTANCE_RUNNING:${service.id}:stop old checkout before launching installed JACO`);
-      if (observed.state !== 'READY' && await occupied(service.url) && !ownsListener(c,service)) throw new Error(`PORT_CONFLICT_OR_UNHEALTHY:${service.id}`);
+      if (observed.state !== 'READY' && await occupied(service.url) && !ownsListener(c,service)) {
+        if (!optionalStartupService(service.id)) throw new Error(`PORT_CONFLICT_OR_UNHEALTHY:${service.id}`);
+        result.warnings.push(`OPTIONAL_PORT_CONFLICT:${service.id}`);
+      }
+      } catch (error) {
+        if (!optionalOwnershipFailure(service.id, error)) throw error;
+        skipOptional(service.id);
+      }
     }
     let chromeAvailable = !c.cdp;
     if (c.cdp) {
       checkpoint('chrome');
       try {
+        if (skippedOptional.has('chrome')) throw new Error('PROCESS_OWNER_NOT_VERIFIED:chrome');
         const chrome = { id: 'chrome', url: `http://127.0.0.1:${c.ports.chrome}/json/version`, accept: d => Boolean(d.webSocketDebuggerUrl) };
         if ((await probe(chrome)).state !== 'READY') {
           if (await occupied(chrome.url)) throw new Error('PORT_CONFLICT:chrome');
-          const exe = executable(c.env, c.env.JACO_CHROME_EXECUTABLE, 'chrome.exe', [c.env.ProgramFiles, c.env['ProgramFiles(x86)'], c.env.LOCALAPPDATA].filter(Boolean).map(p => path.join(p, 'Google/Chrome/Application/chrome.exe')));
+          const exe = chromeExecutable(c.env);
           if (!exe) throw new Error('CHROME_NOT_INSTALLED');
-          const profile = c.env.JACO_CHROME_PROFILE_DIR || path.join(c.dataRoot || c.root, 'Chrome-CDP');
-          if (!profile) throw new Error('CHROME_PROFILE_DIR_REQUIRED');
-          if (!pendingProcess(c, 'chrome')) await launch(c, { id: 'chrome', cwd: c.root, cmd: exe, args: [`--remote-debugging-port=${c.ports.chrome}`, '--remote-debugging-address=127.0.0.1', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', `--user-data-dir=${path.resolve(c.root, profile)}`, c.env.JACO_BROWSER_START_URL || 'https://www.google.com/'] });
+          if (!pendingProcess(c, 'chrome')) await launch(c, { id: 'chrome', cwd: c.root, cmd: exe, args: chromeLaunchArgs(c) });
           await waitReady(chrome, '', 30000);
         }
         chromeAvailable = true;
@@ -335,27 +537,52 @@ export async function activate(c, { open = false } = {}) {
     }
     for (const s of definitions(c)) {
       checkpoint(`service:${s.id}`);
+      if (skippedOptional.has(s.id)) {
+        result.services.push({ id: s.id, state: 'UNAVAILABLE', url: s.url });
+        checkpoint(`degraded:${s.id}`);
+        continue;
+      }
+      try {
       let state = await probe(s, c.env.GATEWAY_TOKEN);
+      let child = null;
+      if (state.state !== 'READY' && !chromeAvailable && ['novaBridge','cdp'].includes(s.id)) throw new Error('BROWSER_CHROME_UNAVAILABLE');
       if (state.state !== 'READY') {
         // Workplace exclusively owns SEER and Nova. Never launch a second copy.
         if (s.id !== 'seer') {
           if (await occupied(s.url) && !ownsListener(c,s)) throw new Error(`PORT_CONFLICT_OR_UNHEALTHY:${s.id}`);
           const pending = pendingProcess(c, s.id);
-          const pid = pending || await launch(c, s); console.log(`${pending ? 'WAITING' : 'STARTED'} ${s.id} PID=${pid}`);
+          if (!pending) child = await launch(c, s);
+          console.log(`${pending ? 'WAITING' : 'STARTED'} ${s.id} PID=${pending || child.pid}`);
         }
-        state = await waitReady(s, c.env.GATEWAY_TOKEN);
+        state = await waitReady(s, c.env.GATEWAY_TOKEN, optionalStartupService(s.id) ? 30000 : 180000, { child });
       }
       result.services.push({ id: s.id, state: state.state, url: s.url }); console.log(`READY ${s.id}`);
       // Product GUI stays usable for first-run model onboarding even if later workers are DEGRADED.
-      if (open && c.dataRoot !== c.root && s.id === 'runtime' && !installedGuiOpened) {
+      if (open && process.platform === 'win32' && c.dataRoot !== c.root && s.id === 'runtime' && !installedGuiOpened) {
         const browser = spawn('explorer.exe', [c.env.JACO_RUNTIME_URL], { windowsHide: true, detached: true, stdio: 'ignore' });
         browser.unref();
         installedGuiOpened = true;
       }
+      if (s.id === 'runtime' && c.staticUi) {
+        result.ui = await inspectStaticUi(c.env.JACO_RUNTIME_URL);
+        console.log('GUI ' + result.ui.state + (result.ui.reason ? ' ' + result.ui.reason : '') + ' ' + c.env.JACO_RUNTIME_URL);
+        if (result.ui.state !== 'HTTP_READY') result.warnings.push(result.ui.reason);
+      }
       checkpoint(`ready:${s.id}`);
+      } catch (error) {
+        if (!optionalStartupService(s.id)) throw error;
+        result.services.push({ id: s.id, state: 'UNAVAILABLE', url: s.url });
+        result.warnings.push(`OPTIONAL_SERVICE_UNAVAILABLE:${s.id}`);
+        checkpoint(`degraded:${s.id}`);
+      }
     }
     checkpoint('nova');
-    for (const check of novaReadiness(c)) await waitReady(check, c.env.GATEWAY_TOKEN);
+    for (const check of novaReadiness(c)) {
+      checkpoint(`service:${check.id}`);
+      console.log(`WAITING ${check.id}`);
+      await waitReady(check, c.env.GATEWAY_TOKEN);
+      console.log(`READY ${check.id}`);
+    }
     result.services.push({ id: 'nova', state: 'READY', owner: 'workplace' });
     if (c.cdp) {
       checkpoint('browser-attachment');
@@ -389,6 +616,7 @@ export async function activate(c, { open = false } = {}) {
     }
     if (c.tunnel) {
       checkpoint('tunnel');
+      try {
       const config = path.resolve(c.root, c.env.JACO_TUNNEL_CONFIG || 'logs/cloudflared-config.yml');
       if (!fs.existsSync(config)) throw new Error('TUNNEL_CONFIGURATION_MISSING');
       // A tunnel is a single long-lived service. Query process ownership before spawn.
@@ -402,12 +630,17 @@ export async function activate(c, { open = false } = {}) {
         await launch(c, { id: 'tunnel', cwd: c.root, cmd: exe, args: ['tunnel', '--config', config, 'run'] });
       }
       result.tunnel = 'PROCESS_PRESENT_PUBLIC_REACHABILITY_UNVERIFIED';
+      } catch {
+        result.tunnel = 'UNAVAILABLE';
+        result.warnings.push('OPTIONAL_SERVICE_UNAVAILABLE:tunnel');
+        checkpoint('tunnel-degraded');
+      }
     }
     result.state = result.warnings.length || (c.cdp && result.browserAttachment !== 'ATTACHED') ? 'DEGRADED' : 'READY'; result.completedAt = new Date().toISOString(); checkpoint('complete');
-    if (open && !installedGuiOpened) { const child = spawn('explorer.exe', [c.env.JACO_RUNTIME_URL], { windowsHide: true, detached: true, stdio: 'ignore' }); child.unref(); }
+    if (open && process.platform === 'win32' && !installedGuiOpened) { const child = spawn('explorer.exe', [c.env.JACO_RUNTIME_URL], { windowsHide: true, detached: true, stdio: 'ignore' }); child.unref(); }
     return result;
   } catch (error) { result.state = 'BLOCKED'; result.error = error.message; result.completedAt = new Date().toISOString(); checkpoint(result.phase); throw error; }
-  finally { fs.unlinkSync(lock); }
+  finally { if (fs.existsSync(lock) && fs.readFileSync(lock, 'utf8') === String(process.pid)) fs.unlinkSync(lock); }
 }
 export async function main(args = process.argv.slice(2)) {
   const runtimeArg = args.indexOf('--runtime');

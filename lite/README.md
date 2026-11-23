@@ -10,7 +10,7 @@ One command installs JACO Lite, checks the download against its SHA-256, brings 
 # Windows (PowerShell)
 irm https://jacocode.com/install.ps1 | iex
 
-# Linux, and Android in Termux (experimental, not verified on a phone yet)
+# Linux, including the Pixel Debian VM (experimental, not physically verified)
 curl -fsSL https://jacocode.com/install.sh | sh
 ```
 
@@ -18,7 +18,7 @@ Then, in any project folder: `jaco-lite`. Later:
 
 | Command | What it does |
 | --- | --- |
-| `jaco-lite update` | installs the newest build; the previous one is kept |
+| `jaco-lite update` | safely stages a checked new build, including while an older launcher is running; the next launch uses it |
 | `jaco-lite rollback` | goes back to the previous build |
 | `jaco-lite doctor` | shows what is installed and whether it can start |
 | `jaco-lite uninstall` | removes it (your projects and `~/.jaco` are not touched) |
@@ -38,14 +38,106 @@ node start.mjs ~/my-project    # or a specific project folder
 
 On Windows you can double-click `START.cmd`; on macOS and Linux run `./start.sh`.
 
-### Android / Termux (portable Lite)
-Install Termux and extract the **same JACO Lite ZIP** into Termux-accessible storage. From the extracted folder run:
+### Install and start inside Pixel's Debian Terminal
+
+The built-in Pixel Terminal is a Linux arm64 virtual machine. It is not Termux.
 
 ```sh
-bash START-ANDROID.sh
+sudo apt update
+sudo apt install -y git curl ca-certificates unzip
+curl -fL https://jacocode.com/install.sh -o jaco-install.sh
+JACO_LITE_PLATFORM=android sh jaco-install.sh
+export PATH="$HOME/.local/bin:$PATH"
+mkdir -p "$HOME/jaco-pixel-project"
+cd "$HOME/jaco-pixel-project"
+jaco-lite doctor
+jaco-lite --no-open
 ```
 
-The launcher uses Node.js >=22.5, attempts to install `nodejs-lts` through Termux if needed, runs the identical bundled server and Codex Cognitive Live Workspace and keeps project state in `$HOME/.jaco`. Open the localhost URL printed by the launcher in your Android browser. **This is a Termux distribution, not an APK.** A packaged archive built on another OS is not guaranteed to work on Android until its dependencies and runtime are tested on a real device. Android device/Termux acceptance remains a release gate.
+The installer verifies the selected Android Lite archive against `latest.json`,
+installs a supported Node.js arm64 build if necessary, and retains the Android
+variant across later `jaco-lite update` calls. If the public download is
+unavailable, do **not** pipe an unverified script into a shell: obtain the
+`verified-jaco-lite` GitHub Actions artifact, verify the Android zip against
+its SHA-256 file, unpack it inside the Debian VM, install Node.js >=22.5 with
+`node:sqlite`, and use the packaged launcher below.
+
+**Do not run `npm ci` or build the repository on the phone to update the GUI.** The verified
+Android package includes the compiled client and server. `jaco-lite doctor` identifies the active
+source commit; `jaco-lite update` downloads the published archive and preserves rollback.
+If an existing installation reports `kind: universal`, re-run the Android installer command above
+once to migrate it. A main revision is published only after the Linux, actual ARM64 installer,
+and Windows smoke gates pass. A failed or superseded release must not replace the public download.
+
+The URL printed after successful startup is **VM-local**. Open the exact address
+in Pixel Chrome only if the phone's localhost forwarding has been verified.
+JACO Lite here has independent local state and does not gain access to the
+Android APK's private LiteRT model or Windows Aura's memories.
+
+### Pixel Terminal (Android Linux, Debian VM) — primary on-phone runtime
+
+Use the **built-in Pixel Linux Terminal**, based on Android Virtualization Framework (AVF).
+It is a separate Debian VM, **not Termux** and not the Android host shell.
+
+1. Enable the Linux development environment in Android developer options and open Terminal. Prefer the installer above; the manual ZIP path below is a fallback.
+2. In Debian, install the base tools: `sudo apt update && sudo apt install -y git curl ca-certificates unzip`.
+3. Install Node.js **22.5+** for Linux arm64 and check `node --version` and
+   `node --experimental-sqlite -e 'require("node:sqlite")'`. Debian's packaged
+   Node version might be too old; the launcher intentionally refuses unsupported versions.
+4. Unpack a complete, checksum-verified **JACO Lite Android** release ZIP *inside
+   Debian*. From the extracted folder:
+   ```sh
+   bash START-PIXEL-TERMINAL.sh --check
+   bash START-PIXEL-TERMINAL.sh
+   ```
+5. Copy the **actual URL printed by JACO** into Pixel Chrome. The VM forwards
+   localhost ports to the host browser on supported builds, but this must be
+   observed on the physical Pixel. The JACO server remains bound to VM loopback.
+   The VM cannot access Android app-private storage or the Android-native
+   LiteRT service merely by using `127.0.0.1`.
+
+This creates a **separate JACO Lite instance** in the Debian VM, with its own
+project and local state in `~/jaco-pixel-project`. It does **not** inherit the
+Windows Aura mission IDs or memory. To control the existing Windows Aura, use
+JACO Link through `https://jacocode.com/link/remote.html`, with the existing
+Windows host paired and the service actually deployed. The native Android APK's
+on-device LiteRT model is another local inferencing option and does not require
+the VM. The LiteRT service is **not** automatically reachable from the Debian VM.
+
+**Status:** Source implementation and CI are not physical Pixel acceptance.
+Verify native Node dependencies on Linux arm64, port forwarding, login/model
+access, VM suspend/restart behavior and resource use before describing it as
+installed or operational on a particular device.
+
+### Legacy Android / Termux (not the intended Pixel path)
+
+The old `START-ANDROID.sh` launcher is retained for compatibility with
+existing Termux installations. The Pixel deployment uses
+`START-PIXEL-TERMINAL.sh` instead.
+
+### Mobile startup and recovery
+
+Use `jaco-lite --port 3000 --recover --no-open` to explicitly authorize a graceful restart of an old, positively identified Linux Lite process belonging to this workspace. A healthy matching release on the requested port is reused. Lite checks the existing Continuum writer before launching children. A live unknown or foreign holder, unrelated port listener, or unsuccessful handoff is reported without force-killing processes or deleting the ledger. Stale locks remain the ledger's responsibility. Default Core port is 3000; no automatic port drift. Explicit alternative ports remain possible. Reuse/recovery is not available for unverified process identities (including non-Linux live owners).
+
+Android Lite starts its bundled editor and shell MCP servers automatically. Existing
+explicit access settings and environment overrides take precedence. Set `JACO_AURA_LEAN=1`
+for lower idle overhead and on-demand tools. New Aura organizations start with scoped
+development grants and autonomy level 5; saved restrictions are never overwritten.
+Agent-driven policy editing is off by default. The operator retains high-impact approvals.
+VS Code loopback embedding is enabled on full and Lite startup. The installed extension can attach to this runtime; it is not installed automatically.
+
+Lite includes the existing Nova browser and CDP bridges. If Chromium/Chrome is installed and local Workplace is ready, the launcher allocates distinct loopback ports, starts a dedicated sandboxed browser profile, verifies both bridges and retries owned process failures up to three attempts. Core remains available when the browser is missing. A missing browser must still be installed by the operator/host setup (no automatic sudo). The browser launched in Pixel Debian is not Android Chrome.
+
+In Connections → Sign-ins → GitHub, the local operator can initiate GitHub CLI's official browser sign-in and configure Git's github.com credential helper without typing terminal commands. GitHub CLI must already be installed. The existing organization authentication is required when configured; no bypass is added. GitHub CLI may fall back to its own local credential file if the OS keyring is unavailable; this is disclosed in the UI. No account, password or OAuth access token is returned to Aura.
+No model is hardcoded or downloaded: choose any connected model in the IDE.
+An unavailable external model is not a Core startup prerequisite.
+
+Before reporting the IDE ready, Lite verifies its HTTP identity and the served
+HTML/JavaScript entry against the installed release manifest. This does not
+prove a browser rendered the UI. If startup fails, inspect
+`<project>/.jaco/lite.log` and `<project>/.jaco/lite-lifecycle.jsonl`.
+A child signal exit is retained, including 137 for SIGKILL; that alone does
+not prove memory pressure.
 
 ### Gameboard and simulation
 The `Spelplan` tab in Cognitive Live Workspace reads `/api/aura/workbench/gameboard` and shows stable numeric agent and MCP-tool IDs and, where SEER is connected, observed mission-graph forecasts. The simulation control accepts assumptions for a hypothetical tool chain; it neither invokes a tool nor claims a verified outcome. A Lite install without SEER reports `UNAVAILABLE` for the canonical strategic graph, rather than faking it; the hypothetical scenario simulator remains available. The durable revisioned exchange stores agent `OBSERVATION`, `HYPOTHESIS` and numeric `MOVE_PROPOSAL` entries with optimistic locking. Entries are self-reported, not verified and cannot invoke an executor. JACO Editor MCP exposes `gameboard_status`, `gameboard_events` and `gameboard_simulate` as read-only tools, plus the Workplace-synchronized `gameboard_publish` operation for clients that connect locally. Public ChatGPT access still requires the authenticated remote JacoEdit transport from PR #142 and its secure OAuth/Cloudflare deployment.
@@ -87,7 +179,8 @@ reaches our server logs like any visit). It never downloads or installs anything
 
 | Option | Meaning |
 | --- | --- |
-| `--port N` | use this port (default 3000, or the next free one) |
+| `--port N` | use this port (default 3000; no silent fallback) |
+| `--recover` | on Linux, gracefully hand off a verified prior Lite writer of this workspace | 
 | `--no-open` | do not open the browser |
 | `--check` | check this installation and print what would start |
 | `--verbose` | also print the server log (it is always saved in `<project>/.jaco/lite.log`) |
@@ -116,3 +209,6 @@ spend has no caps until you set them: turn on a daily, monthly or per-task limit
 `<project>/.jaco/continuum/economic-policy.json`); an empty field means no cap. Lite never overwrites your changes.
 
 Licensed under the MIT License (see `LICENSE`).
+
+### Update during operation
+`jaco-lite update` downloads and verifies a new immutable build, without stopping a running launcher or deleting older build directories. The running process keeps its original code; no live module replacement or automatic restart is performed. Finish the current tool action and stop normally before launching the staged version in the same project. The runtime record `~/.jaco/lite-runtime.json` includes the running source commit and installation directory on new builds. Old installations may use a cached installer: obtain the current installer from jacocode.com once after this change is published. Old builds consume disk space and are intentionally not pruned automatically; only remove them after all launchers are stopped.

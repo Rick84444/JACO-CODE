@@ -2,17 +2,65 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { activationReport, formatReport, runtimeUp } from '../../agents/lib/activate.mjs';
 
+import { localCoreActivationReport } from '../../agents/jaco-cli.mjs';
+
+test('local Core status fallback is read-only and requires a validated activation report', async () => {
+  const calls = [];
+  const expected = {
+    schema: 'jaco.activation/v2', runtime: { up: true, version: '0.23.1' },
+    tools: { servers: [{ id: 'jaco', status: 'READY' }], toolCount: 42 },
+    problems: [], ok: true,
+  };
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, method: init.method });
+    return { ok: true, json: async () => ({ success: true, report: expected }) };
+  };
+  const actual = await localCoreActivationReport({ baseUrl: 'http://127.0.0.1:3000', fetchImpl });
+  assert.deepEqual(actual, expected);
+  assert.deepEqual(calls, [{ url: 'http://127.0.0.1:3000/api/jaco/activation', method: 'GET' }]);
+});
+
+test('local Core activation is POST only when explicitly requested', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, method: init.method });
+    return { ok: true, json: async () => ({ success: true, report: {
+      schema: 'jaco.activation/v2', runtime: { up: true },
+      tools: { servers: [] }, problems: [], ok: false,
+    } }) };
+  };
+  const actual = await localCoreActivationReport({ baseUrl: 'http://localhost:3000', activate: true, fetchImpl });
+  assert.equal(actual.ok, false);
+  assert.deepEqual(calls, [{ url: 'http://localhost:3000/api/jaco/activate', method: 'POST' }]);
+});
+
+test('CLI never delegates authentication to non-local targets or forged responses', async () => {
+  let called = 0;
+  const malicious = async () => { called++; return { ok: true, json: async () => ({ success: true, report: {} }) }; };
+  for (const baseUrl of ['https://localhost:3000', 'http://192.168.1.1:3000', 'http://example.com', 'http://127.0.0.1.evil.test:3000', 'http://user@localhost:3000', 'http://127.0.0.1:3000/api', 'invalid']) {
+    assert.equal(await localCoreActivationReport({ baseUrl, fetchImpl: malicious }), null);
+  }
+  assert.equal(called, 0);
+  assert.equal(await localCoreActivationReport({ baseUrl: 'http://[::1]:3000', fetchImpl: malicious }), null);
+  assert.equal(called, 1);
+});
+
+
 // A runtime stand-in: tool servers that start on request, a provider scan and the planner state.
-function fakeRuntime({ servers, scan, planner, workplace = { state: 'RUNNING', novaState: 'RUNNING' }, startFails = [] }) {
+function fakeRuntime({ servers, scan, planner, workplace = { state: 'RUNNING', novaState: 'RUNNING' }, startFails = [], identity = {}, executorHealth = null }) {
   const calls = [];
   const f = async (url, init = {}) => {
     const route = new URL(url).pathname, method = init.method || 'GET';
     calls.push(`${method} ${route}`);
     const ok = body => ({ ok: true, status: 200, json: async () => ({ success: true, ...body }) });
     const bad = (status, error) => ({ ok: false, status, json: async () => ({ success: false, error }) });
-    if (route === '/api/runtime/identity') return ok({ version: '0.21.0' });
+    if (route === '/api/runtime/identity') return ok({ product:'JACO Autonomus IDE', version: '0.21.0', ...identity });
+    if (route === '/api/connected/nova/executor-health') {
+      assert.ok(init.headers['x-gateway-token']);
+      return executorHealth ? ok(executorHealth) : bad(404, 'NOT_FOUND');
+    }
     if (route === '/api/system/status') return ok({ status: { state: workplace.supervisorState || 'READY' } });
-    if (route === '/health') return ok({ supervisedAgents: { state: workplace.state, nova: { state: workplace.novaState } } });
+    if (route === '/health') return ok({ status: 'READY', supervisedAgents: { state: workplace.state, nova: { state: workplace.novaState } } });
     if (route === '/api/mcp/tools') {
       assert.ok(init.headers['x-gateway-token'], 'tool routes carry the gateway token');
       return ok({ servers: servers.map(s => ({ id: s.id, status: s.status, agentAccess: s.agentAccess || 'read', tools: s.status === 'READY' ? Array.from({ length: s.tools }, (_, i) => ({ name: `t${i}` })) : [] })) });
@@ -67,6 +115,56 @@ test('Workplace/Durable Nova are part of READY truth, not just Core/tools/provid
   assert.ok(r.problems.some(p => /Durable Nova.*not RUNNING|Workplace\/Durable Nova är inte RUNNING/.test(p)));
 });
 
+test('Lite disabled Workplace supervisor is not misdiagnosed as a stopped managed Nova', async () => {
+  const g = GOOD();
+  g.workplace = { state:'DISABLED', novaState:'DISABLED' };
+  const report = await activationReport({ baseUrl:'http://x', workplaceUrl:'http://w',
+    token:'t', fetchImpl:fakeRuntime(g), lite:true, requireWorkplace:true });
+  assert.equal(report.workplace.up, true);
+  assert.equal(report.workplace.state, 'READY');
+  assert.equal(report.workplace.novaState, 'EXTERNAL_UNVERIFIED');
+  assert.equal(report.workplace.externalExecutor, true);
+  assert.ok(report.problems.some(p => /managed by the separate Lite launcher/.test(p)));
+  assert.ok(report.problems.every(p => !p.includes('Workplace/Durable Nova is not RUNNING')));
+  assert.equal(report.ok, false, 'never attest an unprobed external worker');
+});
+
+test('Lite observes its own worker even when coordination is optional and caller assumed full', async () => {
+  const g = GOOD();
+  g.identity = { executionProfile: 'lite', workplaceRequired: false };
+  g.executorHealth = { schema: 'jaco.nova-executor-health/v1', state: 'RUNNING', observedAt: new Date().toISOString() };
+  const f = fakeRuntime(g);
+  const r = await activationReport({ baseUrl:'http://x', token:'t', fetchImpl:f, lite:false });
+  assert.equal(r.ok, true);
+  assert.equal(r.executor.state, 'RUNNING');
+  assert.equal(r.workplace.required, false);
+  assert.ok(!f.calls.includes('GET /health'));
+  assert.ok(f.calls.includes('GET /api/connected/nova/executor-health'));
+});
+
+test('Lite does not attest READY for absent, stale or malformed worker observations', async () => {
+  for (const health of [null, { schema:'jaco.nova-executor-health/v1', state:'UNVERIFIED', observedAt:new Date().toISOString() },
+    { state:'RUNNING', observedAt:new Date().toISOString() }, { schema:'jaco.nova-executor-health/v1', state:'RUNNING', observedAt:null }]) {
+    const g = GOOD();
+    g.identity = { executionProfile:'lite', workplaceRequired:false };
+    g.executorHealth = health;
+    const r = await activationReport({ baseUrl:'http://x', token:'t', fetchImpl:fakeRuntime(g) });
+    assert.equal(r.ok, false);
+    assert.equal(r.executor.state, 'UNVERIFIED');
+  }
+});
+
+test('required Lite coordination checks service health, not disabled supervision', async () => {
+  const g = GOOD();
+  g.identity = { executionProfile:'lite', workplaceRequired:true };
+  g.workplace = { state:'DISABLED', novaState:'DISABLED' };
+  g.executorHealth = { schema:'jaco.nova-executor-health/v1', state:'RUNNING', observedAt:new Date().toISOString() };
+  const r = await activationReport({ baseUrl:'http://x', token:'t', fetchImpl:fakeRuntime(g) });
+  assert.equal(r.ok, true);
+  assert.equal(r.workplace.state, 'READY');
+  assert.equal(r.workplace.novaState, 'RUNNING');
+});
+
 test('a selected planner that was not actually scanned cannot make READY true', async () => {
   const g = GOOD();
   g.planner = { choice: { provider: 'mistral', model: 'mistral-large-latest', by: 'operator' }, choices: [{ provider: 'mistral', usable: true, keyConfigured: true }] };
@@ -110,6 +208,14 @@ test('no provider answers at all is a problem with a way out', async () => {
   const r = await activationReport({ baseUrl: 'http://x', token: 't', fetchImpl: fakeRuntime(g) });
   assert.equal(r.ok, false);
   assert.ok(r.problems.some(p => /No model provider is answering/.test(p)));
+});
+
+test('activation rejects HTML fallback and an unrelated JSON listener', async () => {
+  for (const body of ['<html>SPA</html>', JSON.stringify({success:true, product:'Unrelated'})]) {
+    const r=await activationReport({baseUrl:'http://x',fetchImpl:async()=>new Response(body)});
+    assert.equal(r.runtime.up,false);
+    assert.equal(r.ok,false);
+  }
 });
 
 test('a runtime that is down is reported plainly', async () => {
@@ -167,4 +273,25 @@ test('Termux jaco entrypoint routes activate/status through the product activati
 test('npm jaco:status uses the same activation truth command', () => {
   const pkg = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'));
   assert.equal(pkg.scripts['jaco:status'], 'node agents/jaco-cli.mjs status');
+});
+
+test('Debian CLI prefers the live portable launcher token over stale Termux and state files', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-debian-cli-'));
+  const state = path.join(root, 'state');
+  fs.mkdirSync(state);
+  const runtimeEnv = path.join(root, 'runtime.env');
+  fs.writeFileSync(path.join(root, '.env'), 'JACO_GATEWAY_TOKEN="launcher-current"\nGATEWAY_TOKEN="launcher-old"\n');
+  fs.writeFileSync(runtimeEnv, 'GATEWAY_TOKEN="termux-stale"\n');
+  fs.writeFileSync(path.join(state, 'gateway.token'), 'state-stale\n');
+  assert.equal(gatewayToken({JACO_RUNTIME_ENV:runtimeEnv,JACO_STATE_DIR:state},root),'launcher-current');
+  assert.equal(gatewayToken({TERMUX_VERSION:'0.118',JACO_RUNTIME_ENV:runtimeEnv,JACO_STATE_DIR:state},root),'termux-stale');
+  assert.equal(gatewayToken({GATEWAY_TOKEN:'explicit-override',JACO_RUNTIME_ENV:runtimeEnv,JACO_STATE_DIR:state},root),'explicit-override');
+});
+
+test('installed portable CLI reads JACO_DATA_DIR .env as local-stack does',()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-cli-installed-'));
+  const data=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-cli-data-'));
+  fs.writeFileSync(path.join(root,'.env'),'GATEWAY_TOKEN="checkout-old"\n');
+  fs.writeFileSync(path.join(data,'.env'),'GATEWAY_TOKEN="installed-current"\n');
+  assert.equal(gatewayToken({JACO_DATA_DIR:data,JACO_RUNTIME_ENV:path.join(root,'missing.env')},root),'installed-current');
 });

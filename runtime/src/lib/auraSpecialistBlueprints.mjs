@@ -52,7 +52,7 @@ export function planAuraSpecialistProvision(agents) {
       missing.push({
         ...specialist,
         mail: '',
-        model: { kind: 'local', providerId: 'ollama', model: '' },
+        model: { kind: 'planner', providerId: '', model: '' },
       });
       continue;
     }

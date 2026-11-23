@@ -1,15 +1,18 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MessageSquare, Code2, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone, MoreHorizontal, Bot, Pin, PinOff } from 'lucide-react';
 import { JacoWordmark } from './JacoWordmark';
 import { CostChip } from './CostChip';
 import { JacoWindowsUpdates } from './JacoWindowsUpdates';
 import { useUiLanguage } from '../i18n/UiLanguage';
+import type { AuraPortraitChat } from './AuraPortrait';
 
 const VSCODE_OPEN_URL = 'vscode://jacocode.jaco-cognitive-ide/open';
+const AuraPortrait = React.lazy(() => import('./AuraPortrait'));
 
-export type CognitiveCanvas='conversation'|'stage'|'agents'|'code'|'preview'|'evidence'|'gameboard'|'voice'|'connections';
-type Sidebar='explorer'|'source-control'|'tools'|'skills'|'devices'|'providers'|'revenue';
+export type CognitiveCanvas='conversation'|'stage'|'agents'|'code'|'preview'|'evidence'|'gameboard'|'voice'|'connections'|'economy';
+type Sidebar='explorer'|'source-control'|'tools'|'skills'|'devices'|'providers';
 interface Props {
+  remoteMode?:boolean;
   canvas:CognitiveCanvas;onCanvas:(view:CognitiveCanvas)=>void;conversation:React.ReactNode;detail:React.ReactNode;
   stage:React.ReactNode;stagePinned:boolean;onTogglePin:()=>void;
   sidePanel:React.ReactNode;sidebar:Sidebar;sidePanelOpen:boolean;onSidebar:(view:Sidebar)=>void;onCloseSidebar:()=>void;
@@ -17,10 +20,10 @@ interface Props {
   approvalCount:number;onApprovals:()=>void;onCommands:()=>void;onSignOut:()=>void;
   lastObservedAt:string|null;error:string|null;
   attention?:React.ReactNode;
-  remoteMode?:boolean;
+  portraitChat?: AuraPortraitChat;
 }
-const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['connections',PlugZap,'Anslutningar'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
-const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter'],['revenue',CircleDollarSign,'Budget & ekonomi']] as const;
+const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['connections',PlugZap,'Anslutningar'],['economy',CircleDollarSign,'Ekonomi'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
+const tools=[['explorer',Folder,'Projektfiler'],['source-control',GitBranch,'Git & ändringar'],['tools',Wrench,'Verktyg'],['skills',BookOpen,'Färdigheter'],['providers',PlugZap,'Modellanslutningar'],['devices',MonitorSmartphone,'Enheter']] as const;
 
 const EN_LABELS: Record<string, string> = {
   "Samtal": "Conversation",
@@ -37,7 +40,7 @@ const EN_LABELS: Record<string, string> = {
   "Färdigheter": "Skills",
   "Modellanslutningar": "Model connections",
   "Enheter": "Devices",
-  "Budget & ekonomi": "Budget & spending",
+  "Ekonomi": "Economy",
   "Arbete": "Work",
   "Filer": "Files",
   "Mer": "More",
@@ -72,34 +75,12 @@ const SV_FROM_EN: Record<string, string> = Object.fromEntries(Object.entries(EN_
 
 export function CognitiveWorkspace(props:Props) {
   const { language, setLanguage, tr } = useUiLanguage();
-  const remoteMode = props.remoteMode === true;
-  // A temporary connection failure is not a reason to interrupt a durable Aura mission.
-  useEffect(() => {
-    if (!remoteMode) return;
-    let active = true;
-    const checkSession = async () => {
-      try {
-        const response = await fetch('/ide-auth/status', {credentials: 'same-origin', cache: 'no-store'});
-        if (active && response.status === 401) window.location.replace('/ide-login?next=remote');
-      } catch { /* Retry after coming back online. */ }
-    };
-    const onVisible = () => { if (document.visibilityState === 'visible') void checkSession(); };
-    const onOnline = () => { void checkSession(); };
-    void checkSession();
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void checkSession(); }, 30_000);
-    document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('online', onOnline);
-    return () => {
-      active = false; window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('online', onOnline);
-    };
-  }, [remoteMode]);
   // Labels arrive as Swedish keys or, from the status library, as the English text of the same entry.
   const L = (text: string) => tr(SV_FROM_EN[text] || text, EN_LABELS[text] || text);
   // Local browser only: a remote viewer's VS Code cannot reach this runtime, and the VS Code tab is already open.
   const canOpenInVsCode = typeof window !== 'undefined' && ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname) && window.self === window.top;
   const menu = useRef<HTMLDialogElement>(null);
+  const [portraitOpen, setPortraitOpen] = useState(false);
   // Desktop shortcuts are intentionally inactive while composing chat, editing
   // code or using another control. No agent authority is changed by navigation.
   useEffect(() => {
@@ -116,44 +97,50 @@ export function CognitiveWorkspace(props:Props) {
     window.addEventListener('keydown', onShortcut);
     return () => window.removeEventListener('keydown', onShortcut);
   }, [props.onCanvas]);
+  // Remote is another view of this very same Aura; it never creates a second
+  // executor. Re-check the existing IDE session so a revoked login cannot keep
+  // an old remote view usable.
+  useEffect(() => {
+    if (!props.remoteMode) return;
+    let active = true;
+    const checkSession = async () => {
+      try {
+        const response = await fetch('/ide-auth/status', { credentials: 'same-origin', cache: 'no-store' });
+        if (active && response.status === 401) window.location.replace('/ide-login?next=remote');
+      } catch { /* The normal runtime connection warning handles transient outages. */ }
+    };
+    void checkSession();
+    const timer = window.setInterval(() => void checkSession(), 30000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [props.remoteMode]);
   const navigate = (view:CognitiveCanvas) => { props.onCloseSidebar(); props.onCanvas(view); menu.current?.close(); };
   const openPanel = (view:Sidebar) => { props.onSidebar(view); menu.current?.close(); };
   const hasDetail=props.canvas!=='conversation' && props.canvas!=='stage';
   const showStage=props.canvas!=='conversation';
-  return <div className="cognitive-workspace" data-cognitive-workspace="true" data-remote-mode={remoteMode ? "true" : undefined}>
+  return <div className="cognitive-workspace" data-cognitive-workspace="true" data-remote-mode={props.remoteMode ? "true" : "false"}>
     <header className="cognitive-topbar">
-      <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/><span className="cognitive-product">{remoteMode ? "Aura Remote" : "Aura"}</span></div>
+      <div className="cognitive-brand"><JacoWordmark/><span className="cognitive-brand-divider"/>
+        <button type="button" className="cognitive-product aura-portrait-trigger" aria-haspopup="dialog"
+          aria-label={tr('Öppna Auras porträtt', 'Open Aura portrait')} onClick={() => setPortraitOpen(true)}>Aura</button>
+      </div>
       <button type="button" className="cognitive-project" aria-label={`${tr('Öppna projekt', 'Open project')}: ${props.projectName}`} onClick={()=>openPanel('explorer')}><Folder size={14}/><span>{props.projectName}</span><ChevronRight size={12}/><span className="cognitive-branch">{props.branch || tr('Projekt', 'Project')}</span></button>
       <div className="cognitive-top-actions">
-{!remoteMode && <><CostChip onOpen={()=>props.onSidebar('revenue')}/><JacoWindowsUpdates/></>}
+        <CostChip onOpen={()=>props.onCanvas('economy')}/>
+        <JacoWindowsUpdates/>
         <select className="cognitive-language-select" aria-label={tr('Språk', 'Language')} title={tr('Språk', 'Language')} value={language} onChange={event => setLanguage(event.target.value === 'sv' ? 'sv' : 'en')} style={{color:'inherit',background:'#2f3032',border:'1px solid #3b4652',borderRadius:6,padding:'4px 5px',fontSize:11}}><option value="en">EN</option><option value="sv">SV</option></select>
-        {remoteMode && <button type="button" className="cognitive-remote-signout" onClick={props.onSignOut} aria-label={tr('Logga ut från mobilen', 'Sign out of Remote')} title={tr('Logga ut', 'Sign out')}><LogOut size={17}/></button>}
         {props.approvalCount>0 && <button type="button" className="cognitive-approval-button" aria-label={`${props.approvalCount} ${tr('beslut behöver dig', 'decisions need your attention')}`} onClick={props.onApprovals}><CircleAlert size={14}/><span>{props.approvalCount} {tr('beslut','decisions')}</span></button>}
-{!remoteMode && <button type="button" aria-label={tr('Sök verktyg och kommandon', 'Search tools and commands')} title={tr('Sök', 'Search')+' · Ctrl+Shift+P'} onClick={props.onCommands}><Search size={16}/></button>}
+        <button type="button" aria-label={tr('Sök verktyg och kommandon', 'Search tools and commands')} title={tr('Sök', 'Search')+' · Ctrl+Shift+P'} onClick={props.onCommands}><Search size={16}/></button>
       </div>
     </header>
-    {remoteMode && <nav className="cognitive-remote-navigation" aria-label={tr('Fjärrstyrning', 'Remote control')}>
-      <div className="cognitive-remote-status" role="status">
-        <span className="cognitive-remote-dot" data-tone={props.status.tone}/>
-        <strong>{tr('Aura på din dator', 'Aura on your computer')}</strong>
-        <span>{L(props.status.label)}</span>
-      </div>
-      <div className="cognitive-remote-tabs">
-        {([
-          ['conversation', MessageSquare, tr('Chatt', 'Chat')],
-          ['stage', Eye, tr('Uppdrag', 'Mission')],
-          ['gameboard', Network, tr('Spelplan', 'Plan')],
-          ['evidence', ShieldCheck, tr('Resultat', 'Results')],
-        ] as const).map(([view, Icon, label]) =>
-          <button key={view} type="button" aria-pressed={props.canvas===view} onClick={()=>props.onCanvas(view)}>
-            <Icon size={16}/><span>{label}</span>
-          </button>
-        )}
-        <button type="button" onClick={props.onApprovals} aria-label={tr('Öppna beslut', 'Open decisions')}>
-          <CircleAlert size={16}/><span>{tr('Beslut', 'Decisions')}{props.approvalCount>0 ? ` (${props.approvalCount})` : ''}</span>
-        </button>
-        <a href="/" className="cognitive-remote-full" title={tr('Öppna hela IDE:t', 'Open full IDE')}>{tr('Hela IDE:t', 'Full IDE')}</a>
-      </div>
+    {portraitOpen && <React.Suspense fallback={null}>
+      <AuraPortrait tone={props.status.tone} label={L(props.status.label)} chat={props.portraitChat} onClose={() => setPortraitOpen(false)}/>
+    </React.Suspense>}
+    {props.remoteMode && <nav className="cognitive-remote-navigation" aria-label="Remote control">
+      {([['conversation','Chat'],['stage','Mission'],['code','Code'],['preview','Preview'],['connections','Tools & models'],['gameboard','Plan'],['evidence','Results']] as const).map(([view,label]) =>
+        <button key={view} type="button" aria-pressed={props.canvas===view} onClick={()=>props.onCanvas(view)}>{label}</button>)}
+      <button type="button" onClick={props.onApprovals}>Approvals{props.approvalCount ? ' ('+props.approvalCount+')' : ''}</button>
+      <a href="/" className="cognitive-remote-full">Open full JACO</a>
+      <button type="button" onClick={props.onSignOut}>Sign out of Remote</button>
     </nav>}
     <div className="cognitive-body">
       <nav className="cognitive-rail" aria-label={tr('Projektverktyg', 'Project tools')}>
@@ -169,8 +156,8 @@ export function CognitiveWorkspace(props:Props) {
         <div className="cognitive-contextbar">
           {props.status.tone !== 'idle' && <div className="cognitive-status" data-tone={props.status.tone} role="status"><span/>{L(props.status.label)}</div>}
           <nav className="cognitive-stage-switcher" aria-label={tr('Arbetsyta','Workspace')}>
-            {([['stage', Eye, 'Arbete'], ['code', Code2, 'Kod'], ['preview', Eye, 'Förhandsvisa'], ['evidence', ShieldCheck, 'Belägg']] as const).map(([view, Icon, label]) =>
-              <button key={view} type="button" title={L(label)+' · Ctrl/Cmd+Shift+'+({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view]} aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{L(label)}</span></button>)}
+            {([['stage', Eye, 'Arbete'], ['agents', Bot, 'Agenter'], ['code', Code2, 'Kod'], ['preview', Eye, 'Förhandsvisa'], ['evidence', ShieldCheck, 'Belägg'], ['connections', PlugZap, 'Anslutningar'], ['economy', CircleDollarSign, 'Ekonomi'], ['gameboard', Network, 'Spelplan']] as const).map(([view, Icon, label]) =>
+              <button key={view} type="button" title={L(label)+(({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view] ? ' · Ctrl/Cmd+Shift+'+({stage:1,code:2,preview:3,evidence:4} as Record<string,number>)[view] : '')} aria-pressed={props.canvas===view || (view==='stage' && props.canvas==='conversation')} onClick={()=>props.onCanvas(view)}><Icon size={14}/><span>{L(label)}</span></button>)}
           </nav>
           <button type="button" className="cognitive-mobile-focus" onClick={()=>props.onCanvas(showStage?'conversation':'stage')}>
             {showStage ? <MessageSquare size={15}/> : <Eye size={15}/>}
@@ -178,7 +165,16 @@ export function CognitiveWorkspace(props:Props) {
           </button>
         </div>
         {props.error && <div className="cognitive-connection-notice" role="alert"><CircleAlert size={14}/><span>{tr('Runtime kan inte nås just nu. Tidigare observationer visas tills anslutningen är tillbaka.','Runtime is currently unreachable. Earlier observations remain visible until the connection returns.')}</span></div>}
-        {props.attention}
+        {props.attention && (showStage ? props.attention : (
+          <details className="cognitive-chat-attention" data-testid="jaco-chat-attention">
+            <summary><CircleAlert size={14}/>{props.approvalCount>0
+              ? tr('Beslut kräver din uppmärksamhet','Decisions need your attention')
+              : tr('Ett hinder behöver uppmärksamhet','An issue needs attention')}
+              {props.approvalCount>0 ? ` (${props.approvalCount})` : ''}
+            </summary>
+            {props.attention}
+          </details>
+        ))}
         <main className="cognitive-main" data-canvas="true" data-focus={showStage?'stage':'conversation'}>
           <section className="cognitive-conversation" aria-label={tr('Aura-konversation','Aura conversation')}>{props.conversation}</section>
           <aside className="cognitive-canvas" aria-label="Aura Live Workspace">
@@ -214,7 +210,7 @@ export function CognitiveWorkspace(props:Props) {
         <p>{tr('Modeller, verktyg och projektinställningar','Models, tools and project settings')}</p>
         <div className="cognitive-mobile-menu-grid">
           {views.filter(([id])=>!['conversation','agents'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>navigate(id)}><Icon size={20}/>{L(label)}</button>)}
-          {tools.filter(([id])=>['source-control','devices','revenue'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>openPanel(id)}><Icon size={20}/>{L(label)}</button>)}
+          {tools.filter(([id])=>['source-control','devices'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>openPanel(id)}><Icon size={20}/>{L(label)}</button>)}
           <button type="button" onClick={()=>{menu.current?.close();props.onApprovals();}}><ShieldCheck size={20}/>{L('Beslut')}{props.approvalCount>0 ? ` (${props.approvalCount})` : ''}</button>
           <button type="button" onClick={()=>{menu.current?.close();props.onCommands();}}><Search size={20}/>{L('Sök funktion')}</button>
           <button type="button" onClick={()=>{menu.current?.close();props.onSignOut();}}><LogOut size={20}/>{L('Logga ut')}</button>

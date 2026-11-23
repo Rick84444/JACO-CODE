@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { operatorApprovalCheck } from './operator-action-guard.mjs';
+import { discoverLocalCommands, findLocalExecutable } from './local-command-inventory.mjs';
 
 export const LIMITS = { timeoutMs: 30_000, maxTimeoutMs: 300_000, outputBytes: 64 * 1024, concurrent: 4, argCount: 64, argLength: 4096 };
 export const PROTECTED_READ = /(^|[\\/])\.env(\.[^\\/]*)?([\\/]|$)|secret|credential/i;
@@ -139,6 +140,29 @@ export function normalizeCommand(command, args) {
   return { command: words[0], args: words.slice(1) };
 }
 
+// With push enabled an agent may publish its own work branches, never a protected branch: main and master (and
+// JACO_PROTECTED_BRANCHES) change only through a pull request with green CI. A push must name the remote and the
+// branch, so the current checkout cannot decide it; force, delete, mirror and all-branches pushes are refused.
+const PUSH_OPTION_ALLOWED = /^(-u|--set-upstream|-n|--dry-run|--porcelain|-q|--quiet|-v|--verbose|--no-progress)$/;
+export const protectedBranches = (env = process.env) => new Set(['main', 'master', ...String(env.JACO_PROTECTED_BRANCHES || '').split(',').map(s => s.trim()).filter(Boolean)]);
+export function pushRefusal(args, env = process.env) {
+  const rest = args.slice(1);
+  const option = rest.find(a => a.startsWith('-') && !PUSH_OPTION_ALLOWED.test(a));
+  if (option) return `GIT_PUSH_OPTION_NOT_ALLOWED:${option}`;
+  const [remote, ...refspecs] = positional(rest);
+  if (!remote || !refspecs.length) return 'GIT_PUSH_NEEDS_REMOTE_AND_BRANCH (git push -u origin <work-branch>)';
+  const guarded = protectedBranches(env);
+  for (const spec of refspecs) {
+    if (spec.startsWith('+') || spec.includes('*')) return `GIT_PUSH_REFSPEC_NOT_ALLOWED:${spec}`;
+    const target = (spec.includes(':') ? spec.slice(spec.lastIndexOf(':') + 1) : spec).replace(/^refs\/heads\//, '');
+    if (!target || spec.startsWith(':')) return `GIT_PUSH_DELETE_NOT_ALLOWED:${spec}`;
+    if (target === 'HEAD' || target.startsWith('refs/')) return `GIT_PUSH_NEEDS_BRANCH_NAME:${spec}`;
+    if (guarded.has(target)) return `GIT_PUSH_PROTECTED_BRANCH:${target} (open a pull request instead)`;
+  }
+  return null;
+}
+const linkedDependencies = dir => { try { return fs.lstatSync(path.join(dir, 'node_modules')).isSymbolicLink(); } catch { return false; } };
+
 // Why this command may not run, or its mode. Pure: no process is started here.
 export function classify(command, args, { workspace, cwd = workspace, env = process.env, mode: requested = 'write' } = {}) {
   const refuse = reason => ({ ok: false, reason });
@@ -156,6 +180,9 @@ export function classify(command, args, { workspace, cwd = workspace, env = proc
   destructive = destructive || spec.destructiveIf?.(args) || null;
   if (requested === 'read' && mode !== 'read') return refuse('WRITE_COMMAND_IN_READ_MODE');
   if (push && env.JACO_SHELL_ALLOW_PUSH !== '1') return refuse('GIT_PUSH_NOT_ENABLED (the operator enables it with JACO_SHELL_ALLOW_PUSH=1)');
+  if (push) { const problem = pushRefusal(args, env); if (problem) return refuse(problem); }
+  // A mission worktree borrows the project's packages through a link; an install there would rewrite the project's own.
+  if (command === 'npm' && ['ci', 'install', 'i'].includes(args[0]) && linkedDependencies(cwd || workspace)) return refuse('NPM_INSTALL_INTO_LINKED_DEPENDENCIES (this worktree uses the project\'s installed packages)');
   if (destructive && !push && env.JACO_SHELL_ALLOW_DESTRUCTIVE !== '1') return refuse(`DESTRUCTIVE_NOT_ENABLED:${destructive} (the operator enables it with JACO_SHELL_ALLOW_DESTRUCTIVE=1)`);
   // A script argument for node/python must exist inside the workspace.
   const pathArgs = [...(spec.paths ? spec.paths(args) : []), ...(spec.script && mode === 'write' ? (inline ? scriptOf(args) : positional(args).slice(0, 1)) : [])];
@@ -196,18 +223,31 @@ const redact = text => String(text).replace(/\b(?:sk|gsk|hf|ghp|gho|ghs|xox[abp]
 // Only what a build or a test needs. No token, key or password from the server's environment reaches the command.
 export function commandEnv(env = process.env) {
   const keep = ['PATH', 'HOME', 'USERPROFILE', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'TEMP', 'TMP', 'SystemRoot', 'ComSpec', 'PREFIX', 'TERMUX_VERSION', 'ANDROID_ROOT', 'ANDROID_DATA'];
-  return { ...Object.fromEntries(keep.filter(k => env[k] !== undefined).map(k => [k, env[k]])), GIT_TERMINAL_PROMPT: '0', CI: '1', NO_COLOR: '1' };
+  const filtered = Object.fromEntries(keep.filter(k => env[k] !== undefined).map(k => [k, env[k]]));
+  // Windows commonly exposes Path rather than PATH. Preserve the native key
+  // when PATH is absent so child processes can still resolve contracted tools.
+  if (!('PATH' in filtered)) {
+    const nativePath = Object.keys(env).find(k => k.toLowerCase() === 'path');
+    if (nativePath) filtered[nativePath] = env[nativePath];
+  }
+  return { ...filtered, GIT_TERMINAL_PROMPT: '0', CI: '1', NO_COLOR: '1' };
 }
 // npm is a .cmd file on Windows and cannot be started without a shell: run its own script through node instead.
-export function resolveProgram(command, platform = process.platform, execPath = process.execPath, exists = fs.existsSync) {
+export function resolveProgram(command, platform = process.platform, execPath = process.execPath, exists = fs.existsSync, env = process.env) {
   if (command === 'npm' && platform === 'win32') {
     const cli = path.join(path.dirname(execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
     if (exists(cli)) return { cmd: execPath, prefix: [cli] };
   }
   if (command === 'node') return { cmd: execPath, prefix: [] };
-  if (command === 'python3' && platform === 'win32') return { cmd: 'python', prefix: [] };
-  if (command === 'python' && platform !== 'win32') return { cmd: 'python3', prefix: [] };
-  if (command === 'powershell' && platform !== 'win32') return { cmd: 'pwsh', prefix: [] };
+  // Prefer the requested executable when installed. Fall back only to an
+  // observed equivalent interpreter, not an assumed platform alias.
+  const aliases={python:['python3'],python3:['python'],powershell:['pwsh'],pwsh:['powershell']};
+  if(Object.hasOwn(aliases,command)){
+    for(const candidate of [command,...aliases[command]]){
+      const resolved=findLocalExecutable(candidate,{env,platform});
+      if(resolved)return {cmd:resolved,prefix:[]};
+    }
+  }
   return { cmd: command, prefix: [] };
 }
 
@@ -222,10 +262,13 @@ export class SafeShell {
     if (!this.auditFile) return;
     try { fs.mkdirSync(path.dirname(this.auditFile), { recursive: true }); fs.appendFileSync(this.auditFile, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n', { mode: 0o600 }); } catch { /* the command result is still returned */ }
   }
-  info() {
-    return { workspace: this.workspace, platform: this.platform, shell: 'none (argv only, no interpretation)', programs: Object.keys(PROGRAMS), limits: { ...LIMITS },
+  info({query='',limit=120}={}) {
+    const local=discoverLocalCommands({env:this.env,platform:this.platform,query,limit});
+    local.capabilities=local.capabilities.map(tool=>({ ...tool, route: INTERPRETER_NAMES.has(tool.name)&&!interpretersAllowed(this.env) ? 'interpreter disabled by operator; do not bypass' : Object.hasOwn(PROGRAMS,tool.name) ? 'shell_read or shell_run according to command policy' : 'authorized mission shell only if permitted (not a SafeShell allowlist command)' }));
+    return { workspace: this.workspace, platform: this.platform, shell: 'none (argv only, no interpretation)', programs: Object.keys(PROGRAMS), local, limits: { ...LIMITS },
       destructiveEnabled: this.env.JACO_SHELL_ALLOW_DESTRUCTIVE === '1', pushEnabled: this.env.JACO_SHELL_ALLOW_PUSH === '1',
-      note: 'git: read subcommands in read mode; add/commit/switch/merge/fetch and the like in write mode. node and python3 run a script inside the workspace, never inline code. npm: test, run, ci, ls, install without packages.' };
+      interpretersEnabled: interpretersAllowed(this.env),
+      note: 'programs is the bounded shell policy list; local.programs is actual PATH discovery; local.capabilities describes intended uses and routes, not verified execution or a grant to execute every binary. Use shell_run for permitted writes or the authorized mission shell for other commands. npm: test, run, ci, ls, install without packages.' };
   }
   async run({ command, args = [], cwd = '.', timeoutSeconds, mode = 'write' } = {}) {
     const started = Date.now();
@@ -239,7 +282,7 @@ export class SafeShell {
     if (!verdict.ok) return refused(verdict.reason);
     if (running >= LIMITS.concurrent) return refused('TOO_MANY_COMMANDS_RUNNING');
     const timeoutMs = Math.min(LIMITS.maxTimeoutMs, Math.max(1000, (Number(timeoutSeconds) || LIMITS.timeoutMs / 1000) * 1000));
-    const program = resolveProgram(command, this.platform);
+    const program = resolveProgram(command, this.platform, process.execPath, fs.existsSync, this.env);
     running++;
     try {
       return await new Promise(resolve => {

@@ -1,3 +1,4 @@
+import {DOM_IDENTITY_FN} from './lib/browser-target-match.mjs';
 // JACO Nova Bridge — Chrome CDP wrapper for agent browser control
 // Listens on port 4243, connects to Chrome CDP at port 9222
 // No external dependencies — uses Node.js 24+ built-in WebSocket + fetch
@@ -13,8 +14,10 @@ import { createBrowserActionJournal } from "./lib/browser-action-journal.mjs";
 import { inputAllowed, mutationsEnabled } from "./lib/browser-scope.mjs";
 import { createInputActions, listDownloadFiles, digestFile, signInSession } from "./lib/browser-input.mjs";
 import { approvedLoginOrigins, siteLoginFor } from "./lib/site-logins.mjs";
-import { createAuraOverlay } from "./lib/aura-overlay.mjs";
+import { createAuraOverlay, POINTER_GLIDE_MS } from "./lib/aura-overlay.mjs";
 import { readOperatorLanguage } from "./lib/operator-language.mjs";
+import { followResolvedRuntime } from "./lib/resolved-endpoints.mjs";
+followResolvedRuntime(process.env);
 
 const CDP_PORT = parseInt(process.env.CDP_PORT || "9222");
 const BRIDGE_PORT = parseInt(process.env.NOVA_BRIDGE_PORT || "4243");
@@ -165,11 +168,12 @@ export async function captureSession(session) {
   return {ok:true,observed:true,mimeType:'image/png',...result};
 }
 
-async function withTab(fn, { input = false, missionOrigin = null } = {}) {
+async function withTab(fn, { input = false, active = false, missionOrigin = null, expectedTargetId = null } = {}) {
   const tab = await getActiveTab();
+  if(expectedTargetId&&tab.id!==expectedTargetId)throw new Error('DOM_TARGET_TAB_CHANGED');
   // Draw Aura's window overlay in the tab she works in (kept on its own connection; decoration, never blocking).
   await overlay.attach(tab).catch(() => {});
-  if (input) overlay.working().catch(() => {});
+  if (input || active) await overlay.working().catch(() => {});
   const session = new CDPSession(tab.webSocketDebuggerUrl);
   await session.ready();
   try {
@@ -290,11 +294,11 @@ export async function observeSession(session) {
     // can report what a page says instead of only its first 40 links and buttons.
     const all=[...document.querySelectorAll('a,button,input,select,textarea,[role=button],[role=link],[role=tab]')].map(e=>{
       const r=e.getBoundingClientRect(); const visible=r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden';
-      return {e,r,visible,text:(e.innerText || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.name || '').trim().replace(/\\s+/g,' ').slice(0,100)};
+      return {e,r,visible,...(${DOM_IDENTITY_FN}).call(e)};
     });
     const ranked=[...all.filter(x=>x.visible&&x.text), ...all.filter(x=>x.visible&&!x.text), ...all.filter(x=>!x.visible)].slice(0,80);
     const text=(document.body?.innerText||'').replace(/\\n{3,}/g,'\\n\\n').trim().slice(0,6000);
-    return {url:location.href,title:document.title,text,targets:ranked.map(({e,r,visible,text})=>({selector:selector(e),text,role:e.getAttribute('role')||e.tagName.toLowerCase(),visible,bbox:[r.x,r.y,r.width,r.height]}))};
+    return {url:location.href,title:document.title,text,targets:ranked.map(({e,r,visible,text,role})=>({selector:selector(e),text,role,visible,bbox:[r.x,r.y,r.width,r.height]}))};
   })()`);
   if (!data?.url) throw new Error('OBSERVATION_MISSING');
   return {ok:true, observed:true, at:new Date().toISOString(), ...data};
@@ -412,15 +416,15 @@ const overlay = createAuraOverlay({
 const inputActions = createInputActions({
   evaluate, observe: observeSession,
   // The arrow glides to the target first, so the operator sees where Aura is about to click or type.
-  pointer: async (info, kind) => { await overlay.point(info.x, info.y, kind === 'click'); await new Promise(r => setTimeout(r, 380)); },
+  pointer: async (info, kind) => { await overlay.point(info.x, info.y, kind === 'click'); await new Promise(r => setTimeout(r, POINTER_GLIDE_MS)); },
   tabs: { list: async () => (await getTabs()).filter(t => t.type === 'page'), adopt: tab => { if (!tab.url || tab.url === 'about:blank' || readable(tab.url)) ownedTabs.add(tab.id); } },
   downloads: { dir: DOWNLOAD_DIR },
   uploads: { roots: UPLOAD_ROOTS },
 });
 export const actSession = inputActions.actSession;
 export const axSession = inputActions.axSession;
-async function navigate(url,settleMs) { return withTab(s=>navigateSession(s,url,settleMs)); }
-async function observe() { return withTab(observeSession); }
+async function navigate(url,settleMs) { return withTab(s=>navigateSession(s,url,settleMs), {active:true}); }
+async function observe() { return withTab(async (session,tab)=>({...await observeSession(session),targetId:tab.id})); }
 async function survey(label) {
   const data=await observe();
   const routes=existsSync(ROUTES_FILE)?JSON.parse(readFileSync(ROUTES_FILE,'utf8')):{};
@@ -463,8 +467,14 @@ export const server = createServer(async (req, res) => {
     if (req.headers.origin) return json(res,{ok:false,error:'BROWSER_ORIGIN_DENIED'},403);
     if (req.method==='POST' && ['/navigate','/click','/type','/press','/upload','/sign-in','/tab/open','/tab/switch','/tab/close'].includes(url.pathname) && !mutationsEnabled()) return json(res,{ok:false,error:'MUTATIONS_DISABLED'},403);
     if (req.method === "GET" && url.pathname === "/health") {
-      const result = workplace.allowed ? browserHealth.status() :
+      let result = workplace.allowed ? browserHealth.status() :
         { ok: false, state: 'BLOCKED', browserVerified: false, error: 'WORKPLACE_UNSYNCED' };
+      // After an idle period the receipt has expired and a fresh probe has just started. Wait for it briefly
+      // instead of reporting a working browser as down (every first health poll used to answer 503).
+      if (workplace.allowed && !result.ok && result.state === 'VERIFYING') {
+        await Promise.race([browserHealth.settle(), new Promise(resolve => setTimeout(resolve, 3000))]);
+        result = browserHealth.status();
+      }
       const ready = result.ok === true && result.browserVerified === true && workplace.allowed;
       return json(res, { ...result, ok: ready, state: ready ? 'READY' : 'BLOCKED',
         service: 'nova-bridge', cdpPort: CDP_PORT }, ready ? 200 : 503);
@@ -490,13 +500,13 @@ export const server = createServer(async (req, res) => {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'click');
       if (!b.expectedUrl || (!inputAllowed(b.expectedUrl, process.env, approvedLoginOrigins())&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
-      return json(res, await guardedBrowserWrite("click", b, () => withTab(s=>actSession(s,b,"click"), { input: true,missionOrigin })));
+      return json(res, await guardedBrowserWrite("click", b, () => withTab(s=>actSession(s,b,"click"), { input: true,missionOrigin,expectedTargetId:b.expectedTargetId })));
     }
     if (req.method === "POST" && url.pathname === "/type") {
       const b = await readBody(req);
       const missionOrigin=await missionBrowserGrant(b,'type');
       if (!b.expectedUrl || (!inputAllowed(b.expectedUrl, process.env, approvedLoginOrigins())&&!missionOrigin)) return json(res,{ok:false,error:'EXPECTED_ALLOWED_URL_REQUIRED'},400);
-      return json(res, await guardedBrowserWrite("type", b, () => withTab(s=>actSession(s,b,"type"), { input: true,missionOrigin })));
+      return json(res, await guardedBrowserWrite("type", b, () => withTab(s=>actSession(s,b,"type"), { input: true,missionOrigin,expectedTargetId:b.expectedTargetId })));
     }
     if (req.method === "POST" && url.pathname === "/press") {
       const b = await readBody(req);
@@ -538,6 +548,8 @@ export const server = createServer(async (req, res) => {
         if (!r.ok) throw new Error('CDP_NEW_TAB_FAILED_' + r.status);
         const created = await r.json();
         ownedTabs.add(created.id); novaTabId = created.id;
+        // Install the existing overlay immediately, rather than waiting for a click.
+        await withTab(async session => { await session.send('Page.bringToFront'); }, {active:true}).catch(() => {});
         return { ok: true, verified: true, tab: { id: created.id, url: created.url, current: true } };
       }));
     }

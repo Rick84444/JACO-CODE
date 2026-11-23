@@ -4,7 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import test from 'node:test';
-import { AgentOrganization, createAgentOrganizationRouter } from '../../runtime/src/server/connected/agentOrganization.mjs';
+import { inboxDomain, storeMessage } from '../../agents/lib/inbox.mjs';
+import { assertTaskMandate } from '../../agents/lib/org-permission.mjs';
+import { plannerChoices } from '../../agents/lib/planner-choice.mjs';
+import { AgentOrganization, AURA_DEVELOPMENT_DEFAULTS, createAgentOrganizationRouter, gateAgentTools } from '../../runtime/src/server/connected/agentOrganization.mjs';
 const express = createRequire(new URL('../../runtime/package.json', import.meta.url))('express');
 
 function org(t, options) {
@@ -13,11 +16,14 @@ function org(t, options) {
   return { root, organization: new AgentOrganization(root, options) };
 }
 
-test('Aura starts as vice CEO under the operator with no powers, its own folder, and survives restart', t => {
+test('Aura starts under the operator with scoped development defaults, its own folder, and survives restart', t => {
   const { root, organization } = org(t);
   const aura = organization.snapshot().agents.find(a => a.id === 'aura');
   assert.equal(aura.reportsTo, 'operator');
-  assert.deepEqual(aura.effective.permissions, []);
+  assert.equal(aura.mandate.autonomy, 5);
+  assert.deepEqual([...aura.effective.permissions].sort(), [...AURA_DEVELOPMENT_DEFAULTS].sort());
+  assert.equal(organization.authorize('aura','browser').allowed,false);
+  assert.equal(organization.authorize('aura','git.merge').allowed,false);
   for (const file of ['rules.md', 'mcp.json', 'skills', 'memory']) assert.ok(fs.existsSync(path.join(root, 'org', 'agents', 'aura', file)), file);
   organization.setPermission('aura', 'files.read', true);
   assert.equal(new AgentOrganization(root).authorize('aura', 'files.read').allowed, true);
@@ -32,6 +38,7 @@ test('a report holds a permission only while its whole chain holds it and is act
   organization.createAgent({ name: 'Ekonomi', title: 'Accountant', mail: 'jaco-ekonomi@jacocode.com' });
   organization.setPermission('ekonomi', 'files.write', true);
   assert.equal(organization.authorize('ekonomi', 'files.write').allowed, true);
+  organization.setPermission('aura','commands.run',false);
   assert.throws(() => organization.setPermission('ekonomi', 'commands.run', true), /MANAGER_LACKS_PERMISSION/);
 
   organization.setPermission('aura', 'files.write', false);
@@ -124,11 +131,12 @@ test('operator UI routes reject cross-origin calls and require the risk to be ac
   assert.equal((await call('/agents/aura/permissions/publish', 'PUT', { granted: true, acceptRisk: true })).status, 200);
   assert.equal((await call('/agents/nobody/weights', 'GET')).status, 404);
   const { data } = await call('/', 'GET');
-  assert.deepEqual(data.organization.agents.find(a => a.id === 'aura').effective.permissions, ['publish']);
+  assert.deepEqual([...data.organization.agents.find(a => a.id === 'aura').effective.permissions].sort(), [...AURA_DEVELOPMENT_DEFAULTS,'publish'].sort());
 });
 
 test('Rule of Two: untrusted input, private data and external reach together make every outbound action wait for the operator', t => {
   const { organization } = org(t);
+  organization.setPermission('aura','web.read',false); // isolate the mail-triggered exposure transition
   organization.setLimits('aura', { autonomy: 5 });
   organization.setPermission('aura', 'files.read', true);
   organization.setPermission('aura', 'git.branch', true);
@@ -149,9 +157,11 @@ test('Rule of Two: untrusted input, private data and external reach together mak
 
 test('autonomy levels decide what needs approval and are capped by the manager', t => {
   const { organization } = org(t);
+  organization.setPermission('aura','web.read',false); // isolate autonomy level from Rule of Two
   organization.setPermission('aura', 'files.read', true);
   organization.setPermission('aura', 'files.write', true);
   organization.setPermission('aura', 'publish', true, 'operator', { acceptRisk: true });
+  organization.setLimits('aura', { autonomy: 1 });
   const ask = key => organization.decide('aura', key).needsApproval;
   assert.deepEqual([ask('files.read'), ask('files.write'), ask('publish')], [true, true, true], 'L1 operator');
   organization.setLimits('aura', { autonomy: 3 });
@@ -200,13 +210,14 @@ test('pending hire cannot bypass operator approval through pause and resume', t 
 
 test('failed persistent write cannot publish in-memory permission, limits or status', t => {
   const { organization, root } = org(t);
+  organization.setPermission('aura', 'files.read', false); // establish an explicitly revoked baseline
   const tempPath = path.join(root, 'org', 'organization.json.' + process.pid + '.tmp');
   fs.mkdirSync(tempPath);
   try {
     assert.throws(() => organization.setPermission('aura', 'files.read', true), /EISDIR|EEXIST|EPERM/);
     assert.equal(organization.authorize('aura', 'files.read').allowed, false);
     assert.throws(() => organization.setLimits('aura', { autonomy: 5 }), /EISDIR|EEXIST|EPERM/);
-    assert.equal(organization.agent('aura').mandate.autonomy, 1);
+    assert.equal(organization.agent('aura').mandate.autonomy, 5);
     assert.throws(() => organization.setStatus('aura', 'pause'), /EISDIR|EEXIST|EPERM/);
     assert.equal(organization.agent('aura').status, 'active');
   } finally {
@@ -232,4 +243,105 @@ test('organization writes fail closed without an operator mutation authenticator
   });
   assert.equal(write.status, 403);
   assert.equal(organization.authorize('aura', 'publish').allowed, false);
+});
+
+test('a new agent gets a real jaco-<id>@domain address, a mailbox and a memory file, and inbound mail lands in its inbox', t => {
+  const { root, organization } = org(t);
+  const nova = organization.createAgent({ name: 'Nova' });
+  assert.equal(nova.mail, `jaco-nova@${inboxDomain()}`);
+  const folder = organization.folder('nova');
+  for (const sub of ['memory', 'skills', 'mail/inbox', 'mail/outbox']) assert.ok(fs.statSync(path.join(folder, sub)).isDirectory(), sub);
+  assert.ok(fs.readFileSync(path.join(folder, 'memory', 'MEMORY.md'), 'utf8').includes('<jaco-nova@'));
+  assert.equal(organization.createAgent({ name: 'Scout', mail: 'scout@example.org' }).mail, 'scout@example.org');
+  assert.equal(organization.snapshot().agents.find(a => a.id === 'aura').mail, `jaco-aura@${inboxDomain()}`);
+  const env = { JACO_STATE_DIR: root, JACO_WORKSPACE_ROOT: root };
+  const raw = ['From: a@b.example', 'Subject: Hello Nova', '', 'Hi'].join('\r\n');
+  const stored = storeMessage({ from: 'a@b.example', to: nova.mail, raw, receivedAt: new Date().toISOString() }, env);
+  assert.equal(stored.agentMailbox, true);
+  assert.equal(fs.readdirSync(path.join(folder, 'mail', 'inbox')).length, 1);
+  // An address cannot pick another path, and an unknown agent has no mailbox.
+  assert.equal(storeMessage({ from: 'a@b.example', to: `jaco-ghost@${inboxDomain()}`, raw, receivedAt: new Date().toISOString() }, env).agentMailbox, false);
+});
+
+test('a permission that is not held stops Aura tools and Nova tasks, and granting or revoking applies at once', async t => {
+  const { root, organization } = org(t);
+  organization.setPermission('aura','files.read',false);
+  let ran = 0;
+  const { repo_read, health } = gateAgentTools({ repo_read: { run: async () => ++ran }, health: { run: async () => 'up' } }, organization);
+  await assert.rejects(repo_read.run(), /MANDATE_DENIED:aura:files\.read:PERMISSION_NOT_GRANTED/);
+  assert.equal(ran, 0);
+  assert.equal(await health.run(), 'up');
+  organization.setPermission('aura', 'files.read', true);
+  assert.equal(await repo_read.run(), 1);
+
+  const env = { JACO_STATE_DIR: root };
+  assert.doesNotThrow(() => assertTaskMandate('repo-read', { env }), 'an agent outside the organization is not restricted');
+  organization.createAgent({ name: 'Nova' });
+  assert.throws(() => assertTaskMandate('repo-read', { env }), /MANDATE_DENIED:nova:files\.read:PERMISSION_NOT_GRANTED/);
+  assert.doesNotThrow(() => assertTaskMandate('health-check', { env }));
+  organization.setPermission('nova', 'files.read', true);
+  assert.doesNotThrow(() => assertTaskMandate('repo-read', { env }));
+  // Revoking the manager stops the report without touching its own grant.
+  organization.setPermission('aura', 'files.read', false);
+  assert.throws(() => assertTaskMandate('repo-read', { env }), /MANAGER_LACKS_PERMISSION/);
+  fs.writeFileSync(path.join(root, 'org', 'organization.json'), '{broken');
+  assert.throws(() => assertTaskMandate('repo-read', { env }), /ORGANIZATION_UNREADABLE/);
+});
+
+test('the local Ollama planner uses the loopback address and a connected provider URL wins', () => {
+  assert.equal(plannerChoices({}).ollama.url, 'http://127.0.0.1:11434/v1/chat/completions');
+  const merged = plannerChoices({}, { ollama: { models: ['m'], url: 'http://127.0.0.1:9/v1/chat/completions' } });
+  assert.equal(merged.ollama.url, 'http://127.0.0.1:9/v1/chat/completions');
+});
+
+test('public fetch has a separate revocable mandate; legacy grants are not restored',async t=>{
+  const {root,organization}=org(t);
+  const tools=gateAgentTools({web_fetch:{run:async()=> 'public text'},git_pr:{run:async()=> 'public PR'}},organization);
+  assert.equal(await tools.web_fetch.run(), 'public text');
+  assert.equal(await tools.git_pr.run(), 'public PR');
+  assert.equal(organization.authorize('aura','browser').allowed,false);
+  organization.setPermission('aura','web.read',false);
+  await assert.rejects(tools.web_fetch.run(),/MANDATE_DENIED:aura:web\.read/);
+  assert.equal(new AgentOrganization(root).authorize('aura','web.read').allowed,false);
+  const file=path.join(root,'org','organization.json');
+  const previous=JSON.parse(fs.readFileSync(file,'utf8'));
+  delete previous.publicWebReadInitialized;
+  previous.agents.aura.mandate.permissions={};
+  fs.writeFileSync(file,JSON.stringify(previous));
+  const upgraded=new AgentOrganization(root);
+  assert.equal(upgraded.authorize('aura','web.read').allowed,true);
+  assert.equal(upgraded.authorize('aura','files.write').allowed,false);
+  assert.equal(upgraded.authorize('aura','browser').allowed,false);
+});
+
+test('operator-only Rule of Two waiver lets Aura act freely, keeps hard limits and is revocable', t => {
+  const { root, organization } = org(t);
+  organization.setLimits('aura', { autonomy: 5 });
+  organization.setPermission('aura', 'browser', true, 'operator', { acceptRisk: true, days: 30 });
+  assert.equal(organization.decide('aura', 'commands.run').reason, 'RULE_OF_TWO');
+  assert.equal(organization.effectiveAutonomy('aura'), 4);
+  // Only the operator may accept the exposure.
+  assert.throws(() => organization.setLimits('aura', { ruleOfTwoWaived: true }, 'aura'), /HIGH_RISK_OPERATOR_ONLY|AUTHORITY/);
+  assert.throws(() => organization.setLimits('aura', { ruleOfTwoWaived: 'yes' }), /RULE_OF_TWO_WAIVER_INVALID/);
+  organization.setLimits('aura', { ruleOfTwoWaived: true });
+  assert.equal(organization.effectiveAutonomy('aura'), 5);
+  for (const key of ['commands.run', 'browser', 'git.branch', 'files.write'])
+    assert.deepEqual(organization.decide('aura', key), { allowed: true, needsApproval: false, reason: 'WITHIN_MANDATE' }, key);
+  // Ungranted and locked permissions stay refused.
+  assert.equal(organization.decide('aura', 'git.merge').allowed, false);
+  assert.equal(organization.decide('aura', 'payments').allowed, false);
+  // Persists across restart, and revoking restores the approval requirement.
+  assert.equal(new AgentOrganization(root).decide('aura', 'commands.run').needsApproval, false);
+  organization.setLimits('aura', { ruleOfTwoWaived: false });
+  assert.equal(organization.decide('aura', 'commands.run').reason, 'RULE_OF_TWO');
+});
+
+test('unified executor uses Aura mandate for public web and project tools, honoring revocation',t=>{
+ const {root,organization}=org(t);
+ const env={JACO_STATE_DIR:root,JACO_AURA_UNIFIED_RUNTIME:'1'};
+ for(const task of ['web-fetch','repo-read','repo-write','shell','git-commit'])assert.doesNotThrow(()=>assertTaskMandate(task,{env}));
+ assert.throws(()=>assertTaskMandate('browser-click',{env}),/MANDATE_DENIED:aura:browser/);
+ organization.setPermission('aura','web.read',false);
+ assert.throws(()=>assertTaskMandate('web-fetch',{env}),/MANDATE_DENIED:aura:web.read/);
+ assert.equal(new AgentOrganization(root).authorize('aura','web.read').allowed,false);
 });

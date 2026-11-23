@@ -1,7 +1,7 @@
 // Required data fields per Nova task type. Shared by the runtime (validateTask) and the planner
 // (assertPlanTaskAllowed), so a plan with a missing field is rejected before it costs a mission failure.
 export const TASK_FIELDS = {
-  'detect-surfaces': [], 'health-check': [], 'check-revenue': [],
+  'detect-surfaces': [], 'health-check': [], 'check-revenue': [], 'stack-repair': [],
   'browser-survey-site': ['url'], 'browser-click': ['name'],
   // Read-only HTTP GET for research; no method/body/headers, so it cannot post or pay.
   'web-fetch': ['url'],
@@ -15,9 +15,9 @@ export const TASK_FIELDS = {
   'android-tap': [], 'android-type': ['text'], 'android-scroll': ['direction'],
   'android-back': [], 'android-home': [],
   'desktop-invoke': ['hwnd', 'selector'], 'windows-wmi-read': ['query'], 'screenshot': [],
-  'mouse-move': ['x', 'y'], 'mouse-click': ['x', 'y'],
-  'mouse-scroll': ['x', 'y', 'delta'], 'key-press': ['keys'],
-  'type-text': ['text'], 'get-cursor': [], 'shell': ['command'],
+  'mouse-move': ['x', 'y', 'expectedHwnd'], 'mouse-click': ['x', 'y', 'expectedHwnd'],
+  'mouse-scroll': ['x', 'y', 'delta', 'expectedHwnd'], 'key-press': ['keys', 'expectedHwnd'],
+  'type-text': ['text', 'expectedHwnd'], 'get-cursor': [], 'shell': ['command'],
   'invoke-worker': ['worker', 'prompt'], 'promote-hf': [],
   'repo-list': ['path'], 'repo-read': ['path'], 'repo-write': ['path', 'content'], 'repo-edit': ['path', 'old'],
   'repo-test': ['command'], 'git-status': [], 'git-diff': [], 'git-commit': ['message'], 'git-push': [], 'git-merge': ['ref'],
@@ -31,7 +31,7 @@ export const TASK_FIELDS = {
   // An MCP tool that changes something, on a server the operator opened to agents for writing.
   'mcp-write': ['server', 'tool'],
   // Loads one of JACO's skills (SKILL.md) so the planner can follow it (agents/lib/skills.mjs).
-  'skill-load': ['id'],
+  'skill-load': ['id'], 'propose-tool': ['kind', 'name', 'reason'], 'local-write': ['path', 'content'],
   // Secrets for sign-ups and API keys (agents/lib/secret-capture.mjs); only NOVA_* keys, values never returned.
   'vault-generate-secret': ['key'], 'vault-get-secret': ['key'], 'vault-list-secrets': [], 'secret-store': ['handle', 'key'],
   // JACO's own inbox: verification mail to jaco-*@ addresses (agents/lib/inbox.mjs).
@@ -40,8 +40,20 @@ export const TASK_FIELDS = {
 
 // Shared contracts for native tools and constrained JSON planning.
 export const TASK_SCHEMAS = {
+  'screenshot':{hwnd:{type:'integer',minimum:1},mode:{type:'string',enum:['adaptive','full']},maxWidth:{type:'integer',minimum:320,maximum:1600},maxHeight:{type:'integer',minimum:180,maximum:1200}},
+  'desktop-observe':{hwnd:{type:'integer',minimum:1}},
+  'browser-survey-site':{url:{type:'string'},label:{type:'string'}},
+  'browser-type':{name:{type:'string'},text:{type:'string'}},
+  'mouse-move':{expectedHwnd:{type:'integer',minimum:1},x:{type:'integer'},y:{type:'integer'}},
+  'mouse-click':{expectedHwnd:{type:'integer',minimum:1},measureEntropy:{type:'boolean'},x:{type:'integer'},y:{type:'integer'},button:{type:'string',enum:['left','right','middle']},double:{type:'boolean'}},
+  'mouse-scroll':{expectedHwnd:{type:'integer',minimum:1},x:{type:'integer'},y:{type:'integer'},delta:{type:'integer',minimum:-100,maximum:100}},
+  'key-press':{expectedHwnd:{type:'integer',minimum:1},keys:{type:'string',description:'Key chord e.g. ctrl+s, enter, esc; not shell commands'}},
+  'type-text':{expectedHwnd:{type:'integer',minimum:1},text:{type:'string',maxLength:2000}},
+
   'repo-service': {id:{type:'string'},action:{type:'string',enum:['start','status','stop']}},
   'repo-list': {path:{type:'string'}}, 'repo-read': {path:{type:'string'}},
+  'local-write': {path:{type:'string'},content:{type:'string'}},
+  'propose-tool': {kind:{type:'string',enum:['mcp-git','mcp-command','mcp-http']},name:{type:'string'},reason:{type:'string'},need:{type:'string'},repoUrl:{type:'string'},ref:{type:'string'},command:{type:'string'},args:{type:'array',items:{type:'string'}},env:{type:'object'},url:{type:'string'},tokenEnv:{type:'string'}},
   'repo-write': {path:{type:'string'},content:{type:'string'}},
   'repo-edit': {path:{type:'string'},old:{type:'string'},new:{type:'string'},replaceAll:{type:'boolean'}},
   'repo-test': {command:{type:'string'},kind:{type:'string',enum:['test','falsifier','verify']}},

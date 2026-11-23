@@ -109,6 +109,8 @@ export function securityHeaders(options: { httpsOnly: boolean; dev?: boolean }):
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
+    // Aura's spoken replies are fetched from this origin and played from a local blob URL.
+    "media-src 'self' blob:",
     dev ? "connect-src 'self' ws: wss:" : "connect-src 'self'",
     "object-src 'none'",
     "base-uri 'none'",

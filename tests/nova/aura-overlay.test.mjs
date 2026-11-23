@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { overlaySource, createAuraOverlay, OVERLAY_WORLD, OVERLAY_BINDING } from '../../agents/lib/aura-overlay.mjs';
+import { overlaySource, createAuraOverlay, OVERLAY_WORLD, OVERLAY_BINDING, POINTER_GLIDE_MS } from '../../agents/lib/aura-overlay.mjs';
 
 test('the overlay script is valid JavaScript in both languages and only acts on trusted clicks', () => {
   for (const lang of ['sv', 'en']) {
@@ -82,4 +82,31 @@ test('a call from the page itself (another context or another binding) is ignore
   cdp.fire('Runtime.bindingCalled', { name: 'other', executionContextId: 7, payload: JSON.stringify({ type: 'stop' }) });
   await settle();
   assert.deepEqual(rt.calls, []);
+});
+
+test('navigation restores the active edge in the new isolated world, without guessing cursor coordinates',async()=>{
+  const cdp=fakeCdp(),rt=fakeRuntime();
+  const overlay=createAuraOverlay({CDPSession:cdp.Session,fetchImpl:rt.fetchImpl});
+  await overlay.attach({id:'t1',webSocketDebuggerUrl:'ws://x'});
+  await overlay.working();
+  const before=cdp.sent.length;
+  cdp.fire('Runtime.executionContextCreated',{context:{id:9,name:OVERLAY_WORLD,auxData:{frameId:'main'}}});
+  cdp.fire('Page.loadEventFired',{});
+  await settle();
+  const restored=cdp.sent.slice(before).filter(c=>c.method==='Runtime.evaluate');
+  assert.ok(restored.some(c=>c.params.contextId===9&&c.params.expression.includes('.working()')));
+  assert.ok(restored.every(c=>!c.params.expression.includes('.point(')));
+  await overlay.point(120,85,true);
+  assert.ok(cdp.sent.at(-1).params.expression.includes('.point(120, 85, true)'));
+  const n=cdp.sent.length;await overlay.point(NaN,Infinity);assert.equal(cdp.sent.length,n);
+});
+
+test('visible pointer uses a slow shared glide duration and honors reduced motion', () => {
+  assert.equal(POINTER_GLIDE_MS, 1100);
+  const script = overlaySource();
+  assert.match(script, new RegExp('transform ' + POINTER_GLIDE_MS + 'ms'));
+  assert.match(script, /prefers-reduced-motion: reduce/);
+  assert.match(script, /cursor.style.transition = 'none'/);
+  assert.match(script, /clearTimeout\(ringTimer\)/);
+  assert.doesNotThrow(() => new Function(script));
 });

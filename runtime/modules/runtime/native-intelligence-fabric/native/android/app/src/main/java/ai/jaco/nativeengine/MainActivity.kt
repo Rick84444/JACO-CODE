@@ -18,8 +18,6 @@ import android.widget.*
 import android.view.View
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.concurrent.Executors
 
 /** Native controls for the existing engine; Aura remains the only IDE and agent UI. */
@@ -42,8 +40,6 @@ class MainActivity : Activity() {
     private var resumed = false
     private var pendingId = ""
     private var pendingHash = ""
-    private var paired = false
-    private var autoPairPending = true
     private val backends = listOf("auto", "npu", "gpu", "cpu")
     private val polling = object : Runnable {
         override fun run() { if (!resumed) return; if (!busy) refresh(); handler.postDelayed(this, 15000) }
@@ -79,16 +75,27 @@ class MainActivity : Activity() {
         message.accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true; visibility = android.view.View.GONE; root.addView(this) }
         button("Uppdatera status") { refresh() }
+        button("Lokal AI · offlinechatt") {
+            startActivity(Intent(this, MobileChatActivity::class.java))
+        }
+        button("Aura på Windows · JACO Link") {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://jacocode.com/link/remote.html")))
+            } catch (_: Exception) {
+                message.text = "Webbläsare saknas. JACO Link kräver en ansluten Windows-Aura."
+            }
+        }
+        label("Lokal AI använder telefonens modell. Aura Remote använder samma uppdrag och minne som Windows via JACO Link när tjänsten är aktiverad.")
+
         label("Arbetsyta", 21f)
         port = field("Lokal JACO-port", preferences.getInt("runtimePort", 3000).toString()).apply { inputType = InputType.TYPE_CLASS_NUMBER }
-        button("Öppna Aura") {
+        button("Öppna JACO i Pixel-terminalen") {
             val selectedPort = runtimePort() ?: return@button
             preferences.edit().putInt("runtimePort", selectedPort).apply()
             try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://127.0.0.1:$selectedPort"))) }
             catch (_: Exception) { message.setText(R.string.browser_unavailable) }
         }
-        button("Anslut till JACO igen") { pair() }
-        label("Samma Aura-historik, projekt, agentplaner, bilagor, MCP och skills som i den lokala arbetsytan. JACO behöver vara startat i Termux.")
+        label("Starta JACO Lite i Pixels inbyggda Debian-terminal med START-PIXEL-TERMINAL.sh. Öppna den rapporterade lokala adressen i Chrome. Detta är en separat Linux-VM; webbläsarens localhost-vidarebefordran måste fungera på din Pixel. Lokal AI i appen behöver inte terminalen.")
         label("Lokala modeller", 21f)
         modelList = Spinner(this).apply { contentDescription = "Installerad lokal modell"; root.addView(this) }
         backendList = Spinner(this).apply {
@@ -152,9 +159,10 @@ class MainActivity : Activity() {
             message.setText(R.string.recovery_token_copied)
         }
         advancedButton("Rotera token") {
-            SessionToken.rotate(this); paired = false
+            // Rotating the canonical session token immediately invalidates old clients.
+            SessionToken.rotate(this)
             // The running server resolves the current token for every request. No restart race.
-            pair()
+            message.text = "Lokal motortoken roterad. Kontrollera anslutna klienter innan nästa anrop."
         }
         setContentView(ScrollView(this).apply { isFillViewport = true; fitsSystemWindows = true; addView(root) })
     }
@@ -185,7 +193,7 @@ class MainActivity : Activity() {
                 val loaded = health.optBoolean("healthy", false)
                 val model = if (loaded) health.optString("modelId") else "ingen modell laddad"
                 val backend = if (loaded) health.optString("backend") else "ej observerad"
-                "Lokal motortjänst: svarar\nModell: $model\nBeräkningsmotor: $backend\nJACO-parning: ${if (paired) "verifierad i denna session" else "inte verifierad i denna session"}"
+                "Lokal motortjänst: svarar\nModell: $model\nBeräkningsmotor: $backend"
             } catch (_: Exception) { "Motortjänsten kunde inte kontrolleras. Tidigare modellval är sparat men bekräftar inte att en modell är laddad." }
             runOnUiThread { if (!isDestroyed) {
                 busy = false; status.text = observation
@@ -195,20 +203,7 @@ class MainActivity : Activity() {
                     modelList.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, if (ids.isEmpty()) listOf("Ingen modell installerad") else ids)
                     modelList.setSelection(ids.indexOf(savedModel).coerceAtLeast(0))
                 }
-                if (autoPairPending && resumed) { autoPairPending = false; pair() }
             } }
-        }
-    }
-    private fun pair() {
-        val selectedPort = runtimePort() ?: return
-        preferences.edit().putInt("runtimePort", selectedPort).apply()
-        runTask("Ansluter till JACO…") {
-            paired = false
-            val base = "http://127.0.0.1:$selectedPort"
-            val challenge = postJson("$base/api/startup/native/pair/challenge", JSONObject()).getJSONObject("challenge")
-            val result = postJson("$base/api/startup/native/pair/complete", JSONObject().put("id", challenge.getString("id")).put("nonce", challenge.getString("nonce")).put("token", SessionToken.get(this)))
-            check(result.optBoolean("success", false)) { "Parningen kunde inte verifieras" }
-            paired = true; "JACO-parningen verifierades. Öppna Aura för att fortsätta med ditt projekt."
         }
     }
     @Deprecated("Platform document picker callback")
@@ -229,16 +224,5 @@ class MainActivity : Activity() {
             preferences.edit().putString("model", id.removeSuffix(".litertlm")).apply()
             "Modellen är kopierad och SHA-256 verifierad. Välj Ladda vald modell för att använda den."
         }
-    }
-    private fun postJson(url: String, payload: JSONObject): JSONObject {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"; connectTimeout = 2500; readTimeout = 4000; doOutput = true; instanceFollowRedirects = false
-            setRequestProperty("Content-Type", "application/json")
-        }
-        try {
-            connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
-            check(connection.responseCode in 200..299) { "JACO är inte tillgängligt på vald port (HTTP ${connection.responseCode})" }
-            return JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-        } finally { connection.disconnect() }
     }
 }

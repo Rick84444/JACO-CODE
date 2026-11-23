@@ -15,7 +15,7 @@ export interface AgentNetworkSnapshot {
   plans:Array<{id:string;title:string;objective:string;status:string;agentIds:string[];replans:Array<{reason:string;from:string;to:string}>}>;
   planningAvailable:boolean;coordinatorAvailable:boolean;truncated:boolean;
 }
-const kindLabel={coordinator:'Coordinator',agent:'Connected agent',worker:'Worker process','task-agent':'Mission context'};
+const kindLabel={coordinator:'Coordinator',agent:'Connected agent',worker:'Worker process','task-agent':'Aura mission step'};
 const labels:Record<string,string>={CONNECTED:'Connected',UNAVAILABLE:'Unreachable',OFFLINE:'Disconnected',READY:'Ready',AVAILABLE:'Available',IDLE:'Idle',BUSY:'Reporting work',ACTIVE:'Active',BLOCKED:'Waiting on a prerequisite',DISPATCHED:'Dispatched for execution',RUNNING:'Working',PLANNING:'Planning',EXECUTING:'Working',VERIFIED:'Verified',DONE:'Finished',FAILED:'Failed',SUPERSEDED:'Superseded by a sub-plan',CANCELLED:'Cancelled',NEEDS_REPLAN:'Replan needed',AWAITING_VERIFICATION:'Awaiting verification',EXHAUSTED:'Limit reached'};
 const tone=(status:string)=>['RUNNING','BUSY','ACTIVE','EXECUTING','PLANNING'].includes(status)?'active':['VERIFIED','DONE','CONNECTED','READY','AVAILABLE'].includes(status)?'ready':['BLOCKED','FAILED','UNAVAILABLE','NEEDS_REPLAN','EXHAUSTED'].includes(status)?'waiting':'quiet';
 const statusText=(status:string)=>labels[status]||'Unrecognised state';

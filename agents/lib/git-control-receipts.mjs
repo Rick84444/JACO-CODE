@@ -22,8 +22,26 @@ const ERROR_CODES = new Set([
   'GITHUB_CONTROL_SPEND_APPROVAL_NOT_ALLOWED','GITHUB_CONTROL_OPERATION_UNSUPPORTED',
   'INVALID_MISSION_ALLOWED_TASKS','GOAL_REQUIRED','IDEMPOTENCY_KEY_REQUIRED',
   'CODING_CONTRACT_REQUIRED','NOVA_MISSION_NOT_FOUND',
+  'CHATGPT_STRATEGY_OPERATOR_OPT_IN_REQUIRED','CHATGPT_STRATEGY_TASK_POLICY_INVALID',
+  'CHATGPT_STRATEGY_CODE_SCOPE_NOT_CONFIGURED','CHATGPT_STRATEGY_CODE_SCOPE_DENIED',
+  'CHATGPT_STRATEGY_NODE_CODING_CONTRACT_REQUIRED','CHATGPT_STRATEGY_CONTRACT_NOT_AUTHORIZED',
+  'CHATGPT_STRATEGY_GIT_REF_REQUIRED','CHATGPT_STRATEGY_GRAPH_CYCLE',
+  'CHATGPT_STRATEGY_NODE_COUNT_INVALID','CHATGPT_STRATEGY_TEST_COMMAND_NOT_APPROVED',
+  'CHATGPT_STRATEGY_BUDGET_INVALID','CHATGPT_STRATEGY_GRAPH_NOT_FOUND',
   'WINDOWS_WMI_REQUIRES_DESKTOP_AGENTOS',
+  // A contract the runtime refuses must come back by its own name, so the sender can correct the
+  // command instead of waiting for a receipt that never arrives.
+  'CODING_CONTRACT_SCOPE_REQUIRED', 'CODING_CONTRACT_OBJECTIVE_REQUIRED',
+  'CODING_CONTRACT_ACCEPTANCE_REQUIRED', 'CODING_CONTRACT_SCHEMA_UNSUPPORTED', 'CODING_SERVICES_INVALID',
 ]);
+
+// A refusal the sender can act on: the runtime examined the command and said no for a named, permanent
+// reason. Anything else (a dropped connection, an unavailable mission control) is transient and must keep
+// its existing retry, never be recorded as a decision.
+export function controlRefusalCode(error) {
+  const code = String(error?.message || error || '').split(':')[0].trim();
+  return ERROR_CODES.has(code) ? code : null;
+}
 
 const bounded = (value, max = 160) => String(value ?? '').slice(0, max);
 const digits = value => Number.isFinite(Number(value)) ? Math.max(0, Math.trunc(Number(value))) : 0;
@@ -39,10 +57,12 @@ export function gitControlReceiptSnapshot(control) {
     authoritative: false,
     entries: records.map(entry => ({
       commandId: bounded(entry.commandId),
-      operation: entry.op === 'invalid' ? 'rejected' : entry.op === 'mission.resolve' ? 'mission.resolve' : 'mission.create',
+      operation: entry.op === 'invalid' ? 'rejected' : entry.op === 'strategy.graph.create' ? 'strategy.graph.create' : entry.op === 'mission.resolve' ? 'mission.resolve' : 'mission.create',
       missionId: bounded(entry.missionId || '', 200) || null,
+      graphId: bounded(entry.graphId || '', 200) || null,
       errorCode: entry.status === 'REJECTED'
-        ? (ERROR_CODES.has(String(entry.error || '')) ? entry.error : 'COMMAND_REJECTED') : null,
+        ? (ERROR_CODES.has(String(entry.error || '')) ? entry.error : 'COMMAND_REJECTED')
+        : (entry.status === 'UNVERIFIED' && ERROR_CODES.has(String(entry.error || '')) ? entry.error : null),
       status: bounded(entry.status || 'UNKNOWN', 40),
       phase: bounded(entry.phase || '', 80) || null,
       turn: digits(entry.turn),

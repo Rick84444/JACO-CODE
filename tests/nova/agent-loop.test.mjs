@@ -5,13 +5,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl, mountNovaMissionRoutes } from '../../runtime/src/server/connected/novaMissionControl.mjs';
-import { MissionClient } from '../../agents/lib/mission-client.mjs';
+import { MissionClient, checkedReceipt } from '../../agents/lib/mission-client.mjs';
 import { plannerTools, searchDeferredTools } from '../../agents/lib/native-tools.mjs';
 import { runAgentMission, receiptForModel, contextPacketIntro, hintFor as hintForCheck } from '../../agents/lib/agent-loop.mjs';
 import { createCodingWorkspace } from '../../agents/lib/coding-workspace.mjs';
-import { projectGoalGraph } from '../../gateway/src/seer-project.mjs';
+import { projectGoalGraph, projectNodeContract } from '../../gateway/src/seer-project.mjs';
 
 function setup(t, allowedTasks) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-loop-'));
@@ -108,15 +109,16 @@ test('blocked ends the mission with the reason; no model at all defers without s
   assert.equal(s.control.get(m.id).status, 'BLOCKED');
 });
 
-test('Aura selected model failure is an explicit blocker rather than a permanent step-zero defer', async t => {
+test('Aura defers temporary selected-model outage without ending the durable mission', async t => {
   const s = setup(t, ['web-fetch']);
   const mission = s.control.create({ goal: 'Read an authorized page', idempotencyKey: 'aura-model-block', allowedTasks: ['web-fetch'] });
   let attempts = 0;
   const result = await run(s, { chat: async () => { attempts++; throw Error('AURA_SELECTED_MODEL_UNAVAILABLE:gemini:PROVIDER_TIMEOUT'); } }, async () => assert.fail('no mutation when model is unavailable'));
-  assert.equal(result.blocked, true);
-  assert.equal(attempts, 1, 'a provider outage must not be retried without bounded operator control');
+  assert.equal(result.deferred, true);
+  assert.equal(result.recovery, 'WAIT_PROVIDER');
+  assert.equal(attempts, 1, 'retry happens on the next supervised tick, not in a burst');
   assert.match(result.reason, /AURA_SELECTED_MODEL_UNAVAILABLE/);
-  assert.equal(s.control.get(mission.id).status, 'BLOCKED');
+  assert.equal(s.control.get(mission.id).status, 'ACTIVE');
   assert.equal(s.control.get(mission.id).receipts.length, 0);
 });
 
@@ -128,12 +130,13 @@ test('Aura absent model choice is a visible blocking configuration issue', async
   assert.equal(s.control.get(mission.id).status, 'BLOCKED');
 });
 
-test('a model that never uses tools is stopped after a bounded number of nudges', async t => {
+test('a model that never uses native tools switches to the existing structured planner without blocking', async t => {
   const s = setup(t, ['web-fetch']);
   s.control.create({ goal: 'g', idempotencyKey: 'a5', allowedTasks: ['web-fetch'] });
   const result = await run(s, scripted([{ content: 'hmm' }, { content: 'hmm' }, { content: 'hmm' }]), async () => ({ ok: true }));
-  assert.equal(result.failed, true);
-  assert.equal(result.reason, 'MODEL_DID_NOT_USE_TOOLS');
+  assert.equal(result.deferred, true);
+  assert.equal(result.recovery, 'STRUCTURED_PLANNER');
+  assert.equal(s.control.current()?.status, 'ACTIVE');
 });
 
 test('receipts shown to the model are bounded', () => {
@@ -173,16 +176,17 @@ test('a model that repeats the same call is told it is stuck, and recovers when 
   assert.ok(afterThird.some(c => /^STUCK: .*web-fetch/.test(c)), 'the model was told what it is doing');
 });
 
-test('stuck again after the nudge ends the run as blocked, naming why', async t => {
+test('repeated native-tool loop switches protocol without a false operator blocker', async t => {
   const s = setup(t, ['web-fetch']);
   const m = s.control.create({ goal: 'Läs sidan', idempotencyKey: 'stuck2', allowedTasks: ['web-fetch'] });
   const same = () => ({ tool_calls: [call('web-fetch', { url: 'https://same.test' })] });
   const model = scripted(Array.from({ length: 8 }, same));
   const result = await run(s, model, async () => ({ ok: true, verified: true, content: 'same' }));
-  assert.equal(result.blocked, true);
+  assert.equal(result.deferred, true);
+  assert.equal(result.recovery, 'STRUCTURED_PLANNER');
   assert.match(result.reason, /STUCK:repeat/);
-  assert.equal(result.receipts.length, 6, 'three steps, a nudge, three more steps, then it stops');
-  assert.notEqual(s.control.get(m.id).status, 'COMPLETED');
+  assert.equal(result.receipts.length, 6, 'bounded recovery after two repeated-action windows');
+  assert.equal(s.control.get(m.id).status, 'ACTIVE');
 });
 
 test('a long conversation is condensed before the next model turn and the model still sees what was done', async t => {
@@ -300,8 +304,10 @@ test('refresh replaces one mission packet with updated receipt state between tur
     intro: mission => `BOARD receipts=${mission.receipts?.length || 0}`,
   });
   assert.equal(result.completed, true);
-  assert.equal(model.seen[0][1].content, 'BOARD receipts=0');
-  assert.equal(model.seen[1][1].content, 'BOARD receipts=1');
+  assert.match(model.seen[0][1].content, /^BOARD receipts=0\n/);
+  assert.match(model.seen[1][1].content, /^BOARD receipts=1\n/);
+  assert.match(model.seen[0][1].content, /"recommendedMove":"inspect"/);
+  assert.match(model.seen[1][1].content, /"recommendedMove":"advance"/);
   assert.equal(model.seen[1].filter(m => m.content?.startsWith('BOARD')).length, 1);
   assert.ok(model.seen[1].some(m => m.role === 'tool'));
 });
@@ -593,7 +599,7 @@ test('a budget limit that condensing cannot fix stops for the operator with the 
   assert.equal(s.control.get(m.id).status, 'BLOCKED');
 });
 
-test('repeated text-only answers after a refused completion stop instead of paying for more turns', async t => {
+test('repeated text-only answers switch planning protocol instead of burning the mission budget', async t => {
   const s = setup(t, ['web-fetch']);
   s.control.create({ goal: 'Läs en sida', idempotencyKey: 'idle-1', allowedTasks: ['web-fetch'] });
   const release = s.client.release.bind(s.client);
@@ -611,8 +617,8 @@ test('repeated text-only answers after a refused completion stop instead of payi
     },
     execute: async () => ({ ok: true, verified: true, content: 'a' }),
   });
-  assert.equal(result.failed, true);
-  assert.equal(result.reason, 'MODEL_DID_NOT_USE_TOOLS');
+  assert.equal(result.deferred, true);
+  assert.equal(result.recovery, 'STRUCTURED_PLANNER');
   assert.ok(calls <= 5, `${calls} model calls`);
 });
 
@@ -661,6 +667,56 @@ test('changing historical results do not trigger a false STUCK warning on resume
   assert.equal(result.blocked, true);
   const firstTurn = model.seen[0].filter(message => message.role === 'user').map(message => message.content).join('\n');
   assert.doesNotMatch(firstTurn, /^STUCK:/m, 'historical progress is not an identical-result loop');
+});
+
+test('missing executable across earlier runs tries a different authorized tool before blocking', async t => {
+  const s = setup(t, ['shell', 'repo-read', 'stack-repair']);
+  const m = s.control.create({ goal: 'Diagnose and repair the failed Windows command without repeating it', idempotencyKey: 'missing-command-recovery-1', allowedTasks: ['shell', 'repo-read', 'stack-repair'], contract: { scope: { allowed: ['**'] }, acceptance: ['Repair authorized local command environment'], verification: { tests_required: false } } });
+  const prior = [
+    { type: 'shell', data: { command: 'npm test' }, receipt: { ok: false, verified: false, error: 'spawn npm ENOENT' } },
+    ...Array.from({ length: 6 }, (_, i) => ({ type: 'repo-read', data: { path: `diagnostic-${i}.txt` }, receipt: { ok: true, verified: true, result: { path: `diagnostic-${i}.txt` } } })),
+  ];
+  for (const {type,data,receipt} of prior) {
+    const claimed = await s.client.claim(m.id, 'nova');
+    const lease = { owner: 'nova', token: claimed.token };
+    const action = await s.client.begin(m.id, { ...lease, task: { type, data } });
+    await s.client.finish(m.id, { ...lease, actionId: action.id, receipt });
+  }
+  const model = scripted([
+    { tool_calls: [call('stack-repair', {})] },
+    { tool_calls: [call('complete', { reason: 'Authorized service repair finished and verified [#8]' })] },
+  ]);
+  const executed = [];
+  const result = await run(s, model, async task => { executed.push(task.type); return { ok: true, verified: true }; });
+  assert.equal(result.completed, true, 'mission stays active to recover instead of blocking at startup');
+  assert.deepEqual(executed, ['stack-repair'], 'repeated broken shell command was not executed again');
+  assert.match(JSON.stringify(model.seen[0]), /STRATEGY_RECOVERY.*stack-repair/);
+  assert.equal(s.control.get(m.id).status, 'AWAITING_VERIFICATION');
+});
+
+test('unrepaired missing executable blocks when no different permitted route remains', async t => {
+  const s = setup(t, ['shell', 'repo-read']);
+  const m = s.control.create({ goal: 'Run a command that is not installed', idempotencyKey: 'missing-command-exhausted-1', allowedTasks: ['shell', 'repo-read'], contract: { scope: { allowed: ['**'] }, acceptance: ['Observe real missing tool evidence'], verification: { tests_required: false } } });
+  const prior = [
+    { type: 'shell', data: { command: 'npm test' }, receipt: { ok: false, verified: false, error: 'spawn npm ENOENT' } },
+    ...Array.from({ length: 6 }, (_, i) => ({ type: 'repo-read', data: { path: `diagnostic-${i}.txt` }, receipt: { ok: true, verified: true, result: { path: `diagnostic-${i}.txt` } } })),
+  ];
+  for (const {type,data,receipt} of prior) {
+    const claimed = await s.client.claim(m.id, 'nova');
+    const lease = { owner: 'nova', token: claimed.token };
+    const action = await s.client.begin(m.id, { ...lease, task: { type, data } });
+    await s.client.finish(m.id, { ...lease, actionId: action.id, receipt });
+  }
+  let calls = 0;
+  const result = await run(s, { chat: async () => { calls++; return { content: 'not called' }; } }, async () => assert.fail('no viable tool may execute'));
+  assert.equal(result.blocked, true);
+  assert.equal(calls, 0, 'no paid planning turn when the granted alternatives have all failed or already been tried');
+  assert.match(result.reason, /UNREPAIRED_TOOL_ENV/);
+});
+
+test('failed click or lost desktop target supplies a corrective next-step hint, never an implied approval', () => {
+  assert.match(receiptForModel(1, { ok: false, error: 'BROWSER_CLICK_EXPECTATION_REQUIRED' }), /expect\.url or expect\.selector/);
+  assert.match(receiptForModel(2, { ok: false, error: 'DESKTOP_TRACTION_TARGET_DRIFT' }), /fresh desktop-windows and desktop-observe/);
 });
 
 test('a result that means "already done" says so to the model', () => {
@@ -819,4 +875,330 @@ test('a preflight that cannot reach the runtime yet defers the mission instead o
   const result = await run(s, model, async () => assert.fail('no tool runs'), { preflight: async () => ({ deferred: true, reason: 'RUNTIME_PREFLIGHT_UNAVAILABLE' }) });
   assert.equal(result.deferred, true);
   assert.equal(s.control.get(m.id).status, 'ACTIVE', 'the mission waits, it is not blocked for the operator');
+});
+
+
+test('Aura recovers from a false repo-write denial and commits a documented artifact', async t => {
+  const s = setup(t, ['repo-write','git-commit','repo-read']);
+  const contract = projectNodeContract({ title:'Create documentation', objective:'Create a new Markdown document docs/growth/a.md', mainGoal:'Document growth', projectRoot:null });
+  const m = s.control.create({ goal:'Create docs/growth/a.md and commit', idempotencyKey:'capability-denial-repair-1',
+    contract, allowedTasks:['repo-write','git-commit','repo-read'] });
+  const model = scripted([
+    { tool_calls:[call('blocked',{reason:'I cannot create files because repo-write is missing'})] },
+    { tool_calls:[call('repo-write',{path:'docs/growth/a.md',content:'# Evidence-based draft'})] },
+    { tool_calls:[call('git-commit',{message:'docs: add growth draft'})] },
+    { tool_calls:[call('complete',{reason:'Saved and committed docs/growth/a.md [#1] [#2]'})] },
+  ]);
+  const executed = [];
+  const result = await run(s, model, async task => {
+    executed.push(task.type);
+    return task.type === 'repo-write'
+      ? {ok:true,verified:true,path:'docs/growth/a.md',beforeSha256:'before',afterSha256:'after'}
+      : {ok:true,verified:true,commit:'test-commit'};
+  });
+  assert.equal(result.completed, true);
+  assert.deepEqual(executed, ['repo-write','git-commit']);
+  assert.equal(s.control.get(m.id).status, 'AWAITING_VERIFICATION');
+  assert.match(JSON.stringify(model.seen[1]), /CAPABILITY_CORRECTION: repo-write/);
+  assert.match(JSON.stringify(model.seen[0]), /executionVerified/);
+});
+
+test('three identical false capability refusals stop deterministically without spinning', async t => {
+  const s = setup(t, ['repo-write']);
+  const contract = projectNodeContract({title:'Create documentation', objective:'Create new Markdown document docs/new.md', projectRoot:null});
+  const m = s.control.create({goal:'Create docs/new.md',idempotencyKey:'false-capability-loop',contract,allowedTasks:['repo-write']});
+  const model = scripted(Array.from({length:3},()=>({tool_calls:[call('blocked',{reason:'I cannot create files because repo-write is missing'})]})));
+  const result = await run(s,model, async()=>assert.fail('false denial must not execute'));
+  assert.equal(result.blocked,true);
+  assert.match(result.reason,/CAPABILITY_CONTRADICTION_REPEATED/);
+  assert.equal(model.seen.length,3);
+  assert.equal(s.control.get(m.id).status,'BLOCKED');
+  assert.equal(s.control.get(m.id).receipts.length,0);
+});
+
+test('a genuinely unavailable write tool stays blocked and is never synthesized', async t => {
+  const s=setup(t,['web-fetch']);
+  const m=s.control.create({goal:'Create a Markdown file',idempotencyKey:'actual-missing-tool',allowedTasks:['web-fetch']});
+  const model=scripted([{tool_calls:[call('blocked',{reason:'I cannot create files: no repo-write capability'})]}]);
+  const result=await run(s,model,async()=>assert.fail('no action may be invented'));
+  assert.equal(result.blocked,true);
+  assert.equal(model.seen.length,1);
+  assert.equal(s.control.get(m.id).status,'BLOCKED');
+});
+
+test('Swedish plain-text capability denial is corrected using native tool catalog', async t => {
+  const s=setup(t,['repo-write']);
+  const contract=projectNodeContract({title:'Create report',objective:'Create a new Markdown document docs/report.md'});
+  const m=s.control.create({goal:'Skapa docs/report.md',idempotencyKey:'swedish-denial',contract,allowedTasks:['repo-write']});
+  const model=scripted([
+    {content:'Jag kan inte skapa filer, jag saknar verktyg för att skriva.'},
+    {tool_calls:[call('repo-write',{path:'docs/report.md',content:'# Report'})]},
+    {tool_calls:[call('blocked',{reason:'Actual verification still required'})]},
+  ]);
+  const executed=[];
+  const result=await run(s,model,async task=>{executed.push(task.type);return {ok:true,verified:true,path:task.data.path,beforeSha256:'old',afterSha256:'new'};});
+  assert.equal(result.blocked,true);
+  assert.deepEqual(executed,['repo-write']);
+  assert.match(JSON.stringify(model.seen[1]),/CAPABILITY_CORRECTION: repo-write/);
+  assert.equal(s.control.get(m.id).receipts.length,1);
+});
+
+
+test('acceptance: false tool denial recovers into a real file write and an actual Git commit', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-real-artifact-'));
+  t.after(() => fs.rmSync(root, { recursive:true, force:true, maxRetries:5, retryDelay:50 }));
+  const git = (...args) => execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim();
+  git('init','-b','feature');
+  git('config','user.email','jaco-ci@example.invalid');
+  git('config','user.name','JACO CI');
+  const s = setup(t,['repo-write','git-commit','repo-read']);
+  const contract = projectNodeContract({
+    title:'Create research document',
+    objective:'Create a new Markdown document docs/research.md',
+    mainGoal:'Save a reproducible artifact',
+    projectRoot:root,
+  });
+  assert.equal(contract.verification.tests_required,false,'docs-only tasks do not inherit unrelated npm suites');
+  const m = s.control.create({ goal:'Create docs/research.md and commit',idempotencyKey:'acceptance-real-artifact',
+    allowedTasks:['repo-write','git-commit','repo-read'],contract,projectRoot:root });
+  const workspace = createCodingWorkspace({root});
+  const model = scripted([
+    {tool_calls:[call('blocked',{reason:'I cannot create the Markdown file: repo-write is unavailable'})]},
+    {tool_calls:[call('repo-write',{path:'docs/research.md',content:'# Proven artifact\n\nWritten by Aura.'})]},
+    {tool_calls:[call('git-commit',{message:'docs: add proof artifact'})]},
+    {tool_calls:[call('complete',{reason:'Artifact created and committed [#1] [#2]'})]},
+  ]);
+  const result = await run(s,model,task=>workspace.execute(task,contract,{receipts:s.control.get(m.id).receipts}));
+  assert.equal(result.completed,true);
+  assert.equal(fs.readFileSync(path.join(root,'docs/research.md'),'utf8'),'# Proven artifact\n\nWritten by Aura.');
+  assert.equal(git('show','HEAD:docs/research.md'),'# Proven artifact\n\nWritten by Aura.');
+  assert.equal(git('status','--porcelain'),'');
+  assert.equal(s.control.get(m.id).contractStatus.machineVerified,true);
+});
+
+test('real durable mission resumes without repeating an unchanged read silently', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({goal:'Inspect and validate page changes',idempotencyKey:'causal-resume-1',allowedTasks:['web-fetch']});
+  const oldArgs = {url:'https://example.test/unchanged'};
+  for (let i = 0; i < 2; i++) {
+    const {token}=s.control.claim(m.id,'nova');
+    const action=s.control.begin(m.id,{owner:'nova',token,task:{type:'web-fetch',data:oldArgs}});
+    s.control.finish(m.id,{owner:'nova',token,actionId:action.id,
+      receipt:checkedReceipt(action,{ok:true,verified:true,content:'unchanged'})
+    });
+  }
+  assert.equal(s.control.get(m.id).receipts.length,2);
+  const model=scripted([
+    {tool_calls:[call('web-fetch',oldArgs)]},
+    {tool_calls:[call('web-fetch',{url:'https://example.test/alternative'})]},
+    {tool_calls:[call('complete',{reason:'Alternative endpoint verified [#4]'})]}
+  ]);
+  const runs=[];
+  const result=await run(s,model,async task=>{
+    runs.push(task.data.url);
+    return {ok:true,verified:true,content:task.data.url===oldArgs.url?'unchanged':'new'};
+  });
+  assert.equal(result.completed,true);
+  assert.deepEqual(runs,[oldArgs.url,'https://example.test/alternative']);
+  assert.ok(model.seen[1].some(msg=>msg.role==='user'&&String(msg.content).startsWith('STUCK:')), 
+    'the third unchanged action must trigger adaptive correction across persisted runs');
+  assert.equal(s.control.get(m.id).receipts.length,4);
+  assert.equal(s.control.get(m.id).status,'AWAITING_VERIFICATION');
+});
+
+
+test('queue preemption during model inference yields without false capability denial or another approval',async t=>{
+  const s=setup(t,['web-fetch']);
+  const research=s.control.create({goal:'Read the research result',idempotencyKey:'queue-original',allowedTasks:['web-fetch']});
+  let priority,modelTurns=0,executions=0;
+  const result=await runAgentMission({client:s.client,owner:'nova',system:'test',toolsFor:m=>plannerTools(m.allowedTasks,[],{},false),
+    chat:async()=>{modelTurns++;priority=s.control.create({goal:'Read the priority result',idempotencyKey:'queue-priority',source:'skyfire-order',allowedTasks:['web-fetch']});
+      return {tool_calls:[call('web-fetch',{url:'https://fixture.test/research'})]};},
+    execute:async()=>{executions++;return{ok:true,verified:true};}
+  });
+  assert.equal(result.queueChanged,true);assert.equal(result.deferred,true);
+  assert.equal(result.blocked,undefined);assert.equal(executions,0);assert.equal(modelTurns,1);
+  assert.equal(s.control.get(research.id).status,'ACTIVE');
+  const events=s.control.db.prepare('SELECT type,payload_json FROM events WHERE mission_id=?').all(research.id);
+  assert.ok(events.every(e=>!['NOVA_OPERATOR_APPROVAL_REQUIRED','NOVA_SPEND_BLOCKED','NOVA_PLANNING_RESULT'].includes(e.type)));
+  const priorityModel=scripted([{tool_calls:[call('web-fetch',{url:'https://fixture.test/priority'})]}, {tool_calls:[call('complete',{reason:'Observed priority [#1]'})]}]);
+  const done=await run(s,priorityModel,async()=>({ok:true,verified:true,content:'priority result'}));
+  assert.equal(done.completed,true);assert.equal(s.control.get(priority.id).status,'AWAITING_VERIFICATION');
+  const resumed=await run(s,scripted([{tool_calls:[call('web-fetch',{url:'https://fixture.test/research'})]},{tool_calls:[call('complete',{reason:'Observed research [#1]'})]}]),async()=>({ok:true,verified:true,content:'research result'}));
+  assert.equal(resumed.completed,true);assert.equal(s.control.get(research.id).receipts.length,1);
+  assert.equal(s.control.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='NOVA_OPERATOR_RESOLUTION'").get().n,0);
+});
+
+test('queue changes at a planning boundary do not consume another model turn',async t=>{
+  const s=setup(t,['web-fetch']);
+  const original=s.control.create({goal:'Read two research pages',idempotencyKey:'boundary-original',allowedTasks:['web-fetch']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://fixture.test/first'})]}]);
+  const result=await run(s,model,async()=>({ok:true,verified:true,content:'first'}),{
+    onReceipt:async()=>{s.control.create({goal:'Read the new priority page',idempotencyKey:'boundary-priority',source:'stripe-order',allowedTasks:['web-fetch']});}
+  });
+  assert.equal(result.queueChanged,true);assert.equal(model.seen.length,1);
+  assert.equal(s.control.get(original.id).status,'ACTIVE');assert.equal(result.receipts.length,1);
+});
+
+test('invalid selected-model credentials remain blocked rather than retried indefinitely', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal:'Inspect a page', idempotencyKey:'health-bad-key', allowedTasks:['web-fetch'] });
+  const result = await run(s, { chat: async () => { throw Error('AURA_SELECTED_MODEL_UNAVAILABLE:gemini:AUTH_INVALID_KEY'); } }, async () => assert.fail('no side effects'));
+  assert.equal(result.blocked, true);
+  assert.equal(s.control.get(m.id).status, 'BLOCKED');
+});
+
+test('per-run step window yields ACTIVE durable work and resumes with its receipts', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({ goal:'Read two pages', idempotencyKey:'health-step-yield', allowedTasks:['web-fetch'] });
+  const first = await run(s, scripted([{tool_calls:[call('web-fetch',{url:'https://first.test'})]}]),
+    async () => ({ok:true,verified:true,content:'first'}), {maxSteps:1});
+  assert.equal(first.deferred,true);
+  assert.match(first.reason,/TURN_WINDOW_EXHAUSTED/);
+  assert.equal(s.control.get(m.id).status,'ACTIVE');
+  assert.equal(s.control.get(m.id).receipts.length,1);
+  const next = await run(s, scripted([{tool_calls:[call('web-fetch',{url:'https://second.test'})]},
+    {tool_calls:[call('complete',{reason:'Both pages verified'})]}]),
+    async () => ({ok:true,verified:true,content:'second'}));
+  assert.equal(next.completed,true);
+  assert.equal(s.control.get(m.id).receipts.length,2);
+});
+
+test('service failure refreshes currently allowed catalog and offers an alternate tool', async t => {
+  const s=setup(t,['web-fetch','health-check']);
+  const m=s.control.create({goal:'Check service with a fallback',idempotencyKey:'health-tool-fallback',allowedTasks:['web-fetch','health-check']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://offline.test'})]},
+    {tool_calls:[call('health-check',{})]},
+    {tool_calls:[call('complete',{reason:'Verified by available health-check'})]}]);
+  let catalogs=0;
+  const result=await run(s,model,async action => action.type==='web-fetch'
+    ? {ok:false,verified:false,error:'ECONNREFUSED'} : {ok:true,verified:true,content:'READY'},
+    {toolsFor:mission=>{catalogs++;return plannerTools(mission.allowedTasks,[],{},false);}});
+  assert.equal(result.completed,true);
+  assert.ok(catalogs>=2);
+  assert.match(JSON.stringify(model.seen[1]),/TOOL_HEALTH_RECOVERY/);
+  assert.equal(s.control.get(m.id).receipts.length,2);
+});
+
+test('a temporary broken tool followed by a model block stays active for later repair', async x => {
+  const s=setup(x,['web-fetch','health-check']);
+  const mission=s.control.create({goal:'Read the page',idempotencyKey:'tool-health-block',allowedTasks:['web-fetch','health-check']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://unreachable.test'})]},
+    {tool_calls:[call('blocked',{reason:'Browser bridge unavailable while trying the page'})]}]);
+  const result=await run(s,model,async()=>({ok:false,verified:false,error:'ECONNREFUSED'}));
+  assert.equal(result.deferred,true);
+  assert.equal(result.recovery,'WAIT_TOOL');
+  assert.equal(s.control.get(mission.id).status,'ACTIVE');
+  assert.equal(s.control.get(mission.id).receipts.length,1);
+});
+
+test('operator authorization is never disguised as a health defer', async x => {
+  const s=setup(x,['web-fetch']);
+  const mission=s.control.create({goal:'Read page',idempotencyKey:'tool-health-approval',allowedTasks:['web-fetch']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://unreachable.test'})]},
+    {tool_calls:[call('blocked',{reason:'Operator approval required to proceed'})]}]);
+  const result=await run(s,model,async()=>({ok:false,verified:false,error:'ECONNREFUSED'}));
+  assert.equal(result.blocked,true);
+  assert.equal(s.control.get(mission.id).status,'BLOCKED');
+});
+
+test('a health-deferred mission cools down even after useful work, while a turn window keeps moving', async () => {
+  const { novaLoopDelay } = await import('../../agents/hands-off-agent.mjs');
+  assert.equal(novaLoopDelay({executed:true,deferred:true,recovery:'WAIT_PROVIDER'},60000,3000),60000);
+  assert.equal(novaLoopDelay({executed:true,deferred:true,recovery:'WAIT_TOOL'},60000,3000),60000);
+  assert.equal(novaLoopDelay({executed:true,deferred:true,recovery:'WAIT_RUNTIME'},60000,3000),60000);
+  assert.equal(novaLoopDelay({executed:true,deferred:true,reason:'TURN_WINDOW_EXHAUSTED'},60000,3000),3000);
+  assert.equal(novaLoopDelay({executed:false,deferred:true},60000,3000),60000);
+});
+
+test('a missing operator fact remains a real question even after a network outage', async x => {
+  const s=setup(x,['web-fetch']);
+  const mission=s.control.create({goal:'Read a user-selected article',idempotencyKey:'health-needs-input',allowedTasks:['web-fetch']});
+  const model=scripted([{tool_calls:[call('web-fetch',{url:'https://offline.test'})]},
+    {tool_calls:[call('blocked',{reason:'Which page should I use for the article?'})]}]);
+  const result=await run(s,model,async()=>({ok:false,verified:false,error:'ECONNREFUSED'}));
+  assert.equal(result.blocked,true);
+  assert.equal(s.control.get(mission.id).status,'BLOCKED');
+});
+
+test('graph mission recovers from a repeated native loop by requesting bounded structural repair', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({
+    goal: 'Inspect the service and complete the original goal',
+    source: 'seer-mission-graph',
+    parent: { graphId: 'g-rescue', nodeKey: 'step-1', mainGoal: 'Complete the original goal' },
+    idempotencyKey: 'stuck-graph-repair',
+    allowedTasks: ['web-fetch'],
+  });
+  const same = () => ({ tool_calls: [call('web-fetch', { url: 'https://same.test' })] });
+  const result = await run(s, scripted(Array.from({ length: 8 }, same)),
+    async () => ({ ok: true, verified: true, content: 'unchanged' }));
+  assert.equal(result.replanRequested, true);
+  assert.equal(result.recovery, 'REPLAN_GRAPH');
+  assert.equal(result.blocked, undefined, 'the agent did not request an operator decision');
+  assert.equal(result.receipts.length, 6);
+  const persisted = s.control.get(m.id);
+  assert.equal(persisted.status, 'BLOCKED', 'graph reconciliation owns the next repair');
+  assert.deepEqual(persisted.replanRequest.subgoals, []);
+  assert.match(persisted.replanRequest.reason, /^STUCK:/);
+});
+
+test('automatic graph repair cannot be requested by a mission without a graph', async t => {
+  const s = setup(t, ['web-fetch']);
+  const mission = s.control.create({ goal: 'Read a page', idempotencyKey: 'no-replan-authority', allowedTasks: ['web-fetch'] });
+  const claimed = await s.client.claim(mission.id, 'nova');
+  await assert.rejects(s.client.release(mission.id, {
+    owner: 'nova', token: claimed.token, replanRequest: { reason: 'try another approach', subgoals: [] },
+  }), /REPLAN_REQUIRES_GRAPH_MISSION/);
+  await s.client.release(mission.id, { owner: 'nova', token: claimed.token });
+  assert.equal(s.control.get(mission.id).status, 'ACTIVE');
+});
+
+test('preflight retries transient runtime and browser outages without masking authorization failures', async () => {
+  const { isTransientPreflightBlockers } = await import('../../agents/lib/mission-health-policy.mjs');
+  assert.equal(isTransientPreflightBlockers(['RUNTIME_PREFLIGHT_UNAVAILABLE']), true);
+  assert.equal(isTransientPreflightBlockers(['BROWSER_BRIDGE_UNAVAILABLE']), true);
+  assert.equal(isTransientPreflightBlockers(['BROWSER_BRIDGE_UNAVAILABLE', 'RUNTIME_PREFLIGHT_UNAVAILABLE']), true);
+  for (const cases of [[], ['BROWSER_BRIDGE_AUTH_REQUIRED'], ['CODING_ROOT_MISSING'],
+    ['BROWSER_BRIDGE_UNAVAILABLE', 'MISSION_CONTEXT_UNAVAILABLE']]) {
+    assert.equal(isTransientPreflightBlockers(cases), false);
+  }
+});
+
+test('a durable release failure does not falsely report autonomous repair as accepted', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({
+    goal: 'Diagnose and repair', source: 'seer-mission-graph',
+    parent: { graphId: 'g-release', nodeKey: 'step-1', mainGoal: 'Diagnose and repair' },
+    idempotencyKey: 'release-repair-fails', allowedTasks: ['web-fetch'],
+  });
+  const release = s.client.release.bind(s.client);
+  s.client.release = async (id, input) => {
+    if (input.replanRequest) throw Error('SIMULATED_RELEASE_OUTAGE');
+    return release(id, input);
+  };
+  const same = () => ({ tool_calls: [call('web-fetch', { url: 'https://same.test' })] });
+  const result = await run(s, scripted(Array.from({ length: 8 }, same)),
+    async () => ({ ok: true, verified: true, content: 'unchanged' }));
+  assert.equal(result.deferred, true);
+  assert.equal(result.recovery, 'WAIT_RUNTIME');
+  assert.equal(result.replanRequested, undefined);
+  assert.equal(s.control.get(m.id).status, 'ACTIVE');
+});
+
+test('provider loss after verified work preserves receipts and waits for recovery', async t => {
+  const s = setup(t, ['web-fetch']);
+  const m = s.control.create({goal:'Read and summarize',idempotencyKey:'provider-drop-mid-mission',allowedTasks:['web-fetch']});
+  let calls=0;
+  const result=await run(s,{
+    chat:async()=>{
+      if(calls++===0) return {tool_calls:[call('web-fetch',{url:'https://verified.test'})]};
+      throw Error('NO_PLANNER_AVAILABLE:local model temporarily offline');
+    },
+  },async()=>({ok:true,verified:true,content:'verified page'}));
+  assert.equal(result.deferred,true);
+  assert.equal(result.recovery,'WAIT_PROVIDER');
+  assert.equal(s.control.get(m.id).status,'ACTIVE');
+  assert.equal(s.control.get(m.id).receipts.length,1);
+  assert.equal(s.control.get(m.id).failures,0);
 });

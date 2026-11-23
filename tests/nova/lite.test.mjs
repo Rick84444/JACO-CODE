@@ -7,9 +7,11 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { main as startLite } from '../../lite/start.mjs';
 import { createZip, readZip, crc32 } from '../../tools/lib/zip.mjs';
 import { buildLite, liteDependencies, secretValues, findSecrets, collectFiles, LITE_DEPENDENCIES } from '../../tools/build-lite.mjs';
-import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, writeRuntimeRecord, removeRuntimeRecord, runtimeRecordFile, agentEnv, agentCommand, openBrowser, liteExitCode, appendLiteLifecycle, HELP } from '../../lite/start.mjs';
+import { nodeSupported, parseArgs, findFreePort, resolveProject, ensureProject, ensureEconomicPolicy, checkInstall, checkReleaseIntegrity, waitForHealth, serverEnv, liteChildEnv, writeRuntimeRecord, removeRuntimeRecord, runtimeRecordFile, agentEnv, agentCommand, openBrowser, liteWorkplaceChildEnv, liteWorkplaceRequired, liteLocalConnectionEnv, liteExitCode, appendLiteLifecycle, liteMobileEnv, verifyLiteUi, HELP } from '../../lite/start.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-lite-test-'));
 
@@ -17,7 +19,7 @@ test('Windows launcher explains incomplete ZIP extraction before invoking Node',
   const dir = tmp();
   try {
     fs.copyFileSync(new URL('../../lite/START.cmd', import.meta.url), path.join(dir, 'START.cmd'));
-    const result = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'START.cmd'], {
+    const result = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', path.join(dir, 'START.cmd')], {
       cwd: dir, input: '\n', encoding: 'utf8', timeout: 10_000,
     });
     assert.ifError(result.error);
@@ -53,11 +55,12 @@ test('zip: round trip keeps names, bytes, modes and UTF-8; empty and incompressi
 
 test('launcher: Node version, arguments, free port, project folder and the server environment', async () => {
   assert.deepEqual(['22.4.0', '22.5.0', '24.11.0', '20.19.0', 'x'].map(v => nodeSupported(v)), [false, true, true, false, false]);
-  assert.deepEqual(parseArgs(['proj', '--port', '3100', '--no-open', '--check']), { help: false, check: true, open: false, agent: true, verbose: false, whatsapp: null, whatsappCheck: false, port: 3100, project: 'proj', errors: [] });
+  assert.deepEqual(parseArgs(['proj', '--port', '3100', '--no-open', '--check']), { help: false, check: true, open: false, agent: true, verbose: false, recover: false, whatsapp: null, whatsappCheck: false, port: 3100, project: 'proj', errors: [] });
   assert.equal(parseArgs(['--whatsapp', '+46701234567']).whatsapp, '+46701234567');
   assert.equal(parseArgs(['--whatsapp']).errors.length, 1);
   assert.equal(parseArgs(['--whatsapp-check']).whatsappCheck, true);
   assert.equal(parseArgs(['--port=99999']).errors.length, 1);
+  assert.equal(parseArgs(['--recover']).recover, true);
   assert.equal(parseArgs(['a', 'b', '--nope']).errors.length, 2);
   assert.match(HELP, /Node.js 22.5/);
 
@@ -85,11 +88,63 @@ test('launcher: Node version, arguments, free port, project folder and the serve
   assert.equal(JSON.parse(fs.readFileSync(policyFile, 'utf8')).dailyCloudUsd, 2, 'a change the operator made is never overwritten');
   assert.equal(agentCommand(dir), null, 'no agent file, no agent');
   const agent = agentEnv({ env: {}, installDir: install, project: dir, url: 'http://127.0.0.1:3999', token: 'tok' });
-  assert.deepEqual([agent.JACO_LITE, agent.NOVA_BRAIN_MODE, agent.JACO_RUNTIME_URL, agent.JACO_AUTO_APPROVE_LEVEL, agent.JACO_POLICY_EDIT_GRANT], ['1', 'direct', 'http://127.0.0.1:3999', '5', '1']);
+  assert.deepEqual([agent.JACO_LITE, agent.NOVA_BRAIN_MODE, agent.JACO_RUNTIME_URL, agent.JACO_AUTO_APPROVE_LEVEL, agent.JACO_POLICY_EDIT_GRANT], ['1', 'direct', 'http://127.0.0.1:3999', '5', '0']);
   assert.equal(agentEnv({env:{JACO_AUTO_APPROVE_LEVEL:'1',JACO_POLICY_EDIT_GRANT:'0'},installDir:install,project:dir,url:'http://127.0.0.1:3999',token:'tok'}).JACO_AUTO_APPROVE_LEVEL,'1');
   assert.equal(JSON.stringify(agent).includes('OLLAMA'), false, 'the agent is not tied to one local server');
   const env = serverEnv({ env: { PATH: 'p' }, installDir: install, project: dir, port: 3999, token: 'tok' });
   assert.deepEqual([env.PORT, env.NODE_ENV, env.JACO_LITE, env.JACO_WORKSPACE_ROOT, env.GATEWAY_TOKEN, env.PATH, env.JACO_AUTO_APPROVE_LEVEL], ['3999', 'production', '1', dir, 'tok', 'p', '5']);
+});
+
+test('Lite propagates its selected Node tool bin to every child without losing the operator PATH', () => {
+  const selected = '/home/droid/.local/share/jaco-lite/runtime/node/bin/node';
+  const original = { PATH: '/usr/local/bin:/usr/bin', GEMINI_API_KEY: 'untouched-parent-secret' };
+  const child = liteChildEnv(original, selected, 'linux');
+  assert.equal(child.PATH, '/home/droid/.local/share/jaco-lite/runtime/node/bin:/usr/local/bin:/usr/bin');
+  assert.equal(original.PATH, '/usr/local/bin:/usr/bin', 'parent is not mutated');
+  assert.equal(liteChildEnv(child, selected, 'linux').PATH, child.PATH, 'repeated startup does not duplicate bins');
+  const win = liteChildEnv({ Path: 'C:\\Windows\\System32' }, 'C:\\Node\\node.exe', 'win32');
+  assert.deepEqual(Object.keys(win), ['Path']);
+  assert.equal(win.Path, 'C:\\Node;C:\\Windows\\System32');
+  assert.equal(liteChildEnv(win, 'c:\\node\\node.exe', 'win32').Path, win.Path);
+  assert.equal(liteChildEnv({ PATH: '/usr/bin' }, 'node', 'linux').PATH, '/usr/bin', 'relative executable paths are ignored');
+});
+
+test('Lite defaults local work to optional Workplace, keeps explicit strict mode and never inherits a remote session', () => {
+  assert.equal(liteWorkplaceRequired({}), false);
+  assert.equal(liteWorkplaceRequired({ JACO_WORKPLACE_REQUIRED:'0' }), false);
+  assert.equal(liteWorkplaceRequired({ JACO_WORKPLACE_REQUIRED:'1' }), true);
+  const supplied = { JACO_HUB_URL:'https://example.invalid', JACO_DEVICE_KEY:'fixture', JACO_WORKPLACE_TOKEN:'fixture' };
+  const ready = liteLocalConnectionEnv({ childEnv:supplied, workplacePort:3015, workplaceReady:true });
+  assert.equal(ready.JACO_WORKPLACE_REQUIRED,'0');
+  assert.equal(ready.JACO_WORKPLACE_URL,'http://127.0.0.1:3015');
+  assert.equal(ready.JACO_WORKPLACE_PORT,'3015');
+  assert.equal(ready.JACO_WORKPLACE_SCOPE,'local');
+  assert.equal(ready.JACO_HUB_URL,'');
+  assert.equal(ready.JACO_DEVICE_KEY,'');
+  assert.equal(ready.JACO_WORKPLACE_TOKEN,'');
+  const failed = liteLocalConnectionEnv({ childEnv:{}, workplacePort:3015, workplaceReady:false });
+  assert.equal(failed.JACO_WORKPLACE_URL,'');
+  assert.equal(failed.JACO_WORKPLACE_REQUIRED,'0');
+  assert.equal(liteLocalConnectionEnv({ childEnv:{JACO_WORKPLACE_REQUIRED:'1'}, workplacePort:3015, workplaceReady:true }).JACO_WORKPLACE_REQUIRED,'1');
+});
+
+test('Lite Workplace relays from the operator project, not its packaged dist folder', () => {
+  const project = path.resolve('/home/droid/JACO-CODE');
+  const env = liteWorkplaceChildEnv({
+    childEnv: { PATH:'/usr/bin', GITHUB_TOKEN:'test-secret', JACO_CHATGPT_GIT_REPO_ROOT:'' },
+    project, workplacePort:2995,
+  });
+  assert.equal(env.JACO_CHATGPT_GIT_REPO_ROOT, project);
+  assert.equal(env.JACO_WORKSPACE_ROOT, project);
+  assert.equal(env.JACO_WORKPLACE_PORT, '2995');
+  assert.equal(env.GITHUB_TOKEN, '', 'tokenless Git transport must not inherit GitHub credentials');
+  assert.equal(env.JACO_CHATGPT_WORKPLACE_TOKEN, '');
+  assert.equal(env.JACO_WORKPLACE_OPERATOR_TOKEN, '');
+  const explicit = liteWorkplaceChildEnv({
+    childEnv: { JACO_CHATGPT_GIT_REPO_ROOT:'/existing/project' },
+    project, workplacePort:3015,
+  });
+  assert.equal(explicit.JACO_CHATGPT_GIT_REPO_ROOT, '/existing/project', 'honor an explicitly configured checkout');
 });
 
 test('builder: stages dist without maps, adds launcher and license, scans for secrets, writes a verified zip', async () => {
@@ -102,7 +157,7 @@ test('builder: stages dist without maps, adds launcher and license, scans for se
   const deps = Object.fromEntries(LITE_DEPENDENCIES.map(n => [n, '^1.0.0']));
   fs.writeFileSync(path.join(runtime, 'package.json'), JSON.stringify({ version: '9.9.9', dependencies: deps }));
   fs.mkdirSync(path.join(repo, 'lite'));
-  for (const f of ['start.mjs', 'START.cmd', 'start.sh', 'START-ANDROID.sh', 'README.md', 'connect.html', 'connect.js', 'connect.css']) fs.writeFileSync(path.join(repo, 'lite', f), `// ${f}\n`);
+  for (const f of ['start.mjs', 'START.cmd', 'start.sh', 'START-ANDROID.sh', 'START-PIXEL-TERMINAL.sh', 'README.md', 'connect.html', 'connect.js', 'connect.css']) fs.writeFileSync(path.join(repo, 'lite', f), `// ${f}\n`);
   fs.writeFileSync(path.join(repo, 'LICENSE'), 'MIT');
   const install = stage => { fs.mkdirSync(path.join(stage, 'node_modules', '.bin'), { recursive: true }); fs.writeFileSync(path.join(stage, 'node_modules', 'express.js'), 'x'); fs.writeFileSync(path.join(stage, 'node_modules', '.bin', 'shim.cmd'), 'x'); fs.mkdirSync(path.join(stage, 'node_modules', '@img'), { recursive: true }); fs.writeFileSync(path.join(stage, 'node_modules', '@img', 'sharp.node'), 'x'); };
   const bundleNova = async outfile => fs.writeFileSync(outfile, '// nova');
@@ -111,11 +166,12 @@ test('builder: stages dist without maps, adds launcher and license, scans for se
   const entries = readZip(fs.readFileSync(r.zipPath));
   const names = entries.map(e => e.name);
   assert.equal(r.name, 'jaco-lite-9.9.9');
-  for (const n of ['start.mjs', 'START.cmd', 'start.sh', 'START-ANDROID.sh', 'README.md', 'LICENSE', 'package.json', 'dist/server.cjs', 'dist/index.html', 'dist/assets/a.js', 'dist/nova.mjs', 'dist/voice-link.mjs', 'node_modules/express.js']) assert.ok(names.includes(`jaco-lite-9.9.9/${n}`), n);
+  for (const n of ['start.mjs', 'START.cmd', 'start.sh', 'START-ANDROID.sh', 'START-PIXEL-TERMINAL.sh', 'README.md', 'LICENSE', 'package.json', 'dist/server.cjs', 'dist/index.html', 'dist/assets/a.js', 'dist/nova.mjs', 'dist/voice-link.mjs', 'node_modules/express.js']) assert.ok(names.includes(`jaco-lite-9.9.9/${n}`), n);
   assert.equal(names.some(n => n.endsWith('.map') || n.includes('.bin')), false);
   assert.equal(names.some(n => n.includes('node_modules/@img')), false, 'the 28 MB of image binaries stay out');
   assert.equal(entries.find(e => e.name.endsWith('/start.sh')).mode, 0o755);
   assert.equal(entries.find(e => e.name.endsWith('/START-ANDROID.sh')).mode, 0o755);
+  assert.equal(entries.find(e => e.name.endsWith('/START-PIXEL-TERMINAL.sh')).mode, 0o755);
   assert.deepEqual(JSON.parse(entries.find(e => e.name.endsWith('/package.json')).data).scripts, { start: 'node start.mjs' });
   assert.equal(fs.readFileSync(`${r.zipPath}.sha256`, 'utf8').split(' ')[0], r.sha256);
   const release = JSON.parse(entries.find(e => e.name.endsWith('/release.json')).data);
@@ -126,13 +182,14 @@ test('builder: stages dist without maps, adds launcher and license, scans for se
   const win = readZip(fs.readFileSync(r.platforms.windows.zipPath)), droid = readZip(fs.readFileSync(r.platforms.android.zipPath));
   const has = (entries, top, rel) => entries.some(e => e.name === `${top}/${rel}`);
   assert.ok(has(win, 'jaco-lite-windows-9.9.9', 'START.cmd') && has(win, 'jaco-lite-windows-9.9.9', 'start.mjs'));
-  assert.ok(!has(win, 'jaco-lite-windows-9.9.9', 'START-ANDROID.sh') && !has(win, 'jaco-lite-windows-9.9.9', 'start.sh'), 'no Android launchers in the Windows zip');
-  assert.ok(has(droid, 'jaco-lite-android-9.9.9', 'START-ANDROID.sh') && has(droid, 'jaco-lite-android-9.9.9', 'start.sh') && has(droid, 'jaco-lite-android-9.9.9', 'start.mjs'));
+  assert.ok(!has(win, 'jaco-lite-windows-9.9.9', 'START-PIXEL-TERMINAL.sh') && !has(win, 'jaco-lite-windows-9.9.9', 'START-ANDROID.sh') && !has(win, 'jaco-lite-windows-9.9.9', 'start.sh'), 'no Android launchers in the Windows zip');
+  assert.ok(has(droid, 'jaco-lite-android-9.9.9', 'START-PIXEL-TERMINAL.sh') && has(droid, 'jaco-lite-android-9.9.9', 'START-ANDROID.sh') && has(droid, 'jaco-lite-android-9.9.9', 'start.sh') && has(droid, 'jaco-lite-android-9.9.9', 'start.mjs'));
   assert.ok(!has(droid, 'jaco-lite-android-9.9.9', 'START.cmd'), 'no Windows launcher in the Android zip');
   for (const [entries, top] of [[win, 'jaco-lite-windows-9.9.9'], [droid, 'jaco-lite-android-9.9.9']]) {
     for (const rel of ['dist/server.cjs', 'dist/index.html', 'dist/nova.mjs', 'node_modules/express.js', 'LICENSE', 'package.json']) assert.ok(has(entries, top, rel), `${top}/${rel}`);
   }
   assert.equal(droid.find(e => e.name.endsWith('/START-ANDROID.sh')).mode, 0o755);
+  assert.equal(droid.find(e => e.name.endsWith('/START-PIXEL-TERMINAL.sh')).mode, 0o755);
   assert.equal(JSON.parse(win.find(e => e.name.endsWith('/release.json')).data).platform, 'windows');
   assert.equal(JSON.parse(droid.find(e => e.name.endsWith('/release.json')).data).platform, 'android');
   assert.equal(JSON.parse(win.find(e => e.name.endsWith('/release.json')).data).clientSha256, r.clientSha256, 'same build as the universal zip');
@@ -227,6 +284,63 @@ test('Lite health accepts only the real JSON product, never the SPA HTML fallbac
   }),true,'Workplace readiness keeps its own JSON health contract');
 });
 
+test('Lite restarts an exited durable executor, keeps Core alive and does not restart during shutdown', async () => {
+  const root = tmp(), install = path.join(root,'install'), project = path.join(root,'project');
+  const files = ['dist/server.cjs','dist/index.html','dist/assets/test.js','dist/workplace.mjs',
+    'dist/jaco-editor.mjs','dist/connect.html','dist/nova.mjs','node_modules/express/package.json'];
+  for (const file of files) {
+    const full=path.join(install,file);
+    fs.mkdirSync(path.dirname(full),{recursive:true});
+    fs.writeFileSync(full,'test fixture');
+  }
+  const html='<script type="module" src="/assets/test.js"></script>';
+  fs.writeFileSync(path.join(install,'dist/index.html'),html);
+  const sha=crypto.createHash('sha256').update('test fixture').digest('hex');
+  fs.writeFileSync(path.join(install,'release.json'),JSON.stringify({schema:'jaco.lite-release/v1',
+    workspace:'cognitive-live/v1',entry:'/assets/test.js',serverSha256:sha,indexSha256:crypto.createHash('sha256').update(html).digest('hex'),clientSha256:sha}));
+  const children=[];
+  const start=startLite([project,'--no-open'],{
+    installDir:install,homedir:root,cwd:root,nodeVersion:'24.0.0',env:{PATH:process.env.PATH},
+    noSignals:true,out:()=>{},err:()=>{},findPort:async p=>p,
+    fetchImpl:async uri=>uri.endsWith('/assets/test.js')?new Response('test fixture',{headers:{'content-type':'text/javascript'}}):uri.endsWith('/')?new Response(html,{headers:{'content-type':'text/html'}}):new Response(JSON.stringify(uri.endsWith('/health')
+      ? {product:'JACO Workplace',status:'READY'} : {success:true,product:'JACO Autonomus IDE'})),
+    spawnImpl:(_cmd,args)=>{
+      const child=new EventEmitter();
+      child.pid=100+children.length;
+      child.file=path.basename(args.at(-1));
+      child.kill=()=>{child.emit('exit',null,'SIGTERM');return true;};
+      children.push(child);
+      return child;
+    }
+  });
+  async function waitFor(count){
+    const deadline=Date.now()+5000;
+    while(children.length<count && Date.now()<deadline) await new Promise(r=>setTimeout(r,20));
+    assert.equal(children.length,count);
+  }
+  let coreStopped=false;
+  try {
+    await waitFor(3);
+    assert.equal(children[2].file,'nova.mjs');
+    children[2].emit('exit',1,null);
+    await waitFor(4);
+    assert.equal(children[3].file,'nova.mjs');
+    assert.equal(children.filter(c=>c.file==='server.cjs').length,1);
+    coreStopped=true;
+    children[1].emit('exit',1,null);
+    assert.equal(await start,1);
+    const events=fs.readFileSync(path.join(project,'.jaco','lite-lifecycle.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(events.filter(e=>e.event==='RESTART_SCHEDULED').length,1);
+    assert.equal(events.filter(e=>e.component==='agent' && e.event==='EXIT' && e.expected).length,1);
+  } finally {
+    if(children[1] && !coreStopped) children[1].emit('exit',1,null);
+    await start.catch(()=>{});
+    // Let closed log streams flush before removing the disposable project.
+    await new Promise(r=>setTimeout(r,50));
+    fs.rmSync(root,{recursive:true,force:true});
+  }
+});
+
 test('Lite records signal termination as a failure, never a false exit code zero', () => {
   const signals = { SIGKILL: 9, SIGTERM: 15, SIGINT: 2 };
   assert.equal(liteExitCode(null, 'SIGKILL', signals), 137);
@@ -312,9 +426,11 @@ test('Lite turns the VS Code embed on and leaves a runtime record that is remove
   assert.equal(serverEnv({ env: { JACO_VSCODE_EMBED: '0' }, installDir: '/i', project: '/p', port: 3001, token: 't' }).JACO_VSCODE_EMBED, '0', 'the operator can switch it off');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'lite-record-'));
   try {
-    writeRuntimeRecord({ home, url: 'http://127.0.0.1:3001', port: 3001, project: '/p' });
+    writeRuntimeRecord({ home, url: 'http://127.0.0.1:3001', port: 3001, project: '/p', installDir: '/versions/pinned', sourceCommit: 'test-commit' });
     const record = JSON.parse(fs.readFileSync(runtimeRecordFile(home), 'utf8'));
     assert.deepEqual([record.product, record.url, record.launcherPid], ['JACO Autonomus IDE', 'http://127.0.0.1:3001', process.pid]);
+    assert.equal(record.installDir, '/versions/pinned');
+    assert.equal(record.sourceCommit, 'test-commit');
     removeRuntimeRecord({ home });
     assert.equal(fs.existsSync(runtimeRecordFile(home)), false);
     fs.mkdirSync(path.dirname(runtimeRecordFile(home)), { recursive: true });
@@ -322,4 +438,142 @@ test('Lite turns the VS Code embed on and leaves a runtime record that is remove
     removeRuntimeRecord({ home });
     assert.equal(fs.existsSync(runtimeRecordFile(home)), true, 'another installation\'s record is left alone');
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('Pixel APK session-token rotation has no obsolete paired-state reference', () => {
+  const src = fs.readFileSync(new URL('../../runtime/modules/runtime/native-intelligence-fabric/native/android/app/src/main/java/ai/jaco/nativeengine/MainActivity.kt',import.meta.url), 'utf8');
+  assert.match(src, /SessionToken[.]rotate[(]this[)]/);
+  assert.doesNotMatch(src, /\bpaired\s*=/);
+});
+
+test('Android Lite starts tools by default without selecting or changing the operator model',()=>{
+ const env={JACO_LLAMACPP_MODEL:'existing-alias',JACO_LOCAL_ONLY:'1',JACO_PRIMARY_PROVIDER:'custom',JACO_ALLOW_PAID_MODELS:'0'};
+ const mobile=liteMobileEnv(env,{platform:'android'},'linux');
+ assert.deepEqual(mobile,{...env,JACO_AURA_LEAN:'0',JACO_AUTO_START_TOOLS:'1'});
+ assert.deepEqual(liteMobileEnv(env,{platform:'windows'},'win32'),env);
+ assert.equal(liteMobileEnv({...env,JACO_AURA_LEAN:'1'},{platform:'android'}).JACO_AUTO_START_TOOLS,'0');
+ assert.equal(liteMobileEnv({...env,JACO_AUTO_START_TOOLS:'1'},{platform:'android'}).JACO_AUTO_START_TOOLS,'1');
+});
+
+test('Lite verifies served frontend bytes, not a stale bundle or HTML SPA fallback',async()=>{
+ const entry='/assets/app.js',html='<script src="'+entry+'"></script>',js='console.log("ready")';
+ const sha=s=>crypto.createHash('sha256').update(s).digest('hex');
+ const release={entry,indexSha256:sha(html),clientSha256:sha(js)};
+ const run=(asset,mime='text/javascript')=>verifyLiteUi('http://127.0.0.1:3000',release,{fetchImpl:async url=>url.endsWith('/')?new Response(html,{headers:{'content-type':'text/html'}}):new Response(asset,{headers:{'content-type':mime}})});
+ assert.deepEqual(await run(js),{ok:true});
+ assert.equal((await run('different')).reason,'GUI_ENTRY_DIGEST_MISMATCH');
+ assert.equal((await run(html,'text/html')).ok,false);
+});
+
+test('an identity response from a process that exited while probing is not READY',async()=>{
+ let alive=true;
+ const result=await waitForHealth('http://127.0.0.1:3000',{alive:()=>alive,fetchImpl:async()=>{alive=false;return Response.json({success:true,product:'JACO Autonomus IDE'});}});
+ assert.equal(result,false);
+});
+
+
+import { recoverLiteStartup, inspectStartupWriter } from '../../lite/start.mjs';
+
+test('startup: positively identify a previous same-workspace packaged Linux writer', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lite-recover-'));
+  try {
+    const project = path.join(tmp, 'project');
+    const install = path.join(tmp, 'versions', 'new');
+    const old = path.join(tmp, 'versions', 'old');
+    const ledger = path.join(project, '.jaco', 'continuum', 'ledger');
+    fs.mkdirSync(ledger, { recursive: true });
+    fs.mkdirSync(install, { recursive: true });
+    fs.mkdirSync(path.join(old, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(old, 'dist', 'server.cjs'), '');
+    fs.writeFileSync(path.join(old, 'start.mjs'), '');
+    fs.writeFileSync(path.join(old, 'release.json'), JSON.stringify({schema:'jaco.lite-release/v1',indexSha256:'a',clientSha256:'b',entry:'/assets/a.js'}));
+    const lock = path.join(ledger, 'events.lock');
+    const holder = {pid:112, host:'host', bootId:'boot', startTicks:'11', ownerId:'owner'};
+    const writeLock = v => fs.writeFileSync(lock, JSON.stringify(v));
+    writeLock(holder);
+    const core = {pid:112,parent:111,startTicks:'11',uid:10,cwd:project,state:'S',
+      argv:['node','--experimental-sqlite',path.join(old,'dist','server.cjs')]};
+    const launcher = {pid:111,parent:1,startTicks:'9',uid:10,cwd:project,state:'S',argv:['node',path.join(old,'start.mjs')]};
+    const io = {...fs,readFileSync: (p,...a) => p==='/proc/sys/kernel/random/boot_id'?'boot':fs.readFileSync(p,...a)};
+    const opts = {project,installDir:install,fsImpl:io,hostname:'host',uid:10,platform:'linux',alive:()=>true,inspect:pid=>pid===112?core:launcher};
+    assert.equal(inspectStartupWriter(opts).target.pid,111);
+    assert.equal(inspectStartupWriter({...opts, inspect:()=>({...core,cwd:tmp})}).state,'LIVE_UNVERIFIED');
+    writeLock({...holder,startTicks:'999'});
+    assert.equal(inspectStartupWriter(opts).state,'CLEAR');
+    writeLock({...holder,host:'foreign'});
+    assert.equal(inspectStartupWriter(opts).state,'UNKNOWN_LOCK');
+    writeLock(holder);
+    assert.equal(inspectStartupWriter({...opts,platform:'win32'}).state,'LIVE_UNVERIFIED');
+    assert.equal(inspectStartupWriter({...opts,alive:()=>false}).state,'CLEAR');
+    assert.equal(inspectStartupWriter({...opts,inspect:pid=>pid===112?core:{...launcher,argv:['node','/unrelated']}}).state,'LIVE_UNVERIFIED');
+    assert.equal(inspectStartupWriter({...opts,inspect:()=>({...core,parent:1})}).target.pid,112);
+    assert.equal(JSON.parse(fs.readFileSync(lock)).ownerId,'owner');
+  } finally { fs.rmSync(tmp,{recursive:true,force:true}); }
+});
+
+test('startup: only explicitly approved owned handoff sends a signal, then verifies release', async () => {
+  const core={pid:112,startTicks:'11'}, target={pid:111,startTicks:'9'};
+  const owned={state:'OWNED',pid:112,ownerId:'a',core,target,sameRelease:false};
+  const calls=[];
+  let stopped=false;
+  const opts={port:3000,observe:()=>stopped?{state:'CLEAR'}:owned,
+    ownsPort:()=>false,portFree:async()=>true,signal:pid=>{calls.push(pid);stopped=true},
+    alive:()=>!stopped,inspect:()=>null,timeoutMs:0};
+  assert.equal((await recoverLiteStartup(opts)).reason,'OWNED_WRITER_RESTART_REQUIRES_RECOVER');
+  assert.deepEqual(calls,[]);
+  assert.equal((await recoverLiteStartup({...opts,recover:true,portFree:async()=>false})).reason,'PORT_OWNERSHIP_UNKNOWN');
+  assert.deepEqual(calls,[]);
+  assert.equal((await recoverLiteStartup({...opts,recover:true,observe:()=>({state:'LIVE_UNVERIFIED',pid:112})})).action,'BLOCKED');
+  assert.deepEqual(calls,[]);
+  let n=0;
+  assert.equal((await recoverLiteStartup({...opts,recover:true,observe:()=>++n===1?owned:{...owned,ownerId:'changed'}})).reason,'OWNER_CHANGED');
+  assert.deepEqual(calls,[]);
+  assert.equal((await recoverLiteStartup({...opts,recover:true,signal:()=>{},alive:()=>true})).reason,'HANDOFF_NOT_VERIFIED');
+  assert.deepEqual(calls,[]);
+  assert.equal((await recoverLiteStartup({...opts,recover:true})).action,'RECOVERED');
+  assert.deepEqual(calls,[111]);
+});
+
+test('startup: reuse requires actual socket owner and verified current GUI bytes', async () => {
+  const html='<script src="/assets/main.js"></script>', js='export default 1;';
+  const sha=v=>crypto.createHash('sha256').update(v).digest('hex');
+  const release={indexSha256:sha(html),clientSha256:sha(js),entry:'/assets/main.js'};
+  const core={pid:112,startTicks:'11'};
+  const owned={state:'OWNED',pid:112,ownerId:'a',core,target:core,sameRelease:true};
+  const fetchImpl=async url=> url.endsWith('/api/runtime/identity')?
+    Response.json({success:true,product:'JACO Autonomus IDE'}):
+    new Response(url.endsWith('/')?html:js,{headers:{'content-type':url.endsWith('/')?'text/html':'text/javascript'}});
+  const opts={port:3000,release,observe:()=>owned,ownsPort:()=>true,fetchImpl,signal:()=>assert.fail('reuse must not signal')};
+  assert.equal((await recoverLiteStartup(opts)).action,'REUSE');
+  assert.equal((await recoverLiteStartup({...opts,ownsPort:()=>false})).action,'BLOCKED');
+  assert.equal((await recoverLiteStartup({...opts,release:{...release,clientSha256:'wrong'}})).action,'BLOCKED');
+});
+
+
+test('startup admission: blocked owner does not spawn anything; default port is strict', async () => {
+  const root=tmp(), install=path.join(root,'install'), project=path.join(root,'project');
+  try {
+    for (const file of ['dist/server.cjs','dist/index.html','dist/assets/test.js','dist/workplace.mjs',
+      'dist/jaco-editor.mjs','dist/connect.html','dist/nova.mjs','node_modules/express/package.json']) {
+      const full=path.join(install,file);
+      fs.mkdirSync(path.dirname(full),{recursive:true});fs.writeFileSync(full,'test fixture');
+    }
+    const html='<script type="module" src="/assets/test.js"></script>';
+    fs.writeFileSync(path.join(install,'dist/index.html'),html);
+    const sha=v=>crypto.createHash('sha256').update(v).digest('hex');
+    fs.writeFileSync(path.join(install,'release.json'),JSON.stringify({schema:'jaco.lite-release/v1',
+      workspace:'cognitive-live/v1',entry:'/assets/test.js',serverSha256:sha('test fixture'),indexSha256:sha(html),clientSha256:sha('test fixture')}));
+    fs.mkdirSync(path.join(project,'.jaco'),{recursive:true});
+    const opts={installDir:install,cwd:root,nodeVersion:'24.0.0',env:{},out:()=>{},err:()=>{},noSignals:true,
+      spawnImpl:()=>assert.fail('must not spawn children')};
+    let calls=0;
+    const blocked=await startLite([project,'--recover','--no-open'],{...opts,
+      recoverStartup:async ({port,recover})=>{assert.equal(port,3000); assert.equal(recover,true);calls++;return {action:'BLOCKED',reason:'LIVE_UNVERIFIED'}},
+      findPort:()=>assert.fail('must not choose port after ownership refusal')});
+    assert.equal(blocked,4);
+    assert.equal(calls,1);
+    const busy=await startLite([project,'--no-open'],{...opts,recoverStartup:async()=>({action:'START'}),
+      findPort:async (port,{strict})=>{assert.equal(port,3000);assert.equal(strict,true);throw Error('PORT_IN_USE:3000')}});
+    assert.equal(busy,4);
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
 });

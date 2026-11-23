@@ -15,7 +15,9 @@ export const AURA_RUN_MODES = Object.freeze({
   }),
   autonomous: Object.freeze({
     id: 'autonomous',
-    interactionMode: 'question', // Chat remains read-only even while durable work runs.
+    // Operator 2026-11-19: in Full Autonomous Aura acts in the conversation too (browser, local tools, missions).
+    // Her mandate, the operator-action guard (publish, send, pay, sign in, secrets) and budgets still decide.
+    interactionMode: 'action',
     executionMode: 'autonomous',
     createsMission: true,
     scope: 'durable mission via the canonical Aura runtime under existing budgets, approvals and tools',
@@ -25,9 +27,10 @@ export const AURA_RUN_MODES = Object.freeze({
 export function knownAuraRunMode(value) {
   return typeof value === 'string' && Object.hasOwn(AURA_RUN_MODES, value);
 }
-export function initialAuraRunMode(value) {
-  // Autonomous cannot persist across reloads: the operator selects it explicitly per session.
-  return value === 'planning' ? 'planning' : 'manual';
+// The operator UI has one active workflow. Retain read-only API modes for
+// integrations and explicit internal inspection; a default never grants authority.
+export function initialAuraRunMode() {
+  return 'autonomous';
 }
 export function normalizeAuraRunMode(value) {
   if (!knownAuraRunMode(value)) throw new Error('AURA_RUN_MODE_UNKNOWN');

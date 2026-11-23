@@ -2,6 +2,8 @@
 // replay video, and robots.txt pointing at the sitemap. Reconstructed from the deployed jaco-site bundle; the only
 // behavioural change is the Sitemap line in robots.txt.
 import { handleAuth } from './auth.mjs';
+import { handleLink, handleLinkHostSocket, JacoLinkRoom, JacoLinkPairing } from './link.mjs';
+export { JacoLinkRoom, JacoLinkPairing };
 
 const WINDOWS_ZIP = '/download/jaco-lite-windows.zip';
 const RELEASES = 'https://github.com/Rick84444/JACO-CODE/releases/download';
@@ -13,7 +15,7 @@ const CSP = [
   "img-src 'self' data:",
   "media-src 'self'",
   "font-src 'self'",
-  "connect-src 'self'",
+  "connect-src 'self' wss://jacocode.com",
   "base-uri 'none'",
   "form-action 'none'",
   "frame-ancestors 'none'",
@@ -70,6 +72,16 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.hostname === 'www.jacocode.com') return Response.redirect('https://jacocode.com' + url.pathname + url.search, 301);
+    // JACO Link is a shared multi-tenant service. The Windows PC does not expose
+    // a tunnel and never needs the site's session cookie in its outgoing socket.
+    if (url.pathname === '/link/ws' && url.searchParams.get('role') === 'host') {
+      const response = await handleLinkHostSocket(request, env, url);
+      if (response) return response.status === 101 ? response : withHeaders(response, url.pathname, {noStore:true});
+    }
+    if (url.pathname.startsWith('/link/v1/') || url.pathname === '/link/ws') {
+      const response = await handleLink(request, env, url);
+      if (response) return response.status === 101 ? response : withHeaders(response, url.pathname, {noStore:true});
+    }
     if (url.pathname.startsWith('/auth/')) {
       const res = await handleAuth(request, env, url);
       if (res) return withHeaders(res, url.pathname, { noStore: true });
@@ -77,16 +89,22 @@ export default {
     if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed', { status: 405, headers: { allow: 'GET, HEAD' } });
     if (url.pathname === '/health') return Response.json({ ok: true, service: 'jaco-site' });
     if (url.pathname === '/robots.txt') return new Response(ROBOTS, { headers: { 'content-type': 'text/plain' } });
-    // The Windows download carries Node.js (about 58 MB), over Cloudflare's 25 MiB limit for one static file. It is
-    // served from the GitHub release of the version latest.json names; the installer still checks its SHA-256.
+    // The bundled Windows archive is larger than Cloudflare's single-asset limit.
+    // Resolve the release version from the deployed manifest and keep checksum
+    // verification in the installer unchanged.
     if (url.pathname === WINDOWS_ZIP) {
       const asset = await env.ASSETS.fetch(request);
-      if (asset.status !== 404) return withHeaders(asset, url.pathname);
-      const latest = await env.ASSETS.fetch(new Request(new URL('/download/latest.json', url))).then(r => r.ok ? r.json() : null).catch(() => null);
-      const version = String(latest?.version || '');
+      if (asset.ok) return withHeaders(await withRange(request, asset), url.pathname);
+      const latest = await env.ASSETS.fetch(new URL('/download/latest.json', request.url));
+      const version = latest.ok ? String((await latest.json())?.version || '') : '';
       if (!/^\d+\.\d+\.\d+$/.test(version)) return new Response('Download not available', { status: 503 });
       return Response.redirect(`${RELEASES}/lite-v${version}/jaco-lite-windows-${version}.zip`, 302);
     }
-    return withHeaders(await withRange(request, await env.ASSETS.fetch(request)), url.pathname);
+    const response = withHeaders(await withRange(request, await env.ASSETS.fetch(request)), url.pathname);
+    if (url.pathname.startsWith('/link/')) {
+      response.headers.set('cache-control', 'no-store');
+      response.headers.set('referrer-policy', 'no-referrer');
+    }
+    return response;
   },
 };

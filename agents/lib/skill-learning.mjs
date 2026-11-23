@@ -10,6 +10,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, openSync, fsyncSync, closeSync, renameSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import {routineExperience,recallRoutineExperience} from './routine-experience.mjs';
 
 const stepOf = r => Number(/:turn:(\d+)$/.exec(String(r?.actionId || ''))?.[1]) || null;
 const isMcp = r => r?.type === 'mcp-call' || r?.type === 'mcp-write';
@@ -17,14 +18,19 @@ const toolKey = r => isMcp(r) && r.input?.server && r.input?.tool ? `${r.input.s
 const argsOf = r => isMcp(r) ? (r.input?.arguments || {}) : (r?.input || {});
 const short = (value, max = 160) => { const t = typeof value === 'string' ? value : JSON.stringify(value ?? null); return t.length > max ? `${t.slice(0, max)}...` : t; };
 const errorText = r => String(r?.result?.output || r?.result?.error || r?.error || '').replace(/\s+/g, ' ').trim();
+// An acknowledged input dispatch is not proof of its intended application effect.
+const unresolvedEffect = r => r?.outcomeUnknown === true || r?.result?.outcomeUnknown === true || r?.result?.postconditionVerified === false || r?.result?.evidence === 'input-dispatch-only';
+const positiveReceipt = r => r?.ok === true && r?.verified === true && !unresolvedEffect(r);
 
 // A failed call followed, within the next three steps, by a successful call of the same tool with
 // different arguments. Only receipts that carry their input (receipts since 2026-10-03) count.
 export function toolCorrections(receipts = []) {
   const out = [];
   receipts.forEach((failed, i) => {
-    if (failed?.ok !== false || !failed.input || !toolKey(failed)) return;
-    const fixed = receipts.slice(i + 1, i + 4).find(r => r?.ok === true && r.input && toolKey(r) === toolKey(failed) && JSON.stringify(argsOf(r)) !== JSON.stringify(argsOf(failed)));
+    if (failed?.ok !== false || unresolvedEffect(failed) || !failed.input || !toolKey(failed)) return;
+    const window = receipts.slice(i + 1, i + 4);
+    const barrier = window.findIndex(unresolvedEffect);
+    const fixed = (barrier < 0 ? window : window.slice(0, barrier)).find(r => positiveReceipt(r) && r.input && toolKey(r) === toolKey(failed) && JSON.stringify(argsOf(r)) !== JSON.stringify(argsOf(failed)));
     if (!fixed) return;
     const failedKeys = Object.keys(argsOf(failed)).sort(), fixedKeys = Object.keys(argsOf(fixed)).sort();
     out.push({ tool: toolKey(failed), failedArgs: argsOf(failed), error: errorText(failed).slice(0, 240), workingArgs: argsOf(fixed),
@@ -56,7 +62,7 @@ export function correctionNote(c) {
 // The steps that made up a successful mission, in order, with repeated calls of a tool collapsed.
 export function procedureSteps(receipts = []) {
   const steps = [];
-  for (const r of receipts.filter(r => r?.ok === true && r.verified === true)) {
+  for (const r of receipts.filter(positiveReceipt)) {
     const key = toolKey(r);
     const last = steps.at(-1);
     if (last && last.tool === key) { last.times++; continue; }
@@ -127,15 +133,17 @@ export function learningStore(stateDir) {
   const atomicOutcome=(file,value)=>{const temp=file+'.tmp';let fd;try{fd=openSync(temp,'w',0o600);writeFileSync(fd,JSON.stringify(value,null,2));fsyncSync(fd);closeSync(fd);fd=undefined;renameSync(temp,file);}finally{if(fd!==undefined)closeSync(fd);if(existsSync(temp))unlinkSync(temp);}};
   const outcomes=()=>existsSync(outcomesDir)?readdirSync(outcomesDir).filter(f=>f.endsWith('.json')).map(f=>read(join(outcomesDir,f))).filter(Boolean):[];
   return {
-    recordOutcome(mission) {
+    recordOutcome(mission, {claimCheck=null}={}) {
       const receipts=mission.receipts||[],scopeKey=createHash('sha256').update(JSON.stringify(mission.contract?.scope?.allowed||[])).digest('hex');
-      const item={schema:'jaco.mission-reflection/v1',missionId:mission.id,status:mission.status,scopeKey,at:new Date().toISOString(),verificationStatus:mission.status==='DONE'&&mission.contractStatus?.machineVerified===true?'VERIFIED':'UNVERIFIED',
-        worked:[...new Set(receipts.filter(r=>r.ok&&r.verified).map(r=>r.type))],failed:receipts.filter(r=>r.ok===false).map(r=>({tool:r.type,error:(/^[A-Z][A-Z0-9_]{2,80}/.exec(String(r.error||''))?.[0]||'TOOL_FAILED'),evidence:r.actionId})),
-        unexpected:receipts.filter(r=>r.outcomeUnknown).map(r=>({tool:r.type,evidence:r.actionId})),
-        evidence:receipts.filter(r=>r.ok&&r.verified).map(r=>r.actionId),repositoryRevision:mission.preflight?.repository?.revision||null,
+      const item={schema:'jaco.mission-reflection/v1',missionId:mission.id,status:mission.status,scopeKey,at:new Date().toISOString(),verificationStatus:mission.status==='DONE'&&mission.contractStatus?.machineVerified===true&&!receipts.some(unresolvedEffect)?'VERIFIED':'UNVERIFIED',
+        worked:[...new Set(receipts.filter(positiveReceipt).map(r=>r.type))],failed:receipts.filter(r=>r.ok===false).map(r=>({tool:r.type,error:(/^[A-Z][A-Z0-9_]{2,80}/.exec(String(r.error||''))?.[0]||'TOOL_FAILED'),evidence:r.actionId})),
+        unexpected:receipts.filter(unresolvedEffect).map(r=>({tool:r.type,evidence:r.actionId})),
+        evidence:receipts.filter(positiveReceipt).map(r=>r.actionId),repositoryRevision:mission.preflight?.repository?.revision||null,
         reusablePatterns:procedureSteps(receipts).map(s=>({tool:s.tool,arguments:s.args})),constraints:{scopeKey,requiredStages:mission.contract?.verification?.required_stages||[]}};
+      const routine=routineExperience(mission,claimCheck);if(routine)item.routine=routine;
       mkdirSync(outcomesDir,{recursive:true});atomicOutcome(join(outcomesDir,createHash('sha256').update(mission.id).digest('hex')+'.json'),item);return item;
     },
+    recallRoutine(mission, options={}) {return recallRoutineExperience(outcomes(),mission,options);},
     recallOutcome(contract,revision,{limit=3}={}) {
       const scopeKey=createHash('sha256').update(JSON.stringify(contract?.scope?.allowed||[])).digest('hex');
       return outcomes().filter(o=>o.scopeKey===scopeKey).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,limit).map(o=>({...o,originalVerificationStatus:o.verificationStatus,verificationStatus:o.verificationStatus==='VERIFIED'&&o.repositoryRevision&&o.repositoryRevision!==revision?'STALE':o.verificationStatus,reuseRule:'Historical evidence only; validate against current repository and contract before reuse'}));
@@ -182,6 +190,6 @@ export function lessonsFrom(mission, claimCheck = null) {
   const steps = procedureSteps(receipts);
   // A procedure is learned only from a mission whose answer was checked and held, that is not
   // itself a skill run, and that took at least two kinds of step.
-  const learnable = mission?.status === 'DONE' && claimCheck?.ok === true && !/^Skill [a-z]/.test(String(mission.goal || '')) && new Set(steps.map(s => s.tool)).size >= 2;
+  const learnable = mission?.status === 'DONE' && claimCheck?.ok === true && !receipts.some(unresolvedEffect) && !/^Skill [a-z]/.test(String(mission.goal || '')) && new Set(steps.map(s => s.tool)).size >= 2;
   return { notes, procedure: learnable ? { steps } : null };
 }

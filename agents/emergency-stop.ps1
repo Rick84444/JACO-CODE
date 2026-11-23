@@ -82,6 +82,19 @@ foreach ($p in $ordered) {
 
 # Anything still listening on a JACO port is killed by owner, whatever its command line says.
 $jacoPorts = @(2995, 2996, 2997, 2998, 3000, 4243, 4250, 9222)
+# A service whose default port was taken by another program runs on a resolved port. Follow it there, and
+# leave the foreign program on the default port alone.
+foreach ($stateRoot in @($Proj, $env:JACO_DATA_DIR, (Join-Path $env:LOCALAPPDATA 'JACO')) | Where-Object { $_ }) {
+  $resolvedFile = Join-Path $stateRoot '.jaco\state\resolved-ports.json'
+  if (-not (Test-Path -LiteralPath $resolvedFile)) { continue }
+  try {
+    $resolved = Get-Content -LiteralPath $resolvedFile -Raw | ConvertFrom-Json
+    foreach ($entry in $resolved.ports.PSObject.Properties) {
+      $requested = [int]$entry.Value.requested
+      $jacoPorts = @($jacoPorts | Where-Object { $_ -ne $requested }) + [int]$entry.Value.port
+    }
+  } catch {}
+}
 foreach ($conn in @(Get-NetTCPConnection -ErrorAction SilentlyContinue | Where-Object { $_.RemotePort -eq 0 -and $jacoPorts -contains $_.LocalPort })) {
   $owner = Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
   if ($owner -and $owner.ProcessName -in @('node', 'cloudflared', 'powershell', 'pwsh', 'chrome')) {

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import { KnowledgeStore } from '../../src/server/continuum/knowledgeStore.mjs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -64,6 +65,12 @@ try{
     status:'VERIFIED',evidenceRefs:['knowledge-proof'],metrics:{success:1}});
   assert.equal(attempt.status,400);
   assert.equal((await request('/api/continuum/integrity')).data.integrity.valid,true);
+  const localStore=new KnowledgeStore(path.join(work,'retrieval-test'),{append(){}});
+  for(let i=0;i<1001;i++)localStore.put({id:'distractor-'+i,purpose:'unrelated',confidence:0.99});
+  localStore.put({id:'relevant-old',purpose:'unique regression needle',confidence:0.1});
+  assert.equal(localStore.search('unique regression needle')[0].id,'relevant-old');
+  localStore.setStatus('relevant-old','STALE',{reason:'outdated'});
+  assert.equal(localStore.search('unique regression needle').length,0);
   console.log('COGNITIVE_LIFECYCLE_STRICT: PASS (API forgery refusal, external proof denial, provisional receipt, knowledge and hypothesis gates, integrity)');
 }finally{
   child.kill('SIGTERM');

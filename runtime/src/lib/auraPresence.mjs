@@ -57,7 +57,7 @@ export function auraPresence({
       : !snapshotLive ? 'The workspace status report is too old or missing.' : 'Waiting for a fresh event stream.';
   }else if(blocking){mode='blocked';title=approvals>0?'Your approval is needed':runtimeBlocker?'The run is blocked':friendlyPhase(phase);detail=bounded(mission?.goal)||'A registered mission is waiting for action.';}
   else if(active && unconfirmedProgress){mode='stalled';title='The mission has stalled';detail='The mission is marked active, but there is no fresh observed progress.';}
-  else if(active && phase==='READY' && !lastAction){mode='queued';title='Registered, waiting to run';detail='No tool step has started yet.';}
+  else if(active && !lastAction){mode='queued';title='Registered, waiting to run';detail='No tool step has started yet.';}
   else if(active){mode='working';title=friendlyPhase(phase);detail=bounded(mission?.goal)||'A mission is active.';}
   else if(connectedAgents>0){mode='observed';title='Agent connection observed';detail='Agents are connected, but no active mission is confirmed in the mission list.';}
   else {mode='ready';title='Aura is connected';detail='No active mission reported. Ask Aura to show or create something.';}
@@ -70,11 +70,11 @@ export function auraPresence({
     state==='AWAITING_VERIFICATION'?'The result is waiting for verification.':
     state==='BLOCKED'?bounded(lastAction?.result?.text)||'The mission is blocked. The cause has not been reported.':
     active&&unconfirmedProgress?(lastAction?'No new progress has been reported. The cause is not yet verified.':'No tool step has started. The runtime has not reported why.'):
-    active&&phase==='READY'&&!lastAction?'Waiting for the executor to take the mission.':'No blocker reported.';
+    active&&!lastAction?'Waiting for the executor to take the mission.':'No blocker reported.';
   const nextAction=!connected?'Restore the connection before judging the mission status.':
     approvals>0?'Open the decisions panel and review the waiting decision.':
     blocking?'Review the mission evidence and the reported cause before resuming.':
-    active&&unconfirmedProgress?'Check the executor and the model. Do not start a copy of the mission.':
+    active&&(unconfirmedProgress||!lastAction)?'Check the executor and the model. Do not start a copy of the mission.':
     active?'Follow the next reported step. You can stop or steer the mission in the chat.':'Give Aura a mission.';
   const verified=Number.isFinite(mission?.verifiedReceipts)?mission.verifiedReceipts:null;
   const stepCount=Number.isFinite(mission?.step)?mission.step:null;

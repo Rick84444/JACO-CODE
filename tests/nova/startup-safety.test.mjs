@@ -5,7 +5,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { configuration, definitions, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess,renameWithRetry, ollamaExecutable } from '../../agents/lib/local-stack.mjs';
+import { configuration, definitions, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess,renameWithRetry, ollamaExecutable, resolveServicePorts, readResolvedPorts, waitReady, inspectStaticUi, provisionLocalStartupCredential } from '../../agents/lib/local-stack.mjs';
 const IDENTITY="app.get('/api/runtime/identity',()=>{});";
 function fixture(t, env = {}) {
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-start-test-'));
@@ -64,6 +64,31 @@ test('withholds payment and publication secrets while preserving runtime models 
  assert.equal(e.OLLAMA_API_KEY,'model');assert.equal(e.HUGGINGFACE_TOKEN,'hf');assert.equal(e.JACO_WORKSPACE_ROOT,undefined);
  assert.equal(serviceEnvironment(c,'workplace').HUGGINGFACE_TOKEN,'');
 });
+test('canonical local startup provisions a private internal credential only when missing',t=>{
+ const c=fixture(t,{JACO_GATEWAY_TOKEN:'',GATEWAY_TOKEN:''});
+ const file=path.join(c.root,'.env');
+ assert.equal(fs.existsSync(file),false,'configuration/status must remain read-only');
+ assert.equal(c.env.GATEWAY_TOKEN,'');
+ const first=provisionLocalStartupCredential(c);
+ assert.deepEqual(first,{provisioned:true});
+ assert.match(c.env.GATEWAY_TOKEN,/^[a-f0-9]{64}$/);
+ assert.equal(c.env.JACO_GATEWAY_TOKEN,c.env.GATEWAY_TOKEN);
+ assert.equal(c.env.SEER_TOKEN,c.env.GATEWAY_TOKEN);
+ assert.equal(fs.existsSync(file),true);
+ const text=fs.readFileSync(file,'utf8');
+ assert.match(text,/^JACO_GATEWAY_TOKEN=[a-f0-9]{64}\n$/);
+ assert.deepEqual(provisionLocalStartupCredential(c),{provisioned:false});
+ assert.equal(fs.readFileSync(file,'utf8'),text,'already provisioned token is never rotated');
+});
+test('explicit invalid credential is not silently replaced and valid one remains untouched',t=>{
+ const bad=fixture(t,{JACO_GATEWAY_TOKEN:'short'});
+ assert.throws(()=>provisionLocalStartupCredential(bad),/GATEWAY_TOKEN_REQUIRED_MIN_24/);
+ assert.equal(fs.existsSync(path.join(bad.root,'.env')),false);
+ const ok=fixture(t),before=ok.env.GATEWAY_TOKEN;
+ assert.deepEqual(provisionLocalStartupCredential(ok),{provisioned:false});
+ assert.equal(ok.env.GATEWAY_TOKEN,before);
+ assert.equal(fs.existsSync(path.join(ok.root,'.env')),false);
+});
 test('emergency latch prevents all startup effects',async t=>{
  const c=fixture(t);fs.writeFileSync(path.join(c.root,'.jaco-emergency-stop.json'),'{}');
  await assert.rejects(activate(c),/EMERGENCY_STOP_ACTIVE/);assert.equal(fs.existsSync(path.join(c.root,'logs')),false);
@@ -85,16 +110,19 @@ test('pending service process requires a matching creation time, not just a PID'
  fs.writeFileSync(file,JSON.stringify({pid:process.pid,birth:'2020-01-01T00:00:00.0000000Z'}));
  assert.equal(pendingProcess(c,'runtime'),null);assert.equal(fs.existsSync(file),false);
 });
-test('foreign listener blocks startup and stays running with failure evidence',async t=>{
+test('foreign listener is left running and the service is moved to a free port',async t=>{
  const server=http.createServer((q,r)=>{r.setHeader('content-type','application/json');r.end('{"success":true,"releaseId":"foreign"}');});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  t.after(()=>new Promise(r=>server.close(r)));
- const c=fixture(t,{PORT:String(server.address().port),JACO_ENABLE_CDP:'1'});
- await assert.rejects(activate(c),/PORT_CONFLICT_OR_UNHEALTHY:runtime/);
+ const foreignPort=server.address().port;
+ const c=fixture(t,{PORT:String(foreignPort),JACO_ENABLE_CDP:'1'});
+ const moves=await resolveServicePorts(c);
+ const runtime=moves.find(m=>m.service==='runtime');
+ assert.ok(runtime,'runtime is moved instead of blocking startup');
+ assert.equal(runtime.from,foreignPort);assert.notEqual(runtime.to,foreignPort);
+ assert.equal(c.env.JACO_RUNTIME_URL,'http://127.0.0.1:'+runtime.to);
  assert.equal(server.listening,true);
- const receipt=JSON.parse(fs.readFileSync(path.join(c.root,'logs/startup/status.json')));
- assert.equal(receipt.state,'BLOCKED');assert.deepEqual(receipt.services,[]);
- assert.equal(fs.existsSync(path.join(c.root,'logs/startup/startup.lock')),false);
+ assert.equal(readResolvedPorts(c.dataRoot).runtime.port,runtime.to);
 });
 test('PowerShell wrapper preserves BOM and preflight has no launch effects',{skip:process.platform!=='win32'},()=>{
  const file=path.resolve('agents/start-all.ps1');assert.equal(fs.readFileSync(file,'utf8').charCodeAt(0),0xFEFF);
@@ -162,4 +190,43 @@ test('Aura owns the default Windows stack and never auto-selects Ollama despite 
  });
  assert.equal(legacy.env.JACO_MODEL_PROVIDER,'ollama');
  assert.equal(legacy.env.JACO_SEER_PROVIDER_PREFERENCE,'ollama');
+});
+
+test('source-static uses TypeScript with the compiled UI and no dev Vite server', t=>{
+ const c=fixture(t,{JACO_START_MODE:'source-static'});
+ assert.equal(c.production,false);
+ assert.equal(c.staticUi,true);
+ assert.equal(serviceEnvironment(c,'runtime').NODE_ENV,'production');
+ assert.deepEqual(definitions(c).find(s=>s.id==='runtime').args,['--import','tsx','server.ts']);
+ fs.unlinkSync(path.join(c.runtime,'dist/server.cjs'));
+ assert.equal(configuration(c.root,{JACO_START_MODE:'source-static'}).staticUi,true);
+ fs.unlinkSync(path.join(c.runtime,'dist/index.html'));
+ assert.throws(()=>configuration(c.root,{JACO_START_MODE:'source-static'}),/CLIENT_BUILD_REQUIRED/);
+});
+
+test('a child exiting cleanly without HTTP readiness fails immediately',async()=>{
+ let calls=0;
+ await assert.rejects(waitReady({id:'runtime'},'',180000,{
+   child:{exitCode:0,signalCode:null},probeImpl:async()=>{calls++;return {state:'READY'};}
+ }),/SERVICE_EXITED_BEFORE_READY:runtime:code=0/);
+ assert.equal(calls,0);
+});
+
+test('a child exiting during a readiness probe cannot be reported ready',async()=>{
+ const child={exitCode:null,signalCode:null};
+ await assert.rejects(waitReady({id:'runtime'},'',180000,{
+   child,probeImpl:async()=>{child.signalCode='SIGKILL';return {state:'READY'};}
+ }),/SERVICE_EXITED_BEFORE_READY:runtime:code=null:signal=SIGKILL/);
+});
+
+test('static UI HTTP readiness requires a real nonempty JavaScript asset',async()=>{
+ const base='http://127.0.0.1:3000';
+ const html='<div id="root"></div><script type="module" src="/assets/index-test.js"></script>';
+ const page=()=>new Response(html,{headers:{'content-type':'text/html'}});
+ const ok=await inspectStaticUi(base,async url=>url.pathname==='/'?page():new Response('console.log("ok")',{headers:{'content-type':'text/javascript'}}));
+ assert.equal(ok.state,'HTTP_READY');
+ const missing=await inspectStaticUi(base,async()=>page());
+ assert.equal(missing.state,'UNAVAILABLE','HTML fallback must not count as JavaScript');
+ const empty=await inspectStaticUi(base,async url=>url.pathname==='/'?page():new Response('',{headers:{'content-type':'text/javascript'}}));
+ assert.equal(empty.reason,'GUI_SCRIPT_EMPTY');
 });

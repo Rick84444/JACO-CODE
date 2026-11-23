@@ -54,7 +54,10 @@
     "build:termux": "npm run build:client",
     "verify:aura-operator": "node scripts/verify_aura_operator_workbench.mjs",
     "verify:aura-operator:strict": "node scripts/verify_aura_operator_workbench.mjs --strict-product",
-    "test:workspace-ux": "node --import tsx --test src/lib/workspaceUx.test.tsx"
+    "test:workspace-ux": "node --import tsx --test src/lib/workspaceUx.test.tsx",
+    "prepare:aura-rig": "node scripts/prepare-aura-rig.mjs",
+    "predev": "npm run prepare:aura-rig",
+    "prebuild:client": "npm run prepare:aura-rig"
   },
   "dependencies": {
     "@google/genai": "^2.13.0",
@@ -64,6 +67,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.4",
     "@whiskeysockets/baileys": "7.0.0-rc14",
+    "@xterm/xterm": "6.0.0",
     "d3": "^7.9.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
@@ -75,9 +79,10 @@
     "react-dom": "^19.0.1",
     "recharts": "^3.10.0",
     "stripe": "^22.5.0",
+    "three": "0.186.1",
     "vite": "^6.4.5",
     "ws": "^8.21.3",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",

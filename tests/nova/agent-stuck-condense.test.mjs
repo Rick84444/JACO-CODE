@@ -4,7 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { StuckDetector } from '../../agents/lib/stuck-detector.mjs';
 import { condenseMessages, conversationChars, SUMMARY_MARK } from '../../agents/lib/condenser.mjs';
-import { receiptForModel } from '../../agents/lib/agent-loop.mjs';
+import { receiptForModel, stuckActionName } from '../../agents/lib/agent-loop.mjs';
+import { hashTaskInput } from '../../agents/lib/mission-client.mjs';
 
 const step = (name, args, ok, result, error) => ({ name, args, ok, result, error });
 
@@ -19,6 +20,26 @@ test('stuck: the same call with the same result three times is a repeat; a chang
   const ok = new StuckDetector();
   for (const n of [1, 2, 3, 4]) ok.record(step('shell', { command: 'ls' }, true, { out: String(n) }));
   assert.equal(ok.check().stuck, false, 'same call but new results is progress (a poll)');
+});
+
+test('missing npm in stderr followed by six reads must stop an unrepaired diagnosis', () => {
+  const d = new StuckDetector();
+  d.record(step('repo-test', {command:'npm test'}, false,
+    {stderr:'/bin/sh: 1: npm: not found'}, 'Command failed: npm test'));
+  for (let i = 0; i < 5; i++) {
+    d.record(step(i % 2 ? 'repo-list' : 'repo-read', {path:i % 2 ? '.' : 'package.json'}, true, {content:'same'}));
+  }
+  assert.equal(d.check().kind === 'unrepaired-missing-command', false);
+  d.record(step('repo-read', {path:'install.sh'}, true, {content:'same'}));
+  const verdict = d.check();
+  assert.equal(verdict.kind, 'unrepaired-missing-command');
+  assert.match(verdict.hint, /npm/);
+  const repaired = new StuckDetector();
+  repaired.record(step('repo-test', {command:'npm test'}, false,
+    {stderr:'npm: not found'}, 'Command failed: npm test'));
+  repaired.record(step('repo-edit', {path:'setup.sh'}, true, {changed:true}));
+  for (let i = 0; i < 6; i++) repaired.record(step('repo-read',{path:'f'+i},true,{content:'ok'}));
+  assert.equal(repaired.check().kind === 'unrepaired-missing-command', false);
 });
 
 test('stuck: four failures with the same error are a loop even with different arguments', () => {
@@ -61,6 +82,29 @@ test('stuck: a call that keeps recurring between other steps is caught, whatever
   assert.deepEqual(kinds, [null, null, null, null, null, null, null, 'poll-limit']);
 });
 
+test('stuck: missing npm across successful reads is still one blocker; a restored test clears it', () => {
+  const d = new StuckDetector();
+  for (let i = 0; i < 3; i++) {
+    d.record(step('repo-test', { command: 'npm test' }, false, null, i % 2 ? 'spawn npm ENOENT' : 'npm: not found'));
+    if (i < 2) d.record(step('repo-read', { path: i ? 'install.sh' : 'package.json' }, true, { content: 'diagnostic read' }));
+  }
+  const verdict = d.check();
+  assert.equal(verdict.kind, 'missing-command');
+  assert.match(verdict.hint, /npm/);
+  assert.equal(d.nudge(), 1);
+  d.record(step('repo-test', { command: 'npm test' }, true, { passed: true }));
+  d.record(step('repo-test', { command: 'npm test' }, false, null, 'npm: not found'));
+  d.record(step('repo-read', { path: 'README.md' }, true, { content: 'more evidence' }));
+  d.record(step('repo-test', { command: 'npm test' }, false, null, 'npm: not found'));
+  assert.equal(d.check().stuck, false, 'fresh failure window is below threshold');
+  const notCommand = new StuckDetector();
+  for (let i = 0; i < 3; i++) {
+    notCommand.record(step('repo-read', { path: `no-${i}.txt` }, false, null, 'ENOENT: no such file or directory'));
+    notCommand.record(step('git-status', {}, true, { head: i }));
+  }
+  assert.equal(notCommand.check().stuck, false, 'missing source files are not missing executables');
+});
+
 const assistant = (id, name, args) => ({ role: 'assistant', content: '', tool_calls: [{ id, type: 'function', function: { name, arguments: JSON.stringify(args) } }] });
 const tool = (id, ok, extra = 'x'.repeat(2000)) => ({ role: 'tool', tool_call_id: id, content: JSON.stringify({ ok, error: ok ? undefined : 'ENOENT', data: extra }) });
 const conversation = n => {
@@ -101,9 +145,45 @@ test('condense: the tail never starts with an orphan tool result, and a second p
 });
 
 test('what the model is shown has secrets replaced by handles', () => {
-  const key = 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWx0123456789';
+  const key = ["sk-proj-A","bCdEfGhIjKlMn","OpQrStUvWx0123456789"].join('');
   const shown = receiptForModel(1, { ok: true, verified: true, result: { stdout: `OPENAI_API_KEY=${key}\nall good` } });
   assert.ok(!shown.includes(key), shown);
   assert.match(shown, /all good/);
   assert.match(shown, /secret:/);
 });
+
+test('durable receipt and resumed tool call have one canonical action fingerprint', () => {
+  const oldArgs = { command: 'npm test', args: ['--', 'unit'] };
+  const newArgs = { args: ['--', 'unit'], command: 'npm test' };
+  const inputHash = hashTaskInput(oldArgs);
+  const d = new StuckDetector();
+  for (let i = 0; i < 2; i++) {
+    d.record({ name: 'shell', args: { command: '[truncated]' }, inputHash, ok: true, result: { state: 'unchanged' } });
+  }
+  assert.equal(d.check().stuck, false);
+  d.record({ name: 'shell', args: newArgs, inputHash: hashTaskInput(newArgs), ok: true, result: { state: 'unchanged' } });
+  assert.equal(d.check().kind, 'repeat', 'a resumed identical step must not escape detection');
+});
+
+test('durable MCP action name maps to the exact same server.tool as the live call', () => {
+  const arguments_ = { server: 'browser', tool: 'navigate', arguments: { url: 'https://example.test' } };
+  const d = new StuckDetector();
+  d.record({ name: stuckActionName('mcp-call', arguments_), inputHash: hashTaskInput(arguments_), ok: true, result: { page: 'same' } });
+  d.record({ name: stuckActionName('mcp-call', arguments_), inputHash: hashTaskInput(arguments_), ok: true, result: { page: 'same' } });
+  d.record({ name: stuckActionName('mcp-call', arguments_), args: arguments_, inputHash: hashTaskInput(arguments_), ok: true, result: { page: 'same' } });
+  assert.equal(stuckActionName('mcp-call', arguments_), 'browser.navigate');
+  assert.equal(d.check().kind, 'repeat');
+  assert.equal(stuckActionName('repo-read', {path:'a'}), 'repo-read');
+});
+
+test('changing the argument or observation is genuine new evidence, not an identical-action loop', () => {
+  for (const change of ['args', 'result']) {
+    const d = new StuckDetector();
+    const a = {path:'src/a.ts'};
+    const b = change === 'args' ? {path:'src/b.ts'} : a;
+    for (let i = 0; i < 2; i++) d.record({name:'repo-read',inputHash:hashTaskInput(a),ok:true,result:{content:'old'}});
+    d.record({name:'repo-read',inputHash:hashTaskInput(b),ok:true,result:{content:change==='result'?'new':'old'}});
+    assert.equal(d.check().stuck,false, change);
+  }
+});
+

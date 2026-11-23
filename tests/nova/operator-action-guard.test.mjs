@@ -35,6 +35,9 @@ test('guard stops outward clicks and connector writes, in English and Swedish', 
   for (const text of ['Delete account', 'Publish', 'Send', 'Skicka', 'Ta bort', 'Logga in', 'Sign in'])
     assert.ok(operatorApprovalCheck({ type: 'browser-click', data: { text } }), text);
   assert.ok(operatorApprovalCheck({ type: 'mcp-write', data: { server: 'gmail', tool: 'send_message' } }));
+  for (const tool of ['stripe_charge', 'payments_checkout', 'stripe_refund', 'wallet_withdraw', 'stripe_create_payment_intent', 'stripe_payout_create']) {
+    assert.ok(operatorApprovalCheck({type:'mcp-write', data:{server:'payments',tool}}), tool);
+  }
   assert.ok(operatorApprovalCheck({ type: 'browser-type', data: { text: 'vault:NOVA_PASSWORD' } }));
 });
 
@@ -100,4 +103,57 @@ test('inside a contract the worktree is the sandbox: local clean-up is free, lea
   assert.ok(operatorApprovalCheck({ type: 'mcp-write', data: { server: 'gmail', tool: 'send_message' } }, sandbox));
   // Outside a contract the same local delete still asks.
   assert.ok(operatorApprovalCheck(shell('rm -rf src')));
+});
+
+
+test('a repeated blocked mission awaiting one operator approval retains its original mission identity', t => {
+  const control=setup(t);
+  const request={goal:'Publish the report only after approval',allowedTasks:['shell']};
+  const first=control.create({...request,idempotencyKey:'once-first'});
+  assert.throws(()=>control.begin(first.id,{...leased(control,first.id),task:shell('npm publish')}),/OPERATOR_APPROVAL_REQUIRED/);
+  const pending=control.pendingOperatorAction(first.id);
+  assert.ok(pending);
+  const same=control.create({...request,idempotencyKey:'once-second'});
+  assert.equal(same.id,first.id);
+  assert.equal(same.deduplicated,true);
+  assert.equal(same.awaitingOperator,true);
+  assert.deepEqual(control.pendingOperatorAction(first.id),pending);
+  control.resolve(first.id,{decision:'resume',note:'approve exactly one publish',authority:'operator'});
+  const lease=leased(control,first.id);
+  const action=control.begin(first.id,{...lease,task:shell('npm publish')});
+  control.finish(first.id,{...lease,actionId:action.id,receipt:{ok:true,verified:true}});
+  assert.throws(()=>control.begin(first.id,{...leased(control,first.id),task:shell('npm publish')}),/OPERATOR_APPROVAL_REQUIRED/);
+});
+
+test('a blocked mission without pending operator approval can still be resubmitted', t => {
+  const control=setup(t);
+  const data={goal:'Investigate a persistent coding failure',allowedTasks:['shell']};
+  const first=control.create({...data,idempotencyKey:'failure-first'});
+  control.setStatus(first.id,'BLOCKED');
+  const retry=control.create({...data,idempotencyKey:'failure-second'});
+  assert.notEqual(retry.id,first.id);
+});
+
+test('duplicate approval delivery preserves request identity and approved budget across restart', t => {
+  const control = setup(t);
+  const { id } = control.create({ goal: 'clean', idempotencyKey: 'gate-duplicate', allowedTasks: ['shell'] });
+  const task = shell('rm -rf src');
+  assert.throws(() => control.begin(id, { ...leased(control, id), task }), /OPERATOR_APPROVAL_REQUIRED/);
+  const pending = control.pendingOperatorAction(id);
+  control.resolve(id, { decision: 'resume', note: 'auto-resumed: no authority' });
+  assert.throws(() => control.begin(id, { ...leased(control, id), task }), /OPERATOR_APPROVAL_REQUIRED/);
+  assert.deepEqual(control.pendingOperatorAction(id), pending);
+  const events = () => control.db.prepare("SELECT COUNT(*) AS n FROM events WHERE mission_id=? AND type='NOVA_OPERATOR_APPROVAL_REQUIRED'").get(id).n;
+  assert.equal(events(), 1);
+  control.resolve(id, { decision: 'resume', note: 'approve this action' });
+  const before = control.db.prepare('SELECT budget_started_at FROM nova_sessions WHERE mission_id=?').get(id);
+  const restarted = new NovaMissionControl(control.bus, { allowedTasks: ['shell'] });
+  restarted.resolve(id, { decision: 'resume', note: 'approve this action' });
+  assert.deepEqual(control.db.prepare('SELECT budget_started_at FROM nova_sessions WHERE mission_id=?').get(id), before);
+  const lease = leased(restarted, id);
+  restarted.resolve(id, { decision: 'resume', note: 'duplicate while claimed' });
+  const action = restarted.begin(id, { ...lease, task });
+  assert.equal(action.type, 'shell');
+  restarted.finish(id, { ...lease, actionId: action.id, receipt: { ok: true, verified: true } });
+  assert.throws(() => restarted.begin(id, { ...leased(restarted, id), task }), /OPERATOR_APPROVAL_REQUIRED/);
 });

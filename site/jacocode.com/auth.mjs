@@ -27,6 +27,25 @@ async function unseal(token, secret) {
   }
 }
 
+// Browser session is the tenant identity for JACO Link; no new account table.
+export async function verifySiteSession(request, secret) {
+  if (!secret) return null;
+  const session = await unseal(cookieValue(request, 'jaco_session'), secret);
+  if (!session?.sub || typeof session.sub !== 'string' || !Number.isFinite(session.exp) ||
+      session.exp <= Math.floor(Date.now()/1000)) return null;
+  return { sub: session.sub, email: session.email || '', name: session.name || '' };
+}
+
+// Return only to known JACO Link pages. Never reflect an arbitrary target from OAuth state.
+export function safeAuthReturn(value) {
+  if (typeof value !== 'string' || value.length > 450 || !value.startsWith('/') || value.startsWith('//')) return '/';
+  try {
+    const url = new URL(value, 'https://jacocode.com');
+    if (url.origin !== 'https://jacocode.com' ||
+        !['/link/connect.html','/link/remote.html'].includes(url.pathname)) return '/';
+    return url.pathname + url.search;
+  } catch {return '/';}
+}
 const cookieValue = (request, name) => (request.headers.get('cookie') || '').split(/;\s*/).map(c => c.split(/=(.*)/s)).find(([k]) => k === name)?.[1] || '';
 const cookie = (name, value, { path = '/', maxAge }) => `${name}=${value}; Path=${path}; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
 const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -57,7 +76,7 @@ export async function handleAuth(request, env, url, fetchImpl = fetch) {
     const challenge = b64u(await crypto.subtle.digest('SHA-256', enc.encode(verifier)));
     const target = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     for (const [k, v] of Object.entries({ client_id: env.GOOGLE_CLIENT_ID, redirect_uri: REDIRECT, response_type: 'code', scope: 'openid email profile', state, nonce, code_challenge: challenge, code_challenge_method: 'S256', prompt: 'select_account' })) target.searchParams.set(k, v);
-    const sealed = await seal({ state, nonce, verifier, exp: Math.floor(Date.now() / 1e3) + 600 }, env.SESSION_SECRET);
+    const sealed = await seal({ state, nonce, verifier, returnTo: safeAuthReturn(url.searchParams.get('next')), exp: Math.floor(Date.now() / 1e3) + 600 }, env.SESSION_SECRET);
     return new Response(null, { status: 302, headers: { location: target.toString(), 'set-cookie': cookie('jaco_oauth', sealed, { path: '/auth', maxAge: 600 }) } });
   }
   if (path === '/auth/google/callback') {
@@ -77,7 +96,7 @@ export async function handleAuth(request, env, url, fetchImpl = fetch) {
     const valid = claims && claims.aud === env.GOOGLE_CLIENT_ID && ['https://accounts.google.com', 'accounts.google.com'].includes(claims.iss) && claims.exp > now && claims.nonce === pending.nonce && claims.email_verified === true && claims.sub && claims.email;
     if (!valid) return message(400, 'The sign-in could not be verified.', clear);
     const session = await seal({ sub: claims.sub, email: claims.email, name: claims.name || claims.email, exp: now + SESSION_DAYS * 86400 }, env.SESSION_SECRET);
-    const res = new Response(null, { status: 302, headers: { location: '/' } });
+    const res = new Response(null, { status: 302, headers: { location: safeAuthReturn(pending.returnTo) } });
     res.headers.append('set-cookie', clear);
     res.headers.append('set-cookie', cookie('jaco_session', session, { maxAge: SESSION_DAYS * 86400 }));
     return res;

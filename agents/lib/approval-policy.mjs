@@ -24,9 +24,10 @@ import path from 'node:path';
 export const READ_ONLY_TASKS = new Set([
   'detect-surfaces', 'health-check', 'check-revenue', 'browser-survey-site', 'web-fetch',
   'desktop-windows', 'desktop-observe', 'windows-wmi-read', 'screenshot', 'get-cursor',
-  'repo-list', 'repo-read', 'git-status', 'git-diff', 'mcp-call', 'skill-load',
+  'repo-list', 'repo-read', 'git-status', 'git-diff', 'mcp-call', 'skill-load', 'propose-tool',
 ]);
-export const VERIFIED_CODE_TASKS = new Set(['repo-write', 'repo-edit', 'repo-test', 'git-commit']);
+// A contracted repo-service start/status/stop is bounded to the registered local worktree service.
+export const VERIFIED_CODE_TASKS = new Set(['repo-write', 'repo-edit', 'repo-test', 'repo-service', 'git-commit']);
 // Unambiguous spend vocabulary: always blocks, no matter the surrounding text.
 export const OUTGOING_SPEND = /\b(pay|payment|payout|purchase|buy|subscri(be|ption)|top[- ]?up|send (money|funds)|refund|x402|skyfire|invoice (a|the) vendor|checkout\.sessions?\.create)\b|betal|köp|prenumerer|utbetal/i;
 // Ambiguous vocabulary that also has common non-financial engineering meanings (data transfer,
@@ -41,6 +42,25 @@ const POLICY_BLOCK = /PAYMENT|SECRET_POLICY|ORIGIN_DENIED|Payment Required|SPEND
 // (novaMissionControl.resolve), so resuming it would only spend a planner call.
 const BUDGET_EXHAUSTED = /CODING_CONTRACT_\w*(BUDGET|DURATION)_EXCEEDED/;
 const CAPABILITY_GAP = /PLANNER_BLOCKED|UNKNOWN_TASK_TYPE|WORKER_KEY_MISSING/;
+
+// An unchanged failure cannot be fixed by replaying the same command.
+// Only verified, potentially corrective actions reset this streak. Read-only
+// receipts and aggregate counters are not evidence of a repair.
+const POSSIBLE_REPAIRS = new Set(['repo-write', 'repo-edit', 'git-commit', 'shell', 'local-write']);
+const errorSignature = value => String(value || '').trim().replace(/\s+/g, ' ').slice(0, 240);
+
+export function repeatedUnrepairedFailure(receipts = [], lastError = '') {
+  const target = errorSignature(lastError);
+  if (!target || TRANSIENT.test(target)) return false;
+  let count = 0;
+  for (const receipt of [...receipts].reverse()) {
+    if (receipt?.ok === true && receipt.verified === true && POSSIBLE_REPAIRS.has(receipt.type)) return false;
+    if (receipt?.ok !== false || receipt.outcomeUnknown === true) continue;
+    if (errorSignature(receipt.error) !== target) return false;
+    if (++count >= 2) return true;
+  }
+  return false;
+}
 export const MAX_AUTO_RESUMES = 1;
 export const MAX_LEVEL = 5;
 
@@ -111,8 +131,19 @@ function spendRelated(mission, extraBlocked = []) {
 // check goes to the operator.
 export const CLAIM_RESUME_NOTE = 'auto-resumed: answer contradicted by its own evidence';
 
-export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastError = '', extraBlocked = [], evidence = null, claimCheck = null, claimResumes = 0 } = {}) {
-  if (level <= 0 || !mission?.id) return null;
+// The graph is a strategy projection, not a second approval authority.
+export function graphAllowsAutomaticCompletion(mission, graph) {
+  if (mission?.source !== 'seer-mission-graph') return true;
+  const parent = mission.metadata?.parent;
+  if (!parent?.graphId || !parent?.nodeKey || graph?.id !== parent.graphId) return false;
+  if (!['ACTIVE','NEEDS_REPLAN'].includes(graph.status) || graph.policy?.outcome_unknown) return false;
+  if (graph.policy?.autonomy !== 'closed-loop' || graph.policy?.operator_confirmation_required_for_release === true) return false;
+  return Array.isArray(graph.nodes) && graph.nodes.some(node =>
+    node.key === parent.nodeKey && node.nova_mission_id === mission.id && ['DISPATCHED','RUNNING'].includes(node.status));
+}
+
+export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastError = '', extraBlocked = [], evidence = null, claimCheck = null, claimResumes = 0, graph = null } = {}) {
+  if (level <= 0 || !mission?.id || mission.paused || mission.cancelRequested || mission.pendingOperatorAction || mission.spendApprovalPending) return null;
   if (spendRelated(mission, extraBlocked)) return null;
   const status = String(mission.status || '').toUpperCase();
   const receipts = Array.isArray(mission.receipts) ? mission.receipts : [];
@@ -120,6 +151,8 @@ export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastE
   if (uncertain) return null;
 
   if (status === 'AWAITING_VERIFICATION') {
+    if (!graphAllowsAutomaticCompletion(mission, graph)) return null;
+    if (mission.source === 'seer-mission-graph' && mission.contract?.execution?.autonomous === false) return null;
     const done = receipts.filter(r => r?.ok === true);
     if (!done.length || done.some(r => r.verified !== true)) return null;
     // An answer that cites a step that does not exist or is unverified goes to the operator.
@@ -133,7 +166,8 @@ export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastE
     if (mission.contract && mission.contractStatus?.machineVerified !== true) return null;
     const types = done.map(r => String(r.type || ''));
     if (types.every(t => READ_ONLY_TASKS.has(t))) return { decision: 'confirm', note: `auto-approved (level ${level}): ${done.length} verified read-only receipt(s)` };
-    if (level >= 2 && types.every(t => READ_ONLY_TASKS.has(t) || VERIFIED_CODE_TASKS.has(t))) {
+    if (level >= 2 && types.every(t => READ_ONLY_TASKS.has(t) || VERIFIED_CODE_TASKS.has(t)) &&
+        (!types.includes('repo-service') || mission.contract?.execution?.autonomous === true)) {
       return { decision: 'confirm', note: `auto-approved (level ${level}): verified code work; merge still requires green CI` };
     }
     if (level >= 3) return { decision: 'confirm', note: `auto-approved (level ${level}): ${done.length} verified receipt(s), no outgoing spend` };
@@ -141,8 +175,17 @@ export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastE
   }
 
   if (status === 'BLOCKED') {
+    // Graph repair owns the next approach after an explicit replan request.
+    // The completion resolver must not simultaneously restart the old child.
+    if (mission.replanRequest) return null;
+    if (mission.source === 'seer-mission-graph' && Number(mission.failures || 0) >= Number(mission.contract?.budget?.max_failures || 3) && receipts.some(r=>r.ok===false && !r.outcomeUnknown)) return null;
     const error = String(lastError || [...receipts].reverse().find(r => r?.error)?.error || '');
-    if (!error || POLICY_BLOCK.test(error) || BUDGET_EXHAUSTED.test(error)) return null;
+    // A missing capability or a planner refusal is not transient. Replaying the unchanged
+    // mission cannot grant a tool; level 5 must not turn it into an infinite resume loop.
+    if (!error || POLICY_BLOCK.test(error) || BUDGET_EXHAUSTED.test(error) || CAPABILITY_GAP.test(error)) return null;
+    // Preserve the blocked mission for a different diagnosis instead of
+    // blindly repeating a deterministic command failure for a third time.
+    if (repeatedUnrepairedFailure(receipts, error)) return null;
     // Operator 2026-10-02: an autonomous coding contract is the authority to keep working. Within it,
     // failures are retried without approvals; the contract budget (steps, tool calls, time) bounds the
     // retries, and when it is used up the mission stops for the operator (BUDGET_EXHAUSTED above).
@@ -152,7 +195,7 @@ export function autoResolution(mission = {}, { level = 0, autoResumes = 0, lastE
     // autoResumes counts only since the operator's last own decision.
     const budget = mission.contract?.budget || {};
     const contractResumes = Math.ceil((Number(budget.max_steps) || 40) / Math.max(1, Number(budget.max_failures) || 3));
-    if (level >= 2 && mission.contract && mission.contract.execution?.autonomous !== false && !CAPABILITY_GAP.test(error) && autoResumes < contractResumes) {
+    if (level >= 2 && mission.contract && mission.contract.execution?.autonomous !== false && autoResumes < contractResumes) {
       return { decision: 'resume', note: `auto-resumed (level ${level}): within the autonomous coding contract after "${error.slice(0, 120)}"` };
     }
     if (autoResumes >= MAX_AUTO_RESUMES) return null;

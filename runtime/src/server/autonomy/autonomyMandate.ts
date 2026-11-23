@@ -52,48 +52,59 @@ export class AutonomyMandateStore {
 
   constructor(workspaceRoot: string) {
     this.file = path.join(workspaceRoot, '.jaco', 'state', 'autonomy', 'mandates.json');
-    if (!fs.existsSync(this.file)) atomicWrite(this.file, []);
-    this.ensureLevel5OperatorMandate();
+    const fresh = !fs.existsSync(this.file);
+    if (fresh) atomicWrite(this.file, []);
+    this.ensureLevel5OperatorMandate(fresh);
   }
 
-  private ensureLevel5OperatorMandate(): void {
+  private ensureLevel5OperatorMandate(fresh: boolean): void {
     if (process.env.JACO_LEVEL5_AUTONOMY === '0') return;
-    const all = this.list();
+    // Never regenerate authority from missing, corrupt, revoked or expired state.
+    // Only an explicit first-install configuration may bootstrap a grant. Subsequent
+    // signatures are operator actions; startup preserves all existing scope and expiry.
+    let all: AutonomyMandate[];
+    try { all = this.readStrict(); } catch { return; }
     const now = new Date();
-    const existing = all.find((item) => item.id === 'operator-level5-default');
-    // An operator revocation is final until the operator signs again: startup must not re-sign it.
-    if (existing && existing.enabled === false) return;
+    const marker = path.join(path.dirname(this.file), 'bootstrap-initialized');
+    const configured = fresh && process.env.JACO_LEVEL5_AUTONOMY === '1' && !fs.existsSync(marker);
+    if (!fs.existsSync(marker)) {
+      try { fs.writeFileSync(marker, 'initialized\n', { flag: 'wx', mode: 0o600 }); }
+      catch { return; }
+    }
+    if (all.some(item => item.id === 'operator-level5-default')) return;
     const mandate: AutonomyMandate = {
       id: 'operator-level5-default',
       name: 'Operator Level 5 Build Authority',
       mission: 'Build, test, debug, refactor, research, browse, operate tools, create skills/capabilities and ship JACO autonomously. Outgoing financial commitments require operator approval.',
-      enabled: true,
+      enabled: configured,
       browserScope: 'BROAD_WEB',
       allowedOrigins: [],
       allowedDesktopProcesses: [],
       allowedAndroidPackages: [],
       // Keep operator edits to the decisions, but outgoing money can never become ALLOW here.
-      decisions: { ...DEFAULT_DECISIONS, ...(existing?.decisions || {}), FINANCIAL: existing?.decisions?.FINANCIAL === 'DENY' ? 'DENY' : 'REVIEW' },
+      decisions: { ...DEFAULT_DECISIONS },
       requireSemanticVerificationFor: ['EXTERNAL_MUTATION', 'PUBLISH', 'DESTRUCTIVE'],
       maxHours: 8760,
       maxWorkers: 16,
       singleWriter: true,
-      signedByOperator: true,
-      signedAt: existing?.signedAt || now.toISOString(),
-      // Keep the signed expiry; only a missing or lapsed mandate gets a fresh year.
-      expiresAt: existing && Date.parse(existing.expiresAt) > now.getTime() ? existing.expiresAt : new Date(now.getTime() + 8760 * 3600_000).toISOString(),
-      createdAt: existing?.createdAt || now.toISOString(),
+      signedByOperator: configured,
+      signedAt: configured ? now.toISOString() : null,
+      expiresAt: configured ? new Date(now.getTime() + 8760 * 3600_000).toISOString() : now.toISOString(),
+      createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
     };
     const next = [mandate, ...all.filter((item) => item.id !== mandate.id)].slice(0, 100);
     atomicWrite(this.file, next);
   }
 
+  private readStrict(): AutonomyMandate[] {
+    const parsed = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+    if (!Array.isArray(parsed) || parsed.some(item => !item || typeof item.id !== 'string' || !item.decisions || !Array.isArray(item.requireSemanticVerificationFor))) throw new Error('MANDATE_STORE_INVALID');
+    return parsed;
+  }
+
   list(): AutonomyMandate[] {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      return Array.isArray(parsed) ? parsed : [];
-    } catch { return []; }
+    try { return this.readStrict(); } catch { return []; }
   }
 
   get(id: string | undefined): AutonomyMandate | null {
@@ -120,7 +131,7 @@ export class AutonomyMandateStore {
       allowedOrigins,
       allowedDesktopProcesses: Array.isArray(input.allowedDesktopProcesses) ? input.allowedDesktopProcesses.map(String).slice(0, 10) : [],
       allowedAndroidPackages: Array.isArray(input.allowedAndroidPackages) ? input.allowedAndroidPackages.map(String).slice(0, 10) : [],
-      decisions: { ...DEFAULT_DECISIONS, ...(input.decisions || {}) },
+      decisions: { ...DEFAULT_DECISIONS, ...(input.decisions || {}), FINANCIAL: input.decisions?.FINANCIAL === 'DENY' ? 'DENY' : 'REVIEW' },
       requireSemanticVerificationFor: input.requireSemanticVerificationFor || ['EXTERNAL_MUTATION', 'PUBLISH', 'DESTRUCTIVE'],
       maxHours: hours,
       maxWorkers: Math.max(1, Math.min(16, Number(input.maxWorkers || 8))),
@@ -136,7 +147,7 @@ export class AutonomyMandateStore {
   }
 
   save(mandate: AutonomyMandate): AutonomyMandate {
-    const all = this.list();
+    const all = this.readStrict();
     const index = all.findIndex((item) => item.id === mandate.id);
     const next = { ...mandate, updatedAt: new Date().toISOString() };
     if (index >= 0) all[index] = next; else all.unshift(next);
@@ -173,7 +184,8 @@ export class AutonomyMandateStore {
     if (!mandate || !this.isActive(id)) {
       return { allowed: false, decision: 'DENY', requireReview: false, requireSemanticVerification: false, reason: 'active signed autonomy mandate required', mandate };
     }
-    const decision = mandate.decisions[consequence] || 'DENY';
+    const stored = mandate.decisions[consequence] || 'DENY';
+    const decision = consequence === 'FINANCIAL' && stored !== 'DENY' ? 'REVIEW' : stored;
     const semanticRequired = mandate.requireSemanticVerificationFor.includes(consequence);
     if (decision === 'DENY') return { allowed: false, decision, requireReview: false, requireSemanticVerification: semanticRequired, reason: `${consequence} is denied by mandate`, mandate };
     if (decision === 'REVIEW') return { allowed: false, decision, requireReview: true, requireSemanticVerification: semanticRequired, reason: `${consequence} requires human review`, mandate };

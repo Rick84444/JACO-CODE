@@ -4,6 +4,7 @@
 // evidence, the key is only ever read from the environment, and no key value leaves this module.
 
 import { CATALOG as KNOWN, keyCandidates, catalogById } from './providerCatalog.mjs';
+import { createHash } from 'node:crypto';
 
 const NON_CHAT = /embed|whisper|tts|dall-e|image|moderation|rerank|audio|transcribe|vision-preview|guard/i;
 const trimSlash = value => String(value || '').replace(/\/+$/, '');
@@ -70,18 +71,22 @@ const modelIds = json => {
  * Result `state`: READY (models listed), NEEDS_KEY (API answers 401/403 and no key in the
  * environment), KEY_REJECTED (a key was sent and refused), or UNREACHABLE.
  */
-export async function discoverProvider(rawUrl, { env = process.env, fetchImpl = fetch, timeoutMs = 6000, keyFor = name => env[name] || '' } = {}) {
+export async function discoverProvider(rawUrl, { env = process.env, fetchImpl = fetch, timeoutMs = 6000, keyFor = name => env[name] || '', isolateEndpoint = false } = {}) {
   const url = normalizeProviderUrl(rawUrl);
   const preferredModel = url.searchParams.get('model') || '';
   const known = knownProvider(url);
   const candidateId = providerIdFromUrl(url);
   // An operator-defined endpoint must never replace a catalog provider with the same ID.
-  const id = known?.id || (catalogById(candidateId) ? `custom-${candidateId}` : candidateId);
+  // Explicit URL identities prevent two custom providers from sharing credentials.
+  // Keep legacy discovery IDs for callers that have not opted into endpoint isolation.
+  const endpointId = 'custom-' + candidateId.slice(0, 32) + '-' + createHash('sha256')
+    .update(url.origin + trimSlash(url.pathname).replace(/\/v1$/i, '')).digest('hex').slice(0, 16);
+  const id = known?.id || (isolateEndpoint ? endpointId : (catalogById(candidateId) ? `custom-${candidateId}` : candidateId));
   const apiKeyEnv = known?.apiKeyEnv || `${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
   const key = keyFor(apiKeyEnv) || '';
   const headers = { accept: 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) };
   const evidence = [];
-  const result = (state, extra) => ({ id, known: Boolean(known), apiKeyEnv, credentialConfigured: Boolean(key), state, evidence, ...extra });
+  const result = (state, extra) => ({ id, known: Boolean(known), apiKeyEnv, credentialConfigured: Boolean(key), requiresKey: Boolean(known || key || state === 'NEEDS_KEY' || state === 'KEY_REJECTED'), state, evidence, ...extra });
 
   const bases = known ? [known.baseUrl] : candidatesFor(url);
   // Never send a pasted secret over cleartext off the current device.

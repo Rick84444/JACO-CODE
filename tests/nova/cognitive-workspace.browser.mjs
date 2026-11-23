@@ -19,7 +19,7 @@ const require=createRequire(path.join(release,'package.json'));
 const express=require('express');
 const {chromium}=await import(process.env.JACO_PLAYWRIGHT_MODULE || require.resolve('playwright'));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-ui-test-'));
-let bus=new DurableMissionBus(directory),chat=createAuraChatSession(bus),blockLive=false,blockSession=false,liteAck=false,rejectGoal=false;
+let bus=new DurableMissionBus(directory),chat=createAuraChatSession(bus),blockLive=false,blockSession=false,liteAck=false,rejectGoal=false,livePlan=null;
 const workstream={snapshot:()=>({events:[]})},liveResponses=new Set(),requests=[];
 const code={ 'example.ts':'export const checked = true;\n',
   'preview.html':'<style>body{font-family:system-ui;padding:32px;color:#153345}h1{font-weight:500}</style><h1>Isolerad förhandsvisning</h1><p id="boundary"></p><script>try{window.parent.document.body.dataset.changed="unsafe";document.querySelector("#boundary").textContent="boundary failed";}catch{document.querySelector("#boundary").textContent="isolated";}</script>' };
@@ -42,9 +42,10 @@ app.get('/api/aura/workbench/live',(req,res)=>{
 });
 app.get('/api/aura/workbench',(_req,res)=>res.json(snapshot()));
 app.get('/api/aura/workbench/gameboard',(_req,res)=>res.json({success:true,
-  ...gameboardProjection({graphs:null,graphError:'SEER_NOT_RUNNING_IN_TEST',workers:bus.listWorkers(),missions:bus.listMissions(30)}),
+  ...gameboardProjection({graphs:null,graphError:'SEER_NOT_RUNNING_IN_TEST',workers:bus.listWorkers(),missions:bus.listMissions(30).map(m=>({...m,reviewAvailable:true})),events:bus.listEvents(100),primaryGoal:bus.listMissions(1)[0]?.goal || null}),
   exchange:createGameboardExchange(bus.db).position('global'),
 }));
+app.get('/api/aura/plan',(_req,res)=>res.json({success:true,plans:livePlan?[livePlan]:[]}));
 app.get('/api/aura/workbench/gameboard/events',(req,res)=>res.json({success:true,...createGameboardExchange(bus.db).position(String(req.query.scope||'global'))}));
 app.post('/api/aura/workbench/gameboard/events',(req,res)=>{
   try {res.status(201).json({success:true,...createGameboardExchange(bus.db).publish(req.body)});}
@@ -84,7 +85,7 @@ app.use(express.static(path.join(release,'dist')));
 app.get('*',(_req,res)=>res.sendFile(path.join(release,'dist/index.html')));
 const server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});
 const base='http://127.0.0.1:'+server.address().port;
-const browser=await chromium.launch({headless:true,...(process.env.JACO_BROWSER_EXECUTABLE?{executablePath:process.env.JACO_BROWSER_EXECUTABLE,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']}: {})});
+const browser=await chromium.launch({headless:true,...(process.env.JACO_BROWSER_EXECUTABLE?{executablePath:process.env.JACO_BROWSER_EXECUTABLE,args:['--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--use-angle=swiftshader']}: {})});
 const page=await browser.newPage({viewport:{width:1440,height:960},deviceScaleFactor:1});
 page.setDefaultTimeout(15000);
 // Existing functional contract uses Swedish labels; English is verified independently below.
@@ -176,6 +177,23 @@ try {
     }
     passed('Remote PWA uses one Aura chat, phone navigation and preserves the draft without creating a mission');
   } finally { await remote.close(); }
+  // Same binary, same owner, same full UI on a laptop. The ?remote=1
+  // parameter authenticates a remote session but must not force phone UX.
+  const laptop = await browser.newPage({viewport:{width:1366,height:768}});
+  try {
+    await laptop.goto(base+'/?remote=1',{waitUntil:'domcontentloaded'});
+    await laptop.locator('.cognitive-workspace').waitFor();
+    assert.equal(await laptop.locator('.cognitive-workspace').getAttribute('data-remote-mode'),'true',
+      'laptop remote session still checks pairing and revocation');
+    assert.equal(await laptop.locator('.cognitive-remote-navigation').evaluate(el=>getComputedStyle(el).display),'none',
+      'laptop must not use a separate phone-only navigation');
+    assert.notEqual(await laptop.locator('.cognitive-rail').evaluate(el=>getComputedStyle(el).display),'none',
+      'laptop should show the exact canonical desktop IDE rail');
+    await laptop.getByRole('navigation',{name:/^(Workspace|Arbetsyta)$/}).waitFor();
+    assert.equal(await laptop.locator('.cognitive-workspace').count(),1);
+    assert.equal(await laptop.locator('.cognitive-rail').count(),1);
+    passed('Paired laptop renders the canonical desktop JACO GUI rather than the phone shell');
+  } finally { await laptop.close(); }
   blockSession=true;
   await page.goto(base,{waitUntil:'networkidle'});
   await page.getByRole('button',{name:'Försök läsa igen'}).waitFor();
@@ -192,7 +210,93 @@ try {
   assert.equal(await page.locator('.monaco-editor').count(),0,'defer the editor until a file is opened');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   passed('Production client opens with the real JACO brand, one conversation and no overflow');
+  // Check actual computed production theme, not a mock/design image.
+  const visual=await page.locator('.cognitive-workspace').evaluate(root=>{
+    const rgb=value=>(value.match(/[\d.]+/g)||[]).slice(0,3).map(Number);
+    const luminance=value=>rgb(value).map(c=>{const n=c/255;return n<=.04045?n/12.92:Math.pow((n+.055)/1.055,2.4);}).reduce((a,c,i)=>a+c*[.2126,.7152,.0722][i],0);
+    const ratio=(a,b)=>{const values=[luminance(a),luminance(b)].sort((x,y)=>y-x); return (values[0]+.05)/(values[1]+.05);};
+    const rootStyle=getComputedStyle(root);
+    const box=root.querySelector('.cognitive-input-box');
+    const input=box?.querySelector('textarea');
+    if(!box||!input)throw Error('canonical composer missing');
+    return {background:rootStyle.backgroundColor, contrast:ratio(rootStyle.color,rootStyle.backgroundColor), composer:ratio(getComputedStyle(input).color,getComputedStyle(box).backgroundColor)};
+  });
+  assert.equal(visual.background,'rgb(13, 16, 20)','canonical obsidian working surface');
+  assert.ok(visual.contrast>=4.5&&visual.composer>=4.5,'primary text on tested solid surfaces must be readable');
+  passed('Obsidian theme preserves readable primary and composer text on measured solid surfaces');
   await screenshot('cognitive-workspace-desktop');
+  for(const width of [360,393,412]){
+    await page.setViewportSize({width,height:852});
+    const navigation=page.getByRole('navigation',{name:'Mobilnavigation'});
+    await navigation.waitFor();
+    const dimensions=await navigation.evaluate(nav=>({width:document.documentElement.scrollWidth,viewport:innerWidth,buttons:[...nav.querySelectorAll('button')].map(b=>{const rect=b.getBoundingClientRect();return {width:rect.width,height:rect.height,inView:rect.left>=0&&rect.right<=innerWidth&&rect.top>=0&&rect.bottom<=innerHeight};})}));
+    assert.ok(dimensions.width<=width,'no horizontal document overflow at '+width);
+    assert.ok(dimensions.buttons.every(b=>b.width>=44&&b.height>=44&&b.inView),'visible 44px navigation targets at '+width);
+    const headerFits=await page.locator('.cognitive-topbar').evaluate(header=>
+      [...header.querySelectorAll('button, select')].every(control=>{
+        const rect=control.getBoundingClientRect();
+        return !rect.width||(rect.left>=0&&rect.right<=innerWidth);
+      }));
+    assert.ok(headerFits,'top bar controls fit at '+width);
+    await screenshot('jaco-visual-'+width+'px');
+  }
+  await page.setViewportSize({width:1440,height:960});
+  passed('Canonical mobile controls remain within the viewport at three phone sizes');
+  const portraitTrigger=page.getByRole('button',{name:'Öppna Auras porträtt'});
+  const portrait=page.getByRole('dialog',{name:'Aura',exact:true});
+  await input().fill('Porträttet bevarar utkastet');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  for(const width of [1440,360,393,412]){
+    await page.setViewportSize({width,height:852});
+    await portraitTrigger.click();
+    await portrait.waitFor();
+    await page.waitForFunction(()=>{
+      const canvas=document.querySelector('.aura-portrait-scene canvas');
+      if(!canvas)return false;
+      if(canvas.dataset.renderer!=='rigged-particle-field')return false;
+      const gl=canvas.getContext('webgl2');if(!gl)return false;
+      const data=new Uint8Array(canvas.width*canvas.height*4);gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,data);
+      let lit=0,bright=0;for(let i=0;i<data.length;i+=4){if(data[i+2]>12)lit++;if(data[i+2]>100)bright++;}
+      return Number(canvas.dataset.renderedPoints)>10000&&Number(canvas.dataset.hairPoints)>2000&&Number(canvas.dataset.torsoPoints)>2500&&lit>2000&&bright>250;
+    });
+    assert.equal(await portrait.locator('img').count(),0,'portrait uses a surface light field rather than a photograph');
+    if(width===1440){
+      const reducedCanvas=portrait.locator('canvas');
+      const still=await reducedCanvas.evaluate(canvas=>canvas.toDataURL());
+      await reducedCanvas.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      assert.equal(await reducedCanvas.evaluate(canvas=>canvas.toDataURL()),still,'reduced motion keeps the mask still');
+    }
+    const bounds=await portrait.boundingBox();
+    assert.ok(bounds.x>=0&&bounds.x+bounds.width<=width,'portrait fits viewport at '+width);
+    if(width===1440||width===393)await screenshot('aura-particle-portrait-'+width);
+    await page.keyboard.press('Escape');
+    await portrait.waitFor({state:'detached'});
+    assert.equal(await input().inputValue(),'Porträttet bevarar utkastet');
+  }
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.setViewportSize({width:1440,height:960});
+  passed('Aura particle portrait renders on desktop and phones and preserves the chat draft');
+  await portraitTrigger.click();
+  const scene=portrait.locator('.aura-portrait-scene');
+  await scene.waitFor();
+  await page.waitForFunction(()=>{
+    const canvas=document.querySelector('.aura-portrait-scene canvas');
+    return canvas?.dataset.renderer==='rigged-particle-field'&&Number(canvas.dataset.renderedPoints)>10000;
+  });
+  const renderMask=()=>scene.locator('canvas').evaluate(canvas=>canvas.toDataURL());
+  const initialMask=await renderMask();
+  const initialYaw=Number(await scene.locator('canvas').getAttribute('data-yaw'));
+  const initialGeometry=await scene.locator('canvas').getAttribute('data-geometry-signature');
+  await scene.hover({position:{x:18,y:60}});
+  await page.waitForFunction(({initial,yaw,geometry})=>{
+    const canvas=document.querySelector('.aura-portrait-scene canvas');
+    return Number(canvas?.dataset.renderedPoints)>5000 && Math.abs(Number(canvas?.dataset.yaw)-yaw)>.06 && canvas?.dataset.geometrySignature!==geometry && canvas?.toDataURL()!==initial;
+  },{initial:initialMask,yaw:initialYaw,geometry:initialGeometry});
+  await page.waitForFunction(()=>Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.blinkMm)>2,{},{timeout:12000});
+  await screenshot('aura-rig-blink');
+  await page.keyboard.press('Escape');
+  await portrait.waitFor({state:'detached'});
+  passed('Aura rigged lightform changes actual geometry and rendered frame with motion enabled');
   await input().fill('Behåll mitt utkast');
   await canvas('Kod').click();await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
@@ -218,11 +322,12 @@ try {
   await canvas('Spelplan').click();
   await page.getByTestId('strategy-board').waitFor();
   // Operator can open the actual local memory view from the Gameboard on a mobile viewport.
+  await page.getByTestId('gameboard-memory-section').locator('summary').click();
   await page.getByTestId('memory-gameboard').locator('button').first().click();
   await page.getByRole('region',{name:'Minnets innehåll och beslut'}).waitFor();
   await page.getByTestId('memory-gameboard').getByRole('button',{name:'Stäng minnet'}).click();
   // The operator-facing blueprint is primary; the technical simulator opens on demand.
-  await page.getByText('Technical view', { exact: true }).click();
+  await page.getByText(/^(Teknisk vy|Technical view)$/).click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Gameboard must not overflow Android-size viewport');
   await canvas('Samtal').click();
@@ -232,9 +337,12 @@ try {
   await canvas('Spelplan').click();
   await page.getByTestId('strategy-board').waitFor();
   // The operator-facing blueprint is primary; the technical simulator opens on demand.
-  await page.getByText('Technical view', { exact: true }).click();
+  await page.getByText(/^(Teknisk vy|Technical view)$/).click();
   await page.locator('section[aria-label="Shared gameboard"]').waitFor();
-  await page.getByText('Aura planning: UNAVAILABLE').waitFor();
+  await page.getByText('Aura planning: Planner unavailable').waitFor();
+  await page.getByTestId('gameboard-operational-position').waitFor();
+  await page.getByTestId('gameboard-durable-evidence').waitFor();
+  await page.getByText('Optional scenario laboratory · simulation only').click();
   await page.locator('section[aria-label="Shared gameboard"] input[list="gameboard-tools"]').first().fill('mcp:git:git_status');
   await page.getByRole('button',{name:'Simulate without execution'}).click();
   await page.getByText('Executed: no', {exact:false}).waitFor();
@@ -247,31 +355,114 @@ try {
   await page.setViewportSize({width:1440,height:960});
   const mission=bus.createMission({goal:'Testuppdrag: verifiera HTTP-klienten',source:'browser-test'});
   bus.event('NOVA_ACTION_STARTED',{missionId:mission.id,payload:{action:{id:'read-example',type:'repo-read',data:{path:'example.ts'}}}});
+  await page.locator('[data-event-id="mission:2"]').waitFor({state:'attached'});
+  assert.equal(await page.locator('.cognitive-chat-scroll [data-event-id="mission:2"]').count(),0,
+    'a runtime step must not occupy the human conversation');
+  await page.getByTestId('jaco-chat-diagnostics').locator('summary').first().click();
+  await page.locator('.cognitive-background-events > summary').click();
   await page.locator('[data-event-id="mission:2"]').waitFor();
   assert.equal(await page.locator('[data-event-id="mission:2"]').count(),1);
   await page.locator('[data-mission-id]').waitFor({state:'attached',timeout:10000});
-  passed('A real SSE event is inserted exactly once in the conversation with its mission');
+  passed('A real SSE event is accessible exactly once in diagnostics while chat remains readable');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'read-example',type:'repo-read',ok:true,verified:false,result:{path:'example.ts'}}});
-  await page.getByText('Not verified',{exact:true}).waitFor();
+  // Evidence outcome is the contract; its translated label depends on the
+  // current UI language and must never be mistaken for verified success.
+  await page.locator('[data-event-id="mission:3"][data-outcome="unverified"]').waitFor();
+  await page.locator('[data-event-id="mission:3"] .cognitive-proof[data-outcome="unverified"]').waitFor();
+  await canvas('Spelplan').click();
+  await page.getByText(/^(Teknisk vy|Technical view)$/).click();
+  await page.getByTestId('gameboard-mission-list').waitFor();
+  await page.getByTestId('gameboard-operational-position').getByText('Testuppdrag: verifiera HTTP-klienten').first().waitFor();
+  await page.getByTestId('gameboard-durable-evidence').getByText('NOVA_ACTION_RESULT').first().waitFor();
+  await page.getByRole('button',{name:'Review execution & evidence'}).first().click();
+  await page.locator('.cognitive-evidence-scroll').waitFor();
+  passed('Gameboard renders durable mission evidence and opens the existing review without another agent');
+  await canvas('Samtal').click();
+  // USER-AGENT SIMULATION: a person opens Gameboard after a real durable mission
+  // event, navigates a dynamically published SEER-style DAG, then SEER revises
+  // its observed status. The fixture models PLAN OBSERVATION only: no model has
+  // run here and no synthetic action is promoted to real execution.
+  livePlan={
+    id:'user-journey-graph',title:'Validated gateway',objective:'Deliver a validated gateway',
+    intuition:'Create a trustworthy and autonomous coding product',status:'ACTIVE',
+    progress:{done:0,total:4},needsApproval:[],changes:[],comments:[],
+    nodes:[
+      {key:'deliver',title:'Integrate product',objective:'Integrate',status:'BLOCKED',statusText:'Väntar',dependencies:['qa','docs'],needs:[],comments:[],evidenceRefs:[]},
+      {key:'qa',title:'Verification',objective:'Verify',status:'RUNNING',statusText:'Pågår',dependencies:['foundation'],needs:[],comments:[],missionId:mission.id,evidenceRefs:[]},
+      {key:'docs',title:'Documentation',objective:'Document',status:'READY',statusText:'Redo',dependencies:['foundation'],needs:[],comments:[],evidenceRefs:[]},
+      {key:'foundation',title:'Gateway foundation',objective:'Build',status:'READY',statusText:'Redo',dependencies:[],needs:[],comments:[],evidenceRefs:[]},
+    ],
+  };
+  await canvas('Spelplan').click();
+  const root=page.getByTestId('intuition-root');
+  await root.waitFor();
+  assert.match(await root.innerText(),/Create a trustworthy and autonomous coding product/);
+  assert.equal(await page.getByTestId('gameboard-centered-logo').count(),1);
+  assert.equal(await page.getByTestId('intuition-step').count(),4);
+  assert.equal(await page.locator('[data-node-id="foundation"]').count(),1,'shared dependency only once');
+  assert.equal(await page.locator('path.jaco-intuition-line[data-state="active"]').count(),2,'only real ancestry glows');
+  assert.ok(await page.locator('path.jaco-intuition-line[data-state="pending"]').count()>0,'pending lines stay white');
+  const logo=await page.getByTestId('gameboard-centered-logo').boundingBox();
+  const center=await root.boundingBox();
+  assert.ok(Math.abs((logo.x+logo.width/2)-(center.x+center.width/2))<12,'intuition aligned with logo');
+  await page.getByRole('button',{name:'Zooma in'}).click();
+  await page.getByRole('button',{name:'Anpassa hela trädet'}).click();
+  await page.locator('[data-node-id="qa"]').click();
+  await page.getByRole('dialog',{name:'Verification'}).waitFor();
+  await page.getByRole('button',{name:'Stäng',exact:true}).first().click();
+  await page.getByRole('button',{name:'Minimera beroenden för Verification'}).click();
+  assert.equal(await page.locator('[data-node-id="foundation"]').count(),1,'other parent still keeps shared dependency');
+  await page.getByRole('button',{name:'Expandera beroenden för Verification'}).click();
+  livePlan.nodes.find(n=>n.key==='qa').status='VERIFIED';
+  livePlan.nodes.find(n=>n.key==='qa').evidenceRefs=['bus:real-verified-action'];
+  livePlan.progress.done=1;
+  livePlan.changes.push({at:new Date().toISOString(),reason:'Verified test revised the active path'});
+  bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'graph-refresh',type:'repo-test',ok:true,verified:true,result:{exitCode:0}}});
+  await page.locator('[data-node-id="qa"][data-status="verified"][data-evidence-count="1"]').waitFor({timeout:15000});
+  assert.equal(await page.locator('path.jaco-intuition-line[data-state="active"]').count(),0);
+  assert.ok(await page.locator('path.jaco-intuition-line[data-state="verified"]').count()>0);
+  await page.getByTestId('gameboard-plan-history').locator('summary').click();
+  await page.getByText('Verified test revised the active path').waitFor();
+  await page.getByRole('button',{name:'Aktiv gren'}).click();
+  assert.equal(await page.getByTestId('intuition-step').count(),0,'inactive branch filter cannot invent work');
+  await page.getByRole('button',{name:'Aktiv gren'}).click();
+  await canvas('Samtal').click();
+  assert.equal(requests.some(r=>r.kind==='goal'),false,'the user journey must not silently start a new mission');
+  passed('Simulated user validates live intuition, unique dependencies, blue activity, real receipts, zoom, collapse, replan and no phantom missions');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'failed-test',type:'repo-test',ok:false,verified:true,error:'TEST_NEGATIVE_CONTROL',result:{exitCode:1}}});
-  await page.locator('[data-event-id="mission:4"][data-outcome="failed"]').waitFor();
-  assert.equal(await page.locator('[data-event-id="mission:4"]').getByText('Verified result',{exact:true}).count(),0);
+  const failedSeq=bus.listEvents(1)[0].seq;
+  await page.locator('[data-event-id="mission:'+failedSeq+'"][data-outcome="failed"]').waitFor();
+  assert.equal(await page.locator('[data-event-id="mission:'+failedSeq+'"] .cognitive-proof[data-outcome="verified"]').count(),0);
   passed('A successful unverified step and a failing step cannot masquerade as verified');
   await page.getByRole('button',{name:'Vad har du upptäckt?',exact:true}).click();
   await page.getByRole('button',{name:'Skicka meddelande',exact:true}).click();
   await page.getByText('Testsvaret använder de observerade händelserna. Uppdraget fortsätter.',{exact:true}).waitFor();
   assert.equal(requests.filter(r=>r.kind==='goal').length,0);
-  assert.equal(requests.at(-1).body.interactionMode,'question');
+  assert.equal(requests.at(-1).body.interactionMode,'action');
   const context=requests.at(-1).body.ragContext.find(r=>r.source==='jaco://current-work').content;
   assert.equal(context.mission.id,mission.id);assert.ok(context.events.some(e=>e.outcome==='failed'));
   assert.equal(bus.listMissions(10).length,1);
   passed('A question receives observed run context and does not restart or replace the mission');
   bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'pass-test',type:'repo-test',ok:true,verified:true,result:{path:'example.ts',exitCode:0}}});
-  await page.locator('[data-event-id="mission:5"][data-outcome="verified"]').waitFor();
+  const passedSeq=bus.listEvents(1)[0].seq;
+  const verifiedSelector='[data-event-id="mission:'+passedSeq+'"]';
+  await page.locator(verifiedSelector+'[data-outcome="verified"]').waitFor();
+  // Controlled real React + SSE transport with synthetic mission fixtures: verify
+  // that the canonical Aura Live stage renders several actual bus action types.
+  await canvas('Arbete').click();
+  await page.getByTestId('aura-live-tool-surfaces').waitFor();
+  await page.locator('[data-surface="code"] .aura-live-tool-kind').getByText('repo-read').waitFor();
+  await page.locator('[data-surface="tests"] .aura-live-tool-kind').getByText('repo-test').waitFor();
+  await page.locator('[data-surface="tests"] .aura-live-tool-status[data-outcome="VERIFIED"]').waitFor();
+  await page.locator('[data-surface="tests"] .aura-live-tool-details').waitFor();
+  passed('Canonical Aura Live projects concurrent code and test tool receipts without new agent execution');
+  await canvas('Samtal').click();
   await screenshot('cognitive-workspace-live');
-  await page.locator('[data-event-id="mission:5"]').getByRole('button',{name:'Show evidence'}).click();
-  await page.getByRole('region',{name:'Selected evidence'}).waitFor();
-  assert.ok((await page.getByRole('region',{name:'Selected evidence'}).innerText()).includes('Durable mission history'));
+  await page.locator(verifiedSelector).getByRole('button',{name:/^(Visa bevis|Show evidence)$/}).click();
+  const selectedEvidence=page.getByRole('region',{name:/^(Valt bevis|Selected evidence)$/});
+  await selectedEvidence.waitFor();
+  assert.match(await selectedEvidence.innerText(),/Sparad uppdragshistorik|Saved mission history/,
+    'only the persisted mission receipt may be reported as durable evidence');
   await screenshot('cognitive-workspace-evidence');
   passed('Evidence opens beside the conversation and identifies its durable source');
   await canvas('Samtal').click();
@@ -311,29 +502,41 @@ try {
   assert.equal(await input().inputValue(),'Ett bevarat utkast');
   blockLive=false;
   await page.getByRole('status').filter({hasText:'Working'}).waitFor({timeout:15000});
-  assert.equal(await page.locator('[data-event-id="mission:5"]').count(),1);
+  assert.equal(await page.locator(verifiedSelector).count(),1);
   passed('Live connection interruption preserves the draft, exposes uncertainty and reconnects without duplicates');
+  await portraitTrigger.click();
+  await portrait.locator('p[data-tone="active"]').filter({hasText:'Working'}).waitFor();
+  await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
+  await portrait.waitFor({state:'detached'});
+  assert.equal(await input().inputValue(),'Ett bevarat utkast');
+  assert.equal(bus.listMissions(30).find(item=>item.id===mission.id).status,'ACTIVE');
+  passed('Aura portrait reflects active work and dismissal preserves the running mission');
   for(const response of liveResponses)response.end();
   bus.close();bus=new DurableMissionBus(directory);chat=createAuraChatSession(bus);
   await page.reload({waitUntil:'networkidle'});
-  await page.locator('[data-event-id="mission:5"]').waitFor();
-  assert.equal(await page.locator('[data-event-id="mission:5"]').count(),1);
+  await page.locator(verifiedSelector).waitFor({state:'attached'});
+  assert.equal(await page.locator('.cognitive-chat-scroll '+verifiedSelector).count(),0,
+    'replayed execution logs remain out of the readable chat');
+  await page.getByTestId('jaco-chat-diagnostics').locator('summary').first().click();
+  await page.locator('.cognitive-background-events > summary').click();
+  await page.locator(verifiedSelector).waitFor();
+  assert.equal(await page.locator(verifiedSelector).count(),1);
   await page.getByText('Testsvaret använder de observerade händelserna. Uppdraget fortsätter.',{exact:true}).waitFor();
-  passed('A store restart replays both durable events and the saved encrypted conversation');
+  passed('A store restart replays durable diagnostics and the visible saved encrypted conversation');
   liteAck=true;
   await input().fill('Testa ett Lite-uppdrag');
-  await page.getByTestId('jaco-run-mode-toggle').click();
-  await page.getByRole('button',{name:/Full Autonomous/}).last().click();
+  assert.equal(await page.getByTestId('jaco-run-mode-status').getAttribute('data-run-mode'),'autonomous');
+  assert.equal(await page.getByTestId('jaco-run-mode-toggle').count(),0);
   await page.getByRole('button',{name:'Starta uppdrag',exact:true}).click();
   await page.getByText('Uppdraget är registrerat. Planering och resultat visas här när runtime rapporterar dem.',{exact:true}).waitFor();
-  await page.waitForFunction(()=>document.querySelector('[data-testid="jaco-run-mode-toggle"]')?.textContent.includes('Full Autonomous'));
+  await page.waitForFunction(()=>/Helt självständig|Full Autonomous/.test(document.querySelector('[data-testid="jaco-run-mode-status"]')?.textContent||''));
   await input().fill('Förklara uppdragets status');
   assert.equal(await page.getByTestId('jaco-chat-send').isEnabled(),true,'chat is still available in Full Autonomous while the mission runs');
   assert.equal(requests.filter(r=>r.kind==='goal').length,1);
   passed('Lite mission acknowledgements are accepted without claiming completed work');
   rejectGoal=true;await input().fill('Detta ska inte registreras');
-  await page.getByTestId('jaco-run-mode-toggle').click();
-  await page.getByRole('button',{name:/Full Autonomous/}).last().click();
+  assert.equal(await page.getByTestId('jaco-run-mode-status').getAttribute('data-run-mode'),'autonomous');
+  assert.equal(await page.getByTestId('jaco-run-mode-toggle').count(),0);
   await page.getByRole('button',{name:'Starta uppdrag',exact:true}).click();
   await page.getByText('Uppdragets registrering kunde inte bekräftas: TEST_GOAL_REJECTED',{exact:true}).waitFor();
   assert.equal(bus.listMissions(10).length,2);assert.equal(await input().inputValue(),'Detta ska inte registreras');
@@ -366,6 +569,85 @@ try {
   assert.equal(await page.getByText('The work needs help',{exact:true}).count(),0,'a repaired file read cannot leave a stale global failure');
   passed('Missing material exposes an actionable error and retry reads the real file instead of spinning forever');
   await screenshot('aura-stage-hardened-mobile');
+  // Controlled receipt fixture: exercise the actual installed xterm renderer,
+  // without submitting a shell command or claiming agent execution.
+  await page.setViewportSize({width:1440,height:960});
+  await canvas('Kod').click();
+  const terminalDock=page.locator('.cognitive-terminal-dock');
+  if(!await terminalDock.isVisible())await page.getByRole('button',{name:'Open terminal & details',exact:true}).click();
+  await terminalDock.getByRole('button',{name:'TERMINAL',exact:true}).click();
+  await page.getByTestId('terminal-receipts-toggle').click();
+  const receipts=page.getByTestId('receipt-terminal');
+  await receipts.locator('.xterm-screen').waitFor();
+  bus.event('NOVA_ACTION_RESULT',{missionId:mission.id,payload:{actionId:'receipt-fixture',type:'shell',command:'fixture-only',ok:true,verified:true,result:{stdout:'JACO_RECEIPT_FIXTURE',exitCode:0}}});
+  await receipts.getByText('JACO_RECEIPT_FIXTURE',{exact:false}).first().waitFor({state:'attached',timeout:15000});
+  assert.equal(await receipts.getAttribute('data-renderer'),'xterm');
+  await screenshot('aura-xterm-desktop');
+  await page.setViewportSize({width:393,height:852});
+  await receipts.locator('.xterm-screen').waitFor();
+  assert.equal(await page.getByTestId('terminal-receipts-toggle').isEnabled(),true);
+  await screenshot('aura-xterm-mobile');
+  await page.getByTestId('terminal-receipts-toggle').click();
+  assert.equal(await receipts.count(),0,'dismissal disposes the terminal component');
+  passed('Actual xterm renders a controlled command receipt at desktop and mobile viewport without changing command authority');
+  await page.evaluate(() => {
+    window.auraSpokenReplies = [];
+    window.SpeechRecognition = class {
+      start() { queueMicrotask(() => { this.onresult({results:[[{transcript:'Kan du svara i JACO?'}]]}); this.onend(); }); }
+      abort() {}
+    };
+    Object.defineProperty(window, 'speechSynthesis', {configurable:true,value:{
+      speak(reply) { window.auraSpokenReplies.push(reply.text); window.auraCurrentReply=reply; reply.onstart?.(); },
+      cancel() {},
+    }});
+  });
+  await portraitTrigger.click();
+  await portrait.getByRole('button',{name:'Läs upp svar'}).click();
+  const portraitInput=portrait.getByRole('textbox',{name:'Meddelande till Aura'});
+  await portraitInput.fill('Hej Aura.');
+  await portrait.getByRole('button',{name:'Diktera'}).click();
+  assert.equal(await portraitInput.inputValue(),'Hej Aura. Kan du svara i JACO?');
+  const previousChatRequests=requests.filter(request=>request.kind==='chat').length;
+  await portrait.getByRole('button',{name:'Skicka',exact:true}).click();
+  await page.waitForFunction(()=>window.auraSpokenReplies.length===1);
+  assert.equal(requests.filter(request=>request.kind==='chat').length,previousChatRequests+1);
+  assert.deepEqual(await page.evaluate(()=>window.auraSpokenReplies),['Testsvaret använder de observerade händelserna. Uppdraget fortsätter.']);
+  await page.waitForFunction(()=>Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm)>3,{},{timeout:15000});
+  await screenshot('aura-rig-speaking');
+  await page.evaluate(()=>window.auraCurrentReply.onend?.());
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm==='0.000');
+  passed('Controlled speech drives actual jaw morph displacement, then returns to rest; blinking independently moves eyelid vertices');
+  await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
+  passed('Portrait dictation uses the canonical chat and reads its new reply with a controlled speech adapter');
+  // A browser engine may report an error without an end event. Late callbacks
+  // from that abandoned recording must never modify the shared draft.
+  await page.evaluate(()=>{
+    window.SpeechRecognition=class {
+      start(){window.auraTestRecording=this;}
+      abort(){window.auraTestAbortCount=(window.auraTestAbortCount||0)+1;}
+    };
+    window.auraTestAbortCount=0;
+  });
+  await portraitTrigger.click();
+  await portraitInput.fill('Behåll detta utkast');
+  await portrait.getByRole('button',{name:'Diktera',exact:true}).click();
+  await portrait.getByRole('button',{name:'Sluta lyssna',exact:true}).waitFor();
+  assert.equal(await portrait.getByRole('button',{name:'Läs upp svar'}).isDisabled(),true,'reader cannot be enabled during recording');
+  await page.evaluate(()=>window.auraTestRecording.onerror());
+  await portrait.getByRole('button',{name:'Diktera',exact:true}).waitFor();
+  await portrait.getByText('Röstfunktionen kunde inte användas.',{exact:false}).waitFor();
+  await page.evaluate(()=>window.auraTestRecording.onresult({results:[[{transcript:'STALE_CALLBACK'}]]}));
+  assert.equal(await portraitInput.inputValue(),'Behåll detta utkast');
+  await portrait.getByRole('button',{name:'Diktera',exact:true}).click();
+  assert.equal(await portrait.getByRole('button',{name:'Sluta lyssna',exact:true}).getAttribute('aria-pressed'),'true');
+  await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
+  await portrait.waitFor({state:'detached'});
+  await page.evaluate(()=>window.auraTestRecording.onresult({results:[[{transcript:'AFTER_CLOSE'}]]}));
+  await canvas('Samtal').click();
+  assert.equal(await input().inputValue(),'Behåll detta utkast');
+  assert.ok(await page.evaluate(()=>window.auraTestAbortCount>=2),'failed and dismissed recordings were aborted');
+  assert.equal(await page.evaluate(()=>window.auraSpokenReplies.length),1,'reopening does not replay history');
+  passed('Speech errors and dismissal revoke recording callbacks without changing the shared draft');
   assert.deepEqual(errors,[], 'no unexpected uncaught app/browser errors');
   if(expectedEditorCancels.length) console.log('Monaco disposal cancellations observed: '+expectedEditorCancels.length);
   const report={status:'PASS',checks:results.length,browser:browser.version(),observedAt:new Date().toISOString(),scope:'Controlled UI integration; no inference, Android or operator runtime execution',clientIndexSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(release,'dist/index.html'))).digest('hex'),results};

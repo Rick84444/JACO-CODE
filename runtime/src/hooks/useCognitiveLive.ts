@@ -4,6 +4,8 @@ import { mergeCognitiveEvents } from '../lib/cognitiveEvents.mjs';
 export interface CognitiveEvent {
   id:string; at:string; type:string; category:string; title:string; text:string;
   durable:boolean; seq:number|null; missionId:string|null; missionGoal:string|null; actionId:string|null; planId?:string|null;
+  toolType?:string|null; nodeKey?:string|null;
+  terminal?:{phase:string;command:string;stdout:string;stderr:string;exitCode:number|null;truncated:boolean};
   evidence:{outcome:string;path:string|null;url:string|null;commit:string|null;exitCode:number|null;error:string|null};
 }
 
@@ -21,10 +23,10 @@ export function useCognitiveLive() {
     let active = true;
     let source: EventSource | null = null;
     const observation = (event:MessageEvent) => {
-      if (!active) return;
+      if (!active || event.currentTarget !== source || document.hidden) return;
       try {
         const packet=JSON.parse(event.data);
-        if(packet.schema !== 'jaco.cognitive-live/v1' || !Array.isArray(packet.events)) throw Error('INVALID_LIVE_PACKET');
+        if(packet.schema !== 'jaco.cognitive-live/v1' || !Array.isArray(packet.events) || typeof packet.observedAt !== 'string' || !Number.isFinite(Date.parse(packet.observedAt))) throw Error('INVALID_LIVE_PACKET');
         setEvents(previous=>mergeCognitiveEvents(previous,packet.events));
         setLastObservedAt(packet.observedAt);
         observedAt.current=packet.observedAt;
@@ -35,15 +37,16 @@ export function useCognitiveLive() {
     const open = () => {
       if (source || !active) return;
       setConnection('connecting');
+      observedAt.current = new Date().toISOString();
       const next = new EventSource('/api/aura/workbench/live');
-      next.onopen = () => { if (active) setConnection('live'); };
+      next.onopen = () => { if (active && source === next) { observedAt.current = new Date().toISOString(); setConnection('connecting'); } };
       next.addEventListener('observation', observation);
-      next.addEventListener('source-error', () => { if(active) setConnection('unavailable'); });
-      next.onerror = () => { if(active) setConnection('reconnecting'); };
+      next.addEventListener('source-error', () => { if(active && source === next) setConnection('unavailable'); });
+      next.onerror = () => { if(active && source === next) setConnection('reconnecting'); };
       source = next;
     };
-    const close = () => { source?.close(); source = null; };
-    const onVisibility = () => { if (document.hidden) close(); else open(); };
+    const close = () => { const previous = source; source = null; previous?.close(); observedAt.current = null; };
+    const onVisibility = () => { if (document.hidden) { close(); setConnection('reconnecting'); } else open(); };
     if (!document.hidden) open();
     document.addEventListener('visibilitychange', onVisibility);
     // An open TCP connection is insufficient evidence of new observations.

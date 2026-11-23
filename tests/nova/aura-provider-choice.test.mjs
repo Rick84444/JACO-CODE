@@ -1,3 +1,4 @@
+import { NO_PRICE_ENV, PRICED_ENV } from './priced-env.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { auraChatViaSeer } from '../../agents/lib/aura-seer-chat.mjs';
@@ -31,20 +32,20 @@ test('loopback providers accept an unset optional credential while remote provid
 });
 test('selected local provider failure propagates without a second provider call',async()=>{
   const f=fixture({local:true,fail:'SELECTED_PROVIDER_OFFLINE'});
-  await assert.rejects(()=>manualAuraProviderCompletion(prompt,{...f,env:{}}),/SELECTED_PROVIDER_OFFLINE/);
+  await assert.rejects(()=>manualAuraProviderCompletion(prompt,{...f,env:PRICED_ENV}),/SELECTED_PROVIDER_OFFLINE/);
   assert.equal(f.calls.length,1);assert.equal(f.calls[0].providerId,'custom');
 });
 test('explicit local provider/model dispatch has no fallback or cloud reservation',async()=>{
-  const f=fixture({local:true});const r=await manualAuraProviderCompletion(prompt,{...f,env:{}});
+  const f=fixture({local:true});const r=await manualAuraProviderCompletion(prompt,{...f,env:PRICED_ENV});
   assert.equal(r.provider,'custom');assert.equal(r.local,true);assert.equal(f.calls[0].model,'fast');assert.equal(f.costs.length,0);
 });
-test('an unpriced remote model is accounted at the high reference price instead of being refused',async()=>{
-  const f=fixture();const r=await manualAuraProviderCompletion(prompt,{...f,env:{}});
+test('a remote model with no listed price is accounted at an estimate instead of being refused',async()=>{
+  const f=fixture();const r=await manualAuraProviderCompletion(prompt,{...f,env:PRICED_ENV});
   assert.equal(r.costStatus,'SETTLED');assert.equal(f.calls.length,1);
   const reserved=f.costs.find(x=>x[0]==='reserve')[1].estimatedUsd;assert.ok(reserved>0&&reserved<0.25,'worst case stays under the per-task limit');
 });
 test('cloud suffix cannot bypass budget via localhost',async()=>{
-  const f=fixture({local:true});const r=await manualAuraProviderCompletion({...prompt,model:'fast:cloud'},{...f,env:{}});
+  const f=fixture({local:true});const r=await manualAuraProviderCompletion({...prompt,model:'fast:cloud'},{...f,env:PRICED_ENV});
   assert.equal(r.costStatus,'SETTLED');assert.deepEqual(f.costs.map(x=>x[0]),['reserve','settle'],'reserved and settled like any cloud model');
 });
 test('priced provider reserves and settles the shared manual-chat budget',async()=>{
@@ -63,6 +64,6 @@ test('missing usage and dispatched transport failure remain unknown',async()=>{
 });
 test('provider-aware context limits enlarge remote prompts without exceeding local inference budget', () => {
   assert.equal(auraPromptByteLimit({local:true}),12000);
-  assert.equal(auraPromptByteLimit({local:false}),48000);
-  assert.equal(auraPromptByteLimit({local:true,cloudRelay:true}),48000);
+  assert.equal(auraPromptByteLimit({local:false}),200000);
+  assert.equal(auraPromptByteLimit({local:true,cloudRelay:true}),200000);
 });

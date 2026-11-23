@@ -29,7 +29,7 @@ export function automaticConnections({ registry, mcpHost, env = process.env, now
   async function connectTools() {
     if (!mcpHost || !autoStart) return [];
     const lite = env.JACO_LITE === '1';
-    const rows = mcpHost.status().filter(s => s.agentAccess !== 'off' && (!lite || s.id === 'editor'));
+    const rows = mcpHost.status().filter(s => s.agentAccess !== 'off' && (!lite || ['editor','shell','browser'].includes(s.id)));
     const out = [], todo = [];
     for (const s of rows) {
       if (s.status === 'READY') { retry.delete(s.id); out.push({ id: s.id, state: 'CONNECTED', tools: s.tools.map(t => t.name) }); continue; }

@@ -11,7 +11,7 @@ agents/.agent-state/
 latest-checkpoint.json
 
 # Dependencies and build output
-node_modules/
+node_modules
 dist/
 .gradle/
 
@@ -53,3 +53,18 @@ ecosystem.config.cjs
 # Python bytecode is generated
 __pycache__/
 *.pyc
+
+# Aura-generated output (not source)
+/artifacts/
+/runtime/artifacts/
+
+# Chrome profile created by the local stack for browser attachment
+/Chrome-CDP/
+
+# Lock file for the VS Code extension is not used; the package is built with --no-dependencies
+extensions/jaco-vscode/package-lock.json
+
+# Pinned, generated CC0 Aura rig (prepare:aura-rig)
+/runtime/public/branding/aura-rig.glb
+/runtime/public/branding/aura-rig.glb.tmp-*
+/aura-rig-evidence/

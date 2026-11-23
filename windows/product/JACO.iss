@@ -46,13 +46,25 @@ Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubd
 Source: "{#SourcePath}Start-JACO.ps1"; DestDir: "{app}\windows\product"; Flags: ignoreversion
 Source: "{#SourcePath}JACO-launch.vbs"; DestDir: "{app}\windows\product"; Flags: ignoreversion
 Source: "{#SourcePath}version.json"; DestDir: "{app}\windows\product"; Flags: ignoreversion
+Source: "{#SourcePath}Stop-JACO-Guardian.ps1"; DestDir: "{app}\windows\product"; Flags: ignoreversion
+Source: "{#SourcePath}JACO-guardian-launch.vbs"; DestDir: "{app}\windows\product"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\JACO CODE"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\JACO.ico"; Comment: "Open JACO CODE and Aura"
 Name: "{autodesktop}\JACO CODE"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\JACO.ico"; Tasks: desktopicon
+; Run the existing guardian after sign-in without opening GUI or granting new permissions.
+Name: "{userstartup}\JACO Health Guardian"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-guardian-launch.vbs"""; WorkingDir: "{app}"; Tasks: guardianautostart
 
 [Tasks]
 Name: desktopicon; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
+Name: autostart; Description: "Start Aura automatically when I sign in (no browser window)"; GroupDescription: "Startup:"
+Name: guardianautostart; Description: "Resume JACO background missions on Windows sign-in"; GroupDescription: "Background operation:"; Flags: checkedonce
+
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "JACO CODE"; ValueData: """{sys}\wscript.exe"" ""{app}\windows\product\JACO-launch.vbs"" --background"; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
 Filename: "{sys}\wscript.exe"; Parameters: """{app}\windows\product\JACO-launch.vbs"""; Description: "Launch JACO CODE"; Flags: postinstall skipifsilent runasoriginaluser nowait
+
+[UninstallRun]
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\windows\product\Stop-JACO-Guardian.ps1"""; Flags: runhidden

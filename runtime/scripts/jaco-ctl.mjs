@@ -38,10 +38,12 @@ const isWin = process.platform === 'win32';
  * passes it as env to every spawned process, instead of requiring
  * a code change in every entry point.
  */
-function loadDotEnv(file = path.join(ROOT, '.env')) {
-  if (!fs.existsSync(file)) return {};
+function loadDotEnv(file = null) {
+  const candidates = file ? [file] : [path.join(ROOT, '.env'), path.resolve(ROOT, '..', '.env')];
+  const source = candidates.find(candidate => fs.existsSync(candidate));
+  if (!source) return {};
   const out = {};
-  for (const rawLine of fs.readFileSync(file, 'utf8').split('\n')) {
+  for (const rawLine of fs.readFileSync(source, 'utf8').split('\n')) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#')) continue;
     const eq = line.indexOf('=');

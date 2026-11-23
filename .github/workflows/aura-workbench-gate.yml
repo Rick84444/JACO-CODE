@@ -15,6 +15,9 @@ on:
       - 'runtime/server.ts'
       - 'runtime/src/App.tsx'
       - 'runtime/src/components/AuraChatPanel.tsx'
+      - 'runtime/src/components/InlineAuraApproval.tsx'
+      - 'runtime/src/lib/inlineApproval.mjs'
+      - 'tests/nova/inline-approval.test.mjs'
       - 'runtime/src/components/AuraCodeEditor.tsx'
       - 'runtime/src/components/AuraCommandPalette.tsx'
       - 'runtime/src/components/AuraRepositoryTree.tsx'
@@ -70,6 +73,7 @@ on:
       - 'runtime/src/server/connected/automaticConnections.mjs'
       - 'runtime/src/server/connected/providerRegistry.mjs'
       - 'runtime/src/server/mcp/stdioMcpHost.mjs'
+      - 'tests/nova/mcp-host.test.mjs'
       - 'agents/lib/skills.mjs'
       - 'runtime/gateway/src/jaco-client.mjs'
       - 'tests/nova/workspace-integrations.test.mjs'
@@ -86,6 +90,11 @@ on:
       - 'runtime/src/main.tsx'
       - 'runtime/public/remote.webmanifest'
       - 'tests/nova/aura-cloudflare-remote.test.mjs'
+      - 'tests/nova/ide-access.test.mjs'
+      - 'tests/nova/local-memory-activity.test.mjs'
+      - 'runtime/src/lib/auraLegacyStatePath.mjs'
+      - 'runtime/src/auraEngine.ts'
+      - 'runtime/src/server/connected/ideAccess.mjs'
       - 'runtime/src/components/NovaPlannerCard.tsx'
       - 'runtime/src/components/ProviderConnect.tsx'
       - 'runtime/src/cognitive-workspace.css'
@@ -123,6 +132,9 @@ on:
       - 'runtime/server.ts'
       - 'runtime/src/App.tsx'
       - 'runtime/src/components/AuraChatPanel.tsx'
+      - 'runtime/src/components/InlineAuraApproval.tsx'
+      - 'runtime/src/lib/inlineApproval.mjs'
+      - 'tests/nova/inline-approval.test.mjs'
       - 'runtime/src/components/AuraCodeEditor.tsx'
       - 'runtime/src/components/AuraCommandPalette.tsx'
       - 'runtime/src/components/AuraRepositoryTree.tsx'
@@ -178,6 +190,7 @@ on:
       - 'runtime/src/server/connected/automaticConnections.mjs'
       - 'runtime/src/server/connected/providerRegistry.mjs'
       - 'runtime/src/server/mcp/stdioMcpHost.mjs'
+      - 'tests/nova/mcp-host.test.mjs'
       - 'agents/lib/skills.mjs'
       - 'runtime/gateway/src/jaco-client.mjs'
       - 'tests/nova/workspace-integrations.test.mjs'
@@ -194,6 +207,11 @@ on:
       - 'runtime/src/main.tsx'
       - 'runtime/public/remote.webmanifest'
       - 'tests/nova/aura-cloudflare-remote.test.mjs'
+      - 'tests/nova/ide-access.test.mjs'
+      - 'tests/nova/local-memory-activity.test.mjs'
+      - 'runtime/src/lib/auraLegacyStatePath.mjs'
+      - 'runtime/src/auraEngine.ts'
+      - 'runtime/src/server/connected/ideAccess.mjs'
       - 'runtime/src/components/NovaPlannerCard.tsx'
       - 'runtime/src/components/ProviderConnect.tsx'
       - 'runtime/src/cognitive-workspace.css'
@@ -236,8 +254,12 @@ jobs:
         run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
       - name: Setup and npm distribution
         run: node --test tests/nova/setup.test.mjs tests/nova/package-content.test.mjs
+      - name: Inline chat approval contract
+        run: node --test tests/nova/inline-approval.test.mjs
+      - name: MCP lifecycle and quarantine regressions
+        run: node --test tests/nova/mcp-host.test.mjs
       - name: Workbench truth contract
-        run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs tests/nova/aura-single-agent-functions.test.mjs tests/nova/nova-activity-text.test.mjs tests/nova/aura-cloudflare-remote.test.mjs
+        run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs tests/nova/aura-single-agent-functions.test.mjs tests/nova/nova-activity-text.test.mjs tests/nova/aura-cloudflare-remote.test.mjs tests/nova/ide-access.test.mjs tests/nova/local-memory-activity.test.mjs
       - name: Aura control plane, browser WebSocket and false-READY regressions
         run: node --experimental-sqlite --test tests/nova/aura-cdp-truth.test.mjs tests/nova/aura-oversight.test.mjs tests/nova/cdp-mcp.test.mjs tests/nova/bridges.test.mjs tests/nova/aura-termux-service-health.test.mjs tests/nova/aura-agent-board.test.mjs
       - name: Full JACO GUI VS Code extension safety contract

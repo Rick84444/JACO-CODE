@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createGitRefChatGptTransport } from './chatgpt-git-ref.mjs';
 
 const ISSUE_MARKER='<!-- jaco-chatgpt-workplace-bridge:v1 -->';
 const IN_MARKER='<!-- jaco-chatgpt-workplace-in:v1 -->';
@@ -31,7 +33,7 @@ function agentCard(env){
       stable_id:'chatgpt-jaco-relay',
       requested_name:'ChatGPT',
       provider:'openai',
-      model:env.JACO_CHATGPT_MODEL||'gpt-5.6-sol',
+      model:env.JACO_CHATGPT_MODEL||'unknown',
       agent_type:'chat',
     },
     session:{environment:'chatgpt-github-relay',persistent:false,sandboxed:true},
@@ -103,6 +105,7 @@ export function createChatGptGithubRelay({
   root=process.cwd(),
   env=process.env,
   fetchImpl=globalThis.fetch,
+  gitExecImpl=undefined,
   log=(level,message)=>console.log(`[JACO Workplace] [chatgpt-relay] ${level.toUpperCase()} ${message}`),
 }={}){
   if(!store)throw new Error('CHATGPT_RELAY_STORE_REQUIRED');
@@ -110,7 +113,9 @@ export function createChatGptGithubRelay({
   const token=env.JACO_CHATGPT_WORKPLACE_TOKEN||env.JACO_GITHUB_CONTROL_TOKEN||env.GH_TOKEN||env.GITHUB_TOKEN||'';
   const actor=env.JACO_CHATGPT_WORKPLACE_ACTOR||String(repo).split('/')[0];
   const [owner,name]=String(repo).split('/');
-  const pollMs=Math.max(5000,Number(env.JACO_CHATGPT_WORKPLACE_POLL_MS||10000));
+  // A tokenless fetch should not hammer the Git remote or block normal missions.
+  const pollMs=Math.max((env.JACO_CHATGPT_WORKPLACE_TRANSPORT==='git-ref'||(!token&&env.JACO_CHATGPT_WORKPLACE_TRANSPORT!=='github-issue'))?30000:5000,
+    Number(env.JACO_CHATGPT_WORKPLACE_POLL_MS||30000));
   const stateFile=path.join(root,'.jaco','workplace','chatgpt-github-relay.json');
   const persisted=readState(stateFile);
   let registration=null;
@@ -119,7 +124,15 @@ export function createChatGptGithubRelay({
   let polling=false;
   let lastError=null;
   let started=false;
-  const enabled=Boolean(owner&&name&&token&&actor);
+  // ChatGPT Workplace relay is opt-in. A public GitHub repository must never
+  // implicitly create a background fetch/publish loop on the operator host.
+  const selectedTransport=env.JACO_CHATGPT_WORKPLACE_TRANSPORT||'off';
+  const transport=['git-ref','github-issue'].includes(selectedTransport)?selectedTransport:'off';
+  const enabled=Boolean(owner&&name&&actor&&['github-issue','git-ref'].includes(transport)&&(transport==='git-ref'||token));
+  const gitRef=transport==='git-ref'&&enabled?createGitRefChatGptTransport({
+    repo, repoRoot:env.JACO_CHATGPT_GIT_REPO_ROOT||env.JACO_REPO_ROOT||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..'),
+    ...(gitExecImpl?{gitExecImpl}:{}),
+  }):null;
   let relayState=enabled?'REGISTERING':'DISABLED';
 
   async function api(apiPath,{method='GET',body=null}={}){
@@ -221,14 +234,37 @@ export function createChatGptGithubRelay({
     if(!enabled||!registration||polling)return;
     polling=true;
     try{
-      const issueNumber=await findIssue();
-      await ingestGithub(issueNumber);
-      await mirrorWorkplace(issueNumber);
+      if(transport==='git-ref'){
+        const inbound=await gitRef.read();
+        const msg=parseInbound({user:{login:actor},body:jsonBlock(IN_MARKER,inbound)},actor);
+        if(!msg)throw new Error('CHATGPT_GIT_MESSAGE_REQUIRED');
+        store.postEvent({
+          sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',
+          thread:msg.thread,kind:msg.kind,targets:msg.targets,body:msg.body,
+          payload:{transport:'git-ref',messageId:msg.messageId},
+          references:msg.references,eventId:'chatgpt-git:'+msg.messageId,
+        });
+        const page=store.sync({
+          sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',
+          after:Number(persisted.lastMirroredSeq||0),limit:500,
+        });
+        await gitRef.publish({agentId:registration.agentId,receivedId:msg.messageId,
+          scannedCursor:page.scannedCursor,events:(page.events||[]).filter(isForRelay)});
+        persisted.lastMirroredSeq=Number(page.scannedCursor||persisted.lastMirroredSeq||0);
+        store.ack({sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',cursor:persisted.lastMirroredSeq});
+        writeState(stateFile,persisted);
+      }else{
+        const issueNumber=await findIssue();
+        await ingestGithub(issueNumber);
+        await mirrorWorkplace(issueNumber);
+      }
       lastError=null;
       relayState='READY';
+      store.heartbeat({sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',status:'READY'});
     }catch(error){
       lastError=clip(error?.message||error,500);
       relayState='DEGRADED_UNSYNCED';
+      try{store.heartbeat({sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',status:'DEGRADED_UNSYNCED'});}catch{}
       log('warn',lastError);
     }finally{polling=false;}
   }
@@ -237,22 +273,32 @@ export function createChatGptGithubRelay({
     get enabled(){return enabled;},
     status(){
       return {
-        enabled,started,state:relayState,
+        enabled,started,state:relayState,transport,
         agentId:registration?.agentId||null,
         sessionId:registration?.sessionId||null,
-        issueNumber:persisted.issueNumber||null,
+        issueNumber:transport==='github-issue'?persisted.issueNumber||null:null,
+        ...(transport==='git-ref'?{inboundRef:'jaco-chatgpt-in',outboundRef:'jaco-chatgpt-out'}:{}),
         lastMirroredSeq:Number(persisted.lastMirroredSeq||0),
-        lastGithubAt:persisted.lastGithubAt||null,
+        lastGithubAt:transport==='github-issue'?persisted.lastGithubAt||null:null,
         lastError,
       };
     },
     async start(){
       if(started)return this.status();
       started=true;
-      if(!enabled){relayState='DISABLED';log('info','disabled: no GitHub token configured');return this.status();}
+      if(!enabled){relayState='DISABLED';log('info','disabled: relay transport not configured');return this.status();}
       try{
         relayState='REGISTERING';
+        // Prove the Git origin and inbound ref exist before creating a Workplace session.
+        if(transport==='git-ref')await gitRef.read();
         registration=store.registerAgent(agentCard(env),{workspace:'JACO'});
+        // Agent Card capability claims never grant authority. Restrict this
+        // transport identity to communications, not missions or approvals.
+        store.setPermissions(registration.agentId,{
+          'workplace.read':true,'workplace.post':true,
+          'workplace.claim':false,'decision.publish':false,
+          'mission.create':false,'deployment.execute':false,
+        });
         const initialSeq=Number(registration.latestSeq||0);
         // A new relay session starts at the current Workplace head; historical
         // conversation remains in Workplace but is not bulk-exported to GitHub.
@@ -260,7 +306,7 @@ export function createChatGptGithubRelay({
         store.postEvent({
           sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',
           kind:'STATUS',thread:'agent-status',body:'ChatGPT GitHub relay READY',
-          payload:{status:'READY',transport:'github',issueNumber:persisted.issueNumber||null},
+          payload:{status:'READY',transport,issueNumber:transport==='github-issue'?persisted.issueNumber||null:null},
         });
         if(!persisted.lastMirroredSeq || Number(persisted.lastMirroredSeq)>initialSeq) persisted.lastMirroredSeq=initialSeq;
         writeState(stateFile,persisted);
@@ -268,14 +314,23 @@ export function createChatGptGithubRelay({
         await poll();
         timer=setInterval(()=>{void poll();},pollMs);timer.unref?.();
         heartbeatTimer=setInterval(()=>{
-          try{store.heartbeat({sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',status:'READY'});}
+          try{store.heartbeat({sessionId:registration.sessionId,sessionToken:registration.sessionToken,workspace:'JACO',status:relayState==='READY'?'READY':'DEGRADED_UNSYNCED'});}
           catch(error){lastError=clip(error?.message||error,500);}
         },60000);heartbeatTimer.unref?.();
-        log('info',`READY as ${registration.agentId}`);
+        log(relayState==='READY'?'info':'warn',`${relayState} as ${registration.agentId} (${transport})`);
       }catch(error){
         lastError=clip(error?.message||error,500);
         relayState='DEGRADED_UNSYNCED';
         log('warn',lastError);
+        // On a missing Git ref/network outage, retry onboarding without asking
+        // the operator to restart Windows or manually recreate the session.
+        if(transport==='git-ref'&&!registration&&!timer){
+          timer=setInterval(()=>{
+            clearInterval(timer);timer=null;started=false;
+            void this.start();
+          },pollMs);
+          timer.unref?.();
+        }
       }
       return this.status();
     },

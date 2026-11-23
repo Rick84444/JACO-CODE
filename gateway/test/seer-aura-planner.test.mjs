@@ -68,7 +68,10 @@ test('JACO_ALLOW_PAID_MODELS=0 or a missing key stops a paid choice before any r
   const local = await invokeAuraPlanner({ name: 'ollama', url: 'http://127.0.0.1:11434/v1/chat/completions', model: 'gemma3:4b', local: true, envKey: null },
     { system: 's', user: 'u', max_tokens: 100 }, { env: {}, fetchFn, runtimeUrl: RUNTIME });
   assert.equal(local.ok, true);
-  assert.deepEqual(calls.map(c => new URL(c.url).pathname), ['/v1/chat/completions']);
+  // Provider-neutral: the call reaches the provider's own endpoint and the reply is mapped back. The wire
+  // format (OpenAI-compatible or a provider's native route) is an adapter detail, not part of this contract.
+  assert.equal(calls.length, 1);
+  assert.equal(new URL(calls[0].url).host, '127.0.0.1:11434');
 });
 
 test('SEER fails closed on missing paid opt-in, even if Aura has saved Gemini', async () => {
@@ -186,4 +189,57 @@ test('Aura immediately refreshes the provider registry on a new selected model',
   });
   assert.equal(b?.name,'fixture-b');
   assert.equal(count,2,'saved operator choice must invalidate previous provider cache');
+});
+
+test('unified Aura delegates admission to Core despite absent or stale worker paid flag', async () => {
+  for (const staleFlag of [undefined, '0']) {
+    const {calls,fetchFn}=network({answer:'AURA_ROUTE_OK'});
+    const result=await invokeAuraPlanner(GEMINI,{system:'s',user:'u',max_tokens:32},{
+      env:{JACO_AURA_UNIFIED_RUNTIME:'1',...(staleFlag===undefined?{}:{JACO_ALLOW_PAID_MODELS:staleFlag})},
+      runtimeUrl:RUNTIME,fetchFn,credentialFn:()=> 'fixture-key'
+    });
+    assert.equal(result?.ok,true);
+    assert.equal(result.text,'AURA_ROUTE_OK');
+    assert.deepEqual(calls.map(c=>new URL(c.url).pathname),[
+      '/api/nova/ollama-cost/reserve','/v1beta/openai/chat/completions','/api/nova/ollama-cost/settle'
+    ]);
+  }
+});
+
+test('unified Aura cannot override Core denial or send without a credential', async () => {
+  for (const code of ['CLOUD_DISABLED_BY_POLICY','DAILY_BUDGET_LIMIT','MODEL_PRICING_REQUIRED']) {
+    const {calls,fetchFn}=network({reserve:{success:false,error:code}}), failures=[];
+    const result=await invokeAuraPlanner(GEMINI,{system:'s',user:'u',max_tokens:32},{
+      env:{JACO_AURA_UNIFIED_RUNTIME:'1'},runtimeUrl:RUNTIME,fetchFn,credentialFn:()=> 'fixture-key',
+      onFailure:f=>failures.push(f.code)
+    });
+    assert.equal(result,null);
+    assert.deepEqual(calls.map(c=>new URL(c.url).pathname),['/api/nova/ollama-cost/reserve']);
+    assert.ok(failures.includes(code));
+  }
+  const {calls,fetchFn}=network(), failures=[];
+  assert.equal(await invokeAuraPlanner(GEMINI,{system:'s',user:'u',max_tokens:32},{
+    env:{JACO_AURA_UNIFIED_RUNTIME:'1'},runtimeUrl:RUNTIME,fetchFn,credentialFn:()=>'',onFailure:f=>failures.push(f.code)
+  }),null);
+  assert.deepEqual(failures,['PROVIDER_KEY_MISSING']);
+  assert.equal(calls.length,0);
+});
+
+test('unified Aura transport failure remains unknown and never falls back to another model', async () => {
+  const calls=[],failures=[];
+  const fetchFn=async(url,init={})=>{
+    calls.push(String(url));
+    if(String(url).endsWith('/reserve'))return json({success:true,reservationId:'transport-1'});
+    if(String(url).endsWith('/unknown'))return json({success:true});
+    throw new Error('fixture transport loss');
+  };
+  const result=await invokeAuraPlanner(GEMINI,{system:'s',user:'u',max_tokens:32},{
+    env:{JACO_AURA_UNIFIED_RUNTIME:'1',JACO_ALLOW_PAID_MODELS:'0'},runtimeUrl:RUNTIME,fetchFn,
+    credentialFn:()=> 'fixture-key',onFailure:f=>failures.push(f.code)
+  });
+  assert.equal(result,null);
+  assert.deepEqual(calls.map(c=>new URL(c).pathname),[
+    '/api/nova/ollama-cost/reserve','/v1beta/openai/chat/completions','/api/nova/ollama-cost/unknown'
+  ]);
+  assert.ok(failures.includes('PROVIDER_REQUEST_FAILED'));
 });

@@ -48,6 +48,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Continuum regression suite
         run: npm run test:continuum-runtime
+      - name: Operator authority and commercial archive recovery
+        run: node --test ../tests/nova/autonomy-clock.test.mjs ../tests/nova/commercial-clock.test.mjs
       - name: Local-first inference and no-cloud fallback contracts
         run: node --test scripts/continuum/local-inference-hardening.test.mjs
       - name: Core lifecycle and single-writer contract

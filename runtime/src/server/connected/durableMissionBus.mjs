@@ -274,6 +274,10 @@ export class DurableMissionBus {
   getTicket(ticketId) { const r = this.db.prepare('SELECT * FROM tickets WHERE id=?').get(String(ticketId)); return r ? this.hydrateTicket(r) : null; }
   getWorker(workerId) { const r = this.db.prepare('SELECT * FROM workers WHERE id=?').get(String(workerId)); return r ? this.hydrateWorker(r) : null; }
   missionStatusCounts() { return Object.fromEntries(this.db.prepare('SELECT status, COUNT(*) AS count FROM missions GROUP BY status').all().map(r => [r.status, Number(r.count)])); }
+  listTerminalMissionsBySource(source, after = '', limit = 50) {
+    return this.db.prepare("SELECT * FROM missions WHERE source=? AND status IN ('DONE','CANCELLED') AND id>? ORDER BY id ASC LIMIT ?")
+      .all(String(source),String(after||''),Math.max(1,Math.min(100,Number(limit)||50))).map(row=>this.hydrateMission(row));
+  }
   listMissions(limit = 100) { return this.db.prepare('SELECT * FROM missions ORDER BY created_at DESC LIMIT ?').all(Math.max(1, Math.min(500, Number(limit) || 100))).map(r => this.hydrateMission(r)); }
   missionsAwaitingResolution() { return this.db.prepare("SELECT * FROM missions WHERE status IN ('BLOCKED','AWAITING_VERIFICATION') ORDER BY created_at DESC").all().map(r => this.hydrateMission(r)); }
   listTickets({ status = null, missionId = null, limit = 200 } = {}) {

@@ -1,0 +1,5 @@
+- [x] Trace duplicate-action handling and canonical release behavior.
+- [x] Replace premature completion with bounded planning feedback.
+- [x] Reject browser clicks without an observable postcondition before dispatch.
+- [x] Run mission regression tests and syntax checks.
+- [ ] Verify live provider and runtime behavior.

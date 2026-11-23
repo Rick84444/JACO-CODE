@@ -136,6 +136,20 @@ export interface BrowserBridge {
   close?(): Promise<void>;
 }
 
+// Chrome's discovery endpoint is local, but the WebSocket URL is returned by
+// that endpoint and must not redirect the agent to an unrelated host.
+export function localCdpSocketUrl(raw: string, expectedPort: number): string {
+  let target: URL;
+  try { target = new URL(raw); } catch { throw new Error('CDP_SOCKET_INVALID'); }
+  const host = target.hostname.toLowerCase();
+  if (target.protocol !== 'ws:' || !['127.0.0.1','localhost','[::1]','::1'].includes(host)
+      || Number(target.port) !== expectedPort || target.username || target.password
+      || target.search || target.hash || !target.pathname.startsWith('/devtools/page/')) {
+    throw new Error('CDP_SOCKET_NOT_LOCAL_TARGET');
+  }
+  return target.toString();
+}
+
 /** Chrome DevTools Protocol transport over the browser's own debugging socket. */
 export class CdpBridge implements BrowserBridge {
   private socket: WebSocket | null = null;
@@ -157,14 +171,14 @@ export class CdpBridge implements BrowserBridge {
   }
 
   public static async attach(port: number, urlIncludes: string, targetId?: string): Promise<CdpBridge> {
-    const response = await fetch(`http://127.0.0.1:${port}/json/list`);
+    const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(3000) });
     if (!response.ok) throw new Error(`no CDP endpoint on port ${port} — start Chrome with --remote-debugging-port=${port}`);
     const targets = (await response.json()) as Array<{ id?: string; type: string; url: string; webSocketDebuggerUrl?: string }>;
     const matches = targets.filter(t => t.type === 'page' && t.url.includes(urlIncludes) && t.webSocketDebuggerUrl && (!targetId || t.id === targetId));
     if(matches.length>1)throw new Error('CDP_TARGET_AMBIGUOUS: specify targetId for the selected tab');
     const target = matches[0];
     if (!target?.webSocketDebuggerUrl) throw new Error(`no open tab matching '${urlIncludes}'`);
-    const bridge = new CdpBridge(target.webSocketDebuggerUrl, target.id);
+    const bridge = new CdpBridge(localCdpSocketUrl(target.webSocketDebuggerUrl, port), target.id);
     await bridge.connect();
     return bridge;
   }

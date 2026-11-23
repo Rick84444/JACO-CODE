@@ -13,8 +13,16 @@ export function MissionReview({missions,preferredMissionId,onDecisions}:{mission
   const [id,setId]=useState(()=>{try{return preferredMissionId||localStorage.getItem('jaco:aura:review-mission:v1')||missions[0]?.id||'';}catch{return preferredMissionId||missions[0]?.id||'';}});
   const [file,setFile]=useState(''),[review,setReview]=useState<Review|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false),[wrap,setWrap]=useState(true),[revision,setRevision]=useState(0);
   useEffect(()=>{if(preferredMissionId){setId(preferredMissionId);setFile('');}},[preferredMissionId]);
+  // A remembered mission ID can belong to a deleted or previous workspace.
+  // Do not indefinitely request NOVA_MISSION_NOT_FOUND for a stale selection.
+  // Explicit Gameboard navigation remains authoritative even if the list is paginated.
+  useEffect(()=>{
+    if (preferredMissionId || (id && missions.some(m=>m.id===id))) return;
+    const fallback=missions[0]?.id||'';
+    if (fallback!==id) {setId(fallback);setFile('');setReview(null);setError('');}
+  },[id,missions,preferredMissionId]);
   useEffect(()=>{if(!id&&missions[0])setId(missions[0].id);},[id,missions]);
-  useEffect(()=>{try{if(id)localStorage.setItem('jaco:aura:review-mission:v1',id);}catch{}},[id]);
+  useEffect(()=>{try{if(id)localStorage.setItem('jaco:aura:review-mission:v1',id);else localStorage.removeItem('jaco:aura:review-mission:v1');}catch{}},[id]);
   useEffect(()=>{const timer=setInterval(()=>{if(!document.hidden)setRevision(value=>value+1);},15000);return()=>clearInterval(timer);},[]);
   useEffect(()=>{
     if(!id)return;

@@ -132,7 +132,7 @@ async function gitAction({ project, verb, runner = execFile, confirm, write }) {
 export async function terminalGitCommand(options) { return gitAction(options); }
 
 function launchDetached(cmd, args, options = {}) {
-  const child = spawn(cmd, args, { stdio: 'ignore', detached: true, windowsHide: false, shell: false, ...options });
+  const child = spawn(cmd, args, { stdio: 'ignore', detached: true, windowsHide: true, shell: false, ...options });
   child.on('error', err => { process.stderr.write('Launch failed: ' + short(err) + '\n'); });
   child.unref();
 }

@@ -5,7 +5,7 @@ import {
 } from '../aura/costEngine.mjs';
 export {
   auraProviderPrices, ollamaCloudPrices, ollamaCloudCostUsd, modelPrice, novaProviderCostUsd,
-  auraCostQuote, auraCostSettlement, NOT_BILLED_FAILURE, REFERENCE_PRICE,
+  auraCostQuote, auraCostSettlement, NOT_BILLED_FAILURE,
 } from '../aura/costEngine.mjs';
 
 // Gemini 2.5 and other thinking models spend hidden reasoning tokens from the same output budget. At 700
@@ -14,7 +14,7 @@ export {
 const MAX_OUTPUT_TOKENS = Math.max(256, Math.min(8192, Number(process.env.JACO_AURA_CHAT_MAX_TOKENS) || 2048));
 const THINKS_BY_DEFAULT = new RegExp('(^|[/])gemini-(2[.]5|3)', 'i');
 const LOCAL_PROMPT_BYTES = 12000;
-const REMOTE_PROMPT_BYTES = 48000;
+const REMOTE_PROMPT_BYTES = 200000;
 
 export function auraPromptByteLimit({ local, cloudRelay = false } = {}) {
   // Do not increase local context speculatively. Remote providers may accept more

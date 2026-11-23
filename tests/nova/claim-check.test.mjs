@@ -130,3 +130,82 @@ test('duplicate independent-model verdict IDs are not counted as two independent
   ]}),[0,1]);
   assert.equal(contradictory[0].verdict,'contradicted','a repeated contradiction must not be downgraded');
 });
+
+test('the local judge URL is built once whether or not OLLAMA_BASE_URL already ends in /v1', async () => {
+  const { judgeCandidates } = await import('../../agents/lib/claim-check.mjs');
+  const local = env => judgeCandidates(env).find(j => j.name === 'ollama').url;
+  // The local stack exports the /v1 root; that used to become /v1/v1/chat/completions (HTTP 404).
+  assert.equal(local({ OLLAMA_BASE_URL: 'http://127.0.0.1:11434/v1' }), 'http://127.0.0.1:11434/v1/chat/completions');
+  assert.equal(local({ OLLAMA_BASE_URL: 'http://127.0.0.1:11434' }), 'http://127.0.0.1:11434/v1/chat/completions');
+  assert.equal(local({}), 'http://127.0.0.1:11434/v1/chat/completions');
+});
+
+test('optional judge deadline keeps rule evidence without any extra inference call', async () => {
+  let calls=0;
+  const verified = await checkClaims('Read-only result from the inspected receipt [#1].', [], {
+    maxJudgeMs:0, fetchImpl:async()=>{calls++;throw Error('unexpected');}
+  });
+  assert.equal(calls,0);
+  assert.equal(verified.judged,0);
+  assert.equal(verified.judgeError,'JUDGE_DEADLINE_EXCEEDED');
+  const unsupported = await checkClaims('Commit `abcdef1234567` was created [#1].', [], {
+    maxJudgeMs:0, fetchImpl:async()=>{calls++;throw Error('unexpected');}
+  });
+  assert.equal(unsupported.ok,false);
+  assert.equal(calls,0);
+});
+
+// Observed 2026-11-19: every claim check that day came back with judged:0, judge:null and
+// judgeError "The operation was aborted due to timeout". With no supported and no contradicted claim,
+// automatic resolution could neither confirm the answer nor send it back, so each mission stayed in
+// AWAITING_VERIFICATION for good. server.ts retries an unjudged check up to CLAIM_JUDGE_ATTEMPTS times
+// and only then hands the last attempt to the operator.
+test('server.ts retries a claim check whose judge never answered, a bounded number of times', () => {
+  const server = fs.readFileSync(new URL('../../runtime/server.ts', import.meta.url), 'utf8');
+  const attempts = /const CLAIM_JUDGE_ATTEMPTS = (\d+)/.exec(server);
+  assert.ok(attempts, 'the retry bound is named in server.ts');
+  assert.ok(Number(attempts[1]) >= 2 && Number(attempts[1]) <= 5, `bounded retries, got ${attempts[1]}`);
+  const picker = /const judged = checks\.find\([^;]+\) \|\| null;/.exec(server);
+  assert.ok(picker, 'an unjudged check is told apart from a judged one');
+  assert.match(picker[0], /judgeError/);
+  assert.match(server, /checks\.length >= CLAIM_JUDGE_ATTEMPTS \? checks\[checks\.length - 1\] : null/);
+  // A judged check still counts on the first attempt: a real verdict is never re-judged.
+  assert.match(picker[0], /c\?\.judge \|\| Number\(c\?\.judged\) > 0/);
+});
+
+// Measured 2026-11-21 on the operator's host: the only cloud judges were Groq and Ollama Cloud, neither
+// configured, so every check fell through to the small local model. Asked to grade "I deployed the site to
+// production" against a README read and a health check, qwen2.5:1.5b answered "supported" — it graded a
+// fabricated deployment as verified. A judge that rubber-stamps is worse than no judge, so any
+// OpenAI-compatible endpoint the operator already has can now take the job.
+test('an operator-configured OpenAI-compatible endpoint can be the judge', async () => {
+  const { judgeCandidates } = await import('../../agents/lib/claim-check.mjs');
+  const base = { JACO_CLAIM_JUDGE_URL: 'https://openrouter.ai/api/v1/chat/completions', JACO_CLAIM_JUDGE_MODEL: 'some/capable-model' };
+
+  const [first] = judgeCandidates({ ...base, JACO_CLAIM_JUDGE_KEY: 'k' });
+  assert.equal(first.url, base.JACO_CLAIM_JUDGE_URL);
+  assert.equal(first.model, 'some/capable-model');
+  assert.equal(first.key, 'k');
+  assert.equal(first.name, 'configured', 'and it is preferred over the small local fallback');
+
+  // The key may be named rather than inlined, so it is not duplicated in the environment.
+  assert.equal(judgeCandidates({ ...base, JACO_CLAIM_JUDGE_KEY_ENV: 'OPENROUTER_API_KEY', OPENROUTER_API_KEY: 'from-env' })[0].key, 'from-env');
+  assert.equal(judgeCandidates({ ...base, JACO_CLAIM_JUDGE_NAME: 'openrouter', JACO_CLAIM_JUDGE_KEY: 'k' })[0].name, 'openrouter');
+
+  // Incomplete configuration is ignored rather than half-applied; the local judge still exists as a last resort.
+  for (const partial of [{ JACO_CLAIM_JUDGE_URL: base.JACO_CLAIM_JUDGE_URL }, { JACO_CLAIM_JUDGE_MODEL: 'm' }, {}]) {
+    assert.equal(judgeCandidates(partial).some(j => j.name === 'configured'), false, JSON.stringify(partial));
+    assert.ok(judgeCandidates(partial).some(j => j.name === 'ollama'));
+  }
+
+  // A judge never grades its own answer, however it was configured.
+  assert.equal(judgeCandidates({ ...base, JACO_CLAIM_JUDGE_KEY: 'k' }, { exclude: ['configured/some/capable-model'] }).some(j => j.name === 'configured'), false);
+});
+
+test('the judge deadline is long enough for a real round trip', () => {
+  const server = fs.readFileSync(new URL('../../runtime/server.ts', import.meta.url), 'utf8');
+  const found = /maxJudgeMs: Number\(process\.env\.JACO_CLAIM_JUDGE_TIMEOUT_MS\) \|\| (\d+)_000/.exec(server);
+  assert.ok(found, 'the deadline is configurable');
+  // A local judge measured 15.4 s on this host, so 15 s could never succeed.
+  assert.ok(Number(found[1]) >= 30, `deadline ${found[1]}s must exceed a measured 15.4s local judge`);
+});

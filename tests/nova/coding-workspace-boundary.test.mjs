@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {createCodingWorkspace} from '../../agents/lib/coding-workspace.mjs';
+import {createCodingWorkspace, codingWorkspaceExecutionEnv} from '../../agents/lib/coding-workspace.mjs';
+import {execSync} from 'node:child_process';
 import {normalizeCodingContract} from '../../agents/lib/coding-contract.mjs';
 
 function fixture(t) {
@@ -23,6 +24,25 @@ test('canonical workspace writes and reads allowed source with matching evidence
   assert.equal(read.content,'verified'); assert.equal(write.afterSha256,read.sha256);
   assert.deepEqual(fs.readdirSync(path.join(root,'src/new')),['file.txt']);
   await assert.rejects(workspace.execute({type:'repo-write',data:{path:'outside.txt',content:'no'}},contract),/SCOPE_DENIED/);
+});
+
+test('packaged Node directory is visible to contracted npm tests without forwarding secrets', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-npm-bin-'));
+  t.after(() => fs.rmSync(dir, { recursive:true, force:true }));
+  const nodePath = path.join(dir, process.platform === 'win32' ? 'node.exe' : 'node');
+  const env = codingWorkspaceExecutionEnv({
+    env:{ PATH:'/usr/bin', GEMINI_API_KEY:'private-test-value', NODE_TEST_CONTEXT:'child' },
+    execPath:nodePath, platform:'linux',
+  });
+  assert.equal(env.PATH, dir + ':/usr/bin');
+  assert.equal('GEMINI_API_KEY' in env, false);
+  assert.equal('NODE_TEST_CONTEXT' in env, false);
+  assert.equal(codingWorkspaceExecutionEnv({env,execPath:nodePath,platform:'linux'}).PATH,env.PATH);
+  if (process.platform !== 'win32') {
+    const npm = path.join(dir, 'npm');
+    fs.writeFileSync(npm, ['#!/bin/sh', 'echo verified-npm-sibling', ''].join(String.fromCharCode(10)), { mode: 0o755 });
+    assert.equal(execSync('npm --version', { env, encoding:'utf8' }).trim(), 'verified-npm-sibling');
+  }
 });
 
 test('directory junction cannot redirect read or write outside the workspace',async t=>{

@@ -8,14 +8,16 @@
 //   node tools/jaco-connect-mcp.mjs --http [port]   its own endpoint, POST /mcp on 127.0.0.1 (default
 //                                                    2993), Bearer JACO_GATEWAY_TOKEN; put a tunnel in
 //                                                    front of it to reach it from outside
+import { localServiceUrl } from '../../agents/lib/resolved-endpoints.mjs';
 import http from 'node:http';
+import { discoverPublicApi } from './jaco-public-api-discovery.mjs';
 import readline from 'node:readline';
 import { timingSafeEqual } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { SecretStore, generateSecretValue, validateSecretName } from '../../agents/lib/secret-store.mjs';
 import { listVoices, pickAuraVoice, saveAuraVoice, readAuraVoice, blandConfigured } from '../../agents/lib/bland.mjs';
 
-const RUNTIME = String(process.env.JACO_RUNTIME_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
+const RUNTIME = localServiceUrl('runtime', process.env);
 const store = new SecretStore();
 
 async function runtime(method, route, body) {
@@ -32,6 +34,7 @@ const text = value => (typeof value === 'string' ? value : JSON.stringify(value,
 const SERVICE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,60}$/;
 
 const TOOLS = [
+  { name: 'discover_public_api', description: 'Discover public OpenAPI metadata via bounded guarded HTTPS probes. No credentials are acquired or sent. Falls back to scoped CDP documentation survey if no usable spec is observed.', readOnly: true, inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'], additionalProperties: false }, run: async ({url}) => discoverPublicApi(url) },
   {
     name: 'connect_provider',
     description: 'Connect a model provider from a URL alone (e.g. "deepseek.com", "openrouter.ai", "http://10.0.0.5:8080"). JACO recognises or probes the service, lists its models, picks a default and registers it. Returns state READY, NEEDS_KEY (store the key with store_secret under apiKeyEnv, or ask for an account with request_account), KEY_REJECTED or UNREACHABLE, plus every request tried.',

@@ -1,14 +1,16 @@
+import { terminalText } from '../lib/terminalText.mjs';
+import { ReceiptTerminal } from './ReceiptTerminal';
 import { MissionReview } from './MissionReview';
 import { ConnectionsWorkspace } from './ConnectionsWorkspace';
 import { readAuraResponse as json, acknowledgeSavedDraft } from '../lib/auraApi.mjs';
 import { buildOperatorConfirmation, requiresOperatorConfirmation } from '../lib/operatorApproval.mjs';
+import { InlineAuraApproval } from './InlineAuraApproval';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Bot,
   BookOpen,
   Braces,
-  CircleDollarSign,
   MonitorSmartphone,
   Database,
   FileCode2,
@@ -61,11 +63,10 @@ import { NovaPlannerCard } from './NovaPlannerCard';
 import { ActivationCard, useActivationReport } from './ActivationCard';
 import { FirstRunGuide } from './FirstRunGuide';
 // Loaded only when the operator opens this workspace; idle Aura stays small.
-const RevenueView = React.lazy(() => import('./RevenueView').then(module => ({ default: module.RevenueView })));
+const EconomyView = React.lazy(() => import('./EconomyView').then(module => ({ default: module.EconomyView })));
 // Loaded only when the operator opens this workspace; idle Aura stays small.
 const SkillsView = React.lazy(() => import('./SkillsView').then(module => ({ default: module.SkillsView })));
 import { ProviderConnect } from './ProviderConnect';
-import { EconomicBudgetPanel } from './EconomicBudgetPanel';
 // Loaded only when the operator opens this workspace; idle Aura stays small.
 const DevicesView = React.lazy(() => import('./DevicesView').then(module => ({ default: module.DevicesView })));
 import { McpServersPanel, type McpCallRecord } from './McpServersPanel';
@@ -270,8 +271,8 @@ interface FileResponse extends AuraEditorFile {
   success: boolean;
 }
 
-type SidebarView = 'explorer' | 'source-control' | 'tools' | 'skills' | 'devices' | 'providers' | 'revenue';
-type TerminalMode = 'human' | 'raw';
+type SidebarView = 'explorer' | 'source-control' | 'tools' | 'skills' | 'devices' | 'providers';
+type TerminalMode = 'human' | 'raw' | 'xterm';
 type BottomPanel = 'missions' | 'terminal' | 'problems' | 'output' | 'evidence';
 
 
@@ -324,9 +325,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [guideClosed, setGuideClosed] = useState(false);
   // The chat and a shared link (?plan=<id>) open the blueprint of a plan directly.
   const [focusPlanId, setFocusPlanId] = useState<string | null>(() => { try { return new URLSearchParams(window.location.search).get('plan'); } catch { return null; } });
+  const [focusNodeKey, setFocusNodeKey] = useState<string | null>(null);
   useEffect(() => {
     if (focusPlanId) setWorkspaceView('gameboard');
-    const open = (e: Event) => { const id = (e as CustomEvent).detail; if (typeof id === 'string') { if (id) setFocusPlanId(id); setWorkspaceView(view => view === 'gameboard' && !id ? 'conversation' : 'gameboard'); } };
+    const open = (e: Event) => { const id = (e as CustomEvent).detail; if (typeof id === 'string') { if (id) setFocusPlanId(id); setFocusNodeKey(null); setWorkspaceView(view => view === 'gameboard' && !id ? 'conversation' : 'gameboard'); } };
     window.addEventListener('jaco:open-plan', open);
     return () => window.removeEventListener('jaco:open-plan', open);
   }, []);
@@ -339,6 +341,11 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [fileReadRevision,setFileReadRevision]=useState(0);
   const [stageSaveBusy, setStageSaveBusy] = useState(false);
   const [stageSaveNotice, setStageSaveNotice] = useState<string|null>(null);
+  const openPlanStep = (graphId: string, nodeKey: string | null) => {
+    setFocusPlanId(graphId);
+    setFocusNodeKey(nodeKey);
+    setWorkspaceView('gameboard');
+  };
   const chooseWorkspace = (view:CognitiveCanvas) => {
     if(view !== 'stage' && view !== 'conversation') setWorkspacePinned(true);
     setWorkspaceView(view);
@@ -440,6 +447,19 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const [terminalCommand, setTerminalCommand] = useState('');
   const [terminalNotice, setTerminalNotice] = useState<string | null>(null);
   const [reviewMissionId,setReviewMissionId] = useState<string|null>(null);
+  // The Gameboard navigates to the existing mission review; it never creates
+  // another executor, approval path or a separate set of receipts.
+  useEffect(() => {
+    const showMissionEvidence = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail;
+      if (typeof id !== 'string' || !/^mission-[a-zA-Z0-9-]+$/.test(id)) return;
+      setReviewMissionId(id);
+      setWorkspaceView('evidence');
+      setSidePanelOpen(false);
+    };
+    window.addEventListener('jaco:open-mission-evidence', showMissionEvidence);
+    return () => window.removeEventListener('jaco:open-mission-evidence', showMissionEvidence);
+  }, []);
   const [gitDiff, setGitDiff] = useState<{ path: string; worktree: string; staged: string } | null>(null);
   const [gitActionNotice, setGitActionNotice] = useState<string | null>(null);
   const [gitCommitMessage, setGitCommitMessage] = useState('');
@@ -585,6 +605,20 @@ export const JacoAuraComputeIDE: React.FC = () => {
     setSelectedFile(path);
     setOpenFiles(current => current.includes(path) ? current : [...current, path]);
   };
+
+  // Aura steers the visible workspace during a conversation: views, terminal and files (display only).
+  const workspaceActionTargets = useRef({ chooseWorkspace, openFile });
+  workspaceActionTargets.current = { chooseWorkspace, openFile };
+  useEffect(() => {
+    const onAction = (event: Event) => {
+      const action = (event as CustomEvent).detail as { type?: string; view?: string; path?: string } | undefined;
+      if (action?.type === 'open' && action.view) workspaceActionTargets.current.chooseWorkspace(action.view as CognitiveCanvas);
+      else if (action?.type === 'terminal') { setSidePanelOpen(false); setWorkspaceView('code'); setShowTerminal(true); setBottomPanel('terminal'); }
+      else if (action?.type === 'file' && action.path) workspaceActionTargets.current.openFile(action.path);
+    };
+    window.addEventListener('jaco:workspace-action', onAction);
+    return () => window.removeEventListener('jaco:workspace-action', onAction);
+  }, []);
 
   const closeFile = (path: string) => {
     setOpenFiles(current => {
@@ -974,10 +1008,10 @@ export const JacoAuraComputeIDE: React.FC = () => {
     }
   };
 
-  const resolveApproval = async (approval: OperatorApproval, decision: string) => {
+  const resolveApproval = async (approval: OperatorApproval, decision: string, inlineAcknowledged = false) => {
     const busyKey = `${approval.id}:${decision}`;
     if (approvalBusy) return;
-    const acknowledged = approvalAcknowledged[approval.id] === true;
+    const acknowledged = inlineAcknowledged === true || approvalAcknowledged[approval.id] === true;
     if (requiresOperatorConfirmation(decision) && !acknowledged) {
       setApprovalError('Check the confirmation box so Aura receives an explicit, scoped approval.');
       return;
@@ -991,7 +1025,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           decision,
-          note: `Operator decision from Aura Approval Center: ${decision}`,
+          note: `Operator decision from Aura ${inlineAcknowledged ? 'inline chat' : 'Approval Center'}: ${decision}`,
           confirmation: buildOperatorConfirmation(
             approval.id,
             decision,
@@ -1312,7 +1346,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
       );
     }
 
-    if (sidebar === 'revenue') return <React.Suspense fallback={<div className="p-3 text-xs">Opening budget…</div>}><div className="flex-1 overflow-auto px-2 py-2 space-y-3"><EconomicBudgetPanel inline /><RevenueView /></div></React.Suspense>;
     if (sidebar === 'skills') return <React.Suspense fallback={<div className="p-3 text-xs">Opening skills…</div>}><SkillsView /></React.Suspense>;
     if (sidebar === 'devices') return <React.Suspense fallback={<div className="p-3 text-xs">Opening devices…</div>}><DevicesView browser={snapshot?.integrations?.cdp} onInspectBrowser={() => void selectMcpToolByName('cdp', 'nova_targets')} /></React.Suspense>;
 
@@ -1483,7 +1516,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
       <>
         <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-neutral-300">Providers</div>
         <div className="flex-1 overflow-auto px-2 space-y-2">
-          <EconomicBudgetPanel inline />
           <NovaPlannerCard />
           {(snapshot?.providers || []).map(provider => {
             const receipt = probeReceipts[provider.id];
@@ -1565,12 +1597,17 @@ export const JacoAuraComputeIDE: React.FC = () => {
     await refresh({ includeFiles: false });
   };
 
+  const pendingDecision = snapshot?.approvals?.items?.[0];
   const renderChatContent = () => (
     <>
       {needsModel && !guideClosed && <FirstRunGuide onConnected={() => activation.read()} onClose={() => setGuideClosed(true)} />}
       <div className="flex-1 min-h-0">
         <AuraChatPanel
           session={chatSession}
+          approvalPrompt={pendingDecision ? <InlineAuraApproval approval={pendingDecision} count={snapshot?.approvals?.count ?? 1}
+            busy={Boolean(approvalBusy)} error={approvalError}
+            onDecision={(action, acknowledged) => { void resolveApproval(pendingDecision, action, acknowledged); }}
+            onAll={() => setShowApprovals(true)} /> : null}
           runControls={activation.report?.ok && !activation.error ? null : <ActivationCard activation={activation} projectName={projectName}
             repairBlocked={missionSubmitting || missions.some(item => item.status === 'ACTIVE')}
             onRepair={async problems => {
@@ -1766,7 +1803,6 @@ export const JacoAuraComputeIDE: React.FC = () => {
     ['source-control', GitBranch, 'Git'],
     ['tools', Wrench, 'Tools'],
     ['providers', PlugZap, 'Models'],
-    ['revenue', CircleDollarSign, 'Revenue'],
   ];
   const remoteViewer = typeof window !== 'undefined' && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
   const signOut = async () => {
@@ -1846,8 +1882,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
 
               {bottomPanel === 'terminal' && (
                 <>
-                  <div className="flex-1 overflow-auto p-3 font-mono text-[11px] leading-5">
-                    {terminalNotice && <div className="text-neutral-200 mb-2">{terminalNotice}</div>}
+                  {terminalMode === 'xterm' ? <ReceiptTerminal events={cognitiveEvents}/> : <div className="flex-1 overflow-auto p-3 font-mono text-[11px] leading-5">
+                    {terminalNotice && <div className="text-neutral-200 mb-2">{terminalText(terminalNotice)}</div>}
                     {/* Newest first, each line naming its mission, so the latest work is visible without scrolling. */}
                     {activity.slice(-40).reverse().map(event => (
                       <div key={event.id} className="flex gap-2">
@@ -1857,15 +1893,17 @@ export const JacoAuraComputeIDE: React.FC = () => {
                           {(event.missionGoal || (event.missionId && missionGoals.get(event.missionId))) && (
                             <span className="text-neutral-600" title={String(event.missionGoal || missionGoals.get(String(event.missionId)))}>[{String(event.missionGoal || missionGoals.get(String(event.missionId))).slice(0, 36)}] </span>
                           )}
-                          {terminalMode === 'human' ? humanizeActivity(event) : JSON.stringify({ source: event.source, type: event.type, verified: event.verified, payload: event.payload })}
+                          {terminalText(terminalMode === 'human' ? humanizeActivity(event) : JSON.stringify({ source: event.source, type: event.type, verified: event.verified, payload: event.payload }))}
                         </span>
                       </div>
                     ))}
-                  </div>
+                  </div>}
+                  {terminalMode === 'xterm' && terminalNotice && <div className="px-3 text-[11px] text-neutral-200">{terminalText(terminalNotice)}</div>}
                   <form onSubmit={event => { event.preventDefault(); void runTerminalCommand(); }} className="h-9 border-t border-[#444547] px-3 flex items-center gap-2 shrink-0">
                     <span className="text-emerald-400 font-mono text-xs">$</span>
                     <input value={terminalCommand} onChange={event => setTerminalCommand(event.target.value)} placeholder="Run local shell / npm / node / git command" className="flex-1 bg-transparent outline-none text-[11px] font-mono text-neutral-200 placeholder:text-neutral-500" />
                     <button className="text-[10px] px-2 py-1 border border-[#696a6c] rounded hover:bg-[#464749]">Run</button>
+                    <button type="button" data-testid="terminal-receipts-toggle" aria-pressed={terminalMode==='xterm'} onClick={()=>setTerminalMode(terminalMode==='xterm'?'human':'xterm')} className="text-[10px] px-2 py-1 border border-[#696a6c] rounded">Xterm</button>
                     <button type="button" onClick={() => setTerminalMode(terminalMode === 'human' ? 'raw' : 'human')} className="text-[9px] text-neutral-400 hover:text-neutral-200">{terminalMode === 'human' ? 'human' : 'raw'}</button>
                   </form>
                 </>
@@ -1917,24 +1955,24 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const stagePreview = stagePath && stageFile && stageDraft!==null
     ? <CognitivePreview strict path={stagePath} content={stageDraft} files={files} events={cognitiveEvents} onOpenFile={openFile}/>
     : null;
-  const sideMission = missions.find(m=>m.status==='ACTIVE') || missions.find(m=>m.status==='AWAITING_VERIFICATION') || missions.find(m=>m.status==='BLOCKED') || null;
+  const sideMission = currentMission;
   const sideObservation = sideMission ? stageEvents.filter(event=>event.missionId===sideMission.id).at(-1)?.text ?? null : null;
   const stage = <div className="aura-stage-column">
-    {sideMission&&<details className="aura-stage-mission-details"><summary>Mission · {sideMission.goal}</summary><MissionCard mission={sideMission as any} observation={sideObservation} onCancel={cancelMission} onEndGoal={endMissionGoal} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/></details>}
-    <AuraLiveStage projectRevision={projectKey} candidate={selectedStage} events={stageEvents} preview={stagePreview}
+    {sideMission&&<details className="aura-stage-mission-details"><summary>Mission · {sideMission.goal}</summary><MissionCard mission={sideMission as any} presence={presence} observation={sideObservation} onCancel={cancelMission} onEndGoal={endMissionGoal} onOpenWork={id=>{setReviewMissionId(id||null);setWorkspacePinned(false);setWorkspaceView('stage');}}/></details>}
+    <AuraLiveStage projectRevision={projectKey} candidate={selectedStage} events={stageEvents} liveConnection={cognitiveLive.connection} preview={stagePreview}
     previewError={fileReadError?.path===stagePath?fileReadError.message:null} onRetryPreview={()=>setFileReadRevision(value=>value+1)}
     previewReady={Boolean(stagePreview)} active={status.tone==='active'}
     onInspect={event=>{setSelectedEvidence(event);setWorkspacePinned(true);setWorkspaceView('evidence');}}
-    onOpenFile={openFile} htmlSource={stageFile?.content ?? null} htmlDraft={stageDraft}
+    onOpenFile={openFile} onOpenPlan={openPlanStep} htmlSource={stageFile?.content ?? null} htmlDraft={stageDraft}
     onDraftChange={value=>{if(stagePath)updateDraft(stagePath,value);}}
     onSaveDraft={()=>{if(stagePath)void saveStageDraft(stagePath);}} saveBusy={stageSaveBusy} saveNotice={stageSaveNotice}
     cdpReady={snapshot?.integrations?.cdp?.state==='VERIFIED' || snapshot?.integrations?.cdp?.state==='OBSERVED'}
     pinned={workspacePinned} onHoldMaterial={()=>setWorkspacePinned(true)}
-    activeMission={missions.find(item=>item.status==='ACTIVE') ? {
-      id:missions.find(item=>item.status==='ACTIVE')!.id,
-      goal:String(missions.find(item=>item.status==='ACTIVE')!.goal || 'Running mission'),
-      phase:missions.find(item=>item.status==='ACTIVE')!.phase || null,
-      status:'ACTIVE'
+    activeMission={sideMission ? {
+      id:sideMission.id,
+      goal:String(sideMission.goal || 'Mission'),
+      phase:sideMission.phase || null,
+      status:sideMission.status
     } : null}
     agentActivity={{
       connected:(snapshot?.workplace?.agents || []).filter(item=>item.status==='READY' || item.liveSessions>0).length,
@@ -1943,6 +1981,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     presence={presence}/>
   </div>;
   const canvasDetail = <>
+    {workspaceView==='economy'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening economy…</div>}><EconomyView/></React.Suspense>}
     {workspaceView==='connections'&&<ConnectionsWorkspace initialTab={connectionsTab} onTabChange={setConnectionsTab} onSelectTool={(provider:any,tool:any)=>{selectMcpTool(provider,tool);setWorkspaceView('conversation');}}/>}
     {(codeOpened||workspaceView==='code')&&<div className="cognitive-cached-code" hidden={workspaceView!=='code'}>{codeWorkspace}</div>}
     {workspaceView==='agents'&&<React.Suspense fallback={<div className="cognitive-empty-detail">Opening agent map…</div>}><AuraAgentWorkspace goal={goal} onGoalChange={setGoal} onStartGoal={()=>{void startGoal().catch(()=>{});}} submitting={missionSubmitting} notice={missionNotice} onReview={()=>setWorkspaceView('evidence')} onCancelMission={cancelMission}/></React.Suspense>}
@@ -1958,27 +1997,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
     {externalFile&&externalFile.path===selectedFile&&<div role="alert" className="cognitive-operation-notice">The file changed in the workspace. Your draft is preserved.<button type="button" onClick={acceptExternalFile}>Load latest file</button></div>}
     <div className="cognitive-detail-body">{canvasDetail}</div>
   </div>;
-  const pendingDecision = snapshot?.approvals?.items?.[0];
-  const attention = pendingDecision ? <section className="cognitive-decision" aria-label={tr('Beslut som behöver dig', 'Decisions that need you')}>
-    <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>{tr('Aura behöver ditt beslut', 'JACO needs your decision')}</strong><span>{snapshot.approvals.count} {tr('väntar', 'pending')}</span></div>
-    <h2>{pendingDecision.title}</h2>
-    <p>{reasonText(pendingDecision.reason)}</p>
-    {['command', 'targetFilePath', 'repoUrl'].map(key => typeof pendingDecision.details?.[key] === 'string' && pendingDecision.details[key] &&
-      <p key={key} className="cognitive-decision-context"><span>{({command:tr('Kommando','Command'),targetFilePath:tr('Fil','File'),repoUrl:tr('Källa','Source')})[key]}: </span><code>{pendingDecision.details[key]}</code></p>)}
-    {pendingDecision.actions.some(requiresOperatorConfirmation) && <label className="cognitive-decision-context flex items-start gap-2">
-      <input type="checkbox" checked={approvalAcknowledged[pendingDecision.id] === true}
-        onChange={event => setApprovalAcknowledged(current => ({ ...current, [pendingDecision.id]: event.target.checked }))}
-        className="mt-1 h-4 w-4 accent-amber-300" />
-      <span>{tr('Jag förstår åtgärden och risken som visas och godkänner uttryckligen att Aura utför den inom det här området.', 'I understand the displayed action and risk and explicitly approve Aura to carry it out within this scope.')}</span>
-    </label>}
-    <div className="cognitive-decision-actions">
-      {pendingDecision.actions.map(action => <button key={action} type="button" disabled={Boolean(approvalBusy) || (requiresOperatorConfirmation(action) && approvalAcknowledged[pendingDecision.id] !== true)}
-        onClick={() => void resolveApproval(pendingDecision, action)}>{approvalBusy === `${pendingDecision.id}:${action}` ? tr('Sparar beslutet…', 'Saving decision…') : approvalLabel(action)}</button>)}
-      <button type="button" onClick={() => setShowApprovals(true)}>{snapshot.approvals.count > 1 ? tr('Visa detaljer och alla beslut', 'Show details and all decisions') : tr('Visa detaljer', 'Show details')}</button>
-    </div>
-    {!pendingDecision.actions.length && <p>{tr('En inställning behöver rättas. Öppna detaljerna för att se vad som saknas.', 'A setting needs fixing. Open details to see what is missing.')}</p>}
-    {approvalError && <p role="alert">{tr('Beslutet kunde inte sparas', 'The decision could not be saved')}: {approvalError}</p>}
-  </section> : (snapshot?.seer?.blocker || runtimeError) ? <section className="cognitive-decision" aria-label="This needs attention">
+  const attention = !pendingDecision && (snapshot?.seer?.blocker || runtimeError) ? <section className="cognitive-decision" aria-label="This needs attention">
     <div className="cognitive-decision-title"><ShieldAlert size={18}/><strong>The work needs help</strong></div>
     <p>{snapshot?.seer?.blocker || runtimeError}</p>
     <div className="cognitive-decision-actions">
@@ -1989,6 +2008,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   </section> : null;
   return <>
     <CognitiveWorkspace remoteMode={remoteMode} attention={attention} canvas={workspaceView} onCanvas={chooseWorkspace} conversation={renderChatContent()} detail={detail}
+      portraitChat={chatSession}
       stage={stage} stagePinned={workspacePinned} onTogglePin={()=>setWorkspacePinned(value=>!value)}
       sidebar={sidebar} sidePanelOpen={sidePanelOpen} sidePanel={renderSidebar()}
       onSidebar={view => { if(workspaceView==='gameboard')setWorkspaceView('conversation'); if(['tools','providers','skills'].includes(view)){setConnectionsTab(view==='tools'?'capabilities':view==='providers'?'models':'skills');setWorkspaceView('connections');setSidePanelOpen(false);}else{setSidebar(view);setSidePanelOpen(current => sidebar === view ? !current : true);} }}
@@ -1998,7 +2018,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
       onCommands={() => setCommandPaletteOpen(true)} onSignOut={() => void signOut()}
       lastObservedAt={cognitiveLive.lastObservedAt || snapshot?.observedAt || null} error={connectionError}/>
     {/* The Gameboard fills the whole work area so it can be read; Aura's face, the chat or any tool in the rail closes it. */}
-    {workspaceView==='gameboard'&&<div className="jaco-gameboard-full" role="region" aria-label="Gameboard"><React.Suspense fallback={<div className="cognitive-empty-detail">{tr('Öppnar Gameboard…','Opening the Gameboard…')}</div>}><StrategyBoard focusPlanId={focusPlanId} onClose={()=>setWorkspaceView('conversation')}/><details className="bg-black px-4 pb-4 text-xs text-neutral-400"><summary>{tr('Teknisk vy','Technical view')}</summary><CognitiveGameboard/></details></React.Suspense></div>}
+    {workspaceView==='gameboard'&&<div className="jaco-gameboard-full" role="region" aria-label="Gameboard"><React.Suspense fallback={<div className="cognitive-empty-detail">{tr('Öppnar Gameboard…','Opening the Gameboard…')}</div>}><StrategyBoard focusPlanId={focusPlanId} focusNodeKey={focusNodeKey} eventRevision={cognitiveEvents.at(-1)?.id || null} liveConnection={cognitiveLive.connection} onClose={()=>setWorkspaceView('conversation')}/><details className="bg-black px-4 pb-4 text-xs text-neutral-400"><summary>{tr('Teknisk vy','Technical view')}</summary><CognitiveGameboard/></details></React.Suspense></div>}
     <AuraCommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenTool={openTool}/>
     {renderApprovals()}
   </>;

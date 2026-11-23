@@ -1,0 +1,60 @@
+name: Core startup regression
+on:
+  pull_request:
+    paths:
+      - 'agents/lib/local-stack.mjs'
+      - 'agents/lib/chrome-bootstrap.mjs'
+      - 'agents/lib/health-guardian.mjs'
+      - 'tests/nova/health-guardian.test.mjs'
+      - 'extensions/jaco-vscode/**'
+      - 'windows/product/**'
+      - 'agents/lib/lite-browser-supervisor.mjs'
+      - 'agents/lib/org-permission.mjs'
+      - 'runtime/src/server/connected/githubGuiAuth.mjs'
+      - 'runtime/src/server/connected/agentOrganization.mjs'
+      - 'runtime/src/server/connected/automaticConnections.mjs'
+      - 'tests/nova/startup-developer-connections.test.mjs'
+      - 'tools/build-lite.mjs'
+      - 'lite/start.mjs'
+      - 'tests/nova/lite.test.mjs'
+      - 'agents/lib/planner-choice.mjs'
+      - 'runtime/server.ts'
+      - 'runtime/package.json'
+      - 'scripts/verify-core-startup.mjs'
+      - 'tests/nova/startup-safety.test.mjs'
+      - 'tests/nova/planner-choice.test.mjs'
+      - '.github/workflows/core-startup-regression.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core-startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - run: npm ci --prefix runtime --no-audit --no-fund
+      - run: node --check agents/lib/local-stack.mjs && node --check agents/lib/planner-choice.mjs && node --check scripts/verify-core-startup.mjs
+      - run: node --test tests/nova/startup-safety.test.mjs tests/nova/planner-choice.test.mjs tests/nova/remote-startup-contract.test.mjs tests/nova/lite.test.mjs tests/nova/startup-developer-connections.test.mjs tests/nova/agent-organization.test.mjs tests/nova/mission.test.mjs
+      - run: npm --prefix runtime run build
+      - run: node scripts/verify-core-startup.mjs
+  windows-parity:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - run: node --test tests/nova/health-guardian.test.mjs tests/nova/windows-selfstart.test.mjs tests/nova/startup-developer-connections.test.mjs extensions/jaco-vscode/test/bridge.test.cjs

@@ -41,15 +41,19 @@ test('planner receives mission evidence plus durable continuity without making c
  });assert.equal(r.task.type,'health-check');assert.equal(r.continuity.attention,'health verification');
 });
 test('a screenshot is attached only when its hash belongs to this mission',async()=>{
- const bytes=Buffer.from('offline-image-fixture');fs.writeFileSync(path.join(dir,'latest-observation.png'),bytes);
+ const bytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jv9sAAAAASUVORK5CYII=','base64');fs.writeFileSync(path.join(dir,'latest-observation.png'),bytes);
  for(const matches of [false,true]){
  const mission={id:'mission-screenshot-fixture',allowedTasks:['health-check'],goal:'Inspect',receipts:matches?[{type:'screenshot',ok:true,verified:true,at:new Date().toISOString(),result:{imageSha256:createHash('sha256').update(bytes).digest('hex')}}]:[]};
- const result=await callBrain(loadState(),{mission,observation:null},async(url,opts)=>{assert.equal(Array.isArray(JSON.parse(opts.body).messages[1].content),matches);return Response.json({choices:[{message:{content:'{"complete":true}'}}]});});
+ const result=await callBrain(loadState(),{mission,observation:null},async(url,opts)=>{assert.equal(JSON.parse(opts.body).messages.some(m=>Array.isArray(m.content)&&m.content.some(c=>c.type==='image_url')),matches);return Response.json({choices:[{message:{content:'{"complete":true}'}}]});});
  assert.equal(result.complete,true);
  }
 });
 test('failed legacy queue task is never counted as done',async()=>{const state=loadState();state.taskQueue=[{id:'1',type:'health-check',status:'pending',nextRunAt:0,retries:0,maxRetries:1}];await processQueue(state,async()=>({ok:false,error:'OFFLINE'}));assert.equal(state.completedTasks,0);assert.equal(state.failedTasks,1);});
 test('unknown task fails explicitly',async()=>{await assert.rejects(executeTask({type:'unknown',data:{}},loadState()),/UNKNOWN_TASK/);});
+test('browser click without an observable postcondition is rejected before dispatch',async()=>{
+ const result=await executeTask({type:'browser-click',data:{name:'Learn more'}},loadState(),null);
+ assert.deepEqual(result,{ok:false,verified:false,outcomeUnknown:false,error:'BROWSER_CLICK_EXPECTATION_REQUIRED'});
+});
 
 test('GitHub control polling never changes Nova mission/model cadence',()=>{
  assert.equal(novaLoopDelay(null,60_000,3_000),60_000);
@@ -216,6 +220,6 @@ test('a coding prompt retains available tool contracts without advertising unrel
  assert.ok(desktop.includes('screenshot {hwnd?'));
  assert.ok(!desktop.includes('desktop-invoke {'));
  const pointer=brainSystemFor(['mouse-click'],false,'win32');
- assert.ok(pointer.includes('mouse-move/mouse-click {x,y}'));
+ assert.ok(pointer.includes('mouse-move/mouse-click {x,y,expectedHwnd}'));
  assert.ok(!pointer.includes('key-press {'));
 });

@@ -10,6 +10,12 @@ import crypto from 'node:crypto';
 
 export const CAPABILITY_SCHEMA = 'jaco.capabilities/v1';
 
+// Undefined selects the canonical registry. A configured list is a deliberate ceiling.
+export function configuredTaskCeiling(value) {
+  const raw = String(value ?? '').trim();
+  return !raw || raw === 'sandbox' ? undefined : raw.split(',').map(s => s.trim());
+}
+
 // Operator-facing grouping of the mission task types (agents/lib/task-fields.mjs).
 export const TASK_GROUPS = [
   ['files', 'Files and code', 'Read, create, edit and test the files in your project.'],
@@ -24,7 +30,7 @@ export const TASK_GROUPS = [
 ];
 
 const GROUP_OF = {
-  files: ['repo-list', 'repo-read', 'repo-write', 'repo-edit', 'repo-test', 'repo-service', 'repo-scan'],
+  files: ['repo-list', 'repo-read', 'repo-write', 'repo-edit', 'repo-test', 'repo-service', 'repo-scan', 'local-write'],
   git: ['git-status', 'git-diff', 'git-commit', 'git-push', 'git-merge', 'github-create-repo'],
   shell: ['shell', 'invoke-worker'],
   web: ['web-fetch', 'browser-survey-site', 'browser-click', 'browser-type'],
@@ -32,7 +38,7 @@ const GROUP_OF = {
     'mouse-move', 'mouse-click', 'mouse-scroll', 'key-press', 'type-text', 'get-cursor'],
   android: ['android-status', 'android-observe', 'android-begin', 'android-target', 'android-open-app', 'android-tap',
     'android-type', 'android-scroll', 'android-back', 'android-home'],
-  tools: ['mcp-call', 'mcp-write', 'skill-load'],
+  tools: ['mcp-call', 'mcp-write', 'skill-load', 'propose-tool'],
   secrets: ['vault-generate-secret', 'vault-get-secret', 'vault-list-secrets', 'secret-store', 'email-inbox'],
   system: ['detect-surfaces', 'health-check', 'check-revenue', 'promote-hf'],
 };
@@ -43,13 +49,13 @@ const LABEL = {
   'git-status': 'Git status', 'git-diff': 'Git diff', 'git-commit': 'Commit', 'git-push': 'Push', 'git-merge': 'Merge',
   'github-create-repo': 'Create a GitHub repository',
   shell: 'Run commands', 'invoke-worker': 'Start a worker',
-  'web-fetch': 'Fetch a web page', 'browser-survey-site': 'Read a browser tab', 'browser-click': 'Click in the browser',
-  'browser-type': 'Type in the browser',
+  'web-fetch': 'Fetch a web page', 'browser-survey-site': 'Map a browser tab (RobotMower)', 'browser-click': 'Click tracked DOM target (DOM Traction)',
+  'browser-type': 'Type into tracked DOM target (DOM Traction)',
   'desktop-windows': 'List windows', 'desktop-observe': 'Observe a window', 'desktop-action': 'Act in a window',
-  'desktop-invoke': 'Invoke a control', 'windows-wmi-read': 'Read Windows system info', screenshot: 'Take a screenshot',
+  'desktop-invoke': 'Invoke a control', 'windows-wmi-read': 'Read Windows system info', screenshot: 'Laser Vision: observe screen',
   'mouse-move': 'Move the mouse', 'mouse-click': 'Click the mouse', 'mouse-scroll': 'Scroll', 'key-press': 'Press keys',
   'type-text': 'Type text', 'get-cursor': 'Read the cursor position',
-  'mcp-call': 'Call an MCP tool (read)', 'mcp-write': 'Call an MCP tool (write)', 'skill-load': 'Use a skill',
+  'mcp-call': 'Call an MCP tool (read)', 'mcp-write': 'Call an MCP tool (write)', 'skill-load': 'Use a skill', 'propose-tool': 'Propose a new tool (you approve it)', 'local-write': 'Write a file outside the project (you approve each one)',
   'vault-generate-secret': 'Generate a secret', 'vault-get-secret': 'Use a stored secret', 'vault-list-secrets': 'List secret names',
   'secret-store': 'Store a secret', 'email-inbox': 'Read the agent inbox',
   'detect-surfaces': 'Detect what is available', 'health-check': 'Health check', 'check-revenue': 'Check revenue', 'promote-hf': 'Promote on Hugging Face',

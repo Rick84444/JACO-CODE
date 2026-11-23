@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#050b12"><meta name="robots" content="noindex,nofollow">
+<link rel="manifest" href="/link/manifest.webmanifest"><link rel="stylesheet" href="/link/style.css">
+<title>JACO Remote — Aura</title></head>
+<body><div id="app" class="app">
+<header class="top"><div class="brand"><span class="brand-mark">J</span><span>JACO <em>REMOTE</em></span></div>
+<div id="state" class="state" role="status" aria-live="polite">Ansluter…</div></header>
+<section class="connection"><div><strong>Aura på din dator</strong><p id="pcstate">Kontrollerar JACO-kontot…</p></div>
+<select id="host" aria-label="Välj dator" hidden></select><button id="revoke" type="button" aria-label="Återkalla datorns åtkomst" hidden>Ta bort</button><button id="retry" type="button" aria-label="Uppdatera anslutning">↻</button></section>
+<section id="login" class="notice" hidden><h1>Din Aura. Alla dina enheter.</h1><p>Logga in på ditt JACO-konto för att nå din Windows-dator. Ingen tunnel eller separat Android-agent behövs.</p>
+<a class="primary-link" href="/auth/google?next=%2Flink%2Fremote.html">Logga in med Google</a></section>
+<section id="pair" class="notice" hidden><h2>Ingen dator ansluten</h2><p>Öppna JACO på din Windows-dator → Enheter → JACO Link → Anslut mobilen. Godkänn datorn med samma JACO-konto.</p></section>
+<main id="workspace" class="workspace" hidden>
+<nav class="tabs" aria-label="JACO Remote navigation">
+<button data-view="chat" aria-current="page">Aura</button><button data-view="plan">Spelplan</button><button data-view="memory">Minne</button><button data-view="decisions">Beslut</button></nav>
+<section id="chat" class="view chat-view">
+<div id="messages" class="messages" role="log" aria-label="Aura-samtal" aria-live="polite"></div>
+<div class="composer"><textarea id="question" rows="2" placeholder="Skriv till Aura…" aria-label="Meddelande till Aura"></textarea>
+<button id="send" type="button" class="send">Skicka</button></div>
+<details class="mission-start"><summary>Starta ett autonomt uppdrag</summary><p>Aura kör uppdraget på datorn inom dina befintliga mandat.</p>
+<textarea id="goal" rows="3" placeholder="Vad ska Aura åstadkomma?" aria-label="Uppdragsmål"></textarea>
+<button id="start" class="secondary" type="button">Starta uppdrag</button></details>
+</section>
+<section id="plan" class="view" hidden><h2>Gameboard</h2><p>Den verkliga planen från Windows-runtime. Du kan styra och stoppa uppdrag.</p><div id="plans"></div></section>
+<section id="memory" class="view" hidden><div class="memory-title"><img src="/link/memory-tree.png" alt="" width="50" height="50"><div><h2>Cognitive Memory</h2><p>Sparade kunskapsobjekt och evidens från din dator</p></div></div><div id="memories"></div></section>
+<section id="decisions" class="view" hidden><h2>Operatörens beslut</h2><p>Ingenting godkänns automatiskt från mobilen.</p><div id="approvals"></div></section>
+</main>
+<div id="error" class="error" role="alert" hidden></div>
+<footer>JACO LINK · En Aura · Ditt lokala minne · Din kontroll</footer>
+</div><script type="module" src="/link/remote.js"></script></body></html>

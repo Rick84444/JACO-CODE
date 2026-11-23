@@ -55,14 +55,58 @@ test('unpackaged checkout preserves legacy root layout for existing Windows and 
 });
 
 
-test('Windows setup publishing is tag-gated, not triggered merely by a main merge', () => {
+test('Windows setup publishing: stable is tag-gated; a changed preview version from main publishes a pre-release', () => {
   const workflow = fs.readFileSync(new URL('../../.github/workflows/jaco-windows-release.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /publish-github-release:[\s\S]*?if: github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/tags\/v'\)/);
-  assert.doesNotMatch(workflow, /needs\.windows-setup\.outputs\.version_changed == 'true'/);
+  assert.match(workflow, /publish-github-release:[\s\S]*?startsWith\(github\.ref, 'refs\/tags\/v'\)/);
+  assert.match(workflow, /github\.ref == 'refs\/heads\/main' && needs\.windows-setup\.outputs\.version_changed == 'true' && needs\.windows-setup\.outputs\.channel == 'preview'/);
+});
+
+test('Windows packaged boot validates its own runtime version and runs Aura capability acceptance', () => {
+  const workflow = fs.readFileSync(new URL('../../.github/workflows/jaco-windows-release.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /\$expectedRuntimeVersion = \(Get-Content \(Join-Path \$installDir 'runtime\/package\.json'\)/);
+  assert.match(workflow, /\$identity\.version -eq \$expectedRuntimeVersion/);
+  assert.doesNotMatch(workflow, /\$identity\.version -eq '0\.22\.0'/);
+  assert.match(workflow, /tests\/nova\/capability-recovery\.test\.mjs/);
+  assert.match(workflow, /tests\/nova\/agent-loop\.test\.mjs/);
 });
 
 test('installed Workplace runs supervised executables from the immutable installation', () => {
   const source = fs.readFileSync(new URL('../../gateway/src/workplace/workplace-server.mjs', import.meta.url), 'utf8');
   assert.match(source, /const EXECUTION_ROOT = resolve\(process\.env\.JACO_INSTALL_ROOT \|\| process\.cwd\(\)\)/);
   assert.match(source, /createWorkplaceAgentSupervisor\(\{ root: EXECUTION_ROOT, env: process\.env \}\)/);
+});
+
+test('Windows installation smoke validates the packaged runtime identity, not a fixed historical version', () => {
+  const workflow = fs.readFileSync(new URL('../../.github/workflows/jaco-windows-release.yml', import.meta.url), 'utf8');
+  assert.ok(workflow.includes("$expectedRuntimeVersion = (Get-Content (Join-Path $installDir 'runtime/package.json') -Raw | ConvertFrom-Json).version"));
+  assert.ok(workflow.includes('$identity.version -eq $expectedRuntimeVersion'));
+  assert.ok(!workflow.includes("$identity.version -eq '0.22.0'"));
+  assert.ok(workflow.includes('INSTALLED_RUNTIME_VERSION_INVALID'));
+  // A Windows product release can differ from the version of the embedded runtime.
+  assert.ok(workflow.includes('Get-Content windows/product/version.json'));
+});
+
+test('Windows setup registers a per-user autostart guardian through the immutable product payload', () => {
+  const setup=fs.readFileSync(new URL('../../windows/product/JACO.iss',import.meta.url),'utf8');
+  const bridge=fs.readFileSync(new URL('../../windows/product/JACO-guardian-launch.vbs',import.meta.url),'utf8');
+  assert.match(setup,/Source: "\{#SourcePath\}JACO-guardian-launch\.vbs"; DestDir: "\{app\}\\windows\\product"/);
+  assert.match(setup,/\{userstartup\}\\JACO Health Guardian/);
+  assert.match(setup,/Tasks: guardianautostart/);
+  assert.match(bridge,/JACO_INSTALLED/);
+  assert.match(bridge,/JACO_DATA_DIR/);
+  assert.match(bridge,/health-guardian\.mjs/);
+  assert.doesNotMatch(bridge, /GATEWAY_TOKEN|STRIPE_|APPROVAL/);
+});
+
+test('Lite and full Windows product changes build from the same main commits', () => {
+  const lite=fs.readFileSync(new URL('../../.github/workflows/lite-release.yml', import.meta.url),'utf8');
+  const full=fs.readFileSync(new URL('../../.github/workflows/jaco-windows-release.yml', import.meta.url),'utf8');
+  const filters = src => src.slice(src.indexOf('  push:')).match(/^    paths: \[([^\n]+)\]/m)?.[1];
+  assert.ok(filters(lite));
+  assert.equal(filters(lite),filters(full));
+  const payload=fs.readFileSync(new URL('../../windows/product/Prepare-Release.ps1',import.meta.url),'utf8');
+  assert.match(payload,/git -C \$root rev-parse HEAD/);
+  assert.match(payload,/sourceCommit=\$sourceCommit/);
+  assert.match(full,/\$identity\.sourceCommit -eq \$env:GITHUB_SHA/);
+  assert.match(lite,/needs: \[verified-lite, pixel-arm64-smoke, windows-lite-smoke\]/);
 });

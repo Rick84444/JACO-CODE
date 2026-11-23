@@ -1,5 +1,5 @@
 #!/bin/sh
-# JACO Lite installer for macOS, Linux and Android (Termux).
+# JACO Lite installer for macOS, Linux, Pixel Debian VM and legacy Termux.
 #
 #   curl -fsSL https://jacocode.com/install.sh | sh
 #
@@ -9,7 +9,7 @@
 #   3. uses the Node.js you have if it is new enough; otherwise downloads the official Node.js LTS build from
 #      nodejs.org into the JACO folder (checked against nodejs.org's SHASUMS256.txt). Termux gets nodejs-lts from pkg.
 #   4. unpacks into  $JACO_LITE_HOME/versions/<build>  and points  current  at it (the previous build is kept for
-#      rollback, older ones are removed)
+#      rollback; older immutable builds are retained because a running launcher may still use them)
 #   5. puts a  jaco-lite  command in ~/.local/bin (or tells you what to add to PATH)
 # No administrator rights, nothing outside $JACO_LITE_HOME and that one command. Run it again to update.
 #
@@ -25,6 +25,7 @@
 #   JACO_LITE_NODE_DIST_URL where Node.js builds are (default https://nodejs.org/dist/latest-v24.x)
 #   JACO_LITE_BIN_DIR       where the command goes (default ~/.local/bin, Termux $PREFIX/bin)
 #   JACO_LITE_FORCE=1       install even if this build is already installed
+#   JACO_LITE_PLATFORM=android  use Android Lite ZIP inside Linux arm64 Pixel Debian VM
 set -eu
 
 BASE_URL="${JACO_LITE_BASE_URL:-https://jacocode.com/download}"
@@ -73,6 +74,27 @@ case "$OS" in
   *) die "this installer is for macOS, Linux and Termux. On Windows use:  irm https://jacocode.com/install.ps1 | iex" ;;
 esac
 [ "$TERMUX" = 1 ] && KIND=android
+# Reinstall/update retains the previously chosen platform unless explicitly
+# overridden. Otherwise a Pixel "jaco-lite update" silently switches to the
+# universal archive, so the operator's actual installation changes identity.
+SELECTED_PLATFORM="${JACO_LITE_PLATFORM:-auto}"
+if [ "$SELECTED_PLATFORM" = auto ] && [ "$TERMUX" = 0 ] && [ -f "$HOME_DIR/install.json" ]; then
+  PREVIOUS_KIND="$(json_field kind < "$HOME_DIR/install.json")"
+  [ "$PREVIOUS_KIND" = android ] && SELECTED_PLATFORM=android
+fi
+# Pixel Terminal is Debian Linux, NOT Termux. Android Lite is opt-in.
+case "$SELECTED_PLATFORM" in
+  auto|'') ;;
+  android)
+    [ "$OS" = Linux ] || die "JACO_LITE_PLATFORM=android requires Linux."
+    case "$ARCH" in aarch64|arm64) ;; *) die "Pixel Android Lite requires Linux arm64."; esac
+    if [ "$TERMUX" = 0 ]; then
+      [ -r /etc/os-release ] && grep -Eqs '^ID=(debian|ubuntu)$' /etc/os-release ||
+        die "Pixel Android Lite requires Debian or Ubuntu in the Linux VM."
+    fi
+    KIND=android ;;
+  *) die "JACO_LITE_PLATFORM must be 'android' or omitted." ;;
+esac
 case "$ARCH" in
   x86_64|amd64) NODE_ARCH=x64 ;;
   aarch64|arm64) NODE_ARCH=arm64 ;;
@@ -96,7 +118,7 @@ say "    build $BUILT  ($FILE)"
 
 if [ -f "$HOME_DIR/install.json" ] && [ "${JACO_LITE_FORCE:-0}" != 1 ]; then
   HAVE_SHA="$(json_field sha256 < "$HOME_DIR/install.json")"
-  if [ "$HAVE_SHA" = "$WANT_SHA" ] && [ -d "$HOME_DIR/current" ]; then
+  if [ "$HAVE_SHA" = "$WANT_SHA" ] && [ "$(json_field kind < "$HOME_DIR/install.json")" = "$KIND" ] && [ -d "$HOME_DIR/current" ]; then
     say "    already up to date."
     DONE_UP_TO_DATE=1
   fi
@@ -155,30 +177,40 @@ if [ "${DONE_UP_TO_DATE:-0}" != 1 ]; then
   STAMP="$(printf '%s' "$BUILT" | tr -c 'A-Za-z0-9\n' '-' | sed 's/-*$//')"
   [ -n "$STAMP" ] || STAMP="$(date +%Y%m%d%H%M%S)"
   DEST="$HOME_DIR/versions/$STAMP"
+  # Different platform archives can share a timestamp. Never overwrite a retained build.
+  if [ -e "$DEST" ]; then
+    STAMP="$STAMP-$KIND-$(printf '%s' "$WANT_SHA" | cut -c1-12)-$$"
+    DEST="$HOME_DIR/versions/$STAMP"
+  fi
   mkdir -p "$HOME_DIR/versions" "$WORK/unpack"
   if have unzip; then unzip -q "$WORK/$FILE" -d "$WORK/unpack"
   elif have bsdtar; then bsdtar -xf "$WORK/$FILE" -C "$WORK/unpack"
   else python3 -m zipfile -e "$WORK/$FILE" "$WORK/unpack"; fi
   TOP="$(ls "$WORK/unpack" | head -n1)"
   [ -f "$WORK/unpack/$TOP/start.mjs" ] || die "the archive does not look like JACO Lite (no start.mjs). Nothing was installed."
-  rm -rf "$DEST.new" "$DEST"
+  if [ "$KIND" = android ] && [ "$TERMUX" = 0 ]; then
+    [ -f "$WORK/unpack/$TOP/START-PIXEL-TERMINAL.sh" ] || die "Android Lite archive is missing the Pixel Terminal launcher. Nothing was installed."
+  fi
+  [ ! -e "$DEST" ] && [ ! -e "$DEST.new" ] || die "installation destination already exists."
   mv "$WORK/unpack/$TOP" "$DEST.new" && mv "$DEST.new" "$DEST"
-  chmod +x "$DEST/start.sh" "$DEST/START-ANDROID.sh" 2>/dev/null || true
+  chmod +x "$DEST/start.sh" "$DEST/START-ANDROID.sh" "$DEST/START-PIXEL-TERMINAL.sh" 2>/dev/null || true
   PREVIOUS=""
   [ -L "$HOME_DIR/current" ] && PREVIOUS="$(readlink "$HOME_DIR/current")"
+  # Preserve the previous install metadata, including for installs predating this format.
+  if [ -n "$PREVIOUS" ] && [ ! -f "$HOME_DIR/current/.install.json" ] && [ -f "$HOME_DIR/install.json" ]; then
+    cp "$HOME_DIR/install.json" "$HOME_DIR/current/.install.json"
+  fi
+  printf '{\n  "version": "%s",\n  "builtAt": "%s",\n  "file": "%s",\n  "sha256": "%s",\n  "kind": "%s"\n}\n' "$VERSION" "$BUILT" "$FILE" "$WANT_SHA" "$KIND" > "$DEST/.install.json"
   [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "versions/$STAMP" ] && ln -sfn "$PREVIOUS" "$HOME_DIR/previous"
   ln -sfn "versions/$STAMP" "$HOME_DIR/current"
-  # keep the build before this one for rollback, remove the rest
-  for old in "$HOME_DIR"/versions/*; do
-    [ -d "$old" ] || continue
-    case "versions/$(basename "$old")" in "versions/$STAMP"|"$PREVIOUS") ;; *) rm -rf "$old" ;; esac
-  done
-  printf '{\n  "version": "%s",\n  "builtAt": "%s",\n  "file": "%s",\n  "sha256": "%s",\n  "kind": "%s"\n}\n' "$VERSION" "$BUILT" "$FILE" "$WANT_SHA" "$KIND" > "$HOME_DIR/install.json"
+  # Never prune a version here: a different running launcher can still lazily load its files.
+  # The previous pointer is for rollback, not a complete inventory of live processes.
+  cp "$DEST/.install.json" "$HOME_DIR/install.json"
 fi
 
 mkdir -p "$HOME_DIR/bin"
-# On a phone there is no browser to open from Termux: print the address instead.
-LAUNCH_ARGS=""; [ "$TERMUX" = 1 ] && LAUNCH_ARGS="--no-open"
+# Both the Pixel VM and Termux print the address instead of opening a desktop browser.
+LAUNCH_ARGS=""; [ "$KIND" = android ] && LAUNCH_ARGS="--no-open"
 # a copy of this installer, so  jaco-lite update  works offline from the script (the download itself is fetched fresh)
 if [ -f "$0" ] && grep -q "JACO Lite installer" "$0" 2>/dev/null; then cp "$0" "$HOME_DIR/install.sh" 2>/dev/null || true  # (same file when run as  jaco-lite update)
 else
@@ -198,7 +230,8 @@ case "\${1:-}" in
   rollback)
     [ -L "\$JACO_LITE_HOME/previous" ] || { echo "jaco-lite: there is no previous build to go back to." >&2; exit 1; }
     prev="\$(readlink "\$JACO_LITE_HOME/previous")"; cur="\$(readlink "\$JACO_LITE_HOME/current")"
-    ln -sfn "\$prev" "\$JACO_LITE_HOME/current" && ln -sfn "\$cur" "\$JACO_LITE_HOME/previous" && echo "jaco-lite: now on \$prev (was \$cur)."; exit \$? ;;
+    [ -f "\$JACO_LITE_HOME/\$prev/.install.json" ] || { echo "jaco-lite: previous build metadata missing; update before rollback." >&2; exit 1; }
+    ln -sfn "\$prev" "\$JACO_LITE_HOME/current" && ln -sfn "\$cur" "\$JACO_LITE_HOME/previous" && cp "\$JACO_LITE_HOME/current/.install.json" "\$JACO_LITE_HOME/install.json" && echo "jaco-lite: now on \$prev (was \$cur)."; exit \$? ;;
   uninstall)
     if [ "\${2:-}" != "--yes" ]; then printf 'Remove %s and the jaco-lite command? Your projects and ~/.jaco are not touched. [y/N] ' "\$JACO_LITE_HOME"; read -r a </dev/tty || a=n; case "\$a" in y|Y) ;; *) echo "kept."; exit 0 ;; esac; fi
     rm -f "$BIN_DIR/jaco-lite"; rm -rf "\$JACO_LITE_HOME"; echo "jaco-lite: removed."; exit 0 ;;
@@ -206,6 +239,9 @@ case "\${1:-}" in
     echo "install folder : \$JACO_LITE_HOME"; echo "current build  : \$(readlink "\$JACO_LITE_HOME/current")"; echo "previous build : \$(readlink "\$JACO_LITE_HOME/previous" 2>/dev/null || echo none)"
     echo "node           : \$NODE (\$("\$NODE" --version 2>/dev/null || echo 'does not start'))"
     sed -n -e 's/^  "builtAt": "\(.*\)",\{0,1\}\$/built at       : \1/p' -e 's/^  "sha256": "\(.*\)",\{0,1\}\$/sha256         : \1/p' -e 's/^  "kind": "\(.*\)",\{0,1\}\$/kind           : \1/p' "\$JACO_LITE_HOME/install.json" 2>/dev/null
+    if [ -f "\$JACO_LITE_HOME/current/release.json" ]; then
+      "\$NODE" -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); console.log("source commit  : " + (r.sourceCommit || "unknown"))' "\$JACO_LITE_HOME/current/release.json" || exit 1
+    fi
     exec "\$NODE" "\$JACO_LITE_HOME/current/start.mjs" --check ;;
   version|--version) sed -n 's/^  "version": "\(.*\)",\$/\1/p' "\$JACO_LITE_HOME/install.json"; exit 0 ;;
 esac
@@ -230,5 +266,6 @@ else
   say "    To type just  jaco-lite  add this to your shell profile:  export PATH=\"$BIN_DIR:\$PATH\""
 fi
 say "    Update:  jaco-lite update    Remove:  jaco-lite uninstall"
+say "    Updates stage a new build for the next launch. Running sessions keep their build; finish or pause work before restarting."
 [ "$TERMUX" = 1 ] && say "    Android is experimental: it has not been verified on a phone yet. Open the address JACO prints in your browser."
 exit 0

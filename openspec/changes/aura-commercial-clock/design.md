@@ -1,0 +1,2 @@
+# Design
+Explicit commercial clock choice; existing routine tick enqueues at most hourly, yields to other work. Nova current/claim/begin check the exact signed clock. Only specified marketplace read and apply tools; existing action gate reviews proposals/NDA. Canonical KnowledgeStore holds policy and receipt-indexed outcome summaries, not proven revenue. Delivery and settlement require separate verified integration.

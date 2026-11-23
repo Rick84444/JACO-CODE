@@ -6,6 +6,24 @@ export const ESCALATION_SCHEMA = 'jaco.reasoning-escalation/v1';
 const asArray = value => Array.isArray(value) ? value : [];
 const text = (value, max = 1200) => String(value ?? '').trim().slice(0, max);
 const uniq = values => [...new Set(values.filter(Boolean))];
+// A long coding contract was carried whole into the packet and blocked every planning turn
+// (CONTEXT_PACKET_BUDGET_EXCEEDED). The planner keeps what it must follow; long lists are capped.
+export function boundContract(contract) {
+  if (!contract || typeof contract !== 'object') return null;
+  const list = (value, count, max) => asArray(value).slice(0, count).map(v => text(v, max));
+  return {
+    schema: text(contract.schema, 80) || null,
+    objective: text(contract.objective, 1500),
+    acceptance: list(contract.acceptance, 12, 300),
+    scope: contract.scope && typeof contract.scope === 'object'
+      ? { allowed: list(contract.scope.allowed, 40, 160), forbidden: list(contract.scope.forbidden, 40, 160) } : null,
+    verification: contract.verification && typeof contract.verification === 'object'
+      ? { commands: list(contract.verification.commands, 8, 300), required_stages: list(contract.verification.required_stages, 12, 80) } : null,
+    execution: contract.execution && typeof contract.execution === 'object' ? { ...contract.execution } : null,
+    budget: contract.budget ?? null,
+    preApproved: list(contract.preApproved, 6, 40),
+  };
+}
 
 function summarizeReceipt(receipt, index) {
   const result = receipt?.result && typeof receipt.result === 'object'
@@ -62,10 +80,18 @@ function trimPacket(packet, maxChars) {
   // Lowest-value historical material is removed first. Current objective,
   // authority and selected move are never removed.
   for (const key of ['operatorNotes', 'observations', 'failures', 'evidence']) shrink(key);
+  if (packetSize(out) > maxChars && out.graphMemory) {
+    while (out.graphMemory.matches?.length > 1 && packetSize(out) > maxChars) out.graphMemory.matches.pop();
+    if (packetSize(out) > maxChars) out.graphMemory = null;
+  }
   if (packetSize(out) > maxChars && out.memory) out.memory = text(out.memory, 800);
   if (packetSize(out) > maxChars) {
     out.known = asArray(out.known).slice(0, 6).map(v => text(v, 300));
     out.blockers = asArray(out.blockers).slice(0, 6).map(v => text(v, 300));
+  }
+  if (packetSize(out) > maxChars && out.authority?.contract) {
+    const c = out.authority.contract;
+    out.authority.contract = { objective: text(c.objective, 400), execution: c.execution ?? null, verification: c.verification ?? null };
   }
   if (packetSize(out) > maxChars) throw new Error('CONTEXT_PACKET_BUDGET_EXCEEDED');
   return out;
@@ -76,7 +102,8 @@ export function buildContextPacket({
   strategicContext = null,
   homeText = '',
   skillText = '',
-  maxChars = 12_000,
+  memoryGraph = null,
+  maxChars = 200_000,
 } = {}) {
   if (!mission?.goal) throw new Error('CONTEXT_PACKET_MISSION_REQUIRED');
   const board = strategicContext?.board || null;
@@ -87,7 +114,7 @@ export function buildContextPacket({
   const blockers = uniq(asArray(board?.activeObstacles).map(item => text(item?.description || item?.title || item?.label || item, 500)));
   const constraints = redactDeep({
     allowedTasks: asArray(mission.allowedTasks).map(v => text(v, 120)),
-    contract: mission.contract || null,
+    contract: boundContract(mission.contract),
     budget: mission.budget || null,
   });
 
@@ -112,6 +139,17 @@ export function buildContextPacket({
     observations,
     procedure: skillText ? text(redactDeep(skillText), 2500) : null,
     memory: homeText ? text(redactDeep(homeText), 2500) : null,
+    graphMemory: memoryGraph?.source === 'canonical_continuum_graph' ? redactDeep({
+      source: 'canonical_continuum_graph',
+      authority: 'read_only_context',
+      graphHash: text(memoryGraph.graphHash, 100) || null,
+      repositorySnapshotHash: text(memoryGraph.repositorySnapshotHash, 100) || null,
+      partial: memoryGraph.partial === true,
+      matches: asArray(memoryGraph.matches).slice(0, 8).map(row => ({
+        id: text(row.id, 180), type: text(row.type, 20),
+        label: text(row.label, 160), verification: text(row.verification, 20),
+      })),
+    }) : null,
     operatorNotes: [],
     authority: {
       mode: 'mission_contract_only',
@@ -122,7 +160,7 @@ export function buildContextPacket({
       rule: 'done requires observed evidence; model confidence is not evidence',
     },
   };
-  return trimPacket(redactDeep(packet), Math.max(4000, Number(maxChars) || 12_000));
+  return trimPacket(redactDeep(packet), Math.max(4000, Number(maxChars) || 200_000));
 }
 
 export function formatContextPacket(packet) {

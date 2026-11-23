@@ -2,13 +2,13 @@
 
 ![JACO](media/icon.png)
 
-**Your own AI agent inside VS Code.** Give Aura a goal; it plans, writes code in a safe copy of your project, uses a real browser, and shows you every step in plain words, in English or Swedish. It runs on your computer with your own model (a free Google AI Studio key works, or a local model through Ollama).
+**Aura inside VS Code.** Give Aura a goal; she plans, writes code in a safe copy of your project, uses a real browser, and shows you every step in plain words, in English or Swedish. Choose the model provider that fits the task: local or cloud, with JACO Core remaining the canonical runtime.
 
 ## Get started in three steps
 
 1. Install **JACO Lite** from [jacocode.com](https://jacocode.com/#lite-download) (Node.js 22.5+), unzip it and run START.
 2. Install this extension and click **JACO** in the activity bar.
-3. Choose your model in JACO and give Aura a goal.
+3. Choose your model provider in JACO and give Aura a goal.
 
 ## What you get
 

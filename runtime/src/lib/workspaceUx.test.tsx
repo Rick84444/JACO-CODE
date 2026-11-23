@@ -43,9 +43,11 @@ test('chat exposes response cancellation separately from the running mission', (
   assert.match(html,/Avbryt svar/);
   assert.match(html,/aria-label="Väntetid"/);
   assert.match(html,/Setup action/);
-  assert.match(html,/data-testid="jaco-run-mode-toggle"/);
-  assert.match(html,/Manual/);
-  assert.doesNotMatch(html,/jaco-autonomous-active/);
+  assert.match(html,/data-testid="jaco-run-mode-status"/);
+  assert.match(html,/data-run-mode="autonomous"/);
+  assert.match(html,/jaco-autonomous-active/);
+  assert.doesNotMatch(html,/jaco-run-mode-toggle/);
+  assert.match(html,/jaco-start-mission/);
   assert.match(html,/jaco-build-agent-toggle/);
 });
 
@@ -53,10 +55,10 @@ test('agent constellation exposes real relationships and missing planning withou
   const { AgentConstellation } = await import('../components/AgentConstellation');
   const network:any={schema:'jaco.agent-network/v1',observedAt:new Date().toISOString(),coordinatorId:'coordinator:aura',nodes:[
     {id:'coordinator:aura',kind:'coordinator',name:'Aura',role:'Main agent',parentId:null,status:'CONNECTED',purpose:'Coordinate actual work',model:null,source:'Aura runtime',missionIds:[],planIds:[]},
-    {id:'research',kind:'task-agent',name:'API specialist',role:'Mission context',parentId:'coordinator:aura',status:'READY',purpose:'Inspect actual interfaces',model:null,source:'Aura Strategy Runtime',missionIds:[],planIds:['plan'],dependencies:[]},
+    {id:'research',kind:'task-agent',name:'API specialist',role:'Aura mission step',parentId:'coordinator:aura',status:'READY',purpose:'Inspect actual interfaces',model:null,source:'Aura Strategy Runtime',missionIds:[],planIds:['plan'],dependencies:[]},
   ],links:[{from:'coordinator:aura',to:'research',kind:'delegation'}],plans:[{id:'plan',title:'Research the interface',objective:'Understand the actual code',status:'ACTIVE',agentIds:['research'],replans:[]}],planningAvailable:true,coordinatorAvailable:true,truncated:false};
   const html=renderToStaticMarkup(<AgentConstellation network={network} error={null} onSelectMission={noop}/>);
-  assert.match(html,/API specialist, Mission context, Ready/);
+  assert.match(html,/API specialist, Aura mission step, Ready/);
   assert.match(html,/data-kind="delegation"/);
   assert.match(html,/Inspect actual interfaces|Research the interface/);
   assert.doesNotMatch(html,/The coordinator is not responding/);
@@ -91,13 +93,16 @@ test('CDP refuses ambiguous URL-only attachment instead of choosing another iden
  }finally{globalThis.fetch=original;}
 });
 
-test('routine background observations are grouped while mission blockers stay in the conversation', () => {
+test('routine observations stay collapsed while actionable blockers remain discoverable', () => {
   const session:any={messages:[],setMessages:noop,appendMessage:async()=>{},storageReady:true,storageError:null,retryStorage:noop,input:'',setInput:noop,busy:null,setBusy:noop,toolArguments:'{}',setToolArguments:noop};
   const event:any={id:'background',at:'2026-10-22T10:00:00Z',type:'mission.dispatch.started',category:'observation',title:'New observation',text:'Dispatcher started',missionId:null,evidence:{outcome:'observed'}};
   const html=renderToStaticMarkup(<AuraChatPanel session={session} onStartGoal={noop} liveEvents={[event,{...event,id:'blocked',category:'blocked',title:'Work is blocked',text:'Connection lost',evidence:{outcome:'unknown'}}]}/>);
-  const grouped=html.slice(html.indexOf('<details class="cognitive-background-events"'),html.indexOf('</details>')+10);
+  const start=html.indexOf('<details class="cognitive-background-events"');
+  assert.ok(start>=0,'runtime activity remains accessible under diagnostics');
+  const grouped=html.slice(start,html.indexOf('</details>',start)+10);
   assert.match(grouped,/Dispatcher started/);
   assert.doesNotMatch(grouped,/Connection lost/);
+  assert.match(html,/<details class="cognitive-chat-blockers"/);
   assert.match(html,/Connection lost/);
 });
 
@@ -119,3 +124,9 @@ test('explicit mission controls are still sendable while an unrelated chat answe
   const ordinaryButton=ordinaryHtml.match(/<button data-testid="jaco-chat-send"[^>]*>/)?.[0] || '';
   assert.ok(ordinaryButton.includes('disabled'), 'ordinary second model turn remains bounded');
 });
+
+ test('remote navigation exposes existing work views without losing chat or approvals', () => {
+ const html=renderToStaticMarkup(<CognitiveWorkspace remoteMode canvas="conversation" onCanvas={noop} conversation="Conversation" detail="Code" stage="Stage" stagePinned={false} onTogglePin={noop} sidePanel={null} sidebar="explorer" sidePanelOpen={false} onSidebar={noop} onCloseSidebar={noop} status={{label:'Ready',tone:'idle'}} projectName="Project" changes={0} approvalCount={0} onApprovals={noop} onCommands={noop} onSignOut={noop} lastObservedAt={null} error={null}/>);
+ const nav=html.match(/<nav[^>]*aria-label="Remote control"[^>]*>[\s\S]*?<\/nav>/)?.[0];
+ assert.ok(nav); for(const label of ['Chat','Code','Preview','Tools &amp; models','Approvals']) assert.ok(nav.includes(label), label);
+ });

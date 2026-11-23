@@ -1,13 +1,12 @@
 name: JACO Lite download
 on:
   pull_request:
-    paths: ['lite/**', 'tools/build-lite.mjs', 'tools/verify-lite.mjs', 'tools/serve-dir.mjs', 'tests/nova/lite-install.test.mjs', 'tests/nova/*connections*', 'tests/nova/lite.test.mjs', 'tests/nova/gameboard-mcp-access.test.mjs', 'tests/nova/lite-chat-routing.test.mjs', 'tests/nova/jacocode-site.test.mjs', 'site/**', 'agents/lib/aura-seer-chat.mjs', 'runtime/server.ts', 'runtime/src/server/**', '.github/workflows/lite-release.yml']
+    paths: ['lite/**', 'tools/build-lite.mjs', 'tools/verify-lite.mjs', 'tools/serve-dir.mjs', 'tests/nova/lite-install.test.mjs', 'tests/nova/*connections*', 'tests/nova/lite.test.mjs', 'tests/nova/gameboard-mcp-access.test.mjs', 'tests/nova/lite-chat-routing.test.mjs', 'tests/nova/jacocode-site.test.mjs', 'tests/nova/jaco-link-saas.test.mjs', 'site/**', 'agents/lib/aura-seer-chat.mjs', 'runtime/**', 'agents/**', 'gateway/**', 'package.json', 'package-lock.json', 'tests/nova/pixel-avf-contract.test.mjs', 'openspec/changes/harden-pixel-avf-terminal-release/**', '.github/workflows/lite-release.yml']
   push:
     branches: [main]
-    paths: ['lite/**', 'tools/build-lite.mjs', 'tools/verify-lite.mjs', 'tools/serve-dir.mjs', 'site/**', 'agents/**', 'runtime/**', '.github/workflows/lite-release.yml']
-  # Building and verifying the download happens on every merge to main. Publishing it to jacocode.com does not:
-  # that is a deliberate act, asked for here. (This trigger named a `master` branch that does not exist, so none
-  # of it had ever run.)
+    paths: ['runtime/**', 'agents/**', 'gateway/**', 'lite/**', 'windows/product/**', 'tools/**', 'scripts/**', 'skills/**', 'public/**', 'site/**', 'extensions/**', 'package.json', 'package-lock.json', '.github/workflows/lite-release.yml', '.github/workflows/jaco-windows-release.yml']
+  # Every affected main revision builds, verifies and publishes the same checked downloads.
+  # Manual dispatch remains available to recover or explicitly republish main.
   workflow_dispatch:
     inputs:
       publish:
@@ -18,7 +17,7 @@ permissions:
   contents: read
 concurrency:
   group: lite-download-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   verified-lite:
     runs-on: ubuntu-latest
@@ -30,8 +29,10 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: runtime/package-lock.json
+      - name: Strict OpenSpec CLI validation of Pixel delivery contract
+        run: npx --yes --package=@fission-ai/openspec@1.16.1 openspec validate harden-pixel-avf-terminal-release --strict --no-interactive
       - run: npm ci --prefix runtime
-      - run: node --test tests/nova/lite-chat-routing.test.mjs tests/nova/lite.test.mjs tests/nova/lite-install.test.mjs tests/nova/gameboard-mcp-access.test.mjs tests/nova/automatic-connections.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/provider-env-selection.test.mjs tests/nova/jacocode-site.test.mjs
+      - run: node --test tests/nova/lite-chat-routing.test.mjs tests/nova/lite.test.mjs tests/nova/lite-install.test.mjs tests/nova/gameboard-mcp-access.test.mjs tests/nova/automatic-connections.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/provider-env-selection.test.mjs tests/nova/jacocode-site.test.mjs tests/nova/jaco-link-saas.test.mjs
       - run: npm run lint --prefix runtime
       - name: Build the actual download from this commit
         env:
@@ -74,6 +75,63 @@ jobs:
             build/lite/platforms/*.receipt.json
           if-no-files-found: error
 
+  pixel-arm64-smoke:
+    needs: verified-lite
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-jaco-lite
+          path: pixel-release
+      - name: Check OpenSpec and AVF launcher negative cases on real ARM64 Linux
+        run: |
+          test "$(uname -m)" = aarch64
+          node --test tests/nova/pixel-avf-contract.test.mjs
+      - name: Check the shared Android ZIP and execute its Pixel launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip="$(find pixel-release -name 'jaco-lite-android-*.zip' -type f | head -1)"
+          test -n "$zip" && test -f "$zip.sha256"
+          expected="$(cut -d ' ' -f1 < "$zip.sha256")"
+          actual="$(sha256sum "$zip" | cut -d ' ' -f1)"
+          test "$actual" = "$expected"
+          stage="$(mktemp -d)"
+          unzip -q "$zip" -d "$stage"
+          launcher="$(find "$stage" -name 'START-PIXEL-TERMINAL.sh' -type f | head -1)"
+          test -n "$launcher"
+          bash "$launcher" --check
+          node tools/verify-lite.mjs "$zip"
+      - name: Exercise the actual Android installer and retained platform on ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          serve="$RUNNER_TEMP/pixel-download"; mkdir -p "$serve"
+          zip="$(find pixel-release -name 'jaco-lite-android-*.zip' -type f | head -1)"
+          cp "$zip" "$serve/jaco-lite-android.zip"
+          cp "$(find pixel-release -name latest.json -type f | head -1)" "$serve/latest.json"
+          cp lite/install.sh "$serve/install.sh"
+          node tools/serve-dir.mjs "$serve" 8792 > "$RUNNER_TEMP/pixel-serve.log" 2>&1 &
+          server=$!; trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in {1..30}; do curl -fsS http://127.0.0.1:8792/latest.json >/dev/null && break; sleep 1; done
+          export JACO_LITE_BASE_URL=http://127.0.0.1:8792 JACO_LITE_INSTALL_URL=http://127.0.0.1:8792/install.sh
+          export JACO_LITE_HOME="$RUNNER_TEMP/pixel-home" JACO_LITE_BIN_DIR="$RUNNER_TEMP/pixel-bin"
+          JACO_LITE_PLATFORM=android sh lite/install.sh
+          "$JACO_LITE_BIN_DIR/jaco-lite" doctor | tee "$RUNNER_TEMP/pixel-doctor.txt"
+          grep -q 'installation OK' "$RUNNER_TEMP/pixel-doctor.txt"
+          grep -q 'kind *: android' "$RUNNER_TEMP/pixel-doctor.txt"
+          grep -q "source commit *: $GITHUB_SHA" "$RUNNER_TEMP/pixel-doctor.txt"
+          "$JACO_LITE_BIN_DIR/jaco-lite" update > "$RUNNER_TEMP/pixel-update.txt"
+          cat "$RUNNER_TEMP/pixel-update.txt"
+          grep -q 'already up to date' "$RUNNER_TEMP/pixel-update.txt"
+          test -f "$JACO_LITE_HOME/current/START-PIXEL-TERMINAL.sh"
+          "$JACO_LITE_BIN_DIR/jaco-lite" uninstall --yes
+
   windows-lite-smoke:
     needs: verified-lite
     runs-on: windows-latest
@@ -88,7 +146,7 @@ jobs:
       - name: Install canonical runtime dependencies on Windows
         run: npm ci --prefix runtime
       - name: Run portable Lite regression tests on Windows
-        run: node --test tests/nova/lite-chat-routing.test.mjs tests/nova/lite.test.mjs tests/nova/gameboard-mcp-access.test.mjs tests/nova/gameboard-fabric.test.mjs tests/nova/gameboard-exchange.test.mjs tests/nova/jaco-editor-mcp.test.mjs
+        run: node --test tests/nova/lite-chat-routing.test.mjs tests/nova/lite.test.mjs tests/nova/gameboard-mcp-access.test.mjs tests/nova/gameboard-fabric.test.mjs tests/nova/gameboard-exchange.test.mjs tests/nova/jaco-editor-mcp.test.mjs tests/nova/jaco-link-saas.test.mjs
       - name: Build exact Windows-compatible downloadable Lite
         env:
           JACO_BUILD_SOURCE_COMMIT: ${{ github.sha }}
@@ -151,11 +209,9 @@ jobs:
 
   # Publishing waits for the Windows run: a broken Windows download must not go live before the check that finds it.
   publish:
-    # Deploying the public site is restricted to a deliberate dispatch on main. `workflow_dispatch` lets the
-    # caller choose any ref, so without the ref check `publish=true` on a feature branch would put unreviewed
-    # code on jacocode.com. The build and verify jobs above still run on any ref; only publishing is pinned.
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish
-    needs: [verified-lite, windows-lite-smoke]
+    # Only a verified main build can change the existing website; PRs and feature branches never publish.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
+    needs: [verified-lite, pixel-arm64-smoke, windows-lite-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -196,7 +252,21 @@ jobs:
             }'
           # A deploy that lost the logo or the favicon would strip them from the live site.
           test -f "$SITE/brand/jaco-logo.png" && test -f "$SITE/brand/jaco-icon-192.png"
+      - name: Refuse to publish a superseded main revision
+        id: freshness
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test -n "$current"
+          if [ "$current" = "$GITHUB_SHA" ]; then
+            echo 'publish=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping superseded main revision $GITHUB_SHA; current main is $current"
+          fi
       - name: Publish existing jacocode.com Worker
+        if: steps.freshness.outputs.publish == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
@@ -206,6 +276,7 @@ jobs:
           fi
           npx --yes wrangler@4 deploy --config site/jacocode.com/wrangler.jsonc
       - name: Verify the public site matches what was published
+        if: steps.freshness.outputs.publish == 'true'
         run: |
           SITE=site/jacocode.com/public
           # `index.html` is fetched as `/`: Cloudflare's default HTML handling redirects the explicit path to the
@@ -213,7 +284,8 @@ jobs:
           # --location covers the same redirect on any other path.
           for file in download/jaco-lite.zip download/jaco-lite.zip.sha256 download/jaco-lite-windows.zip \
                       download/jaco-lite-android.zip download/latest.json install.sh install.ps1 \
-                      index.html style.css brand/jaco-logo.png; do
+                      index.html style.css brand/jaco-logo.png \
+                      link/remote.html link/remote.js link/connect.html link/manifest.webmanifest; do
             case "$file" in index.html) url=''; ;; *) url="$file"; ;; esac
             out="$RUNNER_TEMP/public-$(echo "$file" | tr / -)"
             curl --fail --location --retry 4 --retry-delay 5 "https://jacocode.com/$url" --output "$out"

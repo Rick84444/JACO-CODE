@@ -1,4 +1,7 @@
+import { COMMERCIAL_SOURCE, commercialTaskAllowed } from '../autonomy/commercialClock.mjs';
 import {actionLeaseMs} from '../../../../agents/lib/web-fetch-policy.mjs';
+import { validateToolProposal } from '../../../../agents/lib/tool-proposals.mjs';
+import { checkLocalWriteTask } from '../../../../agents/lib/local-write.mjs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { CODE_TASKS, assertCodingBudget, contractVerificationStatus, codingExecutionSummary, normalizeCodingContract, validateCodingTask } from '../../../../agents/lib/coding-contract.mjs';
@@ -14,6 +17,7 @@ import { validateGithubRepoTask } from '../../../../agents/lib/github-repo.mjs';
 import { validateRepoScanTask } from '../../../../agents/lib/repo-scan.mjs';
 import { validateMcpCall } from '../../../../agents/lib/mcp-tools.mjs';
 import { mayAutoReplayTask } from '../../../../agents/lib/replay-semantics.mjs';
+import { isRecoverableToolHealthError } from '../../../../agents/lib/mission-health-policy.mjs';
 
 // Marks a result whose state changes must commit even though the call itself fails.
 class CommittedFailure { constructor(error) { this.error = error; } }
@@ -60,7 +64,11 @@ const DEFAULT_TASKS = [
   'android-status', 'android-observe', 'android-begin', 'android-target',
   'android-open-app', 'android-tap', 'android-type', 'android-scroll', 'android-back', 'android-home',
   'windows-wmi-read', 'screenshot', 'get-cursor',
-  'invoke-worker', 'shell', 'github-create-repo', 'repo-scan', 'mcp-call', 'mcp-write', 'skill-load',
+  'invoke-worker', 'shell', 'github-create-repo', 'repo-scan', 'mcp-call', 'mcp-write', 'skill-load', 'propose-tool',
+  // One file anywhere on this computer: always a one-shot decision for exactly that path and content.
+  'local-write',
+  // Operating the computer as a user: the operator-action guard asks before anything hard to undo or visible to others.
+  'mouse-move', 'mouse-click', 'mouse-scroll', 'key-press', 'type-text',
   'vault-generate-secret', 'vault-get-secret', 'vault-list-secrets', 'secret-store', 'email-inbox',
   ...CODE_TASKS,
 ];
@@ -243,8 +251,16 @@ export function validateTask(task, allowed) {
   }
   if (['browser-survey-site', 'web-fetch'].includes(task.type) && !['http:', 'https:'].includes(new URL(data.url).protocol)) throw new Error('INVALID_URL');
   if (task.type === 'skill-load' && !/^[a-z][a-z0-9-]{1,60}$/.test(String(data.id))) throw new Error('INVALID_SKILL_ID');
+  if (task.type === 'local-write') { const w = checkLocalWriteTask(data); return { type: task.type, data: { path: w.path, content: w.content }, ...(task.expectedOutcome ? { expectedOutcome: task.expectedOutcome } : {}) }; }
+  if (task.type === 'propose-tool') return { type: task.type, data: validateToolProposal(data), ...(task.expectedOutcome ? { expectedOutcome: task.expectedOutcome } : {}) };
   if (['vault-generate-secret', 'vault-get-secret', 'secret-store'].includes(task.type) && !/^NOVA_[A-Z0-9_]{2,77}$/.test(String(data.key))) throw new Error('INVALID_VAULT_KEY');
   if (task.type === 'secret-store' && !/^\[?secret:[0-9a-f]{12}\]?$/.test(String(data.handle))) throw new Error('INVALID_SECRET_HANDLE');
+  if (['mouse-move','mouse-click','mouse-scroll','key-press','type-text'].includes(task.type)) {
+    if(!Number.isSafeInteger(data.expectedHwnd)||data.expectedHwnd<=0)throw Error('INVALID_EXPECTED_HWND');
+    if(task.type.startsWith('mouse-')&&(!Number.isSafeInteger(data.x)||!Number.isSafeInteger(data.y)))throw Error('INVALID_INPUT_COORDINATES');
+    if(data.measureEntropy!==undefined&&(task.type!=='mouse-click'||typeof data.measureEntropy!=='boolean'))throw Error('INVALID_ENTROPY_OPTION');
+    if(data.double!==undefined&&typeof data.double!=='boolean')throw Error('INVALID_DOUBLE_CLICK');
+  }
   if (data.button && !['left', 'right', 'middle'].includes(data.button)) throw new Error('INVALID_BUTTON');
   if (task.type === 'screenshot') {
     if (data.outFile) throw new Error('SCREENSHOT_PATH_IS_RUNTIME_OWNED');
@@ -299,16 +315,19 @@ export function validateTask(task, allowed) {
   return { type: task.type, data, expectedOutcome: String(task.expectedOutcome || '').slice(0, 2000) };
 }
 
-// SEER owns missions in the existing mission-bus database. Nova leases one turn
+// Aura owns operator missions in the existing mission-bus database. Its legacy Nova executor leases one turn
 // at a time. An interrupted execution is never automatically repeated.
 export class NovaMissionControl {
   // capabilities: the operator's switches (capabilityPolicy.mjs). Without it missions keep the narrow legacy scope.
   constructor(bus, { allowedTasks = DEFAULT_TASKS, now = () => Date.now(), knownExecutor = () => true, capabilities = null } = {}) {
     this.bus = bus;
+    this.commercialAuthorization = (_mission, _task = null) => false;
     this.capabilities = capabilities;
     this.knownExecutor = knownExecutor;
     this.db = bus.db;
     this.now = now;
+    // Volatile observation only: after Core restart the actual local executor must report again.
+    this.localExecutorObservedAt = null;
     this.allowedTasks = [...new Set(allowedTasks)].filter(t => Object.hasOwn(TASK_FIELDS, t));
     this.db.exec(`CREATE TABLE IF NOT EXISTS nova_sessions (
       mission_id TEXT PRIMARY KEY REFERENCES missions(id), owner TEXT, token TEXT,
@@ -330,7 +349,7 @@ export class NovaMissionControl {
     if (!sessionColumns.has('budget_turn_base')) this.db.exec('ALTER TABLE nova_sessions ADD COLUMN budget_turn_base INTEGER NOT NULL DEFAULT 0');
     if (!sessionColumns.has('budget_started_at')) this.db.exec('ALTER TABLE nova_sessions ADD COLUMN budget_started_at INTEGER');
     this.transactionDepth = 0;
-    for (const name of ['create','claim','preflight','begin','finish','release','resolve','requestCancel','steer']) {
+    for (const name of ['create','claim','preflight','begin','finish','release','resolve','requestCancel','steer','recoverBlockedHealth','recoverModelSelection']) {
       const operation=this[name].bind(this);
       this[name]=(...args)=> {
         if (this.transactionDepth) return operation(...args);
@@ -345,6 +364,20 @@ export class NovaMissionControl {
         return result;
       };
     }
+  }
+
+  observeLocalExecutor(executor) {
+    if (executor !== 'nova') throw new Error('LOCAL_EXECUTOR_REQUIRED');
+    this.localExecutorObservedAt = this.now();
+    return this.localExecutorHealth();
+  }
+
+  localExecutorHealth() {
+    const at = this.localExecutorObservedAt;
+    const age = at === null ? Infinity : this.now() - at;
+    return { schema: 'jaco.nova-executor-health/v1',
+      state: age >= 0 && age <= 45_000 ? 'RUNNING' : 'UNVERIFIED',
+      observedAt: at === null ? null : new Date(at).toISOString() };
   }
 
   create({ goal, idempotencyKey, source = 'operator', mandateId = null, contract = null, allowedTasks = null, executor = 'nova',parent=null, projectRoot = null }) {
@@ -384,9 +417,22 @@ export class NovaMissionControl {
     const requestedTasks = codingContract ? requested : requested.filter(task => !CODE_TASKS.has(task));
     if (!requestedTasks.length || requestedTasks.some(task => !this.allowedTasks.includes(task))) throw new Error('INVALID_MISSION_ALLOWED_TASKS');
     if (requestedTasks.includes('windows-wmi-read') && !desktopKind) throw new Error('WINDOWS_WMI_REQUIRES_DESKTOP_AGENTOS');
-    // A re-phrased goal that is already open for the same executor joins that mission.
-    const open = this.bus.listMissions(500)
-      // BLOCKED missions are excluded: re-submitting a stuck goal is a legitimate retry.
+    // A still-pending operator approval is the same mission, not a new retry.
+    // Regular BLOCKED failures can still be resubmitted; only a pending decision
+    // is preserved. Project missions require an exact goal, root and contract,
+    // never fuzzy dedup across different worktrees or grants.
+    const listed = this.bus.listMissions(500);
+    const pendingApproval = listed.find(item =>
+      String(item.status || '').toUpperCase() === 'BLOCKED'
+      && (item.metadata?.executor || 'nova') === normalizedExecutor
+      && item.goal === goal.trim()
+      && (item.metadata?.projectRoot || null) === (projectRoot ? path.resolve(projectRoot) : null)
+      && JSON.stringify(item.metadata?.codingContract || null) === JSON.stringify(codingContract)
+      && this.pendingOperatorAction(item.id) !== null);
+    if (pendingApproval) {
+      return { ...this.get(pendingApproval.id), deduplicated: true, awaitingOperator: true };
+    }
+    const open = listed
       .filter(item => ['ACTIVE', 'AWAITING_VERIFICATION'].includes(String(item.status || '').toUpperCase()))
       .map(item => ({ id: item.id, goal: item.goal, executor: item.metadata?.executor || 'nova' }));
     const duplicate = codingContract ? null : findDuplicate(goal, normalizedExecutor, open);
@@ -398,7 +444,7 @@ export class NovaMissionControl {
       goal,
       source,
       idempotencyKey: `nova:${idempotencyKey}`,
-      metadata: { executor: normalizedExecutor, authority: 'SEER', allowedTasks: requestedTasks, mandateId: mandateId?.trim() || null, codingContract,
+      metadata: { executor: normalizedExecutor, authority: 'AURA', primaryAgent: 'aura', allowedTasks: requestedTasks, mandateId: mandateId?.trim() || null, codingContract,
         ...(projectRoot ? { projectRoot: path.resolve(projectRoot) } : {}),
         ...(parent ? {parent:{graphId:String(parent.graphId).slice(0,200),nodeKey:String(parent.nodeKey).slice(0,120),mainGoal:parent.mainGoal,dependencies:Array.isArray(parent.dependencies)?parent.dependencies.map(String).slice(0,100):[],
           ...(parent.agent ? {agent:{id:'task:'+JSON.stringify([String(parent.graphId).slice(0,200),String(parent.nodeKey).slice(0,120)]),name:String(parent.agent.name || goal).slice(0,300),parentKey:typeof parent.agent.parentKey === 'string' ? parent.agent.parentKey.slice(0,120) : null,kind:'task-agent'}} : {}),
@@ -408,21 +454,56 @@ export class NovaMissionControl {
     return this.get(mission.id);
   }
 
+  // The 40-entry session window is model/UI context, never the evidence authority.
+  // Reuse the existing immutable mission events and merge legacy session-only receipts.
+  evidenceReceipts(id, recent = null) {
+    const rows = this.db.prepare("SELECT payload_json FROM events WHERE mission_id=? AND type='NOVA_ACTION_RESULT' ORDER BY seq ASC").all(id);
+    const receipts = new Map();
+    for (const row of rows) {
+      const receipt = decode(row.payload_json);
+      if (receipt?.actionId) receipts.set(receipt.actionId, receipt);
+    }
+    const window = recent ?? decode(this.db.prepare('SELECT receipts_json FROM nova_sessions WHERE mission_id=?').get(id)?.receipts_json || '[]');
+    for (const receipt of window || []) if (receipt?.actionId && !receipts.has(receipt.actionId)) receipts.set(receipt.actionId, receipt);
+    return [...receipts.values()].sort((a,b) => (Number(String(a.actionId).split(':').at(-1)) || 0) - (Number(String(b.actionId).split(':').at(-1)) || 0));
+  }
+
   get(id) {
     const row = this.db.prepare('SELECT * FROM nova_sessions WHERE mission_id=?').get(id);
     if (!row) throw new Error('NOVA_MISSION_NOT_FOUND');
     const base = this.bus.getMission(id);
     const receipts = decode(row.receipts_json);
     const contract = base.metadata?.codingContract || null;
+    const proof = this.evidenceReceipts(id, receipts);
+    const replan = this.bus.lastMissionEvent(id,'NOVA_REPLAN_REQUEST');
+    const lastResolution = this.bus.lastMissionEvent(id,'NOVA_OPERATOR_RESOLUTION');
+    const lastResult = this.bus.lastMissionEvent(id,'NOVA_ACTION_RESULT');
+    const spend = this.bus.lastMissionEvent(id,'NOVA_SPEND_BLOCKED');
+    const used = row.turn - (row.budget_turn_base || 0);
+    const remainingBudget = contract ? {
+      max_steps: Math.max(0, contract.budget.max_steps - used),
+      max_tool_calls: Math.max(0, contract.budget.max_tool_calls - used),
+      max_duration_ms: Math.max(0, contract.budget.max_duration_ms - Math.max(0, this.now() - (row.budget_started_at ?? this.now()))),
+    } : null;
     return { ...base, phase: row.phase, turn: row.turn,
-      allowedTasks: base.metadata.allowedTasks.filter(t => this.allowedTasks.includes(t)),
+      remainingBudget,
+      pendingOperatorAction: this.pendingOperatorAction(id),
+      spendApprovalPending: base.status === 'BLOCKED' && Boolean(spend && spend.seq > (lastResolution?.seq || 0) && spend.seq > (lastResult?.seq || 0)),
+      hasUncertainOutcome: row.phase === 'INTERRUPTED' || proof.some(r => r.outcomeUnknown === true || (r.ok === true && r.verified !== true)),
+      verifiedEvidenceRefs: proof.filter(r => r.ok && r.verified).slice(-40).map(r => `nova:${id}:receipt:${r.actionId}`),
+      allowedTasks: base.metadata.allowedTasks.filter(t => this.allowedTasks.includes(t) && (!this.capabilities || this.capabilities.isTaskEnabled(t))),
       observation: decode(row.observation_json), receipts,
       activeTask: decode(row.active_task_json), failures: row.failures,
-      contract, contractStatus: contract ? contractVerificationStatus(contract, receipts) : null,
-      execution: contract ? codingExecutionSummary(contract, receipts, row.phase) : null,
+      // Read-only public lease presence. Never expose the bearer lease token
+      // or owner identity. Operator takeover must wait for planning as well as
+      // execution to quiesce; READY alone must not be treated as permission.
+      executionLeaseActive: Boolean(row.token || row.owner || (row.lease_until && row.lease_until > this.now())),
+      contract, contractStatus: contract ? contractVerificationStatus(contract, proof) : null,
+      execution: contract ? codingExecutionSummary(contract, proof, row.phase) : null,
       preflight: this.bus.lastMissionEvent(id,'NOVA_PREFLIGHT')?.payload || null,
-      replanRequest: this.bus.lastMissionEvent(id,'NOVA_REPLAN_REQUEST')?.payload || null,
+      replanRequest: replan && replan.seq > (lastResolution?.seq || 0) && replan.seq > (lastResult?.seq || 0) ? replan.payload : null,
       cancelRequested: !TERMINAL.has(base.status) && Boolean(this.bus.lastMissionEvent(id,'NOVA_CANCEL_REQUEST')),
+      paused: TERMINAL.has(base.status) ? null : this.pauseState(id),
       // Immutable operator instructions share this mission's durable event ledger.
       // Revision is the event sequence: a stale model proposal cannot start a tool after a steer.
       steering: this.latestSteering(id),
@@ -453,24 +534,118 @@ export class NovaMissionControl {
     } };
   }
 
+  // Resume a known-failed, replay-safe read after a bounded cooldown, without
+  // requiring the operator to unblock a transient service outage. Unlike resolve(),
+  // this never changes authority, approvals, tool grants or any coding budget.
+  // An unknown/side-effecting outcome or an operator/policy decision stays BLOCKED.
+  recoverBlockedHealth() {
+    const rows = this.db.prepare("SELECT s.* FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='BLOCKED' AND s.phase='BLOCKED' AND s.token IS NULL AND s.active_task_json IS NULL").all();
+    for (const row of rows) {
+      const id = row.mission_id;
+      const mission = this.get(id);
+      if (mission.cancelRequested || mission.paused || this.pendingOperatorAction(id)) continue;
+      if (mission.receipts.some(r => r?.outcomeUnknown === true || (r?.ok === true && r?.verified === false))) continue;
+      const last = mission.receipts.at(-1);
+      if (!last || last.ok !== false || !mayAutoReplayTask(last.type) || !isRecoverableToolHealthError(last.error)) continue;
+
+      // The failure must be the very action that blocked the mission, not a
+      // historical read preceding a later approval or budget denial.
+      const actionEvent = this.bus.lastMissionEvent(id, 'NOVA_ACTION_RESULT');
+      if (!actionEvent || actionEvent.payload?.actionId !== last.actionId) continue;
+      const blockers = [
+        'NOVA_OPERATOR_APPROVAL_REQUIRED', 'NOVA_SPEND_BLOCKED',
+        'NOVA_PREFLIGHT_BLOCKED', 'NOVA_PLANNING_RESULT',
+        'NOVA_LEASE_EXPIRED', 'NOVA_CANCEL_REQUEST',
+      ];
+      if (blockers.some(type => (this.bus.lastMissionEvent(id, type)?.seq || 0) > actionEvent.seq)) continue;
+      if (mission.source === 'seer-mission-graph' && (this.bus.lastMissionEvent(id, 'NOVA_REPLAN_REQUEST')?.seq || 0) > actionEvent.seq) continue;
+      const prior = this.bus.lastMissionEvent(id, 'NOVA_HEALTH_REQUEUED');
+      if (prior?.seq >= actionEvent.seq) continue;
+      const count = this.db.prepare("SELECT COUNT(*) AS n FROM events WHERE mission_id=? AND type='NOVA_HEALTH_REQUEUED'").get(id).n;
+      if (count >= 2) continue;
+      const ageMs = this.now() - Date.parse(last.at || '');
+      if (!Number.isFinite(ageMs) || ageMs < 120_000) continue;
+      if (mission.contract) {
+        try {
+          assertCodingBudget(mission.contract, {
+            toolCallsUsed: row.turn - (row.budget_turn_base || 0),
+            stepsUsed: row.turn - (row.budget_turn_base || 0),
+            failures: row.failures,
+            startedAt: row.budget_started_at,
+            now: this.now(),
+          });
+        } catch { continue; }
+      }
+      const changed = this.db.prepare("UPDATE nova_sessions SET phase='READY' WHERE mission_id=? AND token IS NULL AND phase='BLOCKED' AND active_task_json IS NULL").run(id);
+      if (changed.changes !== 1) continue;
+      this.setStatus(id, 'ACTIVE');
+      this.bus.event('NOVA_HEALTH_REQUEUED', { missionId: id, payload: {
+        evidenceRef: `nova:${id}:receipt:${last.actionId}`,
+        error: String(last.error || '').slice(0, 160), retry: count + 1,
+        next: 'Choose an alternative authorized tool. Never replay an unknown mutation.',
+        preservedBudget: true,
+      } });
+    }
+  }
+
+  // Called only after an explicit operator planner selection has passed its
+  // provider probe and has been persisted. No approval, budget or task replay.
+  recoverModelSelection(choice) {
+    if (!choice?.provider || !choice?.model || choice.by !== 'operator') return [];
+    const recovered = [];
+    const rows = this.db.prepare("SELECT s.* FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='BLOCKED' AND s.phase='BLOCKED' AND s.token IS NULL AND s.active_task_json IS NULL").all();
+    for (const row of rows) {
+      const id = row.mission_id, mission = this.get(id);
+      if (mission.paused || mission.cancelRequested || mission.pendingOperatorAction || mission.spendApprovalPending || mission.hasUncertainOutcome || mission.replanRequest) continue;
+      // Do not reassign remote, commercial, or other explicitly routed workers.
+      if ((mission.metadata?.executor || 'nova') !== 'nova' || mission.source === COMMERCIAL_SOURCE || mission.source === 'seer-mission-graph') continue;
+      const failure = this.bus.lastMissionEvent(id, 'NOVA_PLANNING_RESULT');
+      if (!failure || failure.payload?.error !== 'PLANNER_BLOCKED:AURA_MODEL_SELECTION_REQUIRED') continue;
+      const blockers = ['NOVA_OPERATOR_APPROVAL_REQUIRED','NOVA_SPEND_BLOCKED','NOVA_PREFLIGHT_BLOCKED','NOVA_ACTION_RESULT','NOVA_LEASE_EXPIRED','NOVA_CANCEL_REQUEST','NOVA_OPERATOR_RESOLUTION','NOVA_MODEL_SELECTION_REQUEUED','NOVA_REPLAN_REQUEST'];
+      if (blockers.some(type => (this.bus.lastMissionEvent(id,type)?.seq || 0) > failure.seq)) continue;
+      if (mission.contract) {
+        try { assertCodingBudget(mission.contract, {
+          toolCallsUsed: row.turn - (row.budget_turn_base || 0),
+          stepsUsed: row.turn - (row.budget_turn_base || 0),
+          failures: row.failures, startedAt: row.budget_started_at, now: this.now(),
+        }); } catch { continue; }
+      }
+      const changed = this.db.prepare("UPDATE nova_sessions SET phase='READY' WHERE mission_id=? AND token IS NULL AND phase='BLOCKED' AND active_task_json IS NULL").run(id);
+      if (changed.changes !== 1) continue;
+      this.setStatus(id,'ACTIVE');
+      this.bus.event('NOVA_MODEL_SELECTION_REQUEUED',{missionId:id,payload:{
+        provider:choice.provider, model:choice.model, blockerSeq:failure.seq,
+        preservedBudget:true, next:'Acquire a fresh planning lease; do not replay an unknown action.',
+      }});
+      recovered.push(id);
+    }
+    return recovered;
+  }
+
   // executor (optional): only missions routed to that executor ('nova' or 'desktop-agentos'), so one
   // executor's mission at the queue head never starves the other executor's work.
+  commercialAllowed(mission, task = null) { return mission.source !== COMMERCIAL_SOURCE || this.commercialAuthorization(mission, task); }
+
   current(executor = null) {
     this.recoverExpired();
+    this.recoverBlockedHealth();
     for (const row of this.db.prepare("SELECT s.mission_id FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='ACTIVE' AND s.token IS NULL").all()) this.finishRequestedCancel(row.mission_id);
     if (executor) {
       const ids = this.db.prepare("SELECT s.mission_id FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='ACTIVE' ORDER BY " + QUEUE_ORDER).all();
       for (const { mission_id } of ids) {
         const mission = this.get(mission_id);
-        if ((mission.metadata?.executor || 'nova') === executor) return mission;
+        if (!mission.paused && this.commercialAllowed(mission) && (mission.metadata?.executor || 'nova') === executor) return mission;
       }
       return null;
     }
     // Only executable ACTIVE missions belong at the queue head. BLOCKED and
     // AWAITING_VERIFICATION missions remain durable and visible by id, but must
     // not silently starve unrelated later work.
-    const row = this.db.prepare("SELECT s.mission_id FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='ACTIVE' ORDER BY " + QUEUE_ORDER + " LIMIT 1").get();
-    return row ? this.get(row.mission_id) : null;
+    for (const row of this.db.prepare("SELECT s.mission_id FROM nova_sessions s JOIN missions m ON m.id=s.mission_id WHERE m.status='ACTIVE' ORDER BY " + QUEUE_ORDER).all()) {
+      const mission = this.get(row.mission_id);
+      if (!mission.paused && this.commercialAllowed(mission)) return mission;
+    }
+    return null;
   }
 
   // A planning lease belongs to one running agent. The agent keeps its registered id across restarts, so after a restart the
@@ -514,6 +689,8 @@ export class NovaMissionControl {
     if (typeof owner !== 'string' || !owner || owner.length > 200) throw new Error('MISSION_NOT_CURRENT');
     if (executor != null && !EXECUTOR.test(String(executor))) throw new Error('INVALID_MISSION_EXECUTOR');
     const mission = this.get(id);
+    if (mission.paused) throw new Error('MISSION_PAUSED');
+    if (!this.commercialAllowed(mission)) throw Error('COMMERCIAL_CLOCK_INACTIVE');
     const claimant = executor ? String(executor) : owner.startsWith('desktop-agentos-') ? 'desktop-agentos' : 'nova';
     const desktopOwner = executorKind(claimant) === 'desktop-agentos';
     const missionExecutor = mission.metadata?.executor || 'nova';
@@ -572,6 +749,9 @@ export class NovaMissionControl {
     if ((currentVersion || steerVersion !== undefined) && steerVersion !== currentVersion) throw new Error('NOVA_STEER_STALE');
     if (row.phase !== 'PLANNING' || mission.status !== 'ACTIVE') throw new Error('NOVA_NOT_PLANNING');
     if (mission.cancelRequested) throw new Error('MISSION_CANCEL_REQUESTED');
+    if (mission.paused) throw new Error('MISSION_PAUSED');
+    if (!this.commercialAllowed(mission, task)) throw Error('COMMERCIAL_CLOCK_INACTIVE');
+    if (mission.source === COMMERCIAL_SOURCE && !commercialTaskAllowed(task)) throw Error('COMMERCIAL_TASK_OUT_OF_SCOPE');
     if (mission.contract) {
       const used = row.turn - (row.budget_turn_base || 0);
       const startedAt = row.budget_started_at ?? Date.parse(mission.createdAt || mission.created_at || '');
@@ -579,7 +759,7 @@ export class NovaMissionControl {
     }
     if (this.capabilities && !this.capabilities.isTaskEnabled(String(task?.type))) throw new Error(`TASK_TURNED_OFF_BY_OPERATOR:${String(task?.type).slice(0, 60)}`);
     let checked = validateTask(task, mission.allowedTasks);
-    if (CODE_TASKS.has(checked.type)) checked = validateCodingTask(checked, mission.contract, mission.receipts);
+    if (CODE_TASKS.has(checked.type)) checked = validateCodingTask(checked, mission.contract, this.evidenceReceipts(id));
     if (checked.type === 'github-create-repo') checked = validateGithubRepoTask(checked, mission.goal);
     if (checked.type === 'repo-scan') checked = validateRepoScanTask(checked, mission.goal);
     if (checked.type === 'mcp-call' || checked.type === 'mcp-write') checked = validateMcpCall(checked);
@@ -596,15 +776,20 @@ export class NovaMissionControl {
       this.db.prepare('DELETE FROM nova_spend_approvals WHERE mission_id=?').run(id);
       this.bus.event('NOVA_SPEND_APPROVED_ACTION', { missionId: id, payload: { reason: spend.reason, note: approval.note } });
     }
-    const harmful = operatorApprovalCheck(checked, { sandbox: Boolean(mission.contract) });
+    const harmful = operatorApprovalCheck(checked, { sandbox: Boolean(mission.contract), preApproved: mission.contract?.preApproved || [] });
     if (harmful) {
       const taskHash = `${checked.type}:${hashTaskInput(checked.data)}`;
       const gate = this.db.prepare('SELECT * FROM nova_action_gate WHERE mission_id=?').get(id);
       if (!gate?.approved_at || gate.task_hash !== taskHash) {
-        this.db.prepare('INSERT OR REPLACE INTO nova_action_gate(mission_id,task_hash,reason,requested_at,approved_at,note) VALUES(?,?,?,?,NULL,NULL)').run(id, taskHash, harmful.reason, iso());
+        // Identical pending request: preserve the original approval identity
+        // and timestamp; do not enqueue another operator notification.
+        const samePending = gate && !gate.approved_at && gate.task_hash === taskHash;
+        if (!samePending) {
+          this.db.prepare('INSERT OR REPLACE INTO nova_action_gate(mission_id,task_hash,reason,requested_at,approved_at,note) VALUES(?,?,?,?,NULL,NULL)').run(id, taskHash, harmful.reason, iso());
+        }
         this.db.prepare("UPDATE nova_sessions SET phase='BLOCKED',owner=NULL,token=NULL,lease_until=NULL WHERE mission_id=?").run(id);
         this.setStatus(id, 'BLOCKED');
-        this.bus.event('NOVA_OPERATOR_APPROVAL_REQUIRED', { missionId: id, payload: { error: `OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`, reason: harmful.reason, task: { type: checked.type, data: compactTaskInput(checked.data) } } });
+        if (!samePending) this.bus.event('NOVA_OPERATOR_APPROVAL_REQUIRED', { missionId: id, payload: { error: `OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`, reason: harmful.reason, task: { type: checked.type, data: compactTaskInput(checked.data) } } });
         return new CommittedFailure(new Error(`OPERATOR_APPROVAL_REQUIRED: ${harmful.reason}`));
       }
       // Approval covers exactly the action the operator was shown, once.
@@ -621,7 +806,7 @@ export class NovaMissionControl {
   }
 
   finish(id, { owner, token, actionId, receipt }) {
-    const existing = this.get(id).receipts.find(r => r.actionId === actionId);
+    const existing = this.evidenceReceipts(id).find(r => r.actionId === actionId);
     if (existing) return this.get(id);
     const row = this.assertLease(id, owner, token);
     const action = decode(row.active_task_json);
@@ -643,7 +828,10 @@ export class NovaMissionControl {
     const previousSuccess = receipts.findLastIndex(r => sameAction(r) && r.ok && r.verified);
     const repeatedFailures = receipts.slice(previousSuccess + 1).filter(r => sameAction(r) && r.ok === false && !r.outcomeUnknown).length;
     const stalled = !uncertain && !record.ok && repeatedFailures >= (BATCHABLE.has(action.type) ? 5 : 3);
-    const blocked = uncertain || stalled || failures >= (BATCHABLE.has(action.type) ? 5 : 3);
+    // Distinct known failures use the operator's contracted failure allowance.
+    // The independent repeated-action stop is unchanged and prevents replay loops.
+    const failureLimit = this.get(id).contract?.budget?.max_failures ?? (BATCHABLE.has(action.type) ? 5 : 3);
+    const blocked = uncertain || stalled || failures >= failureLimit;
     this.db.prepare('UPDATE nova_sessions SET phase=?,owner=NULL,token=NULL,lease_until=NULL,active_task_json=NULL,observation_json=?,receipts_json=?,failures=? WHERE mission_id=?')
       .run(blocked ? 'BLOCKED' : 'READY', JSON.stringify(record.after || record.observation || decode(row.observation_json)), JSON.stringify(receipts), failures, id);
     this.setStatus(id, blocked ? 'BLOCKED' : 'ACTIVE');
@@ -675,7 +863,7 @@ export class NovaMissionControl {
       if (mission.source !== 'seer-mission-graph' || !mission.metadata?.parent?.graphId) throw new Error('REPLAN_REQUIRES_GRAPH_MISSION');
       if (completionProposed || error) throw new Error('REPLAN_RESULT_CONFLICT');
       if (Object.keys(replanRequest).some(key => !['reason','subgoals'].includes(key))) throw new Error('REPLAN_REQUEST_INVALID');
-      if (typeof replanRequest.reason !== 'string' || !replanRequest.reason.trim() || replanRequest.reason.length > 1000 || !Array.isArray(replanRequest.subgoals) || replanRequest.subgoals.length < 2 || replanRequest.subgoals.length > 8) throw new Error('REPLAN_REQUEST_INVALID');
+      if (typeof replanRequest.reason !== 'string' || !replanRequest.reason.trim() || replanRequest.reason.length > 1000 || !Array.isArray(replanRequest.subgoals) || (replanRequest.subgoals.length === 1 || replanRequest.subgoals.length > 8)) throw new Error('REPLAN_REQUEST_INVALID');
       for (const subgoal of replanRequest.subgoals) {
         if (!subgoal || Object.keys(subgoal).some(key => !['title','objective'].includes(key)) || typeof subgoal.title !== 'string' || !subgoal.title.trim() || subgoal.title.length > 300 || typeof subgoal.objective !== 'string' || !subgoal.objective.trim() || subgoal.objective.length > 2000) throw new Error('REPLAN_SUBGOAL_INVALID');
       }
@@ -689,14 +877,15 @@ export class NovaMissionControl {
     if (completionProposed) {
       const mission = this.get(id);
       if (mission.contract) {
-        const status = contractVerificationStatus(mission.contract, mission.receipts);
+        const status = mission.contractStatus;
         if (!status.machineVerified) throw new Error(`CONTRACT_VERIFICATION_INCOMPLETE:${status.missing.join(',')}`);
       }
     }
     const failures=error ? row.failures+1 : row.failures;
     // Budget exhaustion and missing-capability errors do not recover by retrying.
     const terminalError=/CODING_CONTRACT_\w*(BUDGET|DURATION)_EXCEEDED|UNKNOWN_TASK_TYPE|WORKER_KEY_MISSING|PLANNER_BLOCKED/.test(String(error || ''));
-    const blocked=Boolean(replanRequest) || failures>=3 || terminalError;
+    const failureLimit = this.get(id).contract?.budget?.max_failures ?? 3;
+    const blocked=Boolean(replanRequest) || failures>=failureLimit || terminalError;
     this.db.prepare("UPDATE nova_sessions SET phase=?,owner=NULL,token=NULL,lease_until=NULL,failures=? WHERE mission_id=?")
       .run(completionProposed ? 'AWAITING_VERIFICATION' : blocked ? 'BLOCKED' : 'READY', failures, id);
     if(blocked)this.setStatus(id,'BLOCKED');
@@ -704,7 +893,7 @@ export class NovaMissionControl {
     // The completion reason is kept: for a read-only mission it is the answer the operator asked for.
     const reason = completionProposed && typeof completionReason === 'string' && completionReason.trim() ? stripEmoji(completionReason).trim().slice(0, 4000) : undefined;
     // Each [#n] the answer cites is checked against the receipts (agents/lib/evidence.mjs).
-    const evidence = reason ? checkCitations(reason, this.get(id).receipts) : undefined;
+    const evidence = reason ? checkCitations(reason, this.evidenceReceipts(id)) : undefined;
     this.bus.event('NOVA_PLANNING_RESULT', { missionId: id, payload: { error, completionProposed, ...(reason ? { reason, evidence } : {}) } });
     return this.get(id);
   }
@@ -731,6 +920,34 @@ export class NovaMissionControl {
     return { steering: this.latestSteering(id), replayed: false };
   }
 
+  // Operator pause (docs/aura/OPERATING_CONTRACT.md, section 7). Durable and event-sourced like a cancel request.
+  // The mission keeps its status, queue place, budget and receipts: no new planning lease is given and no new tool
+  // starts until the operator resumes. A tool that is already executing finishes and records its receipt; nothing
+  // running is aborted, so no outcome becomes unknown because of a pause.
+  pauseState(id) {
+    const pause = this.bus.lastMissionEvent(id, 'NOVA_OPERATOR_PAUSE');
+    if (!pause) return null;
+    const lifted = this.bus.lastMissionEvent(id, 'NOVA_OPERATOR_PAUSE_END');
+    if (lifted && lifted.seq > pause.seq) return null;
+    return { at: pause.ts, note: String(pause.payload?.note || ''), revision: pause.seq };
+  }
+
+  pause(id, note = 'The operator pauses the mission from the Gameboard.') {
+    const mission = this.get(id);
+    if (TERMINAL.has(mission.status)) throw new Error('MISSION_TERMINAL');
+    if (mission.cancelRequested) throw new Error('MISSION_CANCEL_REQUESTED');
+    if (mission.paused) return mission;
+    this.bus.event('NOVA_OPERATOR_PAUSE', { missionId: id, payload: { note: String(note).slice(0, 1000) } });
+    return this.get(id);
+  }
+
+  resumePaused(id, note = 'The operator resumes the mission from the Gameboard.') {
+    const mission = this.get(id);
+    if (!mission.paused) return mission;
+    this.bus.event('NOVA_OPERATOR_PAUSE_END', { missionId: id, payload: { note: String(note).slice(0, 1000) } });
+    return this.get(id);
+  }
+
   requestCancel(id, note = 'The operator ends the mission from Aura.') {
     const mission = this.get(id);
     if (TERMINAL.has(mission.status)) return mission;
@@ -747,30 +964,34 @@ export class NovaMissionControl {
     return true;
   }
 
-  resolve(id, { decision, note, authority = 'operator' }) {
+  // Only Core's internal resolver may act as Aura. The public compatibility
+  // route cannot impersonate it by supplying authority in a request body.
+  resolveAutomatic(id, verdict) { return this.resolve(id, { ...verdict, authority: 'aura' }, true); }
+
+  resolve(id, { decision, note, authority = 'operator' }, internal = false) {
     const mission = this.get(id);
     if (TERMINAL.has(mission.status)) throw new Error('MISSION_TERMINAL');
 
     const normalizedAuthority = String(authority || 'operator').toLowerCase();
-    if (!['operator', 'seer'].includes(normalizedAuthority)) throw new Error('INVALID_RESOLUTION_AUTHORITY');
+    if (normalizedAuthority === 'seer') throw new Error('SEER_RESOLUTION_DELEGATED_TO_AURA');
+    if (normalizedAuthority !== 'operator' && !(internal && normalizedAuthority === 'aura')) throw new Error('INVALID_RESOLUTION_AUTHORITY');
     if (!['resume', 'cancel', 'confirm'].includes(decision) || typeof note !== 'string' || !note.trim()) throw new Error('OPERATOR_DECISION_REQUIRED');
 
-    if (normalizedAuthority === 'seer') {
-      if (decision !== 'confirm') throw new Error('SEER_RESOLUTION_CONFIRM_ONLY');
-      if (mission.source !== 'seer-mission-graph') throw new Error('SEER_RESOLUTION_SOURCE_REQUIRED');
-      if (mission.status !== 'AWAITING_VERIFICATION') throw new Error('SEER_RESOLUTION_AWAITING_VERIFICATION_REQUIRED');
-      if (mission.receipts.some(r => r?.outcomeUnknown === true || (r?.ok === true && r?.verified !== true))) {
-        throw new Error('SEER_RESOLUTION_UNCERTAIN_OUTCOME');
-      }
+    if (normalizedAuthority === 'aura') {
+      if (!['confirm','resume'].includes(decision) || !/^auto-/i.test(note)) throw new Error('AURA_RESOLUTION_INVALID');
+      if (mission.paused || mission.cancelRequested || mission.pendingOperatorAction || mission.spendApprovalPending || mission.hasUncertainOutcome) throw new Error('AURA_RESOLUTION_OPERATOR_BOUNDARY');
+      if (decision === 'confirm' && mission.status !== 'AWAITING_VERIFICATION') throw new Error('AURA_RESOLUTION_AWAITING_VERIFICATION_REQUIRED');
     }
 
     if (decision === 'confirm' && mission.contract) {
-      const status = contractVerificationStatus(mission.contract, mission.receipts);
+      const status = mission.contractStatus;
       if (!status.machineVerified) throw new Error(`CONTRACT_VERIFICATION_INCOMPLETE:${status.missing.join(',')}`);
     }
-    if (decision === 'confirm' && !mission.receipts.some(r => r.ok && r.verified)) throw new Error('VERIFIED_RECEIPT_REQUIRED');
+    if (decision === 'confirm' && !mission.verifiedEvidenceRefs.length) throw new Error('VERIFIED_RECEIPT_REQUIRED');
 
     this.recoverExpired();
+    // Duplicate delivery cannot renew a grant or reset an active mission's budget.
+    if (decision === 'resume' && this.get(id).status === 'ACTIVE') return this.get(id);
     const row = this.db.prepare('SELECT token FROM nova_sessions WHERE mission_id=?').get(id);
     if (row.token) throw new Error('MISSION_BUSY');
     // Only an explicit operator note can approve one outgoing-spend action; automated
@@ -784,12 +1005,16 @@ export class NovaMissionControl {
     }
     if (decision !== 'resume') this.db.prepare('DELETE FROM nova_action_gate WHERE mission_id=?').run(id);
     this.setStatus(id, decision === 'confirm' ? 'DONE' : decision === 'cancel' ? 'CANCELLED' : 'ACTIVE');
+    if (decision === 'resume' && normalizedAuthority === 'operator' && !/^auto-/i.test(note.trim()) && this.pauseState(id)) {
+      this.bus.event('NOVA_OPERATOR_PAUSE_END', { missionId: id, payload: { note: 'Lifted by the operator decision to continue.' } });
+    }
     this.db.prepare('UPDATE nova_sessions SET phase=?,failures=0 WHERE mission_id=?').run(decision === 'resume' ? 'READY' : 'CLOSED', id);
     // Automated resumes (auto-approval policy) never extend the budget; only the operator's own decision does.
     if (decision === 'resume' && normalizedAuthority === 'operator' && !/^auto-/i.test(note.trim())) {
       this.db.prepare('UPDATE nova_sessions SET budget_turn_base=turn,budget_started_at=? WHERE mission_id=?').run(this.now(), id);
     }
-    this.bus.event(normalizedAuthority === 'seer' ? 'NOVA_SEER_RESOLUTION' : 'NOVA_OPERATOR_RESOLUTION', {
+    // Keep the existing event stream for recovery accounting; actor is now truthful.
+    this.bus.event('NOVA_OPERATOR_RESOLUTION', {
       missionId: id,
       payload: { decision, note, authority: normalizedAuthority },
     });
@@ -798,8 +1023,8 @@ export class NovaMissionControl {
 
   // The action a blocked mission is waiting for the operator to approve, if any.
   pendingOperatorAction(id) {
-    const gate = this.db.prepare('SELECT reason,requested_at FROM nova_action_gate WHERE mission_id=? AND approved_at IS NULL').get(id);
-    return gate ? { reason: gate.reason, requestedAt: gate.requested_at } : null;
+    const gate = this.db.prepare('SELECT task_hash,reason,requested_at FROM nova_action_gate WHERE mission_id=? AND approved_at IS NULL').get(id);
+    return gate ? { id: `${id}:${gate.task_hash}:${gate.requested_at}`, reason: gate.reason, requestedAt: gate.requested_at } : null;
   }
 
   setStatus(id, status) { this.db.prepare('UPDATE missions SET status=?,updated_at=? WHERE id=?').run(status, iso(), id); }
@@ -811,6 +1036,13 @@ export function mountNovaMissionRoutes(app, requireAuth, control, onUpdate = () 
     catch (e) { res.status(409).json({ success: false, error: e.message }); }
   };
   const root = '/api/connected/nova';
+  // No mission mutation or update callbacks: health is an observation, not an execution event.
+  app.get(`${root}/executor-health`, requireAuth, (_req, res) =>
+    res.json({ success: true, ...control.localExecutorHealth() }));
+  app.post(`${root}/executor-health`, requireAuth, (req, res) => {
+    try { res.json({ success: true, ...control.observeLocalExecutor(req.body?.executor) }); }
+    catch (error) { res.status(409).json({ success: false, error: error.message }); }
+  });
   app.get(`${root}/current`, requireAuth, route(req => ({ mission: control.current(req.query?.executor ? String(req.query.executor) : null) })));
   app.post(`${root}/missions`, requireAuth, route(req => ({ mission: control.create(req.body || {}) })));
   app.get(`${root}/missions/:id`, requireAuth, route(req => ({ mission: control.get(req.params.id) })));

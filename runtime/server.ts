@@ -1,4 +1,6 @@
 import { readAuraServiceHealth } from '../agents/lib/aura-service-health.mjs';
+import { readAuraDesktopLiveFrame } from '../agents/lib/aura-desktop-live-view.mjs';
+import { missionScreenshotPath } from '../agents/lib/mission-screen-frame.mjs';
 import { githubWindowsReleaseStatus } from './src/server/updates/githubRelease.mjs';
 import { sharedObservation } from './src/server/connected/sharedObservation.mjs';
 import { readMissionReview } from './src/server/connected/missionReview.mjs';
@@ -12,6 +14,7 @@ import http from "http";
 import { WebSocketServer } from "ws";
 import path from "path";
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { runtimeReleaseRoot } from './src/server/runtimeReleaseRoot.mjs';
 import fs from "fs";
 import os from "os";
@@ -27,9 +30,11 @@ import { createHandsOffPlanRunner } from './src/server/android/handsOffPlanRunne
 import { NovaTractionEngine } from './src/server/nova/traction.js';
 import { IntuitionContractStore } from './src/server/autonomy/intuitionContractStore.js';
 import { createDesktopRouter } from './src/server/desktop/router.js';
+import { desktopTakeoverState } from './src/server/desktop/desktopTakeover.mjs';
 import { DesktopHandsOffClient, type DesktopAction } from './src/server/desktop/desktopHandsOff.js';
 import { createCognitiveStreamHandler, readCognitiveFeed } from './src/server/connected/cognitiveLiveStream.mjs';
-import { cognitiveQuestionToolbox } from './src/server/connected/cognitiveQuestionToolbox.mjs';
+import { projectAuraLiveWorkspace } from './src/lib/liveWorkspaceProjection.mjs';
+import { cognitiveQuestionToolbox, withPerceptionTools } from './src/server/connected/cognitiveQuestionToolbox.mjs';
 import { seerLiveWorkstream } from './src/server/seer/liveWorkstream.js';
 import { createBrowserRouter } from './src/server/browser/router.js';
 import { createContinuumRouter } from './src/server/continuum/router.mjs';
@@ -37,8 +42,10 @@ import { createModelRelayRouter } from './src/server/relay/modelRelay.js';
 import { actuatorLeases } from './src/server/handsOff/actuatorLease.js';
 import { ConnectedRuntime, mountConnectedRoutes } from './src/server/connected/connectedRuntime.mjs';
 import { validProviderId } from './src/server/connected/providerRegistry.mjs';
-import { createIdeRemoteGate, upgradeAllowed, ideHost } from './src/server/connected/ideAccess.mjs';
+import { createIdeRemoteGate, ideDeviceRegistryAdapter, upgradeAllowed, ideHost } from './src/server/connected/ideAccess.mjs';
+import { auraLegacyStatePath } from './src/lib/auraLegacyStatePath.mjs';
 import { mountVscodeEmbedHeaders } from './src/server/security/vscodeEmbed.mjs';
+import { githubGuiAuth } from './src/server/connected/githubGuiAuth.mjs';
 import { normalizeAuraChatMode, normalizeAuraMissionMode } from './src/lib/auraRunModes.mjs';
 import { validateOperatorConfirmation } from './src/lib/operatorApproval.mjs';
 import { cognitiveActivationPreview } from './src/lib/auraCognitiveActivation.mjs';
@@ -47,6 +54,7 @@ import { discoverProvider, identifyKey } from './src/server/connected/providerDi
 import { CATALOG as PROVIDER_CATALOG, catalogById, catalogProvider } from './src/server/connected/providerCatalog.mjs';
 import { activationReport } from '../agents/lib/activate.mjs';
 import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret, validateSecretName } from '../agents/lib/secret-store.mjs';
+import { importVaultText } from '../agents/lib/vault-bulk-import.mjs';
 import { listVaultSecrets, runVaultHelper } from '../agents/lib/vault-tools.mjs';
 import { loadLocalJacoEnv, loadWindowsModelKeys, LOCAL_SERVICE_KEYS } from '../agents/lib/local-credential-discovery.mjs';
 const localEnvDiscovery = loadLocalJacoEnv();
@@ -66,35 +74,51 @@ import { stripeRevenueSnapshot } from "./src/server/revenue/stripeRevenue.mjs";
 import { automaticConnections } from "./src/server/connected/automaticConnections.mjs";
 import { liteChatAnswer } from "./src/server/connected/liteChatRouter.mjs";
 import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/mcp/stdioMcpHost.mjs";
+import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFromRemote, readGithubPullRequest } from './src/server/mcp/auraAgentMcpCall.mjs';
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
 import { auraAlwaysAnswers, answerInOrder, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
-import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier } from "./src/server/connected/voiceChannel.mjs";
+import { WORKSPACE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
+import { createStackRepair } from "./src/server/connected/stackRepair.mjs";
+import { createPiperVoice } from "./src/server/connected/piperVoice.mjs";
+import { renewStandingGrants } from "./src/server/desktop/grantAtStart.mjs";
+const repairStack = createStackRepair();
+import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier, synthesize as synthesizeVoice } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
 import { createBalanceFetcher } from "./src/server/connected/providerBalances.mjs";
+import { PRICE_SYNC_INTERVAL_MS, readPriceCatalog, syncPrices } from "./src/server/aura/priceCatalog.mjs";
+import { modelPrice } from "./src/server/aura/costEngine.mjs";
+import { loadState as loadAgentOrders } from "../agents/lib/agent-orders.mjs";
 import { createAuraChatSession } from './src/server/connected/auraChatSession.mjs';
 import { auraOllamaModelCatalog, auraChatProviderCatalog, manualAuraProviderCompletion, chatFallbackChoice, chatFailureHint } from "./src/server/connected/auraOllamaChat.mjs";
 import { auraCostQuote, auraCostSettlement } from "./src/server/aura/costEngine.mjs";
 import { createEconomicBudgetRouter } from './src/server/connected/economicBudget.mjs';
-import { AgentOrganization, createAgentOrganizationRouter } from './src/server/connected/agentOrganization.mjs';
+import { AgentOrganization, createAgentOrganizationRouter, gateAgentTools } from './src/server/connected/agentOrganization.mjs';
 import { AgentReputation, createAgentBoardRouter } from './src/server/connected/agentReputation.mjs';
 import { mountDeviceWorkplace } from './src/server/connected/deviceWorkplace.mjs';
 import { mountConnectionSetup } from './src/server/connected/connectionSetup.mjs';
+import { createJacoLinkHost } from './src/server/connected/jacoLinkHost.mjs';
 import { buildAgentBoard } from "./src/server/connected/auraAgentBoard.mjs";
 import { readAutonomousCycleBoard } from "./src/server/connected/autonomousCycleBoard.mjs";
 import { listSkills, loadSkill, skillMissionGoal, installSkill, skillMissionSpec, fetchSkillFromUrl } from "../agents/lib/skills.mjs";
+import { COMMERCIAL_CLOCK, commercialAuthorized, reconcileCommercialClock, archiveCommercialBatch } from "./src/server/autonomy/commercialClock.mjs";
 import { autoResolution, autoApproveGate, loadApprovalPolicy, updateApprovalPolicy, policyFilePath, CLAIM_RESUME_NOTE } from "../agents/lib/approval-policy.mjs";
 import { checkClaims, judgeCandidates } from "../agents/lib/claim-check.mjs";
 import { taskCatalog, ALWAYS_ASK } from './src/server/capabilities/capabilityPolicy.mjs';
+import { observationsFromMissions, plannerView } from '../agents/lib/capability-observation.mjs';
+import { proposalStore, serverEntryFor } from '../agents/lib/tool-proposals.mjs';
 import { TASK_FIELDS } from "../agents/lib/task-fields.mjs";
 import { learningStore, lessonsFrom, nameProcedure, skillProposal } from "../agents/lib/skill-learning.mjs";
+import { currentRoutineHints, routineCoversNote, routineCoversProcedure } from "../agents/lib/routine-experience.mjs";
+import { metaStore, decisionFindings, metaTrigger, buildReflection, askPremise, reflectionStage } from "../agents/lib/meta-reasoning.mjs";
 import { agentCanUseKey, plannerChoices, plannerChoiceFile, readPlannerChoice, validatePlannerChoice, validPlannerModelId, writePlannerChoice, clearPlannerChoice, testPlannerModel } from "../agents/lib/planner-choice.mjs";
 import { operatorLanguageFile, readOperatorLanguage, writeOperatorLanguage } from "../agents/lib/operator-language.mjs";
 import { listSiteLogins, saveSiteLogin, removeSiteLogin } from "../agents/lib/site-logins.mjs";
 import { createRoutineStore } from "./src/server/connected/auraRoutines.mjs";
 import { createPlanComments, planView } from "./src/server/connected/auraPlan.mjs";
+import { createAuraCoreController } from './src/server/connected/auraCoreController.mjs';
 import { localMemoryActivity } from './src/server/connected/localMemoryActivity.mjs';
 import { synchronizeAuraHarnessModel } from "../agents/lib/aura-harness-model-choice.mjs";
 import { INITIAL_MODELS, INITIAL_CODE_FILES, INITIAL_DEVICES, INITIAL_TERMINAL_LOGS } from "./src/mockData.js";
@@ -186,6 +210,21 @@ const projectRoot = createProjectRoot({ stateDir: path.join(WORKSPACE_ROOT, '.ja
 process.on('unhandledRejection', (reason: any) => {
   console.error('[runtime] unhandled rejection (kept running):', reason?.stack || reason);
 });
+// The JSON body parser looks up its UTF-8 decoder lazily, on the first request with a body. In the packaged
+// Lite CI run that lookup failed after startup (body-parser: 'unsupported charset "UTF-8"', HTTP 415 for every
+// POST, 2026-11-22), intermittently, while the same package passed elsewhere. Loading the decoder once at startup
+// caches it before the server opens its watchers and sockets, so later requests never need the lookup again.
+function preloadJsonBodyDecoder(): void {
+  try {
+    const own = createRequire(typeof __filename === 'string' ? __filename : fileURLToPath(import.meta.url));
+    const fromExpress = createRequire(own.resolve('express/package.json'));
+    const fromBodyParser = createRequire(fromExpress.resolve('body-parser/package.json'));
+    fromBodyParser('iconv-lite').getCodec('utf-8');
+  } catch (error: any) {
+    console.warn(`[http] JSON body decoder preload failed: ${error?.message || error}`);
+  }
+}
+
 const RELEASE_ROOT = runtimeReleaseRoot({ override: process.env.JACO_RELEASE_ROOT, moduleFile: typeof __filename === 'string' ? __filename : fileURLToPath(import.meta.url) });
 // A running packaged IDE may be separate from its editable source checkout. If the
 // checkout is present, Aura can inspect JACO code without changing the selected project.
@@ -195,6 +234,14 @@ const inspectJacoSource = createAuraSourceInspector({ candidateRoots: [
 ] });
 const handsOff = new HandsOffClient(WORKSPACE_ROOT);
 const desktopHandsOff = new DesktopHandsOffClient(WORKSPACE_ROOT, RELEASE_ROOT);
+// Operator standing instruction: the tools are on when JACO activates and the operator switches off what
+// they do not want. Renewing here goes through each surface's own configureGrant, so blocked credential
+// surfaces, name validation and the 8-hour ceiling all still apply; only the opening of the UI is removed.
+const standingGrants = renewStandingGrants({
+  desktop: desktopHandsOff,
+  env: process.env,
+  log: (level, message) => console[level === 'warn' ? 'warn' : 'log'](`[grant-at-start] ${message}`),
+});
 const handsOffPlans = createHandsOffPlanRunner(handsOff, WORKSPACE_ROOT);
 const novaTraction = new NovaTractionEngine();
 const intuitionContracts = new IntuitionContractStore(WORKSPACE_ROOT);
@@ -207,6 +254,10 @@ const mcpHost = new StdioMcpHost({
   runtimeRoot: RELEASE_ROOT,
 });
 process.on('exit', () => mcpHost.stopAll());
+// Aura's voice (Piper Alma) stays loaded in one worker; loaded at start so her first sentence is not late.
+const piperVoice = createPiperVoice({ workerScript: path.join(RELEASE_ROOT, 'tools', 'piper-voice-worker.py') });
+if (piperVoice.available()) void piperVoice.warm();
+process.on('exit', () => piperVoice.stop());
 // JACO skills (SKILL.md). The operator's repository first, so a skill written there is usable without a
 // runtime redeploy; then this checkout; then skills kept in the runtime state.
 const skillRoots = () => [...new Set([
@@ -216,6 +267,8 @@ const skillRoots = () => [...new Set([
 ].map(p => path.resolve(p)))];
 // Learned proposals and approved tool notes; approved learned skills land in .jaco/skills above.
 const skillLearning = learningStore(path.join(WORKSPACE_ROOT, '.jaco'));
+const metaLessons = metaStore(path.join(WORKSPACE_ROOT, '.jaco'));
+const toolProposals = proposalStore(path.join(WORKSPACE_ROOT, '.jaco'));
 
 function resolveWorkspacePath(relativePath) {
   if (!relativePath || typeof relativePath !== "string") {
@@ -265,7 +318,36 @@ async function seerOperatorGoal(): Promise<string | null> {
   return value;
 }
 
-function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam }: { connectedRuntime: any; seerLiveWorkstream: any; readAgentTeam?: () => Promise<any> }) {
+// What the operator has recorded for an agent in the organization registry. It is a recorded mandate: the registry itself
+// does not switch tools on, and a running mission's own restrictions still apply until that mission ends.
+function organizationMandate(organization: any, agentId = 'aura') {
+  const agent = organization?.snapshot().agents.find((a: any) => a.id === agentId);
+  if (!agent) return null;
+  return {
+    id: agent.id, name: agent.name, title: agent.title, status: agent.status, reportsTo: agent.reportsTo, mail: agent.mail || null, folder: agent.folder,
+    grantedPermissions: Object.entries(agent.mandate.permissions).map(([key, grant]: [string, any]) => ({ key, grantedBy: grant.grantedBy, grantedAt: grant.grantedAt, expiresAt: grant.expiresAt || null })),
+    usablePermissions: agent.effective.permissions,
+    // Budget for sub-agents this agent delegates. Its own model calls are governed by the operator's economic policy
+    // (daily and monthly cloud limits in the budget settings), not by this number.
+    subAgentBudgetUsdPerDay: agent.effective.budgetUsdPerDay, maxSubAgents: agent.mandate.maxSubAgents, autonomy: agent.effective.autonomy,
+    ownModelCallBudget: 'governed by the operator economic policy (daily and monthly cloud limits)',
+    traits: agent.effective.traits, exposure: agent.effective.exposure,
+  };
+}
+
+function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam, organization }: { connectedRuntime: any; seerLiveWorkstream: any; readAgentTeam?: () => Promise<any>; organization?: any }) {
+  // Both chat entry points share the same live capability and existing mandate check.
+  const checkedMcp = async (args: any, mode: 'read'|'write') => {
+    const task = mode === 'write' ? 'mcp-write' : 'mcp-call';
+    if (connectedRuntime.capabilities?.isTaskEnabled?.(task) === false) throw Error('CAPABILITY_DISABLED:'+task);
+    const server = String(args?.server || '');
+    const key = mode === 'write' ? 'commands.run' : ['git','repo','filesystem','shell','jaco','editor'].includes(server) ? 'files.read' : 'web.read';
+    const check = organization?.authorize('aura', key);
+    if (!check?.allowed) throw Error('MANDATE_DENIED:aura:' + key + ':' + (check?.reason || 'ORGANIZATION_UNAVAILABLE'));
+    const input=args?.arguments === undefined ? {} : args.arguments;
+    if(!input||typeof input!=='object'||Array.isArray(input)) throw Error('MCP_ARGUMENTS_INVALID');
+    return callAuraMcpTool(mcpHost, {server,tool:String(args?.tool||''),args:input,mode});
+  };
   return {
     observe: async () => {
       const mission: any = connectedRuntime.novaMissions.current();
@@ -273,12 +355,60 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
         observedAt: new Date().toISOString(),
         services: await auraServiceHealth(),
         currentNovaMission: mission ? { id: mission.id, status: mission.status, phase: mission.phase, turn: mission.turn, failures: mission.failures, goal: String(mission.goal).slice(0, 200) } : null,
-        providers: connectedRuntime.providers.list().map((p: any) => ({ id: p.id, model: p.defaultModel, credentialConfigured: p.credentialConfigured })),
+        providers: connectedRuntime.providers.list().map((p: any) => {
+          let local = false;
+          try { local = ['127.0.0.1','localhost','[::1]'].includes(new URL(p.baseUrl).hostname); } catch {}
+          return { id: p.id, model: p.defaultModel, local, credentialRequired: Boolean(p.apiKeyEnv) && !local, credentialConfigured: p.credentialConfigured };
+        }),
         workspaceRoot: path.basename(projectRoot.get()),
+        operatorMandate: organizationMandate(organization, 'aura'),
       }, null, 1);
     },
     tools: {
+      org_mandate: {
+        description: 'Read the mandate the operator has recorded for an agent in the organization registry (permissions granted, budget, autonomy, traits, mail, folder). Use this, not the mission text, to answer what the operator has granted you. It is a record: it does not enable tools, and a running mission may restrict you further. args: {"agentId":"aura"}',
+        run: async (args: any) => organizationMandate(organization, String(args?.agentId || 'aura')) || { error: 'AGENT_NOT_FOUND' },
+      },
       health: { description: 'Read-only HTTP service probes. READY/REACHABLE are not proof of model or tool execution; AUTH_REQUIRED is not healthy. In Termux the ChatGPT gateway is not managed by runit. args: {}', run: async () => auraServiceHealth() },
+      stack_repair: {
+        description: 'Repair the local JACO stack yourself when health shows a service DOWN or 503 (Chrome debug browser 9222, CDP bridge, Nova bridge, gateway, Workplace, SEER). Reruns the canonical starter: only services that are down are relaunched, READY services and foreign listeners are left alone. At most once a minute; call health afterwards to verify. args: {}',
+        run: async () => repairStack(),
+      },
+      mcp_catalog: {
+        description: 'Read the live catalog of connected MCP tool servers and the tools they currently advertise. Use this before answering what tools Aura has. This only observes metadata and never starts or calls a tool. args: {}',
+        run: async () => ({
+          observedAt: new Date().toISOString(),
+          servers: mcpHost.status().map((server: any) => ({
+            id: server.id,
+            name: server.name,
+            role: server.role,
+            status: server.status,
+            agentAccess: server.agentAccess,
+            readTools: (server.tools || []).filter((tool: any) => tool.readOnly === true && tool.agentAllowed === true).slice(0, 100).map((tool: any) => tool.name),
+            writeTools: (server.tools || []).filter((tool: any) => tool.readOnly !== true && tool.agentAllowed === true).slice(0, 100).map((tool: any) => tool.name),
+            blockedTools: (server.tools || []).filter((tool: any) => tool.agentAllowed !== true).slice(0, 100).map((tool: any) => tool.name),
+          })),
+        }),
+      },
+      mcp_discover: {
+        description: 'Discover currently advertised tools from one already configured MCP server, starting it on demand. Only reads the catalog and never calls a tool or broadens policy. args: {server}',
+        run: async (args: any) => {
+          if(connectedRuntime.capabilities?.isTaskEnabled?.('mcp-call')===false && connectedRuntime.capabilities?.isTaskEnabled?.('mcp-write')===false) throw Error('CAPABILITY_DISABLED:mcp');
+          return discoverAuraMcpTools(mcpHost, String(args?.server || ''));
+        },
+      },
+      mcp_read: {
+        description: 'Execute an advertised READ-ONLY MCP tool; use mcp_discover to get its exact name and input schema. args: {server,tool,arguments?}. No writes in Manual or Planning.',
+        run: async (args: any) => checkedMcp(args,'read'),
+      },
+      mcp_tool: {
+        description: 'Call a configured MCP tool for this Aura goal. Automatically connects when permitted. args: {server,tool,arguments?,mode:"read"|"write"}. Existing access, deny rules, argument checks and mission approval requirements still apply.',
+        run: async (args: any) => {
+          const mode=args?.mode ?? 'read';
+          if(mode!=='read'&&mode!=='write') throw Error('MCP_MODE_INVALID');
+          return checkedMcp(args,mode);
+        },
+      },
       termux_services: {
         description: 'Read-only actual runit process status for canonical Termux services. Never starts/restarts a second stack. args: {}',
         run: async () => {
@@ -360,6 +490,41 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
         run: async (args: any) => (connectedRuntime.bus.listMissions(Math.min(100, Number(args?.limit) || 20)) || [])
           .map((m: any) => ({ id: m.id, status: m.status, turn: m.turn, failures: m.failures, goal: String(m.goal || '').slice(0, 120) })),
       },
+      causal_workspace: {
+        description: 'Read-only causal map of Aura tool actions: correlate a real mission and tool with Gameboard graph/node and evidence. This never runs tools, marks success, updates memory or changes authority. args: {"missionId":"optional existing mission ID","limit":60}',
+        run: async (args: any) => {
+          const current = connectedRuntime.novaMissions.current();
+          const requested = typeof args?.missionId === 'string' && /^mission-[a-zA-Z0-9-]{1,120}$/.test(args.missionId)
+            ? args.missionId : current?.id || null;
+          const feed = readCognitiveFeed({
+            bus: connectedRuntime.bus, workstream: seerLiveWorkstream,
+            limit: Math.max(1, Math.min(100, Number(args?.limit) || 60)),
+            secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key))
+              .map(([,value]) => value).filter(Boolean),
+          });
+          const projection = projectAuraLiveWorkspace(feed.events, {missionId: requested, maxSurfaces: 6});
+          const recent = projection.surfaces.flatMap(surface => surface.entries)
+            .sort((a,b) => Date.parse(b.at) - Date.parse(a.at) || (b.seq || 0) - (a.seq || 0));
+          // Reuse the operator's canonical capability grouping; it is metadata,
+          // not proof that a tool was authorized or successfully executed.
+          const toolGroups = new Map<string,string>(taskCatalog([...new Set(recent.map(item => item.toolType))])
+            .flatMap(group => group.tasks.map(task => [task.id, group.id] as [string,string])));
+          return {
+            schema: 'jaco.aura-causal-context/v1', source: 'existing-mission-bus',
+            observedAt: feed.observedAt, historyTruncated: feed.historyTruncated,
+            missionId: requested, observedActions: projection.actionCount,
+            links: recent.slice(0, 12).map(item => ({
+              missionId: item.missionId, graphId: item.planId, nodeKey: item.nodeKey,
+              actionId: item.actionId, toolType: item.toolType, capabilityGroup: toolGroups.get(item.toolType) || 'other',
+              surface: item.surface,
+              observationState: item.state, evidenceOutcome: item.evidence?.outcome || 'observed',
+              receiptEventId: item.durable ? item.eventId : null,
+              resourcePath: item.evidence?.path || null, observedAt: item.at,
+            })),
+            note: 'Tool starts and results are observations. A verified action does not verify the mission or graph node.'
+          };
+        }
+      },
       runtime_events: {
         description: 'Recent runtime/mission events from the connected runtime bus. args: {"limit":30}',
         run: async (args: any) => (connectedRuntime.bus.listEvents(Math.min(200, Number(args?.limit) || 30)) || [])
@@ -390,13 +555,23 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
         },
       },
       web_fetch: {
-        description: 'HTTP GET a public http(s) URL and return the first 15000 characters of text. Read-only. args: {"url":"https://..."}',
+        description: 'Read public HTTPS text without CDP or browser control. Uses the configured Fetch MCP with DNS and redirect safety checks. args: {"url":"https://..."}',
         run: async (args: any) => {
-          const url = new URL(String(args?.url || ''));
-          if (!['http:', 'https:'].includes(url.protocol)) throw new Error('only http(s)');
-          const r = await fetch(url, { signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'JACO-Aura/0.21' } });
-          const text = (await r.text()).replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-          return `HTTP ${r.status}\n${text.slice(0, 15000)}`;
+          if (connectedRuntime.capabilities?.isTaskEnabled?.('web-fetch') === false) throw Error('CAPABILITY_DISABLED:web-fetch');
+          return (await readPublicViaMcp(mcpHost, String(args?.url || ''))).slice(0, 15000);
+        },
+      },
+      git_pr: {
+        description: 'Inspect public GitHub PR metadata, changed files or commits without a browser. args: {number:301,repository?:"owner/repo",section?:"summary"|"files"|"commits",page?:1}. Defaults to current GitHub origin. Request further pages and source for incomplete patches.',
+        run: async (args: any) => {
+          if (connectedRuntime.capabilities?.isTaskEnabled?.('web-fetch') === false) throw Error('CAPABILITY_DISABLED:web-fetch');
+          let repository = args?.repository;
+          if (repository == null) {
+            const remote = await execFileAsync('git', ['remote','get-url','origin'], {cwd:projectRoot.get(),windowsHide:true,timeout:5000});
+            repository = githubRepoFromRemote(remote.stdout);
+            if (!repository) throw Error('GITHUB_ORIGIN_NOT_AVAILABLE: specify owner/repo');
+          }
+          return readGithubPullRequest(mcpHost, {repository,number: Number(args?.number),section:args?.section, page:args?.page});
         },
       },
       env_keys: {
@@ -480,7 +655,7 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam 
         },
       },
       start_goal: {
-        description: 'Activate the canonical Aura operator goal through SEER strategy. Internal execution remains in the durable Mission Bus. args: {"goal":"..."}',
+        description: 'Activate the canonical Aura operator goal through JACO planning. Internal execution remains in the durable Mission Bus. args: {"goal":"..."}',
         run: async (args: any) => {
           const goal = String(args?.goal || '').trim();
           if (!goal || goal.length > 12000) throw new Error('GOAL_REQUIRED_OR_TOO_LONG');
@@ -589,6 +764,7 @@ async function startServer() {
   app.use(securityHeaders({ httpsOnly: process.env.JACO_HTTPS_ONLY === 'true', dev: process.env.NODE_ENV !== 'production' }));
   app.use(requireJsonBody(2 * 1024 * 1024));
   app.use('/api', rateLimit({ windowMs: 60_000, max: 600 }, 'api'));
+  preloadJsonBodyDecoder();
   app.use(express.json({
     limit: '10mb',
     verify: (req: any, _res, buf) => {
@@ -598,10 +774,12 @@ async function startServer() {
   // Remote IDE (src/server/connected/ideAccess.mjs): anything arriving through the tunnel needs a
   // signed-in IDE session before any route, static file or the dev server sees it. The registry is the
   // connected runtime's, created further down; requests only arrive after listen.
-  const ideDevices = {
+  // Constructed before connectedRuntime initializes: defer registry access until request time.
+  const ideDevices = ideDeviceRegistryAdapter({
     verify: (key: string, kind: string) => connectedRuntime.devices.verify(key, kind),
     redeem: (code: string, kind: string) => connectedRuntime.devices.redeem(code, kind),
-  };
+    revoke: (name: string, kind: string) => connectedRuntime.devices.revoke(name, kind),
+  });
   app.use(createIdeRemoteGate(ideDevices, {
     onEvent: (event: any) => seerLiveWorkstream.record({ actor: 'Remote IDE', type: event.type, message: `Remote IDE signed in on ${event.device}`, verified: true, receipt: event }),
   }));
@@ -692,7 +870,10 @@ function requireLocalUiSameOrigin(req: express.Request, res: express.Response, n
 
 // Organization mutation credential is separate from the generic gateway token shared with tools.
 // No configured token means read-only organization UI, never a privileged localhost bypass.
+// JACO_ORG_OPERATOR_AUTH=off is an explicit local opt-out: the loopback/same-origin operator UI may then write without a key.
+const organizationMutationAuthRequired = () => process.env.JACO_ORG_OPERATOR_AUTH !== 'off';
 function requireOrganizationMutationAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (!organizationMutationAuthRequired()) return next();
   const expected = String(process.env.JACO_ORG_OPERATOR_TOKEN || '');
   const provided = String(req.headers['x-jaco-operator-token'] || '');
   if (!expected || provided.length !== expected.length ||
@@ -722,6 +903,18 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   // the default so nothing that relied on it changes.
   const PORT = Number(process.env.PORT) || 3000;
   const HOST = process.env.HOST || "127.0.0.1";
+  // One Aura runtime remains the owner of local state and execution. JACO Link is
+  // only an optional outbound customer transport; no local port or tunnel exposed.
+  let jacoLink: ReturnType<typeof createJacoLinkHost> | null = null;
+  try {
+    jacoLink = createJacoLinkHost({
+      file: path.join(WORKSPACE_ROOT, '.jaco', 'link', 'host.json'),
+      localBaseUrl: 'http://127.0.0.1:' + PORT,
+    });
+    if (process.env.JACO_LINK_ENABLED !== '0') jacoLink.resume();
+  } catch (error) {
+    console.warn('[JACO Link] Initialization failed:', String((error as Error)?.message || error));
+  }
 
 
   const browserSurface = createBrowserRouter(WORKSPACE_ROOT, requireAuth, event => {
@@ -764,6 +957,11 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
     }
   });
 
+  (connectedRuntime.novaMissions as any).commercialAuthorization = (mission: any, task: any = null) => commercialAuthorized(mission, modelRelay.mandates, continuumSurface.runtime.operator, task, connectedRuntime.capabilities);
+  const commercialTick = () => reconcileCommercialClock({
+    mandates: modelRelay.mandates, operator: continuumSurface.runtime.operator, bus: connectedRuntime.bus,
+    nova: connectedRuntime.novaMissions, knowledge: continuumSurface.runtime.knowledge, capabilities: connectedRuntime.capabilities
+  });
   let windowsModelDiscovery: { sourceAvailable: boolean; configured: string[] } = { sourceAvailable: false, configured: [] };
   const connections = automaticConnections({ registry: connectedRuntime.providers, mcpHost,
     loadCredentials: async () => {
@@ -781,6 +979,36 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   app.get('/api/aura/workbench/connections', requireLocalUi, async (_req, res) => {
     try { res.json({ success: true, ...(await connections.refresh()) }); }
     catch { res.status(503).json({ success: false, error: 'CONNECTION_REFRESH_FAILED' }); }
+  });
+  // Aura's spoken voice for the portrait: local Piper Alma first; the voiceChannel engine (edge-tts, which sends the
+  // text to Microsoft, as documented in voiceChannel) only when Piper is unavailable.
+  app.post('/api/aura/voice/speak', requireLocalUiSameOrigin, async (req, res) => {
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+    if (!text.trim() || text.length > 6000) return res.status(400).json({ success: false, error: 'VOICE_TEXT_INVALID' });
+    const lang = typeof req.body?.lang === 'string' && /^[a-z]{2}-[A-Z]{2}$/.test(req.body.lang) ? req.body.lang : 'sv-SE';
+    // Operator 2026-11-19: Aura's voice is Piper TTS with Alma (sv_SE-alma-medium, CC-BY-4.0). It runs on this
+    // computer, so nothing she says leaves the machine. The neural edge voice is only the fallback when Piper fails.
+    let piperError = 'PIPER_MODEL_MISSING';
+    if (lang.startsWith('sv') && piperVoice.available()) {
+      try {
+        const bytes = await piperVoice.synthesize(text);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Jaco-Voice', 'piper-alma');
+        return res.type('audio/wav').send(bytes);
+      } catch (error: any) { piperError = String(error?.message || 'PIPER_FAILED').slice(0, 80); }
+    }
+    try {
+      const env = { ...process.env, JACO_VOICE_ENGINE: process.env.JACO_VOICE_ENGINE || 'edge', JACO_VOICE_LANG: process.env.JACO_VOICE_LANG || lang };
+      const sound = await synthesizeVoice(text, { env });
+      try {
+        const bytes = fs.readFileSync(sound.file);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Jaco-Voice', 'fallback');
+        res.type(sound.mimetype.split(';')[0]).send(bytes);
+      } finally { fs.rmSync(sound.file, { force: true }); }
+    } catch (error: any) {
+      res.status(503).json({ success: false, error: `${piperError}; ${String(error?.message || 'VOICE_UNAVAILABLE')}`.slice(0, 200) });
+    }
   });
   // Metadata only. Existing env, encrypted store and legacy Windows vault remain the owners.
   app.get('/api/aura/workbench/vault/discovery', requireLocalUiSameOrigin, (_req, res) => {
@@ -929,8 +1157,20 @@ const notifyPhone = async (action) => {
       const child = spawn(executable, args, { cwd: projectRoot.get(), shell: false, windowsHide: true, timeout: timeoutMs });
       
       let outputMessage = "";
-      child.stdout.on('data', (data) => outputMessage += data.toString());
-      child.stderr.on('data', (data) => outputMessage += data.toString());
+      seerLiveWorkstream.record({actor:'Aura Terminal',type:'terminal.command.started',
+        message:'Terminal command started',verified:false,receipt:{actionId:action.id,command:action.command || [executable,...args].join(' ')}});
+      let lastOutputAt = 0, outputTruncated = false;
+      const streamOutput = (data: Buffer) => {
+        const incoming = data.toString();
+        if (outputMessage.length + incoming.length > 12000) outputTruncated = true;
+        outputMessage = (outputMessage + incoming).slice(-12000);
+        if (Date.now() - lastOutputAt < 250) return;
+        lastOutputAt = Date.now();
+        seerLiveWorkstream.record({actor:'Aura Terminal',type:'terminal.output',message:'Terminal output received',verified:false,
+          receipt:{actionId:action.id,command:action.command || [executable,...args].join(' '),result:{output:outputMessage,truncated:outputTruncated}}});
+      };
+      child.stdout.on('data', streamOutput);
+      child.stderr.on('data', streamOutput);
       
       child.on('close', (code) => {
         const durationMs = Date.now() - startTime;
@@ -946,11 +1186,11 @@ const notifyPhone = async (action) => {
         if (code !== 0) {
           pushLog("error", (outputMessage || `Exited with code ${code}`), "terminal-exec", evidence);
           action.status = "failed";
-          action.result = { success: false, output: outputMessage || `Exited with code ${code}` };
+          action.result = { success: false, exitCode: code, truncated: outputTruncated, output: outputMessage || `Exited with code ${code}` };
         } else {
           pushLog("info", outputMessage || `Command completed with exit code 0 (${durationMs}ms)`, "terminal-exec", evidence);
           action.status = "executed";
-          action.result = { success: true, output: outputMessage || "Command completed with no output." };
+          action.result = { success: true, exitCode: code, truncated: outputTruncated, output: outputMessage || "Command completed with no output." };
         }
         resolve();
       });
@@ -1187,12 +1427,23 @@ const notifyPhone = async (action) => {
 
 
   app.get('/api/runtime/identity', (_req, res) => {
+    // Build-time commit evidence, never inferred from the mutable project checkout.
+    let sourceCommit: string | null = null;
+    try {
+      const manifest = JSON.parse(fs.readFileSync(path.join(process.env.JACO_RELEASE_ROOT || process.cwd(), 'release.json'), 'utf8'));
+      if (/^[a-f0-9]{40}$/.test(String(manifest.sourceCommit || ''))) sourceCommit = manifest.sourceCommit;
+    } catch {}
     res.json({
+      sourceCommit,
       success: true,
       product: 'JACO Autonomus IDE',
       version: JSON.parse(fs.readFileSync(path.join(process.env.JACO_RELEASE_ROOT || process.cwd(), 'package.json'), 'utf8')).version,
       releaseId: 'jaco-code-0.23.1',
       canonicalGui: 'JACO Autonomous IDE',
+      executionProfile: process.env.JACO_LITE === '1' ? 'lite' : 'full',
+      workplaceRequired: process.env.JACO_LITE === '1'
+        ? Boolean(process.env.JACO_WORKPLACE_REQUIRED && process.env.JACO_WORKPLACE_REQUIRED !== '0')
+        : process.env.JACO_WORKPLACE_REQUIRED !== '0',
       primaryPort: PORT,
       // Only surfaces this runtime can actually drive. The list used to be fixed, so a PC runtime with
       // no paired phone advertised Android and Nova offered Android tools that could only fail.
@@ -1542,7 +1793,9 @@ const notifyPhone = async (action) => {
   };
 
   const getAuraMcpFabric = sharedObservation(async () => {
-    const signal = AbortSignal.timeout(4000);
+    // Each provider gets its own budget, and readiness rests on health and tools/list only. The extra status probes
+    // describe the surface; one slow probe (a browser tab that stops answering) must not mark a working bridge down.
+    const PROBE_MS = 2500;
 
     const providerIds = ['remote','cdp'];
     const providers = await Promise.all(providerIds.map(async id => {
@@ -1552,11 +1805,11 @@ const notifyPhone = async (action) => {
       let observation: any = null;
       let error: string | null = null;
       try {
-        const response = await fetch(`${config.endpoint}/health`, { signal: AbortSignal.any([signal, AbortSignal.timeout(1200)]) });
+        const response = await fetch(`${config.endpoint}/health`, { signal: AbortSignal.timeout(1200) });
         health = await response.json().catch(() => null);
         if (!response.ok) throw new Error(`HTTP_${response.status}`);
         if (GATEWAY_TOKEN.length >= 24) {
-          const listed: any = await callAuraMcpRpc(id, 'tools/list', undefined, signal);
+          const listed: any = await callAuraMcpRpc(id, 'tools/list', undefined, AbortSignal.timeout(PROBE_MS));
           tools = Array.isArray(listed?.tools) ? listed.tools.map((tool: any) => ({
             name: String(tool?.name || ''),
             description: String(tool?.description || ''),
@@ -1566,8 +1819,8 @@ const notifyPhone = async (action) => {
 
           if (id === 'remote') {
             const [statusResult, windowsResult] = await Promise.allSettled([
-              callAuraMcpRpc('remote', 'tools/call', { name: 'remote_status', arguments: {} }, signal),
-              callAuraMcpRpc('remote', 'tools/call', { name: 'remote_windows', arguments: {} }, signal),
+              callAuraMcpRpc('remote', 'tools/call', { name: 'remote_status', arguments: {} }, AbortSignal.timeout(PROBE_MS)),
+              callAuraMcpRpc('remote', 'tools/call', { name: 'remote_windows', arguments: {} }, AbortSignal.timeout(PROBE_MS)),
             ]);
             observation = {
               status: statusResult.status === 'fulfilled' ? parseAuraMcpTextResult(statusResult.value) : { ok: false, error: String(statusResult.reason) },
@@ -1579,7 +1832,7 @@ const notifyPhone = async (action) => {
                 targets: parseAuraMcpTextResult(await callAuraMcpRpc('cdp', 'tools/call', {
                   name: 'nova_targets',
                   arguments: {},
-                }, signal)),
+                }, AbortSignal.timeout(PROBE_MS))),
               };
             } catch (probeError: any) {
               observation = { targets: { ok: false, error: probeError?.message || String(probeError) } };
@@ -1594,11 +1847,11 @@ const notifyPhone = async (action) => {
         name: config.name,
         endpoint: config.endpoint,
         role: config.role,
-        status: health?.ok === true && !signal.aborted && !error ? 'READY' : 'UNAVAILABLE',
+        status: health?.ok === true && !error ? 'READY' : 'UNAVAILABLE',
         health,
         observation,
         tools,
-        error: signal.aborted ? 'MCP_OBSERVATION_TIMEOUT' : error,
+        error: /TimeoutError|aborted due to timeout/i.test(String(error)) ? 'MCP_OBSERVATION_TIMEOUT' : error,
       };
     }));
 
@@ -1697,6 +1950,22 @@ const notifyPhone = async (action) => {
       });
     }
 
+    for (const proposal of toolProposals.list().filter((item: any) => item.status === 'PENDING')) {
+      items.push({
+        id: `tool:${proposal.id}`,
+        kind: 'TOOL',
+        source: 'aura-tool-proposal',
+        title: `${proposal.name}: ${proposal.reason}`,
+        status: 'REVIEW',
+        risk: proposal.kind === 'mcp-git' ? 'HIGH' : 'MEDIUM',
+        reason: proposal.kind === 'mcp-git'
+          ? 'Aura asks for a new tool from a Git repository. Approving fetches and enables its code; check the source first.'
+          : 'Aura asks for a new tool server. Approving saves it with read access only; it can be widened later in the tool settings.',
+        createdAt: proposal.createdAt,
+        actions: ['approve', 'reject'],
+        details: { proposalId: proposal.id, kind: proposal.kind, repoUrl: proposal.repoUrl || null, command: proposal.command ? `${proposal.command} ${proposal.args.join(' ')}` : null, url: proposal.url || null, missions: proposal.missions, need: proposal.need },
+      });
+    }
     for (const source of auraMcpSources.list().filter(item => item.status === 'STAGED')) {
       items.push({
         id: `mcp-source:${source.id}`,
@@ -1843,6 +2112,19 @@ const notifyPhone = async (action) => {
     return data;
   };
 
+  // Aura Core is the preferred orchestration owner. The strategy service
+  // remains a compatibility adapter until Graph SQLite state can be migrated.
+  // Its short lease suppresses the independent fallback timer while Core runs.
+  const auraCoreControl = createAuraCoreController({
+    request: (action: string, input: any) => callCanonicalSeer('/cortex/aura/control/' + action, input),
+    intervalMs: Number(process.env.JACO_AURA_CONTROL_TICK_MS || 2500),
+  });
+
+  app.get('/api/aura/runtime/control', requireLocalUi, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, schema: 'jaco.aura-control/v1', ...auraCoreControl.state() });
+  });
+
   const asArray = (value: any): any[] => {
     if (Array.isArray(value)) return value;
     if (Array.isArray(value?.windows)) return value.windows;
@@ -1962,7 +2244,7 @@ const notifyPhone = async (action) => {
     // What each provider is used for, so the IDE does not show a working planner as merely "REGISTERED"
     // (operator 2026-10-03: "how do I activate providers"). SEER and Aura chat use the observed local
     // model; Nova follows the configured primary provider and then eligible fallbacks.
-    let plannerChoice: any = process.env.JACO_PRIMARY_PROVIDER
+    let plannerChoice: any = process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1'
       ? { provider: process.env.JACO_PRIMARY_PROVIDER, model: plannerChoices(process.env)[process.env.JACO_PRIMARY_PROVIDER]?.models[0] || null }
       : null;
     if (!plannerChoice) try { plannerChoice = readPlannerChoice(plannerChoiceFile(process.env)); } catch {}
@@ -1972,9 +2254,12 @@ const notifyPhone = async (action) => {
       const roles: string[] = [];
       if (active) roles.push(`SEER + Aura chat (${activeModelId || 'local model'})`);
       if (plannerChoice?.provider === provider.id) roles.push(`Nova planner (${plannerChoice.model})`);
-      else if (!disabledProviders.includes(String(provider.id)) && (provider.credentialConfigured || !provider.apiKeyEnv) && provider.id !== 'lmstudio') roles.push('Nova fallback');
+      else if (process.env.JACO_AURA_UNIFIED_RUNTIME !== '1' && !disabledProviders.includes(String(provider.id)) && (provider.credentialConfigured || !provider.apiKeyEnv) && provider.id !== 'lmstudio') roles.push('Nova fallback');
+      let local = false;
+      try { local = ['127.0.0.1','localhost','[::1]'].includes(new URL(provider.baseUrl).hostname); } catch {}
       return {
         roles,
+        local,
         disabled: disabledProviders.includes(String(provider.id)),
         id: provider.id,
         kind: provider.kind,
@@ -1982,7 +2267,7 @@ const notifyPhone = async (action) => {
         apiKeyEnv: provider.apiKeyEnv || null,
         defaultModel: provider.defaultModel || '',
         credentialConfigured: Boolean(provider.credentialConfigured),
-        credentialRequired: Boolean(provider.apiKeyEnv),
+        credentialRequired: Boolean(provider.apiKeyEnv) && !local,
         active,
         status: disabledProviders.includes(String(provider.id)) ? 'DISABLED' : roles.length ? 'ACTIVE' : 'REGISTERED',
         evidenceSource: active ? 'seer-health.local_model' : 'provider-registry',
@@ -2292,9 +2577,26 @@ const notifyPhone = async (action) => {
   // The same observed Gameboard projection is consumed by Codex GUI, JACO Editor MCP and Lite.
   // SEER remains the only graph authority. Missing SEER is explicit (not a fabricated READY board).
   // Local Continuum knowledge, read-only and backed by the existing durable knowledge ledger.
+  // Customer onboarding is local-only; no cloud account can create a new PC
+  // pairing or read the temporary poll credential through the Remote UI.
+  app.get('/api/aura/workbench/link/status', requireLocalUiSameOrigin, (_req, res) => {
+    if (!jacoLink) return res.status(503).json({success:false,error:'LINK_HOST_UNAVAILABLE'});
+    return res.json({success:true,...jacoLink.status()});
+  });
+  app.post('/api/aura/workbench/link/start', requireLocalUiSameOrigin, async (_req, res) => {
+    if (process.env.JACO_LINK_ENABLED === '0') return res.status(403).json({success:false,error:'LINK_DISABLED'});
+    if (!jacoLink) return res.status(503).json({success:false,error:'LINK_HOST_UNAVAILABLE'});
+    try { return res.json({success:true,...await jacoLink.startPairing()}); }
+    catch (error: any) {return res.status(503).json({success:false,error:String(error?.message||error).slice(0,160)});}
+  });
+  app.post('/api/aura/workbench/link/stop', requireLocalUiSameOrigin, (_req, res) => {
+    if (!jacoLink) return res.status(503).json({success:false,error:'LINK_HOST_UNAVAILABLE'});
+    jacoLink.stop();return res.json({success:true,...jacoLink.status()});
+  });
+
   app.get('/api/aura/workbench/local-memory', requireLocalUi, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    try { res.json({ success: true, ...localMemoryActivity(continuumSurface.runtime, { legacyFile: path.join(process.cwd(), '.jaco', 'memory', 'memory-store.json') }) }); }
+    try { res.json({ success: true, ...localMemoryActivity(continuumSurface.runtime, { legacyFile: auraLegacyStatePath('memory', 'memory-store.json') }) }); }
     catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }
   });
   // The plan as the operator sees it (SEER's mission graphs, read only) and the operator's comments on it.
@@ -2319,6 +2621,8 @@ const notifyPhone = async (action) => {
         tasks: new Set(capabilityTasks.filter(t => connectedRuntime.capabilities?.isTaskEnabled ? connectedRuntime.capabilities.isTaskEnabled(t) : true)),
         skills: new Set(skills.filter((k: any) => !k.error).map((k: any) => k.id)),
         payments: Boolean(process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY),
+        // Observed MCP tools, so an "api" need shows whether a connected service actually answers.
+        observed: (() => { try { return capabilityView(); } catch { return null; } })(),
       };
       const plans = graphs.slice(0, 10).map((g: any) => planView(g, { comments: planComments.list(g.id), skills, language, available }));
       res.json({ success: true, plans });
@@ -2380,10 +2684,25 @@ const notifyPhone = async (action) => {
       graphs = payload;
     } catch (error: any) { graphError = String(error?.message || error); }
     try {
+      // A goal can be accepted before SEER creates a graph. Join the existing
+      // operator goal, real mission controller and durable events by observation,
+      // without fabricating a plan or converting registration into execution.
+      const live = seerLiveWorkstream.snapshot();
+      const missionRows = connectedRuntime.bus.listMissions(30);
+      const missions = missionRows.map((base: any) => {
+        try {
+          const current = connectedRuntime.novaMissions.get(base.id);
+          return { ...base, status: current.status, phase: current.phase, receipts: current.receipts, reviewAvailable: true,
+            paused: current.paused, cancelRequested: current.cancelRequested, steering: current.steering,
+            hasUncertainOutcome: current.hasUncertainOutcome, pendingOperatorAction: Boolean(current.pendingOperatorAction),
+            spendApprovalPending: current.spendApprovalPending, replanRequest: Boolean(current.replanRequest) };
+        } catch { return { ...base, reviewAvailable: false, strategicStateObserved: false }; }
+      });
       const projection = gameboardProjection({
         graphs, graphError, providers: mcpHost.status(),
-        workers: connectedRuntime.bus.listWorkers(),
-        missions: connectedRuntime.bus.listMissions(30),
+        workers: connectedRuntime.bus.listWorkers(), missions,
+        events: connectedRuntime.bus.listEvents(100),
+        primaryGoal: (await seerOperatorGoal()) || live.primaryGoal || connectedRuntime.novaMissions.current()?.goal || null,
       });
       res.json({ success: true, ...projection, exchange: gameboardExchange.position('global') });
     } catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }
@@ -2408,6 +2727,12 @@ const notifyPhone = async (action) => {
     } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error) }); }
   });
 
+  const operatorPlannerView = (coordinator: any) => {
+    let choice: any = null;
+    try { choice = readPlannerChoice(plannerChoiceFile(process.env)); } catch {}
+    if (!coordinator?.health || choice?.by !== 'operator' || !choice.model) return coordinator;
+    return { ...coordinator, health: { ...coordinator.health, local_model: { provider: choice.provider, model: choice.model, source: 'operator-choice' } } };
+  };
   const readAuraAgentBoard = async () => {
     const [workplace, coordinator, planning, services] = await Promise.all([
       getAuraWorkbenchWorkplace(), getAuraSeerHealth(),
@@ -2424,8 +2749,10 @@ const notifyPhone = async (action) => {
       auraServiceHealth(),
     ]);
     return buildAgentBoard({ bus: connectedRuntime.bus, control: connectedRuntime.novaMissions,
-      workplace, coordinator, graphs:planning, workers:connectedRuntime.bus.listWorkers(),
+      // The operator's planner choice is what plans; SEER's local slot is only the fallback when none is chosen.
+      workplace, coordinator:operatorPlannerView(coordinator), graphs:planning, workers:connectedRuntime.bus.listWorkers(),
       tools:mcpHost.status(), services,
+      planner: (() => { try { return readPlannerChoice(plannerChoiceFile({ ...process.env, JACO_WORKSPACE_ROOT: WORKSPACE_ROOT })); } catch { return null; } })(),
       secrets: Object.entries(process.env).filter(([key]) => /secret|token|password|api_?key/i.test(key)).map(([,value]) => value),
     });
   };
@@ -2459,6 +2786,25 @@ const notifyPhone = async (action) => {
       res.status(code.startsWith('OPERATOR_STEER_INSTRUCTION_') || code.startsWith('OPERATOR_STEER_REQUEST_ID_') ? 400 : 409)
         .json({ success: false, error: code });
     }
+  });
+
+  // Pause and resume are operator decisions recorded on the mission ledger. Nothing running is aborted; no new
+  // tool starts while paused. Resume lifts the pause only: a blocker still needs its own decision.
+  app.post('/api/aura/workbench/missions/:id/pause', requireLocalUi, (req, res) => {
+    try {
+      const mission = connectedRuntime.novaMissions.pause(req.params.id, String(req.body?.note || 'The operator pauses the mission from the Gameboard.').slice(0, 1000));
+      seerLiveWorkstream.record({ actor: 'Aura Gameboard', type: 'mission.paused', message: `Mission paused by the operator: ${mission.id}`, verified: true, receipt: { missionId: mission.id, pausedAt: mission.paused?.at || null } });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ success: true, missionId: mission.id, paused: mission.paused, status: mission.status });
+    } catch (error: any) { res.status(409).json({ success: false, error: String(error?.message || error) }); }
+  });
+  app.post('/api/aura/workbench/missions/:id/resume', requireLocalUi, (req, res) => {
+    try {
+      const mission = connectedRuntime.novaMissions.resumePaused(req.params.id, String(req.body?.note || 'The operator resumes the mission from the Gameboard.').slice(0, 1000));
+      seerLiveWorkstream.record({ actor: 'Aura Gameboard', type: 'mission.resumed', message: `Mission resumed by the operator: ${mission.id}`, verified: true, receipt: { missionId: mission.id } });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ success: true, missionId: mission.id, paused: mission.paused, status: mission.status });
+    } catch (error: any) { res.status(409).json({ success: false, error: String(error?.message || error) }); }
   });
 
   app.post('/api/aura/workbench/missions/:id/cancel', requireLocalUi, async (req, res) => {
@@ -2757,6 +3103,7 @@ const notifyPhone = async (action) => {
     catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
   });
   const routineTimer = setInterval(() => {
+    try { commercialTick(); } catch (error: any) { console.warn("[commercial clock] reconcile failed:", error?.message || error); }
     void routines.tick({
       startGoal: async (goal: string) => {
         const r = await fetch(`http://127.0.0.1:${PORT}/api/aura/workbench/start-goal`, {
@@ -2833,6 +3180,27 @@ const notifyPhone = async (action) => {
         } else if (decision === 'reject') {
           auraMcpSources.quarantine(id, note || 'Rejected by operator');
         } else throw new Error('INVALID_MCP_SOURCE_DECISION');
+      } else if (kind === 'tool') {
+        // Aura's proposal becomes a tool only here. A Git source is staged and promoted in one decision; a
+        // command or HTTP server is saved with read access. Either way it is the operator's yes that installs.
+        const proposal = toolProposals.get(id);
+        if (!proposal) throw new Error('TOOL_PROPOSAL_NOT_FOUND');
+        if (decision === 'approve') {
+          let result: any = null;
+          if (proposal.kind === 'mcp-git') {
+            const source = await auraMcpSources.stageGit({ repoUrl: proposal.repoUrl, ref: proposal.ref });
+            auraMcpSources.promote(source.id, 'Aura Approval Center (tool proposal)');
+            result = { sourceId: source.id, resolvedSha: source.resolvedSha };
+          } else {
+            const server = mcpHost.saveServer(proposal.name, serverEntryFor(proposal));
+            getAuraMcpFabric.invalidate();
+            result = { serverId: server?.id, status: server?.status };
+          }
+          toolProposals.decide(id, 'approve', { note, result });
+          seerLiveWorkstream.record({ actor: 'Aura Approval Center', type: 'tool.proposal.approved', message: `Tool proposal approved: ${proposal.name}`, verified: true, receipt: { proposalId: id, result } });
+        } else if (decision === 'reject') {
+          toolProposals.decide(id, 'reject', { note });
+        } else throw new Error('INVALID_TOOL_PROPOSAL_DECISION');
       } else if (kind === 'mandate') {
         const endpoint = decision === 'approve' ? 'sign' : decision === 'reject' ? 'revoke' : null;
         if (!endpoint) throw new Error('INVALID_MANDATE_DECISION');
@@ -2877,6 +3245,19 @@ const notifyPhone = async (action) => {
     } catch { res.status(400).json({ success: false, error: 'MCP_CONFIGURATION_INVALID' }); }
   });
 
+  // Tools Aura proposes for herself (agents/lib/tool-proposals.mjs). Recording is loopback-only like the rest of the
+  // workbench; installing happens only through the approval center's decision below.
+  app.post('/api/aura/workbench/tool-proposals', requireLocalUi, (req, res) => {
+    try {
+      const proposal = toolProposals.add(req.body || {}, { missionId: req.body?.missionId == null ? null : String(req.body.missionId).slice(0, 120) });
+      seerLiveWorkstream.record({ actor: 'Aura', type: 'tool.proposed', message: `Aura proposes a tool: ${proposal.name} (${proposal.kind})`, verified: true, receipt: { proposalId: proposal.id, kind: proposal.kind, missions: proposal.missions } });
+      res.status(201).json({ success: true, proposal });
+    } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error) }); }
+  });
+  app.get('/api/aura/workbench/tool-proposals', requireLocalUi, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, proposals: toolProposals.list() });
+  });
   app.post('/api/aura/workbench/mcp/import-git', requireLocalUi, async (req, res) => {
     try {
       const source = await auraMcpSources.stageGit({
@@ -2972,28 +3353,39 @@ const notifyPhone = async (action) => {
   // Nova's access to JACO's MCP tools (token auth). Nova calls these through its mcp-call task, so every
   // tool any connected server offers is usable in missions, whichever LLM plans.
   app.get('/api/mcp/tools', requireAuth, async (_req, res) => {
-    res.json({ success: true, servers: mcpHost.status().map((s: any) => ({ id: s.id, name: s.name, role: s.role, status: s.status, agentAccess: s.agentAccess, tools: s.tools.map((t: any) => ({ name: t.name, description: t.description.slice(0, 300), readOnly: isReadOnlyMcpTool(s.id, t), agentAllowed: t.agentAllowed === true, inputSchema: t.inputSchema })) })) });
+    res.json({ success: true, servers: mcpHost.status().map((s: any) => ({ id: s.id, name: s.name, role: s.role, status: s.status, agentAccess: s.agentAccess, transport:s.transport, error:s.error, tools: s.tools.map((t: any) => ({ name: t.name, description: t.description.slice(0, 300), readOnly: isReadOnlyMcpTool(s.id, t), agentAllowed: t.agentAllowed === true, inputSchema: t.inputSchema })) })) });
   });
   app.post('/api/mcp/start', requireAuth, async (req, res) => {
-    try { res.json({ success: true, tools: (await mcpHost.start(String(req.body?.server || ''))).map((t: any) => t.name) }); }
-    catch (error: any) { res.status(409).json({ success: false, error: error?.message || String(error) }); }
+    try {
+      if(connectedRuntime.capabilities?.isTaskEnabled?.('mcp-call')===false && connectedRuntime.capabilities?.isTaskEnabled?.('mcp-write')===false) return res.status(409).json({success:false,error:'CAPABILITY_DISABLED:mcp',dispatchState:'NOT_DISPATCHED'});
+      const server=String(req.body?.server||'');
+      const def=mcpHost.servers()[server];
+      if(!def||def.validationError||def.agentAccess==='off') return res.status(409).json({success:false,error:'MCP_SERVER_NOT_AVAILABLE_FOR_AGENT',dispatchState:'NOT_DISPATCHED'});
+      res.json({ success: true, tools: (await mcpHost.start(server)).map((t: any) => t.name) });
+    }
+    catch (error: any) { res.status(409).json({ success: false, error: error?.message || String(error), dispatchState:'NOT_DISPATCHED' }); }
   });
   app.post('/api/mcp/call', requireAuth, async (req, res) => {
     const server = String(req.body?.server || ''), tool = String(req.body?.tool || '');
     try {
-      const args = req.body?.arguments && typeof req.body.arguments === 'object' && !Array.isArray(req.body.arguments) ? req.body.arguments : {};
+      const mode=req.body?.mode ?? 'read';
+      const args=req.body?.arguments === undefined ? {} : req.body.arguments;
+      if(mode!=='read'&&mode!=='write') return res.status(400).json({success:false,error:'MCP_MODE_INVALID',dispatchState:'NOT_DISPATCHED'});
+      if(!args||typeof args!=='object'||Array.isArray(args)) return res.status(400).json({success:false,error:'MCP_ARGUMENTS_INVALID',dispatchState:'NOT_DISPATCHED'});
+      const task=mode==='write'?'mcp-write':'mcp-call';
+      if(connectedRuntime.capabilities?.isTaskEnabled?.(task)===false) return res.status(409).json({success:false,error:'CAPABILITY_DISABLED:'+task,dispatchState:'NOT_DISPATCHED'});
       // The server's agent access decides (read, write or off; see stdioMcpHost.mjs). Nova's mcp-call
       // runs read-only tools; a tool that changes something needs its mcp-write task (mode 'write').
-      const result: any = await mcpHost.call(server, tool, args, { actor: 'agent', readOnly: req.body?.mode !== 'write' });
+      const result: any = await mcpHost.call(server, tool, args, { actor: 'agent', readOnly: mode !== 'write' });
       const failed = result?.isError === true;
       seerLiveWorkstream.record({ actor: 'JACO MCP host', type: 'mcp.tool.called', message: `${server}.${tool}`, verified: !failed, receipt: { server, tool, isError: failed } });
       getAuraMcpFabric.invalidate();
-      res.status(failed ? 409 : 200).json({ success: !failed, server, tool, result });
+      res.status(failed ? 409 : 200).json({ success: !failed, server, tool, result, dispatchState: failed ? 'UNKNOWN' : 'ACKNOWLEDGED' });
     } catch (error: any) {
       const message = error?.message || String(error);
       seerLiveWorkstream.record({ actor: 'JACO MCP host', type: 'mcp.tool.refused', message: `${server}.${tool}: ${message}`, verified: false, receipt: { server, tool, error: message } });
       getAuraMcpFabric.invalidate();
-      res.status(409).json({ success: false, server, tool, error: message });
+      res.status(409).json({ success: false, server, tool, error: message, dispatchState: error?.dispatchState === 'NOT_DISPATCHED' ? 'NOT_DISPATCHED' : 'UNKNOWN' });
     }
   });
 
@@ -3024,6 +3416,27 @@ const notifyPhone = async (action) => {
       res.json({ success: true, ...result });
     } catch (error: any) { res.status(/UNKNOWN/.test(error?.message) ? 404 : 400).json({ success: false, error: error?.message || String(error) }); }
   });
+  // A single operator action quarantines only failed *custom* MCP servers.
+  // Definitions remain in workspace configuration with enabled:false; there
+  // is no credential read, payment setup, arbitrary process launch or deletion.
+  app.post('/api/aura/workbench/mcp/quarantine-failed', requireLocalUi, (_req, res) => {
+    if (!localOperatorOnly(_req, res)) return;
+    try {
+      const result = mcpHost.quarantineFailedCustom();
+      if (result.disabled.length) {
+        getAuraMcpFabric.invalidate();
+        seerLiveWorkstream.record({
+          actor: 'Aura Tool Fabric', type: 'mcp.failed-custom.quarantined',
+          message: `Disabled ${result.disabled.length} failed custom MCP connections; definitions preserved`,
+          verified: true, receipt: { disabled: result.disabled, definitionsPreserved: true },
+        });
+      }
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      res.status(409).json({ success: false, error: error?.message || String(error) });
+    }
+  });
+
   app.patch('/api/aura/workbench/mcp/servers/:id/access', requireLocalUi, (req, res) => {
     if (!localOperatorOnly(req, res)) return;
     try {
@@ -3071,6 +3484,22 @@ const notifyPhone = async (action) => {
     return sendSkill(req, res);
   });
 
+  // What each tool has actually done, derived from mission receipts (docs/aura/OPERATING_CONTRACT.md, section 3).
+  app.get('/api/aura/capabilities/observations', requireLocalUi, (_req, res) => {
+    try {
+      const policy = connectedRuntime.capabilities;
+      const missions = connectedRuntime.bus.listMissions(50).map((m: any) => { try { return connectedRuntime.novaMissions.get(m.id); } catch { return { ...m, receipts: [] }; } });
+      const observations = observationsFromMissions({ tools: Object.keys(TASK_FIELDS), mcpServers: mcpHost.status(), missions, isEnabled: (t: string) => policy ? policy.isTaskEnabled(t) : true });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ success: true, view: plannerView(observations), observations });
+    } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
+  });
+  // The same view for the planner and the Gameboard: one source for "does this tool answer?".
+  const capabilityView = () => {
+    const missions = connectedRuntime.bus.listMissions(50).map((m: any) => { try { return connectedRuntime.novaMissions.get(m.id); } catch { return { ...m, receipts: [] }; } });
+    const policy = connectedRuntime.capabilities;
+    return plannerView(observationsFromMissions({ tools: Object.keys(TASK_FIELDS), mcpServers: mcpHost.status(), missions, isEnabled: (t: string) => policy ? policy.isTaskEnabled(t) : true }));
+  };
   // What Aura may use. Everything is on until the operator turns it off here (capabilityPolicy.mjs).
   app.get('/api/aura/capabilities', requireLocalUi, (_req, res) => {
     try {
@@ -3103,6 +3532,19 @@ const notifyPhone = async (action) => {
     } catch (error: any) { res.status(409).json({ success: false, error: error?.message || String(error) }); }
   });
   // Approved tool notes, shown with each tool to Nova's planner.
+  // What Aura learned about her own decisions: lessons with their measured effect, and the reflections behind them.
+  app.get('/api/aura/workbench/meta-lessons', requireLocalUi, (_req, res) => {
+    try { res.setHeader('Cache-Control', 'no-store'); res.json({ success: true, lessons: metaLessons.list(), reflections: metaLessons.reflections(20) }); }
+    catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
+  });
+  app.post('/api/aura/workbench/meta-lessons/:id/approve', requireLocalUi, (req, res) => {
+    try { res.json({ success: true, lesson: metaLessons.approve(String(req.params.id || '')) }); }
+    catch (error: any) { res.status(error?.message === 'META_LESSON_NOT_FOUND' ? 404 : 409).json({ success: false, error: error?.message || String(error) }); }
+  });
+  app.post('/api/aura/workbench/meta-lessons/:id/retire', requireLocalUi, (req, res) => {
+    try { res.json({ success: true, lesson: metaLessons.retire(String(req.params.id || ''), 'OPERATOR') }); }
+    catch (error: any) { res.status(error?.message === 'META_LESSON_NOT_FOUND' ? 404 : 400).json({ success: false, error: error?.message || String(error) }); }
+  });
   app.get('/api/tool-notes', requireAuth, (_req, res) => res.json({ success: true, notes: skillLearning.notes() }));
   // JACO Lite: Nova plans with whatever model the operator connected in the IDE (any OpenAI-compatible
   // provider, local or cloud), not with a fixed list. Only providers that answer right now, each with a
@@ -3128,10 +3570,18 @@ const notifyPhone = async (action) => {
   app.get('/api/connected/nova/missions/:id/preflight-context', requireAuth, (req,res) => {
     try {
       const mission:any=connectedRuntime.novaMissions.get(req.params.id);
+      const routineMission={...mission,receipts:connectedRuntime.novaMissions.evidenceReceipts(mission.id)};
+      const routineExperience={schema:'jaco.routine-context/v1',authority:'advisory_only',current:currentRoutineHints(routineMission),historical:skillLearning.recallRoutine(routineMission)};
+      if(req.query.routineOnly==='1'){res.setHeader('Cache-Control','no-store');res.json({success:true,context:routineExperience});return;}
       const revision=String(req.query.revision||'').slice(0,160);
       const outcomes=skillLearning.recallOutcome(mission.contract,revision);
       const economic=continuumSurface.runtime.economic.snapshot();
-      res.json({success:true,context:{budget:{policy:economic.policy,headroom:economic.headroom},outcomes,approvedToolNotes:skillLearning.notes()}});
+      // Decision-method lessons from earlier missions (agents/lib/meta-reasoning.mjs): advice, never authority.
+      const decisionLessons=metaLessons.recall({missionId:mission.id,allowedTasks:mission.allowedTasks});
+      // What tools have actually answered (agents/lib/capability-observation.mjs): evidence for planning, never permission.
+      let capabilities: any = null;
+      try { capabilities = capabilityView(); } catch { capabilities = null; }
+      res.json({success:true,context:{budget:{policy:economic.policy,headroom:economic.headroom},outcomes,approvedToolNotes:skillLearning.notes(),decisionLessons,capabilities,routineExperience}});
     } catch(error:any) {res.status(400).json({success:false,error:error?.message||'MISSION_CONTEXT_FAILED'});}
   });
   // Run a skill as a Nova mission: the goal names the skill and carries the operator's input; the
@@ -3257,7 +3707,7 @@ const notifyPhone = async (action) => {
       const listed: any = (p.apiKeyEnv && !p.credentialConfigured && !local) ? null : await connectedRuntime.providers.probe(p.id).catch(() => null);
       const models = [...new Set([p.defaultModel, ...((listed?.ok ? listed.models : []) as string[]).filter(m => !NON_CHAT.test(m))].filter(Boolean))] as string[];
       if (!models.length) return null;
-      return [p.id, { label: `${p.id}${local ? ' (local)' : ''}`, paid: Boolean(p.apiKeyEnv) && !local && !models.every((m: string) => /:free$/.test(m)), keyEnv: (local && !p.credentialConfigured) ? null : (p.apiKeyEnv || null), url: `${String(p.baseUrl).replace(/\/+$/, '')}/chat/completions`, models }] as const;
+      return [p.id, { label: `${p.id}${local ? ' (local)' : ''}`, paid: !local && !(p.id === 'openrouter' && models.every((m: string) => /:free$/.test(m))), keyEnv: (local && !p.credentialConfigured) ? null : (p.apiKeyEnv || null), url: `${String(p.baseUrl).replace(/\/+$/, '')}/chat/completions`, models }] as const;
     }));
     connectedChoiceCache = { at: Date.now(), sig, value: Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, any]>) };
     return connectedChoiceCache.value;
@@ -3305,30 +3755,44 @@ const notifyPhone = async (action) => {
 
   // Stripe revenue, read-only, for the IDE's Revenue view. Cached for a minute: the view polls.
   let revenueCache: { at: number; value: any } = { at: 0, value: null };
-  app.get('/api/revenue/stripe', requireLocalUi, async (req, res) => {
-    if (!revenueCache.value || Date.now() - revenueCache.at > 60_000 || req.query.refresh === '1') {
-      revenueCache = { at: Date.now(), value: await stripeRevenueSnapshot({ key: process.env.STRIPE_SECRET_KEY || '' }) };
+  const readStripeRevenue = async (refresh: boolean) => {
+    if (refresh || !revenueCache.value || Date.now() - revenueCache.at > 60_000) {
+      revenueCache = { at: Date.now(), value: await stripeRevenueSnapshot({ key: credential('STRIPE_SECRET_KEY') || '' }) };
     }
-    res.json({ success: !revenueCache.value.error, ...revenueCache.value });
+    return revenueCache.value;
+  };
+  app.get('/api/revenue/stripe', requireLocalUi, async (req, res) => {
+    const value = await readStripeRevenue(req.query.refresh === '1');
+    res.json({ success: !value.error, ...value });
   });
+  // Only a model that has just answered a short text request becomes the planner. Also used by the organization panel.
+  const choosePlanner = async ({ provider, model }: { provider: string; model: string }) => {
+    if (process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1') throw new Error('PLANNER_ENV_PRIMARY_AUTHORITATIVE');
+    const extra = await connectedPlannerChoices(true);
+    const valid = validatePlannerChoice({ provider, model }, process.env, extra);
+    if (!agentCanUseKey(plannerChoices(process.env, extra)[provider]?.keyEnv)) throw Object.assign(new Error('KEY_NOT_AVAILABLE_TO_AGENT'), { status: 422 });
+    const probe = await testPlannerModel(valid, { extra, timeoutMs: 30_000 });
+    if (!probe.ok) throw Object.assign(new Error(`PLANNER_MODEL_TEXT_PROBE_FAILED:${probe.error || probe.status || 'NO_ANSWER'}`), { probe, status: 422 });
+    const saved = writePlannerChoice(plannerChoicePath, valid, 'operator');
+    return connectedRuntime.novaMissions.recoverModelSelection(saved);
+  };
   const chooseAuraModel = async (req: express.Request, res: express.Response) => {
     try {
       if (process.env.JACO_PRIMARY_PROVIDER && process.env.JACO_AURA_UNIFIED_RUNTIME !== '1') return res.status(409).json({ success: false, error: 'PLANNER_ENV_PRIMARY_AUTHORITATIVE' });
       const provider = String(req.body?.provider || '');
+      let recoveredMissions: string[] = [];
       if (provider === 'auto') {
         clearPlannerChoice(plannerChoicePath);
       } else {
-        const extra = await connectedPlannerChoices(true);
-        const valid = validatePlannerChoice({ provider, model: req.body?.model }, process.env, extra);
-        if (!agentCanUseKey(plannerChoices(process.env, extra)[provider]?.keyEnv)) return res.status(422).json({ success: false, error: 'KEY_NOT_AVAILABLE_TO_AGENT' });
-        // Only a model that has just answered a short text request becomes Nova's planner.
-        const probe = await testPlannerModel(valid, { extra, timeoutMs: 30_000 });
-        if (!probe.ok) return res.status(422).json({ success: false, error: 'PLANNER_MODEL_TEXT_PROBE_FAILED', probe });
-        writePlannerChoice(plannerChoicePath, valid, 'operator');
+        try { recoveredMissions = await choosePlanner({ provider, model: req.body?.model }); }
+        catch (error: any) {
+          if (error?.status === 422) return res.status(422).json({ success: false, error: error.message, ...(error.probe ? { probe: error.probe } : {}) });
+          throw error;
+        }
       }
       const state = await plannerState();
       seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.model.chosen', message: `Aura model: ${state.choice ? `${state.choice.provider}/${state.choice.model}` : 'selection required'}`, verified: true, receipt: { choice: state.choice } });
-      res.json(state);
+      res.json({ ...state, recoveredMissions });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error?.message || String(error) });
     }
@@ -3374,6 +3838,16 @@ const notifyPhone = async (action) => {
 
   // Write-only key entry (agents/lib/secret-store.mjs): the operator hands JACO an API key in the
   // local IDE, it is stored encrypted, and no route ever returns a value, only name, length and dates.
+  // A distinct UI flow, not an Aura tool. Provider consent is always human.
+  const githubLogin = githubGuiAuth();
+  app.get('/api/aura/workbench/github/auth', requireLocalUiSameOrigin, requireOrganizationMutationAuth, async (_req, res) => {
+    res.set('Cache-Control', 'no-store').json({ success: true, ...(await githubLogin.status()) });
+  });
+  app.post('/api/aura/workbench/github/auth', requireLocalUiSameOrigin, requireOrganizationMutationAuth, async (req, res) => {
+    if (!req.get('origin') || req.get('origin')?.replace(/^https?:\/\//,'') !== req.get('host')) return res.status(403).json({success:false,error:'GITHUB_AUTH_ORIGIN_REQUIRED'});
+    if (!['start','cancel'].includes(req.body?.action)) return res.status(400).json({success:false,error:'GITHUB_AUTH_ACTION_INVALID'});
+    res.set('Cache-Control','no-store').json({ success: true, ...(req.body.action === 'start' ? await githubLogin.start() : githubLogin.cancel()) });
+  });
   app.get('/api/aura/workbench/secrets', requireLocalUi, (_req, res) => {
     try { res.json({ success: true, secrets: new SecretStore().list() }); }
     catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
@@ -3389,6 +3863,24 @@ const notifyPhone = async (action) => {
     } catch (error: any) {
       res.status(400).json({ success: false, error: error?.message || String(error) });
     }
+  });
+
+  // Local operator only: no separate organization token or agent mission required.
+  app.post('/api/aura/workbench/secrets/bulk-import', requireLocalUiSameOrigin, (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (typeof req.body?.text !== 'string' || typeof req.body?.dryRun !== 'boolean') return res.status(400).json({ success: false, error: 'VAULT_IMPORT_INVALID' });
+    try {
+      const report = importVaultText(req.body.text, { dryRun: req.body.dryRun });
+      let providerRefresh = 'NOT_NEEDED';
+      if (report.imported.length) {
+        try {
+          hydrateEnvFromStore(process.env);
+          connectedRuntime.providers.ensureDefaults();
+          providerRefresh = 'REFRESHED';
+        } catch { providerRefresh = 'PENDING'; }
+      }
+      res.json({ success: true, ...report, providerRefresh });
+    } catch { res.status(400).json({ success: false, error: 'VAULT_IMPORT_FAILED' }); }
   });
 
   // Bridge the existing Windows JACO Credential Manager vault to the canonical encrypted store.
@@ -3439,7 +3931,7 @@ const notifyPhone = async (action) => {
     try {
       const submittedKey = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
       const found: any = await discoverProvider(req.body?.url, {
-        env: process.env, keyFor: (name: string) => submittedKey || credential(name),
+        env: process.env, isolateEndpoint: true, keyFor: (name: string) => submittedKey || credential(name),
       });
       if (submittedKey && found.state === 'READY') {
         const saved = new SecretStore().set(found.apiKeyEnv, submittedKey, { source: 'operator', purpose: `${found.id} API` });
@@ -3448,7 +3940,7 @@ const notifyPhone = async (action) => {
       // KEY_REJECTED and UNREACHABLE must not become registered/active providers.
       const provider = (found.state === 'READY' || (found.state === 'NEEDS_KEY' && !submittedKey))
         ? connectedRuntime.providers.register({
-          id: found.id, baseUrl: found.baseUrl, apiKeyEnv: found.apiKeyEnv, defaultModel: found.defaultModel,
+          id: found.id, baseUrl: found.baseUrl, apiKeyEnv: found.requiresKey ? found.apiKeyEnv : null, defaultModel: found.defaultModel,
         }) : null;
       seerLiveWorkstream.record({
         actor: 'Aura Workbench', type: 'provider.discovered',
@@ -3559,7 +4051,7 @@ const notifyPhone = async (action) => {
       aura: {
         objective: AURA_CANONICAL_OBJECTIVE,
         role: 'operator-ide-surface',
-        strategicAuthority: 'SEER',
+        strategicAuthority: 'JACO',
         executionAuthority: 'Durable Nova / AgentOS / ModelRelay',
         completionRule: 'verified evidence or receipt required'
       },
@@ -3744,6 +4236,13 @@ const notifyPhone = async (action) => {
     } catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
   });
 
+  // The same service recovery Aura has in conversation, reachable as the `stack-repair` mission task so a
+  // mission can reconnect a bridge that went down instead of ending. It restarts only services that are down.
+  app.post('/api/system/stack-repair', requireAuth, async (_req, res) => {
+    try { res.json({ success: true, ...(await repairStack()) }); }
+    catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error).slice(0, 200) }); }
+  });
+
   app.get('/api/hands-off/receipts', requireAuth, (req, res) => {
     res.json({ success: true, receipts: handsOff.listReceipts(Number(req.query.limit || 50)) });
   });
@@ -3895,7 +4394,58 @@ const notifyPhone = async (action) => {
   app.use('/api/desktop/hands-off', createDesktopRouter(WORKSPACE_ROOT, RELEASE_ROOT, requireAuth, event => {
     seerLiveWorkstream.update({ activeModule: 'DesktopHandsOff', phase: event.verified ? 'VERIFYING' : 'DEGRADED' });
     seerLiveWorkstream.record({ actor: event.actor, type: event.type, message: event.message, verified: event.verified });
-  }));
+  }, desktopHandsOff));
+
+  // A read-only operator view into the *original* Laser Vision PNG. Never
+  // capture the screen or execute tools in this HTTP route. Only a recent
+  // mission-bound screenshot, hash-checked by freshMissionFrame, can be shown.
+  // Chrome Remote Desktop (or host-local VMConnect) remains the continuous viewer.
+  app.get('/api/aura/desktop/live-frame', requireLocalUi, (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    if (process.platform !== 'win32') {
+      return res.status(503).json({ success:false, error:'DESKTOP_VIEW_WINDOWS_ONLY' });
+    }
+    let mission: any = null;
+    try { mission = connectedRuntime.novaMissions.current(); } catch {}
+    const file = missionScreenshotPath();
+    const frame = readAuraDesktopLiveFrame({ mission, file });
+    if ('reason' in frame) {
+      return res.status(frame.reason === 'DESKTOP_SCREEN_VIEW_NOT_ENABLED' ? 403 : 409)
+        .json({ success:false, error:frame.reason });
+    }
+    res.setHeader('X-JACO-Frame-SHA256', frame.sha256);
+    res.setHeader('X-JACO-Frame-Observed-At', frame.at);
+    res.setHeader('X-JACO-Mission-Id', frame.missionId);
+    res.setHeader('X-JACO-Windows-Session-Id', String(frame.sessionId));
+    return res.status(200).type('png').send(frame.png);
+  });
+
+  // The existing Nova / Mission Bus operator pause is the only command.
+  // This read-only gate must remain PENDING while its tool, shared UIA client
+  // or ModelRelay desktop lease is still active. An ACK to pause is NOT proof
+  // of human-exclusive keyboard/mouse control.
+  app.get('/api/aura/desktop/takeover/:id/status', requireLocalUi, (req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    try {
+      const mission = connectedRuntime.novaMissions.get(req.params.id);
+      const gate = desktopTakeoverState(mission, {
+        desktopBusy: desktopHandsOff.isActuatorBusy(),
+        relayLease: actuatorLeases.get('DESKTOP'),
+      });
+      return res.json({
+        success:true,
+        missionId:mission.id,
+        paused:Boolean(mission.paused),
+        phase:mission.phase,
+        ...gate,
+      });
+    } catch (error: any) {
+      return res.status(409).json({success:false,error:String(error?.message || error).slice(0,180)});
+    }
+  });
 
   app.use('/api/browser/hands-off', browserSurface.router);
   // The IDE page reads the run status without a gateway token; starting or stopping runs still requires one.
@@ -3904,6 +4454,44 @@ const notifyPhone = async (action) => {
   });
   app.use('/api/continuum', continuumSurface.router);
   app.use('/api/relay', modelRelay.router);
+  // Open a local folder or file in Windows Explorer (operator's own GUI only; allowed roots only).
+  app.post('/api/local/reveal', requireLocalUi, async (req, res) => {
+    if (process.platform !== 'win32') return res.status(501).json({ success: false, error: 'EXPLORER_WINDOWS_ONLY' });
+    try {
+      const { resolveOpenTarget, explorerArgs } = await import('../agents/lib/local-open.mjs');
+      const target = resolveOpenTarget(String(req.body?.path || ''), [WORKSPACE_ROOT, process.env.JACO_DATA_DIR, process.env.JACO_INSTALL_ROOT]);
+      const { spawn } = await import('node:child_process');
+      const child = spawn('explorer.exe', explorerArgs(target), { windowsHide: false, detached: true, stdio: 'ignore' });
+      child.unref();
+      res.json({ success: true, mode: target.mode, path: target.path });
+    } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 120) }); }
+  });
+  // Autonomy clock (GUI): a time-boxed, operator-signed mandate. Financial actions stay on REVIEW in code.
+  const CLOCK_NAME = 'Autonomi-klocka';
+  const clockMandates = () => modelRelay.mandates.list().filter((m: any) => [CLOCK_NAME, COMMERCIAL_CLOCK].includes(m.name) && modelRelay.mandates.isActive(m.id));
+  app.get('/api/aura/autonomy', requireLocalUi, (_req, res) => {
+    const active = clockMandates().sort((a: any, b: any) => Date.parse(b.expiresAt) - Date.parse(a.expiresAt))[0] || null;
+    res.json({ success: true, active: active ? { id: active.id, expiresAt: active.expiresAt, maxHours: active.maxHours, signedAt: active.signedAt, commercial: active.name === COMMERCIAL_CLOCK } : null });
+  });
+  app.post('/api/aura/autonomy/start', requireLocalUiSameOrigin, (req, res) => {
+    const hours = Number(req.body?.hours);
+    if (!Number.isFinite(hours) || hours < 1 || hours > 8760) return res.status(400).json({ success: false, error: 'HOURS_OUT_OF_RANGE' });
+    try {
+      for (const old of clockMandates()) modelRelay.mandates.revoke(old.id);
+      const commercial = req.body?.commercial === true;
+      const created = modelRelay.mandates.create({ name: commercial ? COMMERCIAL_CLOCK : CLOCK_NAME, maxHours: Math.round(hours), mission: commercial ? 'Aura: bounded commercial opportunity discovery and authorized proposals. No outgoing spend or new contractual obligations without operator review.' : 'Aura arbetar fritt inom det operatören startat: läsning, lokala ändringar, tester, commits och PR på egna grenar, webbläsning. Pengar, publicering av release, hemligheter och åtkomst kräver alltid granskning.' });
+      const signed = modelRelay.mandates.sign(created.id);
+      let commercialState: any = null;
+      if (commercial) {
+        try { commercialState = commercialTick(); } catch { commercialState = {state:'QUEUING_FAILED'}; }
+      }
+      res.status(201).json({ success: true, active: { id: signed.id, expiresAt: signed.expiresAt, maxHours: signed.maxHours, signedAt: signed.signedAt, commercial }, commercialState });
+    } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 200) }); }
+  });
+  app.post('/api/aura/autonomy/stop', requireLocalUiSameOrigin, (_req, res) => {
+    const stopped = clockMandates().map((m: any) => modelRelay.mandates.revoke(m.id).id);
+    res.json({ success: true, stopped });
+  });
   mountConnectedRoutes(app, requireAuth, connectedRuntime);
   seerService.setMissionContextProvider(() => connectedRuntime.novaMissions.current());
 
@@ -3915,10 +4503,18 @@ const notifyPhone = async (action) => {
   // receipts by rules and by an independent cheap model before anything approves it. Runs at every
   // approval level, so the operator sees the result too.
   const claimChecksRunning = new Set<string>();
+  // How many times a claim check may be re-judged when no judge model could be reached in time.
+  const CLAIM_JUDGE_ATTEMPTS = 3;
   const claimCheckFor = (own: any[]) => {
     const planned = own.find((e: any) => e.type === 'NOVA_PLANNING_RESULT' && e.payload?.completionProposed);
     if (!planned?.payload?.reason) return { planned: null, check: null };
-    const check = own.find((e: any) => e.type === 'NOVA_CLAIM_CHECK' && e.payload?.planSeq === planned.seq)?.payload || null;
+    const checks = own.filter((e: any) => e.type === 'NOVA_CLAIM_CHECK' && e.payload?.planSeq === planned.seq).map((e: any) => e.payload);
+    // A judge that timed out returns no verdict at all: no claim is supported, none is contradicted. That is not a
+    // finished check, and treating it as one left the mission in AWAITING_VERIFICATION for good, because automatic
+    // resolution can neither confirm nor send back an answer it was never able to judge. Retry a bounded number of
+    // times, then keep the last attempt so the mission goes to the operator instead of being re-judged forever.
+    const judged = checks.find((c: any) => c?.judge || Number(c?.judged) > 0 || !c?.judgeError) || null;
+    const check = judged || (checks.length >= CLAIM_JUDGE_ATTEMPTS ? checks[checks.length - 1] : null);
     return { planned, check };
   };
   const startClaimCheck = (mission: any, planned: any) => {
@@ -3927,7 +4523,9 @@ const notifyPhone = async (action) => {
     claimChecksRunning.add(key);
     let planner: string[] = [];
     try { const choice: any = readPlannerChoice(plannerChoiceFile(process.env)); if (choice?.provider && choice?.model) planner = [`${choice.provider}/${choice.model}`]; } catch {}
-    checkClaims(planned.payload.reason, mission.receipts || [], { exclude: planner })
+    // 15 s cut off every judge on this host: a local judge answered in 15.4 s and a cloud one needs its
+    // round trip too, so every check came back judged:0 and the mission waited for the operator forever.
+    checkClaims(planned.payload.reason, connectedRuntime.novaMissions.evidenceReceipts(mission.id), { exclude: planner, maxJudgeMs: Number(process.env.JACO_CLAIM_JUDGE_TIMEOUT_MS) || 60_000 })
       .catch((error: any) => ({ ok: false, error: String(error?.message || error).slice(0, 200), claims: 0, unsupportedFacts: [], contradicted: [], partial: [] }))
       .then((result: any) => {
         connectedRuntime.bus.event('NOVA_CLAIM_CHECK', { missionId: mission.id, payload: { planSeq: planned.seq, ...result } });
@@ -3937,11 +4535,41 @@ const notifyPhone = async (action) => {
   };
   // Self-written skills (agents/lib/skill-learning.mjs): every finished mission is read once for what
   // it teaches; proposals wait for the operator in the IDE's Skills view.
+  // Meta-reasoning (agents/lib/meta-reasoning.mjs). Every blocked or finished mission is scanned once per stage
+  // in plain code; a reflection is written, and one model call made, only when an objective signal fired.
+  const missionEvents = (id: string) => connectedRuntime.bus.db.prepare('SELECT seq,ts,type,payload_json FROM events WHERE mission_id=? ORDER BY seq ASC LIMIT 500').all(id)
+    .map((r: any) => { let payload: any = {}; try { payload = JSON.parse(r.payload_json || '{}'); } catch {} return { seq: r.seq, ts: r.ts, type: r.type, payload }; });
+  const metaTick = async () => {
+    const due = connectedRuntime.bus.listMissions(50)
+      .filter((m: any) => ['DONE', 'CANCELLED', 'BLOCKED'].includes(String(m.status || '').toUpperCase()) && !metaLessons.isObserved(m.id, reflectionStage(m))).slice(0, 5);
+    for (const base of due) {
+      const stage = reflectionStage(base);
+      let mission: any;
+      try { mission = connectedRuntime.novaMissions.get(base.id); } catch { metaLessons.observe(base, [], stage); continue; }
+      const events = missionEvents(base.id);
+      const findings = decisionFindings(mission, events);
+      const trigger = metaTrigger(mission, events, findings);
+      metaLessons.observe(mission, findings, stage);
+      if (!trigger || metaLessons.isReflected(mission.id, stage)) continue;
+      const reflection = buildReflection(mission, events, { findings, trigger });
+      // "Why did I think this was right?" only has an answer when Aura chose something: a mission stopped
+      // before its first action has no decision of hers to examine.
+      const premise = mission.receipts?.length ? await askPremise(mission, events, reflection, { candidates: judgeCandidates(process.env) }) : null;
+      const stored = metaLessons.record(reflection, stage, { premise });
+      seerLiveWorkstream.record({ actor: 'Aura meta-reasoning', type: 'meta.reflection.recorded', verified: true,
+        message: `${base.id}: ${stored.gap} ${stored.lessons.length} lesson(s) from ${stored.findings.length} observed mistake(s)`.slice(0, 400),
+        receipt: { missionId: base.id, stage, trigger: stored.trigger, patterns: stored.findings.map((f: any) => f.pattern), lessons: stored.lessons, premise: stored.premise } });
+    }
+  };
   let learningBusy = false;
+  let commercialArchiveCursor = '';
   const learnTick = async () => {
     if (learningBusy) return;
     learningBusy = true;
     try {
+      try {
+        commercialArchiveCursor = archiveCommercialBatch({bus:connectedRuntime.bus,nova:connectedRuntime.novaMissions,knowledge:continuumSurface.runtime.knowledge,after:commercialArchiveCursor,onError:(error: any,id: string)=>console.warn('[commercial memory] archive retry:',id,error?.message||error)});
+      } catch (error: any) { console.warn('[commercial memory] batch failed:',error?.message||error); }
       const events = connectedRuntime.bus.listEvents(1000);
       // Missions read before 2026-10-03 20:30 carry a NOVA_LEARNED bus event; later ones are kept in the store.
       const learned = new Set(events.filter((e: any) => e.type === 'NOVA_LEARNED').map((e: any) => e.missionId));
@@ -3951,30 +4579,81 @@ const notifyPhone = async (action) => {
         try { mission = connectedRuntime.novaMissions.get(base.id); } catch { skillLearning.markLearned(base.id); continue; }
         const check = events.find((e: any) => e.missionId === base.id && e.type === 'NOVA_CLAIM_CHECK')?.payload || null;
         const lessons = lessonsFrom(mission, check);
-        const reflection=skillLearning.recordOutcome(mission);
+        const reflection: any=skillLearning.recordOutcome({...mission,receipts:connectedRuntime.novaMissions.evidenceReceipts(mission.id)},{claimCheck:check});
         connectedRuntime.bus.event('NOVA_REFLECTION',{missionId:mission.id,payload:{schema:reflection.schema,verificationStatus:reflection.verificationStatus,worked:reflection.worked,failed:reflection.failed,evidence:reflection.evidence}});
         const made: string[] = [];
-        for (const note of lessons.notes) { const p = skillLearning.add(note); if (p) made.push(p.key); }
-        if (lessons.procedure) {
+        for (const note of lessons.notes) { if(routineCoversNote(reflection.routine,note)) continue; const p = skillLearning.add(note); if (p) made.push(p.key); }
+        if (lessons.procedure && !routineCoversProcedure(reflection.routine,lessons.procedure.steps)) {
           const named = await nameProcedure(mission.goal, lessons.procedure.steps, { candidates: judgeCandidates(process.env) });
           const p = skillLearning.add({ ...skillProposal(mission, mission.receipts, named), missionId: mission.id, namedBy: named.by });
           if (p) made.push(p.key);
         }
+        if(reflection.routine) connectedRuntime.bus.event('NOVA_ROUTINE_EXPERIENCE',{missionId:mission.id,payload:{authority:'advisory_only',playbook:Boolean(reflection.routine.playbook),lessonCount:reflection.routine.lessons.length}});
         skillLearning.markLearned(base.id);
         if (made.length) seerLiveWorkstream.record({ actor: 'JACO learning', type: 'skill.proposed', message: `${base.id}: ${made.length} proposal(s) for operator review`, verified: true, receipt: { missionId: base.id, proposals: made } });
       }
+      await metaTick();
     } catch (error: any) { console.warn('[learning] tick failed:', error?.message || error); }
     finally { learningBusy = false; }
   };
   setInterval(() => { void learnTick(); }, 60_000).unref?.();
 
+  // Per-mission history, not a global event window: concurrent work must not hide
+  // a completion check, previous denial, or consumed auto-resume allowance.
+  const resolutionEvents = (id: string) => connectedRuntime.bus.db.prepare(
+    "SELECT seq,ts,type,payload_json FROM events WHERE mission_id=? ORDER BY seq DESC"
+  ).all(id).map((r: any) => {
+    let payload: any = {}; try { payload = JSON.parse(r.payload_json || '{}'); } catch {}
+    return { seq: r.seq, ts: r.ts, type: r.type, payload };
+  });
+  const graphResolution = new Set<string>();
+  const readResolutionGraph = async (mission: any) => {
+    const parent = mission.metadata?.parent;
+    if (!parent?.graphId) return null;
+    const base = String(process.env.SEER_URL || 'http://127.0.0.1:2997').replace(/\/+$/, '');
+    const token = process.env.SEER_TOKEN || process.env.JACO_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || GATEWAY_TOKEN;
+    const response = await fetch(base + '/cortex/mission-graphs/' + encodeURIComponent(parent.graphId), {
+      headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(4000),
+    });
+    if (!response.ok) throw new Error('AURA_GRAPH_READ_' + response.status);
+    return response.json();
+  };
+  // Per-mission asynchronous reads: one unavailable graph cannot hold unrelated work.
+  const resolvePolicyMission = async (id: string) => {
+    if (graphResolution.has(id)) return;
+    graphResolution.add(id);
+    try {
+      let mission = connectedRuntime.novaMissions.get(id);
+      const graph = mission.source === 'seer-mission-graph' && mission.status === 'AWAITING_VERIFICATION'
+        ? await readResolutionGraph(mission) : null;
+      // Re-read after I/O; a stale proposal may have been superseded by the operator.
+      mission = connectedRuntime.novaMissions.get(id);
+      const status = String(mission.status || '').toUpperCase();
+      if (!['BLOCKED','AWAITING_VERIFICATION'].includes(status) || mission.paused || mission.cancelRequested || mission.pendingOperatorAction || mission.spendApprovalPending) return;
+      const { level, extraBlocked } = loadApprovalPolicy({ file: policyFilePath(WORKSPACE_ROOT) });
+      if (!level) return;
+      const own = resolutionEvents(id);
+      const resolutions = own.filter((e: any) => e.type === 'NOVA_OPERATOR_RESOLUTION');
+      const lastManual = resolutions.findIndex((e: any) => !String(e.payload?.note || '').startsWith('auto-'));
+      const autoResumes = (lastManual === -1 ? resolutions : resolutions.slice(0,lastManual)).filter((e: any) => String(e.payload?.note || '').startsWith('auto-resumed')).length;
+      const lastError = own.find((e: any) => e.payload?.error)?.payload?.error || '';
+      const evidence = own.find((e: any) => e.type === 'NOVA_PLANNING_RESULT' && e.payload?.completionProposed)?.payload?.evidence || null;
+      const { planned, check: claimCheck } = claimCheckFor(own);
+      if (status === 'AWAITING_VERIFICATION' && planned && !claimCheck) return;
+      const claimResumes = resolutions.filter((e: any) => String(e.payload?.note || '').startsWith(CLAIM_RESUME_NOTE)).length;
+      const verdict = autoResolution({ ...mission, receipts: connectedRuntime.novaMissions.evidenceReceipts(id) }, { level, autoResumes, lastError: String(lastError), extraBlocked, evidence, claimCheck, claimResumes, graph });
+      if (!verdict) return;
+      connectedRuntime.novaMissions.resolveAutomatic(id, verdict);
+      recordAuto(`mission:${id} -> ${verdict.decision} (${verdict.note})`, { missionId:id, ...verdict });
+    } catch (error: any) { console.warn('[aura-resolution]', id, error?.message || error); }
+    finally { graphResolution.delete(id); }
+  };
   const autoApproveTick = () => {
     const { level, extraBlocked } = loadApprovalPolicy({ file: policyFilePath(WORKSPACE_ROOT) });
     try {
-      const events = connectedRuntime.bus.listEvents(1000);
       for (const base of connectedRuntime.bus.missionsAwaitingResolution()) {
         if (String(base?.status || '').toUpperCase() !== 'AWAITING_VERIFICATION') continue;
-        const { planned, check } = claimCheckFor(events.filter((e: any) => e.missionId === base.id));
+        const { planned, check } = claimCheckFor(resolutionEvents(base.id));
         if (planned && !check) { try { startClaimCheck(connectedRuntime.novaMissions.get(base.id), planned); } catch {} }
       }
     } catch (error: any) { console.warn('[claim-check] tick failed:', error?.message || error); }
@@ -3991,37 +4670,10 @@ const notifyPhone = async (action) => {
         recordAuto(`mcp-source:${source.id} -> approve (level ${level})`, { sourceId: source.id, resolvedSha: source.resolvedSha, level });
       }
     } catch (error: any) { console.warn('[auto-approve] gate tick failed:', error?.message || error); }
-    try {
-      const events = connectedRuntime.bus.listEvents(1000);
-      for (const base of connectedRuntime.bus.missionsAwaitingResolution()) {
-        const status = String(base?.status || '').toUpperCase();
-        if (!['BLOCKED', 'AWAITING_VERIFICATION'].includes(status)) continue;
-        let mission: any;
-        try { mission = connectedRuntime.novaMissions.get(base.id); } catch { continue; }
-        const own = events.filter((e: any) => e.missionId === mission.id);
-        // Auto-resumes since the operator's last own decision (events are newest first): a manual resume
-        // starts a new budget window, and with it a new allowance of automatic retries.
-        const resolutions = own.filter((e: any) => e.type === 'NOVA_OPERATOR_RESOLUTION');
-        const lastManual = resolutions.findIndex((e: any) => !String(e.payload?.note || '').startsWith('auto-'));
-        const autoResumes = (lastManual === -1 ? resolutions : resolutions.slice(0, lastManual)).filter((e: any) => String(e.payload?.note || '').startsWith('auto-resumed')).length;
-        const lastError = own.find((e: any) => e.payload?.error)?.payload?.error || '';
-        const evidence = own.find((e: any) => e.type === 'NOVA_PLANNING_RESULT' && e.payload?.completionProposed)?.payload?.evidence || null;
-        const { planned, check: claimCheck } = claimCheckFor(own);
-        // An answer is not resolved before its claim check has run.
-        if (status === 'AWAITING_VERIFICATION' && planned && !claimCheck) continue;
-        const claimResumes = resolutions.filter((e: any) => String(e.payload?.note || '').startsWith(CLAIM_RESUME_NOTE)).length;
-        const verdict = autoResolution(mission, { level, autoResumes, lastError: String(lastError), extraBlocked, evidence, claimCheck, claimResumes });
-        if (!verdict) continue;
-        try {
-          connectedRuntime.novaMissions.resolve(mission.id, { ...verdict, authority: 'operator' });
-          recordAuto(`mission:${mission.id} -> ${verdict.decision} (${verdict.note})`, { missionId: mission.id, ...verdict });
-        } catch (error: any) {
-          console.warn(`[auto-approve] ${mission.id} ${verdict.decision} refused: ${error?.message || error}`);
-        }
-      }
-    } catch (error: any) { console.warn('[auto-approve] tick failed:', error?.message || error); }
+    try { for (const base of connectedRuntime.bus.missionsAwaitingResolution()) void resolvePolicyMission(base.id); }
+    catch (error: any) { console.warn('[aura-resolution] scan failed:', error?.message || error); }
   };
-  setInterval(autoApproveTick, 30_000).unref?.();
+  setInterval(autoApproveTick, 5_000).unref?.();
 
   // Voice channel: the operator's own WhatsApp, linked once (JACO Lite: node start.mjs --whatsapp +46...). A mission that
   // needs the operator or has finished is reported there; the channel can only message the one number named by the operator.
@@ -4563,6 +5215,11 @@ const notifyPhone = async (action) => {
   });
 
   const costBalances = createBalanceFetcher({ env: process.env });
+  // Prices follow the market: fetched now if the last sync is old, then every six hours. A failed fetch keeps the last known prices.
+  const refreshPrices = () => syncPrices({ env: process.env }).then((result: any) => { if (!result.ok) console.warn('[economy] price sync failed:', JSON.stringify(result.sources)); return result; });
+  const priceAge = Date.now() - Date.parse(readPriceCatalog(process.env)?.fetchedAt || '');
+  if (!(priceAge < PRICE_SYNC_INTERVAL_MS)) void refreshPrices().catch((error: any) => console.warn('[economy] price sync failed:', error?.message));
+  setInterval(() => { void refreshPrices().catch((error: any) => console.warn('[economy] price sync failed:', error?.message)); }, PRICE_SYNC_INTERVAL_MS).unref();
   continuumSurface.runtime.economic.seedFromLedger(path.join(process.cwd(), '.jaco', 'continuum', 'ledger', 'events.jsonl'))
     .then((r: any) => { if (r?.seeded) console.log('[cost] live tally seeded from ledger:', r.events, 'events'); })
     .catch((error: any) => console.warn('[cost] tally seed failed:', error?.message || error));
@@ -4573,12 +5230,19 @@ const notifyPhone = async (action) => {
     try { res.json({ success: true, ...writeOperatorLanguage(operatorLanguagePath(), String(req.body?.language || '')) }); }
     catch (error: any) { res.status(400).json({ success: false, error: error?.message || String(error) }); }
   });
-  app.use('/api/aura/budget', createEconomicBudgetRouter({ economic: continuumSurface.runtime.economic, requireOperatorUi: requireLocalUi, getBalances: costBalances }));
+  app.use('/api/aura/budget', createEconomicBudgetRouter({ economic: continuumSurface.runtime.economic, requireOperatorUi: requireLocalUi, getBalances: costBalances, getStripeRevenue: () => readStripeRevenue(false), getAgentOrders: () => loadAgentOrders(process.env), listProviders: () => connectedRuntime.providers.list().map((p: any) => { let local = false; try { local = ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(p.baseUrl).hostname); } catch {} return { id: p.id, defaultModel: p.defaultModel, local }; }), modelPrice: (provider: string, model: string) => modelPrice(provider, model, process.env), readPrices: () => readPriceCatalog(process.env), syncPrices: refreshPrices }));
   const agentOrganization = new AgentOrganization(path.resolve(process.env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco')));
   app.use('/api/aura/organization', createAgentOrganizationRouter({
     organization: agentOrganization, requireOperatorUi: requireLocalUi, requireMutationAuth: requireOrganizationMutationAuth,
+    mutationAuthRequired: organizationMutationAuthRequired,
+    providers: connectedRuntime.providers,
+    secrets: new SecretStore(),
+    applyPlanner: choosePlanner,
+    readPlanner: () => process.env.JACO_PRIMARY_PROVIDER ? { provider: process.env.JACO_PRIMARY_PROVIDER, by: 'environment' } : readPlannerChoice(plannerChoicePath),
   }));
 
+  // No per-call prompt ceiling: refusing a large agent turn wastes every token the interrupted task already
+  // spent. Spend stays bounded by the EconomicGovernor daily budget, which prices each reservation below.
   app.post('/api/nova/ollama-cost/reserve', requireAuth, (req, res) => {
     const providerId = String(req.body?.providerId || 'ollama-cloud');
     const model = String(req.body?.model || '');
@@ -4588,8 +5252,8 @@ const notifyPhone = async (action) => {
     const disabled = String(process.env.JACO_DISABLED_PROVIDERS || '').split(',').map(s => s.trim());
     if (!paidModelsAllowed() || disabled.includes(providerId)) return res.status(403).json({ success: false, error: 'NOVA_PROVIDER_DISABLED' });
     if (!validProviderId(providerId) || !validPlannerModelId(model) ||
-        (providerId === 'ollama-cloud' && (!configuredModel || model !== configuredModel)) || !Number.isInteger(promptBytes) || promptBytes < 1 || promptBytes > 200000 ||
-        !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 32768) {
+        (providerId === 'ollama-cloud' && (!configuredModel || model !== configuredModel)) || !Number.isSafeInteger(promptBytes) || promptBytes < 1 ||
+        !Number.isSafeInteger(maxTokens) || maxTokens < 1) {
       return res.status(400).json({ success: false, error: 'NOVA_OLLAMA_COST_INPUT_INVALID' });
     }
     const economic = continuumSurface.runtime.economic;
@@ -4674,6 +5338,8 @@ const notifyPhone = async (action) => {
     try {
       const { message, activeFilePath, targetSubAgent, selectedModel, selectedProvider, model, messagesHistory, interactionMode } = req.body;
       const ragContext = [...(Array.isArray(req.body.ragContext) ? req.body.ragContext : []), ...attachmentContext(req.body.attachmentIds)];
+      // The local GUI can show views and files Aura asks for while she talks (display only, never execution).
+      if (req.body?.connectedSession?.source === 'Aura GUI') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: WORKSPACE_CONTROL_INSTRUCTION } });
       const userMsg = String(message || "Hi");
       const cognitiveActivation = cognitiveActivationPreview(userMsg, {
         knowledge: continuumSurface.runtime.knowledge,
@@ -4711,7 +5377,7 @@ const notifyPhone = async (action) => {
       });
       const sendChatResult = (result: any) => {
         if (connectedReplyId) auraChatSession.append({
-          id: connectedReplyId, role: 'assistant', content: String(result.reply || result.text || ''),
+          id: connectedReplyId, role: 'assistant', content: workspaceReplyText(String(result.reply || result.text || '')),
           meta: [
             connectedSource,
             result.modelUsed || [result.provider, result.model].filter(Boolean).join('/'),
@@ -4767,7 +5433,7 @@ const notifyPhone = async (action) => {
       }
 
       const auraState = auraEngineManager.getState();
-      const allTools=buildAuraToolbox({connectedRuntime,seerLiveWorkstream,readAgentTeam:readAuraAgentBoard});
+      const allTools=(()=>{const box=buildAuraToolbox({connectedRuntime,seerLiveWorkstream,readAgentTeam:readAuraAgentBoard,organization:agentOrganization});return {...box,tools:withPerceptionTools(gateAgentTools(box.tools,agentOrganization))};})();
       const questionTools=questionMode ? cognitiveQuestionToolbox(allTools,()=>readCognitiveFeed({
         bus:connectedRuntime.bus,workstream:seerLiveWorkstream,limit:30,
         secrets:Object.entries(process.env).filter(([key])=>/secret|token|password|api_?key/i.test(key)).map(([,value])=>value).filter(Boolean),
@@ -4854,11 +5520,11 @@ const notifyPhone = async (action) => {
           choice: chatChoice,
           ask: askOrConnected,
           status: failures => auraStatusAnswer(userMsg, failures),
-          onFallback: (fallback, r) => void seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.provider.fallback', message: `${fallback.from} could not answer (${fallback.reason.slice(0, 80)}); answered via SEER ${r.provider}/${r.model}`, verified: true, receipt: { from: fallback.from, to: `${r.provider}/${r.model}`, reason: fallback.reason } }),
+          onFallback: (fallback, r) => void seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.provider.fallback', message: `${fallback.from} could not answer (${fallback.reason.slice(0, 80)}); answered via JACO ${r.provider}/${r.model}`, verified: true, receipt: { from: fallback.from, to: `${r.provider}/${r.model}`, reason: fallback.reason } }),
           onNoModel: failures => void seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.no_model_answer', message: `No model could answer; Aura answered with observed status (${failures.length} failures)`, verified: true, receipt: { failures } }),
         });
 
-      const routeLabel = process.env.JACO_LITE === '1' ? 'Lite direct provider' : chatChoice ? 'Aura direct model' : 'SEER';
+      const routeLabel = process.env.JACO_LITE === '1' ? 'Lite direct provider' : chatChoice ? 'Aura direct model' : 'JACO';
       seerLiveWorkstream.update({
         activeModule: 'Aura',
         provider: result.provider,
@@ -5900,9 +6566,9 @@ const notifyPhone = async (action) => {
       const { targetId, queryTopic } = req.body || {};
       pushLog('info', `[Market Watch] Starting OpenClaw competitor scan for ${targetId || 'all targets'}...`, 'market-watch');
       const result = await marketWatchService.executeOpenClawScrape(targetId, queryTopic);
-      pushLog('success', `[Market Watch] ${result.message}`, 'market-watch');
+      pushLog(result.success ? 'success' : 'warn', `[Market Watch] ${result.message}`, 'market-watch');
       return res.json({
-        success: true,
+        success: result.success,
         item: result.item,
         digest: result.digest,
         message: result.message,
@@ -7011,6 +7677,9 @@ const notifyPhone = async (action) => {
     runtimeShuttingDown = true;
     void (async () => {
       stopJobReaper();
+      // A shutdown never invents a release receipt: the lease expires when
+      // unreachable and the legacy scheduler can safely resume if needed.
+      void auraCoreControl.stop();
       try { connectedRuntime.stop(); } catch {}
       await Promise.allSettled([closeWebSockets(), closeHttpServer()]);
       try { continuumSurface.runtime.close(); } catch (error: any) {
@@ -7028,6 +7697,9 @@ const notifyPhone = async (action) => {
     const auraLean = process.env.JACO_AURA_LEAN === '1';
     // Idle phone: 5s durable lease/queue maintenance vs 1.2s in full mode.
     connectedRuntime.start(Number(process.env.JACO_MISSION_BUS_TICK_MS || (auraLean ? 5000 : 1200)));
+    // Core wins the single control-plane lease unless the operator explicitly
+    // chooses the legacy scheduler. No second planner or agent is spawned.
+    if (process.env.JACO_AURA_CONTROL_OWNER !== 'legacy') auraCoreControl.start();
     // First scan still occurs at boot. Explicit refresh remains available.
     // In Aura Lean poll passive provider catalogs less frequently to reduce
     // concurrent /v1/models requests during local Gemma inference.

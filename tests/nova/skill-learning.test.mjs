@@ -82,3 +82,29 @@ test('read missions are remembered in the store', t => {
   store.markLearned('m1');
   assert.equal(learningStore(dir).isLearned('m1'), true);
 });
+
+test('unknown effects, dispatch-only and unverified responses never teach positive corrections', () => {
+  const failed = r(1,false,'browser','click',{name:'old'});
+  const good = r(2,true,'browser','click',{name:'new'});
+  const uncertain = {...good,outcomeUnknown:true};
+  const dispatchOnly = {...good,result:{evidence:'input-dispatch-only',postconditionVerified:false}};
+  const noProof = {...good,verified:false};
+  assert.equal(toolCorrections([failed,good]).length,1);
+  for (const unsafe of [uncertain,dispatchOnly,noProof,{...good,result:{outcomeUnknown:true}}]) {
+    assert.deepEqual(toolCorrections([failed,unsafe]),[]);
+    assert.deepEqual(procedureSteps([unsafe]),[]);
+  }
+  assert.deepEqual(toolCorrections([{...failed,outcomeUnknown:true},good]),[]);
+  assert.deepEqual(toolCorrections([failed,{...r(2,true,'other','click',{}),outcomeUnknown:true},{...good,actionId:'m:turn:3'}]),[]);
+});
+test('a completed claim-checked mission with unresolved input does not produce a reusable procedure',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-learning-evidence-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const receipts=[r(1,true,'browser','observe',{}),r(2,true,'browser','click',{}, {result:{evidence:'input-dispatch-only',postconditionVerified:false}}),r(3,true,'browser','read',{})];
+  const mission={id:'uncertain',status:'DONE',goal:'Edit page',receipts,contractStatus:{machineVerified:true}};
+  assert.equal(lessonsFrom(mission,{ok:true}).procedure,null);
+  const reflection=learningStore(dir).recordOutcome(mission);
+  assert.equal(reflection.verificationStatus,'UNVERIFIED');
+  assert.deepEqual(reflection.evidence,['m:turn:1','m:turn:3']);
+  assert.equal(reflection.unexpected.length,1);
+});

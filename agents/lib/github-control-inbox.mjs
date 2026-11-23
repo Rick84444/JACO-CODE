@@ -2,7 +2,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createGitControlReceiptPublisher } from './git-control-receipts.mjs';
+import { createGitControlReceiptPublisher, controlRefusalCode } from './git-control-receipts.mjs';
+import { prepareChatGptStrategy, createLocalAuraGraphClient } from './chatgpt-strategy-control.mjs';
 const execFileAsync = promisify(execFile);
 const DEFAULT_REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -10,8 +11,9 @@ const API = 'https://api.github.com';
 const MARKER = '<!-- jaco-nova-control:v1 -->';
 const TITLE_PREFIX = '[JACO NOVA]';
 const TERMINAL = new Set(['DONE', 'CANCELLED']);
+const GRAPH_TERMINAL = new Set(['VERIFIED','CANCELLED','EXHAUSTED']);
 // Mission-control validation codes: resubmitting the same command can never succeed.
-const PERMANENT_MISSION_ERROR = /^(INVALID_[A-Z_]+|GOAL_REQUIRED|IDEMPOTENCY_KEY_REQUIRED|CODING_CONTRACT_REQUIRED|WINDOWS_WMI_REQUIRES_DESKTOP_AGENTOS|NOVA_MISSION_NOT_FOUND)\b/;
+const PERMANENT_MISSION_ERROR = /^(CHATGPT_STRATEGY_[A-Z_]+|INVALID_[A-Z_]+|GOAL_REQUIRED|IDEMPOTENCY_KEY_REQUIRED|CODING_CONTRACT_REQUIRED|WINDOWS_WMI_REQUIRES_DESKTOP_AGENTOS|NOVA_MISSION_NOT_FOUND)\b/;
 
 export function createGithubNovaControlInbox({
   missionClient,
@@ -28,11 +30,27 @@ export function createGithubNovaControlInbox({
   gitControlLocalRef = process.env.JACO_GIT_NOVA_CONTROL_LOCAL_REF || 'refs/jaco/nova-control',
   gitControlPath = process.env.JACO_GIT_NOVA_CONTROL_PATH || '.jaco/nova-control.json',
   gitExecImpl = execFileAsync,
+  strategyEnv = process.env,
+  strategyClient = null,
 } = {}) {
   if (!missionClient) throw new Error('GITHUB_CONTROL_MISSION_CLIENT_REQUIRED');
+  // Instantiate the optional strategy connector only on a real strategy command.
+  // A bad SEER configuration must never disable ordinary Git mission receipts.
+  let defaultAuraGraphs=null;
+  const graphs=()=>strategyClient||(defaultAuraGraphs ||= createLocalAuraGraphClient({env:strategyEnv,fetchImpl}));
   const [owner, name] = String(repo).split('/');
   const configured = Boolean(owner && name && actor);
-  const transport = transportMode === 'git-ref' ? 'git-ref' : token ? 'github-api' : 'git-ref';
+  // A token the API rejects is worse than no token: observed 2026-11-21, the inbox retried the same rejected
+  // credential 42,518 times, read no command and published no receipt, while the git transport beside it
+  // could authenticate through the host credential helper the whole time. The first "Bad credentials" now
+  // retires the API transport for this process and falls back to git, which needs no token at all.
+  let transport = transportMode === 'git-ref' ? 'git-ref' : token ? 'github-api' : 'git-ref';
+  const retireApiTransport = reason => {
+    if (transport !== 'github-api') return false;
+    transport = 'git-ref';
+    log('warn', `GitHub control: API credential rejected (${reason}); continuing on the git transport, which needs no token`);
+    return true;
+  };
   const effectivePollMs = transport === 'github-api'
     ? Math.max(5000, Number.isFinite(pollMs) ? pollMs : 15000)
     : Math.max(30000, Number.isFinite(pollMs) ? pollMs : 30000);
@@ -147,6 +165,21 @@ export function createGithubNovaControlInbox({
     });
   }
 
+  // Preserve a valid command ID even when the operator policy rejects a
+  // command before execution. Never use a public error string as a key.
+  function recoverCommandId(issue){
+    try{
+      const raw=String(issue.body||'');
+      const markerAt=raw.indexOf(MARKER);
+      if(markerAt<0)return null;
+      const content=raw.slice(markerAt+MARKER.length);
+      const fenced=content.match(/```json\s*([\s\S]*?)\s*```/i);
+      const data=JSON.parse((fenced?fenced[1]:content).trim());
+      const id=String(data?.commandId||'').trim();
+      return data?.schema==='jaco.nova-control/v1'&&/^[a-zA-Z0-9._:-]{6,160}$/.test(id)?id:null;
+    }catch{return null;}
+  }
+
   function parse(issue) {
     const raw = String(issue.body || '');
     const markerAt = raw.indexOf(MARKER);
@@ -164,6 +197,12 @@ export function createGithubNovaControlInbox({
     const commandId = String(payload.commandId || '').trim();
     if (!/^[a-zA-Z0-9._:-]{6,160}$/.test(commandId)) throw new Error('GITHUB_CONTROL_COMMAND_ID_INVALID');
     const op = String(payload.op || 'mission.create');
+
+    if (op === 'strategy.graph.create') {
+      if(issue.number != null || transport!=='git-ref') throw new Error('CHATGPT_STRATEGY_GIT_REF_REQUIRED');
+      return {schema:payload.schema,commandId,op,
+        graph:prepareChatGptStrategy({...payload,commandId}, {env:strategyEnv,repo})};
+    }
 
     if (op === 'mission.create') {
       const goal = String(payload.goal || '').trim();
@@ -217,6 +256,7 @@ export function createGithubNovaControlInbox({
   }
 
   async function submit(command, issue) {
+    if(command.op === 'strategy.graph.create') return await graphs().create(command.graph);
     if (command.op === 'mission.create') {
       return await missionClient.create({
         goal: command.goal,
@@ -245,8 +285,9 @@ export function createGithubNovaControlInbox({
         '### JACO Nova local — REJECTED',
         `- error: \`${String(error.message || error).slice(0, 300)}\``,
       ].join('\n')).catch(() => null);
-      control.issues[issue.number == null ? 'git:invalid' : String(issue.number)] = {
-        commandId: issue.number == null ? 'invalid-control-ref' : null,
+      const rejectedId=issue.number == null ? recoverCommandId(issue) : null;
+      control.issues[issue.number == null ? (rejectedId ? 'git:'+rejectedId : 'git:invalid') : String(issue.number)] = {
+        commandId: issue.number == null ? (rejectedId || 'invalid-control-ref') : null,
         op: 'invalid',
         missionId: null,
         commentId: comment?.id || null,
@@ -293,13 +334,15 @@ export function createGithubNovaControlInbox({
       return { accepted: false, rejected: true, issue: issue.number ?? null, commandId: command.commandId, error: error.message };
     }
 
+    const isGraph=command.op==='strategy.graph.create';
     const record = {
       commandId: command.commandId,
       op: command.op,
-      missionId: mission.id,
+      missionId: isGraph?null:mission.id,
+      ...(isGraph?{graphId:mission.id}:{}),
       commentId: null,
       status: mission.status,
-      phase: mission.phase || null,
+      phase: isGraph?'STRATEGY':mission.phase || null,
       closed: false,
     };
     const comment = issue.number == null ? null : await postComment(issue.number, statusText(record, mission));
@@ -308,20 +351,36 @@ export function createGithubNovaControlInbox({
     record.transport = issue.number == null ? 'git-ref' : 'github-api';
     control.issues[key] = record;
 
-    if (TERMINAL.has(String(mission.status))) {
+    if ((isGraph?GRAPH_TERMINAL:TERMINAL).has(String(mission.status))) {
       if (issue.number != null) await closeIssue(issue.number);
       record.closed = true;
     }
-    return { accepted: true, issue: issue.number ?? null, missionId: mission.id, op: command.op, transport: record.transport };
+    return { accepted: true, issue: issue.number ?? null,
+      ...(isGraph?{graphId:mission.id}:{missionId:mission.id}),op: command.op, transport: record.transport };
   }
 
   async function refreshTracked(control) {
     const updates = [];
     for (const [issueNumber, record] of Object.entries(control.issues)) {
-      if (!record?.missionId || record.closed) continue;
+      if ((!record?.missionId&&!record?.graphId) || record.closed) continue;
       let mission;
-      try { mission = await missionClient.get(record.missionId); }
+      try { mission = record.graphId ? await graphs().get(record.graphId) : await missionClient.get(record.missionId); }
       catch { continue; }
+      // SEER may confirm that a once-tracked graph no longer exists (404).
+      // Never dereference null or let a stale strategy graph poison the entire
+      // inbox: continue processing ordinary missions and later Git commands.
+      // This is an unknown outcome, NOT a successful graph completion.
+      if(record.graphId && !mission?.id){
+        record.status='UNVERIFIED';
+        record.phase='GRAPH_MISSING';
+        record.error='CHATGPT_STRATEGY_GRAPH_NOT_FOUND';
+        record.closed=true;
+        updates.push({issue:record.issueNumber??null,graphId:record.graphId,
+          status:record.status,errorCode:record.error});
+        if(record.commentId)await updateComment(record.commentId,statusText(record,{status:record.status,phase:record.phase})).catch(()=>{});
+        continue;
+      }
+      if(!mission)continue;
 
       const statusChanged =
         mission.status !== record.status ||
@@ -331,7 +390,7 @@ export function createGithubNovaControlInbox({
         (Array.isArray(mission.receipts) ? mission.receipts.length : 0) !== Number(record.receipts || 0);
 
       record.status = mission.status;
-      record.phase = mission.phase || null;
+      record.phase = record.graphId?'STRATEGY':mission.phase || null;
       record.turn = Number(mission.turn || 0);
       record.failures = Number(mission.failures || 0);
       record.receipts = Array.isArray(mission.receipts) ? mission.receipts.length : 0;
@@ -341,7 +400,7 @@ export function createGithubNovaControlInbox({
         updates.push({ issue: record.issueNumber ?? null, missionId: mission.id, status: mission.status });
       }
 
-      if (TERMINAL.has(String(mission.status))) {
+      if ((record.graphId?GRAPH_TERMINAL:TERMINAL).has(String(mission.status))) {
         if (record.issueNumber != null) await closeIssue(record.issueNumber).catch(() => {});
         record.closed = true;
       }
@@ -354,8 +413,10 @@ export function createGithubNovaControlInbox({
     repo,
     actor,
     pollMs: effectivePollMs,
-    transport,
-    writeback: transport === 'github-api' ? 'github' : 'git-ref-when-authorized',
+    // Getters, so a fallback away from a rejected credential is reported truthfully rather than
+    // frozen at whatever the transport was when this object was built.
+    get transport() { return transport; },
+    get writeback() { return transport === 'github-api' ? 'github' : 'git-ref-when-authorized'; },
 
     async poll(state, { force = false } = {}) {
       const control = ensureState(state);
@@ -372,13 +433,32 @@ export function createGithubNovaControlInbox({
         const accepted = [];
         for (const issue of issues) {
           let commandId = null;
-          if (issue.number == null) {
-            try { commandId = parse(issue).commandId; } catch {}
-          }
+          if (issue.number == null) commandId = recoverCommandId(issue);
           const key = issue.number == null ? (commandId ? `git:${commandId}` : 'git:invalid') : String(issue.number);
           const record = control.issues[key];
           if (record && (record.closed || record.commandId)) continue;
-          const result = await acceptIssue(issue, control);
+          let result;
+          try {
+            result = await acceptIssue(issue, control);
+          } catch (error) {
+            // A command the runtime refuses is an answer, not a reason to stop answering. This used to
+            // throw out of the whole poll before the receipt publisher below ever ran, so one malformed
+            // command froze the channel: the sender saw no receipt for it and none for anything after it.
+            // Only a named, permanent refusal is recorded; a transient failure keeps its existing retry.
+            const code = controlRefusalCode(error);
+            if (!code) throw error;
+            control.issues[key] = {
+              ...(record || {}),
+              commandId: commandId || record?.commandId || null,
+              transport: issue.transport === 'git-ref' ? 'git-ref' : record?.transport,
+              op: record?.op || 'invalid',
+              status: 'REJECTED',
+              error: code,
+              closed: true,
+            };
+            log('warn', `GitHub control: command ${commandId || key} rejected: ${code}`);
+            continue;
+          }
           if (result.accepted) accepted.push(result);
         }
         // Best-effort telemetry: inability to push Git status must never block
@@ -390,6 +470,11 @@ export function createGithubNovaControlInbox({
         return { enabled: true, accepted, updates, statusReceipt };
       } catch (error) {
         control.lastError = String(error.message || error).slice(0, 500);
+        if (/^GITHUB_CONTROL_HTTP_(401|403)/.test(control.lastError) && retireApiTransport(control.lastError)) {
+          // Poll again straight away on the transport that can actually authenticate.
+          control.lastPollAt = 0;
+          return { enabled: true, accepted: [], updates: [], transport, error: control.lastError };
+        }
         log('warn', `GitHub control poll failed: ${control.lastError}`);
         return { enabled: true, accepted: [], updates: [], error: control.lastError };
       }

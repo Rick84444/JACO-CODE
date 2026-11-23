@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { localMemoryActivity, legacyAuraMemory } from '../../runtime/src/server/connected/localMemoryActivity.mjs';
+import { auraLegacyStateRoot } from '../../runtime/src/lib/auraLegacyStatePath.mjs';
 
 function makeRuntime() {
   const stored = new Map([
@@ -89,4 +90,18 @@ test('legacy AuraEngine memory is read from the existing local JSON without clai
     assert.equal(packet.latestLegacyId,'mem-1794080000000-abcde');
     assert.ok(packet.entries.some(e=>e.title.includes('saved operator')));
   } finally {fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('legacy Aura state follows configured user workspace instead of immutable install folder', () => {
+  const installRoot=path.resolve('C:/Program Files/JACO CODE');
+  const dataRoot=path.resolve('C:/Users/operator/AppData/Local/JACO');
+  assert.equal(auraLegacyStateRoot({JACO_WORKSPACE_ROOT:dataRoot},installRoot),dataRoot);
+  assert.equal(auraLegacyStateRoot({JACO_DATA_DIR:dataRoot},installRoot),dataRoot);
+  assert.equal(auraLegacyStateRoot({},installRoot),installRoot);
+  const server=fs.readFileSync(new URL('../../runtime/server.ts',import.meta.url),'utf8');
+  const engine=fs.readFileSync(new URL('../../runtime/src/auraEngine.ts',import.meta.url),'utf8');
+  assert.ok(server.includes("legacyFile: auraLegacyStatePath('memory', 'memory-store.json')"));
+  assert.ok(engine.includes("auraLegacyStatePath('memory', 'memory-store.json')"));
+  assert.ok(engine.includes("auraLegacyStatePath('skills')"));
+  assert.doesNotMatch(engine, /path[.]join[(]process[.]cwd[(][)], '[.]jaco'/);
 });

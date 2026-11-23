@@ -347,3 +347,40 @@ test('a key withheld from workers only counts for the agent when it is in the se
   assert.equal(agentCanUseKey('GEMINI_API_KEY', { env: {}, store: store('other') }), true);
   assert.equal(agentCanUseKey(null), true);
 });
+
+test('a model that answers text but refuses tools cannot become the planner; a thinking model that only reasoned can', async () => {
+  const local = { provider: 'ollama', model: 'm' };
+  const env = { OLLAMA_MODEL: 'm' };
+  const refused = await testPlannerModel(local, { env, fetchImpl: async (_url, init) => { assert.ok(JSON.parse(init.body).tools?.length); return Response.json({ error: { message: 'm does not support tools' } }, { status: 400 }); } });
+  assert.deepEqual([refused.ok, refused.error], [false, 'PLANNER_MODEL_NO_TOOLS']);
+  const thinking = await testPlannerModel(local, { env, fetchImpl: async () => Response.json({ choices: [{ message: { content: '', reasoning: 'hmm' } }] }) });
+  assert.equal(thinking.ok, true);
+});
+
+test('explicit structured llama.cpp probe requires actual text, not native tools or reasoning-only', async()=>{
+ const extra={llamacpp:{url:'http://127.0.0.1:9380/v1/chat/completions',models:['bonsai-4b'],paid:false,keyEnv:null}};
+ const env={JACO_NOVA_NATIVE_TOOLS:'0',JACO_LOCAL_ONLY:'1',JACO_ALLOW_PAID_MODELS:'0'};
+ const call=(message)=>testPlannerModel({provider:'llamacpp',model:'bonsai-4b'},{env,extra,fetchImpl:async(url,init)=>{
+   assert.equal(url,extra.llamacpp.url);assert.equal(init.redirect,'error');
+   assert.equal(JSON.parse(init.body).tools,undefined);
+   return Response.json({choices:[{message}]});
+ }});
+ const result=await call({content:'OK'});
+ assert.equal(result.ok,true);assert.equal(result.verifiedToolCalling,false);assert.equal(result.plannerProtocol,'structured');
+ assert.equal((await call({content:' ',reasoning:'still thinking'})).ok,false);
+});
+
+test('any custom loopback endpoint can use the explicitly selected structured planner', async()=>{
+ const {testPlannerModel}=await import('../../agents/lib/planner-choice.mjs');
+ const provider='custom-model-local';
+ const extra={[provider]:{url:'http://127.0.0.1:8000/v1/chat/completions',models:['my-model'],paid:false,keyEnv:null}};
+ const r=await testPlannerModel({provider,model:'my-model'},{env:{JACO_NOVA_NATIVE_TOOLS:'0',JACO_ALLOW_PAID_MODELS:'0'},extra,fetchImpl:async(url,init)=>{
+   assert.equal(url,extra[provider].url);
+   assert.equal(JSON.parse(init.body).tools,undefined);
+   assert.equal(init.redirect,'error');
+   return new Response(JSON.stringify({choices:[{message:{content:'OK'}}]}),{status:200});
+ }});
+ assert.equal(r.ok,true);
+ assert.equal(r.plannerProtocol,'structured');
+ assert.equal(r.verifiedToolCalling,false);
+});

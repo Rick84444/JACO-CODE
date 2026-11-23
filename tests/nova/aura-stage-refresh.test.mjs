@@ -12,9 +12,12 @@ test('a displayed CDP still refreshes every 15 s and backs off to at most 2 minu
   for (const bad of [-1, 1.5, NaN, undefined, '3']) assert.equal(cdpRefreshDelay(bad), CDP_REFRESH_MS);
 });
 
-test('the stage refresh uses only the read-only screenshot tool and pauses when pinned, hidden or idle', () => {
+test('the stage refreshes CDP only during observed working missions and pauses when stalled, blocked, hidden or pinned', () => {
   const stage = fs.readFileSync(new URL('../../runtime/src/components/AuraLiveStage.tsx', import.meta.url), 'utf8');
-  assert.match(stage, /if\(!cdpReady \|\| pinned \|\| !activeMission \|\| !showingCdp\)return;/);
+  assert.match(stage, /activeMission\?\.status!=='ACTIVE'/);
+  assert.match(stage, /presence\.mode!=='working'/);
+  assert.match(stage, /if\(!cdpReady \|\| pinned /);
+  assert.match(stage, /!showingCdp\)return;/);
   assert.match(stage, /document\.visibilityState!=='hidden'/);
   assert.doesNotMatch(stage, /nova_(navigate|click|type)/, 'the stage never controls the tab');
 });

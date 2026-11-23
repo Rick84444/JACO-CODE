@@ -40,7 +40,7 @@ export function normalizeProjectRoot(value) {
   return path.resolve(value);
 }
 
-export function projectNodeContract({ title, objective, mainGoal, projectRoot = null }) {
+export function projectNodeContract({ title, objective, mainGoal, projectRoot = null, discoveredTestCommand = undefined }) {
   const what = String(objective || title || '').trim();
   if (!what) throw new Error('PROJECT_NODE_OBJECTIVE_REQUIRED');
   const { readOnly } = projectGoalCapabilities(`${what}\n${String(mainGoal || '')}`);
@@ -49,9 +49,9 @@ export function projectNodeContract({ title, objective, mainGoal, projectRoot = 
   // fresh worktree (no installed packages, and a suite that already fails), 2026-11-06.
   const buildsSomethingNew = !readOnly
     && /\b(?:build|create|make|write|generate|design|bygg|bygga|skapa|skriv|demo|prototyp|prototype)\b/i.test(what)
-    && /\b(?:demo|html|product|produkt|prototype|prototyp|page|sida|document|dokument|spec|report|rapport)\b/i.test(what)
+    && /\b(?:demo|html|product|produkt|prototype|prototyp|page|sida|document|dokument|markdown|\\.md\\b|spec|report|rapport)\b/i.test(what)
     && !/\b(?:fix|bug|debug|repair|regression|refactor|test|tests|testing|testa|felsök|rätta)\b/i.test(what);
-  const testCommand = readOnly || buildsSomethingNew ? null : detectProjectTestCommand(projectRoot);
+  const testCommand = readOnly || buildsSomethingNew ? null : discoveredTestCommand === undefined ? detectProjectTestCommand(projectRoot) : discoveredTestCommand;
   const needsNewTests = !readOnly && /\b(?:test|tests|testing|fix|bug|debug|repair|regression|verify|verification|falsifier|testa|felsök)\b/i.test(what);
   return {
     schema: 'jaco.coding-contract/v1',
@@ -59,7 +59,7 @@ export function projectNodeContract({ title, objective, mainGoal, projectRoot = 
     scope: { allowed: ['**'] },
     acceptance: readOnly
       ? [`${String(title || what).slice(0, 300)} is answered from verified read receipts`, 'No repository mutation is permitted']
-      : [`${String(title || what).slice(0, 300)} is implemented in the project and observable through a receipt`, testCommand ? `The project's tests (${testCommand}) pass after the last code change` : needsNewTests ? 'Create and pass a new workspace test after the final code change' : 'No project test command discovered; report that automated tests were not verified'],
+      : [`${String(title || what).slice(0, 300)} is implemented in the project and observable through a receipt`, testCommand ? `The project's tests (${testCommand}) pass after the last change` : needsNewTests ? 'Create and pass a new workspace test after the final code change' : 'No project test command is required for this ticket; report that automated tests were not verified'],
     execution: {
       autonomous: true,
       require_human_before_destructive_action: true,
@@ -69,7 +69,7 @@ export function projectNodeContract({ title, objective, mainGoal, projectRoot = 
       allow_git_merge: false,
     },
     verification: { change_required: buildsSomethingNew, tests_required: Boolean(testCommand) || needsNewTests, allow_workspace_tests: !readOnly, falsifier_required: false, receipt_required: true, commands: testCommand ? [testCommand] : [] },
-    budget: { max_steps: 40, max_tool_calls: 60, max_failures: 5, max_duration_ms: 3_600_000 },
+    budget: { max_steps: 60, max_tool_calls: 120, max_failures: 5, max_duration_ms: 3_600_000 },
   };
 }
 
@@ -99,6 +99,10 @@ export function projectGoalGraph(primaryGoal) {
       source: 'operator-start-prompt',
       autonomy: 'closed-loop',
       strategic_goal_id: primaryGoal.id || null,
+      // Immutable operator-selected intuition belongs to the graph version.
+      // Replanning changes dependencies, never silently rewrites this anchor.
+      intuition_id: primaryGoal.id || null,
+      intuition_statement: statement,
       reversible: true,
       external_spend: 0,
     },

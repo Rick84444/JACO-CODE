@@ -1,0 +1,25 @@
+{
+  "id": "/link/remote",
+  "name": "JACO Remote — Aura",
+  "short_name": "JACO Remote",
+  "description": "Your own Windows Aura, missions and memory from Android.",
+  "start_url": "/link/remote.html",
+  "scope": "/link/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#050b12",
+  "theme_color": "#050b12",
+  "lang": "sv",
+  "icons": [
+    {
+      "src": "/brand/jaco-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/link/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

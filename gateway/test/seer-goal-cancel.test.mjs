@@ -106,3 +106,49 @@ test('stale legacy governor settings cannot start a second agent or plan goal-le
   assert.equal((Array.isArray(graphs) ? graphs : graphs.graphs || []).length, 0,
     'no graph may be planned without an operator goal');
 });
+
+test('a real strategy adapter fences Aura Core control without exposing the lease in health', {timeout:20000}, async t=>{
+  const call=await startSeer(t);
+  const initial=(await call('/health')).data;
+  assert.equal(initial.aura_control.owner,'aura-fallback');
+  assert.equal(initial.aura_control.runtimeConsolidated,false);
+  const grant=await call('/cortex/aura/control/claim',{owner:'aura-core'});
+  assert.equal(grant.status,201);
+  assert.equal(grant.data.owner,'aura-core');
+  assert.ok(typeof grant.data.token==='string' && grant.data.token.length>=30);
+  const whileOwned=(await call('/health')).data;
+  assert.equal(whileOwned.aura_control.owner,'aura-core');
+  assert.doesNotMatch(JSON.stringify(whileOwned),new RegExp(grant.data.token));
+  const duplicate=await call('/cortex/aura/control/claim',{owner:'aura-core'});
+  assert.equal(duplicate.status,400);
+  assert.equal(duplicate.data.error,'AURA_CONTROL_LEASE_HELD');
+  const stale=await call('/cortex/aura/control/tick',{token:'not-the-token'});
+  assert.equal(stale.status,400);
+  assert.equal(stale.data.error,'AURA_CONTROL_LEASE_INVALID');
+  const valid=await call('/cortex/aura/control/tick',{token:grant.data.token});
+  assert.equal(valid.status,200);
+  assert.equal(valid.data.ok,true);
+  assert.deepEqual(valid.data.phases,['reconcile'],'planning was disabled in this fixture');
+  const released=await call('/cortex/aura/control/release',{token:grant.data.token});
+  assert.equal(released.status,200);
+  assert.equal(released.data.owner,'aura-fallback');
+  assert.equal((await call('/health')).data.aura_control.owner,'aura-fallback');
+});
+
+test('Core lease suppresses an explicitly opted-in legacy SEER governor watchdog', {timeout:20000}, async t=>{
+  const call=await startSeer(t,{
+    JACO_AURA_LEGACY_GOVERNOR:'1',
+    SEER_GOVERNOR_INTERVAL_MS:'1000',
+    SEER_AUTONOMY_LOOP_MS:'0',
+  });
+  const grant=await call('/cortex/aura/control/claim',{owner:'aura-core'});
+  assert.equal(grant.status,201);
+  const health=(await call('/health')).data;
+  assert.equal(health.independent_governor_enabled,true,'test intentionally enables the old governor');
+  assert.equal(health.aura_control.owner,'aura-core');
+  await new Promise(resolve=>setTimeout(resolve,1700));
+  const events=(await call('/cortex/events')).data;
+  assert.equal(events.filter(e=>e.type==='development_cycle.governor_turn').length,0,
+    'an old governor timer cannot invoke model reasoning while Core holds ownership');
+  await call('/cortex/aura/control/release',{token:grant.data.token});
+});

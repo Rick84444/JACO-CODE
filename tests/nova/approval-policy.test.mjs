@@ -74,11 +74,36 @@ test('an autonomous coding contract keeps resuming within its budget, then stops
   assert.equal(autoResolution(m, { level: 2, lastError: 'Command failed', autoResumes: 14 }), null, 'ceil(40/3) retries cover the step budget');
   assert.equal(autoResolution(m, { level: 1, lastError: 'Command failed', autoResumes: 1 }), null, 'level 1 keeps one retry');
   assert.equal(autoResolution(m, { level: 5, lastError: 'CODING_CONTRACT_STEP_BUDGET_EXCEEDED' }), null, 'budget used up: operator');
-  assert.equal(autoResolution(m, { level: 5, lastError: 'PLANNER_BLOCKED:no capability', autoResumes: 1 }), null, 'capability gap: one retry only');
+  assert.equal(autoResolution(m, { level: 5, lastError: 'PLANNER_BLOCKED:no capability', autoResumes: 0 }), null, 'capability gap is not recoverable by replay');
+  assert.equal(autoResolution({ ...m, contract: null }, { level: 5, lastError: 'PLANNER_BLOCKED:repo-write unavailable', autoResumes: 0 }), null, 'no contract: same capability blocker must not resume');
+  assert.equal(autoResolution(m, { level: 5, lastError: 'UNKNOWN_TASK_TYPE:repo-write', autoResumes: 0 }), null, 'unknown tool requires new capability observation');
   assert.equal(autoResolution(m, { level: 5, lastError: 'SHELL_BLOCKED_PAYMENT_SECRET_POLICY' }), null);
   assert.equal(autoResolution({ ...m, goal: 'buy a domain' }, { level: 5, lastError: 'Command failed' }), null, 'spend never');
   assert.equal(autoResolution({ ...m, receipts: [{ ok: true, verified: false, type: 'repo-write' }] }, { level: 5, lastError: 'x' }), null, 'uncertain outcome never');
   assert.equal(autoResolution({ ...m, contract: { ...contract, execution: { autonomous: false } } }, { level: 5, lastError: 'Command failed', autoResumes: 1 }), null, 'non-autonomous contract: one retry');
+});
+
+test('autonomous recovery does not replay the same failed test without a verified repair', () => {
+  const error = 'Command failed: npm test';
+  const failed = { type: 'repo-test', ok: false, verified: false, error };
+  const contract = { execution: { autonomous: true }, budget: { max_steps: 40, max_failures: 3 } };
+  const mission = receipts => ({ id: 'repeat', goal: 'fix code', status: 'BLOCKED', contract, receipts });
+  const opts = { level: 5, lastError: error, autoResumes: 1 };
+
+  assert.equal(autoResolution(mission([failed]), opts)?.decision, 'resume', 'one failure can be diagnosed');
+  assert.equal(autoResolution(mission([failed, { type: 'repo-list', ok: true, verified: true }, failed]), opts), null,
+    'a read-only listing does not fix an identical failed test');
+  assert.equal(autoResolution(mission([failed, { type: 'repo-edit', ok: true, verified: true }, failed]), opts)?.decision,
+    'resume', 'a verified code repair resets the failure streak');
+  assert.equal(autoResolution(mission([failed, { type: 'shell', ok: true, verified: true }, failed]), opts)?.decision,
+    'resume', 'a verified shell action might have changed the environment');
+  assert.equal(autoResolution(mission([
+    { ...failed, error: 'Command failed: node --test a' },
+    failed,
+  ]), opts)?.decision, 'resume', 'distinct failures should not be treated as identical');
+  const transient = { type: 'web-fetch', ok: false, verified: false, error: 'fetch failed' };
+  assert.equal(autoResolution(mission([transient, transient]), { ...opts, lastError: 'fetch failed' })?.decision,
+    'resume', 'transient network errors may recover, within the existing budget');
 });
 
 test('jobs from level 4, MCP sources from level 5, never spend', () => {
@@ -112,4 +137,31 @@ test('level 5: our own LLM API usage is outside the spend stop, real outgoing sp
     assert.equal(autoResolution(awaiting([r('repo-read')], { goal }), { level: 5 }), null, goal);
   }
   assert.equal(autoApproveGate('JOB', 'Refresh the Groq API key usage report', { level: 5 }), true);
+});
+
+// The operator's standing worktree/service contract is sufficient for the
+// final verified local completion. A separate approval for running its
+// verification service would only repeat a decision already made.
+test('verified contracted local service work completes at the code autonomy level', () => {
+  const contract={execution:{autonomous:true}};
+  const m=awaiting([r('repo-write'),r('repo-service'),r('repo-test'),r('git-commit')],{contract,contractStatus:{machineVerified:true}});
+  assert.equal(autoResolution(m,{level:2})?.decision,'confirm');
+  assert.equal(autoResolution({...m,contractStatus:{machineVerified:false}},{level:5}),null);
+  assert.equal(autoResolution({...m,contract:null},{level:2}),null);
+  assert.equal(autoResolution(m,{level:0}),null);
+  assert.equal(autoResolution({...m,receipts:[r('repo-service',{outcomeUnknown:true})]},{level:5}),null);
+  assert.equal(autoResolution({...m,goal:'Buy a domain for launch'},{level:5}),null);
+});
+
+test('graph completion is authorized once by Aura using current parent binding and policy',()=>{
+ const mission=awaiting([r('health-check')],{source:'seer-mission-graph',metadata:{parent:{graphId:'g',nodeKey:'a'}}});
+ const graph={id:'g',status:'ACTIVE',policy:{autonomy:'closed-loop'},nodes:[{key:'a',status:'RUNNING',nova_mission_id:mission.id}]};
+ const options={level:5,graph};
+ assert.equal(autoResolution(mission,options)?.decision,'confirm');
+ assert.equal(autoResolution(mission,{...options,graph:null}),null);
+ assert.equal(autoResolution(mission,{...options,graph:{...graph,policy:{...graph.policy,operator_confirmation_required_for_release:true}}}),null);
+ assert.equal(autoResolution(mission,{...options,graph:{...graph,status:'CANCELLED'}}),null);
+ assert.equal(autoResolution(mission,{...options,graph:{...graph,nodes:[{...graph.nodes[0],nova_mission_id:'other'}]}}),null);
+ assert.equal(autoResolution({...mission,paused:true},options),null);
+ assert.equal(autoResolution(mission,{...options,claimCheck:{ok:false,contradicted:[]}}),null);
 });

@@ -122,8 +122,8 @@ async function runMissionTurn({ client, owner, plan, execute, observe = async ()
     planned = planTasks(proposal);
     if (!planned.length) throw new Error('NO_NEXT_TASK');
     if (repeatsVerifiedAction(mission, planned[0], before)) {
-      await client.release(mission.id, { ...lease, ...(steerVersion ? { steerVersion } : {}), completionProposed: true, completionReason: 'REPEAT_OF_VERIFIED_ACTION' });
-      return { executed: false, awaitingVerification: true, reason: 'REPEAT_OF_VERIFIED_ACTION' };
+      await client.release(mission.id, { ...lease, ...(steerVersion ? { steerVersion } : {}), error: 'REPEAT_OF_VERIFIED_ACTION: choose a different next step or explicitly verify goal completion' });
+      return { executed: false, replanRequired: true, reason: 'REPEAT_OF_VERIFIED_ACTION' };
     }
     task = await client.begin(mission.id, { ...lease, ...(steerVersion ? { steerVersion } : {}), task: planned[0] });
     await onActivity({ phase: 'EXECUTING', missionId: mission.id });

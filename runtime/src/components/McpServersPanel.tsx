@@ -54,6 +54,17 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ id: '', name: '', target: '', icon: 'mcp', agentAccess: 'read' });
   const [formError, setFormError] = useState<string | null>(null);
+  const failedCustom = providers.filter(p => p.status === 'FAILED' && p.builtIn === false);
+  const quarantineFailed = async () => {
+    setWorking('__quarantine');
+    try {
+      const result = await send('/api/aura/workbench/mcp/quarantine-failed', 'POST', {});
+      const n = Array.isArray(result.disabled) ? result.disabled.length : 0;
+      onChanged(`${n} failed custom MCP connections disabled. Their definitions are preserved for later repair.`);
+    } catch (error: any) {
+      onChanged(`Could not disable failed connections: ${error.message}`);
+    } finally { setWorking(null); }
+  };
 
   const setAccess = async (id: string, agentAccess: string) => {
     setWorking(id);
@@ -91,7 +102,8 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   return <section aria-label="MCP servers" className="pb-2">
     <div className="px-3 py-1.5 mt-2 flex items-center">
       <span className="text-[9px] uppercase tracking-wider text-neutral-500">Connected MCP and tools</span>
-      <button onClick={() => setAdding(v => !v)} className="ml-auto text-[9px] text-neutral-200 border border-neutral-800 rounded px-1.5 py-0.5 hover:bg-neutral-900/30">{adding ? 'Close' : '+ Add'}</button>
+      {failedCustom.length > 0 && <button onClick={() => void quarantineFailed()} disabled={working !== null} title="Disable observed failed custom connections without deleting their configuration. Built-in and healthy servers remain unchanged." className="ml-auto text-[9px] text-amber-300 border border-amber-800 rounded px-1.5 py-0.5 disabled:opacity-40">Disable failed ({failedCustom.length})</button>}
+      <button onClick={() => setAdding(v => !v)} className={`${failedCustom.length ? 'ml-1.5' : 'ml-auto'} text-[9px] text-neutral-200 border border-neutral-800 rounded px-1.5 py-0.5 hover:bg-neutral-900/30`}>{adding ? 'Close' : '+ Add'}</button>
     </div>
 
     {adding && <div className="mx-3 mb-2 p-2 rounded border border-[#5a5b5d] bg-[#27282a] space-y-1.5" aria-label="Add MCP server">

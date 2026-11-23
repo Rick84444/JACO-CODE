@@ -34,6 +34,16 @@ $env:PATH = (Split-Path $Node -Parent) + [System.IO.Path]::PathSeparator + $env:
 $entry = Join-Path $InstallRoot 'agents\lib\local-stack.mjs'
 $args = @($entry)
 if (-not $NoBrowser) { $args += '--open' }
+# Independent unelevated monitor survives closing the GUI; its PID/birth lock prevents duplicates.
+$guardian = Join-Path $InstallRoot 'agents\lib\health-guardian.mjs'
+if (Test-Path -LiteralPath $guardian) {
+  try {
+    $quotedGuardian = '"' + $guardian + '"'
+    Start-Process -FilePath $Node -ArgumentList $quotedGuardian -WorkingDirectory $InstallRoot -WindowStyle Hidden
+  } catch {
+    Add-Content -Path (Join-Path $DataRoot 'logs\startup\launcher.log') -Value ('GUARDIAN_LAUNCH_FAILED: ' + $_.Exception.Message)
+  }
+}
 Push-Location $InstallRoot
 try {
   & $Node @args 2>&1 | Out-File -FilePath (Join-Path $DataRoot 'logs\startup\launcher.log') -Encoding utf8 -Append
@@ -44,7 +54,14 @@ try {
     try {
       $receipt = Get-Content (Join-Path $DataRoot 'logs\startup\runtime.process.json') -Raw | ConvertFrom-Json
       $process = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$receipt.pid)" -ErrorAction Stop
-      $identity = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/runtime/identity' -TimeoutSec 5
+      # The runtime may have been moved off port 3000 because another program held it.
+      $runtimeUrl = 'http://127.0.0.1:3000'
+      try {
+        $startup = Get-Content (Join-Path $DataRoot 'logs\startup\status.json') -Raw | ConvertFrom-Json
+        $observed = @($startup.services | Where-Object { $_.id -eq 'runtime' -and $_.url })[0]
+        if ($observed) { $runtimeUrl = ([Uri]$observed.url).GetLeftPart([UriPartial]::Authority) }
+      } catch {}
+      $identity = Invoke-RestMethod -Uri ($runtimeUrl + '/api/runtime/identity') -TimeoutSec 5
       $expected = (Get-Content (Join-Path $InstallRoot 'runtime\CURRENT_RELEASE.json') -Raw | ConvertFrom-Json).releaseId
       $validCore = ($process -and $process.CommandLine.Contains($InstallRoot) -and $identity.success -eq $true -and $identity.releaseId -eq $expected)
     } catch {}

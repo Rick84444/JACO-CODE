@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { credential } from '../../../../agents/lib/secret-store.mjs';
+import { withLocalOllamaContext } from '../../../../agents/lib/ollama-native.mjs';
 import { CATALOG, catalogProvider } from './providerCatalog.mjs';
 
 const sha = value => crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
@@ -221,7 +222,7 @@ export class ProviderRegistry {
     const includeTemperature = p.id !== 'anthropic' && temperature != null;
     const body = { model: selectedModel, messages, ...(includeTemperature ? { temperature } : {}), ...(responseFormat ? { response_format: responseFormat } : {}), ...(maxTokens == null ? {} : { max_tokens: maxTokens }), ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}) };
     const started = Date.now();
-    const res = await fetch(`${trimSlash(p.baseUrl)}/chat/completions`, { method: 'POST', headers: this.headers(p), body: JSON.stringify(body), signal: AbortSignal.timeout(providerCallTimeoutMs(p)) });
+    const res = await withLocalOllamaContext(fetch, this.env)(`${trimSlash(p.baseUrl)}/chat/completions`, { method: 'POST', headers: this.headers(p), body: JSON.stringify(body), signal: AbortSignal.timeout(providerCallTimeoutMs(p)) });
     const text = await res.text();
     if (!res.ok) throw new Error(`PROVIDER_HTTP_${res.status}: ${text.slice(0, 400)}`);
     const parsed = JSON.parse(text);

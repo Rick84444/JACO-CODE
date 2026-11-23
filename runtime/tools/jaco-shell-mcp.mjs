@@ -5,8 +5,8 @@
 //   shell_info   read only: the workspace, the programs, the limits
 //   shell_read   read only: look around (ls, cat, grep, git status/diff/log ...); anything that changes is refused
 //   shell_run    write: build, test, edit, commit (git add/commit, npm test, node script.js ...)
-// Agents get shell_read by default; the operator gives an agent shell_run by setting the server's access to
-// "write" in the IDE. Destructive uses and git push need the operator's environment switches as well.
+// The built-in server defaults to write. Explicit operator read/off/deny settings and mission scope still apply.
+// Destructive uses and git push need the operator's environment switches as well.
 //
 //   JACO_SHELL_WORKSPACE=<folder> node tools/jaco-shell-mcp.mjs      stdio (newline-delimited JSON-RPC)
 import readline from 'node:readline';
@@ -20,8 +20,8 @@ const text = value => JSON.stringify(value, null, 2);
 const argSchema = { command: { type: 'string', description: 'the program, e.g. "git", or the whole command as one string, e.g. "git status --short" (no shell: pipes, ; && and $() are refused)' }, args: { type: 'array', items: { type: 'string' }, description: 'its arguments, one string each' }, cwd: { type: 'string', description: 'folder inside the workspace (default: the workspace)' } };
 
 const TOOLS = [
-  { name: 'shell_info', readOnly: true, description: 'What this shell may run: workspace, allowed programs, limits, and whether destructive commands or push are enabled. Read only.',
-    inputSchema: { type: 'object', properties: {} }, run: async () => shell.info() },
+  { name: 'shell_info', readOnly: true, description: 'Discover actual installed executables on the local host, the bounded shell policy list, and limits. Search by executable name or purpose; returns known uses, argument examples and execution route for PowerShell, Python, Node, Git and other tools. No commands run. Read only.',
+    inputSchema: { type: 'object', properties: {query:{type:'string',maxLength:64},limit:{type:'integer',minimum:1,maximum:300}} }, run: async args => shell.info(args) },
   { name: 'shell_read', readOnly: true, description: 'Run a read-only command in the workspace: ls, cat, head, tail, wc, grep, find, stat, du, file, pwd, uname, df, git status/diff/log/show/blame/ls-files, npm ls, node --version. Anything that would change something is refused. Returns stdout, stderr, exit code, timing.',
     inputSchema: { type: 'object', properties: { ...argSchema, timeoutSeconds: { type: 'number' } }, required: ['command'] },
     run: args => shell.run({ ...args, mode: 'read' }) },

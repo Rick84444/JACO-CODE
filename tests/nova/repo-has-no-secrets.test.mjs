@@ -1,35 +1,114 @@
-// The tracked repository must not contain key-shaped strings. This is a safety net for contributors, not a
-// replacement for a real secret scanner or for rotating a key that was ever committed.
+// No publishable text file, including tests or fixtures, is exempt from secret detection.
+// This is not a substitute for history scanning or rotating compromised credentials.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { generateKeyPairSync } from 'node:crypto';
+import { scanRepositorySecrets } from '../../agents/lib/repo-secret-scan.mjs';
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
-const PATTERNS = [
-  ['OpenAI-style key', /\bsk-(?:proj-|live-|ant-)?[A-Za-z0-9_-]{32,}\b/],
-  ['GitHub token', /\bgh[pousr]_[A-Za-z0-9]{36,}\b/],
-  ['Slack token', /\bxox[abprs]-[A-Za-z0-9-]{20,}\b/],
-  ['AWS access key id', /\bAKIA[0-9A-Z]{16}\b/],
-  ['Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/],
-  ['private key block', /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/],
-  ['Stripe live key', /\b[rs]k_live_[A-Za-z0-9]{20,}\b/],
-];
-// No file is exempt: the repository holds no keys at all (see SECURITY.md).
-const ALLOWED = new Map();
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const git = (root, args) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
 
-test('no tracked file holds a key-shaped string', { skip: !fs.existsSync(path.join(root, '.git')) && 'not a git checkout' }, () => {
-  const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 64 * 1024 * 1024 }).toString().split('\0').filter(Boolean);
-  const hits = [];
-  for (const rel of files) {
-    if (/^tests\//.test(rel) || /\.(png|jpe?g|gif|webp|mp4|webm|zip|woff2?|ico|lock)$/i.test(rel) || /package-lock\.json$/.test(rel)) continue;
-    let text; try { const full = path.join(root, rel); if (!fs.statSync(full).isFile() || fs.statSync(full).size > 3_000_000) continue; text = fs.readFileSync(full, 'utf8'); } catch { continue; }
-    for (const [label, re] of PATTERNS) {
-      if (!re.test(text)) continue;
-      const allowed = [...ALLOWED].some(([prefix, set]) => label === 'Google API key' && prefix === 'AIza' && set.has(rel));
-      if (!allowed) hits.push(`${rel}: ${label}`);
-    }
-  }
-  assert.deepEqual(hits, [], 'remove the value, rotate the key, and read it from the environment instead');
+function temporaryRepository(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-secret-audit-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  git(dir, ['init', '-q']);
+  return dir;
+}
+
+test('no tracked or publishable source, documentation, test or fixture holds a key-shaped secret', () => {
+  const audit = scanRepositorySecrets({ root });
+  assert.deepEqual(audit.errors, [], 'tracked content must be readable');
+  assert.deepEqual(audit.findings, [], 'remove and rotate any committed secret');
+  assert.ok(audit.filesChecked > 0, 'an empty or skipped scan is not proof');
+});
+
+test('a secret committed in tests is detected without publishing its value in a receipt', t => {
+  const dir = temporaryRepository(t);
+  const fixture = path.join(dir, 'tests', 'fixture.txt');
+  fs.mkdirSync(path.dirname(fixture), { recursive: true });
+  // Construct a synthetic test token at execution time: no key-shaped fixture in Git.
+  const synthetic = 'gh' + 'p_' + 'Z'.repeat(36);
+  fs.writeFileSync(fixture, 'fixture: ' + synthetic);
+  git(dir, ['add', 'tests/fixture.txt']);
+  const result = scanRepositorySecrets({ root: dir });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.findings, [{ path: 'tests/fixture.txt', kind: 'github' }]);
+  assert.ok(!JSON.stringify(result).includes(synthetic), 'diagnostics never return the key');
+});
+
+test('a missing tracked text file fails closed', t => {
+  const dir = temporaryRepository(t);
+  fs.writeFileSync(path.join(dir, 'tracked.txt'), 'not a secret');
+  git(dir, ['add', 'tracked.txt']);
+  fs.rmSync(path.join(dir, 'tracked.txt'));
+  const result = scanRepositorySecrets({ root: dir });
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].path, 'tracked.txt');
+});
+
+test('a binary file is recognized by contents, not by an excluded filename', t => {
+  const dir = temporaryRepository(t);
+  fs.writeFileSync(path.join(dir, 'picture.png'), Buffer.from([0, 137, 80, 78, 71, 0]));
+  fs.writeFileSync(path.join(dir, 'fixture.test.mjs'), 'export const safe = true;\n');
+  git(dir, ['add', '.']);
+  const result = scanRepositorySecrets({ root: dir });
+  assert.equal(result.ok, true);
+  assert.equal(result.binaryFiles, 1);
+  assert.equal(result.filesChecked, 1);
+});
+
+test('untracked but publishable files are scanned; ignored private files remain local', t => {
+  const dir = temporaryRepository(t);
+  fs.writeFileSync(path.join(dir, '.gitignore'), '.env\n');
+  fs.writeFileSync(path.join(dir, '.env'), 'AWS_SECRET_ACCESS_KEY=local-only\n');
+  fs.writeFileSync(path.join(dir, 'publishable.txt'), 'gh' + 'p_' + 'K'.repeat(36));
+  git(dir, ['add', '.gitignore']);
+  const result = scanRepositorySecrets({ root: dir });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.findings, [{ path: 'publishable.txt', kind: 'github' }]);
+  assert.equal(result.errors.length, 0);
+});
+
+test('short Ed25519 PKCS#8 PEM private keys are detected', t => {
+  const dir = temporaryRepository(t);
+  const { privateKey } = generateKeyPairSync('ed25519');
+  const pem = privateKey.export({ type: 'pkcs8', format: 'pem' });
+  // A real ephemeral key is generated only inside the disposable test repository.
+  fs.writeFileSync(path.join(dir, 'short-key.txt'), pem);
+  git(dir, ['add', 'short-key.txt']);
+  const result = scanRepositorySecrets({ root: dir });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.findings, [{ path: 'short-key.txt', kind: 'private-key-block' }]);
+  assert.equal(result.errors.length, 0);
+});
+
+test('Latin-1 text with valid ASCII credential characters is never skipped', t => {
+  const dir = temporaryRepository(t);
+  const synthetic = 'gh' + 'p_' + 'R'.repeat(36);
+  fs.writeFileSync(path.join(dir, 'latin1.txt'), Buffer.concat([
+    Buffer.from('caf', 'ascii'), Buffer.from([0xe9]), Buffer.from(' ' + synthetic, 'ascii'),
+  ]));
+  git(dir, ['add', 'latin1.txt']);
+  const result = scanRepositorySecrets({ root: dir });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.findings, [{ path: 'latin1.txt', kind: 'github' }]);
+  assert.equal(result.binaryFiles, 0);
+});
+
+test('UTF-16 private data is detected even when NUL bytes are present', t => {
+  const dir = temporaryRepository(t);
+  const synthetic = 'gh' + 'p_' + 'M'.repeat(36);
+  fs.writeFileSync(path.join(dir, 'utf16.txt'), Buffer.concat([
+    Buffer.from([0xff, 0xfe]),
+    Buffer.from('token ' + synthetic, 'utf16le'),
+  ]));
+  git(dir, ['add', 'utf16.txt']);
+  const result = scanRepositorySecrets({ root: dir });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.findings, [{ path: 'utf16.txt', kind: 'github' }]);
 });

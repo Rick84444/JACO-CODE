@@ -78,7 +78,7 @@ export function projectAgentNetwork({ agents, missions, graphs, coordinator, wor
   for (const mission of missions.filter(m=>!bound.has(m.id))) {
     const id='mission:'+mission.id;
     nodes.push({id,kind:'task-agent',name:mission.goal,purpose:mission.goal,role:'Mission context',parentId:root,
-      status:mission.status,model:null,source:'Durable Nova',missionIds:[mission.id],planIds:[],lastSeenAt:mission.lastActivityAt,
+      status:mission.status,model:null,source:'Aura execution',missionIds:[mission.id],planIds:[],lastSeenAt:mission.lastActivityAt,
       executorId:mission.agentId ? agentIds.get(mission.agentId) || null : null,dependencies:[],receipts:mission.receipts,
       blocker:mission.blocker,nextSteps:mission.replanRequest?.subgoals || [],execution:mission.execution || null});
     links.push({from:root,to:id,kind:'delegation'});

@@ -1,4 +1,4 @@
-// lite/install.sh against a local release server: checksum refusal, update/rollback/prune, a downloaded Node.js
+// lite/install.sh against a local release server: checksum refusal, update/rollback/retention, a downloaded Node.js
 // checked against SHASUMS256, and uninstall. Needs sh, curl, unzip, tar and python3 (to make a zip); skipped elsewhere.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,6 +25,7 @@ function makeZip(dir, name, builtAt) {
   fs.mkdirSync(top, { recursive: true });
   fs.writeFileSync(path.join(top, 'start.mjs'), `console.log('FAKE-LITE ' + process.argv.slice(2).join(' ') + ' built=${builtAt}');\n`);
   fs.writeFileSync(path.join(top, 'start.sh'), '#!/bin/sh\n'); fs.writeFileSync(path.join(top, 'START-ANDROID.sh'), '#!/bin/sh\n');
+  fs.writeFileSync(path.join(top, 'START-PIXEL-TERMINAL.sh'), '#!/bin/sh\n');
   const zip = path.join(dir, `${name}.zip`);
   assert.equal(spawnSync('python3', ['-m', 'zipfile', '-c', zip, top], { cwd: path.join(dir, 'stage') }).status, 0);
   return fs.readFileSync(zip);
@@ -34,7 +35,7 @@ async function release(t, { builtAt = '2026-10-13T10:00:00.000Z', tamper = false
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-install-srv-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const zip = makeZip(dir, 'jaco-lite-fake', builtAt);
-  const latest = { schema: 'jaco.lite-latest/v1', version: '9.9.9', builtAt, files: { universal: { file: unsafeFile ? '../evil.zip' : 'jaco-lite.zip', bytes: zip.length, sha256: sha(zip) }, windows: { file: 'jaco-lite-windows.zip', bytes: zip.length, sha256: sha(zip) } } };
+  const latest = { schema: 'jaco.lite-latest/v1', version: '9.9.9', builtAt, files: { universal: { file: unsafeFile ? '../evil.zip' : 'jaco-lite.zip', bytes: zip.length, sha256: sha(zip) }, windows: { file: 'jaco-lite-windows.zip', bytes: zip.length, sha256: sha(zip) }, android: { file: 'jaco-lite-android.zip', bytes: zip.length, sha256: sha(zip) } } };
   // a fake Node.js: a script named bin/node that accepts -e (version check) and --version
   const nodeDir = path.join(dir, 'nodepkg', `node-v24.0.0-${NODE_OS}-${NODE_ARCH}`, 'bin');
   fs.mkdirSync(nodeDir, { recursive: true });
@@ -46,6 +47,7 @@ async function release(t, { builtAt = '2026-10-13T10:00:00.000Z', tamper = false
     '/latest.json': JSON.stringify(latest, null, 2),
     '/jaco-lite.zip': tamper ? Buffer.concat([zip, Buffer.from('x')]) : zip,
     '/jaco-lite-windows.zip': tamper ? Buffer.concat([zip, Buffer.from('x')]) : zip,
+    '/jaco-lite-android.zip': tamper ? Buffer.concat([zip, Buffer.from('x')]) : zip,
     '/install.ps1': fs.readFileSync(path.join(root, 'lite', 'install.ps1')),
     '/install.sh': fs.readFileSync(SCRIPT),
     '/node/SHASUMS256.txt': `${nodeSumOk ? sha(tgz) : '0'.repeat(64)}  ${tgzName}\n`,
@@ -116,7 +118,7 @@ test('install: an unsafe file name in latest.json is refused before anything is 
   assert.notEqual(r.code, 0); assert.match(r.err, /unsafe file/);
 });
 
-test('update: same build says up to date; a new build keeps the old one for rollback and removes older ones; rollback and uninstall work', { skip }, async t => {
+test('update: same build says up to date; new builds preserve all older files for running launchers; rollback and uninstall work', { skip }, async t => {
   const rel = await release(t, { builtAt: '2026-10-13T10:00:00.000Z' }), s = setup(t, rel);
   assert.equal((await run(SCRIPT, s.env)).code, 0);
   const again = await run(SCRIPT, s.env);
@@ -133,9 +135,14 @@ test('update: same build says up to date; a new build keeps the old one for roll
   assert.ok(fs.lstatSync(path.join(s.jl, 'previous')).isSymbolicLink());
   await build('2026-10-15T10:00:00.000Z');
   assert.equal((await run(launcher, s.env, ['update'])).code, 0);
-  assert.deepEqual(fs.readdirSync(path.join(s.jl, 'versions')).sort(), ['2026-10-14T10-00-00-000Z'.replace('T', 'T'), '2026-10-15T10-00-00-000Z'].map(x => x), 'the oldest build was removed');
+  assert.deepEqual(fs.readdirSync(path.join(s.jl, 'versions')).sort(), ['2026-10-13T10-00-00-000Z', '2026-10-14T10-00-00-000Z', '2026-10-15T10-00-00-000Z'], 'all builds remain available to running launchers');
+  assert.match(cmd(process.execPath, [path.join(s.jl, 'versions', '2026-10-13T10-00-00-000Z', 'start.mjs'), '--x'], s.env).stdout, /built=2026-10-13/, 'a pinned older launcher can still read its original files after two updates');
   assert.match(cmd(launcher, ['rollback'], s.env).stdout, /now on versions\/2026-10-14/);
   assert.match(cmd(launcher, ['--x'], s.env).stdout, /built=2026-10-14/);
+  assert.match(cmd(launcher, ['doctor'], s.env).stdout, /built at *: 2026-10-14/);
+  const restored = await run(launcher, s.env, ['update']);
+  assert.equal(restored.code, 0, restored.err + restored.out);
+  assert.match(cmd(launcher, ['--x'], s.env).stdout, /built=2026-10-15/);
   const gone = cmd(launcher, ['uninstall', '--yes'], s.env);
   assert.match(gone.stdout, /removed/);
   assert.equal(fs.existsSync(s.jl), false); assert.equal(fs.existsSync(path.join(s.home, 'bin', 'jaco-lite')), false);
@@ -185,8 +192,12 @@ test('install.ps1: installs from a checked download, keeps the real ISO build ti
   rel.setBuild({ '/latest.json': next.files['/latest.json'], '/jaco-lite-windows.zip': next.files['/jaco-lite-windows.zip'] });
   assert.equal((await runPs(env)).code, 0);
   assert.deepEqual(fs.readdirSync(path.join(home, 'jl', 'versions')).sort(), ['2026-10-13T10-00-00-000Z', '2026-10-14T10-00-00-000Z']);
+  const third = await release(t, { builtAt: '2026-10-15T10:00:00.000Z' });
+  rel.setBuild({ '/latest.json': third.files['/latest.json'], '/jaco-lite-windows.zip': third.files['/jaco-lite-windows.zip'] });
+  assert.equal((await runPs(env)).code, 0);
+  assert.deepEqual(fs.readdirSync(path.join(home, 'jl', 'versions')).sort(), ['2026-10-13T10-00-00-000Z', '2026-10-14T10-00-00-000Z', '2026-10-15T10-00-00-000Z']);
   const back = await runPs(env, { JACO_LITE_ACTION: 'rollback' });
-  assert.match(back.out, /now on .*2026-10-13T10-00-00-000Z/);
+  assert.match(back.out, /now on .*2026-10-14T10-00-00-000Z/);
   const gone = await runPs(env, { JACO_LITE_ACTION: 'uninstall', JACO_LITE_YES: '1' });
   assert.match(gone.out, /removed/); assert.equal(fs.existsSync(path.join(home, 'jl')), false);
 });
@@ -198,4 +209,65 @@ test('install.ps1: a download that does not match latest.json is refused and exi
   assert.notEqual(r.code, 0);
   assert.match(r.out + r.err, /does not match its SHA-256/);
   assert.equal(fs.existsSync(path.join(home, 'jl', 'current')), false);
+});
+
+test('Pixel Debian explicitly selects Android Lite archive without switching to Termux', { skip }, async t => {
+  const rel = await release(t), s = setup(t, rel);
+  const uname = path.join(s.env.PATH,'uname');
+  fs.rmSync(uname);
+  fs.writeFileSync(uname,'#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo aarch64;; esac\n',{mode:0o755});
+  const env={...s.env,JACO_LITE_PLATFORM:'android'};
+  const first=await run(SCRIPT,env);
+  assert.equal(first.code,0,first.err+first.out);
+  assert.match(first.out,/jaco-lite-android.zip/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(s.jl,'install.json'),'utf8')).kind,'android');
+  assert.ok(fs.existsSync(path.join(s.jl,'current','START-PIXEL-TERMINAL.sh')));
+  const updated=await run(SCRIPT,s.env);
+  assert.equal(updated.code,0,updated.err+updated.out);
+  assert.match(updated.out,/already up to date/, 'update retains Pixel platform selection without another environment flag');
+  const started=cmd(path.join(s.home,'bin','jaco-lite'),['--check'],s.env);
+  assert.match(started.stdout,/FAKE-LITE --no-open --check/);
+  const bad=await run(SCRIPT,{...env,JACO_LITE_PLATFORM:'something-else',JACO_LITE_HOME:path.join(s.home,'rejected')});
+  assert.notEqual(bad.code,0);assert.match(bad.err,/JACO_LITE_PLATFORM must be/);
+  assert.equal(fs.existsSync(path.join(s.home,'rejected')),false);
+});
+
+test('Pixel Debian rejects missing or mismatched Android artifact before installation', { skip }, async t => {
+  const rel=await release(t),s=setup(t,rel);
+  const uname=path.join(s.env.PATH,'uname');fs.rmSync(uname);
+  fs.writeFileSync(uname,'#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo aarch64;; esac\n',{mode:0o755});
+  const env={...s.env,JACO_LITE_PLATFORM:'android'};
+  rel.setBuild({'/jaco-lite-android.zip': Buffer.from('not the published archive')});
+  const r=await run(SCRIPT,env);
+  assert.notEqual(r.code,0);assert.match(r.err,/does not match its SHA-256/);
+  assert.equal(fs.existsSync(path.join(s.jl,'current')),false);
+  rel.setBuild({'/jaco-lite-android.zip':undefined});
+  const missing=await run(SCRIPT,env);
+  assert.notEqual(missing.code,0);assert.equal(fs.existsSync(path.join(s.jl,'current')),false);
+});
+
+
+test('Pixel migration from same-timestamp universal build preserves previous and selects Android', { skip }, async t => {
+  const rel=await release(t), s=setup(t,rel);
+  const uname=path.join(s.env.PATH,'uname'); fs.rmSync(uname);
+  fs.writeFileSync(uname,'#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo aarch64;; esac\n',{mode:0o755});
+  assert.equal((await run(SCRIPT,s.env)).code,0);
+  const old=fs.readlinkSync(path.join(s.jl,'current'));
+  const r=await run(SCRIPT,{...s.env,JACO_LITE_PLATFORM:'android'});
+  assert.equal(r.code,0,r.err+r.out);
+  assert.notEqual(fs.readlinkSync(path.join(s.jl,'current')),old);
+  assert.equal(fs.readlinkSync(path.join(s.jl,'previous')),old);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(s.jl,'install.json'),'utf8')).kind,'android');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(s.jl,'previous','.install.json'),'utf8')).kind,'universal');
+});
+
+test('Lite release gates include GUI changes, exact ARM64 install and only current main publication', () => {
+  const workflow=fs.readFileSync(path.join(root,'.github/workflows/lite-release.yml'),'utf8');
+  assert.match(workflow,/pull_request:\n[^\n]*\x27runtime\/\*\*\x27/);
+  assert.match(workflow,/needs: \[verified-lite, pixel-arm64-smoke, windows-lite-smoke\]/);
+  assert.match(workflow,/github\.ref == 'refs\/heads\/main' && \(github\.event_name == 'push'/);
+  assert.match(workflow,/JACO_LITE_PLATFORM=android sh lite\/install\.sh/);
+  assert.match(workflow,/source commit \*: \$GITHUB_SHA/);
+  assert.match(workflow,/git ls-remote origin refs\/heads\/main/);
+  assert.match(workflow,/if: steps\.freshness\.outputs\.publish == 'true'/);
 });

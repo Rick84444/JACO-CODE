@@ -10,6 +10,8 @@ import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { buildAgentCard, joinWorkplace } from './lib/workplace-session.mjs';
+import { followResolvedRuntime } from './lib/resolved-endpoints.mjs';
+followResolvedRuntime(process.env);
 
 const TOOL_DEFINITIONS = [
   ['remote_status', 'Read runtime, relay and hands-off status', 'GET', '/status', {}],
@@ -115,12 +117,14 @@ export function createRemoteBridge({
 
   const handlers = {
     '/status': async () => {
+      // A status read reports what answered in time; one surface that stops answering must not hold the others for 20 s.
+      const quick = { timeoutMs: 3000 };
       const [identity, relay, desktop, android, browser] = await Promise.allSettled([
-        requestRuntime('GET', '/api/runtime/identity'),
-        requestRuntime('GET', '/api/relay/status'),
-        requestRuntime('GET', '/api/desktop/hands-off/status'),
-        requestRuntime('GET', '/api/hands-off/status'),
-        requestRuntime('GET', '/api/browser/hands-off/status'),
+        requestRuntime('GET', '/api/runtime/identity', undefined, quick),
+        requestRuntime('GET', '/api/relay/status', undefined, quick),
+        requestRuntime('GET', '/api/desktop/hands-off/status', undefined, quick),
+        requestRuntime('GET', '/api/hands-off/status', undefined, quick),
+        requestRuntime('GET', '/api/browser/hands-off/status', undefined, quick),
       ]);
       const value = result => result.status === 'fulfilled' ? result.value : { success: false, error: String(result.reason) };
       const status = {

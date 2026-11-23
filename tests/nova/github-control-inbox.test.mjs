@@ -340,3 +340,83 @@ test('forced Git-only mode never calls REST even if a GH token is configured', a
   assert.equal(calls[0].executor,'nova');
   assert.equal(result.statusReceipt.error,'GIT_CONTROL_STATUS_PUSH_UNAVAILABLE');
 });
+
+// Observed 2026-11-21: a command whose coding contract declared no scope threw CODING_CONTRACT_SCOPE_REQUIRED
+// out of the whole poll, before the receipt publisher ran. The sender got no receipt for that command and none
+// for anything sent afterwards: the channel had been frozen since 01:24 while commands kept arriving.
+test('a refused command answers with a refusal and the channel keeps working', async () => {
+  const seen = [];
+  const client = {
+    async create(input) { seen.push(input.goal); if (input.goal === 'bad') throw new Error('CODING_CONTRACT_SCOPE_REQUIRED'); return { id: 'mission-ok', status: 'ACTIVE' }; },
+    async get() { return { id: 'mission-ok', status: 'ACTIVE', receipts: [] }; },
+    async resolve() { throw new Error('unexpected'); },
+  };
+  const payload = id => ({ schema: 'jaco.nova-control/v1', commandId: id, op: 'mission.create', goal: id === 'refused-001' ? 'bad' : 'good' });
+  let current = 'refused-001';
+  const gitExecImpl = async (file, args) => (args[2] === 'show' ? { stdout: JSON.stringify(payload(current)) } : { stdout: '' });
+  const inbox = createGithubNovaControlInbox({
+    missionClient: client, gitExecImpl, repoRoot: '/repo', repo: 'Rick84444/jaco-code', token: '', actor: 'Rick84444',
+  });
+  const state = {};
+
+  const refused = await inbox.poll(state, { force: true });
+  assert.equal(refused.error, undefined, 'a refusal is an answer, not a poll failure');
+  const record = state.githubControl.issues['git:refused-001'];
+  assert.equal(record.status, 'REJECTED');
+  assert.equal(record.error, 'CODING_CONTRACT_SCOPE_REQUIRED');
+  assert.equal(record.closed, true);
+  assert.equal(record.transport, 'git-ref', 'so the refusal reaches the published receipt index');
+
+  // The next command is still accepted: one bad command no longer freezes the channel.
+  current = 'accepted-002';
+  const after = await inbox.poll(state, { force: true });
+  assert.equal(after.accepted.length, 1);
+  assert.deepEqual(seen, ['bad', 'good']);
+});
+
+test('the published receipt names the refusal so the sender can correct the command', async () => {
+  const { gitControlReceiptSnapshot, controlRefusalCode } = await import('../../agents/lib/git-control-receipts.mjs');
+  const snapshot = gitControlReceiptSnapshot({ issues: {
+    'git:refused-001': { transport: 'git-ref', commandId: 'refused-001', op: 'invalid', status: 'REJECTED', error: 'CODING_CONTRACT_SCOPE_REQUIRED', closed: true },
+  } });
+  assert.equal(snapshot.entries[0].errorCode, 'CODING_CONTRACT_SCOPE_REQUIRED');
+  assert.equal(snapshot.entries[0].status, 'REJECTED');
+  assert.equal(snapshot.authoritative, false, 'a status index, never proof of completion');
+  // Only named permanent refusals are decisions; anything else keeps its retry.
+  assert.equal(controlRefusalCode(new Error('CODING_CONTRACT_SCOPE_REQUIRED')), 'CODING_CONTRACT_SCOPE_REQUIRED');
+  assert.equal(controlRefusalCode(new Error('GITHUB_CONTROL_HTTP_401:Bad credentials')), null);
+  assert.equal(controlRefusalCode(new Error('fetch failed')), null);
+});
+
+// Observed 2026-11-21: the inbox held a credential the API rejected and retried it 42,518 times. It read no
+// command and published no receipt for 20 hours, while the git transport beside it could authenticate through
+// the host credential helper the whole time. A rejected credential now retires the API transport, once.
+test('a credential the API rejects falls back to the git transport instead of repeating forever', async () => {
+  let apiCalls = 0, gitReads = 0;
+  const fetchImpl = async () => { apiCalls += 1; return { ok: false, status: 401, text: async () => JSON.stringify({ message: 'Bad credentials' }) }; };
+  const payload = { schema: 'jaco.nova-control/v1', commandId: 'after-fallback-001', op: 'mission.create', goal: 'Check health' };
+  const gitExecImpl = async (file, args) => {
+    if (args[2] === 'show') { gitReads += 1; return { stdout: JSON.stringify(payload) }; }
+    return { stdout: '' };
+  };
+  const created = [];
+  const inbox = createGithubNovaControlInbox({
+    missionClient: { async create(input) { created.push(input.goal); return { id: 'mission-1', status: 'ACTIVE' }; }, async get() { return { id: 'mission-1', status: 'ACTIVE', receipts: [] }; }, async resolve() { throw new Error('unexpected'); } },
+    fetchImpl, gitExecImpl, repoRoot: '/repo', repo: 'Rick84444/jaco-code', token: 'rejected-token', actor: 'Rick84444',
+  });
+  assert.equal(inbox.transport, 'github-api', 'a configured token still selects the API first');
+
+  const state = {};
+  const first = await inbox.poll(state, { force: true });
+  assert.match(String(first.error), /GITHUB_CONTROL_HTTP_401/);
+  assert.equal(inbox.transport, 'git-ref', 'the rejected credential retired the API transport');
+  assert.equal(inbox.writeback, 'git-ref-when-authorized');
+
+  // The very next poll works over git, and the command is finally read.
+  const callsBefore = apiCalls;
+  const second = await inbox.poll(state, { force: true });
+  assert.equal(second.accepted.length, 1);
+  assert.deepEqual(created, ['Check health']);
+  assert.ok(gitReads > 0, 'the command came from the git ref');
+  assert.equal(apiCalls, callsBefore, 'the rejected credential is never retried');
+});

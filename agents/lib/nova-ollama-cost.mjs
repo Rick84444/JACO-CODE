@@ -13,10 +13,35 @@ export async function novaOllamaCostRequest(path, body, { runtimeUrl, token, fet
   return result;
 }
 
+// Providers bill an image by tiles, not by the length of its base64 encoding. Counting the data URL as prompt
+// text made one full-screen Laser Vision frame several hundred kilobytes of "prompt", the reservation route
+// refused it as invalid (promptBytes > 200000) and the mission stopped right after its first screenshot
+// (observed 2026-11-22, live desktop test). Each image now costs a fixed, deliberately generous byte budget
+// that covers the largest tiled image a provider charges for, so the spend estimate stays an upper bound.
+// The operator can set their provider's real per-image input-token cost with JACO_IMAGE_INPUT_TOKENS.
+export const IMAGE_COST_BYTES = Number.isSafeInteger(Number(process.env.JACO_IMAGE_INPUT_TOKENS)) && Number(process.env.JACO_IMAGE_INPUT_TOKENS) > 0
+  ? Number(process.env.JACO_IMAGE_INPUT_TOKENS) : 8000;
+
+export function costPromptBytes(requestBody) {
+  let images = 0;
+  const text = JSON.stringify(requestBody ?? {}, (key, value) => {
+    if (key === 'image_url' && value && typeof value === 'object' && typeof value.url === 'string' && value.url.startsWith('data:')) {
+      images += 1;
+      return { url: 'data:image' };
+    }
+    if ((key === 'inline_data' || key === 'inlineData') && value && typeof value === 'object' && typeof value.data === 'string') {
+      images += 1;
+      return { mime_type: value.mime_type || value.mimeType, data: '' };
+    }
+    return value;
+  });
+  return Buffer.byteLength(text, 'utf8') + images * IMAGE_COST_BYTES;
+}
+
 export async function reserveNovaOllamaCost({ providerId = 'ollama-cloud', model, requestBody, runtimeUrl, token, fetchImpl }) {
   return novaOllamaCostRequest('reserve', {
     providerId, model,
-    promptBytes: Buffer.byteLength(JSON.stringify(requestBody), 'utf8'),
+    promptBytes: costPromptBytes(requestBody),
     maxTokens: requestBody.max_tokens,
   }, { runtimeUrl, token, fetchImpl });
 }

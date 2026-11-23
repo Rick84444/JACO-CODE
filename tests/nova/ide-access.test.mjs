@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {DeviceRegistry} from '../../runtime/src/server/connected/deviceAccess.mjs';
-import {createIdeRemoteGate, upgradeAllowed, IDE_COOKIE, COMMAND_ROUTES} from '../../runtime/src/server/connected/ideAccess.mjs';
+import {createIdeRemoteGate, ideDeviceRegistryAdapter, upgradeAllowed, IDE_COOKIE, COMMAND_ROUTES} from '../../runtime/src/server/connected/ideAccess.mjs';
 
 const HOST = 'ide.example.com';
 const env = {JACO_IDE_PUBLIC_HOST: HOST};
@@ -13,7 +13,7 @@ function setup(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ide-gate-'));
   t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
   const registry = new DeviceRegistry(path.join(dir, 'devices.json'));
-  const gate = createIdeRemoteGate(registry, {env});
+  const gate = createIdeRemoteGate(ideDeviceRegistryAdapter(registry), {env});
   // Runs one request through the gate; returns what the gate answered, or that it passed it on.
   const run = ({method = 'GET', path: p = '/', headers = {}, body} = {}) => {
     const req = {method, path: p, body, headers: {host: HOST, 'cf-connecting-ip': '203.0.113.7', ...headers}};
@@ -157,4 +157,35 @@ test('logout does not clear cookies or claim success if device revocation fails'
   assert.equal(out.status, 503);
   assert.equal(out.body.error, 'REMOTE_SESSION_REVOCATION_FAILED');
   assert.equal(out.headers['set-cookie'], undefined);
+});
+
+test('canonical runtime adapter revokes a paired device during logout', t => {
+  const s = setup(t);
+  const {cookie} = s.signIn();
+  const before = s.run({path:'/ide-auth/status',headers:{cookie}});
+  assert.equal(before.body.device, 'telefon');
+  const logout = s.run({method:'POST',path:'/ide-auth/logout',headers:{cookie,origin:'https://'+HOST}});
+  assert.deepEqual(logout.body,{success:true,revoked:true});
+  assert.equal(s.run({path:'/ide-auth/status',headers:{cookie}}).status,401);
+  const source = fs.readFileSync(new URL('../../runtime/server.ts',import.meta.url),'utf8');
+  assert.ok(source.includes('const ideDevices = ideDeviceRegistryAdapter({'));
+  assert.ok(source.includes('revoke: (name: string, kind: string) => connectedRuntime.devices.revoke(name, kind)'));
+  assert.throws(() => ideDeviceRegistryAdapter({verify(){},redeem(){}}), /IDE_REGISTRY_REVOKE_MISSING/);
+});
+
+test('direct remote socket and non-loopback Host cannot bypass pairing', t => {
+  const s = setup(t);
+  const gate = createIdeRemoteGate(ideDeviceRegistryAdapter(s.registry),{env});
+  const call = (host, peer, requestPath='/api/aura/workbench') => {
+    const req={method:'GET',path:requestPath,query:{},headers:{host},socket:{remoteAddress:peer}};
+    const res={code:null, status(n){this.code=n;return this;},json(){return this;},redirect(n){this.code=n;return this;},setHeader(){}};
+    let passed=false;
+    gate(req,res,()=>{passed=true;});
+    return {code:res.code,passed};
+  };
+  assert.equal(call('127.0.0.1:3000','192.168.1.50').code,403);
+  assert.equal(call(HOST,'127.0.0.1').code,401);
+  assert.equal(call('127.0.0.1:3000','127.0.0.1').passed,true);
+  assert.equal(upgradeAllowed({headers:{host:HOST},socket:{remoteAddress:'127.0.0.1'}},s.registry,env),false);
+  assert.equal(upgradeAllowed({headers:{host:'127.0.0.1:3000'},socket:{remoteAddress:'192.168.1.50'}},s.registry,env),false);
 });

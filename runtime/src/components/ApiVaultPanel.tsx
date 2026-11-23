@@ -25,6 +25,8 @@ export function ApiVaultPanel({ onChanged }: { onChanged?: () => void | Promise<
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [purpose, setPurpose] = useState('');
+  const [bulkText, setBulkText] = useState('');
+  const [bulkReport, setBulkReport] = useState<{ imported: string[]; kept: string[]; ready: string[]; pending: {line: number; reason: string; candidates?: string[]}[]; failed: {name: string; line: number; reason: string}[]; providerRefresh?: string } | null>(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -62,6 +64,25 @@ export function ApiVaultPanel({ onChanged }: { onChanged?: () => void | Promise<
       await onChanged?.();
     } catch (err: any) { setError(err?.message || tr('Nyckeln kunde inte sparas.', 'The key could not be saved.')); }
     finally { setBusy(''); }
+  };
+
+  const bulkImport = async (dryRun: boolean) => {
+    if (busy || !bulkText.trim()) return;
+    setBusy('bulk'); setError(''); setNotice(''); setBulkReport(null);
+    try {
+      const result = await fetch('/api/aura/workbench/secrets/bulk-import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: bulkText, dryRun }),
+      }).then(readAuraResponse);
+      setBulkReport(result);
+      if (!dryRun) {
+        setBulkText('');
+        await refresh();
+        await onChanged?.();
+      }
+    } catch {
+      setError(tr('Massimporten kunde inte genomföras.', 'Bulk import could not be completed.'));
+    } finally { setBusy(''); }
   };
 
   const importWindows = async (key: string) => {
@@ -109,6 +130,20 @@ export function ApiVaultPanel({ onChanged }: { onChanged?: () => void | Promise<
       </label>
       <button type="submit" disabled={!!busy || !value.trim() || !KEY_NAME.test(name.trim())}> {busy === 'save' ? tr('Sparar…', 'Saving…') : tr('Spara i kassaskåpet', 'Save to Vault')} </button>
     </form>
+    <h4>{tr('Massimport och automatisk matchning', 'Bulk import and automatic matching')}</h4>
+    <p>{tr('Endast lokal runtime. Klistra in tjänstenamn och nyckel per rad eller NAME=value. Tvetydiga rader och befintliga nycklar skrivs inte över.', 'Local runtime only. Paste one service name and key per line or NAME=value. Ambiguous rows and existing credentials are not overwritten.')}</p>
+    <textarea disabled={!!busy} value={bulkText} onChange={e => { setBulkText(e.target.value); setBulkReport(null); }} rows={6} maxLength={131072} autoComplete="off" spellCheck={false} aria-label={tr('Massimport av API-nycklar','Bulk credential input')} placeholder="SERVICE_API_KEY=..." />
+    <button type="button" disabled={!!busy || !bulkText.trim()} onClick={() => void bulkImport(true)}>{tr('Matcha utan att spara','Preview matches')}</button>
+    <button type="button" disabled={!!busy || !bulkText.trim()} onClick={() => void bulkImport(false)}>{tr('Importera matchade nycklar','Import matched credentials')}</button>
+    <button type="button" disabled={!!busy} onClick={() => {setBulkText('');setBulkReport(null);}}>{tr('Rensa inmatning','Clear input')}</button>
+    {bulkReport && <div role="status">
+      <p>{tr('Redo','Ready')}: {bulkReport.ready.join(', ') || '—'}</p>
+      <p>{tr('Importerade','Imported')}: {bulkReport.imported.join(', ') || '—'}</p>
+      <p>{tr('Redan sparade','Already stored')}: {bulkReport.kept.join(', ') || '—'}</p>
+      {bulkReport.pending.map((item,i) => <p key={i}>{tr('Rad','Line')} {item.line}: {item.reason} {item.candidates?.join(', ')}</p>)}
+      {bulkReport.failed.map((item,i) => <p key={i}>{tr('Rad','Line')} {item.line}: {item.name} · {item.reason}</p>)}
+      {bulkReport.providerRefresh === 'PENDING' && <p>{tr('Providerregistreringen behöver uppdateras.','Provider registration refresh is pending.')}</p>}
+    </div>}
     <h4>{tr('Sparat i JACO:s kassaskåp', 'Stored in JACO Vault')}</h4>
     {secrets === null ? <p>{tr('Statusen gick inte att kontrollera.', 'Status could not be verified.')}</p> : secrets.length === 0 ? <p>{tr('Inga nycklar finns i det krypterade lagret.', 'No keys observed in the encrypted store.')}</p> :
       secrets.map(secret => <article key={secret.name}>
