@@ -817,18 +817,18 @@ void main(){${SWAY}
     }
     vbase+=points.length*2;
   };
-  const HAIRLINE=isMobile?36:64,hlRand=seeded(3301);
+  const HAIRLINE=isMobile?8:14,hlRand=seeded(3301);
   for(let k=0;k<HAIRLINE;k++){
-    const side=k%2?1:-1,seed=hlRand(),r=1.06+hlRand()*.035,w0=.012+hlRand()*.008;
+    const side=k%2?1:-1,seed=hlRand(),r=1.018+hlRand()*.022,w0=.003+hlRand()*.004;
     const th0=.58+hlRand()*.18,th1=.90+hlRand()*.25,ph0=side*(.02+hlRand()*.30),ph1=side*(2.2+hlRand()*.5);
     const pts=[];pts.seed=seed;
     for(let i=0;i<LSTEPS;i++){const t=i/(LSTEPS-1),e=t*t*(3-2*t),ph=ph0+(ph1-ph0)*e;const p=scalp(th0+(th1-th0)*e,ph,r);p.sub(restPos);pts.push({p,ph,t:t*.6});}
     pushLock(pts,w0);
   }
-  const COVER=isMobile?44:80,FRONT=0;
+  const COVER=isMobile?8:16,FRONT=isMobile?4:8;
   for(let k=0;k<COVER+FRONT;k++){
     const side=k%2?1:-1,front=k>=COVER,seed=wigRand();
-    const r=1.075+wigRand()*.04,w0=.011+wigRand()*.008;
+    const r=1.025+wigRand()*.025,w0=.004+wigRand()*.004;
     const ph0=front?side*(1.02+wigRand()*0.40):side*(0.04+wigRand()*0.34);
     const phEnd=front?ph0:side*(1.9+wigRand()*0.6);
     const thEnd=front?1.40+wigRand()*.25:0.80+wigRand()*.30;
@@ -856,7 +856,7 @@ void main(){${SWAY}
     pushLock(pts,w0);
   }
   const lockGeo=new THREE.BufferGeometry();attr(lockGeo,'position',lp,3);attr(lockGeo,'aT',lt,1);attr(lockGeo,'aU',lu,1);attr(lockGeo,'aSeed',ls,1);lockGeo.setIndex(lidx);
-  const lockMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uEnergy:energy},transparent:true,depthWrite:false,depthTest:true,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,
+  const lockMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uEnergy:energy},transparent:true,depthWrite:false,depthTest:true,side:THREE.DoubleSide,blending:THREE.NormalBlending,
     vertexShader:String.raw`attribute float aT;attribute float aU;attribute float aSeed;uniform float uTime;varying float vT;varying float vU;varying float vS;
 void main(){${SWAY}
   vT=aT;vU=aU;vS=aSeed;
@@ -1046,8 +1046,8 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     const scene=new THREE.Scene(),cloud=new THREE.Points(geometry,material);
     cloud.frustumCulled=false;scene.add(cloud);
 
-    const camera=new THREE.PerspectiveCamera(21,1,.03,20);
-    const portraitCenterY=1.62;
+    const camera=new THREE.PerspectiveCamera(31,1,.03,20);
+    const portraitCenterY=1.54;
     camera.position.set(0,portraitCenterY+.03,1.05);camera.lookAt(0,portraitCenterY,.03);
     renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power',preserveDrawingBuffer:true});
     renderer.setClearColor(0x000000,0);
