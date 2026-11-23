@@ -93,7 +93,10 @@ export function AuraLiveTerminalWindow({
       </div>
     </section> : <section id="aura-live-terminal-content" className="aura-live-terminal-commands"
       role="tabpanel" aria-labelledby="aura-live-commands-tab">
-      <AuraTerminal events={events} missionId={missionId} connection={connection}/>
+      {/* The operator console spans canonical mission receipts, including recent
+          completed missions. Do not bind command visibility to a different
+          currently selected mission in the Gameboard. */}
+      <AuraTerminal events={events} missionId={null} connection={connection}/>
     </section>}
   </aside>;
 }
