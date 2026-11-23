@@ -988,7 +988,7 @@ function disposeModel(model){
 }
 
 /** GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms. */
-export async function createAuraRigLightform(canvas,{signal,onError}={}){
+export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=false,trackPointer=true}={}){
   const response=await fetch(ASSET,{signal,cache:'force-cache'});
   if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
   const bytes=await response.arrayBuffer();
@@ -1089,7 +1089,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     };
 
     const onPointerMove=e=>{
-      if(motion.matches)return;
+      if(!trackPointer||motion.matches)return;
       const rect=canvas.getBoundingClientRect();
       if(!rect.width||!rect.height)return;
       const nx=((e.clientX-rect.left)/rect.width)*2-1;
@@ -1220,12 +1220,14 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       const smile=still?.09:.09+.045*(1+Math.sin(t*.72))+.04*energy-(isAnalyzing?.03:0);
       const microSaccadeX=still?0:(isVerifying?verifyScanX:(.032*Math.sin(t*2.05)+.018*Math.cos(t*4.9)));
       const microSaccadeY=still?0:.022*Math.cos(t*1.75)-(isVerifying?.03:0);
-      gazeX=still?0:gazeX+((yaw*.44+microSaccadeX)-gazeX)*.24;
-      gazeY=still?0:gazeY+((pitch*.46+microSaccadeY)-gazeY)*.24;
+      const gazeWeight=relaxedGaze&&state.listening?.15:1;
+      gazeX=still?0:gazeX+((yaw*.44+microSaccadeX)*gazeWeight-gazeX)*.24;
+      gazeY=still?0:gazeY+((pitch*.46+microSaccadeY)*gazeWeight-gazeY)*.24;
 
       const squint=still?0:finiteClamp(smile*.45+visemes.cheek+(isAnalyzing?.14:0),0,.38,0);
 
-      assign('eyeBlinkLeft',blink);assign('eyeBlinkRight',blink);
+      const lid=relaxedGaze?.18+.82*blink:blink;
+      assign('eyeBlinkLeft',lid);assign('eyeBlinkRight',lid);
       assign('eyeSquintLeft',squint);assign('eyeSquintRight',squint);
       assign('cheekSquintLeft',squint*.7);assign('cheekSquintRight',squint*.7);
       assign('jawOpen',smoothJaw);
