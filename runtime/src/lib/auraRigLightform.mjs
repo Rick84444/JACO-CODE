@@ -122,7 +122,8 @@ void main(){
   if(aKind>.5&&aKind<1.5){vColor=mix(deepBiolum,pureDiamond,.55+aSeed*.45);strength*=1.15;}
   if(aKind>2.5){strength=0.0;} // The eyes, brows and lashes use their own surfaces.
   vAlpha=clamp(strength*pulse*fade*(1.08+.38*uEnergy),0.0,.96);
-  gl_PointSize=clamp(aSize*uPixelRatio*(2.05+.46*uEnergy)*(0.85+0.25*dof)/max(.82,-mv.z),.70,4.5*uPixelRatio);
+  vAlpha*=.36+.64*aSeed;
+  gl_PointSize=clamp(aSize*uPixelRatio*(1.26+.20*uEnergy)*(0.85+0.25*dof)/max(.82,-mv.z),.50,2.8*uPixelRatio);
   gl_Position=projectionMatrix*mv;
 }
 `;
@@ -545,16 +546,16 @@ function createLightBody(scene,model,bones,groups,isMobile){
   float sharpSpec=pow(NdotH,64.0)*(0.045+lipZone*0.22)*(0.85+0.25*microRelief);
 
   float oneMinusFacing=max(0.0,1.0-auraFacing);
-  float midRim=pow(oneMinusFacing,2.05);
+  float midRim=pow(oneMinusFacing,3.4);
   float outerRim=pow(oneMinusFacing,4.6);
 
   float scanline=.99+.01*sin(vAuraWorldPos.y*480.0-uTime*3.4);
   float voicePulse=1.0+lipZone*uSpeaking*(0.28+0.15*sin(uTime*18.0));
   float auraFade=smoothstep(1.14,1.27,vAuraWorldPos.y)*mix(0.62,1.0,smoothstep(1.27,1.44,vAuraWorldPos.y))*(1.0-smoothstep(0.26,0.38,abs(vAuraWorldPos.x)));
 
-  vec3 deepShadow=vec3(.02,.10,.42);
-  vec3 biolumCyan=vec3(.10,.46,1.0);
-  vec3 sssWarmAzure=vec3(.42,.58,1.0);
+  vec3 deepShadow=vec3(.025,.055,.10);
+  vec3 biolumCyan=vec3(.21,.29,.39);
+  vec3 sssWarmAzure=vec3(.33,.40,.47);
   vec3 decisionAmber=vec3(1.0,.76,.35);
   vec3 lipRoseCyan=vec3(.58,.82,1.0);
   vec3 highlightIce=vec3(.82,.95,1.0);
@@ -579,8 +580,9 @@ function createLightBody(scene,model,bones,groups,isMobile){
   float cheekPlane=1.0+.12*cheekZone*(2.0*keyWrap-1.0);
   vec3 detailed=(baseSkin*cheekPlane*(0.56+0.12*uEnergy)*voicePulse+rimGlow*.80)*scanline;
   // No anatomy below the collarbones: uniform white light that softly dissolves.
-  outgoingLight=detailed;
-  diffuseColor.a=auraFade;
+  float grain=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5;
+  outgoingLight=detailed*(1.0+.018*grain)+vec3(.72,.79,.89)*uSpeaking*.09;
+  diffuseColor.a=auraFade*(.68+.30*midRim);
   #include <opaque_fragment>`);
   };
 
@@ -1155,14 +1157,15 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       const currentAudioLevel=liveFormants?liveFormants.level:(hasExternalLevel?finiteClamp(state.audioLevel,0,1,0):0);
 
       const activeSignal=Number(state.active||state.speaking||state.listening||isAnalyzing||isVerifying)+currentAudioLevel*0.48;
-      energy=still?Number(state.active):energy+(activeSignal-energy)*.08;
+      energy=still?Number(state.active):energy+(activeSignal-energy)*(1-Math.exp(-dt*(activeSignal>energy?3:1.4)));
 
       const verifyScanX=isVerifying&&!still?0.08*Math.sin(t*2.8):0;
       const analyzeTilt=isAnalyzing&&!still?0.045:0;
 
-      const organicYaw=.125*Math.sin(t*.41)+.058*Math.sin(t*.17+1.3)+.022*Math.sin(t*.97);
-      const organicPitch=.036*Math.sin(t*.59+.4)+.020*Math.cos(t*.23)+.011*Math.sin(t*1.25);
-      const organicRoll=.032*Math.sin(t*.35+.8)+.015*Math.cos(t*.79);
+      const idlePhase=t*2*Math.PI*.14;
+      const organicYaw=.031*Math.sin(idlePhase)+.010*Math.sin(idlePhase*1.618+1.3);
+      const organicPitch=.010*Math.sin(idlePhase+.4)+.004*Math.cos(idlePhase*1.618);
+      const organicRoll=.008*Math.sin(idlePhase+.8);
 
       const inputX=Math.abs(state.x)>0.01?finiteClamp(state.x,-1,1,0):pointerX;
       const inputY=Math.abs(state.y)>0.01?finiteClamp(state.y,-1,1,0):pointerY;
@@ -1185,7 +1188,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       camera.lookAt(0,portraitCenterY,.03);
 
       const breathPhase=t*1.15;
-      const breath=still?0:Math.sin(breathPhase)+.24*Math.sin(breathPhase*2.0-.55);
+      const breath=still?0:.35*(Math.sin(breathPhase)+.24*Math.sin(breathPhase*1.618-.55));
       rotate('Spine2',still?0:.021*breath,yaw*.16,roll*.24);
       rotate('Neck',pitch*.36-.008*breath,yaw*.28,roll*.34);
       const speechNod=state.speaking&&!still?.024*smoothJaw:0;
@@ -1230,11 +1233,12 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       assign('eyeBlinkLeft',blink);assign('eyeBlinkRight',blink);
       assign('eyeSquintLeft',squint);assign('eyeSquintRight',squint);
       assign('cheekSquintLeft',squint*.7);assign('cheekSquintRight',squint*.7);
-      assign('jawOpen',smoothJaw);
-      assign('viseme_aa',smoothAA);
-      assign('viseme_O',smoothO);
-      assign('viseme_E',smoothE);
-      assign('viseme_U',smoothU);
+      const articulation=.42;
+      assign('jawOpen',smoothJaw*articulation);
+      assign('viseme_aa',smoothAA*articulation);
+      assign('viseme_O',smoothO*articulation);
+      assign('viseme_E',smoothE*articulation);
+      assign('viseme_U',smoothU*articulation);
       assign('mouthSmileLeft',smile+.012*attention);assign('mouthSmileRight',smile);
       assign('browInnerUp',still?0:.05+.15*energy*(.5+.5*Math.sin(t*1.25))+smoothJaw*.15+(isDecision?.14:0));
       assign('browOuterUpLeft',still?0:.03+.045*attention+.08*energy*(.5+.5*Math.cos(t*1.1)));
