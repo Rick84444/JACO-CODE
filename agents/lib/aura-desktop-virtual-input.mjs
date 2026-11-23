@@ -3,6 +3,7 @@
 // sandbox operator opt-in and a fresh read-only Hyper-V guest observation.
 // This module is pure: it never changes permissions or dispatches input.
 import { freshMissionFrame } from './mission-screen-frame.mjs';
+import { DEFAULT_DESKTOP_PROCESSES } from '../../runtime/src/server/desktop/grantAtStart.mjs';
 
 export function verifiedHyperVGuest(wmi) {
   if (!wmi || wmi.ok !== true || wmi.verified !== true ||
@@ -17,7 +18,8 @@ export function verifiedHyperVGuest(wmi) {
 export function virtualInputGrant({ env = process.env, platform = process.platform, wmi, session } = {}) {
   const requested = env.JACO_ALLOW_COORDINATE_FALLBACK === '1';
   if (!requested) return { requested: false, allowed: false, reason: 'VIRTUAL_INPUT_OPERATOR_OPT_IN_REQUIRED' };
-  if (env.JACO_AURA_DESKTOP_SANDBOX !== 'hyperv-guest' || platform !== 'win32') {
+  const mode = env.JACO_AURA_DESKTOP_SANDBOX;
+  if ((mode !== 'hyperv-guest' && mode !== 'host-operator') || platform !== 'win32') {
     return { requested: true, allowed: false, reason: 'VIRTUAL_INPUT_SANDBOX_MODE_REQUIRED' };
   }
   if (!session || session.schema !== 'jaco.desktop-session/v1' ||
@@ -27,10 +29,36 @@ export function virtualInputGrant({ env = process.env, platform = process.platfo
       session.foregroundHwnd <= 0) {
     return { requested: true, allowed: false, reason: 'VIRTUAL_INPUT_INTERACTIVE_SESSION_UNVERIFIED' };
   }
+  // The operator's explicit choice to let Aura use the real keyboard and mouse on this physical host. The interactive
+  // session checks above still apply, and every action stays bound to a freshly observed window of a granted process
+  // (hostInputTargetAllowed). It is never inferred: both variables must be set by the operator.
+  if (mode === 'host-operator') {
+    return { requested: true, allowed: true, mode, reason: 'OPERATOR_HOST_OPT_IN' };
+  }
   if (!verifiedHyperVGuest(wmi)) {
     return { requested: true, allowed: false, reason: 'VIRTUAL_INPUT_HYPERV_GUEST_UNVERIFIED' };
   }
-  return { requested: true, allowed: true, reason: 'VERIFIED_HYPERV_GUEST_OPERATOR_OPT_IN' };
+  return { requested: true, allowed: true, mode, reason: 'VERIFIED_HYPERV_GUEST_OPERATOR_OPT_IN' };
+}
+
+const processKey = name => String(name || '').trim().toLowerCase().replace(/\.exe$/, '');
+
+// Host mode only: raw input may go to a window whose process the operator granted for desktop control (the same list the
+// standing desktop grant uses). The process comes from the fresh observation of that exact window, never from the task.
+export function hostInputTargetAllowed(task, mission, env = process.env) {
+  const hwnd = task?.data?.expectedHwnd;
+  if (!Number.isSafeInteger(hwnd) || hwnd <= 0) return { allowed: false, reason: 'EXPECTED_HWND_REQUIRED' };
+  const configured = String(env.JACO_DESKTOP_GRANT_PROCESSES || '').split(',').map(processKey).filter(Boolean);
+  const granted = new Set(configured.length ? configured : DEFAULT_DESKTOP_PROCESSES.map(processKey));
+  for (const receipt of [...(mission?.receipts || [])].reverse()) {
+    if (receipt.type !== 'desktop-observe' || !receipt.ok || !receipt.verified) continue;
+    const window = receipt.result?.observation?.window;
+    if (window?.hwnd !== hwnd) continue;
+    const name = processKey(window.processName);
+    if (!name) break;
+    return granted.has(name) ? { allowed: true, process: name } : { allowed: false, reason: 'HOST_INPUT_PROCESS_NOT_GRANTED', process: name };
+  }
+  return { allowed: false, reason: 'HOST_INPUT_TARGET_UNOBSERVED' };
 }
 
 // The legacy Laser Vision captures a PNG in the original agent state directory.

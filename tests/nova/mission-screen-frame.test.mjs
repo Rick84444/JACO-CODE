@@ -84,3 +84,26 @@ test('raw input requires the intended recent window and observed coordinates',()
   assert.throws(()=>observedInputBinding(task,{receipts:[screen]},{now:now+31000}),/FRESH_BOUND/);
   assert.throws(()=>observedInputBinding(task,{receipts:[{...screen,ok:false}]},opts),/FRESH_BOUND/);
 });
+
+// A model on this computer needs 40-50 s per planning step: the observation behind type-text was always older than 30 s when the
+// action was dispatched (2026-11-23, FRESH_BOUND_DESKTOP_OBSERVATION_REQUIRED on every attempt).
+import { rawInputObservationMaxAgeMs, RAW_INPUT_OBSERVATION_MAX_AGE_MS } from '../../agents/lib/mission-screen-frame.mjs';
+
+test('the age limit of the observation behind raw input is configurable, bounded and defaults to 30 s',()=>{
+  assert.equal(RAW_INPUT_OBSERVATION_MAX_AGE_MS,30000);
+  assert.equal(rawInputObservationMaxAgeMs({}),30000);
+  assert.equal(rawInputObservationMaxAgeMs({JACO_RAW_INPUT_OBSERVATION_MAX_AGE_MS:'120000'}),120000);
+  assert.equal(rawInputObservationMaxAgeMs({JACO_RAW_INPUT_OBSERVATION_MAX_AGE_MS:'1'}),5000,'a floor');
+  assert.equal(rawInputObservationMaxAgeMs({JACO_RAW_INPUT_OBSERVATION_MAX_AGE_MS:'99999999'}),600000,'a ceiling');
+  for(const bad of ['abc','-5','0','']) assert.equal(rawInputObservationMaxAgeMs({JACO_RAW_INPUT_OBSERVATION_MAX_AGE_MS:bad}),30000,bad);
+});
+
+test('an observation 48 s old binds only when the operator allows the longer age',()=>{
+  const now=Date.parse('2026-11-23T19:53:40.000Z');
+  const observe={type:'desktop-observe',ok:true,verified:true,at:new Date(now-48000).toISOString(),result:{observation:{window:{hwnd:4260720,processId:20104,rect:{x:0,y:0,width:1680,height:900}}}}};
+  const task={type:'type-text',data:{expectedHwnd:4260720,text:'x'}};
+  assert.throws(()=>observedInputBinding(task,{receipts:[observe]},{now}),/FRESH_BOUND_DESKTOP_OBSERVATION_REQUIRED/);
+  assert.equal(observedInputBinding(task,{receipts:[observe]},{now,maxAgeMs:rawInputObservationMaxAgeMs({JACO_RAW_INPUT_OBSERVATION_MAX_AGE_MS:'120000'})}).hwnd,4260720);
+  const wrong={...task,data:{...task.data,expectedHwnd:99}};
+  assert.throws(()=>observedInputBinding(wrong,{receipts:[observe]},{now,maxAgeMs:120000}),/FRESH_BOUND_DESKTOP_OBSERVATION_REQUIRED/,'a longer age never binds a different window');
+});

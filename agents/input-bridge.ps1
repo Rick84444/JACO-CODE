@@ -33,6 +33,7 @@ param(
   [int]$ExpectedWidth = 0,
   [int]$ExpectedHeight = 0,
   [switch]$MeasureEntropy,
+  [switch]$Activate,
   [switch]$Daemon
 )
 
@@ -129,6 +130,12 @@ public class WinInput {
 
 
   [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hwnd);
+  [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hwnd,int cmd);
+  [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr hwnd);
+  [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
+  [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint from,uint to,bool attach);
+  [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
   [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
   [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(POINT pt);
   [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd,uint flags);
@@ -166,11 +173,26 @@ public class WinInput {
       return AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(),context);
     } catch {return false;}
   }
-  public static void Configure(long hwnd,uint pid,int x,int y,int w,int h,bool point,int px,int py) {
+  // Brings the bound window to the front before a raw action, only when the operator allowed it (host mode, -Activate). The window
+  // is already bound to a fresh observation and a granted process; AssertTarget below still refuses if it is not in front.
+  static void ActivateTarget() {
+    if(SameForeground()) return;
+    if(IsIconic(target)) ShowWindow(target,9);
+    uint foregroundPid;
+    IntPtr foreground=GetForegroundWindow();
+    uint foregroundThread=foreground==IntPtr.Zero?0:GetWindowThreadProcessId(foreground,out foregroundPid);
+    uint thisThread=GetCurrentThreadId();
+    bool attached=foregroundThread!=0&&foregroundThread!=thisThread&&AttachThreadInput(thisThread,foregroundThread,true);
+    try { BringWindowToTop(target); SetForegroundWindow(target); }
+    finally { if(attached) AttachThreadInput(thisThread,foregroundThread,false); }
+    for(int i=0;i<10&&!SameForeground();i++) System.Threading.Thread.Sleep(50);
+  }
+  public static void Configure(long hwnd,uint pid,int x,int y,int w,int h,bool point,int px,int py,bool activate) {
     if(hwnd<=0||pid==0||w<=0||h<=0) throw new InvalidOperationException("TARGET_BINDING_REQUIRED");
     target=new IntPtr(hwnd);targetPid=pid;left=x;top=y;width=w;height=h;
     pointRequired=point;pointX=px;pointY=py;
     if(!EnableDpiV2()) throw new InvalidOperationException("DPI_CONTEXT_UNVERIFIED");
+    if(activate) ActivateTarget();
     AssertTarget(false);
   }
   static bool MatchesRect(RECT r) {
@@ -525,7 +547,7 @@ if($Op -eq 'self_test'){
   $different=Measure-Roi $a $b
   if($different.changedPixelRatio -ne 0.5 -or $different.deltaEntropyBits -ne 1 -or $different.signal -ne 'VISUAL_CHANGE_DETECTED'){throw 'ROI_ENTROPY_FIXTURE_FAILED'}
   $rejected=$false
-  try{[WinInput]::Configure(0,0,0,0,0,0,$false,0,0)}catch{$rejected=$true}
+  try{[WinInput]::Configure(0,0,0,0,0,0,$false,0,0,$false)}catch{$rejected=$true}
   if(-not $rejected -or [WinInput]::DispatchAttempted){throw 'INVALID_BINDING_DISPATCHED'}
   Write-Output '{"ok":true,"checks":3,"inputDispatched":false}'
   return
@@ -535,7 +557,7 @@ if($mutating){
   $visual=$null
   try {
     $point=$Op -in @('mouse_move','mouse_click','mouse_scroll')
-    [WinInput]::Configure($ExpectedHwnd,$ExpectedPid,$ExpectedLeft,$ExpectedTop,$ExpectedWidth,$ExpectedHeight,$point,$X,$Y)
+    [WinInput]::Configure($ExpectedHwnd,$ExpectedPid,$ExpectedLeft,$ExpectedTop,$ExpectedWidth,$ExpectedHeight,$point,$X,$Y,[bool]$Activate)
     if($Op -eq 'mouse_click'){
       if($Button -notin @('left','right','middle')){throw 'INVALID_MOUSE_BUTTON'}
       Do-MouseMove $X $Y
@@ -594,7 +616,7 @@ if(-not $Daemon){
 # Strict local stdio protocol. No evaluation, no arbitrary command or script.
 [Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$allowed=@('Op','X','Y','Button','Double','Delta','Keys','Text','OutFile','CropX','CropY','CropWidth','CropHeight','MaxWidth','MaxHeight','ExpectedHwnd','ExpectedPid','ExpectedLeft','ExpectedTop','ExpectedWidth','ExpectedHeight','MeasureEntropy','DeadlineMs')
+$allowed=@('Op','X','Y','Button','Double','Delta','Keys','Text','OutFile','CropX','CropY','CropWidth','CropHeight','MaxWidth','MaxHeight','ExpectedHwnd','ExpectedPid','ExpectedLeft','ExpectedTop','ExpectedWidth','ExpectedHeight','MeasureEntropy','Activate','DeadlineMs')
 while($null -ne ($line=[Console]::ReadLine())){
   $reqId=$null;$started=$false;$mutation=$false
   try{
@@ -607,7 +629,7 @@ while($null -ne ($line=[Console]::ReadLine())){
       $name=$property.Name
       if($name -eq 'reqId'){continue}
       if($allowed -notcontains $name){throw 'BRIDGE_INVALID_FIELD'}
-      if($name -in @('Double','MeasureEntropy') -and $property.Value -isnot [bool]){throw 'BRIDGE_INVALID_FLAG'}
+      if($name -in @('Double','MeasureEntropy','Activate') -and $property.Value -isnot [bool]){throw 'BRIDGE_INVALID_FLAG'}
       $bound[$name]=$property.Value
     }
     if($bound.Op -notin @('mouse_move','mouse_click','mouse_scroll','key_press','type_text','get_cursor','screenshot','session_status','self_test')){throw 'UNKNOWN_INPUT_OPERATION'}

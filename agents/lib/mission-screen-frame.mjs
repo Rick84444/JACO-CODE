@@ -52,7 +52,16 @@ export function permittedFrameMessages(messages,frame,provider,env=process.env){
 
 const RAW_INPUT_TASKS=new Set(['mouse-move','mouse-click','mouse-scroll','key-press','type-text']);
 const NON_INVALIDATING=new Set(['health-check','detect-surfaces','get-cursor','desktop-windows','windows-wmi-read','repo-list','repo-read','git-status','git-diff','skill-load']);
-export function observedInputBinding(task,mission,{now=Date.now(),maxAgeMs=30000}={}){
+// How old the observation behind a raw keyboard/mouse action may be. 30 s fits a fast cloud model; a model on this computer needs
+// 40-50 s per planning step, so the observation it had just made was always stale when the action was dispatched and every
+// type-text failed with FRESH_BOUND_DESKTOP_OBSERVATION_REQUIRED (2026-11-23). The bridge still re-checks the window's process
+// and geometry at action time, so a longer age does not let the action reach a different window.
+export const RAW_INPUT_OBSERVATION_MAX_AGE_MS = 30000;
+export function rawInputObservationMaxAgeMs(env=process.env){
+  const configured=Number(env?.JACO_RAW_INPUT_OBSERVATION_MAX_AGE_MS);
+  return Number.isFinite(configured)&&configured>0?Math.min(Math.max(Math.floor(configured),5000),600000):RAW_INPUT_OBSERVATION_MAX_AGE_MS;
+}
+export function observedInputBinding(task,mission,{now=Date.now(),maxAgeMs=rawInputObservationMaxAgeMs()}={}){
   if(!RAW_INPUT_TASKS.has(task?.type))return null;
   const data=task.data||{},hwnd=data.expectedHwnd;
   if(!Number.isSafeInteger(hwnd)||hwnd<=0)throw Error('EXPECTED_HWND_REQUIRED');
