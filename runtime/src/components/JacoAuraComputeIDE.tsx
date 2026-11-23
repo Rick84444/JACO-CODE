@@ -1,5 +1,6 @@
 import { terminalText } from '../lib/terminalText.mjs';
 import { ReceiptTerminal } from './ReceiptTerminal';
+import { AuraLiveTerminalWindow } from './AuraLiveTerminalWindow';
 import { MissionReview } from './MissionReview';
 import { ConnectionsWorkspace } from './ConnectionsWorkspace';
 import { readAuraResponse as json, acknowledgeSavedDraft } from '../lib/auraApi.mjs';
@@ -272,7 +273,7 @@ interface FileResponse extends AuraEditorFile {
 }
 
 type SidebarView = 'explorer' | 'source-control' | 'tools' | 'skills' | 'devices' | 'providers';
-type TerminalMode = 'human' | 'raw' | 'xterm';
+type TerminalMode = 'raw' | 'xterm';
 type BottomPanel = 'missions' | 'terminal' | 'problems' | 'output' | 'evidence';
 
 
@@ -354,6 +355,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   useEffect(()=>{if(workspaceView==='code')setCodeOpened(true);},[workspaceView]);
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
+  const [liveTerminalOpen, setLiveTerminalOpen] = useState(false);
   const [selectedEvidence, setSelectedEvidence] = useState<CognitiveEvent|null>(null);
   const [projectName, setProjectName] = useState('Workspace');
   const [projectRoot,setProjectRoot] = useState('');
@@ -425,7 +427,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
   const openChat = () => { setWorkspaceView('conversation'); setSidePanelOpen(false); window.dispatchEvent(new Event('jaco:aura:focus')); };
   const [connectionsTab,setConnectionsTab]=useState('models');
   const [sidebar, setSidebar] = useState<SidebarView>('explorer');
-  const [terminalMode, setTerminalMode] = useState<TerminalMode>('human');
+  const [terminalMode, setTerminalMode] = useState<TerminalMode>('raw');
   const [bottomPanel, setBottomPanel] = useState<BottomPanel>('missions');
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [selectedTool, setSelectedTool] = useState<AuraSelectedTool | null>(null);
@@ -1882,7 +1884,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
                           {(event.missionGoal || (event.missionId && missionGoals.get(event.missionId))) && (
                             <span className="text-neutral-600" title={String(event.missionGoal || missionGoals.get(String(event.missionId)))}>[{String(event.missionGoal || missionGoals.get(String(event.missionId))).slice(0, 36)}] </span>
                           )}
-                          {terminalText(terminalMode === 'human' ? humanizeActivity(event) : JSON.stringify({ source: event.source, type: event.type, verified: event.verified, payload: event.payload }))}
+                          {terminalText(JSON.stringify({ source: event.source, type: event.type, verified: event.verified, payload: event.payload }))}
                         </span>
                       </div>
                     ))}
@@ -1892,8 +1894,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
                     <span className="text-emerald-400 font-mono text-xs">$</span>
                     <input value={terminalCommand} onChange={event => setTerminalCommand(event.target.value)} placeholder="Run local shell / npm / node / git command" className="flex-1 bg-transparent outline-none text-[11px] font-mono text-neutral-200 placeholder:text-neutral-500" />
                     <button className="text-[10px] px-2 py-1 border border-[#696a6c] rounded hover:bg-[#464749]">Run</button>
-                    <button type="button" data-testid="terminal-receipts-toggle" aria-pressed={terminalMode==='xterm'} onClick={()=>setTerminalMode(terminalMode==='xterm'?'human':'xterm')} className="text-[10px] px-2 py-1 border border-[#696a6c] rounded">Xterm</button>
-                    <button type="button" onClick={() => setTerminalMode(terminalMode === 'human' ? 'raw' : 'human')} className="text-[9px] text-neutral-400 hover:text-neutral-200">{terminalMode === 'human' ? 'human' : 'raw'}</button>
+                    <button type="button" data-testid="terminal-receipts-toggle" aria-pressed={terminalMode==='xterm'} onClick={()=>setTerminalMode(terminalMode==='xterm'?'raw':'xterm')} className="text-[10px] px-2 py-1 border border-[#696a6c] rounded">Xterm</button>
+                    
                   </form>
                 </>
               )}
@@ -1996,7 +1998,12 @@ export const JacoAuraComputeIDE: React.FC = () => {
     </div>
   </section> : null;
   return <>
-    <CognitiveWorkspace remoteMode={remoteMode} attention={attention} canvas={workspaceView} onCanvas={chooseWorkspace} conversation={renderChatContent()} detail={detail}
+    <CognitiveWorkspace remoteMode={remoteMode} attention={attention}
+      liveTerminalOpen={liveTerminalOpen} onToggleLiveTerminal={()=>setLiveTerminalOpen(current=>!current)}
+      liveTerminal={<AuraLiveTerminalWindow events={cognitiveEvents} missionId={sideMission?.id || null}
+        missionGoal={sideMission?.goal || null} connection={cognitiveLive.connection}
+        onClose={()=>setLiveTerminalOpen(false)}/>}
+      canvas={workspaceView} onCanvas={chooseWorkspace} conversation={renderChatContent()} detail={detail}
       portraitChat={chatSession}
       stage={stage} stagePinned={workspacePinned} onTogglePin={()=>setWorkspacePinned(value=>!value)}
       sidebar={sidebar} sidePanelOpen={sidePanelOpen} sidePanel={renderSidebar()}
