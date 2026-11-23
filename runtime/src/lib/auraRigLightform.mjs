@@ -988,7 +988,7 @@ function disposeModel(model){
 }
 
 /** GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms. */
-export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true}={}){
+export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false}={}){
   const response=await fetch(ASSET,{signal,cache:'force-cache'});
   if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
   const bytes=await response.arrayBuffer();
@@ -1070,6 +1070,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     };
 
     let energy=0,gazeX=0,gazeY=0,smoothJaw=0;
+    let listeningSince=0, previousYaw=0;
     let smoothAA=0,smoothO=0,smoothE=0,smoothU=0,decisionBlend=0,pupilSize=0.31;
     let pointerX=0,pointerY=0,camX=0,camY=0,busPhase=null;
     let last=-Infinity,lastStepTime=0;
@@ -1168,7 +1169,11 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const inputX=Math.abs(state.x)>0.01?finiteClamp(state.x,-1,1,0):pointerX;
       const inputY=Math.abs(state.y)>0.01?finiteClamp(state.y,-1,1,0):pointerY;
 
-      const targetYaw=still?0:clamp(inputX,-1,1)*.36+organicYaw+verifyScanX*.35;
+      const contact=leadWithEyes&&state.listening&&!still;
+      const contactAge=contact?Math.max(0,t-listeningSince):0;
+      const follow=smoothstep(.22,.90,contactAge);
+      const idleYaw=clamp(inputX,-1,1)*.36+organicYaw+verifyScanX*.35;
+      const targetYaw=still?0:contact?previousYaw*(1-follow)+idleYaw*.12*follow:idleYaw;
       const targetPitch=still?0:clamp(inputY,-1,1)*.16+organicPitch+(state.listening?.032:0)-(isAnalyzing?.025:0);
       const targetRoll=still?0:organicRoll-targetYaw*.15+(state.listening?.042:0)+analyzeTilt;
 
@@ -1221,7 +1226,8 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const microSaccadeX=still?0:(isVerifying?verifyScanX:(.032*Math.sin(t*2.05)+.018*Math.cos(t*4.9)));
       const microSaccadeY=still?0:.022*Math.cos(t*1.75)-(isVerifying?.03:0);
       const gazeWeight=relaxedGaze&&state.listening?.15:1;
-      gazeX=still?0:gazeX+((yaw*.44+microSaccadeX)*gazeWeight-gazeX)*.24;
+      const eyeTarget=contact?clamp(-yaw*1.8+microSaccadeX*.05,-.55,.55):(yaw*.44+microSaccadeX)*gazeWeight;
+      gazeX=still?0:gazeX+(eyeTarget-gazeX)*(contact?1-Math.exp(-dt*24):.24);
       gazeY=still?0:gazeY+((pitch*.46+microSaccadeY)*gazeWeight-gazeY)*.24;
 
       const squint=still?0:finiteClamp(smile*.45+visemes.cheek+(isAnalyzing?.14:0),0,.38,0);
@@ -1341,6 +1347,10 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         if(next&&'audioSource' in next){
           if(next.audioSource)voiceTracker.attach(next.audioSource);
           else voiceTracker.dispose();
+        }
+        if(leadWithEyes&&next?.listening&&!state.listening){
+          listeningSince=performance.now()/1000;
+          previousYaw=yawSpring.val;
         }
         state={...state,...next};
         if(motion.matches)render(0);
