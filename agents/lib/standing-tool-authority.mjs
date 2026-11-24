@@ -10,17 +10,23 @@ export const STANDING_MANDATE_ID = 'operator-level5-default';
 export function standingToolAuthority(workspaceRoot, consequence, {now = Date.now()} = {}) {
   if (!CLASSES.has(consequence)) throw Error('MANDATE_CONSEQUENCE_INVALID');
   if (!workspaceRoot) return { status: 'LEGACY', allowed: false, reason: 'WORKSPACE_UNKNOWN' };
-  const file = path.join(workspaceRoot, '.jaco', 'state', 'autonomy', 'mandates.json');
+  const stateDir = path.join(workspaceRoot, '.jaco', 'state', 'autonomy');
+  const file = path.join(stateDir, 'mandates.json');
+  // The existing mandate store writes this marker on first initialization.
+  // A missing file/record AFTER initialization must not resurrect legacy grants.
+  const initialized = fs.existsSync(path.join(stateDir, 'bootstrap-initialized'));
   let records;
   try { records = JSON.parse(fs.readFileSync(file, 'utf8')); }
   catch (error) {
-    return error?.code === 'ENOENT'
+    return error?.code === 'ENOENT' && !initialized
       ? { status: 'LEGACY', allowed: false, reason: 'NO_MANDATE_STORE' }
-      : { status: 'DENY', allowed: false, reason: 'MANDATE_STORE_UNREADABLE' };
+      : { status: 'DENY', allowed: false, reason: 'MANDATE_STORE_MISSING_OR_UNREADABLE' };
   }
   if (!Array.isArray(records)) return { status: 'DENY', allowed: false, reason: 'MANDATE_STORE_INVALID' };
   const mandate = records.find(v => v?.id === STANDING_MANDATE_ID);
-  if (!mandate) return { status: 'LEGACY', allowed: false, reason: 'NO_STANDING_MANDATE' };
+  if (!mandate) return initialized
+    ? { status: 'DENY', allowed: false, reason: 'MANDATE_RECORD_MISSING' }
+    : { status: 'LEGACY', allowed: false, reason: 'NO_STANDING_MANDATE' };
   // An unconfigured first-install placeholder is not a revocation: preserve
   // legacy behavior until the operator explicitly activates a mandate.
   // A previously signed, then revoked mandate must always deny.
