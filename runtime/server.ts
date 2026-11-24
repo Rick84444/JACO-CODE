@@ -4466,6 +4466,60 @@ const notifyPhone = async (action) => {
       res.json({ success: true, mode: target.mode, path: target.path });
     } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 120) }); }
   });
+  // Persistent operator mandate editor. This is a view of the existing model-relay
+  // store, not a second policy engine. Changes require the operator mutation
+  // credential, while ordinary model/tool credentials cannot rewrite authority.
+  const standingMandateId = 'operator-level5-default';
+  // Flush cached per-surface grants after an operator edits/revokes the source
+  // mandate. Relay checks the store on every action; this additionally protects
+  // existing direct adapter sessions against stale scope until their lease ends.
+  const flushStandingSurfaceGrants = async () => {
+    const errors: string[] = [];
+    try { browserSurface.sessions.getClient()?.configureGrant({ enabled: false }); }
+    catch (error: any) { errors.push('BROWSER:' + String(error?.message || error).slice(0, 120)); }
+    try { desktopHandsOff.configureGrant({ enabled: false }); }
+    catch (error: any) { errors.push('DESKTOP:' + String(error?.message || error).slice(0, 120)); }
+    try { await handsOff.configureGrant({ enabled: false, allowed_packages: [], allow_typing: false,
+      allow_gestures: false, allow_navigation: false, expires_at: new Date().toISOString() }); }
+    catch (error: any) { errors.push('ANDROID:' + String(error?.message || error).slice(0, 120)); }
+    for (const surface of ['BROWSER', 'DESKTOP', 'ANDROID'] as const) {
+      const lease = actuatorLeases.get(surface);
+      if (lease) actuatorLeases.release(surface, lease.holder);
+    }
+    return errors;
+  };
+  app.get('/api/aura/standing-mandate', requireLocalUi, (_req, res) => {
+    const mandate = modelRelay.mandates.get(standingMandateId);
+    if (!mandate) return res.status(404).json({ success: false, error: 'STANDING_MANDATE_NOT_CONFIGURED' });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ success: true, mandate, active: modelRelay.mandates.isActive(standingMandateId),
+      mutationAuthRequired: organizationMutationAuthRequired() });
+  });
+  app.patch('/api/aura/standing-mandate', requireLocalUi, requireOrganizationMutationAuth, async (req, res) => {
+    try {
+      const mandate = modelRelay.mandates.updateOperator(standingMandateId, req.body?.patch, req.body?.expectedRevision);
+      const propagationErrors = await flushStandingSurfaceGrants();
+      res.json({ success: true, mandate, active: modelRelay.mandates.isActive(standingMandateId), propagationErrors });
+    } catch (error: any) {
+      const message = String(error?.message || error);
+      res.status(message === 'MANDATE_REVISION_CONFLICT' ? 409 : 400).json({ success: false, error: message });
+    }
+  });
+  app.post('/api/aura/standing-mandate/:decision', requireLocalUi, requireOrganizationMutationAuth, async (req, res) => {
+    try {
+      const decision = req.params.decision;
+      if (!['sign', 'revoke'].includes(decision)) return res.status(400).json({ success: false, error: 'MANDATE_DECISION_INVALID' });
+      const current = modelRelay.mandates.get(standingMandateId);
+      if (!current) return res.status(404).json({ success: false, error: 'STANDING_MANDATE_NOT_CONFIGURED' });
+      if (current.revision !== req.body?.expectedRevision) return res.status(409).json({ success: false, error: 'MANDATE_REVISION_CONFLICT' });
+      const mandate = decision === 'sign' ? modelRelay.mandates.sign(standingMandateId) : modelRelay.mandates.revoke(standingMandateId);
+      // A revoke invalidates already-propagated browser/desktop/Android grants;
+      // a later authorized relay action reconfigures only its required surface.
+      const propagationErrors = decision === 'revoke' ? await flushStandingSurfaceGrants() : [];
+      res.json({ success: true, mandate, active: modelRelay.mandates.isActive(standingMandateId), propagationErrors });
+    } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error) }); }
+  });
+
   // Autonomy clock (GUI): a time-boxed, operator-signed mandate. Financial actions stay on REVIEW in code.
   const CLOCK_NAME = 'Autonomi-klocka';
   const clockMandates = () => modelRelay.mandates.list().filter((m: any) => [CLOCK_NAME, COMMERCIAL_CLOCK].includes(m.name) && modelRelay.mandates.isActive(m.id));
