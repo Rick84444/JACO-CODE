@@ -1,3 +1,4 @@
+import { runtimeIdentityLabel } from './runtime-identity.js';
 // JACO Remote: browser transport only. No secrets, plans or memory are
 // stored in the cloud or in localStorage. Cloud transport is TLS, not E2EE.
 const $=id=>document.getElementById(id);
@@ -61,12 +62,7 @@ async function refreshIdentity(){
   try {
     const data=await wsSend('GET','/api/runtime/identity',undefined,{timeout:15000});
     if(selected!==hostAtStart)return; // never attribute an old reply to another computer
-    if(data?.success!==true || !/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$/.test(String(data.version||'')))
-      throw Error('RUNTIME_IDENTITY_INVALID');
-    const version='v'+data.version;
-    const commit=/^[a-f0-9]{40}$/.test(String(data.sourceCommit||''))?data.sourceCommit.slice(0,12):'ej styrkt';
-    const mode=['lite','full'].includes(data.executionProfile)?data.executionProfile:'okänt läge';
-    text($('runtimeIdentity'),version+' · '+mode+' · källcommit: '+commit+' (självrapporterat)');
+    text($('runtimeIdentity'),runtimeIdentityLabel(data));
   } catch {
     if(selected===hostAtStart)text($('runtimeIdentity'),'Runtime-identitet ej verifierad; status kan vara inaktuell');
   }
