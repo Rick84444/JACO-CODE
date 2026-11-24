@@ -93,7 +93,7 @@ const NPM_INSTALL_FLAGS = new Set([
   '--no-save', '--ignore-scripts', '--legacy-peer-deps', '--strict-peer-deps',
   '--no-audit', '--no-fund', '--offline', '--prefer-offline', '--package-lock-only',
 ]);
-const NPM_PACKAGE = /^(?:@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*(?:@(?:[~^]?[0-9][a-z0-9.+_-]*|latest|next|beta))?$/i;
+const NPM_PACKAGE = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:@(?:[~^]?[0-9][a-z0-9.+_-]*|latest|next|beta))?$/i;
 export function npmWorkspaceCheck(args) {
   if (!Array.isArray(args) || !args.length) return 'NPM_SUBCOMMAND_NOT_ALLOWED';
   const command = args[0];
