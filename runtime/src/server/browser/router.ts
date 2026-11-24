@@ -79,6 +79,7 @@ export function createBrowserRouter(
   workspaceRoot: string,
   requireAuth: express.RequestHandler,
   onEvent?: (event: { actor: string; type: string; message: string; verified: boolean; receipt?: unknown }) => void,
+  standingMandates?: () => AutonomyMandateStore,
 ): { router: express.Router; sessions: BrowserSessionManager } {
   const router = express.Router();
   const sessions = new BrowserSessionManager(workspaceRoot);
@@ -149,6 +150,31 @@ export function createBrowserRouter(
     const body = (req.body || {}) as Partial<BrowserAction> & { modelId?: string; missionId?: string };
     const type = String(body.type || '') as BrowserActionType;
     if (!ACTION_TYPES.includes(type)) return fail(res, 400, `unsupported action type '${type}'`);
+    // The direct CDP route and ModelRelay obey the SAME existing standing
+    // mandate, with no fresh per-action GUI approval. A revoked mandate cannot
+    // leave an old browser grant usable; explicit first-install legacy grants
+    // remain compatible until the operator activates the standing mandate.
+    const consequence = classify('BROWSER', body);
+    const authority = standingToolAuthority(workspaceRoot, consequence);
+    if (authority.status === 'DENY' || authority.status === 'REVIEW')
+      return fail(res, authority.status === 'REVIEW' ? 428 : 403, 'BROWSER_STANDING_MANDATE_' + authority.status);
+    if (authority.allowed) {
+      const mandates = standingMandates?.();
+      const current = mandates?.get('operator-level5-default');
+      if (!mandates || !current) return fail(res, 503, 'BROWSER_MANDATE_AUTHORITY_UNAVAILABLE');
+      const decision = mandates.evaluate(current.id, consequence, Boolean(body.postcondition));
+      if (!decision.allowed) return fail(res, decision.requireReview ? 428 : 403, decision.reason);
+      try {
+        client.configureGrant({
+          enabled: true, contract_id: current.id,
+          scope_mode: current.browserScope === 'BROAD_WEB' ? 'broad_web' : 'origins',
+          allowed_origins: current.allowedOrigins,
+          allow_click: true, allow_value_set: true, allow_navigate: true,
+          allow_select: true, allow_scroll: true,
+          expires_at: actuatorGrantExpiry(current),
+        });
+      } catch (error) { return fail(res, 409, error); }
+    }
     const holder = String(req.get('x-jaco-model-id') || body.modelId || 'operator').slice(0, 120);
     if (MUTATING.has(type)) {
       try { actuatorLeases.acquire('BROWSER', holder, body.missionId ? String(body.missionId) : null); }
