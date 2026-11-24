@@ -60,7 +60,7 @@ import { readOperatorLanguage, languageInstruction } from './lib/operator-langua
 import { nonTextModelKind, openAiChatCompletionsUrl, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
 import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs';
 import { assertTaskMandate } from './lib/org-permission.mjs';
-import { standingToolAuthority, operatorTaskEnabled } from './lib/standing-tool-authority.mjs';
+import { standingToolAuthority, operatorTaskEnabled, standingOperatorRules } from './lib/standing-tool-authority.mjs';
 import { withLocalOllamaContext } from './lib/ollama-native.mjs';
 import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs';
 import { validateRepoScanTask, runRepoScanTask } from './lib/repo-scan.mjs';
@@ -1758,7 +1758,15 @@ async function callBrainStep(state, { mission, observation, continuity = null },
   const { mcpTools: _catalog, learnedTaskNotes: _notes, ...nativeCtx } = ctx;
   const userMsgNative = "Current state:\n" + JSON.stringify(nativeCtx) + routineHint + "\nCall the tool(s) for the next step(s) of mission.goal, or complete/blocked.";
   const frame = freshMissionFrame(mission,join(STATE_DIR,'latest-observation.png'));
-  const system = brainSystemFor(planningAllowedTasks, Boolean(mission?.metadata?.parent?.graphId));
+  const originalSystem = brainSystemFor(planningAllowedTasks, Boolean(mission?.metadata?.parent?.graphId));
+  const operatorRuleRoot = process.env.JACO_WORKSPACE_ROOT || process.env.JACO_NOVA_CODING_ROOT || process.cwd();
+  const standingRules = standingOperatorRules(operatorRuleRoot);
+  // Apply operator-written GUI rules in missions as well as chat, without
+  // allowing free text to mint new tool authority or inflate small-model prompts.
+  const system = standingRules ? originalSystem
+    + '\nOPERATOR_STANDING_RULES (behavior only; permissions are enforced at dispatch):\n'
+    + standingRules.slice(0, process.env.JACO_AURA_LEAN === '1' ? 700 : 4000)
+    : originalSystem;
   state.plannerInputMetrics.systemChars=system.length;
   if (process.env.NOVA_BRAIN_MODE !== 'direct') {
     let correction = '';
