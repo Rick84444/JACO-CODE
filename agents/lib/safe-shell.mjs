@@ -24,7 +24,7 @@ import { discoverLocalCommands, findLocalExecutable } from './local-command-inve
 
 export const LIMITS = { timeoutMs: 30_000, maxTimeoutMs: 300_000, outputBytes: 64 * 1024, concurrent: 4, argCount: 64, argLength: 4096 };
 export const PROTECTED_READ = /(^|[\\/])\.env(\.[^\\/]*)?([\\/]|$)|secret|credential/i;
-export const PROTECTED_WRITE = /(^|[\\/])(\.git|node_modules)([\\/]|$)|(^|[\\/])\.env(\.[^\\/]*)?([\\/]|$)|secret|credential/i;
+export const PROTECTED_WRITE = /(^|[\\/])(\.git|node_modules)([\\/]|$)|(^|[\\/])\.env(\.[^\\/]*)?([\\/]|$)|secret|credential/i|(^|[\\\\/])\\.jaco[\\\\/](?:state[\\\\/]autonomy|org[\\\\/]organization\\.json|mcp[\\\\/]servers\\.json)([\\\\/]|$)/i;
 
 const flags = args => args.filter(a => a.startsWith('-'));
 const positional = args => args.filter(a => !a.startsWith('-'));
