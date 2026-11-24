@@ -68,3 +68,6 @@ extensions/jaco-vscode/package-lock.json
 /runtime/public/branding/aura-rig.glb
 /runtime/public/branding/aura-rig.glb.tmp-*
 /aura-rig-evidence/
+
+# Personal editor settings stay local.
+.vscode/settings.json

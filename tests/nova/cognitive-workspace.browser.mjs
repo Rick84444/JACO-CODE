@@ -437,6 +437,11 @@ try {
   await page.getByRole('button',{name:'Vad har du upptäckt?',exact:true}).click();
   await page.getByRole('button',{name:'Skicka meddelande',exact:true}).click();
   await page.getByText('Testsvaret använder de observerade händelserna. Uppdraget fortsätter.',{exact:true}).waitFor();
+  // A normal chat (operator 2026-11-24): the newest reply is the last message and is scrolled into view.
+  const chatOrder=await page.evaluate(()=>{const log=document.querySelector('.cognitive-chat-scroll');const replies=[...log.querySelectorAll('.cognitive-assistant-message')];const last=replies.at(-1);const box=last.getBoundingClientRect(),view=log.getBoundingClientRect();return {lastText:last.textContent,visible:box.top<view.bottom&&box.bottom>view.top,atBottom:log.scrollHeight-log.scrollTop-log.clientHeight<80};});
+  assert.match(chatOrder.lastText,/Testsvaret använder de observerade händelserna/,'the newest reply is at the bottom');
+  assert.equal(chatOrder.visible,true,'the newest reply is scrolled into view');
+  assert.equal(chatOrder.atBottom,true,'the chat follows the newest reply');
   assert.equal(requests.filter(r=>r.kind==='goal').length,0);
   assert.equal(requests.at(-1).body.interactionMode,'action');
   const context=requests.at(-1).body.ragContext.find(r=>r.source==='jaco://current-work').content;
