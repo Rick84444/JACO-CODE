@@ -13,7 +13,6 @@
 //   * Two modes: "read" (look, never change) and "write" (build, test, edit, commit). Destructive uses (recursive
 //     rm, git reset, git clean, git push, deleting a branch) are refused unless the operator enabled them in the
 //     server's environment (JACO_SHELL_ALLOW_DESTRUCTIVE=1, JACO_SHELL_ALLOW_PUSH=1); an agent cannot.
-//     Likewise JACO_SHELL_ALLOW_PACKAGE_INSTALL=1 lets npm install add registry packages to the project.
 //   * A minimal environment (no tokens or keys reach the command), a timeout, a cap on output, a cap on
 //     concurrent commands, and an append-only audit log with every command and refusal.
 import { spawn } from 'node:child_process';
@@ -21,11 +20,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { operatorApprovalCheck } from './operator-action-guard.mjs';
+import { standingToolAuthority } from './standing-tool-authority.mjs';
 import { discoverLocalCommands, findLocalExecutable } from './local-command-inventory.mjs';
 
 export const LIMITS = { timeoutMs: 30_000, maxTimeoutMs: 300_000, outputBytes: 64 * 1024, concurrent: 4, argCount: 64, argLength: 4096 };
 export const PROTECTED_READ = /(^|[\\/])\.env(\.[^\\/]*)?([\\/]|$)|secret|credential/i;
-export const PROTECTED_WRITE = /(^|[\\/])(\.git|node_modules)([\\/]|$)|(^|[\\/])\.env(\.[^\\/]*)?([\\/]|$)|secret|credential/i;
+export const PROTECTED_WRITE = /(^|[\\/])(\.git|node_modules)([\\/]|$)|(^|[\\/])\.env(\.[^\\/]*)?([\\/]|$)|secret|credential|(^|[\\/])\.jaco[\\/](?:state[\\/](?:autonomy|capabilities\.json(?:\.initialized)?)|org[\\/]organization\.json|mcp[\\/]servers\.json)([\\/]|$)/i;
 
 const flags = args => args.filter(a => a.startsWith('-'));
 const positional = args => args.filter(a => !a.startsWith('-'));
@@ -40,7 +40,7 @@ function gitClass(args) {
   const sub = args[0];
   if (!sub || sub.startsWith('-')) return { refuse: 'GIT_OPTIONS_BEFORE_SUBCOMMAND_NOT_ALLOWED' };
   const rest = args.slice(1);
-  if (rest.some(a => GIT_BLOCKED_OPTION.test(a))) return { refuse: 'GIT_OPTION_NOT_ALLOWED' };
+  if (rest.some((a, i) => GIT_BLOCKED_OPTION.test(a) && !(sub === 'switch' && i === 0 && a === '-c'))) return { refuse: 'GIT_OPTION_NOT_ALLOWED' };
   if (READ_GIT.has(sub)) return { mode: 'read' };
   switch (sub) {
     case 'branch': {
@@ -54,11 +54,28 @@ function gitClass(args) {
     case 'remote': return rest.length === 0 || (rest.length === 1 && rest[0] === '-v') || (['show', 'get-url'].includes(rest[0]) && rest.length === 2) ? { mode: 'read' } : { refuse: 'GIT_REMOTE_CHANGE_NOT_ALLOWED' };
     case 'push': return { mode: 'write', destructive: 'GIT_PUSH', push: true };
     case 'reset': case 'clean': case 'rebase': return { mode: 'write', destructive: `GIT_${sub.toUpperCase()}` };
-    case 'checkout': return has(rest, '-b', '-B') ? { mode: 'write' } : { mode: 'write', destructive: 'GIT_CHECKOUT_MAY_DISCARD_CHANGES' };
+    case 'checkout': case 'switch': {
+      // A bare checkout can silently restore a file when its name is not a ref.
+      // Use switch for the ordinary branch operation: Git itself rejects a
+      // conflicting dirty worktree and never falls back to restoring a path.
+      const target = value => typeof value === 'string' && (value === '-' || !value.startsWith('-'));
+      if (rest.length === 1 && target(rest[0]))
+        return { mode: 'write', args: ['switch', rest[0]] };
+      const create = sub === 'checkout' ? ['-b'] : ['-c', '--create'];
+      if (create.includes(rest[0]) && (rest.length === 2 || rest.length === 3)
+        && rest.slice(1).every(value => target(value) && value !== '-'))
+        return { mode: 'write' };
+      if (['--detach', '--track'].includes(rest[0]) && rest.length === 2 && target(rest[1]))
+        return { mode: 'write' };
+      // Force/reset, path restoration, merge-on-switch and unrecognized
+      // combinations are not ordinary branch navigation.
+      return { mode: 'write', destructive: sub === 'checkout'
+        ? 'GIT_CHECKOUT_MAY_DISCARD_CHANGES' : 'GIT_SWITCH_MAY_DISCARD_CHANGES' };
+    }
     case 'restore': return has(rest, '--staged') && !has(rest, '--worktree', '-W') ? { mode: 'write' } : { mode: 'write', destructive: 'GIT_RESTORE_DISCARDS_CHANGES' };
     case 'stash': return ['drop', 'clear'].includes(rest[0]) ? { mode: 'write', destructive: 'GIT_STASH_DROP' } : { mode: 'write' };
     case 'pull': return has(rest, '--ff-only') ? { mode: 'write' } : { mode: 'write', destructive: 'GIT_PULL_MAY_MERGE' };
-    case 'add': case 'commit': case 'switch': case 'merge': case 'fetch': case 'mv': case 'rm': case 'init': case 'apply': case 'cherry-pick': case 'revert': return { mode: 'write' };
+    case 'add': case 'commit': case 'merge': case 'fetch': case 'mv': case 'rm': case 'init': case 'apply': case 'cherry-pick': case 'revert': return { mode: 'write' };
     default: return { refuse: `GIT_SUBCOMMAND_NOT_ALLOWED:${sub}` };
   }
 }
@@ -86,6 +103,31 @@ const scriptOf = args => {
   return first && /[\\/.]/.test(first) ? [first] : [];
 };
 
+// npm is a normal workspace development capability, not a per-package
+// approval request. Refuse options that redirect installs outside this workspace
+// and non-registry specs (file:, git:, URL) until their target can be scoped.
+const NPM_INSTALL_FLAGS = new Set([
+  '-D', '--save-dev', '-E', '--save-exact', '--save', '-P', '--save-prod',
+  '--no-save', '--ignore-scripts', '--legacy-peer-deps', '--strict-peer-deps',
+  '--no-audit', '--no-fund', '--offline', '--prefer-offline', '--package-lock-only',
+]);
+const NPM_PACKAGE = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:@(?:[~^]?[0-9][a-z0-9.+_-]*|latest|next|beta))?$/i;
+export function npmWorkspaceCheck(args) {
+  if (!Array.isArray(args) || !args.length) return 'NPM_SUBCOMMAND_NOT_ALLOWED';
+  const command = args[0];
+  if (command === '--version' || command === '-v') return null;
+  if (['test', 't', 'run', 'run-script', 'ci', 'ls', 'list', 'outdated', 'view'].includes(command)) return null;
+  if (!['install', 'i', 'uninstall', 'remove', 'rm', 'update', 'up'].includes(command)) return 'NPM_SUBCOMMAND_NOT_ALLOWED';
+  for (const arg of args.slice(1)) {
+    if (arg.startsWith('-')) {
+      if (!NPM_INSTALL_FLAGS.has(arg)) return 'NPM_INSTALL_OPTION_NOT_ALLOWED:' + arg;
+    } else if (!NPM_PACKAGE.test(arg)) {
+      return 'NPM_PACKAGE_SPEC_NOT_ALLOWED:' + String(arg).slice(0, 80);
+    }
+  }
+  return null;
+}
+
 export const PROGRAMS = {
   ls: { mode: 'read', paths: a => positional(a) },
   cat: { mode: 'read', paths: a => positional(a) },
@@ -104,12 +146,8 @@ export const PROGRAMS = {
   git: { dynamic: gitClass, paths: a => { const i = a.indexOf('--'); return i >= 0 ? a.slice(i + 1) : []; } },
   node: { mode: 'write', script: true, check: a => (a[0] === '--version' || a[0] === '-v' ? null : (a.find(x => /^(-e|-p|--eval|--print|-r|--require|--import|--input-type|--inspect|--inspect-brk|-i|--interactive|--loader|--experimental-loader|--env-file|--env-file-if-exists)(=|$)/.test(x)) ? 'NODE_INLINE_CODE_NOT_ALLOWED' : null)) },
   python3: { mode: 'write', script: true, check: a => (a[0] === '--version' ? null : (a.find(x => /^(-c|-m|-i)$/.test(x)) ? 'PYTHON_INLINE_CODE_NOT_ALLOWED' : null)) },
-  npm: { mode: 'write', check: a => {
-    if (a[0] === '--version' || a[0] === '-v') return null;
-    if (['test', 't', 'run', 'run-script', 'ci', 'ls', 'list', 'outdated', 'view'].includes(a[0])) return null;
-    if (a[0] === 'install' || a[0] === 'i') return positional(a.slice(1)).length ? 'NPM_INSTALL_OF_PACKAGES_NOT_ALLOWED' : null;
-    return 'NPM_SUBCOMMAND_NOT_ALLOWED';
-  }, readSub: ['ls', 'list', 'outdated', 'view'], paths: () => [] },
+  npm: { mode: 'write', check: npmWorkspaceCheck,
+    readSub: ['ls', 'list', 'outdated', 'view'], paths: () => [] },
   bash: { mode: 'write', interpreter: true, paths: scriptOf, check: interpreterCheck },
   powershell: { mode: 'write', interpreter: true, paths: scriptOf, check: interpreterCheck },
   pwsh: { mode: 'write', interpreter: true, paths: scriptOf, check: interpreterCheck },
@@ -162,17 +200,6 @@ export function pushRefusal(args, env = process.env) {
   }
   return null;
 }
-// With package installs enabled: registry packages into this project only. A global install changes
-// the machine outside the workspace; a git, URL, tarball or path spec bypasses the registry.
-const INSTALL_OPTION_ALLOWED = /^(-D|--save-dev|-E|--save-exact|-O|--save-optional|--save-peer|--no-save|--ignore-scripts|--no-audit|--no-fund|--prefer-offline|--legacy-peer-deps)$/;
-const REGISTRY_SPEC = /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*(@[A-Za-z0-9.^~<>=*|+ -]{1,60})?$/;
-export function packageInstallRefusal(args) {
-  const rest = args.slice(1);
-  const option = rest.find(a => a.startsWith('-') && !INSTALL_OPTION_ALLOWED.test(a));
-  if (option) return `NPM_INSTALL_OPTION_NOT_ALLOWED:${option}`;
-  const spec = positional(rest).find(p => !REGISTRY_SPEC.test(p) || /^(npm|file|git|http|https|link|github):/i.test(p));
-  return spec ? `NPM_INSTALL_SPEC_NOT_FROM_REGISTRY:${spec.slice(0, 80)}` : null;
-}
 const linkedDependencies = dir => { try { return fs.lstatSync(path.join(dir, 'node_modules')).isSymbolicLink(); } catch { return false; } };
 
 // Why this command may not run, or its mode. Pure: no process is started here.
@@ -182,31 +209,35 @@ export function classify(command, args, { workspace, cwd = workspace, env = proc
   if (!Array.isArray(args) || args.length > LIMITS.argCount || args.some(a => typeof a !== 'string' || a.length > LIMITS.argLength || a.includes('\0'))) return refuse('ARGUMENTS_INVALID');
   const spec = PROGRAMS[command];
   if (!spec || (INTERPRETER_NAMES.has(command) && !interpretersAllowed(env))) return refuse(`PROGRAM_NOT_ALLOWED:${command}`);
-  let mode = spec.mode, destructive = null, push = false;
-  if (spec.dynamic) { const c = spec.dynamic(args); if (c.refuse) return refuse(c.refuse); mode = c.mode; destructive = c.destructive || null; push = Boolean(c.push); }
+  let mode = spec.mode, destructive = null, push = false, executionArgs = args;
+  if (spec.dynamic) { const c = spec.dynamic(args); if (c.refuse) return refuse(c.refuse); mode = c.mode; destructive = c.destructive || null; push = Boolean(c.push); executionArgs = c.args || args; }
   if (command === 'npm' && spec.readSub.includes(args[0])) mode = 'read';
   if (command === 'node' || command === 'python3' || command === 'python' || command === 'py') { if (args[0] === '--version' || args[0] === '-v') mode = 'read'; }
   // With interpreters on, node and python run inline code too, under the same checks as the other interpreters.
   const inline = interpretersAllowed(env) && (command === 'node' || command === 'python3');
-  let problem = inline && args[0] !== '--version' && args[0] !== '-v' ? interpreterCheck(args) : spec.check?.(args);
-  // The operator may let agents add packages from the npm registry (JACO_SHELL_ALLOW_PACKAGE_INSTALL=1).
-  if (problem === 'NPM_INSTALL_OF_PACKAGES_NOT_ALLOWED' && env.JACO_SHELL_ALLOW_PACKAGE_INSTALL === '1') problem = packageInstallRefusal(args);
-  else if (problem === 'NPM_INSTALL_OF_PACKAGES_NOT_ALLOWED') problem += ' (the operator enables it with JACO_SHELL_ALLOW_PACKAGE_INSTALL=1)';
-  if (problem) return refuse(problem);
+  const problem = inline && args[0] !== '--version' && args[0] !== '-v' ? interpreterCheck(args) : spec.check?.(args); if (problem) return refuse(problem);
   destructive = destructive || spec.destructiveIf?.(args) || null;
   if (requested === 'read' && mode !== 'read') return refuse('WRITE_COMMAND_IN_READ_MODE');
-  if (push && env.JACO_SHELL_ALLOW_PUSH !== '1') return refuse('GIT_PUSH_NOT_ENABLED (the operator enables it with JACO_SHELL_ALLOW_PUSH=1)');
+  // The standing GUI policy replaces legacy env gates after operator signing.
+  // Legacy installations retain their previous switches until configured.
+  const pushAuthority = push ? standingToolAuthority(workspace, 'PUBLISH') : null;
+  if (push && ['DENY', 'REVIEW'].includes(pushAuthority.status)) return refuse('GIT_PUSH_STANDING_MANDATE_' + pushAuthority.status);
+  if (push && !pushAuthority.allowed && env.JACO_SHELL_ALLOW_PUSH !== '1') return refuse('GIT_PUSH_NOT_ENABLED (enable Publish in the standing mandate GUI)');
   if (push) { const problem = pushRefusal(args, env); if (problem) return refuse(problem); }
-  // A mission worktree borrows the project's packages through a link; an install there would rewrite the project's own.
-  if (command === 'npm' && ['ci', 'install', 'i'].includes(args[0]) && linkedDependencies(cwd || workspace)) return refuse('NPM_INSTALL_INTO_LINKED_DEPENDENCIES (this worktree uses the project\'s installed packages)');
-  if (destructive && !push && env.JACO_SHELL_ALLOW_DESTRUCTIVE !== '1') return refuse(`DESTRUCTIVE_NOT_ENABLED:${destructive} (the operator enables it with JACO_SHELL_ALLOW_DESTRUCTIVE=1)`);
+  // The SafeShell executor detaches linked node_modules before an authorized
+  // npm mutation, so a mission can install its own dependencies without ever
+  // writing through the symlink into the operator's primary checkout.
+  const destructiveAuthority = destructive && !push ? standingToolAuthority(workspace, 'DESTRUCTIVE') : null;
+  if (destructiveAuthority && ['DENY', 'REVIEW'].includes(destructiveAuthority.status)) return refuse('DESTRUCTIVE_STANDING_MANDATE_' + destructiveAuthority.status);
+  if (destructiveAuthority && !destructiveAuthority.allowed && env.JACO_SHELL_ALLOW_DESTRUCTIVE !== '1')
+    return refuse(`DESTRUCTIVE_NOT_ENABLED:${destructive} (enable Destructive in the standing mandate GUI)`);
   // A script argument for node/python must exist inside the workspace.
   const pathArgs = [...(spec.paths ? spec.paths(args) : []), ...(spec.script && mode === 'write' ? (inline ? scriptOf(args) : positional(args).slice(0, 1)) : [])];
   const confinement = confine(pathArgs, { workspace, cwd, write: mode === 'write' || Boolean(destructive) });
   if (confinement) return refuse(confinement);
   if (command === 'rm' && positional(args).some(p => path.resolve(cwd, p) === path.resolve(workspace))) return refuse('RM_OF_WORKSPACE_ROOT_NOT_ALLOWED');
   if (command === 'rm' && !positional(args).length) return refuse('RM_NEEDS_A_PATH');
-  return { ok: true, mode, destructive, args: [...args] };
+  return { ok: true, mode, destructive, args: [...executionArgs] };
 }
 
 // The real path of the deepest existing part of p (so a symlink out of the workspace is seen even for a file not yet created).
@@ -283,8 +314,8 @@ export class SafeShell {
     local.capabilities=local.capabilities.map(tool=>({ ...tool, route: INTERPRETER_NAMES.has(tool.name)&&!interpretersAllowed(this.env) ? 'interpreter disabled by operator; do not bypass' : Object.hasOwn(PROGRAMS,tool.name) ? 'shell_read or shell_run according to command policy' : 'authorized mission shell only if permitted (not a SafeShell allowlist command)' }));
     return { workspace: this.workspace, platform: this.platform, shell: 'none (argv only, no interpretation)', programs: Object.keys(PROGRAMS), local, limits: { ...LIMITS },
       destructiveEnabled: this.env.JACO_SHELL_ALLOW_DESTRUCTIVE === '1', pushEnabled: this.env.JACO_SHELL_ALLOW_PUSH === '1',
-      interpretersEnabled: interpretersAllowed(this.env), packageInstallEnabled: this.env.JACO_SHELL_ALLOW_PACKAGE_INSTALL === '1',
-      note: 'programs is the bounded shell policy list; local.programs is actual PATH discovery; local.capabilities describes intended uses and routes, not verified execution or a grant to execute every binary. Use shell_run for permitted writes or the authorized mission shell for other commands. npm: test, run, ci, ls, install without packages' + (this.env.JACO_SHELL_ALLOW_PACKAGE_INSTALL === '1' ? '; install <registry package> into this project (no -g, no git/URL/path specs).' : '.') };
+      interpretersEnabled: interpretersAllowed(this.env),
+      note: 'programs is the bounded shell policy list; local.programs is actual PATH discovery; local.capabilities describes intended uses and routes, not verified execution or a grant to execute every binary. Use shell_run for permitted writes or the authorized mission shell for other commands. npm: test, run, ci, ls, install/uninstall/update registry packages within the workspace.' };
   }
   async run({ command, args = [], cwd = '.', timeoutSeconds, mode = 'write' } = {}) {
     const started = Date.now();
@@ -297,6 +328,21 @@ export class SafeShell {
     const verdict = classify(command, args, { workspace: this.workspace, cwd: where, env: this.env, mode });
     if (!verdict.ok) return refused(verdict.reason);
     if (running >= LIMITS.concurrent) return refused('TOO_MANY_COMMANDS_RUNNING');
+    // Mission worktrees may borrow the main checkout's node_modules via a
+    // symlink. Unlink ONLY that symlink; never mutate or delete its target.
+    // npm then creates local dependencies for this worktree as needed.
+    if (command === 'npm' && ['ci','install','i','uninstall','remove','rm','update','up'].includes(args[0])
+      && linkedDependencies(where)) {
+      const link = path.join(where, 'node_modules');
+      try {
+        if (!fs.lstatSync(link).isSymbolicLink()) return refused('NPM_DEPENDENCY_LINK_CHANGED');
+        fs.unlinkSync(link);
+        this.#audit({ mode: 'write', command: 'npm', outcome: 'dependency-link-detached',
+          cwd: path.relative(this.workspace, where) || '.', target: 'node_modules' });
+      } catch (error) {
+        return refused('NPM_DEPENDENCY_LINK_DETACH_FAILED:' + String(error?.code || 'unknown'));
+      }
+    }
     const timeoutMs = Math.min(LIMITS.maxTimeoutMs, Math.max(1000, (Number(timeoutSeconds) || LIMITS.timeoutMs / 1000) * 1000));
     const program = resolveProgram(command, this.platform, process.execPath, fs.existsSync, this.env);
     running++;

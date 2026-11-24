@@ -50,7 +50,8 @@ export const AUTONOMY = {
   4: { name: 'Approver', role: 'The agent asks only at blockers and before risky outbound actions', needsApproval: ['high-external'] },
   5: { name: 'Observer', role: 'The agent works freely within its mandate; you hold the emergency stop', needsApproval: [] },
 };
-const GRANT_DAYS = { default: 30, max: 90 };
+// Operator-granted permissions persist until revoked; explicit timed delegation is optional.
+const GRANT_DAYS = { default: null, max: 90 };
 
 // 0–100 working-style weights. Capped traits govern autonomy, so a report never exceeds its manager's.
 export const TRAITS = {
@@ -421,8 +422,9 @@ export class AgentOrganization {
       if (actor !== OPERATOR && !this.authorize(actor, key).allowed) throw new Error('GRANTOR_LACKS_PERMISSION');
       let expiry = {};
       if (permission.risk === 'high') {
-        if (!Number.isInteger(days) || days < 1 || days > GRANT_DAYS.max) throw new Error('GRANT_DAYS_INVALID');
-        expiry = { riskAcceptedAt: this.now(), expiresAt: new Date(Date.parse(this.now()) + days * 86400_000).toISOString() };
+        if (days !== null && (!Number.isInteger(days) || days < 1 || days > GRANT_DAYS.max)) throw new Error('GRANT_DAYS_INVALID');
+        expiry = { riskAcceptedAt: this.now(),
+          ...(days === null ? {} : { expiresAt: new Date(Date.parse(this.now()) + days * 86400_000).toISOString() }) };
       }
       agent.mandate.permissions[key] = { grantedBy: actor, grantedAt: this.now(), ...expiry };
     }

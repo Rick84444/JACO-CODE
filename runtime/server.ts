@@ -925,7 +925,7 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
       toolsSkills: ['Chrome CDP', 'Browser Hands-Off', 'Nova Traction'],
     });
     seerLiveWorkstream.record({ actor: event.actor, type: event.type, message: event.message, verified: event.verified, receipt: event.receipt });
-  });
+  }, () => modelRelay.mandates);
   const continuumSurface = createContinuumRouter({ workspaceRoot: WORKSPACE_ROOT, browserSessions: browserSurface.sessions, requireAuth });
 
   const modelRelay = createModelRelayRouter({
@@ -3507,7 +3507,8 @@ const notifyPhone = async (action) => {
       const groups = taskCatalog(Object.keys(TASK_FIELDS)).map((group: any) => ({ ...group, tasks: group.tasks.map((task: any) => ({ ...task, enabled: policy.isTaskEnabled(task.id) })) }));
       const skills = listSkills(skillRoots()).map((skill: any) => ({ id: skill.id, name: skill.name, description: skill.description, enabled: policy.isSkillEnabled(skill.id) }));
       res.setHeader('Cache-Control', 'no-store');
-      res.json({ success: true, schema: policy.snapshot().schema, updatedAt: policy.snapshot().updatedAt, groups, skills, alwaysAsk: ALWAYS_ASK });
+      const snapshot = policy.snapshot();
+      res.json({ success: true, schema: snapshot.schema, status: snapshot.status, updatedAt: snapshot.updatedAt, groups, skills, alwaysAsk: ALWAYS_ASK });
     } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
   });
   app.patch('/api/aura/capabilities', requireLocalUi, (req, res) => {
@@ -3517,7 +3518,7 @@ const notifyPhone = async (action) => {
       const snapshot = req.body?.reset === true ? policy.reset('operator') : policy.update({ tasks: req.body?.tasks, skills: req.body?.skills }, 'operator');
       seerLiveWorkstream.record({ actor: 'Aura Capabilities', type: 'capabilities.changed', message: `Turned off: ${snapshot.disabledTasks.length} task type(s), ${snapshot.disabledSkills.length} skill(s)`, verified: true, receipt: { disabledTasks: snapshot.disabledTasks, disabledSkills: snapshot.disabledSkills } });
       res.json({ success: true, ...snapshot });
-    } catch (error: any) { res.status(/CAPABILITY_INVALID/.test(error?.message) ? 400 : 500).json({ success: false, error: error?.message || String(error) }); }
+    } catch (error: any) { res.status(/CAPABILITY_STATE_INVALID/.test(error?.message) ? 409 : /CAPABILITY_INVALID/.test(error?.message) ? 400 : 500).json({ success: false, error: error?.message || String(error) }); }
   });
   // What JACO learned from its missions, waiting for the operator (agents/lib/skill-learning.mjs).
   app.get('/api/aura/workbench/skill-proposals', requireLocalUi, (_req, res) => {
@@ -4394,7 +4395,7 @@ const notifyPhone = async (action) => {
   app.use('/api/desktop/hands-off', createDesktopRouter(WORKSPACE_ROOT, RELEASE_ROOT, requireAuth, event => {
     seerLiveWorkstream.update({ activeModule: 'DesktopHandsOff', phase: event.verified ? 'VERIFYING' : 'DEGRADED' });
     seerLiveWorkstream.record({ actor: event.actor, type: event.type, message: event.message, verified: event.verified });
-  }, desktopHandsOff));
+  }, desktopHandsOff, modelRelay.mandates));
 
   // A read-only operator view into the *original* Laser Vision PNG. Never
   // capture the screen or execute tools in this HTTP route. Only a recent
@@ -4466,6 +4467,60 @@ const notifyPhone = async (action) => {
       res.json({ success: true, mode: target.mode, path: target.path });
     } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 120) }); }
   });
+  // Persistent operator mandate editor. This is a view of the existing model-relay
+  // store, not a second policy engine. Changes require the operator mutation
+  // credential, while ordinary model/tool credentials cannot rewrite authority.
+  const standingMandateId = 'operator-level5-default';
+  // Flush cached per-surface grants after an operator edits/revokes the source
+  // mandate. Relay checks the store on every action; this additionally protects
+  // existing direct adapter sessions against stale scope until their lease ends.
+  const flushStandingSurfaceGrants = async () => {
+    const errors: string[] = [];
+    try { browserSurface.sessions.getClient()?.configureGrant({ enabled: false }); }
+    catch (error: any) { errors.push('BROWSER:' + String(error?.message || error).slice(0, 120)); }
+    try { desktopHandsOff.configureGrant({ enabled: false }); }
+    catch (error: any) { errors.push('DESKTOP:' + String(error?.message || error).slice(0, 120)); }
+    try { await handsOff.configureGrant({ enabled: false, allowed_packages: [], allow_typing: false,
+      allow_gestures: false, allow_navigation: false, expires_at: new Date().toISOString() }); }
+    catch (error: any) { errors.push('ANDROID:' + String(error?.message || error).slice(0, 120)); }
+    for (const surface of ['BROWSER', 'DESKTOP', 'ANDROID'] as const) {
+      const lease = actuatorLeases.get(surface);
+      if (lease) actuatorLeases.release(surface, lease.holder);
+    }
+    return errors;
+  };
+  app.get('/api/aura/standing-mandate', requireLocalUi, (_req, res) => {
+    const mandate = modelRelay.mandates.get(standingMandateId);
+    if (!mandate) return res.status(404).json({ success: false, error: 'STANDING_MANDATE_NOT_CONFIGURED' });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ success: true, mandate, active: modelRelay.mandates.isActive(standingMandateId),
+      mutationAuthRequired: organizationMutationAuthRequired() });
+  });
+  app.patch('/api/aura/standing-mandate', requireLocalUi, requireOrganizationMutationAuth, async (req, res) => {
+    try {
+      const mandate = modelRelay.mandates.updateOperator(standingMandateId, req.body?.patch, req.body?.expectedRevision);
+      const propagationErrors = await flushStandingSurfaceGrants();
+      res.json({ success: true, mandate, active: modelRelay.mandates.isActive(standingMandateId), propagationErrors });
+    } catch (error: any) {
+      const message = String(error?.message || error);
+      res.status(message === 'MANDATE_REVISION_CONFLICT' ? 409 : 400).json({ success: false, error: message });
+    }
+  });
+  app.post('/api/aura/standing-mandate/:decision', requireLocalUi, requireOrganizationMutationAuth, async (req, res) => {
+    try {
+      const decision = req.params.decision;
+      if (!['sign', 'revoke'].includes(decision)) return res.status(400).json({ success: false, error: 'MANDATE_DECISION_INVALID' });
+      const current = modelRelay.mandates.get(standingMandateId);
+      if (!current) return res.status(404).json({ success: false, error: 'STANDING_MANDATE_NOT_CONFIGURED' });
+      if (current.revision !== req.body?.expectedRevision) return res.status(409).json({ success: false, error: 'MANDATE_REVISION_CONFLICT' });
+      const mandate = decision === 'sign' ? modelRelay.mandates.sign(standingMandateId) : modelRelay.mandates.revoke(standingMandateId);
+      // A revoke invalidates already-propagated browser/desktop/Android grants;
+      // a later authorized relay action reconfigures only its required surface.
+      const propagationErrors = decision === 'revoke' ? await flushStandingSurfaceGrants() : [];
+      res.json({ success: true, mandate, active: modelRelay.mandates.isActive(standingMandateId), propagationErrors });
+    } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error) }); }
+  });
+
   // Autonomy clock (GUI): a time-boxed, operator-signed mandate. Financial actions stay on REVIEW in code.
   const CLOCK_NAME = 'Autonomi-klocka';
   const clockMandates = () => modelRelay.mandates.list().filter((m: any) => [CLOCK_NAME, COMMERCIAL_CLOCK].includes(m.name) && modelRelay.mandates.isActive(m.id));

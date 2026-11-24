@@ -32,6 +32,12 @@ test('coding contract enforces scope, contracted commands and budgets', () => {
   assert.deepEqual(budget,{max_steps:40,max_tool_calls:120,max_failures:3,max_duration_ms:2*60*60_000},'longer default runs (operator 2026-10-02)');
 });
 
+test('even a broad coding contract cannot change the operator capability policy', () => {
+  const contract=normalizeCodingContract({...contractInput,scope:{allowed:['**'],forbidden:[]}});
+  for (const path of ['.jaco/state/capabilities.json','nested/.jaco/state/capabilities.json'])
+    assert.throws(()=>validateCodingTask({type:'repo-write',data:{path,content:'{}'}},contract),/CODING_SCOPE_DENIED/);
+});
+
 test('tests and falsifier must be newer than the latest write before commit', () => {
   const contract = normalizeCodingContract(contractInput);
   const oldTest={ok:true,verified:true,type:'repo-test',actionId:'m:turn:1',result:{kind:'test'}};

@@ -14,6 +14,7 @@
 // secrets, credentials, node_modules). Remote (http) servers stay read-only for agents.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 import path from 'node:path';
 import { HttpMcpClient } from './httpMcpClient.mjs';
 
@@ -42,7 +43,7 @@ export const AGENT_ACCESS = ['off', 'read', 'write'];
 // Logos the IDE ships (src/components/mcpLogos.ts); anything else shows the MCP logo.
 export const ICONS = ['jaco', 'mcp', 'git', 'github', 'cloudflare', 'huggingface', 'nodejs'];
 // Paths an agent may never write through a tool, whatever the server's access.
-const PROTECTED_PATH = /(^|[\\/])(\.env(\.[^\\/]*)?|\.git|node_modules)([\\/]|$)|secret|credential/i;
+const PROTECTED_PATH = /(^|[\\/])(\.env(\.[^\\/]*)?|\.git|node_modules)([\\/]|$)|secret|credential|(^|[\\/])\.jaco[\\/](?:state[\\/](?:autonomy|capabilities\.json(?:\.initialized)?)|org[\\/]organization\.json|mcp[\\/]servers\.json)([\\/]|$)/i;
 
 function commercialDiscoveryServers() {
   return {
@@ -141,12 +142,12 @@ function withAccess(def, s = {}) {
 }
 
 // Why an agent may not run this tool, or null when it may.
-export function agentRefusal(def, tool, args = {}) {
+export function agentRefusal(def, tool, args = {}, { allowRemoteWrite = false } = {}) {
   if (def.agentAccess === 'off') return 'MCP_AGENT_ACCESS_OFF';
   if (def.deny?.includes(tool.name)) return 'MCP_TOOL_DENIED';
   const reads = Boolean(tool.readOnly || KNOWN_READ_ONLY[def.id]?.has(tool.name));
   if (reads) return null;
-  if (def.transport === 'http' && !localBridge(def)) return 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY';
+  if (def.transport === 'http' && !localBridge(def) && !allowRemoteWrite) return 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY';
   // A single scoped, append-only coordination exception for the bundled JacoEdit,
   // never a general write grant. It is available only to the built-in stdio server;
   // overriding it with a user command or remote MCP removes this trusted flag.
@@ -451,12 +452,25 @@ export class StdioMcpHost {
 
   // Status without starting anything: what the IDE shows on every refresh.
   status() {
+    const root = mcpAuthorityRoot(this);
+    const authority = Object.fromEntries(['READ','LOCAL_MUTATION','EXTERNAL_MUTATION','PUBLISH']
+      .map(consequence => [consequence, standingToolAuthority(root, consequence)]));
     return Object.entries(this.servers()).map(([id, def]) => {
       const c = this.clients.get(id);
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
       if (def.validationError) return { id, name: def.name, role: def.role, transport: 'http', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
       const sameLaunch = Boolean(c && launchKey(c.def) === launchKey(def));
-      const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => ({ ...t, readOnly: Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name)), agentAllowed: agentRefusal(def, t) === null }));
+      const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => {
+        const reads = Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name));
+        const consequence = reads ? 'READ' : id === 'git' && /push|merge|release|publish/i.test(t.name) ? 'PUBLISH'
+          : ['shell','filesystem','git','repo','editor'].includes(id) ? 'LOCAL_MUTATION' : 'EXTERNAL_MUTATION';
+        const switchesOn = operatorTaskEnabled(root, reads ? 'mcp-call' : 'mcp-write')
+          && (id !== 'shell' || operatorTaskEnabled(root, 'shell'));
+        const decision = authority[consequence];
+        return { ...t, readOnly: reads, agentAllowed: switchesOn
+          && decision.status !== 'DENY' && decision.status !== 'REVIEW'
+          && agentRefusal(def, t, {}, { allowRemoteWrite: authority.EXTERNAL_MUTATION.allowed }) === null };
+      });
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
         credentialEnv: id === 'huggingface' ? def.tokenEnv || '' : undefined,
         credentialConfigured: def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
@@ -504,7 +518,22 @@ export class StdioMcpHost {
     if (!tool) { done('failed', `MCP_TOOL_UNKNOWN:${id}.${name}`); throw Object.assign(new Error(`MCP_TOOL_UNKNOWN:${id}.${name}`), { dispatchState: 'NOT_DISPATCHED' }); }
     name = tool.name;
     const reads = Boolean(tool.readOnly || KNOWN_READ_ONLY[id]?.has(name));
-    const refusal = actor === 'agent' ? agentRefusal(c.def, tool, args) || (readOnly && !reads ? 'MCP_TOOL_NOT_READ_ONLY' : null)
+    // Inspect the current signed operator mandate on EVERY dispatch. Tool
+    // discovery and an earlier chat/misson approval are not execution grants.
+    const consequence = reads ? 'READ'
+      : id === 'git' && /push|merge|release|publish/i.test(name) ? 'PUBLISH'
+      : ['shell', 'filesystem', 'git', 'repo', 'editor'].includes(id) ? 'LOCAL_MUTATION'
+      : 'EXTERNAL_MUTATION';
+    const root = mcpAuthorityRoot(this);
+    const taskSwitches = [reads ? 'mcp-call' : 'mcp-write', ...(id === 'shell' ? ['shell'] : [])];
+    const disabled = actor === 'agent' ? taskSwitches.find(task => !operatorTaskEnabled(root, task)) : null;
+    const authority = actor === 'agent' ? standingToolAuthority(root, consequence) : null;
+    const refusal = actor === 'agent'
+      ? (disabled ? 'TASK_TURNED_OFF_BY_OPERATOR:' + disabled
+        : authority.status === 'DENY' || authority.status === 'REVIEW'
+          ? 'MCP_STANDING_MANDATE_' + authority.status
+          : agentRefusal(c.def, tool, args, { allowRemoteWrite: consequence === 'EXTERNAL_MUTATION' && authority.allowed })
+            || (readOnly && !reads ? 'MCP_TOOL_NOT_READ_ONLY' : null))
       : c.def.transport === 'http' && !tool.readOnly && !localBridge(c.def) ? 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY' : null;
     if (refusal) { done('refused', `${refusal}:${id}.${name}`); throw Object.assign(new Error(`${refusal}:${id}.${name}`), { dispatchState: 'NOT_DISPATCHED' }); }
     try {

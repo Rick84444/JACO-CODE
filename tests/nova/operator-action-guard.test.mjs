@@ -84,6 +84,37 @@ test('a harmful action blocks the mission until the operator approves exactly th
   assert.throws(() => control.begin(id, { ...leased(control, id), task: shell('rm -rf docs') }), /OPERATOR_APPROVAL_REQUIRED/);
 });
 
+test('standing operator publish permission applies to ordinary missions without a coding contract', t => {
+  const control = setup(t);
+  const root = control.bus.workspaceRoot;
+  const file = path.join(root,'.jaco','state','autonomy','mandates.json');
+  fs.mkdirSync(path.dirname(file),{recursive:true});
+  const decide = publish => fs.writeFileSync(file,JSON.stringify([{
+    id:'operator-level5-default', enabled:true, signedByOperator:true, validity:'STANDING',
+    expiresAt:null, decisions: { READ:'ALLOW', LOCAL_MUTATION:'ALLOW',
+      EXTERNAL_MUTATION:'ALLOW', PUBLISH:publish, AUTH:'ALLOW', SECURITY:'ALLOW',
+      DESTRUCTIVE:'DENY',FINANCIAL:'REVIEW' }
+  }]));
+  decide('ALLOW');
+  const {id} = control.create({goal:'Publish a scoped npm package', idempotencyKey:'standing-publish',
+    allowedTasks:['shell']});
+  const lease=leased(control,id);
+  const action=control.begin(id,{...lease,task:shell('npm publish')});
+  assert.equal(action.type,'shell','signed standing mandate removes repeated publish prompt');
+  control.finish(id,{...lease,actionId:action.id,receipt:{ok:true,verified:true}});
+  decide('DENY');
+  assert.throws(()=>control.begin(id,{...leased(control,id),task:shell('npm publish')}),/STANDING_MANDATE_DENY:PUBLISH/);
+});
+
+test('standing approvals bypass only approved outward categories, not hard limits', () => {
+  const approved=['publish-or-deploy','external-write','send-in-operator-name','sign-in'];
+  assert.equal(operatorApprovalCheck(shell('npm publish'),{standingApproved:approved}),null);
+  assert.equal(operatorApprovalCheck({type:'mcp-write',data:{server:'gmail',tool:'send_message'}},{standingApproved:approved}),null);
+  assert.ok(operatorApprovalCheck(shell('git push --force origin main'),{standingApproved:approved}));
+  assert.ok(operatorApprovalCheck(shell('gh repo delete owner/repo'),{standingApproved:approved}));
+  assert.ok(operatorApprovalCheck(shell('rm -rf /'),{standingApproved:approved}));
+});
+
 test('ordinary shell work runs without asking', t => {
   const control = setup(t);
   const { id } = control.create({ goal: 'run tests', idempotencyKey: 'gate-2', allowedTasks: ['shell'] });

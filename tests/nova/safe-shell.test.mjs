@@ -53,6 +53,26 @@ test('paths stay inside the workspace, symlinks included, and secrets are never 
   assert.match(c(ws, 'touch', ['node_modules/x']).reason, /PROTECTED/);
 });
 
+test('standing publish and destructive GUI selections replace legacy shell env switches', () => {
+  const ws = workspace();
+  const file = path.join(ws, '.jaco', 'state', 'autonomy', 'mandates.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const save = (publish, destructive) => fs.writeFileSync(file, JSON.stringify([{
+    id: 'operator-level5-default', enabled: true, signedByOperator: true,
+    validity: 'STANDING', expiresAt: null,
+    decisions: { PUBLISH: publish, DESTRUCTIVE: destructive, LOCAL_MUTATION: 'ALLOW' }
+  }]));
+  save('ALLOW','ALLOW');
+  assert.equal(c(ws, 'git', ['push', 'origin', 'aura/work']).ok, true);
+  assert.equal(c(ws, 'rm', ['-r', 'src']).ok, true);
+  assert.match(c(ws, 'git', ['push', 'origin', 'main']).reason, /GIT_PUSH_PROTECTED_BRANCH/);
+  assert.match(c(ws, 'touch', ['.jaco/state/autonomy/mandates.json']).reason, /PROTECTED_PATH/);
+  assert.match(c(ws, 'touch', ['.jaco/state/capabilities.json']).reason, /PROTECTED_PATH/);
+  save('DENY','DENY');
+  assert.match(c(ws, 'git', ['push', 'origin', 'aura/work'], { env: { JACO_SHELL_ALLOW_PUSH: '1' } }).reason, /GIT_PUSH_STANDING_MANDATE_DENY/);
+  assert.match(c(ws, 'rm', ['-r', 'src'], { env: { JACO_SHELL_ALLOW_DESTRUCTIVE: '1' } }).reason, /DESTRUCTIVE_STANDING_MANDATE_DENY/);
+});
+
 test('git: read subcommands read, the rest write, and options that run programs or leave the repository are refused', () => {
   const ws = workspace();
   for (const sub of ['status', 'diff', 'log', 'show', 'blame', 'ls-files', 'rev-parse']) assert.equal(c(ws, 'git', [sub], { mode: 'read' }).ok, true, sub);
@@ -92,7 +112,43 @@ test('destructive uses and push are the operator\'s to enable, never the agent\'
   for (const [cmd, args] of [['git', ['checkout', '-b', 'topic']], ['git', ['restore', '--staged', 'src/a.js']], ['git', ['pull', '--ff-only']], ['rm', ['README.md']], ['git', ['stash']], ['git', ['switch', 'x']]]) assert.equal(c(ws, cmd, args).ok, true, `${cmd} ${args.join(' ')}`);
 });
 
-test('node and python run a script in the workspace, never inline code; npm runs project scripts, never installs packages', () => {
+test('ordinary branch navigation does not require destructive permission or restore paths', async () => {
+  const ws = workspace();
+  const git = (...args) => {
+    const result = spawnSync('git', args, { cwd: ws, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  try {
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'initial');
+    const original = git('branch', '--show-current');
+    git('branch', 'other');
+    const shell = new SafeShell({ workspace: ws, env: process.env, auditFile: false });
+    assert.deepEqual(c(ws, 'git', ['checkout', 'other']).args, ['switch', 'other']);
+    assert.equal(c(ws, 'git', ['switch', '-c', 'new-topic']).ok, true);
+    assert.equal((await shell.run({command:'git', args:['checkout','other']})).ok, true);
+    assert.equal(git('branch', '--show-current'), 'other');
+    fs.writeFileSync(path.join(ws, 'README.md'), 'other branch\n');
+    git('add', 'README.md');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'different readme');
+    fs.writeFileSync(path.join(ws, 'README.md'), 'uncommitted work\n');
+    const conflict = await shell.run({command:'git', args:['checkout',original]});
+    assert.equal(conflict.ok, false);
+    assert.notEqual(conflict.refused, true, 'Git must decide whether the dirty worktree can switch');
+    assert.equal(git('branch', '--show-current'), 'other');
+    assert.equal(fs.readFileSync(path.join(ws,'README.md'),'utf8'), 'uncommitted work\n');
+    const pathAttempt = await shell.run({command:'git',args:['checkout','README.md']});
+    assert.equal(pathAttempt.ok,false);
+    assert.equal(fs.readFileSync(path.join(ws,'README.md'),'utf8'), 'uncommitted work\n');
+    for (const args of [['checkout','-f',original], ['checkout','-B','other'],
+      ['checkout','--','README.md'], ['switch','--discard-changes',original],
+      ['switch','--force-create','other'], ['switch','-f',original]]) {
+      assert.match(c(ws,'git',args).reason,/DESTRUCTIVE_NOT_ENABLED/,args.join(' '));
+    }
+  } finally { fs.rmSync(ws, {recursive:true,force:true}); }
+});
+
+test('node and python run workspace scripts; npm can install registry packages within the workspace', () => {
   const ws = workspace();
   assert.equal(c(ws, 'node', ['src/a.js']).ok, true);
   assert.equal(c(ws, 'node', ['--version'], { mode: 'read' }).ok, true);
@@ -105,15 +161,15 @@ test('node and python run a script in the workspace, never inline code; npm runs
   for (const ok of [['test'], ['run', 'hi'], ['ci'], ['install'], ['ls']]) assert.equal(c(ws, 'npm', ok).ok, true, ok.join(' '));
   assert.equal(c(ws, 'npm', ['ls'], { mode: 'read' }).ok, true);
   assert.match(c(ws, 'npm', ['test'], { mode: 'read' }).reason, /WRITE_COMMAND_IN_READ_MODE/);
-  assert.match(c(ws, 'npm', ['install', 'left-pad']).reason, /NPM_INSTALL_OF_PACKAGES.*JACO_SHELL_ALLOW_PACKAGE_INSTALL/);
-  // The operator switch admits registry packages into this project, nothing else.
-  const pkg = { env: { JACO_SHELL_ALLOW_PACKAGE_INSTALL: '1' } };
-  for (const ok of [['install', 'left-pad'], ['i', '-D', '@types/node@20.11.0'], ['install', 'zod@^3.23', '--save-exact']]) assert.equal(c(ws, 'npm', ok, pkg).ok, true, ok.join(' '));
-  assert.match(c(ws, 'npm', ['install', '-g', 'left-pad'], pkg).reason, /NPM_INSTALL_OPTION_NOT_ALLOWED:-g/);
-  assert.match(c(ws, 'npm', ['install', '--registry=https://evil.example', 'x'], pkg).reason, /NPM_INSTALL_OPTION_NOT_ALLOWED/);
-  for (const spec of ['git+https://github.com/a/b.git', 'https://x.example/p.tgz', '../outside', 'file:../x', 'github:a/b', 'npm:other@1'])
-    assert.match(c(ws, 'npm', ['install', spec], pkg).reason, /NPM_INSTALL_SPEC_NOT_FROM_REGISTRY/, spec);
-  assert.match(c(ws, 'npm', ['publish'], pkg).reason, /NPM_SUBCOMMAND_NOT_ALLOWED/);
+  assert.equal(c(ws, 'npm', ['install', 'left-pad']).ok, true);
+  assert.equal(c(ws, 'npm', ['install', '-D', '@types/node']).ok, true);
+  assert.equal(c(ws, 'npm', ['uninstall', 'left-pad']).ok, true);
+  assert.equal(c(ws, 'npm', ['update']).ok, true);
+  for (const unsafe of [['install','--global','left-pad'], ['install','--prefix=/tmp','left-pad'],
+    ['install','file:../../outside'], ['install','https://example.org/pkg.tgz'],
+    ['install','--registry=https://untrusted.example','left-pad']]) {
+    assert.equal(c(ws, 'npm', unsafe).ok, false, unsafe.join(' '));
+  }
   assert.match(c(ws, 'npm', ['publish']).reason, /NPM_SUBCOMMAND_NOT_ALLOWED/);
   assert.match(c(ws, 'npm', ['exec', 'x']).reason, /NPM_SUBCOMMAND_NOT_ALLOWED/);
   assert.match(c(ws, 'npx', ['x']).reason, /PROGRAM_NOT_ALLOWED/);
@@ -136,6 +192,22 @@ test('the command gets a minimal environment: no token, key or password of the s
   assert.equal('PATH' in winPath, false, 'avoid duplicate case variants on Windows');
   assert.equal('GEMINI_API_KEY' in winPath, false, 'PATH support cannot leak secrets');
   assert.equal(resolveProgram('git', 'win32').cmd, 'git');
+});
+
+test('npm installs in an isolated worktree without modifying linked primary dependencies', { skip: !posix }, async () => {
+  const ws = workspace();
+  const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-shared-deps-'));
+  try {
+    fs.writeFileSync(path.join(shared, 'do-not-change.txt'), 'primary');
+    fs.symlinkSync(shared, path.join(ws, 'node_modules'), 'dir');
+    const sh = new SafeShell({ workspace: ws, env: { PATH: process.env.PATH, HOME: ws } });
+    const result = await sh.run({ command:'npm',
+      args:['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund'], timeoutSeconds: 120 });
+    assert.equal(result.ok, true, result.stderr || result.reason);
+    assert.equal(fs.existsSync(path.join(ws,'node_modules')) && fs.lstatSync(path.join(ws,'node_modules')).isSymbolicLink(), false,
+      'npm may omit an empty node_modules directory, but may never retain the shared symlink');
+    assert.equal(fs.readFileSync(path.join(shared,'do-not-change.txt'),'utf8'), 'primary');
+  } finally { fs.rmSync(ws,{recursive:true,force:true}); fs.rmSync(shared,{recursive:true,force:true}); }
 });
 
 test('real runs in a real folder: output, exit codes, refusals, no interpretation of metacharacters', { skip: !posix }, async () => {
