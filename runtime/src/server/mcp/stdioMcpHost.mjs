@@ -43,7 +43,7 @@ export const AGENT_ACCESS = ['off', 'read', 'write'];
 // Logos the IDE ships (src/components/mcpLogos.ts); anything else shows the MCP logo.
 export const ICONS = ['jaco', 'mcp', 'git', 'github', 'cloudflare', 'huggingface', 'nodejs'];
 // Paths an agent may never write through a tool, whatever the server's access.
-const PROTECTED_PATH = /(^|[\\/])(\.env(\.[^\\/]*)?|\.git|node_modules)([\\/]|$)|secret|credential|(^|[\\/])\.jaco[\\/](?:state[\\/](?:autonomy|capabilities\.json)|org[\\/]organization\.json|mcp[\\/]servers\.json)([\\/]|$)/i;
+const PROTECTED_PATH = /(^|[\\/])(\.env(\.[^\\/]*)?|\.git|node_modules)([\\/]|$)|secret|credential|(^|[\\/])\.jaco[\\/](?:state[\\/](?:autonomy|capabilities\.json(?:\.initialized)?)|org[\\/]organization\.json|mcp[\\/]servers\.json)([\\/]|$)/i;
 
 function commercialDiscoveryServers() {
   return {

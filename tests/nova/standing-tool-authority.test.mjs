@@ -81,7 +81,8 @@ test('explicitly disabled GUI task switches override standing grants', () => fix
   assert.equal(operatorTaskEnabled(root,'mcp-write'), false);
   assert.equal(operatorTaskEnabled(root,'mcp-call'), true);
   fs.writeFileSync(file, '{bad-json');
-  assert.equal(operatorTaskEnabled(root,'shell'), true, 'preference corruption falls back to default-on; standing mandate remains authoritative');
+  assert.equal(operatorTaskEnabled(root,'shell'), false, 'corruption must not reactivate a disabled tool');
+  assert.equal(operatorTaskEnabled(root,'mcp-call'), false, 'unknown preferences fail closed');
 }));
 
 test('operator custom rules are loaded from signed mandate without becoming an authorization grant', () => fixture(({root,file}) => {

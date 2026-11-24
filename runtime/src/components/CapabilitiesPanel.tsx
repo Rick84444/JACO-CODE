@@ -30,11 +30,12 @@ export function CapabilitiesPanel({ mcp, onMcpChanged }: { mcp: McpServer[]; onM
   const sv = language === 'sv';
   const [groups, setGroups] = useState<Group[]>([]), [skills, setSkills] = useState<Skill[]>([]), [fixed, setFixed] = useState<Fixed[]>([]);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const [stateInvalid,setStateInvalid]=useState(false);
   const load = useCallback(async () => {
     try {
       const data = await fetch('/api/aura/capabilities', { cache: 'no-store', signal: AbortSignal.timeout(15000) }).then(r => r.json());
       if (data.success === false) throw new Error(data.error);
-      setGroups(data.groups || []); setSkills(data.skills || []); setFixed(data.alwaysAsk || []); setError('');
+      setGroups(data.groups || []); setSkills(data.skills || []); setFixed(data.alwaysAsk || []); setStateInvalid(data.status==='INVALID'); setError('');
     } catch (e: any) { setError(String(e?.message || e)); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -44,7 +45,7 @@ export function CapabilitiesPanel({ mcp, onMcpChanged }: { mcp: McpServer[]; onM
     setBusy(true);
     try { await run(); await load(); onMcpChanged(); } catch (e: any) { setError(String(e?.message || e)); } finally { setBusy(false); }
   };
-  const setTasks = (ids: string[], on: boolean) => change(() => send({ tasks: Object.fromEntries(ids.map(id => [id, on])) }));
+  const setTasks = (ids: string[], on: boolean) => stateInvalid?Promise.resolve():change(() => send({ tasks: Object.fromEntries(ids.map(id => [id, on])) }));
   const all = groups.flatMap(g => g.tasks);
   const off = all.filter(t => !t.enabled).length;
   const mcpTools = mcp.flatMap(s => (s.tools || []).map(t => ({ s, t })));
@@ -70,11 +71,13 @@ export function CapabilitiesPanel({ mcp, onMcpChanged }: { mcp: McpServer[]; onM
     <p role="status"><strong>{all.length - off + mcpOn + skills.filter(s => s.enabled).length}</strong> {tr('förmågor påslagna', 'abilities on')}
       {off + (mcpTools.length - mcpOn) + skills.filter(s => !s.enabled).length > 0 ? <> · <strong>{off + (mcpTools.length - mcpOn) + skills.filter(s => !s.enabled).length}</strong> {tr('avstängda av dig', 'turned off by you')}</> : null}</p>
     {error && <p role="alert">{error}</p>}
-    <div className="capabilities-presets" role="group" aria-label={tr('Snabbval', 'Quick choices')}>
+    {stateInvalid&&<article role="alert"><strong>{tr('Inställningarna är skadade eller saknas','The capability settings are damaged or missing')}</strong><p>{tr('Berörda verktyg och färdigheter spärras tills filen återställs. Återställ helst en säkerhetskopia. En uttrycklig nollställning tar bort tidigare avstängningar; det stående mandatet gäller fortfarande.','Affected tools and skills stay blocked until the file is restored. Prefer restoring a backup. An explicit reset removes prior disabled selections; the standing mandate still applies.')}</p><button type="button" disabled={busy} onClick={()=>{if(window.confirm(tr('Nollställa sparade verktygsval och återgå till standard?','Reset saved tool selections to their defaults?')))void change(()=>send({reset:true}));}}>{tr('Nollställ sparade verktygsval','Reset saved capability selections')}</button></article>}
+    <fieldset disabled={stateInvalid||busy} style={{border:0,padding:0,minWidth:0}}><div className="capabilities-presets" role="group" aria-label={tr('Snabbval', 'Quick choices')}>
       <button type="button" disabled={busy} onClick={() => void preset('everything')}>{tr('Allt påslaget', 'Everything on')}</button>
       <button type="button" disabled={busy} onClick={() => void preset('no-computer')}>{tr('Utan att styra min dator eller telefon', 'Without controlling my computer or phone')}</button>
       <button type="button" disabled={busy} onClick={() => void preset('look-only')}>{tr('Bara titta och läsa', 'Look and read only')}</button>
     </div>
+    </fieldset>
     {fixed.length > 0 && <article className="capabilities-fixed"><strong>{tr('Aura frågar dig alltid först om', 'Aura always asks you first about')}</strong>
       <ul>{fixed.map(raw => { const f = askText(raw, sv); return <li key={f.id}><strong>{f.label}.</strong> {f.why}</li>; })}</ul></article>}
 
@@ -98,7 +101,7 @@ export function CapabilitiesPanel({ mcp, onMcpChanged }: { mcp: McpServer[]; onM
 
     {skills.length > 0 && <details className="capabilities-group">
       <summary><span><strong>{tr('Färdigheter', 'Skills')}</strong><small>{tr('Färdiga sätt att göra saker som Aura kan följa.', 'Ready-made ways of doing things that Aura can follow.')}</small></span><em>{skills.filter(s => s.enabled).length}/{skills.length}</em></summary>
-      <ul>{skills.map(s => <li key={s.id}><label><Check label={s.name} checked={s.enabled} onChange={v => void change(() => send({ skills: { [s.id]: v } }))} /> <strong>{s.name}</strong> <small>{s.description}</small></label></li>)}</ul>
+      <ul>{skills.map(s => <li key={s.id}><label><Check label={s.name} checked={s.enabled} onChange={v => {if(!stateInvalid)void change(() => send({ skills: { [s.id]: v } }));}} /> <strong>{s.name}</strong> <small>{s.description}</small></label></li>)}</ul>
     </details>}
   </section>;
 }
