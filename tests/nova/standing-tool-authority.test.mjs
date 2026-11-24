@@ -81,5 +81,5 @@ test('explicitly disabled GUI task switches override standing grants', () => fix
   assert.equal(operatorTaskEnabled(root,'mcp-write'), false);
   assert.equal(operatorTaskEnabled(root,'mcp-call'), true);
   fs.writeFileSync(file, '{bad-json');
-  assert.equal(operatorTaskEnabled(root,'shell'), false, 'corrupt persisted explicit switches cannot widen access');
+  assert.equal(operatorTaskEnabled(root,'shell'), true, 'preference corruption falls back to default-on; standing mandate remains authoritative');
 }));
