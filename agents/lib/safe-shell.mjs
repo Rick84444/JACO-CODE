@@ -54,11 +54,28 @@ function gitClass(args) {
     case 'remote': return rest.length === 0 || (rest.length === 1 && rest[0] === '-v') || (['show', 'get-url'].includes(rest[0]) && rest.length === 2) ? { mode: 'read' } : { refuse: 'GIT_REMOTE_CHANGE_NOT_ALLOWED' };
     case 'push': return { mode: 'write', destructive: 'GIT_PUSH', push: true };
     case 'reset': case 'clean': case 'rebase': return { mode: 'write', destructive: `GIT_${sub.toUpperCase()}` };
-    case 'checkout': return has(rest, '-b', '-B') ? { mode: 'write' } : { mode: 'write', destructive: 'GIT_CHECKOUT_MAY_DISCARD_CHANGES' };
+    case 'checkout': case 'switch': {
+      // A bare checkout can silently restore a file when its name is not a ref.
+      // Use switch for the ordinary branch operation: Git itself rejects a
+      // conflicting dirty worktree and never falls back to restoring a path.
+      const target = value => typeof value === 'string' && (value === '-' || !value.startsWith('-'));
+      if (rest.length === 1 && target(rest[0]))
+        return { mode: 'write', args: ['switch', rest[0]] };
+      const create = sub === 'checkout' ? ['-b'] : ['-c', '--create'];
+      if (create.includes(rest[0]) && (rest.length === 2 || rest.length === 3)
+        && rest.slice(1).every(value => target(value) && value !== '-'))
+        return { mode: 'write' };
+      if (['--detach', '--track'].includes(rest[0]) && rest.length === 2 && target(rest[1]))
+        return { mode: 'write' };
+      // Force/reset, path restoration, merge-on-switch and unrecognized
+      // combinations are not ordinary branch navigation.
+      return { mode: 'write', destructive: sub === 'checkout'
+        ? 'GIT_CHECKOUT_MAY_DISCARD_CHANGES' : 'GIT_SWITCH_MAY_DISCARD_CHANGES' };
+    }
     case 'restore': return has(rest, '--staged') && !has(rest, '--worktree', '-W') ? { mode: 'write' } : { mode: 'write', destructive: 'GIT_RESTORE_DISCARDS_CHANGES' };
     case 'stash': return ['drop', 'clear'].includes(rest[0]) ? { mode: 'write', destructive: 'GIT_STASH_DROP' } : { mode: 'write' };
     case 'pull': return has(rest, '--ff-only') ? { mode: 'write' } : { mode: 'write', destructive: 'GIT_PULL_MAY_MERGE' };
-    case 'add': case 'commit': case 'switch': case 'merge': case 'fetch': case 'mv': case 'rm': case 'init': case 'apply': case 'cherry-pick': case 'revert': return { mode: 'write' };
+    case 'add': case 'commit': case 'merge': case 'fetch': case 'mv': case 'rm': case 'init': case 'apply': case 'cherry-pick': case 'revert': return { mode: 'write' };
     default: return { refuse: `GIT_SUBCOMMAND_NOT_ALLOWED:${sub}` };
   }
 }
@@ -192,8 +209,8 @@ export function classify(command, args, { workspace, cwd = workspace, env = proc
   if (!Array.isArray(args) || args.length > LIMITS.argCount || args.some(a => typeof a !== 'string' || a.length > LIMITS.argLength || a.includes('\0'))) return refuse('ARGUMENTS_INVALID');
   const spec = PROGRAMS[command];
   if (!spec || (INTERPRETER_NAMES.has(command) && !interpretersAllowed(env))) return refuse(`PROGRAM_NOT_ALLOWED:${command}`);
-  let mode = spec.mode, destructive = null, push = false;
-  if (spec.dynamic) { const c = spec.dynamic(args); if (c.refuse) return refuse(c.refuse); mode = c.mode; destructive = c.destructive || null; push = Boolean(c.push); }
+  let mode = spec.mode, destructive = null, push = false, executionArgs = args;
+  if (spec.dynamic) { const c = spec.dynamic(args); if (c.refuse) return refuse(c.refuse); mode = c.mode; destructive = c.destructive || null; push = Boolean(c.push); executionArgs = c.args || args; }
   if (command === 'npm' && spec.readSub.includes(args[0])) mode = 'read';
   if (command === 'node' || command === 'python3' || command === 'python' || command === 'py') { if (args[0] === '--version' || args[0] === '-v') mode = 'read'; }
   // With interpreters on, node and python run inline code too, under the same checks as the other interpreters.
@@ -220,7 +237,7 @@ export function classify(command, args, { workspace, cwd = workspace, env = proc
   if (confinement) return refuse(confinement);
   if (command === 'rm' && positional(args).some(p => path.resolve(cwd, p) === path.resolve(workspace))) return refuse('RM_OF_WORKSPACE_ROOT_NOT_ALLOWED');
   if (command === 'rm' && !positional(args).length) return refuse('RM_NEEDS_A_PATH');
-  return { ok: true, mode, destructive, args: [...args] };
+  return { ok: true, mode, destructive, args: [...executionArgs] };
 }
 
 // The real path of the deepest existing part of p (so a symlink out of the workspace is seen even for a file not yet created).
