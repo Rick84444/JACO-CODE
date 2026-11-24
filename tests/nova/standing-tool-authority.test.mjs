@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../agents/lib/standing-tool-authority.mjs';
+import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled, standingOperatorRules } from '../../agents/lib/standing-tool-authority.mjs';
 
 const fixture = run => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-tool-authority-'));
@@ -82,4 +82,16 @@ test('explicitly disabled GUI task switches override standing grants', () => fix
   assert.equal(operatorTaskEnabled(root,'mcp-call'), true);
   fs.writeFileSync(file, '{bad-json');
   assert.equal(operatorTaskEnabled(root,'shell'), true, 'preference corruption falls back to default-on; standing mandate remains authoritative');
+}));
+
+test('operator custom rules are loaded from signed mandate without becoming an authorization grant', () => fixture(({root,file}) => {
+  saved(file, { EXTERNAL_MUTATION:'DENY' });
+  const records = JSON.parse(fs.readFileSync(file,'utf8'));
+  records[0].additionalRules = 'Prioritize npm ci and verify every build before committing.';
+  fs.writeFileSync(file, JSON.stringify(records));
+  assert.match(standingOperatorRules(root), /verify every build/);
+  assert.equal(standingToolAuthority(root,'EXTERNAL_MUTATION').status,'DENY');
+  records[0].signedByOperator = false;
+  fs.writeFileSync(file, JSON.stringify(records));
+  assert.equal(standingOperatorRules(root),'');
 }));
