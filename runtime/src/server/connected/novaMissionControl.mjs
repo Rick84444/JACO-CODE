@@ -11,6 +11,7 @@ import { checkCitations } from '../../../../agents/lib/evidence.mjs';
 import { stripEmoji } from '../../../../agents/lib/writing-policy.mjs';
 import { outgoingSpendCheck } from './spendGuard.mjs';
 import { operatorApprovalCheck } from '../../../../agents/lib/operator-action-guard.mjs';
+import { standingToolAuthority } from '../../../../agents/lib/standing-tool-authority.mjs';
 import { findDuplicate } from './missionDedupe.mjs';
 import { TASK_FIELDS } from '../../../../agents/lib/task-fields.mjs';
 import { validateGithubRepoTask } from '../../../../agents/lib/github-repo.mjs';
@@ -776,7 +777,24 @@ export class NovaMissionControl {
       this.db.prepare('DELETE FROM nova_spend_approvals WHERE mission_id=?').run(id);
       this.bus.event('NOVA_SPEND_APPROVED_ACTION', { missionId: id, payload: { reason: spend.reason, note: approval.note } });
     }
-    const harmful = operatorApprovalCheck(checked, { sandbox: Boolean(mission.contract), preApproved: mission.contract?.preApproved || [] });
+    // The standing operator mandate applies to missions as well as chat.
+    // A contract narrows scope; it does not require fresh authorization for
+    // categories that the operator already checked on in the GUI.
+    const target = checked.type;
+    const outward = ['git-push', 'git-merge', 'github-create-repo', 'promote-hf'].includes(target) ? 'PUBLISH'
+      : target === 'mcp-write' && !['shell', 'filesystem', 'git'].includes(checked.data?.server) ? 'EXTERNAL_MUTATION'
+      : ['browser-click', 'browser-type', 'android-tap', 'android-type'].includes(target) ? 'EXTERNAL_MUTATION'
+      : 'LOCAL_MUTATION';
+    const standing = standingToolAuthority(this.bus.workspaceRoot, outward);
+    if (standing.status === 'DENY' || standing.status === 'REVIEW') {
+      throw new Error('STANDING_MANDATE_' + standing.status + ':' + outward);
+    }
+    const preApproved = [...(mission.contract?.preApproved || [])];
+    if (mission.contract && standing.allowed) {
+      if (outward === 'PUBLISH') preApproved.push('merge-or-release', 'publish-or-deploy', 'push-protected-branch');
+      if (outward === 'EXTERNAL_MUTATION') preApproved.push('external-write');
+    }
+    const harmful = operatorApprovalCheck(checked, { sandbox: Boolean(mission.contract), preApproved });
     if (harmful) {
       const taskHash = `${checked.type}:${hashTaskInput(checked.data)}`;
       const gate = this.db.prepare('SELECT * FROM nova_action_gate WHERE mission_id=?').get(id);
