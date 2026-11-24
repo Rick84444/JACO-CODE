@@ -111,6 +111,41 @@ test('destructive uses and push are the operator\'s to enable, never the agent\'
   for (const [cmd, args] of [['git', ['checkout', '-b', 'topic']], ['git', ['restore', '--staged', 'src/a.js']], ['git', ['pull', '--ff-only']], ['rm', ['README.md']], ['git', ['stash']], ['git', ['switch', 'x']]]) assert.equal(c(ws, cmd, args).ok, true, `${cmd} ${args.join(' ')}`);
 });
 
+test('ordinary branch navigation does not require destructive permission or restore paths', async () => {
+  const ws = workspace();
+  const git = (...args) => {
+    const result = spawnSync('git', args, { cwd: ws, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  try {
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'initial');
+    const original = git('branch', '--show-current');
+    git('branch', 'other');
+    const shell = new SafeShell({ workspace: ws, env: process.env, auditFile: false });
+    assert.deepEqual(c(ws, 'git', ['checkout', 'other']).args, ['switch', 'other']);
+    assert.equal((await shell.run({command:'git', args:['checkout','other']})).ok, true);
+    assert.equal(git('branch', '--show-current'), 'other');
+    fs.writeFileSync(path.join(ws, 'README.md'), 'other branch\n');
+    git('add', 'README.md');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'different readme');
+    fs.writeFileSync(path.join(ws, 'README.md'), 'uncommitted work\n');
+    const conflict = await shell.run({command:'git', args:['checkout',original]});
+    assert.equal(conflict.ok, false);
+    assert.notEqual(conflict.refused, true, 'Git must decide whether the dirty worktree can switch');
+    assert.equal(git('branch', '--show-current'), 'other');
+    assert.equal(fs.readFileSync(path.join(ws,'README.md'),'utf8'), 'uncommitted work\n');
+    const pathAttempt = await shell.run({command:'git',args:['checkout','README.md']});
+    assert.equal(pathAttempt.ok,false);
+    assert.equal(fs.readFileSync(path.join(ws,'README.md'),'utf8'), 'uncommitted work\n');
+    for (const args of [['checkout','-f',original], ['checkout','-B','other'],
+      ['checkout','--','README.md'], ['switch','--discard-changes',original],
+      ['switch','--force-create','other'], ['switch','-f',original]]) {
+      assert.match(c(ws,'git',args).reason,/DESTRUCTIVE_NOT_ENABLED/,args.join(' '));
+    }
+  } finally { fs.rmSync(ws, {recursive:true,force:true}); }
+});
+
 test('node and python run workspace scripts; npm can install registry packages within the workspace', () => {
   const ws = workspace();
   assert.equal(c(ws, 'node', ['src/a.js']).ok, true);
