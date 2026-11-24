@@ -51,6 +51,14 @@ test('revoke and damaged state never allow a write', () => fixture(({root,file})
   assert.equal(standingToolAuthority(root, 'LOCAL_MUTATION').status, 'DENY');
 }));
 
+test('removed mandate file or record after first bootstrap never revives legacy rights', () => fixture(({root,file}) => {
+  const bootstrap=path.join(path.dirname(file),'bootstrap-initialized');
+  fs.writeFileSync(bootstrap,'initialized\n');
+  assert.equal(standingToolAuthority(root,'LOCAL_MUTATION').status,'DENY');
+  fs.writeFileSync(file,'[]');
+  assert.equal(standingToolAuthority(root,'LOCAL_MUTATION').status,'DENY');
+}));
+
 test('timed legacy grant expires but signed standing grant does not', () => fixture(({root,file}) => {
   saved(file);
   const grant = JSON.parse(fs.readFileSync(file, 'utf8'));
