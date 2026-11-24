@@ -8,6 +8,7 @@ import { safeAuthReturn } from '../../site/jacocode.com/auth.mjs';
 import { permittedRemoteCall, validateRemoteCall } from '../../site/jacocode.com/link-protocol.mjs';
 import { JacoLinkPairing, JacoLinkRoom } from '../../site/jacocode.com/link.mjs';
 import { createJacoLinkHost } from '../../runtime/src/server/connected/jacoLinkHost.mjs';
+import { runtimeIdentityLabel } from '../../site/jacocode.com/public/link/runtime-identity.js';
 
 const did='abcdefghijklmnopqr';
 const id='123e4567-e89b-42d3-a456-426614174000';
@@ -56,6 +57,18 @@ test('remote RPC allows only intentional Aura operator capabilities and exact pa
   assert.equal(validateRemoteCall(rpc('GET','/api/runtime/identity',{bogus:true})).ok,false);
   assert.equal(validateRemoteCall(rpc('POST','/api/aura/chat')).ok,false);
   assert.equal(validateRemoteCall(rpc('POST','/api/aura/chat',{message:'a'.repeat(60000)})).ok,false);
+});
+
+test('remote status never treats missing or malformed source commit as proof of installation',()=>{
+  const base={success:true,version:'0.23.1',executionProfile:'full'};
+  assert.match(runtimeIdentityLabel({...base,sourceCommit:'a'.repeat(40)}), /källcommit: a{12} \\(självrapporterat\\)/);
+  assert.match(runtimeIdentityLabel({...base,sourceCommit:null}), /källcommit: ej styrkt/);
+  assert.match(runtimeIdentityLabel({...base,sourceCommit:'not-a-commit'}), /källcommit: ej styrkt/);
+  assert.match(runtimeIdentityLabel({...base,executionProfile:'invalid'}), /okänt läge/);
+  for(const invalid of [null,{}, {success:false,version:'0.23.1'},
+    {success:true,version:'<script>alert(1)</script>'},
+    {success:true,version:'7'.repeat(300)}])
+    assert.equal(runtimeIdentityLabel(invalid),'Runtime-identitet ej verifierad');
 });
 
 test('Google OAuth return path cannot redirect customers to attacker origin',()=>{
@@ -164,7 +177,7 @@ test('mobile app has real installable assets and actual branded memory icon',()=
   const manifest=JSON.parse(read(base+'manifest.webmanifest'));
   assert.equal(manifest.start_url,'/link/remote.html');
   assert.equal(manifest.display,'standalone');
-  for(const file of ['remote.html','connect.html','remote.js','connect.js','style.css','icon.svg','memory-tree.png'])
+  for(const file of ['remote.html','connect.html','remote.js','runtime-identity.js','connect.js','style.css','icon.svg','memory-tree.png'])
     assert.ok(fs.statSync(base+file).size>100,file);
   assert.match(read(base+'remote.js'),/\/api\/aura\/workbench\/local-memory/);
   assert.match(read(base+'remote.js'),/\/api\/runtime\/identity/);
