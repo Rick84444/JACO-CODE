@@ -3,6 +3,7 @@
 // Missing legacy stores retain legacy controls; damaged/revoked records cannot authorize work.
 import fs from 'node:fs';
 import path from 'node:path';
+import { readCapabilityState } from './capability-state.mjs';
 
 const CLASSES = new Set(['READ','LOCAL_MUTATION','EXTERNAL_MUTATION','PUBLISH','FINANCIAL','AUTH','SECURITY','DESTRUCTIVE']);
 export const STANDING_MANDATE_ID = 'operator-level5-default';
@@ -51,14 +52,8 @@ export function standingToolAuthority(workspaceRoot, consequence, {now = Date.no
 export function operatorTaskEnabled(workspaceRoot, taskId) {
   if (!workspaceRoot || !taskId) return true;
   const file = path.join(workspaceRoot, '.jaco', 'state', 'capabilities.json');
-  let state;
-  try { state = JSON.parse(fs.readFileSync(file, 'utf8')); }
-  // Task switches are discoverability preferences, never authority grants.
-  // Match CapabilityPolicy's built-in default: a damaged preference file does
-  // not disable every tool; the signed mandate still gates effectful actions.
-  catch { return true; }
-  if (state?.schema !== 'jaco.capabilities/v1' || !Array.isArray(state.disabledTasks)) return true;
-  return !state.disabledTasks.includes(taskId);
+  const state = readCapabilityState(file);
+  return state.status !== 'INVALID' && !state.disabledTasks.includes(taskId);
 }
 
 // Operator-authored supplementary rules are behavioral instructions. They do
