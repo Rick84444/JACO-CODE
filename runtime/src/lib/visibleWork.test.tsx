@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {AuraTerminal} from '../components/AuraTerminal';
+import {AuraLiveTerminalWindow} from '../components/AuraLiveTerminalWindow';
 import {UiLanguageProvider} from '../i18n/UiLanguage';
 import {humanizeEvent} from './humanChat';
 import type {CognitiveEvent} from '../hooks/useCognitiveLive';
@@ -17,4 +18,27 @@ test('the visible terminal renders escaped observed output and labels interrupte
   const html=renderToStaticMarkup(<UiLanguageProvider initialLanguage="sv"><AuraTerminal events={[event]} missionId="m" connection="unavailable"/></UiLanguageProvider>);
   assert.match(html,/npm test/);assert.match(html,/tests passed/);assert.match(html,/Slutkod/);
   assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);assert.match(html,/Anslutningen är avbruten/);
+});
+
+test('Live Terminal defaults to observed human narration and keeps shell output in a separate tab',()=>{
+  const event={...base,terminal:{phase:'finished',command:'node secret-diagnostic.js',stdout:'PRIVATE_COMMAND_OUTPUT',stderr:'',exitCode:0,truncated:false}};
+  const html=renderToStaticMarkup(<UiLanguageProvider initialLanguage="sv">
+    <AuraLiveTerminalWindow events={[event]} missionId="m" missionGoal="Kontrollera projektet"
+      connection="live" onClose={()=>{}}/>
+  </UiLanguageProvider>);
+  assert.match(html,/Aura Live Terminal/);
+  assert.match(html,/Vad Aura gör/);
+  assert.match(html,/Kommandon/);
+  assert.match(html,/Steg 2: Jag kontrollerar modellvalet/);
+  assert.match(html,/Aktivitetsflödet anslutet/);
+  assert.doesNotMatch(html,/PRIVATE_COMMAND_OUTPUT|node secret-diagnostic\.js/);
+  assert.match(html,/aria-modal="false"/);
+});
+test('Live Terminal reports disconnected data honestly instead of claiming active execution',()=>{
+  const html=renderToStaticMarkup(<UiLanguageProvider initialLanguage="sv">
+    <AuraLiveTerminalWindow events={[]} missionId={null} missionGoal={null}
+      connection="unavailable" onClose={()=>{}}/>
+  </UiLanguageProvider>);
+  assert.match(html,/Ingen liveanslutning/);
+  assert.match(html,/Inga steg har rapporterats/);
 });

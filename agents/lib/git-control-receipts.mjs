@@ -29,7 +29,19 @@ const ERROR_CODES = new Set([
   'CHATGPT_STRATEGY_NODE_COUNT_INVALID','CHATGPT_STRATEGY_TEST_COMMAND_NOT_APPROVED',
   'CHATGPT_STRATEGY_BUDGET_INVALID','CHATGPT_STRATEGY_GRAPH_NOT_FOUND',
   'WINDOWS_WMI_REQUIRES_DESKTOP_AGENTOS',
+  // A contract the runtime refuses must come back by its own name, so the sender can correct the
+  // command instead of waiting for a receipt that never arrives.
+  'CODING_CONTRACT_SCOPE_REQUIRED', 'CODING_CONTRACT_OBJECTIVE_REQUIRED',
+  'CODING_CONTRACT_ACCEPTANCE_REQUIRED', 'CODING_CONTRACT_SCHEMA_UNSUPPORTED', 'CODING_SERVICES_INVALID',
 ]);
+
+// A refusal the sender can act on: the runtime examined the command and said no for a named, permanent
+// reason. Anything else (a dropped connection, an unavailable mission control) is transient and must keep
+// its existing retry, never be recorded as a decision.
+export function controlRefusalCode(error) {
+  const code = String(error?.message || error || '').split(':')[0].trim();
+  return ERROR_CODES.has(code) ? code : null;
+}
 
 const bounded = (value, max = 160) => String(value ?? '').slice(0, max);
 const digits = value => Number.isFinite(Number(value)) ? Math.max(0, Math.trunc(Number(value))) : 0;
@@ -62,6 +74,82 @@ export function gitControlReceiptSnapshot(control) {
   };
 }
 
+// Git-ref is a legacy, non-authoritative transport. Multiple already-running
+// installations may still publish to the same branch during migration. Merge
+// bounded receipt indices instead of replacing somebody else's snapshot;
+// disagreeing mission IDs are conflicts, never proof of successful execution.
+const RECEIPT_ID = /^[A-Za-z0-9._:-]{6,160}$/;
+const TERMINAL = new Set(['DONE','CANCELLED','REJECTED','EXHAUSTED']);
+const ENTRY_STATES = new Set(['ACTIVE','READY','PLANNING','EXECUTING','AWAITING_VERIFICATION','BLOCKED','DONE','CANCELLED','EXHAUSTED','REJECTED','UNVERIFIED','UNKNOWN','CONFLICT']);
+const ENTRY_PHASES = new Set(['READY','PLANNING','EXECUTING','AWAITING_VERIFICATION','BLOCKED','CLOSED','CANCELLED','EXHAUSTED','UNVERIFIED','UNKNOWN']);
+const OPERATIONS = new Set(['mission.create','mission.resolve','strategy.graph.create','rejected']);
+function safeIndexEntry(e) {
+  if (!e || typeof e !== 'object' || !RECEIPT_ID.test(String(e.commandId || '')) ||
+      !ENTRY_STATES.has(e.status) || !OPERATIONS.has(e.operation)) return null;
+  const validRef = v => typeof v === 'string' && /^[A-Za-z0-9._:-]{1,200}$/.test(v) ? v : null;
+  // A malformed remote mission ID must never turn into an apparently normal
+  // null reference: that would hide a competing or poisoned publisher.
+  if ((e.missionId != null && !validRef(e.missionId)) ||
+      (e.graphId != null && !validRef(e.graphId))) return null;
+  return {
+    commandId: e.commandId,
+    operation: e.operation,
+    missionId: validRef(e.missionId),
+    graphId: validRef(e.graphId),
+    errorCode: typeof e.errorCode === 'string' && (ERROR_CODES.has(e.errorCode) || ['COMMAND_REJECTED','GIT_CONTROL_COMMAND_CONFLICT'].includes(e.errorCode)) ? e.errorCode : null,
+    status: e.status,
+    phase: ENTRY_PHASES.has(e.phase) ? e.phase : null,
+    turn: digits(e.turn),
+    failures: digits(e.failures),
+    receipts: digits(e.receipts),
+    closed: e.closed === true,
+  };
+}
+function conflictReceipt(a,b) {
+  return {commandId:b.commandId,operation:b.operation,missionId:null,graphId:null,
+    errorCode:'GIT_CONTROL_COMMAND_CONFLICT',status:'CONFLICT',phase:null,
+    turn:Math.max(a.turn,b.turn),failures:Math.max(a.failures,b.failures),
+    receipts:Math.max(a.receipts,b.receipts),closed:false};
+}
+function reconcileEntry(a,b) {
+  if (a.status==='CONFLICT' || b.status==='CONFLICT' || a.operation!==b.operation ||
+      (a.missionId && b.missionId && a.missionId!==b.missionId) ||
+      (a.graphId && b.graphId && a.graphId!==b.graphId) ||
+      ((a.status==='REJECTED' || b.status==='REJECTED') && a.status!==b.status)) {
+    return conflictReceipt(a,b);
+  }
+  // Same canonical mission: never regress a completed receipt to an older
+  // ACTIVE status when a stale writer wakes up after the owner finishes.
+  const evidence = v => [v.turn,v.receipts,TERMINAL.has(v.status)?1:0];
+  const aa=evidence(a),bb=evidence(b);
+  const newer=bb[0]>aa[0] || (bb[0]===aa[0] && (bb[1]>aa[1] || (bb[1]===aa[1] && bb[2]>aa[2])));
+  // A stale runtime must not reopen a terminal mission, even if it has
+  // published a larger local counter from a conflicting cache generation.
+  const chosen=TERMINAL.has(a.status)!==TERMINAL.has(b.status)
+    ? (TERMINAL.has(a.status)?a:b) : (newer?b:a);
+  return {...chosen,missionId:chosen.missionId || a.missionId || b.missionId,
+    graphId:chosen.graphId || a.graphId || b.graphId};
+}
+export function mergeGitControlReceiptSnapshots(local, remote=null) {
+  if(local?.schema!=='jaco.nova-control-status/v1' || local.transport!=='git-ref' ||
+     local.authoritative!==false || !Array.isArray(local.entries)) throw Error('GIT_CONTROL_LOCAL_STATUS_INVALID');
+  if (remote!==null && (remote?.schema!==local.schema || remote?.transport!=='git-ref' ||
+      remote?.authoritative!==false || !Array.isArray(remote?.entries) || remote.entries.length>32))
+    throw Error('GIT_CONTROL_REMOTE_STATUS_INVALID');
+  const output=new Map();
+  // Retain order so trimming protects the most recently observed commands.
+  for (const raw of [...(remote?.entries || []),...local.entries]) {
+    const e=safeIndexEntry(raw);
+    if(!e) throw Error('GIT_CONTROL_REMOTE_STATUS_INVALID');
+    const old=output.get(e.commandId);
+    // Map#set preserves established ordering for known commands; deleting and
+    // reinserting them makes two publishers endlessly reorder A,B -> B,A.
+    output.set(e.commandId,old?reconcileEntry(old,e):e);
+  }
+  return {schema:local.schema,transport:'git-ref',authoritative:false,
+    entries:[...output.values()].slice(-32)};
+}
+
 export function githubOriginMatches(remote, repo) {
   const match = String(remote || '').trim().match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([^/:]+)\/([^/:\s]+?)(?:\.git)?\/?$/i);
   if (!match) return false;
@@ -71,7 +159,6 @@ export function githubOriginMatches(remote, repo) {
 export function createGitControlReceiptPublisher({
   repo, repoRoot, gitBin = 'git', gitExecImpl = execFileAsync, log = () => {},
 } = {}) {
-  let lastDigest = null;
   let retryAfter = 0;
   const git = (args, env, timeout = 20_000) =>
     gitExecImpl(gitBin, ['-C', repoRoot, ...args], {
@@ -81,9 +168,6 @@ export function createGitControlReceiptPublisher({
     async publish(control) {
       const status = gitControlReceiptSnapshot(control);
       if (!status.entries.length) return { sent: false, reason: 'no-git-commands' };
-      const canonical = JSON.stringify(status);
-      const digest = createHash('sha256').update(canonical).digest('hex');
-      if (digest === lastDigest || digest === control.gitReceiptDigest) return { sent: false, reason: 'unchanged' };
       if (Date.now() < retryAfter) return { sent: false, reason: 'backoff' };
 
       // Do not let a credential prompt hang Nova's execution loop.
@@ -110,7 +194,21 @@ export function createGitControlReceiptPublisher({
           await git(['fetch', '--quiet', '--no-tags', 'origin', '+' + STATUS_BRANCH + ':' + STATUS_LOCAL_REF], env, 30_000);
           parent = (await git(['rev-parse', STATUS_LOCAL_REF], env)).stdout.trim();
         }
-        fs.writeFileSync(jsonFile, JSON.stringify({ ...status, publishedAt: new Date().toISOString() }) + '\n', { mode: 0o600 });
+        let remoteSnapshot = null;
+        if (parent) {
+          const {stdout} = await git(['show', STATUS_LOCAL_REF + ':' + STATUS_PATH], env, 15_000);
+          try {remoteSnapshot=JSON.parse(stdout);} catch {throw Error('GIT_CONTROL_REMOTE_STATUS_INVALID');}
+        }
+        const reconciled=mergeGitControlReceiptSnapshots(status, remoteSnapshot);
+        const canonical=JSON.stringify(reconciled);
+        const digest=createHash('sha256').update(canonical).digest('hex');
+        if (remoteSnapshot && JSON.stringify(mergeGitControlReceiptSnapshots(status,remoteSnapshot)) ===
+              JSON.stringify({schema:remoteSnapshot.schema,transport:remoteSnapshot.transport,
+                authoritative:remoteSnapshot.authoritative,entries:remoteSnapshot.entries})) {
+          control.gitReceiptDigest=digest;
+          return {sent:false,reason:'unchanged'};
+        }
+        fs.writeFileSync(jsonFile, JSON.stringify({ ...reconciled, publishedAt: new Date().toISOString() }) + '\n', { mode: 0o600 });
         const blob = (await git(['hash-object', '-w', jsonFile], env)).stdout.trim();
         if (!/^[0-9a-f]{40,64}$/.test(blob)) throw new Error('GIT_CONTROL_BLOB_INVALID');
         await git(['read-tree', '--empty'], env);
@@ -121,12 +219,11 @@ export function createGitControlReceiptPublisher({
         if (!/^[0-9a-f]{40,64}$/.test(commit)) throw new Error('GIT_CONTROL_COMMIT_INVALID');
         // No force push; a concurrent writer cannot be overwritten.
         await git(['push', '--porcelain', 'origin', commit + ':' + STATUS_BRANCH], env, 25_000);
-        lastDigest = digest;
         control.gitReceiptDigest = digest;
         control.gitReceiptPushError = null;
         control.gitReceiptPushedAt = new Date().toISOString();
         retryAfter = 0;
-        return { sent: true, branch: STATUS_BRANCH, count: status.entries.length };
+        return { sent: true, branch: STATUS_BRANCH, count: reconciled.entries.length };
       } catch (error) {
         const code = /GIT_CONTROL_[A-Z_]+/.exec(String(error?.message || ''))?.[0] || 'GIT_CONTROL_STATUS_PUSH_UNAVAILABLE';
         control.gitReceiptPushError = code;

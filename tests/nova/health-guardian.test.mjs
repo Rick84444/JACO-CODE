@@ -92,3 +92,20 @@ test('guardian still tries canonical activation if Core recycle diagnosis fails'
   assert.equal(activated,1);
   assert.equal(result.recycling.reason,'CORE_RECYCLE_DIAGNOSTIC_FAILED');
 });
+
+test('configured Windows browser outage requests canonical recovery without recycling healthy Core', async () => {
+ const services=['runtime','workplace','nova-supervisor','nova-session','novaBridge','cdp'].map(id=>({id,state:id==='cdp'?'UNHEALTHY':'READY'}));
+ const snapshot={services,startup:{browserAttachment:'FAILED'}};
+ assert.deepEqual(unhealthyServices(snapshot,{cdp:true}),['cdp']);
+ assert.deepEqual(unhealthyServices(snapshot,{cdp:false}),[]);
+ let called=0;
+ const result=await guardianTick({cdp:true},{},{
+   inspect:async()=>snapshot,
+   activateStack:async(_c,opts)=>{assert.deepEqual(opts,{open:false});called++;return {state:'READY'};},
+   restartCore:async()=>assert.fail('optional failure must never recycle Core'),now:1000
+ });
+ assert.equal(result.kind,'STARTED');assert.equal(called,1);
+ const healthyBridges={...snapshot,services:services.map(s=>({...s,state:'READY'}))};
+ assert.deepEqual(unhealthyServices(healthyBridges,{cdp:true}),['browser-attachment']);
+ assert.deepEqual(unhealthyServices({...healthyBridges,startup:{browserAttachment:'ATTACHED'}},{cdp:true}),[]);
+});

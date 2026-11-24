@@ -4,6 +4,10 @@ on:
     paths:
       - 'agents/lib/local-stack.mjs'
       - 'agents/lib/chrome-bootstrap.mjs'
+      - 'agents/lib/health-guardian.mjs'
+      - 'tests/nova/health-guardian.test.mjs'
+      - 'extensions/jaco-vscode/**'
+      - 'windows/product/**'
       - 'agents/lib/lite-browser-supervisor.mjs'
       - 'agents/lib/org-permission.mjs'
       - 'runtime/src/server/connected/githubGuiAuth.mjs'
@@ -67,3 +71,16 @@ jobs:
         run: node --test runtime/gateway/test/mcp-profile.test.mjs
       - run: npm --prefix runtime run build
       - run: node scripts/verify-core-startup.mjs
+  windows-parity:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - run: node --test tests/nova/health-guardian.test.mjs tests/nova/windows-selfstart.test.mjs tests/nova/startup-developer-connections.test.mjs extensions/jaco-vscode/test/bridge.test.cjs

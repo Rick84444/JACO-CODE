@@ -28,13 +28,29 @@ export function evaluateStartupEvidence(raw) {
   return { state, phase, browserAttachment, browserRequired, ok };
 }
 
-export function readStartupEvidence(root, { fileSystem = fs } = {}) {
-  try {
-    const content = fileSystem.readFileSync(path.join(root, 'logs', 'startup', 'status.json'), 'utf8');
-    return evaluateStartupEvidence(JSON.parse(content));
-  } catch {
-    return evaluateStartupEvidence(null);
+// Where the starter may have written its checkpoint. local-stack.mjs writes it under its DATA root
+// (`JACO_DATA_DIR` when set, otherwise the install root), while callers pass the root they derived
+// themselves. On Windows nothing sets JACO_ROOT (install-activation.sh is the Linux/Termux installer),
+// so system-control derived repoRoot from the ~/.local/bin wrapper and landed on $HOME: the checkpoint
+// was never found and a fully started stack reported UNVERIFIED/DEGRADED. Look in every root the
+// starter could legitimately have used, in the order most likely to be this installation's own.
+export function startupEvidenceRoots(root, env = process.env, cwd = process.cwd()) {
+  const candidates = [root, env.JACO_DATA_DIR, env.JACO_INSTALL_ROOT, env.JACO_REPO_ROOT, env.JACO_ROOT, cwd];
+  return [...new Set(candidates
+    .filter(value => typeof value === 'string' && value.trim())
+    .map(value => path.resolve(value)))];
+}
+
+export function readStartupEvidence(root, { fileSystem = fs, env = process.env, cwd = process.cwd() } = {}) {
+  for (const base of startupEvidenceRoots(root, env, cwd)) {
+    try {
+      const raw = JSON.parse(fileSystem.readFileSync(path.join(base, 'logs', 'startup', 'status.json'), 'utf8'));
+      // Only the canonical checkpoint counts. Anything else leaves the search running and, if nothing
+      // canonical exists anywhere, the result stays UNVERIFIED: this never infers readiness from a path.
+      if (raw?.schema === 'jaco.local-startup/v1') return evaluateStartupEvidence(raw);
+    } catch { /* not this root; try the next */ }
   }
+  return evaluateStartupEvidence(null);
 }
 
 export function reconcileStartupActivation(report, evidence) {

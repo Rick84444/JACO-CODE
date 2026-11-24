@@ -18,6 +18,11 @@ export function classifyToolFailure(error, task = null) {
   const text = String(error || '').slice(0, 600);
   const server = text.match(SERVER_IN_ERROR)?.[1] || (task?.type?.startsWith?.('mcp') ? task.data?.server : null) || null;
   if (NOT_REPAIRABLE.test(text)) return { kind: 'NEEDS_OPERATOR', server, restart: false, ensureStack: false };
+  if (/MCP_ONE_SHOT_NOT_MCP_SERVER|MCP_SERVER_EXITED:[a-z][a-z0-9-]{1,40}:(?:ENTRYPOINT_NOT_FOUND|NO_MCP_HANDSHAKE)/i.test(text))
+    return {kind:'MCP_ENTRYPOINT_INVALID',server,restart:false,ensureStack:false};
+  if (/MCP_TRANSPORT_(?:DNS|TLS|UNREACHABLE)/i.test(text))
+    return {kind:'MCP_REMOTE_UNREACHABLE',server,restart:false,ensureStack:false};
+  if (/MCP_TRANSPORT_TIMEOUT/i.test(text)) return {kind:'TIMEOUT',server,restart:false,ensureStack:false};
   if (/LEDGER_LOCKED|STARTUP_LOCKED|STARTUP_LOCK_INVALID/i.test(text)) return { kind:'LIVE_STATE_LOCK',server,restart:false,ensureStack:false };
   if (/COMMAND_NOT_FOUND|command not found|not recognized as an internal/i.test(text)) return {kind:'COMMAND_MISSING',server,restart:false,ensureStack:false};
   if (/WRITE_COMMAND_IN_READ_MODE/i.test(text)) return {kind:'WRONG_TOOL_MODE',server,restart:false,ensureStack:false};
@@ -44,6 +49,8 @@ const ADVICE = {
   WRONG_TOOL_MODE: 'Use the write-capable tool only if the current mission and operator already authorize it. Otherwise continue with read-only work; never use another route to bypass the restriction.',
   COMMAND_SYNTAX: 'Inspect shell_info for host-specific syntax and recipes. Pass program and arguments separately, confirm the actual working directory and supported flags. Change the erroneous argument before retrying.',
   PROJECT_ENVIRONMENT: 'Inspect project manifest, lockfile, interpreter version and environment. Use the project dependency manager and authorized setup; verify the import or test before retrying the original task. Do not modify the system Python environment or assume the runtime is missing.',
+  MCP_ENTRYPOINT_INVALID: 'This command is not a working MCP server. Inspect the local server definition, command, cwd and script. Run one-shot jobs as missions, not MCP servers; do not auto-restart or execute paid operations.',
+  MCP_REMOTE_UNREACHABLE: 'Inspect the configured MCP endpoint and transport status. Check DNS, TLS and service readiness without changing credentials, remote-write policy or restarting unrelated local services.',
   PATH_NOT_FOUND: 'The file or directory does not exist. List the parent directory or search for the name to find the right path, then retry with it. Do not create the file unless the goal asks for it.',
   PORT_CONFLICT: 'Another program holds a port this tool wants. JACO resolves its own service ports itself; for a tool, set a different port in its configuration instead of stopping the other program.',
   SERVER_STOPPED: 'The tool server ended. It was started again. A read can be repeated once; for anything that may have changed state, observe the current state first and do not blindly repeat it.',

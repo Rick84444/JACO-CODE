@@ -125,7 +125,7 @@ test('The Build Agent operator action uses the existing dedicated organization a
   const gui = read('runtime/src/components/AuraChatPanel.tsx');
   const org = read('runtime/src/server/connected/agentOrganization.mjs');
   assert.match(gui,/fetch\('\/api\/aura\/organization\/agents'/);
-  assert.match(gui,/kind:'local',providerId:'ollama',model:''/);
+  assert.match(gui,/kind:'planner',providerId:'',model:''/);
   assert.match(gui,/type="password" autoComplete="off"/);
   assert.match(org,/router\.post\('\/agents', handle\(req => \(\{ agent: organization\.createAgent/);
   assert.match(org,/requireMutationAuth\(req, res, next\)/);

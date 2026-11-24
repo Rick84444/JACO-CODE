@@ -4,7 +4,7 @@ import path from 'node:path';
 export const CODING_CONTRACT_SCHEMA = 'jaco.coding-contract/v1';
 export const CODE_TASKS = new Set(['repo-list','repo-read','repo-write','repo-edit','repo-test','repo-service','git-status','git-diff','git-commit','git-push','git-merge']);
 
-const DEFAULT_FORBIDDEN = ['.git/**','**/.git/**','.env','.env.*','**/.env','**/.env.*','node_modules/**','**/node_modules/**','**/*secret*','**/*credential*'];
+const DEFAULT_FORBIDDEN = ['.git/**','**/.git/**','.env','.env.*','**/.env','**/.env.*','node_modules/**','**/node_modules/**','**/*secret*','**/*credential*','.jaco/state/autonomy/**','**/.jaco/state/autonomy/**','.jaco/state/capabilities.json','**/.jaco/state/capabilities.json','.jaco/state/capabilities.json.initialized','**/.jaco/state/capabilities.json.initialized','.jaco/org/organization.json','**/.jaco/org/organization.json','.jaco/mcp/servers.json','**/.jaco/mcp/servers.json'];
 const DEFAULT_PHASES = ['UNDERSTAND','REPOSITORY_MODEL','HYPOTHESES','PLAN','IMPLEMENT','TEST','FALSIFY','VERIFY','COMMIT','RECEIPT'];
 const asInt = (value, fallback, min, max) => {
   const n = Number(value);

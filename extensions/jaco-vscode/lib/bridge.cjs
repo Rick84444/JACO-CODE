@@ -69,7 +69,23 @@ function makeWebviewHtml(mappedUrl) {
 
 // JACO Lite writes where it runs to ~/.jaco/lite-runtime.json (a free port when 3000 is taken). The configured
 // address is tried first; the record is only a fallback, accepted when its process is alive and the address is local.
-function readRuntimeRecord({ fs = require('node:fs'), os = require('node:os'), path = require('node:path'), alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } } } = {}) {
+function readRuntimeRecord({ fs = require('node:fs'), os = require('node:os'), path = require('node:path'), env = process.env, platform = process.platform, alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } } } = {}) {
+  // The full Windows installer writes the canonical startup receipt and the
+  // Core process identity under LocalAppData, not the Lite launcher record.
+  if (platform === 'win32' && env.LOCALAPPDATA) {
+    try {
+      const root = path.join(env.LOCALAPPDATA, 'JACO', 'logs', 'startup');
+      const receipt = JSON.parse(fs.readFileSync(path.join(root, 'status.json'), 'utf8'));
+      const owner = JSON.parse(fs.readFileSync(path.join(root, 'runtime.process.json'), 'utf8'));
+      const core = receipt.services?.find(s => s.id === 'runtime' && s.state === 'READY');
+      if (receipt.schema === 'jaco.local-startup/v1' && Number.isSafeInteger(owner.pid) && owner.pid > 0 &&
+          typeof owner.birth === 'string' && owner.birth && alive(owner.pid) && core) {
+        const identity = new URL(core.url);
+        if (identity.pathname === '/api/runtime/identity' && !identity.username && !identity.password && !identity.search && !identity.hash)
+          return runtimeOrigin(identity.origin);
+      }
+    } catch { /* malformed/stale installed state; try the Lite record */ }
+  }
   try {
     const record = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.jaco', 'lite-runtime.json'), 'utf8'));
     if (record?.product !== 'JACO Autonomus IDE' || !Number.isInteger(record.launcherPid) || !alive(record.launcherPid)) return null;
@@ -77,7 +93,15 @@ function readRuntimeRecord({ fs = require('node:fs'), os = require('node:os'), p
   } catch { return null; }
 }
 
-async function probeWithDiscovery(configured, { fetchImpl = globalThis.fetch, record = readRuntimeRecord } = {}) {
+async function probeWithDiscovery(configured, { fetchImpl = globalThis.fetch, record = readRuntimeRecord, preferRecord = false } = {}) {
+  // Only when the user has not pinned an address: a foreign process on 3000
+  // must not prevent connecting to the recorded, independently verified Core.
+  if (preferRecord) {
+    const found = record();
+    if (found && found !== runtimeOrigin(configured)) {
+      try { return await probeJacoRuntime(found, fetchImpl); } catch { /* stale record */ }
+    }
+  }
   try { return await probeJacoRuntime(configured, fetchImpl); }
   catch (first) {
     if (!/^JACO_VSCODE_RUNTIME_UNREACHABLE|fetch failed|timeout|aborted|ECONNREFUSED/i.test(String(first?.message || first))) throw first;

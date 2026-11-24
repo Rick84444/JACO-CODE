@@ -17,6 +17,11 @@ export class SystemControl {
     // pointed at $HOME. JACO_ROOT (set by install-activation.sh) is the runtime checkout.
     runtimeRoot = process.env.JACO_ROOT || resolve(dirname(jacoctl), '..'),
     repoRoot = process.env.JACO_REPO_ROOT || resolve(runtimeRoot, '..'),
+    // The Windows launcher writes under JACO_DATA_DIR, or under the checkout
+    // containing the invoked Node CLI. Do not infer the receipt root from
+    // JACO_ROOT/JACO_REPO_ROOT, which may point at a stale wrapper checkout.
+    startupDataRoot = process.env.JACO_DATA_DIR ||
+      (String(jacoctl || '').endsWith('.mjs') ? resolve(dirname(jacoctl), '..') : repoRoot),
     gitBin = process.env.JACO_GIT_BIN || 'git',
     bashBin = process.env.JACO_BASH_BIN || '/data/data/com.termux/files/usr/bin/bash',
     npmBin = process.env.JACO_NPM_BIN || 'npm',
@@ -32,6 +37,7 @@ export class SystemControl {
     this.timeoutMs = Math.max(60000, Number(timeoutMs) || 420000);
     this.runtimeRoot = runtimeRoot;
     this.repoRoot = repoRoot;
+    this.startupDataRoot = resolve(startupDataRoot);
     this.gitBin = gitBin;
     this.bashBin = bashBin;
     this.npmBin = npmBin;
@@ -105,7 +111,7 @@ export class SystemControl {
     const novaState = w?.supervisedAgents?.nova?.state === 'RUNNING' ? 'RUNNING'
       : workplaceUp ? 'DEGRADED' : 'DOWN';
     const startup = String(this.jacoctl || '').endsWith('.mjs')
-      ? readStartupEvidence(this.repoRoot) : null;
+      ? readStartupEvidence(this.startupDataRoot) : null;
     const status = coreUp && wpState === 'RUNNING' && novaState === 'RUNNING'
       ? (startup && !startup.ok ? 'DEGRADED' : 'READY')
       : coreUp || workplaceUp ? 'DEGRADED' : 'DOWN';
@@ -122,7 +128,7 @@ export class SystemControl {
     try {
       const report = await this.runCtl(['status', '--json']);
       if (String(this.jacoctl || '').endsWith('.mjs') && report?.schema === 'jaco.activation/v2') {
-        const startup = readStartupEvidence(this.repoRoot);
+        const startup = readStartupEvidence(this.startupDataRoot);
         const ok = report.ok === true && startup.ok;
         return { ...report, startup, ok };
       }

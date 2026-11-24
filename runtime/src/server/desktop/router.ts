@@ -1,5 +1,9 @@
 import express from 'express';
 import { DesktopHandsOffClient, type DesktopAction, type DesktopActionType } from './desktopHandsOff.js';
+import { classify } from '../relay/modelRelay.js';
+import { actuatorGrantExpiry, type AutonomyMandateStore } from '../autonomy/autonomyMandate.js';
+import { DEFAULT_DESKTOP_PROCESSES } from './grantAtStart.mjs';
+import { standingToolAuthority, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 
 /**
  * Desktop hands-off surface.
@@ -16,9 +20,13 @@ export function createDesktopRouter(
   releaseRoot: string,
   requireMutationAuth: express.RequestHandler,
   onEvent?: (event: { actor: string; type: string; message: string; verified: boolean }) => void,
+  canonicalClient?: DesktopHandsOffClient,
+  standingMandates?: AutonomyMandateStore,
 ): express.Router {
   const router = express.Router();
-  const client = new DesktopHandsOffClient(workspaceRoot, releaseRoot);
+  // Reuse ModelRelay's exact actuator instance. A second client would have a
+  // separate in-flight lock and could dispatch UIA concurrently with Aura.
+  const client = canonicalClient ?? new DesktopHandsOffClient(workspaceRoot, releaseRoot);
 
   const fail = (res: express.Response, status: number, error: unknown) =>
     res.status(status).json({ success: false, error: error instanceof Error ? error.message : String(error) });
@@ -66,6 +74,33 @@ export function createDesktopRouter(
     const body = (req.body ?? {}) as Partial<DesktopAction>;
     const type = String(body.type || '') as DesktopActionType;
     if (!ACTION_TYPES.includes(type)) return fail(res, 400, `unsupported action type '${type}'`);
+    const switchId = type === 'observe' ? 'desktop-observe'
+      : type === 'invoke' ? 'desktop-invoke' : 'desktop-action';
+    if (!operatorTaskEnabled(workspaceRoot, switchId))
+      return fail(res, 403, 'TASK_TURNED_OFF_BY_OPERATOR:' + switchId);
+    const consequence = classify('DESKTOP', body);
+    const authority = standingToolAuthority(workspaceRoot, consequence);
+    if (authority.status === 'DENY' || authority.status === 'REVIEW')
+      return fail(res, authority.status === 'REVIEW' ? 428 : 403, 'DESKTOP_STANDING_MANDATE_' + authority.status);
+    if (authority.allowed) {
+      const current = standingMandates?.get('operator-level5-default');
+      if (!standingMandates || !current) return fail(res, 503, 'DESKTOP_MANDATE_AUTHORITY_UNAVAILABLE');
+      const decision = standingMandates.evaluate(current.id, consequence, false);
+      if (!decision.allowed) return fail(res, decision.requireReview ? 428 : 403, decision.reason);
+      // One renewable actuator lease, not a second operator permission.
+      // Empty desktop scope inherits the existing safe program defaults;
+      // explicit user selections replace those defaults.
+      try {
+        client.configureGrant({
+          enabled: true,
+          allowed_processes: current.allowedDesktopProcesses.length
+            ? current.allowedDesktopProcesses : [...DEFAULT_DESKTOP_PROCESSES],
+          allow_invoke: true, allow_value_set: true, allow_toggle: true,
+          allow_select: true, allow_scroll: true,
+          expires_at: actuatorGrantExpiry(current),
+        });
+      } catch (error) { return fail(res, 409, error); }
+    }
 
     const receipt = await client.executeVerified({
       type,

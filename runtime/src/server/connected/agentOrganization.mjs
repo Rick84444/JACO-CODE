@@ -50,7 +50,8 @@ export const AUTONOMY = {
   4: { name: 'Approver', role: 'The agent asks only at blockers and before risky outbound actions', needsApproval: ['high-external'] },
   5: { name: 'Observer', role: 'The agent works freely within its mandate; you hold the emergency stop', needsApproval: [] },
 };
-const GRANT_DAYS = { default: 30, max: 90 };
+// Operator-granted permissions persist until revoked; explicit timed delegation is optional.
+const GRANT_DAYS = { default: null, max: 90 };
 
 // 0–100 working-style weights. Capped traits govern autonomy, so a report never exceeds its manager's.
 export const TRAITS = {
@@ -78,8 +79,12 @@ export const AURA_DEVELOPMENT_DEFAULTS = Object.freeze(['files.read', 'web.read'
 const defaultGrant = at => ({ grantedBy: OPERATOR, grantedAt: at, source: 'product-development-default' });
 const newAuraMandate = at => ({ ...emptyMandate(), autonomy: 5, permissions: Object.fromEntries(AURA_DEVELOPMENT_DEFAULTS.map(key => [key, defaultGrant(at)])) });
 
+// No model is hardcoded: an agent without its own choice follows the model the operator chose for Aura (the planner
+// choice). A local Ollama default once sent agents to a small model on a machine meant to run on cloud models.
+export const FOLLOWS_PLANNER = Object.freeze({ kind: 'planner', providerId: '', model: '' });
+const isOldLocalPlaceholder = model => model?.kind === 'local' && model.providerId === 'ollama' && !model.model;
 function checkModel(model) {
-  if (model == null) return { kind: 'local', providerId: 'ollama', model: '' };
+  if (model == null || model?.kind === 'planner') return { ...FOLLOWS_PLANNER };
   if (typeof model !== 'object' || !['local', 'api'].includes(model.kind)) throw new Error('AGENT_MODEL_INVALID');
   if (!validProviderId(model.providerId)) throw new Error('INVALID_PROVIDER_ID');
   return { kind: model.kind, providerId: model.providerId, model: optionalText(model.model, 120, 'AGENT_MODEL_INVALID') };
@@ -107,6 +112,8 @@ export class AgentOrganization {
       // An earlier build assigned placeholder .local addresses that no mail system can reach. Replace them.
       if (agent.mail.endsWith('@agents.jaco.local')) { agent.mail = ''; backfilled = true; }
       if (!agent.mail) { agent.mail = this.defaultMail(agent.id); backfilled = true; }
+      // The old built-in default was a local Ollama placeholder with no model, never an operator choice.
+      if (isOldLocalPlaceholder(agent.model)) { agent.model = { ...FOLLOWS_PLANNER }; backfilled = true; }
       this.ensureFolder(agent.id);
     }
     if (backfilled) this.save();
@@ -415,8 +422,9 @@ export class AgentOrganization {
       if (actor !== OPERATOR && !this.authorize(actor, key).allowed) throw new Error('GRANTOR_LACKS_PERMISSION');
       let expiry = {};
       if (permission.risk === 'high') {
-        if (!Number.isInteger(days) || days < 1 || days > GRANT_DAYS.max) throw new Error('GRANT_DAYS_INVALID');
-        expiry = { riskAcceptedAt: this.now(), expiresAt: new Date(Date.parse(this.now()) + days * 86400_000).toISOString() };
+        if (days !== null && (!Number.isInteger(days) || days < 1 || days > GRANT_DAYS.max)) throw new Error('GRANT_DAYS_INVALID');
+        expiry = { riskAcceptedAt: this.now(),
+          ...(days === null ? {} : { expiresAt: new Date(Date.parse(this.now()) + days * 86400_000).toISOString() }) };
       }
       agent.mandate.permissions[key] = { grantedBy: actor, grantedAt: this.now(), ...expiry };
     }

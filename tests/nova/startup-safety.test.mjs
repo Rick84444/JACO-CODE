@@ -5,7 +5,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { configuration, definitions, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess,renameWithRetry, ollamaExecutable, resolveServicePorts, readResolvedPorts, waitReady, inspectStaticUi } from '../../agents/lib/local-stack.mjs';
+import { configuration, definitions, serviceEnvironment, activate, runtimeDirectory, tunnelCommandMatches, pendingProcess,renameWithRetry, ollamaExecutable, resolveServicePorts, readResolvedPorts, waitReady, inspectStaticUi, provisionLocalStartupCredential } from '../../agents/lib/local-stack.mjs';
 const IDENTITY="app.get('/api/runtime/identity',()=>{});";
 function fixture(t, env = {}) {
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-start-test-'));
@@ -63,6 +63,31 @@ test('withholds payment and publication secrets while preserving runtime models 
  for(const k of ['STRIPE_SECRET_KEY','GITHUB_TOKEN','CLOUDFLARE_API_TOKEN'])assert.equal(e[k],'');
  assert.equal(e.OLLAMA_API_KEY,'model');assert.equal(e.HUGGINGFACE_TOKEN,'hf');assert.equal(e.JACO_WORKSPACE_ROOT,undefined);
  assert.equal(serviceEnvironment(c,'workplace').HUGGINGFACE_TOKEN,'');
+});
+test('canonical local startup provisions a private internal credential only when missing',t=>{
+ const c=fixture(t,{JACO_GATEWAY_TOKEN:'',GATEWAY_TOKEN:''});
+ const file=path.join(c.root,'.env');
+ assert.equal(fs.existsSync(file),false,'configuration/status must remain read-only');
+ assert.equal(c.env.GATEWAY_TOKEN,'');
+ const first=provisionLocalStartupCredential(c);
+ assert.deepEqual(first,{provisioned:true});
+ assert.match(c.env.GATEWAY_TOKEN,/^[a-f0-9]{64}$/);
+ assert.equal(c.env.JACO_GATEWAY_TOKEN,c.env.GATEWAY_TOKEN);
+ assert.equal(c.env.SEER_TOKEN,c.env.GATEWAY_TOKEN);
+ assert.equal(fs.existsSync(file),true);
+ const text=fs.readFileSync(file,'utf8');
+ assert.match(text,/^JACO_GATEWAY_TOKEN=[a-f0-9]{64}\n$/);
+ assert.deepEqual(provisionLocalStartupCredential(c),{provisioned:false});
+ assert.equal(fs.readFileSync(file,'utf8'),text,'already provisioned token is never rotated');
+});
+test('explicit invalid credential is not silently replaced and valid one remains untouched',t=>{
+ const bad=fixture(t,{JACO_GATEWAY_TOKEN:'short'});
+ assert.throws(()=>provisionLocalStartupCredential(bad),/GATEWAY_TOKEN_REQUIRED_MIN_24/);
+ assert.equal(fs.existsSync(path.join(bad.root,'.env')),false);
+ const ok=fixture(t),before=ok.env.GATEWAY_TOKEN;
+ assert.deepEqual(provisionLocalStartupCredential(ok),{provisioned:false});
+ assert.equal(ok.env.GATEWAY_TOKEN,before);
+ assert.equal(fs.existsSync(path.join(ok.root,'.env')),false);
 });
 test('emergency latch prevents all startup effects',async t=>{
  const c=fixture(t);fs.writeFileSync(path.join(c.root,'.jaco-emergency-stop.json'),'{}');

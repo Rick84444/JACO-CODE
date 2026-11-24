@@ -192,6 +192,11 @@ test('high-risk grants expire and must be renewed', t => {
   assert.deepEqual(organization.authorize('aura', 'browser'), { allowed: false, reason: 'GRANT_EXPIRED', at: 'aura' });
   organization.setPermission('aura', 'browser', true, 'operator', { acceptRisk: true });
   assert.equal(organization.authorize('aura', 'browser').allowed, true);
+  assert.equal(organization.agent('aura').mandate.permissions.browser.expiresAt, undefined,
+    'a fresh operator selection is standing unless a duration was explicitly requested');
+  now = '2028-11-08T00:00:00.000Z';
+  assert.equal(organization.authorize('aura', 'browser').allowed, true,
+    'standing delegation must not expire without an operator change');
 });
 
 

@@ -1,4 +1,6 @@
 import { readAuraServiceHealth } from '../agents/lib/aura-service-health.mjs';
+import { readAuraDesktopLiveFrame } from '../agents/lib/aura-desktop-live-view.mjs';
+import { missionScreenshotPath } from '../agents/lib/mission-screen-frame.mjs';
 import { githubWindowsReleaseStatus } from './src/server/updates/githubRelease.mjs';
 import { sharedObservation } from './src/server/connected/sharedObservation.mjs';
 import { readMissionReview } from './src/server/connected/missionReview.mjs';
@@ -12,6 +14,7 @@ import http from "http";
 import { WebSocketServer } from "ws";
 import path from "path";
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { runtimeReleaseRoot } from './src/server/runtimeReleaseRoot.mjs';
 import fs from "fs";
 import os from "os";
@@ -27,6 +30,7 @@ import { createHandsOffPlanRunner } from './src/server/android/handsOffPlanRunne
 import { NovaTractionEngine } from './src/server/nova/traction.js';
 import { IntuitionContractStore } from './src/server/autonomy/intuitionContractStore.js';
 import { createDesktopRouter } from './src/server/desktop/router.js';
+import { desktopTakeoverState } from './src/server/desktop/desktopTakeover.mjs';
 import { DesktopHandsOffClient, type DesktopAction } from './src/server/desktop/desktopHandsOff.js';
 import { createCognitiveStreamHandler, readCognitiveFeed } from './src/server/connected/cognitiveLiveStream.mjs';
 import { projectAuraLiveWorkspace } from './src/lib/liveWorkspaceProjection.mjs';
@@ -50,6 +54,7 @@ import { discoverProvider, identifyKey } from './src/server/connected/providerDi
 import { CATALOG as PROVIDER_CATALOG, catalogById, catalogProvider } from './src/server/connected/providerCatalog.mjs';
 import { activationReport } from '../agents/lib/activate.mjs';
 import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret, validateSecretName } from '../agents/lib/secret-store.mjs';
+import { importVaultText } from '../agents/lib/vault-bulk-import.mjs';
 import { listVaultSecrets, runVaultHelper } from '../agents/lib/vault-tools.mjs';
 import { loadLocalJacoEnv, loadWindowsModelKeys, LOCAL_SERVICE_KEYS } from '../agents/lib/local-credential-discovery.mjs';
 const localEnvDiscovery = loadLocalJacoEnv();
@@ -78,6 +83,7 @@ import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { WORKSPACE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
 import { createStackRepair } from "./src/server/connected/stackRepair.mjs";
 import { createPiperVoice } from "./src/server/connected/piperVoice.mjs";
+import { renewStandingGrants } from "./src/server/desktop/grantAtStart.mjs";
 const repairStack = createStackRepair();
 import { answerVoiceMessageThroughAura, createVoiceChannel, createMissionNotifier, synthesize as synthesizeVoice } from "./src/server/connected/voiceChannel.mjs";
 import { qrSvg } from "./src/server/connected/qrSvg.mjs";
@@ -204,6 +210,21 @@ const projectRoot = createProjectRoot({ stateDir: path.join(WORKSPACE_ROOT, '.ja
 process.on('unhandledRejection', (reason: any) => {
   console.error('[runtime] unhandled rejection (kept running):', reason?.stack || reason);
 });
+// The JSON body parser looks up its UTF-8 decoder lazily, on the first request with a body. In the packaged
+// Lite CI run that lookup failed after startup (body-parser: 'unsupported charset "UTF-8"', HTTP 415 for every
+// POST, 2026-11-22), intermittently, while the same package passed elsewhere. Loading the decoder once at startup
+// caches it before the server opens its watchers and sockets, so later requests never need the lookup again.
+function preloadJsonBodyDecoder(): void {
+  try {
+    const own = createRequire(typeof __filename === 'string' ? __filename : fileURLToPath(import.meta.url));
+    const fromExpress = createRequire(own.resolve('express/package.json'));
+    const fromBodyParser = createRequire(fromExpress.resolve('body-parser/package.json'));
+    fromBodyParser('iconv-lite').getCodec('utf-8');
+  } catch (error: any) {
+    console.warn(`[http] JSON body decoder preload failed: ${error?.message || error}`);
+  }
+}
+
 const RELEASE_ROOT = runtimeReleaseRoot({ override: process.env.JACO_RELEASE_ROOT, moduleFile: typeof __filename === 'string' ? __filename : fileURLToPath(import.meta.url) });
 // A running packaged IDE may be separate from its editable source checkout. If the
 // checkout is present, Aura can inspect JACO code without changing the selected project.
@@ -213,6 +234,14 @@ const inspectJacoSource = createAuraSourceInspector({ candidateRoots: [
 ] });
 const handsOff = new HandsOffClient(WORKSPACE_ROOT);
 const desktopHandsOff = new DesktopHandsOffClient(WORKSPACE_ROOT, RELEASE_ROOT);
+// Operator standing instruction: the tools are on when JACO activates and the operator switches off what
+// they do not want. Renewing here goes through each surface's own configureGrant, so blocked credential
+// surfaces, name validation and the 8-hour ceiling all still apply; only the opening of the UI is removed.
+const standingGrants = renewStandingGrants({
+  desktop: desktopHandsOff,
+  env: process.env,
+  log: (level, message) => console[level === 'warn' ? 'warn' : 'log'](`[grant-at-start] ${message}`),
+});
 const handsOffPlans = createHandsOffPlanRunner(handsOff, WORKSPACE_ROOT);
 const novaTraction = new NovaTractionEngine();
 const intuitionContracts = new IntuitionContractStore(WORKSPACE_ROOT);
@@ -735,6 +764,7 @@ async function startServer() {
   app.use(securityHeaders({ httpsOnly: process.env.JACO_HTTPS_ONLY === 'true', dev: process.env.NODE_ENV !== 'production' }));
   app.use(requireJsonBody(2 * 1024 * 1024));
   app.use('/api', rateLimit({ windowMs: 60_000, max: 600 }, 'api'));
+  preloadJsonBodyDecoder();
   app.use(express.json({
     limit: '10mb',
     verify: (req: any, _res, buf) => {
@@ -898,7 +928,7 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
       toolsSkills: ['Chrome CDP', 'Browser Hands-Off', 'Nova Traction'],
     });
     seerLiveWorkstream.record({ actor: event.actor, type: event.type, message: event.message, verified: event.verified, receipt: event.receipt });
-  });
+  }, () => modelRelay.mandates);
   const continuumSurface = createContinuumRouter({ workspaceRoot: WORKSPACE_ROOT, browserSessions: browserSurface.sessions, requireAuth });
 
   const modelRelay = createModelRelayRouter({
@@ -3412,6 +3442,27 @@ const notifyPhone = async (action) => {
       res.json({ success: true, ...result });
     } catch (error: any) { res.status(/UNKNOWN/.test(error?.message) ? 404 : 400).json({ success: false, error: error?.message || String(error) }); }
   });
+  // A single operator action quarantines only failed *custom* MCP servers.
+  // Definitions remain in workspace configuration with enabled:false; there
+  // is no credential read, payment setup, arbitrary process launch or deletion.
+  app.post('/api/aura/workbench/mcp/quarantine-failed', requireLocalUi, (_req, res) => {
+    if (!localOperatorOnly(_req, res)) return;
+    try {
+      const result = mcpHost.quarantineFailedCustom();
+      if (result.disabled.length) {
+        getAuraMcpFabric.invalidate();
+        seerLiveWorkstream.record({
+          actor: 'Aura Tool Fabric', type: 'mcp.failed-custom.quarantined',
+          message: `Disabled ${result.disabled.length} failed custom MCP connections; definitions preserved`,
+          verified: true, receipt: { disabled: result.disabled, definitionsPreserved: true },
+        });
+      }
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      res.status(409).json({ success: false, error: error?.message || String(error) });
+    }
+  });
+
   app.patch('/api/aura/workbench/mcp/servers/:id/access', requireLocalUi, (req, res) => {
     if (!localOperatorOnly(req, res)) return;
     try {
@@ -3482,7 +3533,8 @@ const notifyPhone = async (action) => {
       const groups = taskCatalog(Object.keys(TASK_FIELDS)).map((group: any) => ({ ...group, tasks: group.tasks.map((task: any) => ({ ...task, enabled: policy.isTaskEnabled(task.id) })) }));
       const skills = listSkills(skillRoots()).map((skill: any) => ({ id: skill.id, name: skill.name, description: skill.description, enabled: policy.isSkillEnabled(skill.id) }));
       res.setHeader('Cache-Control', 'no-store');
-      res.json({ success: true, schema: policy.snapshot().schema, updatedAt: policy.snapshot().updatedAt, groups, skills, alwaysAsk: ALWAYS_ASK });
+      const snapshot = policy.snapshot();
+      res.json({ success: true, schema: snapshot.schema, status: snapshot.status, updatedAt: snapshot.updatedAt, groups, skills, alwaysAsk: ALWAYS_ASK });
     } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
   });
   app.patch('/api/aura/capabilities', requireLocalUi, (req, res) => {
@@ -3492,7 +3544,7 @@ const notifyPhone = async (action) => {
       const snapshot = req.body?.reset === true ? policy.reset('operator') : policy.update({ tasks: req.body?.tasks, skills: req.body?.skills }, 'operator');
       seerLiveWorkstream.record({ actor: 'Aura Capabilities', type: 'capabilities.changed', message: `Turned off: ${snapshot.disabledTasks.length} task type(s), ${snapshot.disabledSkills.length} skill(s)`, verified: true, receipt: { disabledTasks: snapshot.disabledTasks, disabledSkills: snapshot.disabledSkills } });
       res.json({ success: true, ...snapshot });
-    } catch (error: any) { res.status(/CAPABILITY_INVALID/.test(error?.message) ? 400 : 500).json({ success: false, error: error?.message || String(error) }); }
+    } catch (error: any) { res.status(/CAPABILITY_STATE_INVALID/.test(error?.message) ? 409 : /CAPABILITY_INVALID/.test(error?.message) ? 400 : 500).json({ success: false, error: error?.message || String(error) }); }
   });
   // What JACO learned from its missions, waiting for the operator (agents/lib/skill-learning.mjs).
   app.get('/api/aura/workbench/skill-proposals', requireLocalUi, (_req, res) => {
@@ -3838,6 +3890,24 @@ const notifyPhone = async (action) => {
     } catch (error: any) {
       res.status(400).json({ success: false, error: error?.message || String(error) });
     }
+  });
+
+  // Local operator only: no separate organization token or agent mission required.
+  app.post('/api/aura/workbench/secrets/bulk-import', requireLocalUiSameOrigin, (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (typeof req.body?.text !== 'string' || typeof req.body?.dryRun !== 'boolean') return res.status(400).json({ success: false, error: 'VAULT_IMPORT_INVALID' });
+    try {
+      const report = importVaultText(req.body.text, { dryRun: req.body.dryRun });
+      let providerRefresh = 'NOT_NEEDED';
+      if (report.imported.length) {
+        try {
+          hydrateEnvFromStore(process.env);
+          connectedRuntime.providers.ensureDefaults();
+          providerRefresh = 'REFRESHED';
+        } catch { providerRefresh = 'PENDING'; }
+      }
+      res.json({ success: true, ...report, providerRefresh });
+    } catch { res.status(400).json({ success: false, error: 'VAULT_IMPORT_FAILED' }); }
   });
 
   // Bridge the existing Windows JACO Credential Manager vault to the canonical encrypted store.
@@ -4351,7 +4421,58 @@ const notifyPhone = async (action) => {
   app.use('/api/desktop/hands-off', createDesktopRouter(WORKSPACE_ROOT, RELEASE_ROOT, requireAuth, event => {
     seerLiveWorkstream.update({ activeModule: 'DesktopHandsOff', phase: event.verified ? 'VERIFYING' : 'DEGRADED' });
     seerLiveWorkstream.record({ actor: event.actor, type: event.type, message: event.message, verified: event.verified });
-  }));
+  }, desktopHandsOff, modelRelay.mandates));
+
+  // A read-only operator view into the *original* Laser Vision PNG. Never
+  // capture the screen or execute tools in this HTTP route. Only a recent
+  // mission-bound screenshot, hash-checked by freshMissionFrame, can be shown.
+  // Chrome Remote Desktop (or host-local VMConnect) remains the continuous viewer.
+  app.get('/api/aura/desktop/live-frame', requireLocalUi, (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    if (process.platform !== 'win32') {
+      return res.status(503).json({ success:false, error:'DESKTOP_VIEW_WINDOWS_ONLY' });
+    }
+    let mission: any = null;
+    try { mission = connectedRuntime.novaMissions.current(); } catch {}
+    const file = missionScreenshotPath();
+    const frame = readAuraDesktopLiveFrame({ mission, file });
+    if ('reason' in frame) {
+      return res.status(frame.reason === 'DESKTOP_SCREEN_VIEW_NOT_ENABLED' ? 403 : 409)
+        .json({ success:false, error:frame.reason });
+    }
+    res.setHeader('X-JACO-Frame-SHA256', frame.sha256);
+    res.setHeader('X-JACO-Frame-Observed-At', frame.at);
+    res.setHeader('X-JACO-Mission-Id', frame.missionId);
+    res.setHeader('X-JACO-Windows-Session-Id', String(frame.sessionId));
+    return res.status(200).type('png').send(frame.png);
+  });
+
+  // The existing Nova / Mission Bus operator pause is the only command.
+  // This read-only gate must remain PENDING while its tool, shared UIA client
+  // or ModelRelay desktop lease is still active. An ACK to pause is NOT proof
+  // of human-exclusive keyboard/mouse control.
+  app.get('/api/aura/desktop/takeover/:id/status', requireLocalUi, (req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    try {
+      const mission = connectedRuntime.novaMissions.get(req.params.id);
+      const gate = desktopTakeoverState(mission, {
+        desktopBusy: desktopHandsOff.isActuatorBusy(),
+        relayLease: actuatorLeases.get('DESKTOP'),
+      });
+      return res.json({
+        success:true,
+        missionId:mission.id,
+        paused:Boolean(mission.paused),
+        phase:mission.phase,
+        ...gate,
+      });
+    } catch (error: any) {
+      return res.status(409).json({success:false,error:String(error?.message || error).slice(0,180)});
+    }
+  });
 
   app.use('/api/browser/hands-off', browserSurface.router);
   // The IDE page reads the run status without a gateway token; starting or stopping runs still requires one.
@@ -4372,6 +4493,60 @@ const notifyPhone = async (action) => {
       res.json({ success: true, mode: target.mode, path: target.path });
     } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 120) }); }
   });
+  // Persistent operator mandate editor. This is a view of the existing model-relay
+  // store, not a second policy engine. Changes require the operator mutation
+  // credential, while ordinary model/tool credentials cannot rewrite authority.
+  const standingMandateId = 'operator-level5-default';
+  // Flush cached per-surface grants after an operator edits/revokes the source
+  // mandate. Relay checks the store on every action; this additionally protects
+  // existing direct adapter sessions against stale scope until their lease ends.
+  const flushStandingSurfaceGrants = async () => {
+    const errors: string[] = [];
+    try { browserSurface.sessions.getClient()?.configureGrant({ enabled: false }); }
+    catch (error: any) { errors.push('BROWSER:' + String(error?.message || error).slice(0, 120)); }
+    try { desktopHandsOff.configureGrant({ enabled: false }); }
+    catch (error: any) { errors.push('DESKTOP:' + String(error?.message || error).slice(0, 120)); }
+    try { await handsOff.configureGrant({ enabled: false, allowed_packages: [], allow_typing: false,
+      allow_gestures: false, allow_navigation: false, expires_at: new Date().toISOString() }); }
+    catch (error: any) { errors.push('ANDROID:' + String(error?.message || error).slice(0, 120)); }
+    for (const surface of ['BROWSER', 'DESKTOP', 'ANDROID'] as const) {
+      const lease = actuatorLeases.get(surface);
+      if (lease) actuatorLeases.release(surface, lease.holder);
+    }
+    return errors;
+  };
+  app.get('/api/aura/standing-mandate', requireLocalUi, (_req, res) => {
+    const mandate = modelRelay.mandates.get(standingMandateId);
+    if (!mandate) return res.status(404).json({ success: false, error: 'STANDING_MANDATE_NOT_CONFIGURED' });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ success: true, mandate, active: modelRelay.mandates.isActive(standingMandateId),
+      mutationAuthRequired: organizationMutationAuthRequired() });
+  });
+  app.patch('/api/aura/standing-mandate', requireLocalUi, requireOrganizationMutationAuth, async (req, res) => {
+    try {
+      const mandate = modelRelay.mandates.updateOperator(standingMandateId, req.body?.patch, req.body?.expectedRevision);
+      const propagationErrors = await flushStandingSurfaceGrants();
+      res.json({ success: true, mandate, active: modelRelay.mandates.isActive(standingMandateId), propagationErrors });
+    } catch (error: any) {
+      const message = String(error?.message || error);
+      res.status(message === 'MANDATE_REVISION_CONFLICT' ? 409 : 400).json({ success: false, error: message });
+    }
+  });
+  app.post('/api/aura/standing-mandate/:decision', requireLocalUi, requireOrganizationMutationAuth, async (req, res) => {
+    try {
+      const decision = req.params.decision;
+      if (!['sign', 'revoke'].includes(decision)) return res.status(400).json({ success: false, error: 'MANDATE_DECISION_INVALID' });
+      const current = modelRelay.mandates.get(standingMandateId);
+      if (!current) return res.status(404).json({ success: false, error: 'STANDING_MANDATE_NOT_CONFIGURED' });
+      if (current.revision !== req.body?.expectedRevision) return res.status(409).json({ success: false, error: 'MANDATE_REVISION_CONFLICT' });
+      const mandate = decision === 'sign' ? modelRelay.mandates.sign(standingMandateId) : modelRelay.mandates.revoke(standingMandateId);
+      // A revoke invalidates already-propagated browser/desktop/Android grants;
+      // a later authorized relay action reconfigures only its required surface.
+      const propagationErrors = decision === 'revoke' ? await flushStandingSurfaceGrants() : [];
+      res.json({ success: true, mandate, active: modelRelay.mandates.isActive(standingMandateId), propagationErrors });
+    } catch (error: any) { res.status(400).json({ success: false, error: String(error?.message || error) }); }
+  });
+
   // Autonomy clock (GUI): a time-boxed, operator-signed mandate. Financial actions stay on REVIEW in code.
   const CLOCK_NAME = 'Autonomi-klocka';
   const clockMandates = () => modelRelay.mandates.list().filter((m: any) => [CLOCK_NAME, COMMERCIAL_CLOCK].includes(m.name) && modelRelay.mandates.isActive(m.id));
@@ -4429,7 +4604,9 @@ const notifyPhone = async (action) => {
     claimChecksRunning.add(key);
     let planner: string[] = [];
     try { const choice: any = readPlannerChoice(plannerChoiceFile(process.env)); if (choice?.provider && choice?.model) planner = [`${choice.provider}/${choice.model}`]; } catch {}
-    checkClaims(planned.payload.reason, connectedRuntime.novaMissions.evidenceReceipts(mission.id), { exclude: planner, maxJudgeMs: 15_000 })
+    // 15 s cut off every judge on this host: a local judge answered in 15.4 s and a cloud one needs its
+    // round trip too, so every check came back judged:0 and the mission waited for the operator forever.
+    checkClaims(planned.payload.reason, connectedRuntime.novaMissions.evidenceReceipts(mission.id), { exclude: planner, maxJudgeMs: Number(process.env.JACO_CLAIM_JUDGE_TIMEOUT_MS) || 60_000 })
       .catch((error: any) => ({ ok: false, error: String(error?.message || error).slice(0, 200), claims: 0, unsupportedFacts: [], contradicted: [], partial: [] }))
       .then((result: any) => {
         connectedRuntime.bus.event('NOVA_CLAIM_CHECK', { missionId: mission.id, payload: { planSeq: planned.seq, ...result } });
@@ -5145,6 +5322,8 @@ const notifyPhone = async (action) => {
     readPlanner: () => process.env.JACO_PRIMARY_PROVIDER ? { provider: process.env.JACO_PRIMARY_PROVIDER, by: 'environment' } : readPlannerChoice(plannerChoicePath),
   }));
 
+  // No per-call prompt ceiling: refusing a large agent turn wastes every token the interrupted task already
+  // spent. Spend stays bounded by the EconomicGovernor daily budget, which prices each reservation below.
   app.post('/api/nova/ollama-cost/reserve', requireAuth, (req, res) => {
     const providerId = String(req.body?.providerId || 'ollama-cloud');
     const model = String(req.body?.model || '');
@@ -5154,8 +5333,8 @@ const notifyPhone = async (action) => {
     const disabled = String(process.env.JACO_DISABLED_PROVIDERS || '').split(',').map(s => s.trim());
     if (!paidModelsAllowed() || disabled.includes(providerId)) return res.status(403).json({ success: false, error: 'NOVA_PROVIDER_DISABLED' });
     if (!validProviderId(providerId) || !validPlannerModelId(model) ||
-        (providerId === 'ollama-cloud' && (!configuredModel || model !== configuredModel)) || !Number.isInteger(promptBytes) || promptBytes < 1 || promptBytes > 200000 ||
-        !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 32768) {
+        (providerId === 'ollama-cloud' && (!configuredModel || model !== configuredModel)) || !Number.isSafeInteger(promptBytes) || promptBytes < 1 ||
+        !Number.isSafeInteger(maxTokens) || maxTokens < 1) {
       return res.status(400).json({ success: false, error: 'NOVA_OLLAMA_COST_INPUT_INVALID' });
     }
     const economic = continuumSurface.runtime.economic;
@@ -7089,75 +7268,6 @@ const notifyPhone = async (action) => {
     }
   });
 
-  // ---------------------------------------------------------------------------
-  // Cloudflare Tunnel Setup for Local Ollama & Dev Server
-  // ---------------------------------------------------------------------------
-  let activeCloudflareTunnel: {
-    status: 'idle' | 'installing' | 'configuring' | 'active' | 'error';
-    tunnelId?: string;
-    tunnelName?: string;
-    url?: string;
-    localTarget: string;
-    createdAt?: string;
-    accountTag?: string;
-    logs: string[];
-  } = {
-    status: 'idle',
-    localTarget: 'http://127.0.0.1:11434',
-    logs: ['[tunnel] Cloudflare Tunnel subsystem initialized. Ready to generate tunnel for local Ollama.']
-  };
-
-  // Status check for Cloudflare Tunnel
-  app.get("/api/cloudflare/tunnel-status", requireOperator, (_req, res) => {
-    const hasToken = !!process.env.CLOUDFLARE_API_TOKEN;
-    res.json({
-      success: true,
-      hasToken,
-      tunnel: activeCloudflareTunnel
-    });
-  });
-
-  // Generate / start a real cloudflared quick tunnel. No synthetic URL is emitted.
-  let activeCloudflareProcess: ReturnType<typeof spawn> | null = null;
-  app.post("/api/cloudflare/generate-tunnel", async (req, res) => {
-    const { localTarget = "http://127.0.0.1:11434", tunnelName = "jaco-quick-tunnel" } = req.body || {};
-    if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/.*)?$/i.test(String(localTarget))) {
-      return res.status(400).json({ success:false, error:'localTarget must be a localhost HTTP(S) URL' });
-    }
-    if (activeCloudflareProcess) return res.status(409).json({ success:false, error:'a cloudflared process is already active' });
-    activeCloudflareTunnel = { status:'installing', tunnelName:String(tunnelName), localTarget:String(localTarget), logs:['[cloudflared] starting real quick tunnel process'] };
-    try {
-      const child = spawn('cloudflared', ['tunnel','--no-autoupdate','--url',String(localTarget)], { shell:false, windowsHide:true });
-      activeCloudflareProcess = child;
-      const inspect = (chunk:any) => {
-        const text=chunk.toString(); activeCloudflareTunnel.logs.push(...text.split('\n').filter(Boolean).slice(-10));
-        const match=text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
-        if(match){ activeCloudflareTunnel.status='active'; activeCloudflareTunnel.url=match[0]; activeCloudflareTunnel.createdAt=new Date().toISOString(); }
-      };
-      child.stdout.on('data',inspect); child.stderr.on('data',inspect);
-      child.on('error',(e)=>{activeCloudflareTunnel.status='error';activeCloudflareTunnel.logs.push(e.message);activeCloudflareProcess=null;});
-      child.on('close',(code)=>{if(activeCloudflareTunnel.status!=='idle')activeCloudflareTunnel.status=code===0?'idle':'error';activeCloudflareTunnel.logs.push(`[cloudflared] exited code=${code}`);activeCloudflareProcess=null;});
-      return res.status(202).json({success:true,message:'cloudflared process started; poll tunnel-status for observed URL',tunnel:activeCloudflareTunnel});
-    } catch(err:any) {
-      activeCloudflareTunnel.status='error'; activeCloudflareTunnel.logs.push(String(err?.message||err));
-      return res.status(503).json({success:false,error:String(err?.message||err),tunnel:activeCloudflareTunnel});
-    }
-  });
-
-  app.post("/api/cloudflare/stop-tunnel", (_req, res) => {
-    if (activeCloudflareProcess) { activeCloudflareProcess.kill('SIGTERM'); activeCloudflareProcess = null; }
-    activeCloudflareTunnel.status = 'idle';
-    activeCloudflareTunnel.logs.push(`[cloudflared] Tunnel process stopped by user request.`);
-    activeCloudflareTunnel.url = undefined;
-    pushLog('info', `[Cloudflare Tunnel] Tunnel stopped.`, 'cloudflare-tunnel');
-
-    res.json({
-      success: true,
-      message: "Tunnel stopped successfully",
-      tunnel: activeCloudflareTunnel
-    });
-  });
-
   app.get("/api/actions", requireAuth, (req, res) => {
     res.json({ actions: pendingActions.slice(0, 100) });
   });
@@ -7652,9 +7762,6 @@ const notifyPhone = async (action) => {
       // unreachable and the legacy scheduler can safely resume if needed.
       void auraCoreControl.stop();
       try { connectedRuntime.stop(); } catch {}
-      if (activeCloudflareProcess) {
-        try { activeCloudflareProcess.kill('SIGTERM'); } catch {}
-      }
       await Promise.allSettled([closeWebSockets(), closeHttpServer()]);
       try { continuumSurface.runtime.close(); } catch (error: any) {
         console.error('[JACO] Continuum shutdown failed:', error?.message || error);

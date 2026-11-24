@@ -14,12 +14,26 @@
 // secrets, credentials, node_modules). Remote (http) servers stay read-only for agents.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 import path from 'node:path';
 import { HttpMcpClient } from './httpMcpClient.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
+// Classify a failed MCP child without leaking its stderr, which may contain
+// private paths, environment variables, or provider diagnostics.
+export function classifyMcpChildExit(code, stderr = '', initialized = false) {
+  if (!initialized && /(?:ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND)/.test(String(stderr))) return 'ENTRYPOINT_NOT_FOUND';
+  if (!initialized && code === 0) return 'NO_MCP_HANDSHAKE';
+  return 'EXIT_' + (Number.isInteger(code) ? code : 'UNKNOWN');
+}
+
 // Tools that only read but do not declare readOnlyHint.
 const KNOWN_READ_ONLY = { fetch: new Set(['fetch']) };
+// This seller-registration script is a one-off task, not a JSON-RPC MCP server.
+// Reject accidental registration rather than repeatedly spawning it.
+export function isOneShotSellerScript(command, args = []) {
+  return [command, ...args].some(part => /(?:^|[\\/])create-skyfire-seller-service\.mjs$/i.test(String(part)));
+}
 export const isReadOnlyTool = (server, tool) => Boolean(tool?.readOnly || KNOWN_READ_ONLY[server]?.has(tool?.name));
 // Never invent a tool or strip another server's namespace. Exact registered names win.
 export function resolveAdvertisedTool(server, name, tools) {
@@ -34,7 +48,7 @@ export const AGENT_ACCESS = ['off', 'read', 'write'];
 // Logos the IDE ships (src/components/mcpLogos.ts); anything else shows the MCP logo.
 export const ICONS = ['jaco', 'mcp', 'git', 'github', 'cloudflare', 'huggingface', 'nodejs'];
 // Paths an agent may never write through a tool, whatever the server's access.
-const PROTECTED_PATH = /(^|[\\/])(\.env(\.[^\\/]*)?|\.git|node_modules)([\\/]|$)|secret|credential/i;
+const PROTECTED_PATH = /(^|[\\/])(\.env(\.[^\\/]*)?|\.git|node_modules)([\\/]|$)|secret|credential|(^|[\\/])\.jaco[\\/](?:state[\\/](?:autonomy|capabilities\.json(?:\.initialized)?)|org[\\/]organization\.json|mcp[\\/]servers\.json)([\\/]|$)/i;
 
 function commercialDiscoveryServers() {
   return {
@@ -133,12 +147,12 @@ function withAccess(def, s = {}) {
 }
 
 // Why an agent may not run this tool, or null when it may.
-export function agentRefusal(def, tool, args = {}) {
+export function agentRefusal(def, tool, args = {}, { allowRemoteWrite = false } = {}) {
   if (def.agentAccess === 'off') return 'MCP_AGENT_ACCESS_OFF';
   if (def.deny?.includes(tool.name)) return 'MCP_TOOL_DENIED';
   const reads = Boolean(tool.readOnly || KNOWN_READ_ONLY[def.id]?.has(tool.name));
   if (reads) return null;
-  if (def.transport === 'http' && !localBridge(def)) return 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY';
+  if (def.transport === 'http' && !localBridge(def) && !allowRemoteWrite) return 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY';
   // A single scoped, append-only coordination exception for the bundled JacoEdit,
   // never a general write grant. It is available only to the built-in stdio server;
   // overriding it with a user command or remote MCP removes this trusted flag.
@@ -177,12 +191,16 @@ export function loadServerConfig({ configFile, repoRoot, runtimeRoot }) {
       if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
       if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
       servers[id] = withAccess({ name: String(s.name || id), role: String(s.role || ''), transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, icon: id === 'huggingface' ? 'huggingface' : undefined }, s);
-      } catch { servers[id] = { name: String(s.name || id), role: '', validationError: 'MCP_CONFIGURATION_INVALID' }; }
+      } catch { servers[id] = { name: String(s.name || id), role: '', transport: 'http', validationError: 'MCP_CONFIGURATION_INVALID' }; }
       continue;
     }
     // An entry without a command only changes a built-in server's access (icon, agentAccess, deny).
     if (typeof s.command !== 'string' || !Array.isArray(s.args)) {
       if (servers[id]) servers[id] = withAccess(servers[id], s);
+      continue;
+    }
+    if (isOneShotSellerScript(s.command, s.args)) {
+      servers[id] = { name: String(s.name || id).slice(0, 80), role: '', transport: 'stdio', validationError: 'MCP_ONE_SHOT_NOT_MCP_SERVER' };
       continue;
     }
     // Migrate exactly the old built-in uvx commands, preserving operator access settings.
@@ -221,6 +239,7 @@ export function validateServerEntry(id, s = {}) {
   const command = String(s.command || '').trim();
   if (!command || command.length > 300) throw Error('MCP_COMMAND_REQUIRED');
   if (!Array.isArray(s.args) || s.args.length > 40) throw Error('MCP_ARGS_INVALID');
+  if (isOneShotSellerScript(command, s.args)) throw Error('MCP_ONE_SHOT_NOT_MCP_SERVER');
   const env = {};
   for (const [k, v] of Object.entries(s.env || {})) {
     if (!/^[A-Z][A-Z0-9_]{0,79}$/.test(k)) throw Error('MCP_ENV_NAME_INVALID');
@@ -264,10 +283,15 @@ class StdioClient {
       proc.stdout.on('data', chunk => { if (this.proc === proc) this.onData(chunk); });
       proc.stderr.on('data', chunk => { if (this.proc === proc) this.lastStderr = String(chunk).slice(-500); });
       // Events of a process that was already replaced (stop + restart) must not touch the new one.
-      proc.on('exit', code => {
+      // Node emits 'exit' before stdio pipes necessarily drain. A missing
+      // entrypoint can therefore be misclassified as EXIT_1 instead of
+      // ENTRYPOINT_NOT_FOUND if the error text arrives after 'exit'.
+      // 'close' happens after the stdio streams close, preserving the actual
+      // failure classification without reading or publishing private stderr.
+      proc.on('close', code => {
         if (this.proc !== proc) return;
-        this.error = `exited with code ${code}${this.lastStderr ? `: ${this.lastStderr.trim().slice(-200)}` : ''}`;
-        this.failPending(`MCP_SERVER_EXITED:${this.id}`);
+        this.error = `MCP_SERVER_EXITED:${this.id}:${classifyMcpChildExit(code, this.lastStderr, this.initialized)}`;
+        this.failPending(this.error);
         this.proc = null; this.ready = null; this.initialized = false; this.tools = [];
       });
       // A command that cannot be spawned (e.g. uvx not installed) fails now, not after the 120 s timeout.
@@ -392,6 +416,26 @@ export class StdioMcpHost {
     return { id, removed: !builtIn, disabled: builtIn };
   }
 
+  // Operator-only cleanup: quarantine only *observed FAILED* custom servers.
+  // Keep their full saved definitions (including credential references), so the
+  // operator can repair/re-enable them later. Built-ins and healthy servers stay.
+  quarantineFailedCustom() {
+    const failed = this.status().filter(s => s.status === 'FAILED' && s.builtIn === false).map(s => s.id);
+    if (!failed.length) return { disabled: [], definitionsPreserved: true };
+    let config;
+    try { config = JSON.parse(fs.readFileSync(this.configFile, 'utf8')); }
+    catch { throw Error('MCP_CONFIG_UNREADABLE'); }
+    if (!config || typeof config !== 'object' || !config.servers ||
+        typeof config.servers !== 'object' || Array.isArray(config.servers)) throw Error('MCP_CONFIG_INVALID');
+    const disabled = failed.filter(id => Object.hasOwn(config.servers, id) &&
+      config.servers[id] && config.servers[id].enabled !== false);
+    if (!disabled.length) return { disabled: [], definitionsPreserved: true };
+    for (const id of disabled) config.servers[id] = { ...config.servers[id], enabled: false };
+    this.writeConfig(config);
+    for (const id of disabled) { this.clients.get(id)?.stop(); this.clients.delete(id); }
+    return { disabled, definitionsPreserved: true };
+  }
+
   // Agent access for one server; takes effect on the next call without restarting the server.
   setAccess(id, { agentAccess, deny } = {}) {
     if (!this.servers()[id]) throw Error(`MCP_SERVER_UNKNOWN:${id}`);
@@ -418,14 +462,27 @@ export class StdioMcpHost {
 
   // Status without starting anything: what the IDE shows on every refresh.
   status() {
+    const root = mcpAuthorityRoot(this);
+    const authority = Object.fromEntries(['READ','LOCAL_MUTATION','EXTERNAL_MUTATION','PUBLISH']
+      .map(consequence => [consequence, standingToolAuthority(root, consequence)]));
     return Object.entries(this.servers()).map(([id, def]) => {
       const c = this.clients.get(id);
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
-      if (def.validationError) return { id, name: def.name, role: def.role, transport: 'http', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
+      if (def.validationError) return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
       const sameLaunch = Boolean(c && launchKey(c.def) === launchKey(def));
-      const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => ({ ...t, readOnly: Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name)), agentAllowed: agentRefusal(def, t) === null }));
+      const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => {
+        const reads = Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name));
+        const consequence = reads ? 'READ' : id === 'git' && /push|merge|release|publish/i.test(t.name) ? 'PUBLISH'
+          : ['shell','filesystem','git','repo','editor'].includes(id) ? 'LOCAL_MUTATION' : 'EXTERNAL_MUTATION';
+        const switchesOn = operatorTaskEnabled(root, reads ? 'mcp-call' : 'mcp-write')
+          && (id !== 'shell' || operatorTaskEnabled(root, 'shell'));
+        const decision = authority[consequence];
+        return { ...t, readOnly: reads, agentAllowed: switchesOn
+          && decision.status !== 'DENY' && decision.status !== 'REVIEW'
+          && agentRefusal(def, t, {}, { allowRemoteWrite: authority.EXTERNAL_MUTATION.allowed }) === null };
+      });
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
-        credentialEnv: id === 'huggingface' ? def.tokenEnv || '' : undefined,
+        credentialEnv: def.tokenEnv || undefined,
         credentialConfigured: def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
         builtIn: Boolean(defaultServers(this)[id]),
         icon: def.icon, agentAccess: def.agentAccess, deny: def.deny, stats,
@@ -471,7 +528,22 @@ export class StdioMcpHost {
     if (!tool) { done('failed', `MCP_TOOL_UNKNOWN:${id}.${name}`); throw Object.assign(new Error(`MCP_TOOL_UNKNOWN:${id}.${name}`), { dispatchState: 'NOT_DISPATCHED' }); }
     name = tool.name;
     const reads = Boolean(tool.readOnly || KNOWN_READ_ONLY[id]?.has(name));
-    const refusal = actor === 'agent' ? agentRefusal(c.def, tool, args) || (readOnly && !reads ? 'MCP_TOOL_NOT_READ_ONLY' : null)
+    // Inspect the current signed operator mandate on EVERY dispatch. Tool
+    // discovery and an earlier chat/misson approval are not execution grants.
+    const consequence = reads ? 'READ'
+      : id === 'git' && /push|merge|release|publish/i.test(name) ? 'PUBLISH'
+      : ['shell', 'filesystem', 'git', 'repo', 'editor'].includes(id) ? 'LOCAL_MUTATION'
+      : 'EXTERNAL_MUTATION';
+    const root = mcpAuthorityRoot(this);
+    const taskSwitches = [reads ? 'mcp-call' : 'mcp-write', ...(id === 'shell' ? ['shell'] : [])];
+    const disabled = actor === 'agent' ? taskSwitches.find(task => !operatorTaskEnabled(root, task)) : null;
+    const authority = actor === 'agent' ? standingToolAuthority(root, consequence) : null;
+    const refusal = actor === 'agent'
+      ? (disabled ? 'TASK_TURNED_OFF_BY_OPERATOR:' + disabled
+        : authority.status === 'DENY' || authority.status === 'REVIEW'
+          ? 'MCP_STANDING_MANDATE_' + authority.status
+          : agentRefusal(c.def, tool, args, { allowRemoteWrite: consequence === 'EXTERNAL_MUTATION' && authority.allowed })
+            || (readOnly && !reads ? 'MCP_TOOL_NOT_READ_ONLY' : null))
       : c.def.transport === 'http' && !tool.readOnly && !localBridge(c.def) ? 'MCP_REMOTE_WRITE_REQUIRES_AUTHORITY' : null;
     if (refusal) { done('refused', `${refusal}:${id}.${name}`); throw Object.assign(new Error(`${refusal}:${id}.${name}`), { dispatchState: 'NOT_DISPATCHED' }); }
     try {

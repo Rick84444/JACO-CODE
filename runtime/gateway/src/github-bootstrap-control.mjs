@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, openSync, closeSync, fsyncSync, readdirSync, unlinkSync, linkSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { safeNovaReceiptLines } from './nova-receipt-inspector.mjs';
 import { safeAuraAcceptanceLines, safeAuraNotReadyLines } from './aura-operator-command.mjs';
@@ -9,6 +10,7 @@ const MARKER = '<!-- jaco-bootstrap-control:v1 -->';
 const TITLE_PREFIX = '[JACO BOOT]';
 const AURA_MARKER = '<!-- jaco-aura-control:v1 -->';
 const AURA_TITLE_PREFIX = '[JACO AURA]';
+const liveClaims = new Set();
 const ALLOWED_OPS = new Set(['system.status', 'system.health', 'system.activate', 'system.restart', 'system.update', 'system.nova-receipt']);
 
 
@@ -90,40 +92,105 @@ export function createGithubBootstrapControl({
   gitControlLocalRef = process.env.JACO_GIT_BOOTSTRAP_LOCAL_REF || 'refs/jaco/bootstrap-control',
   gitControlPath = process.env.JACO_GIT_BOOTSTRAP_PATH || '.jaco/bootstrap-control.json',
   gitReadImpl = null,
+  transportMode = process.env.JACO_GITHUB_BOOTSTRAP_TRANSPORT || 'auto',
 } = {}) {
   if (!system) throw new Error('GITHUB_BOOTSTRAP_SYSTEM_REQUIRED');
+  stateFile = resolve(stateFile);
   const [owner, name] = String(repo).split('/');
   const configured = Boolean(enabled && owner && name && actor);
   const loadState = () => {
     try {
       const parsed = JSON.parse(readFileSync(stateFile, 'utf8'));
+      if (!Array.isArray(parsed?.handled) || parsed.handled.some(id => typeof id !== 'string'))
+        throw new Error('BOOTSTRAP_STATE_INVALID');
       return {
         handled: Array.isArray(parsed?.handled) ? parsed.handled.map(String) : [],
         lastPollAt: parsed?.lastPollAt || null,
+        lastSuccessfulPollAt: parsed?.lastSuccessfulPollAt || null,
         lastProcessed: parsed?.lastProcessed || null,
         lastError: parsed?.lastError || null,
       };
-    } catch {
-      return { handled: [], lastPollAt: null, lastProcessed: null, lastError: null };
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw new Error('BOOTSTRAP_STATE_UNREADABLE', { cause: error });
+      return { handled: [], lastPollAt: null, lastSuccessfulPollAt: null, lastProcessed: null, lastError: null };
     }
   };
   const durable = loadState();
   const handled = new Set(durable.handled);
   const persistState = () => {
     mkdirSync(dirname(stateFile), { recursive: true });
-    const temp = stateFile + '.tmp.' + process.pid;
-    writeFileSync(temp, JSON.stringify({
+    const temp = stateFile + '.tmp.' + process.pid + '.' + randomUUID();
+    try {
+      writeFileSync(temp, JSON.stringify({
       schema: 'jaco.bootstrap-state/v1',
-      handled: [...handled].slice(-500),
+      handled: [...handled],
       lastPollAt: durable.lastPollAt,
+      lastSuccessfulPollAt: durable.lastSuccessfulPollAt,
       lastProcessed: durable.lastProcessed,
       lastError: durable.lastError,
-    }, null, 2), { mode: 0o600 });
-    renameSync(temp, stateFile);
+      }, null, 2), { mode: 0o600 });
+      renameSync(temp, stateFile);
+    } finally { try { unlinkSync(temp); } catch { /* already renamed */ } }
   };
   const remember = key => { handled.add(String(key)); persistState(); };
-  const transport = token ? 'github-api' : 'git-ref';
-  const effectivePollMs = token
+  if (!['auto', 'github-api', 'git-ref'].includes(transportMode)) {
+    throw new Error('GITHUB_BOOTSTRAP_INVALID_TRANSPORT');
+  }
+  const transport = transportMode === 'auto' ? (token ? 'github-api' : 'git-ref') : transportMode;
+  const apiMode = transport === 'github-api';
+  const transportReason = transportMode !== 'auto' ? 'EXPLICIT' : token ? 'TOKEN_PRESENT' : 'NO_TOKEN_GIT_REF';
+  let inboxState = 'UNCHECKED';
+  let pendingReceipts = 0;
+  let unresolvedClaims = 0;
+  const journalDir = stateFile + '.journal';
+  const journalPath = commandId => join(journalDir, createHash('sha256').update(commandId).digest('hex') + '.json');
+  // Exclusive creation is the cross-process command claim. Never delete a claim
+  // or evict an ID: a crash between dispatch and a receipt is irreducibly unknown.
+  function writeDurable(file, record, exclusive = false) {
+    mkdirSync(journalDir, { recursive: true });
+    const target = file + '.tmp.' + randomUUID();
+    let fd;
+    try {
+      fd = openSync(target, 'wx', 0o600);
+      writeFileSync(fd, JSON.stringify(record));
+      fsyncSync(fd);
+      closeSync(fd);
+      fd = undefined;
+      // Hard-link publication is atomic and does not replace an existing claim.
+      // An incomplete temp file can never become an executable claim.
+      if (exclusive) linkSync(target, file);
+      else renameSync(target, file);
+      if (process.platform !== 'win32') {
+        const dirFd = openSync(journalDir, 'r');
+        try { fsyncSync(dirFd); } finally { closeSync(dirFd); }
+      }
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+      try { unlinkSync(target); } catch { /* already renamed */ }
+    }
+  }
+  function claim(command, issueNumber) {
+    const file = journalPath(command.commandId);
+    const record = { schema: 'jaco.bootstrap-journal/v1', commandId: command.commandId,
+      op: command.op, issueNumber, phase: 'CLAIMED', pid: process.pid, at: new Date().toISOString() };
+    try { writeDurable(file, record, true); }
+    catch (error) { if (error?.code === 'EEXIST') return null; throw error; }
+    liveClaims.add(file);
+    return { file, record };
+  }
+  function claimOwnerAlive(file, record) {
+    if (record.pid === process.pid) return liveClaims.has(file);
+    if (!Number.isSafeInteger(record.pid) || record.pid < 1) return true;
+    try { process.kill(record.pid, 0); return true; }
+    catch (error) { return error?.code !== 'ESRCH'; }
+  }
+  function finish(file, record, state, lines) {
+    const entry = { ...record, phase: 'TERMINAL', state, lines, finishedAt: new Date().toISOString(),
+      receiptAttempted: false, commentSent: false, delivered: record.issueNumber == null };
+    writeDurable(file, entry);
+    return entry;
+  }
+  const effectivePollMs = apiMode
     ? Math.max(5000, Number.isFinite(pollMs) ? pollMs : 15000)
     : Math.max(30000, Number.isFinite(pollMs) ? pollMs : 30000);
   let inFlight = false;
@@ -208,8 +275,9 @@ export function createGithubBootstrapControl({
   }
 
   async function listCommands() {
-    if (!token) {
+    if (!apiMode) {
       const raw = await readGitControl();
+      inboxState = raw ? 'GIT_REF_PRESENT' : 'GIT_REF_EMPTY';
       if (!raw) return [];
       return [{
         number: null,
@@ -220,15 +288,19 @@ export function createGithubBootstrapControl({
       }];
     }
 
-    const params = new URLSearchParams({
-      state: 'open',
-      creator: actor,
-      per_page: '30',
-      sort: 'created',
-      direction: 'asc',
-    });
-    const issues = await api(`/repos/${owner}/${name}/issues?${params}`);
-    return (Array.isArray(issues) ? issues : []).filter(issue =>
+    if (!token) { inboxState = 'AUTH_REQUIRED'; throw new Error('GITHUB_BOOTSTRAP_TOKEN_REQUIRED'); }
+    const issues = [];
+    for (let page = 1; ; page++) {
+      const params = new URLSearchParams({ state: 'open', creator: actor,
+        per_page: '100', page: String(page), sort: 'created', direction: 'asc' });
+      const batch = await api(`/repos/${owner}/${name}/issues?${params}`);
+      if (!Array.isArray(batch)) throw new Error('GITHUB_BOOTSTRAP_INVALID_ISSUE_LIST');
+      issues.push(...batch);
+      if (batch.length < 100) break;
+      if (page >= 100) throw new Error('GITHUB_BOOTSTRAP_PAGINATION_LIMIT');
+    }
+    inboxState = 'ISSUES_READ';
+    return issues.filter(issue =>
       !issue.pull_request &&
       issue.user?.login === actor &&
       ((String(issue.title || '').startsWith(TITLE_PREFIX) && String(issue.body || '').includes(MARKER)) ||
@@ -237,7 +309,7 @@ export function createGithubBootstrapControl({
   }
 
   async function comment(issueNumber, lines) {
-    if (!token) return null;
+    if (!apiMode || !token) return null;
     return api(`/repos/${owner}/${name}/issues/${issueNumber}/comments`, {
       method: 'POST',
       body: { body: lines.join('\n') },
@@ -245,13 +317,93 @@ export function createGithubBootstrapControl({
   }
 
   async function close(issueNumber) {
-    if (!token) return null;
+    if (!apiMode || !token) return null;
     return api(`/repos/${owner}/${name}/issues/${issueNumber}`, {
       method: 'PATCH',
       body: { state: 'closed', state_reason: 'completed' },
     });
   }
 
+  // Terminal outcomes are durable before any remote writeback. A failed POST
+  // or close never changes the local outcome and never causes re-execution.
+  async function flushReceipt(file, record) {
+    if (record.delivered || !apiMode || !token || record.issueNumber == null) return;
+    const issue = record.issueNumber;
+    const marker = '<!-- jaco-bootstrap-receipt:' + record.commandId + ' -->';
+    if (!record.commentSent) {
+      let exists = false;
+      if (record.receiptAttempted) {
+        for (let page = 1; ; page++) {
+          const batch = await api(`/repos/${owner}/${name}/issues/${issue}/comments?per_page=100&page=${page}`);
+          if (!Array.isArray(batch)) throw new Error('GITHUB_BOOTSTRAP_INVALID_COMMENT_LIST');
+          exists = batch.some(c => c.user?.login === actor && String(c.body || '').includes(marker));
+          if (exists || batch.length < 100) break;
+          if (page >= 100) throw new Error('GITHUB_BOOTSTRAP_COMMENT_PAGINATION_LIMIT');
+        }
+      }
+      if (!exists) {
+        record = { ...record, receiptAttempted: true };
+        writeDurable(file, record);
+        await comment(issue, [...record.lines, marker]);
+      }
+      record = { ...record, commentSent: true };
+      writeDurable(file, record);
+    }
+    await close(issue);
+    writeDurable(file, { ...record, delivered: true });
+  }
+  const unknownLines = record => [
+    '<!-- jaco-bootstrap-status:v1 -->', '### JACO Sentinel bootstrap',
+    '- command: `' + record.commandId + '`', '- operation: `' + record.op + '`',
+    '- status: **UNKNOWN**', '- Service evidence: `NOT_AVAILABLE`',
+    'The command was durably claimed but its dispatch/result could not be reconciled. Never replay automatically.',
+  ];
+  async function drainOutbox() {
+    pendingReceipts = 0;
+    unresolvedClaims = 0;
+    mkdirSync(journalDir, { recursive: true });
+    for (const name of readdirSync(journalDir)) {
+      if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
+      const file = join(journalDir, name);
+      let record = JSON.parse(readFileSync(file, 'utf8'));
+      if (journalPath(record.commandId) !== file || record.schema !== 'jaco.bootstrap-journal/v1')
+        throw new Error('BOOTSTRAP_JOURNAL_INVALID');
+      if (record.phase === 'CLAIMED' && !claimOwnerAlive(file, record)) {
+        record = finish(file, record, 'UNKNOWN', unknownLines(record));
+        durable.lastProcessed = { at: record.finishedAt, issue: record.issueNumber,
+          commandId: record.commandId, op: record.op, status: 'UNKNOWN' };
+        remember(record.commandId);
+      }
+      if (record.phase === 'CLAIMED') unresolvedClaims++;
+      if (record.phase === 'TERMINAL' && !record.delivered) {
+        // The canonical listener is the only writeback worker; do not race
+        // another live local claimant while its initial receipt is in flight.
+        if (liveClaims.has(file) || (record.pid !== process.pid && claimOwnerAlive(file, record))) {
+          pendingReceipts++;
+          continue;
+        }
+        try { await flushReceipt(file, record); }
+        catch (error) { durable.lastError = String(error?.message || error).slice(0, 500); }
+        if (!JSON.parse(readFileSync(file, 'utf8')).delivered) pendingReceipts++;
+      }
+    }
+  }
+  // Upgrade safety: old Sentinel versions could leave a RUNNING receipt
+  // without a local journal on a crash. Never assume such a command is new.
+  async function legacyDispatched(issue, command) {
+    if (!apiMode || !Number.isSafeInteger(issue.number) || !(issue.comments > 0)) return false;
+    for (let page = 1; ; page++) {
+      const batch = await api(`/repos/${owner}/${name}/issues/${issue.number}/comments?per_page=100&page=${page}`);
+      if (!Array.isArray(batch)) throw new Error('GITHUB_BOOTSTRAP_INVALID_COMMENT_LIST');
+      if (batch.some(c => c.user?.login === actor &&
+        String(c.body || '').includes('<!-- jaco-bootstrap-status:v1 -->') &&
+        String(c.body || '').includes('- command: `' + command.commandId + '`') &&
+        String(c.body || '').includes('- operation: `' + command.op + '`') &&
+        !String(c.body || '').includes('- status: **NOT_READY**'))) return true;
+      if (batch.length < 100) return false;
+      if (page >= 100) throw new Error('GITHUB_BOOTSTRAP_COMMENT_PAGINATION_LIMIT');
+    }
+  }
   async function execute(command) {
     if (command.op === 'aura.acceptance') return system.startAuraAcceptance();
     if (command.op === 'system.status') return system.status();
@@ -269,8 +421,9 @@ export function createGithubBootstrapControl({
     const processed = [];
     durable.lastPollAt = new Date().toISOString();
     durable.lastError = null;
-    persistState();
     try {
+      persistState();
+      await drainOutbox();
       const issues = await listCommands();
       for (const issue of issues) {
         let command;
@@ -294,6 +447,23 @@ export function createGithubBootstrapControl({
           continue;
         }
         if (handled.has(command.commandId)) continue;
+        if (await legacyDispatched(issue, command)) {
+          const claimed = claim(command, issue.number);
+          if (!claimed) continue;
+          try {
+            const saved = finish(claimed.file, claimed.record, 'UNKNOWN', [
+              ...unknownLines(claimed.record),
+              'An earlier Sentinel receipt exists; no command was re-dispatched during migration.',
+            ]);
+            durable.lastProcessed = { at: saved.finishedAt, issue: issue.number,
+              commandId: command.commandId, op: command.op, status: 'UNKNOWN' };
+            remember(command.commandId);
+            processed.push({ issue: issue.number, status: 'UNKNOWN' });
+            try { await flushReceipt(claimed.file, saved); }
+            catch (error) { pendingReceipts++; durable.lastError = String(error?.message || error).slice(0, 500); }
+          } finally { liveClaims.delete(claimed.file); }
+          continue;
+        }
 
         // Readiness comes before the journal: nothing has been created yet, so a
         // NOT_READY command stays open and unjournaled and a later poll may retry it.
@@ -327,89 +497,79 @@ export function createGithubBootstrapControl({
           }
         }
 
+        const claimed = claim(command, issue.number ?? null);
+        if (!claimed) continue;
+        const { file, record } = claimed;
+        let terminal;
         try {
-          if (issue.number != null) {
-            await comment(issue.number, [
+          // The RUNNING receipt is an authenticated write preflight, before
+          // dispatch. If it fails, this ID was NOT_DISPATCHED and is not replayed.
+          let dispatchStarted = false;
+          try {
+            if (issue.number != null) {
+              await comment(issue.number, [
+                '<!-- jaco-bootstrap-status:v1 -->',
+                '### JACO Sentinel bootstrap',
+                `- command: \`${command.commandId}\``,
+                `- operation: \`${command.op}\``,
+                '- status: **RUNNING**',
+              ]);
+            }
+            dispatchStarted = true;
+            const result = await execute(command);
+            const reported = result?.schema === 'jaco.aura-operator-command/v1'
+              ? (result.status === 'ACCEPTED' ? 'ACCEPTED' : 'UNVERIFIED')
+              : result?.schema === 'jaco.nova-receipt-summary/v1'
+              ? (result.matched === true ? 'OBSERVED' : 'DEGRADED')
+              : result?.schema === 'jaco.activation/v2'
+              ? (result.ok === true ? 'READY' : 'DEGRADED')
+              : result?.error ? 'DEGRADED'
+              : result?.state || result?.status || (command.op === 'system.status' ? 'OBSERVED' : 'READY');
+            // The issue is public: an untrusted runtime status must never become free-form text.
+            const state = ['READY', 'RUNNING', 'DEGRADED', 'FAILED', 'OBSERVED', 'UPDATED', 'ACCEPTED'].includes(reported)
+              ? reported : 'UNVERIFIED';
+            const healthLines = result?.schema === 'jaco.aura-operator-command/v1'
+              ? safeAuraAcceptanceLines(result)
+              : result?.schema === 'jaco.nova-receipt-summary/v1'
+              ? safeNovaReceiptLines(result) : safeBootstrapHealthLines(result);
+            terminal = { state, lines: [
               '<!-- jaco-bootstrap-status:v1 -->',
               '### JACO Sentinel bootstrap',
               `- command: \`${command.commandId}\``,
               `- operation: \`${command.op}\``,
-              '- status: **RUNNING**',
-            ]);
-          }
-          // Aura goals mutate durable strategic state. Journal the command after
-          // readiness but BEFORE invoking the operator route so a crash cannot replay it.
-          // A missing response is UNKNOWN, never an invitation to retry.
-          if (command.op === 'aura.acceptance') remember(command.commandId);
-          const result = await execute(command);
-          const reported = result?.schema === 'jaco.aura-operator-command/v1'
-            ? (result.status === 'ACCEPTED' ? 'ACCEPTED' : 'UNVERIFIED')
-            : result?.schema === 'jaco.nova-receipt-summary/v1'
-            ? (result.matched === true ? 'OBSERVED' : 'DEGRADED')
-            : result?.schema === 'jaco.activation/v2'
-            ? (result.ok === true ? 'READY' : 'DEGRADED')
-            : result?.error ? 'DEGRADED'
-            : result?.state || result?.status || (command.op === 'system.status' ? 'OBSERVED' : 'READY');
-          // The issue is public: an untrusted runtime status must never become free-form text.
-          const state = ['READY', 'RUNNING', 'DEGRADED', 'FAILED', 'OBSERVED', 'UPDATED', 'ACCEPTED'].includes(reported)
-            ? reported : 'UNVERIFIED';
-          const healthLines = result?.schema === 'jaco.aura-operator-command/v1'
-            ? safeAuraAcceptanceLines(result)
-            : result?.schema === 'jaco.nova-receipt-summary/v1'
-            ? safeNovaReceiptLines(result) : safeBootstrapHealthLines(result);
-          if (issue.number != null) {
-            await comment(issue.number, [
-              '<!-- jaco-bootstrap-status:v1 -->',
-              '### JACO Sentinel bootstrap',
-              `- command: \`${command.commandId}\``,
-              `- operation: \`${command.op}\``,
-              `- status: **${String(state).slice(0, 80)}**`,
-              '',
+              `- status: **${state}**`, '',
               ...(healthLines.length ? healthLines : ['- Service evidence: `NOT_AVAILABLE` (only command completion was reported).']),
-              '',
-              'Sentinel executed a fixed JACO lifecycle verb; no arbitrary shell was exposed.',
-            ]);
-            await close(issue.number);
-          }
-          durable.lastProcessed = {
-            at: new Date().toISOString(),
-            issue: issue.number ?? null,
-            commandId: command.commandId,
-            op: command.op,
-            status: String(state),
-          };
-          remember(command.commandId);
-          processed.push({ issue: issue.number, status: String(state) });
-        } catch (error) {
-          durable.lastError = String(error?.message || error).slice(0, 500);
-          durable.lastProcessed = {
-            at: new Date().toISOString(),
-            issue: issue.number,
-            commandId: command.commandId,
-            op: command.op,
-            status: 'FAILED',
-          };
-          // A failed activation may already have partially changed the host.
-          // Persist the attempted command before network writeback: never auto-retry it.
-          remember(command.commandId);
-          if (issue.number != null) {
-            await comment(issue.number, [
-              '<!-- jaco-bootstrap-status:v1 -->',
-              '### JACO Sentinel bootstrap — FAILED',
-              `- command: \`${command.commandId}\``,
-              `- operation: \`${command.op}\``,
-              '- error: `TARGET_EXECUTION_FAILED`',
+              '', 'Sentinel executed a fixed JACO lifecycle verb; no arbitrary shell was exposed.',
+            ] };
+          } catch (error) {
+            durable.lastError = String(error?.message || error).slice(0, 500);
+            const state = dispatchStarted ? 'FAILED' : 'NOT_DISPATCHED';
+            terminal = { state, lines: [
+              '<!-- jaco-bootstrap-status:v1 -->', '### JACO Sentinel bootstrap — ' + state,
+              `- command: \`${command.commandId}\``, `- operation: \`${command.op}\``,
+              `- status: **${state}**`,
+              dispatchStarted ? '- error: `TARGET_EXECUTION_FAILED`' : '- error: `WRITE_PREFLIGHT_FAILED`',
               '- details: available only on the target host; not published to this issue.',
-            ]).catch(() => {});
-            await close(issue.number).catch(() => {});
+            ] };
           }
-          processed.push({ issue: issue.number, status: 'FAILED' });
+          // A storage failure here deliberately leaves CLAIMED, never reruns.
+          const saved = finish(file, record, terminal.state, terminal.lines);
+          durable.lastProcessed = { at: saved.finishedAt, issue: issue.number ?? null,
+            commandId: command.commandId, op: command.op, status: terminal.state };
+          remember(command.commandId);
+          processed.push({ issue: issue.number, status: terminal.state });
+          try { await flushReceipt(file, saved); }
+          catch (error) { pendingReceipts++; durable.lastError = String(error?.message || error).slice(0, 500); }
+        } finally {
+          liveClaims.delete(file);
         }
       }
+      durable.lastSuccessfulPollAt = new Date().toISOString();
+      persistState();
       return { enabled: configured, processed };
     } catch (error) {
       durable.lastError = String(error?.message || error).slice(0, 500);
-      persistState();
+      try { persistState(); } catch { /* preserve original failure */ }
       throw error;
     } finally {
       inFlight = false;
@@ -423,8 +583,14 @@ export function createGithubBootstrapControl({
       actor,
       pollMs: effectivePollMs,
       transport,
-      writeback: token ? 'github' : 'local-only',
+      transportMode,
+      transportReason,
+      inboxState,
+      pendingReceipts,
+      unresolvedClaims,
+      writeback: apiMode && token ? 'github' : 'local-only',
       lastPollAt: durable.lastPollAt,
+      lastSuccessfulPollAt: durable.lastSuccessfulPollAt,
       lastProcessed: durable.lastProcessed,
       lastError: durable.lastError,
     };

@@ -42,7 +42,7 @@ test('operator creates real persisted agent records, folders and zero-permission
     assert.deepEqual(agent.mandate.permissions, {});
     assert.equal(agent.mandate.budgetUsdPerDay, 0);
     assert.equal(agent.mandate.autonomy, 1);
-    assert.equal(agent.model.kind, 'local');
+    assert.equal(agent.model.kind, 'planner', 'no hardcoded local model: specialists follow the operator choice');
     assert.equal(agent.model.model, '');
     assert.deepEqual(organization.decide(agent.id, 'files.read'), {
       allowed: false, reason: 'PERMISSION_NOT_GRANTED', at: agent.id, needsApproval: false,

@@ -5,7 +5,7 @@ import type { DesktopHandsOffClient, DesktopAction } from '../desktop/desktopHan
 import type { HandsOffClient, HandsOffAction } from '../android/handsOffClient.js';
 import type { NovaTractionEngine } from '../nova/traction.js';
 import { actuatorLeases, type ActuatorSurface } from '../handsOff/actuatorLease.js';
-import { AutonomyMandateStore, type ConsequenceClass } from '../autonomy/autonomyMandate.js';
+import { AutonomyMandateStore, actuatorGrantExpiry, type ConsequenceClass } from '../autonomy/autonomyMandate.js';
 
 const RANK: Record<ConsequenceClass, number> = {
   READ: 0, LOCAL_MUTATION: 1, EXTERNAL_MUTATION: 2, PUBLISH: 3,
@@ -16,7 +16,7 @@ function maxConsequence(a: ConsequenceClass, b: ConsequenceClass): ConsequenceCl
   return RANK[a] >= RANK[b] ? a : b;
 }
 
-function classify(surface: ActuatorSurface, action: any): ConsequenceClass {
+export function classify(surface: ActuatorSurface, action: any): ConsequenceClass {
   const raw = JSON.stringify(action || {}).toLowerCase();
   if (/(password|passcode|otp|one.?time|verification code|login|signin|oauth|authorize|bankid)/.test(raw)) return 'AUTH';
   if (/(checkout|payment|pay\b|purchase|buy\b|swish|stripe|paypal|invoice)/.test(raw)) return 'FINANCIAL';
@@ -77,7 +77,7 @@ export function createModelRelayRouter(input: {
           allow_select: true,
           allow_scroll: true,
           contract_id: mandate.id,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       }
       if (mandate.allowedDesktopProcesses.length) {
@@ -89,7 +89,7 @@ export function createModelRelayRouter(input: {
           allow_toggle: true,
           allow_select: true,
           allow_scroll: true,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       }
       if (mandate.allowedAndroidPackages.length) {
@@ -99,10 +99,10 @@ export function createModelRelayRouter(input: {
           allow_typing: true,
           allow_gestures: true,
           allow_navigation: true,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       }
-      input.onEvent?.({ actor: 'AutonomyContract', type: 'mandate.signed', message: `${mandate.name} signed until ${mandate.expiresAt}; eligible Hands-Off grants propagated`, verified: true, receipt: grants });
+      input.onEvent?.({ actor: 'AutonomyContract', type: 'mandate.signed', message: `${mandate.name} signed ${mandate.expiresAt ? 'until '+mandate.expiresAt : 'until operator revocation'}; eligible Hands-Off grants propagated`, verified: true, receipt: grants });
       res.json({ success: true, mandate, grants });
     } catch (error) {
       // Fail closed: a mandate that could not propagate its requested grants must not remain active.
@@ -178,7 +178,7 @@ export function createModelRelayRouter(input: {
           allow_select: true,
           allow_scroll: true,
           contract_id: mandate.id,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       } else if (surface === 'DESKTOP' && mandate.allowedDesktopProcesses.length) {
         input.desktop.configureGrant({
@@ -189,7 +189,7 @@ export function createModelRelayRouter(input: {
           allow_toggle: true,
           allow_select: true,
           allow_scroll: true,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       } else if (surface === 'ANDROID' && mandate.allowedAndroidPackages.length) {
         await input.android.configureGrant({
@@ -198,7 +198,7 @@ export function createModelRelayRouter(input: {
           allow_typing: true,
           allow_gestures: true,
           allow_navigation: true,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       }
     } catch (error) {
@@ -208,14 +208,23 @@ export function createModelRelayRouter(input: {
     try { actuatorLeases.acquire(surface, modelId, missionId); }
     catch (error) { return fail(res, 423, error, { lease: actuatorLeases.get(surface) }); }
 
-    const targetBearing = surface === 'BROWSER'
-      ? ['click', 'set_value', 'select', 'check', 'wordpress_apply_css'].includes(String(action.type))
-      : surface === 'DESKTOP'
-        ? ['invoke', 'set_value', 'toggle', 'select', 'expand', 'collapse'].includes(String(action.type))
-        : ['tap', 'type_text'].includes(String(action.type));
+    // Browser and Android keep the existing shared Nova pre-lock. Desktop is
+    // different: DesktopHandsOffClient now reuses the same DomTractionEngine
+    // *on two live UIA snapshots* immediately before dispatch. Requiring the
+    // unrelated browser/Android lock here would always reject desktop work
+    // before that stronger window-specific verification could run.
+    const sharedTraction = surface !== 'DESKTOP';
+    const targetBearing = sharedTraction && (
+      surface === 'BROWSER'
+        ? ['click', 'set_value', 'select', 'check', 'wordpress_apply_css'].includes(String(action.type))
+        : ['tap', 'type_text'].includes(String(action.type))
+    );
     if (targetBearing) {
       const traction = input.nova.beforeAction(String(action.type));
-      if (traction.state !== 'VERIFYING') return fail(res, 409, 'Nova target lock is not verified', { traction });
+      if (traction.state !== 'VERIFYING') {
+        actuatorLeases.release(surface, modelId);
+        return fail(res, 409, 'Nova target lock is not verified', { traction });
+      }
     }
 
     input.onEvent?.({ actor: 'ModelRelay', type: 'relay.action.started', message: `${modelId} → ${surface} ${String(action.type)} [${consequence}]`, verified: true });
@@ -233,17 +242,24 @@ export function createModelRelayRouter(input: {
 
       const semanticVerified = surface === 'BROWSER' ? receipt?.verification?.level === 'SEMANTIC' : false;
       if (policy.requireSemanticVerification && !semanticVerified) {
-        input.nova.markActionFailure('semantic postcondition was required but not verified');
+        if (sharedTraction) input.nova.markActionFailure('semantic postcondition was required but not verified');
         input.onEvent?.({ actor: 'ModelRelay', type: 'relay.action.unverified', message: `${surface} action executed but semantic verification failed`, verified: false, receipt });
         return res.status(409).json({ success: false, receipt, consequence, policy, error: 'semantic verification required by mandate' });
       }
-      if (receipt?.verified) input.nova.observe({ expectedTransitionObserved: true, app: surface.toLowerCase() });
-      else input.nova.markActionFailure(receipt?.refusal || receipt?.error || 'unverified state transition');
+      if (sharedTraction) {
+        if (receipt?.verified) input.nova.observe({ expectedTransitionObserved: true, app: surface.toLowerCase() });
+        else input.nova.markActionFailure(receipt?.refusal || receipt?.error || 'unverified state transition');
+      }
       input.onEvent?.({ actor: 'ModelRelay', type: receipt?.verified ? 'relay.action.verified' : 'relay.action.unverified', message: `${modelId} → ${surface} ${String(action.type)}: ${receipt?.verified ? 'VERIFIED' : 'UNVERIFIED'}`, verified: Boolean(receipt?.verified), receipt });
-      return res.status(receipt?.refusal ? 403 : receipt?.verified ? 200 : 409).json({ success: Boolean(receipt?.verified), receipt, consequence, policy, traction: input.nova.getState(), lease: actuatorLeases.get(surface) });
+      return res.status(receipt?.refusal ? 403 : receipt?.verified ? 200 : 409).json({ success: Boolean(receipt?.verified), receipt, consequence, policy, traction: sharedTraction ? input.nova.getState() : (receipt?.traction || null), lease: actuatorLeases.get(surface) });
     } catch (error) {
       input.nova.markActionFailure(error instanceof Error ? error.message : String(error));
       return fail(res, 500, error);
+    } finally {
+      // ModelRelay leases are in-flight ownership, not persistent grants. A
+      // completed action must free the surface so a paused mission can yield
+      // the Windows pointer to the human without waiting for a stale TTL.
+      actuatorLeases.release(surface, modelId);
     }
   });
 

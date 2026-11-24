@@ -35,7 +35,18 @@ test('turning things off persists across restart, validates ids and can be reset
   assert.equal(policy.isTaskEnabled('git-push'), true);
   assert.deepEqual(policy.reset().disabledTasks, []);
   fs.writeFileSync(file, '{ damaged');
-  assert.deepEqual(new CapabilityPolicy(file, { taskIds }).snapshot().disabledTasks, [], 'a damaged file means everything on, not everything off');
+  const damaged = new CapabilityPolicy(file, { taskIds });
+  assert.equal(damaged.snapshot().status, 'INVALID');
+  assert.equal(damaged.isTaskEnabled('shell'), false);
+  assert.equal(damaged.isSkillEnabled('community-post'), false);
+  assert.equal(policy.isTaskEnabled('git-push'), false, 'running instance detects corruption');
+  assert.throws(()=>damaged.update({tasks:{shell:true}}), /CAPABILITY_STATE_INVALID/);
+  damaged.reset('operator');
+  assert.equal(damaged.isTaskEnabled('shell'), true, 'explicit reset repairs the state');
+  damaged.update({tasks:{shell:false}});
+  fs.unlinkSync(file);
+  assert.equal(new CapabilityPolicy(file,{taskIds}).snapshot().status,'INVALID');
+  assert.equal(policy.isTaskEnabled('shell'),false,'deletion after configuration never resurrects the tool');
 });
 
 function control(t, capabilities, options = {}) {
