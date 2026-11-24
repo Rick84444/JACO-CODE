@@ -5,7 +5,7 @@ import type { DesktopHandsOffClient, DesktopAction } from '../desktop/desktopHan
 import type { HandsOffClient, HandsOffAction } from '../android/handsOffClient.js';
 import type { NovaTractionEngine } from '../nova/traction.js';
 import { actuatorLeases, type ActuatorSurface } from '../handsOff/actuatorLease.js';
-import { AutonomyMandateStore, type ConsequenceClass } from '../autonomy/autonomyMandate.js';
+import { AutonomyMandateStore, actuatorGrantExpiry, type ConsequenceClass } from '../autonomy/autonomyMandate.js';
 
 const RANK: Record<ConsequenceClass, number> = {
   READ: 0, LOCAL_MUTATION: 1, EXTERNAL_MUTATION: 2, PUBLISH: 3,
@@ -16,7 +16,7 @@ function maxConsequence(a: ConsequenceClass, b: ConsequenceClass): ConsequenceCl
   return RANK[a] >= RANK[b] ? a : b;
 }
 
-function classify(surface: ActuatorSurface, action: any): ConsequenceClass {
+export function classify(surface: ActuatorSurface, action: any): ConsequenceClass {
   const raw = JSON.stringify(action || {}).toLowerCase();
   if (/(password|passcode|otp|one.?time|verification code|login|signin|oauth|authorize|bankid)/.test(raw)) return 'AUTH';
   if (/(checkout|payment|pay\b|purchase|buy\b|swish|stripe|paypal|invoice)/.test(raw)) return 'FINANCIAL';
@@ -77,7 +77,7 @@ export function createModelRelayRouter(input: {
           allow_select: true,
           allow_scroll: true,
           contract_id: mandate.id,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       }
       if (mandate.allowedDesktopProcesses.length) {
@@ -89,7 +89,7 @@ export function createModelRelayRouter(input: {
           allow_toggle: true,
           allow_select: true,
           allow_scroll: true,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       }
       if (mandate.allowedAndroidPackages.length) {
@@ -99,10 +99,10 @@ export function createModelRelayRouter(input: {
           allow_typing: true,
           allow_gestures: true,
           allow_navigation: true,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       }
-      input.onEvent?.({ actor: 'AutonomyContract', type: 'mandate.signed', message: `${mandate.name} signed until ${mandate.expiresAt}; eligible Hands-Off grants propagated`, verified: true, receipt: grants });
+      input.onEvent?.({ actor: 'AutonomyContract', type: 'mandate.signed', message: `${mandate.name} signed ${mandate.expiresAt ? 'until '+mandate.expiresAt : 'until operator revocation'}; eligible Hands-Off grants propagated`, verified: true, receipt: grants });
       res.json({ success: true, mandate, grants });
     } catch (error) {
       // Fail closed: a mandate that could not propagate its requested grants must not remain active.
@@ -178,7 +178,7 @@ export function createModelRelayRouter(input: {
           allow_select: true,
           allow_scroll: true,
           contract_id: mandate.id,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       } else if (surface === 'DESKTOP' && mandate.allowedDesktopProcesses.length) {
         input.desktop.configureGrant({
@@ -189,7 +189,7 @@ export function createModelRelayRouter(input: {
           allow_toggle: true,
           allow_select: true,
           allow_scroll: true,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       } else if (surface === 'ANDROID' && mandate.allowedAndroidPackages.length) {
         await input.android.configureGrant({
@@ -198,7 +198,7 @@ export function createModelRelayRouter(input: {
           allow_typing: true,
           allow_gestures: true,
           allow_navigation: true,
-          expires_at: mandate.expiresAt,
+          expires_at: actuatorGrantExpiry(mandate),
         });
       }
     } catch (error) {

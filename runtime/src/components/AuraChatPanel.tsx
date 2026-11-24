@@ -14,7 +14,7 @@ import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
 import { budgetIntent, type BudgetIntent } from '../lib/budgetIntent';
 import { humanChatEvents } from '../lib/humanChat';
 import { BudgetCard } from './CostChip';
-import { AutonomyClock } from './AutonomyClock';
+import { StandingMandatePanel } from './StandingMandatePanel';
 import { AuraOverview } from './AuraOverview';
 import { boundChatHistory } from '../lib/chatHistory.mjs';
 import { extractWorkspaceActions, workspaceReplyText } from '../lib/workspaceActions.mjs';
@@ -745,7 +745,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, approvalP
           {blockerEvents.length>0&&<details className="cognitive-chat-blockers"><summary>{tr('Hinder som behöver uppmärksamhet','Issues needing attention')} ({blockerEvents.length})</summary><div className="cognitive-background-events-list">{blockerEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</div></details>}
           <AuraOverview />
           {runControls && <div className="cognitive-run-controls">{runControls}</div>}
-          <AutonomyClock />
+          <StandingMandatePanel />
           {backgroundEvents.length>0&&<details className="cognitive-background-events"><summary>{tr('Visa tekniska händelser','Show technical events')} ({backgroundEvents.length})</summary><div className="cognitive-background-events-list">{backgroundEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</div></details>}
           {historyTruncated&&<p className="cognitive-history-note">{tr('Det senaste arbetet visas. Äldre händelser finns kvar i uppdragshistoriken.','The latest work is shown. Older events remain in mission history.')}</p>}
         </div>

@@ -990,7 +990,11 @@ function disposeModel(model){
   geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());skeletons.forEach(s=>s.dispose());
 }
 
-/** GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms. */
+/**
+ * GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms.
+ * @param {HTMLCanvasElement} canvas
+ * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean}} [options]
+ */
 export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false}={}){
   const response=await fetch(ASSET,{signal,cache:'force-cache'});
   if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);

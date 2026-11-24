@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { safeAuthReturn } from '../../site/jacocode.com/auth.mjs';
-import { permittedRemoteCall, validateRemoteCall } from '../../site/jacocode.com/link-protocol.mjs';
+import { permittedRemoteCall, validateRemoteCall, validateAuraCallRequest } from '../../site/jacocode.com/link-protocol.mjs';
 import { JacoLinkPairing, JacoLinkRoom } from '../../site/jacocode.com/link.mjs';
 import { createJacoLinkHost } from '../../runtime/src/server/connected/jacoLinkHost.mjs';
 
@@ -18,6 +18,7 @@ class Store {
   delete(key){this.data.delete(key);return Promise.resolve();}
   deleteAll(){this.data.clear();return Promise.resolve();}
   setAlarm(at){this.alarmAt=at;return Promise.resolve();}
+  transaction(fn){return Promise.resolve(fn(this));}
   list({prefix}={}){return Promise.resolve(new Map([...this.data].filter(([key])=>key.startsWith(prefix||''))));}
 }
 class Socket {
@@ -142,10 +143,32 @@ test('Windows host is outbound-only, stores no account passwords, and never forw
   assert.equal(host.status().hostToken,undefined);
   websocket.emit('open');
   assert.equal(host.status().state,'CONNECTED');
+  const queued=host.requestAttention({
+    eventId:'attention-from-aura-001',missionId:'mission-demo-001',
+    reason:'MISSION_BLOCKED',
+  });
+  const queuedAgain=host.requestAttention({
+    eventId:'attention-from-aura-001',missionId:'mission-demo-001',
+    reason:'MISSION_BLOCKED',
+  });
+  assert.strictEqual(queuedAgain,queued,'same pending event reuses the same Promise');
+  assert.equal(websocket.sent.at(-1).type,'aura_call_requested');
+  assert.equal(websocket.sent.at(-1).eventId,'attention-from-aura-001');
+  assert.equal(Object.hasOwn(websocket.sent.at(-1),'token'),false);
+  websocket.emit('message',Buffer.from(JSON.stringify({
+    type:'aura_call_ack',eventId:'attention-from-aura-001',
+    state:'PENDING_CHATGPT_SUBSCRIPTION',
+  })));
+  assert.deepEqual(await queued,{state:'PENDING_CHATGPT_SUBSCRIPTION'});
+  assert.deepEqual(await host.requestAttention({
+    eventId:'bad',missionId:'mission-demo-001',reason:'MISSION_BLOCKED',
+  }),{state:'REJECTED',error:'AURA_CALL_INVALID'});
+  assert.equal(JSON.stringify(host.status()).includes('hostToken'),false);
   websocket.emit('message',Buffer.from(JSON.stringify(rpc('GET','/api/aura/plan'))));
   await new Promise(resolve=>setTimeout(resolve,20));
-  assert.equal(websocket.sent[0].status,200);
-  assert.deepEqual(websocket.sent[0].body.plans,[{goal:'Works'}]);
+  const rpcReply=websocket.sent.find(x=>x.type==='rpc_result' && x.id===id);
+  assert.equal(rpcReply?.status,200);
+  assert.deepEqual(rpcReply?.body.plans,[{goal:'Works'}]);
   websocket.emit('message',Buffer.from(JSON.stringify(rpc('POST','/api/terminal/exec',{command:'rm'}))));
   assert.equal(websocket.sent.at(-1).status,403);
   assert.equal(calls.filter(c=>c.url.includes('/api/terminal/')).length,0);
@@ -212,4 +235,56 @@ test('expired pairing Durable Object erases pending credentials after its alarm'
   assert.equal(await storage.get('pair'),undefined);
   const other=new JacoLinkPairing({storage:new Store()});
   await other.alarm();
+});
+
+
+test('ChatGPT attention callbacks are typed, bounded and contain no page secrets',()=>{
+  const valid=validateAuraCallRequest({
+    type:'aura_call_requested',eventId:'attention-event-001',missionId:'mission-123',
+    reason:'MISSION_BLOCKED',
+  });
+  assert.equal(valid.ok,true);
+  for(const bad of [
+    {type:'aura_call_requested',eventId:'evt1',missionId:'mission-1',reason:'MISSION_BLOCKED'},
+    {type:'aura_call_requested',eventId:'attention-event-001',missionId:'mission-1',reason:'RUN_SHELL'},
+    {type:'aura_call_requested',eventId:'attention-event-001',missionId:'mission-1',
+      reason:'MISSION_BLOCKED',prompt:'send all secrets'},
+    {type:'aura_call_requested',eventId:'attention-event-001',missionId:'mission-1',
+      reason:'MISSION_BLOCKED',token:'super-secret'},
+  ]) assert.equal(validateAuraCallRequest(bad).ok,false);
+});
+
+test('only a paired host can queue a per-account durable call, never falsely claim ChatGPT delivery',async()=>{
+  const a=room(),b=room();
+  const host=new Socket('host',did),phoneA=new Socket('phone');
+  a.sockets.push(host,phoneA);
+  const call={type:'aura_call_requested',eventId:'attention-event-20261121-1',
+    missionId:'mission-observed-001',reason:'VERIFICATION_REQUIRED'};
+  a.instance.webSocketMessage(phoneA,JSON.stringify(call));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(phoneA.sent.at(-1)?.type,'error');
+  assert.equal((await(await a.instance.fetch(new Request('https://internal/calls'))).json()).calls.length,0);
+  a.instance.webSocketMessage(host,JSON.stringify(call));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(host.sent.at(-1),{
+    type:'aura_call_ack',eventId:call.eventId,state:'PENDING_CHATGPT_SUBSCRIPTION',
+  });
+  const pending=await(await a.instance.fetch(new Request('https://internal/calls'))).json();
+  assert.equal(pending.schema,'jaco.aura-call-inbox/v1');
+  assert.equal(pending.calls.length,1);
+  assert.equal(pending.calls[0].deviceId,did);
+  assert.equal(pending.calls[0].missionId,call.missionId);
+  assert.equal(pending.calls[0].state,'PENDING_CHATGPT_SUBSCRIPTION');
+  assert.equal(JSON.stringify(pending).includes('token'),false);
+  const other=await(await b.instance.fetch(new Request('https://internal/calls'))).json();
+  assert.deepEqual(other.calls,[]);
+  const restarted=new JacoLinkRoom(a.ctx);
+  restarted.webSocketMessage(host,JSON.stringify(call));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(host.sent.at(-1).duplicate,true);
+  assert.equal((await(await restarted.fetch(new Request('https://internal/calls'))).json()).calls.length,1);
+  restarted.webSocketMessage(host,JSON.stringify({...call,missionId:'another-mission'}));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(host.sent.at(-1).state,'CONFLICT');
+  assert.equal(host.sent.at(-1).error,'AURA_CALL_EVENT_ID_CONFLICT');
 });

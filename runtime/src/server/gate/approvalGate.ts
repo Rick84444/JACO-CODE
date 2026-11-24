@@ -55,8 +55,11 @@ export function submitToGate(proposal: GateActionProposal): GateEvaluationRespon
   const workspaceRoot = gateWorkspaceRoot();
 
   const supported = new Set<JobType>([
-    'code_refactor', 'quality_audit', 'git_ops', 'npu_inference', 'model_benchmark', 'system_patch',
+    'code_refactor', 'quality_audit', 'git_ops', 'npu_inference',
   ]);
+  // This legacy queue cannot execute system_patch/model_benchmark. Those
+  // functions must use the existing coding mission or model tooling rather
+  // than producing phantom approval cards for jobs the worker will reject.
   if (!supported.has(proposal.type)) {
     return { allowed: false, requiresApproval: false, riskLevel: 'CRITICAL', reason: `Job type '${proposal.type}' has no verified worker implementation.` };
   }

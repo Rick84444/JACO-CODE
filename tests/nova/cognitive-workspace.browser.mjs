@@ -498,14 +498,15 @@ try {
   passed('A live file update preserves a dirty draft, rejects a conflicting save and requires explicit reload');
   await canvas('Samtal').click();await input().fill('Ett bevarat utkast');
   blockLive=true;for(const response of liveResponses)response.end();
-  await page.getByRole('status').filter({hasText:'Connection needs recovery'}).waitFor({timeout:12000});
+  // The status line follows the chosen language; this page runs in Swedish.
+  await page.getByRole('status').filter({hasText:'Anslutningen behöver återställas'}).waitFor({timeout:12000});
   assert.equal(await input().inputValue(),'Ett bevarat utkast');
   blockLive=false;
-  await page.getByRole('status').filter({hasText:'Working'}).waitFor({timeout:15000});
+  await page.getByRole('status').filter({hasText:'Arbetar'}).waitFor({timeout:15000});
   assert.equal(await page.locator(verifiedSelector).count(),1);
   passed('Live connection interruption preserves the draft, exposes uncertainty and reconnects without duplicates');
   await portraitTrigger.click();
-  await portrait.locator('p[data-tone="active"]').filter({hasText:'Working'}).waitFor();
+  await portrait.locator('p[data-tone="active"]').filter({hasText:'Arbetar'}).waitFor();
   await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
   await portrait.waitFor({state:'detached'});
   assert.equal(await input().inputValue(),'Ett bevarat utkast');
@@ -590,6 +591,27 @@ try {
   await page.getByTestId('terminal-receipts-toggle').click();
   assert.equal(await receipts.count(),0,'dismissal disposes the terminal component');
   passed('Actual xterm renders a controlled command receipt at desktop and mobile viewport without changing command authority');
+  // The human-readable live terminal moves to its own reversible GUI window.
+  const liveTerminalToggle=page.getByTestId('aura-live-terminal-toggle');
+  await liveTerminalToggle.click();
+  const liveTerminal=page.getByTestId('aura-live-terminal-window');
+  await liveTerminal.waitFor({state:'visible'});
+  assert.equal(await page.locator('.aura-live-stage .aura-terminal').count(),0,
+    'the original AuraTerminal is no longer embedded in Live Stage');
+  assert.equal(await liveTerminal.getByRole('tab',{name:/Vad Aura gör|What Aura is doing/}).getAttribute('aria-selected'),'true');
+  assert.equal(await liveTerminal.getByText('JACO_RECEIPT_FIXTURE',{exact:false}).count(),0,
+    'human narration must not leak terminal stdout');
+  await liveTerminal.getByRole('tab',{name:/Kommandon|Commands/}).click();
+  await liveTerminal.getByText('JACO_RECEIPT_FIXTURE',{exact:false}).first().waitFor({state:'visible'});
+  await liveTerminal.getByRole('tab',{name:/Vad Aura gör|What Aura is doing/}).click();
+  const liveBox=await liveTerminal.boundingBox();
+  assert.ok(liveBox && liveBox.x >= 0 && liveBox.x + liveBox.width <= 393,
+    'the live terminal must fit the mobile viewport');
+  await liveTerminal.getByRole('button',{name:/Stäng live-terminalen|Close live terminal/}).click();
+  assert.equal(await liveTerminal.count(),0);
+  assert.equal(await liveTerminalToggle.getAttribute('aria-expanded'),'false');
+  passed('Live Terminal opens on mobile, isolates human narration from command receipts and dismisses without stopping Aura');
+
   await page.evaluate(() => {
     window.auraSpokenReplies = [];
     window.SpeechRecognition = class {

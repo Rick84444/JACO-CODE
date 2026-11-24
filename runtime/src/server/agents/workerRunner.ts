@@ -12,9 +12,7 @@ const SUPPORTED_TYPES: JobType[] = [
   'code_refactor',
   'quality_audit',
   'git_ops',
-  'npu_inference',
-  'model_benchmark',
-  'system_patch'
+  'npu_inference'
 ];
 
 export async function processSingleJob(job: JobRecord): Promise<any> {

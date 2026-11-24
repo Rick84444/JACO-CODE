@@ -12,6 +12,12 @@ export function remedyFor(error = '') {
   const e = String(error);
   if (/ENOENT.*uvx|uvx.*ENOENT|spawn uvx/i.test(e)) return 'uvx is missing: install uv (Termux: pkg install uv, Windows: winget install astral-sh.uv).';
   if (/ENOENT.*npx|npx.*ENOENT|spawn npx/i.test(e)) return 'npx is missing: install Node.js with npm.';
+  if (/MCP_ONE_SHOT_NOT_MCP_SERVER|NO_MCP_HANDSHAKE/i.test(e)) return 'The configured program is not an MCP server. Remove this server entry; run one-shot jobs through a mission instead.';
+  if (/ENTRYPOINT_NOT_FOUND/i.test(e)) return 'The MCP server entrypoint could not be loaded. Check the configured script path, cwd and installed dependencies.';
+  if (/MCP_TRANSPORT_DNS/i.test(e)) return 'Cannot resolve the MCP server address. Check DNS and network connectivity.';
+  if (/MCP_TRANSPORT_UNREACHABLE/i.test(e)) return 'The MCP endpoint is unreachable. Check its running process, URL and network connection.';
+  if (/MCP_TRANSPORT_TLS/i.test(e)) return 'The MCP endpoint failed TLS verification. Repair the certificate or endpoint configuration.';
+  if (/MCP_TRANSPORT_TIMEOUT/i.test(e)) return 'The MCP endpoint timed out. Check server health and retry when available.';
   if (/ENOENT/i.test(e)) return 'The program the server should start was not found. Check the command in the tool settings.';
   if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|fetch failed|network|offline/i.test(e)) return 'No network connection right now. Retrying automatically.';
   if (/MCP_TIMEOUT|timed out/i.test(e)) return 'The server did not respond in time. Retrying automatically.';
@@ -29,12 +35,14 @@ export function automaticConnections({ registry, mcpHost, env = process.env, now
   async function connectTools() {
     if (!mcpHost || !autoStart) return [];
     const lite = env.JACO_LITE === '1';
-    const rows = mcpHost.status().filter(s => s.agentAccess !== 'off' && (!lite || ['editor','shell','browser'].includes(s.id)));
+    // Include invalid custom definitions in diagnostics even though status() safely reports agentAccess=off.
+    // Do not start them or widen their access; make the failure visible instead of silently filtering it.
+    const rows = mcpHost.status().filter(s => (s.agentAccess !== 'off' || (s.status === 'FAILED' && Boolean(s.error))) && (!lite || ['editor','shell','browser'].includes(s.id)));
     const out = [], todo = [];
     for (const s of rows) {
       if (s.status === 'READY') { retry.delete(s.id); out.push({ id: s.id, state: 'CONNECTED', tools: s.tools.map(t => t.name) }); continue; }
       if (s.credentialEnv && s.credentialConfigured === false) { out.push({ id: s.id, state: 'NO_KEY', tools: [], remedy: `Add ${s.credentialEnv} (JACO Connect can receive it) and the server connects by itself.` }); continue; }
-      if (s.status === 'FAILED' && s.error && /CONFIGURATION_INVALID|HTTPS_URL_REQUIRED|TOKEN_ENV/.test(s.error)) { out.push({ id: s.id, state: 'INVALID', tools: [], error: s.error, remedy: remedyFor(s.error) }); continue; }
+      if (s.status === 'FAILED' && s.error && /CONFIGURATION_INVALID|HTTPS_URL_REQUIRED|TOKEN_ENV|MCP_ONE_SHOT_NOT_MCP_SERVER|ENTRYPOINT_NOT_FOUND|NO_MCP_HANDSHAKE/.test(s.error)) { out.push({ id: s.id, state: 'INVALID', tools: [], error: s.error, remedy: remedyFor(s.error) }); continue; }
       const r = retry.get(s.id);
       if (r && now() < r.nextTry) { out.push({ id: s.id, state: 'RETRY_LATER', tools: [], error: r.error, attempts: r.attempts, nextTry: new Date(r.nextTry).toISOString(), remedy: remedyFor(r.error) }); continue; }
       todo.push(s);
