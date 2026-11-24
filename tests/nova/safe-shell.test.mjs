@@ -105,7 +105,15 @@ test('node and python run a script in the workspace, never inline code; npm runs
   for (const ok of [['test'], ['run', 'hi'], ['ci'], ['install'], ['ls']]) assert.equal(c(ws, 'npm', ok).ok, true, ok.join(' '));
   assert.equal(c(ws, 'npm', ['ls'], { mode: 'read' }).ok, true);
   assert.match(c(ws, 'npm', ['test'], { mode: 'read' }).reason, /WRITE_COMMAND_IN_READ_MODE/);
-  assert.match(c(ws, 'npm', ['install', 'left-pad']).reason, /NPM_INSTALL_OF_PACKAGES/);
+  assert.match(c(ws, 'npm', ['install', 'left-pad']).reason, /NPM_INSTALL_OF_PACKAGES.*JACO_SHELL_ALLOW_PACKAGE_INSTALL/);
+  // The operator switch admits registry packages into this project, nothing else.
+  const pkg = { env: { JACO_SHELL_ALLOW_PACKAGE_INSTALL: '1' } };
+  for (const ok of [['install', 'left-pad'], ['i', '-D', '@types/node@20.11.0'], ['install', 'zod@^3.23', '--save-exact']]) assert.equal(c(ws, 'npm', ok, pkg).ok, true, ok.join(' '));
+  assert.match(c(ws, 'npm', ['install', '-g', 'left-pad'], pkg).reason, /NPM_INSTALL_OPTION_NOT_ALLOWED:-g/);
+  assert.match(c(ws, 'npm', ['install', '--registry=https://evil.example', 'x'], pkg).reason, /NPM_INSTALL_OPTION_NOT_ALLOWED/);
+  for (const spec of ['git+https://github.com/a/b.git', 'https://x.example/p.tgz', '../outside', 'file:../x', 'github:a/b', 'npm:other@1'])
+    assert.match(c(ws, 'npm', ['install', spec], pkg).reason, /NPM_INSTALL_SPEC_NOT_FROM_REGISTRY/, spec);
+  assert.match(c(ws, 'npm', ['publish'], pkg).reason, /NPM_SUBCOMMAND_NOT_ALLOWED/);
   assert.match(c(ws, 'npm', ['publish']).reason, /NPM_SUBCOMMAND_NOT_ALLOWED/);
   assert.match(c(ws, 'npm', ['exec', 'x']).reason, /NPM_SUBCOMMAND_NOT_ALLOWED/);
   assert.match(c(ws, 'npx', ['x']).reason, /PROGRAM_NOT_ALLOWED/);

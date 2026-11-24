@@ -13,6 +13,7 @@
 //   * Two modes: "read" (look, never change) and "write" (build, test, edit, commit). Destructive uses (recursive
 //     rm, git reset, git clean, git push, deleting a branch) are refused unless the operator enabled them in the
 //     server's environment (JACO_SHELL_ALLOW_DESTRUCTIVE=1, JACO_SHELL_ALLOW_PUSH=1); an agent cannot.
+//     Likewise JACO_SHELL_ALLOW_PACKAGE_INSTALL=1 lets npm install add registry packages to the project.
 //   * A minimal environment (no tokens or keys reach the command), a timeout, a cap on output, a cap on
 //     concurrent commands, and an append-only audit log with every command and refusal.
 import { spawn } from 'node:child_process';
@@ -161,6 +162,17 @@ export function pushRefusal(args, env = process.env) {
   }
   return null;
 }
+// With package installs enabled: registry packages into this project only. A global install changes
+// the machine outside the workspace; a git, URL, tarball or path spec bypasses the registry.
+const INSTALL_OPTION_ALLOWED = /^(-D|--save-dev|-E|--save-exact|-O|--save-optional|--save-peer|--no-save|--ignore-scripts|--no-audit|--no-fund|--prefer-offline|--legacy-peer-deps)$/;
+const REGISTRY_SPEC = /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*(@[A-Za-z0-9.^~<>=*|+ -]{1,60})?$/;
+export function packageInstallRefusal(args) {
+  const rest = args.slice(1);
+  const option = rest.find(a => a.startsWith('-') && !INSTALL_OPTION_ALLOWED.test(a));
+  if (option) return `NPM_INSTALL_OPTION_NOT_ALLOWED:${option}`;
+  const spec = positional(rest).find(p => !REGISTRY_SPEC.test(p) || /^(npm|file|git|http|https|link|github):/i.test(p));
+  return spec ? `NPM_INSTALL_SPEC_NOT_FROM_REGISTRY:${spec.slice(0, 80)}` : null;
+}
 const linkedDependencies = dir => { try { return fs.lstatSync(path.join(dir, 'node_modules')).isSymbolicLink(); } catch { return false; } };
 
 // Why this command may not run, or its mode. Pure: no process is started here.
@@ -176,7 +188,11 @@ export function classify(command, args, { workspace, cwd = workspace, env = proc
   if (command === 'node' || command === 'python3' || command === 'python' || command === 'py') { if (args[0] === '--version' || args[0] === '-v') mode = 'read'; }
   // With interpreters on, node and python run inline code too, under the same checks as the other interpreters.
   const inline = interpretersAllowed(env) && (command === 'node' || command === 'python3');
-  const problem = inline && args[0] !== '--version' && args[0] !== '-v' ? interpreterCheck(args) : spec.check?.(args); if (problem) return refuse(problem);
+  let problem = inline && args[0] !== '--version' && args[0] !== '-v' ? interpreterCheck(args) : spec.check?.(args);
+  // The operator may let agents add packages from the npm registry (JACO_SHELL_ALLOW_PACKAGE_INSTALL=1).
+  if (problem === 'NPM_INSTALL_OF_PACKAGES_NOT_ALLOWED' && env.JACO_SHELL_ALLOW_PACKAGE_INSTALL === '1') problem = packageInstallRefusal(args);
+  else if (problem === 'NPM_INSTALL_OF_PACKAGES_NOT_ALLOWED') problem += ' (the operator enables it with JACO_SHELL_ALLOW_PACKAGE_INSTALL=1)';
+  if (problem) return refuse(problem);
   destructive = destructive || spec.destructiveIf?.(args) || null;
   if (requested === 'read' && mode !== 'read') return refuse('WRITE_COMMAND_IN_READ_MODE');
   if (push && env.JACO_SHELL_ALLOW_PUSH !== '1') return refuse('GIT_PUSH_NOT_ENABLED (the operator enables it with JACO_SHELL_ALLOW_PUSH=1)');
@@ -267,8 +283,8 @@ export class SafeShell {
     local.capabilities=local.capabilities.map(tool=>({ ...tool, route: INTERPRETER_NAMES.has(tool.name)&&!interpretersAllowed(this.env) ? 'interpreter disabled by operator; do not bypass' : Object.hasOwn(PROGRAMS,tool.name) ? 'shell_read or shell_run according to command policy' : 'authorized mission shell only if permitted (not a SafeShell allowlist command)' }));
     return { workspace: this.workspace, platform: this.platform, shell: 'none (argv only, no interpretation)', programs: Object.keys(PROGRAMS), local, limits: { ...LIMITS },
       destructiveEnabled: this.env.JACO_SHELL_ALLOW_DESTRUCTIVE === '1', pushEnabled: this.env.JACO_SHELL_ALLOW_PUSH === '1',
-      interpretersEnabled: interpretersAllowed(this.env),
-      note: 'programs is the bounded shell policy list; local.programs is actual PATH discovery; local.capabilities describes intended uses and routes, not verified execution or a grant to execute every binary. Use shell_run for permitted writes or the authorized mission shell for other commands. npm: test, run, ci, ls, install without packages.' };
+      interpretersEnabled: interpretersAllowed(this.env), packageInstallEnabled: this.env.JACO_SHELL_ALLOW_PACKAGE_INSTALL === '1',
+      note: 'programs is the bounded shell policy list; local.programs is actual PATH discovery; local.capabilities describes intended uses and routes, not verified execution or a grant to execute every binary. Use shell_run for permitted writes or the authorized mission shell for other commands. npm: test, run, ci, ls, install without packages' + (this.env.JACO_SHELL_ALLOW_PACKAGE_INSTALL === '1' ? '; install <registry package> into this project (no -g, no git/URL/path specs).' : '.') };
   }
   async run({ command, args = [], cwd = '.', timeoutSeconds, mode = 'write' } = {}) {
     const started = Date.now();
