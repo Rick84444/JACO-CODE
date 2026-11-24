@@ -3507,7 +3507,8 @@ const notifyPhone = async (action) => {
       const groups = taskCatalog(Object.keys(TASK_FIELDS)).map((group: any) => ({ ...group, tasks: group.tasks.map((task: any) => ({ ...task, enabled: policy.isTaskEnabled(task.id) })) }));
       const skills = listSkills(skillRoots()).map((skill: any) => ({ id: skill.id, name: skill.name, description: skill.description, enabled: policy.isSkillEnabled(skill.id) }));
       res.setHeader('Cache-Control', 'no-store');
-      res.json({ success: true, schema: policy.snapshot().schema, updatedAt: policy.snapshot().updatedAt, groups, skills, alwaysAsk: ALWAYS_ASK });
+      const snapshot = policy.snapshot();
+      res.json({ success: true, schema: snapshot.schema, status: snapshot.status, updatedAt: snapshot.updatedAt, groups, skills, alwaysAsk: ALWAYS_ASK });
     } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
   });
   app.patch('/api/aura/capabilities', requireLocalUi, (req, res) => {
@@ -3517,7 +3518,7 @@ const notifyPhone = async (action) => {
       const snapshot = req.body?.reset === true ? policy.reset('operator') : policy.update({ tasks: req.body?.tasks, skills: req.body?.skills }, 'operator');
       seerLiveWorkstream.record({ actor: 'Aura Capabilities', type: 'capabilities.changed', message: `Turned off: ${snapshot.disabledTasks.length} task type(s), ${snapshot.disabledSkills.length} skill(s)`, verified: true, receipt: { disabledTasks: snapshot.disabledTasks, disabledSkills: snapshot.disabledSkills } });
       res.json({ success: true, ...snapshot });
-    } catch (error: any) { res.status(/CAPABILITY_INVALID/.test(error?.message) ? 400 : 500).json({ success: false, error: error?.message || String(error) }); }
+    } catch (error: any) { res.status(/CAPABILITY_STATE_INVALID/.test(error?.message) ? 409 : /CAPABILITY_INVALID/.test(error?.message) ? 400 : 500).json({ success: false, error: error?.message || String(error) }); }
   });
   // What JACO learned from its missions, waiting for the operator (agents/lib/skill-learning.mjs).
   app.get('/api/aura/workbench/skill-proposals', requireLocalUi, (_req, res) => {
