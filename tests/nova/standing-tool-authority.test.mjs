@@ -22,6 +22,14 @@ test('no mandate legacy compatibility does not fabricate an operator grant', () 
   assert.equal(standingToolAuthority(root,'LOCAL_MUTATION').status, 'LEGACY');
 }));
 
+test('first-install unsigned placeholder keeps legacy local development available', () => fixture(({root,file}) => {
+  fs.writeFileSync(file, JSON.stringify([{
+    id:'operator-level5-default', enabled:false, signedByOperator:false,
+    signedAt:null, validity:'STANDING', expiresAt:null, decisions:{ LOCAL_MUTATION:'ALLOW' }
+  }]));
+  assert.equal(standingToolAuthority(root, 'LOCAL_MUTATION').status, 'LEGACY');
+}));
+
 test('standing operator controls local and outward actions independently', () => fixture(({root,file}) => {
   saved(file);
   assert.equal(standingToolAuthority(root,'LOCAL_MUTATION').allowed, true);
