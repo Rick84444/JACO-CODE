@@ -452,12 +452,25 @@ export class StdioMcpHost {
 
   // Status without starting anything: what the IDE shows on every refresh.
   status() {
+    const root = mcpAuthorityRoot(this);
+    const authority = Object.fromEntries(['READ','LOCAL_MUTATION','EXTERNAL_MUTATION','PUBLISH']
+      .map(consequence => [consequence, standingToolAuthority(root, consequence)]));
     return Object.entries(this.servers()).map(([id, def]) => {
       const c = this.clients.get(id);
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
       if (def.validationError) return { id, name: def.name, role: def.role, transport: 'http', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
       const sameLaunch = Boolean(c && launchKey(c.def) === launchKey(def));
-      const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => ({ ...t, readOnly: Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name)), agentAllowed: agentRefusal(def, t, {}, { allowRemoteWrite: standingToolAuthority(mcpAuthorityRoot(this), 'EXTERNAL_MUTATION').allowed }) === null }));
+      const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => {
+        const reads = Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name));
+        const consequence = reads ? 'READ' : id === 'git' && /push|merge|release|publish/i.test(t.name) ? 'PUBLISH'
+          : ['shell','filesystem','git','repo','editor'].includes(id) ? 'LOCAL_MUTATION' : 'EXTERNAL_MUTATION';
+        const switchesOn = operatorTaskEnabled(root, reads ? 'mcp-call' : 'mcp-write')
+          && (id !== 'shell' || operatorTaskEnabled(root, 'shell'));
+        const decision = authority[consequence];
+        return { ...t, readOnly: reads, agentAllowed: switchesOn
+          && decision.status !== 'DENY' && decision.status !== 'REVIEW'
+          && agentRefusal(def, t, {}, { allowRemoteWrite: authority.EXTERNAL_MUTATION.allowed }) === null };
+      });
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
         credentialEnv: id === 'huggingface' ? def.tokenEnv || '' : undefined,
         credentialConfigured: def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
