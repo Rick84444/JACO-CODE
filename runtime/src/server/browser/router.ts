@@ -1,6 +1,9 @@
 import express from 'express';
 import { BrowserHandsOffClient, CdpBridge, type BrowserAction, type BrowserActionType, type BrowserGrant } from './browserHandsOff.js';
 import { actuatorLeases } from '../handsOff/actuatorLease.js';
+import { classify } from '../relay/modelRelay.js';
+import { actuatorGrantExpiry, type AutonomyMandateStore } from '../autonomy/autonomyMandate.js';
+import { standingToolAuthority } from '../../../../agents/lib/standing-tool-authority.mjs';
 
 const ACTION_TYPES: BrowserActionType[] = ['observe', 'survey', 'navigate', 'click', 'set_value', 'select', 'check', 'scroll', 'wordpress_apply_css'];
 const MUTATING = new Set<BrowserActionType>(['navigate', 'click', 'set_value', 'select', 'check', 'scroll', 'wordpress_apply_css']);
