@@ -127,9 +127,15 @@ export function preApprovedFor(reason, preApproved = []) {
 
 // Inside a contract, an action whose category the contract pre-approved does not stop the mission.
 // Outside a contract pre-approval has no effect: the operator decides there, as before.
-export function operatorApprovalCheck(task, { sandbox = false, preApproved = [] } = {}) {
+export function operatorApprovalCheck(task, { sandbox = false, preApproved = [], standingApproved = [] } = {}) {
   const reason = guardCheck(task, { sandbox });
-  if (reason && sandbox && preApprovedFor(reason.reason, preApproved)) return null;
+  // Standing approvals come only from the current signed operator mandate at
+  // the runtime call site. They are not restricted to coding contracts and
+  // never bypass HARD categories. Legacy contract pre-approval remains scoped.
+  if (reason && (
+    (sandbox && preApprovedFor(reason.reason, preApproved)) ||
+    preApprovedFor(reason.reason, standingApproved)
+  )) return null;
   return reason;
 }
 

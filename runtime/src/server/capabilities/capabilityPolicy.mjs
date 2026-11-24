@@ -64,7 +64,8 @@ const label = id => LABEL[id] || id.replace(/^android-/, 'Android ').replace(/-/
 
 export const ALWAYS_ASK = [
   { id: 'spend', label: 'Outgoing payments and new financial commitments', why: 'Money leaving your accounts always needs your decision.' },
-  { id: 'leaving-sandbox', label: 'Leaving the contract sandbox', why: 'Pushing a shared branch, publishing, deploying, sending in your name, signing in, deleting outside the worktree.' },
+  // Outward writes are decided by the signed standing mandate and exact scope,
+  // not permanently classified as a fresh human-approval request.
 ];
 
 export function taskCatalog(taskIds) {

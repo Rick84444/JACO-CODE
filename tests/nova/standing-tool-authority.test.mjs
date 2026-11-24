@@ -1,0 +1,97 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled, standingOperatorRules } from '../../agents/lib/standing-tool-authority.mjs';
+
+const fixture = run => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-tool-authority-'));
+  const file = path.join(root, '.jaco', 'state', 'autonomy', 'mandates.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  try { return run({root,file}); } finally { fs.rmSync(root, { recursive: true, force: true }); }
+};
+const saved = (file, decisions = {}) => fs.writeFileSync(file, JSON.stringify([{
+  id: 'operator-level5-default', enabled: true, signedByOperator: true,
+  validity: 'STANDING', expiresAt: null, revision: 7,
+  decisions: { READ: 'ALLOW', LOCAL_MUTATION: 'ALLOW', EXTERNAL_MUTATION: 'DENY',
+    PUBLISH: 'REVIEW', FINANCIAL: 'REVIEW', ...decisions }
+}]));
+
+test('no mandate legacy compatibility does not fabricate an operator grant', () => fixture(({root}) => {
+  assert.equal(standingToolAuthority(root,'LOCAL_MUTATION').status, 'LEGACY');
+}));
+
+test('first-install unsigned placeholder keeps legacy local development available', () => fixture(({root,file}) => {
+  fs.writeFileSync(file, JSON.stringify([{
+    id:'operator-level5-default', enabled:false, signedByOperator:false,
+    signedAt:null, validity:'STANDING', expiresAt:null, decisions:{ LOCAL_MUTATION:'ALLOW' }
+  }]));
+  assert.equal(standingToolAuthority(root, 'LOCAL_MUTATION').status, 'LEGACY');
+}));
+
+test('standing operator controls local and outward actions independently', () => fixture(({root,file}) => {
+  saved(file);
+  assert.equal(standingToolAuthority(root,'LOCAL_MUTATION').allowed, true);
+  assert.equal(standingToolAuthority(root,'EXTERNAL_MUTATION').status, 'DENY');
+  assert.equal(standingToolAuthority(root,'PUBLISH').status, 'REVIEW');
+  assert.equal(standingToolAuthority(root,'FINANCIAL').status, 'REVIEW');
+  saved(file, { LOCAL_MUTATION: 'DENY', EXTERNAL_MUTATION: 'ALLOW' });
+  assert.equal(standingToolAuthority(root,'LOCAL_MUTATION').status, 'DENY', 'GUI edit acts at next call');
+  assert.equal(standingToolAuthority(root,'EXTERNAL_MUTATION').allowed, true);
+}));
+
+test('revoke and damaged state never allow a write', () => fixture(({root,file}) => {
+  saved(file);
+  const records = JSON.parse(fs.readFileSync(file, 'utf8'));
+  records[0].enabled = false;
+  fs.writeFileSync(file, JSON.stringify(records));
+  assert.equal(standingToolAuthority(root, 'LOCAL_MUTATION').status, 'DENY');
+  fs.writeFileSync(file, 'invalid-json');
+  assert.equal(standingToolAuthority(root, 'LOCAL_MUTATION').status, 'DENY');
+}));
+
+test('removed mandate file or record after first bootstrap never revives legacy rights', () => fixture(({root,file}) => {
+  const bootstrap=path.join(path.dirname(file),'bootstrap-initialized');
+  fs.writeFileSync(bootstrap,'initialized\n');
+  assert.equal(standingToolAuthority(root,'LOCAL_MUTATION').status,'DENY');
+  fs.writeFileSync(file,'[]');
+  assert.equal(standingToolAuthority(root,'LOCAL_MUTATION').status,'DENY');
+}));
+
+test('timed legacy grant expires but signed standing grant does not', () => fixture(({root,file}) => {
+  saved(file);
+  const grant = JSON.parse(fs.readFileSync(file, 'utf8'));
+  grant[0].validity = 'TIMED';
+  grant[0].expiresAt = '2026-01-01T00:00:00.000Z';
+  fs.writeFileSync(file, JSON.stringify(grant));
+  assert.equal(standingToolAuthority(root, 'LOCAL_MUTATION', { now: Date.UTC(2026, 10, 24) }).status, 'DENY');
+}));
+
+test('MCP host workspace is derived from existing config, not a second store', () => fixture(({root}) => {
+  assert.equal(mcpAuthorityRoot({configFile:path.join(root,'.jaco','mcp','servers.json')}), root);
+  assert.equal(mcpAuthorityRoot({}), null);
+}));
+
+test('explicitly disabled GUI task switches override standing grants', () => fixture(({root}) => {
+  assert.equal(operatorTaskEnabled(root, 'shell'), true, 'default tools remain on');
+  const file = path.join(root, '.jaco', 'state', 'capabilities.json');
+  fs.writeFileSync(file, JSON.stringify({ schema:'jaco.capabilities/v1', disabledTasks:['shell','mcp-write'] }));
+  assert.equal(operatorTaskEnabled(root,'shell'), false);
+  assert.equal(operatorTaskEnabled(root,'mcp-write'), false);
+  assert.equal(operatorTaskEnabled(root,'mcp-call'), true);
+  fs.writeFileSync(file, '{bad-json');
+  assert.equal(operatorTaskEnabled(root,'shell'), true, 'preference corruption falls back to default-on; standing mandate remains authoritative');
+}));
+
+test('operator custom rules are loaded from signed mandate without becoming an authorization grant', () => fixture(({root,file}) => {
+  saved(file, { EXTERNAL_MUTATION:'DENY' });
+  const records = JSON.parse(fs.readFileSync(file,'utf8'));
+  records[0].additionalRules = 'Prioritize npm ci and verify every build before committing.';
+  fs.writeFileSync(file, JSON.stringify(records));
+  assert.match(standingOperatorRules(root), /verify every build/);
+  assert.equal(standingToolAuthority(root,'EXTERNAL_MUTATION').status,'DENY');
+  records[0].signedByOperator = false;
+  fs.writeFileSync(file, JSON.stringify(records));
+  assert.equal(standingOperatorRules(root),'');
+}));
