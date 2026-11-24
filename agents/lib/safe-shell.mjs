@@ -207,8 +207,9 @@ export function classify(command, args, { workspace, cwd = workspace, env = proc
   if (push && ['DENY', 'REVIEW'].includes(pushAuthority.status)) return refuse('GIT_PUSH_STANDING_MANDATE_' + pushAuthority.status);
   if (push && !pushAuthority.allowed && env.JACO_SHELL_ALLOW_PUSH !== '1') return refuse('GIT_PUSH_NOT_ENABLED (enable Publish in the standing mandate GUI)');
   if (push) { const problem = pushRefusal(args, env); if (problem) return refuse(problem); }
-  // A mission worktree borrows the project's packages through a link; an install there would rewrite the project's own.
-  if (command === 'npm' && ['ci', 'install', 'i'].includes(args[0]) && linkedDependencies(cwd || workspace)) return refuse('NPM_INSTALL_INTO_LINKED_DEPENDENCIES (this worktree uses the project\'s installed packages)');
+  // The SafeShell executor detaches linked node_modules before an authorized
+  // npm mutation, so a mission can install its own dependencies without ever
+  // writing through the symlink into the operator's primary checkout.
   const destructiveAuthority = destructive && !push ? standingToolAuthority(workspace, 'DESTRUCTIVE') : null;
   if (destructiveAuthority && ['DENY', 'REVIEW'].includes(destructiveAuthority.status)) return refuse('DESTRUCTIVE_STANDING_MANDATE_' + destructiveAuthority.status);
   if (destructiveAuthority && !destructiveAuthority.allowed && env.JACO_SHELL_ALLOW_DESTRUCTIVE !== '1')
@@ -310,6 +311,21 @@ export class SafeShell {
     const verdict = classify(command, args, { workspace: this.workspace, cwd: where, env: this.env, mode });
     if (!verdict.ok) return refused(verdict.reason);
     if (running >= LIMITS.concurrent) return refused('TOO_MANY_COMMANDS_RUNNING');
+    // Mission worktrees may borrow the main checkout's node_modules via a
+    // symlink. Unlink ONLY that symlink; never mutate or delete its target.
+    // npm then creates local dependencies for this worktree as needed.
+    if (command === 'npm' && ['ci','install','i','uninstall','remove','rm','update','up'].includes(args[0])
+      && linkedDependencies(where)) {
+      const link = path.join(where, 'node_modules');
+      try {
+        if (!fs.lstatSync(link).isSymbolicLink()) return refused('NPM_DEPENDENCY_LINK_CHANGED');
+        fs.unlinkSync(link);
+        this.#audit({ mode: 'write', command: 'npm', outcome: 'dependency-link-detached',
+          cwd: path.relative(this.workspace, where) || '.', target: 'node_modules' });
+      } catch (error) {
+        return refused('NPM_DEPENDENCY_LINK_DETACH_FAILED:' + String(error?.code || 'unknown'));
+      }
+    }
     const timeoutMs = Math.min(LIMITS.maxTimeoutMs, Math.max(1000, (Number(timeoutSeconds) || LIMITS.timeoutMs / 1000) * 1000));
     const program = resolveProgram(command, this.platform, process.execPath, fs.existsSync, this.env);
     running++;
