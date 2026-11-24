@@ -8,7 +8,7 @@ export function withPerceptionTools(tools) {
   if (typeof tools.mcp_read?.run !== 'function') return tools;
   const read = async (tool) => {
     const result = await tools.mcp_read.run({server:'browser',tool,arguments:{}});
-    if (result?.isError === true) throw Error('PERCEPTION_MCP_READ_FAILED:' + tool);
+    if (result?.isError === true || result?.ok === false || result?.success === false || result?.outcomeUnknown === true) throw Error('PERCEPTION_MCP_READ_FAILED:' + tool);
     return result;
   };
   const validate = (args, allowed) => {

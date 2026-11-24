@@ -65,9 +65,10 @@ export function buildAuraSeerPrompts({
   // the same rules in short form; the meaning and every boundary are the same.
   const compact = compactRules === true;
   const toolSection = toolCatalog ? [
-    'You have tools. To use a tool, reply with ONE message that contains only one line:',
+    'Use the JSON tool protocol only. For one tool, reply with exactly one line:',
     'TOOL_CALL {"name":"<tool>","args":{...}}',
-    'The tool result comes back as TOOL_RESULT and is an observed receipt you may cite.',
+    'For up to four independent read tools, reply with TOOL_CALLS followed by a JSON array of {name,args} objects. Calls run sequentially; a failed call stops the batch. Do not batch actions that depend on prior tool results or change state. Never output Python, print(), TOOL_CODE, or executable source instead of the tool protocol.',
+    'Each tool result comes back as TOOL_RESULT and is an observed receipt you may cite. An unexecuted call is not evidence.',
     'Use tools to look before you answer. Do not guess file contents, processes or status.',
     'Only the tools listed under TOOLS may be called. start_goal only when it is listed and the operator has ordered the mission.',
     `TOOLS:\n${toolCatalog}`,
@@ -180,6 +181,10 @@ export function buildAuraSeerPrompts({
 }
 
 const MAX_TOOL_ROUNDS = 5;
+const MAX_TOOL_CALLS = 12;
+const MAX_BATCH = 4;
+// Only known read contracts may share a batch. State-changing or unknown contracts require a fresh model turn.
+const BATCH_READ_TOOLS = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','policy_get','dom_track','laser_vision','aura_functions','current_work','runtime_events']);
 
 // Keep model context bounded, without silently dropping the latest operator message.
 // The newest receipt gets the most detail; older receipts are compact references.
@@ -227,26 +232,52 @@ function auraMemoryChars(){
   return Number.isFinite(v) && v >= 0 ? v : 1500;
 }
 
-function parseToolCall(text=''){
-  const at = String(text).indexOf('TOOL_CALL');
-  if (at < 0) return null;
-  const rest = String(text).slice(at + 'TOOL_CALL'.length);
-  const first = rest.indexOf('{');
-  if (first < 0) return null;
-  // Take the first balanced object; the model sometimes repeats the call line.
-  let depth = 0, inString = false, escaped = false, end = -1;
-  for (let i = first; i < rest.length; i++) {
-    const ch = rest[i];
-    if (inString) { if (escaped) escaped = false; else if (ch === '\\') escaped = true; else if (ch === '"') inString = false; continue; }
-    if (ch === '"') inString = true;
-    else if (ch === '{') depth++;
-    else if (ch === '}' && --depth === 0) { end = i; break; }
-  }
-  if (end < 0) return null;
+function parseToolCalls(text=''){
+  const source=String(text).trim();
+  const batch=source.startsWith('TOOL_CALLS ');
+  const single=source.startsWith('TOOL_CALL ');
+  // Treat tool-shaped source as a protocol error, not as an answer or executable code.
+  const toolLike=/^\s*(?:```[^\n]*\n\s*)?(?:TOOL_CALLS?\b|TOOL_CODE\b|print\s*\(\s*(?:mcp_tool|[a-z_]+_read)\s*\()/m.test(source);
+  if(!batch&&!single)return {calls:[],invalid:toolLike};
+  const normalize = call => {
+    if(!call||typeof call!=='object'||Array.isArray(call)||typeof call.name!=='string'||
+      !/^[a-zA-Z0-9_.-]{1,80}$/.test(call.name)||Object.keys(call).some(k=>k!=='name'&&k!=='args')||
+      (call.args!==undefined&&(!call.args||typeof call.args!=='object'||Array.isArray(call.args))))throw Error('INVALID_TOOL_CALL');
+    return {name:call.name,args:call.args??{}};
+  };
   try {
-    const call = JSON.parse(rest.slice(first, end + 1));
-    return call && typeof call.name === 'string' ? { name: call.name, args: call.args && typeof call.args === 'object' ? call.args : {} } : null;
-  } catch { return null; }
+    let calls;
+    if(batch){
+      const value=JSON.parse(source.slice('TOOL_CALLS '.length));
+      if(!Array.isArray(value)||!value.length||value.length>MAX_BATCH)throw Error('INVALID_TOOL_BATCH');
+      calls=value.map(normalize);
+    } else {
+      // Preserve compatibility with models that emit exactly repeated legacy call lines.
+      let rest=source;
+      calls=[];
+      while(rest){
+        if(!rest.startsWith('TOOL_CALL '))throw Error('INVALID_TOOL_CALL_TRAILING_TEXT');
+        rest=rest.slice('TOOL_CALL '.length);
+        if(!rest.startsWith('{'))throw Error('INVALID_TOOL_CALL');
+        let depth=0,inString=false,escaped=false,finish=-1;
+        for(let i=0;i<rest.length;i++){
+          const ch=rest[i];
+          if(inString){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch==='"')inString=false;continue;}
+          if(ch==='"')inString=true;
+          else if(ch==='{')depth++;
+          else if(ch==='}'&&--depth===0){finish=i+1;break;}
+        }
+        if(finish<0)throw Error('INVALID_TOOL_CALL');
+        calls.push(normalize(JSON.parse(rest.slice(0,finish))));
+        if(calls.length>MAX_BATCH)throw Error('INVALID_TOOL_BATCH');
+        rest=rest.slice(finish).trim();
+      }
+      // Distinct multi-calls require the explicit batch protocol.
+      if(new Set(calls.map(call=>JSON.stringify(call))).size!==1)throw Error('USE_TOOL_CALLS_BATCH');
+    }
+    const unique=[...new Map(calls.map(call=>[JSON.stringify(call),call])).values()];
+    return {calls:unique,invalid:false};
+  } catch {return {calls:[],invalid:true};}
 }
 
 // `toolbox` = { observe(): Promise<string>, tools: { name: { description, run(args) } } }.
@@ -272,31 +303,51 @@ async function runToolLoop(input, fetchImpl){
       memory_chars: auraMemoryChars(),
     }, fetchImpl);
     if (completion.costStatus) modelCosts.push({ status: completion.costStatus, usd: completion.costUsd ?? null });
-    // The final model turn can summarize earlier results, but never execute more tools.
-    // Do not show an unexecuted TOOL_CALL as though it were an answer.
-    if (finalRound && parseToolCall(completion.text)) return {
-      completion: { ...completion, text: `The tool limit was reached. I did not carry out the last proposed call. ${receipts.length} earlier tool calls are in the receipts.` },
-      receipts, modelCosts,
+    const parsed = parseToolCalls(completion.text);
+    const protocolError=parsed.invalid;
+    if(finalRound && (protocolError || parsed.calls.length)) return {
+      completion:{...completion,text:`The tool limit was reached. I did not carry out the last proposed call. ${receipts.length} earlier tool calls are in the receipts.`},
+      receipts,modelCosts,
     };
-    const call = finalRound ? null : parseToolCall(completion.text);
-    if (!call) {
-      // gpt-oss sometimes announces a tool ("We will call mission_list.") instead of emitting the call line.
-      const announced = !finalRound && Object.keys(tools).some(name => completion.text.includes(name))
-        && /\b(call|calling|use|anropa|använd|kör)\b/i.test(completion.text) && completion.text.length < 400;
-      if (!announced) return { completion, receipts, modelCosts };
-      transcript = renderAuraToolTranscript(transcriptEntries) + `\n\nNOTE: You wrote "${completion.text.slice(0, 200)}" but gave no TOOL_CALL line. Reply now with exactly one TOOL_CALL line, or with your final answer.\n\n`;
+    if(!parsed.calls.length&&!protocolError){
+      const announced=!finalRound && Object.keys(tools).some(name=>completion.text.includes(name))
+        && /\b(call|calling|use|anropa|använd|kör)\b/i.test(completion.text)&&completion.text.length<400;
+      if(!announced)return {completion,receipts,modelCosts};
+    }
+    const calls=parsed.calls;
+    const invalid=protocolError||!calls.length||
+      calls.some(call=>!Object.hasOwn(tools,call.name))||
+      (calls.length>1&&calls.some(call=>!BATCH_READ_TOOLS.has(call.name)))||
+      receipts.length+calls.length>MAX_TOOL_CALLS;
+    if(invalid){
+      // One call to a tool that is not offered is a refusal the operator should see, not silence.
+      // Invalid batches stay side-effect free and leave no receipts.
+      if(!protocolError&&calls.length===1&&!Object.hasOwn(tools,calls[0].name)){
+        const at=new Date().toISOString();
+        receipts.push({name:calls[0].name,args:calls[0].args,ok:false,at,refused:'TOOL_NOT_ADVERTISED'});
+        transcriptEntries.push({call:calls[0],at,ok:false,text:'REFUSED: TOOL_NOT_ADVERTISED'});
+      }
+      transcript=renderAuraToolTranscript(transcriptEntries)+'\n\nNOTE: No proposed call was executed. Use exactly one advertised TOOL_CALL or a TOOL_CALLS JSON array of at most four independent read tools, within the remaining call budget. Never output TOOL_CODE or Python. After a mutation or failure, observe before choosing another action.\n';
       continue;
     }
-    const at = new Date().toISOString();
-    let ok = false, result;
-    try {
-      if (!Object.hasOwn(tools, call.name)) throw new Error(`unknown tool: ${call.name}`);
-      result = await tools[call.name].run(call.args);
-      ok = true;
-    } catch (error) { result = `ERROR: ${error?.message || error}`; }
-    const text = (typeof result === 'string' ? result : JSON.stringify(result)).slice(0, 6000);
-    receipts.push({ name: call.name, args: call.args, ok, at });
-    transcriptEntries.push({ call, at, ok, text });
+    for(const call of calls){
+      const at=new Date().toISOString();
+      let ok=false,result,unknown=false;
+      try{
+        result=await tools[call.name].run(call.args);
+        unknown=result?.outcomeUnknown===true||result?.dispatchState==='UNKNOWN';
+        ok=!unknown&&result?.ok!==false&&result?.success!==false&&result?.isError!==true&&result?.verified!==false;
+      }catch(error){result=`ERROR: ${error?.message||error}`;unknown=!BATCH_READ_TOOLS.has(call.name);}
+      let text;
+      try{text=(typeof result==='string'?result:JSON.stringify(result)??'null').slice(0,6000);}
+      catch{text='ERROR: TOOL_RESULT_SERIALIZATION_FAILED';ok=false;unknown=!BATCH_READ_TOOLS.has(call.name);}
+      receipts.push({name:call.name,args:call.args,ok,at,...(unknown?{outcomeUnknown:true}:{})});
+      transcriptEntries.push({call,at,ok,text});
+      if(unknown&&!BATCH_READ_TOOLS.has(call.name)){
+        return {completion:{...completion,text:'A tool action has an unknown outcome. It was not retried. Inspect the current state before taking another action.'},receipts,modelCosts};
+      }
+      if(!ok)break;
+    }
     transcript = renderAuraToolTranscript(transcriptEntries);
   }
   // Defensive path if the loop bound ever changes: never dereference a null outcome.
