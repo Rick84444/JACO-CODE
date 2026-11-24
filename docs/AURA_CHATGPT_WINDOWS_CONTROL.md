@@ -1,5 +1,13 @@
 # Aura control plane — this ChatGPT chat to JACO
 
+> **Legacy/diagnostic interface — not a second JACO customer Relay.**
+> The canonical customer connection is account-bound JACO Link. This interface
+> remains only for previously configured development or migration workflows.
+> Do not enable it by default, connect customer accounts through GitHub, or
+> claim that it gives ChatGPT mobile access. See
+> `docs/architecture/CANONICAL_RELAY_AND_DEDUPLICATION.md`.
+
+
 ## Scope and truth boundary
 
 The GitHub issues marked `[JACO BOOT]` are **bootstrap-only**: `system.status`, `system.health`, `system.activate`, `system.restart` and `system.update` are fixed verbs. The receiver checks the issue creator and deduplicates command IDs. Do not add free-form shell, file writes, prompts, credentials, or a general MCP proxy to this channel.

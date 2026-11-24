@@ -71,9 +71,11 @@ ensure_export JACO_WORKPLACE_SUPERVISE_NOVA "1"
 ensure_export JACO_LEVEL5_AUTONOMY "1"
 ensure_export JACO_ALLOW_SHELL_TASKS "1"
 ensure_export JACO_REMOTE_ALLOW_MUTATIONS "1"
-ensure_export JACO_GITHUB_BOOTSTRAP_ENABLE "1"
-ensure_export JACO_GITHUB_BOOTSTRAP_REPO "Rick84444/jaco-code"
-ensure_export JACO_GITHUB_BOOTSTRAP_ACTOR "Rick84444"
+# GitHub bootstrap is a historical developer-only compatibility transport.
+# New JACO installs use account-bound JACO Link; they must not inherit a
+# developer's public repository or silently enable a second control path.
+# Existing explicit settings in runtime.env are preserved for migration.
+ensure_export JACO_GITHUB_BOOTSTRAP_ENABLE "0"
 ensure_export JACO_GITHUB_BOOTSTRAP_POLL_MS "15000"
 
 

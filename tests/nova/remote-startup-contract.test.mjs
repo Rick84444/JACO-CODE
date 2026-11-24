@@ -31,7 +31,9 @@ test('the agent connects its own browser by default; the ChatGPT gateway and tun
  assert.equal(definitions(off).some(s=>['novaBridge','cdp','gateway'].includes(s.id)),false);
  const legacy=configuration(root,{JACO_ENABLE_CDP:'1',JACO_START_TUNNEL:'1'});
  assert.equal(legacy.tunnel,true);
- for(const id of ['novaBridge','cdp','gateway'])assert.ok(definitions(legacy).some(s=>s.id===id),id);
+ for(const id of ['novaBridge','cdp'])assert.ok(definitions(legacy).some(s=>s.id===id),id);
+ assert.equal(legacy.gateway,false, 'CDP must never auto-enable the redundant ChatGPT HTTP gateway');
+ assert.equal(definitions(legacy).some(s=>s.id==='gateway'),false);
  assert.equal(configuration(root,{JACO_ENABLE_CHATGPT_GATEWAY:'1'}).gateway,true);
 });
 test('runtime must return the correct identity',()=>{

@@ -1,4 +1,4 @@
-// Aura is the only operator-facing agent identity. These are capabilities of the
+// Aura is the only agent identity, including internally. These are capabilities of the
 // existing runtime, not independently spawned agents or a second scheduler.
 // This module is read-only: it never grants permissions or executes a mission.
 export const AURA_FUNCTION_DEFINITIONS = Object.freeze([
@@ -49,9 +49,10 @@ export function projectAuraFunctions({ workplace = null, coordinator = null, gra
   return {
     schema: 'jaco.aura-functions/v1',
     observedAt: now,
-    identity: { id: 'aura', name: 'Aura', agentCount: 1, meaning: 'operator-facing-identity-only' },
-    // Internal SEER/Nova/Workplace processes and historical agent records remain
-    // observable in technical diagnostics; do not misreport reduced process count.
+    identity: { id: 'aura', name: 'Aura', agentCount: 1, meaning: 'sole-agent' },
+    // Legacy planning/execution and Workplace processes are technical service
+    // owners, not agents. Remain observable during migration; do not fabricate
+    // runtime consolidation before validated in-process state ownership.
     runtimeConsolidated: false,
     functions: AURA_FUNCTION_DEFINITIONS.map(def => ({
       ...def, state: states[def.id], detail: detail[def.id],

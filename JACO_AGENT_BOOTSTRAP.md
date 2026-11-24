@@ -1,6 +1,6 @@
 # JACO Agent Bootstrap Contract
 
-Every AI participant working in this repository is a participant in the JACO Cognitive Runtime, not an isolated assistant.
+Development tools may collaborate on repository changes, but **Aura is JACO's sole operator-facing agent and runtime identity**. External coding assistants are not another JACO agent and cannot acquire Aura mission authority from this document.
 
 The authoritative collaboration surface is **JACO Workplace**. Conversation history, a local sandbox, a VS Code session, or one agent's memory is not the complete project state.
 

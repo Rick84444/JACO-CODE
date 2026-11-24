@@ -6,7 +6,9 @@ This file is the repository contract for automated contributors.
 
 JACO is a local-first, model-agnostic runtime for persistent, policy-bound and verifiable agent execution.
 
-Keep one canonical owner for each responsibility. Do not add a second planner, mission store, tool registry, browser controller, approval system, provider registry or UI when an existing subsystem can be extended.
+Keep one canonical owner for each responsibility. Do not add a second planner, mission store, tool registry, browser controller, approval system, provider registry, relay or UI when an existing subsystem can be extended.
+
+**Mandatory deduplication gate:** before writing a feature, search the entire repository, tests, Skills, OpenSpec changes and `legacy/` for implementations with the same purpose, including different names. Compare functionality, safety, test evidence, maintainability and currency; choose one canonical owner (not necessarily the newest). Extend it rather than building another variant. Audit callers, preserve state and migrate; once verified, disable the replaced startup path and move retired historic code to `legacy/` or delete it. Do not move active imported files. Record the choice, alternatives, migration and legacy retirement in the change spec. The canonical customer Relay is JACO Link; see `docs/architecture/CANONICAL_RELAY_AND_DEDUPLICATION.md`.
 
 Current implementation owners:
 
@@ -18,11 +20,39 @@ Current implementation owners:
 
 Historical component names are implementation details. New files and APIs should use responsibility-based names.
 
+## One canonical JACO Mode
+
+Aura is JACO's **only agent**, both internally and in the product interface.
+There is no second agent called Sentinel, SEER or Nova. Sentinel is lifecycle
+supervision; planning, execution, workplace coordination, repository
+intelligence, Skills, tools and memory are Aura's capabilities or services,
+not separately empowered agents. Do not create sub-agents or autonomous
+worker personas as a solution to a task. Internal execution workers may
+perform bounded jobs but cannot own independent goals, identity, policy or
+memory.
+
+**Conversation does not imply implementation.** For software discussions,
+investigate the existing repository and verified knowledge first. A new idea
+does not justify a new file, capability owner, prompt or agent. Before an
+authorized code change, identify the canonical owner, inspect exact callers
+and tests, compare alternatives, choose the smallest proven extension and
+record any necessary legacy retirement. Hypotheses and unsupported previous
+code stay unverified. Follow the existing permissions and mission contracts.
+
+**Source of truth:** this root `AGENTS.md` is the only active engineering
+behavior contract. The runtime's shared `JACO_MODE_RULES` in
+`agents/lib/strategic-context.mjs` is a task-scaled prompt projection of
+this rule, not another policy owner. The historical
+`JACO_MASTER_BEHAVIOR_CONTRACT.md` and `runtime/AGENTS.md` have been
+retired from active paths; inspect Git history for old text. GodPrompt is
+a development methodology for contributors, **not** a separate JACO runtime,
+agent identity or automatic policy permission.
+
 ## Before changing code
 
 1. Inspect the current branch and preserve unrelated work.
 2. Trace callers and tests before deleting or renaming anything.
-3. Identify the subsystem that already owns the behavior.
+3. Identify the subsystem that already owns the behavior and document every overlapping implementation before building anything new.
 4. Define an observable acceptance condition and a falsifier.
 5. Check whether the change touches secrets, external mutation, deployment, spend or protected policy.
 6. Prefer the smallest coherent production change over a parallel abstraction.
@@ -39,7 +69,7 @@ If the coordination service is actually available, synchronize before competing 
 - Secrets belong in environment/credential stores, never source, logs, prompts, fixtures or committed examples.
 - Public configuration must not contain operator-specific account IDs, private network addresses, personal endpoints or credentials.
 - Generated files, runtime databases, caches, screenshots and local state stay out of Git.
-- Remove obsolete implementations rather than keeping duplicate generations "just in case".
+- Remove obsolete implementations rather than keeping duplicate generations "just in case". Keep transitional compatibility only with a named owner, explicit opt-in, an observed migration dependency and a removal condition.
 - New names should describe responsibility rather than an invented agent persona.
 
 ## Verification

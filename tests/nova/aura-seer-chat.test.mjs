@@ -4,9 +4,33 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { auraChatViaSeer, buildAuraSeerPrompts, AURA_CANONICAL_OBJECTIVE, renderAuraToolTranscript, summarizeAuraModelCosts } from '../../agents/lib/aura-seer-chat.mjs';
 import { seerCompletion, seerCompletionResult } from '../../agents/lib/seer-client.mjs';
+import { JACO_MODE_RULES } from '../../agents/lib/strategic-context.mjs';
 
 const root=process.cwd();
 const TOKEN='test-token-12345678901234567890';
+
+test('One canonical JACO Mode reuses verified repository knowledge rather than spawning agents or source duplicates', () => {
+  assert.match(JACO_MODE_RULES, /REPO BEFORE BUILD/);
+  assert.match(JACO_MODE_RULES, /canonical implementation owner/);
+  assert.match(JACO_MODE_RULES, /Continuum\/KnowledgeStore/);
+  assert.match(JACO_MODE_RULES, /discussion or hypothesis does not authorize/);
+  for (const compactRules of [true, false]) {
+    for (const chatMode of ['manual', 'planning', 'action']) {
+      const {system} = buildAuraSeerPrompts({message:'Kontrollera om koden redan finns', chatMode, compactRules});
+      assert.match(system, /JACO MODE/);
+      assert.match(system, /REPO BEFORE BUILD/);
+      assert.match(system, /Aura is the one and only agent/);
+    }
+  }
+  assert.equal(fs.existsSync(path.join(root, 'runtime/AGENTS.md')), false);
+  assert.equal(fs.existsSync(path.join(root, 'JACO_MASTER_BEHAVIOR_CONTRACT.md')), false);
+  const rules = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
+  assert.match(rules, /only active engineering/);
+  assert.match(rules, /GodPrompt is\s+a development methodology/);
+  const providerPrompt = fs.readFileSync(path.join(root, 'runtime/src/prompts/gemma4AgenticPrompt.ts'), 'utf8');
+  assert.match(providerPrompt, /import \{ JACO_MODE_RULES \}/);
+  assert.doesNotMatch(providerPrompt, /CodeRefactorAgent|QualityAuditorAgent|ArchitecturePlannerAgent|SystemExecutionAgent/);
+});
 
 test('Aura is told to inspect the live MCP catalog before describing its tools',()=>{
   const {system}=buildAuraSeerPrompts({message:'Vilka verktyg har du?',chatMode:'manual',compactRules:true,toolCatalog:'- mcp_catalog: live tools'});
