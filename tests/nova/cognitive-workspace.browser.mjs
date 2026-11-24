@@ -498,14 +498,15 @@ try {
   passed('A live file update preserves a dirty draft, rejects a conflicting save and requires explicit reload');
   await canvas('Samtal').click();await input().fill('Ett bevarat utkast');
   blockLive=true;for(const response of liveResponses)response.end();
-  await page.getByRole('status').filter({hasText:'Connection needs recovery'}).waitFor({timeout:12000});
+  // The status line follows the chosen language; this page runs in Swedish.
+  await page.getByRole('status').filter({hasText:'Anslutningen behöver återställas'}).waitFor({timeout:12000});
   assert.equal(await input().inputValue(),'Ett bevarat utkast');
   blockLive=false;
-  await page.getByRole('status').filter({hasText:'Working'}).waitFor({timeout:15000});
+  await page.getByRole('status').filter({hasText:'Arbetar'}).waitFor({timeout:15000});
   assert.equal(await page.locator(verifiedSelector).count(),1);
   passed('Live connection interruption preserves the draft, exposes uncertainty and reconnects without duplicates');
   await portraitTrigger.click();
-  await portrait.locator('p[data-tone="active"]').filter({hasText:'Working'}).waitFor();
+  await portrait.locator('p[data-tone="active"]').filter({hasText:'Arbetar'}).waitFor();
   await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
   await portrait.waitFor({state:'detached'});
   assert.equal(await input().inputValue(),'Ett bevarat utkast');
