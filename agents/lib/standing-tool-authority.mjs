@@ -61,6 +61,20 @@ export function operatorTaskEnabled(workspaceRoot, taskId) {
   return !state.disabledTasks.includes(taskId);
 }
 
+// Operator-authored supplementary rules are behavioral instructions. They do
+// not elevate tool permissions: the effectful dispatcher uses only decisions.
+export function standingOperatorRules(workspaceRoot) {
+  const state = standingToolAuthority(workspaceRoot, 'READ');
+  if (state.status === 'LEGACY' || state.status === 'DENY') return '';
+  try {
+    const file = path.join(workspaceRoot, '.jaco', 'state', 'autonomy', 'mandates.json');
+    const records = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const mandate = records.find(v => v?.id === STANDING_MANDATE_ID);
+    return typeof mandate?.additionalRules === 'string'
+      ? mandate.additionalRules.trim().slice(0, 4000) : '';
+  } catch { return ''; }
+}
+
 export function mcpAuthorityRoot(host) {
   // The MCP configuration resides at <workspace>/.jaco/mcp/servers.json.
   return typeof host?.configFile === 'string'
