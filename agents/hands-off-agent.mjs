@@ -36,6 +36,7 @@ import { SKILLS, WORKER_BASE, HF_USER, HF_SPACE, RECEIVER } from './skills.confi
 import { fetchRevenue } from '../gateway/src/commerce/adapters/stripe.mjs';
 import { seerCompletion } from './lib/seer-client.mjs';
 import { budgetedNovaOllamaCall } from './lib/nova-ollama-cost.mjs';
+import { isGeminiComputerUseModel, geminiEndpoint, geminiComputerUseTurn, geminiUsage } from './lib/gemini-computer-use.mjs';
 import { novaTiming, planningDeadline } from './lib/nova-timing.mjs';
 import { MissionClient, processMissionTurn, checkedReceipt, planTasks, BATCHABLE } from './lib/mission-client.mjs';
 import { performLocalWrite } from './lib/local-write.mjs';
@@ -2056,6 +2057,42 @@ export async function agentChat({ messages, tools, mission }, rawFetch = fetch, 
     if (agentToolsUnsupported.has(id)) continue;
     const cooldownMs = (providerCooldownUntil.get(id) || 0) - Date.now();
     if (cooldownMs > 0) { failures.push(`${provider.name}:${cooldownMs <= TEMPORARY_COOLDOWN_MS ? 'COOLDOWN' : 'PARKED'}`); continue; }
+    // Gemini computer-use models speak only the native protocol; the adapter translates their UI
+    // actions into the same bound input tasks. Same budget reservation, same image opt-in.
+    if (provider.name === 'gemini' && isGeminiComputerUseModel(provider.model)) {
+      try {
+        const url = geminiEndpoint(provider.model);
+        const signal = AbortSignal.timeout(novaTiming().requestMs);
+        const headers = { 'x-goog-api-key': key };
+        const send = async body => {
+          const cloud = isPaidProvider(provider)
+            ? await budgetedNovaOllamaCall({ provider: { ...provider, url }, requestBody: body, runtimeUrl: CONFIG.runtimeUrl,
+              token: env.GATEWAY_TOKEN || env.JACO_GATEWAY_TOKEN || '', fetchImpl, signal, headers,
+              maxTokens: body.generationConfig?.maxOutputTokens, usageOf: geminiUsage })
+            : null;
+          const res = cloud?.response || await fetchImpl(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body), signal });
+          const raw = cloud?.rawBody ?? await res.text();
+          let data = cloud?.data; if (!cloud) { try { data = JSON.parse(raw); } catch { data = null; } }
+          return { status: res.status, data, raw, response: res };
+        };
+        const turn = await geminiComputerUseTurn({ messages: permittedFrameMessages(messages, frame, provider, env), tools, mission, frame, send });
+        if (turn.http) {
+          const { status = 0, raw = '', data = null, response } = turn.http;
+          if (status === 429) { parkOn429(provider, response || {}, raw); failures.push(`${provider.name}:429`); continue; }
+          parkProvider(provider, providerParkMs({ status }), `HTTP ${status}`);
+          log("warn", "brain", `${id} HTTP ${status}: ${String(data?.error?.message || raw || '').replace(/\s+/g, ' ').slice(0, 300)}`);
+          failures.push(`${provider.name}:HTTP_${status}`);
+          continue;
+        }
+        if (!turn.local) recordModelCall(provider, "plan");
+        log("info", "brain", `${id} ${turn.local ? 'continued locally' : 'answered'}: ${turn.reply.tool_calls?.length || 0} tool call(s)`);
+        return { content: turn.reply.content || '', tool_calls: turn.reply.tool_calls || [], provider: id };
+      } catch (error) {
+        parkProvider(provider, providerParkMs({ error }), String(error?.message || error).slice(0, 80));
+        failures.push(`${provider.name}:${String(error?.message || error).slice(0, 40)}`);
+        continue;
+      }
+    }
     const requestBody = {
       model: provider.model, messages:permittedFrameMessages(messages,frame,provider,env), tools, tool_choice: "auto", temperature: 0.2,
       max_tokens: provider.name === "deepseek" ? Number(env.JACO_DEEPSEEK_MAX_TOKENS) || 32768 : 8192,
