@@ -152,7 +152,7 @@ test('agent access per server: read, write and off; denied tools and protected p
     const s = host.status().find(x => x.id === 'fake');
     assert.equal(s.agentAccess, 'off');
     assert.deepEqual(s.tools.map(t => t.agentAllowed), [false, false, false]);
-    assert.deepEqual([s.stats.calls, s.stats.refused, s.stats.lastCall.actor], [3, 8, 'operator'], 'calls and refusals are counted');
+    assert.deepEqual([s.stats.calls, s.stats.refused, s.stats.lastCall.actor], [3, 9, 'operator'], 'all calls and all nine refusals, including the GUI policy file, are counted');
     assert.match(host.recentCalls(2)[1].error, /^MCP_AGENT_ACCESS_OFF:fake.echo/, 'a refusal is recorded with its reason');
   } finally { host.stopAll(); }
 });
