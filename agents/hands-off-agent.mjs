@@ -60,6 +60,7 @@ import { readOperatorLanguage, languageInstruction } from './lib/operator-langua
 import { nonTextModelKind, openAiChatCompletionsUrl, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
 import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs';
 import { assertTaskMandate } from './lib/org-permission.mjs';
+import { standingToolAuthority, operatorTaskEnabled } from './lib/standing-tool-authority.mjs';
 import { withLocalOllamaContext } from './lib/ollama-native.mjs';
 import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs';
 import { validateRepoScanTask, runRepoScanTask } from './lib/repo-scan.mjs';
@@ -1001,7 +1002,17 @@ export async function executeTask(task, state, mission = null) {
     case "get-cursor":     return computerTools.getCursor();
     // A project mission works in its own worktree: its shell must run there too. It ran in the main checkout, so `git add`
     // could not see the files the mission had written, and `npm install` changed the operator's own checkout (2026-11-06).
-    case "shell": return localTools.shell(task.data.command, task.data.timeout, mission?.metadata?.projectRoot ? workspaceFor(mission).root : undefined);
+    case "shell": {
+      // The legacy worker's direct execSync route must honor the same live
+      // standing policy as Aura chat/MCP, including immediate operator revokes.
+      const authorityRoot = process.env.JACO_WORKSPACE_ROOT || process.env.JACO_NOVA_CODING_ROOT || process.cwd();
+      const granted = standingToolAuthority(authorityRoot, 'LOCAL_MUTATION');
+      if (!operatorTaskEnabled(authorityRoot, 'shell')) return { ok: false, error: 'TASK_TURNED_OFF_BY_OPERATOR:shell' };
+      if (granted.status === 'DENY' || granted.status === 'REVIEW')
+        return { ok: false, error: 'SHELL_STANDING_MANDATE_' + granted.status };
+      return localTools.shell(task.data.command, task.data.timeout,
+        mission?.metadata?.projectRoot ? workspaceFor(mission).root : undefined);
+    }
     case "repo-list":
     case "repo-read":
     case "repo-write":
