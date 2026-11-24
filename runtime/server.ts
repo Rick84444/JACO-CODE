@@ -4394,7 +4394,7 @@ const notifyPhone = async (action) => {
   app.use('/api/desktop/hands-off', createDesktopRouter(WORKSPACE_ROOT, RELEASE_ROOT, requireAuth, event => {
     seerLiveWorkstream.update({ activeModule: 'DesktopHandsOff', phase: event.verified ? 'VERIFYING' : 'DEGRADED' });
     seerLiveWorkstream.record({ actor: event.actor, type: event.type, message: event.message, verified: event.verified });
-  }, desktopHandsOff));
+  }, desktopHandsOff, modelRelay.mandates));
 
   // A read-only operator view into the *original* Laser Vision PNG. Never
   // capture the screen or execute tools in this HTTP route. Only a recent
