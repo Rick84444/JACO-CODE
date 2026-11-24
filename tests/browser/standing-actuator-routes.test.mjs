@@ -25,7 +25,7 @@ async function fixture(t, create) {
   t.after(()=>{http.close(); fs.rmSync(root,{recursive:true,force:true});});
   const address=http.address();
   const url='http://127.0.0.1:'+address.port;
-  return {...state,url,mandates};
+  return {...state,url,mandates,root};
 }
 
 const post=async (url,body)=>{
@@ -52,6 +52,12 @@ test('direct CDP action renews a signed browser grant, then obeys live revocatio
   assert.equal(grants[0].enabled,true);
   assert.equal(grants[0].scope_mode,'broad_web');
   assert.ok(Date.parse(grants[0].expires_at)>Date.now());
+  const prefs=path.join(env.root,'.jaco','state','capabilities.json');
+  fs.writeFileSync(prefs,JSON.stringify({schema:'jaco.capabilities/v1',disabledTasks:['browser-survey-site']}));
+  const switchedOff=await post(env.url+'/browser/action',action);
+  assert.equal(switchedOff.status,403);
+  assert.equal(executions,1,'GUI untick stops browser immediately');
+  fs.unlinkSync(prefs);
   env.mandates.revoke('operator-level5-default');
   const blocked=await post(env.url+'/browser/action',action);
   assert.equal(blocked.status,403);
@@ -75,6 +81,12 @@ test('direct desktop UIA action uses current signed scope and stops after revoke
   assert.equal(executions,1);
   assert.equal(grants[0].allow_invoke,true);
   assert.ok(grants[0].allowed_processes.length>0,'existing safe process defaults');
+  const prefs=path.join(env.root,'.jaco','state','capabilities.json');
+  fs.writeFileSync(prefs,JSON.stringify({schema:'jaco.capabilities/v1',disabledTasks:['desktop-invoke']}));
+  const switchedOff=await post(env.url+'/desktop/action',action);
+  assert.equal(switchedOff.status,403);
+  assert.equal(executions,1,'GUI untick stops desktop immediately');
+  fs.unlinkSync(prefs);
   env.mandates.revoke('operator-level5-default');
   const blocked=await post(env.url+'/desktop/action',action);
   assert.equal(blocked.status,403);
