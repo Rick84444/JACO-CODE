@@ -36,7 +36,7 @@ import { SKILLS, WORKER_BASE, HF_USER, HF_SPACE, RECEIVER } from './skills.confi
 import { fetchRevenue } from '../gateway/src/commerce/adapters/stripe.mjs';
 import { seerCompletion } from './lib/seer-client.mjs';
 import { budgetedNovaOllamaCall } from './lib/nova-ollama-cost.mjs';
-import { isGeminiComputerUseModel, geminiEndpoint, geminiComputerUseTurn, geminiUsage } from './lib/gemini-computer-use.mjs';
+import { isJacoComputeModel, jacoComputeEndpoint, jacoComputeTurn, jacoComputeUsage } from './lib/jaco-compute.mjs';
 import { novaTiming, planningDeadline } from './lib/nova-timing.mjs';
 import { MissionClient, processMissionTurn, checkedReceipt, planTasks, BATCHABLE } from './lib/mission-client.mjs';
 import { performLocalWrite } from './lib/local-write.mjs';
@@ -2078,23 +2078,23 @@ export async function agentChat({ messages, tools, mission }, rawFetch = fetch, 
     if (cooldownMs > 0) { failures.push(`${provider.name}:${cooldownMs <= TEMPORARY_COOLDOWN_MS ? 'COOLDOWN' : 'PARKED'}`); continue; }
     // Gemini computer-use models speak only the native protocol; the adapter translates their UI
     // actions into the same bound input tasks. Same budget reservation, same image opt-in.
-    if (provider.name === 'gemini' && isGeminiComputerUseModel(provider.model)) {
+    if (provider.name === 'gemini' && isJacoComputeModel(provider.model)) {
       try {
-        const url = geminiEndpoint(provider.model);
+        const url = jacoComputeEndpoint(provider.model);
         const signal = AbortSignal.timeout(novaTiming().requestMs);
         const headers = { 'x-goog-api-key': key };
         const send = async body => {
           const cloud = isPaidProvider(provider)
             ? await budgetedNovaOllamaCall({ provider: { ...provider, url }, requestBody: body, runtimeUrl: CONFIG.runtimeUrl,
               token: env.GATEWAY_TOKEN || env.JACO_GATEWAY_TOKEN || '', fetchImpl, signal, headers,
-              maxTokens: body.generationConfig?.maxOutputTokens, usageOf: geminiUsage })
+              maxTokens: body.generationConfig?.maxOutputTokens, usageOf: jacoComputeUsage })
             : null;
           const res = cloud?.response || await fetchImpl(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body), signal });
           const raw = cloud?.rawBody ?? await res.text();
           let data = cloud?.data; if (!cloud) { try { data = JSON.parse(raw); } catch { data = null; } }
           return { status: res.status, data, raw, response: res };
         };
-        const turn = await geminiComputerUseTurn({ messages: permittedFrameMessages(messages, frame, provider, env), tools, mission, frame, send });
+        const turn = await jacoComputeTurn({ messages: permittedFrameMessages(messages, frame, provider, env), tools, mission, frame, send });
         if (turn.http) {
           const { status = 0, raw = '', data = null, response } = turn.http;
           if (status === 429) { parkOn429(provider, response || {}, raw); failures.push(`${provider.name}:429`); continue; }

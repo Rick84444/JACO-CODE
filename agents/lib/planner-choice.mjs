@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { budgetedNovaOllamaCall } from './nova-ollama-cost.mjs';
-import { isGeminiComputerUseModel, geminiEndpoint, geminiUsage, toGeminiRequest } from './gemini-computer-use.mjs';
+import { isJacoComputeModel, jacoComputeEndpoint, jacoComputeUsage, toJacoComputeRequest } from './jaco-compute.mjs';
 import { credential } from './secret-store.mjs';
 
 // `extra` is the providers the operator connected in the IDE (the runtime's registry, with the models they
@@ -175,18 +175,18 @@ export async function testPlannerModel({ provider, model }, { env = process.env,
     // just to verify text inference; this does not verify mission execution.
     // A Gemini computer-use model is not served by the OpenAI-compatible endpoint: probe it the way
     // Nova will call it, natively with the computerUse tool, under the same reservation.
-    if (isGeminiComputerUseModel(model) && endpoint.hostname === 'generativelanguage.googleapis.com') {
-      const nativeBody = toGeminiRequest({ messages: [{ role: 'user', content: 'Reply with the single word OK.' }], maxOutputTokens: 200 });
-      const nativeUrl = geminiEndpoint(model);
+    if (isJacoComputeModel(model) && endpoint.hostname === 'generativelanguage.googleapis.com') {
+      const nativeBody = toJacoComputeRequest({ messages: [{ role: 'user', content: 'Reply with the single word OK.' }], maxOutputTokens: 200 });
+      const nativeUrl = jacoComputeEndpoint(model);
       const headers = { 'x-goog-api-key': key };
       const nativeResult = await budgetedNovaOllamaCall({ provider: { name: provider, model, url: nativeUrl }, requestBody: nativeBody,
         runtimeUrl: env.JACO_RUNTIME_URL || `http://127.0.0.1:${Number(env.PORT) || 3000}`, token: env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || '',
-        fetchImpl, signal: AbortSignal.timeout(timeoutMs), headers, maxTokens: 200, usageOf: geminiUsage });
+        fetchImpl, signal: AbortSignal.timeout(timeoutMs), headers, maxTokens: 200, usageOf: jacoComputeUsage });
       const parts = nativeResult.data?.candidates?.[0]?.content?.parts || [];
       const reply = parts.map(p => p.text || (p.functionCall ? 'tool call' : '')).join('').trim();
       const latencyMs = Date.now() - started;
       if (!nativeResult.response.ok || !reply) return { ok: false, provider, model, latencyMs, status: nativeResult.response.status, error: String(nativeResult.data?.error?.message || 'no answer').slice(0, 300) };
-      return { ok: true, provider, model, latencyMs, reply: reply.slice(0, 200), usage: geminiUsage(nativeResult.data), plannerProtocol: 'gemini-computer-use' };
+      return { ok: true, provider, model, latencyMs, reply: reply.slice(0, 200), usage: jacoComputeUsage(nativeResult.data), plannerProtocol: 'jaco-compute' };
     }
     const structuredLocal = loopback && env.JACO_NOVA_NATIVE_TOOLS === '0';
     const requestBody = { model, messages: [{ role: 'user', content: 'Reply with the single word OK.' }], max_tokens: 200,

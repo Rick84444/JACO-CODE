@@ -1,4 +1,6 @@
-// Gemini Computer Use as one of Aura's planner models (operator 2026-11-23).
+// JACO Compute: Aura's screen-control planner (operator 2026-11-23; named JACO Compute 2026-11-24).
+// It is backed by Google's Gemini computer-use models; the provider stays "gemini" and Google's
+// model IDs and endpoint are used unchanged, because the API requires them.
 //
 // The Gemini computer-use models only speak the native generateContent protocol with the
 // `computerUse` tool and answer with predefined UI actions (click_at, type_text_at, ...) in
@@ -16,16 +18,16 @@
 
 export const GEMINI_NATIVE_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
-export const isGeminiComputerUseModel = model => /(^|[-_/.])computer-use([-_/.]|$)/i.test(String(model || ''));
+export const isJacoComputeModel = model => /(^|[-_/.])computer-use([-_/.]|$)/i.test(String(model || ''));
 
 // Browser-only actions have no desktop equivalent in the input bridge; dragging and waiting
 // have no JACO task. Excluding them keeps the model inside what can actually be executed.
 export const DESKTOP_EXCLUDED_ACTIONS = Object.freeze(['open_web_browser', 'navigate', 'go_back', 'go_forward', 'search', 'drag_and_drop', 'wait_5_seconds']);
 const PREDEFINED = new Set(['click_at', 'hover_at', 'type_text_at', 'key_combination', 'scroll_at', 'scroll_document', ...DESKTOP_EXCLUDED_ACTIONS]);
 
-export function geminiEndpoint(model, base = GEMINI_NATIVE_BASE) {
+export function jacoComputeEndpoint(model, base = GEMINI_NATIVE_BASE) {
   const id = String(model || '').replace(/^models\//, '');
-  if (!/^[\w.-]{1,120}$/.test(id)) throw new Error('GEMINI_MODEL_ID_INVALID');
+  if (!/^[\w.-]{1,120}$/.test(id)) throw new Error('JACO_COMPUTE_MODEL_ID_INVALID');
   return `${base.replace(/\/$/, '')}/models/${id}:generateContent`;
 }
 
@@ -61,7 +63,7 @@ const parseArgs = raw => { try { const v = typeof raw === 'string' ? JSON.parse(
 
 // OpenAI-style conversation -> Gemini request. Consecutive turns of one role are merged,
 // because the native API expects alternating user/model content.
-export function toGeminiRequest({ messages = [], tools = [], excluded = DESKTOP_EXCLUDED_ACTIONS, maxOutputTokens = 8192 } = {}) {
+export function toJacoComputeRequest({ messages = [], tools = [], excluded = DESKTOP_EXCLUDED_ACTIONS, maxOutputTokens = 8192 } = {}) {
   const system = [];
   const contents = [];
   const names = new Map();
@@ -190,7 +192,7 @@ const observe = (binding, toolNames) => toolNames.has('screenshot')
 
 // One planner turn. `send(requestBody)` performs the (budgeted) HTTP call and returns
 // { status, data, raw }. Returns { reply } (OpenAI-style message) or { http: { status, raw, data } }.
-export async function geminiComputerUseTurn({ messages, tools = [], mission, frame, send, maxOutputTokens = 8192, retries = 1 }) {
+export async function jacoComputeTurn({ messages, tools = [], mission, frame, send, maxOutputTokens = 8192, retries = 1 }) {
   const toolNames = new Set(tools.map(t => t?.function?.name).filter(Boolean));
   const binding = screenshotBinding(mission);
   const receipts = Array.isArray(mission?.receipts) ? mission.receipts : [];
@@ -224,7 +226,7 @@ export async function geminiComputerUseTurn({ messages, tools = [], mission, fra
     if (look) return { reply: { content: '', tool_calls: [look] }, local: true };
   }
 
-  const request = toGeminiRequest({ messages, tools, maxOutputTokens });
+  const request = toJacoComputeRequest({ messages, tools, maxOutputTokens });
   for (let attempt = 0; attempt <= retries; attempt++) {
     const result = await send(request);
     if (!result || result.status < 200 || result.status >= 300) return { http: result || { status: 0 } };
@@ -241,12 +243,12 @@ export async function geminiComputerUseTurn({ messages, tools = [], mission, fra
       try {
         const translated = translateComputerAction(fc.name, fc.args || {}, binding);
         if (translated.confirmation) {
-          return { reply: { content: text, tool_calls: [call('blocked', { reason: `Gemini Computer Use asks for the operator's confirmation before this step: ${translated.confirmation}` })] }, usage: result.data?.usageMetadata };
+          return { reply: { content: text, tool_calls: [call('blocked', { reason: `JACO Compute asks for the operator's confirmation before this step: ${translated.confirmation}` })] }, usage: result.data?.usageMetadata };
         }
         const [first] = translated.tasks;
         if (!toolNames.has(first.type)) throw new Error('COMPUTER_USE_TASK_NOT_ALLOWED:' + first.type);
         if (translated.later?.length && mission?.id) continuations.set(mission.id, { hwnd: binding.hwnd, queue: translated.later, after: receipts.length + 1, since: receipts.length });
-        tool_calls.push({ ...call(first.type, { ...first.data, say: text.slice(0, 300) || `Gemini: ${fc.name}` }), ...signature });
+        tool_calls.push({ ...call(first.type, { ...first.data, say: text.slice(0, 300) || `JACO Compute: ${fc.name}` }), ...signature });
       } catch (error) {
         failure = { name: fc.name, args: fc.args || {}, error: String(error?.message || error) };
         break;
@@ -257,12 +259,12 @@ export async function geminiComputerUseTurn({ messages, tools = [], mission, fra
     request.contents.push({ role: 'model', parts: [{ functionCall: { name: failure.name, args: failure.args } }] });
     request.contents.push({ role: 'user', parts: [{ functionResponse: { name: failure.name, response: { error: failure.error } } }] });
   }
-  return { reply: { content: '', tool_calls: [call('blocked', { reason: 'Gemini Computer Use proposed only actions this desktop cannot execute.' })] } };
+  return { reply: { content: '', tool_calls: [call('blocked', { reason: 'JACO Compute proposed only actions this desktop cannot execute.' })] } };
 }
 
 // Gemini's usage block in the shape the shared cost settlement expects. Hidden thinking is
 // billed as output, so it counts as completion tokens.
-export function geminiUsage(data) {
+export function jacoComputeUsage(data) {
   const u = data?.usageMetadata;
   if (!u || !Number.isInteger(u.promptTokenCount)) return null;
   return { prompt_tokens: u.promptTokenCount, completion_tokens: (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0) };
