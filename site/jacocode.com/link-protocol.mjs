@@ -50,3 +50,20 @@ export function validateHostResponse(value) {
     Number.isInteger(value.status) && value.status >= 100 && value.status <= 599 &&
     JSON.stringify(value).length <= MAX_MESSAGE_BYTES);
 }
+
+// Requests for the user's ChatGPT attention are bounded *events*, not model
+// prompts, mission dispatches or an API key. A verified and subscribed MCP
+// client is required before an event can actually activate ChatGPT Work.
+export const AURA_CALL_REASONS = Object.freeze([
+  'MISSION_BLOCKED', 'REVIEW_REQUIRED', 'VERIFICATION_REQUIRED', 'RUNTIME_UNHEALTHY',
+]);
+const CALL_REASONS = new Set(AURA_CALL_REASONS);
+export function validateAuraCallRequest(value) {
+  if(!value || typeof value!=='object' || Array.isArray(value) ||
+    Object.keys(value).some(k=>!['type','eventId','missionId','reason'].includes(k)) ||
+    value.type!=='aura_call_requested' || !ID.test(String(value.eventId||'')) ||
+    typeof value.missionId!=='string' ||
+    !/^[A-Za-z0-9_.:-]{1,120}$/.test(value.missionId) ||
+    !CALL_REASONS.has(value.reason)) return {ok:false,error:'AURA_CALL_INVALID'};
+  return {ok:true,eventId:value.eventId,missionId:value.missionId,reason:value.reason};
+}
