@@ -225,9 +225,14 @@ test('Target Track refuses ambiguous, stale, unsupported and failed reads withou
   assert.equal(calls,2);
   await assert.rejects(()=>toolbox.target_track.run({surface:'desktop'}),/SURFACE_UNAVAILABLE/);
   await assert.rejects(()=>toolbox.target_track.run({view:'click'}),/VIEW_INVALID/);
-  await assert.rejects(()=>toolbox.target_track.run({target:'Save',view:'html'}),/TARGET_REQUIRES_AUTO_VIEW/);
+  // A target with an explicit view is still a read-only target search (2026-11-24), not a refusal.
+  const before=calls;
+  const searched=await toolbox.target_track.run({target:'Save',view:'html'});
+  assert.equal(searched.schema,'jaco.target-track/v1');
+  assert.equal(searched.actionDispatched ?? false,false);
+  const searchReads=calls-before;
   await assert.rejects(()=>toolbox.target_track.run({target:'x'.repeat(121)}),/TARGET_INVALID/);
-  assert.equal(calls,2);
+  assert.equal(calls,2+searchReads);
   const denied = withPerceptionTools({mcp_read:{run:async()=>{ throw Error('MANDATE_DENIED'); }}});
   await assert.rejects(()=>denied.target_track.run({target:'Save'}),/MANDATE_DENIED/);
 });

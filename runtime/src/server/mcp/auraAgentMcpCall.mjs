@@ -1,5 +1,6 @@
 // The single Aura chat uses the existing MCP host and policy authority.
 // Discovery may start an already configured server, but never executes a tool.
+import { randomUUID } from 'node:crypto';
 import { agentRefusal, isReadOnlyTool, resolveAdvertisedTool } from './stdioMcpHost.mjs';
 import { operatorApprovalCheck } from '../../../../agents/lib/operator-action-guard.mjs';
 import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
@@ -27,7 +28,17 @@ export async function discoverAuraMcpTools(host, server) {
     }))
   };
 }
-export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'read' }) {
+// A refusal raised before host.call cannot have executed anything. It is marked so the chat
+// treats it as a definite failure the model can correct, never as an unknown outcome.
+const preDispatch = error => Object.assign(error instanceof Error ? error : Error(String(error)), { preDispatch: true });
+export async function callAuraMcpTool(host, request) {
+  let prepared;
+  try { prepared = await prepareAuraMcpCall(host, request); }
+  catch (error) { throw preDispatch(error); }
+  const { server, tool, args, mode } = prepared;
+  return host.call(server, tool, args, { actor:'agent', readOnly: mode === 'read' });
+}
+async function prepareAuraMcpCall(host, { server, tool, args = {}, mode = 'read' }) {
   let def = configured(host, server);
   if (!TOOL.test(tool)) throw Error('MCP_TOOL_ID_INVALID');
   if (mode !== 'read' && mode !== 'write') throw Error('MCP_MODE_INVALID');
@@ -38,8 +49,14 @@ export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'r
   const tools = await host.listTools(server);
   def = configured(host, server);
   const advertised = resolveAdvertisedTool(server, tool, tools);
-  if (!advertised) throw Error('MCP_TOOL_UNAVAILABLE');
+  // Name the tools that do exist, so the model can correct a guessed name in its next call.
+  if (!advertised) throw Error(`MCP_TOOL_UNAVAILABLE: ${server} has no tool "${tool}". Available: ${tools.map(t => t.name).slice(0, 30).join(', ')}`);
   tool = advertised.name;
+  // actionId is the idempotency key of one action (the browser bridge requires it on every
+  // change). A model cannot know that contract, so a fresh call gets a fresh key here.
+  if (advertised.inputSchema?.properties?.actionId && args.actionId === undefined) {
+    args = { ...args, actionId: `aura-${randomUUID()}` };
+  }
   const readOnly = isReadOnlyTool(server, advertised);
   // Keep chat and final MCP-host dispatch classification identical.
   const localWorkspaceTool = ['shell', 'filesystem', 'git', 'repo', 'editor'].includes(server);
@@ -66,7 +83,7 @@ export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'r
       if (required) throw Error('MCP_MISSION_APPROVAL_REQUIRED');
     }
   }
-  return host.call(server, tool, args, { actor:'agent', readOnly: mode === 'read' });
+  return { server, tool, args, mode };
 }
 
 

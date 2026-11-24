@@ -14,6 +14,16 @@ export function classifyMcpNetworkError(error) {
   if (causes.some(code => /^(ERR_TLS_|ERR_SSL_|CERT_|UNABLE_TO_VERIFY|DEPTH_ZERO|SELF_SIGNED_CERT)/.test(code))) return 'MCP_TRANSPORT_TLS';
   return 'MCP_CONNECTION_FAILED';
 }
+// JSON-RPC rejected the request itself (parse error, invalid request, unknown method, invalid
+// params): the server ran nothing. Such errors are definite and carry a short sanitized reason
+// so an agent can correct its call; other remote error text stays hidden.
+const NOT_EXECUTED = new Set([-32700, -32600, -32601, -32602]);
+export function rpcError(error) {
+  const code = Number(error?.code) || 'UNKNOWN';
+  const definite = NOT_EXECUTED.has(code);
+  const reason = definite ? String(error?.message || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) : '';
+  return Object.assign(new Error(`MCP_RPC_ERROR:${code}${reason ? '_' + reason : ''}`), definite ? { preDispatch: true } : {});
+}
 export class HttpMcpClient {
   constructor(id, def, { fetchImpl = fetch, env = process.env } = {}) {
     Object.assign(this, { id, def, fetchImpl, env });
@@ -80,7 +90,7 @@ export class HttpMcpClient {
   }
   result(message) {
     // Remote error text can contain credentials or request details; expose a bounded code only.
-    if (message.error) throw Error(`MCP_RPC_ERROR:${Number(message.error.code) || 'UNKNOWN'}`);
+    if (message.error) throw rpcError(message.error);
     return message.result;
   }
   start() {

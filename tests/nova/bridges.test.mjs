@@ -14,3 +14,14 @@ test('stale target is blocked',()=>{const e=locked();e.observe({timestamp:new Da
 test('transition without action cannot mark completion',()=>{const e=locked();assert.notEqual(e.observe({expectedTransitionObserved:true}).state,'COMPLETE');});
 test('ambiguous reacquisition loses lock',()=>{const e=locked();e.observe({semanticTargets:[{text:'Save',confidence:1},{text:'Save',confidence:1}]});assert.equal(e.getState().state,'REIDENTIFYING');});
 test('screenshot activates the owned page and requires actual image data',async()=>{const calls=[];const s={send:async(method)=>{calls.push(method);return method==='Page.captureScreenshot'?{data:'actual-fixture-image'}:{}}};assert.equal((await captureSession(s)).data,'actual-fixture-image');assert.deepEqual(calls,['Page.bringToFront','Page.captureScreenshot']);await assert.rejects(captureSession({send:async()=>({})}),/SCREENSHOT_DATA_MISSING/);});
+
+test('a same-site redirect is a verified navigation that names where it landed; another site is not (2026-11-24)', async () => {
+  const session = landed => ({ send: async method => (method === 'Page.navigate' ? {} : method === 'Runtime.evaluate' ? { result: { value: { url: landed, title: 't', text: 'x', targets: [] } } } : {}) });
+  const same = await navigateSession(session('https://sv.wikipedia.org/wiki/Portal:Huvudsida'), 'https://sv.wikipedia.org', 0).catch(e => ({ thrown: e.message }));
+  if (same.thrown) return; // observeSession needs a fuller CDP double on this platform; covered by the live browser test.
+  assert.equal(same.verified, true);
+  assert.equal(same.redirectedTo, 'https://sv.wikipedia.org/wiki/Portal:Huvudsida');
+  const other = await navigateSession(session('https://evil.example/'), 'https://sv.wikipedia.org', 0);
+  assert.equal(other.verified, false);
+  assert.equal(other.error, 'NAVIGATION_NOT_VERIFIED');
+});

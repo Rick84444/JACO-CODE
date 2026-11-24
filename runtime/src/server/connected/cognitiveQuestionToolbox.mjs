@@ -71,11 +71,10 @@ export function withPerceptionTools(tools) {
       if (surface !== 'browser') throw Error('TARGET_TRACK_SURFACE_UNAVAILABLE_USE_MISSION_TOOLS');
       if (typeof target !== 'string' || target.length > 120) throw Error('TARGET_TRACK_TARGET_INVALID');
       if (typeof view !== 'string' || !['auto', 'observe', 'accessibility', 'html'].includes(view)) throw Error('TARGET_TRACK_VIEW_INVALID');
-      // Explicit modes preserve the legacy raw reads without extra calls.
-      if (view !== 'auto') {
-        if (target.trim()) throw Error('TARGET_TRACK_TARGET_REQUIRES_AUTO_VIEW');
-        return perceptionTools.dom_track.run({ view });
-      }
+      // Explicit modes preserve the legacy raw reads without extra calls. A target with an explicit
+      // view is still a target search: auto already falls back to accessibility, so refusing it only
+      // cost the model a turn (observed 2026-11-24).
+      if (view !== 'auto' && !target.trim()) return perceptionTools.dom_track.run({ view });
       const receipt = await read('nova_observe');
       const page = parseReceipt(receipt);
       const query = target.trim().toLocaleLowerCase();

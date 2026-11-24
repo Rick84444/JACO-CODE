@@ -399,8 +399,13 @@ export async function navigateSession(session, url, settleMs=1000) {
   if (result.errorText || result.isDownload) throw new Error(result.errorText || 'UNEXPECTED_DOWNLOAD');
   await new Promise(r=>setTimeout(r,Math.min(5000,Math.max(0,settleMs))));
   const observation=await observeSession(session);
-  const verified=observation.url===new URL(url).href;
-  return {ok:verified, verified, observation, ...(verified?{}:{error:'NAVIGATION_NOT_VERIFIED'})};
+  // A site's own redirect (sv.wikipedia.org -> /wiki/Portal:Huvudsida) is a completed navigation;
+  // the receipt names where it landed. A redirect to another origin is not verified.
+  const requested=new URL(url);
+  let landed=null;try{landed=new URL(observation.url);}catch{}
+  const exact=landed?.href===requested.href;
+  const verified=exact||landed?.origin===requested.origin;
+  return {ok:verified, verified, observation, ...(verified&&!exact?{redirectedTo:landed.href}:{}), ...(verified?{}:{error:'NAVIGATION_NOT_VERIFIED'})};
 }
 // Click, type and press with real input events, and targets named by the accessibility tree: agents/lib/browser-input.mjs.
 // Aura's window: the blue edge, the arrow and the small chat panel the operator sees in the tab Aura works in.

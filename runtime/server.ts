@@ -338,14 +338,16 @@ function organizationMandate(organization: any, agentId = 'aura') {
 function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam, organization }: { connectedRuntime: any; seerLiveWorkstream: any; readAgentTeam?: () => Promise<any>; organization?: any }) {
   // Both chat entry points share the same live capability and existing mandate check.
   const checkedMcp = async (args: any, mode: 'read'|'write') => {
+    // These refusals happen before any dispatch: a definite failure, never an unknown outcome.
+    const refuse = (code: string) => Object.assign(new Error(code), { preDispatch: true });
     const task = mode === 'write' ? 'mcp-write' : 'mcp-call';
-    if (connectedRuntime.capabilities?.isTaskEnabled?.(task) === false) throw Error('CAPABILITY_DISABLED:'+task);
+    if (connectedRuntime.capabilities?.isTaskEnabled?.(task) === false) throw refuse('CAPABILITY_DISABLED:'+task);
     const server = String(args?.server || '');
     const key = mode === 'write' ? 'commands.run' : ['git','repo','filesystem','shell','jaco','editor'].includes(server) ? 'files.read' : 'web.read';
     const check = organization?.authorize('aura', key);
-    if (!check?.allowed) throw Error('MANDATE_DENIED:aura:' + key + ':' + (check?.reason || 'ORGANIZATION_UNAVAILABLE'));
+    if (!check?.allowed) throw refuse('MANDATE_DENIED:aura:' + key + ':' + (check?.reason || 'ORGANIZATION_UNAVAILABLE'));
     const input=args?.arguments === undefined ? {} : args.arguments;
-    if(!input||typeof input!=='object'||Array.isArray(input)) throw Error('MCP_ARGUMENTS_INVALID');
+    if(!input||typeof input!=='object'||Array.isArray(input)) throw refuse('MCP_ARGUMENTS_INVALID');
     return callAuraMcpTool(mcpHost, {server,tool:String(args?.tool||''),args:input,mode});
   };
   return {

@@ -255,7 +255,7 @@ test('FREE/LOCAL model usage is not misreported as unknown cloud spend', () => {
   assert.equal(summarizeAuraModelCosts([]),null);
 });
 
-test('a model cannot execute a sixth tool or expose an unexecuted TOOL_CALL as success', async () => {
+test('a model cannot execute a thirteenth tool or expose an unexecuted TOOL_CALL as success', async () => {
   const seen=[], executed=[];
   let turns=0;
   const out=await auraChatViaSeer({
@@ -271,14 +271,14 @@ test('a model cannot execute a sixth tool or expose an unexecuted TOOL_CALL as s
       return {observed:true,text:'O'.repeat(10000)+'receipt'+step};
     }}}},
   });
-  assert.equal(turns,6,'bounded tool loop performs only the final summary inference');
-  assert.deepEqual(executed,[1,2,3,4,5]);
-  assert.equal(out.toolReceipts.length,5);
+  assert.equal(turns,13,'bounded tool loop performs only the final summary inference');
+  assert.deepEqual(executed,[1,2,3,4,5,6,7,8,9,10,11,12]);
+  assert.equal(out.toolReceipts.length,12);
   assert.match(out.reply,/did not carry out the last proposed call/);
   assert.doesNotMatch(out.reply,/TOOL_CALL/);
   assert.equal(out.providerReceipt.costStatus,'FREE');
   assert.equal(out.providerReceipt.costUsd,0);
-  assert.equal(out.providerReceipt.modelCalls,6);
+  assert.equal(out.providerReceipt.modelCalls,13);
   assert.ok(seen.at(-1).endsWith('CURRENT_USER_MESSAGE:\nUndersök felet, men hitta inte på vad som körts.'));
   assert.ok(seen.at(-1).length<9000,'tool receipts should not create a runaway prompt');
 });
@@ -416,4 +416,29 @@ test('autonomous chat tells Aura that listed write tools work here without a mis
     const manual = buildAuraSeerPrompts({ message: 'Vad har du?', chatMode: 'manual', compactRules, toolCatalog: '- mcp_catalog: live tools' }).system;
     assert.doesNotMatch(manual, /can be used directly here; you do not need a mission|work here directly, without a mission/);
   }
+});
+
+test('a refusal before dispatch is a definite failure the model can correct, not an unknown outcome (2026-11-24)', async () => {
+  let turns = 0;
+  const replies = ['TOOL_CALL {"name":"mcp_tool","args":{"server":"browser","tool":"navigate","mode":"write"}}',
+    'TOOL_CALL {"name":"mcp_tool","args":{"server":"browser","tool":"nova_navigate","mode":"write"}}', 'Sidan är öppen.'];
+  const out = await auraChatViaSeer({ message: 'Öppna sidan', toolbox: { tools: { mcp_tool: { description: 'action', run: async args => {
+    if (args.tool === 'navigate') throw Object.assign(new Error('MCP_TOOL_UNAVAILABLE: browser has no tool "navigate". Available: nova_navigate'), { preDispatch: true });
+    return { ok: true };
+  } } } }, complete: async () => { turns++; return { provider: 'fixture', model: 'fixture', local: true, text: replies.shift() }; } });
+  assert.equal(out.toolReceipts.length, 2);
+  assert.equal(out.toolReceipts[0].ok, false);
+  assert.equal(out.toolReceipts[0].outcomeUnknown, undefined, 'nothing was dispatched, so the outcome is known');
+  assert.equal(out.toolReceipts[1].ok, true, 'the model corrected the tool name');
+  assert.equal(out.reply, 'Sidan är öppen.');
+  assert.equal(turns, 3);
+});
+
+test('a thrown mutation without the pre-dispatch mark still stops as an unknown outcome', async () => {
+  let runs = 0;
+  const out = await auraChatViaSeer({ message: 'Gör det', toolbox: { tools: { mcp_tool: { description: 'action', run: async () => { runs++; throw new Error('socket hang up'); } } } },
+    complete: async () => ({ provider: 'fixture', model: 'fixture', local: true, text: 'TOOL_CALL {"name":"mcp_tool","args":{}}' }) });
+  assert.equal(runs, 1);
+  assert.equal(out.toolReceipts[0].outcomeUnknown, true);
+  assert.match(out.reply, /not retried/i);
 });
