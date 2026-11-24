@@ -331,3 +331,13 @@ test('perception names resolve to real tools in both chat prompt variants withou
     assert.match(system,/do not claim readiness without live evidence/);
   }
 });
+
+test('autonomous chat tells Aura that listed write tools work here without a mission (2026-11-24)', () => {
+  for (const compactRules of [false, true]) {
+    const action = buildAuraSeerPrompts({ message: 'Installera paketet', chatMode: 'action', compactRules, toolCatalog: '- mcp_tool: guarded live MCP call' }).system;
+    assert.match(action, /AUTONOMOUS: (every tool listed under TOOLS, write tools included|write tools listed under TOOLS work here directly)/);
+    assert.doesNotMatch(action, /mission-only write tools|write tools that require a mission/);
+    const manual = buildAuraSeerPrompts({ message: 'Vad har du?', chatMode: 'manual', compactRules, toolCatalog: '- mcp_catalog: live tools' }).system;
+    assert.doesNotMatch(manual, /can be used directly here; you do not need a mission|work here directly, without a mission/);
+  }
+});
