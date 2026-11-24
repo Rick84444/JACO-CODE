@@ -40,21 +40,23 @@ export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'r
   const advertised = resolveAdvertisedTool(server, tool, tools);
   if (!advertised) throw Error('MCP_TOOL_UNAVAILABLE');
   tool = advertised.name;
-  const refusal = agentRefusal(def, advertised, args);
-  if (refusal) throw Error(refusal);
   const readOnly = isReadOnlyTool(server, advertised);
+  const localWorkspaceTool = ['shell', 'filesystem', 'git'].includes(server);
+  const consequence = readOnly ? 'READ'
+    : server === 'git' && /push|merge|release|publish/i.test(tool) ? 'PUBLISH'
+    : localWorkspaceTool ? 'LOCAL_MUTATION' : 'EXTERNAL_MUTATION';
+  const authority = standingToolAuthority(mcpAuthorityRoot(host), consequence);
+  if (authority.status === 'DENY' || authority.status === 'REVIEW') throw Error('MCP_STANDING_MANDATE_' + authority.status);
+  const refusal = agentRefusal(def, advertised, args, {
+    allowRemoteWrite: consequence === 'EXTERNAL_MUTATION' && authority.allowed
+  });
+  if (refusal) throw Error(refusal);
   if (mode === 'read' && !readOnly) throw Error('MCP_TOOL_WRITE_MODE_REQUIRED');
   if (mode === 'write' && !readOnly) {
     // Local, workspace-bound MCP writes inherit the operator's standing
     // authority. No separate chat microapproval may override an explicit ALLOW.
     // Outward and unknown-effect tools still follow their existing scope gates.
-    const localWorkspaceTool = ['shell', 'filesystem', 'git'].includes(server);
-    const authority = standingToolAuthority(mcpAuthorityRoot(host),
-      localWorkspaceTool ? 'LOCAL_MUTATION' : 'EXTERNAL_MUTATION');
-    if (authority.status === 'DENY' || authority.status === 'REVIEW') {
-      throw Error('MCP_STANDING_MANDATE_' + authority.status);
-    }
-    if (!(localWorkspaceTool && authority.allowed)) {
+    if (!authority.allowed) {
       const required = operatorApprovalCheck({type:'mcp-write',data:{server,tool}});
       if (required) throw Error('MCP_MISSION_APPROVAL_REQUIRED');
     }
