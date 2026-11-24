@@ -74,6 +74,11 @@ on:
       - 'runtime/src/server/connected/providerRegistry.mjs'
       - 'runtime/src/server/mcp/stdioMcpHost.mjs'
       - 'tests/nova/mcp-host.test.mjs'
+      - 'tests/nova/mcp-start-diagnostics.test.mjs'
+      - 'runtime/src/server/mcp/httpMcpClient.mjs'
+      - 'agents/lib/tool-failure-diagnosis.mjs'
+      - 'runtime/src/lib/mcpIntegrationCatalog.mjs'
+      - 'tests/nova/mcp-integration-catalog.test.mjs'
       - 'agents/lib/skills.mjs'
       - 'runtime/gateway/src/jaco-client.mjs'
       - 'tests/nova/workspace-integrations.test.mjs'
@@ -191,6 +196,11 @@ on:
       - 'runtime/src/server/connected/providerRegistry.mjs'
       - 'runtime/src/server/mcp/stdioMcpHost.mjs'
       - 'tests/nova/mcp-host.test.mjs'
+      - 'tests/nova/mcp-start-diagnostics.test.mjs'
+      - 'runtime/src/server/mcp/httpMcpClient.mjs'
+      - 'agents/lib/tool-failure-diagnosis.mjs'
+      - 'runtime/src/lib/mcpIntegrationCatalog.mjs'
+      - 'tests/nova/mcp-integration-catalog.test.mjs'
       - 'agents/lib/skills.mjs'
       - 'runtime/gateway/src/jaco-client.mjs'
       - 'tests/nova/workspace-integrations.test.mjs'
@@ -257,7 +267,7 @@ jobs:
       - name: Inline chat approval contract
         run: node --test tests/nova/inline-approval.test.mjs
       - name: MCP lifecycle and quarantine regressions
-        run: node --test tests/nova/mcp-host.test.mjs
+        run: node --test tests/nova/mcp-host.test.mjs tests/nova/mcp-start-diagnostics.test.mjs
       - name: Workbench truth contract
         run: node --test tests/nova/aura-truthful-gui.test.mjs tests/nova/aura-seer-chat.test.mjs tests/nova/aura-single-agent-functions.test.mjs tests/nova/nova-activity-text.test.mjs tests/nova/aura-cloudflare-remote.test.mjs tests/nova/ide-access.test.mjs tests/nova/local-memory-activity.test.mjs
       - name: Aura control plane, browser WebSocket and false-READY regressions
