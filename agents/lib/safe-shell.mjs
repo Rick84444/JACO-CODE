@@ -40,7 +40,7 @@ function gitClass(args) {
   const sub = args[0];
   if (!sub || sub.startsWith('-')) return { refuse: 'GIT_OPTIONS_BEFORE_SUBCOMMAND_NOT_ALLOWED' };
   const rest = args.slice(1);
-  if (rest.some(a => GIT_BLOCKED_OPTION.test(a))) return { refuse: 'GIT_OPTION_NOT_ALLOWED' };
+  if (rest.some((a, i) => GIT_BLOCKED_OPTION.test(a) && !(sub === 'switch' && i === 0 && a === '-c'))) return { refuse: 'GIT_OPTION_NOT_ALLOWED' };
   if (READ_GIT.has(sub)) return { mode: 'read' };
   switch (sub) {
     case 'branch': {
