@@ -47,8 +47,29 @@ async function getHosts(){
     show('pair',!selected);show('workspace',Boolean(selected));
     state(socket?.readyState===WebSocket.OPEN && selected?'Ansluten':selected?'Ansluter…':'Ingen dator',
       selected?'JACO-konto · '+(hosts.find(h=>h.deviceId===selected)?.label||'Windows PC'):'Öppna JACO Link på Windows för att parkoppla.');
-    if(socket?.readyState===WebSocket.OPEN && selected)await refresh('chat');
+    if(socket?.readyState===WebSocket.OPEN && selected){await refreshIdentity();await refresh('chat');}
+    else text($('runtimeIdentity'),'Runtime ej ansluten');
   }catch(e){error('Kunde inte läsa datorer: '+e.message);}
+}
+async function refreshIdentity(){
+  const hostAtStart=selected;
+  if(!hostAtStart || socket?.readyState!==WebSocket.OPEN) {
+    text($('runtimeIdentity'),'Runtime ej ansluten');
+    return;
+  }
+  text($('runtimeIdentity'),'Kontrollerar runtime-version…');
+  try {
+    const data=await wsSend('GET','/api/runtime/identity',undefined,{timeout:15000});
+    if(selected!==hostAtStart)return; // never attribute an old reply to another computer
+    if(data?.success!==true || !/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$/.test(String(data.version||'')))
+      throw Error('RUNTIME_IDENTITY_INVALID');
+    const version='v'+data.version;
+    const commit=/^[a-f0-9]{40}$/.test(String(data.sourceCommit||''))?data.sourceCommit.slice(0,12):'ej styrkt';
+    const mode=['lite','full'].includes(data.executionProfile)?data.executionProfile:'okänt läge';
+    text($('runtimeIdentity'),version+' · '+mode+' · källcommit: '+commit+' (självrapporterat)');
+  } catch {
+    if(selected===hostAtStart)text($('runtimeIdentity'),'Runtime-identitet ej verifierad; status kan vara inaktuell');
+  }
 }
 function connect(){
   if(socket && [0,1].includes(socket.readyState))return;
@@ -227,7 +248,7 @@ $('revoke').addEventListener('click',async()=>{
   }catch(e){error('Återkallandet kunde inte bekräftas: '+e.message);}
 });
 $('retry').addEventListener('click',()=>{if(socket?.readyState!==1)connect();void getHosts();});
-$('host').addEventListener('change',event=>{selected=event.target.value;void refresh('chat');});
+$('host').addEventListener('change',event=>{selected=event.target.value;void refreshIdentity();void refresh('chat');});
 $('send').addEventListener('click',()=>void sendChat());
 $('question').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();void sendChat();}});
 $('start').addEventListener('click',()=>void startGoal());
