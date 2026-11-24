@@ -3,7 +3,7 @@ import { BrowserHandsOffClient, CdpBridge, type BrowserAction, type BrowserActio
 import { actuatorLeases } from '../handsOff/actuatorLease.js';
 import { classify } from '../relay/modelRelay.js';
 import { actuatorGrantExpiry, type AutonomyMandateStore } from '../autonomy/autonomyMandate.js';
-import { standingToolAuthority } from '../../../../agents/lib/standing-tool-authority.mjs';
+import { standingToolAuthority, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 
 const ACTION_TYPES: BrowserActionType[] = ['observe', 'survey', 'navigate', 'click', 'set_value', 'select', 'check', 'scroll', 'wordpress_apply_css'];
 const MUTATING = new Set<BrowserActionType>(['navigate', 'click', 'set_value', 'select', 'check', 'scroll', 'wordpress_apply_css']);
@@ -154,6 +154,11 @@ export function createBrowserRouter(
     // mandate, with no fresh per-action GUI approval. A revoked mandate cannot
     // leave an old browser grant usable; explicit first-install legacy grants
     // remain compatible until the operator activates the standing mandate.
+    const switchId = type === 'set_value' ? 'browser-type'
+      : ['click','select','check','wordpress_apply_css'].includes(type) ? 'browser-click'
+      : 'browser-survey-site';
+    if (!operatorTaskEnabled(workspaceRoot, switchId))
+      return fail(res, 403, 'TASK_TURNED_OFF_BY_OPERATOR:' + switchId);
     const consequence = classify('BROWSER', body);
     const authority = standingToolAuthority(workspaceRoot, consequence);
     if (authority.status === 'DENY' || authority.status === 'REVIEW')
