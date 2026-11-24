@@ -29,6 +29,11 @@ export function classifyMcpChildExit(code, stderr = '', initialized = false) {
 
 // Tools that only read but do not declare readOnlyHint.
 const KNOWN_READ_ONLY = { fetch: new Set(['fetch']) };
+// This seller-registration script is a one-off task, not a JSON-RPC MCP server.
+// Reject accidental registration rather than repeatedly spawning it.
+export function isOneShotSellerScript(command, args = []) {
+  return [command, ...args].some(part => /(?:^|[\\/])create-skyfire-seller-service\.mjs$/i.test(String(part)));
+}
 export const isReadOnlyTool = (server, tool) => Boolean(tool?.readOnly || KNOWN_READ_ONLY[server]?.has(tool?.name));
 // Never invent a tool or strip another server's namespace. Exact registered names win.
 export function resolveAdvertisedTool(server, name, tools) {
@@ -186,12 +191,16 @@ export function loadServerConfig({ configFile, repoRoot, runtimeRoot }) {
       if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
       if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
       servers[id] = withAccess({ name: String(s.name || id), role: String(s.role || ''), transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, icon: id === 'huggingface' ? 'huggingface' : undefined }, s);
-      } catch { servers[id] = { name: String(s.name || id), role: '', validationError: 'MCP_CONFIGURATION_INVALID' }; }
+      } catch { servers[id] = { name: String(s.name || id), role: '', transport: 'http', validationError: 'MCP_CONFIGURATION_INVALID' }; }
       continue;
     }
     // An entry without a command only changes a built-in server's access (icon, agentAccess, deny).
     if (typeof s.command !== 'string' || !Array.isArray(s.args)) {
       if (servers[id]) servers[id] = withAccess(servers[id], s);
+      continue;
+    }
+    if (isOneShotSellerScript(s.command, s.args)) {
+      servers[id] = { name: String(s.name || id).slice(0, 80), role: '', transport: 'stdio', validationError: 'MCP_ONE_SHOT_NOT_MCP_SERVER' };
       continue;
     }
     // Migrate exactly the old built-in uvx commands, preserving operator access settings.
@@ -230,6 +239,7 @@ export function validateServerEntry(id, s = {}) {
   const command = String(s.command || '').trim();
   if (!command || command.length > 300) throw Error('MCP_COMMAND_REQUIRED');
   if (!Array.isArray(s.args) || s.args.length > 40) throw Error('MCP_ARGS_INVALID');
+  if (isOneShotSellerScript(command, s.args)) throw Error('MCP_ONE_SHOT_NOT_MCP_SERVER');
   const env = {};
   for (const [k, v] of Object.entries(s.env || {})) {
     if (!/^[A-Z][A-Z0-9_]{0,79}$/.test(k)) throw Error('MCP_ENV_NAME_INVALID');
@@ -458,7 +468,7 @@ export class StdioMcpHost {
     return Object.entries(this.servers()).map(([id, def]) => {
       const c = this.clients.get(id);
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
-      if (def.validationError) return { id, name: def.name, role: def.role, transport: 'http', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
+      if (def.validationError) return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
       const sameLaunch = Boolean(c && launchKey(c.def) === launchKey(def));
       const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => {
         const reads = Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name));
