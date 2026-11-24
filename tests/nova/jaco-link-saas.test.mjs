@@ -61,7 +61,7 @@ test('remote RPC allows only intentional Aura operator capabilities and exact pa
 
 test('remote status never treats missing or malformed source commit as proof of installation',()=>{
   const base={success:true,version:'0.23.1',executionProfile:'full'};
-  assert.match(runtimeIdentityLabel({...base,sourceCommit:'a'.repeat(40)}), /källcommit: a{12} \\(självrapporterat\\)/);
+  assert.match(runtimeIdentityLabel({...base,sourceCommit:'a'.repeat(40)}), /källcommit: a{12} \(självrapporterat\)/);
   assert.match(runtimeIdentityLabel({...base,sourceCommit:null}), /källcommit: ej styrkt/);
   assert.match(runtimeIdentityLabel({...base,sourceCommit:'not-a-commit'}), /källcommit: ej styrkt/);
   assert.match(runtimeIdentityLabel({...base,executionProfile:'invalid'}), /okänt läge/);
