@@ -3,7 +3,7 @@
 const $=id=>document.getElementById(id);
 const wsUrl=new URL('/link/ws?role=phone',location.href);
 wsUrl.protocol=location.protocol==='https:'?'wss:':'ws:';
-let socket=null,hosts=[],selected=null,online=false,busy=false,reconnectTimer=null;
+let socket=null,hosts=[],selected=null,online=false,busy=false,reconnectTimer=null,activeView='chat';
 const pending=new Map();
 const LIMIT=80;
 const views=['chat','plan','memory','decisions'];
@@ -47,7 +47,7 @@ async function getHosts(){
     show('pair',!selected);show('workspace',Boolean(selected));
     state(socket?.readyState===WebSocket.OPEN && selected?'Ansluten':selected?'Ansluter…':'Ingen dator',
       selected?'JACO-konto · '+(hosts.find(h=>h.deviceId===selected)?.label||'Windows PC'):'Öppna JACO Link på Windows för att parkoppla.');
-    if(socket?.readyState===WebSocket.OPEN && selected){await refreshIdentity();await refresh('chat');}
+    if(socket?.readyState===WebSocket.OPEN && selected)await Promise.allSettled([refreshIdentity(),refresh(activeView)]);
     else text($('runtimeIdentity'),'Runtime ej ansluten');
   }catch(e){error('Kunde inte läsa datorer: '+e.message);}
 }
@@ -86,6 +86,7 @@ function connect(){
   });
   socket.addEventListener('close',()=>{
     online=false;state('Återansluter…','Datorns uppdrag fortsätter även om mobilen tappar kontakten.');
+    text($('runtimeIdentity'),'Runtime-status inaktuell – datorn är inte ansluten');
     clearPending();reconnectTimer=setTimeout(connect,5000);
   });
   socket.addEventListener('error',()=>{error('Anslutningen bröts. JACO försöker återansluta.');});
@@ -217,6 +218,7 @@ async function decision(a,choice){
 }
 function selectView(view){
   if(!views.includes(view))return;
+  activeView=view;
   for(const v of views)show(v,v===view);
   document.querySelectorAll('[data-view]').forEach(button=>{button.setAttribute('aria-current',button.dataset.view===view?'page':'false');});
   void refresh(view).catch(e=>error('Datorns svar saknas: '+e.message));
@@ -248,7 +250,7 @@ $('revoke').addEventListener('click',async()=>{
   }catch(e){error('Återkallandet kunde inte bekräftas: '+e.message);}
 });
 $('retry').addEventListener('click',()=>{if(socket?.readyState!==1)connect();void getHosts();});
-$('host').addEventListener('change',event=>{selected=event.target.value;void refreshIdentity();void refresh('chat');});
+$('host').addEventListener('change',event=>{selected=event.target.value;void refreshIdentity();void refresh(activeView);});
 $('send').addEventListener('click',()=>void sendChat());
 $('question').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();void sendChat();}});
 $('start').addEventListener('click',()=>void startGoal());
