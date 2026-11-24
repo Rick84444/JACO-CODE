@@ -92,7 +92,7 @@ test('destructive uses and push are the operator\'s to enable, never the agent\'
   for (const [cmd, args] of [['git', ['checkout', '-b', 'topic']], ['git', ['restore', '--staged', 'src/a.js']], ['git', ['pull', '--ff-only']], ['rm', ['README.md']], ['git', ['stash']], ['git', ['switch', 'x']]]) assert.equal(c(ws, cmd, args).ok, true, `${cmd} ${args.join(' ')}`);
 });
 
-test('node and python run a script in the workspace, never inline code; npm runs project scripts, never installs packages', () => {
+test('node and python run workspace scripts; npm can install registry packages within the workspace', () => {
   const ws = workspace();
   assert.equal(c(ws, 'node', ['src/a.js']).ok, true);
   assert.equal(c(ws, 'node', ['--version'], { mode: 'read' }).ok, true);
@@ -105,7 +105,15 @@ test('node and python run a script in the workspace, never inline code; npm runs
   for (const ok of [['test'], ['run', 'hi'], ['ci'], ['install'], ['ls']]) assert.equal(c(ws, 'npm', ok).ok, true, ok.join(' '));
   assert.equal(c(ws, 'npm', ['ls'], { mode: 'read' }).ok, true);
   assert.match(c(ws, 'npm', ['test'], { mode: 'read' }).reason, /WRITE_COMMAND_IN_READ_MODE/);
-  assert.match(c(ws, 'npm', ['install', 'left-pad']).reason, /NPM_INSTALL_OF_PACKAGES/);
+  assert.equal(c(ws, 'npm', ['install', 'left-pad']).ok, true);
+  assert.equal(c(ws, 'npm', ['install', '-D', '@types/node']).ok, true);
+  assert.equal(c(ws, 'npm', ['uninstall', 'left-pad']).ok, true);
+  assert.equal(c(ws, 'npm', ['update']).ok, true);
+  for (const unsafe of [['install','--global','left-pad'], ['install','--prefix=/tmp','left-pad'],
+    ['install','file:../../outside'], ['install','https://example.org/pkg.tgz'],
+    ['install','--registry=https://untrusted.example','left-pad']]) {
+    assert.equal(c(ws, 'npm', unsafe).ok, false, unsafe.join(' '));
+  }
   assert.match(c(ws, 'npm', ['publish']).reason, /NPM_SUBCOMMAND_NOT_ALLOWED/);
   assert.match(c(ws, 'npm', ['exec', 'x']).reason, /NPM_SUBCOMMAND_NOT_ALLOWED/);
   assert.match(c(ws, 'npx', ['x']).reason, /PROGRAM_NOT_ALLOWED/);
