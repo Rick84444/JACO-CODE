@@ -38,6 +38,7 @@ function rpc(method,path,body=undefined) {
 
 test('remote RPC allows only intentional Aura operator capabilities and exact paths',()=>{
   for(const [method,path] of [
+    ['GET','/api/runtime/identity'],
     ['GET','/api/aura/plan'],['GET','/api/aura/chat/session'],
     ['GET','/api/aura/workbench/local-memory'],['GET','/api/aura/workbench/approvals'],
     ['POST','/api/aura/chat'],['POST','/api/aura/workbench/start-goal'],
@@ -47,10 +48,12 @@ test('remote RPC allows only intentional Aura operator capabilities and exact pa
   for(const path of [
     '/api/terminal/exec','/api/aura/workbench/file','/api/aura/workbench/mcp/call',
     '/api/aura/workbench/project','/api/aura/model','/api/aura/budget',
+    '/api/runtime/identity?secrets=1','/api/runtime/package.json',
     '/api/aura/chat?secret=1','/api//aura/chat','/api/aura/../terminal/exec',
     '/api/aura/workbench/approvals/id/decision/../file',
   ])assert.equal(permittedRemoteCall('POST',path),false,path);
   assert.equal(validateRemoteCall(rpc('GET','/api/aura/plan',{bogus:true})).ok,false);
+  assert.equal(validateRemoteCall(rpc('GET','/api/runtime/identity',{bogus:true})).ok,false);
   assert.equal(validateRemoteCall(rpc('POST','/api/aura/chat')).ok,false);
   assert.equal(validateRemoteCall(rpc('POST','/api/aura/chat',{message:'a'.repeat(60000)})).ok,false);
 });
@@ -164,6 +167,9 @@ test('mobile app has real installable assets and actual branded memory icon',()=
   for(const file of ['remote.html','connect.html','remote.js','connect.js','style.css','icon.svg','memory-tree.png'])
     assert.ok(fs.statSync(base+file).size>100,file);
   assert.match(read(base+'remote.js'),/\/api\/aura\/workbench\/local-memory/);
+  assert.match(read(base+'remote.js'),/\/api\/runtime\/identity/);
+  assert.match(read(base+'remote.js'),/självrapporterat/);
+  assert.match(read(base+'remote.html'),/id="runtimeIdentity"/);
   assert.match(read(base+'remote.js'),/\/api\/aura\/workbench\/missions\//);
   assert.match(read('runtime/src/components/DevicesView.tsx'),/jaco-link-onboarding/);
 });
