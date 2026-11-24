@@ -14,7 +14,7 @@
 // secrets, credentials, node_modules). Remote (http) servers stay read-only for agents.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { standingToolAuthority, mcpAuthorityRoot } from '../../../../agents/lib/standing-tool-authority.mjs';
+import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 import path from 'node:path';
 import { HttpMcpClient } from './httpMcpClient.mjs';
 
@@ -511,9 +511,13 @@ export class StdioMcpHost {
       : id === 'git' && /push|merge|release|publish/i.test(name) ? 'PUBLISH'
       : ['shell', 'filesystem', 'git', 'repo', 'editor'].includes(id) ? 'LOCAL_MUTATION'
       : 'EXTERNAL_MUTATION';
-    const authority = actor === 'agent' ? standingToolAuthority(mcpAuthorityRoot(this), consequence) : null;
+    const root = mcpAuthorityRoot(this);
+    const taskSwitches = [reads ? 'mcp-call' : 'mcp-write', ...(id === 'shell' ? ['shell'] : [])];
+    const disabled = actor === 'agent' ? taskSwitches.find(task => !operatorTaskEnabled(root, task)) : null;
+    const authority = actor === 'agent' ? standingToolAuthority(root, consequence) : null;
     const refusal = actor === 'agent'
-      ? (authority.status === 'DENY' || authority.status === 'REVIEW'
+      ? (disabled ? 'TASK_TURNED_OFF_BY_OPERATOR:' + disabled
+        : authority.status === 'DENY' || authority.status === 'REVIEW'
           ? 'MCP_STANDING_MANDATE_' + authority.status
           : agentRefusal(c.def, tool, args, { allowRemoteWrite: consequence === 'EXTERNAL_MUTATION' && authority.allowed })
             || (readOnly && !reads ? 'MCP_TOOL_NOT_READ_ONLY' : null))
