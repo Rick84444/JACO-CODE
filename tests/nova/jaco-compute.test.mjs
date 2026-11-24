@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  isGeminiComputerUseModel, geminiEndpoint, sanitizeSchema, toGeminiRequest, screenshotBinding,
-  normalizeKeys, translateComputerAction, geminiComputerUseTurn, geminiUsage, resetContinuations,
+  isJacoComputeModel, jacoComputeEndpoint, sanitizeSchema, toJacoComputeRequest, screenshotBinding,
+  normalizeKeys, translateComputerAction, jacoComputeTurn, jacoComputeUsage, resetContinuations,
   DESKTOP_EXCLUDED_ACTIONS,
-} from '../../agents/lib/gemini-computer-use.mjs';
+} from '../../agents/lib/jaco-compute.mjs';
 import { budgetedNovaOllamaCall } from '../../agents/lib/nova-ollama-cost.mjs';
 
 const MODEL = 'gemini-2.5-computer-use-preview-10-2025';
@@ -17,14 +17,14 @@ const args = c => JSON.parse(c.function.arguments);
 const answer = (parts, usage = { promptTokenCount: 10, candidatesTokenCount: 3 }) => ({ status: 200, data: { candidates: [{ content: { parts } }], usageMetadata: usage } });
 
 test('recognizes computer-use model ids and builds the native endpoint', () => {
-  assert.equal(isGeminiComputerUseModel(MODEL), true);
-  assert.equal(isGeminiComputerUseModel('gemini-2.5-flash'), false);
-  assert.equal(geminiEndpoint('models/' + MODEL), `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`);
-  assert.throws(() => geminiEndpoint('../x?key=1'), /GEMINI_MODEL_ID_INVALID/);
+  assert.equal(isJacoComputeModel(MODEL), true);
+  assert.equal(isJacoComputeModel('gemini-2.5-flash'), false);
+  assert.equal(jacoComputeEndpoint('models/' + MODEL), `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`);
+  assert.throws(() => jacoComputeEndpoint('../x?key=1'), /JACO_COMPUTE_MODEL_ID_INVALID/);
 });
 
 test('request keeps system, tool history, images and only supported schema keys', () => {
-  const req = toGeminiRequest({
+  const req = toJacoComputeRequest({
     messages: [
       { role: 'system', content: 'rules' },
       { role: 'user', content: [{ type: 'text', text: 'goal' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }] },
@@ -66,7 +66,7 @@ test('translates normalized coordinates into the bound captured window', () => {
 
 test('a confirmation request is never executed; it blocks for the operator', async () => {
   resetContinuations();
-  const result = await geminiComputerUseTurn({
+  const result = await jacoComputeTurn({
     messages: [{ role: 'user', content: 'goal' }], tools: TOOLS, mission: { id: 'm1', receipts: [shot()] }, frame: { url: 'x' },
     send: async () => answer([{ functionCall: { name: 'click_at', args: { x: 1, y: 1, safety_decision: { decision: 'require_confirmation', explanation: 'Accept cookies?' } } } }]),
   });
@@ -81,15 +81,15 @@ test('type_text_at clicks, observes and types without extra model calls', async 
   const send = async () => { calls++; return answer([{ text: 'Typing the name.' }, { functionCall: { name: 'type_text_at', args: { x: 500, y: 500, text: 'Aura', clear_before_typing: false } } }]); };
   const receipts = [shot()];
   const mission = { id: 'm2', receipts };
-  const first = await geminiComputerUseTurn({ messages: [], tools: TOOLS, mission, frame: { url: 'x' }, send });
+  const first = await jacoComputeTurn({ messages: [], tools: TOOLS, mission, frame: { url: 'x' }, send });
   assert.equal(first.reply.tool_calls[0].function.name, 'mouse-click');
   assert.equal(args(first.reply.tool_calls[0]).expectedHwnd, 77);
   receipts.push({ type: 'mouse-click', ok: true, verified: true, at });
-  const look = await geminiComputerUseTurn({ messages: [], tools: TOOLS, mission, frame: null, send });
+  const look = await jacoComputeTurn({ messages: [], tools: TOOLS, mission, frame: null, send });
   assert.equal(look.local, true);
   assert.deepEqual(args(look.reply.tool_calls[0]).hwnd, 77);
   receipts.push(shot());
-  const type = await geminiComputerUseTurn({ messages: [], tools: TOOLS, mission, frame: { url: 'x' }, send });
+  const type = await jacoComputeTurn({ messages: [], tools: TOOLS, mission, frame: { url: 'x' }, send });
   assert.equal(type.reply.tool_calls[0].function.name, 'type-text');
   assert.equal(args(type.reply.tool_calls[0]).text, 'Aura');
   assert.equal(calls, 1);
@@ -101,9 +101,9 @@ test('a failed continuation step is dropped and the model plans again', async ()
   const send = async () => { calls++; return answer([{ functionCall: { name: 'type_text_at', args: { x: 1, y: 1, text: 'x' } } }]); };
   const receipts = [shot()];
   const mission = { id: 'm3', receipts };
-  await geminiComputerUseTurn({ messages: [], tools: TOOLS, mission, frame: { url: 'x' }, send });
+  await jacoComputeTurn({ messages: [], tools: TOOLS, mission, frame: { url: 'x' }, send });
   receipts.push({ type: 'mouse-click', ok: false, verified: false, at }, shot());
-  const next = await geminiComputerUseTurn({ messages: [], tools: TOOLS, mission, frame: { url: 'x' }, send });
+  const next = await jacoComputeTurn({ messages: [], tools: TOOLS, mission, frame: { url: 'x' }, send });
   assert.equal(calls, 2);
   assert.equal(next.reply.tool_calls[0].function.name, 'mouse-click');
 });
@@ -115,7 +115,7 @@ test('an unexecutable action is explained to the model once, custom calls pass t
     answer([{ functionCall: { name: 'scroll_at', args: { x: 1, y: 1, direction: 'left' } } }]),
     answer([{ functionCall: { name: 'complete', args: { reason: 'done' } } }]),
   ];
-  const result = await geminiComputerUseTurn({ messages: [{ role: 'user', content: 'g' }], tools: TOOLS, mission: { id: 'm4', receipts: [shot()] }, frame: { url: 'x' },
+  const result = await jacoComputeTurn({ messages: [{ role: 'user', content: 'g' }], tools: TOOLS, mission: { id: 'm4', receipts: [shot()] }, frame: { url: 'x' },
     send: async body => { sent.push(structuredClone(body)); return replies.shift(); } });
   assert.equal(result.reply.tool_calls[0].function.name, 'complete');
   assert.match(JSON.stringify(sent[1].contents.at(-1)), /SCROLL_DIRECTION_UNSUPPORTED/);
@@ -123,12 +123,12 @@ test('an unexecutable action is explained to the model once, custom calls pass t
 
 test('HTTP failures are returned to the caller, not swallowed', async () => {
   resetContinuations();
-  const result = await geminiComputerUseTurn({ messages: [], tools: TOOLS, mission: { id: 'm5', receipts: [] }, frame: null, send: async () => ({ status: 429, raw: 'quota' }) });
+  const result = await jacoComputeTurn({ messages: [], tools: TOOLS, mission: { id: 'm5', receipts: [] }, frame: null, send: async () => ({ status: 429, raw: 'quota' }) });
   assert.equal(result.http.status, 429);
 });
 
 test('native Gemini usage settles the shared reservation with Gemini headers', async () => {
-  assert.deepEqual(geminiUsage({ usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 2, thoughtsTokenCount: 3 } }), { prompt_tokens: 5, completion_tokens: 5 });
+  assert.deepEqual(jacoComputeUsage({ usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 2, thoughtsTokenCount: 3 } }), { prompt_tokens: 5, completion_tokens: 5 });
   const seen = [];
   const fetchImpl = async (url, init) => {
     seen.push({ url, init, body: JSON.parse(init.body) });
@@ -136,9 +136,9 @@ test('native Gemini usage settles the shared reservation with Gemini headers', a
     if (url.endsWith('/settle')) return new Response(JSON.stringify({ success: true }));
     return new Response(JSON.stringify({ candidates: [], usageMetadata: { promptTokenCount: 7, candidatesTokenCount: 1 } }));
   };
-  const body = toGeminiRequest({ messages: [{ role: 'user', content: 'x' }], maxOutputTokens: 321 });
+  const body = toJacoComputeRequest({ messages: [{ role: 'user', content: 'x' }], maxOutputTokens: 321 });
   await budgetedNovaOllamaCall({ provider: { name: 'gemini', model: MODEL, url: 'https://g/models/m:generateContent', key: 'k' }, requestBody: body,
-    runtimeUrl: 'http://127.0.0.1:3000', token: 't', fetchImpl, headers: { 'x-goog-api-key': 'k' }, maxTokens: 321, usageOf: geminiUsage });
+    runtimeUrl: 'http://127.0.0.1:3000', token: 't', fetchImpl, headers: { 'x-goog-api-key': 'k' }, maxTokens: 321, usageOf: jacoComputeUsage });
   assert.equal(seen[0].body.maxTokens, 321);
   assert.equal(seen[1].init.headers['x-goog-api-key'], 'k');
   assert.equal(seen[1].init.headers.Authorization, undefined);
