@@ -7,7 +7,7 @@ export const MCP_INTEGRATION_CATALOG = Object.freeze([
   {id:'github-remote',name:'GitHub remote',target:'https://api.githubcopilot.com/mcp/',icon:'github',tokenEnv:'GITHUB_TOKEN',auth:'Operator-provided token reference; OAuth not yet supported by JACO MCP host',docs:'https://docs.github.com/en/copilot/how-tos/copilot-in-your-ide/customize-copilot/extend-copilot-with-tools-and-context/set-up-the-github-mcp-server'},
   {id:'render',name:'Render',target:'https://mcp.render.com/mcp',icon:'mcp',tokenEnv:'RENDER_API_KEY',auth:'Operator-provided API-key reference; OAuth not yet supported by JACO MCP host',docs:'https://render.com/docs/mcp-server'},
   {id:'huggingface',name:'Hugging Face',target:'https://huggingface.co/mcp',icon:'huggingface',tokenEnv:'',auth:'Public tools; optional HF_TOKEN for authenticated access',docs:'https://huggingface.co/docs/hub/hf-mcp-server'}
-].map(Object.freeze));
+].map(item=>Object.freeze(item)));
 export function mcpCatalogDraft(id) {
   const preset=MCP_INTEGRATION_CATALOG.find(item=>item.id===id);
   if(!preset) throw Error('MCP_CATALOG_UNKNOWN');
