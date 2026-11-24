@@ -67,6 +67,7 @@ test('standing publish and destructive GUI selections replace legacy shell env s
   assert.equal(c(ws, 'rm', ['-r', 'src']).ok, true);
   assert.match(c(ws, 'git', ['push', 'origin', 'main']).reason, /GIT_PUSH_PROTECTED_BRANCH/);
   assert.match(c(ws, 'touch', ['.jaco/state/autonomy/mandates.json']).reason, /PROTECTED_PATH/);
+  assert.match(c(ws, 'touch', ['.jaco/state/capabilities.json']).reason, /PROTECTED_PATH/);
   save('DENY','DENY');
   assert.match(c(ws, 'git', ['push', 'origin', 'aura/work'], { env: { JACO_SHELL_ALLOW_PUSH: '1' } }).reason, /GIT_PUSH_STANDING_MANDATE_DENY/);
   assert.match(c(ws, 'rm', ['-r', 'src'], { env: { JACO_SHELL_ALLOW_DESTRUCTIVE: '1' } }).reason, /DESTRUCTIVE_STANDING_MANDATE_DENY/);
@@ -124,6 +125,7 @@ test('ordinary branch navigation does not require destructive permission or rest
     git('branch', 'other');
     const shell = new SafeShell({ workspace: ws, env: process.env, auditFile: false });
     assert.deepEqual(c(ws, 'git', ['checkout', 'other']).args, ['switch', 'other']);
+    assert.equal(c(ws, 'git', ['switch', '-c', 'new-topic']).ok, true);
     assert.equal((await shell.run({command:'git', args:['checkout','other']})).ok, true);
     assert.equal(git('branch', '--show-current'), 'other');
     fs.writeFileSync(path.join(ws, 'README.md'), 'other branch\n');
