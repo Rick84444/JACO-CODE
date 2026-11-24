@@ -16,7 +16,7 @@ function maxConsequence(a: ConsequenceClass, b: ConsequenceClass): ConsequenceCl
   return RANK[a] >= RANK[b] ? a : b;
 }
 
-function classify(surface: ActuatorSurface, action: any): ConsequenceClass {
+export function classify(surface: ActuatorSurface, action: any): ConsequenceClass {
   const raw = JSON.stringify(action || {}).toLowerCase();
   if (/(password|passcode|otp|one.?time|verification code|login|signin|oauth|authorize|bankid)/.test(raw)) return 'AUTH';
   if (/(checkout|payment|pay\b|purchase|buy\b|swish|stripe|paypal|invoice)/.test(raw)) return 'FINANCIAL';
