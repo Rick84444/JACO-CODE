@@ -23,7 +23,7 @@ test('a failing tool is answered with the next route the mission can actually ca
   assert.match(afterFetch.message, /STRATEGY_RECOVERY/);
   assert.match(afterFetch.message, /browser-survey-site/);
 
-  // 1b. Browser survey failed too -> DOM TRACK, then the accessibility tree, then pixels.
+  // 1b. Browser survey failed too -> TARGET TRACK (browser/CDP), then the accessibility tree, then pixels.
   const chain = ['dom-track-observe', 'dom-track-ax', 'dom-track-html', 'laser-vision'];
   const receipts = [failed('web-fetch', 'FETCH_FAILED'), failed('browser-survey-site', 'SURVEY_EMPTY')];
   const attempted = [];

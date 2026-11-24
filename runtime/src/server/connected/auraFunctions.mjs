@@ -17,7 +17,7 @@ export function projectAuraFunctions({ workplace = null, coordinator = null, gra
   const workplaceReachable = workplace?.reachable === true;
   const seerReachable = coordinator?.reachable === true;
   const model = seerReachable ? coordinator?.health?.local_model : null;
-  // With the unified Aura runtime SEER has no local model on purpose; Aura reasons with the model the operator chose,
+  // Aura reasons with the model the operator chose; the legacy coordinator service has no independent model,
   // which is saved only after it answered a test request. That saved choice is the inference evidence here.
   const chosen = !model?.model && planner?.by === 'operator' && planner.provider && planner.model ? planner : null;
   const visibleMissions = Array.isArray(missions) ? missions : null;
@@ -50,7 +50,7 @@ export function projectAuraFunctions({ workplace = null, coordinator = null, gra
     schema: 'jaco.aura-functions/v1',
     observedAt: now,
     identity: { id: 'aura', name: 'Aura', agentCount: 1, meaning: 'operator-facing-identity-only' },
-    // Internal SEER/Nova/Workplace processes and historical agent records remain
+    // Historical planner/executor/Workplace process identifiers and agent records remain
     // observable in technical diagnostics; do not misreport reduced process count.
     runtimeConsolidated: false,
     functions: AURA_FUNCTION_DEFINITIONS.map(def => ({

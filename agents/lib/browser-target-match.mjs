@@ -1,4 +1,4 @@
-import { DomTractionEngine } from '../../runtime/src/server/nova/tractionCore.mjs';
+import { TargetTractionEngine } from '../../runtime/src/server/nova/tractionCore.mjs';
 
 // Shared browser-side identity. Deliberately excludes form values and secret-bearing attributes.
 export const DOM_IDENTITY_FN = String.raw`function(){const e=this;return {text:(e.innerText||e.getAttribute('aria-label')||e.getAttribute('placeholder')||e.name||'').trim().replace(/\s+/g,' ').slice(0,100),role:(e.getAttribute('role')||e.tagName.toLowerCase()).toLowerCase()};}`;
@@ -30,10 +30,10 @@ export function pickTarget(targets, name) {
 }
 
 
-// DOM Traction is the live browser target acquisition/re-identification phase.
+// Target Track's browser/CDP adapter acquires and re-identifies live semantic targets.
 // Saved routes are hypotheses: the current CDP observations must independently resolve the same semantic object.
 export async function trackDomTarget(observe,name,{roles=null,now=Date.now}={}){
-  const refusal=(error,available=[])=>({ok:false,verified:false,outcomeUnknown:false,error,available,domTraction:{engine:'DOM Traction',state:'REIDENTIFYING'}});
+  const refusal=(error,available=[])=>({ok:false,verified:false,outcomeUnknown:false,error,available,domTraction:{engine:'Target Track',state:'REIDENTIFYING'}});
   const candidates=page=>(page.targets||[]).filter(t=>!roles||roles.includes(t.role));
   const usable=page=>{const age=now()-Date.parse(page?.at||'');return page?.ok===true&&typeof page.url==='string'&&page.url&&Array.isArray(page.targets)&&Number.isFinite(age)&&age>=0&&age<=5000;};
   let first,second;
@@ -41,7 +41,7 @@ export async function trackDomTarget(observe,name,{roles=null,now=Date.now}={}){
   if(!usable(first))return refusal('DOM_OBSERVATION_STALE_OR_UNAVAILABLE');
   const initial=pickTarget(candidates(first),name);
   if(!initial.target)return refusal(initial.error,initial.available);
-  const engine=new DomTractionEngine();
+  const engine=new TargetTractionEngine();
   const app=JSON.stringify([first.url,first.targetId||null]);
   engine.beginIntent(String(name),'input receipt');
   engine.acquireTarget({semanticPurpose:String(name),text:initial.target.text,role:initial.target.role,bbox:initial.target.bbox,confidence:1,source:'dom'});
@@ -55,5 +55,5 @@ export async function trackDomTarget(observe,name,{roles=null,now=Date.now}={}){
   // Do not confuse a selector change with a lost target: a DOM insertion may move the same unique control.
   const lock=engine.observe({app,timestamp:second.at,semanticTargets:[{...current.target,confidence:1}]});
   if(lock.state!=='LOCKED'||engine.beforeAction('browser-input').state!=='VERIFYING')return refusal('DOM_TARGET_LOCK_LOST');
-  return {ok:true,target:current.target,url:second.url,targetId:second.targetId,traction:{engine:'DOM Traction',trackId:lock.trackId,state:lock.state,reidentified:initial.target.selector!==current.target.selector,observedAt:second.at,matched:current.matched,drift:lock.drift}};
+  return {ok:true,target:current.target,url:second.url,targetId:second.targetId,traction:{engine:'Target Track',trackId:lock.trackId,state:lock.state,reidentified:initial.target.selector!==current.target.selector,observedAt:second.at,matched:current.matched,drift:lock.drift}};
 }

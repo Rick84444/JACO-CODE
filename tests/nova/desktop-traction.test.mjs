@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { verifyDesktopTraction } from '../../runtime/src/server/desktop/desktopTraction.mjs';
+import { TargetTractionEngine, DomTractionEngine, NovaTractionEngine } from '../../runtime/src/server/nova/tractionCore.mjs';
+
+test('Target Track is the same engine as the legacy DOM and Nova aliases', () => {
+  assert.equal(TargetTractionEngine, DomTractionEngine);
+  assert.equal(TargetTractionEngine, NovaTractionEngine);
+});
 
 const action = { type: 'invoke', hwnd: 321, selector: { automationId: 'saveBtn', name: 'Save', controlType: 'Button' } };
 const target = () => ({ automationId: 'saveBtn', name: 'Save', controlType: 'Button', className: 'Button', enabled: true, offscreen: false, rect: { x: 100, y: 80, width: 90, height: 34 } });
@@ -10,7 +16,7 @@ const observation = (extras = {}) => ({
   ...extras,
 });
 
-test('Aura reuses canonical DOM Traction to lock a fresh Windows UIA target', () => {
+test('Aura reuses canonical Target Track to lock a fresh Windows UIA target', () => {
   const initial = observation();
   const next = observation();
   const result = verifyDesktopTraction(initial, next, action);

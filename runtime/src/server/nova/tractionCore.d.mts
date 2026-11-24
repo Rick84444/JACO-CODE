@@ -8,6 +8,7 @@ export class DomTractionEngine {
   markActionFailure(reason: string): NovaTractionState;
 }
 
+export { DomTractionEngine as TargetTractionEngine };
 export { DomTractionEngine as NovaTractionEngine };
 
 export const DRIFT_THRESHOLD: number;

@@ -32,16 +32,16 @@ export const CAPABILITY_ROUTES = Object.freeze({
   'web-read': Object.freeze([
     Object.freeze({ id: 'web-fetch', task: 'web-fetch', label: 'plain HTTP read' }),
     Object.freeze({ id: 'browser-survey', task: 'browser-survey-site', label: 'the real browser through CDP' }),
-    Object.freeze({ id: 'dom-track-observe', task: 'mcp-call', via: { server: 'cdp', tool: 'nova_observe' }, label: 'DOM TRACK: the observed page' }),
-    Object.freeze({ id: 'dom-track-ax', task: 'mcp-call', via: { server: 'cdp', tool: 'nova_ax' }, label: 'DOM TRACK: the accessibility tree' }),
-    Object.freeze({ id: 'dom-track-html', task: 'mcp-call', via: { server: 'cdp', tool: 'nova_html' }, label: 'DOM TRACK: the cleaned HTML' }),
+    Object.freeze({ id: 'dom-track-observe', task: 'mcp-call', via: { server: 'cdp', tool: 'nova_observe' }, label: 'TARGET TRACK (browser/CDP): the observed page' }),
+    Object.freeze({ id: 'dom-track-ax', task: 'mcp-call', via: { server: 'cdp', tool: 'nova_ax' }, label: 'TARGET TRACK (browser/CDP): the accessibility tree' }),
+    Object.freeze({ id: 'dom-track-html', task: 'mcp-call', via: { server: 'cdp', tool: 'nova_html' }, label: 'TARGET TRACK (browser/CDP): the cleaned HTML' }),
     Object.freeze({ id: 'laser-vision', task: 'mcp-call', via: { server: 'cdp', tool: 'nova_screenshot' }, label: 'LASER VISION: a screenshot of the page' }),
   ]),
   // The browser itself is down: reconnect the authorized local bridge, then look again.
   browser: Object.freeze([
     Object.freeze({ id: 'stack-repair', task: 'stack-repair', repair: true, label: 'restart the local services that are down' }),
     Object.freeze({ id: 'browser-targets', task: 'mcp-call', via: { server: 'cdp', tool: 'nova_targets' }, label: 'the open tabs, to confirm the browser answers' }),
-    Object.freeze({ id: 'dom-track-observe', task: 'mcp-call', via: { server: 'cdp', tool: 'nova_observe' }, label: 'DOM TRACK: the observed page' }),
+    Object.freeze({ id: 'dom-track-observe', task: 'mcp-call', via: { server: 'cdp', tool: 'nova_observe' }, label: 'TARGET TRACK (browser/CDP): the observed page' }),
   ]),
   // An MCP server is unavailable: start the authorized service, re-read the catalog, then call it again.
   mcp: Object.freeze([

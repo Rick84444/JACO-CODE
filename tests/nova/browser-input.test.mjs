@@ -392,7 +392,7 @@ test('a click on a link to a slow site waits for the page to leave before judgin
   assert.equal(r.observation.url, 'https://slow.example/next');
 });
 
-test('DOM Traction checks identity again on actual actuator session, before dispatch',async()=>{
+test('Target Track checks identity again on actual actuator session, before dispatch',async()=>{
  const expectedTarget={text:'Save',role:'button'},target={...expectedTarget,visible:true,selector:'button.save'};
  for(const options of [{observedTargets:[{...target,text:'Delete'}],identity:expectedTarget},{observedTargets:[target,{...target,selector:'button.other'}],identity:expectedTarget},{observedTargets:[target],identity:{text:'Delete',role:'button'}}]){
    const s=page(options);

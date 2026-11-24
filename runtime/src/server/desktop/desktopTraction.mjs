@@ -1,7 +1,7 @@
-// JACO Desktop Traction: UIA adapter for the *existing* DOM Traction engine.
+// JACO Desktop Traction: UIA adapter for the *existing* surface-neutral Target Track engine.
 // It never dispatches input. The canonical DesktopHandsOffClient and ModelRelay
 // remain the only desktop mutation path, with the existing mission/mandate gates.
-import { DomTractionEngine } from '../nova/tractionCore.mjs';
+import { TargetTractionEngine } from '../nova/tractionCore.mjs';
 
 const MAX_GAP_MS = 5000;
 const validText = value => typeof value === 'string' ? value.trim() : '';
@@ -78,7 +78,7 @@ export function verifyDesktopTraction(first, second, action, {
   if (identity(a) !== identity(b)) throw Error('DESKTOP_TRACTION_TARGET_CHANGED');
   if ((bounds(a) === null) !== (bounds(b) === null)) throw Error('DESKTOP_TRACTION_GEOMETRY_UNCERTAIN');
 
-  const track = new DomTractionEngine();
+  const track = new TargetTractionEngine();
   const text = validText(a.name) || validText(a.automationId);
   const role = validText(a.controlType);
   const app = w1.processId + ':' + hwnd;

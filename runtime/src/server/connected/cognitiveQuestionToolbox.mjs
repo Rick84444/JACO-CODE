@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { AURA_FUNCTION_DEFINITIONS } from './auraFunctions.mjs';
 // Questions inspect the current run. Starting work is the explicit mission action in the composer.
-const readTools = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','policy_get','dom_track','laser_vision']);
+const readTools = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','policy_get','target_track','dom_track','laser_vision']);
 
 // The existing mcp_read tool is the sole authority for these convenience entry points.
 export function withPerceptionTools(tools) {
@@ -15,9 +15,9 @@ export function withPerceptionTools(tools) {
     if (!args || typeof args !== 'object' || Array.isArray(args) ||
         Object.keys(args).some(key => !allowed.includes(key))) throw Error('PERCEPTION_ARGUMENTS_INVALID');
   };
-  return {...tools,
+  const perceptionTools = {...tools,
     dom_track: {
-      description:'DOM TRACK: read the currently pinned allowed browser page. view: observe (default), accessibility or html. Read-only; respects the existing CDP and organization policy. args: {view?}',
+      description:'Legacy DOM TRACK alias for TARGET TRACK (browser/CDP): read the currently pinned allowed browser page. view: observe (default), accessibility or html. Read-only; respects the existing CDP and organization policy. args: {view?}',
       run: async (args = {}) => {
         validate(args,['view']);
         const views={observe:'nova_observe',accessibility:'nova_ax',html:'nova_html'};
@@ -39,6 +39,104 @@ export function withPerceptionTools(tools) {
       },
     },
   };
+  // A single intent-oriented browser observation replaces several manual
+  // DOM/AX commands. This is NOT an actuator or a cross-platform permission:
+  // desktop/UIA and Android still use their own signed mission tools.
+  const parseReceipt = receipt => {
+    const message = receipt?.content?.find(item => item?.type === 'text' && typeof item.text === 'string')?.text;
+    if (typeof message !== 'string' || message.length > 100_000) return null;
+    try { return JSON.parse(message); } catch { return null; }
+  };
+  const isFresh = at => {
+    const ageMs = Date.now() - Date.parse(at || '');
+    return Number.isFinite(ageMs) && ageMs >= -5_000 && ageMs <= 15_000;
+  };
+  const pick = (nodes, query, textKey) => {
+    const valid = nodes.filter(node => node && typeof node === 'object' && (textKey !== 'text' || node.visible === true));
+    const matched = query ? valid.filter(node => String(node[textKey] || '').toLocaleLowerCase().includes(query)) : valid;
+    const exact = query ? matched.filter(node => String(node[textKey] || '').trim().toLocaleLowerCase() === query) : [];
+    return (exact.length ? exact : matched).slice(0, 12);
+  };
+  const candidate = node => ({
+    role: String(node.role || '').slice(0, 50),
+    text: String(node.text || '').slice(0, 160),
+    // A selector from a read-only observation is only a hint, never an action lock.
+    selectorHint: String(node.selector || '').slice(0, 300),
+  });
+  perceptionTools.target_track = {
+    description: 'TARGET TRACK (browser/CDP): one read-only goal-driven inspection. Give {target:"Save"} to find a visible control with one observation; automatically inspect accessibility if not found. Defaults to a compact page survey. view: auto (default), observe, accessibility or html. The result is NOT a click or a verified action. Windows/Android use their own authorized mission tools. args: {target?,view?,surface?}',
+    run: async (args = {}) => {
+      validate(args, ['target', 'view', 'surface']);
+      const { target = '', view = 'auto', surface = 'browser' } = args;
+      if (surface !== 'browser') throw Error('TARGET_TRACK_SURFACE_UNAVAILABLE_USE_MISSION_TOOLS');
+      if (typeof target !== 'string' || target.length > 120) throw Error('TARGET_TRACK_TARGET_INVALID');
+      if (typeof view !== 'string' || !['auto', 'observe', 'accessibility', 'html'].includes(view)) throw Error('TARGET_TRACK_VIEW_INVALID');
+      // Explicit modes preserve the legacy raw reads without extra calls.
+      if (view !== 'auto') {
+        if (target.trim()) throw Error('TARGET_TRACK_TARGET_REQUIRES_AUTO_VIEW');
+        return perceptionTools.dom_track.run({ view });
+      }
+      const receipt = await read('nova_observe');
+      const page = parseReceipt(receipt);
+      const query = target.trim().toLocaleLowerCase();
+      if (!page || page.ok !== true || !Array.isArray(page.targets) || typeof page.url !== 'string') return {
+        schema: 'jaco.target-track/v1', surface, mode: 'read-only', status: 'UNPARSED_OBSERVATION',
+        usedTools: ['nova_observe'], verifiedTarget: false, actionDispatched: false,
+        observation: receipt,
+      };
+      // The receipt must be fresh; mismatched clocks or unknown timestamps
+      // cannot establish a target candidate that might already have moved.
+      if (!isFresh(page.at)) return {
+        schema: 'jaco.target-track/v1', surface, adapter: 'cdp', mode: 'read-only',
+        status: 'STALE_OBSERVATION', usedTools: ['nova_observe'],
+        verifiedTarget: false, actionDispatched: false,
+      };
+      // Only visible controls can become candidates. This does not bind a
+      // control to the future actuator; browser-click re-identifies it later.
+      let candidates = pick(page.targets.slice(0, 200), query, 'text').map(candidate);
+      const usedTools = ['nova_observe'];
+      let fallbackStatus = 'NOT_NEEDED';
+      if (query && candidates.length === 0) {
+        // Fallback is an authorized *read*, not a retry of a failed operation.
+        // Refused/failed observations fail closed and are never masked.
+        const axReceipt = await read('nova_ax');
+        usedTools.push('nova_ax');
+        const ax = parseReceipt(axReceipt);
+        if (!ax || ax.ok !== true || !Array.isArray(ax.nodes)) {
+          fallbackStatus = 'AX_UNPARSED';
+        } else if (!isFresh(ax.at)) {
+          fallbackStatus = 'AX_STALE';
+        } else {
+          candidates = pick(ax.nodes.slice(0, 200), query, 'name').map(node => ({
+            role: String(node.role || '').slice(0, 50),
+            text: String(node.name || '').slice(0, 160),
+            selectorHint: '',
+          }));
+          fallbackStatus = 'AX_SEARCHED';
+        }
+      }
+      return {
+        schema: 'jaco.target-track/v1', surface, adapter: 'cdp', mode: 'read-only',
+        query: target.trim(), observedAt: typeof page.at === 'string' ? page.at : null,
+        page: { title: String(page.title || '').slice(0, 160),
+          // The browser observation may contain credential-bearing URL parameters.
+          url: (() => {
+            try {
+              const u = new URL(page.url);
+              if (!['http:', 'https:'].includes(u.protocol)) return 'URL_UNAVAILABLE';
+              u.search = ''; u.hash = '';
+              u.pathname = u.pathname.split('/').map(segment => /^[A-Za-z0-9_~-]{32,}$/.test(segment) ? 'redacted' : segment).join('/');
+              return u.toString().slice(0, 512);
+            } catch { return 'URL_UNAVAILABLE'; }
+          })() },
+        status: query ? (candidates.length === 1 ? 'CANDIDATE' : candidates.length > 1 ? 'AMBIGUOUS' : 'NOT_FOUND') : 'OBSERVED',
+        candidates, usedTools, fallbackStatus, verifiedTarget: false, actionDispatched: false,
+        note: 'Read-only candidate information; use the existing signed browser actuator to re-identify before any action.',
+      };
+    },
+  };
+  // The old ID and its response shape are unchanged.
+  return perceptionTools;
 }
 
 // Operator 2026-11-19: Aura must be able to fix her own stack when a service is down, also in conversation.

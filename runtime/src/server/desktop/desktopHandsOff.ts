@@ -358,7 +358,7 @@ export class DesktopHandsOffClient {
     try {
       before = await this.observe(action.hwnd);
       if (MUTATING.includes(action.type)) {
-        // This preserves JACO's existing DOM Traction / Manifold Drift code on
+        // This preserves JACO's existing Target Track / Manifold Drift code on
         // Windows UIA. Never dispatch a changing action from a single stale
         // screenshot, guessed HWND or index-based selector.
         const firstAt = Date.now();
