@@ -781,7 +781,18 @@ export class NovaMissionControl {
     // A contract narrows scope; it does not require fresh authorization for
     // categories that the operator already checked on in the GUI.
     const target = checked.type;
-    const outward = ['git-push', 'git-merge', 'github-create-repo', 'promote-hf'].includes(target) ? 'PUBLISH'
+    // Read-only tasks must remain usable even when the operator turns off
+    // workspace mutation. Do not accidentally use LOCAL_MUTATION for every task.
+    const readTasks = new Set([
+      'detect-surfaces', 'health-check', 'check-revenue', 'web-fetch',
+      'browser-survey-site', 'desktop-windows', 'desktop-observe',
+      'android-status', 'android-observe', 'windows-wmi-read',
+      'screenshot', 'get-cursor', 'repo-list', 'repo-read', 'repo-scan',
+      'git-status', 'git-diff', 'mcp-call', 'skill-load', 'email-inbox',
+      'vault-list-secrets',
+    ]);
+    const outward = readTasks.has(target) ? 'READ'
+      : ['git-push', 'git-merge', 'github-create-repo', 'promote-hf'].includes(target) ? 'PUBLISH'
       : target === 'mcp-write' && !['shell', 'filesystem', 'git'].includes(checked.data?.server) ? 'EXTERNAL_MUTATION'
       : ['browser-click', 'browser-type', 'android-tap', 'android-type'].includes(target) ? 'EXTERNAL_MUTATION'
       : 'LOCAL_MUTATION';
