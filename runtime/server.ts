@@ -925,7 +925,7 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
       toolsSkills: ['Chrome CDP', 'Browser Hands-Off', 'Nova Traction'],
     });
     seerLiveWorkstream.record({ actor: event.actor, type: event.type, message: event.message, verified: event.verified, receipt: event.receipt });
-  });
+  }, () => modelRelay.mandates);
   const continuumSurface = createContinuumRouter({ workspaceRoot: WORKSPACE_ROOT, browserSessions: browserSurface.sessions, requireAuth });
 
   const modelRelay = createModelRelayRouter({
