@@ -3,7 +3,7 @@ import { DesktopHandsOffClient, type DesktopAction, type DesktopActionType } fro
 import { classify } from '../relay/modelRelay.js';
 import { actuatorGrantExpiry, type AutonomyMandateStore } from '../autonomy/autonomyMandate.js';
 import { DEFAULT_DESKTOP_PROCESSES } from './grantAtStart.mjs';
-import { standingToolAuthority } from '../../../../agents/lib/standing-tool-authority.mjs';
+import { standingToolAuthority, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 
 /**
  * Desktop hands-off surface.
@@ -74,6 +74,10 @@ export function createDesktopRouter(
     const body = (req.body ?? {}) as Partial<DesktopAction>;
     const type = String(body.type || '') as DesktopActionType;
     if (!ACTION_TYPES.includes(type)) return fail(res, 400, `unsupported action type '${type}'`);
+    const switchId = type === 'observe' ? 'desktop-observe'
+      : type === 'invoke' ? 'desktop-invoke' : 'desktop-action';
+    if (!operatorTaskEnabled(workspaceRoot, switchId))
+      return fail(res, 403, 'TASK_TURNED_OFF_BY_OPERATOR:' + switchId);
     const consequence = classify('DESKTOP', body);
     const authority = standingToolAuthority(workspaceRoot, consequence);
     if (authority.status === 'DENY' || authority.status === 'REVIEW')
