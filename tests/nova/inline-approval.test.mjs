@@ -56,7 +56,8 @@ test('inline chat uses existing server approval endpoint and explicit per-click 
   assert.match(root,/approvals\/\$\{encodeURIComponent\(approval\.id\)\}\/decision/);
   assert.match(root,/inlineAcknowledged === true \|\| approvalAcknowledged/);
   assert.match(root,/approvalPrompt=\{pendingDecision \? <InlineAuraApproval/);
-  assert.match(panel,/\{approvalPrompt\}[\s\S]*?\{storageReady/);
+  // The chat reads oldest-to-newest, so the pending decision sits under the newest message, above the wait indicator.
+  assert.match(panel,/\{visibleFeed\.map\([\s\S]*?\{approvalPrompt\}[\s\S]*?\{busy&&<div className="cognitive-response-wait"/);
   assert.match(inline,/onDecision\(action, positive\)/);
   assert.match(inline,/view\.missingMission \? \[\]/);
   assert.match(inline,/view\.requiresReview && reviewing !== action/);
