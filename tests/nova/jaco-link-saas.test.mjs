@@ -169,6 +169,9 @@ test('mobile app has real installable assets and actual branded memory icon',()=
   assert.match(read(base+'remote.js'),/\/api\/aura\/workbench\/local-memory/);
   assert.match(read(base+'remote.js'),/\/api\/runtime\/identity/);
   assert.match(read(base+'remote.js'),/självrapporterat/);
+  assert.match(read(base+'remote.js'),/activeView=view/);
+  assert.match(read(base+'remote.js'),/refresh\(activeView\)/);
+  assert.match(read(base+'remote.js'),/Runtime-status inaktuell/);
   assert.match(read(base+'remote.html'),/id="runtimeIdentity"/);
   assert.match(read(base+'remote.js'),/\/api\/aura\/workbench\/missions\//);
   assert.match(read('runtime/src/components/DevicesView.tsx'),/jaco-link-onboarding/);
