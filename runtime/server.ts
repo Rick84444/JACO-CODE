@@ -7242,75 +7242,6 @@ const notifyPhone = async (action) => {
     }
   });
 
-  // ---------------------------------------------------------------------------
-  // Cloudflare Tunnel Setup for Local Ollama & Dev Server
-  // ---------------------------------------------------------------------------
-  let activeCloudflareTunnel: {
-    status: 'idle' | 'installing' | 'configuring' | 'active' | 'error';
-    tunnelId?: string;
-    tunnelName?: string;
-    url?: string;
-    localTarget: string;
-    createdAt?: string;
-    accountTag?: string;
-    logs: string[];
-  } = {
-    status: 'idle',
-    localTarget: 'http://127.0.0.1:11434',
-    logs: ['[tunnel] Cloudflare Tunnel subsystem initialized. Ready to generate tunnel for local Ollama.']
-  };
-
-  // Status check for Cloudflare Tunnel
-  app.get("/api/cloudflare/tunnel-status", requireOperator, (_req, res) => {
-    const hasToken = !!process.env.CLOUDFLARE_API_TOKEN;
-    res.json({
-      success: true,
-      hasToken,
-      tunnel: activeCloudflareTunnel
-    });
-  });
-
-  // Generate / start a real cloudflared quick tunnel. No synthetic URL is emitted.
-  let activeCloudflareProcess: ReturnType<typeof spawn> | null = null;
-  app.post("/api/cloudflare/generate-tunnel", async (req, res) => {
-    const { localTarget = "http://127.0.0.1:11434", tunnelName = "jaco-quick-tunnel" } = req.body || {};
-    if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/.*)?$/i.test(String(localTarget))) {
-      return res.status(400).json({ success:false, error:'localTarget must be a localhost HTTP(S) URL' });
-    }
-    if (activeCloudflareProcess) return res.status(409).json({ success:false, error:'a cloudflared process is already active' });
-    activeCloudflareTunnel = { status:'installing', tunnelName:String(tunnelName), localTarget:String(localTarget), logs:['[cloudflared] starting real quick tunnel process'] };
-    try {
-      const child = spawn('cloudflared', ['tunnel','--no-autoupdate','--url',String(localTarget)], { shell:false, windowsHide:true });
-      activeCloudflareProcess = child;
-      const inspect = (chunk:any) => {
-        const text=chunk.toString(); activeCloudflareTunnel.logs.push(...text.split('\n').filter(Boolean).slice(-10));
-        const match=text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
-        if(match){ activeCloudflareTunnel.status='active'; activeCloudflareTunnel.url=match[0]; activeCloudflareTunnel.createdAt=new Date().toISOString(); }
-      };
-      child.stdout.on('data',inspect); child.stderr.on('data',inspect);
-      child.on('error',(e)=>{activeCloudflareTunnel.status='error';activeCloudflareTunnel.logs.push(e.message);activeCloudflareProcess=null;});
-      child.on('close',(code)=>{if(activeCloudflareTunnel.status!=='idle')activeCloudflareTunnel.status=code===0?'idle':'error';activeCloudflareTunnel.logs.push(`[cloudflared] exited code=${code}`);activeCloudflareProcess=null;});
-      return res.status(202).json({success:true,message:'cloudflared process started; poll tunnel-status for observed URL',tunnel:activeCloudflareTunnel});
-    } catch(err:any) {
-      activeCloudflareTunnel.status='error'; activeCloudflareTunnel.logs.push(String(err?.message||err));
-      return res.status(503).json({success:false,error:String(err?.message||err),tunnel:activeCloudflareTunnel});
-    }
-  });
-
-  app.post("/api/cloudflare/stop-tunnel", (_req, res) => {
-    if (activeCloudflareProcess) { activeCloudflareProcess.kill('SIGTERM'); activeCloudflareProcess = null; }
-    activeCloudflareTunnel.status = 'idle';
-    activeCloudflareTunnel.logs.push(`[cloudflared] Tunnel process stopped by user request.`);
-    activeCloudflareTunnel.url = undefined;
-    pushLog('info', `[Cloudflare Tunnel] Tunnel stopped.`, 'cloudflare-tunnel');
-
-    res.json({
-      success: true,
-      message: "Tunnel stopped successfully",
-      tunnel: activeCloudflareTunnel
-    });
-  });
-
   app.get("/api/actions", requireAuth, (req, res) => {
     res.json({ actions: pendingActions.slice(0, 100) });
   });
@@ -7805,9 +7736,6 @@ const notifyPhone = async (action) => {
       // unreachable and the legacy scheduler can safely resume if needed.
       void auraCoreControl.stop();
       try { connectedRuntime.stop(); } catch {}
-      if (activeCloudflareProcess) {
-        try { activeCloudflareProcess.kill('SIGTERM'); } catch {}
-      }
       await Promise.allSettled([closeWebSockets(), closeHttpServer()]);
       try { continuumSurface.runtime.close(); } catch (error: any) {
         console.error('[JACO] Continuum shutdown failed:', error?.message || error);

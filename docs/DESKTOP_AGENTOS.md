@@ -1,5 +1,7 @@
 # JACO Desktop AgentOS
 
+**Laser Vision setup and verification:** [`JACO_LASER_VISION_SETUP.md`](JACO_LASER_VISION_SETUP.md). Desktop AgentOS contains semantic UIA operations; raw pixels, guest-verified Win32 input, operator GUI still images, privacy opt-in and Chrome Remote Desktop live-view requirements are documented in the linked runbook.
+
 ## Purpose
 
 Desktop AgentOS is the Windows execution surface for JACO. It extends the existing JACO runtime instead of creating a second orchestration stack.

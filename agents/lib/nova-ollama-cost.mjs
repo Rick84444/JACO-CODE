@@ -38,24 +38,26 @@ export function costPromptBytes(requestBody) {
   return Buffer.byteLength(text, 'utf8') + images * IMAGE_COST_BYTES;
 }
 
-export async function reserveNovaOllamaCost({ providerId = 'ollama-cloud', model, requestBody, runtimeUrl, token, fetchImpl }) {
+export async function reserveNovaOllamaCost({ providerId = 'ollama-cloud', model, requestBody, runtimeUrl, token, fetchImpl, maxTokens }) {
   return novaOllamaCostRequest('reserve', {
     providerId, model,
     promptBytes: costPromptBytes(requestBody),
-    maxTokens: requestBody.max_tokens,
+    maxTokens: maxTokens ?? requestBody.max_tokens,
   }, { runtimeUrl, token, fetchImpl });
 }
 
 // Statuses after which the provider cannot have generated (or billed) anything.
 export const DEFINITE_NO_CHARGE = new Set([400, 401, 402, 403, 404, 413, 422, 429]);
 
-export async function budgetedNovaOllamaCall({ provider, requestBody, runtimeUrl, token, fetchImpl = fetch, signal }) {
-  const { reservationId } = await reserveNovaOllamaCost({ providerId: provider.name, model: provider.model, requestBody, runtimeUrl, token, fetchImpl });
+// Non-OpenAI protocols (Gemini's native generateContent) pass their own auth headers, output-token
+// ceiling and a mapper from their usage block to { prompt_tokens, completion_tokens }.
+export async function budgetedNovaOllamaCall({ provider, requestBody, runtimeUrl, token, fetchImpl = fetch, signal, headers = null, maxTokens, usageOf = data => data?.usage }) {
+  const { reservationId } = await reserveNovaOllamaCost({ providerId: provider.name, model: provider.model, requestBody, runtimeUrl, token, fetchImpl, maxTokens });
   let settled = false;
   try {
     const response = await fetchImpl(provider.url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(provider.key ? { Authorization: `Bearer ${provider.key}` } : {}) },
+      headers: { 'Content-Type': 'application/json', ...(headers || (provider.key ? { Authorization: `Bearer ${provider.key}` } : {})) },
       body: JSON.stringify(requestBody), signal,
     });
     const rawBody = await response.text();
@@ -65,7 +67,7 @@ export async function budgetedNovaOllamaCall({ provider, requestBody, runtimeUrl
       try { await novaOllamaCostRequest('release', { reservationId, status: response.status }, { runtimeUrl, token, fetchImpl }); settled = true; } catch {}
       return { response, rawBody, data };
     }
-    const usage = data?.usage;
+    const usage = usageOf(data);
     if (!usage || !Number.isInteger(usage.prompt_tokens) || !Number.isInteger(usage.completion_tokens)) {
       throw new Error('NOVA_CLOUD_COST_OUTCOME_UNKNOWN');
     }

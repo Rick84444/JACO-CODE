@@ -1,5 +1,5 @@
 ; Native Windows setup, built on windows-latest with the exact verified payload.
-; Build: ISCC.exe /DJacoVersion=0.22.0 /DPayloadDir=C:\...\payload /DOutputDir=C:\...\out JACO.iss
+; Build: ISCC.exe /DJacoVersion=0.23.1 /DPayloadDir=C:\...\payload /DOutputDir=C:\...\out JACO.iss
 #ifndef JacoVersion
   #error JacoVersion is required
 #endif
