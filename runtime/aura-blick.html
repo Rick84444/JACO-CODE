@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="sv"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Auras blick · JACO</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0c1420;color:#e4edf7;font:16px system-ui}main{max-width:960px;margin:6vh auto;padding:16px}h1{font-size:1.4rem}section{display:grid;grid-template-columns:1fr 1fr;gap:10px}figure{margin:0}figcaption{margin-bottom:8px}figure div{aspect-ratio:1;overflow:hidden;background:radial-gradient(ellipse at 50% 40%,#030915,#010205);border-radius:9px}canvas{width:100%;height:100%;display:block;transform:scale(1.6);transform-origin:50% 20%}button{margin-top:18px;padding:10px 16px;border-radius:6px;cursor:pointer}output{margin-left:12px}
+</style><main><h1>Avstånd bakom Aura</h1><section><figure><figcaption>Nuvarande avstånd</figcaption><div><canvas></canvas></div></figure><figure><figcaption>Djupare bakgrund</figcaption><div><canvas></canvas></div></figure></section><button disabled>Spela sekvens</button><output aria-live="polite">Laddar porträtten…</output></main>
+<script type="module">
+import {createAuraRigLightform} from './src/lib/auraRigLightform.mjs';
+const button=document.querySelector('button'), status=document.querySelector('output');
+try {
+  const portraits=await Promise.all([...document.querySelectorAll('canvas')].map((canvas,i)=>
+    createAuraRigLightform(canvas,{distantField:i===1,trackPointer:false})));
+  let timers=[];
+  const pose=(x,listening)=>portraits.forEach(p=>p.setState({x,listening}));
+  button.disabled=false;
+  status.textContent='Vila';
+  button.onclick=()=>{
+    timers.forEach(clearTimeout);
+    pose(.72,false);
+    status.textContent='Blicken åt sidan';
+    button.textContent='Spela igen';
+    timers=[
+      setTimeout(()=>{pose(0,true);status.textContent='Lyssnar';},1800),
+      setTimeout(()=>{pose(0,false);status.textContent='Vila';},5400),
+    ];
+  };
+  window.addEventListener('pagehide',()=>{timers.forEach(clearTimeout);portraits.forEach(p=>p.dispose());},{once:true});
+} catch { status.textContent='Porträtten kunde inte laddas.'; }
+</script></html>

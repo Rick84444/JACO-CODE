@@ -472,7 +472,7 @@ export function createBehaviorEngine(){
   };
 }
 
-function createLightBody(scene,model,bones,groups,isMobile){
+function createLightBody(scene,model,bones,groups,isMobile,distantField){
   const body=groups.find(g=>g.kind===0).mesh;
   const jacket=groups.find(g=>g.kind===1).mesh;
   const hairMesh=groups.find(g=>g.kind===2).mesh;
@@ -883,13 +883,13 @@ void main(){
   float ring2=exp(-sq((r-0.68)*12.0))*(0.5+0.5*cos(a*10.0+uTime*0.8));
   float coreGlow=exp(-r*r*7.5);
   float radialFade=1.0-smoothstep(0.65,1.0,r);
-  float alpha=(coreGlow*0.42+exp(-r*r*2.2)*0.14)*(0.85+0.30*uEnergy)*radialFade;
+  float alpha=(coreGlow*0.15+exp(-r*r*2.2)*0.045)*(0.85+0.30*uEnergy)*radialFade;
   vec3 baseCol=mix(vec3(.08,.30,.92),vec3(.96,.72,.30),uCognitiveTint*0.45);
   gl_FragColor=vec4(mix(baseCol,vec3(.78,.93,1.0),coreGlow),alpha);
 }`
   });
   const auraBackdrop=new THREE.Mesh(auraPlaneGeo,auraPlaneMat);
-  auraBackdrop.position.set(0,1.61,-0.16);
+  auraBackdrop.position.set(0,1.61,distantField?-1.8:-0.16);
   auraBackdrop.renderOrder=-2;
   scene.add(auraBackdrop);
 
@@ -922,7 +922,8 @@ void main(){
   const starCount=isMobile?180:340;
   const starPos=[],starTw=[],stars=seeded(4242);
   for(let i=0;i<starCount;i++){
-    const zLayer=i<50?(.15+stars()*.22):(-.45-stars()*.30);
+    const depth=stars();
+    const zLayer=i<50?.15+depth*.22:distantField?-1.25-depth*2.2:-.45-depth*.30;
     starPos.push((stars()-.5)*1.15,1.04+stars()*.96,zLayer);
     starTw.push(stars());
   }
@@ -935,7 +936,9 @@ void main(){
   pos.y+=mod(drift,0.22)-0.11;
   pos.x+=sin(drift*2.4)*0.012;
   vA=(.22+.64*aTw)*(.55+.45*sin(uTime*(.7+aTw*1.9)+aTw*50.0));
-  gl_PointSize=(0.9+2.4*aTw*aTw)*uPixelRatio;
+  float distanceScale=clamp(2.0/(1.05-pos.z),.48,1.0);
+  gl_PointSize=(0.9+2.4*aTw*aTw)*uPixelRatio*distanceScale;
+  vA*=distanceScale;
   gl_Position=projectionMatrix*modelViewMatrix*vec4(pos,1.0);
 }`,
     fragmentShader:String.raw`varying float vA;void main(){float d=length(gl_PointCoord-vec2(.5));gl_FragColor=vec4(.80,.93,1.0,(1.0-smoothstep(0.0,.5,d))*vA);}`});
@@ -959,7 +962,7 @@ void main(){
       hair.position.copy(hp);hair.quaternion.copy(hairQuat).multiply(restInv);
       crown.material.opacity=0;
       veilChest.material.opacity=.28+.06*Math.sin(t*.9)+.08*energyValue;chestCore.material.opacity=.36+.10*Math.sin(t*1.4)+.10*energyValue;veilNeck.material.opacity=.09+.03*Math.sin(t*1.3+1.0)+.05*energyValue;orbitMat.opacity=.70+.15*Math.sin(t*1.2)+.10*energyValue;
-      halo.material.opacity=.28+.15*energyValue+.04*Math.sin(t*1.2);
+      halo.material.opacity=.11+.055*energyValue+.015*Math.sin(t*1.2);
 
       sums[0].set(0,0,0);sums[1].set(0,0,0);counts[0]=counts[1]=0;
       const vs=eyeGroup.vertices;
@@ -987,8 +990,12 @@ function disposeModel(model){
   geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());skeletons.forEach(s=>s.dispose());
 }
 
-/** GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms. */
-export async function createAuraRigLightform(canvas,{signal,onError}={}){
+/**
+ * GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms.
+ * @param {HTMLCanvasElement} canvas
+ * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean}} [options]
+ */
+export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false}={}){
   const response=await fetch(ASSET,{signal,cache:'force-cache'});
   if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
   const bytes=await response.arrayBuffer();
@@ -1053,7 +1060,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power',preserveDrawingBuffer:true});
     renderer.setClearColor(0x000000,0);
 
-    lightBody=createLightBody(scene,model,bones,groups,isMobile);
+    lightBody=createLightBody(scene,model,bones,groups,isMobile,distantField);
     voiceTracker=createVoiceFormantTracker();
     qualityGovernor=createQualityGovernor(isMobile);
     behaviorEngine=createBehaviorEngine();
@@ -1070,6 +1077,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     };
 
     let energy=0,gazeX=0,gazeY=0,smoothJaw=0;
+    let listeningSince=0, previousYaw=0;
     let smoothAA=0,smoothO=0,smoothE=0,smoothU=0,decisionBlend=0,pupilSize=0.31;
     let pointerX=0,pointerY=0,camX=0,camY=0,busPhase=null;
     let last=-Infinity,lastStepTime=0;
@@ -1089,7 +1097,7 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
     };
 
     const onPointerMove=e=>{
-      if(motion.matches)return;
+      if(!trackPointer||motion.matches)return;
       const rect=canvas.getBoundingClientRect();
       if(!rect.width||!rect.height)return;
       const nx=((e.clientX-rect.left)/rect.width)*2-1;
@@ -1168,7 +1176,11 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       const inputX=Math.abs(state.x)>0.01?finiteClamp(state.x,-1,1,0):pointerX;
       const inputY=Math.abs(state.y)>0.01?finiteClamp(state.y,-1,1,0):pointerY;
 
-      const targetYaw=still?0:clamp(inputX,-1,1)*.36+organicYaw+verifyScanX*.35;
+      const contact=leadWithEyes&&state.listening&&!still;
+      const contactAge=contact?Math.max(0,t-listeningSince):0;
+      const follow=smoothstep(.22,.90,contactAge);
+      const idleYaw=clamp(inputX,-1,1)*.36+organicYaw+verifyScanX*.35;
+      const targetYaw=still?0:contact?previousYaw*(1-follow)+idleYaw*.12*follow:idleYaw;
       const targetPitch=still?0:clamp(inputY,-1,1)*.16+organicPitch+(state.listening?.032:0)-(isAnalyzing?.025:0);
       const targetRoll=still?0:organicRoll-targetYaw*.15+(state.listening?.042:0)+analyzeTilt;
 
@@ -1220,12 +1232,15 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
       const smile=still?.09:.09+.045*(1+Math.sin(t*.72))+.04*energy-(isAnalyzing?.03:0);
       const microSaccadeX=still?0:(isVerifying?verifyScanX:(.032*Math.sin(t*2.05)+.018*Math.cos(t*4.9)));
       const microSaccadeY=still?0:.022*Math.cos(t*1.75)-(isVerifying?.03:0);
-      gazeX=still?0:gazeX+((yaw*.44+microSaccadeX)-gazeX)*.24;
-      gazeY=still?0:gazeY+((pitch*.46+microSaccadeY)-gazeY)*.24;
+      const gazeWeight=relaxedGaze&&state.listening?.15:1;
+      const eyeTarget=contact?clamp(-yaw*1.8+microSaccadeX*.05,-.55,.55):(yaw*.44+microSaccadeX)*gazeWeight;
+      gazeX=still?0:gazeX+(eyeTarget-gazeX)*(contact?1-Math.exp(-dt*24):.24);
+      gazeY=still?0:gazeY+((pitch*.46+microSaccadeY)*gazeWeight-gazeY)*.24;
 
       const squint=still?0:finiteClamp(smile*.45+visemes.cheek+(isAnalyzing?.14:0),0,.38,0);
 
-      assign('eyeBlinkLeft',blink);assign('eyeBlinkRight',blink);
+      const lid=relaxedGaze?.18+.82*blink:blink;
+      assign('eyeBlinkLeft',lid);assign('eyeBlinkRight',lid);
       assign('eyeSquintLeft',squint);assign('eyeSquintRight',squint);
       assign('cheekSquintLeft',squint*.7);assign('cheekSquintRight',squint*.7);
       assign('jawOpen',smoothJaw);
@@ -1339,6 +1354,10 @@ export async function createAuraRigLightform(canvas,{signal,onError}={}){
         if(next&&'audioSource' in next){
           if(next.audioSource)voiceTracker.attach(next.audioSource);
           else voiceTracker.dispose();
+        }
+        if(leadWithEyes&&next?.listening&&!state.listening){
+          listeningSince=performance.now()/1000;
+          previousYaw=yawSpring.val;
         }
         state={...state,...next};
         if(motion.matches)render(0);
