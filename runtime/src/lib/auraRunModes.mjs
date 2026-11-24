@@ -16,7 +16,7 @@ export const AURA_RUN_MODES = Object.freeze({
   autonomous: Object.freeze({
     id: 'autonomous',
     // Operator 2026-11-19: in Full Autonomous Aura acts in the conversation too (browser, local tools, missions).
-    // Her mandate, the operator-action guard (publish, send, pay, sign in, secrets) and budgets still decide.
+    // Her standing mandate authorizes in-scope tools without repeated prompts; operator revocation, actual scope, credentials and financial decisions still apply.
     interactionMode: 'action',
     executionMode: 'autonomous',
     createsMission: true,

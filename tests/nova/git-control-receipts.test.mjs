@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
-  gitControlReceiptSnapshot, githubOriginMatches, createGitControlReceiptPublisher,
+  gitControlReceiptSnapshot, mergeGitControlReceiptSnapshots, githubOriginMatches, createGitControlReceiptPublisher,
 } from '../../agents/lib/git-control-receipts.mjs';
 
 test('Git receipt payload is bounded metadata, never goals, credentials or tool contents', () => {
@@ -108,4 +108,68 @@ test('publisher performs real offline Git object roundtrip and preserves user wo
   } finally {
     fs.rmSync(root,{recursive:true,force:true});
   }
+});
+
+
+test('two independent JACO installations retain each other’s Git receipts, with one published status index', async () => {
+  const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-bridge-two-writers-'));
+  const remote=path.join(fixture,'origin.git');
+  const a=path.join(fixture,'a'),b=path.join(fixture,'b');
+  try {
+    execFileSync('git',['init','--bare',remote],{stdio:'ignore'});
+    for(const dir of [a,b]){
+      execFileSync('git',['init',dir],{stdio:'ignore'});
+      execFileSync('git',['-C',dir,'remote','add','origin',remote],{stdio:'ignore'});
+    }
+    const runner=promisify(execFile);
+    const execGit=async(file,args,opts)=>args[2]==='remote'&&args[3]==='get-url'
+      ? {stdout:'https://github.com/Example/jaco-control.git\n'}
+      : runner(file,args,opts);
+    const pubA=createGitControlReceiptPublisher({repo:'Example/jaco-control',repoRoot:a,gitExecImpl:execGit});
+    const pubB=createGitControlReceiptPublisher({repo:'Example/jaco-control',repoRoot:b,gitExecImpl:execGit});
+    const stateA={issues:{a:{commandId:'cmd-from-pc-0001',transport:'git-ref',op:'mission.create',
+      missionId:'mission-on-pc',status:'ACTIVE',phase:'READY',receipts:0}}};
+    const stateB={issues:{b:{commandId:'cmd-from-phone-0002',transport:'git-ref',op:'mission.create',
+      missionId:'mission-on-phone',status:'ACTIVE',phase:'READY',receipts:0}}};
+    assert.equal((await pubA.publish(stateA)).sent,true);
+    assert.equal((await pubB.publish(stateB)).sent,true);
+    const published=()=>JSON.parse(execFileSync('git',['--git-dir',remote,'show',
+      'refs/heads/jaco-control-status:.jaco/nova-status.json'],{encoding:'utf8'}));
+    assert.deepEqual(published().entries.map(x=>x.commandId),
+      ['cmd-from-pc-0001','cmd-from-phone-0002']);
+    assert.equal((await pubA.publish(stateA)).reason,'unchanged');
+    assert.equal(published().entries.length,2,'stale A must not erase B');
+  } finally {fs.rmSync(fixture,{force:true,recursive:true});}
+});
+
+test('same command on two devices is explicitly CONFLICT, never silently DONE',()=>{
+  const entry=(missionId,status='ACTIVE')=>({commandId:'same-command-20261121',operation:'mission.create',
+    missionId,graphId:null,errorCode:null,status,phase:'READY',turn:1,failures:0,receipts:1,closed:false});
+  const base=items=>({schema:'jaco.nova-control-status/v1',transport:'git-ref',
+    authoritative:false,entries:items});
+  const conflict=mergeGitControlReceiptSnapshots(base([entry('mission-on-A')]),base([entry('mission-on-B','DONE')]));
+  assert.equal(conflict.entries.length,1);
+  assert.deepEqual({status:conflict.entries[0].status,missionId:conflict.entries[0].missionId,
+    errorCode:conflict.entries[0].errorCode},
+    {status:'CONFLICT',missionId:null,errorCode:'GIT_CONTROL_COMMAND_CONFLICT'});
+  const preserved=mergeGitControlReceiptSnapshots(base([entry('mission-on-B','DONE')]),conflict);
+  assert.equal(preserved.entries[0].status,'CONFLICT','conflict cannot be erased by later stale writer');
+  assert.equal(JSON.stringify(conflict).includes('mission-on-A'),false);
+  assert.equal(JSON.stringify(conflict).includes('mission-on-B'),false);
+});
+
+test('same durable mission prefers verified later state, and rejects corrupted remote index',()=>{
+  const entry=(status,turn,receipts)=>({commandId:'same-mission-cmd-1000',operation:'mission.create',
+    missionId:'mission-1',graphId:null,errorCode:null,status,phase:status==='DONE'?'CLOSED':'READY',
+    turn,failures:0,receipts,closed:status==='DONE'});
+  const base=entries=>({schema:'jaco.nova-control-status/v1',transport:'git-ref',
+    authoritative:false,entries});
+  const completed=base([entry('DONE',4,4)]),stale=base([entry('ACTIVE',0,0)]);
+  assert.equal(mergeGitControlReceiptSnapshots(stale,completed).entries[0].status,'DONE');
+  assert.throws(()=>mergeGitControlReceiptSnapshots(stale,{schema:'unexpected',entries:[]}),
+    /GIT_CONTROL_REMOTE_STATUS_INVALID/);
+  assert.throws(()=>mergeGitControlReceiptSnapshots(stale,base([{
+    commandId:'valid-but-corrupt-1',operation:'mission.create',status:'DONE',
+    missionId:'../../credentials'
+  }])),/GIT_CONTROL_REMOTE_STATUS_INVALID/);
 });

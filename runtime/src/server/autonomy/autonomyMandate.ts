@@ -16,12 +16,17 @@ export interface AutonomyMandate {
   allowedAndroidPackages: string[];
   decisions: Record<ConsequenceClass, MandateDecision>;
   requireSemanticVerificationFor: ConsequenceClass[];
+  // Standing grants persist until an authenticated operator changes or revokes them.
+  // Legacy records without validity retain their original timed expiration.
+  validity?: 'STANDING' | 'TIMED';
   maxHours: number;
   maxWorkers: number;
+  revision?: number;
+  additionalRules?: string;
   singleWriter: boolean;
   signedByOperator: boolean;
   signedAt: string | null;
-  expiresAt: string;
+  expiresAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,6 +44,13 @@ const DEFAULT_DECISIONS: Record<ConsequenceClass, MandateDecision> = {
   SECURITY: 'ALLOW',
   DESTRUCTIVE: 'ALLOW',
 };
+
+// Surface leases are short-lived even when an operator mandate is standing.
+// The relay refreshes them before each authorized action; no adapter needs an
+// imaginary year-9999 deadline or becomes a second mandate authority.
+export function actuatorGrantExpiry(mandate: Pick<AutonomyMandate, 'expiresAt'>, nowMs = Date.now()): string {
+  return mandate.expiresAt ?? new Date(nowMs + 5 * 60_000).toISOString();
+}
 
 function atomicWrite(file: string, value: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -84,12 +96,15 @@ export class AutonomyMandateStore {
       // Keep operator edits to the decisions, but outgoing money can never become ALLOW here.
       decisions: { ...DEFAULT_DECISIONS },
       requireSemanticVerificationFor: ['EXTERNAL_MUTATION', 'PUBLISH', 'DESTRUCTIVE'],
+      validity: 'STANDING',
       maxHours: 8760,
       maxWorkers: 16,
+      revision: 1,
+      additionalRules: '',
       singleWriter: true,
       signedByOperator: configured,
       signedAt: configured ? now.toISOString() : null,
-      expiresAt: configured ? new Date(now.getTime() + 8760 * 3600_000).toISOString() : now.toISOString(),
+      expiresAt: null,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
     };
@@ -99,7 +114,11 @@ export class AutonomyMandateStore {
 
   private readStrict(): AutonomyMandate[] {
     const parsed = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-    if (!Array.isArray(parsed) || parsed.some(item => !item || typeof item.id !== 'string' || !item.decisions || !Array.isArray(item.requireSemanticVerificationFor))) throw new Error('MANDATE_STORE_INVALID');
+    if (!Array.isArray(parsed) || parsed.some(item => !item || typeof item.id !== 'string' || !item.decisions || !Array.isArray(item.requireSemanticVerificationFor)
+      || (item.validity && !['STANDING', 'TIMED'].includes(item.validity))
+      || (item.expiresAt === null && item.validity !== 'STANDING')
+      || (item.expiresAt !== null && (typeof item.expiresAt !== 'string' || !Number.isFinite(Date.parse(item.expiresAt))))
+      || (item.revision !== undefined && (!Number.isSafeInteger(item.revision) || item.revision < 1)))) throw new Error('MANDATE_STORE_INVALID');
     return parsed;
   }
 
@@ -117,7 +136,10 @@ export class AutonomyMandateStore {
     if (mission.length < 5 || mission.length > 10_000) throw new Error('mission must be 5-10000 characters');
     // Level-5 operator authority is durable; individual missions remain bounded
     // by evidence, leases and target-specific execution contracts.
-    const hours = Math.max(1, Math.min(8760, Number(input.maxHours || 8760)));
+    if (input.validity !== undefined && !['STANDING', 'TIMED'].includes(input.validity)) throw new Error('MANDATE_VALIDITY_INVALID');
+    // A new operator mandate is standing by default; an explicit duration remains timed.
+    const validity = input.validity ?? (input.maxHours === undefined ? 'STANDING' : 'TIMED');
+    const hours = Math.max(1, Math.min(8760, Number(input.maxHours ?? 8760)));
     const browserScope = input.browserScope === 'ORIGINS' ? 'ORIGINS' : 'BROAD_WEB';
     const allowedOrigins = Array.isArray(input.allowedOrigins) ? input.allowedOrigins.map(String).slice(0, 50) : [];
     if (browserScope === 'ORIGINS' && allowedOrigins.length === 0) throw new Error('ORIGINS browser scope requires at least one allowed origin');
@@ -133,26 +155,88 @@ export class AutonomyMandateStore {
       allowedAndroidPackages: Array.isArray(input.allowedAndroidPackages) ? input.allowedAndroidPackages.map(String).slice(0, 10) : [],
       decisions: { ...DEFAULT_DECISIONS, ...(input.decisions || {}), FINANCIAL: input.decisions?.FINANCIAL === 'DENY' ? 'DENY' : 'REVIEW' },
       requireSemanticVerificationFor: input.requireSemanticVerificationFor || ['EXTERNAL_MUTATION', 'PUBLISH', 'DESTRUCTIVE'],
+      validity,
       maxHours: hours,
+      revision: 1,
+      additionalRules: String(input.additionalRules || '').slice(0, 4000),
       maxWorkers: Math.max(1, Math.min(16, Number(input.maxWorkers || 8))),
       // Single-writer is a runtime invariant, not a contract option.
       singleWriter: true,
       signedByOperator: false,
       signedAt: null,
-      expiresAt: new Date(now.getTime() + hours * 3600_000).toISOString(),
+      expiresAt: validity === 'STANDING' ? null : new Date(now.getTime() + hours * 3600_000).toISOString(),
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
     };
     return this.save(mandate);
   }
 
-  save(mandate: AutonomyMandate): AutonomyMandate {
+  save(mandate: AutonomyMandate, expectedRevision?: number): AutonomyMandate {
     const all = this.readStrict();
     const index = all.findIndex((item) => item.id === mandate.id);
-    const next = { ...mandate, updatedAt: new Date().toISOString() };
+    const previous = index < 0 ? null : all[index];
+    if (expectedRevision !== undefined && (previous?.revision ?? 1) !== expectedRevision) throw new Error('MANDATE_REVISION_CONFLICT');
+    const next = { ...mandate, revision: previous ? (previous.revision ?? 1) + 1 : 1, updatedAt: new Date().toISOString() };
     if (index >= 0) all[index] = next; else all.unshift(next);
     atomicWrite(this.file, all.slice(0, 100));
     return next;
+  }
+
+  // This is the only writable operator-edit surface. Do not accept authority,
+  // signature, revision, or expiry fields directly from an untrusted patch.
+  updateOperator(id: string, patch: Record<string, unknown>, expectedRevision: number): AutonomyMandate {
+    const current = this.get(id);
+    if (!current) throw new Error('MANDATE_NOT_FOUND');
+    if (!Number.isSafeInteger(expectedRevision) || (current.revision ?? 1) !== expectedRevision) throw new Error('MANDATE_REVISION_CONFLICT');
+    const allowed = new Set(['name', 'browserScope', 'allowedOrigins', 'allowedDesktopProcesses', 'allowedAndroidPackages', 'decisions', 'validity', 'maxHours', 'maxWorkers', 'additionalRules']);
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch) || Object.keys(patch).some(key => !allowed.has(key))) throw new Error('MANDATE_PATCH_FIELDS_INVALID');
+    const next: AutonomyMandate = { ...current, decisions: { ...current.decisions } };
+    if (patch.name !== undefined) {
+      if (typeof patch.name !== 'string' || !patch.name.trim() || patch.name.length > 120) throw new Error('MANDATE_NAME_INVALID');
+      next.name = patch.name.trim();
+    }
+    if (patch.browserScope !== undefined) {
+      if (patch.browserScope !== 'ORIGINS' && patch.browserScope !== 'BROAD_WEB') throw new Error('MANDATE_BROWSER_SCOPE_INVALID');
+      next.browserScope = patch.browserScope;
+    }
+    for (const field of ['allowedOrigins', 'allowedDesktopProcesses', 'allowedAndroidPackages'] as const) {
+      const value = patch[field];
+      if (value === undefined) continue;
+      if (!Array.isArray(value) || value.length > 50 || value.some(v => typeof v !== 'string' || v.length > 500)) throw new Error('MANDATE_SCOPE_INVALID');
+      next[field] = [...new Set(value.map(v => v.trim()).filter(Boolean))];
+    }
+    if (next.browserScope === 'ORIGINS' && !next.allowedOrigins.length) throw new Error('MANDATE_ORIGINS_REQUIRED');
+    if (patch.decisions !== undefined) {
+      const decisions = patch.decisions;
+      if (!decisions || typeof decisions !== 'object' || Array.isArray(decisions)) throw new Error('MANDATE_DECISIONS_INVALID');
+      for (const [key, value] of Object.entries(decisions)) {
+        if (!Object.hasOwn(DEFAULT_DECISIONS, key) || !['ALLOW', 'REVIEW', 'DENY'].includes(String(value))) throw new Error('MANDATE_DECISIONS_INVALID');
+        if (key === 'FINANCIAL' && value === 'ALLOW') throw new Error('MANDATE_FINANCIAL_REVIEW_REQUIRED');
+        next.decisions[key as ConsequenceClass] = value as MandateDecision;
+      }
+    }
+    if (patch.validity !== undefined) {
+      if (patch.validity !== 'STANDING' && patch.validity !== 'TIMED') throw new Error('MANDATE_VALIDITY_INVALID');
+      next.validity = patch.validity;
+    }
+    if (patch.maxHours !== undefined) {
+      if (!Number.isSafeInteger(patch.maxHours) || (patch.maxHours as number) < 1 || (patch.maxHours as number) > 8760) throw new Error('MANDATE_HOURS_INVALID');
+      next.maxHours = patch.maxHours as number;
+    }
+    if (patch.maxWorkers !== undefined) {
+      if (!Number.isSafeInteger(patch.maxWorkers) || (patch.maxWorkers as number) < 1 || (patch.maxWorkers as number) > 16) throw new Error('MANDATE_WORKERS_INVALID');
+      next.maxWorkers = patch.maxWorkers as number;
+    }
+    if (patch.additionalRules !== undefined) {
+      if (typeof patch.additionalRules !== 'string' || patch.additionalRules.length > 4000) throw new Error('MANDATE_RULES_INVALID');
+      next.additionalRules = patch.additionalRules;
+    }
+    // A standing grant never silently becomes timed, or the reverse, without an
+    // operator patch explicitly selecting that validity mode.
+    if (patch.validity !== undefined || patch.maxHours !== undefined) {
+      next.expiresAt = next.validity === 'STANDING' ? null : new Date(Date.now() + next.maxHours * 3600_000).toISOString();
+    }
+    return this.save(next, expectedRevision);
   }
 
   sign(id: string): AutonomyMandate {
@@ -161,7 +245,7 @@ export class AutonomyMandateStore {
     mandate.enabled = true;
     mandate.signedByOperator = true;
     mandate.signedAt = new Date().toISOString();
-    mandate.expiresAt = new Date(Date.now() + mandate.maxHours * 3600_000).toISOString();
+    mandate.expiresAt = mandate.validity === 'STANDING' ? null : new Date(Date.now() + mandate.maxHours * 3600_000).toISOString();
     return this.save(mandate);
   }
 
@@ -174,7 +258,10 @@ export class AutonomyMandateStore {
 
   isActive(id: string | undefined): boolean {
     const m = this.get(id);
-    return Boolean(m?.enabled && m.signedByOperator && Date.parse(m.expiresAt) > Date.now());
+    return Boolean(m?.enabled && m.signedByOperator && (
+      (m.validity === 'STANDING' && m.expiresAt === null)
+      || (typeof m.expiresAt === 'string' && Date.parse(m.expiresAt) > Date.now())
+    ));
   }
 
   evaluate(id: string | undefined, consequence: ConsequenceClass, semanticPostconditionPresent: boolean): {

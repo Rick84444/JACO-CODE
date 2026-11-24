@@ -32,8 +32,12 @@ const step = async (name, fn) => {
     return r;
   } catch (error) {
     // What the server and the agent logged last: the reason is usually there.
-    const tail = file => { try { return fs.readFileSync(path.join(project, '.jaco', file), 'utf8').slice(-700).replace(/s+/g, ' '); } catch { return '(none)'; } };
-    const detail = `${String(error.message || error)} || lite.log: ${tail('lite.log')} || nova.log: ${tail('nova.log')}`;
+    // (The whitespace pattern was /s+/, which deleted every letter s from the excerpt.) A stack trace fills the
+    // tail, so the error header lines are listed separately: they name the actual cause.
+    const read = file => { try { return fs.readFileSync(path.join(project, '.jaco', file), 'utf8'); } catch { return ''; } };
+    const tail = file => read(file).slice(-700).replace(/\s+/g, ' ') || '(none)';
+    const errors = read('lite.log').split('\n').filter(line => /^\s*\S*(Error|error)\b[:\s]/.test(line) && !/^\s+at /.test(line)).slice(-5).join(' | ').slice(0, 600);
+    const detail = `${String(error.message || error)} || lite.log errors: ${errors || '(none)'} || lite.log: ${tail('lite.log')} || nova.log: ${tail('nova.log')}`;
     steps.push({ name, status: 'failed', ms: Date.now() - started, evidence: detail.slice(0, 2400) });
     console.log(`FAILED  ${name}  ${detail.slice(0, 1800)}`);
     return null;

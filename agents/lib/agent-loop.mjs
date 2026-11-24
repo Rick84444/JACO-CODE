@@ -48,6 +48,8 @@ export function hintFor(receipt) {
   // A model that writes a file through an MCP connector is refused and tried again and again (2026-11-06).
   if (/MCP_TOOL_NOT_READ_ONLY:[^:\s]*(?:write|edit|create|move|delete)/i.test(String(receipt?.error || ''))) return 'Files in your workspace are written with repo-write (a new file) or repo-edit (a change), not through a connector. Use those; if they are not in your list, this mission may not change files: say so and call blocked.';
   if (/CODING_GIT_NOTHING_IN_SCOPE/.test(String(receipt?.error || ''))) return 'Nothing to commit: your changes are already committed, or the files did not change. The work is saved. Go to the next step or call complete.';
+  if (/BROWSER_CLICK_EXPECTATION_REQUIRED/.test(String(receipt?.error || ''))) return 'No click happened: the browser click requires a verifiable expected URL or selector. Observe the current page and provide expect.url or expect.selector before trying a new click; do not repeat an unchanged call.';
+  if (/DESKTOP_TRACTION_|DESKTOP_TARGET_|DESKTOP_FOCUS_|FOREGROUND_/.test(String(receipt?.error || ''))) return 'Desktop target/focus changed or could not be verified. Do not repeat the same coordinates/HWND. Obtain fresh desktop-windows and desktop-observe evidence, then use the existing UIA target identity and window lock before another input action.';
   const r = receipt?.result;
   if (receipt?.ok && r && typeof r === 'object' && r.beforeSha256 && r.beforeSha256 === r.afterSha256) return 'The file already had exactly this content. Nothing changed. Do not repeat this step.';
   return null;
@@ -310,14 +312,22 @@ export async function runAgentMission({
     messages.push({ role: 'system', content: typeof system === 'function' ? system(mission) : system },
       { role: 'user', content: missionIntro });
     messages.push({ role: 'user', content: 'CURRENT CAPABILITY EVIDENCE (catalog, not permission or proof of execution): '+JSON.stringify(capabilityEvidence) });
+    let recoveredInheritedMissing = false;
     if (inheritedCircle.kind === 'unrepaired-missing-command') {
-      // The durable ledger proves the same missing executable survived a run
-      // of read-only diagnostics. A new Gemini turn cannot repair PATH by
-      // reading more files; block once until the host environment changes.
-      const reason = ('UNREPAIRED_TOOL_ENV:' + inheritedCircle.hint).slice(0, 500);
-      return end({ blocked: true, reason }, { error: 'PLANNER_BLOCKED:' + reason });
+      // Do not spend another turn rereading the same setup files. Before
+      // blocking the entire mission, exhaust an ALREADY callable alternative
+      // such as an authorized service repair or repository test. All actual
+      // execution remains gated by the original mission policy.
+      const alternative = tryRecovery('shell failed: ' + inheritedCircle.hint);
+      if (alternative) {
+        recoveredInheritedMissing = true;
+        stuck.nudge(); // discard the dead tool loop, not durable receipts
+      } else {
+        const reason = ('UNREPAIRED_TOOL_ENV:' + inheritedCircle.hint).slice(0, 500);
+        return end({ blocked: true, reason }, { error: 'PLANNER_BLOCKED:' + reason });
+      }
     }
-    if (inheritedCircle.stuck) {
+    if (inheritedCircle.stuck && !recoveredInheritedMissing) {
       // Count the nudge but keep the history. stuck.nudge() also wipes the window, so a run cut short by a rate
       // limit started clean every time and the same circle ran for 88 steps. Now the next repeated step is a
       // second sign of the same circle and blocks the mission with a question for the operator.
@@ -595,6 +605,13 @@ export async function runAgentMission({
       }
       while (diagnosisNotes.length) messages.push({ role: 'user', content: diagnosisNotes.shift() });
       if (nudge?.kind === 'unrepaired-missing-command') {
+        // A repeated missing command is a dead route, not necessarily a dead
+        // mission. Offer one other permitted route before asking the operator.
+        if (tryRecovery('shell failed: ' + nudge.hint)) {
+          stuck.nudge();
+          nudge = null;
+          continue;
+        }
         const reason = ('UNREPAIRED_TOOL_ENV:' + nudge.hint).slice(0, 500);
         return end({ blocked: true, reason }, { error: 'PLANNER_BLOCKED:' + reason });
       }

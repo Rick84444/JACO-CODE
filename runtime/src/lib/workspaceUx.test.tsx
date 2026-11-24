@@ -26,7 +26,7 @@ test('no model has a direct setup action in the main run controls', () => {
 });
 
 test('decisions are outside the canvas so switching to code does not hide them', () => {
-  const html=renderToStaticMarkup(<CognitiveWorkspace canvas="code" onCanvas={noop} conversation="Conversation" detail="Code" stage="Stage" stagePinned={false} onTogglePin={noop}
+  const html=renderToStaticMarkup(<CognitiveWorkspace liveTerminalOpen={false} onToggleLiveTerminal={noop} liveTerminal={null} canvas="code" onCanvas={noop} conversation="Conversation" detail="Code" stage="Stage" stagePinned={false} onTogglePin={noop}
     attention={<section>Operator decision</section>} sidePanel={null} sidebar="explorer" sidePanelOpen={false} onSidebar={noop} onCloseSidebar={noop}
     status={{label:'Needs decision',tone:'waiting'}} projectName="Project" changes={0} approvalCount={1} onApprovals={noop} onCommands={noop} onSignOut={noop} lastObservedAt={null} error={null}/>);
   assert.ok(html.indexOf('Operator decision') < html.indexOf('<main'));
@@ -126,7 +126,7 @@ test('explicit mission controls are still sendable while an unrelated chat answe
 });
 
  test('remote navigation exposes existing work views without losing chat or approvals', () => {
- const html=renderToStaticMarkup(<CognitiveWorkspace remoteMode canvas="conversation" onCanvas={noop} conversation="Conversation" detail="Code" stage="Stage" stagePinned={false} onTogglePin={noop} sidePanel={null} sidebar="explorer" sidePanelOpen={false} onSidebar={noop} onCloseSidebar={noop} status={{label:'Ready',tone:'idle'}} projectName="Project" changes={0} approvalCount={0} onApprovals={noop} onCommands={noop} onSignOut={noop} lastObservedAt={null} error={null}/>);
+ const html=renderToStaticMarkup(<CognitiveWorkspace liveTerminalOpen={false} onToggleLiveTerminal={noop} liveTerminal={null} remoteMode canvas="conversation" onCanvas={noop} conversation="Conversation" detail="Code" stage="Stage" stagePinned={false} onTogglePin={noop} sidePanel={null} sidebar="explorer" sidePanelOpen={false} onSidebar={noop} onCloseSidebar={noop} status={{label:'Ready',tone:'idle'}} projectName="Project" changes={0} approvalCount={0} onApprovals={noop} onCommands={noop} onSignOut={noop} lastObservedAt={null} error={null}/>);
  const nav=html.match(/<nav[^>]*aria-label="Remote control"[^>]*>[\s\S]*?<\/nav>/)?.[0];
  assert.ok(nav); for(const label of ['Chat','Code','Preview','Tools &amp; models','Approvals']) assert.ok(nav.includes(label), label);
  });

@@ -31,7 +31,7 @@ type Organization = {
     permissions: Record<string, Permission>;
     traits: Record<string, { label: string; capped: boolean }>;
     autonomy: Record<string, { name: string; role: string }>;
-    grantDays: { default: number; max: number };
+    grantDays: { default: number | null; max: number };
   };
 };
 type NewAgent = { name: string; title: string; reportsTo: string; task: string; goal: string; mail: string; providerId: string; model: string; kind: 'planner' | 'local' | 'api' };
@@ -108,7 +108,7 @@ export function AuraOrganizationPanel() {
   const [notice, setNotice] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [draft, setDraft] = useState<NewAgent>(emptyAgent);
-  const [grantDays, setGrantDays] = useState(30);
+  const [grantDays, setGrantDays] = useState<number | null>(null);
   const [profile, setProfile] = useState({ name: '', title: '', task: '', goal: '', mail: '', kind: 'planner' as 'planner' | 'local' | 'api', providerId: '', model: '' });
   const [traitDraft, setTraitDraft] = useState<Record<string, number>>({});
   const [budgetDraft, setBudgetDraft] = useState('0');
@@ -353,9 +353,18 @@ export function AuraOrganizationPanel() {
 
           <div className="rounded-xl border border-[#616264] bg-[#202123] p-4">
             <h4 className="mb-3 text-sm font-semibold">{t.permissions}</h4>
-            <label className="mb-3 block text-xs text-neutral-300">High-risk grant duration (days, maximum 90)
-              <input className={inputClass + ' !w-24'} type="number" min={1} max={90} value={grantDays} onChange={e => setGrantDays(Math.max(1, Math.min(90, Number(e.target.value) || 1)))}/>
-            </label>
+            <div className="mb-3 text-xs text-neutral-300">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={grantDays !== null}
+                  onChange={e => setGrantDays(e.target.checked ? 30 : null)}/>
+                Temporary grant (unchecked: remains until the operator revokes it)
+              </label>
+              {grantDays !== null && <label className="mt-2 flex items-center gap-2">
+                Duration, days (1–90)
+                <input className={inputClass + ' !w-24'} type="number" min={1} max={90} value={grantDays}
+                  onChange={e => setGrantDays(Math.max(1, Math.min(90, Number(e.target.value) || 1)))}/>
+              </label>}
+            </div>
             <div className="space-y-1">
               {(Object.entries(organization.catalog.permissions) as [string, Permission][]).map(([key, permission]) => {
                 const grant = selected.mandate.permissions[key];

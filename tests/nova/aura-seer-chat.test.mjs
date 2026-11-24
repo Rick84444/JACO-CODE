@@ -305,12 +305,12 @@ test('Aura is told to find the way and offer to start, not to list what it canno
   assert.match(system, /End by offering to start the first step now/);
 });
 
-test('Aura offers ambitious steps behind consent and writes in its own humble voice', () => {
+test('Aura reuses the standing mandate for public work and asks for actual financial consent', () => {
   const { system } = buildAuraSeerPrompts({ message: 'Hur når vi fler användare?' });
-  assert.match(system, /with your approval I can/);
+  assert.match(system, /already approved, in-scope publishing, Git operations and external tool writes are executable without another prompt/);
   assert.match(system, /never past a CAPTCHA, phone check, payment or identity check, and never pretending to be a person/);
   assert.match(system, /weekly routine/);
-  assert.match(system, /Each step that creates an account, publishes, spends or connects a payment is a separate approval/);
+  assert.match(system, /outgoing payments and commitments still require a separate operator decision/);
   assert.match(system, /without typical AI phrases/);
 });
 
@@ -341,5 +341,15 @@ test('perception names resolve to real tools in both chat prompt variants withou
     assert.match(system,/dom_track is the legacy browser-only alias/);
     assert.match(system,/LASER VISION maps to nova_screenshot/);
     assert.match(system,/do not claim readiness without live evidence/);
+  }
+});
+
+test('autonomous chat tells Aura that listed write tools work here without a mission (2026-11-24)', () => {
+  for (const compactRules of [false, true]) {
+    const action = buildAuraSeerPrompts({ message: 'Installera paketet', chatMode: 'action', compactRules, toolCatalog: '- mcp_tool: guarded live MCP call' }).system;
+    assert.match(action, /AUTONOMOUS: (every tool listed under TOOLS, write tools included|write tools listed under TOOLS work here directly)/);
+    assert.doesNotMatch(action, /mission-only write tools|write tools that require a mission/);
+    const manual = buildAuraSeerPrompts({ message: 'Vad har du?', chatMode: 'manual', compactRules, toolCatalog: '- mcp_catalog: live tools' }).system;
+    assert.doesNotMatch(manual, /can be used directly here; you do not need a mission|work here directly, without a mission/);
   }
 });

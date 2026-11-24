@@ -6,6 +6,8 @@ tasks: [desktop-windows, desktop-observe, desktop-action, screenshot, skill-load
 
 # Aura Desktop — reuse our canonical visual and traction code
 
+**Operator setup:** read `docs/JACO_LASER_VISION_SETUP.md` for the reproducible guest install, original Laser Vision image path, mandatory opt-ins, diagnostic commands, security/remote-viewer separation, and physical acceptance checklist. This skill never substitutes for a signed mandate or a real live receipt.
+
 Aura is the **single root agent**. This is a procedure for the existing Desktop AgentOS executor, not an additional agent or grant of authority. Run only tools already authorized by the mission contract, active ModelRelay mandate and operator switches. A skill can neither add tasks nor override approval, payment, security, destructive-action or network restrictions. The operator controls pause, stop and takeover through the existing Gameboard.
 
 ## Our code is authoritative

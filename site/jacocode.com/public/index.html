@@ -11,7 +11,7 @@
 <meta name="keywords" content="AI coding agent, autonomous coding agent, open source, local-first, MCP, Ollama, VS Code, verifiable agent, Aura">
 <link rel="icon" type="image/png" href="/brand/jaco-icon-192.png">
 <link rel="apple-touch-icon" href="/brand/jaco-icon-192.png">
-<link rel="stylesheet" href="/style.css?v=glass-4">
+<link rel="stylesheet" href="/style.css?v=glass-8">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="JACO">
@@ -112,6 +112,7 @@
 }
 </script>
 <script src="/replay.js" defer></script>
+<script src="/intro.js" defer></script>
 <script src="/sky.js?v=points-1" defer></script>
 <script src="/auth.js" defer></script>
 </head>
@@ -127,7 +128,6 @@
     <a href="#workspace">Workspace</a>
     <a href="#lite">JACO Lite</a>
     <a href="#vscode">VS Code</a>
-    <a href="#cloud">JacoCloud</a>
     <a href="#agents">For agents</a>
     <a href="#faq">FAQ</a>
     <a href="#open">Open source</a>
@@ -145,6 +145,13 @@
       <a class="ghost" href="#replay">See a real run</a>
       <a class="ghost" href="https://github.com/Rick84444/JACO-CODE" rel="noopener">Source on GitHub</a>
     </p>
+  </section>
+
+  <section class="intro" aria-label="Aura">
+    <video id="intro-video" class="intro-video" muted loop playsinline autoplay preload="metadata" poster="/brand/aura-intro-poster.jpg" width="1280" height="720" aria-label="A short film: Aura, the black queen, plays a game on a chessboard and wins.">
+      <source src="/brand/aura-intro.mp4" type="video/mp4">
+    </video>
+    <p class="intro-caption">Aura plays to a plan. The goal is split into moves you can follow on the Gameboard, and every move is checked.</p>
   </section>
 
   <section id="replay" class="replay" aria-labelledby="replay-title">
@@ -303,27 +310,12 @@
     </div>
   </section>
 
-  <section id="cloud" class="cloud" aria-labelledby="cloud-title">
-    <div>
-      <h2 id="cloud-title">JacoCloud</h2>
-      <p>Your own JACO, reachable from your phone. Pair a browser with a one-time code from the IDE on your computer, install it to the home screen, and follow or start missions from anywhere. Keys stay on your machine, every device can be revoked, and the terminal never leaves your desk.</p>
-      <p><a class="btn" href="https://ide.jacocode.com/ide-login">Sign in to JacoCloud</a></p>
-    </div>
-    <ul class="facts">
-      <li>One-time pairing code, 10 minutes</li>
-      <li>Session in an HttpOnly, Secure cookie</li>
-      <li>Revoke any device from the IDE</li>
-      <li>Terminal and shell stay local</li>
-    </ul>
-  </section>
-
   <section id="agents" class="products" aria-labelledby="products-title">
     <h2 id="products-title">For agents</h2>
     <div class="cards">
       <article class="card">
         <h3>JACO Verify API</h3>
-        <p>Send an answer and its evidence; get every claim checked. 25 free checks a day, then 0.02 USD via x402.</p>
-        <p><a class="ghost" href="https://api.jacocode.com/v1/verify">https://api.jacocode.com/v1/verify</a></p>
+        <p>Send an answer and its evidence; get every claim checked. The service is built and runs on our own machine. Its public address and its payments are not switched on yet, so there is nothing to call today.</p>
       </article>
     </div>
   </section>

@@ -7,7 +7,6 @@ import { cognitiveLink } from '../lib/cognitiveEvents.mjs';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { AuraPresence, type AuraPresenceView } from './AuraPresence';
 import { CapturedPage, type CapturedPageData } from './CapturedPage';
-import { AuraTerminal } from './AuraTerminal';
 import { AuraLiveToolSurfaces } from './AuraLiveToolSurfaces';
 import { AuraDesktopMonitor } from './AuraDesktopMonitor';
 import { useUiLanguage } from '../i18n/UiLanguage';
@@ -282,6 +281,5 @@ export function AuraLiveStage({ candidate, projectRevision, events, liveConnecti
       </div>
     </details>}
     </div>
-    <AuraTerminal events={events} missionId={activeMission?.id || null} connection={liveConnection}/>
   </div>;
 }
