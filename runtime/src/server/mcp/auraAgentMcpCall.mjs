@@ -2,7 +2,7 @@
 // Discovery may start an already configured server, but never executes a tool.
 import { agentRefusal, isReadOnlyTool, resolveAdvertisedTool } from './stdioMcpHost.mjs';
 import { operatorApprovalCheck } from '../../../../agents/lib/operator-action-guard.mjs';
-import { standingToolAuthority, mcpAuthorityRoot } from '../../../../agents/lib/standing-tool-authority.mjs';
+import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 
 const SERVER = /^[a-z][a-z0-9-]{1,40}$/;
 const TOOL = /^[A-Za-z0-9_.-]{1,120}$/;
@@ -45,7 +45,11 @@ export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'r
   const consequence = readOnly ? 'READ'
     : server === 'git' && /push|merge|release|publish/i.test(tool) ? 'PUBLISH'
     : localWorkspaceTool ? 'LOCAL_MUTATION' : 'EXTERNAL_MUTATION';
-  const authority = standingToolAuthority(mcpAuthorityRoot(host), consequence);
+  const root = mcpAuthorityRoot(host);
+  for (const taskId of [readOnly ? 'mcp-call' : 'mcp-write', ...(server === 'shell' ? ['shell'] : [])]) {
+    if (!operatorTaskEnabled(root, taskId)) throw Error('TASK_TURNED_OFF_BY_OPERATOR:' + taskId);
+  }
+  const authority = standingToolAuthority(root, consequence);
   if (authority.status === 'DENY' || authority.status === 'REVIEW') throw Error('MCP_STANDING_MANDATE_' + authority.status);
   const refusal = agentRefusal(def, advertised, args, {
     allowRemoteWrite: consequence === 'EXTERNAL_MUTATION' && authority.allowed
