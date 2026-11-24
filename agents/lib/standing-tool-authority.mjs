@@ -21,6 +21,12 @@ export function standingToolAuthority(workspaceRoot, consequence, {now = Date.no
   if (!Array.isArray(records)) return { status: 'DENY', allowed: false, reason: 'MANDATE_STORE_INVALID' };
   const mandate = records.find(v => v?.id === STANDING_MANDATE_ID);
   if (!mandate) return { status: 'LEGACY', allowed: false, reason: 'NO_STANDING_MANDATE' };
+  // An unconfigured first-install placeholder is not a revocation: preserve
+  // legacy behavior until the operator explicitly activates a mandate.
+  // A previously signed, then revoked mandate must always deny.
+  if (mandate.enabled === false && mandate.signedByOperator === false && !mandate.signedAt) {
+    return { status: 'LEGACY', allowed: false, reason: 'MANDATE_NEVER_ACTIVATED' };
+  }
   const valid = mandate.enabled === true && mandate.signedByOperator === true
     && ((mandate.validity === 'STANDING' && mandate.expiresAt === null)
       || (typeof mandate.expiresAt === 'string' && Number.isFinite(Date.parse(mandate.expiresAt))
