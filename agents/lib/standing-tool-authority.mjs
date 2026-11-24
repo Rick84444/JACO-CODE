@@ -53,8 +53,11 @@ export function operatorTaskEnabled(workspaceRoot, taskId) {
   const file = path.join(workspaceRoot, '.jaco', 'state', 'capabilities.json');
   let state;
   try { state = JSON.parse(fs.readFileSync(file, 'utf8')); }
-  catch (error) { return error?.code === 'ENOENT'; }
-  if (state?.schema !== 'jaco.capabilities/v1' || !Array.isArray(state.disabledTasks)) return false;
+  // Task switches are discoverability preferences, never authority grants.
+  // Match CapabilityPolicy's built-in default: a damaged preference file does
+  // not disable every tool; the signed mandate still gates effectful actions.
+  catch { return true; }
+  if (state?.schema !== 'jaco.capabilities/v1' || !Array.isArray(state.disabledTasks)) return true;
   return !state.disabledTasks.includes(taskId);
 }
 
