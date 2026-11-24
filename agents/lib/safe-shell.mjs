@@ -85,6 +85,31 @@ const scriptOf = args => {
   return first && /[\\/.]/.test(first) ? [first] : [];
 };
 
+// npm is a normal workspace development capability, not a per-package
+// approval request. Refuse options that redirect installs outside this workspace
+// and non-registry specs (file:, git:, URL) until their target can be scoped.
+const NPM_INSTALL_FLAGS = new Set([
+  '-D', '--save-dev', '-E', '--save-exact', '--save', '-P', '--save-prod',
+  '--no-save', '--ignore-scripts', '--legacy-peer-deps', '--strict-peer-deps',
+  '--no-audit', '--no-fund', '--offline', '--prefer-offline', '--package-lock-only',
+]);
+const NPM_PACKAGE = /^(?:@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*(?:@(?:[~^]?[0-9][a-z0-9.+_-]*|latest|next|beta))?$/i;
+export function npmWorkspaceCheck(args) {
+  if (!Array.isArray(args) || !args.length) return 'NPM_SUBCOMMAND_NOT_ALLOWED';
+  const command = args[0];
+  if (command === '--version' || command === '-v') return null;
+  if (['test', 't', 'run', 'run-script', 'ci', 'ls', 'list', 'outdated', 'view'].includes(command)) return null;
+  if (!['install', 'i', 'uninstall', 'remove', 'rm', 'update', 'up'].includes(command)) return 'NPM_SUBCOMMAND_NOT_ALLOWED';
+  for (const arg of args.slice(1)) {
+    if (arg.startsWith('-')) {
+      if (!NPM_INSTALL_FLAGS.has(arg)) return 'NPM_INSTALL_OPTION_NOT_ALLOWED:' + arg;
+    } else if (!NPM_PACKAGE.test(arg)) {
+      return 'NPM_PACKAGE_SPEC_NOT_ALLOWED:' + String(arg).slice(0, 80);
+    }
+  }
+  return null;
+}
+
 export const PROGRAMS = {
   ls: { mode: 'read', paths: a => positional(a) },
   cat: { mode: 'read', paths: a => positional(a) },
@@ -103,12 +128,8 @@ export const PROGRAMS = {
   git: { dynamic: gitClass, paths: a => { const i = a.indexOf('--'); return i >= 0 ? a.slice(i + 1) : []; } },
   node: { mode: 'write', script: true, check: a => (a[0] === '--version' || a[0] === '-v' ? null : (a.find(x => /^(-e|-p|--eval|--print|-r|--require|--import|--input-type|--inspect|--inspect-brk|-i|--interactive|--loader|--experimental-loader|--env-file|--env-file-if-exists)(=|$)/.test(x)) ? 'NODE_INLINE_CODE_NOT_ALLOWED' : null)) },
   python3: { mode: 'write', script: true, check: a => (a[0] === '--version' ? null : (a.find(x => /^(-c|-m|-i)$/.test(x)) ? 'PYTHON_INLINE_CODE_NOT_ALLOWED' : null)) },
-  npm: { mode: 'write', check: a => {
-    if (a[0] === '--version' || a[0] === '-v') return null;
-    if (['test', 't', 'run', 'run-script', 'ci', 'ls', 'list', 'outdated', 'view'].includes(a[0])) return null;
-    if (a[0] === 'install' || a[0] === 'i') return positional(a.slice(1)).length ? 'NPM_INSTALL_OF_PACKAGES_NOT_ALLOWED' : null;
-    return 'NPM_SUBCOMMAND_NOT_ALLOWED';
-  }, readSub: ['ls', 'list', 'outdated', 'view'], paths: () => [] },
+  npm: { mode: 'write', check: npmWorkspaceCheck,
+    readSub: ['ls', 'list', 'outdated', 'view'], paths: () => [] },
   bash: { mode: 'write', interpreter: true, paths: scriptOf, check: interpreterCheck },
   powershell: { mode: 'write', interpreter: true, paths: scriptOf, check: interpreterCheck },
   pwsh: { mode: 'write', interpreter: true, paths: scriptOf, check: interpreterCheck },
@@ -268,7 +289,7 @@ export class SafeShell {
     return { workspace: this.workspace, platform: this.platform, shell: 'none (argv only, no interpretation)', programs: Object.keys(PROGRAMS), local, limits: { ...LIMITS },
       destructiveEnabled: this.env.JACO_SHELL_ALLOW_DESTRUCTIVE === '1', pushEnabled: this.env.JACO_SHELL_ALLOW_PUSH === '1',
       interpretersEnabled: interpretersAllowed(this.env),
-      note: 'programs is the bounded shell policy list; local.programs is actual PATH discovery; local.capabilities describes intended uses and routes, not verified execution or a grant to execute every binary. Use shell_run for permitted writes or the authorized mission shell for other commands. npm: test, run, ci, ls, install without packages.' };
+      note: 'programs is the bounded shell policy list; local.programs is actual PATH discovery; local.capabilities describes intended uses and routes, not verified execution or a grant to execute every binary. Use shell_run for permitted writes or the authorized mission shell for other commands. npm: test, run, ci, ls, install/uninstall/update registry packages within the workspace.' };
   }
   async run({ command, args = [], cwd = '.', timeoutSeconds, mode = 'write' } = {}) {
     const started = Date.now();
