@@ -180,11 +180,13 @@ export function buildAuraSeerPrompts({
   return { system: authorizedSystem, user };
 }
 
-const MAX_TOOL_ROUNDS = 5;
+// A browser task (open, type, submit, observe, verify) needs more than five model turns; twelve
+// matches the per-message tool-call ceiling. Budgets and approvals still bound every call.
+const MAX_TOOL_ROUNDS = 12;
 const MAX_TOOL_CALLS = 12;
 const MAX_BATCH = 4;
 // Only known read contracts may share a batch. State-changing or unknown contracts require a fresh model turn.
-const BATCH_READ_TOOLS = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','policy_get','dom_track','laser_vision','aura_functions','current_work','runtime_events']);
+const BATCH_READ_TOOLS = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','policy_get','dom_track','laser_vision','target_track','aura_functions','current_work','runtime_events']);
 
 // Keep model context bounded, without silently dropping the latest operator message.
 // The newest receipt gets the most detail; older receipts are compact references.
@@ -337,7 +339,9 @@ async function runToolLoop(input, fetchImpl){
         result=await tools[call.name].run(call.args);
         unknown=result?.outcomeUnknown===true||result?.dispatchState==='UNKNOWN';
         ok=!unknown&&result?.ok!==false&&result?.success!==false&&result?.isError!==true&&result?.verified!==false;
-      }catch(error){result=`ERROR: ${error?.message||error}`;unknown=!BATCH_READ_TOOLS.has(call.name);}
+      // A refusal raised before dispatch (wrong tool name, mandate, arguments) executed nothing:
+      // it is a definite failure the model can correct, not an unknown outcome that stops the chat.
+      }catch(error){result=`ERROR: ${error?.message||error}`;unknown=!BATCH_READ_TOOLS.has(call.name)&&error?.preDispatch!==true&&error?.dispatchState!=='NOT_DISPATCHED';}
       let text;
       try{text=(typeof result==='string'?result:JSON.stringify(result)??'null').slice(0,6000);}
       catch{text='ERROR: TOOL_RESULT_SERIALIZATION_FAILED';ok=false;unknown=!BATCH_READ_TOOLS.has(call.name);}

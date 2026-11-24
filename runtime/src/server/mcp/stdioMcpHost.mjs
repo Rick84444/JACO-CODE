@@ -328,7 +328,8 @@ class StdioClient {
       let msg; try { msg = JSON.parse(line); } catch { continue; }
       if (msg.id !== undefined && this.pending.has(msg.id)) {
         const p = this.pending.get(msg.id); this.pending.delete(msg.id);
-        msg.error ? p.reject(new Error(msg.error.message || 'MCP_RPC_ERROR')) : p.resolve(msg.result);
+        // Parse error, invalid request, unknown method and invalid params are rejected before the tool runs.
+        msg.error ? p.reject(Object.assign(new Error(msg.error.message || 'MCP_RPC_ERROR'), [-32700, -32600, -32601, -32602].includes(Number(msg.error.code)) ? { preDispatch: true } : {})) : p.resolve(msg.result);
       }
     }
   }
@@ -552,7 +553,11 @@ export class StdioMcpHost {
       const result = await c.request('tools/call', { name, arguments: args }, timeoutMs);
       done(result?.isError === true ? 'tool_error' : 'ok', result?.isError === true ? String((result.content || []).map(x => x?.text || '').join(' ')).slice(0, 300) : null);
       return result;
-    } catch (e) { const message = String(e.message || e).slice(0,300); done('failed',message); throw Object.assign(new Error(message),{dispatchState:'UNKNOWN'}); }
+    } catch (e) {
+      const message = String(e.message || e).slice(0,300); done('failed',message);
+      // A JSON-RPC protocol rejection (invalid params, unknown method) means the server ran nothing.
+      throw Object.assign(new Error(message),{dispatchState: e?.preDispatch === true ? 'NOT_DISPATCHED' : 'UNKNOWN'});
+    }
   }
 
   stopAll() { for (const c of this.clients.values()) c.stop(); }
