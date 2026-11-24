@@ -1,4 +1,5 @@
 import { seerCompletionResult } from './seer-client.mjs';
+import { standingOperatorRules } from './standing-tool-authority.mjs';
 
 export const AURA_CANONICAL_OBJECTIVE = "Aura is JACO's only operator agent. She receives goals and uses JACO's internal planning runtime, durable execution runtime, memory, tools and verification under the existing authority gates. A goal is complete only when verified evidence or a receipt exists. Internal services are not separate operator agents.";
 
