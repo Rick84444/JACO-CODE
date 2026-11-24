@@ -250,7 +250,10 @@ test('two-way: WhatsApp uses Aura durable history and marks the exchange for can
     { role: 'model', content: 'tidigare svar' },
   ]);
   assert.deepEqual(body.connectedSession, { id: 'whatsapp:wamid_A_B', source: 'WhatsApp' });
-  assert.equal(body.interactionMode, 'question');
+  assert.equal(body.interactionMode, 'action', 'the owner talks to the same acting Aura as in the IDE chat');
+  calls.length = 0;
+  await answerVoiceMessageThroughAura({ text: 'bara läs', id: 'wamid.C', baseUrl: 'http://127.0.0.1:3000/', fetchImpl, env: { JACO_VOICE_CHAT_MODE: 'question' } });
+  assert.equal(JSON.parse(calls.at(-1).options.body).interactionMode, 'question', 'the operator can keep the channel read-only');
 });
 
 test('two-way: a voice note or a phone call gets a clear text answer, the call is declined, failures are told', async () => {

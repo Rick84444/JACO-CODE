@@ -171,7 +171,11 @@ const readJson = (file, fallback) => { try { return JSON.parse(fs.readFileSync(f
 
 // WhatsApp is a transport for Aura, not a second chat. Read the durable Aura session, ask through
 // the canonical route, and identify this delivery so the runtime can persist it idempotently.
-export async function answerVoiceMessageThroughAura({ text, id, baseUrl, fetchImpl = globalThis.fetch }) {
+// Operator 2026-11-24: Aura acts in conversations too, as in the IDE chat. Only the configured owner's
+// number reaches this function (inboundFromOwner); the operator-action guard, mandate and budgets still
+// decide every tool. JACO_VOICE_CHAT_MODE=question keeps the channel read-only.
+export const voiceChatMode = (env = process.env) => (env.JACO_VOICE_CHAT_MODE === 'question' ? 'question' : 'action');
+export async function answerVoiceMessageThroughAura({ text, id, baseUrl, fetchImpl = globalThis.fetch, env = process.env }) {
   const root = String(baseUrl || '').replace(/\/$/, '');
   const sessionResponse = await fetchImpl(`${root}/api/aura/chat/session`, {
     headers: { accept: 'application/json' }, signal: AbortSignal.timeout(10_000),
@@ -189,7 +193,7 @@ export async function answerVoiceMessageThroughAura({ text, id, baseUrl, fetchIm
   const response = await fetchImpl(`${root}/api/aura/chat`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      message: String(text || ''), interactionMode: 'question', messagesHistory,
+      message: String(text || ''), interactionMode: voiceChatMode(env), messagesHistory,
       connectedSession: { id: `whatsapp:${safeId}`, source: 'WhatsApp' },
     }),
     signal: AbortSignal.timeout(110_000),
