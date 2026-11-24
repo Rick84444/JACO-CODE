@@ -17,9 +17,41 @@ on:
       - 'agents/grant-desktop-agentos.ps1'
       - 'agents/start-all.ps1'
       - 'agents/lib/mission-client.mjs'
+      - 'agents/lib/agent-loop.mjs'
+      - 'agents/lib/strategy-recovery.mjs'
+      - 'tests/nova/agent-loop.test.mjs'
+      - 'tests/nova/strategy-recovery.test.mjs'
+      - 'tests/nova/agent-stuck-condense.test.mjs'
       - 'agents/lib/mission-screen-frame.mjs'
       - 'agents/input-bridge.ps1'
       - 'agents/lib/input-bridge-daemon.mjs'
+      - 'agents/aura-desktop-vm.ps1'
+      - 'agents/aura-desktop-acceptance.ps1'
+      - 'runtime/src/server/desktop/desktopTraction.mjs'
+      - 'runtime/src/server/desktop/desktopTraction.d.mts'
+      - 'runtime/src/server/desktop/desktopHandsOff.ts'
+      - 'tests/nova/desktop-traction.test.mjs'
+      - 'tests/nova/aura-desktop-skill.test.mjs'
+      - 'tests/nova/aura-desktop-virtual-input.test.mjs'
+      - 'tests/nova/aura-desktop-live-view.test.mjs'
+      - 'tests/nova/aura-desktop-monitor.test.mjs'
+      - 'tests/nova/aura-desktop-takeover.test.mjs'
+      - 'runtime/src/server/desktop/desktopTakeover.mjs'
+      - 'runtime/src/server/desktop/desktopTakeover.d.mts'
+      - 'runtime/src/server/desktop/router.ts'
+      - 'runtime/src/server/relay/modelRelay.ts'
+      - 'runtime/src/server/handsOff/actuatorLease.ts'
+      - 'openspec/changes/harden-aura-desktop-e2e/**'
+      - 'agents/lib/aura-desktop-live-view.mjs'
+      - 'runtime/src/components/AuraDesktopMonitor.tsx'
+      - 'runtime/src/components/AuraLiveStage.tsx'
+      - 'runtime/server.ts'
+      - '.env.example'
+      - 'agents/lib/aura-desktop-virtual-input.mjs'
+      - 'agents/hands-off-agent.mjs'
+      - 'agents/setup-desktop-agentos.ps1'
+      - 'skills/aura-desktop/SKILL.md'
+      - 'docs/AURA_DESKTOP_TOOL.md'
       - 'tests/nova/input-bridge-daemon.test.mjs'
       - 'agents/lib/task-fields.mjs'
       - 'runtime/src/server/nova/tractionCore.mjs'
@@ -60,6 +92,10 @@ jobs:
       - name: Syntax check executor
         run: |
           node --check agents/desktop-agentos.mjs
+          node --check agents/hands-off-agent.mjs
+          node --check runtime/src/server/desktop/desktopTraction.mjs
+          node --check agents/lib/aura-desktop-virtual-input.mjs
+          node --check runtime/src/server/desktop/desktopTakeover.mjs
           node --check agents/run-desktop-agentos.mjs
           node --check agents/lib/mission-client.mjs
           node --check agents/lib/workplace-session.mjs
@@ -72,8 +108,14 @@ jobs:
         # Install the locked runtime imports without browser/Electron downloads.
         run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
 
+      - name: Verify recovery-first mission regression
+        run: node --test tests/nova/agent-loop.test.mjs tests/nova/strategy-recovery.test.mjs tests/nova/agent-stuck-condense.test.mjs
+
       - name: Run Nova tests
         run: npm test
+
+      - name: Verify Laser Vision / DOM Traction desktop safety
+        run: node --test tests/nova/desktop-traction.test.mjs tests/nova/mission-screen-frame.test.mjs tests/nova/aura-desktop-skill.test.mjs tests/nova/aura-desktop-virtual-input.test.mjs tests/nova/aura-desktop-live-view.test.mjs tests/nova/aura-desktop-monitor.test.mjs tests/nova/aura-desktop-takeover.test.mjs
 
       - name: Run Workplace regression suite
         run: npm run test:workplace
@@ -111,6 +153,8 @@ jobs:
         shell: pwsh
         run: |
           node --check agents/desktop-agentos.mjs
+          node --check agents/hands-off-agent.mjs
+          node --check runtime/src/server/desktop/desktopTraction.mjs
           if ($LASTEXITCODE -ne 0) { throw 'desktop-agentos syntax check failed' }
           node --check agents/run-desktop-agentos.mjs
           if ($LASTEXITCODE -ne 0) { throw 'run-desktop-agentos syntax check failed' }
@@ -124,6 +168,8 @@ jobs:
             'agents/setup-desktop-agentos.ps1',
             'agents/grant-desktop-agentos.ps1',
             'agents/start-all.ps1',
+            'agents/aura-desktop-vm.ps1',
+            'agents/aura-desktop-acceptance.ps1',
             'agents/windows-wmi-read.ps1',
             'agents/input-bridge.ps1'
           )
@@ -182,7 +228,9 @@ jobs:
           if ($src -notmatch 'ValidateSet') { throw 'WMI query allowlist missing' }
           if ($src -match 'Invoke-Expression|Start-Process|Invoke-Command') { throw 'WMI bridge exposes an unsafe execution primitive' }
           $setup = Get-Content 'agents/setup-desktop-agentos.ps1' -Raw
-          if ($setup -notmatch "requiredTasks.*windows-wmi-read") { throw 'Desktop AgentOS onboarding does not enable windows-wmi-read' }
+          if ($setup -notmatch "Set-EnvValue.*JACO_NOVA_ALLOWED_TASKS.*sandbox") { throw 'Desktop AgentOS onboarding does not select the canonical sandbox profile' }
+          node --test tests/nova/capability-policy.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical desktop capability contract failed' }
           if ($setup -notmatch 'windows-wmi-read\.mjs') { throw 'Desktop AgentOS onboarding does not validate WMI module' }
           if ($setup -notmatch 'windows-wmi-read\.ps1') { throw 'Desktop AgentOS onboarding does not validate WMI bridge' }
 
@@ -204,3 +252,21 @@ jobs:
           if ($src -notmatch 'singleWriter\s*!==\s*true') { throw 'ModelRelay single-writer gate missing' }
           $start = (Get-Content 'agents/start-all.ps1' -Raw) + (Get-Content 'agents/lib/local-stack.mjs' -Raw)
           if ($start -match 'google-remote-agent\.mjs') { throw 'Reverted Google Remote Agent wiring returned' }
+
+  desktop-typecheck:
+    name: Canonical desktop TypeScript integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked runtime dependencies
+        run: npm ci --prefix runtime --no-audit --no-fund
+      - name: Check DesktopHandsOff client and DOM Traction adapter types
+        run: npm --prefix runtime run lint
+      - name: Bundle the canonical runtime with the desktop adapter
+        run: npm --prefix runtime run build:server
+      - name: Build the actual Aura GUI with Windows live monitor
+        run: npm --prefix runtime run build:client

@@ -134,6 +134,7 @@ test('Aura perception tools use only the guarded canonical MCP read route',async
   for(const view of ['observe','accessibility','html']) await question.dom_track.run({view});
   const capture=await question.laser_vision.run({});
   assert.equal(capture.captured,true);
+  assert.equal(capture.source,'browser/nova_screenshot');
   assert.equal(capture.visualAnalysis,'NOT_PERFORMED');
   assert.match(capture.imageSha256,/^[a-f0-9]{64}$/);
   assert.doesNotMatch(JSON.stringify(capture),/iVBOR/);

@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import WebSocket from 'ws';
-import { validateRemoteCall, MAX_RESPONSE_BYTES } from '../../../../site/jacocode.com/link-protocol.mjs';
+import { validateRemoteCall, validateAuraCallRequest, MAX_RESPONSE_BYTES } from '../../../../site/jacocode.com/link-protocol.mjs';
 
 const DEFAULT_ORIGIN = 'https://jacocode.com';
 const CODE = /^[A-Za-z0-9_-]{18,28}$/;
@@ -59,6 +59,7 @@ export function createJacoLinkHost({
   let saved=readState(file);
   let state='DISCONNECTED', error=null, socket=null, timer=null;
   let stopped=false, pendingCalls=0;
+  const pendingAttention = new Map();
   const persist=data=>{saved=data;writeState(file,data);};
   const status=()=>({
     state,error,configured:Boolean(saved?.hostToken),
@@ -139,6 +140,44 @@ export function createJacoLinkHost({
       }));
     }finally{pendingCalls--;}
   }
+  // Local Aura can request operator/ChatGPT attention through the ONE existing
+  // host WebSocket. This is an account-scoped inbox enqueue, NOT an LLM call.
+  // No retry on ambiguous transport; reuse the same eventId if manually
+  // reconciled. Neither the browser session nor model API credentials appear.
+  function requestAttention(value) {
+    const input=validateAuraCallRequest({type:'aura_call_requested',...value});
+    if(!input.ok)return Promise.resolve({state:'REJECTED',error:input.error});
+    if(!saved?.hostToken || socket?.readyState!==1)
+      return Promise.resolve({state:'NOT_CONNECTED'});
+    if(pendingAttention.has(input.eventId))return pendingAttention.get(input.eventId).promise;
+    if(pendingAttention.size>=8)return Promise.resolve({state:'REJECTED',error:'TOO_MANY_PENDING_ATTENTION_REQUESTS'});
+    let done;
+    const promise=new Promise(resolve=>{done=resolve;});
+    const timer=setTimeout(()=>{
+      pendingAttention.delete(input.eventId);
+      done({state:'UNKNOWN',error:'AURA_CALL_ACK_TIMEOUT'});
+    },10_000);
+    timer.unref?.();
+    pendingAttention.set(input.eventId,{promise,timer,done});
+    try {socket.send(json({type:'aura_call_requested',
+      eventId:input.eventId,missionId:input.missionId,reason:input.reason}));}
+    catch {
+      clearTimeout(timer);pendingAttention.delete(input.eventId);
+      done({state:'UNKNOWN',error:'AURA_CALL_SEND_OUTCOME_UNKNOWN'});
+    }
+    return promise;
+  }
+  function settleAttention(eventId,result) {
+    const item=pendingAttention.get(eventId);
+    if(!item)return;
+    clearTimeout(item.timer);
+    pendingAttention.delete(eventId);
+    item.done(result);
+  }
+  function unknownAttention(error) {
+    for(const eventId of pendingAttention.keys())
+      settleAttention(eventId,{state:'UNKNOWN',error});
+  }
   function connect() {
     if(stopped || !saved?.hostToken)return;
     if(socket && (socket.readyState===0 || socket.readyState===1))return;
@@ -152,6 +191,15 @@ export function createJacoLinkHost({
       if(raw.length>64*1024)return;
       let payload;
       try {payload=JSON.parse(raw.toString());}catch{return;}
+      if(payload?.type==='aura_call_ack' && typeof payload.eventId==='string') {
+        // This acknowledges only persistence in the customer Link inbox.
+        // No claim is made that ChatGPT itself received or answered the event.
+        if(['PENDING_CHATGPT_SUBSCRIPTION','REJECTED','CONFLICT','UNKNOWN'].includes(payload.state))
+          settleAttention(payload.eventId,{state:payload.state,
+            ...(typeof payload.error==='string'?{error:payload.error.slice(0,130)}:{}),
+            ...(payload.duplicate===true?{duplicate:true}:{})});
+        return;
+      }
       const valid=validateRemoteCall(payload);
       if(!valid.ok){
         if(typeof payload?.id==='string')candidate.send(json({type:'rpc_result',id:payload.id,status:403,body:{error:valid.error}}));
@@ -170,6 +218,7 @@ export function createJacoLinkHost({
     candidate.on('close',(code)=>{
       if(socket!==candidate)return;
       socket=null;
+      unknownAttention('LINK_DISCONNECTED_OUTCOME_UNKNOWN');
       if(code===4003){stopped=true;report('REVOKED','Device revoked');return;}
       if(!stopped){report('RECONNECTING');arm(connect,RETRY_MS);}
     });
@@ -180,7 +229,7 @@ export function createJacoLinkHost({
     if(saved?.pending?.until>Date.now()) {report('AWAITING_ACCOUNT_APPROVAL');arm(()=>void poll(),1200);}
     else report('NOT_PAIRED');
   }
-  function stop(){stopped=true;if(timer)cancel(timer);timer=null;socket?.close(1000,'Stopped locally');socket=null;report('STOPPED');}
+  function stop(){stopped=true;if(timer)cancel(timer);timer=null;unknownAttention('LINK_STOPPED_OUTCOME_UNKNOWN');socket?.close(1000,'Stopped locally');socket=null;report('STOPPED');}
   function forgetLocal(){stop();persist({});report('NOT_PAIRED');}
-  return {startPairing,resume,stop,forgetLocal,status,connect};
+  return {startPairing,resume,stop,forgetLocal,status,connect,requestAttention};
 }

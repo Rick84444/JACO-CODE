@@ -2,6 +2,7 @@
 // Discovery may start an already configured server, but never executes a tool.
 import { agentRefusal, isReadOnlyTool, resolveAdvertisedTool } from './stdioMcpHost.mjs';
 import { operatorApprovalCheck } from '../../../../agents/lib/operator-action-guard.mjs';
+import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 
 const SERVER = /^[a-z][a-z0-9-]{1,40}$/;
 const TOOL = /^[A-Za-z0-9_.-]{1,120}$/;
@@ -14,8 +15,9 @@ function configured(host, server) {
   return def;
 }
 export async function discoverAuraMcpTools(host, server) {
-  const def = configured(host, server);
+  configured(host, server);
   const tools = await host.listTools(server);
+  const def = configured(host, server);
   return {
     server, access: def.agentAccess,
     // Discovery does not imply readiness to act or permission for a particular input.
@@ -26,7 +28,7 @@ export async function discoverAuraMcpTools(host, server) {
   };
 }
 export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'read' }) {
-  const def = configured(host, server);
+  let def = configured(host, server);
   if (!TOOL.test(tool)) throw Error('MCP_TOOL_ID_INVALID');
   if (mode !== 'read' && mode !== 'write') throw Error('MCP_MODE_INVALID');
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw Error('MCP_ARGUMENTS_INVALID');
@@ -34,19 +36,35 @@ export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'r
   // This starts a configured but stopped server; status READY is not a
   // prerequisite. Never start an "off" server or widen its access level.
   const tools = await host.listTools(server);
+  def = configured(host, server);
   const advertised = resolveAdvertisedTool(server, tool, tools);
   if (!advertised) throw Error('MCP_TOOL_UNAVAILABLE');
   tool = advertised.name;
-  const refusal = agentRefusal(def, advertised, args);
-  if (refusal) throw Error(refusal);
   const readOnly = isReadOnlyTool(server, advertised);
+  // Keep chat and final MCP-host dispatch classification identical.
+  const localWorkspaceTool = ['shell', 'filesystem', 'git', 'repo', 'editor'].includes(server);
+  const consequence = readOnly ? 'READ'
+    : server === 'git' && /push|merge|release|publish/i.test(tool) ? 'PUBLISH'
+    : localWorkspaceTool ? 'LOCAL_MUTATION' : 'EXTERNAL_MUTATION';
+  const root = mcpAuthorityRoot(host);
+  for (const taskId of [readOnly ? 'mcp-call' : 'mcp-write', ...(server === 'shell' ? ['shell'] : [])]) {
+    if (!operatorTaskEnabled(root, taskId)) throw Error('TASK_TURNED_OFF_BY_OPERATOR:' + taskId);
+  }
+  const authority = standingToolAuthority(root, consequence);
+  if (authority.status === 'DENY' || authority.status === 'REVIEW') throw Error('MCP_STANDING_MANDATE_' + authority.status);
+  const refusal = agentRefusal(def, advertised, args, {
+    allowRemoteWrite: consequence === 'EXTERNAL_MUTATION' && authority.allowed
+  });
+  if (refusal) throw Error(refusal);
   if (mode === 'read' && !readOnly) throw Error('MCP_TOOL_WRITE_MODE_REQUIRED');
   if (mode === 'write' && !readOnly) {
-    // In action chat there is no mission-scoped approval packet. High-impact
-    // actions must go through the existing mission route, which can request
-    // operator authorization; scoped workspace writes remain autonomous.
-    const required = operatorApprovalCheck({type:'mcp-write',data:{server,tool}});
-    if (required) throw Error('MCP_MISSION_APPROVAL_REQUIRED');
+    // Local, workspace-bound MCP writes inherit the operator's standing
+    // authority. No separate chat microapproval may override an explicit ALLOW.
+    // Outward and unknown-effect tools still follow their existing scope gates.
+    if (!authority.allowed) {
+      const required = operatorApprovalCheck({type:'mcp-write',data:{server,tool}});
+      if (required) throw Error('MCP_MISSION_APPROVAL_REQUIRED');
+    }
   }
   return host.call(server, tool, args, { actor:'agent', readOnly: mode === 'read' });
 }

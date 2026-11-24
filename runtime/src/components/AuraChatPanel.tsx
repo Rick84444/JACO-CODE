@@ -2,7 +2,7 @@ import { readAuraResponse as apiJson } from '../lib/auraApi.mjs';
 import { AttachmentPicker } from './AttachmentPicker';
 import { CopyMessageButton } from './CopyMessageButton';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, ArrowUpRight, MessageSquare, ChevronRight } from 'lucide-react';
+import { Search as SearchIcon, Bot, ArrowUp, ArrowDown, Square, Send, Target, Loader2, FileCode2, Settings2, ArrowUpRight, MessageSquare } from 'lucide-react';
 import { ChatMarkdown } from './ChatMarkdown';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { JacoWordmark } from './JacoWordmark';
@@ -14,7 +14,7 @@ import { safeCognitiveText } from '../lib/cognitiveEvents.mjs';
 import { budgetIntent, type BudgetIntent } from '../lib/budgetIntent';
 import { humanChatEvents } from '../lib/humanChat';
 import { BudgetCard } from './CostChip';
-import { AutonomyClock } from './AutonomyClock';
+import { StandingMandatePanel } from './StandingMandatePanel';
 import { AuraOverview } from './AuraOverview';
 import { boundChatHistory } from '../lib/chatHistory.mjs';
 import { extractWorkspaceActions, workspaceReplyText } from '../lib/workspaceActions.mjs';
@@ -173,6 +173,7 @@ export function useAuraChatSession() {
 interface Props {
   session: ReturnType<typeof useAuraChatSession>;
   runControls?: React.ReactNode;
+  approvalPrompt?: React.ReactNode;
   onOpenProviders?: () => void;
   activeFilePath?: string | null;
   activeFileContent?: string | null;
@@ -202,7 +203,7 @@ async function chatJson(response: Response) {
   return data;
 }
 
-export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onCancelMission, onSteerMission, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
+export const AuraChatPanel: React.FC<Props> = ({ session, runControls, approvalPrompt, activeFilePath, activeFileContent, selectedTool, onClearSelectedTool, onStartGoal, onCancelMission, onSteerMission, onOpenProviders, activity = [], missions = [], liveEvents = [], liveConnection, historyTruncated = false, runtimeError, onOpenEvidence, onOpenFile }) => {
   const { messages, setMessages, appendMessage, storageReady, storageError, retryStorage, input, setInput, busy, setBusy, toolArguments, setToolArguments } = session;
   const { tr, language } = useUiLanguage();
   const [attachments, setAttachments] = useState<Array<{id:string;files:Array<{path:string;format:string}>}>>(()=>{
@@ -316,12 +317,8 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
 
   const scrollRef=useRef<HTMLDivElement>(null);
   const followRef=useRef(true);
-  // The selected mode changes dispatch, not privileges; only manual/planning survive reload.
-  const [runMode,setRunMode]=useState<'manual'|'planning'|'autonomous'>(()=>{
-    try { return initialAuraRunMode(localStorage.getItem('jaco:aura:run-mode:v1')); }
-    catch { return 'manual'; }
-  });
-  const [showModePicker,setShowModePicker]=useState(false);
+  // One operator workflow; selecting it never grants new privileges or starts work.
+  const runMode = initialAuraRunMode();
   const [showBuildAgent,setShowBuildAgent]=useState(false);
   const [agentDraft,setAgentDraft]=useState({name:'',title:'',task:'',goal:''});
   const [agentKey,setAgentKey]=useState('');
@@ -355,7 +352,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
         body:JSON.stringify({
           name:agentDraft.name.trim(),title:agentDraft.title.trim(),
           task:agentDraft.task.trim(),goal:agentDraft.goal.trim(),
-          reportsTo:'aura',model:{kind:'local',providerId:'ollama',model:''},
+          reportsTo:'aura',model:{kind:'planner',providerId:'',model:''},
         }),
       });
       const data=await response.json().catch(()=>({}));
@@ -365,12 +362,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     }catch(error:any){
       setAgentMessage(tr('Kunde inte skapa agent: ','Could not create agent: ')+String(error?.message||error).slice(0,200));
     }finally{setAgentCreating(false);}
-  };
-  const selectRunMode = (next:'manual'|'planning'|'autonomous') => {
-    if (busy) return;
-    setRunMode(next);
-    setShowModePicker(false);
-    try { localStorage.setItem('jaco:aura:run-mode:v1', next === 'autonomous' ? 'manual' : next); } catch {}
   };
   const requestRef = useRef<AbortController|null>(null);
   const [waitingSeconds, setWaitingSeconds] = useState(0);
@@ -533,7 +524,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           attachmentIds: attachments.map(item=>item.id),
           message: text,
           connectedSession: { id: user.id, source: 'Aura GUI' },
-          interactionMode: runMode === 'planning' ? 'planning' : runMode === 'autonomous' ? 'action' : 'question',
+          interactionMode: 'action',
           selectedProvider,
           model: selectedProvider === 'seer' ? undefined : chatModel,
           activeFilePath: activeFilePath || null,
@@ -729,15 +720,14 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
     if (!input.trim() || !storageReady || uploading || chatControlBusy || (busy && !parseAuraMissionCommand(input))) return;
     // Build Agent is a local UI action in every mode, never a model directive or a mission.
     if(/^\/?build agent$/i.test(input.trim())) {
-      setShowBuildAgent(true);setShowModePicker(false);setInput('');
+      setShowBuildAgent(true);setInput('');
       return;
     }
-    return ask(); // Every mode retains normal conversation; mission start is explicit.
+    return ask(); // Conversation remains available; direct mission start is explicit.
   };
-  const prompt=(text:string,mode:'chat'|'goal'='chat')=>{
+  const prompt=(text:string)=>{
     setInput(text);
-    // Suggested tasks open in read-only planning first; the operator selects Full Autonomous.
-    setRunMode(mode==='goal'?'planning':'manual');
+    // Prefilling a suggestion does not submit it or change authority.
     inputRef.current?.focus();
   };
 
@@ -755,7 +745,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
           {blockerEvents.length>0&&<details className="cognitive-chat-blockers"><summary>{tr('Hinder som behöver uppmärksamhet','Issues needing attention')} ({blockerEvents.length})</summary><div className="cognitive-background-events-list">{blockerEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</div></details>}
           <AuraOverview />
           {runControls && <div className="cognitive-run-controls">{runControls}</div>}
-          <AutonomyClock />
+          <StandingMandatePanel />
           {backgroundEvents.length>0&&<details className="cognitive-background-events"><summary>{tr('Visa tekniska händelser','Show technical events')} ({backgroundEvents.length})</summary><div className="cognitive-background-events-list">{backgroundEvents.map(event=><CognitiveEventCard key={event.id} event={event} onInspect={onOpenEvidence} onOpenFile={onOpenFile}/>)}</div></details>}
           {historyTruncated&&<p className="cognitive-history-note">{tr('Det senaste arbetet visas. Äldre händelser finns kvar i uppdragshistoriken.','The latest work is shown. Older events remain in mission history.')}</p>}
         </div>
@@ -814,6 +804,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
 
       <div ref={scrollRef} onScroll={()=>{const el=scrollRef.current;if(el){const near=el.scrollTop<80;followRef.current=near;setFollowing(near);}}} role="log" aria-live="polite" aria-relevant="additions" aria-label={tr('JACO-konversation','JACO conversation')} className="cognitive-chat-scroll">
         <div className="cognitive-feed">
+          {approvalPrompt}
           {!storageReady && !storageError && <p className="cognitive-muted">{tr('Läser din sparade konversation…','Loading your saved conversation…')}</p>}
           {storageReady&&feed.length===0&&<div className="cognitive-welcome">
             <JacoWordmark size="lg"/>
@@ -821,8 +812,8 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             <h1>{tr('Vad vill du skapa?','What would you like to build?')}</h1>
             <p>{tr('Beskriv det du vill få att fungera.','Describe what you want to make work.')}<br/>{tr('Följ arbetet, pröva resultatet och forma nästa steg tillsammans.','Follow the work, test the outcome, and shape the next step together.')}</p>
             <div className="cognitive-start-prompts">
-              <button type="button" onClick={()=>prompt(tr('Undersök det öppna projektet. Förklara vad som fungerar och vilka fel du faktiskt kan verifiera.','Inspect the open project. Explain what works and which defects you can actually verify.'),'goal')}><SearchIcon/><span>{tr('Undersök mitt projekt','Inspect my project')}<small>{tr('Förstå koden och nästa steg','Understand the code and next steps')}</small></span><ArrowUpRight size={14}/></button>
-              <button type="button" onClick={()=>prompt(tr('Hjälp mig förbättra en funktion i projektet. Börja med att kartlägga den relevanta koden.','Help improve one feature in this project. Start by mapping the relevant code.'),'goal')}><FileCode2 size={17}/><span>{tr('Utveckla vidare','Develop further')}<small>{tr('Bygg på det som redan finns','Build on what already exists')}</small></span><ArrowUpRight size={14}/></button>
+              <button type="button" onClick={()=>prompt(tr('Undersök det öppna projektet. Förklara vad som fungerar och vilka fel du faktiskt kan verifiera.','Inspect the open project. Explain what works and which defects you can actually verify.'))}><SearchIcon/><span>{tr('Undersök mitt projekt','Inspect my project')}<small>{tr('Förstå koden och nästa steg','Understand the code and next steps')}</small></span><ArrowUpRight size={14}/></button>
+              <button type="button" onClick={()=>prompt(tr('Hjälp mig förbättra en funktion i projektet. Börja med att kartlägga den relevanta koden.','Help improve one feature in this project. Start by mapping the relevant code.'))}><FileCode2 size={17}/><span>{tr('Utveckla vidare','Develop further')}<small>{tr('Bygg på det som redan finns','Build on what already exists')}</small></span><ArrowUpRight size={14}/></button>
             </div>
           </div>}
           {busy&&<div className="cognitive-response-wait"><span role="status"><AuraAvatar thinking size={3}/>{busy==='goal'?tr('Registrerar uppdraget…','Registering mission…'):busy==='tool'?tr('Väntar på verktygets resultat…','Waiting for tool result…'):tr('Väntar på modellens svar…','Waiting for model response…')}{busy==='chat'&&waitingSeconds>=25&&<small>{' '}{tr('Det tar en stund. Svarar inte modellen provar Aura nästa automatiskt.','This is taking a while. If the model does not answer, Aura tries the next one automatically.')}</small>}</span>{busy==='chat' && <><time aria-label={tr('Väntetid','Waiting time')}>{waitingSeconds} s</time><button type="button" onClick={() => requestRef.current?.abort()}>{tr('Avbryt svar','Cancel response')}</button></>}</div>}
@@ -852,28 +843,6 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               <span className="text-neutral-200 truncate">{selectedTool.label}</span>
               <button type="button" onClick={onClearSelectedTool} aria-label={tr('Ta bort valt verktyg','Remove selected tool')} className="ml-auto text-neutral-400 hover:text-neutral-200">×</button>
             </div>
-          )}
-          {showModePicker && (
-            <section role="dialog" aria-label={tr('Välj agentläge','Choose agent mode')}
-              className="mb-2 rounded-lg border border-neutral-800/60 bg-[#292a2c] p-3 space-y-2" data-testid="jaco-run-mode-panel">
-              <div className="text-xs font-semibold text-neutral-200">{tr('Välj hur JACO arbetar','Choose how JACO works')}</div>
-              <div role="group" aria-label={tr('Körläge','Execution mode')} className="grid gap-2">
-                {([
-                  ['manual', tr('Manuell','Manual'), tr('Samtal och läsverktyg. Inga nya uppdrag eller ändringar.','Conversation and read tools only. No new missions or changes.')],
-                  ['planning', tr('Planering','Planning'), tr('Analysera, jämför och skapa en plan. Endast läsverktyg, inga policyändringar.','Research, compare and propose a plan. Read tools only; no policy changes.')],
-                  ['autonomous', tr('Helt självständig','Full Autonomous'), tr('Starta ett varaktigt Aura-uppdrag. Befintliga mandat, budget och godkännanden gäller.','Start a durable Aura mission. Existing permissions, budgets and approvals still apply.')],
-                ] as const).map(([value,label,help])=>(
-                  <button type="button" key={value} aria-pressed={runMode===value}
-                    onClick={()=>selectRunMode(value)} disabled={Boolean(busy)}
-                    className={`flex flex-col items-start rounded border px-3 py-2 text-left text-xs ${runMode===value?'border-neutral-500 bg-neutral-900/30 text-neutral-100':'border-neutral-600 text-neutral-200 hover:border-neutral-500'}`}>
-                    <span className="font-semibold">{label}</span>
-                    <span className="mt-1 text-neutral-300">{help}</span>
-                  </button>
-                ))}
-              </div>
-              <p className="text-[11px] text-neutral-400">{tr('Detta är ett arbetsläge, inte en behörighetsökning.','This selects a workflow, not additional privileges.')}</p>
-              <button type="button" onClick={()=>setShowModePicker(false)} className="text-xs text-neutral-300 hover:text-white">{tr('Stäng','Close')}</button>
-            </section>
           )}
           {showBuildAgent && (
             <section data-testid="jaco-build-agent-panel" aria-label={tr('Bygg agent','Build Agent')}
@@ -939,14 +908,10 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
             )}
             <div className="cognitive-input-actions">
               <div className="cognitive-compose-modes" role="group" aria-label={tr('Agentens körläge','Agent execution mode')}>
-                <button type="button" data-testid="jaco-run-mode-toggle" aria-haspopup="dialog" aria-expanded={showModePicker}
-                  data-run-mode={runMode}
-                  className={runMode==='autonomous'?'jaco-autonomous-active':''}
-                  onClick={()=>{setShowBuildAgent(false);setShowModePicker(value=>!value);}} disabled={Boolean(busy)}>
-                  <Target size={12}/>
-                  {runMode==='manual' ? tr('Manuell','Manual') : runMode==='planning' ? tr('Planering','Planning') : tr('Helt självständig','Full Autonomous')}
-                  <ChevronRight size={12}/>
-                </button>
+                <span data-testid="jaco-run-mode-status" data-run-mode={runMode}
+                  className="jaco-autonomous-active" aria-label={tr('Autonomt läge aktivt','Autonomous mode active')}>
+                  <Target size={12}/>{tr('Helt självständig','Full Autonomous')}
+                </span>
               </div>
               {currentMission?.status==='ACTIVE' && !currentMission.cancelRequested && onSteerMission && (
                 <button data-testid="jaco-steer-mission" type="button" onClick={()=>void steerCurrentMission(currentMission.id)}
@@ -958,16 +923,16 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               )}
               <button data-testid="jaco-build-agent-toggle" type="button"
                 className="text-[11px] text-neutral-300 hover:text-neutral-200"
-                aria-expanded={showBuildAgent} onClick={()=>{setShowModePicker(false);setShowBuildAgent(v=>!v);}}>
+                aria-expanded={showBuildAgent} onClick={()=>setShowBuildAgent(v=>!v)}>
                 <Bot size={12} className="inline mr-1"/>{tr('Bygg agent','Build Agent')}
               </button>
               <span className="cognitive-enter-hint">{tr('Shift + Enter för ny rad','Shift + Enter for new line')}</span>
-              {runMode==='autonomous' && <button data-testid="jaco-start-mission" type="button" onClick={()=>void goal()}
+              <button data-testid="jaco-start-mission" type="button" onClick={()=>void goal()}
                 disabled={!input.trim()||Boolean(busy)||uploading||!storageReady}
                 title={tr('Starta ett nytt uppdrag med befintliga behörigheter','Start a new mission within existing permissions')}
                 className="rounded border border-neutral-600 px-2 py-1.5 text-xs text-neutral-200 disabled:opacity-40">
                 {tr('Starta uppdrag','Start mission')}
-              </button>}
+              </button>
               <button data-testid="jaco-chat-send" type="submit" aria-label={tr('Skicka meddelande','Send message')} title={tr('Skicka','Send')} disabled={!input.trim()||(Boolean(busy)&&!parseAuraMissionCommand(input))||chatControlBusy||uploading||!storageReady} className="cognitive-send-button">{busy?<Loader2 size={16} className="animate-spin"/>:<ArrowUp size={18}/>}</button>
             </div>
           </div>
@@ -978,9 +943,7 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, activeFil
               {tr(' Föreslagna skills',' Skill candidates')}: {cognitiveSuggestions.skills}
               <span title={tr('Ett skillförslag ger inte verktygsbehörighet. Varje steg kontrolleras av runtimen.','Skill discovery grants no tool permissions. Each step must pass runtime checks.')}> · <span className="text-neutral-600">◇</span></span>
             </p>}
-          <p className="cognitive-composer-help">{runMode==='autonomous' ? tr('Chatten fortsätter som vanligt. Starta uppdrag separat; stoppa eller ändra pågående uppdrag med kontrollerna ovan.','Conversation remains available. Start a mission separately; use the controls above to stop or steer running work.')
-            : runMode==='planning' ? tr('Planning läser och föreslår. Inga verktygsändringar eller uppdrag startas.','Planning observes and proposes; no tool mutations or missions start.')
-            : tr('Manual svarar med läsverktyg utan att starta ett uppdrag.','Manual answers using read tools without starting a mission.')}</p>
+          <p className="cognitive-composer-help">{tr('Aura är autonom från start. Starta uppdrag för arbete via Gameboard; skicka meddelanden för samtal och kontroll. Befintliga mandat gäller.','Aura is autonomous from startup. Start mission for Gameboard work; send messages for conversation and control. Existing permissions apply.')}</p>
         </div>
       </form>
     </div>

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {EventEmitter} from 'node:events';
 import {githubGuiAuth} from '../../runtime/src/server/connected/githubGuiAuth.mjs';
+import {chromeExecutable,chromeLaunchArgs} from '../../agents/lib/chrome-bootstrap.mjs';
 import {prepareLiteBrowser} from '../../agents/lib/lite-browser-supervisor.mjs';
 import {automaticConnections} from '../../runtime/src/server/connected/automaticConnections.mjs';
 const tick=()=>new Promise(r=>setImmediate(r));
@@ -76,4 +77,20 @@ test('Lite automatically starts bundled editor, shell and configured CDP but not
  const started=[];
  const conn=automaticConnections({registry,env:{JACO_LITE:'1'},mcpHost:{status:()=>ids.map(id=>({id,status:'STOPPED',agentAccess:id==='off'?'off':'write',tools:[]})),start:async id=>{started.push(id);return [];}}});
  await conn.refresh();assert.deepEqual(started.sort(),['browser','editor','shell']);
+});
+
+test('Windows browser discovery prefers Chrome and falls back to Edge with the same private profile', t=>{
+ const env={ProgramFiles:fs.mkdtempSync(path.join(os.tmpdir(),'jaco-browser-win-'))};
+ t.after(()=>fs.rmSync(env.ProgramFiles,{recursive:true,force:true}));
+ const edge=path.join(env.ProgramFiles,'Microsoft/Edge/Application/msedge.exe');
+ const chrome=path.join(env.ProgramFiles,'Google/Chrome/Application/chrome.exe');
+ fs.mkdirSync(path.dirname(edge),{recursive:true});fs.writeFileSync(edge,'fixture');
+ assert.equal(chromeExecutable(env,'win32'),edge);
+ fs.mkdirSync(path.dirname(chrome),{recursive:true});fs.writeFileSync(chrome,'fixture');
+ assert.equal(chromeExecutable(env,'win32'),chrome);
+ assert.equal(chromeExecutable({...env,JACO_CHROME_EXECUTABLE:edge},'win32'),edge);
+ const args=chromeLaunchArgs({env,root:env.ProgramFiles,dataRoot:env.ProgramFiles,ports:{chrome:9222}},'win32');
+ assert.ok(args.includes('--remote-debugging-address=127.0.0.1'));
+ assert.ok(args.includes('--user-data-dir='+path.join(env.ProgramFiles,'Chrome-CDP')));
+ assert.ok(!args.includes('--no-sandbox'));
 });

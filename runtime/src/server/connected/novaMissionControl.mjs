@@ -10,7 +10,8 @@ import { novaTiming } from '../../../../agents/lib/nova-timing.mjs';
 import { checkCitations } from '../../../../agents/lib/evidence.mjs';
 import { stripEmoji } from '../../../../agents/lib/writing-policy.mjs';
 import { outgoingSpendCheck } from './spendGuard.mjs';
-import { operatorApprovalCheck } from '../../../../agents/lib/operator-action-guard.mjs';
+import { operatorApprovalCheck, categoryOf } from '../../../../agents/lib/operator-action-guard.mjs';
+import { standingToolAuthority } from '../../../../agents/lib/standing-tool-authority.mjs';
 import { findDuplicate } from './missionDedupe.mjs';
 import { TASK_FIELDS } from '../../../../agents/lib/task-fields.mjs';
 import { validateGithubRepoTask } from '../../../../agents/lib/github-repo.mjs';
@@ -494,6 +495,10 @@ export class NovaMissionControl {
       allowedTasks: base.metadata.allowedTasks.filter(t => this.allowedTasks.includes(t) && (!this.capabilities || this.capabilities.isTaskEnabled(t))),
       observation: decode(row.observation_json), receipts,
       activeTask: decode(row.active_task_json), failures: row.failures,
+      // Read-only public lease presence. Never expose the bearer lease token
+      // or owner identity. Operator takeover must wait for planning as well as
+      // execution to quiesce; READY alone must not be treated as permission.
+      executionLeaseActive: Boolean(row.token || row.owner || (row.lease_until && row.lease_until > this.now())),
       contract, contractStatus: contract ? contractVerificationStatus(contract, proof) : null,
       execution: contract ? codingExecutionSummary(contract, proof, row.phase) : null,
       preflight: this.bus.lastMissionEvent(id,'NOVA_PREFLIGHT')?.payload || null,
@@ -772,7 +777,45 @@ export class NovaMissionControl {
       this.db.prepare('DELETE FROM nova_spend_approvals WHERE mission_id=?').run(id);
       this.bus.event('NOVA_SPEND_APPROVED_ACTION', { missionId: id, payload: { reason: spend.reason, note: approval.note } });
     }
-    const harmful = operatorApprovalCheck(checked, { sandbox: Boolean(mission.contract), preApproved: mission.contract?.preApproved || [] });
+    // The standing operator mandate applies to missions as well as chat.
+    // A contract narrows scope; it does not require fresh authorization for
+    // categories that the operator already checked on in the GUI.
+    const target = checked.type;
+    // Read-only tasks must remain usable even when the operator turns off
+    // workspace mutation. Do not accidentally use LOCAL_MUTATION for every task.
+    const readTasks = new Set([
+      'detect-surfaces', 'health-check', 'check-revenue', 'web-fetch',
+      'browser-survey-site', 'desktop-windows', 'desktop-observe',
+      'android-status', 'android-observe', 'windows-wmi-read',
+      'screenshot', 'get-cursor', 'repo-list', 'repo-read', 'repo-scan',
+      'git-status', 'git-diff', 'mcp-call', 'skill-load', 'email-inbox',
+      'vault-list-secrets',
+    ]);
+    const sandbox = Boolean(mission.contract);
+    const category = categoryOf(operatorApprovalCheck(checked, { sandbox })?.reason);
+    // Decide effects from both the task and the actual guard classification.
+    // A published browser click is PUBLISH, not a generic external mutation;
+    // an authenticated sign-in is AUTH, not an arbitrary publish grant.
+    const outward = readTasks.has(target) ? 'READ'
+      : ['publish-or-deploy', 'merge-or-release', 'push-protected-branch'].includes(category)
+          || ['git-push', 'git-merge', 'github-create-repo', 'promote-hf'].includes(target) ? 'PUBLISH'
+      : category === 'sign-in' ? 'AUTH'
+      : ['external-write', 'send-in-operator-name'].includes(category)
+          || target === 'mcp-write' && !['shell', 'filesystem', 'git', 'repo', 'editor'].includes(checked.data?.server)
+          || ['browser-click', 'browser-type', 'android-tap', 'android-type'].includes(target) ? 'EXTERNAL_MUTATION'
+      : 'LOCAL_MUTATION';
+    const root = this.bus.workspaceRoot;
+    const standing = standingToolAuthority(root, outward);
+    if (standing.status === 'DENY' || standing.status === 'REVIEW') {
+      throw new Error('STANDING_MANDATE_' + standing.status + ':' + outward);
+    }
+    const standingApproved = [];
+    if (standingToolAuthority(root, 'PUBLISH').allowed) standingApproved.push('publish-or-deploy','merge-or-release','push-protected-branch');
+    if (standingToolAuthority(root, 'EXTERNAL_MUTATION').allowed) standingApproved.push('external-write','send-in-operator-name');
+    if (standingToolAuthority(root, 'AUTH').allowed) standingApproved.push('sign-in');
+    const harmful = operatorApprovalCheck(checked, {
+      sandbox, preApproved: mission.contract?.preApproved || [], standingApproved
+    });
     if (harmful) {
       const taskHash = `${checked.type}:${hashTaskInput(checked.data)}`;
       const gate = this.db.prepare('SELECT * FROM nova_action_gate WHERE mission_id=?').get(id);

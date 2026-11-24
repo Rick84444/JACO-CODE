@@ -36,6 +36,7 @@ import { SKILLS, WORKER_BASE, HF_USER, HF_SPACE, RECEIVER } from './skills.confi
 import { fetchRevenue } from '../gateway/src/commerce/adapters/stripe.mjs';
 import { seerCompletion } from './lib/seer-client.mjs';
 import { budgetedNovaOllamaCall } from './lib/nova-ollama-cost.mjs';
+import { isGeminiComputerUseModel, geminiEndpoint, geminiComputerUseTurn, geminiUsage } from './lib/gemini-computer-use.mjs';
 import { novaTiming, planningDeadline } from './lib/nova-timing.mjs';
 import { MissionClient, processMissionTurn, checkedReceipt, planTasks, BATCHABLE } from './lib/mission-client.mjs';
 import { performLocalWrite } from './lib/local-write.mjs';
@@ -50,7 +51,7 @@ hydrateEnvFromStore(process.env);
 import { redactDeep, takeHeld, generateSecret, validateVaultKey, holdValue } from './lib/secret-capture.mjs';
 import { readInbox, inboxDomain } from './lib/inbox.mjs';
 import { selectPerceptionRegion, captureMetrics } from './lib/adaptive-perception.mjs';
-import { freshMissionFrame, permittedFrameMessages, observedInputBinding } from './lib/mission-screen-frame.mjs';
+import { freshMissionFrame, permittedFrameMessages, observedInputBinding, missionScreenshotPath } from './lib/mission-screen-frame.mjs';
 import { createGithubNovaControlInbox } from './lib/github-control-inbox.mjs';
 import { enqueueVerifiedReceiptPromotion, flushLivingCorePromotions, ensureLivingCorePromotionState } from './lib/living-core-promotion.mjs';
 import { TASK_FIELDS, taskContract } from './lib/task-fields.mjs';
@@ -60,6 +61,7 @@ import { readOperatorLanguage, languageInstruction } from './lib/operator-langua
 import { nonTextModelKind, openAiChatCompletionsUrl, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
 import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs';
 import { assertTaskMandate } from './lib/org-permission.mjs';
+import { standingToolAuthority, operatorTaskEnabled, standingOperatorRules } from './lib/standing-tool-authority.mjs';
 import { withLocalOllamaContext } from './lib/ollama-native.mjs';
 import { validateGithubRepoTask, githubCreateRepo } from './lib/github-repo.mjs';
 import { validateRepoScanTask, runRepoScanTask } from './lib/repo-scan.mjs';
@@ -445,9 +447,18 @@ const runtime = {
     return runtimeApi("POST", "/api/desktop/hands-off/observe", hwnd ? { hwnd } : {});
   },
   async desktopAction(action) {
-    return runtimeApi("POST", "/api/desktop/hands-off/action", action);
+    return desktopActionRequest(action);
   },
 };
+
+// The desktop router answers an unverified action with 409 and the reason inside receipt.error. runtimeApi threw
+// that away as a bare RUNTIME_HTTP_409, which the loop could only treat as an unknown outcome: the live Notepad
+// run (2026-11-22) stopped for good when invoking a text box that has no Invoke pattern, instead of switching to
+// keyboard input. The receipt-aware request keeps the real reason, and a receipt that says success:false is a
+// definite failure the loop can recover from; transport errors and 5xx still count as unknown.
+export function desktopActionRequest(action, options = {}) {
+  return androidRuntimeRequest("POST", "/api/desktop/hands-off/action", action, { mutation: true, ...options });
+}
 
 // ── Local Tools ──────────────────────────────────────────────────────────────
 
@@ -721,6 +732,9 @@ const lawnmower = {
 // ── Computer Tools (raw mouse + keyboard + screenshot) ───────────────────────
 
 const INPUT_BRIDGE = join(__dirname, "input-bridge.ps1");
+// The desktop executor uses the exact file produced by Laser Vision; no
+// parallel screenshot store or second image-capture implementation.
+export const computerScreenshotPath = () => missionScreenshotPath();
 
 const inputBridgeDaemon=createInputBridgeDaemon(INPUT_BRIDGE);
 function runBridge(args) {
@@ -738,6 +752,10 @@ function runBridge(args) {
   // lost its receipt. The existing mission reconciliation owns that boundary.
   return inputBridgeDaemon.send(payload);
 }
+
+// Read-only native proof of the bridge's actual interactive Windows session.
+// Uses the same single serialized Win32 daemon as screenshot/input.
+export const computerSessionStatus = () => runBridge(['-Op', 'session_status']);
 
 const computerTools = {
   // Raw actions consume only a receipt-bound target, never an arbitrary HWND.
@@ -809,7 +827,7 @@ const computerTools = {
       };
     }
 
-    const file = join(STATE_DIR, 'latest-observation.png');
+    const file = computerScreenshotPath();
     const args = ['-Op', 'screenshot', '-OutFile', file];
     if (plan.rect) {
       args.push('-CropX', plan.rect.x, '-CropY', plan.rect.y, '-CropWidth', plan.rect.width, '-CropHeight', plan.rect.height);
@@ -938,6 +956,9 @@ export async function executeTask(task, state, mission = null) {
   assertTaskMandate(task.type);
   switch (task.type) {
     case "health-check": return runHealthCheck(state);
+    // Restart only the authorized local JACO services that are down (the canonical starter decides what).
+    // A failing tool must not end a mission: this is the repair route the strategy recovery sends Aura down.
+    case "stack-repair": return runtimeApi("POST", "/api/system/stack-repair");
     case "check-revenue":
       // Bug fix #1: Skip revenue check entirely when Stripe key is unavailable
       // (start-all.ps1 strips it from agent env for security). Prevents 4500+ dead log entries.
@@ -982,7 +1003,17 @@ export async function executeTask(task, state, mission = null) {
     case "get-cursor":     return computerTools.getCursor();
     // A project mission works in its own worktree: its shell must run there too. It ran in the main checkout, so `git add`
     // could not see the files the mission had written, and `npm install` changed the operator's own checkout (2026-11-06).
-    case "shell": return localTools.shell(task.data.command, task.data.timeout, mission?.metadata?.projectRoot ? workspaceFor(mission).root : undefined);
+    case "shell": {
+      // The legacy worker's direct execSync route must honor the same live
+      // standing policy as Aura chat/MCP, including immediate operator revokes.
+      const authorityRoot = process.env.JACO_WORKSPACE_ROOT || process.env.JACO_NOVA_CODING_ROOT || process.cwd();
+      const granted = standingToolAuthority(authorityRoot, 'LOCAL_MUTATION');
+      if (!operatorTaskEnabled(authorityRoot, 'shell')) return { ok: false, error: 'TASK_TURNED_OFF_BY_OPERATOR:shell' };
+      if (granted.status === 'DENY' || granted.status === 'REVIEW')
+        return { ok: false, error: 'SHELL_STANDING_MANDATE_' + granted.status };
+      return localTools.shell(task.data.command, task.data.timeout,
+        mission?.metadata?.projectRoot ? workspaceFor(mission).root : undefined);
+    }
     case "repo-list":
     case "repo-read":
     case "repo-write":
@@ -1694,7 +1725,7 @@ async function callBrainStep(state, { mission, observation, continuity = null },
   if (!process.env.NODE_TEST_CONTEXT && Array.isArray(mission?.allowedTasks) && (planningAllowedTasks.includes('mcp-call') || planningAllowedTasks.includes('mcp-write'))) {
     try { ctx.mcpTools = await mcpCatalog({ runtimeUrl: CONFIG.runtimeUrl, write: planningAllowedTasks.includes('mcp-write') }); } catch {}
     // Approved notes for Nova's own tasks, learned from earlier mistakes (MCP tools carry theirs inline).
-    const learned = Object.fromEntries(Object.entries(learnedTaskNotes()).filter(([task]) => planningAllowedTasks.includes(task)));
+    const learned = Object.fromEntries(Object.entries(learnedTaskNotes({runtimeUrl:CONFIG.runtimeUrl})).filter(([task]) => planningAllowedTasks.includes(task)));
     if (Object.keys(learned).length) ctx.learnedTaskNotes = learned;
   }
   // A skill run ("Skill <id>: ..."): the skill's instructions are the procedure for the goal. If the
@@ -1728,7 +1759,15 @@ async function callBrainStep(state, { mission, observation, continuity = null },
   const { mcpTools: _catalog, learnedTaskNotes: _notes, ...nativeCtx } = ctx;
   const userMsgNative = "Current state:\n" + JSON.stringify(nativeCtx) + routineHint + "\nCall the tool(s) for the next step(s) of mission.goal, or complete/blocked.";
   const frame = freshMissionFrame(mission,join(STATE_DIR,'latest-observation.png'));
-  const system = brainSystemFor(planningAllowedTasks, Boolean(mission?.metadata?.parent?.graphId));
+  const originalSystem = brainSystemFor(planningAllowedTasks, Boolean(mission?.metadata?.parent?.graphId));
+  const operatorRuleRoot = process.env.JACO_WORKSPACE_ROOT || process.env.JACO_NOVA_CODING_ROOT || process.cwd();
+  const standingRules = standingOperatorRules(operatorRuleRoot);
+  // Apply operator-written GUI rules in missions as well as chat, without
+  // allowing free text to mint new tool authority or inflate small-model prompts.
+  const system = standingRules ? originalSystem
+    + '\nOPERATOR_STANDING_RULES (behavior only; permissions are enforced at dispatch):\n'
+    + standingRules.slice(0, process.env.JACO_AURA_LEAN === '1' ? 700 : 4000)
+    : originalSystem;
   state.plannerInputMetrics.systemChars=system.length;
   if (process.env.NOVA_BRAIN_MODE !== 'direct') {
     let correction = '';
@@ -1791,7 +1830,7 @@ Plans already rejected this turn (do not repeat them): ${rejectedPlans.slice(-3)
     }
     console.log(`[DEBUG] Trying provider: ${provider.name} model: ${provider.model}`);
     // The structured fallback cannot process tool_search; use bounded generic MCP tasks for large catalogs.
-    const native = nativeToolsFor(provider) ? structuredPlannerTools(planningAllowedTasks, profile==='compact'?focusPlannerToolDescriptions(mcpCatalogTools(),mission):mcpCatalogTools(), learnedTaskNotes(), Boolean(mission?.metadata?.parent?.graphId)) : null;
+    const native = nativeToolsFor(provider) ? structuredPlannerTools(planningAllowedTasks, profile==='compact'?focusPlannerToolDescriptions(mcpCatalogTools({runtimeUrl:CONFIG.runtimeUrl,write:planningAllowedTasks.includes('mcp-write')}),mission):mcpCatalogTools({runtimeUrl:CONFIG.runtimeUrl,write:planningAllowedTasks.includes('mcp-write')}), learnedTaskNotes({runtimeUrl:CONFIG.runtimeUrl}), Boolean(mission?.metadata?.parent?.graphId)) : null;
     state.plannerInputMetrics.nativeToolsCount=native?.tools.length||0;
     state.plannerInputMetrics.nativeToolsChars=native?JSON.stringify(native.tools).length:0;
     try {
@@ -2037,6 +2076,42 @@ export async function agentChat({ messages, tools, mission }, rawFetch = fetch, 
     if (agentToolsUnsupported.has(id)) continue;
     const cooldownMs = (providerCooldownUntil.get(id) || 0) - Date.now();
     if (cooldownMs > 0) { failures.push(`${provider.name}:${cooldownMs <= TEMPORARY_COOLDOWN_MS ? 'COOLDOWN' : 'PARKED'}`); continue; }
+    // Gemini computer-use models speak only the native protocol; the adapter translates their UI
+    // actions into the same bound input tasks. Same budget reservation, same image opt-in.
+    if (provider.name === 'gemini' && isGeminiComputerUseModel(provider.model)) {
+      try {
+        const url = geminiEndpoint(provider.model);
+        const signal = AbortSignal.timeout(novaTiming().requestMs);
+        const headers = { 'x-goog-api-key': key };
+        const send = async body => {
+          const cloud = isPaidProvider(provider)
+            ? await budgetedNovaOllamaCall({ provider: { ...provider, url }, requestBody: body, runtimeUrl: CONFIG.runtimeUrl,
+              token: env.GATEWAY_TOKEN || env.JACO_GATEWAY_TOKEN || '', fetchImpl, signal, headers,
+              maxTokens: body.generationConfig?.maxOutputTokens, usageOf: geminiUsage })
+            : null;
+          const res = cloud?.response || await fetchImpl(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body), signal });
+          const raw = cloud?.rawBody ?? await res.text();
+          let data = cloud?.data; if (!cloud) { try { data = JSON.parse(raw); } catch { data = null; } }
+          return { status: res.status, data, raw, response: res };
+        };
+        const turn = await geminiComputerUseTurn({ messages: permittedFrameMessages(messages, frame, provider, env), tools, mission, frame, send });
+        if (turn.http) {
+          const { status = 0, raw = '', data = null, response } = turn.http;
+          if (status === 429) { parkOn429(provider, response || {}, raw); failures.push(`${provider.name}:429`); continue; }
+          parkProvider(provider, providerParkMs({ status }), `HTTP ${status}`);
+          log("warn", "brain", `${id} HTTP ${status}: ${String(data?.error?.message || raw || '').replace(/\s+/g, ' ').slice(0, 300)}`);
+          failures.push(`${provider.name}:HTTP_${status}`);
+          continue;
+        }
+        if (!turn.local) recordModelCall(provider, "plan");
+        log("info", "brain", `${id} ${turn.local ? 'continued locally' : 'answered'}: ${turn.reply.tool_calls?.length || 0} tool call(s)`);
+        return { content: turn.reply.content || '', tool_calls: turn.reply.tool_calls || [], provider: id };
+      } catch (error) {
+        parkProvider(provider, providerParkMs({ error }), String(error?.message || error).slice(0, 80));
+        failures.push(`${provider.name}:${String(error?.message || error).slice(0, 40)}`);
+        continue;
+      }
+    }
     const requestBody = {
       model: provider.model, messages:permittedFrameMessages(messages,frame,provider,env), tools, tool_choice: "auto", temperature: 0.2,
       max_tokens: provider.name === "deepseek" ? Number(env.JACO_DEEPSEEK_MAX_TOKENS) || 32768 : 8192,
@@ -2161,7 +2236,7 @@ async function runAgentLoop(state) {
       mission.source === 'seer-mission-graph' && Boolean(mission.metadata?.parent?.graphId)),
     preflight: context => runCodingPreflight(state, context),
     // A failed tool is investigated and, where safe, repaired before the model decides what to do next.
-    diagnose: createToolDiagnoser({ runtimeUrl: CONFIG.runtimeUrl, onServerStarted: () => resetMcpCatalog() }),
+    diagnose: createToolDiagnoser({ runtimeUrl: CONFIG.runtimeUrl, onServerStarted: () => resetMcpCatalog({runtimeUrl:CONFIG.runtimeUrl}) }),
     toolsFor: async mission => {
       const permitted = capsuleAllowedTasks(mission);
       const write = permitted.includes('mcp-write');
@@ -2169,9 +2244,9 @@ async function runAgentLoop(state) {
         try { await mcpCatalog({ runtimeUrl: CONFIG.runtimeUrl, write }); }
         catch (error) { log('warn', 'agent', `MCP catalog unavailable: ${String(error?.message || error).slice(0, 120)}`); }
       }
-      const catalog = mcpCatalogTools({ write });
+      const catalog = mcpCatalogTools({ write, runtimeUrl:CONFIG.runtimeUrl });
       return plannerTools(permitted, process.env.NOVA_CONTEXT_PROFILE === 'standard'
-        ? catalog : focusPlannerToolDescriptions(catalog, mission), learnedTaskNotes(),
+        ? catalog : focusPlannerToolDescriptions(catalog, mission), learnedTaskNotes({runtimeUrl:CONFIG.runtimeUrl}),
         mission.source === 'seer-mission-graph' && Boolean(mission.metadata?.parent?.graphId));
     },
     refreshIntro: true,

@@ -8,7 +8,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-export const CAPABILITY_SCHEMA = 'jaco.capabilities/v1';
+import { CAPABILITY_SCHEMA, readCapabilityState, markCapabilityInitialized } from '../../../../agents/lib/capability-state.mjs';
+export { CAPABILITY_SCHEMA };
+
+// Undefined selects the canonical registry. A configured list is a deliberate ceiling.
+export function configuredTaskCeiling(value) {
+  const raw = String(value ?? '').trim();
+  return !raw || raw === 'sandbox' ? undefined : raw.split(',').map(s => s.trim());
+}
 
 // Operator-facing grouping of the mission task types (agents/lib/task-fields.mjs).
 export const TASK_GROUPS = [
@@ -58,7 +65,8 @@ const label = id => LABEL[id] || id.replace(/^android-/, 'Android ').replace(/-/
 
 export const ALWAYS_ASK = [
   { id: 'spend', label: 'Outgoing payments and new financial commitments', why: 'Money leaving your accounts always needs your decision.' },
-  { id: 'leaving-sandbox', label: 'Leaving the contract sandbox', why: 'Pushing a shared branch, publishing, deploying, sending in your name, signing in, deleting outside the worktree.' },
+  // Outward writes are decided by the signed standing mandate and exact scope,
+  // not permanently classified as a fresh human-approval request.
 ];
 
 export function taskCatalog(taskIds) {
@@ -81,30 +89,36 @@ export class CapabilityPolicy {
   constructor(file, { taskIds = [] } = {}) {
     this.file = file;
     this.taskIds = new Set(taskIds);
-    this.state = this.#read();
+    // Migrate an already saved legacy preference file before accepting a
+    // later missing-file state as a fresh installation.
+    if (readCapabilityState(file).status === 'READY') markCapabilityInitialized(file);
   }
 
-  #read() {
-    try {
-      const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      if (saved?.schema === CAPABILITY_SCHEMA) {
-        return {
-          disabledTasks: [...new Set((saved.disabledTasks || []).filter(t => typeof t === 'string'))],
-          disabledSkills: [...new Set((saved.disabledSkills || []).filter(t => typeof t === 'string' && ID.test(t)))],
-          updatedAt: saved.updatedAt || null,
-        };
-      }
-    } catch { /* a missing or damaged file means the default: everything on */ }
-    return { disabledTasks: [], disabledSkills: [], updatedAt: null };
+  #read() { return readCapabilityState(this.file); }
+
+  snapshot() {
+    const state=this.#read();
+    return {schema:CAPABILITY_SCHEMA,...state,
+      disabledTasks:state.status==='INVALID' ? [...this.taskIds].sort() : state.disabledTasks};
+  }
+  isTaskEnabled(id) {
+    const state=this.#read();
+    return state.status!=='INVALID' && !state.disabledTasks.includes(id);
+  }
+  isSkillEnabled(id) {
+    const state=this.#read();
+    return state.status!=='INVALID' && !state.disabledSkills.includes(id);
+  }
+  enabledTasks(ids) {
+    const state=this.#read();
+    return state.status==='INVALID' ? [] : ids.filter(id=>!state.disabledTasks.includes(id));
   }
 
-  snapshot() { return { schema: CAPABILITY_SCHEMA, ...this.state }; }
-  isTaskEnabled(id) { return !this.state.disabledTasks.includes(id); }
-  isSkillEnabled(id) { return !this.state.disabledSkills.includes(id); }
-  enabledTasks(ids) { return ids.filter(id => this.isTaskEnabled(id)); }
-
-  // changes: { tasks: { 'repo-write': false, ... }, skills: { 'repo-insight': true, ... } } — true turns on, false off.
+  // Explicit operator updates only. Never silently replace corrupt preferences
+  // with defaults, since the missing information may include disabled tools.
   update({ tasks = {}, skills = {} } = {}, by = 'operator') {
+    const current=this.#read();
+    if(current.status==='INVALID') throw new Error('CAPABILITY_STATE_INVALID: restore the policy or explicitly reset it');
     const apply = (list, changes, valid) => {
       const set = new Set(list);
       for (const [id, on] of Object.entries(changes || {})) {
@@ -113,21 +127,29 @@ export class CapabilityPolicy {
       }
       return [...set].sort();
     };
-    const next = {
-      disabledTasks: apply(this.state.disabledTasks, tasks, id => this.taskIds.has(id)),
-      disabledSkills: apply(this.state.disabledSkills, skills, id => ID.test(id)),
+    return this.#persist({
+      disabledTasks: apply(current.disabledTasks, tasks, id => this.taskIds.has(id)),
+      disabledSkills: apply(current.disabledSkills, skills, id => ID.test(id)),
       updatedAt: new Date().toISOString(),
-    };
+    },by);
+  }
+
+  #persist(next,by) {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
+    markCapabilityInitialized(this.file);
     const tmp = `${this.file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-    fs.writeFileSync(tmp, `${JSON.stringify({ schema: CAPABILITY_SCHEMA, ...next, by }, null, 2)}\n`, { mode: 0o600 });
-    fs.renameSync(tmp, this.file);
-    this.state = next;
+    try {
+      fs.writeFileSync(tmp, `${JSON.stringify({ schema: CAPABILITY_SCHEMA, ...next, by }, null, 2)}\n`, { mode: 0o600, flag:'wx' });
+      fs.renameSync(tmp, this.file);
+    } finally {
+      try { fs.unlinkSync(tmp); } catch(error) { if(error?.code!=='ENOENT') throw error; }
+    }
     return this.snapshot();
   }
 
+  // An explicit operator reset is the recovery path if the existing record is
+  // unreadable; no automatic reset can expand permission.
   reset(by = 'operator') {
-    return this.update({ tasks: Object.fromEntries(this.state.disabledTasks.map(t => [t, true])),
-      skills: Object.fromEntries(this.state.disabledSkills.map(s => [s, true])) }, by);
+    return this.#persist({disabledTasks:[],disabledSkills:[],updatedAt:new Date().toISOString()},by);
   }
 }

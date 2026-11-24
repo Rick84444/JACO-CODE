@@ -94,3 +94,21 @@ test('Aura supports explicit selection and one-step custom URL+key entry', () =>
   assert.match(source, /aria-label=\{tr\('API-nyckel för en egen modellleverantör', 'API key for a custom model provider'\)\}/);
   assert.match(source, /\{ url: target\.trim\(\), \.\.\.\(key\.trim\(\) \? \{ key: key\.trim\(\) \} : \{\}\) \}/);
 });
+
+test('operator custom endpoints isolate credentials by address and accept keyless discovery', async () => {
+  const fetchImpl=async (url, init)=>{
+    assert.equal(init.redirect,'error');
+    assert.equal(init.headers.authorization,undefined);
+    return new Response(JSON.stringify({data:[{id:'arbitrary-model'}]}),{status:200});
+  };
+  const opts={env:{},fetchImpl,isolateEndpoint:true};
+  const a=await discoverProvider('https://llm.example.org/v1',opts);
+  const b=await discoverProvider('https://llm.other.org/v1',opts);
+  assert.equal(a.state,'READY');
+  assert.equal(a.requiresKey,false);
+  assert.notEqual(a.id,b.id);
+  assert.notEqual(a.apiKeyEnv,b.apiKeyEnv);
+  const local=await discoverProvider('http://127.0.0.1:8080/v1',opts);
+  assert.equal(local.requiresKey,false);
+  assert.equal(local.defaultModel,'arbitrary-model');
+});

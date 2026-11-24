@@ -2,6 +2,50 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { activationReport, formatReport, runtimeUp } from '../../agents/lib/activate.mjs';
 
+import { localCoreActivationReport } from '../../agents/jaco-cli.mjs';
+
+test('local Core status fallback is read-only and requires a validated activation report', async () => {
+  const calls = [];
+  const expected = {
+    schema: 'jaco.activation/v2', runtime: { up: true, version: '0.23.1' },
+    tools: { servers: [{ id: 'jaco', status: 'READY' }], toolCount: 42 },
+    problems: [], ok: true,
+  };
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, method: init.method });
+    return { ok: true, json: async () => ({ success: true, report: expected }) };
+  };
+  const actual = await localCoreActivationReport({ baseUrl: 'http://127.0.0.1:3000', fetchImpl });
+  assert.deepEqual(actual, expected);
+  assert.deepEqual(calls, [{ url: 'http://127.0.0.1:3000/api/jaco/activation', method: 'GET' }]);
+});
+
+test('local Core activation is POST only when explicitly requested', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, method: init.method });
+    return { ok: true, json: async () => ({ success: true, report: {
+      schema: 'jaco.activation/v2', runtime: { up: true },
+      tools: { servers: [] }, problems: [], ok: false,
+    } }) };
+  };
+  const actual = await localCoreActivationReport({ baseUrl: 'http://localhost:3000', activate: true, fetchImpl });
+  assert.equal(actual.ok, false);
+  assert.deepEqual(calls, [{ url: 'http://localhost:3000/api/jaco/activate', method: 'POST' }]);
+});
+
+test('CLI never delegates authentication to non-local targets or forged responses', async () => {
+  let called = 0;
+  const malicious = async () => { called++; return { ok: true, json: async () => ({ success: true, report: {} }) }; };
+  for (const baseUrl of ['https://localhost:3000', 'http://192.168.1.1:3000', 'http://example.com', 'http://127.0.0.1.evil.test:3000', 'http://user@localhost:3000', 'http://127.0.0.1:3000/api', 'invalid']) {
+    assert.equal(await localCoreActivationReport({ baseUrl, fetchImpl: malicious }), null);
+  }
+  assert.equal(called, 0);
+  assert.equal(await localCoreActivationReport({ baseUrl: 'http://[::1]:3000', fetchImpl: malicious }), null);
+  assert.equal(called, 1);
+});
+
+
 // A runtime stand-in: tool servers that start on request, a provider scan and the planner state.
 function fakeRuntime({ servers, scan, planner, workplace = { state: 'RUNNING', novaState: 'RUNNING' }, startFails = [], identity = {}, executorHealth = null }) {
   const calls = [];
@@ -229,4 +273,25 @@ test('Termux jaco entrypoint routes activate/status through the product activati
 test('npm jaco:status uses the same activation truth command', () => {
   const pkg = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'));
   assert.equal(pkg.scripts['jaco:status'], 'node agents/jaco-cli.mjs status');
+});
+
+test('Debian CLI prefers the live portable launcher token over stale Termux and state files', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-debian-cli-'));
+  const state = path.join(root, 'state');
+  fs.mkdirSync(state);
+  const runtimeEnv = path.join(root, 'runtime.env');
+  fs.writeFileSync(path.join(root, '.env'), 'JACO_GATEWAY_TOKEN="launcher-current"\nGATEWAY_TOKEN="launcher-old"\n');
+  fs.writeFileSync(runtimeEnv, 'GATEWAY_TOKEN="termux-stale"\n');
+  fs.writeFileSync(path.join(state, 'gateway.token'), 'state-stale\n');
+  assert.equal(gatewayToken({JACO_RUNTIME_ENV:runtimeEnv,JACO_STATE_DIR:state},root),'launcher-current');
+  assert.equal(gatewayToken({TERMUX_VERSION:'0.118',JACO_RUNTIME_ENV:runtimeEnv,JACO_STATE_DIR:state},root),'termux-stale');
+  assert.equal(gatewayToken({GATEWAY_TOKEN:'explicit-override',JACO_RUNTIME_ENV:runtimeEnv,JACO_STATE_DIR:state},root),'explicit-override');
+});
+
+test('installed portable CLI reads JACO_DATA_DIR .env as local-stack does',()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-cli-installed-'));
+  const data=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-cli-data-'));
+  fs.writeFileSync(path.join(root,'.env'),'GATEWAY_TOKEN="checkout-old"\n');
+  fs.writeFileSync(path.join(data,'.env'),'GATEWAY_TOKEN="installed-current"\n');
+  assert.equal(gatewayToken({JACO_DATA_DIR:data,JACO_RUNTIME_ENV:path.join(root,'missing.env')},root),'installed-current');
 });

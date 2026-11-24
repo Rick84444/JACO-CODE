@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { createToolRegistry } from './tool-registry.mjs';
+import { privateAuraTools, assertPrivateAuraBridge } from './private-aura-tools.mjs';
 
 // Dedicated profiles for external/private ChatGPT MCP connections. The legacy
 // full catalog remains available to existing local JACO clients only when
@@ -35,7 +36,15 @@ export function buildJacoMcpServer(context) {
     { name: 'jaco-autonomus-ide', version: '0.22.0' },
     { capabilities: { tools: { listChanged: false } } }
   );
-  for (const tool of selectJacoMcpTools(createToolRegistry(context), context.profile)) {
+  const profile = context.profile ?? process.env.JACO_MCP_TOOL_PROFILE ?? 'full';
+  const registry = createToolRegistry(context);
+  // The mission profile is separate from the legacy 42-tool catalog.
+  // An external client cannot select it by adding a field to an MCP call.
+  if (profile === 'aura-private') assertPrivateAuraBridge(context.core, context.env);
+  const selected = profile === 'aura-private'
+    ? [...selectJacoMcpTools(registry, 'cognitive-read'), ...privateAuraTools(context)]
+    : selectJacoMcpTools(registry, profile);
+  for (const tool of selected) {
     server.registerTool(tool.name, tool.config, async args => {
       try { return asResult(await tool.handler(args)); }
       catch (error) {

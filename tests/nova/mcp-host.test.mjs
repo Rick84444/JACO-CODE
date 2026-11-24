@@ -81,7 +81,7 @@ test('Nova: mcp-call is validated, the catalog lists only read-only tools, and c
   for (const bad of [{ server: 'Git!', tool: 'x' }, { server: 'git', tool: 'a b' }, { server: 'git', tool: 'x', arguments: [] }]) {
     assert.throws(() => validateMcpCall({ type: 'mcp-call', data: bad }), /MCP_/);
   }
-  resetMcpCatalog();
+  resetMcpCatalog({clearCooldowns:true});
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     calls.push(`${init.method || 'GET'} ${url.replace('http://rt', '')}`);
@@ -142,7 +142,7 @@ test('agent access per server: read, write and off; denied tools and protected p
     assert.equal((await host.call('fake', 'write', { text: 'x' }, { actor: 'agent' })).content[0].text, 'write:x', 'write access runs a changing tool');
     await assert.rejects(host.call('fake', 'write', {}, { readOnly: true }), /MCP_TOOL_NOT_READ_ONLY:fake.write/, 'an mcp-call (read mode) still refuses it');
     await assert.rejects(host.call('fake', 'crash', {}, { actor: 'agent' }), /MCP_TOOL_DENIED:fake.crash/);
-    for (const p of ['.env', 'a/.env.local', '.git/config', 'node_modules/x/index.js', 'keys/secret.txt']) {
+    for (const p of ['.env', 'a/.env.local', '.git/config', 'node_modules/x/index.js', 'keys/secret.txt', '.jaco/state/capabilities.json']) {
       await assert.rejects(host.call('fake', 'write', { path: p }, { actor: 'agent' }), /MCP_PROTECTED_PATH/, p);
     }
     assert.equal((await host.call('fake', 'write', { path: 'src/a.js', content: 'mentions a secret' }, { actor: 'agent' })).content[0].text, 'write:', 'content may mention secrets');
@@ -152,7 +152,7 @@ test('agent access per server: read, write and off; denied tools and protected p
     const s = host.status().find(x => x.id === 'fake');
     assert.equal(s.agentAccess, 'off');
     assert.deepEqual(s.tools.map(t => t.agentAllowed), [false, false, false]);
-    assert.deepEqual([s.stats.calls, s.stats.refused, s.stats.lastCall.actor], [3, 8, 'operator'], 'calls and refusals are counted');
+    assert.deepEqual([s.stats.calls, s.stats.refused, s.stats.lastCall.actor], [3, 9, 'operator'], 'all calls and all nine refusals, including the GUI policy file, are counted');
     assert.match(host.recentCalls(2)[1].error, /^MCP_AGENT_ACCESS_OFF:fake.echo/, 'a refusal is recorded with its reason');
   } finally { host.stopAll(); }
 });
@@ -188,6 +188,9 @@ test('a server that exited between calls is started again and the call succeeds'
     await host.start('fake');
     host.clients.get('fake').proc.kill();
     await new Promise(r => setTimeout(r, 300));
+    const stopped=host.status().find(s=>s.id==='fake');
+    assert.notEqual(stopped.status,'READY');
+    assert.deepEqual(stopped.tools,[],'old descriptors must not look ready');
     assert.equal((await host.call('fake', 'echo', { text: 'again' })).content[0].text, 'echo:again');
   } finally { host.stopAll(); }
 });
@@ -195,7 +198,7 @@ test('a server that exited between calls is started again and the call succeeds'
 test('Nova: changing tools appear only for missions with mcp-write and run as mcp-write steps', async () => {
   const { plannerTools, planFromToolCalls } = await import('../../agents/lib/native-tools.mjs');
   const { mcpCatalogTools } = await import('../../agents/lib/mcp-tools.mjs');
-  resetMcpCatalog();
+  resetMcpCatalog({clearCooldowns:true});
   const bodies = [];
   const fetchImpl = async (url, init = {}) => {
     if (url.endsWith('/api/mcp/tools')) return new Response(JSON.stringify({ servers: [{ id: 'filesystem', name: 'Files', role: 'r', status: 'READY', tools: [
@@ -210,7 +213,7 @@ test('Nova: changing tools appear only for missions with mcp-write and run as mc
   assert.deepEqual(reading[0].tools, ['read_file(path?): Read']);
   const writing = await mcpCatalog({ env: {}, fetchImpl, runtimeUrl: 'http://rt', write: true });
   assert.deepEqual(writing[0].tools, ['read_file(path?): Read', 'write_file(path?, content?) [changes: mcp-write]: Write'], 'a tool the operator did not open stays out');
-  const { resolve } = plannerTools(['mcp-call', 'mcp-write'], mcpCatalogTools());
+  const { resolve } = plannerTools(['mcp-call', 'mcp-write'], mcpCatalogTools({write:true,runtimeUrl:'http://rt'}));
   const plan = planFromToolCalls({ tool_calls: [{ function: { name: 'mcp__filesystem__write_file', arguments: '{"path":"a.txt","content":"x"}' } }] }, resolve);
   assert.equal(plan.task.type, 'mcp-write');
   await callMcpTool({ server: 'filesystem', tool: 'write_file', arguments: {} }, { env: {}, fetchImpl, runtimeUrl: 'http://rt', mode: 'write' });
@@ -292,4 +295,148 @@ test('Lite offers the shell server on every host where its bundle exists', async
       assert.equal(servers.shell.env.JACO_SHELL_WORKSPACE, dir);
     }
   } finally { if (before === undefined) delete process.env.JACO_LITE; else process.env.JACO_LITE = before; }
+});
+
+test('partial MCP discovery preserves ready tools and bounds slow connector waits',async()=>{
+ const {mcpCatalogTools}=await import('../../agents/lib/mcp-tools.mjs');
+ resetMcpCatalog({clearCooldowns:true});let starts=0;
+ const ready={id:'fast',status:'READY',agentAccess:'read',tools:[{name:'read',description:'Read',readOnly:true,agentAllowed:true}]};
+ const slow={id:'slow',status:'STOPPED',transport:'stdio',agentAccess:'read',tools:[]};
+ const remote={id:'remote',transport:'http',status:'STOPPED',agentAccess:'read',tools:[]};
+ const stopped={id:'stale',status:'FAILED',agentAccess:'read',tools:[{name:'old',readOnly:true}]};
+ const disabled={id:'off',status:'READY',agentAccess:'off',tools:ready.tools};
+ const fetchImpl=async(url)=>{
+  if(url.endsWith('/api/mcp/start')){starts++;return new Promise(()=>{});}
+  if(url.endsWith('/api/tool-notes'))return Response.json({notes:{}});
+  return Response.json({success:true,servers:[ready,slow,remote,stopped,disabled]});
+ };
+ const begin=Date.now();const catalog=await mcpCatalog({runtimeUrl:'http://rt',env:{},fetchImpl,discoveryWaitMs:100});
+ assert.ok(Date.now()-begin<2000);assert.equal(starts,1);assert.equal(catalog.find(s=>s.server==='slow').unavailable,true);
+ assert.deepEqual(mcpCatalogTools({runtimeUrl:'http://rt'}).map(t=>t.server),['fast']);
+ resetMcpCatalog({clearCooldowns:true});
+});
+
+test('revoked access during MCP handshake refuses dispatch and stale descriptors',async()=>{
+ const cfg=path.join(dir,'race-access.json');fs.writeFileSync(cfg,JSON.stringify({servers:{fake:{command:process.execPath,args:[serverFile],agentAccess:'read'}}}));
+ const host=new StdioMcpHost({configFile:cfg,repoRoot:dir,runtimeRoot:dir});
+ try{
+  const c=host.client('fake');const start=c.start.bind(c);
+  c.start=async()=>{await start();host.setAccess('fake',{agentAccess:'off'});return c;};
+  await assert.rejects(host.call('fake','echo',{}, {actor:'agent',readOnly:true}),e=>/MCP_AGENT_ACCESS_OFF/.test(e.message)&&e.dispatchState==='NOT_DISPATCHED');
+ }finally{host.stopAll();}
+});
+
+test('concurrent refresh is single flight and keeps the prior snapshot until atomic publication',async()=>{
+  const {mcpCatalogTools,learnedTaskNotes}=await import('../../agents/lib/mcp-tools.mjs');
+  resetMcpCatalog({clearCooldowns:true});
+  const base='http://single-flight';let gets=0,release;
+  const ready={id:'fast',status:'READY',agentAccess:'write',tools:[{name:'read',readOnly:true,agentAllowed:true},{name:'write',readOnly:false,agentAllowed:true}]};
+  const fetchImpl=async url=>{
+    if(url.endsWith('/api/tool-notes'))return Response.json({notes:{shell:[{note:'known'}]}});
+    gets++;
+    if(gets===2)await new Promise(resolve=>{release=resolve;});
+    return Response.json({servers:[ready]});
+  };
+  const options={runtimeUrl:base,env:{},fetchImpl};
+  await mcpCatalog({...options,now:1000,write:true});
+  const a=mcpCatalog({...options,now:17000,write:true});
+  const b=mcpCatalog({...options,now:17000,write:false});
+  assert.equal(gets,2,'both refresh callers share one network request');
+  assert.deepEqual(mcpCatalogTools({runtimeUrl:base,write:true}).map(t=>t.name),['read','write']);
+  assert.deepEqual(mcpCatalogTools({runtimeUrl:base}).map(t=>t.name),['read']);
+  assert.equal(learnedTaskNotes({runtimeUrl:base}).shell,'known');
+  release();
+  const [write,read]=await Promise.all([a,b]);
+  assert.equal(write[0].tools.length,2);assert.equal(read[0].tools.length,1);
+  assert.deepEqual(mcpCatalogTools({runtimeUrl:base}).map(t=>t.name),['read']);
+  assert.deepEqual(mcpCatalogTools({runtimeUrl:base,write:true}).map(t=>t.name),['read','write']);
+  resetMcpCatalog({clearCooldowns:true});
+});
+test('runtime invalidation retains crash cooldown and never republishes a retired refresh',async()=>{
+  const {mcpCatalogTools}=await import('../../agents/lib/mcp-tools.mjs');
+  resetMcpCatalog({clearCooldowns:true});
+  const base='http://cooldown';let starts=0;
+  const fetchImpl=async url=>{
+    if(url.endsWith('/api/tool-notes'))return Response.json({notes:{}});
+    if(url.endsWith('/api/mcp/start')){starts++;return Response.json({success:false});}
+    return Response.json({servers:[{id:'bad',status:'FAILED',agentAccess:'read',tools:[]}]});
+  };
+  const opts={runtimeUrl:base,env:{},fetchImpl};
+  await mcpCatalog({...opts,now:1000});
+  await callMcpTool({server:'bad',tool:'read'},{runtimeUrl:base,env:{},fetchImpl:async()=>new Response(JSON.stringify({error:'MCP_SERVER_EXITED:bad',success:false,dispatchState:'NOT_DISPATCHED'}),{status:409})});
+  await mcpCatalog({...opts,now:2000});assert.equal(starts,1);
+  await mcpCatalog({...opts,now:62000});assert.equal(starts,2);
+  let release;
+  const late=mcpCatalog({runtimeUrl:'http://late',env:{},fetchImpl:async url=>{
+    if(url.endsWith('/api/tool-notes'))return Response.json({notes:{}});
+    return new Promise(resolve=>{release=()=>resolve(Response.json({servers:[{id:'late',status:'READY',tools:[{name:'read',readOnly:true}]}]}));});
+  }});
+  const rejected=assert.rejects(late,/MCP_CATALOG_REFRESH_INVALIDATED/);
+  resetMcpCatalog({runtimeUrl:'http://late'});release();await rejected;
+  assert.deepEqual(mcpCatalogTools({runtimeUrl:'http://late'}),[]);
+  resetMcpCatalog({clearCooldowns:true});
+});
+test('changed launch definition has no stale error, tools or start timestamp',async()=>{
+ const cfg=path.join(dir,'changed-launch.json');
+ const entry={command:process.execPath,args:[serverFile]};
+ fs.writeFileSync(cfg,JSON.stringify({servers:{fake:entry}}));
+ const host=new StdioMcpHost({configFile:cfg,repoRoot:dir,runtimeRoot:dir});
+ try{
+  await host.start('fake');host.clients.get('fake').error='retired error';
+  fs.writeFileSync(cfg,JSON.stringify({servers:{fake:{...entry,args:[serverFile,'changed']}}}));
+  const state=host.status().find(s=>s.id==='fake');
+  assert.equal(state.status,'STOPPED');assert.deepEqual(state.tools,[]);
+  assert.equal(state.error,null);assert.equal(state.startedAt,null);
+ }finally{host.stopAll();}
+});
+
+
+test('failed custom MCP connections are disabled reversibly without affecting working or built-in servers', async t => {
+  const cfg = path.join(dir, 'quarantine-' + process.pid + '.json');
+  const missing = path.join(dir, 'missing-custom-mcp-entrypoint.mjs');
+  const broken = {command:process.execPath,args:[missing],agentAccess:'write',env:{API_KEY:'${LOCAL_TEST_KEY}'}};
+  const good = {command:process.execPath,args:[serverFile],agentAccess:'read'};
+  const remote = {transport:'http',url:'https://offline.example.test/mcp',agentAccess:'read'};
+  fs.writeFileSync(cfg,JSON.stringify({schema:'custom-layout',servers:{bad:broken,good,remote}}));
+  t.after(()=>{fs.rmSync(cfg,{force:true})});
+  const host=new StdioMcpHost({configFile:cfg,repoRoot:dir,runtimeRoot:dir});
+  try {
+    await host.start('good');
+    await assert.rejects(host.start('bad'),/MCP_SERVER_EXITED:bad:ENTRYPOINT_NOT_FOUND/);
+    assert.equal(host.status().find(x=>x.id==='bad').status,'FAILED');
+    const remoteClient=host.client('remote');
+    remoteClient.error='MCP_CONNECTION_FAILED'; // Observed transport failure; no network request here.
+    assert.equal(host.status().find(x=>x.id==='remote').status,'FAILED');
+    const repaired=host.quarantineFailedCustom();
+    assert.deepEqual(repaired,{disabled:['bad','remote'],definitionsPreserved:true});
+    const disk=JSON.parse(fs.readFileSync(cfg,'utf8'));
+    assert.equal(disk.schema,'custom-layout');
+    assert.deepEqual(disk.servers.bad,{...broken,enabled:false});
+    assert.deepEqual(disk.servers.good,good);
+    assert.deepEqual(disk.servers.remote,{...remote,enabled:false});
+    assert.equal(host.status().some(x=>x.id==='bad'||x.id==='remote'),false);
+    assert.equal(host.status().find(x=>x.id==='good').status,'READY');
+    assert.ok(host.status().find(x=>x.id==='git'),'built-in git was not changed');
+    assert.deepEqual(host.quarantineFailedCustom().disabled,[],'second run is idempotent');
+    // Repair is reversible by restoring the saved definition.
+    disk.servers.bad.enabled=true;
+    fs.writeFileSync(cfg,JSON.stringify(disk));
+    assert.equal(host.status().find(x=>x.id==='bad').status,'STOPPED');
+  } finally {host.stopAll()}
+});
+
+test('non-MCP Node script exits with an actionable handshake error, not a misleading READY state', async t => {
+  const script=path.join(dir,'non-mcp-cli.mjs');
+  const cfg=path.join(dir,'non-mcp-cli.json');
+  fs.writeFileSync(script,'process.stdout.write("dry run complete\\n");\n');
+  fs.writeFileSync(cfg,JSON.stringify({servers:{demo:{command:process.execPath,args:[script]}}}));
+  t.after(()=>{fs.rmSync(script,{force:true});fs.rmSync(cfg,{force:true})});
+  const host=new StdioMcpHost({configFile:cfg,repoRoot:dir,runtimeRoot:dir});
+  try {
+    await assert.rejects(host.start('demo'),/MCP_SERVER_EXITED:demo:NO_MCP_HANDSHAKE/);
+    const state=host.status().find(x=>x.id==='demo');
+    assert.equal(state.status,'FAILED');
+    assert.deepEqual(state.tools,[]);
+    assert.equal(state.error,'MCP_SERVER_EXITED:demo:NO_MCP_HANDSHAKE');
+  } finally {host.stopAll()}
 });

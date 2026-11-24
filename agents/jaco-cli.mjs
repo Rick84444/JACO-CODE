@@ -8,6 +8,7 @@
 import { localServiceUrl } from './lib/resolved-endpoints.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
+import { parse } from 'dotenv';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -32,11 +33,41 @@ export function startPlan({ platform = process.platform, env = process.env, root
   return { label: 'agents/lib/local-stack.mjs', cmd: process.execPath, args: [path.join(root, 'agents/lib/local-stack.mjs')] };
 }
 
+
+/**
+ * Recover from a stale CLI token without changing or exposing credentials.
+ * Core's local-only activation endpoint already calls activationReport with its
+ * own credential; never delegate to a remote URL or a tunnel.
+ * `status` stays read-only; `activate` can start only stopped tools.
+ */
+export async function localCoreActivationReport({ baseUrl, activate = false, fetchImpl = fetch } = {}) {
+  let origin;
+  try {
+    const url = new URL(baseUrl);
+    if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ||
+      url.username || url.password || url.pathname !== '/' || url.search || url.hash) return null;
+    origin = url.origin;
+  } catch { return null; }
+  try {
+    const response = await fetchImpl(origin + (activate ? '/api/jaco/activate' : '/api/jaco/activation'), {
+      method: activate ? 'POST' : 'GET',
+      signal: AbortSignal.timeout(activate ? 120_000 : 20_000),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const report = payload?.report;
+    if (payload?.success !== true || report?.schema !== 'jaco.activation/v2' ||
+      report.runtime?.up !== true || !Array.isArray(report.tools?.servers) ||
+      !Array.isArray(report.problems) || typeof report.ok !== 'boolean') return null;
+    return report;
+  } catch { return null; }
+}
+
 function tokenFromEnvFile(file) {
   try {
-    const text = fs.readFileSync(file, 'utf8');
-    const m = /^\s*(?:export\s+)?(?:JACO_)?GATEWAY_TOKEN\s*=\s*(.+?)\s*$/m.exec(text);
-    return m ? m[1].trim().replace(/^["']|["']$/g, '') : '';
+    // Use the same dotenv parser as the portable launcher.
+    const data = parse(fs.readFileSync(file, 'utf8'));
+    return data.JACO_GATEWAY_TOKEN || data.GATEWAY_TOKEN || '';
   } catch { return ''; }
 }
 
@@ -44,19 +75,29 @@ export function gatewayToken(env = process.env, root = ROOT) {
   const direct = env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN;
   if (direct) return direct;
 
-  // Termux Core reads ~/.config/jaco/runtime.env. Read that canonical file before the older
-  // ~/.jaco/gateway.token so a stale cloud-stack token cannot make activation report 401.
   const runtimeEnv = env.JACO_RUNTIME_ENV || path.join(os.homedir(), '.config', 'jaco', 'runtime.env');
+  const dataRoot = env.JACO_DATA_DIR ? path.resolve(env.JACO_DATA_DIR) : root;
+  const launcher = tokenFromEnvFile(path.join(dataRoot, '.env'));
   const canonical = tokenFromEnvFile(runtimeEnv);
-  if (canonical) return canonical;
+
+  // Termux Core is supervised from runtime.env; Debian/Windows portable Core
+  // uses the launcher's JACO_DATA_DIR/.env (or checkout .env).
+  if (isTermux(env)) {
+    if (canonical) return canonical;
+    if (launcher) return launcher;
+  } else {
+    if (launcher) return launcher;
+    if (canonical) return canonical;
+  }
 
   try {
     const stateToken = fs.readFileSync(path.join(env.JACO_STATE_DIR || path.join(os.homedir(), '.jaco'), 'gateway.token'), 'utf8').trim();
     if (stateToken) return stateToken;
   } catch { /* next */ }
 
-  // Portable/cloud starters may persist the token in a checkout .env.
-  const dirs = [root, ...fs.readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map(e => path.join(root, e.name))];
+  const dirs = fs.readdirSync(root, { withFileTypes: true })
+    .filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+    .map(e => path.join(root, e.name));
   for (const dir of dirs) {
     const t = tokenFromEnvFile(path.join(dir, '.env'));
     if (t) return t;
@@ -111,7 +152,17 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     }
   }
 
-  const observed = await activationReport({ baseUrl, token: gatewayToken(env), startTools: command === 'activate' && !argv.includes('--no-tools') });
+  let observed = await activationReport({ baseUrl, token: gatewayToken(env), startTools: command === 'activate' && !argv.includes('--no-tools') });
+  // The canonical Android Core may be supervised by Termux while this CLI runs
+  // inside Debian/proot. Their home directories differ; do not treat an old
+  // ~/.jaco/gateway.token as an operator task or demand a manual token.
+  if (observed.runtime.up && observed.problems.some(p => p === 'Could not read the tools: HTTP_401')) {
+    const delegated = await localCoreActivationReport({
+      baseUrl,
+      activate: command === 'activate' && !argv.includes('--no-tools'),
+    });
+    if (delegated?.runtime?.version === observed.runtime.version) observed = delegated;
+  }
   const report = process.platform === 'win32'
     ? reconcileStartupActivation(observed, readStartupEvidence(startupRoot))
     : observed;

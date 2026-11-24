@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { verifyDesktopTraction, type DesktopTractionEvidence } from './desktopTraction.mjs';
 
 /**
  * Desktop hands-off client (Windows, UI Automation).
@@ -59,6 +60,7 @@ export interface DesktopReceipt {
   after_hash: string | null;
   window: Record<string, unknown> | null;
   result: unknown;
+  traction?: DesktopTractionEvidence;
   refusal?: string;
   error?: string;
 }
@@ -112,6 +114,11 @@ interface BridgeResponse {
 }
 
 export class DesktopHandsOffClient {
+  // One process-local writer protects both the direct Desktop API and the
+  // ModelRelay route. The runtime passes the same client instance to both.
+  private inFlight = false;
+  public isActuatorBusy(): boolean { return this.inFlight; }
+
   private readonly stateRoot: string;
   private readonly ledgerPath: string;
   private readonly grantPath: string;
@@ -275,10 +282,35 @@ export class DesktopHandsOffClient {
 
   // ── Verified execution ─────────────────────────────────────────────────────
   public async executeVerified(action: DesktopAction): Promise<DesktopReceipt> {
+    if (this.inFlight) {
+      const at = new Date().toISOString();
+      const receipt: DesktopReceipt = {
+        action_id: action.action_id || crypto.randomUUID(),
+        action_type: action.type,
+        started_at: at,
+        finished_at: at,
+        success: false,
+        verified: false,
+        refusal: 'DESKTOP_ACTUATOR_BUSY',
+        before_hash: null,
+        after_hash: null,
+        window: null,
+        result: null,
+      };
+      this.appendReceipt(receipt);
+      return receipt;
+    }
+    this.inFlight = true;
+    try { return await this.executeVerifiedSingle(action); }
+    finally { this.inFlight = false; }
+  }
+
+  private async executeVerifiedSingle(action: DesktopAction): Promise<DesktopReceipt> {
     const actionId = action.action_id || crypto.randomUUID();
     const startedAt = new Date().toISOString();
     let before: Record<string, unknown> | null = null;
     let after: Record<string, unknown> | null = null;
+    let traction: DesktopTractionEvidence | null = null;
 
     const fail = (reason: string, refusal = false): DesktopReceipt => {
       const receipt: DesktopReceipt = {
@@ -325,6 +357,20 @@ export class DesktopHandsOffClient {
 
     try {
       before = await this.observe(action.hwnd);
+      if (MUTATING.includes(action.type)) {
+        // This preserves JACO's existing DOM Traction / Manifold Drift code on
+        // Windows UIA. Never dispatch a changing action from a single stale
+        // screenshot, guessed HWND or index-based selector.
+        const firstAt = Date.now();
+        const current = await this.observe(action.hwnd);
+        const secondAt = Date.now();
+        try {
+          traction = verifyDesktopTraction(before, current, action, { firstAt, secondAt, now: secondAt });
+        } catch (error) {
+          return fail(error instanceof Error ? error.message : String(error), true);
+        }
+        before = current;
+      }
 
       const grant = this.getGrant();
       const response = await this.runBridge({
@@ -364,6 +410,7 @@ export class DesktopHandsOffClient {
         after_hash: afterHash,
         window: (after?.window as Record<string, unknown>) ?? (before?.window as Record<string, unknown>) ?? null,
         result: response.data ?? null,
+        ...(traction ? { traction } : {}),
       };
       this.appendReceipt(receipt);
       return receipt;
@@ -397,6 +444,7 @@ export class DesktopHandsOffClient {
       platform: process.platform,
       bridgePath: this.bridgePath,
       actuation: 'ui-automation',
+      inFlight: this.inFlight,
       syntheticInput: false,
       grant: grant ?? { enabled: false },
       grantActive: Boolean(grant?.enabled && Date.parse(grant.expires_at) > Date.now()),

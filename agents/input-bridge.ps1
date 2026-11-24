@@ -47,6 +47,42 @@ public class WinInput {
   [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
   [DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] inputs, int size);
   [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
+  [DllImport("kernel32.dll",SetLastError=true)] private static extern uint GetCurrentProcessId();
+  [DllImport("kernel32.dll",SetLastError=true)] private static extern bool ProcessIdToSessionId(uint pid,out uint sessionId);
+  [DllImport("user32.dll",SetLastError=true)] private static extern IntPtr OpenInputDesktop(uint flags,bool inherit,uint access);
+  [DllImport("user32.dll",SetLastError=true)] private static extern bool CloseDesktop(IntPtr desktop);
+  [DllImport("user32.dll",SetLastError=true,CharSet=CharSet.Unicode)]
+  private static extern bool GetUserObjectInformation(IntPtr handle,int index,System.Text.StringBuilder value,int length,ref int needed);
+
+  // UOI_NAME=2 and DESKTOP_READOBJECTS=0x1. Check the *input* desktop, not
+  // only the process/window station. Winlogon/UAC/locked desktops must veto.
+  private static bool DefaultInputDesktop() {
+    IntPtr desktop=OpenInputDesktop(0,false,0x1);
+    if(desktop==IntPtr.Zero)return false;
+    try {
+      var name=new System.Text.StringBuilder(256);
+      int needed=0;
+      return GetUserObjectInformation(desktop,2,name,name.Capacity*2,ref needed)
+        && String.Equals(name.ToString().TrimEnd('\0'),"Default",StringComparison.OrdinalIgnoreCase);
+    } finally {CloseDesktop(desktop);}
+  }
+  public static uint InteractiveSessionId() {
+    AssertLive();
+    uint self=0, foregroundSession=0;
+    if(!ProcessIdToSessionId(GetCurrentProcessId(),out self)||self==0)
+      throw new InvalidOperationException("NONINTERACTIVE_SESSION_ZERO");
+    IntPtr foreground=GetForegroundWindow();
+    uint foregroundPid=0;
+    if(foreground==IntPtr.Zero||GetWindowThreadProcessId(foreground,out foregroundPid)==0
+        ||foregroundPid==0||!ProcessIdToSessionId(foregroundPid,out foregroundSession)
+        ||foregroundSession!=self)
+      throw new InvalidOperationException("FOREGROUND_SESSION_MISMATCH");
+    if(!DefaultInputDesktop())
+      throw new InvalidOperationException("INPUT_DESKTOP_NOT_DEFAULT");
+    return self;
+  }
+  public static long ForegroundWindowId() { return GetForegroundWindow().ToInt64(); }
+
 
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
 
@@ -150,6 +186,10 @@ public class WinInput {
   }
   public static void AssertTarget(bool checkCursor) {
     AssertLive();
+    // Recheck immediately before every Win32 SendInput, not just at startup:
+    // Chrome Remote Desktop disconnect, Winlogon/UAC and Windows session
+    // switches may happen between mission planning and actuator dispatch.
+    InteractiveSessionId();
     if(!EnableDpiV2())throw new InvalidOperationException("DPI_CONTEXT_UNVERIFIED");
     if(target==IntPtr.Zero||!SameForeground())throw new InvalidOperationException("FOCUS_OR_PID_DRIFT");
     RECT rect,frame;
@@ -341,6 +381,9 @@ function Do-TypeText($text) {
 }
 
 function Do-Screenshot($outFile, $cropX, $cropY, $cropWidth, $cropHeight, $maxWidth, $maxHeight) {
+  # Reject Session 0, a switched Windows user session and the Winlogon/UAC
+  # secure desktop. Never publish a service/locked screen as visual evidence.
+  $sessionId=[WinInput]::InteractiveSessionId()
   Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 
   # Virtual desktop coordinates may be negative on multi-monitor systems.
@@ -367,6 +410,8 @@ function Do-Screenshot($outFile, $cropX, $cropY, $cropWidth, $cropHeight, $maxWi
   $g = [System.Drawing.Graphics]::FromImage($source)
   $g.CopyFromScreen($capture.Location, [System.Drawing.Point]::Empty, $capture.Size)
   $g.Dispose()
+  # A switch to another input desktop during screen copy is a rejected read.
+  if ([WinInput]::InteractiveSessionId() -ne $sessionId) { throw 'SCREEN_SESSION_CHANGED' }
 
   $limitW = if ($null -ne $maxWidth -and $maxWidth -gt 0) { [int]$maxWidth } else { $capture.Width }
   $limitH = if ($null -ne $maxHeight -and $maxHeight -gt 0) { [int]$maxHeight } else { $capture.Height }
@@ -385,6 +430,7 @@ function Do-Screenshot($outFile, $cropX, $cropY, $cropWidth, $cropHeight, $maxWi
   }
 
   if (-not $outFile) { $outFile = "$env:TEMP\jaco-screenshot-$(Get-Date -Format 'yyyyMMddHHmmss').png" }
+  if ([WinInput]::InteractiveSessionId() -ne $sessionId) { throw 'SCREEN_SESSION_CHANGED' }
   $output.Save($outFile, [System.Drawing.Imaging.ImageFormat]::Png)
   if ($output -ne $source) { $output.Dispose() }
   $source.Dispose()
@@ -401,10 +447,12 @@ function Do-Screenshot($outFile, $cropX, $cropY, $cropWidth, $cropHeight, $maxWi
     capture = [ordered]@{ x = $capture.X; y = $capture.Y; width = $capture.Width; height = $capture.Height }
     scale = [Math]::Round($scale, 4)
     bytes = $size
+    sessionId = [int]$sessionId
   } | ConvertTo-Json -Depth 4 -Compress
 }
 
 function Do-GetCursor {
+  [void][WinInput]::InteractiveSessionId()
   $p = New-Object WinInput+POINT
   if (-not [WinInput]::GetCursorPos([ref]$p)) { throw 'CURSOR_READ_REJECTED' }
   [ordered]@{ok=$true;verified=$true;x=$p.X;y=$p.Y} | ConvertTo-Json -Compress
@@ -527,6 +575,10 @@ if($mutating){
   switch($Op){
     'screenshot' {Do-Screenshot $OutFile $CropX $CropY $CropWidth $CropHeight $MaxWidth $MaxHeight}
     'get_cursor' {Do-GetCursor}
+    'session_status' {
+      $sessionId=[WinInput]::InteractiveSessionId()
+      [ordered]@{schema='jaco.desktop-session/v1';ok=$true;verified=$true;interactive=$true;sessionId=[int]$sessionId;foregroundHwnd=[WinInput]::ForegroundWindowId();inputDesktop='Default'} | ConvertTo-Json -Compress
+    }
     default {throw 'UNKNOWN_INPUT_OPERATION'}
   }
 }
@@ -558,7 +610,7 @@ while($null -ne ($line=[Console]::ReadLine())){
       if($name -in @('Double','MeasureEntropy') -and $property.Value -isnot [bool]){throw 'BRIDGE_INVALID_FLAG'}
       $bound[$name]=$property.Value
     }
-    if($bound.Op -notin @('mouse_move','mouse_click','mouse_scroll','key_press','type_text','get_cursor','screenshot','self_test')){throw 'UNKNOWN_INPUT_OPERATION'}
+    if($bound.Op -notin @('mouse_move','mouse_click','mouse_scroll','key_press','type_text','get_cursor','screenshot','session_status','self_test')){throw 'UNKNOWN_INPUT_OPERATION'}
     if(-not $bound.DeadlineMs -or [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() -ge [long]$bound.DeadlineMs){throw 'BRIDGE_REQUEST_EXPIRED'}
     $mutation=$bound.Op -in @('mouse_move','mouse_click','mouse_scroll','key_press','type_text')
     $started=$true

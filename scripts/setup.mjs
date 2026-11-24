@@ -13,11 +13,12 @@ export function ensureGatewayToken(root, env = process.env) {
   const token = env.JACO_GATEWAY_TOKEN || env.GATEWAY_TOKEN || configured.JACO_GATEWAY_TOKEN || configured.GATEWAY_TOKEN;
   if (token) {
     if (token.length < 24) throw new Error('GATEWAY_TOKEN_REQUIRED_MIN_24: update the configured token');
-    return;
+    return token;
   }
   const generated = crypto.randomBytes(32).toString('hex');
   fs.appendFileSync(file, `${text && !text.endsWith('\n') ? '\n' : ''}JACO_GATEWAY_TOKEN=${generated}\n`, { mode: 0o600 });
   fs.chmodSync(file, 0o600);
+  return generated;
 }
 
 // Windows .cmd shims cannot be spawned directly without a command shell.

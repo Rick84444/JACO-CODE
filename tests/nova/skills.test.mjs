@@ -66,7 +66,7 @@ test('an oversized skill is listed with its error; runs of different skills are 
 
 test('the repository skills all parse and declare supported tasks', () => {
   const list = listSkills([repoSkills]);
-  assert.deepEqual(list.map(s => s.id), ['autonomous-api-connection', 'browser-authorized-action', 'browser-workflow-understanding', 'build-web-page', 'buyer-tailored-proposal', 'commercial-opportunity-cycle', 'community-post', 'create-github-repo', 'external-agent-employment', 'fix-a-bug', 'paid-delivery-quality', 'product-validation', 'repo-insight', 'repo-security-scan', 'web-research']);
+  assert.deepEqual(list.map(s => s.id), ['aura-desktop', 'autonomous-api-connection', 'browser-authorized-action', 'browser-workflow-understanding', 'build-web-page', 'buyer-tailored-proposal', 'commercial-opportunity-cycle', 'community-post', 'create-github-repo', 'external-agent-employment', 'fix-a-bug', 'paid-delivery-quality', 'product-validation', 'repo-insight', 'repo-security-scan', 'web-research']);
   for (const s of list) assert.equal(s.error, undefined, `${s.id}: ${s.error}`);
 });
 
@@ -118,6 +118,10 @@ test('browser skills keep read-only observation separate from authorized mutatio
   assert.equal(action.truncated, false);
   assert.match(action.body, /If a required approval cannot be verified/);
   assert.match(action.body, /never issue a fresh actionId/);
+  assert.match(action.body, /ChatGPT callback through an already signed-in account/);
+  assert.match(action.body, /Do not programmatically scrape responses/);
+  assert.match(action.body, /PENDING_CHATGPT_SUBSCRIPTION/);
+  assert.match(action.body, /MCP Events subscription/);
   assert.match(read.body, /no alternate input route/);
 });
 

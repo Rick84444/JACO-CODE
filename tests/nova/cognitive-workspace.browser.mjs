@@ -438,7 +438,7 @@ try {
   await page.getByRole('button',{name:'Skicka meddelande',exact:true}).click();
   await page.getByText('Testsvaret använder de observerade händelserna. Uppdraget fortsätter.',{exact:true}).waitFor();
   assert.equal(requests.filter(r=>r.kind==='goal').length,0);
-  assert.equal(requests.at(-1).body.interactionMode,'question');
+  assert.equal(requests.at(-1).body.interactionMode,'action');
   const context=requests.at(-1).body.ragContext.find(r=>r.source==='jaco://current-work').content;
   assert.equal(context.mission.id,mission.id);assert.ok(context.events.some(e=>e.outcome==='failed'));
   assert.equal(bus.listMissions(10).length,1);
@@ -498,14 +498,15 @@ try {
   passed('A live file update preserves a dirty draft, rejects a conflicting save and requires explicit reload');
   await canvas('Samtal').click();await input().fill('Ett bevarat utkast');
   blockLive=true;for(const response of liveResponses)response.end();
-  await page.getByRole('status').filter({hasText:'Connection needs recovery'}).waitFor({timeout:12000});
+  // The status line follows the chosen language; this page runs in Swedish.
+  await page.getByRole('status').filter({hasText:'Anslutningen behöver återställas'}).waitFor({timeout:12000});
   assert.equal(await input().inputValue(),'Ett bevarat utkast');
   blockLive=false;
-  await page.getByRole('status').filter({hasText:'Working'}).waitFor({timeout:15000});
+  await page.getByRole('status').filter({hasText:'Arbetar'}).waitFor({timeout:15000});
   assert.equal(await page.locator(verifiedSelector).count(),1);
   passed('Live connection interruption preserves the draft, exposes uncertainty and reconnects without duplicates');
   await portraitTrigger.click();
-  await portrait.locator('p[data-tone="active"]').filter({hasText:'Working'}).waitFor();
+  await portrait.locator('p[data-tone="active"]').filter({hasText:'Arbetar'}).waitFor();
   await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
   await portrait.waitFor({state:'detached'});
   assert.equal(await input().inputValue(),'Ett bevarat utkast');
@@ -525,18 +526,18 @@ try {
   passed('A store restart replays durable diagnostics and the visible saved encrypted conversation');
   liteAck=true;
   await input().fill('Testa ett Lite-uppdrag');
-  await page.getByTestId('jaco-run-mode-toggle').click();
-  await page.getByRole('button',{name:/Helt självständig|Full Autonomous/}).last().click();
+  assert.equal(await page.getByTestId('jaco-run-mode-status').getAttribute('data-run-mode'),'autonomous');
+  assert.equal(await page.getByTestId('jaco-run-mode-toggle').count(),0);
   await page.getByRole('button',{name:'Starta uppdrag',exact:true}).click();
   await page.getByText('Uppdraget är registrerat. Planering och resultat visas här när runtime rapporterar dem.',{exact:true}).waitFor();
-  await page.waitForFunction(()=>/Helt självständig|Full Autonomous/.test(document.querySelector('[data-testid="jaco-run-mode-toggle"]')?.textContent||''));
+  await page.waitForFunction(()=>/Helt självständig|Full Autonomous/.test(document.querySelector('[data-testid="jaco-run-mode-status"]')?.textContent||''));
   await input().fill('Förklara uppdragets status');
   assert.equal(await page.getByTestId('jaco-chat-send').isEnabled(),true,'chat is still available in Full Autonomous while the mission runs');
   assert.equal(requests.filter(r=>r.kind==='goal').length,1);
   passed('Lite mission acknowledgements are accepted without claiming completed work');
   rejectGoal=true;await input().fill('Detta ska inte registreras');
-  await page.getByTestId('jaco-run-mode-toggle').click();
-  await page.getByRole('button',{name:/Helt självständig|Full Autonomous/}).last().click();
+  assert.equal(await page.getByTestId('jaco-run-mode-status').getAttribute('data-run-mode'),'autonomous');
+  assert.equal(await page.getByTestId('jaco-run-mode-toggle').count(),0);
   await page.getByRole('button',{name:'Starta uppdrag',exact:true}).click();
   await page.getByText('Uppdragets registrering kunde inte bekräftas: TEST_GOAL_REJECTED',{exact:true}).waitFor();
   assert.equal(bus.listMissions(10).length,2);assert.equal(await input().inputValue(),'Detta ska inte registreras');
@@ -590,6 +591,27 @@ try {
   await page.getByTestId('terminal-receipts-toggle').click();
   assert.equal(await receipts.count(),0,'dismissal disposes the terminal component');
   passed('Actual xterm renders a controlled command receipt at desktop and mobile viewport without changing command authority');
+  // The human-readable live terminal moves to its own reversible GUI window.
+  const liveTerminalToggle=page.getByTestId('aura-live-terminal-toggle');
+  await liveTerminalToggle.click();
+  const liveTerminal=page.getByTestId('aura-live-terminal-window');
+  await liveTerminal.waitFor({state:'visible'});
+  assert.equal(await page.locator('.aura-live-stage .aura-terminal').count(),0,
+    'the original AuraTerminal is no longer embedded in Live Stage');
+  assert.equal(await liveTerminal.getByRole('tab',{name:/Vad Aura gör|What Aura is doing/}).getAttribute('aria-selected'),'true');
+  assert.equal(await liveTerminal.getByText('JACO_RECEIPT_FIXTURE',{exact:false}).count(),0,
+    'human narration must not leak terminal stdout');
+  await liveTerminal.getByRole('tab',{name:/Kommandon|Commands/}).click();
+  await liveTerminal.getByText('JACO_RECEIPT_FIXTURE',{exact:false}).first().waitFor({state:'visible'});
+  await liveTerminal.getByRole('tab',{name:/Vad Aura gör|What Aura is doing/}).click();
+  const liveBox=await liveTerminal.boundingBox();
+  assert.ok(liveBox && liveBox.x >= 0 && liveBox.x + liveBox.width <= 393,
+    'the live terminal must fit the mobile viewport');
+  await liveTerminal.getByRole('button',{name:/Stäng live-terminalen|Close live terminal/}).click();
+  assert.equal(await liveTerminal.count(),0);
+  assert.equal(await liveTerminalToggle.getAttribute('aria-expanded'),'false');
+  passed('Live Terminal opens on mobile, isolates human narration from command receipts and dismisses without stopping Aura');
+
   await page.evaluate(() => {
     window.auraSpokenReplies = [];
     window.SpeechRecognition = class {

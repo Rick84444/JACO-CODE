@@ -1,6 +1,7 @@
 param(
   [string]$RepoRoot = (Split-Path $PSScriptRoot -Parent),
-  [switch]$InstallDependencies
+  [switch]$InstallDependencies,
+  [switch]$EnableSandboxInput
 )
 
 $ErrorActionPreference = 'Stop'
@@ -83,22 +84,27 @@ Set-EnvValue $lines 'JACO_RUNTIME_DIR' $RuntimeName
 Set-EnvValue $lines 'JACO_RUNTIME_URL' 'http://127.0.0.1:3000'
 Set-EnvValue $lines 'SEER_URL' 'http://127.0.0.1:2997'
 Set-EnvValue $lines 'JACO_EXECUTOR' 'desktop-agentos'
-Set-EnvValue $lines 'JACO_ALLOW_COORDINATE_FALLBACK' '0'
+# Raw Win32 mouse and keyboard are opt-in inside a real Hyper-V guest only.
+if ($EnableSandboxInput) {
+  $computer = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+  if ($computer.Manufacturer -notmatch '^Microsoft Corporation$' -or $computer.Model -notmatch '^Virtual Machine$') {
+    throw 'VIRTUAL_INPUT_HYPERV_GUEST_REQUIRED'
+  }
+  Set-EnvValue $lines 'JACO_AURA_DESKTOP_SANDBOX' 'hyperv-guest'
+  Set-EnvValue $lines 'JACO_AURA_DESKTOP_SCREEN_VIEW' '1'
+  Set-EnvValue $lines 'JACO_ALLOW_COORDINATE_FALLBACK' '1'
+} else {
+  Set-EnvValue $lines 'JACO_ALLOW_COORDINATE_FALLBACK' '0'
+}
 Set-EnvValue $lines 'JACO_ALLOW_SHELL_TASKS' '1'
 Set-EnvValue $lines 'JACO_LEVEL5_AUTONOMY' '1'
 Set-EnvValue $lines 'JACO_REMOTE_ALLOW_MUTATIONS' '1'
 
-$requiredTasks = @('detect-surfaces','health-check','check-revenue','browser-survey-site','browser-click','browser-type','desktop-windows','desktop-observe','desktop-action','desktop-invoke','windows-wmi-read','screenshot','get-cursor','invoke-worker','shell','repo-list','repo-read','repo-write','repo-test','git-status','git-diff','git-commit','git-push','git-merge')
+# Preserve explicit operator restrictions. New installs use the canonical registry.
 $currentTasks = Get-EnvValue $lines 'JACO_NOVA_ALLOWED_TASKS'
-$tasks = New-StringList
-if ($currentTasks) {
-  foreach ($item in ($currentTasks -split ',')) {
-    $value = $item.Trim()
-    if ($value -and -not $tasks.Contains($value)) { [void]$tasks.Add($value) }
-  }
+if (-not $currentTasks) {
+  Set-EnvValue $lines 'JACO_NOVA_ALLOWED_TASKS' 'sandbox'
 }
-foreach ($task in $requiredTasks) { if (-not $tasks.Contains($task)) { [void]$tasks.Add($task) } }
-Set-EnvValue $lines 'JACO_NOVA_ALLOWED_TASKS' ($tasks -join ',')
 
 [System.IO.File]::WriteAllLines($EnvPath, $lines.ToArray(), (New-Object System.Text.UTF8Encoding($false)))
 
@@ -124,4 +130,5 @@ Write-Host '  1. Start the stack: .\agents\start-all.ps1'
 Write-Host '  2. The durable Level-5 mandate is created by the runtime; use grant-desktop-agentos.ps1 only to narrow a specific desktop process scope.'
 Write-Host '  3. Submit one operator goal through Aura/SEER; Git, shell, web and verified execution are pre-authorized.'
 Write-Host ''
-Write-Host 'Coordinate fallback remains disabled. Local shell is available only when an explicit mission requests it.' -ForegroundColor Yellow
+Write-Host ('Virtual mouse and keyboard: ' + $(if ($EnableSandboxInput) { 'sandbox opt-in; WMI and mission validated' } else { 'disabled; use -EnableSandboxInput inside dedicated Hyper-V VM' })) -ForegroundColor Yellow
+Write-Host 'Local shell is available only when an explicit mission requests it.' -ForegroundColor Yellow

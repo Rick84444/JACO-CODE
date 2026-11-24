@@ -141,7 +141,6 @@ function currentState(state, at) {
 export function inspectGeminiQuota(state, profile, { model, inputTokenBudget, at = Date.now() } = {}) {
   const id = normalizedGeminiModel(model);
   const limits = profile?.models?.[id];
-  if (!limits) return { allowed: false, reason: 'GEMINI_QUOTA_MODEL_UNCONFIGURED', model: id };
   if (!safePositive(inputTokenBudget))
     return { allowed: false, reason: 'GEMINI_QUOTA_INPUT_REQUIRED', model: id };
   const q = currentState(state, at);
@@ -152,6 +151,10 @@ export function inspectGeminiQuota(state, profile, { model, inputTokenBudget, at
   const cooldownUntil = q.cooldowns[id] || null;
   if (cooldownUntil && cooldownUntil > at)
     return { allowed: false, reason: 'GEMINI_PROVIDER_BACKOFF', model: id, retryAfterMs: cooldownUntil - at };
+  // The operator chooses the model. A model this snapshot does not list is not refused: JACO has no limits to
+  // throttle it by, so it runs and Google's own 429 puts it into backoff (markGeminiQuotaBackoff). Refusing
+  // unlisted models blocked a newly released model the operator picked (gemini-4-neon, 2026-11-22).
+  if (!limits) return { allowed: true, model: id, usedRpm, usedTpm, usedRpd, inputTokenBudget, unthrottled: true };
   // Conservative local throttling below project quota; other apps using the same project are invisible.
   const cap = n => n == null ? null : Math.max(1, Math.floor(n * 0.9));
   const rpmCap = cap(limits.rpm), tpmCap = cap(limits.tpm), rpdCap = cap(limits.rpd);

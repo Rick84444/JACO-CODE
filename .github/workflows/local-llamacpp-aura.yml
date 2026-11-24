@@ -1,0 +1,70 @@
+name: Local llama.cpp Aura integration
+on:
+  pull_request:
+    paths:
+      - 'runtime/src/server/connected/providerRegistry.mjs'
+      - 'runtime/src/server/continuum/providerRegistry.mjs'
+      - 'tests/nova/aura-provider-registry.test.mjs'
+      - 'runtime/scripts/continuum/llamacpp-provider.test.mjs'
+      - 'windows/product/Start-JACO-LocalModel.ps1'
+      - 'docs/architecture/windows-local-llamacpp-aura.md'
+      - 'openspec/changes/windows-local-llamacpp-aura/**'
+      - '.github/workflows/local-llamacpp-aura.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  provider-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - run: node --check runtime/src/server/continuum/providerRegistry.mjs
+      - run: node --test tests/nova/aura-provider-registry.test.mjs tests/nova/automatic-connections.test.mjs
+      - run: node runtime/scripts/continuum/llamacpp-provider.test.mjs
+  windows-powershell:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse launcher with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "windows/product/Start-JACO-LocalModel.ps1",
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw "Windows local-model launcher has PowerShell syntax errors."
+          }
+      - name: Reject occupied loopback port without launching another model
+        shell: powershell
+        run: |
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+          $model = Join-Path $env:RUNNER_TEMP 'test-model.gguf'
+          $binary = Join-Path $env:RUNNER_TEMP 'llama-server.exe'
+          [System.IO.File]::WriteAllText($model, 'test-only')
+          [System.IO.File]::WriteAllText($binary, 'test-only')
+          $observed = ''
+          try {
+            & .\windows\product\Start-JACO-LocalModel.ps1 -ServerExe $binary -ModelFile $model -Port $port -Alias 'test-local' 2>&1 | Out-Null
+          }
+          catch {
+            $observed = $_.Exception.Message
+          }
+          finally {
+            $listener.Stop()
+          }
+          if ($observed -notmatch 'LOCAL_MODEL_PORT_OCCUPIED') {
+            throw "Launcher failed to reject the occupied port: $observed"
+          }
