@@ -53,6 +53,25 @@ test('paths stay inside the workspace, symlinks included, and secrets are never 
   assert.match(c(ws, 'touch', ['node_modules/x']).reason, /PROTECTED/);
 });
 
+test('standing publish and destructive GUI selections replace legacy shell env switches', () => {
+  const ws = workspace();
+  const file = path.join(ws, '.jaco', 'state', 'autonomy', 'mandates.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const save = (publish, destructive) => fs.writeFileSync(file, JSON.stringify([{
+    id: 'operator-level5-default', enabled: true, signedByOperator: true,
+    validity: 'STANDING', expiresAt: null,
+    decisions: { PUBLISH: publish, DESTRUCTIVE: destructive, LOCAL_MUTATION: 'ALLOW' }
+  }]));
+  save('ALLOW','ALLOW');
+  assert.equal(c(ws, 'git', ['push', 'origin', 'aura/work']).ok, true);
+  assert.equal(c(ws, 'rm', ['-r', 'src']).ok, true);
+  assert.match(c(ws, 'git', ['push', 'origin', 'main']).reason, /GIT_PUSH_PROTECTED_BRANCH/);
+  assert.match(c(ws, 'touch', ['.jaco/state/autonomy/mandates.json']).reason, /PROTECTED_PATH/);
+  save('DENY','DENY');
+  assert.match(c(ws, 'git', ['push', 'origin', 'aura/work'], { env: { JACO_SHELL_ALLOW_PUSH: '1' } }).reason, /GIT_PUSH_STANDING_MANDATE_DENY/);
+  assert.match(c(ws, 'rm', ['-r', 'src'], { env: { JACO_SHELL_ALLOW_DESTRUCTIVE: '1' } }).reason, /DESTRUCTIVE_STANDING_MANDATE_DENY/);
+});
+
 test('git: read subcommands read, the rest write, and options that run programs or leave the repository are refused', () => {
   const ws = workspace();
   for (const sub of ['status', 'diff', 'log', 'show', 'blame', 'ls-files', 'rev-parse']) assert.equal(c(ws, 'git', [sub], { mode: 'read' }).ok, true, sub);
