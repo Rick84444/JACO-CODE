@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { standingToolAuthority, mcpAuthorityRoot } from '../../agents/lib/standing-tool-authority.mjs';
+import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../agents/lib/standing-tool-authority.mjs';
 
 const fixture = run => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-tool-authority-'));
@@ -63,4 +63,15 @@ test('timed legacy grant expires but signed standing grant does not', () => fixt
 test('MCP host workspace is derived from existing config, not a second store', () => fixture(({root}) => {
   assert.equal(mcpAuthorityRoot({configFile:path.join(root,'.jaco','mcp','servers.json')}), root);
   assert.equal(mcpAuthorityRoot({}), null);
+}));
+
+test('explicitly disabled GUI task switches override standing grants', () => fixture(({root}) => {
+  assert.equal(operatorTaskEnabled(root, 'shell'), true, 'default tools remain on');
+  const file = path.join(root, '.jaco', 'state', 'capabilities.json');
+  fs.writeFileSync(file, JSON.stringify({ schema:'jaco.capabilities/v1', disabledTasks:['shell','mcp-write'] }));
+  assert.equal(operatorTaskEnabled(root,'shell'), false);
+  assert.equal(operatorTaskEnabled(root,'mcp-write'), false);
+  assert.equal(operatorTaskEnabled(root,'mcp-call'), true);
+  fs.writeFileSync(file, '{bad-json');
+  assert.equal(operatorTaskEnabled(root,'shell'), false, 'corrupt persisted explicit switches cannot widen access');
 }));
