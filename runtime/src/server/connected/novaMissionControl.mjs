@@ -10,7 +10,7 @@ import { novaTiming } from '../../../../agents/lib/nova-timing.mjs';
 import { checkCitations } from '../../../../agents/lib/evidence.mjs';
 import { stripEmoji } from '../../../../agents/lib/writing-policy.mjs';
 import { outgoingSpendCheck } from './spendGuard.mjs';
-import { operatorApprovalCheck } from '../../../../agents/lib/operator-action-guard.mjs';
+import { operatorApprovalCheck, categoryOf } from '../../../../agents/lib/operator-action-guard.mjs';
 import { standingToolAuthority } from '../../../../agents/lib/standing-tool-authority.mjs';
 import { findDuplicate } from './missionDedupe.mjs';
 import { TASK_FIELDS } from '../../../../agents/lib/task-fields.mjs';
@@ -791,21 +791,31 @@ export class NovaMissionControl {
       'git-status', 'git-diff', 'mcp-call', 'skill-load', 'email-inbox',
       'vault-list-secrets',
     ]);
+    const sandbox = Boolean(mission.contract);
+    const category = categoryOf(operatorApprovalCheck(checked, { sandbox })?.reason);
+    // Decide effects from both the task and the actual guard classification.
+    // A published browser click is PUBLISH, not a generic external mutation;
+    // an authenticated sign-in is AUTH, not an arbitrary publish grant.
     const outward = readTasks.has(target) ? 'READ'
-      : ['git-push', 'git-merge', 'github-create-repo', 'promote-hf'].includes(target) ? 'PUBLISH'
-      : target === 'mcp-write' && !['shell', 'filesystem', 'git'].includes(checked.data?.server) ? 'EXTERNAL_MUTATION'
-      : ['browser-click', 'browser-type', 'android-tap', 'android-type'].includes(target) ? 'EXTERNAL_MUTATION'
+      : ['publish-or-deploy', 'merge-or-release', 'push-protected-branch'].includes(category)
+          || ['git-push', 'git-merge', 'github-create-repo', 'promote-hf'].includes(target) ? 'PUBLISH'
+      : category === 'sign-in' ? 'AUTH'
+      : ['external-write', 'send-in-operator-name'].includes(category)
+          || target === 'mcp-write' && !['shell', 'filesystem', 'git', 'repo', 'editor'].includes(checked.data?.server)
+          || ['browser-click', 'browser-type', 'android-tap', 'android-type'].includes(target) ? 'EXTERNAL_MUTATION'
       : 'LOCAL_MUTATION';
-    const standing = standingToolAuthority(this.bus.workspaceRoot, outward);
+    const root = this.bus.workspaceRoot;
+    const standing = standingToolAuthority(root, outward);
     if (standing.status === 'DENY' || standing.status === 'REVIEW') {
       throw new Error('STANDING_MANDATE_' + standing.status + ':' + outward);
     }
-    const preApproved = [...(mission.contract?.preApproved || [])];
-    if (mission.contract && standing.allowed) {
-      if (outward === 'PUBLISH') preApproved.push('merge-or-release', 'publish-or-deploy', 'push-protected-branch');
-      if (outward === 'EXTERNAL_MUTATION') preApproved.push('external-write');
-    }
-    const harmful = operatorApprovalCheck(checked, { sandbox: Boolean(mission.contract), preApproved });
+    const standingApproved = [];
+    if (standingToolAuthority(root, 'PUBLISH').allowed) standingApproved.push('publish-or-deploy','merge-or-release','push-protected-branch');
+    if (standingToolAuthority(root, 'EXTERNAL_MUTATION').allowed) standingApproved.push('external-write','send-in-operator-name');
+    if (standingToolAuthority(root, 'AUTH').allowed) standingApproved.push('sign-in');
+    const harmful = operatorApprovalCheck(checked, {
+      sandbox, preApproved: mission.contract?.preApproved || [], standingApproved
+    });
     if (harmful) {
       const taskHash = `${checked.type}:${hashTaskInput(checked.data)}`;
       const gate = this.db.prepare('SELECT * FROM nova_action_gate WHERE mission_id=?').get(id);
