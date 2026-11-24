@@ -2,6 +2,7 @@
 // Discovery may start an already configured server, but never executes a tool.
 import { agentRefusal, isReadOnlyTool, resolveAdvertisedTool } from './stdioMcpHost.mjs';
 import { operatorApprovalCheck } from '../../../../agents/lib/operator-action-guard.mjs';
+import { standingToolAuthority, mcpAuthorityRoot } from '../../../../agents/lib/standing-tool-authority.mjs';
 
 const SERVER = /^[a-z][a-z0-9-]{1,40}$/;
 const TOOL = /^[A-Za-z0-9_.-]{1,120}$/;
@@ -44,11 +45,19 @@ export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'r
   const readOnly = isReadOnlyTool(server, advertised);
   if (mode === 'read' && !readOnly) throw Error('MCP_TOOL_WRITE_MODE_REQUIRED');
   if (mode === 'write' && !readOnly) {
-    // In action chat there is no mission-scoped approval packet. High-impact
-    // actions must go through the existing mission route, which can request
-    // operator authorization; scoped workspace writes remain autonomous.
-    const required = operatorApprovalCheck({type:'mcp-write',data:{server,tool}});
-    if (required) throw Error('MCP_MISSION_APPROVAL_REQUIRED');
+    // Local, workspace-bound MCP writes inherit the operator's standing
+    // authority. No separate chat microapproval may override an explicit ALLOW.
+    // Outward and unknown-effect tools still follow their existing scope gates.
+    const localWorkspaceTool = ['shell', 'filesystem', 'git'].includes(server);
+    const authority = standingToolAuthority(mcpAuthorityRoot(host),
+      localWorkspaceTool ? 'LOCAL_MUTATION' : 'EXTERNAL_MUTATION');
+    if (authority.status === 'DENY' || authority.status === 'REVIEW') {
+      throw Error('MCP_STANDING_MANDATE_' + authority.status);
+    }
+    if (!(localWorkspaceTool && authority.allowed)) {
+      const required = operatorApprovalCheck({type:'mcp-write',data:{server,tool}});
+      if (required) throw Error('MCP_MISSION_APPROVAL_REQUIRED');
+    }
   }
   return host.call(server, tool, args, { actor:'agent', readOnly: mode === 'read' });
 }
