@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { operatorApprovalCheck } from './operator-action-guard.mjs';
+import { standingToolAuthority } from './standing-tool-authority.mjs';
 import { discoverLocalCommands, findLocalExecutable } from './local-command-inventory.mjs';
 
 export const LIMITS = { timeoutMs: 30_000, maxTimeoutMs: 300_000, outputBytes: 64 * 1024, concurrent: 4, argCount: 64, argLength: 4096 };
@@ -200,11 +201,18 @@ export function classify(command, args, { workspace, cwd = workspace, env = proc
   const problem = inline && args[0] !== '--version' && args[0] !== '-v' ? interpreterCheck(args) : spec.check?.(args); if (problem) return refuse(problem);
   destructive = destructive || spec.destructiveIf?.(args) || null;
   if (requested === 'read' && mode !== 'read') return refuse('WRITE_COMMAND_IN_READ_MODE');
-  if (push && env.JACO_SHELL_ALLOW_PUSH !== '1') return refuse('GIT_PUSH_NOT_ENABLED (the operator enables it with JACO_SHELL_ALLOW_PUSH=1)');
+  // The standing GUI policy replaces legacy env gates after operator signing.
+  // Legacy installations retain their previous switches until configured.
+  const pushAuthority = push ? standingToolAuthority(workspace, 'PUBLISH') : null;
+  if (push && ['DENY', 'REVIEW'].includes(pushAuthority.status)) return refuse('GIT_PUSH_STANDING_MANDATE_' + pushAuthority.status);
+  if (push && !pushAuthority.allowed && env.JACO_SHELL_ALLOW_PUSH !== '1') return refuse('GIT_PUSH_NOT_ENABLED (enable Publish in the standing mandate GUI)');
   if (push) { const problem = pushRefusal(args, env); if (problem) return refuse(problem); }
   // A mission worktree borrows the project's packages through a link; an install there would rewrite the project's own.
   if (command === 'npm' && ['ci', 'install', 'i'].includes(args[0]) && linkedDependencies(cwd || workspace)) return refuse('NPM_INSTALL_INTO_LINKED_DEPENDENCIES (this worktree uses the project\'s installed packages)');
-  if (destructive && !push && env.JACO_SHELL_ALLOW_DESTRUCTIVE !== '1') return refuse(`DESTRUCTIVE_NOT_ENABLED:${destructive} (the operator enables it with JACO_SHELL_ALLOW_DESTRUCTIVE=1)`);
+  const destructiveAuthority = destructive && !push ? standingToolAuthority(workspace, 'DESTRUCTIVE') : null;
+  if (destructiveAuthority && ['DENY', 'REVIEW'].includes(destructiveAuthority.status)) return refuse('DESTRUCTIVE_STANDING_MANDATE_' + destructiveAuthority.status);
+  if (destructiveAuthority && !destructiveAuthority.allowed && env.JACO_SHELL_ALLOW_DESTRUCTIVE !== '1')
+    return refuse(`DESTRUCTIVE_NOT_ENABLED:${destructive} (enable Destructive in the standing mandate GUI)`);
   // A script argument for node/python must exist inside the workspace.
   const pathArgs = [...(spec.paths ? spec.paths(args) : []), ...(spec.script && mode === 'write' ? (inline ? scriptOf(args) : positional(args).slice(0, 1)) : [])];
   const confinement = confine(pathArgs, { workspace, cwd, write: mode === 'write' || Boolean(destructive) });
