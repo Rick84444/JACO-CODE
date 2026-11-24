@@ -142,7 +142,7 @@ test('agent access per server: read, write and off; denied tools and protected p
     assert.equal((await host.call('fake', 'write', { text: 'x' }, { actor: 'agent' })).content[0].text, 'write:x', 'write access runs a changing tool');
     await assert.rejects(host.call('fake', 'write', {}, { readOnly: true }), /MCP_TOOL_NOT_READ_ONLY:fake.write/, 'an mcp-call (read mode) still refuses it');
     await assert.rejects(host.call('fake', 'crash', {}, { actor: 'agent' }), /MCP_TOOL_DENIED:fake.crash/);
-    for (const p of ['.env', 'a/.env.local', '.git/config', 'node_modules/x/index.js', 'keys/secret.txt']) {
+    for (const p of ['.env', 'a/.env.local', '.git/config', 'node_modules/x/index.js', 'keys/secret.txt', '.jaco/state/capabilities.json']) {
       await assert.rejects(host.call('fake', 'write', { path: p }, { actor: 'agent' }), /MCP_PROTECTED_PATH/, p);
     }
     assert.equal((await host.call('fake', 'write', { path: 'src/a.js', content: 'mentions a secret' }, { actor: 'agent' })).content[0].text, 'write:', 'content may mention secrets');
