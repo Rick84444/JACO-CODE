@@ -32,7 +32,7 @@ test('one in-flight DesktopHandsOff instance is shared between the direct API an
   const route=read('../../runtime/src/server/desktop/router.ts');
   const desktop=read('../../runtime/src/server/desktop/desktopHandsOff.ts');
   const relay=read('../../runtime/src/server/relay/modelRelay.ts');
-  assert.match(server,/createDesktopRouter\(WORKSPACE_ROOT, RELEASE_ROOT, requireAuth, event => \{[\s\S]{0,350}desktopHandsOff\)/);
+  assert.match(server,/createDesktopRouter\(WORKSPACE_ROOT, RELEASE_ROOT, requireAuth, event => \{[\s\S]{0,350}desktopHandsOff, modelRelay\.mandates\)/);
   assert.match(route,/const client = canonicalClient \?\? new DesktopHandsOffClient/);
   assert.match(desktop,/private inFlight = false/);
   assert.match(desktop,/if \(this\.inFlight\)/);
