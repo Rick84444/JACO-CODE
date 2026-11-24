@@ -9,6 +9,7 @@ const DEVICE = /^[A-Za-z0-9_-]{8,100}$/;
 
 // Explicit API delegation; do not forward arbitrary /api, shell, Git or model credentials.
 const READS = new Set([
+  '/api/runtime/identity', // bounded read-only self-report; never an authorization grant
   '/api/aura/plan',
   '/api/aura/workbench/local-memory',
   '/api/aura/chat/session',

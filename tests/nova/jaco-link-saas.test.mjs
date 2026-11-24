@@ -8,6 +8,7 @@ import { safeAuthReturn } from '../../site/jacocode.com/auth.mjs';
 import { permittedRemoteCall, validateRemoteCall, validateAuraCallRequest } from '../../site/jacocode.com/link-protocol.mjs';
 import { JacoLinkPairing, JacoLinkRoom } from '../../site/jacocode.com/link.mjs';
 import { createJacoLinkHost } from '../../runtime/src/server/connected/jacoLinkHost.mjs';
+import { runtimeIdentityLabel } from '../../site/jacocode.com/public/link/runtime-identity.js';
 
 const did='abcdefghijklmnopqr';
 const id='123e4567-e89b-42d3-a456-426614174000';
@@ -39,6 +40,7 @@ function rpc(method,path,body=undefined) {
 
 test('remote RPC allows only intentional Aura operator capabilities and exact paths',()=>{
   for(const [method,path] of [
+    ['GET','/api/runtime/identity'],
     ['GET','/api/aura/plan'],['GET','/api/aura/chat/session'],
     ['GET','/api/aura/workbench/local-memory'],['GET','/api/aura/workbench/approvals'],
     ['POST','/api/aura/chat'],['POST','/api/aura/workbench/start-goal'],
@@ -48,12 +50,26 @@ test('remote RPC allows only intentional Aura operator capabilities and exact pa
   for(const path of [
     '/api/terminal/exec','/api/aura/workbench/file','/api/aura/workbench/mcp/call',
     '/api/aura/workbench/project','/api/aura/model','/api/aura/budget',
+    '/api/runtime/identity?secrets=1','/api/runtime/package.json',
     '/api/aura/chat?secret=1','/api//aura/chat','/api/aura/../terminal/exec',
     '/api/aura/workbench/approvals/id/decision/../file',
   ])assert.equal(permittedRemoteCall('POST',path),false,path);
   assert.equal(validateRemoteCall(rpc('GET','/api/aura/plan',{bogus:true})).ok,false);
+  assert.equal(validateRemoteCall(rpc('GET','/api/runtime/identity',{bogus:true})).ok,false);
   assert.equal(validateRemoteCall(rpc('POST','/api/aura/chat')).ok,false);
   assert.equal(validateRemoteCall(rpc('POST','/api/aura/chat',{message:'a'.repeat(60000)})).ok,false);
+});
+
+test('remote status never treats missing or malformed source commit as proof of installation',()=>{
+  const base={success:true,version:'0.23.1',executionProfile:'full'};
+  assert.match(runtimeIdentityLabel({...base,sourceCommit:'a'.repeat(40)}), /källcommit: a{12} \(självrapporterat\)/);
+  assert.match(runtimeIdentityLabel({...base,sourceCommit:null}), /källcommit: ej styrkt/);
+  assert.match(runtimeIdentityLabel({...base,sourceCommit:'not-a-commit'}), /källcommit: ej styrkt/);
+  assert.match(runtimeIdentityLabel({...base,executionProfile:'invalid'}), /okänt läge/);
+  for(const invalid of [null,{}, {success:false,version:'0.23.1'},
+    {success:true,version:'<script>alert(1)</script>'},
+    {success:true,version:'7'.repeat(300)}])
+    assert.equal(runtimeIdentityLabel(invalid),'Runtime-identitet ej verifierad');
 });
 
 test('Google OAuth return path cannot redirect customers to attacker origin',()=>{
@@ -184,9 +200,17 @@ test('mobile app has real installable assets and actual branded memory icon',()=
   const manifest=JSON.parse(read(base+'manifest.webmanifest'));
   assert.equal(manifest.start_url,'/link/remote.html');
   assert.equal(manifest.display,'standalone');
-  for(const file of ['remote.html','connect.html','remote.js','connect.js','style.css','icon.svg','memory-tree.png'])
+  for(const file of ['remote.html','connect.html','remote.js','runtime-identity.js','connect.js','style.css','icon.svg','memory-tree.png'])
     assert.ok(fs.statSync(base+file).size>100,file);
   assert.match(read(base+'remote.js'),/\/api\/aura\/workbench\/local-memory/);
+  assert.match(read(base+'remote.js'),/\/api\/runtime\/identity/);
+  // The self-reported label lives in runtime-identity.js; remote.js renders it from there.
+  assert.match(read(base+'remote.js'),/import \{ runtimeIdentityLabel \} from '\.\/runtime-identity\.js'/);
+  assert.match(read(base+'runtime-identity.js'),/självrapporterat/);
+  assert.match(read(base+'remote.js'),/activeView=view/);
+  assert.match(read(base+'remote.js'),/refresh\(activeView\)/);
+  assert.match(read(base+'remote.js'),/Runtime-status inaktuell/);
+  assert.match(read(base+'remote.html'),/id="runtimeIdentity"/);
   assert.match(read(base+'remote.js'),/\/api\/aura\/workbench\/missions\//);
   assert.match(read('runtime/src/components/DevicesView.tsx'),/jaco-link-onboarding/);
 });
