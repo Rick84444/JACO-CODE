@@ -974,3 +974,59 @@
 .cognitive-workspace .cognitive-chat { position:relative; isolation:isolate; }
 .cognitive-workspace .jaco-quantum-conversation { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:-1; }
 .cognitive-workspace .cognitive-chat-scroll { background:transparent; }
+
+/* Aura Live Terminal: one on-demand read-only window over the canonical workspace.
+   It uses the same live events as chat/stage; this does not create another terminal runner. */
+.cognitive-workspace { position:relative; }
+.aura-live-terminal-window {
+  position:absolute; z-index:85; top:72px; right:14px;
+  width:min(490px,calc(100% - 28px));
+  height:min(650px,calc(100dvh - 120px)); min-height:220px;
+  display:flex; flex-direction:column; min-width:0; overflow:hidden;
+  color:#e4eaf2; background:#111923; border:1px solid #4b6278;
+  border-radius:12px; box-shadow:0 24px 70px #000b,0 0 0 1px #ffffff0a;
+  animation:aura-terminal-open .16s ease-out;
+}
+@keyframes aura-terminal-open {
+  from { opacity:.35; transform:translateX(14px); }
+  to { opacity:1; transform:translateX(0); }
+}
+.aura-live-terminal-header {
+  display:flex; flex:0 0 auto; align-items:center; justify-content:space-between;
+  min-height:46px; padding:0 12px; border-bottom:1px solid #34495d; background:#1b2733;
+}
+.aura-live-terminal-heading { display:inline-flex; align-items:center; gap:9px; font-size:13px; letter-spacing:.02em; }
+.aura-live-terminal-heading svg { color:#9cc9ee; }
+.aura-live-terminal-close { display:inline-flex; align-items:center; justify-content:center; min-width:38px; min-height:38px; border-radius:8px; color:#c8d5e0; }
+.aura-live-terminal-close:hover { background:#ffffff12; }
+.aura-live-terminal-state { display:flex; align-items:center; gap:7px; flex:0 0 auto; padding:7px 13px; font-size:11px; color:#aab9c8; }
+.aura-live-terminal-state-dot { width:6px; height:6px; border-radius:50%; background:#7c8592; }
+.aura-live-terminal-state[data-connection="live"] .aura-live-terminal-state-dot { background:#69bc9b; }
+.aura-live-terminal-goal { margin:0 13px 8px; font-size:12px; color:#dce5ed; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.aura-live-terminal-tabs { display:flex; flex:0 0 auto; border-block:1px solid #324253; background:#15202a; }
+.aura-live-terminal-tabs button { display:flex; align-items:center; gap:7px; flex:1; justify-content:center; min-height:40px; color:#adbfce; font-size:12px; border-bottom:2px solid transparent; }
+.aura-live-terminal-tabs button[aria-selected="true"] { color:#fff; border-bottom-color:#8bc1ee; background:#223449; }
+.aura-live-terminal-activity { display:flex; flex:1; flex-direction:column; min-height:0; }
+.aura-live-terminal-activity-tools { display:flex; justify-content:space-between; gap:8px; align-items:center; padding:7px 13px; font-size:11px; color:#a8b7c6; border-bottom:1px solid #2b3c4b; }
+.aura-live-terminal-activity-tools button { min-height:30px; padding:3px 8px; border:1px solid #40576b; border-radius:6px; color:#c9dfef; }
+.aura-live-terminal-activity-tools button[aria-pressed="true"] { border-color:#5e7d99; color:#9bc9ec; }
+.aura-live-terminal-activity-log { flex:1; min-height:0; overflow-y:auto; padding:6px 13px 16px; overscroll-behavior:contain; }
+.aura-live-terminal-activity-log ol { list-style:none; padding:0; margin:0; }
+.aura-live-terminal-activity-log li { padding:10px 0; border-bottom:1px solid #2d3c4b; }
+.aura-live-terminal-activity-log li p { font-size:12px; line-height:1.6; overflow-wrap:anywhere; margin:3px 0 0; white-space:pre-wrap; }
+.aura-live-terminal-event-meta { display:flex; align-items:center; justify-content:space-between; gap:10px; color:#a8b7c8; font-size:10px; }
+.aura-live-terminal-activity-log li[data-outcome="verified"] .aura-live-terminal-event-meta>span { color:#87d1b4; }
+.aura-live-terminal-activity-log li[data-outcome="failed"] .aura-live-terminal-event-meta>span,
+.aura-live-terminal-activity-log li[data-outcome="unknown"] .aura-live-terminal-event-meta>span { color:#edb482; }
+.aura-live-terminal-empty { padding:24px 4px; font-size:12px; color:#acbcc9; }
+.aura-live-terminal-commands { display:flex; flex:1; flex-direction:column; min-height:0; overflow:hidden; }
+.aura-live-terminal-commands>.aura-terminal { flex:1; height:100%; max-height:none; border-top:none; }
+.aura-live-terminal-commands .aura-terminal-output { flex:1; max-height:none; min-height:0; }
+@media(max-width:700px) {
+  .aura-live-terminal-window { top:calc(57px + env(safe-area-inset-top)); right:8px; left:8px;
+    bottom:calc(60px + env(safe-area-inset-bottom)); width:auto; height:auto; max-height:none; min-height:0; }
+  .aura-live-terminal-header { min-height:45px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .aura-live-terminal-window { animation:none; }
+}

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MessageSquare, Code2, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone, MoreHorizontal, Bot, Pin, PinOff } from 'lucide-react';
+import { MessageSquare, Code2, Eye, ShieldCheck, Folder, GitBranch, Wrench, PlugZap, BookOpen, MonitorSmartphone, Search, CircleDollarSign, CircleAlert, ChevronRight, X, LogOut, Network, Smartphone, MoreHorizontal, Bot, Pin, PinOff, TerminalSquare } from 'lucide-react';
 import { JacoWordmark } from './JacoWordmark';
 import { CostChip } from './CostChip';
 import { JacoWindowsUpdates } from './JacoWindowsUpdates';
@@ -20,6 +20,7 @@ interface Props {
   approvalCount:number;onApprovals:()=>void;onCommands:()=>void;onSignOut:()=>void;
   lastObservedAt:string|null;error:string|null;
   attention?:React.ReactNode;
+  liveTerminalOpen:boolean;onToggleLiveTerminal:()=>void;liveTerminal:React.ReactNode;
   portraitChat?: AuraPortraitChat;
 }
 const views=[['conversation',MessageSquare,'Samtal'],['agents',Bot,'Agenter'],['code',Code2,'Kod'],['connections',PlugZap,'Anslutningar'],['economy',CircleDollarSign,'Ekonomi'],['preview',Eye,'Förhandsvisa'],['evidence',ShieldCheck,'Belägg'],['gameboard',Network,'Spelplan'],['voice',Smartphone,'WhatsApp']] as const;
@@ -127,6 +128,9 @@ export function CognitiveWorkspace(props:Props) {
       <div className="cognitive-top-actions">
         <CostChip onOpen={()=>props.onCanvas('economy')}/>
         <JacoWindowsUpdates/>
+        <button type="button" data-testid="aura-live-terminal-toggle" aria-expanded={props.liveTerminalOpen}
+          aria-controls="aura-live-terminal" aria-label={tr('Öppna Aura Live Terminal', 'Open Aura Live Terminal')}
+          title={tr('Aura Live Terminal', 'Aura Live Terminal')} onClick={props.onToggleLiveTerminal}><TerminalSquare size={16}/></button>
         <select className="cognitive-language-select" aria-label={tr('Språk', 'Language')} title={tr('Språk', 'Language')} value={language} onChange={event => setLanguage(event.target.value === 'sv' ? 'sv' : 'en')} style={{color:'inherit',background:'#2f3032',border:'1px solid #3b4652',borderRadius:6,padding:'4px 5px',fontSize:11}}><option value="en">EN</option><option value="sv">SV</option></select>
         {props.approvalCount>0 && <button type="button" className="cognitive-approval-button" aria-label={`${props.approvalCount} ${tr('beslut behöver dig', 'decisions need your attention')}`} onClick={props.onApprovals}><CircleAlert size={14}/><span>{props.approvalCount} {tr('beslut','decisions')}</span></button>}
         <button type="button" aria-label={tr('Sök verktyg och kommandon', 'Search tools and commands')} title={tr('Sök', 'Search')+' · Ctrl+Shift+P'} onClick={props.onCommands}><Search size={16}/></button>
@@ -138,6 +142,7 @@ export function CognitiveWorkspace(props:Props) {
     {props.remoteMode && <nav className="cognitive-remote-navigation" aria-label="Remote control">
       {([['conversation','Chat'],['stage','Mission'],['code','Code'],['preview','Preview'],['connections','Tools & models'],['gameboard','Plan'],['evidence','Results']] as const).map(([view,label]) =>
         <button key={view} type="button" aria-pressed={props.canvas===view} onClick={()=>props.onCanvas(view)}>{label}</button>)}
+      <button type="button" onClick={props.onToggleLiveTerminal} aria-expanded={props.liveTerminalOpen}>{tr('Live-terminal','Live terminal')}</button>
       <button type="button" onClick={props.onApprovals}>Approvals{props.approvalCount ? ' ('+props.approvalCount+')' : ''}</button>
       <a href="/" className="cognitive-remote-full">Open full JACO</a>
       <button type="button" onClick={props.onSignOut}>Sign out of Remote</button>
@@ -211,11 +216,13 @@ export function CognitiveWorkspace(props:Props) {
         <div className="cognitive-mobile-menu-grid">
           {views.filter(([id])=>!['conversation','agents'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>navigate(id)}><Icon size={20}/>{L(label)}</button>)}
           {tools.filter(([id])=>['source-control','devices'].includes(id)).map(([id,Icon,label])=><button key={id} type="button" onClick={()=>openPanel(id)}><Icon size={20}/>{L(label)}</button>)}
+          <button type="button" onClick={()=>{menu.current?.close();props.onToggleLiveTerminal();}}><TerminalSquare size={20}/>{tr('Live-terminal','Live terminal')}</button>
           <button type="button" onClick={()=>{menu.current?.close();props.onApprovals();}}><ShieldCheck size={20}/>{L('Beslut')}{props.approvalCount>0 ? ` (${props.approvalCount})` : ''}</button>
           <button type="button" onClick={()=>{menu.current?.close();props.onCommands();}}><Search size={20}/>{L('Sök funktion')}</button>
           <button type="button" onClick={()=>{menu.current?.close();props.onSignOut();}}><LogOut size={20}/>{L('Logga ut')}</button>
         </div>
       </div>
     </dialog>
+    {props.liveTerminalOpen && props.liveTerminal}
   </div>;
 }
