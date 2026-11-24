@@ -157,6 +157,21 @@ test('the command gets a minimal environment: no token, key or password of the s
   assert.equal(resolveProgram('git', 'win32').cmd, 'git');
 });
 
+test('npm installs in an isolated worktree without modifying linked primary dependencies', { skip: !posix }, async () => {
+  const ws = workspace();
+  const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-shared-deps-'));
+  try {
+    fs.writeFileSync(path.join(shared, 'do-not-change.txt'), 'primary');
+    fs.symlinkSync(shared, path.join(ws, 'node_modules'), 'dir');
+    const sh = new SafeShell({ workspace: ws, env: { PATH: process.env.PATH, HOME: ws } });
+    const result = await sh.run({ command:'npm',
+      args:['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund'], timeoutSeconds: 120 });
+    assert.equal(result.ok, true, result.stderr || result.reason);
+    assert.equal(fs.lstatSync(path.join(ws,'node_modules')).isSymbolicLink(), false);
+    assert.equal(fs.readFileSync(path.join(shared,'do-not-change.txt'),'utf8'), 'primary');
+  } finally { fs.rmSync(ws,{recursive:true,force:true}); fs.rmSync(shared,{recursive:true,force:true}); }
+});
+
 test('real runs in a real folder: output, exit codes, refusals, no interpretation of metacharacters', { skip: !posix }, async () => {
   const ws = workspace();
   const sh = new SafeShell({ workspace: ws, env: { PATH: process.env.PATH, HOME: ws, JACO_GATEWAY_TOKEN: 'must-not-leak', DEEPSEEK_API_KEY: 'sk-must-not-leak-0123456789' } });
