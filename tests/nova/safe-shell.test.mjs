@@ -167,7 +167,8 @@ test('npm installs in an isolated worktree without modifying linked primary depe
     const result = await sh.run({ command:'npm',
       args:['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund'], timeoutSeconds: 120 });
     assert.equal(result.ok, true, result.stderr || result.reason);
-    assert.equal(fs.lstatSync(path.join(ws,'node_modules')).isSymbolicLink(), false);
+    assert.equal(fs.existsSync(path.join(ws,'node_modules')) && fs.lstatSync(path.join(ws,'node_modules')).isSymbolicLink(), false,
+      'npm may omit an empty node_modules directory, but may never retain the shared symlink');
     assert.equal(fs.readFileSync(path.join(shared,'do-not-change.txt'),'utf8'), 'primary');
   } finally { fs.rmSync(ws,{recursive:true,force:true}); fs.rmSync(shared,{recursive:true,force:true}); }
 });
