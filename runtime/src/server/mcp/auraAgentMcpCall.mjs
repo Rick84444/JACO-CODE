@@ -41,7 +41,8 @@ export async function callAuraMcpTool(host, { server, tool, args = {}, mode = 'r
   if (!advertised) throw Error('MCP_TOOL_UNAVAILABLE');
   tool = advertised.name;
   const readOnly = isReadOnlyTool(server, advertised);
-  const localWorkspaceTool = ['shell', 'filesystem', 'git'].includes(server);
+  // Keep chat and final MCP-host dispatch classification identical.
+  const localWorkspaceTool = ['shell', 'filesystem', 'git', 'repo', 'editor'].includes(server);
   const consequence = readOnly ? 'READ'
     : server === 'git' && /push|merge|release|publish/i.test(tool) ? 'PUBLISH'
     : localWorkspaceTool ? 'LOCAL_MUTATION' : 'EXTERNAL_MUTATION';
