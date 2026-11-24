@@ -40,6 +40,18 @@ export function standingToolAuthority(workspaceRoot, consequence, {now = Date.no
     reason: decision === 'ALLOW' ? 'OPERATOR_STANDING_MANDATE' : 'OPERATOR_MANDATE_' + decision };
 }
 
+// Existing CapabilityPolicy switches are explicit operator denies, not a
+// competing source of grants. Read them at dispatch so live GUI edits apply.
+export function operatorTaskEnabled(workspaceRoot, taskId) {
+  if (!workspaceRoot || !taskId) return true;
+  const file = path.join(workspaceRoot, '.jaco', 'state', 'capabilities.json');
+  let state;
+  try { state = JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch (error) { return error?.code === 'ENOENT'; }
+  if (state?.schema !== 'jaco.capabilities/v1' || !Array.isArray(state.disabledTasks)) return false;
+  return !state.disabledTasks.includes(taskId);
+}
+
 export function mcpAuthorityRoot(host) {
   // The MCP configuration resides at <workspace>/.jaco/mcp/servers.json.
   return typeof host?.configFile === 'string'
