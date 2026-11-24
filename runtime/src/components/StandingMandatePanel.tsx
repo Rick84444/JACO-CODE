@@ -59,6 +59,9 @@ export function StandingMandatePanel() {
       const result = await response.json();
       if (!response.ok || !result.success) throw Error(typeof result.error === 'string' ? result.error : 'MANDATE_WRITE_FAILED');
       await load();
+      if (Array.isArray(result.propagationErrors) && result.propagationErrors.length) {
+        setError('Policyn är sparad men en adapter kunde inte återkallas: ' + result.propagationErrors.join('; '));
+      }
     } catch (e: any) {
       setError(String(e?.message || e));
       if (String(e?.message || '').includes('REVISION_CONFLICT')) {
