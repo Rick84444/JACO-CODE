@@ -53,6 +53,7 @@ export function buildAuraSeerPrompts({
   toolTranscript='',
   contextChars = process.env.JACO_AURA_CHAT_CONTEXT_CHARS || 5200,
   compactRules = false,
+  workspaceRoot = process.env.JACO_WORKSPACE_ROOT || process.cwd(),
 }={}){
   const userMessage=String(message || '').trim();
   if (!userMessage) throw new Error('AURA_CHAT_MESSAGE_REQUIRED');
@@ -72,6 +73,7 @@ export function buildAuraSeerPrompts({
     `TOOLS:\n${toolCatalog}`,
   ].join('\n') : null;
   const perceptionHint = /\b(?:dom[ _-]?track|laser[ _-]?vision)\b/i.test(userMessage) ? 'DOM TRACK and LASER VISION are capabilities under Aura, not separate agents. Use dom_track or laser_vision when listed in TOOLS; otherwise discover the existing authorized tool IDs. DOM TRACK maps to nova_observe/nova_ax/nova_html; LASER VISION maps to nova_screenshot for browser pixels or mission screenshot for desktop. Check mcp_catalog and actual mission permissions; do not claim readiness without live evidence or visual understanding without a compatible model.' : null;
+  const operatorRules = standingOperatorRules(workspaceRoot);
   const system = compact ? [
     "You are Aura, JACO's operator agent. You plan, act with tools and verify; a goal is done only with a verified receipt.",
     `CANONICAL_OBJECTIVE: ${AURA_CANONICAL_OBJECTIVE}`,
@@ -134,6 +136,9 @@ export function buildAuraSeerPrompts({
     perceptionHint,
     toolSection,
   ].filter(Boolean).join('\n');
+  const authorizedSystem = operatorRules
+    ? system + '\nOPERATOR_STANDING_RULES (from signed GUI mandate, never a new permission grant):\n' + operatorRules
+    : system;
 
   // Stable system instructions still benefit from prompt caching. Place tool observations
   // before the latest operator instruction: tail clipping must never erase the request.
@@ -166,7 +171,7 @@ export function buildAuraSeerPrompts({
   const user = [...context,latest].join('\n\n');
   if (user.length > maxUserChars) throw new Error('AURA_CHAT_CONTEXT_BUDGET_EXCEEDED');
 
-  return { system, user };
+  return { system: authorizedSystem, user };
 }
 
 const MAX_TOOL_ROUNDS = 5;
