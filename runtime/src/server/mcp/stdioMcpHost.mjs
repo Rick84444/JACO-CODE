@@ -482,7 +482,7 @@ export class StdioMcpHost {
           && agentRefusal(def, t, {}, { allowRemoteWrite: authority.EXTERNAL_MUTATION.allowed }) === null };
       });
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
-        credentialEnv: id === 'huggingface' ? def.tokenEnv || '' : undefined,
+        credentialEnv: def.tokenEnv || undefined,
         credentialConfigured: def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
         builtIn: Boolean(defaultServers(this)[id]),
         icon: def.icon, agentAccess: def.agentAccess, deny: def.deny, stats,
