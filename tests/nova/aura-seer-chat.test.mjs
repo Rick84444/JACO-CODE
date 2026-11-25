@@ -442,3 +442,26 @@ test('a thrown mutation without the pre-dispatch mark still stops as an unknown 
   assert.equal(out.toolReceipts[0].outcomeUnknown, true);
   assert.match(out.reply, /not retried/i);
 });
+
+test('a call after a narrating sentence or inside a code fence runs; text around it is never executed (2026-11-24)', async () => {
+  const seen = [];
+  const replies = ['Jag öppnar sidan nu.\nTOOL_CALL {"name":"health","args":{}}',
+    '```\nTOOL_CALL {"name":"health","args":{"n":2}}\n```', 'Klart.'];
+  const out = await auraChatViaSeer({ message: 'Kolla', toolbox: { tools: {
+    health: { description: 'read', run: async args => { seen.push(args); return { ok: true }; } },
+  } }, complete: async () => ({ provider: 'fixture', model: 'fixture', local: true, text: replies.shift() }) });
+  assert.deepEqual(seen, [{}, { n: 2 }]);
+  assert.equal(out.toolReceipts.length, 2);
+  assert.equal(out.reply, 'Klart.');
+});
+
+test('a direct tool routed through mcp_tool runs as that direct tool (2026-11-24)', async () => {
+  const seen = [];
+  const replies = ['TOOL_CALL {"name":"mcp_tool","args":{"server":"browser","tool":"target_track","arguments":{"target":"Sök"},"mode":"read"}}', 'Hittade.'];
+  const out = await auraChatViaSeer({ message: 'Hitta', toolbox: { tools: {
+    target_track: { description: 'read', run: async args => { seen.push(['target_track', args]); return { ok: true }; } },
+    mcp_tool: { description: 'action', run: async args => { seen.push(['mcp_tool', args]); return { ok: true }; } },
+  } }, complete: async () => ({ provider: 'fixture', model: 'fixture', local: true, text: replies.shift() }) });
+  assert.deepEqual(seen, [['target_track', { target: 'Sök' }]]);
+  assert.equal(out.toolReceipts[0].name, 'target_track');
+});

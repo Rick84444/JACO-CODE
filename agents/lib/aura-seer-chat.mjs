@@ -234,12 +234,30 @@ function auraMemoryChars(){
   return Number.isFinite(v) && v >= 0 ? v : 1500;
 }
 
+// Find the end of one balanced JSON object or array at the start of s (strings respected).
+function balancedEnd(s, open, close){
+  let depth=0,inString=false,escaped=false;
+  for(let i=0;i<s.length;i++){
+    const ch=s[i];
+    if(inString){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch==='"')inString=false;continue;}
+    if(ch==='"')inString=true;
+    else if(ch===open)depth++;
+    else if(ch===close&&--depth===0)return i+1;
+  }
+  return -1;
+}
+
 function parseToolCalls(text=''){
-  const source=String(text).trim();
+  const raw=String(text).trim();
+  // Models often narrate a sentence before the call or wrap it in a code fence; gemini-2.5-flash did
+  // both and every such turn was discarded as a protocol error (observed 2026-11-24). The call must
+  // still start its own line and be valid JSON, and nothing else in the reply is ever executed.
+  const line=/(^|\n)[ \t]*(?:```[A-Za-z]*[ \t]*\n[ \t]*)?(?=TOOL_CALLS? )/.exec(raw);
+  const source=line ? raw.slice(line.index+line[0].length) : raw;
   const batch=source.startsWith('TOOL_CALLS ');
-  const single=source.startsWith('TOOL_CALL ');
+  const single=!batch&&source.startsWith('TOOL_CALL ');
   // Treat tool-shaped source as a protocol error, not as an answer or executable code.
-  const toolLike=/^\s*(?:```[^\n]*\n\s*)?(?:TOOL_CALLS?\b|TOOL_CODE\b|print\s*\(\s*(?:mcp_tool|[a-z_]+_read)\s*\()/m.test(source);
+  const toolLike=/^\s*(?:```[^\n]*\n\s*)?(?:TOOL_CALLS?\b|TOOL_CODE\b|print\s*\(\s*(?:mcp_tool|[a-z_]+_read)\s*\()/m.test(raw);
   if(!batch&&!single)return {calls:[],invalid:toolLike};
   const normalize = call => {
     if(!call||typeof call!=='object'||Array.isArray(call)||typeof call.name!=='string'||
@@ -250,25 +268,22 @@ function parseToolCalls(text=''){
   try {
     let calls;
     if(batch){
-      const value=JSON.parse(source.slice('TOOL_CALLS '.length));
+      const rest=source.slice('TOOL_CALLS '.length).trimStart();
+      if(!rest.startsWith('['))throw Error('INVALID_TOOL_BATCH');
+      const finish=balancedEnd(rest,'[',']');
+      if(finish<0)throw Error('INVALID_TOOL_BATCH');
+      const value=JSON.parse(rest.slice(0,finish));
       if(!Array.isArray(value)||!value.length||value.length>MAX_BATCH)throw Error('INVALID_TOOL_BATCH');
       calls=value.map(normalize);
     } else {
-      // Preserve compatibility with models that emit exactly repeated legacy call lines.
+      // Preserve compatibility with models that emit exactly repeated legacy call lines. Text after
+      // the call (a closing fence or a sentence) is ignored, never executed.
       let rest=source;
       calls=[];
-      while(rest){
-        if(!rest.startsWith('TOOL_CALL '))throw Error('INVALID_TOOL_CALL_TRAILING_TEXT');
-        rest=rest.slice('TOOL_CALL '.length);
+      while(rest.startsWith('TOOL_CALL ')){
+        rest=rest.slice('TOOL_CALL '.length).trimStart();
         if(!rest.startsWith('{'))throw Error('INVALID_TOOL_CALL');
-        let depth=0,inString=false,escaped=false,finish=-1;
-        for(let i=0;i<rest.length;i++){
-          const ch=rest[i];
-          if(inString){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch==='"')inString=false;continue;}
-          if(ch==='"')inString=true;
-          else if(ch==='{')depth++;
-          else if(ch==='}'&&--depth===0){finish=i+1;break;}
-        }
+        const finish=balancedEnd(rest,'{','}');
         if(finish<0)throw Error('INVALID_TOOL_CALL');
         calls.push(normalize(JSON.parse(rest.slice(0,finish))));
         if(calls.length>MAX_BATCH)throw Error('INVALID_TOOL_BATCH');
@@ -281,6 +296,7 @@ function parseToolCalls(text=''){
     return {calls:unique,invalid:false};
   } catch {return {calls:[],invalid:true};}
 }
+
 
 // `toolbox` = { observe(): Promise<string>, tools: { name: { description, run(args) } } }.
 // Every tool result is recorded as a receipt; the model may only cite what a receipt shows.
@@ -316,7 +332,15 @@ async function runToolLoop(input, fetchImpl){
         && /\b(call|calling|use|anropa|använd|kör)\b/i.test(completion.text)&&completion.text.length<400;
       if(!announced)return {completion,receipts,modelCosts};
     }
-    const calls=parsed.calls;
+    // A model sometimes routes one of these direct tools through mcp_tool as if it were an MCP server
+    // tool (mcp_tool {server:"browser", tool:"target_track"}), wasting its turns (observed 2026-11-24).
+    // Run the direct tool it named instead; nothing beyond that advertised tool is reachable this way.
+    const calls=parsed.calls.map(call=>{
+      const inner=call.name==='mcp_tool'?String(call.args?.tool||''):'';
+      if(!inner||inner==='mcp_tool'||!Object.hasOwn(tools,inner))return call;
+      const args=call.args?.arguments;
+      return {name:inner,args:args&&typeof args==='object'&&!Array.isArray(args)?args:{}};
+    });
     const invalid=protocolError||!calls.length||
       calls.some(call=>!Object.hasOwn(tools,call.name))||
       (calls.length>1&&calls.some(call=>!BATCH_READ_TOOLS.has(call.name)))||

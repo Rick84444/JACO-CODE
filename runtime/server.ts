@@ -385,6 +385,10 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
             name: server.name,
             role: server.role,
             status: server.status,
+            // A failed or stopped server is retried on the next call (a start that failed during a
+            // stack restart stays FAILED until then). Aura read FAILED as "unavailable" and gave up
+            // without trying (observed 2026-11-24).
+            ...(server.status !== 'READY' && server.agentAccess !== 'off' ? { connection: 'Not connected right now. mcp_tool and mcp_discover start or reconnect it on demand: make the call before reporting the server unavailable.' } : {}),
             agentAccess: server.agentAccess,
             readTools: (server.tools || []).filter((tool: any) => tool.readOnly === true && tool.agentAllowed === true).slice(0, 100).map((tool: any) => tool.name),
             writeTools: (server.tools || []).filter((tool: any) => tool.readOnly !== true && tool.agentAllowed === true).slice(0, 100).map((tool: any) => tool.name),
