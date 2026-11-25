@@ -13,10 +13,19 @@ export const WORKSPACE_CONTROL_INSTRUCTION = [
   'They only change what is shown; they never run commands or change files.',
 ].join(' ');
 
-const DIRECTIVE = /\[\[jaco:(open|terminal|file)(?:\s+([^\]\r\n]{1,300}))?\]\]/gi;
+// The Operator Stage: Aura in the middle, panels beside her that she lights up while she talks about them.
+export const STAGE_PANELS = Object.freeze(['mission', 'browser', 'tools']);
+export const STAGE_CONTROL_INSTRUCTION = [
+  'You are on the operator\'s stage: you stand in the middle and panels sit beside you.',
+  'When you talk about one of them, light it up by writing a directive on its own line; the stage enlarges it with a glow and hides the directive:',
+  `[[jaco:focus PANEL]] where PANEL is mission (the work running now, its plan and steps), browser (the page your browser shows) or tools (the tool calls you made).`,
+  'Use it when the panel helps the operator see what you mean, at most two per reply. It only changes what is shown.',
+].join(' ');
+
+const DIRECTIVE = /\[\[jaco:(open|terminal|file|focus)(?:\s+([^\]\r\n]{1,300}))?\]\]/gi;
 const SAFE_PATH = /^(?!\/)(?![A-Za-z]:)(?!.*(?:^|[\\/])\.\.(?:[\\/]|$))[\w .\-\\/@+]{1,300}$/;
 
-/** @param {string} reply @returns {{ text: string, actions: Array<{type:'open',view:string}|{type:'terminal'}|{type:'file',path:string}> }} */
+/** @param {string} reply @returns {{ text: string, actions: Array<{type:'open',view:string}|{type:'terminal'}|{type:'file',path:string}|{type:'focus',panel:string}> }} */
 export function extractWorkspaceActions(reply) {
   const actions = [];
   const text = String(reply || '').replace(DIRECTIVE, (_match, verb, arg) => {
@@ -26,8 +35,12 @@ export function extractWorkspaceActions(reply) {
     if (kind === 'terminal') actions.push({ type: 'terminal' });
     else if (kind === 'open' && WORKSPACE_VIEWS.includes(value.toLowerCase())) actions.push({ type: 'open', view: value.toLowerCase() });
     else if (kind === 'file' && SAFE_PATH.test(value)) actions.push({ type: 'file', path: value.replace(/\\/g, '/') });
+    else if (kind === 'focus' && STAGE_PANELS.includes(value.toLowerCase())) actions.push({ type: 'focus', panel: value.toLowerCase() });
     return '';
-  }).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  })
+    // A directive with a verb the GUI does not know ([[jaco:browser]]) is still a directive, never reply text.
+    .replace(/\[\[jaco:[^\]\r\n]{0,300}\]\]/gi, '')
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   return { text, actions };
 }
 

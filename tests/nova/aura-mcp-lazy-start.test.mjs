@@ -94,6 +94,43 @@ test('qualified MCP aliases keep canonical deny and read/write checks',async()=>
   await assert.rejects(callAuraMcpTool(a.host,{server:'workspace',tool:'workspace.workspace_write'}),/MCP_TOOL_WRITE_MODE_REQUIRED/);
   assert.equal(a.calls.length,1);
 });
+// 2026-11-25: the browser refused every click and keystroke the chat sent, because the model left out the page
+// address Nova requires (or called it `url`). The call now carries the page the browser shows.
+function browserHost(pageUrl='https://www.google.com/?zx=17956') {
+  const calls=[];
+  const def={id:'browser',agentAccess:'write',transport:'http',url:'http://127.0.0.1:2996/mcp',localBridge:true,deny:[]};
+  const props={selector:{type:'string'},expectedUrl:{type:'string'},text:{type:'string'},actionId:{type:'string'}};
+  const tools=[{name:'nova_observe',readOnly:true,inputSchema:{type:'object',properties:{}}},
+    {name:'nova_type',readOnly:false,inputSchema:{type:'object',properties:props}}];
+  const host={servers:()=>({browser:def}),listTools:async()=>tools,call:async(id,name,args,options)=>{
+    calls.push({id,name,args,options});
+    if(name==='nova_observe') return {content:[{type:'text',text:JSON.stringify({url:pageUrl,title:'Google'})}],isError:false};
+    return {content:[{type:'text',text:'{"ok":true,"verified":true}'}],isError:false};
+  }};
+  return {host,calls};
+}
+test('a browser input without expectedUrl carries the page the browser shows, read first',async()=>{
+  const {host,calls}=browserHost();
+  try { await callAuraMcpTool(host,{server:'browser',tool:'nova_type',mode:'write',args:{selector:"textarea[name='q']",text:'Kiruna'}}); }
+  catch (error) { if (!/MANDATE|APPROVAL|AUTHORITY/.test(error.message)) throw error; }
+  assert.equal(calls[0].name,'nova_observe');
+  assert.equal(calls[0].options.readOnly,true);
+  const typed=calls.find(c=>c.name==='nova_type');
+  if (typed) assert.equal(typed.args.expectedUrl,'https://www.google.com/?zx=17956');
+});
+test('a model that names the page `url` means expectedUrl, and an explicit expectedUrl is kept',async()=>{
+  const a=browserHost();
+  try { await callAuraMcpTool(a.host,{server:'browser',tool:'nova_type',mode:'write',args:{url:'https://www.google.com/',selector:'q',text:'x'}}); }
+  catch (error) { if (!/MANDATE|APPROVAL|AUTHORITY/.test(error.message)) throw error; }
+  assert.equal(a.calls.some(c=>c.name==='nova_observe'),false);
+  const typed=a.calls.find(c=>c.name==='nova_type');
+  if (typed) { assert.equal(typed.args.expectedUrl,'https://www.google.com/'); assert.equal('url' in typed.args,false); }
+  const b=browserHost();
+  try { await callAuraMcpTool(b.host,{server:'browser',tool:'nova_type',mode:'write',args:{expectedUrl:'https://example.com/',selector:'q',text:'x'}}); }
+  catch (error) { if (!/MANDATE|APPROVAL|AUTHORITY/.test(error.message)) throw error; }
+  assert.equal(b.calls.some(c=>c.name==='nova_observe'),false);
+});
+
 test('public PR reader uses the read-only fetch server with validated paths and no browser',async()=>{
   const calls=[];
   const host={servers:()=>({fetch:{id:'fetch',agentAccess:'read',deny:[]}}),listTools:async()=>[{name:'fetch',readOnly:true}],call:async(id,name,args,opts)=>{

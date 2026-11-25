@@ -180,10 +180,11 @@ export function buildAuraSeerPrompts({
   return { system: authorizedSystem, user };
 }
 
-// A browser task (open, type, submit, observe, verify) needs more than five model turns; twelve
-// matches the per-message tool-call ceiling. Budgets and approvals still bound every call.
-const MAX_TOOL_ROUNDS = 12;
-const MAX_TOOL_CALLS = 12;
+// A browser task (open, observe, type, submit, verify) used up twelve calls with nothing to spare and the chat
+// stopped mid-task (2026-11-25); twenty leaves room inside the turn's time budget. Work larger than one answer
+// continues as a durable mission (continueAsMission). Budgets and approvals still bound every call.
+const MAX_TOOL_ROUNDS = 20;
+const MAX_TOOL_CALLS = 20;
 const MAX_BATCH = 4;
 // Only known read contracts may share a batch. State-changing or unknown contracts require a fresh model turn.
 const BATCH_READ_TOOLS = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','policy_get','dom_track','laser_vision','target_track','aura_functions','current_work','runtime_events']);
@@ -298,6 +299,28 @@ function parseToolCalls(text=''){
 }
 
 
+// Work that outgrows one chat answer is handed to the durable Mission Bus instead of stopping (operator
+// 2026-11-25: "she does not have enough tools to do real work"). Only in action mode, only through the
+// start_goal tool the chat already offers, and with what was done so far, so the mission does not repeat it.
+// Returns the goal id, or null when no handoff happened.
+export async function continueAsMission(input, tools, receipts) {
+  if (input.chatMode !== 'action' || !tools.start_goal || receipts.some(r => r.name === 'start_goal')) return null;
+  const done = receipts.map(r => `${r.name}${r.args?.tool ? ' ' + r.args.tool : ''} ${r.ok ? 'ok' : 'failed'}`).join('; ');
+  const goal = [String(input.message || '').slice(0, 6000),
+    `Continued from the operator's chat after ${receipts.length} tool calls in one answer.`,
+    done ? `Already done in the chat (verify the current state, do not repeat a completed action): ${done.slice(0, 3000)}` : ''].filter(Boolean).join('\n\n');
+  const at = new Date().toISOString();
+  try {
+    const result = await tools.start_goal.run({ goal });
+    const goalId = typeof result?.goalId === 'string' ? result.goalId : null;
+    receipts.push({ name: 'start_goal', args: { goal: goal.slice(0, 200) }, ok: Boolean(goalId), at });
+    return goalId;
+  } catch (error) {
+    receipts.push({ name: 'start_goal', args: { goal: goal.slice(0, 200) }, ok: false, at, error: String(error?.message || error).slice(0, 200) });
+    return null;
+  }
+}
+
 // `toolbox` = { observe(): Promise<string>, tools: { name: { description, run(args) } } }.
 // Every tool result is recorded as a receipt; the model may only cite what a receipt shows.
 async function runToolLoop(input, fetchImpl){
@@ -323,10 +346,15 @@ async function runToolLoop(input, fetchImpl){
     if (completion.costStatus) modelCosts.push({ status: completion.costStatus, usd: completion.costUsd ?? null });
     const parsed = parseToolCalls(completion.text);
     const protocolError=parsed.invalid;
-    if(finalRound && (protocolError || parsed.calls.length)) return {
-      completion:{...completion,text:`The tool limit was reached. I did not carry out the last proposed call. ${receipts.length} earlier tool calls are in the receipts.`},
-      receipts,modelCosts,
-    };
+    if(finalRound && (protocolError || parsed.calls.length)) {
+      const mission = await continueAsMission(input, tools, receipts);
+      return {
+        completion:{...completion,text: mission
+          ? `This needs more steps than one chat answer allows, so I continue it as a mission (${mission}). You can follow it under current work. ${receipts.length - 1} tool calls from this answer are in the receipts.`
+          : `The tool limit was reached. I did not carry out the last proposed call. ${receipts.length} earlier tool calls are in the receipts.`},
+        receipts,modelCosts,
+      };
+    }
     if(!parsed.calls.length&&!protocolError){
       const announced=!finalRound && Object.keys(tools).some(name=>completion.text.includes(name))
         && /\b(call|calling|use|anropa|använd|kör)\b/i.test(completion.text)&&completion.text.length<400;

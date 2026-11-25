@@ -78,9 +78,10 @@ import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFrom
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
-import { auraAlwaysAnswers, answerInOrder, answerWithin, auraChatDeadlines, auraStatusReply } from "../agents/lib/aura-always-answers.mjs";
+import { auraAlwaysAnswers, answerInOrder, auraChatDeadlines, auraStatusReply, chatBudget } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
-import { WORKSPACE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
+import { WORKSPACE_CONTROL_INSTRUCTION, STAGE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
+import { operatorStageAssets } from "./operator-stage/assets.mjs";
 import { createStackRepair } from "./src/server/connected/stackRepair.mjs";
 import { createPiperVoice } from "./src/server/connected/piperVoice.mjs";
 import { renewStandingGrants } from "./src/server/desktop/grantAtStart.mjs";
@@ -986,35 +987,41 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
     try { res.json({ success: true, ...(await connections.refresh()) }); }
     catch { res.status(503).json({ success: false, error: 'CONNECTION_REFRESH_FAILED' }); }
   });
-  // Aura's spoken voice for the portrait: local Piper Alma first; the voiceChannel engine (edge-tts, which sends the
-  // text to Microsoft, as documented in voiceChannel) only when Piper is unavailable.
+  // Aura's spoken voice for the portrait and the Operator Stage.
+  // Operator 2026-11-25: Piper Alma did not sound human enough; Aura speaks with Microsoft's neural voice
+  // (sv-SE-SofieNeural through the voiceChannel edge engine). The operator chose it knowing the spoken text is sent
+  // to Microsoft. Local Piper Alma (2026-11-19, CC-BY-4.0) stays as the fallback, so she still speaks offline.
+  // JACO_AURA_VOICE=piper puts the local voice first again.
   app.post('/api/aura/voice/speak', requireLocalUiSameOrigin, async (req, res) => {
     const text = typeof req.body?.text === 'string' ? req.body.text : '';
     if (!text.trim() || text.length > 6000) return res.status(400).json({ success: false, error: 'VOICE_TEXT_INVALID' });
     const lang = typeof req.body?.lang === 'string' && /^[a-z]{2}-[A-Z]{2}$/.test(req.body.lang) ? req.body.lang : 'sv-SE';
-    // Operator 2026-11-19: Aura's voice is Piper TTS with Alma (sv_SE-alma-medium, CC-BY-4.0). It runs on this
-    // computer, so nothing she says leaves the machine. The neural edge voice is only the fallback when Piper fails.
-    let piperError = 'PIPER_MODEL_MISSING';
-    if (lang.startsWith('sv') && piperVoice.available()) {
-      try {
-        const bytes = await piperVoice.synthesize(text);
-        res.setHeader('Cache-Control', 'no-store');
-        res.setHeader('X-Jaco-Voice', 'piper-alma');
-        return res.type('audio/wav').send(bytes);
-      } catch (error: any) { piperError = String(error?.message || 'PIPER_FAILED').slice(0, 80); }
-    }
-    try {
-      const env = { ...process.env, JACO_VOICE_ENGINE: process.env.JACO_VOICE_ENGINE || 'edge', JACO_VOICE_LANG: process.env.JACO_VOICE_LANG || lang };
+    const failures: string[] = [];
+    const neural = async () => {
+      const env = { ...process.env, JACO_VOICE_ENGINE: 'edge', JACO_VOICE_LANG: lang };
       const sound = await synthesizeVoice(text, { env });
       try {
+        if (sound.engine && sound.engine !== 'edge-tts') throw new Error('NEURAL_VOICE_UNAVAILABLE');
         const bytes = fs.readFileSync(sound.file);
         res.setHeader('Cache-Control', 'no-store');
-        res.setHeader('X-Jaco-Voice', 'fallback');
+        res.setHeader('X-Jaco-Voice', 'neural-sofie');
         res.type(sound.mimetype.split(';')[0]).send(bytes);
+        return true;
       } finally { fs.rmSync(sound.file, { force: true }); }
-    } catch (error: any) {
-      res.status(503).json({ success: false, error: `${piperError}; ${String(error?.message || 'VOICE_UNAVAILABLE')}`.slice(0, 200) });
+    };
+    const piper = async () => {
+      if (!lang.startsWith('sv') || !piperVoice.available()) throw new Error('PIPER_MODEL_MISSING');
+      const bytes = await piperVoice.synthesize(text);
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Jaco-Voice', 'piper-alma');
+      res.type('audio/wav').send(bytes);
+      return true;
+    };
+    for (const engine of process.env.JACO_AURA_VOICE === 'piper' ? [piper, neural] : [neural, piper]) {
+      try { if (await engine()) return; }
+      catch (error: any) { failures.push(String(error?.message || 'VOICE_FAILED').slice(0, 80)); }
     }
+    res.status(503).json({ success: false, error: failures.join('; ').slice(0, 200) || 'VOICE_UNAVAILABLE' });
   });
   // Metadata only. Existing env, encrypted store and legacy Windows vault remain the owners.
   app.get('/api/aura/workbench/vault/discovery', requireLocalUiSameOrigin, (_req, res) => {
@@ -4430,6 +4437,50 @@ const notifyPhone = async (action) => {
     return res.status(200).type('png').send(frame.png);
   });
 
+  // What Aura's browser shows right now, for the operator's live view (Operator Stage, 2026-11-25).
+  // A read of the pinned allowed CDP page through the existing nova_screenshot tool: local UI only,
+  // no durable receipt and no workstream event (a view, like the desktop live frame above), cached
+  // for one second so a polling viewer cannot hammer the browser.
+  let browserFrameCache: { at: number; png: Buffer; observedAt: string } | null = null;
+  app.get('/api/aura/browser/live-frame', requireLocalUi, async (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    try {
+      if (!browserFrameCache || Date.now() - browserFrameCache.at > 1000) {
+        const result: any = await callAuraMcpRpc('cdp', 'tools/call', { name: 'nova_screenshot', arguments: {} }, AbortSignal.timeout(8000));
+        const image = Array.isArray(result?.content) ? result.content.find((item: any) => item?.type === 'image' && item?.mimeType === 'image/png') : null;
+        const data = typeof image?.data === 'string' ? image.data : '';
+        if (result?.isError === true || !data || data.length > 12_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) {
+          return res.status(409).json({ success: false, error: 'BROWSER_FRAME_UNAVAILABLE' });
+        }
+        const png = Buffer.from(data, 'base64');
+        if (png.length < 24 || !png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+          return res.status(409).json({ success: false, error: 'BROWSER_FRAME_INVALID' });
+        }
+        browserFrameCache = { at: Date.now(), png, observedAt: new Date().toISOString() };
+      }
+      res.setHeader('X-JACO-Frame-Observed-At', browserFrameCache.observedAt);
+      return res.status(200).type('png').send(browserFrameCache.png);
+    } catch (error: any) {
+      return res.status(503).json({ success: false, error: String(error?.message || 'BROWSER_FRAME_FAILED').slice(0, 80) });
+    }
+  });
+
+  // Which page Aura's browser shows (address and title only), so the operator can open it in a real window.
+  app.get('/api/aura/browser/page', requireLocalUi, async (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    try {
+      const result: any = await callAuraMcpRpc('cdp', 'tools/call', { name: 'nova_observe', arguments: {} }, AbortSignal.timeout(8000));
+      const page = JSON.parse(String(result?.content?.find?.((item: any) => item?.type === 'text')?.text || 'null'));
+      const url = typeof page?.url === 'string' && /^https?:\/\//.test(page.url) ? page.url.slice(0, 2000) : null;
+      if (result?.isError === true || !url) return res.status(409).json({ success: false, error: 'BROWSER_PAGE_UNAVAILABLE' });
+      return res.json({ success: true, url, title: String(page?.title || '').slice(0, 300) });
+    } catch (error: any) {
+      return res.status(503).json({ success: false, error: String(error?.message || 'BROWSER_PAGE_FAILED').slice(0, 80) });
+    }
+  });
+
   // The existing Nova / Mission Bus operator pause is the only command.
   // This read-only gate must remain PENDING while its tool, shared UIA client
   // or ModelRelay desktop lease is still active. An ACK to pause is NOT proof
@@ -5400,7 +5451,10 @@ const notifyPhone = async (action) => {
       const { message, activeFilePath, targetSubAgent, selectedModel, selectedProvider, model, messagesHistory, interactionMode } = req.body;
       const ragContext = [...(Array.isArray(req.body.ragContext) ? req.body.ragContext : []), ...attachmentContext(req.body.attachmentIds)];
       // The local GUI can show views and files Aura asks for while she talks (display only, never execution).
-      if (req.body?.connectedSession?.source === 'Aura GUI') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: WORKSPACE_CONTROL_INSTRUCTION } });
+      const chatSource = req.body?.connectedSession?.source;
+      if (chatSource === 'Aura GUI') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: WORKSPACE_CONTROL_INSTRUCTION } });
+      // The Operator Stage: Aura lights up the panel she is talking about (display only, never execution).
+      else if (chatSource === 'Aura Operator Stage') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: STAGE_CONTROL_INSTRUCTION } });
       const userMsg = String(message || "Hi");
       const cognitiveActivation = cognitiveActivationPreview(userMsg, {
         knowledge: continuumSurface.runtime.knowledge,
@@ -5541,20 +5595,22 @@ const notifyPhone = async (action) => {
       // A chat must end in an answer within minutes at most. A chosen provider that failed is followed by another
       // connected provider first: the default route can be a local model that needs minutes on a busy computer.
       const deadlines = auraChatDeadlines();
+      // Every attempt below shares one budget for the turn, so the chain ends before the GUI gives up.
+      const budget = chatBudget(deadlines.totalMs);
       const askOrConnected = async (choice: any) => {
-        if (choice) return await answerWithin(ask(choice), deadlines.chosenMs);
+        if (choice) return await budget.within(() => ask(choice), deadlines.chosenMs);
         const connected = chatChoice ? chatFallbackChoice(connectedRuntime.providers, process.env, { exclude: chatChoice.providerId }) : null;
-        if (connected) { try { return await answerWithin(ask(connected), deadlines.fallbackMs); } catch { /* The default route still gets its turn. */ } }
-        try { return await answerWithin(ask(null), deadlines.defaultMs); }
+        if (connected) { try { return await budget.within(() => ask(connected), deadlines.fallbackMs); } catch { /* The default route still gets its turn. */ } }
+        try { return await budget.within(() => ask(null), deadlines.defaultMs); }
         catch (error) {
           // Every other way to answer, in order: a connected cloud provider, then a model on this computer.
           const attempts: any[] = [];
           const cloud = connected ? null : chatFallbackChoice(connectedRuntime.providers);
           if (cloud) attempts.push({ choice: cloud, ms: deadlines.fallbackMs });
-          const local = await activeLocalChoice().catch(() => null);
+          const local = budget.remaining() > 10_000 ? await activeLocalChoice().catch(() => null) : null;
           if (local && !(chatChoice && local.providerId === chatChoice.providerId && local.model === chatChoice.model)) attempts.push({ choice: local, ms: deadlines.localMs });
           if (!attempts.length) throw error;
-          return await answerInOrder(attempts, ask, error);
+          return await answerInOrder(attempts, ask, error, budget.within);
         }
       };
       // Lite never launches SEER: default chat must not depend on its /cortex/brain.
@@ -7646,6 +7702,23 @@ const notifyPhone = async (action) => {
   app.use('/api', (req, res) => {
     res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: `No route for ${req.method} ${req.baseUrl}${req.path}` } });
   });
+
+  // Aura first (operator 2026-11-25): on this computer the start page is the Operator Stage, Aura in the middle
+  // with her conversation; the IDE stays complete at /ide. A remote IDE session keeps the IDE at / (the stage's
+  // chat and voice are local only), and a release without the stage files falls back to the IDE.
+  const stageAssets = operatorStageAssets(RELEASE_ROOT);
+  const stageReady = stageAssets.available();
+  app.get(['/', '/stage.css', '/stage.js', '/vendor/*'], (req, res, next) => {
+    if (!stageReady || (req as any).ideSession || (ideHost() && req.hostname === ideHost())) return next();
+    const asset = stageAssets.resolve(req.path);
+    if (!asset) return next();
+    res.setHeader('Cache-Control', req.path === '/' ? 'no-store, max-age=0' : 'private, max-age=300');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    try { res.type(asset.type).send(stageAssets.read(asset)); } catch { next(); }
+  });
+  // The IDE, unchanged, one address further in.
+  // (Rewritten to the page itself: a rewrite to the folder made the static server redirect /ide to /ide/.)
+  app.get(['/ide', '/ide/'], (req, _res, next) => { req.url = '/index.html'; next(); });
 
   // Serve static files from public/ directory
   app.use(express.static(path.join(WORKSPACE_ROOT, "public")));

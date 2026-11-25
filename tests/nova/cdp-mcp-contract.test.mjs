@@ -27,9 +27,13 @@ test('CDP MCP declares optional constraints accurately, with required operation 
   await fixture(async({request})=>{
     const response=await request('tools/list');
     const byName=new Map(response.result.tools.map(t=>[t.name,t]));
-    assert.deepEqual(byName.get('nova_click').inputSchema.required,['selector','actionId']);
-    assert.deepEqual(byName.get('nova_click_named').inputSchema.required,['role','name','actionId']);
-    assert.deepEqual(byName.get('nova_upload').inputSchema.required,['selector','files','actionId']);
+    // Nova refuses input without the expected page URL, so the facade must not advertise it as optional.
+    assert.deepEqual(byName.get('nova_click').inputSchema.required,['selector','expectedUrl','actionId']);
+    assert.deepEqual(byName.get('nova_click_named').inputSchema.required,['role','name','expectedUrl','actionId']);
+    assert.deepEqual(byName.get('nova_type').inputSchema.required,['selector','expectedUrl','text','actionId']);
+    assert.deepEqual(byName.get('nova_press').inputSchema.required,['key','expectedUrl','actionId']);
+    assert.deepEqual(byName.get('nova_upload').inputSchema.required,['selector','files','expectedUrl','actionId']);
+    assert.match(byName.get('nova_type').inputSchema.properties.expectedUrl.description,/URL of the page/);
     assert.equal(byName.get('nova_upload').inputSchema.properties.files.type,'array');
     assert.deepEqual(byName.get('nova_targets').inputSchema.required,[]);
     assert.equal(byName.get('nova_screenshot').annotations.readOnlyHint,true);
@@ -40,7 +44,7 @@ test('CDP MCP declares optional constraints accurately, with required operation 
 test('CDP MCP forwards valid upload arrays rather than rejecting typeof object',async()=>{
   await fixture(async({request,calls})=>{
     const response=await request('tools/call',{name:'nova_upload',arguments:{
-      selector:'input[type=file]',files:['images/a.png','documents/b.pdf'],actionId
+      selector:'input[type=file]',files:['images/a.png','documents/b.pdf'],expectedUrl:'https://example.com/form',actionId
     }});
     assert.equal(response.result.isError,false);
     assert.equal(calls.length,1);
@@ -51,13 +55,27 @@ test('CDP MCP forwards valid upload arrays rather than rejecting typeof object',
   });
 });
 
-test('CDP MCP accepts selector and accessibility actions without optional expectedUrl/expect',async()=>{
+test('CDP MCP accepts selector and accessibility actions without the optional expect postcondition',async()=>{
   await fixture(async({request,calls})=>{
-    const a=await request('tools/call',{name:'nova_click',arguments:{selector:'#save',actionId}},20);
-    const b=await request('tools/call',{name:'nova_click_named',arguments:{role:'button',name:'Save',actionId}},21);
+    const expectedUrl='https://www.google.com/';
+    const a=await request('tools/call',{name:'nova_click',arguments:{selector:'#save',expectedUrl,actionId}},20);
+    const b=await request('tools/call',{name:'nova_click_named',arguments:{role:'button',name:'Save',expectedUrl,actionId}},21);
+    const c=await request('tools/call',{name:'nova_type',arguments:{selector:"textarea[name='q']",expectedUrl,text:'Kiruna',actionId}},22);
     assert.equal(a.result.isError,false);
     assert.equal(b.result.isError,false);
-    assert.equal(calls.length,2);
+    assert.equal(c.result.isError,false);
+    assert.equal(calls.length,3);
+  });
+});
+
+// 2026-11-25: models left the "optional" expectedUrl out and Nova refused every input on Google with a bare
+// EXPECTED_ALLOWED_URL_REQUIRED. The facade now refuses first and says what to pass.
+test('an input action without expectedUrl fails before upstream and says what to pass',async()=>{
+  await fixture(async({request,calls})=>{
+    const r=await request('tools/call',{name:'nova_type',arguments:{selector:"textarea[name='q']",text:'Kiruna',actionId}},30);
+    assert.equal(r.error?.code,-32602);
+    assert.match(r.error.message,/^Missing expectedUrl: .*URL of the page you are acting on/);
+    assert.equal(calls.length,0);
   });
 });
 

@@ -161,8 +161,11 @@ export class CDPSession {
 }
 
 export async function captureSession(session) {
-  // Background tabs may not submit compositor frames. Activate the owned Nova tab before capture.
-  await session.send('Page.bringToFront');
+  // A hidden tab may not submit compositor frames, so it is activated before capture. A visible one is not:
+  // Chrome runs with occluded-window backgrounding off, and bringing it forward on every frame raised Aura's
+  // window over the operator's GUI on Windows while the stage polled her live view (2026-11-25).
+  const visibility = await session.send('Runtime.evaluate', { expression: 'document.visibilityState', returnByValue: true }).catch(() => null);
+  if (visibility?.result?.value !== 'visible') await session.send('Page.bringToFront');
   const result=await session.send('Page.captureScreenshot',{format:'png'});
   if(typeof result.data!=='string'||!result.data.length)throw new Error('SCREENSHOT_DATA_MISSING');
   return {ok:true,observed:true,mimeType:'image/png',...result};

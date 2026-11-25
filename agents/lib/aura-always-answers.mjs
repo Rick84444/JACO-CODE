@@ -10,7 +10,27 @@ const answered = r => r && typeof r.reply === 'string' && r.reply.trim();
 // status(failures): Aura's status answer. onFallback/onNoModel: workstream records.
 export function auraChatDeadlines(env = process.env) {
   const ms = (key, fallback) => { const v = Number(env[key]); return Number.isFinite(v) && v >= 1000 ? v : fallback; };
-  return { chosenMs: ms('JACO_AURA_CHAT_CHOSEN_MS', 120_000), defaultMs: ms('JACO_AURA_CHAT_DEFAULT_MS', 90_000), fallbackMs: ms('JACO_AURA_CHAT_FALLBACK_MS', 45_000), localMs: ms('JACO_AURA_CHAT_LOCAL_MS', 150_000) };
+  return { chosenMs: ms('JACO_AURA_CHAT_CHOSEN_MS', 120_000), defaultMs: ms('JACO_AURA_CHAT_DEFAULT_MS', 90_000), fallbackMs: ms('JACO_AURA_CHAT_FALLBACK_MS', 45_000), localMs: ms('JACO_AURA_CHAT_LOCAL_MS', 150_000),
+    // The whole turn, every attempt together. Below the GUI clients' own limits (IDE 360 s, Operator Stage 370 s),
+    // so the operator always receives an answer (the status answer at worst) instead of a transport timeout.
+    totalMs: ms('JACO_AURA_CHAT_TOTAL_MS', 240_000) };
+}
+
+// One budget per chat turn (2026-11-25: chosen 120 s + connected 45 s + SEER 90 s + local 150 s added up to
+// 6.5 minutes and the clients gave up first). Each attempt gets its own limit or what is left, whichever is
+// smaller; once the budget is spent no new attempt starts. within(start, ms) takes a thunk so a skipped
+// attempt never dispatches a model call.
+export function chatBudget(totalMs, now = () => Date.now()) {
+  const end = now() + totalMs;
+  const remaining = () => Math.max(0, end - now());
+  return {
+    remaining,
+    within(start, ms) {
+      const left = remaining();
+      if (left < 3000) return Promise.reject(new Error('AURA_CHAT_BUDGET_SPENT'));
+      return answerWithin(Promise.resolve().then(start), Math.min(ms, left));
+    },
+  };
 }
 
 // A model that does not answer in time must not leave the operator without a reply. The late result is dropped:
@@ -24,11 +44,11 @@ export function answerWithin(work, ms) {
 // When the default route cannot answer, every other way to answer is tried in order (a connected cloud provider
 // first, the local model on this computer last) and the failures are kept together, so one dead provider
 // (an empty balance, a used-up free quota) never hides a local model that would have answered.
-export async function answerInOrder(attempts, ask, firstError = null) {
+export async function answerInOrder(attempts, ask, firstError = null, within = (start, ms) => answerWithin(start(), ms)) {
   const failures = firstError ? [clean(firstError)] : [];
   for (const { choice, ms } of attempts) {
     try {
-      const r = await answerWithin(ask(choice), ms);
+      const r = await within(() => ask(choice), ms);
       if (answered(r)) return r;
       failures.push(`${choice.providerId}/${choice.model || 'default'}: AURA_EMPTY_REPLY`);
     } catch (error) {

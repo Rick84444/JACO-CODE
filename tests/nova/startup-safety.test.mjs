@@ -230,3 +230,18 @@ test('static UI HTTP readiness requires a real nonempty JavaScript asset',async(
  const empty=await inspectStaticUi(base,async url=>url.pathname==='/'?page():new Response('',{headers:{'content-type':'text/javascript'}}));
  assert.equal(empty.reason,'GUI_SCRIPT_EMPTY');
 });
+
+// 2026-11-25: Aura's Operator Stage is the start page; the IDE answers at /ide and is still what readiness proves.
+test('static UI readiness finds the IDE at /ide behind the Operator Stage start page',async()=>{
+ const base='http://127.0.0.1:3000';
+ const ide='<div id="root"></div><script type="module" src="/assets/index-ide.js"></script>';
+ const stage='<main id="stage"></main><script type="module" src="/stage.js"></script>';
+ const seen=[];
+ const r=await inspectStaticUi(base,async url=>{seen.push(url.pathname);
+  if(url.pathname==='/ide')return new Response(ide,{headers:{'content-type':'text/html'}});
+  if(url.pathname==='/')return new Response(stage,{headers:{'content-type':'text/html'}});
+  return new Response('console.log("ide")',{headers:{'content-type':'text/javascript'}});});
+ assert.equal(r.state,'HTTP_READY');
+ assert.equal(r.entry,'/assets/index-ide.js');
+ assert.equal(seen.includes('/'),false,'the stage page is not mistaken for the IDE');
+});

@@ -271,14 +271,14 @@ test('a model cannot execute a thirteenth tool or expose an unexecuted TOOL_CALL
       return {observed:true,text:'O'.repeat(10000)+'receipt'+step};
     }}}},
   });
-  assert.equal(turns,13,'bounded tool loop performs only the final summary inference');
-  assert.deepEqual(executed,[1,2,3,4,5,6,7,8,9,10,11,12]);
-  assert.equal(out.toolReceipts.length,12);
+  assert.equal(turns,21,'bounded tool loop performs only the final summary inference');
+  assert.deepEqual(executed,Array.from({length:20},(_,i)=>i+1));
+  assert.equal(out.toolReceipts.length,20);
   assert.match(out.reply,/did not carry out the last proposed call/);
   assert.doesNotMatch(out.reply,/TOOL_CALL/);
   assert.equal(out.providerReceipt.costStatus,'FREE');
   assert.equal(out.providerReceipt.costUsd,0);
-  assert.equal(out.providerReceipt.modelCalls,13);
+  assert.equal(out.providerReceipt.modelCalls,21);
   assert.ok(seen.at(-1).endsWith('CURRENT_USER_MESSAGE:\nUndersök felet, men hitta inte på vad som körts.'));
   assert.ok(seen.at(-1).length<9000,'tool receipts should not create a runaway prompt');
 });
@@ -399,13 +399,38 @@ test('unknown mutation outcome stops chat execution without replay',async()=>{
   assert.match(out.reply,/not retried/i);
 });
 
-test('batch call budget is capped at twelve independently of model-round budget',async()=>{
+test('batch call budget is capped at twenty independently of model-round budget',async()=>{
   const names=['health','dom_track','laser_vision','mission_list'];let runs=0;
   const tools=Object.fromEntries(names.map(name=>[name,{description:'read',run:async()=>{runs++;return {};}}]));
   const out=await auraChatViaSeer({message:'Inspect',toolbox:{tools},complete:async()=>fixtureCompletion(batchText(...names))});
-  assert.equal(runs,12);
-  assert.equal(out.toolReceipts.length,12);
+  assert.equal(runs,20);
+  assert.equal(out.toolReceipts.length,20);
   assert.doesNotMatch(out.reply,/TOOL_CALL/);
+});
+
+// 2026-11-25: real work stopped at "The tool limit was reached". In action mode it now continues as a mission.
+test('work that outgrows one answer continues as a durable mission with what was already done',async()=>{
+  const goals=[];
+  const tools={
+    health:{description:'read',run:async()=>({})},
+    start_goal:{description:'mission',run:async args=>{goals.push(args.goal);return {accepted:true,goalId:'goal-42'};}},
+  };
+  const out=await auraChatViaSeer({message:'Bygg om inloggningssidan',chatMode:'action',toolbox:{tools},
+    complete:async()=>fixtureCompletion('TOOL_CALL {"name":"health","args":{}}')});
+  assert.equal(goals.length,1);
+  assert.match(goals[0],/^Bygg om inloggningssidan/);
+  assert.match(goals[0],/do not repeat a completed action/);
+  assert.match(out.reply,/continue it as a mission \(goal-42\)/);
+  assert.equal(out.toolReceipts.at(-1).name,'start_goal');
+});
+
+test('question mode never starts a mission when the limit is reached',async()=>{
+  let started=0;
+  const tools={health:{description:'read',run:async()=>({})},start_goal:{description:'mission',run:async()=>{started++;return {goalId:'x'};}}};
+  const out=await auraChatViaSeer({message:'Vad pågår?',chatMode:'manual',toolbox:{tools},
+    complete:async()=>fixtureCompletion('TOOL_CALL {"name":"health","args":{}}')});
+  assert.equal(started,0);
+  assert.match(out.reply,/tool limit was reached/);
 });
 
 test('autonomous chat tells Aura that listed write tools work here without a mission (2026-11-24)', () => {
