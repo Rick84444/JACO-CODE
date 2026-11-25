@@ -4,29 +4,33 @@ import {createServer} from 'node:http';
 import {timingSafeEqual} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 
+// Nova refuses a click, type, press or upload without the URL of the page the caller means to act on (a guard
+// against acting on a page that changed underneath it). Advertised as required, with what to pass: as an
+// optional argument models left it out and every input on Google failed (2026-11-25).
+const EXPECTED_URL={type:'string',description:'Full URL of the page you are acting on, as nova_observe or your last navigation reported it'};
 const definitions=[
   ['nova_targets','List allowed browser tabs','GET','/targets',{}],
   ['nova_observe','TARGET TRACK (browser/CDP): observe the pinned allowed page and its current state','GET','/observe',{}],
   ['nova_screenshot','LASER VISION: capture pixels of the pinned allowed browser page; image observation, not semantic proof','GET','/screenshot',{}],
   ['nova_html','TARGET TRACK (browser/CDP): read the pinned allowed page as cleaned HTML: no scripts, comments, element values, hidden fields, token metadata, event handlers, data attributes, or URL query strings and fragments. Visible page text is returned as shown','GET','/html',{}],
   ['nova_navigate','Navigate within configured origins','POST','/navigate',{url:{type:'string'},actionId:{type:'string'}}],
-  ['nova_click','Click a unique selector and verify an explicit transition','POST','/click',{selector:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
-  ['nova_type','Set a field and read back the value','POST','/type',{selector:{type:'string'},expectedUrl:{type:'string'},text:{type:'string'},actionId:{type:'string'}}],
+  ['nova_click','Click a unique selector and verify an explicit transition','POST','/click',{selector:{type:'string'},expectedUrl:EXPECTED_URL,expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
+  ['nova_type','Set a field and read back the value','POST','/type',{selector:{type:'string'},expectedUrl:EXPECTED_URL,text:{type:'string'},actionId:{type:'string'}}],
   // Targets named the way the page names them (its accessibility tree), with real input events.
   ['nova_ax','TARGET TRACK (browser/CDP): list what can be clicked or typed into on the pinned page, by accessible role and name','GET','/ax',{}],
-  ['nova_click_named','Click the one control with this accessible role and name and verify an explicit transition','POST','/click',{role:{type:'string'},name:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
-  ['nova_type_named','Type into the one field with this accessible role and name and read back the value','POST','/type',{role:{type:'string'},name:{type:'string'},expectedUrl:{type:'string'},text:{type:'string'},actionId:{type:'string'}}],
-  ['nova_upload','Attach files from the workspace to the one file input (selector, optionally inside a same-origin frame or a shadow root written host >>> inner) and read the names back','POST','/upload',{selector:{type:'string'},files:{type:'array',items:{type:'string'},minItems:1,maxItems:10},expectedUrl:{type:'string'},actionId:{type:'string'}}],
+  ['nova_click_named','Click the one control with this accessible role and name and verify an explicit transition','POST','/click',{role:{type:'string'},name:{type:'string'},expectedUrl:EXPECTED_URL,expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
+  ['nova_type_named','Type into the one field with this accessible role and name and read back the value','POST','/type',{role:{type:'string'},name:{type:'string'},expectedUrl:EXPECTED_URL,text:{type:'string'},actionId:{type:'string'}}],
+  ['nova_upload','Attach files from the workspace to the one file input (selector, optionally inside a same-origin frame or a shadow root written host >>> inner) and read the names back','POST','/upload',{selector:{type:'string'},files:{type:'array',items:{type:'string'},minItems:1,maxItems:10},expectedUrl:EXPECTED_URL,actionId:{type:'string'}}],
   ['nova_tabs','List the tabs Nova itself opened','GET','/tabs',{}],
   ['nova_tab_open','Open a page in a new tab that Nova owns and switch to it','POST','/tab/open',{url:{type:'string'},actionId:{type:'string'}}],
   ['nova_tab_switch','Switch to one of the tabs Nova opened','POST','/tab/switch',{id:{type:'string'},actionId:{type:'string'}}],
   ['nova_tab_close','Close one of the tabs Nova opened','POST','/tab/close',{id:{type:'string'},actionId:{type:'string'}}],
   ['nova_downloads','List files the browser has downloaded (names, sizes, digests; never content)','GET','/downloads',{}],
-  ['nova_press','Press one key (Enter, Tab, Escape, arrows, Home, End, PageUp, PageDown, Backspace, Delete, space) and verify an explicit transition','POST','/press',{key:{type:'string'},expectedUrl:{type:'string'},expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
+  ['nova_press','Press one key (Enter, Tab, Escape, arrows, Home, End, PageUp, PageDown, Backspace, Delete, space) and verify an explicit transition','POST','/press',{key:{type:'string'},expectedUrl:EXPECTED_URL,expect:{type:'object',properties:{url:{type:'string'},selector:{type:'string'}}},actionId:{type:'string'}}],
 ];
-// Explicitly optional transition constraints. An actionId and the tool's actual
+// Explicitly optional transition constraints. An actionId, the expected page URL and the tool's actual
 // target/operation fields remain mandatory; a caller can omit postconditions.
-const OPTIONAL_ARGUMENTS = new Set(['expectedUrl', 'expect']);
+const OPTIONAL_ARGUMENTS = new Set(['expect']);
 export function validCdpArgument(value, schema) {
   if (!schema || value === null || value === undefined) return false;
   if (schema.type === 'array') {
@@ -104,6 +108,8 @@ export function createCdpFacade({token=process.env.JACO_GATEWAY_TOKEN || process
       if(Object.keys(args).some(k=>!Object.hasOwn(def[4],k))) return error(-32602,'Unexpected argument');
       for(const [key,schema] of Object.entries(def[4])) {
         if(!Object.hasOwn(args,key) && OPTIONAL_ARGUMENTS.has(key)) continue;
+        // Say what to pass, so a model can correct the call instead of guessing.
+        if(key==='expectedUrl' && !Object.hasOwn(args,key)) return error(-32602,'Missing expectedUrl: '+EXPECTED_URL.description);
         if(!validCdpArgument(args[key],schema)) return error(-32602,'Invalid '+key);
       }
       if(def[2]==='POST' && !/^[A-Za-z0-9][A-Za-z0-9:_-]{7,127}$/.test(args.actionId)) return error(-32602,'Invalid actionId');

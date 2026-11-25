@@ -1,7 +1,45 @@
 // Operator 2026-10-09: "viktigast i hela ide att man alltid kan få svar och hjälp".
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { auraAlwaysAnswers, answerInOrder, auraStatusReply, auraStatusHints, answerWithin, auraChatDeadlines } from '../../agents/lib/aura-always-answers.mjs';
+import { auraAlwaysAnswers, answerInOrder, auraStatusReply, auraStatusHints, answerWithin, auraChatDeadlines, chatBudget } from '../../agents/lib/aura-always-answers.mjs';
+
+// 2026-11-25: per-attempt limits added up to 6.5 minutes (chosen 120 + connected 45 + SEER 90 + local 150 s)
+// and the GUI clients gave up first with a transport timeout instead of an answer.
+test('the turn budget stays below what the GUI clients wait for', () => {
+  const d = auraChatDeadlines({});
+  assert.ok(d.totalMs < 360_000, 'the IDE waits 360 s');
+  assert.ok(d.chosenMs + d.fallbackMs + d.defaultMs + d.localMs > d.totalMs, 'the budget, not the sum, must bound the chain');
+});
+
+test('each attempt gets what is left of the budget, and none starts once it is spent', async () => {
+  let clock = 0;
+  const budget = chatBudget(10_000, () => clock);
+  let started = 0;
+  const slow = () => { started++; return new Promise(() => {}); };
+  clock = 9_000; // 1 s left: below the floor, so the attempt must not dispatch at all
+  await assert.rejects(budget.within(slow, 60_000), /AURA_CHAT_BUDGET_SPENT/);
+  assert.equal(started, 0);
+});
+
+test('an attempt is cut at the remaining budget, not its own longer limit', async () => {
+  const budget = chatBudget(3_200);
+  const t0 = Date.now();
+  await assert.rejects(budget.within(() => new Promise(() => {}), 60_000), /AURA_MODEL_TIMEOUT/);
+  assert.ok(Date.now() - t0 < 5_000);
+});
+
+test('the whole fallback chain with hung providers ends in the status answer within the budget', async () => {
+  const budget = chatBudget(3_500);
+  const hang = () => new Promise(() => {});
+  const t0 = Date.now();
+  const r = await auraAlwaysAnswers({
+    choice: { providerId: 'gemini', model: 'g' },
+    ask: async c => (c ? budget.within(hang, 120_000) : answerInOrder([{ choice: { providerId: 'ollama', model: 'q' }, ms: 150_000 }], hang, null, budget.within)),
+    status,
+  });
+  assert.ok(Date.now() - t0 < 5_000, 'no attempt outlived the budget');
+  assert.equal(r.provider, 'aura');
+});
 
 const reply = (text, provider = 'groq') => ({ success: true, reply: text, text, provider, model: 'm' });
 const status = failures => auraStatusReply(failures);
@@ -70,7 +108,8 @@ test('a model that never answers ends in a timeout the status answer can explain
 });
 
 test('chat deadlines have defaults and ignore invalid overrides', () => {
-  assert.deepEqual(auraChatDeadlines({}), { chosenMs: 120000, defaultMs: 90000, fallbackMs: 45000, localMs: 150000 });
+  assert.deepEqual(auraChatDeadlines({}), { chosenMs: 120000, defaultMs: 90000, fallbackMs: 45000, localMs: 150000, totalMs: 240000 });
+  assert.equal(auraChatDeadlines({ JACO_AURA_CHAT_TOTAL_MS: '200000' }).totalMs, 200000);
   assert.equal(auraChatDeadlines({ JACO_AURA_CHAT_DEFAULT_MS: '5000' }).defaultMs, 5000);
   assert.equal(auraChatDeadlines({ JACO_AURA_CHAT_DEFAULT_MS: 'soon' }).defaultMs, 90000);
 });

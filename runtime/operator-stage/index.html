@@ -4,25 +4,43 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Aura Operator Stage</title>
-  <link rel="stylesheet" href="/vendor/xterm.css">
   <link rel="stylesheet" href="/stage.css">
 </head>
 <body>
+  <canvas id="stars" aria-hidden="true"></canvas>
+  <svg id="beams" aria-hidden="true"></svg>
   <header class="bar">
-    <div class="brand"><span class="dot" id="liveDot"></span>JACO · Aura Operator Stage</div>
+    <div class="brand"><img class="logo" src="/branding/jaco-logo.png" alt="JACO"><span class="dot" id="liveDot" title="Live connection"></span></div>
     <div class="status" id="status">Connecting to Aura…</div>
-    <a class="ide" href="http://127.0.0.1:3000" target="_blank" rel="noopener">Open IDE</a>
+    <a class="ide" href="/ide">Open IDE</a>
   </header>
   <main id="stage">
-    <section class="aura" id="aura" aria-live="polite">
-      <canvas id="orb" width="560" height="560" aria-label="Aura"></canvas>
-      <div class="aura-name">Aura</div>
-      <div class="aura-line" id="auraLine">Waiting for work</div>
-      <div class="aura-model" id="auraModel"></div>
+    <div class="rail left" id="railLeft" aria-label="Strategy and current work"></div>
+    <section class="center" aria-label="Conversation with Aura">
+      <div class="aura" id="aura">
+        <canvas id="orb" width="560" height="560" role="img" aria-label="Aura"></canvas>
+        <div class="aura-line" id="auraLine" aria-live="polite">Here with you</div>
+        <div class="aura-model" id="auraModel"></div>
+      </div>
+      <div class="log" id="log" aria-live="polite"></div>
+      <form class="composer" id="composer">
+        <button type="button" class="talk" id="talk" aria-pressed="false" title="Talk with Aura: she listens, answers aloud and listens again">Talk</button>
+        <textarea id="input" rows="1" placeholder="Talk to Aura…" aria-label="Message to Aura"></textarea>
+        <button type="button" class="voice" id="voice" aria-pressed="false" title="Read Aura's replies aloud">Voice</button>
+        <button type="submit" id="send" aria-label="Send">Send</button>
+      </form>
+      <div class="voice-note" id="voiceNote" hidden></div>
     </section>
-    <div id="windows" class="windows"></div>
+    <div class="rail right" id="railRight" aria-label="What Aura is using"></div>
   </main>
-  <footer class="dock" id="dock"></footer>
+  <div class="viewer" id="viewer" hidden role="dialog" aria-label="Aura's browser">
+    <div class="viewer-frame">
+      <div class="viewer-head"><span id="viewerTitle">Aura's browser</span>
+        <button type="button" id="viewerOpen">Open real window</button>
+        <button type="button" id="viewerClose" aria-label="Close">Close</button></div>
+      <img id="viewerImg" alt="What Aura sees in her browser">
+    </div>
+  </div>
   <script type="module" src="/stage.js"></script>
 </body>
 </html>

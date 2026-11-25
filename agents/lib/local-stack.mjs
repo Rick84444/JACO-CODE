@@ -317,11 +317,19 @@ export async function inspectStaticUi(base, fetchImpl = fetch) {
   try {
     const origin = new URL(base);
     const get = pathname => fetchImpl(new URL(pathname, origin), { redirect: 'error', signal: AbortSignal.timeout(10000) });
-    const root = await get('/');
-    if (!root.ok) return { state: 'UNAVAILABLE', reason: 'GUI_HTTP_' + root.status };
+    // The IDE lives at /ide since Aura's Operator Stage became the start page (2026-11-25); an older or slim
+    // runtime still serves it at /.
+    let root, html, script;
+    for (const pathname of ['/ide', '/']) {
+      root = await get(pathname);
+      if (!root.ok) continue;
+      if (!/text\/html/i.test(root.headers.get('content-type') || '')) continue;
+      html = await root.text();
+      script = html.match(/<script\b[^>]*\bsrc=["'](\/assets\/[^"'<>]+\.js)["']/i)?.[1];
+      if (script && html.includes('id="root"')) break;
+    }
+    if (!root?.ok) return { state: 'UNAVAILABLE', reason: 'GUI_HTTP_' + root?.status };
     if (!/text\/html/i.test(root.headers.get('content-type') || '')) return { state: 'UNAVAILABLE', reason: 'GUI_NOT_HTML' };
-    const html = await root.text();
-    const script = html.match(/<script\b[^>]*\bsrc=["'](\/assets\/[^"'<>]+\.js)["']/i)?.[1];
     if (!script || !html.includes('id="root"')) return { state: 'UNAVAILABLE', reason: 'GUI_ENTRY_MISSING' };
     const asset = await get(script);
     const mime = asset.headers.get('content-type') || '';

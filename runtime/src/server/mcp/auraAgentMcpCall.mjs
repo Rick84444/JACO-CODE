@@ -28,6 +28,15 @@ export async function discoverAuraMcpTools(host, server) {
     }))
   };
 }
+// The address of the page Aura's browser shows now (a read: Nova's observe), or null when it cannot be read.
+async function currentBrowserPage(host) {
+  try {
+    const result = await host.call('browser', 'nova_observe', {}, { actor: 'agent', readOnly: true });
+    if (result?.isError === true) return null;
+    const page = JSON.parse(String(result?.content?.find?.(item => item?.type === 'text')?.text || 'null'));
+    return typeof page?.url === 'string' && /^https?:\/\//.test(page.url) ? page.url : null;
+  } catch { return null; }
+}
 // A refusal raised before host.call cannot have executed anything. It is marked so the chat
 // treats it as a definite failure the model can correct, never as an unknown outcome.
 const preDispatch = error => Object.assign(error instanceof Error ? error : Error(String(error)), { preDispatch: true });
@@ -56,6 +65,20 @@ async function prepareAuraMcpCall(host, { server, tool, args = {}, mode = 'read'
   // change). A model cannot know that contract, so a fresh call gets a fresh key here.
   if (advertised.inputSchema?.properties?.actionId && args.actionId === undefined) {
     args = { ...args, actionId: `aura-${randomUUID()}` };
+  }
+  // expectedUrl: Aura's browser acts only on the page the caller means (Nova answers STALE_PAGE otherwise).
+  // A chat model rarely has the exact address (Google adds ?zx=...), and without it every click and keystroke
+  // was refused (2026-11-25). A call without one gets the page the browser shows right now; a model that
+  // wrote `url` for that page meant expectedUrl. Nova's own origin, sign-in, payment and secret guards still decide.
+  const properties = advertised.inputSchema?.properties || {};
+  if (server === 'browser' && properties.expectedUrl && args.expectedUrl === undefined) {
+    if (typeof args.url === 'string' && !properties.url) {
+      const { url, ...rest } = args;
+      args = { ...rest, expectedUrl: url };
+    } else {
+      const page = await currentBrowserPage(host);
+      if (page) args = { ...args, expectedUrl: page };
+    }
   }
   const readOnly = isReadOnlyTool(server, advertised);
   // Keep chat and final MCP-host dispatch classification identical.
