@@ -331,15 +331,18 @@ public class WinInput {
     }
     SendChecked(batch);
   }
+  // One character per send with a short pause. A single block of every key-down and key-up made the Windows 11 Notepad keep
+  // the first characters and repeat the last one ("Aura 444444444444444", 2026-11-25); plain text boxes were unaffected.
+  // SendChecked re-verifies the foreground window before and after each character, so typing stops the moment focus moves.
   public static void TypeBatch(string text) {
     if(String.IsNullOrEmpty(text)||text.Length>2000)throw new InvalidOperationException("INVALID_TYPE_LENGTH");
-    INPUT[] batch=new INPUT[text.Length*2];
     for(int i=0;i<text.Length;i++){
-      int j=2*i;
-      batch[j].type=INPUT_KEYBOARD;batch[j].u.ki.wScan=text[i];batch[j].u.ki.dwFlags=4;
-      batch[j+1].type=INPUT_KEYBOARD;batch[j+1].u.ki.wScan=text[i];batch[j+1].u.ki.dwFlags=6;
+      INPUT[] pair=new INPUT[2];
+      pair[0].type=INPUT_KEYBOARD;pair[0].u.ki.wScan=text[i];pair[0].u.ki.dwFlags=4;
+      pair[1].type=INPUT_KEYBOARD;pair[1].u.ki.wScan=text[i];pair[1].u.ki.dwFlags=6;
+      SendChecked(pair);
+      if(i+1<text.Length)System.Threading.Thread.Sleep(12);
     }
-    SendChecked(batch);
   }
 
 }
