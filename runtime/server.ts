@@ -82,6 +82,7 @@ import { auraAlwaysAnswers, answerInOrder, auraChatDeadlines, auraStatusReply, c
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { WORKSPACE_CONTROL_INSTRUCTION, STAGE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
 import { operatorStageAssets } from "./operator-stage/assets.mjs";
+import { webSearch } from "./src/server/mcp/webSearch.mjs";
 import { createStackRepair } from "./src/server/connected/stackRepair.mjs";
 import { createPiperVoice } from "./src/server/connected/piperVoice.mjs";
 import { renewStandingGrants } from "./src/server/desktop/grantAtStart.mjs";
@@ -337,6 +338,8 @@ function organizationMandate(organization: any, agentId = 'aura') {
 }
 
 function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam, organization }: { connectedRuntime: any; seerLiveWorkstream: any; readAgentTeam?: () => Promise<any>; organization?: any }) {
+  // A toolbox is built per chat answer, so this counts the web searches of one answer.
+  let webSearches = 0;
   // Both chat entry points share the same live capability and existing mandate check.
   const checkedMcp = async (args: any, mode: 'read'|'write') => {
     // These refusals happen before any dispatch: a definite failure, never an unknown outcome.
@@ -566,6 +569,15 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         run: async (args: any) => {
           if (connectedRuntime.capabilities?.isTaskEnabled?.('web-fetch') === false) throw Error('CAPABILITY_DISABLED:web-fetch');
           return (await readPublicViaMcp(mcpHost, String(args?.url || ''))).slice(0, 15000);
+        },
+      },
+      web_search: {
+        description: 'Search the public web and get up to eight results (title, address, snippet), through the same Fetch MCP as web_fetch. Then read the three or four best with web_fetch in one TOOL_CALLS batch. args: {"query":"...","lang":"sv"|"en" (optional)}',
+        run: async (args: any) => {
+          if (connectedRuntime.capabilities?.isTaskEnabled?.('web-fetch') === false) throw Error('CAPABILITY_DISABLED:web-fetch');
+          // Two searches per answer: with more, Aura kept rephrasing (ten searches, one page read, 2026-11-25).
+          if (++webSearches > 2) throw Error('WEB_SEARCH_LIMIT: you already have results. Read the three or four best with web_fetch in one TOOL_CALLS batch, then answer.');
+          return webSearch(url => readPublicViaMcp(mcpHost, url), { query: String(args?.query || ''), lang: args?.lang });
         },
       },
       git_pr: {

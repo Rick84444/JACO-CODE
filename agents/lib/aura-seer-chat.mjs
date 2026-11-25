@@ -70,6 +70,9 @@ export function buildAuraSeerPrompts({
     'For up to four independent read tools, reply with TOOL_CALLS followed by a JSON array of {name,args} objects. Calls run sequentially; a failed call stops the batch. Do not batch actions that depend on prior tool results or change state. Never output Python, print(), TOOL_CODE, or executable source instead of the tool protocol.',
     'Each tool result comes back as TOOL_RESULT and is an observed receipt you may cite. An unexecuted call is not evidence.',
     'Use tools to look before you answer. Do not guess file contents, processes or status.',
+    // 2026-11-25: Aura read one page and stopped, and asked back where one reading was obvious.
+    'RESEARCH: when the answer needs the web, call web_search if it is listed (one search, at most two), then read the three or four most relevant results it returned with web_fetch in ONE TOOL_CALLS batch, and answer from what they say, naming each source with its address. One page is not research unless it fully answers. Use the browser only for pages that need interaction, sign-in, or to show the operator a page.',
+    'UNDERSTANDING: when a request has one reasonable reading, act on it now; ask back only when two readings would lead to clearly different work, and then ask one short question.',
     'Only the tools listed under TOOLS may be called. start_goal only when it is listed and the operator has ordered the mission.',
     `TOOLS:\n${toolCatalog}`,
   ].join('\n') : null;
@@ -187,7 +190,7 @@ const MAX_TOOL_ROUNDS = 20;
 const MAX_TOOL_CALLS = 20;
 const MAX_BATCH = 4;
 // Only known read contracts may share a batch. State-changing or unknown contracts require a fresh model turn.
-const BATCH_READ_TOOLS = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','policy_get','dom_track','laser_vision','target_track','aura_functions','current_work','runtime_events']);
+const BATCH_READ_TOOLS = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','web_search','policy_get','dom_track','laser_vision','target_track','aura_functions','current_work','runtime_events']);
 
 // Keep model context bounded, without silently dropping the latest operator message.
 // The newest receipt gets the most detail; older receipts are compact references.
