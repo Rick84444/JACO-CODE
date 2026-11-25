@@ -35,6 +35,10 @@ export function chromeLaunchArgs(c, platform = process.platform, home = os.homed
     (c.env.JACO_CHROME_HEADLESS !== '0' && platform === 'linux' && !c.env.DISPLAY && !c.env.WAYLAND_DISPLAY);
   return [`--remote-debugging-port=${c.ports.chrome}`, '--remote-debugging-address=127.0.0.1',
     '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
+    // Aura's browser is an agent browser: no extensions (a Google sign-in syncs the operator's own into it: about
+    // 1 GB of background processes, and each could read the pages she visits) and no profile sync. Cookies and
+    // sign-ins stay (2026-11-25).
+    '--disable-extensions', '--disable-sync',
     `--user-data-dir=${path.resolve(c.root, profile)}`,
     ...(headless ? ['--headless=new'] : []), c.env.JACO_BROWSER_START_URL || 'https://www.google.com/'];
 }
