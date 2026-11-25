@@ -64,6 +64,22 @@ test('the runtime renews the grant at activation', () => {
   assert.match(server, /renewStandingGrants\(\{\s*\n\s*desktop: desktopHandsOff,/);
 });
 
+test('the browser grant is renewed when a page is attached, from the operator\'s listed origins only', () => {
+  const seen = [];
+  const browser = { configureGrant(input) { seen.push(input); return { ...input }; } };
+  const env = { JACO_BROWSER_ALLOWED_ORIGINS: 'http://127.0.0.1:3000, https://remotedesktop.google.com' };
+  const result = renewStandingGrants({ browser, env, now: NOW });
+  assert.equal(result.applied.find(a => a.surface === 'browser').state, 'ACTIVE');
+  assert.deepEqual(seen[0].allowed_origins, ['http://127.0.0.1:3000', 'https://remotedesktop.google.com']);
+  assert.equal(seen[0].scope_mode, 'allowlist');
+  assert.equal(seen[0].allow_value_set, false, 'typing stays an explicit choice');
+  // Nothing listed: nothing is granted and nothing is claimed.
+  assert.deepEqual(renewStandingGrants({ browser, env: {}, now: NOW }).applied, [{ surface: 'browser', state: 'OFF_BY_OPERATOR' }]);
+  // The runtime wires it where the client comes into existence.
+  const router = require$('runtime/src/server/browser/router.ts');
+  assert.match(router, /renewStandingGrants\(\{ browser: nextClient/);
+});
+
 function require$(rel) {
   return fs.readFileSync(new URL('../../' + rel, import.meta.url), 'utf8');
 }

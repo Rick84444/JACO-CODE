@@ -4,6 +4,7 @@ import { actuatorLeases } from '../handsOff/actuatorLease.js';
 import { classify } from '../relay/modelRelay.js';
 import { actuatorGrantExpiry, type AutonomyMandateStore } from '../autonomy/autonomyMandate.js';
 import { standingToolAuthority, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
+import { renewStandingGrants } from '../desktop/grantAtStart.mjs';
 
 const ACTION_TYPES: BrowserActionType[] = ['observe', 'survey', 'navigate', 'click', 'set_value', 'select', 'check', 'scroll', 'wordpress_apply_css'];
 const MUTATING = new Set<BrowserActionType>(['navigate', 'click', 'set_value', 'select', 'check', 'scroll', 'wordpress_apply_css']);
@@ -58,6 +59,12 @@ export class BrowserSessionManager {
     this.cdpPort = port;
     this.urlIncludes = urlIncludes;
     this.attachedAt = new Date().toISOString();
+    // The standing grant (JACO_BROWSER_ALLOWED_ORIGINS) is applied once a page is attached, because the client does not
+    // exist before that. It goes through the client's own configureGrant: validation and the 8-hour ceiling still apply.
+    try {
+      renewStandingGrants({ browser: nextClient, env: process.env,
+        log: (level, message) => console[level === 'warn' ? 'warn' : 'log'](`[grant-at-start] ${message}`) });
+    } catch (error) { console.warn(`[grant-at-start] browser grant not renewed: ${error instanceof Error ? error.message : String(error)}`); }
     try { await previous?.close(); } catch {}
     return this.snapshot();
   }

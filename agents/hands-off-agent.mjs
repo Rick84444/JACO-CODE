@@ -58,6 +58,8 @@ import { TASK_FIELDS, taskContract } from './lib/task-fields.mjs';
 import { CODE_TASKS, validateCodingTask } from './lib/coding-contract.mjs';
 import { trackDomTarget } from './lib/browser-target-match.mjs';
 import { readOperatorLanguage, languageInstruction } from './lib/operator-language.mjs';
+import { localContextTokens } from './lib/context-budget.mjs';
+import { hostInputTargetAllowed } from './lib/aura-desktop-virtual-input.mjs';
 import { nonTextModelKind, openAiChatCompletionsUrl, plannerChoiceFile, readPlannerChoice } from './lib/planner-choice.mjs';
 import { auraHarnessPlannerProtocol } from './lib/aura-harness-model-choice.mjs';
 import { assertTaskMandate } from './lib/org-permission.mjs';
@@ -478,12 +480,17 @@ export const localTools = {
     // The exit code is the observed evidence: 0 means the command ran to completion. Output is
     // bounded (large listings used to fail with ENOBUFS) and hashed so the receipt stays small.
     const clip = text => { const value = String(text || ''); return value.length > 8000 ? value.slice(0, 4000) + "\n...[" + (value.length - 8000) + " chars omitted]...\n" + value.slice(-4000) : value; };
+    // `start <app>` returns at once, but the app it launches inherits the captured output pipes, so the call waited for
+    // the whole timeout and reported failure although the app had opened (observed 2026-11-23: Notepad opened three
+    // times, each step "failed" after 2.5 minutes). A launch command therefore captures nothing; its exit code is
+    // still the evidence, and whether a window exists is checked by observing it.
+    const launch = process.platform === 'win32' && /^\s*start\s/i.test(String(command)) && !/\/wait(?![a-z])/i.test(String(command));
     try {
       const result = execSync(command, {
         timeout: timeoutMs,
         encoding: "utf8",
-        windowsHide: true,
-        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: !launch,
+        stdio: launch ? "ignore" : ["pipe", "pipe", "pipe"],
         maxBuffer: 32 * 1024 * 1024,
         env,
         ...(cwd ? { cwd } : {}),
@@ -740,7 +747,7 @@ const inputBridgeDaemon=createInputBridgeDaemon(INPUT_BRIDGE);
 function runBridge(args) {
   if(process.platform!=='win32'||!existsSync(INPUT_BRIDGE))return Promise.resolve({ok:false,verified:false,error:'WINDOWS_INPUT_BRIDGE_UNAVAILABLE',outcomeUnknown:false});
   const payload={};
-  const flags=new Set(['Double','MeasureEntropy']);
+  const flags=new Set(['Double','MeasureEntropy','Activate']);
   const fields=new Set(['Op','X','Y','Button','Delta','Keys','Text','OutFile','CropX','CropY','CropWidth','CropHeight','MaxWidth','MaxHeight','ExpectedHwnd','ExpectedPid','ExpectedLeft','ExpectedTop','ExpectedWidth','ExpectedHeight']);
   for(let i=0;i<args.length;i++){
     const key=String(args[i]).slice(1);
@@ -763,8 +770,15 @@ const computerTools = {
     let target;
     try {target=observedInputBinding(task,mission);} catch(error){return {ok:false,verified:false,outcomeUnknown:false,error:error.message};}
     const data=task.data,op=task.type.replaceAll('-','_');
+    // On this physical computer (operator opt-in) raw input goes only to a window of a granted process, and the bridge may bring
+    // that observed window to the front first: it refuses input to anything that is not the foreground window.
+    const hostMode=process.env.JACO_AURA_DESKTOP_SANDBOX==='host-operator'&&process.env.JACO_ALLOW_COORDINATE_FALLBACK==='1';
+    if(hostMode){
+      const allowed=hostInputTargetAllowed(task,mission);
+      if(!allowed.allowed)return {ok:false,verified:false,outcomeUnknown:false,error:allowed.reason+(allowed.process?':'+allowed.process:'')};
+    }
     const args=['-Op',op,'-ExpectedHwnd',target.hwnd,'-ExpectedPid',target.processId,
-      '-ExpectedLeft',target.rect.x,'-ExpectedTop',target.rect.y,'-ExpectedWidth',target.rect.width,'-ExpectedHeight',target.rect.height];
+      '-ExpectedLeft',target.rect.x,'-ExpectedTop',target.rect.y,'-ExpectedWidth',target.rect.width,'-ExpectedHeight',target.rect.height,...(hostMode?['-Activate']:[])];
     if(op.startsWith('mouse_')) args.push('-X',data.x,'-Y',data.y);
     if(op==='mouse_click')args.push('-Button',data.button||'left',...(data.double?['-Double']:[]),...(data.measureEntropy?['-MeasureEntropy']:[]));
     if(op==='mouse_scroll')args.push('-Delta',data.delta);
@@ -878,7 +892,7 @@ const computerTools = {
 
 // ── Desktop Lawnmower ────────────────────────────────────────────────────────
 
-const desktopMower = {
+export const desktopMower = {
   async grantAccess(processes, ttlMinutes = 10) {
     return runtime.desktopGrant({
       enabled: true,
@@ -908,7 +922,36 @@ const desktopMower = {
   async setValue(hwnd, selector, text) {
     return runtime.desktopAction({ type: "set_value", hwnd, selector, text });
   },
+
+  // The planner is offered desktop-action (focus, invoke, set_value, toggle, select, expand, collapse, scroll) but this executor
+  // had no case for it: every attempt ended UNKNOWN_TASK_TYPE with an unknown outcome and the mission stopped (2026-11-23, Q5/Q6).
+  // It goes to the same hands-off endpoint as desktop-invoke, so the operator's grant (processes, typing) and the surface's own
+  // checks still decide. A free-form type, an observation here (desktop-observe exists) or a missing window never reaches it.
+  async action(action) {
+    const type = String(action?.type || '');
+    if (!DESKTOP_ACTION_TYPES.has(type)) return { ok: false, verified: false, outcomeUnknown: false, error: `DESKTOP_ACTION_TYPE_INVALID:${type.slice(0, 40) || 'missing'}` };
+    if (!Number.isSafeInteger(action.hwnd) || action.hwnd <= 0) return { ok: false, verified: false, outcomeUnknown: false, error: 'DESKTOP_ACTION_HWND_REQUIRED' };
+    return runtime.desktopAction({ ...action, type });
+  },
 };
+// A set_value that repeats an identical, already verified one with no other change in between. Receipts are the mission's own.
+const CHANGING_TASKS = new Set(['desktop-action', 'desktop-invoke', 'type-text', 'key-press', 'mouse-click', 'mouse-move', 'mouse-scroll', 'shell', 'repo-write', 'repo-edit', 'local-write']);
+export function verifiedRepeatOf(task, mission) {
+  const action = task?.data?.action;
+  if (action?.type !== 'set_value' || !Array.isArray(mission?.receipts)) return null;
+  const wanted = JSON.stringify({ type: action.type, hwnd: action.hwnd, selector: action.selector, text: action.text });
+  for (const receipt of [...mission.receipts].reverse()) {
+    if (receipt?.type === 'desktop-action') {
+      const was = receipt.input?.action;
+      const same = was && JSON.stringify({ type: was.type, hwnd: was.hwnd, selector: was.selector, text: was.text }) === wanted;
+      if (same && receipt.ok === true && receipt.verified === true) return Number(String(receipt.actionId || '').split(':').at(-1)) || receipt.actionId || 'earlier';
+      return null;
+    }
+    if (CHANGING_TASKS.has(receipt?.type)) return null;
+  }
+  return null;
+}
+export const DESKTOP_ACTION_TYPES = new Set(['focus', 'invoke', 'set_value', 'toggle', 'select', 'expand', 'collapse', 'scroll']);
 
 // ── Task Queue ───────────────────────────────────────────────────────────────
 
@@ -982,6 +1025,13 @@ export async function executeTask(task, state, mission = null) {
     case "browser-sign-in": return lawnmower.signIn({missionId:mission?.id,actionId:task.id});
     case "desktop-observe": return desktopMower.observe(task.data.hwnd);
     case "desktop-invoke": return desktopMower.invoke(task.data.hwnd, task.data.selector);
+    case "desktop-action": {
+      // set_value with the value the field already holds shows no change, so the surface reports it unverified and the loop
+      // treats that as an unknown outcome and stops (2026-11-23, Q9: the write had verified, the repeat blocked the mission).
+      const done = verifiedRepeatOf(task, mission);
+      if (done) return { ok: false, verified: false, outcomeUnknown: false, error: `STEP_ALREADY_VERIFIED:turn ${done}`, hint: 'This exact step already succeeded and verified; nothing changed since. Read the result back if needed, then complete.' };
+      return desktopMower.action(task.data?.action);
+    }
     case "desktop-windows": return desktopMower.listWindows();
     case "android-status": return androidNova.status();
     case "android-observe": return androidNova.observe(task.data || {});
@@ -1583,11 +1633,21 @@ function parkOn429(provider, res, rawBody) {
 // A provider that rejects the key or cannot be reached will do the same on the next call. Before
 // this, Qwen (401) and two unreachable Ollama endpoints (90 s timeouts) were retried on every
 // planning turn (2026-09-30). Rejected keys are parked for an hour, unreachable endpoints for 10 min.
-export function providerParkMs({ status, error } = {}) {
+// A server on this computer that was restarted or is still loading answers again in seconds, so it is parked briefly
+// (observed 2026-11-23: restarting the local model parked it for 10 minutes and the mission waited on a healthy server).
+export const LOCAL_PARK_MS = 15_000;
+const loopbackUrl = url => { try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(String(url)).hostname); } catch { return false; } };
+export function providerParkMs({ status, error, url } = {}) {
   if (status === 401 || status === 403) return 60 * 60_000;
   const message = String(error?.message || error || '');
-  if (/timeout|timed out|aborted|ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|fetch failed/i.test(message) || error?.name === 'TimeoutError') return 10 * 60_000;
+  if (/timeout|timed out|aborted|ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|fetch failed/i.test(message) || error?.name === 'TimeoutError') return loopbackUrl(url) ? LOCAL_PARK_MS : 10 * 60_000;
   return 0;
+}
+// A server on this computer that did not answer (restarting, busy, a request that ran out of time) is a pause, not a verdict:
+// the label COOLDOWN makes the mission wait and retry (MODEL_TEMPORARILY_LIMITED) instead of stopping with
+// AURA_SELECTED_MODEL_UNAVAILABLE:...:fetch failed, which blocked a mission whose write had just succeeded (2026-11-23).
+export function providerFailureLabel(error, url) {
+  return providerParkMs({ error, url }) === LOCAL_PARK_MS ? 'COOLDOWN' : String(error?.message || error).slice(0, 40);
 }
 function parkProvider(provider, ms, reason) {
   if (!ms) return;
@@ -1749,7 +1809,9 @@ async function callBrainStep(state, { mission, observation, continuity = null },
   const profile=process.env.NOVA_CONTEXT_PROFILE==='standard'?'standard':'compact';
   const originalContextChars=JSON.stringify(ctx).length;
   ctx=compactPlannerStep(ctx,{profile});
-  state.plannerInputMetrics={profile,originalContextChars,contextChars:JSON.stringify(ctx).length};
+  // Where the prompt's characters go, per top-level key: measured, so trimming targets what is actually large.
+  const keyChars=Object.fromEntries(Object.entries(ctx).map(([key,value])=>[key,JSON.stringify(value??null).length]).sort((a,b)=>b[1]-a[1]).slice(0,8));
+  state.plannerInputMetrics={profile,originalContextChars,contextChars:JSON.stringify(ctx).length,keyChars};
   const routineHint = routineContextText(await readRoutineContext({...mission,allowedTasks:planningAllowedTasks},{
     runtimeUrl:process.env.NODE_TEST_CONTEXT?'':CONFIG.runtimeUrl,
     token:process.env.GATEWAY_TOKEN||process.env.JACO_GATEWAY_TOKEN||''
@@ -1909,7 +1971,7 @@ Plans already rejected this turn (do not repeat them): ${rejectedPlans.slice(-3)
       return proposal;
     } catch (e) {
       if (/^PLAN_/.test(e.message)) rejectedPlans.push(e.message.slice(0, 200));
-      parkProvider(provider, providerParkMs({ error: e }), e.message.slice(0, 80));
+      parkProvider(provider, providerParkMs({ error: e, url: provider.url }), e.message.slice(0, 80));
       log("warn", "brain", `${provider.name} failed: ${e.message.slice(0, 80)}`);
     }
   }
@@ -2140,8 +2202,8 @@ export async function agentChat({ messages, tools, mission }, rawFetch = fetch, 
       log("info", "brain", `${id} answered: ${message.tool_calls?.length || 0} tool call(s), prompt ${data?.usage?.prompt_tokens ?? "?"} tokens`);
       return { content: message.content || '', tool_calls: message.tool_calls || [], provider: id };
     } catch (error) {
-      parkProvider(provider, providerParkMs({ error }), String(error?.message || error).slice(0, 80));
-      failures.push(`${provider.name}:${String(error?.message || error).slice(0, 40)}`);
+      parkProvider(provider, providerParkMs({ error, url: provider.url }), String(error?.message || error).slice(0, 80));
+      failures.push(`${provider.name}:${providerFailureLabel(error, provider.url)}`);
     }
   }
   if (env.JACO_AURA_UNIFIED_RUNTIME === '1') {
@@ -2232,6 +2294,11 @@ async function runAgentLoop(state) {
   let introExtras, planMission = null;
   const result = await runAgentMission({
     client: missionClient, owner: state.agentId, chat: req => agentChat(req),
+    // A model on this computer has a fixed window: size the history to it instead of the cloud-sized default.
+    contextTokens: async () => {
+      const choice = readPlannerChoice(plannerChoiceFile(process.env));
+      return choice?.provider === 'llamacpp' ? localContextTokens(process.env.JACO_LLAMACPP_URL || 'http://127.0.0.1:8081/v1') : null;
+    },
     system: mission => agentSystemFor(capsuleAllowedTasks(mission), process.platform,
       mission.source === 'seer-mission-graph' && Boolean(mission.metadata?.parent?.graphId)),
     preflight: context => runCodingPreflight(state, context),

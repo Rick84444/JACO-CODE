@@ -8,8 +8,14 @@ param(
   [string]$ModelFile = '',
   [ValidatePattern('^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$')][string]$Alias = 'bonsai-9b',
   [ValidateRange(1, 65535)][int]$Port = 8081,
-  [ValidateRange(512, 65536)][int]$Context = 4096,
-  [ValidateRange(0, 999)][int]$GpuLayers = 99
+  [ValidateRange(512, 65536)][int]$Context = 32000,
+  [ValidateRange(0, 999)][int]$GpuLayers = 99,
+  # One slot gives the whole context to one request. Aura sends one long prompt at a time; several slots split the shared context.
+  [ValidateRange(1, 16)][int]$Parallel = 1,
+  # Vision models: the multimodal projector (mmproj) file that belongs to the GGUF. Empty = text only.
+  [string]$MmprojFile = '',
+  # Extra llama-server arguments as one string, split on spaces, for example cache quantization: -ExtraArgs '-fa on -ctk q8_0 -ctv q8_0'
+  [string]$ExtraArgs = ''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -36,6 +42,10 @@ if (-not (Test-Path -LiteralPath $ModelFile -PathType Leaf)) {
   throw "LOCAL_MODEL_FILE_NOT_FOUND: $ModelFile"
 }
 $ServerExe = (Resolve-Path -LiteralPath $ServerExe).ProviderPath
+if (-not [string]::IsNullOrWhiteSpace($MmprojFile)) {
+  if (-not (Test-Path -LiteralPath $MmprojFile -PathType Leaf)) { throw "LOCAL_MODEL_MMPROJ_NOT_FOUND: $MmprojFile" }
+  $MmprojFile = (Resolve-Path -LiteralPath $MmprojFile).ProviderPath
+}
 $ModelFile = (Resolve-Path -LiteralPath $ModelFile).ProviderPath
 
 # Do not assume an existing listener belongs to this model or terminate another process.
@@ -58,8 +68,11 @@ $arguments = @(
   '--port', [string]$Port,
   '-ngl', [string]$GpuLayers,
   '-c', [string]$Context,
+  '-np', [string]$Parallel,
   '--jinja'
 )
+if (-not [string]::IsNullOrWhiteSpace($MmprojFile)) { $arguments += @('--mmproj', $MmprojFile) }
+if (-not [string]::IsNullOrWhiteSpace($ExtraArgs)) { $arguments += @($ExtraArgs.Trim() -split '\s+') }
 Push-Location (Split-Path -Parent $ServerExe)
 try {
   & $ServerExe @arguments

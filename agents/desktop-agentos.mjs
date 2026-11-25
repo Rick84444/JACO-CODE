@@ -18,7 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { MissionClient, processMissionTurn } from './lib/mission-client.mjs';
 import { seerCompletion } from './lib/seer-client.mjs';
 import { loadState, executeTask as legacyExecuteTask, computerScreenshotPath, computerSessionStatus } from './hands-off-agent.mjs';
-import { desktopPlannerVision, virtualInputGrant } from './lib/aura-desktop-virtual-input.mjs';
+import { desktopPlannerVision, virtualInputGrant, hostInputTargetAllowed } from './lib/aura-desktop-virtual-input.mjs';
 import { buildAgentCard, joinWorkplace } from './lib/workplace-session.mjs';
 import { windowsWmiRead } from './lib/windows-wmi-read.mjs';
 import { CODE_TASKS } from './lib/coding-contract.mjs';
@@ -266,6 +266,11 @@ export async function executeTask(task, mission) {
     if (!mission?.id || !Array.isArray(mission.allowedTasks) || !mission.allowedTasks.includes(task.type)) {
       return { ok:false, verified:false, outcomeUnknown:false, error:'VIRTUAL_INPUT_MISSION_TASK_DENIED' };
     }
+    // On a physical host (operator opt-in) the window's process must be one the operator granted for desktop control.
+    if (virtualInput.mode === 'host-operator') {
+      const target = hostInputTargetAllowed(task, mission);
+      if (!target.allowed) return { ok:false, verified:false, outcomeUnknown:false, error:target.reason + (target.process ? ':' + target.process : '') };
+    }
     // Raw input must not become a shadow authority when semantic UIA is blocked.
     // Require the same currently signed autonomy mandate as desktop-action.
     try { await resolveMandateId(mission); }
@@ -399,7 +404,7 @@ export function desktopAgentCard(status = { desktop: { evidenceState: 'UNKNOWN' 
       `UIA evidence at startup: ${status.desktop?.evidenceState || 'UNKNOWN'}`,
       'windows-wmi-read is read-only and limited to fixed CIM profiles; arbitrary WQL/PowerShell is not exposed',
       'Mutations require an active signed autonomy mandate and pass ModelRelay single-writer lease',
-      `virtual mouse/keyboard ${virtualInput.allowed ? 'verified sandbox guest' : virtualInput.reason}, shell ${ALLOW_SHELL ? 'enabled' : 'disabled'}`,
+      `virtual mouse/keyboard ${virtualInput.allowed ? (virtualInput.mode === 'host-operator' ? 'operator host opt-in (granted processes only)' : 'verified sandbox guest') : virtualInput.reason}, shell ${ALLOW_SHELL ? 'enabled' : 'disabled'}`,
     ],
     preferredTasks: ['Windows system observation', 'desktop application control', 'IDE operation through UI Automation'],
   });
@@ -413,7 +418,7 @@ export async function main() {
     console.log(`[AGENTOS] [REAL] runtime=${RUNTIME_URL}`);
     console.log(`[AGENTOS] [REAL] desktop=${status.desktop.evidenceState} actuation=${status.desktop.actuation}`);
     console.log(`[AGENTOS] [REAL] singleWriter=${status.relay.singleWriter === true}`);
-    console.log(`[AGENTOS] [REAL] virtualInput=${status.virtualInput.allowed ? 'VERIFIED_HYPERV_GUEST' : status.virtualInput.reason} shell=${ALLOW_SHELL}`);
+    console.log(`[AGENTOS] [REAL] virtualInput=${status.virtualInput.allowed ? (status.virtualInput.mode === 'host-operator' ? 'OPERATOR_HOST_OPT_IN' : 'VERIFIED_HYPERV_GUEST') : status.virtualInput.reason} shell=${ALLOW_SHELL}`);
 
     // Same rule as every JACO executor: no READY Workplace session, no tool use.
     workplace = await joinWorkplace({

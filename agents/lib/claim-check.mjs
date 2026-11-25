@@ -75,6 +75,29 @@ export function receiptText(receipt) {
 
 const found = (fact, text) => [fact.value, ...fact.alternatives].some(v => v && text.includes(String(v).toLowerCase().replace(/\\/g, '/')));
 
+// Tools that change something. An answer that says one of them did its work needs a receipt of that tool that succeeded and
+// verified. Matching the answer's facts against receipt text is not enough: a refused step still carries the text it was asked
+// to type, so "type-text wrote X" looked supported by the very step that failed (observed 2026-11-23: the answer claimed the
+// line was typed and read back while type-text had failed and the field was empty).
+export const ACTION_TOOLS = ['type-text', 'key-press', 'mouse-click', 'mouse-move', 'mouse-scroll', 'desktop-action', 'desktop-invoke',
+  'browser-click', 'browser-type', 'repo-write', 'repo-edit', 'local-write', 'git-commit', 'git-push', 'git-merge', 'mcp-write', 'shell'];
+// A claim that reports a refusal or an error is not claiming success.
+const NEGATED = /\b(fail(?:ed|ure|s)?|error|denied|refus(?:ed|al)|blocked|could not|couldn'?t|unable|not (?:allowed|permitted|work(?:ed)?|succe)|nekad|nekades|misslyck|fel(?:et)?\b|kunde inte|lyckades inte|inte (?:fungera|lyckas|tillåt)|blockerad)/i;
+const toolMentioned = (text, tool) => new RegExp(`(^|[^a-z0-9])${tool.replace(/-/g, '[-_ ]')}([^a-z0-9]|$)`, 'i').test(text);
+
+export function actionToolIssues(claimText, receipts = []) {
+  const text = plain(claimText);
+  if (NEGATED.test(text)) return [];
+  const issues = [];
+  for (const tool of ACTION_TOOLS) {
+    if (!toolMentioned(text, tool)) continue;
+    const own = receipts.filter(r => r?.type === tool);
+    if (own.some(r => r.ok === true && r.verified === true)) continue;
+    issues.push({ tool, receipts: own.length, failed: own.filter(r => r.ok === false || r.verified === false).length });
+  }
+  return issues;
+}
+
 // Rules only; synchronous. receipts: the mission's receipts.
 export function checkClaimsByRules(answer, receipts = []) {
   const byStep = new Map(receipts.map(r => [stepOf(r), r]));
@@ -85,9 +108,14 @@ export function checkClaimsByRules(answer, receipts = []) {
     const facts = factsOf(claim.text);
     const unsupported = facts.filter(f => !found(f, scope)).map(f => f.value);
     const partial = cited.filter(r => r.result?.truncated === true).map(stepOf);
-    return { i, text: claim.text.slice(0, 400), cites: claim.cites, facts: facts.length, unsupported, partial };
+    const toolIssues = actionToolIssues(claim.text, receipts);
+    return { i, text: claim.text.slice(0, 400), cites: claim.cites, facts: facts.length, unsupported, partial, toolIssues };
   });
-  return { claims, unsupportedFacts: claims.flatMap(c => c.unsupported.map(fact => ({ claim: c.i, fact }))) };
+  return {
+    claims,
+    unsupportedFacts: claims.flatMap(c => c.unsupported.map(fact => ({ claim: c.i, fact }))),
+    unsupportedActions: claims.flatMap(c => c.toolIssues.map(issue => ({ claim: c.i, ...issue, text: c.text }))),
+  };
 }
 
 const JUDGE_PROMPT = 'You check an agent\'s answer against tool output. Compare each claim ONLY with the evidence excerpts it names. verdict: "supported" if the excerpts state it; "contradicted" if they state something incompatible, including a claim that presents a list as complete (for example "changed files: A and B") while the excerpt names further items of the same kind; "unclear" if the excerpts do not cover it. Use each claim\'s id exactly as given (C1, C2, ...). Return JSON only: {"verdicts":[{"id":"C1","verdict":"supported|contradicted|unclear","why":"short reason naming what the excerpt shows"}]}.';
@@ -217,8 +245,11 @@ export async function checkClaims(answer, receipts = [], { env = process.env, fe
     unsupportedFacts: rules.unsupportedFacts.map(u => ({ ...u, text: rules.claims[u.claim].text })),
     partial: [...new Set(rules.claims.flatMap(c => c.partial))],
     judged: verdicts.length, judge, judgeError,
-    contradicted: contradicted.map(v => ({ claim: v.i, why: v.why, text: rules.claims[v.i]?.text })),
+    contradicted: [
+      ...contradicted.map(v => ({ claim: v.i, why: v.why, text: rules.claims[v.i]?.text })),
+      ...rules.unsupportedActions.map(a => ({ claim: a.claim, why: `${a.tool} has no succeeded and verified receipt (${a.failed} of ${a.receipts} failed)`, text: a.text })),
+    ],
     unclear: verdicts.filter(v => v.verdict === 'unclear').length,
-    ok: rules.unsupportedFacts.length === 0 && contradicted.length === 0,
+    ok: rules.unsupportedFacts.length === 0 && contradicted.length === 0 && rules.unsupportedActions.length === 0,
   };
 }

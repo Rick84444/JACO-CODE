@@ -11,7 +11,7 @@ export const TASK_PERMISSIONS = Object.freeze({
   'repo-list': 'files.read', 'repo-read': 'files.read', 'repo-scan': 'files.read', 'git-status': 'files.read', 'git-diff': 'files.read', 'skill-load': 'files.read',
   'repo-write': 'files.write', 'repo-edit': 'files.write',
   shell: 'commands.run', 'stack-repair': 'commands.run', 'repo-test': 'commands.run', 'repo-service': 'commands.run', 'invoke-worker': 'commands.run', 'mcp-write': 'commands.run',
-  'desktop-invoke': 'commands.run', 'mouse-move': 'commands.run', 'mouse-click': 'commands.run', 'mouse-scroll': 'commands.run', 'key-press': 'commands.run', 'type-text': 'commands.run',
+  'desktop-invoke': 'commands.run', 'desktop-action': 'commands.run', 'mouse-move': 'commands.run', 'mouse-click': 'commands.run', 'mouse-scroll': 'commands.run', 'key-press': 'commands.run', 'type-text': 'commands.run',
   'android-begin': 'commands.run', 'android-target': 'commands.run', 'android-open-app': 'commands.run', 'android-tap': 'commands.run', 'android-type': 'commands.run',
   'android-scroll': 'commands.run', 'android-back': 'commands.run', 'android-home': 'commands.run',
   'git-commit': 'git.branch', 'git-push': 'git.branch', 'git-merge': 'git.merge',

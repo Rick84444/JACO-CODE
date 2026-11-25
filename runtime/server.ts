@@ -2809,6 +2809,20 @@ const notifyPhone = async (action) => {
 
   // Operator direction is persisted without another model call or an execution interrupt.
   // Only the authenticated local Aura UI may submit it; worker API tokens cannot steer.
+  // Aura's own triage of the mission queue (missionTriage.mjs). Dry run unless apply is true.
+  app.post('/api/aura/workbench/missions/triage', requireLocalUi, (req, res) => {
+    try { res.json({ success: true, applied: req.body?.apply === true, decisions: connectedRuntime.novaMissions.triage({ apply: req.body?.apply === true }) }); }
+    catch (error: any) { res.status(409).json({ success: false, error: String(error?.message || error) }); }
+  });
+  if (process.env.JACO_MISSION_TRIAGE === '1') {
+    const triageTimer = setInterval(() => {
+      try {
+        const decisions = connectedRuntime.novaMissions.triage({ apply: true }).filter((d: any) => d.applied);
+        for (const d of decisions) seerLiveWorkstream.record({ actor: 'Aura triage', type: 'mission.triage', message: `${d.action === 'cancel' ? 'Ended' : 'Paused'} ${d.id}: ${d.reason}`, verified: true, receipt: { missionId: d.id, action: d.action, reason: d.reason } });
+      } catch (error: any) { console.warn(`[triage] ${String(error?.message || error).slice(0, 200)}`); }
+    }, 60_000);
+    triageTimer.unref?.();
+  }
   app.post('/api/aura/workbench/missions/:id/steer', requireLocalUi, (req, res) => {
     try {
       const { steering, replayed } = connectedRuntime.novaMissions.steer(req.params.id, req.body || {});
@@ -3091,6 +3105,9 @@ const notifyPhone = async (action) => {
         return res.status(201).json({ success: true, lite: true, executionMode, mission: created.mission, testsRequired: created.testsRequired, testCommand: created.testCommand, initialized: created.initialized,
           ...(harnessModel ? { harnessModel: { ...harnessModel, verifiedInference: false, appliesAt: 'next_model_turn' } } : {}) });
       }
+      // A task of the same kind finished in the last day is reported with the answer, so the work is not repeated without a reason.
+      // (Near-identical open missions are already answered with the existing one by NovaMissionControl.create.)
+      const similar = connectedRuntime.novaMissions.findSimilar(goal);
       const result = await callCanonicalSeer('/cortex/strategy/start', {
         goal,
         priority: 1,
@@ -3108,7 +3125,7 @@ const notifyPhone = async (action) => {
         verified: true,
         receipt: { goalId: result?.goal?.id || null, developmentCycle: result?.development_cycle || null, requestedExecutionMode: executionMode },
       });
-      res.status(201).json({ success: true, ...result, executionMode,
+      res.status(201).json({ success: true, ...result, executionMode, ...(similar.done.length ? { similarDone: similar.done.slice(0, 3) } : {}),
         ...(harnessModel ? { harnessModel: { ...harnessModel, verifiedInference: false, appliesAt: 'next_model_turn' } } : {}) });
     } catch (error: any) {
       const code = String(error?.message || error);

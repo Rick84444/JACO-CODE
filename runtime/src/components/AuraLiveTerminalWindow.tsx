@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Activity, TerminalSquare, X } from 'lucide-react';
+import { Activity, MonitorSmartphone, TerminalSquare, X } from 'lucide-react';
 import { humanChatEvents } from '../lib/humanChat';
 import { auraActivityFeed } from '../lib/auraStage.mjs';
 import type { CognitiveEvent } from '../hooks/useCognitiveLive';
@@ -8,6 +8,11 @@ import { AuraTerminal } from './AuraTerminal';
 
 // Presentation-only window. The canonical useCognitiveLive stream already
 // owns these events; opening the window does not start another connection.
+// Google blocks embedding (X-Frame-Options: SAMEORIGIN on remotedesktop.google.com and on its sign-in pages), so the remote
+// desktop opens in its own window beside the interface. The operator signs in there, in their own browser profile.
+export const GOOGLE_REMOTE_URL = 'https://remotedesktop.google.com/access';
+export const openGoogleRemote = () => { window.open(GOOGLE_REMOTE_URL, 'jaco-google-remote', 'popup,width=1180,height=780,noopener'); };
+
 export function AuraLiveTerminalWindow({
   events, missionId, missionGoal, connection, onClose,
 }: {
@@ -46,6 +51,9 @@ export function AuraLiveTerminalWindow({
     aria-label={tr('Aura Live Terminal', 'Aura Live Terminal')}>
     <header className="aura-live-terminal-header">
       <span className="aura-live-terminal-heading"><TerminalSquare size={16}/><strong>Aura Live Terminal</strong></span>
+      <button type="button" className="aura-live-terminal-close" onClick={openGoogleRemote}
+        title={tr('Öppnar Google Remote i ett eget fönster bredvid gränssnittet; logga in där', 'Opens Google Remote in its own window beside the interface; sign in there')}
+        aria-label="Google Remote"><MonitorSmartphone size={17}/></button>
       <button type="button" className="aura-live-terminal-close" onClick={onClose}
         aria-label={tr('Stäng live-terminalen', 'Close live terminal')}><X size={17}/></button>
     </header>
