@@ -384,7 +384,9 @@ export function liteMobileEnv(env, release = {}, platform = process.platform) {
 export async function verifyLiteUi(url, release, { fetchImpl = fetch } = {}) {
   try {
     const get = route => fetchImpl(url + route, { redirect: 'error', signal: AbortSignal.timeout(10000) });
-    const page = await get('/');
+    // The IDE answers at /ide since Aura's Operator Stage became the start page (2026-11-25); an older release at /.
+    let page = await get('/ide');
+    if (!page.ok || !/text\/html/i.test(page.headers.get('content-type') || '')) page = await get('/');
     if (!page.ok || !/text\/html/i.test(page.headers.get('content-type') || '')) return { ok:false, reason:'GUI_HTML_HTTP_' + page.status };
     const html = Buffer.from(await page.arrayBuffer());
     if (crypto.createHash('sha256').update(html).digest('hex') !== release.indexSha256) return { ok:false, reason:'GUI_HTML_DIGEST_MISMATCH' };

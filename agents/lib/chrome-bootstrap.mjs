@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 export function executable(env, configured, name, candidates = []) {
@@ -25,8 +26,10 @@ export function chromeExecutable(env, platform = process.platform) {
   }
   return null;
 }
-export function chromeLaunchArgs(c, platform = process.platform) {
-  const profile = c.env.JACO_CHROME_PROFILE_DIR || path.join(c.dataRoot || c.root, 'Chrome-CDP');
+export function chromeLaunchArgs(c, platform = process.platform, home = os.homedir()) {
+  // One profile per user, whichever checkout or installer starts JACO: the operator's sign-ins (Google and the
+  // rest) live there and must not stay behind in an old download folder (2026-11-25).
+  const profile = c.env.JACO_CHROME_PROFILE_DIR || path.join(home, '.jaco', 'Chrome-CDP');
   if (!profile) throw new Error('CHROME_PROFILE_DIR_REQUIRED');
   const headless = c.env.JACO_CHROME_HEADLESS === '1' ||
     (c.env.JACO_CHROME_HEADLESS !== '0' && platform === 'linux' && !c.env.DISPLAY && !c.env.WAYLAND_DISPLAY);

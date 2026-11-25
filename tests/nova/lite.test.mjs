@@ -465,6 +465,20 @@ test('Lite verifies served frontend bytes, not a stale bundle or HTML SPA fallba
  assert.equal((await run(html,'text/html')).ok,false);
 });
 
+// 2026-11-25: Aura's Operator Stage is the start page of every install; Lite still proves the IDE's own bytes at /ide.
+test('Lite verifies the IDE at /ide while the start page is the Operator Stage',async()=>{
+ const entry='/assets/app.js',ide='<div id="root"></div><script src="'+entry+'"></script>',js='console.log("ready")';
+ const sha=s=>crypto.createHash('sha256').update(s).digest('hex');
+ const release={entry,indexSha256:sha(ide),clientSha256:sha(js)};
+ const seen=[];
+ const result=await verifyLiteUi('http://127.0.0.1:3000',release,{fetchImpl:async url=>{seen.push(new URL(url).pathname);
+  if(url.endsWith('/ide'))return new Response(ide,{headers:{'content-type':'text/html'}});
+  if(url.endsWith('/'))return new Response('<main id="stage"></main><script src="/stage.js"></script>',{headers:{'content-type':'text/html'}});
+  return new Response(js,{headers:{'content-type':'text/javascript'}});}});
+ assert.deepEqual(result,{ok:true});
+ assert.equal(seen.includes('/'),false);
+});
+
 test('an identity response from a process that exited while probing is not READY',async()=>{
  let alive=true;
  const result=await waitForHealth('http://127.0.0.1:3000',{alive:()=>alive,fetchImpl:async()=>{alive=false;return Response.json({success:true,product:'JACO Autonomus IDE'});}});

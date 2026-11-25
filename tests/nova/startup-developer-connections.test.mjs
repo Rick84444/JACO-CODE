@@ -89,8 +89,11 @@ test('Windows browser discovery prefers Chrome and falls back to Edge with the s
  fs.mkdirSync(path.dirname(chrome),{recursive:true});fs.writeFileSync(chrome,'fixture');
  assert.equal(chromeExecutable(env,'win32'),chrome);
  assert.equal(chromeExecutable({...env,JACO_CHROME_EXECUTABLE:edge},'win32'),edge);
- const args=chromeLaunchArgs({env,root:env.ProgramFiles,dataRoot:env.ProgramFiles,ports:{chrome:9222}},'win32');
+ const home=path.join(env.ProgramFiles,'home-fixture');
+ const args=chromeLaunchArgs({env,root:env.ProgramFiles,dataRoot:env.ProgramFiles,ports:{chrome:9222}},'win32',home);
  assert.ok(args.includes('--remote-debugging-address=127.0.0.1'));
- assert.ok(args.includes('--user-data-dir='+path.join(env.ProgramFiles,'Chrome-CDP')));
+ // One per-user profile whichever install starts JACO, so sign-ins survive a new checkout or installer.
+ assert.ok(args.includes('--user-data-dir='+path.join(home,'.jaco','Chrome-CDP')));
+ assert.ok(chromeLaunchArgs({env:{...env,JACO_CHROME_PROFILE_DIR:'C:/custom/profile'},root:env.ProgramFiles,ports:{chrome:9222}},'win32',home).includes('--user-data-dir='+path.resolve(env.ProgramFiles,'C:/custom/profile')));
  assert.ok(!args.includes('--no-sandbox'));
 });
