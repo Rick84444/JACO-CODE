@@ -96,4 +96,6 @@ test('Windows browser discovery prefers Chrome and falls back to Edge with the s
  assert.ok(args.includes('--user-data-dir='+path.join(home,'.jaco','Chrome-CDP')));
  assert.ok(chromeLaunchArgs({env:{...env,JACO_CHROME_PROFILE_DIR:'C:/custom/profile'},root:env.ProgramFiles,ports:{chrome:9222}},'win32',home).includes('--user-data-dir='+path.resolve(env.ProgramFiles,'C:/custom/profile')));
  assert.ok(!args.includes('--no-sandbox'));
+ // An agent browser runs without the operator's synced extensions, which cost about 1 GB and could read her pages.
+ assert.ok(args.includes('--disable-extensions') && args.includes('--disable-sync'));
 });
