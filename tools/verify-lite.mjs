@@ -162,8 +162,21 @@ try {
   });
   must(base, 'server did not start');
 
+  // Aura's Operator Stage is the start page (2026-11-25); the IDE is at /ide.
+  await step('the start page is Aura\'s Operator Stage and loads her rig', async () => {
+    const page = await fetch(`${base}/`);
+    const html = await page.text();
+    must(page.status === 200 && html.includes('id="stage"') && html.includes('src="/stage.js"'), 'the start page is not the Operator Stage');
+    for (const asset of ['/stage.js', '/vendor/aura-rig.mjs', '/vendor/three/build/three.module.js', '/vendor/three/addons/loaders/GLTFLoader.js', '/branding/aura-rig.glb']) {
+      const r = await fetch(`${base}${asset}`);
+      must(r.status === 200, `${asset} HTTP ${r.status}`);
+      if (asset.endsWith('.mjs') || asset.endsWith('.js')) must(!/from\s*['"]three['"]/.test(await r.text()), `${asset} still imports bare three`);
+    }
+    return { evidence: 'stage, rig, three.js and the rig asset are served' };
+  });
+
   await step('the IDE page and its script load', async () => {
-    const html = await (await fetch(`${base}/`)).text();
+    const html = await (await fetch(`${base}/ide`)).text();
     must(/<div id="root"/.test(html), 'index.html has no root element');
     const script = /src="(\/assets\/[^"]+\.js)"/.exec(html)?.[1];
     must(script, 'no script in index.html');

@@ -48,5 +48,35 @@ test('three.js addons reach the browser with their imports resolved', { skip: !t
 });
 
 test('a release without the stage files reports it, so the runtime keeps the IDE at /', () => {
-  assert.equal(operatorStageAssets(path.join(runtimeRoot, 'does-not-exist')).available(), false);
+  const none = operatorStageAssets(path.join(runtimeRoot, 'does-not-exist'));
+  assert.equal(none.available(), false);
+  assert.equal(none.kind, null);
+});
+
+// Lite and the installers ship dist/, not src/ or node_modules/three: the build copies the stage into dist/.
+test('a release layout (dist/operator-stage only) is served when the source is not there', async () => {
+  const os = await import('node:os');
+  const { STAGE_FILES, THREE_FILES } = await import('../../runtime/scripts/build-operator-stage.mjs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-stage-release-'));
+  try {
+    for (const target of Object.keys({ ...STAGE_FILES, ...THREE_FILES })) {
+      const file = path.join(root, 'dist', 'operator-stage', target);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, target.endsWith('aura-rig.mjs') ? "import * as THREE from 'three';" : '// ' + target);
+    }
+    const release = operatorStageAssets(root);
+    assert.equal(release.kind, 'release');
+    assert.match(release.resolve('/').file, /dist[\\/]operator-stage[\\/]index\.html$/);
+    assert.match(release.resolve('/vendor/three/addons/utils/SkeletonUtils.js').file, /dist[\\/]operator-stage[\\/]vendor[\\/]three[\\/]addons/);
+    assert.equal(release.resolve('/vendor/three/build/../../../index.html'), null);
+    assert.match(release.read(release.resolve('/vendor/aura-rig.mjs')).toString(), /from '\/vendor\/three\/build\/three\.module\.js'/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('the build copies every file the source layout serves', async () => {
+  const { STAGE_FILES, THREE_FILES } = await import('../../runtime/scripts/build-operator-stage.mjs');
+  for (const source of Object.values(STAGE_FILES)) assert.ok(fs.existsSync(path.join(runtimeRoot, source)), source);
+  assert.ok(Object.keys(THREE_FILES).includes('vendor/three/LICENSE'), 'three.js is MIT: its license ships with it');
+  for (const needed of ['three.module.js', 'three.core.js', 'GLTFLoader.js', 'BufferGeometryUtils.js', 'SkeletonUtils.js'])
+    assert.ok(Object.keys(THREE_FILES).some(k => k.endsWith(needed)), needed);
 });
