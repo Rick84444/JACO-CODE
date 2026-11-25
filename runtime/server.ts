@@ -3105,13 +3105,9 @@ const notifyPhone = async (action) => {
         return res.status(201).json({ success: true, lite: true, executionMode, mission: created.mission, testsRequired: created.testsRequired, testCommand: created.testCommand, initialized: created.initialized,
           ...(harnessModel ? { harnessModel: { ...harnessModel, verifiedInference: false, appliesAt: 'next_model_turn' } } : {}) });
       }
-      // Do not start what already runs, and say so when the same kind of task was just finished: a restart of a similar
-      // job needs a reason (operator, 2026-11-23). allowDuplicate: true is that reason.
+      // A task of the same kind finished in the last day is reported with the answer, so the work is not repeated without a reason.
+      // (Near-identical open missions are already answered with the existing one by NovaMissionControl.create.)
       const similar = connectedRuntime.novaMissions.findSimilar(goal);
-      if (similar.running && req.body?.allowDuplicate !== true) {
-        seerLiveWorkstream.record({ actor: 'Aura Workbench', type: 'strategy.operator_goal.duplicate', message: `The same goal is already running as ${similar.running.id}; not started twice`, verified: true, receipt: { missionId: similar.running.id } });
-        return res.status(200).json({ success: true, duplicate: true, missionId: similar.running.id, message: 'The same goal is already running.' });
-      }
       const result = await callCanonicalSeer('/cortex/strategy/start', {
         goal,
         priority: 1,

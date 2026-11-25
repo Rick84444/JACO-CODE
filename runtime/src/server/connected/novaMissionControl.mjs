@@ -987,7 +987,7 @@ export class NovaMissionControl {
     return decisions;
   }
 
-  // The same task already running, or finished in the last day: asked before a new goal is started.
+  // A task of the same family finished in the last day: asked before a new goal is started.
   findSimilar(goal, now = Date.now()) {
     // Only Nova missions (those with a session) can be read with get(); the bus also holds other missions.
     const ids = this.db.prepare("SELECT m.id AS id FROM missions m JOIN nova_sessions s ON s.mission_id=m.id WHERE m.status IN ('ACTIVE','DONE') ORDER BY m.created_at DESC LIMIT 200").all();

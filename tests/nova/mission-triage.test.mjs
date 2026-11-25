@@ -49,20 +49,17 @@ test('a recent mission is left alone even when it is not the newest', () => {
   assert.deepEqual(plan([mission('a', { createdAt: ago(20), updatedAt: ago(2) }), mission('b', { goal: 'Other', createdAt: ago(5), updatedAt: ago(1) })]), {});
 });
 
-test('the same goal that is already running is reused; a task finished today is reported, not silently repeated', () => {
+test('a task of the same family finished today is reported, not silently repeated', () => {
   const missions = [
     mission('running', { goal: 'Skriv en rad i Anteckningar', status: 'ACTIVE' }),
     mission('paused-same', { goal: 'Skriv en rad i Anteckningar', status: 'ACTIVE', paused: { at: ago(1) } }),
     mission('done-today', { goal: 'Datorövning A (Bonsai)', status: 'DONE', updatedAt: ago(120), receipts: [{ ok: true, verified: true, at: ago(121) }] }),
     mission('done-old', { goal: 'Datorövning A (Bonsai)', status: 'DONE', updatedAt: ago(60 * 30) }),
   ];
-  const found = findSimilarMissions('  skriv en RAD i  anteckningar ', missions, { now: NOW });
-  assert.equal(found.running.id, 'running');
   const again = findSimilarMissions('Datorövning A (annan text)', missions, { now: NOW });
-  assert.equal(again.running, null);
   assert.deepEqual(again.done.map(d => d.id), ['done-today'], 'only the last day counts');
   assert.equal(again.done[0].verified, true);
-  assert.deepEqual(findSimilarMissions('', missions, { now: NOW }), { running: null, done: [] });
+  assert.deepEqual(findSimilarMissions('', missions, { now: NOW }), { done: [] });
 });
 
 // Against the real mission control and its database: the lookups must read Nova missions only (the bus also holds others) and
@@ -73,7 +70,7 @@ import path from 'node:path';
 import { DurableMissionBus } from '../../runtime/src/server/connected/durableMissionBus.mjs';
 import { NovaMissionControl } from '../../runtime/src/server/connected/novaMissionControl.mjs';
 
-test('mission control: findSimilar sees a running identical goal, triage dry-runs and applies through pause and cancel', t => {
+test('mission control: findSimilar reads Nova missions only, triage dry-runs and applies through pause and cancel', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'triage-'));
   const bus = new DurableMissionBus(dir);
   t.after(() => { bus.close(); fs.rmSync(dir, { recursive: true, force: true }); });
@@ -82,8 +79,7 @@ test('mission control: findSimilar sees a running identical goal, triage dry-run
   bus.createMission({ goal: 'Not a nova mission', source: 'SEER', metadata: {} });
   const first = control.create({ goal: 'Datorövning X1 (försök ett)', idempotencyKey: 'k1', allowedTasks: ['web-fetch'] });
   const retry = control.create({ goal: 'Datorövning X2 (försök två)', idempotencyKey: 'k2', allowedTasks: ['web-fetch'] });
-  assert.equal(control.findSimilar('datorövning x1 (försök ett)').running?.id, first.id);
-  assert.equal(control.findSimilar('Something else entirely').running, null);
+  assert.deepEqual(control.findSimilar('Something else entirely'), { done: [] });
 
   const later = Date.now() + 3600_000;
   const dry = control.triage({ apply: false, now: later });

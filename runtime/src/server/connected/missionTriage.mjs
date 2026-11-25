@@ -53,22 +53,18 @@ export function planMissionTriage(missions, { now = Date.now(), idleMs = TRIAGE_
   return decisions;
 }
 
-const sameText = goal => String(goal || '').toLowerCase().replace(/\s+/g, ' ').trim();
 export const DONE_WINDOW_MS = 24 * 60 * 60_000;
 
 /**
- * Before a goal is started: is the same task already running, or was a similar one just finished with evidence?
- * `running` is a mission with exactly the same goal text that is ACTIVE and not paused (a double start or a re-run of a
- * routine); `done` lists missions of the same goal family that finished (DONE) within the last day, newest first. The caller
- * decides: a running duplicate is reused, a finished one is reported so the work is not repeated without a reason.
+ * Before a goal is started: was a task of the same family just finished with evidence? Missions of the same family that finished
+ * (DONE) within the last day are listed, newest first, so the caller can report them instead of silently repeating the work.
+ * (A still-open near-duplicate is answered by NovaMissionControl.create through missionDedupe.mjs.)
  */
 export function findSimilarMissions(goal, missions, { now = Date.now(), windowMs = DONE_WINDOW_MS } = {}) {
-  const text = sameText(goal), family = goalFamily(goal);
-  if (!text) return { running: null, done: [] };
-  const list = (missions || []).filter(m => m && m.id);
-  const running = list.find(m => m.status === 'ACTIVE' && !m.paused && !m.cancelRequested && sameText(m.goal) === text) || null;
-  const done = list.filter(m => m.status === 'DONE' && family && goalFamily(m.goal) === family && now - time(m.updatedAt) <= windowMs)
+  const family = goalFamily(goal);
+  if (!family) return { done: [] };
+  const done = (missions || []).filter(m => m && m.id && m.status === 'DONE' && goalFamily(m.goal) === family && now - time(m.updatedAt) <= windowMs)
     .sort((a, b) => time(b.updatedAt) - time(a.updatedAt))
     .map(m => ({ id: m.id, goal: String(m.goal).slice(0, 160), finishedAt: m.updatedAt, verified: verifiedProgress(m) }));
-  return { running, done };
+  return { done };
 }
