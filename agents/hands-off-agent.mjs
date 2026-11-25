@@ -1,7 +1,7 @@
 import { createInputBridgeDaemon } from './lib/input-bridge-daemon.mjs';
 import { compactPlannerStep, focusPlannerToolDescriptions } from './lib/context-packet.mjs';
 import { localCommandHint, shellHostGuidance } from './lib/local-command-inventory.mjs';
-import { PRE_APPROVABLE, HARD_LIMITS, standingPreApproved } from './lib/operator-action-guard.mjs';
+import { PRE_APPROVABLE, HARD_LIMITS } from './lib/operator-action-guard.mjs';
 /**
  * JACO Hands-Off Agent v3.0 — Long-running autonomous daemon
  *
@@ -2091,7 +2091,7 @@ export const WEB_RULE ="Target Track (browser/CDP adapter): browser-click and br
 // and the rule the runtime applies cannot drift apart.
 export const AUTONOMY_RULE = [
   "Working inside a coding contract: the contract is your permission. Inside its scope, its allowed tasks and its budget, you act on your own. Do not ask the operator to confirm ordinary steps such as reading, editing files in your worktree, running tests, committing to your own branch, or opening a pull request. Do not stop to ask whether you may continue; keep working.",
-  "The contract's preApproved list is what the operator booked in advance: those kinds of outward action run without stopping. The kinds you may book are: " + Object.entries(PRE_APPROVABLE).map(([id, text]) => id + ' (' + text + ')').join('; ') + "." + (standingPreApproved().length ? " The operator has also booked these for every contract, so they need no stop either: " + standingPreApproved().join(', ') + "." : ""),
+  "The contract's preApproved list is what the operator booked in advance: those kinds of outward action run without stopping. The kinds you may book are: " + Object.entries(PRE_APPROVABLE).map(([id, text]) => id + ' (' + text + ')').join('; ') + ".",
   "Stop and ask only for the hard limits, which no contract can allow: " + HARD_LIMITS.join('; ') + ". For one of these, state exactly which action and why, then keep doing every other step that does not depend on it.",
   "A temporary model or provider wait is not a question for the operator: wait and retry on a later turn. Never report a step as done without observed evidence.",
   "Decide with this test: is the action inside the contract, and is it reversible and not visible to others? Then do it. Is it outward, but booked in preApproved? Then do it. Is it a hard limit or not booked? Then stop for it only and say why.",
