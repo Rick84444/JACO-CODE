@@ -114,23 +114,32 @@ export function withPerceptionTools(tools) {
           fallbackStatus = 'AX_SEARCHED';
         }
       }
+      // The browser observation may contain credential-bearing URL parameters.
+      const pageUrl = (() => {
+        try {
+          const u = new URL(page.url);
+          if (!['http:', 'https:'].includes(u.protocol)) return 'URL_UNAVAILABLE';
+          u.search = ''; u.hash = '';
+          u.pathname = u.pathname.split('/').map(segment => /^[A-Za-z0-9_~-]{32,}$/.test(segment) ? 'redacted' : segment).join('/');
+          return u.toString().slice(0, 512);
+        } catch { return 'URL_UNAVAILABLE'; }
+      })();
+      // Ready-made mcp_tool arguments for the named actuators: role, name and the expected page are
+      // what nova_click_named / nova_type_named require, and a model guessing them failed with
+      // INVALID_ROLE (observed 2026-11-24). Passing one is still a normal guarded write that the
+      // actuator re-identifies; this read grants nothing.
+      const usable = pageUrl !== 'URL_UNAVAILABLE';
+      const withUse = c => (usable && c.role && c.text ? { ...c, use: {
+        click: { server: 'browser', tool: 'nova_click_named', mode: 'write', arguments: { role: c.role, name: c.text, expectedUrl: pageUrl } },
+        type: { server: 'browser', tool: 'nova_type_named', mode: 'write', arguments: { role: c.role, name: c.text, expectedUrl: pageUrl, text: '<text to type>' } },
+      } } : c);
       return {
         schema: 'jaco.target-track/v1', surface, adapter: 'cdp', mode: 'read-only',
         query: target.trim(), observedAt: typeof page.at === 'string' ? page.at : null,
-        page: { title: String(page.title || '').slice(0, 160),
-          // The browser observation may contain credential-bearing URL parameters.
-          url: (() => {
-            try {
-              const u = new URL(page.url);
-              if (!['http:', 'https:'].includes(u.protocol)) return 'URL_UNAVAILABLE';
-              u.search = ''; u.hash = '';
-              u.pathname = u.pathname.split('/').map(segment => /^[A-Za-z0-9_~-]{32,}$/.test(segment) ? 'redacted' : segment).join('/');
-              return u.toString().slice(0, 512);
-            } catch { return 'URL_UNAVAILABLE'; }
-          })() },
+        page: { title: String(page.title || '').slice(0, 160), url: pageUrl },
         status: query ? (candidates.length === 1 ? 'CANDIDATE' : candidates.length > 1 ? 'AMBIGUOUS' : 'NOT_FOUND') : 'OBSERVED',
-        candidates, usedTools, fallbackStatus, verifiedTarget: false, actionDispatched: false,
-        note: 'Read-only candidate information; use the existing signed browser actuator to re-identify before any action.',
+        candidates: candidates.map(withUse), usedTools, fallbackStatus, verifiedTarget: false, actionDispatched: false,
+        note: 'Read-only candidate information. To act, call mcp_tool with a candidate\'s use.click or use.type (replace <text to type>); the browser actuator re-identifies the control before acting.',
       };
     },
   };
