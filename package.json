@@ -9,6 +9,7 @@
   },
   "scripts": {
     "jaco:start": "node agents/lib/local-stack.mjs --open",
+    "jaco:stage": "node runtime/operator-stage/server.mjs",
     "jaco:activate": "node agents/jaco-cli.mjs activate",
     "jaco:status": "node agents/jaco-cli.mjs status",
     "jaco:preflight": "node agents/lib/local-stack.mjs --preflight",
