@@ -12,7 +12,15 @@
   <header class="bar">
     <div class="brand"><img class="logo" src="/branding/jaco-logo.png" alt="JACO"><span class="dot" id="liveDot" title="Live connection"></span></div>
     <div class="status" id="status">Connecting to Aura…</div>
-    <a class="ide" href="/ide">Open IDE</a>
+    <div class="model-box">
+      <button type="button" class="ide" id="modelBtn" aria-haspopup="dialog" aria-expanded="false" title="Choose the model Aura thinks with">Model</button>
+      <div class="model-pop" id="modelPop" hidden role="dialog" aria-label="Choose Aura's model">
+        <label>Provider <select id="modelProvider"></select></label>
+        <label>Model <select id="modelName"></select></label>
+        <div class="model-row"><button type="button" id="modelUse">Use this model</button><span id="modelState" aria-live="polite"></span></div>
+      </div>
+    </div>
+    <button type="button" class="ide" id="ideToggle" aria-pressed="false" title="Open the IDE beside Aura">IDE beside</button>
   </header>
   <main id="stage">
     <div class="rail left" id="railLeft" aria-label="Strategy and current work"></div>
@@ -33,6 +41,11 @@
     </section>
     <div class="rail right" id="railRight" aria-label="What Aura is using"></div>
   </main>
+  <aside class="ide-pane" id="idePane" hidden aria-label="JACO IDE">
+    <div class="ide-resize" id="ideResize" title="Drag to resize"></div>
+    <div class="ide-bar"><span>IDE</span><a href="/ide" target="_blank" rel="noopener">Own window</a><button type="button" id="ideClose">Close</button></div>
+    <iframe id="ideFrame" title="JACO IDE"></iframe>
+  </aside>
   <div class="viewer" id="viewer" hidden role="dialog" aria-label="Aura's browser">
     <div class="viewer-frame">
       <div class="viewer-head"><span id="viewerTitle">Aura's browser</span>

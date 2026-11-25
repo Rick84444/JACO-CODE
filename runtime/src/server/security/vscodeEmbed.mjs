@@ -8,6 +8,10 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 export function vscodeEmbedAllowed(req, env = process.env) {
   if (env.JACO_VSCODE_EMBED !== '1') return false;
+  return loopbackPageRequest(req);
+}
+
+function loopbackPageRequest(req) {
   if (!['GET', 'HEAD'].includes(req.method)) return false;
   const ip = String(req.socket?.remoteAddress || '');
   if (!LOOPBACK.has(ip)) return false;
@@ -18,7 +22,22 @@ export function vscodeEmbedAllowed(req, env = process.env) {
   return true;
 }
 
+// The Operator Stage opens the IDE beside Aura (operator 2026-11-25). Only /ide, only on this computer, and only
+// inside a page of the same origin: frame-ancestors 'self', never a foreign site. A remote IDE session is excluded.
+export const STAGE_IDE_PATHS = new Set(['/ide', '/ide/']);
+export function stageIdeFrameAllowed(req) {
+  return STAGE_IDE_PATHS.has(req.path) && !req.ideSession && loopbackPageRequest(req);
+}
+
 export function mountVscodeEmbedHeaders(app, { env = process.env } = {}) {
+  app.use((req, res, next) => {
+    if (!stageIdeFrameAllowed(req)) return next();
+    const csp = String(res.getHeader('Content-Security-Policy') || '');
+    if (!/(?:^|;\s*)frame-ancestors\s+'none'(?=\s*;|\s*$)/.test(csp)) return next(); // hardening changed: keep it as is
+    res.setHeader('Content-Security-Policy', csp.replace(/frame-ancestors\s+'none'/, "frame-ancestors 'self'"));
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    next();
+  });
   app.use((req, res, next) => {
     if (req.path !== VSCODE_EMBED_PATH) return next();
     if (!vscodeEmbedAllowed(req, env)) {
