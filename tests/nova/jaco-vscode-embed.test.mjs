@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { mountVscodeEmbedHeaders, VSCODE_EMBED_PATH, vscodeEmbedAllowed } from '../../runtime/src/server/security/vscodeEmbed.mjs';
+import { mountVscodeEmbedHeaders, VSCODE_EMBED_PATH, vscodeEmbedAllowed, stageIdeFrameAllowed } from '../../runtime/src/server/security/vscodeEmbed.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 function request({ path = VSCODE_EMBED_PATH, method = 'GET', host = '127.0.0.1:3000', ip = '127.0.0.1', extra = {}, enabled = true, csp } = {}) {
@@ -20,11 +20,40 @@ function request({ path = VSCODE_EMBED_PATH, method = 'GET', host = '127.0.0.1:3
     status(code) { status = code; return this; },
     json(data) { body = data; return this; },
   };
-  let middleware;
-  mountVscodeEmbedHeaders({ use(fn) { middleware = fn; } }, { env: { JACO_VSCODE_EMBED: enabled ? '1' : '0' } });
-  middleware(req, res, () => { continued = true; });
+  const chain = [];
+  mountVscodeEmbedHeaders({ use(fn) { chain.push(fn); } }, { env: { JACO_VSCODE_EMBED: enabled ? '1' : '0' } });
+  const run = i => i < chain.length ? chain[i](req, res, () => run(i + 1)) : (continued = true);
+  run(0);
   return { headers, status, body, continued, req };
 }
+
+// The Operator Stage opens the IDE beside Aura: /ide may be framed by the same origin, on this computer only.
+test('/ide can be framed by the stage on the same origin, and nothing else is relaxed', () => {
+  for (const p of ['/ide', '/ide/']) {
+    const r = request({ path: p, enabled: false });
+    assert.equal(r.continued, true, p);
+    assert.equal(r.headers.get('x-frame-options'), 'SAMEORIGIN', p);
+    assert.match(r.headers.get('content-security-policy'), /frame-ancestors 'self'/, p);
+    assert.doesNotMatch(r.headers.get('content-security-policy'), /vscode|https:/, p);
+  }
+  for (const p of ['/', '/ide-login', '/idea', '/ide/x', '/api/aura/chat']) {
+    const r = request({ path: p, enabled: false });
+    assert.equal(r.headers.get('x-frame-options'), 'DENY', p);
+    assert.match(r.headers.get('content-security-policy'), /frame-ancestors 'none'/, p);
+  }
+});
+
+test('/ide framing is refused for remote, proxied, rebinding and remote-session requests', () => {
+  for (const overrides of [{ host: 'evil.example:3000' }, { ip: '192.168.1.80' }, { extra: { 'x-forwarded-for': '192.0.2.10' } },
+    { extra: { 'cf-connecting-ip': '192.0.2.10' } }, { method: 'POST' }]) {
+    const r = request({ path: '/ide', enabled: false, ...overrides });
+    assert.equal(r.headers.get('x-frame-options'), 'DENY', JSON.stringify(overrides));
+    assert.match(r.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  }
+  assert.equal(stageIdeFrameAllowed({ path: '/ide', method: 'GET', ideSession: { name: 'phone' }, socket: { remoteAddress: '127.0.0.1' }, headers: { host: '127.0.0.1:3000' } }), false);
+  const changed = request({ path: '/ide', enabled: false, csp: "default-src 'self'" });
+  assert.equal(changed.headers.get('x-frame-options'), 'DENY', 'hardening that changed is left as it is');
+});
 test('JACO defaults to frame denied and requires explicit opt-in', () => {
   const normal = request({path: '/'});
   assert.equal(normal.continued, true);

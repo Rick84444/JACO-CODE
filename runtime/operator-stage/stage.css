@@ -19,6 +19,33 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .ide { color: var(--muted); text-decoration: none; border: 1px solid var(--edge); padding: 4px 12px; border-radius: 16px; font-size: 13px; }
 
 #stage { position: absolute; inset: 44px 0 0 0; z-index: 2; display: grid; grid-template-columns: 1fr var(--center) 1fr; }
+button.ide { background: none; cursor: pointer; font: 13px system-ui; }
+button.ide[aria-pressed="true"], button.ide[aria-expanded="true"] { color: var(--text); border-color: var(--glow); }
+
+/* Choosing the model Aura thinks with (the shared planner choice the IDE uses too). */
+.model-box { position: relative; }
+.model-pop { position: absolute; right: 0; top: 34px; width: 320px; padding: 12px; display: grid; gap: 10px; z-index: 70;
+  background: rgba(8,16,28,.95); border: 1px solid var(--edge); border-radius: 12px; box-shadow: 0 0 40px rgba(79,180,255,.2); }
+.model-pop[hidden] { display: none; }
+.model-pop label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.model-pop select { background: #0a1424; color: var(--text); border: 1px solid var(--edge); border-radius: 8px; padding: 6px; font: 13px system-ui; }
+.model-row { display: flex; align-items: center; gap: 10px; }
+.model-row button { background: rgba(124,199,255,.16); color: var(--text); border: 1px solid rgba(124,199,255,.4); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.model-row span { font-size: 12px; color: var(--muted); }
+
+/* The IDE beside Aura. */
+.ide-pane { position: fixed; top: 44px; right: 0; bottom: 0; width: var(--split, 50vw); z-index: 30; display: flex; flex-direction: column;
+  background: #05090f; border-left: 1px solid var(--glow); box-shadow: -10px 0 40px rgba(79,180,255,.15); }
+.ide-pane[hidden] { display: none; }
+.ide-bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; font: 12px var(--mono); color: #9fd4ff; border-bottom: 1px solid var(--edge); }
+.ide-bar span { flex: 1; letter-spacing: .1em; }
+.ide-bar a, .ide-bar button { color: #9fd4ff; background: none; border: 1px solid var(--edge); border-radius: 8px; padding: 2px 8px; font: 12px system-ui; text-decoration: none; cursor: pointer; }
+.ide-pane iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+.ide-resize { position: absolute; left: -5px; top: 0; bottom: 0; width: 10px; cursor: col-resize; z-index: 2; }
+body.split #stage { right: var(--split, 50vw); grid-template-columns: minmax(220px, 1fr) minmax(0, 600px) 0; }
+body.split .rail.left { padding-inline: 12px; }
+body.split .rail.right { display: none; }
+body.split.resizing iframe { pointer-events: none; }
 
 /* The middle: Aura and the conversation. */
 .center { display: flex; flex-direction: column; min-height: 0; padding-bottom: 16px; position: relative; z-index: 3; }

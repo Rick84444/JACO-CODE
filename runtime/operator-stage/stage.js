@@ -468,13 +468,70 @@ function connectLive() {
   es.onerror = () => { $('liveDot').classList.remove('live'); };
 }
 
+// ---------- The model Aura thinks with: the same shared choice the IDE sets (POST /api/aura/model) ----------
+const modelLabel = c => c ? `${c.provider} / ${String(c.model || '').replace(/^models\//, '')}` : 'no model chosen';
+let modelChoices = [], currentModel = null;
 async function header() {
   try {
-    const p = await (await fetch('/api/nova/planner')).json();
-    if (p?.choice) $('auraModel').textContent = `${p.choice.provider} / ${String(p.choice.model).replace(/^models\//, '')}`;
+    const p = await (await fetch('/api/aura/model', { cache: 'no-store' })).json();
+    currentModel = p?.choice || null;
+    modelChoices = (p?.choices || []).filter(c => c.usable && Array.isArray(c.models) && c.models.length);
+    $('auraModel').textContent = modelLabel(currentModel);
+    $('modelBtn').textContent = 'Model: ' + (currentModel ? String(currentModel.model).replace(/^models\//, '').slice(0, 28) : 'none');
     $('status').textContent = 'Connected';
   } catch { $('status').textContent = 'Runtime not reachable'; }
 }
+function fillModels(provider, model) {
+  const sel = $('modelProvider'), names = $('modelName');
+  sel.replaceChildren(...modelChoices.map(c => new Option(c.label || c.provider, c.provider, false, c.provider === provider)));
+  const chosen = modelChoices.find(c => c.provider === sel.value) || modelChoices[0];
+  names.replaceChildren(...(chosen?.models || []).map(m => new Option(String(m).replace(/^models\//, ''), m, false, m === model)));
+}
+$('modelBtn').addEventListener('click', async () => {
+  const pop = $('modelPop'), open = pop.hidden;
+  pop.hidden = !open; $('modelBtn').setAttribute('aria-expanded', String(open));
+  if (open) { await header(); fillModels(currentModel?.provider, currentModel?.model); $('modelState').textContent = modelLabel(currentModel); }
+});
+$('modelProvider').addEventListener('change', () => fillModels($('modelProvider').value, null));
+$('modelUse').addEventListener('click', async () => {
+  const provider = $('modelProvider').value, model = $('modelName').value;
+  if (!provider || !model) return;
+  $('modelUse').disabled = true; $('modelState').textContent = 'Checking that it answers…';
+  try {
+    const res = await fetch('/api/aura/model', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, model }), signal: AbortSignal.timeout(40000) });
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok || r.success === false || r.choice?.model !== model) throw new Error(String(r?.probe?.error || r?.error || 'not confirmed').slice(0, 120));
+    $('modelState').textContent = 'Active: ' + modelLabel(r.choice);
+    await header();
+    message('system', `Aura now thinks with ${modelLabel(r.choice)}.`);
+  } catch (error) { $('modelState').textContent = 'Not switched: ' + (error?.message || error); }
+  finally { $('modelUse').disabled = false; }
+});
+addEventListener('click', e => { if (!$('modelPop').hidden && !e.target.closest('.model-box')) { $('modelPop').hidden = true; $('modelBtn').setAttribute('aria-expanded', 'false'); } });
+
+// ---------- The IDE beside Aura (same origin, local only) ----------
+const savedSplit = (() => { try { return Number(localStorage.getItem('jaco.stage.split')) || 0; } catch { return 0; } })();
+if (savedSplit >= 320) document.documentElement.style.setProperty('--split', savedSplit + 'px');
+function setIde(open) {
+  $('idePane').hidden = !open; document.body.classList.toggle('split', open);
+  $('ideToggle').setAttribute('aria-pressed', String(open));
+  if (open && !$('ideFrame').src) $('ideFrame').src = '/ide';
+}
+$('ideToggle').addEventListener('click', () => setIde($('idePane').hidden));
+$('ideClose').addEventListener('click', () => setIde(false));
+$('ideResize').addEventListener('pointerdown', e => {
+  e.preventDefault(); document.body.classList.add('resizing'); $('ideResize').setPointerCapture(e.pointerId);
+  const move = ev => {
+    const width = Math.max(320, Math.min(innerWidth - 420, innerWidth - ev.clientX));
+    document.documentElement.style.setProperty('--split', width + 'px');
+  };
+  const up = () => {
+    document.body.classList.remove('resizing');
+    $('ideResize').removeEventListener('pointermove', move); $('ideResize').removeEventListener('pointerup', up);
+    try { localStorage.setItem('jaco.stage.split', String(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--split')) || 0)); } catch { /* storage unavailable */ }
+  };
+  $('ideResize').addEventListener('pointermove', move); $('ideResize').addEventListener('pointerup', up);
+});
 
 holo('mission'); holo('tools');
 header(); loadHistory(); pollCalls(); connectLive(); refreshBoard();
