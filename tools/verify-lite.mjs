@@ -303,7 +303,9 @@ try {
       body:JSON.stringify({message:'Reply with one word: OK',selectedProvider:'seer',interactionMode:'question'})
     });
     must(res.status===200 && body?.success===true && !body.degraded,
-      'Lite routed to SEER or failed to use the local provider: '+JSON.stringify({http:res.status,success:body?.success,degraded:body?.degraded,provider:body?.provider,model:body?.model,error:String(body?.error||'').slice(0,250),code:body?.code||null}).slice(0,450));
+      'Lite routed to SEER or failed to use the local provider: '+JSON.stringify({http:res.status,success:body?.success,degraded:body?.degraded,provider:body?.provider,model:body?.model,error:String(body?.error||'').slice(0,250),code:body?.code||null,
+        // The status answer lists what failed; without it a red check says nothing about why.
+        failures:String(body?.reply||'').split('\n').filter(l=>/^\s*-\s/.test(l)).slice(-4).join(' | ').slice(0,500)}).slice(0,1000));
     must(body.provider==='litert' && body.model==='jaco-lite-mock-probe',
       'JACO selected a non-observed provider/model: '+JSON.stringify(body).slice(0,350));
     must(body.reply==='LITE_DIRECT_ROUTE_OK','Lite did not forward the model response');
