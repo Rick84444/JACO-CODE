@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aura Operator Stage</title>
+  <link rel="stylesheet" href="/vendor/xterm.css">
+  <link rel="stylesheet" href="/stage.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="brand"><span class="dot" id="liveDot"></span>JACO · Aura Operator Stage</div>
+    <div class="status" id="status">Connecting to Aura…</div>
+    <a class="ide" href="http://127.0.0.1:3000" target="_blank" rel="noopener">Open IDE</a>
+  </header>
+  <main id="stage">
+    <section class="aura" id="aura" aria-live="polite">
+      <canvas id="orb" width="560" height="560" aria-label="Aura"></canvas>
+      <div class="aura-name">Aura</div>
+      <div class="aura-line" id="auraLine">Waiting for work</div>
+      <div class="aura-model" id="auraModel"></div>
+    </section>
+    <div id="windows" class="windows"></div>
+  </main>
+  <footer class="dock" id="dock"></footer>
+  <script type="module" src="/stage.js"></script>
+</body>
+</html>
