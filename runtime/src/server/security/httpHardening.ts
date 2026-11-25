@@ -125,7 +125,9 @@ export function securityHeaders(options: { httpsOnly: boolean; dev?: boolean }):
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=(), usb=()');
+    // The microphone is open to JACO's own pages only (talk with Aura, dictation; operator 2026-11-25), never to a
+    // framed foreign origin; the browser still asks the operator before the first use.
+    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(self), camera=(), payment=(), usb=()');
     if (options.httpsOnly) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     next();
   };

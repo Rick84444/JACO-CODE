@@ -96,26 +96,6 @@ function particleOrb() {
   return { pulse: (amount = 0.6) => { target = Math.min(1, target + amount); } };
 }
 
-// A short beam of light from Aura to the panel she is using: the action is visible.
-function beam(el) {
-  if (reduceMotion || !el.offsetParent) return;
-  const c = $('orb').getBoundingClientRect(), r = el.getBoundingClientRect();
-  const x1 = c.left + c.width / 2, y1 = c.top + c.height * 0.55;
-  const toLeft = r.left + r.width / 2 < x1, x2 = toLeft ? r.right - 6 : r.left + 6, y2 = r.top + Math.min(40, r.height / 2);
-  const svg = $('beams'), ns = 'http://www.w3.org/2000/svg';
-  const id = 'g' + Math.random().toString(36).slice(2);
-  const d = `M${x1},${y1} Q${(x1 + x2) / 2},${Math.min(y1, y2) - 60} ${x2},${y2}`;
-  const g = document.createElementNS(ns, 'g');
-  // A glowing point leads, the line follows it; both land behind the glass and fade.
-  g.innerHTML = `<defs><linearGradient id="${id}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4fb4ff" stop-opacity="0"/><stop offset="1" stop-color="#bfe4ff" stop-opacity=".9"/></linearGradient></defs>`
-    + `<path d="${d}" stroke="url(#${id})" stroke-width="1.6" fill="none" pathLength="1" style="filter:drop-shadow(0 0 6px #4fb4ff);stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset .75s cubic-bezier(.3,.6,.4,1), opacity 1.2s ease-out .9s"/>`
-    + `<circle r="3.6" fill="#eaf7ff" style="filter:drop-shadow(0 0 6px #4fb4ff) drop-shadow(0 0 14px #4fb4ff);transition:opacity 1s ease-out .9s"><animateMotion dur=".7s" fill="freeze" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines=".3 .6 .4 1" path="${d}"/></circle>`;
-  svg.appendChild(g);
-  const path = g.querySelector('path'), dot = g.querySelector('circle');
-  requestAnimationFrame(() => { path.style.strokeDashoffset = '0'; path.style.opacity = '0'; dot.style.opacity = '0'; });
-  setTimeout(() => g.remove(), 2400);
-}
-
 // ---------- Holograms beside Aura ----------
 const PANELS = {
   mission: { title: 'Strategy', rail: 'railLeft', board: true },
@@ -150,7 +130,7 @@ function holo(id) {
 function activate(id, { look = true } = {}) {
   const h = holo(id);
   h.el.classList.add('live'); clearTimeout(h.liveTimer); h.liveTimer = setTimeout(() => h.el.classList.remove('live'), 2200);
-  beam(h.el); if (look) aura.lookAt(h.el);
+  if (look) aura.lookAt(h.el);
 }
 function addLine(id, text, tone = '', { max = 9, quiet = false } = {}) {
   const h = holo(id);
@@ -166,10 +146,10 @@ function focus(ids, { by = 'aura' } = {}) {
   const wanted = new Set(ids.filter(id => PANELS[id]).slice(0, 2));
   if (!wanted.size) return;
   for (const h of holos.values()) h.el.classList.toggle('focus', wanted.has(h.id));
-  for (const id of wanted) { const h = holo(id); h.el.classList.add('focus'); beam(h.el); }
+  for (const id of wanted) holo(id).el.classList.add('focus');
   aura.lookAt(holo([...wanted][0]).el, 3000);
   if (wanted.has('browser')) refreshBrowserView();
-  if (wanted.has('mission')) refreshBoard();
+  if (wanted.has('mission')) { boardKey = ''; refreshBoard(); } // replay the strategy line when it is shown
   clearTimeout(focusTimer);
   if (by === 'aura') focusTimer = setTimeout(() => unfocus(), 45000);
 }
@@ -194,21 +174,28 @@ function renderBoard(plan, subs) {
   const subH = running >= 0 ? subs.length * 20 + 8 : 0;
   const y = i => top + i * rowH + (running >= 0 && i > running ? subH : 0);
   let svg = `<text class="goal" x="0" y="14">${esc(String(plan.objective || '').slice(0, 52))}</text>`;
-  for (let i = 0; i < nodes.length - 1; i++) {
-    const done = ['VERIFIED', 'DONE'].includes(nodes[i].status);
-    svg += `<line class="spine${done ? ' done' : ''}" x1="10" y1="${y(i)}" x2="10" y2="${y(i + 1)}"/>`;
+  // The strategy as a line: a glowing point leads it from the first step to where Aura is now, each step lights up
+  // as the line reaches it, and at the step being worked on the line opens into its sub-steps.
+  const done = n => ['VERIFIED', 'DONE'].includes(n.status);
+  const reach = running >= 0 ? running : Math.max(0, nodes.map(done).lastIndexOf(true));
+  const STEP = 0.4, traceDur = Math.max(0.4, reach * STEP);
+  svg += `<line class="spine" x1="10" y1="${y(0)}" x2="10" y2="${y(nodes.length - 1)}"/>`;
+  if (reach > 0) {
+    const trace = `M10,${y(0)}` + nodes.slice(1, reach + 1).map((_, k) => ` L10,${y(k + 1)}`).join('');
+    svg += `<path class="trace" d="${trace}" pathLength="1" style="animation-duration:${traceDur}s"/>`
+      + `<circle class="lead" r="3.6" style="animation-delay:${traceDur}s"><animateMotion dur="${traceDur}s" fill="freeze" path="${trace}"/></circle>`;
   }
   nodes.forEach((n, i) => {
-    svg += `<g class="step ${esc(n.status)}"><circle class="node" cx="10" cy="${y(i)}" r="6"/><text x="26" y="${y(i) + 4}">${esc(String(n.title || n.identity).slice(0, 38))}</text></g>`;
+    svg += `<g class="step ${esc(n.status)}" style="animation-delay:${Math.min(i, reach) * STEP}s"><circle class="node" cx="10" cy="${y(i)}" r="6"/><text x="26" y="${y(i) + 4}">${esc(String(n.title || n.identity).slice(0, 38))}</text></g>`;
   });
   if (running >= 0 && subs.length) {
     const y0 = y(running), lastY = y0 + 8 + subs.length * 20;
     const branch = `M10,${y0} C30,${y0} 34,${y0 + 10} 34,${y0 + 18} L34,${lastY - 10}`;
-    // The line opens into the sub-steps behind a glowing point that leads it.
-    svg += `<path class="branch" d="${branch}"/><circle class="lead" r="3.2"><animateMotion dur="1.1s" fill="freeze" path="${branch}"/></circle>`;
+    svg += `<path class="branch" d="${branch}" style="animation-delay:${traceDur}s"/>`
+      + `<circle class="lead" r="3.2" visibility="hidden" style="animation-delay:${traceDur + 1.1}s"><set attributeName="visibility" to="visible" begin="${traceDur}s"/><animateMotion begin="${traceDur}s" dur="1.1s" fill="freeze" path="${branch}"/></circle>`;
     subs.forEach((s, j) => {
       const sy = y0 + 18 + j * 20;
-      svg += `<g class="sub"><circle cx="34" cy="${sy}" r="2.6"/><text x="44" y="${sy + 4}" style="animation-delay:${0.5 + j * 0.15}s">${esc(s)}</text></g>`;
+      svg += `<g class="sub"><circle cx="34" cy="${sy}" r="2.6"/><text x="44" y="${sy + 4}" style="animation-delay:${traceDur + 0.5 + j * 0.15}s">${esc(s)}</text></g>`;
     });
   }
   const height = y(nodes.length - 1) + 16;
@@ -338,10 +325,28 @@ function listen() {
   try { r.start(); $('talk').classList.add('listening'); aura.listening(true); }
   catch { recognition = null; }
 }
-function setTalking(on) {
+// The browser's own microphone question, raised as soon as the page opens, so talking works on the first press.
+async function askMicrophone() {
+  if (!Recognition || !navigator.mediaDevices?.getUserMedia) return false;
+  try { if ((await navigator.permissions?.query({ name: 'microphone' }))?.state === 'granted') return true; } catch { /* no permissions API */ }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach(t => t.stop());
+    note('Microphone allowed. Press Talk to speak with Aura.');
+    return true;
+  } catch (error) {
+    note(error?.name === 'NotAllowedError'
+      ? 'The microphone is blocked for this page. Click the lock in the address bar, allow the microphone, and press Talk.'
+      : `The microphone could not be opened (${error?.name || error}).`);
+    return false;
+  }
+}
+setTimeout(askMicrophone, 1200);
+async function setTalking(on) {
   talking = on; $('talk').setAttribute('aria-pressed', String(on));
-  if (on) { note('Listening. Speech recognition in Chrome uses Google\'s service.'); voice.on = true; quickEnds = 0; listen(); }
-  else { stopListening(); }
+  if (!on) { stopListening(); return; }
+  if (!await askMicrophone()) { talking = false; $('talk').setAttribute('aria-pressed', 'false'); return; }
+  note('Listening. Speech recognition in Chrome uses Google\'s service.'); voice.on = true; quickEnds = 0; listen();
 }
 $('talk').addEventListener('click', () => setTalking(!talking));
 document.addEventListener('visibilitychange', () => { if (document.hidden) { stopListening(); voice.stop(); } else listen(); });

@@ -8,8 +8,6 @@
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, "Segoe UI", sans-serif; overflow: hidden; }
 /* The room: small glowing points at three depths, like the light Aura is made of. */
 #stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
-/* Beams run behind the glass they land on (the holograms blur them), in front of the room. */
-#beams { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; overflow: visible; }
 .bar { position: fixed; inset: 0 0 auto 0; height: 44px; display: flex; align-items: center; gap: 16px; padding: 0 18px; z-index: 50; }
 .brand { font-weight: 600; letter-spacing: .04em; display: flex; align-items: center; gap: 10px; white-space: nowrap; color: var(--muted); }
 .logo { height: 26px; width: auto; display: block; filter: drop-shadow(0 0 8px rgba(79,180,255,.45)); }
@@ -129,16 +127,19 @@ body.split.resizing iframe { pointer-events: none; }
 .board .step text { font: 12px system-ui; fill: #a9c7e2; }
 .board .step.VERIFIED text, .board .step.DONE text { fill: #8fe0cf; }
 .board .step.RUNNING text { fill: #fff; }
-.board .spine { stroke: rgba(79,180,255,.35); stroke-width: 2; }
-.board .spine.done { stroke: var(--glow); filter: drop-shadow(0 0 4px var(--glow)); }
+.board .spine { stroke: rgba(79,180,255,.22); stroke-width: 2; }
+.board .trace { stroke: var(--glow); stroke-width: 2.2; fill: none; filter: drop-shadow(0 0 5px var(--glow)); stroke-dasharray: 1; stroke-dashoffset: 1; animation: grow 1s linear forwards; }
+.board .step { opacity: .35; animation: light-up .35s ease-out forwards; }
+@keyframes light-up { to { opacity: 1; } }
 .board .node { fill: #06101c; stroke: rgba(120,200,255,.5); stroke-width: 2; }
 .board .step.VERIFIED .node, .board .step.DONE .node { fill: var(--ok); stroke: var(--ok); }
 .board .step.RUNNING .node { fill: var(--glow); stroke: #bfe4ff; animation: pulse 1.6s ease-in-out infinite; }
 .board .step.FAILED .node, .board .step.BLOCKED .node { fill: var(--fail); stroke: var(--fail); }
 @keyframes pulse { 50% { filter: drop-shadow(0 0 8px var(--glow)); r: 8; } }
-.board .branch { stroke: var(--glow); stroke-width: 1.6; fill: none; filter: drop-shadow(0 0 4px var(--glow)); stroke-dasharray: 400; stroke-dashoffset: 400; animation: grow 1.1s ease-out forwards; }
+.board .branch { stroke: var(--glow); stroke-width: 1.6; fill: none; filter: drop-shadow(0 0 4px var(--glow)); stroke-dasharray: 400; stroke-dashoffset: 400; animation: grow 1.1s ease-out both; }
 .board .sub circle { fill: #bfe4ff; filter: drop-shadow(0 0 4px var(--glow)); }
-.board .lead { fill: #eaf7ff; filter: drop-shadow(0 0 5px var(--glow)) drop-shadow(0 0 12px var(--glow)); animation: lead-fade .5s ease-out 1.2s forwards; }
+/* The leading point: visible while it travels, then it fades where the line ends. */
+.board .lead { fill: #eaf7ff; filter: drop-shadow(0 0 5px var(--glow)) drop-shadow(0 0 12px var(--glow)); animation: lead-fade .6s ease-out forwards; }
 @keyframes lead-fade { to { opacity: 0; } }
 .board .sub text { font: 11px var(--mono); fill: #9fd4ff; opacity: 0; animation: appear .4s ease-out forwards; }
 @keyframes grow { to { stroke-dashoffset: 0; } }

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { AURA_FUNCTION_DEFINITIONS } from './auraFunctions.mjs';
 // Questions inspect the current run. Starting work is the explicit mission action in the composer.
-const readTools = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','policy_get','target_track','dom_track','laser_vision']);
+const readTools = new Set(['attachment_read','health','termux_services','mcp_catalog','mcp_discover','repo_list','repo_read','jaco_source','mission_get','mission_list','agent_team','aura_runtime','org_mandate','causal_workspace','git_status','git_log','git_pr','mcp_read','seer_goals','seer_memory','web_fetch','web_search','policy_get','target_track','dom_track','laser_vision']);
 
 // The existing mcp_read tool is the sole authority for these convenience entry points.
 export function withPerceptionTools(tools) {

@@ -114,6 +114,8 @@ test('runtime mounts embed only after remote IDE authentication and leaves root 
   const staticRoot = server.indexOf('app.use(express.static(path.join(WORKSPACE_ROOT, "public")))');
   assert.ok(remoteGate > 0 && embed > remoteGate && staticRoot > embed);
   assert.match(hardening, /"frame-ancestors 'none'"/);
+  // Talking with Aura needs the microphone on JACO's own pages; framed foreign origins and the camera stay off.
+  assert.match(hardening, /Permissions-Policy', 'geolocation=\(\), microphone=\(self\), camera=\(\), payment=\(\), usb=\(\)'/);
   assert.match(hardening, /res.setHeader\('X-Frame-Options', 'DENY'\)/);
 });
 
