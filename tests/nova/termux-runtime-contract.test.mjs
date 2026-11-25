@@ -8,7 +8,9 @@ const runtime=path.join(root,'runtime');
 
 test('Termux build avoids native server bundling while desktop keeps esbuild',()=>{
   const pkg=JSON.parse(fs.readFileSync(path.join(runtime,'package.json'),'utf8'));
-  assert.equal(pkg.scripts['build:client'],'vite build');
+  // The client build also copies Aura's Operator Stage into dist/ (2026-11-25); still no native server bundling.
+  assert.equal(pkg.scripts['build:client'],'vite build && node scripts/build-operator-stage.mjs');
+  assert.doesNotMatch(pkg.scripts['build:client'],/esbuild/);
   assert.match(pkg.scripts['build:server'],/^esbuild server\.ts /);
   assert.equal(pkg.scripts['build'],'npm run build:client && npm run build:server');
   assert.equal(pkg.scripts['build:termux'],'npm run build:client');
