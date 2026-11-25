@@ -83,6 +83,7 @@ import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { WORKSPACE_CONTROL_INSTRUCTION, STAGE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
 import { operatorStageAssets } from "./operator-stage/assets.mjs";
 import { webSearch } from "./src/server/mcp/webSearch.mjs";
+import { geminiSpeak } from "./src/server/connected/geminiVoice.mjs";
 import { createStackRepair } from "./src/server/connected/stackRepair.mjs";
 import { createPiperVoice } from "./src/server/connected/piperVoice.mjs";
 import { renewStandingGrants } from "./src/server/desktop/grantAtStart.mjs";
@@ -1021,6 +1022,15 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
         return true;
       } finally { fs.rmSync(sound.file, { force: true }); }
     };
+    // Operator 2026-11-25: try Gemini's speech model. Budgeted through the economic governor (geminiVoice.mjs).
+    const gemini = async () => {
+      const bytes = await geminiSpeak(text, { apiKey: process.env.GEMINI_API_KEY || '', economic: continuumSurface.runtime.economic,
+        voice: process.env.JACO_AURA_GEMINI_VOICE || 'Kore', lang });
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Jaco-Voice', 'gemini');
+      res.type('audio/wav').send(bytes);
+      return true;
+    };
     const piper = async () => {
       if (!lang.startsWith('sv') || !piperVoice.available()) throw new Error('PIPER_MODEL_MISSING');
       const bytes = await piperVoice.synthesize(text);
@@ -1029,7 +1039,8 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
       res.type('audio/wav').send(bytes);
       return true;
     };
-    for (const engine of process.env.JACO_AURA_VOICE === 'piper' ? [piper, neural] : [neural, piper]) {
+    const order = process.env.JACO_AURA_VOICE === 'piper' ? [piper, neural] : process.env.JACO_AURA_VOICE === 'neural' ? [neural, piper] : [gemini, neural, piper];
+    for (const engine of order) {
       try { if (await engine()) return; }
       catch (error: any) { failures.push(String(error?.message || 'VOICE_FAILED').slice(0, 80)); }
     }

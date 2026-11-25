@@ -4,7 +4,14 @@ const MAX = 220, FIRST = 140;
 
 /** @param {string} text @returns {string[]} */
 export function speechParts(text) {
-  const clean = String(text || '').replace(/```[\s\S]*?```/g, ' ').replace(/[*_#>`]+/g, '').replace(/\s+/g, ' ').trim();
+  // Spoken text has no code, link targets or web addresses (she read whole source URLs aloud, 2026-11-25).
+  const clean = String(text || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\[([^\]]+)\]\((?:https?:\/\/|www\.)[^)]*\)/g, '$1')
+    .replace(/\(?\s*(?:källa|source)\s*:\s*(?:https?:\/\/|www\.)[^\s)]+\s*\)?/gi, ' ')
+    .replace(/(?:https?:\/\/|www\.)[^\s)\]]+/g, ' ')
+    .replace(/\(\s*\)/g, ' ')
+    .replace(/[*_#>`]+/g, '').replace(/\s+([.,;:!?])/g, '$1').replace(/\s+/g, ' ').trim();
   if (!clean) return [];
   const sentences = clean.match(/[^.!?…]+(?:[.!?…]+["')\]]*|$)/g)?.map(s => s.trim()).filter(Boolean) || [clean];
   const pieces = [];
