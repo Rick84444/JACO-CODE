@@ -1424,6 +1424,8 @@ export const JacoAuraComputeIDE: React.FC = () => {
 
             <AuraIntegrationsPanel workplace={snapshot?.workplace} observedAt={snapshot?.observedAt} providers={snapshot?.mcp?.providers || []} busy={mcpStarting} onConnect={id => void startMcpServer(id)} onHuggingFace={(enabled, tokenEnv) => void configureHuggingFace(enabled, tokenEnv)} notice={integrationNotice} />
             <McpServersPanel
+              observedAt={snapshot?.observedAt||null}
+              observationFailed={!!connectionError}
               providers={snapshot?.mcp?.providers || []}
               recentCalls={snapshot?.mcp?.recentCalls || []}
               busy={mcpStarting}
