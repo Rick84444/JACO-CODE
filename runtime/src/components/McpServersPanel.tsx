@@ -9,7 +9,7 @@ export interface McpTool { name: string; description: string; readOnly: boolean;
 export interface McpCallRecord { server?: string; tool: string; actor: string; outcome: string; error: string | null; ms: number; at: string }
 export interface McpProvider {
   id: string; name: string; role: string; status: string; transport?: string; endpoint?: string; error: string | null; tools: McpTool[];
-  credentialEnv?: string; credentialConfigured?: boolean | null;
+  credentialEnv?: string; credentialConfigured?: boolean | null; allowOpenLogin?: boolean;
   icon?: string; agentAccess?: 'off' | 'read' | 'write'; deny?: string[]; builtIn?: boolean;
   stats?: { calls: number; failures: number; refused: number; lastCall: McpCallRecord | null };
 }
@@ -54,7 +54,7 @@ async function send(url: string, method: string, body?: unknown) {
 export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, onStart, onSelectTool, onChanged }: Props) {
   const [working, setWorking] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState({ id: '', name: '', target: '', icon: 'mcp', agentAccess: 'read', tokenEnv: '' });
+  const [draft, setDraft] = useState({ id: '', name: '', target: '', icon: 'mcp', agentAccess: 'read', tokenEnv: '', allowOpenLogin: false });
   const [query, setQuery] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const failedCustom = providers.filter(p => p.status === 'FAILED' && p.builtIn === false);
@@ -91,14 +91,14 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
     if (http && draft.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(draft.tokenEnv.trim())) { setFormError('Enter a variable name, not a token value.'); return; }
     if (providers.some(p=>p.id===draft.id.trim()) && !window.confirm('Replace this existing connection configuration?')) return;
     const entry = http
-      ? { id: draft.id.trim(), name: draft.name.trim() || draft.id.trim(), transport: 'http', url: target, tokenEnv: draft.tokenEnv.trim() || null, icon: draft.icon, agentAccess: draft.agentAccess }
+      ? { id: draft.id.trim(), name: draft.name.trim() || draft.id.trim(), transport: 'http', url: target, tokenEnv: draft.tokenEnv.trim() || null, icon: draft.icon, agentAccess: draft.agentAccess, allowOpenLogin: draft.allowOpenLogin === true }
       : { id: draft.id.trim(), name: draft.name.trim() || draft.id.trim(), command: parts[0], args: parts.slice(1), icon: draft.icon, agentAccess: draft.agentAccess };
     setWorking('__add');
     try {
       await send('/api/aura/workbench/mcp/servers', 'POST', entry);
       try { const started=await send('/api/aura/workbench/mcp/start','POST',{providerId:entry.id}); onChanged(`${entry.name}: ${Array.isArray(started.tools)?started.tools.length:0} tools discovered. Individual tool execution is not yet verified.`); }
       catch(error:any) { onChanged(`${entry.name} saved, but the connection failed: ${error.message}`); }
-      setDraft({ id: '', name: '', target: '', icon: 'mcp', agentAccess: 'read', tokenEnv: '' }); setAdding(false);
+      setDraft({ id: '', name: '', target: '', icon: 'mcp', agentAccess: 'read', tokenEnv: '', allowOpenLogin: false }); setAdding(false);
     } catch (e: any) { setFormError(e.message); }
     finally { setWorking(null); }
   };
@@ -112,17 +112,17 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
     </div>
 
     <div className="mx-3 mb-3 rounded border border-neutral-700 p-3 space-y-2" aria-label="Official MCP integrations">
-      <h3 className="text-sm font-semibold text-neutral-200">Integration catalog</h3>
+      <h3 className="text-sm font-semibold text-neutral-200">Plugin Center</h3>
       <p className="text-xs text-neutral-400">Official endpoints. Select a connection to review its configuration. Nothing is installed or authenticated until you explicitly save and connect.</p>
       <input aria-label="Search integration catalog" placeholder="Search providers" value={query} onChange={e=>setQuery(e.target.value)} className="w-full rounded border border-neutral-700 bg-[#1d1e20] px-2 py-1 text-sm"/>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 grid-cols-2 sm:grid-cols-3">
         {MCP_INTEGRATION_CATALOG.filter(p=>(p.name+' '+p.auth).toLowerCase().includes(query.trim().toLowerCase())).map(p=>{
           const current=providers.find(v=>v.id===p.id);
           return <article key={p.id} className="rounded border border-neutral-700 p-2 space-y-1">
             <div className="flex items-center gap-2"><McpLogo icon={p.icon}/><strong className="text-xs">{p.name}</strong></div>
             <div className="text-xs text-neutral-400" role="status">{mcpConnectionState(current).replaceAll('_',' ')}</div>
-            <p className="text-xs text-neutral-400">{p.auth}</p>
-            <div className="flex flex-wrap items-center gap-2"><button type="button" disabled={working!==null} onClick={()=>{setDraft(mcpCatalogDraft(p.id));setFormError(null);setAdding(true);}} className="rounded border border-neutral-600 px-2 py-1 text-xs">{current?'Review configuration':'Configure'}</button>
+            <details className="text-xs text-neutral-400"><summary>Authentication</summary><p>{p.auth}</p></details>
+            <div className="flex flex-wrap items-center gap-2"><button type="button" disabled={working!==null} onClick={()=>{setDraft({...mcpCatalogDraft(p.id),allowOpenLogin:current?.allowOpenLogin===true});setFormError(null);setAdding(true);}} className="rounded border border-neutral-600 px-2 py-1 text-xs">{current?'Review configuration':'Configure'}</button>
             <a className="text-xs underline text-neutral-300" href={p.docs} target="_blank" rel="noopener noreferrer">Official setup</a></div>
           </article>;
         })}
@@ -131,10 +131,10 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
 
     {adding && <div className="mx-3 mb-2 p-2 rounded border border-[#5a5b5d] bg-[#27282a] space-y-1.5" aria-label="Add MCP server">
       <div className="flex gap-1.5">
-        <input aria-label="Server id" value={draft.id} onChange={e => setDraft({ ...draft, id: e.target.value.toLowerCase() })} placeholder="id, e.g. github" className="min-w-0 flex-1 bg-[#1d1e20] border border-[#505153] rounded px-2 py-1 text-[10px] outline-none" />
+        <input aria-label="Server id" value={draft.id} onChange={e => setDraft({ ...draft, id: e.target.value.toLowerCase(),allowOpenLogin:false })} placeholder="id, e.g. github" className="min-w-0 flex-1 bg-[#1d1e20] border border-[#505153] rounded px-2 py-1 text-[10px] outline-none" />
         <input aria-label="Name" value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Name" className="min-w-0 flex-1 bg-[#1d1e20] border border-[#505153] rounded px-2 py-1 text-[10px] outline-none" />
       </div>
-      <input aria-label="Command or address" value={draft.target} onChange={e => setDraft({ ...draft, target: e.target.value, tokenEnv: '' })} placeholder="npx -y @modelcontextprotocol/server-memory  or  https://…/mcp" className="w-full bg-[#1d1e20] border border-[#505153] rounded px-2 py-1 text-[10px] font-mono outline-none" />
+      <input aria-label="Command or address" value={draft.target} onChange={e => setDraft({ ...draft, target: e.target.value, tokenEnv: '',allowOpenLogin:false })} placeholder="npx -y @modelcontextprotocol/server-memory  or  https://…/mcp" className="w-full bg-[#1d1e20] border border-[#505153] rounded px-2 py-1 text-[10px] font-mono outline-none" />
       <div className="flex gap-1.5 items-center">
         <select aria-label="Logo" value={draft.icon} onChange={e => setDraft({ ...draft, icon: e.target.value })} className="bg-[#1d1e20] border border-[#505153] rounded px-1 py-1 text-[10px]">
           {ICON_CHOICES.map(i => <option key={i} value={i}>{i === 'jaco' ? 'JACO' : MCP_LOGOS[i].title}</option>)}
@@ -145,8 +145,9 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
         </select>
       </div>
       {/^https:\/\//i.test(draft.target.trim())&&<label className="block text-xs text-neutral-300">Bearer credential environment variable (optional)
-        <input aria-label="Credential environment variable" value={draft.tokenEnv} onChange={e=>setDraft({...draft,tokenEnv:e.target.value})} placeholder="e.g. RENDER_API_KEY" className="block w-full rounded border border-neutral-700 bg-[#1d1e20] px-2 py-1"/>
+        <input aria-label="Credential environment variable" value={draft.tokenEnv} onChange={e=>setDraft({...draft,tokenEnv:e.target.value,allowOpenLogin:false})} placeholder="e.g. RENDER_API_KEY" className="block w-full rounded border border-neutral-700 bg-[#1d1e20] px-2 py-1"/>
       </label>}
+      {MCP_INTEGRATION_CATALOG.some(p=>p.id===draft.id && p.target===draft.target && p.loginUrl) && <label className="flex items-start gap-2 text-xs text-neutral-300"><input type="checkbox" checked={draft.allowOpenLogin} onChange={e=>setDraft({...draft,allowOpenLogin:e.target.checked})}/>Allow Aura to open this provider's official sign-in page when authentication is needed. Does not grant access to passwords, consent or new scopes.</label>}
       <p className="text-xs text-neutral-400">Use an existing environment variable name, never paste the secret here. Remote writes require explicit server write access and an applicable signed operator mandate. Browser-based OAuth is not yet implemented in this MCP host.</p>
       {formError && <p role="status" className="text-[10px] text-amber-300 break-words">{formError}</p>}
       <button onClick={() => void add()} disabled={working !== null} className="w-full rounded border border-neutral-700 py-1 text-[10px] text-neutral-200 disabled:opacity-40">{working === '__add' ? 'Connecting…' : 'Save and connect'}</button>
