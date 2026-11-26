@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {MCP_INTEGRATION_CATALOG,mcpCatalogDraft,mcpConnectionState} from '../../runtime/src/lib/mcpIntegrationCatalog.mjs';
+import {MCP_INTEGRATION_CATALOG,mcpCatalogDraft,mcpConnectionState,pluginLoginPreset} from '../../runtime/src/lib/mcpIntegrationCatalog.mjs';
 import {validateServerEntry} from '../../runtime/src/server/mcp/stdioMcpHost.mjs';
 
 test('official catalog presets are valid explicit operator configurations with read-only agent defaults',()=>{
@@ -13,10 +13,11 @@ test('official catalog presets are valid explicit operator configurations with r
     assert.equal(new URL(config.url).protocol,'https:');
     assert.equal(new URL(item.docs).protocol,'https:');
     assert.equal(config.agentAccess,'read');
+    assert.notEqual(config.allowOpenLogin,true);
     assert.equal(config.tokenEnv,draft.tokenEnv||null);
     assert.notEqual(mcpCatalogDraft(item.id),draft);
   }
-  assert.equal(ids.size,6);
+  assert.equal(ids.size,10);
   assert.throws(()=>mcpCatalogDraft('arbitrary'),/MCP_CATALOG_UNKNOWN/);
 });
 test('configuration, authentication, stale state and discovered tools are distinct',()=>{
@@ -29,4 +30,13 @@ test('configuration, authentication, stale state and discovered tools are distin
   assert.equal(mcpConnectionState({status:'UNOBSERVED'}),'UNOBSERVED');
   assert.equal(mcpConnectionState({status:'READY',agentAccess:'off'}),'AGENT_ACCESS_OFF');
   assert.equal(mcpConnectionState({status:'FAILED',error:'MCP_TRANSPORT_DNS'}),'ERROR');
+});
+
+test('login pages are pinned to the reviewed plugin endpoint and token reference',()=>{
+  const d={transport:'http',url:'https://mcp.render.com/mcp',tokenEnv:'RENDER_API_KEY',agentAccess:'read'};
+  assert.equal(pluginLoginPreset('render',d)?.loginUrl,'https://dashboard.render.com/');
+  for(const changes of [{url:'https://example.org/mcp'},{url:d.url+'?other=true'},{tokenEnv:'OTHER_TOKEN'},{agentAccess:'off'},{transport:'stdio'}]){
+    assert.equal(pluginLoginPreset('render',{...d,...changes}),null);
+  }
+  assert.equal(pluginLoginPreset('unknown',d),null);
 });
