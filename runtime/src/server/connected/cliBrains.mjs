@@ -98,7 +98,7 @@ function run(bin, args, { input = '', timeoutMs, env = process.env, spawnImpl = 
 export async function brainStatus(id, { env = process.env, spawnImpl, home } = {}) {
   const b = Object.hasOwn(BRAINS, id) ? BRAINS[id] : null; if (!b) throw new Error('UNKNOWN_BRAIN');
   const base = { id: b.id, providerId: b.providerId, label: b.label, plan: b.plan, loginKind: b.loginKind, loginHint: b.loginHint || null, observed: b.observed };
-  
+
   try {
     const r = await run(b.bin, b.statusArgs, { timeoutMs: STATUS_TIMEOUT_MS, env, spawnImpl });
     const text = `${r.stdout}\n${r.stderr}`.trim();
