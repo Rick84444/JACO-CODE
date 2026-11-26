@@ -9,6 +9,8 @@ const REF=provider.credentialRef;
 const fail=code=>{throw Error(code);};
 const string=(v,max=8192)=>typeof v==='string'&&v.length>0&&v.length<=max&&!/[\x00-\x20\x7f]/.test(v);
 const random=()=>randomBytes(32).toString('base64url');
+const has=(values,item)=>Array.isArray(values)&&values.includes(item);
+const fingerprint=raw=>createHash('sha256').update(raw).digest('hex');
 const same=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
 const endpoints=Object.freeze({
   metadata:origin+'/.well-known/oauth-protected-resource/mcp',
@@ -41,7 +43,7 @@ export async function discoverLinearOAuth({fetchImpl=fetch}={}){
   if(prm.scopes_supported!==undefined&&(!Array.isArray(prm.scopes_supported)||!prm.scopes_supported.includes('read')))fail('MCP_OAUTH_READ_SCOPE_UNAVAILABLE');
   const asm=await json(endpoints.server,{},fetchImpl);
   if(asm.issuer!==origin||asm.authorization_endpoint!==endpoints.authorize||asm.token_endpoint!==endpoints.token||asm.registration_endpoint!==endpoints.register)fail('MCP_OAUTH_ISSUER_MISMATCH');
-  if(!asm.code_challenge_methods_supported?.includes('S256')||!asm.token_endpoint_auth_methods_supported?.includes('none')||!asm.response_types_supported?.includes('code')||!asm.grant_types_supported?.includes('authorization_code'))fail('MCP_OAUTH_METADATA_UNSUPPORTED');
+  if(!has(asm.code_challenge_methods_supported,'S256')||!has(asm.token_endpoint_auth_methods_supported,'none')||!has(asm.response_types_supported,'code')||!has(asm.grant_types_supported,'authorization_code'))fail('MCP_OAUTH_METADATA_UNSUPPORTED');
   return {issuer:origin,resource,issRequired:asm.authorization_response_iss_parameter_supported===true,refreshSupported:asm.grant_types_supported.includes('refresh_token')};
 }
 export async function beginLinearOAuth(redirectUri,{fetchImpl=fetch,now=Date.now}={}){
@@ -86,8 +88,9 @@ export function parseLinearOAuth(raw){
   }catch{return null;}
 }
 export function linearOAuthStatus({store=new SecretStore(),now=Date.now}={}){
-  let r;try{r=parseLinearOAuth(store.get(REF));}catch{return {configured:false,expiresAt:null,refreshAvailable:false};}
-  return {configured:Boolean(r&&(r.expiresAt>now()||r.refreshToken)),expiresAt:r?.expiresAt||null,refreshAvailable:Boolean(r?.refreshToken)};
+  let raw,r;try{raw=store.get(REF);r=parseLinearOAuth(raw);}catch{return {configured:false,expiresAt:null,refreshAvailable:false};}
+  const refreshAvailable=Boolean(r?.refreshToken&&rejected.get(store.file)!==fingerprint(raw));
+  return {configured:Boolean(r&&(r.expiresAt>now()||refreshAvailable)),expiresAt:r?.expiresAt||null,refreshAvailable};
 }
 const refreshes=new Map();
 const rejected=new Map();
@@ -99,8 +102,10 @@ export async function linearOAuthAccess({store=new SecretStore(),fetchImpl=fetch
   if(record.expiresAt>now()+30000||record.expiresAt>now()&&!record.refreshToken)return record.accessToken;
   if(!record.refreshToken)fail('MCP_AUTH_REQUIRED');
   const key=store.file;
-  if(rejected.get(key)===raw)fail('MCP_AUTH_REQUIRED');
-  if(refreshes.has(key))return refreshes.get(key);
+  const stamp=fingerprint(raw);
+  if(rejected.get(key)===stamp)fail('MCP_AUTH_REQUIRED');
+  const existing=refreshes.get(key);
+  if(existing){if(existing.stamp!==stamp)fail('MCP_OAUTH_CREDENTIAL_CHANGED');return existing.pending;}
   const pending=(async()=>{
     try{
       const data=await post(endpoints.token,{grant_type:'refresh_token',client_id:record.clientId,refresh_token:record.refreshToken,resource,scope:'read'},fetchImpl,true);
@@ -108,8 +113,8 @@ export async function linearOAuthAccess({store=new SecretStore(),fetchImpl=fetch
       if(!store.replaceIfCurrent(REF,raw,JSON.stringify(next),{source:'operator-oauth',purpose:'Linear OAuth read scope'}))fail('MCP_OAUTH_CREDENTIAL_CHANGED');
       rejected.delete(key);
       return next.accessToken;
-    }catch(error){if(error?.message==='MCP_OAUTH_REJECTED'){rejected.set(key,raw);fail('MCP_AUTH_REQUIRED');}throw error;}
+    }catch(error){if(error?.message==='MCP_OAUTH_REJECTED'){rejected.set(key,stamp);fail('MCP_AUTH_REQUIRED');}throw error;}
   })();
-  refreshes.set(key,pending);
-  try{return await pending;}finally{if(refreshes.get(key)===pending)refreshes.delete(key);}
+  const entry={stamp,pending};refreshes.set(key,entry);
+  try{return await pending;}finally{if(refreshes.get(key)===entry)refreshes.delete(key);}
 }
