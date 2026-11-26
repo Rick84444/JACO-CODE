@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MCP_LOGOS } from './mcpLogos';
 import { FINANCIAL_LOGOS } from './financialLogos';
-import { MCP_INTEGRATION_CATALOG, mcpCatalogDraft, mcpConnectionState, pluginCategory, marketplaceEntries } from '../lib/mcpIntegrationCatalog.mjs';
+import { MCP_INTEGRATION_CATALOG, mcpCatalogDraft, mcpConnectionState, pluginCategory, marketplaceEntries, pluginEnvironment, pluginEvidence, observationFresh } from '../lib/mcpIntegrationCatalog.mjs';
 
 // JACO's MCP servers as the operator manages them (operator 2026-10-09): each with its logo, what it
 // answered, what agents may do with it, and the last calls. Servers are added here without editing
@@ -10,11 +10,13 @@ export interface McpTool { name: string; description: string; readOnly: boolean;
 export interface McpCallRecord { server?: string; tool: string; actor: string; outcome: string; error: string | null; ms: number; at: string }
 export interface McpProvider {
   id: string; name: string; role: string; status: string; transport?: string; endpoint?: string; error: string | null; tools: McpTool[];
-  credentialEnv?: string; credentialConfigured?: boolean | null; allowOpenLogin?: boolean;
+  credentialEnv?: string; credentialConfigured?: boolean | null; allowOpenLogin?: boolean; catalogMatch?: boolean; loginOpeningSupported?: boolean; startedAt?: string | null;
   icon?: string; agentAccess?: 'off' | 'read' | 'write'; deny?: string[]; builtIn?: boolean;
   stats?: { calls: number; failures: number; refused: number; lastCall: McpCallRecord | null };
 }
 interface Props {
+  observedAt?: string | null;
+  observationFailed?: boolean;
   providers: McpProvider[];
   recentCalls: McpCallRecord[];
   busy: string | null;
@@ -62,12 +64,38 @@ async function send(url: string, method: string, body?: unknown) {
   return data;
 }
 
-export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, onStart, onSelectTool, onChanged }: Props) {
+export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, onStart, onSelectTool, onChanged, observedAt, observationFailed=false }: Props) {
   const [working, setWorking] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ id: '', name: '', target: '', icon: 'mcp', agentAccess: 'read', tokenEnv: '', allowOpenLogin: false });
   const [query, setQuery] = useState('');
   const [category,setCategory]=useState('all');
+  const [scope,setScope]=useState<'all'|'configured'|'available'|'directory'>('all');
+  const [selectedPlugin,setSelectedPlugin]=useState('');
+  const [clock,setClock]=useState(Date.now());
+  const modal=useRef<HTMLDialogElement>(null);
+  useEffect(()=>{const t=window.setInterval(()=>setClock(Date.now()),5000);return()=>window.clearInterval(t);},[]);
+  const fresh=!observationFailed&&observationFresh(observedAt,clock);
+  const preset=MCP_INTEGRATION_CATALOG.find(p=>p.id===selectedPlugin);
+  const directory=marketplaceEntries(providers).find(p=>p.id===selectedPlugin);
+  const selected=preset||directory;
+  const current=providers.find(p=>p.id===selectedPlugin);
+  const evidence=pluginEvidence(current,fresh);
+  useEffect(()=>{
+    const dialog=modal.current;
+    if(selectedPlugin&&dialog&&!dialog.open)dialog.showModal();
+    else if(!selectedPlugin&&dialog?.open)dialog.close();
+  },[selectedPlugin]);
+  const statusLabel=(value:string)=>({AVAILABLE:'Not configured',UNOBSERVED:'Observation unavailable',CUSTOM_CONFIGURATION:'Custom configuration',TOOLS_DISCOVERED:'Tools discovered',AUTH_REQUIRED:'Authentication required',AGENT_ACCESS_OFF:'Agent access disabled',CONFIGURED:'Configured · not connected',ERROR:'Connection failed',CONNECTING:'Connecting',ADAPTER_REQUIRED:'Adapter required',OAUTH_REQUIRED:'OAuth required'}[value]||value.replaceAll('_',' '));
+  const environmentLabel=(id:string)=>({SANDBOX:'Sandbox / test',PUBLIC_DATA:'Public data',ACCOUNT_SCOPE_UNVERIFIED:'Account scope not verified'}[pluginEnvironment(id)]||'Account scope not verified');
+  const updateLoginAccess=async(enabled:boolean)=>{
+    if(!current||!fresh||working)return;
+    setWorking(current.id);setFormError(null);
+    try{await send('/api/aura/workbench/mcp/servers/'+encodeURIComponent(current.id)+'/access','PATCH',{allowOpenLogin:enabled});onChanged(current.name+': login-opening permission '+(enabled?'enabled':'revoked'));}
+    catch(e:any){setFormError(String(e?.message||'Permission change failed'));}
+    finally{setWorking(null);}
+  };
+
   const [registryQuery,setRegistryQuery]=useState('');
   const [registryBusy,setRegistryBusy]=useState(false);
   const [registryError,setRegistryError]=useState('');
@@ -135,31 +163,59 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
       <button onClick={() => setAdding(v => !v)} className={`${failedCustom.length ? 'ml-1.5' : 'ml-auto'} text-[9px] text-neutral-200 border border-neutral-800 rounded px-1.5 py-0.5 hover:bg-neutral-900/30`}>{adding ? 'Close' : '+ Add'}</button>
     </div>
 
-    <div className="mx-3 mb-3 rounded border border-neutral-700 p-3 space-y-2" aria-label="Official MCP integrations">
-      <h3 className="text-sm font-semibold text-neutral-200">Plugin Center</h3>
-      <p className="text-xs text-neutral-400">Official endpoints. Select a connection to review its configuration. Nothing is installed or authenticated until you explicitly save and connect.</p>
-      <input aria-label="Search integration catalog" placeholder="Search providers" value={query} onChange={e=>setQuery(e.target.value)} className="w-full rounded border border-neutral-700 bg-[#1d1e20] px-2 py-1 text-sm"/>
-      <div className="flex flex-wrap gap-1" aria-label="Plugin categories">
-        {[['all','All'],['development','Dev'],['cloud','Cloud'],['marketing','Marketing'],['commerce','Commerce'],['finance','Finance'],['marketplace','Marketplace']].map(([id,label])=><button key={id} type="button" aria-pressed={category===id} onClick={()=>setCategory(id)} className={'px-2 py-1 rounded border text-xs '+(category===id?'border-[#659bd0] bg-[#253a4d]':'border-neutral-700')}>{label}</button>)}
+    <section className="mx-3 mb-3 rounded-xl border border-neutral-700 bg-[#1d2025] p-3 space-y-3" aria-label="Integration management">
+      <header className="flex flex-wrap justify-between items-start gap-2">
+        <div><h3 className="text-sm font-semibold tracking-wide text-neutral-100">Integrations</h3><p className="mt-1 text-[11px] text-neutral-400">Manage connections, access and provider catalog.</p></div>
+        <span className="text-[10px] text-neutral-400">{fresh?'Runtime observation current':'Runtime observation unavailable or stale'}</span>
+      </header>
+      <div className="grid grid-cols-3 gap-2" aria-label="Connection summary">
+        {[['Configured',fresh?providers.filter(p=>['http','stdio'].includes(p.transport||'')).length:'—'],['Tools discovered',fresh?providers.filter(p=>mcpConnectionState(p)==='TOOLS_DISCOVERED').length:'—'],['Attention required',fresh?providers.filter(p=>['AUTH_REQUIRED','ERROR','CUSTOM_CONFIGURATION'].includes(mcpConnectionState(p))).length:'—']].map(([label,value])=><div key={label} className="min-w-0 border border-neutral-700 rounded-md p-2"><div className="text-lg font-semibold tabular-nums">{value}</div><div className="text-[10px] text-neutral-400">{label}</div></div>)}
       </div>
-      <div className="grid gap-2 grid-cols-2 sm:grid-cols-3">
-        {MCP_INTEGRATION_CATALOG.filter(p=>(category==='all'||pluginCategory(p)===category)&&matches(p)).map(p=>{
-          const current=providers.find(v=>v.id===p.id);
-          return <article key={p.id} className="rounded border border-neutral-700 p-2 space-y-1">
-            <div className="flex items-center gap-2"><PluginLogo id={p.id} name={p.name} icon={p.icon}/><strong className="text-xs">{p.name}</strong></div>
-            <div className="text-xs text-neutral-400" role="status">{mcpConnectionState(current).replaceAll('_',' ')}</div>
-            <details className="text-xs text-neutral-400"><summary>Authentication</summary><p>{p.auth}</p></details>
-            <div className="flex flex-wrap items-center gap-2"><button type="button" disabled={working!==null} onClick={()=>{setDraft({...mcpCatalogDraft(p.id),allowOpenLogin:current?.allowOpenLogin===true});setFormError(null);setAdding(true);}} className="rounded border border-neutral-600 px-2 py-1 text-xs">{current?'Review configuration':'Configure'}</button>
-            <a className="text-xs underline text-neutral-300" href={p.docs} target="_blank" rel="noopener noreferrer">Official setup</a></div>
-          </article>;
+      <div className="flex flex-wrap gap-1 border-b border-neutral-700 pb-2" aria-label="Integration views">
+        {([['all','All'],['configured','Configured'],['available','Available'],['directory','Directory']] as const).map(([id,label])=><button key={id} type="button" onClick={()=>setScope(id)} aria-pressed={scope===id} className={'rounded px-2 py-1.5 text-xs '+(scope===id?'bg-[#31445a] text-sky-100':'text-neutral-400 hover:text-white')}>{label}</button>)}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <input aria-label="Search integration catalog" placeholder="Search integrations" value={query} onChange={e=>setQuery(e.target.value)} className="min-w-[120px] flex-1 rounded border border-neutral-700 bg-[#15171a] px-3 py-2 text-xs"/>
+        <select aria-label="Plugin category" value={category} onChange={e=>setCategory(e.target.value)} className="min-w-0 rounded border border-neutral-700 bg-[#15171a] p-2 text-xs">
+          {[['all','All categories'],['development','Development'],['cloud','Cloud'],['marketing','Marketing'],['commerce','Commerce'],['finance','Finance'],['marketplace','Marketplace']].map(([id,label])=><option key={id} value={id}>{label}</option>)}
+        </select>
+      </div>
+      <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+        {MCP_INTEGRATION_CATALOG.filter(p=>(category==='all'||pluginCategory(p)===category)&&matches(p)&&scope!=='directory'&&(scope==='all'||(fresh&&(scope==='configured'?providers.some(v=>v.id===p.id):!providers.some(v=>v.id===p.id))))).map(p=>{
+          const row=providers.find(v=>v.id===p.id);
+          const state=mcpConnectionState(row,fresh);
+          return <button type="button" key={p.id} onClick={()=>{setFormError(null);setSelectedPlugin(p.id);}} className="rounded-lg border border-neutral-700 bg-[#22262c] px-3 py-3 text-left hover:border-sky-700 focus-visible:outline focus-visible:outline-sky-300">
+            <div className="flex items-center gap-3"><PluginLogo id={p.id} name={p.name} icon={p.icon} size={28}/><div className="min-w-0 flex-1"><strong className="block text-xs text-neutral-100">{p.name}</strong><span className="block text-[10px] text-neutral-400">{environmentLabel(p.id)}</span></div><span aria-hidden="true" className="text-neutral-500">›</span></div>
+            <div className="mt-2 text-[10px] text-neutral-300">{statusLabel(state)}</div>
+          </button>;
         })}
-        {marketplaceEntries(providers).filter(p=>(category==='all'||p.category===category)&&matches(p)).map(p=><article key={p.id} className="rounded border border-neutral-700 p-2 space-y-1">
-          <div className="flex items-center gap-2"><PluginLogo id={p.id} name={p.name}/><strong className="text-xs">{p.name}</strong></div>
-          <div role="status" className="text-[10px] text-neutral-400">{p.state.replaceAll('_',' ')}</div>
-          <p className="text-xs text-neutral-400">{p.purpose}</p>
-          <a className="text-xs underline text-neutral-300" href={p.docs} target="_blank" rel="noopener noreferrer">Official setup</a>
-        </article>)}
+        {marketplaceEntries(providers).filter(p=>(category==='all'||p.category===category)&&matches(p)&&(scope==='all'||scope==='directory'||(scope==='configured'&&fresh&&p.status==='EXISTING_HOST'&&providers.some(v=>v.id===p.id)))).map(p=><button type="button" key={p.id} onClick={()=>{setFormError(null);setSelectedPlugin(p.id);}} className="rounded-lg border border-neutral-700 bg-[#22262c] px-3 py-3 text-left hover:border-sky-700 focus-visible:outline focus-visible:outline-sky-300">
+          <div className="flex gap-3 items-center"><PluginLogo id={p.id} name={p.name} size={28}/><div className="min-w-0 flex-1"><strong className="block text-xs text-neutral-100">{p.name}</strong><span className="block text-[10px] text-neutral-400"> {p.status==='EXISTING_HOST'?'Existing integration':'Directory entry'}</span></div><span aria-hidden="true" className="text-neutral-500">›</span></div>
+          <div className="mt-2 text-[10px] text-neutral-300">{statusLabel(p.status==='EXISTING_HOST'&&!fresh?'UNOBSERVED':p.state)}</div>
+        </button>)}
       </div>
+      <dialog ref={modal} aria-labelledby="plugin-detail-title" onClose={()=>{setSelectedPlugin('');setFormError(null);}} onClick={e=>{if(e.target===e.currentTarget)e.currentTarget.close();}} className="m-auto w-[min(94vw,480px)] max-h-[85dvh] overflow-auto rounded-xl border border-neutral-600 bg-[#1c2026] p-0 text-neutral-100 backdrop:bg-black/70">
+        {selected&&<div className="p-5 space-y-4">
+          <header className="flex items-center gap-3"><PluginLogo id={selected.id} name={selected.name} size={36}/><div className="min-w-0 flex-1"><h3 id="plugin-detail-title" className="font-semibold">{selected.name}</h3><p className="text-xs text-neutral-400">{environmentLabel(selected.id)}</p></div><button autoFocus type="button" aria-label="Close integration details" onClick={()=>modal.current?.close()} className="rounded border border-neutral-600 px-2 py-1">×</button></header>
+          <p className="text-xs text-neutral-300">{selected.purpose||'Connection and account settings'}</p>
+          <dl className="space-y-2 rounded-lg border border-neutral-700 p-3 text-xs">
+            <div className="flex justify-between gap-3"><dt className="text-neutral-400">Connection</dt><dd>{statusLabel(preset?evidence.state:directory?.status==='EXISTING_HOST'&&!fresh?'UNOBSERVED':directory?.state||'UNOBSERVED')}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-neutral-400">Agent access</dt><dd>{evidence.agentAccess?ACCESS_LABEL[evidence.agentAccess]:'Not observed'}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-neutral-400">Discovered / allowed read tools</dt><dd>{evidence.toolsDiscovered??'—'} / {evidence.allowedReadTools??'—'}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-neutral-400">Last recorded tool call</dt><dd className="text-right">{evidence.lastCall?evidence.lastCall.outcome+' · '+new Date(evidence.lastCall.at).toLocaleString():'Not observed'}</dd></div>
+          </dl>
+          {preset&&<div className="space-y-2 text-xs"><h4 className="font-semibold">Authentication</h4><p className="text-neutral-400">{preset.auth}</p><p className="break-all text-neutral-400">{preset.target}</p>{preset.tokenEnv&&<p className="text-neutral-400">Credential reference: <code>{preset.tokenEnv}</code></p>}</div>}
+          {current&&fresh&&<div className="space-y-2 text-xs">
+            {current.catalogMatch===false&&<p role="status" className="text-amber-300">This ID has a custom configuration. Catalog settings are not applied.</p>}
+            {(current.loginOpeningSupported||current.allowOpenLogin)&&<label className="flex gap-2 items-start"><input type="checkbox" checked={current.allowOpenLogin===true} disabled={working!==null||(!current.allowOpenLogin&&!current.loginOpeningSupported)} onChange={e=>void updateLoginAccess(e.target.checked)}/><span>Allow Aura to open the approved account page. No credential submission or consent.</span></label>}
+            <button type="button" disabled={busy!==null||working!==null} onClick={()=>onStart(current.id)} className="rounded border border-neutral-600 px-3 py-2 disabled:opacity-40">Discover tools</button>
+          </div>}
+          {!current&&fresh&&preset&&<button type="button" disabled={working!==null} onClick={()=>{setDraft(mcpCatalogDraft(preset.id));modal.current?.close();setAdding(true);}} className="rounded bg-[#314a66] px-4 py-2 text-xs font-medium">Configure connection</button>}
+          {formError&&<p role="alert" className="text-xs text-amber-300">{formError}</p>}
+          <div className="border-t border-neutral-700 pt-3 flex justify-between gap-2"><a href={selected.docs} target="_blank" rel="noopener noreferrer" className="text-xs text-sky-300 underline">Provider documentation</a><button type="button" onClick={()=>modal.current?.close()} className="text-xs text-neutral-300">Close</button></div>
+          <p className="text-[10px] text-neutral-400">Tool discovery or a transport acknowledgement does not verify a business outcome.</p>
+        </div>}
+      </dialog>
       <details className="rounded border border-neutral-700 p-2">
         <summary className="cursor-pointer text-xs font-semibold">MCP Marketplace · Search public registry</summary>
         <form className="flex gap-2 mt-2" onSubmit={e=>{e.preventDefault();void searchRegistry();}}>
@@ -170,7 +226,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
         {registryBusy&&<p role="status">Searching…</p>}{registryError&&<p role="alert">{registryError}</p>}
         {registry&&<ul className="space-y-2 max-h-72 overflow-auto mt-2">{registry.entries.map((r,i)=><li key={r.name+'@'+r.version+'-'+i} className="border-b border-neutral-700 pb-1 text-xs break-words"><strong>{r.title||r.name}</strong><div>{r.name} · {r.version}</div><p>{r.description}</p><span className="text-neutral-400">Discovered · not verified</span></li>)}{!registry.entries.length&&<li>No active latest entries on this page.</li>}{registry.hasMore&&<li>More results exist. Narrow your search.</li>}</ul>}
       </details>
-    </div>
+    </section>
 
     {adding && <div className="mx-3 mb-2 p-2 rounded border border-[#5a5b5d] bg-[#27282a] space-y-1.5" aria-label="Add MCP server">
       <div className="flex gap-1.5">
@@ -206,12 +262,12 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
             <div className="text-[10px] text-neutral-200">{p.name}</div>
             <div className="text-[8px] text-neutral-500 truncate" title={p.endpoint}>{p.role}</div>
           </div>
-          <span className={`text-[8px] ${p.status === 'READY' ? 'text-emerald-400' : p.status === 'FAILED' ? 'text-amber-400' : 'text-neutral-500'}`}>{mcpConnectionState(p).replaceAll('_',' ')}</span>
-          {managed(p) && p.status !== 'READY' && <button onClick={() => onStart(p.id)} disabled={busy !== null} className="text-[8px] border border-violet-800 text-violet-300 rounded px-1.5 py-0.5 hover:bg-violet-950/30 disabled:opacity-40">{busy === p.id ? 'Starting…' : 'Start'}</button>}
+          <span className={`text-[8px] ${p.status === 'READY' ? 'text-emerald-400' : p.status === 'FAILED' ? 'text-amber-400' : 'text-neutral-500'}`}>{statusLabel(mcpConnectionState(p,fresh))}</span>
+          {managed(p) && p.status !== 'READY' && <button onClick={() => onStart(p.id)} disabled={!fresh||busy !== null} className="text-[8px] border border-violet-800 text-violet-300 rounded px-1.5 py-0.5 hover:bg-violet-950/30 disabled:opacity-40">{busy === p.id ? 'Starting…' : 'Start'}</button>}
         </div>
         {managed(p) && <div className="px-3 pb-1.5 flex items-center gap-2 text-[9px]">
           <label className="text-neutral-400 flex items-center gap-1">Agents
-            <select aria-label={`Agent access ${p.name}`} value={p.agentAccess || 'read'} disabled={working !== null} onChange={e => void setAccess(p.id, e.target.value)} className="bg-[#1d1e20] border border-[#505153] rounded px-1 py-0.5 text-[9px] text-neutral-200 disabled:opacity-60">
+            <select aria-label={`Agent access ${p.name}`} value={p.agentAccess || 'read'} disabled={!fresh||working !== null} onChange={e => void setAccess(p.id, e.target.value)} className="bg-[#1d1e20] border border-[#505153] rounded px-1 py-0.5 text-[9px] text-neutral-200 disabled:opacity-60">
               {Object.entries(ACCESS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </label>
