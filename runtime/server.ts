@@ -4047,20 +4047,20 @@ const notifyPhone = async (action) => {
 
   // Subscription brains: the operator's Claude, ChatGPT (Codex) or Gemini sign-in, held by the vendor's own CLI.
   // JACO only asks the CLI whether it is signed in, starts its web sign-in, and registers it as a provider.
-  app.get('/api/aura/workbench/brains', requireLocalUi, async (_req, res) => {
+  app.get('/api/aura/workbench/brains', requireLocalUiSameOrigin, async (_req, res) => {
     try {
       res.setHeader('Cache-Control', 'no-store');
       const list = await allBrainStatus();
-      for (const b of list) if (b.loggedIn && !connectedRuntime.providers.providers.has(b.providerId)) connectedRuntime.providers.registerCliBrain(b.id);
       brainCache = { at: Date.now(), list };
       res.json({ success: true, brains: list.map((b: any) => ({ ...b, registered: connectedRuntime.providers.providers.has(b.providerId) })) });
     } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
   });
 
-  app.post('/api/aura/workbench/brains/:id/login', requireLocalUi, async (req, res) => {
+  app.post('/api/aura/workbench/brains/:id/login', requireLocalUiSameOrigin, async (req, res) => {
     try {
       const id = String(req.params.id);
-      if (!CLI_BRAINS[id]) return res.status(404).json({ success: false, error: 'UNKNOWN_BRAIN' });
+      if (!Object.hasOwn(CLI_BRAINS, id)) return res.status(404).json({ success: false, error: 'UNKNOWN_BRAIN' });
+      if (id === 'claude') return res.status(403).json({ success: false, error: 'THIRD_PARTY_PLAN_ACCESS_NOT_APPROVED' });
       const login = await startBrainLogin(id);
       seerLiveWorkstream.record({ actor: 'Aura Workbench', type: 'brain.login.started', message: `Sign-in started for ${CLI_BRAINS[id].label} (${login.state})`, verified: false, receipt: { brain: id, state: login.state } });
       brainCache = null;
