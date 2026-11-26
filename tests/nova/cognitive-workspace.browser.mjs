@@ -297,6 +297,29 @@ try {
   await page.keyboard.press('Escape');
   await portrait.waitFor({state:'detached'});
   passed('Aura rigged lightform changes actual geometry and rendered frame with motion enabled');
+  // Real browser rendering, not merely a CSS background or a status flag.
+  for(const width of [1440,393]){
+    await page.setViewportSize({width,height:852});
+    await portraitTrigger.click();
+    await portrait.getByRole('button',{name:'Isgrotta · helkropp'}).click();
+    await page.waitForFunction(()=>{
+      const canvas=document.querySelector('.aura-portrait-scene canvas');
+      return canvas?.dataset.renderer==='rigged-cavern'&&Number(canvas.dataset.drawCalls)>4&&Number(canvas.dataset.triangles)>1000&&Number(canvas.dataset.frameBudget)<=24;
+    },{},{timeout:20000});
+    const cavernCanvas=portrait.locator('canvas');
+    const before=await cavernCanvas.getAttribute('data-yaw');
+    await cavernCanvas.locator('..').hover({position:{x:12,y:30}});
+    await page.waitForFunction(previous=>Math.abs(Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.yaw)-Number(previous))>.025,before,{timeout:10000});
+    await screenshot('aura-ice-cavern-'+width);
+    await portrait.getByRole('button',{name:'Återgå till närbild'}).click();
+    await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.renderer==='rigged-particle-field');
+    await page.keyboard.press('Escape');
+    await portrait.waitFor({state:'detached'});
+    assert.equal(await input().inputValue(),'Porträttet bevarar utkastet');
+  }
+  await page.setViewportSize({width:1440,height:960});
+  passed('Cavern scene renders and returns to the original portrait without replacing the draft');
+
   await input().fill('Behåll mitt utkast');
   await canvas('Kod').click();await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
