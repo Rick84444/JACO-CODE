@@ -80,7 +80,7 @@ import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFrom
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createPluginLogin } from './src/server/connected/pluginLogin.mjs';
 import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../agents/lib/standing-tool-authority.mjs';
-import { MCP_INTEGRATION_CATALOG, pluginLoginPreset, marketplaceEntries } from './src/lib/mcpIntegrationCatalog.mjs';
+import { MCP_INTEGRATION_CATALOG, pluginLoginPreset, marketplaceEntries, financialOptions } from './src/lib/mcpIntegrationCatalog.mjs';
 import { searchPluginRegistry } from './src/server/mcp/pluginRegistry.mjs';
 import { readGithubActions } from "./src/server/github/githubActions.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
@@ -416,6 +416,7 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         run: async () => ({
           observedAt: new Date().toISOString(),
           marketplace: marketplaceEntries(mcpHost.status()),
+          financialOptions: financialOptions(mcpHost.status()),
           availablePlugins: (()=>{const defs=mcpHost.servers();return MCP_INTEGRATION_CATALOG.map(p=>({id:p.id,name:p.name,configured:Boolean(defs[p.id]),loginOpeningApproved:Boolean(defs[p.id]?.allowOpenLogin && pluginLoginPreset(p.id,defs[p.id]))}));})(),
           servers: mcpHost.status().map((server: any) => ({
             id: server.id,
@@ -2788,7 +2789,7 @@ const notifyPhone = async (action) => {
         events: connectedRuntime.bus.listEvents(100),
         primaryGoal: (await seerOperatorGoal()) || live.primaryGoal || connectedRuntime.novaMissions.current()?.goal || null,
       });
-      res.json({ success: true, ...projection, exchange: gameboardExchange.position('global') });
+      res.json({ success: true, ...projection, financialOptions: financialOptions(mcpHost.status()), exchange: gameboardExchange.position('global') });
     } catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }
   });
 
@@ -3466,6 +3467,7 @@ const notifyPhone = async (action) => {
     const eligible=MCP_INTEGRATION_CATALOG.filter(p=>defs[p.id]?.allowOpenLogin===true && pluginLoginPreset(p.id,defs[p.id]) && mcpHost.status().some((row:any)=>row.id===p.id && (row.credentialConfigured===false || /MCP_(?:AUTH|CREDENTIAL)_REQUIRED/.test(row.error||'')))).map(p=>p.id);
     const canOpen=agentOrganization?.authorize('aura','commands.run')?.allowed && connectedRuntime.capabilities?.isTaskEnabled?.('mcp-write')!==false && operatorTaskEnabled(mcpAuthorityRoot(mcpHost),'mcp-write') && !['DENY','REVIEW'].includes(standingToolAuthority(mcpAuthorityRoot(mcpHost),'LOCAL_MUTATION').status);
     if(eligible.length && canOpen && !defs['jaco-plugin-center']) servers.push({id:'jaco-plugin-center',name:'JACO Plugin Center',role:'Local approved account-page launcher (not an external MCP server)',status:'READY',agentAccess:'write',transport:'internal',error:null,tools:[{name:'open_login',description:'Open an approved provider account page. Operator completes any sign-in. Does not authenticate or expand scopes.',readOnly:false,agentAllowed:true,inputSchema:{type:'object',properties:{plugin:{type:'string',enum:eligible}},required:['plugin'],additionalProperties:false}}]});
+    if(!defs['jaco-financial-options'] && connectedRuntime.capabilities?.isTaskEnabled?.('mcp-call')!==false && operatorTaskEnabled(mcpAuthorityRoot(mcpHost),'mcp-call') && !['DENY','REVIEW'].includes(standingToolAuthority(mcpAuthorityRoot(mcpHost),'READ').status)) servers.push({id:'jaco-financial-options',name:'Financial strategy choices',role:'Read-only Gameboard economic alternatives; no financial execution',status:'READY',agentAccess:'read',transport:'internal',error:null,tools:[{name:'list_options',description:'Read Gameboard financial strategy candidates and observed plugin readiness; not a grant or financial transaction.',readOnly:true,agentAllowed:true,inputSchema:{type:'object',properties:{},additionalProperties:false}}]});
     res.json({success:true,servers});
   });
   app.post('/api/mcp/start', requireAuth, async (req, res) => {
@@ -3489,6 +3491,10 @@ const notifyPhone = async (action) => {
       if(connectedRuntime.capabilities?.isTaskEnabled?.(task)===false) return res.status(409).json({success:false,error:'CAPABILITY_DISABLED:'+task,dispatchState:'NOT_DISPATCHED'});
       // The server's agent access decides (read, write or off; see stdioMcpHost.mjs). Nova's mcp-call
       // runs read-only tools; a tool that changes something needs its mcp-write task (mode 'write').
+      if(server==='jaco-financial-options' && !mcpHost.servers()[server]) {
+        if(tool!=='list_options'||mode!=='read'||Object.keys(args).length||!operatorTaskEnabled(mcpAuthorityRoot(mcpHost),'mcp-call')||['DENY','REVIEW'].includes(standingToolAuthority(mcpAuthorityRoot(mcpHost),'READ').status)) return res.status(403).json({success:false,error:'FINANCIAL_OPTIONS_READ_ONLY',dispatchState:'NOT_DISPATCHED'});
+        return res.json({success:true,server,tool,result:{content:[{type:'text',text:JSON.stringify(financialOptions(mcpHost.status()))}]},dispatchState:'ACKNOWLEDGED'});
+      }
       if(server==='jaco-plugin-center' && !mcpHost.servers()[server]) {
         if(tool!=='open_login' || mode!=='write') return res.status(400).json({success:false,error:'PLUGIN_LOGIN_WRITE_REQUIRED',dispatchState:'NOT_DISPATCHED'});
         const opened=await authorizedPluginLogin(args,agentOrganization,connectedRuntime.capabilities);
