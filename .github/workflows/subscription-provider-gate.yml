@@ -17,6 +17,8 @@ on:
       - 'runtime/src/server/mcp/stdioMcpHost.mjs'
       - 'runtime/src/server/mcp/httpMcpClient.mjs'
       - 'runtime/src/server/mcp/guidedMcpConnection.mjs'
+      - 'agents/lib/secret-store.mjs'
+      - 'agents/lib/vault-tools.mjs'
       - 'tests/nova/guided-mcp-connection.test.mjs'
       - 'runtime/src/server/connected/pluginLogin.mjs'
       - 'tests/nova/plugin-login.test.mjs'
@@ -39,7 +41,7 @@ on:
       - 'runtime/package*.json'
       - '.github/workflows/subscription-provider-gate.yml'
   push:
-    branches: [main, 'spec/extend-subscription-access']
+    branches: [main, 'spec/extend-subscription-access', 'spec/complete-mcp-onboarding']
     paths:
       - 'runtime/src/components/BrainLogin.tsx'
       - 'runtime/src/components/ProviderConnect.tsx'
@@ -55,6 +57,8 @@ on:
       - 'runtime/src/server/mcp/stdioMcpHost.mjs'
       - 'runtime/src/server/mcp/httpMcpClient.mjs'
       - 'runtime/src/server/mcp/guidedMcpConnection.mjs'
+      - 'agents/lib/secret-store.mjs'
+      - 'agents/lib/vault-tools.mjs'
       - 'tests/nova/guided-mcp-connection.test.mjs'
       - 'runtime/src/server/connected/pluginLogin.mjs'
       - 'tests/nova/plugin-login.test.mjs'
