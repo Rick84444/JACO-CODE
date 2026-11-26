@@ -22,3 +22,10 @@ Preview starts only on a user-controlled local host with JACO_LOCAL_SIWC=1. Cred
 - [ ] Verify API key field lifecycle and provider scoping (browser test added; unverified).
 - [ ] Verify read-only GitHub Actions projection and existing source-control integration (negative/positive tests added; no live gh session observed).
 - [ ] Observe Subscription Provider Gate results for Linux, Windows, production builds and browser tests on final SHA; retain artifacts and review before merge. No CI result had been returned for 57573781 at inspection time.
+
+## Plugin Center, finance and enterprise release criteria
+- [ ] Verify configured MCP catalog and public registry discovery against actual provider endpoints; directory-only entries remain unimplemented.
+- [ ] Verify local account-page launcher with operator opt-in, exact endpoint match, revoked permission, current capability, and safe launch on Windows/Linux. Tests added; no target-host execution observed.
+- [ ] Verify financial option projection and active mission steering preserve original objective, budget and no financial execution; sandbox is not real revenue.
+- [ ] Verify integration management dialogs and create-only configuration, scoped login permission edit, stale observation state and provider-specific logos on desktop/mobile. Controlled Chromium tests added; not yet observed.
+- [ ] Verify CI at final revision and review known security, OAuth, financial and provider entitlement limits before release. Local git access failed DNS; CI for revision 76c0dc89 was queued at inspection. No green gate observed.
