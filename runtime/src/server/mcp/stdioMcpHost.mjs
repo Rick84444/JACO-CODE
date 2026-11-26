@@ -16,8 +16,8 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 import path from 'node:path';
-import { HttpMcpClient } from './httpMcpClient.mjs';
-import { MCP_INTEGRATION_CATALOG, catalogDefinitionMatches, pluginLoginPreset } from '../../lib/mcpIntegrationCatalog.mjs';
+import { HttpMcpClient, mcpCredential } from './httpMcpClient.mjs';
+import { MCP_INTEGRATION_CATALOG, catalogDefinitionMatches, pluginLoginPreset, isGuidedCredentialRef, guidedCredentialMatches } from '../../lib/mcpIntegrationCatalog.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
 // Classify a failed MCP child without leaking its stderr, which may contain
@@ -191,6 +191,7 @@ export function loadServerConfig({ configFile, repoRoot, runtimeRoot }) {
       const url = new URL(s.url);
       if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
       if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
+      if(isGuidedCredentialRef(s.tokenEnv)&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
       servers[id] = withAccess({ name: String(s.name || id), role: String(s.role || ''), transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, allowOpenLogin: s.allowOpenLogin === true, icon: id === 'huggingface' ? 'huggingface' : undefined }, s);
       } catch { servers[id] = { name: String(s.name || id), role: '', transport: 'http', validationError: 'MCP_CONFIGURATION_INVALID' }; }
       continue;
@@ -497,7 +498,7 @@ export class StdioMcpHost {
       });
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
         credentialEnv: def.tokenEnv || undefined,
-        credentialConfigured: def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
+        credentialConfigured: def.tokenEnv ? Boolean(mcpCredential(id,def)) : null,
         allowOpenLogin: def.allowOpenLogin === true,
         catalogMatch: MCP_INTEGRATION_CATALOG.some(p=>p.id===id)?catalogDefinitionMatches(id,def):undefined,
         loginOpeningSupported: Boolean(pluginLoginPreset(id,def)),
