@@ -27,7 +27,7 @@ interface Props {
 }
 
 export function PluginLogo({id,name,icon,size=24}:{id:string;name:string;icon?:string;size?:number}){
-  const aliases:Record<string,string>={'paypal-sandbox':'paypal','stripe-sandbox':'stripe','mailchimp-docs':'mailchimp','tiktok-direct':'tiktok','openai-docs':'openai','microsoft-learn':'microsoft','cloudflare-docs':'cloudflare','cloudflare-api':'cloudflare','github-remote':'github'};
+  const aliases:Record<string,string>={'paypal-sandbox':'paypal','stripe-sandbox':'stripe','linear-oauth':'linear','mailchimp-docs':'mailchimp','tiktok-direct':'tiktok','openai-docs':'openai','microsoft-learn':'microsoft','cloudflare-docs':'cloudflare','cloudflare-api':'cloudflare','github-remote':'github'};
   const key=aliases[id]||id;
   const brand=FINANCIAL_LOGOS[key];
   if(brand?.path)return <svg role="img" aria-label={brand.title} viewBox="0 0 24 24" width={size} height={size} className="shrink-0"><path fill={brand.color} d={brand.path}/></svg>;
@@ -62,6 +62,68 @@ async function send(url: string, method: string, body?: unknown) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.success === false) throw new Error(data.error || `HTTP_${res.status}`);
   return data;
+}
+
+type OAuthStatus={state:string;configured:boolean;expiresAt:number|null;refreshAvailable:boolean;verifiedAt:string|null;proof:{teamCount:number}|null;error:string|null};
+const LINEAR_LOGIN_ROUTE='/api/aura/workbench/mcp/oauth/linear';
+function LinearOAuthPanel({onChanged,blocked}:{onChanged:(notice:string)=>void;blocked:boolean}){
+  const [status,setStatus]=useState<OAuthStatus|null>(null);
+  const [url,setUrl]=useState('');
+  const [working,setWorking]=useState(false);
+  const [error,setError]=useState('');
+  const [confirmed,setConfirmed]=useState(false);
+  const changed=useRef(onChanged);changed.current=onChanged;
+  const lastVerified=useRef<string|null>(null);
+  const active=useRef(true);
+  useEffect(()=>{
+    active.current=true;
+    let fetching=false;
+    const poll=async()=>{
+      if(fetching)return;fetching=true;
+      try{
+        const data=await send(LINEAR_LOGIN_ROUTE,'GET');
+        if(!active.current)return;
+        setStatus(data);
+        if(data.state!=='WAITING_FOR_CONSENT')setUrl('');
+        if(data.verifiedAt&&data.verifiedAt!==lastVerified.current){lastVerified.current=data.verifiedAt;changed.current('Linear OAuth: account read verified');}
+      }catch{if(active.current)setError('Local runtime status unavailable. OAuth requires the JACO host computer.');}
+      finally{fetching=false;}
+    };
+    void poll();const timer=window.setInterval(()=>void poll(),2000);
+    return()=>{active.current=false;window.clearInterval(timer);};
+  },[]);
+  const pending=['PREPARING','WAITING_FOR_CONSENT','VERIFYING'].includes(status?.state||'');
+  async function action(kind:'start'|'cancel'|'disconnect'){
+    if(working||blocked&&kind!=='cancel')return;
+    setWorking(true);setError('');setUrl('');
+    try{
+      const data=await send(LINEAR_LOGIN_ROUTE+'/'+kind,'POST',{});
+      if(!active.current)return;
+      if(kind==='start'){
+        const target=new URL(data.url);
+        if(target.origin!=='https://mcp.linear.app'||target.pathname!=='/authorize'||target.username||target.password||target.hash)throw Error('MCP_OAUTH_ENDPOINT_INVALID');
+        setUrl(target.href);
+        setStatus(prev=>({configured:prev?.configured||false,expiresAt:prev?.expiresAt||null,refreshAvailable:prev?.refreshAvailable||false,verifiedAt:prev?.verifiedAt||null,proof:prev?.proof||null,error:null,state:data.state}));
+      }else{
+        setStatus(data);setConfirmed(false);
+        if(kind==='disconnect')changed.current('Linear OAuth: local connection removed');
+      }
+    }catch(e:any){if(active.current)setError(String(e?.message||'MCP_OAUTH_FAILED'));}
+    finally{if(active.current)setWorking(false);}
+  }
+  return <section aria-label="Linear browser OAuth" className="space-y-3 rounded-lg border border-sky-900/70 bg-[#182431] p-3 text-xs">
+    <h4 className="font-semibold text-sky-100">Connect using Linear sign-in</h4>
+    <p>Read-only access. Sign in on the JACO host computer; no API key or password is entered into JACO. The browser asks you to authorize the read scope.</p>
+    {status&&<p role="status">{status.state.replaceAll('_',' ')}{status.verifiedAt?' · account read verified':''}{status.proof?' · '+status.proof.teamCount+' visible teams':''}</p>}
+    {status?.expiresAt&&<p>Token expiry: {new Date(status.expiresAt).toLocaleString()} · {status.refreshAvailable?'Refresh token available':'Sign-in required on expiry'}</p>}
+    {status?.configured&&!pending&&<label className="flex items-start gap-2"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>Pause related missions and confirm that reconnecting may select a different account.</label>}
+    {!pending&&<button type="button" disabled={blocked||working||!status||status.configured&&!confirmed} onClick={()=>void action('start')} className="rounded bg-[#314a66] px-4 py-2 font-semibold disabled:opacity-40">{working?'Preparing…':status?.configured?'Reconnect with Linear':'Connect with Linear'}</button>}
+    {url&&<a href={url} target="_blank" rel="noopener noreferrer" className="block rounded border border-neutral-600 px-3 py-2 text-sky-100">Open Linear authorization</a>}
+    {pending&&<button type="button" disabled={working} onClick={()=>void action('cancel')} className="rounded border border-neutral-600 px-3 py-2">Cancel sign-in</button>}
+    {status?.configured&&!pending&&<button type="button" disabled={blocked||working||!confirmed} onClick={()=>void action('disconnect')} className="rounded border border-neutral-600 px-3 py-2">Disconnect locally</button>}
+    {error||status?.error?<p role="alert" className="text-amber-300">{error||status?.error}</p>:null}
+    <p className="text-neutral-400">Account verification is not Aura execution verification. Local disconnect does not prove remote token revocation.</p>
+  </section>;
 }
 
 export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, onStart, onSelectTool, onChanged, observedAt, observationFailed=false }: Props) {
@@ -231,7 +293,8 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
             <div className="flex justify-between gap-3"><dt className="text-neutral-400">Discovered / allowed read tools</dt><dd>{evidence.toolsDiscovered??'—'} / {evidence.allowedReadTools??'—'}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-400">Last recorded tool call</dt><dd className="text-right">{evidence.lastCall?evidence.lastCall.outcome+' · '+new Date(evidence.lastCall.at).toLocaleString():'Not observed'}</dd></div>
           </dl>
-          {preset&&!guided&&<div className="space-y-2 text-xs"><h4 className="font-semibold">Authentication</h4><p className="text-neutral-400">{preset.auth}</p><p className="break-all text-neutral-400">{preset.target}</p>{preset.tokenEnv&&<p className="text-neutral-400">Credential reference: <code>{preset.tokenEnv}</code></p>}</div>}
+          {preset&&!guided&&selectedPlugin!=='linear-oauth'&&<div className="space-y-2 text-xs"><h4 className="font-semibold">Authentication</h4><p className="text-neutral-400">{preset.auth}</p><p className="break-all text-neutral-400">{preset.target}</p>{preset.tokenEnv&&<p className="text-neutral-400">Credential reference: <code>{preset.tokenEnv}</code></p>}</div>}
+          {selectedPlugin==='linear-oauth'&&<LinearOAuthPanel onChanged={onChanged} blocked={!fresh||current?.catalogMatch===false||!!current&&current.agentAccess!=='read'}/>}
           {guided&&<section aria-label="Guided account connection" className="space-y-3 rounded-lg border border-sky-900/70 bg-[#182431] p-3 text-xs">
             <h4 className="font-semibold text-sky-100">{current?'Verify account connection':'Connect your account'}</h4>
             <p className="text-neutral-300">{current?'Test the existing credential without replacing your configuration.':'Use a restricted provider token or a credential already saved on this device. JACO tests the actual account before saving a connection.'}</p>
@@ -257,7 +320,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
             {(current.loginOpeningSupported||current.allowOpenLogin)&&<label className="flex gap-2 items-start"><input type="checkbox" checked={current.allowOpenLogin===true} disabled={working!==null||(!current.allowOpenLogin&&!current.loginOpeningSupported)} onChange={e=>void updateLoginAccess(e.target.checked)}/><span>Allow Aura to open the approved account page. No credential submission or consent.</span></label>}
             <button type="button" disabled={busy!==null||working!==null} onClick={()=>onStart(current.id)} className="rounded border border-neutral-600 px-3 py-2 disabled:opacity-40">Discover tools</button>
           </div>}
-          {!current&&fresh&&preset&&!guided&&<button type="button" disabled={working!==null} onClick={()=>{setDraft(mcpCatalogDraft(preset.id));modal.current?.close();setAdding(true);}} className="rounded bg-[#314a66] px-4 py-2 text-xs font-medium">Configure connection</button>}
+          {!current&&fresh&&preset&&!guided&&selectedPlugin!=='linear-oauth'&&<button type="button" disabled={working!==null} onClick={()=>{setDraft(mcpCatalogDraft(preset.id));modal.current?.close();setAdding(true);}} className="rounded bg-[#314a66] px-4 py-2 text-xs font-medium">Configure connection</button>}
           {formError&&<p role="alert" className="text-xs text-amber-300">{formError}</p>}
           <details className="border-t border-neutral-700 pt-3 text-xs text-neutral-400"><summary>Technical documentation</summary><a href={selected.docs} target="_blank" rel="noopener noreferrer" className="text-sky-300 underline">Provider documentation</a></details><div className="flex justify-end"><button type="button" onClick={()=>modal.current?.close()} className="text-xs text-neutral-300">Close</button></div>
           <p className="text-[10px] text-neutral-400">Tool discovery or a transport acknowledgement does not verify a business outcome.</p>
