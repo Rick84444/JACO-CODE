@@ -1,3 +1,4 @@
+import { FinancialOptionsPanel, type FinancialOptions } from './FinancialOptionsPanel';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Activity, GitBranch, Network, RefreshCw, ShieldCheck, Wrench } from 'lucide-react';
 
@@ -7,7 +8,7 @@ interface Plan {identity:string;numericId:number;objective:string;status:string;
 interface GameboardEntry {revision:number;actorId:string;actorNumericId:number;kind:string;statement:string;target:string|null;evidenceStatus:string;metrics:{confidence:number;informationGain:number;goalImpact:number}|null}
 interface Mission {identity:string;status:string;goal:string;phase:string|null;source:string;updatedAt:string|null;actionCount:number;verifiedActions:number;lastError:string|null;evidenceStatus:string;reviewAvailable:boolean}
 interface ActivityEntry {id:string;numericId:number;type:string;at:string|null;missionId:string|null;taskType:string|null;outcome:'VERIFIED'|'FAILED'|'BLOCKED'|'OBSERVED';error:string|null;evidenceRef:string}
-interface Position {exchange?:{revision:number;entries:GameboardEntry[]};schema:string;observedAt:string;graphSource:string;graphError:string|null;agents:Array<{identity:string;numericId:number;status:string}>;tools:Tool[];plans:Plan[];missions:Mission[];operatorGoal:{statement:string;status:string;source:string}|null;activity:ActivityEntry[];next:{code:string;missionId:string|null;text:string}}
+interface Position {financialOptions?:FinancialOptions;exchange?:{revision:number;entries:GameboardEntry[]};schema:string;observedAt:string;graphSource:string;graphError:string|null;agents:Array<{identity:string;numericId:number;status:string}>;tools:Tool[];plans:Plan[];missions:Mission[];operatorGoal:{statement:string;status:string;source:string}|null;activity:ActivityEntry[];next:{code:string;missionId:string|null;text:string}}
 interface ScenarioResult {status:string;executed:boolean;verified:boolean;result:{terminalProbability:number;score:number;order:string[]}}
 const intId=(value:number)=>String(value).padStart(15,'0');
 const probability=(v:number|undefined)=>Number.isFinite(v)?(Number(v)*100).toFixed(1)+' %':'Unknown';
@@ -95,6 +96,7 @@ export function CognitiveGameboard() {
         </article>)}
       </div>:<p data-testid="gameboard-no-mission" className="text-xs text-amber-300">No durable mission observed. Goal registration alone does not prove execution.</p>}
     </section>
+    <FinancialOptionsPanel options={error?null:position?.financialOptions}/>
     <section data-testid="gameboard-durable-evidence" className="rounded-lg border border-neutral-700 bg-[#292a2c] p-3 space-y-2">
       <h3 className="text-xs font-semibold flex gap-2 items-center"><Activity size={15}/>Durable execution timeline</h3>
       <p className="text-xs text-neutral-300">Events from the Mission Bus. Only verified action receipts are marked VERIFIED. Registration and planning are observations.</p>
