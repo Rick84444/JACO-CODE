@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import { credential } from '../../../../agents/lib/secret-store.mjs';
 import { withLocalOllamaContext } from '../../../../agents/lib/ollama-native.mjs';
 import { CATALOG, catalogProvider } from './providerCatalog.mjs';
+import { BRAINS, brainStatus, complete as cliComplete } from './cliBrains.mjs';
 
 const sha = value => crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 const trimSlash = value => String(value || '').replace(/\/+$/, '');
@@ -23,9 +24,11 @@ function providerCallTimeoutMs(p) {
 }
 
 export class ProviderRegistry {
-  constructor(workspaceRoot, env = process.env) {
+  // `cli` is for tests only: { spawnImpl, home } replace the real vendor CLIs.
+  constructor(workspaceRoot, env = process.env, { cli = {} } = {}) {
     this.workspaceRoot = workspaceRoot;
     this.env = env;
+    this.cli = cli;
     this.stateDir = path.join(workspaceRoot, '.jaco', 'runtime');
     this.file = path.join(this.stateDir, 'providers.json');
     fs.mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
@@ -92,7 +95,27 @@ export class ProviderRegistry {
   }
 
   list() {
-    return [...this.providers.values()].map(p => ({ ...p, credentialConfigured: Boolean(this.key(p)) }));
+    // A CLI-login provider holds no credential in JACO: the vendor CLI owns it, so it never "needs a key".
+    return [...this.providers.values()].map(p => ({ ...p, credentialConfigured: p.kind === 'cli-login' ? true : Boolean(this.key(p)) }));
+  }
+
+  // A vendor CLI the operator has signed in (cliBrains.mjs) becomes a provider in this same registry.
+  registerCliBrain(brainId) {
+    const b = BRAINS[brainId]; if (!b) throw new Error('UNKNOWN_BRAIN');
+    const provider = { id: b.providerId, kind: 'cli-login', baseUrl: `cli://${b.bin}`, apiKeyEnv: null, defaultModel: b.defaultModel, label: b.label, createdAt: new Date().toISOString() };
+    this.providers.set(provider.id, provider);
+    this.probeCache.delete(provider.id);
+    this.save();
+    return { ...provider, credentialConfigured: true };
+  }
+
+  async #probeCli(p) {
+    const started = Date.now();
+    const b = Object.values(BRAINS).find(x => x.providerId === p.id);
+    const s = b ? await brainStatus(b.id, { env: this.env, ...this.cli }) : { loggedIn: false };
+    return { providerId: p.id, ok: Boolean(s.loggedIn), status: s.loggedIn ? 200 : 401, latencyMs: Date.now() - started,
+      responseHash: sha({ id: p.id, loggedIn: Boolean(s.loggedIn) }), observedAt: new Date(started).toISOString(),
+      models: s.loggedIn ? [p.defaultModel || 'default'] : [], ...(s.loggedIn ? {} : { error: 'CLI_NOT_SIGNED_IN' }) };
   }
 
   register(input) {
@@ -132,6 +155,7 @@ export class ProviderRegistry {
     const id = String(providerId);
     const p = this.providers.get(id);
     if (!p) throw new Error('PROVIDER_NOT_FOUND');
+    if (p.kind === 'cli-login') return this.#probeCli(p);
     const fingerprint = [p.baseUrl, p.defaultModel, p.apiKeyEnv || ''].join('\u0000');
     const maxAge = Math.max(0, Math.min(300_000, Number(maxAgeMs) || 0));
     const cached = this.probeCache.get(id);
@@ -197,7 +221,7 @@ export class ProviderRegistry {
       const local = /^(localhost|127\.|\[?::1)/.test(new URL(p.baseUrl).hostname);
       if (p.apiKeyEnv && !p.credentialConfigured && !local) return { id: p.id, active: false, state: 'NO_KEY', baseUrl: p.baseUrl, defaultModel: p.defaultModel, models: 0 };
       const r = await this.probe(p.id, { maxAgeMs });
-      const state = r.ok ? 'ACTIVE' : r.status === 401 || r.status === 403 ? 'KEY_REJECTED' : 'UNREACHABLE';
+      const state = r.ok ? 'ACTIVE' : p.kind === 'cli-login' ? 'NO_KEY' : r.status === 401 || r.status === 403 ? 'KEY_REJECTED' : 'UNREACHABLE';
       return { id: p.id, active: r.ok, state, baseUrl: p.baseUrl, defaultModel: p.defaultModel, models: r.models?.length || 0, modelIds: r.models || [], observedAt: r.observedAt || new Date().toISOString(), ms: r.latencyMs };
     }));
   }
@@ -216,6 +240,11 @@ export class ProviderRegistry {
     const selectedModel = String(model || p.defaultModel || '').trim();
     if (!selectedModel) throw new Error('PROVIDER_MODEL_REQUIRED');
     if (!Array.isArray(messages) || messages.length === 0) throw new Error('MESSAGES_REQUIRED');
+    if (p.kind === 'cli-login') {
+      // The vendor CLI has no JSON mode; ask for it in words and let the caller's own parser decide.
+      const asked = responseFormat ? [...messages, { role: 'user', content: 'Reply with a single valid JSON value and nothing else.' }] : messages;
+      return cliComplete(p.id, { messages: asked, model: model || '', env: this.env, ...this.cli });
+    }
     // Anthropic's OpenAI-compatibility layer rejects temperature values below 1 on current Claude
     // families. Omitting temperature lets the provider use its valid default while keeping the generic
     // OpenAI-compatible path for every other provider.

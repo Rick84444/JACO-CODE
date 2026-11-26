@@ -51,6 +51,7 @@ import { validateOperatorConfirmation } from './src/lib/operatorApproval.mjs';
 import { cognitiveActivationPreview } from './src/lib/auraCognitiveActivation.mjs';
 import { liveMissionView } from './src/server/connected/liveMission.mjs';
 import { discoverProvider, identifyKey } from './src/server/connected/providerDiscovery.mjs';
+import { allBrainStatus, brainStatus, startLogin as startBrainLogin, BRAINS as CLI_BRAINS } from './src/server/connected/cliBrains.mjs';
 import { CATALOG as PROVIDER_CATALOG, catalogById, catalogProvider } from './src/server/connected/providerCatalog.mjs';
 import { activationReport } from '../agents/lib/activate.mjs';
 import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret, validateSecretName } from '../agents/lib/secret-store.mjs';
@@ -195,6 +196,15 @@ import {
 } from "./src/server/forge/jacoForge.js";
 import { createA2ARouter } from './src/server/a2a/router.js';
 import { createAuraSourceInspector } from './src/server/connected/auraSourceInspector.mjs';
+
+// Sign-in state of the vendor CLIs, observed by spawning them; cached so Aura's snapshot does not spawn on every read.
+let brainCache: { at: number; list: any[] } | null = null;
+const cachedBrainStatus = async (): Promise<any[]> => {
+  if (brainCache && Date.now() - brainCache.at < 30_000) return brainCache.list;
+  const list = await allBrainStatus();
+  brainCache = { at: Date.now(), list };
+  return list;
+};
 
 // Phone-approval config: notifications go out via ntfy.sh (no account/infra needed).
 // NTFY_TOPIC should be a hard-to-guess string only you know (ntfy topics are public by name).
@@ -365,8 +375,11 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         providers: connectedRuntime.providers.list().map((p: any) => {
           let local = false;
           try { local = ['127.0.0.1','localhost','[::1]'].includes(new URL(p.baseUrl).hostname); } catch {}
-          return { id: p.id, model: p.defaultModel, local, credentialRequired: Boolean(p.apiKeyEnv) && !local, credentialConfigured: p.credentialConfigured };
+          return { id: p.id, kind: p.kind, model: p.defaultModel, local, credentialRequired: Boolean(p.apiKeyEnv) && !local, credentialConfigured: p.credentialConfigured };
         }),
+        // Claude, ChatGPT (Codex) and Gemini through the operator's own subscription: the vendor CLI holds the
+        // sign-in, the operator signs in from the GUI. `signedIn` is observed from the CLI, not assumed.
+        subscriptionBrains: (await cachedBrainStatus()).map((b: any) => ({ id: b.id, provider: b.providerId, label: b.label, plan: b.plan, installed: b.installed, signedIn: b.loggedIn, registered: connectedRuntime.providers.providers.has(b.providerId) })),
         workspaceRoot: path.basename(projectRoot.get()),
         operatorMandate: organizationMandate(organization, 'aura'),
       }, null, 1);
@@ -4029,6 +4042,31 @@ const notifyPhone = async (action) => {
       res.status(provider ? 201 : 200).json({ success: true, result: rest, provider });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error?.message || String(error) });
+    }
+  });
+
+  // Subscription brains: the operator's Claude, ChatGPT (Codex) or Gemini sign-in, held by the vendor's own CLI.
+  // JACO only asks the CLI whether it is signed in, starts its web sign-in, and registers it as a provider.
+  app.get('/api/aura/workbench/brains', requireLocalUi, async (_req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      const list = await allBrainStatus();
+      for (const b of list) if (b.loggedIn && !connectedRuntime.providers.providers.has(b.providerId)) connectedRuntime.providers.registerCliBrain(b.id);
+      brainCache = { at: Date.now(), list };
+      res.json({ success: true, brains: list.map((b: any) => ({ ...b, registered: connectedRuntime.providers.providers.has(b.providerId) })) });
+    } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
+  });
+
+  app.post('/api/aura/workbench/brains/:id/login', requireLocalUi, async (req, res) => {
+    try {
+      const id = String(req.params.id);
+      if (!CLI_BRAINS[id]) return res.status(404).json({ success: false, error: 'UNKNOWN_BRAIN' });
+      const login = await startBrainLogin(id);
+      seerLiveWorkstream.record({ actor: 'Aura Workbench', type: 'brain.login.started', message: `Sign-in started for ${CLI_BRAINS[id].label} (${login.state})`, verified: false, receipt: { brain: id, state: login.state } });
+      brainCache = null;
+      res.json({ success: true, login });
+    } catch (error: any) {
+      res.status(error?.message === 'CLI_NOT_INSTALLED' ? 424 : 400).json({ success: false, error: error?.message || String(error) });
     }
   });
 

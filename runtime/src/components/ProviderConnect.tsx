@@ -2,6 +2,7 @@ import { readAuraResponse } from '../lib/auraApi.mjs';
 import { useOptionalUiLanguage } from '../i18n/UiLanguage';
 import React, { useEffect, useState } from 'react';
 import { Loader2, Check, KeyRound, X, RefreshCw } from 'lucide-react';
+import { BrainLogin } from './BrainLogin';
 
 // Connect a model provider from a URL alone (POST /api/aura/workbench/providers/connect): JACO
 // recognises or probes the service, lists its models, picks a default and registers it.
@@ -129,6 +130,7 @@ export const ProviderConnect: React.FC<{ onConnected: () => void | Promise<void>
 
   return (
     <div className="space-y-2">
+    <BrainLogin onChanged={onConnected} />
     <KeyAndActive onChanged={onConnected} />
     <div className="border border-[#505153] bg-[#292a2c] rounded p-2 space-y-2">
       <div className="text-xs font-semibold">{tr('Anslut modell', 'Connect model')}</div>

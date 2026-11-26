@@ -121,6 +121,7 @@ export async function startLogin(id, { env = process.env, spawnImpl = nodeSpawn 
   const entry = { url: null };
   logins.set(id, entry);
   const stop = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, LOGIN_TIMEOUT_MS);
+  stop.unref?.(); // a pending sign-in must never keep JACO (or a test run) alive
   const release = () => { clearTimeout(stop); if (logins.get(id) === entry) logins.delete(id); };
   let seen = '';
   const sniff = chunk => { if (entry.url || seen.length > 64_000) return; seen += chunk; entry.url = seen.match(/https:\/\/[^\s"'<>]+/)?.[0] || null; };
