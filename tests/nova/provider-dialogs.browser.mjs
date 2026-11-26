@@ -124,6 +124,18 @@ try{
     await github.getByText('Account read verified',{exact:true}).waitFor();
     assert.deepEqual(mutations.at(-1),{url:'/api/aura/workbench/mcp/connect/github-remote',body:{token:'fixture-new-only',allowOpenLogin:false}});
     assert.equal(await github.getByLabel('Integration API token').inputValue(),'');
+    await page.keyboard.press('Escape');
+    await github.waitFor({state:'hidden'});
+    await page.getByRole('button',{name:'Review Stripe Sandbox integration'}).click();
+    const stripe=page.getByRole('dialog',{name:'Stripe Sandbox'});
+    await stripe.getByText(/Sandbox only/).waitFor();
+    assert.equal(await stripe.getByRole('link',{name:'Open Stripe Dashboard · API keys'}).getAttribute('href'),'https://dashboard.stripe.com/apikeys');
+    assert.equal(await stripe.getByRole('button',{name:'Configure connection'}).count(),0);
+    await stripe.getByLabel('Integration API token').fill('rk_'+'test_fixture');
+    await stripe.getByRole('button',{name:'Connect and verify'}).click();
+    await stripe.getByText('Account read verified',{exact:true}).waitFor();
+    assert.deepEqual(mutations.at(-1),{url:'/api/aura/workbench/mcp/connect/stripe-sandbox',body:{token:'rk_'+'test_fixture',allowOpenLogin:false}});
+    assert.equal(await stripe.getByLabel('Integration API token').inputValue(),'');
     assert.deepEqual(errors,[]);
     await page.close();
     mutations.length=0;
