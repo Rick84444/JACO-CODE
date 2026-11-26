@@ -8,7 +8,7 @@ import {HttpMcpClient} from './httpMcpClient.mjs';
 const safe=e=>/^MCP_[A-Z0-9_]+$/.test(e?.message||'')?e.message:'MCP_OAUTH_FAILED';
 const id=provider.id,ref=provider.credentialRef;
 const definition=()=>({name:'Linear OAuth',transport:'http',url:provider.resource,tokenEnv:ref,icon:'mcp',agentAccess:'read',deny:[],allowOpenLogin:false});
-const allowedDefinition=def=>!def||guidedCredentialMatches(id,def)&&def.agentAccess==='read';
+const allowedDefinition=def=>!def||guidedCredentialMatches(id,def)&&['read','off'].includes(def.agentAccess);
 
 async function verifyRead(record,fetchImpl){
   const c=new HttpMcpClient(id,definition(),{fetchImpl,oauthAccess:async()=>record.accessToken});
@@ -27,7 +27,6 @@ async function verifyRead(record,fetchImpl){
   }finally{c.stop();}
 }
 
-/** @param {{host:any,store?:any,fetchImpl?:typeof fetch,onChanged?:()=>void,now?:()=>number}} options */
 export class McpOAuthSession {
   #pending=null;
   #state='IDLE';
@@ -35,6 +34,7 @@ export class McpOAuthSession {
   #verifiedAt=null;
   #proof=null;
   #generation=0;
+  /** @param {{host:any,store?:any,fetchImpl?:typeof fetch,onChanged?:()=>void,now?:()=>number}} options */
   constructor({host,store=new SecretStore(),fetchImpl=fetch,onChanged=()=>{},now=Date.now}){
     Object.assign(this,{host,store,fetchImpl,onChanged,now});
   }
@@ -42,7 +42,7 @@ export class McpOAuthSession {
     const credential=linearOAuthStatus({store:this.store,now:this.now});
     const config=this.host.servers()[id];
     const configured=Boolean(config&&allowedDefinition(config)&&credential.configured);
-    return {id,state:this.#pending?this.#state:!configured&&this.#state==='READ_VERIFIED'?'AUTH_REQUIRED':this.#state==='IDLE'&&configured?'CONFIGURED':this.#state,configured,
+    return {id,state:this.#pending?this.#state:!configured&&['READ_VERIFIED','CONFIGURED_RECONNECT_REQUIRED'].includes(this.#state)?'AUTH_REQUIRED':this.#state==='IDLE'&&configured?'CONFIGURED':this.#state,configured,
       expiresAt:credential.expiresAt,refreshAvailable:credential.refreshAvailable,
       verifiedAt:configured?this.#verifiedAt:null,proof:configured?this.#proof:null,error:this.#error,
       scope:'read',agentExecutionVerified:false};
@@ -50,7 +50,7 @@ export class McpOAuthSession {
   async start(){
     if(this.#pending)throw Error('MCP_OAUTH_PENDING');
     const before=this.host.servers()[id];
-    if(!allowedDefinition(before))throw Error('MCP_OAUTH_EXISTING_CONFIGURATION');
+    if(!allowedDefinition(before)||before?.agentAccess==='off')throw Error('MCP_OAUTH_EXISTING_CONFIGURATION');
     const beforeKey=JSON.stringify(before||null),prior=this.store.get(ref);
     const generation=++this.#generation;
     let attempt=null,busy=false;
@@ -81,6 +81,8 @@ export class McpOAuthSession {
         this.#verifiedAt=new Date(this.now()).toISOString();
         this.#proof=proof;
         this.#state='READ_VERIFIED';this.#error=null;
+        try{await this.host.start(id);}catch{if(valid()){this.#state='CONFIGURED_RECONNECT_REQUIRED';this.#error='MCP_OAUTH_RECONNECT_REQUIRED';}}
+        if(!valid())throw Error('MCP_OAUTH_CANCELLED');
         try{this.onChanged();}catch{}
         res.writeHead(200);res.end('Linear account read verified. Return to JACO.');
       }catch(error){
@@ -90,7 +92,7 @@ export class McpOAuthSession {
     });
     const timer=setTimeout(()=>{if(valid()){++this.#generation;this.#state='ERROR';this.#error='MCP_OAUTH_ATTEMPT_EXPIRED';}close();},300000);
     timer.unref();
-    this.#pending={server};this.#state='PREPARING';this.#error=null;
+    this.#pending={server,timer};this.#state='PREPARING';this.#error=null;this.#proof=null;this.#verifiedAt=null;
     try{
       await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',()=>{server.removeListener('error',reject);resolve();});});
       if(!valid())throw Error('MCP_OAUTH_CANCELLED');
@@ -106,7 +108,7 @@ export class McpOAuthSession {
   cancel(){
     ++this.#generation;
     const pending=this.#pending;
-    if(pending){pending.server.close();this.#pending=null;}
+    if(pending){clearTimeout(pending.timer);pending.server.close();this.#pending=null;}
     this.#state='IDLE';this.#error=null;
     return this.status();
   }
