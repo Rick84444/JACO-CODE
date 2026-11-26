@@ -95,7 +95,7 @@ try{
     await detail.waitFor({state:'hidden'});
     assert.equal(await render.evaluate(el=>document.activeElement===el),true);
     await render.click();
-    await detail.getByText('Replace expired token',{exact:true}).click();
+    await detail.getByRole('button',{name:'Replace expired token',exact:true}).click();
     await detail.getByLabel('Replacement API token').fill('fixture-replacement-only');
     const replace=detail.getByRole('button',{name:'Verify and replace token'});
     assert.equal(await replace.isDisabled(),true);
@@ -103,6 +103,8 @@ try{
     await replace.click();
     await detail.getByText('Account read verified',{exact:true}).waitFor();
     assert.deepEqual(mutations.at(-1),{url:'/api/aura/workbench/mcp/connect/render',body:{token:'fixture-replacement-only',replaceCredential:true}});
+    assert.equal(await detail.getByLabel('Replacement API token').count(),0,'successful replacement closes the input');
+    await detail.getByRole('button',{name:'Replace expired token',exact:true}).click();
     assert.equal(await detail.getByLabel('Replacement API token').inputValue(),'');
     await page.keyboard.press('Escape');
     await detail.waitFor({state:'hidden'});
