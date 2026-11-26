@@ -17,7 +17,7 @@ test('official catalog presets are valid explicit operator configurations with r
     assert.equal(config.tokenEnv,draft.tokenEnv||null);
     assert.notEqual(mcpCatalogDraft(item.id),draft);
   }
-  assert.equal(ids.size,15);
+  assert.equal(ids.size,16);
   assert.throws(()=>mcpCatalogDraft('arbitrary'),/MCP_CATALOG_UNKNOWN/);
 });
 test('configuration, authentication, stale state and discovered tools are distinct',()=>{
