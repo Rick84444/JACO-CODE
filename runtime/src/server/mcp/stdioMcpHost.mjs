@@ -191,6 +191,7 @@ export function loadServerConfig({ configFile, repoRoot, runtimeRoot }) {
     if (s.transport === 'http') {
       try {
       const url = new URL(s.url);
+      if(id===LINEAR_OAUTH.id&&s.agentAccess==='write')throw Error('MCP_OAUTH_READ_ONLY');
       if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
       if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
       if((id==='stripe-sandbox'||id===LINEAR_OAUTH.id||isGuidedCredentialRef(s.tokenEnv))&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
@@ -237,6 +238,7 @@ export function validateServerEntry(id, s = {}) {
   };
   if (s.transport === 'http') {
     const url = new URL(String(s.url || ''));
+    if(id===LINEAR_OAUTH.id&&s.agentAccess==='write')throw Error('MCP_OAUTH_READ_ONLY');
     if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
     if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
     if((id==='stripe-sandbox'||id===LINEAR_OAUTH.id||isGuidedCredentialRef(s.tokenEnv))&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
@@ -458,6 +460,7 @@ export class StdioMcpHost {
     const current=this.servers()[id];
     if (!current) throw Error(`MCP_SERVER_UNKNOWN:${id}`);
     if (agentAccess !== undefined && !AGENT_ACCESS.includes(agentAccess)) throw Error('MCP_AGENT_ACCESS_INVALID');
+    if(id===LINEAR_OAUTH.id&&agentAccess==='write')throw Error('MCP_OAUTH_READ_ONLY');
     if(allowOpenLogin!==undefined&&typeof allowOpenLogin!=='boolean')throw Error('MCP_LOGIN_OPT_IN_INVALID');
     if(allowOpenLogin===true&&!pluginLoginPreset(id,{...current,agentAccess:agentAccess??current.agentAccess}))throw Error('MCP_LOGIN_OPT_IN_NOT_SUPPORTED');
     const config = this.readConfig();
