@@ -7,9 +7,26 @@ import { fileURLToPath } from 'node:url';
 import { operatorStageAssets } from '../../runtime/operator-stage/assets.mjs';
 
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../runtime');
-const assets = operatorStageAssets(runtimeRoot);
-// CI installs the repository root, not the runtime's own packages; three.js is only there after `npm install` in runtime/.
-const threeInstalled = fs.existsSync(path.join(runtimeRoot, 'node_modules/three/build/three.module.js'));
+// CI installs the repository root, not the runtime's own packages, so runtime/node_modules/three is absent there
+// (this failed the Desktop AgentOS Gate twice). The tests therefore run against a temporary runtime root holding
+// copies of the REAL stage files and a small stand-in for three.js; nothing here depends on an install.
+import os from 'node:os';
+const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-stage-src-'));
+process.on('exit', () => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
+for (const rel of ['operator-stage/index.html', 'operator-stage/stage.css', 'operator-stage/stage.js', 'operator-stage/setup.js', 'operator-stage/setupSteps.mjs',
+  'src/lib/auraRigLightform.mjs', 'src/lib/workspaceActions.mjs', 'src/lib/speechParts.mjs']) {
+  fs.mkdirSync(path.dirname(path.join(fixtureRoot, rel)), { recursive: true });
+  fs.copyFileSync(path.join(runtimeRoot, rel), path.join(fixtureRoot, rel));
+}
+for (const [rel, text] of Object.entries({
+  'node_modules/three/build/three.module.js': "export * from './three.core.js';",
+  'node_modules/three/build/three.core.js': 'export const REVISION = "stand-in";',
+  'node_modules/three/examples/jsm/loaders/GLTFLoader.js': "import { Loader } from 'three';\nimport { clone } from '../utils/SkeletonUtils.js';\nexport class GLTFLoader extends Loader {}",
+  'node_modules/three/examples/jsm/utils/SkeletonUtils.js': 'export const clone = x => x;',
+  'node_modules/three/examples/jsm/utils/BufferGeometryUtils.js': 'export const toTrianglesDrawMode = x => x;',
+})) { fs.mkdirSync(path.dirname(path.join(fixtureRoot, rel)), { recursive: true }); fs.writeFileSync(path.join(fixtureRoot, rel), text); }
+const assets = operatorStageAssets(fixtureRoot);
+const threeInstalled = true;
 
 test('the stage page and the modules it shares with the IDE resolve to real files', () => {
   assert.equal(assets.available(), true);
@@ -17,6 +34,8 @@ test('the stage page and the modules it shares with the IDE resolve to real file
     assert.ok(assets.resolve(p), p);
   }
   assert.match(assets.resolve('/vendor/aura-rig.mjs').file, /src[\\/]lib[\\/]auraRigLightform\.mjs$/);
+  assert.equal(assets.kind, 'source');
+  for (const p of ['/setup.js', '/setup-steps.mjs']) assert.ok(assets.resolve(p), p);
 });
 
 test('nothing outside three.js\'s own build and addon folders can be reached', () => {
