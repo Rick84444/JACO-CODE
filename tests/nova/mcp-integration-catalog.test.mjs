@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {MCP_INTEGRATION_CATALOG,mcpCatalogDraft,mcpConnectionState,pluginLoginPreset,marketplaceEntries,pluginCategory,financialOptions} from '../../runtime/src/lib/mcpIntegrationCatalog.mjs';
+import {MCP_INTEGRATION_CATALOG,mcpCatalogDraft,mcpConnectionState,pluginLoginPreset,marketplaceEntries,pluginCategory,financialOptions,catalogDefinitionMatches,pluginEvidence,observationFresh,pluginEnvironment} from '../../runtime/src/lib/mcpIntegrationCatalog.mjs';
 import {validateServerEntry} from '../../runtime/src/server/mcp/stdioMcpHost.mjs';
 
 test('official catalog presets are valid explicit operator configurations with read-only agent defaults',()=>{
@@ -75,4 +75,26 @@ test('financial choices distinguish observed read tools from setup and never gra
   assert.equal(financialOptions([{...live,agentAccess:'off'}]).strategies.find(s=>s.id==='market-research').state,'SETUP_OR_DISCOVERY_REQUIRED');
   assert.equal(financialOptions([{...live,tools:[{readOnly:false,agentAllowed:true}]}]).strategies.find(s=>s.id==='market-research').state,'SETUP_OR_DISCOVERY_REQUIRED');
   assert.equal(financialOptions([{...live,credentialConfigured:false}]).strategies.find(s=>s.id==='market-research').state,'SETUP_OR_DISCOVERY_REQUIRED');
+});
+
+test('enterprise evidence separates catalog identity, stale observations and test environment',()=>{
+  const def={transport:'http',url:'https://mcp.render.com/mcp',tokenEnv:'RENDER_API_KEY',agentAccess:'read'};
+  assert.equal(catalogDefinitionMatches('render',def),true);
+  assert.equal(catalogDefinitionMatches('render',{...def,url:def.url+'?other=1'}),false);
+  assert.equal(catalogDefinitionMatches('render',{...def,tokenEnv:'DIFFERENT_TOKEN'}),false);
+  assert.equal(mcpConnectionState(null,false),'UNOBSERVED');
+  assert.equal(pluginEnvironment('paypal-sandbox'),'SANDBOX');
+  assert.equal(pluginEnvironment('stripe'),'ACCOUNT_SCOPE_UNVERIFIED');
+  const at='2026-11-26T13:00:00.000Z',now=Date.parse(at);
+  assert.equal(observationFresh(at,now+30000),true);
+  assert.equal(observationFresh(at,now+60000),false);
+  assert.equal(observationFresh(at,now-6000),false);
+  const provider={id:'coingecko',status:'READY',agentAccess:'read',catalogMatch:true,tools:[{readOnly:true,agentAllowed:true}],stats:{lastCall:{at,outcome:'ok',tool:'price',error:'private'}}};
+  assert.equal(pluginEvidence(provider).allowedReadTools,1);
+  assert.deepEqual(pluginEvidence(provider).lastCall,{at,outcome:'ok',tool:'price'});
+  assert.equal(pluginEvidence(provider).executionVerified,false);
+  assert.equal(pluginEvidence(provider,false).lastCall,null);
+  assert.equal(pluginEvidence({...provider,catalogMatch:false}).state,'CUSTOM_CONFIGURATION');
+  assert.equal(financialOptions([{...provider,catalogMatch:false}]).strategies.find(s=>s.id==='market-research').state,'SETUP_OR_DISCOVERY_REQUIRED');
+  assert.equal(financialOptions([provider],at).observedAt,at);
 });
