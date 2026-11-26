@@ -54,7 +54,7 @@ const ChatGPTPlanPreview: React.FC<{onStatus:(s:PlanStatus)=>void; visible:boole
       const r=await fetch(endpoint,{cache:'no-store'}).then(readAuraResponse);
       setStatus(r); onStatus(r);
       if (r.state !== 'waiting') setUrl('');
-    } catch {const failed={success:false,error:'SIWC_STATUS_UNAVAILABLE'};setStatus(failed);onStatus(failed);}
+    } catch (e:any) {const failed={success:false,error:String(e?.message||'SIWC_STATUS_UNAVAILABLE')};setStatus(failed);onStatus(failed);}
   },[onStatus]);
   useEffect(()=>{void refresh();},[refresh]);
   useEffect(()=>{if(visible)void refresh();},[visible,refresh]);
@@ -82,7 +82,7 @@ const ChatGPTPlanPreview: React.FC<{onStatus:(s:PlanStatus)=>void; visible:boole
   return <section className="rounded border border-[#505153] p-2 space-y-2 text-xs">
     <div className="font-semibold">ChatGPT — {tr('direkt prenumerationsanslutning','direct plan access')}</div>
     {!status ? <div>{tr('Kontrollerar…','Checking…')}</div> : !status.success ?
-      <div className="text-neutral-400">{tr('Lokal förhandsversion: aktiveras på egen dator med JACO_LOCAL_SIWC=1.','Local preview: enable on your own computer with JACO_LOCAL_SIWC=1.')}</div> :
+      <div className="text-neutral-400">{status.error==='SIWC_PREVIEW_DISABLED'?tr('Lokal förhandsversion: aktiveras på egen dator med JACO_LOCAL_SIWC=1.','Local preview: enable on your own computer with JACO_LOCAL_SIWC=1.'):tr('Anslutningsstatus kunde inte hämtas.','Connection status unavailable.')}</div> :
       <>
         <div className="text-neutral-400">{tr('Lokal session. Ingen automatisk modellstyrning.','Local session. No automatic model routing.')}</div>
         <div>{status.connected?tr('Behörighet mottagen','Permission granted'):status.state==='waiting'?tr('Väntar på inloggning','Waiting for sign-in'):tr('Inte ansluten','Not connected')}</div>
@@ -96,13 +96,14 @@ const ChatGPTPlanPreview: React.FC<{onStatus:(s:PlanStatus)=>void; visible:boole
         {status.verifiedAt && <div className="text-emerald-300">{tr('Modellsvar verifierat','Model response verified')}: {status.verifiedAt}</div>}
         {(status.state!=='disconnected') && <button disabled={busy} className={btn} onClick={()=>void action('disconnect')}>{tr('Koppla från lokalt','Disconnect locally')}</button>}
       </>}
-    {(error||status?.success&&status?.error) && <div className="text-red-300">{error||status.error}</div>}
+    {(error||status?.success&&status?.error) && <div className="text-red-300">{error||status?.error}</div>}
   </section>;
 };
 
 export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void>; renderApiKey?: (id:Exclude<Provider,'other'>)=>React.ReactNode; renderOther?:()=>React.ReactNode }> = ({ onChanged,renderApiKey,renderOther }) => {
   const { tr } = useOptionalUiLanguage();
   const [selected,setSelected] = useState<Provider|null>(null);
+  const [keyOpen,setKeyOpen] = useState(false);
   const [plan,setPlan] = useState<PlanStatus|null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -224,7 +225,7 @@ export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void>; rend
           const label=brandLabel(b);
           return <button key={b.id} type="button" aria-haspopup="dialog" aria-expanded={selected===b.id}
             aria-label={label+' — '+status.text} title={label+' — '+status.text}
-            onClick={()=>setSelected(b.id)}
+            onClick={()=>{setKeyOpen(false);setSelected(b.id);}}
             className="relative min-w-0 min-h-12 rounded-md border border-[#45474a] bg-[#222325] hover:bg-[#303237] hover:border-[#6e7580] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#3794ff] flex flex-col items-center justify-center gap-1 py-2">
             {b.brain?<Logo id={b.brain}/>:<Ellipsis className="w-[18px] h-[18px] text-neutral-300"/>}
             {b.id!=='other' && <span aria-hidden="true" className={'absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full '+status.color}/>}
@@ -232,7 +233,7 @@ export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void>; rend
           </button>;
         })}
       </div>
-      <dialog ref={dialog} aria-labelledby={titleId} onClose={()=>setSelected(null)}
+      <dialog ref={dialog} aria-labelledby={titleId} onClose={()=>{setKeyOpen(false);setSelected(null);}}
         onClick={e=>{if(e.target===e.currentTarget)dialog.current?.close();}}
         className="m-auto p-0 w-[calc(100%_-_1.5rem)] max-w-[440px] max-h-[85dvh] overflow-y-auto overscroll-contain rounded-xl border border-[#505763] bg-[#202225] text-neutral-100 shadow-2xl backdrop:bg-black/60">
         <div className="p-4 space-y-3">
@@ -247,9 +248,9 @@ export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void>; rend
           {/* Keep OAuth flow state mounted while the dialog is closed. It is never stored in the browser. */}
           <div hidden={selected!=='openai'}><ChatGPTPlanPreview visible={selected==='openai'} onStatus={setPlan}/></div>
           {selected && selected!=='other' && <>
-            {renderApiKey && <details className="rounded-md border border-[#45474a] p-2">
+            {renderApiKey && <details open={keyOpen} onToggle={e=>setKeyOpen(e.currentTarget.open)} className="rounded-md border border-[#45474a] p-2">
               <summary className="cursor-pointer text-xs font-medium">{tr('Anslut med API-nyckel','Connect with API key')}</summary>
-              <div className="pt-2">{renderApiKey(selected)}</div>
+              {keyOpen && <div className="pt-2">{renderApiKey(selected)}</div>}
             </details>}
             {selected==='gemini' && <a className="block text-xs text-[#66adff]" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">{tr('Öppna Google AI Studio','Open Google AI Studio')}</a>}
             <details className="rounded-md border border-[#45474a] p-2">
