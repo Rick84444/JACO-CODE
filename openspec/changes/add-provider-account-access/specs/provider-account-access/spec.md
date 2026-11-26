@@ -26,3 +26,9 @@ The runtime SHALL not expose secrets to model context, cloud relay, UI, logs or 
 #### Scenario: Remote client
 - **WHEN** the Android PWA requests provider status
 - **THEN** it SHALL receive redacted connection status only.
+
+### Requirement: Official CLI boundary
+The runtime SHALL treat external CLI agents as delegated tools, not extract their subscription credentials or impersonate their service clients.
+#### Scenario: CLI entitlement unavailable
+- **WHEN** a CLI is not installed or the selected integration lacks a supported account or permitted usage
+- **THEN** JACO SHALL expose the unavailable condition without attempting private endpoints or paid fallback.
