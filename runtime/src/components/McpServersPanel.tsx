@@ -86,8 +86,8 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
     if(selectedPlugin&&dialog&&!dialog.open)dialog.showModal();
     else if(!selectedPlugin&&dialog?.open)dialog.close();
   },[selectedPlugin]);
-  const statusLabel=(value:string)=>({AVAILABLE:'Not configured',UNOBSERVED:'Observation unavailable',CUSTOM_CONFIGURATION:'Custom configuration',TOOLS_DISCOVERED:'Tools discovered',AUTH_REQUIRED:'Authentication required',AGENT_ACCESS_OFF:'Agent access disabled',CONFIGURED:'Configured · not connected',ERROR:'Connection failed',CONNECTING:'Connecting',ADAPTER_REQUIRED:'Adapter required',OAUTH_REQUIRED:'OAuth required'}[value]||value.replaceAll('_',' '));
-  const environmentLabel=(id:string)=>({SANDBOX:'Sandbox / test',PUBLIC_DATA:'Public data',ACCOUNT_SCOPE_UNVERIFIED:'Account scope not verified'}[pluginEnvironment(id)]||'Account scope not verified');
+  const statusLabel=(value:string)=>(({AVAILABLE:'Not configured',UNOBSERVED:'Observation unavailable',CUSTOM_CONFIGURATION:'Custom configuration',TOOLS_DISCOVERED:'Tools discovered',AUTH_REQUIRED:'Authentication required',AGENT_ACCESS_OFF:'Agent access disabled',CONFIGURED:'Configured · not connected',ERROR:'Connection failed',CONNECTING:'Connecting',ADAPTER_REQUIRED:'Adapter required',OAUTH_REQUIRED:'OAuth required'} as Record<string,string>)[value]||value.replaceAll('_',' '));
+  const environmentLabel=(id:string)=>(({SANDBOX:'Sandbox / test',PUBLIC_DATA:'Public data',ACCOUNT_SCOPE_UNVERIFIED:'Account scope not verified'} as Record<string,string>)[pluginEnvironment(id)]||'Account scope not verified');
   const updateLoginAccess=async(enabled:boolean)=>{
     if(!current||!fresh||working)return;
     setWorking(current.id);setFormError(null);
@@ -136,12 +136,13 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   };
   const add = async () => {
     setFormError(null);
+    if(!fresh){setFormError('Refresh connection status before changing configuration.');return;}
     const target = draft.target.trim();
     const http = /^https:\/\//i.test(target);
     const parts = http ? [] : splitCommandLine(target);
     if (!draft.id.trim() || !target || (!http && !parts.length)) { setFormError('Enter an id and a command or https address.'); return; }
     if (http && draft.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(draft.tokenEnv.trim())) { setFormError('Enter a variable name, not a token value.'); return; }
-    if (providers.some(p=>p.id===draft.id.trim()) && !window.confirm('Replace this existing connection configuration?')) return;
+    if (providers.some(p=>p.id===draft.id.trim())) { setFormError('This ID is already configured. Manage access on its existing connection; use a different ID for a new connection.'); return; }
     const entry = http
       ? { id: draft.id.trim(), name: draft.name.trim() || draft.id.trim(), transport: 'http', url: target, tokenEnv: draft.tokenEnv.trim() || null, icon: draft.icon, agentAccess: draft.agentAccess, allowOpenLogin: draft.allowOpenLogin === true }
       : { id: draft.id.trim(), name: draft.name.trim() || draft.id.trim(), command: parts[0], args: parts.slice(1), icon: draft.icon, agentAccess: draft.agentAccess };
@@ -159,7 +160,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   return <section aria-label="MCP servers" className="pb-2">
     <div className="px-3 py-1.5 mt-2 flex items-center">
       <span className="text-[9px] uppercase tracking-wider text-neutral-500">Connected MCP and tools</span>
-      {failedCustom.length > 0 && <button onClick={() => void quarantineFailed()} disabled={working !== null} title="Disable observed failed custom connections without deleting their configuration. Built-in and healthy servers remain unchanged." className="ml-auto text-[9px] text-amber-300 border border-amber-800 rounded px-1.5 py-0.5 disabled:opacity-40">Disable failed ({failedCustom.length})</button>}
+      {failedCustom.length > 0 && <button onClick={() => void quarantineFailed()} disabled={!fresh||working !== null} title="Disable observed failed custom connections without deleting their configuration. Built-in and healthy servers remain unchanged." className="ml-auto text-[9px] text-amber-300 border border-amber-800 rounded px-1.5 py-0.5 disabled:opacity-40">Disable failed ({failedCustom.length})</button>}
       <button onClick={() => setAdding(v => !v)} className={`${failedCustom.length ? 'ml-1.5' : 'ml-auto'} text-[9px] text-neutral-200 border border-neutral-800 rounded px-1.5 py-0.5 hover:bg-neutral-900/30`}>{adding ? 'Close' : '+ Add'}</button>
     </div>
 
@@ -249,7 +250,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
       {MCP_INTEGRATION_CATALOG.some(p=>p.id===draft.id && p.target===draft.target && p.loginUrl) && <label className="flex items-start gap-2 text-xs text-neutral-300"><input type="checkbox" checked={draft.allowOpenLogin} onChange={e=>setDraft({...draft,allowOpenLogin:e.target.checked})}/>Allow Aura to open this provider's official sign-in page when authentication is needed. Does not grant access to passwords, consent or new scopes.</label>}
       <p className="text-xs text-neutral-400">Use an existing environment variable name, never paste the secret here. Remote writes require explicit server write access and an applicable signed operator mandate. Browser-based OAuth is not yet implemented in this MCP host.</p>
       {formError && <p role="status" className="text-[10px] text-amber-300 break-words">{formError}</p>}
-      <button onClick={() => void add()} disabled={working !== null} className="w-full rounded border border-neutral-700 py-1 text-[10px] text-neutral-200 disabled:opacity-40">{working === '__add' ? 'Connecting…' : 'Save and connect'}</button>
+      <button onClick={() => void add()} disabled={!fresh||working !== null} className="w-full rounded border border-neutral-700 py-1 text-[10px] text-neutral-200 disabled:opacity-40">{working === '__add' ? 'Connecting…' : 'Save and connect'}</button>
     </div>}
 
     {providers.map(p => {
@@ -257,12 +258,12 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
       const last = s?.lastCall;
       return <div key={p.id} className="border-b border-[#414244]">
         <div className="px-3 py-1.5 flex items-start gap-2">
-          <span className={`mt-0.5 ${p.status === 'READY' ? '' : 'opacity-50'}`}><PluginLogo id={p.id} name={p.name} icon={p.icon} size={18} /></span>
+          <span className={`mt-0.5 ${fresh && p.status === 'READY' ? '' : 'opacity-50'}`}><PluginLogo id={p.id} name={p.name} icon={p.icon} size={18} /></span>
           <div className="min-w-0 flex-1">
             <div className="text-[10px] text-neutral-200">{p.name}</div>
             <div className="text-[8px] text-neutral-500 truncate" title={p.endpoint}>{p.role}</div>
           </div>
-          <span className={`text-[8px] ${p.status === 'READY' ? 'text-emerald-400' : p.status === 'FAILED' ? 'text-amber-400' : 'text-neutral-500'}`}>{statusLabel(mcpConnectionState(p,fresh))}</span>
+          <span className={`text-[8px] ${fresh && p.status === 'READY' && p.catalogMatch!==false ? 'text-emerald-400' : p.status === 'FAILED' ? 'text-amber-400' : 'text-neutral-500'}`}>{statusLabel(mcpConnectionState(p,fresh))}</span>
           {managed(p) && p.status !== 'READY' && <button onClick={() => onStart(p.id)} disabled={!fresh||busy !== null} className="text-[8px] border border-violet-800 text-violet-300 rounded px-1.5 py-0.5 hover:bg-violet-950/30 disabled:opacity-40">{busy === p.id ? 'Starting…' : 'Start'}</button>}
         </div>
         {managed(p) && <div className="px-3 pb-1.5 flex items-center gap-2 text-[9px]">
