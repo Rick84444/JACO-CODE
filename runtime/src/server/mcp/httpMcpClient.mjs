@@ -40,8 +40,8 @@ export function rpcError(error) {
   return Object.assign(new Error(`MCP_RPC_ERROR:${code}${reason ? '_' + reason : ''}`), definite ? { preDispatch: true } : {});
 }
 export class HttpMcpClient {
-  constructor(id, def, { fetchImpl = fetch, env = process.env } = {}) {
-    Object.assign(this, { id, def, fetchImpl, env });
+  constructor(id, def, { fetchImpl = fetch, env = process.env, oauthAccess = null } = {}) {
+    Object.assign(this, { id, def, fetchImpl, env, oauthAccess });
     this.protocol = '2025-06-18'; this.nextId = 1; this.tools = []; this.ready = null; this.initialized = false;
     this.session = null; this.error = null; this.startedAt = null; this.generation = 0;
   }
@@ -65,7 +65,7 @@ export class HttpMcpClient {
     if (this.session) headers['Mcp-Session-Id'] = this.session;
     if (this.def.tokenEnv) {
       let token;
-      try{token=this.id===LINEAR_OAUTH.id?await linearOAuthAccess({store:new SecretStore({env:this.env}),fetchImpl:this.fetchImpl}):mcpCredential(this.id,this.def,this.env);}
+      try{token=this.id===LINEAR_OAUTH.id?(this.oauthAccess?await this.oauthAccess():await linearOAuthAccess({store:new SecretStore({env:this.env}),fetchImpl:this.fetchImpl})):mcpCredential(this.id,this.def,this.env);}
       catch(error){this.assertCurrent(generation);this.error=classifyMcpNetworkError(error);this.stop();throw Error(this.error);}
       this.assertCurrent(generation);
       if (!token) { this.error='MCP_CREDENTIAL_REQUIRED'; this.stop(); throw Error(this.error); }
