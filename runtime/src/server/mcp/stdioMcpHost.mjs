@@ -186,12 +186,14 @@ export function loadServerConfig({ configFile, repoRoot, runtimeRoot }) {
   for (const [id, s] of Object.entries(custom)) {
     if (!ID.test(id)) continue;
     if (s === null || s.enabled === false) { delete servers[id]; continue; }
+    if(id==='stripe-sandbox'&&s.transport!=='http'){servers[id]={name:'Stripe Sandbox',role:'',transport:'http',validationError:'MCP_CONFIGURATION_INVALID'};continue;}
     if (s.transport === 'http') {
       try {
       const url = new URL(s.url);
       if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
       if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
-      if(isGuidedCredentialRef(s.tokenEnv)&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
+      if((id==='stripe-sandbox'||isGuidedCredentialRef(s.tokenEnv))&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
+      if(s.tokenEnv==='STRIPE_SANDBOX_PROBE_KEY')throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
       servers[id] = withAccess({ name: String(s.name || id), role: String(s.role || ''), transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, allowOpenLogin: s.allowOpenLogin === true, icon: id === 'huggingface' ? 'huggingface' : undefined }, s);
       } catch { servers[id] = { name: String(s.name || id), role: '', transport: 'http', validationError: 'MCP_CONFIGURATION_INVALID' }; }
       continue;
@@ -236,9 +238,11 @@ export function validateServerEntry(id, s = {}) {
     const url = new URL(String(s.url || ''));
     if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
     if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
-    if(isGuidedCredentialRef(s.tokenEnv)&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
+    if((id==='stripe-sandbox'||isGuidedCredentialRef(s.tokenEnv))&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
+    if(s.tokenEnv==='STRIPE_SANDBOX_PROBE_KEY')throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
     return { ...common, transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, ...(s.allowOpenLogin === true ? {allowOpenLogin:true} : {}) };
   }
+  if(id==='stripe-sandbox')throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
   const command = String(s.command || '').trim();
   if (!command || command.length > 300) throw Error('MCP_COMMAND_REQUIRED');
   if (!Array.isArray(s.args) || s.args.length > 40) throw Error('MCP_ARGS_INVALID');
