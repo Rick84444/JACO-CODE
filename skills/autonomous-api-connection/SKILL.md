@@ -14,3 +14,9 @@ tasks: [mcp-call, mcp-write, browser-survey-site, browser-click, browser-type, w
 6. Re-evaluate a failed connection with bounded backoff in the existing Aura mission loop, then use an alternative source or report the exact blocker. Never create a separate background agent or recurring process.
 
 Existing CDP/Fetch tools here are orchestration steps, not evidence of a live connection. No approval bypass, no global credential harvesting, no automatic financial activation.
+
+## Reuse approved Plugin Center connections
+- Discover the live MCP catalog first. Prefer an already configured Render, Cloudflare, GitHub, Hugging Face, Linear, Context7 or Stripe plugin to inventing a new integration. The catalog is not execution evidence.
+- If authentication is needed, use the authorized account-page launcher only after the operator enabled the plugin's `allowOpenLogin` option. In the full Aura toolbox use `plugin_login({plugin:"render"})`; in a mission use the advertised `jaco-plugin-center.open_login` via the existing `mcp-write` task and its input schema. Never call an unadvertised tool or use shell/CDP to bypass a refused launch.
+- The opener accepts only plugin IDs with reviewed provider URLs, not arbitrary URLs or authentication redirects. An accepted browser launch is not a sign-in. If a provider needs a password, MFA, an OAuth grant or API key, the operator completes that step using the official site and existing Vault. Existing valid stored credentials are reused by the MCP host.
+- After the operator completes setup, rediscover tools and make a permitted low-risk read call. If still unauthorized, record NEEDS_OPERATOR rather than looping on sign-in. Never approve new permissions or perform financial operations merely because a plugin is configured.
