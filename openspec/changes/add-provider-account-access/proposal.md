@@ -14,3 +14,7 @@ On a local user-controlled host, complete real authorized ChatGPT and Gemini req
 - https://openai.com/policies/sign-in-with-chatgpt-terms/
 - https://ai.google.dev/gemini-api/docs/api-key
 - https://ai.google.dev/gemini-api/docs/oauth
+
+## CLI clarification (2026-11-26)
+Google moved individual Free/Pro/Ultra access from Gemini CLI to Antigravity CLI on 2026-06-18. Evaluate official Gemini CLI ACP for eligible enterprise accounts and official Antigravity CLI for individual users as bounded task delegation, not as an unrestricted inference provider. No reuse of CLI OAuth credentials in JACO. Verify third-party usage terms before enabling either bridge.
+Sources: https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/ ; https://geminicli.com/docs/cli/acp-mode/ ; https://geminicli.com/docs/resources/faq/ ; https://antigravity.google/docs/cli/headless/
