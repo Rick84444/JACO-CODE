@@ -190,7 +190,7 @@ export function loadServerConfig({ configFile, repoRoot, runtimeRoot }) {
       const url = new URL(s.url);
       if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
       if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
-      servers[id] = withAccess({ name: String(s.name || id), role: String(s.role || ''), transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, icon: id === 'huggingface' ? 'huggingface' : undefined }, s);
+      servers[id] = withAccess({ name: String(s.name || id), role: String(s.role || ''), transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, allowOpenLogin: s.allowOpenLogin === true, icon: id === 'huggingface' ? 'huggingface' : undefined }, s);
       } catch { servers[id] = { name: String(s.name || id), role: '', transport: 'http', validationError: 'MCP_CONFIGURATION_INVALID' }; }
       continue;
     }
