@@ -75,18 +75,20 @@ function LinearOAuthPanel({onChanged,blocked}:{onChanged:(notice:string)=>void;b
   const changed=useRef(onChanged);changed.current=onChanged;
   const lastVerified=useRef<string|null>(null);
   const active=useRef(true);
+  const actionBusy=useRef(false),revision=useRef(0);
   useEffect(()=>{
     active.current=true;
     let fetching=false;
     const poll=async()=>{
-      if(fetching)return;fetching=true;
+      if(fetching||actionBusy.current)return;fetching=true;
+      const observedRevision=revision.current;
       try{
         const data=await send(LINEAR_LOGIN_ROUTE,'GET');
-        if(!active.current)return;
+        if(!active.current||actionBusy.current||observedRevision!==revision.current)return;
         setStatus(data);
         if(data.state!=='WAITING_FOR_CONSENT')setUrl('');
         if(data.verifiedAt&&data.verifiedAt!==lastVerified.current){lastVerified.current=data.verifiedAt;changed.current('Linear OAuth: account read verified');}
-      }catch{if(active.current)setError('Local runtime status unavailable. OAuth requires the JACO host computer.');}
+      }catch{if(active.current&&!actionBusy.current&&observedRevision===revision.current)setError('Local runtime status unavailable. OAuth requires the JACO host computer.');}
       finally{fetching=false;}
     };
     void poll();const timer=window.setInterval(()=>void poll(),2000);
@@ -94,7 +96,8 @@ function LinearOAuthPanel({onChanged,blocked}:{onChanged:(notice:string)=>void;b
   },[]);
   const pending=['PREPARING','WAITING_FOR_CONSENT','VERIFYING'].includes(status?.state||'');
   async function action(kind:'start'|'cancel'|'disconnect'){
-    if(working||blocked&&kind!=='cancel')return;
+    if(actionBusy.current||blocked&&kind!=='cancel')return;
+    actionBusy.current=true;revision.current++;
     setWorking(true);setError('');setUrl('');
     try{
       const data=await send(LINEAR_LOGIN_ROUTE+'/'+kind,'POST',{});
@@ -103,13 +106,13 @@ function LinearOAuthPanel({onChanged,blocked}:{onChanged:(notice:string)=>void;b
         const target=new URL(data.url);
         if(target.origin!=='https://mcp.linear.app'||target.pathname!=='/authorize'||target.username||target.password||target.hash)throw Error('MCP_OAUTH_ENDPOINT_INVALID');
         setUrl(target.href);
-        setStatus(prev=>({configured:prev?.configured||false,expiresAt:prev?.expiresAt||null,refreshAvailable:prev?.refreshAvailable||false,verifiedAt:prev?.verifiedAt||null,proof:prev?.proof||null,error:null,state:data.state}));
+        setStatus(prev=>({configured:prev?.configured||false,expiresAt:prev?.expiresAt||null,refreshAvailable:prev?.refreshAvailable||false,verifiedAt:null,proof:null,error:null,state:data.state}));
       }else{
         setStatus(data);setConfirmed(false);
         if(kind==='disconnect')changed.current('Linear OAuth: local connection removed');
       }
     }catch(e:any){if(active.current)setError(String(e?.message||'MCP_OAUTH_FAILED'));}
-    finally{if(active.current)setWorking(false);}
+    finally{actionBusy.current=false;if(active.current)setWorking(false);}
   }
   return <section aria-label="Linear browser OAuth" className="space-y-3 rounded-lg border border-sky-900/70 bg-[#182431] p-3 text-xs">
     <h4 className="font-semibold text-sky-100">Connect using Linear sign-in</h4>
