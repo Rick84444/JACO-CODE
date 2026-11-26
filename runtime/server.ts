@@ -1945,9 +1945,11 @@ const notifyPhone = async (action) => {
       id: s.id, name: s.name, endpoint: `${s.transport}: ${s.command}`, role: s.role, transport: s.transport, credentialEnv: s.credentialEnv,
       status: s.status, health: null, observation: null, tools: s.tools, error: s.error,
       icon: s.icon, agentAccess: s.agentAccess, deny: s.deny, stats: s.stats, builtIn: s.builtIn,
+      credentialConfigured:s.credentialConfigured,allowOpenLogin:s.allowOpenLogin,catalogMatch:s.catalogMatch,loginOpeningSupported:s.loginOpeningSupported,startedAt:s.startedAt,
     }));
     const value = {
       schema: 'jaco.aura-mcp-fabric/v1',
+      observedAt:new Date().toISOString(),
       providers: [...providers.map(p => ({ ...p, icon: 'jaco' })), ...stdioProviders],
       sources: auraMcpSources.list(),
       recentCalls: mcpHost.recentCalls(20),
@@ -3342,6 +3344,7 @@ const notifyPhone = async (action) => {
   });
 
   app.get('/api/aura/workbench/mcp', requireLocalUi, async (_req, res) => {
+    res.setHeader('Cache-Control','no-store');
     try { res.json({ success: true, ...(await getAuraMcpFabric()) }); }
     catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
   });
