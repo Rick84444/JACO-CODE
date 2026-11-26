@@ -24,8 +24,9 @@ export function mcpCatalogDraft(id) {
   return {id:preset.id,name:preset.name,target:preset.target,icon:preset.icon,tokenEnv:preset.tokenEnv,agentAccess:'read',allowOpenLogin:false};
 }
 export function mcpConnectionState(provider, observed=true) {
+  if (!observed || provider?.status==='UNOBSERVED') return 'UNOBSERVED';
   if (!provider) return 'AVAILABLE';
-  if (!observed || provider.status==='UNOBSERVED') return 'UNOBSERVED';
+  if (provider.catalogMatch===false) return 'CUSTOM_CONFIGURATION';
   if (provider.agentAccess==='off') return 'AGENT_ACCESS_OFF';
   if (provider.credentialConfigured===false || /MCP_(?:AUTH|CREDENTIAL)_REQUIRED/.test(provider.error||'')) return 'AUTH_REQUIRED';
   if (provider.status==='FAILED') return 'ERROR';
@@ -34,13 +35,33 @@ export function mcpConnectionState(provider, observed=true) {
   return 'CONFIGURED';
 }
 
-// Match only the official registered endpoint and credential reference. Never derive a login URL from server output.
-export function pluginLoginPreset(id, definition) {
-  const preset=MCP_INTEGRATION_CATALOG.find(p=>p.id===id && p.loginUrl);
-  if(!preset || !definition || definition.transport!=='http' || definition.validationError || definition.agentAccess==='off') return null;
-  try { if(new URL(definition.url).href!==new URL(preset.target).href) return null; } catch { return null; }
+// Match only the reviewed endpoint and credential reference. No credentials are returned.
+export function catalogDefinitionMatches(id,definition){
+  const preset=MCP_INTEGRATION_CATALOG.find(p=>p.id===id);
+  if(!preset || !definition || definition.transport!=='http' || definition.validationError) return false;
+  try { if(new URL(definition.url).href!==new URL(preset.target).href) return false; } catch { return false; }
   const refs=id==='huggingface'?['','HF_TOKEN','HUGGINGFACE_TOKEN']:[preset.tokenEnv||''];
-  return refs.includes(definition.tokenEnv||'')?preset:null;
+  return refs.includes(definition.tokenEnv||'');
+}
+export function pluginLoginPreset(id,definition){
+  if(!catalogDefinitionMatches(id,definition)||definition.agentAccess==='off')return null;
+  return MCP_INTEGRATION_CATALOG.find(p=>p.id===id&&p.loginUrl)||null;
+}
+export function pluginEnvironment(id){
+  if(id==='paypal-sandbox')return 'SANDBOX';
+  if(['openai-docs','microsoft-learn','cloudflare-docs','mailchimp-docs','coingecko','context7','jobbi','frantic'].includes(id))return 'PUBLIC_DATA';
+  return 'ACCOUNT_SCOPE_UNVERIFIED';
+}
+export function observationFresh(observedAt,now=Date.now(),maxAgeMs=45000){
+  const at=Date.parse(observedAt||'');
+  return Number.isFinite(at)&&Number.isFinite(now)&&at<=now+5000&&now-at<=maxAgeMs;
+}
+export function pluginEvidence(provider,observed=true){
+  const state=mcpConnectionState(provider,observed);
+  const known=observed&&provider&&state!=='UNOBSERVED'&&state!=='CUSTOM_CONFIGURATION';
+  const last=known?provider.stats?.lastCall:null;
+  const lastCall=last&&Number.isFinite(Date.parse(last.at))?{at:last.at,outcome:String(last.outcome||'UNKNOWN').slice(0,32),tool:String(last.tool||'').slice(0,80)}:null;
+  return {state,agentAccess:known?provider.agentAccess||'read':null,toolsDiscovered:known&&state==='TOOLS_DISCOVERED'?provider.tools?.length??0:null,allowedReadTools:known&&state==='TOOLS_DISCOVERED'?(provider.tools||[]).filter(t=>t.readOnly===true&&t.agentAllowed===true).length:null,lastCall,executionVerified:false};
 }
 
 export const MARKETPLACE_DIRECTORY=Object.freeze([
@@ -76,15 +97,15 @@ export function marketplaceEntries(providers=[]){
 }
 
 // Shared strategy projection: candidates are not grants, goals, or verified results.
-export function financialOptions(providers=null){
+export function financialOptions(providers=null,observedAt=new Date().toISOString()){
   const observed=Array.isArray(providers);
   const rows=observed?providers:[];
-  const plugins=[...MCP_INTEGRATION_CATALOG.filter(p=>pluginCategory(p)==='finance').map(p=>({id:p.id,name:p.name,purpose:p.purpose||'Revenue and billing data',docs:p.docs,state:observed?mcpConnectionState(rows.find(r=>r.id===p.id)):'UNOBSERVED'})),...marketplaceEntries(rows).filter(p=>p.category==='finance')];
+  const plugins=[...MCP_INTEGRATION_CATALOG.filter(p=>pluginCategory(p)==='finance').map(p=>({id:p.id,name:p.name,purpose:p.purpose||'Revenue and billing data',docs:p.docs,environment:pluginEnvironment(p.id),...pluginEvidence(rows.find(r=>r.id===p.id),observed)})),...marketplaceEntries(rows).filter(p=>p.category==='finance').map(p=>({...p,environment:pluginEnvironment(p.id),executionVerified:false}))];
   const groups=[
     {id:'revenue-review',title:'Revenue review',titleSv:'Intäktsanalys',plugins:['stripe','paypal-sandbox','paypal','square','chargebee'],goal:'Review observed revenue, fees and subscription metrics. Do not create payments.'},
     {id:'market-research',title:'Market research',titleSv:'Marknadsanalys',plugins:['coingecko','alphavantage','financialmodelingprep','alpaca','riksbanken'],goal:'Collect sourced market data and compare scenarios. Do not place trades.'},
     {id:'accounting-review',title:'Accounting review',titleSv:'Bokföring och avstämning',plugins:['fortnox','xero','quickbooks','stripe'],goal:'Compare authorized accounting and transaction records, prepare reconciliation suggestions.'},
     {id:'capital-overview',title:'Capital overview',titleSv:'Kapitalöversikt',plugins:['mercury','wise','coinbase','x402','stripe'],goal:'Review observed balances and costs without moving funds or signing transactions.'}
   ];
-  return {observed,plugins,strategies:groups.map(g=>({...g,plugins:g.plugins.map(id=>plugins.find(p=>p.id===id)).filter(Boolean),state:!observed?'UNOBSERVED':g.plugins.some(id=>MCP_INTEGRATION_CATALOG.some(p=>p.id===id)&&rows.some(r=>r.id===id&&r.status==='READY'&&r.agentAccess!=='off'&&r.credentialConfigured!==false&&r.tools?.some(t=>t.readOnly===true&&t.agentAllowed===true)))?'READ_TOOLS_DISCOVERED':'SETUP_OR_DISCOVERY_REQUIRED',executionVerified:false,financialMutationAllowed:false}))};
+  return {observed,observedAt:observed?observedAt:null,plugins,strategies:groups.map(g=>({...g,plugins:g.plugins.map(id=>plugins.find(p=>p.id===id)).filter(Boolean),state:!observed?'UNOBSERVED':g.plugins.some(id=>MCP_INTEGRATION_CATALOG.some(p=>p.id===id)&&rows.some(r=>r.id===id&&r.status==='READY'&&r.catalogMatch!==false&&r.agentAccess!=='off'&&r.credentialConfigured!==false&&r.tools?.some(t=>t.readOnly===true&&t.agentAllowed===true)))?'READ_TOOLS_DISCOVERED':'SETUP_OR_DISCOVERY_REQUIRED',executionVerified:false,financialMutationAllowed:false}))};
 }
