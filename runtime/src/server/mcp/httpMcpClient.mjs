@@ -1,12 +1,16 @@
 import { SecretStore } from '../../../../agents/lib/secret-store.mjs';
-import { isGuidedCredentialRef, guidedCredentialMatches } from '../../lib/mcpIntegrationCatalog.mjs';
+import { isGuidedCredentialRef, guidedCredentialMatches, stripeSandboxKey } from '../../lib/mcpIntegrationCatalog.mjs';
 
 // A guided secret is resolved in process only, for the exact provider endpoint.
 export function mcpCredential(id,def,env=process.env){
   if(!def.tokenEnv)return '';
+  if(id==='stripe-sandbox'&&def.tokenEnv==='STRIPE_SANDBOX_PROBE_KEY'){
+    if(def.url!=='https://mcp.stripe.com/'||!stripeSandboxKey(env[def.tokenEnv]))return '';
+    return env[def.tokenEnv];
+  }
   if(!isGuidedCredentialRef(def.tokenEnv))return env[def.tokenEnv]||'';
   if(!guidedCredentialMatches(id,def))return '';
-  try{return new SecretStore({env}).get(def.tokenEnv)||'';}catch{return '';}
+  try{const token=new SecretStore({env}).get(def.tokenEnv)||'';return id==='stripe-sandbox'&&!stripeSandboxKey(token)?'':token;}catch{return '';}
 }
 // Streamable HTTP transport used by the canonical MCP host.
 // Only emit finite error codes; low-level fetch errors can contain private
@@ -45,6 +49,11 @@ export class HttpMcpClient {
   }
   async request(method, params, timeoutMs = 20000, notification = false) {
     const generation = this.generation;
+    if(this.id==='stripe-sandbox'){
+      if(this.def.url!=='https://mcp.stripe.com/'||!['JACO_MCP_GUIDED_STRIPE_SANDBOX','STRIPE_SANDBOX_PROBE_KEY'].includes(this.def.tokenEnv))throw Object.assign(Error('MCP_STRIPE_SANDBOX_SCOPE_INVALID'),{preDispatch:true});
+      const allowed=['initialize','notifications/initialized','tools/list'];
+      if(!allowed.includes(method)&&!(method==='tools/call'&&params?.name==='get_stripe_account_info'&&params.arguments&&typeof params.arguments==='object'&&!Array.isArray(params.arguments)&&Object.keys(params.arguments).length===0))throw Object.assign(Error('MCP_STRIPE_SANDBOX_READ_ONLY'),{preDispatch:true});
+    }
     if (this.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw Error('MCP_TLS_VERIFICATION_REQUIRED');
     const id = notification ? undefined : this.nextId++;
     const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': this.protocol };
@@ -132,6 +141,7 @@ export class HttpMcpClient {
       } while (cursor);
       this.assertCurrent(generation);
       this.tools = tools.map(t => ({ name: String(t.name).slice(0,200), description: String(t.description || '').slice(0,3000), inputSchema: t.inputSchema || {type:'object'}, readOnly: t.annotations?.readOnlyHint === true }));
+      if(this.id==='stripe-sandbox')this.tools=this.tools.filter(t=>t.name==='get_stripe_account_info'&&t.readOnly===true&&t.inputSchema?.type==='object'&&!(t.inputSchema.required||[]).length);
       this.initialized = true; this.error = null; return this;
     })().catch(error => {
       const code = classifyMcpNetworkError(error);
