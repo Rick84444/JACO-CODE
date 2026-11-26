@@ -10,7 +10,7 @@ const require=createRequire(path.join(root,'package.json'));
 const {build}=require('esbuild');
 const {chromium}=await import(process.env.JACO_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.JACO_PLAYWRIGHT_MODULE).href : pathToFileURL(require.resolve('playwright')).href);
 const bundle=await build({stdin:{contents:
-  "import React from 'react';import{createRoot}from'react-dom/client';import{ProviderConnect}from'./src/components/ProviderConnect';import{McpServersPanel}from'./src/components/McpServersPanel';import{UiLanguageProvider}from'./src/i18n/UiLanguage';createRoot(document.getElementById('root')).render(<UiLanguageProvider initialLanguage='sv'>{location.search.includes('integrations')?<McpServersPanel observedAt={new Date().toISOString()} providers={[{id:'render',name:'Render',role:'Cloud',status:'READY',transport:'http',error:null,agentAccess:'read',credentialConfigured:true,allowOpenLogin:true,catalogMatch:true,loginOpeningSupported:true,tools:[{name:'list_services',description:'Read services',readOnly:true,agentAllowed:true}],deny:['delete_service'],stats:{calls:0,failures:0,refused:0,lastCall:null}}]} recentCalls={[]} busy={null} selectedToolId={null} onStart={()=>{}} onSelectTool={()=>{}} onChanged={()=>{}}/>:<ProviderConnect onConnected={()=>{}}/>}</UiLanguageProvider>);",
+  "import React from 'react';import{createRoot}from'react-dom/client';import{ProviderConnect}from'./src/components/ProviderConnect';import{McpServersPanel}from'./src/components/McpServersPanel';import{UiLanguageProvider}from'./src/i18n/UiLanguage';function Fixture(){const [allow,setAllow]=React.useState(true);return <UiLanguageProvider initialLanguage='sv'>{location.search.includes('integrations')?<McpServersPanel observedAt={new Date().toISOString()} providers={[{id:'render',name:'Render',role:'Cloud',status:'READY',transport:'http',error:null,agentAccess:'read',credentialConfigured:true,allowOpenLogin:allow,catalogMatch:true,loginOpeningSupported:true,tools:[{name:'list_services',description:'Read services',readOnly:true,agentAllowed:true}],deny:['delete_service'],stats:{calls:0,failures:0,refused:0,lastCall:null}}]} recentCalls={[]} busy={null} selectedToolId={null} onStart={()=>{}} onSelectTool={()=>{}} onChanged={message=>{if(message.includes('revoked'))setAllow(false);}}/>:<ProviderConnect onConnected={()=>{}}/>}</UiLanguageProvider>}createRoot(document.getElementById('root')).render(<Fixture/>);",
   resolveDir:root,loader:'tsx'},bundle:true,write:false,platform:'browser',format:'esm',jsx:'automatic'});
 const cssDir=path.join(root,'dist','assets');
 const cssFiles=fs.readdirSync(cssDir).filter(f=>f.endsWith('.css'));
@@ -85,7 +85,8 @@ try{
     assert.ok(detailBounds&&detailBounds.x>=0&&detailBounds.x+detailBounds.width<=width+1,'integration dialog fits viewport');
     const optIn=detail.getByRole('checkbox',{name:/Allow Aura to open/});
     assert.equal(await optIn.isChecked(),true);
-    await Promise.all([page.waitForResponse(r=>r.url().endsWith('/servers/render/access')),optIn.uncheck()]);
+    await Promise.all([page.waitForResponse(r=>r.url().endsWith('/servers/render/access')),optIn.click()]);
+    await page.waitForFunction(()=>!document.querySelector('dialog[open] input[type=checkbox]')?.checked);
     assert.equal(mutations.length,1);
     assert.deepEqual(mutations[0],{url:'/api/aura/workbench/mcp/servers/render/access',body:{allowOpenLogin:false}});
     if(process.env.JACO_UI_SCREENSHOTS)await page.screenshot({path:path.join(process.env.JACO_UI_SCREENSHOTS,'integration-dialog-'+width+'.png')});
