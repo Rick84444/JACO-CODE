@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {MCP_INTEGRATION_CATALOG,mcpCatalogDraft,mcpConnectionState,pluginLoginPreset} from '../../runtime/src/lib/mcpIntegrationCatalog.mjs';
+import {MCP_INTEGRATION_CATALOG,mcpCatalogDraft,mcpConnectionState,pluginLoginPreset,marketplaceEntries,pluginCategory} from '../../runtime/src/lib/mcpIntegrationCatalog.mjs';
 import {validateServerEntry} from '../../runtime/src/server/mcp/stdioMcpHost.mjs';
 
 test('official catalog presets are valid explicit operator configurations with read-only agent defaults',()=>{
@@ -17,7 +17,7 @@ test('official catalog presets are valid explicit operator configurations with r
     assert.equal(config.tokenEnv,draft.tokenEnv||null);
     assert.notEqual(mcpCatalogDraft(item.id),draft);
   }
-  assert.equal(ids.size,10);
+  assert.equal(ids.size,12);
   assert.throws(()=>mcpCatalogDraft('arbitrary'),/MCP_CATALOG_UNKNOWN/);
 });
 test('configuration, authentication, stale state and discovered tools are distinct',()=>{
@@ -39,4 +39,20 @@ test('login pages are pinned to the reviewed plugin endpoint and token reference
     assert.equal(pluginLoginPreset('render',{...d,...changes}),null);
   }
   assert.equal(pluginLoginPreset('unknown',d),null);
+});
+
+test('marketing presets and marketplace candidates never masquerade as connected',()=>{
+  const b=mcpCatalogDraft('buffer');
+  assert.equal(b.target,'https://mcp.buffer.com/mcp');
+  assert.equal(b.tokenEnv,'BUFFER_API_KEY');
+  assert.equal(b.agentAccess,'read');
+  assert.equal(b.allowOpenLogin,false);
+  assert.equal(pluginCategory(MCP_INTEGRATION_CATALOG.find(p=>p.id==='buffer')),'marketing');
+  assert.equal(pluginCategory(MCP_INTEGRATION_CATALOG.find(p=>p.id==='stripe')),'commerce');
+  assert.equal(mcpCatalogDraft('mailchimp-docs').tokenEnv,'');
+  for(const id of ['etsy','shopify','ebay','hubspot','jobbi','frantic'])assert.throws(()=>mcpCatalogDraft(id),/MCP_CATALOG_UNKNOWN/);
+  const entries=marketplaceEntries([{id:'jobbi',status:'READY'},{id:'etsy',status:'READY'}]);
+  assert.equal(entries.find(p=>p.id==='jobbi').state,'TOOLS_DISCOVERED');
+  assert.equal(entries.find(p=>p.id==='etsy').state,'ADAPTER_REQUIRED');
+  assert.equal(entries.find(p=>p.id==='hubspot').state,'OAUTH_REQUIRED');
 });
