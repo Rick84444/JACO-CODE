@@ -1,3 +1,4 @@
+import { FinancialOptionsPanel, type FinancialOptions } from './FinancialOptionsPanel';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, ShieldAlert, MessageSquare, GitBranch, X } from 'lucide-react';
 import { readAuraResponse } from '../lib/auraApi.mjs';
@@ -472,7 +473,7 @@ const short = (text: string, max = 70) => text.length > max ? text.slice(0, max 
 export function StrategyBoard({ focusPlanId = null, focusNodeKey = null, onClose, eventRevision = null, liveConnection = 'unavailable' }: { focusPlanId?: string | null; focusNodeKey?: string | null; onClose?: () => void; eventRevision?: string | null; liveConnection?: string }) {
   const { tr, language } = useUiLanguage();
   const [plans, setPlans] = useState<Plan[] | null>(null);
-  const [observed, setObserved] = useState<{operatorGoal?:{statement:string}|null;missions?:ObservedMission[];next?:{text:string}}|null>(null);
+  const [observed, setObserved] = useState<{operatorGoal?:{statement:string}|null;missions?:ObservedMission[];next?:{text:string};financialOptions?:FinancialOptions}|null>(null);
   const [error, setError] = useState('');
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [chosen, setChosen] = useState<string | null>(focusPlanId);
@@ -547,6 +548,7 @@ export function StrategyBoard({ focusPlanId = null, focusNodeKey = null, onClose
       </div>
     </header>
     <p className="text-center text-xs text-neutral-400">{tr('Intuitionen är målet. Aura härleder förutsättningarna baklänges och utför dem i verklig beroendeordning. Klicka på ett steg för att granska varför det behövs.', 'Intuition is the goal. Aura derives prerequisites backwards and executes them in real dependency order. Select a step to inspect why it is needed.')}</p>
+    <FinancialOptionsPanel options={observed?.financialOptions} missions={liveMissions.filter(m=>missionControlState(m).steer)} onSaved={()=>void load()}/>
     {planDecisions.length > 0 && <section aria-label={tr('Väntar på dig', 'Waiting for you')} className="space-y-2">
       <div className="text-xs font-semibold uppercase tracking-widest text-amber-300">{tr('Väntar på dig', 'Waiting for you')} ({planDecisions.length})</div>
       {planDecisions.map(d => <React.Fragment key={d.id}><DecisionRow decision={d} onDone={() => void load()} /></React.Fragment>)}

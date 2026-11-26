@@ -51,6 +51,8 @@ import { validateOperatorConfirmation } from './src/lib/operatorApproval.mjs';
 import { cognitiveActivationPreview } from './src/lib/auraCognitiveActivation.mjs';
 import { liveMissionView } from './src/server/connected/liveMission.mjs';
 import { discoverProvider, identifyKey } from './src/server/connected/providerDiscovery.mjs';
+import { allBrainStatus, brainStatus, startLogin as startBrainLogin, BRAINS as CLI_BRAINS } from './src/server/connected/cliBrains.mjs';
+import { ChatGPTPlanSession } from './src/server/connected/chatgptPlanSession.mjs';
 import { CATALOG as PROVIDER_CATALOG, catalogById, catalogProvider } from './src/server/connected/providerCatalog.mjs';
 import { activationReport } from '../agents/lib/activate.mjs';
 import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret, validateSecretName } from '../agents/lib/secret-store.mjs';
@@ -76,6 +78,11 @@ import { liteChatAnswer } from "./src/server/connected/liteChatRouter.mjs";
 import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/mcp/stdioMcpHost.mjs";
 import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFromRemote, readGithubPullRequest } from './src/server/mcp/auraAgentMcpCall.mjs';
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
+import { createPluginLogin } from './src/server/connected/pluginLogin.mjs';
+import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../agents/lib/standing-tool-authority.mjs';
+import { MCP_INTEGRATION_CATALOG, pluginLoginPreset, marketplaceEntries, financialOptions } from './src/lib/mcpIntegrationCatalog.mjs';
+import { searchPluginRegistry } from './src/server/mcp/pluginRegistry.mjs';
+import { readGithubActions } from "./src/server/github/githubActions.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
 import { auraAlwaysAnswers, answerInOrder, auraChatDeadlines, auraStatusReply, chatBudget } from "../agents/lib/aura-always-answers.mjs";
@@ -196,6 +203,15 @@ import {
 import { createA2ARouter } from './src/server/a2a/router.js';
 import { createAuraSourceInspector } from './src/server/connected/auraSourceInspector.mjs';
 
+// Sign-in state of the vendor CLIs, observed by spawning them; cached so Aura's snapshot does not spawn on every read.
+let brainCache: { at: number; list: any[] } | null = null;
+const cachedBrainStatus = async (): Promise<any[]> => {
+  if (brainCache && Date.now() - brainCache.at < 30_000) return brainCache.list;
+  const list = await allBrainStatus();
+  brainCache = { at: Date.now(), list };
+  return list;
+};
+
 // Phone-approval config: notifications go out via ntfy.sh (no account/infra needed).
 // NTFY_TOPIC should be a hard-to-guess string only you know (ntfy topics are public by name).
 // APPROVAL_BASE_URL should be this server's LAN address, e.g. http://192.168.1.50:3000,
@@ -257,6 +273,17 @@ const mcpHost = new StdioMcpHost({
   runtimeRoot: RELEASE_ROOT,
 });
 process.on('exit', () => mcpHost.stopAll());
+const openPluginLogin = createPluginLogin({host:mcpHost});
+const authorizedPluginLogin = async (args: any, organization: any, capabilities: any) => {
+  const refuse = (code: string) => Object.assign(Error(code),{preDispatch:true,dispatchState:'NOT_DISPATCHED'});
+  if(capabilities?.isTaskEnabled?.('mcp-write')===false || !operatorTaskEnabled(mcpAuthorityRoot(mcpHost),'mcp-write')) throw refuse('CAPABILITY_DISABLED:mcp-write');
+  if(!organization?.authorize('aura','commands.run')?.allowed) throw refuse('MANDATE_DENIED:aura:commands.run');
+  // Opening a fixed page is a local browser launch, not authentication or approval of scopes.
+  const authority=standingToolAuthority(mcpAuthorityRoot(mcpHost),'LOCAL_MUTATION');
+  if(['DENY','REVIEW'].includes(authority.status)) throw refuse('PLUGIN_LOGIN_MANDATE_'+authority.status);
+  if(!args || typeof args!=='object' || Array.isArray(args) || Object.keys(args).some(k=>k!=='plugin') || typeof args.plugin!=='string') throw refuse('PLUGIN_ARGUMENTS_INVALID');
+  return openPluginLogin(args.plugin);
+};
 // Aura's voice (Piper Alma) stays loaded in one worker; loaded at start so her first sentence is not late.
 const piperVoice = createPiperVoice({ workerScript: path.join(RELEASE_ROOT, 'tools', 'piper-voice-worker.py') });
 if (piperVoice.available()) void piperVoice.warm();
@@ -365,8 +392,11 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         providers: connectedRuntime.providers.list().map((p: any) => {
           let local = false;
           try { local = ['127.0.0.1','localhost','[::1]'].includes(new URL(p.baseUrl).hostname); } catch {}
-          return { id: p.id, model: p.defaultModel, local, credentialRequired: Boolean(p.apiKeyEnv) && !local, credentialConfigured: p.credentialConfigured };
+          return { id: p.id, kind: p.kind, model: p.defaultModel, local, credentialRequired: Boolean(p.apiKeyEnv) && !local, credentialConfigured: p.credentialConfigured };
         }),
+        // Claude, ChatGPT (Codex) and Gemini through the operator's own subscription: the vendor CLI holds the
+        // sign-in, the operator signs in from the GUI. `signedIn` is observed from the CLI, not assumed.
+        subscriptionBrains: (await cachedBrainStatus()).map((b: any) => ({ id: b.id, provider: b.providerId, label: b.label, plan: b.plan, installed: b.installed, signedIn: b.loggedIn, registered: connectedRuntime.providers.providers.has(b.providerId) })),
         workspaceRoot: path.basename(projectRoot.get()),
         operatorMandate: organizationMandate(organization, 'aura'),
       }, null, 1);
@@ -385,6 +415,9 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         description: 'Read the live catalog of connected MCP tool servers and the tools they currently advertise. Use this before answering what tools Aura has. This only observes metadata and never starts or calls a tool. args: {}',
         run: async () => ({
           observedAt: new Date().toISOString(),
+          marketplace: marketplaceEntries(mcpHost.status()),
+          financialOptions: financialOptions(mcpHost.status()),
+          availablePlugins: (()=>{const defs=mcpHost.servers();return MCP_INTEGRATION_CATALOG.map(p=>({id:p.id,name:p.name,configured:Boolean(defs[p.id]),loginOpeningApproved:Boolean(defs[p.id]?.allowOpenLogin && pluginLoginPreset(p.id,defs[p.id]))}));})(),
           servers: mcpHost.status().map((server: any) => ({
             id: server.id,
             name: server.name,
@@ -395,11 +428,27 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
             // without trying (observed 2026-11-24).
             ...(server.status !== 'READY' && server.agentAccess !== 'off' ? { connection: 'Not connected right now. mcp_tool and mcp_discover start or reconnect it on demand: make the call before reporting the server unavailable.' } : {}),
             agentAccess: server.agentAccess,
+            credentialConfigured: server.credentialConfigured ?? null,
+            authenticationRequired: server.credentialConfigured===false || /MCP_(?:AUTH|CREDENTIAL)_REQUIRED/.test(server.error||''),
             readTools: (server.tools || []).filter((tool: any) => tool.readOnly === true && tool.agentAllowed === true).slice(0, 100).map((tool: any) => tool.name),
             writeTools: (server.tools || []).filter((tool: any) => tool.readOnly !== true && tool.agentAllowed === true).slice(0, 100).map((tool: any) => tool.name),
             blockedTools: (server.tools || []).filter((tool: any) => tool.agentAllowed !== true).slice(0, 100).map((tool: any) => tool.name),
           })),
         }),
+      },
+      plugin_login: {
+        description: 'Open the official account page for an already configured plugin when authentication is required. Requires the operator’s saved opt-in and existing commands.run mandate. Never grants new scopes, submits credentials or verifies sign-in. args: {plugin}',
+        run: async (args: any) => {
+          return authorizedPluginLogin(args,organization,connectedRuntime.capabilities);
+        },
+      },
+      plugin_search: {
+        description: 'Read-only search by server name in the public MCP Registry. Results are untrusted metadata, not installed or verified plugins. args: {query}',
+        run: async (args: any) => {
+          if(!organization?.authorize('aura','web.read')?.allowed) throw Error('MANDATE_DENIED:aura:web.read');
+          if(connectedRuntime.capabilities?.isTaskEnabled?.('mcp-call')===false) throw Error('CAPABILITY_DISABLED:mcp-call');
+          return searchPluginRegistry(args?.query);
+        },
       },
       mcp_discover: {
         description: 'Discover currently advertised tools from one already configured MCP server, starting it on demand. Only reads the catalog and never calls a tool or broadens policy. args: {server}',
@@ -1896,9 +1945,11 @@ const notifyPhone = async (action) => {
       id: s.id, name: s.name, endpoint: `${s.transport}: ${s.command}`, role: s.role, transport: s.transport, credentialEnv: s.credentialEnv,
       status: s.status, health: null, observation: null, tools: s.tools, error: s.error,
       icon: s.icon, agentAccess: s.agentAccess, deny: s.deny, stats: s.stats, builtIn: s.builtIn,
+      credentialConfigured:s.credentialConfigured,allowOpenLogin:s.allowOpenLogin,catalogMatch:s.catalogMatch,loginOpeningSupported:s.loginOpeningSupported,startedAt:s.startedAt,
     }));
     const value = {
       schema: 'jaco.aura-mcp-fabric/v1',
+      observedAt:new Date().toISOString(),
       providers: [...providers.map(p => ({ ...p, icon: 'jaco' })), ...stdioProviders],
       sources: auraMcpSources.list(),
       recentCalls: mcpHost.recentCalls(20),
@@ -2740,7 +2791,7 @@ const notifyPhone = async (action) => {
         events: connectedRuntime.bus.listEvents(100),
         primaryGoal: (await seerOperatorGoal()) || live.primaryGoal || connectedRuntime.novaMissions.current()?.goal || null,
       });
-      res.json({ success: true, ...projection, exchange: gameboardExchange.position('global') });
+      res.json({ success: true, ...projection, financialOptions: financialOptions(mcpHost.status()), exchange: gameboardExchange.position('global') });
     } catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || error) }); }
   });
 
@@ -2910,6 +2961,13 @@ const notifyPhone = async (action) => {
   app.get('/api/aura/workbench', requireLocalUi, async (_req, res) => {
     try { res.json(await buildAuraWorkbenchSnapshot()); }
     catch (error: any) { res.status(503).json({ success: false, error: error?.message || String(error) }); }
+  });
+
+  // Read-only Actions status for the open project's canonical Git origin.
+  app.get('/api/aura/workbench/git/actions', requireLocalUiSameOrigin, async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try { res.json({ success: true, ...(await readGithubActions(projectRoot.get())) }); }
+    catch (error: any) { res.status(503).json({ success: false, error: /^GIT(HUB)?_[A-Z0-9_]+$/.test(error?.message || '') ? error.message : 'GITHUB_ACTIONS_UNAVAILABLE' }); }
   });
 
   app.get('/api/aura/workbench/git/status', requireLocalUi, async (_req, res) => {
@@ -3286,6 +3344,7 @@ const notifyPhone = async (action) => {
   });
 
   app.get('/api/aura/workbench/mcp', requireLocalUi, async (_req, res) => {
+    res.setHeader('Cache-Control','no-store');
     try { res.json({ success: true, ...(await getAuraMcpFabric()) }); }
     catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
   });
@@ -3406,7 +3465,13 @@ const notifyPhone = async (action) => {
   // Nova's access to JACO's MCP tools (token auth). Nova calls these through its mcp-call task, so every
   // tool any connected server offers is usable in missions, whichever LLM plans.
   app.get('/api/mcp/tools', requireAuth, async (_req, res) => {
-    res.json({ success: true, servers: mcpHost.status().map((s: any) => ({ id: s.id, name: s.name, role: s.role, status: s.status, agentAccess: s.agentAccess, transport:s.transport, error:s.error, tools: s.tools.map((t: any) => ({ name: t.name, description: t.description.slice(0, 300), readOnly: isReadOnlyMcpTool(s.id, t), agentAllowed: t.agentAllowed === true, inputSchema: t.inputSchema })) })) });
+    const servers=mcpHost.status().map((s: any) => ({ id: s.id, name: s.name, role: s.role, status: s.status, agentAccess: s.agentAccess, transport:s.transport, error:s.error, tools: s.tools.map((t: any) => ({ name: t.name, description: t.description.slice(0, 300), readOnly: isReadOnlyMcpTool(s.id, t), agentAllowed: t.agentAllowed === true, inputSchema: t.inputSchema })) }));
+    const defs=mcpHost.servers();
+    const eligible=MCP_INTEGRATION_CATALOG.filter(p=>defs[p.id]?.allowOpenLogin===true && pluginLoginPreset(p.id,defs[p.id]) && mcpHost.status().some((row:any)=>row.id===p.id && (row.credentialConfigured===false || /MCP_(?:AUTH|CREDENTIAL)_REQUIRED/.test(row.error||'')))).map(p=>p.id);
+    const canOpen=agentOrganization?.authorize('aura','commands.run')?.allowed && connectedRuntime.capabilities?.isTaskEnabled?.('mcp-write')!==false && operatorTaskEnabled(mcpAuthorityRoot(mcpHost),'mcp-write') && !['DENY','REVIEW'].includes(standingToolAuthority(mcpAuthorityRoot(mcpHost),'LOCAL_MUTATION').status);
+    if(eligible.length && canOpen && !defs['jaco-plugin-center']) servers.push({id:'jaco-plugin-center',name:'JACO Plugin Center',role:'Local approved account-page launcher (not an external MCP server)',status:'READY',agentAccess:'write',transport:'internal',error:null,tools:[{name:'open_login',description:'Open an approved provider account page. Operator completes any sign-in. Does not authenticate or expand scopes.',readOnly:false,agentAllowed:true,inputSchema:{type:'object',properties:{plugin:{type:'string',enum:eligible}},required:['plugin'],additionalProperties:false}}]});
+    if(!defs['jaco-financial-options'] && connectedRuntime.capabilities?.isTaskEnabled?.('mcp-call')!==false && operatorTaskEnabled(mcpAuthorityRoot(mcpHost),'mcp-call') && !['DENY','REVIEW'].includes(standingToolAuthority(mcpAuthorityRoot(mcpHost),'READ').status)) servers.push({id:'jaco-financial-options',name:'Financial strategy choices',role:'Read-only Gameboard economic alternatives; no financial execution',status:'READY',agentAccess:'read',transport:'internal',error:null,tools:[{name:'list_options',description:'Read Gameboard financial strategy candidates and observed plugin readiness; not a grant or financial transaction.',readOnly:true,agentAllowed:true,inputSchema:{type:'object',properties:{},additionalProperties:false}}]});
+    res.json({success:true,servers});
   });
   app.post('/api/mcp/start', requireAuth, async (req, res) => {
     try {
@@ -3429,6 +3494,16 @@ const notifyPhone = async (action) => {
       if(connectedRuntime.capabilities?.isTaskEnabled?.(task)===false) return res.status(409).json({success:false,error:'CAPABILITY_DISABLED:'+task,dispatchState:'NOT_DISPATCHED'});
       // The server's agent access decides (read, write or off; see stdioMcpHost.mjs). Nova's mcp-call
       // runs read-only tools; a tool that changes something needs its mcp-write task (mode 'write').
+      if(server==='jaco-financial-options' && !mcpHost.servers()[server]) {
+        if(tool!=='list_options'||mode!=='read'||Object.keys(args).length||!operatorTaskEnabled(mcpAuthorityRoot(mcpHost),'mcp-call')||['DENY','REVIEW'].includes(standingToolAuthority(mcpAuthorityRoot(mcpHost),'READ').status)) return res.status(403).json({success:false,error:'FINANCIAL_OPTIONS_READ_ONLY',dispatchState:'NOT_DISPATCHED'});
+        return res.json({success:true,server,tool,result:{content:[{type:'text',text:JSON.stringify(financialOptions(mcpHost.status()))}]},dispatchState:'ACKNOWLEDGED'});
+      }
+      if(server==='jaco-plugin-center' && !mcpHost.servers()[server]) {
+        if(tool!=='open_login' || mode!=='write') return res.status(400).json({success:false,error:'PLUGIN_LOGIN_WRITE_REQUIRED',dispatchState:'NOT_DISPATCHED'});
+        const opened=await authorizedPluginLogin(args,agentOrganization,connectedRuntime.capabilities);
+        seerLiveWorkstream.record({actor:'Aura Plugin Center',type:'plugin.login.request',message:'Account page launch requested',verified:false,receipt:{plugin:opened.plugin,state:opened.state,authenticated:false}});
+        return res.json({success:true,server,tool,result:{content:[{type:'text',text:JSON.stringify(opened)}]},dispatchState:'ACKNOWLEDGED'});
+      }
       const result: any = await mcpHost.call(server, tool, args, { actor: 'agent', readOnly: mode !== 'write' });
       const failed = result?.isError === true;
       seerLiveWorkstream.record({ actor: 'JACO MCP host', type: 'mcp.tool.called', message: `${server}.${tool}`, verified: !failed, receipt: { server, tool, isError: failed } });
@@ -3449,11 +3524,17 @@ const notifyPhone = async (action) => {
     if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) { res.status(403).json({ success: false, error: 'ORIGIN_NOT_ALLOWED' }); return false; }
     return true;
   };
+  app.get('/api/aura/workbench/mcp/registry', requireLocalUiSameOrigin, async (req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    try { res.json({success:true,...await searchPluginRegistry(req.query.q)}); }
+    catch (error:any) { res.status(400).json({success:false,error:/^PLUGIN_REGISTRY_[A-Z0-9_]+$/.test(error?.message||'')?error.message:'PLUGIN_REGISTRY_UNAVAILABLE'}); }
+  });
   app.get('/api/aura/workbench/mcp/calls', requireLocalUi, (_req, res) => res.json({ success: true, calls: mcpHost.recentCalls(50) }));
   app.post('/api/aura/workbench/mcp/servers', requireLocalUi, (req, res) => {
     if (!localOperatorOnly(req, res)) return;
     try {
       const id = String(req.body?.id || '');
+      if(req.body?.createOnly===true && mcpHost.servers()[id]) return res.status(409).json({success:false,error:'MCP_SERVER_ALREADY_CONFIGURED'});
       const server = mcpHost.saveServer(id, req.body || {});
       getAuraMcpFabric.invalidate();
       seerLiveWorkstream.record({ actor: 'Aura Tool Fabric', type: 'mcp.server.saved', message: `MCP server ${id} saved (${server?.transport}, agents: ${server?.agentAccess})`, verified: true, receipt: { id, transport: server?.transport, agentAccess: server?.agentAccess } });
@@ -3494,9 +3575,9 @@ const notifyPhone = async (action) => {
     if (!localOperatorOnly(req, res)) return;
     try {
       const id = String(req.params.id || '');
-      const server = mcpHost.setAccess(id, { agentAccess: req.body?.agentAccess, deny: req.body?.deny });
+      const server = mcpHost.setAccess(id, { agentAccess: req.body?.agentAccess, deny: req.body?.deny, allowOpenLogin:req.body?.allowOpenLogin });
       getAuraMcpFabric.invalidate();
-      seerLiveWorkstream.record({ actor: 'Aura Tool Fabric', type: 'mcp.access.changed', message: `Agents on ${id}: ${server?.agentAccess}${server?.deny?.length ? `, denied ${server.deny.join(', ')}` : ''}`, verified: true, receipt: { id, agentAccess: server?.agentAccess, deny: server?.deny } });
+      seerLiveWorkstream.record({ actor: 'Aura Tool Fabric', type: 'mcp.access.changed', message: `Agents on ${id}: ${server?.agentAccess}${server?.deny?.length ? `, denied ${server.deny.join(', ')}` : ''}`, verified: true, receipt: { id, agentAccess: server?.agentAccess, deny: server?.deny, allowOpenLogin:server?.allowOpenLogin===true } });
       res.json({ success: true, server });
     } catch (error: any) { res.status(/UNKNOWN/.test(error?.message) ? 404 : 400).json({ success: false, error: error?.message || String(error) }); }
   });
@@ -4029,6 +4110,57 @@ const notifyPhone = async (action) => {
       res.status(provider ? 201 : 200).json({ success: true, result: rest, provider });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error?.message || String(error) });
+    }
+  });
+
+  // Local preview: official SIWC, separate from vendor CLI authentication.
+  const chatGPTPlan = new ChatGPTPlanSession();
+  const requirePlanLocal = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (process.env.JACO_LOCAL_SIWC !== '1') return res.status(403).json({ success: false, error: 'SIWC_PREVIEW_DISABLED' });
+    const host = String(req.headers.host || '');
+    if (!/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host)) return res.status(403).json({ success: false, error: 'LOCAL_UI_ONLY' });
+    const origin = String(req.headers.origin || '');
+    if (req.method !== 'GET' && origin !== 'http://' + host && origin !== 'https://' + host) return res.status(403).json({ success: false, error: 'CROSS_ORIGIN_DENIED' });
+    return requireLocalUiSameOrigin(req,res,next);
+  };
+  const planError = (res: express.Response, e: any) => res.status(400).json({ success:false, error:/^SIWC_[A-Z0-9_]+$/.test(e?.message || '') ? e.message : 'SIWC_OPERATION_FAILED' });
+  app.get('/api/aura/workbench/chatgpt-plan',requirePlanLocal,(_req,res)=>res.json({success:true,...chatGPTPlan.status()}));
+  app.post('/api/aura/workbench/chatgpt-plan/login',requirePlanLocal,async(_req,res)=>{
+    try {res.json({success:true,...await chatGPTPlan.start()});} catch(e){planError(res,e);}
+  });
+  app.post('/api/aura/workbench/chatgpt-plan/models',requirePlanLocal,async(_req,res)=>{
+    try {res.json({success:true,...await chatGPTPlan.discover()});} catch(e){planError(res,e);}
+  });
+  app.post('/api/aura/workbench/chatgpt-plan/test',requirePlanLocal,async(req,res)=>{
+    try {res.json({success:true,...await chatGPTPlan.test(String(req.body?.model||''))});} catch(e){planError(res,e);}
+  });
+  app.post('/api/aura/workbench/chatgpt-plan/disconnect',requirePlanLocal,(_req,res)=>{
+    res.json({success:true,...chatGPTPlan.disconnect()});
+  });
+
+  // Subscription brains: the operator's Claude, ChatGPT (Codex) or Gemini sign-in, held by the vendor's own CLI.
+  // JACO only asks the CLI whether it is signed in, starts its web sign-in, and registers it as a provider.
+  app.get('/api/aura/workbench/brains', requireLocalUiSameOrigin, async (_req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      const list = await allBrainStatus();
+      brainCache = { at: Date.now(), list };
+      res.json({ success: true, brains: list.map((b: any) => ({ ...b, registered: connectedRuntime.providers.providers.has(b.providerId) })) });
+    } catch (error: any) { res.status(500).json({ success: false, error: error?.message || String(error) }); }
+  });
+
+  app.post('/api/aura/workbench/brains/:id/login', requireLocalUiSameOrigin, async (req, res) => {
+    try {
+      const id = String(req.params.id);
+      if (!Object.hasOwn(CLI_BRAINS, id)) return res.status(404).json({ success: false, error: 'UNKNOWN_BRAIN' });
+      if (id === 'claude') return res.status(403).json({ success: false, error: 'THIRD_PARTY_PLAN_ACCESS_NOT_APPROVED' });
+      const login = await startBrainLogin(id);
+      seerLiveWorkstream.record({ actor: 'Aura Workbench', type: 'brain.login.started', message: `Sign-in started for ${CLI_BRAINS[id].label} (${login.state})`, verified: false, receipt: { brain: id, state: login.state } });
+      brainCache = null;
+      res.json({ success: true, login });
+    } catch (error: any) {
+      res.status(error?.message === 'CLI_NOT_INSTALLED' ? 424 : 400).json({ success: false, error: error?.message || String(error) });
     }
   });
 

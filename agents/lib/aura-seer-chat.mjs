@@ -334,6 +334,35 @@ export function briefToolDescription(description) {
   return [cut(first, 110), cut(args, 110)].filter(Boolean).join(' ');
 }
 
+// A model on this computer is refused a prompt over 12 000 bytes (auraPromptByteLimit). The fixed rules leave so
+// little room that two more tools made Lite's default chat fail again (2026-11-26, 12 866 bytes), so a compact
+// prompt is fitted rather than hoped to fit: first the tool descriptions give way, then older context, and only
+// last the args contracts. The operator's newest message is never cut.
+export const LOCAL_PROMPT_TARGET_BYTES = 11_800;
+export function fitCompactPrompts(options, tools = {}, maxBytes = LOCAL_PROMPT_TARGET_BYTES) {
+  let prompts = buildAuraSeerPrompts(options);
+  if (options.compactRules !== true) return prompts;
+  const fits = p => Buffer.byteLength(p.system + p.user, 'utf8') <= maxBytes;
+  if (fits(prompts)) return prompts;
+  const argsOnly = description => {
+    const args = /\bargs?:\s*(\{.*?\}|none|\{\})(?=\s|$|\.)/i.exec(String(description ?? '').replace(/\s+/g, ' '))?.[0] || '';
+    return args.length <= 80 ? args : args.slice(0, 79) + '…';
+  };
+  const listed = render => (options.toolCatalog ? Object.entries(tools).map(([name, tool]) => render(name, tool)).join('\n') : '');
+  const withArgs = listed((name, tool) => `- ${name}${argsOnly(tool.description) ? ': ' + argsOnly(tool.description) : ''}`);
+  const namesOnly = listed(name => `- ${name}`);
+  const budget = Number(options.contextChars) || 5200;
+  for (const [toolCatalog, contextChars] of [[withArgs, budget], [withArgs, Math.min(budget, 4000)], [withArgs, 3000], [namesOnly, 3000]]) {
+    // A message too long for the smaller context keeps the larger prompt (and its honest refusal).
+    try { prompts = buildAuraSeerPrompts({ ...options, toolCatalog, contextChars }); } catch (error) {
+      if (!/TOO_LARGE_FOR_CONTEXT|BUDGET_EXCEEDED/.test(String(error?.message))) throw error;
+      continue;
+    }
+    if (fits(prompts)) break;
+  }
+  return prompts;
+}
+
 // `toolbox` = { observe(): Promise<string>, tools: { name: { description, run(args) } } }.
 // Every tool result is recorded as a receipt; the model may only cite what a receipt shows.
 async function runToolLoop(input, fetchImpl){
@@ -351,7 +380,7 @@ async function runToolLoop(input, fetchImpl){
   let transcript = '';
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     const finalRound = round === MAX_TOOL_ROUNDS;
-    const {system,user}=buildAuraSeerPrompts({ ...input, observedState, toolCatalog: finalRound ? '' : catalog, toolTranscript: transcript });
+    const {system,user}=fitCompactPrompts({ ...input, observedState, toolCatalog: finalRound ? '' : catalog, toolTranscript: transcript }, tools);
     const completion=await (input.complete || ((args) => seerCompletionResult(args, fetchImpl)))({
       system,
       user,
