@@ -74,6 +74,8 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   const [selectedPlugin,setSelectedPlugin]=useState('');
   const [guidedToken,setGuidedToken]=useState('');
   const [guidedOptIn,setGuidedOptIn]=useState(false);
+  const [replaceCredential,setReplaceCredential]=useState(false);
+  const [confirmReplacement,setConfirmReplacement]=useState(false);
   const [guidedResult,setGuidedResult]=useState<{id:string;state:string;verifiedAt:string;probe:string;toolCount:number|null;proof:{accountObserved?:boolean;workspaceCount?:number}}|null>(null);
   const [guidedError,setGuidedError]=useState<{id:string;message:string}|null>(null);
   const [clock,setClock]=useState(Date.now());
@@ -88,6 +90,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   const selected=preset||directory;
   const current=providers.find(p=>p.id===selectedPlugin);
   const evidence=pluginEvidence(current,fresh);
+  const canReplace=!!guided&&current?.catalogMatch===true&&current?.agentAccess==='read'&&current?.credentialEnv===guided.credentialRef;
   useEffect(()=>{
     const dialog=modal.current;
     if(selectedPlugin&&dialog&&!dialog.open)dialog.showModal();
@@ -96,17 +99,17 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   const statusLabel=(value:string)=>(({AVAILABLE:'Not configured',UNOBSERVED:'Observation unavailable',CUSTOM_CONFIGURATION:'Custom configuration',TOOLS_DISCOVERED:'Tools discovered',AUTH_REQUIRED:'Authentication required',AGENT_ACCESS_OFF:'Agent access disabled',CONFIGURED:'Configured · not connected',ERROR:'Connection failed',CONNECTING:'Connecting',ADAPTER_REQUIRED:'Adapter required',OAUTH_REQUIRED:'OAuth required'} as Record<string,string>)[value]||value.replaceAll('_',' '));
   const environmentLabel=(id:string)=>(({SANDBOX:'Sandbox / test',PUBLIC_DATA:'Public data',ACCOUNT_SCOPE_UNVERIFIED:'Account scope not verified'} as Record<string,string>)[pluginEnvironment(id)]||'Account scope not verified');
   const connectGuided=async()=>{
-    if(!guided||!fresh||working||busy)return;
+    if(!guided||!fresh||working||busy||replaceCredential&&(!canReplace||!confirmReplacement||!guidedToken.trim()))return;
     const id=guided.id;
     const token=guidedToken;
     setGuidedToken('');setGuidedResult(null);setGuidedError(null);setWorking(id);
     try{
-      const result=await send('/api/aura/workbench/mcp/connect/'+encodeURIComponent(id),'POST',current?{}:{token,allowOpenLogin:guidedOptIn});
-      setGuidedResult(result);
+      const result=await send('/api/aura/workbench/mcp/connect/'+encodeURIComponent(id),'POST',current?(replaceCredential?{token,replaceCredential:true}:{}):{token,allowOpenLogin:guidedOptIn});
+      setGuidedResult(result);setReplaceCredential(false);setConfirmReplacement(false);
       onChanged(guided.name+': '+(result.state==='READ_PROBE_VERIFIED'?'account read verified':'account read verified; runtime reconnect required'));
     }catch(error:any){
       const code=String(error?.message||'MCP_GUIDED_CONNECTION_FAILED');
-      const labels:Record<string,string>={MCP_CREDENTIAL_REQUIRED:'No credential found. Enter a provider token for a new connection, or repair the existing credential reference in the Vault.',MCP_AUTH_REQUIRED:'Authentication rejected. Check the token and its permissions.',MCP_GUIDED_CREDENTIAL_EXISTS:'A saved credential already exists. Retry without entering a new token.',MCP_GUIDED_EXISTING_CONFIGURATION:'This connection is disabled or uses a custom endpoint. Existing settings have not been changed.',MCP_GUIDED_PROBE_UNAVAILABLE:'The provider did not advertise the expected safe verification tool.',MCP_GUIDED_PROOF_INVALID:'The provider response did not establish account access.',MCP_GUIDED_CREDENTIAL_STORED_CONFIG_FAILED:'Credential stored securely, but configuration could not be saved. Retry with no new token.'};
+      const labels:Record<string,string>={MCP_CREDENTIAL_REQUIRED:'No credential found. Enter a provider token for a new connection, or repair the existing credential reference in the Vault.',MCP_AUTH_REQUIRED:'Authentication rejected. Check the token and its permissions.',MCP_GUIDED_CREDENTIAL_CHANGED:'The saved credential changed during verification. Reopen this dialog and retry.',MCP_GUIDED_REPLACEMENT_NOT_SUPPORTED:'Only a scoped read-only connection can be repaired here.',MCP_GUIDED_CREDENTIAL_EXISTS:'A saved credential already exists. Retry without entering a new token.',MCP_GUIDED_EXISTING_CONFIGURATION:'This connection is disabled or uses a custom endpoint. Existing settings have not been changed.',MCP_GUIDED_PROBE_UNAVAILABLE:'The provider did not advertise the expected safe verification tool.',MCP_GUIDED_PROOF_INVALID:'The provider response did not establish account access.',MCP_GUIDED_CREDENTIAL_STORED_CONFIG_FAILED:'Credential stored securely, but configuration could not be saved. Retry with no new token.'};
       setGuidedError({id,message:labels[code]||code});
     }finally{setWorking(null);}
   };
@@ -218,7 +221,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
           <div className="mt-2 text-[10px] text-neutral-300">{statusLabel(p.status==='EXISTING_HOST'&&!fresh?'UNOBSERVED':p.state)}</div>
         </button>)}
       </div>
-      <dialog ref={modal} aria-labelledby="plugin-detail-title" onClose={()=>{setSelectedPlugin('');setFormError(null);setGuidedToken('');setGuidedOptIn(false);setGuidedError(null);}} onClick={e=>{if(e.target===e.currentTarget)e.currentTarget.close();}} className="m-auto w-[min(94vw,480px)] max-h-[85dvh] overflow-auto rounded-xl border border-neutral-600 bg-[#1c2026] p-0 text-neutral-100 backdrop:bg-black/70">
+      <dialog ref={modal} aria-labelledby="plugin-detail-title" onClose={()=>{setSelectedPlugin('');setFormError(null);setGuidedToken('');setGuidedOptIn(false);setGuidedError(null);setReplaceCredential(false);setConfirmReplacement(false);}} onClick={e=>{if(e.target===e.currentTarget)e.currentTarget.close();}} className="m-auto w-[min(94vw,480px)] max-h-[85dvh] overflow-auto rounded-xl border border-neutral-600 bg-[#1c2026] p-0 text-neutral-100 backdrop:bg-black/70">
         {selected&&<div className="p-5 space-y-4">
           <header className="flex items-center gap-3"><PluginLogo id={selected.id} name={selected.name} size={36}/><div className="min-w-0 flex-1"><h3 id="plugin-detail-title" className="font-semibold">{selected.name}</h3><p className="text-xs text-neutral-400">{environmentLabel(selected.id)}</p></div><button autoFocus type="button" aria-label="Close integration details" onClick={()=>modal.current?.close()} className="rounded border border-neutral-600 px-2 py-1">×</button></header>
           <p className="text-xs text-neutral-300">{selected.purpose||'Connection and account settings'}</p>
@@ -237,7 +240,13 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
               <label className="block">API token (leave blank to use saved credentials)<input type="password" aria-label="Integration API token" value={guidedToken} onChange={e=>setGuidedToken(e.target.value)} autoComplete="off" spellCheck={false} maxLength={16384} className="mt-1 block w-full rounded border border-neutral-600 bg-[#15171a] px-3 py-2"/></label>
               <label className="flex items-start gap-2"><input type="checkbox" checked={guidedOptIn} onChange={e=>setGuidedOptIn(e.target.checked)}/>Allow Aura to open this provider's account page when reauthentication is needed.</label>
             </>}
-            <button type="button" disabled={!fresh||working!==null||busy!==null||current?.catalogMatch===false||current?.agentAccess==='off'} onClick={()=>void connectGuided()} className="rounded bg-[#314a66] px-4 py-2 font-semibold disabled:opacity-40">{working===guided.id?'Checking account…':current?'Verify account':'Connect and verify'}</button>
+            {canReplace&&<details onToggle={e=>{setReplaceCredential(e.currentTarget.open);setConfirmReplacement(false);setGuidedToken('');}} className="space-y-2 rounded border border-neutral-600 p-2"><summary className="cursor-pointer">Replace expired token</summary>
+              <p>Pause affected missions first. The new token may belong to a different account. Verify the account and workspace scope before resuming missions.</p>
+              <a href={guided.loginUrl} target="_blank" rel="noopener noreferrer" className="text-sky-300 underline">Open account token settings</a>
+              <label className="block">New API token<input aria-label="Replacement API token" type="password" autoComplete="off" spellCheck={false} value={guidedToken} onChange={e=>setGuidedToken(e.target.value)} className="mt-1 block w-full rounded border border-neutral-600 bg-[#15171a] px-3 py-2"/></label>
+              <label className="flex items-start gap-2"><input type="checkbox" checked={confirmReplacement} onChange={e=>setConfirmReplacement(e.target.checked)}/>I authorize replacement of this connection's credential and understand that account scope may change.</label>
+            </details>}
+            <button type="button" disabled={!fresh||working!==null||busy!==null||current?.catalogMatch===false||current?.agentAccess==='off'||replaceCredential&&(!canReplace||!confirmReplacement||!guidedToken.trim())} onClick={()=>void connectGuided()} className="rounded bg-[#314a66] px-4 py-2 font-semibold disabled:opacity-40">{working===guided.id?'Checking account…':replaceCredential?'Verify and replace token':current?'Verify account':'Connect and verify'}</button>
             {guidedError?.id===guided.id&&<p role="alert" className="text-amber-300">{guidedError.message}</p>}
             {guidedResult?.id===guided.id&&<div role="status" className="rounded border border-neutral-600 p-2"><strong>{guidedResult.state==='READ_PROBE_VERIFIED'?'Account read verified':'Account read verified; runtime reconnect needed'}</strong><p>{guidedResult.probe} · {new Date(guidedResult.verifiedAt).toLocaleString()}</p>{guidedResult.proof.workspaceCount!==undefined&&<p>{guidedResult.proof.workspaceCount} accessible workspaces</p>}<p>{guidedResult.toolCount??'—'} discovered tools. Aura execution and write permissions are not verified by this check.</p></div>}
           </section>}
