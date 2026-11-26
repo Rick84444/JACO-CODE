@@ -16,7 +16,7 @@ const stateText = (tr: (sv: string, en: string) => string): Record<Scanned['stat
 
 // Paste an API key: JACO senses the service from the key, checks it, stores and registers it, then lists
 // which providers are active right now (POST /providers/key, GET /providers/scan).
-const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onChanged }) => {
+const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void>; fixedProvider?: 'openai' | 'anthropic' | 'gemini' }> = ({ onChanged, fixedProvider }) => {
   const { tr } = useOptionalUiLanguage();
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
@@ -37,12 +37,13 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
   };
   useEffect(() => {
     void refresh();
+    if (fixedProvider) return;
     void fetch('/api/aura/workbench/providers/catalog').then(readAuraResponse)
       .then(data => setCatalog(data.providers || []))
       .catch(() => setError(tr('Kunde inte läsa listan över leverantörer. Prova API-adressen nedan.', 'Could not read the provider list. Try the API address below.')));
   }, []);
 
-  const submit = async (provider = providerChoice) => {
+  const submit = async (provider = fixedProvider || providerChoice) => {
     if (!key.trim() || busy) return;
     setBusy(true); setError(''); setResult(null);
     try {
@@ -59,11 +60,11 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
   return (
     <div className="border border-[#505153] bg-[#292a2c] rounded p-2 space-y-2">
       <div className="text-xs font-semibold">{tr('Lägg till API-nyckel', 'Add API key')}</div>
-      <select value={providerChoice} onChange={e => setProviderChoice(e.target.value)} aria-label={tr('Välj leverantör för API-nyckeln', 'Choose API provider')}
+      {!fixedProvider && <select value={providerChoice} onChange={e => setProviderChoice(e.target.value)} aria-label={tr('Välj leverantör för API-nyckeln', 'Choose API provider')}
         className="w-full bg-[#1f2022] border border-[#505153] rounded px-2 py-1.5 text-xs">
         <option value="">{tr('Hitta automatiskt', 'Detect automatically')}</option>
         {catalog.map(p => <option key={p.id} value={p.id}>{p.id}</option>)}
-      </select>
+      </select>}
       <form onSubmit={e => { e.preventDefault(); void submit(); }} className="flex gap-1.5">
         <input type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} aria-label={tr('API-nyckel för modellleverantören', 'API key for the model provider')} placeholder={tr('Klistra in en API-nyckel', 'Paste an API key')}
           className="flex-1 min-w-0 bg-[#1f2022] border border-[#505153] rounded px-2 py-1.5 text-xs outline-none focus:border-neutral-600" />
@@ -88,7 +89,7 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
       </div>
       {scan && (
         <div className="space-y-0.5">
-          {scan.map(p => (
+          {scan.filter(p => !fixedProvider || p.id === fixedProvider).map(p => (
             <div key={p.id} className="flex items-center gap-2 text-[11px]">
               <span className={`h-2 w-2 rounded-full shrink-0 ${p.active ? 'bg-emerald-400' : p.state === 'NO_KEY' ? 'bg-neutral-600' : 'bg-red-400'}`} />
               <span className="text-neutral-200">{p.id}</span>
@@ -103,7 +104,7 @@ const KeyAndActive: React.FC<{ onChanged: () => void | Promise<void> }> = ({ onC
 
 const EXAMPLES = ['deepseek.com', 'groq.com', 'openrouter.ai', 'http://127.0.0.1:11434'];
 
-export const ProviderConnect: React.FC<{ onConnected: () => void | Promise<void> }> = ({ onConnected }) => {
+const CustomProviderConnect: React.FC<{ onConnected: () => void | Promise<void> }> = ({ onConnected }) => {
   const { tr } = useOptionalUiLanguage();
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
@@ -129,9 +130,6 @@ export const ProviderConnect: React.FC<{ onConnected: () => void | Promise<void>
   };
 
   return (
-    <div className="space-y-2">
-    <BrainLogin onChanged={onConnected} />
-    <KeyAndActive onChanged={onConnected} />
     <div className="border border-[#505153] bg-[#292a2c] rounded p-2 space-y-2">
       <div className="text-xs font-semibold">{tr('Anslut modell', 'Connect model')}</div>
       <form onSubmit={e => { e.preventDefault(); void connect(); }} className="space-y-1.5">
@@ -170,6 +168,13 @@ export const ProviderConnect: React.FC<{ onConnected: () => void | Promise<void>
         </div>
       )}
     </div>
-    </div>
   );
 };
+
+export const ProviderConnect: React.FC<{ onConnected: () => void | Promise<void> }> = ({ onConnected }) => (
+  <BrainLogin
+    onChanged={onConnected}
+    renderApiKey={id => <KeyAndActive key={id} fixedProvider={id} onChanged={onConnected} />}
+    renderOther={() => <div className="space-y-2"><KeyAndActive onChanged={onConnected} /><CustomProviderConnect onConnected={onConnected} /></div>}
+  />
+);
