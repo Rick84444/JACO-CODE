@@ -68,6 +68,7 @@ const EconomyView = React.lazy(() => import('./EconomyView').then(module => ({ d
 // Loaded only when the operator opens this workspace; idle Aura stays small.
 const SkillsView = React.lazy(() => import('./SkillsView').then(module => ({ default: module.SkillsView })));
 import { ProviderConnect } from './ProviderConnect';
+import { GitHubActionsPanel } from './GitHubActionsPanel';
 // Loaded only when the operator opens this workspace; idle Aura stays small.
 const DevicesView = React.lazy(() => import('./DevicesView').then(module => ({ default: module.DevicesView })));
 import { McpServersPanel, type McpCallRecord } from './McpServersPanel';
@@ -1250,6 +1251,7 @@ export const JacoAuraComputeIDE: React.FC = () => {
             </div>
             )}
             {gitActionNotice && <div className="text-[9px] text-neutral-200 break-words">{gitActionNotice}</div>}
+            <GitHubActionsPanel />
           </div>
 
           <div className="flex-1 overflow-auto">
