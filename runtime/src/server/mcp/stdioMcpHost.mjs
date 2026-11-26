@@ -234,7 +234,7 @@ export function validateServerEntry(id, s = {}) {
     const url = new URL(String(s.url || ''));
     if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
     if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
-    return { ...common, transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null };
+    return { ...common, transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, ...(s.allowOpenLogin === true ? {allowOpenLogin:true} : {}) };
   }
   const command = String(s.command || '').trim();
   if (!command || command.length > 300) throw Error('MCP_COMMAND_REQUIRED');
@@ -485,6 +485,7 @@ export class StdioMcpHost {
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
         credentialEnv: def.tokenEnv || undefined,
         credentialConfigured: def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
+        allowOpenLogin: def.allowOpenLogin === true,
         builtIn: Boolean(defaultServers(this)[id]),
         icon: def.icon, agentAccess: def.agentAccess, deny: def.deny, stats,
         status: sameLaunch ? (c.initialized ? 'READY' : c.ready ? 'STARTING' : c.error ? 'FAILED' : 'STOPPED') : 'STOPPED',
