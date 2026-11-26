@@ -29,6 +29,7 @@ const store = () => new SecretStore();
 export async function getVaultSecret({ key, prefix = 'JACO' } = {}) {
   if (!key) throw new Error('VAULT_KEY_REQUIRED');
   const cleanKey = String(key).trim();
+  if (/^JACO_MCP_GUIDED_/i.test(cleanKey)) return { ok:false, verified:false, error:'VAULT_CONNECTOR_CREDENTIAL_SCOPED' };
 
   // 1. Check process.env first for ultra-fast access
   if (process.env[cleanKey]) {
@@ -58,6 +59,7 @@ export async function saveVaultSecret({ key, value, prefix = 'JACO' } = {}) {
   if (!key) throw new Error('VAULT_KEY_REQUIRED');
   if (value === undefined || value === null) throw new Error('VAULT_VALUE_REQUIRED');
   const cleanKey = String(key).trim();
+  if (/^JACO_MCP_GUIDED_/i.test(cleanKey)) return { ok:false, verified:false, error:'VAULT_CONNECTOR_CREDENTIAL_SCOPED' };
   const valStr = String(value);
 
   if (useStore()) {
