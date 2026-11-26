@@ -46,6 +46,7 @@ export function createGuidedMcpConnection({host,store=new SecretStore(),env=proc
       const probeDef={transport:'http',url:preset.target,tokenEnv:preset.tokenEnv};
       const client=createClient(id,probeDef,{[preset.tokenEnv]:token,NODE_TLS_REJECT_UNAUTHORIZED:env.NODE_TLS_REJECT_UNAUTHORIZED});
       let proof;
+      const probeStarted=now();
       try{
         await client.start();
         const tool=client.tools.find(t=>t.name===preset.tool);
@@ -53,7 +54,8 @@ export function createGuidedMcpConnection({host,store=new SecretStore(),env=proc
         proof=verifyPayload(id,proofPayload(await client.request('tools/call',{name:preset.tool,arguments:{}},15000)));
       }catch(error){throw Error(classifyMcpNetworkError(error));}
       finally{client.stop();}
-      const verifiedAt=new Date(now()).toISOString();
+      const probeFinished=now();
+      const verifiedAt=new Date(probeFinished).toISOString();
       if(JSON.stringify(host.servers()[id]||null)!==beforeKey)throw Error('MCP_GUIDED_CONFIGURATION_CHANGED');
       if(!before){
         if(!store.has(preset.credentialRef)){
@@ -65,7 +67,7 @@ export function createGuidedMcpConnection({host,store=new SecretStore(),env=proc
       let tools;
       try{tools=await host.start(id);}
       catch{return {id,state:'CONFIGURED_RECONNECT_REQUIRED',verifiedAt,probe:preset.tool,proof,toolCount:null,agentExecutionVerified:false};}
-      host.record(id,{tool:preset.tool,actor:'operator',outcome:'ok',error:null,ms:0,at:verifiedAt});
+      host.record(id,{tool:preset.tool,actor:'operator',outcome:'ok',error:null,ms:Math.max(0,probeFinished-probeStarted),at:verifiedAt});
       return {id,state:'READ_PROBE_VERIFIED',verifiedAt,probe:preset.tool,proof,toolCount:tools.length,agentExecutionVerified:false};
     }finally{pending.delete(id);}
   };
