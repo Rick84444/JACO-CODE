@@ -17,7 +17,8 @@ import fs from 'node:fs';
 import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 import path from 'node:path';
 import { HttpMcpClient, mcpCredential } from './httpMcpClient.mjs';
-import { MCP_INTEGRATION_CATALOG, catalogDefinitionMatches, pluginLoginPreset, isGuidedCredentialRef, guidedCredentialMatches } from '../../lib/mcpIntegrationCatalog.mjs';
+import { MCP_INTEGRATION_CATALOG, catalogDefinitionMatches, pluginLoginPreset, isGuidedCredentialRef, guidedCredentialMatches, LINEAR_OAUTH } from '../../lib/mcpIntegrationCatalog.mjs';
+import {linearOAuthStatus} from './mcpOAuthTransport.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
 // Classify a failed MCP child without leaking its stderr, which may contain
@@ -186,13 +187,14 @@ export function loadServerConfig({ configFile, repoRoot, runtimeRoot }) {
   for (const [id, s] of Object.entries(custom)) {
     if (!ID.test(id)) continue;
     if (s === null || s.enabled === false) { delete servers[id]; continue; }
-    if(id==='stripe-sandbox'&&s.transport!=='http'){servers[id]={name:'Stripe Sandbox',role:'',transport:'http',validationError:'MCP_CONFIGURATION_INVALID'};continue;}
+    if((id==='stripe-sandbox'||id===LINEAR_OAUTH.id)&&s.transport!=='http'){servers[id]={name:id==='stripe-sandbox'?'Stripe Sandbox':'Linear OAuth',role:'',transport:'http',validationError:'MCP_CONFIGURATION_INVALID'};continue;}
     if (s.transport === 'http') {
       try {
       const url = new URL(s.url);
+      if(id===LINEAR_OAUTH.id&&s.agentAccess==='write')throw Error('MCP_OAUTH_READ_ONLY');
       if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
       if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
-      if((id==='stripe-sandbox'||isGuidedCredentialRef(s.tokenEnv))&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
+      if((id==='stripe-sandbox'||id===LINEAR_OAUTH.id||isGuidedCredentialRef(s.tokenEnv))&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
       if(s.tokenEnv==='STRIPE_SANDBOX_PROBE_KEY')throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
       servers[id] = withAccess({ name: String(s.name || id), role: String(s.role || ''), transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, allowOpenLogin: s.allowOpenLogin === true, icon: id === 'huggingface' ? 'huggingface' : undefined }, s);
       } catch { servers[id] = { name: String(s.name || id), role: '', transport: 'http', validationError: 'MCP_CONFIGURATION_INVALID' }; }
@@ -236,13 +238,14 @@ export function validateServerEntry(id, s = {}) {
   };
   if (s.transport === 'http') {
     const url = new URL(String(s.url || ''));
+    if(id===LINEAR_OAUTH.id&&s.agentAccess==='write')throw Error('MCP_OAUTH_READ_ONLY');
     if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
     if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
-    if((id==='stripe-sandbox'||isGuidedCredentialRef(s.tokenEnv))&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
+    if((id==='stripe-sandbox'||id===LINEAR_OAUTH.id||isGuidedCredentialRef(s.tokenEnv))&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
     if(s.tokenEnv==='STRIPE_SANDBOX_PROBE_KEY')throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
     return { ...common, transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, ...(s.allowOpenLogin === true ? {allowOpenLogin:true} : {}) };
   }
-  if(id==='stripe-sandbox')throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
+  if(id==='stripe-sandbox'||id===LINEAR_OAUTH.id)throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
   const command = String(s.command || '').trim();
   if (!command || command.length > 300) throw Error('MCP_COMMAND_REQUIRED');
   if (!Array.isArray(s.args) || s.args.length > 40) throw Error('MCP_ARGS_INVALID');
@@ -457,6 +460,7 @@ export class StdioMcpHost {
     const current=this.servers()[id];
     if (!current) throw Error(`MCP_SERVER_UNKNOWN:${id}`);
     if (agentAccess !== undefined && !AGENT_ACCESS.includes(agentAccess)) throw Error('MCP_AGENT_ACCESS_INVALID');
+    if(id===LINEAR_OAUTH.id&&agentAccess==='write')throw Error('MCP_OAUTH_READ_ONLY');
     if(allowOpenLogin!==undefined&&typeof allowOpenLogin!=='boolean')throw Error('MCP_LOGIN_OPT_IN_INVALID');
     if(allowOpenLogin===true&&!pluginLoginPreset(id,{...current,agentAccess:agentAccess??current.agentAccess}))throw Error('MCP_LOGIN_OPT_IN_NOT_SUPPORTED');
     const config = this.readConfig();
@@ -508,7 +512,7 @@ export class StdioMcpHost {
       });
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
         credentialEnv: def.tokenEnv || undefined,
-        credentialConfigured: def.tokenEnv ? Boolean(mcpCredential(id,def)) : null,
+        credentialConfigured: id===LINEAR_OAUTH.id?linearOAuthStatus().configured:def.tokenEnv ? Boolean(mcpCredential(id,def)) : null,
         allowOpenLogin: def.allowOpenLogin === true,
         catalogMatch: MCP_INTEGRATION_CATALOG.some(p=>p.id===id)?catalogDefinitionMatches(id,def):undefined,
         loginOpeningSupported: Boolean(pluginLoginPreset(id,def)),

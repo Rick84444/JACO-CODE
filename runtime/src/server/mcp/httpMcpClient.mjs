@@ -1,5 +1,6 @@
 import { SecretStore } from '../../../../agents/lib/secret-store.mjs';
-import { isGuidedCredentialRef, guidedCredentialMatches, stripeSandboxKey } from '../../lib/mcpIntegrationCatalog.mjs';
+import { isGuidedCredentialRef, guidedCredentialMatches, stripeSandboxKey, LINEAR_OAUTH } from '../../lib/mcpIntegrationCatalog.mjs';
+import {linearOAuthAccess,parseLinearOAuth} from './mcpOAuthTransport.mjs';
 
 // A guided secret is resolved in process only, for the exact provider endpoint.
 export function mcpCredential(id,def,env=process.env){
@@ -10,7 +11,7 @@ export function mcpCredential(id,def,env=process.env){
   }
   if(!isGuidedCredentialRef(def.tokenEnv))return env[def.tokenEnv]||'';
   if(!guidedCredentialMatches(id,def))return '';
-  try{const token=new SecretStore({env}).get(def.tokenEnv)||'';return id==='stripe-sandbox'&&!stripeSandboxKey(token)?'':token;}catch{return '';}
+  try{const raw=new SecretStore({env}).get(def.tokenEnv)||'';if(id===LINEAR_OAUTH.id){const record=parseLinearOAuth(raw);return record&&record.expiresAt>Date.now()?record.accessToken:'';}const token=raw;return id==='stripe-sandbox'&&!stripeSandboxKey(token)?'':token;}catch{return '';}
 }
 // Streamable HTTP transport used by the canonical MCP host.
 // Only emit finite error codes; low-level fetch errors can contain private
@@ -39,8 +40,8 @@ export function rpcError(error) {
   return Object.assign(new Error(`MCP_RPC_ERROR:${code}${reason ? '_' + reason : ''}`), definite ? { preDispatch: true } : {});
 }
 export class HttpMcpClient {
-  constructor(id, def, { fetchImpl = fetch, env = process.env } = {}) {
-    Object.assign(this, { id, def, fetchImpl, env });
+  constructor(id, def, { fetchImpl = fetch, env = process.env, oauthAccess = null } = {}) {
+    Object.assign(this, { id, def, fetchImpl, env, oauthAccess });
     this.protocol = '2025-06-18'; this.nextId = 1; this.tools = []; this.ready = null; this.initialized = false;
     this.session = null; this.error = null; this.startedAt = null; this.generation = 0;
   }
@@ -49,6 +50,10 @@ export class HttpMcpClient {
   }
   async request(method, params, timeoutMs = 20000, notification = false) {
     const generation = this.generation;
+    if(this.id===LINEAR_OAUTH.id){
+      if(!guidedCredentialMatches(this.id,this.def))throw Object.assign(Error('MCP_OAUTH_ENDPOINT_INVALID'),{preDispatch:true});
+      if(!['initialize','notifications/initialized','tools/list'].includes(method)&&!(method==='tools/call'&&this.tools.some(t=>t.name===params?.name&&t.readOnly===true)))throw Object.assign(Error('MCP_OAUTH_READ_ONLY'),{preDispatch:true});
+    }
     if(this.id==='stripe-sandbox'){
       if(this.def.url!=='https://mcp.stripe.com/'||!['JACO_MCP_GUIDED_STRIPE_SANDBOX','STRIPE_SANDBOX_PROBE_KEY'].includes(this.def.tokenEnv))throw Object.assign(Error('MCP_STRIPE_SANDBOX_SCOPE_INVALID'),{preDispatch:true});
       const allowed=['initialize','notifications/initialized','tools/list'];
@@ -59,7 +64,10 @@ export class HttpMcpClient {
     const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': this.protocol };
     if (this.session) headers['Mcp-Session-Id'] = this.session;
     if (this.def.tokenEnv) {
-      const token = mcpCredential(this.id,this.def,this.env);
+      let token;
+      try{token=this.id===LINEAR_OAUTH.id?(this.oauthAccess?await this.oauthAccess():await linearOAuthAccess({store:new SecretStore({env:this.env}),fetchImpl:this.fetchImpl})):mcpCredential(this.id,this.def,this.env);}
+      catch(error){this.assertCurrent(generation);this.error=classifyMcpNetworkError(error);this.stop();throw Error(this.error);}
+      this.assertCurrent(generation);
       if (!token) { this.error='MCP_CREDENTIAL_REQUIRED'; this.stop(); throw Error(this.error); }
       headers.authorization = `Bearer ${token}`;
     }
@@ -141,6 +149,7 @@ export class HttpMcpClient {
       } while (cursor);
       this.assertCurrent(generation);
       this.tools = tools.map(t => ({ name: String(t.name).slice(0,200), description: String(t.description || '').slice(0,3000), inputSchema: t.inputSchema || {type:'object'}, readOnly: t.annotations?.readOnlyHint === true }));
+      if(this.id===LINEAR_OAUTH.id)this.tools=this.tools.filter(t=>t.readOnly===true);
       if(this.id==='stripe-sandbox')this.tools=this.tools.filter(t=>t.name==='get_stripe_account_info'&&t.readOnly===true&&t.inputSchema?.type==='object'&&!(t.inputSchema.required||[]).length);
       this.initialized = true; this.error = null; return this;
     })().catch(error => {

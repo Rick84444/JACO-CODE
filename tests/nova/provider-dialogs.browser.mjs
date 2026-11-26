@@ -18,14 +18,19 @@ assert.ok(cssFiles.length,'production CSS required');
 const css=cssFiles.map(f=>fs.readFileSync(path.join(cssDir,f),'utf8')).join('\n');
 const brains=[{id:'claude',providerId:'claude-cli',label:'Claude',plan:'Claude Code',installed:true,loggedIn:false,loginKind:'browser'},{id:'gemini',providerId:'gemini-cli',label:'Gemini',plan:'Code Assist',installed:true,loggedIn:false,loginKind:'terminal',loginHint:'gemini'},{id:'codex',providerId:'codex-cli',label:'Codex',plan:'ChatGPT',installed:true,loggedIn:false,loginKind:'browser'}];
 const mutations=[];
+let oauthState='IDLE';
+const oauthStatus=()=>({success:true,state:oauthState,configured:false,expiresAt:null,refreshAvailable:false,verifiedAt:null,proof:null,error:null});
 const server=http.createServer(async(req,res)=>{
   const send=(body,type='application/json')=>{res.setHeader('content-type',type);res.end(type==='application/json'?JSON.stringify(body):body);};
   if(req.url==='/'||req.url==='/?integrations=1')return send('<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><body style="background:#202225;color:white"><div id="root" style="width:min(100%,340px);margin:12px auto"></div><script type="module" src="/app.js"></script></body></html>','text/html');
   if(req.url==='/style.css')return send(css,'text/css');
   if(req.url==='/app.js')return send(bundle.outputFiles[0].text,'text/javascript');
+  if(req.url==='/api/aura/workbench/mcp/oauth/linear'&&req.method==='GET')return send(oauthStatus());
   if(req.method==='POST'||req.method==='PATCH'){
     let body='';for await(const c of req)body+=c;
     mutations.push({url:req.url,body:JSON.parse(body||'{}')});
+    if(req.url.endsWith('/oauth/linear/start')){oauthState='WAITING_FOR_CONSENT';return send({...oauthStatus(),url:'https://mcp.linear.app/authorize?state=fixture'});}
+    if(req.url.endsWith('/oauth/linear/cancel')){oauthState='IDLE';return send(oauthStatus());}
     if(req.url.startsWith('/api/aura/workbench/mcp/connect/'))return send({success:true,id:req.url.split('/').at(-1),state:'READ_PROBE_VERIFIED',verifiedAt:new Date().toISOString(),probe:'fixture_read',proof:{accountObserved:true},toolCount:1});
     return send({success:true,result:{state:'READY',id:'gemini',models:['fixture-model'],defaultModel:'fixture-model'}});
   }
@@ -136,6 +141,23 @@ try{
     await stripe.getByText('Account read verified',{exact:true}).waitFor();
     assert.deepEqual(mutations.at(-1),{url:'/api/aura/workbench/mcp/connect/stripe-sandbox',body:{token:'rk_'+'test_fixture',allowOpenLogin:false}});
     assert.equal(await stripe.getByLabel('Integration API token').inputValue(),'');
+    await page.keyboard.press('Escape');
+    await stripe.waitFor({state:'hidden'});
+    const beforeOAuth=mutations.length;
+    await page.getByRole('button',{name:'Review Linear OAuth integration'}).click();
+    const linear=page.getByRole('dialog',{name:'Linear OAuth'});
+    await linear.getByRole('button',{name:'Connect with Linear'}).waitFor();
+    assert.equal(mutations.length,beforeOAuth,'review does not start OAuth');
+    assert.equal(await linear.locator('input[type=password]').count(),0);
+    await linear.getByRole('button',{name:'Connect with Linear'}).click();
+    const consent=linear.getByRole('link',{name:'Open Linear authorization'});
+    await consent.waitFor();
+    assert.equal(await consent.getAttribute('href'),'https://mcp.linear.app/authorize?state=fixture');
+    assert.deepEqual(mutations.at(-1),{url:'/api/aura/workbench/mcp/oauth/linear/start',body:{}});
+    await linear.getByRole('button',{name:'Cancel sign-in'}).click();
+    await consent.waitFor({state:'hidden'});
+    await linear.getByRole('button',{name:'Connect with Linear'}).waitFor();
+    assert.deepEqual(mutations.at(-1),{url:'/api/aura/workbench/mcp/oauth/linear/cancel',body:{}});
     assert.deepEqual(errors,[]);
     await page.close();
     mutations.length=0;
