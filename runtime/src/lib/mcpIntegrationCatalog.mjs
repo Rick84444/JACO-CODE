@@ -35,13 +35,31 @@ export function mcpConnectionState(provider, observed=true) {
   return 'CONFIGURED';
 }
 
+// Guided setup is implemented only for explicitly reviewed provider contracts.
+export const GUIDED_MCP_PROBES=Object.freeze({
+  'github-remote':Object.freeze({tool:'get_me',credentialRef:'JACO_MCP_GUIDED_GITHUB_REMOTE'}),
+  render:Object.freeze({tool:'list_workspaces',credentialRef:'JACO_MCP_GUIDED_RENDER'})
+});
+export function guidedMcpPreset(id){
+  if(typeof id!=='string'||!Object.hasOwn(GUIDED_MCP_PROBES,id))return null;
+  const preset=MCP_INTEGRATION_CATALOG.find(p=>p.id===id);
+  return preset?{...preset,...GUIDED_MCP_PROBES[id]}:null;
+}
+export function isGuidedCredentialRef(name){
+  return typeof name==='string'&&name.startsWith('JACO_MCP_GUIDED_');
+}
+export function guidedCredentialMatches(id,definition){
+  const preset=guidedMcpPreset(id);
+  if(!preset||!definition||definition.transport!=='http'||definition.tokenEnv!==preset.credentialRef)return false;
+  try{return new URL(definition.url).href===new URL(preset.target).href;}catch{return false;}
+}
 // Match only the reviewed endpoint and credential reference. No credentials are returned.
 export function catalogDefinitionMatches(id,definition){
   const preset=MCP_INTEGRATION_CATALOG.find(p=>p.id===id);
   if(!preset || !definition || definition.transport!=='http' || definition.validationError) return false;
   try { if(new URL(definition.url).href!==new URL(preset.target).href) return false; } catch { return false; }
   const refs=id==='huggingface'?['','HF_TOKEN','HUGGINGFACE_TOKEN']:[preset.tokenEnv||''];
-  return refs.includes(definition.tokenEnv||'');
+  return refs.includes(definition.tokenEnv||'')||guidedCredentialMatches(id,definition);
 }
 export function pluginLoginPreset(id,definition){
   if(!catalogDefinitionMatches(id,definition)||definition.agentAccess==='off')return null;
