@@ -47,6 +47,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const [voiceError, setVoiceError] = useState(false);
   const [maskError, setMaskError] = useState(false);
   const [photoreal, setPhotoreal] = useState(false);
+  const [cavern, setCavern] = useState(false);
   const audioTap = useRef<MediaStream | null>(null);
   // Conversation mode: listen, send after a pause, hear the reply, listen again.
   const [conversation, setConversation] = useState(savedConversation);
@@ -334,13 +335,13 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const options={signal:controller.signal,onError:()=>{if(!controller.signal.aborted)setMaskError(true);}};
     const load=photoreal
       ? import('../lib/auraSplatProvider.mjs').then(({createAuraSplatProvider})=>createAuraSplatProvider(element,options))
-      : import('../lib/auraRigLightform.mjs').then(({createAuraRigLightform})=>createAuraRigLightform(element,options));
+      : import('../lib/auraRigLightform.mjs').then(({createAuraRigLightform})=>createAuraRigLightform(element,{...options,cavern}));
     void load.then(instance=>{
       if(controller.signal.aborted){instance.dispose();return;}
       rig.current=instance;instance.setState({...rigState.current,audioSource:audioTap.current});
     }).catch(()=>{if(!controller.signal.aborted)setMaskError(true);});
     return()=>{controller.abort();rig.current?.dispose();rig.current=null;};
-  },[photoreal]);
+  },[photoreal,cavern]);
 
   return <dialog ref={dialog} className="aura-portrait" aria-labelledby="aura-portrait-title"
     onCancel={event => { event.preventDefault(); onClose(); }}
@@ -349,17 +350,23 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       <h2 id="aura-portrait-title">Aura</h2>
       <button type="button" onClick={onClose} aria-label={tr('Stäng Auras porträtt', 'Close Aura portrait')}><X size={20}/></button>
     </header>
-    <div key={photoreal ? 'splat' : 'lightform'} className="aura-portrait-scene" style={{position:'relative'}} onPointerMove={event => {
+    <div key={photoreal ? 'splat' : cavern ? 'cavern' : 'lightform'} className="aura-portrait-scene" style={{position:'relative'}} onPointerMove={event => {
       const rect = event.currentTarget.getBoundingClientRect();
       const p={x:2*(event.clientX-rect.left)/rect.width-1,y:2*(event.clientY-rect.top)/rect.height-1};
       Object.assign(rigState.current,p);rig.current?.setState(p);
     }} onPointerLeave={() => { Object.assign(rigState.current,{x:0,y:0});rig.current?.setState({x:0,y:0}); }}>
       <canvas ref={canvas} width={480} height={480} role="img"
-        aria-label={photoreal ? tr('Experimentellt fotorealistiskt ansikte', 'Experimental photoreal face') : tr('Auras tredimensionella ljusgestalt', 'Aura’s three-dimensional lightform')}/>
+        aria-label={photoreal ? tr('Experimentellt fotorealistiskt ansikte', 'Experimental photoreal face') : cavern ? tr('Aura i en tredimensionell isgrotta', 'Aura in a three-dimensional ice cavern') : tr('Auras tredimensionella ljusgestalt', 'Aura’s three-dimensional lightform')}/>
     </div>
-    <button type="button" aria-pressed={photoreal} disabled={speaking || listening || awaiting} onClick={()=>setPhotoreal(value=>!value)}>
+    <div className="aura-portrait-controls">
+    <button type="button" aria-pressed={cavern} disabled={speaking || listening || awaiting} onClick={()=>{setPhotoreal(false);setCavern(value=>!value);}}>
+      {cavern ? tr('Återgå till närbild', 'Return to close-up') : tr('Isgrotta · helkropp', 'Ice cavern · full body')}
+    </button>
+    <button type="button" aria-pressed={photoreal} disabled={speaking || listening || awaiting} onClick={()=>{setCavern(false);setPhotoreal(value=>!value);}}>
       {photoreal ? tr('Återgå till ljusgestalt', 'Return to lightform') : tr('Prova lokalt ansikte (experimentellt)', 'Try local face (experimental)')}
     </button>
+    </div>
+    {cavern && <p className="aura-portrait-voice-note">{tr('Lokal 3D-scen · befintlig rigg, ännu inte det slutliga ansiktet.', 'Local 3D scene · existing rig, not yet the final face.')}</p>}
     {photoreal && <p className="aura-portrait-voice-note">{tr('Kräver en lokalt installerad, licensgodkänd ansiktsmodell. Ljudstyrd formantanimation; inte verifierad läppsynk.', 'Requires a locally installed, rights-cleared head. Audio-driven formant animation; lip sync not verified.')}</p>}
     {maskError && <p role="status">{photoreal ? tr('Lokalt ansikte kunde inte användas. Kontrollera installation eller återgå till ljusgestalt.', 'Local face unavailable. Check installation or return to lightform.') : tr('Den tredimensionella gestalten kunde inte laddas. Chatten är fortfarande tillgänglig.', 'The 3D lightform could not load. Chat remains available.')}</p>}
     <p data-tone={tone}>{label}</p>
