@@ -51,7 +51,7 @@ export class HttpMcpClient {
     if (this.session) headers['Mcp-Session-Id'] = this.session;
     if (this.def.tokenEnv) {
       const token = mcpCredential(this.id,this.def,this.env);
-      if (!token) throw Error('MCP_CREDENTIAL_REQUIRED');
+      if (!token) { this.error='MCP_CREDENTIAL_REQUIRED'; this.stop(); throw Error(this.error); }
       headers.authorization = `Bearer ${token}`;
     }
     let response;
@@ -66,7 +66,13 @@ export class HttpMcpClient {
     // session header nor stop the replacement on a stale 404.
     if (generation !== this.generation) { void response.body?.cancel().catch(() => {}); throw Error('MCP_REQUEST_SUPERSEDED'); }
     if (response.status === 404 && this.session) { this.error = 'MCP_SESSION_EXPIRED'; this.stop(); throw Error('MCP_SESSION_EXPIRED'); }
-    if (!response.ok) throw Error(response.status === 401 || response.status === 403 ? 'MCP_AUTH_REQUIRED' : `MCP_HTTP_${response.status}`);
+    if (!response.ok) {
+      void response.body?.cancel().catch(() => {});
+      if (response.status === 401 || response.status === 403) {
+        this.error='MCP_AUTH_REQUIRED'; this.stop(); throw Error(this.error);
+      }
+      throw Error(`MCP_HTTP_${response.status}`);
+    }
     const session = response.headers.get('mcp-session-id');
     if (session) this.session = session;
     if (notification) { await response.body?.cancel(); return; }
