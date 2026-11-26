@@ -52,6 +52,7 @@ import { cognitiveActivationPreview } from './src/lib/auraCognitiveActivation.mj
 import { liveMissionView } from './src/server/connected/liveMission.mjs';
 import { discoverProvider, identifyKey } from './src/server/connected/providerDiscovery.mjs';
 import { allBrainStatus, brainStatus, startLogin as startBrainLogin, BRAINS as CLI_BRAINS } from './src/server/connected/cliBrains.mjs';
+import { ChatGPTPlanSession } from './src/server/connected/chatgptPlanSession.mjs';
 import { CATALOG as PROVIDER_CATALOG, catalogById, catalogProvider } from './src/server/connected/providerCatalog.mjs';
 import { activationReport } from '../agents/lib/activate.mjs';
 import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret, validateSecretName } from '../agents/lib/secret-store.mjs';
@@ -4043,6 +4044,32 @@ const notifyPhone = async (action) => {
     } catch (error: any) {
       res.status(400).json({ success: false, error: error?.message || String(error) });
     }
+  });
+
+  // Local preview: official SIWC, separate from vendor CLI authentication.
+  const chatGPTPlan = new ChatGPTPlanSession();
+  const requirePlanLocal = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (process.env.JACO_LOCAL_SIWC !== '1') return res.status(403).json({ success: false, error: 'SIWC_PREVIEW_DISABLED' });
+    const host = String(req.headers.host || '');
+    if (!/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host)) return res.status(403).json({ success: false, error: 'LOCAL_UI_ONLY' });
+    const origin = String(req.headers.origin || '');
+    if (req.method !== 'GET' && origin !== 'http://' + host && origin !== 'https://' + host) return res.status(403).json({ success: false, error: 'CROSS_ORIGIN_DENIED' });
+    return requireLocalUiSameOrigin(req,res,next);
+  };
+  const planError = (res: express.Response, e: any) => res.status(400).json({ success:false, error:/^SIWC_[A-Z0-9_]+$/.test(e?.message || '') ? e.message : 'SIWC_OPERATION_FAILED' });
+  app.get('/api/aura/workbench/chatgpt-plan',requirePlanLocal,(_req,res)=>res.json({success:true,...chatGPTPlan.status()}));
+  app.post('/api/aura/workbench/chatgpt-plan/login',requirePlanLocal,async(_req,res)=>{
+    try {res.json({success:true,...await chatGPTPlan.start()});} catch(e){planError(res,e);}
+  });
+  app.post('/api/aura/workbench/chatgpt-plan/models',requirePlanLocal,async(_req,res)=>{
+    try {res.json({success:true,...await chatGPTPlan.discover()});} catch(e){planError(res,e);}
+  });
+  app.post('/api/aura/workbench/chatgpt-plan/test',requirePlanLocal,async(req,res)=>{
+    try {res.json({success:true,...await chatGPTPlan.test(String(req.body?.model||''))});} catch(e){planError(res,e);}
+  });
+  app.post('/api/aura/workbench/chatgpt-plan/disconnect',requirePlanLocal,(_req,res)=>{
+    res.json({success:true,...chatGPTPlan.disconnect()});
   });
 
   // Subscription brains: the operator's Claude, ChatGPT (Codex) or Gemini sign-in, held by the vendor's own CLI.
