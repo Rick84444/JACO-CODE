@@ -476,6 +476,11 @@ export class StdioMcpHost {
     return c;
   }
 
+  // Retire the session and its current-account evidence without rewriting configuration.
+  resetConnection(id) {
+    this.clients.get(id)?.stop(); this.clients.delete(id); this.stats.delete(id);
+  }
+
   // Status without starting anything: what the IDE shows on every refresh.
   status() {
     const root = mcpAuthorityRoot(this);
@@ -569,7 +574,7 @@ export class StdioMcpHost {
       // Never retry a call after entering the transport. A remote error string
       // is not evidence that dispatch did not occur.
       const result = await c.request('tools/call', { name, arguments: args }, timeoutMs);
-      done(result?.isError === true ? 'tool_error' : 'ok', result?.isError === true ? String((result.content || []).map(x => x?.text || '').join(' ')).slice(0, 300) : null);
+      done(result?.isError === true ? 'tool_error' : 'ok', result?.isError === true ? (c.def.transport==='http'?'MCP_REMOTE_TOOL_ERROR':String((result.content || []).map(x => x?.text || '').join(' ')).slice(0, 300)) : null);
       return result;
     } catch (e) {
       const message = String(e.message || e).slice(0,300); done('failed',message);
