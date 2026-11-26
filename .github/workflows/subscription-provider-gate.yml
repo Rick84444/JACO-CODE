@@ -10,6 +10,8 @@ on:
       - 'runtime/src/server/mcp/stdioMcpHost.mjs'
       - 'runtime/src/server/connected/pluginLogin.mjs'
       - 'tests/nova/plugin-login.test.mjs'
+      - 'runtime/src/server/mcp/pluginRegistry.mjs'
+      - 'tests/nova/plugin-registry.test.mjs'
       - 'tests/nova/mcp-integration-catalog.test.mjs'
       - 'runtime/src/components/GitHubActionsPanel.tsx'
       - 'runtime/src/components/JacoAuraComputeIDE.tsx'
@@ -36,6 +38,8 @@ on:
       - 'runtime/src/server/mcp/stdioMcpHost.mjs'
       - 'runtime/src/server/connected/pluginLogin.mjs'
       - 'tests/nova/plugin-login.test.mjs'
+      - 'runtime/src/server/mcp/pluginRegistry.mjs'
+      - 'tests/nova/plugin-registry.test.mjs'
       - 'tests/nova/mcp-integration-catalog.test.mjs'
       - 'runtime/src/components/GitHubActionsPanel.tsx'
       - 'runtime/src/components/JacoAuraComputeIDE.tsx'
@@ -84,8 +88,9 @@ jobs:
           node --check runtime/src/server/github/githubActions.mjs
           node --check runtime/src/server/connected/pluginLogin.mjs
           node --check runtime/src/lib/mcpIntegrationCatalog.mjs
+          node --check runtime/src/server/mcp/pluginRegistry.mjs
       - name: OAuth, stream and CLI safety contracts (fixtures only)
-        run: node --test tests/nova/cli-brains.test.mjs tests/nova/chatgpt-plan-transport.test.mjs tests/nova/provider-key.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/github-actions.test.mjs tests/nova/plugin-login.test.mjs tests/nova/mcp-integration-catalog.test.mjs
+        run: node --test tests/nova/cli-brains.test.mjs tests/nova/chatgpt-plan-transport.test.mjs tests/nova/provider-key.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/github-actions.test.mjs tests/nova/plugin-login.test.mjs tests/nova/mcp-integration-catalog.test.mjs tests/nova/plugin-registry.test.mjs
   provider-ui:
     runs-on: ubuntu-latest
     timeout-minutes: 20
