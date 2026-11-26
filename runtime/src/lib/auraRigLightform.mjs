@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {createIceCavern,createCavernAvatar,cavernGovernor} from './auraCavern.mjs';
 
 // JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
 // A light-form is sampled from the actual skinned geometry, never from a portrait.
@@ -993,16 +994,16 @@ function disposeModel(model){
 /**
  * GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms.
  * @param {HTMLCanvasElement} canvas
- * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean}} [options]
+ * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean, cavern?: boolean}} [options]
  */
-export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false}={}){
+export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,cavern=false}={}){
   const response=await fetch(ASSET,{signal,cache:'force-cache'});
   if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
   const bytes=await response.arrayBuffer();
   if(bytes.byteLength!==EXPECTED_BYTES)throw Error('AURA_RIG_ASSET_SIZE');
   const gltf=await new GLTFLoader().parseAsync(bytes,'');
   const model=gltf.scene;
-  let renderer,geometry,material,observer,domTelemetryObserver,lightBody,voiceTracker,qualityGovernor,behaviorEngine,raf=0,disposed=false;
+  let renderer,geometry,material,observer,domTelemetryObserver,lightBody,iceWorld,voiceTracker,qualityGovernor,behaviorEngine,raf=0,disposed=false;
   const motion=window.matchMedia('(prefers-reduced-motion: reduce)');
   let cleanup=()=>{};
   try{
@@ -1035,7 +1036,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     };
     model.updateMatrixWorld(true);
     const isMobile=window.innerWidth<768;
-    const groups=createSamples(model,isMobile?.64:1);
+    const groups=cavern?[]:createSamples(model,isMobile?.64:1);
     const total=groups.reduce((n,g)=>n+g.samples.length,0);
     geometry=new THREE.BufferGeometry();
     const positions=new Float32Array(total*3),normals=new Float32Array(total*3);
@@ -1055,12 +1056,17 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     const scene=new THREE.Scene(),cloud=new THREE.Points(geometry,material);
     cloud.frustumCulled=false;scene.add(cloud);
 
-    const camera=new THREE.PerspectiveCamera(31,1,.03,20);
+    const camera=new THREE.PerspectiveCamera(cavern?42:31,1,.03,cavern?40:20);
     camera.position.set(0,1.570,1.05);camera.lookAt(0,1.540,.03);
-    renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power',preserveDrawingBuffer:true});
+    renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:!cavern,powerPreference:'low-power',preserveDrawingBuffer:!cavern});
     renderer.setClearColor(0x000000,0);
 
-    lightBody=createLightBody(scene,model,bones,groups,isMobile,distantField);
+    if(cavern){
+      iceWorld=createIceCavern(scene,isMobile);
+      lightBody=createCavernAvatar(scene,model);
+    }else lightBody=createLightBody(scene,model,bones,groups,isMobile,distantField);
+    const cavernBudget=cavernGovernor(isMobile);
+    let lastDpr=0;
     voiceTracker=createVoiceFormantTracker();
     qualityGovernor=createQualityGovernor(isMobile);
     behaviorEngine=createBehaviorEngine();
@@ -1194,8 +1200,15 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         camY+=(pitchSpring.val*0.025-camY)*0.08;
       }
       const yaw=yawSpring.val,pitch=pitchSpring.val,roll=rollSpring.val;
-      camera.position.set(camX,1.570+camY,1.05);
-      camera.lookAt(0,1.540,.03);
+      if(cavern){
+        const distance=Math.max(3.15,3.15/Math.min(1,camera.aspect));
+        camera.position.set(camX*3.2,1.02+camY*2,distance);
+        camera.lookAt(0,.92,0);
+        iceWorld.update(t);
+      }else{
+        camera.position.set(camX,1.570+camY,1.05);
+        camera.lookAt(0,1.540,.03);
+      }
 
       const breathPhase=t*1.15;
       const breath=still?0:Math.sin(breathPhase)+.24*Math.sin(breathPhase*2.0-.55);
@@ -1204,6 +1217,13 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       rotate('Head',pitch*.72+(state.speaking&&!still?.018*Math.sin(t*3.9)*clamp(smoothJaw*2.5,0.2,1.0):0),yaw*.76,roll*.64);
       rotate('LeftShoulder',still?0:.016*breath,0,-.009*breath);
       rotate('RightShoulder',still?0:.016*breath+.003,0,.009*breath);
+      if(cavern){
+        const shift=still?0:Math.sin(t*.43)*.025;
+        rotate('Hips',0,shift*.5,shift);
+        rotate('Spine',0,-shift*.45,-shift*.7);
+        const gesture=state.speaking&&!still?.035*Math.sin(t*1.6):0;
+        rotate('LeftArm',gesture,0,-shift*.5);rotate('RightArm',-gesture,0,shift*.5);
+      }
 
       for(let j=0;j<4;j++){
         const lag=j*.46;
@@ -1219,7 +1239,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const b2=smoothstep(2.32,2.39,blinkCycle)*(1-smoothstep(2.39,2.54,blinkCycle))*.84;
       const blink=still?0:Math.max(b1,b2);
 
-      const visemes=behaviorEngine.computeVisemes(t,still,state,liveFormants,hasExternalLevel);
+      const visemes=behaviorEngine.computeVisemes(t,still||Boolean(cavern&&!liveFormants&&!hasExternalLevel&&!state.phonemes),state,liveFormants,hasExternalLevel);
       smoothJaw=still?0:finiteClamp(smoothJaw+(visemes.jaw-smoothJaw)*.32,0,1,0);
       smoothAA=still?0:finiteClamp(smoothAA+(visemes.aa-smoothAA)*.30,0,1,0);
       smoothO=still?0:finiteClamp(smoothO+(visemes.O-smoothO)*.30,0,1,0);
@@ -1299,9 +1319,9 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       lightBody.update(t,energy,blink,finiteClamp(smoothJaw*2.0,0,1,0),qualityTier,decisionBlend,pupilSize);
 
       let signature=0;for(let j=0;j<Math.min(positions.length,6000);j+=31)signature+=positions[j]*(j+1);
-      canvas.dataset.renderedPoints=String(total);canvas.dataset.renderer='rigged-particle-field';
-      canvas.dataset.hairPoints=String(groups.find(g=>g.kind===2).samples.length);
-      canvas.dataset.torsoPoints=String(groups.find(g=>g.kind===1).samples.length);
+      canvas.dataset.renderedPoints=String(total);canvas.dataset.renderer=cavern?'rigged-cavern':'rigged-particle-field';
+      canvas.dataset.hairPoints=String(groups.find(g=>g.kind===2)?.samples.length??0);
+      canvas.dataset.torsoPoints=String(groups.find(g=>g.kind===1)?.samples.length??0);
       canvas.dataset.yaw=yaw.toFixed(4);canvas.dataset.blink=blink.toFixed(4);canvas.dataset.jaw=smoothJaw.toFixed(4);
       canvas.dataset.geometrySignature=signature.toFixed(5);
       canvas.dataset.blinkMm=displacement(probes[0]).toFixed(3);
@@ -1311,10 +1331,20 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       canvas.dataset.audioConnected=String(voiceTracker.isConnected());
     };
 
-    const render=time=>{if(disposed||document.hidden)return;pose(time);renderer.render(scene,camera);};
+    const budgetSettings=()=>cavernBudget.settings(Boolean(state.active||busPhase==='analyzing'||busPhase==='verifying'));
+    const render=time=>{
+      if(disposed||document.hidden)return;
+      if(cavern){
+        const settings=budgetSettings(),dpr=Math.min(window.devicePixelRatio||1,settings.dpr);
+        if(lastDpr!==dpr){renderer.setPixelRatio(dpr);lastDpr=dpr;}
+        canvas.dataset.frameBudget=String(settings.fps);
+      }
+      const start=performance.now();pose(time);renderer.render(scene,camera);
+      if(cavern){cavernBudget.observe(performance.now()-start);canvas.dataset.drawCalls=String(renderer.info.render.calls);canvas.dataset.triangles=String(renderer.info.render.triangles);}
+    };
     const tick=time=>{
       if(disposed||document.hidden||motion.matches)return;
-      if(time-last>=FRAME_TIME-1){render(time);last=time;}
+      if(time-last>=(cavern?1000/budgetSettings().fps:FRAME_TIME)-1){render(time);last=time;}
       raf=requestAnimationFrame(tick);
     };
     const refresh=()=>{
@@ -1325,8 +1355,8 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     const resize=()=>{
       if(disposed)return;
       const width=Math.max(1,canvas.clientWidth||360),height=Math.max(1,canvas.clientHeight||width);
-      const dpr=Math.min(window.devicePixelRatio||1,1.5);
-      renderer.setPixelRatio(dpr);renderer.setSize(width,height,false);
+      const dpr=Math.min(window.devicePixelRatio||1,cavern?budgetSettings().dpr:1.5);
+      lastDpr=dpr;renderer.setPixelRatio(dpr);renderer.setSize(width,height,false);
       camera.aspect=width/height;camera.updateProjectionMatrix();material.uniforms.uPixelRatio.value=dpr;
       if(motion.matches)render(0);
     };
@@ -1338,7 +1368,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       window.removeEventListener('jaco:cognitive-phase',onMissionEvent);
       motion.removeEventListener('change',refresh);document.removeEventListener('visibilitychange',refresh);
       canvas.removeEventListener('webglcontextlost',lost);signal?.removeEventListener('abort',dispose);
-      voiceTracker?.dispose();lightBody?.dispose();geometry.dispose();material.dispose();renderer.dispose();disposeModel(model);
+      voiceTracker?.dispose();lightBody?.dispose();iceWorld?.dispose();geometry.dispose();material.dispose();renderer.dispose();disposeModel(model);
     }
     cleanup=dispose;
     window.addEventListener('pointermove',onPointerMove,{passive:true});
@@ -1366,7 +1396,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       dispose
     };
   }catch(error){
-    if(!disposed){cleanup();if(!disposed){disposed=true;voiceTracker?.dispose();lightBody?.dispose();geometry?.dispose();material?.dispose();renderer?.dispose();disposeModel(model);}}
+    if(!disposed){cleanup();if(!disposed){disposed=true;voiceTracker?.dispose();lightBody?.dispose();iceWorld?.dispose();geometry?.dispose();material?.dispose();renderer?.dispose();disposeModel(model);}}
     throw error;
   }
 }
