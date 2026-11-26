@@ -7,7 +7,7 @@ import {SecretStore,hydrateEnvFromStore,isExportableSecret} from '../../agents/l
 import {HttpMcpClient,mcpCredential} from '../../runtime/src/server/mcp/httpMcpClient.mjs';
 import {createGuidedMcpConnection} from '../../runtime/src/server/mcp/guidedMcpConnection.mjs';
 import {guidedMcpPreset} from '../../runtime/src/lib/mcpIntegrationCatalog.mjs';
-import {validateServerEntry} from '../../runtime/src/server/mcp/stdioMcpHost.mjs';
+import {validateServerEntry,StdioMcpHost} from '../../runtime/src/server/mcp/stdioMcpHost.mjs';
 
 function fixture(t,id='github-remote',{reject=false,invalid=false,missing=false,reconnectFailure=false}={}){
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-guided-'));
@@ -180,4 +180,52 @@ test('Stripe sandbox does not persist unverifiable account responses',async t=>{
   await assert.rejects(f.connect('stripe-sandbox',{token:'rk_'+'test_fixture'}),/MCP_GUIDED_PROOF_INVALID/);
   assert.deepEqual(f.store.list(),[]);
   assert.deepEqual(f.defs,{});
+});
+
+test('canonical host dispatches sandbox account read after restart and enforces operator deny',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-mcp-host-'));
+  const configFile=path.join(root,'.jaco','mcp','servers.json');
+  const previousState=process.env.JACO_STATE_DIR;
+  const previousKey=process.env.JACO_SECRET_KEY;
+  process.env.JACO_STATE_DIR=path.join(root,'vault');
+  delete process.env.JACO_SECRET_KEY;
+  t.after(()=>{
+    if(previousState===undefined)delete process.env.JACO_STATE_DIR;else process.env.JACO_STATE_DIR=previousState;
+    if(previousKey===undefined)delete process.env.JACO_SECRET_KEY;else process.env.JACO_SECRET_KEY=previousKey;
+    fs.rmSync(root,{recursive:true,force:true});
+  });
+  const calls=[];
+  const id='stripe-sandbox',token='rk_'+'test_fixture';
+  t.mock.method(globalThis,'fetch',async(url,options)=>{
+    assert.equal(url,'https://mcp.stripe.com/');
+    assert.equal(options.headers.authorization,'Bearer '+token);
+    const rpc=JSON.parse(options.body);calls.push(rpc.method);
+    if(rpc.method==='notifications/initialized')return new Response(null,{status:204});
+    let result;
+    if(rpc.method==='initialize')result={protocolVersion:'2025-06-18'};
+    else if(rpc.method==='tools/list')result={tools:['get_stripe_account_info','stripe_api_write'].map(name=>({name,inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:true}}))};
+    else if(rpc.method==='tools/call'){
+      assert.deepEqual(rpc.params,{name:'get_stripe_account_info',arguments:{}});
+      result={content:[{type:'text',text:JSON.stringify({id:'acct_fixture',livemode:false})}]};
+    }else throw Error('unexpected RPC');
+    return Response.json({jsonrpc:'2.0',id:rpc.id,result});
+  });
+  const host=new StdioMcpHost({configFile,repoRoot:root,runtimeRoot:root});
+  const connect=createGuidedMcpConnection({host});
+  const result=await connect(id,{token});
+  assert.equal(result.state,'READ_PROBE_VERIFIED');
+  assert.equal(host.status().find(row=>row.id===id).tools.length,1);
+  assert.doesNotMatch(fs.readFileSync(configFile,'utf8'),/test_fixture/);
+  host.stopAll();
+  const restarted=new StdioMcpHost({configFile,repoRoot:root,runtimeRoot:root});
+  try{
+    const reply=await restarted.call(id,'get_stripe_account_info',{}, {actor:'agent',readOnly:true});
+    assert.equal(JSON.parse(reply.content[0].text).id,'acct_fixture');
+    assert.equal(restarted.status().find(row=>row.id===id).stats.lastCall.actor,'agent');
+    const before=calls.length;
+    await assert.rejects(restarted.call(id,'stripe_api_write',{}, {actor:'agent'}),/MCP_TOOL_UNKNOWN/);
+    restarted.setAccess(id,{deny:['get_stripe_account_info']});
+    await assert.rejects(restarted.call(id,'get_stripe_account_info',{}, {actor:'agent',readOnly:true}),/MCP_TOOL_DENIED/);
+    assert.equal(calls.length,before);
+  }finally{restarted.stopAll();}
 });
