@@ -281,7 +281,10 @@ class StdioClient {
       this.startedAt = new Date().toISOString();
       proc.stdout.setEncoding('utf8');
       proc.stdout.on('data', chunk => { if (this.proc === proc) this.onData(chunk); });
-      proc.stderr.on('data', chunk => { if (this.proc === proc) this.lastStderr = String(chunk).slice(-500); });
+      // The tail across chunks, not the last chunk: Node writes a missing-entrypoint error in several pieces, and
+      // keeping only the final one lost the MODULE_NOT_FOUND line (flaky ENTRYPOINT_NOT_FOUND, then EXIT_1).
+      // Bounded, and only ever classified: it is never published.
+      proc.stderr.on('data', chunk => { if (this.proc === proc) this.lastStderr = (this.lastStderr + String(chunk)).slice(-4000); });
       // Events of a process that was already replaced (stop + restart) must not touch the new one.
       // Node emits 'exit' before stdio pipes necessarily drain. A missing
       // entrypoint can therefore be misclassified as EXIT_1 instead of
