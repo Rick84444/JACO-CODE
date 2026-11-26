@@ -78,6 +78,8 @@ import { liteChatAnswer } from "./src/server/connected/liteChatRouter.mjs";
 import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/mcp/stdioMcpHost.mjs";
 import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFromRemote, readGithubPullRequest } from './src/server/mcp/auraAgentMcpCall.mjs';
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
+import { createPluginLogin } from './src/server/connected/pluginLogin.mjs';
+import { MCP_INTEGRATION_CATALOG, pluginLoginPreset } from './src/lib/mcpIntegrationCatalog.mjs';
 import { readGithubActions } from "./src/server/github/githubActions.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
@@ -269,6 +271,7 @@ const mcpHost = new StdioMcpHost({
   runtimeRoot: RELEASE_ROOT,
 });
 process.on('exit', () => mcpHost.stopAll());
+const openPluginLogin = createPluginLogin({host:mcpHost});
 // Aura's voice (Piper Alma) stays loaded in one worker; loaded at start so her first sentence is not late.
 const piperVoice = createPiperVoice({ workerScript: path.join(RELEASE_ROOT, 'tools', 'piper-voice-worker.py') });
 if (piperVoice.available()) void piperVoice.warm();
@@ -400,6 +403,7 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         description: 'Read the live catalog of connected MCP tool servers and the tools they currently advertise. Use this before answering what tools Aura has. This only observes metadata and never starts or calls a tool. args: {}',
         run: async () => ({
           observedAt: new Date().toISOString(),
+          availablePlugins: MCP_INTEGRATION_CATALOG.map(p=>({id:p.id,name:p.name,configured:Boolean(mcpHost.servers()[p.id]),loginOpeningApproved:Boolean(mcpHost.servers()[p.id]?.allowOpenLogin && pluginLoginPreset(p.id,mcpHost.servers()[p.id]))})),
           servers: mcpHost.status().map((server: any) => ({
             id: server.id,
             name: server.name,
@@ -415,6 +419,16 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
             blockedTools: (server.tools || []).filter((tool: any) => tool.agentAllowed !== true).slice(0, 100).map((tool: any) => tool.name),
           })),
         }),
+      },
+      plugin_login: {
+        description: 'Open the official account page for an already configured plugin when authentication is required. Requires the operator’s saved opt-in and existing commands.run mandate. Never grants new scopes, submits credentials or verifies sign-in. args: {plugin}',
+        run: async (args: any) => {
+          if(connectedRuntime.capabilities?.isTaskEnabled?.('mcp-write')===false) throw Error('CAPABILITY_DISABLED:mcp-write');
+          const check=organization?.authorize('aura','commands.run');
+          if(!check?.allowed) throw Error('MANDATE_DENIED:aura:commands.run');
+          if(!args || typeof args!=='object' || Array.isArray(args) || Object.keys(args).some(k=>k!=='plugin')) throw Error('PLUGIN_ARGUMENTS_INVALID');
+          return openPluginLogin(args.plugin);
+        },
       },
       mcp_discover: {
         description: 'Discover currently advertised tools from one already configured MCP server, starting it on demand. Only reads the catalog and never calls a tool or broadens policy. args: {server}',
