@@ -70,10 +70,12 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   const [draft, setDraft] = useState({ id: '', name: '', target: '', icon: 'mcp', agentAccess: 'read', tokenEnv: '', allowOpenLogin: false });
   const [query, setQuery] = useState('');
   const [category,setCategory]=useState('all');
-  const [scope,setScope]=useState<'all'|'configured'|'available'|'directory'>('all');
+  const [scope,setScope]=useState<'all'|'configured'|'available'|'directory'>(providers.some(p=>MCP_INTEGRATION_CATALOG.some(c=>c.id===p.id))?'configured':'available');
   const [selectedPlugin,setSelectedPlugin]=useState('');
   const [clock,setClock]=useState(Date.now());
   const modal=useRef<HTMLDialogElement>(null);
+  const setupModal=useRef<HTMLDialogElement>(null);
+  useEffect(()=>{const dialog=setupModal.current;if(adding&&dialog&&!dialog.open)dialog.showModal();else if(!adding&&dialog?.open)dialog.close();},[adding]);
   useEffect(()=>{const t=window.setInterval(()=>setClock(Date.now()),5000);return()=>window.clearInterval(t);},[]);
   const fresh=!observationFailed&&observationFresh(observedAt,clock);
   const preset=MCP_INTEGRATION_CATALOG.find(p=>p.id===selectedPlugin);
@@ -148,7 +150,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
       : { id: draft.id.trim(), name: draft.name.trim() || draft.id.trim(), command: parts[0], args: parts.slice(1), icon: draft.icon, agentAccess: draft.agentAccess };
     setWorking('__add');
     try {
-      await send('/api/aura/workbench/mcp/servers', 'POST', entry);
+      await send('/api/aura/workbench/mcp/servers', 'POST', {...entry,createOnly:true});
       try { const started=await send('/api/aura/workbench/mcp/start','POST',{providerId:entry.id}); onChanged(`${entry.name}: ${Array.isArray(started.tools)?started.tools.length:0} tools discovered. Individual tool execution is not yet verified.`); }
       catch(error:any) { onChanged(`${entry.name} saved, but the connection failed: ${error.message}`); }
       setDraft({ id: '', name: '', target: '', icon: 'mcp', agentAccess: 'read', tokenEnv: '', allowOpenLogin: false }); setAdding(false);
@@ -181,16 +183,17 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
           {[['all','All categories'],['development','Development'],['cloud','Cloud'],['marketing','Marketing'],['commerce','Commerce'],['finance','Finance'],['marketplace','Marketplace']].map(([id,label])=><option key={id} value={id}>{label}</option>)}
         </select>
       </div>
+      {!fresh&&<p role="status" className="text-[11px] text-neutral-400">Refresh the runtime observation before changing a connection. Select All or Directory to browse documentation.</p>}
       <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
         {MCP_INTEGRATION_CATALOG.filter(p=>(category==='all'||pluginCategory(p)===category)&&matches(p)&&scope!=='directory'&&(scope==='all'||(fresh&&(scope==='configured'?providers.some(v=>v.id===p.id):!providers.some(v=>v.id===p.id))))).map(p=>{
           const row=providers.find(v=>v.id===p.id);
           const state=mcpConnectionState(row,fresh);
-          return <button type="button" key={p.id} onClick={()=>{setFormError(null);setSelectedPlugin(p.id);}} className="rounded-lg border border-neutral-700 bg-[#22262c] px-3 py-3 text-left hover:border-sky-700 focus-visible:outline focus-visible:outline-sky-300">
+          return <button type="button" key={p.id} aria-haspopup="dialog" aria-label={"Review "+p.name+" integration"} onClick={()=>{setFormError(null);setSelectedPlugin(p.id);}} className="rounded-lg border border-neutral-700 bg-[#22262c] px-3 py-3 text-left hover:border-sky-700 focus-visible:outline focus-visible:outline-sky-300">
             <div className="flex items-center gap-3"><PluginLogo id={p.id} name={p.name} icon={p.icon} size={28}/><div className="min-w-0 flex-1"><strong className="block text-xs text-neutral-100">{p.name}</strong><span className="block text-[10px] text-neutral-400">{environmentLabel(p.id)}</span></div><span aria-hidden="true" className="text-neutral-500">›</span></div>
             <div className="mt-2 text-[10px] text-neutral-300">{statusLabel(state)}</div>
           </button>;
         })}
-        {marketplaceEntries(providers).filter(p=>(category==='all'||p.category===category)&&matches(p)&&(scope==='all'||scope==='directory'||(scope==='configured'&&fresh&&p.status==='EXISTING_HOST'&&providers.some(v=>v.id===p.id)))).map(p=><button type="button" key={p.id} onClick={()=>{setFormError(null);setSelectedPlugin(p.id);}} className="rounded-lg border border-neutral-700 bg-[#22262c] px-3 py-3 text-left hover:border-sky-700 focus-visible:outline focus-visible:outline-sky-300">
+        {marketplaceEntries(providers).filter(p=>(category==='all'||p.category===category)&&matches(p)&&(scope==='all'||scope==='directory'||(scope==='configured'&&fresh&&p.status==='EXISTING_HOST'&&providers.some(v=>v.id===p.id)))).map(p=><button type="button" key={p.id} aria-haspopup="dialog" aria-label={"Review "+p.name+" integration"} onClick={()=>{setFormError(null);setSelectedPlugin(p.id);}} className="rounded-lg border border-neutral-700 bg-[#22262c] px-3 py-3 text-left hover:border-sky-700 focus-visible:outline focus-visible:outline-sky-300">
           <div className="flex gap-3 items-center"><PluginLogo id={p.id} name={p.name} size={28}/><div className="min-w-0 flex-1"><strong className="block text-xs text-neutral-100">{p.name}</strong><span className="block text-[10px] text-neutral-400"> {p.status==='EXISTING_HOST'?'Existing integration':'Directory entry'}</span></div><span aria-hidden="true" className="text-neutral-500">›</span></div>
           <div className="mt-2 text-[10px] text-neutral-300">{statusLabel(p.status==='EXISTING_HOST'&&!fresh?'UNOBSERVED':p.state)}</div>
         </button>)}
@@ -229,7 +232,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
       </details>
     </section>
 
-    {adding && <div className="mx-3 mb-2 p-2 rounded border border-[#5a5b5d] bg-[#27282a] space-y-1.5" aria-label="Add MCP server">
+    <dialog ref={setupModal} aria-labelledby="mcp-setup-title" onClose={()=>{setAdding(false);setFormError(null);}} className="m-auto w-[min(94vw,480px)] max-h-[85dvh] overflow-auto rounded-xl border border-neutral-600 bg-[#1c2026] p-0 text-neutral-100 backdrop:bg-black/70">{adding&&<div className="p-5 space-y-3" aria-label="Add MCP server"><header className="flex items-center justify-between gap-2"><h3 id="mcp-setup-title" className="font-semibold">Configure integration</h3><button type="button" aria-label="Close setup" onClick={()=>setupModal.current?.close()} className="rounded border border-neutral-600 px-2 py-1">×</button></header>
       <div className="flex gap-1.5">
         <input aria-label="Server id" value={draft.id} onChange={e => setDraft({ ...draft, id: e.target.value.toLowerCase(),allowOpenLogin:false })} placeholder="id, e.g. github" className="min-w-0 flex-1 bg-[#1d1e20] border border-[#505153] rounded px-2 py-1 text-[10px] outline-none" />
         <input aria-label="Name" value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Name" className="min-w-0 flex-1 bg-[#1d1e20] border border-[#505153] rounded px-2 py-1 text-[10px] outline-none" />
@@ -251,7 +254,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
       <p className="text-xs text-neutral-400">Use an existing environment variable name, never paste the secret here. Remote writes require explicit server write access and an applicable signed operator mandate. Browser-based OAuth is not yet implemented in this MCP host.</p>
       {formError && <p role="status" className="text-[10px] text-amber-300 break-words">{formError}</p>}
       <button onClick={() => void add()} disabled={!fresh||working !== null} className="w-full rounded border border-neutral-700 py-1 text-[10px] text-neutral-200 disabled:opacity-40">{working === '__add' ? 'Connecting…' : 'Save and connect'}</button>
-    </div>}
+    </div>}</dialog>
 
     {providers.map(p => {
       const s = p.stats;
