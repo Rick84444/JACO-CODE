@@ -324,12 +324,25 @@ export async function continueAsMission(input, tools, receipts) {
   }
 }
 
+/** First sentence (at most 110 characters) plus the `args: {...}` contract (at most 110), for models with small windows. */
+export function briefToolDescription(description) {
+  const text = String(description ?? '').replace(/\s+/g, ' ').trim();
+  const args = /\bargs?:\s*(\{.*?\}|none|\{\})(?=\s|$|\.)/i.exec(text)?.[0] || '';
+  const withoutArgs = args ? text.replace(args, '').trim() : text;
+  const first = withoutArgs.split(/(?<=[.!?])\s/)[0] || withoutArgs;
+  const cut = (s, n) => (s.length <= n ? s : s.slice(0, n - 1).trimEnd() + '…');
+  return [cut(first, 110), cut(args, 110)].filter(Boolean).join(' ');
+}
+
 // `toolbox` = { observe(): Promise<string>, tools: { name: { description, run(args) } } }.
 // Every tool result is recorded as a receipt; the model may only cite what a receipt shows.
 async function runToolLoop(input, fetchImpl){
   const toolbox = input.toolbox;
   const tools = toolbox.tools || {};
-  const catalog = Object.entries(tools).map(([name, tool]) => `- ${name}: ${tool.description}`).join('\n');
+  // A model on this computer has a small window: the first sentence of each tool and its args format are enough to
+  // call it. The full descriptions pushed the prompt over the local limit, so Lite's chat fell back to the status
+  // answer (CI "default chat to a local model", 2026-11-25).
+  const catalog = Object.entries(tools).map(([name, tool]) => `- ${name}: ${input.compactRules === true ? briefToolDescription(tool.description) : tool.description}`).join('\n');
   let observedState = '';
   try { observedState = String(await toolbox.observe?.() ?? ''); } catch (error) { observedState = `observation failed: ${error?.message || error}`; }
   const receipts = [];

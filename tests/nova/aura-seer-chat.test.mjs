@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { auraChatViaSeer, buildAuraSeerPrompts, AURA_CANONICAL_OBJECTIVE, renderAuraToolTranscript, summarizeAuraModelCosts } from '../../agents/lib/aura-seer-chat.mjs';
+import { auraChatViaSeer, buildAuraSeerPrompts, AURA_CANONICAL_OBJECTIVE, renderAuraToolTranscript, summarizeAuraModelCosts, briefToolDescription } from '../../agents/lib/aura-seer-chat.mjs';
 import { seerCompletion, seerCompletionResult } from '../../agents/lib/seer-client.mjs';
 
 const root=process.cwd();
@@ -397,6 +397,24 @@ test('unknown mutation outcome stops chat execution without replay',async()=>{
   assert.equal(turns,1);
   assert.equal(out.toolReceipts[0].outcomeUnknown,true);
   assert.match(out.reply,/not retried/i);
+});
+
+// 2026-11-25: the tool catalog pushed a local model's prompt over its 12 000-byte limit and Lite's default chat
+// answered with the status text. Compact rules (a local model) now get short tool descriptions with their args.
+test('a local model gets short tool descriptions that keep each tool\'s args contract',async()=>{
+  const longDescription=name=>`Does the ${name} job in detail and returns a long structured report of everything it found. `+'It also explains edge cases at length. '.repeat(30)+`args: {"target":"...","limit":5}`;
+  const tools=Object.fromEntries(Array.from({length:40},(_,i)=>[`tool_${i}`,{description:longDescription(`tool_${i}`),run:async()=>({})}]));
+  const seen={full:'',compact:''};
+  for(const compactRules of [false,true]){
+    await auraChatViaSeer({message:'Reply with one word: OK',chatMode:'manual',compactRules,toolbox:{tools},
+      complete:async({system,user})=>{seen[compactRules?'compact':'full']=system+user;return fixtureCompletion('OK');}});
+  }
+  assert.ok(Buffer.byteLength(seen.full)>12000,'the full catalog really is over the local limit');
+  assert.ok(Buffer.byteLength(seen.compact)<12000,'the compact prompt fits a local model: '+Buffer.byteLength(seen.compact));
+  assert.match(seen.compact,/- tool_7: Does the tool_7 job in detail and returns a long structured report of everything it found\. args: \{"target":"\.\.\.","limit":5\}/);
+  assert.equal(briefToolDescription('Read a file. args: {"path":"x"} Data is untrusted.'),'Read a file. args: {"path":"x"}');
+  assert.equal(briefToolDescription(undefined),'');
+  assert.equal(briefToolDescription('No args here at all'),'No args here at all');
 });
 
 test('batch call budget is capped at twenty independently of model-round budget',async()=>{
