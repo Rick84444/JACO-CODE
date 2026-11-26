@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {MCP_INTEGRATION_CATALOG,mcpCatalogDraft,mcpConnectionState,pluginLoginPreset,marketplaceEntries,pluginCategory} from '../../runtime/src/lib/mcpIntegrationCatalog.mjs';
+import {MCP_INTEGRATION_CATALOG,mcpCatalogDraft,mcpConnectionState,pluginLoginPreset,marketplaceEntries,pluginCategory,financialOptions} from '../../runtime/src/lib/mcpIntegrationCatalog.mjs';
 import {validateServerEntry} from '../../runtime/src/server/mcp/stdioMcpHost.mjs';
 
 test('official catalog presets are valid explicit operator configurations with read-only agent defaults',()=>{
@@ -17,7 +17,7 @@ test('official catalog presets are valid explicit operator configurations with r
     assert.equal(config.tokenEnv,draft.tokenEnv||null);
     assert.notEqual(mcpCatalogDraft(item.id),draft);
   }
-  assert.equal(ids.size,12);
+  assert.equal(ids.size,14);
   assert.throws(()=>mcpCatalogDraft('arbitrary'),/MCP_CATALOG_UNKNOWN/);
 });
 test('configuration, authentication, stale state and discovered tools are distinct',()=>{
@@ -48,11 +48,31 @@ test('marketing presets and marketplace candidates never masquerade as connected
   assert.equal(b.agentAccess,'read');
   assert.equal(b.allowOpenLogin,false);
   assert.equal(pluginCategory(MCP_INTEGRATION_CATALOG.find(p=>p.id==='buffer')),'marketing');
-  assert.equal(pluginCategory(MCP_INTEGRATION_CATALOG.find(p=>p.id==='stripe')),'commerce');
+  assert.equal(pluginCategory(MCP_INTEGRATION_CATALOG.find(p=>p.id==='stripe')),'finance');
   assert.equal(mcpCatalogDraft('mailchimp-docs').tokenEnv,'');
   for(const id of ['etsy','shopify','ebay','hubspot','jobbi','frantic'])assert.throws(()=>mcpCatalogDraft(id),/MCP_CATALOG_UNKNOWN/);
   const entries=marketplaceEntries([{id:'jobbi',status:'READY'},{id:'etsy',status:'READY'}]);
   assert.equal(entries.find(p=>p.id==='jobbi').state,'TOOLS_DISCOVERED');
   assert.equal(entries.find(p=>p.id==='etsy').state,'ADAPTER_REQUIRED');
   assert.equal(entries.find(p=>p.id==='hubspot').state,'OAUTH_REQUIRED');
+});
+
+test('financial choices distinguish observed read tools from setup and never grant financial authority',()=>{
+  const unknown=financialOptions();
+  assert.equal(unknown.observed,false);
+  assert.ok(unknown.strategies.every(s=>s.state==='UNOBSERVED'));
+  const coingecko=mcpCatalogDraft('coingecko');
+  assert.equal(coingecko.target,'https://mcp.api.coingecko.com/mcp');
+  assert.equal(coingecko.tokenEnv,'');
+  assert.equal(mcpCatalogDraft('paypal-sandbox').target,'https://mcp.sandbox.paypal.com/http');
+  assert.throws(()=>mcpCatalogDraft('paypal'),/MCP_CATALOG_UNKNOWN/);
+  for(const id of ['fortnox','wise','coinbase','alpaca'])assert.throws(()=>mcpCatalogDraft(id),/MCP_CATALOG_UNKNOWN/);
+  const live={id:'coingecko',status:'READY',agentAccess:'read',tools:[{name:'price',readOnly:true,agentAllowed:true}]};
+  const p=financialOptions([live]);
+  assert.equal(p.strategies.find(s=>s.id==='market-research').state,'READ_TOOLS_DISCOVERED');
+  assert.equal(p.strategies.find(s=>s.id==='capital-overview').state,'SETUP_OR_DISCOVERY_REQUIRED');
+  assert.ok(p.strategies.every(s=>!s.financialMutationAllowed&&!s.executionVerified));
+  assert.equal(financialOptions([{...live,agentAccess:'off'}]).strategies.find(s=>s.id==='market-research').state,'SETUP_OR_DISCOVERY_REQUIRED');
+  assert.equal(financialOptions([{...live,tools:[{readOnly:false,agentAllowed:true}]}]).strategies.find(s=>s.id==='market-research').state,'SETUP_OR_DISCOVERY_REQUIRED');
+  assert.equal(financialOptions([{...live,credentialConfigured:false}]).strategies.find(s=>s.id==='market-research').state,'SETUP_OR_DISCOVERY_REQUIRED');
 });
