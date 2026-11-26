@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MCP_LOGOS } from './mcpLogos';
-import { MCP_INTEGRATION_CATALOG, mcpCatalogDraft, mcpConnectionState } from '../lib/mcpIntegrationCatalog.mjs';
+import { MCP_INTEGRATION_CATALOG, mcpCatalogDraft, mcpConnectionState, pluginCategory, marketplaceEntries } from '../lib/mcpIntegrationCatalog.mjs';
 
 // JACO's MCP servers as the operator manages them (operator 2026-10-09): each with its logo, what it
 // answered, what agents may do with it, and the last calls. Servers are added here without editing
@@ -56,6 +56,19 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ id: '', name: '', target: '', icon: 'mcp', agentAccess: 'read', tokenEnv: '', allowOpenLogin: false });
   const [query, setQuery] = useState('');
+  const [category,setCategory]=useState('all');
+  const [registryQuery,setRegistryQuery]=useState('');
+  const [registryBusy,setRegistryBusy]=useState(false);
+  const [registryError,setRegistryError]=useState('');
+  const [registry,setRegistry]=useState<{entries:{name:string;title:string;description:string;version:string;state:string}[];hasMore:boolean}|null>(null);
+  const searchRegistry=async()=>{
+    if(registryBusy||registryQuery.trim().length<3)return;
+    setRegistryBusy(true);setRegistryError('');setRegistry(null);
+    try{setRegistry(await send('/api/aura/workbench/mcp/registry?q='+encodeURIComponent(registryQuery.trim()),'GET'));}
+    catch(e:any){setRegistryError(String(e?.message||'Registry unavailable'));}
+    finally{setRegistryBusy(false);}
+  };
+  const matches=(p:{name:string;auth?:string;purpose?:string})=>(p.name+' '+(p.auth||'')+' '+(p.purpose||'')).toLowerCase().includes(query.trim().toLowerCase());
   const [formError, setFormError] = useState<string | null>(null);
   const failedCustom = providers.filter(p => p.status === 'FAILED' && p.builtIn === false);
   const quarantineFailed = async () => {
@@ -115,8 +128,11 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
       <h3 className="text-sm font-semibold text-neutral-200">Plugin Center</h3>
       <p className="text-xs text-neutral-400">Official endpoints. Select a connection to review its configuration. Nothing is installed or authenticated until you explicitly save and connect.</p>
       <input aria-label="Search integration catalog" placeholder="Search providers" value={query} onChange={e=>setQuery(e.target.value)} className="w-full rounded border border-neutral-700 bg-[#1d1e20] px-2 py-1 text-sm"/>
+      <div className="flex flex-wrap gap-1" aria-label="Plugin categories">
+        {[['all','All'],['development','Dev'],['cloud','Cloud'],['marketing','Marketing'],['commerce','Commerce'],['marketplace','Marketplace']].map(([id,label])=><button key={id} type="button" aria-pressed={category===id} onClick={()=>setCategory(id)} className={'px-2 py-1 rounded border text-xs '+(category===id?'border-[#659bd0] bg-[#253a4d]':'border-neutral-700')}>{label}</button>)}
+      </div>
       <div className="grid gap-2 grid-cols-2 sm:grid-cols-3">
-        {MCP_INTEGRATION_CATALOG.filter(p=>(p.name+' '+p.auth).toLowerCase().includes(query.trim().toLowerCase())).map(p=>{
+        {MCP_INTEGRATION_CATALOG.filter(p=>(category==='all'||pluginCategory(p)===category)&&matches(p)).map(p=>{
           const current=providers.find(v=>v.id===p.id);
           return <article key={p.id} className="rounded border border-neutral-700 p-2 space-y-1">
             <div className="flex items-center gap-2"><McpLogo icon={p.icon}/><strong className="text-xs">{p.name}</strong></div>
@@ -126,7 +142,23 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
             <a className="text-xs underline text-neutral-300" href={p.docs} target="_blank" rel="noopener noreferrer">Official setup</a></div>
           </article>;
         })}
+        {marketplaceEntries(providers).filter(p=>(category==='all'||p.category===category)&&matches(p)).map(p=><article key={p.id} className="rounded border border-neutral-700 p-2 space-y-1">
+          <strong className="text-xs">{p.name}</strong>
+          <div role="status" className="text-[10px] text-neutral-400">{p.state.replaceAll('_',' ')}</div>
+          <p className="text-xs text-neutral-400">{p.purpose}</p>
+          <a className="text-xs underline text-neutral-300" href={p.docs} target="_blank" rel="noopener noreferrer">Official setup</a>
+        </article>)}
       </div>
+      <details className="rounded border border-neutral-700 p-2">
+        <summary className="cursor-pointer text-xs font-semibold">MCP Marketplace · Search public registry</summary>
+        <form className="flex gap-2 mt-2" onSubmit={e=>{e.preventDefault();void searchRegistry();}}>
+          <input className="min-w-0 flex-1 bg-[#1d1e20] border border-neutral-700 rounded px-2 text-xs" aria-label="Search public MCP Registry" placeholder="e.g. marketing" maxLength={100} value={registryQuery} onChange={e=>setRegistryQuery(e.target.value)}/>
+          <button className="border border-neutral-600 rounded px-2 py-1 text-xs disabled:opacity-40" disabled={registryBusy||registryQuery.trim().length<3}>Search</button>
+        </form>
+        <p className="text-xs text-neutral-400 mt-2">Directory listings are not trusted installations. Review publisher, credentials, permissions and costs separately.</p>
+        {registryBusy&&<p role="status">Searching…</p>}{registryError&&<p role="alert">{registryError}</p>}
+        {registry&&<ul className="space-y-2 max-h-72 overflow-auto mt-2">{registry.entries.map((r,i)=><li key={r.name+'@'+r.version+'-'+i} className="border-b border-neutral-700 pb-1 text-xs break-words"><strong>{r.title||r.name}</strong><div>{r.name} · {r.version}</div><p>{r.description}</p><span className="text-neutral-400">Discovered · not verified</span></li>)}{!registry.entries.length&&<li>No active latest entries on this page.</li>}{registry.hasMore&&<li>More results exist. Narrow your search.</li>}</ul>}
+      </details>
     </div>
 
     {adding && <div className="mx-3 mb-2 p-2 rounded border border-[#5a5b5d] bg-[#27282a] space-y-1.5" aria-label="Add MCP server">
