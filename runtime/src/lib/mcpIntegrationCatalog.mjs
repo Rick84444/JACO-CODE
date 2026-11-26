@@ -64,6 +64,7 @@ export function pluginEvidence(provider,observed=true){
   return {state,agentAccess:known?provider.agentAccess||'read':null,toolsDiscovered:known&&state==='TOOLS_DISCOVERED'?provider.tools?.length??0:null,allowedReadTools:known&&state==='TOOLS_DISCOVERED'?(provider.tools||[]).filter(t=>t.readOnly===true&&t.agentAllowed===true).length:null,lastCall,executionVerified:false};
 }
 
+/** @type {ReadonlyArray<Readonly<{id:string,name:string,category:string,purpose:string,status:string,docs:string}>>} */
 export const MARKETPLACE_DIRECTORY=Object.freeze([
   {id:'hubspot',name:'HubSpot',category:'marketing',purpose:'CRM, campaigns and leads',status:'OAUTH_REQUIRED',docs:'https://developers.hubspot.com/docs/apps/developer-platform/build-apps/integrate-with-the-remote-hubspot-mcp-server'},
   {id:'semrush',name:'Semrush',category:'marketing',purpose:'SEO and competitor research',status:'ADAPTER_REQUIRED',docs:'https://developer.semrush.com/api/v4/introduction/semrush-mcp/'},
@@ -90,7 +91,7 @@ export const MARKETPLACE_DIRECTORY=Object.freeze([
   {"id":"coinbase","name":"Coinbase AgentKit","category":"finance","purpose":"Owner-controlled wallet infrastructure; no signing adapter","status":"ADAPTER_REQUIRED","docs":"https://github.com/coinbase/agentkit"},
   {"id":"wise","name":"Wise","category":"finance","purpose":"International account and currency reporting","status":"ADAPTER_REQUIRED","docs":"https://docs.wise.com/"},
   {"id":"x402","name":"x402","category":"finance","purpose":"Machine-readable payment protocol; no outgoing payment adapter","status":"ADAPTER_REQUIRED","docs":"https://www.x402.org/"}
-].map(Object.freeze));
+].map(item=>Object.freeze(item)));
 export const pluginCategory=p=>p.category || (p.id==='stripe'?'finance':['render','cloudflare-api','cloudflare-docs'].includes(p.id)?'cloud':'development');
 export function marketplaceEntries(providers=[]){
   return MARKETPLACE_DIRECTORY.map(p=>({...p,state:p.status==='EXISTING_HOST'?mcpConnectionState(providers.find(v=>v.id===p.id)):p.status}));
