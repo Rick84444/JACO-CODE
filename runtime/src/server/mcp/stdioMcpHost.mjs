@@ -236,6 +236,7 @@ export function validateServerEntry(id, s = {}) {
     const url = new URL(String(s.url || ''));
     if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
     if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
+    if(isGuidedCredentialRef(s.tokenEnv)&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
     return { ...common, transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, ...(s.allowOpenLogin === true ? {allowOpenLogin:true} : {}) };
   }
   const command = String(s.command || '').trim();
