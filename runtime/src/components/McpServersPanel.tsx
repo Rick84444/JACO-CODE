@@ -27,7 +27,7 @@ interface Props {
 }
 
 export function PluginLogo({id,name,icon,size=24}:{id:string;name:string;icon?:string;size?:number}){
-  const aliases:Record<string,string>={'paypal-sandbox':'paypal','mailchimp-docs':'mailchimp','tiktok-direct':'tiktok','openai-docs':'openai','microsoft-learn':'microsoft','cloudflare-docs':'cloudflare','cloudflare-api':'cloudflare','github-remote':'github'};
+  const aliases:Record<string,string>={'paypal-sandbox':'paypal','stripe-sandbox':'stripe','mailchimp-docs':'mailchimp','tiktok-direct':'tiktok','openai-docs':'openai','microsoft-learn':'microsoft','cloudflare-docs':'cloudflare','cloudflare-api':'cloudflare','github-remote':'github'};
   const key=aliases[id]||id;
   const brand=FINANCIAL_LOGOS[key];
   if(brand?.path)return <svg role="img" aria-label={brand.title} viewBox="0 0 24 24" width={size} height={size} className="shrink-0"><path fill={brand.color} d={brand.path}/></svg>;
@@ -109,7 +109,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
       onChanged(guided.name+': '+(result.state==='READ_PROBE_VERIFIED'?'account read verified':'account read verified; runtime reconnect required'));
     }catch(error:any){
       const code=String(error?.message||'MCP_GUIDED_CONNECTION_FAILED');
-      const labels:Record<string,string>={MCP_CREDENTIAL_REQUIRED:'No credential found. Enter a provider token for a new connection, or repair the existing credential reference in the Vault.',MCP_AUTH_REQUIRED:'Authentication rejected. Check the token and its permissions.',MCP_GUIDED_CREDENTIAL_CHANGED:'The saved credential changed during verification. Reopen this dialog and retry.',MCP_GUIDED_REPLACEMENT_NOT_SUPPORTED:'Only a scoped read-only connection can be repaired here.',MCP_GUIDED_CREDENTIAL_EXISTS:'A saved credential already exists. Retry without entering a new token.',MCP_GUIDED_EXISTING_CONFIGURATION:'This connection is disabled or uses a custom endpoint. Existing settings have not been changed.',MCP_GUIDED_PROBE_UNAVAILABLE:'The provider did not advertise the expected safe verification tool.',MCP_GUIDED_PROOF_INVALID:'The provider response did not establish account access.',MCP_GUIDED_CREDENTIAL_STORED_CONFIG_FAILED:'Credential stored securely, but configuration could not be saved. Retry with no new token.'};
+      const labels:Record<string,string>={MCP_STRIPE_SANDBOX_KEY_REQUIRED:'A restricted Stripe sandbox key is required. Create an agent-tagged test key in Stripe Dashboard.',MCP_CREDENTIAL_REQUIRED:'No credential found. Enter a provider token for a new connection, or repair the existing credential reference in the Vault.',MCP_AUTH_REQUIRED:'Authentication rejected. Check the token and its permissions.',MCP_GUIDED_CREDENTIAL_CHANGED:'The saved credential changed during verification. Reopen this dialog and retry.',MCP_GUIDED_REPLACEMENT_NOT_SUPPORTED:'Only a scoped read-only connection can be repaired here.',MCP_GUIDED_CREDENTIAL_EXISTS:'A saved credential already exists. Retry without entering a new token.',MCP_GUIDED_EXISTING_CONFIGURATION:'This connection is disabled or uses a custom endpoint. Existing settings have not been changed.',MCP_GUIDED_PROBE_UNAVAILABLE:'The provider did not advertise the expected safe verification tool.',MCP_GUIDED_PROOF_INVALID:'The provider response did not establish account access.',MCP_GUIDED_CREDENTIAL_STORED_CONFIG_FAILED:'Credential stored securely, but configuration could not be saved. Retry with no new token.'};
       setGuidedError({id,message:labels[code]||code});
     }finally{setWorking(null);}
   };
@@ -235,8 +235,9 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
           {guided&&<section aria-label="Guided account connection" className="space-y-3 rounded-lg border border-sky-900/70 bg-[#182431] p-3 text-xs">
             <h4 className="font-semibold text-sky-100">{current?'Verify account connection':'Connect your account'}</h4>
             <p className="text-neutral-300">{current?'Test the existing credential without replacing your configuration.':'Use a restricted provider token or a credential already saved on this device. JACO tests the actual account before saving a connection.'}</p>
+            {guided.id==='stripe-sandbox'&&<p className="text-amber-200">Sandbox only. Select a Stripe sandbox and create a restricted agent-tagged key with account read permission. Live and unrestricted keys are rejected. Only the account information tool is available.</p>}
             {!current&&<>
-              <a href={guided.loginUrl} target="_blank" rel="noopener noreferrer" className="inline-flex rounded border border-neutral-600 px-3 py-2 text-neutral-100">{guided.id==='render'?'Open Render account · API keys':'Open GitHub token settings'}</a>
+              <a href={guided.loginUrl} target="_blank" rel="noopener noreferrer" className="inline-flex rounded border border-neutral-600 px-3 py-2 text-neutral-100">{guided.id==='stripe-sandbox'?'Open Stripe Dashboard · API keys':guided.id==='render'?'Open Render account · API keys':'Open GitHub token settings'}</a>
               <label className="block">API token (leave blank to use saved credentials)<input type="password" aria-label="Integration API token" value={guidedToken} onChange={e=>setGuidedToken(e.target.value)} autoComplete="off" spellCheck={false} maxLength={16384} className="mt-1 block w-full rounded border border-neutral-600 bg-[#15171a] px-3 py-2"/></label>
               <label className="flex items-start gap-2"><input type="checkbox" checked={guidedOptIn} onChange={e=>setGuidedOptIn(e.target.checked)}/>Allow Aura to open this provider's account page when reauthentication is needed.</label>
             </>}
