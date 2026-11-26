@@ -417,6 +417,24 @@ test('a local model gets short tool descriptions that keep each tool\'s args con
   assert.equal(briefToolDescription('No args here at all'),'No args here at all');
 });
 
+// 2026-11-26: two more tools pushed the compact prompt to 12 866 bytes and Lite's default chat failed again.
+// A compact prompt is now fitted under the local limit however the toolbox and context grow.
+test('a local model\'s prompt stays under the byte limit with many tools and a full context, keeping every tool and the newest message',async()=>{
+  const tools=Object.fromEntries(Array.from({length:70},(_,i)=>[`workspace_tool_${i}`,{
+    description:`Utför arbetsuppgift ${i} i arbetsytan och rapporterar utförligt vad som hände under körningen. args: {"path":"...","limit":${i}}`,run:async()=>({})}]));
+  const message='Svara med exakt ett ord: ok, och börja inte om något pågående uppdrag.';
+  let seen=null;
+  await auraChatViaSeer({message,chatMode:'action',compactRules:true,
+    messagesHistory:Array.from({length:12},(_,i)=>({role:i%2?'assistant':'user',content:'Tidigare samtal om åtgärder och tillstånd. '.repeat(20)})),
+    ragContext:[{source:'jaco://current-work',content:'Pågående arbete med många händelser och kvitton. '.repeat(200)}],
+    toolbox:{observe:async()=>'Tjänst körs och rapporterar läget för alla delar. '.repeat(300),tools},
+    complete:async(prompts)=>{seen=prompts;return fixtureCompletion('ok');}});
+  const bytes=Buffer.byteLength(seen.system+seen.user);
+  assert.ok(bytes<=12000,'fits the local limit: '+bytes);
+  for(let i=0;i<70;i++) assert.ok(seen.system.includes(`- workspace_tool_${i}`),'tool '+i+' is still offered');
+  assert.ok(seen.user.endsWith('CURRENT_USER_MESSAGE:\n'+message),'the newest message is intact');
+});
+
 test('batch call budget is capped at twenty independently of model-round budget',async()=>{
   const names=['health','dom_track','laser_vision','mission_list'];let runs=0;
   const tools=Object.fromEntries(names.map(name=>[name,{description:'read',run:async()=>{runs++;return {};}}]));
