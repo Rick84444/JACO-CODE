@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 import path from 'node:path';
 import { HttpMcpClient } from './httpMcpClient.mjs';
+import { MCP_INTEGRATION_CATALOG, catalogDefinitionMatches, pluginLoginPreset } from '../../lib/mcpIntegrationCatalog.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
 // Classify a failed MCP child without leaking its stderr, which may contain
@@ -398,9 +399,13 @@ export class StdioMcpHost {
   // Add or replace a server from the IDE; built-in servers can be replaced too.
   saveServer(id, entry) {
     const valid = validateServerEntry(id, entry);
+    if(valid.allowOpenLogin===true&&!pluginLoginPreset(id,valid))throw Error('MCP_LOGIN_OPT_IN_NOT_SUPPORTED');
+    const previous=this.servers()[id];
     const config = this.readConfig();
     config.servers[id] = { ...valid, enabled: true };
     this.writeConfig(config);
+    // Historical calls remain in the audit timeline, but not as evidence for a new endpoint.
+    if(!previous||launchKey(previous)!==launchKey(valid))this.stats.delete(id);
     this.clients.get(id)?.stop(); this.clients.delete(id);
     return this.status().find(s => s.id === id);
   }
@@ -414,6 +419,7 @@ export class StdioMcpHost {
     if (builtIn) config.servers[id] = { enabled: false }; else delete config.servers[id];
     this.writeConfig(config);
     this.clients.get(id)?.stop(); this.clients.delete(id);
+    this.stats.delete(id);
     return { id, removed: !builtIn, disabled: builtIn };
   }
 
@@ -438,13 +444,17 @@ export class StdioMcpHost {
   }
 
   // Agent access for one server; takes effect on the next call without restarting the server.
-  setAccess(id, { agentAccess, deny } = {}) {
-    if (!this.servers()[id]) throw Error(`MCP_SERVER_UNKNOWN:${id}`);
+  setAccess(id, { agentAccess, deny, allowOpenLogin } = {}) {
+    const current=this.servers()[id];
+    if (!current) throw Error(`MCP_SERVER_UNKNOWN:${id}`);
     if (agentAccess !== undefined && !AGENT_ACCESS.includes(agentAccess)) throw Error('MCP_AGENT_ACCESS_INVALID');
+    if(allowOpenLogin!==undefined&&typeof allowOpenLogin!=='boolean')throw Error('MCP_LOGIN_OPT_IN_INVALID');
+    if(allowOpenLogin===true&&!pluginLoginPreset(id,{...current,agentAccess:agentAccess??current.agentAccess}))throw Error('MCP_LOGIN_OPT_IN_NOT_SUPPORTED');
     const config = this.readConfig();
     const entry = { ...(config.servers[id] || {}) };
     if (entry.enabled === false && defaultServers(this)[id]) throw Error('MCP_SERVER_DISABLED');
     if (agentAccess !== undefined) entry.agentAccess = agentAccess;
+    if(allowOpenLogin!==undefined)entry.allowOpenLogin=allowOpenLogin;
     if (deny !== undefined) entry.deny = Array.isArray(deny) ? deny.map(String).filter(t => /^[A-Za-z0-9_.-]{1,80}$/.test(t)) : [];
     config.servers[id] = entry;
     this.writeConfig(config);
@@ -469,7 +479,7 @@ export class StdioMcpHost {
     return Object.entries(this.servers()).map(([id, def]) => {
       const c = this.clients.get(id);
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
-      if (def.validationError) return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
+      if (def.validationError) return { id, catalogMatch:MCP_INTEGRATION_CATALOG.some(p=>p.id===id)?false:undefined, name: def.name, role: def.role, transport: def.transport || 'stdio', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
       const sameLaunch = Boolean(c && launchKey(c.def) === launchKey(def));
       const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => {
         const reads = Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name));
@@ -486,6 +496,8 @@ export class StdioMcpHost {
         credentialEnv: def.tokenEnv || undefined,
         credentialConfigured: def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
         allowOpenLogin: def.allowOpenLogin === true,
+        catalogMatch: MCP_INTEGRATION_CATALOG.some(p=>p.id===id)?catalogDefinitionMatches(id,def):undefined,
+        loginOpeningSupported: Boolean(pluginLoginPreset(id,def)),
         builtIn: Boolean(defaultServers(this)[id]),
         icon: def.icon, agentAccess: def.agentAccess, deny: def.deny, stats,
         status: sameLaunch ? (c.initialized ? 'READY' : c.ready ? 'STARTING' : c.error ? 'FAILED' : 'STOPPED') : 'STOPPED',
