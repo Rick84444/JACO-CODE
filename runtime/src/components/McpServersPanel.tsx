@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { MCP_LOGOS } from './mcpLogos';
+import { FINANCIAL_LOGOS } from './financialLogos';
 import { MCP_INTEGRATION_CATALOG, mcpCatalogDraft, mcpConnectionState, pluginCategory, marketplaceEntries } from '../lib/mcpIntegrationCatalog.mjs';
 
 // JACO's MCP servers as the operator manages them (operator 2026-10-09): each with its logo, what it
@@ -21,6 +22,16 @@ interface Props {
   onStart: (id: string) => void;
   onSelectTool: (provider: McpProvider, tool: McpTool) => void;
   onChanged: (notice: string) => void;
+}
+
+export function PluginLogo({id,name,icon,size=24}:{id:string;name:string;icon?:string;size?:number}){
+  const aliases:Record<string,string>={'paypal-sandbox':'paypal','mailchimp-docs':'mailchimp','tiktok-direct':'tiktok','openai-docs':'openai','microsoft-learn':'microsoft','cloudflare-docs':'cloudflare','cloudflare-api':'cloudflare','github-remote':'github'};
+  const key=aliases[id]||id;
+  const brand=FINANCIAL_LOGOS[key];
+  if(brand?.path)return <svg role="img" aria-label={brand.title} viewBox="0 0 24 24" width={size} height={size} className="shrink-0"><path fill={brand.color} d={brand.path}/></svg>;
+  if(MCP_LOGOS[key])return <McpLogo icon={key} size={size}/>;
+  if(icon&&icon!=='mcp'&&MCP_LOGOS[icon])return <McpLogo icon={icon} size={size}/>;
+  return <span role="img" aria-label={name+' monogram'} className="inline-flex shrink-0 items-center justify-center rounded bg-neutral-800 border border-neutral-600 font-semibold" style={{width:size,height:size,color:brand?.color||'#A8C5E8',fontSize:Math.max(8,size*.36)}}>{brand?.monogram||name.slice(0,2).toUpperCase()}</span>;
 }
 
 export function McpLogo({ icon, size = 14 }: { icon?: string; size?: number }) {
@@ -129,13 +140,13 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
       <p className="text-xs text-neutral-400">Official endpoints. Select a connection to review its configuration. Nothing is installed or authenticated until you explicitly save and connect.</p>
       <input aria-label="Search integration catalog" placeholder="Search providers" value={query} onChange={e=>setQuery(e.target.value)} className="w-full rounded border border-neutral-700 bg-[#1d1e20] px-2 py-1 text-sm"/>
       <div className="flex flex-wrap gap-1" aria-label="Plugin categories">
-        {[['all','All'],['development','Dev'],['cloud','Cloud'],['marketing','Marketing'],['commerce','Commerce'],['marketplace','Marketplace']].map(([id,label])=><button key={id} type="button" aria-pressed={category===id} onClick={()=>setCategory(id)} className={'px-2 py-1 rounded border text-xs '+(category===id?'border-[#659bd0] bg-[#253a4d]':'border-neutral-700')}>{label}</button>)}
+        {[['all','All'],['development','Dev'],['cloud','Cloud'],['marketing','Marketing'],['commerce','Commerce'],['finance','Finance'],['marketplace','Marketplace']].map(([id,label])=><button key={id} type="button" aria-pressed={category===id} onClick={()=>setCategory(id)} className={'px-2 py-1 rounded border text-xs '+(category===id?'border-[#659bd0] bg-[#253a4d]':'border-neutral-700')}>{label}</button>)}
       </div>
       <div className="grid gap-2 grid-cols-2 sm:grid-cols-3">
         {MCP_INTEGRATION_CATALOG.filter(p=>(category==='all'||pluginCategory(p)===category)&&matches(p)).map(p=>{
           const current=providers.find(v=>v.id===p.id);
           return <article key={p.id} className="rounded border border-neutral-700 p-2 space-y-1">
-            <div className="flex items-center gap-2"><McpLogo icon={p.icon}/><strong className="text-xs">{p.name}</strong></div>
+            <div className="flex items-center gap-2"><PluginLogo id={p.id} name={p.name} icon={p.icon}/><strong className="text-xs">{p.name}</strong></div>
             <div className="text-xs text-neutral-400" role="status">{mcpConnectionState(current).replaceAll('_',' ')}</div>
             <details className="text-xs text-neutral-400"><summary>Authentication</summary><p>{p.auth}</p></details>
             <div className="flex flex-wrap items-center gap-2"><button type="button" disabled={working!==null} onClick={()=>{setDraft({...mcpCatalogDraft(p.id),allowOpenLogin:current?.allowOpenLogin===true});setFormError(null);setAdding(true);}} className="rounded border border-neutral-600 px-2 py-1 text-xs">{current?'Review configuration':'Configure'}</button>
@@ -143,7 +154,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
           </article>;
         })}
         {marketplaceEntries(providers).filter(p=>(category==='all'||p.category===category)&&matches(p)).map(p=><article key={p.id} className="rounded border border-neutral-700 p-2 space-y-1">
-          <strong className="text-xs">{p.name}</strong>
+          <div className="flex items-center gap-2"><PluginLogo id={p.id} name={p.name}/><strong className="text-xs">{p.name}</strong></div>
           <div role="status" className="text-[10px] text-neutral-400">{p.state.replaceAll('_',' ')}</div>
           <p className="text-xs text-neutral-400">{p.purpose}</p>
           <a className="text-xs underline text-neutral-300" href={p.docs} target="_blank" rel="noopener noreferrer">Official setup</a>
@@ -190,7 +201,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
       const last = s?.lastCall;
       return <div key={p.id} className="border-b border-[#414244]">
         <div className="px-3 py-1.5 flex items-start gap-2">
-          <span className={`mt-0.5 ${p.status === 'READY' ? '' : 'opacity-50'}`}><McpLogo icon={p.icon} /></span>
+          <span className={`mt-0.5 ${p.status === 'READY' ? '' : 'opacity-50'}`}><PluginLogo id={p.id} name={p.name} icon={p.icon} size={18} /></span>
           <div className="min-w-0 flex-1">
             <div className="text-[10px] text-neutral-200">{p.name}</div>
             <div className="text-[8px] text-neutral-500 truncate" title={p.endpoint}>{p.role}</div>
