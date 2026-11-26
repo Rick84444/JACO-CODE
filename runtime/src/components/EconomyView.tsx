@@ -1,3 +1,4 @@
+import { FinancialOptionsPanel, type FinancialOptions } from './FinancialOptionsPanel';
 import React, { useEffect, useState } from 'react';
 import { auraErrorMessage, readAuraResponse } from '../lib/auraApi.mjs';
 import { useOptionalUiLanguage } from '../i18n/UiLanguage';
@@ -57,11 +58,13 @@ const button = 'rounded-md border border-[#616264] px-3 py-2 text-neutral-200 ho
 export const EconomyView: React.FC = () => {
   const { tr, language } = useOptionalUiLanguage();
   const { usd, amounts, count, time, sourceLabel } = formatters(tr, language === 'sv' ? 'sv-SE' : 'en-US');
+  const [financialOptions,setFinancialOptions]=useState<FinancialOptions|null>(null);
   const [data, setData] = useState<Economy | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const load = async () => {
+    void fetch('/api/aura/workbench/gameboard',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(readAuraResponse).then(p=>setFinancialOptions(p.financialOptions||null)).catch(()=>setFinancialOptions(null));
     try { const next = await fetch('/api/aura/budget/economy', { cache: 'no-store', signal: AbortSignal.timeout(30_000) }).then(readAuraResponse); setData(next.economy); setError(null); }
     catch (cause: any) { setError(auraErrorMessage(cause?.message)); }
   };
@@ -94,6 +97,7 @@ export const EconomyView: React.FC = () => {
       </header>
       {error && <div role="alert" className="rounded-md border border-red-900 bg-red-950/30 px-3 py-2 text-red-200">{tr('Ekonomin kunde inte läsas', 'The economy could not be read')}: {error}</div>}
       {notice && <div role="status" className="rounded-md border border-[#505153] px-3 py-2 text-neutral-200">{notice}</div>}
+      <FinancialOptionsPanel options={financialOptions}/>
       {data && <>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Tile label={tr('Intäkter, 30 dagar', 'Revenue, 30 days')} value={stripe?.configured === false && !Object.keys(data.revenue.last30DaysByCurrency).length ? tr('Inte kopplat', 'Not connected') : amounts(data.revenue.last30DaysByCurrency)} detail={stripe?.configured === false ? tr('Stripe saknar nyckel', 'Stripe has no key') : undefined}/>
