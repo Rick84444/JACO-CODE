@@ -37,6 +37,65 @@ const INSTALL: Record<Brain['id'], string> = {
   gemini: 'npm i -g @google/gemini-cli',
 };
 
+// The direct ChatGPT path does not use Codex, CLI tokens, or a shared API key.
+const ChatGPTPlanPreview: React.FC = () => {
+  const { tr } = useOptionalUiLanguage();
+  const [status,setStatus] = useState<any>(null);
+  const [url,setUrl] = useState('');
+  const [model,setModel] = useState('');
+  const [busy,setBusy] = useState(false);
+  const [error,setError] = useState('');
+  const endpoint='/api/aura/workbench/chatgpt-plan';
+  const refresh = useCallback(async () => {
+    try {
+      const r=await fetch(endpoint,{cache:'no-store'}).then(readAuraResponse);
+      setStatus(r);
+      if (r.state !== 'waiting') setUrl('');
+    } catch {setStatus({success:false,error:'SIWC_STATUS_UNAVAILABLE'});}
+  },[]);
+  useEffect(()=>{void refresh();},[refresh]);
+  useEffect(()=>{
+    if(status?.state!=='waiting') return;
+    const timer=setInterval(()=>void refresh(),2500);
+    return ()=>clearInterval(timer);
+  },[status?.state,refresh]);
+  const action=async (name:string, body?:object)=>{
+    setBusy(true);setError('');
+    try {
+      const r=await fetch(endpoint+'/'+name,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body||{})}).then(readAuraResponse);
+      if(!r.success)throw new Error(r.error||'SIWC_OPERATION_FAILED');
+      if(name==='login'){
+        const u=new URL(r.url);
+        if(u.origin!=='https://auth.openai.com'||u.pathname!=='/api/accounts/authorize')throw new Error('SIWC_URL_INVALID');
+        setUrl(u.href);
+      }
+      if(name==='models')setModel(r.models?.[0]?.id||'');
+      if(name==='disconnect'){setModel('');setUrl('');}
+    }catch(e:any){setError(String(e?.message||'SIWC_OPERATION_FAILED'));}
+    finally{await refresh();setBusy(false);}
+  };
+  const btn="rounded bg-[#0e639c] hover:bg-[#1177bb] disabled:opacity-40 px-2.5 py-1 text-[11px]";
+  return <section className="rounded border border-[#505153] p-2 space-y-2 text-xs">
+    <div className="font-semibold">ChatGPT — {tr('direkt prenumerationsanslutning','direct plan access')}</div>
+    {!status ? <div>{tr('Kontrollerar…','Checking…')}</div> : !status.success ?
+      <div className="text-neutral-400">{tr('Lokal förhandsversion: aktiveras på egen dator med JACO_LOCAL_SIWC=1.','Local preview: enable on your own computer with JACO_LOCAL_SIWC=1.')}</div> :
+      <>
+        <div className="text-neutral-400">{tr('Lokal session. Ingen automatisk modellstyrning.','Local session. No automatic model routing.')}</div>
+        <div>{status.connected?tr('Behörighet mottagen','Permission granted'):status.state==='waiting'?tr('Väntar på inloggning','Waiting for sign-in'):tr('Inte ansluten','Not connected')}</div>
+        {!status.connected && status.state!=='waiting' && <button disabled={busy} className={btn} onClick={()=>void action('login')}>{tr('Fortsätt med ChatGPT','Continue with ChatGPT')}</button>}
+        {url && status.state==='waiting' && <a className="block text-[#3794ff]" href={url} target="_blank" rel="noopener noreferrer">{tr('Öppna OpenAI:s inloggning','Open OpenAI sign-in')}</a>}
+        {status.connected && <div className="flex flex-wrap items-center gap-2">
+          <button disabled={busy} className={btn} onClick={()=>void action('models')}>{tr('Hämta modeller','Discover models')}</button>
+          {!!status.models?.length && <><select className="bg-[#202124] p-1 rounded" value={model} onChange={e=>setModel(e.target.value)}><option value="">—</option>{status.models.map((m:any)=><option key={m.id} value={m.id}>{m.label}</option>)}</select>
+          <button disabled={busy||!model} className={btn} onClick={()=>void action('test',{model})}>{tr('Testa (använder kvot)','Test (uses plan quota)')}</button></>}
+        </div>}
+        {status.verifiedAt && <div className="text-emerald-300">{tr('Modellsvar verifierat','Model response verified')}: {status.verifiedAt}</div>}
+        {(status.state!=='disconnected') && <button disabled={busy} className={btn} onClick={()=>void action('disconnect')}>{tr('Koppla från lokalt','Disconnect locally')}</button>}
+      </>}
+    {(error||status?.success&&status?.error) && <div className="text-red-300">{error||status.error}</div>}
+  </section>;
+};
+
 export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void> }> = ({ onChanged }) => {
   const { tr } = useOptionalUiLanguage();
   const [brains, setBrains] = useState<Brain[] | null>(null);
@@ -54,7 +113,7 @@ export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void> }> = 
       if (!body.success) throw new Error(body.error || 'BRAINS_FAILED');
       const list: Brain[] = body.brains;
       setBrains(list); setError('');
-      // A sign-in that just completed registers the provider on the server; tell the rest of the GUI.
+      // A sign-in status changed; update the surrounding UI without activating any provider.
       const newly = list.filter(b => b.loggedIn && !known.current.has(b.id));
       list.forEach(b => b.loggedIn ? known.current.add(b.id) : known.current.delete(b.id));
       if (newly.length) {
@@ -132,6 +191,7 @@ export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void> }> = 
         <div className="text-xs font-semibold">{tr('Leverantörskonton och CLI-status', 'Provider accounts and CLI status')}</div>
         <button type="button" onClick={() => void refresh()} aria-label={tr('Kontrollera igen', 'Check again')} className="text-neutral-300 hover:text-white"><RefreshCw className="w-3.5 h-3.5" /></button>
       </div>
+      <ChatGPTPlanPreview />
       {brains ? <ul>{brains.map(row)}</ul> : <div className="text-[11px] text-neutral-400">{tr('Kontrollerar…', 'Checking…')}</div>}
       {error && <div className="text-[11px] text-red-300 break-words">{error}</div>}
       <div className="text-[10px] text-neutral-400">{tr('CLI-inloggning aktiverar inte automatiskt en modell. Gemini för privatkonto använder Antigravity; direkt Gemini API finns via Google AI Studio.', 'CLI sign-in does not automatically activate a model. Individual Gemini accounts use Antigravity; the direct Gemini API is available through Google AI Studio.')}</div>
