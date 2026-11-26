@@ -46,11 +46,13 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const [speaking, setSpeaking] = useState(false);
   const [voiceError, setVoiceError] = useState(false);
   const [maskError, setMaskError] = useState(false);
+  const [photoreal, setPhotoreal] = useState(false);
+  const audioTap = useRef<MediaStream | null>(null);
   // Conversation mode: listen, send after a pause, hear the reply, listen again.
   const [conversation, setConversation] = useState(savedConversation);
   const [awaiting, setAwaiting] = useState(false);
   const conversationRef = useRef(false);
-  const rig = useRef<Awaited<ReturnType<typeof import('../lib/auraRigLightform.mjs')['createAuraRigLightform']>> | null>(null);
+  const rig = useRef<Awaited<ReturnType<typeof import('../lib/auraRigLightform.mjs')['createAuraRigLightform']>> | Awaited<ReturnType<typeof import('../lib/auraSplatProvider.mjs')['createAuraSplatProvider']>> | null>(null);
   const latestReply = chat?.messages.filter(message => message.role === 'assistant' && message.content.trim()).at(-1);
   const lastRead = useRef(latestReply?.id);
   const active = tone === 'active' || speaking;
@@ -116,6 +118,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
         controller.abort();
         audio.pause();
         urls.forEach(u => URL.revokeObjectURL(u));
+        audioTap.current = null;
         rig.current?.setState({ audioSource: null });
       },
     };
@@ -123,6 +126,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       if (utterance.current !== handle) return;
       utterance.current = null;
       setSpeaking(false);
+      audioTap.current = null;
       rig.current?.setState({ audioSource: null });
       urls.forEach(u => URL.revokeObjectURL(u));
     };
@@ -156,7 +160,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       if (utterance.current !== handle) return;
       setSpeaking(true);
       const tap = (audio as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream?.();
-      rig.current?.setState({ audioSource: tap ?? null, speaking: true });
+      audioTap.current = tap ?? null;
+      rig.current?.setState({ audioSource: audioTap.current, speaking: true });
     };
     const playPart = (url: string) => new Promise<void>((resolve, reject) => {
       audio.onended = () => resolve();
@@ -325,14 +330,17 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const controller=new AbortController();
     const element=canvas.current;
     if(!element)return;
-    void import('../lib/auraRigLightform.mjs').then(({createAuraRigLightform})=>
-      createAuraRigLightform(element,{signal:controller.signal,onError:()=>{if(!controller.signal.aborted)setMaskError(true);}})
-    ).then(instance=>{
+    setMaskError(false);
+    const options={signal:controller.signal,onError:()=>{if(!controller.signal.aborted)setMaskError(true);}};
+    const load=photoreal
+      ? import('../lib/auraSplatProvider.mjs').then(({createAuraSplatProvider})=>createAuraSplatProvider(element,options))
+      : import('../lib/auraRigLightform.mjs').then(({createAuraRigLightform})=>createAuraRigLightform(element,options));
+    void load.then(instance=>{
       if(controller.signal.aborted){instance.dispose();return;}
-      rig.current=instance;instance.setState(rigState.current);
+      rig.current=instance;instance.setState({...rigState.current,audioSource:audioTap.current});
     }).catch(()=>{if(!controller.signal.aborted)setMaskError(true);});
     return()=>{controller.abort();rig.current?.dispose();rig.current=null;};
-  },[]);
+  },[photoreal]);
 
   return <dialog ref={dialog} className="aura-portrait" aria-labelledby="aura-portrait-title"
     onCancel={event => { event.preventDefault(); onClose(); }}
@@ -341,15 +349,19 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       <h2 id="aura-portrait-title">Aura</h2>
       <button type="button" onClick={onClose} aria-label={tr('Stäng Auras porträtt', 'Close Aura portrait')}><X size={20}/></button>
     </header>
-    <div className="aura-portrait-scene" onPointerMove={event => {
+    <div key={photoreal ? 'splat' : 'lightform'} className="aura-portrait-scene" style={{position:'relative'}} onPointerMove={event => {
       const rect = event.currentTarget.getBoundingClientRect();
       const p={x:2*(event.clientX-rect.left)/rect.width-1,y:2*(event.clientY-rect.top)/rect.height-1};
       Object.assign(rigState.current,p);rig.current?.setState(p);
     }} onPointerLeave={() => { Object.assign(rigState.current,{x:0,y:0});rig.current?.setState({x:0,y:0}); }}>
       <canvas ref={canvas} width={480} height={480} role="img"
-        aria-label={tr('Auras tredimensionella ljusgestalt', 'Aura’s three-dimensional lightform')}/>
+        aria-label={photoreal ? tr('Experimentellt fotorealistiskt ansikte', 'Experimental photoreal face') : tr('Auras tredimensionella ljusgestalt', 'Aura’s three-dimensional lightform')}/>
     </div>
-    {maskError && <p role="status">{tr('Den tredimensionella gestalten kunde inte laddas. Chatten är fortfarande tillgänglig.', 'The 3D lightform could not load. Chat remains available.')}</p>}
+    <button type="button" aria-pressed={photoreal} disabled={speaking || listening || awaiting} onClick={()=>setPhotoreal(value=>!value)}>
+      {photoreal ? tr('Återgå till ljusgestalt', 'Return to lightform') : tr('Prova lokalt ansikte (experimentellt)', 'Try local face (experimental)')}
+    </button>
+    {photoreal && <p className="aura-portrait-voice-note">{tr('Kräver en lokalt installerad, licensgodkänd ansiktsmodell. Ljudstyrd formantanimation; inte verifierad läppsynk.', 'Requires a locally installed, rights-cleared head. Audio-driven formant animation; lip sync not verified.')}</p>}
+    {maskError && <p role="status">{photoreal ? tr('Lokalt ansikte kunde inte användas. Kontrollera installation eller återgå till ljusgestalt.', 'Local face unavailable. Check installation or return to lightform.') : tr('Den tredimensionella gestalten kunde inte laddas. Chatten är fortfarande tillgänglig.', 'The 3D lightform could not load. Chat remains available.')}</p>}
     <p data-tone={tone}>{label}</p>
     {chat && <div className="aura-portrait-conversation">
       {latestReply && <div className="aura-portrait-reply" aria-live="polite">{workspaceReplyText(latestReply.content)}</div>}
