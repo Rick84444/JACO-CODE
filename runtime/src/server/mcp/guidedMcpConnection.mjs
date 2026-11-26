@@ -1,6 +1,6 @@
 import { SecretStore, credential } from '../../../../agents/lib/secret-store.mjs';
 import { HttpMcpClient, mcpCredential, classifyMcpNetworkError } from './httpMcpClient.mjs';
-import { guidedMcpPreset, catalogDefinitionMatches, guidedCredentialMatches } from '../../lib/mcpIntegrationCatalog.mjs';
+import { guidedMcpPreset, catalogDefinitionMatches, guidedCredentialMatches, stripeSandboxKey } from '../../lib/mcpIntegrationCatalog.mjs';
 
 function proofPayload(result){
   if(!result||result.isError===true)throw Error('MCP_GUIDED_READ_REJECTED');
@@ -14,6 +14,11 @@ function verifyPayload(id,payload){
     const user=payload?.user||payload;
     if(typeof user?.login!=='string'||!user.login||!(typeof user.id==='number'||typeof user.id==='string'))throw Error('MCP_GUIDED_PROOF_INVALID');
     return {accountObserved:true};
+  }
+  if(id==='stripe-sandbox'){
+    const account=payload?.account||payload;
+    if(typeof account?.id!=='string'||!/^acct_[A-Za-z0-9]+$/.test(account.id)||account.livemode===true||payload?.livemode===true)throw Error('MCP_GUIDED_PROOF_INVALID');
+    return {accountObserved:true,environment:'SANDBOX'};
   }
   const workspaces=Array.isArray(payload)?payload:payload?.workspaces;
   if(!Array.isArray(workspaces)||!workspaces.every(w=>typeof w?.id==='string'&&w.id))throw Error('MCP_GUIDED_PROOF_INVALID');
@@ -43,18 +48,19 @@ export function createGuidedMcpConnection({host,store=new SecretStore(),env=proc
       if(before&&submitted&&!replacing)throw Error('MCP_GUIDED_REPLACEMENT_NOT_SUPPORTED');
       if(!before&&submitted&&store.has(preset.credentialRef))throw Error('MCP_GUIDED_CREDENTIAL_EXISTS');
       const prior=replacing?store.get(preset.credentialRef):null;
-      const token=replacing?submitted:before?mcpCredential(id,before,env):submitted||store.get(preset.credentialRef)||credential(preset.tokenEnv,{env,store});
+      const token=replacing?submitted:before?mcpCredential(id,before,env):submitted||store.get(preset.credentialRef)||(id==='stripe-sandbox'?'':credential(preset.tokenEnv,{env,store}));
       if(!token)throw Error('MCP_CREDENTIAL_REQUIRED');
+      if(id==='stripe-sandbox'&&!stripeSandboxKey(token))throw Error('MCP_STRIPE_SANDBOX_KEY_REQUIRED');
       // Temporary session: Render's list_workspaces may select its sole workspace
       // in this session. No deployment, resource change or persistent selection.
-      const probeDef={transport:'http',url:preset.target,tokenEnv:preset.tokenEnv};
-      const client=createClient(id,probeDef,{[preset.tokenEnv]:token,NODE_TLS_REJECT_UNAUTHORIZED:env.NODE_TLS_REJECT_UNAUTHORIZED});
+      const probeDef={transport:'http',url:preset.target,tokenEnv:id==='stripe-sandbox'?'STRIPE_SANDBOX_PROBE_KEY':preset.tokenEnv};
+      const client=createClient(id,probeDef,{[probeDef.tokenEnv]:token,NODE_TLS_REJECT_UNAUTHORIZED:env.NODE_TLS_REJECT_UNAUTHORIZED});
       let proof;
       const probeStarted=now();
       try{
         await client.start();
         const tool=client.tools.find(t=>t.name===preset.tool);
-        if(!tool||tool.inputSchema?.type!=='object'||(tool.inputSchema.required||[]).length||id==='github-remote'&&tool.readOnly!==true)throw Error('MCP_GUIDED_PROBE_UNAVAILABLE');
+        if(!tool||tool.inputSchema?.type!=='object'||(tool.inputSchema.required||[]).length||id!=='render'&&tool.readOnly!==true)throw Error('MCP_GUIDED_PROBE_UNAVAILABLE');
         proof=verifyPayload(id,proofPayload(await client.request('tools/call',{name:preset.tool,arguments:{}},15000)));
       }catch(error){throw Error(classifyMcpNetworkError(error));}
       finally{client.stop();}
