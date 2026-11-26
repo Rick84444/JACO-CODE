@@ -16,25 +16,26 @@ function fixture(t,id='github-remote',{reject=false,invalid=false,missing=false,
   const store=new SecretStore({env});
   const preset=guidedMcpPreset(id);
   const defs={},requests=[],records=[],resets=[];
+  const sandboxFixture='rk_'+'test_fixture';
   const fetchImpl=async(url,options)=>{
     assert.equal(url,preset.target);
     assert.equal(options.redirect,'error');
-    assert.ok(['Bearer fixture-not-a-real-credential','Bearer fixture-replacement','Bearer fixture-rejected'].includes(options.headers.authorization));
+    assert.ok(['Bearer fixture-not-a-real-credential','Bearer fixture-replacement','Bearer fixture-rejected','Bearer '+sandboxFixture].includes(options.headers.authorization));
     const rpc=JSON.parse(options.body);requests.push(rpc.method);
     if(reject||options.headers.authorization==='Bearer fixture-rejected')return new Response(null,{status:401});
     if(rpc.method==='notifications/initialized')return new Response(null,{status:204});
     let result;
     if(rpc.method==='initialize')result={protocolVersion:'2025-06-18'};
-    else if(rpc.method==='tools/list')result={tools:missing?[]:[{name:preset.tool,inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:id==='github-remote'}}]};
+    else if(rpc.method==='tools/list')result={tools:missing?[]:[{name:preset.tool,inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:id!=='render'}},...(id==='stripe-sandbox'?[{name:'stripe_api_write',inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:true}}]:[])]};
     else if(rpc.method==='tools/call'){
       assert.deepEqual(rpc.params,{name:preset.tool,arguments:{}});
-      result={content:[{type:'text',text:JSON.stringify(invalid?{message:'no proof'}:id==='render'?[{id:'workspace-fixture'}]:{login:'fixture-user',id:1})}]};
+      result={content:[{type:'text',text:JSON.stringify(invalid?{message:'no proof'}:id==='render'?[{id:'workspace-fixture'}]:id==='stripe-sandbox'?{id:'acct_fixture',livemode:false}:{login:'fixture-user',id:1})}]};
     }else throw Error('unexpected request');
     return Response.json({jsonrpc:'2.0',id:rpc.id,result});
   };
   const host={servers:()=>defs,saveServer:(id,def)=>{defs[id]=validateServerEntry(id,def);},start:async id=>{
     if(reconnectFailure)throw Error('MCP_TRANSPORT_DNS');
-    assert.ok(['fixture-not-a-real-credential','fixture-replacement'].includes(mcpCredential(id,defs[id],env)));
+    assert.ok(['fixture-not-a-real-credential','fixture-replacement',sandboxFixture].includes(mcpCredential(id,defs[id],env)));
     return [{name:preset.tool}];
   },resetConnection:id=>resets.push(id),record:(id,entry)=>records.push({id,...entry})};
   const connect=createGuidedMcpConnection({host,store,env,createClient:(id,def,probeEnv)=>new HttpMcpClient(id,def,{env:probeEnv,fetchImpl})});
@@ -123,4 +124,60 @@ test('authentication loss retires tools and session without replaying the call',
   assert.deepEqual(c.tools,[]);
   assert.equal(c.error,'MCP_AUTH_REQUIRED');
   assert.equal(requests,1);
+});
+
+test('Stripe sandbox uses restricted test credentials and verifies account without exporting identity',async t=>{
+  const f=fixture(t,'stripe-sandbox');
+  const id='stripe-sandbox';
+  for(const token of ['rk_'+'live_fixture','sk_'+'test_fixture','pk_'+'test_fixture','not-a-key']){
+    await assert.rejects(f.connect(id,{token}),/MCP_STRIPE_SANDBOX_KEY_REQUIRED/);
+  }
+  assert.deepEqual(f.requests,[]);
+  assert.deepEqual(f.store.list(),[]);
+  const token='rk_'+'test_fixture';
+  const result=await f.connect(id,{token,allowOpenLogin:true});
+  assert.equal(result.state,'READ_PROBE_VERIFIED');
+  assert.deepEqual(result.proof,{accountObserved:true,environment:'SANDBOX'});
+  assert.equal(result.agentExecutionVerified,false);
+  assert.deepEqual(f.requests,['initialize','notifications/initialized','tools/list','tools/call']);
+  assert.equal(f.store.get(f.preset.credentialRef),token);
+  assert.equal(f.defs[id].agentAccess,'read');
+  assert.doesNotMatch(JSON.stringify(result),/acct_fixture|test_fixture/);
+  assert.equal(mcpCredential(id,{...f.defs[id],url:'https://example.org/'},f.env),'');
+  assert.throws(()=>validateServerEntry(id,{...f.defs[id],tokenEnv:'STRIPE_MCP_API_KEY'}),/MCP_CREDENTIAL_SCOPE_INVALID/);
+  assert.throws(()=>validateServerEntry(id,{...f.defs[id],url:'https://example.org/'}),/MCP_CREDENTIAL_SCOPE_INVALID/);
+  assert.throws(()=>validateServerEntry('other',{...f.defs[id]}),/MCP_CREDENTIAL_SCOPE_INVALID/);
+  assert.throws(()=>validateServerEntry('other',{...f.defs[id],tokenEnv:'STRIPE_SANDBOX_PROBE_KEY'}),/MCP_CREDENTIAL_SCOPE_INVALID/);
+  assert.throws(()=>validateServerEntry(id,{command:'node',args:[]}),/MCP_CREDENTIAL_SCOPE_INVALID/);
+});
+test('Stripe sandbox transport only exposes and dispatches reviewed account-read tool',async()=>{
+  let requests=0;
+  const token='rk_'+'test_fixture';
+  const client=new HttpMcpClient('stripe-sandbox',{transport:'http',url:'https://mcp.stripe.com/',tokenEnv:'STRIPE_SANDBOX_PROBE_KEY',agentAccess:'write'},{env:{STRIPE_SANDBOX_PROBE_KEY:token},fetchImpl:async(url,options)=>{
+    requests++;
+    assert.equal(url,'https://mcp.stripe.com/');
+    const rpc=JSON.parse(options.body);
+    if(rpc.method==='notifications/initialized')return new Response(null,{status:204});
+    let result;
+    if(rpc.method==='initialize')result={protocolVersion:'2025-06-18'};
+    else if(rpc.method==='tools/list')result={tools:['get_stripe_account_info','stripe_api_write'].map(name=>({name,inputSchema:{type:'object'},annotations:{readOnlyHint:true}}))};
+    else if(rpc.method==='tools/call')result={content:[{type:'text',text:'fixture'}]};
+    return Response.json({jsonrpc:'2.0',id:rpc.id,result});
+  }});
+  await client.start();
+  assert.deepEqual(client.tools.map(t=>t.name),['get_stripe_account_info']);
+  await assert.rejects(client.request('tools/call',{name:'stripe_api_write',arguments:{}}),/MCP_STRIPE_SANDBOX_READ_ONLY/);
+  await assert.rejects(client.request('tools/call',{name:'get_stripe_account_info',arguments:{account:'other'}}),/MCP_STRIPE_SANDBOX_READ_ONLY/);
+  await assert.rejects(client.request('resources/read',{}),/MCP_STRIPE_SANDBOX_READ_ONLY/);
+  assert.equal(requests,3);
+  await client.request('tools/call',{name:'get_stripe_account_info',arguments:{}});
+  assert.equal(requests,4);
+  const wrong=new HttpMcpClient('stripe-sandbox',{transport:'http',url:'https://example.org/',tokenEnv:'STRIPE_SANDBOX_PROBE_KEY'},{env:{STRIPE_SANDBOX_PROBE_KEY:token},fetchImpl:async()=>{throw Error('must not fetch');}});
+  await assert.rejects(wrong.start(),/MCP_STRIPE_SANDBOX_SCOPE_INVALID/);
+});
+test('Stripe sandbox does not persist unverifiable account responses',async t=>{
+  const f=fixture(t,'stripe-sandbox',{invalid:true});
+  await assert.rejects(f.connect('stripe-sandbox',{token:'rk_'+'test_fixture'}),/MCP_GUIDED_PROOF_INVALID/);
+  assert.deepEqual(f.store.list(),[]);
+  assert.deepEqual(f.defs,{});
 });
