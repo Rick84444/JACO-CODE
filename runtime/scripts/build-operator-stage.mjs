@@ -14,6 +14,8 @@ export const STAGE_FILES = {
   'index.html': 'operator-stage/index.html',
   'stage.css': 'operator-stage/stage.css',
   'stage.js': 'operator-stage/stage.js',
+  'setup.js': 'operator-stage/setup.js',
+  'setup-steps.mjs': 'operator-stage/setupSteps.mjs',
   'vendor/aura-rig.mjs': 'src/lib/auraRigLightform.mjs',
   'vendor/workspace-actions.mjs': 'src/lib/workspaceActions.mjs',
   'vendor/speech-parts.mjs': 'src/lib/speechParts.mjs',

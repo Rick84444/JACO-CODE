@@ -19,6 +19,7 @@
         <div class="model-row"><button type="button" id="modelUse">Use this model</button><span id="modelState" aria-live="polite"></span></div>
       </div>
     </div>
+    <button type="button" class="ide" id="setupBtn" data-incomplete="false" title="Step-by-step setup: start, AI model, vault, provider, activate">Setup</button>
     <button type="button" class="ide" id="ideToggle" aria-pressed="false" title="Open the IDE beside Aura">IDE beside</button>
   </header>
   <main id="stage">
@@ -40,6 +41,12 @@
     </section>
     <div class="rail right" id="railRight" aria-label="What Aura is using"></div>
   </main>
+  <div class="setup" id="setup" hidden role="dialog" aria-modal="true" aria-label="Set up JACO">
+    <div class="setup-card">
+      <div class="setup-head"><strong>JACO</strong><span>Setup</span><button type="button" id="setupClose" aria-label="Close">Close</button></div>
+      <div class="setup-body" id="setupBody"></div>
+    </div>
+  </div>
   <aside class="ide-pane" id="idePane" hidden aria-label="JACO IDE">
     <div class="ide-resize" id="ideResize" title="Drag to resize"></div>
     <div class="ide-bar"><span>IDE</span><a href="/ide" target="_blank" rel="noopener">Own window</a><button type="button" id="ideClose">Close</button></div>

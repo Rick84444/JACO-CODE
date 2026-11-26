@@ -7748,7 +7748,7 @@ const notifyPhone = async (action) => {
   // chat and voice are local only), and a release without the stage files falls back to the IDE.
   const stageAssets = operatorStageAssets(RELEASE_ROOT);
   const stageReady = stageAssets.available();
-  app.get(['/', '/stage.css', '/stage.js', '/vendor/*'], (req, res, next) => {
+  app.get(['/', '/stage.css', '/stage.js', '/setup.js', '/setup-steps.mjs', '/vendor/*'], (req, res, next) => {
     if (!stageReady || (req as any).ideSession || (ideHost() && req.hostname === ideHost())) return next();
     const asset = stageAssets.resolve(req.path);
     if (!asset) return next();
