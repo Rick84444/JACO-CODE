@@ -112,6 +112,15 @@ export function createIceCavern(scene,mobile=false) {
   return {update(t){particles.position.y=.045*Math.sin(t*.21);},dispose(){scene.remove(group);scene.fog=oldFog;scene.background=oldBackground;shafts.dispose();tips.dispose();owned.forEach(x=>x.dispose());}};
 }
 
+// Restrained technical garment palette, evaluated once per source vertex. No texture download.
+export function garmentShade(x,y,z){
+  const boot=y<.19, cuff=y>=.19&&y<.24;
+  const trim=Math.abs(Math.abs(x)-.105)<.014&&y>.38&&y<.92;
+  const panel=Math.abs(x)>.19&&y>.65&&y<1.38;
+  const seam=Math.abs(x)<.012&&z>.025&&y>1.02&&y<1.43;
+  return boot?0x344653:cuff?0x526576:trim?0x6aafc4:seam?0x455b70:panel?0x62798c:0x9aaab8;
+}
+
 // Source geometry is a genuine existing CC0 rig, not a reconstruction of the reference portrait.
 export function createCavernAvatar(scene,model) {
   const meshes=[];
@@ -123,8 +132,17 @@ export function createCavernAvatar(scene,model) {
   const bounds=suit.geometry.boundingBox.clone().applyMatrix4(suit.matrixWorld);
   if(bounds.min.y>.36||bounds.max.y<1.15)throw Error('AURA_CAVERN_FULL_BODY_ASSET_REQUIRED');
   const material=(color,emissive,roughness=.65)=>new THREE.MeshStandardMaterial({color,emissive,emissiveIntensity:.10,roughness,metalness:.06});
-  const skin=material(0xd8d1d1,0x17466b),cloth=material(0x8198af,0x16465b,.64);
-  const hair=material(0xe4eff7,0x16465b,.48);hair.side=THREE.DoubleSide;
+  const skin=material(0xe4d7d4,0x10232f,.78),cloth=material(0xffffff,0x0c2938,.76);
+  cloth.vertexColors=true;cloth.metalness=.14;
+  // Use rest-space geometry for a modest, dark-trimmed technical suit; colors follow the skinned mesh.
+  const suitPos=suit.geometry.attributes.position,colors=new Float32Array(suitPos.count*3),vertex=new THREE.Vector3(),color=new THREE.Color();
+  for(let i=0;i<suitPos.count;i++){
+    vertex.fromBufferAttribute(suitPos,i).applyMatrix4(suit.matrixWorld);
+    color.setHex(garmentShade(vertex.x,vertex.y,vertex.z));
+    colors.set([color.r,color.g,color.b],i*3);
+  }
+  suit.geometry.setAttribute('color',new THREE.BufferAttribute(colors,3));
+  const hair=material(0xf1f3f5,0x102b3e,.52);hair.side=THREE.DoubleSide;
   const eyes=material(0x589ea8,0x0c2435,.23);
   const teeth=material(0xc8cbd0,0x050b12,.55),tongue=material(0x8c5a68,0x000000);
   const lash=material(0x879aab,0x000000);lash.side=THREE.DoubleSide;
@@ -150,6 +168,15 @@ export function createCavernAvatar(scene,model) {
   // Old materials may be shared with hidden meshes; let model disposal handle those still referenced.
   for(const m of meshes)(Array.isArray(m.material)?m.material:[m.material]).forEach(x=>old.delete(x));
   old.forEach(x=>x?.dispose());
-  scene.add(model);
-  return {update(){},dispose(){scene.remove(model); /* model owner disposes assigned materials */ }};
+  // A subtle rest-pose proportion adjustment applies equally to rig, clothing and face;
+  // no detached anatomy or independent mesh stretching. Keep foot height stable.
+  model.scale.x*=.975;model.scale.y*=1.025;model.scale.z*=.985;
+  model.updateMatrixWorld(true);
+  const adjusted=suit.geometry.boundingBox.clone().applyMatrix4(suit.matrixWorld);
+  model.position.y+=bounds.min.y-adjusted.min.y;model.updateMatrixWorld(true);
+  // Contact darkening on the actual floor; not a fake mirrored live avatar.
+  const shadowGeo=new THREE.PlaneGeometry(1.35,.85);
+  const shadowMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,vertexShader:'varying vec2 p;void main(){p=uv*2.-1.;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec2 p;void main(){float a=.50*exp(-dot(p,p)*4.);a*=1.-smoothstep(.75,1.,length(p));gl_FragColor=vec4(.001,.008,.014,a);}' });
+  const contact=new THREE.Mesh(shadowGeo,shadowMat);contact.rotation.x=-Math.PI/2;contact.position.set(0,-.041,0);scene.add(contact,model);
+  return {update(){},dispose(){scene.remove(model,contact);shadowGeo.dispose();shadowMat.dispose();const assigned=new Set(meshes.map(m=>m.material));for(const m of materials)if(!assigned.has(m))m.dispose(); /* model owner disposes assigned materials */ }};
 }
