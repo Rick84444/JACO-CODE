@@ -36,7 +36,8 @@ export function auraChatProviderCatalog(providers, env = process.env) {
     const local = ['localhost','127.0.0.1','[::1]'].includes(host);
     const pricedModels = Object.keys(prices).filter(key => key.startsWith(`${p.id}/`)).map(key => key.slice(p.id.length + 1));
     const models = [...new Set([p.defaultModel, ...(p.id === 'ollama' ? auraOllamaModelCatalog(env) : []), ...pricedModels].filter(Boolean))];
-    return { id: p.id, local, defaultModel: p.defaultModel || '', models,
+    // A signed-in vendor CLI (kind 'cli-login') is paid by the operator's subscription: no per-call price exists.
+    return { id: p.id, local, subscription: p.kind === 'cli-login', defaultModel: p.defaultModel || '', models,
       credentialReady: local || !p.apiKeyEnv || p.credentialConfigured,
       pricedModels: [...new Set([...pricedModels, ...(p.id === 'ollama' ? auraOllamaModelCatalog(env) : [])])],
     };
@@ -54,6 +55,12 @@ export async function manualAuraProviderCompletion({ providerId, model, system, 
   if (typeof system !== 'string' || typeof user !== 'string') throw new Error('AURA_CHAT_PROMPT_INVALID');
   const bytes = Buffer.byteLength(system + user, 'utf8');
   if (bytes > auraPromptByteLimit({ local: entry.local, cloudRelay: /(?:-cloud|:cloud)$/.test(model) })) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
+  if (entry.subscription) {
+    // No metered spend to authorize, reserve or settle: the subscription is already paid. Say so instead of
+    // inventing a cost; the prompt still leaves this computer for the vendor, which `local: false` records.
+    const result = await providers.chat({ providerId, model, temperature, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] });
+    return { text: result.content, finishReason: result.finishReason ?? null, provider: providerId, model: result.model || model, local: false, costStatus: 'SUBSCRIPTION' };
+  }
   const configured = auraProviderPrices(env)[`${providerId}/${model}`];
   // A cloud model can be served through a loopback relay; its suffix must not bypass cost accounting.
   const isCloudSuffix = /(?:-cloud|:cloud)$/.test(model);

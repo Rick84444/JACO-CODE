@@ -56,15 +56,23 @@ export const BRAINS = {
     // The Gemini CLI has no login subcommand: the first interactive run offers "Login with Google".
     loginKind: 'terminal', loginHint: 'gemini',
     statusArgs: null,
-    status: (home = os.homedir()) => {
-      const file = path.join(home, '.gemini', 'oauth_creds.json');
-      return { loggedIn: fs.existsSync(file), detail: 'google account' };
+    // A leftover credentials file does not make an uninstalled CLI usable: the executable must exist too.
+    status: (home = os.homedir(), env = process.env, exists = fs.existsSync) => {
+      if (!onPath('gemini', env, exists)) return { installed: false, loggedIn: false, detail: 'CLI_NOT_INSTALLED' };
+      return { installed: true, loggedIn: exists(path.join(home, '.gemini', 'oauth_creds.json')), detail: 'google account' };
     },
     defaultModel: 'default',
     chatArgs: model => ['-p', ' ', ...(model && model !== 'default' ? ['--model', model] : [])],
     parseChat: out => out,
   },
 };
+
+// Is `bin` an executable on PATH? (PATHEXT on Windows.) Injectable for tests.
+export function onPath(bin, env = process.env, exists = fs.existsSync) {
+  const dirs = String(env.PATH || env.Path || '').split(path.delimiter).filter(Boolean);
+  const exts = process.platform === 'win32' ? ['', ...String(env.PATHEXT || '.EXE;.CMD;.BAT').split(';').filter(Boolean)] : [''];
+  return dirs.some(d => exts.some(e => exists(path.join(d, bin + e))));
+}
 
 export const brainByProviderId = providerId => Object.values(BRAINS).find(b => b.providerId === providerId) || null;
 
@@ -91,10 +99,10 @@ function run(bin, args, { input = '', timeoutMs, env = process.env, spawnImpl = 
   });
 }
 
-export async function brainStatus(id, { env = process.env, spawnImpl, home } = {}) {
+export async function brainStatus(id, { env = process.env, spawnImpl, home, exists } = {}) {
   const b = BRAINS[id]; if (!b) throw new Error('UNKNOWN_BRAIN');
   const base = { id: b.id, providerId: b.providerId, label: b.label, plan: b.plan, loginKind: b.loginKind, loginHint: b.loginHint || null, observed: b.observed };
-  if (!b.statusArgs) return { ...base, installed: true, ...b.status(home) };
+  if (!b.statusArgs) return { ...base, ...b.status(home, env, exists) };
   try {
     const r = await run(b.bin, b.statusArgs, { timeoutMs: STATUS_TIMEOUT_MS, env, spawnImpl });
     const text = `${r.stdout}\n${r.stderr}`.trim();

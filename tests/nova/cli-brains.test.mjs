@@ -6,6 +6,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { cliEnv, brainStatus, complete, startLogin, BRAINS } from '../../runtime/src/server/connected/cliBrains.mjs';
+import { manualAuraProviderCompletion, auraChatProviderCatalog } from '../../runtime/src/server/connected/auraOllamaChat.mjs';
 import { ProviderRegistry } from '../../runtime/src/server/connected/providerRegistry.mjs';
 
 // A stand-in for a vendor CLI: records what it was started with and what arrived on stdin.
@@ -56,10 +57,21 @@ test('unreadable status output fails closed', async () => {
 
 test('gemini sign-in is the Google credentials file, and its login is a terminal command', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-gem-'));
-  assert.equal((await brainStatus('gemini', { home })).loggedIn, false);
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-bin-'));
+  fs.writeFileSync(path.join(bin, process.platform === 'win32' ? 'gemini.EXE' : 'gemini'), '');
+  const env = { PATH: bin, PATHEXT: '.EXE' };
+  assert.equal((await brainStatus('gemini', { home, env })).loggedIn, false);
   fs.mkdirSync(path.join(home, '.gemini')); fs.writeFileSync(path.join(home, '.gemini', 'oauth_creds.json'), '{}');
-  assert.equal((await brainStatus('gemini', { home })).loggedIn, true);
+  const s = await brainStatus('gemini', { home, env });
+  assert.equal(s.installed, true); assert.equal(s.loggedIn, true);
   assert.deepEqual(await startLogin('gemini'), { state: 'TERMINAL', command: 'gemini' });
+});
+
+test('a leftover Gemini credentials file does not make an uninstalled CLI signed in', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-gem-'));
+  fs.mkdirSync(path.join(home, '.gemini')); fs.writeFileSync(path.join(home, '.gemini', 'oauth_creds.json'), '{}');
+  const s = await brainStatus('gemini', { home, env: { PATH: fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-empty-')) } });
+  assert.equal(s.installed, false); assert.equal(s.loggedIn, false); assert.equal(s.detail, 'CLI_NOT_INSTALLED');
 });
 
 test('a completion sends the prompt on stdin, tool-less, without API keys, and returns the text', async () => {
@@ -124,4 +136,17 @@ test('every brand has a distinct provider id that the registry id syntax accepts
   const ids = Object.values(BRAINS).map(b => b.providerId);
   assert.equal(new Set(ids).size, 3);
   for (const id of ids) assert.match(id, /^[a-z0-9][a-z0-9._-]{1,63}$/);
+});
+
+test('Aura chat through a subscription brain skips metered-cloud authorization and reports SUBSCRIPTION', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-aura-'));
+  const spawnImpl = fakeCli(c => c.args[0] === 'auth' ? { stdout: signedIn } : { stdout: JSON.stringify({ result: 'hej från abonnemanget' }) });
+  const reg = new ProviderRegistry(root, { PATH: '/bin' }, { cli: { spawnImpl } });
+  reg.registerCliBrain('claude');
+  const entry = auraChatProviderCatalog(reg, {}).find(p => p.id === 'claude-cli');
+  assert.equal(entry.subscription, true); assert.equal(entry.credentialReady, true); assert.equal(entry.local, false);
+  // Cloud spending is switched off: any metered path would throw. The subscription path must not touch it.
+  const economic = new Proxy({}, { get: (_t, name) => () => { throw new Error(`metered path used: ${String(name)}`); } });
+  const r = await manualAuraProviderCompletion({ providerId: 'claude-cli', model: 'default', system: 'S', user: 'U' }, { providers: reg, economic, env: {} });
+  assert.equal(r.text, 'hej från abonnemanget'); assert.equal(r.costStatus, 'SUBSCRIPTION'); assert.equal(r.local, false);
 });
