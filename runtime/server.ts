@@ -78,6 +78,7 @@ import { liteChatAnswer } from "./src/server/connected/liteChatRouter.mjs";
 import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/mcp/stdioMcpHost.mjs";
 import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFromRemote, readGithubPullRequest } from './src/server/mcp/auraAgentMcpCall.mjs';
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
+import { readGithubActions } from "./src/server/github/githubActions.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
 import { auraAlwaysAnswers, answerInOrder, auraChatDeadlines, auraStatusReply, chatBudget } from "../agents/lib/aura-always-answers.mjs";
@@ -2924,6 +2925,13 @@ const notifyPhone = async (action) => {
   app.get('/api/aura/workbench', requireLocalUi, async (_req, res) => {
     try { res.json(await buildAuraWorkbenchSnapshot()); }
     catch (error: any) { res.status(503).json({ success: false, error: error?.message || String(error) }); }
+  });
+
+  // Read-only Actions status for the open project's canonical Git origin.
+  app.get('/api/aura/workbench/git/actions', requireLocalUiSameOrigin, async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try { res.json({ success: true, ...(await readGithubActions(projectRoot.get())) }); }
+    catch (error: any) { res.status(503).json({ success: false, error: /^GIT(HUB)?_[A-Z0-9_]+$/.test(error?.message || '') ? error.message : 'GITHUB_ACTIONS_UNAVAILABLE' }); }
   });
 
   app.get('/api/aura/workbench/git/status', requireLocalUi, async (_req, res) => {
