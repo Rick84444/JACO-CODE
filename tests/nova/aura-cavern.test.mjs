@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {cavernLayout,cavernGovernor,createIceCavern} from '../../runtime/src/lib/auraCavern.mjs';
+import {cavernLayout,cavernGovernor,createIceCavern,garmentShade} from '../../runtime/src/lib/auraCavern.mjs';
+import {bodyMotion,approachAngle} from '../../runtime/src/lib/auraBodyMotion.mjs';
 // Resolve Three through the same dependency tree as the renderer.
 import {createRequire} from 'node:module';
 const require=createRequire(new URL('../../runtime/package.json',import.meta.url));
@@ -38,4 +39,23 @@ test('real scene contains world-space depth, two bounded crystal batches and cle
   assert.ok(scene.fog);
   cave.update(1);cave.dispose();
   assert.equal(scene.children.length,0);assert.equal(scene.fog,null);
+});
+
+test('body motion is bounded, quiet without speech, and reduced motion is static',()=>{
+  for(let i=0;i<600;i++){
+    const t=i/10,quiet=bodyMotion(t),speaking=bodyMotion(t,{speaking:true,jaw:.9});
+    assert.equal(quiet.gesture,0);
+    assert.ok(Math.abs(speaking.gesture)<=.043);
+    assert.ok(Math.abs(speaking.hips)<=.024);
+    assert.ok(Math.abs(speaking.breath)<=.012);
+  }
+  assert.ok(Object.values(bodyMotion(14,{speaking:true,jaw:1,reduced:true})).every(x=>x===0));
+  const next=approachAngle(0,.04,1/24);
+  assert.ok(next>0&&next<.04);
+  assert.equal(approachAngle(.02,.04,0),.02);
+});
+test('garment palette separates boot, cuff, body and trim without additional draw calls',()=>{
+  const palette=[garmentShade(0,.1,0),garmentShade(0,.22,0),garmentShade(.105,.6,0),garmentShade(0,1.2,.1),garmentShade(.25,1.2,0),garmentShade(.05,1.2,0)];
+  assert.equal(new Set(palette).size,6);
+  assert.ok(palette.every(x=>Number.isInteger(x)&&x>=0&&x<=0xffffff));
 });
