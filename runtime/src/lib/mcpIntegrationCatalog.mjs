@@ -12,6 +12,7 @@ export const MCP_INTEGRATION_CATALOG = Object.freeze([
   {id:'context7',name:'Context7',target:'https://mcp.context7.com/mcp',icon:'mcp',tokenEnv:'CONTEXT7_API_KEY',loginUrl:'https://context7.com/',auth:'Bearer API key for documentation tools',docs:'https://context7.com/docs/installation'},
   {id:'stripe',name:'Stripe',target:'https://mcp.stripe.com/',icon:'mcp',tokenEnv:'STRIPE_MCP_API_KEY',loginUrl:'https://dashboard.stripe.com/',auth:'Restricted API key; read-only test access recommended; no payment authorization',docs:'https://github.com/stripe/ai/tree/main/tools/modelcontextprotocol'}
 ,
+  {id:'stripe-sandbox',name:'Stripe Sandbox',target:'https://mcp.stripe.com/',icon:'mcp',tokenEnv:'JACO_MCP_GUIDED_STRIPE_SANDBOX',loginUrl:'https://dashboard.stripe.com/apikeys',auth:'Agent-tagged restricted sandbox key; account read only',docs:'https://docs.stripe.com/mcp',category:'finance',purpose:'Verify Stripe sandbox account access; never live revenue or payments'},
   {id:'buffer',name:'Buffer',target:'https://mcp.buffer.com/mcp',icon:'mcp',tokenEnv:'BUFFER_API_KEY',loginUrl:'https://publish.buffer.com/',auth:'Bearer API key; whole account scope. Start read-only.',docs:'https://developers.buffer.com/guides/integrations/other-ai-tools.html',category:'marketing',purpose:'Social channels, post drafts, queue and analytics'},
   {id:'mailchimp-docs',name:'Mailchimp Docs',target:'https://mailchimp.com/developer/_mcp/server',icon:'mcp',tokenEnv:'',auth:'Public documentation only; no account access',docs:'https://mailchimp.com/developer/marketing/build/ai-tools/mcp-server',category:'marketing',purpose:'Campaign API documentation'}
 ,
@@ -38,7 +39,8 @@ export function mcpConnectionState(provider, observed=true) {
 // Guided setup is implemented only for explicitly reviewed provider contracts.
 export const GUIDED_MCP_PROBES=Object.freeze({
   'github-remote':Object.freeze({tool:'get_me',credentialRef:'JACO_MCP_GUIDED_GITHUB_REMOTE'}),
-  render:Object.freeze({tool:'list_workspaces',credentialRef:'JACO_MCP_GUIDED_RENDER'})
+  render:Object.freeze({tool:'list_workspaces',credentialRef:'JACO_MCP_GUIDED_RENDER'}),
+  'stripe-sandbox':Object.freeze({tool:'get_stripe_account_info',credentialRef:'JACO_MCP_GUIDED_STRIPE_SANDBOX'})
 });
 export function guidedMcpPreset(id){
   if(typeof id!=='string'||!Object.hasOwn(GUIDED_MCP_PROBES,id))return null;
@@ -48,6 +50,7 @@ export function guidedMcpPreset(id){
 export function isGuidedCredentialRef(name){
   return typeof name==='string'&&name.startsWith('JACO_MCP_GUIDED_');
 }
+export function stripeSandboxKey(token){return typeof token==='string'&&/^rk_test_[A-Za-z0-9_]+$/.test(token);}
 export function guidedCredentialMatches(id,definition){
   const preset=guidedMcpPreset(id);
   if(!preset||!definition||definition.transport!=='http'||definition.tokenEnv!==preset.credentialRef)return false;
@@ -58,6 +61,7 @@ export function catalogDefinitionMatches(id,definition){
   const preset=MCP_INTEGRATION_CATALOG.find(p=>p.id===id);
   if(!preset || !definition || definition.transport!=='http' || definition.validationError) return false;
   try { if(new URL(definition.url).href!==new URL(preset.target).href) return false; } catch { return false; }
+  if(id==='stripe-sandbox')return guidedCredentialMatches(id,definition);
   const refs=id==='huggingface'?['','HF_TOKEN','HUGGINGFACE_TOKEN']:[preset.tokenEnv||''];
   return refs.includes(definition.tokenEnv||'')||guidedCredentialMatches(id,definition);
 }
@@ -66,7 +70,7 @@ export function pluginLoginPreset(id,definition){
   return MCP_INTEGRATION_CATALOG.find(p=>p.id===id&&p.loginUrl)||null;
 }
 export function pluginEnvironment(id){
-  if(id==='paypal-sandbox')return 'SANDBOX';
+  if(id==='paypal-sandbox'||id==='stripe-sandbox')return 'SANDBOX';
   if(['openai-docs','microsoft-learn','cloudflare-docs','mailchimp-docs','coingecko','context7','jobbi','frantic'].includes(id))return 'PUBLIC_DATA';
   return 'ACCOUNT_SCOPE_UNVERIFIED';
 }
