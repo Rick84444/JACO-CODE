@@ -11,7 +11,7 @@ export const MCP_INTEGRATION_CATALOG = Object.freeze([
   {id:'linear',name:'Linear',target:'https://mcp.linear.app/mcp',icon:'mcp',tokenEnv:'LINEAR_API_KEY',loginUrl:'https://linear.app/',auth:'Restricted API key or OAuth (manual key setup supported here)',docs:'https://linear.app/docs/mcp'},
   {id:'context7',name:'Context7',target:'https://mcp.context7.com/mcp',icon:'mcp',tokenEnv:'CONTEXT7_API_KEY',loginUrl:'https://context7.com/',auth:'Bearer API key for documentation tools',docs:'https://context7.com/docs/installation'},
   {id:'stripe',name:'Stripe',target:'https://mcp.stripe.com/',icon:'mcp',tokenEnv:'STRIPE_MCP_API_KEY',loginUrl:'https://dashboard.stripe.com/',auth:'Restricted API key; read-only test access recommended; no payment authorization',docs:'https://github.com/stripe/ai/tree/main/tools/modelcontextprotocol'}
-, 
+,
   {id:'buffer',name:'Buffer',target:'https://mcp.buffer.com/mcp',icon:'mcp',tokenEnv:'BUFFER_API_KEY',loginUrl:'https://publish.buffer.com/',auth:'Bearer API key; whole account scope. Start read-only.',docs:'https://developers.buffer.com/guides/integrations/other-ai-tools.html',category:'marketing',purpose:'Social channels, post drafts, queue and analytics'},
   {id:'mailchimp-docs',name:'Mailchimp Docs',target:'https://mailchimp.com/developer/_mcp/server',icon:'mcp',tokenEnv:'',auth:'Public documentation only; no account access',docs:'https://mailchimp.com/developer/marketing/build/ai-tools/mcp-server',category:'marketing',purpose:'Campaign API documentation'}
 ,
@@ -86,5 +86,5 @@ export function financialOptions(providers=null){
     {id:'accounting-review',title:'Accounting review',titleSv:'Bokföring och avstämning',plugins:['fortnox','xero','quickbooks','stripe'],goal:'Compare authorized accounting and transaction records, prepare reconciliation suggestions.'},
     {id:'capital-overview',title:'Capital overview',titleSv:'Kapitalöversikt',plugins:['mercury','wise','coinbase','x402','stripe'],goal:'Review observed balances and costs without moving funds or signing transactions.'}
   ];
-  return {observed,plugins,strategies:groups.map(g=>({...g,plugins:g.plugins.map(id=>plugins.find(p=>p.id===id)).filter(Boolean),state:!observed?'UNOBSERVED':g.plugins.some(id=>rows.some(r=>r.id===id&&r.status==='READY'&&r.agentAccess!=='off'&&r.credentialConfigured!==false&&r.tools?.some(t=>t.readOnly===true&&t.agentAllowed===true)))?'READ_TOOLS_DISCOVERED':'SETUP_OR_DISCOVERY_REQUIRED',executionVerified:false,financialMutationAllowed:false}))};
+  return {observed,plugins,strategies:groups.map(g=>({...g,plugins:g.plugins.map(id=>plugins.find(p=>p.id===id)).filter(Boolean),state:!observed?'UNOBSERVED':g.plugins.some(id=>MCP_INTEGRATION_CATALOG.some(p=>p.id===id)&&rows.some(r=>r.id===id&&r.status==='READY'&&r.agentAccess!=='off'&&r.credentialConfigured!==false&&r.tools?.some(t=>t.readOnly===true&&t.agentAllowed===true)))?'READ_TOOLS_DISCOVERED':'SETUP_OR_DISCOVERY_REQUIRED',executionVerified:false,financialMutationAllowed:false}))};
 }
