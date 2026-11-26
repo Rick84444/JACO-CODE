@@ -1,3 +1,13 @@
+import { SecretStore } from '../../../../agents/lib/secret-store.mjs';
+import { isGuidedCredentialRef, guidedCredentialMatches } from '../../lib/mcpIntegrationCatalog.mjs';
+
+// A guided secret is resolved in process only, for the exact provider endpoint.
+export function mcpCredential(id,def,env=process.env){
+  if(!def.tokenEnv)return '';
+  if(!isGuidedCredentialRef(def.tokenEnv))return env[def.tokenEnv]||'';
+  if(!guidedCredentialMatches(id,def))return '';
+  try{return new SecretStore({env}).get(def.tokenEnv)||'';}catch{return '';}
+}
 // Streamable HTTP transport used by the canonical MCP host.
 // Only emit finite error codes; low-level fetch errors can contain private
 // network details and must not leak into the agent log or public UI.
@@ -40,7 +50,7 @@ export class HttpMcpClient {
     const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': this.protocol };
     if (this.session) headers['Mcp-Session-Id'] = this.session;
     if (this.def.tokenEnv) {
-      const token = this.env[this.def.tokenEnv];
+      const token = mcpCredential(this.id,this.def,this.env);
       if (!token) throw Error('MCP_CREDENTIAL_REQUIRED');
       headers.authorization = `Bearer ${token}`;
     }
