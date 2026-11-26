@@ -10,7 +10,7 @@ const require=createRequire(path.join(root,'package.json'));
 const {build}=require('esbuild');
 const {chromium}=await import(process.env.JACO_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.JACO_PLAYWRIGHT_MODULE).href : pathToFileURL(require.resolve('playwright')).href);
 const bundle=await build({stdin:{contents:
-  "import React from 'react';import{createRoot}from'react-dom/client';import{ProviderConnect}from'./src/components/ProviderConnect';import{UiLanguageProvider}from'./src/i18n/UiLanguage';createRoot(document.getElementById('root')).render(<UiLanguageProvider initialLanguage='sv'><ProviderConnect onConnected={()=>{}}/></UiLanguageProvider>);",
+  "import React from 'react';import{createRoot}from'react-dom/client';import{ProviderConnect}from'./src/components/ProviderConnect';import{McpServersPanel}from'./src/components/McpServersPanel';import{UiLanguageProvider}from'./src/i18n/UiLanguage';createRoot(document.getElementById('root')).render(<UiLanguageProvider initialLanguage='sv'>{location.search.includes('integrations')?<McpServersPanel observedAt={new Date().toISOString()} providers={[{id:'render',name:'Render',role:'Cloud',status:'READY',transport:'http',error:null,agentAccess:'read',credentialConfigured:true,allowOpenLogin:true,catalogMatch:true,loginOpeningSupported:true,tools:[{name:'list_services',description:'Read services',readOnly:true,agentAllowed:true}],deny:['delete_service'],stats:{calls:0,failures:0,refused:0,lastCall:null}}]} recentCalls={[]} busy={null} selectedToolId={null} onStart={()=>{}} onSelectTool={()=>{}} onChanged={()=>{}}/>:<ProviderConnect onConnected={()=>{}}/>}</UiLanguageProvider>);",
   resolveDir:root,loader:'tsx'},bundle:true,write:false,platform:'browser',format:'esm',jsx:'automatic'});
 const cssDir=path.join(root,'dist','assets');
 const cssFiles=fs.readdirSync(cssDir).filter(f=>f.endsWith('.css'));
@@ -20,10 +20,10 @@ const brains=[{id:'claude',providerId:'claude-cli',label:'Claude',plan:'Claude C
 const mutations=[];
 const server=http.createServer(async(req,res)=>{
   const send=(body,type='application/json')=>{res.setHeader('content-type',type);res.end(type==='application/json'?JSON.stringify(body):body);};
-  if(req.url==='/')return send('<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><body style="background:#202225;color:white"><div id="root" style="width:min(100%,340px);margin:12px auto"></div><script type="module" src="/app.js"></script></body></html>','text/html');
+  if(req.url==='/'||req.url==='/?integrations=1')return send('<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><body style="background:#202225;color:white"><div id="root" style="width:min(100%,340px);margin:12px auto"></div><script type="module" src="/app.js"></script></body></html>','text/html');
   if(req.url==='/style.css')return send(css,'text/css');
   if(req.url==='/app.js')return send(bundle.outputFiles[0].text,'text/javascript');
-  if(req.method==='POST'){
+  if(req.method==='POST'||req.method==='PATCH'){
     let body='';for await(const c of req)body+=c;
     mutations.push({url:req.url,body:JSON.parse(body||'{}')});
     return send({success:true,result:{state:'READY',id:'gemini',models:['fixture-model'],defaultModel:'fixture-model'}});
@@ -72,6 +72,35 @@ try{
     await g.getByRole('button',{name:'Stäng'}).click();
     await page.getByRole('button',{name:/^Fler —/}).click();
     await page.getByRole('dialog',{name:'Fler'}).getByLabel('Modellleverantörens adress').waitFor();
+    assert.deepEqual(errors,[]);
+    mutations.length=0;
+    await page.goto(base+'/?integrations=1');
+    const render=page.getByRole('button',{name:'Review Render integration'});
+    await render.click();
+    const detail=page.getByRole('dialog',{name:'Render'});
+    await detail.waitFor();
+    assert.equal(mutations.length,0,'opening existing integration cannot mutate its configuration');
+    assert.equal(await detail.getByRole('button',{name:'Configure connection'}).count(),0);
+    const detailBounds=await detail.boundingBox();
+    assert.ok(detailBounds&&detailBounds.x>=0&&detailBounds.x+detailBounds.width<=width+1,'integration dialog fits viewport');
+    const optIn=detail.getByRole('checkbox',{name:/Allow Aura to open/});
+    assert.equal(await optIn.isChecked(),true);
+    await Promise.all([page.waitForResponse(r=>r.url().endsWith('/servers/render/access')),optIn.uncheck()]);
+    assert.equal(mutations.length,1);
+    assert.deepEqual(mutations[0],{url:'/api/aura/workbench/mcp/servers/render/access',body:{allowOpenLogin:false}});
+    if(process.env.JACO_UI_SCREENSHOTS)await page.screenshot({path:path.join(process.env.JACO_UI_SCREENSHOTS,'integration-dialog-'+width+'.png')});
+    await page.keyboard.press('Escape');
+    await detail.waitFor({state:'hidden'});
+    assert.equal(await render.evaluate(el=>document.activeElement===el),true);
+    await page.getByRole('button',{name:'Available',exact:true}).click();
+    await page.getByRole('button',{name:'Review CoinGecko integration'}).click();
+    await page.getByRole('dialog',{name:'CoinGecko'}).getByRole('button',{name:'Configure connection'}).click();
+    const setup=page.getByRole('dialog',{name:'Configure integration'});
+    await setup.waitFor();
+    assert.equal(await setup.getByLabel('Server id').inputValue(),'coingecko');
+    assert.equal(mutations.length,1,'setup review is not a connection');
+    await page.keyboard.press('Escape');
+    await setup.waitFor({state:'hidden'});
     assert.deepEqual(errors,[]);
     await page.close();
     mutations.length=0;
