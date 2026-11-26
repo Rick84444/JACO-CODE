@@ -9,3 +9,6 @@
 - [ ] Add negative security and regression tests, run type/syntax and relevant CI.
 - [ ] Obtain real user-authorized Windows-host ChatGPT/Gemini evidence; verify Android remote UI.
 - [ ] Independent review and green CI before merge.
+
+- [ ] Verify official Gemini ACP and Antigravity CLI entitlement, supported delegation interfaces and usage terms; distinguish interactive from unattended use.
+- [ ] If supported, extend existing execution registry with local CLI delegation, isolation, cancellation, policy enforcement and structured evidence; test with real accounts.
