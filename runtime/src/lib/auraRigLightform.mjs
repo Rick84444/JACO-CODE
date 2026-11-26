@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {createIceCavern,createCavernAvatar,cavernGovernor} from './auraCavern.mjs';
+import {bodyMotion,approachAngle} from './auraBodyMotion.mjs';
 
 // JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
 // A light-form is sampled from the actual skinned geometry, never from a portrait.
@@ -1067,6 +1068,10 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     }else lightBody=createLightBody(scene,model,bones,groups,isMobile,distantField);
     const cavernBudget=cavernGovernor(isMobile);
     let lastDpr=0;
+    const bodyAngles={hips:0,spine:0,breath:0,shoulder:0,gesture:0,elbow:0,wrist:0};
+    const bodyNames={hips:['Hips','Pelvis','hips','pelvis'],spine:['Spine','Spine1','spine'],leftArm:['LeftArm','LeftUpperArm','leftUpperArm'],rightArm:['RightArm','RightUpperArm','rightUpperArm'],leftForearm:['LeftForeArm','LeftForearm','LeftLowerArm','leftLowerArm'],rightForearm:['RightForeArm','RightForearm','RightLowerArm','rightLowerArm'],leftHand:['LeftHand','leftHand'],rightHand:['RightHand','rightHand']};
+    const bodyBone=Object.fromEntries(Object.entries(bodyNames).map(([key,names])=>[key,names.find(name=>bones.has(name))]));
+    if(cavern)canvas.dataset.bodyBones=String(Object.values(bodyBone).filter(Boolean).length);
     voiceTracker=createVoiceFormantTracker();
     qualityGovernor=createQualityGovernor(isMobile);
     behaviorEngine=createBehaviorEngine();
@@ -1218,11 +1223,15 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       rotate('LeftShoulder',still?0:.016*breath,0,-.009*breath);
       rotate('RightShoulder',still?0:.016*breath+.003,0,.009*breath);
       if(cavern){
-        const shift=still?0:Math.sin(t*.43)*.025;
-        rotate('Hips',0,shift*.5,shift);
-        rotate('Spine',0,-shift*.45,-shift*.7);
-        const gesture=state.speaking&&!still?.035*Math.sin(t*1.6):0;
-        rotate('LeftArm',gesture,0,-shift*.5);rotate('RightArm',-gesture,0,shift*.5);
+        const target=bodyMotion(t,{speaking:state.speaking,listening:state.listening,active:state.active,jaw:smoothJaw,reduced:still});
+        for(const key of Object.keys(bodyAngles))bodyAngles[key]=still?0:approachAngle(bodyAngles[key],target[key],dt);
+        const {hips,spine,breath:chest,shoulder,gesture,elbow,wrist}=bodyAngles;
+        // Leave pelvis/feet stationary in this increment; avoid root drift without foot IK.
+        rotate(bodyBone.spine,chest,hips*.5,spine);
+        rotate('LeftShoulder',chest+shoulder,0,-.008*breath);rotate('RightShoulder',chest-shoulder,0,.008*breath);
+        rotate(bodyBone.leftArm,gesture,0,-hips*.35);rotate(bodyBone.rightArm,-gesture,0,-hips*.25);
+        rotate(bodyBone.leftForearm,elbow,0,0);rotate(bodyBone.rightForearm,-elbow*.65,0,0);
+        rotate(bodyBone.leftHand,0,wrist,0);rotate(bodyBone.rightHand,0,-wrist*.75,0);
       }
 
       for(let j=0;j<4;j++){
