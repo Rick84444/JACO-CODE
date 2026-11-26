@@ -6,6 +6,7 @@ on:
       - 'runtime/src/components/BrainLogin.tsx'
       - 'runtime/src/components/ProviderConnect.tsx'
       - 'runtime/src/components/McpServersPanel.tsx'
+      - 'runtime/src/components/ConnectionsWorkspace.tsx'
       - 'runtime/src/lib/mcpIntegrationCatalog.mjs'
       - 'runtime/src/components/FinancialOptionsPanel.tsx'
       - 'runtime/src/components/financialLogos.ts'
@@ -40,6 +41,7 @@ on:
       - 'runtime/src/components/BrainLogin.tsx'
       - 'runtime/src/components/ProviderConnect.tsx'
       - 'runtime/src/components/McpServersPanel.tsx'
+      - 'runtime/src/components/ConnectionsWorkspace.tsx'
       - 'runtime/src/lib/mcpIntegrationCatalog.mjs'
       - 'runtime/src/components/FinancialOptionsPanel.tsx'
       - 'runtime/src/components/financialLogos.ts'
@@ -101,6 +103,7 @@ jobs:
           node --check runtime/src/server/connected/pluginLogin.mjs
           node --check runtime/src/lib/mcpIntegrationCatalog.mjs
           node --check runtime/src/server/mcp/pluginRegistry.mjs
+          node --check runtime/src/server/mcp/stdioMcpHost.mjs
       - name: OAuth, stream and CLI safety contracts (fixtures only)
         run: node --test tests/nova/cli-brains.test.mjs tests/nova/chatgpt-plan-transport.test.mjs tests/nova/provider-key.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/github-actions.test.mjs tests/nova/plugin-login.test.mjs tests/nova/mcp-integration-catalog.test.mjs tests/nova/plugin-registry.test.mjs
   provider-ui:
