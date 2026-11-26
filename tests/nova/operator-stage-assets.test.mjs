@@ -47,6 +47,26 @@ test('three.js addons reach the browser with their imports resolved', { skip: !t
   }
 });
 
+// 2026-11-26: /setup.js was missing from the route list, fell through to the IDE's index.html, and the stage
+// (which imports it) loaded nothing. Every module the stage imports must be both served and routed.
+test('every module the stage imports is resolved by the assets and routed by the runtime', () => {
+  const server = fs.readFileSync(path.join(runtimeRoot, 'server.ts'), 'utf8');
+  const routes = /app\.get\((\[[^\]]*'\/stage\.js'[^\]]*\])/.exec(server)?.[1] || '';
+  assert.ok(routes, 'the stage route list is in server.ts');
+  const imported = new Set();
+  for (const file of ['stage.js', 'setup.js']) {
+    const text = fs.readFileSync(path.join(runtimeRoot, 'operator-stage', file), 'utf8');
+    for (const m of text.matchAll(/from\s+'(\/[^']+)'|import\('(\/[^']+)'\)/g)) imported.add(m[1] || m[2]);
+  }
+  assert.ok(imported.size >= 5, 'the stage imports its modules');
+  for (const url of imported) {
+    assert.ok(assets.resolve(url), `${url} is not served by operatorStageAssets`);
+    const inList = routes.includes(`'${url}'`) || (url.startsWith('/vendor/') && routes.includes("'/vendor/*'"));
+    assert.ok(inList, `${url} is not in the runtime's route list, so it would fall through to the IDE page`);
+  }
+  for (const url of ['/', '/stage.css', '/stage.js']) assert.ok(routes.includes(`'${url}'`), url);
+});
+
 test('a release without the stage files reports it, so the runtime keeps the IDE at /', () => {
   const none = operatorStageAssets(path.join(runtimeRoot, 'does-not-exist'));
   assert.equal(none.available(), false);

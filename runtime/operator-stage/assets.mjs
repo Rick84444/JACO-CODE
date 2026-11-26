@@ -17,6 +17,7 @@ function layout(runtimeRoot) {
   const source = {
     files: {
       '/': path.join(stage, 'index.html'), '/stage.css': path.join(stage, 'stage.css'), '/stage.js': path.join(stage, 'stage.js'),
+      '/setup.js': path.join(stage, 'setup.js'), '/setup-steps.mjs': path.join(stage, 'setupSteps.mjs'),
       '/vendor/aura-rig.mjs': path.join(runtimeRoot, 'src/lib/auraRigLightform.mjs'),
       '/vendor/workspace-actions.mjs': path.join(runtimeRoot, 'src/lib/workspaceActions.mjs'),
       '/vendor/speech-parts.mjs': path.join(runtimeRoot, 'src/lib/speechParts.mjs'),
@@ -30,6 +31,7 @@ function layout(runtimeRoot) {
   const release = {
     files: {
       '/': path.join(built, 'index.html'), '/stage.css': path.join(built, 'stage.css'), '/stage.js': path.join(built, 'stage.js'),
+      '/setup.js': path.join(built, 'setup.js'), '/setup-steps.mjs': path.join(built, 'setup-steps.mjs'),
       '/vendor/aura-rig.mjs': path.join(built, 'vendor/aura-rig.mjs'),
       '/vendor/workspace-actions.mjs': path.join(built, 'vendor/workspace-actions.mjs'),
       '/vendor/speech-parts.mjs': path.join(built, 'vendor/speech-parts.mjs'),

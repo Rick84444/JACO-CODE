@@ -4,6 +4,7 @@
 // real runtime receipts (MCP call log, live mission stream, gameboard, browser frames) and the IDE's chat session.
 import { extractWorkspaceActions, workspaceReplyText } from '/vendor/workspace-actions.mjs';
 import { speechParts } from '/vendor/speech-parts.mjs';
+import { init as initSetup } from '/setup.js';
 
 const $ = id => document.getElementById(id);
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -539,5 +540,5 @@ $('ideResize').addEventListener('pointerdown', e => {
 });
 
 holo('mission'); holo('tools');
-header(); loadHistory(); pollCalls(); connectLive(); refreshBoard();
+header(); loadHistory(); pollCalls(); connectLive(); refreshBoard(); void initSetup();
 $('input').focus();

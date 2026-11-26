@@ -31,6 +31,36 @@ button.ide[aria-pressed="true"], button.ide[aria-expanded="true"] { color: var(-
 .model-row button { background: rgba(124,199,255,.16); color: var(--text); border: 1px solid rgba(124,199,255,.4); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 .model-row span { font-size: 12px; color: var(--muted); }
 
+/* The structured start: five ticked steps. */
+.setup { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; background: rgba(2,4,10,.78); backdrop-filter: blur(5px); padding: 16px; }
+.setup[hidden] { display: none; }
+.setup-card { width: min(860px, 100%); max-height: 92vh; overflow: auto; background: rgba(8,16,28,.96); border: 1px solid var(--glow); border-radius: 16px; box-shadow: 0 0 60px rgba(79,180,255,.28); }
+.setup-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--edge); }
+.setup-head span { flex: 1; color: var(--muted); letter-spacing: .12em; text-transform: uppercase; font-size: 12px; }
+.setup-head button, .setup button { background: rgba(124,199,255,.12); color: var(--text); border: 1px solid rgba(124,199,255,.35); border-radius: 10px; padding: 7px 14px; cursor: pointer; font: inherit; }
+.setup button.primary { background: rgba(79,180,255,.28); border-color: var(--glow); }
+.setup button:disabled { opacity: .45; cursor: default; }
+.setup-body { display: grid; grid-template-columns: 250px 1fr; gap: 20px; padding: 18px; }
+.setup-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.setup-steps li { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 10px; border: 1px solid transparent; color: var(--muted); cursor: pointer; }
+.setup-steps li.current { border-color: var(--glow); color: var(--text); background: rgba(79,180,255,.1); box-shadow: 0 0 18px rgba(79,180,255,.2); }
+.setup-steps li.done { color: var(--ok); }
+.setup-steps .mark { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; border: 1px solid currentColor; font: 12px var(--mono); flex: none; }
+.setup-steps li.done .mark { background: var(--ok); color: #031; border-color: var(--ok); }
+.setup-steps em { color: var(--faint); font-style: normal; font-size: 12px; }
+.setup-body h3 { margin: 0 0 8px; font-weight: 600; }
+.setup-body p { margin: 8px 0; color: var(--text); line-height: 1.5; }
+.setup-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+.setup-option { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--edge); border-radius: 12px; background: rgba(255,255,255,.03); }
+.setup-option p { margin: 0; color: var(--muted); font-size: 13px; }
+.setup input, .setup select { background: #0a1424; color: var(--text); border: 1px solid var(--edge); border-radius: 8px; padding: 8px; font: 14px system-ui; max-width: 100%; }
+.setup-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.setup-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.setup-hint { color: var(--muted) !important; font-size: 13px; }
+.setup-message { color: var(--ok) !important; } .setup-busy { color: var(--muted) !important; }
+#setupBtn[data-incomplete="true"] { border-color: var(--glow); color: var(--text); box-shadow: 0 0 12px rgba(79,180,255,.45); }
+@media (max-width: 720px) { .setup-body { grid-template-columns: 1fr; } .setup-choice { grid-template-columns: 1fr; } }
+
 /* The IDE beside Aura. */
 .ide-pane { position: fixed; top: 44px; right: 0; bottom: 0; width: var(--split, 50vw); z-index: 30; display: flex; flex-direction: column;
   background: #05090f; border-left: 1px solid var(--glow); box-shadow: -10px 0 40px rgba(79,180,255,.15); }
