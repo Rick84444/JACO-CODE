@@ -3571,9 +3571,9 @@ const notifyPhone = async (action) => {
     if (!localOperatorOnly(req, res)) return;
     try {
       const id = String(req.params.id || '');
-      const server = mcpHost.setAccess(id, { agentAccess: req.body?.agentAccess, deny: req.body?.deny });
+      const server = mcpHost.setAccess(id, { agentAccess: req.body?.agentAccess, deny: req.body?.deny, allowOpenLogin:req.body?.allowOpenLogin });
       getAuraMcpFabric.invalidate();
-      seerLiveWorkstream.record({ actor: 'Aura Tool Fabric', type: 'mcp.access.changed', message: `Agents on ${id}: ${server?.agentAccess}${server?.deny?.length ? `, denied ${server.deny.join(', ')}` : ''}`, verified: true, receipt: { id, agentAccess: server?.agentAccess, deny: server?.deny } });
+      seerLiveWorkstream.record({ actor: 'Aura Tool Fabric', type: 'mcp.access.changed', message: `Agents on ${id}: ${server?.agentAccess}${server?.deny?.length ? `, denied ${server.deny.join(', ')}` : ''}`, verified: true, receipt: { id, agentAccess: server?.agentAccess, deny: server?.deny, allowOpenLogin:server?.allowOpenLogin===true } });
       res.json({ success: true, server });
     } catch (error: any) { res.status(/UNKNOWN/.test(error?.message) ? 404 : 400).json({ success: false, error: error?.message || String(error) }); }
   });
