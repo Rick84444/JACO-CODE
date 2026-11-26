@@ -79,6 +79,7 @@ import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/
 import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFromRemote, readGithubPullRequest } from './src/server/mcp/auraAgentMcpCall.mjs';
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createPluginLogin } from './src/server/connected/pluginLogin.mjs';
+import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../agents/lib/standing-tool-authority.mjs';
 import { MCP_INTEGRATION_CATALOG, pluginLoginPreset } from './src/lib/mcpIntegrationCatalog.mjs';
 import { readGithubActions } from "./src/server/github/githubActions.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
@@ -272,6 +273,16 @@ const mcpHost = new StdioMcpHost({
 });
 process.on('exit', () => mcpHost.stopAll());
 const openPluginLogin = createPluginLogin({host:mcpHost});
+const authorizedPluginLogin = async (args: any, organization: any, capabilities: any) => {
+  const refuse = (code: string) => Object.assign(Error(code),{preDispatch:true,dispatchState:'NOT_DISPATCHED'});
+  if(capabilities?.isTaskEnabled?.('mcp-write')===false || !operatorTaskEnabled(mcpAuthorityRoot(mcpHost),'mcp-write')) throw refuse('CAPABILITY_DISABLED:mcp-write');
+  if(!organization?.authorize('aura','commands.run')?.allowed) throw refuse('MANDATE_DENIED:aura:commands.run');
+  // Opening a fixed page is a local browser launch, not authentication or approval of scopes.
+  const authority=standingToolAuthority(mcpAuthorityRoot(mcpHost),'LOCAL_MUTATION');
+  if(['DENY','REVIEW'].includes(authority.status)) throw refuse('PLUGIN_LOGIN_MANDATE_'+authority.status);
+  if(!args || typeof args!=='object' || Array.isArray(args) || Object.keys(args).some(k=>k!=='plugin') || typeof args.plugin!=='string') throw refuse('PLUGIN_ARGUMENTS_INVALID');
+  return openPluginLogin(args.plugin);
+};
 // Aura's voice (Piper Alma) stays loaded in one worker; loaded at start so her first sentence is not late.
 const piperVoice = createPiperVoice({ workerScript: path.join(RELEASE_ROOT, 'tools', 'piper-voice-worker.py') });
 if (piperVoice.available()) void piperVoice.warm();
@@ -403,7 +414,7 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         description: 'Read the live catalog of connected MCP tool servers and the tools they currently advertise. Use this before answering what tools Aura has. This only observes metadata and never starts or calls a tool. args: {}',
         run: async () => ({
           observedAt: new Date().toISOString(),
-          availablePlugins: MCP_INTEGRATION_CATALOG.map(p=>({id:p.id,name:p.name,configured:Boolean(mcpHost.servers()[p.id]),loginOpeningApproved:Boolean(mcpHost.servers()[p.id]?.allowOpenLogin && pluginLoginPreset(p.id,mcpHost.servers()[p.id]))})),
+          availablePlugins: (()=>{const defs=mcpHost.servers();return MCP_INTEGRATION_CATALOG.map(p=>({id:p.id,name:p.name,configured:Boolean(defs[p.id]),loginOpeningApproved:Boolean(defs[p.id]?.allowOpenLogin && pluginLoginPreset(p.id,defs[p.id]))}));})(),
           servers: mcpHost.status().map((server: any) => ({
             id: server.id,
             name: server.name,
@@ -414,6 +425,8 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
             // without trying (observed 2026-11-24).
             ...(server.status !== 'READY' && server.agentAccess !== 'off' ? { connection: 'Not connected right now. mcp_tool and mcp_discover start or reconnect it on demand: make the call before reporting the server unavailable.' } : {}),
             agentAccess: server.agentAccess,
+            credentialConfigured: server.credentialConfigured ?? null,
+            authenticationRequired: server.credentialConfigured===false || /MCP_(?:AUTH|CREDENTIAL)_REQUIRED/.test(server.error||''),
             readTools: (server.tools || []).filter((tool: any) => tool.readOnly === true && tool.agentAllowed === true).slice(0, 100).map((tool: any) => tool.name),
             writeTools: (server.tools || []).filter((tool: any) => tool.readOnly !== true && tool.agentAllowed === true).slice(0, 100).map((tool: any) => tool.name),
             blockedTools: (server.tools || []).filter((tool: any) => tool.agentAllowed !== true).slice(0, 100).map((tool: any) => tool.name),
@@ -423,11 +436,7 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
       plugin_login: {
         description: 'Open the official account page for an already configured plugin when authentication is required. Requires the operator’s saved opt-in and existing commands.run mandate. Never grants new scopes, submits credentials or verifies sign-in. args: {plugin}',
         run: async (args: any) => {
-          if(connectedRuntime.capabilities?.isTaskEnabled?.('mcp-write')===false) throw Error('CAPABILITY_DISABLED:mcp-write');
-          const check=organization?.authorize('aura','commands.run');
-          if(!check?.allowed) throw Error('MANDATE_DENIED:aura:commands.run');
-          if(!args || typeof args!=='object' || Array.isArray(args) || Object.keys(args).some(k=>k!=='plugin')) throw Error('PLUGIN_ARGUMENTS_INVALID');
-          return openPluginLogin(args.plugin);
+          return authorizedPluginLogin(args,organization,connectedRuntime.capabilities);
         },
       },
       mcp_discover: {
@@ -3442,7 +3451,12 @@ const notifyPhone = async (action) => {
   // Nova's access to JACO's MCP tools (token auth). Nova calls these through its mcp-call task, so every
   // tool any connected server offers is usable in missions, whichever LLM plans.
   app.get('/api/mcp/tools', requireAuth, async (_req, res) => {
-    res.json({ success: true, servers: mcpHost.status().map((s: any) => ({ id: s.id, name: s.name, role: s.role, status: s.status, agentAccess: s.agentAccess, transport:s.transport, error:s.error, tools: s.tools.map((t: any) => ({ name: t.name, description: t.description.slice(0, 300), readOnly: isReadOnlyMcpTool(s.id, t), agentAllowed: t.agentAllowed === true, inputSchema: t.inputSchema })) })) });
+    const servers=mcpHost.status().map((s: any) => ({ id: s.id, name: s.name, role: s.role, status: s.status, agentAccess: s.agentAccess, transport:s.transport, error:s.error, tools: s.tools.map((t: any) => ({ name: t.name, description: t.description.slice(0, 300), readOnly: isReadOnlyMcpTool(s.id, t), agentAllowed: t.agentAllowed === true, inputSchema: t.inputSchema })) }));
+    const defs=mcpHost.servers();
+    const eligible=MCP_INTEGRATION_CATALOG.filter(p=>defs[p.id]?.allowOpenLogin===true && pluginLoginPreset(p.id,defs[p.id]) && mcpHost.status().some((row:any)=>row.id===p.id && (row.credentialConfigured===false || /MCP_(?:AUTH|CREDENTIAL)_REQUIRED/.test(row.error||'')))).map(p=>p.id);
+    const canOpen=agentOrganization?.authorize('aura','commands.run')?.allowed && connectedRuntime.capabilities?.isTaskEnabled?.('mcp-write')!==false && operatorTaskEnabled(mcpAuthorityRoot(mcpHost),'mcp-write') && !['DENY','REVIEW'].includes(standingToolAuthority(mcpAuthorityRoot(mcpHost),'LOCAL_MUTATION').status);
+    if(eligible.length && canOpen && !defs['jaco-plugin-center']) servers.push({id:'jaco-plugin-center',name:'JACO Plugin Center',role:'Local approved account-page launcher (not an external MCP server)',status:'READY',agentAccess:'write',transport:'internal',error:null,tools:[{name:'open_login',description:'Open an approved provider account page. Operator completes any sign-in. Does not authenticate or expand scopes.',readOnly:false,agentAllowed:true,inputSchema:{type:'object',properties:{plugin:{type:'string',enum:eligible}},required:['plugin'],additionalProperties:false}}]});
+    res.json({success:true,servers});
   });
   app.post('/api/mcp/start', requireAuth, async (req, res) => {
     try {
@@ -3465,6 +3479,12 @@ const notifyPhone = async (action) => {
       if(connectedRuntime.capabilities?.isTaskEnabled?.(task)===false) return res.status(409).json({success:false,error:'CAPABILITY_DISABLED:'+task,dispatchState:'NOT_DISPATCHED'});
       // The server's agent access decides (read, write or off; see stdioMcpHost.mjs). Nova's mcp-call
       // runs read-only tools; a tool that changes something needs its mcp-write task (mode 'write').
+      if(server==='jaco-plugin-center' && !mcpHost.servers()[server]) {
+        if(tool!=='open_login' || mode!=='write') return res.status(400).json({success:false,error:'PLUGIN_LOGIN_WRITE_REQUIRED',dispatchState:'NOT_DISPATCHED'});
+        const opened=await authorizedPluginLogin(args,agentOrganization,connectedRuntime.capabilities);
+        seerLiveWorkstream.record({actor:'Aura Plugin Center',type:'plugin.login.request',message:'Account page launch requested',verified:false,receipt:{plugin:opened.plugin,state:opened.state,authenticated:false}});
+        return res.json({success:true,server,tool,result:{content:[{type:'text',text:JSON.stringify(opened)}]},dispatchState:'ACKNOWLEDGED'});
+      }
       const result: any = await mcpHost.call(server, tool, args, { actor: 'agent', readOnly: mode !== 'write' });
       const failed = result?.isError === true;
       seerLiveWorkstream.record({ actor: 'JACO MCP host', type: 'mcp.tool.called', message: `${server}.${tool}`, verified: !failed, receipt: { server, tool, isError: failed } });
