@@ -15,6 +15,7 @@ export function createPluginLogin({host,execute=exec,platform=process.platform,e
     const state=host.status().find(s=>s.id===id);
     if(!state)throw Error('PLUGIN_NOT_CONFIGURED');
     if(state.status==='READY'&&state.credentialConfigured!==false)return {plugin:id,state:'ALREADY_CONNECTED',opened:false};
+    if(state.credentialConfigured!==false && !/MCP_(?:AUTH|CREDENTIAL)_REQUIRED|HTTP_401|HTTP_403/.test(String(state.error||'')))throw Error('PLUGIN_AUTH_NEED_NOT_OBSERVED');
     const at=now();
     if(last.has(id)&&at-last.get(id)<60000)throw Error('PLUGIN_LOGIN_RATE_LIMITED');
     last.set(id,at);
