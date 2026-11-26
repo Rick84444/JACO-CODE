@@ -97,8 +97,10 @@ export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void> }> = 
             <span className="text-[10px] text-neutral-400 truncate">{b.plan}</span>
           </div>
           <div className="text-[11px] text-neutral-400 mt-0.5 break-words">
-            {b.loggedIn
-              ? <span className="inline-flex items-center gap-1 text-emerald-300"><Check className="w-3 h-3" />{tr('Inloggad. Kan användas som hjärna.', 'Signed in. Available as a brain.')}</span>
+            {b.id === 'claude'
+              ? tr('Använd Claude Code i terminalen. Tredjepartsabonnemang kräver godkänd integration.', 'Use Claude Code in the terminal. Third-party subscription access requires an approved integration.')
+              : b.loggedIn
+              ? <span className="inline-flex items-center gap-1 text-emerald-300"><Check className="w-3 h-3" />{tr('Inloggning observerad. Modellåtkomst inte verifierad.', 'Sign-in observed. Model access not verified.')}</span>
               : !b.installed
                 ? <>{tr('Programmet saknas. Installera: ', 'Program not found. Install: ')}<code className="text-neutral-300">{INSTALL[b.id]}</code></>
                 : l?.state === 'WAITING'
@@ -113,7 +115,7 @@ export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void> }> = 
             </a>
           )}
         </div>
-        {!b.loggedIn && b.installed && (
+        {b.id !== 'claude' && !b.loggedIn && b.installed && (
           <button type="button" disabled={busy === b.id || l?.state === 'WAITING'}
             onClick={() => void (b.loginKind === 'terminal' ? refresh() : login(b))}
             className="shrink-0 bg-[#0e639c] hover:bg-[#1177bb] disabled:opacity-40 rounded px-2.5 py-1 text-[11px] font-semibold">
@@ -127,12 +129,12 @@ export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void> }> = 
   return (
     <div className="border border-[#505153] bg-[#292a2c] rounded p-2 space-y-2">
       <div className="flex items-center justify-between">
-        <div className="text-xs font-semibold">{tr('Använd ditt abonnemang som hjärna', 'Use your subscription as the brain')}</div>
+        <div className="text-xs font-semibold">{tr('Leverantörskonton och CLI-status', 'Provider accounts and CLI status')}</div>
         <button type="button" onClick={() => void refresh()} aria-label={tr('Kontrollera igen', 'Check again')} className="text-neutral-300 hover:text-white"><RefreshCw className="w-3.5 h-3.5" /></button>
       </div>
       {brains ? <ul>{brains.map(row)}</ul> : <div className="text-[11px] text-neutral-400">{tr('Kontrollerar…', 'Checking…')}</div>}
       {error && <div className="text-[11px] text-red-300 break-words">{error}</div>}
-      <div className="text-[10px] text-neutral-400">{tr('Inloggningen sker hos leverantören. JACO ser aldrig din token.', 'Sign-in happens with the vendor. JACO never sees your token.')}</div>
+      <div className="text-[10px] text-neutral-400">{tr('CLI-inloggning aktiverar inte automatiskt en modell. Gemini för privatkonto använder Antigravity; direkt Gemini API finns via Google AI Studio.', 'CLI sign-in does not automatically activate a model. Individual Gemini accounts use Antigravity; the direct Gemini API is available through Google AI Studio.')}</div>
     </div>
   );
 };
