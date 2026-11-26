@@ -16,3 +16,9 @@
 - [ ] Gemini AI Studio onboarding and current Google CLI entitlement/terms integration, native Windows launcher validation.
 - [ ] Full CI, negative route tests, target host evidence and review before merge. No production-ready claim.
 Preview starts only on a user-controlled local host with JACO_LOCAL_SIWC=1. Credentials are process-only. No automatic registration or usage. Shell tool policy unchanged. The dev branch is based on Claude's exact commit rather than pushing to the concurrently edited branch.
+
+## Compact provider dialogs and GitHub Actions extension
+- [ ] Verify compact provider launcher and single native modal using SSR and controlled Chromium desktop/mobile tests (tests added, execution not observed).
+- [ ] Verify API key field lifecycle and provider scoping (browser test added; unverified).
+- [ ] Verify read-only GitHub Actions projection and existing source-control integration (negative/positive tests added; no live gh session observed).
+- [ ] Observe Subscription Provider Gate results for Linux, Windows, production builds and browser tests on final SHA; retain artifacts and review before merge. No CI result had been returned for 57573781 at inspection time.
