@@ -54,12 +54,14 @@ test('unreadable status output fails closed', async () => {
   assert.equal(s.loggedIn, false);
 });
 
-test('gemini sign-in is the Google credentials file, and its login is a terminal command', async () => {
+test('Gemini installation is not proof of account entitlement', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-gem-'));
-  assert.equal((await brainStatus('gemini', { home })).loggedIn, false);
-  fs.mkdirSync(path.join(home, '.gemini')); fs.writeFileSync(path.join(home, '.gemini', 'oauth_creds.json'), '{}');
-  assert.equal((await brainStatus('gemini', { home })).loggedIn, true);
-  assert.deepEqual(await startLogin('gemini'), { state: 'TERMINAL', command: 'gemini' });
+  try {
+    fs.mkdirSync(path.join(home, '.gemini')); fs.writeFileSync(path.join(home, '.gemini', 'oauth_creds.json'), '{}');
+    const s = await brainStatus('gemini', { home, spawnImpl: fakeCli(() => ({ stdout: '1.0.0' })) });
+    assert.equal(s.installed, true); assert.equal(s.loggedIn, false);
+    assert.deepEqual(await startLogin('gemini'), { state: 'TERMINAL', command: 'gemini' });
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
 
 test('a completion sends the prompt on stdin, tool-less, without API keys, and returns the text', async () => {
@@ -124,4 +126,24 @@ test('every brand has a distinct provider id that the registry id syntax accepts
   const ids = Object.values(BRAINS).map(b => b.providerId);
   assert.equal(new Set(ids).size, 3);
   for (const id of ids) assert.match(id, /^[a-z0-9][a-z0-9._-]{1,63}$/);
+});
+
+test('API-key status is never a subscription sign-in', async () => {
+  const c = await brainStatus('claude', { spawnImpl: claudeCli({ status: JSON.stringify({ loggedIn: true, authMethod: 'api_key' }) }) });
+  assert.equal(c.loggedIn, false);
+  const d = await brainStatus('codex', { spawnImpl: fakeCli(() => ({ stdout: 'Logged in using an API key' })) });
+  assert.equal(d.loggedIn, false);
+});
+test('Codex returns only completed agent message, not terminal metadata', async () => {
+  const stdout = [
+    { type: 'thread.started', thread_id: 'private' },
+    { type: 'item.completed', item: { type: 'agent_message', text: 'answer' } },
+    { type: 'turn.completed', usage: {} }
+  ].map(x => JSON.stringify(x)).join('\n');
+  const r = await complete('codex-cli', { messages: [{ role:'user', content:'x' }], spawnImpl: fakeCli(() => ({ stdout })) });
+  assert.equal(r.content, 'answer');
+  await assert.rejects(complete('codex-cli', { messages: [{ role:'user', content:'x' }], spawnImpl: fakeCli(() => ({ stdout: stdout.split('\n').slice(0,2).join('\n') })) }), /CLI_BRAIN_OUTPUT_UNPARSEABLE/);
+});
+test('stderr never reaches caller', async () => {
+  await assert.rejects(complete('claude-cli', { messages: [{ role:'user', content:'x' }], spawnImpl: fakeCli(() => ({ code:1, stderr:'private diagnostic' })) }), e => e.message === 'CLI_BRAIN_EXIT_1');
 });
