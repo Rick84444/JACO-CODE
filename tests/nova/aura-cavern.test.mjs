@@ -4,7 +4,7 @@ import {cavernLayout,cavernGovernor,createIceCavern} from '../../runtime/src/lib
 // Resolve Three through the same dependency tree as the renderer.
 import {createRequire} from 'node:module';
 const require=createRequire(new URL('../../runtime/package.json',import.meta.url));
-const THREE=await import(require.resolve('three'));
+const THREE=require('three');
 
 test('cavern layout is reproducible and leaves central walkway clear',()=>{
   const a=cavernLayout(),b=cavernLayout();
