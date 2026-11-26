@@ -3534,6 +3534,7 @@ const notifyPhone = async (action) => {
     if (!localOperatorOnly(req, res)) return;
     try {
       const id = String(req.body?.id || '');
+      if(req.body?.createOnly===true && mcpHost.servers()[id]) return res.status(409).json({success:false,error:'MCP_SERVER_ALREADY_CONFIGURED'});
       const server = mcpHost.saveServer(id, req.body || {});
       getAuraMcpFabric.invalidate();
       seerLiveWorkstream.record({ actor: 'Aura Tool Fabric', type: 'mcp.server.saved', message: `MCP server ${id} saved (${server?.transport}, agents: ${server?.agentAccess})`, verified: true, receipt: { id, transport: server?.transport, agentAccess: server?.agentAccess } });
