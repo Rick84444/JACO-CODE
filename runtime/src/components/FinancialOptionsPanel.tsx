@@ -1,28 +1,32 @@
-import React,{useState} from 'react';
+import React,{useEffect,useState} from 'react';
 import {PluginLogo} from './McpServersPanel';
 import {useOptionalUiLanguage} from '../i18n/UiLanguage';
 import {readAuraResponse} from '../lib/auraApi.mjs';
-export type FinancialPlugin={id:string;name:string;purpose:string;state:string;docs:string};
+import {observationFresh} from '../lib/mcpIntegrationCatalog.mjs';
+export type FinancialPlugin={id:string;name:string;purpose:string;state:string;docs:string;environment?:string;allowedReadTools?:number|null;toolsDiscovered?:number|null;lastCall?:{at:string;outcome:string;tool:string}|null};
 export type FinancialStrategy={id:string;title:string;titleSv:string;goal:string;state:string;plugins:FinancialPlugin[];executionVerified:false;financialMutationAllowed:false};
-export type FinancialOptions={observed:boolean;plugins:FinancialPlugin[];strategies:FinancialStrategy[]};
+export type FinancialOptions={observed:boolean;observedAt?:string|null;plugins:FinancialPlugin[];strategies:FinancialStrategy[]};
 export function FinancialOptionsPanel({options,missions=[],onSaved}:{options?:FinancialOptions|null;missions?:{identity:string;goal:string}[];onSaved?:()=>void}){
   const {tr,language}=useOptionalUiLanguage();
   const [selected,setSelected]=useState('');
+  const [clock,setClock]=useState(Date.now());
+  useEffect(()=>{const t=window.setInterval(()=>setClock(Date.now()),5000);return()=>window.clearInterval(t);},[]);
+  const fresh=!!options?.observed&&observationFresh(options.observedAt,clock);
   const [missionId,setMissionId]=useState('');
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState('');
   const [error,setError]=useState('');
   const active=options?.strategies.find(s=>s.id===selected);
   const mission=missions.find(m=>m.identity===missionId);
-  const labels:Record<string,[string,string]>={READ_TOOLS_DISCOVERED:['Läsverktyg upptäckta','Read tools discovered'],SETUP_OR_DISCOVERY_REQUIRED:['Anslutning behövs','Setup or discovery needed'],UNOBSERVED:['Ej observerat','Not observed'],AVAILABLE:['Kan konfigureras','Configurable'],ADAPTER_REQUIRED:['Adapter krävs','Adapter required'],OAUTH_REQUIRED:['OAuth krävs','OAuth required'],AUTH_REQUIRED:['Inloggning krävs','Authentication required'],TOOLS_DISCOVERED:['Verktyg upptäckta','Tools discovered'],AGENT_ACCESS_OFF:['Avstängd','Disabled']};
+  const labels:Record<string,[string,string]>={READ_TOOLS_DISCOVERED:['Läsverktyg upptäckta','Read tools discovered'],SETUP_OR_DISCOVERY_REQUIRED:['Anslutning behövs','Setup or discovery needed'],UNOBSERVED:['Ej observerat','Not observed'],AVAILABLE:['Kan konfigureras','Configurable'],ADAPTER_REQUIRED:['Adapter krävs','Adapter required'],OAUTH_REQUIRED:['OAuth krävs','OAuth required'],AUTH_REQUIRED:['Inloggning krävs','Authentication required'],TOOLS_DISCOVERED:['Verktyg upptäckta','Tools discovered'],AGENT_ACCESS_OFF:['Avstängd','Disabled'],CUSTOM_CONFIGURATION:['Anpassad konfiguration','Custom configuration']};
   const label=(state:string)=>labels[state]?tr(...labels[state]):state.replaceAll('_',' ');
   async function apply(){
-    if(!active||!mission||busy||!options?.observed)return;
+    if(!active||!mission||busy||!fresh)return;
     setBusy(true);setNotice('');setError('');
     try{
       const result=await fetch('/api/aura/workbench/missions/'+encodeURIComponent(mission.identity)+'/steer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),instruction:'Consider financial strategy '+active.id+': '+active.goal+' Preserve the operator goal and current budget and mandate. Use observed, authorized read tools only; if unavailable, report setup needs. No spending, payment, transfer or trading.'})}).then(readAuraResponse);
       if(!result.steering?.revision)throw Error('STRATEGY_NOT_CONFIRMED');
-      setNotice(tr('Strategiförslag registrerat. Aura utvärderar det vid nästa planeringssteg.','Strategy suggestion recorded. Aura evaluates it at the next planning step.'));
+      setNotice(tr('Strategiförslag registrerat · revision '+result.steering.revision+'. Aura utvärderar det vid nästa planeringssteg.','Strategy suggestion recorded · revision '+result.steering.revision+'. Aura evaluates it at the next planning step.'));
       onSaved?.();
     }catch(e:any){setError(String(e?.message||'STRATEGY_NOT_CONFIRMED'));}
     finally{setBusy(false);}
@@ -30,14 +34,15 @@ export function FinancialOptionsPanel({options,missions=[],onSaved}:{options?:Fi
   return <details className="rounded-lg border border-neutral-700 p-3 text-xs space-y-2" data-testid="financial-strategy-options">
     <summary className="cursor-pointer font-semibold text-sky-200">{tr('Ekonomiska strategier','Financial strategies')}</summary>
     <p className="text-neutral-400">{tr('Alternativ för Aura, inte godkända transaktioner. Befintlig budget och operatörens mål gäller.','Options for Aura, not authorized transactions. Existing budget and operator goal remain in effect.')}</p>
-    {!options?.observed?<p>{tr('Ingen aktuell verktygsobservation.','No current tool observation.')}</p>:<>
-      <div className="grid grid-cols-2 gap-2">
+    <div className="flex flex-wrap gap-2 text-[10px] text-neutral-300"><span className="rounded border border-neutral-600 px-2 py-1">{tr('Endast analys','Analysis only')}</span><span className="rounded border border-neutral-600 px-2 py-1">{tr('Ingen finansiell exekvering','No financial execution')}</span>{fresh&&options?.observedAt&&<span className="px-2 py-1">{tr('Observerat','Observed')} {new Date(options.observedAt).toLocaleString(language==='sv'?'sv-SE':'en-US')}</span>}</div>
+    {!fresh||!options?<p>{tr('Ingen aktuell verktygsobservation.','No current tool observation.')}</p>:<>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {options.strategies.map(s=><button key={s.id} type="button" aria-pressed={selected===s.id} onClick={()=>{setSelected(s.id);setNotice('');setError('');}} className={'text-left rounded border p-2 '+(selected===s.id?'border-sky-400 bg-sky-950/30':'border-neutral-700')}><strong>{language==='sv'?s.titleSv:s.title}</strong><div className="mt-1 text-neutral-400">{label(s.state)}</div><div className="flex flex-wrap gap-1 mt-2">{s.plugins.slice(0,6).map(p=><PluginLogo key={p.id} id={p.id} name={p.name} size={20}/>)}</div></button>)}
       </div>
       {active&&<div className="rounded border border-neutral-700 p-2 space-y-2">
         <p>{active.goal}</p>
-        {active.plugins.map(p=><div key={p.id} className="flex gap-2 items-center"><PluginLogo id={p.id} name={p.name}/><div className="flex-1 min-w-0"><strong>{p.name}</strong><div className="text-neutral-400">{label(p.state)}</div></div><a href={p.docs} target="_blank" rel="noopener noreferrer" className="text-sky-300">{tr('Dokumentation','Docs')}</a></div>)}
-        {missions.length>0&&<div className="space-y-2"><select aria-label={tr('Välj aktivt uppdrag','Choose active mission')} className="w-full bg-neutral-900 border border-neutral-700 p-1" value={missionId} onChange={e=>setMissionId(e.target.value)}><option value="">{tr('Välj aktivt uppdrag','Choose active mission')}</option>{missions.map(m=><option key={m.identity} value={m.identity}>{m.goal}</option>)}</select><button type="button" disabled={!mission||busy} onClick={()=>void apply()} className="rounded border border-sky-700 p-2 disabled:opacity-40">{tr('Föreslå strategin till Aura','Suggest strategy to Aura')}</button></div>}
+        {active.plugins.map(p=><div key={p.id} className="flex gap-2 items-center"><PluginLogo id={p.id} name={p.name}/><div className="flex-1 min-w-0"><strong>{p.name}</strong><div className="text-neutral-400">{label(p.state)}{p.environment==='SANDBOX'?' · Sandbox':p.environment==='PUBLIC_DATA'?' · Public data':' · '+tr('Kontomiljö ej verifierad','Account scope unverified')}</div>{p.allowedReadTools!=null&&<div className="text-neutral-400">{p.allowedReadTools} {tr('tillåtna läsverktyg','allowed read tools')}</div>}{p.lastCall&&<div className="text-[10px] text-neutral-400">{tr('Senaste verktygsanrop','Last tool call')}: {p.lastCall.outcome} · {new Date(p.lastCall.at).toLocaleString()}</div>}</div><a href={p.docs} target="_blank" rel="noopener noreferrer" className="text-sky-300">{tr('Dokumentation','Docs')}</a></div>)}
+        {missions.length>0&&<div className="space-y-2"><select aria-label={tr('Välj aktivt uppdrag','Choose active mission')} className="w-full bg-neutral-900 border border-neutral-700 p-1" value={missionId} onChange={e=>setMissionId(e.target.value)}><option value="">{tr('Välj aktivt uppdrag','Choose active mission')}</option>{missions.map(m=><option key={m.identity} value={m.identity}>{m.goal}</option>)}</select><button type="button" disabled={!mission||busy||!fresh} onClick={()=>void apply()} className="rounded border border-sky-700 p-2 disabled:opacity-40">{tr('Föreslå strategin till Aura','Suggest strategy to Aura')}</button></div>}
         {notice&&<p role="status">{notice}</p>}{error&&<p role="alert" className="text-amber-300">{error}</p>}
       </div>}
     </>}
