@@ -1,6 +1,6 @@
 import { SecretStore, credential } from '../../../../agents/lib/secret-store.mjs';
 import { HttpMcpClient, mcpCredential, classifyMcpNetworkError } from './httpMcpClient.mjs';
-import { guidedMcpPreset, catalogDefinitionMatches } from '../../lib/mcpIntegrationCatalog.mjs';
+import { guidedMcpPreset, catalogDefinitionMatches, guidedCredentialMatches } from '../../lib/mcpIntegrationCatalog.mjs';
 
 function proofPayload(result){
   if(!result||result.isError===true)throw Error('MCP_GUIDED_READ_REJECTED');
@@ -26,8 +26,9 @@ export function createGuidedMcpConnection({host,store=new SecretStore(),env=proc
   return async function connect(id,input={}){
     const preset=guidedMcpPreset(id);
     if(!preset)throw Error('MCP_GUIDED_UNSUPPORTED');
-    if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!['token','allowOpenLogin'].includes(k)))throw Error('MCP_GUIDED_INPUT_INVALID');
+    if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!['token','allowOpenLogin','replaceCredential'].includes(k)))throw Error('MCP_GUIDED_INPUT_INVALID');
     if(input.allowOpenLogin!==undefined&&typeof input.allowOpenLogin!=='boolean')throw Error('MCP_GUIDED_INPUT_INVALID');
+    if(input.replaceCredential!==undefined&&typeof input.replaceCredential!=='boolean')throw Error('MCP_GUIDED_INPUT_INVALID');
     if(input.token!==undefined&&typeof input.token!=='string')throw Error('MCP_GUIDED_INPUT_INVALID');
     if(pending.has(id))throw Error('MCP_GUIDED_BUSY');
     pending.add(id);
@@ -37,9 +38,12 @@ export function createGuidedMcpConnection({host,store=new SecretStore(),env=proc
       if(before&&(!catalogDefinitionMatches(id,before)||before.agentAccess==='off'))throw Error('MCP_GUIDED_EXISTING_CONFIGURATION');
       const submitted=input.token?.trim()||'';
       if(submitted.length>16384||/[\r\n\x00]/.test(submitted))throw Error('MCP_GUIDED_INPUT_INVALID');
-      if(before&&submitted)throw Error('MCP_GUIDED_REPLACEMENT_NOT_SUPPORTED');
-      if(submitted&&store.has(preset.credentialRef))throw Error('MCP_GUIDED_CREDENTIAL_EXISTS');
-      const token=before?mcpCredential(id,before,env):submitted||store.get(preset.credentialRef)||credential(preset.tokenEnv,{env,store});
+      const replacing=input.replaceCredential===true;
+      if(replacing&&(!before||!submitted||before.agentAccess!=='read'||!guidedCredentialMatches(id,before)))throw Error('MCP_GUIDED_REPLACEMENT_NOT_SUPPORTED');
+      if(before&&submitted&&!replacing)throw Error('MCP_GUIDED_REPLACEMENT_NOT_SUPPORTED');
+      if(!before&&submitted&&store.has(preset.credentialRef))throw Error('MCP_GUIDED_CREDENTIAL_EXISTS');
+      const prior=replacing?store.get(preset.credentialRef):null;
+      const token=replacing?submitted:before?mcpCredential(id,before,env):submitted||store.get(preset.credentialRef)||credential(preset.tokenEnv,{env,store});
       if(!token)throw Error('MCP_CREDENTIAL_REQUIRED');
       // Temporary session: Render's list_workspaces may select its sole workspace
       // in this session. No deployment, resource change or persistent selection.
@@ -57,6 +61,10 @@ export function createGuidedMcpConnection({host,store=new SecretStore(),env=proc
       const probeFinished=now();
       const verifiedAt=new Date(probeFinished).toISOString();
       if(JSON.stringify(host.servers()[id]||null)!==beforeKey)throw Error('MCP_GUIDED_CONFIGURATION_CHANGED');
+      if(replacing){
+        if(!store.replaceIfCurrent(preset.credentialRef,prior,token,{source:'operator-guided-mcp',purpose:preset.name+' MCP credential'}))throw Error('MCP_GUIDED_CREDENTIAL_CHANGED');
+        host.resetConnection(id);
+      }
       if(!before){
         if(!store.has(preset.credentialRef)){
           if(!store.setIfAbsent(preset.credentialRef,token,{source:'operator-guided-mcp',purpose:preset.name+' MCP credential'}))throw Error('MCP_GUIDED_CREDENTIAL_EXISTS');
@@ -66,9 +74,9 @@ export function createGuidedMcpConnection({host,store=new SecretStore(),env=proc
       }
       let tools;
       try{tools=await host.start(id);}
-      catch{return {id,state:'CONFIGURED_RECONNECT_REQUIRED',verifiedAt,probe:preset.tool,proof,toolCount:null,agentExecutionVerified:false};}
+      catch{return {id,state:'CONFIGURED_RECONNECT_REQUIRED',verifiedAt,probe:preset.tool,proof,credentialReplaced:replacing,toolCount:null,agentExecutionVerified:false};}
       host.record(id,{tool:preset.tool,actor:'operator',outcome:'ok',error:null,ms:Math.max(0,probeFinished-probeStarted),at:verifiedAt});
-      return {id,state:'READ_PROBE_VERIFIED',verifiedAt,probe:preset.tool,proof,toolCount:tools.length,agentExecutionVerified:false};
+      return {id,state:'READ_PROBE_VERIFIED',verifiedAt,probe:preset.tool,proof,credentialReplaced:replacing,toolCount:tools.length,agentExecutionVerified:false};
     }finally{pending.delete(id);}
   };
 }
