@@ -1,0 +1,80 @@
+// Controlled browser test of the actual provider components; no vendor network or real secrets.
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import {createRequire} from 'node:module';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+const root=fileURLToPath(new URL('../../runtime/',import.meta.url));
+const require=createRequire(path.join(root,'package.json'));
+const {build}=require('esbuild');
+const {chromium}=await import(process.env.JACO_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.JACO_PLAYWRIGHT_MODULE).href : pathToFileURL(require.resolve('playwright')).href);
+const bundle=await build({stdin:{contents:
+  "import React from 'react';import{createRoot}from'react-dom/client';import{ProviderConnect}from'./src/components/ProviderConnect';import{UiLanguageProvider}from'./src/i18n/UiLanguage';createRoot(document.getElementById('root')).render(<UiLanguageProvider initialLanguage='sv'><ProviderConnect onConnected={()=>{}}/></UiLanguageProvider>);",
+  resolveDir:root,loader:'tsx'},bundle:true,write:false,platform:'browser',format:'esm',jsx:'automatic'});
+const cssDir=path.join(root,'dist','assets');
+const cssFiles=fs.readdirSync(cssDir).filter(f=>f.endsWith('.css'));
+assert.ok(cssFiles.length,'production CSS required');
+const css=cssFiles.map(f=>fs.readFileSync(path.join(cssDir,f),'utf8')).join('\n');
+const brains=[{id:'claude',providerId:'claude-cli',label:'Claude',plan:'Claude Code',installed:true,loggedIn:false,loginKind:'browser'},{id:'gemini',providerId:'gemini-cli',label:'Gemini',plan:'Code Assist',installed:true,loggedIn:false,loginKind:'terminal',loginHint:'gemini'},{id:'codex',providerId:'codex-cli',label:'Codex',plan:'ChatGPT',installed:true,loggedIn:false,loginKind:'browser'}];
+const mutations=[];
+const server=http.createServer(async(req,res)=>{
+  const send=(body,type='application/json')=>{res.setHeader('content-type',type);res.end(type==='application/json'?JSON.stringify(body):body);};
+  if(req.url==='/')return send('<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><body style="background:#202225;color:white"><div id="root" style="width:min(100%,340px);margin:12px auto"></div><script type="module" src="/app.js"></script></body></html>','text/html');
+  if(req.url==='/style.css')return send(css,'text/css');
+  if(req.url==='/app.js')return send(bundle.outputFiles[0].text,'text/javascript');
+  if(req.method==='POST'){
+    let body='';for await(const c of req)body+=c;
+    mutations.push({url:req.url,body:JSON.parse(body||'{}')});
+    return send({success:true,result:{state:'READY',id:'gemini',models:['fixture-model'],defaultModel:'fixture-model'}});
+  }
+  if(req.url.endsWith('/brains'))return send({success:true,brains});
+  if(req.url.endsWith('/chatgpt-plan'))return send({success:true,connected:false,state:'disconnected',models:[]});
+  if(req.url.endsWith('/providers/scan'))return send({success:true,providers:[]});
+  if(req.url.endsWith('/providers/catalog'))return send({success:true,providers:[]});
+  res.statusCode=404;return send({success:false,error:'FIXTURE_NOT_FOUND'});
+});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+let browser;
+try{
+  browser=await chromium.launch({headless:true});
+  for(const width of [1440,393]){
+    const page=await browser.newPage({viewport:{width,height:852}});
+    const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    const base='http://127.0.0.1:'+server.address().port;
+    await page.goto(base);
+    const openai=page.getByRole('button',{name:/^OpenAI —/});
+    await openai.click();
+    const dialog=page.getByRole('dialog',{name:'OpenAI'});
+    await dialog.getByRole('button',{name:'Fortsätt med ChatGPT'}).waitFor();
+    assert.equal(mutations.length,0,'opening a dialog never initiates authentication');
+    const bounds=await dialog.boundingBox();
+    assert.ok(bounds&&bounds.x>=0&&bounds.x+bounds.width<=width+1,'dialog fits viewport');
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({state:'hidden'});
+    assert.equal(await openai.evaluate(el=>document.activeElement===el),true,'focus returns to launcher');
+    await page.getByRole('button',{name:/^Gemini —/}).click();
+    const g=page.getByRole('dialog',{name:'Gemini'});
+    await g.getByText('Anslut med API-nyckel',{exact:true}).click();
+    const field=g.getByLabel('API-nyckel för modellleverantören');
+    await field.fill('fixture-only');
+    await g.getByRole('button',{name:'Stäng'}).click();
+    await g.waitFor({state:'hidden'});
+    await page.getByRole('button',{name:/^Gemini —/}).click();
+    await g.getByText('Anslut med API-nyckel',{exact:true}).click();
+    assert.equal(await field.inputValue(),'','unsaved secret cleared on close');
+    await field.fill('fixture-only');
+    await g.getByRole('button',{name:'Spara',exact:true}).click();
+    await g.getByText(/gemini är ansluten/).waitFor();
+    assert.equal(mutations.at(-1).body.provider,'gemini');
+    assert.equal(mutations.at(-1).url,'/api/aura/workbench/providers/key');
+    if(process.env.JACO_UI_SCREENSHOTS){fs.mkdirSync(process.env.JACO_UI_SCREENSHOTS,{recursive:true});await page.screenshot({path:path.join(process.env.JACO_UI_SCREENSHOTS,'provider-dialog-'+width+'.png')});}
+    await g.getByRole('button',{name:'Stäng'}).click();
+    await page.getByRole('button',{name:/^Fler —/}).click();
+    await page.getByRole('dialog',{name:'Fler'}).getByLabel('Modellleverantörens adress').waitFor();
+    assert.deepEqual(errors,[]);
+    await page.close();
+    mutations.length=0;
+  }
+  console.log('PASS: controlled desktop and phone provider dialogs (no real account or inference)');
+}finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}
