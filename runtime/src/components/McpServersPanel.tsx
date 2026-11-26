@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MCP_LOGOS } from './mcpLogos';
 import { FINANCIAL_LOGOS } from './financialLogos';
-import { MCP_INTEGRATION_CATALOG, mcpCatalogDraft, mcpConnectionState, pluginCategory, marketplaceEntries, pluginEnvironment, pluginEvidence, observationFresh } from '../lib/mcpIntegrationCatalog.mjs';
+import { MCP_INTEGRATION_CATALOG, mcpCatalogDraft, mcpConnectionState, pluginCategory, marketplaceEntries, pluginEnvironment, pluginEvidence, observationFresh, guidedMcpPreset } from '../lib/mcpIntegrationCatalog.mjs';
 
 // JACO's MCP servers as the operator manages them (operator 2026-10-09): each with its logo, what it
 // answered, what agents may do with it, and the last calls. Servers are added here without editing
@@ -72,6 +72,10 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   const [category,setCategory]=useState('all');
   const [scope,setScope]=useState<'all'|'configured'|'available'|'directory'>(providers.some(p=>MCP_INTEGRATION_CATALOG.some(c=>c.id===p.id))?'configured':'available');
   const [selectedPlugin,setSelectedPlugin]=useState('');
+  const [guidedToken,setGuidedToken]=useState('');
+  const [guidedOptIn,setGuidedOptIn]=useState(false);
+  const [guidedResult,setGuidedResult]=useState<{id:string;state:string;verifiedAt:string;probe:string;toolCount:number|null;proof:{accountObserved?:boolean;workspaceCount?:number}}|null>(null);
+  const [guidedError,setGuidedError]=useState<{id:string;message:string}|null>(null);
   const [clock,setClock]=useState(Date.now());
   const modal=useRef<HTMLDialogElement>(null);
   const setupModal=useRef<HTMLDialogElement>(null);
@@ -79,6 +83,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   useEffect(()=>{const t=window.setInterval(()=>setClock(Date.now()),5000);return()=>window.clearInterval(t);},[]);
   const fresh=!observationFailed&&observationFresh(observedAt,clock);
   const preset=MCP_INTEGRATION_CATALOG.find(p=>p.id===selectedPlugin);
+  const guided=guidedMcpPreset(selectedPlugin);
   const directory=marketplaceEntries(providers).find(p=>p.id===selectedPlugin);
   const selected=preset||directory;
   const current=providers.find(p=>p.id===selectedPlugin);
@@ -90,6 +95,21 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
   },[selectedPlugin]);
   const statusLabel=(value:string)=>(({AVAILABLE:'Not configured',UNOBSERVED:'Observation unavailable',CUSTOM_CONFIGURATION:'Custom configuration',TOOLS_DISCOVERED:'Tools discovered',AUTH_REQUIRED:'Authentication required',AGENT_ACCESS_OFF:'Agent access disabled',CONFIGURED:'Configured · not connected',ERROR:'Connection failed',CONNECTING:'Connecting',ADAPTER_REQUIRED:'Adapter required',OAUTH_REQUIRED:'OAuth required'} as Record<string,string>)[value]||value.replaceAll('_',' '));
   const environmentLabel=(id:string)=>(({SANDBOX:'Sandbox / test',PUBLIC_DATA:'Public data',ACCOUNT_SCOPE_UNVERIFIED:'Account scope not verified'} as Record<string,string>)[pluginEnvironment(id)]||'Account scope not verified');
+  const connectGuided=async()=>{
+    if(!guided||!fresh||working||busy)return;
+    const id=guided.id;
+    const token=guidedToken;
+    setGuidedToken('');setGuidedResult(null);setGuidedError(null);setWorking(id);
+    try{
+      const result=await send('/api/aura/workbench/mcp/connect/'+encodeURIComponent(id),'POST',current?{}:{token,allowOpenLogin:guidedOptIn});
+      setGuidedResult(result);
+      onChanged(guided.name+': '+(result.state==='READ_PROBE_VERIFIED'?'account read verified':'account read verified; runtime reconnect required'));
+    }catch(error:any){
+      const code=String(error?.message||'MCP_GUIDED_CONNECTION_FAILED');
+      const labels:Record<string,string>={MCP_CREDENTIAL_REQUIRED:'No credential found. Enter a provider token for a new connection, or repair the existing credential reference in the Vault.',MCP_AUTH_REQUIRED:'Authentication rejected. Check the token and its permissions.',MCP_GUIDED_CREDENTIAL_EXISTS:'A saved credential already exists. Retry without entering a new token.',MCP_GUIDED_EXISTING_CONFIGURATION:'This connection is disabled or uses a custom endpoint. Existing settings have not been changed.',MCP_GUIDED_PROBE_UNAVAILABLE:'The provider did not advertise the expected safe verification tool.',MCP_GUIDED_PROOF_INVALID:'The provider response did not establish account access.',MCP_GUIDED_CREDENTIAL_STORED_CONFIG_FAILED:'Credential stored securely, but configuration could not be saved. Retry with no new token.'};
+      setGuidedError({id,message:labels[code]||code});
+    }finally{setWorking(null);}
+  };
   const updateLoginAccess=async(enabled:boolean)=>{
     if(!current||!fresh||working)return;
     setWorking(current.id);setFormError(null);
@@ -198,7 +218,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
           <div className="mt-2 text-[10px] text-neutral-300">{statusLabel(p.status==='EXISTING_HOST'&&!fresh?'UNOBSERVED':p.state)}</div>
         </button>)}
       </div>
-      <dialog ref={modal} aria-labelledby="plugin-detail-title" onClose={()=>{setSelectedPlugin('');setFormError(null);}} onClick={e=>{if(e.target===e.currentTarget)e.currentTarget.close();}} className="m-auto w-[min(94vw,480px)] max-h-[85dvh] overflow-auto rounded-xl border border-neutral-600 bg-[#1c2026] p-0 text-neutral-100 backdrop:bg-black/70">
+      <dialog ref={modal} aria-labelledby="plugin-detail-title" onClose={()=>{setSelectedPlugin('');setFormError(null);setGuidedToken('');setGuidedOptIn(false);setGuidedError(null);}} onClick={e=>{if(e.target===e.currentTarget)e.currentTarget.close();}} className="m-auto w-[min(94vw,480px)] max-h-[85dvh] overflow-auto rounded-xl border border-neutral-600 bg-[#1c2026] p-0 text-neutral-100 backdrop:bg-black/70">
         {selected&&<div className="p-5 space-y-4">
           <header className="flex items-center gap-3"><PluginLogo id={selected.id} name={selected.name} size={36}/><div className="min-w-0 flex-1"><h3 id="plugin-detail-title" className="font-semibold">{selected.name}</h3><p className="text-xs text-neutral-400">{environmentLabel(selected.id)}</p></div><button autoFocus type="button" aria-label="Close integration details" onClick={()=>modal.current?.close()} className="rounded border border-neutral-600 px-2 py-1">×</button></header>
           <p className="text-xs text-neutral-300">{selected.purpose||'Connection and account settings'}</p>
@@ -208,15 +228,28 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
             <div className="flex justify-between gap-3"><dt className="text-neutral-400">Discovered / allowed read tools</dt><dd>{evidence.toolsDiscovered??'—'} / {evidence.allowedReadTools??'—'}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-400">Last recorded tool call</dt><dd className="text-right">{evidence.lastCall?evidence.lastCall.outcome+' · '+new Date(evidence.lastCall.at).toLocaleString():'Not observed'}</dd></div>
           </dl>
-          {preset&&<div className="space-y-2 text-xs"><h4 className="font-semibold">Authentication</h4><p className="text-neutral-400">{preset.auth}</p><p className="break-all text-neutral-400">{preset.target}</p>{preset.tokenEnv&&<p className="text-neutral-400">Credential reference: <code>{preset.tokenEnv}</code></p>}</div>}
+          {preset&&!guided&&<div className="space-y-2 text-xs"><h4 className="font-semibold">Authentication</h4><p className="text-neutral-400">{preset.auth}</p><p className="break-all text-neutral-400">{preset.target}</p>{preset.tokenEnv&&<p className="text-neutral-400">Credential reference: <code>{preset.tokenEnv}</code></p>}</div>}
+          {guided&&<section aria-label="Guided account connection" className="space-y-3 rounded-lg border border-sky-900/70 bg-[#182431] p-3 text-xs">
+            <h4 className="font-semibold text-sky-100">{current?'Verify account connection':'Connect your account'}</h4>
+            <p className="text-neutral-300">{current?'Test the existing credential without replacing your configuration.':'Use a restricted provider token or a credential already saved on this device. JACO tests the actual account before saving a connection.'}</p>
+            {!current&&<>
+              <a href={guided.loginUrl} target="_blank" rel="noopener noreferrer" className="inline-flex rounded border border-neutral-600 px-3 py-2 text-neutral-100">{guided.id==='render'?'Open Render account · API keys':'Open GitHub token settings'}</a>
+              <label className="block">API token (leave blank to use saved credentials)<input type="password" aria-label="Integration API token" value={guidedToken} onChange={e=>setGuidedToken(e.target.value)} autoComplete="off" spellCheck={false} maxLength={16384} className="mt-1 block w-full rounded border border-neutral-600 bg-[#15171a] px-3 py-2"/></label>
+              <label className="flex items-start gap-2"><input type="checkbox" checked={guidedOptIn} onChange={e=>setGuidedOptIn(e.target.checked)}/>Allow Aura to open this provider's account page when reauthentication is needed.</label>
+            </>}
+            <button type="button" disabled={!fresh||working!==null||busy!==null||current?.catalogMatch===false||current?.agentAccess==='off'} onClick={()=>void connectGuided()} className="rounded bg-[#314a66] px-4 py-2 font-semibold disabled:opacity-40">{working===guided.id?'Checking account…':current?'Verify account':'Connect and verify'}</button>
+            {guidedError?.id===guided.id&&<p role="alert" className="text-amber-300">{guidedError.message}</p>}
+            {guidedResult?.id===guided.id&&<div role="status" className="rounded border border-neutral-600 p-2"><strong>{guidedResult.state==='READ_PROBE_VERIFIED'?'Account read verified':'Account read verified; runtime reconnect needed'}</strong><p>{guidedResult.probe} · {new Date(guidedResult.verifiedAt).toLocaleString()}</p>{guidedResult.proof.workspaceCount!==undefined&&<p>{guidedResult.proof.workspaceCount} accessible workspaces</p>}<p>{guidedResult.toolCount??'—'} discovered tools. Aura execution and write permissions are not verified by this check.</p></div>}
+          </section>}
+          {!preset&&directory?.status!=='EXISTING_HOST'&&<p role="status" className="rounded border border-neutral-600 p-3 text-xs text-neutral-300">Not available in JACO yet. This directory entry does not install or connect a provider.</p>}
           {current&&fresh&&<div className="space-y-2 text-xs">
             {current.catalogMatch===false&&<p role="status" className="text-amber-300">This ID has a custom configuration. Catalog settings are not applied.</p>}
             {(current.loginOpeningSupported||current.allowOpenLogin)&&<label className="flex gap-2 items-start"><input type="checkbox" checked={current.allowOpenLogin===true} disabled={working!==null||(!current.allowOpenLogin&&!current.loginOpeningSupported)} onChange={e=>void updateLoginAccess(e.target.checked)}/><span>Allow Aura to open the approved account page. No credential submission or consent.</span></label>}
             <button type="button" disabled={busy!==null||working!==null} onClick={()=>onStart(current.id)} className="rounded border border-neutral-600 px-3 py-2 disabled:opacity-40">Discover tools</button>
           </div>}
-          {!current&&fresh&&preset&&<button type="button" disabled={working!==null} onClick={()=>{setDraft(mcpCatalogDraft(preset.id));modal.current?.close();setAdding(true);}} className="rounded bg-[#314a66] px-4 py-2 text-xs font-medium">Configure connection</button>}
+          {!current&&fresh&&preset&&!guided&&<button type="button" disabled={working!==null} onClick={()=>{setDraft(mcpCatalogDraft(preset.id));modal.current?.close();setAdding(true);}} className="rounded bg-[#314a66] px-4 py-2 text-xs font-medium">Configure connection</button>}
           {formError&&<p role="alert" className="text-xs text-amber-300">{formError}</p>}
-          <div className="border-t border-neutral-700 pt-3 flex justify-between gap-2"><a href={selected.docs} target="_blank" rel="noopener noreferrer" className="text-xs text-sky-300 underline">Provider documentation</a><button type="button" onClick={()=>modal.current?.close()} className="text-xs text-neutral-300">Close</button></div>
+          <details className="border-t border-neutral-700 pt-3 text-xs text-neutral-400"><summary>Technical documentation</summary><a href={selected.docs} target="_blank" rel="noopener noreferrer" className="text-sky-300 underline">Provider documentation</a></details><div className="flex justify-end"><button type="button" onClick={()=>modal.current?.close()} className="text-xs text-neutral-300">Close</button></div>
           <p className="text-[10px] text-neutral-400">Tool discovery or a transport acknowledgement does not verify a business outcome.</p>
         </div>}
       </dialog>
