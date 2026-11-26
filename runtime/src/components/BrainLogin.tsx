@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Loader2, RefreshCw } from 'lucide-react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { Check, Loader2, RefreshCw, X, Ellipsis } from 'lucide-react';
 import { readAuraResponse } from '../lib/auraApi.mjs';
 import { useOptionalUiLanguage } from '../i18n/UiLanguage';
 
@@ -11,6 +11,9 @@ interface Brain {
   installed: boolean; loggedIn: boolean; registered: boolean; loginKind: 'browser' | 'terminal'; loginHint: string | null; detail?: string;
 }
 interface Login { state: 'WAITING' | 'TERMINAL'; url?: string | null; command?: string }
+type Provider = 'openai' | 'anthropic' | 'gemini' | 'other';
+type PlanStatus = { success: boolean; connected?: boolean; verifiedAt?: string | null; state?: string; error?: string; models?: {id:string;label:string}[] };
+const BRANDS: {id:Provider; label:string; brain?:Brain['id']}[] = [{id:'openai',label:'OpenAI',brain:'codex'},{id:'anthropic',label:'Claude',brain:'claude'},{id:'gemini',label:'Gemini',brain:'gemini'},{id:'other',label:'',}];
 
 // Simplified marks, flat and quiet; they are not the vendors' official artwork.
 const Logo: React.FC<{ id: Brain['id'] }> = ({ id }) => {
@@ -38,9 +41,9 @@ const INSTALL: Record<Brain['id'], string> = {
 };
 
 // The direct ChatGPT path does not use Codex, CLI tokens, or a shared API key.
-const ChatGPTPlanPreview: React.FC = () => {
+const ChatGPTPlanPreview: React.FC<{onStatus:(s:PlanStatus)=>void; visible:boolean}> = ({onStatus,visible}) => {
   const { tr } = useOptionalUiLanguage();
-  const [status,setStatus] = useState<any>(null);
+  const [status,setStatus] = useState<PlanStatus|null>(null);
   const [url,setUrl] = useState('');
   const [model,setModel] = useState('');
   const [busy,setBusy] = useState(false);
@@ -49,11 +52,12 @@ const ChatGPTPlanPreview: React.FC = () => {
   const refresh = useCallback(async () => {
     try {
       const r=await fetch(endpoint,{cache:'no-store'}).then(readAuraResponse);
-      setStatus(r);
+      setStatus(r); onStatus(r);
       if (r.state !== 'waiting') setUrl('');
-    } catch {setStatus({success:false,error:'SIWC_STATUS_UNAVAILABLE'});}
-  },[]);
+    } catch {const failed={success:false,error:'SIWC_STATUS_UNAVAILABLE'};setStatus(failed);onStatus(failed);}
+  },[onStatus]);
   useEffect(()=>{void refresh();},[refresh]);
+  useEffect(()=>{if(visible)void refresh();},[visible,refresh]);
   useEffect(()=>{
     if(status?.state!=='waiting') return;
     const timer=setInterval(()=>void refresh(),2500);
@@ -86,7 +90,7 @@ const ChatGPTPlanPreview: React.FC = () => {
         {url && status.state==='waiting' && <a className="block text-[#3794ff]" href={url} target="_blank" rel="noopener noreferrer">{tr('Öppna OpenAI:s inloggning','Open OpenAI sign-in')}</a>}
         {status.connected && <div className="flex flex-wrap items-center gap-2">
           <button disabled={busy} className={btn} onClick={()=>void action('models')}>{tr('Hämta modeller','Discover models')}</button>
-          {!!status.models?.length && <><select className="bg-[#202124] p-1 rounded" value={model} onChange={e=>setModel(e.target.value)}><option value="">—</option>{status.models.map((m:any)=><option key={m.id} value={m.id}>{m.label}</option>)}</select>
+          {!!status.models?.length && <><select aria-label={tr('ChatGPT-modell','ChatGPT model')} className="min-w-0 max-w-full bg-[#202124] p-1 rounded" value={model} onChange={e=>setModel(e.target.value)}><option value="">—</option>{(status.models ?? []).map((m)=><option key={m.id} value={m.id}>{m.label}</option>)}</select>
           <button disabled={busy||!model} className={btn} onClick={()=>void action('test',{model})}>{tr('Testa (använder kvot)','Test (uses plan quota)')}</button></>}
         </div>}
         {status.verifiedAt && <div className="text-emerald-300">{tr('Modellsvar verifierat','Model response verified')}: {status.verifiedAt}</div>}
@@ -96,8 +100,13 @@ const ChatGPTPlanPreview: React.FC = () => {
   </section>;
 };
 
-export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void> }> = ({ onChanged }) => {
+export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void>; renderApiKey?: (id:Exclude<Provider,'other'>)=>React.ReactNode; renderOther?:()=>React.ReactNode }> = ({ onChanged,renderApiKey,renderOther }) => {
   const { tr } = useOptionalUiLanguage();
+  const [selected,setSelected] = useState<Provider|null>(null);
+  const [plan,setPlan] = useState<PlanStatus|null>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const refreshInFlight = useRef(false);
   const [brains, setBrains] = useState<Brain[] | null>(null);
   const [error, setError] = useState('');
   const [logins, setLogins] = useState<Partial<Record<Brain['id'], Login>>>({});
@@ -108,6 +117,8 @@ export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void> }> = 
   changed.current = onChanged;
 
   const refresh = useCallback(async () => {
+    if(refreshInFlight.current)return;
+    refreshInFlight.current=true;
     try {
       const body = await fetch('/api/aura/workbench/brains').then(readAuraResponse);
       if (!body.success) throw new Error(body.error || 'BRAINS_FAILED');
@@ -120,7 +131,8 @@ export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void> }> = 
         setLogins(cur => { const next = { ...cur }; newly.forEach(b => delete next[b.id]); return next; });
         await changed.current?.();
       }
-    } catch (e: any) { setError(String(e?.message || e)); }
+    } catch (e: any) { setBrains(null);setError(String(e?.message || e)); }
+    finally {refreshInFlight.current=false;}
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
@@ -185,16 +197,73 @@ export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void> }> = 
     );
   };
 
+  useEffect(()=>{
+    const node=dialog.current;
+    if(selected && node && !node.open){node.showModal();void refresh();}
+  },[selected,refresh]);
+
+  const activeBrand=BRANDS.find(b=>b.id===selected);
+  const currentBrain=brains?.find(b=>b.id===activeBrand?.brain);
+  const brandLabel=(b:typeof BRANDS[number])=>b.id==='other'?tr('Fler','More'):b.label;
+  // Dots represent observed state, not a subscription entitlement or automatic activation.
+  const indication=(b:typeof BRANDS[number])=>{
+    if(b.id==='openai' && plan?.success && plan.connected && plan.verifiedAt)return {color:'bg-emerald-400',text:tr('Modellsvar observerat','Model response observed')};
+    if(b.id==='openai' && plan?.success && plan.connected)return {color:'bg-sky-400',text:tr('Behörighet mottagen','Permission granted')};
+    if(b.brain && brains?.some(x=>x.id===b.brain && x.loggedIn))return {color:'bg-sky-400',text:tr('CLI-inloggning observerad','CLI sign-in observed')};
+    return {color:'bg-neutral-600',text:tr('Inte verifierad','Not verified')};
+  };
   return (
-    <div className="border border-[#505153] bg-[#292a2c] rounded p-2 space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="text-xs font-semibold">{tr('Leverantörskonton och CLI-status', 'Provider accounts and CLI status')}</div>
-        <button type="button" onClick={() => void refresh()} aria-label={tr('Kontrollera igen', 'Check again')} className="text-neutral-300 hover:text-white"><RefreshCw className="w-3.5 h-3.5" /></button>
+    <div className="rounded border border-[#505153] bg-[#292a2c] p-2">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="text-xs font-semibold">{tr('Modellanslutningar','Model connections')}</div>
+        <span className="text-[10px] text-neutral-400">{tr('Välj leverantör','Choose provider')}</span>
       </div>
-      <ChatGPTPlanPreview />
-      {brains ? <ul>{brains.map(row)}</ul> : <div className="text-[11px] text-neutral-400">{tr('Kontrollerar…', 'Checking…')}</div>}
-      {error && <div className="text-[11px] text-red-300 break-words">{error}</div>}
-      <div className="text-[10px] text-neutral-400">{tr('CLI-inloggning aktiverar inte automatiskt en modell. Gemini för privatkonto använder Antigravity; direkt Gemini API finns via Google AI Studio.', 'CLI sign-in does not automatically activate a model. Individual Gemini accounts use Antigravity; the direct Gemini API is available through Google AI Studio.')}</div>
+      <div className="grid grid-cols-4 gap-1.5" aria-label={tr('Modellleverantörer','Model providers')}>
+        {BRANDS.map(b=>{
+          const status=indication(b);
+          const label=brandLabel(b);
+          return <button key={b.id} type="button" aria-haspopup="dialog" aria-expanded={selected===b.id}
+            aria-label={label+' — '+status.text} title={label+' — '+status.text}
+            onClick={()=>setSelected(b.id)}
+            className="relative min-w-0 min-h-12 rounded-md border border-[#45474a] bg-[#222325] hover:bg-[#303237] hover:border-[#6e7580] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#3794ff] flex flex-col items-center justify-center gap-1 py-2">
+            {b.brain?<Logo id={b.brain}/>:<Ellipsis className="w-[18px] h-[18px] text-neutral-300"/>}
+            {b.id!=='other' && <span aria-hidden="true" className={'absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full '+status.color}/>}
+            <span className="text-[10px] text-neutral-200 truncate max-w-full px-1">{label}</span>
+          </button>;
+        })}
+      </div>
+      <dialog ref={dialog} aria-labelledby={titleId} onClose={()=>setSelected(null)}
+        onClick={e=>{if(e.target===e.currentTarget)dialog.current?.close();}}
+        className="m-auto p-0 w-[calc(100%_-_1.5rem)] max-w-[440px] max-h-[85dvh] overflow-y-auto overscroll-contain rounded-xl border border-[#505763] bg-[#202225] text-neutral-100 shadow-2xl backdrop:bg-black/60">
+        <div className="p-4 space-y-3">
+          <header className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              {activeBrand?.brain?<Logo id={activeBrand.brain}/>:<Ellipsis className="w-[18px] h-[18px]"/>}
+              <h2 id={titleId} className="font-semibold text-sm">{activeBrand?brandLabel(activeBrand):tr('Modellanslutning','Model connection')}</h2>
+            </div>
+            <button type="button" aria-label={tr('Stäng','Close')} onClick={()=>dialog.current?.close()}
+              className="p-2 rounded hover:bg-[#35373b] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#3794ff]"><X className="w-4 h-4"/></button>
+          </header>
+          {/* Keep OAuth flow state mounted while the dialog is closed. It is never stored in the browser. */}
+          <div hidden={selected!=='openai'}><ChatGPTPlanPreview visible={selected==='openai'} onStatus={setPlan}/></div>
+          {selected && selected!=='other' && <>
+            {renderApiKey && <details className="rounded-md border border-[#45474a] p-2">
+              <summary className="cursor-pointer text-xs font-medium">{tr('Anslut med API-nyckel','Connect with API key')}</summary>
+              <div className="pt-2">{renderApiKey(selected)}</div>
+            </details>}
+            {selected==='gemini' && <a className="block text-xs text-[#66adff]" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">{tr('Öppna Google AI Studio','Open Google AI Studio')}</a>}
+            <details className="rounded-md border border-[#45474a] p-2">
+              <summary className="cursor-pointer text-xs font-medium">{tr('CLI och avancerat','CLI and advanced')}</summary>
+              <div className="space-y-2 pt-2">
+                {currentBrain?<ul>{row(currentBrain)}</ul>:<div className="text-xs text-neutral-400">{error||tr('CLI-status ej tillgänglig','CLI status unavailable')}</div>}
+                <button type="button" onClick={()=>void refresh()} className="flex items-center gap-1.5 text-xs text-neutral-300 hover:text-white"><RefreshCw className="w-3.5 h-3.5"/>{tr('Kontrollera status','Check status')}</button>
+                <p className="text-[11px] text-neutral-400">{selected==='gemini'?tr('Privatkonto: Antigravity. Direkt modellåtkomst: Gemini API.','Individual account: Antigravity. Direct model access: Gemini API.'):tr('CLI-inloggning aktiverar inte automatiskt en modell.','CLI sign-in does not automatically activate a model.')}</p>
+              </div>
+            </details>
+          </>}
+          {selected==='other' && renderOther?.()}
+        </div>
+      </dialog>
     </div>
   );
 };
