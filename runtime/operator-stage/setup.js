@@ -15,7 +15,11 @@ const TITLES = {
   activate: t('Aktivera hela systemet', 'Activate the whole system'),
 };
 
-const state = { report: null, error: '', vault: null, providers: [], catalog: [], skippedVault: false, busy: '', message: '', open: false, view: null, local: false };
+// "Skip" is remembered in this browser, so a finished setup does not reopen on every visit.
+function remembered(key) { try { return localStorage.getItem(key); } catch { return null; } }
+function remember(key, value) { try { localStorage.setItem(key, value); } catch { /* private window: asked again next time */ } }
+
+const state = { report: null, error: '', vault: null, providers: [], catalog: [], skippedVault: remembered('jaco.setup.skipVault') === '1', busy: '', message: '', open: false, view: null, local: false };
 
 const get = (url, ms = 30000) => fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(ms) }).then(r => r.json()).catch(() => null);
 const post = async (url, body, ms = 45000) => {
@@ -75,15 +79,31 @@ function apiPanel() {
       : t('Kontrollerar att JACO svarar…', 'Checking that JACO answers…')), button(t('Kontrollera igen', 'Check again'), () => act('api', async () => {}), { primary: true, disabled: Boolean(state.busy || state.checking) }));
 }
 
+// The key field and the service list live as long as the page: a status check redraws the panel while the
+// operator is typing, and a new field would drop what was typed. The value is only ever in the field itself.
+let keyFields = null;
+function keyControls() {
+  keyFields ??= {
+    key: el('input', { type: 'password', autocomplete: 'off', placeholder: t('Klistra in din nyckel', 'Paste your key'), 'aria-label': t('API-nyckel', 'API key') }),
+    which: el('select', { 'aria-label': t('Tjänst', 'Service') }),
+  };
+  const { which } = keyFields;
+  if (which.options.length !== state.catalog.length + 1) {
+    const chosen = which.value;
+    which.replaceChildren(el('option', { value: '' }, t('Känn igen från nyckeln', 'Detect from the key')), ...state.catalog.map(id => el('option', { value: id }, id)));
+    which.value = state.catalog.includes(chosen) ? chosen : '';
+  }
+  return keyFields;
+}
+
 function brainPanel() {
   const suggestion = suggestModel(state.providers), localOk = state.providers.some(p => p.local && p.credentialReady !== false && p.models?.length);
-  const key = el('input', { type: 'password', autocomplete: 'off', placeholder: t('Klistra in din nyckel', 'Paste your key'), 'aria-label': t('API-nyckel', 'API key') });
-  const which = el('select', { 'aria-label': t('Tjänst', 'Service') }, el('option', { value: '' }, t('Känn igen från nyckeln', 'Detect from the key')), ...state.catalog.map(id => el('option', { value: id }, id)));
+  const { key, which } = keyControls();
   const connect = () => act('key', async () => {
     if (!plausibleKey(key.value)) throw new Error(t('Det där ser inte ut som en nyckel.', 'That does not look like a key.'));
     const r = await post('/api/aura/workbench/providers/key', { key: key.value.trim(), ...(which.value ? { provider: which.value } : {}) });
-    key.value = '';
     if (!r.ok || r.data.result?.state !== 'READY') throw new Error(explainKey(r.data.result?.state));
+    key.value = '';
     state.message = t('Nyckeln fungerar och är sparad krypterad.', 'The key works and is stored encrypted.');
   });
   return el('div', {},
@@ -108,7 +128,7 @@ function vaultPanel() {
   return el('div', {},
     el('p', {}, t('Sparade nycklar i Windows-valvet kan hämtas in i JACO:s egna krypterade förvar. Värdena visas aldrig.', 'Credentials saved in the Windows vault can be fetched into JACO\'s own encrypted store. The values are never shown.')),
     rows.length ? el('ul', { class: 'setup-list' }, rows, el('li', {}, button(t('Hämta alla', 'Fetch all'), () => act('vault-all', async () => { for (const name of pending) await post('/api/aura/workbench/vault/import-windows', { name }); }), { primary: true, disabled: Boolean(state.busy) }))) : el('p', {}, t('Inget att hämta.', 'Nothing to fetch.')),
-    button(t('Hoppa över', 'Skip'), () => { state.skippedVault = true; render(); refresh(); }));
+    button(t('Hoppa över', 'Skip'), () => { state.skippedVault = true; remember('jaco.setup.skipVault', '1'); state.view = null; render(); refresh(); }));
 }
 
 function providerPanel() {
@@ -143,19 +163,23 @@ const PANELS = { api: apiPanel, brain: brainPanel, vault: vaultPanel, provider: 
 
 export function render() {
   const body = $('setupBody'); if (!body) return;
+  // Taken before the panel is built: building it moves the key field out of the page, which drops its focus.
+  const typing = document.activeElement;
   const { steps, current, ready } = setupSteps({ report: state.report, error: state.error, vault: state.vault, skippedVault: state.skippedVault });
   const shown = state.view && steps.some(s => s.id === state.view) ? state.view : current;
   $('setupBtn').dataset.incomplete = String(!ready);
   const list = el('ol', { class: 'setup-steps' }, steps.map((step, i) => el('li', { class: `${step.done ? 'done' : step.skipped ? 'skipped' : step.id === shown ? 'current' : ''}`, onclick: () => { state.view = step.id; render(); } },
     el('span', { class: 'mark', 'aria-hidden': 'true' }, step.done ? '✓' : step.skipped ? '–' : String(i + 1)), el('span', {}, TITLES[step.id], step.optional ? el('em', {}, ' ' + t('(valfritt)', '(optional)')) : null))));
-  const panel = ready
-    ? el('div', {}, el('h3', {}, t('Klart! Aura kan arbeta.', 'Done! Aura can work.')), el('p', {}, t('Skriv vad du vill ha hjälp med, eller tryck Prata.', 'Write what you want help with, or press Talk.')), button(t('Börja', 'Start'), close, { primary: true }))
+  // A finished setup still opens every step: a step the operator picked is shown, so a key can be added or changed.
+  const panel = ready && !state.view
+    ? el('div', {}, el('h3', {}, t('Klart! Aura kan arbeta.', 'Done! Aura can work.')), el('p', {}, t('Skriv vad du vill ha hjälp med, eller tryck Prata.', 'Write what you want help with, or press Talk.')), button(t('Börja', 'Start'), close, { primary: true }), ' ', button(t('Lägg till eller byt nyckel', 'Add or change a key'), () => { state.view = 'brain'; render(); }))
     : el('div', {}, el('h3', {}, TITLES[shown]), PANELS[shown](), state.busy ? el('p', { class: 'setup-busy', role: 'status' }, t('Arbetar…', 'Working…')) : null, state.message ? el('p', { class: 'setup-message', role: 'status' }, state.message) : null);
   body.replaceChildren(list, panel);
+  if (typing && typing !== document.activeElement && body.contains(typing)) typing.focus();
 }
 
 export function open() { state.open = true; state.view = null; $('setup').hidden = false; render(); void refresh(); }
-export function close() { state.open = false; $('setup').hidden = true; }
+export function close() { state.open = false; if (keyFields) keyFields.key.value = ''; $('setup').hidden = true; }
 
 export async function init() {
   $('setupBtn').addEventListener('click', open);
