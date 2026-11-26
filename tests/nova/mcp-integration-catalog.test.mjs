@@ -104,7 +104,7 @@ test('Stripe sandbox is explicitly isolated from financial strategy readiness',(
   assert.equal(draft.tokenEnv,'JACO_MCP_GUIDED_STRIPE_SANDBOX');
   assert.equal(pluginEnvironment('stripe-sandbox'),'SANDBOX');
   const ready={id:'stripe-sandbox',status:'READY',agentAccess:'read',catalogMatch:true,credentialConfigured:true,tools:[{name:'get_stripe_account_info',readOnly:true,agentAllowed:true}]};
-  const options=financialOptions([ready]);
+  const options=financialOptions([ready,{...ready,id:'paypal-sandbox'}]);
   assert.equal(options.plugins.find(p=>p.id==='stripe-sandbox').environment,'SANDBOX');
   assert.ok(options.strategies.every(s=>s.state==='SETUP_OR_DISCOVERY_REQUIRED'&&!s.financialMutationAllowed));
 });
