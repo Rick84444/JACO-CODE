@@ -15,13 +15,13 @@ function fixture(t,id='github-remote',{reject=false,invalid=false,missing=false,
   const env={JACO_STATE_DIR:dir};
   const store=new SecretStore({env});
   const preset=guidedMcpPreset(id);
-  const defs={},requests=[],records=[];
+  const defs={},requests=[],records=[],resets=[];
   const fetchImpl=async(url,options)=>{
     assert.equal(url,preset.target);
     assert.equal(options.redirect,'error');
-    assert.equal(options.headers.authorization,'Bearer fixture-not-a-real-credential');
+    assert.ok(['Bearer fixture-not-a-real-credential','Bearer fixture-replacement','Bearer fixture-rejected'].includes(options.headers.authorization));
     const rpc=JSON.parse(options.body);requests.push(rpc.method);
-    if(reject)return new Response(null,{status:401});
+    if(reject||options.headers.authorization==='Bearer fixture-rejected')return new Response(null,{status:401});
     if(rpc.method==='notifications/initialized')return new Response(null,{status:204});
     let result;
     if(rpc.method==='initialize')result={protocolVersion:'2025-06-18'};
@@ -34,11 +34,11 @@ function fixture(t,id='github-remote',{reject=false,invalid=false,missing=false,
   };
   const host={servers:()=>defs,saveServer:(id,def)=>{defs[id]=validateServerEntry(id,def);},start:async id=>{
     if(reconnectFailure)throw Error('MCP_TRANSPORT_DNS');
-    assert.equal(mcpCredential(id,defs[id],env),'fixture-not-a-real-credential');
+    assert.ok(['fixture-not-a-real-credential','fixture-replacement'].includes(mcpCredential(id,defs[id],env)));
     return [{name:preset.tool}];
-  },record:(id,entry)=>records.push({id,...entry})};
+  },resetConnection:id=>resets.push(id),record:(id,entry)=>records.push({id,...entry})};
   const connect=createGuidedMcpConnection({host,store,env,createClient:(id,def,probeEnv)=>new HttpMcpClient(id,def,{env:probeEnv,fetchImpl})});
-  return {connect,defs,store,env,requests,records,preset};
+  return {connect,defs,store,env,requests,records,resets,preset};
 }
 for(const id of ['github-remote','render']){
   test(id+' performs account read before persisting, with no environment export',async t=>{
@@ -83,4 +83,44 @@ test('directory entries and arbitrary URLs cannot use guided onboarding',async t
   await assert.rejects(f.connect('etsy',{token:'fixture-not-a-real-credential'}),/MCP_GUIDED_UNSUPPORTED/);
   await assert.rejects(f.connect('github-remote',{token:'fixture-not-a-real-credential',url:'https://example.org'}),/MCP_GUIDED_INPUT_INVALID/);
   assert.deepEqual(f.requests,[]);
+});
+
+test('scoped replacement is verified before retiring session and preserves connector permissions',async t=>{
+  const f=fixture(t);
+  const id='github-remote';
+  await f.connect(id,{token:'fixture-not-a-real-credential',allowOpenLogin:true});
+  f.defs[id].deny=['dangerous_tool'];
+  const original=JSON.stringify(f.defs[id]);
+  await assert.rejects(f.connect(id,{token:'fixture-rejected',replaceCredential:true}),/MCP_AUTH_REQUIRED/);
+  assert.equal(f.store.get(f.preset.credentialRef),'fixture-not-a-real-credential');
+  assert.deepEqual(f.resets,[]);
+  const result=await f.connect(id,{token:'fixture-replacement',replaceCredential:true});
+  assert.equal(result.credentialReplaced,true);
+  assert.equal(result.state,'READ_PROBE_VERIFIED');
+  assert.equal(f.store.get(f.preset.credentialRef),'fixture-replacement');
+  assert.equal(JSON.stringify(f.defs[id]),original);
+  assert.deepEqual(f.resets,[id]);
+  f.defs[id].agentAccess='write';
+  await assert.rejects(f.connect(id,{token:'fixture-not-a-real-credential',replaceCredential:true}),/MCP_GUIDED_REPLACEMENT_NOT_SUPPORTED/);
+});
+test('vault compare-and-set cannot overwrite a concurrent credential change',t=>{
+  const f=fixture(t);
+  const key=f.preset.credentialRef;
+  f.store.set(key,'fixture-one');
+  f.store.set(key,'fixture-two');
+  assert.equal(f.store.replaceIfCurrent(key,'fixture-one','fixture-three'),false);
+  assert.equal(f.store.get(key),'fixture-two');
+  assert.equal(f.store.replaceIfCurrent(key,'fixture-two','fixture-three'),true);
+  assert.equal(f.store.get(key),'fixture-three');
+});
+test('authentication loss retires tools and session without replaying the call',async()=>{
+  let requests=0;
+  const c=new HttpMcpClient('render',{transport:'http',url:'https://mcp.render.com/mcp',tokenEnv:'RENDER_API_KEY'},{env:{RENDER_API_KEY:'fixture'},fetchImpl:async()=>{requests++;return new Response(null,{status:401});}});
+  c.initialized=true;c.session='old-session';c.tools=[{name:'list_services'}];
+  await assert.rejects(c.request('tools/call',{name:'list_services',arguments:{}}),/MCP_AUTH_REQUIRED/);
+  assert.equal(c.initialized,false);
+  assert.equal(c.session,null);
+  assert.deepEqual(c.tools,[]);
+  assert.equal(c.error,'MCP_AUTH_REQUIRED');
+  assert.equal(requests,1);
 });
