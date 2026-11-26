@@ -4,7 +4,8 @@ import {promisify} from 'node:util';
 import {pluginLoginPreset} from '../../lib/mcpIntegrationCatalog.mjs';
 const exec=promisify(execFile);
 const safeEnv=new Set(['PATH','Path','HOME','USERPROFILE','SYSTEMROOT','SystemRoot','WINDIR','APPDATA','LOCALAPPDATA','TEMP','TMP','DISPLAY','WAYLAND_DISPLAY','XDG_RUNTIME_DIR','DBUS_SESSION_BUS_ADDRESS','LANG','TERMUX_VERSION','PREFIX']);
-export function createPluginLogin({host,execute=exec,platform=process.platform,env=process.env,now=Date.now}={}){
+/** @param {{host:{servers:()=>Record<string, any>,status:()=>any[]},execute?:typeof exec,platform?:string,env?:NodeJS.ProcessEnv,now?:()=>number}} options */
+export function createPluginLogin({host,execute=exec,platform=process.platform,env=process.env,now=Date.now}){
   const last=new Map();
   return async function openPluginLogin(id){
     if(typeof id!=='string'||!/^[a-z][a-z0-9-]{1,40}$/.test(id))throw Error('PLUGIN_ID_INVALID');
