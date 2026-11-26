@@ -1,0 +1,103 @@
+name: Subscription Provider Gate
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/src/components/BrainLogin.tsx'
+      - 'runtime/src/components/ProviderConnect.tsx'
+      - 'runtime/src/server/connected/cliBrains.mjs'
+      - 'runtime/src/server/connected/chatgptPlan*.mjs'
+      - 'runtime/src/server/connected/provider*.mjs'
+      - 'runtime/server.ts'
+      - 'runtime/src/lib/providerDialogs.test.tsx'
+      - 'tests/nova/cli-brains.test.mjs'
+      - 'tests/nova/chatgpt-plan*.test.mjs'
+      - 'tests/nova/provider-dialogs.browser.mjs'
+      - 'package*.json'
+      - 'runtime/package*.json'
+      - '.github/workflows/subscription-provider-gate.yml'
+  push:
+    branches: [main, 'spec/extend-subscription-access']
+    paths:
+      - 'runtime/src/components/BrainLogin.tsx'
+      - 'runtime/src/components/ProviderConnect.tsx'
+      - 'runtime/src/server/connected/cliBrains.mjs'
+      - 'runtime/src/server/connected/chatgptPlan*.mjs'
+      - 'runtime/src/server/connected/provider*.mjs'
+      - 'runtime/server.ts'
+      - 'runtime/src/lib/providerDialogs.test.tsx'
+      - 'tests/nova/cli-brains.test.mjs'
+      - 'tests/nova/chatgpt-plan*.test.mjs'
+      - 'tests/nova/provider-dialogs.browser.mjs'
+      - 'package*.json'
+      - 'runtime/package*.json'
+      - '.github/workflows/subscription-provider-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provider-contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked contract dependencies
+        run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - name: Syntax checks
+        run: |
+          node --check runtime/src/server/connected/cliBrains.mjs
+          node --check runtime/src/server/connected/chatgptPlanTransport.mjs
+          node --check runtime/src/server/connected/chatgptPlanSession.mjs
+          node --check tests/nova/provider-dialogs.browser.mjs
+      - name: OAuth, stream and CLI safety contracts (fixtures only)
+        run: node --test tests/nova/cli-brains.test.mjs tests/nova/chatgpt-plan-transport.test.mjs tests/nova/provider-key.test.mjs tests/nova/aura-provider-registry.test.mjs
+  provider-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      JACO_UI_SCREENSHOTS: ${{ github.workspace }}/test-results/provider-dialogs
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: runtime/package-lock.json
+      - name: Install locked runtime dependencies
+        run: npm ci --prefix runtime --no-audit --no-fund
+      - name: Runtime typecheck and server/client build
+        working-directory: runtime
+        run: |
+          npm run lint
+          npm run build:client
+          npm run build:server
+      - name: Rendered UI contracts
+        working-directory: runtime
+        run: node --import tsx --test src/lib/providerDialogs.test.tsx
+      - name: Install isolated browser test tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/jaco-browser" --no-package-lock --no-audit --no-fund playwright@1.62.1
+          node "$RUNNER_TEMP/jaco-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          echo "JACO_PLAYWRIGHT_MODULE=$RUNNER_TEMP/jaco-browser/node_modules/playwright/index.mjs" >> "$GITHUB_ENV"
+      - name: Real component browser tests (controlled API)
+        run: node tests/nova/provider-dialogs.browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: provider-dialogs-controlled-ui
+          path: test-results/provider-dialogs
+          if-no-files-found: ignore
