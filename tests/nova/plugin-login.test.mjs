@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {createPluginLogin} from '../../runtime/src/server/connected/pluginLogin.mjs';
-import {validateServerEntry,loadServerConfig} from '../../runtime/src/server/mcp/stdioMcpHost.mjs';
+import {validateServerEntry,loadServerConfig,StdioMcpHost} from '../../runtime/src/server/mcp/stdioMcpHost.mjs';
 
 const base={transport:'http',url:'https://mcp.render.com/mcp',tokenEnv:'RENDER_API_KEY',agentAccess:'read',allowOpenLogin:true};
 function fixture(){
@@ -54,4 +54,25 @@ test('approval persists in canonical config and is revoked by removing the opt-i
 test('browser failure never produces a success receipt or diagnostic leak',async()=>{
   const open=createPluginLogin({host:{servers:()=>({render:base}),status:()=>[{id:'render',status:'FAILED',credentialConfigured:false}]},platform:'win32',execute:async()=>{throw Error('private diagnostic');}});
   await assert.rejects(open('render'),e=>e.message==='PLUGIN_BROWSER_OPEN_FAILED');
+});
+
+test('login permission updates preserve endpoint, token reference, deny list and agent mode',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'jaco-plugin-access-'));
+  try{
+    const host=new StdioMcpHost({configFile:path.join(dir,'servers.json'),repoRoot:dir,runtimeRoot:dir});
+    host.saveServer('render',{...base,allowOpenLogin:false,deny:['dangerous_tool'],agentAccess:'read'});
+    host.setAccess('render',{allowOpenLogin:true});
+    const after=host.servers().render;
+    assert.equal(after.allowOpenLogin,true);
+    assert.deepEqual(after.deny,['dangerous_tool']);
+    assert.equal(after.tokenEnv,'RENDER_API_KEY');
+    assert.equal(after.url,base.url);
+    assert.equal(after.agentAccess,'read');
+    host.setAccess('render',{allowOpenLogin:false});
+    assert.equal(host.servers().render.allowOpenLogin,false);
+    host.saveServer('render',{...base,allowOpenLogin:false,url:'https://example.org/mcp'});
+    assert.throws(()=>host.setAccess('render',{allowOpenLogin:true}),/MCP_LOGIN_OPT_IN_NOT_SUPPORTED/);
+    assert.equal(host.status().find(s=>s.id==='render').catalogMatch,false);
+    assert.throws(()=>host.saveServer('render',{...base,url:'https://example.org/mcp'}),/MCP_LOGIN_OPT_IN_NOT_SUPPORTED/);
+  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
