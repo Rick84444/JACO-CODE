@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {createIceCavern,createCavernAvatar,cavernGovernor} from './auraCavern.mjs';
 import {bodyMotion,approachAngle} from './auraBodyMotion.mjs';
+import {createBlinkController,approachFacialWeight} from './auraFacialDynamics.mjs';
 
 // JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
 // A light-form is sampled from the actual skinned geometry, never from a portrait.
@@ -1087,6 +1088,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       s.val=nextVal;
     };
 
+    const blinkController=createBlinkController();
     let energy=0,gazeX=0,gazeY=0,smoothJaw=0;
     let listeningSince=0, previousYaw=0;
     let smoothAA=0,smoothO=0,smoothE=0,smoothU=0,decisionBlend=0,pupilSize=0.31;
@@ -1243,17 +1245,15 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         );
       }
 
-      const blinkCycle=t%5.3;
-      const b1=smoothstep(1.98,2.06,blinkCycle)*(1-smoothstep(2.06,2.23,blinkCycle));
-      const b2=smoothstep(2.32,2.39,blinkCycle)*(1-smoothstep(2.39,2.54,blinkCycle))*.84;
-      const blink=still?0:Math.max(b1,b2);
+      const blink=blinkController.sample(time/1000,phase,still);
+      const faceDt=finiteClamp(rawDt/1000,0,.12,1/30);
 
       const visemes=behaviorEngine.computeVisemes(t,still||Boolean(cavern&&!liveFormants&&!hasExternalLevel&&!state.phonemes),state,liveFormants,hasExternalLevel);
-      smoothJaw=still?0:finiteClamp(smoothJaw+(visemes.jaw-smoothJaw)*.32,0,1,0);
-      smoothAA=still?0:finiteClamp(smoothAA+(visemes.aa-smoothAA)*.30,0,1,0);
-      smoothO=still?0:finiteClamp(smoothO+(visemes.O-smoothO)*.30,0,1,0);
-      smoothE=still?0:finiteClamp(smoothE+(visemes.E-smoothE)*.28,0,1,0);
-      smoothU=still?0:finiteClamp(smoothU+(visemes.U-smoothU)*.28,0,1,0);
+      smoothJaw=still?0:approachFacialWeight(smoothJaw,visemes.jaw,faceDt,.32);
+      smoothAA=still?0:approachFacialWeight(smoothAA,visemes.aa,faceDt,.30);
+      smoothO=still?0:approachFacialWeight(smoothO,visemes.O,faceDt,.30);
+      smoothE=still?0:approachFacialWeight(smoothE,visemes.E,faceDt,.28);
+      smoothU=still?0:approachFacialWeight(smoothU,visemes.U,faceDt,.28);
 
       const targetPupil=0.30+(isAnalyzing?0.065:0)+(state.listening?0.045:0)+0.03*energy+0.02*Math.sin(t*0.7);
       pupilSize=still?0.32:pupilSize+(targetPupil-pupilSize)*0.12;
