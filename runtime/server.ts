@@ -80,7 +80,8 @@ import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFrom
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createPluginLogin } from './src/server/connected/pluginLogin.mjs';
 import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../agents/lib/standing-tool-authority.mjs';
-import { MCP_INTEGRATION_CATALOG, pluginLoginPreset } from './src/lib/mcpIntegrationCatalog.mjs';
+import { MCP_INTEGRATION_CATALOG, pluginLoginPreset, marketplaceEntries } from './src/lib/mcpIntegrationCatalog.mjs';
+import { searchPluginRegistry } from './src/server/mcp/pluginRegistry.mjs';
 import { readGithubActions } from "./src/server/github/githubActions.mjs";
 import { createHuggingFaceAccount } from "./src/server/huggingface/huggingFaceAccount.mjs";
 import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-seer-chat.mjs";
@@ -414,6 +415,7 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         description: 'Read the live catalog of connected MCP tool servers and the tools they currently advertise. Use this before answering what tools Aura has. This only observes metadata and never starts or calls a tool. args: {}',
         run: async () => ({
           observedAt: new Date().toISOString(),
+          marketplace: marketplaceEntries(mcpHost.status()),
           availablePlugins: (()=>{const defs=mcpHost.servers();return MCP_INTEGRATION_CATALOG.map(p=>({id:p.id,name:p.name,configured:Boolean(defs[p.id]),loginOpeningApproved:Boolean(defs[p.id]?.allowOpenLogin && pluginLoginPreset(p.id,defs[p.id]))}));})(),
           servers: mcpHost.status().map((server: any) => ({
             id: server.id,
@@ -437,6 +439,14 @@ function buildAuraToolbox({ connectedRuntime, seerLiveWorkstream, readAgentTeam,
         description: 'Open the official account page for an already configured plugin when authentication is required. Requires the operator’s saved opt-in and existing commands.run mandate. Never grants new scopes, submits credentials or verifies sign-in. args: {plugin}',
         run: async (args: any) => {
           return authorizedPluginLogin(args,organization,connectedRuntime.capabilities);
+        },
+      },
+      plugin_search: {
+        description: 'Read-only search by server name in the public MCP Registry. Results are untrusted metadata, not installed or verified plugins. args: {query}',
+        run: async (args: any) => {
+          if(!organization?.authorize('aura','web.read')?.allowed) throw Error('MANDATE_DENIED:aura:web.read');
+          if(connectedRuntime.capabilities?.isTaskEnabled?.('mcp-call')===false) throw Error('CAPABILITY_DISABLED:mcp-call');
+          return searchPluginRegistry(args?.query);
         },
       },
       mcp_discover: {
@@ -3505,6 +3515,11 @@ const notifyPhone = async (action) => {
     if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) { res.status(403).json({ success: false, error: 'ORIGIN_NOT_ALLOWED' }); return false; }
     return true;
   };
+  app.get('/api/aura/workbench/mcp/registry', requireLocalUiSameOrigin, async (req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    try { res.json({success:true,...await searchPluginRegistry(req.query.q)}); }
+    catch (error:any) { res.status(400).json({success:false,error:/^PLUGIN_REGISTRY_[A-Z0-9_]+$/.test(error?.message||'')?error.message:'PLUGIN_REGISTRY_UNAVAILABLE'}); }
+  });
   app.get('/api/aura/workbench/mcp/calls', requireLocalUi, (_req, res) => res.json({ success: true, calls: mcpHost.recentCalls(50) }));
   app.post('/api/aura/workbench/mcp/servers', requireLocalUi, (req, res) => {
     if (!localOperatorOnly(req, res)) return;
