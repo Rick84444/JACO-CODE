@@ -80,6 +80,7 @@ import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFrom
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createPluginLogin } from './src/server/connected/pluginLogin.mjs';
 import { createGuidedMcpConnection } from './src/server/mcp/guidedMcpConnection.mjs';
+import { McpOAuthSession } from './src/server/mcp/mcpOAuthSession.mjs';
 import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../agents/lib/standing-tool-authority.mjs';
 import { MCP_INTEGRATION_CATALOG, pluginLoginPreset, marketplaceEntries, financialOptions } from './src/lib/mcpIntegrationCatalog.mjs';
 import { searchPluginRegistry } from './src/server/mcp/pluginRegistry.mjs';
@@ -3531,6 +3532,26 @@ const notifyPhone = async (action) => {
     catch (error:any) { res.status(400).json({success:false,error:/^PLUGIN_REGISTRY_[A-Z0-9_]+$/.test(error?.message||'')?error.message:'PLUGIN_REGISTRY_UNAVAILABLE'}); }
   });
   app.get('/api/aura/workbench/mcp/calls', requireLocalUi, (_req, res) => res.json({ success: true, calls: mcpHost.recentCalls(50) }));
+  const mcpOAuth=new McpOAuthSession({host:mcpHost,onChanged:()=>{getAuraMcpFabric.invalidate();}});
+  app.get('/api/aura/workbench/mcp/oauth/linear',requireLocalUiSameOrigin,(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    if(!localOperatorOnly(req,res))return;
+    res.json({success:true,...mcpOAuth.status()});
+  });
+  app.post('/api/aura/workbench/mcp/oauth/linear/:action',requireLocalUiSameOrigin,async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    if(!localOperatorOnly(req,res))return;
+    if(req.body&&Object.keys(req.body).length)return res.status(400).json({success:false,error:'MCP_OAUTH_INPUT_INVALID'});
+    try{
+      const action=String(req.params.action||'');
+      if(!['start','cancel','disconnect'].includes(action))return res.status(404).json({success:false,error:'MCP_OAUTH_ACTION_UNKNOWN'});
+      const result=action==='start'?await mcpOAuth.start():action==='cancel'?mcpOAuth.cancel():mcpOAuth.disconnect();
+      res.json({success:true,...result});
+    }catch(error:any){
+      const code=/^MCP_[A-Z0-9_]+$/.test(error?.message||'')?error.message:'MCP_OAUTH_FAILED';
+      res.status(409).json({success:false,error:code});
+    }
+  });
   const guidedMcpConnect=createGuidedMcpConnection({host:mcpHost});
   app.post('/api/aura/workbench/mcp/connect/:id',requireLocalUiSameOrigin,async(req,res)=>{
     res.setHeader('Cache-Control','no-store');
