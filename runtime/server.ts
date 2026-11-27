@@ -76,6 +76,7 @@ import { stripeRevenueSnapshot } from "./src/server/revenue/stripeRevenue.mjs";
 import { automaticConnections } from "./src/server/connected/automaticConnections.mjs";
 import { liteChatAnswer } from "./src/server/connected/liteChatRouter.mjs";
 import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/mcp/stdioMcpHost.mjs";
+import { auraTerminals } from './src/server/mcp/auraTerminals.mjs';
 import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFromRemote, readGithubPullRequest } from './src/server/mcp/auraAgentMcpCall.mjs';
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createPluginLogin } from './src/server/connected/pluginLogin.mjs';
@@ -4673,6 +4674,34 @@ const notifyPhone = async (action) => {
     } catch (error: any) {
       return res.status(503).json({ success: false, error: String(error?.message || 'BROWSER_FRAME_FAILED').slice(0, 80) });
     }
+  });
+
+  // Aura's terminals and the pages open in her browser, for the operator's own screen.
+  app.get('/api/aura/terminals', requireLocalUiSameOrigin, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, terminals: auraTerminals.list() });
+  });
+  app.get('/api/aura/browser/tabs', requireLocalUiSameOrigin, async (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    try {
+      const result: any = await callAuraMcpRpc('cdp', 'tools/call', { name: 'nova_tabs', arguments: {} }, AbortSignal.timeout(8000));
+      const body = JSON.parse(String(result?.content?.find?.((item: any) => item?.type === 'text')?.text || 'null'));
+      if (result?.isError === true || !Array.isArray(body?.tabs)) return res.status(409).json({ success: false, error: 'BROWSER_TABS_UNAVAILABLE' });
+      // Only the pages Aura opened: the operator's own tabs in her window stay out of this list.
+      const tabs = body.tabs.filter((t: any) => t.openedBy === 'aura' || t.current).slice(0, 8)
+        .map((t: any) => ({ id: String(t.id), title: String(t.title || '').slice(0, 80), url: String(t.url || '').slice(0, 300), current: t.current === true }));
+      res.json({ success: true, tabs });
+    } catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || 'BROWSER_TABS_FAILED').slice(0, 80) }); }
+  });
+  app.post('/api/aura/browser/tabs/switch', requireLocalUiSameOrigin, async (req, res) => {
+    const id = typeof req.body?.id === 'string' && /^[A-Za-z0-9_-]{4,80}$/.test(req.body.id) ? req.body.id : '';
+    if (!id) return res.status(400).json({ success: false, error: 'BROWSER_TAB_ID_INVALID' });
+    try {
+      const result: any = await callAuraMcpRpc('cdp', 'tools/call', { name: 'nova_tab_switch', arguments: { id, actionId: `stage-${crypto.randomUUID()}` } }, AbortSignal.timeout(10000));
+      if (result?.isError === true) return res.status(409).json({ success: false, error: 'BROWSER_TAB_SWITCH_REFUSED' });
+      browserFrameCache = null;
+      res.json({ success: true });
+    } catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || 'BROWSER_TAB_SWITCH_FAILED').slice(0, 80) }); }
   });
 
   // Which page Aura's browser shows (address and title only), so the operator can open it in a real window.

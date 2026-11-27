@@ -2,6 +2,7 @@
 // Discovery may start an already configured server, but never executes a tool.
 import { randomUUID } from 'node:crypto';
 import { agentRefusal, isReadOnlyTool, resolveAdvertisedTool } from './stdioMcpHost.mjs';
+import { auraTerminals, TERMINAL_TOOLS } from './auraTerminals.mjs';
 import { operatorApprovalCheck } from '../../../../agents/lib/operator-action-guard.mjs';
 import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 
@@ -45,7 +46,9 @@ export async function callAuraMcpTool(host, request) {
   try { prepared = await prepareAuraMcpCall(host, request); }
   catch (error) { throw preDispatch(error); }
   const { server, tool, args, mode } = prepared;
-  return host.call(server, tool, args, { actor:'agent', readOnly: mode === 'read' });
+  const send = prepared => host.call(server, tool, prepared, { actor:'agent', readOnly: mode === 'read' });
+  // Shell commands are shown to the operator in the named terminal they ran in.
+  return server === 'shell' && TERMINAL_TOOLS.has(tool) ? auraTerminals.run(args, send) : send(args);
 }
 async function prepareAuraMcpCall(host, { server, tool, args = {}, mode = 'read' }) {
   let def = configured(host, server);

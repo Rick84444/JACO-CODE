@@ -75,6 +75,7 @@ const holos = new Map();
 function holo(id) {
   if (holos.has(id)) return holos.get(id);
   const spec = PANELS[id];
+  if (!spec) throw new Error('UNKNOWN_PANEL ' + id);
   const el = document.createElement('section');
   el.className = 'holo' + (spec.board ? ' board' : '') + (spec.view ? ' browser' : ''); el.dataset.panel = id; el.tabIndex = 0;
   el.setAttribute('aria-label', spec.title);
@@ -437,6 +438,55 @@ async function pollCalls() {
   setTimeout(pollCalls, 1000);
 }
 
+// ---------- Aura's terminals: one window per name, with what ran there ----------
+const shownTerminals = new Map();
+async function pollTerminals() {
+  if (document.hidden) return void setTimeout(pollTerminals, 1500);
+  try {
+    const data = await (await fetch('/api/aura/terminals', { cache: 'no-store' })).json();
+    const names = new Set();
+    for (const [index, t] of (data.terminals || []).entries()) {
+      const id = 'term:' + t.name; names.add(id);
+      const stamp = t.entries.at(-1)?.at;
+      if (!stamp || shownTerminals.get(id) === stamp) continue;
+      PANELS[id] ??= { title: 'Terminal: ' + t.name, rail: index % 2 ? 'railLeft' : 'railRight' };
+      const first = !shownTerminals.has(id); shownTerminals.set(id, stamp);
+      const h = holo(id); h.list.replaceChildren();
+      for (const e of t.entries.slice(-3)) {
+        addLine(id, '$ ' + e.command, e.ok ? 'ok' : 'fail', { max: 12, quiet: true });
+        for (const line of e.output.split('\n').filter(Boolean).slice(-3)) addLine(id, line, '', { max: 12, quiet: true });
+      }
+      if (!first || Date.now() - Date.parse(stamp) < 20000) activate(id);
+    }
+    // A window the runtime no longer keeps is closed here too.
+    for (const id of [...shownTerminals.keys()]) if (!names.has(id)) { shownTerminals.delete(id); holos.get(id)?.el.remove(); holos.delete(id); delete PANELS[id]; }
+  } catch { /* the runtime may be restarting; keep polling */ }
+  setTimeout(pollTerminals, 1500);
+}
+
+// ---------- The pages open in Aura's browser ----------
+async function refreshTabs() {
+  const h = holos.get('browser'); if (!h || document.hidden) return;
+  try {
+    const data = await (await fetch('/api/aura/browser/tabs', { cache: 'no-store' })).json();
+    let strip = h.el.querySelector('.tabs');
+    if (!strip) { strip = document.createElement('div'); strip.className = 'tabs'; h.el.querySelector('.holo-view').before(strip); }
+    const tabs = data.tabs || [];
+    strip.hidden = tabs.length < 2;
+    strip.replaceChildren(...tabs.map(t => {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = t.title || t.url; b.title = t.url;
+      b.setAttribute('aria-pressed', String(t.current));
+      b.addEventListener('click', async e => {
+        e.stopPropagation();
+        await fetch('/api/aura/browser/tabs/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: t.id }) });
+        await refreshTabs(); refreshBrowserView();
+      });
+      return b;
+    }));
+  } catch { /* the browser or the runtime may be away */ }
+}
+setInterval(refreshTabs, 5000);
+
 // ---------- Source 2: what Aura's browser shows (a read of her pinned page) ----------
 let viewBusy = false, lastFrameUrl = null, lastFrameAt = 0;
 async function refreshBrowserView() {
@@ -564,5 +614,5 @@ $('ideResize').addEventListener('pointerdown', e => {
 
 holo('mission'); holo('tools');
 addEventListener('jaco:model-changed', () => void header());
-header(); loadHistory(); pollCalls(); connectLive(); refreshBoard(); void initSetup();
+header(); loadHistory(); pollTerminals(); pollCalls(); connectLive(); refreshBoard(); void initSetup();
 $('input').focus();

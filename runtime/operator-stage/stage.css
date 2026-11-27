@@ -194,3 +194,10 @@ body.split.resizing iframe { pointer-events: none; }
   .aura canvas { width: 200px; height: 200px; }
 }
 @media (prefers-reduced-motion: reduce) { .holo, .msg, .holo::after, .holo-body li.new, .board * { animation: none !important; transition: none !important; } }
+
+/* Several pages in Aura's browser, and several terminals stacked in the side rails. */
+.holo .tabs { display: flex; gap: 4px; padding: 6px 8px 0; overflow-x: auto; }
+.holo .tabs button { flex: 0 0 auto; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: rgba(124,199,255,.08); color: var(--muted); border: 1px solid var(--edge); border-radius: 6px; padding: 2px 8px; font: 11px system-ui; cursor: pointer; }
+.holo .tabs button[aria-pressed="true"] { color: var(--text); border-color: var(--glow); }
+.rail { overflow-y: auto; }
+
