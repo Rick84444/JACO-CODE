@@ -56,8 +56,8 @@
     "verify:aura-operator:strict": "node scripts/verify_aura_operator_workbench.mjs --strict-product",
     "test:workspace-ux": "node --import tsx --test src/lib/workspaceUx.test.tsx",
     "prepare:aura-rig": "node scripts/prepare-aura-rig.mjs",
-    "predev": "npm run prepare:aura-rig",
-    "prebuild:client": "npm run prepare:aura-rig"
+    "predev": "npm run prepare:aura-rig && node scripts/prepare-aura-v31.mjs",
+    "prebuild:client": "npm run prepare:aura-rig && node scripts/prepare-aura-v31.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.13.0",
