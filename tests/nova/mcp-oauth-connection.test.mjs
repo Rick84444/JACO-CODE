@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {SecretStore,credential,hydrateEnvFromStore} from '../../agents/lib/secret-store.mjs';
+import {SecretStore,credential,hydrateEnvFromStore,isExportableSecret} from '../../agents/lib/secret-store.mjs';
 import {getVaultSecret,saveVaultSecret} from '../../agents/lib/vault-tools.mjs';
 import {LINEAR_OAUTH as p} from '../../runtime/src/server/mcp/oauthReadonly.mjs';
 import {LINEAR_OAUTH_REF as ref,ReadonlyOAuthCredentials} from '../../runtime/src/server/mcp/oauthReadonlyCredentials.mjs';
@@ -174,4 +174,18 @@ test('host rejects incorrect provider, endpoint and write authority for OAuth re
   assert.throws(()=>validateServerEntry('other',definition),/SCOPE_INVALID/);
   assert.throws(()=>validateServerEntry('linear',{...definition,url:'https://example.org/mcp'}),/SCOPE_INVALID/);
   assert.throws(()=>validateServerEntry('linear',{...definition,agentAccess:'write'}),/SCOPE_INVALID/);
+});
+
+test('reserved connector namespaces cannot export secrets even with ordinary key suffixes',t=>{
+  const f=fixture(t);
+  const names=['JACO_MCP_OAUTH_FIXTURE_TOKEN','JACO_MCP_GUIDED_FIXTURE_API_KEY','JACO_MCP_OAUTH_FIXTURE_SECRET'];
+  for(const name of names){
+    f.store.set(name,'fixture-scoped-secret');
+    assert.equal(isExportableSecret(name),false);
+    assert.equal(credential(name,{env:f.env,store:f.store}),'');
+  }
+  f.store.set('FIXTURE_API_KEY','ordinary-fixture');
+  assert.deepEqual(hydrateEnvFromStore(f.env,f.store),['FIXTURE_API_KEY']);
+  assert.equal(f.env.FIXTURE_API_KEY,'ordinary-fixture');
+  for(const name of names)assert.equal(f.env[name],undefined);
 });
