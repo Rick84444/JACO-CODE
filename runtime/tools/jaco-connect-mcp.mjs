@@ -56,7 +56,7 @@ const TOOLS = [
     name: 'store_secret',
     description: 'Store an API key, token or password in JACO\'s encrypted store under an UPPER_SNAKE name (e.g. DEEPSEEK_API_KEY). Write-only: the value is never returned by any tool. Use the name a connect_provider result gives as apiKeyEnv.',
     inputSchema: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' }, purpose: { type: 'string' } }, required: ['name', 'value'] },
-    run: ({ name, value, purpose }) => store.set(name, value, { source: 'mcp', purpose }),
+    run: ({ name, value, purpose }) => {if(/^JACO_MCP_(?:GUIDED_|OAUTH_)/i.test(String(name).trim()))throw Error('VAULT_CONNECTOR_CREDENTIAL_SCOPED');return store.set(name, value, { source: 'mcp', purpose });},
   },
   {
     name: 'generate_secret',
@@ -65,6 +65,7 @@ const TOOLS = [
     run: ({ name, length, purpose }) => {
       const key = validateSecretName(name);
       if (store.has(key)) return { ...store.describe(key), created: false, note: 'already exists; not replaced' };
+      if(/^JACO_MCP_(?:GUIDED_|OAUTH_)/i.test(key))throw Error('VAULT_CONNECTOR_CREDENTIAL_SCOPED');
       return { ...store.set(key, generateSecretValue(length), { source: 'generated', purpose }), created: true };
     },
   },
