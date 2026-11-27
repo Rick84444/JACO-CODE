@@ -2,7 +2,7 @@
 // and the session as one HMAC-signed HttpOnly cookie. Nothing is stored server side.
 const enc = new TextEncoder();
 const dec = new TextDecoder();
-const REDIRECT = 'https://jacocode.com/auth/google/callback';
+const DEFAULT_ORIGIN = 'https://jacocode.com';
 const SESSION_DAYS = 30;
 
 const b64u = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -28,12 +28,12 @@ async function unseal(token, secret) {
 }
 
 // Browser session is the tenant identity for JACO Link; no new account table.
-export async function verifySiteSession(request, secret) {
+export async function verifySiteSession(request, secret, includeExpiry=false) {
   if (!secret) return null;
   const session = await unseal(cookieValue(request, 'jaco_session'), secret);
   if (!session?.sub || typeof session.sub !== 'string' || !Number.isFinite(session.exp) ||
       session.exp <= Math.floor(Date.now()/1000)) return null;
-  return { sub: session.sub, email: session.email || '', name: session.name || '' };
+  return { sub: session.sub, email: session.email || '', name: session.name || '', ...(includeExpiry?{expiresAt:session.exp*1000}:{}) };
 }
 
 // Return only to known JACO Link pages. Never reflect an arbitrary target from OAuth state.
@@ -60,6 +60,8 @@ function idTokenClaims(idToken) {
 }
 
 export async function handleAuth(request, env, url, fetchImpl = fetch) {
+  const origin=env.PUBLIC_ORIGIN||DEFAULT_ORIGIN;
+  const redirect=origin+'/auth/google/callback';
   const path = url.pathname;
   if (!path.startsWith('/auth/')) return null;
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.SESSION_SECRET) return json({ error: 'login_not_configured' }, 503);
@@ -68,14 +70,14 @@ export async function handleAuth(request, env, url, fetchImpl = fetch) {
     return session ? json({ signedIn: true, email: session.email, name: session.name }) : json({ signedIn: false });
   }
   if (path === '/auth/logout') {
-    if (request.method !== 'POST' || request.headers.get('origin') !== 'https://jacocode.com') return json({ error: 'forbidden' }, 403);
+    if (request.method !== 'POST' || request.headers.get('origin') !== origin) return json({ error: 'forbidden' }, 403);
     return new Response(null, { status: 204, headers: { 'set-cookie': cookie('jaco_session', '', { maxAge: 0 }) } });
   }
   if (path === '/auth/google') {
     const state = random(24), nonce = random(24), verifier = random(32);
     const challenge = b64u(await crypto.subtle.digest('SHA-256', enc.encode(verifier)));
     const target = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    for (const [k, v] of Object.entries({ client_id: env.GOOGLE_CLIENT_ID, redirect_uri: REDIRECT, response_type: 'code', scope: 'openid email profile', state, nonce, code_challenge: challenge, code_challenge_method: 'S256', prompt: 'select_account' })) target.searchParams.set(k, v);
+    for (const [k, v] of Object.entries({ client_id: env.GOOGLE_CLIENT_ID, redirect_uri: redirect, response_type: 'code', scope: 'openid email profile', state, nonce, code_challenge: challenge, code_challenge_method: 'S256', prompt: 'select_account' })) target.searchParams.set(k, v);
     const sealed = await seal({ state, nonce, verifier, returnTo: safeAuthReturn(url.searchParams.get('next')), exp: Math.floor(Date.now() / 1e3) + 600 }, env.SESSION_SECRET);
     return new Response(null, { status: 302, headers: { location: target.toString(), 'set-cookie': cookie('jaco_oauth', sealed, { path: '/auth', maxAge: 600 }) } });
   }
@@ -88,7 +90,7 @@ export async function handleAuth(request, env, url, fetchImpl = fetch) {
     const token = await fetchImpl('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ code: q.get('code'), client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, redirect_uri: REDIRECT, grant_type: 'authorization_code', code_verifier: pending.verifier }),
+      body: new URLSearchParams({ code: q.get('code'), client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, redirect_uri: redirect, grant_type: 'authorization_code', code_verifier: pending.verifier }),
     });
     if (!token.ok) return message(502, 'Google did not accept the sign-in. Please try again.', clear);
     const claims = idTokenClaims((await token.json()).id_token);
