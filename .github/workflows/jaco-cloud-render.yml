@@ -1,0 +1,43 @@
+name: JACO Cloud Render contract
+on:
+  pull_request:
+    paths:
+      - 'cloud/control/**'
+      - 'site/jacocode.com/auth.mjs'
+      - 'site/jacocode.com/link*.mjs'
+      - 'tests/nova/cloud*.test.mjs'
+      - '.github/workflows/jaco-cloud-render.yml'
+permissions:
+  contents: read
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: local_ci_only
+          POSTGRES_DB: jaco_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --prefix cloud/control --ignore-scripts --no-audit --no-fund
+      - run: npm --prefix cloud/control test
+      - run: |
+          node --check cloud/control/server.mjs
+          node --check cloud/control/render-link.mjs
+          node --check site/jacocode.com/auth.mjs
+          node --check site/jacocode.com/link.mjs
+      - name: Real PostgreSQL isolation and restart contract
+        run: node --test cloud/control/render-postgres.test.mjs
+        env:
+          DATABASE_URL: postgresql://postgres:local_ci_only@127.0.0.1:5432/jaco_ci
