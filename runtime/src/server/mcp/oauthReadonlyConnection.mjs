@@ -38,8 +38,8 @@ export function createReadonlyOAuthConnection({host,credentials=readonlyOAuthCre
     credentials.installVerified(auth,new Date(now()).toISOString());
     try{host.saveServer('linear',definition);}
     catch{throw Error('MCP_OAUTH_VAULT_SAVED_CONFIG_FAILED');}
-    try{await host.start('linear');connectionError=null;}
-    catch(e){connectionError=safeCode(e);}
+    try{await host.start('linear');if(isCurrent())connectionError=null;}
+    catch(e){if(isCurrent())connectionError=safeCode(e);}
     finally{onChange();}
   }});
   function status(){
