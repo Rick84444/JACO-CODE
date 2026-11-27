@@ -119,3 +119,12 @@ test('the build copies every file the source layout serves', async () => {
   for (const needed of ['three.module.js', 'three.core.js', 'GLTFLoader.js', 'BufferGeometryUtils.js', 'SkeletonUtils.js'])
     assert.ok(Object.keys(THREE_FILES).some(k => k.endsWith(needed)), needed);
 });
+
+// A syntax error in any of these empties the start page, and nothing bundles them, so no build would notice.
+test('every stage script parses', async () => {
+  const { spawnSync } = await import('node:child_process');
+  for (const name of fs.readdirSync(path.join(runtimeRoot, 'operator-stage')).filter(f => /\.m?js$/.test(f))) {
+    const r = spawnSync(process.execPath, ['--check', path.join(runtimeRoot, 'operator-stage', name)], { encoding: 'utf8' });
+    assert.equal(r.status, 0, `${name}: ${r.stderr}`);
+  }
+});

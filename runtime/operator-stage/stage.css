@@ -56,6 +56,7 @@ button.ide[aria-pressed="true"], button.ide[aria-expanded="true"] { color: var(-
 .setup input, .setup select { background: #0a1424; color: var(--text); border: 1px solid var(--edge); border-radius: 8px; padding: 8px; font: 14px system-ui; max-width: 100%; }
 .setup-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .setup-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.held-mark { color: var(--ok); font-size: 13px; }
 .setup-hint { color: var(--muted) !important; font-size: 13px; }
 .setup-message { color: var(--ok) !important; } .setup-busy { color: var(--muted) !important; }
 #setupBtn[data-incomplete="true"] { border-color: var(--glow); color: var(--text); box-shadow: 0 0 12px rgba(79,180,255,.45); }

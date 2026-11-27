@@ -1,7 +1,7 @@
 // The structured start of JACO on the Operator Stage: five steps, each ticked from what the runtime reports.
 // 1 start the API, 2 an AI brain (cloud key or local model), 3 fetch from the vault, 4 connect the provider,
 // 5 activate everything. Uses only the endpoints the IDE already uses; no secret value is ever displayed or kept here.
-import { setupSteps, suggestModel, plausibleKey } from '/setup-steps.mjs';
+import { setupSteps, suggestModel, plausibleKey, vaultRows } from '/setup-steps.mjs';
 
 const sv = (navigator.language || '').toLowerCase().startsWith('sv');
 const t = (swedish, english) => (sv ? swedish : english);
@@ -38,7 +38,7 @@ export async function refresh() {
   state.checking = false;
   state.report = activation?.success ? activation.report : null;
   state.error = state.report ? '' : 'unreachable';
-  state.vault = windows?.available ? { available: true, keys: windows.keys || [], configured: (discovery?.configured || []).map(c => c.name) } : { available: false, keys: [], configured: [] };
+  state.vault = windows?.available ? { available: true, keys: windows.keys || [], fetched: windows.fetched || [], configured: (discovery?.configured || []).map(c => c.name) } : { available: false, keys: [], fetched: [], configured: [] };
   state.providers = Array.isArray(models?.providers) ? models.providers : [];
   state.catalog = (catalog?.providers || []).map(p => p.id);
   render();
@@ -120,15 +120,29 @@ function brainPanel() {
 }
 
 function vaultPanel() {
-  const pending = (state.vault?.keys || []).filter(name => !(state.vault.configured || []).includes(name));
-  const rows = pending.map(name => el('li', {}, el('code', {}, name), ' ', button(t('Hämta', 'Fetch'), () => act('vault-' + name, async () => {
+  const rows = vaultRows(state.vault), pending = rows.filter(row => row.state === 'PENDING').map(row => row.name);
+  const fetch1 = async name => {
     const r = await post('/api/aura/workbench/vault/import-windows', { name });
-    if (!r.ok && r.data.error !== 'SECRET_ALREADY_EXISTS') throw new Error(t('Kunde inte hämta ' + name, 'Could not fetch ' + name));
-  }), { disabled: Boolean(state.busy) })));
+    return r.ok || r.data.error === 'SECRET_ALREADY_EXISTS';
+  };
+  const fetchSome = names => async () => {
+    const failed = [];
+    for (const name of names) if (!(await fetch1(name).catch(() => false))) failed.push(name);
+    if (failed.length) throw new Error(t('Kunde inte hämta: ', 'Could not fetch: ') + failed.join(', '));
+    state.message = t(`Hämtat: ${names.join(', ')}`, `Fetched: ${names.join(', ')}`);
+  };
+  const labels = { FETCHED: t('✓ Hämtad', '✓ Fetched'), PRESENT: t('✓ Finns redan', '✓ Already set') };
+  const list = rows.map(({ name, state: held }) => el('li', { class: held === 'PENDING' ? 'pending' : 'held' }, el('code', {}, name), ' ',
+    held === 'PENDING' ? button(t('Hämta', 'Fetch'), () => act('vault-' + name, fetchSome([name])), { disabled: Boolean(state.busy) }) : el('span', { class: 'held-mark' }, labels[held])));
+  const summary = !rows.length ? t('Inga sparade nycklar hittades i Windows-valvet.', 'No saved keys were found in the Windows vault.')
+    : !pending.length ? t(`Alla ${rows.length} nycklar är hämtade.`, `All ${rows.length} keys are fetched.`)
+    : t(`${rows.length - pending.length} av ${rows.length} nycklar är hämtade.`, `${rows.length - pending.length} of ${rows.length} keys are fetched.`);
   return el('div', {},
     el('p', {}, t('Sparade nycklar i Windows-valvet kan hämtas in i JACO:s egna krypterade förvar. Värdena visas aldrig.', 'Credentials saved in the Windows vault can be fetched into JACO\'s own encrypted store. The values are never shown.')),
-    rows.length ? el('ul', { class: 'setup-list' }, rows, el('li', {}, button(t('Hämta alla', 'Fetch all'), () => act('vault-all', async () => { for (const name of pending) await post('/api/aura/workbench/vault/import-windows', { name }); }), { primary: true, disabled: Boolean(state.busy) }))) : el('p', {}, t('Inget att hämta.', 'Nothing to fetch.')),
-    button(t('Hoppa över', 'Skip'), () => { state.skippedVault = true; remember('jaco.setup.skipVault', '1'); state.view = null; render(); refresh(); }));
+    el('p', { class: 'setup-hint', role: 'status' }, summary),
+    rows.length ? el('ul', { class: 'setup-list' }, list) : null,
+    pending.length ? el('div', { class: 'setup-row' }, button(t('Hämta alla', 'Fetch all'), () => act('vault-all', fetchSome(pending)), { primary: true, disabled: Boolean(state.busy) }),
+      button(t('Hoppa över', 'Skip'), () => { state.skippedVault = true; remember('jaco.setup.skipVault', '1'); state.view = null; render(); refresh(); })) : null);
 }
 
 function providerPanel() {
@@ -168,8 +182,10 @@ export function render() {
   const { steps, current, ready } = setupSteps({ report: state.report, error: state.error, vault: state.vault, skippedVault: state.skippedVault });
   const shown = state.view && steps.some(s => s.id === state.view) ? state.view : current;
   $('setupBtn').dataset.incomplete = String(!ready);
+  // How many vault keys JACO holds, readable from the step list without opening the step.
+  const held = vaultRows(state.vault), heldCount = held.length ? ` ${held.filter(row => row.state !== 'PENDING').length}/${held.length}` : '';
   const list = el('ol', { class: 'setup-steps' }, steps.map((step, i) => el('li', { class: `${step.done ? 'done' : step.skipped ? 'skipped' : step.id === shown ? 'current' : ''}`, onclick: () => { state.view = step.id; render(); } },
-    el('span', { class: 'mark', 'aria-hidden': 'true' }, step.done ? '✓' : step.skipped ? '–' : String(i + 1)), el('span', {}, TITLES[step.id], step.optional ? el('em', {}, ' ' + t('(valfritt)', '(optional)')) : null))));
+    el('span', { class: 'mark', 'aria-hidden': 'true' }, step.done ? '✓' : step.skipped ? '–' : String(i + 1)), el('span', {}, TITLES[step.id], step.id === 'vault' ? heldCount : null, step.optional ? el('em', {}, ' ' + t('(valfritt)', '(optional)')) : null))));
   // A finished setup still opens every step: a step the operator picked is shown, so a key can be added or changed.
   const panel = ready && !state.view
     ? el('div', {}, el('h3', {}, t('Klart! Aura kan arbeta.', 'Done! Aura can work.')), el('p', {}, t('Skriv vad du vill ha hjälp med, eller tryck Prata.', 'Write what you want help with, or press Talk.')), button(t('Börja', 'Start'), close, { primary: true }), ' ', button(t('Lägg till eller byt nyckel', 'Add or change a key'), () => { state.view = 'brain'; render(); }))

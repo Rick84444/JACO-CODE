@@ -11,9 +11,9 @@ export const STEP_IDS = Object.freeze(['api', 'brain', 'vault', 'provider', 'act
 /**
  * @param {{
  *   report?: any, error?: string,
- *   vault?: { available?: boolean, keys?: string[], configured?: string[] } | null,
+ *   vault?: { available?: boolean, keys?: string[], fetched?: string[], configured?: string[] } | null,
  *   skippedVault?: boolean,
- * }} input  report: GET /api/jaco/activation; vault: Windows vault keys not yet imported, and names already configured
+ * }} input  report: GET /api/jaco/activation; vault: Windows vault key names, those JACO has stored, and names already configured
  * @returns {{ steps: Array<{ id: string, done: boolean, optional: boolean, skipped: boolean, detail: string }>, current: string | null, ready: boolean }}
  */
 export function setupSteps({ report = null, error = '', vault = null, skippedVault = false } = {}) {
@@ -21,7 +21,7 @@ export function setupSteps({ report = null, error = '', vault = null, skippedVau
   const brain = Boolean(up && report?.providers?.some(p => p.active));
   const provider = Boolean(brain && report?.planner?.reachable === true);
   const activated = Boolean(provider && report?.tools?.toolCount > 0 && report?.ok);
-  const pending = (vault?.keys || []).filter(name => !(vault?.configured || []).includes(name));
+  const pending = vaultRows(vault).filter(row => row.state === 'PENDING');
   const vaultDone = !pending.length;
   const steps = [
     { id: 'api', done: up, optional: false, skipped: false, detail: up ? 'RUNTIME_UP' : error ? 'RUNTIME_UNREACHABLE' : 'RUNTIME_CHECKING' },
@@ -32,6 +32,15 @@ export function setupSteps({ report = null, error = '', vault = null, skippedVau
   ];
   const next = steps.find(step => !step.done && !step.skipped);
   return { steps, current: next ? next.id : null, ready: steps.every(step => step.done || step.skipped) && activated };
+}
+
+/**
+ * Every Windows vault key with what JACO knows about it, by name: FETCHED (in JACO's encrypted store), PRESENT
+ * (already configured elsewhere, such as a local environment file) or PENDING (still only in the Windows vault).
+ */
+export function vaultRows(vault) {
+  const fetched = new Set(vault?.fetched || []), configured = new Set(vault?.configured || []);
+  return (vault?.keys || []).map(name => ({ name, state: fetched.has(name) ? 'FETCHED' : configured.has(name) ? 'PRESENT' : 'PENDING' }));
 }
 
 /** The model to pre-select for a step: a connected local model first (nothing leaves the computer), then a cloud default. */

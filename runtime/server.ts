@@ -4026,7 +4026,10 @@ const notifyPhone = async (action) => {
     try {
       const result = await listVaultSecrets({ prefix: 'JACO' });
       if (!result.ok) return res.json({ success: true, available: false, keys: [], reason: 'WINDOWS_VAULT_UNAVAILABLE' });
-      res.json({ success: true, available: true, keys: (result.keys || []).filter((key: string) => /^[A-Z][A-Z0-9_]{1,127}$/.test(key)) });
+      const keys = (result.keys || []).filter((key: string) => /^[A-Z][A-Z0-9_]{1,127}$/.test(key));
+      // Which of them JACO already holds (names only), so every surface can show what has been fetched.
+      const stored = new Set(new SecretStore().list().map((item: any) => item.name));
+      res.json({ success: true, available: true, keys, fetched: keys.filter((key: string) => stored.has(key)) });
     } catch {
       res.json({ success: true, available: false, keys: [], reason: 'WINDOWS_VAULT_UNAVAILABLE' });
     }
