@@ -22,3 +22,9 @@ Upstream: https://github.com/payner35/avatarz/tree/54dcccf96f3d73aa58474c51c3417
 - [ ] Verify dependency/asset licensing and actual local artifact build.
 - [ ] Verify physical desktop and Android performance, synchronisation and visual quality.
 - [ ] Merge only after relevant CI and acceptance evidence.
+
+## Serving and rights (review follow-up)
+- The head is a real person's likeness. The installer writes the bundle to `runtime/local/aura-splat` (git-ignored, outside `public/`), so neither `express.static` nor the client build can expose it. The runtime serves `/aura-splat` through one guarded route (`runtime/src/server/auraLocalAssets.mjs`): loopback peer only, no proxy headers, and no signed-in remote IDE session. A refused request gets the same 403 whether or not the file exists.
+- A copy left under `public/aura-splat` by an earlier layout is shadowed by that route and not served; startup warns, and a client build would still copy it.
+- The installer requires `--confirm-likeness-rights` and a rights notice that is readable UTF-8 text (at least 40 characters and 8 words, at most 1 MiB). It records the sha256 of the head and the notice in `PROVENANCE.txt`. This is a statement by the operator, not verified legal clearance.
+- Falsifier: a request through a proxy or from a remote IDE session that receives `head.zip`, or an installer run without the flag that installs. Unobserved: the real `requireLocalUi` behind a real tunnel, a real install (needs network and a rights-cleared head), Windows and Android paths.
