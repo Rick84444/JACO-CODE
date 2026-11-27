@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {LINEAR_OAUTH as p,beginLinearOAuth,completeLinearOAuth,refreshLinearOAuth} from '../../runtime/src/server/mcp/oauthReadonly.mjs';
+import {LINEAR_OAUTH as p,beginLinearOAuth,completeLinearOAuth,refreshLinearOAuth,createReadonlyOAuthClient} from '../../runtime/src/server/mcp/oauthReadonly.mjs';
 import {ReadonlyMcpOAuthSession} from '../../runtime/src/server/mcp/oauthReadonlySession.mjs';
 
 const redirectUri='http://127.0.0.1:43210/mcp/oauth/callback';
-function fixture({resource={},metadata={},registration={},token={},rejectNetwork=false}={}){
+function fixture({resource={},metadata={},registration={},token={},rejectNetwork=false,provider=p}={}){
+  const p=provider;
   const calls=[];
   const fetchImpl=async(url,init)=>{
     assert.equal(init.redirect,'error');
@@ -99,4 +100,67 @@ test('loopback callback authorizes once and never returns token to browser or st
   assert.equal(session.status().state,'authorized');
   assert.equal(session.status().accountVerified,false);
   assert.doesNotMatch(JSON.stringify(session.status()),/fixture-access|fixture-refresh/);
+});
+
+const secondProvider=Object.freeze({
+  issuer:'https://auth.example.invalid',
+  resource:'https://mcp.example.invalid/tools',
+  metadata:'https://auth.example.invalid/.well-known/oauth-authorization-server',
+  protectedResource:'https://mcp.example.invalid/.well-known/oauth-protected-resource/tools',
+  authorize:'https://auth.example.invalid/authorize',
+  token:'https://auth.example.invalid/token',
+  register:'https://auth.example.invalid/register',
+  scope:'read'
+});
+
+test('same OAuth engine works with a separate reviewed provider contract',async()=>{
+  const contract={...secondProvider};
+  const client=createReadonlyOAuthClient(contract);
+  contract.token='https://untrusted.example.invalid/token';
+  const f=fixture({provider:secondProvider});
+  const a=await client.begin({redirectUri,fetchImpl:f.fetchImpl});
+  assert.equal(new URL(a.url).origin,secondProvider.issuer);
+  const cb=callback(a,{iss:secondProvider.issuer});
+  const auth=await client.complete(a,cb,{fetchImpl:f.fetchImpl});
+  assert.equal(auth.issuer,secondProvider.issuer);
+  assert.equal(auth.resource,secondProvider.resource);
+  const rotated=await client.refresh(auth,{fetchImpl:f.fetchImpl});
+  assert.equal(rotated.issuer,secondProvider.issuer);
+  assert.deepEqual(f.calls.map(c=>c.url),[secondProvider.protectedResource,secondProvider.metadata,secondProvider.register,secondProvider.token,secondProvider.token]);
+});
+
+test('authorization attempts and credentials cannot cross provider engines',async()=>{
+  const client=createReadonlyOAuthClient(secondProvider);
+  const f=fixture({provider:secondProvider});
+  const a=await client.begin({redirectUri,fetchImpl:f.fetchImpl});
+  await assert.rejects(completeLinearOAuth(a,callback(a),{fetchImpl:f.fetchImpl}),/ATTEMPT_INVALID/);
+  await assert.rejects(client.complete({...a},callback(a,{iss:secondProvider.issuer}),{fetchImpl:f.fetchImpl}),/ATTEMPT_INVALID/);
+  const auth=await client.complete(a,callback(a,{iss:secondProvider.issuer}),{fetchImpl:f.fetchImpl});
+  await assert.rejects(refreshLinearOAuth(auth,{fetchImpl:f.fetchImpl}),/REFRESH_INVALID/);
+  assert.equal(f.calls.length,4);
+});
+
+test('generic client remains fail-closed on unreviewed destinations and scopes',async()=>{
+  for(const patch of [{token:'http://example.invalid/token'},{token:'https://user@example.invalid/token'},{scope:'write'},{extra:'unknown'}]){
+    assert.throws(()=>createReadonlyOAuthClient({...secondProvider,...patch}),/PROVIDER_CONTRACT_INVALID/);
+  }
+  const client=createReadonlyOAuthClient(secondProvider);
+  const f=fixture({provider:secondProvider,metadata:{token_endpoint:'https://untrusted.example.invalid/token'}});
+  await assert.rejects(client.begin({redirectUri,fetchImpl:f.fetchImpl}),/METADATA_MISMATCH/);
+  assert.equal(f.calls.length,2);
+});
+
+test('loopback session accepts a reviewed OAuth engine without Linear-specific network calls',async t=>{
+  const f=fixture({provider:secondProvider});
+  const client=createReadonlyOAuthClient(secondProvider);
+  let internal;
+  const session=new ReadonlyMcpOAuthSession({fetchImpl:f.fetchImpl,oauthClient:client,onAuthorized:async value=>{internal=value;}});
+  t.after(()=>session.cancel());
+  const {url}=await session.start();
+  const u=new URL(url);
+  const uri=u.searchParams.get('redirect_uri');
+  const response=await fetch(uri+'?'+new URLSearchParams({state:u.searchParams.get('state'),iss:secondProvider.issuer,code:'fixture-code'}));
+  assert.equal(response.status,200);
+  assert.equal(internal.issuer,secondProvider.issuer);
+  assert.doesNotMatch(await response.text(),/fixture-access|fixture-refresh/);
 });
