@@ -18,6 +18,8 @@ assert.ok(cssFiles.length,'production CSS required');
 const css=cssFiles.map(f=>fs.readFileSync(path.join(cssDir,f),'utf8')).join('\n');
 const brains=[{id:'claude',providerId:'claude-cli',label:'Claude',plan:'Claude Code',installed:true,loggedIn:false,loginKind:'browser'},{id:'gemini',providerId:'gemini-cli',label:'Gemini',plan:'Code Assist',installed:true,loggedIn:false,loginKind:'terminal',loginHint:'gemini'},{id:'codex',providerId:'codex-cli',label:'Codex',plan:'ChatGPT',installed:true,loggedIn:false,loginKind:'browser'}];
 const mutations=[];
+let linearPending=false;
+const linearStatus=()=>({success:true,provider:'linear',state:linearPending?'waiting':'idle',error:null,pending:linearPending,existingConfiguration:false,credentialState:'NOT_CONFIGURED',configured:false,accountVerified:false,verifiedAt:null,toolsDiscovered:null,runtimeReady:false,agentExecutionVerified:false});
 const server=http.createServer(async(req,res)=>{
   const send=(body,type='application/json')=>{res.setHeader('content-type',type);res.end(type==='application/json'?JSON.stringify(body):body);};
   if(req.url==='/'||req.url==='/?integrations=1')return send('<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><body style="background:#202225;color:white"><div id="root" style="width:min(100%,340px);margin:12px auto"></div><script type="module" src="/app.js"></script></body></html>','text/html');
@@ -26,8 +28,11 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='POST'||req.method==='PATCH'){
     let body='';for await(const c of req)body+=c;
     mutations.push({url:req.url,body:JSON.parse(body||'{}')});
+    if(req.url.endsWith('/mcp/oauth/linear/start')){linearPending=true;return send({success:true,state:'waiting',url:'https://mcp.linear.app/authorize?state=fixture-state&scope=read'});}
+    if(req.url.endsWith('/mcp/oauth/linear/cancel')){linearPending=false;return send(linearStatus());}
     return send({success:true,result:{state:'READY',id:'gemini',models:['fixture-model'],defaultModel:'fixture-model'}});
   }
+  if(req.url.endsWith('/mcp/oauth/linear'))return send(linearStatus());
   if(req.url.endsWith('/brains'))return send({success:true,brains});
   if(req.url.endsWith('/chatgpt-plan'))return send({success:true,connected:false,state:'disconnected',models:[]});
   if(req.url.endsWith('/providers/scan'))return send({success:true,providers:[]});
@@ -102,6 +107,26 @@ try{
     assert.equal(mutations.length,1,'setup review is not a connection');
     await page.keyboard.press('Escape');
     await setup.waitFor({state:'hidden'});
+    await page.getByRole('button',{name:'Review Linear integration'}).click();
+    const linear=page.getByRole('dialog',{name:'Linear'});
+    const signIn=linear.getByRole('button',{name:'Anslut med Linear',exact:true});
+    await signIn.waitFor();
+    assert.equal(mutations.length,1,'opening account dialog only reads status');
+    await signIn.click();
+    const signInLink=linear.getByRole('link',{name:'Öppna säker inloggning'});
+    await signInLink.waitFor();
+    assert.equal(await signInLink.getAttribute('href'),'https://mcp.linear.app/authorize?state=fixture-state&scope=read');
+    assert.equal(await signInLink.getAttribute('target'),'_blank');
+    assert.equal(mutations.at(-1).url,'/api/aura/workbench/mcp/oauth/linear/start');
+    const linearBounds=await linear.boundingBox();
+    assert.ok(linearBounds&&linearBounds.x>=0&&linearBounds.x+linearBounds.width<=width+1);
+    if(process.env.JACO_UI_SCREENSHOTS)await page.screenshot({path:path.join(process.env.JACO_UI_SCREENSHOTS,'linear-oauth-'+width+'.png')});
+    await linear.getByRole('button',{name:'Avbryt',exact:true}).click();
+    await signIn.waitFor();
+    assert.equal(await signInLink.count(),0);
+    assert.equal(mutations.at(-1).url,'/api/aura/workbench/mcp/oauth/linear/cancel');
+    await page.keyboard.press('Escape');
+    await linear.waitFor({state:'hidden'});
     assert.deepEqual(errors,[]);
     await page.close();
     mutations.length=0;
