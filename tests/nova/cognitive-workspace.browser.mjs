@@ -320,37 +320,48 @@ try {
   await page.setViewportSize({width:1440,height:960});
   passed('Cavern scene renders and returns to the original portrait without replacing the draft');
 
-  // Missing candidate must fail explicitly; never display the old rig under the new label.
+  // Aura's anatomical model is the default portrait. A missing candidate falls back to the lightform and says so;
+  // the lightform is never shown under Aura's label, and an explicit retry fails the same visible way.
   const anatomicalRoute='**/branding/aura-anatomical.glb';
+  const fallbackNotice='Auras modell saknas eller kunde inte verifieras';
   await page.route(anatomicalRoute,route=>route.fulfill({status:404,body:'Not installed'}));
   await portraitTrigger.click();
+  await portrait.getByText(fallbackNotice,{exact:false}).waitFor();
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.renderer==='rigged-particle-field');
+  assert.equal(await portrait.getByRole('button',{name:'Återgå till ljusgestalt',exact:true}).count(),0,'the lightform is not labelled as Aura');
   await portrait.getByRole('button',{name:'Aura anatomisk 3D',exact:true}).click();
-  await portrait.getByText('Den lokala anatomiska modellen saknas eller kunde inte verifieras.',{exact:false}).waitFor();
-  assert.equal(await portrait.locator('canvas').getAttribute('data-renderer'),null);
-  await portrait.getByRole('button',{name:'Återgå till ljusgestalt',exact:true}).click();
+  await portrait.getByText(fallbackNotice,{exact:false}).waitFor();
   await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.renderer==='rigged-particle-field');
   await page.keyboard.press('Escape');
   await portrait.waitFor({state:'detached'});
   await page.unroute(anatomicalRoute);
-  passed('Missing anatomical asset fails visibly and preserves the existing portrait');
+  passed('Missing anatomical model falls back visibly to the lightform portrait');
   if(process.env.JACO_AURA_ANATOMICAL_PATH){
     const candidate=fs.readFileSync(process.env.JACO_AURA_ANATOMICAL_PATH);
     await page.route(anatomicalRoute,route=>route.fulfill({status:200,contentType:'model/gltf-binary',body:candidate}));
     for(const width of [1440,393]){
       await page.setViewportSize({width,height:852});
       await portraitTrigger.click();
-      await portrait.getByRole('button',{name:'Aura anatomisk 3D',exact:true}).click();
+      // Default: Aura's model in the head-and-shoulders close-up, no button press needed.
       await page.waitForFunction(()=>{
         const d=document.querySelector('.aura-portrait-scene canvas')?.dataset;
-        return d?.renderer==='anatomical-textured-mesh'&&Number(d.triangles)>50000&&Number(d.renderedPoints)===0&&Number(d.bodyBones)>=6;
+        return d?.renderer==='anatomical-textured-mesh'&&d.framing==='portrait'&&Number(d.triangles)>50000&&Number(d.renderedPoints)===0&&Number(d.bodyBones)>=6;
       },{},{timeout:45000});
       await page.waitForFunction(()=>Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.blinkMm)>0.5,{},{timeout:15000});
-      await screenshot('aura-anatomical-'+width);
+      assert.equal(await portrait.getByText(fallbackNotice,{exact:false}).count(),0);
+      await screenshot('aura-anatomical-portrait-'+width);
+      await portrait.getByRole('button',{name:'Visa helkropp',exact:true}).click();
+      await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.framing==='full'&&document.querySelector('.aura-portrait-scene canvas')?.dataset.renderer==='anatomical-textured-mesh',{},{timeout:45000});
+      await screenshot('aura-anatomical-full-'+width);
+      await portrait.getByRole('button',{name:'Återgå till ljusgestalt',exact:true}).click();
+      await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.renderer==='rigged-particle-field');
+      await screenshot('aura-lightform-choice-'+width);
+      await portrait.getByRole('button',{name:'Aura anatomisk 3D',exact:true}).click();
       await page.keyboard.press('Escape');
       await portrait.waitFor({state:'detached'});
     }
     await page.unroute(anatomicalRoute);
-    passed('Exact provisioned V4 candidate renders skinned textured mesh and real blink deformation at desktop and mobile viewport');
+    passed('Provisioned anatomical candidate is the default close-up, switches to full body and to the lightform, with real blink deformation');
   }else console.log('SKIP anatomical positive browser test: JACO_AURA_ANATOMICAL_PATH not supplied');
   await page.setViewportSize({width:1440,height:960});
 

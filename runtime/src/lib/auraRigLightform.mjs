@@ -1006,11 +1006,14 @@ function disposeModel(model){
 /**
  * GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms.
  * @param {HTMLCanvasElement} canvas
- * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean, cavern?: boolean, anatomical?: boolean, stars?: boolean}} [options]
+ * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean, cavern?: boolean, anatomical?: boolean, stars?: boolean, framing?: 'full'|'portrait'}} [options]
  */
-export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,cavern=false,anatomical=false,stars=true}={}){
+export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,cavern=false,anatomical=false,stars=true,framing='full'}={}){
   if(anatomical&&cavern)throw Error('AURA_RIG_MODE_CONFLICT');
   const fullBody=cavern||anatomical;
+  // Head-and-shoulders view of the anatomical model, framed like the lightform portrait. The camera aims at the
+  // model's own Head bone, so the framing follows the model's height instead of a fixed number.
+  const closeUp=anatomical&&framing==='portrait';
   let bytes;
   if(anatomical)bytes=await fetchAnatomicalAsset(signal);
   else{
@@ -1074,7 +1077,15 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     const scene=new THREE.Scene(),cloud=new THREE.Points(geometry,material);
     cloud.frustumCulled=false;if(!anatomical)scene.add(cloud);
 
-    const camera=new THREE.PerspectiveCamera(fullBody?42:31,1,.03,fullBody?40:20);
+    const camera=new THREE.PerspectiveCamera(fullBody&&!closeUp?42:31,1,.03,fullBody?40:20);
+    let headAim=1.540;
+    if(closeUp){
+      model.updateMatrixWorld(true);
+      const headWorld=new THREE.Vector3();bones.get('Head').bone.getWorldPosition(headWorld);
+      // The Head bone sits at the base of the skull; the face centre is a few centimetres above it.
+      headAim=headWorld.y+.06;
+    }
+    canvas.dataset.framing=closeUp?'portrait':fullBody?'full':'portrait';
     camera.position.set(0,1.570,1.05);camera.lookAt(0,1.540,.03);
     renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:!fullBody,powerPreference:'low-power',preserveDrawingBuffer:!fullBody});
     renderer.setClearColor(0x000000,0);
@@ -1240,7 +1251,10 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         camY+=(pitchSpring.val*0.025-camY)*0.08;
       }
       const yaw=yawSpring.val,pitch=pitchSpring.val,roll=rollSpring.val;
-      if(anatomical){
+      if(closeUp){
+        camera.position.set(camX*.5,headAim+.03+camY,1.05);
+        camera.lookAt(0,headAim,.03);
+      }else if(anatomical){
         // V4 measured rest bounds: y=-.002..1.782 m; allow head/hand clearance.
         const distance=Math.max(2.95,1.9/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*Math.min(1,camera.aspect))+.3);
         camera.position.set(camX*.7,.90,distance+.15);camera.lookAt(0,.90,.04);

@@ -31,6 +31,15 @@ interface Dictation {
 const CONVERSATION_KEY = 'jaco.aura.conversation';
 function savedConversation() { try { return localStorage.getItem(CONVERSATION_KEY) === '1'; } catch { return false; } }
 
+
+const PORTRAIT_MODE_KEY='jaco.aura.portraitMode';
+function readPortraitMode(): 'aura' | 'lightform' | null {
+  try { const v=globalThis.localStorage?.getItem(PORTRAIT_MODE_KEY); return v==='aura'||v==='lightform'?v:null; } catch { return null; }
+}
+function writePortraitMode(mode: 'aura' | 'lightform') {
+  try { globalThis.localStorage?.setItem(PORTRAIT_MODE_KEY,mode); } catch { /* the choice just is not remembered */ }
+}
+
 export default function AuraPortrait({ tone, label, chat, onClose }: {
   tone: string;
   label: string;
@@ -53,7 +62,12 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const [maskError, setMaskError] = useState(false);
   const [photoreal, setPhotoreal] = useState(false);
   const [cavern, setCavern] = useState(false);
-  const [anatomical, setAnatomical] = useState(false);
+  // Aura's anatomical model is the default portrait; the lightform stays one click away. Only an explicit choice is
+  // remembered, so an automatic fallback (model missing) never hides Aura once a verified model is installed.
+  const [anatomical, setAnatomical] = useState(() => readPortraitMode() !== 'lightform');
+  const [framing, setFraming] = useState<'portrait' | 'full'>('portrait');
+  const [anatomicalFallback, setAnatomicalFallback] = useState(false);
+  const choosePortrait = (mode: 'aura' | 'lightform') => { writePortraitMode(mode); setAnatomicalFallback(false); setAnatomical(mode === 'aura'); };
   const audioTap = useRef<MediaStream | null>(null);
   // Conversation mode: listen, send after a pause, hear the reply, listen again.
   const [conversation, setConversation] = useState(savedConversation);
@@ -400,13 +414,18 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const options={signal:controller.signal,onError:()=>{if(!controller.signal.aborted)setMaskError(true);}};
     const load=photoreal
       ? import('../lib/auraSplatProvider.mjs').then(({createAuraSplatProvider})=>createAuraSplatProvider(element,options))
-      : import('../lib/auraRigLightform.mjs').then(({createAuraRigLightform})=>createAuraRigLightform(element,{...options,cavern,anatomical}));
+      : import('../lib/auraRigLightform.mjs').then(({createAuraRigLightform})=>createAuraRigLightform(element,{...options,cavern,anatomical,framing}));
     void load.then(instance=>{
       if(controller.signal.aborted){instance.dispose();return;}
       rig.current=instance;instance.setState({...rigState.current,audioSource:audioTap.current});
-    }).catch(()=>{if(!controller.signal.aborted)setMaskError(true);});
+    }).catch(()=>{
+      if(controller.signal.aborted)return;
+      // A missing or unverified model falls back to the lightform and says so; it is never shown under Aura's label.
+      if(anatomical){setAnatomicalFallback(true);setAnatomical(false);return;}
+      setMaskError(true);
+    });
     return()=>{controller.abort();rig.current?.dispose();rig.current=null;};
-  },[photoreal,cavern,anatomical]);
+  },[photoreal,cavern,anatomical,framing]);
 
   return <dialog ref={dialog} className="aura-portrait" aria-labelledby="aura-portrait-title"
     onCancel={event => { event.preventDefault(); onClose(); }}
@@ -430,13 +449,17 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     <button type="button" aria-pressed={photoreal} disabled={speaking || listening || awaiting} onClick={()=>{setAnatomical(false);setCavern(false);setPhotoreal(value=>!value);}}>
       {photoreal ? tr('Återgå till ljusgestalt', 'Return to lightform') : tr('Prova lokalt ansikte (experimentellt)', 'Try local face (experimental)')}
     </button>
-    <button type="button" aria-pressed={anatomical} disabled={speaking || preparingSpeech || listening || awaiting} onClick={()=>{setPhotoreal(false);setCavern(false);setAnatomical(value=>!value);}}>
+    <button type="button" aria-pressed={anatomical} disabled={speaking || preparingSpeech || listening || awaiting} onClick={()=>{setPhotoreal(false);setCavern(false);choosePortrait(anatomical?'lightform':'aura');}}>
       {anatomical ? tr('Återgå till ljusgestalt','Return to lightform') : tr('Aura anatomisk 3D','Aura anatomical 3D')}
     </button>
+    {anatomical && <button type="button" aria-pressed={framing==='full'} disabled={speaking || preparingSpeech || listening || awaiting} onClick={()=>setFraming(value=>value==='portrait'?'full':'portrait')}>
+      {framing==='portrait' ? tr('Visa helkropp','Show full body') : tr('Visa ansikte','Show face')}
+    </button>}
     </div>
     {anatomical && <p className="aura-portrait-voice-note">{tr('Texturerad anatomisk kandidat (V4/V6/V31). Hår, dräkt och ansiktslikhet är inte slutgiltiga.','Textured anatomical candidate (V4/V6/V31). Hair, clothing and facial likeness are not final.')}</p>}
     {cavern && <p className="aura-portrait-voice-note">{tr('Lokal 3D-scen · befintlig rigg, ännu inte det slutliga ansiktet.', 'Local 3D scene · existing rig, not yet the final face.')}</p>}
     {photoreal && <p className="aura-portrait-voice-note">{tr('Kräver en lokalt installerad, licensgodkänd ansiktsmodell. Ljudstyrd formantanimation; inte verifierad läppsynk.', 'Requires a locally installed, rights-cleared head. Audio-driven formant animation; lip sync not verified.')}</p>}
+    {anatomicalFallback && !anatomical && !cavern && !photoreal && <p role="status">{tr('Auras modell saknas eller kunde inte verifieras, så ljusgestalten visas. Installera en verifierad V4-, V6- eller V31-modell.','Aura\'s model is missing or could not be verified, so the lightform is shown. Install a verified V4, V6 or V31 model.')}</p>}
     {maskError && <p role="status">{anatomical ? tr('Den lokala anatomiska modellen saknas eller kunde inte verifieras. Installera en verifierad V4-, V6- eller V31-modell eller välj en annan visning.','The local anatomical model is missing or could not be verified. Install a verified V4, V6 or V31 model or select another view.') : photoreal ? tr('Lokalt ansikte kunde inte användas. Kontrollera installation eller återgå till ljusgestalt.', 'Local face unavailable. Check installation or return to lightform.') : tr('Den tredimensionella gestalten kunde inte laddas. Chatten är fortfarande tillgänglig.', 'The 3D lightform could not load. Chat remains available.')}</p>}
     <p data-tone={tone}>{label}</p>
     {chat && <div className="aura-portrait-conversation">
