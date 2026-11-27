@@ -110,6 +110,7 @@ try{
     await page.getByRole('button',{name:'Review Linear integration'}).click();
     const linear=page.getByRole('dialog',{name:'Linear'});
     const signIn=linear.getByRole('button',{name:'Anslut med Linear',exact:true});
+    assert.equal(await linear.getByRole('button',{name:/Configure API key manually|Configure connection/}).count(),0,'Linear account onboarding must not offer a manual key fallback');
     await signIn.waitFor();
     assert.equal(mutations.length,1,'opening account dialog only reads status');
     await signIn.click();
