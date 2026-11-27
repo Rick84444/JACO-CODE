@@ -690,14 +690,6 @@ try {
     return d?.conversationFloor==='speaking'&&d?.articulationSource==='audio-formants'&&Number(d?.jawMm)>.5;
   },{},{timeout:15000});
   await screenshot('aura-rig-speaking');
-  await page.evaluate(()=>{
-    window.SpeechRecognition=class {
-      start(){window.auraInterruptRecording=this;}
-      abort(){}
-    };
-  });
-  // Re-render has already read the recognition constructor; the controlled
-  // recognition error scenario below verifies speech events separately.
   await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='idle',{},{timeout:15000});
   await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm==='0.000');
   await page.unroute('**/api/aura/voice/speak');
