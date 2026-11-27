@@ -3,7 +3,7 @@
 // uses it or talks about it, then fades; she looks at it, then back at the operator. Everything shown comes from
 // real runtime receipts (MCP call log, live mission stream, gameboard, browser frames) and the IDE's chat session.
 import { extractWorkspaceActions, workspaceReplyText } from '/vendor/workspace-actions.mjs';
-import { speechParts } from '/vendor/speech-parts.mjs';
+import { speechParts, pcmSamples } from '/vendor/speech-parts.mjs';
 import { init as initSetup } from '/setup.js';
 
 const $ = id => document.getElementById(id);
@@ -229,21 +229,68 @@ const voice = (() => {
   const show = () => $('voice').setAttribute('aria-pressed', String(readAloud));
   show();
   function stop() { const c = current; current = null; try { c?.cancel(); } catch { /* already stopped */ } aura.voice(null); }
+  // The sound output is opened by a press or a key (browsers refuse it otherwise) and then kept.
+  let sound = null;
+  const wake = () => { try { sound ??= new AudioContext({ sampleRate: 24000 }); if (sound.state === 'suspended') void sound.resume(); } catch { sound = null; } };
+  addEventListener('pointerdown', wake, true); addEventListener('keydown', wake, true);
+  // Plays each part while it is still being generated. Returns how many parts were heard, so the caller can speak
+  // the rest from whole files if streaming is not available.
+  async function speakStreamed(parts, lang, handle, controller) {
+    wake();
+    if (!sound) return 0;
+    await Promise.race([sound.resume().catch(() => {}), new Promise(r => setTimeout(r, 300))]);
+    if (sound.state !== 'running') return 0;
+    const out = sound.createGain(), tap = sound.createMediaStreamDestination(), sources = new Set();
+    out.connect(sound.destination); out.connect(tap);
+    handle.onCancel.push(() => { sources.forEach(s => { try { s.stop(); } catch { /* ended */ } }); out.disconnect(); });
+    const request = part => fetch('/api/aura/voice/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ text: part, lang }) });
+    let at = 0, next = request(parts[0]), heard = 0, started = false;
+    for (let i = 0; i < parts.length; i++) {
+      let pieces = 0;
+      try {
+        const response = await next;
+        if (!response.ok || !response.body) break;
+        const reader = response.body.getReader();
+        let carry = null;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (current !== handle) return parts.length;
+          if (done) break;
+          // The next part is asked for as soon as this one starts, so there is no pause between them.
+          if (!pieces++ && i + 1 < parts.length) { next = request(parts[i + 1]); next.catch(() => {}); }
+          const read = pcmSamples(carry, value); carry = read.carry;
+          if (!read.samples.length) continue;
+          const buffer = sound.createBuffer(1, read.samples.length, 24000); buffer.copyToChannel(read.samples, 0);
+          const source = sound.createBufferSource(); source.buffer = buffer; source.connect(out);
+          at = Math.max(at, sound.currentTime + 0.05); source.start(at); at += buffer.duration;
+          sources.add(source); source.onended = () => sources.delete(source);
+          if (!started) { started = true; aura.voice(tap.stream); }
+        }
+      } catch (error) { if (controller.signal.aborted) return parts.length; if (!pieces) break; }
+      if (!pieces) break;
+      heard = i + 1;
+    }
+    // Wait until the last scheduled sound has played.
+    while (current === handle && sound.currentTime < at) await new Promise(r => setTimeout(r, 100));
+    return heard;
+  }
   // Sentence by sentence: the next one is synthesized while the current one plays, so she starts quickly.
   async function speak(text) {
     stop();
     const parts = speechParts(text); if (!parts.length) return;
     const lang = /[åäö]|\b(och|jag|det|är|inte|du|har)\b/i.test(text) ? 'sv-SE' : 'en-US';
     const controller = new AbortController(), audio = new Audio(), urls = [];
-    const handle = { cancel() { controller.abort(); audio.pause(); urls.forEach(u => URL.revokeObjectURL(u)); } };
+    const handle = { onCancel: [], cancel() { controller.abort(); audio.pause(); this.onCancel.forEach(f => f()); urls.forEach(u => URL.revokeObjectURL(u)); } };
     current = handle;
     const synth = part => fetch('/api/aura/voice/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ text: part, lang }) })
       .then(async r => { if (!r.ok) throw new Error('VOICE_UNAVAILABLE'); const u = URL.createObjectURL(await r.blob()); urls.push(u); return u; });
     audio.onplay = () => { if (current === handle) aura.voice(audio.captureStream?.() ?? null); };
     const play = url => new Promise((resolve, reject) => { audio.onended = resolve; audio.onerror = () => reject(new Error('VOICE_PLAYBACK_FAILED')); audio.src = url; audio.play().catch(reject); });
     try {
-      let next = synth(parts[0]);
-      for (let i = 0; i < parts.length; i++) {
+      const from = await speakStreamed(parts, lang, handle, controller);
+      if (current !== handle || from >= parts.length) return;
+      let next = synth(parts[from]);
+      for (let i = from; i < parts.length; i++) {
         const url = await next; if (current !== handle) return;
         if (i + 1 < parts.length) { next = synth(parts[i + 1]); next.catch(() => {}); }
         await play(url); if (current !== handle) return;

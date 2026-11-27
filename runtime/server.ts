@@ -90,7 +90,7 @@ import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { WORKSPACE_CONTROL_INSTRUCTION, STAGE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
 import { operatorStageAssets } from "./operator-stage/assets.mjs";
 import { webSearch } from "./src/server/mcp/webSearch.mjs";
-import { geminiSpeak } from "./src/server/connected/geminiVoice.mjs";
+import { geminiSpeak, geminiSpeakStream } from "./src/server/connected/geminiVoice.mjs";
 import { createStackRepair } from "./src/server/connected/stackRepair.mjs";
 import { createPiperVoice } from "./src/server/connected/piperVoice.mjs";
 import { renewStandingGrants } from "./src/server/desktop/grantAtStart.mjs";
@@ -1094,6 +1094,27 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
       catch (error: any) { failures.push(String(error?.message || 'VOICE_FAILED').slice(0, 80)); }
     }
     res.status(503).json({ success: false, error: failures.join('; ').slice(0, 200) || 'VOICE_UNAVAILABLE' });
+  });
+  // The same voice as it is generated: raw 24 kHz sound in pieces. A failure before the first piece answers 503, and
+  // the page then asks /voice/speak for a whole file.
+  app.post('/api/aura/voice/stream', requireLocalUiSameOrigin, async (req, res) => {
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+    if (!text.trim() || text.length > 6000) return res.status(400).json({ success: false, error: 'VOICE_TEXT_INVALID' });
+    const lang = typeof req.body?.lang === 'string' && /^[a-z]{2}-[A-Z]{2}$/.test(req.body.lang) ? req.body.lang : 'sv-SE';
+    if (process.env.JACO_AURA_VOICE === 'piper' || process.env.JACO_AURA_VOICE === 'neural') return res.status(503).json({ success: false, error: 'VOICE_STREAM_NOT_CHOSEN' });
+    try {
+      // The generation is read to its end even if the listener leaves, so the cost is settled from Google's report.
+      await geminiSpeakStream(text, { apiKey: process.env.GEMINI_API_KEY || '', economic: continuumSurface.runtime.economic,
+        voice: process.env.JACO_AURA_GEMINI_VOICE || 'Kore', lang, onChunk: (pcm: Buffer) => {
+          if (res.writableEnded || res.destroyed) return;
+          if (!res.headersSent) { res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Jaco-Voice', 'gemini-stream'); res.type('audio/l16; rate=24000; channels=1'); }
+          res.write(pcm);
+        } });
+      res.end();
+    } catch (error: any) {
+      if (!res.headersSent) res.status(503).json({ success: false, error: String(error?.message || 'VOICE_FAILED').slice(0, 80) });
+      else res.destroy();
+    }
   });
   // Metadata only. Existing env, encrypted store and legacy Windows vault remain the owners.
   app.get('/api/aura/workbench/vault/discovery', requireLocalUiSameOrigin, (_req, res) => {
