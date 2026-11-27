@@ -4,7 +4,10 @@ export const ANATOMICAL_BYTES=37095016;
 export const ANATOMICAL_SHA256='c5971c63aec5922b8df83bc207839146d0f419b84e1a33ae611cb1862ec81ccc';
 export const ANATOMICAL_CANDIDATES=Object.freeze([
   Object.freeze({version:'V4',bytes:ANATOMICAL_BYTES,sha256:ANATOMICAL_SHA256}),
-  Object.freeze({version:'V6',bytes:39494416,sha256:'ba7479460465de16178f2620a611910f48f39b87d1abc8e5eb8d8cd37a8f5a8b'})
+  Object.freeze({version:'V6',bytes:39494416,sha256:'ba7479460465de16178f2620a611910f48f39b87d1abc8e5eb8d8cd37a8f5a8b'}),
+  // Operator-built JACO candidate, normalised to 1.75 m with soles at y=0. Values come from the operator's own
+  // measurement report; a file that does not match both exactly is refused, never accepted.
+  Object.freeze({version:'V31-JACO',bytes:45304080,sha256:'ea9c4646cf197f042fa4a39ea8ecd5a438adb1b0865c8eddb0749d0915bd6129'})
 ]);
 export function validateAnatomicalHeader(bytes){
   const candidate=ANATOMICAL_CANDIDATES.find(c=>c.bytes===bytes.byteLength);

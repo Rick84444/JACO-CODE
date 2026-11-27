@@ -19,7 +19,7 @@ export async function installCandidate(source,destination){
   return {...candidate,destination};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
-  if(!process.argv[2])throw Error('Usage: node runtime/scripts/install-aura-anatomical.mjs <Aura-V4-compact.glb|Aura-V6-garment-study.glb>');
+  if(!process.argv[2])throw Error('Usage: node runtime/scripts/install-aura-anatomical.mjs <Aura-V4-compact.glb|Aura-V6-garment-study.glb|Aura-V31-JACO.glb>');
   const destination=fileURLToPath(new URL('../public/branding/aura-anatomical.glb',import.meta.url));
   console.log(JSON.stringify(await installCandidate(resolve(process.argv[2]),destination)));
 }
