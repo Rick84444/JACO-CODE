@@ -365,8 +365,8 @@ class StdioClient {
 const launchKey = def => JSON.stringify([def.transport, def.command, def.args, def.env, def.cwd, def.url, def.tokenEnv]);
 
 export class StdioMcpHost {
-  constructor({ configFile, repoRoot, runtimeRoot, log = () => {}, now = () => Date.now() }) {
-    Object.assign(this, { configFile, repoRoot, runtimeRoot, log, now });
+  constructor({ configFile, repoRoot, runtimeRoot, log = () => {}, now = () => Date.now(), oauthCredentials = readonlyOAuthCredentials }) {
+    Object.assign(this, { configFile, repoRoot, runtimeRoot, log, now, oauthCredentials });
     this.clients = new Map();
     // Feedback for the IDE: per-server counters and the latest calls, newest first.
     this.stats = new Map();
@@ -473,7 +473,7 @@ export class StdioMcpHost {
     if (!def) throw new Error(`MCP_SERVER_UNKNOWN:${id}`);
     if (def.validationError) throw Error(def.validationError);
     let c = this.clients.get(id);
-    if (!c || launchKey(c.def) !== launchKey(def)) { c?.stop(); c = def.transport === 'http' ? new HttpMcpClient(id, def) : new StdioClient(id, def, { log: this.log }); this.clients.set(id, c); }
+    if (!c || launchKey(c.def) !== launchKey(def)) { c?.stop(); c = def.transport === 'http' ? new HttpMcpClient(id, def, {oauthCredentials:this.oauthCredentials}) : new StdioClient(id, def, { log: this.log }); this.clients.set(id, c); }
     else c.def = def;
     return c;
   }
@@ -490,7 +490,7 @@ export class StdioMcpHost {
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
       if (def.validationError) return { id, catalogMatch:MCP_INTEGRATION_CATALOG.some(p=>p.id===id)?false:undefined, name: def.name, role: def.role, transport: def.transport || 'stdio', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
       const sameLaunch = Boolean(c && launchKey(c.def) === launchKey(def));
-      const oauthStatus=isOAuthReference(def.tokenEnv)?readonlyOAuthCredentials.status():null;
+      const oauthStatus=isOAuthReference(def.tokenEnv)?this.oauthCredentials.status():null;
       const tools = (sameLaunch && c.initialized && oauthStatus?.credentialConfigured!==false ? c.tools : []).map(t => {
         const reads = Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name));
         const consequence = reads ? 'READ' : id === 'git' && /push|merge|release|publish/i.test(t.name) ? 'PUBLISH'
@@ -574,7 +574,7 @@ export class StdioMcpHost {
       // Never retry a call after entering the transport. A remote error string
       // is not evidence that dispatch did not occur.
       const result = await c.request('tools/call', { name, arguments: args }, timeoutMs);
-      done(result?.isError === true ? 'tool_error' : 'ok', result?.isError === true ? String((result.content || []).map(x => x?.text || '').join(' ')).slice(0, 300) : null);
+      done(result?.isError === true ? 'tool_error' : 'ok', result?.isError === true ? (isOAuthReference(c.def.tokenEnv)?'MCP_REMOTE_TOOL_ERROR':String((result.content || []).map(x => x?.text || '').join(' ')).slice(0, 300)) : null);
       return result;
     } catch (e) {
       const message = String(e.message || e).slice(0,300); done('failed',message);
