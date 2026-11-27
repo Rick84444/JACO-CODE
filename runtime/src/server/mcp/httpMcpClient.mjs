@@ -110,7 +110,7 @@ export class HttpMcpClient {
   }
   result(message) {
     // Remote error text can contain credentials or request details; expose a bounded code only.
-    if (message.error) throw rpcError(message.error);
+    if (message.error) throw rpcError(isOAuthReference(this.def.tokenEnv)?{code:message.error.code}:message.error);
     return message.result;
   }
   start() {
