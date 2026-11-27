@@ -5,6 +5,7 @@ import {bodyMotion,approachAngle} from './auraBodyMotion.mjs';
 import {createBlinkController,approachFacialWeight} from './auraFacialDynamics.mjs';
 import {createConversationBehavior} from './auraConversationBehavior.mjs';
 import {fetchAnatomicalAsset} from './auraAnatomicalAsset.mjs';
+import {createHeadAudioBridge,HEAD_AUDIO_VISEMES} from './auraHeadAudio.mjs';
 
 // JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
 // A light-form is sampled from the actual skinned geometry, never from a portrait.
@@ -184,12 +185,14 @@ const SWAY=String.raw`
  * - NEVER calls unargumented `sourceNode.disconnect()` on external AudioNodes, preventing accidental detachment of main playback speakers.
  * - Uses fftSize=1024 (~46.8 Hz resolution at 48 kHz) to resolve F0 pitch, F1/F2 vowel formants, and spectral Shannon entropy.
  */
-export function createVoiceFormantTracker(){
+export function createVoiceFormantTracker({headAudio=false}={}){
+  const headBridge=headAudio?createHeadAudioBridge():null;
   let ctx=null,ownsContext=false,analyser=null,sourceNode=null,ownsSourceNode=false,bins=null,connected=false;
   let noiseFloor=0.012;
   const result={level:0,openVowel:0,roundVowel:0,spreadVowel:0,sibilant:0,entropy:0};
 
   function detachCurrent(){
+    headBridge?.detach();
     if(sourceNode&&analyser){
       try{
         // Only disconnect the specific analyser branch; never blanket-disconnect an external AudioNode
@@ -322,6 +325,8 @@ export function createVoiceFormantTracker(){
       result.entropy=entropy;
       return result;
     },
+    sampleHeadAudio(dt,active){return headBridge?.sample(ctx,sourceNode,dt,active&&connected&&ownsSourceNode)||null;},
+    suspendHeadAudio(){headBridge?.detach();},
     isConnected(){return connected;},
     dispose(){
       detachCurrent();
@@ -1096,7 +1101,9 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     const bodyNames={hips:['Hips','Pelvis','hips','pelvis'],spine:['Spine','Spine1','spine'],leftArm:['LeftArm','LeftUpperArm','leftUpperArm'],rightArm:['RightArm','RightUpperArm','rightUpperArm'],leftForearm:['LeftForeArm','LeftForearm','LeftLowerArm','leftLowerArm'],rightForearm:['RightForeArm','RightForearm','RightLowerArm','rightLowerArm'],leftHand:['LeftHand','leftHand'],rightHand:['RightHand','rightHand']};
     const bodyBone=Object.fromEntries(Object.entries(bodyNames).map(([key,names])=>[key,names.find(name=>bones.has(name))]));
     if(fullBody)canvas.dataset.bodyBones=String(Object.values(bodyBone).filter(Boolean).length);
-    voiceTracker=createVoiceFormantTracker();
+    const completeVisemes=HEAD_AUDIO_VISEMES.every(name=>name in face.morphTargetDictionary);
+    voiceTracker=createVoiceFormantTracker({headAudio:anatomical&&completeVisemes});
+    if(anatomical)canvas.dataset.headAudioRig=completeVisemes?'complete':'missing-visemes';
     qualityGovernor=createQualityGovernor(isMobile);
     behaviorEngine=createBehaviorEngine();
 
@@ -1279,6 +1286,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const blink=blinkController.sample(time/1000,turn?.floor==='speaking'?'speaking':phase,still);
       const faceDt=finiteClamp(rawDt/1000,0,.12,1/30);
 
+      const headWeights=voiceTracker.sampleHeadAudio(rawDt,!still&&state.speechPlaying===true&&!state.phonemes);
       const missingArticulation=!liveFormants&&!hasExternalLevel&&!state.phonemes;
       const visemes=behaviorEngine.computeVisemes(t,still||Boolean((fullBody||managed)&&missingArticulation)||Boolean(managed&&!state.speechPlaying),state,liveFormants,hasExternalLevel);
       smoothJaw=still?0:approachFacialWeight(smoothJaw,visemes.jaw,faceDt,.32);
@@ -1306,11 +1314,15 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       assign('eyeBlinkLeft',lid);assign('eyeBlinkRight',lid);
       assign('eyeSquintLeft',squint);assign('eyeSquintRight',squint);
       assign('cheekSquintLeft',squint*.7);assign('cheekSquintRight',squint*.7);
-      assign('jawOpen',smoothJaw);
-      assign('viseme_aa',smoothAA);
-      assign('viseme_O',smoothO);
-      assign('viseme_E',smoothE);
-      assign('viseme_U',smoothU);
+      if(headWeights){
+        // Upstream Oculus targets contain their own jaw deformation; do not stack the FFT jaw.
+        assign('jawOpen',0);
+        for(const name of HEAD_AUDIO_VISEMES)assign(name,headWeights[name]);
+      }else{
+        assign('jawOpen',smoothJaw);
+        for(const name of HEAD_AUDIO_VISEMES)assign(name,0);
+        assign('viseme_aa',smoothAA);assign('viseme_O',smoothO);assign('viseme_E',smoothE);assign('viseme_U',smoothU);
+      }
       assign('mouthSmileLeft',smile);assign('mouthSmileRight',smile);
       assign('browInnerUp',still?0:turn?turn.brow:.05+.15*energy*(.5+.5*Math.sin(t*1.25))+smoothJaw*.15+(isDecision?.14:0));
       assign('browOuterUpLeft',still?0:turn?turn.brow*.6:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
@@ -1370,7 +1382,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       canvas.dataset.blinkMm=displacement(probes[0]).toFixed(3);
       canvas.dataset.jawMm=displacement(probes[1]).toFixed(3);
       canvas.dataset.cognitivePhase=phase;
-      if(turn){canvas.dataset.conversationFloor=turn.floor;canvas.dataset.conversationAttention=turn.attention.toFixed(4);canvas.dataset.conversationGesture=turn.gesture.toFixed(4);canvas.dataset.articulationSource=!state.speechPlaying?'none':state.phonemes?'timed-or-explicit':liveFormants?'audio-formants':hasExternalLevel?'audio-level-approximate':'unavailable';}
+      if(turn){canvas.dataset.conversationFloor=turn.floor;canvas.dataset.conversationAttention=turn.attention.toFixed(4);canvas.dataset.conversationGesture=turn.gesture.toFixed(4);canvas.dataset.articulationSource=!state.speechPlaying?'none':state.phonemes?'timed-or-explicit':headWeights?'headaudio-classifier':liveFormants?'audio-formants':hasExternalLevel?'audio-level-approximate':'unavailable';}
       canvas.dataset.qualityTier=qualityTier>0.5?'high':'mobile-adaptive';
       canvas.dataset.audioConnected=String(voiceTracker.isConnected());
     };
@@ -1392,7 +1404,8 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       raf=requestAnimationFrame(tick);
     };
     const refresh=()=>{
-      cancelAnimationFrame(raf);if(disposed||document.hidden)return;
+      cancelAnimationFrame(raf);if(disposed||document.hidden||motion.matches)voiceTracker?.suspendHeadAudio();
+      if(disposed||document.hidden)return;
       last=-Infinity;render(motion.matches?0:performance.now());
       if(!motion.matches)raf=requestAnimationFrame(tick);
     };

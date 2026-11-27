@@ -79,3 +79,6 @@ extensions/jaco-vscode/package-lock.json
 # Operator-provisioned experimental anatomical model
 /runtime/public/branding/aura-anatomical.glb
 /runtime/public/branding/aura-anatomical.glb.tmp-*
+
+# Operator-provisioned rights-cleared HeadAudio model
+/runtime/public/branding/aura-headaudio-model.bin
