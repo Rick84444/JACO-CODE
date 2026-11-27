@@ -4,6 +4,11 @@ on:
     paths:
       - '.github/workflows/aura-rigged-model.yml'
       - 'runtime/scripts/inspect-aura-rig.mjs'
+      - 'runtime/scripts/inspect-aura-v31.mjs'
+      - 'runtime/scripts/install-aura-v31.mjs'
+      - 'runtime/src/lib/auraRigLightform.mjs'
+      - 'runtime/public/branding/aura-anatomical.glb'
+      - 'openspec/changes/add-interactive-avatar/specs/interactive-avatar/spec.md'
       - 'openspec/changes/add-interactive-avatar/rigged-model-evaluation.md'
   workflow_dispatch:
 permissions:
@@ -19,6 +24,15 @@ jobs:
           node-version: '24'
       - name: Verify exact CC0 model and inspect real skeleton and morphs
         run: node runtime/scripts/inspect-aura-rig.mjs
+      - name: Verify V31 candidate if supplied (legacy evidence is not V31 approval)
+        shell: bash
+        run: |
+          if [ -f runtime/public/branding/aura-anatomical.glb ]; then
+            node runtime/scripts/inspect-aura-v31.mjs runtime/public/branding/aura-anatomical.glb | tee aura-rig-evidence/v31-manifest.json
+          else
+            echo "::notice::V31 binary not supplied; V31 structural and visual acceptance remain pending."
+            printf '%s\n' '{"version":"V31","structuralStatus":"NOT_TESTED","visualStatus":"NOT_TESTED","reason":"ASSET_MISSING"}' > aura-rig-evidence/v31-manifest.json
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: aura-verified-rig
