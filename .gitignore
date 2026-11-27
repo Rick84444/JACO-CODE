@@ -75,3 +75,7 @@ extensions/jaco-vscode/package-lock.json
 # Operator-provisioned experimental photoreal face and generated local bundle
 /runtime/public/aura-splat/
 /runtime/.aura-splat-stage-*/
+
+# Operator-provisioned experimental anatomical model
+/runtime/public/branding/aura-anatomical.glb
+/runtime/public/branding/aura-anatomical.glb.tmp-*
