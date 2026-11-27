@@ -3,6 +3,7 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {createIceCavern,createCavernAvatar,cavernGovernor} from './auraCavern.mjs';
 import {bodyMotion,approachAngle} from './auraBodyMotion.mjs';
 import {createBlinkController,approachFacialWeight} from './auraFacialDynamics.mjs';
+import {createConversationBehavior} from './auraConversationBehavior.mjs';
 
 // JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
 // A light-form is sampled from the actual skinned geometry, never from a portrait.
@@ -1089,6 +1090,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     };
 
     const blinkController=createBlinkController();
+    const conversationBehavior=createConversationBehavior();
     let energy=0,gazeX=0,gazeY=0,smoothJaw=0;
     let listeningSince=0, previousYaw=0;
     let smoothAA=0,smoothO=0,smoothE=0,smoothU=0,decisionBlend=0,pupilSize=0.31;
@@ -1165,6 +1167,8 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
 
       const qualityTier=qualityGovernor.update(rawDt,time);
       const phase=behaviorEngine.resolvePhase(state,busPhase);
+      const managed=state.conversationManaged===true;
+      const turn=managed?conversationBehavior.sample(time/1000,state,still):null;
       const isAnalyzing=phase==='analyzing';
       const isVerifying=phase==='verifying';
       const isDecision=phase==='awaiting_decision';
@@ -1193,9 +1197,9 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const contactAge=contact?Math.max(0,t-listeningSince):0;
       const follow=smoothstep(.22,.90,contactAge);
       const idleYaw=clamp(inputX,-1,1)*.36+organicYaw+verifyScanX*.35;
-      const targetYaw=still?0:contact?previousYaw*(1-follow)+idleYaw*.12*follow:idleYaw;
-      const targetPitch=still?0:clamp(inputY,-1,1)*.16+organicPitch+(state.listening?.032:0)-(isAnalyzing?.025:0);
-      const targetRoll=still?0:organicRoll-targetYaw*.15+(state.listening?.042:0)+analyzeTilt;
+      const targetYaw=still?0:turn?idleYaw*(1-turn.attention*.87):contact?previousYaw*(1-follow)+idleYaw*.12*follow:idleYaw;
+      const targetPitch=still?0:turn?turn.pitch+(clamp(inputY,-1,1)*.16+organicPitch)*turn.motion:clamp(inputY,-1,1)*.16+organicPitch+(state.listening?.032:0)-(isAnalyzing?.025:0);
+      const targetRoll=still?0:turn?turn.roll+organicRoll*turn.motion-targetYaw*.15:organicRoll-targetYaw*.15+(state.listening?.042:0)+analyzeTilt;
 
       if(still){
         yawSpring.val=yawSpring.vel=pitchSpring.val=pitchSpring.vel=rollSpring.val=rollSpring.vel=camX=camY=0;
@@ -1221,11 +1225,12 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const breath=still?0:Math.sin(breathPhase)+.24*Math.sin(breathPhase*2.0-.55);
       rotate('Spine2',still?0:.021*breath,yaw*.16,roll*.24);
       rotate('Neck',pitch*.36-.008*breath,yaw*.28,roll*.34);
-      rotate('Head',pitch*.72+(state.speaking&&!still?.018*Math.sin(t*3.9)*clamp(smoothJaw*2.5,0.2,1.0):0),yaw*.76,roll*.64);
+      rotate('Head',pitch*.72+(!managed&&state.speaking&&!still?.018*Math.sin(t*3.9)*clamp(smoothJaw*2.5,0.2,1.0):0),yaw*.76,roll*.64);
       rotate('LeftShoulder',still?0:.016*breath,0,-.009*breath);
       rotate('RightShoulder',still?0:.016*breath+.003,0,.009*breath);
       if(cavern){
-        const target=bodyMotion(t,{speaking:state.speaking,listening:state.listening,active:state.active,jaw:smoothJaw,reduced:still});
+        const target=bodyMotion(t,{speaking:!managed&&state.speaking,listening:!managed&&state.listening,active:state.active,jaw:smoothJaw,reduced:still});
+        if(turn){target.hips*=turn.motion;target.spine*=turn.motion;target.shoulder*=turn.motion;target.gesture=turn.gesture;target.elbow=turn.gesture*.65;target.wrist=turn.gesture*.28;}
         for(const key of Object.keys(bodyAngles))bodyAngles[key]=still?0:approachAngle(bodyAngles[key],target[key],dt);
         const {hips,spine,breath:chest,shoulder,gesture,elbow,wrist}=bodyAngles;
         // Leave pelvis/feet stationary in this increment; avoid root drift without foot IK.
@@ -1245,26 +1250,29 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         );
       }
 
-      const blink=blinkController.sample(time/1000,phase,still);
+      const blink=blinkController.sample(time/1000,turn?.floor==='speaking'?'speaking':phase,still);
       const faceDt=finiteClamp(rawDt/1000,0,.12,1/30);
 
-      const visemes=behaviorEngine.computeVisemes(t,still||Boolean(cavern&&!liveFormants&&!hasExternalLevel&&!state.phonemes),state,liveFormants,hasExternalLevel);
+      const missingArticulation=!liveFormants&&!hasExternalLevel&&!state.phonemes;
+      const visemes=behaviorEngine.computeVisemes(t,still||Boolean((cavern||managed)&&missingArticulation)||Boolean(managed&&!state.speechPlaying),state,liveFormants,hasExternalLevel);
       smoothJaw=still?0:approachFacialWeight(smoothJaw,visemes.jaw,faceDt,.32);
       smoothAA=still?0:approachFacialWeight(smoothAA,visemes.aa,faceDt,.30);
       smoothO=still?0:approachFacialWeight(smoothO,visemes.O,faceDt,.30);
       smoothE=still?0:approachFacialWeight(smoothE,visemes.E,faceDt,.28);
       smoothU=still?0:approachFacialWeight(smoothU,visemes.U,faceDt,.28);
 
-      const targetPupil=0.30+(isAnalyzing?0.065:0)+(state.listening?0.045:0)+0.03*energy+0.02*Math.sin(t*0.7);
+      // No inferred pupil response to question semantics or unobserved light.
+      const targetPupil=managed?.31:0.30+(isAnalyzing?0.065:0)+(state.listening?0.045:0)+0.03*energy+0.02*Math.sin(t*0.7);
       pupilSize=still?0.32:pupilSize+(targetPupil-pupilSize)*0.12;
 
-      const smile=still?.09:.09+.045*(1+Math.sin(t*.72))+.04*energy-(isAnalyzing?.03:0);
+      const smile=still?(managed?.025:.09):managed?.025:.09+.045*(1+Math.sin(t*.72))+.04*energy-(isAnalyzing?.03:0);
       const microSaccadeX=still?0:(isVerifying?verifyScanX:(.032*Math.sin(t*2.05)+.018*Math.cos(t*4.9)));
       const microSaccadeY=still?0:.022*Math.cos(t*1.75)-(isVerifying?.03:0);
       const gazeWeight=relaxedGaze&&state.listening?.15:1;
-      const eyeTarget=contact?clamp(-yaw*1.8+microSaccadeX*.05,-.55,.55):(yaw*.44+microSaccadeX)*gazeWeight;
-      gazeX=still?0:gazeX+(eyeTarget-gazeX)*(contact?1-Math.exp(-dt*24):.24);
-      gazeY=still?0:gazeY+((pitch*.46+microSaccadeY)*gazeWeight-gazeY)*.24;
+      const eyeTarget=turn?clamp(-yaw*.85*turn.attention+microSaccadeX*turn.motion,-.55,.55):contact?clamp(-yaw*1.8+microSaccadeX*.05,-.55,.55):(yaw*.44+microSaccadeX)*gazeWeight;
+      const verticalTarget=turn?clamp(-pitch*.65*turn.attention+microSaccadeY*turn.motion,-.35,.35):(pitch*.46+microSaccadeY)*gazeWeight;
+      gazeX=still?0:gazeX+(eyeTarget-gazeX)*(turn?1-Math.exp(-dt*15):contact?1-Math.exp(-dt*24):.24);
+      gazeY=still?0:gazeY+(verticalTarget-gazeY)*(turn?1-Math.exp(-dt*15):.24);
 
       const squint=still?0:finiteClamp(smile*.45+visemes.cheek+(isAnalyzing?.14:0),0,.38,0);
 
@@ -1278,9 +1286,9 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       assign('viseme_E',smoothE);
       assign('viseme_U',smoothU);
       assign('mouthSmileLeft',smile);assign('mouthSmileRight',smile);
-      assign('browInnerUp',still?0:.05+.15*energy*(.5+.5*Math.sin(t*1.25))+smoothJaw*.15+(isDecision?.14:0));
-      assign('browOuterUpLeft',still?0:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
-      assign('browOuterUpRight',still?0:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
+      assign('browInnerUp',still?0:turn?turn.brow:.05+.15*energy*(.5+.5*Math.sin(t*1.25))+smoothJaw*.15+(isDecision?.14:0));
+      assign('browOuterUpLeft',still?0:turn?turn.brow*.6:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
+      assign('browOuterUpRight',still?0:turn?turn.brow*.6:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
       assign('noseSneerLeft',smoothJaw*.12);assign('noseSneerRight',smoothJaw*.12);
       assign('eyeLookInLeft',Math.max(0,gazeX));assign('eyeLookOutLeft',Math.max(0,-gazeX));
       assign('eyeLookOutRight',Math.max(0,gazeX));assign('eyeLookInRight',Math.max(0,-gazeX));
@@ -1336,6 +1344,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       canvas.dataset.blinkMm=displacement(probes[0]).toFixed(3);
       canvas.dataset.jawMm=displacement(probes[1]).toFixed(3);
       canvas.dataset.cognitivePhase=phase;
+      if(turn){canvas.dataset.conversationFloor=turn.floor;canvas.dataset.conversationAttention=turn.attention.toFixed(4);canvas.dataset.conversationGesture=turn.gesture.toFixed(4);canvas.dataset.articulationSource=!state.speechPlaying?'none':state.phonemes?'timed-or-explicit':liveFormants?'audio-formants':hasExternalLevel?'audio-level-approximate':'unavailable';}
       canvas.dataset.qualityTier=qualityTier>0.5?'high':'mobile-adaptive';
       canvas.dataset.audioConnected=String(voiceTracker.isConnected());
     };
