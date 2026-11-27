@@ -8,7 +8,7 @@ export class ReadonlyMcpOAuthSession {
   #state='idle';
   #error=null;
   #generation=0;
-  /** @param {{fetchImpl?:typeof fetch,onAuthorized:(session:any)=>Promise<void>}} options */
+  /** @param {{fetchImpl?:typeof fetch,onAuthorized:(session:any,isCurrent:()=>boolean)=>Promise<void>}} options */
   constructor({fetchImpl=fetch,onAuthorized}){
     if(typeof onAuthorized!=='function')throw Error('MCP_OAUTH_INTERNAL_HANDLER_REQUIRED');
     this.fetchImpl=fetchImpl;this.onAuthorized=onAuthorized;
@@ -39,7 +39,7 @@ export class ReadonlyMcpOAuthSession {
         if(!current())throw Error('MCP_OAUTH_CANCELLED');
         // Internal callback owns storage and account verification. No token reaches the browser.
         // Do not install a connector here; the canonical host is its owner.
-        await this.onAuthorized(session);
+        await this.onAuthorized(session,current);
         if(!current())throw Error('MCP_OAUTH_CANCELLED');
         this.#state='authorized';this.#error=null;
         res.writeHead(200);res.end('Authorization received. Return to JACO for connection verification.');
