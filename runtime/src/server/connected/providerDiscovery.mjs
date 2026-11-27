@@ -3,7 +3,7 @@
 // host, anything else is probed for an OpenAI-compatible or Ollama API. Every request is recorded as
 // evidence, the key is only ever read from the environment, and no key value leaves this module.
 
-import { CATALOG as KNOWN, keyCandidates, catalogById } from './providerCatalog.mjs';
+import { CATALOG as KNOWN, keyCandidates, catalogById, modelListHeaders, keyRefused } from './providerCatalog.mjs';
 import { createHash } from 'node:crypto';
 
 const NON_CHAT = /embed|whisper|tts|dall-e|image|moderation|rerank|audio|transcribe|vision-preview|guard/i;
@@ -55,7 +55,7 @@ async function get(fetchImpl, href, headers, timeoutMs) {
     const res = await fetchImpl(href, { headers, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) });
     const text = await res.text();
     let json = null; try { json = JSON.parse(text); } catch { /* not JSON */ }
-    return { href, status: res.status, ms: Date.now() - started, json };
+    return { href, status: res.status, ms: Date.now() - started, json, refused: keyRefused(res.status, text) };
   } catch (error) {
     return { href, status: null, ms: Date.now() - started, error: error?.name === 'TimeoutError' ? 'TIMEOUT' : String(error?.message || error) };
   }
@@ -84,7 +84,7 @@ export async function discoverProvider(rawUrl, { env = process.env, fetchImpl = 
   const id = known?.id || (isolateEndpoint ? endpointId : (catalogById(candidateId) ? `custom-${candidateId}` : candidateId));
   const apiKeyEnv = known?.apiKeyEnv || `${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
   const key = keyFor(apiKeyEnv) || '';
-  const headers = { accept: 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) };
+  const headersFor = base => ({ accept: 'application/json', ...modelListHeaders(base, key) });
   const evidence = [];
   const result = (state, extra) => ({ id, known: Boolean(known), apiKeyEnv, credentialConfigured: Boolean(key), requiresKey: Boolean(known || key || state === 'NEEDS_KEY' || state === 'KEY_REJECTED'), state, evidence, ...extra });
 
@@ -96,15 +96,15 @@ export async function discoverProvider(rawUrl, { env = process.env, fetchImpl = 
   })) throw new Error('PROVIDER_KEY_REQUIRES_HTTPS');
   let authWall = null;
   for (const base of bases) {
-    const r = await get(fetchImpl, `${base}/models`, headers, timeoutMs);
+    const r = await get(fetchImpl, `${base}/models`, headersFor(base), timeoutMs);
     evidence.push({ url: r.href, status: r.status, ms: r.ms, ...(r.error ? { error: r.error } : {}) });
     const models = r.status === 200 ? modelIds(r.json) : null;
     if (models?.length) return result('READY', { baseUrl: base, models, defaultModel: pickDefaultModel(models, preferredModel) });
-    if ((r.status === 401 || r.status === 403) && !authWall) authWall = base;
+    if (r.refused && !authWall) authWall = base;
   }
   // Ollama's native listing, when the OpenAI-compatible path is closed or the URL was the bare host.
   if (!known) {
-    const r = await get(fetchImpl, `${url.origin}/api/tags`, headers, timeoutMs);
+    const r = await get(fetchImpl, `${url.origin}/api/tags`, headersFor(url.origin), timeoutMs);
     evidence.push({ url: r.href, status: r.status, ms: r.ms, ...(r.error ? { error: r.error } : {}) });
     const models = r.status === 200 ? modelIds(r.json) : null;
     if (models?.length) return result('READY', { baseUrl: `${url.origin}/v1`, models, defaultModel: pickDefaultModel(models, preferredModel), kind: 'ollama' });
@@ -122,7 +122,9 @@ export async function discoverProvider(rawUrl, { env = process.env, fetchImpl = 
  * caller asks which one, so the key is only ever sent to the one service it is checked against.
  * state: READY | KEY_REJECTED | UNREACHABLE | AMBIGUOUS | UNKNOWN_KEY. The key is never returned.
  */
-export async function identifyKey(key, { provider = '', fetchImpl = fetch, timeoutMs = 6000 } = {}) {
+// The operator is waiting for this one answer, so it gets longer than a background probe: on a loaded computer a
+// first connection took 5-10 s (observed 2026-11-26), and a shorter limit called a healthy service unreachable.
+export async function identifyKey(key, { provider = '', fetchImpl = fetch, timeoutMs = 20_000 } = {}) {
   const value = String(key || '').trim();
   if (!value) throw new Error('API_KEY_REQUIRED');
   const chosen = provider ? catalogById(String(provider).toLowerCase()) : null;
@@ -131,11 +133,11 @@ export async function identifyKey(key, { provider = '', fetchImpl = fetch, timeo
   if (!candidates.length) return { state: 'UNKNOWN_KEY', candidates: [], evidence: [] };
   if (candidates.length > 1) return { state: 'AMBIGUOUS', candidates: candidates.map(c => c.id), evidence: [] };
   const [entry] = candidates;
-  const r = await get(fetchImpl, `${entry.baseUrl}/models`, { accept: 'application/json', authorization: `Bearer ${value}` }, timeoutMs);
+  const r = await get(fetchImpl, `${entry.baseUrl}/models`, { accept: 'application/json', ...modelListHeaders(entry.baseUrl, value) }, timeoutMs);
   const evidence = [{ url: r.href, status: r.status, ms: r.ms, ...(r.error ? { error: r.error } : {}) }];
   const base = { id: entry.id, apiKeyEnv: entry.apiKeyEnv, baseUrl: entry.baseUrl, evidence };
   const models = r.status === 200 ? modelIds(r.json) : null;
   if (models) return { ...base, state: 'READY', models, defaultModel: pickDefaultModel(models, entry.defaultModel || '') };
-  if (r.status === 401 || r.status === 403) return { ...base, state: 'KEY_REJECTED', models: [], defaultModel: entry.defaultModel || '' };
+  if (r.refused) return { ...base, state: 'KEY_REJECTED', models: [], defaultModel: entry.defaultModel || '' };
   return { ...base, state: 'UNREACHABLE', models: [], defaultModel: entry.defaultModel || '' };
 }

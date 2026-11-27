@@ -1,7 +1,7 @@
 // The structured start of JACO: every tick comes from what the runtime reports (operator 2026-11-25).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { setupSteps, suggestModel, plausibleKey, STEP_IDS } from '../../runtime/operator-stage/setupSteps.mjs';
+import { setupSteps, suggestModel, plausibleKey, vaultRows, STEP_IDS } from '../../runtime/operator-stage/setupSteps.mjs';
 
 const ready = { ok: true, runtime: { up: true }, providers: [{ id: 'ollama', active: true }], planner: { provider: 'ollama', model: 'q', reachable: true }, tools: { toolCount: 12 } };
 const ids = r => r.steps.map(s => s.id).join(',');
@@ -63,4 +63,29 @@ test('a local model is suggested before a cloud one, with its own default', () =
 test('only a key-shaped single token is accepted from the field', () => {
   assert.equal(plausibleKey(' AIzaSyExampleExampleExample1234 '), true);
   for (const bad of ['', 'short', 'two words in a key value', 'x'.repeat(401), null]) assert.equal(plausibleKey(bad), false);
+});
+
+// Observed 2026-11-26: every Windows vault key was already stored, but Setup listed 14 of them as not fetched,
+// because it compared against a list of known service names only. A stored key must show as fetched.
+test('a key JACO has stored shows as fetched, whatever its name', () => {
+  const vault = { available: true, keys: ['NOVA_X402_PAY_TO', 'GEMINI_API_KEY', 'NEW_KEY'], fetched: ['NOVA_X402_PAY_TO'], configured: ['GEMINI_API_KEY'] };
+  assert.deepEqual(vaultRows(vault), [
+    { name: 'NOVA_X402_PAY_TO', state: 'FETCHED' },
+    { name: 'GEMINI_API_KEY', state: 'PRESENT' },
+    { name: 'NEW_KEY', state: 'PENDING' },
+  ]);
+  const report = { runtime: { up: true }, providers: [{ active: true }] };
+  const step = v => setupSteps({ report, vault: v }).steps.find(s => s.id === 'vault');
+  assert.equal(step(vault).done, false);
+  assert.equal(step(vault).detail, '1 to fetch');
+  assert.equal(step({ ...vault, fetched: ['NOVA_X402_PAY_TO', 'NEW_KEY'] }).done, true);
+});
+
+test('a ChatGPT plan turned on for chat completes the model steps without a key or local model', () => {
+  const report = { runtime: { up: true }, providers: [], planner: {}, tools: { toolCount: 9 }, ok: false };
+  const plan = { connected: true, use: { enabled: true, model: 'plan-model' } };
+  const r = setupSteps({ report, plan });
+  assert.equal(r.ready, true);
+  assert.equal(r.steps.find(s => s.id === 'provider').detail, 'chatgpt-plan/plan-model');
+  assert.equal(setupSteps({ report, plan: { connected: true, use: { enabled: false } } }).current, 'brain', 'signing in alone connects nothing');
 });

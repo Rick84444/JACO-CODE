@@ -220,12 +220,12 @@ export function renderAuraToolTranscript(entries = []) {
 
 export function summarizeAuraModelCosts(costs = []) {
   if (!costs.length) return null;
-  const settled = new Set(['LOCAL', 'FREE', 'SETTLED']);
+  const settled = new Set(['LOCAL', 'FREE', 'SETTLED', 'PLAN']); // PLAN: included in the operator's own subscription
   const statuses = costs.map(item => String(item.status || ''));
   return {
     costStatus: statuses.some(status => !settled.has(status)) ? 'OUTCOME_UNKNOWN'
       : statuses.includes('SETTLED') ? 'SETTLED'
-      : statuses.includes('LOCAL') ? 'LOCAL' : 'FREE',
+      : statuses.includes('PLAN') ? 'PLAN' : statuses.includes('LOCAL') ? 'LOCAL' : 'FREE',
     costUsd: costs.reduce((sum, item) => sum + (Number.isFinite(item.usd) && item.usd >= 0 ? item.usd : 0), 0),
     modelCalls: costs.length,
   };

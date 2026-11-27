@@ -479,6 +479,8 @@ export class StdioMcpHost {
     const root = mcpAuthorityRoot(this);
     const authority = Object.fromEntries(['READ','LOCAL_MUTATION','EXTERNAL_MUTATION','PUBLISH']
       .map(consequence => [consequence, standingToolAuthority(root, consequence)]));
+    // Read the operator's switches once per answer. One file read per connected tool blocked the event loop.
+    const switches = Object.fromEntries(['mcp-call','mcp-write','shell'].map(task => [task, operatorTaskEnabled(root, task)]));
     return Object.entries(this.servers()).map(([id, def]) => {
       const c = this.clients.get(id);
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
@@ -488,8 +490,7 @@ export class StdioMcpHost {
         const reads = Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name));
         const consequence = reads ? 'READ' : id === 'git' && /push|merge|release|publish/i.test(t.name) ? 'PUBLISH'
           : ['shell','filesystem','git','repo','editor'].includes(id) ? 'LOCAL_MUTATION' : 'EXTERNAL_MUTATION';
-        const switchesOn = operatorTaskEnabled(root, reads ? 'mcp-call' : 'mcp-write')
-          && (id !== 'shell' || operatorTaskEnabled(root, 'shell'));
+        const switchesOn = switches[reads ? 'mcp-call' : 'mcp-write'] && (id !== 'shell' || switches.shell);
         const decision = authority[consequence];
         return { ...t, readOnly: reads, agentAllowed: switchesOn
           && decision.status !== 'DENY' && decision.status !== 'REVIEW'
