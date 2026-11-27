@@ -1,0 +1,4 @@
+- [ ] Verify pinned metadata, public registration, PKCE callback and exchange with controlled tests.
+- [ ] Test issuer mismatch, invalid state, expanded scopes, expired attempts, redirect refusal, token refresh.
+- [ ] Wire existing vault, canonical MCP host, verified read probe and logo dialog after review.
+- [ ] Verify actual provider account, restart/revoke and CI; no production claim before evidence.
