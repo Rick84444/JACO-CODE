@@ -6,6 +6,9 @@ on:
       - 'runtime/scripts/inspect-aura-rig.mjs'
       - 'runtime/scripts/inspect-aura-v31.mjs'
       - 'runtime/scripts/install-aura-v31.mjs'
+      - 'runtime/scripts/prepare-aura-v31.mjs'
+      - 'runtime/package.json'
+      - 'assets/aura-v31/**'
       - 'runtime/src/lib/auraRigLightform.mjs'
       - 'runtime/public/branding/aura-anatomical.glb'
       - 'openspec/changes/add-interactive-avatar/specs/interactive-avatar/spec.md'
@@ -27,6 +30,8 @@ jobs:
       - name: Verify V31 candidate if supplied (legacy evidence is not V31 approval)
         shell: bash
         run: |
+          set -o pipefail
+          node runtime/scripts/prepare-aura-v31.mjs
           if [ -f runtime/public/branding/aura-anatomical.glb ]; then
             node runtime/scripts/inspect-aura-v31.mjs runtime/public/branding/aura-anatomical.glb | tee aura-rig-evidence/v31-manifest.json
           else
