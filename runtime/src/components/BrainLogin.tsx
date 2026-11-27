@@ -12,7 +12,8 @@ interface Brain {
 }
 interface Login { state: 'WAITING' | 'TERMINAL'; url?: string | null; command?: string }
 type Provider = 'openai' | 'anthropic' | 'gemini' | 'other';
-type PlanStatus = { success: boolean; connected?: boolean; verifiedAt?: string | null; state?: string; error?: string; models?: {id:string;label:string}[] };
+type PlanStatus = { success: boolean; connected?: boolean; verifiedAt?: string | null; state?: string; error?: string; models?: {id:string;label:string}[];
+  account?: string; use?: { enabled: boolean; model: string; backgroundAllowed: boolean }; revoked?: boolean | null };
 const BRANDS: {id:Provider; label:string; brain?:Brain['id']}[] = [{id:'openai',label:'OpenAI',brain:'codex'},{id:'anthropic',label:'Claude',brain:'claude'},{id:'gemini',label:'Gemini',brain:'gemini'},{id:'other',label:'',}];
 
 // Simplified marks, flat and quiet; they are not the vendors' official artwork.
@@ -40,14 +41,17 @@ const INSTALL: Record<Brain['id'], string> = {
   gemini: 'npm i -g @google/gemini-cli',
 };
 
-// The direct ChatGPT path does not use Codex, CLI tokens, or a shared API key.
-const ChatGPTPlanPreview: React.FC<{onStatus:(s:PlanStatus)=>void; visible:boolean}> = ({onStatus,visible}) => {
+// The operator's ChatGPT plan through "Sign in with ChatGPT" (no Codex, CLI tokens or API key). Signing in routes
+// nothing: the operator turns chat use on, and background work has its own consent.
+const ChatGPTPlan: React.FC<{onStatus:(s:PlanStatus)=>void; visible:boolean}> = ({onStatus,visible}) => {
   const { tr } = useOptionalUiLanguage();
   const [status,setStatus] = useState<PlanStatus|null>(null);
   const [url,setUrl] = useState('');
   const [model,setModel] = useState('');
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState('');
+  const [notice,setNotice] = useState('');
+  const asked = useRef(false);
   const endpoint='/api/aura/workbench/chatgpt-plan';
   const refresh = useCallback(async () => {
     try {
@@ -64,7 +68,7 @@ const ChatGPTPlanPreview: React.FC<{onStatus:(s:PlanStatus)=>void; visible:boole
     return ()=>clearInterval(timer);
   },[status?.state,refresh]);
   const action=async (name:string, body?:object)=>{
-    setBusy(true);setError('');
+    setBusy(true);setError('');setNotice('');
     try {
       const r=await fetch(endpoint+'/'+name,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body||{})}).then(readAuraResponse);
       if(!r.success)throw new Error(r.error||'SIWC_OPERATION_FAILED');
@@ -73,29 +77,41 @@ const ChatGPTPlanPreview: React.FC<{onStatus:(s:PlanStatus)=>void; visible:boole
         if(u.origin!=='https://auth.openai.com'||u.pathname!=='/api/accounts/authorize')throw new Error('SIWC_URL_INVALID');
         setUrl(u.href);
       }
-      if(name==='models')setModel(r.models?.[0]?.id||'');
-      if(name==='disconnect'){setModel('');setUrl('');}
+      if(name==='disconnect'){setModel('');setUrl('');asked.current=false;
+        if(r.revoked===false)setNotice(tr('Kontot togs bort här, men OpenAI bekräftade inte återkallelsen. Ta bort JACO CODE i ChatGPT-inställningarna.','The account was removed here, but OpenAI did not confirm the revocation. Remove JACO CODE in ChatGPT settings.'));}
     }catch(e:any){setError(String(e?.message||'SIWC_OPERATION_FAILED'));}
     finally{await refresh();setBusy(false);}
   };
+  // The models of the plan are read once after sign-in.
+  useEffect(()=>{
+    if(visible&&status?.connected&&!status.models?.length&&!asked.current){asked.current=true;void action('models');}
+  },[visible,status?.connected,status?.models?.length]);
+  const chosen = model || status?.use?.model || status?.models?.[0]?.id || '';
+  const inUse = Boolean(status?.use?.enabled);
   const btn="rounded bg-[#0e639c] hover:bg-[#1177bb] disabled:opacity-40 px-2.5 py-1 text-[11px]";
   return <section className="rounded border border-[#505153] p-2 space-y-2 text-xs">
-    <div className="font-semibold">ChatGPT — {tr('direkt prenumerationsanslutning','direct plan access')}</div>
+    <div className="font-semibold">ChatGPT — {tr('ditt abonnemang','your plan')}</div>
     {!status ? <div>{tr('Kontrollerar…','Checking…')}</div> : !status.success ?
-      <div className="text-neutral-400">{status.error==='SIWC_PREVIEW_DISABLED'?tr('Lokal förhandsversion: aktiveras på egen dator med JACO_LOCAL_SIWC=1.','Local preview: enable on your own computer with JACO_LOCAL_SIWC=1.'):tr('Anslutningsstatus kunde inte hämtas.','Connection status unavailable.')}</div> :
+      <div className="text-neutral-400">{status.error==='SIWC_PREVIEW_DISABLED'?tr('Avstängd på den här installationen (JACO_LOCAL_SIWC=0).','Turned off on this installation (JACO_LOCAL_SIWC=0).'):tr('Anslutningsstatus kunde inte hämtas.','Connection status unavailable.')}</div> :
       <>
-        <div className="text-neutral-400">{tr('Lokal session. Ingen automatisk modellstyrning.','Local session. No automatic model routing.')}</div>
-        <div>{status.connected?tr('Behörighet mottagen','Permission granted'):status.state==='waiting'?tr('Väntar på inloggning','Waiting for sign-in'):tr('Inte ansluten','Not connected')}</div>
+        <div className="text-neutral-400">{tr('Aura kan svara med din ChatGPT-plan. Det du skriver och det sammanhang Aura skickar går till OpenAI och räknas mot planens gränser. Inloggningen sparas krypterad på den här datorn.','Aura can answer with your ChatGPT plan. What you write and the context Aura sends go to OpenAI and count against your plan limits. The sign-in is stored encrypted on this computer.')}</div>
+        <div>{status.connected?tr('Ansluten','Connected')+(status.account?' · '+status.account:''):status.state==='waiting'?tr('Väntar på inloggning','Waiting for sign-in'):status.state==='expired'?tr('Inloggningen har gått ut','The sign-in has expired'):tr('Inte ansluten','Not connected')}</div>
         {!status.connected && status.state!=='waiting' && <button disabled={busy} className={btn} onClick={()=>void action('login')}>{tr('Fortsätt med ChatGPT','Continue with ChatGPT')}</button>}
         {url && status.state==='waiting' && <a className="block text-[#3794ff]" href={url} target="_blank" rel="noopener noreferrer">{tr('Öppna OpenAI:s inloggning','Open OpenAI sign-in')}</a>}
-        {status.connected && <div className="flex flex-wrap items-center gap-2">
-          <button disabled={busy} className={btn} onClick={()=>void action('models')}>{tr('Hämta modeller','Discover models')}</button>
-          {!!status.models?.length && <><select aria-label={tr('ChatGPT-modell','ChatGPT model')} className="min-w-0 max-w-full bg-[#202124] p-1 rounded" value={model} onChange={e=>setModel(e.target.value)}><option value="">—</option>{(status.models ?? []).map((m)=><option key={m.id} value={m.id}>{m.label}</option>)}</select>
-          <button disabled={busy||!model} className={btn} onClick={()=>void action('test',{model})}>{tr('Testa (använder kvot)','Test (uses plan quota)')}</button></>}
+        {status.connected && <div className="space-y-2">
+          {status.models?.length ? <div className="flex flex-wrap items-center gap-2">
+            <select aria-label={tr('ChatGPT-modell','ChatGPT model')} className="min-w-0 max-w-full bg-[#202124] p-1 rounded" value={chosen} onChange={e=>{setModel(e.target.value);if(inUse)void action('use',{enabled:true,model:e.target.value});}}>{status.models.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</select>
+            <button disabled={busy||!chosen} className={btn} onClick={()=>void action('use',{enabled:!inUse,model:chosen})}>{inUse?tr('Sluta använda i chatten','Stop using in chat'):tr('Använd i Auras chatt','Use for Aura chat')}</button>
+            <button disabled={busy||!chosen} className={btn} onClick={()=>void action('test',{model:chosen})}>{tr('Testa (använder kvot)','Test (uses plan quota)')}</button>
+          </div> : <button disabled={busy} className={btn} onClick={()=>void action('models')}>{tr('Hämta modeller','Discover models')}</button>}
+          {inUse && <div className="text-emerald-300">{tr('Aura-chatten svarar med','Aura chat answers with')} {status.use?.model}</div>}
+          <label className="flex items-start gap-1.5 text-neutral-300"><input type="checkbox" disabled={busy} checked={Boolean(status.use?.backgroundAllowed)} onChange={e=>void action('use',{enabled:inUse,model:chosen,backgroundAllowed:e.target.checked})}/>
+            <span>{tr('Tillåt även anrop som inte kommer direkt från mig (till exempel från en parkopplad enhet).','Also allow requests that do not come directly from me (for example from a paired device).')}</span></label>
         </div>}
         {status.verifiedAt && <div className="text-emerald-300">{tr('Modellsvar verifierat','Model response verified')}: {status.verifiedAt}</div>}
-        {(status.state!=='disconnected') && <button disabled={busy} className={btn} onClick={()=>void action('disconnect')}>{tr('Koppla från lokalt','Disconnect locally')}</button>}
+        {(status.state!=='disconnected') && <button disabled={busy} className={btn} onClick={()=>void action('disconnect')}>{tr('Koppla från','Disconnect')}</button>}
       </>}
+    {notice && <div className="text-amber-300">{notice}</div>}
     {(error||status?.success&&status?.error) && <div className="text-red-300">{error||status?.error}</div>}
   </section>;
 };
@@ -246,7 +262,7 @@ export const BrainLogin: React.FC<{ onChanged?: () => void | Promise<void>; rend
               className="p-2 rounded hover:bg-[#35373b] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#3794ff]"><X className="w-4 h-4"/></button>
           </header>
           {/* Keep OAuth flow state mounted while the dialog is closed. It is never stored in the browser. */}
-          <div hidden={selected!=='openai'}><ChatGPTPlanPreview visible={selected==='openai'} onStatus={setPlan}/></div>
+          <div hidden={selected!=='openai'}><ChatGPTPlan visible={selected==='openai'} onStatus={setPlan}/></div>
           {selected && selected!=='other' && <>
             {renderApiKey && <details open={keyOpen} onToggle={e=>setKeyOpen(e.currentTarget.open)} className="rounded-md border border-[#45474a] p-2">
               <summary className="cursor-pointer text-xs font-medium">{tr('Anslut med API-nyckel','Connect with API key')}</summary>

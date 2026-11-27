@@ -13,21 +13,24 @@ export const STEP_IDS = Object.freeze(['api', 'brain', 'vault', 'provider', 'act
  *   report?: any, error?: string,
  *   vault?: { available?: boolean, keys?: string[], fetched?: string[], configured?: string[] } | null,
  *   skippedVault?: boolean,
+ *   plan?: { connected?: boolean, use?: { enabled?: boolean, model?: string } } | null,
  * }} input  report: GET /api/jaco/activation; vault: Windows vault key names, those JACO has stored, and names already configured
  * @returns {{ steps: Array<{ id: string, done: boolean, optional: boolean, skipped: boolean, detail: string }>, current: string | null, ready: boolean }}
  */
-export function setupSteps({ report = null, error = '', vault = null, skippedVault = false } = {}) {
+export function setupSteps({ report = null, error = '', vault = null, skippedVault = false, plan = null } = {}) {
   const up = Boolean(report?.runtime?.up) && !error;
-  const brain = Boolean(up && report?.providers?.some(p => p.active));
-  const provider = Boolean(brain && report?.planner?.reachable === true);
-  const activated = Boolean(provider && report?.tools?.toolCount > 0 && report?.ok);
+  // The operator's ChatGPT plan, turned on for chat, is a brain of its own: no key or local model is needed.
+  const planned = Boolean(up && plan?.connected && plan.use?.enabled && plan.use.model);
+  const brain = Boolean(planned || (up && report?.providers?.some(p => p.active)));
+  const provider = Boolean(planned || (brain && report?.planner?.reachable === true));
+  const activated = Boolean(provider && report?.tools?.toolCount > 0 && (report?.ok || planned));
   const pending = vaultRows(vault).filter(row => row.state === 'PENDING');
   const vaultDone = !pending.length;
   const steps = [
     { id: 'api', done: up, optional: false, skipped: false, detail: up ? 'RUNTIME_UP' : error ? 'RUNTIME_UNREACHABLE' : 'RUNTIME_CHECKING' },
-    { id: 'brain', done: brain, optional: false, skipped: false, detail: brain ? `${report.providers.filter(p => p.active).length} active` : 'NO_MODEL' },
+    { id: 'brain', done: brain, optional: false, skipped: false, detail: planned ? 'CHATGPT_PLAN' : brain ? `${report.providers.filter(p => p.active).length} active` : 'NO_MODEL' },
     { id: 'vault', done: vaultDone, optional: true, skipped: !vaultDone && skippedVault, detail: vaultDone ? 'NOTHING_TO_FETCH' : `${pending.length} to fetch` },
-    { id: 'provider', done: provider, optional: false, skipped: false, detail: provider ? `${report.planner.provider}/${report.planner.model}` : report?.planner?.provider ? 'NOT_VERIFIED' : 'NO_CHOICE' },
+    { id: 'provider', done: provider, optional: false, skipped: false, detail: planned ? `chatgpt-plan/${plan.use.model}` : provider ? `${report.planner.provider}/${report.planner.model}` : report?.planner?.provider ? 'NOT_VERIFIED' : 'NO_CHOICE' },
     { id: 'activate', done: activated, optional: false, skipped: false, detail: activated ? `${report.tools.toolCount} tools` : 'NOT_STARTED' },
   ];
   const next = steps.find(step => !step.done && !step.skipped);

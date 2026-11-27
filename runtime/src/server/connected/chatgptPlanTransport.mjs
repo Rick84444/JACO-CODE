@@ -51,7 +51,7 @@ async function jsonRequest(url, init, fetchImpl) {
 }
 
 export function verifyIdentity(token, jwks, clientId, nonce, now = Date.now()/1000) {
-  if (!nonempty(token) || token.length > 32000 || !validClient(clientId) || !nonempty(nonce)) fail('SIWC_IDENTITY_INVALID');
+  if (!nonempty(token) || token.length > 32000 || !validClient(clientId) || (nonce !== null && !nonempty(nonce))) fail('SIWC_IDENTITY_INVALID');
   const parts = token.split('.');
   if (parts.length !== 3 || parts.some(p => !/^[A-Za-z0-9_-]+$/.test(p))) fail('SIWC_IDENTITY_INVALID');
   const [h,p,s] = parts;
@@ -61,11 +61,12 @@ export function verifyIdentity(token, jwks, clientId, nonce, now = Date.now()/10
   const keys = (jwks?.keys || []).filter(k => k.kid === header.kid && k.kty === 'RSA' && (!k.alg || k.alg === 'RS256') && (!k.use || k.use === 'sig'));
   if (keys.length !== 1 || !verify('RSA-SHA256', Buffer.from(h+'.'+p), createPublicKey({key:keys[0],format:'jwk'}),Buffer.from(s,'base64url'))) fail('SIWC_SIGNATURE_INVALID');
   const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+  // A refreshed identity token carries no nonce (nonce === null); every other claim is still checked.
   if (claims.iss !== AUTH || !audiences.includes(clientId) ||
     ((audiences.length > 1 || claims.azp) && claims.azp !== clientId) ||
     !Number.isFinite(claims.exp) || claims.exp <= now || !Number.isFinite(claims.iat) || claims.iat > now+5 ||
     (claims.nbf !== undefined && (!Number.isFinite(claims.nbf) || claims.nbf > now+5)) ||
-    !equal(nonce,claims.nonce) || !nonempty(claims.sub)) fail('SIWC_IDENTITY_INVALID');
+    (nonce !== null && !equal(nonce,claims.nonce)) || !nonempty(claims.sub)) fail('SIWC_IDENTITY_INVALID');
   return { issuer: claims.iss, subject: claims.sub, email: typeof claims.email === 'string' ? claims.email : '' };
 }
 
@@ -83,6 +84,45 @@ export async function exchangeAuthorization(attempt, callbackUrl, { fetchImpl = 
   const session = Object.freeze({ ...identity, clientId:grant.client_id, accessToken:data.access_token, refreshToken:data.refresh_token, idToken:data.id_token, scopes:Object.freeze(scopes),expiresAt:Date.now()+data.expires_in*1000 });
   verifiedSessions.add(session);
   return session;
+}
+
+// The account as this computer stored it (encrypted), made usable again after a restart. The access token may be
+// expired; it is then refreshed before use.
+export function restoreSession(record) {
+  const scopes = Array.isArray(record?.scopes) ? record.scopes.filter(nonempty) : [];
+  if (record?.issuer !== AUTH || !nonempty(record.subject) || !validClient(record.clientId) || !nonempty(record.accessToken) ||
+    !nonempty(record.refreshToken) || !scopes.includes(PLAN) || !scopes.includes('resource.invoke') || !Number.isFinite(record.expiresAt)) fail('SIWC_ACCOUNT_INVALID');
+  const session = Object.freeze({ issuer: AUTH, subject: record.subject, email: typeof record.email === 'string' ? record.email : '', clientId: record.clientId,
+    accessToken: record.accessToken, refreshToken: record.refreshToken, scopes: Object.freeze(scopes), expiresAt: record.expiresAt });
+  verifiedSessions.add(session);
+  return session;
+}
+
+// The refresh token rotates on every use: the caller must save the returned one before anything else.
+export async function refreshSession(session, { fetchImpl = fetch } = {}) {
+  if (!verifiedSessions.has(session)) fail('SIWC_SESSION_REQUIRED');
+  const body = new URLSearchParams({ grant_type: 'refresh_token', client_id: session.clientId, refresh_token: session.refreshToken, resource: API });
+  const data = await jsonRequest(AUTH + '/api/accounts/oauth/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body }, fetchImpl);
+  if (nonempty(data.id_token)) {
+    const jwks = await jsonRequest(AUTH + '/.well-known/jwks.json', {}, fetchImpl);
+    if (verifyIdentity(data.id_token, jwks, session.clientId, null).subject !== session.subject) fail('SIWC_ACCOUNT_MISMATCH');
+  }
+  // An omitted scope means the grant is unchanged (OAuth 2.0); a stated one must still include the plan.
+  const scopes = typeof data.scope === 'string' ? data.scope.split(/\s+/) : [...session.scopes];
+  if (!scopes.includes(PLAN) || !scopes.includes('resource.invoke')) fail('SIWC_PLAN_NOT_GRANTED');
+  if (!nonempty(data.access_token) || String(data.token_type).toLowerCase() !== 'bearer' || !Number.isFinite(data.expires_in) || data.expires_in <= 0) fail('SIWC_TOKEN_INVALID');
+  return restoreSession({ ...session, scopes, accessToken: data.access_token, refreshToken: nonempty(data.refresh_token) ? data.refresh_token : session.refreshToken, expiresAt: Date.now() + data.expires_in * 1000 });
+}
+
+export async function revokeSession(session, { fetchImpl = fetch } = {}) {
+  if (!verifiedSessions.has(session)) fail('SIWC_SESSION_REQUIRED');
+  const config = await jsonRequest(AUTH + '/.well-known/openid-configuration', {}, fetchImpl);
+  let endpoint;
+  try { endpoint = new URL(config.revocation_endpoint); } catch { fail('SIWC_REVOCATION_INVALID'); }
+  if (endpoint.origin !== AUTH) fail('SIWC_REVOCATION_INVALID');
+  const r = await fetchImpl(endpoint.href, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ token: session.refreshToken, token_type_hint: 'refresh_token', client_id: session.clientId }), redirect: 'error', signal: AbortSignal.timeout(15000) });
+  if (!r.ok) fail('SIWC_HTTP_' + r.status);
 }
 
 function headers(session) {
@@ -126,9 +166,13 @@ export async function readCompletedResponse(body) {
 export async function completePlan(session,{model,messages,fetchImpl=fetch,signal}={}) {
   if (!nonempty(model) || !Array.isArray(messages) || !messages.length || messages.some(m=>!['user','assistant','system','developer'].includes(m?.role)||typeof m.content!=='string')) fail('SIWC_INPUT_INVALID');
   const started=Date.now();
+  const instructions=messages.filter(m=>m.role==='system'||m.role==='developer').map(m=>m.content).join('\n\n');
+  const turns=messages.filter(m=>m.role==='user'||m.role==='assistant').map(({role,content})=>({role,content}));
+  if(!turns.length)fail('SIWC_INPUT_INVALID');
   const r=await fetchImpl(API+'/responses',{method:'POST',headers:headers(session),redirect:'error',
     signal:signal?AbortSignal.any([signal,AbortSignal.timeout(120000)]):AbortSignal.timeout(120000),
-    body:JSON.stringify({model,input:messages,store:false,stream:true})});
+    // This route refuses system items: their text travels as instructions.
+    body:JSON.stringify({model,...(instructions?{instructions}:{}),input:turns,store:false,stream:true})});
   if (!r.ok) fail('SIWC_HTTP_'+r.status);
   const result=await readCompletedResponse(r.body);
   return {...result,model,providerId:'chatgpt-plan',finishReason:'stop',latencyMs:Date.now()-started};

@@ -80,3 +80,12 @@ test('a key JACO has stored shows as fetched, whatever its name', () => {
   assert.equal(step(vault).detail, '1 to fetch');
   assert.equal(step({ ...vault, fetched: ['NOVA_X402_PAY_TO', 'NEW_KEY'] }).done, true);
 });
+
+test('a ChatGPT plan turned on for chat completes the model steps without a key or local model', () => {
+  const report = { runtime: { up: true }, providers: [], planner: {}, tools: { toolCount: 9 }, ok: false };
+  const plan = { connected: true, use: { enabled: true, model: 'plan-model' } };
+  const r = setupSteps({ report, plan });
+  assert.equal(r.ready, true);
+  assert.equal(r.steps.find(s => s.id === 'provider').detail, 'chatgpt-plan/plan-model');
+  assert.equal(setupSteps({ report, plan: { connected: true, use: { enabled: false } } }).current, 'brain', 'signing in alone connects nothing');
+});
