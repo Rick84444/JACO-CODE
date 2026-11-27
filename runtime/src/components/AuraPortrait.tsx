@@ -19,6 +19,8 @@ interface Dictation {
   interimResults?: boolean;
   onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }> }) => void) | null;
   onend: (() => void) | null;
+  onspeechstart?: (() => void) | null;
+  onspeechend?: (() => void) | null;
   onerror: ((event?: { error?: string }) => void) | null;
   start(): void;
   stop?(): void;
@@ -44,6 +46,9 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const [listening, setListening] = useState(false);
   const [readReplies, setReadReplies] = useState(savedConversation);
   const [speaking, setSpeaking] = useState(false);
+  const [userSpeaking, setUserSpeaking] = useState(false);
+  const [preparingSpeech, setPreparingSpeech] = useState(false);
+  const [speechAct, setSpeechAct] = useState<'neutral' | 'question'>('neutral');
   const [voiceError, setVoiceError] = useState(false);
   const [maskError, setMaskError] = useState(false);
   const [photoreal, setPhotoreal] = useState(false);
@@ -53,15 +58,17 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const [conversation, setConversation] = useState(savedConversation);
   const [awaiting, setAwaiting] = useState(false);
   const conversationRef = useRef(false);
+  const awaitToken = useRef(0);
   const rig = useRef<Awaited<ReturnType<typeof import('../lib/auraRigLightform.mjs')['createAuraRigLightform']>> | Awaited<ReturnType<typeof import('../lib/auraSplatProvider.mjs')['createAuraSplatProvider']>> | null>(null);
   const latestReply = chat?.messages.filter(message => message.role === 'assistant' && message.content.trim()).at(-1);
   const lastRead = useRef(latestReply?.id);
   const active = tone === 'active' || speaking;
-  const rigState = useRef({active:false,speaking:false,listening:false,x:0,y:0});
+  const awaitingReply = awaiting || Boolean(chat?.busy);
+  const rigState = useRef({active:false,speaking:false,listening:false,x:0,y:0,conversationManaged:true,userSpeaking:false,speechPlaying:false,preparingSpeech:false,awaitingReply:false,speechAct:'neutral'});
   useEffect(()=>{
-    Object.assign(rigState.current,{active,speaking,listening});
+    Object.assign(rigState.current,{active,speaking,listening,userSpeaking:userSpeaking&&listening,speechPlaying:speaking,preparingSpeech,awaitingReply,speechAct});
     rig.current?.setState(rigState.current);
-  },[active,speaking,listening]);
+  },[active,speaking,listening,userSpeaking,preparingSpeech,awaitingReply,speechAct]);
   const locale = language === 'sv' ? 'sv-SE' : 'en-US';
   const speechWindow = window as Window & {
     SpeechRecognition?: new () => Dictation;
@@ -84,13 +91,18 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const onVisibility = () => {
       if (!document.hidden) return;
       stop();
+      awaitToken.current++;
+      setAwaiting(false);
       setListening(false);
+      setUserSpeaking(false);
+      setPreparingSpeech(false);
       setSpeaking(false);
       setReadReplies(false);
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
+      awaitToken.current++;
       stop();
     };
   }, [synthesis]);
@@ -98,12 +110,15 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   useEffect(() => {
     if (!latestReply || lastRead.current === latestReply.id) return;
     lastRead.current = latestReply.id;
+    awaitToken.current++;
+    setAwaiting(false);
     // Never play into an open microphone, read restored history or start audio in a hidden tab.
     if (!readReplies || !chat?.storageReady || document.hidden || dictation.current) return;
     if (utterance.current) {
       const previous = utterance.current;
       utterance.current = null;
       setSpeaking(false);
+      setPreparingSpeech(false);
       try { previous.cancel(); } catch { /* Already stopped. */ }
     }
     const text = workspaceReplyText(latestReply.content);
@@ -120,22 +135,26 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
         audio.pause();
         urls.forEach(u => URL.revokeObjectURL(u));
         audioTap.current = null;
-        rig.current?.setState({ audioSource: null });
+        rig.current?.setState({ audioSource: null, speaking:false, speechPlaying:false, preparingSpeech:false });
       },
     };
     const finish = () => {
       if (utterance.current !== handle) return;
       utterance.current = null;
       setSpeaking(false);
+      setPreparingSpeech(false);
       audioTap.current = null;
-      rig.current?.setState({ audioSource: null });
+      rig.current?.setState({ audioSource: null, speaking:false, speechPlaying:false, preparingSpeech:false });
       urls.forEach(u => URL.revokeObjectURL(u));
     };
     const browserFallback = () => {
       if (utterance.current !== handle || !synthesis) { setVoiceError(true); finish(); return; }
       const reply = new SpeechSynthesisUtterance(text);
       reply.lang = locale;
-      reply.onstart = () => { if (utterance.current === handle) setSpeaking(true); };
+      setSpeechAct(/\?\s*$/.test(text)?'question':'neutral');
+      reply.onstart = () => { if (utterance.current === handle) { setPreparingSpeech(false); setSpeaking(true); } };
+      reply.onpause = () => { if (utterance.current === handle) setSpeaking(false); };
+      reply.onresume = () => { if (utterance.current === handle) setSpeaking(true); };
       reply.onend = finish;
       reply.onerror = event => {
         if (utterance.current === handle && !['canceled', 'interrupted'].includes(event.error)) setVoiceError(true);
@@ -145,6 +164,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       try { synthesis.speak(reply); } catch { setVoiceError(true); finish(); }
     };
     utterance.current = handle;
+    setPreparingSpeech(true);
     const parts = speechParts(text);
     const synthesize = (part: string) => fetch('/api/aura/voice/speak', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
@@ -157,15 +177,24 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     });
     // Lip sync listens to a copy of the stream; the audio element itself plays straight to the speakers, so a
     // suspended Web Audio context can never silence Aura.
-    audio.onplay = () => {
+    audio.onplaying = () => {
       if (utterance.current !== handle) return;
+      setPreparingSpeech(false);
       setSpeaking(true);
       const tap = (audio as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream?.();
       audioTap.current = tap ?? null;
-      rig.current?.setState({ audioSource: audioTap.current, speaking: true });
+      rig.current?.setState({ audioSource: audioTap.current, speaking: true, speechPlaying:true, preparingSpeech:false });
     };
+    const pauseVisualSpeech = (preparing: boolean) => {
+      if (utterance.current !== handle) return;
+      setSpeaking(false);
+      setPreparingSpeech(preparing);
+      rig.current?.setState({ speaking:false, speechPlaying:false, preparingSpeech:preparing });
+    };
+    audio.onwaiting = () => pauseVisualSpeech(true);
+    audio.onpause = () => { if (audio.paused && !audio.ended) pauseVisualSpeech(false); };
     const playPart = (url: string) => new Promise<void>((resolve, reject) => {
-      audio.onended = () => resolve();
+      audio.onended = () => { pauseVisualSpeech(true); resolve(); };
       audio.onerror = () => reject(new Error('VOICE_PLAYBACK_FAILED'));
       audio.src = url;
       audio.play().catch(reject);
@@ -180,6 +209,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
           if (utterance.current !== handle) return;
           // Prefetch the following sentence while this one plays.
           if (index + 1 < parts.length) { next = synthesize(parts[index + 1]); next.catch(() => {}); }
+          setSpeechAct(/\?\s*$/.test(parts[index])?'question':'neutral');
           await playPart(url);
           started = true;
           if (utterance.current !== handle) return;
@@ -198,6 +228,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       const recording = dictation.current;
       dictation.current = null;
       setListening(false);
+      setUserSpeaking(false);
       try { recording.abort(); } catch { setVoiceError(true); }
       return;
     }
@@ -208,12 +239,15 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       utterance.current = null;
       try { reply.cancel(); } catch { /* Already stopped. */ }
       setSpeaking(false);
+      setPreparingSpeech(false);
     }
     setVoiceError(false);
     const recording = new Recognition();
     recording.lang = locale;
     recording.continuous = true;
     recording.interimResults = true;
+    recording.onspeechstart = () => { if (dictation.current === recording) setUserSpeaking(true); };
+    recording.onspeechend = () => { if (dictation.current === recording) setUserSpeaking(false); };
     // Text already in the box stays; this session's words are shown live and replaced as they are refined.
     let base = (chat.input || '').trimEnd();
     let committed = '';
@@ -235,10 +269,12 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
           if (dictation.current !== recording || !conversationRef.current) return;
           dictation.current = null;
           setListening(false);
+          setUserSpeaking(false);
           try { recording.abort(); } catch { /* Engine already stopped. */ }
+          const token = ++awaitToken.current;
           setAwaiting(true);
-          setTimeout(() => { if (!submitDraft()) setAwaiting(false); }, 60);
-          setTimeout(() => setAwaiting(false), 90000);
+          setTimeout(() => { if (awaitToken.current === token && (!conversationRef.current || document.hidden || !submitDraft())) setAwaiting(false); }, 60);
+          setTimeout(() => { if (awaitToken.current === token) setAwaiting(false); }, 90000);
         }, 1300);
       }
     };
@@ -248,11 +284,13 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       if (event?.error === 'no-speech' || event?.error === 'aborted') return;
       dictation.current = null;
       setListening(false);
+      setUserSpeaking(false);
       setVoiceError(true);
       try { recording.abort(); } catch { /* Engine already stopped. */ }
     };
     recording.onend = () => {
       if (dictation.current !== recording) return;
+      setUserSpeaking(false);
       // Browsers end recognition after a pause; keep listening until the operator presses stop.
       base = [base, committed].filter(Boolean).join(' ');
       committed = '';
@@ -295,6 +333,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       if (!readReplies) { lastRead.current = latestReply?.id; setReadReplies(true); }
     } else {
       if (dictation.current) toggleDictation();
+      awaitToken.current++;
       setAwaiting(false);
     }
   }
@@ -302,8 +341,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   // Conversation loop: when Aura is neither working nor speaking, start listening again.
   useEffect(() => {
     conversationRef.current = conversation;
-    if (!conversation || !chat || listening || speaking || awaiting || chat.busy || document.hidden || dictation.current) return;
-    const id = setTimeout(() => { if (conversationRef.current && !dictation.current) toggleDictation(); }, 450);
+    if (!conversation || !chat || listening || speaking || preparingSpeech || awaiting || chat.busy || document.hidden || dictation.current || utterance.current) return;
+    const id = setTimeout(() => { if (conversationRef.current && !dictation.current && !utterance.current) toggleDictation(); }, 450);
     return () => clearTimeout(id);
   });
 
@@ -314,6 +353,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       utterance.current = null;
       try { reply.cancel(); } catch { setVoiceError(true); }
       setSpeaking(false);
+      setPreparingSpeech(false);
     }
     // Establish the baseline on enable, including restored chat history.
     lastRead.current = latestReply?.id;
