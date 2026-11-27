@@ -21,29 +21,29 @@ const targets={
 };
 export function createConversationBehavior(){
   const out={floor:'idle',attention:0,pitch:0,roll:0,brow:0,gesture:0,motion:1};
-  let previous=null,entered=0,base='idle',yieldUntil=-1,lastAccent=-Infinity;
+  let previous=null,base='idle',yieldUntil=-1,lastAccent=-Infinity,accentStart=-Infinity;
   return {sample(t,state={},reduced=false){
     if(reduced||!Number.isFinite(t)||t<0){
-      previous=null;base='idle';yieldUntil=-1;lastAccent=-Infinity;
+      previous=null;base='idle';yieldUntil=-1;lastAccent=accentStart=-Infinity;
       Object.assign(out,{floor:conversationFloor(state),attention:0,pitch:0,roll:0,brow:0,gesture:0,motion:0});
       return out;
     }
     const next=conversationFloor(state),reset=previous===null||t<previous||t-previous>1.2;
     const dt=reset?0:clamp(t-previous,0,.12);previous=t;
     if(reset){
-      base=next;entered=t;yieldUntil=-1;lastAccent=t;
+      base=next;yieldUntil=-1;lastAccent=accentStart=-Infinity;
       for(let i=0;i<keys.length;i++)out[keys[i]]=targets[next][i];
     }else if(next!==base){
       yieldUntil=base==='speaking'&&next==='idle'?t+.30:-1;
-      base=next;entered=t;
+      base=next;
+      accentStart=-Infinity;
+      if(next==='speaking'&&t-lastAccent>2.5)lastAccent=accentStart=t;
     }
     const floor=base==='idle'&&t<yieldUntil?'yielding':base;
-    const age=t-entered;
     const target=targets[floor];
     // Single small turn-opening gesture, never a repeated loop or a claim of semantic alignment.
     // Refractory time also prevents rapid chunk restarts from triggering more accents.
-    if(!reset&&floor==='speaking'&&age<.12&&t-lastAccent>2.5)lastAccent=t;
-    const since=t-lastAccent;
+    const since=t-accentStart;
     const accent=floor==='speaking'&&since>=0&&since<.8?smooth(since/.23)*(1-smooth((since-.23)/.57)):0;
     for(let i=0;i<keys.length;i++){
       const key=keys[i];
