@@ -130,6 +130,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const audio = new Audio();
     const urls: string[] = [];
     let started = false;
+    let nativePlayback = true;
     const handle = {
       cancel: () => {
         controller.abort();
@@ -152,6 +153,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     };
     const browserFallback = () => {
       if (utterance.current !== handle || !synthesis) { setVoiceError(true); finish(); return; }
+      nativePlayback = false;
       controller.abort();
       audio.pause();
       urls.forEach(u => URL.revokeObjectURL(u));
@@ -163,7 +165,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       setSpeechAct(/\?\s*$/.test(text)?'question':'neutral');
       reply.onstart = () => { if (utterance.current === handle) { setPreparingSpeech(false); setSpeaking(true); } };
       reply.onpause = () => { if (utterance.current === handle) setSpeaking(false); };
-      reply.onresume = () => { if (utterance.current === handle) setSpeaking(true); };
+      reply.onresume = () => { if (utterance.current === handle) { setPreparingSpeech(false); setSpeaking(true); } };
       reply.onend = finish;
       reply.onerror = event => {
         if (utterance.current === handle && !['canceled', 'interrupted'].includes(event.error)) setVoiceError(true);
@@ -189,7 +191,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     // Lip sync listens to a copy of the stream; the audio element itself plays straight to the speakers, so a
     // suspended Web Audio context can never silence Aura.
     audio.onplaying = () => {
-      if (utterance.current !== handle) return;
+      if (utterance.current !== handle || !nativePlayback) return;
       started = true;
       setPreparingSpeech(false);
       setSpeaking(true);
@@ -198,7 +200,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       rig.current?.setState({ audioSource: audioTap.current, speaking: true, speechPlaying:true, preparingSpeech:false });
     };
     const pauseVisualSpeech = (preparing: boolean) => {
-      if (utterance.current !== handle) return;
+      if (utterance.current !== handle || !nativePlayback) return;
       setSpeaking(false);
       setPreparingSpeech(preparing);
       rig.current?.setState({ speaking:false, speechPlaying:false, preparingSpeech:preparing });
