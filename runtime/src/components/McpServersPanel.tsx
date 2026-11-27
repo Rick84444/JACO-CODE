@@ -247,7 +247,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
         </select>
         <McpLogo icon={draft.icon} />
         <select aria-label="Agent access" value={draft.agentAccess} onChange={e => setDraft({ ...draft, agentAccess: e.target.value })} className="ml-auto bg-[#1d1e20] border border-[#505153] rounded px-1 py-1 text-[10px]">
-          {Object.entries(ACCESS_LABEL).filter(([v])=>p.credentialEnv!=='JACO_MCP_OAUTH_LINEAR'||v!=='write').map(([v, l]) => <option key={v} value={v}>Agents: {l}</option>)}
+          {Object.entries(ACCESS_LABEL).filter(([v])=>draft.tokenEnv.trim()!=='JACO_MCP_OAUTH_LINEAR'||v!=='write').map(([v, l]) => <option key={v} value={v}>Agents: {l}</option>)}
         </select>
       </div>
       {/^https:\/\//i.test(draft.target.trim())&&<label className="block text-xs text-neutral-300">Bearer credential environment variable (optional)
