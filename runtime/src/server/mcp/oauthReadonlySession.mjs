@@ -8,10 +8,11 @@ export class ReadonlyMcpOAuthSession {
   #state='idle';
   #error=null;
   #generation=0;
-  /** @param {{fetchImpl?:typeof fetch,onAuthorized:(session:any,isCurrent:()=>boolean)=>Promise<void>}} options */
-  constructor({fetchImpl=fetch,onAuthorized}){
+  /** @param {{fetchImpl?:typeof fetch,onAuthorized:(session:any,isCurrent:()=>boolean)=>Promise<void>,oauthClient?:{begin:typeof beginLinearOAuth,complete:typeof completeLinearOAuth}}} options */
+  constructor({fetchImpl=fetch,onAuthorized,oauthClient={begin:beginLinearOAuth,complete:completeLinearOAuth}}){
     if(typeof onAuthorized!=='function')throw Error('MCP_OAUTH_INTERNAL_HANDLER_REQUIRED');
-    this.fetchImpl=fetchImpl;this.onAuthorized=onAuthorized;
+    if(typeof oauthClient?.begin!=='function'||typeof oauthClient?.complete!=='function')throw Error('MCP_OAUTH_INTERNAL_HANDLER_REQUIRED');
+    this.fetchImpl=fetchImpl;this.onAuthorized=onAuthorized;this.oauthClient=oauthClient;
   }
   status(){return {state:this.#state,error:this.#error,pending:!!this.#pending,accountVerified:false};}
   cancel(){
@@ -35,7 +36,7 @@ export class ReadonlyMcpOAuthSession {
       const callback=new URL(req.url,attempt.redirectUri);
       processing=true;
       try{
-        const session=await completeLinearOAuth(attempt,callback.href,{fetchImpl:this.fetchImpl});
+        const session=await this.oauthClient.complete(attempt,callback.href,{fetchImpl:this.fetchImpl});
         if(!current())throw Error('MCP_OAUTH_CANCELLED');
         // Internal callback owns storage and account verification. No token reaches the browser.
         // Do not install a connector here; the canonical host is its owner.
@@ -59,7 +60,7 @@ export class ReadonlyMcpOAuthSession {
     try{
       await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',()=>{server.removeListener('error',reject);resolve();});});
       if(!current())throw Error('MCP_OAUTH_CANCELLED');
-      attempt=await beginLinearOAuth({redirectUri:'http://127.0.0.1:'+server.address().port+'/mcp/oauth/callback',fetchImpl:this.fetchImpl});
+      attempt=await this.oauthClient.begin({redirectUri:'http://127.0.0.1:'+server.address().port+'/mcp/oauth/callback',fetchImpl:this.fetchImpl});
       if(!current())throw Error('MCP_OAUTH_CANCELLED');
       this.#state='waiting';
       return {url:attempt.url,state:'waiting'};
