@@ -28,6 +28,7 @@ export function mcpConnectionState(provider, observed=true) {
   if (!provider) return 'AVAILABLE';
   if (provider.catalogMatch===false) return 'CUSTOM_CONFIGURATION';
   if (provider.agentAccess==='off') return 'AGENT_ACCESS_OFF';
+  if (provider.oauthState==='REFRESHING'||provider.oauthState==='REFRESH_REQUIRED') return 'CONNECTING';
   if (provider.credentialConfigured===false || /MCP_(?:AUTH|CREDENTIAL)_REQUIRED/.test(provider.error||'')) return 'AUTH_REQUIRED';
   if (provider.status==='FAILED') return 'ERROR';
   if (provider.status==='STARTING') return 'CONNECTING';
@@ -40,7 +41,7 @@ export function catalogDefinitionMatches(id,definition){
   const preset=MCP_INTEGRATION_CATALOG.find(p=>p.id===id);
   if(!preset || !definition || definition.transport!=='http' || definition.validationError) return false;
   try { if(new URL(definition.url).href!==new URL(preset.target).href) return false; } catch { return false; }
-  const refs=id==='huggingface'?['','HF_TOKEN','HUGGINGFACE_TOKEN']:[preset.tokenEnv||''];
+  const refs=id==='huggingface'?['','HF_TOKEN','HUGGINGFACE_TOKEN']:id==='linear'?['LINEAR_API_KEY','JACO_MCP_OAUTH_LINEAR']:[preset.tokenEnv||''];
   return refs.includes(definition.tokenEnv||'');
 }
 export function pluginLoginPreset(id,definition){
