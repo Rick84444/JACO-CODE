@@ -454,7 +454,9 @@ let modelChoices = [], currentModel = null;
 async function header() {
   try {
     const p = await (await fetch('/api/aura/model', { cache: 'no-store' })).json();
-    currentModel = p?.choice || null;
+    const plan = await fetch('/api/aura/workbench/chatgpt-plan', { cache: 'no-store' }).then(r => r.json()).catch(() => null);
+    // The ChatGPT plan, when turned on for chat, answers instead of the shared model choice.
+    currentModel = plan?.connected && plan.use?.enabled ? { provider: 'chatgpt-plan', model: plan.use.model } : p?.choice || null;
     modelChoices = (p?.choices || []).filter(c => c.usable && Array.isArray(c.models) && c.models.length);
     $('auraModel').textContent = modelLabel(currentModel);
     $('modelBtn').textContent = 'Model: ' + (currentModel ? String(currentModel.model).replace(/^models\//, '').slice(0, 28) : 'none');
@@ -514,5 +516,6 @@ $('ideResize').addEventListener('pointerdown', e => {
 });
 
 holo('mission'); holo('tools');
+addEventListener('jaco:model-changed', () => void header());
 header(); loadHistory(); pollCalls(); connectLive(); refreshBoard(); void initSetup();
 $('input').focus();

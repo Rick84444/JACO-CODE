@@ -43,8 +43,16 @@ export function auraChatProviderCatalog(providers, env = process.env) {
   });
 }
 
-export async function manualAuraProviderCompletion({ providerId, model, system, user, temperature = 0.2 }, { providers, economic, env = process.env }) {
+export async function manualAuraProviderCompletion({ providerId, model, system, user, temperature = 0.2 }, { providers, economic, env = process.env, plan = null, background = false }) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(model || '')) throw new Error('AURA_MODEL_INVALID');
+  // The operator's own ChatGPT plan (chatgptPlanSession.mjs): included in their subscription, so no API spend is
+  // reserved. It is offered only where the caller hands in the signed-in session.
+  if (providerId === 'chatgpt-plan' && plan) {
+    if (typeof system !== 'string' || typeof user !== 'string') throw new Error('AURA_CHAT_PROMPT_INVALID');
+    if (Buffer.byteLength(system + user, 'utf8') > auraPromptByteLimit({ local: false })) throw new Error('AURA_CHAT_PROMPT_TOO_LARGE');
+    const result = await plan.complete({ model, system, user, background });
+    return { text: result.content, finishReason: result.finishReason ?? null, provider: providerId, model: result.model || model, local: false, costStatus: 'PLAN' };
+  }
   const entry = auraChatProviderCatalog(providers, env).find(p => p.id === providerId);
   if (!entry) throw new Error('AURA_PROVIDER_NOT_REGISTERED');
   if (!entry.credentialReady) throw new Error('AURA_PROVIDER_CREDENTIAL_MISSING');
