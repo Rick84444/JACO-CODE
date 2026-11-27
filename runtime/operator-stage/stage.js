@@ -171,7 +171,11 @@ function renderBoard(plan, subs) {
   host.innerHTML = `<svg viewBox="0 0 340 ${height}" height="${height}" role="img" aria-label="Strategy steps">${svg}</svg>`;
   h.none.hidden = true;
 }
+let boardBusy = false;
 async function refreshBoard() {
+  // A hidden page is not looked at, and a slow answer must not stack up behind itself.
+  if (boardBusy || document.hidden) return;
+  boardBusy = true;
   try {
     const g = await (await fetch('/api/aura/workbench/gameboard', { cache: 'no-store' })).json();
     const plan = (g.plans || []).find(p => p.status === 'ACTIVE') || (g.plans || [])[0];
@@ -182,9 +186,10 @@ async function refreshBoard() {
     lastPlan = plan; missionActions = subs;
     renderBoard(plan, subs);
     if (changed) activate('mission');
-  } catch { /* runtime restarting */ }
+  } catch { /* runtime restarting */ } finally { boardBusy = false; }
 }
 setInterval(refreshBoard, 4000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshBoard(); });
 
 // ---------- Conversation: the same encrypted chat session the IDE uses ----------
 const log = $('log');
@@ -367,6 +372,7 @@ $('input').addEventListener('input', e => { e.target.style.height = ''; e.target
 const seenCalls = new Set();
 let firstPoll = true;
 async function pollCalls() {
+  if (document.hidden) return void setTimeout(pollCalls, 1000); // calls made meanwhile are read when it is shown
   try {
     const data = await (await fetch('/api/aura/workbench/mcp/calls')).json();
     for (const c of (data.calls || []).slice(-40)) {
@@ -406,7 +412,7 @@ async function refreshBrowserView() {
 }
 // Live while it is shown large or in focus, slow otherwise.
 setInterval(() => {
-  const h = holos.get('browser'); if (!h) return;
+  const h = holos.get('browser'); if (!h || document.hidden) return;
   if (!$('viewer').hidden || h.el.classList.contains('focus') || Date.now() - lastFrameAt > 6000) refreshBrowserView();
 }, 1500);
 function openViewer() { $('viewer').hidden = false; refreshBrowserView(); }
