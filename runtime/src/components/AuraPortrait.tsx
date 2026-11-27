@@ -129,6 +129,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const controller = new AbortController();
     const audio = new Audio();
     const urls: string[] = [];
+    let started = false;
     const handle = {
       cancel: () => {
         controller.abort();
@@ -141,6 +142,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const finish = () => {
       if (utterance.current !== handle) return;
       utterance.current = null;
+      controller.abort();
+      audio.pause();
       setSpeaking(false);
       setPreparingSpeech(false);
       audioTap.current = null;
@@ -149,6 +152,12 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     };
     const browserFallback = () => {
       if (utterance.current !== handle || !synthesis) { setVoiceError(true); finish(); return; }
+      controller.abort();
+      audio.pause();
+      urls.forEach(u => URL.revokeObjectURL(u));
+      audioTap.current = null;
+      rig.current?.setState({ audioSource:null, speaking:false, speechPlaying:false });
+      setPreparingSpeech(true);
       const reply = new SpeechSynthesisUtterance(text);
       reply.lang = locale;
       setSpeechAct(/\?\s*$/.test(text)?'question':'neutral');
@@ -171,7 +180,9 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       body: JSON.stringify({ text: part, lang: locale }),
     }).then(async response => {
       if (!response.ok) throw new Error('VOICE_UNAVAILABLE');
-      const url = URL.createObjectURL(await response.blob());
+      const blob = await response.blob();
+      if (controller.signal.aborted || utterance.current !== handle) throw new DOMException('Speech canceled','AbortError');
+      const url = URL.createObjectURL(blob);
       urls.push(url);
       return url;
     });
@@ -179,10 +190,11 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     // suspended Web Audio context can never silence Aura.
     audio.onplaying = () => {
       if (utterance.current !== handle) return;
+      started = true;
       setPreparingSpeech(false);
       setSpeaking(true);
-      const tap = (audio as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream?.();
-      audioTap.current = tap ?? null;
+      try { audioTap.current = (audio as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream?.() ?? null; }
+      catch { audioTap.current = null; }
       rig.current?.setState({ audioSource: audioTap.current, speaking: true, speechPlaying:true, preparingSpeech:false });
     };
     const pauseVisualSpeech = (preparing: boolean) => {
@@ -194,13 +206,24 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     audio.onwaiting = () => pauseVisualSpeech(true);
     audio.onpause = () => { if (audio.paused && !audio.ended) pauseVisualSpeech(false); };
     const playPart = (url: string) => new Promise<void>((resolve, reject) => {
-      audio.onended = () => { pauseVisualSpeech(true); resolve(); };
-      audio.onerror = () => reject(new Error('VOICE_PLAYBACK_FAILED'));
+      let settled = false;
+      const settle = (error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        controller.signal.removeEventListener('abort',cancel);
+        audio.onended = null;
+        audio.onerror = null;
+        if (error) reject(error); else resolve();
+      };
+      const cancel = () => settle(new DOMException('Speech canceled','AbortError'));
+      if (controller.signal.aborted) { cancel(); return; }
+      controller.signal.addEventListener('abort',cancel,{once:true});
+      audio.onended = () => { pauseVisualSpeech(true); settle(); };
+      audio.onerror = () => settle(new Error('VOICE_PLAYBACK_FAILED'));
       audio.src = url;
-      audio.play().catch(reject);
+      audio.play().catch(settle);
     });
     void (async () => {
-      let started = false;
       if (!parts.length) { finish(); return; }
       try {
         let next = synthesize(parts[0]);
@@ -211,7 +234,6 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
           if (index + 1 < parts.length) { next = synthesize(parts[index + 1]); next.catch(() => {}); }
           setSpeechAct(/\?\s*$/.test(parts[index])?'question':'neutral');
           await playPart(url);
-          started = true;
           if (utterance.current !== handle) return;
         }
         finish();
@@ -281,7 +303,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     recording.onerror = event => {
       if (dictation.current !== recording) return;
       // Silence and engine restarts are normal while listening; only real failures are reported.
-      if (event?.error === 'no-speech' || event?.error === 'aborted') return;
+      if (event?.error === 'no-speech' || event?.error === 'aborted') { setUserSpeaking(false); return; }
       dictation.current = null;
       setListening(false);
       setUserSpeaking(false);
