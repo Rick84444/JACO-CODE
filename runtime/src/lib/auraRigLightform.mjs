@@ -6,6 +6,34 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 // The pinned CC0 MPFB source and build-time compaction are documented in OpenSpec.
 const ASSET='/branding/aura-rig.glb';
 const EXPECTED_BYTES=7465400;
+const V31_ASSET='/branding/aura-anatomical.glb';
+const V31_BYTES=45304080;
+const V31_SHA256='ea9c4646cf197f042fa4a39ea8ecd5a438adb1b0865c8eddb0749d0915bd6129';
+async function loadAvatar(signal){
+  // Optional locally installed V31; keep the existing lightform if not installed.
+  try{
+    const response=await fetch(V31_ASSET,{signal,cache:'force-cache'});
+    if(response.ok&&!response.headers.get('content-type')?.includes('text/html')){
+      const bytes=await response.arrayBuffer();
+      const header=new DataView(bytes);
+      if(bytes.byteLength!==V31_BYTES||header.getUint32(0,true)!==0x46546c67||header.getUint32(4,true)!==2||header.getUint32(8,true)!==V31_BYTES)throw Error('AURA_V31_HEADER');
+      if(globalThis.crypto?.subtle){
+        const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+        if(hash!==V31_SHA256)throw Error('AURA_V31_HASH');
+      }
+      return {gltf:await new GLTFLoader().parseAsync(bytes,''),anatomical:true};
+    }
+    if(!response.ok&&response.status!==404)throw Error('AURA_V31_HTTP_'+response.status);
+  }catch(error){
+    if(signal?.aborted)throw error;
+    console.warn('Aura V31 unavailable; retaining lightform',error);
+  }
+  const response=await fetch(ASSET,{signal,cache:'force-cache'});
+  if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
+  const bytes=await response.arrayBuffer();
+  if(bytes.byteLength!==EXPECTED_BYTES)throw Error('AURA_RIG_ASSET_SIZE');
+  return {gltf:await new GLTFLoader().parseAsync(bytes,''),anatomical:false};
+}
 const FRAME_TIME=1000/30;
 function seeded(seed){let s=seed>>>0;return()=>((s=(Math.imul(s,1664525)+1013904223)>>>0)/4294967296);}
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -981,13 +1009,13 @@ void main(){
 }
 
 function disposeModel(model){
-  const geometries=new Set(),materials=new Set(),skeletons=new Set();
+  const geometries=new Set(),materials=new Set(),skeletons=new Set(),textures=new Set();
   model?.traverse(o=>{
     if(o.geometry)geometries.add(o.geometry);
     if(o.material)(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>materials.add(m));
     if(o.skeleton)skeletons.add(o.skeleton);
   });
-  geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());skeletons.forEach(s=>s.dispose());
+  geometries.forEach(g=>g.dispose());materials.forEach(m=>{for(const value of Object.values(m))if(value?.isTexture)textures.add(value);m.dispose();});textures.forEach(t=>t.dispose());skeletons.forEach(s=>s.dispose());
 }
 
 /**
@@ -996,11 +1024,7 @@ function disposeModel(model){
  * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean, stars?: boolean}} [options]
  */
 export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,stars=true}={}){
-  const response=await fetch(ASSET,{signal,cache:'force-cache'});
-  if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
-  const bytes=await response.arrayBuffer();
-  if(bytes.byteLength!==EXPECTED_BYTES)throw Error('AURA_RIG_ASSET_SIZE');
-  const gltf=await new GLTFLoader().parseAsync(bytes,'');
+  const {gltf,anatomical}=await loadAvatar(signal);
   const model=gltf.scene;
   let renderer,geometry,material,observer,domTelemetryObserver,lightBody,voiceTracker,qualityGovernor,behaviorEngine,raf=0,disposed=false;
   const motion=window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -1035,7 +1059,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     };
     model.updateMatrixWorld(true);
     const isMobile=window.innerWidth<768;
-    const groups=createSamples(model,isMobile?.64:1);
+    const groups=anatomical?[]:createSamples(model,isMobile?.64:1);
     const total=groups.reduce((n,g)=>n+g.samples.length,0);
     geometry=new THREE.BufferGeometry();
     const positions=new Float32Array(total*3),normals=new Float32Array(total*3);
@@ -1053,14 +1077,26 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending
     });
     const scene=new THREE.Scene(),cloud=new THREE.Points(geometry,material);
-    cloud.frustumCulled=false;scene.add(cloud);
+    cloud.frustumCulled=false;if(!anatomical)scene.add(cloud);
 
     const camera=new THREE.PerspectiveCamera(31,1,.03,20);
     camera.position.set(0,1.570,1.05);camera.lookAt(0,1.540,.03);
     renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power',preserveDrawingBuffer:true});
     renderer.setClearColor(0x000000,0);
 
-    lightBody=createLightBody(scene,model,bones,groups,isMobile,distantField,stars);
+    if(anatomical){
+      // Render the authored GLB materials and meshes in the SAME portrait camera/canvas.
+      // Reuse the existing pose, morph, voice and cognitive-state logic below.
+      model.traverse(o=>{if(o.isSkinnedMesh)o.frustumCulled=false;});
+      scene.add(model);
+      const ambient=new THREE.HemisphereLight(0xdce9ff,0x151b26,1.35);
+      const key=new THREE.DirectionalLight(0xe5efff,2.1);key.position.set(.65,2.3,1.7);
+      const rim=new THREE.DirectionalLight(0x9ab8e8,1.0);rim.position.set(-.7,1.95,-.8);
+      scene.add(ambient,key,rim);
+      lightBody={update(){},dispose(){}};
+    }else{
+      lightBody=createLightBody(scene,model,bones,groups,isMobile,distantField,stars);
+    }
     voiceTracker=createVoiceFormantTracker();
     qualityGovernor=createQualityGovernor(isMobile);
     behaviorEngine=createBehaviorEngine();
@@ -1299,11 +1335,12 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       lightBody.update(t,energy,blink,finiteClamp(smoothJaw*2.0,0,1,0),qualityTier,decisionBlend,pupilSize);
 
       let signature=0;for(let j=0;j<Math.min(positions.length,6000);j+=31)signature+=positions[j]*(j+1);
-      canvas.dataset.renderedPoints=String(total);canvas.dataset.renderer='rigged-particle-field';
-      canvas.dataset.hairPoints=String(groups.find(g=>g.kind===2).samples.length);
-      canvas.dataset.torsoPoints=String(groups.find(g=>g.kind===1).samples.length);
+      canvas.dataset.renderedPoints=String(total);canvas.dataset.renderer=anatomical?'rigged-anatomical-v31':'rigged-particle-field';
+      canvas.dataset.avatarVersion=anatomical?'V31':'lightform';
+      canvas.dataset.hairPoints=String(groups.find(g=>g.kind===2)?.samples.length??0);
+      canvas.dataset.torsoPoints=String(groups.find(g=>g.kind===1)?.samples.length??0);
       canvas.dataset.yaw=yaw.toFixed(4);canvas.dataset.blink=blink.toFixed(4);canvas.dataset.jaw=smoothJaw.toFixed(4);
-      canvas.dataset.geometrySignature=signature.toFixed(5);
+      canvas.dataset.geometrySignature=(anatomical?yaw*100+blink*10+smoothJaw:signature).toFixed(5);
       canvas.dataset.blinkMm=displacement(probes[0]).toFixed(3);
       canvas.dataset.jawMm=displacement(probes[1]).toFixed(3);
       canvas.dataset.cognitivePhase=phase;
