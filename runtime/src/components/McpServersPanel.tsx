@@ -217,7 +217,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
             {current.credentialEnv!=='JACO_MCP_OAUTH_LINEAR'&&(current.loginOpeningSupported||current.allowOpenLogin)&&<label className="flex gap-2 items-start"><input type="checkbox" checked={current.allowOpenLogin===true} disabled={working!==null||(!current.allowOpenLogin&&!current.loginOpeningSupported)} onChange={e=>void updateLoginAccess(e.target.checked)}/><span>Allow Aura to open the approved account page. No credential submission or consent.</span></label>}
             <button type="button" disabled={busy!==null||working!==null} onClick={()=>onStart(current.id)} className="rounded border border-neutral-600 px-3 py-2 disabled:opacity-40">Discover tools</button>
           </div>}
-          {!current&&fresh&&preset&&<button type="button" disabled={working!==null} onClick={()=>{setDraft(mcpCatalogDraft(preset.id));modal.current?.close();setAdding(true);}} className="rounded bg-[#314a66] px-4 py-2 text-xs font-medium">{preset.id==='linear'?'Configure API key manually':'Configure connection'}</button>}
+          {!current&&fresh&&preset&&preset.id!=='linear'&&<button type="button" disabled={working!==null} onClick={()=>{setDraft(mcpCatalogDraft(preset.id));modal.current?.close();setAdding(true);}} className="rounded bg-[#314a66] px-4 py-2 text-xs font-medium">Configure connection</button>}
           {formError&&<p role="alert" className="text-xs text-amber-300">{formError}</p>}
           <div className="border-t border-neutral-700 pt-3 flex justify-between gap-2"><a href={selected.docs} target="_blank" rel="noopener noreferrer" className="text-xs text-sky-300 underline">Provider documentation</a><button type="button" onClick={()=>modal.current?.close()} className="text-xs text-neutral-300">Close</button></div>
           <p className="text-[10px] text-neutral-400">Tool discovery or a transport acknowledgement does not verify a business outcome.</p>
@@ -254,7 +254,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
         <input aria-label="Credential environment variable" value={draft.tokenEnv} onChange={e=>setDraft({...draft,tokenEnv:e.target.value,allowOpenLogin:false})} placeholder="e.g. RENDER_API_KEY" className="block w-full rounded border border-neutral-700 bg-[#1d1e20] px-2 py-1"/>
       </label>}
       {MCP_INTEGRATION_CATALOG.some(p=>p.id===draft.id && p.target===draft.target && p.loginUrl) && <label className="flex items-start gap-2 text-xs text-neutral-300"><input type="checkbox" checked={draft.allowOpenLogin} onChange={e=>setDraft({...draft,allowOpenLogin:e.target.checked})}/>Allow Aura to open this provider's official sign-in page when authentication is needed. Does not grant access to passwords, consent or new scopes.</label>}
-      <p className="text-xs text-neutral-400">Use an existing environment variable name, never paste the secret here. Remote writes require explicit server write access and an applicable signed operator mandate. Browser-based OAuth is not yet implemented in this MCP host.</p>
+      <p className="text-xs text-neutral-400">Use an existing environment variable name, never paste the secret here. Remote writes require explicit server write access and an applicable signed operator mandate. For supported account sign-in, use the provider dialog.</p>
       {formError && <p role="status" className="text-[10px] text-amber-300 break-words">{formError}</p>}
       <button onClick={() => void add()} disabled={!fresh||working !== null} className="w-full rounded border border-neutral-700 py-1 text-[10px] text-neutral-200 disabled:opacity-40">{working === '__add' ? 'Connecting…' : 'Save and connect'}</button>
     </div>}</dialog>
@@ -275,7 +275,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
         {managed(p) && <div className="px-3 pb-1.5 flex items-center gap-2 text-[9px]">
           <label className="text-neutral-400 flex items-center gap-1">Agents
             <select aria-label={`Agent access ${p.name}`} value={p.agentAccess || 'read'} disabled={!fresh||working !== null} onChange={e => void setAccess(p.id, e.target.value)} className="bg-[#1d1e20] border border-[#505153] rounded px-1 py-0.5 text-[9px] text-neutral-200 disabled:opacity-60">
-              {Object.entries(ACCESS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              {Object.entries(ACCESS_LABEL).filter(([v])=>p.credentialEnv!=='JACO_MCP_OAUTH_LINEAR'||v!=='write').map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </label>
           {!!p.deny?.length && <span className="text-neutral-500 truncate" title={`Never for agents: ${p.deny.join(', ')}`}>blocked: {p.deny.join(', ')}</span>}
