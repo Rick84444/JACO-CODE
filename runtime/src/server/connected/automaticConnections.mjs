@@ -41,6 +41,12 @@ export function automaticConnections({ registry, mcpHost, env = process.env, now
     const out = [], todo = [];
     for (const s of rows) {
       if (s.status === 'READY') { retry.delete(s.id); out.push({ id: s.id, state: 'CONNECTED', tools: s.tools.map(t => t.name) }); continue; }
+      if (s.oauthState && s.credentialConfigured === false) {
+        retry.delete(s.id);
+        const refreshing=s.oauthState==='REFRESHING';
+        out.push({id:s.id,state:refreshing?'AUTH_REFRESHING':'AUTH_REQUIRED',tools:[],remedy:refreshing?'Wait for account session renewal.':'Open the provider account sign-in dialog in Integrations to reconnect.'});
+        continue;
+      }
       if (s.credentialEnv && s.credentialConfigured === false) { out.push({ id: s.id, state: 'NO_KEY', tools: [], remedy: `Add ${s.credentialEnv} (JACO Connect can receive it) and the server connects by itself.` }); continue; }
       if (s.status === 'FAILED' && s.error && /CONFIGURATION_INVALID|HTTPS_URL_REQUIRED|TOKEN_ENV|MCP_ONE_SHOT_NOT_MCP_SERVER|ENTRYPOINT_NOT_FOUND|NO_MCP_HANDSHAKE/.test(s.error)) { out.push({ id: s.id, state: 'INVALID', tools: [], error: s.error, remedy: remedyFor(s.error) }); continue; }
       const r = retry.get(s.id);
