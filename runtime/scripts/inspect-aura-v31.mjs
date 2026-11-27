@@ -21,20 +21,44 @@ export function inspectV31(bytes){
   const face=skinned.map(n=>j.meshes[n.mesh]).find(m=>requiredMorphs.every(n=>m.extras?.targetNames?.includes(n)));
   if(!face)throw Error('AURA_V31_MORPHS');
   const binStart=end+8;
-  // Validate actual dense float POSITION deltas rather than trusting morph labels.
+  // Validate actual dense or sparse float POSITION deltas rather than trusting morph labels.
   for(const name of requiredMorphs){
     const idx=face.extras.targetNames.indexOf(name);
     let nonzero=false;
     for(const primitive of face.primitives){
       const a=j.accessors[primitive.targets?.[idx]?.POSITION];
-      if(!a||a.componentType!==5126||a.type!=='VEC3'||a.sparse)continue;
-      const v=j.bufferViews[a.bufferView];if(!v||v.buffer!==0)continue;
-      const start=binStart+(v.byteOffset||0)+(a.byteOffset||0),stride=v.byteStride||12;
-      if(start+(a.count-1)*stride+12>Math.min(bytes.length,binStart+(v.byteOffset||0)+v.byteLength))throw Error('AURA_V31_ACCESSOR_BOUNDS');
-      for(let i=0;i<a.count&&!nonzero;i++){
+      if(!a||a.componentType!==5126||a.type!=='VEC3')continue;
+      const checkRange=(viewIndex,offset,count,stride,width)=>{
+        const v=j.bufferViews[viewIndex];
+        if(!v||v.buffer!==0||!Number.isInteger(count)||count<1||offset<0)throw Error('AURA_V31_ACCESSOR_LAYOUT');
+        const start=binStart+(v.byteOffset||0)+offset;
+        if(start+(count-1)*stride+width>Math.min(bytes.length,binStart+(v.byteOffset||0)+v.byteLength))throw Error('AURA_V31_ACCESSOR_BOUNDS');
+        return start;
+      };
+      const sparse=a.sparse;
+      let start,stride,count;
+      if(sparse){
+        count=sparse.count;stride=12;
+        if(count>a.count)throw Error('AURA_V31_SPARSE_COUNT');
+        const type=sparse.indices.componentType,width=({5121:1,5123:2,5125:4})[type];
+        if(!width)throw Error('AURA_V31_SPARSE_INDEX_TYPE');
+        const ix=checkRange(sparse.indices.bufferView,sparse.indices.byteOffset||0,count,width,width);
+        let previous=-1;
+        for(let i=0;i<count;i++){
+          const index=bytes.readUIntLE(ix+i*width,width);
+          if(index<=previous||index>=a.count)throw Error('AURA_V31_SPARSE_INDEX');
+          previous=index;
+        }
+        start=checkRange(sparse.values.bufferView,sparse.values.byteOffset||0,count,stride,12);
+      }else{
+        count=a.count;stride=j.bufferViews[a.bufferView]?.byteStride||12;
+        start=checkRange(a.bufferView,a.byteOffset||0,count,stride,12);
+      }
+      for(let i=0;i<count;i++){
         const p=start+i*stride;
         const x=bytes.readFloatLE(p),y=bytes.readFloatLE(p+4),z=bytes.readFloatLE(p+8);
-        if(Number.isFinite(x)&&Number.isFinite(y)&&Number.isFinite(z)&&x*x+y*y+z*z>1e-8)nonzero=true;
+        if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(z))throw Error('AURA_V31_NONFINITE_MORPH');
+        if(x*x+y*y+z*z>1e-8)nonzero=true;
       }
     }
     if(!nonzero)throw Error('AURA_V31_EMPTY_MORPH:'+name);
