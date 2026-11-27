@@ -1955,7 +1955,8 @@ const notifyPhone = async (action) => {
       recentCalls: mcpHost.recentCalls(20),
     };
     return value;
-  });
+    // The IDE polls every 3 s: answer from the last observation while the bridges are asked again.
+  }, { staleMs: 15_000 });
 
   const getAuraWorkbenchWorkplace = async () => {
     const base = String(process.env.JACO_WORKPLACE_URL || 'http://127.0.0.1:2995').replace(/\/+$/, '');
