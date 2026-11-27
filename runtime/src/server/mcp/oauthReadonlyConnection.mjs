@@ -44,13 +44,15 @@ export function createReadonlyOAuthConnection({host,credentials=readonlyOAuthCre
   }});
   function status(){
     const config=host.servers().linear;
+    const saved=host.readConfig().servers?.linear;
     const scoped=oauthDefinitionMatches('linear',config);
+    const existingConfiguration=!!(config||saved)&&!oauthDefinitionMatches('linear',config||saved);
     const auth=credentials.status();
     const flow=session.status();
     const row=scoped?host.status().find(p=>p.id==='linear'):null;
     const verifiedAt=scoped?auth.verifiedAt:null;
     return {provider:'linear',state:flow.state,error:flow.error||connectionError||null,pending:flow.pending,
-      existingConfiguration:!!config&&!scoped,credentialState:auth.state,configured:scoped,
+      existingConfiguration,credentialState:auth.state,configured:scoped,
       accountVerified:!!verifiedAt,verifiedAt,toolsDiscovered:row?.status==='READY'?row.tools.length:null,
       runtimeReady:row?.status==='READY'&&auth.state==='AUTHORIZED',agentExecutionVerified:false};
   }
