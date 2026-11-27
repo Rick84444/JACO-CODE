@@ -1340,7 +1340,15 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       canvas.dataset.hairPoints=String(groups.find(g=>g.kind===2)?.samples.length??0);
       canvas.dataset.torsoPoints=String(groups.find(g=>g.kind===1)?.samples.length??0);
       canvas.dataset.yaw=yaw.toFixed(4);canvas.dataset.blink=blink.toFixed(4);canvas.dataset.jaw=smoothJaw.toFixed(4);
-      canvas.dataset.geometrySignature=(anatomical?yaw*100+blink*10+smoothJaw:signature).toFixed(5);
+      if(anatomical){
+        // Measure the deformed geometry rather than synthesizing a motion receipt from state.
+        signature=0;
+        for(let p=0;p<probes.length;p++){
+          face.getVertexPosition(probes[p].vertex,temp).applyMatrix4(face.matrixWorld);
+          signature+=(temp.x*3+temp.y*5+temp.z*7)*(p+1);
+        }
+      }
+      canvas.dataset.geometrySignature=signature.toFixed(5);
       canvas.dataset.blinkMm=displacement(probes[0]).toFixed(3);
       canvas.dataset.jawMm=displacement(probes[1]).toFixed(3);
       canvas.dataset.cognitivePhase=phase;
