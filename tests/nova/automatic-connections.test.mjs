@@ -91,3 +91,22 @@ test('actual registry keeps a saved operator endpoint and model through reconcil
     assert.equal(restarted.providers.get('ollama').baseUrl,'http://127.0.0.1:11436/v1');
   }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
+
+test('OAuth session renewal or reauthorization never requests a manual API key', async()=>{
+  const registry={providers:new Map(),ensureDefaults(){},list:()=>[],register(){},probe:async()=>({ok:false})};
+  let oauthState='REAUTH_REQUIRED', credentialConfigured=false, starts=0;
+  const mcpHost={status:()=>[{id:'linear',status:'FAILED',agentAccess:'read',tools:[],credentialEnv:'JACO_MCP_OAUTH_LINEAR',credentialConfigured,oauthState}],start:async()=>{starts++;return [{name:'get_user'}];}};
+  const c=automaticConnections({registry,mcpHost,env:{}});
+  let receipt=await c.refresh({force:true});
+  assert.equal(receipt.tools[0].state,'AUTH_REQUIRED');
+  assert.match(receipt.tools[0].remedy,/sign-in dialog/);
+  assert.doesNotMatch(JSON.stringify(receipt),/JACO_MCP_OAUTH_LINEAR|NO_KEY/);
+  oauthState='REFRESHING';
+  receipt=await c.refresh({force:true});
+  assert.equal(receipt.tools[0].state,'AUTH_REFRESHING');
+  assert.equal(starts,0);
+  oauthState='REFRESH_REQUIRED';credentialConfigured=true;
+  receipt=await c.refresh({force:true});
+  assert.equal(receipt.tools[0].state,'CONNECTED');
+  assert.equal(starts,1);
+});
