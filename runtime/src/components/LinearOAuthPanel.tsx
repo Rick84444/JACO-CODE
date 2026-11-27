@@ -37,6 +37,7 @@ export function LinearOAuthPanel({fresh,onChanged}:{fresh:boolean;onChanged:(not
     mounted.current=true;
     const controller=new AbortController();
     let timer:number|undefined;
+    let unavailable=false;
     async function poll(){
       const revision=sequence.current;
       try{
@@ -47,8 +48,8 @@ export function LinearOAuthPanel({fresh,onChanged}:{fresh:boolean;onChanged:(not
         if(data.runtimeReady&&!previousReady.current)notice.current('Linear: account read verified; tools discovered');
         previousReady.current=data.runtimeReady===true;
       }catch(e:any){
-        if(!controller.signal.aborted&&revision===sequence.current){setStatus(null);setUrl('');setError(String(e?.message||'MCP_OAUTH_STATUS_UNAVAILABLE'));}
-      }finally{if(!controller.signal.aborted)timer=window.setTimeout(poll,2500);}
+        if(!controller.signal.aborted&&revision===sequence.current){const code=String(e?.message||'MCP_OAUTH_STATUS_UNAVAILABLE');setStatus(null);setUrl('');setError(code);unavailable=code==='MCP_OAUTH_PREVIEW_DISABLED'||code==='LOCAL_UI_ONLY';}
+      }finally{if(!controller.signal.aborted&&!unavailable)timer=window.setTimeout(poll,2500);}
     }
     void poll();
     return()=>{mounted.current=false;controller.abort();window.clearTimeout(timer);};
