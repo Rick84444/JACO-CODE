@@ -68,13 +68,13 @@ export function createReadonlyOAuthClient(provider) {
     if(!includes(metadata.code_challenge_methods_supported,'S256')||!includes(metadata.token_endpoint_auth_methods_supported,'none')||!includes(metadata.grant_types_supported,'authorization_code')||!includes(metadata.grant_types_supported,'refresh_token')||!includes(metadata.response_types_supported,'code')||!includes(metadata.scopes_supported,p.scope)||metadata.authorization_response_iss_parameter_supported!==true)fail('CONTRACT_UNSUPPORTED');
     return p;
   }
-  
+
   function callbackUri(uri){
     let u;try{u=new URL(uri);}catch{fail('CALLBACK_INVALID');}
     if(u.protocol!=='http:'||u.hostname!=='127.0.0.1'||!u.port||u.pathname!=='/mcp/oauth/callback'||u.search||u.hash||u.username||u.password||u.href!==uri)fail('CALLBACK_INVALID');
     return u.href;
   }
-  
+
   /** One in-memory attempt. Never serialize it to a browser or log. */
   async function begin({redirectUri,fetchImpl=fetch,now=Date.now}){
     redirectUri=callbackUri(redirectUri);
@@ -93,7 +93,7 @@ export function createReadonlyOAuthClient(provider) {
     attempts.add(attempt);
     return attempt;
   }
-  
+
   async function exchange(params,{fetchImpl,now,clientId,previousRefresh}){
     const r=await jsonRequest(fetchImpl,p.token,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({...params,client_id:clientId,resource:p.resource})});
     if(!opaque(r.access_token)||String(r.token_type).toLowerCase()!=='bearer'||!Number.isSafeInteger(r.expires_in)||r.expires_in<=0||r.expires_in>86400)fail('TOKEN_INVALID');
@@ -101,7 +101,7 @@ export function createReadonlyOAuthClient(provider) {
     if(r.refresh_token!==undefined&&!opaque(r.refresh_token))fail('TOKEN_INVALID');
     return {issuer:p.issuer,resource:p.resource,clientId,scope:p.scope,accessToken:r.access_token,refreshToken:r.refresh_token||previousRefresh||null,expiresAt:now()+r.expires_in*1000};
   }
-  
+
   async function complete(attempt,callback,{fetchImpl=fetch,now=Date.now}={}){
     if(!attempt||!attempts.has(attempt)||attempt.consumed||now()>=attempt.expiresAt)fail('ATTEMPT_INVALID');
     let u;try{u=new URL(callback);}catch{fail('CALLBACK_INVALID');}
@@ -114,7 +114,7 @@ export function createReadonlyOAuthClient(provider) {
     if(q.getAll('code').length!==1||!opaque(q.get('code')))fail('CODE_INVALID');
     return exchange({grant_type:'authorization_code',code:q.get('code'),code_verifier:attempt.verifier,redirect_uri:attempt.redirectUri},{fetchImpl,now,clientId:attempt.clientId});
   }
-  
+
   // Caller must serialize refresh and persist rotated tokens atomically before use.
   // No retries: a lost response may have consumed the old refresh token.
   async function refresh(session,{fetchImpl=fetch,now=Date.now}={}){
