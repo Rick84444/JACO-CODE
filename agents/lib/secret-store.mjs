@@ -97,6 +97,15 @@ export class SecretStore {
       return true;
     });
   }
+  // Compare under the same cross-process lock used by normal vault writes.
+  replaceIfCurrent(name, expected, value, meta = {}) {
+    const key = validateSecretName(name);
+    return this.#withWriteLock(() => {
+      if (this.get(key) !== expected) return false;
+      this.#setUnlocked(key, value, meta);
+      return true;
+    });
+  }
   #setUnlocked(name, value, meta) {
     const key = validateSecretName(name);
     const text = String(value ?? '');
