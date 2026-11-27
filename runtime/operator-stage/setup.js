@@ -19,7 +19,7 @@ const TITLES = {
 function remembered(key) { try { return localStorage.getItem(key); } catch { return null; } }
 function remember(key, value) { try { localStorage.setItem(key, value); } catch { /* private window: asked again next time */ } }
 
-const state = { report: null, error: '', vault: null, providers: [], catalog: [], skippedVault: remembered('jaco.setup.skipVault') === '1', busy: '', message: '', open: false, view: null, local: false };
+const state = { report: null, error: '', vault: null, providers: [], catalog: [], skippedVault: remembered('jaco.setup.skipVault') === '1', busy: '', message: '', open: false, view: null, local: false, plan: null };
 
 const get = (url, ms = 30000) => fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(ms) }).then(r => r.json()).catch(() => null);
 const post = async (url, body, ms = 45000) => {
@@ -31,18 +31,19 @@ const post = async (url, body, ms = 45000) => {
 export async function refresh() {
   // A slow computer can need a minute to answer: that is "checking", not "JACO is not running".
   state.checking = true; if (state.open) render();
-  const [activation, windows, discovery, models, catalog] = await Promise.all([
+  const [activation, windows, discovery, models, catalog, plan] = await Promise.all([
     get('/api/jaco/activation', 150000), get('/api/aura/workbench/vault/windows', 90000), get('/api/aura/workbench/vault/discovery', 90000),
-    get('/api/aura/chat/models', 90000), get('/api/aura/workbench/providers/catalog', 90000),
+    get('/api/aura/chat/models', 90000), get('/api/aura/workbench/providers/catalog', 90000), get(PLAN),
   ]);
   state.checking = false;
+  state.plan = plan?.success ? plan : null;
   state.report = activation?.success ? activation.report : null;
   state.error = state.report ? '' : 'unreachable';
   state.vault = windows?.available ? { available: true, keys: windows.keys || [], fetched: windows.fetched || [], configured: (discovery?.configured || []).map(c => c.name) } : { available: false, keys: [], fetched: [], configured: [] };
   state.providers = Array.isArray(models?.providers) ? models.providers : [];
   state.catalog = (catalog?.providers || []).map(p => p.id);
   render();
-  return setupSteps({ report: state.report, error: state.error, vault: state.vault, skippedVault: state.skippedVault });
+  return setupSteps({ report: state.report, error: state.error, vault: state.vault, skippedVault: state.skippedVault, plan: state.plan });
 }
 
 function el(tag, props = {}, ...children) {
@@ -61,6 +62,7 @@ async function act(name, work) {
   state.busy = name; state.message = ''; render();
   try { await work(); } catch (error) { state.message = String(error?.message || error); }
   state.busy = ''; await refresh();
+  dispatchEvent(new Event('jaco:model-changed')); // the stage header shows which model answers
 }
 
 const explainKey = code => ({
@@ -69,6 +71,59 @@ const explainKey = code => ({
   AMBIGUOUS: t('Nyckeln passar flera tjänster. Välj tjänst i listan och försök igen.', 'The key fits several services. Pick the service in the list and try again.'),
   UNKNOWN_KEY: t('Nyckeln känns inte igen. Välj tjänst i listan och försök igen.', 'The key is not recognised. Pick the service in the list and try again.'),
 }[code] || t('Något gick fel. Försök igen om en stund.', 'Something went wrong. Try again in a moment.'));
+
+// --- The operator's ChatGPT plan ("Continue with ChatGPT") ---
+const PLAN = '/api/aura/workbench/chatgpt-plan';
+let planTimer = 0;
+const planAction = async (name, body) => {
+  const r = await post(`${PLAN}/${name}`, body, 45000);
+  if (!r.ok) throw new Error(t('ChatGPT svarade inte som väntat: ', 'ChatGPT did not respond as expected: ') + String(r.data.error || r.status));
+  return r.data;
+};
+async function readPlan() { const r = await get(PLAN); state.plan = r?.success ? r : null; return state.plan; }
+// While the operator signs in on OpenAI's page, wait for the result and then read the plan's models.
+function watchSignIn() {
+  clearTimeout(planTimer);
+  planTimer = setTimeout(async () => {
+    const plan = await readPlan();
+    if (plan?.state === 'waiting') return watchSignIn();
+    if (plan?.connected && !plan.models?.length) { try { state.plan = await planAction('models'); } catch (error) { state.message = String(error.message); } }
+    render(); dispatchEvent(new Event('jaco:model-changed'));
+  }, 2500);
+}
+function signIn() {
+  // The window is opened by the click itself, or the browser blocks it.
+  const popup = window.open('', '_blank');
+  return act('chatgpt', async () => {
+    try {
+      const r = await planAction('login');
+      const url = new URL(r.url);
+      if (url.origin !== 'https://auth.openai.com') throw new Error('SIWC_URL_INVALID');
+      if (popup) { popup.opener = null; popup.location.replace(url.href); } else state.signInUrl = url.href;
+      state.message = t('Logga in hos OpenAI i fönstret som öppnades.', 'Sign in with OpenAI in the window that opened.');
+      watchSignIn();
+    } catch (error) { popup?.close(); throw error; }
+  });
+}
+function planOption() {
+  const plan = state.plan;
+  const title = el('strong', {}, t('ChatGPT (ditt abonnemang)', 'ChatGPT (your plan)'));
+  const about = el('p', {}, t('Ingen API-nyckel behövs. Det du skriver går till OpenAI och räknas mot din plan.', 'No API key needed. What you write goes to OpenAI and counts against your plan.'));
+  if (!plan) return null;
+  if (!plan.connected) return el('div', { class: 'setup-option' }, title, about,
+    button(plan.state === 'expired' ? t('Logga in igen', 'Sign in again') : t('Fortsätt med ChatGPT', 'Continue with ChatGPT'), signIn, { primary: true, disabled: Boolean(state.busy) || plan.state === 'waiting' }),
+    state.signInUrl && plan.state === 'waiting' ? el('p', {}, el('a', { href: state.signInUrl, target: '_blank', rel: 'noopener noreferrer' }, t('Öppna inloggningen', 'Open the sign-in'))) : null,
+    plan.state === 'waiting' ? button(t('Avbryt', 'Cancel'), () => act('chatgpt', async () => { clearTimeout(planTimer); await planAction('disconnect'); })) : null);
+  const model = el('select', { 'aria-label': t('ChatGPT-modell', 'ChatGPT model') }, ...(plan.models || []).map(m => el('option', { value: m.id, selected: m.id === plan.use?.model }, m.label)));
+  return el('div', { class: 'setup-option' }, title, el('p', { class: 'held-mark' }, `${t('✓ Inloggad', '✓ Signed in')} ${plan.account || ''}`),
+    plan.use?.enabled ? el('p', {}, `${t('Aura-chatten svarar med', 'Aura chat answers with')} ${plan.use.model}`) : about,
+    plan.models?.length ? el('div', { class: 'setup-row' }, model,
+      button(plan.use?.enabled ? t('Byt till vald modell', 'Switch to this model') : t('Använd i chatten', 'Use for chat'), () => act('chatgpt', async () => {
+        await planAction('use', { enabled: true, model: model.value }); state.message = t('Aura svarar nu med din ChatGPT-plan.', 'Aura now answers with your ChatGPT plan.');
+      }), { primary: true, disabled: Boolean(state.busy) }))
+      : button(t('Hämta modeller', 'Discover models'), () => act('chatgpt', async () => { await planAction('models'); }), { disabled: Boolean(state.busy) }),
+    button(t('Koppla från', 'Disconnect'), () => act('chatgpt', async () => { await planAction('disconnect'); }), { disabled: Boolean(state.busy) }));
+}
 
 // --- Step panels ---
 function apiPanel() {
@@ -109,6 +164,7 @@ function brainPanel() {
   return el('div', {},
     el('p', {}, t('JACO tänker med en AI-modell. Välj hur:', 'JACO thinks with an AI model. Choose how:')),
     el('div', { class: 'setup-choice' },
+      planOption(),
       el('div', { class: 'setup-option' }, el('strong', {}, t('Lokal modell (inget lämnar datorn)', 'Local model (nothing leaves your computer)')),
         el('p', {}, localOk ? t('En lokal modell hittades. Den är gratis och privat.', 'A local model was found. It is free and private.')
           : t('Ingen lokal modell hittades. Installera Ollama (ollama.com), hämta en modell och kontrollera igen.', 'No local model found. Install Ollama (ollama.com), pull a model and check again.')),
@@ -179,7 +235,7 @@ export function render() {
   const body = $('setupBody'); if (!body) return;
   // Taken before the panel is built: building it moves the key field out of the page, which drops its focus.
   const typing = document.activeElement;
-  const { steps, current, ready } = setupSteps({ report: state.report, error: state.error, vault: state.vault, skippedVault: state.skippedVault });
+  const { steps, current, ready } = setupSteps({ report: state.report, error: state.error, vault: state.vault, skippedVault: state.skippedVault, plan: state.plan });
   const shown = state.view && steps.some(s => s.id === state.view) ? state.view : current;
   $('setupBtn').dataset.incomplete = String(!ready);
   // How many vault keys JACO holds, readable from the step list without opening the step.

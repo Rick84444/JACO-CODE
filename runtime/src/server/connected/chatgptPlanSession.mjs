@@ -1,11 +1,25 @@
-// Local, operator-initiated SIWC preview. No automatic provider registration.
-// Tokens are kept in this process only until a reviewed account vault is integrated.
+// The operator's own ChatGPT plan through OpenAI's "Sign in with ChatGPT" flow for locally run, open-source apps.
+// https://developers.openai.com/siwc/token-sharing-open-source/
+// The account is kept encrypted on this computer only, in its own folder (not the vault that tools list). Signing
+// in routes nothing by itself: the operator turns chat use on, and background work needs its own consent.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { beginAuthorization, exchangeAuthorization, listPlanModels, completePlan } from './chatgptPlanTransport.mjs';
+import { beginAuthorization, exchangeAuthorization, listPlanModels, completePlan, refreshSession, restoreSession, revokeSession } from './chatgptPlanTransport.mjs';
+import { SecretStore, stateDir } from '../../../../agents/lib/secret-store.mjs';
+
+const ACCOUNT = 'CHATGPT_PLAN_ACCOUNT';
+export function chatGPTAccountStore(env = process.env) {
+  const store = new SecretStore({ env, dir: path.join(stateDir(env), 'siwc') });
+  return {
+    load() { const text = store.get(ACCOUNT); return text ? JSON.parse(text) : null; },
+    save(record) { store.set(ACCOUNT, JSON.stringify(record), { source: 'chatgpt-sign-in', purpose: 'Operator ChatGPT plan' }); },
+    clear() { store.delete(ACCOUNT); },
+  };
+}
+const masked = email => { const [name, host] = String(email || '').split('@'); return host ? `${name.slice(0, 1)}***@${host}` : ''; };
 
 function hostIdentifier() {
   const dir=path.join(os.homedir(),'.jaco','siwc');
@@ -29,16 +43,64 @@ export class ChatGPTPlanSession {
   #models=[];
   #verifiedAt=null;
   #generation=0;
-  constructor({hostId=hostIdentifier,fetchImpl=fetch}={}) { this.hostId=hostId;this.fetchImpl=fetchImpl; }
+  #refreshing=null;
+  #use={enabled:false,model:'',backgroundAllowed:false};
+  constructor({hostId=hostIdentifier,fetchImpl=fetch,store=chatGPTAccountStore()}={}) {
+    this.hostId=hostId;this.fetchImpl=fetchImpl;this.store=store;
+    try {
+      const saved=store.load();
+      if(saved){
+        this.#session=restoreSession(saved);
+        this.#use={enabled:saved.use?.enabled===true,model:String(saved.use?.model||''),backgroundAllowed:saved.use?.backgroundAllowed===true};
+        this.#models=Array.isArray(saved.models)?saved.models:[];
+        this.#state=saved.reconnect?'expired':'connected';
+      }
+    }catch{this.#state='error';this.#error='SIWC_ACCOUNT_UNREADABLE';}
+  }
+  #save(extra={}) { if(this.#session)this.store.save({...this.#session,use:this.#use,models:this.#models,...extra}); }
   status() {
-    const connected=Boolean(this.#session && this.#session.expiresAt>Date.now());
-    return {state:connected?this.#state:(this.#state==='connected'?'expired':this.#state),
-      connected,models:connected?this.#models:[],verifiedAt:connected?this.#verifiedAt:null,error:this.#error,testBusy:this.#testBusy,
-      storage:'process-only',automaticRouting:false};
+    const connected=Boolean(this.#session)&&this.#state!=='expired';
+    return {state:this.#state,connected,account:this.#session?masked(this.#session.email):'',
+      models:connected?this.#models:[],use:{...this.#use},verifiedAt:connected?this.#verifiedAt:null,error:this.#error,testBusy:this.#testBusy,
+      storage:'encrypted-on-this-computer'};
+  }
+  // The model Aura's chat uses, or null. Never set by signing in alone.
+  chatChoice() {
+    return this.#session&&this.#state==='connected'&&this.#use.enabled&&this.#use.model?{providerId:'chatgpt-plan',model:this.#use.model}:null;
+  }
+  /** @param {{enabled?: boolean, model?: string, backgroundAllowed?: boolean}} [choice] */
+  use({enabled,model=this.#use.model,backgroundAllowed=this.#use.backgroundAllowed}={}) {
+    if(!this.status().connected)throw new Error('SIWC_SESSION_REQUIRED');
+    if(enabled&&!this.#models.some(m=>m.id===model))throw new Error('SIWC_MODEL_NOT_DISCOVERED');
+    this.#use={enabled:enabled===true,model:String(model||''),backgroundAllowed:backgroundAllowed===true};
+    this.#save();return this.status();
+  }
+  // One refresh at a time: the refresh token rotates, so a second concurrent use of the old one would be refused.
+  async #fresh() {
+    if(!this.#session||this.#state==='expired')throw new Error('SIWC_RECONNECT_REQUIRED');
+    if(this.#session.expiresAt-Date.now()>60000)return this.#session;
+    if(!this.#refreshing){
+      const generation=this.#generation,before=this.#session;
+      this.#refreshing=(async()=>{
+        try {
+          const next=await refreshSession(before,{fetchImpl:this.fetchImpl});
+          if(generation!==this.#generation)throw new Error('SIWC_CANCELLED');
+          this.#session=next;this.#save();return next;
+        }catch(e){
+          if(generation===this.#generation&&/^SIWC_(HTTP_40[013]|PLAN_NOT_GRANTED|ACCOUNT_MISMATCH)$/.test(e?.message||'')){
+            this.#state='expired';this.#error='SIWC_RECONNECT_REQUIRED';this.#save({reconnect:true});throw new Error('SIWC_RECONNECT_REQUIRED');
+          }
+          throw new Error(safeError(e));
+        }
+      })().finally(()=>{this.#refreshing=null;});
+    }
+    return this.#refreshing;
   }
   async start() {
     if(this.#pending)throw new Error('SIWC_LOGIN_PENDING');
-    if(this.#session)throw new Error('SIWC_DISCONNECT_FIRST');
+    if(this.#session&&this.#state!=='expired')throw new Error('SIWC_DISCONNECT_FIRST');
+    // Signing in again after expiry reuses the issued client and must be the same account.
+    const previous=this.#session;
     const generation=++this.#generation;
     const hostId=this.hostId();
     let attempt;
@@ -58,9 +120,9 @@ export class ChatGPTPlanSession {
       if(u.searchParams.get('state')!==attempt.state){res.writeHead(400);res.end('Invalid sign-in state.');return;}
       busy=true;
       try {
-        const session=await exchangeAuthorization(attempt,u.href,{fetchImpl:this.fetchImpl});
+        const session=await exchangeAuthorization(attempt,u.href,{fetchImpl:this.fetchImpl,expectedSubject:previous?.subject});
         if(generation!==this.#generation)throw new Error('SIWC_CANCELLED');
-        this.#session=session;this.#state='connected';this.#error=null;
+        this.#session=session;this.#state='connected';this.#error=null;this.#save();
         res.writeHead(200);res.end('ChatGPT connected. Return to the local JACO settings window.');
       }catch(e){
         if(generation===this.#generation){this.#state='error';this.#error=safeError(e);}
@@ -83,7 +145,7 @@ export class ChatGPTPlanSession {
         server.once('error',reject);
         server.listen(0,'127.0.0.1',()=>{server.removeListener('error',reject);resolve();});
       });
-      attempt=beginAuthorization({hostId,redirectUri:'http://127.0.0.1:'+server.address().port+'/auth/callback'});
+      attempt=beginAuthorization({hostId,clientId:previous?.clientId,redirectUri:'http://127.0.0.1:'+server.address().port+'/auth/callback'});
       if(generation!==this.#generation)throw new Error('SIWC_CANCELLED');
       return {url:attempt.url};
     }catch(e){
@@ -94,31 +156,43 @@ export class ChatGPTPlanSession {
   }
   async discover() {
     if(!this.status().connected)throw new Error('SIWC_SESSION_REQUIRED');
-    const session=this.#session,generation=this.#generation;
+    const generation=this.#generation;
     try {
-      const models=await listPlanModels(session,{fetchImpl:this.fetchImpl});
+      const models=await listPlanModels(await this.#fresh(),{fetchImpl:this.fetchImpl});
       if(generation!==this.#generation)throw new Error('SIWC_CANCELLED');
-      this.#models=models;this.#error=null;return this.status();
-    }catch(e){if(generation===this.#generation)this.#error=safeError(e);throw new Error(safeError(e));}
+      this.#models=models;this.#error=null;this.#save();return this.status();
+    }catch(e){if(generation===this.#generation&&this.#state!=='expired')this.#error=safeError(e);throw new Error(safeError(e));}
+  }
+  // One answer from the plan. Background work (anything the operator did not just ask for) needs its own consent.
+  async complete({model,system,user,background=false}) {
+    if(background&&!this.#use.backgroundAllowed)throw new Error('SIWC_BACKGROUND_CONSENT_REQUIRED');
+    const session=await this.#fresh();
+    try {
+      const result=await completePlan(session,{model,messages:[{role:'system',content:String(system||'')},{role:'user',content:String(user||'')}],fetchImpl:this.fetchImpl});
+      this.#verifiedAt=new Date().toISOString();this.#error=null;return result;
+    }catch(e){this.#error=safeError(e);throw new Error(safeError(e));}
   }
   async test(model) {
     if(!this.status().connected)throw new Error('SIWC_SESSION_REQUIRED');
     if(this.#testBusy)throw new Error('SIWC_TEST_PENDING');
     if(!this.#models.some(m=>m.id===model))throw new Error('SIWC_MODEL_NOT_DISCOVERED');
-    const session=this.#session,generation=this.#generation;
     this.#testBusy=true;
     try {
-      const result=await completePlan(session,{model,messages:[{role:'user',content:'Reply with the single word OK.'}],fetchImpl:this.fetchImpl});
-      if(generation!==this.#generation)throw new Error('SIWC_CANCELLED');
-      this.#verifiedAt=new Date().toISOString();this.#error=null;
+      const result=await this.complete({model,system:'Reply briefly.',user:'Reply with the single word OK.'});
       return {model:result.model,verifiedAt:this.#verifiedAt};
-    }catch(e){if(generation===this.#generation){this.#verifiedAt=null;this.#error=safeError(e);}throw new Error(safeError(e));}
+    }catch(e){this.#verifiedAt=null;throw e;}
     finally{this.#testBusy=false;}
   }
-  disconnect() {
+  // Removes the account here whatever happens; says whether OpenAI confirmed the revocation.
+  async disconnect() {
     ++this.#generation;
     if(this.#pending){clearTimeout(this.#pending.timeout);this.#pending.server.close();this.#pending=null;}
+    const session=this.#session;
     this.#session=null;this.#models=[];this.#verifiedAt=null;this.#error=null;this.#state='disconnected';
-    return this.status();
+    this.#use={enabled:false,model:'',backgroundAllowed:false};
+    this.store.clear();
+    let revoked=null;
+    if(session){try{await revokeSession(session,{fetchImpl:this.fetchImpl});revoked=true;}catch{revoked=false;}}
+    return {...this.status(),revoked};
   }
 }

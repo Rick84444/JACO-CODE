@@ -3926,6 +3926,8 @@ const notifyPhone = async (action) => {
           throw error;
         }
       }
+      // Choosing another model is the operator's choice for the chat too: the ChatGPT plan steps aside.
+      if (chatGPTPlan.chatChoice()) chatGPTPlan.use({ enabled: false });
       const state = await plannerState();
       seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.model.chosen', message: `Aura model: ${state.choice ? `${state.choice.provider}/${state.choice.model}` : 'selection required'}`, verified: true, receipt: { choice: state.choice } });
       res.json({ ...state, recoveredMissions });
@@ -4117,11 +4119,12 @@ const notifyPhone = async (action) => {
     }
   });
 
-  // Local preview: official SIWC, separate from vendor CLI authentication.
+  // The operator's ChatGPT plan (official Sign in with ChatGPT for local apps), separate from vendor CLI sign-ins.
   const chatGPTPlan = new ChatGPTPlanSession();
   const requirePlanLocal = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     res.setHeader('Cache-Control', 'no-store');
-    if (process.env.JACO_LOCAL_SIWC !== '1') return res.status(403).json({ success: false, error: 'SIWC_PREVIEW_DISABLED' });
+    // On by default for this computer; JACO_LOCAL_SIWC=0 turns it off.
+    if (process.env.JACO_LOCAL_SIWC === '0') return res.status(403).json({ success: false, error: 'SIWC_PREVIEW_DISABLED' });
     const host = String(req.headers.host || '');
     if (!/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host)) return res.status(403).json({ success: false, error: 'LOCAL_UI_ONLY' });
     const origin = String(req.headers.origin || '');
@@ -4139,8 +4142,16 @@ const notifyPhone = async (action) => {
   app.post('/api/aura/workbench/chatgpt-plan/test',requirePlanLocal,async(req,res)=>{
     try {res.json({success:true,...await chatGPTPlan.test(String(req.body?.model||''))});} catch(e){planError(res,e);}
   });
-  app.post('/api/aura/workbench/chatgpt-plan/disconnect',requirePlanLocal,(_req,res)=>{
-    res.json({success:true,...chatGPTPlan.disconnect()});
+  app.post('/api/aura/workbench/chatgpt-plan/use',requirePlanLocal,(req,res)=>{
+    try {
+      const state = chatGPTPlan.use({ enabled: req.body?.enabled === true, model: typeof req.body?.model === 'string' ? req.body.model : undefined,
+        backgroundAllowed: typeof req.body?.backgroundAllowed === 'boolean' ? req.body.backgroundAllowed : undefined });
+      seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.model.chosen', message: state.use.enabled ? `Aura chat uses the ChatGPT plan: ${state.use.model}` : 'Aura chat no longer uses the ChatGPT plan', verified: true, receipt: { use: state.use } });
+      res.json({success:true,...state});
+    } catch(e){planError(res,e);}
+  });
+  app.post('/api/aura/workbench/chatgpt-plan/disconnect',requirePlanLocal,async(_req,res)=>{
+    try {res.json({success:true,...await chatGPTPlan.disconnect()});} catch(e){planError(res,e);}
   });
 
   // Subscription brains: the operator's Claude, ChatGPT (Codex) or Gemini sign-in, held by the vendor's own CLI.
@@ -5702,8 +5713,12 @@ const notifyPhone = async (action) => {
         ? readPlannerChoice(plannerChoiceFile()) : null;
       const connectedModel = sharedModel && auraChatProviderCatalog(connectedRuntime.providers)
         .find(p => p.id === sharedModel.provider && p.credentialReady && sharedModel.model);
-      const chatChoice = providerChoice || (connectedModel
+      // The operator's ChatGPT plan, when they turned it on for chat, comes before the shared model choice.
+      const planChoice = !providerChoice && (!selectedProvider || selectedProvider === 'seer') ? chatGPTPlan.chatChoice() : null;
+      const chatChoice = providerChoice || planChoice || (connectedModel
         ? { providerId: sharedModel.provider, model: sharedModel.model } : null);
+      // A request from the operator's own page; anything else counts as background use of the plan.
+      const fromOperatorInterface = Boolean(req.get('origin') && new URL(String(req.get('origin'))).host === req.get('host'));
       if (!selectedProvider && selectedModel && selectedModel !== 'seer' && (!cloudModel || !auraOllamaModelCatalog().includes(cloudModel))) {
         return res.status(400).json({ success: false, error: 'AURA_MODEL_NOT_AVAILABLE' });
       }
@@ -5748,6 +5763,7 @@ const notifyPhone = async (action) => {
         compactRules: Boolean(choice && auraChatProviderCatalog(connectedRuntime.providers).find(p => p.id === choice.providerId)?.local),
         ...(choice ? { complete: (args: any) => manualAuraProviderCompletion({ ...args, ...choice }, {
           providers: connectedRuntime.providers, economic: continuumSurface.runtime.economic,
+          plan: chatGPTPlan, background: !fromOperatorInterface,
         }) } : {}),
       });
       // The chat always ends in an answer (agents/lib/aura-always-answers.mjs): the chosen provider, then
@@ -5793,7 +5809,12 @@ const notifyPhone = async (action) => {
       // First query real /models at local endpoints; failed local inference falls
       // through to another local model and finally one budget-authorized cloud
       // candidate. Explicit operator choices are tried first, never silently replaced.
-      const liteResult = process.env.JACO_LITE === '1'
+      // A failed plan answer ends the turn: no other (possibly paid) model is tried without the operator choosing it.
+      const planOnly = chatChoice?.providerId === 'chatgpt-plan';
+      const planResult: any = planOnly
+        ? await budget.within(() => ask(chatChoice), deadlines.chosenMs).catch((error: any) => auraStatusAnswer(userMsg, [`chatgpt-plan/${chatChoice!.model}: ${String(error?.message || error).slice(0, 160)}`]))
+        : null;
+      const liteResult = !planOnly && process.env.JACO_LITE === '1'
         ? await liteChatAnswer({
           choice: chatChoice,
           providers: connectedRuntime.providers,
@@ -5805,7 +5826,7 @@ const notifyPhone = async (action) => {
             verified: true, receipt: fallback,
           }),
         }) : null;
-      const result: any = liteResult
+      const result: any = planResult || (liteResult
         ? liteResult.degraded
           ? await auraStatusAnswer(userMsg, liteResult.failures)
           : liteResult
@@ -5815,7 +5836,7 @@ const notifyPhone = async (action) => {
           status: failures => auraStatusAnswer(userMsg, failures),
           onFallback: (fallback, r) => void seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.provider.fallback', message: `${fallback.from} could not answer (${fallback.reason.slice(0, 80)}); answered via JACO ${r.provider}/${r.model}`, verified: true, receipt: { from: fallback.from, to: `${r.provider}/${r.model}`, reason: fallback.reason } }),
           onNoModel: failures => void seerLiveWorkstream.record({ actor: 'Aura GUI', type: 'aura.no_model_answer', message: `No model could answer; Aura answered with observed status (${failures.length} failures)`, verified: true, receipt: { failures } }),
-        });
+        }));
 
       const routeLabel = process.env.JACO_LITE === '1' ? 'Lite direct provider' : chatChoice ? 'Aura direct model' : 'JACO';
       seerLiveWorkstream.update({
