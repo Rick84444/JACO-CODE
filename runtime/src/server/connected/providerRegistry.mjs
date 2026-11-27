@@ -7,7 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { credential } from '../../../../agents/lib/secret-store.mjs';
 import { withLocalOllamaContext } from '../../../../agents/lib/ollama-native.mjs';
-import { CATALOG, catalogProvider } from './providerCatalog.mjs';
+import { CATALOG, catalogProvider, modelListHeaders, keyRefused } from './providerCatalog.mjs';
 import { BRAINS, brainStatus, complete as cliComplete } from './cliBrains.mjs';
 
 const sha = value => crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
@@ -172,7 +172,7 @@ export class ProviderRegistry {
       let result;
       try {
         const res = await fetch(`${trimSlash(p.baseUrl)}/models`, {
-          headers: this.headers(p), redirect: 'error', signal: AbortSignal.timeout(5000),
+          headers: { accept: 'application/json', ...modelListHeaders(p.baseUrl, this.key(p)) }, redirect: 'error', signal: AbortSignal.timeout(5000),
         });
         const body = await res.text();
         const observation = {
@@ -180,7 +180,7 @@ export class ProviderRegistry {
           responseHash: sha(body), observedAt: new Date(started).toISOString(),
         };
         if (!res.ok) {
-          result = { ...observation, ok: false, models: [] };
+          result = { ...observation, ok: false, models: [], keyRefused: keyRefused(res.status, body) };
         } else {
           let data;
           try { data = JSON.parse(body)?.data; } catch {}
@@ -221,7 +221,7 @@ export class ProviderRegistry {
       const local = /^(localhost|127\.|\[?::1)/.test(new URL(p.baseUrl).hostname);
       if (p.apiKeyEnv && !p.credentialConfigured && !local) return { id: p.id, active: false, state: 'NO_KEY', baseUrl: p.baseUrl, defaultModel: p.defaultModel, models: 0 };
       const r = await this.probe(p.id, { maxAgeMs });
-      const state = r.ok ? 'ACTIVE' : p.kind === 'cli-login' ? 'NO_KEY' : r.status === 401 || r.status === 403 ? 'KEY_REJECTED' : 'UNREACHABLE';
+      const state = r.ok ? 'ACTIVE' : p.kind === 'cli-login' ? 'NO_KEY' : r.keyRefused || keyRefused(r.status) ? 'KEY_REJECTED' : 'UNREACHABLE';
       return { id: p.id, active: r.ok, state, baseUrl: p.baseUrl, defaultModel: p.defaultModel, models: r.models?.length || 0, modelIds: r.models || [], observedAt: r.observedAt || new Date().toISOString(), ms: r.latencyMs };
     }));
   }

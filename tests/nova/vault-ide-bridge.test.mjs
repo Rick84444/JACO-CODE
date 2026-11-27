@@ -77,3 +77,10 @@ test('the Windows credential importer does not return secret values to Aura', ()
   assert.doesNotMatch(route, /res\.(?:json|send)\([^\n]*retrieved\.value/);
   assert.match(route, /connectedRuntime.providers.ensureDefaults\(\)/);
 });
+
+test('the Windows vault listing says which keys JACO has already stored, by name only', () => {
+  const src = read('runtime/server.ts');
+  const route = src.slice(src.indexOf("app.get('/api/aura/workbench/vault/windows'"), src.indexOf("app.post('/api/aura/workbench/vault/import-windows'"));
+  assert.match(route, /new SecretStore\(\)\.list\(\)\.map/);
+  assert.match(route, /fetched: keys\.filter\(/);
+});

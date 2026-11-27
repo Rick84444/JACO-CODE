@@ -487,13 +487,16 @@ export class NovaMissionControl {
       max_tool_calls: Math.max(0, contract.budget.max_tool_calls - used),
       max_duration_ms: Math.max(0, contract.budget.max_duration_ms - Math.max(0, this.now() - (row.budget_started_at ?? this.now()))),
     } : null;
+    // The operator's switches are read once for the whole mission: the Gameboard reads thirty missions at a time,
+    // and one file read per task blocked the event loop for seconds.
+    const permitted = base.metadata.allowedTasks.filter(t => this.allowedTasks.includes(t));
     return { ...base, phase: row.phase, turn: row.turn,
       remainingBudget,
       pendingOperatorAction: this.pendingOperatorAction(id),
       spendApprovalPending: base.status === 'BLOCKED' && Boolean(spend && spend.seq > (lastResolution?.seq || 0) && spend.seq > (lastResult?.seq || 0)),
       hasUncertainOutcome: row.phase === 'INTERRUPTED' || proof.some(r => r.outcomeUnknown === true || (r.ok === true && r.verified !== true)),
       verifiedEvidenceRefs: proof.filter(r => r.ok && r.verified).slice(-40).map(r => `nova:${id}:receipt:${r.actionId}`),
-      allowedTasks: base.metadata.allowedTasks.filter(t => this.allowedTasks.includes(t) && (!this.capabilities || this.capabilities.isTaskEnabled(t))),
+      allowedTasks: this.capabilities ? this.capabilities.enabledTasks(permitted) : permitted,
       observation: decode(row.observation_json), receipts,
       activeTask: decode(row.active_task_json), failures: row.failures,
       // Read-only public lease presence. Never expose the bearer lease token

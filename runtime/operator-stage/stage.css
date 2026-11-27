@@ -6,8 +6,8 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, "Segoe UI", sans-serif; overflow: hidden; }
-/* The room: small glowing points at three depths, like the light Aura is made of. */
-#stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+/* The room: a soft light behind Aura, nothing else (operator 2026-11-26: no stars behind her). */
+body { background: radial-gradient(circle 60vmax at 50% 30%, rgba(20, 48, 90, .35), transparent 100%), var(--bg); }
 .bar { position: fixed; inset: 0 0 auto 0; height: 44px; display: flex; align-items: center; gap: 16px; padding: 0 18px; z-index: 50; }
 .brand { font-weight: 600; letter-spacing: .04em; display: flex; align-items: center; gap: 10px; white-space: nowrap; color: var(--muted); }
 .logo { height: 26px; width: auto; display: block; filter: drop-shadow(0 0 8px rgba(79,180,255,.45)); }
@@ -56,6 +56,7 @@ button.ide[aria-pressed="true"], button.ide[aria-expanded="true"] { color: var(-
 .setup input, .setup select { background: #0a1424; color: var(--text); border: 1px solid var(--edge); border-radius: 8px; padding: 8px; font: 14px system-ui; max-width: 100%; }
 .setup-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .setup-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.held-mark { color: var(--ok); font-size: 13px; }
 .setup-hint { color: var(--muted) !important; font-size: 13px; }
 .setup-message { color: var(--ok) !important; } .setup-busy { color: var(--muted) !important; }
 #setupBtn[data-incomplete="true"] { border-color: var(--glow); color: var(--text); box-shadow: 0 0 12px rgba(79,180,255,.45); }

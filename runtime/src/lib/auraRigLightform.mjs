@@ -472,7 +472,7 @@ export function createBehaviorEngine(){
   };
 }
 
-function createLightBody(scene,model,bones,groups,isMobile,distantField){
+function createLightBody(scene,model,bones,groups,isMobile,distantField,stars){
   const body=groups.find(g=>g.kind===0).mesh;
   const jacket=groups.find(g=>g.kind===1).mesh;
   const hairMesh=groups.find(g=>g.kind===2).mesh;
@@ -920,12 +920,12 @@ void main(){
   orbit.add(new THREE.Mesh(orbitGlowGeo,orbitGlowMat));scene.add(orbit);owned.push(orbitGeo,orbitMat,orbitGlowGeo,orbitGlowMat);
 
   const starCount=isMobile?180:340;
-  const starPos=[],starTw=[],stars=seeded(4242);
+  const starPos=[],starTw=[],starSeed=seeded(4242);
   for(let i=0;i<starCount;i++){
-    const depth=stars();
+    const depth=starSeed();
     const zLayer=i<50?.15+depth*.22:distantField?-1.25-depth*2.2:-.45-depth*.30;
-    starPos.push((stars()-.5)*1.15,1.04+stars()*.96,zLayer);
-    starTw.push(stars());
+    starPos.push((starSeed()-.5)*1.15,1.04+starSeed()*.96,zLayer);
+    starTw.push(starSeed());
   }
   const starGeo=new THREE.BufferGeometry();attr(starGeo,'position',starPos,3);attr(starGeo,'aTw',starTw,1);
   const starMat=new THREE.ShaderMaterial({uniforms:{uTime:time,uPixelRatio:pixelRatio},transparent:true,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,
@@ -942,7 +942,7 @@ void main(){
   gl_Position=projectionMatrix*modelViewMatrix*vec4(pos,1.0);
 }`,
     fragmentShader:String.raw`varying float vA;void main(){float d=length(gl_PointCoord-vec2(.5));gl_FragColor=vec4(.80,.93,1.0,(1.0-smoothstep(0.0,.5,d))*vA);}`});
-  const starField=new THREE.Points(starGeo,starMat);starField.frustumCulled=false;scene.add(starField);
+  const starField=new THREE.Points(starGeo,starMat);starField.frustumCulled=false;starField.visible=stars;scene.add(starField);
   owned.push(lineGeo,lineMat,sparkGeo,sparkMat,starGeo,starMat,auraPlaneGeo,auraPlaneMat,texture);
 
   const hp=new THREE.Vector3(),hq=new THREE.Quaternion(),sums=[new THREE.Vector3(),new THREE.Vector3()],counts=[0,0];
@@ -993,9 +993,9 @@ function disposeModel(model){
 /**
  * GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms.
  * @param {HTMLCanvasElement} canvas
- * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean}} [options]
+ * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean, stars?: boolean}} [options]
  */
-export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false}={}){
+export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,stars=true}={}){
   const response=await fetch(ASSET,{signal,cache:'force-cache'});
   if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
   const bytes=await response.arrayBuffer();
@@ -1060,7 +1060,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power',preserveDrawingBuffer:true});
     renderer.setClearColor(0x000000,0);
 
-    lightBody=createLightBody(scene,model,bones,groups,isMobile,distantField);
+    lightBody=createLightBody(scene,model,bones,groups,isMobile,distantField,stars);
     voiceTracker=createVoiceFormantTracker();
     qualityGovernor=createQualityGovernor(isMobile);
     behaviorEngine=createBehaviorEngine();

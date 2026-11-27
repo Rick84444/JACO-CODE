@@ -9,38 +9,6 @@ import { init as initSetup } from '/setup.js';
 const $ = id => document.getElementById(id);
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// ---------- The room: small glowing points at three depths ----------
-(function starfield() {
-  const canvas = $('stars'), ctx = canvas.getContext('2d');
-  let w = 0, h = 0, stars = [];
-  function resize() {
-    const dpr = Math.min(2, devicePixelRatio || 1);
-    w = canvas.width = innerWidth * dpr; h = canvas.height = innerHeight * dpr;
-    const count = Math.round((innerWidth * innerHeight) / 2600);
-    stars = Array.from({ length: count }, () => {
-      const depth = Math.random() ** 2; // most points far away, a few near
-      return { x: Math.random() * w, y: Math.random() * h, depth, r: (0.4 + depth * 1.6) * dpr, phase: Math.random() * 6.28, speed: 0.4 + Math.random() * 1.6 };
-    });
-  }
-  resize(); addEventListener('resize', resize);
-  let t = 0;
-  (function frame() {
-    t += reduceMotion ? 0 : 0.016;
-    ctx.clearRect(0, 0, w, h);
-    const glow = ctx.createRadialGradient(w / 2, h * 0.3, 0, w / 2, h * 0.3, Math.max(w, h) * 0.6);
-    glow.addColorStop(0, 'rgba(20,48,90,0.35)'); glow.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
-    for (const s of stars) {
-      // Near points drift faster than far ones: parallax gives the room depth.
-      s.y -= (0.02 + s.depth * 0.12) * (reduceMotion ? 0 : 1); if (s.y < -4) s.y = h + 4;
-      const a = (0.18 + s.depth * 0.6) * (0.65 + 0.35 * Math.sin(t * s.speed + s.phase));
-      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 6.283);
-      ctx.fillStyle = `rgba(${150 + s.depth * 80 | 0},${205 + s.depth * 40 | 0},255,${a})`; ctx.fill();
-    }
-    requestAnimationFrame(frame);
-  })();
-})();
-
 // ---------- Aura: her 3D lightform (the IDE portrait's rig) ----------
 // She looks at the panel she works in, then back at the operator (eye contact); she does not follow the mouse.
 const aura = (() => {
@@ -48,7 +16,7 @@ const aura = (() => {
   const state = { active: false, speaking: false, listening: false, x: 0, y: 0 };
   const apply = () => rig?.setState({ active: state.active });
   import('/vendor/aura-rig.mjs')
-    .then(({ createAuraRigLightform }) => createAuraRigLightform($('orb'), { trackPointer: false, onError: () => { fallback ??= particleOrb(); } }))
+    .then(({ createAuraRigLightform }) => createAuraRigLightform($('orb'), { trackPointer: false, stars: false, onError: () => { fallback ??= particleOrb(); } }))
     .then(instance => { rig = instance; rig.setState(state); })
     .catch(error => { console.warn('Aura rig unavailable, using particle fallback:', error?.message || error); fallback ??= particleOrb(); });
   return {

@@ -20,6 +20,20 @@ export const CATALOG = [
 
 export const catalogById = id => CATALOG.find(c => c.id === id) || null;
 
+const hostOf = url => { try { return new URL(url).hostname.toLowerCase(); } catch { return ''; } };
+
+// The credential headers for asking a service which models it has. Anthropic's own /models endpoint takes its
+// key header and a version; its OpenAI-compatible chat endpoint takes the bearer token every other service takes.
+export const modelListHeaders = (baseUrl, key) => {
+  if (!key) return {};
+  if (hostOf(baseUrl) === 'api.anthropic.com') return { 'x-api-key': key, 'anthropic-version': '2023-06-01' };
+  return { authorization: `Bearer ${key}` };
+};
+
+// Whether a reply means "this key is not accepted". Google answers a wrong key with 400, not 401.
+export const keyRefused = (status, body = '') => status === 401 || status === 403
+  || (status === 400 && /API_KEY_INVALID|valid API key|API key (not valid|expired)/i.test(String(body)));
+
 // Services a pasted key can belong to. A key shape that several services share (DeepSeek and Qwen both
 // issue "sk-" plus 32 hex characters) returns all of them: the key is never sent to a service the
 // operator has not chosen, so the caller asks which one.
