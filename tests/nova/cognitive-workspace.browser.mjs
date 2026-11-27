@@ -662,11 +662,46 @@ try {
   await page.waitForFunction(()=>window.auraSpokenReplies.length===1);
   assert.equal(requests.filter(request=>request.kind==='chat').length,previousChatRequests+1);
   assert.deepEqual(await page.evaluate(()=>window.auraSpokenReplies),['Testsvaret använder de observerade händelserna. Uppdraget fortsätter.']);
-  await page.waitForFunction(()=>Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm)>3,{},{timeout:15000});
-  await screenshot('aura-rig-speaking');
+  await page.waitForFunction(()=>{
+    const d=document.querySelector('.aura-portrait-scene canvas')?.dataset;
+    return d?.conversationFloor==='speaking'&&d?.articulationSource==='unavailable'&&d?.jawMm==='0.000';
+  });
   await page.evaluate(()=>window.auraCurrentReply.onend?.());
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='idle');
+  passed('Browser speech without observable audio drives conversational posture but never fabricates articulation');
+
+  // Positive control: actual PCM playback, not simulated speech events or semantic lip sync.
+  const rate=24000,count=rate*3,wav=Buffer.alloc(44+count*2);
+  wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);
+  wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);
+  wav.writeUInt32LE(rate,24);wav.writeUInt32LE(rate*2,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);
+  wav.write('data',36);wav.writeUInt32LE(count*2,40);
+  for(let i=0;i<count;i++){
+    const t=i/rate;let v=0;
+    for(let k=1;k<=15;k++)v+=Math.sin(2*Math.PI*180*k*t)/Math.sqrt(k);
+    const envelope=Math.min(1,t*20,(3-t)*20);
+    wav.writeInt16LE(Math.round(Math.max(-1,Math.min(1,v*.17))*envelope*24000),44+i*2);
+  }
+  await page.route('**/api/aura/voice/speak',route=>route.fulfill({status:200,contentType:'audio/wav',body:wav}));
+  await portraitInput.fill('Testa ljudstyrd artikulation.');
+  await portrait.getByRole('button',{name:'Skicka',exact:true}).click();
+  await page.waitForFunction(()=>{
+    const d=document.querySelector('.aura-portrait-scene canvas')?.dataset;
+    return d?.conversationFloor==='speaking'&&d?.articulationSource==='audio-formants'&&Number(d?.jawMm)>.5;
+  },{},{timeout:15000});
+  await screenshot('aura-rig-speaking');
+  await page.evaluate(()=>{
+    window.SpeechRecognition=class {
+      start(){window.auraInterruptRecording=this;}
+      abort(){}
+    };
+  });
+  // Re-render has already read the recognition constructor; the controlled
+  // recognition error scenario below verifies speech events separately.
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='idle',{},{timeout:15000});
   await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm==='0.000');
-  passed('Controlled speech drives actual jaw morph displacement, then returns to rest; blinking independently moves eyelid vertices');
+  await page.unroute('**/api/aura/voice/speak');
+  passed('Actual PCM playback drives measured jaw displacement and returns to neutral; synthetic tone is not a lip-sync accuracy test');
   await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
   passed('Portrait dictation uses the canonical chat and reads its new reply with a controlled speech adapter');
   // A browser engine may report an error without an end event. Late callbacks
@@ -683,10 +718,16 @@ try {
   await portrait.getByRole('button',{name:'Diktera',exact:true}).click();
   await portrait.getByRole('button',{name:'Sluta lyssna',exact:true}).waitFor();
   assert.equal(await portrait.getByRole('button',{name:'Läs upp svar'}).isDisabled(),true,'reader cannot be enabled during recording');
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='receptive');
+  await page.evaluate(()=>window.auraTestRecording.onspeechstart?.());
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='user-speaking');
+  await page.evaluate(()=>window.auraTestRecording.onspeechend?.());
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='receptive');
   await page.evaluate(()=>window.auraTestRecording.onerror());
   await portrait.getByRole('button',{name:'Diktera',exact:true}).waitFor();
   await portrait.getByText('Röstfunktionen kunde inte användas.',{exact:false}).waitFor();
-  await page.evaluate(()=>window.auraTestRecording.onresult({results:[[{transcript:'STALE_CALLBACK'}]]}));
+  await page.evaluate(()=>{window.auraTestRecording.onresult({results:[[{transcript:'STALE_CALLBACK'}]]});window.auraTestRecording.onspeechstart?.();});
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='idle');
   assert.equal(await portraitInput.inputValue(),'Behåll detta utkast');
   await portrait.getByRole('button',{name:'Diktera',exact:true}).click();
   assert.equal(await portrait.getByRole('button',{name:'Sluta lyssna',exact:true}).getAttribute('aria-pressed'),'true');
