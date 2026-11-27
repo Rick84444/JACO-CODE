@@ -4,6 +4,7 @@ import {createIceCavern,createCavernAvatar,cavernGovernor} from './auraCavern.mj
 import {bodyMotion,approachAngle} from './auraBodyMotion.mjs';
 import {createBlinkController,approachFacialWeight} from './auraFacialDynamics.mjs';
 import {createConversationBehavior} from './auraConversationBehavior.mjs';
+import {fetchAnatomicalAsset} from './auraAnatomicalAsset.mjs';
 
 // JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
 // A light-form is sampled from the actual skinned geometry, never from a portrait.
@@ -985,25 +986,34 @@ void main(){
 }
 
 function disposeModel(model){
-  const geometries=new Set(),materials=new Set(),skeletons=new Set();
+  const geometries=new Set(),materials=new Set(),skeletons=new Set(),textures=new Set(),images=new Set();
   model?.traverse(o=>{
     if(o.geometry)geometries.add(o.geometry);
     if(o.material)(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>materials.add(m));
     if(o.skeleton)skeletons.add(o.skeleton);
   });
+  for(const m of materials)for(const value of Object.values(m))if(value?.isTexture)textures.add(value);
+  for(const texture of textures){if(texture.source?.data?.close)images.add(texture.source.data);texture.dispose();}
+  images.forEach(image=>image.close());
   geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());skeletons.forEach(s=>s.dispose());
 }
 
 /**
  * GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms.
  * @param {HTMLCanvasElement} canvas
- * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean, cavern?: boolean}} [options]
+ * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean, cavern?: boolean, anatomical?: boolean}} [options]
  */
-export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,cavern=false}={}){
-  const response=await fetch(ASSET,{signal,cache:'force-cache'});
-  if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
-  const bytes=await response.arrayBuffer();
-  if(bytes.byteLength!==EXPECTED_BYTES)throw Error('AURA_RIG_ASSET_SIZE');
+export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,cavern=false,anatomical=false}={}){
+  if(anatomical&&cavern)throw Error('AURA_RIG_MODE_CONFLICT');
+  const fullBody=cavern||anatomical;
+  let bytes;
+  if(anatomical)bytes=await fetchAnatomicalAsset(signal);
+  else{
+    const response=await fetch(ASSET,{signal,cache:'force-cache'});
+    if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
+    bytes=await response.arrayBuffer();
+    if(bytes.byteLength!==EXPECTED_BYTES)throw Error('AURA_RIG_ASSET_SIZE');
+  }
   const gltf=await new GLTFLoader().parseAsync(bytes,'');
   const model=gltf.scene;
   let renderer,geometry,material,observer,domTelemetryObserver,lightBody,iceWorld,voiceTracker,qualityGovernor,behaviorEngine,raf=0,disposed=false;
@@ -1039,7 +1049,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     };
     model.updateMatrixWorld(true);
     const isMobile=window.innerWidth<768;
-    const groups=cavern?[]:createSamples(model,isMobile?.64:1);
+    const groups=fullBody?[]:createSamples(model,isMobile?.64:1);
     const total=groups.reduce((n,g)=>n+g.samples.length,0);
     geometry=new THREE.BufferGeometry();
     const positions=new Float32Array(total*3),normals=new Float32Array(total*3);
@@ -1057,14 +1067,26 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending
     });
     const scene=new THREE.Scene(),cloud=new THREE.Points(geometry,material);
-    cloud.frustumCulled=false;scene.add(cloud);
+    cloud.frustumCulled=false;if(!anatomical)scene.add(cloud);
 
-    const camera=new THREE.PerspectiveCamera(cavern?42:31,1,.03,cavern?40:20);
+    const camera=new THREE.PerspectiveCamera(fullBody?42:31,1,.03,fullBody?40:20);
     camera.position.set(0,1.570,1.05);camera.lookAt(0,1.540,.03);
-    renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:!cavern,powerPreference:'low-power',preserveDrawingBuffer:!cavern});
+    renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:!fullBody,powerPreference:'low-power',preserveDrawingBuffer:!fullBody});
     renderer.setClearColor(0x000000,0);
 
-    if(cavern){
+    if(anatomical){
+      // Preserve source textures, skinning, morphs and separate eye/hair/garment meshes.
+      scene.background=new THREE.Color(0x101923);
+      renderer.toneMapping=THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure=1.05;
+      const hemisphere=new THREE.HemisphereLight(0xe4edff,0x596271,1.35);
+      const key=new THREE.DirectionalLight(0xfff4e8,2.1);key.position.set(-2,3,4);
+      const fill=new THREE.DirectionalLight(0xdce9ff,.65);fill.position.set(3,1.8,2);
+      const rim=new THREE.DirectionalLight(0xc9e7ff,1.1);rim.position.set(1,2,-3);
+      scene.add(model,hemisphere,key,fill,rim);
+      model.traverse(o=>{if(o.isSkinnedMesh)o.frustumCulled=false;});
+      lightBody={update(){},dispose(){scene.remove(model,hemisphere,key,fill,rim);}};
+    }else if(cavern){
       iceWorld=createIceCavern(scene,isMobile);
       lightBody=createCavernAvatar(scene,model);
     }else lightBody=createLightBody(scene,model,bones,groups,isMobile,distantField);
@@ -1073,7 +1095,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     const bodyAngles={hips:0,spine:0,breath:0,shoulder:0,gesture:0,elbow:0,wrist:0};
     const bodyNames={hips:['Hips','Pelvis','hips','pelvis'],spine:['Spine','Spine1','spine'],leftArm:['LeftArm','LeftUpperArm','leftUpperArm'],rightArm:['RightArm','RightUpperArm','rightUpperArm'],leftForearm:['LeftForeArm','LeftForearm','LeftLowerArm','leftLowerArm'],rightForearm:['RightForeArm','RightForearm','RightLowerArm','rightLowerArm'],leftHand:['LeftHand','leftHand'],rightHand:['RightHand','rightHand']};
     const bodyBone=Object.fromEntries(Object.entries(bodyNames).map(([key,names])=>[key,names.find(name=>bones.has(name))]));
-    if(cavern)canvas.dataset.bodyBones=String(Object.values(bodyBone).filter(Boolean).length);
+    if(fullBody)canvas.dataset.bodyBones=String(Object.values(bodyBone).filter(Boolean).length);
     voiceTracker=createVoiceFormantTracker();
     qualityGovernor=createQualityGovernor(isMobile);
     behaviorEngine=createBehaviorEngine();
@@ -1211,7 +1233,11 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         camY+=(pitchSpring.val*0.025-camY)*0.08;
       }
       const yaw=yawSpring.val,pitch=pitchSpring.val,roll=rollSpring.val;
-      if(cavern){
+      if(anatomical){
+        // V4 measured rest bounds: y=-.002..1.782 m; allow head/hand clearance.
+        const distance=Math.max(2.95,1.9/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*Math.min(1,camera.aspect))+.3);
+        camera.position.set(camX*.7,.90,distance+.15);camera.lookAt(0,.90,.04);
+      }else if(cavern){
         const distance=Math.max(3.15,3.15/Math.min(1,camera.aspect));
         camera.position.set(camX*3.2,1.02+camY*2,distance);
         camera.lookAt(0,.92,0);
@@ -1228,7 +1254,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       rotate('Head',pitch*.72+(!managed&&state.speaking&&!still?.018*Math.sin(t*3.9)*clamp(smoothJaw*2.5,0.2,1.0):0),yaw*.76,roll*.64);
       rotate('LeftShoulder',still?0:.016*breath,0,-.009*breath);
       rotate('RightShoulder',still?0:.016*breath+.003,0,.009*breath);
-      if(cavern){
+      if(fullBody){
         const target=bodyMotion(t,{speaking:!managed&&state.speaking,listening:!managed&&state.listening,active:state.active,jaw:smoothJaw,reduced:still});
         if(turn){target.hips*=turn.motion;target.spine*=turn.motion;target.shoulder*=turn.motion;target.gesture=turn.gesture;target.elbow=turn.gesture*.65;target.wrist=turn.gesture*.28;}
         for(const key of Object.keys(bodyAngles))bodyAngles[key]=still?0:approachAngle(bodyAngles[key],target[key],dt);
@@ -1254,7 +1280,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const faceDt=finiteClamp(rawDt/1000,0,.12,1/30);
 
       const missingArticulation=!liveFormants&&!hasExternalLevel&&!state.phonemes;
-      const visemes=behaviorEngine.computeVisemes(t,still||Boolean((cavern||managed)&&missingArticulation)||Boolean(managed&&!state.speechPlaying),state,liveFormants,hasExternalLevel);
+      const visemes=behaviorEngine.computeVisemes(t,still||Boolean((fullBody||managed)&&missingArticulation)||Boolean(managed&&!state.speechPlaying),state,liveFormants,hasExternalLevel);
       smoothJaw=still?0:approachFacialWeight(smoothJaw,visemes.jaw,faceDt,.32);
       smoothAA=still?0:approachFacialWeight(smoothAA,visemes.aa,faceDt,.30);
       smoothO=still?0:approachFacialWeight(smoothO,visemes.O,faceDt,.30);
@@ -1336,7 +1362,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       lightBody.update(t,energy,blink,finiteClamp(smoothJaw*2.0,0,1,0),qualityTier,decisionBlend,pupilSize);
 
       let signature=0;for(let j=0;j<Math.min(positions.length,6000);j+=31)signature+=positions[j]*(j+1);
-      canvas.dataset.renderedPoints=String(total);canvas.dataset.renderer=cavern?'rigged-cavern':'rigged-particle-field';
+      canvas.dataset.renderedPoints=String(total);canvas.dataset.renderer=anatomical?'anatomical-textured-mesh':cavern?'rigged-cavern':'rigged-particle-field';
       canvas.dataset.hairPoints=String(groups.find(g=>g.kind===2)?.samples.length??0);
       canvas.dataset.torsoPoints=String(groups.find(g=>g.kind===1)?.samples.length??0);
       canvas.dataset.yaw=yaw.toFixed(4);canvas.dataset.blink=blink.toFixed(4);canvas.dataset.jaw=smoothJaw.toFixed(4);
@@ -1352,17 +1378,17 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     const budgetSettings=()=>cavernBudget.settings(Boolean(state.active||busPhase==='analyzing'||busPhase==='verifying'));
     const render=time=>{
       if(disposed||document.hidden)return;
-      if(cavern){
+      if(fullBody){
         const settings=budgetSettings(),dpr=Math.min(window.devicePixelRatio||1,settings.dpr);
         if(lastDpr!==dpr){renderer.setPixelRatio(dpr);lastDpr=dpr;}
         canvas.dataset.frameBudget=String(settings.fps);
       }
       const start=performance.now();pose(time);renderer.render(scene,camera);
-      if(cavern){cavernBudget.observe(performance.now()-start);canvas.dataset.drawCalls=String(renderer.info.render.calls);canvas.dataset.triangles=String(renderer.info.render.triangles);}
+      if(fullBody){cavernBudget.observe(performance.now()-start);canvas.dataset.drawCalls=String(renderer.info.render.calls);canvas.dataset.triangles=String(renderer.info.render.triangles);}
     };
     const tick=time=>{
       if(disposed||document.hidden||motion.matches)return;
-      if(time-last>=(cavern?1000/budgetSettings().fps:FRAME_TIME)-1){render(time);last=time;}
+      if(time-last>=(fullBody?1000/budgetSettings().fps:FRAME_TIME)-1){render(time);last=time;}
       raf=requestAnimationFrame(tick);
     };
     const refresh=()=>{
@@ -1373,7 +1399,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     const resize=()=>{
       if(disposed)return;
       const width=Math.max(1,canvas.clientWidth||360),height=Math.max(1,canvas.clientHeight||width);
-      const dpr=Math.min(window.devicePixelRatio||1,cavern?budgetSettings().dpr:1.5);
+      const dpr=Math.min(window.devicePixelRatio||1,fullBody?budgetSettings().dpr:1.5);
       lastDpr=dpr;renderer.setPixelRatio(dpr);renderer.setSize(width,height,false);
       camera.aspect=width/height;camera.updateProjectionMatrix();material.uniforms.uPixelRatio.value=dpr;
       if(motion.matches)render(0);
