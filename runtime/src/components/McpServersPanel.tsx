@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MCP_LOGOS } from './mcpLogos';
 import { FINANCIAL_LOGOS } from './financialLogos';
+import {LinearOAuthPanel} from './LinearOAuthPanel';
 import { MCP_INTEGRATION_CATALOG, mcpCatalogDraft, mcpConnectionState, pluginCategory, marketplaceEntries, pluginEnvironment, pluginEvidence, observationFresh } from '../lib/mcpIntegrationCatalog.mjs';
 
 // JACO's MCP servers as the operator manages them (operator 2026-10-09): each with its logo, what it
@@ -10,6 +11,7 @@ export interface McpTool { name: string; description: string; readOnly: boolean;
 export interface McpCallRecord { server?: string; tool: string; actor: string; outcome: string; error: string | null; ms: number; at: string }
 export interface McpProvider {
   id: string; name: string; role: string; status: string; transport?: string; endpoint?: string; error: string | null; tools: McpTool[];
+  oauthState?: string; accountVerifiedAt?: string|null;
   credentialEnv?: string; credentialConfigured?: boolean | null; allowOpenLogin?: boolean; catalogMatch?: boolean; loginOpeningSupported?: boolean; startedAt?: string | null;
   icon?: string; agentAccess?: 'off' | 'read' | 'write'; deny?: string[]; builtIn?: boolean;
   stats?: { calls: number; failures: number; refused: number; lastCall: McpCallRecord | null };
@@ -209,9 +211,10 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
             <div className="flex justify-between gap-3"><dt className="text-neutral-400">Last recorded tool call</dt><dd className="text-right">{evidence.lastCall?evidence.lastCall.outcome+' · '+new Date(evidence.lastCall.at).toLocaleString():'Not observed'}</dd></div>
           </dl>
           {preset&&<div className="space-y-2 text-xs"><h4 className="font-semibold">Authentication</h4><p className="text-neutral-400">{preset.auth}</p><p className="break-all text-neutral-400">{preset.target}</p>{preset.tokenEnv&&<p className="text-neutral-400">Credential reference: <code>{preset.tokenEnv}</code></p>}</div>}
+          {selectedPlugin==='linear'&&<LinearOAuthPanel fresh={fresh} onChanged={onChanged}/>}
           {current&&fresh&&<div className="space-y-2 text-xs">
             {current.catalogMatch===false&&<p role="status" className="text-amber-300">This ID has a custom configuration. Catalog settings are not applied.</p>}
-            {(current.loginOpeningSupported||current.allowOpenLogin)&&<label className="flex gap-2 items-start"><input type="checkbox" checked={current.allowOpenLogin===true} disabled={working!==null||(!current.allowOpenLogin&&!current.loginOpeningSupported)} onChange={e=>void updateLoginAccess(e.target.checked)}/><span>Allow Aura to open the approved account page. No credential submission or consent.</span></label>}
+            {current.credentialEnv!=='JACO_MCP_OAUTH_LINEAR'&&(current.loginOpeningSupported||current.allowOpenLogin)&&<label className="flex gap-2 items-start"><input type="checkbox" checked={current.allowOpenLogin===true} disabled={working!==null||(!current.allowOpenLogin&&!current.loginOpeningSupported)} onChange={e=>void updateLoginAccess(e.target.checked)}/><span>Allow Aura to open the approved account page. No credential submission or consent.</span></label>}
             <button type="button" disabled={busy!==null||working!==null} onClick={()=>onStart(current.id)} className="rounded border border-neutral-600 px-3 py-2 disabled:opacity-40">Discover tools</button>
           </div>}
           {!current&&fresh&&preset&&<button type="button" disabled={working!==null} onClick={()=>{setDraft(mcpCatalogDraft(preset.id));modal.current?.close();setAdding(true);}} className="rounded bg-[#314a66] px-4 py-2 text-xs font-medium">Configure connection</button>}
@@ -244,7 +247,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
         </select>
         <McpLogo icon={draft.icon} />
         <select aria-label="Agent access" value={draft.agentAccess} onChange={e => setDraft({ ...draft, agentAccess: e.target.value })} className="ml-auto bg-[#1d1e20] border border-[#505153] rounded px-1 py-1 text-[10px]">
-          {Object.entries(ACCESS_LABEL).map(([v, l]) => <option key={v} value={v}>Agents: {l}</option>)}
+          {Object.entries(ACCESS_LABEL).filter(([v])=>p.credentialEnv!=='JACO_MCP_OAUTH_LINEAR'||v!=='write').map(([v, l]) => <option key={v} value={v}>Agents: {l}</option>)}
         </select>
       </div>
       {/^https:\/\//i.test(draft.target.trim())&&<label className="block text-xs text-neutral-300">Bearer credential environment variable (optional)
@@ -276,7 +279,7 @@ export function McpServersPanel({ providers, recentCalls, busy, selectedToolId, 
             </select>
           </label>
           {!!p.deny?.length && <span className="text-neutral-500 truncate" title={`Never for agents: ${p.deny.join(', ')}`}>blocked: {p.deny.join(', ')}</span>}
-          <button onClick={() => void remove(p)} disabled={working !== null} className="ml-auto text-neutral-400 hover:text-red-300 disabled:opacity-40">{p.builtIn ? 'Turn off' : 'Remove'}</button>
+          <button onClick={() => p.credentialEnv==='JACO_MCP_OAUTH_LINEAR'?setSelectedPlugin('linear'):void remove(p)} disabled={working !== null} className="ml-auto text-neutral-400 hover:text-red-300 disabled:opacity-40">{p.credentialEnv==='JACO_MCP_OAUTH_LINEAR'?'Manage account':p.builtIn ? 'Turn off' : 'Remove'}</button>
         </div>}
         {s && (s.calls > 0 || s.refused > 0) && <div className="px-3 pb-1 text-[9px] text-neutral-400">
           {s.calls} calls · {s.failures} errors · {s.refused} refused
