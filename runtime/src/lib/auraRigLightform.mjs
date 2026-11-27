@@ -5,7 +5,7 @@ import {bodyMotion,approachAngle} from './auraBodyMotion.mjs';
 import {createBlinkController,approachFacialWeight} from './auraFacialDynamics.mjs';
 import {createConversationBehavior} from './auraConversationBehavior.mjs';
 import {fetchAnatomicalAsset} from './auraAnatomicalAsset.mjs';
-import {createHeadAudioBridge,HEAD_AUDIO_VISEMES} from './auraHeadAudio.mjs';
+import {createHeadAudioBridge,HEAD_AUDIO_VISEMES,hasHeadAudioVisemes} from './auraHeadAudio.mjs';
 
 // JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
 // A light-form is sampled from the actual skinned geometry, never from a portrait.
@@ -1101,7 +1101,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     const bodyNames={hips:['Hips','Pelvis','hips','pelvis'],spine:['Spine','Spine1','spine'],leftArm:['LeftArm','LeftUpperArm','leftUpperArm'],rightArm:['RightArm','RightUpperArm','rightUpperArm'],leftForearm:['LeftForeArm','LeftForearm','LeftLowerArm','leftLowerArm'],rightForearm:['RightForeArm','RightForearm','RightLowerArm','rightLowerArm'],leftHand:['LeftHand','leftHand'],rightHand:['RightHand','rightHand']};
     const bodyBone=Object.fromEntries(Object.entries(bodyNames).map(([key,names])=>[key,names.find(name=>bones.has(name))]));
     if(fullBody)canvas.dataset.bodyBones=String(Object.values(bodyBone).filter(Boolean).length);
-    const completeVisemes=HEAD_AUDIO_VISEMES.every(name=>name in face.morphTargetDictionary);
+    const completeVisemes=hasHeadAudioVisemes(face.morphTargetDictionary);
     voiceTracker=createVoiceFormantTracker({headAudio:anatomical&&completeVisemes});
     if(anatomical)canvas.dataset.headAudioRig=completeVisemes?'complete':'missing-visemes';
     qualityGovernor=createQualityGovernor(isMobile);

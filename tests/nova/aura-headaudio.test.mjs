@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createHeadAudioBridge,validateHeadAudioModel,HEAD_AUDIO_VISEMES} from '../../runtime/src/lib/auraHeadAudio.mjs';
+import {createHeadAudioBridge,validateHeadAudioModel,HEAD_AUDIO_VISEMES,hasHeadAudioVisemes} from '../../runtime/src/lib/auraHeadAudio.mjs';
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(){
   const buffer=new ArrayBuffer(15*368),view=new DataView(buffer);
@@ -44,4 +44,9 @@ test('missing model is explicit fallback, not repeated fetches per frame',async(
   b.sample(ctx,source,16,true);await flush();
   for(let i=0;i<100;i++)assert.equal(b.sample(ctx,source,16,true),null);
   assert.equal(calls,1);b.detach();
+});
+
+test('MPFB requires fourteen speaking morphs; silence is neutral',()=>{
+  const d=Object.fromEntries(HEAD_AUDIO_VISEMES.filter(n=>n!=='viseme_sil').map((n,i)=>[n,i]));
+  assert.equal(hasHeadAudioVisemes(d),true);delete d.viseme_PP;assert.equal(hasHeadAudioVisemes(d),false);
 });

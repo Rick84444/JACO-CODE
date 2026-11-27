@@ -1,6 +1,8 @@
 // Adapter for the unmodified MIT HeadAudio modules under public/vendor.
 // Only captured playback is passed in; never acquires media or reroutes output.
 export const HEAD_AUDIO_VISEMES=Object.freeze(['aa','E','I','O','U','PP','SS','TH','DD','FF','kk','nn','RR','CH','sil'].map(x=>'viseme_'+x));
+// Silence is neutral on MPFB: no nonzero silence morph is required.
+export function hasHeadAudioVisemes(dictionary){return Boolean(dictionary)&&HEAD_AUDIO_VISEMES.filter(name=>name!=='viseme_sil').every(name=>Object.hasOwn(dictionary,name));}
 export const HEAD_AUDIO_MODEL='/branding/aura-headaudio-model.bin';
 const RECORD_BYTES=368,MAX_RECORDS=1024;
 const zero=()=>Object.fromEntries(HEAD_AUDIO_VISEMES.map(k=>[k,0]));
