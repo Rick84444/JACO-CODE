@@ -488,7 +488,7 @@ export class StdioMcpHost {
     return Object.entries(this.servers()).map(([id, def]) => {
       const c = this.clients.get(id);
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
-      if (def.validationError) return { id, catalogMatch:MCP_INTEGRATION_CATALOG.some(p=>p.id===id)?false:undefined, name: def.name, role: def.role, transport: def.transport || 'stdio', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
+      if (def.validationError) return { id, catalogMatch:MCP_INTEGRATION_CATALOG.some(p=>p.id===id)?false:undefined, name: def.name, role: def.role, transport: def.transport || 'stdio', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], allowOpenLogin: false, stats };
       const sameLaunch = Boolean(c && launchKey(c.def) === launchKey(def));
       const oauthStatus=isOAuthReference(def.tokenEnv)?this.oauthCredentials.status():null;
       const tools = (sameLaunch && c.initialized && oauthStatus?.credentialConfigured!==false ? c.tools : []).map(t => {
