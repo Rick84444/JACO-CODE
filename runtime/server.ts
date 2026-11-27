@@ -53,6 +53,7 @@ import { liveMissionView } from './src/server/connected/liveMission.mjs';
 import { discoverProvider, identifyKey } from './src/server/connected/providerDiscovery.mjs';
 import { allBrainStatus, brainStatus, startLogin as startBrainLogin, BRAINS as CLI_BRAINS } from './src/server/connected/cliBrains.mjs';
 import { ChatGPTPlanSession } from './src/server/connected/chatgptPlanSession.mjs';
+import {createReadonlyOAuthConnection} from './src/server/mcp/oauthReadonlyConnection.mjs';
 import { CATALOG as PROVIDER_CATALOG, catalogById, catalogProvider } from './src/server/connected/providerCatalog.mjs';
 import { activationReport } from '../agents/lib/activate.mjs';
 import { SecretStore, credential, hydrateEnvFromStore, isExportableSecret, validateSecretName } from '../agents/lib/secret-store.mjs';
@@ -1945,7 +1946,7 @@ const notifyPhone = async (action) => {
       id: s.id, name: s.name, endpoint: `${s.transport}: ${s.command}`, role: s.role, transport: s.transport, credentialEnv: s.credentialEnv,
       status: s.status, health: null, observation: null, tools: s.tools, error: s.error,
       icon: s.icon, agentAccess: s.agentAccess, deny: s.deny, stats: s.stats, builtIn: s.builtIn,
-      credentialConfigured:s.credentialConfigured,allowOpenLogin:s.allowOpenLogin,catalogMatch:s.catalogMatch,loginOpeningSupported:s.loginOpeningSupported,startedAt:s.startedAt,
+      credentialConfigured:s.credentialConfigured,allowOpenLogin:s.allowOpenLogin,catalogMatch:s.catalogMatch,loginOpeningSupported:s.loginOpeningSupported,startedAt:s.startedAt,oauthState:s.oauthState,accountVerifiedAt:s.accountVerifiedAt,
     }));
     const value = {
       schema: 'jaco.aura-mcp-fabric/v1',
@@ -3524,6 +3525,30 @@ const notifyPhone = async (action) => {
     if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) { res.status(403).json({ success: false, error: 'ORIGIN_NOT_ALLOWED' }); return false; }
     return true;
   };
+  // Local opt-in pilot only. Never return credentials, and never permit a tunneled loopback callback.
+  const linearOAuth=createReadonlyOAuthConnection({host:mcpHost,onChange:()=>getAuraMcpFabric.invalidate()});
+  const requireMcpOAuthLocal=(req:express.Request,res:express.Response,next:express.NextFunction)=>{
+    res.setHeader('Cache-Control','no-store');
+    if(process.env.JACO_LOCAL_MCP_OAUTH!=='1')return res.status(403).json({success:false,error:'MCP_OAUTH_PREVIEW_DISABLED'});
+    const host=String(req.headers.host||'');
+    if(!/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host))return res.status(403).json({success:false,error:'LOCAL_UI_ONLY'});
+    const origin=String(req.headers.origin||'');
+    if(req.method!=='GET'&&origin!=='http://'+host&&origin!=='https://'+host)return res.status(403).json({success:false,error:'CROSS_ORIGIN_DENIED'});
+    return requireLocalUiSameOrigin(req,res,next);
+  };
+  const oauthError=(res:express.Response,error:any)=>res.status(409).json({success:false,error:/^MCP_[A-Z0-9_]+$/.test(error?.message||'')?error.message:'MCP_OAUTH_CONNECTION_FAILED'});
+  app.get('/api/aura/workbench/mcp/oauth/linear',requireMcpOAuthLocal,(_req,res)=>{
+    try{res.json({success:true,...linearOAuth.status()});}catch(e){oauthError(res,e);}
+  });
+  app.post('/api/aura/workbench/mcp/oauth/linear/start',requireMcpOAuthLocal,async(_req,res)=>{
+    try{res.json({success:true,...await linearOAuth.start()});}catch(e){oauthError(res,e);}
+  });
+  app.post('/api/aura/workbench/mcp/oauth/linear/cancel',requireMcpOAuthLocal,(_req,res)=>{
+    try{res.json({success:true,...linearOAuth.cancel()});}catch(e){oauthError(res,e);}
+  });
+  app.post('/api/aura/workbench/mcp/oauth/linear/disconnect',requireMcpOAuthLocal,(_req,res)=>{
+    try{res.json({success:true,...linearOAuth.disconnect()});}catch(e){oauthError(res,e);}
+  });
   app.get('/api/aura/workbench/mcp/registry', requireLocalUiSameOrigin, async (req,res)=>{
     res.setHeader('Cache-Control','no-store');
     try { res.json({success:true,...await searchPluginRegistry(req.query.q)}); }
