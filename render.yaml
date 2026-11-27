@@ -1,0 +1,33 @@
+# Isolated customer-cloud validation only. No live operator device migration.
+services:
+  - type: web
+    name: jaco-cloud-validation
+    runtime: node
+    branch: cloud/render-control-foundation
+    region: frankfurt
+    plan: free
+    autoDeployTrigger: "off"
+    buildCommand: npm install --prefix cloud/control --ignore-scripts --no-audit --no-fund && npm --prefix cloud/control test
+    startCommand: npm --prefix cloud/control start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: LINK_ENABLED
+        value: "0"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: jaco-cloud-validation-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: LINK_SIGNING_KEY
+        generateValue: true
+      - key: LINK_STORAGE_KEY
+        generateValue: true
+databases:
+  - name: jaco-cloud-validation-db
+    plan: free
+    region: frankfurt
+    postgresMajorVersion: "17"
+    ipAllowList: []

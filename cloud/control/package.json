@@ -7,7 +7,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test ../../tests/nova/cloud-control-handoff.test.mjs ../../tests/nova/cloud-postgres-store.test.mjs ../../tests/nova/cloud-handoff.test.mjs render-store.test.mjs"
+    "test": "node --test ../../tests/nova/cloud-control-handoff.test.mjs ../../tests/nova/cloud-postgres-store.test.mjs ../../tests/nova/cloud-handoff.test.mjs render-store.test.mjs google-auth.test.mjs"
   },
   "dependencies": {
     "pg": "8.16.3",

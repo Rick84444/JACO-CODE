@@ -59,6 +59,27 @@ function idTokenClaims(idToken) {
   try { return JSON.parse(dec.decode(fromB64u(String(idToken).split('.')[1]))); } catch { return null; }
 }
 
+// Render customer sign-in additionally verifies the ID-token signature against
+// Google's fixed HTTPS JWK endpoint. Never accept a token-supplied key URL.
+export async function verifyGoogleIdToken(idToken,fetchImpl=fetch){
+  try{
+    if(typeof idToken!=='string'||idToken.length>16384)return null;
+    const parts=idToken.split('.');
+    if(parts.length!==3||parts.some(x=>!x||!/^[A-Za-z0-9_-]+$/.test(x)))return null;
+    const header=JSON.parse(dec.decode(fromB64u(parts[0])));
+    if(header.alg!=='RS256'||typeof header.kid!=='string'||header.kid.length>128||header.jku||header.jwk||header.x5u)return null;
+    const response=await fetchImpl('https://www.googleapis.com/oauth2/v3/certs',{redirect:'error',signal:AbortSignal.timeout(10000)});
+    if(!response.ok)return null;
+    const keys=(await response.json()).keys;
+    if(!Array.isArray(keys)||keys.length>20)return null;
+    const jwk=keys.find(k=>k.kid===header.kid&&k.kty==='RSA'&&(!k.alg||k.alg==='RS256')&&(!k.use||k.use==='sig'));
+    if(!jwk)return null;
+    const key=await crypto.subtle.importKey('jwk',jwk,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
+    if(!await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,fromB64u(parts[2]),enc.encode(parts[0]+'.'+parts[1])))return null;
+    return idTokenClaims(idToken);
+  }catch{return null;}
+}
+
 export async function handleAuth(request, env, url, fetchImpl = fetch) {
   const origin=env.PUBLIC_ORIGIN||DEFAULT_ORIGIN;
   const redirect=origin+'/auth/google/callback';
@@ -93,7 +114,8 @@ export async function handleAuth(request, env, url, fetchImpl = fetch) {
       body: new URLSearchParams({ code: q.get('code'), client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, redirect_uri: redirect, grant_type: 'authorization_code', code_verifier: pending.verifier }),
     });
     if (!token.ok) return message(502, 'Google did not accept the sign-in. Please try again.', clear);
-    const claims = idTokenClaims((await token.json()).id_token);
+    const idToken=(await token.json()).id_token;
+    const claims=env.VERIFY_GOOGLE_ID_TOKEN==='1'?await verifyGoogleIdToken(idToken,fetchImpl):idTokenClaims(idToken);
     const now = Math.floor(Date.now() / 1e3);
     const valid = claims && claims.aud === env.GOOGLE_CLIENT_ID && ['https://accounts.google.com', 'accounts.google.com'].includes(claims.iss) && claims.exp > now && claims.nonce === pending.nonce && claims.email_verified === true && claims.sub && claims.email;
     if (!valid) return message(400, 'The sign-in could not be verified.', clear);

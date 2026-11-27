@@ -976,8 +976,11 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   // only an optional outbound customer transport; no local port or tunnel exposed.
   let jacoLink: ReturnType<typeof createJacoLinkHost> | null = null;
   try {
+    const linkOrigin = process.env.JACO_LINK_ORIGIN || 'https://jacocode.com';
+    const linkStateFile = linkOrigin === 'https://jacocode.com' ? 'host.json' : linkOrigin === 'https://cloud.jacocode.com' ? 'host-cloud.json' : 'host-render-validation.json';
     jacoLink = createJacoLinkHost({
-      file: path.join(WORKSPACE_ROOT, '.jaco', 'link', 'host.json'),
+      origin: linkOrigin,
+      file: path.join(WORKSPACE_ROOT, '.jaco', 'link', linkStateFile),
       localBaseUrl: 'http://127.0.0.1:' + PORT,
     });
     if (process.env.JACO_LINK_ENABLED !== '0') jacoLink.resume();

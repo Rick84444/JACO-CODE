@@ -20,6 +20,7 @@ export function createRenderLink(pool,key){
       let current=attachment;
       ws.deserializeAttachment=()=>current;
       ws.serializeAttachment=next=>{current=next;};
+      if(attachment.role==='host')for(const prior of sockets){const a=prior.deserializeAttachment?.();if(a?.role==='host'&&a.deviceId===attachment.deviceId)prior.close(4001,'Host replaced');}
       sockets.add(ws);
       ws.on('message',(data,binary)=>{if(binary){ws.close(1003,'Text required');return;}serial(id,()=>handler.webSocketMessage(ws,data.toString('utf8'))).catch(()=>ws.close(1011,'Link error'));});
       ws.on('close',()=>{sockets.delete(ws);serial(id,()=>handler.webSocketClose(ws)).catch(()=>{});});

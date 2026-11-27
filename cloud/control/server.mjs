@@ -17,13 +17,21 @@ if(!dbUrl)throw Error('DATABASE_URL_REQUIRED');
 const pool=new pg.Pool({connectionString:dbUrl,max:8,connectionTimeoutMillis:5000,statement_timeout:10000});
 pool.on('error',()=>console.error('JACO_CLOUD_DB_POOL_ERROR'));
 const lease=await pool.connect();
-// An exclusive process lease prevents competing Render instances dispatching
-// through the same account. Do not retry unknown mutations on process death.
-const lock=await lease.query('SELECT pg_try_advisory_lock(14729013,20261121) AS acquired');
-if(!lock.rows[0].acquired){lease.release();await pool.end();throw Error('LINK_SINGLE_OWNER_LEASE_BUSY');}
-lease.on('error',()=>process.exit(1));lease.on('end',()=>process.exit(1));
-for(const file of ['001_missions.sql','002_link.sql'])await lease.query(await readFile(new URL('./sql/'+file,import.meta.url),'utf8'));
-const env={PUBLIC_ORIGIN:origin,LINK_ENABLED:enabled?'1':'0',GOOGLE_CLIENT_ID:process.env.GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET:process.env.GOOGLE_CLIENT_SECRET,SESSION_SECRET:process.env.SESSION_SECRET,LINK_SIGNING_KEY:process.env.LINK_SIGNING_KEY};
+// An exclusive process lease prevents competing enabled Render instances.
+// Disabled validation builds need no relay lease and cannot dispatch.
+if(enabled){
+  const lock=await lease.query('SELECT pg_try_advisory_lock(14729013,20261121) AS acquired');
+  if(!lock.rows[0].acquired){lease.release();await pool.end();throw Error('LINK_SINGLE_OWNER_LEASE_BUSY');}
+  lease.on('error',()=>process.exit(1));lease.on('end',()=>process.exit(1));
+}
+try{
+  await lease.query('BEGIN');
+  await lease.query('SELECT pg_advisory_xact_lock(14729013,20261122)');
+  for(const file of ['001_missions.sql','002_link.sql'])await lease.query(await readFile(new URL('./sql/'+file,import.meta.url),'utf8'));
+  await lease.query('COMMIT');
+}catch(error){await lease.query('ROLLBACK').catch(()=>{});lease.release(true);throw error;}
+if(!enabled)lease.release();
+const env={PUBLIC_ORIGIN:origin,VERIFY_GOOGLE_ID_TOKEN:'1',LINK_ENABLED:enabled?'1':'0',GOOGLE_CLIENT_ID:process.env.GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET:process.env.GOOGLE_CLIENT_SECRET,SESSION_SECRET:process.env.SESSION_SECRET,LINK_SIGNING_KEY:process.env.LINK_SIGNING_KEY};
 const key=Buffer.from(process.env.LINK_STORAGE_KEY||'','base64url');
 if(enabled&&(!env.GOOGLE_CLIENT_ID||!env.GOOGLE_CLIENT_SECRET||String(env.SESSION_SECRET||'').length<32||String(env.LINK_SIGNING_KEY||'').length<32||key.length!==32))throw Error('LINK_CONFIGURATION_REQUIRED');
 const link=enabled?createRenderLink(pool,key):null;
