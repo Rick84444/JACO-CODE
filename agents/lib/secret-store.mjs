@@ -168,7 +168,7 @@ export function generateSecretValue(length = 32) {
 
 // The value of a credential by name: the environment wins, then the store. For in-process use only.
 export function credential(name, { env = process.env, store = null } = {}) {
-  if (!name || /^JACO_MCP_(?:GUIDED_|OAUTH_)/i.test(String(name))) return '';
+  if (!name || /^JACO_MCP_(?:GUIDED_|OAUTH_)/i.test(String(name).trim())) return '';
   if (env[name]) return String(env[name]);
   try { return (store || new SecretStore({ env })).get(name) || ''; } catch { return ''; }
 }
