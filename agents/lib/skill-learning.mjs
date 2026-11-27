@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, openSy
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import {routineExperience,recallRoutineExperience} from './routine-experience.mjs';
+import {summarizeMissionOutcomes} from './mission-intelligence.mjs';
 
 const stepOf = r => Number(/:turn:(\d+)$/.exec(String(r?.actionId || ''))?.[1]) || null;
 const isMcp = r => r?.type === 'mcp-call' || r?.type === 'mcp-write';
@@ -142,6 +143,11 @@ export function learningStore(stateDir) {
         reusablePatterns:procedureSteps(receipts).map(s=>({tool:s.tool,arguments:s.args})),constraints:{scopeKey,requiredStages:mission.contract?.verification?.required_stages||[]}};
       const routine=routineExperience(mission,claimCheck);if(routine)item.routine=routine;
       mkdirSync(outcomesDir,{recursive:true});atomicOutcome(join(outcomesDir,createHash('sha256').update(mission.id).digest('hex')+'.json'),item);return item;
+    },
+    intelligence(contract, revision) {
+      if(!Array.isArray(contract?.scope?.allowed)||!contract.scope.allowed.length)throw new TypeError('EXPLICIT_SCOPE_REQUIRED');
+      const scopeKey=createHash('sha256').update(JSON.stringify(contract.scope.allowed)).digest('hex');
+      return summarizeMissionOutcomes(outcomes(),{scopeKey,revision});
     },
     recallRoutine(mission, options={}) {return recallRoutineExperience(outcomes(),mission,options);},
     recallOutcome(contract,revision,{limit=3}={}) {
